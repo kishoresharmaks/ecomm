@@ -1,0 +1,4 @@
+country_code,country_name,currency,locale,phone_code,postal_code_label,postal_code_pattern,subdivision_code,subdivision_name,subdivision_type,city_code,city_name,area_code,area_name,postal_code
+IN,India,INR,en-IN,+91,Pincode,^[1-9][0-9]{5}$,IN-TN,Tamil Nadu,State,IN-TN-CBE,Coimbatore,IN-TN-CBE-RSPURAM,RS Puram,641002
+AE,United Arab Emirates,AED,en-AE,+971,Postal code,^[A-Za-z0-9 -]{0,12}$,AE-DU,Dubai,Emirate,AE-DU-DXB,Dubai,AE-DU-DXB-DEIRA,Deira,
+GB,United Kingdom,GBP,en-GB,+44,Postcode,^[A-Za-z0-9 ]{5,8}$,GB-ENG,England,Country,GB-ENG-LON,London,GB-ENG-LON-CAMDEN,Camden,NW1

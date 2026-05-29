@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="960" viewBox="0 0 1440 960" role="img" aria-labelledby="title desc">
+<title id="title">1HandIndia - Order Detail</title>
+<desc id="desc">Phase 1 UI mockup for Order Detail, route /admin/orders/[orderNumber]</desc>
+<defs><filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#101828" flood-opacity="0.12"/></filter></defs>
+<rect x="0" y="0" width="1440" height="960" rx="0" fill="#FAF7F0" stroke="none" stroke-width="0" />
+<rect x="24" y="20" width="1392" height="900" rx="18" fill="#FFFFFF" stroke="#D8DEE8" stroke-width="1" filter="url(#shadow)"/>
+<rect x="24" y="20" width="1392" height="42" rx="18" fill="#F8FAFC" stroke="#D8DEE8" stroke-width="1" />
+<circle cx="52" cy="41" r="6" fill="#FF5F56" stroke="none" stroke-width="1"/>
+<circle cx="74" cy="41" r="6" fill="#FFBD2E" stroke="none" stroke-width="1"/>
+<circle cx="96" cy="41" r="6" fill="#27C93F" stroke="none" stroke-width="1"/>
+<text x="122" y="47" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="700" fill="#667085" text-anchor="start" >1HandIndia Phase 1 UI mockup</text>
+<text x="1380" y="47" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="600" fill="#667085" text-anchor="end" >/admin/orders/[orderNumber]</text>
+<rect x="24" y="62" width="266" height="858" rx="0" fill="#163B5C" stroke="none" stroke-width="0" />
+<text x="58" y="112" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="27" font-weight="900" fill="#FFFFFF" text-anchor="start" >1HandIndia</text>
+<rect x="58" y="132" width="172" height="30" rx="15" fill="#FFFFFF22" stroke="none" stroke-width="0" />
+<text x="144" y="152" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="700" fill="#FFFFFF" text-anchor="middle" >Admin Panel</text>
+<text x="68" y="196" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="700" fill="#FFFFFF" text-anchor="start" >Dashboard</text>
+<text x="68" y="246" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="700" fill="#FFFFFF" text-anchor="start" >Customers</text>
+<text x="68" y="296" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="700" fill="#FFFFFF" text-anchor="start" >Sellers</text>
+<text x="68" y="346" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="700" fill="#FFFFFF" text-anchor="start" >Products</text>
+<text x="68" y="396" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="700" fill="#FFFFFF" text-anchor="start" >Orders</text>
+<text x="68" y="446" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="700" fill="#FFFFFF" text-anchor="start" >B2B</text>
+<text x="68" y="496" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="700" fill="#FFFFFF" text-anchor="start" >CMS</text>
+<text x="68" y="546" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="700" fill="#FFFFFF" text-anchor="start" >Reports</text>
+<text x="68" y="596" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="700" fill="#FFFFFF" text-anchor="start" >Settings</text>
+<text x="68" y="646" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="700" fill="#FFFFFF" text-anchor="start" >Audit Logs</text>
+<text x="58" y="878" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#DCE8F2" text-anchor="start" >Phase 1 web portal</text>
+<rect x="290" y="62" width="1126" height="76" rx="0" fill="#F8FAFC" stroke="#E5E7EB" stroke-width="1" />
+<text x="326" y="106" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="700" fill="#667085" text-anchor="start" >/admin/orders/[orderNumber]</text>
+<rect x="1134" y="84" width="86" height="30" rx="15" fill="#E9F7F1" stroke="none" stroke-width="0" />
+<text x="1177" y="104" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="700" fill="#0F8A5F" text-anchor="middle" >Must</text>
+<circle cx="1280" cy="100" r="18" fill="#F57C00" stroke="none" stroke-width="1"/>
+<text x="1280" y="106" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="900" fill="#FFFFFF" text-anchor="middle" >1HI</text>
+<text x="1312" y="105" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="700" fill="#1F2933" text-anchor="start" >Logged in role</text>
+<rect x="326" y="168" width="92" height="30" rx="15" fill="#FFF1E3" stroke="none" stroke-width="0" />
+<text x="372" y="188" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="700" fill="#F57C00" text-anchor="middle" >Must</text>
+<text x="326" y="232" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="30" font-weight="900" fill="#1F2933" text-anchor="start" >Order Detail</text>
+<text x="326" y="262" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="15" font-weight="400" fill="#667085" text-anchor="start" >Order items, seller split, customer, payment, delivery, audit.</text>
+<line x1="326" y1="316" x2="1348" y2="316" stroke="#E5E7EB" stroke-width="1" stroke-linecap="round"/>
+<rect x="326" y="334" width="466" height="210" rx="8" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1" />
+<text x="346" y="367" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="16" font-weight="850" fill="#1F2933" text-anchor="start" >Record summary</text>
+<rect x="346" y="382" width="52" height="5" rx="3" fill="#163B5C" stroke="none" stroke-width="0" />
+<rect x="346" y="410" width="390" height="12" rx="6" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="346" y="444" width="366" height="12" rx="6" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="346" y="478" width="342" height="12" rx="6" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="346" y="512" width="318" height="12" rx="6" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="346" y="496" width="90" height="30" rx="15" fill="#EAF1F7" stroke="none" stroke-width="0" />
+<text x="391" y="516" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="700" fill="#163B5C" text-anchor="middle" >Review</text>
+<rect x="820" y="334" width="528" height="210" rx="8" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1" />
+<text x="840" y="367" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="16" font-weight="850" fill="#1F2933" text-anchor="start" >Related data</text>
+<rect x="840" y="382" width="52" height="5" rx="3" fill="#0F8A5F" stroke="none" stroke-width="0" />
+<rect x="840" y="402" width="488" height="44" rx="6" fill="#EAF1F7" stroke="none" stroke-width="0" />
+<text x="858" y="430" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="800" fill="#0F8A5F" text-anchor="start" >Name</text>
+<text x="980" y="430" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="800" fill="#0F8A5F" text-anchor="start" >Status</text>
+<text x="1102" y="430" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="800" fill="#0F8A5F" text-anchor="start" >Owner</text>
+<text x="1224" y="430" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="800" fill="#0F8A5F" text-anchor="start" >Action</text>
+<rect x="840" y="446" width="488" height="50" rx="0" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1" />
+<rect x="858" y="464" width="74" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="980" y="464" width="69" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="1102" y="464" width="64" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="1224" y="464" width="60" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="840" y="496" width="488" height="50" rx="0" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1" />
+<rect x="858" y="514" width="69" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="980" y="514" width="64" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="1102" y="514" width="60" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="1224" y="514" width="60" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="1212" y="507" width="84" height="30" rx="15" fill="#E9F7F1" stroke="none" stroke-width="0" />
+<text x="1254" y="527" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="700" fill="#0F8A5F" text-anchor="middle" >Active</text>
+<rect x="840" y="546" width="488" height="50" rx="0" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1" />
+<rect x="858" y="564" width="64" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="980" y="564" width="60" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="1102" y="564" width="60" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="1224" y="564" width="60" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="840" y="596" width="488" height="50" rx="0" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1" />
+<rect x="858" y="614" width="60" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="980" y="614" width="60" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="1102" y="614" width="60" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="1224" y="614" width="60" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="1212" y="607" width="84" height="30" rx="15" fill="#E9F7F1" stroke="none" stroke-width="0" />
+<text x="1254" y="627" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="700" fill="#0F8A5F" text-anchor="middle" >Active</text>
+<rect x="840" y="646" width="488" height="50" rx="0" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1" />
+<rect x="858" y="664" width="60" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="980" y="664" width="60" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="1102" y="664" width="60" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="1224" y="664" width="60" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="326" y="578" width="1022" height="170" rx="8" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1" />
+<text x="356" y="620" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="18" font-weight="900" fill="#1F2933" text-anchor="start" >Timeline</text>
+<circle cx="374" cy="674" r="13" fill="#F57C00" stroke="none" stroke-width="1"/>
+<text x="374" y="710" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="800" fill="#1F2933" text-anchor="middle" >Created</text>
+<line x1="392" y1="674" x2="564" y2="674" stroke="#E5E7EB" stroke-width="3" stroke-linecap="round"/>
+<circle cx="622" cy="674" r="13" fill="#F57C00" stroke="none" stroke-width="1"/>
+<text x="622" y="710" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="800" fill="#1F2933" text-anchor="middle" >Reviewed</text>
+<line x1="640" y1="674" x2="812" y2="674" stroke="#E5E7EB" stroke-width="3" stroke-linecap="round"/>
+<circle cx="870" cy="674" r="13" fill="#F57C00" stroke="none" stroke-width="1"/>
+<text x="870" y="710" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="800" fill="#1F2933" text-anchor="middle" >Updated</text>
+<line x1="888" y1="674" x2="1060" y2="674" stroke="#E5E7EB" stroke-width="3" stroke-linecap="round"/>
+<circle cx="1118" cy="674" r="13" fill="#F57C00" stroke="none" stroke-width="1"/>
+<text x="1118" y="710" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="800" fill="#1F2933" text-anchor="middle" >Notified</text>
+<line x1="1136" y1="674" x2="1308" y2="674" stroke="#E5E7EB" stroke-width="3" stroke-linecap="round"/>
+<text x="720" y="894" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="700" fill="#667085" text-anchor="middle" >1HandIndia UI mockup image - Phase 1 frozen screen list - Not a coded screenshot</text>
+</svg>

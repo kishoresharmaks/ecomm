@@ -1,0 +1,42 @@
+{
+  "name": "@indihub/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --port 3000",
+    "build": "next build",
+    "start": "next start --port 3000",
+    "start:render": "next start --hostname 0.0.0.0 --port ${PORT:-3000}",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@clerk/nextjs": "7.4.1",
+    "@headlessui/react": "^2.2.10",
+    "@indihub/config": "workspace:*",
+    "@indihub/shared-types": "workspace:*",
+    "@indihub/ui": "workspace:*",
+    "@indihub/validators": "workspace:*",
+    "@tanstack/react-query": "5.100.13",
+    "lucide-react": "1.16.0",
+    "next": "16.2.6",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "react-hook-form": "7.76.0",
+    "zod": "4.4.3",
+    "zustand": "5.0.13"
+  },
+  "devDependencies": {
+    "@indihub/eslint-config": "workspace:*",
+    "@indihub/tsconfig": "workspace:*",
+    "@tailwindcss/postcss": "4.3.0",
+    "@types/node": "25.9.1",
+    "@types/react": "19.2.15",
+    "@types/react-dom": "19.2.3",
+    "tailwindcss": "4.3.0",
+    "typescript": "6.0.3",
+    "vitest": "4.1.7"
+  }
+}

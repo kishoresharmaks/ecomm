@@ -1,0 +1,72 @@
+services:
+  - type: web
+    name: indihub-api
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm db:generate && pnpm --filter @indihub/api build
+    startCommand: pnpm --filter @indihub/api start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 24.14.1
+      - key: INDIHUB_ENV
+        value: testing
+      - key: INDIHUB_SEED_MODE
+        value: schema
+      - key: INDIHUB_ALLOW_PRODUCTION_SEED
+        value: "false"
+      - key: API_HOST
+        value: "0.0.0.0"
+      - key: API_CORS_ORIGINS
+        value: https://indihub-web.onrender.com
+      - key: NEXT_PUBLIC_WEB_URL
+        value: https://indihub-web.onrender.com
+      - key: NEXT_PUBLIC_API_URL
+        value: https://indihub-api.onrender.com
+      - key: FX_PROVIDER
+        value: frankfurter
+      - key: FX_BASE_CURRENCY
+        value: INR
+      - key: FX_CACHE_TTL_MINUTES
+        value: "360"
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: CLERK_SECRET_KEY
+        sync: false
+      - key: CLERK_JWT_KEY
+        sync: false
+      - key: CLERK_AUTHORIZED_PARTIES
+        value: https://indihub-web.onrender.com
+      - key: INDIHUB_FIRST_ADMIN_EMAIL
+        sync: false
+      - key: INDIHUB_FIRST_ADMIN_NAME
+        value: 1HandIndia Admin
+      - key: INDIHUB_FIRST_ADMIN_PASSWORD
+        sync: false
+      - key: INDIHUB_AUTH_SYNC_SECRET
+        sync: false
+      - key: INDIHUB_BOOTSTRAP_SECRET
+        sync: false
+
+  - type: web
+    name: indihub-web
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm db:generate && pnpm --filter @indihub/web build
+    startCommand: pnpm --filter @indihub/web start:render
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: 24.14.1
+      - key: NEXT_PUBLIC_APP_NAME
+        value: 1HandIndia
+      - key: NEXT_PUBLIC_WEB_URL
+        value: https://indihub-web.onrender.com
+      - key: NEXT_PUBLIC_API_URL
+        value: https://indihub-api.onrender.com
+      - key: NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+        sync: false

@@ -1,0 +1,392 @@
+"use client";
+
+import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
+import { Bike, MapPinned, Phone, Save, UserRound } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Button, SectionHeading, StatusBadge, type StatusTone } from "@indihub/ui";
+import {
+  getDeliveryProfile,
+  updateDeliveryProfile,
+  type DeliveryPartnerProfileAccount,
+  type DeliveryPartnerProfileUpdatePayload,
+} from "@/lib/delivery-api";
+import {
+  DeliveryError,
+  DeliveryIconTile,
+  DeliveryMetric,
+  DeliveryPanel,
+  formatPaise,
+  humanize,
+  useDeliveryAuth,
+} from "./delivery-ui";
+
+type DeliveryProfileForm = {
+  phone: string;
+  vehicleNumber: string;
+  isAvailable: boolean;
+  serviceCountryCode: string;
+  serviceStateCode: string;
+  serviceCityCode: string;
+  servicePincodes: string;
+  serviceLocalAreaCodes: string;
+  notes: string;
+};
+
+const emptyForm: DeliveryProfileForm = {
+  phone: "",
+  vehicleNumber: "",
+  isAvailable: true,
+  serviceCountryCode: "",
+  serviceStateCode: "",
+  serviceCityCode: "",
+  servicePincodes: "",
+  serviceLocalAreaCodes: "",
+  notes: "",
+};
+
+export function DeliveryProfileClient() {
+  const auth = useDeliveryAuth();
+  const queryClient = useQueryClient();
+  const [form, setForm] = useState<DeliveryProfileForm>(emptyForm);
+  const [notice, setNotice] = useState<{ tone: StatusTone; message: string } | null>(null);
+  const queryKey = useMemo(() => ["delivery-profile", auth.authKey], [auth.authKey]);
+  const profileQuery = useQuery({
+    queryKey,
+    queryFn: () => getDeliveryProfile(auth.authHeaders),
+    enabled: auth.enabled,
+    retry: false,
+  });
+  const updateProfile = useMutation({
+    mutationFn: (payload: DeliveryPartnerProfileUpdatePayload) =>
+      updateDeliveryProfile(auth.authHeaders, payload),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(queryKey, updated);
+      setNotice({ tone: "success", message: "Profile updated." });
+    },
+    onError: (error) => {
+      setNotice({
+        tone: "danger",
+        message: error instanceof Error ? error.message : "Profile update failed.",
+      });
+    },
+  });
+
+  useEffect(() => {
+    if (profileQuery.data) {
+      setForm(profileToForm(profileQuery.data));
+    }
+  }, [profileQuery.data]);
+
+  if (!auth.enabled) {
+    return null;
+  }
+
+  if (profileQuery.error) {
+    return <DeliveryError error={profileQuery.error} onRetry={() => void profileQuery.refetch()} />;
+  }
+
+  const profile = profileQuery.data;
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setNotice(null);
+    updateProfile.mutate({
+      phone: phonePayload(form.phone),
+      vehicleNumber: form.vehicleNumber.trim(),
+      isAvailable: form.isAvailable,
+      serviceCountryCode: form.serviceCountryCode.trim(),
+      serviceStateCode: form.serviceStateCode.trim(),
+      serviceCityCode: form.serviceCityCode.trim(),
+      servicePincodes: csvValues(form.servicePincodes),
+      serviceLocalAreaCodes: csvValues(form.serviceLocalAreaCodes),
+      notes: form.notes.trim(),
+    });
+  }
+
+  return (
+    <div className="grid gap-5">
+      <div className="grid gap-4 md:grid-cols-3">
+        <DeliveryMetric
+          label="Availability"
+          value={form.isAvailable ? "Active" : "Inactive"}
+          note="Used for new admin assignment"
+        />
+        <DeliveryMetric
+          label="Active workload"
+          value={profile?.activeWorkload ?? 0}
+          note="Assigned deliveries in progress"
+        />
+        <DeliveryMetric
+          label="COD exposure"
+          value={formatPaise(profile?.pendingCodCashPaise ?? 0)}
+          note={`Limit ${formatPaise(profile?.deliveryProfile.effectiveCodCashLimitPaise ?? 0)}`}
+        />
+      </div>
+
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <SectionHeading
+          title="Partner profile"
+          description="Keep delivery contact, vehicle, availability, and service area details current."
+        />
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusBadge tone={form.isAvailable ? "success" : "warning"}>
+            {form.isAvailable ? "Available" : "Inactive"}
+          </StatusBadge>
+          <StatusBadge tone="info">{humanize(profile?.status ?? "ACTIVE")}</StatusBadge>
+        </div>
+      </div>
+
+      {profileQuery.isLoading ? (
+        <DeliveryPanel>
+          <div className="h-72 animate-pulse rounded-md bg-[#F8FAFC]" />
+        </DeliveryPanel>
+      ) : null}
+
+      {profile ? (
+        <form onSubmit={submit} className="grid gap-5">
+          <div className="grid gap-3 lg:grid-cols-3">
+            <ProfileSummaryCard
+              icon={<UserRound className="h-5 w-5" aria-hidden="true" />}
+              label="Account"
+              value={profile.fullName || profile.email || "Delivery partner"}
+              note={profile.email ?? "Email not set"}
+            />
+            <ProfileSummaryCard
+              icon={<Phone className="h-5 w-5" aria-hidden="true" />}
+              label="Phone"
+              value={form.phone || "Not set"}
+              note="Visible to delivery operations"
+            />
+            <ProfileSummaryCard
+              icon={<Bike className="h-5 w-5" aria-hidden="true" />}
+              label="Vehicle"
+              value={form.vehicleNumber || "Not set"}
+              note="Used by admin handover"
+            />
+          </div>
+
+          {notice ? (
+            <div className="rounded-md border border-[#D8E2EA] bg-[#F8FAFC] p-3">
+              <StatusBadge tone={notice.tone}>{notice.message}</StatusBadge>
+            </div>
+          ) : null}
+
+          <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
+            <DeliveryPanel>
+              <h2 className="text-base font-black text-[#123A5A]">Contact and status</h2>
+              <div className="mt-4 grid gap-4">
+                <ProfileInput
+                  label="Phone"
+                  value={form.phone}
+                  inputMode="tel"
+                  placeholder="9876543210"
+                  onChange={(phone) => setForm((current) => ({ ...current, phone }))}
+                />
+                <ProfileInput
+                  label="Vehicle number"
+                  value={form.vehicleNumber}
+                  placeholder="TN 30 AB 1234"
+                  onChange={(vehicleNumber) =>
+                    setForm((current) => ({ ...current, vehicleNumber }))
+                  }
+                />
+                <label className="flex min-h-12 items-center justify-between gap-3 rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 py-2">
+                  <span>
+                    <span className="block text-sm font-black text-[#1F2933]">Available for assignment</span>
+                    <span className="block text-xs font-semibold text-[#667085]">
+                      {form.isAvailable ? "Active" : "Inactive"}
+                    </span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={form.isAvailable}
+                    onChange={(event) =>
+                      setForm((current) => ({ ...current, isAvailable: event.target.checked }))
+                    }
+                    className="h-5 w-5 accent-[#ED3500]"
+                  />
+                </label>
+              </div>
+            </DeliveryPanel>
+
+            <DeliveryPanel>
+              <h2 className="text-base font-black text-[#123A5A]">Service area</h2>
+              <div className="mt-4 grid gap-4">
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <ProfileInput
+                    label="Country code"
+                    value={form.serviceCountryCode}
+                    placeholder="IN"
+                    onChange={(serviceCountryCode) =>
+                      setForm((current) => ({ ...current, serviceCountryCode }))
+                    }
+                  />
+                  <ProfileInput
+                    label="State code"
+                    value={form.serviceStateCode}
+                    placeholder="IN-TN"
+                    onChange={(serviceStateCode) =>
+                      setForm((current) => ({ ...current, serviceStateCode }))
+                    }
+                  />
+                  <ProfileInput
+                    label="City code"
+                    value={form.serviceCityCode}
+                    placeholder="IN-TN-SALEM"
+                    onChange={(serviceCityCode) =>
+                      setForm((current) => ({ ...current, serviceCityCode }))
+                    }
+                  />
+                </div>
+                <ProfileInput
+                  label="Service pincodes"
+                  value={form.servicePincodes}
+                  placeholder="636114, 636304"
+                  onChange={(servicePincodes) =>
+                    setForm((current) => ({ ...current, servicePincodes }))
+                  }
+                />
+                <ProfileInput
+                  label="Local area codes"
+                  value={form.serviceLocalAreaCodes}
+                  placeholder="PIN-636114-708A9748"
+                  onChange={(serviceLocalAreaCodes) =>
+                    setForm((current) => ({ ...current, serviceLocalAreaCodes }))
+                  }
+                />
+              </div>
+            </DeliveryPanel>
+          </div>
+
+          <DeliveryPanel>
+            <div className="flex items-start gap-3">
+              <DeliveryIconTile>
+                <MapPinned className="h-5 w-5" aria-hidden="true" />
+              </DeliveryIconTile>
+              <div className="min-w-0 flex-1">
+                <ProfileTextarea
+                  label="Notes"
+                  value={form.notes}
+                  placeholder="Shift timing, preferred pickup point, route notes"
+                  onChange={(notes) => setForm((current) => ({ ...current, notes }))}
+                />
+              </div>
+            </div>
+          </DeliveryPanel>
+
+          <div className="sticky bottom-3 z-10 flex justify-end">
+            <Button type="submit" disabled={updateProfile.isPending || profileQuery.isLoading}>
+              <Save className="h-4 w-4" aria-hidden="true" />
+              {updateProfile.isPending ? "Saving..." : "Save profile"}
+            </Button>
+          </div>
+        </form>
+      ) : null}
+    </div>
+  );
+}
+
+function ProfileSummaryCard({
+  icon,
+  label,
+  value,
+  note,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+  note: string;
+}) {
+  return (
+    <div className="flex min-w-0 items-start gap-3 rounded-md border border-[#E5E7EB] bg-[#F8FAFC] p-4">
+      <DeliveryIconTile>{icon}</DeliveryIconTile>
+      <div className="min-w-0">
+        <p className="text-xs font-black uppercase tracking-wide text-[#667085]">{label}</p>
+        <p className="mt-1 truncate text-base font-black text-[#1F2933]">{value}</p>
+        <p className="mt-1 truncate text-xs font-semibold text-[#667085]">{note}</p>
+      </div>
+    </div>
+  );
+}
+
+function ProfileInput({
+  label,
+  value,
+  placeholder,
+  inputMode,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  placeholder?: string;
+  inputMode?: "text" | "tel";
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="block">
+      <span className="text-xs font-black uppercase tracking-wide text-[#667085]">{label}</span>
+      <input
+        value={value}
+        inputMode={inputMode}
+        placeholder={placeholder}
+        onChange={(event) => onChange(event.target.value)}
+        className="mt-2 h-11 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 text-sm font-semibold text-[#1F2933] outline-none transition placeholder:text-[#98A2B3] focus:border-[#ED3500] focus:bg-white focus:ring-2 focus:ring-[#FFE0D6]"
+      />
+    </label>
+  );
+}
+
+function ProfileTextarea({
+  label,
+  value,
+  placeholder,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  placeholder?: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="block">
+      <span className="text-xs font-black uppercase tracking-wide text-[#667085]">{label}</span>
+      <textarea
+        value={value}
+        placeholder={placeholder}
+        onChange={(event) => onChange(event.target.value)}
+        className="mt-2 min-h-28 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 py-2 text-sm font-semibold leading-6 text-[#1F2933] outline-none transition placeholder:text-[#98A2B3] focus:border-[#ED3500] focus:bg-white focus:ring-2 focus:ring-[#FFE0D6]"
+      />
+    </label>
+  );
+}
+
+function profileToForm(account: DeliveryPartnerProfileAccount): DeliveryProfileForm {
+  const profile = account.deliveryProfile;
+  return {
+    phone: profile.phone ?? account.phone ?? "",
+    vehicleNumber: profile.vehicleNumber ?? "",
+    isAvailable: profile.isAvailable ?? true,
+    serviceCountryCode: profile.serviceCountryCode ?? "",
+    serviceStateCode: profile.serviceStateCode ?? "",
+    serviceCityCode: profile.serviceCityCode ?? "",
+    servicePincodes: profile.servicePincodes?.join(", ") ?? "",
+    serviceLocalAreaCodes: profile.serviceLocalAreaCodes?.join(", ") ?? "",
+    notes: profile.notes ?? "",
+  };
+}
+
+function csvValues(value: string) {
+  return Array.from(
+    new Set(
+      value
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
+function phonePayload(value: string) {
+  const phone = value.replace(/\D/g, "");
+  return phone || undefined;
+}

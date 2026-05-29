@@ -1,0 +1,1 @@
+Read AGENTS.md and the 1HandIndia docs, then continue the project from the prepared workspace context.

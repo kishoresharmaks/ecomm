@@ -1,0 +1,1253 @@
+import {
+  BadRequestException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import {
+  ApprovalStatus,
+  CategoryStatus,
+  EmailRecipientType,
+  InventoryMovementType,
+  Prisma,
+  ProductAttributeFieldType,
+  ProductAttributeScope,
+  ProductListingMode,
+  ProductStatus,
+  ProductTemplateStatus,
+  SellerStatus,
+  VariantStatus,
+} from "@indihub/database";
+import {
+  marketplaceProductEssentialFields,
+  marketplaceProductRequiredEssentialFields,
+  type MarketplaceProductEssentialField,
+} from "@indihub/shared-types";
+import type { RequestUser } from "../auth/types/indihub-request";
+import { paginationFromQuery } from "../common/pagination";
+import { createSlug } from "../common/slug";
+import { EMAIL_TRIGGER_EVENTS } from "../notifications/email-trigger-catalog";
+import { NotificationsService } from "../notifications/notifications.service";
+import { PrismaService } from "../prisma/prisma.service";
+import {
+  normalizeStorageImageReference,
+  safeStorageFolderSegment,
+} from "../storage/storage-image";
+import { ProductApprovalDecision, ProductApprovalDto } from "./dto/product-approval.dto";
+import {
+  CreateSellerProductDto,
+  ProductVariantDto,
+  UpdateProductVariantDto,
+  UpdateSellerProductDto,
+} from "./dto/product.dto";
+import { ProductQueryDto } from "./dto/product-query.dto";
+
+const productInclude = {
+  category: {
+    include: {
+      productTemplate: {
+        include: {
+          fields: {
+            orderBy: [{ scope: "asc" as const }, { sortOrder: "asc" as const }, { label: "asc" as const }],
+          },
+        },
+      },
+    },
+  },
+  seller: {
+    include: {
+      profile: true,
+      user: true,
+    },
+  },
+  hsnMaster: true,
+  images: {
+    orderBy: [{ sortOrder: "asc" as const }, { createdAt: "asc" as const }],
+  },
+  variants: {
+    orderBy: [{ createdAt: "asc" as const }],
+  },
+};
+
+const publicSellerProfileSelect = {
+  id: true,
+  sellerId: true,
+  logoUrl: true,
+  bannerUrl: true,
+  description: true,
+  contactName: true,
+  contactPhone: true,
+  contactEmail: true,
+  createdAt: true,
+  updatedAt: true,
+};
+
+const publicProductInclude = {
+  category: {
+    include: {
+      productTemplate: {
+        include: {
+          fields: {
+            orderBy: [{ scope: "asc" as const }, { sortOrder: "asc" as const }, { label: "asc" as const }],
+          },
+        },
+      },
+    },
+  },
+  seller: {
+    select: {
+      id: true,
+      storeName: true,
+      slug: true,
+      sellerType: true,
+      status: true,
+      approvalStatus: true,
+      profile: {
+        select: publicSellerProfileSelect,
+      },
+    },
+  },
+  hsnMaster: true,
+  images: {
+    orderBy: [{ sortOrder: "asc" as const }, { createdAt: "asc" as const }],
+  },
+  variants: {
+    orderBy: [{ createdAt: "asc" as const }],
+  },
+};
+
+@Injectable()
+export class ProductsService {
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(NotificationsService) private readonly notifications: NotificationsService,
+  ) {}
+
+  async listPublicProducts(query: ProductQueryDto) {
+    const { page, skip, take } = this.pagination(query);
+    const where: Prisma.ProductWhereInput = {
+      deletedAt: null,
+      status: ProductStatus.ACTIVE,
+      approvalStatus: ApprovalStatus.APPROVED,
+      seller: {
+        status: SellerStatus.APPROVED,
+        approvalStatus: ApprovalStatus.APPROVED,
+      },
+      category: {
+        status: CategoryStatus.ACTIVE,
+        deletedAt: null,
+      },
+      ...(query.categoryId ? { categoryId: query.categoryId } : {}),
+      ...(query.sellerId ? { sellerId: query.sellerId } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { name: { contains: query.search, mode: "insensitive" } },
+              { description: { contains: query.search, mode: "insensitive" } },
+              { searchText: { contains: query.search, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+    };
+
+    const items = await this.prisma.client.product.findMany({
+      where,
+      include: publicProductInclude,
+      orderBy: { createdAt: "desc" },
+      skip,
+      take,
+    });
+    const total = await this.prisma.client.product.count({ where });
+
+    return { items, total, page, limit: take };
+  }
+
+  async getPublicProduct(slug: string) {
+    const product = await this.prisma.client.product.findFirst({
+      where: {
+        slug,
+        deletedAt: null,
+        status: ProductStatus.ACTIVE,
+        approvalStatus: ApprovalStatus.APPROVED,
+        seller: {
+          status: SellerStatus.APPROVED,
+          approvalStatus: ApprovalStatus.APPROVED,
+        },
+      },
+      include: publicProductInclude,
+    });
+
+    if (!product) {
+      throw new NotFoundException("Product not found.");
+    }
+
+    return product;
+  }
+
+  async listSellerProducts(actor: RequestUser, query: ProductQueryDto) {
+    const seller = await this.resolveSeller(actor);
+    const { page, skip, take } = this.pagination(query);
+    const where: Prisma.ProductWhereInput = {
+      sellerId: seller.id,
+      deletedAt: null,
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.approvalStatus ? { approvalStatus: query.approvalStatus } : {}),
+      ...(query.categoryId ? { categoryId: query.categoryId } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { name: { contains: query.search, mode: "insensitive" } },
+              { description: { contains: query.search, mode: "insensitive" } },
+              { searchText: { contains: query.search, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+    };
+
+    const items = await this.prisma.client.product.findMany({
+      where,
+      include: productInclude,
+      orderBy: { createdAt: "desc" },
+      skip,
+      take,
+    });
+    const total = await this.prisma.client.product.count({ where });
+
+    return { items, total, page, limit: take };
+  }
+
+  async getSellerProduct(actor: RequestUser, productId: string) {
+    const seller = await this.resolveSeller(actor);
+    const product = await this.prisma.client.product.findFirst({
+      where: {
+        id: productId,
+        sellerId: seller.id,
+        deletedAt: null,
+      },
+      include: productInclude,
+    });
+
+    if (!product) {
+      throw new NotFoundException("Seller product not found.");
+    }
+
+    return product;
+  }
+
+  async createSellerProduct(actor: RequestUser, dto: CreateSellerProductDto) {
+    const seller = await this.resolveApprovedSeller(actor);
+    const images = this.normalizeProductImages(
+      dto.images,
+      "Product images",
+      this.sellerUploadFolder(actor.id, "products"),
+    );
+    const category = await this.ensureActiveCategory(dto.categoryId);
+    const attributes = this.applyCategoryTaxDefaults(
+      category,
+      this.validateAttributes(
+        category.productTemplate?.fields ?? [],
+        ProductAttributeScope.PRODUCT,
+        dto.attributes,
+        "Product attributes",
+      ),
+    );
+    const productTaxFields = await this.resolveProductTaxFields(category, attributes);
+    const variants = dto.variants.map((variant) => ({
+      ...variant,
+      attributes: this.validateAttributes(
+        category.productTemplate?.fields ?? [],
+        ProductAttributeScope.VARIANT,
+        variant.attributes,
+        `Variant ${variant.variantName ?? variant.sku ?? ""}`.trim() || "Variant attributes",
+      ),
+    }));
+    const listingMode = category.productTemplate?.listingMode ?? ProductListingMode.CART;
+    const slug = await this.createUniqueProductSlug(dto.name);
+    const variantInputs = await this.prepareVariantInputs(dto.name, variants);
+
+    const productId = await this.prisma.client.$transaction(async (tx) => {
+      const product = await tx.product.create({
+        data: {
+          sellerId: seller.id,
+          categoryId: dto.categoryId,
+          name: dto.name,
+          slug,
+          description: dto.description,
+          status: ProductStatus.INACTIVE,
+          approvalStatus: ApprovalStatus.PENDING_APPROVAL,
+          listingMode,
+          attributes: this.jsonObjectOrNull(attributes),
+          hsnCode: productTaxFields.hsnCode,
+          gstRatePercent: productTaxFields.gstRatePercent,
+          hsnMasterId: productTaxFields.hsnMasterId,
+          searchText: this.createSearchText(dto.name, dto.description, attributes),
+        },
+      });
+
+      if (images.length) {
+        await tx.productImage.createMany({
+          data: images.map((image, index) => ({
+            productId: product.id,
+            url: image.url,
+            altText: image.altText ?? product.name,
+            sortOrder: image.sortOrder ?? index,
+            isPrimary: image.isPrimary ?? index === 0,
+          })),
+        });
+      }
+
+      for (const variantInput of variantInputs) {
+        const variant = await tx.productVariant.create({
+          data: {
+            productId: product.id,
+            sku: variantInput.sku,
+            variantName: variantInput.variantName ?? null,
+            pricePaise: variantInput.pricePaise,
+            mrpPaise: variantInput.mrpPaise ?? null,
+            stockQuantity: variantInput.stockQuantity ?? 0,
+            status: variantInput.status ?? VariantStatus.ACTIVE,
+            attributes: this.jsonObjectOrNull(variantInput.attributes),
+          },
+        });
+
+        if (variant.stockQuantity > 0) {
+          await tx.inventoryMovement.create({
+            data: {
+              productVariantId: variant.id,
+              movementType: InventoryMovementType.INCREMENT,
+              quantity: variant.stockQuantity,
+              reason: "Initial seller stock",
+              referenceType: "product",
+              referenceId: product.id,
+              createdById: actor.id,
+            },
+          });
+        }
+      }
+
+      await tx.auditLog.create({
+        data: {
+          actor: { connect: { id: actor.id } },
+          action: "product.submitted",
+          entityType: "product",
+          entityId: product.id,
+          newValue: {
+            name: product.name,
+            sellerId: seller.id,
+            approvalStatus: product.approvalStatus,
+          },
+        },
+      });
+
+      return product.id;
+    });
+
+    const product = await this.getProductByIdOrThrow(productId);
+    await Promise.all([
+      this.notifications.notifyEvent({
+        eventCode: EMAIL_TRIGGER_EVENTS.PRODUCT_SUBMITTED_SELLER,
+        recipientType: EmailRecipientType.SELLER,
+        recipient: product.seller.user.email,
+        userId: product.seller.userId,
+        variables: {
+          productName: product.name,
+          sellerName: product.seller.storeName,
+        },
+      }),
+      this.notifications.notifyAdminEvent(EMAIL_TRIGGER_EVENTS.PRODUCT_SUBMITTED_ADMIN, {
+        productName: product.name,
+        sellerName: product.seller.storeName,
+      }),
+    ]);
+
+    return product;
+  }
+
+  async updateSellerProduct(actor: RequestUser, productId: string, dto: UpdateSellerProductDto) {
+    const seller = await this.resolveApprovedSeller(actor);
+    const existing = await this.getSellerProductOrThrow(seller.id, productId);
+    const images = this.normalizeProductImages(
+      dto.images,
+      "Product images",
+      this.sellerUploadFolder(actor.id, "products"),
+    );
+    const category = await this.ensureActiveCategory(dto.categoryId ?? existing.categoryId);
+    const attributes =
+      dto.attributes !== undefined || dto.categoryId !== undefined
+        ? this.applyCategoryTaxDefaults(
+            category,
+            this.validateAttributes(
+              category.productTemplate?.fields ?? [],
+              ProductAttributeScope.PRODUCT,
+              dto.attributes ?? (existing.attributes as Record<string, unknown> | undefined),
+              "Product attributes",
+            ),
+          )
+        : (existing.attributes as Record<string, unknown> | null);
+    const productTaxFields =
+      dto.attributes !== undefined || dto.categoryId !== undefined
+        ? await this.resolveProductTaxFields(category, attributes ?? {})
+        : null;
+    const variantDtos = dto.variants?.map((variant) => {
+      if (variant.attributes === undefined) {
+        return variant;
+      }
+
+      return {
+        ...variant,
+        attributes: this.validateAttributes(
+          category.productTemplate?.fields ?? [],
+          ProductAttributeScope.VARIANT,
+          variant.attributes,
+          `Variant ${variant.variantName ?? variant.sku ?? ""}`.trim() || "Variant attributes",
+        ),
+      };
+    });
+    const listingMode = category.productTemplate?.listingMode ?? ProductListingMode.CART;
+
+    const updatedProductId = await this.prisma.client.$transaction(async (tx) => {
+      const product = await tx.product.update({
+        where: { id: productId },
+        data: {
+          ...(dto.categoryId !== undefined ? { categoryId: dto.categoryId } : {}),
+          ...(dto.name !== undefined ? { name: dto.name } : {}),
+          ...(dto.description !== undefined ? { description: dto.description } : {}),
+          ...(dto.categoryId !== undefined ? { listingMode } : {}),
+          ...(dto.attributes !== undefined || dto.categoryId !== undefined
+            ? { attributes: this.jsonObjectOrNull(attributes) }
+            : {}),
+          ...(productTaxFields
+            ? {
+                hsnCode: productTaxFields.hsnCode,
+                gstRatePercent: productTaxFields.gstRatePercent,
+                hsnMasterId: productTaxFields.hsnMasterId,
+              }
+            : {}),
+          ...(dto.name !== undefined || dto.description !== undefined || dto.attributes !== undefined || dto.categoryId !== undefined
+            ? {
+                searchText: this.createSearchText(
+                  dto.name ?? existing.name,
+                  dto.description ?? existing.description,
+                  attributes ?? {},
+                ),
+              }
+            : {}),
+          status: ProductStatus.INACTIVE,
+          approvalStatus: ApprovalStatus.PENDING_APPROVAL,
+        },
+      });
+
+      if (dto.images !== undefined) {
+        await tx.productImage.deleteMany({ where: { productId } });
+        if (images.length) {
+          await tx.productImage.createMany({
+            data: images.map((image, index) => ({
+              productId,
+              url: image.url,
+              altText: image.altText ?? product.name,
+              sortOrder: image.sortOrder ?? index,
+              isPrimary: image.isPrimary ?? index === 0,
+            })),
+          });
+        }
+      }
+
+      if (variantDtos?.length) {
+        for (const variantDto of variantDtos) {
+          await this.upsertVariant(tx, actor, productId, product.name, variantDto);
+        }
+      }
+
+      await tx.auditLog.create({
+        data: {
+          actor: { connect: { id: actor.id } },
+          action: "product.updated",
+          entityType: "product",
+          entityId: product.id,
+          oldValue: {
+            name: existing.name,
+            status: existing.status,
+            approvalStatus: existing.approvalStatus,
+          },
+          newValue: {
+            name: product.name,
+            status: product.status,
+            approvalStatus: product.approvalStatus,
+          },
+        },
+      });
+
+      return product.id;
+    });
+
+    const product = await this.getProductByIdOrThrow(updatedProductId);
+    await Promise.all([
+      this.notifications.notifyEvent({
+        eventCode: EMAIL_TRIGGER_EVENTS.PRODUCT_SUBMITTED_SELLER,
+        recipientType: EmailRecipientType.SELLER,
+        recipient: product.seller.user.email,
+        userId: product.seller.userId,
+        variables: {
+          productName: product.name,
+          sellerName: product.seller.storeName,
+        },
+      }),
+      this.notifications.notifyAdminEvent(EMAIL_TRIGGER_EVENTS.PRODUCT_SUBMITTED_ADMIN, {
+        productName: product.name,
+        sellerName: product.seller.storeName,
+      }),
+    ]);
+
+    return product;
+  }
+
+  async archiveSellerProduct(actor: RequestUser, productId: string) {
+    const seller = await this.resolveSeller(actor);
+    const existing = await this.getSellerProductOrThrow(seller.id, productId);
+    const product = await this.prisma.client.product.update({
+      where: { id: productId },
+      data: {
+        status: ProductStatus.ARCHIVED,
+        deletedAt: new Date(),
+      },
+    });
+
+    await this.prisma.client.auditLog.create({
+      data: {
+        actor: { connect: { id: actor.id } },
+        action: "product.archived",
+        entityType: "product",
+        entityId: product.id,
+        oldValue: existing,
+        newValue: product,
+      },
+    });
+
+    return product;
+  }
+
+  async archiveAdminProduct(actor: RequestUser, productId: string) {
+    const existing = await this.prisma.client.product.findFirst({
+      where: { id: productId, deletedAt: null },
+      include: productInclude,
+    });
+
+    if (!existing) {
+      throw new NotFoundException("Product not found.");
+    }
+
+    const updatedProduct = await this.prisma.client.product.update({
+      where: { id: productId },
+      data: {
+        status: ProductStatus.ARCHIVED,
+        deletedAt: new Date(),
+      },
+    });
+
+    await this.prisma.client.auditLog.create({
+      data: {
+        actor: { connect: { id: actor.id } },
+        action: "admin.product.archived",
+        entityType: "product",
+        entityId: productId,
+        oldValue: {
+          status: existing.status,
+          approvalStatus: existing.approvalStatus,
+          deletedAt: existing.deletedAt,
+        },
+        newValue: {
+          status: updatedProduct.status,
+          approvalStatus: updatedProduct.approvalStatus,
+          deletedAt: updatedProduct.deletedAt,
+        },
+      },
+    });
+
+    return this.getProductByIdOrThrow(productId);
+  }
+
+  async listAdminProducts(query: ProductQueryDto) {
+    const { page, skip, take } = this.pagination(query);
+    const where: Prisma.ProductWhereInput = {
+      deletedAt: null,
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.approvalStatus ? { approvalStatus: query.approvalStatus } : {}),
+      ...(query.categoryId ? { categoryId: query.categoryId } : {}),
+      ...(query.sellerId ? { sellerId: query.sellerId } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { name: { contains: query.search, mode: "insensitive" } },
+              { description: { contains: query.search, mode: "insensitive" } },
+              { searchText: { contains: query.search, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+    };
+
+    const items = await this.prisma.client.product.findMany({
+      where,
+      include: productInclude,
+      orderBy: { createdAt: "desc" },
+      skip,
+      take,
+    });
+    const total = await this.prisma.client.product.count({ where });
+
+    return { items, total, page, limit: take };
+  }
+
+  listPendingAdminProducts() {
+    return this.prisma.client.product.findMany({
+      where: {
+        deletedAt: null,
+        approvalStatus: ApprovalStatus.PENDING_APPROVAL,
+      },
+      include: productInclude,
+      orderBy: { createdAt: "asc" },
+      take: 100,
+    });
+  }
+
+  async updateProductApproval(productId: string, dto: ProductApprovalDto, actor: RequestUser) {
+    const existing = await this.prisma.client.product.findFirst({
+      where: { id: productId, deletedAt: null },
+      include: productInclude,
+    });
+
+    if (!existing) {
+      throw new NotFoundException("Product not found.");
+    }
+
+    const approved = dto.decision === ProductApprovalDecision.APPROVE;
+    if (approved) {
+      this.ensureProductApprovalReadiness(existing);
+    }
+
+    const updatedProduct = await this.prisma.client.product.update({
+      where: { id: productId },
+      data: {
+        approvalStatus: approved ? ApprovalStatus.APPROVED : ApprovalStatus.REJECTED,
+        status: approved ? ProductStatus.ACTIVE : ProductStatus.INACTIVE,
+      },
+    });
+    const product = await this.getProductByIdOrThrow(updatedProduct.id);
+
+    await this.prisma.client.auditLog.create({
+      data: {
+        actor: { connect: { id: actor.id } },
+        action: approved ? "product.approved" : "product.rejected",
+        entityType: "product",
+        entityId: product.id,
+        oldValue: {
+          status: existing.status,
+          approvalStatus: existing.approvalStatus,
+        },
+        newValue: {
+          status: updatedProduct.status,
+          approvalStatus: updatedProduct.approvalStatus,
+          note: dto.note,
+        },
+      },
+    });
+
+    await this.notifications.notifyEvent({
+      eventCode: approved
+        ? EMAIL_TRIGGER_EVENTS.PRODUCT_APPROVED
+        : EMAIL_TRIGGER_EVENTS.PRODUCT_REJECTED,
+      recipientType: EmailRecipientType.SELLER,
+      recipient: product.seller.user.email,
+      userId: product.seller.userId,
+      variables: {
+        productName: product.name,
+        sellerName: product.seller.storeName,
+        note: dto.note ?? "",
+      },
+    });
+
+    return product;
+  }
+
+  private pagination(query: ProductQueryDto) {
+    return paginationFromQuery(query);
+  }
+
+  private async resolveSeller(actor: RequestUser) {
+    const seller = await this.prisma.client.seller.findUnique({
+      where: { userId: actor.id },
+    });
+
+    if (!seller) {
+      throw new ForbiddenException("Seller account is required.");
+    }
+
+    return seller;
+  }
+
+  private async resolveApprovedSeller(actor: RequestUser) {
+    const seller = await this.resolveSeller(actor);
+
+    if (
+      seller.status !== SellerStatus.APPROVED ||
+      seller.approvalStatus !== ApprovalStatus.APPROVED
+    ) {
+      throw new ForbiddenException("Seller approval is required for product operations.");
+    }
+
+    return seller;
+  }
+
+  private async ensureActiveCategory(categoryId: string) {
+    const category = await this.prisma.client.category.findFirst({
+      where: {
+        id: categoryId,
+        status: CategoryStatus.ACTIVE,
+        deletedAt: null,
+      },
+      include: {
+        productTemplate: {
+          include: {
+            fields: {
+              orderBy: [{ scope: "asc" }, { sortOrder: "asc" }, { label: "asc" }],
+            },
+          },
+        },
+      },
+    });
+
+    if (!category) {
+      throw new NotFoundException("Active category not found.");
+    }
+
+    if (
+      category.productTemplate &&
+      (category.productTemplate.status === ProductTemplateStatus.ARCHIVED ||
+        category.productTemplate.deletedAt)
+    ) {
+      throw new BadRequestException("Category product template is archived.");
+    }
+
+    return category;
+  }
+
+  private async getSellerProductOrThrow(sellerId: string, productId: string) {
+    const product = await this.prisma.client.product.findFirst({
+      where: {
+        id: productId,
+        sellerId,
+        deletedAt: null,
+      },
+    });
+
+    if (!product) {
+      throw new NotFoundException("Seller product not found.");
+    }
+
+    return product;
+  }
+
+  private async getProductByIdOrThrow(productId: string) {
+    const product = await this.prisma.client.product.findUnique({
+      where: { id: productId },
+      include: productInclude,
+    });
+
+    if (!product) {
+      throw new NotFoundException("Product not found.");
+    }
+
+    return product;
+  }
+
+  private async prepareVariantInputs(productName: string, variants: ProductVariantDto[]) {
+    const prepared: Array<ProductVariantDto & { sku: string }> = [];
+
+    for (const [index, variant] of variants.entries()) {
+      const skuBase = variant.sku ?? `${productName}-${variant.variantName ?? index + 1}`;
+      prepared.push({
+        ...variant,
+        sku: await this.createUniqueSku(skuBase),
+      });
+    }
+
+    return prepared;
+  }
+
+  private normalizeProductImages(
+    images:
+      | Array<{ url: string; altText?: string; sortOrder?: number; isPrimary?: boolean }>
+      | undefined,
+    fieldName: string,
+    requiredFolder: string,
+  ) {
+    return (images ?? []).map((image) => ({
+      ...image,
+      url: normalizeStorageImageReference(image.url, fieldName, requiredFolder) ?? image.url,
+    }));
+  }
+
+  private async upsertVariant(
+    tx: Prisma.TransactionClient,
+    actor: RequestUser,
+    productId: string,
+    productName: string,
+    variantDto: ProductVariantDto | UpdateProductVariantDto,
+  ) {
+    const existingVariant = variantDto.id
+      ? await tx.productVariant.findFirst({
+          where: { id: variantDto.id, productId },
+        })
+      : null;
+
+    if (variantDto.id && !existingVariant) {
+      throw new NotFoundException("Product variant not found.");
+    }
+
+    if (existingVariant) {
+      const nextStock = variantDto.stockQuantity ?? existingVariant.stockQuantity;
+      const stockDifference = nextStock - existingVariant.stockQuantity;
+      const variant = await tx.productVariant.update({
+        where: { id: existingVariant.id },
+        data: {
+          ...(variantDto.sku !== undefined
+            ? { sku: await this.createUniqueSku(variantDto.sku) }
+            : {}),
+          ...(variantDto.variantName !== undefined
+            ? { variantName: variantDto.variantName ?? null }
+            : {}),
+          ...(variantDto.pricePaise !== undefined ? { pricePaise: variantDto.pricePaise } : {}),
+          ...(variantDto.mrpPaise !== undefined ? { mrpPaise: variantDto.mrpPaise ?? null } : {}),
+          ...(variantDto.stockQuantity !== undefined
+            ? { stockQuantity: variantDto.stockQuantity }
+            : {}),
+          ...(variantDto.status !== undefined ? { status: variantDto.status } : {}),
+          ...(variantDto.attributes !== undefined
+            ? { attributes: this.jsonObjectOrNull(variantDto.attributes) }
+            : {}),
+        },
+      });
+
+      if (stockDifference !== 0) {
+        await tx.inventoryMovement.create({
+          data: {
+            productVariantId: variant.id,
+            movementType:
+              stockDifference > 0
+                ? InventoryMovementType.INCREMENT
+                : InventoryMovementType.DECREMENT,
+            quantity: Math.abs(stockDifference),
+            reason: "Seller product stock update",
+            referenceType: "product",
+            referenceId: productId,
+            createdById: actor.id,
+          },
+        });
+      }
+
+      return variant;
+    }
+
+    if (variantDto.pricePaise === undefined) {
+      throw new BadRequestException("Variant price is required when adding a new product variant.");
+    }
+
+    const sku = await this.createUniqueSku(
+      variantDto.sku ?? `${productName}-${variantDto.variantName ?? "variant"}`,
+    );
+    const variant = await tx.productVariant.create({
+      data: {
+        productId,
+        sku,
+        variantName: variantDto.variantName ?? null,
+        pricePaise: variantDto.pricePaise,
+        mrpPaise: variantDto.mrpPaise ?? null,
+        stockQuantity: variantDto.stockQuantity ?? 0,
+        status: variantDto.status ?? VariantStatus.ACTIVE,
+        attributes: this.jsonObjectOrNull(variantDto.attributes),
+      },
+    });
+
+    if (variant.stockQuantity > 0) {
+      await tx.inventoryMovement.create({
+        data: {
+          productVariantId: variant.id,
+          movementType: InventoryMovementType.INCREMENT,
+          quantity: variant.stockQuantity,
+          reason: "Seller added product variant stock",
+          referenceType: "product",
+          referenceId: productId,
+          createdById: actor.id,
+        },
+      });
+    }
+
+    return variant;
+  }
+
+  private validateAttributes(
+    fields: Array<{
+      fieldKey: string;
+      label: string;
+      fieldType: ProductAttributeFieldType;
+      scope: ProductAttributeScope;
+      isRequired: boolean;
+      options: unknown;
+    }>,
+    scope: ProductAttributeScope,
+    input: Record<string, unknown> | undefined,
+    context: string,
+  ) {
+    const scopedFields = fields.filter((field) => field.scope === scope);
+    const source = input ?? {};
+    const normalized: Record<string, unknown> = {};
+    const marketplaceEssentials =
+      scope === ProductAttributeScope.PRODUCT
+        ? this.validateMarketplaceEssentialAttributes(source, context)
+        : {};
+
+    for (const field of scopedFields) {
+      const value = source[field.fieldKey];
+      const missing = this.isMissingAttributeValue(value);
+
+      if (field.isRequired && missing) {
+        throw new BadRequestException(`${context}: ${field.label} is required.`);
+      }
+
+      if (missing) {
+        continue;
+      }
+
+      normalized[field.fieldKey] = this.normalizeAttributeValue(field, value, context);
+    }
+
+    return scope === ProductAttributeScope.PRODUCT
+      ? { ...marketplaceEssentials, ...normalized }
+      : normalized;
+  }
+
+  private validateMarketplaceEssentialAttributes(
+    source: Record<string, unknown>,
+    context: string,
+  ) {
+    const normalized: Record<string, unknown> = {};
+
+    for (const field of marketplaceProductEssentialFields) {
+      const value = source[field.key];
+
+      if (this.isMissingAttributeValue(value)) {
+        continue;
+      }
+
+      normalized[field.key] = this.normalizeMarketplaceEssentialValue(field, value, context);
+    }
+
+    return normalized;
+  }
+
+  private applyCategoryTaxDefaults(
+    category: {
+      defaultHsnCode?: string | null;
+      defaultGstRatePercent?: unknown;
+    },
+    attributes: Record<string, unknown>,
+  ) {
+    const normalized = { ...attributes };
+
+    if (this.isMissingAttributeValue(normalized.hsnCode) && category.defaultHsnCode) {
+      normalized.hsnCode = category.defaultHsnCode;
+    }
+
+    if (
+      this.isMissingAttributeValue(normalized.gstRatePercent) &&
+      category.defaultGstRatePercent !== null &&
+      category.defaultGstRatePercent !== undefined
+    ) {
+      normalized.gstRatePercent = Number(String(category.defaultGstRatePercent));
+    }
+
+    return normalized;
+  }
+
+  private async resolveProductTaxFields(
+    category: { id: string; defaultHsnCode?: string | null; defaultGstRatePercent?: unknown },
+    attributes: Record<string, unknown>,
+  ) {
+    const hsnCode = this.normalizedHsnCodeFromValue(attributes.hsnCode ?? category.defaultHsnCode);
+    const gstRatePercent = this.normalizedGstRateFromValue(attributes.gstRatePercent ?? category.defaultGstRatePercent);
+    const hsnMaster = hsnCode
+      ? await this.prisma.client.hsnMaster.findFirst({
+          where: {
+            hsnCode,
+            isActive: true,
+            OR: [{ categoryId: category.id }, { categoryId: null }],
+          },
+          orderBy: [{ categoryId: "desc" }, { updatedAt: "desc" }],
+        })
+      : null;
+
+    return {
+      hsnCode,
+      gstRatePercent,
+      hsnMasterId: hsnMaster?.id ?? null,
+    };
+  }
+
+  private ensureProductApprovalReadiness(product: {
+    attributes: unknown;
+    hsnCode?: string | null;
+    gstRatePercent?: unknown;
+  }) {
+    const source = this.attributeRecord(product.attributes);
+    if (this.isMissingAttributeValue(source.hsnCode) && product.hsnCode) {
+      source.hsnCode = product.hsnCode;
+    }
+    if (
+      this.isMissingAttributeValue(source.gstRatePercent) &&
+      product.gstRatePercent !== null &&
+      product.gstRatePercent !== undefined
+    ) {
+      source.gstRatePercent = Number(String(product.gstRatePercent));
+    }
+
+    const missing = marketplaceProductRequiredEssentialFields
+      .filter((field) => this.isMissingAttributeValue(source[field.key]))
+      .map((field) => field.label);
+
+    if (missing.length) {
+      throw new BadRequestException(`Product approval requires marketplace essentials: ${missing.join(", ")}.`);
+    }
+  }
+
+  private attributeRecord(value: unknown): Record<string, unknown> {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return {};
+    }
+
+    return value as Record<string, unknown>;
+  }
+
+  private normalizedHsnCodeFromValue(value: unknown) {
+    if (typeof value !== "string") {
+      return null;
+    }
+
+    const trimmed = value.trim();
+    return /^\d{4,8}$/.test(trimmed) ? trimmed : null;
+  }
+
+  private normalizedGstRateFromValue(value: unknown) {
+    if (value === null || value === undefined || value === "") {
+      return null;
+    }
+
+    const numberValue = typeof value === "number" ? value : Number(String(value));
+    if (!Number.isFinite(numberValue) || numberValue < 0 || numberValue > 100) {
+      return null;
+    }
+
+    return Number(numberValue.toFixed(2));
+  }
+
+  private normalizeMarketplaceEssentialValue(
+    field: MarketplaceProductEssentialField,
+    value: unknown,
+    context: string,
+  ) {
+    switch (field.inputType) {
+      case "TEXT":
+      case "TEXTAREA": {
+        if (typeof value !== "string") {
+          throw new BadRequestException(`${context}: ${field.label} must be text.`);
+        }
+        const trimmed = value.trim();
+        if (field.key === "hsnCode" && !/^\d{4,8}$/.test(trimmed)) {
+          throw new BadRequestException(`${context}: ${field.label} must be a 4 to 8 digit code.`);
+        }
+        return trimmed;
+      }
+
+      case "NUMBER": {
+        const numberValue = typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
+        if (!Number.isFinite(numberValue) || numberValue < 0) {
+          throw new BadRequestException(`${context}: ${field.label} must be a positive number.`);
+        }
+        if (field.key === "gstRatePercent" && numberValue > 100) {
+          throw new BadRequestException(`${context}: ${field.label} must be between 0 and 100.`);
+        }
+        return Number(numberValue.toFixed(3));
+      }
+
+      case "SELECT": {
+        if (typeof value !== "string") {
+          throw new BadRequestException(`${context}: ${field.label} must be one selected value.`);
+        }
+        const selected = value.trim();
+        const options = field.options ?? [];
+        if (options.length && !options.includes(selected)) {
+          throw new BadRequestException(`${context}: ${field.label} must be one of ${options.join(", ")}.`);
+        }
+        return selected;
+      }
+
+      case "MULTI_TEXT": {
+        const values = Array.isArray(value)
+          ? value.map((item) => String(item))
+          : typeof value === "string"
+            ? value.split(/[\n,]/)
+            : null;
+        if (!values) {
+          throw new BadRequestException(`${context}: ${field.label} must be a list of text values.`);
+        }
+        return values.map((item) => item.trim()).filter(Boolean).slice(0, 30);
+      }
+
+      default:
+        return value;
+    }
+  }
+
+  private normalizeAttributeValue(
+    field: {
+      fieldKey: string;
+      label: string;
+      fieldType: ProductAttributeFieldType;
+      options: unknown;
+    },
+    value: unknown,
+    context: string,
+  ) {
+    switch (field.fieldType) {
+      case ProductAttributeFieldType.TEXT:
+      case ProductAttributeFieldType.TEXTAREA:
+        if (typeof value !== "string") {
+          throw new BadRequestException(`${context}: ${field.label} must be text.`);
+        }
+        return value.trim();
+
+      case ProductAttributeFieldType.NUMBER: {
+        const numberValue = typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
+        if (!Number.isFinite(numberValue)) {
+          throw new BadRequestException(`${context}: ${field.label} must be a number.`);
+        }
+        return numberValue;
+      }
+
+      case ProductAttributeFieldType.BOOLEAN:
+        if (typeof value === "boolean") {
+          return value;
+        }
+        if (value === "true") {
+          return true;
+        }
+        if (value === "false") {
+          return false;
+        }
+        throw new BadRequestException(`${context}: ${field.label} must be yes or no.`);
+
+      case ProductAttributeFieldType.DATE:
+        if (typeof value !== "string" || Number.isNaN(Date.parse(value))) {
+          throw new BadRequestException(`${context}: ${field.label} must be a valid date.`);
+        }
+        return value;
+
+      case ProductAttributeFieldType.SELECT: {
+        if (typeof value !== "string") {
+          throw new BadRequestException(`${context}: ${field.label} must be one selected value.`);
+        }
+        const selected = value.trim();
+        this.ensureAllowedOption(field, selected, context);
+        return selected;
+      }
+
+      case ProductAttributeFieldType.MULTI_SELECT: {
+        const selected = Array.isArray(value) ? value : typeof value === "string" ? [value] : null;
+        if (!selected) {
+          throw new BadRequestException(`${context}: ${field.label} must be a list of selected values.`);
+        }
+        const normalizedValues = selected.map((item) => String(item).trim()).filter(Boolean);
+        for (const item of normalizedValues) {
+          this.ensureAllowedOption(field, item, context);
+        }
+        return normalizedValues;
+      }
+
+      default:
+        return value;
+    }
+  }
+
+  private ensureAllowedOption(
+    field: { label: string; options: unknown },
+    value: string,
+    context: string,
+  ) {
+    const options = Array.isArray(field.options)
+      ? field.options.map((option) => String(option).trim()).filter(Boolean)
+      : [];
+    if (options.length && !options.includes(value)) {
+      throw new BadRequestException(`${context}: ${field.label} must be one of ${options.join(", ")}.`);
+    }
+  }
+
+  private isMissingAttributeValue(value: unknown) {
+    if (value === undefined || value === null) {
+      return true;
+    }
+    if (typeof value === "string") {
+      return value.trim() === "";
+    }
+    if (Array.isArray(value)) {
+      return value.length === 0;
+    }
+
+    return false;
+  }
+
+  private jsonObjectOrNull(value: Record<string, unknown> | undefined | null) {
+    if (!value || Object.keys(value).length === 0) {
+      return Prisma.JsonNull;
+    }
+
+    return value as Prisma.InputJsonObject;
+  }
+
+  private async createUniqueProductSlug(name: string) {
+    const baseSlug = createSlug(name) || "product";
+    let candidate = baseSlug;
+    let suffix = 1;
+
+    while (await this.prisma.client.product.findUnique({ where: { slug: candidate } })) {
+      suffix += 1;
+      candidate = `${baseSlug}-${suffix}`;
+    }
+
+    return candidate;
+  }
+
+  private async createUniqueSku(value: string) {
+    const baseSku = (createSlug(value) || "indihub-sku").toUpperCase();
+    let candidate = baseSku;
+    let suffix = 1;
+
+    while (await this.prisma.client.productVariant.findUnique({ where: { sku: candidate } })) {
+      suffix += 1;
+      candidate = `${baseSku}-${suffix}`;
+    }
+
+    return candidate;
+  }
+
+  private createSearchText(name: string, description: string, attributes: Record<string, unknown> = {}) {
+    const attributeText = Object.values(attributes)
+      .flatMap((value) => (Array.isArray(value) ? value : [value]))
+      .filter((value) => typeof value === "string" || typeof value === "number")
+      .join(" ");
+
+    return `${name} ${description} ${attributeText}`.trim().slice(0, 1000);
+  }
+
+  private sellerUploadFolder(userId: string, suffix: string) {
+    return `indihub/sellers/${safeStorageFolderSegment(userId)}/${suffix}`;
+  }
+}

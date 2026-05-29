@@ -1,0 +1,187 @@
+import { indihubFetch, type IndihubAuthHeaders } from "./api";
+
+export type PublicImageUploadPurpose =
+  | "SELLER_LOGO"
+  | "SELLER_BANNER"
+  | "SELLER_PRODUCT_IMAGE"
+  | "ADMIN_BANNER"
+  | "CATEGORY_IMAGE";
+
+export type PublicImageUploadResult = {
+  secureUrl: string;
+  assetKey: string;
+  publicId: string;
+  width?: number;
+  height?: number;
+  bytes?: number;
+  format?: string;
+};
+
+type ImageKitUploadRequest = {
+  provider: "imagekit";
+  urlEndpoint: string;
+  publicKey: string;
+  token: string;
+  expire: number;
+  signature: string;
+  assetKey: string;
+  folder: string;
+  fileName: string;
+};
+
+type S3UploadRequest = {
+  provider: "s3";
+  method: "PUT";
+  uploadUrl: string;
+  assetKey: string;
+  headers?: Record<string, string>;
+};
+
+type PublicImageUploadRequest = ImageKitUploadRequest | S3UploadRequest;
+
+type UploadOptions = {
+  publicId?: string;
+  onProgress?: (progress: number) => void;
+};
+
+const maxImageBytes = 5 * 1024 * 1024;
+const allowedImageTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+
+export function validatePublicImageFile(file: File) {
+  if (!allowedImageTypes.has(file.type)) {
+    throw new Error("Upload a JPG, PNG, WebP, or GIF image.");
+  }
+
+  if (file.size > maxImageBytes) {
+    throw new Error("Image must be 5 MB or smaller.");
+  }
+}
+
+export async function uploadPublicImage(
+  auth: IndihubAuthHeaders,
+  file: File,
+  purpose: PublicImageUploadPurpose,
+  options: UploadOptions = {},
+) {
+  validatePublicImageFile(file);
+
+  const uploadRequest = await indihubFetch<PublicImageUploadRequest>(
+    "/api/storage/public-image/upload-request",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        purpose,
+        fileName: file.name,
+        contentType: file.type,
+        ...(options.publicId ? { publicId: options.publicId } : {}),
+      }),
+    },
+    auth,
+  );
+
+  if (uploadRequest.provider === "s3") {
+    return uploadS3Image(file, uploadRequest, options.onProgress);
+  }
+
+  return uploadImageKitImage(file, uploadRequest, options.onProgress);
+}
+
+function uploadImageKitImage(
+  file: File,
+  request: ImageKitUploadRequest,
+  onProgress?: (progress: number) => void,
+) {
+  const body = new FormData();
+  body.set("file", file);
+  body.set("fileName", request.fileName);
+  body.set("publicKey", request.publicKey);
+  body.set("signature", request.signature);
+  body.set("expire", String(request.expire));
+  body.set("token", request.token);
+  body.set("folder", request.folder);
+  body.set("useUniqueFileName", "false");
+
+  return new Promise<PublicImageUploadResult>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "https://upload.imagekit.io/api/v1/files/upload");
+
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable && onProgress) {
+        onProgress(Math.round((event.loaded / event.total) * 100));
+      }
+    };
+
+    xhr.onload = () => {
+      const payload = parseImageKitResponse(xhr.responseText);
+      if (xhr.status < 200 || xhr.status >= 300) {
+        reject(new Error(payload.message ?? "Image upload failed."));
+        return;
+      }
+
+      resolve({
+        secureUrl: payload.url ?? `${request.urlEndpoint.replace(/\/+$/, "")}/${request.assetKey}`,
+        assetKey: request.assetKey,
+        publicId: request.assetKey,
+        ...(payload.width !== undefined ? { width: payload.width } : {}),
+        ...(payload.height !== undefined ? { height: payload.height } : {}),
+        ...(payload.size !== undefined ? { bytes: payload.size } : {}),
+        ...(payload.fileType ? { format: payload.fileType.toLowerCase() } : {}),
+      });
+    };
+
+    xhr.onerror = () => reject(new Error("Unable to reach the image upload service."));
+    xhr.send(body);
+  });
+}
+
+function uploadS3Image(file: File, uploadRequest: S3UploadRequest, onProgress?: (progress: number) => void) {
+  return new Promise<PublicImageUploadResult>((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open(uploadRequest.method, uploadRequest.uploadUrl);
+
+    Object.entries(uploadRequest.headers ?? {}).forEach(([key, value]) => {
+      request.setRequestHeader(key, value);
+    });
+
+    request.upload.onprogress = (event) => {
+      if (event.lengthComputable && onProgress) {
+        onProgress(Math.round((event.loaded / event.total) * 100));
+      }
+    };
+
+    request.onload = () => {
+      if (request.status < 200 || request.status >= 300) {
+        reject(new Error("Image upload failed."));
+        return;
+      }
+
+      const format = file.type.split("/").at(1);
+
+      resolve({
+        secureUrl: "",
+        assetKey: uploadRequest.assetKey,
+        publicId: uploadRequest.assetKey,
+        bytes: file.size,
+        ...(format ? { format } : {}),
+      });
+    };
+
+    request.onerror = () => reject(new Error("Unable to reach the image upload service."));
+    request.send(file);
+  });
+}
+
+function parseImageKitResponse(value: string) {
+  try {
+    return JSON.parse(value) as {
+      url?: string;
+      width?: number;
+      height?: number;
+      size?: number;
+      fileType?: string;
+      message?: string;
+    };
+  } catch {
+    return {};
+  }
+}

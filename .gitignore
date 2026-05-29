@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+.next/
+dist/
+build/
+coverage/
+playwright-report/
+test-results/
+.turbo/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+.logs/
+npm-debug.log*
+pnpm-debug.log*
+
+# Local caches and temp files
+.cache/
+.tmp/
+.qa-screenshots/
+tmp-*.png
+IndiHub_Testing_Source_*.zip
+AGENTS.pdf
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Generated Prisma client cache
+prisma/generated/
+packages/database/src/generated/

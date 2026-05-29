@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="960" viewBox="0 0 1440 960" role="img" aria-labelledby="title desc">
+<title id="title">1HandIndia - Wishlist</title>
+<desc id="desc">Phase 1 UI mockup for Wishlist, route /account/wishlist</desc>
+<defs><filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#101828" flood-opacity="0.12"/></filter></defs>
+<rect x="0" y="0" width="1440" height="960" rx="0" fill="#FAF7F0" stroke="none" stroke-width="0" />
+<rect x="24" y="20" width="1392" height="900" rx="18" fill="#FFFFFF" stroke="#D8DEE8" stroke-width="1" filter="url(#shadow)"/>
+<rect x="24" y="20" width="1392" height="42" rx="18" fill="#F8FAFC" stroke="#D8DEE8" stroke-width="1" />
+<circle cx="52" cy="41" r="6" fill="#FF5F56" stroke="none" stroke-width="1"/>
+<circle cx="74" cy="41" r="6" fill="#FFBD2E" stroke="none" stroke-width="1"/>
+<circle cx="96" cy="41" r="6" fill="#27C93F" stroke="none" stroke-width="1"/>
+<text x="122" y="47" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="700" fill="#667085" text-anchor="start" >1HandIndia Phase 1 UI mockup</text>
+<text x="1380" y="47" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="600" fill="#667085" text-anchor="end" >/account/wishlist</text>
+<rect x="24" y="62" width="266" height="858" rx="0" fill="#17324A" stroke="none" stroke-width="0" />
+<text x="58" y="112" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="27" font-weight="900" fill="#FFFFFF" text-anchor="start" >1HandIndia</text>
+<rect x="58" y="132" width="172" height="30" rx="15" fill="#FFFFFF22" stroke="none" stroke-width="0" />
+<text x="144" y="152" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="700" fill="#FFFFFF" text-anchor="middle" >Customer Account</text>
+<text x="68" y="196" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="700" fill="#FFFFFF" text-anchor="start" >Dashboard</text>
+<text x="68" y="246" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="700" fill="#FFFFFF" text-anchor="start" >Profile</text>
+<text x="68" y="296" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="700" fill="#FFFFFF" text-anchor="start" >Addresses</text>
+<rect x="46" y="324" width="220" height="40" rx="8" fill="#FFFFFF2E" stroke="none" stroke-width="0" />
+<rect x="46" y="324" width="5" height="40" rx="3" fill="#F57C00" stroke="none" stroke-width="0" />
+<text x="68" y="346" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="700" fill="#FFFFFF" text-anchor="start" >Wishlist</text>
+<text x="68" y="396" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="700" fill="#FFFFFF" text-anchor="start" >Orders</text>
+<text x="68" y="446" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="700" fill="#FFFFFF" text-anchor="start" >Support</text>
+<text x="58" y="878" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#DCE8F2" text-anchor="start" >Phase 1 web portal</text>
+<rect x="290" y="62" width="1126" height="76" rx="0" fill="#F8FAFC" stroke="#E5E7EB" stroke-width="1" />
+<text x="326" y="106" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="700" fill="#667085" text-anchor="start" >/account/wishlist</text>
+<rect x="1134" y="84" width="86" height="30" rx="15" fill="#E9F7F1" stroke="none" stroke-width="0" />
+<text x="1177" y="104" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="700" fill="#0F8A5F" text-anchor="middle" >Must</text>
+<circle cx="1280" cy="100" r="18" fill="#F57C00" stroke="none" stroke-width="1"/>
+<text x="1280" y="106" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="900" fill="#FFFFFF" text-anchor="middle" >1HI</text>
+<text x="1312" y="105" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="700" fill="#1F2933" text-anchor="start" >Logged in role</text>
+<rect x="326" y="168" width="92" height="30" rx="15" fill="#FFF1E3" stroke="none" stroke-width="0" />
+<text x="372" y="188" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="700" fill="#F57C00" text-anchor="middle" >Must</text>
+<text x="326" y="232" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="30" font-weight="900" fill="#1F2933" text-anchor="start" >Wishlist</text>
+<text x="326" y="262" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="15" font-weight="400" fill="#667085" text-anchor="start" >Saved products.</text>
+<line x1="326" y1="316" x2="1348" y2="316" stroke="#E5E7EB" stroke-width="1" stroke-linecap="round"/>
+<rect x="326" y="334" width="1022" height="68" rx="8" fill="#F8FAFC" stroke="#E5E7EB" stroke-width="1" />
+<text x="352" y="356" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="700" fill="#1F2933" text-anchor="start" >Search</text>
+<rect x="352" y="366" width="340" height="46" rx="7" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1" />
+<text x="368" y="395" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="400" fill="#667085" text-anchor="start" >Filter records</text>
+<rect x="1050" y="354" width="94" height="30" rx="15" fill="#EAF1F7" stroke="none" stroke-width="0" />
+<text x="1097" y="374" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="700" fill="#163B5C" text-anchor="middle" >Status</text>
+<rect x="1162" y="354" width="94" height="30" rx="15" fill="#FFF1E3" stroke="none" stroke-width="0" />
+<text x="1209" y="374" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="700" fill="#F57C00" text-anchor="middle" >Export</text>
+<rect x="326" y="430" width="1022" height="44" rx="6" fill="#EAF1F7" stroke="none" stroke-width="0" />
+<text x="344" y="458" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="800" fill="#163B5C" text-anchor="start" >Name</text>
+<text x="548" y="458" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="800" fill="#163B5C" text-anchor="start" >Type</text>
+<text x="752" y="458" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="800" fill="#163B5C" text-anchor="start" >Status</text>
+<text x="956" y="458" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="800" fill="#163B5C" text-anchor="start" >Updated</text>
+<text x="1160" y="458" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="800" fill="#163B5C" text-anchor="start" >Action</text>
+<rect x="326" y="474" width="1022" height="50" rx="0" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1" />
+<rect x="344" y="492" width="156" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="548" y="492" width="151" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="752" y="492" width="146" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="956" y="492" width="141" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="1160" y="492" width="136" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="326" y="524" width="1022" height="50" rx="0" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1" />
+<rect x="344" y="542" width="151" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="548" y="542" width="146" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="752" y="542" width="141" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="956" y="542" width="136" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="1160" y="542" width="131" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="1232" y="535" width="84" height="30" rx="15" fill="#E9F7F1" stroke="none" stroke-width="0" />
+<text x="1274" y="555" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="700" fill="#0F8A5F" text-anchor="middle" >Active</text>
+<rect x="326" y="574" width="1022" height="50" rx="0" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1" />
+<rect x="344" y="592" width="146" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="548" y="592" width="141" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="752" y="592" width="136" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="956" y="592" width="131" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="1160" y="592" width="126" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="326" y="624" width="1022" height="50" rx="0" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1" />
+<rect x="344" y="642" width="141" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="548" y="642" width="136" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="752" y="642" width="131" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="956" y="642" width="126" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="1160" y="642" width="121" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="1232" y="635" width="84" height="30" rx="15" fill="#E9F7F1" stroke="none" stroke-width="0" />
+<text x="1274" y="655" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="700" fill="#0F8A5F" text-anchor="middle" >Active</text>
+<rect x="326" y="674" width="1022" height="50" rx="0" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1" />
+<rect x="344" y="692" width="136" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="548" y="692" width="131" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="752" y="692" width="126" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="956" y="692" width="121" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<rect x="1160" y="692" width="116" height="10" rx="5" fill="#D0D5DD" stroke="none" stroke-width="0" />
+<text x="720" y="894" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="700" fill="#667085" text-anchor="middle" >1HandIndia UI mockup image - Phase 1 frozen screen list - Not a coded screenshot</text>
+</svg>

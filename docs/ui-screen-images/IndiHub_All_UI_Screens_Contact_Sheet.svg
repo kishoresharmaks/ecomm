@@ -1,0 +1,559 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="2600" viewBox="0 0 1800 2600">
+<rect width="1800" height="2600" fill="#FAF7F0"/>
+<text x="72" y="88" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="42" font-weight="900" fill="#163B5C">1HandIndia Phase 1 UI Screens</text>
+<text x="72" y="126" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="18" font-weight="600" fill="#667085">Contact sheet for 79 generated SVG screen mockups</text>
+<rect x="72" y="176" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="72" y="176" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="86" y="200" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">01. Homepage</text>
+<text x="86" y="240" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Public Storefront</text>
+<text x="86" y="264" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/</text>
+<rect x="86" y="288" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="102" y="304" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="414" y="176" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="414" y="176" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="428" y="200" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">02. Category Listing</text>
+<text x="428" y="240" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Public Storefront</text>
+<text x="428" y="264" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/categories</text>
+<rect x="428" y="288" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="444" y="304" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="756" y="176" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="756" y="176" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="770" y="200" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">03. Category Detail / Product List</text>
+<text x="770" y="240" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Public Storefront</text>
+<text x="770" y="264" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/categories/[slug]</text>
+<rect x="770" y="288" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="786" y="304" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="1098" y="176" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="1098" y="176" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="1112" y="200" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">04. Product Search Results</text>
+<text x="1112" y="240" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Public Storefront</text>
+<text x="1112" y="264" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/search</text>
+<rect x="1112" y="288" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="1128" y="304" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="1440" y="176" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="1440" y="176" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="1454" y="200" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">05. Product Detail</text>
+<text x="1454" y="240" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Public Storefront</text>
+<text x="1454" y="264" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/products/[slug]</text>
+<rect x="1454" y="288" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="1470" y="304" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="72" y="356" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="72" y="356" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="86" y="380" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">06. Seller / Store Profile</text>
+<text x="86" y="420" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Public Storefront</text>
+<text x="86" y="444" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/stores/[slug]</text>
+<rect x="86" y="468" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="102" y="484" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="414" y="356" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="414" y="356" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="428" y="380" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">07. Cart</text>
+<text x="428" y="420" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Public Storefront</text>
+<text x="428" y="444" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/cart</text>
+<rect x="428" y="468" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="444" y="484" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="756" y="356" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="756" y="356" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="770" y="380" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">08. Checkout</text>
+<text x="770" y="420" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Public Storefront</text>
+<text x="770" y="444" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/checkout</text>
+<rect x="770" y="468" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="786" y="484" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="1098" y="356" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="1098" y="356" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="1112" y="380" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">09. Order Success</text>
+<text x="1112" y="420" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Public Storefront</text>
+<text x="1112" y="444" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/checkout/success/[orderNumber]</text>
+<rect x="1112" y="468" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="1128" y="484" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="1440" y="356" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="1440" y="356" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="1454" y="380" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">10. Track Order Public Entry</text>
+<text x="1454" y="420" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Public Storefront</text>
+<text x="1454" y="444" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/track-order</text>
+<rect x="1454" y="468" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="1470" y="484" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Should</text>
+<rect x="72" y="536" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="72" y="536" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="86" y="560" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">11. About Page</text>
+<text x="86" y="600" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Public Storefront</text>
+<text x="86" y="624" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/about</text>
+<rect x="86" y="648" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="102" y="664" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Should</text>
+<rect x="414" y="536" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="414" y="536" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="428" y="560" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">12. Contact Page</text>
+<text x="428" y="600" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Public Storefront</text>
+<text x="428" y="624" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/contact</text>
+<rect x="428" y="648" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="444" y="664" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="756" y="536" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="756" y="536" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="770" y="560" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">13. Privacy Policy</text>
+<text x="770" y="600" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Public Storefront</text>
+<text x="770" y="624" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/privacy-policy</text>
+<rect x="770" y="648" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="786" y="664" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="1098" y="536" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="1098" y="536" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="1112" y="560" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">14. Terms and Conditions</text>
+<text x="1112" y="600" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Public Storefront</text>
+<text x="1112" y="624" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/terms-and-conditions</text>
+<rect x="1112" y="648" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="1128" y="664" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="1440" y="536" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="1440" y="536" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="1454" y="560" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">15. Refund / Return Policy</text>
+<text x="1454" y="600" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Public Storefront</text>
+<text x="1454" y="624" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/refund-return-policy</text>
+<rect x="1454" y="648" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="1470" y="664" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="72" y="716" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="72" y="716" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="86" y="740" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">16. Shipping Policy</text>
+<text x="86" y="780" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Public Storefront</text>
+<text x="86" y="804" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/shipping-policy</text>
+<rect x="86" y="828" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="102" y="844" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Should</text>
+<rect x="414" y="716" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="414" y="716" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="428" y="740" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">17. Seller Policy</text>
+<text x="428" y="780" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Public Storefront</text>
+<text x="428" y="804" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/seller-policy</text>
+<rect x="428" y="828" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="444" y="844" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Should</text>
+<rect x="756" y="716" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="756" y="716" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="770" y="740" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">01. Customer Sign In</text>
+<text x="770" y="780" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Customer Account</text>
+<text x="770" y="804" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/sign-in</text>
+<rect x="770" y="828" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="786" y="844" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="1098" y="716" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="1098" y="716" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="1112" y="740" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">02. Customer Sign Up</text>
+<text x="1112" y="780" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Customer Account</text>
+<text x="1112" y="804" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/sign-up</text>
+<rect x="1112" y="828" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="1128" y="844" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="1440" y="716" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="1440" y="716" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="1454" y="740" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">03. Account Dashboard</text>
+<text x="1454" y="780" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Customer Account</text>
+<text x="1454" y="804" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/account</text>
+<rect x="1454" y="828" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="1470" y="844" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="72" y="896" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="72" y="896" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="86" y="920" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">04. Profile</text>
+<text x="86" y="960" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Customer Account</text>
+<text x="86" y="984" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/account/profile</text>
+<rect x="86" y="1008" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="102" y="1024" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="414" y="896" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="414" y="896" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="428" y="920" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">05. Address Book</text>
+<text x="428" y="960" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Customer Account</text>
+<text x="428" y="984" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/account/addresses</text>
+<rect x="428" y="1008" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="444" y="1024" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="756" y="896" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="756" y="896" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="770" y="920" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">06. Wishlist</text>
+<text x="770" y="960" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Customer Account</text>
+<text x="770" y="984" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/account/wishlist</text>
+<rect x="770" y="1008" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="786" y="1024" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="1098" y="896" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="1098" y="896" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="1112" y="920" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">07. Order History</text>
+<text x="1112" y="960" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Customer Account</text>
+<text x="1112" y="984" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/account/orders</text>
+<rect x="1112" y="1008" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="1128" y="1024" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="1440" y="896" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="1440" y="896" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="1454" y="920" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">08. Order Detail</text>
+<text x="1454" y="960" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Customer Account</text>
+<text x="1454" y="984" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/account/orders/[orderNumber]</text>
+<rect x="1454" y="1008" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="1470" y="1024" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="72" y="1076" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="72" y="1076" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="86" y="1100" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">09. Support / Contact Requests</text>
+<text x="86" y="1140" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Customer Account</text>
+<text x="86" y="1164" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/account/support</text>
+<rect x="86" y="1188" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="102" y="1204" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Should</text>
+<rect x="414" y="1076" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="414" y="1076" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="428" y="1100" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">01. Seller Sign In</text>
+<text x="428" y="1140" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Seller Center</text>
+<text x="428" y="1164" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/seller/sign-in</text>
+<rect x="428" y="1188" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="444" y="1204" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="756" y="1076" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="756" y="1076" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="770" y="1100" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">02. Seller Registration</text>
+<text x="770" y="1140" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Seller Center</text>
+<text x="770" y="1164" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/seller/register</text>
+<rect x="770" y="1188" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="786" y="1204" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="1098" y="1076" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="1098" y="1076" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="1112" y="1100" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">03. Seller Pending Approval</text>
+<text x="1112" y="1140" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Seller Center</text>
+<text x="1112" y="1164" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/seller/pending-approval</text>
+<rect x="1112" y="1188" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="1128" y="1204" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="1440" y="1076" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="1440" y="1076" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="1454" y="1100" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">04. Seller Dashboard</text>
+<text x="1454" y="1140" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Seller Center</text>
+<text x="1454" y="1164" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/seller</text>
+<rect x="1454" y="1188" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="1470" y="1204" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="72" y="1256" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="72" y="1256" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="86" y="1280" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">05. Store Profile</text>
+<text x="86" y="1320" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Seller Center</text>
+<text x="86" y="1344" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/seller/store-profile</text>
+<rect x="86" y="1368" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="102" y="1384" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="414" y="1256" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="414" y="1256" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="428" y="1280" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">06. Product List</text>
+<text x="428" y="1320" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Seller Center</text>
+<text x="428" y="1344" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/seller/products</text>
+<rect x="428" y="1368" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="444" y="1384" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="756" y="1256" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="756" y="1256" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="770" y="1280" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">07. Add Product</text>
+<text x="770" y="1320" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Seller Center</text>
+<text x="770" y="1344" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/seller/products/new</text>
+<rect x="770" y="1368" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="786" y="1384" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="1098" y="1256" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="1098" y="1256" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="1112" y="1280" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">08. Edit Product</text>
+<text x="1112" y="1320" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Seller Center</text>
+<text x="1112" y="1344" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/seller/products/[id]/edit</text>
+<rect x="1112" y="1368" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="1128" y="1384" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="1440" y="1256" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="1440" y="1256" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="1454" y="1280" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">09. Seller Orders</text>
+<text x="1454" y="1320" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Seller Center</text>
+<text x="1454" y="1344" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/seller/orders</text>
+<rect x="1454" y="1368" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="1470" y="1384" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="72" y="1436" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="72" y="1436" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="86" y="1460" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">10. Seller Order Detail</text>
+<text x="86" y="1500" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Seller Center</text>
+<text x="86" y="1524" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/seller/orders/[orderNumber]</text>
+<rect x="86" y="1548" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="102" y="1564" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="414" y="1436" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="414" y="1436" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="428" y="1460" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">11. Delivery Update</text>
+<text x="428" y="1500" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Seller Center</text>
+<text x="428" y="1524" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/seller/orders/[orderNumber]/delivery</text>
+<rect x="428" y="1548" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="444" y="1564" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="756" y="1436" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="756" y="1436" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="770" y="1460" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">12. B2B Enquiries</text>
+<text x="770" y="1500" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Seller Center</text>
+<text x="770" y="1524" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/seller/b2b-enquiries</text>
+<rect x="770" y="1548" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="786" y="1564" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="1098" y="1436" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="1098" y="1436" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="1112" y="1460" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">13. B2B Enquiry Detail</text>
+<text x="1112" y="1500" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Seller Center</text>
+<text x="1112" y="1524" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/seller/b2b-enquiries/[id]</text>
+<rect x="1112" y="1548" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="1128" y="1564" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="1440" y="1436" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="1440" y="1436" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="1454" y="1460" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">14. Sales Summary</text>
+<text x="1454" y="1500" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Seller Center</text>
+<text x="1454" y="1524" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/seller/reports/sales</text>
+<rect x="1454" y="1548" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="1470" y="1564" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Should</text>
+<rect x="72" y="1616" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="72" y="1616" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="86" y="1640" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">01. B2B Registration</text>
+<text x="86" y="1680" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">B2B Buyer Portal</text>
+<text x="86" y="1704" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/b2b/register</text>
+<rect x="86" y="1728" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="102" y="1744" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="414" y="1616" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="414" y="1616" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="428" y="1640" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">02. B2B Sign In</text>
+<text x="428" y="1680" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">B2B Buyer Portal</text>
+<text x="428" y="1704" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/b2b/sign-in</text>
+<rect x="428" y="1728" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="444" y="1744" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="756" y="1616" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="756" y="1616" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="770" y="1640" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">03. B2B Dashboard</text>
+<text x="770" y="1680" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">B2B Buyer Portal</text>
+<text x="770" y="1704" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/b2b</text>
+<rect x="770" y="1728" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="786" y="1744" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="1098" y="1616" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="1098" y="1616" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="1112" y="1640" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">04. Company Profile</text>
+<text x="1112" y="1680" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">B2B Buyer Portal</text>
+<text x="1112" y="1704" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/b2b/company-profile</text>
+<rect x="1112" y="1728" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="1128" y="1744" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="1440" y="1616" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="1440" y="1616" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="1454" y="1640" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">05. Submit Product Enquiry</text>
+<text x="1454" y="1680" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">B2B Buyer Portal</text>
+<text x="1454" y="1704" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/b2b/enquiries/new</text>
+<rect x="1454" y="1728" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="1470" y="1744" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="72" y="1796" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="72" y="1796" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="86" y="1820" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">06. My Enquiries</text>
+<text x="86" y="1860" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">B2B Buyer Portal</text>
+<text x="86" y="1884" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/b2b/enquiries</text>
+<rect x="86" y="1908" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="102" y="1924" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="414" y="1796" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="414" y="1796" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="428" y="1820" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">07. Enquiry Detail</text>
+<text x="428" y="1860" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">B2B Buyer Portal</text>
+<text x="428" y="1884" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/b2b/enquiries/[id]</text>
+<rect x="428" y="1908" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="444" y="1924" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="756" y="1796" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="756" y="1796" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="770" y="1820" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">01. Admin Sign In</text>
+<text x="770" y="1860" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Admin Panel</text>
+<text x="770" y="1884" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/admin/sign-in</text>
+<rect x="770" y="1908" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="786" y="1924" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="1098" y="1796" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="1098" y="1796" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="1112" y="1820" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">02. Admin Dashboard</text>
+<text x="1112" y="1860" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Admin Panel</text>
+<text x="1112" y="1884" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/admin</text>
+<rect x="1112" y="1908" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="1128" y="1924" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="1440" y="1796" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="1440" y="1796" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="1454" y="1820" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">03. Customers</text>
+<text x="1454" y="1860" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Admin Panel</text>
+<text x="1454" y="1884" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/admin/customers</text>
+<rect x="1454" y="1908" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="1470" y="1924" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="72" y="1976" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="72" y="1976" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="86" y="2000" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">04. Customer Detail</text>
+<text x="86" y="2040" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Admin Panel</text>
+<text x="86" y="2064" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/admin/customers/[id]</text>
+<rect x="86" y="2088" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="102" y="2104" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Should</text>
+<rect x="414" y="1976" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="414" y="1976" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="428" y="2000" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">05. Sellers / Vendors</text>
+<text x="428" y="2040" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Admin Panel</text>
+<text x="428" y="2064" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/admin/sellers</text>
+<rect x="428" y="2088" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="444" y="2104" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="756" y="1976" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="756" y="1976" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="770" y="2000" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">06. Seller Detail</text>
+<text x="770" y="2040" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Admin Panel</text>
+<text x="770" y="2064" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/admin/sellers/[id]</text>
+<rect x="770" y="2088" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="786" y="2104" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="1098" y="1976" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="1098" y="1976" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="1112" y="2000" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">07. Seller Approval Queue</text>
+<text x="1112" y="2040" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Admin Panel</text>
+<text x="1112" y="2064" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/admin/sellers/approvals</text>
+<rect x="1112" y="2088" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="1128" y="2104" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="1440" y="1976" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="1440" y="1976" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="1454" y="2000" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">08. Business Buyers</text>
+<text x="1454" y="2040" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Admin Panel</text>
+<text x="1454" y="2064" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/admin/business-buyers</text>
+<rect x="1454" y="2088" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="1470" y="2104" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="72" y="2156" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="72" y="2156" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="86" y="2180" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">09. Categories</text>
+<text x="86" y="2220" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Admin Panel</text>
+<text x="86" y="2244" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/admin/categories</text>
+<rect x="86" y="2268" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="102" y="2284" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="414" y="2156" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="414" y="2156" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="428" y="2180" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">10. Products</text>
+<text x="428" y="2220" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Admin Panel</text>
+<text x="428" y="2244" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/admin/products</text>
+<rect x="428" y="2268" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="444" y="2284" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="756" y="2156" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="756" y="2156" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="770" y="2180" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">11. Product Approval Queue</text>
+<text x="770" y="2220" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Admin Panel</text>
+<text x="770" y="2244" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/admin/products/approvals</text>
+<rect x="770" y="2268" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="786" y="2284" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="1098" y="2156" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="1098" y="2156" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="1112" y="2180" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">12. Orders</text>
+<text x="1112" y="2220" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Admin Panel</text>
+<text x="1112" y="2244" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/admin/orders</text>
+<rect x="1112" y="2268" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="1128" y="2284" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="1440" y="2156" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="1440" y="2156" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="1454" y="2180" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">13. Order Detail</text>
+<text x="1454" y="2220" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Admin Panel</text>
+<text x="1454" y="2244" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/admin/orders/[orderNumber]</text>
+<rect x="1454" y="2268" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="1470" y="2284" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="72" y="2336" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="72" y="2336" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="86" y="2360" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">14. Manual Delivery Update</text>
+<text x="86" y="2400" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Admin Panel</text>
+<text x="86" y="2424" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/admin/orders/[orderNumber]/delivery</text>
+<rect x="86" y="2448" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="102" y="2464" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="414" y="2336" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="414" y="2336" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="428" y="2360" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">15. B2B Enquiries</text>
+<text x="428" y="2400" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Admin Panel</text>
+<text x="428" y="2424" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/admin/b2b-enquiries</text>
+<rect x="428" y="2448" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="444" y="2464" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="756" y="2336" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="756" y="2336" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="770" y="2360" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">16. B2B Enquiry Detail</text>
+<text x="770" y="2400" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Admin Panel</text>
+<text x="770" y="2424" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/admin/b2b-enquiries/[id]</text>
+<rect x="770" y="2448" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="786" y="2464" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="1098" y="2336" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="1098" y="2336" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="1112" y="2360" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">17. Banners</text>
+<text x="1112" y="2400" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Admin Panel</text>
+<text x="1112" y="2424" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/admin/cms/banners</text>
+<rect x="1112" y="2448" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="1128" y="2464" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="1440" y="2336" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="1440" y="2336" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="1454" y="2360" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">18. Homepage Content</text>
+<text x="1454" y="2400" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Admin Panel</text>
+<text x="1454" y="2424" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/admin/cms/homepage</text>
+<rect x="1454" y="2448" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="1470" y="2464" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="72" y="2516" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="72" y="2516" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="86" y="2540" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">19. CMS Pages</text>
+<text x="86" y="2580" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Admin Panel</text>
+<text x="86" y="2604" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/admin/cms/pages</text>
+<rect x="86" y="2628" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="102" y="2644" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="414" y="2516" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="414" y="2516" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="428" y="2540" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">20. Support / Contact Requests</text>
+<text x="428" y="2580" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Admin Panel</text>
+<text x="428" y="2604" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/admin/support-requests</text>
+<rect x="428" y="2628" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="444" y="2644" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="756" y="2516" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="756" y="2516" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="770" y="2540" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">21. Reports Overview</text>
+<text x="770" y="2580" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Admin Panel</text>
+<text x="770" y="2604" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/admin/reports</text>
+<rect x="770" y="2628" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="786" y="2644" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="1098" y="2516" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="1098" y="2516" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="1112" y="2540" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">22. Sales Report</text>
+<text x="1112" y="2580" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Admin Panel</text>
+<text x="1112" y="2604" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/admin/reports/sales</text>
+<rect x="1112" y="2628" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="1128" y="2644" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="1440" y="2516" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="1440" y="2516" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="1454" y="2540" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">23. Seller Report</text>
+<text x="1454" y="2580" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Admin Panel</text>
+<text x="1454" y="2604" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/admin/reports/sellers</text>
+<rect x="1454" y="2628" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="1470" y="2644" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="72" y="2696" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="72" y="2696" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="86" y="2720" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">24. Product Report</text>
+<text x="86" y="2760" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Admin Panel</text>
+<text x="86" y="2784" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/admin/reports/products</text>
+<rect x="86" y="2808" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="102" y="2824" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="414" y="2696" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="414" y="2696" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="428" y="2720" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">25. Enquiry Report</text>
+<text x="428" y="2760" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Admin Panel</text>
+<text x="428" y="2784" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/admin/reports/enquiries</text>
+<rect x="428" y="2808" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="444" y="2824" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="756" y="2696" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="756" y="2696" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="770" y="2720" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">26. Commission Settings</text>
+<text x="770" y="2760" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Admin Panel</text>
+<text x="770" y="2784" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/admin/settings/commissions</text>
+<rect x="770" y="2808" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="786" y="2824" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="1098" y="2696" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="1098" y="2696" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="1112" y="2720" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">27. Shipping Settings</text>
+<text x="1112" y="2760" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Admin Panel</text>
+<text x="1112" y="2784" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/admin/settings/shipping</text>
+<rect x="1112" y="2808" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="1128" y="2824" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="1440" y="2696" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="1440" y="2696" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="1454" y="2720" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">28. Payment Settings</text>
+<text x="1454" y="2760" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Admin Panel</text>
+<text x="1454" y="2784" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/admin/settings/payments</text>
+<rect x="1454" y="2808" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="1470" y="2824" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Should</text>
+<rect x="72" y="2876" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="72" y="2876" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="86" y="2900" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">29. Email Settings</text>
+<text x="86" y="2940" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Admin Panel</text>
+<text x="86" y="2964" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/admin/settings/email</text>
+<rect x="86" y="2988" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="102" y="3004" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="414" y="2876" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="414" y="2876" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="428" y="2900" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">30. Admin Users / Roles</text>
+<text x="428" y="2940" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Admin Panel</text>
+<text x="428" y="2964" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/admin/settings/users</text>
+<rect x="428" y="2988" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="444" y="3004" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="756" y="2876" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="756" y="2876" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="770" y="2900" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">31. Audit Logs</text>
+<text x="770" y="2940" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Admin Panel</text>
+<text x="770" y="2964" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/admin/audit-logs</text>
+<rect x="770" y="2988" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="786" y="3004" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+<rect x="1098" y="2876" width="314" height="154" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+<rect x="1098" y="2876" width="314" height="36" rx="8" fill="#163B5C"/>
+<text x="1112" y="2900" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">32. General Settings</text>
+<text x="1112" y="2940" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="#667085">Admin Panel</text>
+<text x="1112" y="2964" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="500" fill="#667085">/admin/settings/general</text>
+<rect x="1112" y="2988" width="78" height="24" rx="12" fill="#FFF1E3"/>
+<text x="1128" y="3004" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="800" fill="#F57C00">Must</text>
+</svg>

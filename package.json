@@ -1,0 +1,47 @@
+{
+  "name": "indihub",
+  "version": "0.1.0",
+  "private": true,
+  "description": "1HandIndia Phase 1 multi-vendor ecommerce marketplace monorepo.",
+  "packageManager": "pnpm@10.20.0",
+  "engines": {
+    "node": ">=22.0.0 <26.0.0",
+    "pnpm": ">=10.0.0 <11.0.0"
+  },
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "pnpm db:generate && turbo build",
+    "typecheck": "pnpm db:generate && turbo typecheck",
+    "lint": "turbo lint",
+    "test": "turbo test",
+    "format": "prettier --write .",
+    "db:generate": "prisma generate --schema prisma/schema.prisma",
+    "db:validate": "prisma validate --schema prisma/schema.prisma",
+    "db:migrate": "prisma migrate dev --schema prisma/schema.prisma",
+    "db:push": "prisma db push --schema prisma/schema.prisma",
+    "db:seed": "tsx prisma/seed.ts --mode schema",
+    "db:seed:system": "tsx prisma/seed.ts --mode system",
+    "db:seed:bootstrap": "tsx prisma/seed.ts --mode bootstrap",
+    "locations:import": "tsx scripts/locations/import-locations.ts --mode import",
+    "locations:refresh": "tsx scripts/locations/import-locations.ts --mode refresh",
+    "locations:import:india": "tsx scripts/locations/import-india-pincodes.ts --mode refresh",
+    "storage:normalize-image-keys": "tsx scripts/storage/normalize-public-image-keys.ts --apply",
+    "dev:web": "pnpm --filter @indihub/web dev",
+    "dev:api": "pnpm --filter @indihub/api dev",
+    "dev:worker": "pnpm --filter @indihub/worker dev"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.60.0",
+    "@types/node": "25.9.1",
+    "dotenv": "17.4.2",
+    "eslint": "10.4.0",
+    "prettier": "3.8.3",
+    "prisma": "7.8.0",
+    "supertest": "7.2.2",
+    "tsx": "4.22.3",
+    "turbo": "2.9.14",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.59.4",
+    "vitest": "4.1.7"
+  }
+}
