@@ -1233,10 +1233,7 @@ const environmentOnlyConfigGroups = [
     title: "Database and runtime URLs",
     keys: [
       "DATABASE_URL",
-      "DIRECT_URL",
-      "PORT",
       "API_PORT",
-      "API_HOST",
       "API_CORS_ORIGINS",
       "NEXT_PUBLIC_WEB_URL",
       "NEXT_PUBLIC_API_URL",

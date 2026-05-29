@@ -30,7 +30,6 @@ The target quality is a professional marketplace portal similar in seriousness a
 | `docs/ui-screen-images/index.html` | Generated Phase 1 UI screen image gallery for client review. |
 | `docs/IndiHub_IMPLEMENTATION_START_PHASE1.md` | First implementation milestone note and local run/verification status. |
 | `docs/IndiHub_PHASE1_END_TO_END_CHECKLIST.md` | Complete Phase 1 done/pending checklist and next implementation order. |
-| `docs/IndiHub_RENDER_NEON_TEST_DEPLOYMENT.md` | Render + Neon temporary testing deployment guide and environment checklist. |
 | `docs/WORKSPACE_SKILL_LOADING_GUIDE.md` | Skills and working process for future Codex sessions. |
 | `AGENTS.md` | Future-agent operating instructions for this workspace. |
 
@@ -69,4 +68,4 @@ Native mobile apps, automated payouts, Shiprocket/Delhivery live courier integra
 
 ## Next Step
 
-Run browser-level end-to-end QA with the web and API servers running together, then use `docs/IndiHub_RENDER_NEON_TEST_DEPLOYMENT.md` for temporary Render + Neon hosting while production database, Redis, domain, Clerk, public image provider/base URL, Razorpay, email, backup, and monitoring details are confirmed.
+Run browser-level end-to-end QA with the web and API servers running together, then prepare deployment once hosting, production database, Redis, domain, Clerk, public image provider/base URL, Razorpay, email, backup, and monitoring details are confirmed.

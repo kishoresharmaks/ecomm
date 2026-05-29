@@ -40,13 +40,11 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup("api/docs", app, document);
 
-  const port = Number(process.env.PORT ?? process.env.API_PORT ?? 4000);
-  const host = process.env.API_HOST ?? "0.0.0.0";
-  await app.listen(port, host);
+  const port = Number(process.env.API_PORT ?? 4000);
+  await app.listen(port);
 
-  const displayHost = host === "0.0.0.0" ? "localhost" : host;
-  console.log(`1HandIndia API listening on http://${displayHost}:${port}/api`);
-  console.log(`1HandIndia API docs available on http://${displayHost}:${port}/api/docs`);
+  console.log(`1HandIndia API listening on http://localhost:${port}/api`);
+  console.log(`1HandIndia API docs available on http://localhost:${port}/api/docs`);
 }
 
 bootstrap().catch((error) => {

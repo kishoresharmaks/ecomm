@@ -85,7 +85,6 @@ Foundation and scope:
 - UI screen list and database plan are prepared.
 - Brand palette is locked for all web portals: primary `#ED3500`, secondary `#FFFCFB`.
 - Implementation uses the locked Turborepo, Next.js web app, NestJS API, worker app, shared packages, PostgreSQL, Prisma, and Clerk foundation.
-- Temporary Render + Neon testing deployment prep is present through root `render.yaml` and `docs/IndiHub_RENDER_NEON_TEST_DEPLOYMENT.md`. This is for hosted QA only; final production launch still needs real provider accounts, domain/CORS, backups, monitoring, and browser-level end-to-end QA.
 
 Completed or substantially implemented:
 
@@ -155,7 +154,6 @@ Latest verified gates:
 - 2026-05-26 admin settings readback hardening: API and admin UI setting readers now coerce legacy string/number boolean values and string-stored numbers for checkout payment toggles, checkout platform fee, payout settings, payment readiness, and checkout pricing, so saved settings do not appear reset after dev-server restart or old DB rows. API tests include deprecations-as-errors and pass with 20 files/75 tests; web tests pass with 3 files/6 tests; `pnpm.cmd db:validate`, API typecheck/lint/build, web typecheck/lint/build pass.
 - 2026-05-26 production seed safety hardening: `pnpm db:seed` now runs schema-only and creates or updates no data by default. Seed write modes are explicit through `pnpm db:seed:system` for RBAC reference rows and `pnpm db:seed:bootstrap` for local/dev bootstrap rows; production-like write modes are blocked unless `INDIHUB_ALLOW_PRODUCTION_SEED=true` is set for an approved one-time operation. Verification: `pnpm.cmd db:validate`, `pnpm.cmd --filter @indihub/api typecheck`, `pnpm.cmd db:seed` passed as no-write schema mode, and production-like `pnpm.cmd db:seed:bootstrap` refused to run before writes.
 - 2026-05-26 local-area selector UX fix: selected local-area labels like `Mettu Street (636001)` now continue searching by area name/pincode instead of showing a false `No matching local areas` dropdown. The selected area is retained while async results refresh, and the public locations API also accepts display-label search terms. API/web typecheck, lint, test, and build pass.
-- 2026-05-30 Render + Neon testing deployment prep verification: API startup now respects Render `PORT` and `API_HOST`, Prisma CLI prefers `DIRECT_URL` for Neon schema commands while runtime keeps `DATABASE_URL`, the web app has a Render start script, root `render.yaml` defines API/web Render services, and `docs/IndiHub_RENDER_NEON_TEST_DEPLOYMENT.md` documents the Neon pooled/direct URL setup and Render environment checklist. Verification passed: `pnpm.cmd db:validate`, `pnpm.cmd --filter @indihub/api typecheck`, `pnpm.cmd --filter @indihub/api lint`, `pnpm.cmd --filter @indihub/api build`, `pnpm.cmd --filter @indihub/web typecheck`, `pnpm.cmd --filter @indihub/web lint`, and `pnpm.cmd --filter @indihub/web build`.
 
 Important caveats:
 
@@ -170,5 +168,4 @@ Important caveats:
 Recommended next work:
 
 - Run browser-level end-to-end QA across auth sync, customer checkout, seller approval/product management, B2B enquiries, admin reports/settings, support, and location selectors after starting the web/API servers together.
-- For temporary hosting, create the Neon database, set pooled `DATABASE_URL` and direct `DIRECT_URL`, run the schema/setup commands from `docs/IndiHub_RENDER_NEON_TEST_DEPLOYMENT.md`, then deploy the root `render.yaml` Blueprint on Render.
 - Configure real provider accounts only when the client is ready: Razorpay, email provider, public/private storage providers, production database, production Clerk keys, and production domain/CORS.

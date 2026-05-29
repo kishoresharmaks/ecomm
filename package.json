@@ -5,8 +5,8 @@
   "description": "1HandIndia Phase 1 multi-vendor ecommerce marketplace monorepo.",
   "packageManager": "pnpm@10.20.0",
   "engines": {
-    "node": ">=22.0.0 <26.0.0",
-    "pnpm": ">=10.0.0 <11.0.0"
+    "node": ">=22.0.0",
+    "pnpm": ">=10.0.0"
   },
   "scripts": {
     "dev": "turbo dev",
