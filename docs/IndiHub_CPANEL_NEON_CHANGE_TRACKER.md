@@ -12,6 +12,7 @@
 | `apps/api/app.js` | Added cPanel startup wrapper for the NestJS API. | cPanel startup file is `app.js`. |
 | `apps/web/app.js` | Added cPanel startup wrapper for the Next.js web app. | cPanel startup file is `app.js`. |
 | `apps/web/package.json` | Added `build:cpanel` using `next build --webpack`. | cPanel shared hosting failed the default Turbopack build with `ERR_WORKER_INIT_FAILED` / `EAGAIN`. |
+| `apps/web/next.config.mjs` | Limited Next.js build concurrency and disabled the webpack build worker. | cPanel shared hosting refused Node worker process spawning with `spawn ... processChild.js EAGAIN`. |
 | `docs/IndiHub_CPANEL_NEON_DEPLOYMENT.md` | Added cPanel + Neon setup guide. | Gives repeatable deployment steps. |
 | `docs/IndiHub_CPANEL_NEON_CHANGE_TRACKER.md` | Added this tracker. | Keeps rollback instructions in one place. |
 
@@ -30,13 +31,15 @@ docs/IndiHub_CPANEL_NEON_CHANGE_TRACKER.md
 
 2. Remove `build:cpanel` from `apps/web/package.json`.
 
-3. Restore API port logic in `apps/api/src/main.ts`:
+3. Remove the cPanel build-concurrency `experimental` block from `apps/web/next.config.mjs`.
+
+4. Restore API port logic in `apps/api/src/main.ts`:
 
 ```ts
 const port = Number(process.env.API_PORT ?? 4000);
 ```
 
-4. Run verification:
+5. Run verification:
 
 ```powershell
 pnpm.cmd db:validate

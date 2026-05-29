@@ -55,7 +55,7 @@ If cPanel Terminal does not expose `npx`, install pnpm once through the Node app
 /home/nexusnat/pnpm-tool/node_modules/.bin/pnpm --filter @indihub/web build:cpanel
 ```
 
-The cPanel web build uses `next build --webpack` because shared hosting can fail Turbopack worker startup with `ERR_WORKER_INIT_FAILED` / `EAGAIN`.
+The cPanel web build uses `next build --webpack`, plus a low-concurrency Next.js config, because shared hosting can fail Turbopack or webpack worker startup with `ERR_WORKER_INIT_FAILED` / `EAGAIN`.
 
 ## 3. API Environment Variables
 
