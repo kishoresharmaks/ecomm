@@ -41,10 +41,21 @@ npm -v
 npx pnpm@10.20.0 install --frozen-lockfile
 npx pnpm@10.20.0 db:generate
 npx pnpm@10.20.0 --filter @indihub/api build
-npx pnpm@10.20.0 --filter @indihub/web build
+npx pnpm@10.20.0 --filter @indihub/web build:cpanel
 ```
 
 Use `npx pnpm@10.20.0` because this cPanel shell does not expose `corepack`.
+
+If cPanel Terminal does not expose `npx`, install pnpm once through the Node app virtual environment and then run:
+
+```bash
+/home/nexusnat/pnpm-tool/node_modules/.bin/pnpm install --frozen-lockfile
+/home/nexusnat/pnpm-tool/node_modules/.bin/pnpm db:generate
+/home/nexusnat/pnpm-tool/node_modules/.bin/pnpm --filter @indihub/api build
+/home/nexusnat/pnpm-tool/node_modules/.bin/pnpm --filter @indihub/web build:cpanel
+```
+
+The cPanel web build uses `next build --webpack` because shared hosting can fail Turbopack worker startup with `ERR_WORKER_INIT_FAILED` / `EAGAIN`.
 
 ## 3. API Environment Variables
 

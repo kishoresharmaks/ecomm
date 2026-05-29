@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "next dev --port 3000",
     "build": "next build",
+    "build:cpanel": "next build --webpack",
     "start": "next start --port 3000",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
