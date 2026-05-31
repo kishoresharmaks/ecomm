@@ -26,16 +26,7 @@ const nextConfig = {
     "@indihub/shared-types",
     "@indihub/ui",
     "@indihub/validators"
-  ],
-  experimental: {
-    cpus: 1,
-    parallelServerBuildTraces: false,
-    parallelServerCompiles: false,
-    staticGenerationMaxConcurrency: 1,
-    webpackBuildWorker: false,
-    webpackMemoryOptimizations: true,
-    workerThreads: true
-  }
+  ]
 };
 
 export default nextConfig;

@@ -11,6 +11,7 @@ import {
   DocumentStatus,
   EmailRecipientType,
   ProductStatus,
+  Prisma,
   RoleCode,
   SellerStatus,
   SellerSubscriptionStatus,
@@ -67,6 +68,7 @@ export class SellersService {
   async registerSeller(actor: RequestUser, dto: CreateSellerOnboardingDto) {
     const location = await this.locationsService.resolveAddressLocation(dto.address);
     const documents = this.normalizeSellerDocuments(actor.id, dto.documents);
+    const slug = await this.createUniqueSlug(dto.storeName);
     const seller = await this.prisma.client.$transaction(async (tx) => {
       const existingSeller = await tx.seller.findUnique({ where: { userId: actor.id } });
 
@@ -109,7 +111,6 @@ export class SellersService {
         },
       });
 
-      const slug = await this.createUniqueSlug(dto.storeName);
       const selectedPlan = await this.sellerSubscriptions.resolveRegistrationPlan(
         tx,
         dto.subscriptionPlanId,
@@ -127,58 +128,50 @@ export class SellersService {
           subscriptionPlanId: selectedPlan?.id ?? null,
           subscriptionStatus: SellerSubscriptionStatus.ACTIVE,
           subscriptionStartedAt,
-          profile: {
-            create: {
-              description: dto.businessDescription ?? null,
-              businessLegalName: this.emptyToNull(dto.businessLegalName),
-              businessType: dto.businessType ?? null,
-              gstNumber: this.normalizeGstNumber(dto.gstNumber),
-              panNumber: this.normalizePanNumber(dto.panNumber),
-              contactName: dto.contactName,
-              contactPhone: dto.contactPhone,
-              contactEmail: user.email,
-            },
-          },
-          addresses: {
-            create: {
-              line1: dto.address.line1,
-              line2: dto.address.line2 ?? null,
-              area: location.area,
-              city: location.city,
-              state: location.state,
-              pincode: location.pincode,
-              country: location.country,
-              countryCode: location.countryCode,
-              stateCode: location.stateCode,
-              cityCode: location.cityCode,
-              localAreaCode: location.localAreaCode,
-            },
-          },
-          ...(documents.length
-            ? {
-                documents: {
-                  create: documents.map((document) => ({
-                    documentType: document.documentType,
-                    fileUrl: document.fileUrl,
-                    status: DocumentStatus.PENDING,
-                  })),
-                },
-              }
-            : {}),
-        },
-        include: {
-          profile: true,
-          addresses: true,
-          documents: true,
-          user: true,
-          subscriptionPlan: true,
-          subscriptions: {
-            where: { isCurrent: true },
-            include: { plan: true },
-            orderBy: { createdAt: "desc" },
-          },
         },
       });
+
+      await tx.sellerProfile.create({
+        data: {
+          sellerId: seller.id,
+          description: dto.businessDescription ?? null,
+          businessLegalName: this.emptyToNull(dto.businessLegalName),
+          businessType: dto.businessType ?? null,
+          gstNumber: this.normalizeGstNumber(dto.gstNumber),
+          panNumber: this.normalizePanNumber(dto.panNumber),
+          contactName: dto.contactName,
+          contactPhone: dto.contactPhone,
+          contactEmail: user.email,
+        },
+      });
+
+      await tx.sellerAddress.create({
+        data: {
+          sellerId: seller.id,
+          line1: dto.address.line1,
+          line2: dto.address.line2 ?? null,
+          area: location.area,
+          city: location.city,
+          state: location.state,
+          pincode: location.pincode,
+          country: location.country,
+          countryCode: location.countryCode,
+          stateCode: location.stateCode,
+          cityCode: location.cityCode,
+          localAreaCode: location.localAreaCode,
+        },
+      });
+
+      for (const document of documents) {
+        await tx.sellerDocument.create({
+          data: {
+            sellerId: seller.id,
+            documentType: document.documentType,
+            fileUrl: document.fileUrl,
+            status: DocumentStatus.PENDING,
+          },
+        });
+      }
 
       await this.sellerSubscriptions.recordRegistrationAssignment(
         tx,
@@ -210,7 +203,7 @@ export class SellersService {
         },
       });
 
-      return seller;
+      return this.getSellerByIdOrThrow(tx, seller.id);
     });
 
     await Promise.all([
@@ -235,6 +228,24 @@ export class SellersService {
     ]);
 
     return seller;
+  }
+
+  private getSellerByIdOrThrow(tx: Prisma.TransactionClient, sellerId: string) {
+    return tx.seller.findUniqueOrThrow({
+      where: { id: sellerId },
+      include: {
+        profile: true,
+        addresses: true,
+        documents: true,
+        user: true,
+        subscriptionPlan: true,
+        subscriptions: {
+          where: { isCurrent: true },
+          include: { plan: true },
+          orderBy: { createdAt: "desc" },
+        },
+      },
+    });
   }
 
   async getPublicSeller(slug: string) {

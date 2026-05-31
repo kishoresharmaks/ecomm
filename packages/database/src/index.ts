@@ -14,11 +14,17 @@ loadLocalEnv();
 
 const connectionString =
   process.env.DATABASE_URL ?? "postgresql://postgres:postgres@localhost:5432/indihub?schema=public";
+const transactionMaxWaitMs = positiveIntegerEnv("PRISMA_TRANSACTION_MAX_WAIT_MS", 15_000);
+const transactionTimeoutMs = positiveIntegerEnv("PRISMA_TRANSACTION_TIMEOUT_MS", 30_000);
 
 function createPrismaClient() {
   const adapter = new PrismaPg({ connectionString });
   return new PrismaClient({
     adapter,
+    transactionOptions: {
+      maxWait: transactionMaxWaitMs,
+      timeout: transactionTimeoutMs,
+    },
     log: process.env.NODE_ENV === "development" ? ["query", "error", "warn"] : ["error"]
   });
 }
@@ -69,4 +75,15 @@ function applyEnvFile(envPath: string) {
 
     process.env[key] ??= value;
   }
+}
+
+function positiveIntegerEnv(key: string, fallback: number) {
+  const value = process.env[key];
+
+  if (!value) {
+    return fallback;
+  }
+
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
