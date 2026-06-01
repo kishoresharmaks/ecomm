@@ -425,7 +425,7 @@ function PlanPicker({
         </span>
         <SectionHeading
           title="Seller subscription plan"
-          description="Choose the plan for onboarding. The current default plan is selected automatically."
+          description="Choose the plan for onboarding. Paid monthly and yearly plans are authorised after admin approval."
         />
       </div>
 
@@ -477,6 +477,11 @@ function PlanPicker({
                   Products {limitLabel(plan.productLimit)} / Featured{" "}
                   {limitLabel(plan.featuredProductLimit)} / B2B {limitLabel(plan.b2bEnquiryLimit)}
                 </p>
+                {plan.pricePaise > 0 && plan.billingCycle !== "LIFETIME" ? (
+                  <p className="mt-2 text-xs font-bold text-[#8A5A00]">
+                    Recurring Razorpay authorisation starts only after admin approval.
+                  </p>
+                ) : null}
               </div>
               <p className="text-lg font-black text-[#163B5C]">
                 {formatMoney(plan.pricePaise, plan.currency)}

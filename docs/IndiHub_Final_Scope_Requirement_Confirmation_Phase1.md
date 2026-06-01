@@ -95,6 +95,8 @@ The following features are locked for Phase 1.
 - Basic business information collection.
 - Seller subscription plan selection during onboarding.
 - Default seller subscription plan assignment if the seller does not choose a specific plan.
+- Approved scope update on 31-05-2026: paid monthly/yearly seller subscription plans use Razorpay recurring payment authorisation after admin approval.
+- Failed seller subscription renewals get a 7-day grace period before new product and seller B2B growth actions are restricted.
 - Admin approval before selling.
 - Seller dashboard.
 - Add product.
@@ -201,6 +203,7 @@ The following features are locked for Phase 1.
 - Manual bank transfer can be enabled only if the client confirms it before development.
 - Manual finance workspace is included as a Phase 1 scope update: Admin and Finance Manager users can verify COD and bank transfer collections, mark eligible offline payments paid/rejected, review seller settlements/payouts/ledger/statements, and manage payment settings.
 - Bank transfer settings include platform bank/UPI destination, instructions, and customer UTR/reference capture. Automated bank reconciliation is future scope.
+- Approved scope update on 31-05-2026: Razorpay recurring billing is included for paid seller subscription plans. Production use still depends on Razorpay account approval, valid keys, webhook setup, and provider subscription support.
 - Basic order receipt.
 - Basic tax/GST fields where required for product/order records.
 - Payment gateway transaction charges are not included in development cost.
@@ -302,7 +305,7 @@ They can be planned as Phase 2, Phase 3, or separate change requests.
 - Delivery partner payout or settlement workflow.
 - Automated seller payouts.
 - Seller payout provider integration.
-- Automated seller subscription payment collection and recurring billing.
+- Advanced seller billing beyond Razorpay recurring subscriptions, such as custom invoicing, multi-provider recurring billing, or offline reconciliation automation.
 - Paid seller promotions.
 - Advanced B2B RFQ workflow.
 - Quotation comparison engine.
@@ -388,6 +391,7 @@ The client must provide or confirm the following before development starts:
 - Commission rules.
 - Payment method decision.
 - Razorpay account details, if online payment is required in Phase 1.
+- Razorpay subscription/recurring billing support enabled on the merchant account if paid seller plans are used.
 - Cash on delivery decision.
 - Manual bank transfer decision.
 - Shipping charge rules.

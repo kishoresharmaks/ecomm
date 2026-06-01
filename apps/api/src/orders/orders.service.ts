@@ -35,7 +35,13 @@ import type { RequestUser } from "../auth/types/indihub-request";
 import { CheckoutPricingService } from "../checkout/checkout-pricing.service";
 import { DeliveryRoutingService } from "../checkout/delivery-routing.service";
 import { CheckoutDeliveryPreference } from "../checkout/dto/delivery-routing.dto";
-import { paginationFromQuery } from "../common/pagination";
+import {
+  createdAtCursorOrderBy,
+  createdAtCursorWhere,
+  cursorPageFromItems,
+  cursorPaginationFromQuery,
+  paginationFromQuery,
+} from "../common/pagination";
 import { CustomersService } from "../customers/customers.service";
 import { SellerLedgerService } from "../finance/seller-ledger.service";
 import { LocationsService } from "../locations/locations.service";
@@ -3882,12 +3888,26 @@ export class OrdersService {
   }
 
   private async listOrders(where: Prisma.OrderWhereInput, query: OrderQueryDto) {
+    if (query.cursor) {
+      const { take, cursor } = cursorPaginationFromQuery(query);
+      const cursorWhere = createdAtCursorWhere(cursor) as Prisma.OrderWhereInput | undefined;
+      const items = await this.prisma.client.order.findMany({
+        where: cursorWhere ? { AND: [where, cursorWhere] } : where,
+        include: orderInclude,
+        orderBy: createdAtCursorOrderBy(),
+        take: take + 1,
+      });
+      const pageResult = cursorPageFromItems(items, take);
+
+      return { ...pageResult, limit: take };
+    }
+
     const { page, skip, take } = paginationFromQuery(query);
 
     const items = await this.prisma.client.order.findMany({
       where,
       include: orderInclude,
-      orderBy: { createdAt: "desc" },
+      orderBy: createdAtCursorOrderBy(),
       skip,
       take,
     });

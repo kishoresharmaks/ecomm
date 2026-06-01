@@ -3873,7 +3873,7 @@ describe.sequential("1HandIndia backend integration", () => {
         recipientType: "CUSTOMER",
         templateId: createdTemplateId,
         isEnabled: true,
-        delayMinutes: 30,
+        delayMinutes: 0,
       });
       await request(app.getHttpServer())
         .patch(`/api/admin/email/triggers/${customerRegisteredTrigger.id}`)
@@ -3958,6 +3958,36 @@ describe.sequential("1HandIndia backend integration", () => {
           }),
         ]),
       );
+
+      const overview = await request(app.getHttpServer())
+        .get("/api/admin/email/overview")
+        .set(adminSessionHeader)
+        .expect(200);
+      expect(overview.body).toMatchObject({
+        pipelineMode: "IMMEDIATE",
+        setting: {
+          provider: "smtp",
+          isEnabled: true,
+          providerConfigured: true,
+        },
+        logs: {
+          totals: {
+            SKIPPED: expect.any(Number),
+          },
+          recent: {
+            skipped: expect.arrayContaining([
+              expect.objectContaining({
+                id: log.id,
+                templateCode: template.code,
+                eventCode: "CUSTOMER_REGISTERED",
+              }),
+            ]),
+          },
+        },
+        triggers: {
+          enabled: expect.any(Number),
+        },
+      });
 
       smtpCreateTransportMock.mockClear();
       smtpSendMailMock.mockClear();
@@ -4127,6 +4157,121 @@ describe.sequential("1HandIndia backend integration", () => {
           .send({ note: "Reset stock after concurrent checkout assertion" });
       }
       await clearActiveCustomerCart(prisma, data.customer.id);
+    }
+  });
+
+  it("prevents overselling when two customers concurrently checkout the last stock unit", async () => {
+    const secondCustomerUser = await createUserWithRole(
+      prisma,
+      data.roles,
+      RoleCode.CUSTOMER,
+      `${runId}-stock-race-customer@1handindia.test`,
+      "1HandIndia Stock Race Customer",
+    );
+    const secondCustomer = await prisma.customer.create({
+      data: {
+        userId: secondCustomerUser.id,
+        displayName: "1HandIndia Stock Race Customer",
+        status: UserStatus.ACTIVE,
+        wishlist: {
+          create: {},
+        },
+      },
+    });
+    const raceProduct = await prisma.product.create({
+      data: {
+        sellerId: data.seller.id,
+        categoryId: data.category.id,
+        name: `${runId} Race Stock Product`,
+        slug: `${runId}-race-stock-product`,
+        description: "Low-stock product used to prove checkout cannot oversell.",
+        status: ProductStatus.ACTIVE,
+        approvalStatus: ApprovalStatus.APPROVED,
+        searchText: `${runId} Race Stock Product low stock`,
+        variants: {
+          create: {
+            sku: `${runId}-RACE-STOCK-SKU`,
+            variantName: "Last Unit",
+            pricePaise: 9000,
+            stockQuantity: 1,
+            status: VariantStatus.ACTIVE,
+          },
+        },
+      },
+      include: {
+        variants: true,
+      },
+    });
+    const raceVariant = raceProduct.variants[0]!;
+    const checkoutActors = [
+      { userId: data.customerUser.id, customerId: data.customer.id },
+      { userId: secondCustomerUser.id, customerId: secondCustomer.id },
+    ];
+    let winningOrderNumber: string | undefined;
+    let winningUserId: string | undefined;
+
+    try {
+      await Promise.all(
+        checkoutActors.map(async (actor) => {
+          await clearActiveCustomerCart(prisma, actor.customerId);
+          await request(app.getHttpServer())
+            .post("/api/cart/items")
+            .set(authHeader(actor.userId))
+            .send({
+              productVariantId: raceVariant.id,
+              quantity: 1,
+            })
+            .expect(201);
+        }),
+      );
+
+      const payload = {
+        shippingAddress: {
+          fullName: "1HandIndia Test Customer",
+          phone: "9876543210",
+          line1: "12 Test Market Road",
+          city: "Coimbatore",
+          state: "Tamil Nadu",
+          pincode: "641012",
+        },
+        deliveryMode: DeliveryMode.THIRD_PARTY_COURIER,
+        paymentMethod: "MANUAL",
+        buyerCountryCode: "IN",
+        shippingPaise: 0,
+      };
+
+      const responses = await Promise.all(
+        checkoutActors.map((actor) =>
+          request(app.getHttpServer())
+            .post("/api/account/orders")
+            .set(authHeader(actor.userId))
+            .send(payload),
+        ),
+      );
+      const statuses = responses.map((response) => response.status).sort();
+      const successIndex = responses.findIndex((response) => response.status === 201);
+      const failed = responses.find((response) => response.status === 400);
+      const stockAfterCheckout = await prisma.productVariant.findUniqueOrThrow({
+        where: { id: raceVariant.id },
+      });
+
+      expect(statuses).toEqual([201, 400]);
+      expect(String(failed?.body.message ?? "")).toContain("Insufficient stock");
+      expect(stockAfterCheckout.stockQuantity).toBe(0);
+      winningOrderNumber = responses[successIndex]?.body.orderNumber as string | undefined;
+      winningUserId = checkoutActors[successIndex]?.userId;
+      expect(winningOrderNumber).toBeTruthy();
+      expect(winningUserId).toBeTruthy();
+    } finally {
+      if (winningOrderNumber && winningUserId) {
+        await request(app.getHttpServer())
+          .patch(`/api/account/orders/${winningOrderNumber}/cancel`)
+          .set(authHeader(winningUserId))
+          .send({ note: "Reset stock after low-stock concurrency assertion" });
+      }
+      await Promise.all(
+        checkoutActors.map((actor) => clearActiveCustomerCart(prisma, actor.customerId)),
+      );
     }
   });
 
@@ -4803,6 +4948,62 @@ describe.sequential("1HandIndia backend integration", () => {
       ]),
     );
 
+    const manualDealProduct = await prisma.product.create({
+      data: {
+        sellerId: data.seller.id,
+        categoryId: data.category.id,
+        name: `${runId} Admin Selected Deal Product`,
+        slug: `${runId}-admin-selected-deal-product`,
+        description: "Non-discounted product manually promoted through the admin flash sale.",
+        status: ProductStatus.ACTIVE,
+        approvalStatus: ApprovalStatus.APPROVED,
+        searchText: `${runId} admin selected flash sale`,
+        images: {
+          create: {
+            url: "indihub/products/admin-selected-deal.jpg",
+            altText: "Admin selected flash sale product",
+            isPrimary: true,
+          },
+        },
+        variants: {
+          create: {
+            sku: `${runId}-ADMIN-DEAL-SKU`,
+            variantName: "Flash Sale Pack",
+            pricePaise: 9900,
+            stockQuantity: 5,
+            status: VariantStatus.ACTIVE,
+          },
+        },
+      },
+    });
+
+    const activeDealSection = await request(app.getHttpServer())
+      .post("/api/admin/cms/homepage-sections")
+      .set(adminSessionHeader)
+      .send({
+        sectionType: "deal_strip",
+        title: `${runId} Admin Flash Sale`,
+        status: ContentStatus.PUBLISHED,
+        sortOrder: 0,
+        config: {
+          subtitle: "Admin-selected sale products should lead the storefront flash sale.",
+          ctaLabel: "View all deals",
+          ctaUrl: "/deals",
+          endsAt: new Date(Date.now() + 86_400_000).toISOString(),
+          items: [
+            {
+              sourceType: "product",
+              sourceId: manualDealProduct.id,
+              slug: manualDealProduct.slug,
+              label: manualDealProduct.name,
+              badge: "52",
+              linkUrl: `/products/${manualDealProduct.slug}`,
+            },
+          ],
+        },
+      })
+      .expect(201);
+
     const productSeo = await request(app.getHttpServer())
       .post("/api/admin/cms/seo")
       .set(adminSessionHeader)
@@ -4958,6 +5159,117 @@ describe.sequential("1HandIndia backend integration", () => {
     );
     expect(publicMenus.body).not.toEqual(
       expect.arrayContaining([expect.objectContaining({ id: childMenuItem.body.id })]),
+    );
+
+    const storefrontHome = await request(app.getHttpServer())
+      .get("/api/storefront/home")
+      .query({
+        countryCode: "IN",
+        stateCode: "IN-TN",
+        cityCode: "IN-TN-CBE",
+        localAreaCode: "IN-TN-CBE-RS",
+        limit: "4",
+      })
+      .expect(200);
+    const storefrontHomeBody = storefrontHome.body as {
+      banners: Array<{ id: string; title: string }>;
+      homepageSections: Array<{ id: string; title: string }>;
+      categories: Array<{ id: string; _count?: { products?: number } }>;
+      storesNearYou: Array<{
+        id: string;
+        locationMatchLevel: string;
+        _count?: { products?: number };
+      }>;
+      productRails: {
+        featured: Array<{ id: string }>;
+        latest: Array<{ id: string }>;
+        deals: Array<{ id: string }>;
+      };
+      stats: Record<string, number>;
+      menus: {
+        header: Array<{ id: string; children?: Array<{ id: string }> }>;
+      };
+    };
+    expect(storefrontHomeBody.banners).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: publishedBanner.body.id,
+          title: `${runId} Updated Homepage Banner`,
+        }),
+      ]),
+    );
+    expect(storefrontHomeBody.banners.some((banner) => banner.id === draftBanner.body.id)).toBe(
+      false,
+    );
+    expect(storefrontHomeBody.banners.some((banner) => banner.id === futureBanner.body.id)).toBe(
+      false,
+    );
+    expect(storefrontHomeBody.banners.some((banner) => banner.id === expiredBanner.body.id)).toBe(
+      false,
+    );
+    expect(storefrontHomeBody.homepageSections).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: publishedHomepageSection.body.id,
+          title: `${runId} Updated Homepage Categories`,
+        }),
+        expect.objectContaining({
+          id: activeDealSection.body.id,
+          title: `${runId} Admin Flash Sale`,
+        }),
+      ]),
+    );
+    expect(
+      storefrontHomeBody.homepageSections.some(
+        (section) => section.id === draftHomepageSection.body.id,
+      ),
+    ).toBe(false);
+    const liveHomeCategory = storefrontHomeBody.categories.find(
+      (category) => category.id === data.category.id,
+    );
+    expect(liveHomeCategory?._count?.products ?? 0).toBeGreaterThanOrEqual(1);
+    const nearbyHomeStore = storefrontHomeBody.storesNearYou.find(
+      (store) => store.id === data.seller.id,
+    );
+    expect(nearbyHomeStore).toMatchObject({
+      locationMatchLevel: "LOCAL_AREA",
+    });
+    expect(nearbyHomeStore?._count?.products ?? 0).toBeGreaterThanOrEqual(1);
+    expect(storefrontHomeBody.productRails.latest).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: data.product.id })]),
+    );
+    expect(storefrontHomeBody.productRails.deals).toEqual([
+      expect.objectContaining({ id: manualDealProduct.id, campaignBadge: "52" }),
+    ]);
+    const storefrontDeals = await request(app.getHttpServer())
+      .get("/api/storefront/deals")
+      .query({ limit: "8" })
+      .expect(200);
+    expect(storefrontDeals.body).toMatchObject({
+      total: 1,
+      page: 1,
+      limit: 8,
+      items: [expect.objectContaining({ id: manualDealProduct.id, campaignBadge: "52" })],
+    });
+    expect(storefrontHomeBody.stats).toEqual(
+      expect.objectContaining({
+        liveProducts: expect.any(Number),
+        approvedStores: expect.any(Number),
+        activeCustomers: expect.any(Number),
+        activeCategories: expect.any(Number),
+        verifiedSellers: expect.any(Number),
+        verifiedSellerPercent: expect.any(Number),
+      }),
+    );
+    expect(storefrontHomeBody.menus.header).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: menuItem.body.id,
+          children: expect.arrayContaining([
+            expect.objectContaining({ id: childMenuItem.body.id }),
+          ]),
+        }),
+      ]),
     );
 
     const sitemap = await request(app.getHttpServer())
@@ -6130,7 +6442,9 @@ async function seedHighVolumeAutoAssignmentData(
 
 async function cleanupIntegrationData(prisma: PrismaClient) {
   const users = await prisma.user.findMany({
-    where: { email: { contains: runId } },
+    where: {
+      OR: [{ email: { contains: runId } }, { email: { startsWith: "ih-e2e-" } }],
+    },
     select: { id: true },
   });
   const userIds = users.map((user) => user.id);

@@ -3,7 +3,7 @@
 import { type ChangeEvent, FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import type { Route } from "next";
-import { CreditCard, ExternalLink, FileText, Loader2, Store, Upload } from "lucide-react";
+import { CreditCard, ExternalLink, FileText, Loader2, Store, Truck, Upload } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
 import { LocationFields } from "@/components/locations/location-fields";
@@ -112,6 +112,10 @@ export function SellerProfileClient() {
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+    const existingShiprocketSetting = profileQuery.data?.courierProviderSettings?.find(
+      (setting) => setting.providerCode === "SHIPROCKET",
+    );
+    const shiprocketPickupLocation = optionalFormValue(form, "shiprocketPickupLocation");
     setNotice(null);
     mutation.mutate({
       storeName: formValue(form, "storeName"),
@@ -149,6 +153,17 @@ export function SellerProfileClient() {
         documentType: document.documentType,
         fileUrl: document.fileUrl,
       })),
+      ...(shiprocketPickupLocation || existingShiprocketSetting
+        ? {
+            courierSettings: [
+              {
+                providerCode: "SHIPROCKET",
+                pickupLocationName: shiprocketPickupLocation,
+                isActive: Boolean(shiprocketPickupLocation),
+              },
+            ],
+          }
+        : {}),
     });
   }
 
@@ -175,6 +190,9 @@ export function SellerProfileClient() {
   const profile = profileQuery.data;
   const address = profile?.addresses[0];
   const payoutProfile = profile?.payoutProfile;
+  const shiprocketSetting = profile?.courierProviderSettings?.find(
+    (setting) => setting.providerCode === "SHIPROCKET",
+  );
 
   return (
     <div className="grid gap-5">
@@ -401,6 +419,25 @@ export function SellerProfileClient() {
               disabled={mutation.isPending}
               inputClassName="h-11 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 text-sm font-semibold text-[#1F2933] outline-none focus:border-[#ED3500] focus:bg-white"
             />
+            <div className="rounded-md border border-[#D8E2EA] bg-[#F8FAFC] p-3">
+              <div className="flex items-start gap-3">
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-white text-[#ED3500]">
+                  <Truck className="h-4 w-4" aria-hidden="true" />
+                </span>
+                <div className="grid flex-1 gap-3">
+                  <SectionHeading
+                    title="Courier pickup"
+                    description="Seller pickup location name used by live courier booking."
+                  />
+                  <SellerField
+                    label="Shiprocket pickup location"
+                    name="shiprocketPickupLocation"
+                    defaultValue={shiprocketSetting?.pickupLocationName ?? ""}
+                    placeholder="Main Warehouse"
+                  />
+                </div>
+              </div>
+            </div>
             <Button type="submit" disabled={mutation.isPending}>
               {mutation.isPending ? "Saving..." : "Save profile"}
             </Button>

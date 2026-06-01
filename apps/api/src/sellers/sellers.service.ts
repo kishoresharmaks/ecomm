@@ -14,7 +14,6 @@ import {
   Prisma,
   RoleCode,
   SellerStatus,
-  SellerSubscriptionStatus,
   UserStatus,
 } from "@indihub/database";
 import type { RequestUser } from "../auth/types/indihub-request";
@@ -116,6 +115,7 @@ export class SellersService {
         dto.subscriptionPlanId,
       );
       const subscriptionStartedAt = selectedPlan ? new Date() : null;
+      const subscriptionStatus = this.sellerSubscriptions.initialRegistrationStatus(selectedPlan);
 
       const seller = await tx.seller.create({
         data: {
@@ -126,7 +126,7 @@ export class SellersService {
           status: SellerStatus.PENDING_APPROVAL,
           approvalStatus: ApprovalStatus.PENDING_APPROVAL,
           subscriptionPlanId: selectedPlan?.id ?? null,
-          subscriptionStatus: SellerSubscriptionStatus.ACTIVE,
+          subscriptionStatus,
           subscriptionStartedAt,
         },
       });
@@ -485,6 +485,23 @@ export class SellersService {
       }
     }
 
+    const courierSettings = this.normalizeCourierProviderSettings(dto.courierSettings);
+    if (dto.courierSettings !== undefined && courierSettings.length) {
+      const configuredProviders = await this.prisma.client.courierProviderSetting.findMany({
+        where: { providerCode: { in: courierSettings.map((setting) => setting.providerCode) } },
+        select: { providerCode: true },
+      });
+      const configuredCodes = new Set(configuredProviders.map((provider) => provider.providerCode));
+      const missingCodes = courierSettings
+        .map((setting) => setting.providerCode)
+        .filter((providerCode) => !configuredCodes.has(providerCode));
+      if (missingCodes.length) {
+        throw new BadRequestException(
+          `Courier provider setting is not configured yet: ${missingCodes.join(", ")}.`,
+        );
+      }
+    }
+
     const seller = await this.prisma.client.$transaction(async (tx) => {
       const updatedSeller = await tx.seller.update({
         where: { id: existing.id },
@@ -578,6 +595,37 @@ export class SellersService {
             isVerified: false,
           },
         });
+      }
+
+      if (dto.courierSettings !== undefined) {
+        for (const setting of courierSettings) {
+          await tx.sellerCourierProviderSetting.upsert({
+            where: {
+              sellerId_providerCode: {
+                sellerId: existing.id,
+                providerCode: setting.providerCode,
+              },
+            },
+            update: {
+              pickupLocationName: setting.pickupLocationName,
+              isActive: setting.isActive,
+              settingsSnapshot: {
+                source: "SELLER_PROFILE",
+                updatedByUserId: actor.id,
+              },
+            },
+            create: {
+              sellerId: existing.id,
+              providerCode: setting.providerCode,
+              pickupLocationName: setting.pickupLocationName,
+              isActive: setting.isActive,
+              settingsSnapshot: {
+                source: "SELLER_PROFILE",
+                updatedByUserId: actor.id,
+              },
+            },
+          });
+        }
       }
 
       if (
@@ -698,6 +746,9 @@ export class SellersService {
           profile: true,
           payoutProfile: true,
           addresses: true,
+          courierProviderSettings: {
+            orderBy: { providerCode: "asc" },
+          },
           documents: true,
           subscriptionPlan: true,
           subscriptions: {
@@ -720,6 +771,9 @@ export class SellersService {
         profile: true,
         payoutProfile: true,
         addresses: true,
+        courierProviderSettings: {
+          orderBy: { providerCode: "asc" },
+        },
         documents: true,
         subscriptionPlan: true,
         subscriptions: {
@@ -836,5 +890,33 @@ export class SellersService {
   private emptyToNull(value?: string | null) {
     const trimmed = value?.trim();
     return trimmed ? trimmed : null;
+  }
+
+  private normalizeCourierProviderSettings(
+    settings: UpdateSellerProfileDto["courierSettings"],
+  ) {
+    const seen = new Set<string>();
+
+    return (settings ?? []).map((setting) => {
+      const providerCode = setting.providerCode
+        .trim()
+        .toUpperCase()
+        .replace(/[^A-Z0-9_]/g, "_")
+        .replace(/_+/g, "_")
+        .slice(0, 40);
+      if (!providerCode) {
+        throw new BadRequestException("Courier provider code is required.");
+      }
+      if (seen.has(providerCode)) {
+        throw new BadRequestException(`Courier provider ${providerCode} is duplicated.`);
+      }
+      seen.add(providerCode);
+
+      return {
+        providerCode,
+        pickupLocationName: this.emptyToNull(setting.pickupLocationName),
+        isActive: setting.isActive ?? true,
+      };
+    });
   }
 }

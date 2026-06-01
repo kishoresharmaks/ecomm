@@ -1,6 +1,12 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma, SellerLedgerEntryType, SellerPayoutStatus, SellerSettlementStatus } from "@indihub/database";
-import { paginationFromQuery } from "../common/pagination";
+import {
+  createdAtCursorOrderBy,
+  createdAtCursorWhere,
+  cursorPageFromItems,
+  cursorPaginationFromQuery,
+  paginationFromQuery,
+} from "../common/pagination";
 import { RequestUser } from "../auth/types/indihub-request";
 import { PrismaService } from "../prisma/prisma.service";
 import { ManualLedgerAdjustmentDto, PayoutQueryDto } from "./dto/finance.dto";
@@ -25,26 +31,57 @@ export class SellerLedgerService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async listLedger(query: PayoutQueryDto, sellerIdFromPath?: string) {
-    const { page, skip, take } = paginationFromQuery(query, { defaultLimit: 25, maxLimit: 100 });
     const sellerId = sellerIdFromPath ?? query.sellerId;
 
     if (!sellerId) {
       throw new BadRequestException("sellerId is required.");
     }
 
+    const search = query.search?.trim();
     const where: Prisma.SellerLedgerEntryWhereInput = {
       sellerId,
-      ...(query.search
+      ...(search
         ? {
             OR: [
-              { description: { contains: query.search, mode: "insensitive" } },
-              { referenceId: { contains: query.search, mode: "insensitive" } },
-              { payout: { payoutNumber: { contains: query.search, mode: "insensitive" } } }
+              { description: { contains: search, mode: "insensitive" } },
+              { referenceId: { contains: search, mode: "insensitive" } },
+              { payout: { payoutNumber: { contains: search, mode: "insensitive" } } }
             ]
           }
         : {})
     };
 
+    if (query.cursor) {
+      const { take, cursor } = cursorPaginationFromQuery(query, {
+        defaultLimit: 25,
+        maxLimit: 100
+      });
+      const cursorWhere = createdAtCursorWhere(cursor) as
+        | Prisma.SellerLedgerEntryWhereInput
+        | undefined;
+      const [items, latest] = await this.prisma.client.$transaction(async (tx) => {
+        const items = await tx.sellerLedgerEntry.findMany({
+          where: cursorWhere ? { AND: [where, cursorWhere] } : where,
+          include: {
+            payout: { select: { id: true, payoutNumber: true, status: true } },
+            orderSellerSplit: { select: { id: true, order: { select: { orderNumber: true } } } }
+          },
+          orderBy: createdAtCursorOrderBy(),
+          take: take + 1
+        });
+        const latest = await tx.sellerLedgerEntry.findFirst({
+          where: { sellerId },
+          orderBy: createdAtCursorOrderBy(),
+          select: { balanceAfterPaise: true }
+        });
+        return [items, latest] as const;
+      });
+      const pageResult = cursorPageFromItems(items, take);
+
+      return { ...pageResult, limit: take, balancePaise: latest?.balanceAfterPaise ?? 0 };
+    }
+
+    const { page, skip, take } = paginationFromQuery(query, { defaultLimit: 25, maxLimit: 100 });
     const [items, total, latest] = await this.prisma.client.$transaction(async (tx) => {
       const items = await tx.sellerLedgerEntry.findMany({
         where,
@@ -52,14 +89,14 @@ export class SellerLedgerService {
           payout: { select: { id: true, payoutNumber: true, status: true } },
           orderSellerSplit: { select: { id: true, order: { select: { orderNumber: true } } } }
         },
-        orderBy: { createdAt: "desc" },
+        orderBy: createdAtCursorOrderBy(),
         skip,
         take
       });
       const total = await tx.sellerLedgerEntry.count({ where });
       const latest = await tx.sellerLedgerEntry.findFirst({
         where: { sellerId },
-        orderBy: { createdAt: "desc" },
+        orderBy: createdAtCursorOrderBy(),
         select: { balanceAfterPaise: true }
       });
       return [items, total, latest] as const;

@@ -42,6 +42,30 @@ describe("seo helpers", () => {
     });
   });
 
+  it("uses real-data fallback images when CMS SEO image fields are empty", () => {
+    const metadata = metadataFromSeo(null, {
+      title: "Local marketplace homepage",
+      description: "Dynamic homepage generated from live catalogue counts.",
+      path: "/",
+      imageUrl: "indihub/cms/homepage-hero.jpg"
+    });
+
+    expect(metadata.openGraph).toMatchObject({
+      images: [
+        {
+          url: "http://localhost:4000/api/storage/public-image?key=indihub%2Fcms%2Fhomepage-hero.jpg",
+          alt: "Local marketplace homepage"
+        }
+      ]
+    });
+    expect(metadata.twitter).toMatchObject({
+      card: "summary_large_image",
+      images: [
+        "http://localhost:4000/api/storage/public-image?key=indihub%2Fcms%2Fhomepage-hero.jpg"
+      ]
+    });
+  });
+
   it("builds breadcrumb JSON-LD with absolute item URLs", () => {
     const jsonLd = buildBreadcrumbJsonLd([
       { name: "Home", path: "/" },

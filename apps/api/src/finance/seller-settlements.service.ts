@@ -1,6 +1,12 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { OrderStatus, PaymentStatus, Prisma, SellerOrderStatus, SellerPayoutStatus, SellerSettlementStatus } from "@indihub/database";
-import { paginationFromQuery } from "../common/pagination";
+import {
+  createdAtCursorOrderBy,
+  createdAtCursorWhere,
+  cursorPageFromItems,
+  cursorPaginationFromQuery,
+  paginationFromQuery,
+} from "../common/pagination";
 import { RequestUser } from "../auth/types/indihub-request";
 import { PrismaService } from "../prisma/prisma.service";
 import { SettlementDraftDto, SettlementQueryDto } from "./dto/finance.dto";
@@ -45,24 +51,37 @@ export class SellerSettlementsService {
   ) {}
 
   async listRuns(query: SettlementQueryDto) {
-    const { page, skip, take } = paginationFromQuery(query, { defaultLimit: 20, maxLimit: 100 });
+    const search = query.search?.trim();
     const where: Prisma.SellerSettlementRunWhereInput = {
       ...(query.status ? { status: query.status } : {}),
-      ...(query.search ? { runNumber: { contains: query.search, mode: "insensitive" } } : {})
+      ...(search ? { runNumber: { contains: search, mode: "insensitive" } } : {})
     };
 
+    if (query.cursor) {
+      const { take, cursor } = cursorPaginationFromQuery(query, {
+        defaultLimit: 20,
+        maxLimit: 100
+      });
+      const cursorWhere = createdAtCursorWhere(cursor) as
+        | Prisma.SellerSettlementRunWhereInput
+        | undefined;
+      const items = await this.prisma.client.sellerSettlementRun.findMany({
+        where: cursorWhere ? { AND: [where, cursorWhere] } : where,
+        include: this.runListInclude(),
+        orderBy: createdAtCursorOrderBy(),
+        take: take + 1
+      });
+      const pageResult = cursorPageFromItems(items, take);
+
+      return { ...pageResult, limit: take };
+    }
+
+    const { page, skip, take } = paginationFromQuery(query, { defaultLimit: 20, maxLimit: 100 });
     const [items, total] = await this.prisma.client.$transaction(async (tx) => {
       const items = await tx.sellerSettlementRun.findMany({
         where,
-        include: {
-          payouts: {
-            include: {
-              seller: { select: { id: true, storeName: true, slug: true } }
-            },
-            orderBy: { netPayablePaise: "desc" }
-          }
-        },
-        orderBy: { createdAt: "desc" },
+        include: this.runListInclude(),
+        orderBy: createdAtCursorOrderBy(),
         skip,
         take
       });
@@ -71,6 +90,17 @@ export class SellerSettlementsService {
     });
 
     return { items, total, page, limit: take };
+  }
+
+  private runListInclude() {
+    return {
+      payouts: {
+        include: {
+          seller: { select: { id: true, storeName: true, slug: true } }
+        },
+        orderBy: { netPayablePaise: "desc" as const }
+      }
+    } satisfies Prisma.SellerSettlementRunInclude;
   }
 
   async getRun(runId: string) {
@@ -176,8 +206,21 @@ export class SellerSettlementsService {
         });
 
         for (const { split, calculation } of sellerDraft.splits) {
-          await tx.orderSellerSplit.update({
-            where: { id: split.id },
+          const splitUpdate = await tx.orderSellerSplit.updateMany({
+            where: {
+              id: split.id,
+              payoutId: null,
+              sellerStatus: { not: SellerOrderStatus.CANCELLED },
+              settlementStatus: { in: [SellerSettlementStatus.NOT_ELIGIBLE, SellerSettlementStatus.ELIGIBLE] },
+              order: {
+                orderStatus: OrderStatus.DELIVERED,
+                paymentStatus: { in: [PaymentStatus.PAID, PaymentStatus.NOT_REQUIRED] },
+                createdAt: {
+                  gte: dateFrom,
+                  lte: dateTo
+                }
+              }
+            },
             data: {
               payoutId: payout.id,
               commissionRuleId: calculation.commissionRuleId ?? null,
@@ -193,6 +236,9 @@ export class SellerSettlementsService {
               settlementEligibleAt: split.settlementEligibleAt ?? new Date()
             }
           });
+          if (splitUpdate.count !== 1) {
+            throw new ConflictException("Settlement eligibility changed while creating this draft. Refresh and try again.");
+          }
         }
 
         this.addTotals(runTotals, totals);
@@ -226,33 +272,39 @@ export class SellerSettlementsService {
   }
 
   async submitRun(runId: string, actor: RequestUser) {
-    const existing = await this.prisma.client.sellerSettlementRun.findUnique({
-      where: { id: runId },
-      include: { payouts: true }
-    });
-
-    if (!existing) {
-      throw new NotFoundException("Settlement run not found.");
-    }
-
-    if (existing.status !== SellerPayoutStatus.DRAFT) {
-      throw new BadRequestException("Only draft settlement runs can be submitted for approval.");
-    }
-
     await this.prisma.client.$transaction(async (tx) => {
-      await tx.sellerSettlementRun.update({
+      const existing = await tx.sellerSettlementRun.findUnique({
         where: { id: runId },
+        include: { payouts: true }
+      });
+
+      if (!existing) {
+        throw new NotFoundException("Settlement run not found.");
+      }
+
+      if (existing.status !== SellerPayoutStatus.DRAFT) {
+        throw new BadRequestException("Only draft settlement runs can be submitted for approval.");
+      }
+
+      const runUpdate = await tx.sellerSettlementRun.updateMany({
+        where: { id: runId, status: SellerPayoutStatus.DRAFT },
         data: {
           status: SellerPayoutStatus.PENDING_APPROVAL,
           submittedById: actor.id,
           submittedAt: new Date()
         }
       });
+      if (runUpdate.count !== 1) {
+        throw new ConflictException("Settlement run status changed. Refresh and try again.");
+      }
 
-      await tx.sellerPayout.updateMany({
+      const payoutUpdate = await tx.sellerPayout.updateMany({
         where: { settlementRunId: runId, status: SellerPayoutStatus.DRAFT },
         data: { status: SellerPayoutStatus.PENDING_APPROVAL }
       });
+      if (payoutUpdate.count !== existing.payouts.length) {
+        throw new ConflictException("Settlement payouts changed. Refresh and try again.");
+      }
 
       for (const payout of existing.payouts) {
         await tx.sellerPayoutEvent.create({

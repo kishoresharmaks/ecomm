@@ -39,5 +39,10 @@ export class B2BEnquiryQueryDto {
   @Min(1)
   @Max(100)
   limit?: number;
-}
 
+  @ApiPropertyOptional({ description: "Opaque cursor for large result sets." })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  cursor?: string;
+}

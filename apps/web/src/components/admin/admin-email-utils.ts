@@ -188,9 +188,7 @@ export function emailTriggerUpdatePayload(form: {
   return {
     templateId: form.templateId || null,
     isEnabled: form.isEnabled,
-    delayMinutes: Number.isFinite(form.delayMinutes)
-      ? Math.max(0, Math.min(10080, Math.round(form.delayMinutes)))
-      : 0,
+    delayMinutes: 0,
   };
 }
 
@@ -330,10 +328,6 @@ export function validateEmailTriggerForm(form: {
   unknownVariables: string[];
   templateStatus?: EmailTemplateStatus | undefined;
 }) {
-  if (!Number.isFinite(form.delayMinutes) || form.delayMinutes < 0 || form.delayMinutes > 10080) {
-    return "Delay must be between 0 minutes and 7 days.";
-  }
-
   if (!form.isEnabled) {
     return "";
   }

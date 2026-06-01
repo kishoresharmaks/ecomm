@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ApprovalStatus, RoleCode, SellerOrderStatus, SellerPayoutStatus, SellerSettlementStatus, SellerStatus } from "@indihub/database";
+import { ApprovalStatus, OrderStatus, PaymentStatus, RoleCode, SellerOrderStatus, SellerPayoutStatus, SellerSettlementStatus, SellerStatus } from "@indihub/database";
 import type { PrismaService } from "../prisma/prisma.service";
 import type { FinanceCalculatorService } from "./finance-calculator.service";
 import type { SellerLedgerService } from "./seller-ledger.service";
@@ -94,7 +94,19 @@ describe("SellerPayoutsService seller requests", () => {
       })
     });
     expect(tx.orderSellerSplit.updateMany).toHaveBeenCalledWith({
-      where: { id: "split-1", payoutId: null },
+      where: {
+        id: "split-1",
+        sellerId: "seller-1",
+        payoutId: null,
+        sellerStatus: { not: SellerOrderStatus.CANCELLED },
+        settlementStatus: {
+          in: [SellerSettlementStatus.NOT_ELIGIBLE, SellerSettlementStatus.ELIGIBLE]
+        },
+        order: {
+          orderStatus: OrderStatus.DELIVERED,
+          paymentStatus: { in: [PaymentStatus.PAID, PaymentStatus.NOT_REQUIRED] }
+        }
+      },
       data: expect.objectContaining({
         payoutId: "payout-1",
         settlementStatus: SellerSettlementStatus.DRAFTED,
@@ -108,5 +120,90 @@ describe("SellerPayoutsService seller requests", () => {
         newStatus: SellerPayoutStatus.PENDING_APPROVAL
       })
     });
+  });
+
+  it("blocks duplicate payout approval when the status changed concurrently", async () => {
+    const tx = {
+      sellerPayout: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "payout-1",
+          status: SellerPayoutStatus.PENDING_APPROVAL,
+          netPayablePaise: 43_600,
+          note: null
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 })
+      },
+      orderSellerSplit: {
+        aggregate: vi.fn().mockResolvedValue({
+          _count: { _all: 1 },
+          _sum: { netPayablePaise: 43_600 }
+        })
+      }
+    };
+    const prisma = {
+      client: {
+        $transaction: vi.fn((callback) => callback(tx)),
+        sellerPayout: {
+          findFirst: vi.fn()
+        }
+      }
+    } as unknown as PrismaService;
+    const ledger = {
+      postPayoutApprovalEntries: vi.fn()
+    } as unknown as SellerLedgerService;
+    const service = new SellerPayoutsService(prisma, {} as FinanceCalculatorService, ledger);
+
+    await expect(
+      service.approvePayout(
+        "payout-1",
+        { note: "Approve once." },
+        { id: "admin-1", clerkUserId: null, email: "admin@example.com", roles: [RoleCode.ADMIN] }
+      )
+    ).rejects.toThrow("Payout status changed");
+
+    expect(ledger.postPayoutApprovalEntries).not.toHaveBeenCalled();
+  });
+
+  it("blocks marking a payout paid when linked split state changed concurrently", async () => {
+    const tx = {
+      sellerPayout: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "payout-1",
+          status: SellerPayoutStatus.APPROVED,
+          netPayablePaise: 43_600,
+          note: null
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 })
+      },
+      orderSellerSplit: {
+        aggregate: vi.fn().mockResolvedValue({
+          _count: { _all: 1 },
+          _sum: { netPayablePaise: 43_600 }
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 })
+      }
+    };
+    const prisma = {
+      client: {
+        $transaction: vi.fn((callback) => callback(tx)),
+        sellerPayout: {
+          findFirst: vi.fn()
+        }
+      }
+    } as unknown as PrismaService;
+    const ledger = {
+      postPayoutPaidEntry: vi.fn()
+    } as unknown as SellerLedgerService;
+    const service = new SellerPayoutsService(prisma, {} as FinanceCalculatorService, ledger);
+
+    await expect(
+      service.markPaid(
+        "payout-1",
+        { paymentMode: "BANK_TRANSFER", transactionReference: "UTR-1" },
+        { id: "admin-1", clerkUserId: null, email: "admin@example.com", roles: [RoleCode.ADMIN] }
+      )
+    ).rejects.toThrow("Payout splits changed");
+
+    expect(ledger.postPayoutPaidEntry).not.toHaveBeenCalled();
   });
 });

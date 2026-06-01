@@ -18,16 +18,17 @@ Flow:
 6. The backend applies the selected email theme and any per-template style overrides. Templates without a selected theme use the current published default 1HandIndia theme.
 7. The backend wraps the rendered body in email-safe HTML and inlines safe styles before delivery.
 8. A `NotificationLog` row is created with recipient, event code, recipient type, trigger rule, template code, status, rendered subject/body HTML, variables, and schedule metadata.
-9. If `delayMinutes` is greater than 0, the email is scheduled in BullMQ. If Redis/queue support is unavailable, the log is marked `SKIPPED` instead of sending early.
-10. If `REDIS_URL` is configured, immediate emails are queued in BullMQ for the worker.
-11. If Redis is not configured, immediate emails are sent by the API and the log is updated.
+9. Transactional action emails are sent immediately by the API after the action creates the `NotificationLog`; trigger-rule delay values are normalised to `0` and ignored for new action sends.
+10. Redis/BullMQ email workers remain as a safety path for any legacy queued jobs, but new order, seller, product, payment, B2B, and support action emails do not wait for a scheduled worker time.
+11. If delivery fails, the same log is marked `FAILED` for admin review and explicit retry.
 12. Before a provider call, the sender atomically claims the `NotificationLog` row with a temporary delivery lock. Only one API or worker process can claim a pending log.
 13. Immediately after provider success, the same locked row is marked `SENT` with `sentAt` and the provider message id. Duplicate jobs see the existing lock/provider id and skip delivery.
 14. The worker re-checks the `NotificationLog` row and current email setting before delivery. If sending was disabled after the job was queued, or if the job is older than `EMAIL_QUEUE_SEND_WINDOW_MINUTES` minutes, the log is marked `SKIPPED` instead of sending late.
 15. Queue jobs use one delivery attempt and store no provider secret payload. Failed delivery remains visible in logs for an explicit admin retry.
 16. Stale delivery locks are failed after `EMAIL_DELIVERY_LOCK_STALE_MINUTES` minutes, so admins can investigate provider logs before retrying.
 17. Delivery is handled by `EmailDeliveryService`.
-18. Admins manage templates, themes, triggers, settings, and logs from `/admin/email`.
+18. Admins manage templates, themes, triggers, settings, overview health, and logs from `/admin/email`.
+19. The admin overview reads a single optimized `/api/admin/email/overview` summary instead of making several separate log-list calls for health counts.
 
 Supported delivery providers:
 
@@ -68,10 +69,11 @@ Compatibility path: `/admin/notifications`
 Admins can:
 
 - review email health from the Overview tab
+- see provider readiness, immediate-delivery mode, recent sent volume, open issues, missing trigger templates, and last sent/pending timestamps from the Overview tab
 - review pending, skipped, and failed delivery states from the Overview tab
 - manage transactional templates from the Templates tab
 - manage reusable guided email themes from the Themes tab
-- map safe app events to templates and delays from the Triggers tab
+- map safe app events to templates and enabled/disabled state from the Triggers tab
 - manage provider/sender settings from the Settings tab
 - filter logs by template, category, event, recipient type, recipient email, and status
 - search by recipient email
@@ -80,6 +82,12 @@ Admins can:
 - see context variables such as order number, payment status, product name, enquiry id, support subject, seller name, and note
 - see provider id or failure reason
 - retry failed or skipped logs
+
+Database/query optimization:
+
+- `/api/admin/email/logs` returns a lean email-log projection for table and preview use instead of loading full user records.
+- Email log indexes are compound for the common admin filters plus newest-first ordering: status, template code, event code, recipient type, trigger rule, channel, and created time.
+- Trigger health avoids per-trigger log queries by aggregating recent failure counts and last sent timestamps in grouped database queries.
 
 Retry behavior:
 
@@ -108,7 +116,7 @@ Template category behavior:
 Trigger behavior:
 
 - Trigger rules are seeded from the fixed transactional event catalog and are not arbitrary code.
-- Admins can enable or disable a trigger, select a template, and set a delay in minutes.
+- Admins can enable or disable a trigger and select a template. Transactional trigger delays are disabled so action emails send immediately.
 - Enabled trigger rules require a published email template.
 - Unknown placeholders are blocked for trigger-enabled templates when those placeholders are not supported by the selected event.
 - Draft and archived templates are never used for live sending.
@@ -165,7 +173,7 @@ Before production launch:
 2. Configure the chosen live provider credentials or SMTP host details from `/admin/email` -> Settings.
 3. Configure admin alert recipients in `/admin/email` -> Settings, or keep active admin users available as the fallback.
 4. Review or update the default 1HandIndia theme from `/admin/email` -> Themes.
-5. Review trigger mappings and delays from `/admin/email` -> Triggers.
+5. Review trigger mappings and immediate-send state from `/admin/email` -> Triggers.
 6. Send test emails through real flows: account, seller registration, product submission, checkout, payment success/failure, B2B enquiry, and support.
 7. Confirm `/admin/email` -> Logs shows rendered subject/body/context, event code, recipient type, schedule metadata, and provider ids.
 8. Confirm `/admin/email` -> Overview shows pending, skipped, and failed counts clearly.

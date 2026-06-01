@@ -14,12 +14,14 @@ describe("PaymentsService", () => {
         findFirst: vi.fn(),
         findUnique: vi.fn(),
         update: vi.fn(),
+        updateMany: vi.fn(),
       },
       paymentEvent: {
         create: vi.fn(),
       },
       order: {
         update: vi.fn(),
+        updateMany: vi.fn(),
         findUnique: vi.fn(),
       },
       orderStatusEvent: {
@@ -43,6 +45,8 @@ describe("PaymentsService", () => {
     vi.clearAllMocks();
     prisma.client.setting.findMany.mockResolvedValue([]);
     prisma.client.payment.findUnique.mockImplementation(async () => prisma.client.payment.findFirst());
+    prisma.client.payment.updateMany.mockResolvedValue({ count: 1 });
+    prisma.client.order.updateMany.mockResolvedValue({ count: 1 });
     process.env.RAZORPAY_WEBHOOK_SECRET = "webhook_secret";
     process.env.RAZORPAY_KEY_ID = "rzp_test_key";
     process.env.RAZORPAY_KEY_SECRET = "key_secret";
@@ -120,7 +124,7 @@ describe("PaymentsService", () => {
       paymentId: "payment_1",
       status: PaymentStatus.PAID,
     });
-    expect(prisma.client.payment.update).toHaveBeenCalledWith({
+    expect(prisma.client.payment.updateMany).toHaveBeenCalledWith({
       where: { id: "payment_1" },
       data: {
         status: PaymentStatus.PAID,
@@ -128,7 +132,7 @@ describe("PaymentsService", () => {
         rawResponse: JSON.parse(rawBody.toString()),
       },
     });
-    expect(prisma.client.order.update).toHaveBeenCalledWith({
+    expect(prisma.client.order.updateMany).toHaveBeenCalledWith({
       where: { id: "order_internal_1" },
       data: { paymentStatus: PaymentStatus.PAID },
     });
@@ -186,7 +190,9 @@ describe("PaymentsService", () => {
       reason: "paid_payment_is_terminal",
     });
     expect(prisma.client.payment.update).not.toHaveBeenCalled();
+    expect(prisma.client.payment.updateMany).not.toHaveBeenCalled();
     expect(prisma.client.order.update).not.toHaveBeenCalled();
+    expect(prisma.client.order.updateMany).not.toHaveBeenCalled();
     expect(notifications.notifyEvent).not.toHaveBeenCalled();
   });
 
@@ -221,7 +227,47 @@ describe("PaymentsService", () => {
       reason: "paid_payment_is_terminal",
     });
     expect(prisma.client.payment.update).not.toHaveBeenCalled();
+    expect(prisma.client.payment.updateMany).not.toHaveBeenCalled();
     expect(prisma.client.order.update).not.toHaveBeenCalled();
+    expect(prisma.client.order.updateMany).not.toHaveBeenCalled();
+    expect(notifications.notifyEvent).not.toHaveBeenCalled();
+  });
+
+  it("treats a guarded late failed update as terminal when payment wins the race", async () => {
+    const rawBody = Buffer.from(
+      JSON.stringify(createRazorpayPayload("payment.failed", "pay_failed", "order_1")),
+    );
+    const signature = createHmac("sha256", "webhook_secret").update(rawBody).digest("hex");
+    prisma.client.payment.findFirst.mockResolvedValue(createPaymentRecord());
+    prisma.client.payment.findUnique
+      .mockResolvedValueOnce(createPaymentRecord())
+      .mockResolvedValueOnce(
+        createPaymentRecord({
+          status: PaymentStatus.PAID,
+          providerPaymentId: "pay_paid",
+          order: {
+            paymentStatus: PaymentStatus.PAID,
+          },
+        }),
+      );
+    prisma.client.payment.updateMany.mockResolvedValueOnce({ count: 0 });
+    const service = new PaymentsService(prisma as never, notifications as never);
+
+    const result = await service.handleRazorpayWebhook(
+      signature,
+      JSON.parse(rawBody.toString()),
+      rawBody,
+    );
+
+    expect(result).toEqual({
+      received: true,
+      ignored: true,
+      paymentId: "payment_1",
+      status: PaymentStatus.PAID,
+      reason: "paid_payment_is_terminal",
+    });
+    expect(prisma.client.paymentEvent.create).not.toHaveBeenCalled();
+    expect(prisma.client.order.updateMany).not.toHaveBeenCalled();
     expect(notifications.notifyEvent).not.toHaveBeenCalled();
   });
 
@@ -274,7 +320,7 @@ describe("PaymentsService", () => {
       paymentId: "payment_1",
       status: PaymentStatus.PAID,
     });
-    expect(prisma.client.payment.update).toHaveBeenCalledWith({
+    expect(prisma.client.payment.updateMany).toHaveBeenCalledWith({
       where: { id: "payment_1" },
       data: expect.objectContaining({
         status: PaymentStatus.PAID,
@@ -309,6 +355,7 @@ describe("PaymentsService", () => {
 
     expect(fetchMock).not.toHaveBeenCalled();
     expect(prisma.client.payment.update).not.toHaveBeenCalled();
+    expect(prisma.client.payment.updateMany).not.toHaveBeenCalled();
     expect(notifications.notifyEvent).not.toHaveBeenCalled();
   });
 
@@ -339,6 +386,7 @@ describe("PaymentsService", () => {
     ).rejects.toBeInstanceOf(BadRequestException);
 
     expect(prisma.client.payment.update).not.toHaveBeenCalled();
+    expect(prisma.client.payment.updateMany).not.toHaveBeenCalled();
     expect(notifications.notifyEvent).not.toHaveBeenCalled();
   });
 });

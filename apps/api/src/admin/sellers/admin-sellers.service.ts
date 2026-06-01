@@ -1,5 +1,13 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { ApprovalStatus, EmailRecipientType, Prisma, SellerStatus } from "@indihub/database";
+import {
+  ApprovalStatus,
+  EmailRecipientType,
+  PaymentStatus,
+  Prisma,
+  SellerStatus,
+  SellerSubscriptionBillingCycle,
+  SellerSubscriptionStatus,
+} from "@indihub/database";
 import { paginationFromQuery } from "../../common/pagination";
 import { EMAIL_TRIGGER_EVENTS } from "../../notifications/email-trigger-catalog";
 import { NotificationsService } from "../../notifications/notifications.service";
@@ -103,7 +111,7 @@ export class AdminSellersService {
     const updatedSeller = await this.prisma.client.$transaction(async (tx) => {
       const seller = await tx.seller.findFirst({
         where: { id: sellerId },
-        include: { user: true, profile: true },
+        include: { user: true, profile: true, subscriptionPlan: true },
       });
 
       if (!seller) {
@@ -111,6 +119,10 @@ export class AdminSellersService {
       }
 
       const approved = dto.decision === SellerApprovalDecision.APPROVE;
+      const nextSubscriptionStatus =
+        approved && seller.subscriptionPlan
+          ? this.defaultSubscriptionStatusForPlan(seller.subscriptionPlan)
+          : seller.subscriptionStatus;
       const nextSeller = await tx.seller.update({
         where: {
           id: sellerId,
@@ -118,6 +130,7 @@ export class AdminSellersService {
         data: {
           status: approved ? SellerStatus.APPROVED : SellerStatus.REJECTED,
           approvalStatus: approved ? ApprovalStatus.APPROVED : ApprovalStatus.REJECTED,
+          subscriptionStatus: nextSubscriptionStatus,
         },
         include: {
           user: true,
@@ -127,6 +140,22 @@ export class AdminSellersService {
           subscriptionPlan: true,
         },
       });
+
+      if (approved) {
+        await tx.sellerSubscription.updateMany({
+          where: {
+            sellerId,
+            isCurrent: true,
+          },
+          data: {
+            status: nextSubscriptionStatus,
+            lastPaymentStatus:
+              nextSubscriptionStatus === SellerSubscriptionStatus.PENDING_PAYMENT
+                ? PaymentStatus.PENDING
+                : PaymentStatus.NOT_REQUIRED,
+          },
+        });
+      }
 
       await tx.auditLog.create({
         data: {
@@ -273,5 +302,19 @@ export class AdminSellersService {
     }
 
     return seller;
+  }
+
+  private defaultSubscriptionStatusForPlan(plan: {
+    pricePaise: number;
+    billingCycle: SellerSubscriptionBillingCycle;
+  }) {
+    const recurringPaidPlan =
+      plan.pricePaise > 0 &&
+      (plan.billingCycle === SellerSubscriptionBillingCycle.MONTHLY ||
+        plan.billingCycle === SellerSubscriptionBillingCycle.YEARLY);
+
+    return recurringPaidPlan
+      ? SellerSubscriptionStatus.PENDING_PAYMENT
+      : SellerSubscriptionStatus.ACTIVE;
   }
 }

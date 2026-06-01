@@ -60,6 +60,12 @@ export class AdminEmailController {
     return this.notificationsService.listTriggers();
   }
 
+  @Get("overview")
+  @ApiOperation({ summary: "Read transactional email workspace health and delivery summary." })
+  overview() {
+    return this.notificationsService.getEmailOperationsOverview();
+  }
+
   @Patch("triggers/:id")
   @ApiOperation({ summary: "Update a transactional email trigger rule." })
   updateTrigger(

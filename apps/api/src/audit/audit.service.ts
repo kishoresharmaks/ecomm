@@ -1,6 +1,12 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { Prisma } from "@indihub/database";
-import { paginationFromQuery } from "../common/pagination";
+import {
+  createdAtCursorOrderBy,
+  createdAtCursorWhere,
+  cursorPageFromItems,
+  cursorPaginationFromQuery,
+  paginationFromQuery,
+} from "../common/pagination";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditQueryDto } from "./dto/audit-query.dto";
 
@@ -40,7 +46,6 @@ export class AuditService {
   }
 
   async list(query: AuditQueryDto) {
-    const { page, skip, take } = paginationFromQuery(query, { defaultLimit: 50 });
     const where: Prisma.AuditLogWhereInput = {
       ...(query.action ? { action: { contains: query.action, mode: "insensitive" } } : {}),
       ...(query.entityType ? { entityType: query.entityType } : {}),
@@ -55,11 +60,46 @@ export class AuditService {
         : {})
     };
 
+    if (query.cursor) {
+      const { take, cursor } = cursorPaginationFromQuery(query, { defaultLimit: 50 });
+      const cursorWhere = createdAtCursorWhere(cursor) as Prisma.AuditLogWhereInput | undefined;
+      const items = await this.prisma.client.auditLog.findMany({
+        where: cursorWhere ? { AND: [where, cursorWhere] } : where,
+        include: {
+          actor: {
+            select: {
+              id: true,
+              email: true,
+              phone: true,
+              fullName: true,
+              status: true
+            }
+          }
+        },
+        orderBy: createdAtCursorOrderBy(),
+        take: take + 1
+      });
+      const pageResult = cursorPageFromItems(items, take);
+
+      return { ...pageResult, limit: take };
+    }
+
+    const { page, skip, take } = paginationFromQuery(query, { defaultLimit: 50 });
     const [items, total] = await this.prisma.client.$transaction(async (tx) => {
       const items = await tx.auditLog.findMany({
         where,
-        include: { actor: true },
-        orderBy: { createdAt: "desc" },
+        include: {
+          actor: {
+            select: {
+              id: true,
+              email: true,
+              phone: true,
+              fullName: true,
+              status: true
+            }
+          }
+        },
+        orderBy: createdAtCursorOrderBy(),
         skip,
         take
       });

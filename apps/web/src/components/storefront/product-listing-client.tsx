@@ -13,6 +13,7 @@ import {
   getCategory,
   listCategories,
   listProducts,
+  listStorefrontDeals,
   primaryVariant,
   type ProductSummary
 } from "@/lib/storefront-api";
@@ -31,7 +32,7 @@ import {
 import { browsingLocationLabel } from "./storefront-location-utils";
 
 type ProductListingClientProps = {
-  mode: "categories" | "category" | "search";
+  mode: "categories" | "category" | "search" | "deals";
   categorySlug?: string;
   initialSearch?: string;
 };
@@ -63,7 +64,7 @@ export function ProductListingClient({ mode, categorySlug, initialSearch = "" }:
         limit: 24
       };
 
-      return listProducts(query);
+      return mode === "deals" ? listStorefrontDeals(query) : listProducts(query);
     },
     enabled: mode !== "category" || Boolean(categoryId)
   });
@@ -89,13 +90,21 @@ export function ProductListingClient({ mode, categorySlug, initialSearch = "" }:
   });
 
   const title =
-    mode === "category" ? (categoryQuery.data?.name ?? "Category products") : mode === "search" ? "Search products" : "All categories";
+    mode === "category"
+      ? (categoryQuery.data?.name ?? "Category products")
+      : mode === "deals"
+        ? "Flash Sale Deals"
+        : mode === "search"
+          ? "Search products"
+          : "All categories";
   const description =
     mode === "category"
       ? (categoryQuery.data?.description ?? "Products approved for this category.")
-      : mode === "search"
-        ? "Search live approved products across active sellers."
-        : "Browse the active launch categories managed from the catalogue.";
+      : mode === "deals"
+        ? "Admin-selected flash sale products and active discounted products from approved sellers."
+        : mode === "search"
+          ? "Search live approved products across active sellers."
+          : "Browse the active launch categories managed from the catalogue.";
 
   return (
     <StorefrontFrame>
@@ -143,12 +152,34 @@ export function ProductListingClient({ mode, categorySlug, initialSearch = "" }:
 
       {mode === "categories" ? (
         <StorefrontSection>
-          <SectionHeading title="Categories" description="Each category links into live product browsing." />
-          <div className="mt-5 grid grid-cols-3 gap-3 sm:mt-6 sm:gap-4 lg:grid-cols-5">
-            {categoriesQuery.data?.map((category) => (
-              <StorefrontCategoryCard key={category.id} category={category} variant="directory" />
-            ))}
-          </div>
+          <SectionHeading
+            title="Categories"
+            description="Browse active departments published for the storefront, then continue into live products from approved sellers."
+          />
+          {categoriesQuery.isLoading ? (
+            <div className="mt-5 grid gap-4 sm:mt-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {Array.from({ length: 8 }).map((_, index) => (
+                <StorefrontSkeleton key={index} className="h-72" />
+              ))}
+            </div>
+          ) : categoriesQuery.isError ? (
+            <StorefrontErrorPanel
+              className="mt-6"
+              error={categoriesQuery.error}
+              onRetry={() => void categoriesQuery.refetch()}
+            />
+          ) : categoriesQuery.data?.length ? (
+            <div className="mt-5 grid gap-4 sm:mt-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {categoriesQuery.data.map((category) => (
+                <StorefrontCategoryCard key={category.id} category={category} variant="directory" />
+              ))}
+            </div>
+          ) : (
+            <StorefrontEmptyState
+              className="mt-5"
+              message="No active categories are published yet."
+            />
+          )}
         </StorefrontSection>
       ) : null}
 
@@ -156,8 +187,8 @@ export function ProductListingClient({ mode, categorySlug, initialSearch = "" }:
         <StorefrontSection>
           <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <SectionHeading
-              title={submittedSearch ? `Results for "${submittedSearch}"` : "Product results"}
-              description={`${productsQuery.data?.total ?? 0} products found.`}
+              title={submittedSearch ? `Results for "${submittedSearch}"` : mode === "deals" ? "Live deals" : "Product results"}
+              description={`${productsQuery.data?.total ?? 0} ${mode === "deals" ? "deals" : "products"} found.`}
             />
             {mode === "category" ? (
               <Button asChild variant="outline">

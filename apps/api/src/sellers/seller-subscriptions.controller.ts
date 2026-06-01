@@ -9,7 +9,8 @@ import {
   AssignSellerSubscriptionDto,
   CreateSellerSubscriptionPlanDto,
   SellerSubscriptionPlanQueryDto,
-  UpdateSellerSubscriptionPlanDto
+  UpdateSellerSubscriptionPlanDto,
+  VerifySellerRazorpaySubscriptionDto
 } from "./dto/seller-subscription.dto";
 import { SellerSubscriptionsService } from "./seller-subscriptions.service";
 
@@ -30,6 +31,30 @@ export class SellerSubscriptionsController {
   @ApiOkResponse({ description: "Current seller subscription." })
   getSellerSubscription(@CurrentUser() actor: RequestUser) {
     return this.subscriptions.getSellerSubscription(actor);
+  }
+
+  @Roles(RoleCode.SELLER)
+  @Post("seller/subscription/authorize")
+  @ApiOkResponse({ description: "Create or reuse a Razorpay seller subscription checkout session." })
+  authorizeSellerSubscription(@CurrentUser() actor: RequestUser) {
+    return this.subscriptions.authorizeSellerSubscription(actor);
+  }
+
+  @Roles(RoleCode.SELLER)
+  @Post("seller/subscription/verify")
+  @ApiOkResponse({ description: "Verify Razorpay seller subscription checkout response." })
+  verifySellerSubscription(
+    @CurrentUser() actor: RequestUser,
+    @Body() dto: VerifySellerRazorpaySubscriptionDto
+  ) {
+    return this.subscriptions.verifySellerRazorpaySubscription(actor, dto);
+  }
+
+  @Roles(RoleCode.SELLER)
+  @Post("seller/subscription/cancel")
+  @ApiOkResponse({ description: "Cancel seller recurring subscription at period end." })
+  cancelSellerSubscription(@CurrentUser() actor: RequestUser) {
+    return this.subscriptions.cancelSellerSubscription(actor);
   }
 
   @Roles(RoleCode.ADMIN)

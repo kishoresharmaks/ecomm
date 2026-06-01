@@ -150,7 +150,7 @@ describe("admin email workspace helpers", () => {
     ).toEqual({
       templateId: "template_1",
       isEnabled: true,
-      delayMinutes: 90,
+      delayMinutes: 0,
     });
     expect(
       unknownTemplateVariables("Hello {{ customerName }} {{ bad }}", ["customerName"]),

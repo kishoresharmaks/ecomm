@@ -2,28 +2,45 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { FormEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
+import { type FormEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import {
+  BadgePercent,
+  BookOpen,
   BriefcaseBusiness,
   ChevronDown,
   Globe2,
-  Headset,
-  LayoutGrid,
-  Menu,
+  Grid3X3,
+  Heart,
+  MapPin,
+  Menu as MenuIcon,
+  MoreHorizontal,
+  PackageSearch,
   Search,
+  Shirt,
+  ShoppingBasket,
   ShoppingCart,
+  Sofa,
   Store,
-  Truck,
   UserRound,
-  X
+  X,
 } from "lucide-react";
-import { Button, cn } from "@indihub/ui";
+import { cn } from "@indihub/ui";
 import { AuthActions } from "@/components/auth/auth-actions";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
 import { useMarket } from "@/components/market/market-context";
 import { StorefrontLocationPicker } from "@/components/storefront/storefront-location-picker";
+import { useStorefrontLocation } from "@/components/storefront/storefront-location-context";
+import { browsingLocationLabel } from "@/components/storefront/storefront-location-utils";
 import { listLocationCountries } from "@/lib/location-api";
-import { cartTotals, getCart, listCmsMenus, type CmsMenuItem } from "@/lib/storefront-api";
+import {
+  cartTotals,
+  getCart,
+  listCategories,
+  listCmsMenus,
+  type CategorySummary,
+  type CmsMenuItem,
+} from "@/lib/storefront-api";
 import { useQuery } from "@tanstack/react-query";
 
 type HeaderNavItem = {
@@ -32,7 +49,7 @@ type HeaderNavItem = {
   children?: HeaderNavItem[];
 };
 
-type NavIcon = typeof LayoutGrid;
+const categoryIcons = [PackageSearch, Shirt, ShoppingBasket, Sofa, BadgePercent, Store, BookOpen];
 
 export function StorefrontHeader() {
   const router = useRouter();
@@ -40,6 +57,7 @@ export function StorefrontHeader() {
   const searchParams = useSearchParams();
   const customerAuth = useCustomerAuth();
   const market = useMarket();
+  const storefrontLocation = useStorefrontLocation();
   const [query, setQuery] = useState(searchParams.get("q") ?? "");
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -47,18 +65,22 @@ export function StorefrontHeader() {
     queryKey: ["cart", customerAuth.authKey],
     queryFn: () => getCart(customerAuth.authHeaders),
     enabled: customerAuth.enabled,
-    retry: false
+    retry: false,
   });
   const totals = cartTotals(cartQuery.data);
+  const categoriesQuery = useQuery({
+    queryKey: ["categories", "header"],
+    queryFn: listCategories,
+    retry: false,
+  });
   const menuQuery = useQuery({
     queryKey: ["cms-menus", "header"],
     queryFn: () => listCmsMenus("header"),
-    retry: false
+    retry: false,
   });
-  const navItems = menuQuery.data?.map(menuItemToNavItem) ?? [];
   const countriesQuery = useQuery({
     queryKey: ["locations", "countries"],
-    queryFn: listLocationCountries
+    queryFn: listLocationCountries,
   });
   const countries = countriesQuery.data ?? [];
   const marketCountries = countries.some((country) => country.code === market.countryCode)
@@ -67,10 +89,18 @@ export function StorefrontHeader() {
         {
           code: market.countryCode,
           name: market.market.countryName,
-          currency: market.market.currency
+          currency: market.market.currency,
         },
-        ...countries
+        ...countries,
       ];
+  const categories = categoriesQuery.data ?? [];
+  const primaryCategories = categories.slice(0, 6);
+  const secondaryCategories = categories.slice(6, 14);
+  const cmsItems = menuQuery.data?.map(menuItemToNavItem) ?? [];
+  const mobileLocationLabel =
+    storefrontLocation.source === "global"
+      ? "Set location"
+      : browsingLocationLabel(storefrontLocation.activeLocation);
 
   function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -80,217 +110,421 @@ export function StorefrontHeader() {
   }
 
   return (
-    <header className="relative z-[60] bg-[#FAF7F0]/94 backdrop-blur-xl">
-      <div className="mx-auto max-w-7xl px-4 py-4 lg:px-6 lg:py-5">
-        <div className="relative rounded-[32px] border border-white/90 bg-white/92 p-3 shadow-[0_22px_60px_rgba(22,59,92,0.1)] ring-1 ring-[#F4EADD]">
-          <div className="hidden gap-5 lg:grid lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:items-center lg:px-2">
-            <BrandBlock />
+    <header className="sticky top-0 z-[80] border-b border-[#F1D7CF] bg-white/96 shadow-[0_10px_32px_rgba(22,59,92,0.04)] backdrop-blur-xl">
+      <div className="mx-auto max-w-md px-4 pb-4 pt-3 lg:hidden">
+        <div className="flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={() => setMobileOpen((current) => !current)}
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-[#111827] transition hover:bg-[#FFF0EC] hover:text-[#ED3500]"
+            aria-label="Toggle storefront menu"
+            aria-expanded={mobileOpen}
+          >
+            {mobileOpen ? <X className="h-6 w-6" /> : <MenuIcon className="h-6 w-6" />}
+          </button>
 
-            <form onSubmit={submitSearch} className="min-w-0 lg:mx-auto lg:w-full lg:max-w-[600px]">
-              <label className="relative block">
-                <span className="sr-only">Search products</span>
-                <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#667085]" />
-                <input
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Search products, stores..."
-                  className="h-14 w-full rounded-full border border-[#D8E2EA] bg-[#FCFDFE] pl-12 pr-32 text-sm font-semibold text-[#1F2933] outline-none transition focus:border-[#ED3500] focus:bg-white focus:shadow-[0_0_0_4px_rgba(237,53,0,0.08)]"
-                />
-                <Button
-                  type="submit"
-                  size="sm"
-                  className="absolute right-2 top-2 h-10 rounded-full px-5 !text-white shadow-[0_10px_26px_rgba(237,53,0,0.18)] hover:!text-white [&_svg]:!text-white"
-                >
-                  <Search size={15} />
-                  <span>Search</span>
-                </Button>
-              </label>
-            </form>
+          <MobileBrandLogo />
 
-            <div className="ml-auto flex items-center gap-2">
-              <MarketPicker marketCountries={marketCountries} value={market.countryCode} onChange={market.setCountryCode} />
-              <Button
-                asChild
-                variant="outline"
-                size="sm"
-                className="rounded-full border-[#D8E2EA] bg-white/90 px-4 text-[#163B5C] [&_svg]:text-[#163B5C]"
-              >
-                <Link href="/account">
-                  <UserRound size={16} /> Account
-                </Link>
-              </Button>
-              <Button
-                asChild
-                variant="secondary"
-                size="sm"
-                className="relative rounded-full bg-[#163B5C] px-4 !text-white shadow-[0_10px_26px_rgba(22,59,92,0.18)] hover:bg-[#0f2d46] hover:!text-white [&_span]:!text-white [&_svg]:!text-white"
-              >
-                <Link href="/cart" aria-label={`Cart with ${totals.itemCount} items`}>
-                  <ShoppingCart size={16} />
-                  <span>Cart</span>
-                  {totals.itemCount > 0 ? (
-                    <span className="absolute -right-2 -top-2 grid h-5 min-w-5 place-items-center rounded-full bg-[#ED3500] px-1 text-[10px] font-black text-white">
-                      {totals.itemCount}
-                    </span>
-                  ) : null}
-                </Link>
-              </Button>
-              <div className="shrink-0">
-                <AuthActions />
-              </div>
-            </div>
+          <div className="flex min-w-0 items-center justify-end gap-2">
+            <span className="hidden max-w-[104px] items-center gap-1.5 rounded-full px-1 text-xs font-black text-[#1F2933] min-[390px]:inline-flex">
+              <MapPin className="h-5 w-5 shrink-0 fill-[#ED3500] text-[#ED3500]" aria-hidden="true" />
+              <span className="truncate">{mobileLocationLabel}</span>
+              <ChevronDown className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            </span>
+            <Link href="/account/wishlist" className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-[#111827]" aria-label="Wishlist">
+              <Heart className="h-6 w-6" aria-hidden="true" />
+            </Link>
+            <Link href="/cart" className="relative grid h-10 w-10 shrink-0 place-items-center rounded-full text-[#111827]" aria-label="Cart">
+              <ShoppingCart className="h-6 w-6" aria-hidden="true" />
+              {totals.itemCount > 0 ? (
+                <span className="absolute right-0 top-0 grid h-5 min-w-5 place-items-center rounded-full bg-[#ED3500] px-1 text-[10px] font-black text-white">
+                  {totals.itemCount}
+                </span>
+              ) : null}
+            </Link>
           </div>
+        </div>
 
-          <div className="relative hidden items-center gap-4 border-t border-[#EEF2F6] px-2 pt-4 lg:flex">
-            <nav className="flex flex-1 flex-wrap items-center gap-2">
-              {navItems.map((item) => (
-                <HeaderNavLink key={`${item.href}-${item.label}`} item={item} pathname={pathname} />
-              ))}
-            </nav>
-            <StorefrontLocationPicker compact className="shrink-0" />
-          </div>
+        <form onSubmit={submitSearch} className="mt-4">
+          <label className="relative block">
+            <span className="sr-only">Search products, stores, or brands</span>
+            <Search className="pointer-events-none absolute left-5 top-1/2 h-6 w-6 -translate-y-1/2 text-[#ED3500]" />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search products, stores, brands..."
+              className="h-16 w-full rounded-full border border-[#FFB9A6] bg-white pl-14 pr-[112px] text-sm font-semibold text-[#111827] shadow-[0_14px_36px_rgba(22,59,92,0.07)] outline-none transition focus:border-[#ED3500] focus:ring-4 focus:ring-[#ED3500]/10"
+            />
+            <button
+              type="submit"
+              className="absolute right-2 top-2 h-12 rounded-full bg-[#ED3500] px-6 text-sm font-black text-white shadow-[0_10px_24px_rgba(237,53,0,0.22)]"
+            >
+              Search
+            </button>
+          </label>
+        </form>
 
-          <div className="space-y-3 lg:hidden">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex min-w-0 items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => setMobileOpen((current) => !current)}
-                  className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl border border-[#D8E2EA] bg-[#FCFDFE] text-[#163B5C] shadow-sm"
-                  aria-label="Toggle navigation"
-                  aria-expanded={mobileOpen}
-                >
-                  {mobileOpen ? <X size={18} /> : <Menu size={18} />}
-                </button>
-                <BrandBlock compact />
-              </div>
+        <nav className="mt-5 grid grid-cols-6 gap-2" aria-label="Mobile storefront categories">
+          <MobileCategoryShortcut href="/categories" label="All Categories" icon={<Grid3X3 className="h-5 w-5" />} active={isActivePath(pathname, "/categories")} />
+          {primaryCategories.slice(0, 4).map((category, index) => {
+            const Icon = categoryIcons[index % categoryIcons.length] ?? PackageSearch;
+            return (
+              <MobileCategoryShortcut
+                key={category.id}
+                href={`/categories/${category.slug}`}
+                label={category.name}
+                icon={<Icon className="h-5 w-5" />}
+                active={isActivePath(pathname, `/categories/${category.slug}`)}
+              />
+            );
+          })}
+          <button
+            type="button"
+            onClick={() => setMobileOpen(true)}
+            className="flex min-w-0 flex-col items-center gap-2 text-center text-[11px] font-bold text-[#111827]"
+          >
+            <span className="grid h-14 w-14 place-items-center rounded-full border border-[#E8EDF2] bg-white text-[#111827] shadow-[0_10px_24px_rgba(22,59,92,0.06)]">
+              <MoreHorizontal className="h-5 w-5" aria-hidden="true" />
+            </span>
+            <span className="line-clamp-2 min-h-8 leading-4">More</span>
+          </button>
+        </nav>
 
-              <div className="flex items-center gap-2">
-                <Button
-                  asChild
-                  variant="outline"
-                  size="sm"
-                  className="h-11 w-11 rounded-2xl border-[#D8E2EA] bg-white px-0 text-[#163B5C] [&_svg]:text-[#163B5C]"
-                >
-                  <Link href="/account" aria-label="Account">
-                    <UserRound size={18} />
-                  </Link>
-                </Button>
-                <Button
-                  asChild
-                  variant="secondary"
-                  size="sm"
-                  className="relative h-11 min-w-[52px] rounded-2xl bg-[#163B5C] px-3 !text-white shadow-[0_10px_24px_rgba(22,59,92,0.16)] hover:bg-[#0f2d46] hover:!text-white [&_svg]:!text-white"
-                >
-                  <Link href="/cart" aria-label={`Cart with ${totals.itemCount} items`}>
-                    <ShoppingCart size={17} />
-                    {totals.itemCount > 0 ? (
-                      <span className="absolute -right-1.5 -top-1.5 grid h-5 min-w-5 place-items-center rounded-full bg-[#ED3500] px-1 text-[10px] font-black text-white">
-                        {totals.itemCount}
-                      </span>
-                    ) : null}
-                  </Link>
-                </Button>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3">
-              <StorefrontLocationPicker compact className="min-w-0" />
+        {mobileOpen ? (
+          <div className="mt-4 rounded-[22px] border border-[#FFE0D6] bg-[#FFFCFB] p-4 shadow-[0_18px_44px_rgba(22,59,92,0.08)]">
+            <div className="grid gap-3">
+              <StorefrontLocationPicker mobile compact />
               <MarketPicker
                 marketCountries={marketCountries}
                 value={market.countryCode}
                 onChange={market.setCountryCode}
-                className="h-12 rounded-full px-3"
+                className="h-11 rounded-full"
               />
             </div>
-
-            <form onSubmit={submitSearch}>
-              <label className="relative block">
-                <span className="sr-only">Search products</span>
-                <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#667085]" />
-                <input
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Search products, stores, categories..."
-                  className="h-12 w-full rounded-full border border-[#D8E2EA] bg-[#FCFDFE] pl-11 pr-16 text-sm font-semibold text-[#1F2933] outline-none transition focus:border-[#ED3500] focus:bg-white"
+            <div className="mt-4 grid gap-2">
+              <MobileLink href="/categories" label="All Categories" icon={<Grid3X3 className="h-4 w-4" />} onNavigate={() => setMobileOpen(false)} />
+              {primaryCategories.map((category, index) => {
+                const Icon = categoryIcons[index % categoryIcons.length] ?? PackageSearch;
+                return (
+                  <MobileLink
+                    key={category.id}
+                    href={`/categories/${category.slug}`}
+                    label={category.name}
+                    icon={<Icon className="h-4 w-4" />}
+                    onNavigate={() => setMobileOpen(false)}
+                  />
+                );
+              })}
+              {cmsItems.map((item) => (
+                <MobileLink
+                  key={`${item.href}-${item.label}`}
+                  href={item.href}
+                  label={item.label}
+                  icon={<BriefcaseBusiness className="h-4 w-4" />}
+                  onNavigate={() => setMobileOpen(false)}
                 />
-                <button
-                  type="submit"
-                  className="absolute right-1.5 top-1.5 grid h-9 w-11 place-items-center rounded-full bg-[#ED3500] text-white shadow-[0_8px_22px_rgba(237,53,0,0.18)]"
-                  aria-label="Search storefront"
-                >
-                  <Search size={16} />
-                </button>
-              </label>
-            </form>
+              ))}
+              <MobileLink href="/account/wishlist" label="Wishlist" icon={<Heart className="h-4 w-4" />} onNavigate={() => setMobileOpen(false)} />
+              <MobileLink href="/cart" label={`Cart (${totals.itemCount})`} icon={<ShoppingCart className="h-4 w-4" />} onNavigate={() => setMobileOpen(false)} />
+              <MobileLink href="/account" label="Account" icon={<UserRound className="h-4 w-4" />} onNavigate={() => setMobileOpen(false)} />
+            </div>
+            <div className="mt-4 border-t border-[#FFE0D6] pt-4">
+              <AuthActions />
+            </div>
+          </div>
+        ) : null}
+      </div>
 
-            {mobileOpen ? (
-              <div className="rounded-[28px] border border-[#E8EDF2] bg-[#FCFDFE] p-4 shadow-[0_18px_46px_rgba(22,59,92,0.08)]">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ED3500]">
-                      Browse
-                    </p>
-                    <h2 className="mt-1 text-lg font-black text-[#163B5C]">
-                      Marketplace menu
-                    </h2>
-                  </div>
-                  <span className="rounded-full bg-[#EAF1F7] px-3 py-1 text-xs font-black text-[#163B5C]">
-                    Public routes
-                  </span>
-                </div>
+      <div className="mx-auto hidden max-w-[1440px] px-4 py-3 sm:px-6 lg:block lg:px-10">
+        <div className="grid gap-3 lg:grid-cols-[210px_minmax(0,1fr)_auto] lg:items-center">
+          <div className="flex items-center justify-between gap-3">
+            <BrandBlock />
+          </div>
 
-                <div className="mt-4 grid gap-2">
-                  {navItems.map((item) => (
-                    <MobileNavLink
-                      key={`${item.href}-${item.label}`}
-                      item={item}
-                      onNavigate={() => setMobileOpen(false)}
-                    />
-                  ))}
-                  <MobileNavLink item={{ label: "Account", href: "/account" }} onNavigate={() => setMobileOpen(false)} />
-                </div>
+          <form onSubmit={submitSearch} className="min-w-0">
+            <label className="relative block">
+              <span className="sr-only">Search products, stores, or brands</span>
+              <Search className="pointer-events-none absolute left-5 top-1/2 h-5 w-5 -translate-y-1/2 text-[#ED3500]" />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search products, stores, brands..."
+                className="h-14 w-full rounded-full border border-[#FFE0D6] bg-white pl-14 pr-28 text-sm font-semibold text-[#111827] shadow-[0_14px_44px_rgba(22,59,92,0.08)] outline-none transition focus:border-[#ED3500] focus:ring-4 focus:ring-[#ED3500]/10"
+              />
+              <button
+                type="submit"
+                className="absolute right-2 top-2 h-10 rounded-full bg-[#ED3500] px-5 text-sm font-black text-white shadow-[0_10px_24px_rgba(237,53,0,0.22)] transition hover:bg-[#d52f00]"
+              >
+                Search
+              </button>
+            </label>
+          </form>
 
-                <div className="mt-4 border-t border-[#E5E7EB] pt-4">
-                  <AuthActions />
-                </div>
-              </div>
-            ) : null}
+          <div className="hidden items-center gap-4 lg:flex">
+            <StorefrontLocationPicker compact className="max-w-[190px]" />
+            <HeaderAction href="/account/wishlist" label="Wishlist" icon={<Heart className="h-5 w-5" />} />
+            <HeaderAction
+              href="/cart"
+              label="Cart"
+              icon={<ShoppingCart className="h-5 w-5" />}
+              badge={totals.itemCount}
+            />
+            <HeaderAction href="/account" label="Account" icon={<UserRound className="h-5 w-5" />} />
           </div>
         </div>
+
+        <div className="mt-3 hidden items-center gap-3 lg:flex">
+          <CategoryMenu categories={categories} />
+          <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
+            {primaryCategories.map((category, index) => {
+              const Icon = categoryIcons[index % categoryIcons.length] ?? PackageSearch;
+              return (
+                <NavPill
+                  key={category.id}
+                  href={`/categories/${category.slug}`}
+                  label={category.name}
+                  active={isActivePath(pathname, `/categories/${category.slug}`)}
+                  icon={<Icon className="h-4 w-4" />}
+                />
+              );
+            })}
+          </nav>
+          <MoreMenu
+            categories={secondaryCategories}
+            cmsItems={cmsItems}
+            marketCountries={marketCountries}
+            marketValue={market.countryCode}
+            onMarketChange={market.setCountryCode}
+          />
+          <div className="shrink-0">
+            <AuthActions />
+          </div>
+        </div>
+
       </div>
     </header>
   );
 }
 
-function BrandBlock({ compact = false }: { compact?: boolean }) {
+function MobileBrandLogo() {
+  return (
+    <Link href="/" className="flex min-w-0 items-center gap-1.5" aria-label="1HandIndia home">
+      <span className="text-4xl font-black leading-none text-[#ED3500]">1</span>
+      <span className="whitespace-nowrap text-[24px] font-black leading-none tracking-normal text-[#111827]">
+        Hand<span className="text-[#ED3500]">India</span>
+      </span>
+    </Link>
+  );
+}
+
+function MobileCategoryShortcut({
+  href,
+  label,
+  icon,
+  active,
+}: {
+  href: string;
+  label: string;
+  icon: ReactNode;
+  active: boolean;
+}) {
   return (
     <Link
-      href="/"
-      className={cn("flex min-w-0 items-center gap-3", compact ? "gap-2.5" : "")}
-      aria-label="1HandIndia home"
+      href={href}
+      className={cn(
+        "flex min-w-0 flex-col items-center gap-2 text-center text-[11px] font-bold text-[#111827]",
+        active && "text-[#ED3500]",
+      )}
     >
       <span
         className={cn(
-          "grid place-items-center rounded-[18px] bg-[#163B5C] font-black text-white shadow-[0_14px_34px_rgba(22,59,92,0.18)]",
-          compact ? "h-11 w-11 text-sm" : "h-14 w-14 text-lg"
+          "grid h-14 w-14 place-items-center rounded-full border bg-white shadow-[0_10px_24px_rgba(22,59,92,0.06)]",
+          active ? "border-[#FFE0D6] text-[#ED3500]" : "border-[#E8EDF2] text-[#111827]",
         )}
       >
-        1HI
+        {icon}
+      </span>
+      <span className="line-clamp-2 min-h-8 leading-4">{label}</span>
+    </Link>
+  );
+}
+
+function BrandBlock() {
+  return (
+    <Link href="/" className="flex min-w-0 items-center gap-2" aria-label="1HandIndia home">
+      <span className="relative grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#ED3500] text-lg font-black text-white shadow-[0_12px_26px_rgba(237,53,0,0.2)]">
+        1
       </span>
       <span className="min-w-0">
-        <span className="block text-[11px] font-black uppercase tracking-[0.28em] text-[#ED3500]">
-          Seller to shopper
+        <span className="block whitespace-nowrap text-[22px] font-black leading-none tracking-normal text-[#111827]">
+          Hand<span className="text-[#ED3500]">India</span>
         </span>
-        <span className={cn("block font-black leading-none text-[#163B5C]", compact ? "text-xl" : "text-[2rem]")}>
-          1HandIndia
+        <span className="mt-1 hidden truncate text-[10px] font-semibold leading-none text-[#667085] sm:block">
+          Smart shopping, verified sellers.
         </span>
-        {!compact ? (
-          <span className="mt-1 block max-w-sm text-xs font-semibold leading-5 text-[#667085]">
-            Local stores, trusted catalogue, and serious marketplace operations.
+      </span>
+    </Link>
+  );
+}
+
+function HeaderAction({
+  href,
+  label,
+  icon,
+  badge,
+}: {
+  href: string;
+  label: string;
+  icon: ReactNode;
+  badge?: number;
+}) {
+  return (
+    <Link href={href} className="relative flex items-center gap-2 text-sm font-black text-[#1F2933] transition hover:text-[#ED3500]">
+      <span className="relative text-[#1F2933]">
+        {icon}
+        {badge && badge > 0 ? (
+          <span className="absolute -right-2 -top-2 grid h-5 min-w-5 place-items-center rounded-full bg-[#ED3500] px-1 text-[10px] font-black text-white">
+            {badge}
           </span>
         ) : null}
       </span>
+      <span>{label}</span>
+    </Link>
+  );
+}
+
+function CategoryMenu({ categories }: { categories: CategorySummary[] }) {
+  return (
+    <Menu as="div" className="relative shrink-0">
+      <MenuButton className="inline-flex h-12 items-center gap-2 rounded-[12px] bg-[#ED3500] px-4 text-sm font-black text-white shadow-[0_12px_28px_rgba(237,53,0,0.22)] transition hover:bg-[#d52f00]">
+        <Grid3X3 className="h-4 w-4" aria-hidden="true" />
+        All Categories
+        <ChevronDown className="h-4 w-4" aria-hidden="true" />
+      </MenuButton>
+      <MenuItems
+        anchor="bottom start"
+        className="z-[90] mt-2 grid w-72 origin-top rounded-[18px] border border-[#FFE0D6] bg-white p-2 shadow-[0_22px_70px_rgba(22,59,92,0.16)] outline-none"
+      >
+        {categories.length ? (
+          categories.slice(0, 12).map((category, index) => {
+            const Icon = categoryIcons[index % categoryIcons.length] ?? PackageSearch;
+            return (
+              <MenuItem key={category.id}>
+                <Link
+                  href={`/categories/${category.slug}`}
+                  className="flex items-center gap-3 rounded-[14px] px-3 py-2.5 text-sm font-bold text-[#1F2933] data-focus:bg-[#FFF4EF] data-focus:text-[#ED3500]"
+                >
+                  <Icon className="h-4 w-4 shrink-0 text-[#ED3500]" aria-hidden="true" />
+                  <span className="min-w-0 flex-1 truncate">{category.name}</span>
+                  <span className="text-xs font-semibold text-[#98A2B3]">
+                    {category._count?.products ?? 0}
+                  </span>
+                </Link>
+              </MenuItem>
+            );
+          })
+        ) : (
+          <div className="px-3 py-2 text-sm font-semibold text-[#667085]">No active categories yet.</div>
+        )}
+      </MenuItems>
+    </Menu>
+  );
+}
+
+function NavPill({
+  href,
+  label,
+  icon,
+  active,
+}: {
+  href: string;
+  label: string;
+  icon: ReactNode;
+  active: boolean;
+}) {
+  return (
+    <Link
+      href={href}
+      className={cn(
+        "inline-flex h-11 shrink-0 items-center gap-2 border-r border-[#E8EDF2] px-5 text-sm font-black transition last:border-r-0",
+        active ? "text-[#ED3500]" : "text-[#1F2933] hover:text-[#ED3500]",
+      )}
+    >
+      <span className={active ? "text-[#ED3500]" : "text-[#667085]"}>{icon}</span>
+      <span className="max-w-[140px] truncate">{label}</span>
+    </Link>
+  );
+}
+
+function MoreMenu({
+  categories,
+  cmsItems,
+  marketCountries,
+  marketValue,
+  onMarketChange,
+}: {
+  categories: CategorySummary[];
+  cmsItems: HeaderNavItem[];
+  marketCountries: Array<{ code: string; name: string; currency: string }>;
+  marketValue: string;
+  onMarketChange: (code: string) => void;
+}) {
+  const moreLinks = [
+    ...categories.map((category) => ({
+      label: category.name,
+      href: `/categories/${category.slug}`,
+    })),
+    ...cmsItems,
+  ];
+
+  return (
+    <Menu as="div" className="relative shrink-0">
+      <MenuButton className="inline-flex h-11 items-center gap-2 px-4 text-sm font-black text-[#1F2933] transition hover:text-[#ED3500]">
+        More <ChevronDown className="h-4 w-4" aria-hidden="true" />
+      </MenuButton>
+      <MenuItems
+        anchor="bottom end"
+        className="z-[90] mt-2 w-72 origin-top-right rounded-[18px] border border-[#FFE0D6] bg-white p-2 shadow-[0_22px_70px_rgba(22,59,92,0.16)] outline-none"
+      >
+        {moreLinks.map((item) => (
+          <MenuItem key={`${item.href}-${item.label}`}>
+            <NavAnchor item={item} className="block rounded-[14px] px-3 py-2.5 text-sm font-bold text-[#1F2933] data-focus:bg-[#FFF4EF] data-focus:text-[#ED3500]">
+              {item.label}
+            </NavAnchor>
+          </MenuItem>
+        ))}
+        <div className="mt-2 border-t border-[#FFE0D6] pt-2">
+          <MarketPicker
+            marketCountries={marketCountries}
+            value={marketValue}
+            onChange={onMarketChange}
+            className="w-full justify-between"
+          />
+        </div>
+      </MenuItems>
+    </Menu>
+  );
+}
+
+function MobileLink({
+  href,
+  label,
+  icon,
+  onNavigate,
+}: {
+  href: string;
+  label: string;
+  icon: ReactNode;
+  onNavigate: () => void;
+}) {
+  return (
+    <Link
+      href={href}
+      onClick={onNavigate}
+      className="flex items-center gap-3 rounded-[16px] border border-[#FFE0D6] bg-white px-3 py-3 text-sm font-black text-[#1F2933]"
+    >
+      <span className="grid h-9 w-9 place-items-center rounded-full bg-[#FFF0EC] text-[#ED3500]">{icon}</span>
+      {label}
     </Link>
   );
 }
@@ -299,7 +533,7 @@ function MarketPicker({
   marketCountries,
   value,
   onChange,
-  className
+  className,
 }: {
   marketCountries: Array<{ code: string; name: string; currency: string }>;
   value: string;
@@ -348,22 +582,16 @@ function MarketPicker({
       <button
         type="button"
         onClick={() => setIsOpen((current) => !current)}
-        onKeyDown={(event) => {
-          if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            setIsOpen(true);
-          }
-        }}
         className={cn(
-          "flex h-11 items-center gap-2 rounded-full border border-[#D8E2EA] bg-[#FCFDFE] px-3 text-xs font-black text-[#163B5C] shadow-sm outline-none transition hover:border-[#163B5C]/40 hover:bg-white focus-visible:border-[#ED3500] focus-visible:ring-4 focus-visible:ring-[#ED3500]/10",
-          className
+          "flex h-10 items-center gap-2 rounded-full border border-[#FFE0D6] bg-white px-3 text-xs font-black text-[#1F2933] shadow-sm outline-none transition hover:border-[#ED3500] focus-visible:ring-4 focus-visible:ring-[#ED3500]/10",
+          className,
         )}
         aria-label="Select market country and currency"
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         aria-controls={listboxId}
       >
-        <Globe2 className="h-4 w-4 shrink-0" aria-hidden="true" />
+        <Globe2 className="h-4 w-4 shrink-0 text-[#ED3500]" aria-hidden="true" />
         <span className="whitespace-nowrap">
           {selectedMarket ? `${selectedMarket.code} / ${selectedMarket.currency}` : "Market"}
         </span>
@@ -371,7 +599,7 @@ function MarketPicker({
       </button>
 
       {isOpen ? (
-        <div className="absolute right-0 top-full z-[90] mt-2 w-52 overflow-hidden rounded-2xl border border-[#D8E2EA] bg-white p-1.5 shadow-[0_22px_60px_rgba(22,59,92,0.18)] ring-1 ring-[#F4EADD]">
+        <div className="absolute right-0 top-full z-[95] mt-2 w-56 overflow-hidden rounded-[18px] border border-[#FFE0D6] bg-white p-1.5 shadow-[0_22px_60px_rgba(22,59,92,0.18)]">
           <div id={listboxId} role="listbox" aria-label="Market country and currency" className="max-h-72 overflow-y-auto">
             {marketCountries.map((country) => {
               const selected = country.code === value;
@@ -384,19 +612,20 @@ function MarketPicker({
                   aria-selected={selected}
                   onClick={() => chooseMarket(country.code)}
                   className={cn(
-                    "flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left transition",
+                    "flex w-full items-center justify-between gap-3 rounded-[14px] px-3 py-2.5 text-left transition",
                     selected
-                      ? "bg-[#163B5C] text-white shadow-sm"
-                      : "text-[#163B5C] hover:bg-[#FFF4EF] hover:text-[#ED3500]"
+                      ? "bg-[#ED3500] text-white shadow-sm"
+                      : "text-[#1F2933] hover:bg-[#FFF4EF] hover:text-[#ED3500]",
                   )}
                 >
                   <span className="min-w-0">
-                    <span className="block text-sm font-black">{country.code} / {country.currency}</span>
+                    <span className="block text-sm font-black">
+                      {country.code} / {country.currency}
+                    </span>
                     <span className={cn("mt-0.5 block truncate text-[11px] font-semibold", selected ? "text-white/75" : "text-[#667085]")}>
                       {country.name}
                     </span>
                   </span>
-                  {selected ? <span className="h-2 w-2 rounded-full bg-[#ED3500]" aria-hidden="true" /> : null}
                 </button>
               );
             })}
@@ -407,101 +636,25 @@ function MarketPicker({
   );
 }
 
-function HeaderNavLink({ item, pathname }: { item: HeaderNavItem; pathname: string }) {
-  const hasChildren = Boolean(item.children?.length);
-  const Icon = navIconForHref(item.href);
-
-  return (
-    <div className="group relative">
-      <NavAnchor
-        item={item}
-        className={cn(
-          "flex items-center gap-2 rounded-full border px-4 py-2.5 text-sm font-black transition",
-          isActivePath(pathname, item.href)
-            ? "border-[#163B5C] bg-[#163B5C] !text-white shadow-[0_12px_30px_rgba(22,59,92,0.16)] hover:!text-white [&_span]:!text-white [&_svg]:!text-white"
-            : "border-[#E8EDF2] bg-[#FCFDFE] text-[#163B5C] hover:border-[#ED3500] hover:text-[#ED3500]"
-        )}
-      >
-        {Icon ? <Icon className="h-4 w-4" aria-hidden="true" /> : null}
-        <span>{item.label}</span>
-        {hasChildren ? <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" /> : null}
-      </NavAnchor>
-      {hasChildren ? (
-        <div className="invisible absolute left-0 top-full z-[70] w-60 translate-y-2 rounded-[20px] border border-[#D8E2EA] bg-white p-2 opacity-0 shadow-xl transition group-hover:visible group-hover:translate-y-1 group-hover:opacity-100 group-focus-within:visible group-focus-within:translate-y-1 group-focus-within:opacity-100">
-          {item.children?.map((child) => (
-            <NavAnchor
-              key={`${child.href}-${child.label}`}
-              item={child}
-              className={cn(
-                "block rounded-2xl px-3 py-2.5 text-sm font-bold text-[#1F2933] hover:bg-[#FFF4EF]",
-                isActivePath(pathname, child.href) ? "bg-[#EAF1F7] text-[#163B5C]" : ""
-              )}
-            >
-              {child.label}
-            </NavAnchor>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function MobileNavLink({ item, onNavigate }: { item: HeaderNavItem; onNavigate: () => void }) {
-  const Icon = navIconForHref(item.href);
-
-  return (
-    <div className="overflow-hidden rounded-[22px] border border-[#E5E7EB] bg-white shadow-sm">
-      <NavAnchor
-        item={item}
-        onClick={onNavigate}
-        className="flex items-center gap-3 px-4 py-3 text-sm font-black text-[#163B5C]"
-      >
-        {Icon ? (
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-2xl bg-[#FFF4EF] text-[#ED3500]">
-            <Icon className="h-4 w-4" aria-hidden="true" />
-          </span>
-        ) : null}
-        <span>{item.label}</span>
-      </NavAnchor>
-      {item.children?.length ? (
-        <div className="space-y-1 border-t border-[#FFE0D6] px-3 py-2">
-          {item.children.map((child) => (
-            <NavAnchor
-              key={`${child.href}-${child.label}`}
-              item={child}
-              onClick={onNavigate}
-              className="block rounded-2xl px-3 py-2 text-sm font-bold text-[#4B587C]"
-            >
-              {child.label}
-            </NavAnchor>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 function NavAnchor({
   item,
   className,
-  onClick,
-  children
+  children,
 }: {
   item: HeaderNavItem;
   className: string;
-  onClick?: () => void;
   children: ReactNode;
 }) {
   if (isExternalHref(item.href)) {
     return (
-      <a href={item.href} target="_blank" rel="noreferrer" className={className} {...(onClick ? { onClick } : {})}>
+      <a href={item.href} target="_blank" rel="noreferrer" className={className}>
         {children}
       </a>
     );
   }
 
   return (
-    <Link href={item.href} className={className} {...(onClick ? { onClick } : {})}>
+    <Link href={item.href} className={className}>
       {children}
     </Link>
   );
@@ -511,42 +664,18 @@ function menuItemToNavItem(item: CmsMenuItem): HeaderNavItem {
   return {
     label: item.label,
     href: item.href,
-    children: item.children?.map(menuItemToNavItem) ?? []
+    children: item.children?.map(menuItemToNavItem) ?? [],
   };
 }
 
-function navIconForHref(href: string): NavIcon | null {
-  if (href.startsWith("/categories")) {
-    return LayoutGrid;
+function isActivePath(pathname: string, href: string) {
+  if (href === "/") {
+    return pathname === href;
   }
 
-  if (href.startsWith("/stores")) {
-    return Store;
-  }
-
-  if (href.startsWith("/track-order")) {
-    return Truck;
-  }
-
-  if (href.startsWith("/contact")) {
-    return Headset;
-  }
-
-  if (href.startsWith("/seller")) {
-    return Store;
-  }
-
-  if (href.startsWith("/b2b")) {
-    return BriefcaseBusiness;
-  }
-
-  return null;
+  return pathname === href || pathname.startsWith(`${href}/`);
 }
 
 function isExternalHref(href: string) {
-  return /^https?:\/\//i.test(href);
-}
-
-function isActivePath(pathname: string, href: string) {
-  return !isExternalHref(href) && (pathname === href || (href !== "/" && pathname.startsWith(`${href}/`)));
+  return /^(https?:)?\/\//i.test(href) || href.startsWith("mailto:") || href.startsWith("tel:");
 }

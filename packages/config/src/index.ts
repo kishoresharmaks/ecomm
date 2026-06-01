@@ -38,6 +38,8 @@ export const phaseOneScope = {
 
 export const serverEnvSchema = z.object({
   DATABASE_URL: z.string().min(1),
+  DATABASE_DIRECT_URL: z.string().optional(),
+  DATABASE_READ_URL: z.string().optional(),
   API_PORT: z.coerce.number().int().positive().default(4000),
   API_CORS_ORIGINS: z.string().default("http://localhost:3000"),
   REDIS_URL: z.string().optional(),

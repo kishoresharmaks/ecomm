@@ -27,6 +27,7 @@ import {
   type ProductSummary,
 } from "@/lib/storefront-api";
 import { StorefrontImage } from "./storefront-image";
+import { getStorefrontStockStatus } from "./storefront-stock-status";
 import { StorefrontNotice, StorefrontQuantityStepper } from "./storefront-ui";
 import { useStorefrontWishlist } from "./use-storefront-wishlist";
 
@@ -57,6 +58,7 @@ export function ProductQuickViewModal({ product, open, onClose }: ProductQuickVi
   const listingMode = product?.listingMode ?? "CART";
   const isEnquiryOnly = listingMode === "ENQUIRY_ONLY";
   const hasStock = Boolean(variant && variant.stockQuantity > 0);
+  const stockStatus = getStorefrontStockStatus(variant?.stockQuantity);
   const imageUrl = product?.images[imageIndex]?.url ?? (product ? primaryImage(product) : null);
   const mrp = variant?.mrpPaise && variant.mrpPaise > variant.pricePaise ? variant.mrpPaise : null;
   const isWishlisted = product ? wishlist.hasWishlistProduct(product.id) : false;
@@ -179,8 +181,8 @@ export function ProductQuickViewModal({ product, open, onClose }: ProductQuickVi
                 </DialogTitle>
 
                 <div className="mt-4 flex flex-wrap items-center gap-2">
-                  <StatusBadge tone={isEnquiryOnly ? "warning" : hasStock ? "success" : "danger"}>
-                    {isEnquiryOnly ? "Enquiry required" : hasStock ? `${variant?.stockQuantity ?? 0} available` : "Unavailable"}
+                  <StatusBadge tone={isEnquiryOnly ? "warning" : stockStatus.tone}>
+                    {isEnquiryOnly ? "Enquiry required" : stockStatus.label}
                   </StatusBadge>
                   <StatusBadge tone="info">{product.category.name}</StatusBadge>
                   {product.isFeatured ? <StatusBadge tone="warning">Featured</StatusBadge> : null}
@@ -243,10 +245,13 @@ export function ProductQuickViewModal({ product, open, onClose }: ProductQuickVi
                         size="lg"
                         disabled={!variant || !hasStock || addMutation.isPending}
                         onClick={() => addMutation.mutate()}
-                        className="h-12 rounded-md bg-[#163B5C] hover:bg-[#0f2d46]"
+                        className={cn(
+                          "h-12 rounded-md bg-[#163B5C] hover:bg-[#0f2d46]",
+                          (!variant || !hasStock) && "bg-[#FFF0EC] text-[#C4320A] hover:bg-[#FFF0EC] [&_svg]:text-[#C4320A]",
+                        )}
                       >
                         <ShoppingCart className="h-5 w-5" aria-hidden="true" />
-                        {addMutation.isPending ? "Adding" : "Add to cart"}
+                        {!variant ? "Unavailable" : !hasStock ? "Sold out" : addMutation.isPending ? "Adding" : "Add to cart"}
                       </Button>
                     </div>
                   )}

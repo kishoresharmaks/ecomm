@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from "@nestjs/swagger";
-import { IsEnum, IsOptional, IsString, Max, Min } from "class-validator";
+import { IsEnum, IsOptional, IsString, Max, MaxLength, Min } from "class-validator";
 import { EmailRecipientType, EmailTemplateCategory, NotificationStatus } from "@indihub/database";
 import { Type } from "class-transformer";
 
@@ -46,4 +46,10 @@ export class NotificationQueryDto {
   @Min(1)
   @Max(100)
   limit?: number;
+
+  @ApiPropertyOptional({ description: "Opaque cursor returned by a previous list response." })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  cursor?: string;
 }

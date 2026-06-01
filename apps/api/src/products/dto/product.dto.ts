@@ -82,6 +82,34 @@ export class ProductVariantDto {
   @Min(0)
   stockQuantity?: number;
 
+  @ApiPropertyOptional({ example: 500, description: "Packed variant weight in grams for courier booking." })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  packageWeightGrams?: number;
+
+  @ApiPropertyOptional({ example: 20, description: "Packed variant length in centimetres." })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  packageLengthCm?: number;
+
+  @ApiPropertyOptional({ example: 15, description: "Packed variant breadth in centimetres." })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  packageBreadthCm?: number;
+
+  @ApiPropertyOptional({ example: 8, description: "Packed variant height in centimetres." })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  packageHeightCm?: number;
+
   @ApiPropertyOptional({ enum: VariantStatus, default: VariantStatus.ACTIVE })
   @IsOptional()
   @IsEnum(VariantStatus)

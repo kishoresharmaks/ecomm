@@ -83,7 +83,17 @@ export class SupportService {
 
     return this.prisma.client.supportRequest.findMany({
       where,
-      include: { user: true },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            phone: true,
+            fullName: true,
+            status: true,
+          },
+        },
+      },
       orderBy: { createdAt: "desc" },
       take: 100,
     });

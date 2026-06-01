@@ -1,6 +1,12 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { ApprovalStatus, OrderStatus, PaymentStatus, Prisma, SellerOrderStatus, SellerPayoutStatus, SellerSettlementStatus, SellerStatus } from "@indihub/database";
-import { paginationFromQuery } from "../common/pagination";
+import {
+  createdAtCursorOrderBy,
+  createdAtCursorWhere,
+  cursorPageFromItems,
+  cursorPaginationFromQuery,
+  paginationFromQuery,
+} from "../common/pagination";
 import { RequestUser } from "../auth/types/indihub-request";
 import { PrismaService } from "../prisma/prisma.service";
 import { readBooleanSetting, readNumberSetting } from "../settings/setting-value-utils";
@@ -42,47 +48,45 @@ export class SellerPayoutsService {
   ) {}
 
   async listPayouts(query: PayoutQueryDto, sellerIdFromAuth?: string) {
-    const { page, skip, take } = paginationFromQuery(query, { defaultLimit: 20, maxLimit: 100 });
     const sellerId = sellerIdFromAuth ?? query.sellerId;
+    const search = query.search?.trim();
     const where: Prisma.SellerPayoutWhereInput = {
       ...(sellerId ? { sellerId } : {}),
       ...(query.status ? { status: query.status } : {}),
-      ...(query.search
+      ...(search
         ? {
             OR: [
-              { payoutNumber: { contains: query.search, mode: "insensitive" } },
-              { seller: { storeName: { contains: query.search, mode: "insensitive" } } },
-              { transactionReference: { contains: query.search, mode: "insensitive" } }
+              { payoutNumber: { contains: search, mode: "insensitive" } },
+              { seller: { storeName: { contains: search, mode: "insensitive" } } },
+              { transactionReference: { contains: search, mode: "insensitive" } }
             ]
           }
         : {})
     };
 
+    if (query.cursor) {
+      const { take, cursor } = cursorPaginationFromQuery(query, {
+        defaultLimit: 20,
+        maxLimit: 100
+      });
+      const cursorWhere = createdAtCursorWhere(cursor) as Prisma.SellerPayoutWhereInput | undefined;
+      const items = await this.prisma.client.sellerPayout.findMany({
+        where: cursorWhere ? { AND: [where, cursorWhere] } : where,
+        include: this.payoutListInclude(),
+        orderBy: createdAtCursorOrderBy(),
+        take: take + 1
+      });
+      const pageResult = cursorPageFromItems(items, take);
+
+      return { ...pageResult, limit: take };
+    }
+
+    const { page, skip, take } = paginationFromQuery(query, { defaultLimit: 20, maxLimit: 100 });
     const [items, total] = await this.prisma.client.$transaction(async (tx) => {
       const items = await tx.sellerPayout.findMany({
         where,
-        include: {
-          seller: {
-            select: {
-              id: true,
-              storeName: true,
-              slug: true,
-              payoutProfile: {
-                select: {
-                  accountHolderName: true,
-                  bankName: true,
-                  accountNumber: true,
-                  ifscCode: true,
-                  upiId: true,
-                  isVerified: true
-                }
-              }
-            }
-          },
-          settlementRun: { select: { id: true, runNumber: true, status: true } },
-          _count: { select: { orderSplits: true, ledgerEntries: true, statements: true } }
-        },
-        orderBy: { createdAt: "desc" },
+        include: this.payoutListInclude(),
+        orderBy: createdAtCursorOrderBy(),
         skip,
         take
       });
@@ -91,6 +95,30 @@ export class SellerPayoutsService {
     });
 
     return { items, total, page, limit: take };
+  }
+
+  private payoutListInclude() {
+    return {
+      seller: {
+        select: {
+          id: true,
+          storeName: true,
+          slug: true,
+          payoutProfile: {
+            select: {
+              accountHolderName: true,
+              bankName: true,
+              accountNumber: true,
+              ifscCode: true,
+              upiId: true,
+              isVerified: true
+            }
+          }
+        }
+      },
+      settlementRun: { select: { id: true, runNumber: true, status: true } },
+      _count: { select: { orderSplits: true, ledgerEntries: true, statements: true } }
+    } satisfies Prisma.SellerPayoutInclude;
   }
 
   async sellerPayoutAvailability(sellerId: string) {
@@ -133,7 +161,14 @@ export class SellerPayoutsService {
         const updated = await tx.orderSellerSplit.updateMany({
           where: {
             id: split.id,
-            payoutId: null
+            sellerId,
+            payoutId: null,
+            sellerStatus: { not: SellerOrderStatus.CANCELLED },
+            settlementStatus: { in: [SellerSettlementStatus.NOT_ELIGIBLE, SellerSettlementStatus.ELIGIBLE] },
+            order: {
+              orderStatus: OrderStatus.DELIVERED,
+              paymentStatus: { in: [PaymentStatus.PAID, PaymentStatus.NOT_REQUIRED] }
+            }
           },
           data: {
             payoutId: payout.id,
@@ -217,8 +252,16 @@ export class SellerPayoutsService {
         throw new BadRequestException("Only payouts pending approval can be approved.");
       }
 
-      await tx.sellerPayout.update({
-        where: { id: payoutId },
+      const splitSummary = await this.payoutSplitSummary(tx, payoutId);
+      if (splitSummary.count < 1) {
+        throw new BadRequestException("Payout has no linked order splits.");
+      }
+      if (splitSummary.netPayablePaise !== payout.netPayablePaise) {
+        throw new ConflictException("Payout split totals changed. Refresh and try again.");
+      }
+
+      const payoutUpdate = await tx.sellerPayout.updateMany({
+        where: { id: payoutId, status: SellerPayoutStatus.PENDING_APPROVAL },
         data: {
           status: SellerPayoutStatus.APPROVED,
           approvedById: actor.id,
@@ -226,14 +269,24 @@ export class SellerPayoutsService {
           note: dto.note ?? payout.note
         }
       });
+      if (payoutUpdate.count !== 1) {
+        throw new ConflictException("Payout status changed. Refresh and try again.");
+      }
 
-      await tx.orderSellerSplit.updateMany({
-        where: { payoutId },
+      const splitUpdate = await tx.orderSellerSplit.updateMany({
+        where: {
+          payoutId,
+          sellerStatus: { not: SellerOrderStatus.CANCELLED },
+          settlementStatus: SellerSettlementStatus.DRAFTED
+        },
         data: {
           settlementStatus: SellerSettlementStatus.APPROVED,
           settledAt: new Date()
         }
       });
+      if (splitUpdate.count !== splitSummary.count) {
+        throw new ConflictException("Payout splits changed. Refresh and try again.");
+      }
 
       await this.ledger.postPayoutApprovalEntries(tx, payoutId, actor);
       await this.createEvent(tx, payoutId, "payout.approved", payout.status, SellerPayoutStatus.APPROVED, actor, dto.note);
@@ -260,16 +313,22 @@ export class SellerPayoutsService {
         throw new BadRequestException("Only draft or pending payouts can be rejected.");
       }
 
-      await tx.sellerPayout.update({
-        where: { id: payoutId },
+      const payoutUpdate = await tx.sellerPayout.updateMany({
+        where: { id: payoutId, status: { in: rejectableStatuses } },
         data: {
           status: SellerPayoutStatus.REJECTED,
           note: dto.note ?? payout.note
         }
       });
+      if (payoutUpdate.count !== 1) {
+        throw new ConflictException("Payout status changed. Refresh and try again.");
+      }
 
       await tx.orderSellerSplit.updateMany({
-        where: { payoutId },
+        where: {
+          payoutId,
+          settlementStatus: { in: [SellerSettlementStatus.DRAFTED, SellerSettlementStatus.APPROVED] }
+        },
         data: {
           payoutId: null,
           settlementStatus: SellerSettlementStatus.ELIGIBLE
@@ -299,8 +358,16 @@ export class SellerPayoutsService {
         throw new BadRequestException("Only approved payouts can be marked paid.");
       }
 
-      await tx.sellerPayout.update({
-        where: { id: payoutId },
+      const splitSummary = await this.payoutSplitSummary(tx, payoutId);
+      if (splitSummary.count < 1) {
+        throw new BadRequestException("Payout has no linked order splits.");
+      }
+      if (splitSummary.netPayablePaise !== payout.netPayablePaise) {
+        throw new ConflictException("Payout split totals changed. Refresh and try again.");
+      }
+
+      const payoutUpdate = await tx.sellerPayout.updateMany({
+        where: { id: payoutId, status: SellerPayoutStatus.APPROVED },
         data: {
           status: SellerPayoutStatus.PAID,
           paymentMode: dto.paymentMode,
@@ -310,13 +377,19 @@ export class SellerPayoutsService {
           note: dto.note ?? payout.note
         }
       });
+      if (payoutUpdate.count !== 1) {
+        throw new ConflictException("Payout status changed. Refresh and try again.");
+      }
 
-      await tx.orderSellerSplit.updateMany({
-        where: { payoutId },
+      const splitUpdate = await tx.orderSellerSplit.updateMany({
+        where: { payoutId, settlementStatus: SellerSettlementStatus.APPROVED },
         data: {
           settlementStatus: SellerSettlementStatus.PAID
         }
       });
+      if (splitUpdate.count !== splitSummary.count) {
+        throw new ConflictException("Payout splits changed. Refresh and try again.");
+      }
 
       await this.ledger.postPayoutPaidEntry(tx, payoutId, actor);
       await this.createEvent(tx, payoutId, "payout.marked_paid", payout.status, SellerPayoutStatus.PAID, actor, dto.note);
@@ -355,6 +428,19 @@ export class SellerPayoutsService {
         data: { status: nextStatus }
       });
     }
+  }
+
+  private async payoutSplitSummary(tx: Prisma.TransactionClient, payoutId: string) {
+    const summary = await tx.orderSellerSplit.aggregate({
+      where: { payoutId },
+      _count: { _all: true },
+      _sum: { netPayablePaise: true }
+    });
+
+    return {
+      count: summary._count._all,
+      netPayablePaise: summary._sum.netPayablePaise ?? 0
+    };
   }
 
   private createEvent(

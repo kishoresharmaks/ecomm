@@ -10,6 +10,7 @@ import {
   BookCourierShipmentDto,
   CourierCodRemittanceQueryDto,
   CourierShipmentQueryDto,
+  ImportCourierCodRemittanceReportDto,
   UpdateCourierTrackingDto,
   UpsertCourierCodRemittanceDto,
   VerifyCourierCodRemittanceDto,
@@ -64,6 +65,15 @@ export class FinanceCourierCodRemittancesController {
   @ApiOperation({ summary: "Import or update a courier COD remittance report row." })
   upsertRemittance(@CurrentUser() actor: RequestUser, @Body() dto: UpsertCourierCodRemittanceDto) {
     return this.courierLogistics.upsertCourierCodRemittance(actor, dto);
+  }
+
+  @Post("report")
+  @ApiOperation({ summary: "Import a courier COD remittance report with multiple package rows." })
+  importRemittanceReport(
+    @CurrentUser() actor: RequestUser,
+    @Body() dto: ImportCourierCodRemittanceReportDto,
+  ) {
+    return this.courierLogistics.importCourierCodRemittanceReport(actor, dto);
   }
 
   @Patch(":remittanceId/verify")

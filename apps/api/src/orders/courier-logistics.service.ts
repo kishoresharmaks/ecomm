@@ -10,6 +10,7 @@ import {
   CodCollectionSource,
   CodCollectionStatus,
   CourierCodRemittanceStatus,
+  CourierProviderMode,
   CourierShipmentStatus,
   CourierWebhookEventStatus,
   DeliveryMode,
@@ -23,10 +24,19 @@ import {
 } from "@indihub/database";
 import type { RequestUser } from "../auth/types/indihub-request";
 import { PrismaService } from "../prisma/prisma.service";
+import { CourierAdapterRegistry } from "./courier-adapters/courier-adapter.registry";
+import type {
+  CourierBookingAddress,
+  CourierBookingItem,
+  CourierBookingPackage,
+  CourierBookingResult,
+  CourierProviderAdapterSnapshot,
+} from "./courier-adapters/courier-adapter.types";
 import {
   BookCourierShipmentDto,
   CourierCodRemittanceQueryDto,
   CourierShipmentQueryDto,
+  ImportCourierCodRemittanceReportDto,
   UpdateCourierTrackingDto,
   UpsertCourierCodRemittanceDto,
   VerifyCourierCodRemittanceDto,
@@ -34,7 +44,40 @@ import {
 
 type CourierProviderSnapshot = {
   webhookSecret?: string | null;
+  adapterCode?: string | null;
+  liveApiCallsEnabled?: boolean;
+  defaultPackage?: {
+    weightGrams?: number | null;
+    lengthCm?: number | null;
+    breadthCm?: number | null;
+    heightCm?: number | null;
+  } | null;
 };
+
+type CourierBookOrderShipment = Prisma.OrderShipmentGetPayload<{
+  include: {
+    order: {
+      include: {
+        payments: true;
+        shipments: true;
+        customer: { include: { user: true } };
+      };
+    };
+    seller: {
+      include: {
+        profile: true;
+        addresses: true;
+        courierProviderSettings: true;
+      };
+    };
+    courierShipment: true;
+    courierCodRemittance: true;
+  };
+}>;
+
+type CourierBookingOrderItem = Prisma.OrderItemGetPayload<{
+  include: { productVariant: true };
+}>;
 
 const deliveryStatusRank = {
   [DeliveryStatus.NOT_ASSIGNED]: 0,
@@ -48,7 +91,10 @@ const deliveryStatusRank = {
 
 @Injectable()
 export class CourierLogisticsService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(CourierAdapterRegistry) private readonly courierAdapters: CourierAdapterRegistry,
+  ) {}
 
   async listCourierShipments(query: CourierShipmentQueryDto) {
     const take = Math.min(query.limit ?? 50, 100);
@@ -84,8 +130,20 @@ export class CourierLogisticsService {
     const orderShipment = await this.prisma.client.orderShipment.findUnique({
       where: { shipmentNumber },
       include: {
-        order: { include: { payments: true, shipments: true } },
-        seller: true,
+        order: {
+          include: {
+            payments: true,
+            shipments: true,
+            customer: { include: { user: true } },
+          },
+        },
+        seller: {
+          include: {
+            profile: true,
+            addresses: true,
+            courierProviderSettings: { where: { providerCode, isActive: true } },
+          },
+        },
         courierShipment: true,
         courierCodRemittance: true,
       },
@@ -104,57 +162,70 @@ export class CourierLogisticsService {
       throw new BadRequestException("Courier provider is not active for routing.");
     }
 
-    const status = dto.awbNumber ? CourierShipmentStatus.BOOKED : CourierShipmentStatus.NOT_BOOKED;
+    let liveBooking: CourierBookingResult | null = null;
+    try {
+      liveBooking = await this.createLiveCourierBooking(orderShipment, provider, dto);
+    } catch (error) {
+      await this.recordCourierBookingFailure(actor, orderShipment, providerCode, error);
+      throw new BadRequestException(error instanceof Error ? error.message : "Courier booking failed.");
+    }
+    const resolvedAwbNumber = liveBooking?.awbNumber ?? dto.awbNumber?.trim() ?? null;
+    const resolvedProviderOrderId = liveBooking?.providerOrderId ?? dto.providerOrderId?.trim() ?? null;
+    const resolvedLabelUrl = liveBooking?.labelUrl ?? dto.labelUrl?.trim() ?? null;
+    const resolvedTrackingUrl = liveBooking?.trackingUrl ?? dto.trackingUrl?.trim() ?? null;
+    const status =
+      liveBooking?.trackingStatus ??
+      (resolvedAwbNumber ? CourierShipmentStatus.BOOKED : CourierShipmentStatus.NOT_BOOKED);
+    const statusLabel =
+      liveBooking?.trackingStatusLabel ??
+      dto.note ??
+      (resolvedAwbNumber ? "Shipment booked." : "Awaiting provider booking.");
+    const bookingPayloadSnapshot =
+      liveBooking?.bookingPayloadSnapshot ?? {
+        source: "ADMIN_PROVIDER_READY",
+        providerCode,
+        shipmentNumber,
+        note: dto.note ?? null,
+      };
+    const bookingResponseSnapshot =
+      liveBooking?.bookingResponseSnapshot ?? {
+        awbNumber: resolvedAwbNumber,
+        providerOrderId: resolvedProviderOrderId,
+        labelUrl: resolvedLabelUrl,
+      };
     const orderId = await this.prisma.client.$transaction(async (tx) => {
       const courierShipment = await tx.courierShipment.upsert({
         where: { orderShipmentId: orderShipment.id },
         update: {
           providerCode,
-          providerOrderId: dto.providerOrderId?.trim() || null,
-          awbNumber: dto.awbNumber?.trim() || null,
+          providerOrderId: resolvedProviderOrderId,
+          awbNumber: resolvedAwbNumber,
           trackingStatus: status,
-          trackingStatusLabel: dto.note ?? (dto.awbNumber ? "Shipment booked." : "Awaiting provider booking."),
-          trackingUrl: dto.trackingUrl?.trim() || null,
-          labelUrl: dto.labelUrl?.trim() || null,
+          trackingStatusLabel: statusLabel,
+          trackingUrl: resolvedTrackingUrl,
+          labelUrl: resolvedLabelUrl,
           bookingAttemptCount: { increment: 1 },
-          bookingError: null,
-          bookedAt: dto.awbNumber ? new Date() : null,
-          bookingPayloadSnapshot: {
-            source: "ADMIN_PROVIDER_READY",
-            providerCode,
-            shipmentNumber,
-            note: dto.note ?? null,
-          },
-          bookingResponseSnapshot: {
-            awbNumber: dto.awbNumber?.trim() || null,
-            providerOrderId: dto.providerOrderId?.trim() || null,
-            labelUrl: dto.labelUrl?.trim() || null,
-          },
+          bookingError: status === CourierShipmentStatus.BOOKED ? null : liveBooking?.trackingStatusLabel ?? null,
+          bookedAt: status === CourierShipmentStatus.BOOKED ? new Date() : null,
+          bookingPayloadSnapshot: this.inputJson(bookingPayloadSnapshot),
+          bookingResponseSnapshot: this.inputJson(bookingResponseSnapshot),
         },
         create: {
           orderShipmentId: orderShipment.id,
           orderId: orderShipment.orderId,
           sellerId: orderShipment.sellerId,
           providerCode,
-          providerOrderId: dto.providerOrderId?.trim() || null,
-          awbNumber: dto.awbNumber?.trim() || null,
+          providerOrderId: resolvedProviderOrderId,
+          awbNumber: resolvedAwbNumber,
           trackingStatus: status,
-          trackingStatusLabel: dto.note ?? (dto.awbNumber ? "Shipment booked." : "Awaiting provider booking."),
-          trackingUrl: dto.trackingUrl?.trim() || null,
-          labelUrl: dto.labelUrl?.trim() || null,
+          trackingStatusLabel: statusLabel,
+          trackingUrl: resolvedTrackingUrl,
+          labelUrl: resolvedLabelUrl,
           bookingAttemptCount: 1,
-          bookedAt: dto.awbNumber ? new Date() : null,
-          bookingPayloadSnapshot: {
-            source: "ADMIN_PROVIDER_READY",
-            providerCode,
-            shipmentNumber,
-            note: dto.note ?? null,
-          },
-          bookingResponseSnapshot: {
-            awbNumber: dto.awbNumber?.trim() || null,
-            providerOrderId: dto.providerOrderId?.trim() || null,
-            labelUrl: dto.labelUrl?.trim() || null,
-          },
+          bookedAt: status === CourierShipmentStatus.BOOKED ? new Date() : null,
+          bookingError: status === CourierShipmentStatus.BOOKED ? null : liveBooking?.trackingStatusLabel ?? null,
+          bookingPayloadSnapshot: this.inputJson(bookingPayloadSnapshot),
+          bookingResponseSnapshot: this.inputJson(bookingResponseSnapshot),
         },
       });
 
@@ -163,10 +234,10 @@ export class CourierLogisticsService {
         data: {
           deliveryMode: DeliveryMode.THIRD_PARTY_COURIER,
           courierProviderCode: providerCode,
-          awbNumber: dto.awbNumber?.trim() || null,
+          awbNumber: resolvedAwbNumber,
           courierTrackingStatus: status,
-          labelUrl: dto.labelUrl?.trim() || null,
-          trackingReference: dto.awbNumber?.trim() || orderShipment.trackingReference,
+          labelUrl: resolvedLabelUrl,
+          trackingReference: resolvedAwbNumber ?? resolvedProviderOrderId ?? orderShipment.trackingReference,
           codCollectionSource: this.hasCodPayment(orderShipment.order.payments)
             ? CodCollectionSource.THIRD_PARTY_COURIER
             : orderShipment.codCollectionSource,
@@ -184,8 +255,9 @@ export class CourierLogisticsService {
           newValue: {
             providerCode,
             shipmentNumber,
-            awbNumber: dto.awbNumber?.trim() || null,
-            providerOrderId: dto.providerOrderId?.trim() || null,
+            awbNumber: resolvedAwbNumber,
+            providerOrderId: resolvedProviderOrderId,
+            source: liveBooking ? "LIVE_ADAPTER" : "MANUAL_PROVIDER_READY",
           },
         },
       });
@@ -424,6 +496,34 @@ export class CourierLogisticsService {
     return this.getOrderCourierSummary(orderId);
   }
 
+  async importCourierCodRemittanceReport(actor: RequestUser, dto: ImportCourierCodRemittanceReportDto) {
+    const processed: Array<{ shipmentNumber?: string; awbNumber?: string; orderNumber?: string }> = [];
+    for (const row of dto.rows) {
+      const rowDto: UpsertCourierCodRemittanceDto = { ...row };
+      const reportReference = row.reportReference ?? dto.reportReference;
+      if (reportReference !== undefined) {
+        rowDto.reportReference = reportReference;
+      }
+      const summary = await this.upsertCourierCodRemittance(actor, rowDto);
+      const processedRow: { shipmentNumber?: string; awbNumber?: string; orderNumber?: string } = {
+        orderNumber: summary.orderNumber,
+      };
+      if (row.shipmentNumber !== undefined) {
+        processedRow.shipmentNumber = row.shipmentNumber;
+      }
+      if (row.awbNumber !== undefined) {
+        processedRow.awbNumber = row.awbNumber;
+      }
+      processed.push(processedRow);
+    }
+
+    return {
+      total: processed.length,
+      reportReference: dto.reportReference ?? null,
+      items: processed,
+    };
+  }
+
   async verifyCourierCodRemittance(
     actor: RequestUser,
     remittanceId: string,
@@ -486,6 +586,216 @@ export class CourierLogisticsService {
     });
 
     return this.getOrderCourierSummary(orderId);
+  }
+
+  private async createLiveCourierBooking(
+    orderShipment: CourierBookOrderShipment,
+    provider: Prisma.CourierProviderSettingGetPayload<Record<string, never>>,
+    dto: BookCourierShipmentDto,
+  ): Promise<CourierBookingResult | null> {
+    if (dto.awbNumber?.trim() || provider.mode === CourierProviderMode.MANUAL) {
+      return null;
+    }
+    if (!provider.credentialsConfigured) {
+      throw new Error("Courier provider credentials are not configured.");
+    }
+
+    const snapshot = this.providerSnapshot(provider.settingsSnapshot) as CourierProviderAdapterSnapshot;
+    const adapter = this.courierAdapters.getAdapter(snapshot.adapterCode, provider.providerCode);
+    if (!adapter) {
+      throw new Error(`No live courier adapter is available for ${provider.providerCode}.`);
+    }
+
+    const bookingRequest = await this.buildCourierBookingRequest(orderShipment, provider.providerCode, snapshot, dto);
+    return adapter.bookShipment(bookingRequest);
+  }
+
+  private async recordCourierBookingFailure(
+    actor: RequestUser,
+    orderShipment: CourierBookOrderShipment,
+    providerCode: string,
+    error: unknown,
+  ) {
+    const message = error instanceof Error ? error.message : "Courier booking failed.";
+    await this.prisma.client.$transaction(async (tx) => {
+      await tx.courierShipment.upsert({
+        where: { orderShipmentId: orderShipment.id },
+        update: {
+          providerCode,
+          trackingStatus: CourierShipmentStatus.NOT_BOOKED,
+          trackingStatusLabel: "Courier booking failed.",
+          bookingAttemptCount: { increment: 1 },
+          bookingError: message,
+        },
+        create: {
+          orderShipmentId: orderShipment.id,
+          orderId: orderShipment.orderId,
+          sellerId: orderShipment.sellerId,
+          providerCode,
+          trackingStatus: CourierShipmentStatus.NOT_BOOKED,
+          trackingStatusLabel: "Courier booking failed.",
+          bookingAttemptCount: 1,
+          bookingError: message,
+          bookingPayloadSnapshot: {
+            source: "LIVE_ADAPTER_FAILURE",
+            shipmentNumber: orderShipment.shipmentNumber,
+            providerCode,
+          },
+        },
+      });
+      await tx.orderShipment.update({
+        where: { id: orderShipment.id },
+        data: {
+          courierProviderCode: providerCode,
+          courierTrackingStatus: CourierShipmentStatus.NOT_BOOKED,
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorUserId: actor.id,
+          action: "courier.shipment.booking_failed",
+          entityType: "order_shipment",
+          entityId: orderShipment.id,
+          newValue: {
+            providerCode,
+            shipmentNumber: orderShipment.shipmentNumber,
+            message,
+          },
+        },
+      });
+    });
+  }
+
+  private async buildCourierBookingRequest(
+    orderShipment: CourierBookOrderShipment,
+    providerCode: string,
+    settings: CourierProviderAdapterSnapshot,
+    dto: BookCourierShipmentDto,
+  ) {
+    const shippingAddress = this.readCourierAddressSnapshot(orderShipment.order.shippingAddressSnapshot);
+    if (!shippingAddress) {
+      throw new Error("Courier booking needs a delivery address snapshot.");
+    }
+    const sellerAddress = orderShipment.seller.addresses[0];
+    if (!sellerAddress) {
+      throw new Error("Courier booking needs a seller pickup address.");
+    }
+    const pickupLocationName =
+      orderShipment.seller.courierProviderSettings.find(
+        (setting) => setting.providerCode === providerCode && setting.isActive,
+      )?.pickupLocationName?.trim() ?? null;
+    if (!pickupLocationName) {
+      throw new Error(`Seller pickup location is missing for ${providerCode}.`);
+    }
+
+    const items = await this.prisma.client.orderItem.findMany({
+      where: { orderId: orderShipment.orderId, sellerId: orderShipment.sellerId },
+      include: { productVariant: true },
+      orderBy: { createdAt: "asc" },
+    });
+    if (!items.length) {
+      throw new Error("Courier booking needs at least one seller package item.");
+    }
+
+    const customerUser = orderShipment.order.customer.user;
+    const bookingAddress: CourierBookingAddress = {
+      ...shippingAddress,
+      fullName: shippingAddress.fullName ?? customerUser.fullName ?? "Customer",
+      email: customerUser.email,
+      phone: shippingAddress.phone ?? customerUser.phone,
+    };
+
+    return {
+      providerCode,
+      shipmentNumber: orderShipment.shipmentNumber,
+      orderNumber: orderShipment.order.orderNumber,
+      orderDate: orderShipment.order.createdAt,
+      currency: orderShipment.order.currency,
+      paymentMethod: this.hasCodPayment(orderShipment.order.payments) ? "COD" as const : "PREPAID" as const,
+      subtotalPaise: orderShipment.subtotalPaise,
+      codAmountPaise: this.expectedPackageCodAmountPaise(orderShipment.order, orderShipment),
+      pickupLocationName,
+      shippingAddress: bookingAddress,
+      sellerAddress: {
+        fullName: orderShipment.seller.storeName,
+        email: orderShipment.seller.profile?.contactEmail ?? null,
+        phone: orderShipment.seller.profile?.contactPhone ?? null,
+        line1: sellerAddress.line1,
+        line2: sellerAddress.line2,
+        area: sellerAddress.area,
+        city: sellerAddress.city,
+        state: sellerAddress.state,
+        pincode: sellerAddress.pincode,
+        country: sellerAddress.country,
+        countryCode: sellerAddress.countryCode,
+      },
+      items: items.map((item) => this.courierBookingItem(item)),
+      parcel: this.resolveCourierParcel(items, settings.defaultPackage),
+      note: dto.note ?? null,
+      settings,
+    };
+  }
+
+  private courierBookingItem(item: CourierBookingOrderItem): CourierBookingItem {
+    return {
+      name: item.productNameSnapshot,
+      sku: item.productVariant.sku,
+      quantity: item.quantity,
+      unitPricePaise: item.unitPricePaise,
+    };
+  }
+
+  private resolveCourierParcel(
+    items: CourierBookingOrderItem[],
+    defaults: CourierProviderAdapterSnapshot["defaultPackage"],
+  ): CourierBookingPackage {
+    const fallback = {
+      weightGrams: this.positiveInteger(defaults?.weightGrams, 500),
+      lengthCm: this.positiveInteger(defaults?.lengthCm, 20),
+      breadthCm: this.positiveInteger(defaults?.breadthCm, 15),
+      heightCm: this.positiveInteger(defaults?.heightCm, 8),
+    };
+    let weightGrams = 0;
+    let lengthCm = fallback.lengthCm;
+    let breadthCm = fallback.breadthCm;
+    let heightCm = fallback.heightCm;
+
+    for (const item of items) {
+      const variant = item.productVariant;
+      const itemWeight = this.positiveInteger(
+        variant.packageWeightGrams ?? this.jsonNumber(variant.attributes, "packageWeightGrams"),
+        fallback.weightGrams,
+      );
+      weightGrams += itemWeight * item.quantity;
+      lengthCm = Math.max(
+        lengthCm,
+        this.positiveInteger(
+          variant.packageLengthCm ?? this.jsonNumber(variant.attributes, "packageLengthCm"),
+          fallback.lengthCm,
+        ),
+      );
+      breadthCm = Math.max(
+        breadthCm,
+        this.positiveInteger(
+          variant.packageBreadthCm ?? this.jsonNumber(variant.attributes, "packageBreadthCm"),
+          fallback.breadthCm,
+        ),
+      );
+      heightCm = Math.max(
+        heightCm,
+        this.positiveInteger(
+          variant.packageHeightCm ?? this.jsonNumber(variant.attributes, "packageHeightCm"),
+          fallback.heightCm,
+        ),
+      );
+    }
+
+    return {
+      weightGrams: Math.max(weightGrams, fallback.weightGrams),
+      lengthCm,
+      breadthCm,
+      heightCm,
+    };
   }
 
   private async applyCourierTracking(
@@ -890,9 +1200,9 @@ export class CourierLogisticsService {
     }
   }
 
-  private providerSnapshot(value: Prisma.JsonValue | null): CourierProviderSnapshot {
+  private providerSnapshot(value: Prisma.JsonValue | null): CourierProviderSnapshot & CourierProviderAdapterSnapshot {
     return value && typeof value === "object" && !Array.isArray(value)
-      ? (value as CourierProviderSnapshot)
+      ? (value as CourierProviderSnapshot & CourierProviderAdapterSnapshot)
       : {};
   }
 
@@ -993,6 +1303,44 @@ export class CourierLogisticsService {
 
   private hasCodPayment(payments: Array<{ provider: PaymentProvider; method: string | null }>) {
     return payments.some((payment) => payment.provider === PaymentProvider.COD || payment.method === "COD");
+  }
+
+  private readCourierAddressSnapshot(value: Prisma.JsonValue | null): CourierBookingAddress | null {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return null;
+    }
+    const record = value as Record<string, unknown>;
+
+    return {
+      fullName: this.snapshotString(record.fullName),
+      phone: this.snapshotString(record.phone),
+      line1: this.snapshotString(record.line1),
+      line2: this.snapshotString(record.line2),
+      area: this.snapshotString(record.area),
+      city: this.snapshotString(record.city),
+      state: this.snapshotString(record.state),
+      pincode: this.snapshotString(record.pincode),
+      country: this.snapshotString(record.country),
+      countryCode: this.snapshotString(record.countryCode),
+    };
+  }
+
+  private snapshotString(value: unknown) {
+    return typeof value === "string" && value.trim() ? value.trim() : null;
+  }
+
+  private positiveInteger(value: unknown, fallback: number) {
+    const parsed = typeof value === "number" ? value : Number(value);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+  }
+
+  private jsonNumber(value: Prisma.JsonValue | null, key: string) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return null;
+    }
+    const raw = (value as Record<string, unknown>)[key];
+    const parsed = typeof raw === "number" ? raw : Number(raw);
+    return Number.isFinite(parsed) ? parsed : null;
   }
 
   private courierShipmentInclude() {

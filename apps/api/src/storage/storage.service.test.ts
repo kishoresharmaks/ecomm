@@ -2,7 +2,7 @@ import { ServiceUnavailableException } from "@nestjs/common";
 import { RoleCode } from "@indihub/database";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PublicImageUploadPurpose } from "./dto/public-image-upload.dto";
-import { assertManagedImageReference } from "./storage-image";
+import { assertManagedImageReference, normalizePublicImageReference } from "./storage-image";
 import { StorageService } from "./storage.service";
 import type { PrismaService } from "../prisma/prisma.service";
 
@@ -190,5 +190,22 @@ describe("StorageService", () => {
         "indihub/sellers/user_seller/profile/logo",
       ),
     ).toThrow("Store logo must be uploaded through the signed seller image flow.");
+  });
+
+  it("allows admin-managed public images to use storage keys or secure external urls", () => {
+    expect(normalizePublicImageReference("indihub/categories/stationery.jpg", "Category image")).toBe(
+      "indihub/categories/stationery.jpg",
+    );
+    expect(
+      normalizePublicImageReference(
+        "https://img.magnific.com/free-photo/modern-stationary-collection-arrangement_23-2149309649.jpg?semt=ais_hybrid&w=740&q=80",
+        "Category image",
+      ),
+    ).toBe(
+      "https://img.magnific.com/free-photo/modern-stationary-collection-arrangement_23-2149309649.jpg?semt=ais_hybrid&w=740&q=80",
+    );
+    expect(() =>
+      normalizePublicImageReference("http://img.magnific.com/category.jpg", "Category image"),
+    ).toThrow("Category image must be a secure HTTPS image URL or valid image storage key.");
   });
 });

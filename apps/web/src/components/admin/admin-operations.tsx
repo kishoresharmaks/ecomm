@@ -438,6 +438,12 @@ type CourierProviderRecord = {
   apiKeyConfigured?: boolean;
   apiSecretConfigured?: boolean;
   passwordConfigured?: boolean;
+  defaultPackage?: {
+    weightGrams?: number | null;
+    lengthCm?: number | null;
+    breadthCm?: number | null;
+    heightCm?: number | null;
+  } | null;
   liveApiCallsEnabled?: boolean;
   notes?: string | null;
 };
@@ -491,6 +497,10 @@ type CourierProviderFormState = {
   apiSecret: string;
   password: string;
   webhookSecret: string;
+  defaultPackageWeightGrams: string;
+  defaultPackageLengthCm: string;
+  defaultPackageBreadthCm: string;
+  defaultPackageHeightCm: string;
   credentialsConfigured: boolean;
   webhookSecretConfigured: boolean;
   notes: string;
@@ -1315,6 +1325,16 @@ const homepageSectionTypeOptions: AdminSelectOption[] = [
     description: "Short promotional row with a call to action.",
   },
   {
+    value: "seller_cta",
+    label: "Seller CTA",
+    description: "Become-a-seller homepage callout with managed benefit cards.",
+  },
+  {
+    value: "service_badges",
+    label: "Service badges",
+    description: "Small footer/storefront trust and service badges.",
+  },
+  {
     value: "trust_highlights",
     label: "Trust highlights",
     description: "Service, safety, delivery, or marketplace proof points.",
@@ -1332,6 +1352,9 @@ const homepageSectionKnownConfigKeys = new Set([
   "ctaLabel",
   "ctaUrl",
   "ctaHref",
+  "startsAt",
+  "endsAt",
+  "timerEndsAt",
   "items",
 ]);
 const emptyHomepageSectionDataSources: HomepageSectionDataSources = {
@@ -1373,6 +1396,8 @@ type HomepageSectionCreateFormState = {
   subtitle: string;
   ctaLabel: string;
   ctaUrl: string;
+  startsAt: string;
+  endsAt: string;
   items: HomepageSectionItemFormState[];
   status: string;
   sortOrder: string;
@@ -3275,6 +3300,9 @@ export function AdminOrderDetailPageClient({ orderNumber }: { orderNumber: strin
                       shipment.courierShipment?.awbNumber ??
                       shipment.awbNumber ??
                       "";
+                    const selectedCourierProvider = activeCourierProviders.find(
+                      (provider) => provider.providerCode === selectedProviderCode,
+                    );
                     const isCourierPackage = shipment.deliveryMode === "THIRD_PARTY_COURIER";
                     const remittance = shipment.courierCodRemittance;
                     const canVerifyRemittance = remittance?.status === "REMITTED";
@@ -3431,7 +3459,11 @@ export function AdminOrderDetailPageClient({ orderNumber }: { orderNumber: strin
                                   })
                                 }
                               >
-                                Save courier
+                                {selectedCourierProvider?.mode !== "MANUAL" &&
+                                selectedCourierProvider?.credentialsConfigured &&
+                                !awbNumber
+                                  ? "Book live"
+                                  : "Save courier"}
                               </Button>
                             </div>
 
@@ -5070,6 +5102,81 @@ function CourierProviderSettingsPanel({ authHeaders }: { authHeaders: IndihubAut
                     className="h-11 rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-semibold outline-none focus:border-[#ED3500]"
                   />
                 </label>
+              </div>
+              <div className="mt-4 rounded-md border border-[#E5E7EB] bg-white p-3">
+                <p className="text-xs font-black uppercase tracking-wide text-[#667085]">
+                  Default package fallback
+                </p>
+                <div className="mt-3 grid gap-3 md:grid-cols-4">
+                  <label className="grid gap-1.5">
+                    <span className="text-xs font-black uppercase text-[#667085]">
+                      Weight g
+                    </span>
+                    <input
+                      type="number"
+                      min={1}
+                      value={form.defaultPackageWeightGrams}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          defaultPackageWeightGrams: event.target.value,
+                        }))
+                      }
+                      className="h-11 rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-semibold outline-none focus:border-[#ED3500]"
+                    />
+                  </label>
+                  <label className="grid gap-1.5">
+                    <span className="text-xs font-black uppercase text-[#667085]">
+                      Length cm
+                    </span>
+                    <input
+                      type="number"
+                      min={1}
+                      value={form.defaultPackageLengthCm}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          defaultPackageLengthCm: event.target.value,
+                        }))
+                      }
+                      className="h-11 rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-semibold outline-none focus:border-[#ED3500]"
+                    />
+                  </label>
+                  <label className="grid gap-1.5">
+                    <span className="text-xs font-black uppercase text-[#667085]">
+                      Breadth cm
+                    </span>
+                    <input
+                      type="number"
+                      min={1}
+                      value={form.defaultPackageBreadthCm}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          defaultPackageBreadthCm: event.target.value,
+                        }))
+                      }
+                      className="h-11 rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-semibold outline-none focus:border-[#ED3500]"
+                    />
+                  </label>
+                  <label className="grid gap-1.5">
+                    <span className="text-xs font-black uppercase text-[#667085]">
+                      Height cm
+                    </span>
+                    <input
+                      type="number"
+                      min={1}
+                      value={form.defaultPackageHeightCm}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          defaultPackageHeightCm: event.target.value,
+                        }))
+                      }
+                      className="h-11 rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-semibold outline-none focus:border-[#ED3500]"
+                    />
+                  </label>
+                </div>
               </div>
             </div>
             <div className="grid gap-3 md:grid-cols-2">
@@ -12386,7 +12493,20 @@ function HomepageSectionFields({
           label="Section type"
           value={form.sectionType}
           options={typeOptions}
-          onChange={(sectionType) => setForm((current) => ({ ...current, sectionType }))}
+          onChange={(sectionType) =>
+            setForm((current) => ({
+              ...current,
+              sectionType,
+              ctaLabel:
+                sectionType === "deal_strip" && !current.ctaLabel.trim()
+                  ? "View all deals"
+                  : current.ctaLabel,
+              ctaUrl:
+                sectionType === "deal_strip" && !current.ctaUrl.trim()
+                  ? "/deals"
+                  : current.ctaUrl,
+            }))
+          }
           buttonClassName="bg-white"
         />
         <TextInput
@@ -12423,6 +12543,25 @@ function HomepageSectionFields({
           onChange={(ctaUrl) => setForm((current) => ({ ...current, ctaUrl }))}
         />
       </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        <TextInput
+          label="Start date"
+          type="datetime-local"
+          value={form.startsAt}
+          onChange={(startsAt) => setForm((current) => ({ ...current, startsAt }))}
+        />
+        <TextInput
+          label="End date"
+          type="datetime-local"
+          value={form.endsAt}
+          onChange={(endsAt) => setForm((current) => ({ ...current, endsAt }))}
+        />
+      </div>
+      {form.sectionType === "deal_strip" ? (
+        <p className="rounded-md bg-[#FFF7E6] px-3 py-2 text-xs font-semibold text-[#B54708]">
+          For Flash Sale, selected products are shown first. If no products are selected, active discounted products are used until the end date.
+        </p>
+      ) : null}
 
       <div className="rounded-lg border border-[#D8E2EA] bg-[#F8FAFC] p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -12662,6 +12801,10 @@ function homepageSectionFormState(section?: HomepageSectionRecord): HomepageSect
     subtitle: stringConfigValue(config.subtitle) || stringConfigValue(config.description),
     ctaLabel: stringConfigValue(config.ctaLabel),
     ctaUrl: stringConfigValue(config.ctaUrl) || stringConfigValue(config.ctaHref),
+    startsAt: isoToDateTimeLocal(stringConfigValue(config.startsAt)),
+    endsAt: isoToDateTimeLocal(
+      stringConfigValue(config.endsAt) || stringConfigValue(config.timerEndsAt),
+    ),
     items,
     status: section?.status ?? "PUBLISHED",
     sortOrder: String(section?.sortOrder ?? 0),
@@ -12698,6 +12841,14 @@ function homepageSectionConfig(form: HomepageSectionCreateFormState) {
   assignOptionalConfigString(config, "subtitle", form.subtitle);
   assignOptionalConfigString(config, "ctaLabel", form.ctaLabel);
   assignOptionalConfigString(config, "ctaUrl", form.ctaUrl);
+  assignOptionalConfigString(config, "startsAt", dateTimeLocalToIso(form.startsAt));
+  assignOptionalConfigString(config, "endsAt", dateTimeLocalToIso(form.endsAt));
+
+  if (form.sectionType === "deal_strip") {
+    assignOptionalConfigString(config, "timerEndsAt", dateTimeLocalToIso(form.endsAt));
+  } else {
+    delete config.timerEndsAt;
+  }
 
   if (items.length) {
     config.items = items;
@@ -15089,6 +15240,10 @@ function defaultCourierProviderForm(): CourierProviderFormState {
     apiSecret: "",
     password: "",
     webhookSecret: "",
+    defaultPackageWeightGrams: "500",
+    defaultPackageLengthCm: "20",
+    defaultPackageBreadthCm: "15",
+    defaultPackageHeightCm: "8",
     credentialsConfigured: false,
     webhookSecretConfigured: false,
     notes: "",
@@ -15114,6 +15269,18 @@ function courierProviderFormFromRecord(provider: CourierProviderRecord): Courier
     apiSecret: "",
     password: "",
     webhookSecret: "",
+    defaultPackageWeightGrams: provider.defaultPackage?.weightGrams
+      ? String(provider.defaultPackage.weightGrams)
+      : "",
+    defaultPackageLengthCm: provider.defaultPackage?.lengthCm
+      ? String(provider.defaultPackage.lengthCm)
+      : "",
+    defaultPackageBreadthCm: provider.defaultPackage?.breadthCm
+      ? String(provider.defaultPackage.breadthCm)
+      : "",
+    defaultPackageHeightCm: provider.defaultPackage?.heightCm
+      ? String(provider.defaultPackage.heightCm)
+      : "",
     credentialsConfigured: provider.credentialsConfigured,
     webhookSecretConfigured: provider.webhookSecretConfigured,
     notes: provider.notes ?? "",
@@ -15143,6 +15310,10 @@ function courierProviderPayloadFromForm(form: CourierProviderFormState) {
     cancellationEndpointPath: form.cancellationEndpointPath.trim(),
     accountCode: form.accountCode.trim(),
     username: form.username.trim(),
+    defaultPackageWeightGrams: positiveIntegerOrUndefined(form.defaultPackageWeightGrams),
+    defaultPackageLengthCm: positiveIntegerOrUndefined(form.defaultPackageLengthCm),
+    defaultPackageBreadthCm: positiveIntegerOrUndefined(form.defaultPackageBreadthCm),
+    defaultPackageHeightCm: positiveIntegerOrUndefined(form.defaultPackageHeightCm),
     ...(apiKey ? { apiKey } : {}),
     ...(apiSecret ? { apiSecret } : {}),
     ...(password ? { password } : {}),
@@ -15436,6 +15607,11 @@ function optionalRupeesInputToPaise(value: string) {
 function emptyToUndefined(value: string) {
   const normalized = value.trim();
   return normalized ? normalized : undefined;
+}
+
+function positiveIntegerOrUndefined(value: string) {
+  const parsed = Number(value.trim());
+  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : undefined;
 }
 
 function formatMinor(value: number, currency = "INR") {

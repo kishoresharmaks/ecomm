@@ -1,6 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { Type } from "class-transformer";
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
   IsDateString,
   IsEnum,
   IsIn,
@@ -10,6 +12,7 @@ import {
   IsUUID,
   MaxLength,
   Min,
+  ValidateNested,
 } from "class-validator";
 import { CourierCodRemittanceStatus, CourierShipmentStatus } from "@indihub/database";
 
@@ -173,6 +176,21 @@ export class UpsertCourierCodRemittanceDto {
   @IsString()
   @MaxLength(1000)
   notes?: string;
+}
+
+export class ImportCourierCodRemittanceReportDto {
+  @ApiPropertyOptional({ example: "SHIPROCKET-COD-REPORT-2026-05-31" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  reportReference?: string;
+
+  @ApiProperty({ type: [UpsertCourierCodRemittanceDto] })
+  @ArrayMinSize(1)
+  @ArrayMaxSize(500)
+  @ValidateNested({ each: true })
+  @Type(() => UpsertCourierCodRemittanceDto)
+  rows!: UpsertCourierCodRemittanceDto[];
 }
 
 export class VerifyCourierCodRemittanceDto {

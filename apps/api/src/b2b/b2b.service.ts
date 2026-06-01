@@ -4,6 +4,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
 } from "@nestjs/common";
 import {
   ApprovalStatus,
@@ -16,11 +17,18 @@ import {
   UserStatus,
 } from "@indihub/database";
 import type { RequestUser } from "../auth/types/indihub-request";
-import { paginationFromQuery } from "../common/pagination";
+import {
+  createdAtCursorOrderBy,
+  createdAtCursorWhere,
+  cursorPageFromItems,
+  cursorPaginationFromQuery,
+  paginationFromQuery,
+} from "../common/pagination";
 import { LocationsService } from "../locations/locations.service";
 import { EMAIL_TRIGGER_EVENTS } from "../notifications/email-trigger-catalog";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { SellerSubscriptionsService } from "../sellers/seller-subscriptions.service";
 import { CreateB2BEnquiryDto } from "./dto/b2b-enquiry.dto";
 import { B2BEnquiryQueryDto } from "./dto/b2b-query.dto";
 import { CreateB2BResponseDto } from "./dto/b2b-response.dto";
@@ -108,6 +116,9 @@ export class B2BService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(LocationsService) private readonly locationsService: LocationsService,
     @Inject(NotificationsService) private readonly notifications: NotificationsService,
+    @Optional()
+    @Inject(SellerSubscriptionsService)
+    private readonly sellerSubscriptions?: SellerSubscriptionsService,
   ) {}
 
   async getProfile(actor: RequestUser) {
@@ -458,6 +469,7 @@ export class B2BService {
 
   async respondAsSeller(actor: RequestUser, enquiryId: string, dto: CreateB2BResponseDto) {
     const seller = await this.resolveApprovedSeller(actor);
+    await this.sellerSubscriptions?.ensureCanUseSellerB2B(seller.id);
     await this.getEnquiryOrThrow({
       id: enquiryId,
       sellerId: seller.id,
@@ -503,21 +515,44 @@ export class B2BService {
   }
 
   async listAdminBusinessBuyers(query: BusinessBuyerQueryDto) {
-    const { page, skip, take } = paginationFromQuery(query);
+    const search = query.search?.trim();
     const where: Prisma.BusinessBuyerWhereInput = {
       ...(query.status ? { status: query.status } : {}),
-      ...(query.search
+      ...(search
         ? {
             OR: [
-              { companyName: { contains: query.search, mode: "insensitive" } },
-              { gstNumber: { contains: query.search, mode: "insensitive" } },
-              { contactName: { contains: query.search, mode: "insensitive" } },
-              { user: { email: { contains: query.search, mode: "insensitive" } } },
+              { companyName: { contains: search, mode: "insensitive" } },
+              { gstNumber: { contains: search, mode: "insensitive" } },
+              { contactName: { contains: search, mode: "insensitive" } },
+              { user: { email: { contains: search, mode: "insensitive" } } },
             ],
           }
         : {}),
     };
 
+    if (query.cursor) {
+      const { take, cursor } = cursorPaginationFromQuery(query);
+      const cursorWhere = createdAtCursorWhere(cursor) as
+        | Prisma.BusinessBuyerWhereInput
+        | undefined;
+      const items = await this.prisma.client.businessBuyer.findMany({
+        where: cursorWhere ? { AND: [where, cursorWhere] } : where,
+        include: {
+          user: true,
+          addresses: true,
+          _count: {
+            select: { enquiries: true },
+          },
+        },
+        orderBy: createdAtCursorOrderBy(),
+        take: take + 1,
+      });
+      const pageResult = cursorPageFromItems(items, take);
+
+      return { ...pageResult, limit: take };
+    }
+
+    const { page, skip, take } = paginationFromQuery(query);
     const items = await this.prisma.client.businessBuyer.findMany({
       where,
       include: {
@@ -527,7 +562,7 @@ export class B2BService {
           select: { enquiries: true },
         },
       },
-      orderBy: { createdAt: "desc" },
+      orderBy: createdAtCursorOrderBy(),
       skip,
       take,
     });
@@ -598,12 +633,26 @@ export class B2BService {
   }
 
   private async listEnquiries(where: Prisma.B2BEnquiryWhereInput, query: B2BEnquiryQueryDto) {
+    if (query.cursor) {
+      const { take, cursor } = cursorPaginationFromQuery(query);
+      const cursorWhere = createdAtCursorWhere(cursor) as Prisma.B2BEnquiryWhereInput | undefined;
+      const items = await this.prisma.client.b2BEnquiry.findMany({
+        where: cursorWhere ? { AND: [where, cursorWhere] } : where,
+        include: enquiryInclude,
+        orderBy: createdAtCursorOrderBy(),
+        take: take + 1,
+      });
+      const pageResult = cursorPageFromItems(items, take);
+
+      return { ...pageResult, limit: take };
+    }
+
     const { page, skip, take } = paginationFromQuery(query);
 
     const items = await this.prisma.client.b2BEnquiry.findMany({
       where,
       include: enquiryInclude,
-      orderBy: { createdAt: "desc" },
+      orderBy: createdAtCursorOrderBy(),
       skip,
       take,
     });
@@ -613,17 +662,19 @@ export class B2BService {
   }
 
   private enquiryWhere(query: B2BEnquiryQueryDto): Prisma.B2BEnquiryWhereInput {
+    const search = query.search?.trim();
+
     return {
       ...(query.status ? { status: query.status } : {}),
       ...(query.productId ? { productId: query.productId } : {}),
       ...(query.sellerId ? { sellerId: query.sellerId } : {}),
-      ...(query.search
+      ...(search
         ? {
             OR: [
-              { message: { contains: query.search, mode: "insensitive" } },
-              { businessBuyer: { companyName: { contains: query.search, mode: "insensitive" } } },
-              { product: { name: { contains: query.search, mode: "insensitive" } } },
-              { seller: { storeName: { contains: query.search, mode: "insensitive" } } },
+              { message: { contains: search, mode: "insensitive" } },
+              { businessBuyer: { companyName: { contains: search, mode: "insensitive" } } },
+              { product: { name: { contains: search, mode: "insensitive" } } },
+              { seller: { storeName: { contains: search, mode: "insensitive" } } },
             ],
           }
         : {}),

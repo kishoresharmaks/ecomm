@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { cache } from "react";
 import { JsonLd } from "@/components/seo/json-ld";
 import { StorefrontHomeClient } from "@/components/storefront/storefront-home-client";
-import { buildOrganizationJsonLd, buildWebsiteJsonLd, buildWebPageJsonLd, metadataFromSeo, resolveSeoEntry } from "@/lib/seo";
+import { getStorefrontHome, primaryImage } from "@/lib/storefront-api";
+import { buildOrganizationJsonLd, buildWebsiteJsonLd, buildWebPageJsonLd, metadataFromSeo, resolveSeoEntry, safeData } from "@/lib/seo";
 
 const homeSeoFallback = {
   title: "1HandIndia Marketplace",
@@ -11,16 +12,28 @@ const homeSeoFallback = {
 } as const;
 
 const getHomeSeo = cache(() => resolveSeoEntry({ entityType: "HOME", routePath: "/" }));
+const getHomePayload = cache(() => safeData(() => getStorefrontHome({ limit: 6 })));
 
 export async function generateMetadata(): Promise<Metadata> {
-  const seo = await getHomeSeo();
-  return metadataFromSeo(seo, homeSeoFallback);
+  const [seo, home] = await Promise.all([getHomeSeo(), getHomePayload()]);
+  const bannerImage = home?.banners[0]?.imageUrl ?? home?.banners[0]?.mobileImageUrl;
+  const productImage = home?.productRails.featured[0]
+    ? primaryImage(home.productRails.featured[0])
+    : home?.productRails.latest[0]
+      ? primaryImage(home.productRails.latest[0])
+      : null;
+
+  return metadataFromSeo(seo, {
+    ...homeSeoFallback,
+    description: statsSeoDescription(home) || homeSeoFallback.description,
+    imageUrl: bannerImage || productImage
+  });
 }
 
 export default async function StorefrontHomePage() {
-  const seo = await getHomeSeo();
+  const [seo, home] = await Promise.all([getHomeSeo(), getHomePayload()]);
   const title = seo?.metaTitle?.trim() || homeSeoFallback.title;
-  const description = seo?.metaDescription?.trim() || homeSeoFallback.description;
+  const description = seo?.metaDescription?.trim() || statsSeoDescription(home) || homeSeoFallback.description;
   const path = seo?.canonicalUrl?.trim() || homeSeoFallback.path;
 
   return (
@@ -29,4 +42,12 @@ export default async function StorefrontHomePage() {
       <StorefrontHomeClient />
     </>
   );
+}
+
+function statsSeoDescription(home: Awaited<ReturnType<typeof getHomePayload>>) {
+  if (!home?.stats || (!home.stats.liveProducts && !home.stats.approvedStores)) {
+    return "";
+  }
+
+  return `Shop ${home.stats.liveProducts.toLocaleString("en-IN")} live products from ${home.stats.approvedStores.toLocaleString("en-IN")} approved stores on 1HandIndia.`;
 }

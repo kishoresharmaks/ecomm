@@ -62,6 +62,13 @@ enum SellerSubscriptionStatus {
   CANCELLED
 }
 
+enum SellerSubscriptionProviderEventStatus {
+  RECEIVED
+  PROCESSED
+  SKIPPED
+  FAILED
+}
+
 enum ApprovalStatus {
   DRAFT
   PENDING_APPROVAL
@@ -469,6 +476,7 @@ model User {
   adminCredential    AdminCredential?
   adminSessions      AdminSession[]
 
+  @@index([status, createdAt])
   @@map("users")
 }
 
@@ -573,6 +581,7 @@ model Customer {
   carts       Cart[]
   orders      Order[]
 
+  @@index([status, createdAt])
   @@map("customers")
 }
 
@@ -647,6 +656,7 @@ model Seller {
   user                         User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
   subscriptionPlan             SellerSubscriptionPlan?  @relation("SellerCurrentSubscriptionPlan", fields: [subscriptionPlanId], references: [id])
   subscriptions                SellerSubscription[]
+  subscriptionPayments         SellerSubscriptionPayment[]
   profile                      SellerProfile?
   addresses                    SellerAddress[]
   documents                    SellerDocument[]
@@ -657,6 +667,7 @@ model Seller {
   orderShipments               OrderShipment[]
   courierShipments             CourierShipment[]
   courierCodRemittances        CourierCodRemittance[]
+  courierProviderSettings      SellerCourierProviderSetting[]
   b2bEnquiries                 B2BEnquiry[]
   commissionRules              CommissionRule[]
   payoutProfile                SellerPayoutProfile?
@@ -669,6 +680,8 @@ model Seller {
   @@index([sellerType])
   @@index([subscriptionPlanId])
   @@index([subscriptionStatus])
+  @@index([deletedAt, createdAt])
+  @@index([status, approvalStatus, createdAt])
   @@map("sellers")
 }
 
@@ -718,6 +731,24 @@ model SellerAddress {
   @@map("seller_addresses")
 }
 
+model SellerCourierProviderSetting {
+  id                 String                 @id @default(uuid()) @db.Uuid
+  sellerId           String                 @map("seller_id") @db.Uuid
+  providerCode       String                 @map("provider_code")
+  pickupLocationName String?                @map("pickup_location_name")
+  isActive           Boolean                @default(true) @map("is_active")
+  settingsSnapshot   Json?                  @map("settings_snapshot")
+  createdAt          DateTime               @default(now()) @map("created_at")
+  updatedAt          DateTime               @updatedAt @map("updated_at")
+  seller             Seller                 @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  provider           CourierProviderSetting @relation(fields: [providerCode], references: [providerCode], onDelete: Cascade)
+
+  @@unique([sellerId, providerCode])
+  @@index([providerCode, isActive])
+  @@index([sellerId, isActive])
+  @@map("seller_courier_provider_settings")
+}
+
 model SellerDocument {
   id           String         @id @default(uuid()) @db.Uuid
   sellerId     String         @map("seller_id") @db.Uuid
@@ -762,6 +793,10 @@ model SellerSubscriptionPlan {
   featuredProductLimit  Int?                           @map("featured_product_limit")
   b2bEnquiryLimit       Int?                           @map("b2b_enquiry_limit")
   commissionDiscountBps Int                            @default(0) @map("commission_discount_bps")
+  providerPlanId        String?                        @map("provider_plan_id")
+  providerPlanVersion   Int                            @default(1) @map("provider_plan_version")
+  providerPlanSyncedAt  DateTime?                      @map("provider_plan_synced_at")
+  providerPlanSnapshot  Json?                          @map("provider_plan_snapshot")
   isDefault             Boolean                        @default(false) @map("is_default")
   isActive              Boolean                        @default(true) @map("is_active")
   sortOrder             Int                            @default(100) @map("sort_order")
@@ -772,29 +807,98 @@ model SellerSubscriptionPlan {
 
   @@index([isActive, sortOrder])
   @@index([isDefault])
+  @@index([providerPlanId])
   @@map("seller_subscription_plans")
 }
 
 model SellerSubscription {
-  id               String                   @id @default(uuid()) @db.Uuid
-  sellerId         String                   @map("seller_id") @db.Uuid
-  planId           String                   @map("plan_id") @db.Uuid
-  status           SellerSubscriptionStatus @default(ACTIVE)
-  isCurrent        Boolean                  @default(true) @map("is_current")
-  startedAt        DateTime                 @default(now()) @map("started_at")
-  currentPeriodEnd DateTime?                @map("current_period_end")
-  cancelledAt      DateTime?                @map("cancelled_at")
-  note             String?
-  createdById      String?                  @map("created_by") @db.Uuid
-  createdAt        DateTime                 @default(now()) @map("created_at")
-  updatedAt        DateTime                 @updatedAt @map("updated_at")
-  seller           Seller                   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
-  plan             SellerSubscriptionPlan   @relation(fields: [planId], references: [id])
+  id                          String                             @id @default(uuid()) @db.Uuid
+  sellerId                    String                             @map("seller_id") @db.Uuid
+  planId                      String                             @map("plan_id") @db.Uuid
+  status                      SellerSubscriptionStatus           @default(ACTIVE)
+  isCurrent                   Boolean                            @default(true) @map("is_current")
+  startedAt                   DateTime                           @default(now()) @map("started_at")
+  currentPeriodEnd            DateTime?                          @map("current_period_end")
+  cancelledAt                 DateTime?                          @map("cancelled_at")
+  provider                    PaymentProvider?                   @map("provider")
+  providerSubscriptionId      String?                            @unique @map("provider_subscription_id")
+  providerPlanId              String?                            @map("provider_plan_id")
+  providerStatus              String?                            @map("provider_status")
+  providerCustomerId          String?                            @map("provider_customer_id")
+  authorizedAt                DateTime?                          @map("authorized_at")
+  nextBillingAt               DateTime?                          @map("next_billing_at")
+  gracePeriodEndsAt           DateTime?                          @map("grace_period_ends_at")
+  cancelAtPeriodEnd           Boolean                            @default(false) @map("cancel_at_period_end")
+  providerCancelAtCycleEnd    Boolean                            @default(false) @map("provider_cancel_at_cycle_end")
+  lastPaymentStatus           PaymentStatus?                     @map("last_payment_status")
+  paymentFailureCount         Int                                @default(0) @map("payment_failure_count")
+  providerSnapshot            Json?                              @map("provider_snapshot")
+  note                        String?
+  createdById                 String?                            @map("created_by") @db.Uuid
+  createdAt                   DateTime                           @default(now()) @map("created_at")
+  updatedAt                   DateTime                           @updatedAt @map("updated_at")
+  seller                      Seller                             @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  plan                        SellerSubscriptionPlan             @relation(fields: [planId], references: [id])
+  payments                    SellerSubscriptionPayment[]
+  providerEvents              SellerSubscriptionProviderEvent[]
 
   @@index([sellerId, isCurrent])
   @@index([sellerId, status])
   @@index([planId])
+  @@index([providerPlanId])
+  @@index([providerStatus])
+  @@index([gracePeriodEndsAt])
   @@map("seller_subscriptions")
+}
+
+model SellerSubscriptionPayment {
+  id                       String             @id @default(uuid()) @db.Uuid
+  sellerId                 String             @map("seller_id") @db.Uuid
+  sellerSubscriptionId     String             @map("seller_subscription_id") @db.Uuid
+  provider                 PaymentProvider    @default(RAZORPAY)
+  providerSubscriptionId   String?            @map("provider_subscription_id")
+  providerInvoiceId        String?            @map("provider_invoice_id")
+  providerPaymentId        String?            @map("provider_payment_id")
+  amountPaise              Int                @default(0) @map("amount_paise")
+  currency                 String             @default("INR")
+  status                   PaymentStatus      @default(PENDING)
+  billingPeriodStart       DateTime?          @map("billing_period_start")
+  billingPeriodEnd         DateTime?          @map("billing_period_end")
+  paidAt                   DateTime?          @map("paid_at")
+  failedAt                 DateTime?          @map("failed_at")
+  rawResponse              Json?              @map("raw_response")
+  createdAt                DateTime           @default(now()) @map("created_at")
+  updatedAt                DateTime           @updatedAt @map("updated_at")
+  seller                   Seller             @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  sellerSubscription       SellerSubscription @relation(fields: [sellerSubscriptionId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerInvoiceId])
+  @@unique([provider, providerPaymentId])
+  @@index([sellerId, createdAt])
+  @@index([sellerSubscriptionId])
+  @@index([providerSubscriptionId])
+  @@index([status])
+  @@map("seller_subscription_payments")
+}
+
+model SellerSubscriptionProviderEvent {
+  id                       String                                @id @default(uuid()) @db.Uuid
+  sellerSubscriptionId     String?                               @map("seller_subscription_id") @db.Uuid
+  provider                 PaymentProvider                       @default(RAZORPAY)
+  providerEventId          String                                @map("provider_event_id")
+  eventType                String                                @map("event_type")
+  status                   SellerSubscriptionProviderEventStatus  @default(RECEIVED)
+  payload                  Json?
+  message                  String?
+  createdAt                DateTime                              @default(now()) @map("created_at")
+  processedAt              DateTime?                             @map("processed_at")
+  sellerSubscription       SellerSubscription?                   @relation(fields: [sellerSubscriptionId], references: [id], onDelete: SetNull)
+
+  @@unique([provider, providerEventId])
+  @@index([sellerSubscriptionId])
+  @@index([eventType])
+  @@index([status])
+  @@map("seller_subscription_provider_events")
 }
 
 model BusinessBuyer {
@@ -1098,6 +1202,10 @@ model Product {
   @@index([hsnCode])
   @@index([gstRatePercent])
   @@index([hsnMasterId])
+  @@index([deletedAt, status, approvalStatus, createdAt])
+  @@index([categoryId, status, approvalStatus, createdAt])
+  @@index([sellerId, deletedAt, createdAt])
+  @@index([isFeatured, createdAt])
   @@map("products")
 }
 
@@ -1124,6 +1232,10 @@ model ProductVariant {
   mrpPaise           Int?                @map("mrp_paise")
   currency           String              @default("INR")
   stockQuantity      Int                 @default(0) @map("stock_quantity")
+  packageWeightGrams Int?                @map("package_weight_grams")
+  packageLengthCm    Int?                @map("package_length_cm")
+  packageBreadthCm   Int?                @map("package_breadth_cm")
+  packageHeightCm    Int?                @map("package_height_cm")
   status             VariantStatus       @default(ACTIVE)
   attributes         Json?
   createdAt          DateTime            @default(now()) @map("created_at")
@@ -1135,6 +1247,8 @@ model ProductVariant {
 
   @@index([productId])
   @@index([status])
+  @@index([productId, status, createdAt])
+  @@index([status, stockQuantity])
   @@map("product_variants")
 }
 
@@ -1249,6 +1363,10 @@ model Order {
   @@index([paymentStatus])
   @@index([deliveryStatus])
   @@index([createdAt])
+  @@index([customerId, createdAt])
+  @@index([orderStatus, createdAt])
+  @@index([paymentStatus, createdAt])
+  @@index([deliveryStatus, createdAt])
   @@map("orders")
 }
 
@@ -1309,6 +1427,9 @@ model OrderSellerSplit {
   @@index([commissionRuleId])
   @@index([payoutId])
   @@index([settlementStatus])
+  @@index([sellerId, settlementStatus, createdAt])
+  @@index([sellerId, payoutId, settlementStatus])
+  @@index([payoutId, settlementStatus])
   @@map("order_seller_splits")
 }
 
@@ -1685,6 +1806,10 @@ model Payment {
   @@index([orderId])
   @@index([status])
   @@index([providerPaymentId])
+  @@unique([provider, providerOrderId])
+  @@unique([provider, providerPaymentId])
+  @@index([provider, status, createdAt])
+  @@index([provider, providerOrderId])
   @@map("payments")
 }
 
@@ -1763,6 +1888,7 @@ model SellerSettlementRun {
 
   @@index([status])
   @@index([periodFrom, periodTo])
+  @@index([status, createdAt])
   @@map("seller_settlement_runs")
 }
 
@@ -1803,6 +1929,8 @@ model SellerPayout {
   @@index([sellerId, status])
   @@index([settlementRunId])
   @@index([periodFrom, periodTo])
+  @@index([status, createdAt])
+  @@index([sellerId, status, createdAt])
   @@map("seller_payouts")
 }
 
@@ -1911,6 +2039,8 @@ model B2BEnquiry {
   @@index([businessBuyerId])
   @@index([sellerId])
   @@index([status])
+  @@index([businessBuyerId, status, createdAt])
+  @@index([sellerId, status, createdAt])
   @@map("b2b_enquiries")
 }
 
@@ -1952,6 +2082,7 @@ model Banner {
   @@index([status])
   @@index([startsAt])
   @@index([endsAt])
+  @@index([status, sortOrder])
   @@map("banners")
 }
 
@@ -1981,6 +2112,7 @@ model HomepageSection {
   updatedAt   DateTime      @updatedAt @map("updated_at")
 
   @@index([status])
+  @@index([sectionType, status, sortOrder])
   @@map("homepage_sections")
 }
 
@@ -2105,6 +2237,7 @@ model SupportRequest {
 
   @@index([userId])
   @@index([status])
+  @@index([status, createdAt])
   @@map("support_requests")
 }
 
@@ -2127,6 +2260,7 @@ model NotificationTemplate {
   @@index([category])
   @@index([channel])
   @@index([status])
+  @@index([channel, category, status])
   @@index([themeId])
   @@map("notification_templates")
 }
@@ -2148,6 +2282,8 @@ model EmailTriggerRule {
   @@index([category])
   @@index([templateId])
   @@index([isEnabled])
+  @@index([category, isEnabled])
+  @@index([category, eventCode, recipientType])
   @@map("email_trigger_rules")
 }
 
@@ -2193,6 +2329,13 @@ model NotificationLog {
   @@index([triggerRuleId])
   @@index([status])
   @@index([scheduledFor])
+  @@index([createdAt])
+  @@index([channel, createdAt])
+  @@index([status, createdAt])
+  @@index([templateCode, createdAt])
+  @@index([eventCode, createdAt])
+  @@index([recipientType, createdAt])
+  @@index([triggerRuleId, status, createdAt])
   @@map("notification_logs")
 }
 
@@ -2272,6 +2415,7 @@ model CourierProviderSetting {
   updatedAt               DateTime            @updatedAt @map("updated_at")
   courierShipments        CourierShipment[]
   courierCodRemittances   CourierCodRemittance[]
+  sellerProviderSettings  SellerCourierProviderSetting[]
 
   @@index([isActive, providerCode])
   @@index([mode])
@@ -2293,5 +2437,8 @@ model AuditLog {
   @@index([actorUserId])
   @@index([entityType, entityId])
   @@index([createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([action, createdAt])
+  @@index([entityType, createdAt])
   @@map("audit_logs")
 }

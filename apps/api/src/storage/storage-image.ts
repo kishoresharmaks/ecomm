@@ -30,6 +30,27 @@ export function normalizeStorageImageReference(
   return key;
 }
 
+export function normalizePublicImageReference(
+  value: string | null | undefined,
+  fieldName: string,
+  requiredFolder?: string,
+) {
+  if (value === undefined || value === null) {
+    return value;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  if (isAbsoluteUrl(trimmed)) {
+    return assertSecureExternalImageUrl(trimmed, fieldName);
+  }
+
+  return normalizeStorageImageReference(trimmed, fieldName, requiredFolder);
+}
+
 export function storageImageKeyFromValue(value: string, fieldName = "Image") {
   return assertPortableImageKey(value, fieldName);
 }
@@ -61,4 +82,28 @@ function assertPortableImageKey(value: string, fieldName: string) {
   }
 
   return normalized;
+}
+
+function isAbsoluteUrl(value: string) {
+  try {
+    new URL(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function assertSecureExternalImageUrl(value: string, fieldName: string) {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new BadRequestException(`${fieldName} must be a secure HTTPS image URL or valid image storage key.`);
+  }
+
+  if (url.protocol !== "https:" || url.username || url.password || !url.hostname) {
+    throw new BadRequestException(`${fieldName} must be a secure HTTPS image URL or valid image storage key.`);
+  }
+
+  return url.toString();
 }

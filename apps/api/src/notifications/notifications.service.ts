@@ -10,7 +10,13 @@ import {
   UserStatus,
 } from "@indihub/database";
 import type { RequestUser } from "../auth/types/indihub-request";
-import { paginationFromQuery } from "../common/pagination";
+import {
+  createdAtCursorOrderBy,
+  createdAtCursorWhere,
+  cursorPageFromItems,
+  cursorPaginationFromQuery,
+  paginationFromQuery,
+} from "../common/pagination";
 import { PrismaService } from "../prisma/prisma.service";
 import {
   CreateEmailTemplateDto,
@@ -115,6 +121,25 @@ const safeFontFallbacks: Record<EmailThemeTokens["fontFamily"], string> = {
   Verdana: "Verdana, Geneva, sans-serif",
   Tahoma: "Tahoma, Geneva, sans-serif",
 };
+const EMAIL_OVERVIEW_RECENT_LIMIT = 5;
+const EMAIL_OVERVIEW_WINDOW_DAYS = 7;
+const emailLogListSelect: Prisma.NotificationLogSelect = {
+  id: true,
+  channel: true,
+  templateCode: true,
+  eventCode: true,
+  recipientType: true,
+  scheduledFor: true,
+  sentAt: true,
+  recipient: true,
+  subject: true,
+  body: true,
+  variables: true,
+  status: true,
+  providerMessageId: true,
+  errorMessage: true,
+  createdAt: true,
+};
 
 @Injectable()
 export class NotificationsService {
@@ -122,7 +147,7 @@ export class NotificationsService {
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Inject(NotificationQueueService) private readonly queue: NotificationQueueService,
+    @Inject(NotificationQueueService) private readonly _queue: NotificationQueueService,
     @Inject(EmailDeliveryService) private readonly emailDelivery: EmailDeliveryService,
   ) {}
 
@@ -176,7 +201,6 @@ export class NotificationsService {
   }
 
   async listLogs(query: NotificationQueryDto) {
-    const { page, skip, take } = paginationFromQuery(query, { defaultLimit: 50 });
     const templateCodesForCategory = query.category
       ? await this.prisma.client.notificationTemplate.findMany({
           where: { category: query.category, channel: NotificationChannel.EMAIL },
@@ -184,16 +208,18 @@ export class NotificationsService {
         })
       : [];
     const categoryTemplateCodes = templateCodesForCategory.map((item) => item.code);
-    const templateCodeFilter =
-      query.templateCode && query.category
-        ? categoryTemplateCodes.includes(query.templateCode)
-          ? query.templateCode
-          : "__NO_MATCH__"
-        : query.templateCode;
+    if (query.category && !categoryTemplateCodes.length) {
+      return this.emptyNotificationLogList(query);
+    }
+    if (query.templateCode && query.category && !categoryTemplateCodes.includes(query.templateCode)) {
+      return this.emptyNotificationLogList(query);
+    }
+
     const where: Prisma.NotificationLogWhereInput = {
+      channel: NotificationChannel.EMAIL,
       ...(query.status ? { status: query.status } : {}),
-      ...(templateCodeFilter
-        ? { templateCode: templateCodeFilter }
+      ...(query.templateCode
+        ? { templateCode: query.templateCode }
         : query.category
           ? { templateCode: { in: categoryTemplateCodes } }
           : {}),
@@ -204,20 +230,184 @@ export class NotificationsService {
         : {}),
     };
 
-    const [items, total] = await this.prisma.client.$transaction(async (tx) => {
-      const items = await tx.notificationLog.findMany({
+    if (query.cursor) {
+      const { take, cursor } = cursorPaginationFromQuery(query, { defaultLimit: 50 });
+      const cursorWhere = createdAtCursorWhere(cursor) as
+        | Prisma.NotificationLogWhereInput
+        | undefined;
+      const items = await this.prisma.client.notificationLog.findMany({
+        where: cursorWhere ? { AND: [where, cursorWhere] } : where,
+        select: emailLogListSelect,
+        orderBy: createdAtCursorOrderBy(),
+        take: take + 1,
+      });
+      const pageResult = cursorPageFromItems(items, take);
+
+      return { ...pageResult, limit: take };
+    }
+
+    const { page, skip, take } = paginationFromQuery(query, { defaultLimit: 50 });
+    const [items, total] = await Promise.all([
+      this.prisma.client.notificationLog.findMany({
         where,
-        include: { user: true },
-        orderBy: { createdAt: "desc" },
+        select: emailLogListSelect,
+        orderBy: createdAtCursorOrderBy(),
         skip,
         take,
-      });
-      const total = await tx.notificationLog.count({ where });
-
-      return [items, total] as const;
-    });
+      }),
+      this.prisma.client.notificationLog.count({ where }),
+    ]);
 
     return { items, total, page, limit: take };
+  }
+
+  private emptyNotificationLogList(query: NotificationQueryDto) {
+    if (query.cursor) {
+      const { take } = cursorPaginationFromQuery(query, { defaultLimit: 50 });
+      return {
+        items: [],
+        limit: take,
+        pageInfo: {
+          hasNextPage: false,
+          nextCursor: null,
+        },
+      };
+    }
+
+    const { page, take } = paginationFromQuery(query, { defaultLimit: 50 });
+    return { items: [], total: 0, page, limit: take };
+  }
+
+  async getEmailOperationsOverview() {
+    const now = new Date();
+    const recentWindowStart = new Date(
+      now.getTime() - EMAIL_OVERVIEW_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+    );
+    const emailWhere = {
+      channel: NotificationChannel.EMAIL,
+    } satisfies Prisma.NotificationLogWhereInput;
+    const settingPromise = this.prisma.client.emailSetting.findFirst({
+      orderBy: { createdAt: "asc" },
+    });
+
+    const [
+      statusCounts,
+      recentStatusCounts,
+      recentFailures,
+      recentPending,
+      recentSkipped,
+      lastSent,
+      oldestPending,
+      totalTriggers,
+      enabledTriggers,
+      disabledTriggers,
+      missingTemplateTriggers,
+      templateStatusCounts,
+      themeStatusCounts,
+      setting,
+    ] = await Promise.all([
+      this.prisma.client.notificationLog.groupBy({
+        by: ["status"],
+        where: emailWhere,
+        _count: { id: true },
+      }),
+      this.prisma.client.notificationLog.groupBy({
+        by: ["status"],
+        where: {
+          ...emailWhere,
+          createdAt: { gte: recentWindowStart },
+        },
+        _count: { id: true },
+      }),
+      this.prisma.client.notificationLog.findMany({
+        where: { ...emailWhere, status: NotificationStatus.FAILED },
+        select: emailLogListSelect,
+        orderBy: { createdAt: "desc" },
+        take: EMAIL_OVERVIEW_RECENT_LIMIT,
+      }),
+      this.prisma.client.notificationLog.findMany({
+        where: { ...emailWhere, status: NotificationStatus.PENDING },
+        select: emailLogListSelect,
+        orderBy: { createdAt: "desc" },
+        take: EMAIL_OVERVIEW_RECENT_LIMIT,
+      }),
+      this.prisma.client.notificationLog.findMany({
+        where: { ...emailWhere, status: NotificationStatus.SKIPPED },
+        select: emailLogListSelect,
+        orderBy: { createdAt: "desc" },
+        take: EMAIL_OVERVIEW_RECENT_LIMIT,
+      }),
+      this.prisma.client.notificationLog.findFirst({
+        where: { ...emailWhere, status: NotificationStatus.SENT },
+        select: { sentAt: true, createdAt: true },
+        orderBy: [{ sentAt: "desc" }, { createdAt: "desc" }],
+      }),
+      this.prisma.client.notificationLog.findFirst({
+        where: { ...emailWhere, status: NotificationStatus.PENDING },
+        select: { scheduledFor: true, createdAt: true, providerMessageId: true },
+        orderBy: { createdAt: "asc" },
+      }),
+      this.prisma.client.emailTriggerRule.count(),
+      this.prisma.client.emailTriggerRule.count({ where: { isEnabled: true } }),
+      this.prisma.client.emailTriggerRule.count({ where: { isEnabled: false } }),
+      this.prisma.client.emailTriggerRule.count({
+        where: { isEnabled: true, templateId: null },
+      }),
+      this.prisma.client.notificationTemplate.groupBy({
+        by: ["status"],
+        where: { channel: NotificationChannel.EMAIL },
+        _count: { id: true },
+      }),
+      this.prisma.client.emailTheme.groupBy({
+        by: ["status"],
+        _count: { id: true },
+      }),
+      settingPromise,
+    ]);
+
+    const provider = setting?.provider ?? process.env.EMAIL_PROVIDER ?? "smtp";
+    const providerConfig = this.emailProviderConfig(setting?.providerConfig);
+
+    return {
+      generatedAt: now,
+      pipelineMode: "IMMEDIATE",
+      windowDays: EMAIL_OVERVIEW_WINDOW_DAYS,
+      setting: {
+        provider,
+        isEnabled: setting?.isEnabled ?? false,
+        providerConfigured: this.isEmailProviderConfigured(provider, providerConfig),
+        senderEmail:
+          setting?.senderEmail ?? process.env.EMAIL_FROM_ADDRESS ?? "no-reply@example.com",
+        adminRecipientCount: this.recipientCount(setting?.adminRecipients),
+        updatedAt: setting?.updatedAt ?? null,
+      },
+      logs: {
+        totals: this.notificationStatusCounts(statusCounts),
+        recentWindowTotals: this.notificationStatusCounts(recentStatusCounts),
+        lastSentAt: lastSent?.sentAt ?? lastSent?.createdAt ?? null,
+        oldestPendingAt: oldestPending?.scheduledFor ?? oldestPending?.createdAt ?? null,
+        pendingDeliveryLockActive: this.isStaleDeliveryLock(oldestPending?.providerMessageId)
+          ? false
+          : Boolean(oldestPending?.providerMessageId?.startsWith(EMAIL_DELIVERY_LOCK_PREFIX)),
+        recent: {
+          failures: recentFailures,
+          pending: recentPending,
+          skipped: recentSkipped,
+        },
+      },
+      triggers: {
+        total: totalTriggers,
+        enabled: enabledTriggers,
+        disabled: disabledTriggers,
+        missingTemplate: missingTemplateTriggers,
+      },
+      templates: {
+        statusCounts: this.contentStatusCounts(templateStatusCounts),
+      },
+      themes: {
+        statusCounts: this.contentStatusCounts(themeStatusCounts),
+      },
+    };
   }
 
   listTemplates(query: EmailTemplateQueryDto = {}) {
@@ -384,37 +574,54 @@ export class NotificationsService {
       include: { template: { include: { theme: true } } },
       orderBy: [{ category: "asc" }, { eventCode: "asc" }, { recipientType: "asc" }],
     });
-
-    return Promise.all(
-      rules.map(async (rule) => {
-        const [lastSent, recentFailures] = await Promise.all([
-          this.prisma.client.notificationLog.findMany({
-            where: { triggerRuleId: rule.id, status: NotificationStatus.SENT },
-            orderBy: { sentAt: "desc" },
-            take: 1,
-          }),
-          this.prisma.client.notificationLog.count({
-            where: {
-              triggerRuleId: rule.id,
-              status: { in: [NotificationStatus.FAILED, NotificationStatus.SKIPPED] },
-              createdAt: {
-                gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-              },
-            },
-          }),
-        ]);
-        const catalog = findEmailTriggerCatalogItem(rule.eventCode, rule.recipientType);
-
-        return {
-          ...rule,
-          eventName: catalog?.eventName ?? this.humanizeCode(rule.eventCode),
-          defaultTemplateCode: catalog?.defaultTemplateCode ?? null,
-          variableKeys: catalog?.variableKeys ?? [],
-          lastSentAt: lastSent[0]?.sentAt ?? lastSent[0]?.createdAt ?? null,
-          recentFailureCount: recentFailures,
-        };
-      }),
+    const triggerIds = rules.map((rule) => rule.id);
+    const recentWindowStart = new Date(
+      Date.now() - EMAIL_OVERVIEW_WINDOW_DAYS * 24 * 60 * 60 * 1000,
     );
+    const [lastSentRows, recentFailureRows] = triggerIds.length
+      ? await Promise.all([
+          this.prisma.client.notificationLog.groupBy({
+            by: ["triggerRuleId"],
+            where: {
+              triggerRuleId: { in: triggerIds },
+              status: NotificationStatus.SENT,
+            },
+            _max: { sentAt: true, createdAt: true },
+          }),
+          this.prisma.client.notificationLog.groupBy({
+            by: ["triggerRuleId"],
+            where: {
+              triggerRuleId: { in: triggerIds },
+              status: { in: [NotificationStatus.FAILED, NotificationStatus.SKIPPED] },
+              createdAt: { gte: recentWindowStart },
+            },
+            _count: { id: true },
+          }),
+        ])
+      : [[], []];
+    const lastSentByTrigger = new Map(
+      lastSentRows
+        .filter((row) => row.triggerRuleId)
+        .map((row) => [row.triggerRuleId as string, row._max.sentAt ?? row._max.createdAt]),
+    );
+    const recentFailuresByTrigger = new Map(
+      recentFailureRows
+        .filter((row) => row.triggerRuleId)
+        .map((row) => [row.triggerRuleId as string, row._count.id]),
+    );
+
+    return rules.map((rule) => {
+      const catalog = findEmailTriggerCatalogItem(rule.eventCode, rule.recipientType);
+
+      return {
+        ...rule,
+        eventName: catalog?.eventName ?? this.humanizeCode(rule.eventCode),
+        defaultTemplateCode: catalog?.defaultTemplateCode ?? null,
+        variableKeys: catalog?.variableKeys ?? [],
+        lastSentAt: lastSentByTrigger.get(rule.id) ?? null,
+        recentFailureCount: recentFailuresByTrigger.get(rule.id) ?? 0,
+      };
+    });
   }
 
   async updateTrigger(actor: RequestUser, id: string, dto: UpdateEmailTriggerRuleDto) {
@@ -435,7 +642,7 @@ export class NotificationsService {
     }
 
     const nextEnabled = dto.isEnabled ?? existing.isEnabled;
-    const nextDelayMinutes = dto.delayMinutes ?? existing.delayMinutes;
+    const nextDelayMinutes = 0;
     const nextTemplateId =
       dto.templateId === undefined ? existing.templateId : dto.templateId || null;
     const nextTemplate = nextTemplateId
@@ -702,10 +909,7 @@ export class NotificationsService {
       data: rendered,
     });
 
-    const queued = await this.queue.enqueueEmail(payload);
-    if (!queued) {
-      await this.deliverAndUpdateLog(payload);
-    }
+    await this.deliverAndUpdateLog(payload);
 
     return this.prisma.client.notificationLog.findUnique({
       where: { id: log.id },
@@ -796,23 +1000,10 @@ export class NotificationsService {
       );
     }
 
-    const delayMs = Math.max(0, rule.delayMinutes) * 60 * 1000;
-    const scheduledFor = delayMs ? new Date(Date.now() + delayMs) : null;
     const logInput = this.triggerLogInput(input, template.code);
-
-    if (delayMs && !this.queue.isAvailable()) {
-      return this.createLog(
-        logInput,
-        NotificationStatus.SKIPPED,
-        "Delayed email requires the Redis email queue. Configure REDIS_URL and run the worker before enabling delayed trigger sends.",
-        rendered,
-        { ...context, scheduledFor },
-      );
-    }
 
     const log = await this.createLog(logInput, NotificationStatus.PENDING, undefined, rendered, {
       ...context,
-      scheduledFor,
     });
     const payload: EmailJobPayload = {
       notificationLogId: log.id,
@@ -826,21 +1017,7 @@ export class NotificationsService {
       templateCode: template.code,
     };
 
-    const queued = await this.queue.enqueueEmail(payload, delayMs ? { delayMs } : undefined);
-    if (!queued) {
-      if (delayMs) {
-        return this.prisma.client.notificationLog.update({
-          where: { id: log.id },
-          data: {
-            status: NotificationStatus.SKIPPED,
-            errorMessage:
-              "Delayed email could not be queued. Configure REDIS_URL and run the worker before enabling delayed trigger sends.",
-          },
-        });
-      }
-
-      await this.deliverAndUpdateLog(payload);
-    }
+    await this.deliverAndUpdateLog(payload);
 
     return this.prisma.client.notificationLog.findUnique({
       where: { id: log.id },
@@ -906,10 +1083,7 @@ export class NotificationsService {
       templateCode: template.code,
     };
 
-    const queued = await this.queue.enqueueEmail(payload);
-    if (!queued) {
-      await this.deliverAndUpdateLog(payload);
-    }
+    await this.deliverAndUpdateLog(payload);
 
     return this.prisma.client.notificationLog.findUnique({
       where: { id: log.id },
@@ -1038,6 +1212,16 @@ export class NotificationsService {
     });
 
     if (existing) {
+      if (existing.delayMinutes !== 0) {
+        const normalized = await this.prisma.client.emailTriggerRule.update({
+          where: { id: existing.id },
+          data: { delayMinutes: 0 },
+          include: { template: { include: { theme: true } } },
+        });
+
+        return { rule: normalized, catalog };
+      }
+
       return { rule: existing, catalog };
     }
 
@@ -1077,6 +1261,7 @@ export class NotificationsService {
           },
           update: {
             category: item.category,
+            delayMinutes: 0,
           },
           create: {
             eventCode: item.eventCode,
@@ -1468,6 +1653,70 @@ export class NotificationsService {
         return entryValue === null || ["string", "number", "boolean"].includes(typeof entryValue);
       }),
     );
+  }
+
+  private notificationStatusCounts(
+    rows: Array<{ status: NotificationStatus; _count: { id: number } }>,
+  ): Record<NotificationStatus, number> {
+    const counts: Record<NotificationStatus, number> = {
+      [NotificationStatus.PENDING]: 0,
+      [NotificationStatus.SENT]: 0,
+      [NotificationStatus.FAILED]: 0,
+      [NotificationStatus.SKIPPED]: 0,
+    };
+
+    for (const row of rows) {
+      counts[row.status] = row._count.id;
+    }
+
+    return counts;
+  }
+
+  private contentStatusCounts(
+    rows: Array<{ status: ContentStatus; _count: { id: number } }>,
+  ): Record<ContentStatus, number> {
+    const counts: Record<ContentStatus, number> = {
+      [ContentStatus.DRAFT]: 0,
+      [ContentStatus.IN_REVIEW]: 0,
+      [ContentStatus.SCHEDULED]: 0,
+      [ContentStatus.PUBLISHED]: 0,
+      [ContentStatus.ARCHIVED]: 0,
+    };
+
+    for (const row of rows) {
+      counts[row.status] = row._count.id;
+    }
+
+    return counts;
+  }
+
+  private isEmailProviderConfigured(provider: string, config: EmailProviderConfig) {
+    if (provider === "brevo") {
+      return Boolean(config.brevoApiKey);
+    }
+
+    if (provider === "resend") {
+      return Boolean(config.resendApiKey);
+    }
+
+    if (provider === "sendgrid") {
+      return Boolean(config.sendgridApiKey);
+    }
+
+    return Boolean(config.smtpBridgeUrl || (config.smtpHost && config.smtpPort));
+  }
+
+  private recipientCount(value: string | null | undefined) {
+    if (!value?.trim()) {
+      return 0;
+    }
+
+    return new Set(
+      value
+        .split(/[\n,]/)
+        .map((recipient) => recipient.trim().toLowerCase())
+        .filter(Boolean),
+    ).size;
   }
 
   private emailProviderConfig(value: Prisma.JsonValue | null | undefined): EmailProviderConfig {

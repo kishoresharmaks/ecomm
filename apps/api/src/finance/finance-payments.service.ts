@@ -12,7 +12,13 @@ import {
   StatusEventType,
 } from "@indihub/database";
 import type { RequestUser } from "../auth/types/indihub-request";
-import { paginationFromQuery } from "../common/pagination";
+import {
+  cursorPageFromTimestampItems,
+  cursorPaginationFromQuery,
+  paginationFromQuery,
+  timestampCursorOrderBy,
+  timestampCursorWhere,
+} from "../common/pagination";
 import { EMAIL_TRIGGER_EVENTS } from "../notifications/email-trigger-catalog";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -102,12 +108,33 @@ export class FinancePaymentsService {
   }
 
   async listPaymentCollections(query: FinancePaymentCollectionQueryDto) {
-    const { page, skip, take } = paginationFromQuery(query);
     const where = this.paymentCollectionWhere(query);
+
+    if (query.cursor) {
+      const { take, cursor } = cursorPaginationFromQuery(query);
+      const cursorWhere = timestampCursorWhere("updatedAt", cursor) as
+        | Prisma.PaymentWhereInput
+        | undefined;
+      const items = await this.prisma.client.payment.findMany({
+        where: cursorWhere ? { AND: [where, cursorWhere] } : where,
+        include: this.paymentCollectionInclude(),
+        orderBy: timestampCursorOrderBy("updatedAt"),
+        take: take + 1,
+      });
+      const pageResult = cursorPageFromTimestampItems(items, take, "updatedAt");
+
+      return {
+        items: pageResult.items.map((payment) => this.toPaymentCollection(payment)),
+        pageInfo: pageResult.pageInfo,
+        limit: take,
+      };
+    }
+
+    const { page, skip, take } = paginationFromQuery(query);
     const items = await this.prisma.client.payment.findMany({
       where,
       include: this.paymentCollectionInclude(),
-      orderBy: { updatedAt: "desc" },
+      orderBy: timestampCursorOrderBy("updatedAt"),
       skip,
       take,
     });
@@ -383,6 +410,7 @@ export class FinancePaymentsService {
   private paymentCollectionWhere(
     query: FinancePaymentCollectionQueryDto,
   ): Prisma.PaymentWhereInput {
+    const search = query.search?.trim();
     const createdAt: Prisma.DateTimeFilter = {
       ...(query.dateFrom ? { gte: new Date(query.dateFrom) } : {}),
       ...(query.dateTo ? { lte: new Date(query.dateTo) } : {}),
@@ -392,14 +420,14 @@ export class FinancePaymentsService {
       ...(query.provider ? { provider: query.provider } : {}),
       ...(query.paymentStatus ? { status: query.paymentStatus } : {}),
       ...(Object.keys(createdAt).length ? { createdAt } : {}),
-      ...(query.search
+      ...(search
         ? {
             order: {
               OR: [
-                { orderNumber: { contains: query.search, mode: "insensitive" } },
-                { customer: { user: { email: { contains: query.search, mode: "insensitive" } } } },
+                { orderNumber: { contains: search, mode: "insensitive" } },
+                { customer: { user: { email: { contains: search, mode: "insensitive" } } } },
                 {
-                  customer: { user: { fullName: { contains: query.search, mode: "insensitive" } } },
+                  customer: { user: { fullName: { contains: search, mode: "insensitive" } } },
                 },
               ],
             },

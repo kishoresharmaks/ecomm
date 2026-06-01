@@ -1,5 +1,12 @@
 import { NotFoundException } from "@nestjs/common";
-import { ApprovalStatus, EmailRecipientType, SellerStatus } from "@indihub/database";
+import {
+  ApprovalStatus,
+  EmailRecipientType,
+  PaymentStatus,
+  SellerStatus,
+  SellerSubscriptionBillingCycle,
+  SellerSubscriptionStatus,
+} from "@indihub/database";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AdminSellersService } from "./admin-sellers.service";
 import { SellerApprovalDecision } from "./dto/seller-approval.dto";
@@ -21,6 +28,11 @@ describe("AdminSellersService", () => {
       storeName: "Indi Local",
       status: SellerStatus.PENDING_APPROVAL,
       approvalStatus: ApprovalStatus.PENDING_APPROVAL,
+      subscriptionStatus: SellerSubscriptionStatus.ACTIVE,
+      subscriptionPlan: {
+        pricePaise: 0,
+        billingCycle: SellerSubscriptionBillingCycle.MONTHLY,
+      },
       user: { email: "seller@example.com" },
       profile: null,
     });
@@ -30,6 +42,7 @@ describe("AdminSellersService", () => {
       storeName: "Indi Local",
       status: SellerStatus.APPROVED,
       approvalStatus: ApprovalStatus.APPROVED,
+      subscriptionStatus: SellerSubscriptionStatus.ACTIVE,
       user: { email: "seller@example.com" },
       profile: null,
       addresses: [],
@@ -45,6 +58,16 @@ describe("AdminSellersService", () => {
     expect(result).toMatchObject({
       status: SellerStatus.APPROVED,
       approvalStatus: ApprovalStatus.APPROVED,
+    });
+    expect(tx.sellerSubscription.updateMany).toHaveBeenCalledWith({
+      where: {
+        sellerId: "seller_1",
+        isCurrent: true,
+      },
+      data: {
+        status: SellerSubscriptionStatus.ACTIVE,
+        lastPaymentStatus: "NOT_REQUIRED",
+      },
     });
     expect(tx.auditLog.create).toHaveBeenCalledWith({
       data: {
@@ -75,6 +98,56 @@ describe("AdminSellersService", () => {
     });
   });
 
+  it("keeps a paid recurring seller subscription pending until payment authorization", async () => {
+    const tx = createSellerTx();
+    tx.seller.findFirst.mockResolvedValue({
+      id: "seller_paid",
+      userId: "user_seller_paid",
+      storeName: "Indi Paid Store",
+      status: SellerStatus.PENDING_APPROVAL,
+      approvalStatus: ApprovalStatus.PENDING_APPROVAL,
+      subscriptionStatus: SellerSubscriptionStatus.ACTIVE,
+      subscriptionPlan: {
+        pricePaise: 99900,
+        billingCycle: SellerSubscriptionBillingCycle.MONTHLY,
+      },
+      user: { email: "paid-seller@example.com" },
+      profile: null,
+    });
+    tx.seller.update.mockResolvedValue({
+      id: "seller_paid",
+      userId: "user_seller_paid",
+      storeName: "Indi Paid Store",
+      status: SellerStatus.APPROVED,
+      approvalStatus: ApprovalStatus.APPROVED,
+      subscriptionStatus: SellerSubscriptionStatus.PENDING_PAYMENT,
+      user: { email: "paid-seller@example.com" },
+      profile: null,
+      addresses: [],
+    });
+    const service = new AdminSellersService(createPrisma(tx), notifications as never);
+
+    await service.updateSellerApproval("seller_paid", { decision: SellerApprovalDecision.APPROVE });
+
+    expect(tx.seller.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          subscriptionStatus: SellerSubscriptionStatus.PENDING_PAYMENT,
+        }),
+      }),
+    );
+    expect(tx.sellerSubscription.updateMany).toHaveBeenCalledWith({
+      where: {
+        sellerId: "seller_paid",
+        isCurrent: true,
+      },
+      data: {
+        status: SellerSubscriptionStatus.PENDING_PAYMENT,
+        lastPaymentStatus: PaymentStatus.PENDING,
+      },
+    });
+  });
+
   it("throws when an approval decision targets a missing seller", async () => {
     const tx = createSellerTx();
     tx.seller.findFirst.mockResolvedValue(null);
@@ -93,6 +166,9 @@ function createSellerTx() {
     seller: {
       findFirst: vi.fn(),
       update: vi.fn(),
+    },
+    sellerSubscription: {
+      updateMany: vi.fn(),
     },
     auditLog: {
       create: vi.fn(),

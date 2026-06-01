@@ -340,6 +340,34 @@ export class UpsertCourierProviderSettingDto {
   @MaxLength(1000)
   webhookSecret?: string;
 
+  @ApiPropertyOptional({ example: 500, description: "Fallback package weight in grams." })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  defaultPackageWeightGrams?: number;
+
+  @ApiPropertyOptional({ example: 20, description: "Fallback package length in centimetres." })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  defaultPackageLengthCm?: number;
+
+  @ApiPropertyOptional({ example: 15, description: "Fallback package breadth in centimetres." })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  defaultPackageBreadthCm?: number;
+
+  @ApiPropertyOptional({ example: 8, description: "Fallback package height in centimetres." })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  defaultPackageHeightCm?: number;
+
   @ApiPropertyOptional({ example: false })
   @IsOptional()
   @IsBoolean()

@@ -13,6 +13,7 @@ import {
   CourierWebhooksController,
   FinanceCourierCodRemittancesController,
 } from "./courier-logistics.controller";
+import { CourierAdapterRegistry } from "./courier-adapters/courier-adapter.registry";
 import { CourierLogisticsService } from "./courier-logistics.service";
 import { CustomerOrdersController } from "./customer-orders.controller";
 import { DeliveryPartnerProfileController } from "./delivery-partner-profile.controller";
@@ -37,7 +38,7 @@ import { SellerOrdersController } from "./seller-orders.controller";
     PublicOrdersController,
     CourierWebhooksController
   ],
-  providers: [OrdersService, CourierLogisticsService],
+  providers: [OrdersService, CourierLogisticsService, CourierAdapterRegistry],
   exports: [OrdersService]
 })
 export class OrdersModule {}

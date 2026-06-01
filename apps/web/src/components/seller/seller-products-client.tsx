@@ -211,6 +211,10 @@ export function SellerProductsClient({
         variantNameFromAttributes(variantAttributes) ??
         sku;
       const mrpPaise = rupeesToPaise(formValue(form, `${prefix}:mrp`));
+      const packageWeightGrams = positiveIntegerFormValue(form, `${prefix}:packageWeightGrams`);
+      const packageLengthCm = positiveIntegerFormValue(form, `${prefix}:packageLengthCm`);
+      const packageBreadthCm = positiveIntegerFormValue(form, `${prefix}:packageBreadthCm`);
+      const packageHeightCm = positiveIntegerFormValue(form, `${prefix}:packageHeightCm`);
       return {
         ...(row.variant?.id ? { id: row.variant.id } : {}),
         ...(sku && sku !== row.variant?.sku ? { sku } : {}),
@@ -218,6 +222,10 @@ export function SellerProductsClient({
         pricePaise: rupeesToPaise(formValue(form, `${prefix}:price`)),
         ...(mrpPaise > 0 ? { mrpPaise } : {}),
         stockQuantity: Number(formValue(form, `${prefix}:stock`) || 0),
+        ...(packageWeightGrams ? { packageWeightGrams } : {}),
+        ...(packageLengthCm ? { packageLengthCm } : {}),
+        ...(packageBreadthCm ? { packageBreadthCm } : {}),
+        ...(packageHeightCm ? { packageHeightCm } : {}),
         status: formValue(form, `${prefix}:status`) === "INACTIVE" ? "INACTIVE" as const : "ACTIVE" as const,
         attributes: variantAttributes
       };
@@ -558,6 +566,36 @@ function VariantEditor({
       <SellerField label="Price" name={`${prefix}:price`} type="number" required min={0} step="0.01" defaultValue={paiseToRupees(row.variant?.pricePaise)} />
       <SellerField label="MRP" name={`${prefix}:mrp`} type="number" min={0} step="0.01" defaultValue={paiseToRupees(row.variant?.mrpPaise)} />
       <SellerField label="Stock" name={`${prefix}:stock`} type="number" min={0} defaultValue={row.variant?.stockQuantity ?? 0} />
+      <div className="grid gap-3 sm:grid-cols-4">
+        <SellerField
+          label="Weight g"
+          name={`${prefix}:packageWeightGrams`}
+          type="number"
+          min={1}
+          defaultValue={row.variant?.packageWeightGrams ?? ""}
+        />
+        <SellerField
+          label="Length cm"
+          name={`${prefix}:packageLengthCm`}
+          type="number"
+          min={1}
+          defaultValue={row.variant?.packageLengthCm ?? ""}
+        />
+        <SellerField
+          label="Breadth cm"
+          name={`${prefix}:packageBreadthCm`}
+          type="number"
+          min={1}
+          defaultValue={row.variant?.packageBreadthCm ?? ""}
+        />
+        <SellerField
+          label="Height cm"
+          name={`${prefix}:packageHeightCm`}
+          type="number"
+          min={1}
+          defaultValue={row.variant?.packageHeightCm ?? ""}
+        />
+      </div>
       <SellerSelect label="Variant status" name={`${prefix}:status`} defaultValue={row.variant?.status ?? "ACTIVE"}>
         <option value="ACTIVE">Active</option>
         <option value="INACTIVE">Inactive</option>
@@ -1167,6 +1205,15 @@ function marketplaceEssentialsFromForm(form: FormData): Record<string, unknown> 
   }
 
   return attributes;
+}
+
+function positiveIntegerFormValue(form: FormData, name: string) {
+  const rawValue = optionalFormValue(form, name);
+  if (!rawValue) {
+    return undefined;
+  }
+  const parsed = Number(rawValue);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : undefined;
 }
 
 function coerceMarketplaceEssentialValue(field: MarketplaceProductEssentialField, rawValue: string | undefined): unknown {

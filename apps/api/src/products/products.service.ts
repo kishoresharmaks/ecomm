@@ -4,6 +4,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
 } from "@nestjs/common";
 import {
   ApprovalStatus,
@@ -25,11 +26,20 @@ import {
   type MarketplaceProductEssentialField,
 } from "@indihub/shared-types";
 import type { RequestUser } from "../auth/types/indihub-request";
-import { paginationFromQuery } from "../common/pagination";
+import {
+  createdAtCursorOrderBy,
+  createdAtCursorWhere,
+  cursorPageFromItems,
+  cursorPaginationFromQuery,
+  decodeCursorPayload,
+  encodeCursorPayload,
+  paginationFromQuery,
+} from "../common/pagination";
 import { createSlug } from "../common/slug";
 import { EMAIL_TRIGGER_EVENTS } from "../notifications/email-trigger-catalog";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { SellerSubscriptionsService } from "../sellers/seller-subscriptions.service";
 import {
   normalizeStorageImageReference,
   safeStorageFolderSegment,
@@ -117,15 +127,34 @@ const publicProductInclude = {
   },
 };
 
+type ProductSearchCursor = {
+  rank: number | string;
+  createdAt: string;
+  id: string;
+};
+
+type ProductSearchRow = {
+  id: string;
+  rank: number;
+  createdAt: Date;
+};
+
 @Injectable()
 export class ProductsService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(NotificationsService) private readonly notifications: NotificationsService,
+    @Optional()
+    @Inject(SellerSubscriptionsService)
+    private readonly sellerSubscriptions?: SellerSubscriptionsService,
   ) {}
 
   async listPublicProducts(query: ProductQueryDto) {
-    const { page, skip, take } = this.pagination(query);
+    const search = query.search?.trim();
+    if (search) {
+      return this.listPublicProductsByFullTextSearch(query, search);
+    }
+
     const where: Prisma.ProductWhereInput = {
       deletedAt: null,
       status: ProductStatus.ACTIVE,
@@ -140,21 +169,27 @@ export class ProductsService {
       },
       ...(query.categoryId ? { categoryId: query.categoryId } : {}),
       ...(query.sellerId ? { sellerId: query.sellerId } : {}),
-      ...(query.search
-        ? {
-            OR: [
-              { name: { contains: query.search, mode: "insensitive" } },
-              { description: { contains: query.search, mode: "insensitive" } },
-              { searchText: { contains: query.search, mode: "insensitive" } },
-            ],
-          }
-        : {}),
     };
 
+    if (query.cursor) {
+      const { take, cursor } = cursorPaginationFromQuery(query);
+      const cursorWhere = createdAtCursorWhere(cursor) as Prisma.ProductWhereInput | undefined;
+      const items = await this.prisma.client.product.findMany({
+        where: cursorWhere ? { AND: [where, cursorWhere] } : where,
+        include: publicProductInclude,
+        orderBy: createdAtCursorOrderBy(),
+        take: take + 1,
+      });
+      const pageResult = cursorPageFromItems(items, take);
+
+      return { ...pageResult, limit: take };
+    }
+
+    const { page, skip, take } = this.pagination(query);
     const items = await this.prisma.client.product.findMany({
       where,
       include: publicProductInclude,
-      orderBy: { createdAt: "desc" },
+      orderBy: createdAtCursorOrderBy(),
       skip,
       take,
     });
@@ -187,28 +222,43 @@ export class ProductsService {
 
   async listSellerProducts(actor: RequestUser, query: ProductQueryDto) {
     const seller = await this.resolveSeller(actor);
-    const { page, skip, take } = this.pagination(query);
+    const search = query.search?.trim();
     const where: Prisma.ProductWhereInput = {
       sellerId: seller.id,
       deletedAt: null,
       ...(query.status ? { status: query.status } : {}),
       ...(query.approvalStatus ? { approvalStatus: query.approvalStatus } : {}),
       ...(query.categoryId ? { categoryId: query.categoryId } : {}),
-      ...(query.search
+      ...(search
         ? {
             OR: [
-              { name: { contains: query.search, mode: "insensitive" } },
-              { description: { contains: query.search, mode: "insensitive" } },
-              { searchText: { contains: query.search, mode: "insensitive" } },
+              { name: { contains: search, mode: "insensitive" } },
+              { description: { contains: search, mode: "insensitive" } },
+              { searchText: { contains: search, mode: "insensitive" } },
             ],
           }
         : {}),
     };
 
+    if (query.cursor) {
+      const { take, cursor } = cursorPaginationFromQuery(query);
+      const cursorWhere = createdAtCursorWhere(cursor) as Prisma.ProductWhereInput | undefined;
+      const items = await this.prisma.client.product.findMany({
+        where: cursorWhere ? { AND: [where, cursorWhere] } : where,
+        include: productInclude,
+        orderBy: createdAtCursorOrderBy(),
+        take: take + 1,
+      });
+      const pageResult = cursorPageFromItems(items, take);
+
+      return { ...pageResult, limit: take };
+    }
+
+    const { page, skip, take } = this.pagination(query);
     const items = await this.prisma.client.product.findMany({
       where,
       include: productInclude,
-      orderBy: { createdAt: "desc" },
+      orderBy: createdAtCursorOrderBy(),
       skip,
       take,
     });
@@ -237,6 +287,7 @@ export class ProductsService {
 
   async createSellerProduct(actor: RequestUser, dto: CreateSellerProductDto) {
     const seller = await this.resolveApprovedSeller(actor);
+    await this.sellerSubscriptions?.ensureCanCreateProduct(seller.id);
     const images = this.normalizeProductImages(
       dto.images,
       "Product images",
@@ -306,6 +357,10 @@ export class ProductsService {
             pricePaise: variantInput.pricePaise,
             mrpPaise: variantInput.mrpPaise ?? null,
             stockQuantity: variantInput.stockQuantity ?? 0,
+            packageWeightGrams: variantInput.packageWeightGrams ?? null,
+            packageLengthCm: variantInput.packageLengthCm ?? null,
+            packageBreadthCm: variantInput.packageBreadthCm ?? null,
+            packageHeightCm: variantInput.packageHeightCm ?? null,
             status: variantInput.status ?? VariantStatus.ACTIVE,
             attributes: this.jsonObjectOrNull(variantInput.attributes),
           },
@@ -568,28 +623,43 @@ export class ProductsService {
   }
 
   async listAdminProducts(query: ProductQueryDto) {
-    const { page, skip, take } = this.pagination(query);
+    const search = query.search?.trim();
     const where: Prisma.ProductWhereInput = {
       deletedAt: null,
       ...(query.status ? { status: query.status } : {}),
       ...(query.approvalStatus ? { approvalStatus: query.approvalStatus } : {}),
       ...(query.categoryId ? { categoryId: query.categoryId } : {}),
       ...(query.sellerId ? { sellerId: query.sellerId } : {}),
-      ...(query.search
+      ...(search
         ? {
             OR: [
-              { name: { contains: query.search, mode: "insensitive" } },
-              { description: { contains: query.search, mode: "insensitive" } },
-              { searchText: { contains: query.search, mode: "insensitive" } },
+              { name: { contains: search, mode: "insensitive" } },
+              { description: { contains: search, mode: "insensitive" } },
+              { searchText: { contains: search, mode: "insensitive" } },
             ],
           }
         : {}),
     };
 
+    if (query.cursor) {
+      const { take, cursor } = cursorPaginationFromQuery(query);
+      const cursorWhere = createdAtCursorWhere(cursor) as Prisma.ProductWhereInput | undefined;
+      const items = await this.prisma.client.product.findMany({
+        where: cursorWhere ? { AND: [where, cursorWhere] } : where,
+        include: productInclude,
+        orderBy: createdAtCursorOrderBy(),
+        take: take + 1,
+      });
+      const pageResult = cursorPageFromItems(items, take);
+
+      return { ...pageResult, limit: take };
+    }
+
+    const { page, skip, take } = this.pagination(query);
     const items = await this.prisma.client.product.findMany({
       where,
       include: productInclude,
-      orderBy: { createdAt: "desc" },
+      orderBy: createdAtCursorOrderBy(),
       skip,
       take,
     });
@@ -671,6 +741,167 @@ export class ProductsService {
 
   private pagination(query: ProductQueryDto) {
     return paginationFromQuery(query);
+  }
+
+  private async listPublicProductsByFullTextSearch(query: ProductQueryDto, search: string) {
+    if (query.cursor) {
+      const { take } = cursorPaginationFromQuery(query);
+      const searchCursor = this.decodeProductSearchCursor(query.cursor);
+      const rows = await this.findPublicProductSearchRows(search, query, take + 1, {
+        cursor: searchCursor,
+      });
+      const pageRows = rows.slice(0, take);
+      const items = await this.findPublicProductsByIds(pageRows.map((row) => row.id));
+      const lastRow = pageRows[pageRows.length - 1] ?? null;
+
+      return {
+        items,
+        limit: take,
+        pageInfo: {
+          hasNextPage: rows.length > take,
+          nextCursor: rows.length > take && lastRow ? this.encodeProductSearchCursor(lastRow) : null,
+        },
+      };
+    }
+
+    const { page, skip, take } = this.pagination(query);
+    const [rows, total] = await Promise.all([
+      this.findPublicProductSearchRows(search, query, take, { skip }),
+      this.countPublicProductSearchRows(search, query),
+    ]);
+    const items = await this.findPublicProductsByIds(rows.map((row) => row.id));
+
+    return { items, total, page, limit: take };
+  }
+
+  private async findPublicProductSearchRows(
+    search: string,
+    query: ProductQueryDto,
+    limit: number,
+    options: { skip?: number; cursor?: ProductSearchRow | null } = {},
+  ) {
+    const searchDocument = this.productSearchDocumentSql();
+    const searchQuery = Prisma.sql`plainto_tsquery('simple', ${search})`;
+    const rankExpression = Prisma.sql`ts_rank(${searchDocument}, ${searchQuery})`;
+    const clauses = this.publicProductSearchWhereClauses(search, query, searchDocument, searchQuery);
+    if (options.cursor) {
+      clauses.push(
+        Prisma.sql`(${rankExpression}, p.created_at, p.id) < (${options.cursor.rank}, ${options.cursor.createdAt}, ${options.cursor.id}::uuid)`,
+      );
+    }
+
+    return this.prisma.client.$queryRaw<ProductSearchRow[]>`
+      SELECT p.id, ${rankExpression}::float8 AS rank, p.created_at AS "createdAt"
+      FROM products p
+      INNER JOIN sellers s ON s.id = p.seller_id
+      INNER JOIN categories c ON c.id = p.category_id
+      WHERE ${Prisma.join(clauses, " AND ")}
+      ORDER BY ${rankExpression} DESC, p.created_at DESC, p.id DESC
+      LIMIT ${limit}
+      ${options.skip ? Prisma.sql`OFFSET ${options.skip}` : Prisma.empty}
+    `;
+  }
+
+  private async countPublicProductSearchRows(search: string, query: ProductQueryDto) {
+    const searchDocument = this.productSearchDocumentSql();
+    const searchQuery = Prisma.sql`plainto_tsquery('simple', ${search})`;
+    const clauses = this.publicProductSearchWhereClauses(search, query, searchDocument, searchQuery);
+    const rows = await this.prisma.client.$queryRaw<Array<{ count: number }>>`
+      SELECT count(*)::int AS count
+      FROM products p
+      INNER JOIN sellers s ON s.id = p.seller_id
+      INNER JOIN categories c ON c.id = p.category_id
+      WHERE ${Prisma.join(clauses, " AND ")}
+    `;
+
+    return rows[0]?.count ?? 0;
+  }
+
+  private publicProductSearchWhereClauses(
+    search: string,
+    query: ProductQueryDto,
+    searchDocument: Prisma.Sql,
+    searchQuery: Prisma.Sql,
+  ) {
+    const likeSearch = `%${search}%`;
+    const clauses = [
+      Prisma.sql`p.deleted_at IS NULL`,
+      Prisma.sql`p.status = ${ProductStatus.ACTIVE}`,
+      Prisma.sql`p.approval_status = ${ApprovalStatus.APPROVED}`,
+      Prisma.sql`s.deleted_at IS NULL`,
+      Prisma.sql`s.status = ${SellerStatus.APPROVED}`,
+      Prisma.sql`s.approval_status = ${ApprovalStatus.APPROVED}`,
+      Prisma.sql`c.deleted_at IS NULL`,
+      Prisma.sql`c.status = ${CategoryStatus.ACTIVE}`,
+      Prisma.sql`(
+        ${searchDocument} @@ ${searchQuery}
+        OR p.name ILIKE ${likeSearch}
+        OR p.description ILIKE ${likeSearch}
+        OR p.search_text ILIKE ${likeSearch}
+      )`,
+    ];
+
+    if (query.categoryId) {
+      clauses.push(Prisma.sql`p.category_id = ${query.categoryId}::uuid`);
+    }
+    if (query.sellerId) {
+      clauses.push(Prisma.sql`p.seller_id = ${query.sellerId}::uuid`);
+    }
+
+    return clauses;
+  }
+
+  private productSearchDocumentSql() {
+    return Prisma.sql`to_tsvector('simple', coalesce(p.name, '') || ' ' || coalesce(p.description, '') || ' ' || coalesce(p.search_text, ''))`;
+  }
+
+  private async findPublicProductsByIds(productIds: string[]) {
+    if (!productIds.length) {
+      return [];
+    }
+
+    const products = await this.prisma.client.product.findMany({
+      where: { id: { in: productIds } },
+      include: publicProductInclude,
+    });
+    const productById = new Map(products.map((product) => [product.id, product]));
+
+    return productIds.flatMap((productId) => {
+      const product = productById.get(productId);
+      return product ? [product] : [];
+    });
+  }
+
+  private encodeProductSearchCursor(row: ProductSearchRow) {
+    return encodeCursorPayload({
+      rank: row.rank,
+      createdAt: row.createdAt.toISOString(),
+      id: row.id,
+    });
+  }
+
+  private decodeProductSearchCursor(cursor: string) {
+    const payload = decodeCursorPayload<Record<string, unknown>>(cursor) as ProductSearchCursor | null;
+    if (!payload) {
+      return null;
+    }
+
+    const rank = Number(payload.rank);
+    const createdAt = new Date(payload.createdAt);
+    if (
+      !Number.isFinite(rank) ||
+      Number.isNaN(createdAt.getTime()) ||
+      typeof payload.id !== "string" ||
+      !payload.id
+    ) {
+      throw new BadRequestException("cursor is invalid.");
+    }
+
+    return {
+      rank,
+      createdAt,
+      id: payload.id,
+    };
   }
 
   private async resolveSeller(actor: RequestUser) {
@@ -821,6 +1052,18 @@ export class ProductsService {
           ...(variantDto.stockQuantity !== undefined
             ? { stockQuantity: variantDto.stockQuantity }
             : {}),
+          ...(variantDto.packageWeightGrams !== undefined
+            ? { packageWeightGrams: variantDto.packageWeightGrams ?? null }
+            : {}),
+          ...(variantDto.packageLengthCm !== undefined
+            ? { packageLengthCm: variantDto.packageLengthCm ?? null }
+            : {}),
+          ...(variantDto.packageBreadthCm !== undefined
+            ? { packageBreadthCm: variantDto.packageBreadthCm ?? null }
+            : {}),
+          ...(variantDto.packageHeightCm !== undefined
+            ? { packageHeightCm: variantDto.packageHeightCm ?? null }
+            : {}),
           ...(variantDto.status !== undefined ? { status: variantDto.status } : {}),
           ...(variantDto.attributes !== undefined
             ? { attributes: this.jsonObjectOrNull(variantDto.attributes) }
@@ -863,6 +1106,10 @@ export class ProductsService {
         pricePaise: variantDto.pricePaise,
         mrpPaise: variantDto.mrpPaise ?? null,
         stockQuantity: variantDto.stockQuantity ?? 0,
+        packageWeightGrams: variantDto.packageWeightGrams ?? null,
+        packageLengthCm: variantDto.packageLengthCm ?? null,
+        packageBreadthCm: variantDto.packageBreadthCm ?? null,
+        packageHeightCm: variantDto.packageHeightCm ?? null,
         status: variantDto.status ?? VariantStatus.ACTIVE,
         attributes: this.jsonObjectOrNull(variantDto.attributes),
       },

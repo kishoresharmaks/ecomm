@@ -146,3 +146,17 @@ export class AssignSellerSubscriptionDto {
   @MaxLength(1000)
   note?: string;
 }
+
+export class VerifySellerRazorpaySubscriptionDto {
+  @ApiProperty({ example: "sub_razorpay123" })
+  @IsString()
+  razorpaySubscriptionId!: string;
+
+  @ApiProperty({ example: "pay_razorpay123" })
+  @IsString()
+  razorpayPaymentId!: string;
+
+  @ApiProperty({ example: "generated_checkout_signature" })
+  @IsString()
+  razorpaySignature!: string;
+}

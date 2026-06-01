@@ -140,7 +140,7 @@ describe("NotificationsService", () => {
         user: { connect: { id: "user_1" } },
       }),
     });
-    expect(queue.enqueueEmail).toHaveBeenCalledWith(
+    expect(emailDelivery.deliver).toHaveBeenCalledWith(
       expect.objectContaining({
         notificationLogId: "log_1",
         recipient: "customer@example.com",
@@ -248,7 +248,7 @@ describe("NotificationsService", () => {
         body: expect.stringContaining("Order 1HI202605260002 is paid"),
       },
     });
-    expect(queue.enqueueEmail).toHaveBeenCalledWith(
+    expect(emailDelivery.deliver).toHaveBeenCalledWith(
       expect.objectContaining({
         notificationLogId: "log_retry",
         recipient: "customer@example.com",
@@ -344,13 +344,13 @@ describe("NotificationsService", () => {
       },
     });
 
-    expect(queue.enqueueEmail).toHaveBeenCalledWith(
+    expect(emailDelivery.deliver).toHaveBeenCalledWith(
       expect.objectContaining({
         subject: "Support SUP-123",
         body: expect.stringContaining('href="https://1handindia.test/support/tickets/123"'),
       }),
     );
-    const payload = queue.enqueueEmail.mock.calls[0]?.[0];
+    const payload = emailDelivery.deliver.mock.calls[0]?.[0];
     expect(payload?.body).toContain("Open link");
     expect(payload?.body).toContain("background:#FFFFFF");
     expect(payload?.body).toContain("color:#163B5C");
@@ -401,7 +401,7 @@ describe("NotificationsService", () => {
       recipient: "customer@example.com",
     });
 
-    const payload = queue.enqueueEmail.mock.calls[0]?.[0];
+    const payload = emailDelivery.deliver.mock.calls[0]?.[0];
     expect(payload?.body).toContain("#0F8A5F");
     expect(payload?.body).toContain("Edited default footer");
     expect(payload?.body).toContain("border-radius:12px");
@@ -455,12 +455,11 @@ describe("NotificationsService", () => {
         status: NotificationStatus.PENDING,
       }),
     });
-    expect(queue.enqueueEmail).toHaveBeenCalledWith(
+    expect(emailDelivery.deliver).toHaveBeenCalledWith(
       expect.objectContaining({
         templateCode: "CUSTOMER_ACCOUNT_CREATED",
         subject: "Welcome Priya",
       }),
-      undefined,
     );
   });
 
@@ -505,7 +504,7 @@ describe("NotificationsService", () => {
     expect(queue.enqueueEmail).not.toHaveBeenCalled();
   });
 
-  it("queues delayed trigger email and stores scheduled time", async () => {
+  it("sends trigger email immediately even when a legacy delay is configured", async () => {
     queue.isAvailable.mockReturnValue(true);
     queue.enqueueEmail.mockResolvedValue(true);
     prisma.client.emailTriggerRule.findUnique.mockResolvedValue({
@@ -515,6 +514,23 @@ describe("NotificationsService", () => {
       category: EmailTemplateCategory.CUSTOMER,
       isEnabled: true,
       delayMinutes: 30,
+      templateId: "template_customer",
+      template: {
+        code: "CUSTOMER_ACCOUNT_CREATED",
+        channel: NotificationChannel.EMAIL,
+        subject: "Welcome {{ customerName }}",
+        body: "Hello {{ customerName }}",
+        status: ContentStatus.PUBLISHED,
+        theme: null,
+      },
+    });
+    prisma.client.emailTriggerRule.update.mockResolvedValue({
+      id: "trigger_delayed",
+      eventCode: "CUSTOMER_REGISTERED",
+      recipientType: EmailRecipientType.CUSTOMER,
+      category: EmailTemplateCategory.CUSTOMER,
+      isEnabled: true,
+      delayMinutes: 0,
       templateId: "template_customer",
       template: {
         code: "CUSTOMER_ACCOUNT_CREATED",
@@ -541,19 +557,29 @@ describe("NotificationsService", () => {
       variables: { customerName: "Priya" },
     });
 
-    expect(prisma.client.notificationLog.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        scheduledFor: expect.any(Date),
+    const createdLogData = prisma.client.notificationLog.create.mock.calls[0]?.[0]?.data;
+    expect(createdLogData).toEqual(
+      expect.objectContaining({
         status: NotificationStatus.PENDING,
       }),
+    );
+    expect(createdLogData?.scheduledFor).toBeUndefined();
+    expect(prisma.client.emailTriggerRule.update).toHaveBeenCalledWith({
+      where: { id: "trigger_delayed" },
+      data: { delayMinutes: 0 },
+      include: { template: { include: { theme: true } } },
     });
-    expect(queue.enqueueEmail).toHaveBeenCalledWith(expect.any(Object), {
-      delayMs: 30 * 60 * 1000,
-    });
-    expect(emailDelivery.deliver).not.toHaveBeenCalled();
+    expect(queue.enqueueEmail).not.toHaveBeenCalled();
+    expect(emailDelivery.deliver).toHaveBeenCalledWith(
+      expect.objectContaining({
+        notificationLogId: "log_delayed",
+        templateCode: "CUSTOMER_ACCOUNT_CREATED",
+        subject: "Welcome Priya",
+      }),
+    );
   });
 
-  it("skips delayed trigger email when queue is unavailable", async () => {
+  it("still sends legacy delayed trigger email immediately when queue is unavailable", async () => {
     queue.isAvailable.mockReturnValue(false);
     prisma.client.emailTriggerRule.findUnique.mockResolvedValue({
       id: "trigger_delayed_unavailable",
@@ -562,6 +588,23 @@ describe("NotificationsService", () => {
       category: EmailTemplateCategory.CUSTOMER,
       isEnabled: true,
       delayMinutes: 15,
+      templateId: "template_customer",
+      template: {
+        code: "CUSTOMER_ACCOUNT_CREATED",
+        channel: NotificationChannel.EMAIL,
+        subject: "Welcome {{ customerName }}",
+        body: "Hello {{ customerName }}",
+        status: ContentStatus.PUBLISHED,
+        theme: null,
+      },
+    });
+    prisma.client.emailTriggerRule.update.mockResolvedValue({
+      id: "trigger_delayed_unavailable",
+      eventCode: "CUSTOMER_REGISTERED",
+      recipientType: EmailRecipientType.CUSTOMER,
+      category: EmailTemplateCategory.CUSTOMER,
+      isEnabled: true,
+      delayMinutes: 0,
       templateId: "template_customer",
       template: {
         code: "CUSTOMER_ACCOUNT_CREATED",
@@ -587,14 +630,25 @@ describe("NotificationsService", () => {
       variables: { customerName: "Priya" },
     });
 
-    expect(prisma.client.notificationLog.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        status: NotificationStatus.SKIPPED,
-        scheduledFor: expect.any(Date),
-        errorMessage: expect.stringContaining("Delayed email requires the Redis email queue"),
+    const createdLogData = prisma.client.notificationLog.create.mock.calls[0]?.[0]?.data;
+    expect(createdLogData).toEqual(
+      expect.objectContaining({
+        status: NotificationStatus.PENDING,
       }),
+    );
+    expect(createdLogData?.scheduledFor).toBeUndefined();
+    expect(prisma.client.emailTriggerRule.update).toHaveBeenCalledWith({
+      where: { id: "trigger_delayed_unavailable" },
+      data: { delayMinutes: 0 },
+      include: { template: { include: { theme: true } } },
     });
     expect(queue.enqueueEmail).not.toHaveBeenCalled();
-    expect(emailDelivery.deliver).not.toHaveBeenCalled();
+    expect(emailDelivery.deliver).toHaveBeenCalledWith(
+      expect.objectContaining({
+        notificationLogId: "log_delay_skip",
+        templateCode: "CUSTOMER_ACCOUNT_CREATED",
+        subject: "Welcome Priya",
+      }),
+    );
   });
 });

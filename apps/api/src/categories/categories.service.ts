@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, Inject, Injectable, NotFoundExc
 import { CategoryStatus, ProductTemplateStatus } from "@indihub/database";
 import { createSlug } from "../common/slug";
 import { PrismaService } from "../prisma/prisma.service";
-import { normalizeStorageImageReference } from "../storage/storage-image";
+import { normalizePublicImageReference } from "../storage/storage-image";
 import type { RequestUser } from "../auth/types/indihub-request";
 import { CreateCategoryDto, UpdateCategoryDto } from "./dto/create-category.dto";
 
@@ -103,7 +103,7 @@ export class CategoriesService {
     await this.ensureProductTemplateExists(dto.productTemplateId);
     const slug = await this.createUniqueSlug(dto.name);
 
-    const imageUrl = normalizeStorageImageReference(dto.imageUrl, "Category image");
+    const imageUrl = normalizePublicImageReference(dto.imageUrl, "Category image");
     const defaultHsnCode = this.normalizeHsnCode(dto.defaultHsnCode);
     const defaultGstRatePercent = this.normalizeGstRate(dto.defaultGstRatePercent);
     this.ensureCompleteCategoryTaxDefaults(defaultHsnCode, defaultGstRatePercent);
@@ -153,7 +153,7 @@ export class CategoriesService {
       }
     }
 
-    const imageUrl = normalizeStorageImageReference(dto.imageUrl, "Category image");
+    const imageUrl = normalizePublicImageReference(dto.imageUrl, "Category image");
     const nextDefaultHsnCode =
       dto.defaultHsnCode !== undefined ? this.normalizeHsnCode(dto.defaultHsnCode) : existing.defaultHsnCode;
     const nextDefaultGstRatePercent =

@@ -1,6 +1,12 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma, SellerStatementStatus } from "@indihub/database";
-import { paginationFromQuery } from "../common/pagination";
+import {
+  cursorPageFromTimestampItems,
+  cursorPaginationFromQuery,
+  paginationFromQuery,
+  timestampCursorOrderBy,
+  timestampCursorWhere,
+} from "../common/pagination";
 import { RequestUser } from "../auth/types/indihub-request";
 import { PrismaService } from "../prisma/prisma.service";
 import { FinanceListQueryDto, GenerateStatementDto } from "./dto/finance.dto";
@@ -17,28 +23,45 @@ export class SellerStatementsService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async listStatements(query: FinanceListQueryDto, sellerIdFromAuth?: string) {
-    const { page, skip, take } = paginationFromQuery(query, { defaultLimit: 20, maxLimit: 100 });
+    const search = query.search?.trim();
     const where: Prisma.SellerStatementWhereInput = {
       ...(sellerIdFromAuth ? { sellerId: sellerIdFromAuth } : {}),
-      ...(query.search
+      ...(search
         ? {
             OR: [
-              { statementNumber: { contains: query.search, mode: "insensitive" } },
-              { seller: { storeName: { contains: query.search, mode: "insensitive" } } },
-              { payout: { payoutNumber: { contains: query.search, mode: "insensitive" } } }
+              { statementNumber: { contains: search, mode: "insensitive" } },
+              { seller: { storeName: { contains: search, mode: "insensitive" } } },
+              { payout: { payoutNumber: { contains: search, mode: "insensitive" } } }
             ]
           }
         : {})
     };
 
+    if (query.cursor) {
+      const { take, cursor } = cursorPaginationFromQuery(query, {
+        defaultLimit: 20,
+        maxLimit: 100
+      });
+      const cursorWhere = timestampCursorWhere("generatedAt", cursor) as
+        | Prisma.SellerStatementWhereInput
+        | undefined;
+      const items = await this.prisma.client.sellerStatement.findMany({
+        where: cursorWhere ? { AND: [where, cursorWhere] } : where,
+        include: this.statementListInclude(),
+        orderBy: timestampCursorOrderBy("generatedAt"),
+        take: take + 1
+      });
+      const pageResult = cursorPageFromTimestampItems(items, take, "generatedAt");
+
+      return { ...pageResult, limit: take };
+    }
+
+    const { page, skip, take } = paginationFromQuery(query, { defaultLimit: 20, maxLimit: 100 });
     const [items, total] = await this.prisma.client.$transaction(async (tx) => {
       const items = await tx.sellerStatement.findMany({
         where,
-        include: {
-          seller: { select: { id: true, storeName: true, slug: true } },
-          payout: { select: { id: true, payoutNumber: true, status: true } }
-        },
-        orderBy: { generatedAt: "desc" },
+        include: this.statementListInclude(),
+        orderBy: timestampCursorOrderBy("generatedAt"),
         skip,
         take
       });
@@ -47,6 +70,13 @@ export class SellerStatementsService {
     });
 
     return { items, total, page, limit: take };
+  }
+
+  private statementListInclude() {
+    return {
+      seller: { select: { id: true, storeName: true, slug: true } },
+      payout: { select: { id: true, payoutNumber: true, status: true } }
+    } satisfies Prisma.SellerStatementInclude;
   }
 
   async generateStatement(dto: GenerateStatementDto, actor: RequestUser) {

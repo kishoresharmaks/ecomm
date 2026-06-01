@@ -4,6 +4,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
   ServiceUnavailableException,
   UnauthorizedException,
 } from "@nestjs/common";
@@ -20,6 +21,7 @@ import type { RequestUser } from "../auth/types/indihub-request";
 import { EMAIL_TRIGGER_EVENTS } from "../notifications/email-trigger-catalog";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { SellerSubscriptionsService } from "../sellers/seller-subscriptions.service";
 import { readBooleanSetting, readNumberSetting } from "../settings/setting-value-utils";
 import { UpsertPaymentConfigurationDto } from "./dto/payment-config.dto";
 import { VerifyRazorpayPaymentDto } from "./dto/razorpay-payment.dto";
@@ -99,6 +101,9 @@ export class PaymentsService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(NotificationsService) private readonly notifications: NotificationsService,
+    @Optional()
+    @Inject(SellerSubscriptionsService)
+    private readonly sellerSubscriptions?: SellerSubscriptionsService,
   ) {}
 
   async readiness() {
@@ -665,6 +670,12 @@ export class PaymentsService {
   ) {
     await this.verifyWebhookSignature(signature, payload, rawBody);
 
+    const sellerSubscriptionResult =
+      await this.sellerSubscriptions?.handleRazorpaySubscriptionWebhook(payload, eventId);
+    if (sellerSubscriptionResult?.handled) {
+      return sellerSubscriptionResult;
+    }
+
     const event = String(payload.event ?? "");
     const paymentEntity = this.extractRazorpayPaymentEntity(payload);
     if (!paymentEntity) {
@@ -773,6 +784,23 @@ export class PaymentsService {
         nextProviderPaymentId && nextProviderPaymentId !== currentPayment.providerPaymentId,
       );
 
+      if (
+        currentPayment.status === PaymentStatus.PAID &&
+        nextStatus === PaymentStatus.PAID &&
+        currentPayment.providerPaymentId &&
+        providerPaymentChanged
+      ) {
+        return {
+          received: true,
+          ignored: true,
+          paymentId: currentPayment.id,
+          status: currentPayment.status,
+          reason: "paid_payment_is_terminal",
+          notify: false,
+          notificationPayment: currentPayment,
+        };
+      }
+
       if (!statusChanged && !providerPaymentChanged) {
         return {
           received: true,
@@ -785,14 +813,52 @@ export class PaymentsService {
         };
       }
 
-      await tx.payment.update({
-        where: { id: currentPayment.id },
+      const paymentUpdate = await tx.payment.updateMany({
+        where: {
+          id: currentPayment.id,
+          ...(nextStatus === PaymentStatus.FAILED
+            ? {
+                status: { not: PaymentStatus.PAID },
+                order: { paymentStatus: { not: PaymentStatus.PAID } },
+              }
+            : {}),
+        },
         data: {
           status: nextStatus,
           providerPaymentId: nextProviderPaymentId,
           rawResponse: payload as Prisma.InputJsonValue,
         },
       });
+      if (paymentUpdate.count !== 1) {
+        const latestPayment = await tx.payment.findUnique({
+          where: { id: currentPayment.id },
+          include: {
+            order: {
+              include: {
+                customer: {
+                  include: {
+                    user: true,
+                  },
+                },
+              },
+            },
+          },
+        });
+        return {
+          received: true,
+          ignored: true,
+          paymentId: currentPayment.id,
+          status: latestPayment?.status ?? currentPayment.status,
+          reason:
+            latestPayment?.status === PaymentStatus.PAID ||
+            latestPayment?.order.paymentStatus === PaymentStatus.PAID
+              ? "paid_payment_is_terminal"
+              : "payment_status_conflict",
+          notify: false,
+          notificationPayment: latestPayment ?? currentPayment,
+        };
+      }
+
       await tx.paymentEvent.create({
         data: {
           paymentId: currentPayment.id,
@@ -804,10 +870,26 @@ export class PaymentsService {
       });
 
       if (statusChanged) {
-        await tx.order.update({
-          where: { id: currentPayment.orderId },
+        const orderUpdate = await tx.order.updateMany({
+          where: {
+            id: currentPayment.orderId,
+            ...(nextStatus === PaymentStatus.FAILED
+              ? { paymentStatus: { not: PaymentStatus.PAID } }
+              : {}),
+          },
           data: { paymentStatus: nextStatus },
         });
+        if (orderUpdate.count !== 1 && nextStatus === PaymentStatus.FAILED) {
+          return {
+            received: true,
+            ignored: true,
+            paymentId: currentPayment.id,
+            status: PaymentStatus.PAID,
+            reason: "paid_payment_is_terminal",
+            notify: false,
+            notificationPayment: currentPayment,
+          };
+        }
         await tx.orderStatusEvent.create({
           data: {
             orderId: currentPayment.orderId,

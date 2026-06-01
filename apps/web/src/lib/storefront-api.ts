@@ -78,6 +78,10 @@ export type ProductVariant = {
   mrpPaise?: number | null;
   currency: string;
   stockQuantity: number;
+  packageWeightGrams?: number | null;
+  packageLengthCm?: number | null;
+  packageBreadthCm?: number | null;
+  packageHeightCm?: number | null;
   status: string;
   attributes?: Record<string, unknown> | null;
 };
@@ -171,6 +175,11 @@ export type ProductSummary = {
   seller: SellerSummary;
   images: ProductImage[];
   variants: ProductVariant[];
+  campaignBadge?: string | null;
+  campaignLabel?: string | null;
+  campaignDescription?: string | null;
+  campaignImageUrl?: string | null;
+  campaignLinkUrl?: string | null;
   createdAt?: string;
 };
 
@@ -403,6 +412,36 @@ export type CmsMenuItem = {
   children?: CmsMenuItem[];
 };
 
+export type StorefrontHomeStats = {
+  liveProducts: number;
+  approvedStores: number;
+  activeCustomers: number;
+  activeCategories: number;
+  verifiedSellers: number;
+  verifiedSellerPercent: number;
+};
+
+export type StorefrontHomePayload = {
+  banners: HomepageBanner[];
+  homepageSections: HomepageSection[];
+  categories: CategorySummary[];
+  storesNearYou: StoreProfile[];
+  productRails: {
+    featured: ProductSummary[];
+    latest: ProductSummary[];
+    deals: ProductSummary[];
+  };
+  stats: StorefrontHomeStats;
+  menus: {
+    header: CmsMenuItem[];
+    footer: CmsMenuItem[];
+    legal: CmsMenuItem[];
+  };
+  sellerCta?: HomepageSection | null;
+  serviceBadges?: HomepageSection | null;
+  generatedAt?: string;
+};
+
 export type OrderSummary = {
   id: string;
   orderNumber: string;
@@ -631,6 +670,27 @@ export function listProducts(
   return indihubFetch<PaginatedProducts>(`/api/products${suffix}`);
 }
 
+export function listStorefrontDeals(
+  query: {
+    search?: string;
+    categoryId?: string;
+    sellerId?: string;
+    page?: number;
+    limit?: number;
+  } = {},
+) {
+  const params = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== "") {
+      params.set(key, String(value));
+    }
+  }
+
+  const suffix = params.size ? `?${params.toString()}` : "";
+  return indihubFetch<PaginatedProducts>(`/api/storefront/deals${suffix}`);
+}
+
 export function getProduct(slug: string) {
   return indihubFetch<ProductSummary>(`/api/products/${encodeURIComponent(slug)}`);
 }
@@ -650,6 +710,19 @@ export function listStores(query: StoreLocationQuery = {}) {
 
   const suffix = params.size ? `?${params.toString()}` : "";
   return indihubFetch<StoreProfile[]>(`/api/sellers${suffix}`);
+}
+
+export function getStorefrontHome(query: StoreLocationQuery = {}) {
+  const params = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== "") {
+      params.set(key, String(value));
+    }
+  }
+
+  const suffix = params.size ? `?${params.toString()}` : "";
+  return indihubFetch<StorefrontHomePayload>(`/api/storefront/home${suffix}`);
 }
 
 export function getCmsPage(slug: string) {
@@ -852,7 +925,8 @@ export function formatOrderTotal(
 }
 
 export function primaryImage(product: ProductSummary) {
-  return product.images.find((image) => image.isPrimary)?.url ?? product.images[0]?.url ?? null;
+  const campaignImage = product.campaignImageUrl?.trim();
+  return campaignImage || (product.images.find((image) => image.isPrimary)?.url ?? product.images[0]?.url ?? null);
 }
 
 export function isPurchasableVariant(variant: ProductVariant) {
@@ -860,7 +934,12 @@ export function isPurchasableVariant(variant: ProductVariant) {
 }
 
 export function primaryVariant(product: ProductSummary) {
-  return product.variants.find(isPurchasableVariant) ?? null;
+  return (
+    product.variants.find(isPurchasableVariant) ??
+    product.variants.find((variant) => variant.status === "ACTIVE") ??
+    product.variants[0] ??
+    null
+  );
 }
 
 export function cartTotals(cart?: CartSummary) {

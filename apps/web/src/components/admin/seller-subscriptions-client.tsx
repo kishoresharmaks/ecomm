@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
-import { CheckCircle2, CreditCard, Pencil, Plus, ShieldCheck, Store, UserRound } from "lucide-react";
+import { CheckCircle2, CreditCard, Pencil, Plus, ReceiptText, ShieldCheck, Store, UserRound } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
 import { useAdminAuth } from "@/components/admin/admin-auth-context";
@@ -101,7 +101,7 @@ export function AdminSellerSubscriptionsClient() {
       ...sellers.map((seller) => ({
         value: seller.id,
         label: seller.storeName,
-        description: seller.subscriptionPlan?.name ?? "No plan"
+        description: `${seller.subscriptionPlan?.name ?? "No plan"} / ${humanize(seller.subscriptionStatus)}`
       }))
     ],
     [sellers]
@@ -196,10 +196,11 @@ export function AdminSellerSubscriptionsClient() {
 
   return (
     <div className="grid gap-5">
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <SummaryTile label="Plans" value={plans.length} note={`${activePlans.length} active`} />
         <SummaryTile label="Default plan" value={defaultPlan?.name ?? "Not set"} note="Used during seller onboarding" />
         <SummaryTile label="Assigned sellers" value={plans.reduce((total, plan) => total + (plan._count?.currentSellers ?? 0), 0)} note="Current plan links" />
+        <SummaryTile label="Billing attention" value={sellers.filter((seller) => ["PENDING_PAYMENT", "EXPIRED"].includes(seller.subscriptionStatus ?? "")).length} note="Payment pending or expired" />
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
@@ -304,6 +305,9 @@ export function AdminSellerSubscriptionsClient() {
                       <p className="mt-1 text-xs font-bold text-[#667085]">
                         {plan._count?.currentSellers ?? 0} sellers currently assigned / {plan._count?.subscriptions ?? 0} historical assignments
                       </p>
+                      <p className="mt-1 text-xs font-bold text-[#667085]">
+                        Razorpay plan {plan.providerPlanId ? `synced (${plan.providerPlanId})` : "will sync on first paid authorisation"} / version {plan.providerPlanVersion ?? 1}
+                      </p>
                     </div>
                     <div className="flex flex-wrap gap-2 lg:justify-end">
                       <Button type="button" variant="outline" size="sm" onClick={() => editPlan(plan)}>
@@ -327,7 +331,7 @@ export function AdminSellerSubscriptionsClient() {
               <span className="grid h-10 w-10 place-items-center rounded-md bg-[#EAF1F7] text-[#163B5C]">
                 <UserRound className="h-5 w-5" aria-hidden="true" />
               </span>
-              <SectionHeading title="Assign seller plan" description="Manual operational assignment. Payment collection is separate from this Phase 1 control." />
+              <SectionHeading title="Assign seller plan" description="Paid recurring plans move to seller Razorpay authorisation unless admin sets a manual status." />
             </div>
             <form
               className="mt-5 grid gap-3 md:grid-cols-2"
@@ -362,6 +366,51 @@ export function AdminSellerSubscriptionsClient() {
                 </Button>
               </div>
             </form>
+          </section>
+
+          <section className="rounded-lg border border-[#D9E2EA] bg-white p-5 shadow-sm">
+            <div className="flex items-center gap-3">
+              <span className="grid h-10 w-10 place-items-center rounded-md bg-[#FFF0EC] text-[#ED3500]">
+                <ReceiptText className="h-5 w-5" aria-hidden="true" />
+              </span>
+              <SectionHeading title="Seller billing state" description="Recurring authorisation, grace-period, cancellation, and provider status by seller." />
+            </div>
+            <div className="mt-5 overflow-x-auto">
+              <table className="min-w-full text-left text-sm">
+                <thead className="border-b border-[#D9E2EA] text-xs uppercase tracking-wide text-[#667085]">
+                  <tr>
+                    <th className="px-3 py-2">Seller</th>
+                    <th className="px-3 py-2">Plan</th>
+                    <th className="px-3 py-2">Billing</th>
+                    <th className="px-3 py-2">Provider</th>
+                    <th className="px-3 py-2">Failure</th>
+                    <th className="px-3 py-2">Cancel</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#EDF2F7]">
+                  {sellers.map((seller) => {
+                    const current = seller.subscriptions?.[0];
+                    return (
+                      <tr key={seller.id}>
+                        <td className="px-3 py-3 font-black text-[#1F2933]">{seller.storeName}</td>
+                        <td className="px-3 py-3 font-semibold text-[#667085]">{seller.subscriptionPlan?.name ?? "No plan"}</td>
+                        <td className="px-3 py-3">
+                          <StatusBadge tone={statusTone(seller.subscriptionStatus)}>{humanize(seller.subscriptionStatus)}</StatusBadge>
+                        </td>
+                        <td className="px-3 py-3 font-semibold text-[#667085]">{current?.providerStatus ?? "Not authorised"}</td>
+                        <td className="px-3 py-3 font-semibold text-[#667085]">{current?.paymentFailureCount ?? 0}</td>
+                        <td className="px-3 py-3 font-semibold text-[#667085]">{current?.cancelAtPeriodEnd ? "Period end" : "No"}</td>
+                      </tr>
+                    );
+                  })}
+                  {!sellersQuery.isLoading && sellers.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="px-3 py-6 text-sm font-semibold text-[#667085]">No sellers found.</td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
           </section>
         </div>
       </div>
@@ -454,4 +503,17 @@ function limitLabel(value?: number | null) {
 
 function humanize(value?: string | null) {
   return value ? value.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (char) => char.toUpperCase()) : "Not set";
+}
+
+function statusTone(status?: string | null): "success" | "warning" | "danger" | "info" {
+  if (["ACTIVE", "TRIALING"].includes(status ?? "")) {
+    return "success";
+  }
+  if (status === "PENDING_PAYMENT") {
+    return "warning";
+  }
+  if (["EXPIRED", "CANCELLED"].includes(status ?? "")) {
+    return "danger";
+  }
+  return "info";
 }

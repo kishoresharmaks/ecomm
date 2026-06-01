@@ -54,6 +54,12 @@ type CourierProviderSettingsSnapshot = {
   username?: string | null;
   credentials?: CourierProviderCredentialsSnapshot | null;
   webhookSecret?: string | null;
+  defaultPackage?: {
+    weightGrams?: number | null;
+    lengthCm?: number | null;
+    breadthCm?: number | null;
+    heightCm?: number | null;
+  } | null;
   liveApiCallsEnabled?: boolean;
   supportedPhase?: string;
 };
@@ -1338,6 +1344,24 @@ export class DeliveryRoutingService {
     const apiSecret = this.secretSnapshotText(dto.apiSecret, currentCredentials.apiSecret);
     const password = this.secretSnapshotText(dto.password, currentCredentials.password);
     const webhookSecret = this.secretSnapshotText(dto.webhookSecret, currentSnapshot.webhookSecret);
+    const defaultPackage = {
+      weightGrams: this.optionalSnapshotNumber(
+        dto.defaultPackageWeightGrams,
+        currentSnapshot.defaultPackage?.weightGrams,
+      ),
+      lengthCm: this.optionalSnapshotNumber(
+        dto.defaultPackageLengthCm,
+        currentSnapshot.defaultPackage?.lengthCm,
+      ),
+      breadthCm: this.optionalSnapshotNumber(
+        dto.defaultPackageBreadthCm,
+        currentSnapshot.defaultPackage?.breadthCm,
+      ),
+      heightCm: this.optionalSnapshotNumber(
+        dto.defaultPackageHeightCm,
+        currentSnapshot.defaultPackage?.heightCm,
+      ),
+    };
     const credentialsConfigured =
       (dto.credentialsConfigured ?? existing?.credentialsConfigured ?? false) ||
       Boolean(apiKey || apiSecret || password || accountCode || username);
@@ -1361,6 +1385,7 @@ export class DeliveryRoutingService {
         password,
       },
       webhookSecret,
+      defaultPackage,
       liveApiCallsEnabled: mode === CourierProviderMode.LIVE && credentialsConfigured,
       supportedPhase: "provider_adapter_ready",
     };
@@ -1512,6 +1537,7 @@ export class DeliveryRoutingService {
       apiKeyConfigured: Boolean(credentials.apiKey),
       apiSecretConfigured: Boolean(credentials.apiSecret),
       passwordConfigured: Boolean(credentials.password),
+      defaultPackage: snapshot.defaultPackage ?? null,
       liveApiCallsEnabled: Boolean(snapshot.liveApiCallsEnabled),
     };
   }
@@ -1545,6 +1571,14 @@ export class DeliveryRoutingService {
 
     const trimmed = value.trim();
     return trimmed || null;
+  }
+
+  private optionalSnapshotNumber(value: number | undefined, current?: number | null) {
+    if (typeof value === "undefined") {
+      return Number.isFinite(current) && current && current > 0 ? current : null;
+    }
+
+    return Number.isFinite(value) && value > 0 ? Math.round(value) : null;
   }
 
   private secretSnapshotText(value: string | undefined, current?: string | null) {

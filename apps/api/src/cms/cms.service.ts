@@ -15,6 +15,15 @@ import { CmsRevisionQueryDto } from "./dto/cms-revision.dto";
 import { CreateHomepageSectionDto, UpdateHomepageSectionDto } from "./dto/homepage-section.dto";
 import { CreateSeoEntryDto, SeoEntryQueryDto, UpdateSeoEntryDto } from "./dto/seo-entry.dto";
 
+type PublishedHomepageSectionOptions = {
+  includeInactiveSchedule?: boolean;
+};
+
+type HomepageSectionScheduleRecord = {
+  config: Prisma.JsonValue;
+  status: ContentStatus;
+};
+
 const PRIVATE_SITEMAP_EXCLUSIONS = [
   "/admin",
   "/account",
@@ -41,12 +50,50 @@ const PRIVATE_SITEMAP_EXCLUSIONS = [
 const STATIC_SITEMAP_ENTRIES = [
   { path: "/", changeFrequency: "daily", priority: 1, source: "homepage" },
   { path: "/categories", changeFrequency: "daily", priority: 0.8, source: "categories" },
+  { path: "/deals", changeFrequency: "daily", priority: 0.75, source: "deals" },
   { path: "/stores", changeFrequency: "daily", priority: 0.8, source: "stores" },
   { path: "/about", changeFrequency: "monthly", priority: 0.45, source: "about" },
   { path: "/contact", changeFrequency: "monthly", priority: 0.55, source: "support_landing" },
   { path: "/seller/register", changeFrequency: "weekly", priority: 0.65, source: "seller_landing" },
   { path: "/b2b/register", changeFrequency: "weekly", priority: 0.65, source: "b2b_landing" }
 ] as const;
+
+function homepageSectionScheduleIsLive(section: HomepageSectionScheduleRecord, now = new Date()) {
+  const config = jsonRecord(section.config);
+  const startsAt = parseScheduleDate(config.startsAt);
+  const endsAt = parseScheduleDate(config.endsAt ?? config.timerEndsAt);
+
+  if (section.status === ContentStatus.SCHEDULED && !startsAt) {
+    return false;
+  }
+
+  if (startsAt && startsAt > now) {
+    return false;
+  }
+
+  if (endsAt && endsAt < now) {
+    return false;
+  }
+
+  return true;
+}
+
+function parseScheduleDate(value: unknown) {
+  if (typeof value !== "string" || !value.trim()) {
+    return null;
+  }
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function jsonRecord(value: Prisma.JsonValue): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  return value as Record<string, unknown>;
+}
 
 @Injectable()
 export class CmsService {
@@ -66,11 +113,17 @@ export class CmsService {
     });
   }
 
-  listPublishedHomepageSections() {
-    return this.prisma.client.homepageSection.findMany({
-      where: { status: ContentStatus.PUBLISHED },
+  async listPublishedHomepageSections(options: PublishedHomepageSectionOptions = {}) {
+    const sections = await this.prisma.client.homepageSection.findMany({
+      where: { status: { in: [ContentStatus.PUBLISHED, ContentStatus.SCHEDULED] } },
       orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }]
     });
+
+    if (options.includeInactiveSchedule) {
+      return sections;
+    }
+
+    return sections.filter((section) => homepageSectionScheduleIsLive(section));
   }
 
   async getPublishedPage(slug: string) {

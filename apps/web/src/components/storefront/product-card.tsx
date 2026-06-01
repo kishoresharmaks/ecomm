@@ -3,7 +3,7 @@
 import Link from "next/link";
 import type { Route } from "next";
 import { useState, type MouseEvent } from "react";
-import { Eye, FilePlus2, Heart, ShoppingCart, Store } from "lucide-react";
+import { Eye, FilePlus2, Heart, PackageCheck, ShoppingCart, Store } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Button, cn } from "@indihub/ui";
 import { useMarket } from "@/components/market/market-context";
@@ -11,6 +11,7 @@ import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
 import { formatMoney, getCart, primaryImage, primaryVariant, type ProductSummary } from "@/lib/storefront-api";
 import { ProductQuickViewModal } from "./product-quick-view-modal";
 import { StorefrontImage } from "./storefront-image";
+import { getStorefrontStockStatus, storefrontStockBadgeClass } from "./storefront-stock-status";
 import { useStorefrontWishlist } from "./use-storefront-wishlist";
 
 type ProductCardProps = {
@@ -28,11 +29,13 @@ export function ProductCard({ product, onAddToCart, isAdding = false }: ProductC
   const variant = primaryVariant(product);
   const href = `/products/${product.slug}` as Route;
   const hasStock = Boolean(variant && variant.stockQuantity > 0);
+  const stockStatus = getStorefrontStockStatus(variant?.stockQuantity);
   const mrp = variant?.mrpPaise && variant.mrpPaise > variant.pricePaise ? variant.mrpPaise : null;
   const isWishlisted = wishlist.hasWishlistProduct(product.id);
   const isWishlistPending = wishlist.isPendingProductId === product.id;
   const listingMode = product.listingMode ?? "CART";
   const isEnquiryOnly = listingMode === "ENQUIRY_ONLY";
+  const campaignBadge = product.campaignBadge?.trim();
   const cartQuery = useQuery({
     queryKey: ["cart", customerAuth.authKey],
     queryFn: () => getCart(customerAuth.authHeaders),
@@ -66,12 +69,17 @@ export function ProductCard({ product, onAddToCart, isAdding = false }: ProductC
     <article className="group flex h-full min-w-0 flex-col overflow-hidden rounded-lg border border-[#E8EDF2] bg-white shadow-sm transition hover:-translate-y-0.5 hover:border-[#ED3500] hover:shadow-[0_24px_48px_rgba(22,59,92,0.08)] sm:rounded-[28px]">
       <div className="relative">
         <Link href={href} className="block">
-          <div className="relative aspect-square overflow-hidden bg-[#EAF1F7] sm:aspect-[4/3]">
+          <div className="relative aspect-square overflow-hidden bg-[#FFF8F5] sm:aspect-[4/3]">
+            {campaignBadge ? (
+              <span className="absolute left-2 top-2 z-10 max-w-[calc(100%-4rem)] truncate rounded-full bg-[#ED3500] px-2.5 py-1 text-[10px] font-black text-white shadow-[0_8px_18px_rgba(237,53,0,0.20)] sm:left-3 sm:top-3">
+                {campaignBadge}
+              </span>
+            ) : null}
             <StorefrontImage
               src={imageUrl}
               alt={product.images[0]?.altText ?? product.name}
               sizes="(max-width: 640px) 50vw, (max-width: 768px) 50vw, (max-width: 1280px) 33vw, 280px"
-              className="transition duration-500 group-hover:scale-105"
+              className="object-contain p-4 transition duration-500 group-hover:scale-105"
               fallbackLabel={product.category.name}
             />
           </div>
@@ -123,6 +131,16 @@ export function ProductCard({ product, onAddToCart, isAdding = false }: ProductC
           </h3>
         </Link>
 
+        <span
+          className={cn(
+            "mt-3 inline-flex w-fit items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-black",
+            storefrontStockBadgeClass(stockStatus.tone),
+          )}
+        >
+          <PackageCheck className="h-3.5 w-3.5" aria-hidden="true" />
+          {stockStatus.label}
+        </span>
+
         <div className="mt-auto flex flex-col gap-2 pt-3 sm:flex-row sm:items-end sm:justify-between sm:gap-3 sm:pt-5">
           <div className="min-w-0">
             <p className="truncate text-base font-black text-[#163B5C] sm:text-xl">
@@ -137,7 +155,7 @@ export function ProductCard({ product, onAddToCart, isAdding = false }: ProductC
             <Button asChild size="sm" variant="outline" className="h-9 w-fit rounded-full px-3">
               <Link href={href} aria-label={`Enquire about ${product.name}`}>
                 <FilePlus2 size={15} />
-                <span className="hidden sm:inline">Enquire</span>
+                <span>Enquire</span>
               </Link>
             </Button>
           ) : isInCart ? (
@@ -149,7 +167,7 @@ export function ProductCard({ product, onAddToCart, isAdding = false }: ProductC
             >
               <Link href="/cart" aria-label={`View cart with ${product.name}`}>
                 <ShoppingCart size={15} />
-                <span className="hidden sm:inline">View cart</span>
+                <span>Cart</span>
               </Link>
             </Button>
           ) : (
@@ -158,11 +176,14 @@ export function ProductCard({ product, onAddToCart, isAdding = false }: ProductC
               size="sm"
               disabled={!variant || !hasStock || isAdding}
               onClick={() => onAddToCart?.(product)}
-              aria-label={`Add ${product.name} to cart`}
-              className="h-9 w-fit rounded-full px-3"
+              aria-label={hasStock ? `Add ${product.name} to cart` : `${product.name} is not available for cart`}
+              className={cn(
+                "h-9 w-fit rounded-full px-3",
+                !hasStock && "border border-[#FFD1C4] bg-[#FFF0EC] text-[#C4320A] hover:bg-[#FFF0EC] [&_svg]:text-[#C4320A]",
+              )}
             >
               <ShoppingCart size={15} />
-              <span className="hidden sm:inline">{isAdding ? "Adding" : "Add"}</span>
+              <span>{!variant ? "Unavailable" : !hasStock ? "Sold out" : isAdding ? "Adding" : "Add"}</span>
             </Button>
           )}
         </div>

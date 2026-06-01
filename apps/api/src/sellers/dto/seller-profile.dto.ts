@@ -1,6 +1,8 @@
 import { ApiPropertyOptional } from "@nestjs/swagger";
 import {
   ArrayMaxSize,
+  IsArray,
+  IsBoolean,
   IsEmail,
   IsEnum,
   IsOptional,
@@ -109,6 +111,25 @@ export class UpdateSellerPayoutProfileDto {
   upiId?: string;
 }
 
+export class UpdateSellerCourierProviderSettingDto {
+  @ApiPropertyOptional({ example: "SHIPROCKET" })
+  @IsString()
+  @MinLength(2)
+  @MaxLength(40)
+  providerCode!: string;
+
+  @ApiPropertyOptional({ example: "Main Warehouse" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  pickupLocationName?: string;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}
+
 export class UpdateSellerProfileDto {
   @ApiPropertyOptional({ example: "1HandIndia Local Store" })
   @IsOptional()
@@ -197,6 +218,14 @@ export class UpdateSellerProfileDto {
   @ValidateNested()
   @Type(() => UpdateSellerPayoutProfileDto)
   payoutProfile?: UpdateSellerPayoutProfileDto;
+
+  @ApiPropertyOptional({ type: [UpdateSellerCourierProviderSettingDto] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => UpdateSellerCourierProviderSettingDto)
+  courierSettings?: UpdateSellerCourierProviderSettingDto[];
 
   @ApiPropertyOptional({ type: [SellerVerificationDocumentDto] })
   @IsOptional()

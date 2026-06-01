@@ -2,25 +2,26 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Headset, Home, LayoutGrid, Store } from "lucide-react";
+import { BadgePercent, Home, LayoutGrid, Store, UserRound } from "lucide-react";
 import { cn } from "@indihub/ui";
 
 const tabs = [
   { label: "Home", href: "/", icon: Home },
-  { label: "Stores", href: "/stores", icon: Store },
   { label: "Categories", href: "/categories", icon: LayoutGrid },
-  { label: "Contact", href: "/contact", icon: Headset }
+  { label: "Stores", href: "/stores", icon: Store },
+  { label: "Offers", href: "/deals", icon: BadgePercent },
+  { label: "Account", href: "/account", icon: UserRound },
 ] as const;
 
 export function StorefrontMobileTabs() {
   const pathname = usePathname();
 
   return (
-    <div
-      className="fixed inset-x-0 bottom-0 z-40 px-4 lg:hidden"
-      style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 0.75rem)" }}
-    >
-      <nav className="mx-auto flex max-w-md items-center justify-between gap-2 rounded-[28px] border border-white/80 bg-white/92 p-2 shadow-[0_22px_55px_rgba(22,59,92,0.18)] backdrop-blur-xl">
+    <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[#EEF0F4] bg-white/96 px-3 pt-2 shadow-[0_-12px_34px_rgba(22,59,92,0.08)] backdrop-blur-xl lg:hidden">
+      <nav
+        className="mx-auto flex max-w-md items-center justify-between gap-1"
+        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 0.45rem)" }}
+      >
         {tabs.map(({ href, label, icon: Icon }) => {
           const active = isActivePath(pathname, href);
 
@@ -29,14 +30,14 @@ export function StorefrontMobileTabs() {
               key={href}
               href={href}
               className={cn(
-                "flex min-w-0 flex-1 flex-col items-center gap-1 rounded-[20px] px-2 py-2 text-[11px] font-black transition",
+                "flex min-w-0 flex-1 flex-col items-center gap-1 rounded-[18px] px-2 py-1.5 text-[11px] font-bold transition",
                 active
-                  ? "bg-[#163B5C] text-white shadow-[0_10px_24px_rgba(22,59,92,0.22)]"
-                  : "text-[#667085]"
+                  ? "text-[#ED3500]"
+                  : "text-[#667085] hover:text-[#ED3500]"
               )}
               aria-current={active ? "page" : undefined}
             >
-              <Icon className="h-4 w-4" aria-hidden="true" />
+              <Icon className={cn("h-5 w-5", active && "fill-[#ED3500]/10")} aria-hidden="true" />
               <span className="truncate">{label}</span>
             </Link>
           );

@@ -34,6 +34,13 @@ export type SellerProfile = Omit<SellerSummary, "profile"> & {
     status?: string;
   } | null;
   addresses: SellerAddress[];
+  courierProviderSettings?: Array<{
+    id: string;
+    providerCode: string;
+    pickupLocationName?: string | null;
+    isActive: boolean;
+    settingsSnapshot?: Record<string, unknown> | null;
+  }>;
   documents?: SellerVerificationDocument[];
   createdAt?: string;
   updatedAt?: string;
@@ -77,6 +84,9 @@ export type SellerSubscriptionPlan = {
   featuredProductLimit?: number | null;
   b2bEnquiryLimit?: number | null;
   commissionDiscountBps?: number | null;
+  providerPlanId?: string | null;
+  providerPlanVersion?: number | null;
+  providerPlanSyncedAt?: string | null;
   isDefault: boolean;
   isActive: boolean;
   sortOrder?: number;
@@ -97,8 +107,41 @@ export type SellerSubscription = {
   startedAt?: string;
   currentPeriodEnd?: string | null;
   cancelledAt?: string | null;
+  provider?: string | null;
+  providerSubscriptionId?: string | null;
+  providerPlanId?: string | null;
+  providerStatus?: string | null;
+  authorizedAt?: string | null;
+  nextBillingAt?: string | null;
+  gracePeriodEndsAt?: string | null;
+  cancelAtPeriodEnd?: boolean;
+  providerCancelAtCycleEnd?: boolean;
+  lastPaymentStatus?: PaymentStatus | null;
+  paymentFailureCount?: number;
   note?: string | null;
   plan?: SellerSubscriptionPlan | null;
+  payments?: SellerSubscriptionPayment[];
+};
+
+export type PaymentStatus = "PENDING" | "PAID" | "FAILED" | "REFUNDED" | "NOT_REQUIRED";
+
+export type SellerSubscriptionPayment = {
+  id: string;
+  sellerId: string;
+  sellerSubscriptionId: string;
+  provider: string;
+  providerSubscriptionId?: string | null;
+  providerInvoiceId?: string | null;
+  providerPaymentId?: string | null;
+  amountPaise: number;
+  currency: string;
+  status: PaymentStatus;
+  billingPeriodStart?: string | null;
+  billingPeriodEnd?: string | null;
+  paidAt?: string | null;
+  failedAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export type SellerSubscriptionPlanList = {
@@ -113,6 +156,43 @@ export type SellerSubscriptionSummary = {
   subscriptionCurrentPeriodEnd?: string | null;
   plan?: SellerSubscriptionPlan | null;
   currentSubscription?: SellerSubscription | null;
+  payments?: SellerSubscriptionPayment[];
+  billing?: {
+    requiresPayment: boolean;
+    canAuthorize: boolean;
+    canCancel: boolean;
+    gracePeriodEndsAt?: string | null;
+    cancelAtPeriodEnd: boolean;
+    providerStatus?: string | null;
+    lastPaymentStatus?: PaymentStatus | null;
+    paymentFailureCount: number;
+  };
+};
+
+export type SellerSubscriptionAuthorization = {
+  requiresPayment: boolean;
+  keyId?: string;
+  sellerId: string;
+  subscriptionId?: string;
+  razorpaySubscriptionId?: string;
+  amountPaise?: number;
+  currency?: string;
+  plan?: SellerSubscriptionPlan;
+  status?: SellerSubscriptionStatus;
+  checkout?: {
+    key: string;
+    subscription_id: string;
+    name: string;
+    description: string;
+    prefill?: {
+      name?: string;
+      email?: string;
+      contact?: string;
+    };
+    theme?: {
+      color?: string;
+    };
+  };
 };
 
 export type SellerProfilePayload = {
@@ -147,6 +227,11 @@ export type SellerProfilePayload = {
     cityCode?: string | undefined;
     localAreaCode?: string | undefined;
   };
+  courierSettings?: Array<{
+    providerCode: string;
+    pickupLocationName?: string | undefined;
+    isActive?: boolean | undefined;
+  }>;
   documents?: Array<{
     documentType: SellerDocumentType;
     fileUrl: string;
@@ -201,6 +286,10 @@ export type SellerProductPayload = {
     pricePaise: number;
     mrpPaise?: number | undefined;
     stockQuantity?: number | undefined;
+    packageWeightGrams?: number | undefined;
+    packageLengthCm?: number | undefined;
+    packageBreadthCm?: number | undefined;
+    packageHeightCm?: number | undefined;
     status?: "ACTIVE" | "INACTIVE" | undefined;
     attributes?: Record<string, unknown>;
   }>;
@@ -360,6 +449,44 @@ export function listSellerSubscriptionPlans() {
 
 export function getSellerSubscription(auth: IndihubAuthHeaders) {
   return indihubFetch<SellerSubscriptionSummary>("/api/seller/subscription", undefined, auth);
+}
+
+export function authorizeSellerSubscription(auth: IndihubAuthHeaders) {
+  return indihubFetch<SellerSubscriptionAuthorization>(
+    "/api/seller/subscription/authorize",
+    {
+      method: "POST",
+    },
+    auth,
+  );
+}
+
+export function verifySellerSubscription(
+  auth: IndihubAuthHeaders,
+  payload: {
+    razorpaySubscriptionId: string;
+    razorpayPaymentId: string;
+    razorpaySignature: string;
+  },
+) {
+  return indihubFetch<SellerSubscriptionSummary>(
+    "/api/seller/subscription/verify",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    auth,
+  );
+}
+
+export function cancelSellerSubscription(auth: IndihubAuthHeaders) {
+  return indihubFetch<SellerSubscriptionSummary>(
+    "/api/seller/subscription/cancel",
+    {
+      method: "POST",
+    },
+    auth,
+  );
 }
 
 export function listSellerProducts(

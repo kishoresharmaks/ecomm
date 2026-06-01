@@ -27,6 +27,7 @@ import { ReportsModule } from "../reports/reports.module";
 import { SellersModule } from "../sellers/sellers.module";
 import { SettingsModule } from "../settings/settings.module";
 import { StorageModule } from "../storage/storage.module";
+import { StorefrontModule } from "../storefront/storefront.module";
 import { SupportModule } from "../support/support.module";
 
 @Module({
@@ -59,6 +60,7 @@ import { SupportModule } from "../support/support.module";
     SupportModule,
     SettingsModule,
     StorageModule,
+    StorefrontModule,
     ReportsModule,
     AdminDashboardModule,
     AdminSellersModule,

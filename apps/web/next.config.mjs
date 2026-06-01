@@ -1,9 +1,15 @@
+import process from "node:process";
 import { config as loadEnv } from "dotenv";
 
 loadEnv({ path: "../../.env", quiet: true });
 
+const isWindows = process.platform === "win32";
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  experimental: {
+    ...(isWindows ? { workerThreads: true } : {})
+  },
   images: {
     remotePatterns: [
       {

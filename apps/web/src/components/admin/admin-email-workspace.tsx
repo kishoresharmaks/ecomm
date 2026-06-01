@@ -138,6 +138,49 @@ type EmailTriggerRecord = {
   updatedAt?: string | null;
 };
 
+type EmailStatusCounts = Record<"PENDING" | "SENT" | "FAILED" | "SKIPPED", number>;
+type EmailContentStatusCounts = Record<
+  "DRAFT" | "IN_REVIEW" | "SCHEDULED" | "PUBLISHED" | "ARCHIVED",
+  number
+>;
+type EmailOverviewRecord = {
+  generatedAt: string;
+  pipelineMode: "IMMEDIATE";
+  windowDays: number;
+  setting: {
+    provider: string;
+    isEnabled: boolean;
+    providerConfigured: boolean;
+    senderEmail: string;
+    adminRecipientCount: number;
+    updatedAt?: string | null;
+  };
+  logs: {
+    totals: EmailStatusCounts;
+    recentWindowTotals: EmailStatusCounts;
+    lastSentAt?: string | null;
+    oldestPendingAt?: string | null;
+    pendingDeliveryLockActive: boolean;
+    recent: {
+      failures: EmailLogRecord[];
+      pending: EmailLogRecord[];
+      skipped: EmailLogRecord[];
+    };
+  };
+  triggers: {
+    total: number;
+    enabled: number;
+    disabled: number;
+    missingTemplate: number;
+  };
+  templates: {
+    statusCounts: EmailContentStatusCounts;
+  };
+  themes: {
+    statusCounts: EmailContentStatusCounts;
+  };
+};
+
 type EmailStatusFilter = "ALL" | "PENDING" | "SENT" | "FAILED" | "SKIPPED";
 
 const emailTemplateStatusOptions: AdminSelectOption[] = [
@@ -195,36 +238,7 @@ export function AdminEmailWorkspaceClient() {
   const themesQuery = useEmailThemes(auth.authHeaders);
   const triggersQuery = useEmailTriggers(auth.authHeaders);
   const settingsQuery = useEmailSettings(auth.authHeaders);
-  const failuresQuery = useQuery({
-    queryKey: ["admin-email-overview-failures", auth.authHeaders],
-    enabled: Boolean(auth.isAuthenticated),
-    queryFn: () =>
-      indihubFetch<PageResult<EmailLogRecord>>(
-        buildEmailLogQueryPath({ status: "FAILED", limit: 5 }),
-        undefined,
-        auth.authHeaders,
-      ),
-  });
-  const pendingQuery = useQuery({
-    queryKey: ["admin-email-overview-pending", auth.authHeaders],
-    enabled: Boolean(auth.isAuthenticated),
-    queryFn: () =>
-      indihubFetch<PageResult<EmailLogRecord>>(
-        buildEmailLogQueryPath({ status: "PENDING", limit: 5 }),
-        undefined,
-        auth.authHeaders,
-      ),
-  });
-  const skippedQuery = useQuery({
-    queryKey: ["admin-email-overview-skipped", auth.authHeaders],
-    enabled: Boolean(auth.isAuthenticated),
-    queryFn: () =>
-      indihubFetch<PageResult<EmailLogRecord>>(
-        buildEmailLogQueryPath({ status: "SKIPPED", limit: 5 }),
-        undefined,
-        auth.authHeaders,
-      ),
-  });
+  const overviewQuery = useEmailOverview(auth.authHeaders);
 
   return (
     <div className="space-y-5">
@@ -239,18 +253,15 @@ export function AdminEmailWorkspaceClient() {
                 themes={themesQuery.data ?? []}
                 setting={settingsQuery.data}
                 triggers={triggersQuery.data ?? []}
-                failures={failuresQuery.data}
-                pending={pendingQuery.data}
-                skipped={skippedQuery.data}
+                overview={overviewQuery.data}
                 isLoading={
                   templatesQuery.isLoading ||
                   themesQuery.isLoading ||
                   triggersQuery.isLoading ||
                   settingsQuery.isLoading ||
-                  failuresQuery.isLoading ||
-                  pendingQuery.isLoading ||
-                  skippedQuery.isLoading
+                  overviewQuery.isLoading
                 }
+                onRefresh={() => overviewQuery.refetch()}
               />
             ),
           },
@@ -305,44 +316,127 @@ function EmailOverviewPanel({
   themes,
   setting,
   triggers,
-  failures,
-  pending,
-  skipped,
+  overview,
   isLoading,
+  onRefresh,
 }: {
   templates: EmailTemplateRecord[];
   themes: EmailThemeRecord[];
   setting?: EmailSettingRecord | undefined;
   triggers: EmailTriggerRecord[];
-  failures?: PageResult<EmailLogRecord> | undefined;
-  pending?: PageResult<EmailLogRecord> | undefined;
-  skipped?: PageResult<EmailLogRecord> | undefined;
+  overview?: EmailOverviewRecord | undefined;
   isLoading?: boolean | undefined;
+  onRefresh?: (() => void) | undefined;
 }) {
-  const published = templates.filter((template) => template.status === "PUBLISHED").length;
-  const draft = templates.filter((template) => template.status === "DRAFT").length;
-  const archived = templates.filter((template) => template.status === "ARCHIVED").length;
-  const publishedThemes = themes.filter((theme) => theme.status === "PUBLISHED").length;
-  const enabledTriggers = triggers.filter((trigger) => trigger.isEnabled).length;
-  const failureItems = failures?.items ?? [];
-  const pendingItems = pending?.items ?? [];
-  const skippedItems = skipped?.items ?? [];
-  const delayedTriggers = triggers.filter(
-    (trigger) => trigger.isEnabled && trigger.delayMinutes > 0,
-  ).length;
+  const templateStatusCounts = overview?.templates.statusCounts;
+  const themeStatusCounts = overview?.themes.statusCounts;
+  const published =
+    templateStatusCounts?.PUBLISHED ??
+    templates.filter((template) => template.status === "PUBLISHED").length;
+  const draft =
+    templateStatusCounts?.DRAFT ??
+    templates.filter((template) => template.status === "DRAFT").length;
+  const archived =
+    templateStatusCounts?.ARCHIVED ??
+    templates.filter((template) => template.status === "ARCHIVED").length;
+  const themeTotal = themeStatusCounts
+    ? Object.values(themeStatusCounts).reduce((total, count) => total + count, 0)
+    : themes.length;
+  const publishedThemes =
+    themeStatusCounts?.PUBLISHED ?? themes.filter((theme) => theme.status === "PUBLISHED").length;
+  const enabledTriggers =
+    overview?.triggers.enabled ?? triggers.filter((trigger) => trigger.isEnabled).length;
+  const pendingTotal = overview?.logs.totals.PENDING ?? 0;
+  const failedTotal = overview?.logs.totals.FAILED ?? 0;
+  const skippedTotal = overview?.logs.totals.SKIPPED ?? 0;
+  const sentLastWindow = overview?.logs.recentWindowTotals.SENT ?? 0;
+  const failureItems = overview?.logs.recent.failures ?? [];
+  const pendingItems = overview?.logs.recent.pending ?? [];
+  const skippedItems = overview?.logs.recent.skipped ?? [];
+  const currentSetting = overview?.setting ?? {
+    provider: setting?.provider ?? "smtp",
+    isEnabled: setting?.isEnabled ?? false,
+    providerConfigured: setting ? providerConfigured(setting) : false,
+    senderEmail: setting?.senderEmail ?? "no-reply@example.com",
+    adminRecipientCount: recipientCount(setting?.adminRecipients),
+  };
 
   return (
     <div className="space-y-5">
+      <AdminPanel className="border-[#FBD2C4] bg-gradient-to-br from-white to-[#FFFCFB]">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusBadge tone="success">Immediate delivery</StatusBadge>
+              <StatusBadge tone={currentSetting.isEnabled ? "success" : "warning"}>
+                {currentSetting.isEnabled ? "Sending enabled" : "Sending disabled"}
+              </StatusBadge>
+              <StatusBadge tone={currentSetting.providerConfigured ? "success" : "warning"}>
+                {currentSetting.providerConfigured ? "Provider ready" : "Provider setup needed"}
+              </StatusBadge>
+            </div>
+            <h2 className="mt-4 text-2xl font-black text-[#1F2933]">
+              Transactional email command center
+            </h2>
+            <p className="mt-2 max-w-4xl text-sm font-semibold leading-6 text-[#667085]">
+              Order, seller, payment, B2B, support, and account emails are logged, rendered,
+              claimed, and delivered immediately when the app action happens.
+            </p>
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
+              <StatusSummary
+                label={`${overview?.windowDays ?? 7} day sent`}
+                value={sentLastWindow}
+                tone="success"
+              />
+              <StatusSummary
+                label="Open issues"
+                value={failedTotal + pendingTotal}
+                tone={failedTotal + pendingTotal > 0 ? "danger" : "success"}
+              />
+              <StatusSummary
+                label="Missing templates"
+                value={overview?.triggers.missingTemplate ?? 0}
+                tone={(overview?.triggers.missingTemplate ?? 0) > 0 ? "danger" : "success"}
+              />
+            </div>
+          </div>
+          <div className="w-full rounded-lg border border-[#FBD2C4] bg-white p-4 shadow-sm sm:w-80">
+            <p className="text-xs font-black uppercase tracking-wide text-[#667085]">Provider</p>
+            <p className="mt-2 text-xl font-black text-[#163B5C]">
+              {humanize(currentSetting.provider)}
+            </p>
+            <p className="mt-1 truncate text-sm font-semibold text-[#667085]">
+              {currentSetting.senderEmail}
+            </p>
+            <div className="mt-4 space-y-2 text-xs font-semibold text-[#667085]">
+              <p>Admin alert recipients: {currentSetting.adminRecipientCount || "Role users"}</p>
+              <p>Last sent: {formatDate(overview?.logs.lastSentAt)}</p>
+              <p>Oldest pending: {formatDate(overview?.logs.oldestPendingAt)}</p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              className="mt-4 w-full"
+              onClick={onRefresh}
+              disabled={isLoading || !onRefresh}
+            >
+              <RefreshCw className="h-4 w-4" />
+              Refresh health
+            </Button>
+          </div>
+        </div>
+      </AdminPanel>
+
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <EmailMetricCard
           label="Email sending"
-          value={setting?.isEnabled ? "Enabled" : "Disabled"}
-          tone={setting?.isEnabled ? "success" : "warning"}
+          value={currentSetting.isEnabled ? "Enabled" : "Disabled"}
+          tone={currentSetting.isEnabled ? "success" : "warning"}
         />
         <EmailMetricCard
           label="Provider"
-          value={humanize(setting?.provider ?? "smtp")}
-          tone={setting?.isEnabled ? "info" : "warning"}
+          value={humanize(currentSetting.provider)}
+          tone={currentSetting.providerConfigured ? "success" : "warning"}
         />
         <EmailMetricCard
           label="Published templates"
@@ -351,7 +445,7 @@ function EmailOverviewPanel({
         />
         <EmailMetricCard
           label="Reusable themes"
-          value={`${themes.length}`}
+          value={`${themeTotal}`}
           tone={publishedThemes ? "success" : "warning"}
         />
         <EmailMetricCard
@@ -361,18 +455,18 @@ function EmailOverviewPanel({
         />
         <EmailMetricCard
           label="Pending logs"
-          value={`${pending?.total ?? 0}`}
-          tone={(pending?.total ?? 0) > 0 ? "warning" : "success"}
+          value={`${pendingTotal}`}
+          tone={pendingTotal > 0 ? "warning" : "success"}
         />
         <EmailMetricCard
           label="Recent failures"
-          value={`${failures?.total ?? 0}`}
-          tone={(failures?.total ?? 0) > 0 ? "danger" : "success"}
+          value={`${failedTotal}`}
+          tone={failedTotal > 0 ? "danger" : "success"}
         />
         <EmailMetricCard
           label="Skipped logs"
-          value={`${skipped?.total ?? 0}`}
-          tone={(skipped?.total ?? 0) > 0 ? "warning" : "success"}
+          value={`${skippedTotal}`}
+          tone={skippedTotal > 0 ? "warning" : "success"}
         />
       </div>
 
@@ -393,16 +487,16 @@ function EmailOverviewPanel({
             <StatusSummary label="Archived" value={archived} tone="danger" />
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-3">
-            <StatusSummary label="Delayed" value={delayedTriggers} tone="info" />
+            <StatusSummary label="Immediate" value={enabledTriggers} tone="success" />
             <StatusSummary
               label="Pending"
-              value={pending?.total ?? 0}
-              tone={(pending?.total ?? 0) > 0 ? "warning" : "success"}
+              value={pendingTotal}
+              tone={pendingTotal > 0 ? "warning" : "success"}
             />
             <StatusSummary
               label="Skipped"
-              value={skipped?.total ?? 0}
-              tone={(skipped?.total ?? 0) > 0 ? "warning" : "success"}
+              value={skippedTotal}
+              tone={skippedTotal > 0 ? "warning" : "success"}
             />
           </div>
           <div className="mt-4 grid gap-3 lg:grid-cols-2">
@@ -600,6 +694,7 @@ function EmailTemplatesPanel({
         }),
         queryClient.invalidateQueries({ queryKey: ["admin-email-themes"] }),
         queryClient.invalidateQueries({ queryKey: ["admin-email-triggers"] }),
+        queryClient.invalidateQueries({ queryKey: ["admin-email-overview"] }),
       ]);
     },
     onError: (error) =>
@@ -988,6 +1083,7 @@ function EmailThemesPanel({ themesQuery }: { themesQuery: ReturnType<typeof useE
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["admin-email-themes"] }),
         queryClient.invalidateQueries({ queryKey: ["admin-email-templates"] }),
+        queryClient.invalidateQueries({ queryKey: ["admin-email-overview"] }),
       ]);
     },
     onError: (error) =>
@@ -1181,7 +1277,7 @@ function EmailTriggersPanel({
       setForm({
         templateId: selectedTrigger.templateId ?? null,
         isEnabled: selectedTrigger.isEnabled,
-        delayMinutes: selectedTrigger.delayMinutes,
+        delayMinutes: 0,
       });
       setNotice(null);
     }
@@ -1189,7 +1285,6 @@ function EmailTriggersPanel({
     selectedTrigger?.id,
     selectedTrigger?.templateId,
     selectedTrigger?.isEnabled,
-    selectedTrigger?.delayMinutes,
   ]);
 
   const templateOptions = useMemo(
@@ -1241,6 +1336,7 @@ function EmailTriggersPanel({
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["admin-email-triggers"] }),
         queryClient.invalidateQueries({ queryKey: ["admin-email-templates"] }),
+        queryClient.invalidateQueries({ queryKey: ["admin-email-overview"] }),
       ]);
     },
     onError: (error) =>
@@ -1253,7 +1349,7 @@ function EmailTriggersPanel({
         <WorkspaceHeader
           icon={<Bell className="h-5 w-5" />}
           title="Email triggers"
-          description="Map safe app-owned events to templates, enablement, and simple send delays."
+          description="Map safe app-owned events to templates. Transactional emails send immediately when the app action happens."
           isFetching={triggersQuery.isFetching}
           onRefresh={() => triggersQuery.refetch()}
         />
@@ -1316,10 +1412,10 @@ function EmailTriggersPanel({
               ),
             },
             {
-              header: "Delay",
+              header: "Send",
               cell: (item) => (
-                <span className="text-xs font-semibold text-[#667085]">
-                  {delayLabel(item.delayMinutes)}
+                <span className="text-xs font-black text-[#0F8A5F]">
+                  {item.isEnabled ? "Immediate" : "Disabled"}
                 </span>
               ),
             },
@@ -1339,7 +1435,7 @@ function EmailTriggersPanel({
         <WorkspaceHeader
           icon={<Clock className="h-5 w-5" />}
           title="Trigger controls"
-          description="Recipients are resolved by the app. Admins only choose template, enabled state, and delay."
+          description="Recipients are resolved by the app. Admins choose the template and enabled state; sends are immediate."
           isFetching={templatesQuery.isFetching}
         />
         {selectedTrigger ? (
@@ -1365,24 +1461,7 @@ function EmailTriggersPanel({
               }
               buttonClassName="bg-white"
             />
-            <label className="block">
-              <span className="text-xs font-black uppercase tracking-wide text-[#667085]">
-                Delay minutes
-              </span>
-              <input
-                type="number"
-                min={0}
-                max={10080}
-                value={form.delayMinutes}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    delayMinutes: Number(event.target.value),
-                  }))
-                }
-                className="mt-2 h-11 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 text-sm font-semibold text-[#1F2933] outline-none focus:border-[#ED3500] focus:bg-white"
-              />
-            </label>
+            <ReadOnlyField label="Send timing" value="Immediately after the action happens" />
             <VariableHelper
               variables={
                 selectedTemplate
@@ -1397,6 +1476,7 @@ function EmailTriggersPanel({
             <SmallStack
               lines={[
                 `Default template: ${selectedTrigger.defaultTemplateCode ?? "Not configured"}`,
+                "Delay: disabled for transactional action emails",
                 `Last sent: ${formatDate(selectedTrigger.lastSentAt)}`,
                 `Recent failures: ${selectedTrigger.recentFailureCount}`,
               ]}
@@ -1447,9 +1527,7 @@ export function EmailSettingsPanel() {
       setNotice("Email settings saved.");
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["admin-email-settings"] }),
-        queryClient.invalidateQueries({ queryKey: ["admin-email-overview-failures"] }),
-        queryClient.invalidateQueries({ queryKey: ["admin-email-overview-pending"] }),
-        queryClient.invalidateQueries({ queryKey: ["admin-email-overview-skipped"] }),
+        queryClient.invalidateQueries({ queryKey: ["admin-email-overview"] }),
       ]);
     },
     onError: (error) =>
@@ -1539,9 +1617,7 @@ function EmailLogsPanel() {
       setNotice("Email retry submitted.");
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["admin-email-logs"] }),
-        queryClient.invalidateQueries({ queryKey: ["admin-email-overview-failures"] }),
-        queryClient.invalidateQueries({ queryKey: ["admin-email-overview-pending"] }),
-        queryClient.invalidateQueries({ queryKey: ["admin-email-overview-skipped"] }),
+        queryClient.invalidateQueries({ queryKey: ["admin-email-overview"] }),
       ]);
     },
     onError: (error) =>
@@ -1824,7 +1900,7 @@ function EmailSettingsForm({
           </div>
           <p className="mt-3 text-xs font-semibold leading-5 text-[#667085]">
             A log is claimed before provider delivery, marked sent immediately after provider
-            success, and old delayed sends are blocked.
+            success, and old queued sends are blocked from going out late.
           </p>
         </div>
       </div>
@@ -2580,6 +2656,15 @@ function useEmailSettings(authHeaders: IndihubAuthHeaders) {
   });
 }
 
+function useEmailOverview(authHeaders: IndihubAuthHeaders) {
+  return useQuery({
+    queryKey: ["admin-email-overview", authHeaders],
+    enabled: Boolean(authHeaders.bearerToken),
+    queryFn: () =>
+      indihubFetch<EmailOverviewRecord>("/api/admin/email/overview", undefined, authHeaders),
+  });
+}
+
 function adminRequest<T = unknown>(
   path: string,
   authHeaders: IndihubAuthHeaders,
@@ -2627,6 +2712,19 @@ function notificationVariableLines(variables?: Record<string, unknown> | null) {
   }
 
   return Object.entries(variables).map(([key, value]) => `${key}: ${String(value)}`);
+}
+
+function recipientCount(value?: string | null) {
+  if (!value?.trim()) {
+    return 0;
+  }
+
+  return new Set(
+    value
+      .split(/[\n,]/)
+      .map((recipient) => recipient.trim().toLowerCase())
+      .filter(Boolean),
+  ).size;
 }
 
 function statusTone(status?: string | null): StatusTone {
@@ -2690,17 +2788,4 @@ function formatDate(value?: string | null) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
-}
-
-function delayLabel(minutes: number) {
-  if (!minutes) {
-    return "Immediate";
-  }
-
-  if (minutes % 60 === 0) {
-    const hours = minutes / 60;
-    return `${hours} ${hours === 1 ? "hour" : "hours"}`;
-  }
-
-  return `${minutes} minutes`;
 }

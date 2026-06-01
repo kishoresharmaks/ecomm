@@ -44,5 +44,10 @@ export class AuditQueryDto {
   @Min(1)
   @Max(100)
   limit?: number;
-}
 
+  @ApiPropertyOptional({ description: "Opaque cursor returned by a previous list response." })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  cursor?: string;
+}
