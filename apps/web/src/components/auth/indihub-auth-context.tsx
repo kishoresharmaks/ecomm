@@ -157,7 +157,10 @@ export function ClerkCustomerAuthProvider({ children }: { children: ReactNode })
   const value = useMemo<CustomerAuthContextValue>(
     () => ({
       mode: "clerk",
-      authHeaders: bearerToken ? { bearerToken, getBearerToken: readBearerToken, onUnauthorized: handleUnauthorized } : {},
+      authHeaders:
+        bearerToken && userId
+          ? { bearerToken, clerkUserId: userId, getBearerToken: readBearerToken, onUnauthorized: handleUnauthorized }
+          : {},
       authKey: userId ? `clerk:${userId}` : "clerk:anonymous",
       enabled: syncState.status === "ready" && Boolean(bearerToken),
       status: syncState.status,

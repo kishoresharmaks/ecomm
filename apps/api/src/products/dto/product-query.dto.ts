@@ -1,12 +1,14 @@
-import { Type } from "class-transformer";
+import { Transform, Type } from "class-transformer";
 import { ApiPropertyOptional } from "@nestjs/swagger";
-import { IsEnum, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from "class-validator";
+import { IsEnum, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from "class-validator";
 import { ApprovalStatus, ProductStatus } from "@indihub/database";
 
 export class ProductQueryDto {
   @ApiPropertyOptional({ example: "rice" })
   @IsOptional()
+  @Transform(({ value }) => (typeof value === "string" ? value.trim() : value))
   @IsString()
+  @MinLength(2)
   @MaxLength(120)
   search?: string;
 
@@ -50,4 +52,9 @@ export class ProductQueryDto {
   @IsString()
   @MaxLength(500)
   cursor?: string;
+
+  @ApiPropertyOptional({ enum: ["offset", "cursor"], description: "Use cursor to avoid total-count queries on large public result sets." })
+  @IsOptional()
+  @IsIn(["offset", "cursor"])
+  pagination?: "offset" | "cursor";
 }

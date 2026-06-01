@@ -353,7 +353,7 @@ export function ProductDetailClient({ slug }: { slug: string }) {
                         (!selectedVariant || !hasStock) && "bg-[#FFF0EC] text-[#C4320A] hover:bg-[#FFF0EC] [&_svg]:text-[#C4320A]",
                       )}
                     >
-                      <ShoppingCart size={18} /> {!selectedVariant ? "Unavailable" : !hasStock ? "Sold out" : addMutation.isPending ? "Adding" : "Add to cart"}
+                      <ShoppingCart size={18} /> {!selectedVariant ? "Unavailable" : !hasStock ? "Out of stock" : addMutation.isPending ? "Adding" : "Add to cart"}
                     </Button>
                     <Button asChild variant="outline" size="lg" className="min-w-[160px] rounded-full border-[#ED3500] text-[#ED3500] hover:bg-[#FFF0EC]">
                       <Link href="/cart">View cart</Link>

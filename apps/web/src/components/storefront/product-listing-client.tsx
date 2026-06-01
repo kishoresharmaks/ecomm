@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { ArrowRight, Search } from "lucide-react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, SectionHeading, cn } from "@indihub/ui";
 import { CustomerAuthNotice } from "@/components/auth/customer-auth-notice";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
@@ -44,6 +44,7 @@ export function ProductListingClient({ mode, categorySlug, initialSearch = "" }:
   const [search, setSearch] = useState(initialSearch);
   const [submittedSearch, setSubmittedSearch] = useState(initialSearch);
   const [notice, setNotice] = useState<string | null>(null);
+  const isSearchMode = mode === "search";
 
   const categoriesQuery = useQuery({
     queryKey: ["categories"],
@@ -66,7 +67,21 @@ export function ProductListingClient({ mode, categorySlug, initialSearch = "" }:
 
       return mode === "deals" ? listStorefrontDeals(query) : listProducts(query);
     },
-    enabled: mode !== "category" || Boolean(categoryId)
+    enabled: mode !== "categories" && !isSearchMode && (mode !== "category" || Boolean(categoryId))
+  });
+  const searchProductsQuery = useInfiniteQuery({
+    queryKey: ["products", "cursor", mode, categoryId, submittedSearch],
+    queryFn: ({ pageParam }) =>
+      listProducts({
+        ...(categoryId ? { categoryId } : {}),
+        ...(submittedSearch ? { search: submittedSearch } : {}),
+        ...(pageParam ? { cursor: pageParam } : {}),
+        pagination: "cursor",
+        limit: 24
+      }, customerAuth.authHeaders),
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.pageInfo?.nextCursor ?? undefined,
+    enabled: isSearchMode
   });
   const addMutation = useMutation({
     mutationFn: (product: ProductSummary) => {
@@ -105,6 +120,17 @@ export function ProductListingClient({ mode, categorySlug, initialSearch = "" }:
         : mode === "search"
           ? "Search live approved products across active sellers."
           : "Browse the active launch categories managed from the catalogue.";
+  const productItems = isSearchMode
+    ? (searchProductsQuery.data?.pages.flatMap((page) => page.items) ?? [])
+    : (productsQuery.data?.items ?? []);
+  const productsLoading = isSearchMode ? searchProductsQuery.isLoading : productsQuery.isLoading;
+  const productsError = isSearchMode ? searchProductsQuery.error : productsQuery.error;
+  const productsHasError = isSearchMode ? searchProductsQuery.isError : productsQuery.isError;
+  const productResultDescription = isSearchMode
+    ? submittedSearch
+      ? `Showing matching approved products for "${submittedSearch}".`
+      : "Showing live approved products."
+    : `${productsQuery.data?.total ?? 0} ${mode === "deals" ? "deals" : "products"} found.`;
 
   return (
     <StorefrontFrame>
@@ -188,7 +214,7 @@ export function ProductListingClient({ mode, categorySlug, initialSearch = "" }:
           <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <SectionHeading
               title={submittedSearch ? `Results for "${submittedSearch}"` : mode === "deals" ? "Live deals" : "Product results"}
-              description={`${productsQuery.data?.total ?? 0} ${mode === "deals" ? "deals" : "products"} found.`}
+              description={productResultDescription}
             />
             {mode === "category" ? (
               <Button asChild variant="outline">
@@ -204,12 +230,12 @@ export function ProductListingClient({ mode, categorySlug, initialSearch = "" }:
           ) : null}
 
           <div className="mt-5 grid grid-cols-2 gap-3 sm:mt-6 sm:gap-5 md:grid-cols-3 lg:grid-cols-4">
-            {productsQuery.isLoading || categoryQuery.isLoading ? (
+            {productsLoading || categoryQuery.isLoading ? (
               Array.from({ length: 8 }).map((_, index) => (
                 <StorefrontSkeleton key={index} className="h-64 sm:h-80" />
               ))
-            ) : productsQuery.data?.items.length ? (
-              productsQuery.data.items.map((product) => (
+            ) : productItems.length ? (
+              productItems.map((product) => (
                 <ProductCard
                   key={product.id}
                   product={product}
@@ -222,19 +248,39 @@ export function ProductListingClient({ mode, categorySlug, initialSearch = "" }:
             )}
           </div>
 
+          {isSearchMode && searchProductsQuery.hasNextPage ? (
+            <div className="mt-8 flex justify-center">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void searchProductsQuery.fetchNextPage()}
+                disabled={searchProductsQuery.isFetchingNextPage}
+              >
+                {searchProductsQuery.isFetchingNextPage ? "Loading" : "Load more products"}
+                <ArrowRight size={16} />
+              </Button>
+            </div>
+          ) : null}
+
           {!customerAuth.enabled ? (
             <div className="mt-8">
               <CustomerAuthNotice />
             </div>
           ) : null}
 
-          {productsQuery.isError || categoryQuery.isError ? (
+          {productsHasError || categoryQuery.isError ? (
             <StorefrontErrorPanel
               className="mt-6"
-              error={(productsQuery.error ?? categoryQuery.error) as Error}
+              error={(productsError ?? categoryQuery.error) as Error}
               onRetry={() => {
-                void productsQuery.refetch();
-                void categoryQuery.refetch();
+                if (isSearchMode) {
+                  void searchProductsQuery.refetch();
+                } else {
+                  void productsQuery.refetch();
+                }
+                if (mode === "category") {
+                  void categoryQuery.refetch();
+                }
               }}
             />
           ) : null}

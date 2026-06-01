@@ -116,7 +116,7 @@ export function StorefrontLocationPicker({
   const triggerToneClass = mobile
     ? "w-full justify-between rounded-[22px] border border-[#D8E2EA] bg-white px-4 py-3 text-left shadow-sm"
     : compact
-      ? "min-w-[210px] max-w-[260px] justify-between rounded-full border border-[#D8E2EA] bg-[#FCFDFE] px-3 py-2.5 text-left shadow-sm"
+      ? "w-full min-w-0 justify-between rounded-full border border-[#D8E2EA] bg-[#FCFDFE] px-3 py-2.5 text-left shadow-sm"
       : "min-w-[220px] justify-between rounded-full border border-[#D8E2EA] bg-white/85 px-4 py-2.5 text-left shadow-sm backdrop-blur";
   const triggerLabel = compact
     ? activeLocation?.areaName ??

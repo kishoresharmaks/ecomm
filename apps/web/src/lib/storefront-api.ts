@@ -93,6 +93,8 @@ export type SellerSummary = {
   sellerType?: string;
   status?: string;
   approvalStatus?: string;
+  createdAt?: string;
+  updatedAt?: string;
   profile?: {
     logoUrl?: string | null;
     bannerUrl?: string | null;
@@ -100,6 +102,8 @@ export type SellerSummary = {
     contactName?: string | null;
     contactPhone?: string | null;
     contactEmail?: string | null;
+    createdAt?: string;
+    updatedAt?: string;
   } | null;
   payoutProfile?: {
     accountHolderName?: string | null;
@@ -198,9 +202,13 @@ export type HsnMasterEntry = {
 
 export type PaginatedProducts = {
   items: ProductSummary[];
-  total: number;
-  page: number;
+  total?: number;
+  page?: number;
   limit: number;
+  pageInfo?: {
+    hasNextPage: boolean;
+    nextCursor: string | null;
+  };
 };
 
 export type CartItem = {
@@ -656,18 +664,21 @@ export function listProducts(
     sellerId?: string;
     page?: number;
     limit?: number;
+    cursor?: string | null;
+    pagination?: "offset" | "cursor";
   } = {},
+  auth?: IndihubAuthHeaders,
 ) {
   const params = new URLSearchParams();
 
   for (const [key, value] of Object.entries(query)) {
-    if (value !== undefined && value !== "") {
+    if (value !== undefined && value !== null && value !== "") {
       params.set(key, String(value));
     }
   }
 
   const suffix = params.size ? `?${params.toString()}` : "";
-  return indihubFetch<PaginatedProducts>(`/api/products${suffix}`);
+  return indihubFetch<PaginatedProducts>(`/api/products${suffix}`, undefined, auth);
 }
 
 export function listStorefrontDeals(
@@ -677,12 +688,14 @@ export function listStorefrontDeals(
     sellerId?: string;
     page?: number;
     limit?: number;
+    cursor?: string | null;
+    pagination?: "offset" | "cursor";
   } = {},
 ) {
   const params = new URLSearchParams();
 
   for (const [key, value] of Object.entries(query)) {
-    if (value !== undefined && value !== "") {
+    if (value !== undefined && value !== null && value !== "") {
       params.set(key, String(value));
     }
   }

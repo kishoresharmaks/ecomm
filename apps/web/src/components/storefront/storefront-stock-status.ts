@@ -17,7 +17,7 @@ export function getStorefrontStockStatus(stockQuantity: number | null | undefine
 
   if (stockQuantity <= 0) {
     return {
-      label: "Sold out",
+      label: "Out of stock",
       tone: "danger",
       isAvailable: false,
     };

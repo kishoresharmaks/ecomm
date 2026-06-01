@@ -653,16 +653,50 @@ export function getSellerSalesReport(
 }
 
 export function flattenCategories(categories: CategorySummary[]) {
-  const flattened: CategorySummary[] = [];
+  return sellerCategoryOptions(categories).map((option) => option.category);
+}
 
-  for (const category of categories) {
-    flattened.push(category);
+export type SellerCategoryOption = {
+  category: CategorySummary;
+  label: string;
+  depth: number;
+  hasChildren: boolean;
+};
+
+export function sellerCategoryOptions(categories: CategorySummary[]) {
+  const options: SellerCategoryOption[] = [];
+  const seenCategoryIds = new Set<string>();
+
+  function visit(category: CategorySummary, ancestors: string[] = []) {
+    if (seenCategoryIds.has(category.id)) {
+      return;
+    }
+
+    seenCategoryIds.add(category.id);
+    const path = [...ancestors, category.name];
+    options.push({
+      category,
+      label: path.join(" / "),
+      depth: ancestors.length,
+      hasChildren: Boolean(category.children?.length),
+    });
+
     if (category.children?.length) {
-      flattened.push(...category.children);
+      for (const child of category.children) {
+        visit(child, path);
+      }
     }
   }
 
-  return flattened;
+  for (const category of categories) {
+    visit(category);
+  }
+
+  return options;
+}
+
+export function sellerCategoryLabel(categories: CategorySummary[], categoryId: string) {
+  return sellerCategoryOptions(categories).find((option) => option.category.id === categoryId)?.label ?? "";
 }
 
 export function primarySellerImage(images?: ProductImage[]) {

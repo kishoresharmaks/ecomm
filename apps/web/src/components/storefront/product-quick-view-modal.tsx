@@ -251,7 +251,7 @@ export function ProductQuickViewModal({ product, open, onClose }: ProductQuickVi
                         )}
                       >
                         <ShoppingCart className="h-5 w-5" aria-hidden="true" />
-                        {!variant ? "Unavailable" : !hasStock ? "Sold out" : addMutation.isPending ? "Adding" : "Add to cart"}
+                        {!variant ? "Unavailable" : !hasStock ? "Out of stock" : addMutation.isPending ? "Adding" : "Add to cart"}
                       </Button>
                     </div>
                   )}

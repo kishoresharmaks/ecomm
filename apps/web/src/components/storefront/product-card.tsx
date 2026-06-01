@@ -183,7 +183,7 @@ export function ProductCard({ product, onAddToCart, isAdding = false }: ProductC
               )}
             >
               <ShoppingCart size={15} />
-              <span>{!variant ? "Unavailable" : !hasStock ? "Sold out" : isAdding ? "Adding" : "Add"}</span>
+              <span>{!variant ? "Unavailable" : !hasStock ? "Out of stock" : isAdding ? "Adding" : "Add"}</span>
             </Button>
           )}
         </div>

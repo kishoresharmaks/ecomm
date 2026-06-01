@@ -5,6 +5,8 @@ import { Mail, MapPin, Send, ShieldCheck, Store } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { listCmsMenus, type CmsMenuItem } from "@/lib/storefront-api";
 
+const brandLogoSrc = "/brand/1handindia_logo.png";
+
 const fallbackMarketplaceLinks = [
   { label: "All Categories", href: "/categories" },
   { label: "Stores Near You", href: "/stores" },
@@ -47,8 +49,8 @@ export function StorefrontFooter() {
         <div className="grid gap-8 py-8 lg:grid-cols-[1.2fr_0.85fr_0.85fr_0.85fr_1.1fr]">
           <div>
             <Link href="/" className="inline-flex items-center gap-2" aria-label="1HandIndia home">
-              <span className="grid h-9 w-9 place-items-center rounded-full bg-[#ED3500] text-lg font-black text-white">
-                1
+              <span className="grid h-10 w-10 place-items-center overflow-hidden rounded-full bg-white shadow-[0_10px_22px_rgba(237,53,0,0.14)]">
+                <img src={brandLogoSrc} alt="" className="h-full w-full object-cover" loading="lazy" />
               </span>
               <span className="text-2xl font-black tracking-normal text-[#111827]">
                 Hand<span className="text-[#ED3500]">India</span>

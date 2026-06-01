@@ -7573,7 +7573,7 @@ export function AdminCategoriesPageClient() {
         parentId?: string | null | undefined;
         productTemplateId?: string | null | undefined;
         description?: string | undefined;
-        imageUrl?: string | undefined;
+        imageUrl?: string | null | undefined;
         defaultHsnCode?: string | null | undefined;
         defaultGstRatePercent?: number | null | undefined;
         defaultTaxDescription?: string | null | undefined;
@@ -7665,10 +7665,13 @@ export function AdminCategoriesPageClient() {
             {
               header: "Category",
               cell: (item) => (
-                <EntityTitle
-                  title={item.name}
-                  subtitle={item.parent?.name ? `Under ${item.parent.name}` : item.slug}
-                />
+                <div className="flex items-center gap-3">
+                  <AvatarImage src={item.imageUrl} fallback={item.name.slice(0, 2) || "CA"} />
+                  <EntityTitle
+                    title={item.name}
+                    subtitle={item.parent?.name ? `Under ${item.parent.name}` : item.slug}
+                  />
+                </div>
               ),
             },
             {
@@ -7746,6 +7749,7 @@ export function AdminCategoriesPageClient() {
             category={editingCategory}
             categories={items}
             productTemplates={templates}
+            authHeaders={auth.authHeaders}
             onCancel={() => setEditingCategory(null)}
             onSubmit={(payload) =>
               updateCategory.mutate(
@@ -7759,6 +7763,7 @@ export function AdminCategoriesPageClient() {
           <CategoryCreateForm
             categories={items}
             productTemplates={templates}
+            authHeaders={auth.authHeaders}
             onSubmit={(payload) => createCategory.mutate(payload)}
             disabled={createCategory.isPending}
           />
@@ -13597,11 +13602,13 @@ function fieldKeyFromLabel(label: string) {
 function CategoryCreateForm({
   categories,
   productTemplates,
+  authHeaders,
   onSubmit,
   disabled,
 }: {
   categories: CategoryRecord[];
   productTemplates: ProductTemplateRecord[];
+  authHeaders: IndihubAuthHeaders;
   onSubmit: (payload: {
     name: string;
     parentId?: string | undefined;
@@ -13666,10 +13673,17 @@ function CategoryCreateForm({
           values={["ACTIVE", "INACTIVE", "ARCHIVED"]}
           onChange={(status) => setForm((current) => ({ ...current, status }))}
         />
-        <TextInput
-          label="Image URL"
-          value={form.imageUrl}
-          onChange={(imageUrl) => setForm((current) => ({ ...current, imageUrl }))}
+        <SellerImageUpload
+          label="Category image"
+          description="Upload the storefront category tile image through the configured ImageKit/public image provider."
+          value={form.imageUrl || null}
+          onChange={(imageUrl) => setForm((current) => ({ ...current, imageUrl: imageUrl ?? "" }))}
+          authHeaders={authHeaders}
+          purpose="CATEGORY_IMAGE"
+          previewLabel={form.name || "Category"}
+          aspectClass="aspect-[5/3]"
+          disabled={disabled ?? false}
+          layout="stacked"
         />
         <div className="grid gap-3 rounded-md border border-[#D8E2EA] bg-[#F8FAFC] p-3">
           <p className="text-xs font-black uppercase tracking-wide text-[#667085]">
@@ -13836,6 +13850,7 @@ function CategoryEditForm({
   category,
   categories,
   productTemplates,
+  authHeaders,
   onSubmit,
   onCancel,
   disabled,
@@ -13843,6 +13858,7 @@ function CategoryEditForm({
   category: CategoryRecord;
   categories: CategoryRecord[];
   productTemplates: ProductTemplateRecord[];
+  authHeaders: IndihubAuthHeaders;
   onSubmit: (
     payload: Partial<{
       name: string;
@@ -13850,7 +13866,7 @@ function CategoryEditForm({
       parentId?: string | null | undefined;
       productTemplateId?: string | null | undefined;
       description?: string | undefined;
-      imageUrl?: string | undefined;
+      imageUrl?: string | null | undefined;
       defaultHsnCode?: string | null | undefined;
       defaultGstRatePercent?: number | null | undefined;
       defaultTaxDescription?: string | null | undefined;
@@ -13923,10 +13939,17 @@ function CategoryEditForm({
           values={["ACTIVE", "INACTIVE", "ARCHIVED"]}
           onChange={(status) => setForm((current) => ({ ...current, status }))}
         />
-        <TextInput
-          label="Image URL"
-          value={form.imageUrl}
-          onChange={(imageUrl) => setForm((current) => ({ ...current, imageUrl }))}
+        <SellerImageUpload
+          label="Category image"
+          description="Replace or remove the image shown on category cards and public category SEO previews."
+          value={form.imageUrl || null}
+          onChange={(imageUrl) => setForm((current) => ({ ...current, imageUrl: imageUrl ?? "" }))}
+          authHeaders={authHeaders}
+          purpose="CATEGORY_IMAGE"
+          previewLabel={form.name || category.name}
+          aspectClass="aspect-[5/3]"
+          disabled={disabled ?? false}
+          layout="stacked"
         />
         <div className="grid gap-3 rounded-md border border-[#D8E2EA] bg-[#F8FAFC] p-3">
           <p className="text-xs font-black uppercase tracking-wide text-[#667085]">
@@ -13983,7 +14006,7 @@ function CategoryEditForm({
               parentId: form.parentId || null,
               productTemplateId: form.productTemplateId || null,
               description: form.description || undefined,
-              imageUrl: form.imageUrl || undefined,
+              imageUrl: form.imageUrl || null,
               defaultHsnCode: form.defaultHsnCode || null,
               defaultGstRatePercent: form.defaultGstRatePercent
                 ? Number(form.defaultGstRatePercent)

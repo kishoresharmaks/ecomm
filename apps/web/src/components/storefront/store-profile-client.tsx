@@ -1,46 +1,66 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, Building2, MapPin, RefreshCw, ShieldCheck, ShoppingBag, type LucideIcon } from "lucide-react";
-import { useState } from "react";
+import type { Route } from "next";
+import {
+  ArrowLeft,
+  BadgeCheck,
+  CalendarDays,
+  Heart,
+  MapPin,
+  PackageCheck,
+  RefreshCw,
+  ShieldCheck,
+  ShoppingBag,
+  ShoppingCart,
+  Store,
+  type LucideIcon,
+} from "lucide-react";
+import { useState, type MouseEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
+import { Button, SectionHeading, cn } from "@indihub/ui";
 import { CustomerAuthNotice } from "@/components/auth/customer-auth-notice";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
+import { useMarket } from "@/components/market/market-context";
 import {
   addCartItem,
+  formatMoney,
   getStoreProfile,
   listProducts,
+  primaryImage,
   primaryVariant,
-  type ProductSummary
+  type ProductSummary,
 } from "@/lib/storefront-api";
-import { ProductCard } from "./product-card";
 import { StorefrontFrame } from "./storefront-frame";
 import { StorefrontImage } from "./storefront-image";
+import { getStorefrontStockStatus, storefrontStockBadgeClass } from "./storefront-stock-status";
 import {
   StorefrontEmptyState,
   StorefrontErrorPanel,
   StorefrontNotice,
-  StorefrontPanel,
-  StorefrontSummaryRow,
   StorefrontSkeleton,
 } from "./storefront-ui";
 import { locationMatchLabel, sellerLocationLabel } from "./storefront-location-utils";
+import { useStorefrontWishlist } from "./use-storefront-wishlist";
+
+const brandLogoSrc = "/brand/1handindia_logo.png";
+const vendorHeroVisualSrc = "/brand/vendor-page-logo.png";
 
 export function StoreProfileClient({ slug }: { slug: string }) {
   const queryClient = useQueryClient();
   const customerAuth = useCustomerAuth();
+  const wishlist = useStorefrontWishlist();
   const [notice, setNotice] = useState<string | null>(null);
 
   const storeQuery = useQuery({
     queryKey: ["store-profile", slug],
     queryFn: () => getStoreProfile(slug),
-    retry: false
+    retry: false,
   });
   const productsQuery = useQuery({
     queryKey: ["products", "store", storeQuery.data?.id],
     queryFn: () => listProducts({ sellerId: storeQuery.data?.id ?? "", limit: 24 }),
-    enabled: Boolean(storeQuery.data?.id)
+    enabled: Boolean(storeQuery.data?.id),
   });
   const addMutation = useMutation({
     mutationFn: (product: ProductSummary) => {
@@ -58,17 +78,28 @@ export function StoreProfileClient({ slug }: { slug: string }) {
       setNotice(`${product.name} added to cart.`);
       void queryClient.invalidateQueries({ queryKey: ["cart", customerAuth.authKey] });
     },
-    onError: (error) => setNotice(error instanceof Error ? error.message : "Unable to add product to cart.")
+    onError: (error) => setNotice(error instanceof Error ? error.message : "Unable to add product to cart."),
   });
 
   const store = storeQuery.data;
   const address = store?.addresses[0];
   const bannerUrl = store?.profile?.bannerUrl ?? null;
   const logoUrl = store?.profile?.logoUrl ?? null;
+  const productCount = store?._count?.products ?? productsQuery.data?.items.length ?? 0;
+  const memberSince = formatMonthYear(store?.createdAt ?? store?.profile?.createdAt);
+
+  async function toggleWishlist(product: ProductSummary) {
+    try {
+      const action = await wishlist.toggleWishlist(product.id);
+      setNotice(action === "add" ? `${product.name} saved to wishlist.` : `${product.name} removed from wishlist.`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Unable to update wishlist.");
+    }
+  }
 
   return (
     <StorefrontFrame>
-      <main className="min-h-[calc(100svh-69px)] bg-[#FAF7F0]">
+      <main className="min-h-[calc(100svh-69px)] bg-[#FFFCFB]">
         <section className="mx-auto max-w-7xl px-5 py-6 lg:px-6">
           <Button asChild variant="ghost" size="sm">
             <Link href="/search">
@@ -80,105 +111,118 @@ export function StoreProfileClient({ slug }: { slug: string }) {
 
         {storeQuery.isLoading ? (
           <section className="mx-auto max-w-7xl px-5 pb-10 lg:px-6">
-            <StorefrontSkeleton className="h-96 bg-white" />
+            <StorefrontSkeleton className="h-[420px] bg-white" />
           </section>
         ) : null}
 
         {store ? (
           <>
             <section className="mx-auto max-w-7xl px-5 pb-8 lg:px-6">
-              <div className="overflow-hidden rounded-[34px] border border-[#E5E7EB] bg-white shadow-[0_24px_70px_rgba(22,59,92,0.08)]">
-                <div className="relative min-h-72 bg-[#163B5C]">
-                  <StorefrontImage src={bannerUrl} alt={`${store.storeName} banner`} priority sizes="100vw" fallbackLabel={store.storeName} />
-                  <div className="absolute inset-0 bg-[#102F49]/65" />
-                  <div className="relative flex min-h-72 flex-col justify-end p-5 text-white md:p-8">
-                    <div className="mb-5 flex items-center gap-4">
-                      <span className="relative grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-2xl border border-white/30 bg-white/15 text-2xl font-black">
-                        <StorefrontImage src={logoUrl} alt={`${store.storeName} logo`} sizes="80px" fallbackLabel={store.storeName.slice(0, 2).toUpperCase()} />
+              <div className="overflow-hidden rounded-[26px] border border-[#E8DCD6] bg-white shadow-[0_24px_70px_rgba(22,59,92,0.10)]">
+                <div className="relative isolate min-h-[250px] overflow-hidden bg-[#082C62] sm:min-h-[300px] md:min-h-[340px]">
+                  {bannerUrl ? (
+                    <span className="absolute inset-0 -z-20 opacity-30">
+                      <StorefrontImage src={bannerUrl} alt={`${store.storeName} banner`} priority sizes="100vw" fallbackLabel={store.storeName} />
+                    </span>
+                  ) : null}
+                  <span className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_72%_18%,rgba(237,53,0,0.32),transparent_30%),linear-gradient(135deg,#06224D_0%,#083A7C_48%,#071B35_100%)]" />
+                  <span className="absolute inset-0 -z-10 opacity-25 [background-image:radial-gradient(rgba(255,255,255,0.42)_1px,transparent_1px)] [background-size:18px_18px]" />
+
+                  <div className="grid min-h-[250px] grid-cols-[48px_minmax(0,1fr)_76px] items-center gap-2 p-4 pb-12 text-white sm:min-h-[300px] sm:grid-cols-[88px_minmax(0,1fr)_176px] sm:gap-5 sm:p-7 sm:pb-16 md:min-h-[340px] md:grid-cols-[112px_minmax(0,1fr)_320px] md:gap-8 md:p-12 md:pb-20">
+                    <span className="relative grid h-12 w-12 shrink-0 place-items-center self-center overflow-hidden rounded-full border-[3px] border-white bg-white text-base font-black text-[#163B5C] shadow-[0_16px_40px_rgba(0,0,0,0.22)] sm:h-[5.5rem] sm:w-[5.5rem] sm:border-4 sm:text-2xl md:h-28 md:w-28 md:border-[6px] md:text-3xl">
+                      <StorefrontImage
+                        src={logoUrl}
+                        alt={`${store.storeName} logo`}
+                        sizes="112px"
+                        fallbackLabel={store.storeName.slice(0, 2).toUpperCase()}
+                      />
+                      <span className="absolute bottom-0 right-0 grid h-5 w-5 place-items-center rounded-full border-2 border-white bg-[#ED3500] text-white shadow-lg sm:h-7 sm:w-7 md:bottom-1 md:right-1 md:h-8 md:w-8">
+                        <BadgeCheck className="h-3 w-3 sm:h-4 sm:w-4 md:h-5 md:w-5" aria-hidden="true" />
                       </span>
-                      <div>
-                        <StatusBadge tone="success" className="border-white/30 bg-white/15 text-white">
-                          {locationMatchLabel(store.locationMatchLevel)}
-                        </StatusBadge>
-                        <h1 className="mt-3 text-4xl font-black tracking-normal md:text-5xl">{store.storeName}</h1>
-                      </div>
+                    </span>
+
+                    <div className="min-w-0 self-center">
+                      <span className="inline-flex rounded-full border border-white/25 bg-white/12 px-2.5 py-0.5 text-[10px] font-black sm:px-3 sm:py-1 sm:text-xs">
+                        Marketplace
+                      </span>
+                      <h1 className="mt-2 whitespace-normal text-[16px] font-black leading-5 tracking-normal text-white sm:mt-4 sm:text-3xl sm:leading-tight md:text-5xl">
+                        {store.storeName}
+                      </h1>
+                      {/* <p className="mt-2 line-clamp-2 max-w-2xl text-[11px] font-semibold leading-4 text-white/88 sm:mt-3 sm:line-clamp-3 sm:text-sm sm:leading-6 md:text-base md:leading-7">
+                        {store.profile?.description ??
+                          "Approved 1HandIndia seller profile with products, store details, and customer-facing catalog."}
+                      </p> */}
+                      
                     </div>
-                    <p className="max-w-3xl text-sm font-semibold leading-7 text-white/90">
-                      {store.profile?.description ?? "Approved 1HandIndia seller profile with products, store details, and customer-facing catalogue."}
-                    </p>
+
+                    <HeroLogoStand />
                   </div>
                 </div>
 
-                <div className="grid gap-4 border-t border-[#E5E7EB] p-5 md:grid-cols-3">
-                  <Info icon={ShoppingBag} label="Products" value={`${store._count?.products ?? 0} live products`} />
-                  <Info icon={ShieldCheck} label="Status" value="Approved for selling" />
-                  <Info
-                    icon={MapPin}
-                    label="Location"
-                    value={sellerLocationLabel(address)}
-                  />
+                <div className="relative z-10 -mt-8 px-5 pb-5 md:px-8">
+                  <div className="grid grid-cols-3 overflow-hidden rounded-2xl border border-[#E5E7EB] bg-white shadow-[0_18px_44px_rgba(22,59,92,0.12)]">
+                    <StoreStatCard icon={ShoppingBag} label="Products" value={`${productCount.toLocaleString("en-IN")} live products`} />
+                    <StoreStatCard icon={ShieldCheck} label="Status" value="Approved for selling" tone="success" />
+                    <StoreStatCard icon={CalendarDays} label="Member since" value={memberSince ?? "Recently joined"} />
+                  </div>
                 </div>
               </div>
             </section>
 
-            <section className="mx-auto grid max-w-7xl gap-5 px-5 pb-12 lg:grid-cols-[1fr_320px] lg:px-6">
-              <div>
-                <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-                  <SectionHeading title="Store products" description="Approved active products from this seller." />
-                  <Button type="button" variant="outline" onClick={() => void productsQuery.refetch()} disabled={productsQuery.isFetching}>
-                    <RefreshCw className="h-4 w-4" aria-hidden="true" />
-                    Refresh
-                  </Button>
-                </div>
-
-                {notice ? (
-                  <StorefrontNotice className="mt-5">{notice}</StorefrontNotice>
-                ) : null}
-
-                <div className="mt-5 grid grid-cols-2 gap-3 sm:mt-6 sm:gap-5 xl:grid-cols-3">
-                  {productsQuery.isLoading ? (
-                    Array.from({ length: 6 }).map((_, index) => <StorefrontSkeleton key={index} className="h-64 bg-white sm:h-80" />)
-                  ) : productsQuery.data?.items.length ? (
-                    productsQuery.data.items.map((product) => (
-                      <ProductCard
-                        key={product.id}
-                        product={product}
-                        onAddToCart={(item) => addMutation.mutate(item)}
-                        isAdding={addMutation.isPending}
-                      />
-                    ))
-                  ) : (
-                    <StorefrontEmptyState className="col-span-2 xl:col-span-3" message="No approved products are live for this store yet." />
-                  )}
-                </div>
-
-                {productsQuery.isError ? <StorefrontErrorPanel className="mt-6" error={productsQuery.error} onRetry={() => void productsQuery.refetch()} /> : null}
+            <section className="mx-auto max-w-7xl px-5 pb-12 lg:px-6">
+              <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                <SectionHeading title="Store products" description="Approved active products from this seller." />
+                <Button type="button" variant="outline" onClick={() => void productsQuery.refetch()} disabled={productsQuery.isFetching}>
+                  <RefreshCw className={cn("h-4 w-4", productsQuery.isFetching && "animate-spin")} aria-hidden="true" />
+                  Refresh
+                </Button>
               </div>
 
-              <StorefrontPanel className="h-fit" as="aside">
-                <div className="flex items-center gap-3">
-                  <span className="grid h-10 w-10 place-items-center rounded-2xl bg-[#EAF1F7] text-[#163B5C]">
-                    <Building2 className="h-5 w-5" aria-hidden="true" />
-                  </span>
-                  <SectionHeading title="Store details" description="Public seller contact and location summary." />
+              <div className="mt-3 flex flex-wrap gap-2 text-xs font-black text-[#667085]">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-[#E8EDF2] bg-white px-3 py-1.5">
+                  <MapPin className="h-3.5 w-3.5 text-[#ED3500]" aria-hidden="true" />
+                  {sellerLocationLabel(address)}
+                </span>
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-[#E8EDF2] bg-white px-3 py-1.5">
+                  <Store className="h-3.5 w-3.5 text-[#ED3500]" aria-hidden="true" />
+                  {locationMatchLabel(store.locationMatchLevel)}
+                </span>
+              </div>
+
+              {notice ? <StorefrontNotice className="mt-5">{notice}</StorefrontNotice> : null}
+
+              <div className="mt-5 grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-2">
+                {productsQuery.isLoading ? (
+                  Array.from({ length: 4 }).map((_, index) => (
+                    <StorefrontSkeleton key={index} className="h-80 bg-white xl:h-56" />
+                  ))
+                ) : productsQuery.data?.items.length ? (
+                  productsQuery.data.items.map((product) => (
+                    <StoreProductTile
+                      key={product.id}
+                      product={product}
+                      onAddToCart={(item) => addMutation.mutate(item)}
+                      isAdding={addMutation.isPending}
+                      isWishlisted={wishlist.hasWishlistProduct(product.id)}
+                      isWishlistEnabled={wishlist.isEnabled}
+                      isWishlistPending={wishlist.isPendingProductId === product.id}
+                      onToggleWishlist={(item) => void toggleWishlist(item)}
+                    />
+                  ))
+                ) : (
+                  <StorefrontEmptyState className="col-span-2" message="No approved products are live for this store yet." />
+                )}
+              </div>
+
+              {productsQuery.isError ? (
+                <StorefrontErrorPanel className="mt-6" error={productsQuery.error} onRetry={() => void productsQuery.refetch()} />
+              ) : null}
+
+              {!customerAuth.enabled ? (
+                <div className="mt-6 max-w-2xl">
+                  <CustomerAuthNotice />
                 </div>
-                <div className="mt-5 rounded-2xl border border-[#E8EDF2] bg-[#F8FAFC] px-4 py-3 text-sm font-semibold text-[#425466]">
-                  This store serves from <span className="font-black text-[#163B5C]">{sellerLocationLabel(address)}</span>.
-                </div>
-                <div className="mt-5 grid gap-3 text-sm font-semibold text-[#667085]">
-                  <InfoLine label="Contact" value={store.profile?.contactName ?? store.user?.fullName ?? store.storeName} />
-                  <InfoLine label="Email" value={store.profile?.contactEmail ?? store.user?.email ?? "Not listed"} />
-                  <InfoLine label="Phone" value={store.profile?.contactPhone ?? store.user?.phone ?? "Not listed"} />
-                  <InfoLine label="City" value={address?.city ?? "Not listed"} />
-                  <InfoLine label={address?.countryCode === "IN" || !address?.countryCode ? "Pincode" : "Postal code"} value={address?.pincode ?? "Not listed"} />
-                  <InfoLine label="Country" value={address?.country ?? address?.countryCode ?? "Not listed"} />
-                </div>
-                {!customerAuth.enabled ? (
-                  <div className="mt-5">
-                    <CustomerAuthNotice />
-                  </div>
-                ) : null}
-              </StorefrontPanel>
+              ) : null}
             </section>
           </>
         ) : null}
@@ -193,22 +237,168 @@ export function StoreProfileClient({ slug }: { slug: string }) {
   );
 }
 
-function Info({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
+function HeroLogoStand() {
   return (
-    <div className="flex items-center gap-3 rounded-md bg-[#F8FAFC] p-4">
-      <span className="grid h-10 w-10 place-items-center rounded-md bg-white text-[#163B5C]">
+    <div className="relative h-40 w-full self-stretch overflow-hidden sm:h-56 md:h-72">
+      <img
+        src={vendorHeroVisualSrc}
+        alt=""
+        className="absolute inset-0 h-full w-full object-cover object-center"
+        loading="eager"
+        aria-hidden="true"
+      />
+      <span className="pointer-events-none absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-[#082C62] to-transparent sm:w-14 md:w-20" />
+    </div>
+  );
+}
+
+function StoreStatCard({
+  icon: Icon,
+  label,
+  value,
+  tone = "neutral",
+}: {
+  icon: LucideIcon;
+  label: string;
+  value: string;
+  tone?: "neutral" | "success";
+}) {
+  return (
+    <div className="flex min-w-0 items-center gap-2 border-r border-[#E8EDF2] p-3 last:border-r-0 sm:gap-4 sm:p-5">
+      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-[#E8EDF2] bg-[#F8FAFC] text-[#163B5C] sm:h-12 sm:w-12">
         <Icon className="h-5 w-5" aria-hidden="true" />
       </span>
-      <span>
-        <span className="block text-xs font-bold uppercase tracking-wide text-[#667085]">{label}</span>
-        <span className="mt-1 block text-sm font-black text-[#1F2933]">{value}</span>
+      <span className="min-w-0">
+        <span className="block text-[10px] font-bold uppercase tracking-wide text-[#667085] sm:text-xs">{label}</span>
+        <span className={cn("mt-1 block text-xs font-black leading-5 text-[#1F2933] sm:text-sm", tone === "success" && "text-[#0F8A5F]")}>
+          {value}
+        </span>
       </span>
     </div>
   );
 }
 
-function InfoLine({ label, value }: { label: string; value: string }) {
+function StoreProductTile({
+  product,
+  onAddToCart,
+  isAdding,
+  isWishlisted,
+  isWishlistEnabled,
+  isWishlistPending,
+  onToggleWishlist,
+}: {
+  product: ProductSummary;
+  onAddToCart: (product: ProductSummary) => void;
+  isAdding: boolean;
+  isWishlisted: boolean;
+  isWishlistEnabled: boolean;
+  isWishlistPending: boolean;
+  onToggleWishlist: (product: ProductSummary) => void;
+}) {
+  const market = useMarket();
+  const imageUrl = primaryImage(product);
+  const displayImageUrl = imageUrl || brandLogoSrc;
+  const variant = primaryVariant(product);
+  const hasStock = Boolean(variant && variant.stockQuantity > 0);
+  const stockStatus = getStorefrontStockStatus(variant?.stockQuantity);
+  const mrp = variant?.mrpPaise && variant.mrpPaise > variant.pricePaise ? variant.mrpPaise : null;
+  const href = `/products/${product.slug}` as Route;
+
+  function handleWishlistClick(event: MouseEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    onToggleWishlist(product);
+  }
+
   return (
-    <StorefrontSummaryRow className="border-b border-[#E5E7EB] pb-3 last:border-b-0 last:pb-0" label={label} value={value} />
+    <article className="group grid min-h-full overflow-hidden rounded-2xl border border-[#E5E7EB] bg-white shadow-sm transition hover:-translate-y-0.5 hover:border-[#ED3500] hover:shadow-[0_22px_48px_rgba(22,59,92,0.10)] xl:grid-cols-[220px_1fr]">
+      <Link href={href} className="relative block aspect-square overflow-hidden bg-[#FFF5F1] xl:aspect-auto xl:min-h-full">
+        <StorefrontImage
+          src={displayImageUrl}
+          alt={product.images[0]?.altText ?? product.name}
+          sizes="(max-width: 640px) 50vw, (max-width: 1280px) 50vw, 260px"
+          className="object-contain p-5 transition duration-500 group-hover:scale-105"
+          fallbackLabel={product.category.name}
+          allowExternalRemote
+        />
+      </Link>
+
+      <div className="relative flex min-w-0 flex-col p-4 sm:p-5">
+        {isWishlistEnabled ? (
+          <button
+            type="button"
+            onClick={handleWishlistClick}
+            disabled={isWishlistPending}
+            aria-label={isWishlisted ? `Remove ${product.name} from wishlist` : `Save ${product.name} to wishlist`}
+            className={cn(
+              "absolute right-3 top-3 grid h-9 w-9 place-items-center rounded-full border border-[#E8EDF2] bg-white text-[#163B5C] shadow-sm transition hover:bg-[#FFF0EC] hover:text-[#ED3500] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ED3500] sm:right-4 sm:top-4 sm:h-10 sm:w-10",
+              isWishlisted && "bg-[#FFF0EC] text-[#ED3500]",
+              isWishlistPending && "cursor-wait opacity-70",
+            )}
+          >
+            <Heart className={cn("h-5 w-5", isWishlisted && "fill-current")} aria-hidden="true" />
+          </button>
+        ) : null}
+
+        <Link
+          href={`/stores/${product.seller.slug}` as Route}
+          className="flex max-w-[calc(100%-3rem)] items-center gap-1.5 text-[10px] font-black uppercase tracking-wide text-[#667085] hover:text-[#163B5C] sm:max-w-[calc(100%-3.5rem)] sm:gap-2 sm:text-xs"
+        >
+          <Store className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <span className="truncate">{product.seller.storeName}</span>
+        </Link>
+
+        <Link href={href} className="mt-3 block max-w-[calc(100%-3rem)] sm:mt-4 sm:max-w-[calc(100%-3.5rem)]">
+          <h2 className="line-clamp-2 min-h-10 text-sm font-black leading-5 text-[#1F2933] group-hover:text-[#163B5C] sm:min-h-14 sm:text-xl sm:leading-7">
+            {product.name}
+          </h2>
+        </Link>
+
+        <span className={cn("mt-3 inline-flex w-fit items-center gap-1 rounded-full px-2 py-1 text-[10px] font-black sm:gap-1.5 sm:px-3 sm:text-xs", storefrontStockBadgeClass(stockStatus.tone))}>
+          <PackageCheck className="h-3.5 w-3.5" aria-hidden="true" />
+          {stockStatus.label}
+        </span>
+
+        <div className="mt-auto flex flex-col items-start gap-3 pt-5 sm:flex-row sm:items-end sm:justify-between sm:gap-4 sm:pt-6">
+          <div>
+            <p className="text-xl font-black text-[#071B35] sm:text-2xl">
+              {variant ? market.format(variant.pricePaise) : "Price pending"}
+            </p>
+            {mrp ? <p className="text-sm font-semibold text-[#98A2B3] line-through">{market.format(mrp)}</p> : null}
+            {variant && market.market.currency !== variant.currency ? (
+              <p className="mt-1 text-xs font-bold text-[#667085]">{formatMoney(variant.pricePaise, variant.currency)} base</p>
+            ) : null}
+          </div>
+
+          <Button
+            type="button"
+            size="sm"
+            disabled={!variant || !hasStock || isAdding}
+            onClick={() => onAddToCart(product)}
+            aria-label={hasStock ? `Add ${product.name} to cart` : `${product.name} is out of stock`}
+            className={cn(
+              "h-10 rounded-full px-4 sm:h-11 sm:px-5",
+              !hasStock && "border border-[#FFD1C4] bg-[#FFF0EC] text-[#C4320A] hover:bg-[#FFF0EC] [&_svg]:text-[#C4320A]",
+            )}
+          >
+            <ShoppingCart className="h-4 w-4" aria-hidden="true" />
+            {!variant ? "Unavailable" : !hasStock ? "Out of stock" : isAdding ? "Adding" : "Add"}
+          </Button>
+        </div>
+      </div>
+    </article>
   );
+}
+
+function formatMonthYear(value?: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return new Intl.DateTimeFormat("en-IN", { month: "short", year: "numeric" }).format(date);
 }

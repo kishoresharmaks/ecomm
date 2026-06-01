@@ -14,14 +14,17 @@ import {
   Heart,
   MapPin,
   Menu as MenuIcon,
-  MoreHorizontal,
+  PackageCheck,
   PackageSearch,
+  RefreshCcw,
   Search,
   Shirt,
   ShoppingBasket,
   ShoppingCart,
+  ShieldCheck,
   Sofa,
   Store,
+  Truck,
   UserRound,
   X,
 } from "lucide-react";
@@ -49,6 +52,7 @@ type HeaderNavItem = {
   children?: HeaderNavItem[];
 };
 
+const brandLogoSrc = "/brand/1handindia_logo.png";
 const categoryIcons = [PackageSearch, Shirt, ShoppingBasket, Sofa, BadgePercent, Store, BookOpen];
 
 export function StorefrontHeader() {
@@ -95,7 +99,6 @@ export function StorefrontHeader() {
       ];
   const categories = categoriesQuery.data ?? [];
   const primaryCategories = categories.slice(0, 6);
-  const secondaryCategories = categories.slice(6, 14);
   const cmsItems = menuQuery.data?.map(menuItemToNavItem) ?? [];
   const mobileLocationLabel =
     storefrontLocation.source === "global"
@@ -164,31 +167,27 @@ export function StorefrontHeader() {
           </label>
         </form>
 
-        <nav className="mt-5 grid grid-cols-6 gap-2" aria-label="Mobile storefront categories">
-          <MobileCategoryShortcut href="/categories" label="All Categories" icon={<Grid3X3 className="h-5 w-5" />} active={isActivePath(pathname, "/categories")} />
-          {primaryCategories.slice(0, 4).map((category, index) => {
-            const Icon = categoryIcons[index % categoryIcons.length] ?? PackageSearch;
-            return (
-              <MobileCategoryShortcut
-                key={category.id}
-                href={`/categories/${category.slug}`}
-                label={category.name}
-                icon={<Icon className="h-5 w-5" />}
-                active={isActivePath(pathname, `/categories/${category.slug}`)}
-              />
-            );
-          })}
+        <div className="mt-5 flex flex-wrap items-center gap-3">
           <button
             type="button"
             onClick={() => setMobileOpen(true)}
-            className="flex min-w-0 flex-col items-center gap-2 text-center text-[11px] font-bold text-[#111827]"
+            className="inline-flex h-14 shrink-0 items-center gap-2 rounded-[12px] bg-[#ED3500] px-4 text-sm font-black text-white shadow-[0_12px_28px_rgba(237,53,0,0.22)]"
           >
-            <span className="grid h-14 w-14 place-items-center rounded-full border border-[#E8EDF2] bg-white text-[#111827] shadow-[0_10px_24px_rgba(22,59,92,0.06)]">
-              <MoreHorizontal className="h-5 w-5" aria-hidden="true" />
-            </span>
-            <span className="line-clamp-2 min-h-8 leading-4">More</span>
+            <Grid3X3 className="h-5 w-5" aria-hidden="true" />
+            All Categories
+            <ChevronDown className="h-4 w-4" aria-hidden="true" />
           </button>
-        </nav>
+          <button
+            type="button"
+            onClick={() => setMobileOpen(true)}
+            className="ml-auto inline-flex h-11 items-center gap-2 rounded-full px-3 text-sm font-black text-[#111827] transition hover:bg-[#FFF0EC] hover:text-[#ED3500]"
+          >
+            More <ChevronDown className="h-4 w-4" aria-hidden="true" />
+          </button>
+          <div className="shrink-0">
+            <AuthActions />
+          </div>
+        </div>
 
         {mobileOpen ? (
           <div className="mt-4 rounded-[22px] border border-[#FFE0D6] bg-[#FFFCFB] p-4 shadow-[0_18px_44px_rgba(22,59,92,0.08)]">
@@ -260,8 +259,8 @@ export function StorefrontHeader() {
             </label>
           </form>
 
-          <div className="hidden items-center gap-4 lg:flex">
-            <StorefrontLocationPicker compact className="max-w-[190px]" />
+          <div className="hidden min-w-0 items-center justify-end gap-2 lg:flex xl:gap-4">
+            <StorefrontLocationPicker compact className="w-[168px] shrink-0 xl:w-[190px]" />
             <HeaderAction href="/account/wishlist" label="Wishlist" icon={<Heart className="h-5 w-5" />} />
             <HeaderAction
               href="/cart"
@@ -275,22 +274,15 @@ export function StorefrontHeader() {
 
         <div className="mt-3 hidden items-center gap-3 lg:flex">
           <CategoryMenu categories={categories} />
-          <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
-            {primaryCategories.map((category, index) => {
-              const Icon = categoryIcons[index % categoryIcons.length] ?? PackageSearch;
-              return (
-                <NavPill
-                  key={category.id}
-                  href={`/categories/${category.slug}`}
-                  label={category.name}
-                  active={isActivePath(pathname, `/categories/${category.slug}`)}
-                  icon={<Icon className="h-4 w-4" />}
-                />
-              );
-            })}
+          <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden" aria-label="Storefront quick links">
+            <NavPill
+              href="/stores"
+              label="Local Shops"
+              active={isActivePath(pathname, "/stores")}
+              icon={<Store className="h-4 w-4" />}
+            />
           </nav>
           <MoreMenu
-            categories={secondaryCategories}
             cmsItems={cmsItems}
             marketCountries={marketCountries}
             marketValue={market.countryCode}
@@ -308,43 +300,18 @@ export function StorefrontHeader() {
 
 function MobileBrandLogo() {
   return (
-    <Link href="/" className="flex min-w-0 items-center gap-1.5" aria-label="1HandIndia home">
-      <span className="text-4xl font-black leading-none text-[#ED3500]">1</span>
-      <span className="whitespace-nowrap text-[24px] font-black leading-none tracking-normal text-[#111827]">
+    <Link href="/" className="flex min-w-0 items-center gap-2" aria-label="1HandIndia home">
+      <span className="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-full bg-white shadow-[0_10px_22px_rgba(237,53,0,0.16)]">
+        <img src={brandLogoSrc} alt="" className="h-full w-full object-cover" loading="eager" />
+      </span>
+      <span className="min-w-0">
+        <span className="block whitespace-nowrap text-[22px] font-black leading-none tracking-normal text-[#111827]">
         Hand<span className="text-[#ED3500]">India</span>
+        </span>
+        <span className="mt-1 block truncate text-[9px] font-semibold leading-none text-[#667085]">
+          Smart shopping, verified sellers.
+        </span>
       </span>
-    </Link>
-  );
-}
-
-function MobileCategoryShortcut({
-  href,
-  label,
-  icon,
-  active,
-}: {
-  href: string;
-  label: string;
-  icon: ReactNode;
-  active: boolean;
-}) {
-  return (
-    <Link
-      href={href}
-      className={cn(
-        "flex min-w-0 flex-col items-center gap-2 text-center text-[11px] font-bold text-[#111827]",
-        active && "text-[#ED3500]",
-      )}
-    >
-      <span
-        className={cn(
-          "grid h-14 w-14 place-items-center rounded-full border bg-white shadow-[0_10px_24px_rgba(22,59,92,0.06)]",
-          active ? "border-[#FFE0D6] text-[#ED3500]" : "border-[#E8EDF2] text-[#111827]",
-        )}
-      >
-        {icon}
-      </span>
-      <span className="line-clamp-2 min-h-8 leading-4">{label}</span>
     </Link>
   );
 }
@@ -352,8 +319,8 @@ function MobileCategoryShortcut({
 function BrandBlock() {
   return (
     <Link href="/" className="flex min-w-0 items-center gap-2" aria-label="1HandIndia home">
-      <span className="relative grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#ED3500] text-lg font-black text-white shadow-[0_12px_26px_rgba(237,53,0,0.2)]">
-        1
+      <span className="relative grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-full bg-white shadow-[0_12px_26px_rgba(237,53,0,0.18)]">
+        <img src={brandLogoSrc} alt="" className="h-full w-full object-cover" loading="eager" />
       </span>
       <span className="min-w-0">
         <span className="block whitespace-nowrap text-[22px] font-black leading-none tracking-normal text-[#111827]">
@@ -379,7 +346,11 @@ function HeaderAction({
   badge?: number;
 }) {
   return (
-    <Link href={href} className="relative flex items-center gap-2 text-sm font-black text-[#1F2933] transition hover:text-[#ED3500]">
+    <Link
+      href={href}
+      className="relative flex h-10 shrink-0 items-center gap-2 whitespace-nowrap rounded-full px-1.5 text-sm font-black text-[#1F2933] transition hover:text-[#ED3500] xl:px-0"
+      aria-label={label}
+    >
       <span className="relative text-[#1F2933]">
         {icon}
         {badge && badge > 0 ? (
@@ -388,12 +359,14 @@ function HeaderAction({
           </span>
         ) : null}
       </span>
-      <span>{label}</span>
+      <span className="hidden xl:inline">{label}</span>
     </Link>
   );
 }
 
 function CategoryMenu({ categories }: { categories: CategorySummary[] }) {
+  const visibleCategories = categories.slice(0, 6);
+
   return (
     <Menu as="div" className="relative shrink-0">
       <MenuButton className="inline-flex h-12 items-center gap-2 rounded-[12px] bg-[#ED3500] px-4 text-sm font-black text-white shadow-[0_12px_28px_rgba(237,53,0,0.22)] transition hover:bg-[#d52f00]">
@@ -403,31 +376,95 @@ function CategoryMenu({ categories }: { categories: CategorySummary[] }) {
       </MenuButton>
       <MenuItems
         anchor="bottom start"
-        className="z-[90] mt-2 grid w-72 origin-top rounded-[18px] border border-[#FFE0D6] bg-white p-2 shadow-[0_22px_70px_rgba(22,59,92,0.16)] outline-none"
+        className="z-[90] mt-2 w-[min(1120px,calc(100vw-5rem))] origin-top overflow-hidden rounded-[18px] border border-[#FFE0D6] bg-white shadow-[0_22px_70px_rgba(22,59,92,0.16)] outline-none"
       >
         {categories.length ? (
-          categories.slice(0, 12).map((category, index) => {
-            const Icon = categoryIcons[index % categoryIcons.length] ?? PackageSearch;
-            return (
-              <MenuItem key={category.id}>
-                <Link
-                  href={`/categories/${category.slug}`}
-                  className="flex items-center gap-3 rounded-[14px] px-3 py-2.5 text-sm font-bold text-[#1F2933] data-focus:bg-[#FFF4EF] data-focus:text-[#ED3500]"
-                >
-                  <Icon className="h-4 w-4 shrink-0 text-[#ED3500]" aria-hidden="true" />
-                  <span className="min-w-0 flex-1 truncate">{category.name}</span>
-                  <span className="text-xs font-semibold text-[#98A2B3]">
-                    {category._count?.products ?? 0}
-                  </span>
-                </Link>
-              </MenuItem>
-            );
-          })
+          <>
+            <div className="grid gap-0 p-5 [grid-template-columns:repeat(auto-fit,minmax(150px,1fr))]">
+              {visibleCategories.map((category, index) => (
+                <MegaCategoryColumn key={category.id} category={category} index={index} />
+              ))}
+            </div>
+            <div className="grid gap-2 border-t border-[#F1D7CF] bg-[#F8FAFC] px-5 py-3 sm:grid-cols-5">
+              <MegaMenuBenefit icon={<ShieldCheck className="h-4 w-4" aria-hidden="true" />} label="Top Quality Products" />
+              <MegaMenuBenefit icon={<BadgePercent className="h-4 w-4" aria-hidden="true" />} label="Best Prices & Offers" />
+              <MegaMenuBenefit icon={<PackageCheck className="h-4 w-4" aria-hidden="true" />} label="Secure Payments" />
+              <MegaMenuBenefit icon={<RefreshCcw className="h-4 w-4" aria-hidden="true" />} label="Easy Returns" />
+              <MegaMenuBenefit icon={<Truck className="h-4 w-4" aria-hidden="true" />} label="Fast Delivery" />
+            </div>
+          </>
         ) : (
-          <div className="px-3 py-2 text-sm font-semibold text-[#667085]">No active categories yet.</div>
+          <div className="px-5 py-4 text-sm font-semibold text-[#667085]">No active categories yet.</div>
         )}
       </MenuItems>
     </Menu>
+  );
+}
+
+function MegaCategoryColumn({ category, index }: { category: CategorySummary; index: number }) {
+  const Icon = categoryIcons[index % categoryIcons.length] ?? PackageSearch;
+  const children = category.children ?? [];
+  const productCount = category._count?.products ?? 0;
+
+  return (
+    <div className="min-w-0 border-r border-[#E8EDF2] px-4 py-1 last:border-r-0">
+      <MenuItem>
+        <Link
+          href={`/categories/${category.slug}`}
+          className="group flex items-center gap-2 rounded-[12px] px-2 py-2 text-sm font-black text-[#1F2933] data-focus:bg-[#FFF4EF] data-focus:text-[#ED3500]"
+        >
+          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#FFF0EC] text-[#ED3500]">
+            <Icon className="h-4 w-4" aria-hidden="true" />
+          </span>
+          <span className="min-w-0">
+            <span className="block truncate">{category.name}</span>
+            <span className="mt-0.5 block text-[11px] font-semibold text-[#98A2B3]">
+              {productCount ? `${productCount} products` : `${children.length} sections`}
+            </span>
+          </span>
+        </Link>
+      </MenuItem>
+
+      <div className="mt-2 grid gap-1">
+        {children.length ? (
+          children.slice(0, 6).map((child) => (
+            <MenuItem key={child.id}>
+              <Link
+                href={`/categories/${child.slug}`}
+                className="block truncate rounded-[10px] px-2 py-1.5 text-sm font-semibold text-[#4B5563] data-focus:bg-[#FFF4EF] data-focus:text-[#ED3500]"
+              >
+                {child.name}
+              </Link>
+            </MenuItem>
+          ))
+        ) : (
+          <p className="px-2 py-1.5 text-xs font-semibold leading-5 text-[#667085]">
+            {category.description?.trim() || "Browse all products in this category."}
+          </p>
+        )}
+      </div>
+
+      <MenuItem>
+        <Link
+          href={`/categories/${category.slug}`}
+          className="mt-3 inline-flex items-center gap-1 px-2 text-xs font-black text-[#ED3500] data-focus:text-[#C72D00]"
+        >
+          View all
+          <ChevronDown className="-rotate-90 h-3.5 w-3.5" aria-hidden="true" />
+        </Link>
+      </MenuItem>
+    </div>
+  );
+}
+
+function MegaMenuBenefit({ icon, label }: { icon: ReactNode; label: string }) {
+  return (
+    <div className="flex min-w-0 items-center justify-center gap-2 text-xs font-bold text-[#4B5563]">
+      <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-white text-[#667085] shadow-sm">
+        {icon}
+      </span>
+      <span className="truncate">{label}</span>
+    </div>
   );
 }
 
@@ -457,25 +494,23 @@ function NavPill({
 }
 
 function MoreMenu({
-  categories,
   cmsItems,
   marketCountries,
   marketValue,
   onMarketChange,
 }: {
-  categories: CategorySummary[];
   cmsItems: HeaderNavItem[];
   marketCountries: Array<{ code: string; name: string; currency: string }>;
   marketValue: string;
   onMarketChange: (code: string) => void;
 }) {
-  const moreLinks = [
-    ...categories.map((category) => ({
-      label: category.name,
-      href: `/categories/${category.slug}`,
-    })),
-    ...cmsItems,
-  ];
+  const moreLinks = cmsItems.length
+    ? cmsItems
+    : [
+        { label: "Deals", href: "/deals" },
+        { label: "Become a Seller", href: "/seller/register" },
+        { label: "B2B Buyers", href: "/b2b" },
+      ];
 
   return (
     <Menu as="div" className="relative shrink-0">

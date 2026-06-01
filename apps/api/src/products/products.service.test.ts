@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
-import { ApprovalStatus, EmailRecipientType, ProductStatus, SellerStatus } from "@indihub/database";
+import { ApprovalStatus, EmailRecipientType, ProductStatus, SellerStatus, VariantStatus } from "@indihub/database";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ProductApprovalDecision } from "./dto/product-approval.dto";
 import { ProductsService } from "./products.service";
@@ -44,6 +44,51 @@ describe("ProductsService", () => {
     returnEligibility: "Returnable",
     packageWeightGrams: 500,
   };
+
+  function publicProductWithStock(condition: string, stockQuantity: number) {
+    return {
+      id: "product_1",
+      slug: "product-1",
+      attributes: { ...marketplaceEssentials, condition },
+      variants: [
+        {
+          id: "variant_1",
+          status: VariantStatus.ACTIVE,
+          stockQuantity,
+        },
+      ],
+    };
+  }
+
+  it("keeps new public product details visible when stock is zero", async () => {
+    prisma.client.product.findFirst.mockResolvedValue(publicProductWithStock("New", 0));
+    const service = new ProductsService(prisma as never, notifications as never);
+
+    await expect(service.getPublicProduct("product-1")).resolves.toMatchObject({
+      slug: "product-1",
+      attributes: expect.objectContaining({ condition: "New" }),
+    });
+  });
+
+  it.each(["Used", "Refurbished"])(
+    "hides sold %s product details from public storefront",
+    async (condition) => {
+      prisma.client.product.findFirst.mockResolvedValue(publicProductWithStock(condition, 0));
+      const service = new ProductsService(prisma as never, notifications as never);
+
+      await expect(service.getPublicProduct("product-1")).rejects.toBeInstanceOf(NotFoundException);
+    },
+  );
+
+  it("keeps used public product details visible when active stock remains", async () => {
+    prisma.client.product.findFirst.mockResolvedValue(publicProductWithStock("Used", 1));
+    const service = new ProductsService(prisma as never, notifications as never);
+
+    await expect(service.getPublicProduct("product-1")).resolves.toMatchObject({
+      slug: "product-1",
+      attributes: expect.objectContaining({ condition: "Used" }),
+    });
+  });
 
   it("blocks seller product creation until seller approval is complete", async () => {
     prisma.client.seller.findUnique.mockResolvedValue({

@@ -898,7 +898,7 @@ function DealHeroProductCard({ product }: { product: ProductSummary }) {
               )}
             >
               <ShoppingCart className="h-4 w-4" aria-hidden="true" />
-              {!variant ? "Unavailable" : !stockStatus.isAvailable ? "Sold out" : addMutation.isPending ? "Adding" : "Add to Cart"}
+              {!variant ? "Unavailable" : !stockStatus.isAvailable ? "Out of stock" : addMutation.isPending ? "Adding" : "Add to Cart"}
             </button>
           ) : (
             <HomepageItemLink

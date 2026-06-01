@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import { type FormEvent, type KeyboardEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowLeft, ArrowUp, Edit3, ImagePlus, PackagePlus, Plus, Search, Star, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, CheckCircle2, ClipboardList, Edit3, Eye, ImagePlus, PackagePlus, Plus, Search, Star, Trash2 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, SectionHeading, StatusBadge, cn } from "@indihub/ui";
 import {
@@ -24,10 +24,13 @@ import {
   getSellerProfile,
   listSellerProducts,
   primarySellerImage,
+  sellerCategoryLabel,
+  sellerCategoryOptions,
   updateSellerProduct,
   type SellerProductPayload
 } from "@/lib/seller-api";
 import type { IndihubAuthHeaders } from "@/lib/api";
+import { sellerProductStockBadge } from "@/lib/product-stock-labels";
 import { uploadPublicImage } from "@/lib/public-image-upload";
 import type { CategorySummary, HsnMasterEntry, ProductImage, ProductSummary, ProductTemplateField, ProductTemplateSummary, ProductVariant } from "@/lib/storefront-api";
 import {
@@ -92,6 +95,8 @@ export function SellerProductsClient({
   const [selectedCategoryId, setSelectedCategoryId] = useState("");
   const [draftVariants, setDraftVariants] = useState<DraftVariantRow[]>([emptyDraftVariant()]);
   const [taxDraft, setTaxDraft] = useState<TaxDraft>({ hsnCode: "", gstRatePercent: "" });
+  const [productNameDraft, setProductNameDraft] = useState("");
+  const [productDescriptionDraft, setProductDescriptionDraft] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const confirmation = useConfirmationDialog();
 
@@ -102,6 +107,7 @@ export function SellerProductsClient({
     refetchOnWindowFocus: false,
     staleTime: 5 * 60 * 1000
   });
+  const categoryOptions = useMemo(() => sellerCategoryOptions(categoriesQuery.data ?? []), [categoriesQuery.data]);
   const categories = useMemo(() => flattenCategories(categoriesQuery.data ?? []), [categoriesQuery.data]);
 
   const productsQuery = useQuery({
@@ -139,6 +145,8 @@ export function SellerProductsClient({
       setDraftImages([]);
       setDraftVariants([emptyDraftVariant()]);
       setSelectedCategoryId(categories[0]?.id ?? "");
+      setProductNameDraft("");
+      setProductDescriptionDraft("");
       void queryClient.invalidateQueries({ queryKey: ["seller-products", sellerAuth.authKey] });
       void queryClient.invalidateQueries({ queryKey: ["seller-sales-report", sellerAuth.authKey] });
       if (isFormMode) {
@@ -163,6 +171,8 @@ export function SellerProductsClient({
     setDraftImages(imagesToDraft(editingProduct?.images ?? []));
     setSelectedCategoryId(editingProduct?.categoryId ?? "");
     setDraftVariants(variantsToDraft(editingProduct?.variants ?? []));
+    setProductNameDraft(editingProduct?.name ?? "");
+    setProductDescriptionDraft(editingProduct?.description ?? "");
   }, [productQuery.data]);
 
   useEffect(() => {
@@ -258,10 +268,23 @@ export function SellerProductsClient({
   const sellerReady = profileQuery.data?.status === "APPROVED" && profileQuery.data?.approvalStatus === "APPROVED";
   const editingProduct = productQuery.data ?? null;
   const selectedCategory = categories.find((category) => category.id === selectedCategoryId) ?? categories[0] ?? null;
+  const selectedCategoryLabel = sellerCategoryLabel(categoriesQuery.data ?? [], selectedCategoryId);
   const selectedTemplate = selectedCategory?.productTemplate ?? null;
   const productFields = templateFields(selectedTemplate, "PRODUCT").filter((field) => !marketplaceEssentialFieldKeys.has(field.fieldKey));
   const variantFields = templateFields(selectedTemplate, "VARIANT");
   const selectedListingMode = selectedTemplate?.listingMode ?? "CART";
+  const formTitle = editingProduct ? "Edit product" : "Add product";
+  const formDescription = editingProduct
+    ? "Update catalogue, image, price, stock, tax, and variant details before resubmitting for approval."
+    : "Fill in the product details below to create a new marketplace listing.";
+  const primaryDraftImage = draftImages.find((image) => image.isPrimary)?.url ?? draftImages[0]?.url ?? null;
+  const firstExistingVariant = draftVariants.find((row) => row.variant)?.variant ?? null;
+  const hasExistingVariantStock = draftVariants.some((row) => row.variant);
+  const knownStockTotal = draftVariants.reduce((total, row) => total + (row.variant?.stockQuantity ?? 0), 0);
+  const variantRowsLabel = `${draftVariants.length} ${draftVariants.length === 1 ? "variant" : "variants"}`;
+  const priceSummary = firstExistingVariant ? formatMoney(firstExistingVariant.pricePaise, firstExistingVariant.currency) : "Set in variants";
+  const stockSummary = hasExistingVariantStock ? `${knownStockTotal} total stock` : "Set in variants";
+  const previewName = productNameDraft.trim() || "Product preview";
 
   if (isFormMode) {
     return (
@@ -270,106 +293,227 @@ export function SellerProductsClient({
         {productId && productQuery.isLoading ? <SellerSkeleton className="h-96" /> : null}
         {productQuery.error ? <SellerErrorPanel error={productQuery.error} onRetry={() => void productQuery.refetch()} /> : null}
         {!productId || editingProduct || !productQuery.isLoading ? (
-          <SellerPanel>
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div className="flex items-start gap-3">
-                <span className="grid h-11 w-11 place-items-center rounded-md bg-[#FFF0EC] text-[#ED3500]">
-                  <PackagePlus className="h-5 w-5" aria-hidden="true" />
-                </span>
-                <SectionHeading
-                  title={editingProduct ? "Edit product" : "Add product"}
-                  description={editingProduct ? "Update the product and send it back for admin approval." : "Fill the required catalogue, tax, image, price, and stock details."}
-                />
-              </div>
-              <Button asChild variant="outline">
+          <div className="grid gap-5">
+            <div className="rounded-lg border border-[#D9E2EA] bg-white p-5 shadow-sm">
+              <Button asChild variant="ghost" size="sm" className="-ml-3 mb-3 text-[#5F6F82]">
                 <Link href="/seller/products">
                   <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-                  Products
+                  Back to products
                 </Link>
               </Button>
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="flex items-start gap-3">
+                  <span className="grid h-12 w-12 shrink-0 place-items-center rounded-md bg-[#FFF0EC] text-[#ED3500]">
+                    <PackagePlus className="h-5 w-5" aria-hidden="true" />
+                  </span>
+                  <SectionHeading title={formTitle} description={formDescription} />
+                </div>
+                <Button asChild variant="outline">
+                  <Link href="/seller/products">
+                    <ClipboardList className="h-4 w-4" aria-hidden="true" />
+                    Products
+                  </Link>
+                </Button>
+              </div>
             </div>
 
             {notice ? (
-              <div className="mt-4">
-                <StatusBadge tone={saveMutation.isError ? "danger" : "success"}>{notice}</StatusBadge>
-              </div>
+              <StatusBadge tone={saveMutation.isError ? "danger" : "success"} className="justify-self-start">
+                {notice}
+              </StatusBadge>
             ) : null}
             {!profileQuery.isLoading && !sellerReady ? (
-              <div className="mt-4 rounded-lg border border-[#FFC7B8] bg-[#FFF0EC] p-4 text-sm font-semibold text-[#9F2600]">
+              <div className="rounded-lg border border-[#FFC7B8] bg-[#FFF0EC] p-4 text-sm font-semibold text-[#9F2600]">
                 Product submission unlocks after seller approval. You can prepare profile details now and return here after admin approval.
               </div>
             ) : null}
 
-            <form key={editingProduct?.id ?? "new"} onSubmit={submitProduct} onKeyDown={preventAccidentalProductSubmit} className="mt-5 grid gap-4">
-              <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_390px]">
-                <div className="grid gap-4">
-                  <div className="grid gap-4 rounded-lg border border-[#D9E2EA] bg-white p-4">
-                    <div className="grid gap-4 md:grid-cols-2">
+            <form
+              key={editingProduct?.id ?? "new"}
+              onSubmit={submitProduct}
+              onKeyDown={preventAccidentalProductSubmit}
+              className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_350px] xl:items-start"
+            >
+              <div className="grid gap-4">
+                <ProductFormSection
+                  number={1}
+                  title="Basic information"
+                  description="Select the exact category and add the buyer-facing product name and description."
+                >
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
                       <SellerSelect label="Category" name="categoryId" required value={selectedCategoryId} onChange={setSelectedCategoryId}>
                         <option value="">Select category</option>
-                        {categories.map((category) => (
-                          <option key={category.id} value={category.id}>
-                            {category.parentId ? " - " : ""}
-                            {category.name}
+                        {categoryOptions.map((option) => (
+                          <option key={option.category.id} value={option.category.id}>
+                            {option.hasChildren ? `${option.label} (department)` : option.label}
                           </option>
                         ))}
                       </SellerSelect>
-                      <SellerField label="Product name" name="name" required defaultValue={editingProduct?.name} placeholder="Premium Ponni Rice" />
+                      {selectedCategoryLabel ? (
+                        <p className="text-xs font-semibold text-[#667085]">
+                          Selected path: <span className="font-black text-[#163B5C]">{selectedCategoryLabel}</span>
+                        </p>
+                      ) : (
+                        <p className="text-xs font-semibold text-[#667085]">Choose the exact department or subcategory.</p>
+                      )}
                     </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <StatusBadge tone={selectedListingMode === "ENQUIRY_ONLY" ? "warning" : selectedListingMode === "CART_AND_ENQUIRY" ? "info" : "success"}>
-                        {humanizeAttributeLabel(selectedListingMode)}
-                      </StatusBadge>
-                      <span className="text-xs font-bold text-[#667085]">{selectedTemplate?.name ?? "Standard"} template</span>
-                    </div>
-                    <SellerTextArea label="Description" name="description" required defaultValue={editingProduct?.description} rows={4} placeholder="Product details, packaging, usage, and included items." />
+                    <SellerField
+                      label="Product name"
+                      name="name"
+                      required
+                      value={productNameDraft}
+                      onChange={setProductNameDraft}
+                      placeholder="Premium Ponni Rice"
+                    />
                   </div>
+                  <div className="flex flex-wrap items-center gap-2 rounded-md border border-[#E5E7EB] bg-[#F8FAFC] px-3 py-2">
+                    <StatusBadge tone={selectedListingMode === "ENQUIRY_ONLY" ? "warning" : selectedListingMode === "CART_AND_ENQUIRY" ? "info" : "success"}>
+                      {humanizeAttributeLabel(selectedListingMode)}
+                    </StatusBadge>
+                    <span className="text-xs font-bold text-[#667085]">{selectedTemplate?.name ?? "Standard"} template</span>
+                  </div>
+                  <div className="space-y-2">
+                    <SellerTextArea
+                      label="Description"
+                      name="description"
+                      required
+                      value={productDescriptionDraft}
+                      onChange={setProductDescriptionDraft}
+                      rows={4}
+                      placeholder="Product details, packaging, usage, and included items."
+                    />
+                    <p className="text-right text-xs font-semibold text-[#667085]">{productDescriptionDraft.length}/500 recommended</p>
+                  </div>
+                </ProductFormSection>
 
-                  <ProductGalleryUploader authHeaders={sellerAuth.authHeaders} images={draftImages} onChange={setDraftImages} disabled={saveMutation.isPending || !sellerReady} />
-                </div>
+                <ProductFormSection
+                  number={2}
+                  title="Product images"
+                  description="Upload clear images so buyers can inspect the item before purchase."
+                >
+                  <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
+                    <ProductGalleryUploader authHeaders={sellerAuth.authHeaders} images={draftImages} onChange={setDraftImages} disabled={saveMutation.isPending || !sellerReady} />
+                    <ProductImageTips />
+                  </div>
+                </ProductFormSection>
 
-                <div className="grid content-start gap-4 rounded-lg border border-[#D9E2EA] bg-[#F8FAFC] p-4">
-                  <div className="flex items-start justify-between gap-3">
+                <ProductFormSection
+                  number={3}
+                  title="Pricing, stock and variants"
+                  description="Use one row for a simple product. Add rows only for size, color, pack, or model changes."
+                >
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                      <p className="text-sm font-black text-[#1F2933]">Price, stock, variant</p>
-                      <p className="mt-1 text-xs font-semibold leading-5 text-[#667085]">Use one row for a simple product. Add more only for size, color, pack, or model changes.</p>
+                      <p className="text-sm font-black text-[#1F2933]">{variantRowsLabel}</p>
+                      <p className="mt-1 text-xs font-semibold leading-5 text-[#667085]">Price and stock are saved per variant for checkout accuracy.</p>
                     </div>
                     <Button type="button" variant="outline" size="sm" onClick={() => setDraftVariants((current) => [...current, emptyDraftVariant()])}>
                       <Plus className="h-4 w-4" aria-hidden="true" />
-                      Add
+                      Add variant
                     </Button>
                   </div>
-                  {draftVariants.map((row, index) => (
-                    <VariantEditor
-                      key={row.rowId}
-                      row={row}
-                      index={index}
-                      fields={variantFields}
-                      canRemove={draftVariants.length > 1}
-                      onRemove={() => setDraftVariants((current) => current.filter((item) => item.rowId !== row.rowId))}
+                  <div className="grid gap-3">
+                    {draftVariants.map((row, index) => (
+                      <VariantEditor
+                        key={row.rowId}
+                        row={row}
+                        index={index}
+                        fields={variantFields}
+                        canRemove={draftVariants.length > 1}
+                        onRemove={() => setDraftVariants((current) => current.filter((item) => item.rowId !== row.rowId))}
+                      />
+                    ))}
+                  </div>
+                </ProductFormSection>
+
+                <ProductFormSection
+                  number={4}
+                  title="Marketplace, tax and delivery details"
+                  description="Complete the common fields used for approval, storefront specifications, tax, shipping, and search."
+                >
+                  <MarketplaceProductEssentialsFields
+                    values={editingProduct?.attributes ?? null}
+                    category={selectedCategory}
+                    taxDraft={taxDraft}
+                    onTaxDraftChange={setTaxDraft}
+                  />
+                </ProductFormSection>
+
+                {productFields.length ? (
+                  <ProductFormSection
+                    number={5}
+                    title="Category-specific fields"
+                    description="Add extra details required by the selected category template."
+                  >
+                    <DynamicAttributeFields
+                      key={`product-${editingProduct?.id ?? "new"}-${selectedTemplate?.id ?? "standard"}`}
+                      fields={productFields}
+                      values={editingProduct?.attributes ?? null}
+                      namePrefix="productAttribute"
+                      title="Category details"
+                      embedded
                     />
-                  ))}
-                  <Button type="submit" disabled={saveMutation.isPending || categories.length === 0 || !sellerReady}>
-                    {saveMutation.isPending ? "Saving..." : editingProduct ? "Update product" : "Submit product"}
-                  </Button>
-                </div>
+                  </ProductFormSection>
+                ) : null}
               </div>
 
-              <MarketplaceProductEssentialsFields
-                values={editingProduct?.attributes ?? null}
-                category={selectedCategory}
-                taxDraft={taxDraft}
-                onTaxDraftChange={setTaxDraft}
-              />
-              <DynamicAttributeFields
-                key={`product-${editingProduct?.id ?? "new"}-${selectedTemplate?.id ?? "standard"}`}
-                fields={productFields}
-                values={editingProduct?.attributes ?? null}
-                namePrefix="productAttribute"
-                title="Category details"
-              />
+              <aside className="grid content-start gap-4 xl:sticky xl:top-24">
+                <ProductSidebarCard
+                  title="Submission status"
+                  icon={<ClipboardList className="h-4 w-4" aria-hidden="true" />}
+                  action={<StatusBadge tone={editingProduct ? "info" : "warning"}>{editingProduct ? "Resubmission" : "Review required"}</StatusBadge>}
+                >
+                  <div className="grid gap-3">
+                    <ProductStatusStep title="Seller details" description={sellerReady ? "Approved seller account" : "Approval required before submit"} complete={sellerReady} />
+                    <ProductStatusStep title="Admin review" description="Submitted products are reviewed before storefront publishing." complete={Boolean(editingProduct?.approvalStatus === "APPROVED")} />
+                    <ProductStatusStep title="Storefront visibility" description="Visible only after approval and active catalogue status." complete={Boolean(editingProduct?.status === "ACTIVE" && editingProduct?.approvalStatus === "APPROVED")} />
+                  </div>
+                </ProductSidebarCard>
+
+                <ProductSidebarCard title="Product preview" icon={<Eye className="h-4 w-4" aria-hidden="true" />}>
+                  <div className="overflow-hidden rounded-md border border-[#E5E7EB] bg-[#F8FAFC]">
+                    {primaryDraftImage ? (
+                      <div className="relative aspect-[4/3] overflow-hidden bg-[#EAF1F7]">
+                        <StorefrontImage src={primaryDraftImage} alt={previewName} sizes="350px" fallbackLabel="1HI" />
+                      </div>
+                    ) : (
+                      <div className="grid aspect-[4/3] place-items-center bg-[#EEF3F7] text-center">
+                        <div>
+                          <ImagePlus className="mx-auto h-9 w-9 text-[#A8B6C4]" aria-hidden="true" />
+                          <p className="mt-2 text-xs font-bold text-[#667085]">Upload a product image</p>
+                        </div>
+                      </div>
+                    )}
+                    <div className="p-3">
+                      <p className="line-clamp-2 text-sm font-black leading-5 text-[#1F2933]">{previewName}</p>
+                      <p className="mt-1 truncate text-xs font-semibold text-[#667085]">{selectedCategoryLabel || "Select category"}</p>
+                      <p className="mt-2 text-sm font-black text-[#163B5C]">{priceSummary}</p>
+                    </div>
+                  </div>
+                </ProductSidebarCard>
+
+                <ProductSidebarCard title="Summary" icon={<CheckCircle2 className="h-4 w-4" aria-hidden="true" />}>
+                  <div className="grid gap-3">
+                    <ProductSummaryRow label="Category" value={selectedCategoryLabel || "-"} />
+                    <ProductSummaryRow label="Template" value={selectedTemplate?.name ?? "Standard"} />
+                    <ProductSummaryRow label="Images" value={`${draftImages.length}/${maxProductImages}`} />
+                    <ProductSummaryRow label="Variants" value={variantRowsLabel} />
+                    <ProductSummaryRow label="Stock" value={stockSummary} />
+                  </div>
+                </ProductSidebarCard>
+
+                <ProductSidebarCard>
+                  <Button type="submit" disabled={saveMutation.isPending || categories.length === 0 || !sellerReady} className="h-11 w-full">
+                    {saveMutation.isPending ? "Saving..." : editingProduct ? "Update product" : "Submit for approval"}
+                  </Button>
+                  <Button asChild variant="outline" className="mt-3 w-full">
+                    <Link href="/seller/products">Cancel</Link>
+                  </Button>
+                </ProductSidebarCard>
+              </aside>
             </form>
-          </SellerPanel>
+          </div>
         ) : null}
       </div>
     );
@@ -457,6 +601,119 @@ export function SellerProductsClient({
   );
 }
 
+function ProductFormSection({
+  number,
+  title,
+  description,
+  children,
+}: {
+  number: number;
+  title: string;
+  description: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="overflow-hidden rounded-lg border border-[#D9E2EA] bg-white shadow-sm">
+      <div className="flex items-start gap-3 border-b border-[#E5E7EB] bg-white px-5 py-4">
+        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#ED3500] text-sm font-black text-white">
+          {number}
+        </span>
+        <div className="min-w-0">
+          <h2 className="text-base font-black text-[#1F2933]">{title}</h2>
+          <p className="mt-1 text-sm leading-5 text-[#667085]">{description}</p>
+        </div>
+      </div>
+      <div className="grid gap-4 p-5">{children}</div>
+    </section>
+  );
+}
+
+function ProductSidebarCard({
+  title,
+  icon,
+  action,
+  children,
+}: {
+  title?: string;
+  icon?: ReactNode;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <section className="rounded-lg border border-[#D9E2EA] bg-white p-4 shadow-sm">
+      {title ? (
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2">
+            {icon ? <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-[#FFF0EC] text-[#ED3500]">{icon}</span> : null}
+            <h2 className="truncate text-sm font-black text-[#1F2933]">{title}</h2>
+          </div>
+          {action}
+        </div>
+      ) : null}
+      {children}
+    </section>
+  );
+}
+
+function ProductStatusStep({
+  title,
+  description,
+  complete,
+}: {
+  title: string;
+  description: string;
+  complete: boolean;
+}) {
+  return (
+    <div className="flex items-start gap-3 rounded-md border border-[#E5E7EB] bg-[#F8FAFC] p-3">
+      <span
+        className={cn(
+          "mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full border",
+          complete ? "border-[#BFEAD9] bg-[#E9F7F1] text-[#0F8A5F]" : "border-[#D8E2EA] bg-white text-[#A8B6C4]",
+        )}
+      >
+        <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
+      </span>
+      <span className="min-w-0">
+        <span className="block text-sm font-black text-[#1F2933]">{title}</span>
+        <span className="mt-0.5 block text-xs font-semibold leading-5 text-[#667085]">{description}</span>
+      </span>
+    </div>
+  );
+}
+
+function ProductSummaryRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 text-sm">
+      <span className="font-semibold text-[#667085]">{label}</span>
+      <span className="max-w-[180px] text-right font-black text-[#1F2933]">{value}</span>
+    </div>
+  );
+}
+
+function ProductImageTips() {
+  const tips = [
+    "Use high-resolution images",
+    "Show multiple angles",
+    "Use a clean, bright background",
+    "Keep the first image catalogue-ready",
+  ];
+
+  return (
+    <div className="rounded-lg border border-[#D9E2EA] bg-[#F8FAFC] p-4">
+      <p className="text-sm font-black text-[#1F2933]">Tips for great images</p>
+      <div className="mt-3 grid gap-2">
+        {tips.map((tip) => (
+          <div key={tip} className="flex items-start gap-2 text-xs font-semibold leading-5 text-[#667085]">
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#0F8A5F]" aria-hidden="true" />
+            <span>{tip}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ProductRow({
   product,
   editHref,
@@ -469,6 +726,7 @@ function ProductRow({
   archivePending: boolean;
 }) {
   const variant = product.variants[0];
+  const stockBadge = sellerProductStockBadge(product);
   const chips = attributeChips(product.attributes, product.category.productTemplate?.fields ?? []);
 
   return (
@@ -485,7 +743,7 @@ function ProductRow({
           <StatusBadge tone={product.listingMode === "ENQUIRY_ONLY" ? "warning" : product.listingMode === "CART_AND_ENQUIRY" ? "info" : "success"}>
             {humanizeAttributeLabel(product.listingMode ?? "CART")}
           </StatusBadge>
-          {variant ? <StatusBadge tone={variant.stockQuantity <= 5 ? "warning" : "info"}>{variant.stockQuantity} in stock</StatusBadge> : null}
+          {stockBadge ? <StatusBadge tone={stockBadge.tone}>{stockBadge.label}</StatusBadge> : null}
           {variant ? <StatusBadge tone="neutral">{formatMoney(variant.pricePaise, variant.currency)}</StatusBadge> : null}
         </div>
         {chips.length ? (
@@ -553,7 +811,7 @@ function VariantEditor({
   const prefix = variantFieldPrefix(row.rowId);
 
   return (
-    <div className="grid gap-4 rounded-lg border border-[#D9E2EA] bg-white p-4">
+    <div className="grid gap-4 rounded-lg border border-[#D9E2EA] bg-[#F8FAFC] p-4">
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm font-black text-[#1F2933]">Variant {index + 1}</p>
         <Button type="button" variant="ghost" size="sm" onClick={onRemove} disabled={!canRemove}>
@@ -561,11 +819,17 @@ function VariantEditor({
           Remove
         </Button>
       </div>
-      <SellerField label="SKU" name={`${prefix}:sku`} defaultValue={row.variant?.sku} placeholder="1HI-RICE-5KG" />
-      <SellerField label="Variant name" name={`${prefix}:variantName`} defaultValue={row.variant?.variantName} placeholder="5 KG Pack" />
-      <SellerField label="Price" name={`${prefix}:price`} type="number" required min={0} step="0.01" defaultValue={paiseToRupees(row.variant?.pricePaise)} />
-      <SellerField label="MRP" name={`${prefix}:mrp`} type="number" min={0} step="0.01" defaultValue={paiseToRupees(row.variant?.mrpPaise)} />
-      <SellerField label="Stock" name={`${prefix}:stock`} type="number" min={0} defaultValue={row.variant?.stockQuantity ?? 0} />
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <SellerField label="SKU" name={`${prefix}:sku`} defaultValue={row.variant?.sku} placeholder="1HI-RICE-5KG" />
+        <SellerField label="Variant name" name={`${prefix}:variantName`} defaultValue={row.variant?.variantName} placeholder="5 KG Pack" />
+        <SellerField label="Price" name={`${prefix}:price`} type="number" required min={0} step="0.01" defaultValue={paiseToRupees(row.variant?.pricePaise)} />
+        <SellerField label="MRP" name={`${prefix}:mrp`} type="number" min={0} step="0.01" defaultValue={paiseToRupees(row.variant?.mrpPaise)} />
+        <SellerField label="Stock" name={`${prefix}:stock`} type="number" min={0} defaultValue={row.variant?.stockQuantity ?? 0} />
+        <SellerSelect label="Variant status" name={`${prefix}:status`} defaultValue={row.variant?.status ?? "ACTIVE"}>
+          <option value="ACTIVE">Active</option>
+          <option value="INACTIVE">Inactive</option>
+        </SellerSelect>
+      </div>
       <div className="grid gap-3 sm:grid-cols-4">
         <SellerField
           label="Weight g"
@@ -596,10 +860,6 @@ function VariantEditor({
           defaultValue={row.variant?.packageHeightCm ?? ""}
         />
       </div>
-      <SellerSelect label="Variant status" name={`${prefix}:status`} defaultValue={row.variant?.status ?? "ACTIVE"}>
-        <option value="ACTIVE">Active</option>
-        <option value="INACTIVE">Inactive</option>
-      </SellerSelect>
       <DynamicAttributeFields
         fields={fields}
         values={row.variant?.attributes ?? null}
@@ -649,7 +909,7 @@ function MarketplaceProductEssentialsFields({
   ];
 
   return (
-    <div className="grid gap-4 rounded-lg border border-[#D9E2EA] bg-white p-4">
+    <div className="grid gap-5">
       {groups.map((group) => {
         const fields = marketplaceProductEssentialFields.filter((field) => field.group === group.group);
         const requiredFields = fields.filter((field) => field.required);
@@ -658,7 +918,7 @@ function MarketplaceProductEssentialsFields({
         const collapsedFields = requiredFields.length ? optionalFields : optionalFields.slice(1);
 
         return (
-          <div key={group.group} className="grid gap-3">
+          <div key={group.group} className="grid gap-3 border-b border-[#E5E7EB] pb-5 last:border-b-0 last:pb-0">
             <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="text-sm font-black text-[#1F2933]">{group.title}</p>
@@ -870,19 +1130,21 @@ function DynamicAttributeFields({
   fields,
   values,
   namePrefix,
-  title
+  title,
+  embedded = false,
 }: {
   fields: ProductTemplateField[];
   values?: Record<string, unknown> | null;
   namePrefix: string;
   title: string;
+  embedded?: boolean;
 }) {
   if (!fields.length) {
     return null;
   }
 
   return (
-    <div className="grid gap-4 rounded-lg border border-[#D9E2EA] bg-white p-4">
+    <div className={cn("grid gap-4", embedded ? "" : "rounded-lg border border-[#D9E2EA] bg-white p-4")}>
       <p className="text-sm font-black text-[#1F2933]">{title}</p>
       <div className="grid gap-4 md:grid-cols-2">
         {fields.map((field) => (
@@ -1042,10 +1304,10 @@ function ProductGalleryUploader({
   }
 
   return (
-    <div className="rounded-lg border border-[#D9E2EA] bg-white p-4">
+    <div className="grid gap-4">
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div>
-          <p className="text-sm font-black text-[#1F2933]">Product images</p>
+          <p className="text-sm font-black text-[#1F2933]">Image upload</p>
           <p className="mt-1 text-sm leading-6 text-[#667085]">Upload up to 10 images. Select one primary image for catalogue cards.</p>
         </div>
         <Button type="button" variant="outline" size="sm" onClick={() => inputRef.current?.click()} disabled={disabled || uploading || remaining <= 0}>
@@ -1065,7 +1327,21 @@ function ProductGalleryUploader({
       ) : null}
       {error ? <p className="mt-3 text-sm font-bold text-[#D64545]">{error}</p> : null}
 
-      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      {images.length === 0 ? (
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          disabled={disabled || uploading || remaining <= 0}
+          className="rounded-lg border border-dashed border-[#D8E2EA] bg-[#F8FAFC] p-8 text-center transition hover:border-[#ED3500] hover:bg-[#FFF0EC] disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <ImagePlus className="mx-auto h-9 w-9 text-[#ED3500]" aria-hidden="true" />
+          <span className="mt-3 block text-sm font-black text-[#1F2933]">Upload product images</span>
+          <span className="mt-1 block text-sm text-[#667085]">Drag support depends on browser, click here to browse.</span>
+          <span className="mt-1 block text-xs font-semibold text-[#667085]">PNG, JPG, WebP, or GIF. Keep each image under your storage provider limit.</span>
+        </button>
+      ) : null}
+
+      <div className={cn("grid gap-3 md:grid-cols-2 xl:grid-cols-3", images.length === 0 && "hidden")}>
         {images.map((image, index) => (
           <div key={image.id} className="rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-3">
             <div className="relative aspect-[4/3] overflow-hidden rounded-md bg-[#EAF1F7]">
@@ -1100,14 +1376,7 @@ function ProductGalleryUploader({
           </div>
         ))}
       </div>
-
-      {images.length === 0 ? (
-        <div className="mt-4 rounded-lg border border-dashed border-[#D8E2EA] bg-[#F8FAFC] p-6 text-center">
-          <p className="text-sm font-black text-[#1F2933]">No product images uploaded</p>
-          <p className="mt-1 text-sm text-[#667085]">Uploaded images will appear on catalogue cards and product pages.</p>
-        </div>
-      ) : null}
-      <p className={cn("mt-3 text-xs font-bold", remaining <= 0 ? "text-[#D64545]" : "text-[#667085]")}>{remaining} image slots remaining.</p>
+      <p className={cn("text-xs font-bold", remaining <= 0 ? "text-[#D64545]" : "text-[#667085]")}>{remaining} image slots remaining.</p>
     </div>
   );
 }

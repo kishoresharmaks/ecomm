@@ -20,7 +20,8 @@ export class CategoriesService {
     return this.prisma.client.category.findMany({
       where: {
         status: CategoryStatus.ACTIVE,
-        deletedAt: null
+        deletedAt: null,
+        parentId: null
       },
       include: {
         productTemplate: {

@@ -7,6 +7,6 @@ describe("storefront stock status", () => {
     expect(getStorefrontStockStatus(10).label).toBe("In stock");
     expect(getStorefrontStockStatus(9).label).toBe("Few left");
     expect(getStorefrontStockStatus(1).label).toBe("Few left");
-    expect(getStorefrontStockStatus(0).label).toBe("Sold out");
+    expect(getStorefrontStockStatus(0).label).toBe("Out of stock");
   });
 });

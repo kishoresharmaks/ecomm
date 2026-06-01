@@ -14,12 +14,13 @@ For the current 1HandIndia Phase 1 codebase, the safest rollout order is:
 1. Keep current Prisma schema indexes and add production-only SQL indexes for hot read paths.
 2. Add PostgreSQL full-text/GIN indexes for product search.
 3. Add cursor pagination to public product lists, admin orders, audit logs, notifications, seller orders, and B2B lists.
-4. Add Redis caching for homepage/catalog/settings/read-heavy APIs, with explicit invalidation.
+4. Add Nginx and API-level rate limiting for search, auth, checkout, admin, and public API routes.
 5. Add PgBouncer/runtime connection-pool configuration before production deployment.
-6. Keep current atomic inventory decrement, then add explicit row locking if concurrency tests show contention.
-7. Add materialized analytics views once real order volume begins.
-8. Add read replicas after production traffic proves read pressure.
-9. Partition orders only after growth, because it is a major database migration.
+6. Add Redis caching for homepage/catalog/settings/read-heavy APIs, with explicit invalidation.
+7. Keep current atomic inventory decrement, then add explicit row locking if concurrency tests show contention.
+8. Add materialized analytics views once real order volume begins.
+9. Add read replicas after production traffic proves read pressure.
+10. Partition orders only after growth, because it is a major database migration.
 
 ## 2. Current Repo Status
 
@@ -32,6 +33,7 @@ For the current 1HandIndia Phase 1 codebase, the safest rollout order is:
 | Redis caching | Partially implemented | Redis/BullMQ exists for email queue jobs when `REDIS_URL` is configured. API response caching is not yet implemented. |
 | PgBouncer pooling | Config prepared | Runtime `DATABASE_URL`, migration `DATABASE_DIRECT_URL`, and future `DATABASE_READ_URL` are documented/configured. Actual production pooler must be provided by the DB host. |
 | Full-text search with GIN | Implemented | Migration adds `pg_trgm` and GIN indexes; public product search now uses ranked PostgreSQL full-text search. |
+| Search/API rate limiting | Implemented | Nginx deployment snippet protects the VPS before Node, and the NestJS API has route-aware in-memory rate limiting for single-instance launch. |
 | Inventory row locking | Atomic safety plus test | Checkout uses transaction plus atomic conditional decrement. New concurrency test proves two customers cannot oversell one stock unit. |
 | Cursor pagination | Implemented for large lists | Cursor pagination now covers products, orders, audit logs, notifications, B2B enquiries/business buyers, and key finance lists. |
 | Materialized analytics views | Not implemented | Reports currently use live aggregate/groupBy queries. |
@@ -47,6 +49,7 @@ This section answers what is required before the first real production launch, a
 | Full-text search with GIN | Yes | Done in code | Apply migration, then test catalogue search against staging data. |
 | PgBouncer connection pooling | Yes | Config-ready | Put the provider pooled URL in `DATABASE_URL` and direct migration URL in `DATABASE_DIRECT_URL` before deployment. |
 | Cursor pagination | Recommended before production | Done for major large lists | Keep backward-compatible page/limit, but use cursor for large product/order/log/B2B/finance screens. |
+| Search/API rate limiting | Yes | Done in code/docs | Install the Nginx snippet on the VPS, keep the API private on localhost, and leave API in-memory limiting enabled for the first single-instance launch. |
 | Redis caching | Recommended before production | Partly done | Redis/BullMQ email queue is wired. Add API response caching for homepage, CMS, category tree, public stores, and safe catalogue reads. |
 | Inventory row locking / stock safety | Core safety is done | Concurrency-tested | Current checkout uses atomic conditional stock decrement and has a two-customer low-stock race test. Explicit `FOR UPDATE` can be added later if high contention appears. |
 | Materialized views for analytics | Not required for first launch | Not done | Live aggregate reports are acceptable for Phase 1. Add materialized views after real reporting volume grows. |
@@ -60,8 +63,9 @@ Before the first production launch, the optimization must-do list is:
 1. Apply the production SQL migration in staging and production.
 2. Configure PgBouncer or the managed provider's pooled runtime connection.
 3. Run staging query-plan checks for product search, product lists, order lists, audit logs, notifications, B2B, and finance lists.
-4. Add Redis caching for read-heavy public/CMS/catalog APIs.
-5. Run the checkout stock concurrency test as part of API production checks.
+4. Install the Nginx rate-limit snippet for `/api/products`, auth, checkout/cart/order, admin, and public API routes.
+5. Keep API rate limiting enabled and set `INDIHUB_TRUST_PROXY_HEADERS=true` only when the Node API port is private behind Nginx.
+6. Run the checkout stock concurrency test as part of API production checks.
 
 ### Already Good Enough For First Launch
 
@@ -71,6 +75,7 @@ These items are already acceptable for early production:
 - Partial SQL indexes and GIN product-search indexes are now present in a migration.
 - Public product search uses PostgreSQL full-text ranking for searched catalogue requests.
 - Cursor pagination is available for the major large-list APIs while keeping existing page/limit compatibility.
+- Search abuse protection is available at both Nginx and NestJS API layers for a single Ubuntu VPS launch.
 - Checkout stock decrement is atomic, guarded by stock availability, and covered by a low-stock concurrency test.
 - Redis/BullMQ is already wired for email queue jobs when `REDIS_URL` is configured.
 - Reports use database aggregates and can stay live-query based during early Phase 1.
@@ -82,8 +87,10 @@ These items are already acceptable for early production:
 - Added cursor pagination helpers in `apps/api/src/common/pagination.ts`.
 - Updated public product search to use ranked PostgreSQL full-text search with safe parameterized Prisma raw SQL.
 - Added cursor support to product, order, audit, notification, B2B, and key finance list APIs.
+- Added API-level in-memory route-aware rate limiting for anonymous search, authenticated search, product detail, auth, checkout/cart/order, admin/finance, and general public API traffic.
+- Added `deploy/nginx/indihub-rate-limits.conf` and `docs/IndiHub_PRODUCTION_RATE_LIMITING.md` for the Ubuntu VPS Nginx layer and later Redis-backed rate-limit upgrade path.
 - Added backend integration coverage for two customers concurrently checking out the final stock unit.
-- Verification passed: `pnpm.cmd db:validate`, `pnpm.cmd --filter @indihub/api typecheck`, `pnpm.cmd --filter @indihub/api lint`, `pnpm.cmd --filter @indihub/api build`, and `pnpm.cmd --filter @indihub/api test` with 22 files and 123 tests.
+- Verification passed: `pnpm.cmd db:validate`, `pnpm.cmd --filter @indihub/api typecheck`, `pnpm.cmd --filter @indihub/api lint`, `pnpm.cmd --filter @indihub/api build`, `pnpm.cmd --filter @indihub/api test` with 23 files and 133 tests, `pnpm.cmd --filter @indihub/web typecheck`, `pnpm.cmd --filter @indihub/web lint`, `pnpm.cmd --filter @indihub/web test` with 11 files and 31 tests, and `pnpm.cmd --filter @indihub/web build`.
 
 ### Later Scale Work
 
@@ -419,7 +426,43 @@ Response shape:
 
 Keep page/limit for small admin pages if needed, but public and append-only lists should move to cursor pagination first.
 
-### 3.10 Materialized Views For Analytics
+### 3.10 Nginx And API Rate Limiting
+
+**Recommendation:** Required before first production traffic.
+
+Search, auth, checkout, and admin endpoints need abuse protection before requests reach expensive application logic. For the first single Ubuntu VPS launch, use Nginx for edge protection and the NestJS in-memory limiter for route-aware application limits.
+
+Current production shape:
+
+- Nginx protects `/api/products`, `/api/products/:slug`, auth, checkout/cart/order, admin, and all remaining `/api/*` routes before traffic reaches Node.
+- NestJS applies separate counters for anonymous search, authenticated search, product details, auth, checkout/cart/order, admin/finance, and public API routes.
+- Public product search trims input, requires at least 2 characters when a search term is provided, caps search at 120 characters, caps limit at 100, and storefront search uses `limit=24`.
+- Cursor-based storefront search avoids expensive total-count queries.
+
+Recommended first-launch limits:
+
+| Surface | First-launch limit |
+|---|---:|
+| Anonymous product search | 30 requests/min |
+| Logged-in product search | 100 requests/min |
+| Product detail pages | 240 requests/min |
+| Auth/sign-in APIs | 20 requests/min |
+| Checkout/cart/order APIs | 60 requests/min |
+| Admin/finance APIs | 120 requests/min |
+| Other public APIs | 300 requests/min |
+
+Deployment files:
+
+- `deploy/nginx/indihub-rate-limits.conf`
+- `docs/IndiHub_PRODUCTION_RATE_LIMITING.md`
+
+VPS safety rules:
+
+- Keep the NestJS API bound to localhost/private networking, for example `127.0.0.1:4000`.
+- Set `INDIHUB_TRUST_PROXY_HEADERS=true` only when direct public access to the Node API port is blocked.
+- Keep Redis-backed counters as the later upgrade when multiple API processes or multiple servers are deployed.
+
+### 3.11 Materialized Views For Analytics
 
 **Recommendation:** Add after launch or before launch if seeded data is large.
 
@@ -469,6 +512,7 @@ Run refresh jobs through the worker on a schedule after order/payment flows are 
 - Add raw SQL migration for partial indexes and search GIN indexes.
 - Update public product search to use indexed full-text search.
 - Add cursor pagination helper and migrate public products plus admin orders first.
+- Add Nginx/API rate limiting for search, auth, checkout, admin, and public API traffic.
 - Add a checkout concurrency test for low-stock variants.
 
 ### Phase B - Runtime Performance
@@ -477,6 +521,7 @@ Run refresh jobs through the worker on a schedule after order/payment flows are 
 - Cache storefront home, category tree, CMS published content, and public store/product rails.
 - Add cache invalidation from product approval/archive, CMS publish/delete, category updates, seller suspension, and settings save.
 - Add metrics/logging for cache hit/miss and slow DB queries.
+- Move API rate-limit counters to Redis if the API runs in multiple processes or multiple servers.
 
 ### Phase C - Scale After Real Traffic
 
@@ -491,6 +536,8 @@ Run refresh jobs through the worker on a schedule after order/payment flows are 
 - Web typecheck, lint, tests, and build pass.
 - Raw SQL indexes are applied in staging without table lock issues.
 - `EXPLAIN (ANALYZE, BUFFERS)` proves product search and list queries use the expected indexes.
+- Nginx rate limiting is installed for the VPS API routes and `nginx -t` passes on the server.
+- API 429 responses are verified for excessive anonymous search requests.
 - Checkout concurrency test proves no oversell.
 - Redis outage fallback proves public pages still work.
 - PgBouncer production-like connection test passes under load.
@@ -504,8 +551,9 @@ For this codebase, the highest-value immediate production optimizations are:
 1. Full-text search with GIN.
 2. Partial indexes for public products, active sellers, orders, logs, and notifications.
 3. Cursor pagination for large lists.
-4. PgBouncer runtime pooling.
-5. Redis caching for read-heavy public/CMS/catalog responses.
-6. Checkout stock concurrency test around the existing atomic decrement.
+4. Nginx/API rate limiting for search, auth, checkout, admin, and public API traffic.
+5. PgBouncer runtime pooling.
+6. Redis caching for read-heavy public/CMS/catalog responses.
+7. Checkout stock concurrency test around the existing atomic decrement.
 
 Read replicas, order partitioning, and materialized analytics views are important, but they should come after staging load tests or real production volume confirms the need.

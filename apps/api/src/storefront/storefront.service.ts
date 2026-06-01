@@ -9,6 +9,7 @@ import {
   UserStatus,
   VariantStatus,
 } from "@indihub/database";
+import { isSoldResaleProduct } from "@indihub/shared-types";
 import { CmsService } from "../cms/cms.service";
 import { paginationFromQuery } from "../common/pagination";
 import { ProductQueryDto } from "../products/dto/product-query.dto";
@@ -340,16 +341,18 @@ export class StorefrontService {
     return rankedSellers.slice(0, limit);
   }
 
-  private listHomeProducts(input: {
+  private async listHomeProducts(input: {
     orderBy: Prisma.ProductOrderByWithRelationInput | Prisma.ProductOrderByWithRelationInput[];
     take: number;
   }) {
-    return this.prisma.client.product.findMany({
+    const products = await this.prisma.client.product.findMany({
       where: publicProductWhere,
       include: publicProductInclude,
       orderBy: input.orderBy,
-      take: input.take,
+      take: input.take * 3,
     });
+
+    return this.publicVisibleProducts(products).slice(0, input.take);
   }
 
   private async listSelectedDealProducts(
@@ -370,7 +373,9 @@ export class StorefrontService {
       },
       include: publicProductInclude,
     });
-    const productById = new Map(products.map((product) => [product.id, product]));
+    const productById = new Map(
+      this.publicVisibleProducts(products).map((product) => [product.id, product]),
+    );
     const dealItemByProductId = new Map(dealItems.map((item) => [item.sourceId, item]));
 
     return productIds.flatMap((productId) => {
@@ -413,7 +418,11 @@ export class StorefrontService {
     });
 
     const discountedProducts = this.sortDealProducts(
-      products.filter((product) => discountedVariantScore(product).discountPercent > 0),
+      products.filter(
+        (product) =>
+          !isSoldResaleProduct(product) &&
+          discountedVariantScore(product).discountPercent > 0,
+      ),
     );
 
     return typeof input.resultLimit === "number"
@@ -435,6 +444,10 @@ export class StorefrontService {
           }
         : {}),
     };
+  }
+
+  private publicVisibleProducts<T extends PublicProduct>(products: T[]) {
+    return products.filter((product) => !isSoldResaleProduct(product));
   }
 
   private sortDealProducts(products: PublicProduct[]) {
