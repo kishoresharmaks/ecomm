@@ -3,6 +3,7 @@ import {
   LocationImportMode,
   LocationImportSourceType,
   LocationImportStatus,
+  type Prisma,
   type PrismaClient
 } from "@indihub/database";
 
@@ -21,6 +22,7 @@ export type LocationAreaInput = {
   name: string;
   postalCode?: string | null;
   sourceRecordId?: string | null;
+  metadata?: Record<string, unknown> | null;
   sortOrder?: number;
 };
 
@@ -278,6 +280,7 @@ export async function importLocationDataset(
 
           for (const areaInput of cityInput.areas ?? []) {
             const areaCode = normalizeCode(areaInput.code);
+            const metadata = cleanMetadata(areaInput.metadata);
             await prisma.locationArea.upsert({
               where: {
                 cityId_code: {
@@ -291,6 +294,7 @@ export async function importLocationDataset(
                 active: true,
                 source: normalizedSource.code,
                 sourceRecordId: cleanOptional(areaInput.sourceRecordId) ?? areaCode,
+                ...(metadata !== undefined ? { metadata } : {}),
                 sortOrder: areaInput.sortOrder ?? 0
               },
               create: {
@@ -301,6 +305,7 @@ export async function importLocationDataset(
                 active: true,
                 source: normalizedSource.code,
                 sourceRecordId: cleanOptional(areaInput.sourceRecordId) ?? areaCode,
+                ...(metadata !== undefined ? { metadata } : {}),
                 sortOrder: areaInput.sortOrder ?? 0
               }
             });
@@ -574,6 +579,15 @@ function cleanRequired(value: string) {
 
 function cleanOptional(value: string | null | undefined) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function cleanMetadata(value: Record<string, unknown> | null | undefined): Prisma.InputJsonObject | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const entries = Object.entries(value).filter(([, entry]) => entry !== undefined && entry !== null && entry !== "");
+  return entries.length ? (Object.fromEntries(entries) as Prisma.InputJsonObject) : undefined;
 }
 
 function hashDataset(dataset: LocationImportDataset) {

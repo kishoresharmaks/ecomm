@@ -33,6 +33,25 @@ async function main() {
   const build = buildIndiaPincodeDataset(records, {
     sourceUrl
   });
+
+  if (booleanArg(args.dryRun) || booleanArg(args.preview)) {
+    console.log(
+      [
+        "India pincode import preview",
+        `accepted=${build.acceptedRows}`,
+        `skipped=${build.skippedRows}`,
+        `states=${build.quality.stateCount}`,
+        `cities=${build.cityCount}`,
+        `areas=${build.areaCount}`,
+        `uniquePincodes=${build.quality.uniquePincodes}`,
+        `duplicateRows=${build.quality.duplicateSourceRows}`,
+        `readyToApply=${build.quality.readyToApply}`
+      ].join(" ")
+    );
+    console.log(JSON.stringify(build.quality, null, 2));
+    return;
+  }
+
   const result = await importLocationDataset(prisma, build.dataset, mode);
 
   console.log(
@@ -42,6 +61,8 @@ async function main() {
       `status=${result.status}`,
       `accepted=${build.acceptedRows}`,
       `skipped=${build.skippedRows}`,
+      `uniquePincodes=${build.quality.uniquePincodes}`,
+      `duplicateRows=${build.quality.duplicateSourceRows}`,
       `states=${result.importedSubdivisions}`,
       `cities=${result.importedCities}`,
       `areas=${result.importedAreas}`
@@ -193,6 +214,18 @@ function numericValue(value: number | string | undefined) {
 
 function stringArg(value: string | true | undefined) {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function booleanArg(value: string | true | undefined) {
+  if (value === true) {
+    return true;
+  }
+
+  if (typeof value !== "string") {
+    return false;
+  }
+
+  return ["1", "true", "yes", "y"].includes(value.trim().toLowerCase());
 }
 
 main()

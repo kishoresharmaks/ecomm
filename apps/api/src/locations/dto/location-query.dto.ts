@@ -79,3 +79,17 @@ export class RunLocationImportDto {
   @IsEnum(LocationImportMode)
   mode?: LocationImportMode;
 }
+
+export class IndiaPostalLookupQueryDto {
+  @ApiPropertyOptional({ example: "110001" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(6)
+  pincode?: string;
+
+  @ApiPropertyOptional({ example: "Connaught Place" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  postOffice?: string;
+}

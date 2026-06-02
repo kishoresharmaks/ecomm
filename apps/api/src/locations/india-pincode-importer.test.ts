@@ -14,6 +14,13 @@ describe("India pincode importer", () => {
       {
         officename: "Ada B.O",
         pincode: "504293",
+        officeType: "B.O",
+        deliveryStatus: "Delivery",
+        division: "Adilabad",
+        region: "Hyderabad",
+        circle: "Andhra Pradesh",
+        taluk: "Asifabad",
+        block: "",
         district: "Adilabad",
         statename: "ANDHRA PRADESH"
       }
@@ -47,10 +54,26 @@ describe("India pincode importer", () => {
     expect(district).toMatchObject({ name: "Kumuram Bheem Asifabad" });
     expect(district?.areas).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ name: "Kothimir", postalCode: "504273" }),
+        expect.objectContaining({
+          name: "Kothimir",
+          postalCode: "504273",
+          metadata: expect.objectContaining({
+            sourceOfficeName: "Kothimir B.O",
+            sourceDistrict: "KUMURAM BHEEM ASIFABAD",
+            sourceState: "TELANGANA"
+          })
+        }),
         expect.objectContaining({ name: "Papanpet", postalCode: "504299" })
       ])
     );
+    expect(result.quality).toMatchObject({
+      totalRows: 2,
+      acceptedRows: 2,
+      skippedRows: 0,
+      uniquePincodes: 2,
+      localAreaCount: 2,
+      readyToApply: true
+    });
   });
 
   it("normalizes known India Post state aliases", () => {
@@ -103,5 +126,59 @@ describe("India pincode importer", () => {
 
     expect(result.acceptedRows).toBe(0);
     expect(result.skippedRows).toBe(2);
+    expect(result.quality).toMatchObject({
+      unknownStateRows: 1,
+      invalidPincodeRows: 1,
+      readyToApply: false
+    });
+  });
+
+  it("captures duplicate source rows and postal metadata quality counts", () => {
+    const result = buildIndiaPincodeDataset([
+      {
+        officename: "Kothimir B.O",
+        pincode: "504273",
+        officeType: "B.O",
+        deliveryStatus: "Delivery",
+        division: "Adilabad",
+        region: "Hyderabad",
+        circle: "Telangana",
+        taluk: "Asifabad",
+        district: "KUMURAM BHEEM ASIFABAD",
+        statename: "TELANGANA"
+      },
+      {
+        officename: "Kothimir B.O",
+        pincode: "504273",
+        officetype: "B.O",
+        deliverystatus: "Delivery",
+        divisionname: "Adilabad",
+        regionname: "Hyderabad",
+        circlename: "Telangana",
+        districtname: "KUMURAM BHEEM ASIFABAD",
+        statename: "TELANGANA"
+      }
+    ]);
+
+    const district = result.dataset.countries[0]?.subdivisions
+      ?.find((subdivision) => subdivision.code === "IN-TG")
+      ?.cities?.find((city) => city.code === "IN-TG-KUMURAM-BHEEM-ASIFABAD");
+
+    expect(result.quality).toMatchObject({
+      acceptedRows: 2,
+      duplicateSourceRows: 1,
+      uniquePincodes: 1,
+      multiOfficePincodes: 1,
+      deliveryStatusCounts: { Delivery: 2 },
+      officeTypeCounts: { "B.O": 2 }
+    });
+    expect(district?.areas).toHaveLength(1);
+    expect(district?.areas?.[0]?.metadata).toMatchObject({
+      officeType: "B.O",
+      deliveryStatus: "Delivery",
+      division: "Adilabad",
+      region: "Hyderabad",
+      circle: "Telangana"
+    });
   });
 });

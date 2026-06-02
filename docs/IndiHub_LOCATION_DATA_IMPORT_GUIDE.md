@@ -25,8 +25,11 @@ For India pincode coverage, use the dedicated Department of Posts / data.gov.in 
 
 ```powershell
 $env:DATAGOVINDIA_API_KEY="your-data-gov-in-api-key"
+pnpm locations:import:india -- --dry-run
 pnpm locations:import:india
 ```
+
+Always run the dry run first for a new source pull. It builds the same hierarchy in memory, prints the quality report, and exits without writing database rows. Proceed with the real import only when the quality report is acceptable for operations.
 
 If the API is rate-limited, download an approved Department of Posts CSV and import from file:
 
@@ -41,6 +44,65 @@ State/UT -> district as city node -> post office as local area -> pincode
 ```
 
 The India pincode source does not provide a separate canonical city field, so districts are stored in the current `LocationCity` layer until a separate official city/locality source is added.
+
+The importer stores source quality metadata on the import run and postal metadata on each local area:
+
+```text
+Import run metadata -> accepted/skipped rows, invalid pincode rows, unknown states, duplicate source rows, unique pincodes, delivery/office-type counts
+Local area metadata -> source office name, office type, delivery status, division, region, circle, taluk/block, source district/state
+```
+
+This keeps operational diagnostics inside PostgreSQL and avoids using Redis or an external cache for location coverage. Address selectors continue reading normalized data from the existing location APIs, while admin users can inspect the latest import run for source health.
+
+Admins can review the India import status and lookup individual PIN codes from:
+
+```text
+/admin/locations/import
+```
+
+The PostalPin helper uses the backend-only route below for single-record verification. It does not bulk import and it does not write to the location tables:
+
+```text
+GET /api/admin/locations/india-postal-lookup?pincode=110001
+GET /api/admin/locations/india-postal-lookup?postOffice=Connaught%20Place
+```
+
+Lookup responses include a database comparison summary when matching imported rows exist for the returned PIN codes:
+
+```text
+MATCHED -> PostalPin records and imported database rows align
+PARTIAL -> some records match, some are missing or extra
+NOT_IMPORTED -> PostalPin returned records but no matching database rows exist
+DATABASE_ONLY -> imported database rows exist but PostalPin returned no records
+NO_DATA -> neither source has matching rows
+```
+
+Do not crawl `api.postalpincode.in` for all PIN codes. Use the Department of Posts/data.gov.in bulk importer or approved CSV fallback for full India coverage.
+
+## Serviceability Layer
+
+Location import is only the master address dataset. A row in `LocationArea` means the place can appear in address forms; it does not automatically mean checkout should accept orders for that place.
+
+Operational serviceability is checked separately from:
+
+```text
+Imported location -> known country/state/city/local area/pincode
+Seller coverage -> approved sellers mapped to that country/state/city/pincode/local area
+Delivery coverage -> delivery partners, courier provider country support, and routing rules
+Shipping price -> active shipping rate cards or fallback shipping settings
+Payment readiness -> enabled Razorpay/COD/bank-transfer/manual checkout options and COD limits
+```
+
+Admins can review this combined readiness from:
+
+```text
+/admin/locations/serviceability
+GET /api/admin/locations/serviceability?countryCode=IN&pincode=110001&paymentMethod=COD&subtotalPaise=99900
+```
+
+The serviceability checker is read-only. It reuses the same delivery routing, payment settings, seller addresses, courier provider settings, and shipping rate cards used by checkout operations. This avoids duplicating location data and keeps the large India pincode import efficient inside PostgreSQL instead of adding Redis for basic coverage decisions.
+
+Customer checkout enforces the delivery side of the same rule. If routing cannot find a serviceable local delivery or courier route for the selected delivery address, checkout summary and order placement return a clear "not serviceable yet" error instead of creating an order that operations cannot deliver. Payment method availability, including COD limits, remains enforced by the existing checkout payment settings.
 
 ## Normalized CSV Format
 

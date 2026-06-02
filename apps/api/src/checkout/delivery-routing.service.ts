@@ -1,5 +1,6 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import {
+  ApprovalStatus,
   CartStatus,
   CodCollectionStatus,
   CourierProviderMode,
@@ -10,17 +11,20 @@ import {
   Prisma,
   RoleCode,
   ShippingCodSurchargeType,
+  SellerStatus,
   UserStatus,
 } from "@indihub/database";
 import type { RequestUser } from "../auth/types/indihub-request";
 import { CustomersService } from "../customers/customers.service";
 import { LocationsService } from "../locations/locations.service";
+import { PaymentsService } from "../payments/payments.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { readNumberSetting } from "../settings/setting-value-utils";
 import {
   CheckoutDeliveryPreference,
   CheckoutRoutingAddressDto,
   CheckoutRoutingPaymentMethod,
+  LocationServiceabilityQueryDto,
   ResolveCheckoutDeliveryDto,
   RoutingSimulatorDto,
   UpdateCourierProviderActiveDto,
@@ -122,6 +126,75 @@ export type DeliveryRoutingQuote = {
   routingSnapshot: Prisma.InputJsonObject;
 };
 
+export type LocationServiceabilityStatus = "READY" | "PARTIAL" | "NOT_SERVICEABLE";
+
+export type LocationServiceabilitySummary = {
+  status: LocationServiceabilityStatus;
+  query: {
+    countryCode: string | null;
+    stateCode: string | null;
+    cityCode: string | null;
+    pincode: string | null;
+    localAreaCode: string | null;
+    subtotalPaise: number;
+    paymentMethod: CheckoutRoutingPaymentMethod;
+  };
+  knownLocation: {
+    country: { code: string; name: string; enabled: boolean } | null;
+    state: { code: string; name: string; active: boolean } | null;
+    city: { code: string; name: string; active: boolean } | null;
+    localArea: { code: string; name: string; postalCode: string | null; active: boolean } | null;
+  };
+  readiness: {
+    locationKnown: boolean;
+    deliveryAvailable: boolean;
+    codAvailable: boolean;
+    sellerCoverage: boolean;
+    deliveryPartnerCoverage: boolean;
+    shippingRateConfigured: boolean;
+  };
+  delivery: {
+    mode: DeliveryMode;
+    routingFailed: boolean;
+    routingFailureReason: DeliveryRoutingFailureReason | null;
+    routingFailureNote: string | null;
+    matchedRateCardId: string | null;
+    matchedRateCardName: string | null;
+    shippingChargePaise: number;
+    codSurchargePaise: number;
+    totalDeliveryChargePaise: number;
+    recommendedPartnerUserId: string | null;
+    recommendedPartnerName: string | null;
+    courierProviderCode: string | null;
+    warnings: string[];
+    diagnostics: DeliveryRoutingQuote["diagnostics"];
+  };
+  payments: {
+    requestedMethod: CheckoutRoutingPaymentMethod;
+    requestedMethodEnabled: boolean;
+    codEnabled: boolean;
+    codMaxOrderPaise: number | null;
+    methods: Array<{
+      method: string;
+      label: string;
+      enabled: boolean;
+      note?: string;
+    }>;
+  };
+  coverage: {
+    approvedSellerCount: number;
+    exactSellerCount: number;
+    citySellerCount: number;
+    stateSellerCount: number;
+    countrySellerCount: number;
+    activeDeliveryPartnerCount: number;
+    eligibleLocalPartnerCount: number;
+    activeShippingRateCardCount: number;
+    activeCourierProviderCount: number;
+  };
+  nextActions: string[];
+};
+
 type PartnerCandidateUser = Prisma.UserGetPayload<{
   include: {
     deliveryProfile: {
@@ -171,6 +244,7 @@ export class DeliveryRoutingService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(CustomersService) private readonly customersService: CustomersService,
     @Inject(LocationsService) private readonly locationsService: LocationsService,
+    @Inject(PaymentsService) private readonly paymentsService: PaymentsService,
   ) {}
 
   async resolveCustomerCheckoutDelivery(actor: RequestUser, dto: ResolveCheckoutDeliveryDto) {
@@ -557,6 +631,337 @@ export class DeliveryRoutingService {
       subtotalPaise: dto.subtotalPaise ?? 0,
       paymentMethod: dto.paymentMethod ?? CheckoutRoutingPaymentMethod.COD,
     });
+  }
+
+  async locationServiceabilitySummary(
+    query: LocationServiceabilityQueryDto,
+  ): Promise<LocationServiceabilitySummary> {
+    const address = this.normalizeAddress({
+      countryCode: this.normalizeOptionalCode(query.countryCode) ?? "IN",
+      stateCode: this.normalizeOptionalCode(query.stateCode),
+      cityCode: this.normalizeOptionalCode(query.cityCode),
+      pincode: this.normalizeOptionalCode(query.pincode),
+      localAreaCode: this.normalizeOptionalCode(query.localAreaCode),
+    });
+    const subtotalPaise = this.nonNegativeInt(query.subtotalPaise ?? 0);
+    const paymentMethod = query.paymentMethod ?? CheckoutRoutingPaymentMethod.COD;
+    const [knownLocation, sellerCoverage, activeDeliveryPartnerCount, activeShippingRateCardCount, activeCourierProviderCount] =
+      await Promise.all([
+        this.knownLocationForServiceability(address),
+        this.sellerCoverageForServiceability(address),
+        this.prisma.client.user.count({
+          where: {
+            status: UserStatus.ACTIVE,
+            userRoles: { some: { role: { code: RoleCode.DELIVERY_PARTNER } } },
+            deliveryProfile: { is: { isAvailable: true } },
+          },
+        }),
+        this.prisma.client.shippingRateCard.count({ where: { isActive: true } }),
+        this.prisma.client.courierProviderSetting.count({ where: { isActive: true } }),
+      ]);
+
+    const deliveryQuote = await this.resolveDelivery({
+      deliveryPreference: CheckoutDeliveryPreference.DELIVER_TO_ADDRESS,
+      address,
+      subtotalPaise,
+      paymentMethod,
+    });
+    const paymentMethods = await this.paymentsService.checkoutMethods(
+      subtotalPaise + deliveryQuote.totalDeliveryChargePaise,
+    );
+    const requestedPaymentMethod = paymentMethods.methods.find((method) => method.method === paymentMethod);
+    const codMethod = paymentMethods.methods.find((method) => method.method === CheckoutRoutingPaymentMethod.COD);
+    const locationKnown = this.locationKnownForQuery(knownLocation, address);
+    const deliveryAvailable = !deliveryQuote.routingFailed;
+    const sellerCoverageAvailable =
+      sellerCoverage.exactSellerCount > 0 ||
+      sellerCoverage.citySellerCount > 0 ||
+      sellerCoverage.stateSellerCount > 0 ||
+      sellerCoverage.countrySellerCount > 0;
+    const deliveryPartnerCoverage =
+      deliveryQuote.diagnostics.localEligiblePartners > 0 || Boolean(deliveryQuote.courierProviderCode);
+    const shippingRateConfigured = Boolean(deliveryQuote.matchedRateCardId);
+    const codAvailable = Boolean(codMethod?.enabled);
+    const readiness = {
+      locationKnown,
+      deliveryAvailable,
+      codAvailable,
+      sellerCoverage: sellerCoverageAvailable,
+      deliveryPartnerCoverage,
+      shippingRateConfigured,
+    };
+    const status = this.locationServiceabilityStatus(readiness, paymentMethod);
+
+    return {
+      status,
+      query: {
+        countryCode: address?.countryCode ?? null,
+        stateCode: address?.stateCode ?? null,
+        cityCode: address?.cityCode ?? null,
+        pincode: address?.pincode ?? null,
+        localAreaCode: address?.localAreaCode ?? null,
+        subtotalPaise,
+        paymentMethod,
+      },
+      knownLocation,
+      readiness,
+      delivery: {
+        mode: deliveryQuote.deliveryMode,
+        routingFailed: deliveryQuote.routingFailed,
+        routingFailureReason: deliveryQuote.routingFailureReason,
+        routingFailureNote: deliveryQuote.routingFailureNote,
+        matchedRateCardId: deliveryQuote.matchedRateCardId,
+        matchedRateCardName: deliveryQuote.matchedRateCardName,
+        shippingChargePaise: deliveryQuote.shippingChargePaise,
+        codSurchargePaise: deliveryQuote.codSurchargePaise,
+        totalDeliveryChargePaise: deliveryQuote.totalDeliveryChargePaise,
+        recommendedPartnerUserId: deliveryQuote.recommendedPartnerUserId,
+        recommendedPartnerName: deliveryQuote.recommendedPartnerName,
+        courierProviderCode: deliveryQuote.courierProviderCode,
+        warnings: deliveryQuote.warnings,
+        diagnostics: deliveryQuote.diagnostics,
+      },
+      payments: {
+        requestedMethod: paymentMethod,
+        requestedMethodEnabled: Boolean(requestedPaymentMethod?.enabled),
+        codEnabled: codAvailable,
+        codMaxOrderPaise:
+          typeof codMethod?.maxOrderPaise === "number" && codMethod.maxOrderPaise > 0
+            ? codMethod.maxOrderPaise
+            : null,
+        methods: paymentMethods.methods.map((method) => ({
+          method: method.method,
+          label: method.label,
+          enabled: method.enabled,
+          ...(method.note ? { note: method.note } : {}),
+        })),
+      },
+      coverage: {
+        ...sellerCoverage,
+        activeDeliveryPartnerCount,
+        eligibleLocalPartnerCount: deliveryQuote.diagnostics.localEligiblePartners,
+        activeShippingRateCardCount,
+        activeCourierProviderCount,
+      },
+      nextActions: this.locationServiceabilityNextActions(readiness, paymentMethod, deliveryQuote),
+    };
+  }
+
+  private async knownLocationForServiceability(
+    address: DeliveryRoutingAddress | null,
+  ): Promise<LocationServiceabilitySummary["knownLocation"]> {
+    const country = address?.countryCode
+      ? await this.prisma.client.locationCountry.findUnique({ where: { code: address.countryCode } })
+      : null;
+    const state = address?.stateCode
+      ? await this.prisma.client.locationSubdivision.findFirst({
+          where: {
+            code: address.stateCode,
+            ...(country ? { countryId: country.id } : {}),
+          },
+        })
+      : null;
+    const city = address?.cityCode
+      ? await this.prisma.client.locationCity.findFirst({
+          where: {
+            code: address.cityCode,
+            ...(state
+              ? { subdivisionId: state.id }
+              : country
+                ? { subdivision: { countryId: country.id } }
+                : {}),
+          },
+        })
+      : null;
+    const scope: { countryId?: string; stateId?: string; cityId?: string } = {};
+    if (country) {
+      scope.countryId = country.id;
+    }
+    if (state) {
+      scope.stateId = state.id;
+    }
+    if (city) {
+      scope.cityId = city.id;
+    }
+    const localArea = await this.knownLocalAreaForServiceability(address, scope);
+
+    return {
+      country: country
+        ? { code: country.code, name: country.name, enabled: country.enabled }
+        : null,
+      state: state
+        ? { code: state.code, name: state.name, active: state.active }
+        : null,
+      city: city
+        ? { code: city.code, name: city.name, active: city.active }
+        : null,
+      localArea: localArea
+        ? { code: localArea.code, name: localArea.name, postalCode: localArea.postalCode, active: localArea.active }
+        : null,
+    };
+  }
+
+  private async knownLocalAreaForServiceability(
+    address: DeliveryRoutingAddress | null,
+    scope: { countryId?: string; stateId?: string; cityId?: string },
+  ) {
+    const localAreaCode = address?.localAreaCode ?? null;
+    const postalCode = address?.pincode ?? null;
+    if (!localAreaCode && !postalCode) {
+      return null;
+    }
+
+    const where: Prisma.LocationAreaWhereInput = {
+      ...(localAreaCode ? { code: localAreaCode } : { postalCode }),
+      ...(scope.cityId
+        ? { cityId: scope.cityId }
+        : scope.stateId
+          ? { city: { subdivisionId: scope.stateId } }
+          : scope.countryId
+            ? { city: { subdivision: { countryId: scope.countryId } } }
+            : {}),
+    };
+
+    return this.prisma.client.locationArea.findFirst({
+      where,
+      orderBy: [{ active: "desc" }, { name: "asc" }],
+    });
+  }
+
+  private locationKnownForQuery(
+    knownLocation: LocationServiceabilitySummary["knownLocation"],
+    address: DeliveryRoutingAddress | null,
+  ) {
+    if (address?.countryCode && !knownLocation.country) {
+      return false;
+    }
+    if (address?.stateCode && !knownLocation.state) {
+      return false;
+    }
+    if (address?.cityCode && !knownLocation.city) {
+      return false;
+    }
+    if ((address?.localAreaCode || address?.pincode) && !knownLocation.localArea) {
+      return false;
+    }
+
+    return Boolean(knownLocation.country || knownLocation.state || knownLocation.city || knownLocation.localArea);
+  }
+
+  private async sellerCoverageForServiceability(address: DeliveryRoutingAddress | null) {
+    const approvedSellerWhere: Prisma.SellerWhereInput = {
+      status: SellerStatus.APPROVED,
+      approvalStatus: ApprovalStatus.APPROVED,
+      deletedAt: null,
+    };
+    const exactWhere = this.sellerAddressWhereForServiceability(address, "exact");
+    const cityWhere = this.sellerAddressWhereForServiceability(address, "city");
+    const stateWhere = this.sellerAddressWhereForServiceability(address, "state");
+    const countryWhere = this.sellerAddressWhereForServiceability(address, "country");
+    const [approvedSellerCount, exactSellerCount, citySellerCount, stateSellerCount, countrySellerCount] =
+      await Promise.all([
+        this.prisma.client.seller.count({ where: approvedSellerWhere }),
+        exactWhere
+          ? this.prisma.client.seller.count({ where: { ...approvedSellerWhere, addresses: { some: exactWhere } } })
+          : Promise.resolve(0),
+        cityWhere
+          ? this.prisma.client.seller.count({ where: { ...approvedSellerWhere, addresses: { some: cityWhere } } })
+          : Promise.resolve(0),
+        stateWhere
+          ? this.prisma.client.seller.count({ where: { ...approvedSellerWhere, addresses: { some: stateWhere } } })
+          : Promise.resolve(0),
+        countryWhere
+          ? this.prisma.client.seller.count({ where: { ...approvedSellerWhere, addresses: { some: countryWhere } } })
+          : Promise.resolve(0),
+      ]);
+
+    return {
+      approvedSellerCount,
+      exactSellerCount,
+      citySellerCount,
+      stateSellerCount,
+      countrySellerCount,
+    };
+  }
+
+  private sellerAddressWhereForServiceability(
+    address: DeliveryRoutingAddress | null,
+    level: "exact" | "city" | "state" | "country",
+  ): Prisma.SellerAddressWhereInput | null {
+    if (!address) {
+      return null;
+    }
+
+    if (level === "exact") {
+      const exact: Prisma.SellerAddressWhereInput[] = [
+        ...(address.localAreaCode ? [{ localAreaCode: address.localAreaCode }] : []),
+        ...(address.pincode ? [{ pincode: address.pincode }] : []),
+      ];
+      return exact.length ? { OR: exact } : null;
+    }
+
+    if (level === "city" && address.cityCode) {
+      return { cityCode: address.cityCode };
+    }
+
+    if ((level === "city" || level === "state") && address.stateCode) {
+      return { stateCode: address.stateCode };
+    }
+
+    if (address.countryCode) {
+      return { countryCode: address.countryCode };
+    }
+
+    return null;
+  }
+
+  private locationServiceabilityStatus(
+    readiness: LocationServiceabilitySummary["readiness"],
+    paymentMethod: CheckoutRoutingPaymentMethod,
+  ): LocationServiceabilityStatus {
+    if (!readiness.locationKnown || !readiness.deliveryAvailable) {
+      return "NOT_SERVICEABLE";
+    }
+
+    if (
+      !readiness.sellerCoverage ||
+      !readiness.deliveryPartnerCoverage ||
+      !readiness.shippingRateConfigured ||
+      (paymentMethod === CheckoutRoutingPaymentMethod.COD && !readiness.codAvailable)
+    ) {
+      return "PARTIAL";
+    }
+
+    return "READY";
+  }
+
+  private locationServiceabilityNextActions(
+    readiness: LocationServiceabilitySummary["readiness"],
+    paymentMethod: CheckoutRoutingPaymentMethod,
+    deliveryQuote: DeliveryRoutingQuote,
+  ) {
+    const actions: string[] = [];
+
+    if (!readiness.locationKnown) {
+      actions.push("Import or enable the selected location before enforcing checkout serviceability.");
+    }
+    if (!readiness.sellerCoverage) {
+      actions.push("Approve or onboard sellers for this city, pincode, or local area.");
+    }
+    if (!readiness.deliveryPartnerCoverage) {
+      actions.push("Add delivery partner coverage or activate a courier provider for this location.");
+    }
+    if (!readiness.shippingRateConfigured) {
+      actions.push("Create an active shipping rate card for this delivery mode and location scope.");
+    }
+    if (paymentMethod === CheckoutRoutingPaymentMethod.COD && !readiness.codAvailable) {
+      actions.push("Enable COD or raise the COD max order value if cash collection should be allowed here.");
+    }
+    if (deliveryQuote.routingFailed && deliveryQuote.routingFailureNote) {
+      actions.push(deliveryQuote.routingFailureNote);
+    }
+
+    return actions;
   }
 
   private async quoteForMode(input: {

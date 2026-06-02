@@ -14,6 +14,7 @@ import {
   VariantStatus,
 } from "@indihub/database";
 import type { RequestUser } from "../auth/types/indihub-request";
+import { assertCheckoutDeliveryServiceable } from "../checkout/checkout-serviceability";
 import {
   CheckoutPricingService,
   type CheckoutChargeDeliveryOptions,
@@ -78,6 +79,10 @@ export class CartService {
       this.prisma.client,
       deliveryOptions,
     );
+    assertCheckoutDeliveryServiceable(charges, {
+      addressProvided: deliveryOptions.address !== undefined,
+      deliveryPreference: deliveryOptions.deliveryPreference ?? null,
+    });
     const market = await this.marketService.getMarketCurrency(query.buyerCountryCode ?? "IN");
     const buyerSubtotalMinor = this.marketService.convertMinorUnits(charges.subtotalPaise, market);
     const buyerShippingMinor = this.marketService.convertMinorUnits(charges.shippingPaise, market);

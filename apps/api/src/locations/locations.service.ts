@@ -6,10 +6,12 @@ import {
   LocationAreaQueryDto,
   LocationCityQueryDto,
   LocationCountryQueryDto,
+  IndiaPostalLookupQueryDto,
   RunLocationImportDto,
   LocationSubdivisionQueryDto,
   UpdateLocationCountryDto
 } from "./dto/location-query.dto";
+import { attachStoredIndiaPostalComparison, fetchIndiaPostalLookup, type IndiaPostalStoredArea } from "./india-postal-lookup";
 import { importLocationDataset } from "./location-importer";
 import { normalizeLocationAreaSearchTerms } from "./location-search";
 
@@ -217,6 +219,20 @@ export class LocationsService {
     return importLocationDataset(this.prisma.client, bundledLocationDataset, dto.mode ?? LocationImportMode.REFRESH);
   }
 
+  async lookupIndiaPostalCode(query: IndiaPostalLookupQueryDto) {
+    const lookup = await fetchIndiaPostalLookup(query);
+    const pincodes = Array.from(
+      new Set(
+        [
+          ...lookup.postOffices.map((office) => office.pincode).filter((pincode): pincode is string => Boolean(pincode)),
+          ...(query.pincode ? [query.pincode.trim()] : [])
+        ].filter(Boolean)
+      )
+    );
+
+    return attachStoredIndiaPostalComparison(lookup, await this.listStoredIndiaPostalAreas(pincodes));
+  }
+
   async updateCountry(code: string, dto: UpdateLocationCountryDto) {
     const countryCode = this.normalizeCountryCode(code);
     const existing = await this.prisma.client.locationCountry.findUnique({ where: { code: countryCode } });
@@ -408,5 +424,47 @@ export class LocationsService {
       localAreaCode: this.clean(input.localAreaCode)?.toUpperCase() ?? null,
       pincode
     };
+  }
+
+  private async listStoredIndiaPostalAreas(pincodes: string[]): Promise<IndiaPostalStoredArea[]> {
+    if (!pincodes.length) {
+      return [];
+    }
+
+    const areas = await this.prisma.client.locationArea.findMany({
+      where: {
+        active: true,
+        postalCode: { in: pincodes },
+        city: {
+          active: true,
+          subdivision: {
+            active: true,
+            country: { code: "IN" }
+          }
+        }
+      },
+      include: {
+        city: {
+          include: { subdivision: true }
+        }
+      },
+      orderBy: [{ postalCode: "asc" }, { name: "asc" }]
+    });
+
+    return areas.map((area) => ({
+      code: area.code,
+      name: area.name,
+      postalCode: area.postalCode,
+      cityName: area.city.name,
+      cityCode: area.city.code,
+      stateName: area.city.subdivision.name,
+      stateCode: area.city.subdivision.code,
+      source: area.source,
+      metadata: this.recordMetadata(area.metadata)
+    }));
+  }
+
+  private recordMetadata(value: unknown) {
+    return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
   }
 }

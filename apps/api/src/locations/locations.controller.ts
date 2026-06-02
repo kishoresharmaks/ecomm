@@ -4,6 +4,7 @@ import { RoleCode } from "@indihub/database";
 import { Public } from "../auth/decorators/public.decorator";
 import { Roles } from "../auth/decorators/roles.decorator";
 import {
+  IndiaPostalLookupQueryDto,
   LocationAreaQueryDto,
   LocationCityQueryDto,
   LocationCountryQueryDto,
@@ -69,6 +70,12 @@ export class AdminLocationsController {
   @ApiOperation({ summary: "List recent location import and refresh runs." })
   listImportRuns() {
     return this.locationsService.listAdminImportRuns();
+  }
+
+  @Get("india-postal-lookup")
+  @ApiOperation({ summary: "Verify a single India pincode or post-office name through PostalPin lookup." })
+  lookupIndiaPostalCode(@Query() query: IndiaPostalLookupQueryDto) {
+    return this.locationsService.lookupIndiaPostalCode(query);
   }
 
   @Post("import-runs")

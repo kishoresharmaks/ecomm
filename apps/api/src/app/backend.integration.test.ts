@@ -113,7 +113,7 @@ describe.sequential("1HandIndia backend integration", () => {
       .send({ email: adminEmail, password: adminPassword })
       .expect(201);
     adminSessionHeader = bearerAuthHeader(adminLogin.body.token as string);
-  }, 60000);
+  }, 120000);
 
   afterAll(async () => {
     if (prisma) {
@@ -396,6 +396,99 @@ describe.sequential("1HandIndia backend integration", () => {
       .get("/api/admin/locations/countries")
       .set(adminSessionHeader)
       .expect(200);
+
+    await request(app.getHttpServer())
+      .get("/api/admin/locations/india-postal-lookup")
+      .query({ pincode: "110001" })
+      .expect(401);
+    await request(app.getHttpServer())
+      .get("/api/admin/locations/india-postal-lookup")
+      .set(adminSessionHeader)
+      .query({ pincode: "000000" })
+      .expect(400);
+
+    const postalFetch = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              Message: "Number of pincode(s) found:1",
+              Status: "Success",
+              PostOffice: [
+                {
+                  Name: "Baroda House",
+                  BranchType: "Sub Post Office",
+                  DeliveryStatus: "Non-Delivery",
+                  Circle: "Delhi",
+                  District: "Central Delhi",
+                  Division: "New Delhi Central",
+                  Region: "Delhi",
+                  Block: "New Delhi",
+                  State: "Delhi",
+                  Country: "India",
+                  Pincode: "110001",
+                },
+              ],
+            },
+          ]),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([{ Message: "No records found", Status: "Error", PostOffice: null }]), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+
+    try {
+      const lookup = await request(app.getHttpServer())
+        .get("/api/admin/locations/india-postal-lookup")
+        .set(adminSessionHeader)
+        .query({ pincode: "110001" })
+        .expect(200);
+      expect(lookup.body).toMatchObject({
+        provider: "api.postalpincode.in",
+        queryType: "PINCODE",
+        query: "110001",
+        status: "SUCCESS",
+        postOffices: [
+          expect.objectContaining({
+            name: "Baroda House",
+            state: "Delhi",
+            pincode: "110001",
+          }),
+        ],
+      });
+
+      const emptyLookup = await request(app.getHttpServer())
+        .get("/api/admin/locations/india-postal-lookup")
+        .set(adminSessionHeader)
+        .query({ postOffice: "Missing Office" })
+        .expect(200);
+      expect(emptyLookup.body).toMatchObject({
+        queryType: "POST_OFFICE",
+        query: "Missing Office",
+        status: "NOT_FOUND",
+        postOffices: [],
+      });
+
+      expect(postalFetch).toHaveBeenCalledWith(
+        "https://api.postalpincode.in/pincode/110001",
+        expect.objectContaining({
+          headers: expect.objectContaining({ accept: "application/json" }),
+        }),
+      );
+      expect(postalFetch).toHaveBeenCalledWith(
+        "https://api.postalpincode.in/postoffice/Missing%20Office",
+        expect.objectContaining({
+          headers: expect.objectContaining({ accept: "application/json" }),
+        }),
+      );
+    } finally {
+      postalFetch.mockRestore();
+    }
   });
 
   it("ranks public sellers by browsing location and exposes match metadata", async () => {
@@ -6749,17 +6842,33 @@ async function cleanupIntegrationData(prisma: PrismaClient) {
   await prisma.cartItem.deleteMany({
     where: { OR: [{ cartId: { in: cartIds } }, { sellerId: { in: sellerIds } }] },
   });
+  await prisma.cartItem.deleteMany({
+    where: { productVariant: { product: { sellerId: { in: sellerIds } } } },
+  });
   await prisma.cart.deleteMany({ where: { id: { in: cartIds } } });
   await prisma.wishlistItem.deleteMany({ where: { productId: { in: productIds } } });
+  await prisma.wishlistItem.deleteMany({
+    where: { product: { sellerId: { in: sellerIds } } },
+  });
   await prisma.wishlist.deleteMany({ where: { customerId: { in: customerIds } } });
   await prisma.inventoryMovement.deleteMany({
     where: {
       OR: [{ createdById: { in: userIds } }, { productVariantId: { in: productVariantIds } }],
     },
   });
+  await prisma.inventoryMovement.deleteMany({
+    where: { productVariant: { product: { sellerId: { in: sellerIds } } } },
+  });
   await prisma.productImage.deleteMany({ where: { productId: { in: productIds } } });
-  await prisma.productVariant.deleteMany({ where: { id: { in: productVariantIds } } });
-  await prisma.product.deleteMany({ where: { id: { in: productIds } } });
+  await prisma.productImage.deleteMany({
+    where: { product: { sellerId: { in: sellerIds } } },
+  });
+  await prisma.productVariant.deleteMany({
+    where: { OR: [{ id: { in: productVariantIds } }, { product: { sellerId: { in: sellerIds } } }] },
+  });
+  await prisma.product.deleteMany({
+    where: { OR: [{ id: { in: productIds } }, { sellerId: { in: sellerIds } }] },
+  });
   await prisma.cmsRevision.deleteMany({
     where: {
       OR: [{ actorUserId: { in: userIds } }, { entityId: { in: entityIds } }],

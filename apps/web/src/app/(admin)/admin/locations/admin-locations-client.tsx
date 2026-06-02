@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Database, RefreshCw, ShieldCheck, ToggleLeft, ToggleRight } from "lucide-react";
+import { Database, RefreshCw, ShieldCheck, ToggleLeft, ToggleRight, Upload } from "lucide-react";
 import { Button, StatusBadge } from "@indihub/ui";
 import { useAdminAuth } from "@/components/admin/admin-auth-context";
 import { useConfirmationDialog } from "@/components/shared/confirmation-dialog";
@@ -72,10 +73,18 @@ export function AdminLocationsClient() {
                 </p>
               </div>
             </div>
-            <Button type="button" onClick={() => refreshMutation.mutate()} disabled={refreshMutation.isPending}>
-              <RefreshCw className="h-4 w-4" aria-hidden="true" />
-              Refresh baseline
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button asChild variant="outline">
+                <Link href="/admin/locations/import">
+                  <Upload className="h-4 w-4" aria-hidden="true" />
+                  Import India data
+                </Link>
+              </Button>
+              <Button type="button" onClick={() => refreshMutation.mutate()} disabled={refreshMutation.isPending}>
+                <RefreshCw className="h-4 w-4" aria-hidden="true" />
+                Refresh baseline
+              </Button>
+            </div>
           </div>
 
           {coverageQuery.error ? (

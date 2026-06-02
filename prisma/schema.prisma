@@ -1014,6 +1014,7 @@ model LocationArea {
   active         Boolean      @default(true)
   source         String?
   sourceRecordId String?      @map("source_record_id")
+  metadata       Json?
   sortOrder      Int          @default(0) @map("sort_order")
   createdAt      DateTime     @default(now()) @map("created_at")
   updatedAt      DateTime     @updatedAt @map("updated_at")

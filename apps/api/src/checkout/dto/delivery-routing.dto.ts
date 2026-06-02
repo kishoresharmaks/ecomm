@@ -414,3 +414,46 @@ export class RoutingSimulatorDto {
   @IsEnum(CheckoutRoutingPaymentMethod)
   paymentMethod?: CheckoutRoutingPaymentMethod;
 }
+
+export class LocationServiceabilityQueryDto {
+  @ApiPropertyOptional({ example: "IN" })
+  @IsOptional()
+  @Matches(/^[A-Z]{2}$/)
+  countryCode?: string;
+
+  @ApiPropertyOptional({ example: "IN-TN" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  stateCode?: string;
+
+  @ApiPropertyOptional({ example: "IN-TN-CBE" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  cityCode?: string;
+
+  @ApiPropertyOptional({ example: "641012" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  pincode?: string;
+
+  @ApiPropertyOptional({ example: "IN-TN-CBE-RS" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  localAreaCode?: string;
+
+  @ApiPropertyOptional({ example: 99900 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  subtotalPaise?: number;
+
+  @ApiPropertyOptional({ enum: CheckoutRoutingPaymentMethod, default: CheckoutRoutingPaymentMethod.COD })
+  @IsOptional()
+  @IsEnum(CheckoutRoutingPaymentMethod)
+  paymentMethod?: CheckoutRoutingPaymentMethod;
+}

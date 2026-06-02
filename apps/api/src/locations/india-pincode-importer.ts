@@ -17,8 +17,39 @@ export const INDIA_PINCODE_CATALOG_URL = "https://www.data.gov.in/resource/all-i
 export type IndiaPincodeRecord = {
   officename?: string | number | null;
   pincode?: string | number | null;
+  officeType?: string | number | null;
+  officetype?: string | number | null;
+  deliveryStatus?: string | number | null;
+  deliverystatus?: string | number | null;
+  division?: string | number | null;
+  divisionname?: string | number | null;
+  region?: string | number | null;
+  regionname?: string | number | null;
+  circle?: string | number | null;
+  circlename?: string | number | null;
+  taluk?: string | number | null;
+  block?: string | number | null;
   district?: string | number | null;
+  districtname?: string | number | null;
   statename?: string | number | null;
+};
+
+export type IndiaPincodeImportQualityReport = {
+  totalRows: number;
+  acceptedRows: number;
+  skippedRows: number;
+  missingRequiredRows: number;
+  invalidPincodeRows: number;
+  unknownStateRows: number;
+  duplicateSourceRows: number;
+  uniquePincodes: number;
+  multiOfficePincodes: number;
+  stateCount: number;
+  districtCityCount: number;
+  localAreaCount: number;
+  deliveryStatusCounts: Record<string, number>;
+  officeTypeCounts: Record<string, number>;
+  readyToApply: boolean;
 };
 
 export type IndiaPincodeDatasetBuildResult = {
@@ -27,6 +58,7 @@ export type IndiaPincodeDatasetBuildResult = {
   skippedRows: number;
   cityCount: number;
   areaCount: number;
+  quality: IndiaPincodeImportQualityReport;
 };
 
 export function parseIndiaPincodeCsv(csv: string): IndiaPincodeRecord[] {
@@ -42,6 +74,13 @@ export function parseIndiaPincodeCsv(csv: string): IndiaPincodeRecord[] {
   return records.map((row) => ({
     officename: cell(row, columnIndex, "officename"),
     pincode: cell(row, columnIndex, "pincode"),
+    officeType: cell(row, columnIndex, "officetype"),
+    deliveryStatus: cell(row, columnIndex, "deliverystatus"),
+    division: cell(row, columnIndex, "divisionname") || cell(row, columnIndex, "division"),
+    region: cell(row, columnIndex, "regionname") || cell(row, columnIndex, "region"),
+    circle: cell(row, columnIndex, "circlename") || cell(row, columnIndex, "circle"),
+    taluk: cell(row, columnIndex, "taluk"),
+    block: cell(row, columnIndex, "block"),
     district: cell(row, columnIndex, "district") || cell(row, columnIndex, "districtname"),
     statename: cell(row, columnIndex, "statename")
   }));
@@ -106,17 +145,45 @@ export function buildIndiaPincodeDataset(
   const subdivisionByCode = new Map((country.subdivisions ?? []).map((subdivision) => [subdivision.code, subdivision]));
   const cityMaps = new Map<string, Map<string, LocationCityInput>>();
   const areaMaps = new Map<string, Map<string, LocationAreaInput>>();
+  const pincodeCounts = new Map<string, number>();
+  const sourceRecordIds = new Set<string>();
+  const quality: IndiaPincodeImportQualityReport = {
+    totalRows: records.length,
+    acceptedRows: 0,
+    skippedRows: 0,
+    missingRequiredRows: 0,
+    invalidPincodeRows: 0,
+    unknownStateRows: 0,
+    duplicateSourceRows: 0,
+    uniquePincodes: 0,
+    multiOfficePincodes: 0,
+    stateCount: 0,
+    districtCityCount: 0,
+    localAreaCount: 0,
+    deliveryStatusCounts: {},
+    officeTypeCounts: {},
+    readyToApply: false
+  };
   let acceptedRows = 0;
   let skippedRows = 0;
 
   for (const record of records) {
     const pincode = cleanPincode(record.pincode);
     const officeName = cleanString(record.officename);
-    const district = cleanString(record.district);
+    const district = cleanString(record.district) || cleanString(record.districtname);
     const stateName = cleanString(record.statename);
+    const officeType = cleanString(record.officeType) || cleanString(record.officetype);
+    const deliveryStatus = cleanString(record.deliveryStatus) || cleanString(record.deliverystatus);
 
-    if (!pincode || !officeName || !district || !stateName) {
+    if (!pincode) {
       skippedRows += 1;
+      quality.invalidPincodeRows += 1;
+      continue;
+    }
+
+    if (!officeName || !district || !stateName) {
+      skippedRows += 1;
+      quality.missingRequiredRows += 1;
       continue;
     }
 
@@ -124,6 +191,7 @@ export function buildIndiaPincodeDataset(
     const subdivision = overrideStateCode ? stateByCode.get(overrideStateCode) : stateByName.get(normalizeStateName(stateName));
     if (!subdivision) {
       skippedRows += 1;
+      quality.unknownStateRows += 1;
       continue;
     }
 
@@ -134,6 +202,15 @@ export function buildIndiaPincodeDataset(
     }
 
     const districtLookup = normalizeLookup(district);
+    const sourceRecordId = [subdivision.code, districtLookup, pincode, normalizeLookup(officeName)].join("|");
+    if (sourceRecordIds.has(sourceRecordId)) {
+      quality.duplicateSourceRows += 1;
+    }
+    sourceRecordIds.add(sourceRecordId);
+    pincodeCounts.set(pincode, (pincodeCounts.get(pincode) ?? 0) + 1);
+    incrementCount(quality.deliveryStatusCounts, deliveryStatus || "Unknown");
+    incrementCount(quality.officeTypeCounts, officeType || "Unknown");
+
     const cityCode = cityCodeAliases.get(`${subdivision.code}|${districtLookup}`) ?? createCityCode(subdivision.code, district);
     const cityMap = ensureCityMap(cityMaps, subdivision.code);
     const city = upsertByCode(cityMap, cityCode, () => ({
@@ -153,7 +230,8 @@ export function buildIndiaPincodeDataset(
       code: areaCode,
       name: displayName(cleanOfficeName(officeName)),
       postalCode: pincode,
-      sourceRecordId: [subdivision.code, districtLookup, pincode, normalizeLookup(officeName)].join("|")
+      sourceRecordId,
+      metadata: buildAreaMetadata(record, { district, stateName, officeType, deliveryStatus })
     };
     upsertByCode(ensureAreaMap(areaMaps, city.code), areaCode, () => {
       city.areas ??= [];
@@ -173,6 +251,14 @@ export function buildIndiaPincodeDataset(
       0
     ) ?? 0;
   const cityCount = country.subdivisions?.reduce((total, subdivision) => total + (subdivision.cities?.length ?? 0), 0) ?? 0;
+  quality.acceptedRows = acceptedRows;
+  quality.skippedRows = skippedRows;
+  quality.uniquePincodes = pincodeCounts.size;
+  quality.multiOfficePincodes = Array.from(pincodeCounts.values()).filter((count) => count > 1).length;
+  quality.stateCount = country.subdivisions?.filter((subdivision) => (subdivision.cities?.length ?? 0) > 0).length ?? 0;
+  quality.districtCityCount = cityCount;
+  quality.localAreaCount = areaCount;
+  quality.readyToApply = skippedRows === 0;
 
   return {
     dataset: {
@@ -190,6 +276,7 @@ export function buildIndiaPincodeDataset(
       skippedRows,
       metadata: {
         acceptedRows,
+        quality,
         sourceResourceId: INDIA_PINCODE_RESOURCE_ID,
         hierarchyMapping: "State/UT -> district as city node -> post office as local area"
       }
@@ -197,7 +284,8 @@ export function buildIndiaPincodeDataset(
     acceptedRows,
     skippedRows,
     cityCount,
-    areaCount
+    areaCount,
+    quality
   };
 }
 
@@ -287,6 +375,32 @@ function upsertByCode<T extends { code: string }>(items: Map<string, T>, code: s
   const item = create();
   items.set(code, item);
   return item;
+}
+
+function buildAreaMetadata(
+  record: IndiaPincodeRecord,
+  values: { district: string; stateName: string; officeType: string; deliveryStatus: string }
+) {
+  return cleanMetadata({
+    sourceOfficeName: cleanString(record.officename),
+    officeType: values.officeType,
+    deliveryStatus: values.deliveryStatus,
+    division: cleanString(record.division) || cleanString(record.divisionname),
+    region: cleanString(record.region) || cleanString(record.regionname),
+    circle: cleanString(record.circle) || cleanString(record.circlename),
+    taluk: cleanString(record.taluk),
+    block: cleanString(record.block),
+    sourceDistrict: values.district,
+    sourceState: values.stateName
+  });
+}
+
+function cleanMetadata(value: Record<string, string>) {
+  return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry));
+}
+
+function incrementCount(target: Record<string, number>, key: string) {
+  target[key] = (target[key] ?? 0) + 1;
 }
 
 function sortLocationHierarchy(country: LocationCountryInput) {

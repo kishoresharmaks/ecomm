@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Inject, Param, Patch, Post } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, Query } from "@nestjs/common";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import { RoleCode } from "@indihub/database";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
@@ -6,6 +6,7 @@ import { Roles } from "../auth/decorators/roles.decorator";
 import type { RequestUser } from "../auth/types/indihub-request";
 import { DeliveryRoutingService } from "./delivery-routing.service";
 import {
+  LocationServiceabilityQueryDto,
   ResolveCheckoutDeliveryDto,
   RoutingSimulatorDto,
   UpdateCourierProviderActiveDto,
@@ -121,5 +122,20 @@ export class AdminRoutingSimulatorController {
   @ApiOperation({ summary: "Simulate delivery routing using the same engine as checkout." })
   simulate(@Body() dto: RoutingSimulatorDto) {
     return this.deliveryRouting.simulateRouting(dto);
+  }
+}
+
+@ApiTags("Admin Location Serviceability")
+@Roles(RoleCode.ADMIN)
+@Controller("admin/locations/serviceability")
+export class AdminLocationServiceabilityController {
+  constructor(
+    @Inject(DeliveryRoutingService) private readonly deliveryRouting: DeliveryRoutingService,
+  ) {}
+
+  @Get()
+  @ApiOperation({ summary: "Summarise delivery, payment, seller, and rate-card readiness for a location." })
+  summary(@Query() query: LocationServiceabilityQueryDto) {
+    return this.deliveryRouting.locationServiceabilitySummary(query);
   }
 }

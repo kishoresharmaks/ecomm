@@ -36,7 +36,26 @@ export type LocationArea = {
   code: string;
   name: string;
   postalCode?: string | null;
+  metadata?: Record<string, unknown> | null;
   city?: LocationCity;
+};
+
+export type AdminIndiaPincodeImportQuality = {
+  totalRows: number;
+  acceptedRows: number;
+  skippedRows: number;
+  missingRequiredRows: number;
+  invalidPincodeRows: number;
+  unknownStateRows: number;
+  duplicateSourceRows: number;
+  uniquePincodes: number;
+  multiOfficePincodes: number;
+  stateCount: number;
+  districtCityCount: number;
+  localAreaCount: number;
+  deliveryStatusCounts: Record<string, number>;
+  officeTypeCounts: Record<string, number>;
+  readyToApply: boolean;
 };
 
 export function listLocationCountries() {
@@ -107,6 +126,12 @@ export type AdminLocationImportRun = {
   importedAreas: number;
   skippedRows: number;
   errorMessage?: string | null;
+  metadata?: {
+    acceptedRows?: number;
+    sourceResourceId?: string;
+    hierarchyMapping?: string;
+    quality?: AdminIndiaPincodeImportQuality;
+  } | null;
   startedAt: string;
   finishedAt?: string | null;
   source?: {
@@ -114,4 +139,127 @@ export type AdminLocationImportRun = {
     name: string;
     provider: string;
   };
+};
+
+export type AdminIndiaPostalLookupPostOffice = {
+  name: string;
+  branchType: string | null;
+  deliveryStatus: string | null;
+  circle: string | null;
+  district: string | null;
+  division: string | null;
+  region: string | null;
+  block: string | null;
+  state: string | null;
+  country: string | null;
+  pincode: string | null;
+  databaseMatch?: AdminIndiaPostalStoredArea | null;
+};
+
+export type AdminIndiaPostalStoredArea = {
+  code: string;
+  name: string;
+  postalCode: string | null;
+  cityName: string;
+  cityCode: string;
+  stateName: string;
+  stateCode: string;
+  source: string | null;
+  metadata: Record<string, unknown> | null;
+};
+
+export type AdminIndiaPostalLookupComparison = {
+  status: "MATCHED" | "PARTIAL" | "NOT_IMPORTED" | "DATABASE_ONLY" | "NO_DATA";
+  storedAreaCount: number;
+  matchedPostOfficeCount: number;
+  missingPostOfficeCount: number;
+  extraStoredAreaCount: number;
+  storedAreas: AdminIndiaPostalStoredArea[];
+  missingPostOffices: AdminIndiaPostalLookupPostOffice[];
+  extraStoredAreas: AdminIndiaPostalStoredArea[];
+};
+
+export type AdminIndiaPostalLookupResponse = {
+  provider: "api.postalpincode.in";
+  queryType: "PINCODE" | "POST_OFFICE";
+  query: string;
+  sourceUrl: string;
+  status: "SUCCESS" | "NOT_FOUND";
+  message: string;
+  postOffices: AdminIndiaPostalLookupPostOffice[];
+  comparison?: AdminIndiaPostalLookupComparison;
+};
+
+export type AdminLocationServiceabilitySummary = {
+  status: "READY" | "PARTIAL" | "NOT_SERVICEABLE";
+  query: {
+    countryCode: string | null;
+    stateCode: string | null;
+    cityCode: string | null;
+    pincode: string | null;
+    localAreaCode: string | null;
+    subtotalPaise: number;
+    paymentMethod: "RAZORPAY" | "COD" | "BANK_TRANSFER" | "MANUAL";
+  };
+  knownLocation: {
+    country: { code: string; name: string; enabled: boolean } | null;
+    state: { code: string; name: string; active: boolean } | null;
+    city: { code: string; name: string; active: boolean } | null;
+    localArea: { code: string; name: string; postalCode: string | null; active: boolean } | null;
+  };
+  readiness: {
+    locationKnown: boolean;
+    deliveryAvailable: boolean;
+    codAvailable: boolean;
+    sellerCoverage: boolean;
+    deliveryPartnerCoverage: boolean;
+    shippingRateConfigured: boolean;
+  };
+  delivery: {
+    mode: string;
+    routingFailed: boolean;
+    routingFailureReason: string | null;
+    routingFailureNote: string | null;
+    matchedRateCardId: string | null;
+    matchedRateCardName: string | null;
+    shippingChargePaise: number;
+    codSurchargePaise: number;
+    totalDeliveryChargePaise: number;
+    recommendedPartnerUserId: string | null;
+    recommendedPartnerName: string | null;
+    courierProviderCode: string | null;
+    warnings: string[];
+    diagnostics: {
+      localPartnersChecked: number;
+      localEligiblePartners: number;
+      rejectedPartnersSkipped: number;
+      codLimitSkipped: number;
+      rateCardsChecked: number;
+      providerChecked: string | null;
+    };
+  };
+  payments: {
+    requestedMethod: "RAZORPAY" | "COD" | "BANK_TRANSFER" | "MANUAL";
+    requestedMethodEnabled: boolean;
+    codEnabled: boolean;
+    codMaxOrderPaise: number | null;
+    methods: Array<{
+      method: string;
+      label: string;
+      enabled: boolean;
+      note?: string;
+    }>;
+  };
+  coverage: {
+    approvedSellerCount: number;
+    exactSellerCount: number;
+    citySellerCount: number;
+    stateSellerCount: number;
+    countrySellerCount: number;
+    activeDeliveryPartnerCount: number;
+    eligibleLocalPartnerCount: number;
+    activeShippingRateCardCount: number;
+    activeCourierProviderCount: number;
+  };
+  nextActions: string[];
 };

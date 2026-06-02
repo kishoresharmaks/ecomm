@@ -32,6 +32,7 @@ import {
   VariantStatus,
 } from "@indihub/database";
 import type { RequestUser } from "../auth/types/indihub-request";
+import { assertCheckoutDeliveryServiceable } from "../checkout/checkout-serviceability";
 import { CheckoutPricingService } from "../checkout/checkout-pricing.service";
 import { DeliveryRoutingService } from "../checkout/delivery-routing.service";
 import { CheckoutDeliveryPreference } from "../checkout/dto/delivery-routing.dto";
@@ -369,6 +370,10 @@ export class OrdersService {
         ...(dto.deliveryMode !== undefined ? { deliveryMode: dto.deliveryMode } : {}),
         address: shippingAddressSnapshot,
         paymentMethod: dto.paymentMethod,
+      });
+      assertCheckoutDeliveryServiceable(charges, {
+        addressProvided: true,
+        deliveryPreference,
       });
       const { shippingPaise, platformFeePaise, totalPaise } = charges;
       const resolvedDeliveryMode =

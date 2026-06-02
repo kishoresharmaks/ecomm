@@ -13,6 +13,8 @@ export const adminNav = [
   { group: "Content", label: "Content management", href: "/admin/cms" },
   { group: "Content", label: "Categories", href: "/admin/categories" },
   { group: "Content", label: "Locations", href: "/admin/locations" },
+  { group: "Content", label: "Location import", href: "/admin/locations/import" },
+  { group: "Operations", label: "Location serviceability", href: "/admin/locations/serviceability" },
   { group: "Operations", label: "Reports", href: "/admin/reports" },
   { group: "Operations", label: "Delivery operations", href: "/admin/delivery" },
   { group: "Finance", label: "Seller subscriptions", href: "/admin/seller-subscriptions" },
