@@ -109,20 +109,12 @@ export class AuthUsersService {
         },
       });
 
-      const userRoles = await tx.userRole.findMany({
-        where: { userId: user.id },
-        include: { role: true },
-      });
-
       return {
         isNew: !existingUser,
         id: user.id,
-        clerkUserId: user.clerkUserId,
         email: user.email,
         fullName: user.fullName,
-        phone: user.phone,
         status: user.status,
-        roles: userRoles.map((userRole) => userRole.role.code),
       };
     });
 
@@ -138,9 +130,7 @@ export class AuthUsersService {
       });
     }
 
-    const { isNew, ...response } = result;
-    void isNew;
-    return response;
+    return { synced: true };
   }
 
   private roleName(roleCode: RoleCode) {

@@ -99,13 +99,7 @@ export function SellerProfileClient() {
     if (profileQuery.data) {
       setLogoUrl(profileQuery.data.profile?.logoUrl ?? null);
       setBannerUrl(profileQuery.data.profile?.bannerUrl ?? null);
-      setDocuments(
-        (profileQuery.data.documents ?? []).map((document) => ({
-          documentType: document.documentType,
-          fileUrl: document.fileUrl,
-          fileName: document.fileUrl.split("/").at(-1) ?? document.documentType,
-        })),
-      );
+      setDocuments([]);
     }
   }, [profileQuery.data]);
 
@@ -116,6 +110,7 @@ export function SellerProfileClient() {
       (setting) => setting.providerCode === "SHIPROCKET",
     );
     const shiprocketPickupLocation = optionalFormValue(form, "shiprocketPickupLocation");
+    const payoutProfile = sellerPayoutProfilePayload(form);
     setNotice(null);
     mutation.mutate({
       storeName: formValue(form, "storeName"),
@@ -129,13 +124,7 @@ export function SellerProfileClient() {
       contactName: formValue(form, "contactName"),
       contactPhone: formValue(form, "contactPhone"),
       contactEmail: formValue(form, "contactEmail"),
-      payoutProfile: {
-        accountHolderName: optionalFormValue(form, "payoutAccountHolderName"),
-        bankName: optionalFormValue(form, "payoutBankName"),
-        accountNumber: optionalFormValue(form, "payoutAccountNumber"),
-        ifscCode: optionalFormValue(form, "payoutIfscCode"),
-        upiId: optionalFormValue(form, "payoutUpiId"),
-      },
+      ...(payoutProfile ? { payoutProfile } : {}),
       address: {
         line1: formValue(form, "line1"),
         line2: optionalFormValue(form, "line2"),
@@ -149,10 +138,14 @@ export function SellerProfileClient() {
         cityCode: formValue(form, "cityCode"),
         localAreaCode: optionalFormValue(form, "localAreaCode"),
       },
-      documents: documents.map((document) => ({
-        documentType: document.documentType,
-        fileUrl: document.fileUrl,
-      })),
+      ...(documents.length
+        ? {
+            documents: documents.map((document) => ({
+              documentType: document.documentType,
+              fileUrl: document.fileUrl,
+            })),
+          }
+        : {}),
       ...(shiprocketPickupLocation || existingShiprocketSetting
         ? {
             courierSettings: [
@@ -380,24 +373,33 @@ export function SellerProfileClient() {
             <SellerField
               label="Account holder name"
               name="payoutAccountHolderName"
-              defaultValue={payoutProfile?.accountHolderName ?? profile?.profile?.contactName}
+              placeholder={payoutProfile?.accountHolderName ?? profile?.profile?.contactName ?? "Enter account holder name"}
             />
-            <SellerField label="UPI ID" name="payoutUpiId" defaultValue={payoutProfile?.upiId} />
+            <SellerField
+              label="UPI ID"
+              name="payoutUpiId"
+              placeholder={payoutProfile?.maskedUpiId ? `Saved: ${payoutProfile.maskedUpiId}` : "seller@upi"}
+            />
             <SellerField
               label="Bank name"
               name="payoutBankName"
-              defaultValue={payoutProfile?.bankName}
+              placeholder={payoutProfile?.bankName ?? "Enter bank name"}
             />
             <SellerField
               label="Account number"
               name="payoutAccountNumber"
-              defaultValue={payoutProfile?.accountNumber}
+              placeholder={payoutProfile?.maskedAccountNumber ? `Saved: ${payoutProfile.maskedAccountNumber}` : "Enter account number"}
             />
             <SellerField
               label="IFSC code"
               name="payoutIfscCode"
-              defaultValue={payoutProfile?.ifscCode}
+              placeholder={payoutProfile?.ifscCode ?? "Enter IFSC code"}
             />
+            {payoutProfile ? (
+              <p className="text-xs font-semibold leading-5 text-[#667085] md:col-span-2">
+                Existing payout details are saved securely. Enter new values only when you want to replace them.
+              </p>
+            ) : null}
           </div>
         </SellerPanel>
 
@@ -497,7 +499,7 @@ function DocumentUploadField({
             {value
               ? value.fileName
               : storedDocument?.status
-                ? `${humanize(storedDocument.status)} / ${storedDocument.fileUrl.split("/").at(-1)}`
+                ? `${humanize(storedDocument.status)} / ${storedDocument.fileName ?? "Uploaded document"}`
                 : document.description}
           </span>
         </span>
@@ -522,6 +524,18 @@ function DocumentUploadField({
       ) : null}
     </label>
   );
+}
+
+function sellerPayoutProfilePayload(form: FormData): SellerProfilePayload["payoutProfile"] | undefined {
+  const payload = {
+    accountHolderName: optionalFormValue(form, "payoutAccountHolderName"),
+    bankName: optionalFormValue(form, "payoutBankName"),
+    accountNumber: optionalFormValue(form, "payoutAccountNumber"),
+    ifscCode: optionalFormValue(form, "payoutIfscCode"),
+    upiId: optionalFormValue(form, "payoutUpiId"),
+  };
+
+  return Object.values(payload).some(Boolean) ? payload : undefined;
 }
 
 function humanize(value?: string | null) {

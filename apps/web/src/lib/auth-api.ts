@@ -8,13 +8,7 @@ export type SyncCurrentUserPayload = {
 };
 
 export type SyncedAuthUser = {
-  id: string;
-  clerkUserId: string | null;
-  email: string;
-  fullName?: string | null;
-  phone?: string | null;
-  status: string;
-  roles: string[];
+  synced: true;
 };
 
 export function syncCurrentUser(auth: IndihubAuthHeaders, payload: SyncCurrentUserPayload) {

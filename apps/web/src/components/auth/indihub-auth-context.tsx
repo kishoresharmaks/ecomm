@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode, createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { ReactNode, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth, useUser } from "@clerk/nextjs";
 import { useDevAuth } from "@/components/dev-auth/dev-auth-context";
 import { syncCurrentUser } from "@/lib/auth-api";
@@ -50,6 +50,8 @@ export function ClerkCustomerAuthProvider({ children }: { children: ReactNode })
   const [bearerToken, setBearerToken] = useState<string | null>(null);
   const [syncState, setSyncState] = useState<{ status: CustomerAuthStatus; error?: string }>({ status: "syncing" });
   const [refreshIndex, setRefreshIndex] = useState(0);
+  const lastSyncedSignatureRef = useRef<string | null>(null);
+  const inFlightSyncRef = useRef<{ signature: string; promise: Promise<unknown> } | null>(null);
 
   const readBearerToken = useCallback(
     async (options?: { skipCache?: boolean }) => {
@@ -77,17 +79,19 @@ export function ClerkCustomerAuthProvider({ children }: { children: ReactNode })
     async function loadToken() {
       if (!isLoaded) {
         setBearerToken(null);
-        setSyncState({ status: "syncing" });
+        setSyncState((current) => (current.status === "syncing" ? current : { status: "syncing" }));
         return;
       }
 
       if (!isSignedIn || !userId) {
         setBearerToken(null);
-        setSyncState({ status: "signed-out" });
+        lastSyncedSignatureRef.current = null;
+        inFlightSyncRef.current = null;
+        setSyncState((current) => (current.status === "signed-out" ? current : { status: "signed-out" }));
         return;
       }
 
-      setSyncState({ status: "syncing" });
+      setSyncState((current) => (current.status === "ready" || current.status === "syncing" ? current : { status: "syncing" }));
       const token = await getToken({ skipCache: refreshIndex > 0 });
       if (!token) {
         if (!cancelled) {
@@ -123,7 +127,7 @@ export function ClerkCustomerAuthProvider({ children }: { children: ReactNode })
       }
 
       if (!isUserLoaded) {
-        setSyncState({ status: "syncing" });
+        setSyncState((current) => (current.status === "syncing" ? current : { status: "syncing" }));
         return;
       }
 
@@ -133,11 +137,36 @@ export function ClerkCustomerAuthProvider({ children }: { children: ReactNode })
         return;
       }
 
-      setSyncState({ status: "syncing" });
-      await syncCurrentUser({ bearerToken, getBearerToken: readBearerToken, onUnauthorized: handleUnauthorized }, payload);
+      const syncSignature = JSON.stringify({
+        userId,
+        refreshIndex,
+        email: payload.email,
+        phone: payload.phone ?? "",
+        fullName: payload.fullName ?? ""
+      });
+      if (lastSyncedSignatureRef.current === syncSignature) {
+        setSyncState((current) => (current.status === "ready" ? current : { status: "ready" }));
+        return;
+      }
 
-      if (!cancelled) {
-        setSyncState({ status: "ready" });
+      setSyncState((current) => (current.status === "ready" || current.status === "syncing" ? current : { status: "syncing" }));
+      let syncPromise = inFlightSyncRef.current?.signature === syncSignature ? inFlightSyncRef.current.promise : null;
+      if (!syncPromise) {
+        syncPromise = syncCurrentUser({ bearerToken, getBearerToken: readBearerToken, onUnauthorized: handleUnauthorized }, payload);
+        inFlightSyncRef.current = { signature: syncSignature, promise: syncPromise };
+      }
+
+      try {
+        await syncPromise;
+
+        if (!cancelled) {
+          lastSyncedSignatureRef.current = syncSignature;
+          setSyncState({ status: "ready" });
+        }
+      } finally {
+        if (inFlightSyncRef.current?.signature === syncSignature && inFlightSyncRef.current.promise === syncPromise) {
+          inFlightSyncRef.current = null;
+        }
       }
     }
 

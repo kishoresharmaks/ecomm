@@ -17,17 +17,36 @@ import { PrismaService } from "../prisma/prisma.service";
 import { PublicSellerQueryDto } from "../sellers/dto/public-seller-query.dto";
 
 const publicSellerProfileSelect = {
-  id: true,
-  sellerId: true,
   logoUrl: true,
   bannerUrl: true,
   description: true,
-  contactName: true,
-  contactPhone: true,
-  contactEmail: true,
-  createdAt: true,
-  updatedAt: true,
 };
+
+const publicSellerAddressSelect = {
+  area: true,
+  city: true,
+  state: true,
+  country: true,
+  countryCode: true,
+  stateCode: true,
+  cityCode: true,
+  localAreaCode: true,
+  pincode: true,
+};
+
+const publicSellerSelect = {
+  id: true,
+  storeName: true,
+  slug: true,
+  sellerType: true,
+  createdAt: true,
+  profile: {
+    select: publicSellerProfileSelect,
+  },
+  addresses: {
+    select: publicSellerAddressSelect,
+  },
+} satisfies Prisma.SellerSelect;
 
 const productTemplateInclude = {
   fields: {
@@ -53,8 +72,6 @@ const publicProductInclude = {
       storeName: true,
       slug: true,
       sellerType: true,
-      status: true,
-      approvalStatus: true,
       profile: {
         select: publicSellerProfileSelect,
       },
@@ -95,6 +112,7 @@ const DEAL_SECTION_TYPE = "deal_strip";
 
 type PublicSellerLocationMatchLevel = keyof typeof publicSellerLocationMatchRanks;
 type PublicProduct = Prisma.ProductGetPayload<{ include: typeof publicProductInclude }>;
+type PublicSellerRecord = Prisma.SellerGetPayload<{ select: typeof publicSellerSelect }>;
 type HomepageSectionRecord = {
   sectionType: string;
   config: Prisma.JsonValue;
@@ -286,12 +304,7 @@ export class StorefrontService {
         approvalStatus: ApprovalStatus.APPROVED,
         deletedAt: null,
       },
-      include: {
-        profile: {
-          select: publicSellerProfileSelect,
-        },
-        addresses: true,
-      },
+      select: publicSellerSelect,
       orderBy: { storeName: "asc" },
     });
     const sellerIds = sellers.map((seller) => seller.id);
@@ -315,13 +328,13 @@ export class StorefrontService {
         query.localAreaCode ||
         query.pincode,
     );
-    const rankedSellers = sellers.map((seller) => ({
-      ...seller,
-      locationMatchLevel: this.resolvePublicSellerLocationMatchLevel(seller.addresses, query),
-      _count: {
-        products: productCountBySeller.get(seller.id) ?? 0,
-      },
-    }));
+    const rankedSellers = sellers.map((seller) =>
+      this.toPublicSellerResponse(
+        seller,
+        productCountBySeller.get(seller.id) ?? 0,
+        this.resolvePublicSellerLocationMatchLevel(seller.addresses, query),
+      ),
+    );
 
     if (hasLocationPreference) {
       rankedSellers.sort((left, right) => {
@@ -546,6 +559,38 @@ export class StorefrontService {
         },
       })),
     }));
+  }
+
+  private toPublicSellerResponse(
+    seller: PublicSellerRecord,
+    productCount: number,
+    locationMatchLevel: PublicSellerLocationMatchLevel = "NONE",
+  ) {
+    return {
+      id: seller.id,
+      storeName: seller.storeName,
+      slug: seller.slug,
+      sellerType: seller.sellerType,
+      createdAt: seller.createdAt,
+      profile: seller.profile
+        ? {
+            logoUrl: seller.profile.logoUrl,
+            bannerUrl: seller.profile.bannerUrl,
+            description: seller.profile.description,
+          }
+        : null,
+      addresses: seller.addresses.map((address) => ({
+        area: address.area,
+        city: address.city,
+        state: address.state,
+        country: address.country,
+        countryCode: address.countryCode,
+      })),
+      locationMatchLevel,
+      _count: {
+        products: productCount,
+      },
+    };
   }
 
   private resolvePublicSellerLocationMatchLevel(

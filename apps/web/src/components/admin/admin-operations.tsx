@@ -6222,7 +6222,7 @@ export function AdminCmsPageClient() {
               <div className="grid gap-5 xl:grid-cols-[1fr_420px]">
                 <CmsList
                   title="Homepage banners"
-                  description="Hero and promotional banners ordered by sort priority."
+                  description="First published banner by sort order controls the storefront hero."
                   items={bannerItems}
                   isLoading={banners.isLoading}
                   removeLabel="Delete"
@@ -12416,7 +12416,7 @@ function BannerCreateForm({
   });
 
   return (
-    <Panel title="Create homepage banner">
+    <Panel title="Create homepage hero banner">
       <div className="space-y-3">
         <BannerFormFields
           form={form}

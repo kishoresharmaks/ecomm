@@ -1,5 +1,6 @@
 import type { CustomerAddress } from "@/lib/account-api";
 import type {
+  PublicStoreAddress,
   SellerAddress,
   StoreLocationMatchLevel,
   StoreLocationQuery,
@@ -128,7 +129,7 @@ export function locationMatchLabel(level: StoreLocationMatchLevel | undefined) {
   }
 }
 
-export function sellerLocationLabel(address?: SellerAddress | null) {
+export function sellerLocationLabel(address?: SellerAddress | PublicStoreAddress | null) {
   if (!address) {
     return "Location not listed";
   }

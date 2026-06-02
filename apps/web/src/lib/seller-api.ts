@@ -17,10 +17,23 @@ type SellerProfileDetails = NonNullable<SellerSummary["profile"]> & {
   panNumber?: string | null;
 };
 
+type SellerProfileAddress = Omit<SellerAddress, "id"> & {
+  id?: string;
+};
+
+type SellerPayoutProfileSummary = {
+  accountHolderName?: string | null;
+  bankName?: string | null;
+  maskedAccountNumber?: string | null;
+  ifscCode?: string | null;
+  maskedUpiId?: string | null;
+  isVerified?: boolean;
+};
+
 export type SellerProfile = Omit<SellerSummary, "profile"> & {
   id: string;
-  userId: string;
   profile?: SellerProfileDetails | null;
+  payoutProfile?: SellerPayoutProfileSummary | null;
   subscriptionStatus?: SellerSubscriptionStatus;
   subscriptionStartedAt?: string | null;
   subscriptionCurrentPeriodEnd?: string | null;
@@ -33,13 +46,11 @@ export type SellerProfile = Omit<SellerSummary, "profile"> & {
     fullName?: string | null;
     status?: string;
   } | null;
-  addresses: SellerAddress[];
+  addresses: SellerProfileAddress[];
   courierProviderSettings?: Array<{
-    id: string;
     providerCode: string;
     pickupLocationName?: string | null;
     isActive: boolean;
-    settingsSnapshot?: Record<string, unknown> | null;
   }>;
   documents?: SellerVerificationDocument[];
   createdAt?: string;
@@ -56,9 +67,9 @@ export type SellerBusinessType =
   | "OTHER";
 
 export type SellerVerificationDocument = {
-  id?: string;
   documentType: SellerDocumentType;
-  fileUrl: string;
+  fileUrl?: string;
+  fileName?: string | null;
   status?: "PENDING" | "APPROVED" | "REJECTED";
   createdAt?: string;
   updatedAt?: string;

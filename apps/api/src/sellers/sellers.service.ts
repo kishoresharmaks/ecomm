@@ -32,17 +32,37 @@ import { UpdateSellerProfileDto } from "./dto/seller-profile.dto";
 import { SellerSubscriptionsService } from "./seller-subscriptions.service";
 
 const publicSellerProfileSelect = {
-  id: true,
-  sellerId: true,
   logoUrl: true,
   bannerUrl: true,
   description: true,
-  contactName: true,
-  contactPhone: true,
-  contactEmail: true,
   createdAt: true,
-  updatedAt: true,
 };
+
+const publicSellerAddressSelect = {
+  area: true,
+  city: true,
+  state: true,
+  country: true,
+  countryCode: true,
+  stateCode: true,
+  cityCode: true,
+  localAreaCode: true,
+  pincode: true,
+};
+
+const publicSellerSelect = {
+  id: true,
+  storeName: true,
+  slug: true,
+  sellerType: true,
+  createdAt: true,
+  profile: {
+    select: publicSellerProfileSelect,
+  },
+  addresses: {
+    select: publicSellerAddressSelect,
+  },
+} satisfies Prisma.SellerSelect;
 
 const publicSellerLocationMatchRanks = {
   NONE: 0,
@@ -53,6 +73,26 @@ const publicSellerLocationMatchRanks = {
 } as const;
 
 export type PublicSellerLocationMatchLevel = keyof typeof publicSellerLocationMatchRanks;
+type PublicSellerRecord = Prisma.SellerGetPayload<{ select: typeof publicSellerSelect }>;
+
+const sellerProfileInclude = {
+  user: true,
+  profile: true,
+  payoutProfile: true,
+  addresses: true,
+  courierProviderSettings: {
+    orderBy: { providerCode: "asc" },
+  },
+  documents: true,
+  subscriptionPlan: true,
+  subscriptions: {
+    where: { isCurrent: true },
+    include: { plan: true },
+    orderBy: { createdAt: "desc" },
+  },
+} satisfies Prisma.SellerInclude;
+
+type SellerProfileRecord = Prisma.SellerGetPayload<{ include: typeof sellerProfileInclude }>;
 
 @Injectable()
 export class SellersService {
@@ -256,22 +296,7 @@ export class SellersService {
         approvalStatus: ApprovalStatus.APPROVED,
         deletedAt: null,
       },
-      include: {
-        user: {
-          select: {
-            id: true,
-            email: true,
-            phone: true,
-            fullName: true,
-            status: true,
-          },
-        },
-        profile: {
-          select: publicSellerProfileSelect,
-        },
-        addresses: true,
-        subscriptionPlan: true,
-      },
+      select: publicSellerSelect,
     });
 
     if (!seller) {
@@ -287,12 +312,7 @@ export class SellersService {
       },
     });
 
-    return {
-      ...seller,
-      _count: {
-        products: productCount,
-      },
-    };
+    return this.toPublicSellerResponse(seller, productCount);
   }
 
   async listPublicSellers(query: PublicSellerQueryDto = {}) {
@@ -303,12 +323,7 @@ export class SellersService {
         approvalStatus: ApprovalStatus.APPROVED,
         deletedAt: null,
       },
-      include: {
-        profile: {
-          select: publicSellerProfileSelect,
-        },
-        addresses: true,
-      },
+      select: publicSellerSelect,
       orderBy: { storeName: "asc" },
     });
     const sellerIds = sellers.map((seller) => seller.id);
@@ -336,13 +351,13 @@ export class SellersService {
         query.pincode,
     );
 
-    const rankedSellers = sellers.map((seller) => ({
-      ...seller,
-      locationMatchLevel: this.resolvePublicSellerLocationMatchLevel(seller.addresses, query),
-      _count: {
-        products: productCountBySeller.get(seller.id) ?? 0,
-      },
-    }));
+    const rankedSellers = sellers.map((seller) =>
+      this.toPublicSellerResponse(
+        seller,
+        productCountBySeller.get(seller.id) ?? 0,
+        this.resolvePublicSellerLocationMatchLevel(seller.addresses, query),
+      ),
+    );
 
     if (hasLocationPreference) {
       rankedSellers.sort((left, right) => {
@@ -360,6 +375,39 @@ export class SellersService {
     }
 
     return rankedSellers.slice(0, limit);
+  }
+
+  private toPublicSellerResponse(
+    seller: PublicSellerRecord,
+    productCount: number,
+    locationMatchLevel: PublicSellerLocationMatchLevel = "NONE",
+  ) {
+    return {
+      id: seller.id,
+      storeName: seller.storeName,
+      slug: seller.slug,
+      sellerType: seller.sellerType,
+      createdAt: seller.createdAt,
+      profile: seller.profile
+        ? {
+            logoUrl: seller.profile.logoUrl,
+            bannerUrl: seller.profile.bannerUrl,
+            description: seller.profile.description,
+            createdAt: seller.profile.createdAt,
+          }
+        : null,
+      addresses: seller.addresses.map((address) => ({
+        area: address.area,
+        city: address.city,
+        state: address.state,
+        country: address.country,
+        countryCode: address.countryCode,
+      })),
+      locationMatchLevel,
+      _count: {
+        products: productCount,
+      },
+    };
   }
 
   private resolvePublicSellerLocationMatchLevel(
@@ -433,7 +481,8 @@ export class SellersService {
   }
 
   async getMySellerProfile(actor: RequestUser) {
-    return this.getSellerForUserOrThrow(actor.id);
+    const seller = await this.getSellerForUserOrThrow(actor.id);
+    return this.toSellerProfileResponse(seller);
   }
 
   async updateMySellerProfile(actor: RequestUser, dto: UpdateSellerProfileDto) {
@@ -564,7 +613,7 @@ export class SellersService {
         });
       }
 
-      if (dto.payoutProfile) {
+      if (dto.payoutProfile && this.hasPayoutProfileUpdate(dto.payoutProfile)) {
         await tx.sellerPayoutProfile.upsert({
           where: { sellerId: existing.id },
           update: {
@@ -741,47 +790,17 @@ export class SellersService {
 
       return tx.seller.findUniqueOrThrow({
         where: { id: existing.id },
-        include: {
-          user: true,
-          profile: true,
-          payoutProfile: true,
-          addresses: true,
-          courierProviderSettings: {
-            orderBy: { providerCode: "asc" },
-          },
-          documents: true,
-          subscriptionPlan: true,
-          subscriptions: {
-            where: { isCurrent: true },
-            include: { plan: true },
-            orderBy: { createdAt: "desc" },
-          },
-        },
+        include: sellerProfileInclude,
       });
     });
 
-    return seller;
+    return this.toSellerProfileResponse(seller);
   }
 
   private async getSellerForUserOrThrow(userId: string) {
     const seller = await this.prisma.client.seller.findUnique({
       where: { userId },
-      include: {
-        user: true,
-        profile: true,
-        payoutProfile: true,
-        addresses: true,
-        courierProviderSettings: {
-          orderBy: { providerCode: "asc" },
-        },
-        documents: true,
-        subscriptionPlan: true,
-        subscriptions: {
-          where: { isCurrent: true },
-          include: { plan: true },
-          orderBy: { createdAt: "desc" },
-        },
-      },
+      include: sellerProfileInclude,
     });
 
     if (!seller) {
@@ -789,6 +808,141 @@ export class SellersService {
     }
 
     return seller;
+  }
+
+  private toSellerProfileResponse(seller: SellerProfileRecord) {
+    return {
+      id: seller.id,
+      storeName: seller.storeName,
+      slug: seller.slug,
+      sellerType: seller.sellerType,
+      status: seller.status,
+      approvalStatus: seller.approvalStatus,
+      subscriptionStatus: seller.subscriptionStatus,
+      subscriptionStartedAt: seller.subscriptionStartedAt,
+      subscriptionCurrentPeriodEnd: seller.subscriptionCurrentPeriodEnd,
+      createdAt: seller.createdAt,
+      updatedAt: seller.updatedAt,
+      user: {
+        email: seller.user.email,
+        phone: seller.user.phone,
+        fullName: seller.user.fullName,
+        status: seller.user.status,
+      },
+      profile: seller.profile
+        ? {
+            logoUrl: seller.profile.logoUrl,
+            bannerUrl: seller.profile.bannerUrl,
+            description: seller.profile.description,
+            businessLegalName: seller.profile.businessLegalName,
+            businessType: seller.profile.businessType,
+            gstNumber: seller.profile.gstNumber,
+            panNumber: seller.profile.panNumber,
+            contactName: seller.profile.contactName,
+            contactPhone: seller.profile.contactPhone,
+            contactEmail: seller.profile.contactEmail,
+            createdAt: seller.profile.createdAt,
+            updatedAt: seller.profile.updatedAt,
+          }
+        : null,
+      payoutProfile: seller.payoutProfile
+        ? {
+            accountHolderName: seller.payoutProfile.accountHolderName,
+            bankName: seller.payoutProfile.bankName,
+            maskedAccountNumber: this.maskAccountNumber(seller.payoutProfile.accountNumber),
+            ifscCode: seller.payoutProfile.ifscCode,
+            maskedUpiId: this.maskUpiId(seller.payoutProfile.upiId),
+            isVerified: seller.payoutProfile.isVerified,
+          }
+        : null,
+      addresses: seller.addresses.map((address) => ({
+        line1: address.line1,
+        line2: address.line2,
+        area: address.area,
+        city: address.city,
+        state: address.state,
+        pincode: address.pincode,
+        country: address.country,
+        countryCode: address.countryCode,
+        stateCode: address.stateCode,
+        cityCode: address.cityCode,
+        localAreaCode: address.localAreaCode,
+      })),
+      courierProviderSettings: seller.courierProviderSettings.map((setting) => ({
+        providerCode: setting.providerCode,
+        pickupLocationName: setting.pickupLocationName,
+        isActive: setting.isActive,
+      })),
+      documents: seller.documents.map((document) => ({
+        documentType: document.documentType,
+        status: document.status,
+        fileName: this.privateFileName(document.fileUrl),
+        createdAt: document.createdAt,
+        updatedAt: document.updatedAt,
+      })),
+      subscriptionPlan: this.toSellerSubscriptionPlanResponse(seller.subscriptionPlan),
+      subscriptions: seller.subscriptions.map((subscription) => ({
+        status: subscription.status,
+        isCurrent: subscription.isCurrent,
+        startedAt: subscription.startedAt,
+        currentPeriodEnd: subscription.currentPeriodEnd,
+        cancelledAt: subscription.cancelledAt,
+        cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
+        lastPaymentStatus: subscription.lastPaymentStatus,
+        paymentFailureCount: subscription.paymentFailureCount,
+        plan: this.toSellerSubscriptionPlanResponse(subscription.plan),
+      })),
+    };
+  }
+
+  private toSellerSubscriptionPlanResponse(
+    plan: SellerProfileRecord["subscriptionPlan"] | SellerProfileRecord["subscriptions"][number]["plan"],
+  ) {
+    return plan
+      ? {
+          id: plan.id,
+          code: plan.code,
+          name: plan.name,
+          description: plan.description,
+          pricePaise: plan.pricePaise,
+          currency: plan.currency,
+          billingCycle: plan.billingCycle,
+          productLimit: plan.productLimit,
+          featuredProductLimit: plan.featuredProductLimit,
+          b2bEnquiryLimit: plan.b2bEnquiryLimit,
+          commissionDiscountBps: plan.commissionDiscountBps,
+          isDefault: plan.isDefault,
+          isActive: plan.isActive,
+          sortOrder: plan.sortOrder,
+        }
+      : null;
+  }
+
+  private maskAccountNumber(value?: string | null) {
+    if (!value) {
+      return null;
+    }
+
+    const digits = value.replace(/\D/g, "");
+    const suffix = digits.slice(-4) || value.slice(-4);
+    return `****${suffix}`;
+  }
+
+  private maskUpiId(value?: string | null) {
+    if (!value) {
+      return null;
+    }
+
+    const [name, provider] = value.split("@");
+    if (!name || !provider) {
+      return "****";
+    }
+
+    return `${name.slice(0, 2)}****@${provider}`;
+  }
+
+  private privateFileName(value?: string | null) {
+    return value?.split("/").at(-1) ?? "Uploaded document";
   }
 
   private async createUniqueSlug(storeName: string, excludeSellerId?: string) {
@@ -840,6 +994,20 @@ export class SellersService {
         fileUrl: this.normalizePrivateDocumentReference(document.fileUrl, documentType, folder),
       };
     });
+  }
+
+  private hasPayoutProfileUpdate(payoutProfile: UpdateSellerProfileDto["payoutProfile"]) {
+    if (!payoutProfile) {
+      return false;
+    }
+
+    return [
+      payoutProfile.accountHolderName,
+      payoutProfile.bankName,
+      payoutProfile.accountNumber,
+      payoutProfile.ifscCode,
+      payoutProfile.upiId,
+    ].some((value) => value !== undefined);
   }
 
   private normalizePrivateDocumentReference(

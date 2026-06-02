@@ -287,10 +287,8 @@ export function buildStoreJsonLd(store: StoreProfile) {
     address: address
       ? {
           "@type": "PostalAddress",
-          streetAddress: [address.line1, address.line2].filter(Boolean).join(", "),
           addressLocality: address.city,
           addressRegion: address.state,
-          postalCode: address.pincode,
           addressCountry: address.countryCode ?? "IN"
         }
       : undefined

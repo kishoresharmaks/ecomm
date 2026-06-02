@@ -1,4 +1,4 @@
-import { Body, Controller, Headers, Inject, Post, UnauthorizedException } from "@nestjs/common";
+import { Body, Controller, Header, Headers, Inject, Post, UnauthorizedException } from "@nestjs/common";
 import { ApiHeader, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { RoleCode } from "@indihub/database";
 import { Public } from "./decorators/public.decorator";
@@ -6,6 +6,7 @@ import { ClerkAuthService } from "./clerk-auth.service";
 import { SyncCurrentUserDto } from "./dto/sync-current-user.dto";
 import { SyncAuthUserDto } from "./dto/sync-auth-user.dto";
 import { AuthUsersService } from "./auth-users.service";
+import { encryptForBearerSession } from "../common/encrypted-response";
 
 @ApiTags("Auth")
 @Controller("auth")
@@ -17,6 +18,7 @@ export class AuthSyncController {
 
   @Public()
   @Post("sync-user")
+  @Header("Cache-Control", "no-store")
   @ApiOperation({ summary: "Sync a Clerk-authenticated user into 1HandIndia RBAC records." })
   @ApiHeader({ name: "x-indihub-sync-secret", required: true })
   syncUser(@Headers("x-indihub-sync-secret") syncSecret: string | undefined, @Body() dto: SyncAuthUserDto) {
@@ -31,6 +33,7 @@ export class AuthSyncController {
 
   @Public()
   @Post("sync-current-user")
+  @Header("Cache-Control", "no-store")
   @ApiOperation({ summary: "Sync the current Clerk session user into 1HandIndia RBAC records." })
   @ApiHeader({ name: "Authorization", required: true })
   async syncCurrentUser(
@@ -41,6 +44,7 @@ export class AuthSyncController {
       ...dto,
       defaultRole: RoleCode.CUSTOMER
     });
-    return this.authUsersService.syncAuthUser(profile);
+    const response = await this.authUsersService.syncAuthUser(profile);
+    return encryptForBearerSession(authorizationHeader, response);
   }
 }

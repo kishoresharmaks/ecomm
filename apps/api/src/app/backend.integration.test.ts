@@ -569,7 +569,29 @@ describe.sequential("1HandIndia backend integration", () => {
       slug: noneSeller.slug,
       locationMatchLevel: "NONE",
     });
-  });
+    expectPublicStorePayloadSafe(localizedBody[localIndex]);
+
+    const storeDetail = await request(app.getHttpServer())
+      .get(`/api/sellers/${salemLocalSeller.slug}`)
+      .expect(200);
+    expect(storeDetail.body).toMatchObject({
+      id: salemLocalSeller.id,
+      slug: salemLocalSeller.slug,
+      storeName: salemLocalSeller.storeName,
+      locationMatchLevel: "NONE",
+    });
+    expectPublicStorePayloadSafe(storeDetail.body);
+
+    const publicProducts = await request(app.getHttpServer())
+      .get("/api/products")
+      .query({ search: runId, limit: 20 })
+      .expect(200);
+    const publicProduct = (publicProducts.body.items as Array<{ id?: string; seller?: unknown }>).find(
+      (item) => item.id === data.product.id,
+    );
+    expect(publicProduct?.seller).toBeTruthy();
+    expectPublicProductSellerPayloadSafe(publicProduct?.seller);
+  }, 30000);
 
   it("runs customer cart, checkout, seller ownership, delivery, and cancellation through the API", async () => {
     const firstAddress = await request(app.getHttpServer())
@@ -5234,6 +5256,7 @@ describe.sequential("1HandIndia backend integration", () => {
     expect(nearbyHomeStore).toMatchObject({
       locationMatchLevel: "LOCAL_AREA",
     });
+    expectPublicStorePayloadSafe(nearbyHomeStore);
     expect(nearbyHomeStore?._count?.products ?? 0).toBeGreaterThanOrEqual(1);
     expect(storefrontHomeBody.productRails.latest).toEqual(
       expect.arrayContaining([expect.objectContaining({ id: data.product.id })]),
@@ -6158,6 +6181,84 @@ async function createUserWithRole(
       },
     },
   });
+}
+
+function expectPublicStorePayloadSafe(value: unknown) {
+  const store = expectRecord(value);
+  expectNoProperties(store, [
+    "userId",
+    "user",
+    "status",
+    "approvalStatus",
+    "commissionType",
+    "commissionValue",
+    "subscriptionPlanId",
+    "subscriptionStatus",
+    "subscriptionStartedAt",
+    "subscriptionCurrentPeriodEnd",
+    "subscriptionPlan",
+    "updatedAt",
+    "deletedAt",
+  ]);
+
+  if (store.profile !== null && store.profile !== undefined) {
+    expectNoProperties(expectRecord(store.profile), [
+      "id",
+      "sellerId",
+      "contactName",
+      "contactPhone",
+      "contactEmail",
+      "updatedAt",
+    ]);
+  }
+
+  const addresses = store.addresses;
+  expect(Array.isArray(addresses)).toBe(true);
+  for (const address of addresses as unknown[]) {
+    expectNoProperties(expectRecord(address), [
+      "id",
+      "sellerId",
+      "line1",
+      "line2",
+      "pincode",
+      "stateCode",
+      "cityCode",
+      "localAreaCode",
+      "latitude",
+      "longitude",
+      "createdAt",
+      "updatedAt",
+    ]);
+  }
+}
+
+function expectPublicProductSellerPayloadSafe(value: unknown) {
+  const seller = expectRecord(value);
+  expectNoProperties(seller, ["userId", "user", "status", "approvalStatus", "subscriptionPlan"]);
+
+  if (seller.profile !== null && seller.profile !== undefined) {
+    expectNoProperties(expectRecord(seller.profile), [
+      "id",
+      "sellerId",
+      "contactName",
+      "contactPhone",
+      "contactEmail",
+      "createdAt",
+      "updatedAt",
+    ]);
+  }
+}
+
+function expectRecord(value: unknown): Record<string, unknown> {
+  expect(value).toEqual(expect.any(Object));
+  expect(Array.isArray(value)).toBe(false);
+  return value as Record<string, unknown>;
+}
+
+function expectNoProperties(record: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    expect(record).not.toHaveProperty(key);
+  }
 }
 
 async function createApprovedSeller(

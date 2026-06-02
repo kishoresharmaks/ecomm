@@ -134,17 +134,29 @@ export type SellerAddress = {
   localAreaCode?: string | null;
 };
 
+export type PublicStoreAddress = {
+  area?: string | null;
+  city: string;
+  state: string;
+  country?: string | null;
+  countryCode?: string | null;
+};
+
 export type StoreLocationMatchLevel = "LOCAL_AREA" | "CITY" | "STATE" | "COUNTRY" | "NONE";
 
-export type StoreProfile = SellerSummary & {
-  user?: {
-    id?: string;
-    email?: string | null;
-    phone?: string | null;
-    fullName?: string | null;
-    status?: string;
+export type StoreProfile = {
+  id: string;
+  storeName: string;
+  slug: string;
+  sellerType?: string;
+  createdAt?: string;
+  profile?: {
+    logoUrl?: string | null;
+    bannerUrl?: string | null;
+    description?: string | null;
+    createdAt?: string;
   } | null;
-  addresses: SellerAddress[];
+  addresses: PublicStoreAddress[];
   locationMatchLevel?: StoreLocationMatchLevel;
   _count?: {
     products?: number;

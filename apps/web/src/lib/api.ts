@@ -32,15 +32,17 @@ export async function buildAuthHeaders(auth?: IndihubAuthHeaders, options: Beare
   return {
     ...(bearerToken ? { Authorization: `Bearer ${bearerToken}` } : {}),
     ...(auth?.platformUserId ? { "x-indihub-user-id": auth.platformUserId } : {}),
-    ...(auth?.clerkUserId ? { "x-clerk-user-id": auth.clerkUserId } : {})
+    ...(auth?.clerkUserId && !bearerToken ? { "x-clerk-user-id": auth.clerkUserId } : {})
   };
 }
 
 export async function indihubFetch<T>(path: string, init?: RequestInit, auth?: IndihubAuthHeaders): Promise<T> {
-  let response = await request(path, init, auth, { skipCache: false });
+  let result = await request(path, init, auth, { skipCache: false });
+  let response = result.response;
 
   if (response.status === 401 && auth?.getBearerToken) {
-    response = await request(path, init, auth, { skipCache: true });
+    result = await request(path, init, auth, { skipCache: true });
+    response = result.response;
   }
 
   if (!response.ok) {
@@ -56,7 +58,8 @@ export async function indihubFetch<T>(path: string, init?: RequestInit, auth?: I
     return undefined as T;
   }
 
-  return response.json() as Promise<T>;
+  const body = await response.json();
+  return decryptResponseBody<T>(body, result.bearerToken);
 }
 
 export function userFacingApiErrorMessage(error: unknown) {
@@ -76,19 +79,24 @@ export function userFacingApiErrorMessage(error: unknown) {
 }
 
 async function request(path: string, init: RequestInit | undefined, auth: IndihubAuthHeaders | undefined, options: BearerTokenOptions) {
+  const bearerToken = await bearerTokenForRequest(auth, options);
   const headers = new Headers({
     "Content-Type": "application/json",
-    ...(await buildAuthHeaders(auth, options))
+    ...(bearerToken ? { Authorization: `Bearer ${bearerToken}` } : {}),
+    ...(auth?.platformUserId ? { "x-indihub-user-id": auth.platformUserId } : {}),
+    ...(auth?.clerkUserId && !bearerToken ? { "x-clerk-user-id": auth.clerkUserId } : {})
   });
 
   if (init?.headers) {
     new Headers(init.headers).forEach((value, key) => headers.set(key, value));
   }
 
-  return fetch(`${apiBaseUrl}${path}`, {
+  const response = await fetch(`${apiBaseUrl}${path}`, {
     ...init,
     headers
   });
+
+  return { response, bearerToken };
 }
 
 async function bearerTokenForRequest(auth?: IndihubAuthHeaders, options: BearerTokenOptions = {}) {
@@ -153,4 +161,65 @@ function isDeveloperAuthMessage(message: string, status?: number) {
   const mentionsClerkAuth = lower.includes("clerk") && (lower.includes("session") || lower.includes("token") || lower.includes("unauthorized"));
 
   return mentionsToken || mentionsClerkAuth || (status === 401 && lower.includes("clerk"));
+}
+
+type EncryptedResponseEnvelope = {
+  encrypted: true;
+  alg: "A256GCM";
+  iv: string;
+  tag: string;
+  data: string;
+};
+
+async function decryptResponseBody<T>(body: unknown, bearerToken?: string | null) {
+  if (!isEncryptedResponseEnvelope(body)) {
+    return body as T;
+  }
+
+  if (!bearerToken) {
+    throw new IndihubApiError("Encrypted response cannot be opened without the active session.", 0);
+  }
+
+  const context = new TextEncoder().encode(`indihub-response-v1:${bearerToken}`);
+  const keyBytes = await globalThis.crypto.subtle.digest("SHA-256", context);
+  const key = await globalThis.crypto.subtle.importKey("raw", keyBytes, "AES-GCM", false, ["decrypt"]);
+  const encrypted = concatBytes(base64ToBytes(body.data), base64ToBytes(body.tag));
+  const decrypted = await globalThis.crypto.subtle.decrypt(
+    {
+      name: "AES-GCM",
+      iv: base64ToBytes(body.iv),
+    },
+    key,
+    encrypted,
+  );
+
+  return JSON.parse(new TextDecoder().decode(decrypted)) as T;
+}
+
+function isEncryptedResponseEnvelope(value: unknown): value is EncryptedResponseEnvelope {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      (value as { encrypted?: unknown }).encrypted === true &&
+      (value as { alg?: unknown }).alg === "A256GCM" &&
+      typeof (value as { iv?: unknown }).iv === "string" &&
+      typeof (value as { tag?: unknown }).tag === "string" &&
+      typeof (value as { data?: unknown }).data === "string",
+  );
+}
+
+function base64ToBytes(value: string) {
+  const binary = globalThis.atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
+function concatBytes(first: Uint8Array, second: Uint8Array) {
+  const combined = new Uint8Array(first.length + second.length);
+  combined.set(first);
+  combined.set(second, first.length);
+  return combined;
 }

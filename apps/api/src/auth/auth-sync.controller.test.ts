@@ -10,7 +10,7 @@ describe("AuthSyncController", () => {
       defaultRole: RoleCode.CUSTOMER
     };
     const authUsersService = {
-      syncAuthUser: vi.fn().mockResolvedValue(profile)
+      syncAuthUser: vi.fn().mockResolvedValue({ synced: true })
     };
     const clerkAuthService = {
       resolveSessionProfile: vi.fn().mockResolvedValue(profile)
@@ -18,10 +18,16 @@ describe("AuthSyncController", () => {
 
     const controller = new AuthSyncController(authUsersService as never, clerkAuthService as never);
 
-    await controller.syncCurrentUser("Bearer token", {
+    const result = await controller.syncCurrentUser("Bearer token", {
       email: "customer@example.com",
       defaultRole: RoleCode.ADMIN
     });
+
+    expect(result).toMatchObject({
+      encrypted: true,
+      alg: "A256GCM"
+    });
+    expect(JSON.stringify(result)).not.toContain("customer@example.com");
 
     expect(clerkAuthService.resolveSessionProfile).toHaveBeenCalledWith("Bearer token", {
       email: "customer@example.com",

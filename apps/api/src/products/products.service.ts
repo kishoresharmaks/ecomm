@@ -83,16 +83,9 @@ const productInclude = {
 };
 
 const publicSellerProfileSelect = {
-  id: true,
-  sellerId: true,
   logoUrl: true,
   bannerUrl: true,
   description: true,
-  contactName: true,
-  contactPhone: true,
-  contactEmail: true,
-  createdAt: true,
-  updatedAt: true,
 };
 
 const publicProductInclude = {
@@ -113,8 +106,6 @@ const publicProductInclude = {
       storeName: true,
       slug: true,
       sellerType: true,
-      status: true,
-      approvalStatus: true,
       profile: {
         select: publicSellerProfileSelect,
       },

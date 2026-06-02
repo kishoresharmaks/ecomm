@@ -24,7 +24,6 @@ describe("AuthUsersService", () => {
     });
     tx.role.upsert.mockResolvedValue({ id: "role_customer", code: RoleCode.CUSTOMER });
     tx.customer.upsert.mockResolvedValue({ id: "customer_1", userId: "user_1" });
-    tx.userRole.findMany.mockResolvedValue([{ role: { code: RoleCode.CUSTOMER } }]);
 
     const service = new AuthUsersService(createPrisma(tx), notifications as never);
 
@@ -35,12 +34,7 @@ describe("AuthUsersService", () => {
       phone: "9876543210",
     });
 
-    expect(result).toMatchObject({
-      id: "user_1",
-      clerkUserId: "clerk_1",
-      email: "customer@example.com",
-      roles: [RoleCode.CUSTOMER],
-    });
+    expect(result).toEqual({ synced: true });
     expect(tx.user.create).toHaveBeenCalledWith({
       data: {
         clerkUserId: "clerk_1",
@@ -94,7 +88,6 @@ describe("AuthUsersService", () => {
       status: UserStatus.ACTIVE,
     });
     tx.role.upsert.mockResolvedValue({ id: "role_b2b", code: RoleCode.BUSINESS_BUYER });
-    tx.userRole.findMany.mockResolvedValue([{ role: { code: RoleCode.BUSINESS_BUYER } }]);
 
     const service = new AuthUsersService(createPrisma(tx), notifications as never);
 
@@ -105,7 +98,7 @@ describe("AuthUsersService", () => {
       defaultRole: RoleCode.BUSINESS_BUYER,
     });
 
-    expect(result.roles).toEqual([RoleCode.BUSINESS_BUYER]);
+    expect(result).toEqual({ synced: true });
     expect(tx.user.update).toHaveBeenCalledWith({
       where: { id: "user_2" },
       data: {
@@ -134,7 +127,6 @@ function createAuthTx() {
     },
     userRole: {
       upsert: vi.fn(),
-      findMany: vi.fn(),
     },
     customer: {
       upsert: vi.fn(),

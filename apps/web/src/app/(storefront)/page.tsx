@@ -39,7 +39,7 @@ export default async function StorefrontHomePage() {
   return (
     <>
       <JsonLd data={[buildOrganizationJsonLd(), buildWebsiteJsonLd(), buildWebPageJsonLd({ title, description, path })]} />
-      <StorefrontHomeClient />
+      <StorefrontHomeClient initialHome={home} />
     </>
   );
 }

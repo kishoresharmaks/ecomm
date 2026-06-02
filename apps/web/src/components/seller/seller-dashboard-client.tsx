@@ -33,10 +33,11 @@ export function SellerDashboardClient() {
     retry: false
   });
 
+  const hasSellerProfile = Boolean(profileQuery.data);
   const reportQuery = useQuery({
     queryKey: ["seller-sales-report", sellerAuth.authKey, "dashboard"],
     queryFn: () => getSellerSalesReport(sellerAuth.authHeaders),
-    enabled: sellerAuth.enabled,
+    enabled: sellerAuth.enabled && hasSellerProfile,
     retry: false
   });
 
@@ -44,7 +45,7 @@ export function SellerDashboardClient() {
     return <SellerAuthNotice />;
   }
 
-  if (profileQuery.isLoading || reportQuery.isLoading) {
+  if (profileQuery.isLoading || (hasSellerProfile && reportQuery.isLoading)) {
     return <SellerSkeleton />;
   }
 

@@ -60,9 +60,15 @@ import {
 } from "./storefront-ui";
 import { useStorefrontWishlist } from "./use-storefront-wishlist";
 
-export function StorefrontHomeClient() {
+export function StorefrontHomeClient({
+  initialHome = null,
+}: {
+  initialHome?: StorefrontHomePayload | null;
+}) {
   const customerAuth = useCustomerAuth();
   const storefrontLocation = useStorefrontLocation();
+  const useInitialHome =
+    storefrontLocation.source === "global" && !storefrontLocation.activeLocation && initialHome;
   const homeQuery = useQuery({
     queryKey: [
       "storefront-home",
@@ -73,6 +79,7 @@ export function StorefrontHomeClient() {
       storefrontLocation.activeLocation?.pincode ?? "",
     ],
     queryFn: () => getStorefrontHome(browsingLocationQuery(storefrontLocation.activeLocation, 6)),
+    initialData: useInitialHome ? initialHome : undefined,
     retry: false,
   });
 
@@ -200,14 +207,15 @@ function HomepageHero({
   const router = useRouter();
   const [query, setQuery] = useState("");
   const banner = home?.banners[0] ?? null;
-  const title = banner?.title?.trim() || "Discover Local Marketplace";
+  const title = banner?.title?.trim() || "";
   const subtitle =
     banner?.subtitle?.trim() ||
-    statsSentence(home?.stats) ||
-    "Browse live products from approved sellers and local stores.";
-  const eyebrow = banner?.eyebrow?.trim() || "Shop local, save smart";
+    statsSentence(home?.stats);
+  const eyebrow = banner?.eyebrow?.trim() || "";
   const ctaLabel = banner?.ctaLabel?.trim() || "Shop Now";
   const ctaHref = banner?.linkUrl?.trim() || "/categories";
+  const secondaryCtaLabel = banner?.secondaryCtaLabel?.trim() || "";
+  const secondaryCtaHref = banner?.secondaryLinkUrl?.trim() || "";
   const locationText =
     locationSource === "global"
       ? "Set your location"
@@ -219,6 +227,14 @@ function HomepageHero({
     router.push((trimmed ? `/search?q=${encodeURIComponent(trimmed)}` : "/search") as Route);
   }
 
+  if (!banner) {
+    return isLoading ? (
+      <section className="mx-auto max-w-[1440px] px-4 pt-2 sm:px-6 lg:px-10 lg:pt-4">
+        <StorefrontSkeleton className="min-h-[270px] rounded-[22px] bg-white/70 lg:min-h-[540px]" />
+      </section>
+    ) : null;
+  }
+
   return (
     <section className="mx-auto max-w-[1440px] px-4 pt-2 sm:px-6 lg:px-10 lg:pt-4">
       <div className="relative isolate min-h-[270px] overflow-hidden rounded-[22px] border border-[#FFE4DC] bg-[linear-gradient(104deg,#fff_0%,#fff_42%,#fff1ec_100%)] shadow-[0_18px_50px_rgba(237,53,0,0.07)] sm:rounded-[18px] lg:min-h-[540px] lg:shadow-[0_24px_80px_rgba(237,53,0,0.08)]">
@@ -228,9 +244,11 @@ function HomepageHero({
         <div className="relative grid min-h-[270px] grid-cols-[minmax(0,1fr)_minmax(118px,0.86fr)] gap-2 px-5 py-6 sm:px-8 lg:min-h-[540px] lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:gap-6 lg:px-16 lg:py-14">
           <div className="flex max-w-[620px] flex-col justify-center">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-full bg-[#FFF0EC] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-[#ED3500] lg:text-[11px] lg:tracking-[0.14em]">
-                {isLoading ? "Loading marketplace" : eyebrow}
-              </span>
+              {eyebrow ? (
+                <span className="rounded-full bg-[#FFF0EC] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-[#ED3500] lg:text-[11px] lg:tracking-[0.14em]">
+                  {eyebrow}
+                </span>
+              ) : null}
               <span className="hidden items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-[11px] font-black text-[#163B5C] shadow-sm lg:inline-flex">
                 <LocateFixed className="h-3.5 w-3.5 text-[#ED3500]" aria-hidden="true" />
                 {locationText}
@@ -240,9 +258,11 @@ function HomepageHero({
             <h1 className="mt-4 max-w-[11ch] text-[32px] font-black leading-[1.03] tracking-normal text-[#111827] sm:text-5xl lg:mt-5 lg:text-7xl">
               {splitMarketplaceTitle(title)}
             </h1>
-            <p className="mt-3 max-w-[20ch] text-sm font-semibold leading-6 text-[#596276] sm:text-base sm:leading-7 lg:mt-5 lg:max-w-md">
-              {subtitle}
-            </p>
+            {subtitle ? (
+              <p className="mt-3 max-w-[20ch] text-sm font-semibold leading-6 text-[#596276] sm:text-base sm:leading-7 lg:mt-5 lg:max-w-md">
+                {subtitle}
+              </p>
+            ) : null}
 
             <div className="mt-5 flex flex-wrap items-center gap-4 lg:mt-7">
               <HomepageItemLink
@@ -254,6 +274,14 @@ function HomepageHero({
                   <ArrowRight className="h-4 w-4" aria-hidden="true" />
                 </span>
               </HomepageItemLink>
+              {secondaryCtaLabel && secondaryCtaHref ? (
+                <HomepageItemLink
+                  href={secondaryCtaHref}
+                  className="inline-flex h-12 items-center rounded-full border border-[#FFE0D6] bg-white px-5 text-sm font-black text-[#163B5C] shadow-sm transition hover:-translate-y-0.5 hover:border-[#ED3500]/40 hover:text-[#ED3500]"
+                >
+                  {secondaryCtaLabel}
+                </HomepageItemLink>
+              ) : null}
               <form onSubmit={submitSearch} className="hidden h-12 min-w-[260px] overflow-hidden rounded-full border border-[#FFE0D6] bg-white shadow-sm lg:flex">
                 <label htmlFor="home-search" className="sr-only">
                   Search products, stores, or brands
@@ -289,7 +317,25 @@ function MobileHeroVisual({
   products: ProductSummary[];
   isLoading: boolean;
 }) {
+  const bannerImage = banner?.mobileImageUrl || banner?.imageUrl || null;
+  const bannerTitle = banner?.title || "Homepage banner";
+  const bannerImageAlt = banner?.imageAlt || bannerTitle;
   const visualProducts = products.slice(0, 3);
+
+  if (bannerImage) {
+    return (
+      <div className="relative min-w-0 overflow-hidden rounded-[18px] bg-white/65 lg:hidden">
+        <StorefrontImage
+          src={bannerImage}
+          alt={bannerImageAlt}
+          sizes="160px"
+          fallbackLabel={bannerTitle}
+          allowExternalRemote
+          className="object-contain p-3"
+        />
+      </div>
+    );
+  }
 
   if (visualProducts.length) {
     return (
@@ -320,21 +366,6 @@ function MobileHeroVisual({
     );
   }
 
-  if (banner?.imageUrl) {
-    return (
-      <div className="relative min-w-0 lg:hidden">
-        <StorefrontImage
-          src={banner.imageUrl}
-          alt={banner.imageAlt || banner.title}
-          sizes="160px"
-          fallbackLabel={banner.title}
-          allowExternalRemote
-          className="object-contain p-3"
-        />
-      </div>
-    );
-  }
-
   return isLoading ? <StorefrontSkeleton className="h-36 rounded-[18px] bg-white/70 lg:hidden" /> : <span className="lg:hidden" />;
 }
 
@@ -347,6 +378,9 @@ function HeroVisual({
   products: ProductSummary[];
   isLoading: boolean;
 }) {
+  const bannerImage = banner?.imageUrl || banner?.mobileImageUrl || null;
+  const bannerTitle = banner?.title || "Homepage banner";
+  const bannerImageAlt = banner?.imageAlt || bannerTitle;
   const visualProducts = products.slice(0, 4);
   const hasProductCards = visualProducts.length > 0;
 
@@ -356,7 +390,17 @@ function HeroVisual({
       <div className="absolute left-1/2 top-1/2 h-72 w-72 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#ED3500]" />
       <div className="absolute left-[16%] top-[26%] h-16 w-16 rounded-full bg-[#ED3500]/18 blur-sm" />
 
-      {hasProductCards ? (
+      {bannerImage ? (
+        <div className="relative z-10 h-[340px] w-[440px] rotate-[-3deg] overflow-hidden rounded-[28px] border border-white/70 bg-white shadow-[0_30px_80px_rgba(22,59,92,0.16)]">
+          <StorefrontImage
+            src={bannerImage}
+            alt={bannerImageAlt}
+            sizes="440px"
+            fallbackLabel={bannerTitle}
+            allowExternalRemote
+          />
+        </div>
+      ) : hasProductCards ? (
         visualProducts.map((product, index) => (
           <HeroProductCard
             key={product.id}
@@ -364,16 +408,6 @@ function HeroVisual({
             className={heroProductPosition(index)}
           />
         ))
-      ) : banner?.imageUrl ? (
-        <div className="relative z-10 h-[340px] w-[440px] rotate-[-3deg] overflow-hidden rounded-[28px] border border-white/70 bg-white shadow-[0_30px_80px_rgba(22,59,92,0.16)]">
-          <StorefrontImage
-            src={banner.imageUrl}
-            alt={banner.imageAlt || banner.title}
-            sizes="440px"
-            fallbackLabel={banner.title}
-            allowExternalRemote
-          />
-        </div>
       ) : isLoading ? (
         <StorefrontSkeleton className="relative z-10 h-[320px] w-[420px] bg-white/70" />
       ) : null}
