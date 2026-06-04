@@ -10,8 +10,10 @@ import { AdminDeliveryController } from "./admin-delivery.controller";
 import { AdminOrdersController } from "./admin-orders.controller";
 import {
   AdminCourierShipmentsController,
+  CourierWorkspaceController,
   CourierWebhooksController,
   FinanceCourierCodRemittancesController,
+  SellerCourierPackagesController,
 } from "./courier-logistics.controller";
 import { CourierAdapterRegistry } from "./courier-adapters/courier-adapter.registry";
 import { CourierLogisticsService } from "./courier-logistics.service";
@@ -29,6 +31,8 @@ import { SellerOrdersController } from "./seller-orders.controller";
     CustomerOrdersController,
     AdminOrdersController,
     AdminCourierShipmentsController,
+    CourierWorkspaceController,
+    SellerCourierPackagesController,
     AdminDeliveryController,
     FinanceCourierCodRemittancesController,
     FinanceOrderPaymentsController,

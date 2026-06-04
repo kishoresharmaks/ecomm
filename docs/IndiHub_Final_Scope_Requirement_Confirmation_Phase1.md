@@ -30,8 +30,8 @@ Any feature, automation, integration, mobile app, workflow, or major change not 
 The first build will focus on:
 
 - Customer shopping website.
-- Seller/vendor onboarding.
-- Nearby store selling support.
+- Seller onboarding for marketplace sellers, hyperlocal stores, and wholesale distributors.
+- Hyperlocal store selling support.
 - Product catalogue management.
 - Cart, checkout, and order management.
 - Basic B2B enquiry and quotation request flow.
@@ -63,7 +63,7 @@ The following features are locked for Phase 1.
 - Product price display.
 - Product stock status display.
 - Seller/store details on product pages.
-- Vendor/store profile page.
+- Seller/store profile page.
 - Basic wishlist or saved products.
 - Cart management.
 - Checkout flow.
@@ -81,10 +81,11 @@ The following features are locked for Phase 1.
 - Customer order history.
 - Customer support/contact request option.
 
-### 3.3 Seller, Vendor, Nearby Store, and Local Shop
+### 3.3 Seller Operational Types
 
-- Seller/vendor registration.
-- Nearby store/local shop registration under the vendor flow.
+- Seller registration.
+- Seller operational type selection: marketplace seller, hyperlocal store, or wholesale distributor.
+- Business entity type remains separate for KYC, GST, invoicing, taxation, and payouts.
 - Seller login.
 - Seller profile creation.
 - Store name setup.
@@ -110,7 +111,7 @@ The following features are locked for Phase 1.
 - Update basic order status.
 - View basic sales summary.
 - View B2B enquiries related to seller products where applicable.
-- Vendor/store profile page.
+- Seller/store profile page.
 
 ### 3.4 Product and Catalogue Management
 
@@ -159,7 +160,7 @@ The following features are locked for Phase 1.
 - Admin dashboard.
 - Basic website summary.
 - Customer management.
-- Seller/vendor management.
+- Seller management.
 - Business buyer management.
 - Seller approval.
 - Seller rejection.
@@ -256,15 +257,15 @@ Included Phase 1 email types:
 - Customer account created email.
 - Customer login/security notification if supported by the selected auth provider.
 - Password reset email if supported by the selected auth provider.
-- Seller/vendor account registration received email.
-- Nearby store/local shop registration received email under the vendor flow.
-- Seller/vendor approval email.
-- Seller/vendor rejection email.
+- Seller account registration received email.
+- Seller operational type registration received email for marketplace sellers, hyperlocal stores, and wholesale distributors.
+- Seller approval email.
+- Seller rejection email.
 - Product submitted for approval email to admin.
-- Product approved email to seller/vendor.
-- Product rejected email to seller/vendor.
+- Product approved email to seller.
+- Product rejected email to seller.
 - Order placed email to customer.
-- New order received email to seller/vendor.
+- New order received email to seller.
 - New order alert email to admin.
 - Payment pending email, if online payment is enabled.
 - Payment success email, if online payment is enabled.
@@ -277,7 +278,7 @@ Included Phase 1 email types:
 - Basic refund/update email, if refund handling is enabled in Phase 1.
 - B2B enquiry submitted email to business buyer.
 - B2B enquiry alert email to admin.
-- B2B enquiry alert email to seller/vendor where applicable.
+- B2B enquiry alert email to seller where applicable.
 - Manual B2B enquiry response email.
 - Contact/support request received email.
 - Contact/support request alert email to admin.
@@ -336,7 +337,7 @@ They can be planned as Phase 2, Phase 3, or separate change requests.
 Phase 1 will support the following user types:
 
 - Customer / B2C Buyer.
-- Seller / Vendor, including Nearby Store / Local Shop.
+- Seller, including marketplace seller, hyperlocal store, and wholesale distributor operational types.
 - Business Buyer / B2B Buyer for basic enquiry flow.
 - Delivery Partner for admin-assigned manual delivery tasks.
 - Admin Team.
@@ -386,7 +387,7 @@ The client must provide or confirm the following before development starts:
 - Product images.
 - Product prices.
 - Product stock details.
-- Initial seller/vendor details.
+- Initial seller details and operational type.
 - Seller approval rules.
 - Commission rules.
 - Payment method decision.
@@ -481,7 +482,7 @@ By approving this document, the client confirms:
 - Phase 1 is a web-first marketplace build.
 - The features listed in Section 3 are included in the frozen Phase 1 scope.
 - The features listed in Section 4 are not included in the INR 200,000 Phase 1 build.
-- Nearby Store / Local Shop is treated as a vendor type in Phase 1.
+- Seller operational types are marketplace seller, hyperlocal store, and wholesale distributor; legal business entity type remains separate.
 - Delivery Partner / Courier Partner is handled through a manual web workspace for assigned orders, while live courier API/mobile tracking remains a later phase.
 - Transactional email notifications are included, but third-party email service charges are separate.
 - Any additional feature after this freeze will be handled as a change request or later phase.

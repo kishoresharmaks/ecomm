@@ -76,9 +76,9 @@ class SellerAddressDto {
 }
 
 export class SellerVerificationDocumentDto {
-  @ApiProperty({ example: "GST_CERTIFICATE" })
+  @ApiProperty({ example: "ID_PROOF" })
   @IsString()
-  @Matches(/^(GST_CERTIFICATE|PAN_CARD|ADDRESS_PROOF|BANK_PROOF|BUSINESS_REGISTRATION|OTHER)$/)
+  @Matches(/^(ID_PROOF|SIGNATURE_PROOF|GST_CERTIFICATE|PAN_CARD|ADDRESS_PROOF|BANK_PROOF|BUSINESS_REGISTRATION|OTHER)$/)
   documentType!: string;
 
   @ApiProperty({ example: "indihub/sellers/user-id/documents/gst-certificate.pdf" })

@@ -11,6 +11,7 @@ import {
   CheckoutStatus,
   DeliveryAssignmentAttemptSource,
   CodCollectionStatus,
+  CourierShipmentStatus,
   DeliveryAssignmentStatus,
   DeliveryMode,
   DeliveryRoutingFailureReason,
@@ -18,6 +19,7 @@ import {
   EmailRecipientType,
   InventoryMovementType,
   OrderStatus,
+  OrderShipmentPackageStatus,
   PaymentProvider,
   PaymentStatus,
   Prisma,
@@ -25,6 +27,7 @@ import {
   ProductStatus,
   RoleCode,
   SellerStatus,
+  SellerType,
   SellerOrderStatus,
   SellerSettlementStatus,
   StatusEventType,
@@ -32,9 +35,12 @@ import {
   VariantStatus,
 } from "@indihub/database";
 import type { RequestUser } from "../auth/types/indihub-request";
-import { assertCheckoutDeliveryServiceable } from "../checkout/checkout-serviceability";
 import { CheckoutPricingService } from "../checkout/checkout-pricing.service";
-import { DeliveryRoutingService } from "../checkout/delivery-routing.service";
+import {
+  DeliveryRoutingService,
+  type DeliveryRoutingPackage,
+  type DeliveryRoutingQuote,
+} from "../checkout/delivery-routing.service";
 import { CheckoutDeliveryPreference } from "../checkout/dto/delivery-routing.dto";
 import {
   createdAtCursorOrderBy,
@@ -59,12 +65,14 @@ import {
 } from "./dto/checkout.dto";
 import { CodVerificationDecision, CodVerificationDto } from "./dto/cod-verification.dto";
 import {
+  CourierDeliveryPartnerAvailabilityDto,
   CreateDeliveryAttemptDto,
   DeliveryAssignmentDecision,
   DeliveryAssignmentDecisionDto,
   DeliveryOperationsQueryDto,
   DeliveryPartnerQueryDto,
   UpdateDeliveryAssignmentDto,
+  UpdateDeliveryPartnerProfileDto,
   UpdateOwnDeliveryPartnerProfileDto,
 } from "./dto/delivery-operations.dto";
 import { UpdateDeliveryDto } from "./dto/delivery-update.dto";
@@ -105,6 +113,17 @@ const orderInclude = {
           },
           codCollectedBy: true,
           codVerifiedBy: true,
+          packages: {
+            include: {
+              courierPackages: {
+                include: {
+                  courierConsignment: true,
+                },
+                orderBy: { updatedAt: "desc" as const },
+              },
+            },
+            orderBy: { sequence: "asc" as const },
+          },
           courierShipment: true,
           courierCodRemittance: true,
         },
@@ -126,6 +145,17 @@ const orderInclude = {
       },
       codCollectedBy: true,
       codVerifiedBy: true,
+      packages: {
+        include: {
+          courierPackages: {
+            include: {
+              courierConsignment: true,
+            },
+            orderBy: { updatedAt: "desc" as const },
+          },
+        },
+        orderBy: { sequence: "asc" as const },
+      },
       courierShipment: true,
       courierCodRemittance: true,
     },
@@ -163,9 +193,28 @@ const orderInclude = {
 };
 
 type OrderWithRelations = Prisma.OrderGetPayload<{ include: typeof orderInclude }>;
+type OrderShipmentPackageWithRelations = OrderWithRelations["shipments"][number]["packages"][number];
 type DeliveryPartnerWithProfile = Prisma.UserGetPayload<{
   include: { deliveryProfile: true };
 }>;
+
+type DeliveryPartnerProfileReadback = {
+  phone: string | null;
+  vehicleNumber: string | null;
+  isAvailable: boolean;
+  priority: number;
+  serviceCountryCode: string | null;
+  serviceStateCode: string | null;
+  serviceCityCode: string | null;
+  servicePincodes: string[];
+  serviceLocalAreaCodes: string[];
+  baseLatitude: string | null;
+  baseLongitude: string | null;
+  serviceRadiusKm: number | null;
+  codCashLimitPaise: number | null;
+  effectiveCodCashLimitPaise: number;
+  notes: string | null;
+};
 
 type DeliveryPartnerServiceAreaScore = {
   eligible: boolean;
@@ -204,6 +253,15 @@ const deliveryTrackingReferencePrefix = "1HI-DEL";
 const deliveryTrackingReferenceWidth = 6;
 const defaultCodCashLimitPaise = 500000;
 const deliveryCodCashLimitSettingKey = "delivery.defaultCodCashLimitPaise";
+const deliveryRoutingRetryIntervalMs = 15 * 60 * 1000;
+const deliveryRoutingRetryWindowMs = 2 * 60 * 60 * 1000;
+const labelDownloadBlockedStatuses = new Set<CourierShipmentStatus>([
+  CourierShipmentStatus.CANCELLED,
+  CourierShipmentStatus.FAILED,
+  CourierShipmentStatus.RTO_INITIATED,
+  CourierShipmentStatus.RTO_IN_TRANSIT,
+  CourierShipmentStatus.RTO_DELIVERED,
+]);
 
 const sellerStatusRank = {
   [SellerOrderStatus.PENDING]: 0,
@@ -344,6 +402,13 @@ export class OrdersService {
 
         const product = await tx.product.findUniqueOrThrow({
           where: { id: variant.productId },
+          include: {
+            seller: {
+              include: {
+                user: true,
+              },
+            },
+          },
         });
 
         if (product.listingMode === ProductListingMode.ENQUIRY_ONLY) {
@@ -363,23 +428,30 @@ export class OrdersService {
         (total, { item, variant }) => total + item.quantity * variant.pricePaise,
         0,
       );
-      const charges = await this.checkoutPricing.calculateCharges(subtotalPaise, tx, {
+      const sellerPackages = this.checkoutSellerPackages(validatedItems);
+      const charges = await this.checkoutPricing.calculateSellerPackageCharges(
+        subtotalPaise,
+        sellerPackages,
+        tx,
+        {
         ...(dto.deliveryPreference !== undefined || dto.deliveryMode === undefined
           ? { deliveryPreference }
           : {}),
         ...(dto.deliveryMode !== undefined ? { deliveryMode: dto.deliveryMode } : {}),
         address: shippingAddressSnapshot,
         paymentMethod: dto.paymentMethod,
-      });
-      assertCheckoutDeliveryServiceable(charges, {
-        addressProvided: true,
-        deliveryPreference,
-      });
+        },
+      );
       const { shippingPaise, platformFeePaise, totalPaise } = charges;
-      const resolvedDeliveryMode =
-        charges.deliveryRouting?.deliveryMode ??
-        dto.deliveryMode ??
-        DeliveryMode.LOCAL_DELIVERY_PARTNER;
+      const deliveryRoutings = charges.deliveryRoutings ?? [];
+      const deliveryRoutingBySeller = new Map(
+        deliveryRoutings.map((routing) => [routing.sellerId, routing.quote]),
+      );
+      const summaryRouting = this.summaryDeliveryRouting(deliveryRoutings, charges.deliveryRouting);
+      const resolvedDeliveryMode = this.summaryDeliveryMode(
+        deliveryRoutings.map((routing) => routing.quote.deliveryMode),
+        dto.deliveryMode,
+      );
       const buyerSubtotalMinor = this.marketService.convertMinorUnits(subtotalPaise, market);
       const buyerShippingMinor = this.marketService.convertMinorUnits(shippingPaise, market);
       const buyerPlatformFeeMinor = this.marketService.convertMinorUnits(platformFeePaise, market);
@@ -448,6 +520,23 @@ export class OrdersService {
       });
 
       const sellerTotals = new Map<string, number>();
+      const sellerItemAllocations = new Map<
+        string,
+        Array<{
+          orderItemId: string;
+          productId: string;
+          productVariantId: string;
+          productName: string;
+          sku?: string | null;
+          variantName?: string | null;
+          quantity: number;
+          lineTotalPaise: number;
+          weightGrams?: number | null;
+          lengthCm?: number | null;
+          breadthCm?: number | null;
+          heightCm?: number | null;
+        }>
+      >();
 
       for (const { item, variant, product } of validatedItems) {
         const lineTotalPaise = item.quantity * variant.pricePaise;
@@ -456,7 +545,7 @@ export class OrdersService {
           (sellerTotals.get(product.sellerId) ?? 0) + lineTotalPaise,
         );
 
-        await tx.orderItem.create({
+        const orderItem = await tx.orderItem.create({
           data: {
             orderId: order.id,
             sellerId: product.sellerId,
@@ -473,6 +562,22 @@ export class OrdersService {
             currency: variant.currency,
           },
         });
+        const allocations = sellerItemAllocations.get(product.sellerId) ?? [];
+        allocations.push({
+          orderItemId: orderItem.id,
+          productId: product.id,
+          productVariantId: variant.id,
+          productName: product.name,
+          sku: variant.sku,
+          variantName: variant.variantName,
+          quantity: item.quantity,
+          lineTotalPaise,
+          weightGrams: variant.packageWeightGrams,
+          lengthCm: variant.packageLengthCm,
+          breadthCm: variant.packageBreadthCm,
+          heightCm: variant.packageHeightCm,
+        });
+        sellerItemAllocations.set(product.sellerId, allocations);
 
         const stockUpdate = await tx.productVariant.updateMany({
           where: {
@@ -506,8 +611,11 @@ export class OrdersService {
       }
 
       const sellerShippingShares = this.allocateMinorAmountByKey(shippingPaise, sellerTotals);
+      const routedAt = new Date();
       let shipmentSequence = 1;
       for (const [sellerId, sellerSubtotalPaise] of sellerTotals.entries()) {
+        const shipmentRouting = deliveryRoutingBySeller.get(sellerId) ?? summaryRouting;
+        const shipmentRoutingFailedAt = shipmentRouting?.routingFailed ? routedAt : null;
         const sellerSplit = await tx.orderSellerSplit.create({
           data: {
             orderId: order.id,
@@ -519,7 +627,7 @@ export class OrdersService {
           },
         });
 
-        await tx.orderShipment.upsert({
+        const orderShipment = await tx.orderShipment.upsert({
           where: { orderSellerSplitId: sellerSplit.id },
           update: {},
           create: {
@@ -528,27 +636,57 @@ export class OrdersService {
             orderSellerSplitId: sellerSplit.id,
             sellerId,
             subtotalPaise: sellerSubtotalPaise,
-            shippingPaise: sellerShippingShares.get(sellerId) ?? 0,
-            codSurchargePaise: 0,
-            deliveryMode: resolvedDeliveryMode,
+            shippingPaise:
+              shipmentRouting?.shippingChargePaise ?? sellerShippingShares.get(sellerId) ?? 0,
+            codSurchargePaise: shipmentRouting?.codSurchargePaise ?? 0,
+            deliveryMode: shipmentRouting?.deliveryMode ?? resolvedDeliveryMode,
             status: DeliveryStatus.PENDING,
             deliveryNote: dto.customerNote ?? null,
-            courierProviderCode: charges.deliveryRouting?.courierProviderCode ?? null,
-            routingFailed: charges.deliveryRouting?.routingFailed ?? false,
-            routingFailureReason: charges.deliveryRouting?.routingFailureReason ?? null,
-            routingFailureNote: charges.deliveryRouting?.routingFailureNote ?? null,
-            routedAt: charges.deliveryRouting ? new Date() : null,
-            shippingChargeSnapshot: charges.deliveryRouting?.shippingSnapshot ?? Prisma.JsonNull,
-            codSurchargeSnapshot: charges.deliveryRouting?.codSurchargeSnapshot ?? Prisma.JsonNull,
-            assignmentNote:
-              charges.deliveryRouting?.routingFailureNote ??
-              (charges.deliveryRouting?.recommendedPartnerUserId
-                ? "Local delivery route selected. Partner will be assigned after this seller package is packed."
-                : null),
+            courierProviderCode: shipmentRouting?.courierProviderCode ?? null,
+            routingFailed: shipmentRouting?.routingFailed ?? false,
+            routingFailureReason: shipmentRouting?.routingFailureReason ?? null,
+            routingFailureNote: shipmentRouting?.routingFailureNote ?? null,
+            routedAt: shipmentRouting ? routedAt : null,
+            routingFirstFailedAt: shipmentRoutingFailedAt,
+            routingLastAttemptAt: shipmentRouting ? routedAt : null,
+            routingRetryCount: 0,
+            routingPermanentFailureAt: null,
+            routingSnapshot: shipmentRouting?.routingSnapshot ?? Prisma.JsonNull,
+            shippingChargeSnapshot: shipmentRouting?.shippingSnapshot ?? Prisma.JsonNull,
+            codSurchargeSnapshot: shipmentRouting?.codSurchargeSnapshot ?? Prisma.JsonNull,
+            assignmentNote: this.shipmentRoutingAssignmentNote(shipmentRouting),
+          },
+        });
+        const itemAllocations = sellerItemAllocations.get(sellerId) ?? [];
+        await tx.orderShipmentPackage.create({
+          data: {
+            packageNumber: this.createPackageNumber(orderShipment.shipmentNumber, 1),
+            orderShipmentId: orderShipment.id,
+            orderId: order.id,
+            sellerId,
+            sequence: 1,
+            deliveryMode: orderShipment.deliveryMode,
+            status: this.initialPackageStatus(orderShipment.deliveryMode),
+            shippingPaise: orderShipment.shippingPaise,
+            codSurchargePaise: orderShipment.codSurchargePaise,
+            declaredValuePaise: sellerSubtotalPaise,
+            currency: market.baseCurrency,
+            itemAllocations,
+            packageSnapshot: {
+              source: "CHECKOUT_DEFAULT_PACKAGE",
+              packageRule: "ONE_DEFAULT_PACKAGE_PER_SELLER_SHIPMENT",
+              orderNumber: order.orderNumber,
+              shipmentNumber: orderShipment.shipmentNumber,
+              itemCount: itemAllocations.length,
+            },
+            readyForBookingAt:
+              orderShipment.deliveryMode === DeliveryMode.THIRD_PARTY_COURIER ? routedAt : null,
           },
         });
         shipmentSequence += 1;
       }
+
+      const summaryRoutingFailedAt = summaryRouting?.routingFailed ? routedAt : null;
 
       await tx.deliveryDetail.create({
         data: {
@@ -556,18 +694,17 @@ export class OrdersService {
           deliveryMode: resolvedDeliveryMode,
           status: DeliveryStatus.PENDING,
           deliveryNote: dto.customerNote ?? null,
-          courierProviderCode: charges.deliveryRouting?.courierProviderCode ?? null,
-          routingFailed: charges.deliveryRouting?.routingFailed ?? false,
-          routingFailureReason: charges.deliveryRouting?.routingFailureReason ?? null,
-          routingFailureNote: charges.deliveryRouting?.routingFailureNote ?? null,
-          routedAt: charges.deliveryRouting ? new Date() : null,
-          shippingChargeSnapshot: charges.deliveryRouting?.shippingSnapshot ?? Prisma.JsonNull,
-          codSurchargeSnapshot: charges.deliveryRouting?.codSurchargeSnapshot ?? Prisma.JsonNull,
+          courierProviderCode: summaryRouting?.courierProviderCode ?? null,
+          routingFailed: deliveryRoutings.some((routing) => routing.quote.routingFailed),
+          routingFailureReason: summaryRouting?.routingFailureReason ?? null,
+          routingFailureNote: summaryRouting?.routingFailureNote ?? null,
+          routedAt: summaryRouting ? routedAt : null,
+          shippingChargeSnapshot: charges.snapshot.shipping ?? Prisma.JsonNull,
+          codSurchargeSnapshot: summaryRouting?.codSurchargeSnapshot ?? Prisma.JsonNull,
           assignmentNote:
-            charges.deliveryRouting?.routingFailureNote ??
-            (charges.deliveryRouting?.recommendedPartnerUserId
-              ? "Local delivery route selected. Partner will be assigned after packing."
-              : null),
+            summaryRoutingFailedAt
+              ? (summaryRouting?.routingFailureNote ?? null)
+              : "Seller package routes are stored on individual shipments.",
         },
       });
 
@@ -612,7 +749,7 @@ export class OrdersService {
             paymentMethod: dto.paymentMethod,
             deliveryPreference,
             deliveryMode: resolvedDeliveryMode,
-            deliveryRouting: charges.deliveryRouting?.routingSnapshot ?? null,
+            deliveryRouting: charges.snapshot.deliveryRouting ?? null,
           },
         },
       });
@@ -622,12 +759,17 @@ export class OrdersService {
 
     const order = await this.getOrderByIdOrThrow(orderId);
     await this.notifyOrderPlaced(order);
+    await this.notifyShipmentRoutingOperations(order);
     return order;
   }
 
   async listCustomerOrders(actor: RequestUser, query: OrderQueryDto) {
     const customer = await this.customersService.ensureCustomerForUser(actor);
-    return this.listOrders({ ...this.orderQueryWhere(query), customerId: customer.id }, query);
+    const result = await this.listOrders({ ...this.orderQueryWhere(query), customerId: customer.id }, query);
+    return {
+      ...result,
+      items: result.items.map((order) => this.customerSafeOrder(order)),
+    };
   }
 
   async getCustomerOrder(actor: RequestUser, orderNumber: string) {
@@ -644,7 +786,7 @@ export class OrdersService {
       throw new NotFoundException("Order not found.");
     }
 
-    return order;
+    return this.customerSafeOrder(order);
   }
 
   async trackPublicOrder(dto: TrackOrderDto) {
@@ -724,7 +866,18 @@ export class OrdersService {
           : null,
         subtotalPaise: shipment.subtotalPaise,
         shippingPaise: shipment.shippingPaise,
+        codSurchargePaise: shipment.codSurchargePaise,
         deliveryMode: shipment.deliveryMode,
+        courierProviderCode: shipment.courierProviderCode,
+        routingFailed: shipment.routingFailed,
+        routingFailureReason: shipment.routingFailureReason,
+        routingFailureNote: shipment.routingFailureNote,
+        routedAt: shipment.routedAt,
+        routingFirstFailedAt: shipment.routingFirstFailedAt,
+        routingLastAttemptAt: shipment.routingLastAttemptAt,
+        routingRetryCount: shipment.routingRetryCount,
+        routingPermanentFailureAt: shipment.routingPermanentFailureAt,
+        routingSnapshot: shipment.routingSnapshot,
         status: shipment.status,
         assignmentStatus: shipment.assignmentStatus,
         estimatedDeliveryDate: shipment.estimatedDeliveryDate,
@@ -733,6 +886,9 @@ export class OrdersService {
         codCollectedAmountPaise: shipment.codCollectedAmountPaise,
         codCollectedAt: shipment.codCollectedAt,
         codVerifiedAt: shipment.codVerifiedAt,
+        packages: shipment.packages.map((shipmentPackage) =>
+          this.shipmentPackageReadback(shipmentPackage, { sellerLabelAccess: false }),
+        ),
       })),
       deliveryDetail: order.deliveryDetail
         ? {
@@ -774,7 +930,17 @@ export class OrdersService {
   }
 
   async cancelCustomerOrder(actor: RequestUser, orderNumber: string, dto: CancelOrderDto) {
-    const existing = await this.getCustomerOrder(actor, orderNumber);
+    const customer = await this.customersService.ensureCustomerForUser(actor);
+    const existing = await this.prisma.client.order.findFirst({
+      where: {
+        orderNumber,
+        customerId: customer.id,
+      },
+      include: orderInclude,
+    });
+    if (!existing) {
+      throw new NotFoundException("Order not found.");
+    }
 
     if (existing.orderStatus === OrderStatus.CANCELLED) {
       throw new BadRequestException("Order is already cancelled.");
@@ -983,6 +1149,97 @@ export class OrdersService {
     };
   }
 
+  listCourierDeliveryPartners(query: DeliveryPartnerQueryDto) {
+    return this.listDeliveryPartners(query);
+  }
+
+  async getCourierDeliveryPartner(userId: string) {
+    const user = await this.getDeliveryPartnerUserForOperationsOrThrow(userId);
+    return this.toDeliveryPartnerSummary(user);
+  }
+
+  async updateCourierDeliveryPartnerProfile(
+    actor: RequestUser,
+    userId: string,
+    dto: UpdateDeliveryPartnerProfileDto,
+  ) {
+    const user = await this.getDeliveryPartnerUserForOperationsOrThrow(userId);
+    const profileData = this.deliveryPartnerProfileData(dto);
+
+    await this.prisma.client.$transaction(async (tx) => {
+      const profile = await tx.deliveryPartnerProfile.upsert({
+        where: { userId },
+        update: profileData,
+        create: {
+          userId,
+          phone: dto.phone ?? user.phone,
+          isAvailable: dto.isAvailable ?? true,
+          ...profileData,
+        },
+      });
+
+      if (dto.phone !== undefined && dto.phone !== user.phone) {
+        await tx.user.update({
+          where: { id: userId },
+          data: { phone: dto.phone || null },
+        });
+      }
+
+      await tx.auditLog.create({
+        data: {
+          actorUserId: actor.id,
+          action: "courier.delivery_partner.profile_updated",
+          entityType: "user",
+          entityId: userId,
+          ...(user.deliveryProfile
+            ? { oldValue: this.deliveryPartnerProfileAuditValue(user.deliveryProfile) }
+            : {}),
+          newValue: this.deliveryPartnerProfileAuditValue(profile),
+        },
+      });
+    });
+
+    return this.getCourierDeliveryPartner(userId);
+  }
+
+  async updateCourierDeliveryPartnerAvailability(
+    actor: RequestUser,
+    userId: string,
+    dto: CourierDeliveryPartnerAvailabilityDto,
+  ) {
+    const user = await this.getDeliveryPartnerUserForOperationsOrThrow(userId);
+
+    await this.prisma.client.$transaction(async (tx) => {
+      const profile = await tx.deliveryPartnerProfile.upsert({
+        where: { userId },
+        update: { isAvailable: dto.isAvailable },
+        create: {
+          userId,
+          phone: user.phone,
+          isAvailable: dto.isAvailable,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actorUserId: actor.id,
+          action: "courier.delivery_partner.availability_updated",
+          entityType: "user",
+          entityId: userId,
+          oldValue: {
+            isAvailable: user.deliveryProfile?.isAvailable ?? null,
+          },
+          newValue: {
+            isAvailable: profile.isAvailable,
+            note: dto.note?.trim() || null,
+          },
+        },
+      });
+    });
+
+    return this.getCourierDeliveryPartner(userId);
+  }
+
   async getDeliveryPartnerProfile(actor: RequestUser) {
     const user = await this.getDeliveryPartnerUserOrThrow(actor.id);
     return this.toDeliveryPartnerSelfProfile(user);
@@ -993,7 +1250,7 @@ export class OrdersService {
     dto: UpdateOwnDeliveryPartnerProfileDto,
   ) {
     const user = await this.getDeliveryPartnerUserOrThrow(actor.id);
-    const profileData = this.ownDeliveryPartnerProfileData(dto);
+    const profileData = this.deliveryPartnerProfileData(dto);
 
     await this.prisma.client.$transaction(async (tx) => {
       const profile = await tx.deliveryPartnerProfile.upsert({
@@ -1294,6 +1551,232 @@ export class OrdersService {
       await this.notifyDeliveryPartnerAssigned(updated, dto.assignmentNote);
     }
     return updated;
+  }
+
+  async updateAdminShipmentDelivery(
+    actor: RequestUser,
+    orderNumber: string,
+    shipmentNumber: string,
+    dto: UpdateDeliveryDto,
+  ) {
+    const order = await this.getOrderByNumberOrThrow(orderNumber);
+    const shipment = order.shipments.find(
+      (item) => item.shipmentNumber.toUpperCase() === shipmentNumber.toUpperCase(),
+    );
+    if (!shipment) {
+      throw new NotFoundException("Shipment not found for this order.");
+    }
+
+    const nextMode = dto.deliveryMode ?? shipment.deliveryMode;
+    const nextModeUsesLocalPartner = nextMode === DeliveryMode.LOCAL_DELIVERY_PARTNER;
+    if (dto.deliveryPartnerUserId && !nextModeUsesLocalPartner) {
+      throw new BadRequestException(
+        "Local delivery partners can only be assigned when shipment mode is Local Delivery Partner.",
+      );
+    }
+    if (dto.deliveryPartnerUserId) {
+      await this.assertDeliveryPartnerUser(this.prisma.client, dto.deliveryPartnerUserId);
+    }
+
+    const updatedOrderId = await this.prisma.client.$transaction(async (tx) => {
+      const updatedShipment = await tx.orderShipment.update({
+        where: { id: shipment.id },
+        data: {
+          deliveryMode: nextMode,
+          ...(dto.courierProviderCode !== undefined
+            ? { courierProviderCode: this.cleanProviderCode(dto.courierProviderCode) }
+            : nextMode !== DeliveryMode.THIRD_PARTY_COURIER
+              ? { courierProviderCode: null }
+              : {}),
+          ...(dto.partnerName !== undefined ? { partnerName: dto.partnerName ?? null } : {}),
+          ...(dto.partnerPhone !== undefined ? { partnerPhone: dto.partnerPhone ?? null } : {}),
+          ...(dto.deliveryPartnerUserId !== undefined
+            ? {
+                deliveryPartnerUserId: nextModeUsesLocalPartner
+                  ? (dto.deliveryPartnerUserId ?? null)
+                  : null,
+                assignmentStatus:
+                  nextModeUsesLocalPartner && dto.deliveryPartnerUserId
+                    ? DeliveryAssignmentStatus.ASSIGNED
+                    : DeliveryAssignmentStatus.UNASSIGNED,
+                assignedAt: nextModeUsesLocalPartner && dto.deliveryPartnerUserId ? new Date() : null,
+                acceptedAt: null,
+                rejectedAt: null,
+              }
+            : nextModeUsesLocalPartner
+              ? {}
+              : {
+                  deliveryPartnerUserId: null,
+                  assignmentStatus: DeliveryAssignmentStatus.UNASSIGNED,
+                  assignedAt: null,
+                  acceptedAt: null,
+                  rejectedAt: null,
+                }),
+          ...(dto.trackingReference !== undefined
+            ? { trackingReference: this.normalizeTrackingReference(dto.trackingReference) }
+            : {}),
+          ...(dto.estimatedDeliveryDate !== undefined
+            ? {
+                estimatedDeliveryDate: dto.estimatedDeliveryDate
+                  ? new Date(dto.estimatedDeliveryDate)
+                  : null,
+              }
+            : {}),
+          ...(dto.deliveryNote !== undefined ? { deliveryNote: dto.deliveryNote ?? null } : {}),
+          ...(dto.receiverName !== undefined ? { receiverName: dto.receiverName ?? null } : {}),
+          ...(dto.proofNote !== undefined ? { proofNote: dto.proofNote ?? null } : {}),
+          ...(dto.proofReference !== undefined ? { proofReference: dto.proofReference ?? null } : {}),
+          ...(dto.status !== undefined ? { status: dto.status } : {}),
+          routingFailed: false,
+          routingFailureReason: null,
+          routingFailureNote: null,
+          routingPermanentFailureAt: null,
+          routingLastAttemptAt: new Date(),
+          assignmentNote:
+            dto.deliveryNote ??
+            (nextMode === DeliveryMode.MANUAL_TRANSPORT
+              ? "Manual transport selected by admin. No courier booking will be attempted."
+              : "Shipment delivery route manually overridden by admin."),
+        },
+      });
+
+      const allShipments = await tx.orderShipment.findMany({
+        where: { orderId: order.id },
+        select: { deliveryMode: true, routingFailed: true, routingFailureReason: true, routingFailureNote: true },
+      });
+      const nextSummaryMode = this.summaryDeliveryMode(
+        allShipments.map((item) => item.deliveryMode),
+        order.deliveryDetail?.deliveryMode,
+      );
+      await tx.deliveryDetail.updateMany({
+        where: { orderId: order.id },
+        data: {
+          deliveryMode: nextSummaryMode,
+          routingFailed: allShipments.some((item) => item.routingFailed),
+          routingFailureReason:
+            allShipments.find((item) => item.routingFailed)?.routingFailureReason ?? null,
+          routingFailureNote:
+            allShipments.find((item) => item.routingFailed)?.routingFailureNote ?? null,
+          assignmentNote: "Seller shipment delivery modes are managed package-wise.",
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actorUserId: actor.id,
+          action: "order.shipment.delivery_overridden",
+          entityType: "order_shipment",
+          entityId: shipment.id,
+          oldValue: this.deliveryAuditValue(shipment),
+          newValue: this.deliveryAuditValue(updatedShipment),
+        },
+      });
+
+      return order.id;
+    });
+
+    return this.getOrderByIdOrThrow(updatedOrderId);
+  }
+
+  async retryDueRoutingFailures(actor?: RequestUser) {
+    const now = new Date();
+    const dueSince = new Date(now.getTime() - deliveryRoutingRetryIntervalMs);
+    const permanentSince = new Date(now.getTime() - deliveryRoutingRetryWindowMs);
+    const shipments = await this.prisma.client.orderShipment.findMany({
+      where: {
+        routingFailed: true,
+        routingPermanentFailureAt: null,
+        routingFirstFailedAt: { not: null },
+        routingLastAttemptAt: { lte: dueSince },
+        status: { notIn: [DeliveryStatus.DELIVERED, DeliveryStatus.CANCELLED] },
+      },
+      include: {
+        seller: true,
+        order: {
+          include: {
+            payments: { orderBy: { createdAt: "desc" } },
+          },
+        },
+      },
+      orderBy: [{ routingFirstFailedAt: "asc" }],
+      take: 50,
+    });
+
+    let retried = 0;
+    let resolved = 0;
+    let permanent = 0;
+
+    for (const shipment of shipments) {
+      if (shipment.routingFirstFailedAt && shipment.routingFirstFailedAt <= permanentSince) {
+        await this.prisma.client.orderShipment.update({
+          where: { id: shipment.id },
+          data: {
+            routingPermanentFailureAt: now,
+            routingLastAttemptAt: now,
+            routingRetryCount: { increment: 1 },
+            assignmentNote:
+              shipment.assignmentNote ??
+              "Routing failure is permanent after the two-hour retry window. Admin override is required.",
+          },
+        });
+        permanent += 1;
+        continue;
+      }
+
+      const quote = await this.deliveryRouting.resolveDelivery(
+        {
+          deliveryPreference: CheckoutDeliveryPreference.DELIVER_TO_ADDRESS,
+          address: this.readShippingAddressSnapshot(shipment.order.shippingAddressSnapshot),
+          subtotalPaise: shipment.subtotalPaise,
+          paymentMethod: shipment.order.payments[0]?.method ?? null,
+          sellerId: shipment.sellerId,
+          sellerType: shipment.seller.sellerType,
+          package: this.routingPackageFromSnapshot(shipment.routingSnapshot),
+        },
+        this.prisma.client,
+      );
+      const failedAt = quote.routingFailed ? (shipment.routingFirstFailedAt ?? now) : null;
+
+      await this.prisma.client.orderShipment.update({
+        where: { id: shipment.id },
+        data: {
+          deliveryMode: quote.deliveryMode,
+          shippingPaise: quote.shippingChargePaise,
+          codSurchargePaise: quote.codSurchargePaise,
+          courierProviderCode: quote.courierProviderCode,
+          routingFailed: quote.routingFailed,
+          routingFailureReason: quote.routingFailureReason,
+          routingFailureNote: quote.routingFailureNote,
+          routedAt: now,
+          routingFirstFailedAt: failedAt,
+          routingLastAttemptAt: now,
+          routingRetryCount: { increment: 1 },
+          routingPermanentFailureAt: null,
+          routingSnapshot: quote.routingSnapshot,
+          shippingChargeSnapshot: quote.shippingSnapshot,
+          codSurchargeSnapshot: quote.codSurchargeSnapshot,
+          assignmentNote: this.shipmentRoutingAssignmentNote(quote),
+        },
+      });
+
+      retried += 1;
+      if (!quote.routingFailed) {
+        resolved += 1;
+      }
+    }
+
+    if (actor && (retried || permanent)) {
+      await this.prisma.client.auditLog.create({
+        data: {
+          actorUserId: actor.id,
+          action: "delivery.routing_failures.retry_due",
+          entityType: "order_shipment",
+          newValue: { retried, resolved, permanent, scanned: shipments.length },
+        },
+      });
+    }
+
+    return { scanned: shipments.length, retried, resolved, permanent };
   }
 
   async respondDeliveryAssignment(
@@ -2786,12 +3269,110 @@ export class OrdersService {
         : orderWithDelivery;
   }
 
-  private filterOrderForSeller(order: OrderWithRelations, sellerId: string): OrderWithRelations {
+  private filterOrderForSeller(order: OrderWithRelations, sellerId: string) {
+    return {
+      ...this.customerSafeOrder(order),
+      items: order.items.filter((item) => item.sellerId === sellerId),
+      sellerSplits: order.sellerSplits
+        .filter((split) => split.sellerId === sellerId)
+        .map((split) => ({
+          ...split,
+          shipment: split.shipment
+            ? this.shipmentReadback(split.shipment, { sellerLabelAccess: true })
+            : null,
+        })),
+      shipments: order.shipments
+        .filter((shipment) => shipment.sellerId === sellerId)
+        .map((shipment) => this.shipmentReadback(shipment, { sellerLabelAccess: true })),
+    };
+  }
+
+  private customerSafeOrder(order: OrderWithRelations) {
     return {
       ...order,
-      items: order.items.filter((item) => item.sellerId === sellerId),
-      sellerSplits: order.sellerSplits.filter((split) => split.sellerId === sellerId),
-      shipments: order.shipments.filter((shipment) => shipment.sellerId === sellerId),
+      sellerSplits: order.sellerSplits.map((split) => ({
+        ...split,
+        shipment: split.shipment
+          ? this.shipmentReadback(split.shipment, { sellerLabelAccess: false })
+          : null,
+      })),
+      shipments: order.shipments.map((shipment) =>
+        this.shipmentReadback(shipment, { sellerLabelAccess: false }),
+      ),
+    };
+  }
+
+  private shipmentReadback(
+    shipment: OrderWithRelations["shipments"][number] | NonNullable<OrderWithRelations["sellerSplits"][number]["shipment"]>,
+    options: { sellerLabelAccess: boolean },
+  ) {
+    return {
+      ...shipment,
+      labelUrl: null,
+      courierShipment: shipment.courierShipment
+        ? {
+            ...shipment.courierShipment,
+            labelUrl: null,
+          }
+        : null,
+      packages: shipment.packages.map((shipmentPackage) =>
+        this.shipmentPackageReadback(shipmentPackage, options),
+      ),
+    };
+  }
+
+  private shipmentPackageReadback(
+    shipmentPackage: OrderShipmentPackageWithRelations,
+    options: { sellerLabelAccess: boolean },
+  ) {
+    const courierPackage = shipmentPackage.courierPackages[0] ?? null;
+    const canDownloadLabel = Boolean(
+      options.sellerLabelAccess &&
+        shipmentPackage.deliveryMode === DeliveryMode.THIRD_PARTY_COURIER &&
+        courierPackage?.labelUrl &&
+        !labelDownloadBlockedStatuses.has(courierPackage.trackingStatus),
+    );
+
+    return {
+      id: shipmentPackage.id,
+      packageNumber: shipmentPackage.packageNumber,
+      orderShipmentId: shipmentPackage.orderShipmentId,
+      orderId: shipmentPackage.orderId,
+      sellerId: shipmentPackage.sellerId,
+      sequence: shipmentPackage.sequence,
+      deliveryMode: shipmentPackage.deliveryMode,
+      status: shipmentPackage.status,
+      shippingPaise: shipmentPackage.shippingPaise,
+      codSurchargePaise: shipmentPackage.codSurchargePaise,
+      declaredValuePaise: shipmentPackage.declaredValuePaise,
+      currency: shipmentPackage.currency,
+      weightGrams: shipmentPackage.weightGrams,
+      lengthCm: shipmentPackage.lengthCm,
+      breadthCm: shipmentPackage.breadthCm,
+      heightCm: shipmentPackage.heightCm,
+      itemAllocations: shipmentPackage.itemAllocations,
+      readyForBookingAt: shipmentPackage.readyForBookingAt,
+      bookedAt: shipmentPackage.bookedAt,
+      pickupScheduledAt: shipmentPackage.pickupScheduledAt,
+      pickedUpAt: shipmentPackage.pickedUpAt,
+      deliveredAt: shipmentPackage.deliveredAt,
+      cancelledAt: shipmentPackage.cancelledAt,
+      createdAt: shipmentPackage.createdAt,
+      updatedAt: shipmentPackage.updatedAt,
+      awbNumber: courierPackage?.awbNumber ?? null,
+      courierName: courierPackage?.courierName ?? null,
+      courierCode: courierPackage?.courierCode ?? courierPackage?.courierConsignment.providerCode ?? null,
+      courierTrackingStatus: courierPackage?.trackingStatus ?? CourierShipmentStatus.NOT_BOOKED,
+      courierTrackingStatusLabel: courierPackage?.trackingStatusLabel ?? null,
+      trackingUrl: courierPackage?.trackingUrl ?? null,
+      shippingZone: courierPackage?.shippingZone ?? courierPackage?.courierConsignment.shippingZone ?? null,
+      providerRawStatus: courierPackage?.providerRawStatus ?? null,
+      providerRawStatusCode: courierPackage?.providerRawStatusCode ?? null,
+      shipmentBookedAt: courierPackage?.bookedAt ?? courierPackage?.courierConsignment.bookedAt ?? null,
+      canDownloadLabel,
+      labelDownloadUrl: canDownloadLabel
+        ? `/api/seller/packages/${encodeURIComponent(shipmentPackage.id)}/label`
+        : null,
     };
   }
 
@@ -3689,16 +4270,19 @@ export class OrdersService {
   }
 
   private async toDeliveryPartnerSummary(user: DeliveryPartnerWithProfile) {
-    const [activeWorkload, pendingCodCashPaise] = await Promise.all([
+    const [activeWorkload, pendingCodCashPaise, defaultCodLimitPaise] = await Promise.all([
       this.activePartnerWorkload(user.id),
       this.pendingPartnerCodExposure(user.id),
+      this.defaultPartnerCodLimitPaise(),
     ]);
+    const deliveryProfile = this.deliveryPartnerProfileReadback(user, defaultCodLimitPaise);
 
     return {
       ...this.deliveryPartnerIdentity(user),
-      deliveryProfile: user.deliveryProfile,
+      deliveryProfile,
       activeWorkload,
       pendingCodCashPaise,
+      ...this.deliveryPartnerReadiness(user, deliveryProfile, pendingCodCashPaise),
     };
   }
 
@@ -3708,26 +4292,14 @@ export class OrdersService {
       this.pendingPartnerCodExposure(user.id),
       this.defaultPartnerCodLimitPaise(),
     ]);
-    const profile = user.deliveryProfile;
+    const deliveryProfile = this.deliveryPartnerProfileReadback(user, defaultCodLimitPaise);
 
     return {
       ...this.deliveryPartnerIdentity(user),
-      deliveryProfile: {
-        phone: profile?.phone ?? user.phone ?? null,
-        vehicleNumber: profile?.vehicleNumber ?? null,
-        isAvailable: profile?.isAvailable ?? true,
-        priority: profile?.priority ?? 100,
-        serviceCountryCode: profile?.serviceCountryCode ?? null,
-        serviceStateCode: profile?.serviceStateCode ?? null,
-        serviceCityCode: profile?.serviceCityCode ?? null,
-        servicePincodes: profile?.servicePincodes ?? [],
-        serviceLocalAreaCodes: profile?.serviceLocalAreaCodes ?? [],
-        codCashLimitPaise: profile?.codCashLimitPaise ?? null,
-        effectiveCodCashLimitPaise: profile?.codCashLimitPaise ?? defaultCodLimitPaise,
-        notes: profile?.notes ?? null,
-      },
+      deliveryProfile,
       activeWorkload,
       pendingCodCashPaise,
+      ...this.deliveryPartnerReadiness(user, deliveryProfile, pendingCodCashPaise),
     };
   }
 
@@ -3736,6 +4308,30 @@ export class OrdersService {
       where: {
         id: userId,
         status: UserStatus.ACTIVE,
+        userRoles: {
+          some: {
+            role: {
+              code: RoleCode.DELIVERY_PARTNER,
+            },
+          },
+        },
+      },
+      include: {
+        deliveryProfile: true,
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException("Delivery partner profile not found.");
+    }
+
+    return user;
+  }
+
+  private async getDeliveryPartnerUserForOperationsOrThrow(userId: string) {
+    const user = await this.prisma.client.user.findFirst({
+      where: {
+        id: userId,
         userRoles: {
           some: {
             role: {
@@ -3766,7 +4362,78 @@ export class OrdersService {
     };
   }
 
-  private ownDeliveryPartnerProfileData(dto: UpdateOwnDeliveryPartnerProfileDto) {
+  private deliveryPartnerProfileReadback(
+    user: DeliveryPartnerWithProfile,
+    defaultCodLimitPaise: number,
+  ): DeliveryPartnerProfileReadback {
+    const profile = user.deliveryProfile;
+
+    return {
+      phone: profile?.phone ?? user.phone ?? null,
+      vehicleNumber: profile?.vehicleNumber ?? null,
+      isAvailable: profile?.isAvailable ?? true,
+      priority: profile?.priority ?? 100,
+      serviceCountryCode: profile?.serviceCountryCode ?? null,
+      serviceStateCode: profile?.serviceStateCode ?? null,
+      serviceCityCode: profile?.serviceCityCode ?? null,
+      servicePincodes: profile?.servicePincodes ?? [],
+      serviceLocalAreaCodes: profile?.serviceLocalAreaCodes ?? [],
+      baseLatitude: profile?.baseLatitude?.toString() ?? null,
+      baseLongitude: profile?.baseLongitude?.toString() ?? null,
+      serviceRadiusKm: profile?.serviceRadiusKm ?? null,
+      codCashLimitPaise: profile?.codCashLimitPaise ?? null,
+      effectiveCodCashLimitPaise: profile?.codCashLimitPaise ?? defaultCodLimitPaise,
+      notes: profile?.notes ?? null,
+    };
+  }
+
+  private deliveryPartnerReadiness(
+    user: DeliveryPartnerWithProfile,
+    profile: DeliveryPartnerProfileReadback,
+    pendingCodCashPaise: number,
+  ) {
+    const readinessReasons: string[] = [];
+    const hasProfile = Boolean(user.deliveryProfile);
+    const hasServiceCoverage = Boolean(
+      profile.serviceCountryCode ||
+        profile.serviceStateCode ||
+        profile.serviceCityCode ||
+        profile.servicePincodes.length > 0 ||
+        profile.serviceLocalAreaCodes.length > 0 ||
+        profile.serviceRadiusKm,
+    );
+    const codLimitExceeded =
+      profile.effectiveCodCashLimitPaise >= 0 &&
+      pendingCodCashPaise > profile.effectiveCodCashLimitPaise;
+
+    if (!hasProfile) {
+      readinessReasons.push("Missing profile");
+    }
+    if (user.status !== UserStatus.ACTIVE) {
+      readinessReasons.push("User disabled");
+    }
+    if (!profile.isAvailable) {
+      readinessReasons.push("Paused");
+    }
+    if (!hasServiceCoverage) {
+      readinessReasons.push("No service coverage");
+    }
+    if (codLimitExceeded) {
+      readinessReasons.push("COD limit exceeded");
+    }
+
+    return {
+      hasProfile,
+      hasServiceCoverage,
+      codLimitExceeded,
+      assignmentReady: readinessReasons.length === 0,
+      readinessReasons,
+    };
+  }
+
+  private deliveryPartnerProfileData(
+    dto: UpdateOwnDeliveryPartnerProfileDto | UpdateDeliveryPartnerProfileDto,
+  ) {
     return {
       ...(dto.phone !== undefined ? { phone: this.optionalText(dto.phone) } : {}),
       ...(dto.vehicleNumber !== undefined
@@ -3789,6 +4456,12 @@ export class OrdersService {
       ...(dto.serviceLocalAreaCodes !== undefined
         ? { serviceLocalAreaCodes: this.cleanStringArray(dto.serviceLocalAreaCodes) }
         : {}),
+      ...(dto.baseLatitude !== undefined ? { baseLatitude: dto.baseLatitude } : {}),
+      ...(dto.baseLongitude !== undefined ? { baseLongitude: dto.baseLongitude } : {}),
+      ...(dto.serviceRadiusKm !== undefined ? { serviceRadiusKm: dto.serviceRadiusKm } : {}),
+      ...("codCashLimitPaise" in dto && dto.codCashLimitPaise !== undefined
+        ? { codCashLimitPaise: dto.codCashLimitPaise }
+        : {}),
       ...(dto.notes !== undefined ? { notes: this.optionalText(dto.notes) } : {}),
     };
   }
@@ -3803,6 +4476,9 @@ export class OrdersService {
     serviceCityCode?: string | null;
     servicePincodes?: string[];
     serviceLocalAreaCodes?: string[];
+    baseLatitude?: Prisma.Decimal | number | string | null;
+    baseLongitude?: Prisma.Decimal | number | string | null;
+    serviceRadiusKm?: number | null;
     codCashLimitPaise?: number | null;
     notes?: string | null;
   }) {
@@ -3816,6 +4492,9 @@ export class OrdersService {
       serviceCityCode: profile.serviceCityCode ?? null,
       servicePincodes: profile.servicePincodes ?? [],
       serviceLocalAreaCodes: profile.serviceLocalAreaCodes ?? [],
+      baseLatitude: profile.baseLatitude?.toString() ?? null,
+      baseLongitude: profile.baseLongitude?.toString() ?? null,
+      serviceRadiusKm: profile.serviceRadiusKm ?? null,
       codCashLimitPaise: profile.codCashLimitPaise ?? null,
       notes: profile.notes ?? null,
     };
@@ -4108,6 +4787,183 @@ export class OrdersService {
     return `${orderNumber}-S${String(sequence).padStart(2, "0")}`;
   }
 
+  private createPackageNumber(shipmentNumber: string, sequence: number) {
+    return `${shipmentNumber}-P${String(sequence).padStart(2, "0")}`;
+  }
+
+  private initialPackageStatus(deliveryMode: DeliveryMode) {
+    return deliveryMode === DeliveryMode.THIRD_PARTY_COURIER
+      ? OrderShipmentPackageStatus.READY_FOR_BOOKING
+      : OrderShipmentPackageStatus.PACKING_PENDING;
+  }
+
+  private packageStatusFromDeliveryStatus(status: DeliveryStatus, deliveryMode: DeliveryMode) {
+    switch (status) {
+      case DeliveryStatus.PACKED:
+        return deliveryMode === DeliveryMode.THIRD_PARTY_COURIER
+          ? OrderShipmentPackageStatus.READY_FOR_BOOKING
+          : OrderShipmentPackageStatus.PACKING_PENDING;
+      case DeliveryStatus.DISPATCHED:
+        return OrderShipmentPackageStatus.PICKED_UP;
+      case DeliveryStatus.IN_TRANSIT:
+        return OrderShipmentPackageStatus.IN_TRANSIT;
+      case DeliveryStatus.DELIVERED:
+        return OrderShipmentPackageStatus.DELIVERED;
+      case DeliveryStatus.CANCELLED:
+        return OrderShipmentPackageStatus.CANCELLED;
+      default:
+        return this.initialPackageStatus(deliveryMode);
+    }
+  }
+
+  private checkoutSellerPackages(
+    items: Array<{
+      item: { quantity: number };
+      variant: {
+        packageWeightGrams?: number | null;
+        packageLengthCm?: number | null;
+        packageBreadthCm?: number | null;
+        packageHeightCm?: number | null;
+        attributes?: Prisma.JsonValue | null;
+        pricePaise: number;
+      };
+      product: {
+        sellerId: string;
+        seller: {
+          sellerType: SellerType;
+        };
+      };
+    }>,
+  ) {
+    const packages = new Map<
+      string,
+      {
+        sellerId: string;
+        sellerType: SellerType;
+        subtotalPaise: number;
+        package: {
+          weightGrams: number;
+          lengthCm: number;
+          breadthCm: number;
+          heightCm: number;
+          itemCount: number;
+        };
+      }
+    >();
+
+    for (const { item, variant, product } of items) {
+      const current =
+        packages.get(product.sellerId) ??
+        {
+          sellerId: product.sellerId,
+          sellerType: product.seller.sellerType,
+          subtotalPaise: 0,
+          package: {
+            weightGrams: 0,
+            lengthCm: 20,
+            breadthCm: 15,
+            heightCm: 8,
+            itemCount: 0,
+          },
+        };
+      const itemWeightGrams = this.positiveInt(
+        variant.packageWeightGrams ?? this.jsonNumber(variant.attributes, "packageWeightGrams"),
+        500,
+      );
+      current.subtotalPaise += item.quantity * variant.pricePaise;
+      current.package.weightGrams += itemWeightGrams * item.quantity;
+      current.package.lengthCm = Math.max(
+        current.package.lengthCm,
+        this.positiveInt(
+          variant.packageLengthCm ?? this.jsonNumber(variant.attributes, "packageLengthCm"),
+          20,
+        ),
+      );
+      current.package.breadthCm = Math.max(
+        current.package.breadthCm,
+        this.positiveInt(
+          variant.packageBreadthCm ?? this.jsonNumber(variant.attributes, "packageBreadthCm"),
+          15,
+        ),
+      );
+      current.package.heightCm = Math.max(
+        current.package.heightCm,
+        this.positiveInt(
+          variant.packageHeightCm ?? this.jsonNumber(variant.attributes, "packageHeightCm"),
+          8,
+        ),
+      );
+      current.package.itemCount += item.quantity;
+      packages.set(product.sellerId, current);
+    }
+
+    return Array.from(packages.values()).map((sellerPackage) => ({
+      ...sellerPackage,
+      package: {
+        ...sellerPackage.package,
+        weightGrams: Math.max(sellerPackage.package.weightGrams, 500),
+      },
+    }));
+  }
+
+  private summaryDeliveryRouting(
+    routings: Array<{ quote: DeliveryRoutingQuote }>,
+    fallback: DeliveryRoutingQuote | null,
+  ) {
+    return routings.find((routing) => routing.quote.routingFailed)?.quote ?? routings[0]?.quote ?? fallback;
+  }
+
+  private summaryDeliveryMode(modes: DeliveryMode[], fallback?: DeliveryMode) {
+    if (!modes.length) {
+      return fallback ?? DeliveryMode.LOCAL_DELIVERY_PARTNER;
+    }
+    const firstMode = modes[0] ?? fallback ?? DeliveryMode.LOCAL_DELIVERY_PARTNER;
+    if (modes.every((mode) => mode === firstMode)) {
+      return firstMode;
+    }
+    if (modes.includes(DeliveryMode.MANUAL_TRANSPORT)) {
+      return DeliveryMode.MANUAL_TRANSPORT;
+    }
+    return DeliveryMode.THIRD_PARTY_COURIER;
+  }
+
+  private shipmentRoutingAssignmentNote(
+    routing: DeliveryRoutingQuote | null,
+  ) {
+    if (!routing) {
+      return null;
+    }
+    if (routing.routingFailureNote) {
+      return routing.routingFailureNote;
+    }
+    if (routing.deliveryMode === DeliveryMode.MANUAL_TRANSPORT) {
+      return "Manual transport coordination required. No courier booking will be attempted.";
+    }
+    if (routing.recommendedPartnerUserId) {
+      return "Local delivery route selected. Partner will be assigned after this seller package is packed.";
+    }
+    if (routing.deliveryMode === DeliveryMode.THIRD_PARTY_COURIER) {
+      return "Courier route selected. Shiprocket pickup location must match the seller profile before live booking.";
+    }
+
+    return null;
+  }
+
+  private positiveInt(value: number | null | undefined, fallback: number) {
+    return typeof value === "number" && Number.isFinite(value) && value > 0
+      ? Math.round(value)
+      : fallback;
+  }
+
+  private jsonNumber(value: Prisma.JsonValue | null | undefined, key: string) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return null;
+    }
+
+    const raw = (value as Record<string, unknown>)[key];
+    return typeof raw === "number" && Number.isFinite(raw) ? raw : null;
+  }
+
   private async updateSellerShipmentStatusGuarded(
     tx: Prisma.TransactionClient,
     input: {
@@ -4119,11 +4975,33 @@ export class OrdersService {
   ) {
     const shipment = await tx.orderShipment.findUnique({
       where: { orderSellerSplitId: input.orderSellerSplitId },
-      select: { id: true, status: true },
+      select: { id: true, status: true, deliveryMode: true },
     });
 
     if (!shipment) {
-      await tx.orderShipment.create({ data: input.createData });
+      const created = await tx.orderShipment.create({ data: input.createData });
+      const packageStatus = this.packageStatusFromDeliveryStatus(
+        created.status,
+        created.deliveryMode,
+      );
+      await tx.orderShipmentPackage.create({
+        data: {
+          packageNumber: this.createPackageNumber(created.shipmentNumber, 1),
+          orderShipmentId: created.id,
+          orderId: created.orderId,
+          sellerId: created.sellerId,
+          sequence: 1,
+          deliveryMode: created.deliveryMode,
+          status: packageStatus,
+          shippingPaise: created.shippingPaise,
+          codSurchargePaise: created.codSurchargePaise,
+          declaredValuePaise: created.subtotalPaise,
+          packageSnapshot: {
+            source: "SELLER_STATUS_COMPATIBILITY_DEFAULT_PACKAGE",
+            shipmentNumber: created.shipmentNumber,
+          },
+        },
+      });
       return;
     }
 
@@ -4142,6 +5020,25 @@ export class OrdersService {
     if (updated.count !== 1) {
       throw new BadRequestException("Seller package changed. Refresh the order and try again.");
     }
+    await tx.orderShipmentPackage.updateMany({
+      where: {
+        orderShipmentId: shipment.id,
+        status: {
+          notIn: [
+            OrderShipmentPackageStatus.DELIVERED,
+            OrderShipmentPackageStatus.CANCELLED,
+            OrderShipmentPackageStatus.FAILED,
+            OrderShipmentPackageStatus.RTO_DELIVERED,
+          ],
+        },
+      },
+      data: {
+        status: this.packageStatusFromDeliveryStatus(input.nextStatus, shipment.deliveryMode),
+        ...(input.nextStatus === DeliveryStatus.PACKED ? { readyForBookingAt: new Date() } : {}),
+        ...(input.nextStatus === DeliveryStatus.DELIVERED ? { deliveredAt: new Date() } : {}),
+        ...(input.nextStatus === DeliveryStatus.CANCELLED ? { cancelledAt: new Date() } : {}),
+      },
+    });
   }
 
   private allocateMinorAmountByKey(amountPaise: number, subtotals: Map<string, number>) {
@@ -4277,6 +5174,106 @@ export class OrdersService {
         totalPaise: order.totalPaise,
       }),
     ]);
+  }
+
+  private async notifyShipmentRoutingOperations(
+    order: Awaited<ReturnType<OrdersService["getAdminOrder"]>>,
+  ) {
+    const shippingAddress = this.readShippingAddressSnapshot(order.shippingAddressSnapshot);
+    const buyerDestination = [
+      shippingAddress?.area,
+      shippingAddress?.city,
+      shippingAddress?.state,
+      shippingAddress?.pincode,
+      shippingAddress?.countryCode,
+    ]
+      .filter(Boolean)
+      .join(", ");
+    const alerts = order.shipments.flatMap((shipment) => {
+      const sellerName = shipment.seller.storeName;
+      const sellerContact =
+        shipment.seller.user.email ?? shipment.seller.user.phone ?? shipment.seller.userId;
+      const baseVariables = {
+        orderNumber: order.orderNumber,
+        shipmentNumber: shipment.shipmentNumber,
+        sellerName,
+        deliveryMode: shipment.deliveryMode,
+        packageDimensions: this.routingPackageText(shipment.routingSnapshot),
+        buyerDestination,
+        sellerContact,
+        note: shipment.routingFailureNote ?? shipment.assignmentNote ?? "",
+      };
+      const items: Array<Promise<unknown>> = [];
+
+      if (shipment.routingFailed) {
+        items.push(
+          this.notifications.notifyAdminEvent(
+            EMAIL_TRIGGER_EVENTS.DELIVERY_ROUTING_FAILED_ADMIN,
+            baseVariables,
+          ),
+        );
+      }
+
+      if (shipment.deliveryMode === DeliveryMode.MANUAL_TRANSPORT) {
+        items.push(
+          this.notifications.notifyAdminEvent(
+            EMAIL_TRIGGER_EVENTS.MANUAL_TRANSPORT_REQUIRED_ADMIN,
+            {
+              ...baseVariables,
+              note:
+                shipment.assignmentNote ??
+                "Manual transport requires offline coordination. No courier booking will be attempted.",
+            },
+          ),
+        );
+        if (shipment.seller.user.email) {
+          items.push(
+            this.notifications.notifyEvent({
+              eventCode: EMAIL_TRIGGER_EVENTS.MANUAL_TRANSPORT_REQUIRED_SELLER,
+              recipientType: EmailRecipientType.SELLER,
+              recipient: shipment.seller.user.email,
+              userId: shipment.seller.userId,
+              variables: {
+                ...baseVariables,
+                note:
+                  shipment.assignmentNote ??
+                  "Manual transport requires offline coordination. Our operations team will coordinate dispatch details.",
+              },
+            }),
+          );
+        }
+      }
+
+      return items;
+    });
+
+    if (alerts.length) {
+      await Promise.all(alerts);
+    }
+  }
+
+  private routingPackageText(value: Prisma.JsonValue | null | undefined) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return "";
+    }
+
+    const packageSnapshot = (value as Record<string, unknown>).package;
+    if (!packageSnapshot || typeof packageSnapshot !== "object" || Array.isArray(packageSnapshot)) {
+      return "";
+    }
+
+    const record = packageSnapshot as Record<string, unknown>;
+    const weightGrams = typeof record.weightGrams === "number" ? record.weightGrams : null;
+    const lengthCm = typeof record.lengthCm === "number" ? record.lengthCm : null;
+    const breadthCm = typeof record.breadthCm === "number" ? record.breadthCm : null;
+    const heightCm = typeof record.heightCm === "number" ? record.heightCm : null;
+
+    return [
+      weightGrams ? `${weightGrams}g` : null,
+      lengthCm && breadthCm && heightCm ? `${lengthCm}x${breadthCm}x${heightCm}cm` : null,
+    ]
+      .filter(Boolean)
+      .join(" ");
   }
 
   private async notifyCustomerOrderStatus(
@@ -4505,6 +5502,35 @@ export class OrdersService {
     return trackingReference ? trackingReference : null;
   }
 
+  private cleanProviderCode(value?: string | null) {
+    const providerCode = value?.trim().toUpperCase();
+    return providerCode || null;
+  }
+
+  private routingPackageFromSnapshot(value: Prisma.JsonValue | null | undefined): DeliveryRoutingPackage | null {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return null;
+    }
+
+    const rawPackage = (value as Record<string, unknown>).package;
+    if (!rawPackage || typeof rawPackage !== "object" || Array.isArray(rawPackage)) {
+      return null;
+    }
+
+    const record = rawPackage as Record<string, unknown>;
+    return {
+      weightGrams: this.snapshotNumber(record.weightGrams),
+      lengthCm: this.snapshotNumber(record.lengthCm),
+      breadthCm: this.snapshotNumber(record.breadthCm),
+      heightCm: this.snapshotNumber(record.heightCm),
+      itemCount: this.snapshotNumber(record.itemCount),
+    };
+  }
+
+  private snapshotNumber(value: unknown) {
+    return typeof value === "number" && Number.isFinite(value) ? value : null;
+  }
+
   private shouldGenerateTrackingReference({
     previousDelivery,
     dto,
@@ -4537,7 +5563,10 @@ export class OrdersService {
     return Boolean(value?.trim());
   }
 
-  private async assertDeliveryPartnerUser(tx: Prisma.TransactionClient, userId: string) {
+  private async assertDeliveryPartnerUser(
+    tx: Prisma.TransactionClient | PrismaService["client"],
+    userId: string,
+  ) {
     const user = await tx.user.findFirst({
       where: {
         id: userId,
@@ -4660,7 +5689,17 @@ export class OrdersService {
           : null,
         subtotalPaise: shipment.subtotalPaise,
         shippingPaise: shipment.shippingPaise,
+        codSurchargePaise: shipment.codSurchargePaise,
         deliveryMode: shipment.deliveryMode,
+        courierProviderCode: shipment.courierProviderCode,
+        routingFailed: shipment.routingFailed,
+        routingFailureReason: shipment.routingFailureReason,
+        routingFailureNote: shipment.routingFailureNote,
+        routedAt: shipment.routedAt,
+        routingFirstFailedAt: shipment.routingFirstFailedAt,
+        routingLastAttemptAt: shipment.routingLastAttemptAt,
+        routingRetryCount: shipment.routingRetryCount,
+        routingPermanentFailureAt: shipment.routingPermanentFailureAt,
         status: shipment.status,
         assignmentStatus: shipment.assignmentStatus,
         deliveryPartnerUserId: shipment.deliveryPartnerUserId,
@@ -4673,6 +5712,9 @@ export class OrdersService {
         codCollectedAmountPaise: shipment.codCollectedAmountPaise,
         codCollectedAt: shipment.codCollectedAt,
         codVerifiedAt: shipment.codVerifiedAt,
+        packages: shipment.packages.map((shipmentPackage) =>
+          this.shipmentPackageReadback(shipmentPackage, { sellerLabelAccess: false }),
+        ),
       })),
       payments: order.payments.map((payment) => ({
         id: payment.id,

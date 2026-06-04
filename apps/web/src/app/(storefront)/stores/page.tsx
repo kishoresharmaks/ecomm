@@ -7,7 +7,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const seo = await resolveSeoEntry({ entityType: "CUSTOM_ROUTE", routePath: "/stores" });
   return metadataFromSeo(seo, {
     title: "1HandIndia Stores",
-    description: "Discover approved sellers, local shops, and nearby stores selling on the 1HandIndia marketplace.",
+    description: "Discover approved marketplace sellers, hyperlocal stores, and wholesale distributors selling on the 1HandIndia marketplace.",
     path: "/stores"
   });
 }

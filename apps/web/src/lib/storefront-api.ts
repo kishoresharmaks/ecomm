@@ -289,7 +289,7 @@ export type PlaceOrderPayload = {
   addressId?: string;
   shippingAddress?: CheckoutAddress;
   deliveryPreference?: "STORE_PICKUP" | "DELIVER_TO_ADDRESS";
-  deliveryMode?: "STORE_PICKUP" | "LOCAL_DELIVERY_PARTNER" | "THIRD_PARTY_COURIER";
+  deliveryMode?: "STORE_PICKUP" | "LOCAL_DELIVERY_PARTNER" | "THIRD_PARTY_COURIER" | "MANUAL_TRANSPORT";
   paymentMethod: "RAZORPAY" | "COD" | "BANK_TRANSFER" | "MANUAL";
   paymentReference?: string;
   buyerCountryCode?: string;
@@ -306,7 +306,7 @@ export type ResolveCheckoutDeliveryPayload = {
 
 export type CheckoutDeliveryRouteQuote = {
   deliveryPreference: "STORE_PICKUP" | "DELIVER_TO_ADDRESS";
-  deliveryMode: "STORE_PICKUP" | "LOCAL_DELIVERY_PARTNER" | "THIRD_PARTY_COURIER";
+  deliveryMode: "STORE_PICKUP" | "LOCAL_DELIVERY_PARTNER" | "THIRD_PARTY_COURIER" | "MANUAL_TRANSPORT";
   recommendedPartnerUserId: string | null;
   courierProviderCode: string | null;
   matchedRateCardId: string | null;
@@ -318,6 +318,23 @@ export type CheckoutDeliveryRouteQuote = {
   routingFailureReason: string | null;
   routingFailureNote: string | null;
   fallbackReason: string | null;
+  shipmentQuotes?: Array<{
+    sellerId: string;
+    sellerType: string;
+    subtotalPaise: number;
+    deliveryMode: "STORE_PICKUP" | "LOCAL_DELIVERY_PARTNER" | "THIRD_PARTY_COURIER" | "MANUAL_TRANSPORT";
+    shippingChargePaise: number;
+    codSurchargePaise: number;
+    totalDeliveryChargePaise: number;
+    routingFailed: boolean;
+    routingFailureReason: string | null;
+    routingFailureNote: string | null;
+    courierProviderCode: string | null;
+    recommendedPartnerUserId: string | null;
+    recommendedPartnerName: string | null;
+    routingSnapshot?: unknown;
+  }>;
+  shipmentShippingTotalPaise?: number;
   warnings: string[];
 };
 
@@ -518,6 +535,43 @@ export type OrderSummary = {
     codCollectedAmountPaise?: number | null;
     codCollectedAt?: string | null;
     codVerifiedAt?: string | null;
+    packages?: Array<{
+      id: string;
+      packageNumber: string;
+      orderShipmentId: string;
+      orderId: string;
+      sellerId: string;
+      sequence: number;
+      deliveryMode: string;
+      status: string;
+      shippingPaise: number;
+      codSurchargePaise?: number;
+      declaredValuePaise?: number;
+      currency: string;
+      weightGrams?: number | null;
+      lengthCm?: number | null;
+      breadthCm?: number | null;
+      heightCm?: number | null;
+      itemAllocations?: unknown;
+      readyForBookingAt?: string | null;
+      bookedAt?: string | null;
+      pickupScheduledAt?: string | null;
+      pickedUpAt?: string | null;
+      deliveredAt?: string | null;
+      cancelledAt?: string | null;
+      awbNumber?: string | null;
+      courierName?: string | null;
+      courierCode?: string | null;
+      courierTrackingStatus?: string | null;
+      courierTrackingStatusLabel?: string | null;
+      trackingUrl?: string | null;
+      shippingZone?: string | null;
+      providerRawStatus?: string | null;
+      providerRawStatusCode?: string | null;
+      shipmentBookedAt?: string | null;
+      canDownloadLabel?: boolean;
+      labelDownloadUrl?: string | null;
+    }>;
   }>;
   deliveryDetail?: {
     deliveryMode: string;

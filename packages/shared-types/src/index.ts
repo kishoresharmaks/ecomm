@@ -4,7 +4,11 @@ export type PlatformRole = (typeof platformRoles)[number];
 export * from "./product-essentials";
 export * from "./product-lifecycle";
 
-export const sellerTypes = ["VENDOR", "NEARBY_STORE", "LOCAL_SHOP"] as const;
+export const sellerTypes = [
+  "MARKETPLACE_SELLER",
+  "HYPERLOCAL_STORE",
+  "WHOLESALE_DISTRIBUTOR"
+] as const;
 export type SellerType = (typeof sellerTypes)[number];
 
 export const sellerStatuses = [

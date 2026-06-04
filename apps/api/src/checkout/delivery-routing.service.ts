@@ -9,17 +9,20 @@ import {
   DeliveryRoutingFailureReason,
   DeliveryStatus,
   Prisma,
+  ProductStatus,
   RoleCode,
   ShippingCodSurchargeType,
+  SellerType,
   SellerStatus,
   UserStatus,
+  VariantStatus,
 } from "@indihub/database";
 import type { RequestUser } from "../auth/types/indihub-request";
 import { CustomersService } from "../customers/customers.service";
 import { LocationsService } from "../locations/locations.service";
 import { PaymentsService } from "../payments/payments.service";
 import { PrismaService } from "../prisma/prisma.service";
-import { readNumberSetting } from "../settings/setting-value-utils";
+import { readBooleanSetting, readNumberSetting } from "../settings/setting-value-utils";
 import {
   CheckoutDeliveryPreference,
   CheckoutRoutingAddressDto,
@@ -36,6 +39,12 @@ import {
 const defaultShippingChargeSettingKey = "shipping.default_charge_paise";
 const defaultCodCashLimitSettingKey = "delivery.defaultCodCashLimitPaise";
 const defaultCodCashLimitPaise = 500000;
+const wholesaleBulkyRoutingEnabledSettingKey = "delivery.wholesale_bulky_routing.enabled";
+const bulkyWeightThresholdSettingKey = "delivery.bulky.weight_grams";
+const bulkyMaxSideThresholdSettingKey = "delivery.bulky.max_side_cm";
+const defaultBulkyWeightThresholdGrams = 20_000;
+const defaultBulkyMaxSideCm = 100;
+const routingRuleVersion = "seller_type_delivery_routing_v1";
 
 type RoutingClient = Prisma.TransactionClient | PrismaService["client"];
 
@@ -82,6 +91,16 @@ export type DeliveryRoutingAddress = {
   stateCode?: string | null;
   cityCode?: string | null;
   localAreaCode?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+};
+
+export type DeliveryRoutingPackage = {
+  weightGrams?: number | null;
+  lengthCm?: number | null;
+  breadthCm?: number | null;
+  heightCm?: number | null;
+  itemCount?: number | null;
 };
 
 export type ResolveDeliveryRoutingInput = {
@@ -91,6 +110,9 @@ export type ResolveDeliveryRoutingInput = {
   subtotalPaise: number;
   paymentMethod?: string | null | undefined;
   orderId?: string | undefined;
+  sellerId?: string | null | undefined;
+  sellerType?: SellerType | null | undefined;
+  package?: DeliveryRoutingPackage | null | undefined;
 };
 
 export type DeliveryRoutingQuote = {
@@ -124,6 +146,10 @@ export type DeliveryRoutingQuote = {
   shippingSnapshot: Prisma.InputJsonObject;
   codSurchargeSnapshot: Prisma.InputJsonObject;
   routingSnapshot: Prisma.InputJsonObject;
+  packageSnapshot?: Prisma.InputJsonObject | null;
+  sellerId?: string | null;
+  sellerType?: SellerType | null;
+  routingRuleVersion?: string;
 };
 
 export type LocationServiceabilityStatus = "READY" | "PARTIAL" | "NOT_SERVICEABLE";
@@ -273,7 +299,34 @@ export class DeliveryRoutingService {
       ...(dto.shippingAddress !== undefined ? { shippingAddress: dto.shippingAddress } : {}),
     });
 
-    return this.resolveDelivery(
+    const sellerPackages = await this.checkoutPreviewSellerPackages(cart.items, this.prisma.client);
+    const shipmentQuotes = await Promise.all(
+      sellerPackages.map(async (sellerPackage) => {
+        const quote = await this.resolveDelivery(
+          {
+            deliveryPreference: dto.deliveryPreference,
+            address,
+            subtotalPaise: sellerPackage.subtotalPaise,
+            paymentMethod: dto.paymentMethod ?? CheckoutRoutingPaymentMethod.COD,
+            sellerId: sellerPackage.sellerId,
+            sellerType: sellerPackage.sellerType,
+            package: sellerPackage.package,
+          },
+          this.prisma.client,
+        );
+
+        return {
+          sellerId: sellerPackage.sellerId,
+          sellerType: sellerPackage.sellerType,
+          subtotalPaise: sellerPackage.subtotalPaise,
+          quote,
+        };
+      }),
+    );
+    const summaryQuote =
+      shipmentQuotes.find((shipment) => shipment.quote.routingFailed)?.quote ??
+      shipmentQuotes[0]?.quote ??
+      (await this.resolveDelivery(
       {
         deliveryPreference: dto.deliveryPreference,
         address,
@@ -281,7 +334,31 @@ export class DeliveryRoutingService {
         paymentMethod: dto.paymentMethod ?? CheckoutRoutingPaymentMethod.COD,
       },
       this.prisma.client,
-    );
+      ));
+
+    return {
+      ...summaryQuote,
+      shipmentQuotes: shipmentQuotes.map((shipment) => ({
+        sellerId: shipment.sellerId,
+        sellerType: shipment.sellerType,
+        subtotalPaise: shipment.subtotalPaise,
+        deliveryMode: shipment.quote.deliveryMode,
+        shippingChargePaise: shipment.quote.shippingChargePaise,
+        codSurchargePaise: shipment.quote.codSurchargePaise,
+        totalDeliveryChargePaise: shipment.quote.totalDeliveryChargePaise,
+        routingFailed: shipment.quote.routingFailed,
+        routingFailureReason: shipment.quote.routingFailureReason,
+        routingFailureNote: shipment.quote.routingFailureNote,
+        courierProviderCode: shipment.quote.courierProviderCode,
+        recommendedPartnerUserId: shipment.quote.recommendedPartnerUserId,
+        recommendedPartnerName: shipment.quote.recommendedPartnerName,
+        routingSnapshot: shipment.quote.routingSnapshot,
+      })),
+      shipmentShippingTotalPaise: shipmentQuotes.reduce(
+        (total, shipment) => total + shipment.quote.totalDeliveryChargePaise,
+        0,
+      ),
+    };
   }
 
   async resolveDelivery(
@@ -290,6 +367,9 @@ export class DeliveryRoutingService {
   ): Promise<DeliveryRoutingQuote> {
     const normalizedSubtotal = this.nonNegativeInt(input.subtotalPaise);
     const address = this.normalizeAddress(input.address);
+    const parcel = this.normalizePackage(input.package);
+    const sellerType = input.sellerType ?? null;
+    const sellerId = input.sellerId ?? null;
     const forcedMode =
       input.requestedDeliveryMode && !input.deliveryPreference ? input.requestedDeliveryMode : null;
     const deliveryPreference =
@@ -317,26 +397,95 @@ export class DeliveryRoutingService {
         fallbackReason: null,
         warnings: [],
         providerChecked: null,
+        sellerId,
+        sellerType,
+        parcel,
       });
     }
 
-    if (forcedMode === DeliveryMode.THIRD_PARTY_COURIER) {
-      const provider = await this.findActiveProviderForCountry(address?.countryCode, client);
+    if (forcedMode === DeliveryMode.MANUAL_TRANSPORT) {
       return this.quoteForMode({
         deliveryPreference,
-        deliveryMode: DeliveryMode.THIRD_PARTY_COURIER,
+        deliveryMode: DeliveryMode.MANUAL_TRANSPORT,
         address,
         subtotalPaise: normalizedSubtotal,
         paymentMethod: input.paymentMethod,
         client,
         partnerSelection: null,
-        providerCode: provider?.providerCode ?? null,
+        providerCode: null,
         routingFailed: false,
         routingFailureReason: null,
         routingFailureNote: null,
-        fallbackReason: null,
-        warnings: provider ? [] : ["No active courier provider matched this address yet."],
-        providerChecked: provider?.providerCode ?? null,
+        fallbackReason: "Manual transport selected by operations.",
+        warnings: [
+          "Manual transport requires offline coordination. No courier booking will be attempted.",
+        ],
+        providerChecked: null,
+        sellerId,
+        sellerType,
+        parcel,
+      });
+    }
+
+    if (sellerType === SellerType.WHOLESALE_DISTRIBUTOR) {
+      const bulkyRoutingEnabled = await this.wholesaleBulkyRoutingEnabled(client);
+      const bulkyThreshold = await this.bulkyThreshold(client);
+      const isBulky = this.isBulkyPackage(parcel, bulkyThreshold);
+
+      if (bulkyRoutingEnabled && isBulky) {
+        return this.quoteForMode({
+          deliveryPreference,
+          deliveryMode: DeliveryMode.MANUAL_TRANSPORT,
+          address,
+          subtotalPaise: normalizedSubtotal,
+          paymentMethod: input.paymentMethod,
+          client,
+          partnerSelection: null,
+          providerCode: null,
+          routingFailed: false,
+          routingFailureReason: null,
+          routingFailureNote: null,
+          fallbackReason: "Wholesale bulky package routed to manual transport.",
+          warnings: [
+            "Manual transport requires admin/seller offline coordination. No courier booking will be attempted.",
+          ],
+          providerChecked: null,
+          sellerId,
+          sellerType,
+          parcel,
+          packageIsBulky: true,
+        });
+      }
+
+      return this.resolveCourierDelivery({
+        deliveryPreference,
+        address,
+        subtotalPaise: normalizedSubtotal,
+        paymentMethod: input.paymentMethod,
+        client,
+        partnerSelection: null,
+        fallbackReason: bulkyRoutingEnabled
+          ? "Wholesale normal package routed to courier."
+          : "Wholesale bulky routing feature flag is disabled; routed to courier.",
+        sellerId,
+        sellerType,
+        parcel,
+        packageIsBulky: isBulky,
+      });
+    }
+
+    if (forcedMode === DeliveryMode.THIRD_PARTY_COURIER) {
+      return this.resolveCourierDelivery({
+        deliveryPreference,
+        address,
+        subtotalPaise: normalizedSubtotal,
+        paymentMethod: input.paymentMethod,
+        client,
+        partnerSelection: null,
+        fallbackReason: "Courier delivery mode requested.",
+        sellerId,
+        sellerType,
+        parcel,
       });
     }
 
@@ -362,7 +511,7 @@ export class DeliveryRoutingService {
     if (
       forcedMode === DeliveryMode.LOCAL_DELIVERY_PARTNER ||
       partnerSelection.candidate ||
-      localRateMatch
+      (!sellerType && localRateMatch)
     ) {
       const warnings = partnerSelection.candidate
         ? []
@@ -388,52 +537,23 @@ export class DeliveryRoutingService {
             : "Legacy local delivery mode requested.",
         warnings,
         providerChecked: null,
+        sellerId,
+        sellerType,
+        parcel,
       });
     }
 
-    const provider = await this.findActiveProviderForCountry(address?.countryCode, client);
-    if (provider) {
-      return this.quoteForMode({
-        deliveryPreference,
-        deliveryMode: DeliveryMode.THIRD_PARTY_COURIER,
-        address,
-        subtotalPaise: normalizedSubtotal,
-        paymentMethod: input.paymentMethod,
-        client,
-        partnerSelection,
-        providerCode: provider.providerCode,
-        routingFailed: false,
-        routingFailureReason: null,
-        routingFailureNote: null,
-        fallbackReason: "No eligible local partner matched; routed to courier fallback.",
-        warnings: [],
-        providerChecked: provider.providerCode,
-      });
-    }
-
-    const failureReason = (await this.anyActiveCourierProvider(client))
-      ? DeliveryRoutingFailureReason.COURIER_COUNTRY_UNSERVICEABLE
-      : DeliveryRoutingFailureReason.COURIER_PROVIDER_INACTIVE;
-    const failureNote =
-      failureReason === DeliveryRoutingFailureReason.COURIER_COUNTRY_UNSERVICEABLE
-        ? "No local partner matched and no active courier provider serves this country."
-        : "No local partner matched and courier fallback is not active.";
-
-    return this.quoteForMode({
+    return this.resolveCourierDelivery({
       deliveryPreference,
-      deliveryMode: DeliveryMode.THIRD_PARTY_COURIER,
       address,
       subtotalPaise: normalizedSubtotal,
       paymentMethod: input.paymentMethod,
       client,
       partnerSelection,
-      providerCode: null,
-      routingFailed: true,
-      routingFailureReason: failureReason,
-      routingFailureNote: failureNote,
       fallbackReason: "No local partner matched.",
-      warnings: [failureNote],
-      providerChecked: null,
+      sellerId,
+      sellerType,
+      parcel,
     });
   }
 
@@ -463,6 +583,109 @@ export class DeliveryRoutingService {
       item: card,
       warnings: await this.rateCardOverlapWarnings(card),
     };
+  }
+
+  private async checkoutPreviewSellerPackages(
+    cartItems: Array<{ productVariantId: string; quantity: number }>,
+    client: RoutingClient,
+  ) {
+    const sellerPackages = new Map<
+      string,
+      {
+        sellerId: string;
+        sellerType: SellerType;
+        subtotalPaise: number;
+        package: {
+          weightGrams: number;
+          lengthCm: number;
+          breadthCm: number;
+          heightCm: number;
+          itemCount: number;
+        };
+      }
+    >();
+
+    for (const item of cartItems) {
+      const variant = await client.productVariant.findFirst({
+        where: {
+          id: item.productVariantId,
+          status: VariantStatus.ACTIVE,
+          product: {
+            status: ProductStatus.ACTIVE,
+            approvalStatus: ApprovalStatus.APPROVED,
+            deletedAt: null,
+            seller: {
+              status: SellerStatus.APPROVED,
+              approvalStatus: ApprovalStatus.APPROVED,
+            },
+          },
+        },
+        include: {
+          product: {
+            include: {
+              seller: true,
+            },
+          },
+        },
+      });
+
+      if (!variant) {
+        continue;
+      }
+
+      const sellerId = variant.product.sellerId;
+      const current =
+        sellerPackages.get(sellerId) ??
+        {
+          sellerId,
+          sellerType: variant.product.seller.sellerType,
+          subtotalPaise: 0,
+          package: {
+            weightGrams: 0,
+            lengthCm: 20,
+            breadthCm: 15,
+            heightCm: 8,
+            itemCount: 0,
+          },
+        };
+      const itemWeightGrams = this.positiveInt(
+        variant.packageWeightGrams ?? this.jsonNumber(variant.attributes, "packageWeightGrams"),
+        500,
+      );
+      current.subtotalPaise += item.quantity * variant.pricePaise;
+      current.package.weightGrams += itemWeightGrams * item.quantity;
+      current.package.lengthCm = Math.max(
+        current.package.lengthCm,
+        this.positiveInt(
+          variant.packageLengthCm ?? this.jsonNumber(variant.attributes, "packageLengthCm"),
+          20,
+        ),
+      );
+      current.package.breadthCm = Math.max(
+        current.package.breadthCm,
+        this.positiveInt(
+          variant.packageBreadthCm ?? this.jsonNumber(variant.attributes, "packageBreadthCm"),
+          15,
+        ),
+      );
+      current.package.heightCm = Math.max(
+        current.package.heightCm,
+        this.positiveInt(
+          variant.packageHeightCm ?? this.jsonNumber(variant.attributes, "packageHeightCm"),
+          8,
+        ),
+      );
+      current.package.itemCount += item.quantity;
+      sellerPackages.set(sellerId, current);
+    }
+
+    return Array.from(sellerPackages.values()).map((sellerPackage) => ({
+      ...sellerPackage,
+      package: {
+        ...sellerPackage.package,
+        weightGrams: Math.max(sellerPackage.package.weightGrams, 500),
+      },
+    }));
   }
 
   async updateRateCard(actor: RequestUser, rateCardId: string, dto: UpsertShippingRateCardDto) {
@@ -979,6 +1202,10 @@ export class DeliveryRoutingService {
     fallbackReason: string | null;
     warnings: string[];
     providerChecked: string | null;
+    sellerId?: string | null | undefined;
+    sellerType?: SellerType | null | undefined;
+    parcel?: DeliveryRoutingPackage | null | undefined;
+    packageIsBulky?: boolean | undefined;
   }): Promise<DeliveryRoutingQuote> {
     const rateMatch =
       input.deliveryMode === DeliveryMode.STORE_PICKUP
@@ -1033,9 +1260,14 @@ export class DeliveryRoutingService {
       amountPaise: codSurchargePaise,
       paymentMethod: input.paymentMethod ?? null,
     };
+    const packageSnapshot = this.packageSnapshot(input.parcel, input.packageIsBulky);
     const routingSnapshot: Prisma.InputJsonObject = {
+      ruleVersion: routingRuleVersion,
+      sellerId: input.sellerId ?? null,
+      sellerType: input.sellerType ?? null,
       deliveryPreference: input.deliveryPreference,
       deliveryMode: input.deliveryMode,
+      package: packageSnapshot,
       recommendedPartnerUserId: partner?.user.id ?? null,
       recommendedPartnerName: partner ? this.partnerName(partner.user) : null,
       partnerMatchLabel: partner?.matchLabel ?? null,
@@ -1080,7 +1312,156 @@ export class DeliveryRoutingService {
       shippingSnapshot,
       codSurchargeSnapshot,
       routingSnapshot,
+      packageSnapshot,
+      sellerId: input.sellerId ?? null,
+      sellerType: input.sellerType ?? null,
+      routingRuleVersion,
     };
+  }
+
+  private async resolveCourierDelivery(input: {
+    deliveryPreference: CheckoutDeliveryPreference;
+    address: DeliveryRoutingAddress | null;
+    subtotalPaise: number;
+    paymentMethod?: string | null | undefined;
+    client: RoutingClient;
+    partnerSelection: PartnerSelection | null;
+    fallbackReason: string | null;
+    sellerId?: string | null;
+    sellerType?: SellerType | null;
+    parcel?: DeliveryRoutingPackage | null;
+    packageIsBulky?: boolean;
+  }) {
+    const provider = await this.findActiveProviderForCountry(input.address?.countryCode, input.client);
+    if (provider) {
+      return this.quoteForMode({
+        deliveryPreference: input.deliveryPreference,
+        deliveryMode: DeliveryMode.THIRD_PARTY_COURIER,
+        address: input.address,
+        subtotalPaise: input.subtotalPaise,
+        paymentMethod: input.paymentMethod,
+        client: input.client,
+        partnerSelection: input.partnerSelection,
+        providerCode: provider.providerCode,
+        routingFailed: false,
+        routingFailureReason: null,
+        routingFailureNote: null,
+        fallbackReason: input.fallbackReason,
+        warnings: [],
+        providerChecked: provider.providerCode,
+        sellerId: input.sellerId,
+        sellerType: input.sellerType,
+        parcel: input.parcel,
+        packageIsBulky: input.packageIsBulky,
+      });
+    }
+
+    const failureReason = (await this.anyActiveCourierProvider(input.client))
+      ? DeliveryRoutingFailureReason.COURIER_COUNTRY_UNSERVICEABLE
+      : DeliveryRoutingFailureReason.COURIER_PROVIDER_INACTIVE;
+    const failureNote =
+      failureReason === DeliveryRoutingFailureReason.COURIER_COUNTRY_UNSERVICEABLE
+        ? "No active courier provider serves this delivery country."
+        : "Courier fallback is not active.";
+    const note = input.partnerSelection
+      ? `No local partner matched and ${failureNote.charAt(0).toLowerCase()}${failureNote.slice(1)}`
+      : failureNote;
+
+    return this.quoteForMode({
+      deliveryPreference: input.deliveryPreference,
+      deliveryMode: DeliveryMode.THIRD_PARTY_COURIER,
+      address: input.address,
+      subtotalPaise: input.subtotalPaise,
+      paymentMethod: input.paymentMethod,
+      client: input.client,
+      partnerSelection: input.partnerSelection,
+      providerCode: null,
+      routingFailed: true,
+      routingFailureReason: failureReason,
+      routingFailureNote: note,
+      fallbackReason: input.fallbackReason,
+      warnings: [note],
+      providerChecked: null,
+      sellerId: input.sellerId,
+      sellerType: input.sellerType,
+      parcel: input.parcel,
+      packageIsBulky: input.packageIsBulky,
+    });
+  }
+
+  private async wholesaleBulkyRoutingEnabled(client: RoutingClient) {
+    const setting = await client.setting.findUnique({
+      where: { key: wholesaleBulkyRoutingEnabledSettingKey },
+      select: { value: true },
+    });
+    const envEnabled = process.env.INDIHUB_WHOLESALE_BULKY_ROUTING_ENABLED === "true";
+    return readBooleanSetting(setting?.value, envEnabled);
+  }
+
+  private async bulkyThreshold(client: RoutingClient) {
+    const settings = await client.setting.findMany({
+      where: {
+        key: {
+          in: [bulkyWeightThresholdSettingKey, bulkyMaxSideThresholdSettingKey],
+        },
+      },
+    });
+    const settingMap = new Map(settings.map((setting) => [setting.key, setting.value]));
+
+    return {
+      weightGrams: this.nonNegativeInt(
+        readNumberSetting(
+          settingMap.get(bulkyWeightThresholdSettingKey),
+          defaultBulkyWeightThresholdGrams,
+        ),
+      ),
+      maxSideCm: this.nonNegativeInt(
+        readNumberSetting(settingMap.get(bulkyMaxSideThresholdSettingKey), defaultBulkyMaxSideCm),
+      ),
+    };
+  }
+
+  private isBulkyPackage(
+    parcel: DeliveryRoutingPackage | null,
+    threshold: { weightGrams: number; maxSideCm: number },
+  ) {
+    if (!parcel) {
+      return false;
+    }
+
+    const weightGrams = this.nonNegativeInt(parcel.weightGrams ?? 0);
+    const maxSideCm = Math.max(
+      this.nonNegativeInt(parcel.lengthCm ?? 0),
+      this.nonNegativeInt(parcel.breadthCm ?? 0),
+      this.nonNegativeInt(parcel.heightCm ?? 0),
+    );
+
+    return weightGrams > threshold.weightGrams || maxSideCm > threshold.maxSideCm;
+  }
+
+  private normalizePackage(parcel?: DeliveryRoutingPackage | null) {
+    if (!parcel) {
+      return null;
+    }
+
+    return {
+      weightGrams: this.nullablePositiveInt(parcel.weightGrams),
+      lengthCm: this.nullablePositiveInt(parcel.lengthCm),
+      breadthCm: this.nullablePositiveInt(parcel.breadthCm),
+      heightCm: this.nullablePositiveInt(parcel.heightCm),
+      itemCount: this.nullablePositiveInt(parcel.itemCount),
+    };
+  }
+
+  private packageSnapshot(parcel: DeliveryRoutingPackage | null | undefined, packageIsBulky?: boolean) {
+    return {
+      weightGrams: parcel?.weightGrams ?? null,
+      lengthCm: parcel?.lengthCm ?? null,
+      breadthCm: parcel?.breadthCm ?? null,
+      heightCm: parcel?.heightCm ?? null,
+      itemCount: parcel?.itemCount ?? null,
+      isBulky: packageIsBulky ?? false,
+    } satisfies Prisma.InputJsonObject;
   }
 
   private async chooseBestLocalPartner(
@@ -1199,6 +1580,13 @@ export class DeliveryRoutingService {
     if (address?.countryCode) {
       legacyAreaOr.push({ serviceCountryCode: address.countryCode });
     }
+    if (this.hasCoordinates(address)) {
+      legacyAreaOr.push({
+        baseLatitude: { not: null },
+        baseLongitude: { not: null },
+        serviceRadiusKm: { not: null },
+      });
+    }
     legacyAreaOr.push({
       serviceCityCode: null,
       servicePincodes: { isEmpty: true },
@@ -1306,6 +1694,7 @@ export class DeliveryRoutingService {
           profile.priority,
         ),
       ),
+      this.matchPartnerRadius(profile, address),
     ].filter((match): match is LocationMatch => Boolean(match));
 
     return (
@@ -1316,6 +1705,50 @@ export class DeliveryRoutingService {
         return left.priority - right.priority;
       })[0] ?? null
     );
+  }
+
+  private matchPartnerRadius(
+    profile: PartnerCandidateUser["deliveryProfile"],
+    address: DeliveryRoutingAddress | null,
+  ) {
+    if (!profile || !this.hasCoordinates(address)) {
+      return null;
+    }
+    if (!profile.baseLatitude || !profile.baseLongitude || !profile.serviceRadiusKm) {
+      return null;
+    }
+
+    const baseLatitude = Number(profile.baseLatitude);
+    const baseLongitude = Number(profile.baseLongitude);
+    const deliveryLatitude = Number(address?.latitude);
+    const deliveryLongitude = Number(address?.longitude);
+    const radiusKm = Number(profile.serviceRadiusKm);
+    if (
+      !Number.isFinite(baseLatitude) ||
+      !Number.isFinite(baseLongitude) ||
+      !Number.isFinite(deliveryLatitude) ||
+      !Number.isFinite(deliveryLongitude) ||
+      !Number.isFinite(radiusKm) ||
+      radiusKm <= 0
+    ) {
+      return null;
+    }
+
+    const distanceKm = this.haversineKm(
+      baseLatitude,
+      baseLongitude,
+      deliveryLatitude,
+      deliveryLongitude,
+    );
+    if (distanceKm > radiusKm) {
+      return null;
+    }
+
+    return {
+      specificityScore: 3,
+      matchLabel: `radius ${Math.round(distanceKm * 10) / 10}km`,
+      priority: profile.priority,
+    };
   }
 
   private matchLocationScope(
@@ -2107,6 +2540,8 @@ export class DeliveryRoutingService {
       stateCode: this.normalizeOptionalCode(address.stateCode),
       cityCode: this.normalizeOptionalCode(address.cityCode),
       localAreaCode: this.normalizeOptionalCode(address.localAreaCode),
+      latitude: this.nullableFiniteNumber(address.latitude),
+      longitude: this.nullableFiniteNumber(address.longitude),
     };
   }
 
@@ -2137,5 +2572,54 @@ export class DeliveryRoutingService {
 
   private nonNegativeInt(value: number) {
     return Math.max(0, Math.round(value));
+  }
+
+  private nullablePositiveInt(value?: number | null) {
+    return typeof value === "number" && Number.isFinite(value) && value > 0
+      ? Math.round(value)
+      : null;
+  }
+
+  private nullableFiniteNumber(value?: number | null) {
+    return typeof value === "number" && Number.isFinite(value) ? value : null;
+  }
+
+  private hasCoordinates(address: DeliveryRoutingAddress | null): address is DeliveryRoutingAddress {
+    return (
+      typeof address?.latitude === "number" &&
+      Number.isFinite(address.latitude) &&
+      typeof address.longitude === "number" &&
+      Number.isFinite(address.longitude)
+    );
+  }
+
+  private haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
+    const toRadians = (degrees: number) => (degrees * Math.PI) / 180;
+    const earthRadiusKm = 6371;
+    const dLat = toRadians(lat2 - lat1);
+    const dLon = toRadians(lon2 - lon1);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(toRadians(lat1)) *
+        Math.cos(toRadians(lat2)) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+
+    return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  private positiveInt(value: number | null | undefined, fallback: number) {
+    return typeof value === "number" && Number.isFinite(value) && value > 0
+      ? Math.round(value)
+      : fallback;
+  }
+
+  private jsonNumber(value: Prisma.JsonValue | null | undefined, key: string) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return null;
+    }
+
+    const raw = (value as Record<string, unknown>)[key];
+    return typeof raw === "number" && Number.isFinite(raw) ? raw : null;
   }
 }

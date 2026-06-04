@@ -5,14 +5,15 @@ export const indiaLocationImportGuideCards = [
     title: "Official bulk import",
     source: "Department of Posts / data.gov.in",
     command: '$env:DATAGOVINDIA_API_KEY="your-data-gov-in-api-key"\npnpm locations:import:india -- --dry-run\npnpm locations:import:india',
-    description: "Preview first, then load India states, district city nodes, post-office local areas, pincodes, and postal metadata into the database."
+    description:
+      "Preview first, then load India states, district city nodes, post-office local areas, pincodes, and postal metadata through the staging-table bulk importer."
   },
   {
     title: "CSV fallback",
     source: "Approved Department of Posts CSV",
     command:
       'pnpm locations:import:india -- --file data/location-imports/all_india_pin_code.csv --source-url "https://data.gov.in/sites/default/files/all_india_pin_code.csv"',
-    description: "Use this when the data.gov.in API key is unavailable or the API is rate-limited."
+    description: "Use this when the data.gov.in API key is unavailable or the API is rate-limited; it uses the same bulk staging path."
   },
   {
     title: "PostalPin verification",

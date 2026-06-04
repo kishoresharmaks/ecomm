@@ -1,17 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronDown, MapPin, RotateCcw } from "lucide-react";
 import { Button, cn } from "@indihub/ui";
 import { useMarket } from "@/components/market/market-context";
-import {
-  listLocationAreas,
-  listLocationCities,
-  listLocationCountries,
-  listLocationStates,
-  type LocationArea,
-} from "@/lib/location-api";
-import { useQuery } from "@tanstack/react-query";
+import { type LocationArea } from "@/lib/location-api";
+import { useLocationAreaStore, useLocationCatalog } from "@/components/locations/location-store";
 import { formatLocalAreaLabel, normalizeLocalAreaSearchValue } from "@/components/locations/location-utils";
 import { useStorefrontLocation } from "./storefront-location-context";
 import {
@@ -62,34 +56,19 @@ export function StorefrontLocationPicker({
     setShowRefinements(Boolean(location?.localAreaCode || location?.areaName || location?.pincode));
   }, [activeLocation, market.countryCode]);
 
-  const countriesQuery = useQuery({
-    queryKey: ["locations", "countries"],
-    queryFn: listLocationCountries,
-  });
-  const statesQuery = useQuery({
-    queryKey: ["locations", "states", countryCode],
-    queryFn: () => listLocationStates(countryCode),
-    enabled: Boolean(countryCode),
-  });
-  const citiesQuery = useQuery({
-    queryKey: ["locations", "cities", stateCode],
-    queryFn: () => listLocationCities(stateCode),
-    enabled: Boolean(stateCode),
-  });
-  const areaLookupSearch = useMemo(
-    () => normalizeLocalAreaSearchValue(areaSearch),
-    [areaSearch],
-  );
-  const areasQuery = useQuery({
-    queryKey: ["locations", "areas", cityCode, areaLookupSearch],
-    queryFn: () => listLocationAreas({ cityCode, search: areaLookupSearch, limit: 50 }),
-    enabled: Boolean(cityCode),
+  const locationCatalog = useLocationCatalog({ countryCode, stateCode });
+  const areasStore = useLocationAreaStore({
+    countryCode,
+    stateCode,
+    cityCode,
+    search: areaSearch,
+    limit: 50,
   });
 
-  const countries = countriesQuery.data ?? [];
-  const states = statesQuery.data ?? [];
-  const cities = citiesQuery.data ?? [];
-  const areas = areasQuery.data ?? [];
+  const countries = locationCatalog.countries;
+  const states = locationCatalog.states;
+  const cities = locationCatalog.cities;
+  const areas = areasStore.areas;
   const country = countries.find((item) => item.code === countryCode);
   const state = states.find((item) => item.code === stateCode);
   const city = cities.find((item) => item.code === cityCode);
@@ -107,7 +86,7 @@ export function StorefrontLocationPicker({
       : null);
   const selectedAreaLabel = area ? formatLocalAreaLabel(area) : "";
   const shouldShowAreaSuggestions =
-    Boolean(cityCode) &&
+    Boolean(countryCode) &&
     areaSearch.trim().length > 0 &&
     normalizeLocalAreaSearchValue(areaSearch) !==
       normalizeLocalAreaSearchValue(selectedAreaLabel);
@@ -127,13 +106,15 @@ export function StorefrontLocationPicker({
     : browsingLocationLabel(activeLocation);
 
   function applyLocation() {
+    const selectedStateName = state?.name ?? selectedArea?.city?.subdivision?.name;
+    const selectedCityName = city?.name ?? selectedArea?.city?.name;
     const next = normalizeBrowsingLocation({
       countryCode,
-      countryName: country?.name ?? market.market.countryName,
+      countryName: country?.name ?? selectedArea?.city?.subdivision?.country?.name ?? market.market.countryName,
       ...(stateCode ? { stateCode } : {}),
-      ...(state?.name ? { stateName: state.name } : {}),
+      ...(selectedStateName ? { stateName: selectedStateName } : {}),
       ...(cityCode ? { cityCode } : {}),
-      ...(city?.name ? { cityName: city.name } : {}),
+      ...(selectedCityName ? { cityName: selectedCityName } : {}),
       ...(localAreaCode ? { localAreaCode } : {}),
       ...((area?.name ?? areaSearch)
         ? { areaName: area?.name ?? areaSearch }
@@ -203,9 +184,9 @@ export function StorefrontLocationPicker({
             <p className="text-xs font-black uppercase tracking-[0.18em] text-[#ED3500]">
               Store location
             </p>
-            <h3 className="mt-2 text-xl font-black text-[#163B5C]">Choose a city first</h3>
+            <h3 className="mt-2 text-xl font-black text-[#163B5C]">Choose browsing location</h3>
             <p className="mt-2 text-sm font-semibold leading-6 text-[#667085]">
-              Start with state and city. Add area or pincode only if you want more precise nearby stores.
+              Start with a country, then refine by state, city, local area, or pincode.
             </p>
           </div>
 
@@ -282,7 +263,7 @@ export function StorefrontLocationPicker({
               />
             </div>
 
-            {cityCode ? (
+            {countryCode ? (
               <div className="space-y-3 rounded-2xl border border-[#E5E7EB] bg-[#FCFDFE] p-4">
                 <button
                   type="button"
@@ -331,6 +312,18 @@ export function StorefrontLocationPicker({
                                   setLocalAreaCode(item.code);
                                   setAreaSearch(formatLocalAreaLabel(item));
                                   setPincode(item.postalCode ?? "");
+                                  const selectedCity = item.city;
+                                  const selectedSubdivision = selectedCity?.subdivision;
+                                  const selectedCountry = selectedSubdivision?.country;
+                                  if (selectedCountry?.code) {
+                                    setCountryCode(selectedCountry.code);
+                                  }
+                                  if (selectedSubdivision?.code) {
+                                    setStateCode(selectedSubdivision.code);
+                                  }
+                                  if (selectedCity?.code) {
+                                    setCityCode(selectedCity.code);
+                                  }
                                 }}
                                 className={cn(
                                   "block w-full px-3 py-2 text-left text-sm font-semibold text-[#1F2933] hover:bg-[#FFF0EC]",
@@ -342,7 +335,7 @@ export function StorefrontLocationPicker({
                             ))
                           ) : (
                             <div className="px-3 py-2 text-sm font-semibold text-[#667085]">
-                              {areasQuery.isLoading ? "Searching areas..." : "No matching local areas"}
+                              {areasStore.isLoading ? "Searching areas..." : "No matching local areas"}
                             </div>
                           )}
                         </div>

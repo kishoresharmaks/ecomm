@@ -74,15 +74,42 @@ export type CourierBookingRequest = {
 export type CourierBookingResult = {
   providerOrderId?: string | null;
   awbNumber?: string | null;
+  courierName?: string | null;
+  courierCode?: string | null;
   trackingUrl?: string | null;
   labelUrl?: string | null;
+  manifestUrl?: string | null;
+  invoiceUrl?: string | null;
+  shippingZone?: string | null;
+  providerRawStatus?: string | null;
+  providerRawStatusCode?: string | null;
+  pickupScheduledAt?: Date | null;
   trackingStatus?: CourierShipmentStatus;
   trackingStatusLabel?: string | null;
   bookingPayloadSnapshot: unknown;
   bookingResponseSnapshot: unknown;
 };
 
+export type CourierPickupSyncRequest = {
+  providerCode: string;
+  pickupLocationName: string;
+  sellerName: string;
+  sellerEmail: string;
+  sellerPhone: string;
+  sellerAddress: CourierBookingAddress;
+  settings: CourierProviderAdapterSnapshot;
+};
+
+export type CourierPickupSyncResult = {
+  pickupLocationName: string;
+  providerPickupId?: string | null;
+  statusLabel?: string | null;
+  pickupPayloadSnapshot: unknown;
+  pickupResponseSnapshot: unknown;
+};
+
 export interface CourierAdapter {
   readonly code: string;
   bookShipment(request: CourierBookingRequest): Promise<CourierBookingResult>;
+  syncPickupLocation?(request: CourierPickupSyncRequest): Promise<CourierPickupSyncResult>;
 }

@@ -24,7 +24,7 @@ export class AdminAuthController {
   }
 
   @Post("logout")
-  @Roles(RoleCode.ADMIN, RoleCode.FINANCE)
+  @Roles(RoleCode.ADMIN, RoleCode.FINANCE, RoleCode.COURIER_MANAGER)
   @ApiHeader({ name: "Authorization", required: true })
   @ApiOperation({ summary: "Revoke the current standalone admin session." })
   logout(@Headers("authorization") authorizationHeader: string | undefined, @CurrentUser() actor: RequestUser) {
@@ -32,7 +32,7 @@ export class AdminAuthController {
   }
 
   @Get("me")
-  @Roles(RoleCode.ADMIN, RoleCode.FINANCE)
+  @Roles(RoleCode.ADMIN, RoleCode.FINANCE, RoleCode.COURIER_MANAGER)
   @ApiOperation({ summary: "Read the current standalone admin session user." })
   me(@CurrentUser() actor: RequestUser) {
     return this.adminAuthService.me(actor);

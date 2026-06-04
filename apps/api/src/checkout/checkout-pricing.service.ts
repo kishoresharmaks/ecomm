@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, Optional } from "@nestjs/common";
-import { DeliveryMode, Prisma } from "@indihub/database";
+import { DeliveryMode, Prisma, SellerType } from "@indihub/database";
 import { PrismaService } from "../prisma/prisma.service";
 import { readBooleanSetting, readNumberSetting } from "../settings/setting-value-utils";
 import {
@@ -7,6 +7,7 @@ import {
 } from "./dto/delivery-routing.dto";
 import {
   DeliveryRoutingAddress,
+  DeliveryRoutingPackage,
   DeliveryRoutingQuote,
   DeliveryRoutingService,
 } from "./delivery-routing.service";
@@ -30,6 +31,20 @@ export type CheckoutChargeDeliveryOptions = {
   orderId?: string | undefined;
 };
 
+export type CheckoutSellerPackageDeliveryInput = {
+  sellerId: string;
+  sellerType: SellerType;
+  subtotalPaise: number;
+  package?: DeliveryRoutingPackage | null;
+};
+
+export type CheckoutSellerPackageDeliveryRouting = {
+  sellerId: string;
+  sellerType: SellerType;
+  subtotalPaise: number;
+  quote: DeliveryRoutingQuote;
+};
+
 export type CheckoutCharges = {
   subtotalPaise: number;
   shippingPaise: number;
@@ -37,6 +52,7 @@ export type CheckoutCharges = {
   totalPaise: number;
   snapshot: Prisma.InputJsonObject;
   deliveryRouting: DeliveryRoutingQuote | null;
+  deliveryRoutings?: CheckoutSellerPackageDeliveryRouting[];
 };
 
 @Injectable()
@@ -104,6 +120,97 @@ export class CheckoutPricingService {
     };
   }
 
+  async calculateSellerPackageCharges(
+    subtotalPaise: number,
+    sellerPackages: CheckoutSellerPackageDeliveryInput[],
+    client: PricingClient = this.prisma.client,
+    deliveryOptions: CheckoutChargeDeliveryOptions = {},
+  ): Promise<CheckoutCharges> {
+    const normalizedSubtotal = this.nonNegativeInt(subtotalPaise);
+    const settings = await this.pricingSettings(client);
+    const settingMap = new Map(settings.map((setting) => [setting.key, setting.value]));
+    const deliveryRoutings = this.shouldResolveDelivery(deliveryOptions)
+      ? await Promise.all(
+          sellerPackages.map(async (sellerPackage) => {
+            const quote = await this.requireDeliveryRouting().resolveDelivery(
+              {
+                ...this.deliveryRoutingInput(
+                  deliveryOptions,
+                  this.nonNegativeInt(sellerPackage.subtotalPaise),
+                ),
+                sellerId: sellerPackage.sellerId,
+                sellerType: sellerPackage.sellerType,
+                package: sellerPackage.package ?? null,
+              },
+              client,
+            );
+
+            return {
+              sellerId: sellerPackage.sellerId,
+              sellerType: sellerPackage.sellerType,
+              subtotalPaise: this.nonNegativeInt(sellerPackage.subtotalPaise),
+              quote,
+            } satisfies CheckoutSellerPackageDeliveryRouting;
+          }),
+        )
+      : [];
+    const shippingPaise = deliveryRoutings.length
+      ? deliveryRoutings.reduce(
+          (total, routing) => total + this.nonNegativeInt(routing.quote.totalDeliveryChargePaise),
+          0,
+        )
+      : this.nonNegativeInt(
+          this.numberSetting(settingMap.get(settingKeys.shippingDefaultChargePaise), 0),
+        );
+    const platformFeeEnabled = this.booleanSetting(settingMap.get(settingKeys.platformFeeEnabled), false);
+    const platformFeeType = this.platformFeeType(settingMap.get(settingKeys.platformFeeType));
+    const platformFeeValueBps = this.nonNegativeInt(this.numberSetting(settingMap.get(settingKeys.platformFeeValueBps), 0));
+    const platformFeeFixedPaise = this.nonNegativeInt(this.numberSetting(settingMap.get(settingKeys.platformFeeFixedPaise), 0));
+    const platformFeePaise = platformFeeEnabled
+      ? this.calculatePlatformFee(normalizedSubtotal, platformFeeType, platformFeeValueBps, platformFeeFixedPaise)
+      : 0;
+    const shipmentSnapshots = deliveryRoutings.map((routing) => ({
+      sellerId: routing.sellerId,
+      sellerType: routing.sellerType,
+      subtotalPaise: routing.subtotalPaise,
+      shippingPaise: this.nonNegativeInt(routing.quote.shippingChargePaise),
+      codSurchargePaise: this.nonNegativeInt(routing.quote.codSurchargePaise),
+      deliveryMode: routing.quote.deliveryMode,
+      routingFailed: routing.quote.routingFailed,
+      routing: routing.quote.shippingSnapshot,
+      codSurcharge: routing.quote.codSurchargeSnapshot,
+      routingSnapshot: routing.quote.routingSnapshot,
+    }));
+
+    return {
+      subtotalPaise: normalizedSubtotal,
+      shippingPaise,
+      platformFeePaise,
+      totalPaise: normalizedSubtotal + shippingPaise + platformFeePaise,
+      snapshot: {
+        shipping: {
+          key: deliveryRoutings.length ? null : settingKeys.shippingDefaultChargePaise,
+          chargePaise: shippingPaise,
+          shipments: shipmentSnapshots,
+          discountApportionment: "Future shipping discounts are apportioned pro-rata by shipment charge.",
+        },
+        platformFee: {
+          enabled: platformFeeEnabled,
+          type: platformFeeType,
+          valueBps: platformFeeValueBps,
+          fixedPaise: platformFeeFixedPaise,
+          amountPaise: platformFeePaise
+        },
+        deliveryRouting: {
+          ruleVersion: "seller_type_delivery_routing_v1",
+          shipments: deliveryRoutings.map((routing) => routing.quote.routingSnapshot),
+        },
+      },
+      deliveryRouting: deliveryRoutings[0]?.quote ?? null,
+      deliveryRoutings,
+    };
+  }
+
   private shouldResolveDelivery(options: CheckoutChargeDeliveryOptions) {
     return Boolean(
       options.deliveryPreference ||
@@ -120,6 +227,16 @@ export class CheckoutPricingService {
     }
 
     return this.deliveryRouting;
+  }
+
+  private pricingSettings(client: PricingClient) {
+    return client.setting.findMany({
+      where: {
+        key: {
+          in: Object.values(settingKeys)
+        }
+      }
+    });
   }
 
   private deliveryRoutingInput(options: CheckoutChargeDeliveryOptions, subtotalPaise: number) {

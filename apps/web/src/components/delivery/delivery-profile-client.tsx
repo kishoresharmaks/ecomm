@@ -3,7 +3,10 @@
 import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 import { Bike, MapPinned, Phone, Save, UserRound } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, SectionHeading, StatusBadge, type StatusTone } from "@indihub/ui";
+import { Button, SectionHeading, StatusBadge, cn, type StatusTone } from "@indihub/ui";
+import { useLocationAreaStore, useLocationCatalog } from "@/components/locations/location-store";
+import { formatLocalAreaLabel } from "@/components/locations/location-utils";
+import type { LocationArea } from "@/lib/location-api";
 import {
   getDeliveryProfile,
   updateDeliveryProfile,
@@ -211,50 +214,7 @@ export function DeliveryProfileClient() {
 
             <DeliveryPanel>
               <h2 className="text-base font-black text-[#123A5A]">Service area</h2>
-              <div className="mt-4 grid gap-4">
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <ProfileInput
-                    label="Country code"
-                    value={form.serviceCountryCode}
-                    placeholder="IN"
-                    onChange={(serviceCountryCode) =>
-                      setForm((current) => ({ ...current, serviceCountryCode }))
-                    }
-                  />
-                  <ProfileInput
-                    label="State code"
-                    value={form.serviceStateCode}
-                    placeholder="IN-TN"
-                    onChange={(serviceStateCode) =>
-                      setForm((current) => ({ ...current, serviceStateCode }))
-                    }
-                  />
-                  <ProfileInput
-                    label="City code"
-                    value={form.serviceCityCode}
-                    placeholder="IN-TN-SALEM"
-                    onChange={(serviceCityCode) =>
-                      setForm((current) => ({ ...current, serviceCityCode }))
-                    }
-                  />
-                </div>
-                <ProfileInput
-                  label="Service pincodes"
-                  value={form.servicePincodes}
-                  placeholder="636114, 636304"
-                  onChange={(servicePincodes) =>
-                    setForm((current) => ({ ...current, servicePincodes }))
-                  }
-                />
-                <ProfileInput
-                  label="Local area codes"
-                  value={form.serviceLocalAreaCodes}
-                  placeholder="PIN-636114-708A9748"
-                  onChange={(serviceLocalAreaCodes) =>
-                    setForm((current) => ({ ...current, serviceLocalAreaCodes }))
-                  }
-                />
-              </div>
+              <DeliveryServiceAreaPicker form={form} onChange={setForm} />
             </DeliveryPanel>
           </div>
 
@@ -286,6 +246,175 @@ export function DeliveryProfileClient() {
   );
 }
 
+function DeliveryServiceAreaPicker({
+  form,
+  onChange,
+}: {
+  form: DeliveryProfileForm;
+  onChange: (updater: (current: DeliveryProfileForm) => DeliveryProfileForm) => void;
+}) {
+  const [areaSearch, setAreaSearch] = useState("");
+  const locationCatalog = useLocationCatalog({
+    countryCode: form.serviceCountryCode,
+    stateCode: form.serviceStateCode,
+  });
+  const areasStore = useLocationAreaStore({
+    countryCode: form.serviceCountryCode,
+    stateCode: form.serviceStateCode,
+    cityCode: form.serviceCityCode,
+    search: areaSearch,
+    limit: 50,
+  });
+  const pincodeValues = codeValues(form.servicePincodes);
+  const localAreaValues = codeValues(form.serviceLocalAreaCodes);
+
+  function update(patch: Partial<DeliveryProfileForm>) {
+    onChange((current) => ({ ...current, ...patch }));
+  }
+
+  function selectArea(area: LocationArea) {
+    const selectedCity = area.city;
+    const selectedSubdivision = selectedCity?.subdivision;
+    const selectedCountry = selectedSubdivision?.country;
+
+    onChange((current) => ({
+      ...current,
+      serviceCountryCode: selectedCountry?.code ?? current.serviceCountryCode,
+      serviceStateCode: selectedSubdivision?.code ?? current.serviceStateCode,
+      serviceCityCode: selectedCity?.code ?? current.serviceCityCode,
+      servicePincodes: area.postalCode
+        ? joinCodeValues(addCodeValue(current.servicePincodes, area.postalCode))
+        : current.servicePincodes,
+      serviceLocalAreaCodes: joinCodeValues(addCodeValue(current.serviceLocalAreaCodes, area.code)),
+    }));
+    setAreaSearch(formatLocalAreaLabel(area));
+  }
+
+  return (
+    <div className="mt-4 grid gap-4">
+      <div className="grid gap-3 sm:grid-cols-3">
+        <ProfileSelect
+          label="Country"
+          value={form.serviceCountryCode}
+          disabled={locationCatalog.countriesQuery.isLoading}
+          options={locationCatalog.countries.map((country) => ({
+            value: country.code,
+            label: country.name,
+          }))}
+          emptyLabel="Any country"
+          onChange={(serviceCountryCode) =>
+            update({
+              serviceCountryCode,
+              serviceStateCode: "",
+              serviceCityCode: "",
+              servicePincodes: "",
+              serviceLocalAreaCodes: "",
+            })
+          }
+        />
+        <ProfileSelect
+          label="State"
+          value={form.serviceStateCode}
+          disabled={!form.serviceCountryCode || locationCatalog.statesQuery.isLoading}
+          options={locationCatalog.states.map((state) => ({ value: state.code, label: state.name }))}
+          emptyLabel="Any state"
+          onChange={(serviceStateCode) =>
+            update({
+              serviceStateCode,
+              serviceCityCode: "",
+              servicePincodes: "",
+              serviceLocalAreaCodes: "",
+            })
+          }
+        />
+        <ProfileSelect
+          label="City"
+          value={form.serviceCityCode}
+          disabled={!form.serviceStateCode || locationCatalog.citiesQuery.isLoading}
+          options={locationCatalog.cities.map((city) => ({ value: city.code, label: city.name }))}
+          emptyLabel="Any city"
+          onChange={(serviceCityCode) =>
+            update({
+              serviceCityCode,
+              servicePincodes: "",
+              serviceLocalAreaCodes: "",
+            })
+          }
+        />
+      </div>
+
+      <label className="block">
+        <span className="text-xs font-black uppercase tracking-wide text-[#667085]">
+          Local area / pincode search
+        </span>
+        <input
+          value={areaSearch}
+          placeholder="Search Omalur or 636455"
+          disabled={!form.serviceCountryCode}
+          onChange={(event) => setAreaSearch(event.target.value)}
+          className="mt-2 h-11 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 text-sm font-semibold text-[#1F2933] outline-none transition placeholder:text-[#98A2B3] focus:border-[#ED3500] focus:bg-white focus:ring-2 focus:ring-[#FFE0D6]"
+        />
+      </label>
+
+      {form.serviceCountryCode && areaSearch.trim() ? (
+        <div className="max-h-44 overflow-auto rounded-md border border-[#E5E7EB] bg-white">
+          {areasStore.areas.length ? (
+            areasStore.areas.map((area) => (
+              <button
+                key={area.code}
+                type="button"
+                onClick={() => selectArea(area)}
+                className={cn(
+                  "block w-full px-3 py-2 text-left text-sm font-semibold text-[#1F2933] hover:bg-[#FFF0EC]",
+                  localAreaValues.includes(area.code) ? "bg-[#FFF0EC] text-[#9F2600]" : "",
+                )}
+              >
+                <span className="block font-black">{formatLocalAreaLabel(area)}</span>
+                <span className="text-xs text-[#667085]">
+                  {[area.city?.name, area.city?.subdivision?.name, area.city?.subdivision?.country?.name]
+                    .filter(Boolean)
+                    .join(", ")}
+                </span>
+              </button>
+            ))
+          ) : (
+            <p className="px-3 py-2 text-sm font-semibold text-[#667085]">
+              {areasStore.isLoading ? "Searching..." : "No matching local areas"}
+            </p>
+          )}
+        </div>
+      ) : null}
+
+      <CodeChipList
+        label="Service pincodes"
+        values={pincodeValues}
+        emptyText="No specific pincodes. Country/state/city coverage applies."
+        onRemove={(code) =>
+          onChange((current) => ({
+            ...current,
+            servicePincodes: joinCodeValues(removeCodeValue(current.servicePincodes, code)),
+          }))
+        }
+        onClear={() => update({ servicePincodes: "" })}
+      />
+      <CodeChipList
+        label="Local area codes"
+        values={localAreaValues}
+        emptyText="No specific local areas."
+        onRemove={(code) =>
+          onChange((current) => ({
+            ...current,
+            serviceLocalAreaCodes: joinCodeValues(
+              removeCodeValue(current.serviceLocalAreaCodes, code),
+            ),
+          }))
+        }
+        onClear={() => update({ serviceLocalAreaCodes: "" })}
+      />
+    </div>
+  );
+}
+
 function ProfileSummaryCard({
   icon,
   label,
@@ -306,6 +435,41 @@ function ProfileSummaryCard({
         <p className="mt-1 truncate text-xs font-semibold text-[#667085]">{note}</p>
       </div>
     </div>
+  );
+}
+
+function ProfileSelect({
+  label,
+  value,
+  options,
+  emptyLabel,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: Array<{ value: string; label: string }>;
+  emptyLabel: string;
+  disabled?: boolean;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="block">
+      <span className="text-xs font-black uppercase tracking-wide text-[#667085]">{label}</span>
+      <select
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+        className="mt-2 h-11 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 text-sm font-semibold text-[#1F2933] outline-none transition focus:border-[#ED3500] focus:bg-white focus:ring-2 focus:ring-[#FFE0D6] disabled:opacity-60"
+      >
+        <option value="">{emptyLabel}</option>
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 
@@ -333,6 +497,53 @@ function ProfileInput({
         className="mt-2 h-11 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 text-sm font-semibold text-[#1F2933] outline-none transition placeholder:text-[#98A2B3] focus:border-[#ED3500] focus:bg-white focus:ring-2 focus:ring-[#FFE0D6]"
       />
     </label>
+  );
+}
+
+function CodeChipList({
+  label,
+  values,
+  emptyText,
+  onRemove,
+  onClear,
+}: {
+  label: string;
+  values: string[];
+  emptyText: string;
+  onRemove: (value: string) => void;
+  onClear: () => void;
+}) {
+  return (
+    <div className="rounded-md border border-[#D8E2EA] bg-[#F8FAFC] p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-xs font-black uppercase tracking-wide text-[#667085]">{label}</span>
+        {values.length ? (
+          <button
+            type="button"
+            onClick={onClear}
+            className="text-xs font-black uppercase tracking-wide text-[#B42318]"
+          >
+            Clear
+          </button>
+        ) : null}
+      </div>
+      {values.length ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {values.map((value) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => onRemove(value)}
+              className="rounded-full border border-[#D8E2EA] bg-white px-3 py-1.5 text-xs font-black text-[#163B5C] transition hover:border-[#ED3500] hover:text-[#ED3500]"
+            >
+              {value}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-2 text-sm font-semibold text-[#667085]">{emptyText}</p>
+      )}
+    </div>
   );
 }
 
@@ -384,6 +595,22 @@ function csvValues(value: string) {
         .filter(Boolean),
     ),
   );
+}
+
+function codeValues(value: string) {
+  return csvValues(value);
+}
+
+function addCodeValue(value: string, code: string) {
+  return Array.from(new Set([...codeValues(value), code.trim()].filter(Boolean)));
+}
+
+function removeCodeValue(value: string, code: string) {
+  return codeValues(value).filter((item) => item !== code);
+}
+
+function joinCodeValues(values: string[]) {
+  return values.join(", ");
 }
 
 function phonePayload(value: string) {

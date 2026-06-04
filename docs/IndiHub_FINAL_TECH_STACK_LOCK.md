@@ -78,7 +78,7 @@ The locked web app must support these separate areas:
 
 - Public customer storefront.
 - Customer account.
-- Seller/vendor/nearby-store center.
+- Seller center for marketplace sellers, hyperlocal stores, and wholesale distributors.
 - B2B buyer portal.
 - Admin control panel.
 - CMS and policy pages.

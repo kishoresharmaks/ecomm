@@ -48,6 +48,17 @@ export class AdminOrdersController {
     return this.ordersService.updateDelivery(actor, orderNumber, dto, { sellerOnly: false });
   }
 
+  @Patch(":orderNumber/shipments/:shipmentNumber/delivery")
+  @ApiOperation({ summary: "Override delivery mode and routing fields for one seller shipment." })
+  updateShipmentDelivery(
+    @CurrentUser() actor: RequestUser,
+    @Param("orderNumber") orderNumber: string,
+    @Param("shipmentNumber") shipmentNumber: string,
+    @Body() dto: UpdateDeliveryDto
+  ) {
+    return this.ordersService.updateAdminShipmentDelivery(actor, orderNumber, shipmentNumber, dto);
+  }
+
   @Patch(":orderNumber/cod-verification")
   @ApiOperation({ summary: "Verify or reject delivery partner COD collection for an order." })
   verifyCodCollection(

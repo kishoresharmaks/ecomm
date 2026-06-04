@@ -180,9 +180,9 @@ export class PublicImageUploadRequestDto {
 }
 
 export class PrivateDocumentUploadRequestDto {
-  @ApiPropertyOptional({ example: "GST_CERTIFICATE" })
+  @ApiPropertyOptional({ example: "ID_PROOF" })
   @IsString()
-  @Matches(/^(GST_CERTIFICATE|PAN_CARD|ADDRESS_PROOF|BANK_PROOF|BUSINESS_REGISTRATION|OTHER)$/)
+  @Matches(/^(ID_PROOF|SIGNATURE_PROOF|GST_CERTIFICATE|PAN_CARD|ADDRESS_PROOF|BANK_PROOF|BUSINESS_REGISTRATION|OTHER)$/)
   documentType!: string;
 
   @ApiPropertyOptional({ example: "gst-certificate.pdf" })

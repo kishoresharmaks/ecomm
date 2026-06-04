@@ -230,6 +230,8 @@ export function AddressesClient() {
                 area: editing?.area ?? undefined,
                 pincode: editing?.pincode ?? undefined
               }}
+              defaultCountryCode="IN"
+              loadCitiesAcrossCountry
             />
             <label className="flex items-center gap-3 rounded-md border border-[#E5E7EB] bg-[#F8FAFC] px-3 py-3 text-sm font-bold text-[#1F2933]">
               <input name="isDefault" type="checkbox" defaultChecked={editing?.isDefault ?? false} />

@@ -4,6 +4,22 @@
 
 Storefront, seller, checkout, customer, and B2B address forms must read location data only from 1HandIndia APIs. The frontend must not call GeoNames, Data.gov.in, OneMap, Royal Mail, Nominatim, or any other location provider directly.
 
+## Central Location Store
+
+The canonical location store is PostgreSQL through the normalized location tables:
+
+```text
+LocationCountry -> LocationSubdivision -> LocationCity -> LocationArea
+```
+
+Every user-facing country, state, city, local-area, and pincode selector must read from:
+
+```text
+Database tables -> NestJS /api/locations/* -> apps/web/src/components/locations/location-store.ts
+```
+
+Do not create page-local country/state/city arrays, hardcoded city defaults, or direct provider lookups in seller, customer, checkout, B2B, storefront, admin, or delivery screens. The shared web location store owns the TanStack Query keys and fetch rules so options are cached consistently and large India local-area data is searched on demand instead of loaded fully into the browser.
+
 ## Seed vs Import
 
 `prisma/seed.ts` is read-only by default. Country, currency, postal-code label, and registered import-source bootstrap rows are created only when running the explicit bootstrap seed mode:
@@ -30,6 +46,14 @@ pnpm locations:import:india
 ```
 
 Always run the dry run first for a new source pull. It builds the same hierarchy in memory, prints the quality report, and exits without writing database rows. Proceed with the real import only when the quality report is acceptable for operations.
+
+The real India import uses the bulk path by default:
+
+```text
+CSV/data.gov.in records -> location_import_staging_rows -> set-based SQL merge -> LocationCountry / LocationSubdivision / LocationCity / LocationArea
+```
+
+This avoids row-by-row Prisma upserts for the large India pincode file. Use `--import-engine row` only for small debugging runs. For hosted Neon imports, prefer the direct database URL instead of a pooled URL where possible.
 
 If the API is rate-limited, download an approved Department of Posts CSV and import from file:
 

@@ -1,16 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { cn } from "@indihub/ui";
-import {
-  type LocationArea,
-  listLocationAreas,
-  listLocationCities,
-  listLocationCountries,
-  listLocationStates
-} from "@/lib/location-api";
-import { formatLocalAreaLabel, normalizeLocalAreaSearchValue } from "./location-utils";
+import { type LocationArea } from "@/lib/location-api";
+import { formatLocalAreaLabel } from "./location-utils";
+import { useLocationAreaStore, useLocationCatalog } from "./location-store";
 
 export type AddressLocationValue = {
   country?: string | null | undefined;
@@ -24,8 +18,17 @@ export type AddressLocationValue = {
   pincode?: string | null | undefined;
 };
 
+type LocationAreaOption = {
+  code: string;
+  name: string;
+  postalCode?: string | null;
+  city?: LocationArea["city"];
+};
+
 type LocationFieldsProps = {
   defaultValue?: AddressLocationValue | undefined;
+  defaultCountryCode?: string | undefined;
+  loadCitiesAcrossCountry?: boolean;
   disabled?: boolean;
   className?: string;
   inputClassName?: string;
@@ -38,71 +41,90 @@ const defaultLabelClass = "space-y-2";
 
 export function LocationFields({
   defaultValue,
+  defaultCountryCode = "IN",
+  loadCitiesAcrossCountry = false,
   disabled = false,
   className,
   inputClassName,
   labelClassName
 }: LocationFieldsProps) {
-  const [countryCode, setCountryCode] = useState(defaultValue?.countryCode ?? "IN");
+  const [countryCode, setCountryCode] = useState(defaultValue?.countryCode ?? defaultCountryCode);
   const [stateCode, setStateCode] = useState(defaultValue?.stateCode ?? "");
   const [cityCode, setCityCode] = useState(defaultValue?.cityCode ?? "");
   const [localAreaCode, setLocalAreaCode] = useState(defaultValue?.localAreaCode ?? "");
   const [areaSearch, setAreaSearch] = useState(defaultValue?.area ?? "");
-  const [selectedArea, setSelectedArea] = useState<LocationArea | null>(null);
+  const [selectedArea, setSelectedArea] = useState<LocationAreaOption | null>(null);
   const [pincode, setPincode] = useState(defaultValue?.pincode ?? "");
 
   const inputClass = inputClassName ?? defaultInputClass;
   const labelClass = labelClassName ?? defaultLabelClass;
+  const postalCodeLookup = postalCodeLookupValue(countryCode, pincode);
 
-  const countriesQuery = useQuery({
-    queryKey: ["locations", "countries"],
-    queryFn: listLocationCountries
-  });
-  const statesQuery = useQuery({
-    queryKey: ["locations", "states", countryCode],
-    queryFn: () => listLocationStates(countryCode),
-    enabled: Boolean(countryCode)
-  });
-  const citiesQuery = useQuery({
-    queryKey: ["locations", "cities", stateCode],
-    queryFn: () => listLocationCities(stateCode),
-    enabled: Boolean(stateCode)
-  });
-  const areaLookupSearch = useMemo(() => normalizeLocalAreaSearchValue(areaSearch), [areaSearch]);
-  const areasQuery = useQuery({
-    queryKey: ["locations", "areas", cityCode, areaLookupSearch],
-    queryFn: () => listLocationAreas({ cityCode, search: areaLookupSearch, limit: 50 }),
-    enabled: Boolean(cityCode)
+  const locationCatalog = useLocationCatalog({ countryCode, stateCode, loadCitiesAcrossCountry });
+  const areasStore = useLocationAreaStore({
+    countryCode,
+    stateCode: postalCodeLookup ? "" : stateCode,
+    cityCode: postalCodeLookup ? "" : cityCode,
+    search: postalCodeLookup ? "" : areaSearch,
+    postalCode: postalCodeLookup,
+    limit: 50,
   });
 
-  const rawCountries = countriesQuery.data ?? [];
-  const rawStates = statesQuery.data ?? [];
-  const rawCities = citiesQuery.data ?? [];
-  const rawAreas = areasQuery.data ?? [];
+  const rawCountries = locationCatalog.countries;
+  const rawStates = locationCatalog.states;
+  const rawCities = locationCatalog.cities;
+  const rawAreas = areasStore.areas;
+  const selectedAreaCity = selectedArea?.city;
+  const selectedAreaSubdivision = selectedAreaCity?.subdivision;
+  const selectedAreaCountry = selectedAreaSubdivision?.country;
   const countries = rawCountries.some((item) => item.code === countryCode)
     ? rawCountries
     : [
         {
-          id: `fallback-${countryCode}`,
+          id: selectedAreaCountry?.id ?? `fallback-${countryCode}`,
           code: countryCode,
-          name: defaultValue?.country ?? (countryCode === "IN" ? "India" : countryCode),
-          currency: countryCode === "IN" ? "INR" : "",
-          locale: countryCode === "IN" ? "en-IN" : "en-US",
-          phoneCode: "",
-          postalCodeLabel: countryCode === "IN" ? "Pincode" : "Postal code",
-          postalCodePattern: null,
-          enabled: true,
-          sortOrder: -1
+          name:
+            selectedAreaCountry?.name ??
+            defaultValue?.country ??
+            (countryCode === defaultCountryCode && countryCode === "IN" ? "India" : countryCode),
+          currency: selectedAreaCountry?.currency ?? (countryCode === "IN" ? "INR" : ""),
+          locale: selectedAreaCountry?.locale ?? (countryCode === "IN" ? "en-IN" : "en-US"),
+          phoneCode: selectedAreaCountry?.phoneCode ?? "",
+          postalCodeLabel: selectedAreaCountry?.postalCodeLabel ?? (countryCode === "IN" ? "Pincode" : "Postal code"),
+          postalCodePattern: selectedAreaCountry?.postalCodePattern ?? null,
+          enabled: selectedAreaCountry?.enabled ?? true,
+          sortOrder: selectedAreaCountry?.sortOrder ?? -1
         },
         ...rawCountries
       ];
-  const states = stateCode && defaultValue?.state && !rawStates.some((item) => item.code === stateCode)
-    ? [{ id: `fallback-${stateCode}`, countryId: "", code: stateCode, name: defaultValue.state, type: "State / province" }, ...rawStates]
+  const fallbackStateName = selectedAreaSubdivision?.name ?? defaultValue?.state;
+  const states = stateCode && fallbackStateName && !rawStates.some((item) => item.code === stateCode)
+    ? [
+        {
+          id: selectedAreaSubdivision?.id ?? `fallback-${stateCode}`,
+          countryId: selectedAreaSubdivision?.countryId ?? "",
+          code: stateCode,
+          name: fallbackStateName,
+          type: selectedAreaSubdivision?.type ?? "State / province",
+          country: selectedAreaCountry
+        },
+        ...rawStates
+      ]
     : rawStates;
-  const cities = cityCode && defaultValue?.city && !rawCities.some((item) => item.code === cityCode)
-    ? [{ id: `fallback-${cityCode}`, subdivisionId: "", code: cityCode, name: defaultValue.city }, ...rawCities]
+  const fallbackCityName = selectedAreaCity?.name ?? defaultValue?.city;
+  const cities = cityCode && fallbackCityName && !rawCities.some((item) => item.code === cityCode)
+    ? [
+        {
+          id: selectedAreaCity?.id ?? `fallback-${cityCode}`,
+          subdivisionId: selectedAreaCity?.subdivisionId ?? "",
+          code: cityCode,
+          name: fallbackCityName,
+          subdivision: selectedAreaSubdivision
+        },
+        ...rawCities
+      ]
     : rawCities;
-  const areas = useMemo(() => {
+  const areas: LocationAreaOption[] = useMemo(() => {
     if (localAreaCode && selectedArea?.code === localAreaCode && !rawAreas.some((item) => item.code === localAreaCode)) {
       return [selectedArea, ...rawAreas];
     }
@@ -127,6 +149,29 @@ export function LocationFields({
   const city = cities.find((item) => item.code === cityCode);
   const area = areas.find((item) => item.code === localAreaCode);
   const postalLabel = country?.postalCodeLabel ?? (countryCode === "IN" ? "Pincode" : "Postal code");
+  const canChooseCity = Boolean(countryCode && (stateCode || loadCitiesAcrossCountry));
+  const pincodeAreaOptions = postalCodeLookup ? areas.filter((item) => item.postalCode === postalCodeLookup) : [];
+
+  function selectArea(nextArea: LocationAreaOption) {
+    setLocalAreaCode(nextArea.code);
+    setSelectedArea(nextArea);
+    setAreaSearch(formatLocalAreaLabel(nextArea));
+    const selectedCity = nextArea.city;
+    const selectedSubdivision = selectedCity?.subdivision;
+    const selectedCountry = selectedSubdivision?.country;
+    if (selectedCountry?.code) {
+      setCountryCode(selectedCountry.code);
+    }
+    if (selectedSubdivision?.code) {
+      setStateCode(selectedSubdivision.code);
+    }
+    if (selectedCity?.code) {
+      setCityCode(selectedCity.code);
+    }
+    if (nextArea.postalCode) {
+      setPincode(nextArea.postalCode);
+    }
+  }
 
   useEffect(() => {
     if (!stateCode && defaultValue?.state && states.length) {
@@ -142,6 +187,12 @@ export function LocationFields({
       const match = cities.find((item) => sameName(item.name, defaultValue.city));
       if (match) {
         setCityCode(match.code);
+        if (match.subdivision?.country?.code) {
+          setCountryCode(match.subdivision.country.code);
+        }
+        if (match.subdivision?.code) {
+          setStateCode(match.subdivision.code);
+        }
       }
     }
   }, [cityCode, cities, defaultValue?.city]);
@@ -150,7 +201,7 @@ export function LocationFields({
     if (!localAreaCode && defaultValue?.area && areas.length) {
       const match = areas.find((item) => sameName(item.name, defaultValue.area));
       if (match) {
-        setLocalAreaCode(match.code);
+        selectArea(match);
       }
     }
   }, [areas, defaultValue?.area, localAreaCode]);
@@ -163,9 +214,9 @@ export function LocationFields({
 
   const hiddenValues = useMemo(
     () => ({
-      country: country?.name ?? defaultValue?.country ?? "India",
-      state: state?.name ?? defaultValue?.state ?? "",
-      city: city?.name ?? defaultValue?.city ?? "",
+      country: country?.name ?? selectedAreaCountry?.name ?? defaultValue?.country ?? "India",
+      state: state?.name ?? selectedAreaSubdivision?.name ?? defaultValue?.state ?? "",
+      city: city?.name ?? selectedAreaCity?.name ?? defaultValue?.city ?? "",
       area: area?.name ?? areaSearch ?? defaultValue?.area ?? ""
     }),
     [
@@ -177,6 +228,9 @@ export function LocationFields({
       defaultValue?.city,
       defaultValue?.country,
       defaultValue?.state,
+      selectedAreaCity?.name,
+      selectedAreaCountry?.name,
+      selectedAreaSubdivision?.name,
       state?.name
     ]
   );
@@ -197,7 +251,7 @@ export function LocationFields({
         getValue={(item) => item.code}
         inputClassName={inputClass}
         labelClassName={labelClass}
-        disabled={disabled || countriesQuery.isLoading}
+        disabled={disabled || locationCatalog.countriesQuery.isLoading}
         onChange={(value) => {
           setCountryCode(value);
           setStateCode("");
@@ -207,7 +261,7 @@ export function LocationFields({
           setAreaSearch("");
           setPincode("");
         }}
-      />
+      /> 
 
       <SelectField
         label={state?.type ?? "State / province"}
@@ -218,7 +272,7 @@ export function LocationFields({
         getValue={(item) => item.code}
         inputClassName={inputClass}
         labelClassName={labelClass}
-        disabled={disabled || !countryCode || statesQuery.isLoading}
+        disabled={disabled || !countryCode || locationCatalog.statesQuery.isLoading}
         onChange={(value) => {
           setStateCode(value);
           setCityCode("");
@@ -234,13 +288,22 @@ export function LocationFields({
         name="cityCode"
         value={cityCode}
         options={cities}
-        getLabel={(item) => item.name}
+        getLabel={(item) => loadCitiesAcrossCountry ? formatCityOptionLabel(item) : item.name}
         getValue={(item) => item.code}
         inputClassName={inputClass}
         labelClassName={labelClass}
-        disabled={disabled || !stateCode || citiesQuery.isLoading}
+        disabled={disabled || !canChooseCity || locationCatalog.citiesQuery.isLoading}
         onChange={(value) => {
           setCityCode(value);
+          const selectedCity = cities.find((item) => item.code === value);
+          const selectedSubdivision = selectedCity?.subdivision;
+          const selectedCountry = selectedSubdivision?.country;
+          if (selectedCountry?.code && selectedCountry.code !== countryCode) {
+            setCountryCode(selectedCountry.code);
+          }
+          if (selectedSubdivision?.code && selectedSubdivision.code !== stateCode) {
+            setStateCode(selectedSubdivision.code);
+          }
           setLocalAreaCode("");
           setSelectedArea(null);
           setAreaSearch("");
@@ -258,8 +321,9 @@ export function LocationFields({
         getValue={(item) => item.code}
         inputClassName={inputClass}
         labelClassName={labelClass}
-        disabled={disabled || !cityCode || areasQuery.isLoading}
-        isLoading={areasQuery.isLoading}
+        disabled={disabled || !countryCode}
+        isLoading={areasStore.isLoading || areasStore.isFetching}
+        placeholder="Search local area or pincode"
         onSearchChange={(value) => {
           setAreaSearch(value);
           setLocalAreaCode("");
@@ -269,27 +333,37 @@ export function LocationFields({
           setLocalAreaCode(value);
           const selected = areas.find((item) => item.code === value);
           if (selected) {
-            setSelectedArea(selected);
-            setAreaSearch(formatLocalAreaLabel(selected));
-          }
-          if (selected?.postalCode) {
-            setPincode(selected.postalCode);
+            selectArea(selected);
           }
         }}
       />
 
-      <label className={labelClass}>
-        <span className="block text-sm font-bold text-[#1F2933]">{postalLabel}</span>
-        <input
-          name="pincode"
-          value={pincode}
-          onChange={(event) => setPincode(event.target.value)}
-          disabled={disabled}
-          className={inputClass}
-          placeholder={postalLabel}
-          required={countryCode !== "AE"}
+      <div className={labelClass}>
+        <label className="block">
+          <span className="block text-sm font-bold text-[#1F2933]">{postalLabel}</span>
+          <input
+            name="pincode"
+            value={pincode}
+            onChange={(event) => {
+              setPincode(event.target.value);
+              setLocalAreaCode("");
+              setSelectedArea(null);
+              setAreaSearch("");
+            }}
+            disabled={disabled}
+            className={inputClass}
+            placeholder={postalLabel}
+            required={countryCode !== "AE"}
+          />
+        </label>
+        <PincodeAreaSuggestions
+          pincode={postalCodeLookup}
+          areas={pincodeAreaOptions}
+          selectedCode={localAreaCode}
+          isLoading={Boolean(postalCodeLookup && (areasStore.isLoading || areasStore.isFetching))}
+          onSelect={selectArea}
         />
-      </label>
+      </div>
     </div>
   );
 }
@@ -344,6 +418,7 @@ function AreaSearchField<T>({
   labelClassName,
   disabled,
   isLoading,
+  placeholder,
   onSearchChange,
   onSelect
 }: {
@@ -358,6 +433,7 @@ function AreaSearchField<T>({
   labelClassName: string;
   disabled?: boolean;
   isLoading?: boolean;
+  placeholder?: string;
   onSearchChange: (value: string) => void;
   onSelect: (value: string) => void;
 }) {
@@ -365,7 +441,7 @@ function AreaSearchField<T>({
   const selectedOption = options.find((item) => getValue(item) === value);
   const selectedOptionLabel = selectedOption ? getLabel(selectedOption) : "";
   const selectionIsDisplayed = Boolean(value && selectedOptionLabel && searchValue.trim() === selectedOptionLabel.trim());
-  const showOptions = focused && !disabled && !selectionIsDisplayed;
+  const showOptions = focused && !disabled && !selectionIsDisplayed && (isLoading || options.length > 0 || searchValue.trim().length > 0);
 
   return (
     <label className={cn(labelClassName, "relative")}>
@@ -379,7 +455,7 @@ function AreaSearchField<T>({
         onBlur={() => window.setTimeout(() => setFocused(false), 120)}
         disabled={disabled}
         className={inputClassName}
-        placeholder={isLoading ? "Loading local areas..." : `Search ${label.toLowerCase()}`}
+        placeholder={isLoading ? "Loading local areas..." : placeholder ?? `Search ${label.toLowerCase()}`}
         autoComplete="off"
       />
       {showOptions ? (
@@ -416,6 +492,73 @@ function AreaSearchField<T>({
   );
 }
 
+function PincodeAreaSuggestions({
+  pincode,
+  areas,
+  selectedCode,
+  isLoading,
+  onSelect
+}: {
+  pincode: string;
+  areas: LocationAreaOption[];
+  selectedCode: string;
+  isLoading: boolean;
+  onSelect: (area: LocationAreaOption) => void;
+}) {
+  if (!pincode) {
+    return null;
+  }
+
+  return (
+    <div className="mt-2 rounded-md border border-[#D8E2EA] bg-[#F8FAFC] p-3">
+      <p className="text-xs font-black uppercase tracking-wide text-[#667085]">
+        {isLoading ? `Loading local areas for ${pincode}` : `Local areas for ${pincode}`}
+      </p>
+      {areas.length ? (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {areas.map((area) => (
+            <button
+              key={area.code}
+              type="button"
+              onClick={() => onSelect(area)}
+              className={cn(
+                "rounded-md border px-3 py-2 text-left text-xs font-black transition",
+                selectedCode === area.code
+                  ? "border-[#ED3500] bg-[#FFF0EC] text-[#ED3500]"
+                  : "border-[#D8E2EA] bg-white text-[#1F2933] hover:border-[#ED3500]"
+              )}
+            >
+              {area.name}
+            </button>
+          ))}
+        </div>
+      ) : !isLoading ? (
+        <p className="mt-2 text-xs font-semibold leading-5 text-[#667085]">
+          No local areas are imported for this pincode yet.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function sameName(left: string, right: string | null | undefined) {
   return left.trim().toLowerCase() === right?.trim().toLowerCase();
+}
+
+function formatCityOptionLabel(city: { name: string; subdivision?: { name: string } | undefined }) {
+  const stateName = city.subdivision?.name;
+  return stateName ? `${city.name}, ${stateName}` : city.name;
+}
+
+function postalCodeLookupValue(countryCode: string, pincode: string) {
+  const value = pincode.trim().toUpperCase();
+  if (!value) {
+    return "";
+  }
+
+  if (countryCode === "IN") {
+    return /^[1-9][0-9]{5}$/.test(value) ? value : "";
+  }
+
+  return value.length >= 3 ? value : "";
 }

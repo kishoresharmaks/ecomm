@@ -66,8 +66,17 @@ const adminEmail = `${runId}-admin@1handindia.test`;
 const adminPassword = "IntegrationAdminPass123!";
 const financeEmail = `${runId}-finance@1handindia.test`;
 const financePassword = "IntegrationFinancePass123!";
+const integrationDbSafety = evaluateIntegrationDbSafety();
+const integrationDescribe = integrationDbSafety.allowed ? describe.sequential : describe.skip;
 
-describe.sequential("1HandIndia backend integration", () => {
+if (!integrationDbSafety.allowed) {
+  console.warn(
+    `[backend.integration] Skipping DB-writing integration suite: ${integrationDbSafety.reason}. ` +
+      "Use a local disposable PostgreSQL database whose name includes test/e2e/integration and set INDIHUB_ALLOW_INTEGRATION_TEST_DB=true to run it.",
+  );
+}
+
+integrationDescribe("1HandIndia backend integration", () => {
   let app: INestApplication;
   let prisma: PrismaClient;
   let data: Awaited<ReturnType<typeof seedIntegrationData>>;
@@ -367,6 +376,20 @@ describe.sequential("1HandIndia backend integration", () => {
     expect(areas.body).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ code: "IN-TN-CBE-RS", postalCode: "641012" }),
+      ]),
+    );
+
+    const stateWideAreas = await request(app.getHttpServer())
+      .get("/api/locations/areas")
+      .query({ countryCode: "IN", stateCode: "IN-TN", search: "omalur", limit: "50" })
+      .expect(200);
+    expect(stateWideAreas.body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "IN-TN-SLM-OMALUR",
+          postalCode: "636455",
+          city: expect.objectContaining({ code: "IN-TN-SLM", name: "Salem" }),
+        }),
       ]),
     );
 
@@ -5881,6 +5904,85 @@ function safeRunCode() {
   return runId.replace(/[^a-zA-Z0-9]/g, "_").toUpperCase();
 }
 
+function evaluateIntegrationDbSafety() {
+  if (isProtectedEnvironment()) {
+    return {
+      allowed: false,
+      reason: "current environment is production/staging/pre-production protected",
+    };
+  }
+
+  if (process.env.INDIHUB_ALLOW_INTEGRATION_TEST_DB !== "true") {
+    return {
+      allowed: false,
+      reason: "INDIHUB_ALLOW_INTEGRATION_TEST_DB is not true",
+    };
+  }
+
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) {
+    return {
+      allowed: false,
+      reason: "DATABASE_URL is not configured",
+    };
+  }
+
+  const parsedUrl = parseDatabaseUrl(databaseUrl);
+  if (!parsedUrl) {
+    return {
+      allowed: false,
+      reason: "DATABASE_URL could not be parsed safely",
+    };
+  }
+
+  const localHosts = new Set(["localhost", "127.0.0.1", "::1"]);
+  if (!localHosts.has(parsedUrl.host)) {
+    return {
+      allowed: false,
+      reason: "DATABASE_URL is not a local disposable database",
+    };
+  }
+
+  if (!/(test|e2e|integration)/i.test(parsedUrl.databaseName)) {
+    return {
+      allowed: false,
+      reason: "database name does not include test/e2e/integration",
+    };
+  }
+
+  return { allowed: true, reason: "local disposable integration database explicitly allowed" };
+}
+
+function parseDatabaseUrl(databaseUrl: string) {
+  try {
+    const parsed = new URL(databaseUrl);
+    return {
+      host: parsed.hostname.toLowerCase(),
+      databaseName: decodeURIComponent(parsed.pathname.replace(/^\/+/, "")).toLowerCase(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function isProtectedEnvironment() {
+  if (
+    process.env.INDIHUB_PRODUCTION === "true" ||
+    process.env.INDIHUB_STAGING === "true" ||
+    process.env.INDIHUB_PREPRODUCTION === "true"
+  ) {
+    return true;
+  }
+
+  return [process.env.NODE_ENV, process.env.VERCEL_ENV, process.env.INDIHUB_ENV].some(
+    (value) =>
+      value !== undefined &&
+      ["production", "prod", "staging", "stage", "preproduction", "preprod", "uat"].includes(
+        value.toLowerCase().replace(/[^a-z0-9]+/g, ""),
+      ),
+  );
+}
+
 async function seedIntegrationData(prisma: PrismaClient) {
   await seedIntegrationLocations(prisma);
 
@@ -6163,6 +6265,27 @@ async function seedIntegrationLocations(prisma: PrismaClient) {
       sortOrder: 10,
     },
   });
+  const salem = await prisma.locationCity.upsert({
+    where: { subdivisionId_code: { subdivisionId: tamilNadu.id, code: "IN-TN-SLM" } },
+    update: { name: "Salem", sortOrder: 20 },
+    create: {
+      subdivisionId: tamilNadu.id,
+      code: "IN-TN-SLM",
+      name: "Salem",
+      sortOrder: 20,
+    },
+  });
+  await prisma.locationArea.upsert({
+    where: { cityId_code: { cityId: salem.id, code: "IN-TN-SLM-OMALUR" } },
+    update: { name: "Omalur", postalCode: "636455", sortOrder: 10 },
+    create: {
+      cityId: salem.id,
+      code: "IN-TN-SLM-OMALUR",
+      name: "Omalur",
+      postalCode: "636455",
+      sortOrder: 10,
+    },
+  });
 
   const england = await prisma.locationSubdivision.upsert({
     where: { countryId_code: { countryId: uk.id, code: "GB-ENG" } },
@@ -6376,7 +6499,7 @@ async function createApprovedSeller(
   return prisma.seller.create({
     data: {
       userId,
-      sellerType: SellerType.LOCAL_SHOP,
+      sellerType: SellerType.HYPERLOCAL_STORE,
       storeName,
       slug,
       status: SellerStatus.APPROVED,

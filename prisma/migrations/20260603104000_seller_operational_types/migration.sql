@@ -1,0 +1,20 @@
+ALTER TYPE "SellerType" RENAME TO "SellerType_old";
+
+CREATE TYPE "SellerType" AS ENUM (
+  'MARKETPLACE_SELLER',
+  'HYPERLOCAL_STORE',
+  'WHOLESALE_DISTRIBUTOR'
+);
+
+ALTER TABLE "sellers"
+  ALTER COLUMN "seller_type" TYPE "SellerType"
+  USING (
+    CASE "seller_type"::text
+      WHEN 'VENDOR' THEN 'MARKETPLACE_SELLER'
+      WHEN 'NEARBY_STORE' THEN 'HYPERLOCAL_STORE'
+      WHEN 'LOCAL_SHOP' THEN 'HYPERLOCAL_STORE'
+      ELSE 'MARKETPLACE_SELLER'
+    END
+  )::"SellerType";
+
+DROP TYPE "SellerType_old";

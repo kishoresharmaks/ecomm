@@ -2,17 +2,17 @@
 
 *1HandIndia Multi-Vendor Ecommerce Marketplace - Complete Feature List*
 
-1HandIndia is a multi-vendor ecommerce marketplace where customers, nearby stores, vendors, sellers, and business buyers can use one platform for online buying and selling.
+1HandIndia is a multi-vendor ecommerce marketplace where customers, marketplace sellers, hyperlocal stores, wholesale distributors, and business buyers can use one platform for online buying and selling.
 
-The platform supports B2C customer shopping, B2B business enquiries, vendor/seller product selling, admin control, and future mobile app expansion.
+The platform supports B2C customer shopping, B2B business enquiries, seller product selling, admin control, and future mobile app expansion.
 
 *1. Main Project Features*
 
 - Multi-vendor ecommerce marketplace website.
 - B2C customer shopping flow.
 - B2B business buyer enquiry flow.
-- Vendor and seller registration.
-- Nearby store onboarding.
+- Seller registration.
+- Marketplace seller, hyperlocal store, and wholesale distributor onboarding.
 - Product listing and catalogue management.
 - Customer order placement.
 - Seller order management.
@@ -54,12 +54,12 @@ The platform supports B2C customer shopping, B2B business enquiries, vendor/sell
 - Manual bank transfer confirmation option if approved.
 - Invoice or order receipt generation.
 
-*3. Vendor / Seller / Nearby Store / Local Shop Features*
+*3. Seller Operational Type Features*
 
 - Seller registration.
 - Seller login.
-- Nearby store/local shop registration under vendor flow.
-- Vendor profile creation.
+- Seller operational type selection.
+- Marketplace seller, hyperlocal store, or wholesale distributor profile creation.
 - Store name setup.
 - Store logo setup.
 - Store banner setup.
@@ -80,10 +80,10 @@ The platform supports B2C customer shopping, B2B business enquiries, vendor/sell
 - Basic sales summary viewing.
 - Business enquiry viewing.
 - B2B quotation request viewing.
-- Vendor/store profile page.
+- Seller/store profile page.
 - Store product listing page.
-- Vendor-level rating display.
-- Vendor-level review display.
+- Seller-level rating display.
+- Seller-level review display.
 - Verified seller badge option.
 - Seller KYC or business verification.
 - Seller suspension by admin if needed.
@@ -169,17 +169,17 @@ The platform supports B2C customer shopping, B2B business enquiries, vendor/sell
 - Play Store publishing support.
 - App Store publishing support if iOS app is approved.
 
-*7. Nearby Store / Local Shop Vendor Features*
+*7. Hyperlocal Store Features*
 
-- Local shop onboarding under vendor flow.
-- Nearby store selling.
+- Hyperlocal store onboarding under the seller flow.
+- Hyperlocal store selling.
 - Seller address collection.
 - Seller area collection.
 - Seller city collection.
-- Nearby store discovery.
-- Area-based vendor discovery.
-- City-based vendor discovery.
-- Vendor/store page for each seller.
+- Hyperlocal store discovery.
+- Area-based seller discovery.
+- City-based seller discovery.
+- Seller/store page for each seller.
 - Store pickup or click-and-collect in future scope.
 - Customer can view products from one store.
 - Customer can compare sellers.
@@ -268,7 +268,7 @@ The platform supports B2C customer shopping, B2B business enquiries, vendor/sell
 - Basic filter options.
 - Seller-based browsing.
 - Stock-based product visibility.
-- Nearby store discovery.
+- Hyperlocal store discovery.
 - SEO-friendly pages.
 - Privacy policy page.
 - Refund policy page.
@@ -349,8 +349,8 @@ The platform supports B2C customer shopping, B2B business enquiries, vendor/sell
 - Core marketplace website.
 - Mobile-friendly responsive design.
 - Customer shopping flow.
-- Seller/vendor onboarding.
-- Nearby store selling support.
+- Seller onboarding.
+- Hyperlocal store selling support.
 - Product listing.
 - Cart and checkout.
 - Basic order tracking.

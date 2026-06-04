@@ -3,6 +3,7 @@ import { Type } from "class-transformer";
 import {
   ArrayMaxSize,
   ArrayMinSize,
+  IsBoolean,
   IsDateString,
   IsEnum,
   IsIn,
@@ -14,7 +15,13 @@ import {
   Min,
   ValidateNested,
 } from "class-validator";
-import { CourierCodRemittanceStatus, CourierShipmentStatus } from "@indihub/database";
+import {
+  CourierCodRemittanceStatus,
+  CourierShipmentStatus,
+  DeliveryAssignmentStatus,
+  DeliveryMode,
+  OrderShipmentPackageStatus,
+} from "@indihub/database";
 
 export class CourierShipmentQueryDto {
   @ApiPropertyOptional({ example: "COURIER_PROVIDER" })
@@ -40,6 +47,114 @@ export class CourierShipmentQueryDto {
   @IsInt()
   @Min(1)
   limit?: number;
+}
+
+export class CourierPackageQueryDto {
+  @ApiPropertyOptional({ enum: DeliveryMode })
+  @IsOptional()
+  @IsEnum(DeliveryMode)
+  deliveryMode?: DeliveryMode;
+
+  @ApiPropertyOptional({ enum: OrderShipmentPackageStatus })
+  @IsOptional()
+  @IsEnum(OrderShipmentPackageStatus)
+  packageStatus?: OrderShipmentPackageStatus;
+
+  @ApiPropertyOptional({ enum: CourierShipmentStatus })
+  @IsOptional()
+  @IsEnum(CourierShipmentStatus)
+  trackingStatus?: CourierShipmentStatus;
+
+  @ApiPropertyOptional({ example: "SHIPROCKET" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  providerCode?: string;
+
+  @ApiPropertyOptional({ example: "1HI202606040001" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  search?: string;
+
+  @ApiPropertyOptional({ example: 50 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  limit?: number;
+}
+
+export class CourierRoutingFailureQueryDto {
+  @ApiPropertyOptional({ example: "641002" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  search?: string;
+
+  @ApiPropertyOptional({ example: 50 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  limit?: number;
+}
+
+export class CourierRoutingOverrideDto {
+  @ApiPropertyOptional({ enum: DeliveryMode })
+  @IsOptional()
+  @IsEnum(DeliveryMode)
+  deliveryMode?: DeliveryMode;
+
+  @ApiPropertyOptional({ example: "SHIPROCKET" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  courierProviderCode?: string;
+
+  @ApiPropertyOptional({ example: "2d6f5f7c-0b6a-4d65-93b8-3c5b8c62d6f1" })
+  @IsOptional()
+  @IsUUID()
+  deliveryPartnerUserId?: string | null;
+
+  @ApiPropertyOptional({ example: "Manual override by courier manager." })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  note?: string;
+}
+
+export class CourierLocalDeliveryQueryDto {
+  @ApiPropertyOptional({ enum: DeliveryAssignmentStatus })
+  @IsOptional()
+  @IsEnum(DeliveryAssignmentStatus)
+  assignmentStatus?: DeliveryAssignmentStatus;
+
+  @ApiPropertyOptional({ example: "641002" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  search?: string;
+
+  @ApiPropertyOptional({ example: 50 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  limit?: number;
+}
+
+export class CourierLocalDeliveryAssignmentDto {
+  @ApiPropertyOptional({ example: "2d6f5f7c-0b6a-4d65-93b8-3c5b8c62d6f1" })
+  @IsOptional()
+  @IsUUID()
+  deliveryPartnerUserId?: string | null;
+
+  @ApiPropertyOptional({ example: "Assigned from courier operations workspace." })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  assignmentNote?: string;
 }
 
 export class BookCourierShipmentDto {
@@ -95,6 +210,41 @@ export class UpdateCourierTrackingDto {
   @IsString()
   @MaxLength(1000)
   note?: string;
+}
+
+export class UpdateSellerShipmentPackageDto {
+  @ApiPropertyOptional({ example: 750 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  weightGrams?: number;
+
+  @ApiPropertyOptional({ example: 24 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  lengthCm?: number;
+
+  @ApiPropertyOptional({ example: 18 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  breadthCm?: number;
+
+  @ApiPropertyOptional({ example: 10 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  heightCm?: number;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  markReadyForBooking?: boolean;
 }
 
 export class CourierCodRemittanceQueryDto {

@@ -1,4 +1,4 @@
-import { indihubFetch, type IndihubAuthHeaders } from "./api";
+import { IndihubApiError, apiBaseUrl, buildAuthHeaders, indihubFetch, type IndihubAuthHeaders } from "./api";
 import type { AccountOrder } from "./account-api";
 import type { SellerDocumentType } from "./seller-document-upload";
 import type {
@@ -249,8 +249,16 @@ export type SellerProfilePayload = {
   }>;
 };
 
+export type SellerCourierPickupSyncResult = {
+  providerCode: string;
+  pickupLocationName: string;
+  providerPickupId?: string | null;
+  statusLabel?: string | null;
+  seller?: SellerProfile;
+};
+
 export type SellerOnboardingPayload = {
-  sellerType: "VENDOR" | "NEARBY_STORE" | "LOCAL_SHOP";
+  sellerType: "MARKETPLACE_SELLER" | "HYPERLOCAL_STORE" | "WHOLESALE_DISTRIBUTOR";
   storeName: string;
   businessLegalName?: string;
   businessType?: SellerBusinessType;
@@ -340,6 +348,7 @@ export type SellerDeliveryPayload = {
     | "STORE_PICKUP"
     | "LOCAL_DELIVERY_PARTNER"
     | "THIRD_PARTY_COURIER"
+    | "MANUAL_TRANSPORT"
     | undefined;
   partnerName?: string | undefined;
   partnerPhone?: string | undefined;
@@ -438,6 +447,16 @@ export function updateSellerProfile(auth: IndihubAuthHeaders, payload: SellerPro
     {
       method: "PATCH",
       body: JSON.stringify(payload),
+    },
+    auth,
+  );
+}
+
+export function syncSellerCourierPickup(auth: IndihubAuthHeaders, providerCode: string) {
+  return indihubFetch<SellerCourierPickupSyncResult>(
+    `/api/seller/profile/courier-pickups/${encodeURIComponent(providerCode)}/sync`,
+    {
+      method: "POST",
     },
     auth,
   );
@@ -610,6 +629,48 @@ export function updateSellerDelivery(
 ) {
   return indihubFetch<SellerOrder>(
     `/api/seller/orders/${encodeURIComponent(orderNumber)}/delivery`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    },
+    auth,
+  );
+}
+
+export async function fetchSellerPackageLabel(
+  auth: IndihubAuthHeaders,
+  labelDownloadUrl: string,
+) {
+  const response = await fetch(`${apiBaseUrl}${labelDownloadUrl}`, {
+    headers: await buildAuthHeaders(auth),
+  });
+  if (!response.ok) {
+    throw new IndihubApiError("Courier label could not be downloaded.", response.status);
+  }
+  const contentDisposition = response.headers.get("content-disposition") ?? "";
+  const fileNameMatch = /filename="?([^";]+)"?/i.exec(contentDisposition);
+
+  return {
+    blob: await response.blob(),
+    fileName: fileNameMatch?.[1] ?? "courier-label.pdf",
+  };
+}
+
+export type SellerPackageUpdatePayload = {
+  weightGrams?: number | undefined;
+  lengthCm?: number | undefined;
+  breadthCm?: number | undefined;
+  heightCm?: number | undefined;
+  markReadyForBooking?: boolean | undefined;
+};
+
+export function updateSellerPackage(
+  auth: IndihubAuthHeaders,
+  packageId: string,
+  payload: SellerPackageUpdatePayload,
+) {
+  return indihubFetch(
+    `/api/seller/packages/${encodeURIComponent(packageId)}`,
     {
       method: "PATCH",
       body: JSON.stringify(payload),

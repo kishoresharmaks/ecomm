@@ -15,6 +15,12 @@ export class UpdateDeliveryDto {
   @MaxLength(120)
   partnerName?: string;
 
+  @ApiPropertyOptional({ example: "SHIPROCKET" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  courierProviderCode?: string;
+
   @ApiPropertyOptional({ example: "9876543210" })
   @IsOptional()
   @Matches(/^[6-9]\d{9}$/)

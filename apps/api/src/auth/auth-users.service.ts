@@ -146,7 +146,7 @@ export class AuthUsersService {
       case RoleCode.ADMIN:
         return "Platform admin and operations team.";
       case RoleCode.SELLER:
-        return "Vendor, nearby store, or local shop.";
+        return "Marketplace seller, hyperlocal store, or wholesale distributor.";
       case RoleCode.BUSINESS_BUYER:
         return "B2B buyer account for enquiries.";
       case RoleCode.CUSTOMER:

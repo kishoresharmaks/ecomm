@@ -8,7 +8,10 @@ import {
   ChevronDown,
   ChevronUp,
   ClipboardList,
+  Download,
+  ExternalLink,
   Package,
+  Printer,
   Truck,
   XCircle,
 } from "lucide-react";
@@ -16,10 +19,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, SectionHeading, StatusBadge, cn } from "@indihub/ui";
 import { formatMoney } from "@/lib/storefront-api";
 import {
+  fetchSellerPackageLabel,
   getSellerOrder,
   getSellerProfile,
   updateSellerDelivery,
   updateSellerOrderStatus,
+  updateSellerPackage,
 } from "@/lib/seller-api";
 import {
   SellerAuthNotice,
@@ -45,11 +50,17 @@ const sellerStatuses = [
   "CANCELLED",
 ] as const;
 type SellerStatus = (typeof sellerStatuses)[number];
-const deliveryModes = ["STORE_PICKUP", "LOCAL_DELIVERY_PARTNER", "THIRD_PARTY_COURIER"] as const;
+const deliveryModes = [
+  "STORE_PICKUP",
+  "LOCAL_DELIVERY_PARTNER",
+  "THIRD_PARTY_COURIER",
+  "MANUAL_TRANSPORT",
+] as const;
 const deliveryModeLabels: Record<(typeof deliveryModes)[number], string> = {
   STORE_PICKUP: "Store pickup",
   LOCAL_DELIVERY_PARTNER: "Local delivery partner (auto assign)",
   THIRD_PARTY_COURIER: "Third-party courier service",
+  MANUAL_TRANSPORT: "Manual transport",
 };
 const deliveryStatuses = [
   "NOT_ASSIGNED",
@@ -110,6 +121,10 @@ export function SellerOrderDetailClient({ orderNumber }: { orderNumber: string }
   const [statusNote, setStatusNote] = useState("");
   const [selectedDeliveryStatus, setSelectedDeliveryStatus] = useState<DeliveryStatus>("PENDING");
   const [showDeliveryDetails, setShowDeliveryDetails] = useState(false);
+  const [labelActionPackageId, setLabelActionPackageId] = useState<string | null>(null);
+  const [packageDrafts, setPackageDrafts] = useState<
+    Record<string, { weightGrams: string; lengthCm: string; breadthCm: string; heightCm: string }>
+  >({});
 
   const profileQuery = useQuery({
     queryKey: ["seller-profile", sellerAuth.authKey],
@@ -153,6 +168,22 @@ export function SellerOrderDetailClient({ orderNumber }: { orderNumber: string }
       setNotice(error instanceof Error ? error.message : "Delivery update failed."),
   });
 
+  const packageMutation = useMutation({
+    mutationFn: ({
+      packageId,
+      payload,
+    }: {
+      packageId: string;
+      payload: Parameters<typeof updateSellerPackage>[2];
+    }) => updateSellerPackage(sellerAuth.authHeaders, packageId, payload),
+    onSuccess: () => {
+      setNotice("Package details updated.");
+      invalidateOrder();
+    },
+    onError: (error) =>
+      setNotice(error instanceof Error ? error.message : "Package update failed."),
+  });
+
   function invalidateOrder() {
     void queryClient.invalidateQueries({
       queryKey: ["seller-order", sellerAuth.authKey, orderNumber],
@@ -167,6 +198,66 @@ export function SellerOrderDetailClient({ orderNumber }: { orderNumber: string }
       sellerStatus,
       note: statusNote.trim() || undefined,
     });
+  }
+
+  function updatePackageDraft(packageId: string, key: keyof (typeof packageDrafts)[string], value: string) {
+    setPackageDrafts((current) => ({
+      ...current,
+      [packageId]: {
+        ...(current[packageId] ?? { weightGrams: "", lengthCm: "", breadthCm: "", heightCm: "" }),
+        [key]: value,
+      },
+    }));
+  }
+
+  function savePackageDetails(packageId: string, markReadyForBooking = false) {
+    const draft = packageDrafts[packageId];
+    setNotice(null);
+    packageMutation.mutate({
+      packageId,
+      payload: {
+        weightGrams: positiveDraftNumber(draft?.weightGrams),
+        lengthCm: positiveDraftNumber(draft?.lengthCm),
+        breadthCm: positiveDraftNumber(draft?.breadthCm),
+        heightCm: positiveDraftNumber(draft?.heightCm),
+        markReadyForBooking,
+      },
+    });
+  }
+
+  async function handleLabelAction(
+    shipmentPackage: { id: string; labelDownloadUrl?: string | null },
+    action: "download" | "print",
+  ) {
+    if (!shipmentPackage.labelDownloadUrl) {
+      setNotice("Courier label is not available yet.");
+      return;
+    }
+    setNotice(null);
+    setLabelActionPackageId(shipmentPackage.id);
+    try {
+      const label = await fetchSellerPackageLabel(
+        sellerAuth.authHeaders,
+        shipmentPackage.labelDownloadUrl,
+      );
+      const url = URL.createObjectURL(label.blob);
+      if (action === "download") {
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = label.fileName;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      } else {
+        window.open(url, "_blank", "noopener,noreferrer");
+        window.setTimeout(() => URL.revokeObjectURL(url), 30000);
+      }
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Courier label could not be opened.");
+    } finally {
+      setLabelActionPackageId(null);
+    }
   }
 
   function submitDelivery(event: FormEvent<HTMLFormElement>) {
@@ -198,6 +289,18 @@ export function SellerOrderDetailClient({ orderNumber }: { orderNumber: string }
       order?.shipments?.find((shipment) => shipment.sellerId === sellerId) ?? order?.shipments?.[0],
     [order?.shipments, sellerId],
   );
+  useEffect(() => {
+    const nextDrafts: typeof packageDrafts = {};
+    for (const shipmentPackage of sellerShipment?.packages ?? []) {
+      nextDrafts[shipmentPackage.id] = {
+        weightGrams: shipmentPackage.weightGrams ? String(shipmentPackage.weightGrams) : "",
+        lengthCm: shipmentPackage.lengthCm ? String(shipmentPackage.lengthCm) : "",
+        breadthCm: shipmentPackage.breadthCm ? String(shipmentPackage.breadthCm) : "",
+        heightCm: shipmentPackage.heightCm ? String(shipmentPackage.heightCm) : "",
+      };
+    }
+    setPackageDrafts(nextDrafts);
+  }, [sellerShipment?.packages]);
   const sellerItems = useMemo(() => {
     if (!order) {
       return [];
@@ -365,6 +468,178 @@ export function SellerOrderDetailClient({ orderNumber }: { orderNumber: string }
                   label="Shipping share"
                   value={formatMoney(sellerShipment.shippingPaise, order.currency)}
                 />
+              </div>
+              <div className="mt-5 grid gap-3">
+                {(sellerShipment.packages ?? []).map((shipmentPackage) => {
+                  const labelBusy = labelActionPackageId === shipmentPackage.id;
+                  const canEditPackage =
+                    shipmentPackage.deliveryMode === "THIRD_PARTY_COURIER" &&
+                    (shipmentPackage.courierTrackingStatus ?? "NOT_BOOKED") === "NOT_BOOKED";
+                  const draft = packageDrafts[shipmentPackage.id] ?? {
+                    weightGrams: "",
+                    lengthCm: "",
+                    breadthCm: "",
+                    heightCm: "",
+                  };
+                  return (
+                    <div
+                      key={shipmentPackage.id}
+                      className="rounded-lg border border-[#D8E2EA] bg-[#F8FAFC] p-4"
+                    >
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-sm font-black text-[#1F2933]">
+                              {shipmentPackage.packageNumber}
+                            </p>
+                            <StatusBadge tone={shipmentPackage.canDownloadLabel ? "success" : "info"}>
+                              {packageStatusTitle(shipmentPackage)}
+                            </StatusBadge>
+                          </div>
+                          <div className="mt-3 grid gap-2 text-sm font-semibold text-[#667085] sm:grid-cols-2">
+                            <Info
+                              label="AWB"
+                              value={shipmentPackage.awbNumber ?? "Not assigned"}
+                            />
+                            <Info
+                              label="Courier"
+                              value={
+                                shipmentPackage.courierName ??
+                                shipmentPackage.courierCode ??
+                                "Not assigned"
+                              }
+                            />
+                            <Info
+                              label="Tracking"
+                              value={
+                                shipmentPackage.courierTrackingStatusLabel ??
+                                statusLabel(shipmentPackage.courierTrackingStatus)
+                              }
+                            />
+                            <Info
+                              label="Booked"
+                              value={
+                                shipmentPackage.shipmentBookedAt
+                                  ? formatDateTime(shipmentPackage.shipmentBookedAt)
+                                  : "Not booked"
+                              }
+                            />
+                          </div>
+                          {canEditPackage ? (
+                            <div className="mt-4 grid gap-3 rounded-lg border border-[#D8E2EA] bg-white p-3 sm:grid-cols-4">
+                              <SellerField
+                                label="Weight g"
+                                name={`weight-${shipmentPackage.id}`}
+                                type="number"
+                                min={1}
+                                value={draft.weightGrams}
+                                onChange={(value) =>
+                                  updatePackageDraft(shipmentPackage.id, "weightGrams", value)
+                                }
+                              />
+                              <SellerField
+                                label="Length cm"
+                                name={`length-${shipmentPackage.id}`}
+                                type="number"
+                                min={1}
+                                value={draft.lengthCm}
+                                onChange={(value) =>
+                                  updatePackageDraft(shipmentPackage.id, "lengthCm", value)
+                                }
+                              />
+                              <SellerField
+                                label="Breadth cm"
+                                name={`breadth-${shipmentPackage.id}`}
+                                type="number"
+                                min={1}
+                                value={draft.breadthCm}
+                                onChange={(value) =>
+                                  updatePackageDraft(shipmentPackage.id, "breadthCm", value)
+                                }
+                              />
+                              <SellerField
+                                label="Height cm"
+                                name={`height-${shipmentPackage.id}`}
+                                type="number"
+                                min={1}
+                                value={draft.heightCm}
+                                onChange={(value) =>
+                                  updatePackageDraft(shipmentPackage.id, "heightCm", value)
+                                }
+                              />
+                            </div>
+                          ) : null}
+                        </div>
+                        <div className="flex flex-wrap gap-2 lg:justify-end">
+                          {canEditPackage ? (
+                            <>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => savePackageDetails(shipmentPackage.id)}
+                                disabled={packageMutation.isPending}
+                              >
+                                Save package
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => savePackageDetails(shipmentPackage.id, true)}
+                                disabled={packageMutation.isPending}
+                              >
+                                Ready
+                              </Button>
+                            </>
+                          ) : null}
+                          {shipmentPackage.canDownloadLabel ? (
+                            <>
+                              <Button
+                                type="button"
+                                size="sm"
+                                onClick={() => void handleLabelAction(shipmentPackage, "download")}
+                                disabled={labelBusy}
+                              >
+                                <Download className="h-4 w-4" aria-hidden="true" />
+                                Download label
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => void handleLabelAction(shipmentPackage, "print")}
+                                disabled={labelBusy}
+                              >
+                                <Printer className="h-4 w-4" aria-hidden="true" />
+                                Print
+                              </Button>
+                            </>
+                          ) : (
+                            <StatusBadge tone="warning">{packageLabelState(shipmentPackage)}</StatusBadge>
+                          )}
+                          {shipmentPackage.trackingUrl ? (
+                            <Button asChild size="sm" variant="outline">
+                              <a
+                                href={shipmentPackage.trackingUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                <ExternalLink className="h-4 w-4" aria-hidden="true" />
+                                Track
+                              </a>
+                            </Button>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                {(sellerShipment.packages ?? []).length === 0 ? (
+                  <p className="rounded-lg border border-[#D8E2EA] bg-[#F8FAFC] p-4 text-sm font-semibold text-[#667085]">
+                    Package details are not available yet.
+                  </p>
+                ) : null}
               </div>
             </SellerPanel>
           ) : null}
@@ -619,6 +894,48 @@ function toDateInput(value?: string | null) {
   }
 
   return new Date(value).toISOString().slice(0, 10);
+}
+
+function positiveDraftNumber(value?: string) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function packageStatusTitle(shipmentPackage: {
+  canDownloadLabel?: boolean;
+  status?: string | null;
+  courierTrackingStatus?: string | null;
+}) {
+  if (shipmentPackage.canDownloadLabel) {
+    return "Label ready";
+  }
+  if (shipmentPackage.courierTrackingStatus && shipmentPackage.courierTrackingStatus !== "NOT_BOOKED") {
+    return statusLabel(shipmentPackage.courierTrackingStatus);
+  }
+  return statusLabel(shipmentPackage.status);
+}
+
+function packageLabelState(shipmentPackage: {
+  deliveryMode?: string | null;
+  status?: string | null;
+  courierTrackingStatus?: string | null;
+}) {
+  if (shipmentPackage.deliveryMode !== "THIRD_PARTY_COURIER") {
+    return "No courier label";
+  }
+  if (shipmentPackage.courierTrackingStatus === "CANCELLED" || shipmentPackage.status === "CANCELLED") {
+    return "Cancelled";
+  }
+  if (shipmentPackage.courierTrackingStatus === "FAILED" || shipmentPackage.status === "FAILED") {
+    return "Booking failed";
+  }
+  if (shipmentPackage.courierTrackingStatus?.startsWith("RTO") || shipmentPackage.status?.startsWith("RTO")) {
+    return "RTO";
+  }
+  if (shipmentPackage.status === "READY_FOR_BOOKING") {
+    return "Courier booking pending";
+  }
+  return "Packing pending";
 }
 
 function Info({ label, value }: { label: string; value?: string | number | null }) {

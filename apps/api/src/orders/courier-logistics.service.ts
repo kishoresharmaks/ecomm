@@ -13,14 +13,19 @@ import {
   CourierProviderMode,
   CourierShipmentStatus,
   CourierWebhookEventStatus,
+  DeliveryAssignmentAttemptSource,
+  DeliveryAssignmentStatus,
   DeliveryMode,
   DeliveryStatus,
+  OrderShipmentPackageStatus,
   OrderStatus,
   PaymentProvider,
   PaymentStatus,
   Prisma,
+  RoleCode,
   SellerOrderStatus,
   SellerSettlementStatus,
+  UserStatus,
 } from "@indihub/database";
 import type { RequestUser } from "../auth/types/indihub-request";
 import { PrismaService } from "../prisma/prisma.service";
@@ -35,8 +40,14 @@ import type {
 import {
   BookCourierShipmentDto,
   CourierCodRemittanceQueryDto,
+  CourierLocalDeliveryAssignmentDto,
+  CourierLocalDeliveryQueryDto,
+  CourierPackageQueryDto,
+  CourierRoutingFailureQueryDto,
+  CourierRoutingOverrideDto,
   CourierShipmentQueryDto,
   ImportCourierCodRemittanceReportDto,
+  UpdateSellerShipmentPackageDto,
   UpdateCourierTrackingDto,
   UpsertCourierCodRemittanceDto,
   VerifyCourierCodRemittanceDto,
@@ -70,6 +81,15 @@ type CourierBookOrderShipment = Prisma.OrderShipmentGetPayload<{
         courierProviderSettings: true;
       };
     };
+    packages: {
+      include: {
+        courierPackages: {
+          include: {
+            courierConsignment: true;
+          };
+        };
+      };
+    };
     courierShipment: true;
     courierCodRemittance: true;
   };
@@ -88,6 +108,14 @@ const deliveryStatusRank = {
   [DeliveryStatus.DELIVERED]: 5,
   [DeliveryStatus.CANCELLED]: 6,
 } satisfies Record<DeliveryStatus, number>;
+
+const labelDownloadBlockedStatuses = new Set<CourierShipmentStatus>([
+  CourierShipmentStatus.CANCELLED,
+  CourierShipmentStatus.FAILED,
+  CourierShipmentStatus.RTO_INITIATED,
+  CourierShipmentStatus.RTO_IN_TRANSIT,
+  CourierShipmentStatus.RTO_DELIVERED,
+]);
 
 @Injectable()
 export class CourierLogisticsService {
@@ -144,6 +172,17 @@ export class CourierLogisticsService {
             courierProviderSettings: { where: { providerCode, isActive: true } },
           },
         },
+        packages: {
+          include: {
+            courierPackages: {
+              include: {
+                courierConsignment: true,
+              },
+              orderBy: { updatedAt: "desc" },
+            },
+          },
+          orderBy: { sequence: "asc" },
+        },
         courierShipment: true,
         courierCodRemittance: true,
       },
@@ -193,7 +232,14 @@ export class CourierLogisticsService {
         providerOrderId: resolvedProviderOrderId,
         labelUrl: resolvedLabelUrl,
       };
+    const pickupLocationName =
+      orderShipment.seller.courierProviderSettings.find(
+        (setting) => setting.providerCode === providerCode && setting.isActive,
+      )?.pickupLocationName?.trim() ?? null;
     const orderId = await this.prisma.client.$transaction(async (tx) => {
+      const now = new Date();
+      const orderShipmentPackage = await this.ensureDefaultShipmentPackage(tx, orderShipment);
+      const nextPackageStatus = this.packageStatusFromCourierStatus(status);
       const courierShipment = await tx.courierShipment.upsert({
         where: { orderShipmentId: orderShipment.id },
         update: {
@@ -206,7 +252,7 @@ export class CourierLogisticsService {
           labelUrl: resolvedLabelUrl,
           bookingAttemptCount: { increment: 1 },
           bookingError: status === CourierShipmentStatus.BOOKED ? null : liveBooking?.trackingStatusLabel ?? null,
-          bookedAt: status === CourierShipmentStatus.BOOKED ? new Date() : null,
+          bookedAt: status === CourierShipmentStatus.BOOKED ? now : null,
           bookingPayloadSnapshot: this.inputJson(bookingPayloadSnapshot),
           bookingResponseSnapshot: this.inputJson(bookingResponseSnapshot),
         },
@@ -222,10 +268,103 @@ export class CourierLogisticsService {
           trackingUrl: resolvedTrackingUrl,
           labelUrl: resolvedLabelUrl,
           bookingAttemptCount: 1,
-          bookedAt: status === CourierShipmentStatus.BOOKED ? new Date() : null,
+          bookedAt: status === CourierShipmentStatus.BOOKED ? now : null,
           bookingError: status === CourierShipmentStatus.BOOKED ? null : liveBooking?.trackingStatusLabel ?? null,
           bookingPayloadSnapshot: this.inputJson(bookingPayloadSnapshot),
           bookingResponseSnapshot: this.inputJson(bookingResponseSnapshot),
+        },
+      });
+      const courierConsignment = await tx.courierConsignment.upsert({
+        where: {
+          consignmentNumber: this.createConsignmentNumber(orderShipment.shipmentNumber, 1),
+        },
+        update: {
+          providerCode,
+          providerOrderId: resolvedProviderOrderId,
+          pickupLocationName,
+          trackingStatus: status,
+          trackingStatusLabel: statusLabel,
+          labelDocumentUrl: resolvedLabelUrl,
+          manifestUrl: liveBooking?.manifestUrl ?? null,
+          invoiceUrl: liveBooking?.invoiceUrl ?? null,
+          shippingZone: liveBooking?.shippingZone ?? null,
+          providerRawStatus: liveBooking?.providerRawStatus ?? null,
+          providerRawStatusCode: liveBooking?.providerRawStatusCode ?? null,
+          bookingAttemptCount: { increment: 1 },
+          bookingError: status === CourierShipmentStatus.BOOKED ? null : liveBooking?.trackingStatusLabel ?? null,
+          bookedAt: status === CourierShipmentStatus.BOOKED ? now : null,
+          bookingPayloadSnapshot: this.inputJson(bookingPayloadSnapshot),
+          bookingResponseSnapshot: this.inputJson(bookingResponseSnapshot),
+        },
+        create: {
+          consignmentNumber: this.createConsignmentNumber(orderShipment.shipmentNumber, 1),
+          orderShipmentId: orderShipment.id,
+          orderId: orderShipment.orderId,
+          sellerId: orderShipment.sellerId,
+          providerCode,
+          providerOrderId: resolvedProviderOrderId,
+          pickupLocationName,
+          trackingStatus: status,
+          trackingStatusLabel: statusLabel,
+          labelDocumentUrl: resolvedLabelUrl,
+          manifestUrl: liveBooking?.manifestUrl ?? null,
+          invoiceUrl: liveBooking?.invoiceUrl ?? null,
+          shippingZone: liveBooking?.shippingZone ?? null,
+          providerRawStatus: liveBooking?.providerRawStatus ?? null,
+          providerRawStatusCode: liveBooking?.providerRawStatusCode ?? null,
+          bookingAttemptCount: 1,
+          bookedAt: status === CourierShipmentStatus.BOOKED ? now : null,
+          bookingError: status === CourierShipmentStatus.BOOKED ? null : liveBooking?.trackingStatusLabel ?? null,
+          bookingPayloadSnapshot: this.inputJson(bookingPayloadSnapshot),
+          bookingResponseSnapshot: this.inputJson(bookingResponseSnapshot),
+        },
+      });
+      const existingConsignmentPackage = await tx.courierConsignmentPackage.findFirst({
+        where: {
+          courierConsignmentId: courierConsignment.id,
+          orderShipmentPackageId: orderShipmentPackage.id,
+        },
+      });
+      const courierPackageData = {
+        orderShipmentId: orderShipment.id,
+        orderId: orderShipment.orderId,
+        sellerId: orderShipment.sellerId,
+        providerPackageId: resolvedProviderOrderId,
+        awbNumber: resolvedAwbNumber,
+        courierName: liveBooking?.courierName ?? provider.displayName,
+        courierCode: liveBooking?.courierCode ?? providerCode,
+        trackingStatus: status,
+        trackingStatusLabel: statusLabel,
+        trackingUrl: resolvedTrackingUrl,
+        labelUrl: resolvedLabelUrl,
+        manifestUrl: liveBooking?.manifestUrl ?? null,
+        invoiceUrl: liveBooking?.invoiceUrl ?? null,
+        shippingZone: liveBooking?.shippingZone ?? null,
+        providerRawStatus: liveBooking?.providerRawStatus ?? null,
+        providerRawStatusCode: liveBooking?.providerRawStatusCode ?? null,
+        bookedAt: status === CourierShipmentStatus.BOOKED ? now : null,
+        pickupScheduledAt: liveBooking?.pickupScheduledAt ?? null,
+      };
+      if (existingConsignmentPackage) {
+        await tx.courierConsignmentPackage.update({
+          where: { id: existingConsignmentPackage.id },
+          data: courierPackageData,
+        });
+      } else {
+        await tx.courierConsignmentPackage.create({
+          data: {
+            courierConsignmentId: courierConsignment.id,
+            orderShipmentPackageId: orderShipmentPackage.id,
+            ...courierPackageData,
+          },
+        });
+      }
+      await tx.orderShipmentPackage.update({
+        where: { id: orderShipmentPackage.id },
+        data: {
+          status: nextPackageStatus,
+          bookedAt: status === CourierShipmentStatus.BOOKED ? now : orderShipmentPackage.bookedAt,
+          pickupScheduledAt: liveBooking?.pickupScheduledAt ?? orderShipmentPackage.pickupScheduledAt,
         },
       });
 
@@ -255,6 +394,7 @@ export class CourierLogisticsService {
           newValue: {
             providerCode,
             shipmentNumber,
+            packageNumber: orderShipmentPackage.packageNumber,
             awbNumber: resolvedAwbNumber,
             providerOrderId: resolvedProviderOrderId,
             source: liveBooking ? "LIVE_ADAPTER" : "MANUAL_PROVIDER_READY",
@@ -300,6 +440,523 @@ export class CourierLogisticsService {
     });
 
     return this.getOrderCourierSummary(orderId);
+  }
+
+  async getCourierDashboard() {
+    const [
+      pendingBookings,
+      bookingFailures,
+      labelReady,
+      pickupScheduled,
+      inTransit,
+      delivered,
+      routingFailures,
+      localDeliveryPending,
+      courierCodPending,
+      activeProviders,
+    ] = await Promise.all([
+      this.prisma.client.orderShipmentPackage.count({
+        where: {
+          deliveryMode: DeliveryMode.THIRD_PARTY_COURIER,
+          status: {
+            in: [
+              OrderShipmentPackageStatus.PACKING_PENDING,
+              OrderShipmentPackageStatus.READY_FOR_BOOKING,
+              OrderShipmentPackageStatus.BOOKING_PENDING,
+            ],
+          },
+        },
+      }),
+      this.prisma.client.courierShipment.count({
+        where: {
+          OR: [
+            { bookingError: { not: null } },
+            { trackingStatus: CourierShipmentStatus.FAILED },
+          ],
+        },
+      }),
+      this.prisma.client.courierConsignmentPackage.count({
+        where: {
+          labelUrl: { not: null },
+          trackingStatus: { notIn: Array.from(labelDownloadBlockedStatuses) },
+        },
+      }),
+      this.prisma.client.courierConsignmentPackage.count({
+        where: { trackingStatus: CourierShipmentStatus.PICKUP_SCHEDULED },
+      }),
+      this.prisma.client.courierConsignmentPackage.count({
+        where: {
+          trackingStatus: {
+            in: [
+              CourierShipmentStatus.PICKED_UP,
+              CourierShipmentStatus.IN_TRANSIT,
+              CourierShipmentStatus.OUT_FOR_DELIVERY,
+              CourierShipmentStatus.RTO_INITIATED,
+              CourierShipmentStatus.RTO_IN_TRANSIT,
+            ],
+          },
+        },
+      }),
+      this.prisma.client.courierConsignmentPackage.count({
+        where: { trackingStatus: CourierShipmentStatus.DELIVERED },
+      }),
+      this.prisma.client.orderShipment.count({
+        where: {
+          OR: [{ routingFailed: true }, { routingPermanentFailureAt: { not: null } }],
+        },
+      }),
+      this.prisma.client.orderShipment.count({
+        where: {
+          deliveryMode: DeliveryMode.LOCAL_DELIVERY_PARTNER,
+          assignmentStatus: {
+            in: [DeliveryAssignmentStatus.UNASSIGNED, DeliveryAssignmentStatus.REJECTED],
+          },
+          status: { notIn: [DeliveryStatus.DELIVERED, DeliveryStatus.CANCELLED] },
+        },
+      }),
+      this.prisma.client.courierCodRemittance.count({
+        where: {
+          status: {
+            in: [
+              CourierCodRemittanceStatus.PENDING,
+              CourierCodRemittanceStatus.COURIER_COLLECTED,
+              CourierCodRemittanceStatus.REMITTED,
+            ],
+          },
+        },
+      }),
+      this.prisma.client.courierProviderSetting.count({ where: { isActive: true } }),
+    ]);
+
+    return {
+      generatedAt: new Date().toISOString(),
+      metrics: {
+        pendingBookings,
+        bookingFailures,
+        labelReady,
+        pickupScheduled,
+        inTransit,
+        delivered,
+        routingFailures,
+        localDeliveryPending,
+        courierCodPending,
+        activeProviders,
+      },
+    };
+  }
+
+  async listCourierPackages(query: CourierPackageQueryDto) {
+    const take = Math.min(query.limit ?? 50, 100);
+    const search = query.search?.trim();
+    const providerCode = query.providerCode?.trim().toUpperCase();
+    const where: Prisma.OrderShipmentPackageWhereInput = {
+      ...(query.deliveryMode ? { deliveryMode: query.deliveryMode } : {}),
+      ...(query.packageStatus ? { status: query.packageStatus } : {}),
+      ...(query.trackingStatus
+        ? { courierPackages: { some: { trackingStatus: query.trackingStatus } } }
+        : {}),
+      ...(providerCode
+        ? {
+            courierPackages: {
+              some: {
+                courierConsignment: { providerCode },
+              },
+            },
+          }
+        : {}),
+      ...(search
+        ? {
+            OR: [
+              { packageNumber: { contains: search, mode: "insensitive" } },
+              { orderShipment: { shipmentNumber: { contains: search, mode: "insensitive" } } },
+              { order: { orderNumber: { contains: search, mode: "insensitive" } } },
+              { seller: { storeName: { contains: search, mode: "insensitive" } } },
+              { courierPackages: { some: { awbNumber: { contains: search, mode: "insensitive" } } } },
+            ],
+          }
+        : {}),
+    };
+
+    const [items, total] = await Promise.all([
+      this.prisma.client.orderShipmentPackage.findMany({
+        where,
+        include: this.courierPackageInclude(),
+        orderBy: [{ updatedAt: "desc" }],
+        take,
+      }),
+      this.prisma.client.orderShipmentPackage.count({ where }),
+    ]);
+
+    return { items: items.map((item) => this.courierPackageReadback(item)), total };
+  }
+
+  async getCourierPackage(packageId: string) {
+    const shipmentPackage = await this.prisma.client.orderShipmentPackage.findUnique({
+      where: { id: packageId },
+      include: this.courierPackageInclude(true),
+    });
+
+    if (!shipmentPackage) {
+      throw new NotFoundException("Courier package not found.");
+    }
+
+    return this.courierPackageReadback(shipmentPackage);
+  }
+
+  async bookPackage(actor: RequestUser, packageId: string, dto: BookCourierShipmentDto) {
+    const shipmentPackage = await this.prisma.client.orderShipmentPackage.findUnique({
+      where: { id: packageId },
+      include: {
+        orderShipment: true,
+      },
+    });
+
+    if (!shipmentPackage) {
+      throw new NotFoundException("Courier package not found.");
+    }
+
+    if (shipmentPackage.deliveryMode !== DeliveryMode.THIRD_PARTY_COURIER) {
+      throw new BadRequestException("Courier booking is only available for third-party courier packages.");
+    }
+
+    await this.bookShipment(actor, shipmentPackage.orderShipment.shipmentNumber, dto);
+    return this.getCourierPackage(packageId);
+  }
+
+  async updatePackageTracking(actor: RequestUser, packageId: string, dto: UpdateCourierTrackingDto) {
+    const shipmentPackage = await this.prisma.client.orderShipmentPackage.findUnique({
+      where: { id: packageId },
+      include: {
+        orderShipment: { include: { courierShipment: true } },
+        courierPackages: {
+          include: { courierConsignment: true },
+          orderBy: { updatedAt: "desc" },
+        },
+      },
+    });
+
+    if (!shipmentPackage) {
+      throw new NotFoundException("Courier package not found.");
+    }
+
+    const courierPackage = shipmentPackage.courierPackages[0] ?? null;
+    const courierShipmentId = shipmentPackage.orderShipment.courierShipment?.id ?? null;
+    if (!courierShipmentId && !courierPackage) {
+      throw new BadRequestException("Book this package before updating courier tracking.");
+    }
+
+    if (courierShipmentId) {
+      await this.updateTracking(actor, courierShipmentId, dto);
+      return this.getCourierPackage(packageId);
+    }
+
+    const orderId = await this.prisma.client.$transaction(async (tx) => {
+      await tx.courierConsignmentPackage.update({
+        where: { id: courierPackage!.id },
+        data: {
+          trackingStatus: dto.trackingStatus,
+          trackingStatusLabel: dto.trackingStatusLabel ?? dto.note ?? null,
+          lastTrackedAt: new Date(),
+        },
+      });
+      await tx.orderShipmentPackage.update({
+        where: { id: packageId },
+        data: { status: this.packageStatusFromCourierStatus(dto.trackingStatus) },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorUserId: actor.id,
+          action: "courier.package.tracking_updated",
+          entityType: "order_shipment_package",
+          entityId: packageId,
+          newValue: { trackingStatus: dto.trackingStatus, note: dto.note ?? null },
+        },
+      });
+      return shipmentPackage.orderId;
+    });
+
+    await this.getOrderCourierSummary(orderId);
+    return this.getCourierPackage(packageId);
+  }
+
+  async listRoutingFailures(query: CourierRoutingFailureQueryDto) {
+    const take = Math.min(query.limit ?? 50, 100);
+    const search = query.search?.trim();
+    const where: Prisma.OrderShipmentWhereInput = {
+      OR: [{ routingFailed: true }, { routingPermanentFailureAt: { not: null } }],
+      ...(search
+        ? {
+            AND: [
+              {
+                OR: [
+                  { shipmentNumber: { contains: search, mode: "insensitive" } },
+                  { order: { orderNumber: { contains: search, mode: "insensitive" } } },
+                  { seller: { storeName: { contains: search, mode: "insensitive" } } },
+                  { routingFailureNote: { contains: search, mode: "insensitive" } },
+                ],
+              },
+            ],
+          }
+        : {}),
+    };
+    const [items, total] = await Promise.all([
+      this.prisma.client.orderShipment.findMany({
+        where,
+        include: this.routingShipmentInclude(),
+        orderBy: [{ routingFirstFailedAt: "asc" }, { updatedAt: "desc" }],
+        take,
+      }),
+      this.prisma.client.orderShipment.count({ where }),
+    ]);
+
+    return { items: items.map((item) => this.routingShipmentReadback(item)), total };
+  }
+
+  async overrideRoutingFailure(actor: RequestUser, shipmentId: string, dto: CourierRoutingOverrideDto) {
+    const shipment = await this.prisma.client.orderShipment.findUnique({
+      where: { id: shipmentId },
+      include: { order: true },
+    });
+
+    if (!shipment) {
+      throw new NotFoundException("Shipment not found.");
+    }
+
+    const nextMode = dto.deliveryMode ?? shipment.deliveryMode;
+    const partnerUserId = nextMode === DeliveryMode.LOCAL_DELIVERY_PARTNER ? dto.deliveryPartnerUserId ?? null : null;
+    if (partnerUserId) {
+      await this.assertDeliveryPartnerUser(partnerUserId);
+    }
+    const courierProviderCode =
+      nextMode === DeliveryMode.THIRD_PARTY_COURIER
+        ? dto.courierProviderCode?.trim().toUpperCase() || shipment.courierProviderCode
+        : null;
+    const now = new Date();
+
+    await this.prisma.client.$transaction(async (tx) => {
+      await tx.orderShipment.update({
+        where: { id: shipment.id },
+        data: {
+          deliveryMode: nextMode,
+          courierProviderCode,
+          deliveryPartnerUserId: partnerUserId,
+          assignmentStatus: partnerUserId
+            ? DeliveryAssignmentStatus.ASSIGNED
+            : DeliveryAssignmentStatus.UNASSIGNED,
+          assignedAt: partnerUserId ? now : null,
+          acceptedAt: null,
+          rejectedAt: null,
+          assignmentNote: dto.note ?? null,
+          routingFailed: false,
+          routingFailureReason: null,
+          routingFailureNote: null,
+          routingPermanentFailureAt: null,
+          routingLastAttemptAt: now,
+          routedAt: now,
+        },
+      });
+      await tx.orderShipmentPackage.updateMany({
+        where: { orderShipmentId: shipment.id },
+        data: { deliveryMode: nextMode },
+      });
+      await tx.deliveryDetail.upsert({
+        where: { orderId: shipment.orderId },
+        update: {
+          deliveryMode: nextMode,
+          courierProviderCode,
+          deliveryPartnerUserId: partnerUserId,
+          assignmentStatus: partnerUserId
+            ? DeliveryAssignmentStatus.ASSIGNED
+            : DeliveryAssignmentStatus.UNASSIGNED,
+          assignedAt: partnerUserId ? now : null,
+          acceptedAt: null,
+          rejectedAt: null,
+          assignmentNote: dto.note ?? null,
+          routingFailed: false,
+          routingFailureReason: null,
+          routingFailureNote: null,
+          routedAt: now,
+        },
+        create: {
+          orderId: shipment.orderId,
+          deliveryMode: nextMode,
+          status: shipment.order.deliveryStatus,
+          courierProviderCode,
+          deliveryPartnerUserId: partnerUserId,
+          assignmentStatus: partnerUserId
+            ? DeliveryAssignmentStatus.ASSIGNED
+            : DeliveryAssignmentStatus.UNASSIGNED,
+          assignedAt: partnerUserId ? now : null,
+          assignmentNote: dto.note ?? null,
+          routingFailed: false,
+          routedAt: now,
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorUserId: actor.id,
+          action: "courier.routing_failure.overridden",
+          entityType: "order_shipment",
+          entityId: shipment.id,
+          oldValue: {
+            deliveryMode: shipment.deliveryMode,
+            routingFailed: shipment.routingFailed,
+            routingFailureReason: shipment.routingFailureReason,
+          },
+          newValue: {
+            deliveryMode: nextMode,
+            courierProviderCode,
+            deliveryPartnerUserId: partnerUserId,
+            note: dto.note ?? null,
+          },
+        },
+      });
+    });
+
+    return this.getCourierPackageSummaryForShipment(shipment.id);
+  }
+
+  async listLocalDeliveryQueue(query: CourierLocalDeliveryQueryDto) {
+    const take = Math.min(query.limit ?? 50, 100);
+    const search = query.search?.trim();
+    const where: Prisma.OrderShipmentWhereInput = {
+      deliveryMode: DeliveryMode.LOCAL_DELIVERY_PARTNER,
+      ...(query.assignmentStatus ? { assignmentStatus: query.assignmentStatus } : {}),
+      ...(search
+        ? {
+            OR: [
+              { shipmentNumber: { contains: search, mode: "insensitive" } },
+              { order: { orderNumber: { contains: search, mode: "insensitive" } } },
+              { seller: { storeName: { contains: search, mode: "insensitive" } } },
+              { partnerName: { contains: search, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+    };
+
+    const [items, total, partners] = await Promise.all([
+      this.prisma.client.orderShipment.findMany({
+        where,
+        include: this.routingShipmentInclude(),
+        orderBy: [{ updatedAt: "desc" }],
+        take,
+      }),
+      this.prisma.client.orderShipment.count({ where }),
+      this.listActiveDeliveryPartners(),
+    ]);
+
+    return {
+      items: items.map((item) => this.routingShipmentReadback(item)),
+      partners,
+      total,
+    };
+  }
+
+  async assignLocalDeliveryShipment(
+    actor: RequestUser,
+    shipmentId: string,
+    dto: CourierLocalDeliveryAssignmentDto,
+  ) {
+    const shipment = await this.prisma.client.orderShipment.findUnique({
+      where: { id: shipmentId },
+      include: { order: { include: { deliveryDetail: true } } },
+    });
+    if (!shipment) {
+      throw new NotFoundException("Shipment not found.");
+    }
+    if (shipment.deliveryMode !== DeliveryMode.LOCAL_DELIVERY_PARTNER) {
+      throw new BadRequestException("Local delivery assignment is only available for local delivery shipments.");
+    }
+
+    const partnerUserId = dto.deliveryPartnerUserId ?? null;
+    if (partnerUserId) {
+      await this.assertDeliveryPartnerUser(partnerUserId);
+    }
+    const now = new Date();
+
+    await this.prisma.client.$transaction(async (tx) => {
+      const deliveryDetail = await tx.deliveryDetail.upsert({
+        where: { orderId: shipment.orderId },
+        update: {
+          deliveryMode: DeliveryMode.LOCAL_DELIVERY_PARTNER,
+          deliveryPartnerUserId: partnerUserId,
+          assignmentStatus: partnerUserId
+            ? DeliveryAssignmentStatus.ASSIGNED
+            : DeliveryAssignmentStatus.UNASSIGNED,
+          assignedAt: partnerUserId ? now : null,
+          acceptedAt: null,
+          rejectedAt: null,
+          assignmentNote: dto.assignmentNote ?? null,
+        },
+        create: {
+          orderId: shipment.orderId,
+          deliveryMode: DeliveryMode.LOCAL_DELIVERY_PARTNER,
+          status: shipment.status,
+          deliveryPartnerUserId: partnerUserId,
+          assignmentStatus: partnerUserId
+            ? DeliveryAssignmentStatus.ASSIGNED
+            : DeliveryAssignmentStatus.UNASSIGNED,
+          assignedAt: partnerUserId ? now : null,
+          assignmentNote: dto.assignmentNote ?? null,
+        },
+      });
+      await tx.orderShipment.update({
+        where: { id: shipment.id },
+        data: {
+          deliveryPartnerUserId: partnerUserId,
+          assignmentStatus: partnerUserId
+            ? DeliveryAssignmentStatus.ASSIGNED
+            : DeliveryAssignmentStatus.UNASSIGNED,
+          assignedAt: partnerUserId ? now : null,
+          acceptedAt: null,
+          rejectedAt: null,
+          assignmentNote: dto.assignmentNote ?? null,
+        },
+      });
+      if (partnerUserId) {
+        await tx.deliveryAssignmentAttempt.create({
+          data: {
+            orderId: shipment.orderId,
+            deliveryDetailId: deliveryDetail.id,
+            partnerUserId,
+            source: DeliveryAssignmentAttemptSource.MANUAL,
+            status: DeliveryAssignmentStatus.ASSIGNED,
+            note: dto.assignmentNote ?? "Assigned from courier operations workspace.",
+            assignedById: actor.id,
+          },
+        });
+      }
+      await tx.deliveryEvent.create({
+        data: {
+          deliveryDetailId: deliveryDetail.id,
+          oldStatus: shipment.order.deliveryDetail?.status ?? null,
+          newStatus: deliveryDetail.status,
+          note: dto.assignmentNote ?? (partnerUserId ? "Local delivery partner assigned." : "Local delivery partner unassigned."),
+          updatedById: actor.id,
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorUserId: actor.id,
+          action: "courier.local_delivery.assigned",
+          entityType: "order_shipment",
+          entityId: shipment.id,
+          oldValue: {
+            deliveryPartnerUserId: shipment.deliveryPartnerUserId,
+            assignmentStatus: shipment.assignmentStatus,
+          },
+          newValue: {
+            deliveryPartnerUserId: partnerUserId,
+            assignmentStatus: partnerUserId
+              ? DeliveryAssignmentStatus.ASSIGNED
+              : DeliveryAssignmentStatus.UNASSIGNED,
+            note: dto.assignmentNote ?? null,
+          },
+        },
+      });
+    });
+
+    return this.getCourierPackageSummaryForShipment(shipment.id);
   }
 
   async handleTrackingWebhook(
@@ -395,6 +1052,143 @@ export class CourierLogisticsService {
     });
 
     return result;
+  }
+
+  async getSellerPackageLabel(actor: RequestUser, packageId: string) {
+    const seller = await this.resolveSeller(actor);
+    const shipmentPackage = await this.prisma.client.orderShipmentPackage.findFirst({
+      where: {
+        id: packageId,
+        sellerId: seller.id,
+      },
+      include: {
+        courierPackages: {
+          include: {
+            courierConsignment: true,
+          },
+          orderBy: { updatedAt: "desc" },
+        },
+      },
+    });
+    if (!shipmentPackage) {
+      throw new NotFoundException("Courier package not found.");
+    }
+    if (shipmentPackage.deliveryMode !== DeliveryMode.THIRD_PARTY_COURIER) {
+      throw new BadRequestException("Courier labels are only available for third-party courier packages.");
+    }
+    const courierPackage = shipmentPackage.courierPackages[0] ?? null;
+    if (!courierPackage?.labelUrl) {
+      throw new NotFoundException("Courier label is not available yet.");
+    }
+    if (labelDownloadBlockedStatuses.has(courierPackage.trackingStatus)) {
+      throw new BadRequestException("Courier label download is disabled for this package status.");
+    }
+
+    const response = await fetch(courierPackage.labelUrl);
+    if (!response.ok) {
+      throw new BadRequestException("Courier label could not be downloaded from the provider.");
+    }
+    const contentType = response.headers.get("content-type") ?? "application/pdf";
+    const buffer = Buffer.from(await response.arrayBuffer());
+
+    return {
+      buffer,
+      contentType,
+      fileName: `${shipmentPackage.packageNumber}-label.pdf`,
+    };
+  }
+
+  async getCourierPackageLabel(packageId: string) {
+    const shipmentPackage = await this.prisma.client.orderShipmentPackage.findUnique({
+      where: { id: packageId },
+      include: {
+        courierPackages: {
+          include: {
+            courierConsignment: true,
+          },
+          orderBy: { updatedAt: "desc" },
+        },
+      },
+    });
+    if (!shipmentPackage) {
+      throw new NotFoundException("Courier package not found.");
+    }
+    if (shipmentPackage.deliveryMode !== DeliveryMode.THIRD_PARTY_COURIER) {
+      throw new BadRequestException("Courier labels are only available for third-party courier packages.");
+    }
+    const courierPackage = shipmentPackage.courierPackages[0] ?? null;
+    if (!courierPackage?.labelUrl) {
+      throw new NotFoundException("Courier label is not available yet.");
+    }
+    if (labelDownloadBlockedStatuses.has(courierPackage.trackingStatus)) {
+      throw new BadRequestException("Courier label download is disabled for this package status.");
+    }
+
+    const response = await fetch(courierPackage.labelUrl);
+    if (!response.ok) {
+      throw new BadRequestException("Courier label could not be downloaded from the provider.");
+    }
+    const contentType = response.headers.get("content-type") ?? "application/pdf";
+    const buffer = Buffer.from(await response.arrayBuffer());
+
+    return {
+      buffer,
+      contentType,
+      fileName: `${shipmentPackage.packageNumber}-label.pdf`,
+    };
+  }
+
+  async updateSellerPackage(
+    actor: RequestUser,
+    packageId: string,
+    dto: UpdateSellerShipmentPackageDto,
+  ) {
+    const seller = await this.resolveSeller(actor);
+    const shipmentPackage = await this.prisma.client.orderShipmentPackage.findFirst({
+      where: {
+        id: packageId,
+        sellerId: seller.id,
+      },
+      include: {
+        courierPackages: true,
+      },
+    });
+    if (!shipmentPackage) {
+      throw new NotFoundException("Seller package not found.");
+    }
+    if (
+      shipmentPackage.courierPackages.some(
+        (courierPackage) => courierPackage.trackingStatus !== CourierShipmentStatus.NOT_BOOKED,
+      )
+    ) {
+      throw new BadRequestException("Package dimensions cannot be changed after courier booking starts.");
+    }
+    const readyForBooking =
+      dto.markReadyForBooking === true &&
+      shipmentPackage.deliveryMode === DeliveryMode.THIRD_PARTY_COURIER;
+
+    return this.prisma.client.orderShipmentPackage.update({
+      where: { id: shipmentPackage.id },
+      data: {
+        ...(dto.weightGrams !== undefined ? { weightGrams: dto.weightGrams } : {}),
+        ...(dto.lengthCm !== undefined ? { lengthCm: dto.lengthCm } : {}),
+        ...(dto.breadthCm !== undefined ? { breadthCm: dto.breadthCm } : {}),
+        ...(dto.heightCm !== undefined ? { heightCm: dto.heightCm } : {}),
+        ...(readyForBooking
+          ? {
+              status: OrderShipmentPackageStatus.READY_FOR_BOOKING,
+              readyForBookingAt: new Date(),
+            }
+          : {}),
+        packageSnapshot: {
+          ...(shipmentPackage.packageSnapshot && typeof shipmentPackage.packageSnapshot === "object"
+            ? (shipmentPackage.packageSnapshot as Record<string, unknown>)
+            : {}),
+          sellerUpdatedAt: new Date().toISOString(),
+          sellerCanOnlyEditBeforeBooking: true,
+        },
+      },
+    });
   }
 
   async listCourierCodRemittances(query: CourierCodRemittanceQueryDto) {
@@ -618,6 +1412,7 @@ export class CourierLogisticsService {
   ) {
     const message = error instanceof Error ? error.message : "Courier booking failed.";
     await this.prisma.client.$transaction(async (tx) => {
+      const orderShipmentPackage = await this.ensureDefaultShipmentPackage(tx, orderShipment);
       await tx.courierShipment.upsert({
         where: { orderShipmentId: orderShipment.id },
         update: {
@@ -641,6 +1436,47 @@ export class CourierLogisticsService {
             shipmentNumber: orderShipment.shipmentNumber,
             providerCode,
           },
+        },
+      });
+      await tx.courierConsignment.upsert({
+        where: {
+          consignmentNumber: this.createConsignmentNumber(orderShipment.shipmentNumber, 1),
+        },
+        update: {
+          providerCode,
+          trackingStatus: CourierShipmentStatus.NOT_BOOKED,
+          trackingStatusLabel: "Courier booking failed.",
+          bookingAttemptCount: { increment: 1 },
+          bookingError: message,
+          bookingPayloadSnapshot: {
+            source: "LIVE_ADAPTER_FAILURE",
+            shipmentNumber: orderShipment.shipmentNumber,
+            packageNumber: orderShipmentPackage.packageNumber,
+            providerCode,
+          },
+        },
+        create: {
+          consignmentNumber: this.createConsignmentNumber(orderShipment.shipmentNumber, 1),
+          orderShipmentId: orderShipment.id,
+          orderId: orderShipment.orderId,
+          sellerId: orderShipment.sellerId,
+          providerCode,
+          trackingStatus: CourierShipmentStatus.NOT_BOOKED,
+          trackingStatusLabel: "Courier booking failed.",
+          bookingAttemptCount: 1,
+          bookingError: message,
+          bookingPayloadSnapshot: {
+            source: "LIVE_ADAPTER_FAILURE",
+            shipmentNumber: orderShipment.shipmentNumber,
+            packageNumber: orderShipmentPackage.packageNumber,
+            providerCode,
+          },
+        },
+      });
+      await tx.orderShipmentPackage.update({
+        where: { id: orderShipmentPackage.id },
+        data: {
+          status: OrderShipmentPackageStatus.FAILED,
         },
       });
       await tx.orderShipment.update({
@@ -829,6 +1665,48 @@ export class CourierLogisticsService {
         lastTrackedAt: new Date(),
       },
     });
+    const courierPackages = await tx.courierConsignmentPackage.findMany({
+      where: input.awbNumber
+        ? { awbNumber: input.awbNumber }
+        : { orderShipmentId: courierShipment.orderShipmentId },
+    });
+    const packageStatus = this.packageStatusFromCourierStatus(input.trackingStatus);
+    if (courierPackages.length) {
+      await tx.courierConsignmentPackage.updateMany({
+        where: { id: { in: courierPackages.map((item) => item.id) } },
+        data: {
+          trackingStatus: input.trackingStatus,
+          trackingStatusLabel: input.statusLabel ?? null,
+          providerRawStatus: input.statusLabel ?? null,
+          lastWebhookEventId: input.eventId,
+          ...(input.eventId ? { lastWebhookAt: new Date() } : {}),
+          lastTrackedAt: new Date(),
+        },
+      });
+      await tx.orderShipmentPackage.updateMany({
+        where: { id: { in: courierPackages.map((item) => item.orderShipmentPackageId) } },
+        data: {
+          status: packageStatus,
+          ...(input.trackingStatus === CourierShipmentStatus.PICKUP_SCHEDULED
+            ? { pickupScheduledAt: new Date() }
+            : {}),
+          ...(input.trackingStatus === CourierShipmentStatus.PICKED_UP ? { pickedUpAt: new Date() } : {}),
+          ...(input.trackingStatus === CourierShipmentStatus.DELIVERED ? { deliveredAt: new Date() } : {}),
+          ...(input.trackingStatus === CourierShipmentStatus.CANCELLED ? { cancelledAt: new Date() } : {}),
+        },
+      });
+      await tx.courierConsignment.updateMany({
+        where: { id: { in: courierPackages.map((item) => item.courierConsignmentId) } },
+        data: {
+          trackingStatus: input.trackingStatus,
+          trackingStatusLabel: input.statusLabel ?? null,
+          providerRawStatus: input.statusLabel ?? null,
+          lastWebhookEventId: input.eventId,
+          ...(input.eventId ? { lastWebhookAt: new Date() } : {}),
+          lastTrackedAt: new Date(),
+        },
+      });
+    }
 
     const nextDeliveryStatus = this.deliveryStatusFromCourierStatus(input.trackingStatus);
     if (nextDeliveryStatus) {
@@ -1206,10 +2084,113 @@ export class CourierLogisticsService {
       : {};
   }
 
+  private async resolveSeller(actor: RequestUser) {
+    const seller = await this.prisma.client.seller.findUnique({
+      where: { userId: actor.id },
+      select: { id: true },
+    });
+    if (!seller) {
+      throw new UnauthorizedException("Seller account is required.");
+    }
+    return seller;
+  }
+
+  private createConsignmentNumber(shipmentNumber: string, sequence: number) {
+    return `${shipmentNumber}-C${String(sequence).padStart(2, "0")}`;
+  }
+
+  private createPackageNumber(shipmentNumber: string, sequence: number) {
+    return `${shipmentNumber}-P${String(sequence).padStart(2, "0")}`;
+  }
+
+  private async ensureDefaultShipmentPackage(
+    tx: Prisma.TransactionClient,
+    orderShipment: CourierBookOrderShipment,
+  ) {
+    const existing = await tx.orderShipmentPackage.findFirst({
+      where: { orderShipmentId: orderShipment.id },
+      orderBy: { sequence: "asc" },
+    });
+    if (existing) {
+      return existing;
+    }
+
+    const items = await tx.orderItem.findMany({
+      where: { orderId: orderShipment.orderId, sellerId: orderShipment.sellerId },
+      include: { productVariant: true },
+      orderBy: { createdAt: "asc" },
+    });
+
+    return tx.orderShipmentPackage.create({
+      data: {
+        packageNumber: this.createPackageNumber(orderShipment.shipmentNumber, 1),
+        orderShipmentId: orderShipment.id,
+        orderId: orderShipment.orderId,
+        sellerId: orderShipment.sellerId,
+        sequence: 1,
+        deliveryMode: orderShipment.deliveryMode,
+        status:
+          orderShipment.deliveryMode === DeliveryMode.THIRD_PARTY_COURIER
+            ? OrderShipmentPackageStatus.READY_FOR_BOOKING
+            : OrderShipmentPackageStatus.PACKING_PENDING,
+        shippingPaise: orderShipment.shippingPaise,
+        codSurchargePaise: orderShipment.codSurchargePaise,
+        declaredValuePaise: orderShipment.subtotalPaise,
+        currency: orderShipment.order.currency,
+        itemAllocations: items.map((item) => ({
+          orderItemId: item.id,
+          productVariantId: item.productVariantId,
+          productName: item.productNameSnapshot,
+          quantity: item.quantity,
+          lineTotalPaise: item.lineTotalPaise,
+        })),
+        packageSnapshot: {
+          source: "COURIER_BOOKING_DEFAULT_PACKAGE",
+          shipmentNumber: orderShipment.shipmentNumber,
+          itemCount: items.length,
+        },
+        readyForBookingAt:
+          orderShipment.deliveryMode === DeliveryMode.THIRD_PARTY_COURIER ? new Date() : null,
+      },
+    });
+  }
+
+  private packageStatusFromCourierStatus(status: CourierShipmentStatus) {
+    switch (status) {
+      case CourierShipmentStatus.BOOKED:
+        return OrderShipmentPackageStatus.BOOKED;
+      case CourierShipmentStatus.PICKUP_SCHEDULED:
+        return OrderShipmentPackageStatus.PICKUP_SCHEDULED;
+      case CourierShipmentStatus.PICKED_UP:
+        return OrderShipmentPackageStatus.PICKED_UP;
+      case CourierShipmentStatus.IN_TRANSIT:
+        return OrderShipmentPackageStatus.IN_TRANSIT;
+      case CourierShipmentStatus.OUT_FOR_DELIVERY:
+        return OrderShipmentPackageStatus.OUT_FOR_DELIVERY;
+      case CourierShipmentStatus.DELIVERED:
+        return OrderShipmentPackageStatus.DELIVERED;
+      case CourierShipmentStatus.RTO_INITIATED:
+        return OrderShipmentPackageStatus.RTO_INITIATED;
+      case CourierShipmentStatus.RTO_IN_TRANSIT:
+        return OrderShipmentPackageStatus.RTO_IN_TRANSIT;
+      case CourierShipmentStatus.RTO_DELIVERED:
+        return OrderShipmentPackageStatus.RTO_DELIVERED;
+      case CourierShipmentStatus.CANCELLED:
+        return OrderShipmentPackageStatus.CANCELLED;
+      case CourierShipmentStatus.FAILED:
+        return OrderShipmentPackageStatus.FAILED;
+      default:
+        return OrderShipmentPackageStatus.BOOKING_PENDING;
+    }
+  }
+
   private mapCourierStatus(status?: string | null) {
     const normalized = status?.trim().toUpperCase().replace(/[\s-]+/g, "_") ?? "";
     if (["BOOKED", "MANIFESTED", "SHIPMENT_BOOKED"].includes(normalized)) {
       return CourierShipmentStatus.BOOKED;
+    }
+    if (["PICKUP_SCHEDULED", "PICKUP_ASSIGNED", "PICKUP_CREATED"].includes(normalized)) {
+      return CourierShipmentStatus.PICKUP_SCHEDULED;
     }
     if (["PICKED", "PICKED_UP", "PICKUP_DONE", "HANDOVER_DONE"].includes(normalized)) {
       return CourierShipmentStatus.PICKED_UP;
@@ -1223,7 +2204,16 @@ export class CourierLogisticsService {
     if (["DELIVERED", "DELIVERY_DONE"].includes(normalized)) {
       return CourierShipmentStatus.DELIVERED;
     }
-    if (["FAILED", "DELIVERY_FAILED", "RTO", "RETURNED", "EXCEPTION"].includes(normalized)) {
+    if (["RTO", "RTO_INITIATED", "RETURN_TO_ORIGIN"].includes(normalized)) {
+      return CourierShipmentStatus.RTO_INITIATED;
+    }
+    if (["RTO_IN_TRANSIT", "RETURN_IN_TRANSIT"].includes(normalized)) {
+      return CourierShipmentStatus.RTO_IN_TRANSIT;
+    }
+    if (["RTO_DELIVERED", "RETURNED", "RETURN_DELIVERED"].includes(normalized)) {
+      return CourierShipmentStatus.RTO_DELIVERED;
+    }
+    if (["FAILED", "DELIVERY_FAILED", "EXCEPTION"].includes(normalized)) {
       return CourierShipmentStatus.FAILED;
     }
     if (["CANCELLED", "CANCELED"].includes(normalized)) {
@@ -1235,15 +2225,19 @@ export class CourierLogisticsService {
   private deliveryStatusFromCourierStatus(status: CourierShipmentStatus) {
     switch (status) {
       case CourierShipmentStatus.BOOKED:
+      case CourierShipmentStatus.PICKUP_SCHEDULED:
         return DeliveryStatus.PACKED;
       case CourierShipmentStatus.PICKED_UP:
         return DeliveryStatus.DISPATCHED;
       case CourierShipmentStatus.IN_TRANSIT:
       case CourierShipmentStatus.OUT_FOR_DELIVERY:
+      case CourierShipmentStatus.RTO_INITIATED:
+      case CourierShipmentStatus.RTO_IN_TRANSIT:
         return DeliveryStatus.IN_TRANSIT;
       case CourierShipmentStatus.DELIVERED:
         return DeliveryStatus.DELIVERED;
       case CourierShipmentStatus.CANCELLED:
+      case CourierShipmentStatus.RTO_DELIVERED:
         return DeliveryStatus.CANCELLED;
       default:
         return null;
@@ -1270,6 +2264,12 @@ export class CourierLogisticsService {
     if (statuses.some((status) => status === CourierShipmentStatus.OUT_FOR_DELIVERY)) {
       return CourierShipmentStatus.OUT_FOR_DELIVERY;
     }
+    if (statuses.some((status) => status === CourierShipmentStatus.RTO_IN_TRANSIT)) {
+      return CourierShipmentStatus.RTO_IN_TRANSIT;
+    }
+    if (statuses.some((status) => status === CourierShipmentStatus.RTO_INITIATED)) {
+      return CourierShipmentStatus.RTO_INITIATED;
+    }
     if (statuses.some((status) => status === CourierShipmentStatus.IN_TRANSIT)) {
       return CourierShipmentStatus.IN_TRANSIT;
     }
@@ -1278,6 +2278,12 @@ export class CourierLogisticsService {
     }
     if (statuses.every((status) => status === CourierShipmentStatus.DELIVERED)) {
       return CourierShipmentStatus.DELIVERED;
+    }
+    if (statuses.every((status) => status === CourierShipmentStatus.RTO_DELIVERED)) {
+      return CourierShipmentStatus.RTO_DELIVERED;
+    }
+    if (statuses.some((status) => status === CourierShipmentStatus.PICKUP_SCHEDULED)) {
+      return CourierShipmentStatus.PICKUP_SCHEDULED;
     }
     if (statuses.some((status) => status === CourierShipmentStatus.BOOKED)) {
       return CourierShipmentStatus.BOOKED;
@@ -1345,7 +2351,24 @@ export class CourierLogisticsService {
 
   private courierShipmentInclude() {
     return {
-      orderShipment: { include: { seller: true, order: true, courierCodRemittance: true } },
+      orderShipment: {
+        include: {
+          seller: true,
+          order: true,
+          courierCodRemittance: true,
+          packages: {
+            include: {
+              courierPackages: {
+                include: {
+                  courierConsignment: true,
+                },
+                orderBy: { updatedAt: "desc" },
+              },
+            },
+            orderBy: { sequence: "asc" },
+          },
+        },
+      },
       order: true,
       seller: true,
       codRemittance: true,
@@ -1371,6 +2394,17 @@ export class CourierLogisticsService {
             seller: true,
             courierShipment: true,
             courierCodRemittance: true,
+            packages: {
+              include: {
+                courierPackages: {
+                  include: {
+                    courierConsignment: true,
+                  },
+                  orderBy: { updatedAt: "desc" },
+                },
+              },
+              orderBy: { sequence: "asc" },
+            },
           },
           orderBy: { createdAt: "asc" },
         },
@@ -1406,6 +2440,153 @@ export class CourierLogisticsService {
     item: Prisma.CourierCodRemittanceGetPayload<{ include: ReturnType<CourierLogisticsService["courierCodRemittanceInclude"]> }>,
   ) {
     return item;
+  }
+
+  private courierPackageInclude(includeDetail = false) {
+    return {
+      order: true,
+      seller: {
+        include: {
+          profile: true,
+          addresses: true,
+        },
+      },
+      orderShipment: {
+        include: {
+          deliveryPartner: true,
+          courierShipment: true,
+          courierCodRemittance: true,
+        },
+      },
+      courierPackages: {
+        include: {
+          courierConsignment: true,
+        },
+        orderBy: { updatedAt: "desc" },
+      },
+      ...(includeDetail
+        ? {
+            order: {
+              include: {
+                items: true,
+                payments: true,
+                deliveryDetail: true,
+              },
+            },
+          }
+        : {}),
+    } satisfies Prisma.OrderShipmentPackageInclude;
+  }
+
+  private courierPackageReadback(
+    shipmentPackage: Prisma.OrderShipmentPackageGetPayload<{ include: ReturnType<CourierLogisticsService["courierPackageInclude"]> }>,
+  ) {
+    const courierPackage = shipmentPackage.courierPackages[0] ?? null;
+    const canDownloadLabel = Boolean(
+      courierPackage?.labelUrl && !labelDownloadBlockedStatuses.has(courierPackage.trackingStatus),
+    );
+    return {
+      ...shipmentPackage,
+      latestCourierPackage: courierPackage,
+      courierTrackingStatus:
+        courierPackage?.trackingStatus ??
+        shipmentPackage.orderShipment.courierShipment?.trackingStatus ??
+        CourierShipmentStatus.NOT_BOOKED,
+      awbNumber: courierPackage?.awbNumber ?? shipmentPackage.orderShipment.courierShipment?.awbNumber ?? null,
+      courierName: courierPackage?.courierName ?? null,
+      courierCode:
+        courierPackage?.courierCode ??
+        courierPackage?.courierConsignment.providerCode ??
+        shipmentPackage.orderShipment.courierProviderCode ??
+        null,
+      trackingUrl: courierPackage?.trackingUrl ?? shipmentPackage.orderShipment.courierShipment?.trackingUrl ?? null,
+      canBookCourier: shipmentPackage.deliveryMode === DeliveryMode.THIRD_PARTY_COURIER,
+      canDownloadLabel,
+      labelDownloadUrl: canDownloadLabel ? `/api/courier/packages/${shipmentPackage.id}/label` : null,
+    };
+  }
+
+  private routingShipmentInclude() {
+    return {
+      order: true,
+      seller: {
+        include: {
+          profile: true,
+        },
+      },
+      deliveryPartner: {
+        include: {
+          deliveryProfile: true,
+        },
+      },
+      packages: {
+        include: {
+          courierPackages: {
+            include: {
+              courierConsignment: true,
+            },
+            orderBy: { updatedAt: "desc" },
+          },
+        },
+        orderBy: { sequence: "asc" },
+      },
+      courierShipment: true,
+      courierCodRemittance: true,
+    } satisfies Prisma.OrderShipmentInclude;
+  }
+
+  private routingShipmentReadback(
+    shipment: Prisma.OrderShipmentGetPayload<{ include: ReturnType<CourierLogisticsService["routingShipmentInclude"]> }>,
+  ) {
+    return {
+      ...shipment,
+      firstPackage: shipment.packages[0] ?? null,
+      packageCount: shipment.packages.length,
+    };
+  }
+
+  private async getCourierPackageSummaryForShipment(shipmentId: string) {
+    const packages = await this.prisma.client.orderShipmentPackage.findMany({
+      where: { orderShipmentId: shipmentId },
+      include: this.courierPackageInclude(),
+      orderBy: { sequence: "asc" },
+    });
+    return { items: packages.map((item) => this.courierPackageReadback(item)), total: packages.length };
+  }
+
+  private async assertDeliveryPartnerUser(userId: string) {
+    const user = await this.prisma.client.user.findFirst({
+      where: {
+        id: userId,
+        status: UserStatus.ACTIVE,
+        userRoles: { some: { role: { code: RoleCode.DELIVERY_PARTNER } } },
+      },
+      select: { id: true },
+    });
+    if (!user) {
+      throw new BadRequestException("Assigned delivery partner must be an active user with the delivery partner role.");
+    }
+  }
+
+  private async listActiveDeliveryPartners() {
+    const partners = await this.prisma.client.user.findMany({
+      where: {
+        status: UserStatus.ACTIVE,
+        userRoles: { some: { role: { code: RoleCode.DELIVERY_PARTNER } } },
+      },
+      include: {
+        deliveryProfile: true,
+      },
+      orderBy: [{ fullName: "asc" }, { email: "asc" }],
+      take: 100,
+    });
+    return partners.map((partner) => ({
+      id: partner.id,
+      email: partner.email,
+      fullName: partner.fullName,
+      phone: partner.phone,
+      deliveryProfile: partner.deliveryProfile,
+    }));
   }
 
   private payloadText(payload: unknown, keys: string[]) {

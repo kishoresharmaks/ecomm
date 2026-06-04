@@ -143,7 +143,7 @@ export function ProductListingClient({ mode, categorySlug, initialSearch = "" }:
             {storefrontLocation.source !== "global" ? (
               <>
                 <br />
-                Products are still shown platform-wide. Nearby stores for{" "}
+                Products are still shown platform-wide. Hyperlocal stores for{" "}
                 <Link href="/stores" className="font-black text-[#163B5C] underline decoration-[#ED3500]/40 underline-offset-4">
                   {browsingLocationLabel(storefrontLocation.activeLocation)}
                 </Link>{" "}

@@ -24,6 +24,12 @@ const userInclude = {
   deliveryProfile: true
 };
 
+const backOfficeRoleCodes = new Set<RoleCode>([
+  RoleCode.ADMIN,
+  RoleCode.FINANCE,
+  RoleCode.COURIER_MANAGER,
+]);
+
 @Injectable()
 export class AdminUsersService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
@@ -186,12 +192,12 @@ export class AdminUsersService {
 
   async setBackOfficePassword(actor: RequestUser, userId: string, dto: SetBackOfficePasswordDto) {
     const user = await this.getUserOrThrow(userId);
-    const canUseBackOffice = user.userRoles.some(
-      (userRole) => userRole.role.code === RoleCode.ADMIN || userRole.role.code === RoleCode.FINANCE
+    const canUseBackOffice = user.userRoles.some((userRole) =>
+      backOfficeRoleCodes.has(userRole.role.code),
     );
 
     if (!canUseBackOffice) {
-      throw new BadRequestException("Assign Admin or Finance Manager role before setting a back-office password.");
+      throw new BadRequestException("Assign Admin, Finance Manager, or Courier Manager role before setting a back-office password.");
     }
 
     const hashed = await hashAdminPassword(dto.password);

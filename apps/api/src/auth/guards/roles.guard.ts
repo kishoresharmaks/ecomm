@@ -45,6 +45,6 @@ export class RolesGuard implements CanActivate {
   }
 
   private isBackOfficeRole(role: RoleCode) {
-    return role === RoleCode.ADMIN || role === RoleCode.FINANCE;
+    return role === RoleCode.ADMIN || role === RoleCode.FINANCE || role === RoleCode.COURIER_MANAGER;
   }
 }

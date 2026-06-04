@@ -4,7 +4,7 @@
 
 **Selected working brand name:** 1HandIndia
 
-1HandIndia should feel like a serious Indian marketplace brand: simple to say, easy to remember, and suitable for customer shopping, local sellers, vendors, and B2B buyers.
+1HandIndia should feel like a serious Indian marketplace brand: simple to say, easy to remember, and suitable for customer shopping, local sellers, wholesale distributors, and B2B buyers.
 
 ## 2. Logo Status
 
@@ -45,7 +45,7 @@ When designing the logo, keep it:
 - Indian but modern.
 - Trustworthy for payments and sellers.
 - Friendly enough for customers.
-- Professional enough for vendors, B2B buyers, and admins.
+- Professional enough for sellers, B2B buyers, and admins.
 - Premium without looking expensive or complicated.
 
 ## 6. Temporary Brand Assets

@@ -9,7 +9,7 @@ import { IndihubApiError, indihubFetch } from "@/lib/api";
 
 type SellerApprovalStatus = "DRAFT" | "PENDING_APPROVAL" | "APPROVED" | "REJECTED";
 type SellerStatus = "DRAFT" | "PENDING_APPROVAL" | "APPROVED" | "REJECTED" | "SUSPENDED";
-type SellerType = "VENDOR" | "NEARBY_STORE" | "LOCAL_SHOP";
+type SellerType = "MARKETPLACE_SELLER" | "HYPERLOCAL_STORE" | "WHOLESALE_DISTRIBUTOR";
 
 type PendingSeller = {
   id: string;
@@ -72,7 +72,7 @@ export function SellerApprovalsClient() {
         <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-black text-[#1F2933]">Pending registrations</h2>
-              <p className="mt-1 text-sm text-[#667085]">Seller, nearby-store, and local-shop records awaiting moderation.</p>
+              <p className="mt-1 text-sm text-[#667085]">Marketplace seller, hyperlocal store, and wholesale distributor records awaiting moderation.</p>
             </div>
             <Button type="button" variant="outline" onClick={() => pendingQuery.refetch()} disabled={pendingQuery.isFetching}>
               <RefreshCw className="h-4 w-4" aria-hidden="true" />

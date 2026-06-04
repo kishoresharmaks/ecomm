@@ -86,7 +86,7 @@
 | 5 | Money stored in paise | DONE | Order, product, payment, and quotation values use paise fields. |
 | 6 | User, role, permission tables | DONE | RBAC schema exists. |
 | 7 | Customer tables | DONE | Customer, address, wishlist tables exist. |
-| 8 | Seller/vendor/local shop tables | DONE | Seller profile, address, document, type fields exist. |
+| 8 | Seller operational tables | DONE | Seller profile, address, document, operational type, and separate business entity fields exist. |
 | 9 | Business buyer tables | DONE | Business buyer and address tables exist. |
 | 10 | Catalogue tables | DONE | Categories, products, images, variants, inventory movement. |
 | 11 | Cart and checkout tables | DONE | Cart, cart item, checkout session. |
@@ -138,12 +138,12 @@
 | 10 | Admin users and role assignment API | DONE | Admin user list/status/role APIs exist. |
 | 11 | Role-change audit logs | DONE | Admin role add/remove actions are audited. |
 
-### 6.3 Seller, Vendor, Nearby Store, and Local Shop
+### 6.3 Seller Operational Types
 
 | # | Item | Status | Notes |
 |---|---|---|---|
 | 1 | Public seller registration API | DONE | `POST /api/sellers/register`. |
-| 2 | Seller type support | DONE | Vendor, nearby store, local shop handled through seller type. |
+| 2 | Seller type support | DONE | Marketplace seller, hyperlocal store, and wholesale distributor handled through seller operational type. |
 | 3 | Seller pending approval flow | DONE | New sellers are pending until admin approval. |
 | 4 | Admin pending sellers API | DONE | `GET /api/admin/sellers/pending`. |
 | 5 | Admin seller approval/rejection API | DONE | `PATCH /api/admin/sellers/:sellerId/approval`. |
@@ -361,7 +361,7 @@
 | 2 | Admin dashboard | `/admin` | DONE | Live dashboard, support, audit, and summary data are wired. |
 | 3 | Customers | `/admin/customers` | DONE | Customer list, filters, status actions, and guarded disable modal are wired. |
 | 4 | Customer detail | `/admin/customers` | DONE | Phase 1 customer operations are covered in the customer list surface; no separate detail route is required yet. |
-| 5 | Sellers/vendors | `/admin/sellers` | DONE | Seller list, approval, rejection, suspension, and guarded modals are wired. |
+| 5 | Sellers | `/admin/sellers` | DONE | Seller list, approval, rejection, suspension, and guarded modals are wired. |
 | 6 | Seller detail | `/admin/sellers` | DONE | Phase 1 seller operational data is surfaced in the seller list and approval screens. |
 | 7 | Seller approval queue | `/admin/sellers/approvals` | DONE | Pending sellers load from the admin API and approval actions call the backend. |
 | 8 | Business buyers | `/admin/business-buyers` | DONE | Business buyer list and status actions are wired. |
@@ -419,7 +419,7 @@
 | 6 | Final logo | CLIENT | Logo can be added later. |
 | 7 | Product categories | CLIENT | Starter categories exist; final data pending. |
 | 8 | Product list, images, prices, stock | CLIENT | Needed for real storefront data. |
-| 9 | Initial seller/vendor details | CLIENT | Needed for real seller onboarding and test data. |
+| 9 | Initial seller details | CLIENT | Needed for real seller onboarding, operational type selection, and test data. |
 | 10 | Commission rules | CLIENT | Manual/default settings exist; final rules pending. |
 | 11 | Payment method decision | CLIENT | Runtime toggles exist in `/admin/payments`; client still decides which methods to enable for launch. |
 | 12 | Razorpay account keys | CLIENT | Admin panel accepts keys, but approved Razorpay account credentials and deployed webhook setup are client/provider dependencies. |

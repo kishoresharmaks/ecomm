@@ -6,10 +6,13 @@ import {
   IsDateString,
   IsEnum,
   IsInt,
+  IsLatitude,
+  IsLongitude,
   IsOptional,
   IsString,
   IsUUID,
   Matches,
+  Max,
   MaxLength,
   Min,
 } from "class-validator";
@@ -127,6 +130,26 @@ export class UpdateDeliveryPartnerProfileDto {
   @IsString({ each: true })
   serviceLocalAreaCodes?: string[];
 
+  @ApiPropertyOptional({ example: 11.0168 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsLatitude()
+  baseLatitude?: number;
+
+  @ApiPropertyOptional({ example: 76.9558 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsLongitude()
+  baseLongitude?: number;
+
+  @ApiPropertyOptional({ example: 12 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(500)
+  serviceRadiusKm?: number;
+
   @ApiPropertyOptional({ example: 500000 })
   @IsOptional()
   @Type(() => Number)
@@ -139,6 +162,19 @@ export class UpdateDeliveryPartnerProfileDto {
   @IsString()
   @MaxLength(1000)
   notes?: string;
+}
+
+export class CourierDeliveryPartnerAvailabilityDto {
+  @ApiProperty({ example: true })
+  @Transform(({ value }) => value === true || value === "true")
+  @IsBoolean()
+  isAvailable!: boolean;
+
+  @ApiPropertyOptional({ example: "Paused due to vehicle maintenance." })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  note?: string;
 }
 
 export class UpdateOwnDeliveryPartnerProfileDto {
@@ -196,6 +232,26 @@ export class UpdateOwnDeliveryPartnerProfileDto {
   @IsArray()
   @IsString({ each: true })
   serviceLocalAreaCodes?: string[];
+
+  @ApiPropertyOptional({ example: 11.0168 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsLatitude()
+  baseLatitude?: number;
+
+  @ApiPropertyOptional({ example: 76.9558 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsLongitude()
+  baseLongitude?: number;
+
+  @ApiPropertyOptional({ example: 12 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(500)
+  serviceRadiusKm?: number;
 
   @ApiPropertyOptional({ example: "Covers Salem local routes." })
   @IsOptional()

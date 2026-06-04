@@ -8,6 +8,7 @@ import {
   AdminRoutingSimulatorController,
   AdminShippingRateCardsController,
   CheckoutDeliveryController,
+  CourierProvidersController,
 } from "./checkout-delivery.controller";
 import { DeliveryRoutingService } from "./delivery-routing.service";
 import { CheckoutPricingService } from "./checkout-pricing.service";
@@ -18,6 +19,7 @@ import { CheckoutPricingService } from "./checkout-pricing.service";
     CheckoutDeliveryController,
     AdminShippingRateCardsController,
     AdminCourierProvidersController,
+    CourierProvidersController,
     AdminRoutingSimulatorController,
     AdminLocationServiceabilityController,
   ],

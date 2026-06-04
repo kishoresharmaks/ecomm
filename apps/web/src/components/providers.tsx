@@ -14,7 +14,12 @@ const clerkPublishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
 export function Providers({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const shouldUseClerk = Boolean(clerkPublishableKey && !pathname.startsWith("/admin") && !pathname.startsWith("/finance"));
+  const shouldUseClerk = Boolean(
+    clerkPublishableKey &&
+      !pathname.startsWith("/admin") &&
+      !pathname.startsWith("/finance") &&
+      !pathname.startsWith("/courier"),
+  );
   const [queryClient] = useState(
     () =>
       new QueryClient({

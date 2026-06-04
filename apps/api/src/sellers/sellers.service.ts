@@ -8,6 +8,7 @@ import {
 } from "@nestjs/common";
 import {
   ApprovalStatus,
+  CourierProviderMode,
   DocumentStatus,
   EmailRecipientType,
   ProductStatus,
@@ -20,6 +21,11 @@ import type { RequestUser } from "../auth/types/indihub-request";
 import { LocationsService } from "../locations/locations.service";
 import { EMAIL_TRIGGER_EVENTS } from "../notifications/email-trigger-catalog";
 import { NotificationsService } from "../notifications/notifications.service";
+import { CourierAdapterRegistry } from "../orders/courier-adapters/courier-adapter.registry";
+import type {
+  CourierBookingAddress,
+  CourierProviderAdapterSnapshot,
+} from "../orders/courier-adapters/courier-adapter.types";
 import { PrismaService } from "../prisma/prisma.service";
 import { createSlug } from "../common/slug";
 import {
@@ -102,6 +108,7 @@ export class SellersService {
     @Inject(NotificationsService) private readonly notifications: NotificationsService,
     @Inject(SellerSubscriptionsService)
     private readonly sellerSubscriptions: SellerSubscriptionsService,
+    @Inject(CourierAdapterRegistry) private readonly courierAdapters: CourierAdapterRegistry,
   ) {}
 
   async registerSeller(actor: RequestUser, dto: CreateSellerOnboardingDto) {
@@ -132,7 +139,7 @@ export class SellersService {
         create: {
           code: RoleCode.SELLER,
           name: "Seller",
-          description: "Vendor, nearby store, or local shop.",
+          description: "Marketplace seller, hyperlocal store, or wholesale distributor.",
         },
       });
 
@@ -797,6 +804,126 @@ export class SellersService {
     return this.toSellerProfileResponse(seller);
   }
 
+  async syncMyCourierPickup(actor: RequestUser, providerCodeParam: string) {
+    const providerCode = this.normalizeProviderCode(providerCodeParam);
+    const seller = await this.getSellerForUserOrThrow(actor.id);
+    const provider = await this.prisma.client.courierProviderSetting.findUnique({
+      where: { providerCode },
+    });
+    if (!provider || !provider.isActive) {
+      throw new BadRequestException(`Courier provider ${providerCode} is not active.`);
+    }
+    if (provider.mode === CourierProviderMode.MANUAL) {
+      throw new BadRequestException(`Courier provider ${providerCode} is configured for manual entry.`);
+    }
+    if (!provider.credentialsConfigured) {
+      throw new BadRequestException(`Courier provider ${providerCode} credentials are not configured.`);
+    }
+
+    const snapshot = this.providerSnapshot(provider.settingsSnapshot);
+    const adapter = this.courierAdapters.getAdapter(snapshot.adapterCode, provider.providerCode);
+    if (!adapter?.syncPickupLocation) {
+      throw new BadRequestException(`Courier provider ${providerCode} does not support pickup sync.`);
+    }
+
+    const sellerAddress = seller.addresses[0];
+    if (!sellerAddress) {
+      throw new BadRequestException("Seller pickup address is required before courier pickup sync.");
+    }
+
+    const sellerEmail = this.emptyToNull(seller.profile?.contactEmail) ?? seller.user.email;
+    const sellerPhone = this.emptyToNull(seller.profile?.contactPhone) ?? this.emptyToNull(seller.user.phone);
+    if (!sellerEmail) {
+      throw new BadRequestException("Seller pickup email is required before courier pickup sync.");
+    }
+    if (!sellerPhone) {
+      throw new BadRequestException("Seller pickup phone is required before courier pickup sync.");
+    }
+
+    const existingSetting = seller.courierProviderSettings.find(
+      (setting) => setting.providerCode === providerCode,
+    );
+    const pickupLocationName =
+      this.emptyToNull(existingSetting?.pickupLocationName) ??
+      this.generatePickupLocationName(seller, sellerAddress);
+    const pickupResult = await adapter.syncPickupLocation({
+      providerCode,
+      pickupLocationName,
+      sellerName:
+        this.emptyToNull(seller.profile?.contactName) ??
+        this.emptyToNull(seller.user.fullName) ??
+        seller.storeName,
+      sellerEmail,
+      sellerPhone,
+      sellerAddress: this.toCourierPickupAddress(sellerAddress),
+      settings: snapshot,
+    });
+
+    const updatedSeller = await this.prisma.client.$transaction(async (tx) => {
+      const setting = await tx.sellerCourierProviderSetting.upsert({
+        where: {
+          sellerId_providerCode: {
+            sellerId: seller.id,
+            providerCode,
+          },
+        },
+        update: {
+          pickupLocationName: pickupResult.pickupLocationName,
+          isActive: true,
+          settingsSnapshot: {
+            source: "SELLER_PROFILE_PICKUP_SYNC",
+            syncedAt: new Date().toISOString(),
+            providerPickupId: pickupResult.providerPickupId ?? null,
+            statusLabel: pickupResult.statusLabel ?? null,
+            updatedByUserId: actor.id,
+          },
+        },
+        create: {
+          sellerId: seller.id,
+          providerCode,
+          pickupLocationName: pickupResult.pickupLocationName,
+          isActive: true,
+          settingsSnapshot: {
+            source: "SELLER_PROFILE_PICKUP_SYNC",
+            syncedAt: new Date().toISOString(),
+            providerPickupId: pickupResult.providerPickupId ?? null,
+            statusLabel: pickupResult.statusLabel ?? null,
+            updatedByUserId: actor.id,
+          },
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actorUserId: actor.id,
+          action: "seller.courier_pickup.synced",
+          entityType: "seller_courier_provider_setting",
+          entityId: setting.id,
+          newValue: {
+            sellerId: seller.id,
+            providerCode,
+            pickupLocationName: pickupResult.pickupLocationName,
+            providerPickupId: pickupResult.providerPickupId ?? null,
+            statusLabel: pickupResult.statusLabel ?? null,
+          },
+        },
+      });
+
+      return tx.seller.findUniqueOrThrow({
+        where: { id: seller.id },
+        include: sellerProfileInclude,
+      });
+    });
+
+    return {
+      providerCode,
+      pickupLocationName: pickupResult.pickupLocationName,
+      providerPickupId: pickupResult.providerPickupId ?? null,
+      statusLabel: pickupResult.statusLabel ?? "Courier pickup location synced.",
+      seller: this.toSellerProfileResponse(updatedSeller),
+    };
+  }
+
   private async getSellerForUserOrThrow(userId: string) {
     const seller = await this.prisma.client.seller.findUnique({
       where: { userId },
@@ -1060,21 +1187,71 @@ export class SellersService {
     return trimmed ? trimmed : null;
   }
 
+  private providerSnapshot(value: Prisma.JsonValue | null): CourierProviderAdapterSnapshot {
+    return value && typeof value === "object" && !Array.isArray(value)
+      ? (value as CourierProviderAdapterSnapshot)
+      : {};
+  }
+
+  private normalizeProviderCode(value: string) {
+    const providerCode = value
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9_]/g, "_")
+      .replace(/_+/g, "_")
+      .slice(0, 40);
+    if (!providerCode) {
+      throw new BadRequestException("Courier provider code is required.");
+    }
+
+    return providerCode;
+  }
+
+  private toCourierPickupAddress(address: SellerProfileRecord["addresses"][number]): CourierBookingAddress {
+    return {
+      line1: address.line1,
+      line2: address.line2,
+      area: address.area,
+      city: address.city,
+      state: address.state,
+      pincode: address.pincode,
+      country: address.country,
+      countryCode: address.countryCode,
+    };
+  }
+
+  private generatePickupLocationName(
+    seller: Pick<SellerProfileRecord, "id" | "storeName" | "slug">,
+    address: SellerProfileRecord["addresses"][number],
+  ) {
+    const storeSegment =
+      this.pickupLocationSegment(seller.slug, 14) ||
+      this.pickupLocationSegment(seller.storeName, 14) ||
+      "SELLER";
+    const locationSegment =
+      this.pickupLocationSegment(address.pincode, 8) ||
+      this.pickupLocationSegment(address.city, 8) ||
+      "PICKUP";
+    const sellerSegment = seller.id.replace(/-/g, "").slice(0, 6).toUpperCase();
+    const value = `1HI${storeSegment}${locationSegment}${sellerSegment}`;
+
+    return value.slice(0, 36);
+  }
+
+  private pickupLocationSegment(value: string | null | undefined, maxLength: number) {
+    return createSlug(value ?? "")
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, "")
+      .slice(0, maxLength);
+  }
+
   private normalizeCourierProviderSettings(
     settings: UpdateSellerProfileDto["courierSettings"],
   ) {
     const seen = new Set<string>();
 
     return (settings ?? []).map((setting) => {
-      const providerCode = setting.providerCode
-        .trim()
-        .toUpperCase()
-        .replace(/[^A-Z0-9_]/g, "_")
-        .replace(/_+/g, "_")
-        .slice(0, 40);
-      if (!providerCode) {
-        throw new BadRequestException("Courier provider code is required.");
-      }
+      const providerCode = this.normalizeProviderCode(setting.providerCode);
       if (seen.has(providerCode)) {
         throw new BadRequestException(`Courier provider ${providerCode} is duplicated.`);
       }

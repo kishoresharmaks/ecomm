@@ -46,14 +46,14 @@ export function StoreDirectoryClient() {
         <StorefrontPageHeader
           badge={
             storefrontLocation.source === "global"
-              ? "Approved vendors and local shops"
+              ? "Approved sellers and hyperlocal stores"
               : `Browsing near ${browsingLocationHeadline(storefrontLocation.activeLocation)}`
           }
           title="Shop by store"
           description={
             storefrontLocation.source === "global"
-              ? "Browse approved 1HandIndia sellers and public storefront pages, then set a browsing location to move nearby stores to the front."
-              : `Local store discovery is currently tuned to ${browsingLocationLabel(storefrontLocation.activeLocation)}.`
+              ? "Browse approved 1HandIndia sellers and public storefront pages, then set a browsing location to move hyperlocal stores to the front."
+              : `Hyperlocal store discovery is currently tuned to ${browsingLocationLabel(storefrontLocation.activeLocation)}.`
           }
         >
           <div className="flex justify-start lg:justify-end">

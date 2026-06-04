@@ -4,15 +4,15 @@
 
 This document explains the complete 1HandIndia marketplace scope in one place so development can start with clear business and product requirements.
 
-1HandIndia is not a simple ecommerce site. It is a multi-vendor marketplace with customer shopping, vendor selling, nearby-store onboarding, B2B buying, mobile apps, admin operations, courier workflow, seller payout handling, analytics, and trust controls.
+1HandIndia is not a simple ecommerce site. It is a multi-vendor marketplace with customer shopping, marketplace seller onboarding, hyperlocal store onboarding, wholesale distributor support, B2B buying, mobile apps, admin operations, courier workflow, seller payout handling, analytics, and trust controls.
 
 ## 2. Product Vision
 
 1HandIndia should become a professional marketplace portal where:
 
 - Customers can buy products online.
-- Nearby stores can sell products online.
-- Vendors can manage products, stock, orders, and payouts.
+- Hyperlocal stores can sell products online.
+- Marketplace sellers and wholesale distributors can manage products, stock, orders, and payouts.
 - Business buyers can request quotations and place bulk orders.
 - Admin can control users, sellers, products, orders, payments, commissions, reports, policies, and platform operations.
 - Mobile apps can support customers and sellers.
@@ -48,9 +48,11 @@ The target is not to copy Flipkart. The target is to build a professional market
 - Reviews products and sellers.
 - Uses the responsive website in Phase 1. Native customer mobile app is a future upgrade.
 
-### Vendor / Seller / Nearby Store / Local Shop
+### Seller / Marketplace Seller / Hyperlocal Store / Wholesale Distributor
 
 - Registers as a seller.
+- Chooses an operational seller type: marketplace seller, hyperlocal store, or wholesale distributor.
+- Keeps legal business entity type separate for GST, invoicing, KYC, taxation, and payouts.
 - Creates store profile.
 - Lists products.
 - Manages stock and pricing.
@@ -58,7 +60,7 @@ The target is not to copy Flipkart. The target is to build a professional market
 - Handles enquiries.
 - Views basic sales summary.
 - Uses seller dashboard in Phase 1. Seller mobile app is a future upgrade.
-- Joins as a local vendor if it is a nearby store or local shop.
+- Joins as a hyperlocal store when local radius delivery, store pickup, or nearby discovery applies.
 - Adds store location and contact details.
 - Sells through 1HandIndia.
 - Can support nearby discovery.
@@ -84,7 +86,7 @@ The target is not to copy Flipkart. The target is to build a professional market
 
 - Handles support tickets.
 - Tracks courier issues.
-- Assists buyers and vendors.
+- Assists buyers and sellers.
 - Escalates disputes to admin.
 
 ## 5. Frozen Phase 1 Feature Groups
@@ -117,7 +119,7 @@ The final Phase 1 source of truth is `docs/IndiHub_Final_Scope_Requirement_Confi
 - Customer support.
 - Basic support/contact request.
 
-### Vendor / Seller Center
+### Seller Center
 
 - Seller registration and login.
 - Store profile.
@@ -127,9 +129,9 @@ The final Phase 1 source of truth is `docs/IndiHub_Final_Scope_Requirement_Confi
 - Sales summary.
 - Basic sales summary.
 
-### Nearby Store / Local Shop Vendor Flow
+### Hyperlocal Store Flow
 
-- Local shop onboarding under the vendor flow.
+- Hyperlocal store onboarding under the seller flow.
 - Address, area, and city collection.
 - Nearby discovery.
 - Store pickup or click-and-collect.
@@ -189,7 +191,7 @@ The final Phase 1 source of truth is `docs/IndiHub_Final_Scope_Requirement_Confi
 
 - Transactional email notifications.
 - Customer account created email.
-- Seller/vendor registration and approval emails.
+- Seller registration and approval emails.
 - Order placed, order status update, and order delivered emails.
 - Seller/admin new order alert emails.
 - B2B enquiry submitted and alert emails.
@@ -352,7 +354,7 @@ All third-party fees, approval delays, and provider limitations must be treated 
 - Delivery status update owner: admin, seller, delivery partner, or a combination by business rule.
 - SMS/WhatsApp/email provider names.
 - Product categories for first launch.
-- Number of initial vendors.
+- Number of initial sellers by operational type.
 - Whether marketplace stock is seller-managed only.
 - Whether COD is allowed.
 - Whether store pickup is allowed at launch.

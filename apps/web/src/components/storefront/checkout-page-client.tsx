@@ -89,10 +89,10 @@ const initialAddress: CheckoutAddress = {
   line2: "",
   area: "",
   city: "",
-  state: "Tamil Nadu",
+  state: "",
   pincode: "",
   countryCode: "IN",
-  stateCode: "IN-TN",
+  stateCode: "",
   cityCode: "",
   localAreaCode: "",
 };
@@ -408,6 +408,8 @@ export function CheckoutPageClient() {
                 <div className="md:col-span-2">
                   <LocationFields
                     defaultValue={initialAddress}
+                    defaultCountryCode="IN"
+                    loadCitiesAcrossCountry
                     className="md:grid-cols-2"
                     labelClassName="space-y-2"
                     inputClassName={storefrontInputClassName}

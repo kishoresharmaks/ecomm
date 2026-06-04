@@ -17,6 +17,7 @@ export const adminNav = [
   { group: "Operations", label: "Location serviceability", href: "/admin/locations/serviceability" },
   { group: "Operations", label: "Reports", href: "/admin/reports" },
   { group: "Operations", label: "Delivery operations", href: "/admin/delivery" },
+  { group: "Operations", label: "Courier workspace", href: "/courier" },
   { group: "Finance", label: "Seller subscriptions", href: "/admin/seller-subscriptions" },
   { group: "Finance", label: "Finance workspace", href: "/finance" },
   { group: "Finance", label: "Commission rules", href: "/admin/finance/commission-rules" },
@@ -43,6 +44,16 @@ export const financeNav = [
   { group: "Rules", label: "Commission rules", href: "/finance/commission-rules" },
   { group: "Reports", label: "Payment reports", href: "/finance/reports" },
   { group: "Settings", label: "Payment settings", href: "/finance/settings" },
+];
+
+export const courierNav = [
+  { group: "Overview", label: "Dashboard", href: "/courier" },
+  { group: "Packages", label: "Packages", href: "/courier/packages" },
+  { group: "Packages", label: "Routing failures", href: "/courier/routing-failures" },
+  { group: "Local delivery", label: "Local delivery", href: "/courier/local-delivery" },
+  { group: "Local delivery", label: "Delivery partners", href: "/courier/local-delivery/partners" },
+  { group: "Courier setup", label: "Providers", href: "/courier/providers" },
+  { group: "COD", label: "COD remittances", href: "/courier/cod-remittances" },
 ];
 
 export const sellerNav = [

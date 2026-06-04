@@ -343,7 +343,7 @@ function Render-Home {
   Add-PageTitle $Svg $Screen 58 168 1320
   Add-Rect $Svg 58 336 728 230 $Colors.Navy "none" 14 0
   Add-Text $Svg 98 390 "1HandIndia marketplace" 38 "900" $Colors.White
-  Add-WrappedText $Svg 98 430 "Browse trusted Indian sellers, nearby stores, and B2B-ready products from one serious marketplace portal." 54 17 "#E8F0F7" 26 3
+  Add-WrappedText $Svg 98 430 "Browse trusted Indian sellers, hyperlocal stores, and B2B-ready products from one serious marketplace portal." 54 17 "#E8F0F7" 26 3
   Add-Button $Svg 98 512 156 "Shop now" $Colors.Orange
   Add-Button $Svg 270 512 160 "Seller center" $Colors.White $Colors.Navy
   Add-Rect $Svg 826 336 250 230 $Colors.SoftOrange "none" 14 0
@@ -353,7 +353,7 @@ function Render-Home {
   }
   Add-Rect $Svg 1106 336 272 230 $Colors.SoftGreen "none" 14 0
   Add-Text $Svg 1138 382 "Local seller focus" 20 "900" $Colors.Ink
-  Add-WrappedText $Svg 1138 420 "Nearby stores and local shops use the vendor flow in Phase 1." 28 15 $Colors.Muted 22 3
+  Add-WrappedText $Svg 1138 420 "Marketplace sellers, hyperlocal stores, and wholesale distributors use one seller flow in Phase 1." 28 15 $Colors.Muted 22 3
   $x = 58
   foreach ($name in @("Featured product", "Deal product", "New arrival", "B2B enquiry item")) {
     Add-BlockCard $Svg $x 604 315 208 $name $Colors.Orange "lines"
@@ -670,8 +670,8 @@ $Screens = @(
   (New-Screen "customer" "Customer Account" 8 "Order Detail" "/account/orders/[orderNumber]" "Must" "Order items, seller split, delivery details, status timeline." "detail"),
   (New-Screen "customer" "Customer Account" 9 "Support / Contact Requests" "/account/support" "Should" "Customer submitted contact/support requests." "table"),
 
-  (New-Screen "seller" "Seller Center" 1 "Seller Sign In" "/seller/sign-in" "Must" "Seller/vendor login." "auth"),
-  (New-Screen "seller" "Seller Center" 2 "Seller Registration" "/seller/register" "Must" "Seller, vendor, nearby store, or local shop registration." "auth"),
+  (New-Screen "seller" "Seller Center" 1 "Seller Sign In" "/seller/sign-in" "Must" "Seller login." "auth"),
+  (New-Screen "seller" "Seller Center" 2 "Seller Registration" "/seller/register" "Must" "Seller registration with operational and legal business type." "auth"),
   (New-Screen "seller" "Seller Center" 3 "Seller Pending Approval" "/seller/pending-approval" "Must" "Message shown until admin approves seller." "success"),
   (New-Screen "seller" "Seller Center" 4 "Seller Dashboard" "/seller" "Must" "Sales summary, product count, order count, enquiry count." "dashboard"),
   (New-Screen "seller" "Seller Center" 5 "Store Profile" "/seller/store-profile" "Must" "Store name, logo, banner, address, city, area, contact, business details." "form"),
@@ -697,7 +697,7 @@ $Screens = @(
   (New-Screen "admin" "Admin Panel" 2 "Admin Dashboard" "/admin" "Must" "Orders, sellers, products, enquiries, sales summary." "dashboard"),
   (New-Screen "admin" "Admin Panel" 3 "Customers" "/admin/customers" "Must" "View and manage customer records." "table"),
   (New-Screen "admin" "Admin Panel" 4 "Customer Detail" "/admin/customers/[id]" "Should" "Profile, addresses, order history." "detail"),
-  (New-Screen "admin" "Admin Panel" 5 "Sellers / Vendors" "/admin/sellers" "Must" "Seller list, approval status, suspension status." "table"),
+  (New-Screen "admin" "Admin Panel" 5 "Sellers" "/admin/sellers" "Must" "Seller list, approval status, suspension status." "table"),
   (New-Screen "admin" "Admin Panel" 6 "Seller Detail" "/admin/sellers/[id]" "Must" "Store profile, documents, products, orders, actions." "detail"),
   (New-Screen "admin" "Admin Panel" 7 "Seller Approval Queue" "/admin/sellers/approvals" "Must" "Approve/reject pending seller registrations." "approval"),
   (New-Screen "admin" "Admin Panel" 8 "Business Buyers" "/admin/business-buyers" "Must" "B2B buyer list and company details." "table"),

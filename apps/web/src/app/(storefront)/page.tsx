@@ -7,7 +7,7 @@ import { buildOrganizationJsonLd, buildWebsiteJsonLd, buildWebPageJsonLd, metada
 
 const homeSeoFallback = {
   title: "1HandIndia Marketplace",
-  description: "Shop from verified sellers, nearby stores, and B2B-ready marketplace partners on 1HandIndia.",
+  description: "Shop from verified sellers, hyperlocal stores, and B2B-ready marketplace partners on 1HandIndia.",
   path: "/"
 } as const;
 

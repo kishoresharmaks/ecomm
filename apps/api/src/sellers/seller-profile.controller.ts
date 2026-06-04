@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Header, Headers, Inject, Patch } from "@nestjs/common";
+import { Body, Controller, Get, Header, Headers, Inject, Param, Patch, Post } from "@nestjs/common";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import { RoleCode } from "@indihub/database";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
@@ -31,6 +31,18 @@ export class SellerProfileController {
     @Headers("authorization") authorizationHeader: string | undefined
   ) {
     const response = await this.sellersService.updateMySellerProfile(actor, dto);
+    return encryptForBearerSession(authorizationHeader, response);
+  }
+
+  @Post("courier-pickups/:providerCode/sync")
+  @Header("Cache-Control", "no-store")
+  @ApiOperation({ summary: "Create or reuse the seller pickup location with a live courier provider." })
+  async syncCourierPickup(
+    @CurrentUser() actor: RequestUser,
+    @Param("providerCode") providerCode: string,
+    @Headers("authorization") authorizationHeader: string | undefined
+  ) {
+    const response = await this.sellersService.syncMyCourierPickup(actor, providerCode);
     return encryptForBearerSession(authorizationHeader, response);
   }
 }

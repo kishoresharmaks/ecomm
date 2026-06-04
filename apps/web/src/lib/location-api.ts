@@ -67,13 +67,42 @@ export function listLocationStates(countryCode?: string) {
   return indihubFetch<LocationSubdivision[]>(`/api/locations/states${suffix}`);
 }
 
-export function listLocationCities(stateCode?: string) {
-  const suffix = stateCode ? `?stateCode=${encodeURIComponent(stateCode)}` : "";
+export type LocationCityQuery = {
+  countryCode?: string;
+  stateCode?: string;
+};
+
+export function listLocationCities(input?: string | LocationCityQuery) {
+  const params = typeof input === "string" ? { stateCode: input } : (input ?? {});
+  const query = new URLSearchParams();
+  if (params.countryCode) {
+    query.set("countryCode", params.countryCode);
+  }
+  if (params.stateCode) {
+    query.set("stateCode", params.stateCode);
+  }
+
+  const suffix = query.toString() ? `?${query.toString()}` : "";
   return indihubFetch<LocationCity[]>(`/api/locations/cities${suffix}`);
 }
 
-export function listLocationAreas(params: { cityCode?: string; search?: string; postalCode?: string; limit?: number } = {}) {
+export function listLocationAreas(
+  params: {
+    countryCode?: string;
+    stateCode?: string;
+    cityCode?: string;
+    search?: string;
+    postalCode?: string;
+    limit?: number;
+  } = {}
+) {
   const query = new URLSearchParams();
+  if (params.countryCode) {
+    query.set("countryCode", params.countryCode);
+  }
+  if (params.stateCode) {
+    query.set("stateCode", params.stateCode);
+  }
   if (params.cityCode) {
     query.set("cityCode", params.cityCode);
   }

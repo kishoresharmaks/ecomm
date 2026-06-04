@@ -22,12 +22,13 @@ enum RoleCode {
   SUPPORT_STAFF
   DELIVERY_PARTNER
   FINANCE
+  COURIER_MANAGER
 }
 
 enum SellerType {
-  VENDOR
-  NEARBY_STORE
-  LOCAL_SHOP
+  MARKETPLACE_SELLER
+  HYPERLOCAL_STORE
+  WHOLESALE_DISTRIBUTOR
 }
 
 enum SellerBusinessType {
@@ -203,6 +204,7 @@ enum DeliveryMode {
   STORE_PICKUP
   LOCAL_DELIVERY_PARTNER
   THIRD_PARTY_COURIER @map("MANUAL_COURIER")
+  MANUAL_TRANSPORT
 }
 
 enum ShippingCodSurchargeType {
@@ -220,12 +222,33 @@ enum CourierProviderMode {
 enum CourierShipmentStatus {
   NOT_BOOKED
   BOOKED
+  PICKUP_SCHEDULED
   PICKED_UP
   IN_TRANSIT
   OUT_FOR_DELIVERY
   DELIVERED
+  RTO_INITIATED
+  RTO_IN_TRANSIT
+  RTO_DELIVERED
   FAILED
   CANCELLED
+}
+
+enum OrderShipmentPackageStatus {
+  PACKING_PENDING
+  READY_FOR_BOOKING
+  BOOKING_PENDING
+  BOOKED
+  PICKUP_SCHEDULED
+  PICKED_UP
+  IN_TRANSIT
+  OUT_FOR_DELIVERY
+  DELIVERED
+  RTO_INITIATED
+  RTO_IN_TRANSIT
+  RTO_DELIVERED
+  CANCELLED
+  FAILED
 }
 
 enum CourierWebhookEventStatus {
@@ -665,6 +688,9 @@ model Seller {
   orderItems                   OrderItem[]
   orderSplits                  OrderSellerSplit[]
   orderShipments               OrderShipment[]
+  orderShipmentPackages        OrderShipmentPackage[]
+  courierConsignments          CourierConsignment[]
+  courierConsignmentPackages   CourierConsignmentPackage[]
   courierShipments             CourierShipment[]
   courierCodRemittances        CourierCodRemittance[]
   courierProviderSettings      SellerCourierProviderSetting[]
@@ -1352,6 +1378,9 @@ model Order {
   items                   OrderItem[]
   sellerSplits            OrderSellerSplit[]
   shipments               OrderShipment[]
+  shipmentPackages        OrderShipmentPackage[]
+  courierConsignments     CourierConsignment[]
+  courierConsignmentPackages CourierConsignmentPackage[]
   courierShipments        CourierShipment[]
   courierCodRemittances   CourierCodRemittance[]
   statusEvents            OrderStatusEvent[]
@@ -1458,6 +1487,11 @@ model OrderShipment {
   routingFailureReason     DeliveryRoutingFailureReason? @map("routing_failure_reason")
   routingFailureNote       String?                  @map("routing_failure_note")
   routedAt                 DateTime?                @map("routed_at")
+  routingFirstFailedAt     DateTime?                @map("routing_first_failed_at")
+  routingLastAttemptAt     DateTime?                @map("routing_last_attempt_at")
+  routingRetryCount        Int                      @default(0) @map("routing_retry_count")
+  routingPermanentFailureAt DateTime?               @map("routing_permanent_failure_at")
+  routingSnapshot          Json?                    @map("routing_snapshot")
   shippingChargeSnapshot   Json?                    @map("shipping_charge_snapshot")
   codSurchargeSnapshot     Json?                    @map("cod_surcharge_snapshot")
   awbNumber                String?                  @unique @map("awb_number")
@@ -1486,6 +1520,9 @@ model OrderShipment {
   deliveryPartner          User?                    @relation("ShipmentDeliveryPartnerAssignments", fields: [deliveryPartnerUserId], references: [id])
   codCollectedBy           User?                    @relation("ShipmentCodCollectedBy", fields: [codCollectedById], references: [id])
   codVerifiedBy            User?                    @relation("ShipmentCodVerifiedBy", fields: [codVerifiedById], references: [id])
+  packages                 OrderShipmentPackage[]
+  courierConsignments      CourierConsignment[]
+  courierConsignmentPackages CourierConsignmentPackage[]
   courierShipment          CourierShipment?
   courierCodRemittance     CourierCodRemittance?
 
@@ -1497,9 +1534,51 @@ model OrderShipment {
   @@index([deliveryMode, status, createdAt])
   @@index([courierProviderCode, courierTrackingStatus])
   @@index([routingFailed, createdAt])
+  @@index([routingFailed, routingFirstFailedAt])
+  @@index([routingPermanentFailureAt])
   @@index([codCollectionStatus, codCollectedById])
   @@index([codCollectionStatus, codVerifiedById])
   @@map("order_shipments")
+}
+
+model OrderShipmentPackage {
+  id                    String                     @id @default(uuid()) @db.Uuid
+  packageNumber         String                     @unique @map("package_number")
+  orderShipmentId       String                     @map("order_shipment_id") @db.Uuid
+  orderId               String                     @map("order_id") @db.Uuid
+  sellerId              String                     @map("seller_id") @db.Uuid
+  sequence              Int
+  deliveryMode          DeliveryMode               @map("delivery_mode")
+  status                OrderShipmentPackageStatus @default(PACKING_PENDING)
+  shippingPaise         Int                        @default(0) @map("shipping_paise")
+  codSurchargePaise     Int                        @default(0) @map("cod_surcharge_paise")
+  declaredValuePaise    Int                        @default(0) @map("declared_value_paise")
+  currency              String                     @default("INR")
+  weightGrams           Int?                       @map("weight_grams")
+  lengthCm              Int?                       @map("length_cm")
+  breadthCm             Int?                       @map("breadth_cm")
+  heightCm              Int?                       @map("height_cm")
+  itemAllocations       Json?                      @map("item_allocations")
+  packageSnapshot       Json?                      @map("package_snapshot")
+  readyForBookingAt     DateTime?                  @map("ready_for_booking_at")
+  bookedAt              DateTime?                  @map("booked_at")
+  pickupScheduledAt     DateTime?                  @map("pickup_scheduled_at")
+  pickedUpAt            DateTime?                  @map("picked_up_at")
+  deliveredAt           DateTime?                  @map("delivered_at")
+  cancelledAt           DateTime?                  @map("cancelled_at")
+  createdAt             DateTime                   @default(now()) @map("created_at")
+  updatedAt             DateTime                   @updatedAt @map("updated_at")
+  orderShipment         OrderShipment              @relation(fields: [orderShipmentId], references: [id], onDelete: Cascade)
+  order                 Order                      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  seller                Seller                     @relation(fields: [sellerId], references: [id])
+  courierPackages       CourierConsignmentPackage[]
+
+  @@unique([orderShipmentId, sequence])
+  @@index([orderId, status, createdAt])
+  @@index([orderShipmentId, status])
+  @@index([sellerId, status, createdAt])
+  @@index([deliveryMode, status, createdAt])
+  @@map("order_shipment_packages")
 }
 
 model OrderStatusEvent {
@@ -1639,6 +1718,94 @@ model CourierShipment {
   @@map("courier_shipments")
 }
 
+model CourierConsignment {
+  id                      String                @id @default(uuid()) @db.Uuid
+  consignmentNumber       String                @unique @map("consignment_number")
+  orderShipmentId         String                @map("order_shipment_id") @db.Uuid
+  orderId                 String                @map("order_id") @db.Uuid
+  sellerId                String                @map("seller_id") @db.Uuid
+  providerCode            String                @map("provider_code")
+  providerOrderId         String?               @map("provider_order_id")
+  pickupLocationName      String?               @map("pickup_location_name")
+  trackingStatus          CourierShipmentStatus @default(NOT_BOOKED) @map("tracking_status")
+  trackingStatusLabel     String?               @map("tracking_status_label")
+  manifestUrl             String?               @map("manifest_url")
+  invoiceUrl              String?               @map("invoice_url")
+  labelDocumentUrl        String?               @map("label_document_url")
+  shippingZone            String?               @map("shipping_zone")
+  providerRawStatus       String?               @map("provider_raw_status")
+  providerRawStatusCode   String?               @map("provider_raw_status_code")
+  bookingPayloadSnapshot  Json?                 @map("booking_payload_snapshot")
+  bookingResponseSnapshot Json?                 @map("booking_response_snapshot")
+  lastWebhookEventId      String?               @map("last_webhook_event_id")
+  lastWebhookAt           DateTime?             @map("last_webhook_at")
+  lastTrackedAt           DateTime?             @map("last_tracked_at")
+  bookingAttemptCount     Int                   @default(0) @map("booking_attempt_count")
+  bookingError            String?               @map("booking_error")
+  bookedAt                DateTime?             @map("booked_at")
+  cancelledAt             DateTime?             @map("cancelled_at")
+  createdAt               DateTime              @default(now()) @map("created_at")
+  updatedAt               DateTime              @updatedAt @map("updated_at")
+  orderShipment           OrderShipment         @relation(fields: [orderShipmentId], references: [id], onDelete: Cascade)
+  order                   Order                 @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  seller                  Seller                @relation(fields: [sellerId], references: [id])
+  provider                CourierProviderSetting @relation(fields: [providerCode], references: [providerCode])
+  packages                CourierConsignmentPackage[]
+
+  @@unique([providerCode, providerOrderId])
+  @@index([orderId, trackingStatus, updatedAt])
+  @@index([orderShipmentId, trackingStatus, updatedAt])
+  @@index([sellerId, trackingStatus, updatedAt])
+  @@index([providerCode, trackingStatus, updatedAt])
+  @@index([providerCode, lastTrackedAt])
+  @@map("courier_consignments")
+}
+
+model CourierConsignmentPackage {
+  id                       String                @id @default(uuid()) @db.Uuid
+  courierConsignmentId     String                @map("courier_consignment_id") @db.Uuid
+  orderShipmentPackageId   String                @map("order_shipment_package_id") @db.Uuid
+  orderShipmentId          String                @map("order_shipment_id") @db.Uuid
+  orderId                  String                @map("order_id") @db.Uuid
+  sellerId                 String                @map("seller_id") @db.Uuid
+  providerPackageId        String?               @map("provider_package_id")
+  awbNumber                String?               @unique @map("awb_number")
+  courierName              String?               @map("courier_name")
+  courierCode              String?               @map("courier_code")
+  trackingStatus           CourierShipmentStatus @default(NOT_BOOKED) @map("tracking_status")
+  trackingStatusLabel      String?               @map("tracking_status_label")
+  trackingUrl              String?               @map("tracking_url")
+  labelUrl                 String?               @map("label_url")
+  labelStorageKey          String?               @map("label_storage_key")
+  labelContentType         String?               @map("label_content_type")
+  labelFetchedAt           DateTime?             @map("label_fetched_at")
+  manifestUrl              String?               @map("manifest_url")
+  invoiceUrl               String?               @map("invoice_url")
+  shippingZone             String?               @map("shipping_zone")
+  providerRawStatus        String?               @map("provider_raw_status")
+  providerRawStatusCode    String?               @map("provider_raw_status_code")
+  bookedAt                 DateTime?             @map("booked_at")
+  pickupScheduledAt        DateTime?             @map("pickup_scheduled_at")
+  lastWebhookEventId       String?               @map("last_webhook_event_id")
+  lastWebhookAt            DateTime?             @map("last_webhook_at")
+  lastTrackedAt            DateTime?             @map("last_tracked_at")
+  createdAt                DateTime              @default(now()) @map("created_at")
+  updatedAt                DateTime              @updatedAt @map("updated_at")
+  courierConsignment       CourierConsignment    @relation(fields: [courierConsignmentId], references: [id], onDelete: Cascade)
+  orderShipmentPackage     OrderShipmentPackage  @relation(fields: [orderShipmentPackageId], references: [id], onDelete: Cascade)
+  orderShipment            OrderShipment         @relation(fields: [orderShipmentId], references: [id], onDelete: Cascade)
+  order                    Order                 @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  seller                   Seller                @relation(fields: [sellerId], references: [id])
+
+  @@unique([courierConsignmentId, orderShipmentPackageId])
+  @@index([orderId, trackingStatus, updatedAt])
+  @@index([orderShipmentId, trackingStatus, updatedAt])
+  @@index([orderShipmentPackageId, trackingStatus, updatedAt])
+  @@index([sellerId, trackingStatus, updatedAt])
+  @@index([awbNumber, trackingStatus])
+  @@map("courier_consignment_packages")
+}
+
 model CourierWebhookEvent {
   id               String                    @id @default(uuid()) @db.Uuid
   providerCode     String                    @map("provider_code")
@@ -1707,6 +1874,9 @@ model DeliveryPartnerProfile {
   serviceCityCode        String?  @map("service_city_code")
   servicePincodes        String[] @default([]) @map("service_pincodes")
   serviceLocalAreaCodes  String[] @default([]) @map("service_local_area_codes")
+  baseLatitude           Decimal? @map("base_latitude") @db.Decimal(10, 7)
+  baseLongitude          Decimal? @map("base_longitude") @db.Decimal(10, 7)
+  serviceRadiusKm        Int?     @map("service_radius_km")
   codCashLimitPaise      Int?     @map("cod_cash_limit_paise")
   notes                  String?
   createdAt              DateTime @default(now()) @map("created_at")
@@ -1718,6 +1888,7 @@ model DeliveryPartnerProfile {
   @@index([isAvailable, serviceCountryCode, serviceStateCode, serviceCityCode])
   @@index([priority])
   @@index([serviceCityCode])
+  @@index([baseLatitude, baseLongitude])
   @@map("delivery_partner_profiles")
 }
 
@@ -2415,6 +2586,7 @@ model CourierProviderSetting {
   createdAt               DateTime            @default(now()) @map("created_at")
   updatedAt               DateTime            @updatedAt @map("updated_at")
   courierShipments        CourierShipment[]
+  courierConsignments     CourierConsignment[]
   courierCodRemittances   CourierCodRemittance[]
   sellerProviderSettings  SellerCourierProviderSetting[]
 

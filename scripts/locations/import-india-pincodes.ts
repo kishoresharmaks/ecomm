@@ -10,7 +10,12 @@ import {
   parseIndiaPincodeCsv,
   type IndiaPincodeRecord
 } from "../../apps/api/src/locations/india-pincode-importer";
-import { importLocationDataset } from "../../apps/api/src/locations/location-importer";
+import {
+  importLocationDataset,
+  importLocationDatasetBulk,
+  type LocationImportBulkOptions,
+  type LocationImportResult
+} from "../../apps/api/src/locations/location-importer";
 
 type CliArgs = Record<string, string | true>;
 
@@ -29,12 +34,16 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const pageLimit = positiveIntegerArg(args.limit, 5000, "limit");
   const mode = parseMode(args.mode);
+  const importEngine = parseImportEngine(args);
+  const bulkOptions: LocationImportBulkOptions = {
+    batchSize: positiveIntegerArg(args.batchSize ?? args["batch-size"], 1000, "batch-size")
+  };
   const { records, sourceUrl } = await loadRecords(args, pageLimit);
   const build = buildIndiaPincodeDataset(records, {
     sourceUrl
   });
 
-  if (booleanArg(args.dryRun) || booleanArg(args.preview)) {
+  if (booleanArg(args.dryRun ?? args["dry-run"]) || booleanArg(args.preview)) {
     console.log(
       [
         "India pincode import preview",
@@ -52,11 +61,16 @@ async function main() {
     return;
   }
 
-  const result = await importLocationDataset(prisma, build.dataset, mode);
+  if (importEngine === "bulk") {
+    warnIfUsingPooledDatabaseUrl();
+  }
+
+  const result = await runImport(importEngine, build.dataset, mode, bulkOptions);
 
   console.log(
     [
       "India pincode import completed",
+      `engine=${importEngine === "bulk" ? "bulk-staging" : "row-upsert"}`,
       `run=${result.runId}`,
       `status=${result.status}`,
       `accepted=${build.acceptedRows}`,
@@ -70,6 +84,19 @@ async function main() {
   );
 }
 
+async function runImport(
+  importEngine: "bulk" | "row",
+  dataset: Parameters<typeof importLocationDataset>[1],
+  mode: LocationImportMode,
+  bulkOptions: LocationImportBulkOptions
+): Promise<LocationImportResult> {
+  if (importEngine === "row") {
+    return importLocationDataset(prisma, dataset, mode);
+  }
+
+  return importLocationDatasetBulk(prisma, dataset, mode, bulkOptions);
+}
+
 async function loadRecords(args: CliArgs, pageLimit: number) {
   const file = stringArg(args.file);
 
@@ -78,14 +105,14 @@ async function loadRecords(args: CliArgs, pageLimit: number) {
     const csv = await readFile(absolutePath, "utf8");
     return {
       records: parseIndiaPincodeCsv(csv),
-      sourceUrl: stringArg(args.sourceUrl) ?? absolutePath
+      sourceUrl: stringArg(args.sourceUrl ?? args["source-url"]) ?? absolutePath
     };
   }
 
   const apiKey = apiKeyFromArgs(args);
   return {
     records: await fetchAllRecords(apiKey, pageLimit),
-    sourceUrl: stringArg(args.sourceUrl) ?? INDIA_PINCODE_CATALOG_URL
+    sourceUrl: stringArg(args.sourceUrl ?? args["source-url"]) ?? INDIA_PINCODE_CATALOG_URL
   };
 }
 
@@ -142,7 +169,7 @@ async function fetchPage(apiKey: string, offset: number, limit: number): Promise
 }
 
 function apiKeyFromArgs(args: CliArgs) {
-  const apiKey = stringArg(args.apiKey) ?? process.env.DATAGOVINDIA_API_KEY ?? process.env.DATA_GOV_IN_API_KEY;
+  const apiKey = stringArg(args.apiKey ?? args["api-key"]) ?? process.env.DATAGOVINDIA_API_KEY ?? process.env.DATA_GOV_IN_API_KEY;
 
   if (!apiKey) {
     throw new Error(
@@ -194,6 +221,20 @@ function parseMode(value: string | true | undefined) {
   return LocationImportMode.REFRESH;
 }
 
+function parseImportEngine(args: CliArgs): "bulk" | "row" {
+  const normalized = stringArg(args.importEngine ?? args["import-engine"])?.toLowerCase();
+
+  if (!normalized || normalized === "bulk" || normalized === "bulk-staging") {
+    return "bulk";
+  }
+
+  if (normalized === "row" || normalized === "row-upsert") {
+    return "row";
+  }
+
+  throw new Error("Unsupported import engine. Use bulk or row.");
+}
+
 function positiveIntegerArg(value: string | true | undefined, fallback: number, field: string) {
   if (value === undefined || value === true || value === "") {
     return fallback;
@@ -226,6 +267,21 @@ function booleanArg(value: string | true | undefined) {
   }
 
   return ["1", "true", "yes", "y"].includes(value.trim().toLowerCase());
+}
+
+function warnIfUsingPooledDatabaseUrl() {
+  const databaseUrl = process.env.DATABASE_URL ?? "";
+  if (!/pooler/i.test(databaseUrl)) {
+    return;
+  }
+
+  console.warn(
+    [
+      "Bulk location import detected a pooled database URL.",
+      "For large Neon imports, use the direct database URL when possible to reduce long-running import disconnects.",
+      "The pooled URL can still work, but direct is safer for this operation."
+    ].join(" ")
+  );
 }
 
 main()

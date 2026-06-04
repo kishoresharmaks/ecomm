@@ -21,7 +21,11 @@ import { bundledLocationDataset } from "../apps/api/src/locations/bundled-locati
 
 const roleSeeds = [
   { code: RoleCode.CUSTOMER, name: "Customer", description: "B2C buyer account." },
-  { code: RoleCode.SELLER, name: "Seller", description: "Vendor, nearby store, or local shop." },
+  {
+    code: RoleCode.SELLER,
+    name: "Seller",
+    description: "Marketplace seller, hyperlocal store, or wholesale distributor.",
+  },
   {
     code: RoleCode.BUSINESS_BUYER,
     name: "Business Buyer",
@@ -32,6 +36,11 @@ const roleSeeds = [
     code: RoleCode.FINANCE,
     name: "Finance Manager",
     description: "Finance workspace user for payments, settlements, payouts, and reports.",
+  },
+  {
+    code: RoleCode.COURIER_MANAGER,
+    name: "Courier Manager",
+    description: "Courier and delivery operations workspace user.",
   },
 ];
 
@@ -80,7 +89,7 @@ const cmsPages = [
     slug: "terms-and-conditions",
     title: "Terms and Conditions",
     content:
-      "1HandIndia is a multi-vendor marketplace where customers, sellers, local shops, and business buyers use separate account areas. Users must provide accurate information, follow marketplace policies, and use the platform only for lawful transactions.\n\nSellers are responsible for product accuracy, stock, pricing, fulfilment, and manual delivery updates. 1HandIndia admin may moderate sellers, products, orders, content, and B2B enquiries to protect marketplace trust.\n\nFinal commercial, legal, tax, payment, and dispute terms should be reviewed and approved before production launch.",
+      "1HandIndia is a multi-vendor marketplace where customers, marketplace sellers, hyperlocal stores, wholesale distributors, and business buyers use separate account areas. Users must provide accurate information, follow marketplace policies, and use the platform only for lawful transactions.\n\nSellers are responsible for product accuracy, stock, pricing, fulfilment, and manual delivery updates. 1HandIndia admin may moderate sellers, products, orders, content, and B2B enquiries to protect marketplace trust.\n\nFinal commercial, legal, tax, payment, and dispute terms should be reviewed and approved before production launch.",
   },
   {
     slug: "refund-return-policy",
@@ -98,7 +107,7 @@ const cmsPages = [
     slug: "seller-policy",
     title: "Seller Policy",
     content:
-      "Sellers, vendors, nearby stores, and local shops must complete onboarding and admin approval before active selling. Product submissions, images, pricing, stock, and delivery updates must be accurate and may be reviewed by admin.\n\n1HandIndia can reject, archive, or suspend sellers and products that break marketplace quality, trust, fulfilment, or policy requirements. Seller finance, commissions, settlements, payouts, and ledger records are managed through the admin finance workflow.\n\nFinal seller commercial terms, commission rules, KYC requirements, and dispute handling should be approved before production launch.",
+      "Marketplace sellers, hyperlocal stores, and wholesale distributors must complete onboarding and admin approval before active selling. Product submissions, images, pricing, stock, and delivery updates must be accurate and may be reviewed by admin.\n\n1HandIndia can reject, archive, or suspend sellers and products that break marketplace quality, trust, fulfilment, or policy requirements. Seller finance, commissions, settlements, payouts, and ledger records are managed through the admin finance workflow.\n\nFinal seller commercial terms, commission rules, KYC requirements, and dispute handling should be approved before production launch.",
   },
 ] as const;
 
@@ -107,7 +116,7 @@ const defaultCategories = [
   ["fashion", "Fashion"],
   ["electronics", "Electronics"],
   ["home-kitchen", "Home & Kitchen"],
-  ["local-shops", "Local Shops"],
+  ["hyperlocal-stores", "Hyperlocal Stores"],
 ] as const;
 
 const defaultCategoryTemplateCodes: Record<(typeof defaultCategories)[number][0], string> = {
@@ -115,7 +124,7 @@ const defaultCategoryTemplateCodes: Record<(typeof defaultCategories)[number][0]
   fashion: "FASHION",
   electronics: "ELECTRONICS",
   "home-kitchen": "HOME",
-  "local-shops": "STANDARD",
+  "hyperlocal-stores": "STANDARD",
 };
 
 const defaultCategoryTaxProfiles: Partial<
@@ -720,7 +729,7 @@ const defaultSubscriptionPlans = [
   {
     code: "PRO_YEARLY",
     name: "Pro Yearly",
-    description: "Higher-capacity seller plan for established vendors and local shop chains.",
+    description: "Higher-capacity seller plan for established marketplace sellers, hyperlocal store chains, and wholesale distributors.",
     pricePaise: 999900,
     currency: "INR",
     billingCycle: SellerSubscriptionBillingCycle.YEARLY,
@@ -761,9 +770,21 @@ function readSeedMode(): SeedMode {
 function isProductionLikeEnvironment() {
   return (
     process.env.NODE_ENV === "production" ||
-    process.env.VERCEL_ENV === "production" ||
-    process.env.INDIHUB_ENV === "production" ||
-    process.env.INDIHUB_PRODUCTION === "true"
+    isProtectedDeploymentEnv(process.env.VERCEL_ENV) ||
+    isProtectedDeploymentEnv(process.env.INDIHUB_ENV) ||
+    process.env.INDIHUB_PRODUCTION === "true" ||
+    process.env.INDIHUB_STAGING === "true" ||
+    process.env.INDIHUB_PREPRODUCTION === "true"
+  );
+}
+
+function isProtectedDeploymentEnv(value: string | undefined) {
+  if (!value) {
+    return false;
+  }
+
+  return ["production", "prod", "staging", "stage", "preproduction", "preprod", "uat"].includes(
+    value.toLowerCase().replace(/[^a-z0-9]+/g, ""),
   );
 }
 
@@ -774,7 +795,7 @@ function assertSeedWritesAllowed(mode: SeedMode) {
 
   if (isProductionLikeEnvironment() && process.env.INDIHUB_ALLOW_PRODUCTION_SEED !== "true") {
     throw new Error(
-      `Refusing to run "${mode}" seed in a production-like environment. ` +
+      `Refusing to run "${mode}" seed in a production/staging/pre-production-like environment. ` +
         "Run schema/migrations separately, or set INDIHUB_ALLOW_PRODUCTION_SEED=true only for an approved one-time bootstrap.",
     );
   }

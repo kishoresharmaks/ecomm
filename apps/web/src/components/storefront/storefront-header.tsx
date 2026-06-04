@@ -32,10 +32,10 @@ import { cn } from "@indihub/ui";
 import { AuthActions } from "@/components/auth/auth-actions";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
 import { useMarket } from "@/components/market/market-context";
+import { useLocationCatalog } from "@/components/locations/location-store";
 import { StorefrontLocationPicker } from "@/components/storefront/storefront-location-picker";
 import { useStorefrontLocation } from "@/components/storefront/storefront-location-context";
 import { browsingLocationLabel } from "@/components/storefront/storefront-location-utils";
-import { listLocationCountries } from "@/lib/location-api";
 import {
   cartTotals,
   getCart,
@@ -82,11 +82,8 @@ export function StorefrontHeader() {
     queryFn: () => listCmsMenus("header"),
     retry: false,
   });
-  const countriesQuery = useQuery({
-    queryKey: ["locations", "countries"],
-    queryFn: listLocationCountries,
-  });
-  const countries = countriesQuery.data ?? [];
+  const locationCatalog = useLocationCatalog({ countryCode: market.countryCode });
+  const countries = locationCatalog.countries;
   const marketCountries = countries.some((country) => country.code === market.countryCode)
     ? countries
     : [
@@ -277,7 +274,7 @@ export function StorefrontHeader() {
           <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden" aria-label="Storefront quick links">
             <NavPill
               href="/stores"
-              label="Local Shops"
+              label="Hyperlocal Stores"
               active={isActivePath(pathname, "/stores")}
               icon={<Store className="h-4 w-4" />}
             />

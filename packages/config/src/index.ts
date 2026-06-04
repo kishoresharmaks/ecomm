@@ -3,7 +3,7 @@ import { z } from "zod";
 export const brandConfig = {
   name: "1HandIndia",
   shortName: "1HI",
-  tagline: "Trusted marketplace for customers, sellers, nearby stores, and B2B buyers.",
+  tagline: "Trusted marketplace for customers, sellers, hyperlocal stores, and B2B buyers.",
   colors: {
     primary: "#ED3500",
     primaryHover: "#C72D00",

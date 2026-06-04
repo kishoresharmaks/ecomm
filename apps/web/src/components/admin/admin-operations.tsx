@@ -69,6 +69,7 @@ import {
 import { CheckoutFeeSettings } from "@/components/admin/settings/checkout-fee-settings";
 import { SellerPayoutSettings } from "@/components/admin/settings/seller-payout-settings";
 import { readBooleanSettingValue } from "@/components/admin/settings/setting-value-utils";
+import { useLocationAreaStore, useLocationCatalog } from "@/components/locations/location-store";
 import { formatLocalAreaLabel } from "@/components/locations/location-utils";
 import { SellerImageUpload } from "@/components/seller/seller-ui";
 import { IndihubApiError, indihubFetch, type IndihubAuthHeaders } from "@/lib/api";
@@ -78,10 +79,6 @@ import {
   type LocationCity,
   type LocationCountry,
   type LocationSubdivision,
-  listLocationAreas,
-  listLocationCities,
-  listLocationCountries,
-  listLocationStates,
 } from "@/lib/location-api";
 
 const contentWorkflowStatusValues = ["DRAFT", "IN_REVIEW", "SCHEDULED", "PUBLISHED", "ARCHIVED"];
@@ -267,6 +264,7 @@ type OrderRecord = {
     seller?: SellerRecord | null;
     subtotalPaise: number;
     shippingPaise: number;
+    codSurchargePaise?: number | null;
     deliveryMode: string;
     status: string;
     assignmentStatus?: string | null;
@@ -275,6 +273,15 @@ type OrderRecord = {
     deliveryPartnerUserId?: string | null;
     trackingReference?: string | null;
     courierProviderCode?: string | null;
+    routingFailed?: boolean | null;
+    routingFailureReason?: string | null;
+    routingFailureNote?: string | null;
+    routedAt?: string | null;
+    routingFirstFailedAt?: string | null;
+    routingLastAttemptAt?: string | null;
+    routingRetryCount?: number | null;
+    routingPermanentFailureAt?: string | null;
+    routingSnapshot?: unknown;
     awbNumber?: string | null;
     courierTrackingStatus?: string | null;
     labelUrl?: string | null;
@@ -522,6 +529,16 @@ type RoutingSimulatorResult = {
   routingFailureNote?: string | null;
   fallbackReason?: string | null;
   warnings: string[];
+  shipmentQuotes?: Array<{
+    sellerId: string;
+    sellerType: string;
+    subtotalPaise: number;
+    deliveryMode: string;
+    totalDeliveryChargePaise: number;
+    routingFailed: boolean;
+    routingFailureNote?: string | null;
+  }>;
+  shipmentShippingTotalPaise?: number;
 };
 
 type BusinessBuyerRecord = {
@@ -1084,6 +1101,7 @@ const roleCodes = [
   "SUPPORT_STAFF",
   "DELIVERY_PARTNER",
   "FINANCE",
+  "COURIER_MANAGER",
 ] as const;
 type PlatformRoleCode = (typeof roleCodes)[number];
 type UserRoleFilter = "ALL" | PlatformRoleCode;
@@ -1125,6 +1143,11 @@ const deliveryModeOptions: AdminSelectOption[] = [
     label: "Courier service",
     description: "External courier services configured from Courier integrations.",
   },
+  {
+    value: "MANUAL_TRANSPORT",
+    label: "Manual transport",
+    description: "Offline transport coordination for bulky or wholesale packages.",
+  },
 ];
 const shippingRateModeOptions: AdminSelectOption[] = [
   {
@@ -1136,6 +1159,11 @@ const shippingRateModeOptions: AdminSelectOption[] = [
     value: "THIRD_PARTY_COURIER",
     label: "Third-party courier",
     description: "Used when checkout falls back to an admin-configured courier provider.",
+  },
+  {
+    value: "MANUAL_TRANSPORT",
+    label: "Manual transport",
+    description: "Optional pricing rule for offline bulky or wholesale transport.",
   },
 ];
 const courierProviderModeOptions: AdminSelectOption[] = [
@@ -3304,6 +3332,7 @@ export function AdminOrderDetailPageClient({ orderNumber }: { orderNumber: strin
                       (provider) => provider.providerCode === selectedProviderCode,
                     );
                     const isCourierPackage = shipment.deliveryMode === "THIRD_PARTY_COURIER";
+                    const isManualTransportPackage = shipment.deliveryMode === "MANUAL_TRANSPORT";
                     const remittance = shipment.courierCodRemittance;
                     const canVerifyRemittance = remittance?.status === "REMITTED";
 
@@ -3342,6 +3371,12 @@ export function AdminOrderDetailPageClient({ orderNumber }: { orderNumber: strin
                                     "NOT_BOOKED",
                                 )}
                               </StatusBadge>
+                            ) : null}
+                            {isManualTransportPackage ? (
+                              <StatusBadge tone="warning">Manual transport</StatusBadge>
+                            ) : null}
+                            {shipment.routingFailed ? (
+                              <StatusBadge tone="danger">Routing failed</StatusBadge>
                             ) : null}
                           </div>
                         </div>
@@ -4668,14 +4703,11 @@ function CourierProviderSettingsPanel({ authHeaders }: { authHeaders: IndihubAut
     queryFn: () =>
       indihubFetch<CourierProviderResponse>("/api/admin/courier-providers", undefined, authHeaders),
   });
-  const countriesQuery = useQuery({
-    queryKey: ["locations", "countries"],
-    queryFn: listLocationCountries,
-  });
+  const locationCatalog = useLocationCatalog({ countryCode: "" });
   const providers = providersQuery.data?.items ?? [];
   const selectedProvider =
     providers.find((provider) => provider.providerCode === selectedProviderCode) ?? null;
-  const countryChoices = countrySelectChoices(countriesQuery.data ?? [], form.serviceableCountries);
+  const countryChoices = countrySelectChoices(locationCatalog.countries, form.serviceableCountries);
   const saveProvider = useMutation({
     mutationFn: () =>
       adminRequest<CourierProviderRecord>("/api/admin/courier-providers", authHeaders, {
@@ -9881,7 +9913,7 @@ function BackOfficePasswordControl({
   disabled?: boolean | undefined;
 }) {
   const roles = userRoleCodes(user);
-  const backOfficeUser = roles.includes("ADMIN") || roles.includes("FINANCE");
+  const backOfficeUser = roles.includes("ADMIN") || roles.includes("FINANCE") || roles.includes("COURIER_MANAGER");
   const [password, setPassword] = useState("");
 
   if (!backOfficeUser) {
@@ -9917,7 +9949,7 @@ function BackOfficePasswordControl({
         Save password
       </Button>
       <p className="mt-2 text-xs font-semibold text-[#667085]">
-        Required for standalone Admin or Finance workspace sign in.
+        Required for standalone Admin, Finance, or Courier workspace sign in.
       </p>
     </div>
   );
@@ -10344,6 +10376,8 @@ function roleIcon(roleCode: PlatformRoleCode) {
       return <ClipboardList className={className} />;
     case "FINANCE":
       return <Landmark className={className} />;
+    case "COURIER_MANAGER":
+      return <Truck className={className} />;
   }
 }
 
@@ -10362,6 +10396,9 @@ function roleChipClass(roleCode: PlatformRoleCode) {
   }
   if (roleCode === "FINANCE") {
     return "border-[#F8DCA6] bg-[#FFF7E6] text-[#B7791F]";
+  }
+  if (roleCode === "COURIER_MANAGER") {
+    return "border-[#BFEAD9] bg-[#E9F7F1] text-[#0F8A5F]";
   }
   return "border-[#E5E7EB] bg-[#F8FAFC] text-[#475467]";
 }
@@ -15059,45 +15096,35 @@ function AdminLocationSelector({
   onChange: (value: AdminLocationValue) => void;
   allowAnyCountry?: boolean;
 }) {
-  const countriesQuery = useQuery({
-    queryKey: ["locations", "countries"],
-    queryFn: listLocationCountries,
+  const locationCatalog = useLocationCatalog({
+    countryCode: value.countryCode,
+    stateCode: value.stateCode,
   });
-  const statesQuery = useQuery({
-    queryKey: ["locations", "states", value.countryCode],
-    enabled: Boolean(value.countryCode),
-    queryFn: () => listLocationStates(value.countryCode),
-  });
-  const citiesQuery = useQuery({
-    queryKey: ["locations", "cities", value.stateCode],
-    enabled: Boolean(value.stateCode),
-    queryFn: () => listLocationCities(value.stateCode),
-  });
-  const cityAreasQuery = useQuery({
-    queryKey: ["locations", "areas", "city", value.cityCode],
+  const cityAreasStore = useLocationAreaStore({
+    countryCode: value.countryCode,
+    stateCode: value.stateCode,
+    cityCode: value.cityCode,
+    limit: 100,
     enabled: Boolean(value.cityCode),
-    queryFn: () => listLocationAreas({ cityCode: value.cityCode, limit: 100 }),
   });
-  const pincodeAreasQuery = useQuery({
-    queryKey: ["locations", "areas", "pincode", value.cityCode, value.pincode],
+  const pincodeAreasStore = useLocationAreaStore({
+    countryCode: value.countryCode,
+    stateCode: value.stateCode,
+    cityCode: value.cityCode,
+    postalCode: value.pincode,
+    limit: 100,
     enabled: Boolean(value.pincode),
-    queryFn: () =>
-      listLocationAreas({
-        ...(value.cityCode ? { cityCode: value.cityCode } : {}),
-        postalCode: value.pincode,
-        limit: 100,
-      }),
   });
   const pincodeListId = useId();
   const countries = withFallbackOption(
-    (countriesQuery.data ?? []).map(countryToOption),
+    locationCatalog.countries.map(countryToOption),
     value.countryCode,
   );
-  const states = withFallbackOption((statesQuery.data ?? []).map(stateToOption), value.stateCode);
-  const cities = withFallbackOption((citiesQuery.data ?? []).map(cityToOption), value.cityCode);
-  const cityAreas = cityAreasQuery.data ?? [];
+  const states = withFallbackOption(locationCatalog.states.map(stateToOption), value.stateCode);
+  const cities = withFallbackOption(locationCatalog.cities.map(cityToOption), value.cityCode);
+  const cityAreas = cityAreasStore.areas;
   const pincodeOptions = withFallbackOption(uniquePincodeOptions(cityAreas), value.pincode);
-  const areaSource = value.pincode ? (pincodeAreasQuery.data ?? []) : cityAreas;
+  const areaSource = value.pincode ? pincodeAreasStore.areas : cityAreas;
   const areaOptions = withFallbackOption(areaSource.map(areaToOption), value.localAreaCode);
   const selectClassName =
     "h-11 rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-semibold outline-none focus:border-[#ED3500] disabled:bg-[#F8FAFC]";
@@ -15204,8 +15231,14 @@ function AdminLocationSelector({
           value={value.localAreaCode}
           onChange={(event) => {
             const localAreaCode = event.currentTarget.value;
-            const selectedArea = areaOptions.find((area) => area.code === localAreaCode);
+            const selectedArea = areaSource.find((area) => area.code === localAreaCode);
+            const selectedCity = selectedArea?.city;
+            const selectedSubdivision = selectedCity?.subdivision;
+            const selectedCountry = selectedSubdivision?.country;
             update({
+              countryCode: selectedCountry?.code ?? value.countryCode,
+              stateCode: selectedSubdivision?.code ?? value.stateCode,
+              cityCode: selectedCity?.code ?? value.cityCode,
               localAreaCode,
               pincode: selectedArea?.postalCode || value.pincode,
             });

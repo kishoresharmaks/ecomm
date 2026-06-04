@@ -170,7 +170,7 @@ After the initial scaffold, the next locked build step was started and completed
 - Added admin seller approval page:
   - `/admin/sellers/approvals`
 
-The admin endpoints are protected by database-backed role checks. The public seller registration endpoint creates a pending seller/vendor/local-shop record for admin approval.
+The admin endpoints are protected by database-backed role checks. The public seller registration endpoint creates a pending seller operational record for admin approval.
 
 ## 10. Next Implementation Step
 

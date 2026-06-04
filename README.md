@@ -1,6 +1,6 @@
 # 1HandIndia Multi-Vendor Ecommerce Marketplace
 
-1HandIndia is planned as a large multi-vendor ecommerce marketplace with B2C shopping, B2B business buying, nearby-store/vendor selling, admin control, mobile apps, logistics, payouts, analytics, and advanced marketplace features.
+1HandIndia is planned as a large multi-vendor ecommerce marketplace with B2C shopping, B2B business buying, marketplace seller, hyperlocal store, and wholesale distributor selling, admin control, mobile apps, logistics, payouts, analytics, and advanced marketplace features.
 
 The target quality is a professional marketplace portal similar in seriousness and operational depth to large ecommerce platforms such as Flipkart, without copying any brand identity, UI, content, or proprietary behavior.
 
@@ -38,7 +38,7 @@ The target quality is a professional marketplace portal similar in seriousness a
 - Multi-vendor ecommerce website.
 - B2C customer shopping.
 - Basic B2B enquiry and quotation request workflow.
-- Vendor, seller, and nearby-store selling.
+- Marketplace seller, hyperlocal store, and wholesale distributor selling.
 - Admin panel.
 - Products, categories, cart, checkout, and orders.
 - Seller dashboard and product management.

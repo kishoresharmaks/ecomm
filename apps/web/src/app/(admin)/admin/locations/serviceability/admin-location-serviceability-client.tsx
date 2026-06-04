@@ -1,8 +1,8 @@
 "use client";
 
 import type { FormEvent, ReactNode } from "react";
-import { useMemo, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useMutation } from "@tanstack/react-query";
 import { CreditCard, MapPinned, Search, Store, Truck } from "lucide-react";
 import { Button, StatusBadge, cn, type StatusTone } from "@indihub/ui";
 import { useAdminAuth } from "@/components/admin/admin-auth-context";
@@ -12,13 +12,10 @@ import {
   serviceabilityTone,
   type AdminLocationServiceabilityPaymentMethod
 } from "@/components/admin/admin-location-serviceability-utils";
-import { formatLocalAreaLabel, normalizeLocalAreaSearchValue } from "@/components/locations/location-utils";
+import { useLocationAreaStore, useLocationCatalog } from "@/components/locations/location-store";
+import { formatLocalAreaLabel } from "@/components/locations/location-utils";
 import { IndihubApiError, indihubFetch } from "@/lib/api";
 import {
-  listLocationAreas,
-  listLocationCities,
-  listLocationCountries,
-  listLocationStates,
   type AdminLocationServiceabilitySummary,
   type LocationArea
 } from "@/lib/location-api";
@@ -52,26 +49,16 @@ export function AdminLocationServiceabilityClient() {
     paymentMethod: "COD"
   });
   const [areaSearch, setAreaSearch] = useState("");
-  const areaLookupSearch = useMemo(() => normalizeLocalAreaSearchValue(areaSearch), [areaSearch]);
-
-  const countriesQuery = useQuery({
-    queryKey: ["locations", "countries"],
-    queryFn: listLocationCountries
+  const locationCatalog = useLocationCatalog({
+    countryCode: form.countryCode,
+    stateCode: form.stateCode
   });
-  const statesQuery = useQuery({
-    queryKey: ["locations", "states", form.countryCode],
-    enabled: Boolean(form.countryCode),
-    queryFn: () => listLocationStates(form.countryCode)
-  });
-  const citiesQuery = useQuery({
-    queryKey: ["locations", "cities", form.stateCode],
-    enabled: Boolean(form.stateCode),
-    queryFn: () => listLocationCities(form.stateCode)
-  });
-  const areasQuery = useQuery({
-    queryKey: ["locations", "areas", form.cityCode, areaLookupSearch],
-    enabled: Boolean(form.cityCode),
-    queryFn: () => listLocationAreas({ cityCode: form.cityCode, search: areaLookupSearch, limit: 25 })
+  const areasStore = useLocationAreaStore({
+    countryCode: form.countryCode,
+    stateCode: form.stateCode,
+    cityCode: form.cityCode,
+    search: areaSearch,
+    limit: 25
   });
 
   const summaryMutation = useMutation({
@@ -101,7 +88,14 @@ export function AdminLocationServiceabilityClient() {
   }
 
   function selectArea(area: LocationArea) {
+    const selectedCity = area.city;
+    const selectedSubdivision = selectedCity?.subdivision;
+    const selectedCountry = selectedSubdivision?.country;
+
     updateForm({
+      countryCode: selectedCountry?.code ?? form.countryCode,
+      stateCode: selectedSubdivision?.code ?? form.stateCode,
+      cityCode: selectedCity?.code ?? form.cityCode,
       localAreaCode: area.code,
       pincode: area.postalCode ?? form.pincode
     });
@@ -127,8 +121,8 @@ export function AdminLocationServiceabilityClient() {
           <SelectControl
             label="Country"
             value={form.countryCode}
-            disabled={countriesQuery.isLoading}
-            options={(countriesQuery.data ?? []).map((country) => ({ value: country.code, label: country.name }))}
+            disabled={locationCatalog.countriesQuery.isLoading}
+            options={locationCatalog.countries.map((country) => ({ value: country.code, label: country.name }))}
             onChange={(value) => {
               updateForm({ countryCode: value, stateCode: "", cityCode: "", localAreaCode: "", pincode: "" });
               setAreaSearch("");
@@ -137,8 +131,8 @@ export function AdminLocationServiceabilityClient() {
           <SelectControl
             label="State / UT"
             value={form.stateCode}
-            disabled={!form.countryCode || statesQuery.isLoading}
-            options={(statesQuery.data ?? []).map((state) => ({ value: state.code, label: state.name }))}
+            disabled={!form.countryCode || locationCatalog.statesQuery.isLoading}
+            options={locationCatalog.states.map((state) => ({ value: state.code, label: state.name }))}
             onChange={(value) => {
               updateForm({ stateCode: value, cityCode: "", localAreaCode: "", pincode: "" });
               setAreaSearch("");
@@ -147,8 +141,8 @@ export function AdminLocationServiceabilityClient() {
           <SelectControl
             label="City / district"
             value={form.cityCode}
-            disabled={!form.stateCode || citiesQuery.isLoading}
-            options={(citiesQuery.data ?? []).map((city) => ({ value: city.code, label: city.name }))}
+            disabled={!form.stateCode || locationCatalog.citiesQuery.isLoading}
+            options={locationCatalog.cities.map((city) => ({ value: city.code, label: city.name }))}
             onChange={(value) => {
               updateForm({ cityCode: value, localAreaCode: "", pincode: "" });
               setAreaSearch("");
@@ -163,15 +157,15 @@ export function AdminLocationServiceabilityClient() {
                 setAreaSearch(event.target.value);
                 updateForm({ localAreaCode: "" });
               }}
-              disabled={!form.cityCode}
+              disabled={!form.countryCode}
               placeholder="Search local area or pincode"
               className="mt-2 h-11 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 text-sm font-semibold text-[#1F2933] outline-none transition focus:border-[#ED3500] focus:bg-white"
             />
           </label>
-          {form.cityCode && areaSearch.trim() ? (
+          {form.countryCode && areaSearch.trim() ? (
             <div className="max-h-44 overflow-auto rounded-md border border-[#E5E7EB] bg-[#FCFDFE]">
-              {(areasQuery.data ?? []).length ? (
-                (areasQuery.data ?? []).map((area) => (
+              {areasStore.areas.length ? (
+                areasStore.areas.map((area) => (
                   <button
                     key={area.code}
                     type="button"
@@ -186,7 +180,7 @@ export function AdminLocationServiceabilityClient() {
                 ))
               ) : (
                 <p className="px-3 py-2 text-sm font-semibold text-[#667085]">
-                  {areasQuery.isLoading ? "Searching..." : "No matching local areas"}
+                  {areasStore.isLoading ? "Searching..." : "No matching local areas"}
                 </p>
               )}
             </div>

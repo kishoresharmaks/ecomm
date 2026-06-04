@@ -50,4 +50,10 @@ export class AdminDeliveryController {
   ) {
     return this.ordersService.updateAdminDeliveryAssignment(actor, orderNumber, dto);
   }
+
+  @Post("routing-failures/retry-due")
+  @ApiOperation({ summary: "Retry due shipment delivery routing failures and mark expired failures permanent." })
+  retryDueRoutingFailures(@CurrentUser() actor: RequestUser) {
+    return this.ordersService.retryDueRoutingFailures(actor);
+  }
 }

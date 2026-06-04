@@ -50,7 +50,7 @@ export class AdminUsersController {
   }
 
   @Put(":userId/backoffice-password")
-  @ApiOperation({ summary: "Set a standalone back-office password for admin or finance users." })
+  @ApiOperation({ summary: "Set a standalone back-office password for admin, finance, or courier users." })
   setBackOfficePassword(
     @CurrentUser() actor: RequestUser,
     @Param("userId") userId: string,

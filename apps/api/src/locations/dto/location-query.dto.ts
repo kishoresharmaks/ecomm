@@ -20,6 +20,12 @@ export class LocationSubdivisionQueryDto {
 }
 
 export class LocationCityQueryDto {
+  @ApiPropertyOptional({ example: "IN" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2)
+  countryCode?: string;
+
   @ApiPropertyOptional({ example: "IN-TN" })
   @IsOptional()
   @IsString()
@@ -28,6 +34,18 @@ export class LocationCityQueryDto {
 }
 
 export class LocationAreaQueryDto {
+  @ApiPropertyOptional({ example: "IN" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2)
+  countryCode?: string;
+
+  @ApiPropertyOptional({ example: "IN-TN" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  stateCode?: string;
+
   @ApiPropertyOptional({ example: "IN-TN-CBE" })
   @IsOptional()
   @IsString()

@@ -62,21 +62,30 @@ export class LocationsService {
   }
 
   listCities(query: LocationCityQueryDto) {
+    const countryCode = this.clean(query.countryCode)?.toUpperCase();
+    const stateCode = this.clean(query.stateCode)?.toUpperCase();
+
     return this.prisma.client.locationCity.findMany({
       where: {
         active: true,
-        ...(query.stateCode
+        ...(stateCode
           ? {
               subdivision: {
-                code: query.stateCode.trim().toUpperCase(),
+                code: stateCode,
                 active: true,
-                country: { enabled: true }
+                country: {
+                  ...(countryCode ? { code: countryCode } : {}),
+                  enabled: true
+                }
               }
             }
           : {
               subdivision: {
                 active: true,
-                country: { enabled: true }
+                country: {
+                  ...(countryCode ? { code: countryCode } : {}),
+                  enabled: true
+                }
               }
             })
       },
@@ -93,29 +102,30 @@ export class LocationsService {
     const search = this.clean(query.search);
     const searchTerms = normalizeLocationAreaSearchTerms(search);
     const limit = this.limitFromQuery(query.limit);
+    const countryCode = this.clean(query.countryCode)?.toUpperCase();
+    const stateCode = this.clean(query.stateCode)?.toUpperCase();
+    const cityCode = this.clean(query.cityCode)?.toUpperCase();
 
     return this.prisma.client.locationArea.findMany({
       where: {
         active: true,
-        ...(query.cityCode
-          ? {
-              city: {
-                code: query.cityCode.trim().toUpperCase(),
-                active: true,
-                subdivision: { active: true, country: { enabled: true } }
-              }
+        city: {
+          ...(cityCode ? { code: cityCode } : {}),
+          active: true,
+          subdivision: {
+            ...(stateCode ? { code: stateCode } : {}),
+            active: true,
+            country: {
+              ...(countryCode ? { code: countryCode } : {}),
+              enabled: true
             }
-          : {
-              city: {
-                active: true,
-                subdivision: { active: true, country: { enabled: true } }
-              }
-            }),
+          }
+        },
         ...(query.postalCode ? { postalCode: query.postalCode.trim() } : {}),
         ...(searchTerms.length
           ? {
               OR: searchTerms.flatMap((term) => [
-                { name: { contains: term } },
+                { name: { contains: term, mode: "insensitive" } },
                 { postalCode: { contains: term } },
                 { code: { contains: term.toUpperCase() } }
               ])

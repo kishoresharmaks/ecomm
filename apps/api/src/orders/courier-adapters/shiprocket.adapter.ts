@@ -3,6 +3,8 @@ import type {
   CourierAdapter,
   CourierBookingRequest,
   CourierBookingResult,
+  CourierPickupSyncRequest,
+  CourierPickupSyncResult,
 } from "./courier-adapter.types";
 
 type ShiprocketJson = Record<string, unknown>;
@@ -13,6 +15,7 @@ const defaultBookingEndpoint = "/v1/external/orders/create/adhoc";
 const defaultServiceabilityEndpoint = "/v1/external/courier/serviceability";
 const defaultAwbEndpoint = "/v1/external/courier/assign/awb";
 const defaultLabelEndpoint = "/v1/external/courier/generate/label";
+const defaultPickupEndpoint = "/v1/external/settings/company/addpickup";
 
 export class ShiprocketCourierAdapter implements CourierAdapter {
   readonly code = "SHIPROCKET";
@@ -116,6 +119,53 @@ export class ShiprocketCourierAdapter implements CourierAdapter {
     };
   }
 
+  async syncPickupLocation(
+    request: CourierPickupSyncRequest,
+  ): Promise<CourierPickupSyncResult> {
+    const baseUrl = normalizeBaseUrl(request.settings.apiBaseUrl ?? defaultBaseUrl);
+    const email = request.settings.username?.trim();
+    const password = request.settings.credentials?.password?.trim();
+    if (!email || !password) {
+      throw new Error("Shiprocket pickup sync needs API username/email and password.");
+    }
+
+    const token = await this.authenticate(baseUrl, email, password);
+    const pickupPayload = this.createPickupPayload(request);
+    const pickupLocationName = String(pickupPayload.pickup_location);
+
+    try {
+      const pickupResponse = await postJson(
+        urlFor(baseUrl, defaultPickupEndpoint),
+        pickupPayload,
+        token,
+      );
+      const providerPickupId =
+        readText(pickupResponse, ["pickup_id"]) ??
+        readText(pickupResponse, ["address", "id"]) ??
+        readText(pickupResponse, ["data", "id"]);
+
+      return {
+        pickupLocationName,
+        providerPickupId,
+        statusLabel: "Shiprocket pickup location synced.",
+        pickupPayloadSnapshot: pickupPayload,
+        pickupResponseSnapshot: pickupResponse,
+      };
+    } catch (error) {
+      if (isDuplicatePickupError(error)) {
+        return {
+          pickupLocationName,
+          providerPickupId: null,
+          statusLabel: "Shiprocket pickup location already exists.",
+          pickupPayloadSnapshot: pickupPayload,
+          pickupResponseSnapshot: { duplicate: true, message: errorMessage(error) },
+        };
+      }
+
+      throw error;
+    }
+  }
+
   private async authenticate(baseUrl: string, email: string, password: string) {
     const response = await postJson(urlFor(baseUrl, authEndpoint), { email, password });
     const token = readText(response, ["token"]) ?? readText(response, ["data", "token"]);
@@ -175,6 +225,27 @@ export class ShiprocketCourierAdapter implements CourierAdapter {
     }
 
     return payload;
+  }
+
+  private createPickupPayload(request: CourierPickupSyncRequest) {
+    return {
+      pickup_location: truncateText(
+        requiredText(request.pickupLocationName, "pickup location name"),
+        36,
+      ),
+      name: requiredText(request.sellerName, "seller pickup contact name"),
+      email: requiredText(request.sellerEmail, "seller pickup email"),
+      phone: normalizeShiprocketPhone(request.sellerPhone),
+      address: truncateText(
+        requiredText(request.sellerAddress.line1, "seller pickup address line 1"),
+        80,
+      ),
+      address_2: compactText([request.sellerAddress.line2, request.sellerAddress.area]),
+      city: requiredText(request.sellerAddress.city, "seller pickup city"),
+      state: requiredText(request.sellerAddress.state, "seller pickup state"),
+      country: request.sellerAddress.country ?? "India",
+      pin_code: requiredText(request.sellerAddress.pincode, "seller pickup pincode"),
+    } satisfies ShiprocketJson;
   }
 }
 
@@ -278,7 +349,7 @@ function objectAt(value: unknown, path: string[]) {
 function requiredText(value: string | null | undefined, label: string) {
   const trimmed = value?.trim();
   if (!trimmed) {
-    throw new Error(`Shiprocket booking needs ${label}.`);
+    throw new Error(`Shiprocket request needs ${label}.`);
   }
 
   return trimmed;
@@ -309,6 +380,20 @@ function numericOrText(value: string) {
   return Number.isFinite(parsed) && value.trim() !== "" ? parsed : value;
 }
 
+function truncateText(value: string, maxLength: number) {
+  return value.length > maxLength ? value.slice(0, maxLength).trim() : value;
+}
+
+function normalizeShiprocketPhone(value: string) {
+  const digits = value.replace(/\D/g, "");
+  const normalized = digits.length > 10 && digits.startsWith("91") ? digits.slice(-10) : digits;
+  if (normalized.length < 10) {
+    throw new Error("Shiprocket request needs a 10 digit seller pickup phone.");
+  }
+
+  return normalized;
+}
+
 function safeBodyMessage(body: unknown) {
   if (!body || typeof body !== "object") {
     return String(body ?? "empty response");
@@ -319,4 +404,13 @@ function safeBodyMessage(body: unknown) {
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Unknown error";
+}
+
+function isDuplicatePickupError(error: unknown) {
+  const message = errorMessage(error).toLowerCase();
+  return (
+    message.includes("already") ||
+    message.includes("duplicate") ||
+    message.includes("exists")
+  );
 }

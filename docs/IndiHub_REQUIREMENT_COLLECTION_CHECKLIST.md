@@ -50,9 +50,11 @@ Use this checklist before development starts. It prevents missing business detai
 - Tax percentage per product or category.
 - Return eligibility per product or category.
 
-## 4. Vendor / Seller Details
+## 4. Seller Details
 
 - Initial seller list.
+- Seller operational type: marketplace seller, hyperlocal store, or wholesale distributor.
+- Legal business entity type: individual, proprietorship, partnership, LLP, private limited, public limited, or other.
 - Seller business names.
 - Seller contact details.
 - Seller address.

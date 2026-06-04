@@ -16,7 +16,7 @@ It follows the frozen Phase 1 scope:
 
 - Customer storefront.
 - Customer account.
-- Seller/vendor/local shop dashboard.
+- Seller dashboard for marketplace sellers, hyperlocal stores, and wholesale distributors.
 - Basic B2B enquiry flow.
 - Admin control panel.
 - Cart, checkout, and order flow.
@@ -34,7 +34,7 @@ Native mobile apps, delivery partner mobile app, live courier API, GPS/OTP/proof
 |---|---|---|
 | Public storefront | Guest and customer | Browse products, stores, categories, and policies. |
 | Customer account | Customer / B2C buyer | Manage profile, addresses, wishlist, orders, and support/contact requests. |
-| Seller center | Seller / Vendor / Nearby Store / Local Shop | Manage store profile, products, stock, orders, and B2B enquiries. |
+| Seller center | Marketplace Seller / Hyperlocal Store / Wholesale Distributor | Manage store profile, products, stock, orders, and B2B enquiries. |
 | B2B buyer portal | Business buyer | Register company, submit product enquiries, and view enquiry status. |
 | Delivery partner workspace | Delivery partner | View assigned delivery orders and update manual delivery progress. |
 | Admin panel | Admin team | Manage users, sellers, products, orders, content, reports, settings, and audit records. |
@@ -75,14 +75,14 @@ Native mobile apps, delivery partner mobile app, live courier API, GPS/OTP/proof
 | 8 | Order Detail | `/account/orders/[orderNumber]` | Must | Order items, seller split, delivery details, status timeline. |
 | 9 | Support / Contact Requests | `/account/support` | Should | Customer submitted contact/support requests. |
 
-## 5. Seller / Vendor / Nearby Store Screens
+## 5. Seller Operational Screens
 
-Nearby stores and local shops use the same seller/vendor flow in Phase 1.
+Marketplace sellers, hyperlocal stores, and wholesale distributors use the same seller center in Phase 1, while the operational type remains available for delivery, commission, SLA, and discovery rules.
 
 | # | Screen | Suggested Route | Priority | Purpose |
 |---|---|---|---|---|
-| 1 | Seller Sign In | `/seller/sign-in` | Must | Seller/vendor login. |
-| 2 | Seller Registration | `/seller/register` | Must | Seller, vendor, nearby store, or local shop registration. |
+| 1 | Seller Sign In | `/seller/sign-in` | Must | Seller login. |
+| 2 | Seller Registration | `/seller/register` | Must | Seller registration with operational type and separate legal business entity type. |
 | 3 | Seller Pending Approval | `/seller/pending-approval` | Must | Message shown until admin approves seller. |
 | 4 | Seller Dashboard | `/seller` | Must | Sales summary, product count, order count, enquiry count. |
 | 5 | Store Profile | `/seller/store-profile` | Must | Store name, logo, banner, address, city, area, contact, business details. |
@@ -127,7 +127,7 @@ Phase 1 supports basic enquiry and request quotation flow only.
 | 2 | Admin Dashboard | `/admin` | Must | Orders, sellers, products, enquiries, sales summary. |
 | 3 | Customers | `/admin/customers` | Must | View and manage customer records. |
 | 4 | Customer Detail | `/admin/customers/[id]` | Should | Profile, addresses, order history. |
-| 5 | Sellers / Vendors | `/admin/sellers` | Must | Seller list, approval status, suspension status. |
+| 5 | Sellers | `/admin/sellers` | Must | Seller list, approval status, suspension status. |
 | 6 | Seller Detail | `/admin/sellers/[id]` | Must | Store profile, documents, products, orders, actions. |
 | 7 | Seller Approval Queue | `/admin/sellers/approvals` | Must | Approve/reject pending seller registrations. |
 | 8 | Business Buyers | `/admin/business-buyers` | Must | B2B buyer list and company details. |
@@ -229,11 +229,11 @@ Future roles:
 | `wishlists` | Saved product container | `id`, `customer_id` |
 | `wishlist_items` | Saved products | `id`, `wishlist_id`, `product_id`, `created_at` |
 
-### 11.3 Seller / Vendor / Nearby Store
+### 11.3 Seller Operational Model
 
 | Table | Purpose | Important Fields |
 |---|---|---|
-| `sellers` | Seller/vendor/local shop profile | `id`, `user_id`, `seller_type`, `store_name`, `slug`, `status`, `approval_status`, `commission_type`, `commission_value` |
+| `sellers` | Seller operational profile | `id`, `user_id`, `seller_type`, `store_name`, `slug`, `status`, `approval_status`, `commission_type`, `commission_value` |
 | `seller_profiles` | Store presentation and contact details | `id`, `seller_id`, `logo_url`, `banner_url`, `description`, `contact_name`, `contact_phone`, `contact_email` |
 | `seller_addresses` | Store address and area | `id`, `seller_id`, `line1`, `line2`, `area`, `city`, `state`, `pincode`, `latitude`, `longitude` |
 | `seller_documents` | Basic seller KYC files if collected | `id`, `seller_id`, `document_type`, `file_url`, `status` |
@@ -242,9 +242,19 @@ Future roles:
 
 Seller type enum:
 
-- `VENDOR`
-- `NEARBY_STORE`
-- `LOCAL_SHOP`
+- `MARKETPLACE_SELLER`
+- `HYPERLOCAL_STORE`
+- `WHOLESALE_DISTRIBUTOR`
+
+Seller business entity type remains separate:
+
+- `INDIVIDUAL`
+- `PROPRIETORSHIP`
+- `PARTNERSHIP`
+- `LLP`
+- `PRIVATE_LIMITED`
+- `PUBLIC_LIMITED`
+- `OTHER`
 
 Seller status enum:
 
@@ -566,7 +576,7 @@ Confirm these decisions before creating Prisma schema:
 - Store money as integer paise fields.
 - Use seller-managed stock.
 - Use basic product variants from the beginning.
-- Nearby Store / Local Shop uses the seller table with `seller_type`.
+- Marketplace seller, hyperlocal store, and wholesale distributor use the seller table with `seller_type`; legal business entity type remains separate.
 - Delivery partner details are manual fields on order delivery records with optional assignment to an active delivery partner user.
 - Delivery partner is a separate web role for assigned manual delivery tasks only.
 - No automated seller payout tables are active in Phase 1.
@@ -578,7 +588,7 @@ This UI and database plan is ready when:
 
 - Every frozen Phase 1 feature maps to at least one screen.
 - Every screen has supporting database entities.
-- Seller, nearby store, and local shop are handled under one vendor model.
+- Marketplace seller, hyperlocal store, and wholesale distributor are handled under one seller operational model.
 - Delivery partner details are manual and can be assigned to a delivery partner web role.
 - Email notifications have template and log tables.
 - Future upgrade features are not required for Phase 1 launch.

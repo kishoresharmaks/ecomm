@@ -110,6 +110,47 @@ export class AdminCourierProvidersController {
   }
 }
 
+@ApiTags("Courier Providers")
+@Roles(RoleCode.ADMIN, RoleCode.COURIER_MANAGER)
+@Controller("courier/providers")
+export class CourierProvidersController {
+  constructor(
+    @Inject(DeliveryRoutingService) private readonly deliveryRouting: DeliveryRoutingService,
+  ) {}
+
+  @Get()
+  @ApiOperation({ summary: "List courier provider routing settings for courier operations." })
+  listProviders() {
+    return this.deliveryRouting.listCourierProviders();
+  }
+
+  @Post()
+  @ApiOperation({ summary: "Create or update a courier provider routing setting." })
+  upsertProvider(@CurrentUser() actor: RequestUser, @Body() dto: UpsertCourierProviderSettingDto) {
+    return this.deliveryRouting.upsertCourierProvider(actor, dto);
+  }
+
+  @Patch(":providerCode")
+  @ApiOperation({ summary: "Create or update a courier provider by provider code." })
+  patchProvider(
+    @CurrentUser() actor: RequestUser,
+    @Param("providerCode") providerCode: string,
+    @Body() dto: UpsertCourierProviderSettingDto,
+  ) {
+    return this.deliveryRouting.upsertCourierProvider(actor, { ...dto, providerCode });
+  }
+
+  @Patch(":providerCode/active")
+  @ApiOperation({ summary: "Activate or deactivate a courier provider." })
+  updateProviderActive(
+    @CurrentUser() actor: RequestUser,
+    @Param("providerCode") providerCode: string,
+    @Body() dto: UpdateCourierProviderActiveDto,
+  ) {
+    return this.deliveryRouting.updateCourierProviderActive(actor, providerCode, dto);
+  }
+}
+
 @ApiTags("Admin Routing Simulator")
 @Roles(RoleCode.ADMIN)
 @Controller("admin/routing-simulator")

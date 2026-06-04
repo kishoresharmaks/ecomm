@@ -5,6 +5,9 @@ import { type ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowRight,
+  CheckCircle2,
+  Circle,
+  CircleDot,
   CreditCard,
   FileText,
   Loader2,
@@ -25,6 +28,7 @@ import {
 } from "@/lib/seller-document-upload";
 import {
   getSellerProfile,
+  listSellerProducts,
   listSellerSubscriptionPlans,
   onboardSeller,
   type SellerBusinessType,
@@ -34,9 +38,9 @@ import {
 import { formatMoney } from "@/lib/storefront-api";
 
 const sellerTypes = [
-  { value: "VENDOR", label: "Vendor" },
-  { value: "NEARBY_STORE", label: "Nearby store" },
-  { value: "LOCAL_SHOP", label: "Local shop" },
+  { value: "MARKETPLACE_SELLER", label: "Marketplace seller" },
+  { value: "HYPERLOCAL_STORE", label: "Hyperlocal store" },
+  { value: "WHOLESALE_DISTRIBUTOR", label: "Wholesale distributor" },
 ] as const;
 
 const businessTypes: Array<{ value: SellerBusinessType; label: string }> = [
@@ -54,6 +58,16 @@ const verificationDocuments: Array<{
   label: string;
   description: string;
 }> = [
+  {
+    type: "ID_PROOF",
+    label: "ID proof",
+    description: "PAN, Aadhaar, passport, or business-authorized ID proof.",
+  },
+  {
+    type: "SIGNATURE_PROOF",
+    label: "Signature proof",
+    description: "Signed declaration, signature image, or authorization letter.",
+  },
   {
     type: "GST_CERTIFICATE",
     label: "GST certificate",
@@ -95,6 +109,12 @@ export function SellerRegistrationForm() {
     queryKey: ["seller-subscription-plans"],
     queryFn: listSellerSubscriptionPlans,
   });
+  const productsQuery = useQuery({
+    queryKey: ["seller-onboarding-products", auth.authKey],
+    queryFn: () => listSellerProducts(auth.authHeaders, { limit: 20 }),
+    enabled: auth.enabled && Boolean(sellerQuery.data),
+    retry: false,
+  });
 
   const onboardingMutation = useMutation({
     mutationFn: (payload: SellerOnboardingPayload) => onboardSeller(auth.authHeaders, payload),
@@ -116,6 +136,32 @@ export function SellerRegistrationForm() {
   const currentEmail = auth.userProfile?.email;
   const currentName = useMemo(() => auth.userProfile?.fullName ?? "", [auth.userProfile?.fullName]);
   const currentPhone = normalizeIndianPhone(auth.userProfile?.phone);
+  const existingSeller = sellerQuery.data;
+  const existingDocuments = existingSeller?.documents ?? [];
+  const selectedDocuments = documents;
+  const allDocuments = [...existingDocuments, ...selectedDocuments];
+  const idVerified = hasChecklistDocumentType(allDocuments, [
+    "ID_PROOF",
+    "PAN_CARD",
+    "GST_CERTIFICATE",
+    "BUSINESS_REGISTRATION",
+  ]);
+  const signatureVerified = hasChecklistDocumentType(allDocuments, ["SIGNATURE_PROOF"]);
+  const listingCreated = Boolean(productsQuery.data?.total);
+  const stockAdded = Boolean(
+    productsQuery.data?.items.some((product) =>
+      product.variants?.some((variant) => (variant.stockQuantity ?? 0) > 0),
+    ),
+  );
+  const onboardingStatus = {
+    emailVerified: Boolean(currentEmail),
+    idVerified,
+    signatureVerified,
+    displayNameReady: Boolean(existingSeller?.storeName?.trim()),
+    pickupAddressReady: isPickupAddressReady(existingSeller?.addresses?.[0]),
+    listingCreated,
+    stockAdded,
+  };
   const expectedMissingSeller =
     sellerQuery.error instanceof IndihubApiError && [403, 404].includes(sellerQuery.error.status);
   const plans = plansQuery.data?.items ?? [];
@@ -190,7 +236,7 @@ export function SellerRegistrationForm() {
 
   if (sellerQuery.data) {
     return (
-      <div className="grid gap-5">
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="rounded-lg border border-[#BFEAD9] bg-white p-5 shadow-sm">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="flex items-start gap-3">
@@ -230,6 +276,7 @@ export function SellerRegistrationForm() {
             </Button>
           </div>
         </div>
+        <OnboardingCompletionStatus status={onboardingStatus} />
       </div>
     );
   }
@@ -252,153 +299,296 @@ export function SellerRegistrationForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} className="grid gap-5 xl:grid-cols-[1fr_420px]">
-      <section className="rounded-lg border border-[#E5E7EB] bg-white p-5 shadow-sm">
-        <div className="flex items-start gap-3">
-          <span className="grid h-11 w-11 place-items-center rounded-md bg-[#EAF1F7] text-[#163B5C]">
-            <Store className="h-5 w-5" aria-hidden="true" />
-          </span>
-          <SectionHeading
-            title="Seller onboarding"
-            description="Create a seller profile for this account. Our operations team reviews the details before products can go live."
-          />
-        </div>
-
-        <div className="mt-5 grid gap-4 md:grid-cols-2">
-          <Field
-            label="Account email"
-            name="accountEmail"
-            type="email"
-            defaultValue={currentEmail ?? "Signed-in account"}
-            readOnly
-          />
-          <Field label="Store name" name="storeName" required placeholder="Enter your store name" />
-          <label className="space-y-2">
-            <span className="block text-sm font-bold text-[#1F2933]">Seller type</span>
-            <select
-              name="sellerType"
-              required
-              className="h-11 w-full rounded-md border border-[#E5E7EB] bg-white px-3 text-sm outline-none focus:border-[#ED3500]"
-            >
-              {sellerTypes.map((type) => (
-                <option key={type.value} value={type.value}>
-                  {type.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <Field
-            label="Business legal name"
-            name="businessLegalName"
-            placeholder="Registered business or proprietor name"
-          />
-          <label className="space-y-2">
-            <span className="block text-sm font-bold text-[#1F2933]">Business type</span>
-            <select
-              name="businessType"
-              className="h-11 w-full rounded-md border border-[#E5E7EB] bg-white px-3 text-sm outline-none focus:border-[#ED3500]"
-            >
-              <option value="">Select business type</option>
-              {businessTypes.map((type) => (
-                <option key={type.value} value={type.value}>
-                  {type.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <Field label="GST number" name="gstNumber" placeholder="33ABCDE1234F1Z5" />
-          <Field label="PAN number" name="panNumber" placeholder="ABCDE1234F" />
-          <Field
-            label="Contact name"
-            name="contactName"
-            required
-            defaultValue={currentName}
-            placeholder="Primary contact person"
-          />
-          <Field
-            label="Phone"
-            name="contactPhone"
-            required
-            defaultValue={currentPhone}
-            placeholder="+91 9876543210"
-          />
-          <label className="space-y-2 md:col-span-2">
-            <span className="block text-sm font-bold text-[#1F2933]">Business description</span>
-            <textarea
-              name="businessDescription"
-              rows={4}
-              className="w-full rounded-md border border-[#E5E7EB] bg-white px-3 py-3 text-sm outline-none focus:border-[#ED3500]"
-              placeholder="Describe your store, products, service area, and fulfilment capacity"
-            />
-          </label>
-          <div className="md:col-span-2">
-            <PlanPicker
-              plans={plans}
-              selectedPlanId={selectedPlanId}
-              defaultPlanId={defaultPlanId}
-              loading={plansQuery.isLoading}
-              error={plansQuery.error}
-              onChange={setSelectedPlanId}
+    <form onSubmit={onSubmit} className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="grid gap-5">
+        <section className="rounded-lg border border-[#E5E7EB] bg-white p-5 shadow-sm">
+          <div className="flex items-start gap-3">
+            <span className="grid h-11 w-11 place-items-center rounded-md bg-[#EAF1F7] text-[#163B5C]">
+              <ShieldCheck className="h-5 w-5" aria-hidden="true" />
+            </span>
+            <SectionHeading
+              title="Email verification"
+             />
+          </div>
+          <div className="mt-5 grid gap-4">
+            <Field
+              label="Account email"
+              name="accountEmail"
+              type="email"
+              defaultValue={currentEmail ?? "Signed-in account"}
+              readOnly
             />
           </div>
-        </div>
-      </section>
+        </section>
 
-      <section className="rounded-lg border border-[#E5E7EB] bg-white p-5 shadow-sm">
-        <div className="flex items-start gap-3">
-          <span className="grid h-10 w-10 place-items-center rounded-md bg-[#FFF0EC] text-[#ED3500]">
-            <FileText className="h-5 w-5" aria-hidden="true" />
-          </span>
-          <SectionHeading
-            title="Verification documents"
-            description="Upload optional seller proof documents. Private document storage must be configured by admin."
-          />
-        </div>
-        <div className="mt-5 grid gap-3">
-          {verificationDocuments.map((document) => (
-            <DocumentUploadField
-              key={document.type}
-              document={document}
-              value={documents.find((item) => item.documentType === document.type)}
-              authHeaders={auth.authHeaders}
-              disabled={onboardingMutation.isPending}
-              onUploaded={(uploaded) =>
-                setDocuments((current) => [
-                  ...current.filter((item) => item.documentType !== uploaded.documentType),
-                  uploaded,
-                ])
-              }
+        <section className="rounded-lg border border-[#E5E7EB] bg-white p-5 shadow-sm">
+          <div className="flex items-start gap-3">
+            <span className="grid h-10 w-10 place-items-center rounded-md bg-[#FFF0EC] text-[#ED3500]">
+              <FileText className="h-5 w-5" aria-hidden="true" />
+            </span>
+            <SectionHeading
+              title="ID and signature verification"
+              description="Upload the required proof documents before final review. Admin can approve or reject each document."
             />
+          </div>
+          <div className="mt-5 grid gap-3">
+            {verificationDocuments.map((document) => (
+              <DocumentUploadField
+                key={document.type}
+                document={document}
+                value={documents.find((item) => item.documentType === document.type)}
+                authHeaders={auth.authHeaders}
+                disabled={onboardingMutation.isPending}
+                onUploaded={(uploaded) =>
+                  setDocuments((current) => [
+                    ...current.filter((item) => item.documentType !== uploaded.documentType),
+                    uploaded,
+                  ])
+                }
+              />
+            ))}
+          </div>
+        </section>
+
+        <section className="rounded-lg border border-[#E5E7EB] bg-white p-5 shadow-sm">
+          <div className="flex items-start gap-3">
+            <span className="grid h-11 w-11 place-items-center rounded-md bg-[#EAF1F7] text-[#163B5C]">
+              <Store className="h-5 w-5" aria-hidden="true" />
+            </span>
+            <SectionHeading
+              title="Store and pickup details"
+              description="Add the display name and pickup address used for seller verification and fulfilment."
+            />
+          </div>
+
+          <div className="mt-5 grid gap-4 md:grid-cols-2">
+            <Field label="Store name" name="storeName" required placeholder="Enter your store name" />
+            <label className="space-y-2">
+              <span className="block text-sm font-bold text-[#1F2933]">Seller type</span>
+              <select
+                name="sellerType"
+                required
+                className="h-11 w-full rounded-md border border-[#E5E7EB] bg-white px-3 text-sm outline-none focus:border-[#ED3500]"
+              >
+                {sellerTypes.map((type) => (
+                  <option key={type.value} value={type.value}>
+                    {type.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Field
+              label="Business legal name"
+              name="businessLegalName"
+              placeholder="Registered business or proprietor name"
+            />
+            <label className="space-y-2">
+              <span className="block text-sm font-bold text-[#1F2933]">Business type</span>
+              <select
+                name="businessType"
+                className="h-11 w-full rounded-md border border-[#E5E7EB] bg-white px-3 text-sm outline-none focus:border-[#ED3500]"
+              >
+                <option value="">Select business type</option>
+                {businessTypes.map((type) => (
+                  <option key={type.value} value={type.value}>
+                    {type.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Field label="GST number" name="gstNumber" placeholder="33ABCDE1234F1Z5" />
+            <Field label="PAN number" name="panNumber" placeholder="ABCDE1234F" />
+            <Field
+              label="Contact name"
+              name="contactName"
+              required
+              defaultValue={currentName}
+              placeholder="Primary contact person"
+            />
+            <Field
+              label="Phone"
+              name="contactPhone"
+              required
+              defaultValue={currentPhone}
+              placeholder="+91 9876543210"
+            />
+            <label className="space-y-2 md:col-span-2">
+              <span className="block text-sm font-bold text-[#1F2933]">Business description</span>
+              <textarea
+                name="businessDescription"
+                rows={4}
+                className="w-full rounded-md border border-[#E5E7EB] bg-white px-3 py-3 text-sm outline-none focus:border-[#ED3500]"
+                placeholder="Describe your store, products, service area, and fulfilment capacity"
+              />
+            </label>
+            <div className="md:col-span-2">
+              <PlanPicker
+                plans={plans}
+                selectedPlanId={selectedPlanId}
+                defaultPlanId={defaultPlanId}
+                loading={plansQuery.isLoading}
+                error={plansQuery.error}
+                onChange={setSelectedPlanId}
+              />
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4">
+            <Field label="Address line 1" name="line1" required placeholder="Building and street" />
+            <Field label="Address line 2" name="line2" placeholder="Landmark or floor" />
+            <LocationFields
+              defaultValue={{ countryCode: "IN" }}
+              inputClassName="h-11 w-full rounded-md border border-[#E5E7EB] bg-white px-3 text-sm outline-none focus:border-[#ED3500]"
+            />
+
+            <Button type="submit" disabled={onboardingMutation.isPending}>
+              {onboardingMutation.isPending ? "Submitting..." : "Submit for review"}
+            </Button>
+
+            {state.status === "success" ? (
+              <StatusBadge tone="success">{state.message}</StatusBadge>
+            ) : null}
+            {state.status === "error" ? (
+              <StatusBadge tone="danger">{state.message}</StatusBadge>
+            ) : null}
+          </div>
+        </section>
+      </div>
+
+      <aside className="self-start xl:sticky xl:top-8">
+        <OnboardingCompletionStatus status={onboardingStatus} />
+      </aside>
+    </form>
+  );
+}
+
+type OnboardingStatusValue = {
+  emailVerified: boolean;
+  idVerified: boolean;
+  signatureVerified: boolean;
+  displayNameReady: boolean;
+  pickupAddressReady: boolean;
+  listingCreated: boolean;
+  stockAdded: boolean;
+};
+
+type OnboardingStatusItemState = "complete" | "current" | "pending";
+
+function OnboardingCompletionStatus({ status }: { status: OnboardingStatusValue }) {
+  const sections = [
+    {
+      title: "Email Verification",
+      items: [
+        { key: "email", label: "Email Verification", complete: status.emailVerified },
+      ],
+    },
+    {
+      title: "ID & Signature Verification",
+      items: [
+        { key: "id", label: "ID Verification", complete: status.idVerified },
+        { key: "signature", label: "Signature Verification", complete: status.signatureVerified },
+      ],
+    },
+    {
+      title: "Store & Pickup Details",
+      items: [
+        { key: "display", label: "Display Name", complete: status.displayNameReady },
+        { key: "pickup", label: "Pickup Address", complete: status.pickupAddressReady },
+      ],
+    },
+    {
+      title: "Listing & Stock Availability",
+      items: [
+        { key: "listing", label: "Listing Created", complete: status.listingCreated },
+        { key: "stock", label: "Stock Added", complete: status.stockAdded },
+      ],
+    },
+  ];
+  const allItems = sections.flatMap((section) => section.items);
+  const progress = Math.round(
+    (allItems.filter((item) => item.complete).length / allItems.length) * 100,
+  );
+  const firstIncompleteKey = sections
+    .flatMap((section) => section.items)
+    .find((item) => !item.complete)?.key;
+
+  return (
+    <section className="overflow-hidden rounded-lg border border-[#F59E0B] bg-[#FFF7E8] shadow-sm">
+      <div className="p-4">
+        <h2 className="text-base font-black leading-5 text-[#1F2933]">
+          Your onboarding completion status
+        </h2>
+        <div className="mt-4 flex items-center gap-3">
+          <span className="rounded-full bg-[#F5A623] px-3 py-1 text-sm font-black text-white">
+            {progress}%
+          </span>
+          <div className="h-2 flex-1 overflow-hidden rounded-full border border-[#F5A623] bg-white">
+            <div className="h-full rounded-full bg-[#F5A623]" style={{ width: `${progress}%` }} />
+          </div>
+        </div>
+      </div>
+
+      <div className="border-t border-[#F5A623]/50 bg-white px-4 py-4">
+        <div className="grid gap-5">
+          {sections.map((section) => (
+            <div key={section.title}>
+              <h3 className="text-sm font-semibold text-[#1F2933]">{section.title}</h3>
+              <div className="mt-3 grid gap-3">
+                {section.items.map((item) => (
+                  <OnboardingCompletionItem
+                    key={item.key}
+                    label={item.label}
+                    state={
+                      item.complete
+                        ? "complete"
+                        : item.key === firstIncompleteKey
+                          ? "current"
+                          : "pending"
+                    }
+                  />
+                ))}
+              </div>
+            </div>
           ))}
         </div>
-      </section>
+      </div>
+    </section>
+  );
+}
 
-      <section className="rounded-lg border border-[#E5E7EB] bg-white p-5 shadow-sm">
-        <SectionHeading
-          title="Pickup and business address"
-          description="This address is used for seller verification and order fulfilment coordination."
-        />
-        <div className="mt-5 grid gap-4">
-          <Field label="Address line 1" name="line1" required placeholder="Building and street" />
-          <Field label="Address line 2" name="line2" placeholder="Landmark or floor" />
-          <LocationFields
-            defaultValue={{ countryCode: "IN", stateCode: "IN-TN", state: "Tamil Nadu" }}
-            inputClassName="h-11 w-full rounded-md border border-[#E5E7EB] bg-white px-3 text-sm outline-none focus:border-[#ED3500]"
-          />
+function OnboardingCompletionItem({
+  label,
+  state,
+}: {
+  label: string;
+  state: OnboardingStatusItemState;
+}) {
+  const complete = state === "complete";
+  const current = state === "current";
 
-          <Button type="submit" disabled={onboardingMutation.isPending}>
-            {onboardingMutation.isPending ? "Submitting..." : "Submit for review"}
-          </Button>
-
-          {state.status === "success" ? (
-            <StatusBadge tone="success">{state.message}</StatusBadge>
-          ) : null}
-          {state.status === "error" ? (
-            <StatusBadge tone="danger">{state.message}</StatusBadge>
-          ) : null}
-        </div>
-      </section>
-    </form>
+  return (
+    <div className="flex items-center gap-3 text-sm">
+      <span
+        className={
+          complete
+            ? "text-[#32B877]"
+            : current
+              ? "text-[#F5A623]"
+              : "text-[#F5A623]"
+        }
+      >
+        {complete ? (
+          <CheckCircle2 className="h-4 w-4" aria-label="Completed" />
+        ) : current ? (
+          <CircleDot className="h-4 w-4" aria-label="Current" />
+        ) : (
+          <Circle className="h-4 w-4" aria-label="Pending" />
+        )}
+      </span>
+      <span className={complete ? "font-semibold text-[#111827]" : "font-semibold text-[#667085]"}>
+        {label}
+      </span>
+    </div>
   );
 }
 
@@ -665,6 +855,32 @@ function formValue(form: FormData, name: string) {
 function optionalFormValue(form: FormData, name: string) {
   const value = formValue(form, name);
   return value ? value : undefined;
+}
+
+function hasChecklistDocumentType(
+  documents: Array<{ documentType: string; status?: string | null }>,
+  documentTypes: SellerDocumentType[],
+) {
+  const expectedTypes = new Set<string>(documentTypes);
+  return documents.some(
+    (document) =>
+      expectedTypes.has(document.documentType) &&
+      (document.status === undefined || document.status === "APPROVED"),
+  );
+}
+
+function isPickupAddressReady(address?: {
+  line1?: string | null;
+  city?: string | null;
+  state?: string | null;
+  pincode?: string | null;
+}) {
+  return Boolean(
+    address?.line1?.trim() &&
+      address.city?.trim() &&
+      address.state?.trim() &&
+      address.pincode?.trim(),
+  );
 }
 
 function normalizeIndianPhone(value?: string | null) {

@@ -13,6 +13,7 @@ describe("customer delivery labels", () => {
     expect(customerDeliveryModeLabel("LOCAL_DELIVERY_PARTNER")).toBe("Local delivery partner");
     expect(customerDeliveryModeLabel("STORE_PICKUP")).toBe("Store pickup");
     expect(customerDeliveryModeLabel("THIRD_PARTY_COURIER")).toBe("Courier delivery");
+    expect(customerDeliveryModeLabel("MANUAL_TRANSPORT")).toBe("Manual transport");
   });
 
   it("keeps legacy delivery modes readable for old order records", () => {

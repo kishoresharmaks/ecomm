@@ -38,6 +38,10 @@ export function customerDeliveryModeLabel(mode?: string | null) {
     return "Courier delivery";
   }
 
+  if (mode === "MANUAL_TRANSPORT") {
+    return "Manual transport";
+  }
+
   if (mode === "SELLER_SELF_DELIVERY") {
     return "Local delivery partner";
   }

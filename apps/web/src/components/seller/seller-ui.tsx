@@ -1,5 +1,6 @@
 "use client";
 
+import { SignOutButton } from "@clerk/nextjs";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -13,6 +14,7 @@ import {
   LayoutDashboard,
   Loader2,
   LogIn,
+  LogOut,
   Menu,
   MessageSquareText,
   ReceiptText,
@@ -33,6 +35,8 @@ import { IndihubApiError, userFacingApiErrorMessage } from "@/lib/api";
 import type { IndihubAuthHeaders } from "@/lib/api";
 import { uploadPublicImage, type PublicImageUploadPurpose } from "@/lib/public-image-upload";
 import { sellerNav } from "@/lib/portal-nav";
+
+const clerkEnabled = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 
 const sellerNavIcons: Record<string, ReactNode> = {
   "/seller": <LayoutDashboard className="h-4 w-4" aria-hidden="true" />,
@@ -101,6 +105,7 @@ export function SellerWorkspaceShell({
                 {sellerNav.map((item) => (
                   <SellerNavLink key={item.href} item={item} pathname={pathname} onClick={() => setMobileOpen(false)} />
                 ))}
+                <SellerLogoutButton className="mt-1 w-full justify-start" onClick={() => setMobileOpen(false)} />
               </nav>
             ) : null}
           </div>
@@ -153,14 +158,34 @@ function SellerSidebar({ pathname }: { pathname: string }) {
       <div className="mt-4 shrink-0 rounded-lg border border-white/10 bg-white/[0.06] p-3">
         <p className="text-sm font-black leading-5">Store operations</p>
         <p className="mt-1 text-xs leading-5 text-[#DCE8F2]">Catalogue, orders, delivery, and enquiries in one place.</p>
-        <Button asChild variant="outline" size="sm" className="mt-3 h-9 border-white/20 bg-white/10 px-3 text-white hover:bg-white/15">
-          <Link href="/">
-            <Home className="h-4 w-4" aria-hidden="true" />
-            Storefront
-          </Link>
-        </Button>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button asChild variant="outline" size="sm" className="h-9 border-white/20 bg-white/10 px-3 text-white hover:bg-white/15">
+            <Link href="/">
+              <Home className="h-4 w-4" aria-hidden="true" />
+              Storefront
+            </Link>
+          </Button>
+          <SellerLogoutButton className="h-9 border-white/20 bg-white/10 px-3 text-white hover:bg-white/15" />
+        </div>
       </div>
     </div>
+  );
+}
+
+function SellerLogoutButton({ className, onClick }: { className?: string; onClick?: () => void }) {
+  const auth = useCustomerAuth();
+
+  if (!clerkEnabled || auth.mode !== "clerk" || !["ready", "error"].includes(auth.status)) {
+    return null;
+  }
+
+  return (
+    <SignOutButton redirectUrl="/">
+      <Button type="button" variant="outline" size="sm" className={className} onClick={onClick}>
+        <LogOut className="h-4 w-4" aria-hidden="true" />
+        Logout
+      </Button>
+    </SignOutButton>
   );
 }
 

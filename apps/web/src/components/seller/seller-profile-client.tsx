@@ -15,6 +15,7 @@ import {
 } from "@/lib/seller-document-upload";
 import {
   getSellerProfile,
+  syncSellerCourierPickup,
   updateSellerProfile,
   type SellerBusinessType,
   type SellerProfilePayload,
@@ -52,6 +53,16 @@ const verificationDocuments: Array<{
   description: string;
 }> = [
   {
+    type: "ID_PROOF",
+    label: "ID proof",
+    description: "PAN, Aadhaar, passport, or business-authorized ID proof.",
+  },
+  {
+    type: "SIGNATURE_PROOF",
+    label: "Signature proof",
+    description: "Signed declaration, signature image, or authorization letter.",
+  },
+  {
     type: "GST_CERTIFICATE",
     label: "GST certificate",
     description: "Optional for GST-registered sellers.",
@@ -73,6 +84,7 @@ export function SellerProfileClient() {
   const queryClient = useQueryClient();
   const sellerAuth = useSellerAuth();
   const [notice, setNotice] = useState<string | null>(null);
+  const [noticeTone, setNoticeTone] = useState<"success" | "danger">("success");
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [bannerUrl, setBannerUrl] = useState<string | null>(null);
   const [documents, setDocuments] = useState<SellerDocumentUploadResult[]>([]);
@@ -88,11 +100,28 @@ export function SellerProfileClient() {
     mutationFn: (payload: SellerProfilePayload) =>
       updateSellerProfile(sellerAuth.authHeaders, payload),
     onSuccess: () => {
+      setNoticeTone("success");
       setNotice("Seller profile updated.");
       void queryClient.invalidateQueries({ queryKey: ["seller-profile", sellerAuth.authKey] });
     },
-    onError: (error) =>
-      setNotice(error instanceof Error ? error.message : "Seller profile update failed."),
+    onError: (error) => {
+      setNoticeTone("danger");
+      setNotice(error instanceof Error ? error.message : "Seller profile update failed.");
+    },
+  });
+
+  const pickupSyncMutation = useMutation({
+    mutationFn: (providerCode: string) =>
+      syncSellerCourierPickup(sellerAuth.authHeaders, providerCode),
+    onSuccess: (result) => {
+      setNoticeTone("success");
+      setNotice(result.statusLabel ?? `Pickup synced: ${result.pickupLocationName}`);
+      void queryClient.invalidateQueries({ queryKey: ["seller-profile", sellerAuth.authKey] });
+    },
+    onError: (error) => {
+      setNoticeTone("danger");
+      setNotice(error instanceof Error ? error.message : "Pickup sync failed.");
+    },
   });
 
   useEffect(() => {
@@ -186,6 +215,7 @@ export function SellerProfileClient() {
   const shiprocketSetting = profile?.courierProviderSettings?.find(
     (setting) => setting.providerCode === "SHIPROCKET",
   );
+  const profileBusy = mutation.isPending || pickupSyncMutation.isPending;
 
   return (
     <div className="grid gap-5">
@@ -220,7 +250,7 @@ export function SellerProfileClient() {
               </Button>
             ) : null}
             {notice ? (
-              <StatusBadge tone={mutation.isError ? "danger" : "success"}>{notice}</StatusBadge>
+              <StatusBadge tone={noticeTone}>{notice}</StatusBadge>
             ) : null}
           </div>
         </div>
@@ -300,7 +330,7 @@ export function SellerProfileClient() {
                 purpose="SELLER_LOGO"
                 previewLabel={profile?.storeName?.slice(0, 2).toUpperCase() ?? "1HI"}
                 aspectClass="aspect-square"
-                disabled={mutation.isPending}
+                disabled={profileBusy}
               />
             </div>
             <div className="md:col-span-2">
@@ -313,7 +343,7 @@ export function SellerProfileClient() {
                 purpose="SELLER_BANNER"
                 previewLabel={profile?.storeName ?? "1HandIndia"}
                 aspectClass="aspect-[5/2]"
-                disabled={mutation.isPending}
+                disabled={profileBusy}
               />
             </div>
             <div className="md:col-span-2">
@@ -347,7 +377,7 @@ export function SellerProfileClient() {
                   (item) => item.documentType === document.type,
                 )}
                 authHeaders={sellerAuth.authHeaders}
-                disabled={mutation.isPending}
+                disabled={profileBusy}
                 onUploaded={(uploaded) =>
                   setDocuments((current) => [
                     ...current.filter((item) => item.documentType !== uploaded.documentType),
@@ -417,8 +447,20 @@ export function SellerProfileClient() {
             />
             <SellerField label="Address line 2" name="line2" defaultValue={address?.line2} />
             <LocationFields
-              defaultValue={address}
-              disabled={mutation.isPending}
+              defaultValue={{
+                country: address?.country ?? "India",
+                countryCode: address?.countryCode ?? "IN",
+                state: address?.state,
+                stateCode: address?.stateCode,
+                city: address?.city,
+                cityCode: address?.cityCode,
+                area: address?.area,
+                localAreaCode: address?.localAreaCode,
+                pincode: address?.pincode,
+              }}
+              defaultCountryCode="IN"
+              loadCitiesAcrossCountry
+              disabled={profileBusy}
               inputClassName="h-11 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 text-sm font-semibold text-[#1F2933] outline-none focus:border-[#ED3500] focus:bg-white"
             />
             <div className="rounded-md border border-[#D8E2EA] bg-[#F8FAFC] p-3">
@@ -437,10 +479,31 @@ export function SellerProfileClient() {
                     defaultValue={shiprocketSetting?.pickupLocationName ?? ""}
                     placeholder="Main Warehouse"
                   />
+                  <div className="flex flex-col gap-3 rounded-md border border-[#D8E2EA] bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-sm font-bold text-[#1F2933]">
+                      {shiprocketSetting?.pickupLocationName
+                        ? `Saved pickup: ${shiprocketSetting.pickupLocationName}`
+                        : "No Shiprocket pickup synced."}
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => pickupSyncMutation.mutate("SHIPROCKET")}
+                      disabled={profileBusy}
+                    >
+                      {pickupSyncMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                      ) : (
+                        <Truck className="h-4 w-4" aria-hidden="true" />
+                      )}
+                      {pickupSyncMutation.isPending ? "Syncing..." : "Sync pickup"}
+                    </Button>
+                  </div>
                 </div>
               </div>
             </div>
-            <Button type="submit" disabled={mutation.isPending}>
+            <Button type="submit" disabled={profileBusy}>
               {mutation.isPending ? "Saving..." : "Save profile"}
             </Button>
           </div>

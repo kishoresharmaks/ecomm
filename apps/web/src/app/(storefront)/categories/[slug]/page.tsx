@@ -10,7 +10,7 @@ export async function generateMetadata({ params }: CategoryProductsPageProps): P
   const { category, seo } = await categorySeoData(slug);
   return metadataFromSeo(seo, {
     title: category ? `${category.name} Products` : "Category Products",
-    description: category?.description ?? "Browse category products from verified sellers and nearby stores on 1HandIndia.",
+    description: category?.description ?? "Browse category products from verified sellers and hyperlocal stores on 1HandIndia.",
     path: `/categories/${slug}`,
     imageUrl: category?.imageUrl
   });

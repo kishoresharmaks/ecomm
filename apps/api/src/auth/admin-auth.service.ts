@@ -25,6 +25,12 @@ type UserWithRoles = Prisma.UserGetPayload<{
   };
 }>;
 
+const backOfficeRoleCodes = new Set<RoleCode>([
+  RoleCode.ADMIN,
+  RoleCode.FINANCE,
+  RoleCode.COURIER_MANAGER,
+]);
+
 @Injectable()
 export class AdminAuthService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
@@ -328,7 +334,9 @@ export class AdminAuthService {
   }
 
   private hasBackOfficeRole(user: UserWithRoles) {
-    return user.userRoles.some((userRole) => userRole.role.code === RoleCode.ADMIN || userRole.role.code === RoleCode.FINANCE);
+    return user.userRoles.some((userRole) =>
+      backOfficeRoleCodes.has(userRole.role.code),
+    );
   }
 
   private toRequestUser(user: UserWithRoles): RequestUser {

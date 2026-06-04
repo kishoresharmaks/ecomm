@@ -1,6 +1,8 @@
 import { indihubFetch, type IndihubAuthHeaders } from "./api";
 
 export type SellerDocumentType =
+  | "ID_PROOF"
+  | "SIGNATURE_PROOF"
   | "GST_CERTIFICATE"
   | "PAN_CARD"
   | "ADDRESS_PROOF"
