@@ -4,7 +4,14 @@ import { RoleCode } from "@indihub/database";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { Roles } from "../auth/decorators/roles.decorator";
 import type { RequestUser } from "../auth/types/indihub-request";
-import { SettingsQueryDto, UpsertCheckoutPlatformFeeDto, UpsertEmailSettingDto, UpsertSettingDto } from "./dto/settings.dto";
+import {
+  SettingsQueryDto,
+  UpsertCheckoutPlatformFeeDto,
+  UpsertDeliveryPartnerPayoutSettingsDto,
+  UpsertEmailSettingDto,
+  UpsertMapRoutingSettingsDto,
+  UpsertSettingDto,
+} from "./dto/settings.dto";
 import { SettingsService } from "./settings.service";
 
 @ApiTags("Admin Settings")
@@ -43,6 +50,36 @@ export class SettingsController {
   @ApiOperation({ summary: "Atomically update checkout buyer platform fee settings." })
   upsertCheckoutPlatformFee(@CurrentUser() actor: RequestUser, @Body() dto: UpsertCheckoutPlatformFeeDto) {
     return this.settingsService.upsertCheckoutPlatformFee(actor, dto);
+  }
+
+  @Get("delivery-partner-payouts")
+  @ApiOperation({ summary: "Read delivery partner payout and earning settings." })
+  getDeliveryPartnerPayoutSettings() {
+    return this.settingsService.getDeliveryPartnerPayoutSettings();
+  }
+
+  @Put("delivery-partner-payouts")
+  @ApiOperation({ summary: "Update delivery partner payout and earning settings." })
+  upsertDeliveryPartnerPayoutSettings(
+    @CurrentUser() actor: RequestUser,
+    @Body() dto: UpsertDeliveryPartnerPayoutSettingsDto,
+  ) {
+    return this.settingsService.upsertDeliveryPartnerPayoutSettings(actor, dto);
+  }
+
+  @Get("maps/routing")
+  @ApiOperation({ summary: "Read map routing provider settings." })
+  getMapRoutingSettings() {
+    return this.settingsService.getMapRoutingSettings();
+  }
+
+  @Put("maps/routing")
+  @ApiOperation({ summary: "Update map routing provider settings." })
+  upsertMapRoutingSettings(
+    @CurrentUser() actor: RequestUser,
+    @Body() dto: UpsertMapRoutingSettingsDto,
+  ) {
+    return this.settingsService.upsertMapRoutingSettings(actor, dto);
   }
 
   @Put(":key")

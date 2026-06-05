@@ -5,17 +5,32 @@ import { PrismaService } from "../prisma/prisma.service";
 import {
   SettingsQueryDto,
   UpsertCheckoutPlatformFeeDto,
+  UpsertDeliveryPartnerPayoutSettingsDto,
   UpsertEmailSettingDto,
+  UpsertMapRoutingSettingsDto,
   UpsertSettingDto,
 } from "./dto/settings.dto";
+import {
+  deliveryPartnerPayoutSettingGroup,
+  deliveryPartnerPayoutSettingKeys,
+  normalizeDeliveryPartnerPayoutSettings,
+  readDeliveryPartnerPayoutSettings,
+} from "./delivery-partner-payout-settings";
 import {
   normalizeTypedSettingValue,
   readBooleanSetting,
   readNumberSetting,
 } from "./setting-value-utils";
+import {
+  mapRoutingSettingGroup,
+  mapRoutingSettingKeys,
+  mapRoutingSettingsReadback,
+  normalizeMapRoutingSettings,
+  readMapRoutingSettings,
+} from "./map-routing-settings";
 
 const DEFAULT_EMAIL_SETTING_ID = "00000000-0000-0000-0000-000000000001";
-const sensitiveSettingPatterns = [/secret/i, /key_secret/i, /password/i, /token/i];
+const sensitiveSettingPatterns = [/secret/i, /key_secret/i, /api_key/i, /password/i, /token/i];
 const checkoutPlatformFeeKeys = {
   enabled: "checkout.platform_fee.enabled",
   type: "checkout.platform_fee.type",
@@ -77,6 +92,15 @@ export class SettingsService {
     });
 
     return this.checkoutPlatformFeeAuditValue(settings);
+  }
+
+  async getDeliveryPartnerPayoutSettings() {
+    return readDeliveryPartnerPayoutSettings(this.prisma.client);
+  }
+
+  async getMapRoutingSettings() {
+    const settings = await readMapRoutingSettings(this.prisma.client);
+    return mapRoutingSettingsReadback(settings);
   }
 
   async upsertSetting(actor: RequestUser, key: string, dto: UpsertSettingDto) {
@@ -188,6 +212,214 @@ export class SettingsService {
 
     return {
       ...normalized,
+      settings: settings.map((setting) => this.sanitizeSetting(setting)),
+    };
+  }
+
+  async upsertDeliveryPartnerPayoutSettings(
+    actor: RequestUser,
+    dto: UpsertDeliveryPartnerPayoutSettingsDto,
+  ) {
+    const normalized = {
+      minimumPerOrderPaise: this.nonNegativeInt(dto.minimumPerOrderPaise),
+      basePayPaise: this.nonNegativeInt(dto.basePayPaise),
+      perKmPaise: this.nonNegativeInt(dto.perKmPaise),
+      codBonusPaise: this.nonNegativeInt(dto.codBonusPaise),
+      minimumWalletPayoutPaise: this.nonNegativeInt(dto.minimumWalletPayoutPaise),
+      requestsEnabled: dto.requestsEnabled,
+      freeDeliveryPlatformSubsidyEnabled: dto.freeDeliveryPlatformSubsidyEnabled,
+    };
+    const writes = [
+      this.settingWrite(
+        deliveryPartnerPayoutSettingKeys.minimumPerOrderPaise,
+        deliveryPartnerPayoutSettingGroup,
+        SettingValueType.NUMBER,
+        normalized.minimumPerOrderPaise,
+      ),
+      this.settingWrite(
+        deliveryPartnerPayoutSettingKeys.basePayPaise,
+        deliveryPartnerPayoutSettingGroup,
+        SettingValueType.NUMBER,
+        normalized.basePayPaise,
+      ),
+      this.settingWrite(
+        deliveryPartnerPayoutSettingKeys.perKmPaise,
+        deliveryPartnerPayoutSettingGroup,
+        SettingValueType.NUMBER,
+        normalized.perKmPaise,
+      ),
+      this.settingWrite(
+        deliveryPartnerPayoutSettingKeys.codBonusPaise,
+        deliveryPartnerPayoutSettingGroup,
+        SettingValueType.NUMBER,
+        normalized.codBonusPaise,
+      ),
+      this.settingWrite(
+        deliveryPartnerPayoutSettingKeys.minimumWalletPayoutPaise,
+        deliveryPartnerPayoutSettingGroup,
+        SettingValueType.NUMBER,
+        normalized.minimumWalletPayoutPaise,
+      ),
+      this.settingWrite(
+        deliveryPartnerPayoutSettingKeys.requestsEnabled,
+        deliveryPartnerPayoutSettingGroup,
+        SettingValueType.BOOLEAN,
+        normalized.requestsEnabled,
+      ),
+      this.settingWrite(
+        deliveryPartnerPayoutSettingKeys.freeDeliveryPlatformSubsidyEnabled,
+        deliveryPartnerPayoutSettingGroup,
+        SettingValueType.BOOLEAN,
+        normalized.freeDeliveryPlatformSubsidyEnabled,
+      ),
+    ];
+
+    const settings = await this.prisma.client.$transaction(async (tx) => {
+      const before = await tx.setting.findMany({
+        where: {
+          key: {
+            in: Object.values(deliveryPartnerPayoutSettingKeys),
+          },
+        },
+      });
+      const updatedSettings = [];
+
+      for (const write of writes) {
+        const setting = await tx.setting.upsert({
+          where: { key: write.key },
+          update: {
+            value: write.value,
+            valueType: write.valueType,
+            group: write.group,
+          },
+          create: write,
+        });
+        updatedSettings.push(setting);
+      }
+
+      await tx.auditLog.create({
+        data: {
+          actorUserId: actor.id,
+          action: "settings.delivery_partner_payouts.updated",
+          entityType: "delivery_partner_payout_settings",
+          oldValue: normalizeDeliveryPartnerPayoutSettings(before),
+          newValue: normalized,
+        },
+      });
+
+      return updatedSettings;
+    });
+
+    return {
+      ...normalized,
+      settings: settings.map((setting) => this.sanitizeSetting(setting)),
+    };
+  }
+
+  async upsertMapRoutingSettings(actor: RequestUser, dto: UpsertMapRoutingSettingsDto) {
+    const existingSettings = await this.prisma.client.setting.findMany({
+      where: {
+        key: {
+          in: Object.values(mapRoutingSettingKeys),
+        },
+      },
+    });
+    const existing = normalizeMapRoutingSettings(existingSettings);
+    const normalized = {
+      enabled: dto.enabled,
+      provider: dto.provider,
+      googleApiToken: this.nextSecretValue(dto.googleApiToken, existing.googleApiToken),
+      googleTravelMode: dto.googleTravelMode,
+      mapboxAccessToken: this.nextSecretValue(
+        dto.mapboxAccessToken,
+        existing.mapboxAccessToken,
+      ),
+      mapboxProfile: dto.mapboxProfile,
+      fallbackToHaversine: dto.fallbackToHaversine,
+    };
+    const writes = [
+      this.settingWrite(
+        mapRoutingSettingKeys.enabled,
+        mapRoutingSettingGroup,
+        SettingValueType.BOOLEAN,
+        normalized.enabled,
+      ),
+      this.settingWrite(
+        mapRoutingSettingKeys.provider,
+        mapRoutingSettingGroup,
+        SettingValueType.STRING,
+        normalized.provider,
+      ),
+      this.settingWrite(
+        mapRoutingSettingKeys.googleApiToken,
+        mapRoutingSettingGroup,
+        SettingValueType.STRING,
+        normalized.googleApiToken,
+      ),
+      this.settingWrite(
+        mapRoutingSettingKeys.googleTravelMode,
+        mapRoutingSettingGroup,
+        SettingValueType.STRING,
+        normalized.googleTravelMode,
+      ),
+      this.settingWrite(
+        mapRoutingSettingKeys.mapboxAccessToken,
+        mapRoutingSettingGroup,
+        SettingValueType.STRING,
+        normalized.mapboxAccessToken,
+      ),
+      this.settingWrite(
+        mapRoutingSettingKeys.mapboxProfile,
+        mapRoutingSettingGroup,
+        SettingValueType.STRING,
+        normalized.mapboxProfile,
+      ),
+      this.settingWrite(
+        mapRoutingSettingKeys.fallbackToHaversine,
+        mapRoutingSettingGroup,
+        SettingValueType.BOOLEAN,
+        normalized.fallbackToHaversine,
+      ),
+    ];
+
+    const settings = await this.prisma.client.$transaction(async (tx) => {
+      const before = await tx.setting.findMany({
+        where: {
+          key: {
+            in: Object.values(mapRoutingSettingKeys),
+          },
+        },
+      });
+      const updatedSettings = [];
+
+      for (const write of writes) {
+        const setting = await tx.setting.upsert({
+          where: { key: write.key },
+          update: {
+            value: write.value,
+            valueType: write.valueType,
+            group: write.group,
+          },
+          create: write,
+        });
+        updatedSettings.push(setting);
+      }
+
+      await tx.auditLog.create({
+        data: {
+          actorUserId: actor.id,
+          action: "settings.map_routing.updated",
+          entityType: "map_routing_settings",
+          oldValue: mapRoutingSettingsReadback(normalizeMapRoutingSettings(before)),
+          newValue: mapRoutingSettingsReadback(normalized),
+        },
+      });
+
+      return updatedSettings;
+    });
+
+    return {
+      ...mapRoutingSettingsReadback(normalized),
       settings: settings.map((setting) => this.sanitizeSetting(setting)),
     };
   }
@@ -327,6 +559,19 @@ export class SettingsService {
 
   private nonNegativeInt(value: number) {
     return Math.max(0, Math.round(value));
+  }
+
+  private nextSecretValue(next: string | undefined, existing: string) {
+    if (next === undefined) {
+      return existing;
+    }
+
+    const trimmed = next.trim();
+    if (!trimmed || trimmed === "[secret configured]" || /^\*+$/.test(trimmed)) {
+      return existing;
+    }
+
+    return trimmed;
   }
 
   private emailProviderConfig(value: Prisma.JsonValue | null | undefined): EmailProviderConfig {

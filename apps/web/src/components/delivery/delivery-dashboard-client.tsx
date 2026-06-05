@@ -4,7 +4,7 @@ import Link from "next/link";
 import { ArrowRight, Clock3, IndianRupee } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
-import { listDeliveryOrders, type DeliveryOrder } from "@/lib/delivery-api";
+import { getDeliveryWallet, listDeliveryOrders, type DeliveryOrder } from "@/lib/delivery-api";
 import {
   DeliveryEmptyState,
   DeliveryError,
@@ -27,6 +27,12 @@ export function DeliveryDashboardClient() {
     enabled: auth.enabled,
     retry: false
   });
+  const walletQuery = useQuery({
+    queryKey: ["delivery-wallet", auth.authKey, "dashboard"],
+    queryFn: () => getDeliveryWallet(auth.authHeaders, { limit: 5 }),
+    enabled: auth.enabled,
+    retry: false
+  });
 
   if (!auth.enabled) {
     return null;
@@ -39,11 +45,16 @@ export function DeliveryDashboardClient() {
 
   return (
     <div className="grid gap-5">
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <DeliveryMetric label="Assigned" value={ordersQuery.data?.total ?? orders.length} note="Orders assigned by admin" />
         <DeliveryMetric label="Active" value={activeOrders.length} note="Pending, packed, or in transit" />
         <DeliveryMetric label="Delivered" value={deliveredOrders.length} note="Completed delivery updates" />
         <DeliveryMetric label="COD pending" value={codPending.length} note="Admin marks COD paid after verification" />
+        <DeliveryMetric
+          label="Wallet balance"
+          value={formatPaise(walletQuery.data?.summary.availableBalancePaise ?? 0)}
+          note={`${formatPaise(walletQuery.data?.summary.totalEarnedPaise ?? 0)} local earnings`}
+        />
       </div>
 
       <DeliveryPanel>

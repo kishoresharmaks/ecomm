@@ -662,10 +662,12 @@ export function CourierDeliveryPartnerDetailClient({ userId }: { userId: string 
         </div>
       </section>
 
-      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
         <InfoCell label="Active workload" value={String(partner.activeWorkload)} />
         <InfoCell label="COD exposure" value={money(partner.pendingCodCashPaise)} />
         <InfoCell label="COD limit" value={money(partner.deliveryProfile.effectiveCodCashLimitPaise)} />
+        <InfoCell label="Wallet balance" value={money(partner.wallet?.availableBalancePaise ?? 0)} />
+        <InfoCell label="Local earnings" value={money(partner.wallet?.totalEarnedPaise ?? 0)} />
         <InfoCell label="Service radius" value={partner.deliveryProfile.serviceRadiusKm ? `${partner.deliveryProfile.serviceRadiusKm} km` : "Not set"} />
       </section>
 
@@ -1307,6 +1309,12 @@ function DeliveryPartnerRow({ partner }: { partner: CourierDeliveryPartnerRecord
         </p>
         <p>
           COD limit: <span className="font-black text-[#1F2933]">{money(profile.effectiveCodCashLimitPaise)}</span>
+        </p>
+        <p>
+          Wallet: <span className="font-black text-[#1F2933]">{money(partner.wallet?.availableBalancePaise ?? 0)}</span>
+        </p>
+        <p>
+          Earnings: <span className="font-black text-[#1F2933]">{money(partner.wallet?.totalEarnedPaise ?? 0)}</span>
         </p>
       </div>
       <div className="flex justify-end">

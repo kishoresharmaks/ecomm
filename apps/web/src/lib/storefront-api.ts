@@ -1,4 +1,5 @@
 import { indihubFetch, type IndihubAuthHeaders } from "./api";
+import type { LocationSource } from "./maps-api";
 
 export type CategorySummary = {
   id: string;
@@ -132,6 +133,11 @@ export type SellerAddress = {
   stateCode?: string | null;
   cityCode?: string | null;
   localAreaCode?: string | null;
+  latitude?: number | string | null;
+  longitude?: number | string | null;
+  locationSource?: LocationSource | string | null;
+  accuracyMeters?: number | string | null;
+  locationConfidenceScore?: number | string | null;
 };
 
 export type PublicStoreAddress = {
@@ -266,6 +272,11 @@ export type CheckoutSummaryOptions = {
     cityCode?: string | undefined;
     pincode?: string | undefined;
     localAreaCode?: string | undefined;
+    latitude?: number | undefined;
+    longitude?: number | undefined;
+    locationSource?: LocationSource | undefined;
+    accuracyMeters?: number | undefined;
+    locationConfidenceScore?: number | undefined;
   };
 };
 
@@ -283,6 +294,11 @@ export type CheckoutAddress = {
   stateCode?: string | undefined;
   cityCode?: string | undefined;
   localAreaCode?: string | undefined;
+  latitude?: number | null | undefined;
+  longitude?: number | null | undefined;
+  locationSource?: LocationSource | null | undefined;
+  accuracyMeters?: number | null | undefined;
+  locationConfidenceScore?: number | null | undefined;
 };
 
 export type PlaceOrderPayload = {
@@ -857,6 +873,12 @@ export function getCheckoutSummary(
   }
   if (address?.localAreaCode) {
     query.set("localAreaCode", address.localAreaCode);
+  }
+  if (address?.latitude !== undefined) {
+    query.set("latitude", String(address.latitude));
+  }
+  if (address?.longitude !== undefined) {
+    query.set("longitude", String(address.longitude));
   }
 
   return indihubFetch<CheckoutSummary>(

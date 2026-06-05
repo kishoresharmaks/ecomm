@@ -1,15 +1,20 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
 import {
   ApprovalStatus,
   CartStatus,
   CheckoutStatus,
   DeliveryAssignmentAttemptSource,
+  DeliveryPartnerPayoutStatus,
+  DeliveryPartnerWalletEntryDirection,
+  DeliveryPartnerWalletEntryType,
   CodCollectionStatus,
   CourierShipmentStatus,
   DeliveryAssignmentStatus,
@@ -50,13 +55,20 @@ import {
   paginationFromQuery,
 } from "../common/pagination";
 import { CustomersService } from "../customers/customers.service";
+import {
+  DeliveryPartnerPayoutQueryDto,
+  MarkPayoutPaidDto,
+  PayoutActionDto,
+} from "../finance/dto/finance.dto";
 import { SellerLedgerService } from "../finance/seller-ledger.service";
 import { LocationsService } from "../locations/locations.service";
+import { RouteDistanceService, type RouteDistanceResult } from "../maps/route-distance.service";
 import { MarketService } from "../market/market.service";
 import { EMAIL_TRIGGER_EVENTS } from "../notifications/email-trigger-catalog";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PaymentsService } from "../payments/payments.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { readDeliveryPartnerPayoutSettings } from "../settings/delivery-partner-payout-settings";
 import { CancelOrderDto } from "./dto/cancel-order.dto";
 import {
   CheckoutPaymentMethod,
@@ -70,7 +82,9 @@ import {
   DeliveryAssignmentDecision,
   DeliveryAssignmentDecisionDto,
   DeliveryOperationsQueryDto,
+  DeliveryPartnerPayoutRequestDto,
   DeliveryPartnerQueryDto,
+  DeliveryPartnerWalletQueryDto,
   UpdateDeliveryAssignmentDto,
   UpdateDeliveryPartnerProfileDto,
   UpdateOwnDeliveryPartnerProfileDto,
@@ -192,7 +206,57 @@ const orderInclude = {
   },
 };
 
+const deliveryPartnerPayoutInclude = {
+  partner: {
+    select: {
+      id: true,
+      email: true,
+      phone: true,
+      fullName: true,
+      deliveryProfile: {
+        select: {
+          vehicleNumber: true,
+          isAvailable: true,
+        },
+      },
+    },
+  },
+  requestedBy: {
+    select: {
+      id: true,
+      email: true,
+      fullName: true,
+    },
+  },
+  approvedBy: {
+    select: {
+      id: true,
+      email: true,
+      fullName: true,
+    },
+  },
+  paidBy: {
+    select: {
+      id: true,
+      email: true,
+      fullName: true,
+    },
+  },
+  walletEntries: {
+    select: {
+      id: true,
+      entryType: true,
+      direction: true,
+      amountPaise: true,
+      createdAt: true,
+    },
+  },
+};
+
 type OrderWithRelations = Prisma.OrderGetPayload<{ include: typeof orderInclude }>;
+type DeliveryPartnerPayoutWithRelations = Prisma.DeliveryPartnerPayoutGetPayload<{
+  include: typeof deliveryPartnerPayoutInclude;
+}>;
 type OrderShipmentPackageWithRelations = OrderWithRelations["shipments"][number]["packages"][number];
 type DeliveryPartnerWithProfile = Prisma.UserGetPayload<{
   include: { deliveryProfile: true };
@@ -320,7 +384,17 @@ type TrackableAddressSnapshot = {
   stateCode: string | null;
   cityCode: string | null;
   localAreaCode: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  locationSource: string | null;
+  accuracyMeters: number | null;
+  locationConfidenceScore: number | null;
 };
+
+type DeliveryPartnerWalletReadClient = Pick<
+  Prisma.TransactionClient,
+  "deliveryPartnerPayout" | "deliveryPartnerWalletEntry" | "setting"
+>;
 
 @Injectable()
 export class OrdersService {
@@ -331,6 +405,7 @@ export class OrdersService {
     @Inject(CustomersService) private readonly customersService: CustomersService,
     @Inject(SellerLedgerService) private readonly sellerLedgerService: SellerLedgerService,
     @Inject(LocationsService) private readonly locationsService: LocationsService,
+    @Inject(RouteDistanceService) private readonly routeDistance: RouteDistanceService,
     @Inject(MarketService) private readonly marketService: MarketService,
     @Inject(NotificationsService) private readonly notifications: NotificationsService,
     @Inject(PaymentsService) private readonly paymentsService: PaymentsService,
@@ -1243,6 +1318,288 @@ export class OrdersService {
   async getDeliveryPartnerProfile(actor: RequestUser) {
     const user = await this.getDeliveryPartnerUserOrThrow(actor.id);
     return this.toDeliveryPartnerSelfProfile(user);
+  }
+
+  async getDeliveryPartnerWallet(actor: RequestUser, query: DeliveryPartnerWalletQueryDto) {
+    await this.getDeliveryPartnerUserOrThrow(actor.id);
+    return this.deliveryPartnerWalletForUser(actor.id, query);
+  }
+
+  async requestDeliveryPartnerWalletPayout(
+    actor: RequestUser,
+    dto: DeliveryPartnerPayoutRequestDto,
+  ) {
+    await this.getDeliveryPartnerUserOrThrow(actor.id);
+
+    const payoutId = await this.prisma.client.$transaction(async (tx) => {
+      const summary = await this.deliveryPartnerWalletSummary(actor.id, tx);
+      if (!summary.payoutRequestsEnabled) {
+        throw new BadRequestException("Delivery partner payout requests are disabled by admin.");
+      }
+
+      if (summary.activePayoutRequestCount > 0) {
+        throw new ConflictException(
+          "You already have a payout request pending approval or payment.",
+        );
+      }
+
+      if (summary.availableBalancePaise < summary.minimumPayoutPaise) {
+        throw new BadRequestException(
+          `Available wallet balance is below the minimum payout threshold of INR ${(
+            summary.minimumPayoutPaise / 100
+          ).toLocaleString("en-IN")}.`,
+        );
+      }
+
+      const payout = await tx.deliveryPartnerPayout.create({
+        data: {
+          payoutNumber: this.makeDeliveryPartnerPayoutNumber(),
+          partnerUserId: actor.id,
+          amountPaise: summary.availableBalancePaise,
+          currency: summary.currency,
+          status: DeliveryPartnerPayoutStatus.REQUESTED,
+          note: dto.note?.trim() || null,
+          requestedById: actor.id,
+          settingsSnapshot: summary.payoutSettings as Prisma.InputJsonObject,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actorUserId: actor.id,
+          action: "delivery_partner_payout.requested",
+          entityType: "delivery_partner_payout",
+          entityId: payout.id,
+          newValue: {
+            payoutNumber: payout.payoutNumber,
+            partnerUserId: actor.id,
+            amountPaise: payout.amountPaise,
+            currency: payout.currency,
+            status: payout.status,
+            settingsSnapshot: summary.payoutSettings,
+          },
+        },
+      });
+
+      return payout.id;
+    });
+
+    return this.getDeliveryPartnerPayout(payoutId);
+  }
+
+  async listDeliveryPartnerPayouts(query: DeliveryPartnerPayoutQueryDto) {
+    const { page, skip, take } = paginationFromQuery(query, { defaultLimit: 20, maxLimit: 100 });
+    const search = query.search?.trim();
+    const where: Prisma.DeliveryPartnerPayoutWhereInput = {
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.partnerUserId ? { partnerUserId: query.partnerUserId } : {}),
+      ...(search
+        ? {
+            OR: [
+              { payoutNumber: { contains: search, mode: "insensitive" } },
+              { partner: { email: { contains: search, mode: "insensitive" } } },
+              { partner: { phone: { contains: search, mode: "insensitive" } } },
+              { partner: { fullName: { contains: search, mode: "insensitive" } } },
+            ],
+          }
+        : {}),
+    };
+
+    const [items, total] = await Promise.all([
+      this.prisma.client.deliveryPartnerPayout.findMany({
+        where,
+        include: deliveryPartnerPayoutInclude,
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        skip,
+        take,
+      }),
+      this.prisma.client.deliveryPartnerPayout.count({ where }),
+    ]);
+
+    return {
+      items: items.map((payout) => this.deliveryPartnerPayoutReadback(payout)),
+      total,
+      page,
+      limit: take,
+    };
+  }
+
+  async getDeliveryPartnerPayout(payoutId: string) {
+    const payout = await this.prisma.client.deliveryPartnerPayout.findUnique({
+      where: { id: payoutId },
+      include: deliveryPartnerPayoutInclude,
+    });
+
+    if (!payout) {
+      throw new NotFoundException("Delivery partner payout not found.");
+    }
+
+    return this.deliveryPartnerPayoutReadback(payout);
+  }
+
+  async approveDeliveryPartnerPayout(
+    payoutId: string,
+    dto: PayoutActionDto,
+    actor: RequestUser,
+  ) {
+    await this.prisma.client.$transaction(async (tx) => {
+      const payout = await tx.deliveryPartnerPayout.findUnique({ where: { id: payoutId } });
+      if (!payout) {
+        throw new NotFoundException("Delivery partner payout not found.");
+      }
+
+      if (payout.status !== DeliveryPartnerPayoutStatus.REQUESTED) {
+        throw new BadRequestException("Only requested delivery partner payouts can be approved.");
+      }
+
+      const update = await tx.deliveryPartnerPayout.updateMany({
+        where: { id: payoutId, status: DeliveryPartnerPayoutStatus.REQUESTED },
+        data: {
+          status: DeliveryPartnerPayoutStatus.APPROVED,
+          approvedById: actor.id,
+          approvedAt: new Date(),
+          note: dto.note ?? payout.note,
+        },
+      });
+
+      if (update.count !== 1) {
+        throw new ConflictException("Delivery partner payout changed. Refresh and try again.");
+      }
+
+      await tx.auditLog.create({
+        data: {
+          actorUserId: actor.id,
+          action: "delivery_partner_payout.approved",
+          entityType: "delivery_partner_payout",
+          entityId: payoutId,
+          oldValue: { status: payout.status, note: payout.note },
+          newValue: { status: DeliveryPartnerPayoutStatus.APPROVED, note: dto.note ?? payout.note },
+        },
+      });
+    });
+
+    return this.getDeliveryPartnerPayout(payoutId);
+  }
+
+  async rejectDeliveryPartnerPayout(
+    payoutId: string,
+    dto: PayoutActionDto,
+    actor: RequestUser,
+  ) {
+    const rejectableStatuses: DeliveryPartnerPayoutStatus[] = [
+      DeliveryPartnerPayoutStatus.REQUESTED,
+      DeliveryPartnerPayoutStatus.APPROVED,
+    ];
+
+    await this.prisma.client.$transaction(async (tx) => {
+      const payout = await tx.deliveryPartnerPayout.findUnique({ where: { id: payoutId } });
+      if (!payout) {
+        throw new NotFoundException("Delivery partner payout not found.");
+      }
+
+      if (!rejectableStatuses.includes(payout.status)) {
+        throw new BadRequestException(
+          "Only requested or approved delivery partner payouts can be rejected.",
+        );
+      }
+
+      const update = await tx.deliveryPartnerPayout.updateMany({
+        where: { id: payoutId, status: { in: rejectableStatuses } },
+        data: {
+          status: DeliveryPartnerPayoutStatus.REJECTED,
+          note: dto.note ?? payout.note,
+        },
+      });
+
+      if (update.count !== 1) {
+        throw new ConflictException("Delivery partner payout changed. Refresh and try again.");
+      }
+
+      await tx.auditLog.create({
+        data: {
+          actorUserId: actor.id,
+          action: "delivery_partner_payout.rejected",
+          entityType: "delivery_partner_payout",
+          entityId: payoutId,
+          oldValue: { status: payout.status, note: payout.note },
+          newValue: { status: DeliveryPartnerPayoutStatus.REJECTED, note: dto.note ?? payout.note },
+        },
+      });
+    });
+
+    return this.getDeliveryPartnerPayout(payoutId);
+  }
+
+  async markDeliveryPartnerPayoutPaid(
+    payoutId: string,
+    dto: MarkPayoutPaidDto,
+    actor: RequestUser,
+  ) {
+    await this.prisma.client.$transaction(async (tx) => {
+      const payout = await tx.deliveryPartnerPayout.findUnique({ where: { id: payoutId } });
+      if (!payout) {
+        throw new NotFoundException("Delivery partner payout not found.");
+      }
+
+      if (payout.status !== DeliveryPartnerPayoutStatus.APPROVED) {
+        throw new BadRequestException("Only approved delivery partner payouts can be marked paid.");
+      }
+
+      const paidAt = dto.paidAt ? new Date(dto.paidAt) : new Date();
+      const update = await tx.deliveryPartnerPayout.updateMany({
+        where: { id: payoutId, status: DeliveryPartnerPayoutStatus.APPROVED },
+        data: {
+          status: DeliveryPartnerPayoutStatus.PAID,
+          paidById: actor.id,
+          paidAt,
+          paymentMode: dto.paymentMode.trim(),
+          transactionReference: dto.transactionReference.trim(),
+          note: dto.note ?? payout.note,
+        },
+      });
+
+      if (update.count !== 1) {
+        throw new ConflictException("Delivery partner payout changed. Refresh and try again.");
+      }
+
+      await tx.deliveryPartnerWalletEntry.create({
+        data: {
+          partnerUserId: payout.partnerUserId,
+          payoutId: payout.id,
+          entryType: DeliveryPartnerWalletEntryType.MANUAL_PAYOUT,
+          direction: DeliveryPartnerWalletEntryDirection.DEBIT,
+          amountPaise: payout.amountPaise,
+          currency: payout.currency,
+          description: `Manual payout paid for ${payout.payoutNumber}`,
+          metadata: {
+            payoutNumber: payout.payoutNumber,
+            paymentMode: dto.paymentMode.trim(),
+            transactionReference: dto.transactionReference.trim(),
+            paidAt: paidAt.toISOString(),
+            note: dto.note ?? null,
+          },
+          createdById: actor.id,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actorUserId: actor.id,
+          action: "delivery_partner_payout.paid",
+          entityType: "delivery_partner_payout",
+          entityId: payoutId,
+          oldValue: { status: payout.status },
+          newValue: {
+            status: DeliveryPartnerPayoutStatus.PAID,
+            paymentMode: dto.paymentMode.trim(),
+            transactionReference: dto.transactionReference.trim(),
+            amountPaise: payout.amountPaise,
+          },
+        },
+      });
+    });
+
+    return this.getDeliveryPartnerPayout(payoutId);
   }
 
   async updateOwnDeliveryPartnerProfile(
@@ -2551,6 +2908,7 @@ export class OrdersService {
       const deliveryStatusChanged = nextDeliveryStatus !== order.deliveryStatus;
       const deliveryDetailStatusChanged =
         nextDeliveryStatus !== (order.deliveryDetail?.status ?? null);
+      let deliveryDetailIdForWallet = order.deliveryDetail?.id ?? null;
 
       if (orderStatusChanged || deliveryStatusChanged) {
         await tx.order.update({
@@ -2576,6 +2934,7 @@ export class OrdersService {
             deliveryNote: note,
           },
         });
+        deliveryDetailIdForWallet = delivery.id;
 
         await tx.deliveryEvent.create({
           data: {
@@ -2645,6 +3004,15 @@ export class OrdersService {
           order.paymentStatus === PaymentStatus.NOT_REQUIRED)
       ) {
         await this.markSellerSplitsSettlementEligible(tx, order.id);
+      }
+
+      if (requestedDeliveryStatus === DeliveryStatus.DELIVERED && deliveryDetailIdForWallet) {
+        await this.creditLocalDeliveryPartnerEarnings(tx, {
+          orderId: order.id,
+          deliveryDetailId: deliveryDetailIdForWallet,
+          createdById: actor.id,
+          note,
+        });
       }
 
       await tx.auditLog.create({
@@ -3193,6 +3561,15 @@ export class OrdersService {
           order.paymentStatus === PaymentStatus.NOT_REQUIRED)
       ) {
         await this.markSellerSplitsSettlementEligible(tx, order.id);
+      }
+
+      if (nextStatus === DeliveryStatus.DELIVERED) {
+        await this.creditLocalDeliveryPartnerEarnings(tx, {
+          orderId: order.id,
+          deliveryDetailId: delivery.id,
+          createdById: actor.id,
+          note: dto.deliveryNote ?? null,
+        });
       }
 
       await tx.auditLog.create({
@@ -4270,10 +4647,11 @@ export class OrdersService {
   }
 
   private async toDeliveryPartnerSummary(user: DeliveryPartnerWithProfile) {
-    const [activeWorkload, pendingCodCashPaise, defaultCodLimitPaise] = await Promise.all([
+    const [activeWorkload, pendingCodCashPaise, defaultCodLimitPaise, wallet] = await Promise.all([
       this.activePartnerWorkload(user.id),
       this.pendingPartnerCodExposure(user.id),
       this.defaultPartnerCodLimitPaise(),
+      this.deliveryPartnerWalletSummary(user.id),
     ]);
     const deliveryProfile = this.deliveryPartnerProfileReadback(user, defaultCodLimitPaise);
 
@@ -4282,15 +4660,17 @@ export class OrdersService {
       deliveryProfile,
       activeWorkload,
       pendingCodCashPaise,
+      wallet,
       ...this.deliveryPartnerReadiness(user, deliveryProfile, pendingCodCashPaise),
     };
   }
 
   private async toDeliveryPartnerSelfProfile(user: DeliveryPartnerWithProfile) {
-    const [activeWorkload, pendingCodCashPaise, defaultCodLimitPaise] = await Promise.all([
+    const [activeWorkload, pendingCodCashPaise, defaultCodLimitPaise, wallet] = await Promise.all([
       this.activePartnerWorkload(user.id),
       this.pendingPartnerCodExposure(user.id),
       this.defaultPartnerCodLimitPaise(),
+      this.deliveryPartnerWalletSummary(user.id),
     ]);
     const deliveryProfile = this.deliveryPartnerProfileReadback(user, defaultCodLimitPaise);
 
@@ -4299,7 +4679,447 @@ export class OrdersService {
       deliveryProfile,
       activeWorkload,
       pendingCodCashPaise,
+      wallet,
       ...this.deliveryPartnerReadiness(user, deliveryProfile, pendingCodCashPaise),
+    };
+  }
+
+  private async deliveryPartnerWalletForUser(
+    partnerUserId: string,
+    query: DeliveryPartnerWalletQueryDto,
+  ) {
+    const { page, skip, take } = paginationFromQuery(query, { defaultLimit: 20 });
+    const where: Prisma.DeliveryPartnerWalletEntryWhereInput = { partnerUserId };
+
+    const [summary, entries, total, payouts] = await Promise.all([
+      this.deliveryPartnerWalletSummary(partnerUserId),
+      this.prisma.client.deliveryPartnerWalletEntry.findMany({
+        where,
+        include: {
+          order: {
+            select: {
+              orderNumber: true,
+              paymentStatus: true,
+              deliveryStatus: true,
+            },
+          },
+          orderShipment: {
+            select: {
+              shipmentNumber: true,
+              deliveryMode: true,
+              status: true,
+              shippingPaise: true,
+            },
+          },
+        },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        skip,
+        take,
+      }),
+      this.prisma.client.deliveryPartnerWalletEntry.count({ where }),
+      this.prisma.client.deliveryPartnerPayout.findMany({
+        where: { partnerUserId },
+        include: deliveryPartnerPayoutInclude,
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        take: 10,
+      }),
+    ]);
+
+    return {
+      summary,
+      items: entries.map((entry) => ({
+        id: entry.id,
+        entryType: entry.entryType,
+        direction: entry.direction,
+        amountPaise: entry.amountPaise,
+        currency: entry.currency,
+        description: entry.description,
+        metadata: entry.metadata,
+        createdAt: entry.createdAt,
+        order: entry.order
+          ? {
+              orderNumber: entry.order.orderNumber,
+              paymentStatus: entry.order.paymentStatus,
+              deliveryStatus: entry.order.deliveryStatus,
+            }
+          : null,
+        shipment: entry.orderShipment
+          ? {
+              shipmentNumber: entry.orderShipment.shipmentNumber,
+              deliveryMode: entry.orderShipment.deliveryMode,
+              status: entry.orderShipment.status,
+              shippingPaise: entry.orderShipment.shippingPaise,
+            }
+          : null,
+      })),
+      payouts: payouts.map((payout) => this.deliveryPartnerPayoutReadback(payout)),
+      total,
+      page,
+      limit: take,
+    };
+  }
+
+  private async deliveryPartnerWalletSummary(
+    partnerUserId: string,
+    client: DeliveryPartnerWalletReadClient = this.prisma.client,
+  ) {
+    const [credit, debit, earnings, pendingPayout, settings] = await Promise.all([
+      client.deliveryPartnerWalletEntry.aggregate({
+        where: {
+          partnerUserId,
+          direction: DeliveryPartnerWalletEntryDirection.CREDIT,
+        },
+        _sum: { amountPaise: true },
+        _count: { _all: true },
+      }),
+      client.deliveryPartnerWalletEntry.aggregate({
+        where: {
+          partnerUserId,
+          direction: DeliveryPartnerWalletEntryDirection.DEBIT,
+        },
+        _sum: { amountPaise: true },
+        _count: { _all: true },
+      }),
+      client.deliveryPartnerWalletEntry.aggregate({
+        where: {
+          partnerUserId,
+          entryType: DeliveryPartnerWalletEntryType.LOCAL_DELIVERY_EARNING,
+          direction: DeliveryPartnerWalletEntryDirection.CREDIT,
+        },
+        _sum: { amountPaise: true },
+        _count: { _all: true },
+      }),
+      client.deliveryPartnerPayout.aggregate({
+        where: {
+          partnerUserId,
+          status: {
+            in: [DeliveryPartnerPayoutStatus.REQUESTED, DeliveryPartnerPayoutStatus.APPROVED],
+          },
+        },
+        _sum: { amountPaise: true },
+        _count: { _all: true },
+      }),
+      readDeliveryPartnerPayoutSettings(client),
+    ]);
+
+    const totalCreditPaise = credit._sum.amountPaise ?? 0;
+    const totalDebitPaise = debit._sum.amountPaise ?? 0;
+    const ledgerBalancePaise = totalCreditPaise - totalDebitPaise;
+    const pendingPayoutPaise = pendingPayout._sum.amountPaise ?? 0;
+    const availableBalancePaise = Math.max(0, ledgerBalancePaise - pendingPayoutPaise);
+
+    return {
+      totalEarnedPaise: earnings._sum.amountPaise ?? 0,
+      totalCreditedPaise: totalCreditPaise,
+      totalDebitedPaise: totalDebitPaise,
+      ledgerBalancePaise,
+      pendingPayoutPaise,
+      activePayoutRequestCount: pendingPayout._count._all,
+      availableBalancePaise,
+      localDeliveryCount: earnings._count._all,
+      currency: "INR",
+      minimumPayoutPaise: settings.minimumWalletPayoutPaise,
+      payoutRequestsEnabled: settings.requestsEnabled,
+      canRequestPayout:
+        settings.requestsEnabled && availableBalancePaise >= settings.minimumWalletPayoutPaise,
+      payoutSettings: settings,
+    };
+  }
+
+  private deliveryPartnerPayoutReadback(payout: DeliveryPartnerPayoutWithRelations) {
+    return {
+      id: payout.id,
+      payoutNumber: payout.payoutNumber,
+      partnerUserId: payout.partnerUserId,
+      amountPaise: payout.amountPaise,
+      currency: payout.currency,
+      status: payout.status,
+      note: payout.note,
+      settingsSnapshot: payout.settingsSnapshot,
+      requestedAt: payout.requestedAt,
+      approvedAt: payout.approvedAt,
+      paidAt: payout.paidAt,
+      paymentMode: payout.paymentMode,
+      transactionReference: payout.transactionReference,
+      createdAt: payout.createdAt,
+      updatedAt: payout.updatedAt,
+      partner: payout.partner
+        ? {
+            id: payout.partner.id,
+            email: payout.partner.email,
+            phone: payout.partner.phone,
+            fullName: payout.partner.fullName,
+            deliveryProfile: payout.partner.deliveryProfile,
+          }
+        : null,
+      requestedBy: payout.requestedBy,
+      approvedBy: payout.approvedBy,
+      paidBy: payout.paidBy,
+      walletEntries: payout.walletEntries,
+    };
+  }
+
+  private makeDeliveryPartnerPayoutNumber() {
+    const datePart = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Kolkata",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    })
+      .format(new Date())
+      .replace(/-/g, "");
+    return `DPP-${datePart}-${randomUUID().slice(0, 8).toUpperCase()}`;
+  }
+
+  private async creditLocalDeliveryPartnerEarnings(
+    tx: Prisma.TransactionClient,
+    input: {
+      orderId: string;
+      deliveryDetailId: string;
+      createdById: string;
+      note?: string | null;
+    },
+  ) {
+    const settings = await readDeliveryPartnerPayoutSettings(tx);
+    const shipments = await tx.orderShipment.findMany({
+      where: {
+        orderId: input.orderId,
+        deliveryMode: DeliveryMode.LOCAL_DELIVERY_PARTNER,
+        status: DeliveryStatus.DELIVERED,
+        deliveryPartnerUserId: { not: null },
+      },
+      include: {
+        order: {
+          select: {
+            orderNumber: true,
+            currency: true,
+            shippingAddressSnapshot: true,
+            payments: {
+              select: {
+                provider: true,
+                method: true,
+              },
+            },
+          },
+        },
+        seller: {
+          select: {
+            storeName: true,
+            addresses: {
+              orderBy: { createdAt: "asc" },
+              take: 1,
+              select: {
+                line1: true,
+                city: true,
+                state: true,
+                pincode: true,
+                latitude: true,
+                longitude: true,
+                locationSource: true,
+                accuracyMeters: true,
+                locationConfidenceScore: true,
+              },
+            },
+          },
+        },
+        deliveryPartner: {
+          include: {
+            deliveryProfile: true,
+          },
+        },
+      },
+    });
+
+    for (const shipment of shipments) {
+      if (!shipment.deliveryPartnerUserId) {
+        continue;
+      }
+
+      const existingEntry = await tx.deliveryPartnerWalletEntry.findUnique({
+        where: {
+          orderShipmentId_entryType: {
+            orderShipmentId: shipment.id,
+            entryType: DeliveryPartnerWalletEntryType.LOCAL_DELIVERY_EARNING,
+          },
+        },
+        select: { id: true },
+      });
+      if (existingEntry) {
+        continue;
+      }
+
+      const shippingAddress = this.readShippingAddressSnapshot(shipment.order.shippingAddressSnapshot);
+      const distanceResult = await this.deliveryPartnerEarningDistance(
+        tx,
+        shipment.seller.addresses[0],
+        shipment.deliveryPartner?.deliveryProfile,
+        shippingAddress,
+      );
+      const distanceKm = distanceResult.distanceKm;
+      const billableDistanceKm = Math.max(0, Math.ceil(distanceKm ?? 0));
+      const isCod = shipment.order.payments.some(
+        (payment) =>
+          payment.provider === PaymentProvider.COD ||
+          payment.method?.trim().toUpperCase() === "COD",
+      );
+      const perKmPayPaise = billableDistanceKm * settings.perKmPaise;
+      const codBonusPaise = isCod ? settings.codBonusPaise : 0;
+      const formulaPaise = Math.max(
+        settings.minimumPerOrderPaise,
+        settings.basePayPaise + perKmPayPaise + codBonusPaise,
+      );
+      const customerShippingPaise = Math.max(0, shipment.shippingPaise);
+      const amountPaise = settings.freeDeliveryPlatformSubsidyEnabled
+        ? formulaPaise
+        : Math.min(formulaPaise, customerShippingPaise);
+      const platformSubsidyPaise = Math.max(0, amountPaise - customerShippingPaise);
+
+      if (amountPaise <= 0) {
+        continue;
+      }
+
+      await tx.deliveryPartnerWalletEntry.create({
+        data: {
+          partnerUserId: shipment.deliveryPartnerUserId,
+          orderId: shipment.orderId,
+          orderShipmentId: shipment.id,
+          deliveryDetailId: input.deliveryDetailId,
+          entryType: DeliveryPartnerWalletEntryType.LOCAL_DELIVERY_EARNING,
+          direction: DeliveryPartnerWalletEntryDirection.CREDIT,
+          amountPaise,
+          currency: shipment.order.currency,
+          description: `Local delivery earning for ${shipment.order.orderNumber}`,
+          metadata: {
+            orderNumber: shipment.order.orderNumber,
+            shipmentNumber: shipment.shipmentNumber,
+            sellerStoreName: shipment.seller.storeName,
+            deliveryMode: shipment.deliveryMode,
+            source: "LOCAL_DELIVERY_PARTNER_DYNAMIC_PAYOUT",
+            note: input.note ?? null,
+            settingsSnapshot: settings,
+            distanceSnapshot: distanceResult,
+            locationQualitySnapshot: {
+              pickup: this.locationQualitySnapshot(shipment.seller.addresses[0]),
+              destination: shippingAddress
+                ? {
+                    locationSource: shippingAddress.locationSource,
+                    accuracyMeters: shippingAddress.accuracyMeters,
+                    locationConfidenceScore: shippingAddress.locationConfidenceScore,
+                  }
+                : null,
+            },
+            calculation: {
+              minimumPerOrderPaise: settings.minimumPerOrderPaise,
+              basePayPaise: settings.basePayPaise,
+              perKmPaise: settings.perKmPaise,
+              billableDistanceKm,
+              distanceKm,
+              usedDistanceFallback: distanceResult.accuracy !== "ROAD_ROUTE",
+              distanceProvider: distanceResult.provider,
+              distanceAccuracy: distanceResult.accuracy,
+              distanceFailureReason: distanceResult.failureReason,
+              perKmPayPaise,
+              isCod,
+              codBonusPaise,
+              formulaPaise,
+              customerShippingPaise,
+              freeDeliveryPlatformSubsidyEnabled:
+                settings.freeDeliveryPlatformSubsidyEnabled,
+              platformSubsidyPaise,
+            },
+          },
+          createdById: input.createdById,
+        },
+      });
+    }
+  }
+
+  private async deliveryPartnerEarningDistance(
+    tx: Prisma.TransactionClient,
+    pickupAddress:
+      | {
+          line1?: string | null;
+          city?: string | null;
+          state?: string | null;
+          pincode?: string | null;
+          latitude?: Prisma.Decimal | number | string | null;
+          longitude?: Prisma.Decimal | number | string | null;
+          locationSource?: string | null;
+          accuracyMeters?: Prisma.Decimal | number | string | null;
+          locationConfidenceScore?: Prisma.Decimal | number | string | null;
+        }
+      | null
+      | undefined,
+    profile:
+      | {
+          baseLatitude?: Prisma.Decimal | number | string | null;
+          baseLongitude?: Prisma.Decimal | number | string | null;
+        }
+      | null
+      | undefined,
+    address: TrackableAddressSnapshot | null,
+  ): Promise<RouteDistanceResult> {
+    const destination = address
+      ? {
+          latitude: address.latitude,
+          longitude: address.longitude,
+          label: [address.line1, address.city, address.pincode].filter(Boolean).join(", "),
+        }
+      : null;
+    const pickupResult = await this.routeDistance.calculate({
+      origin: pickupAddress
+        ? {
+            latitude: pickupAddress.latitude,
+            longitude: pickupAddress.longitude,
+            label: [
+              "Seller pickup",
+              pickupAddress.line1,
+              pickupAddress.city,
+              pickupAddress.pincode,
+            ]
+              .filter(Boolean)
+              .join(", "),
+          }
+        : null,
+      destination,
+      client: tx,
+    });
+
+    if (pickupResult.distanceKm !== null) {
+      return pickupResult;
+    }
+
+    const partnerBaseResult = await this.routeDistance.calculate({
+      origin: {
+        latitude: profile?.baseLatitude,
+        longitude: profile?.baseLongitude,
+        label: "Delivery partner base",
+      },
+      destination,
+      client: tx,
+    });
+
+    return partnerBaseResult.distanceKm !== null ? partnerBaseResult : pickupResult;
+  }
+
+  private locationQualitySnapshot(
+    address:
+      | {
+          locationSource?: string | null;
+          accuracyMeters?: Prisma.Decimal | number | string | null;
+          locationConfidenceScore?: Prisma.Decimal | number | string | null;
+        }
+      | null
+      | undefined,
+  ) {
+    if (!address) {
+      return null;
+    }
+
+    return {
+      locationSource: address.locationSource ?? null,
+      accuracyMeters: this.readSnapshotNumber(address.accuracyMeters),
+      locationConfidenceScore: this.readSnapshotNumber(address.locationConfidenceScore),
     };
   }
 
@@ -4700,11 +5520,34 @@ export class OrdersService {
       stateCode: this.readSnapshotString(record.stateCode),
       cityCode: this.readSnapshotString(record.cityCode),
       localAreaCode: this.readSnapshotString(record.localAreaCode),
+      latitude: this.readSnapshotNumber(record.latitude),
+      longitude: this.readSnapshotNumber(record.longitude),
+      locationSource: this.readSnapshotString(record.locationSource),
+      accuracyMeters: this.readSnapshotNumber(record.accuracyMeters),
+      locationConfidenceScore: this.readSnapshotNumber(record.locationConfidenceScore),
     };
   }
 
   private readSnapshotString(value: unknown) {
     return typeof value === "string" && value.trim() ? value.trim() : null;
+  }
+
+  private readSnapshotNumber(value: unknown) {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+
+    if (typeof value === "string" && value.trim()) {
+      const parsed = Number(value.trim());
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    if (value && typeof value === "object" && "toString" in value) {
+      const parsed = Number(value.toString());
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    return null;
   }
 
   private async resolveShippingAddressSnapshot(customerId: string, dto: PlaceOrderDto) {
@@ -4727,6 +5570,14 @@ export class OrdersService {
         stateCode: address.stateCode,
         cityCode: address.cityCode,
         localAreaCode: address.localAreaCode,
+        latitude: address.latitude === null ? null : Number(address.latitude),
+        longitude: address.longitude === null ? null : Number(address.longitude),
+        locationSource: address.locationSource,
+        accuracyMeters: address.accuracyMeters === null ? null : Number(address.accuracyMeters),
+        locationConfidenceScore:
+          address.locationConfidenceScore === null
+            ? null
+            : Number(address.locationConfidenceScore),
       };
     }
 
@@ -4754,6 +5605,11 @@ export class OrdersService {
       stateCode: location.stateCode,
       cityCode: location.cityCode,
       localAreaCode: location.localAreaCode,
+      latitude: address.latitude ?? null,
+      longitude: address.longitude ?? null,
+      locationSource: address.locationSource ?? null,
+      accuracyMeters: address.accuracyMeters ?? null,
+      locationConfidenceScore: address.locationConfidenceScore ?? null,
     };
   }
 

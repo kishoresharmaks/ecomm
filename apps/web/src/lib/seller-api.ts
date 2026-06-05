@@ -1,5 +1,6 @@
 import { IndihubApiError, apiBaseUrl, buildAuthHeaders, indihubFetch, type IndihubAuthHeaders } from "./api";
 import type { AccountOrder } from "./account-api";
+import type { LocationSource } from "./maps-api";
 import type { SellerDocumentType } from "./seller-document-upload";
 import type {
   CategorySummary,
@@ -237,6 +238,11 @@ export type SellerProfilePayload = {
     stateCode?: string | undefined;
     cityCode?: string | undefined;
     localAreaCode?: string | undefined;
+    latitude?: number | null | undefined;
+    longitude?: number | null | undefined;
+    locationSource?: LocationSource | null | undefined;
+    accuracyMeters?: number | null | undefined;
+    locationConfidenceScore?: number | null | undefined;
   };
   courierSettings?: Array<{
     providerCode: string;
@@ -284,6 +290,11 @@ export type SellerOnboardingPayload = {
     stateCode?: string | undefined;
     cityCode?: string | undefined;
     localAreaCode?: string | undefined;
+    latitude?: number | null | undefined;
+    longitude?: number | null | undefined;
+    locationSource?: LocationSource | null | undefined;
+    accuracyMeters?: number | null | undefined;
+    locationConfidenceScore?: number | null | undefined;
   };
 };
 

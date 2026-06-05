@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@indihub/ui";
 import { type LocationArea } from "@/lib/location-api";
 import { formatLocalAreaLabel } from "./location-utils";
@@ -16,6 +16,11 @@ export type AddressLocationValue = {
   area?: string | null | undefined;
   localAreaCode?: string | null | undefined;
   pincode?: string | null | undefined;
+};
+
+type LocationAutofillEventDetail = {
+  address?: AddressLocationValue;
+  overwrite?: boolean;
 };
 
 type LocationAreaOption = {
@@ -38,6 +43,7 @@ type LocationFieldsProps = {
 const defaultInputClass =
   "h-11 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 text-sm font-semibold text-[#1F2933] outline-none focus:border-[#ED3500] focus:bg-white";
 const defaultLabelClass = "space-y-2";
+const locationAutofillEventName = "indihub:location-autofill";
 
 export function LocationFields({
   defaultValue,
@@ -48,6 +54,7 @@ export function LocationFields({
   inputClassName,
   labelClassName
 }: LocationFieldsProps) {
+  const rootRef = useRef<HTMLDivElement>(null);
   const [countryCode, setCountryCode] = useState(defaultValue?.countryCode ?? defaultCountryCode);
   const [stateCode, setStateCode] = useState(defaultValue?.stateCode ?? "");
   const [cityCode, setCityCode] = useState(defaultValue?.cityCode ?? "");
@@ -55,6 +62,13 @@ export function LocationFields({
   const [areaSearch, setAreaSearch] = useState(defaultValue?.area ?? "");
   const [selectedArea, setSelectedArea] = useState<LocationAreaOption | null>(null);
   const [pincode, setPincode] = useState(defaultValue?.pincode ?? "");
+  const [pendingAutofill, setPendingAutofill] = useState<AddressLocationValue | null>(null);
+  const [manualNames, setManualNames] = useState<{
+    country?: string | undefined;
+    state?: string | undefined;
+    city?: string | undefined;
+    area?: string | undefined;
+  }>({});
 
   const inputClass = inputClassName ?? defaultInputClass;
   const labelClass = labelClassName ?? defaultLabelClass;
@@ -69,6 +83,26 @@ export function LocationFields({
     postalCode: postalCodeLookup,
     limit: 50,
   });
+
+  useEffect(() => {
+    setCountryCode(defaultValue?.countryCode ?? defaultCountryCode);
+    setStateCode(defaultValue?.stateCode ?? "");
+    setCityCode(defaultValue?.cityCode ?? "");
+    setLocalAreaCode(defaultValue?.localAreaCode ?? "");
+    setAreaSearch(defaultValue?.area ?? "");
+    setPincode(defaultValue?.pincode ?? "");
+    setSelectedArea(null);
+    setPendingAutofill(null);
+    setManualNames({});
+  }, [
+    defaultCountryCode,
+    defaultValue?.area,
+    defaultValue?.cityCode,
+    defaultValue?.countryCode,
+    defaultValue?.localAreaCode,
+    defaultValue?.pincode,
+    defaultValue?.stateCode
+  ]);
 
   const rawCountries = locationCatalog.countries;
   const rawStates = locationCatalog.states;
@@ -214,10 +248,15 @@ export function LocationFields({
 
   const hiddenValues = useMemo(
     () => ({
-      country: country?.name ?? selectedAreaCountry?.name ?? defaultValue?.country ?? "India",
-      state: state?.name ?? selectedAreaSubdivision?.name ?? defaultValue?.state ?? "",
-      city: city?.name ?? selectedAreaCity?.name ?? defaultValue?.city ?? "",
-      area: area?.name ?? areaSearch ?? defaultValue?.area ?? ""
+      country:
+        country?.name ??
+        selectedAreaCountry?.name ??
+        manualNames.country ??
+        defaultValue?.country ??
+        "India",
+      state: state?.name ?? selectedAreaSubdivision?.name ?? manualNames.state ?? defaultValue?.state ?? "",
+      city: city?.name ?? selectedAreaCity?.name ?? manualNames.city ?? defaultValue?.city ?? "",
+      area: area?.name ?? (areaSearch || manualNames.area || defaultValue?.area || "")
     }),
     [
       area?.name,
@@ -228,6 +267,10 @@ export function LocationFields({
       defaultValue?.city,
       defaultValue?.country,
       defaultValue?.state,
+      manualNames.area,
+      manualNames.city,
+      manualNames.country,
+      manualNames.state,
       selectedAreaCity?.name,
       selectedAreaCountry?.name,
       selectedAreaSubdivision?.name,
@@ -235,8 +278,115 @@ export function LocationFields({
     ]
   );
 
+  useEffect(() => {
+    const form = rootRef.current?.closest("form");
+    if (!form) {
+      return;
+    }
+
+    function handleAutofill(event: Event) {
+      const detail = (event as CustomEvent<LocationAutofillEventDetail>).detail;
+      const address = detail?.address;
+      if (!address) {
+        return;
+      }
+
+      const overwrite = Boolean(detail.overwrite);
+      const nextAutofill: AddressLocationValue = {
+        country: cleanAddressValue(address.country),
+        countryCode: cleanAddressValue(address.countryCode),
+        state: cleanAddressValue(address.state),
+        city: cleanAddressValue(address.city),
+        area: cleanAddressValue(address.area),
+        pincode: cleanAddressValue(address.pincode)
+      };
+
+      setPendingAutofill((current) => ({ ...(current ?? {}), ...nextAutofill }));
+
+      if (nextAutofill.countryCode && (overwrite || !countryCode)) {
+        setCountryCode(nextAutofill.countryCode);
+      }
+
+      if (overwrite) {
+        if (nextAutofill.state) {
+          setStateCode("");
+        }
+        if (nextAutofill.city) {
+          setCityCode("");
+        }
+        if (nextAutofill.area) {
+          setLocalAreaCode("");
+          setSelectedArea(null);
+        }
+      }
+
+      if (nextAutofill.pincode && (overwrite || !pincode)) {
+        setPincode(nextAutofill.pincode);
+        setLocalAreaCode("");
+        setSelectedArea(null);
+      }
+
+      if (nextAutofill.area && (overwrite || !areaSearch)) {
+        setAreaSearch(nextAutofill.area);
+        setLocalAreaCode("");
+        setSelectedArea(null);
+      }
+
+      setManualNames((current) => ({
+        country: nextAutofill.country && (overwrite || !current.country) ? nextAutofill.country : current.country,
+        state: nextAutofill.state && (overwrite || !stateCode) ? nextAutofill.state : current.state,
+        city: nextAutofill.city && (overwrite || !cityCode) ? nextAutofill.city : current.city,
+        area: nextAutofill.area && (overwrite || !localAreaCode) ? nextAutofill.area : current.area
+      }));
+    }
+
+    form.addEventListener(locationAutofillEventName, handleAutofill as EventListener);
+    return () => form.removeEventListener(locationAutofillEventName, handleAutofill as EventListener);
+  }, [areaSearch, cityCode, countryCode, localAreaCode, pincode, stateCode]);
+
+  useEffect(() => {
+    if (!pendingAutofill?.state || stateCode || !states.length) {
+      return;
+    }
+
+    const match = states.find((item) => sameName(item.name, pendingAutofill.state));
+    if (match) {
+      setStateCode(match.code);
+    }
+  }, [pendingAutofill?.state, stateCode, states]);
+
+  useEffect(() => {
+    if (!pendingAutofill?.city || cityCode || !cities.length) {
+      return;
+    }
+
+    const match = cities.find((item) => sameName(item.name, pendingAutofill.city));
+    if (!match) {
+      return;
+    }
+
+    setCityCode(match.code);
+    if (match.subdivision?.country?.code) {
+      setCountryCode(match.subdivision.country.code);
+    }
+    if (match.subdivision?.code) {
+      setStateCode(match.subdivision.code);
+    }
+  }, [cities, cityCode, pendingAutofill?.city]);
+
+  useEffect(() => {
+    if (!pendingAutofill?.area || localAreaCode || !areas.length) {
+      return;
+    }
+
+    const match = areas.find((item) => sameName(item.name, pendingAutofill.area));
+    if (match) {
+      selectArea(match);
+    }
+  }, [areas, localAreaCode, pendingAutofill?.area]);
+
   return (
-    <div className={cn("grid gap-4", className)}>
+    <div ref={rootRef} className={cn("grid gap-4", className)}>
       <input type="hidden" name="country" value={hiddenValues.country} />
       <input type="hidden" name="state" value={hiddenValues.state} />
       <input type="hidden" name="city" value={hiddenValues.city} />
@@ -273,6 +423,7 @@ export function LocationFields({
         inputClassName={inputClass}
         labelClassName={labelClass}
         disabled={disabled || !countryCode || locationCatalog.statesQuery.isLoading}
+        required={!hiddenValues.state}
         onChange={(value) => {
           setStateCode(value);
           setCityCode("");
@@ -293,6 +444,7 @@ export function LocationFields({
         inputClassName={inputClass}
         labelClassName={labelClass}
         disabled={disabled || !canChooseCity || locationCatalog.citiesQuery.isLoading}
+        required={!hiddenValues.city}
         onChange={(value) => {
           setCityCode(value);
           const selectedCity = cities.find((item) => item.code === value);
@@ -378,7 +530,8 @@ function SelectField<T>({
   inputClassName,
   labelClassName,
   disabled,
-  onChange
+  onChange,
+  required = true,
 }: {
   label: string;
   name: string;
@@ -390,11 +543,12 @@ function SelectField<T>({
   labelClassName: string;
   disabled?: boolean;
   onChange: (value: string) => void;
+  required?: boolean;
 }) {
   return (
     <label className={labelClassName}>
       <span className="block text-sm font-bold text-[#1F2933]">{label}</span>
-      <select name={name} value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled} className={inputClassName} required>
+      <select name={name} value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled} className={inputClassName} required={required}>
         <option value="">Select {label.toLowerCase()}</option>
         {options.map((item) => (
           <option key={getValue(item)} value={getValue(item)}>
@@ -543,6 +697,10 @@ function PincodeAreaSuggestions({
 
 function sameName(left: string, right: string | null | undefined) {
   return left.trim().toLowerCase() === right?.trim().toLowerCase();
+}
+
+function cleanAddressValue(value: string | null | undefined) {
+  return value?.trim() || undefined;
 }
 
 function formatCityOptionLabel(city: { name: string; subdivision?: { name: string } | undefined }) {

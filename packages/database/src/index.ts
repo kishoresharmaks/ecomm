@@ -13,7 +13,9 @@ declare global {
 loadLocalEnv();
 
 const connectionString =
-  process.env.DATABASE_URL ?? "postgresql://postgres:postgres@localhost:5432/indihub?schema=public";
+  normalizePgSslMode(
+    process.env.DATABASE_URL ?? "postgresql://postgres:postgres@localhost:5432/indihub?schema=public"
+  );
 const transactionMaxWaitMs = positiveIntegerEnv("PRISMA_TRANSACTION_MAX_WAIT_MS", 15_000);
 const transactionTimeoutMs = positiveIntegerEnv("PRISMA_TRANSACTION_TIMEOUT_MS", 30_000);
 
@@ -75,6 +77,22 @@ function applyEnvFile(envPath: string) {
 
     process.env[key] ??= value;
   }
+}
+
+function normalizePgSslMode(value: string) {
+  try {
+    const url = new URL(value);
+    const sslMode = url.searchParams.get("sslmode")?.trim().toLowerCase();
+
+    if (sslMode === "prefer" || sslMode === "require" || sslMode === "verify-ca") {
+      url.searchParams.set("sslmode", "verify-full");
+      return url.toString();
+    }
+  } catch {
+    return value;
+  }
+
+  return value;
 }
 
 function positiveIntegerEnv(key: string, fallback: number) {

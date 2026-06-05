@@ -13,10 +13,24 @@ type StorefrontImageProps = {
   className?: string;
   priority?: boolean;
   fallbackLabel?: string;
+  showFallbackLabel?: boolean;
+  fallbackImageSrc?: string;
   allowExternalRemote?: boolean;
 };
 
-export function StorefrontImage({ src, alt, sizes, className, priority = false, fallbackLabel, allowExternalRemote = false }: StorefrontImageProps) {
+const brandFallbackImageSrc = "/brand/1handindia_hero_mark.png";
+
+export function StorefrontImage({
+  src,
+  alt,
+  sizes,
+  className,
+  priority = false,
+  fallbackLabel,
+  showFallbackLabel = true,
+  fallbackImageSrc = brandFallbackImageSrc,
+  allowExternalRemote = false
+}: StorefrontImageProps) {
   const [failed, setFailed] = useState(false);
   const resolvedSrc = resolveImageSource(src);
 
@@ -67,11 +81,24 @@ export function StorefrontImage({ src, alt, sizes, className, priority = false, 
   }
 
   return (
-    <div className="flex h-full w-full flex-col justify-between bg-[linear-gradient(135deg,#EAF1F7,#FFF0EC)] p-4">
-      <span className="grid h-11 w-11 place-items-center rounded-md bg-white/80 text-[#163B5C] shadow-sm">
-        <ImageIcon size={20} />
-      </span>
-      {fallbackLabel ? <span className="text-sm font-black text-[#163B5C]">{fallbackLabel}</span> : null}
+    <div className={cn("relative flex h-full w-full flex-col items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_50%_30%,#FFFFFF_0%,#FFF4EF_46%,#FFE5DB_100%)] p-4 text-center", className)}>
+      <img
+        src={fallbackImageSrc}
+        alt=""
+        loading={priority ? "eager" : "lazy"}
+        decoding="async"
+        className="h-full max-h-[78%] w-full max-w-[78%] object-contain drop-shadow-[0_12px_24px_rgba(237,53,0,0.16)]"
+        onError={() => setFailed(true)}
+      />
+      {showFallbackLabel && fallbackLabel ? (
+        <span className="mt-2 line-clamp-2 max-w-full text-xs font-black leading-4 text-[#163B5C]">
+          {fallbackLabel}
+        </span>
+      ) : !fallbackImageSrc ? (
+        <span className="grid h-11 w-11 place-items-center rounded-md bg-white/80 text-[#163B5C] shadow-sm">
+          <ImageIcon size={20} />
+        </span>
+      ) : null}
     </div>
   );
 }

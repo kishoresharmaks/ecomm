@@ -7,6 +7,7 @@ import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
 import { CustomerAuthNotice } from "@/components/auth/customer-auth-notice";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
 import { LocationFields } from "@/components/locations/location-fields";
+import { MapLocationPicker } from "@/components/maps/map-location-picker";
 import { useConfirmationDialog } from "@/components/shared/confirmation-dialog";
 import { AccountShell } from "./account-shell";
 import {
@@ -102,6 +103,10 @@ export function AddressesClient() {
     const stateCode = optionalFormValue(form, "stateCode");
     const cityCode = optionalFormValue(form, "cityCode");
     const localAreaCode = optionalFormValue(form, "localAreaCode");
+    const coordinates = nullableCoordinatePair(form);
+    const locationSource = nullableFormValue(form, "locationSource") as CustomerAddressPayload["locationSource"];
+    const accuracyMeters = nullableNumberValue(form, "accuracyMeters");
+    const locationConfidenceScore = nullableNumberValue(form, "locationConfidenceScore");
     const payload: CustomerAddressPayload = {
       ...(label ? { label } : {}),
       fullName: formValue(form, "fullName"),
@@ -117,6 +122,10 @@ export function AddressesClient() {
       ...(stateCode ? { stateCode } : {}),
       ...(cityCode ? { cityCode } : {}),
       ...(localAreaCode ? { localAreaCode } : {}),
+      ...(coordinates.latitude !== undefined ? coordinates : {}),
+      ...(locationSource !== undefined ? { locationSource } : {}),
+      ...(accuracyMeters !== undefined ? { accuracyMeters } : {}),
+      ...(locationConfidenceScore !== undefined ? { locationConfidenceScore } : {}),
       isDefault: form.get("isDefault") === "on"
     };
 
@@ -233,6 +242,17 @@ export function AddressesClient() {
               defaultCountryCode="IN"
               loadCitiesAcrossCountry
             />
+            <MapLocationPicker
+              defaultValue={{
+                latitude: editing?.latitude,
+                longitude: editing?.longitude,
+                locationSource: editing?.locationSource,
+                accuracyMeters: editing?.accuracyMeters,
+                locationConfidenceScore: editing?.locationConfidenceScore
+              }}
+              authHeaders={customerAuth.authHeaders}
+              disabled={!customerAuth.enabled || saveMutation.isPending}
+            />
             <label className="flex items-center gap-3 rounded-md border border-[#E5E7EB] bg-[#F8FAFC] px-3 py-3 text-sm font-bold text-[#1F2933]">
               <input name="isDefault" type="checkbox" defaultChecked={editing?.isDefault ?? false} />
               Set as default delivery address
@@ -253,4 +273,41 @@ export function AddressesClient() {
       </div>
     </AccountShell>
   );
+}
+
+function nullableFormValue(form: FormData, key: string) {
+  if (!form.has(key)) {
+    return undefined;
+  }
+
+  return optionalFormValue(form, key) ?? null;
+}
+
+function nullableCoordinatePair(form: FormData) {
+  const latitude = nullableNumberValue(form, "latitude");
+  const longitude = nullableNumberValue(form, "longitude");
+
+  if (latitude === undefined && longitude === undefined) {
+    return {};
+  }
+
+  if (typeof latitude === "number" && typeof longitude === "number") {
+    return { latitude, longitude };
+  }
+
+  return { latitude: null, longitude: null };
+}
+
+function nullableNumberValue(form: FormData, key: string) {
+  if (!form.has(key)) {
+    return undefined;
+  }
+
+  const raw = optionalFormValue(form, key);
+  if (!raw) {
+    return null;
+  }
+
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }

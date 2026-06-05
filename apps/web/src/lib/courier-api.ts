@@ -198,11 +198,21 @@ export type CourierDeliveryPartnerProfile = {
   notes?: string | null;
 };
 
+export type CourierDeliveryPartnerWalletSummary = {
+  totalEarnedPaise: number;
+  totalCreditedPaise: number;
+  totalDebitedPaise: number;
+  availableBalancePaise: number;
+  localDeliveryCount: number;
+  currency: string;
+};
+
 export type CourierDeliveryPartnerRecord = DeliveryPartnerOption & {
   status: string;
   deliveryProfile: CourierDeliveryPartnerProfile;
   activeWorkload: number;
   pendingCodCashPaise: number;
+  wallet?: CourierDeliveryPartnerWalletSummary;
   hasProfile: boolean;
   hasServiceCoverage: boolean;
   codLimitExceeded: boolean;

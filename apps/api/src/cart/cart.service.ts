@@ -157,6 +157,14 @@ export class CartService {
         stateCode: address.stateCode,
         cityCode: address.cityCode,
         localAreaCode: address.localAreaCode,
+        latitude: address.latitude === null ? null : Number(address.latitude),
+        longitude: address.longitude === null ? null : Number(address.longitude),
+        locationSource: address.locationSource,
+        accuracyMeters: address.accuracyMeters === null ? null : Number(address.accuracyMeters),
+        locationConfidenceScore:
+          address.locationConfidenceScore === null
+            ? null
+            : Number(address.locationConfidenceScore),
       };
     }
 
@@ -165,7 +173,9 @@ export class CartService {
       !query.stateCode &&
       !query.cityCode &&
       !query.pincode &&
-      !query.localAreaCode
+      !query.localAreaCode &&
+      query.latitude === undefined &&
+      query.longitude === undefined
     ) {
       return undefined;
     }
@@ -176,6 +186,8 @@ export class CartService {
       cityCode: query.cityCode ?? null,
       pincode: query.pincode ?? null,
       localAreaCode: query.localAreaCode ?? null,
+      latitude: query.latitude ?? null,
+      longitude: query.longitude ?? null,
     };
   }
 

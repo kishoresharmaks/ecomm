@@ -30,6 +30,11 @@ export type DeliveryOrder = {
     pincode?: string;
     country?: string;
     countryCode?: string | null;
+    latitude?: number | string | null;
+    longitude?: number | string | null;
+    locationSource?: string | null;
+    accuracyMeters?: number | string | null;
+    locationConfidenceScore?: number | string | null;
   } | null;
   customer?: {
     email?: string | null;
@@ -152,6 +157,80 @@ export type DeliveryPartnerProfileAccount = {
   deliveryProfile: DeliveryPartnerProfile;
   activeWorkload: number;
   pendingCodCashPaise: number;
+  wallet?: DeliveryPartnerWalletSummary;
+};
+
+export type DeliveryPartnerWalletSummary = {
+  totalEarnedPaise: number;
+  totalCreditedPaise: number;
+  totalDebitedPaise: number;
+  ledgerBalancePaise?: number;
+  pendingPayoutPaise?: number;
+  activePayoutRequestCount?: number;
+  availableBalancePaise: number;
+  localDeliveryCount: number;
+  currency: string;
+  minimumPayoutPaise?: number;
+  payoutRequestsEnabled?: boolean;
+  canRequestPayout?: boolean;
+  payoutSettings?: DeliveryPartnerPayoutSettings;
+};
+
+export type DeliveryPartnerPayoutSettings = {
+  minimumPerOrderPaise: number;
+  basePayPaise: number;
+  perKmPaise: number;
+  codBonusPaise: number;
+  minimumWalletPayoutPaise: number;
+  requestsEnabled: boolean;
+  freeDeliveryPlatformSubsidyEnabled: boolean;
+};
+
+export type DeliveryPartnerWalletEntry = {
+  id: string;
+  entryType: string;
+  direction: "CREDIT" | "DEBIT";
+  amountPaise: number;
+  currency: string;
+  description?: string | null;
+  metadata?: Record<string, unknown> | null;
+  createdAt: string;
+  order?: {
+    orderNumber: string;
+    paymentStatus: string;
+    deliveryStatus: string;
+  } | null;
+  shipment?: {
+    shipmentNumber: string;
+    deliveryMode: string;
+    status: string;
+    shippingPaise: number;
+  } | null;
+};
+
+export type DeliveryPartnerPayout = {
+  id: string;
+  payoutNumber: string;
+  partnerUserId: string;
+  amountPaise: number;
+  currency: string;
+  status: "REQUESTED" | "APPROVED" | "REJECTED" | "PAID";
+  note?: string | null;
+  requestedAt?: string | null;
+  approvedAt?: string | null;
+  paidAt?: string | null;
+  paymentMode?: string | null;
+  transactionReference?: string | null;
+  createdAt?: string | null;
+};
+
+export type DeliveryPartnerWallet = {
+  summary: DeliveryPartnerWalletSummary;
+  items: DeliveryPartnerWalletEntry[];
+  payouts?: DeliveryPartnerPayout[];
+  total: number;
+  page: number;
+  limit: number;
 };
 
 export type DeliveryPartnerProfileUpdatePayload = {
@@ -199,7 +278,7 @@ export function listDeliveryOrders(
 ) {
   const params = new URLSearchParams();
   Object.entries(query).forEach(([key, value]) => {
-    if (value !== undefined && value !== "") {
+    if (value !== undefined) {
       params.set(key, String(value));
     }
   });
@@ -254,6 +333,32 @@ export function createDeliveryAttempt(
 
 export function getDeliveryProfile(auth: IndihubAuthHeaders) {
   return indihubFetch<DeliveryPartnerProfileAccount>("/api/delivery/profile", undefined, auth);
+}
+
+export function getDeliveryWallet(auth: IndihubAuthHeaders, query: { page?: number; limit?: number } = {}) {
+  const params = new URLSearchParams();
+  Object.entries(query).forEach(([key, value]) => {
+    if (value !== undefined) {
+      params.set(key, String(value));
+    }
+  });
+
+  return indihubFetch<DeliveryPartnerWallet>(
+    `/api/delivery/wallet${params.size ? `?${params.toString()}` : ""}`,
+    undefined,
+    auth
+  );
+}
+
+export function requestDeliveryWalletPayout(auth: IndihubAuthHeaders, payload: { note?: string }) {
+  return indihubFetch<DeliveryPartnerPayout>(
+    "/api/delivery/wallet/payout-requests",
+    {
+      method: "POST",
+      body: JSON.stringify(removeEmptyValues(payload))
+    },
+    auth
+  );
 }
 
 export function updateDeliveryProfile(

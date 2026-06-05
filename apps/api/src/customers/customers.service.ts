@@ -140,6 +140,11 @@ export class CustomersService {
           stateCode: location.stateCode,
           cityCode: location.cityCode,
           localAreaCode: location.localAreaCode,
+          latitude: dto.latitude ?? null,
+          longitude: dto.longitude ?? null,
+          locationSource: dto.locationSource ?? null,
+          accuracyMeters: dto.accuracyMeters ?? null,
+          locationConfidenceScore: dto.locationConfidenceScore ?? null,
           isDefault
         }
       });
@@ -212,6 +217,13 @@ export class CustomersService {
                 cityCode: location.cityCode,
                 localAreaCode: location.localAreaCode
               }
+            : {}),
+          ...(dto.latitude !== undefined ? { latitude: dto.latitude ?? null } : {}),
+          ...(dto.longitude !== undefined ? { longitude: dto.longitude ?? null } : {}),
+          ...(dto.locationSource !== undefined ? { locationSource: dto.locationSource ?? null } : {}),
+          ...(dto.accuracyMeters !== undefined ? { accuracyMeters: dto.accuracyMeters ?? null } : {}),
+          ...(dto.locationConfidenceScore !== undefined
+            ? { locationConfidenceScore: dto.locationConfidenceScore ?? null }
             : {}),
           ...(dto.isDefault !== undefined ? { isDefault: dto.isDefault } : {})
         }

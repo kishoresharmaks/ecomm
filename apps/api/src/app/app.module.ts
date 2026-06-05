@@ -16,6 +16,7 @@ import { FinanceModule } from "../finance/finance.module";
 import { HealthController } from "../health/health.controller";
 import { HsnMasterModule } from "../hsn-master/hsn-master.module";
 import { LocationsModule } from "../locations/locations.module";
+import { MapsModule } from "../maps/maps.module";
 import { MarketModule } from "../market/market.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { OrdersModule } from "../orders/orders.module";
@@ -50,6 +51,7 @@ import { SupportModule } from "../support/support.module";
     FinanceModule,
     HsnMasterModule,
     LocationsModule,
+    MapsModule,
     MarketModule,
     NotificationsModule,
     ProductTemplatesModule,

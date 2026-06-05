@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   listLocationAreas,
@@ -30,6 +30,26 @@ export const locationQueryKeys = {
     ] as const,
 };
 
+export const locationQueryCacheOptions = {
+  countries: {
+    staleTime: 30 * 60 * 1000,
+    gcTime: 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  },
+  catalog: {
+    staleTime: 15 * 60 * 1000,
+    gcTime: 45 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  },
+  areas: {
+    staleTime: 3 * 60 * 1000,
+    gcTime: 15 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  },
+} as const;
+
+const defaultLocationAreaDebounceMs = 300;
+
 type LocationAreaStoreInput = {
   countryCode?: string | null;
   stateCode?: string | null;
@@ -38,6 +58,7 @@ type LocationAreaStoreInput = {
   postalCode?: string | null;
   limit?: number;
   minimumSearchLength?: number;
+  debounceMs?: number;
   enabled?: boolean;
 };
 
@@ -148,16 +169,19 @@ export function useLocationCatalog({
   const countriesQuery = useQuery({
     queryKey: locationQueryKeys.countries(),
     queryFn: listLocationCountries,
+    ...locationQueryCacheOptions.countries,
   });
   const statesQuery = useQuery({
     queryKey: locationQueryKeys.states(normalizedCountryCode),
     queryFn: () => listLocationStates(normalizedCountryCode),
     enabled: Boolean(normalizedCountryCode),
+    ...locationQueryCacheOptions.catalog,
   });
   const citiesQuery = useQuery({
     queryKey: locationQueryKeys.cities(cityRequest.queryParams),
     queryFn: () => listLocationCities(cityRequest.queryParams),
     enabled: cityRequest.enabled,
+    ...locationQueryCacheOptions.catalog,
   });
 
   return {
@@ -171,14 +195,30 @@ export function useLocationCatalog({
 }
 
 export function useLocationAreaStore(input: LocationAreaStoreInput) {
+  const debounceMs = input.debounceMs ?? defaultLocationAreaDebounceMs;
+  const debouncedSearch = useDebouncedValue(input.search ?? "", debounceMs);
+  const debouncedPostalCode = useDebouncedValue(input.postalCode ?? "", debounceMs);
   const request = useMemo(
-    () => buildLocationAreaStoreRequest(input),
+    () => {
+      const requestInput: LocationAreaStoreInput = {
+        countryCode: input.countryCode ?? null,
+        stateCode: input.stateCode ?? null,
+        cityCode: input.cityCode ?? null,
+        search: debouncedSearch,
+        postalCode: debouncedPostalCode,
+        ...(input.limit !== undefined ? { limit: input.limit } : {}),
+        ...(input.minimumSearchLength !== undefined ? { minimumSearchLength: input.minimumSearchLength } : {}),
+        ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
+      };
+
+      return buildLocationAreaStoreRequest(requestInput);
+    },
     [
+      debouncedPostalCode,
+      debouncedSearch,
       input.countryCode,
-      input.stateCode,
       input.cityCode,
-      input.search,
-      input.postalCode,
+      input.stateCode,
       input.limit,
       input.minimumSearchLength,
       input.enabled,
@@ -188,6 +228,7 @@ export function useLocationAreaStore(input: LocationAreaStoreInput) {
     queryKey: locationQueryKeys.areas(request.queryParams),
     queryFn: () => listLocationAreas(request.queryParams),
     enabled: request.enabled,
+    ...locationQueryCacheOptions.areas,
   });
 
   return {
@@ -199,4 +240,20 @@ export function useLocationAreaStore(input: LocationAreaStoreInput) {
 
 function cleanCode(value: string | null | undefined) {
   return value?.trim().toUpperCase() ?? "";
+}
+
+function useDebouncedValue(value: string, delayMs: number) {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    if (delayMs <= 0) {
+      setDebouncedValue(value);
+      return;
+    }
+
+    const timeout = window.setTimeout(() => setDebouncedValue(value), delayMs);
+    return () => window.clearTimeout(timeout);
+  }, [delayMs, value]);
+
+  return debouncedValue;
 }

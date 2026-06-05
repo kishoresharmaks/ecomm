@@ -67,6 +67,8 @@ import {
   type AdminSelectOption,
 } from "@/components/admin/admin-ux";
 import { CheckoutFeeSettings } from "@/components/admin/settings/checkout-fee-settings";
+import { DeliveryPartnerPayoutSettings } from "@/components/admin/settings/delivery-partner-payout-settings";
+import { MapRoutingSettings } from "@/components/admin/settings/map-routing-settings";
 import { SellerPayoutSettings } from "@/components/admin/settings/seller-payout-settings";
 import { readBooleanSettingValue } from "@/components/admin/settings/setting-value-utils";
 import { useLocationAreaStore, useLocationCatalog } from "@/components/locations/location-store";
@@ -4586,7 +4588,12 @@ export function AdminSettingsPageClient() {
           {
             key: "courier-integrations",
             label: "Courier integrations",
-            panel: <CourierProviderSettingsPanel authHeaders={auth.authHeaders} />,
+            panel: (
+              <div className="space-y-5">
+                <MapRoutingSettings />
+                <CourierProviderSettingsPanel authHeaders={auth.authHeaders} />
+              </div>
+            ),
           },
           {
             key: "storage",
@@ -4664,6 +4671,7 @@ export function AdminSettingsPageClient() {
             panel: (
               <div className="space-y-5">
                 <SellerPayoutSettings settings={settings} />
+                <DeliveryPartnerPayoutSettings settings={settings} />
                 <Panel title="Finance records">
                   <div className="flex flex-wrap items-center justify-between gap-4">
                     <p className="max-w-3xl text-sm font-semibold leading-6 text-[#667085]">

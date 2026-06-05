@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { LocationImportMode } from "@indihub/database";
+import { LocationImportMode, type Prisma } from "@indihub/database";
 import { PrismaService } from "../prisma/prisma.service";
 import { bundledLocationDataset } from "./bundled-location-data";
 import {
@@ -14,6 +14,16 @@ import {
 import { attachStoredIndiaPostalComparison, fetchIndiaPostalLookup, type IndiaPostalStoredArea } from "./india-postal-lookup";
 import { importLocationDataset } from "./location-importer";
 import { normalizeLocationAreaSearchTerms } from "./location-search";
+
+const publicLocationCacheMaxEntries = 500;
+const catalogCacheTtlMs = 10 * 60 * 1000;
+const areaSearchCacheTtlMs = 2 * 60 * 1000;
+
+type CacheEntry<T> = {
+  expiresAt: number;
+  value?: T;
+  promise?: Promise<T>;
+};
 
 export type AddressLocationInput = {
   countryCode?: string | null | undefined;
@@ -41,109 +51,138 @@ export type ResolvedAddressLocation = {
 
 @Injectable()
 export class LocationsService {
+  private readonly publicLocationCache = new Map<string, CacheEntry<unknown>>();
+
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   listCountries(query: LocationCountryQueryDto = {}) {
-    return this.prisma.client.locationCountry.findMany({
-      where: query.includeDisabled ? {} : { enabled: true },
-      orderBy: [{ sortOrder: "asc" }, { name: "asc" }]
-    });
+    const includeDisabled = Boolean(query.includeDisabled);
+    return this.cachedPublicLocationQuery(
+      `countries:${includeDisabled ? "all" : "enabled"}`,
+      catalogCacheTtlMs,
+      () =>
+        this.prisma.client.locationCountry.findMany({
+          where: includeDisabled ? {} : { enabled: true },
+          orderBy: [{ sortOrder: "asc" }, { name: "asc" }]
+        })
+    );
   }
 
   listSubdivisions(query: LocationSubdivisionQueryDto) {
-    return this.prisma.client.locationSubdivision.findMany({
-      where: {
-        active: true,
-        ...(query.countryCode ? { country: { code: this.normalizeCountryCode(query.countryCode), enabled: true } } : {})
-      },
-      include: { country: true },
-      orderBy: [{ sortOrder: "asc" }, { name: "asc" }]
-    });
+    const countryCode = this.clean(query.countryCode)?.toUpperCase() ?? "";
+    return this.cachedPublicLocationQuery(
+      `subdivisions:${countryCode || "all"}`,
+      catalogCacheTtlMs,
+      () =>
+        this.prisma.client.locationSubdivision.findMany({
+          where: {
+            active: true,
+            ...(countryCode ? { country: { code: countryCode, enabled: true } } : {})
+          },
+          include: { country: true },
+          orderBy: [{ sortOrder: "asc" }, { name: "asc" }]
+        })
+    );
   }
 
   listCities(query: LocationCityQueryDto) {
     const countryCode = this.clean(query.countryCode)?.toUpperCase();
     const stateCode = this.clean(query.stateCode)?.toUpperCase();
 
-    return this.prisma.client.locationCity.findMany({
-      where: {
-        active: true,
-        ...(stateCode
-          ? {
-              subdivision: {
-                code: stateCode,
-                active: true,
-                country: {
-                  ...(countryCode ? { code: countryCode } : {}),
-                  enabled: true
+    return this.cachedPublicLocationQuery(
+      `cities:${countryCode ?? "all"}:${stateCode ?? "all"}`,
+      catalogCacheTtlMs,
+      () =>
+        this.prisma.client.locationCity.findMany({
+          where: {
+            active: true,
+            ...(stateCode
+              ? {
+                  subdivision: {
+                    code: stateCode,
+                    active: true,
+                    country: {
+                      ...(countryCode ? { code: countryCode } : {}),
+                      enabled: true
+                    }
+                  }
                 }
-              }
+              : {
+                  subdivision: {
+                    active: true,
+                    country: {
+                      ...(countryCode ? { code: countryCode } : {}),
+                      enabled: true
+                    }
+                  }
+                })
+          },
+          include: {
+            subdivision: {
+              include: { country: true }
             }
-          : {
-              subdivision: {
-                active: true,
-                country: {
-                  ...(countryCode ? { code: countryCode } : {}),
-                  enabled: true
-                }
-              }
-            })
-      },
-      include: {
-        subdivision: {
-          include: { country: true }
-        }
-      },
-      orderBy: [{ sortOrder: "asc" }, { name: "asc" }]
-    });
+          },
+          orderBy: [{ sortOrder: "asc" }, { name: "asc" }]
+        })
+    );
   }
 
   listAreas(query: LocationAreaQueryDto) {
     const search = this.clean(query.search);
     const searchTerms = normalizeLocationAreaSearchTerms(search);
+    const searchFilters = this.locationAreaSearchFilters(searchTerms);
     const limit = this.limitFromQuery(query.limit);
     const countryCode = this.clean(query.countryCode)?.toUpperCase();
     const stateCode = this.clean(query.stateCode)?.toUpperCase();
     const cityCode = this.clean(query.cityCode)?.toUpperCase();
 
-    return this.prisma.client.locationArea.findMany({
-      where: {
-        active: true,
-        city: {
-          ...(cityCode ? { code: cityCode } : {}),
-          active: true,
-          subdivision: {
-            ...(stateCode ? { code: stateCode } : {}),
+    return this.cachedPublicLocationQuery(
+      [
+        "areas",
+        countryCode ?? "all",
+        stateCode ?? "all",
+        cityCode ?? "all",
+        query.postalCode?.trim() ?? "",
+        searchTerms.join("|"),
+        limit
+      ].join(":"),
+      areaSearchCacheTtlMs,
+      () =>
+        this.prisma.client.locationArea.findMany({
+          where: {
             active: true,
-            country: {
-              ...(countryCode ? { code: countryCode } : {}),
-              enabled: true
-            }
-          }
-        },
-        ...(query.postalCode ? { postalCode: query.postalCode.trim() } : {}),
-        ...(searchTerms.length
-          ? {
-              OR: searchTerms.flatMap((term) => [
-                { name: { contains: term, mode: "insensitive" } },
-                { postalCode: { contains: term } },
-                { code: { contains: term.toUpperCase() } }
-              ])
-            }
-          : {})
-      },
-      include: {
-        city: {
+            city: {
+              ...(cityCode ? { code: cityCode } : {}),
+              active: true,
+              subdivision: {
+                ...(stateCode ? { code: stateCode } : {}),
+                active: true,
+                country: {
+                  ...(countryCode ? { code: countryCode } : {}),
+                  enabled: true
+                }
+              }
+            },
+            ...(query.postalCode ? { postalCode: query.postalCode.trim() } : {}),
+            ...(searchFilters.length
+              ? {
+                  OR: searchFilters
+                }
+              : {})
+          },
           include: {
-            subdivision: {
-              include: { country: true }
+            city: {
+              include: {
+                subdivision: {
+                  include: { country: true }
+                }
+              }
             }
-          }
-        }
-      },
-      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-      take: limit
-    });
+          },
+          orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+          take: limit
+        })
+    );
   }
 
   listAdminCountries() {
@@ -226,7 +265,9 @@ export class LocationsService {
       throw new BadRequestException("Only registered bundled baseline import can be triggered from admin UI.");
     }
 
-    return importLocationDataset(this.prisma.client, bundledLocationDataset, dto.mode ?? LocationImportMode.REFRESH);
+    const result = await importLocationDataset(this.prisma.client, bundledLocationDataset, dto.mode ?? LocationImportMode.REFRESH);
+    this.clearPublicLocationCache();
+    return result;
   }
 
   async lookupIndiaPostalCode(query: IndiaPostalLookupQueryDto) {
@@ -251,13 +292,15 @@ export class LocationsService {
       throw new NotFoundException("Location country not found.");
     }
 
-    return this.prisma.client.locationCountry.update({
+    const updated = await this.prisma.client.locationCountry.update({
       where: { code: countryCode },
       data: {
         ...(dto.enabled !== undefined ? { enabled: dto.enabled } : {}),
         ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {})
       }
     });
+    this.clearPublicLocationCache();
+    return updated;
   }
 
   async resolveAddressLocation(input: AddressLocationInput): Promise<ResolvedAddressLocation> {
@@ -402,6 +445,73 @@ export class LocationsService {
     }
 
     return Math.min(parsed, 100);
+  }
+
+  private locationAreaSearchFilters(searchTerms: string[]): Prisma.LocationAreaWhereInput[] {
+    return searchTerms.flatMap((term) => {
+      const filters: Prisma.LocationAreaWhereInput[] = [
+        { name: { contains: term, mode: "insensitive" } },
+        { code: { contains: term.toUpperCase() } }
+      ];
+
+      if (/^[0-9]{4,10}$/.test(term)) {
+        filters.push({ postalCode: term });
+      } else {
+        filters.push({ postalCode: { contains: term } });
+      }
+
+      return filters;
+    });
+  }
+
+  private async cachedPublicLocationQuery<T>(key: string, ttlMs: number, loader: () => Promise<T>): Promise<T> {
+    const now = Date.now();
+    const current = this.publicLocationCache.get(key) as CacheEntry<T> | undefined;
+
+    if (current && current.expiresAt > now) {
+      if (current.value !== undefined) {
+        return current.value;
+      }
+
+      if (current.promise) {
+        return current.promise;
+      }
+    }
+
+    const promise = loader()
+      .then((value) => {
+        this.setPublicLocationCacheEntry(key, { expiresAt: Date.now() + ttlMs, value });
+        return value;
+      })
+      .catch((error) => {
+        if (this.publicLocationCache.get(key)?.promise === promise) {
+          this.publicLocationCache.delete(key);
+        }
+        throw error;
+      });
+
+    this.setPublicLocationCacheEntry(key, { expiresAt: now + ttlMs, promise });
+    return promise;
+  }
+
+  private setPublicLocationCacheEntry(key: string, entry: CacheEntry<unknown>) {
+    if (this.publicLocationCache.has(key)) {
+      this.publicLocationCache.delete(key);
+    }
+
+    this.publicLocationCache.set(key, entry);
+
+    while (this.publicLocationCache.size > publicLocationCacheMaxEntries) {
+      const oldestKey = this.publicLocationCache.keys().next().value;
+      if (!oldestKey) {
+        break;
+      }
+      this.publicLocationCache.delete(oldestKey);
+    }
+  }
+
+  private clearPublicLocationCache() {
+    this.publicLocationCache.clear();
   }
 
   private resolveLegacyIndiaAddress(input: AddressLocationInput): ResolvedAddressLocation {

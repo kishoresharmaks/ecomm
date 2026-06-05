@@ -13,7 +13,14 @@ import {
   MaxLength,
   Min
 } from "class-validator";
-import { CommissionType, PaymentProvider, PaymentStatus, FinanceRuleScope, SellerPayoutStatus } from "@indihub/database";
+import {
+  CommissionType,
+  DeliveryPartnerPayoutStatus,
+  PaymentProvider,
+  PaymentStatus,
+  FinanceRuleScope,
+  SellerPayoutStatus,
+} from "@indihub/database";
 
 export class FinanceListQueryDto {
   @ApiPropertyOptional({ example: "seller name or payout number" })
@@ -183,6 +190,18 @@ export class PayoutQueryDto extends SettlementQueryDto {
   @IsOptional()
   @IsUUID()
   sellerId?: string;
+}
+
+export class DeliveryPartnerPayoutQueryDto extends FinanceListQueryDto {
+  @ApiPropertyOptional({ enum: DeliveryPartnerPayoutStatus })
+  @IsOptional()
+  @IsEnum(DeliveryPartnerPayoutStatus)
+  status?: DeliveryPartnerPayoutStatus;
+
+  @ApiPropertyOptional({ example: "70cf4fb8-44b7-4ff0-b65c-5987c72f91ab" })
+  @IsOptional()
+  @IsUUID()
+  partnerUserId?: string;
 }
 
 export class PayoutActionDto {

@@ -2,7 +2,11 @@ import { Type } from "class-transformer";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import {
   IsEnum,
+  IsIn,
   IsInt,
+  IsLatitude,
+  IsLongitude,
+  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
@@ -15,6 +19,8 @@ import {
 } from "class-validator";
 import { DeliveryMode } from "@indihub/database";
 import { CheckoutDeliveryPreference } from "../../checkout/dto/delivery-routing.dto";
+
+const locationSources = ["GPS", "MAP_PICK", "MANUAL", "REVERSE_GEOCODE"] as const;
 
 export enum CheckoutPaymentMethod {
   RAZORPAY = "RAZORPAY",
@@ -92,6 +98,39 @@ export class CheckoutShippingAddressDto {
   @IsString()
   @MaxLength(80)
   localAreaCode?: string;
+
+  @ApiPropertyOptional({ example: 11.6643 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsLatitude()
+  latitude?: number;
+
+  @ApiPropertyOptional({ example: 78.146 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsLongitude()
+  longitude?: number;
+
+  @ApiPropertyOptional({ enum: locationSources, example: "MAP_PICK" })
+  @IsOptional()
+  @IsIn(locationSources)
+  locationSource?: (typeof locationSources)[number];
+
+  @ApiPropertyOptional({ example: 24.5 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @Max(50_000)
+  accuracyMeters?: number;
+
+  @ApiPropertyOptional({ example: 92 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  locationConfidenceScore?: number;
 }
 
 export class PlaceOrderDto {

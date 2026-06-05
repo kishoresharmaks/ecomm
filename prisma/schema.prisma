@@ -290,6 +290,31 @@ enum CourierCodRemittanceStatus {
   REJECTED
 }
 
+enum DeliveryPartnerWalletEntryType {
+  LOCAL_DELIVERY_EARNING
+  MANUAL_ADJUSTMENT
+  MANUAL_PAYOUT
+}
+
+enum DeliveryPartnerWalletEntryDirection {
+  CREDIT
+  DEBIT
+}
+
+enum LocationSource {
+  GPS
+  MAP_PICK
+  MANUAL
+  REVERSE_GEOCODE
+}
+
+enum DeliveryPartnerPayoutStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  PAID
+}
+
 enum SellerOrderStatus {
   PENDING
   ACCEPTED
@@ -492,6 +517,12 @@ model User {
   deliveryAssignmentAttempts DeliveryAssignmentAttempt[] @relation("DeliveryAssignmentAttemptPartner")
   createdDeliveryAssignmentAttempts DeliveryAssignmentAttempt[] @relation("DeliveryAssignmentAttemptAssignedBy")
   deliveryAttempts   DeliveryAttempt[]
+  deliveryWalletEntries DeliveryPartnerWalletEntry[] @relation("DeliveryPartnerWalletEntries")
+  createdDeliveryWalletEntries DeliveryPartnerWalletEntry[] @relation("DeliveryPartnerWalletEntryCreatedBy")
+  deliveryPartnerPayouts DeliveryPartnerPayout[] @relation("DeliveryPartnerPayoutPartner")
+  requestedDeliveryPartnerPayouts DeliveryPartnerPayout[] @relation("DeliveryPartnerPayoutRequestedBy")
+  approvedDeliveryPartnerPayouts DeliveryPartnerPayout[] @relation("DeliveryPartnerPayoutApprovedBy")
+  paidDeliveryPartnerPayouts DeliveryPartnerPayout[] @relation("DeliveryPartnerPayoutPaidBy")
   b2bResponses       B2BEnquiryResponse[]
   supportRequests    SupportRequest[]
   notificationLogs   NotificationLog[]
@@ -625,6 +656,11 @@ model CustomerAddress {
   stateCode     String?  @map("state_code")
   cityCode      String?  @map("city_code")
   localAreaCode String?  @map("local_area_code")
+  latitude      Decimal? @db.Decimal(10, 7)
+  longitude     Decimal? @db.Decimal(10, 7)
+  locationSource LocationSource? @map("location_source")
+  accuracyMeters Decimal? @map("accuracy_meters") @db.Decimal(10, 2)
+  locationConfidenceScore Decimal? @map("location_confidence_score") @db.Decimal(5, 2)
   isDefault     Boolean  @default(false) @map("is_default")
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
@@ -633,6 +669,7 @@ model CustomerAddress {
   @@index([customerId])
   @@index([city, pincode])
   @@index([countryCode, stateCode, cityCode])
+  @@index([latitude, longitude])
   @@map("customer_addresses")
 }
 
@@ -747,6 +784,9 @@ model SellerAddress {
   localAreaCode String?  @map("local_area_code")
   latitude      Decimal? @db.Decimal(10, 7)
   longitude     Decimal? @db.Decimal(10, 7)
+  locationSource LocationSource? @map("location_source")
+  accuracyMeters Decimal? @map("accuracy_meters") @db.Decimal(10, 2)
+  locationConfidenceScore Decimal? @map("location_confidence_score") @db.Decimal(5, 2)
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
   seller        Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
@@ -1026,6 +1066,7 @@ model LocationCity {
 
   @@unique([subdivisionId, code])
   @@index([subdivisionId, active, sortOrder])
+  @@index([code, active], map: "idx_location_cities_code_active")
   @@index([name])
   @@index([source])
   @@map("location_cities")
@@ -1048,8 +1089,11 @@ model LocationArea {
 
   @@unique([cityId, code])
   @@index([cityId, active, sortOrder])
+  @@index([cityId, postalCode], map: "idx_location_areas_city_postal")
+  @@index([code], map: "idx_location_areas_code")
   @@index([name])
   @@index([postalCode])
+  @@index([postalCode, active, sortOrder], map: "idx_location_areas_postal_active_sort")
   @@index([source])
   @@map("location_areas")
 }
@@ -1387,6 +1431,7 @@ model Order {
   deliveryDetail          DeliveryDetail?
   deliveryAssignmentAttempts DeliveryAssignmentAttempt[]
   payments                Payment[]
+  deliveryPartnerWalletEntries DeliveryPartnerWalletEntry[]
 
   @@index([customerId])
   @@index([orderStatus])
@@ -1525,6 +1570,7 @@ model OrderShipment {
   courierConsignmentPackages CourierConsignmentPackage[]
   courierShipment          CourierShipment?
   courierCodRemittance     CourierCodRemittance?
+  deliveryPartnerWalletEntries DeliveryPartnerWalletEntry[]
 
   @@unique([orderId, sellerId])
   @@index([orderId, status, createdAt])
@@ -1645,6 +1691,7 @@ model DeliveryDetail {
   events                  DeliveryEvent[]
   attempts                DeliveryAttempt[]
   assignmentAttempts      DeliveryAssignmentAttempt[]
+  walletEntries           DeliveryPartnerWalletEntry[]
 
   @@index([status, updatedAt])
   @@index([deliveryMode, status])
@@ -1957,6 +2004,73 @@ model DeliveryEvent {
 
   @@index([deliveryDetailId])
   @@map("delivery_events")
+}
+
+model DeliveryPartnerWalletEntry {
+  id                String                              @id @default(uuid()) @db.Uuid
+  partnerUserId     String                              @map("partner_user_id") @db.Uuid
+  orderId           String?                             @map("order_id") @db.Uuid
+  orderShipmentId   String?                             @map("order_shipment_id") @db.Uuid
+  deliveryDetailId  String?                             @map("delivery_detail_id") @db.Uuid
+  payoutId          String?                             @map("payout_id") @db.Uuid
+  entryType         DeliveryPartnerWalletEntryType      @map("entry_type")
+  direction         DeliveryPartnerWalletEntryDirection @default(CREDIT)
+  amountPaise       Int                                 @map("amount_paise")
+  currency          String                              @default("INR")
+  description       String?
+  metadata          Json?
+  createdById       String?                             @map("created_by_id") @db.Uuid
+  createdAt         DateTime                            @default(now()) @map("created_at")
+  partner           User                                @relation("DeliveryPartnerWalletEntries", fields: [partnerUserId], references: [id], onDelete: Cascade)
+  order             Order?                              @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  orderShipment     OrderShipment?                      @relation(fields: [orderShipmentId], references: [id], onDelete: SetNull)
+  deliveryDetail    DeliveryDetail?                     @relation(fields: [deliveryDetailId], references: [id], onDelete: SetNull)
+  payout            DeliveryPartnerPayout?              @relation(fields: [payoutId], references: [id], onDelete: SetNull)
+  createdBy         User?                               @relation("DeliveryPartnerWalletEntryCreatedBy", fields: [createdById], references: [id])
+
+  @@unique([orderShipmentId, entryType])
+  @@unique([payoutId, entryType])
+  @@index([partnerUserId, createdAt])
+  @@index([partnerUserId, entryType, createdAt])
+  @@index([orderId])
+  @@index([orderShipmentId])
+  @@index([deliveryDetailId])
+  @@index([payoutId])
+  @@index([createdById])
+  @@map("delivery_partner_wallet_entries")
+}
+
+model DeliveryPartnerPayout {
+  id                   String                      @id @default(uuid()) @db.Uuid
+  payoutNumber         String                      @unique @map("payout_number")
+  partnerUserId        String                      @map("partner_user_id") @db.Uuid
+  amountPaise          Int                         @map("amount_paise")
+  currency             String                      @default("INR")
+  status               DeliveryPartnerPayoutStatus @default(REQUESTED)
+  note                 String?
+  settingsSnapshot     Json?                       @map("settings_snapshot")
+  requestedById        String?                     @map("requested_by_id") @db.Uuid
+  requestedAt          DateTime                    @default(now()) @map("requested_at")
+  approvedById         String?                     @map("approved_by_id") @db.Uuid
+  approvedAt           DateTime?                   @map("approved_at")
+  paidById             String?                     @map("paid_by_id") @db.Uuid
+  paidAt               DateTime?                   @map("paid_at")
+  paymentMode          String?                     @map("payment_mode")
+  transactionReference String?                     @map("transaction_reference")
+  createdAt            DateTime                    @default(now()) @map("created_at")
+  updatedAt            DateTime                    @updatedAt @map("updated_at")
+  partner              User                        @relation("DeliveryPartnerPayoutPartner", fields: [partnerUserId], references: [id], onDelete: Cascade)
+  requestedBy          User?                       @relation("DeliveryPartnerPayoutRequestedBy", fields: [requestedById], references: [id])
+  approvedBy           User?                       @relation("DeliveryPartnerPayoutApprovedBy", fields: [approvedById], references: [id])
+  paidBy               User?                       @relation("DeliveryPartnerPayoutPaidBy", fields: [paidById], references: [id])
+  walletEntries        DeliveryPartnerWalletEntry[]
+
+  @@index([partnerUserId, status, createdAt])
+  @@index([status, createdAt])
+  @@index([requestedById])
+  @@index([approvedById])
+  @@index([paidById])
+  @@map("delivery_partner_payouts")
 }
 
 model Payment {

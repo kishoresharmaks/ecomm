@@ -8,6 +8,7 @@ import { Button, StatusBadge } from "@indihub/ui";
 import { CustomerAuthNotice } from "@/components/auth/customer-auth-notice";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
 import { LocationFields } from "@/components/locations/location-fields";
+import { MapLocationPicker } from "@/components/maps/map-location-picker";
 import { useMarket } from "@/components/market/market-context";
 import { listCustomerAddresses } from "@/lib/account-api";
 import { customerDeliveryOptions } from "@/lib/delivery-labels";
@@ -415,6 +416,20 @@ export function CheckoutPageClient() {
                     inputClassName={storefrontInputClassName}
                   />
                 </div>
+                <div className="md:col-span-2">
+                  <MapLocationPicker
+                    defaultValue={{
+                      latitude: initialAddress.latitude,
+                      longitude: initialAddress.longitude,
+                      locationSource: initialAddress.locationSource,
+                      accuracyMeters: initialAddress.accuracyMeters,
+                      locationConfidenceScore: initialAddress.locationConfidenceScore,
+                    }}
+                    authHeaders={customerAuth.authHeaders}
+                    disabled={orderMutation.isPending}
+                    inputClassName={storefrontInputClassName}
+                  />
+                </div>
               </div>
             ) : null}
           </StorefrontPanel>
@@ -745,6 +760,10 @@ function cleanAddress(address: CheckoutAddress): CheckoutAddress {
     stateCode: address.stateCode?.trim(),
     cityCode: address.cityCode?.trim(),
     localAreaCode: address.localAreaCode?.trim(),
+    ...coordinatePairFromValues(address.latitude, address.longitude),
+    locationSource: address.locationSource ?? null,
+    accuracyMeters: nullableFiniteNumber(address.accuracyMeters),
+    locationConfidenceScore: nullableFiniteNumber(address.locationConfidenceScore),
   };
 }
 
@@ -768,6 +787,8 @@ function validateAddress(address: CheckoutAddress) {
 }
 
 function addressFromForm(form: FormData): CheckoutAddress {
+  const coordinates = nullableCoordinatePair(form);
+
   return {
     fullName: formValue(form, "fullName"),
     phone: formValue(form, "phone"),
@@ -782,6 +803,10 @@ function addressFromForm(form: FormData): CheckoutAddress {
     stateCode: formValue(form, "stateCode"),
     cityCode: formValue(form, "cityCode"),
     localAreaCode: optionalFormValue(form, "localAreaCode"),
+    ...coordinates,
+    locationSource: nullableFormValue(form, "locationSource") as CheckoutAddress["locationSource"],
+    accuracyMeters: nullableNumberValue(form, "accuracyMeters"),
+    locationConfidenceScore: nullableNumberValue(form, "locationConfidenceScore"),
   };
 }
 
@@ -793,4 +818,68 @@ function formValue(form: FormData, key: string) {
 function optionalFormValue(form: FormData, key: string) {
   const value = formValue(form, key);
   return value || undefined;
+}
+
+function nullableFormValue(form: FormData, key: string) {
+  if (!form.has(key)) {
+    return undefined;
+  }
+
+  return optionalFormValue(form, key) ?? null;
+}
+
+function nullableCoordinatePair(form: FormData) {
+  const latitude = nullableNumberValue(form, "latitude");
+  const longitude = nullableNumberValue(form, "longitude");
+
+  if (latitude === undefined && longitude === undefined) {
+    return {};
+  }
+
+  if (typeof latitude === "number" && typeof longitude === "number") {
+    return { latitude, longitude };
+  }
+
+  return { latitude: null, longitude: null };
+}
+
+function nullableNumberValue(form: FormData, key: string) {
+  if (!form.has(key)) {
+    return undefined;
+  }
+
+  const value = optionalFormValue(form, key);
+  if (value === undefined) {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function coordinatePairFromValues(
+  rawLatitude: number | string | null | undefined,
+  rawLongitude: number | string | null | undefined,
+) {
+  const latitude = nullableFiniteNumber(rawLatitude);
+  const longitude = nullableFiniteNumber(rawLongitude);
+
+  if (typeof latitude === "number" && typeof longitude === "number") {
+    return { latitude, longitude };
+  }
+
+  if (latitude === undefined && longitude === undefined) {
+    return {};
+  }
+
+  return { latitude: null, longitude: null };
+}
+
+function nullableFiniteNumber(value: number | string | null | undefined) {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }

@@ -93,6 +93,9 @@ export type DeliveryRoutingAddress = {
   localAreaCode?: string | null;
   latitude?: number | null;
   longitude?: number | null;
+  locationSource?: string | null;
+  accuracyMeters?: number | null;
+  locationConfidenceScore?: number | null;
 };
 
 export type DeliveryRoutingPackage = {
@@ -2056,6 +2059,14 @@ export class DeliveryRoutingService {
         stateCode: address.stateCode,
         cityCode: address.cityCode,
         localAreaCode: address.localAreaCode,
+        latitude: address.latitude === null ? null : Number(address.latitude),
+        longitude: address.longitude === null ? null : Number(address.longitude),
+        locationSource: address.locationSource,
+        accuracyMeters: address.accuracyMeters === null ? null : Number(address.accuracyMeters),
+        locationConfidenceScore:
+          address.locationConfidenceScore === null
+            ? null
+            : Number(address.locationConfidenceScore),
       };
     }
 
@@ -2085,6 +2096,11 @@ export class DeliveryRoutingService {
       stateCode: location.stateCode,
       cityCode: location.cityCode,
       localAreaCode: location.localAreaCode,
+      latitude: address.latitude ?? null,
+      longitude: address.longitude ?? null,
+      locationSource: address.locationSource ?? null,
+      accuracyMeters: address.accuracyMeters ?? null,
+      locationConfidenceScore: address.locationConfidenceScore ?? null,
     };
   }
 
@@ -2542,6 +2558,9 @@ export class DeliveryRoutingService {
       localAreaCode: this.normalizeOptionalCode(address.localAreaCode),
       latitude: this.nullableFiniteNumber(address.latitude),
       longitude: this.nullableFiniteNumber(address.longitude),
+      locationSource: this.cleanString(address.locationSource),
+      accuracyMeters: this.nullableFiniteNumber(address.accuracyMeters),
+      locationConfidenceScore: this.nullableFiniteNumber(address.locationConfidenceScore),
     };
   }
 

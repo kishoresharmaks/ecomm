@@ -5,16 +5,24 @@ import {
   IsBoolean,
   IsEmail,
   IsEnum,
+  IsIn,
+  IsLatitude,
+  IsLongitude,
+  IsNumber,
   IsOptional,
   IsString,
   Matches,
+  Max,
   MaxLength,
+  Min,
   MinLength,
   ValidateNested,
 } from "class-validator";
 import { Type } from "class-transformer";
 import { SellerBusinessType } from "@indihub/database";
 import { SellerVerificationDocumentDto } from "./create-seller-registration.dto";
+
+const locationSources = ["GPS", "MAP_PICK", "MANUAL", "REVERSE_GEOCODE"] as const;
 
 export class UpdateSellerAddressDto {
   @ApiPropertyOptional({ example: "No 12, Market Road" })
@@ -77,6 +85,39 @@ export class UpdateSellerAddressDto {
   @IsString()
   @MaxLength(80)
   localAreaCode?: string;
+
+  @ApiPropertyOptional({ example: 11.6643 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsLatitude()
+  latitude?: number;
+
+  @ApiPropertyOptional({ example: 78.146 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsLongitude()
+  longitude?: number;
+
+  @ApiPropertyOptional({ enum: locationSources, example: "MAP_PICK" })
+  @IsOptional()
+  @IsIn(locationSources)
+  locationSource?: (typeof locationSources)[number];
+
+  @ApiPropertyOptional({ example: 24.5 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @Max(50_000)
+  accuracyMeters?: number;
+
+  @ApiPropertyOptional({ example: 92 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  locationConfidenceScore?: number;
 }
 
 export class UpdateSellerPayoutProfileDto {

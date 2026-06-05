@@ -62,6 +62,75 @@ export class UpsertCheckoutPlatformFeeDto {
   fixedPaise!: number;
 }
 
+export class UpsertDeliveryPartnerPayoutSettingsDto {
+  @ApiProperty({ example: 4000, description: "Minimum delivery partner earning per completed local order, in paise." })
+  @IsInt()
+  @Min(0)
+  minimumPerOrderPaise!: number;
+
+  @ApiProperty({ example: 2500, description: "Base earning per completed local order, in paise." })
+  @IsInt()
+  @Min(0)
+  basePayPaise!: number;
+
+  @ApiProperty({ example: 800, description: "Per-kilometer earning rate, in paise." })
+  @IsInt()
+  @Min(0)
+  perKmPaise!: number;
+
+  @ApiProperty({ example: 500, description: "COD delivery bonus, in paise." })
+  @IsInt()
+  @Min(0)
+  codBonusPaise!: number;
+
+  @ApiProperty({ example: 100000, description: "Minimum wallet balance required before payout request, in paise." })
+  @IsInt()
+  @Min(0)
+  minimumWalletPayoutPaise!: number;
+
+  @ApiProperty({ example: true })
+  @IsBoolean()
+  requestsEnabled!: boolean;
+
+  @ApiProperty({ example: true })
+  @IsBoolean()
+  freeDeliveryPlatformSubsidyEnabled!: boolean;
+}
+
+export class UpsertMapRoutingSettingsDto {
+  @ApiProperty({ example: false })
+  @IsBoolean()
+  enabled!: boolean;
+
+  @ApiProperty({ enum: ["HAVERSINE", "GOOGLE_ROUTES", "MAPBOX_DIRECTIONS"] })
+  @IsIn(["HAVERSINE", "GOOGLE_ROUTES", "MAPBOX_DIRECTIONS"])
+  provider!: "HAVERSINE" | "GOOGLE_ROUTES" | "MAPBOX_DIRECTIONS";
+
+  @ApiPropertyOptional({ example: "AIza..." })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  googleApiToken?: string;
+
+  @ApiProperty({ enum: ["DRIVE", "TWO_WHEELER", "WALK", "BICYCLE"] })
+  @IsIn(["DRIVE", "TWO_WHEELER", "WALK", "BICYCLE"])
+  googleTravelMode!: "DRIVE" | "TWO_WHEELER" | "WALK" | "BICYCLE";
+
+  @ApiPropertyOptional({ example: "pk.ey..." })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  mapboxAccessToken?: string;
+
+  @ApiProperty({ enum: ["mapbox/driving", "mapbox/driving-traffic", "mapbox/walking", "mapbox/cycling"] })
+  @IsIn(["mapbox/driving", "mapbox/driving-traffic", "mapbox/walking", "mapbox/cycling"])
+  mapboxProfile!: "mapbox/driving" | "mapbox/driving-traffic" | "mapbox/walking" | "mapbox/cycling";
+
+  @ApiProperty({ example: true })
+  @IsBoolean()
+  fallbackToHaversine!: boolean;
+}
+
 export class EmailProviderConfigDto {
   @ApiPropertyOptional({ example: "xkeysib-..." })
   @IsOptional()

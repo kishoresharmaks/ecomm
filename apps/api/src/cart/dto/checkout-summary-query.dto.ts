@@ -1,5 +1,14 @@
 import { ApiPropertyOptional } from "@nestjs/swagger";
-import { IsEnum, IsOptional, IsString, Matches, MaxLength } from "class-validator";
+import { Type } from "class-transformer";
+import {
+  IsEnum,
+  IsLatitude,
+  IsLongitude,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+} from "class-validator";
 import {
   CheckoutDeliveryPreference,
   CheckoutRoutingPaymentMethod,
@@ -55,4 +64,16 @@ export class CheckoutSummaryQueryDto {
   @IsString()
   @MaxLength(80)
   localAreaCode?: string;
+
+  @ApiPropertyOptional({ example: 11.6643 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsLatitude()
+  latitude?: number;
+
+  @ApiPropertyOptional({ example: 78.146 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsLongitude()
+  longitude?: number;
 }

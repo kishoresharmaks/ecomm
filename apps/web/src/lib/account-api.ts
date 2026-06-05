@@ -1,4 +1,5 @@
 import { indihubFetch, type IndihubAuthHeaders } from "./api";
+import type { LocationSource } from "./maps-api";
 import type { OrderSummary, ProductImage, ProductVariant, SellerSummary } from "./storefront-api";
 
 export type CustomerUser = {
@@ -28,6 +29,11 @@ export type CustomerAddress = {
   stateCode?: string | null;
   cityCode?: string | null;
   localAreaCode?: string | null;
+  latitude?: number | string | null;
+  longitude?: number | string | null;
+  locationSource?: LocationSource | string | null;
+  accuracyMeters?: number | string | null;
+  locationConfidenceScore?: number | string | null;
   isDefault: boolean;
   createdAt?: string;
   updatedAt?: string;
@@ -71,6 +77,11 @@ export type CustomerAddressPayload = {
   stateCode?: string | undefined;
   cityCode?: string | undefined;
   localAreaCode?: string | undefined;
+  latitude?: number | null | undefined;
+  longitude?: number | null | undefined;
+  locationSource?: LocationSource | null | undefined;
+  accuracyMeters?: number | null | undefined;
+  locationConfidenceScore?: number | null | undefined;
   isDefault?: boolean | undefined;
 };
 
@@ -113,6 +124,11 @@ export type AccountOrder = OrderSummary & {
     pincode?: string;
     country?: string;
     countryCode?: string | null;
+    latitude?: number | string | null;
+    longitude?: number | string | null;
+    locationSource?: LocationSource | string | null;
+    accuracyMeters?: number | string | null;
+    locationConfidenceScore?: number | string | null;
   } | null;
   sellerSplits?: Array<{
     id: string;

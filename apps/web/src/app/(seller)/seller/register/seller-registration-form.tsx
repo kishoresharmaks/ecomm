@@ -20,6 +20,7 @@ import {
 import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
 import { LocationFields } from "@/components/locations/location-fields";
+import { MapLocationPicker } from "@/components/maps/map-location-picker";
 import { IndihubApiError, type IndihubAuthHeaders } from "@/lib/api";
 import {
   uploadSellerDocument,
@@ -190,6 +191,10 @@ export function SellerRegistrationForm() {
     const gstNumber = optionalFormValue(form, "gstNumber")?.toUpperCase();
     const panNumber = optionalFormValue(form, "panNumber")?.toUpperCase();
     const subscriptionPlanId = optionalFormValue(form, "subscriptionPlanId");
+    const coordinates = nullableCoordinatePair(form);
+    const locationSource = nullableFormValue(form, "locationSource") as SellerOnboardingPayload["address"]["locationSource"];
+    const accuracyMeters = nullableNumberValue(form, "accuracyMeters");
+    const locationConfidenceScore = nullableNumberValue(form, "locationConfidenceScore");
 
     onboardingMutation.mutate({
       sellerType: formValue(form, "sellerType") as SellerOnboardingPayload["sellerType"],
@@ -222,6 +227,10 @@ export function SellerRegistrationForm() {
         stateCode: formValue(form, "stateCode"),
         cityCode: formValue(form, "cityCode"),
         localAreaCode: optionalFormValue(form, "localAreaCode"),
+        ...coordinates,
+        locationSource,
+        accuracyMeters,
+        locationConfidenceScore,
       },
     });
   }
@@ -439,6 +448,11 @@ export function SellerRegistrationForm() {
             <LocationFields
               defaultValue={{ countryCode: "IN" }}
               inputClassName="h-11 w-full rounded-md border border-[#E5E7EB] bg-white px-3 text-sm outline-none focus:border-[#ED3500]"
+            />
+            <MapLocationPicker
+              authHeaders={auth.authHeaders}
+              disabled={onboardingMutation.isPending}
+              radiusPreviewKm={5}
             />
 
             <Button type="submit" disabled={onboardingMutation.isPending}>
@@ -823,6 +837,7 @@ function Field({
   placeholder,
   defaultValue,
   readOnly = false,
+  step,
 }: {
   label: string;
   name: string;
@@ -831,6 +846,7 @@ function Field({
   placeholder?: string;
   defaultValue?: string | null | undefined;
   readOnly?: boolean;
+  step?: string | undefined;
 }) {
   return (
     <label className="space-y-2">
@@ -842,6 +858,7 @@ function Field({
         placeholder={placeholder}
         defaultValue={defaultValue ?? ""}
         readOnly={readOnly}
+        step={step}
         className="h-11 w-full rounded-md border border-[#E5E7EB] bg-white px-3 text-sm outline-none focus:border-[#ED3500] read-only:bg-[#F8FAFC] read-only:text-[#667085]"
       />
     </label>
@@ -855,6 +872,43 @@ function formValue(form: FormData, name: string) {
 function optionalFormValue(form: FormData, name: string) {
   const value = formValue(form, name);
   return value ? value : undefined;
+}
+
+function nullableFormValue(form: FormData, name: string) {
+  if (!form.has(name)) {
+    return undefined;
+  }
+
+  return optionalFormValue(form, name) ?? null;
+}
+
+function nullableCoordinatePair(form: FormData) {
+  const latitude = nullableNumberValue(form, "latitude");
+  const longitude = nullableNumberValue(form, "longitude");
+
+  if (latitude === undefined && longitude === undefined) {
+    return {};
+  }
+
+  if (typeof latitude === "number" && typeof longitude === "number") {
+    return { latitude, longitude };
+  }
+
+  return { latitude: null, longitude: null };
+}
+
+function nullableNumberValue(form: FormData, name: string) {
+  if (!form.has(name)) {
+    return undefined;
+  }
+
+  const value = optionalFormValue(form, name);
+  if (value === undefined) {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function hasChecklistDocumentType(

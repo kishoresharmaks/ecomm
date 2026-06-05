@@ -7,6 +7,7 @@ import { CreditCard, ExternalLink, FileText, Loader2, Store, Truck, Upload } fro
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
 import { LocationFields } from "@/components/locations/location-fields";
+import { MapLocationPicker } from "@/components/maps/map-location-picker";
 import { type IndihubAuthHeaders } from "@/lib/api";
 import {
   uploadSellerDocument,
@@ -140,6 +141,10 @@ export function SellerProfileClient() {
     );
     const shiprocketPickupLocation = optionalFormValue(form, "shiprocketPickupLocation");
     const payoutProfile = sellerPayoutProfilePayload(form);
+    const coordinates = nullableCoordinatePair(form);
+    const locationSource = nullableFormValue(form, "locationSource") as NonNullable<SellerProfilePayload["address"]>["locationSource"];
+    const accuracyMeters = nullableNumberValue(form, "accuracyMeters");
+    const locationConfidenceScore = nullableNumberValue(form, "locationConfidenceScore");
     setNotice(null);
     mutation.mutate({
       storeName: formValue(form, "storeName"),
@@ -166,6 +171,10 @@ export function SellerProfileClient() {
         stateCode: formValue(form, "stateCode"),
         cityCode: formValue(form, "cityCode"),
         localAreaCode: optionalFormValue(form, "localAreaCode"),
+        ...coordinates,
+        locationSource,
+        accuracyMeters,
+        locationConfidenceScore,
       },
       ...(documents.length
         ? {
@@ -463,6 +472,18 @@ export function SellerProfileClient() {
               disabled={profileBusy}
               inputClassName="h-11 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 text-sm font-semibold text-[#1F2933] outline-none focus:border-[#ED3500] focus:bg-white"
             />
+            <MapLocationPicker
+              defaultValue={{
+                latitude: address?.latitude,
+                longitude: address?.longitude,
+                locationSource: address?.locationSource,
+                accuracyMeters: address?.accuracyMeters,
+                locationConfidenceScore: address?.locationConfidenceScore,
+              }}
+              authHeaders={sellerAuth.authHeaders}
+              disabled={profileBusy}
+              radiusPreviewKm={5}
+            />
             <div className="rounded-md border border-[#D8E2EA] bg-[#F8FAFC] p-3">
               <div className="flex items-start gap-3">
                 <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-white text-[#ED3500]">
@@ -599,6 +620,43 @@ function sellerPayoutProfilePayload(form: FormData): SellerProfilePayload["payou
   };
 
   return Object.values(payload).some(Boolean) ? payload : undefined;
+}
+
+function nullableFormValue(form: FormData, name: string) {
+  if (!form.has(name)) {
+    return undefined;
+  }
+
+  return optionalFormValue(form, name) ?? null;
+}
+
+function nullableCoordinatePair(form: FormData) {
+  const latitude = nullableNumberValue(form, "latitude");
+  const longitude = nullableNumberValue(form, "longitude");
+
+  if (latitude === undefined && longitude === undefined) {
+    return {};
+  }
+
+  if (typeof latitude === "number" && typeof longitude === "number") {
+    return { latitude, longitude };
+  }
+
+  return { latitude: null, longitude: null };
+}
+
+function nullableNumberValue(form: FormData, name: string) {
+  if (!form.has(name)) {
+    return undefined;
+  }
+
+  const value = optionalFormValue(form, name);
+  if (value === undefined) {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function humanize(value?: string | null) {

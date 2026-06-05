@@ -68,4 +68,71 @@ describe("LocationsService", () => {
       }),
     );
   });
+
+  it("dedupes identical local-area lookup requests within the public cache window", async () => {
+    const areas = [{ id: "area-1", code: "IN-TN-SLM-FR", name: "Fairlands" }];
+    const findMany = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(() => resolve(areas), 1);
+        }),
+    );
+    const service = new LocationsService({
+      client: {
+        locationArea: { findMany },
+      },
+    } as never);
+
+    const [first, second, third] = await Promise.all([
+      service.listAreas({
+        countryCode: "in",
+        stateCode: "in-tn",
+        cityCode: "in-tn-slm",
+        search: "fairlands",
+        limit: 25,
+      }),
+      service.listAreas({
+        countryCode: "IN",
+        stateCode: "IN-TN",
+        cityCode: "IN-TN-SLM",
+        search: "fairlands",
+        limit: 25,
+      }),
+      service.listAreas({
+        countryCode: "IN",
+        stateCode: "IN-TN",
+        cityCode: "IN-TN-SLM",
+        search: "fairlands",
+        limit: 25,
+      }),
+    ]);
+
+    expect(first).toBe(areas);
+    expect(second).toBe(areas);
+    expect(third).toBe(areas);
+    expect(findMany).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses exact postal-code matching for full numeric local-area searches", async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const service = new LocationsService({
+      client: {
+        locationArea: { findMany },
+      },
+    } as never);
+
+    await service.listAreas({
+      countryCode: "IN",
+      search: "636001",
+      limit: 25,
+    });
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: expect.arrayContaining([{ postalCode: "636001" }]),
+        }),
+      }),
+    );
+  });
 });

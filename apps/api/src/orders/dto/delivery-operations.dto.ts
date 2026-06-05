@@ -74,6 +74,30 @@ export class DeliveryPartnerQueryDto {
   limit?: number;
 }
 
+export class DeliveryPartnerWalletQueryDto {
+  @ApiPropertyOptional({ example: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number;
+
+  @ApiPropertyOptional({ example: 20 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  limit?: number;
+}
+
+export class DeliveryPartnerPayoutRequestDto {
+  @ApiPropertyOptional({ example: "Please process this payout in the next finance cycle." })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  note?: string;
+}
+
 export class UpdateDeliveryPartnerProfileDto {
   @ApiPropertyOptional({ example: "9876543210" })
   @IsOptional()

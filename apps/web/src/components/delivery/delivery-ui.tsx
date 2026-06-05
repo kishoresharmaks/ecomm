@@ -12,6 +12,7 @@ import {
   RefreshCw,
   ShieldCheck,
   Truck,
+  Wallet,
   UserRound
 } from "lucide-react";
 import { Button, StatusBadge, cn, type StatusTone } from "@indihub/ui";
@@ -33,6 +34,7 @@ export type DeliveryAuthState = {
 const deliveryNav = [
   { href: "/delivery", label: "Dashboard", icon: LayoutDashboard },
   { href: "/delivery/orders", label: "Assigned orders", icon: ClipboardList },
+  { href: "/delivery/wallet", label: "Wallet", icon: Wallet },
   { href: "/delivery/profile", label: "Profile", icon: UserRound }
 ];
 

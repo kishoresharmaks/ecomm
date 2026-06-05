@@ -108,7 +108,7 @@ export function DeliveryProfileClient() {
 
   return (
     <div className="grid gap-5">
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <DeliveryMetric
           label="Availability"
           value={form.isAvailable ? "Active" : "Inactive"}
@@ -123,6 +123,11 @@ export function DeliveryProfileClient() {
           label="COD exposure"
           value={formatPaise(profile?.pendingCodCashPaise ?? 0)}
           note={`Limit ${formatPaise(profile?.deliveryProfile.effectiveCodCashLimitPaise ?? 0)}`}
+        />
+        <DeliveryMetric
+          label="Wallet balance"
+          value={formatPaise(profile?.wallet?.availableBalancePaise ?? 0, profile?.wallet?.currency ?? "INR")}
+          note={`${profile?.wallet?.localDeliveryCount ?? 0} local deliveries credited`}
         />
       </div>
 

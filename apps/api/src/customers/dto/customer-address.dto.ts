@@ -1,5 +1,21 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from "@nestjs/swagger";
-import { IsBoolean, IsOptional, IsString, Matches, MaxLength, MinLength } from "class-validator";
+import { Type } from "class-transformer";
+import {
+  IsBoolean,
+  IsIn,
+  IsLatitude,
+  IsLongitude,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+} from "class-validator";
+
+const locationSources = ["GPS", "MAP_PICK", "MANUAL", "REVERSE_GEOCODE"] as const;
 
 export class CreateCustomerAddressDto {
   @ApiPropertyOptional({ example: "Home" })
@@ -87,6 +103,39 @@ export class CreateCustomerAddressDto {
   @IsOptional()
   @IsBoolean()
   isDefault?: boolean;
+
+  @ApiPropertyOptional({ example: 11.6643 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsLatitude()
+  latitude?: number;
+
+  @ApiPropertyOptional({ example: 78.146 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsLongitude()
+  longitude?: number;
+
+  @ApiPropertyOptional({ enum: locationSources, example: "MAP_PICK" })
+  @IsOptional()
+  @IsIn(locationSources)
+  locationSource?: (typeof locationSources)[number];
+
+  @ApiPropertyOptional({ example: 24.5 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @Max(50_000)
+  accuracyMeters?: number;
+
+  @ApiPropertyOptional({ example: 92 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  locationConfidenceScore?: number;
 }
 
 export class UpdateCustomerAddressDto extends PartialType(CreateCustomerAddressDto) {}

@@ -100,9 +100,31 @@ export function StorefrontLocationProvider({ children }: { children: ReactNode }
 
 export function useStorefrontLocation() {
   const context = useContext(StorefrontLocationContext);
-  if (!context) {
+  const [hasHydratedConsumer, setHasHydratedConsumer] = useState(false);
+
+  useEffect(() => {
+    setHasHydratedConsumer(true);
+  }, []);
+
+  const hydrationSafeContext = useMemo<StorefrontLocationContextValue | null>(() => {
+    if (!context || hasHydratedConsumer) {
+      return context;
+    }
+
+    return {
+      ...context,
+      activeLocation: null,
+      manualLocation: null,
+      source: "global",
+      prefillLocation: null,
+      isReady: false,
+      isPrefillLoading: false,
+    };
+  }, [context, hasHydratedConsumer]);
+
+  if (!hydrationSafeContext) {
     throw new Error("useStorefrontLocation must be used inside StorefrontLocationProvider.");
   }
 
-  return context;
+  return hydrationSafeContext;
 }

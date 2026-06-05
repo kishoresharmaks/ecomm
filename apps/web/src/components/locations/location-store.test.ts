@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildLocationAreaStoreRequest, buildLocationCityCatalogRequest } from "./location-store";
+import {
+  buildLocationAreaStoreRequest,
+  buildLocationCityCatalogRequest,
+  locationQueryCacheOptions,
+} from "./location-store";
 
 describe("location central store request builder", () => {
   it("loads India cities by country when a form needs all city choices before state selection", () => {
@@ -101,5 +105,14 @@ describe("location central store request builder", () => {
       },
       enabled: true,
     });
+  });
+
+  it("keeps location query cache windows high enough for traffic-heavy forms", () => {
+    expect(locationQueryCacheOptions.countries.refetchOnWindowFocus).toBe(false);
+    expect(locationQueryCacheOptions.catalog.refetchOnWindowFocus).toBe(false);
+    expect(locationQueryCacheOptions.areas.refetchOnWindowFocus).toBe(false);
+    expect(locationQueryCacheOptions.countries.staleTime).toBeGreaterThanOrEqual(30 * 60 * 1000);
+    expect(locationQueryCacheOptions.catalog.staleTime).toBeGreaterThanOrEqual(15 * 60 * 1000);
+    expect(locationQueryCacheOptions.areas.staleTime).toBeGreaterThanOrEqual(3 * 60 * 1000);
   });
 });

@@ -10,6 +10,8 @@ import {
   ClipboardList,
   Download,
   ExternalLink,
+  MapPin,
+  Navigation,
   Package,
   Printer,
   Truck,
@@ -17,6 +19,12 @@ import {
 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, SectionHeading, StatusBadge, cn } from "@indihub/ui";
+import {
+  coordinatesFromSnapshot,
+  formatCoordinates,
+  googleMapsDirectionsUrl,
+  googleMapsSearchUrl,
+} from "@/lib/map-navigation";
 import { formatMoney } from "@/lib/storefront-api";
 import {
   fetchSellerPackageLabel,
@@ -338,6 +346,7 @@ export function SellerOrderDetailClient({ orderNumber }: { orderNumber: string }
   }
 
   const address = order.shippingAddressSnapshot;
+  const addressCoordinates = coordinatesFromSnapshot(address);
   const delivery = sellerShipment ?? order.deliveryDetail;
   const currentSellerStatus = sellerStatusValue(sellerSplit?.sellerStatus);
   const currentDeliveryStatus = deliveryStatusValue(
@@ -880,6 +889,34 @@ export function SellerOrderDetailClient({ orderNumber }: { orderNumber: string }
               {address?.country || address?.countryCode ? (
                 <p>{address.country ?? address.countryCode}</p>
               ) : null}
+              {addressCoordinates ? (
+                <div className="mt-4 rounded-xl border border-[#D8E2EA] bg-white p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StatusBadge tone="success">Coordinates available</StatusBadge>
+                    {address?.locationSource ? <StatusBadge tone="info">{statusLabel(address.locationSource)}</StatusBadge> : null}
+                    {address?.accuracyMeters ? <StatusBadge tone="info">Accuracy {address.accuracyMeters} m</StatusBadge> : null}
+                  </div>
+                  <p className="mt-2 text-xs font-semibold text-[#667085]">{formatCoordinates(addressCoordinates)}</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button asChild size="sm">
+                      <a href={googleMapsDirectionsUrl(addressCoordinates)} target="_blank" rel="noreferrer">
+                        <Navigation className="h-4 w-4" aria-hidden="true" />
+                        Open route
+                      </a>
+                    </Button>
+                    <Button asChild size="sm" variant="outline">
+                      <a href={googleMapsSearchUrl(addressCoordinates)} target="_blank" rel="noreferrer">
+                        <MapPin className="h-4 w-4" aria-hidden="true" />
+                        View pin
+                      </a>
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <p className="mt-3 rounded-xl border border-[#FFE0D6] bg-[#FFFCFB] px-3 py-2 text-xs font-bold text-[#8A4B32]">
+                  No coordinate pin was saved for this order; use the written address.
+                </p>
+              )}
             </div>
           </SellerPanel>
         </div>

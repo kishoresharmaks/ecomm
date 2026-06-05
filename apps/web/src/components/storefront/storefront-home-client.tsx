@@ -95,6 +95,20 @@ export function StorefrontHomeClient({
   const topCategories = home?.categories ?? [];
   const liveCategorySection = findSection(home?.homepageSections, "featured_categories");
   const featuredProductSection = findSection(home?.homepageSections, "featured_products");
+  const categorySectionTitle = liveCategorySection?.title || "Shop by Category";
+  const categorySectionDescription =
+    stringValue(liveCategorySection?.config?.subtitle) ||
+    stringValue(liveCategorySection?.config?.description) ||
+    "Explore top categories";
+  const featuredProductTitle = featuredProductSection?.title || "Trending Now";
+  const featuredProductDescription =
+    stringValue(featuredProductSection?.config?.subtitle) ||
+    stringValue(featuredProductSection?.config?.description) ||
+    "Live products loved by marketplace shoppers";
+  const storesLocationLabel =
+    storefrontLocation.source === "global"
+      ? "Top rated stores"
+      : `Top rated stores in and around ${browsingLocationHeadline(storefrontLocation.activeLocation)}`;
   const serviceItems = normalizeHomepageItems(home?.serviceBadges?.config?.items);
   const sellerCtaConfig = home?.sellerCta?.config ?? null;
 
@@ -118,20 +132,14 @@ export function StorefrontHomeClient({
         <StatsStrip home={home} isLoading={homeQuery.isLoading} />
 
         <div className="flex flex-col">
-          <div className="hidden lg:order-1 lg:block">
-            <CategoryShowcase
-              categories={topCategories}
-              isLoading={homeQuery.isLoading}
-              title={liveCategorySection?.title || "Shop by Category"}
-              description={
-                stringValue(liveCategorySection?.config?.subtitle) ||
-                stringValue(liveCategorySection?.config?.description) ||
-                "Explore top categories"
-              }
-            />
-          </div>
+          <CategoryShowcase
+            categories={topCategories}
+            isLoading={homeQuery.isLoading}
+            title={categorySectionTitle}
+            description={categorySectionDescription}
+          />
 
-          <div className="order-1 lg:order-4">
+          <div>
             {dealProducts.length || homeQuery.isLoading ? (
               <DealRail
                 products={dealProducts}
@@ -141,14 +149,10 @@ export function StorefrontHomeClient({
             ) : null}
           </div>
 
-          <div className="order-2 lg:order-3">
+          <div>
             <ProductRailSection
-              title={featuredProductSection?.title || "Trending Now"}
-              description={
-                stringValue(featuredProductSection?.config?.subtitle) ||
-                stringValue(featuredProductSection?.config?.description) ||
-                "Live products loved by marketplace shoppers"
-              }
+              title={featuredProductTitle}
+              description={featuredProductDescription}
               products={trendingProducts}
               isLoading={homeQuery.isLoading}
               promoProduct={trendingProducts[0]}
@@ -156,23 +160,11 @@ export function StorefrontHomeClient({
             />
           </div>
 
-          <div className="order-3 lg:order-2">
+          <div>
             <StoresNearYou
               stores={home?.storesNearYou ?? []}
               isLoading={homeQuery.isLoading}
-              locationLabel={
-                storefrontLocation.source === "global"
-                  ? "Top rated stores"
-                  : `Top rated stores in and around ${browsingLocationHeadline(storefrontLocation.activeLocation)}`
-              }
-            />
-          </div>
-
-          <div className="hidden lg:order-5 lg:block">
-            <LiveCategories
-              categories={topCategories}
-              isLoading={homeQuery.isLoading}
-              section={liveCategorySection}
+              locationLabel={storesLocationLabel}
             />
           </div>
         </div>
@@ -241,7 +233,7 @@ function HomepageHero({
         <div className="absolute inset-0 opacity-80 [background-image:radial-gradient(circle_at_18%_62%,rgba(237,53,0,0.14)_0,transparent_16%),radial-gradient(circle_at_78%_24%,rgba(237,53,0,0.10)_0,transparent_18%)]" />
         <div className="absolute right-[12%] top-8 hidden h-16 w-24 bg-[radial-gradient(#ED3500_1.2px,transparent_1.2px)] [background-size:10px_10px] opacity-25 lg:block" />
 
-        <div className="relative grid min-h-[270px] grid-cols-[minmax(0,1fr)_minmax(118px,0.86fr)] gap-2 px-5 py-6 sm:px-8 lg:min-h-[540px] lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:gap-6 lg:px-16 lg:py-14">
+        <div className="relative grid min-h-[270px] grid-cols-[minmax(0,1fr)_108px] gap-2 px-5 py-6 sm:grid-cols-[minmax(0,1fr)_180px] sm:gap-3 sm:px-8 lg:min-h-[540px] lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:gap-6 lg:px-16 lg:py-14">
           <div className="flex max-w-[620px] flex-col justify-center">
             <div className="flex flex-wrap items-center gap-2">
               {eyebrow ? (
@@ -255,7 +247,7 @@ function HomepageHero({
               </span>
             </div>
 
-            <h1 className="mt-4 max-w-[11ch] text-[32px] font-black leading-[1.03] tracking-normal text-[#111827] sm:text-5xl lg:mt-5 lg:text-7xl">
+            <h1 className="mt-4 max-w-[12ch] text-[30px] font-black leading-[1.03] tracking-normal text-[#111827] sm:text-5xl lg:mt-5 lg:text-7xl">
               {splitMarketplaceTitle(title)}
             </h1>
             {subtitle ? (
@@ -320,48 +312,42 @@ function MobileHeroVisual({
   const bannerImage = banner?.mobileImageUrl || banner?.imageUrl || null;
   const bannerTitle = banner?.title || "Homepage banner";
   const bannerImageAlt = banner?.imageAlt || bannerTitle;
-  const visualProducts = products.slice(0, 3);
+  const fallbackProduct = products.find((product) => primaryImage(product)) ?? products[0] ?? null;
+  const fallbackProductImage = fallbackProduct ? primaryImage(fallbackProduct) : null;
+  const visualImage = bannerImage || fallbackProductImage;
+  const visualAlt = bannerImage ? bannerImageAlt : (fallbackProduct?.name ?? bannerTitle);
+  const visualLabel = bannerImage ? bannerTitle : (fallbackProduct?.category.name ?? bannerTitle);
 
-  if (bannerImage) {
-    return (
-      <div className="relative min-w-0 overflow-hidden rounded-[18px] bg-white/65 lg:hidden">
+  if (visualImage || !isLoading) {
+    const content = (
+      <span className="relative block h-full w-full">
         <StorefrontImage
-          src={bannerImage}
-          alt={bannerImageAlt}
-          sizes="160px"
-          fallbackLabel={bannerTitle}
+          src={visualImage}
+          alt={visualAlt}
+          sizes="(max-width: 640px) 108px, 180px"
+          fallbackLabel={visualLabel}
+          showFallbackLabel={false}
           allowExternalRemote
-          className="object-contain p-3"
+          className={cn(
+            "transition duration-500",
+            bannerImage ? "object-cover" : "object-contain p-3"
+          )}
         />
-      </div>
+      </span>
     );
-  }
 
-  if (visualProducts.length) {
-    return (
-      <div className="relative flex min-w-0 items-center justify-center lg:hidden">
-        <span className="absolute left-1/2 top-1/2 h-24 w-28 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#ED3500]/10 blur-lg" />
-        {visualProducts.map((product, index) => (
-          <Link
-            key={product.id}
-            href={`/products/${product.slug}` as Route}
-            className={cn(
-              "absolute block h-[104px] w-[86px] overflow-hidden rounded-[18px] border border-white/80 bg-white shadow-[0_16px_34px_rgba(22,59,92,0.12)]",
-              index === 0 && "left-0 top-8 rotate-[-8deg]",
-              index === 1 && "right-4 top-2 rotate-[8deg]",
-              index === 2 && "bottom-4 right-0 rotate-[10deg]",
-            )}
-          >
-            <StorefrontImage
-              src={primaryImage(product)}
-              alt={product.name}
-              sizes="96px"
-              fallbackLabel={product.category.name}
-              allowExternalRemote
-              className="object-contain p-2"
-            />
-          </Link>
-        ))}
+    return fallbackProduct && !bannerImage ? (
+      <Link
+        href={`/products/${fallbackProduct.slug}` as Route}
+        className="relative my-auto block aspect-[4/5] min-w-0 overflow-hidden rounded-[18px] border border-white/80 bg-white/80 shadow-[0_18px_42px_rgba(22,59,92,0.10)] lg:hidden"
+      >
+        <span className="absolute inset-0 bg-[radial-gradient(circle_at_50%_32%,rgba(237,53,0,0.10),transparent_54%)]" />
+        {content}
+      </Link>
+    ) : (
+      <div className="relative my-auto aspect-[4/5] min-w-0 overflow-hidden rounded-[18px] border border-white/80 bg-white/80 shadow-[0_18px_42px_rgba(22,59,92,0.10)] lg:hidden">
+        <span className="absolute inset-0 bg-[radial-gradient(circle_at_50%_32%,rgba(237,53,0,0.10),transparent_54%)]" />
+        {content}
       </div>
     );
   }
@@ -397,7 +383,9 @@ function HeroVisual({
             alt={bannerImageAlt}
             sizes="440px"
             fallbackLabel={bannerTitle}
+            showFallbackLabel={false}
             allowExternalRemote
+            className="object-cover"
           />
         </div>
       ) : hasProductCards ? (
@@ -496,15 +484,30 @@ function CategoryShowcase({
   description: string;
 }) {
   return (
-    <section className="mx-auto max-w-[1360px] px-4 py-5 sm:px-6 lg:px-10">
-      <SectionTitle title={title} description={description} href="/categories" action="View all categories" />
-      <ScrollRail className="mt-4" ariaLabel="Shop by category" controls={false}>
+    <section className="mx-auto max-w-[1360px] px-4 py-6 sm:px-6 lg:px-10 lg:py-10">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="text-3xl font-black tracking-normal text-[#111827] sm:text-4xl lg:text-[42px] lg:leading-none">
+            {title}
+          </h2>
+          {description ? (
+            <p className="mt-2 text-base font-semibold text-[#7A8496] sm:text-lg lg:text-xl">{description}</p>
+          ) : null}
+        </div>
+        <HomepageItemLink
+          href="/categories"
+          className="inline-flex w-fit items-center gap-3 text-sm font-black !text-[#ED3500] transition hover:!text-[#c92b00] sm:mt-3 lg:text-base"
+        >
+          View all categories <ArrowRight className="h-5 w-5" aria-hidden="true" />
+        </HomepageItemLink>
+      </div>
+      <ScrollRail className="mt-6 lg:mt-12" ariaLabel="Shop by category" controls={false}>
         {isLoading
           ? Array.from({ length: 8 }).map((_, index) => (
-              <StorefrontSkeleton key={index} className="h-[205px] w-[154px] shrink-0 rounded-[18px] bg-white" />
+              <StorefrontSkeleton key={index} className="h-[242px] w-[158px] shrink-0 rounded-[24px] bg-white sm:h-[322px] sm:w-[232px] lg:h-[430px] lg:w-[296px]" />
             ))
-          : categories.slice(0, 8).map((category) => (
-              <CategoryTile key={category.id} category={category} />
+          : categories.slice(0, 8).map((category, index) => (
+              <CategoryTile key={category.id} category={category} accent={categoryAccent(index)} />
             ))}
       </ScrollRail>
       {!isLoading && !categories.length ? (
@@ -514,31 +517,90 @@ function CategoryShowcase({
   );
 }
 
-function CategoryTile({ category }: { category: CategorySummary }) {
-  const productCount = category._count?.products ?? 0;
+type CategoryAccent = {
+  imageBg: string;
+  text: string;
+  buttonBg: string;
+  glow: string;
+};
 
+const CATEGORY_ACCENTS: CategoryAccent[] = [
+  {
+    imageBg: "bg-[radial-gradient(circle_at_50%_42%,#FFEFF5_0%,#FFE8EF_50%,#FFF7F9_100%)]",
+    text: "text-[#F43F7D]",
+    buttonBg: "bg-[#FFF0F4]",
+    glow: "shadow-[0_18px_44px_rgba(244,63,125,0.14)]",
+  },
+  {
+    imageBg: "bg-[radial-gradient(circle_at_50%_42%,#F3ECFF_0%,#EEE4FF_52%,#FBF8FF_100%)]",
+    text: "text-[#7C3AED]",
+    buttonBg: "bg-[#F4EDFF]",
+    glow: "shadow-[0_18px_44px_rgba(124,58,237,0.13)]",
+  },
+  {
+    imageBg: "bg-[radial-gradient(circle_at_50%_42%,#ECFCEB_0%,#E1F8DF_52%,#F7FFF6_100%)]",
+    text: "text-[#2FAE3D]",
+    buttonBg: "bg-[#EEF9EE]",
+    glow: "shadow-[0_18px_44px_rgba(47,174,61,0.12)]",
+  },
+  {
+    imageBg: "bg-[radial-gradient(circle_at_50%_42%,#ECF5FF_0%,#E4F0FF_52%,#F7FBFF_100%)]",
+    text: "text-[#2F80ED]",
+    buttonBg: "bg-[#EEF6FF]",
+    glow: "shadow-[0_18px_44px_rgba(47,128,237,0.12)]",
+  },
+];
+
+const DEFAULT_CATEGORY_ACCENT: CategoryAccent = {
+  imageBg: "bg-[radial-gradient(circle_at_50%_42%,#FFEFF5_0%,#FFE8EF_50%,#FFF7F9_100%)]",
+  text: "text-[#F43F7D]",
+  buttonBg: "bg-[#FFF0F4]",
+  glow: "shadow-[0_18px_44px_rgba(244,63,125,0.14)]",
+};
+
+function categoryAccent(index: number) {
+  return CATEGORY_ACCENTS[index % CATEGORY_ACCENTS.length] ?? DEFAULT_CATEGORY_ACCENT;
+}
+
+function CategoryTile({ category, accent }: { category: CategorySummary; accent: CategoryAccent }) {
   return (
     <Link
       href={`/categories/${category.slug}` as Route}
-      className="group relative h-[205px] w-[154px] shrink-0 overflow-hidden rounded-[18px] border border-[#FFE6DE] bg-[#FFF1EC] p-2 shadow-[0_10px_24px_rgba(237,53,0,0.06)] outline outline-1 outline-transparent transition hover:border-[#ED3500] hover:outline-[#ED3500] hover:shadow-[0_18px_36px_rgba(237,53,0,0.10)] focus-visible:outline-[#ED3500]"
+      className="group flex h-[242px] w-[158px] snap-start shrink-0 flex-col items-center overflow-hidden rounded-[24px] border border-[#E8EDF2] bg-white px-4 py-5 text-center shadow-[0_18px_44px_rgba(22,59,92,0.06)] outline outline-1 outline-transparent transition hover:-translate-y-1 hover:border-[#FFD8CC] hover:shadow-[0_28px_70px_rgba(22,59,92,0.10)] focus-visible:outline-[#ED3500] sm:h-[322px] sm:w-[232px] sm:px-7 sm:py-8 lg:h-[430px] lg:w-[296px] lg:rounded-[26px] lg:px-9 lg:py-10"
     >
-      <span className="relative block h-[124px] overflow-hidden rounded-[15px] bg-[#FFF1EC]">
+      <span
+        className={cn(
+          "relative grid h-[104px] w-[104px] shrink-0 place-items-center overflow-hidden rounded-full sm:h-[154px] sm:w-[154px] lg:h-[196px] lg:w-[196px]",
+          accent.imageBg,
+        )}
+      >
         <StorefrontImage
-          src={category.imageUrl ?? null}
+          src={category.imageUrl?.trim() || null}
           alt={category.name}
-          sizes="150px"
+          sizes="(max-width: 640px) 104px, (max-width: 1024px) 154px, 196px"
           fallbackLabel={category.name}
+          showFallbackLabel={false}
           allowExternalRemote
-          className="object-contain p-2 transition duration-500 group-hover:scale-105"
+          className="object-contain p-4 transition duration-500 group-hover:scale-110 sm:p-7 lg:p-9"
         />
       </span>
-      <span className="absolute inset-x-2 bottom-2 rounded-[14px] bg-white px-2.5 py-3 text-center shadow-[0_10px_22px_rgba(22,59,92,0.08)]">
-        <span className="block truncate text-sm font-black leading-5 text-[#1F2933]">
-          {category.name}
-        </span>
-        <span className="mt-0.5 block text-xs font-bold text-[#98A2B3]">
-          {productCount.toLocaleString("en-IN")}{productCount > 0 ? "+" : ""} {productCount === 1 ? "product" : "products"}
-        </span>
+      <span className="mt-5 line-clamp-2 min-h-10 text-base font-black leading-5 text-[#111827] sm:mt-7 sm:text-2xl sm:leading-8 lg:mt-9">
+        {category.name}
+      </span>
+      <span className="mt-3 inline-flex items-center gap-2 text-xs font-bold text-[#7A8496] sm:mt-4 sm:text-sm">
+        <ShoppingBag className={cn("h-4 w-4", accent.text)} aria-hidden="true" />
+        Explore category
+      </span>
+      <span
+        className={cn(
+          "mt-auto grid h-11 w-11 place-items-center rounded-full transition group-hover:scale-110 sm:h-14 sm:w-14",
+          accent.buttonBg,
+          accent.text,
+          accent.glow,
+        )}
+        aria-hidden="true"
+      >
+        <ArrowRight className="h-5 w-5 sm:h-6 sm:w-6" />
       </span>
     </Link>
   );
@@ -659,7 +721,7 @@ function ProductRailSection({
   return (
     <section className="mx-auto max-w-[1360px] px-4 py-5 sm:px-6 lg:px-10 lg:py-6">
       <MobileSectionHeader title={title} href="/search" />
-      <div className="grid items-stretch gap-3 lg:grid-cols-[320px_minmax(0,1fr)]">
+      <div className="grid items-stretch gap-3 lg:grid-cols-[minmax(260px,320px)_minmax(0,1fr)]">
         <div className="hidden lg:block">
           <PromoPanel product={promoProduct} tone={promoTone} title={title} description={description} />
         </div>
@@ -667,7 +729,7 @@ function ProductRailSection({
           <ScrollRail ariaLabel={title} controls={false}>
             {isLoading
               ? Array.from({ length: 5 }).map((_, index) => (
-                  <StorefrontSkeleton key={index} className="h-[176px] w-[112px] shrink-0 rounded-[16px] bg-white lg:h-[368px] lg:w-[188px]" />
+                  <StorefrontSkeleton key={index} className="h-[268px] w-[154px] shrink-0 rounded-[16px] bg-white sm:h-[292px] sm:w-[170px] lg:h-[368px] lg:w-[188px]" />
                 ))
               : products.map((product) => (
                   <CompactProductCard
@@ -708,18 +770,18 @@ function DealRail({
       <div className="relative overflow-visible bg-transparent lg:rounded-[28px] lg:border lg:border-[#FFF0EC] lg:bg-white lg:p-8 lg:shadow-[0_24px_70px_rgba(22,59,92,0.08)]">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="flex min-w-0 items-center justify-between gap-3">
-            <span className="flex min-w-0 items-center gap-2">
+            <div className="flex min-w-0 items-center gap-2">
               <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#FFF0EC] text-[#ED3500] lg:h-10 lg:w-10">
-              <Zap className="h-5 w-5 fill-[#ED3500]" aria-hidden="true" />
+                <Zap className="h-5 w-5 fill-[#ED3500]" aria-hidden="true" />
               </span>
-              <span className="min-w-0">
-                <span className="block text-2xl font-black tracking-normal text-[#111827] lg:hidden">{title}</span>
-                <span className="hidden text-xs font-black uppercase tracking-wide text-[#ED3500] lg:block">{title}</span>
-                <span className="mt-1 hidden text-xl font-black tracking-normal text-[#111827] sm:text-2xl lg:block lg:text-3xl">
+              <div className="min-w-0">
+                <h2 className="block text-2xl font-black tracking-normal text-[#111827] lg:hidden">{title}</h2>
+                <h2 className="hidden text-xs font-black uppercase tracking-wide text-[#ED3500] lg:block">{title}</h2>
+                <p className="mt-1 hidden text-xl font-black tracking-normal text-[#111827] sm:text-2xl lg:block lg:text-3xl">
                   {headline}
-                </span>
-              </span>
-            </span>
+                </p>
+              </div>
+            </div>
             <HomepageItemLink href="/deals" className="inline-flex shrink-0 items-center gap-2 text-sm font-black text-[#ED3500] lg:hidden">
               View all <ArrowRight className="h-5 w-5" aria-hidden="true" />
             </HomepageItemLink>
@@ -781,7 +843,7 @@ function DealHeroScroller({
   }
 
   return (
-    <div className="relative mt-4 lg:mt-7">
+    <div className="relative mt-4 overflow-hidden lg:mt-7">
       <button
         type="button"
         aria-label="Previous deals"
@@ -793,7 +855,7 @@ function DealHeroScroller({
       <div
         ref={railRef}
         aria-label={ariaLabel}
-        className="flex snap-x gap-3 overflow-x-auto pb-3 pt-1 [scrollbar-width:none] lg:gap-4 [&::-webkit-scrollbar]:hidden"
+        className="flex max-w-full snap-x gap-3 overflow-x-auto pb-3 pt-1 [scrollbar-width:none] lg:gap-4 [&::-webkit-scrollbar]:hidden"
       >
         {children}
       </div>
@@ -957,78 +1019,6 @@ function DealHeroProductCard({ product }: { product: ProductSummary }) {
   );
 }
 
-function LiveCategories({
-  categories,
-  isLoading,
-  section,
-}: {
-  categories: CategorySummary[];
-  isLoading: boolean;
-  section?: HomepageSection | null;
-}) {
-  return (
-    <section className="mx-auto max-w-[1360px] px-4 py-6 sm:px-6 lg:px-10">
-      <SectionTitle
-        title={section?.title || "Live Categories from the Catalogue"}
-        description={
-          stringValue(section?.config?.subtitle) ||
-          stringValue(section?.config?.description) ||
-          "Real category aisles published from the admin catalogue"
-        }
-        href="/categories"
-        action="View all categories"
-      />
-      <ScrollRail className="mt-5" ariaLabel="Live categories">
-        {isLoading
-          ? Array.from({ length: 5 }).map((_, index) => (
-              <StorefrontSkeleton key={index} className="h-[156px] w-[265px] shrink-0 bg-white" />
-            ))
-          : categories.slice(0, 8).map((category, index) => (
-              <LiveCategoryCard key={category.id} category={category} highlight={index === 0} />
-            ))}
-      </ScrollRail>
-    </section>
-  );
-}
-
-function LiveCategoryCard({ category, highlight }: { category: CategorySummary; highlight?: boolean }) {
-  const count = category._count?.products ?? 0;
-
-  return (
-    <Link
-      href={`/categories/${category.slug}` as Route}
-      className={cn(
-        "group grid h-[156px] w-[265px] shrink-0 grid-cols-[1fr_112px] overflow-hidden rounded-[16px] border p-4 transition hover:-translate-y-0.5 hover:shadow-[0_18px_42px_rgba(22,59,92,0.08)]",
-        highlight
-          ? "border-[#ED3500] bg-[#ED3500] text-white"
-          : "border-[#E8EDF2] bg-white text-[#1F2933]",
-      )}
-    >
-      <span className="flex min-w-0 flex-col justify-between">
-        <span>
-          <span className="line-clamp-1 text-sm font-black">{category.name}</span>
-          <span className={cn("mt-1 block text-xs font-semibold", highlight ? "text-white/80" : "text-[#7A8496]")}>
-            {count.toLocaleString("en-IN")} live {count === 1 ? "deal" : "deals"}
-          </span>
-        </span>
-        <span className={cn("inline-flex items-center gap-2 text-xs font-black", highlight ? "text-white" : "text-[#ED3500]")}>
-          View deals <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-        </span>
-      </span>
-      <span className="relative overflow-hidden rounded-[14px] bg-[#FFF4EF]">
-        <StorefrontImage
-          src={category.imageUrl ?? null}
-          alt={category.name}
-          sizes="112px"
-          fallbackLabel={category.name}
-          allowExternalRemote
-          className="transition duration-500 group-hover:scale-105"
-        />
-      </span>
-    </Link>
-  );
-}
-
 function MobileSectionHeader({ title, href, accent = true }: { title: string; href: string; accent?: boolean }) {
   return (
     <div className="mb-4 flex items-center justify-between gap-3 lg:hidden">
@@ -1158,9 +1148,9 @@ function PromoPanel({
       </span>
       <span className="absolute bottom-5 right-20 h-11 w-11 rotate-45 border border-white/24" />
       <div className="relative z-10">
-        <p className={cn("text-xl font-black leading-none", tone === "orange" ? "text-white" : "text-[#ED3500]")}>
+        <h2 className={cn("text-xl font-black leading-none", tone === "orange" ? "text-white" : "text-[#ED3500]")}>
           {title}
-        </p>
+        </h2>
         <p className={cn("mt-3 max-w-[20ch] text-sm font-bold leading-6", tone === "orange" ? "text-white/88" : "text-[#596276]")}>
           {description || (product ? product.name : "Hot products from approved sellers")}
         </p>
@@ -1223,11 +1213,11 @@ function CompactProductCard({
   return (
     <article
       className={cn(
-        "group flex h-[176px] w-[112px] shrink-0 flex-col overflow-visible rounded-[16px] border border-transparent bg-transparent shadow-none transition lg:h-[368px] lg:w-[188px] lg:overflow-hidden lg:border lg:bg-white lg:shadow-[0_10px_24px_rgba(22,59,92,0.05)] lg:hover:border-[#ED3500] lg:hover:shadow-[0_18px_38px_rgba(22,59,92,0.09)]",
-        stockStatus.tone === "danger" ? "lg:border-[#FFD1C4]" : "lg:border-[#E8EDF2]",
+        "group flex h-[268px] w-[154px] snap-start shrink-0 flex-col overflow-hidden rounded-[16px] border bg-white shadow-[0_10px_24px_rgba(22,59,92,0.05)] transition hover:border-[#ED3500] hover:shadow-[0_18px_38px_rgba(22,59,92,0.09)] sm:h-[292px] sm:w-[170px] lg:h-[368px] lg:w-[188px]",
+        stockStatus.tone === "danger" ? "border-[#FFD1C4]" : "border-[#E8EDF2]",
       )}
     >
-      <div className="relative h-[100px] shrink-0 overflow-hidden rounded-full border border-[#E8EDF2] bg-white shadow-[0_10px_24px_rgba(22,59,92,0.06)] lg:h-[168px] lg:rounded-none lg:border-0 lg:bg-[#FFF8F5] lg:shadow-none">
+      <div className="relative h-[124px] shrink-0 overflow-hidden bg-[#FFF8F5] sm:h-[142px] lg:h-[168px]">
         <Link href={`/products/${product.slug}` as Route} className="absolute inset-0 block">
           {campaignBadge ? (
             <span className="absolute left-3 top-3 z-10 hidden max-w-[120px] truncate rounded-full bg-[#ED3500] px-2.5 py-1 text-[10px] font-black text-white shadow-[0_8px_18px_rgba(237,53,0,0.20)] lg:block">
@@ -1237,10 +1227,10 @@ function CompactProductCard({
           <StorefrontImage
             src={primaryImage(product)}
             alt={product.name}
-            sizes="188px"
+            sizes="(max-width: 640px) 154px, (max-width: 1024px) 170px, 188px"
             fallbackLabel={product.category.name}
             allowExternalRemote
-            className="object-contain p-3 transition duration-500 group-hover:scale-105 lg:p-5"
+            className="object-contain p-4 transition duration-500 group-hover:scale-105 lg:p-5"
           />
         </Link>
         <button
@@ -1249,7 +1239,7 @@ function CompactProductCard({
           disabled={isWishlistPending}
           aria-label={isWishlisted ? `Remove ${product.name} from wishlist` : `Save ${product.name} to wishlist`}
           className={cn(
-            "absolute right-1 top-1 grid h-7 w-7 place-items-center rounded-full bg-white text-[#ED3500] shadow-[0_8px_18px_rgba(22,59,92,0.10)] transition lg:right-3 lg:top-3",
+            "absolute right-2 top-2 grid h-8 w-8 place-items-center rounded-full bg-white text-[#ED3500] shadow-[0_8px_18px_rgba(22,59,92,0.10)] transition lg:right-3 lg:top-3",
             isWishlisted && "bg-[#FFF0EC]",
             isWishlistPending && "cursor-wait opacity-70",
           )}
@@ -1257,25 +1247,25 @@ function CompactProductCard({
           <Heart className={cn("h-4 w-4", isWishlisted && "fill-current")} aria-hidden="true" strokeWidth={2} />
         </button>
       </div>
-      <div className="flex min-w-0 flex-1 flex-col px-1 pb-0 pt-2 text-center lg:px-4 lg:pb-6 lg:pt-3 lg:text-left">
+      <div className="flex min-w-0 flex-1 flex-col px-3 pb-4 pt-3 text-left lg:px-4 lg:pb-6">
         <Link href={`/products/${product.slug}` as Route} className="line-clamp-2 min-h-9 text-sm font-black leading-[18px] text-[#1F2933] lg:min-h-10 lg:leading-5">
           {product.name}
         </Link>
-        <p className="mt-1 hidden line-clamp-1 text-[11px] font-bold text-[#98A2B3] lg:block">{product.seller.storeName}</p>
+        <p className="mt-1 line-clamp-1 text-[11px] font-bold text-[#98A2B3]">{product.seller.storeName}</p>
         <div className="mt-2 flex min-w-0 items-baseline gap-2">
-          <span className="mx-auto text-sm font-black text-[#1F2933] lg:mx-0 lg:text-base">
+          <span className="text-sm font-black text-[#1F2933] lg:text-base">
             {variant ? market.format(variant.pricePaise) : "Price pending"}
           </span>
           {mrp ? <span className="hidden truncate text-xs font-semibold text-[#98A2B3] line-through lg:inline">{market.format(mrp)}</span> : null}
         </div>
         {discount ? (
-          <span className="mt-1 hidden w-fit rounded bg-[#FFF0EC] px-2 py-0.5 text-[10px] font-black text-[#ED3500] lg:inline-flex">
+          <span className="mt-1 w-fit rounded bg-[#FFF0EC] px-2 py-0.5 text-[10px] font-black text-[#ED3500]">
             {discount}% OFF
           </span>
         ) : null}
         <span
           className={cn(
-            "mt-auto hidden w-fit items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-black lg:inline-flex",
+            "mt-auto hidden w-fit items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-black sm:inline-flex",
             storefrontStockBadgeClass(stockStatus.tone),
           )}
         >
@@ -1327,10 +1317,10 @@ function ScrollRail({
   controls?: boolean;
 }) {
   return (
-    <div className={cn("relative", className)}>
+    <div className={cn("relative overflow-hidden", className)}>
       <div
         aria-label={ariaLabel}
-        className="-mx-1 flex snap-x gap-3 overflow-x-auto px-1 pb-3 pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="-mx-1 flex max-w-full snap-x gap-3 overflow-x-auto px-1 pb-3 pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         {children}
       </div>
@@ -1531,11 +1521,20 @@ function defaultSellerCtaItems(): NormalizedHomepageItem[] {
   ];
 }
 
+type CountdownPart = { label: string; value: string };
+
+const COUNTDOWN_PLACEHOLDER: CountdownPart[] = [
+  { label: "Hours", value: "--" },
+  { label: "Mins", value: "--" },
+  { label: "Secs", value: "--" },
+];
+
 function useCountdownParts(value: string) {
-  const [now, setNow] = useState(() => Date.now());
+  const [now, setNow] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!value) {
+    if (!isValidCountdownTarget(value)) {
+      setNow(null);
       return;
     }
 
@@ -1544,17 +1543,27 @@ function useCountdownParts(value: string) {
     return () => window.clearInterval(intervalId);
   }, [value]);
 
-  return useMemo(() => buildStaticCountdown(value, now), [now, value]);
+  return useMemo(() => {
+    if (!isValidCountdownTarget(value)) {
+      return null;
+    }
+    if (now === null) {
+      return COUNTDOWN_PLACEHOLDER;
+    }
+    return buildStaticCountdown(value, now);
+  }, [now, value]);
 }
 
-function buildStaticCountdown(value: string, now = Date.now()) {
+function isValidCountdownTarget(value: string) {
   if (!value) {
-    return null;
+    return false;
   }
   const target = new Date(value);
-  if (Number.isNaN(target.getTime())) {
-    return null;
-  }
+  return !Number.isNaN(target.getTime());
+}
+
+function buildStaticCountdown(value: string, now: number) {
+  const target = new Date(value);
   const delta = Math.max(0, target.getTime() - now);
   const hours = Math.floor(delta / 3_600_000);
   const minutes = Math.floor((delta % 3_600_000) / 60_000);

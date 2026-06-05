@@ -100,6 +100,40 @@ export type SellerPayout = {
   createdAt?: string;
 };
 
+export type DeliveryPartnerPayout = {
+  id: string;
+  payoutNumber: string;
+  partnerUserId: string;
+  amountPaise: number;
+  currency: string;
+  status: "REQUESTED" | "APPROVED" | "REJECTED" | "PAID";
+  note?: string | null;
+  settingsSnapshot?: Record<string, unknown> | null;
+  requestedAt?: string | null;
+  approvedAt?: string | null;
+  paidAt?: string | null;
+  paymentMode?: string | null;
+  transactionReference?: string | null;
+  createdAt?: string;
+  partner?: {
+    id: string;
+    email?: string | null;
+    phone?: string | null;
+    fullName?: string | null;
+    deliveryProfile?: {
+      vehicleNumber?: string | null;
+      isAvailable?: boolean | null;
+    } | null;
+  } | null;
+  walletEntries?: Array<{
+    id: string;
+    entryType: string;
+    direction: "CREDIT" | "DEBIT";
+    amountPaise: number;
+    createdAt?: string;
+  }>;
+};
+
 export type SellerSettlementRun = {
   id: string;
   runNumber: string;
@@ -232,6 +266,22 @@ export function rejectPayout(auth: IndihubAuthHeaders, payoutId: string, note?: 
 
 export function markPayoutPaid(auth: IndihubAuthHeaders, payoutId: string, payload: { paymentMode: string; transactionReference: string; paidAt?: string; note?: string }) {
   return indihubFetch<SellerPayout>(`/api/admin/finance/payouts/${encodeURIComponent(payoutId)}/mark-paid`, { method: "PATCH", body: JSON.stringify(payload) }, auth);
+}
+
+export function listDeliveryPartnerPayouts(auth: IndihubAuthHeaders, query: Record<string, string | number | undefined> = {}) {
+  return indihubFetch<PageResult<DeliveryPartnerPayout>>(`/api/admin/finance/delivery-partner-payouts${queryString(query)}`, undefined, auth);
+}
+
+export function approveDeliveryPartnerPayout(auth: IndihubAuthHeaders, payoutId: string, note?: string) {
+  return indihubFetch<DeliveryPartnerPayout>(`/api/admin/finance/delivery-partner-payouts/${encodeURIComponent(payoutId)}/approve`, { method: "PATCH", body: JSON.stringify({ note }) }, auth);
+}
+
+export function rejectDeliveryPartnerPayout(auth: IndihubAuthHeaders, payoutId: string, note?: string) {
+  return indihubFetch<DeliveryPartnerPayout>(`/api/admin/finance/delivery-partner-payouts/${encodeURIComponent(payoutId)}/reject`, { method: "PATCH", body: JSON.stringify({ note }) }, auth);
+}
+
+export function markDeliveryPartnerPayoutPaid(auth: IndihubAuthHeaders, payoutId: string, payload: { paymentMode: string; transactionReference: string; paidAt?: string; note?: string }) {
+  return indihubFetch<DeliveryPartnerPayout>(`/api/admin/finance/delivery-partner-payouts/${encodeURIComponent(payoutId)}/mark-paid`, { method: "PATCH", body: JSON.stringify(payload) }, auth);
 }
 
 export function listAdminLedger(auth: IndihubAuthHeaders, query: Record<string, string | number | undefined> = {}) {

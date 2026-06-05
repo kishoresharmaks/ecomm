@@ -206,6 +206,11 @@ export class SellersService {
           stateCode: location.stateCode,
           cityCode: location.cityCode,
           localAreaCode: location.localAreaCode,
+          latitude: dto.address.latitude ?? null,
+          longitude: dto.address.longitude ?? null,
+          locationSource: dto.address.locationSource ?? null,
+          accuracyMeters: dto.address.accuracyMeters ?? null,
+          locationConfidenceScore: dto.address.locationConfidenceScore ?? null,
         },
       });
 
@@ -717,6 +722,17 @@ export class SellersService {
                 localAreaCode: location.localAreaCode,
               }
             : {}),
+          ...(dto.address.latitude !== undefined ? { latitude: dto.address.latitude ?? null } : {}),
+          ...(dto.address.longitude !== undefined ? { longitude: dto.address.longitude ?? null } : {}),
+          ...(dto.address.locationSource !== undefined
+            ? { locationSource: dto.address.locationSource ?? null }
+            : {}),
+          ...(dto.address.accuracyMeters !== undefined
+            ? { accuracyMeters: dto.address.accuracyMeters ?? null }
+            : {}),
+          ...(dto.address.locationConfidenceScore !== undefined
+            ? { locationConfidenceScore: dto.address.locationConfidenceScore ?? null }
+            : {}),
         };
 
         if (address) {
@@ -750,6 +766,11 @@ export class SellersService {
               stateCode: location?.stateCode ?? null,
               cityCode: location?.cityCode ?? null,
               localAreaCode: location?.localAreaCode ?? null,
+              latitude: dto.address.latitude ?? null,
+              longitude: dto.address.longitude ?? null,
+              locationSource: dto.address.locationSource ?? null,
+              accuracyMeters: dto.address.accuracyMeters ?? null,
+              locationConfidenceScore: dto.address.locationConfidenceScore ?? null,
             },
           });
         }

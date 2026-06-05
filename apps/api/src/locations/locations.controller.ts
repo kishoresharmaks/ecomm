@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Inject, Param, Patch, Post, Query } from "@nestjs/common";
+import { Body, Controller, Get, Header, Inject, Param, Patch, Post, Query } from "@nestjs/common";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import { RoleCode } from "@indihub/database";
 import { Public } from "../auth/decorators/public.decorator";
@@ -14,6 +14,9 @@ import {
 } from "./dto/location-query.dto";
 import { LocationsService } from "./locations.service";
 
+const publicLocationCatalogCacheHeader = "public, max-age=300, s-maxage=1800, stale-while-revalidate=3600";
+const publicLocationAreaCacheHeader = "public, max-age=60, s-maxage=600, stale-while-revalidate=1800";
+
 @ApiTags("Locations")
 @Controller("locations")
 export class LocationsController {
@@ -21,6 +24,7 @@ export class LocationsController {
 
   @Public()
   @Get("countries")
+  @Header("Cache-Control", publicLocationCatalogCacheHeader)
   @ApiOperation({ summary: "List enabled market countries." })
   listCountries(@Query() query: LocationCountryQueryDto) {
     return this.locationsService.listCountries(query);
@@ -28,6 +32,7 @@ export class LocationsController {
 
   @Public()
   @Get("states")
+  @Header("Cache-Control", publicLocationCatalogCacheHeader)
   @ApiOperation({ summary: "List states/provinces for a country." })
   listSubdivisions(@Query() query: LocationSubdivisionQueryDto) {
     return this.locationsService.listSubdivisions(query);
@@ -35,6 +40,7 @@ export class LocationsController {
 
   @Public()
   @Get("cities")
+  @Header("Cache-Control", publicLocationCatalogCacheHeader)
   @ApiOperation({ summary: "List cities for a state/province." })
   listCities(@Query() query: LocationCityQueryDto) {
     return this.locationsService.listCities(query);
@@ -42,6 +48,7 @@ export class LocationsController {
 
   @Public()
   @Get("areas")
+  @Header("Cache-Control", publicLocationAreaCacheHeader)
   @ApiOperation({ summary: "List local areas for a city." })
   listAreas(@Query() query: LocationAreaQueryDto) {
     return this.locationsService.listAreas(query);
