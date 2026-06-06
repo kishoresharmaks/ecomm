@@ -17,6 +17,7 @@ export const adminNav = [
   { group: "Operations", label: "Location serviceability", href: "/admin/locations/serviceability" },
   { group: "Operations", label: "Reports", href: "/admin/reports" },
   { group: "Operations", label: "Delivery operations", href: "/admin/delivery" },
+  { group: "Operations", label: "Delivery applications", href: "/admin/delivery-partner-applications" },
   { group: "Operations", label: "Courier workspace", href: "/courier" },
   { group: "Finance", label: "Seller subscriptions", href: "/admin/seller-subscriptions" },
   { group: "Finance", label: "Finance workspace", href: "/finance" },

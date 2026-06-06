@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { IndihubApiError, indihubFetch, userSessionExpiredMessage } from "./api";
+import { IndihubApiError, indihubFetch, requestTimedOutMessage, userFacingApiErrorMessage, userSessionExpiredMessage } from "./api";
 
 describe("indihubFetch", () => {
   afterEach(() => {
@@ -46,6 +46,14 @@ describe("indihubFetch", () => {
       message: userSessionExpiredMessage,
       status: 401
     } satisfies Partial<IndihubApiError>);
+  });
+
+  it("keeps raw abort errors out of user-facing API failures", () => {
+    const abortError = new Error("signal is aborted without reason");
+    abortError.name = "AbortError";
+
+    expect(userFacingApiErrorMessage(abortError)).toBe(requestTimedOutMessage);
+    expect(userFacingApiErrorMessage("signal is aborted without reason")).toBe(requestTimedOutMessage);
   });
 
   it("decrypts encrypted bearer-token responses", async () => {

@@ -71,6 +71,12 @@ import { DeliveryPartnerPayoutSettings } from "@/components/admin/settings/deliv
 import { MapRoutingSettings } from "@/components/admin/settings/map-routing-settings";
 import { SellerPayoutSettings } from "@/components/admin/settings/seller-payout-settings";
 import { readBooleanSettingValue } from "@/components/admin/settings/setting-value-utils";
+import {
+  roleRemovalHasBlockers,
+  roleRemovalNoteError,
+  visibleRoleRemovalCounts,
+  type RoleRemovalImpact,
+} from "@/components/admin/admin-role-removal-utils";
 import { useLocationAreaStore, useLocationCatalog } from "@/components/locations/location-store";
 import { formatLocalAreaLabel } from "@/components/locations/location-utils";
 import { SellerImageUpload } from "@/components/seller/seller-ui";
@@ -1468,6 +1474,11 @@ type ContentEditRequest =
   | { kind: "banner"; item: BannerRecord }
   | { kind: "section"; item: HomepageSectionRecord };
 
+type RoleRemovalDialogRequest = {
+  user: UserRecord;
+  roleCode: PlatformRoleCode;
+};
+
 export function AdminCustomersPageClient() {
   const auth = useAdminAuth();
   const queryClient = useQueryClient();
@@ -1539,6 +1550,9 @@ export function AdminUsersPageClient() {
   const [statusFilter, setStatusFilter] = useState<UserStatusFilter>("ALL");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [roleRemovalRequest, setRoleRemovalRequest] =
+    useState<RoleRemovalDialogRequest | null>(null);
+  const [roleRemovalNote, setRoleRemovalNote] = useState("");
   const confirmation = useAdminConfirmation();
   const query = useAdminList<UserRecord>(
     "admin-users",
@@ -1567,20 +1581,32 @@ export function AdminUsersPageClient() {
       userId,
       roleCode,
       action,
+      note,
     }: {
       userId: string;
       roleCode: PlatformRoleCode;
       action: "add" | "remove";
+      note?: string | undefined;
     }) =>
       adminRequest(
         `/api/admin/users/${userId}/roles${action === "remove" ? "/remove" : ""}`,
         auth.authHeaders,
         {
           method: action === "remove" ? "PATCH" : "POST",
-          body: JSON.stringify({ roleCode, note: "Updated from admin role console." }),
+          body: JSON.stringify({
+            roleCode,
+            note: note?.trim() || "Updated from admin role console.",
+          }),
         },
       ),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-users"] }),
+  });
+  const previewRoleRemoval = useMutation({
+    mutationFn: ({ userId, roleCode }: { userId: string; roleCode: PlatformRoleCode }) =>
+      adminRequest<RoleRemovalImpact>(
+        `/api/admin/users/${userId}/roles/${roleCode}/removal-impact`,
+        auth.authHeaders,
+      ),
   });
   const setBackOfficePassword = useMutation({
     mutationFn: ({ userId, password }: { userId: string; password: string }) =>
@@ -1617,12 +1643,35 @@ export function AdminUsersPageClient() {
   };
   const requestRoleRemoval = (userId: string, roleCode: PlatformRoleCode) => {
     const user = items.find((item) => item.id === userId);
-    confirmation.requestConfirmation({
-      title: "Remove assigned role?",
-      description: `${humanize(roleCode)} access will be removed from ${user?.email ?? "this user"}. The profile record stays in the audit trail.`,
-      confirmLabel: "Remove role",
-      onConfirm: () => updateRole.mutate({ userId, roleCode, action: "remove" }),
-    });
+    if (!user) {
+      return;
+    }
+    setRoleRemovalRequest({ user, roleCode });
+    setRoleRemovalNote("");
+    previewRoleRemoval.mutate({ userId, roleCode });
+  };
+  const closeRoleRemovalDialog = () => {
+    setRoleRemovalRequest(null);
+    setRoleRemovalNote("");
+    previewRoleRemoval.reset();
+  };
+  const confirmRoleRemoval = () => {
+    if (!roleRemovalRequest || !previewRoleRemoval.data) {
+      return;
+    }
+    const noteError = roleRemovalNoteError(previewRoleRemoval.data, roleRemovalNote);
+    if (roleRemovalHasBlockers(previewRoleRemoval.data) || noteError) {
+      return;
+    }
+    updateRole.mutate(
+      {
+        userId: roleRemovalRequest.user.id,
+        roleCode: roleRemovalRequest.roleCode,
+        action: "remove",
+        note: roleRemovalNote,
+      },
+      { onSuccess: closeRoleRemovalDialog },
+    );
   };
 
   return (
@@ -1634,6 +1683,18 @@ export function AdminUsersPageClient() {
       total={totalItems(query.data, items.length)}
     >
       {confirmation.dialog}
+      <RoleRemovalImpactDialog
+        request={roleRemovalRequest}
+        impact={previewRoleRemoval.data ?? null}
+        isLoading={previewRoleRemoval.isPending}
+        error={previewRoleRemoval.error}
+        removeError={roleRemovalRequest ? updateRole.error : null}
+        note={roleRemovalNote}
+        onNoteChange={setRoleRemovalNote}
+        onClose={closeRoleRemovalDialog}
+        onConfirm={confirmRoleRemoval}
+        isRemoving={updateRole.isPending}
+      />
       {updateStatus.error ||
       updateRole.error ||
       setBackOfficePassword.error ||
@@ -9740,6 +9801,233 @@ function RoleChipList({
           </span>
         );
       })}
+    </div>
+  );
+}
+
+function RoleRemovalImpactDialog({
+  request,
+  impact,
+  isLoading,
+  error,
+  removeError,
+  note,
+  onNoteChange,
+  onClose,
+  onConfirm,
+  isRemoving,
+}: {
+  request: RoleRemovalDialogRequest | null;
+  impact: RoleRemovalImpact | null;
+  isLoading: boolean;
+  error: unknown;
+  removeError: unknown;
+  note: string;
+  onNoteChange: (value: string) => void;
+  onClose: () => void;
+  onConfirm: () => void;
+  isRemoving: boolean;
+}) {
+  if (!request) {
+    return null;
+  }
+
+  const noteError = roleRemovalNoteError(impact, note);
+  const hasBlockers = roleRemovalHasBlockers(impact);
+  const counts = visibleRoleRemovalCounts(impact);
+  const canConfirm = Boolean(impact && !hasBlockers && !noteError && !isLoading && !isRemoving);
+
+  return (
+    <Dialog open onClose={isRemoving ? () => undefined : onClose} className="relative z-[160]">
+      <DialogBackdrop
+        transition
+        className="fixed inset-0 bg-[#101828]/55 transition duration-200 data-closed:opacity-0"
+      />
+      <div className="fixed inset-0 w-screen overflow-y-auto px-4 py-6">
+        <div className="flex min-h-full items-center justify-center">
+          <DialogPanel
+            transition
+            className="w-full max-w-2xl rounded-lg border border-[#FFD1C4] bg-white p-5 shadow-2xl transition duration-200 data-closed:scale-95 data-closed:opacity-0"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex min-w-0 items-start gap-3">
+                <span className="grid h-11 w-11 shrink-0 place-items-center rounded-md bg-[#FFF0EC] text-[#ED3500]">
+                  <ShieldAlert className="h-5 w-5" aria-hidden="true" />
+                </span>
+                <div className="min-w-0">
+                  <DialogTitle className="text-lg font-black text-[#1F2933]">
+                    Remove {humanize(request.roleCode)} role?
+                  </DialogTitle>
+                  <Description className="mt-1 text-sm font-semibold leading-6 text-[#667085]">
+                    Access will be removed from {request.user.email}. Business records are preserved;
+                    only the related operational profile is suspended when required.
+                  </Description>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={isRemoving}
+                className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-[#D8E2EA] bg-white text-[#667085] transition hover:border-[#ED3500] hover:text-[#ED3500] disabled:cursor-not-allowed disabled:opacity-50"
+                aria-label="Close role removal impact"
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-4">
+              {isLoading ? (
+                <div className="flex items-center gap-3 rounded-lg border border-[#D8E2EA] bg-[#F8FAFC] p-4 text-sm font-bold text-[#667085]">
+                  <RefreshCw className="h-4 w-4 animate-spin text-[#ED3500]" aria-hidden="true" />
+                  Checking role impact, active work, COD, payouts, and profile links.
+                </div>
+              ) : null}
+
+              {error ? (
+                <div className="rounded-lg border border-[#F5B7B7] bg-[#FDECEC] p-4">
+                  <p className="text-sm font-black text-[#B42318]">Unable to load role impact</p>
+                  <p className="mt-1 text-sm font-semibold text-[#7A271A]">
+                    {mutationErrorMessage(error)}
+                  </p>
+                </div>
+              ) : null}
+
+              {removeError ? (
+                <div className="rounded-lg border border-[#F5B7B7] bg-[#FDECEC] p-4">
+                  <p className="text-sm font-black text-[#B42318]">Unable to remove role</p>
+                  <p className="mt-1 text-sm font-semibold text-[#7A271A]">
+                    {mutationErrorMessage(removeError)}
+                  </p>
+                </div>
+              ) : null}
+
+              {impact ? (
+                <>
+                  <div className="flex flex-wrap gap-2">
+                    <StatusBadge tone={impact.canRemove ? "success" : "danger"}>
+                      {impact.canRemove ? "Can remove" : "Blocked"}
+                    </StatusBadge>
+                    {impact.noteRequired ? <StatusBadge tone="warning">Admin note required</StatusBadge> : null}
+                    {impact.affectedProfile ? (
+                      <StatusBadge tone="info">{humanize(impact.affectedProfile)}</StatusBadge>
+                    ) : null}
+                  </div>
+
+                  {impact.blockers.length ? (
+                    <ImpactList
+                      title="Resolve before removing"
+                      tone="danger"
+                      items={impact.blockers}
+                    />
+                  ) : null}
+
+                  {impact.cleanupActions.length ? (
+                    <ImpactList
+                      title="Cleanup actions"
+                      tone="info"
+                      items={impact.cleanupActions}
+                    />
+                  ) : null}
+
+                  {impact.warnings.length ? (
+                    <ImpactList title="Preserved data" tone="warning" items={impact.warnings} />
+                  ) : null}
+
+                  {counts.length ? (
+                    <div className="rounded-lg border border-[#D8E2EA] bg-[#F8FAFC] p-4">
+                      <p className="text-xs font-black uppercase tracking-wide text-[#667085]">
+                        Associated records
+                      </p>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        {counts.map((item) => (
+                          <div
+                            key={item.key}
+                            className="flex items-center justify-between gap-3 rounded-md border border-[#E5E7EB] bg-white px-3 py-2"
+                          >
+                            <span className="text-xs font-black text-[#596276]">{item.label}</span>
+                            <span className="text-sm font-black text-[#163B5C]">
+                              {item.value.toLocaleString("en-IN")}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {impact.noteRequired ? (
+                    <label className="block">
+                      <span className="text-xs font-black uppercase tracking-wide text-[#667085]">
+                        Admin note
+                      </span>
+                      <textarea
+                        value={note}
+                        onChange={(event) => onNoteChange(event.target.value)}
+                        rows={3}
+                        placeholder="Example: Active work cleared and profile access removed after admin review."
+                        className={cn(
+                          "mt-2 w-full rounded-md border bg-white px-3 py-2 text-sm font-semibold text-[#1F2933] outline-none transition focus:border-[#ED3500]",
+                          noteError ? "border-[#F5B7B7]" : "border-[#D8E2EA]",
+                        )}
+                      />
+                      {noteError ? (
+                        <span className="mt-1 block text-xs font-bold text-[#B42318]">
+                          {noteError}
+                        </span>
+                      ) : null}
+                    </label>
+                  ) : null}
+                </>
+              ) : null}
+            </div>
+
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button type="button" variant="outline" onClick={onClose} disabled={isRemoving}>
+                Keep role
+              </Button>
+              <Button
+                type="button"
+                className="bg-[#B42318] hover:bg-[#8F1D14] focus-visible:ring-[#B42318]"
+                onClick={onConfirm}
+                disabled={!canConfirm}
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+                {isRemoving ? "Removing" : "Remove role"}
+              </Button>
+            </div>
+          </DialogPanel>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
+function ImpactList({
+  title,
+  tone,
+  items,
+}: {
+  title: string;
+  tone: "danger" | "warning" | "info";
+  items: string[];
+}) {
+  const styles =
+    tone === "danger"
+      ? "border-[#F5B7B7] bg-[#FDECEC] text-[#B42318]"
+      : tone === "warning"
+        ? "border-[#FEDF89] bg-[#FFFAEB] text-[#B54708]"
+        : "border-[#C5D8E8] bg-[#F8FAFC] text-[#163B5C]";
+
+  return (
+    <div className={cn("rounded-lg border p-4", styles)}>
+      <p className="text-xs font-black uppercase tracking-wide">{title}</p>
+      <ul className="mt-2 space-y-1.5">
+        {items.map((item) => (
+          <li key={item} className="flex gap-2 text-sm font-semibold leading-5">
+            <span aria-hidden="true">-</span>
+            <span>{item}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

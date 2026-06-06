@@ -12,6 +12,7 @@ import { CartModule } from "../cart/cart.module";
 import { CategoriesModule } from "../categories/categories.module";
 import { CmsModule } from "../cms/cms.module";
 import { CustomersModule } from "../customers/customers.module";
+import { DeliveryPartnerApplicationsModule } from "../delivery-partner-applications/delivery-partner-applications.module";
 import { FinanceModule } from "../finance/finance.module";
 import { HealthController } from "../health/health.controller";
 import { HsnMasterModule } from "../hsn-master/hsn-master.module";
@@ -44,6 +45,7 @@ import { SupportModule } from "../support/support.module";
     AdminBootstrapModule,
     AdminCustomersModule,
     CustomersModule,
+    DeliveryPartnerApplicationsModule,
     CartModule,
     B2BModule,
     CategoriesModule,

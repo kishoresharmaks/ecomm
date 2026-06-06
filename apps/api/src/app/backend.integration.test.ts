@@ -2097,18 +2097,25 @@ integrationDescribe("1HandIndia backend integration", () => {
           partnerName: null,
           partnerPhone: null,
           trackingReference: null,
-          codCollectionStatus: CodCollectionStatus.VERIFIED,
-          codCollectedAmountPaise: codDuePaise,
         },
       });
+      expect(successTrack.body.deliveryDetail).not.toHaveProperty("codCollectionStatus");
+      expect(successTrack.body.deliveryDetail).not.toHaveProperty("codCollectedAmountPaise");
+      expect(successTrack.body.deliveryDetail).not.toHaveProperty("codCollectionNote");
+      expect(successTrack.body.deliveryDetail).not.toHaveProperty("codVerificationNote");
+      const successTrackShipments = successTrack.body.shipments as Array<Record<string, unknown>>;
+      expect(successTrackShipments[0]).not.toHaveProperty("codCollectionStatus");
+      expect(successTrackShipments[0]).not.toHaveProperty("codCollectedAmountPaise");
       expect(successTrack.body.customerDeliveryTimeline).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ label: "Assigned to delivery partner", completed: true }),
           expect.objectContaining({ label: "Picked up", completed: true }),
           expect.objectContaining({ label: "Out for delivery", completed: true }),
-          expect.objectContaining({ label: "COD collected", completed: true }),
           expect.objectContaining({ label: "Delivered", completed: true }),
         ]),
+      );
+      expect(successTrack.body.customerDeliveryTimeline).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ label: "COD collected" })]),
       );
 
       const storedOrder = await prisma.order.findUniqueOrThrow({
@@ -3065,19 +3072,24 @@ integrationDescribe("1HandIndia backend integration", () => {
         deliveryDetail: {
           partnerPhone: null,
           trackingReference: null,
-          codCollectionStatus: CodCollectionStatus.VERIFIED,
-          codCollectedAmountPaise: 12000,
-          codCollectionNote: "Collected exact COD amount from customer.",
-          codVerificationNote: "Cash matched at admin desk.",
         },
       });
+      expect(trackedOrder.body.deliveryDetail).not.toHaveProperty("codCollectionStatus");
+      expect(trackedOrder.body.deliveryDetail).not.toHaveProperty("codCollectedAmountPaise");
+      expect(trackedOrder.body.deliveryDetail).not.toHaveProperty("codCollectionNote");
+      expect(trackedOrder.body.deliveryDetail).not.toHaveProperty("codVerificationNote");
+      const trackedShipments = trackedOrder.body.shipments as Array<Record<string, unknown>>;
+      expect(trackedShipments[0]).not.toHaveProperty("codCollectionStatus");
+      expect(trackedShipments[0]).not.toHaveProperty("codCollectedAmountPaise");
       expect(trackedOrder.body.customerDeliveryTimeline).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ label: "Assigned to delivery partner", completed: true }),
           expect.objectContaining({ label: "Out for delivery", completed: true }),
-          expect.objectContaining({ label: "COD collected", completed: true }),
           expect.objectContaining({ label: "Delivered", completed: true }),
         ]),
+      );
+      expect(trackedOrder.body.customerDeliveryTimeline).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ label: "COD collected" })]),
       );
       const trackedDelivery = (trackedOrder.body as { deliveryDetail: { events: unknown[] } })
         .deliveryDetail;

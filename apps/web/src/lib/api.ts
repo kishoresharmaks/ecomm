@@ -1,4 +1,12 @@
 export const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+export const apiRequestTimeoutMs = Number(process.env.NEXT_PUBLIC_API_TIMEOUT_MS ?? 8000);
+const localApiBasePattern = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i;
+export const skipDefaultLocalApiOnServer =
+  typeof window === "undefined" &&
+  process.env.NODE_ENV === "production" &&
+  !process.env.NEXT_PUBLIC_API_URL &&
+  process.env.INDIHUB_ALLOW_LOCAL_API_BUILD_FETCH !== "true" &&
+  localApiBasePattern.test(apiBaseUrl);
 
 type BearerTokenOptions = {
   skipCache?: boolean;
@@ -13,6 +21,7 @@ export type IndihubAuthHeaders = {
 };
 
 export const userSessionExpiredMessage = "Your sign-in session expired. Please refresh your session or sign in again.";
+export const requestTimedOutMessage = "The server is taking longer than expected. Please try again.";
 
 export class IndihubApiError extends Error {
   readonly status: number;
@@ -67,6 +76,10 @@ export function userFacingApiErrorMessage(error: unknown) {
     return error.message;
   }
 
+  if (isAbortError(error)) {
+    return requestTimedOutMessage;
+  }
+
   if (error instanceof Error) {
     return sanitizeApiMessage(error.message);
   }
@@ -79,6 +92,10 @@ export function userFacingApiErrorMessage(error: unknown) {
 }
 
 async function request(path: string, init: RequestInit | undefined, auth: IndihubAuthHeaders | undefined, options: BearerTokenOptions) {
+  if (skipDefaultLocalApiOnServer) {
+    throw new Error("Skipping default localhost API fetch during production server rendering.");
+  }
+
   const bearerToken = await bearerTokenForRequest(auth, options);
   const headers = new Headers({
     "Content-Type": "application/json",
@@ -91,12 +108,28 @@ async function request(path: string, init: RequestInit | undefined, auth: Indihu
     new Headers(init.headers).forEach((value, key) => headers.set(key, value));
   }
 
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    ...init,
-    headers
-  });
+  const controller =
+    init?.signal || !Number.isFinite(apiRequestTimeoutMs) || apiRequestTimeoutMs <= 0
+      ? null
+      : new AbortController();
+  const timeoutId = controller
+    ? setTimeout(() => controller.abort(), apiRequestTimeoutMs)
+    : null;
 
-  return { response, bearerToken };
+  try {
+    const requestInit: RequestInit = {
+      ...init,
+      headers,
+      ...(init?.signal || controller?.signal ? { signal: init?.signal ?? controller?.signal ?? null } : {})
+    };
+    const response = await fetch(`${apiBaseUrl}${path}`, requestInit);
+
+    return { response, bearerToken };
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
 }
 
 async function bearerTokenForRequest(auth?: IndihubAuthHeaders, options: BearerTokenOptions = {}) {
@@ -148,11 +181,28 @@ function sanitizeApiMessage(message: string, status?: number) {
     return status ? `Request failed with status ${status}` : "Something went wrong. Please try again.";
   }
 
+  if (isAbortMessage(trimmed)) {
+    return requestTimedOutMessage;
+  }
+
   if (isDeveloperAuthMessage(trimmed, status)) {
     return userSessionExpiredMessage;
   }
 
   return trimmed;
+}
+
+function isAbortError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return error.name === "AbortError" || isAbortMessage(error.message);
+}
+
+function isAbortMessage(message: string) {
+  const lower = message.toLowerCase();
+  return lower.includes("signal is aborted") || lower.includes("aborted without reason") || lower.includes("operation was aborted");
 }
 
 function isDeveloperAuthMessage(message: string, status?: number) {

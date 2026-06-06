@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect } from "react";
 import type { ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   ClipboardList,
   LayoutDashboard,
@@ -20,6 +22,7 @@ import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
 import { DevAuthPanel } from "@/components/dev-auth/dev-auth-panel";
 import { useDevAuth } from "@/components/dev-auth/dev-auth-context";
 import { userFacingApiErrorMessage, type IndihubAuthHeaders } from "@/lib/api";
+import { getOwnDeliveryPartnerApplication } from "@/lib/delivery-partner-application-api";
 
 export type DeliveryAuthState = {
   mode: "clerk" | "local";
@@ -37,6 +40,8 @@ const deliveryNav = [
   { href: "/delivery/wallet", label: "Wallet", icon: Wallet },
   { href: "/delivery/profile", label: "Profile", icon: UserRound }
 ];
+
+type DeliveryAccessStatus = "signed-out" | "checking" | "ready" | "needs-application" | "error";
 
 export function useDeliveryAuth(): DeliveryAuthState {
   const customerAuth = useCustomerAuth();
@@ -69,11 +74,32 @@ export function DeliveryShell({
   children: ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const auth = useDeliveryAuth();
+  const accessQuery = useQuery({
+    queryKey: ["delivery-access", auth.authKey],
+    queryFn: () => getOwnDeliveryPartnerApplication(auth.authHeaders),
+    enabled: auth.enabled && auth.status === "ready",
+    retry: false,
+  });
+  const isDeliveryPartner = Boolean(accessQuery.data?.isDeliveryPartner);
+  const needsApplication =
+    auth.enabled &&
+    auth.status === "ready" &&
+    accessQuery.isSuccess &&
+    !isDeliveryPartner;
+  const accessStatus = deliveryAccessStatus(auth, accessQuery.isLoading, Boolean(accessQuery.error), isDeliveryPartner, needsApplication);
+
+  useEffect(() => {
+    if (needsApplication && pathname !== "/delivery/register") {
+      router.replace("/delivery/register");
+    }
+  }, [needsApplication, pathname, router]);
 
   return (
     <div className="min-h-screen bg-[#F7F4EE]">
       <aside className="fixed inset-y-0 left-0 z-20 hidden w-72 border-r border-white/10 bg-[#123A5A] text-white lg:block">
-        <DeliverySidebar pathname={pathname} />
+        <DeliverySidebar pathname={pathname} accessStatus={accessStatus} />
       </aside>
       <main className="lg:pl-72">
         <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-10">
@@ -93,14 +119,22 @@ export function DeliveryShell({
             </div>
           </div>
           <DeliveryAuthNotice />
-          {children}
+          {isDeliveryPartner ? (
+            children
+          ) : (
+            <DeliveryAccessGate
+              status={accessStatus}
+              error={accessQuery.error}
+              onRetry={() => void accessQuery.refetch()}
+            />
+          )}
         </div>
       </main>
     </div>
   );
 }
 
-function DeliverySidebar({ pathname }: { pathname: string }) {
+function DeliverySidebar({ pathname, accessStatus }: { pathname: string; accessStatus: DeliveryAccessStatus }) {
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden px-4 py-5">
       <Link href="/delivery" className="flex shrink-0 items-center gap-3 rounded-md border border-white/10 bg-white/[0.05] p-3">
@@ -111,7 +145,7 @@ function DeliverySidebar({ pathname }: { pathname: string }) {
         </span>
       </Link>
 
-      <DeliverySidebarStatus />
+      <DeliverySidebarStatus accessStatus={accessStatus} />
 
       <nav className="mt-5 min-h-0 flex-1 overflow-y-auto pr-1 [scrollbar-color:rgba(255,255,255,0.28)_transparent] [scrollbar-width:thin]">
         <p className="px-2 pb-2 text-[11px] font-black uppercase tracking-[0.14em] text-[#BFD4E5]">Workspace</p>
@@ -125,11 +159,12 @@ function DeliverySidebar({ pathname }: { pathname: string }) {
   );
 }
 
-function DeliverySidebarStatus() {
+function DeliverySidebarStatus({ accessStatus }: { accessStatus: DeliveryAccessStatus }) {
   const auth = useDeliveryAuth();
-  const ready = auth.enabled && auth.status === "ready";
-  const label = ready ? "Ready" : auth.mode === "local" ? "Setup needed" : humanize(auth.status);
-  const tone: StatusTone = ready ? "success" : auth.status === "error" ? "danger" : "warning";
+  const ready = accessStatus === "ready";
+  const label = sidebarStatusLabel(accessStatus, auth);
+  const tone: StatusTone =
+    accessStatus === "ready" ? "success" : accessStatus === "error" ? "danger" : "warning";
 
   return (
     <div className="mt-5 rounded-md border border-white/10 bg-white text-[#123A5A] shadow-sm">
@@ -142,7 +177,9 @@ function DeliverySidebarStatus() {
             <p className="text-sm font-black">Partner session</p>
             <StatusBadge tone={tone}>{label}</StatusBadge>
           </div>
-          <p className="mt-1 truncate text-xs font-semibold text-[#667085]">{ready ? "Assigned delivery workspace" : "Delivery account required"}</p>
+          <p className="mt-1 truncate text-xs font-semibold text-[#667085]">
+            {ready ? "Assigned delivery workspace" : "Delivery account required"}
+          </p>
         </div>
       </div>
     </div>
@@ -199,11 +236,16 @@ export function DeliveryAuthNotice() {
             </div>
             <p className="mt-1 text-xs leading-5 text-[#667085]">Sign in with the account assigned by admin to view delivery tasks.</p>
           </div>
-          <Button asChild>
-            <Link href="/sign-in?redirect_url=/delivery">
-              <LogIn size={16} /> Sign in
-            </Link>
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button asChild>
+              <Link href="/sign-in?redirect_url=/delivery">
+                <LogIn size={16} /> Sign in
+              </Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/delivery/register">Apply now</Link>
+            </Button>
+          </div>
         </div>
       </DeliveryPanel>
     );
@@ -230,6 +272,69 @@ export function DeliveryAuthNotice() {
       <div className="flex items-center gap-3 text-sm font-semibold text-[#667085]">
         <Loader2 className="h-4 w-4 animate-spin text-[#123A5A]" aria-hidden="true" />
         Syncing delivery partner account
+      </div>
+    </DeliveryPanel>
+  );
+}
+
+function DeliveryAccessGate({
+  status,
+  error,
+  onRetry,
+}: {
+  status: DeliveryAccessStatus;
+  error: unknown;
+  onRetry: () => void;
+}) {
+  if (status === "signed-out") {
+    return null;
+  }
+
+  if (status === "error") {
+    return (
+      <DeliveryPanel className="border-[#F5B7B7] bg-[#FDECEC]">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-black text-[#8A1F1F]">Delivery access check failed</p>
+            <p className="mt-1 text-xs leading-5 text-[#8A1F1F]">
+              {userFacingApiErrorMessage(error)}
+            </p>
+          </div>
+          <Button type="button" variant="outline" onClick={onRetry}>
+            <RefreshCw size={16} /> Retry
+          </Button>
+        </div>
+      </DeliveryPanel>
+    );
+  }
+
+  if (status === "needs-application") {
+    return (
+      <DeliveryPanel>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-[#123A5A]" aria-hidden="true" />
+              <p className="text-sm font-black text-[#1F2933]">Delivery partner profile not active</p>
+              <StatusBadge tone="warning">Application required</StatusBadge>
+            </div>
+            <p className="mt-1 text-xs leading-5 text-[#667085]">
+              Redirecting to the delivery partner application page. Admin approval is required before this workspace opens.
+            </p>
+          </div>
+          <Button asChild>
+            <Link href="/delivery/register">Apply now</Link>
+          </Button>
+        </div>
+      </DeliveryPanel>
+    );
+  }
+
+  return (
+    <DeliveryPanel>
+      <div className="flex items-center gap-3 text-sm font-semibold text-[#667085]">
+        <Loader2 className="h-4 w-4 animate-spin text-[#123A5A]" aria-hidden="true" />
+        Checking delivery partner approval
       </div>
     </DeliveryPanel>
   );
@@ -297,6 +402,49 @@ export function DeliveryTruckIcon() {
 
 export function humanize(value?: string | null) {
   return (value ?? "").replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function deliveryAccessStatus(
+  auth: DeliveryAuthState,
+  checking: boolean,
+  hasError: boolean,
+  isDeliveryPartner: boolean,
+  needsApplication: boolean,
+): DeliveryAccessStatus {
+  if (!auth.enabled || auth.status === "signed-out") {
+    return "signed-out";
+  }
+  if (auth.status === "error" || hasError) {
+    return "error";
+  }
+  if (isDeliveryPartner) {
+    return "ready";
+  }
+  if (needsApplication) {
+    return "needs-application";
+  }
+  if (checking || auth.status === "syncing") {
+    return "checking";
+  }
+
+  return "checking";
+}
+
+function sidebarStatusLabel(status: DeliveryAccessStatus, auth: DeliveryAuthState) {
+  if (status === "ready") {
+    return "Ready";
+  }
+  if (status === "needs-application") {
+    return "Apply";
+  }
+  if (status === "checking") {
+    return "Checking";
+  }
+  if (status === "error") {
+    return "Error";
+  }
+
+  return auth.mode === "local" ? "Setup needed" : humanize(auth.status);
 }
 
 export function formatPaise(value?: number | null, currency = "INR") {

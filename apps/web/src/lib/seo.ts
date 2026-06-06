@@ -1,6 +1,6 @@
 import type { Metadata, MetadataRoute } from "next";
 import { brandConfig } from "@indihub/config";
-import { apiBaseUrl } from "./api";
+import { apiBaseUrl, apiRequestTimeoutMs, skipDefaultLocalApiOnServer } from "./api";
 import { resolveImageSource } from "./image-url";
 import { getCategory, getCmsPage, getProduct, getStoreProfile, listCategories, listProducts, listStores, primaryImage, primaryVariant, type CategorySummary, type CmsPage, type ProductSummary, type StoreProfile } from "./storefront-api";
 
@@ -343,14 +343,34 @@ export async function safeData<T>(loader: () => Promise<T>) {
 }
 
 async function safePublicFetch<T>(path: string) {
+  if (skipDefaultLocalApiOnServer) {
+    return null;
+  }
+
+  const controller =
+    !Number.isFinite(apiRequestTimeoutMs) || apiRequestTimeoutMs <= 0
+      ? null
+      : new AbortController();
+  const timeoutId = controller
+    ? setTimeout(() => controller.abort(), apiRequestTimeoutMs)
+    : null;
+
   try {
-    const response = await fetch(`${apiBaseUrl}${path}`, { next: { revalidate: 300 } });
+    const requestInit: RequestInit = {
+      next: { revalidate: 300 },
+      ...(controller?.signal ? { signal: controller.signal } : {}),
+    };
+    const response = await fetch(`${apiBaseUrl}${path}`, requestInit);
     if (!response.ok) {
       return null;
     }
     return (await response.json()) as T;
   } catch {
     return null;
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
   }
 }
 

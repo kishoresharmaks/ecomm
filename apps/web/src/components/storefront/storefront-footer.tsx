@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { listCmsMenus, type CmsMenuItem } from "@/lib/storefront-api";
 
 const brandLogoSrc = "/brand/1handindia_logo.png";
+const staticStorefrontDataStaleMs = 5 * 60 * 1000;
 
 const fallbackMarketplaceLinks = [
   { label: "All Categories", href: "/categories" },
@@ -28,15 +29,25 @@ const fallbackPolicyLinks = [
   { label: "Seller Policy", href: "/seller-policy" },
 ];
 
-export function StorefrontFooter() {
+export function StorefrontFooter({
+  initialFooterMenu,
+  initialLegalMenu,
+}: {
+  initialFooterMenu?: CmsMenuItem[] | undefined;
+  initialLegalMenu?: CmsMenuItem[] | undefined;
+}) {
   const footerMenuQuery = useQuery({
     queryKey: ["cms-menus", "footer"],
     queryFn: () => listCmsMenus("footer"),
+    initialData: initialFooterMenu,
+    staleTime: staticStorefrontDataStaleMs,
     retry: false,
   });
   const legalMenuQuery = useQuery({
     queryKey: ["cms-menus", "legal"],
     queryFn: () => listCmsMenus("legal"),
+    initialData: initialLegalMenu,
+    staleTime: staticStorefrontDataStaleMs,
     retry: false,
   });
 

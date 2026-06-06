@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PrismaPg } from "@prisma/adapter-pg";
+import type { PoolConfig } from "pg";
 import { PrismaClient } from "./generated/prisma/client";
 export { CodCollectionStatus } from "./generated/prisma/enums";
 export type { CodCollectionStatus as CodCollectionStatusValue } from "./generated/prisma/enums";
@@ -14,13 +15,44 @@ loadLocalEnv();
 
 const connectionString =
   normalizePgSslMode(
-    process.env.DATABASE_URL ?? "postgresql://postgres:postgres@localhost:5432/indihub?schema=public"
+    nonEmptyEnv("DATABASE_URL") ?? "postgresql://postgres:postgres@localhost:5432/indihub?schema=public"
   );
-const transactionMaxWaitMs = positiveIntegerEnv("PRISMA_TRANSACTION_MAX_WAIT_MS", 15_000);
+const isProductionRuntime =
+  process.env.NODE_ENV === "production" || process.env.INDIHUB_ENV === "production";
+const transactionMaxWaitMs = positiveIntegerEnv(
+  "PRISMA_TRANSACTION_MAX_WAIT_MS",
+  isProductionRuntime ? 10_000 : 15_000,
+);
 const transactionTimeoutMs = positiveIntegerEnv("PRISMA_TRANSACTION_TIMEOUT_MS", 30_000);
+const poolMax = positiveIntegerEnv("PG_POOL_MAX", isProductionRuntime ? 10 : 6);
+const poolConnectionTimeoutMs = positiveIntegerEnv(
+  "PG_POOL_CONNECTION_TIMEOUT_MS",
+  isProductionRuntime ? 10_000 : 30_000,
+);
+const poolIdleTimeoutMs = positiveIntegerEnv(
+  "PG_POOL_IDLE_TIMEOUT_MS",
+  isProductionRuntime ? 60_000 : 30_000,
+);
+const poolMaxLifetimeSeconds = positiveIntegerEnv(
+  "PG_POOL_MAX_LIFETIME_SECONDS",
+  isProductionRuntime ? 900 : 300,
+);
+const poolKeepAliveInitialDelayMs = positiveIntegerEnv("PG_POOL_KEEP_ALIVE_INITIAL_DELAY_MS", 10_000);
+const poolAllowExitOnIdle = booleanEnv("PG_POOL_ALLOW_EXIT_ON_IDLE", false);
 
 function createPrismaClient() {
-  const adapter = new PrismaPg({ connectionString });
+  const poolConfig: PoolConfig = {
+    connectionString,
+    max: poolMax,
+    connectionTimeoutMillis: poolConnectionTimeoutMs,
+    idleTimeoutMillis: poolIdleTimeoutMs,
+    keepAlive: true,
+    keepAliveInitialDelayMillis: poolKeepAliveInitialDelayMs,
+    maxLifetimeSeconds: poolMaxLifetimeSeconds,
+    allowExitOnIdle: poolAllowExitOnIdle,
+    application_name: process.env.PG_APP_NAME ?? "indihub-api"
+  };
+  const adapter = new PrismaPg(poolConfig);
   return new PrismaClient({
     adapter,
     transactionOptions: {
@@ -96,7 +128,7 @@ function normalizePgSslMode(value: string) {
 }
 
 function positiveIntegerEnv(key: string, fallback: number) {
-  const value = process.env[key];
+  const value = nonEmptyEnv(key);
 
   if (!value) {
     return fallback;
@@ -104,4 +136,27 @@ function positiveIntegerEnv(key: string, fallback: number) {
 
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function booleanEnv(key: string, fallback: boolean) {
+  const value = process.env[key]?.trim().toLowerCase();
+
+  if (!value) {
+    return fallback;
+  }
+
+  if (["1", "true", "yes", "on"].includes(value)) {
+    return true;
+  }
+
+  if (["0", "false", "no", "off"].includes(value)) {
+    return false;
+  }
+
+  return fallback;
+}
+
+function nonEmptyEnv(key: string) {
+  const value = process.env[key]?.trim();
+  return value ? value : undefined;
 }

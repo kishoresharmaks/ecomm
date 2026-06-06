@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import {
   ApprovalStatus,
   CategoryStatus,
@@ -15,6 +15,7 @@ import { paginationFromQuery } from "../common/pagination";
 import { ProductQueryDto } from "../products/dto/product-query.dto";
 import { PrismaService } from "../prisma/prisma.service";
 import { PublicSellerQueryDto } from "../sellers/dto/public-seller-query.dto";
+import { isTransientPrismaConnectionError, retryTransientPrismaRead } from "../prisma/transient-read-retry";
 
 const publicSellerProfileSelect = {
   logoUrl: true,
@@ -58,13 +59,23 @@ const productTemplateInclude = {
   },
 };
 
+const publicCategoryCardSelect = {
+  id: true,
+  parentId: true,
+  productTemplateId: true,
+  name: true,
+  slug: true,
+  description: true,
+  imageUrl: true,
+  defaultHsnCode: true,
+  defaultGstRatePercent: true,
+  defaultTaxDescription: true,
+  sortOrder: true,
+} satisfies Prisma.CategorySelect;
+
 const publicProductInclude = {
   category: {
-    include: {
-      productTemplate: {
-        include: productTemplateInclude,
-      },
-    },
+    select: publicCategoryCardSelect,
   },
   seller: {
     select: {
@@ -77,12 +88,45 @@ const publicProductInclude = {
       },
     },
   },
-  hsnMaster: true,
   images: {
-    orderBy: [{ sortOrder: "asc" as const }, { createdAt: "asc" as const }],
+    select: {
+      id: true,
+      url: true,
+      altText: true,
+      sortOrder: true,
+      isPrimary: true,
+    },
+    orderBy: [
+      { isPrimary: "desc" as const },
+      { sortOrder: "asc" as const },
+      { createdAt: "asc" as const },
+    ],
+    take: 4,
   },
   variants: {
-    orderBy: [{ createdAt: "asc" as const }],
+    select: {
+      id: true,
+      sku: true,
+      variantName: true,
+      pricePaise: true,
+      mrpPaise: true,
+      currency: true,
+      stockQuantity: true,
+      packageWeightGrams: true,
+      packageLengthCm: true,
+      packageBreadthCm: true,
+      packageHeightCm: true,
+      status: true,
+      attributes: true,
+    },
+    where: {
+      status: VariantStatus.ACTIVE,
+    },
+    orderBy: [
+      { stockQuantity: "desc" as const },
+      { createdAt: "asc" as const },
+    ],
+    take: 4,
   },
 };
 
@@ -109,6 +153,17 @@ const publicSellerLocationMatchRanks = {
 } as const;
 
 const DEAL_SECTION_TYPE = "deal_strip";
+const HOME_OPTIONAL_READ_TIMEOUT_MS = positiveIntegerEnv(
+  "STOREFRONT_HOME_OPTIONAL_READ_TIMEOUT_MS",
+  10_000,
+);
+const HOME_OPTIONAL_CACHE_TTL_MS = positiveIntegerEnv(
+  "STOREFRONT_HOME_OPTIONAL_CACHE_TTL_MS",
+  120_000,
+);
+const HOME_PAYLOAD_CACHE_TTL_MS = positiveIntegerEnv("STOREFRONT_HOME_CACHE_TTL_MS", 30_000);
+const homeOptionalReadCache = new Map<string, { expiresAt: number; value: unknown }>();
+const homePayloadCache = new Map<string, { expiresAt: number; value: unknown }>();
 
 type PublicSellerLocationMatchLevel = keyof typeof publicSellerLocationMatchRanks;
 type PublicProduct = Prisma.ProductGetPayload<{ include: typeof publicProductInclude }>;
@@ -129,41 +184,43 @@ type HomepageDealItem = {
 
 @Injectable()
 export class StorefrontService {
+  private readonly logger = new Logger(StorefrontService.name);
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(CmsService) private readonly cms: CmsService,
   ) {}
 
   async getHome(query: PublicSellerQueryDto = {}) {
-    const [
-      banners,
-      homepageSections,
-      categories,
-      categoryProductCounts,
-      storesNearYou,
-      featuredProducts,
-      latestProducts,
-      discountedProducts,
-      stats,
-      headerMenu,
-      footerMenu,
-      legalMenu,
-    ] = await Promise.all([
+    const cacheKey = `home:${this.homeLocationCacheKey(query)}`;
+    const cached = this.readHomePayloadCache(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    try {
+      const payload = await retryTransientPrismaRead(() => this.getHomePayload(query));
+      this.writeHomePayloadCache(cacheKey, payload);
+      return payload;
+    } catch (error) {
+      if (!isTransientPrismaConnectionError(error)) {
+        throw error;
+      }
+
+      const stale = this.readHomePayloadCache(cacheKey, { allowStale: true });
+      if (stale) {
+        this.logger.warn("Transient database connection issue while reading homepage; returning stale homepage cache.");
+        return stale;
+      }
+
+      throw error;
+    }
+  }
+
+  private async getHomePayload(query: PublicSellerQueryDto = {}) {
+    const [banners, homepageSections, headerMenu, footerMenu, legalMenu] = await Promise.all([
       this.cms.listPublishedBanners(),
       this.cms.listPublishedHomepageSections({ includeInactiveSchedule: true }),
-      this.listHomeCategories(),
-      this.listPublicCategoryProductCounts(),
-      this.listHomeStores(query),
-      this.listHomeProducts({
-        orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }],
-        take: 10,
-      }),
-      this.listHomeProducts({
-        orderBy: [{ createdAt: "desc" }],
-        take: 10,
-      }),
-      this.listDiscountedProducts({ resultLimit: 8 }),
-      this.getStats(),
       this.cms.listPublishedMenuItems("header"),
       this.cms.listPublishedMenuItems("footer"),
       this.cms.listPublishedMenuItems("legal"),
@@ -177,16 +234,64 @@ export class StorefrontService {
     const hasConfiguredDealSection = homepageSections.some(
       (section) => section.sectionType === DEAL_SECTION_TYPE,
     );
-    const selectedDealProducts = activeDealSection
-      ? await this.listSelectedDealProducts(activeDealSection)
-      : [];
-    const dealProducts = activeDealSection
-      ? selectedDealProducts.length
-        ? selectedDealProducts
-        : discountedProducts
-      : hasConfiguredDealSection
-        ? []
-        : discountedProducts;
+
+    const [
+      categories,
+      categoryProductCounts,
+      storesNearYou,
+      featuredProducts,
+      latestProducts,
+      dealProducts,
+      stats,
+    ] = await Promise.all([
+      this.optionalHomeRead("home categories", "home:categories", () => this.listHomeCategories(), []),
+      this.optionalHomeRead(
+        "home category product counts",
+        "home:category-product-counts",
+        () => this.listPublicCategoryProductCounts(),
+        [],
+      ),
+      this.optionalHomeRead(
+        "home nearby stores",
+        `home:stores:${this.homeLocationCacheKey(query)}`,
+        () => this.listHomeStores(query),
+        [],
+      ),
+      this.optionalHomeRead(
+        "featured home products",
+        "home:products:featured",
+        () =>
+          this.listHomeProducts({
+            orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }],
+            take: 10,
+          }),
+        [],
+      ),
+      this.optionalHomeRead(
+        "latest home products",
+        "home:products:latest",
+        () =>
+          this.listHomeProducts({
+            orderBy: [{ createdAt: "desc" }],
+            take: 10,
+          }),
+        [],
+      ),
+      this.optionalHomeRead(
+        "home deal products",
+        `home:products:deals:${activeDealSection?.id ?? (hasConfiguredDealSection ? "configured" : "automatic")}`,
+        () => this.resolveHomeDealProducts(activeDealSection, hasConfiguredDealSection),
+        [],
+      ),
+      this.optionalHomeRead("home stats", "home:stats", () => this.getStats(), {
+        liveProducts: 0,
+        approvedStores: 0,
+        activeCustomers: 0,
+        activeCategories: 0,
+        verifiedSellers: 0,
+        verifiedSellerPercent: 0,
+      }),
+    ]);
 
     const categoryCounts = new Map(
       categoryProductCounts.map((count) => [count.categoryId, count._count._all]),
@@ -221,6 +326,10 @@ export class StorefrontService {
   }
 
   async listDeals(query: ProductQueryDto = {}) {
+    return retryTransientPrismaRead(() => this.listDealsPayload(query));
+  }
+
+  private async listDealsPayload(query: ProductQueryDto = {}) {
     const { page, skip, take } = paginationFromQuery(query, { defaultLimit: 24, maxLimit: 100 });
     const homepageSections = await this.cms.listPublishedHomepageSections({
       includeInactiveSchedule: true,
@@ -368,6 +477,20 @@ export class StorefrontService {
     return this.publicVisibleProducts(products).slice(0, input.take);
   }
 
+  private async resolveHomeDealProducts(
+    activeDealSection: HomepageSectionRecord | null,
+    hasConfiguredDealSection: boolean,
+  ) {
+    if (activeDealSection) {
+      const selectedDealProducts = await this.listSelectedDealProducts(activeDealSection);
+      return selectedDealProducts.length
+        ? selectedDealProducts
+        : this.listDiscountedProducts({ resultLimit: 8 });
+    }
+
+    return hasConfiguredDealSection ? [] : this.listDiscountedProducts({ resultLimit: 8 });
+  }
+
   private async listSelectedDealProducts(
     section: HomepageSectionRecord,
     query: ProductQueryDto = {},
@@ -485,10 +608,9 @@ export class StorefrontService {
   private async getStats() {
     const [
       liveProducts,
-      approvedStores,
+      approvedSellers,
       activeCustomers,
       activeCategories,
-      approvedSellers,
       totalSellers,
     ] = await Promise.all([
       this.prisma.client.product.count({ where: publicProductWhere }),
@@ -512,13 +634,6 @@ export class StorefrontService {
       }),
       this.prisma.client.seller.count({
         where: {
-          status: SellerStatus.APPROVED,
-          approvalStatus: ApprovalStatus.APPROVED,
-          deletedAt: null,
-        },
-      }),
-      this.prisma.client.seller.count({
-        where: {
           deletedAt: null,
         },
       }),
@@ -526,7 +641,7 @@ export class StorefrontService {
 
     return {
       liveProducts,
-      approvedStores,
+      approvedStores: approvedSellers,
       activeCustomers,
       activeCategories,
       verifiedSellers: approvedSellers,
@@ -536,6 +651,81 @@ export class StorefrontService {
           ? 100
           : 0,
     };
+  }
+
+  private async optionalHomeRead<T>(
+    label: string,
+    cacheKey: string,
+    operation: () => Promise<T>,
+    fallback: T,
+  ) {
+    const cached = this.readHomeCache<T>(cacheKey);
+
+    try {
+      const value = await retryTransientPrismaRead(
+        () => withTimeout(operation(), HOME_OPTIONAL_READ_TIMEOUT_MS, label),
+        { attempts: 2, delayMs: 250 },
+      );
+      this.writeHomeCache(cacheKey, value);
+      return value;
+    } catch (error) {
+      if (!isHomeOptionalReadFallbackError(error)) {
+        throw error;
+      }
+
+      const suffix = cached ? "returning cached value" : "returning empty fallback";
+      this.logger.warn(`Homepage optional read failed for ${label}; ${suffix}.`);
+      return cached ?? fallback;
+    }
+  }
+
+  private readHomeCache<T>(cacheKey: string) {
+    const cached = homeOptionalReadCache.get(cacheKey);
+    if (!cached || cached.expiresAt <= Date.now()) {
+      homeOptionalReadCache.delete(cacheKey);
+      return undefined;
+    }
+
+    return cached.value as T;
+  }
+
+  private writeHomeCache<T>(cacheKey: string, value: T) {
+    homeOptionalReadCache.set(cacheKey, {
+      expiresAt: Date.now() + HOME_OPTIONAL_CACHE_TTL_MS,
+      value,
+    });
+  }
+
+  private readHomePayloadCache<T>(cacheKey: string, options: { allowStale?: boolean } = {}) {
+    const cached = homePayloadCache.get(cacheKey);
+    if (!cached) {
+      return undefined;
+    }
+
+    if (!options.allowStale && cached.expiresAt <= Date.now()) {
+      homePayloadCache.delete(cacheKey);
+      return undefined;
+    }
+
+    return cached.value as T;
+  }
+
+  private writeHomePayloadCache<T>(cacheKey: string, value: T) {
+    homePayloadCache.set(cacheKey, {
+      expiresAt: Date.now() + HOME_PAYLOAD_CACHE_TTL_MS,
+      value,
+    });
+  }
+
+  private homeLocationCacheKey(query: PublicSellerQueryDto) {
+    return [
+      query.countryCode ?? "",
+      query.stateCode ?? "",
+      query.cityCode ?? "",
+      query.localAreaCode ?? "",
+      query.pincode ?? "",
+      query.limit ?? "",
+    ].join("|");
   }
 
   private withLiveProductCounts<
@@ -756,6 +946,45 @@ function dealStockRank(stockQuantity: number) {
   }
 
   return 2;
+}
+
+class HomeOptionalReadTimeoutError extends Error {
+  constructor(label: string, timeoutMs: number) {
+    super(`${label} exceeded ${timeoutMs}ms.`);
+    this.name = "HomeOptionalReadTimeoutError";
+  }
+}
+
+function withTimeout<T>(operation: Promise<T>, timeoutMs: number, label: string) {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new HomeOptionalReadTimeoutError(label, timeoutMs));
+    }, timeoutMs);
+  });
+
+  return Promise.race([
+    operation.finally(() => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    }),
+    timeout,
+  ]);
+}
+
+function isHomeOptionalReadFallbackError(error: unknown) {
+  return error instanceof HomeOptionalReadTimeoutError || isTransientPrismaConnectionError(error);
+}
+
+function positiveIntegerEnv(key: string, fallback: number) {
+  const value = process.env[key]?.trim();
+  if (!value) {
+    return fallback;
+  }
+
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function homepageSectionScheduleIsLive(section: HomepageSectionRecord, now = new Date()) {

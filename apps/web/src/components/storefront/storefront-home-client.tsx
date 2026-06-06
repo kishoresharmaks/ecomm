@@ -99,7 +99,7 @@ export function StorefrontHomeClient({
   const categorySectionDescription =
     stringValue(liveCategorySection?.config?.subtitle) ||
     stringValue(liveCategorySection?.config?.description) ||
-    "Explore top categories";
+    "Explore our top categories and find what you need";
   const featuredProductTitle = featuredProductSection?.title || "Trending Now";
   const featuredProductDescription =
     stringValue(featuredProductSection?.config?.subtitle) ||
@@ -113,7 +113,7 @@ export function StorefrontHomeClient({
   const sellerCtaConfig = home?.sellerCta?.config ?? null;
 
   return (
-    <StorefrontFrame>
+    <StorefrontFrame initialMenus={home?.menus}>
       <main className="bg-[#FFFCFB] pb-8">
         <HomepageHero
           home={home}
@@ -447,7 +447,7 @@ function StatsStrip({ home, isLoading }: { home: StorefrontHomePayload | undefin
 
   return (
     <section className="mx-auto max-w-[1360px] px-4 py-4 sm:px-6 lg:px-10 lg:py-6">
-      <div className="grid auto-cols-[minmax(78px,1fr)] grid-flow-col gap-0 overflow-x-auto rounded-[18px] border border-[#F1D7CF] bg-white p-3 shadow-[0_14px_42px_rgba(22,59,92,0.06)] [scrollbar-width:none] sm:grid-cols-2 lg:flex lg:min-h-[112px] lg:flex-wrap lg:items-center lg:justify-center lg:gap-y-3 lg:overflow-visible lg:px-5 lg:py-4 lg:shadow-[0_20px_60px_rgba(22,59,92,0.07)] [&::-webkit-scrollbar]:hidden">
+      <div className="indihub-scroll-rail grid auto-cols-[minmax(78px,1fr)] grid-flow-col gap-0 overflow-x-auto rounded-[18px] border border-[#F1D7CF] bg-white p-3 shadow-[0_14px_42px_rgba(22,59,92,0.06)] [scrollbar-width:none] sm:grid-cols-2 lg:flex lg:min-h-[112px] lg:flex-wrap lg:items-center lg:justify-center lg:gap-y-3 lg:overflow-visible lg:px-5 lg:py-4 lg:shadow-[0_20px_60px_rgba(22,59,92,0.07)] [&::-webkit-scrollbar]:hidden">
         {items.map((item, index) => (
           <div
             key={item.label}
@@ -484,36 +484,91 @@ function CategoryShowcase({
   description: string;
 }) {
   return (
-    <section className="mx-auto max-w-[1360px] px-4 py-6 sm:px-6 lg:px-10 lg:py-10">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+    <section className="mx-auto max-w-[1360px] px-4 py-6 sm:px-6 lg:px-10 lg:py-12">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h2 className="text-3xl font-black tracking-normal text-[#111827] sm:text-4xl lg:text-[42px] lg:leading-none">
+          <span className="mb-4 hidden items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-[#ED3500] sm:inline-flex">
+            <span className="h-1 w-5 rounded-full bg-[#ED3500]" aria-hidden="true" />
+            Categories
+          </span>
+          <h2 className="text-3xl font-black tracking-normal text-[#111827] sm:text-4xl lg:text-[40px] lg:leading-none">
             {title}
           </h2>
           {description ? (
-            <p className="mt-2 text-base font-semibold text-[#7A8496] sm:text-lg lg:text-xl">{description}</p>
+            <p className="mt-2 text-base font-semibold text-[#7A8496] sm:text-lg">{description}</p>
           ) : null}
         </div>
         <HomepageItemLink
           href="/categories"
-          className="inline-flex w-fit items-center gap-3 text-sm font-black !text-[#ED3500] transition hover:!text-[#c92b00] sm:mt-3 lg:text-base"
+          className="inline-flex h-10 w-fit items-center gap-2 rounded-full border border-[#FFE0D6] bg-white px-4 text-sm font-black !text-[#ED3500] shadow-sm transition hover:-translate-y-0.5 hover:border-[#ED3500]/50 hover:bg-[#FFF7F3] hover:!text-[#c92b00]"
         >
-          View all categories <ArrowRight className="h-5 w-5" aria-hidden="true" />
+          View all categories <ArrowRight className="h-4 w-4" aria-hidden="true" />
         </HomepageItemLink>
       </div>
-      <ScrollRail className="mt-6 lg:mt-12" ariaLabel="Shop by category" controls={false}>
+      <div className="mt-5 grid grid-cols-2 gap-2.5 sm:hidden">
+        {isLoading
+          ? Array.from({ length: 4 }).map((_, index) => (
+              <StorefrontSkeleton key={index} className="h-[132px] rounded-[16px] bg-white" />
+            ))
+          : categories.slice(0, 4).map((category, index) => (
+              <MobileCategoryTile key={category.id} category={category} accent={categoryAccent(index)} />
+            ))}
+      </div>
+      <div className="mt-7 hidden gap-5 sm:grid sm:grid-cols-2 lg:mt-9 lg:grid-cols-4">
         {isLoading
           ? Array.from({ length: 8 }).map((_, index) => (
-              <StorefrontSkeleton key={index} className="h-[242px] w-[158px] shrink-0 rounded-[24px] bg-white sm:h-[322px] sm:w-[232px] lg:h-[430px] lg:w-[296px]" />
+              <StorefrontSkeleton key={index} className="h-[348px] rounded-[20px] bg-white" />
             ))
           : categories.slice(0, 8).map((category, index) => (
               <CategoryTile key={category.id} category={category} accent={categoryAccent(index)} />
             ))}
-      </ScrollRail>
+      </div>
       {!isLoading && !categories.length ? (
         <StorefrontEmptyState className="mt-5" message="No active categories are available yet." />
       ) : null}
     </section>
+  );
+}
+
+function MobileCategoryTile({ category, accent }: { category: CategorySummary; accent: CategoryAccent }) {
+  return (
+    <Link
+      href={`/categories/${category.slug}` as Route}
+      className="group flex min-h-[132px] min-w-0 flex-col overflow-hidden rounded-[16px] border border-[#E8EDF2] bg-white p-3 text-left shadow-[0_10px_24px_rgba(22,59,92,0.05)] transition active:scale-[0.98]"
+    >
+      <span
+        className={cn(
+          "grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-full",
+          accent.imageBg,
+        )}
+      >
+        <StorefrontImage
+          src={category.imageUrl?.trim() || null}
+          alt={category.name}
+          sizes="48px"
+          fallbackLabel={category.name}
+          showFallbackLabel={false}
+          allowExternalRemote
+          className="object-contain p-2 transition duration-300 group-active:scale-105"
+        />
+      </span>
+      <span className="mt-3 line-clamp-2 min-h-8 text-[13px] font-black leading-4 text-[#111827]">
+        {category.name}
+      </span>
+      <span className="mt-auto flex min-w-0 items-center justify-between gap-2 pt-2 text-[10px] font-bold text-[#7A8496]">
+        <span className="truncate">Explore category</span>
+        <span
+          className={cn(
+            "grid h-7 w-7 shrink-0 place-items-center rounded-full",
+            accent.buttonBg,
+            accent.text,
+          )}
+          aria-hidden="true"
+        >
+          <ArrowRight className="h-3.5 w-3.5" />
+        </span>
+      </span>
+    </Link>
   );
 }
 
@@ -563,44 +618,75 @@ function categoryAccent(index: number) {
 }
 
 function CategoryTile({ category, accent }: { category: CategorySummary; accent: CategoryAccent }) {
+  const productCount = category._count?.products ?? 0;
+  const childCount = category.children?.length ?? 0;
+  const detail = productCount
+    ? `${productCount.toLocaleString("en-IN")} products`
+    : childCount
+      ? `${childCount.toLocaleString("en-IN")} sections`
+      : "Curated picks";
+  const summary =
+    category.description?.trim() ||
+    (productCount
+      ? ""
+      : "Explore curated picks and popular marketplace collections.");
+
   return (
     <Link
       href={`/categories/${category.slug}` as Route}
-      className="group flex h-[242px] w-[158px] snap-start shrink-0 flex-col items-center overflow-hidden rounded-[24px] border border-[#E8EDF2] bg-white px-4 py-5 text-center shadow-[0_18px_44px_rgba(22,59,92,0.06)] outline outline-1 outline-transparent transition hover:-translate-y-1 hover:border-[#FFD8CC] hover:shadow-[0_28px_70px_rgba(22,59,92,0.10)] focus-visible:outline-[#ED3500] sm:h-[322px] sm:w-[232px] sm:px-7 sm:py-8 lg:h-[430px] lg:w-[296px] lg:rounded-[26px] lg:px-9 lg:py-10"
+      className="group relative flex min-h-[348px] min-w-0 flex-col overflow-hidden rounded-[20px] border border-[#E8EDF2] bg-white p-6 text-left shadow-[0_12px_28px_rgba(22,59,92,0.05)] outline outline-1 outline-transparent transition hover:-translate-y-1 hover:border-[#FFD8CC] hover:shadow-[0_22px_52px_rgba(22,59,92,0.10)] focus-visible:outline-[#ED3500]"
     >
+      <span className="flex items-start justify-between gap-4">
+        <span
+          className={cn(
+            "relative grid h-[112px] w-[112px] shrink-0 place-items-center overflow-hidden rounded-full",
+            accent.imageBg,
+          )}
+        >
+          <StorefrontImage
+            src={category.imageUrl?.trim() || null}
+            alt={category.name}
+            sizes="112px"
+            fallbackLabel={category.name}
+            showFallbackLabel={false}
+            allowExternalRemote
+            className="object-contain p-5 transition duration-500 group-hover:scale-110"
+          />
+        </span>
+        <span
+          className={cn(
+            "grid h-10 w-10 shrink-0 place-items-center rounded-full transition group-hover:translate-x-0.5 group-hover:scale-105",
+            accent.buttonBg,
+            accent.text,
+          )}
+          aria-hidden="true"
+        >
+          <ArrowRight className="h-4 w-4" />
+        </span>
+      </span>
+
+      <span className="mt-5 min-w-0">
+        <span className="line-clamp-2 text-xl font-black leading-6 text-[#111827] lg:text-[22px]">
+          {category.name}
+        </span>
+        <span className="mt-2 flex items-center gap-2 text-sm font-bold text-[#7A8496]">
+          <ShoppingBag className={cn("h-4 w-4", accent.text)} aria-hidden="true" />
+          {detail}
+        </span>
+        <span className="mt-4 line-clamp-2 min-h-11 text-sm font-semibold leading-6 text-[#667085]">
+          {summary}
+        </span>
+      </span>
+
       <span
         className={cn(
-          "relative grid h-[104px] w-[104px] shrink-0 place-items-center overflow-hidden rounded-full sm:h-[154px] sm:w-[154px] lg:h-[196px] lg:w-[196px]",
-          accent.imageBg,
-        )}
-      >
-        <StorefrontImage
-          src={category.imageUrl?.trim() || null}
-          alt={category.name}
-          sizes="(max-width: 640px) 104px, (max-width: 1024px) 154px, 196px"
-          fallbackLabel={category.name}
-          showFallbackLabel={false}
-          allowExternalRemote
-          className="object-contain p-4 transition duration-500 group-hover:scale-110 sm:p-7 lg:p-9"
-        />
-      </span>
-      <span className="mt-5 line-clamp-2 min-h-10 text-base font-black leading-5 text-[#111827] sm:mt-7 sm:text-2xl sm:leading-8 lg:mt-9">
-        {category.name}
-      </span>
-      <span className="mt-3 inline-flex items-center gap-2 text-xs font-bold text-[#7A8496] sm:mt-4 sm:text-sm">
-        <ShoppingBag className={cn("h-4 w-4", accent.text)} aria-hidden="true" />
-        Explore category
-      </span>
-      <span
-        className={cn(
-          "mt-auto grid h-11 w-11 place-items-center rounded-full transition group-hover:scale-110 sm:h-14 sm:w-14",
+          "mt-auto flex h-12 items-center justify-center gap-2 rounded-[12px] border border-[#FFE0D6] text-sm font-black transition group-hover:border-current",
           accent.buttonBg,
           accent.text,
-          accent.glow,
         )}
-        aria-hidden="true"
       >
-        <ArrowRight className="h-5 w-5 sm:h-6 sm:w-6" />
+        Explore category
+        <ArrowRight className="h-4 w-4" aria-hidden="true" />
       </span>
     </Link>
   );
@@ -855,7 +941,7 @@ function DealHeroScroller({
       <div
         ref={railRef}
         aria-label={ariaLabel}
-        className="flex max-w-full snap-x gap-3 overflow-x-auto pb-3 pt-1 [scrollbar-width:none] lg:gap-4 [&::-webkit-scrollbar]:hidden"
+        className="indihub-scroll-rail flex max-w-full snap-x snap-mandatory gap-3 overflow-x-auto pb-3 pt-1 [scrollbar-width:none] lg:gap-4 [&::-webkit-scrollbar]:hidden"
       >
         {children}
       </div>
@@ -1320,7 +1406,7 @@ function ScrollRail({
     <div className={cn("relative overflow-hidden", className)}>
       <div
         aria-label={ariaLabel}
-        className="-mx-1 flex max-w-full snap-x gap-3 overflow-x-auto px-1 pb-3 pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="indihub-scroll-rail -mx-1 flex max-w-full snap-x snap-mandatory gap-3 overflow-x-auto px-1 pb-3 pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         {children}
       </div>

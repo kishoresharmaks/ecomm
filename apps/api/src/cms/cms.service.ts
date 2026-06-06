@@ -1,9 +1,10 @@
-import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ApprovalStatus, CategoryStatus, ContentStatus, Prisma, ProductStatus, SellerStatus, SeoEntityType } from "@indihub/database";
 import type { RequestUser } from "../auth/types/indihub-request";
 import { paginationFromQuery } from "../common/pagination";
 import { createSlug } from "../common/slug";
 import { PrismaService } from "../prisma/prisma.service";
+import { isTransientPrismaConnectionError, retryTransientPrismaRead } from "../prisma/transient-read-retry";
 import { normalizeStorageImageReference } from "../storage/storage-image";
 import { CreateBannerDto, UpdateBannerDto } from "./dto/banner.dto";
 import { CreateCmsMediaDto, CmsMediaQueryDto, UpdateCmsMediaDto } from "./dto/cms-media.dto";
@@ -23,6 +24,8 @@ type HomepageSectionScheduleRecord = {
   config: Prisma.JsonValue;
   status: ContentStatus;
 };
+
+const PUBLIC_CMS_READ_TIMEOUT_MS = positiveIntegerEnv("PUBLIC_CMS_READ_TIMEOUT_MS", 8_000);
 
 const PRIVATE_SITEMAP_EXCLUSIONS = [
   "/admin",
@@ -97,11 +100,13 @@ function jsonRecord(value: Prisma.JsonValue): Record<string, unknown> {
 
 @Injectable()
 export class CmsService {
+  private readonly logger = new Logger(CmsService.name);
+
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   listPublishedBanners() {
     const now = new Date();
-    return this.prisma.client.banner.findMany({
+    return this.publicCmsRead("published banners", () => this.prisma.client.banner.findMany({
       where: {
         status: ContentStatus.PUBLISHED,
         AND: [
@@ -110,14 +115,14 @@ export class CmsService {
         ]
       },
       orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }]
-    });
+    }), []);
   }
 
   async listPublishedHomepageSections(options: PublishedHomepageSectionOptions = {}) {
-    const sections = await this.prisma.client.homepageSection.findMany({
+    const sections = await this.publicCmsRead("published homepage sections", () => this.prisma.client.homepageSection.findMany({
       where: { status: { in: [ContentStatus.PUBLISHED, ContentStatus.SCHEDULED] } },
       orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }]
-    });
+    }), []);
 
     if (options.includeInactiveSchedule) {
       return sections;
@@ -471,11 +476,28 @@ export class CmsService {
   }
 
   async listPublishedMenuItems(area = "header") {
-    return this.prisma.client.cmsMenuItem.findMany({
-      where: { area: this.normalizeMenuArea(area), parentId: null, status: ContentStatus.PUBLISHED },
+    const menuArea = this.normalizeMenuArea(area);
+    return this.publicCmsRead(`published ${menuArea} menu items`, () => this.prisma.client.cmsMenuItem.findMany({
+      where: { area: menuArea, parentId: null, status: ContentStatus.PUBLISHED },
       include: { children: { where: { status: ContentStatus.PUBLISHED }, orderBy: [{ sortOrder: "asc" }, { label: "asc" }] } },
       orderBy: [{ sortOrder: "asc" }, { label: "asc" }]
-    });
+    }), []);
+  }
+
+  private async publicCmsRead<T>(label: string, operation: () => Promise<T>, fallback: T) {
+    try {
+      return await retryTransientPrismaRead(
+        () => withTimeout(operation(), PUBLIC_CMS_READ_TIMEOUT_MS, label),
+        { attempts: 2, delayMs: 250 },
+      );
+    } catch (error) {
+      if (!isPublicCmsReadFallbackError(error)) {
+        throw error;
+      }
+
+      this.logger.warn(`Transient database connection issue while reading ${label}; returning empty public CMS fallback.`);
+      return fallback;
+    }
   }
 
   async createMenuItem(actor: RequestUser, dto: CreateCmsMenuItemDto) {
@@ -1259,4 +1281,43 @@ export class CmsService {
   private toJsonValue(value: unknown): Prisma.InputJsonValue {
     return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
   }
+}
+
+class PublicCmsReadTimeoutError extends Error {
+  constructor(label: string, timeoutMs: number) {
+    super(`${label} exceeded ${timeoutMs}ms.`);
+    this.name = "PublicCmsReadTimeoutError";
+  }
+}
+
+function withTimeout<T>(operation: Promise<T>, timeoutMs: number, label: string) {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new PublicCmsReadTimeoutError(label, timeoutMs));
+    }, timeoutMs);
+  });
+
+  return Promise.race([
+    operation.finally(() => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    }),
+    timeout,
+  ]);
+}
+
+function isPublicCmsReadFallbackError(error: unknown) {
+  return error instanceof PublicCmsReadTimeoutError || isTransientPrismaConnectionError(error);
+}
+
+function positiveIntegerEnv(key: string, fallback: number) {
+  const value = process.env[key]?.trim();
+  if (!value) {
+    return fallback;
+  }
+
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }

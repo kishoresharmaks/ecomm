@@ -63,6 +63,7 @@ export function StorefrontLocationPicker({
     cityCode,
     search: areaSearch,
     limit: 50,
+    enabled: open && showRefinements,
   });
 
   const countries = locationCatalog.countries;

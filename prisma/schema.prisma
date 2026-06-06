@@ -315,6 +315,12 @@ enum DeliveryPartnerPayoutStatus {
   PAID
 }
 
+enum DeliveryPartnerApplicationStatus {
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+}
+
 enum SellerOrderStatus {
   PENDING
   ACCEPTED
@@ -523,6 +529,8 @@ model User {
   requestedDeliveryPartnerPayouts DeliveryPartnerPayout[] @relation("DeliveryPartnerPayoutRequestedBy")
   approvedDeliveryPartnerPayouts DeliveryPartnerPayout[] @relation("DeliveryPartnerPayoutApprovedBy")
   paidDeliveryPartnerPayouts DeliveryPartnerPayout[] @relation("DeliveryPartnerPayoutPaidBy")
+  deliveryPartnerApplications DeliveryPartnerApplication[] @relation("DeliveryPartnerApplicationApplicant")
+  reviewedDeliveryPartnerApplications DeliveryPartnerApplication[] @relation("DeliveryPartnerApplicationReviewer")
   b2bResponses       B2BEnquiryResponse[]
   supportRequests    SupportRequest[]
   notificationLogs   NotificationLog[]
@@ -1937,6 +1945,53 @@ model DeliveryPartnerProfile {
   @@index([serviceCityCode])
   @@index([baseLatitude, baseLongitude])
   @@map("delivery_partner_profiles")
+}
+
+model DeliveryPartnerApplication {
+  id                     String                           @id @default(uuid()) @db.Uuid
+  userId                 String                           @unique @map("user_id") @db.Uuid
+  status                 DeliveryPartnerApplicationStatus @default(PENDING_REVIEW)
+  fullName               String                           @map("full_name")
+  email                  String
+  phone                  String
+  alternatePhone         String?                          @map("alternate_phone")
+  vehicleType            String                           @map("vehicle_type")
+  vehicleNumber          String                           @map("vehicle_number")
+  drivingLicenseNumber   String?                          @map("driving_license_number")
+  experienceSummary      String?                          @map("experience_summary")
+  serviceCountryCode     String?                          @map("service_country_code")
+  serviceStateCode       String?                          @map("service_state_code")
+  serviceCityCode        String?                          @map("service_city_code")
+  servicePincodes        String[]                         @default([]) @map("service_pincodes")
+  serviceLocalAreaCodes  String[]                         @default([]) @map("service_local_area_codes")
+  addressLine1           String                           @map("address_line_1")
+  addressLine2           String?                          @map("address_line_2")
+  area                   String?
+  city                   String
+  state                  String
+  pincode                String
+  country                String                           @default("India")
+  baseLatitude           Decimal?                         @map("base_latitude") @db.Decimal(10, 7)
+  baseLongitude          Decimal?                         @map("base_longitude") @db.Decimal(10, 7)
+  locationSource         LocationSource?                  @map("location_source")
+  accuracyMeters         Decimal?                         @map("accuracy_meters") @db.Decimal(10, 2)
+  locationConfidenceScore Decimal?                         @map("location_confidence_score") @db.Decimal(5, 2)
+  serviceRadiusKm        Int?                             @map("service_radius_km")
+  availabilityNotes      String?                          @map("availability_notes")
+  reviewedAt             DateTime?                        @map("reviewed_at")
+  reviewedById           String?                          @map("reviewed_by_id") @db.Uuid
+  reviewNote             String?                          @map("review_note")
+  createdAt              DateTime                         @default(now()) @map("created_at")
+  updatedAt              DateTime                         @updatedAt @map("updated_at")
+  user                   User                             @relation("DeliveryPartnerApplicationApplicant", fields: [userId], references: [id], onDelete: Cascade)
+  reviewedBy             User?                            @relation("DeliveryPartnerApplicationReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([email])
+  @@index([phone])
+  @@index([serviceCountryCode, serviceStateCode, serviceCityCode])
+  @@index([reviewedById])
+  @@map("delivery_partner_applications")
 }
 
 model DeliveryPartnerServiceArea {

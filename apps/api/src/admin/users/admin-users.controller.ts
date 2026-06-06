@@ -31,6 +31,16 @@ export class AdminUsersController {
     return this.adminUsersService.getUser(userId);
   }
 
+  @Get(":userId/roles/:roleCode/removal-impact")
+  @ApiOperation({ summary: "Preview blockers and cleanup actions before removing a user role." })
+  roleRemovalImpact(
+    @CurrentUser() actor: RequestUser,
+    @Param("userId") userId: string,
+    @Param("roleCode") roleCode: RoleCode
+  ) {
+    return this.adminUsersService.getRoleRemovalImpact(actor, userId, roleCode);
+  }
+
   @Patch(":userId/status")
   @ApiOperation({ summary: "Update a user account status." })
   updateStatus(@CurrentUser() actor: RequestUser, @Param("userId") userId: string, @Body() dto: UpdateUserStatusDto) {

@@ -1,5 +1,16 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { Prisma, RoleCode, UserStatus } from "@indihub/database";
+import {
+  CodCollectionStatus,
+  DeliveryAssignmentStatus,
+  DeliveryPartnerPayoutStatus,
+  DeliveryStatus,
+  Prisma,
+  RoleCode,
+  SellerOrderStatus,
+  SellerPayoutStatus,
+  SellerStatus,
+  UserStatus,
+} from "@indihub/database";
 import { hashAdminPassword } from "../../auth/admin-password";
 import type { RequestUser } from "../../auth/types/indihub-request";
 import { paginationFromQuery } from "../../common/pagination";
@@ -24,11 +35,58 @@ const userInclude = {
   deliveryProfile: true
 };
 
+type AdminUserWithProfiles = Prisma.UserGetPayload<{ include: typeof userInclude }>;
+
 const backOfficeRoleCodes = new Set<RoleCode>([
   RoleCode.ADMIN,
   RoleCode.FINANCE,
   RoleCode.COURIER_MANAGER,
 ]);
+
+const activeSellerOrderStatuses = [
+  SellerOrderStatus.PENDING,
+  SellerOrderStatus.ACCEPTED,
+  SellerOrderStatus.PROCESSING,
+  SellerOrderStatus.DISPATCHED,
+] as const;
+
+const openSellerPayoutStatuses = [
+  SellerPayoutStatus.DRAFT,
+  SellerPayoutStatus.PENDING_APPROVAL,
+  SellerPayoutStatus.APPROVED,
+  SellerPayoutStatus.HELD,
+] as const;
+
+const activeDeliveryAssignmentStatuses = [
+  DeliveryAssignmentStatus.ASSIGNED,
+  DeliveryAssignmentStatus.ACCEPTED,
+] as const;
+
+const activeDeliveryStatuses = [
+  DeliveryStatus.PENDING,
+  DeliveryStatus.PACKED,
+  DeliveryStatus.DISPATCHED,
+  DeliveryStatus.IN_TRANSIT,
+] as const;
+
+const openDeliveryPayoutStatuses = [
+  DeliveryPartnerPayoutStatus.REQUESTED,
+  DeliveryPartnerPayoutStatus.APPROVED,
+] as const;
+
+type AdminUsersDbClient = PrismaService["client"] | Prisma.TransactionClient;
+
+export type RoleRemovalImpact = {
+  userId: string;
+  roleCode: RoleCode;
+  canRemove: boolean;
+  noteRequired: boolean;
+  affectedProfile: "CUSTOMER" | "SELLER" | "BUSINESS_BUYER" | "DELIVERY_PARTNER" | "BACK_OFFICE" | null;
+  blockers: string[];
+  warnings: string[];
+  cleanupActions: string[];
+  associatedCounts: Record<string, number>;
+};
 
 @Injectable()
 export class AdminUsersService {
@@ -154,40 +212,73 @@ export class AdminUsersService {
     return this.getUserOrThrow(userId);
   }
 
-  async removeRole(actor: RequestUser, userId: string, dto: UpdateUserRoleDto) {
+  async getRoleRemovalImpact(
+    actor: RequestUser,
+    userId: string,
+    roleCode: RoleCode,
+  ): Promise<RoleRemovalImpact> {
+    this.assertValidRoleCode(roleCode);
     const user = await this.getUserOrThrow(userId);
-    const role = await this.prisma.client.role.findUnique({ where: { code: dto.roleCode } });
+    const role = await this.prisma.client.role.findUnique({ where: { code: roleCode } });
 
     if (!role) {
       throw new NotFoundException("Role not found.");
     }
 
-    if (dto.roleCode === RoleCode.ADMIN) {
-      if (user.id === actor.id) {
-        throw new BadRequestException("Admin cannot remove their own admin role.");
-      }
-      await this.ensureAnotherActiveAdmin(user.id);
-    }
+    return this.buildRoleRemovalImpact(this.prisma.client, actor, user, roleCode, role.id);
+  }
 
-    await this.prisma.client.userRole.deleteMany({
-      where: {
-        userId,
-        roleId: role.id
+  async removeRole(actor: RequestUser, userId: string, dto: UpdateUserRoleDto) {
+    this.assertValidRoleCode(dto.roleCode);
+
+    return this.prisma.client.$transaction(async (tx) => {
+      const user = await this.getUserOrThrow(userId, tx);
+      const role = await tx.role.findUnique({ where: { code: dto.roleCode } });
+
+      if (!role) {
+        throw new NotFoundException("Role not found.");
       }
+
+      const impact = await this.buildRoleRemovalImpact(tx, actor, user, dto.roleCode, role.id);
+      if (!impact.canRemove) {
+        throw new BadRequestException(impact.blockers.join(" "));
+      }
+
+      const note = dto.note?.trim() ?? "";
+      if (impact.noteRequired && !note) {
+        throw new BadRequestException(
+          "Admin note is required when removing a role with associated data or cleanup actions.",
+        );
+      }
+
+      await this.applyRoleRemovalCleanup(tx, user, dto.roleCode);
+
+      await tx.userRole.deleteMany({
+        where: {
+          userId,
+          roleId: role.id
+        }
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actor: { connect: { id: actor.id } },
+          action: "admin.user.role_removed",
+          entityType: "user",
+          entityId: user.id,
+          oldValue: { roles: user.userRoles.map((userRole) => userRole.role.code) },
+          newValue: {
+            removedRole: dto.roleCode,
+            note,
+            cleanupActions: impact.cleanupActions,
+            associatedCounts: impact.associatedCounts,
+            warnings: impact.warnings,
+          }
+        }
+      });
+
+      return this.getUserOrThrow(userId, tx);
     });
-
-    await this.prisma.client.auditLog.create({
-      data: {
-        actor: { connect: { id: actor.id } },
-        action: "admin.user.role_removed",
-        entityType: "user",
-        entityId: user.id,
-        oldValue: { roles: user.userRoles.map((userRole) => userRole.role.code) },
-        newValue: { removedRole: dto.roleCode, note: dto.note }
-      }
-    });
-
-    return this.getUserOrThrow(userId);
   }
 
   async setBackOfficePassword(actor: RequestUser, userId: string, dto: SetBackOfficePasswordDto) {
@@ -284,8 +375,8 @@ export class AdminUsersService {
     return this.getUserOrThrow(userId);
   }
 
-  private async getUserOrThrow(userId: string) {
-    const user = await this.prisma.client.user.findUnique({
+  private async getUserOrThrow(userId: string, db: AdminUsersDbClient = this.prisma.client) {
+    const user = await db.user.findUnique({
       where: { id: userId },
       include: userInclude
     });
@@ -312,6 +403,244 @@ export class AdminUsersService {
 
     if (otherAdminCount === 0) {
       throw new BadRequestException("At least one other active admin must remain.");
+    }
+  }
+
+  private async buildRoleRemovalImpact(
+    db: AdminUsersDbClient,
+    actor: RequestUser,
+    user: AdminUserWithProfiles,
+    roleCode: RoleCode,
+    roleId: string,
+  ): Promise<RoleRemovalImpact> {
+    const associatedCounts: Record<string, number> = {};
+    const blockers: string[] = [];
+    const warnings: string[] = [];
+    const cleanupActions: string[] = [];
+    let affectedProfile: RoleRemovalImpact["affectedProfile"] = null;
+
+    const roleAssigned = user.userRoles.some((userRole) => userRole.role.code === roleCode);
+    if (!roleAssigned) {
+      blockers.push(`${this.roleName(roleCode)} role is not assigned to this user.`);
+    }
+
+    if (roleCode === RoleCode.ADMIN) {
+      affectedProfile = "BACK_OFFICE";
+      if (user.id === actor.id) {
+        blockers.push("Admin cannot remove their own admin role.");
+      }
+      const otherAdminCount = await db.user.count({
+        where: {
+          id: { not: user.id },
+          status: UserStatus.ACTIVE,
+          userRoles: {
+            some: {
+              role: { code: RoleCode.ADMIN }
+            }
+          }
+        }
+      });
+      if (otherAdminCount === 0) {
+        blockers.push("At least one other active admin must remain.");
+      }
+    }
+
+    if (roleCode === RoleCode.SELLER && user.seller) {
+      affectedProfile = "SELLER";
+      const sellerId = user.seller.id;
+      const [products, orderSplits, activeOrders, openPayouts, ledgerEntries] = await Promise.all([
+        db.product.count({ where: { sellerId } }),
+        db.orderSellerSplit.count({ where: { sellerId } }),
+        db.orderSellerSplit.count({
+          where: { sellerId, sellerStatus: { in: [...activeSellerOrderStatuses] } },
+        }),
+        db.sellerPayout.count({
+          where: { sellerId, status: { in: [...openSellerPayoutStatuses] } },
+        }),
+        db.sellerLedgerEntry.count({ where: { sellerId } }),
+      ]);
+      associatedCounts.products = products;
+      associatedCounts.orderSplits = orderSplits;
+      associatedCounts.activeSellerOrders = activeOrders;
+      associatedCounts.openSellerPayouts = openPayouts;
+      associatedCounts.sellerLedgerEntries = ledgerEntries;
+      cleanupActions.push("Seller profile will be suspended. Products, orders, payouts, and ledger history remain preserved.");
+      warnings.push("Seller access will be removed and the seller store will stop operating until restored by admin.");
+      if (activeOrders > 0) {
+        blockers.push("Resolve active seller orders before removing Seller role.");
+      }
+      if (openPayouts > 0) {
+        blockers.push("Resolve open seller payouts before removing Seller role.");
+      }
+    }
+
+    if (roleCode === RoleCode.DELIVERY_PARTNER) {
+      affectedProfile = "DELIVERY_PARTNER";
+      const [
+        activeDeliveryDetails,
+        activeShipments,
+        unverifiedDeliveryCod,
+        unverifiedShipmentCod,
+        openPayouts,
+        walletEntries,
+      ] = await Promise.all([
+        db.deliveryDetail.count({
+          where: {
+            deliveryPartnerUserId: user.id,
+            assignmentStatus: { in: [...activeDeliveryAssignmentStatuses] },
+            status: { in: [...activeDeliveryStatuses] },
+          },
+        }),
+        db.orderShipment.count({
+          where: {
+            deliveryPartnerUserId: user.id,
+            assignmentStatus: { in: [...activeDeliveryAssignmentStatuses] },
+            status: { in: [...activeDeliveryStatuses] },
+          },
+        }),
+        db.deliveryDetail.count({
+          where: {
+            codCollectionStatus: CodCollectionStatus.COLLECTED,
+            OR: [{ codCollectedById: user.id }, { deliveryPartnerUserId: user.id }],
+          },
+        }),
+        db.orderShipment.count({
+          where: {
+            codCollectionStatus: CodCollectionStatus.COLLECTED,
+            OR: [{ codCollectedById: user.id }, { deliveryPartnerUserId: user.id }],
+          },
+        }),
+        db.deliveryPartnerPayout.count({
+          where: {
+            partnerUserId: user.id,
+            status: { in: [...openDeliveryPayoutStatuses] },
+          },
+        }),
+        db.deliveryPartnerWalletEntry.count({ where: { partnerUserId: user.id } }),
+      ]);
+      associatedCounts.activeDeliveryDetails = activeDeliveryDetails;
+      associatedCounts.activeOrderShipments = activeShipments;
+      associatedCounts.unverifiedDeliveryCodCollections = unverifiedDeliveryCod;
+      associatedCounts.unverifiedShipmentCodCollections = unverifiedShipmentCod;
+      associatedCounts.openDeliveryPartnerPayouts = openPayouts;
+      associatedCounts.deliveryPartnerWalletEntries = walletEntries;
+      cleanupActions.push("Delivery partner profile will be marked unavailable. Wallet, COD, payout, and delivery history remain preserved.");
+      warnings.push("Partner will lose delivery workspace access after the role is removed.");
+      if (activeDeliveryDetails + activeShipments > 0) {
+        blockers.push("Reassign or complete active assigned deliveries before removing Delivery Partner role.");
+      }
+      if (unverifiedDeliveryCod + unverifiedShipmentCod > 0) {
+        blockers.push("Verify or reject pending COD cash collections before removing Delivery Partner role.");
+      }
+      if (openPayouts > 0) {
+        blockers.push("Resolve requested or approved delivery partner payouts before removing Delivery Partner role.");
+      }
+    }
+
+    if (roleCode === RoleCode.BUSINESS_BUYER && user.businessBuyer) {
+      affectedProfile = "BUSINESS_BUYER";
+      const [addresses, enquiries] = await Promise.all([
+        db.businessBuyerAddress.count({ where: { businessBuyerId: user.businessBuyer.id } }),
+        db.b2BEnquiry.count({ where: { businessBuyerId: user.businessBuyer.id } }),
+      ]);
+      associatedCounts.businessBuyerAddresses = addresses;
+      associatedCounts.b2bEnquiries = enquiries;
+      cleanupActions.push("Business buyer profile will be disabled. Enquiries and quotation history remain preserved.");
+      warnings.push("B2B buyer portal access will be removed until the role is restored.");
+    }
+
+    if (roleCode === RoleCode.CUSTOMER && user.customer) {
+      affectedProfile = "CUSTOMER";
+      const [addresses, orders] = await Promise.all([
+        db.customerAddress.count({ where: { customerId: user.customer.id } }),
+        db.order.count({ where: { customerId: user.customer.id } }),
+      ]);
+      associatedCounts.customerAddresses = addresses;
+      associatedCounts.customerOrders = orders;
+      warnings.push("Customer profile, addresses, orders, wishlist, and support history remain preserved.");
+    }
+
+    if (backOfficeRoleCodes.has(roleCode)) {
+      affectedProfile = affectedProfile ?? "BACK_OFFICE";
+      const remainingBackOfficeRoles = user.userRoles.filter(
+        (userRole) => userRole.role.id !== roleId && backOfficeRoleCodes.has(userRole.role.code),
+      );
+      if (remainingBackOfficeRoles.length === 0) {
+        const [credentialCount, activeSessionCount] = await Promise.all([
+          db.adminCredential.count({ where: { userId: user.id } }),
+          db.adminSession.count({ where: { userId: user.id, revokedAt: null } }),
+        ]);
+        associatedCounts.backOfficeCredentials = credentialCount;
+        associatedCounts.activeAdminSessions = activeSessionCount;
+        cleanupActions.push("Back-office password will be removed and active admin sessions will be revoked.");
+        warnings.push("This user will no longer be able to sign in to Admin, Finance, or Courier back-office workspaces.");
+      }
+    }
+
+    if (roleCode === RoleCode.SUPPORT_STAFF) {
+      warnings.push("Support staff access will be removed. Existing audit history remains preserved.");
+    }
+
+    const hasAssociatedData =
+      cleanupActions.length > 0 ||
+      Object.values(associatedCounts).some((count) => count > 0);
+
+    return {
+      userId: user.id,
+      roleCode,
+      canRemove: blockers.length === 0,
+      noteRequired: hasAssociatedData,
+      affectedProfile,
+      blockers,
+      warnings,
+      cleanupActions,
+      associatedCounts,
+    };
+  }
+
+  private async applyRoleRemovalCleanup(
+    db: Prisma.TransactionClient,
+    user: AdminUserWithProfiles,
+    roleCode: RoleCode,
+  ) {
+    if (roleCode === RoleCode.SELLER && user.seller) {
+      await db.seller.update({
+        where: { id: user.seller.id },
+        data: { status: SellerStatus.SUSPENDED },
+      });
+    }
+
+    if (roleCode === RoleCode.BUSINESS_BUYER && user.businessBuyer) {
+      await db.businessBuyer.update({
+        where: { id: user.businessBuyer.id },
+        data: { status: UserStatus.DISABLED },
+      });
+    }
+
+    if (roleCode === RoleCode.DELIVERY_PARTNER && user.deliveryProfile) {
+      await db.deliveryPartnerProfile.update({
+        where: { userId: user.id },
+        data: { isAvailable: false },
+      });
+    }
+
+    if (backOfficeRoleCodes.has(roleCode)) {
+      const remainingBackOfficeRoles = user.userRoles.filter(
+        (userRole) => userRole.role.code !== roleCode && backOfficeRoleCodes.has(userRole.role.code),
+      );
+      if (remainingBackOfficeRoles.length === 0) {
+        await db.adminCredential.deleteMany({ where: { userId: user.id } });
+        await db.adminSession.updateMany({
+          where: { userId: user.id, revokedAt: null },
+          data: { revokedAt: new Date() },
+        });
+      }
+    }
+  }
+
+  private assertValidRoleCode(roleCode: RoleCode) {
+    if (!Object.values(RoleCode).includes(roleCode)) {
+      throw new BadRequestException("Unsupported role code.");
     }
   }
 

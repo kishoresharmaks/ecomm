@@ -929,69 +929,10 @@ export class OrdersService {
             }
           : null,
       })),
-      shipments: order.shipments.map((shipment) => ({
-        id: shipment.id,
-        shipmentNumber: shipment.shipmentNumber,
-        sellerId: shipment.sellerId,
-        seller: shipment.seller
-          ? {
-              storeName: shipment.seller.storeName,
-              slug: shipment.seller.slug,
-            }
-          : null,
-        subtotalPaise: shipment.subtotalPaise,
-        shippingPaise: shipment.shippingPaise,
-        codSurchargePaise: shipment.codSurchargePaise,
-        deliveryMode: shipment.deliveryMode,
-        courierProviderCode: shipment.courierProviderCode,
-        routingFailed: shipment.routingFailed,
-        routingFailureReason: shipment.routingFailureReason,
-        routingFailureNote: shipment.routingFailureNote,
-        routedAt: shipment.routedAt,
-        routingFirstFailedAt: shipment.routingFirstFailedAt,
-        routingLastAttemptAt: shipment.routingLastAttemptAt,
-        routingRetryCount: shipment.routingRetryCount,
-        routingPermanentFailureAt: shipment.routingPermanentFailureAt,
-        routingSnapshot: shipment.routingSnapshot,
-        status: shipment.status,
-        assignmentStatus: shipment.assignmentStatus,
-        estimatedDeliveryDate: shipment.estimatedDeliveryDate,
-        deliveryNote: shipment.deliveryNote,
-        codCollectionStatus: shipment.codCollectionStatus,
-        codCollectedAmountPaise: shipment.codCollectedAmountPaise,
-        codCollectedAt: shipment.codCollectedAt,
-        codVerifiedAt: shipment.codVerifiedAt,
-        packages: shipment.packages.map((shipmentPackage) =>
-          this.shipmentPackageReadback(shipmentPackage, { sellerLabelAccess: false }),
-        ),
-      })),
-      deliveryDetail: order.deliveryDetail
-        ? {
-            deliveryMode: order.deliveryDetail.deliveryMode,
-            partnerName: null,
-            partnerPhone: null,
-            trackingReference: null,
-            estimatedDeliveryDate: order.deliveryDetail.estimatedDeliveryDate,
-            deliveryNote: order.deliveryDetail.deliveryNote,
-            assignmentStatus: order.deliveryDetail.assignmentStatus,
-            assignedAt: order.deliveryDetail.assignedAt,
-            acceptedAt: order.deliveryDetail.acceptedAt,
-            status: order.deliveryDetail.status,
-            codCollectionStatus: order.deliveryDetail.codCollectionStatus,
-            codCollectedAmountPaise: order.deliveryDetail.codCollectedAmountPaise,
-            codCollectedAt: order.deliveryDetail.codCollectedAt,
-            codCollectionNote: order.deliveryDetail.codCollectionNote,
-            codVerifiedAt: order.deliveryDetail.codVerifiedAt,
-            codVerificationNote: order.deliveryDetail.codVerificationNote,
-            events: order.deliveryDetail.events.map((event) => ({
-              id: event.id,
-              oldStatus: event.oldStatus,
-              newStatus: event.newStatus,
-              note: event.note,
-              createdAt: event.createdAt,
-            })),
-          }
-        : null,
+      shipments: order.shipments.map((shipment) =>
+        this.customerSafeShipmentReadback(shipment, { publicLookup: true }),
+      ),
+      deliveryDetail: this.customerSafeDeliveryDetail(order.deliveryDetail, { publicLookup: true }),
       customerDeliveryTimeline: this.customerDeliveryTimeline(order),
       statusEvents: order.statusEvents.map((event) => ({
         id: event.id,
@@ -3667,15 +3608,112 @@ export class OrdersService {
   private customerSafeOrder(order: OrderWithRelations) {
     return {
       ...order,
+      deliveryDetail: this.customerSafeDeliveryDetail(order.deliveryDetail, { publicLookup: false }),
       sellerSplits: order.sellerSplits.map((split) => ({
         ...split,
         shipment: split.shipment
-          ? this.shipmentReadback(split.shipment, { sellerLabelAccess: false })
+          ? this.customerSafeShipmentReadback(split.shipment, { publicLookup: false })
           : null,
       })),
       shipments: order.shipments.map((shipment) =>
-        this.shipmentReadback(shipment, { sellerLabelAccess: false }),
+        this.customerSafeShipmentReadback(shipment, { publicLookup: false }),
       ),
+    };
+  }
+
+  private customerSafeDeliveryDetail(
+    delivery: OrderWithRelations["deliveryDetail"],
+    options: { publicLookup: boolean },
+  ) {
+    if (!delivery) {
+      return null;
+    }
+
+    return {
+      deliveryMode: delivery.deliveryMode,
+      partnerName: options.publicLookup ? null : delivery.partnerName,
+      partnerPhone: options.publicLookup ? null : delivery.partnerPhone,
+      assignmentStatus: delivery.assignmentStatus,
+      assignedAt: delivery.assignedAt,
+      acceptedAt: delivery.acceptedAt,
+      trackingReference: options.publicLookup ? null : delivery.trackingReference,
+      estimatedDeliveryDate: delivery.estimatedDeliveryDate,
+      deliveryNote: delivery.deliveryNote,
+      status: delivery.status,
+      events: delivery.events.map((event) => ({
+        id: event.id,
+        oldStatus: event.oldStatus,
+        newStatus: event.newStatus,
+        note: event.note,
+        createdAt: event.createdAt,
+      })),
+    };
+  }
+
+  private customerSafeShipmentReadback(
+    shipment: OrderWithRelations["shipments"][number] | NonNullable<OrderWithRelations["sellerSplits"][number]["shipment"]>,
+    options: { publicLookup: boolean },
+  ) {
+    const seller = "seller" in shipment ? shipment.seller : null;
+
+    return {
+      id: shipment.id,
+      shipmentNumber: shipment.shipmentNumber,
+      sellerId: shipment.sellerId,
+      seller: seller
+        ? {
+            storeName: seller.storeName,
+            slug: seller.slug,
+          }
+        : null,
+      subtotalPaise: shipment.subtotalPaise,
+      shippingPaise: shipment.shippingPaise,
+      codSurchargePaise: shipment.codSurchargePaise,
+      deliveryMode: shipment.deliveryMode,
+      status: shipment.status,
+      assignmentStatus: shipment.assignmentStatus,
+      partnerName: options.publicLookup ? null : shipment.partnerName,
+      partnerPhone: options.publicLookup ? null : shipment.partnerPhone,
+      trackingReference: options.publicLookup ? null : shipment.trackingReference,
+      estimatedDeliveryDate: shipment.estimatedDeliveryDate,
+      deliveryNote: shipment.deliveryNote,
+      packages: shipment.packages.map((shipmentPackage) =>
+        this.customerSafeShipmentPackageReadback(shipmentPackage),
+      ),
+    };
+  }
+
+  private customerSafeShipmentPackageReadback(shipmentPackage: OrderShipmentPackageWithRelations) {
+    const courierPackage = shipmentPackage.courierPackages[0] ?? null;
+
+    return {
+      id: shipmentPackage.id,
+      packageNumber: shipmentPackage.packageNumber,
+      orderShipmentId: shipmentPackage.orderShipmentId,
+      orderId: shipmentPackage.orderId,
+      sellerId: shipmentPackage.sellerId,
+      sequence: shipmentPackage.sequence,
+      deliveryMode: shipmentPackage.deliveryMode,
+      status: shipmentPackage.status,
+      shippingPaise: shipmentPackage.shippingPaise,
+      codSurchargePaise: shipmentPackage.codSurchargePaise,
+      declaredValuePaise: shipmentPackage.declaredValuePaise,
+      currency: shipmentPackage.currency,
+      itemAllocations: shipmentPackage.itemAllocations,
+      readyForBookingAt: shipmentPackage.readyForBookingAt,
+      bookedAt: shipmentPackage.bookedAt,
+      pickupScheduledAt: shipmentPackage.pickupScheduledAt,
+      pickedUpAt: shipmentPackage.pickedUpAt,
+      deliveredAt: shipmentPackage.deliveredAt,
+      cancelledAt: shipmentPackage.cancelledAt,
+      awbNumber: courierPackage?.awbNumber ?? null,
+      courierName: courierPackage?.courierName ?? null,
+      courierTrackingStatus: courierPackage?.trackingStatus ?? CourierShipmentStatus.NOT_BOOKED,
+      courierTrackingStatusLabel: courierPackage?.trackingStatusLabel ?? null,
+      trackingUrl: courierPackage?.trackingUrl ?? null,
+      shipmentBookedAt: courierPackage?.bookedAt ?? courierPackage?.courierConsignment.bookedAt ?? null,
+      canDownloadLabel: false,
+      labelDownloadUrl: null,
     };
   }
 
@@ -5359,14 +5397,6 @@ export class OrdersService {
         completed: this.deliveryStatusReached(order.deliveryStatus, DeliveryStatus.IN_TRANSIT),
       },
       {
-        code: "COD_COLLECTED",
-        label: "COD collected",
-        at: delivery?.codCollectedAt ?? null,
-        completed:
-          delivery?.codCollectionStatus === CodCollectionStatus.COLLECTED ||
-          delivery?.codCollectionStatus === CodCollectionStatus.VERIFIED,
-      },
-      {
         code: "DELIVERED",
         label: "Delivered",
         at: this.deliveryEventTime(order, DeliveryStatus.DELIVERED),
@@ -5374,7 +5404,7 @@ export class OrdersService {
       },
     ];
 
-    return items.filter((item) => item.completed || item.code !== "COD_COLLECTED");
+    return items;
   }
 
   private deliveryEventTime(order: OrderWithRelations, status: DeliveryStatus) {

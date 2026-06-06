@@ -62,7 +62,7 @@ export function ConfirmationDialog({
   const ConfirmIcon = tone === "danger" ? X : CheckCircle2;
 
   return (
-    <Dialog open={open} onClose={onClose} className="relative z-50">
+    <Dialog open={open} onClose={onClose} className="relative z-[140]">
       <DialogBackdrop transition className="fixed inset-0 bg-[#101828]/45 transition duration-200 data-closed:opacity-0" />
       <div className="fixed inset-0 w-screen overflow-y-auto px-4 py-6">
         <div className="flex min-h-full items-center justify-center">

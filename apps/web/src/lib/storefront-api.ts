@@ -547,10 +547,6 @@ export type OrderSummary = {
     trackingReference?: string | null;
     estimatedDeliveryDate?: string | null;
     deliveryNote?: string | null;
-    codCollectionStatus?: string | null;
-    codCollectedAmountPaise?: number | null;
-    codCollectedAt?: string | null;
-    codVerifiedAt?: string | null;
     packages?: Array<{
       id: string;
       packageNumber: string;
@@ -581,9 +577,6 @@ export type OrderSummary = {
       courierTrackingStatus?: string | null;
       courierTrackingStatusLabel?: string | null;
       trackingUrl?: string | null;
-      shippingZone?: string | null;
-      providerRawStatus?: string | null;
-      providerRawStatusCode?: string | null;
       shipmentBookedAt?: string | null;
       canDownloadLabel?: boolean;
       labelDownloadUrl?: string | null;
@@ -600,13 +593,6 @@ export type OrderSummary = {
     estimatedDeliveryDate?: string | null;
     deliveryNote?: string | null;
     status: string;
-    codCollectionStatus?: string | null;
-    codCollectedAmountPaise?: number | null;
-    codCollectedAt?: string | null;
-    codCollectionNote?: string | null;
-    codVerifiedAt?: string | null;
-    codVerificationNote?: string | null;
-    receiverName?: string | null;
     events?: Array<{
       id: string;
       oldStatus?: string | null;

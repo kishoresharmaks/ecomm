@@ -56,7 +56,7 @@ export class UpdateUserRoleDto {
   @IsEnum(RoleCode)
   roleCode!: RoleCode;
 
-  @ApiPropertyOptional({ example: "Assigned for operations access." })
+  @ApiPropertyOptional({ example: "Associated work reviewed before changing role access." })
   @IsOptional()
   @IsString()
   @MaxLength(1000)

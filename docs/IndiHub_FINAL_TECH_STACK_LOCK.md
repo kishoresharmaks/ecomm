@@ -46,7 +46,7 @@ The stack is chosen for a serious marketplace portal while keeping Phase 1 align
 | Error tracking | Sentry-ready | Add Sentry configuration if client provides account/project details; otherwise keep environment-ready integration points. |
 | Testing | Vitest + Supertest + Playwright | Use unit tests, API tests, and browser flow tests for critical marketplace paths. |
 | CI/CD | GitHub Actions | Run lint, typecheck, build, tests, Prisma checks, and deployment gates. |
-| Phase 1 deployment | Vercel for web + Render/Railway/Fly/AWS for API and worker | Use managed PostgreSQL, managed Redis if jobs are deployed, configurable public/private storage providers, and environment variables for all secrets. |
+| Phase 1 deployment | Vercel or VPS web hosting + VPS API/worker | Production database target is the client's own PostgreSQL server on the VPS or private VPS network. Managed/Postgres test providers such as Neon are acceptable for development or staging only. Use environment variables for all secrets. |
 
 ## 3. Phase 1 Repository Structure
 

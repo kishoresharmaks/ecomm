@@ -1,3 +1,13 @@
 packages:
-  - "apps/*"
-  - "packages/*"
+  - apps/*
+  - packages/*
+
+onlyBuiltDependencies:
+  - '@clerk/shared'
+  - '@nestjs/core'
+  - '@prisma/engines'
+  - '@scarf/scarf'
+  - esbuild
+  - msgpackr-extract
+  - prisma
+  - sharp

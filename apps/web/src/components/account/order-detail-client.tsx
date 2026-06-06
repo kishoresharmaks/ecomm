@@ -434,57 +434,6 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
                 </PagePanel>
               ) : null}
 
-              {isCodTrackingVisible(order) ? (
-                <PagePanel>
-                  <SectionHeading
-                    title="COD collection"
-                    description="Cash collection is recorded by delivery and verified by admin."
-                  />
-                  <div className="mt-4 grid gap-3 text-sm font-semibold text-[#667085]">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <StatusBadge
-                        tone={codCollectionTone(order.deliveryDetail?.codCollectionStatus)}
-                      >
-                        COD{" "}
-                        {statusLabel(order.deliveryDetail?.codCollectionStatus ?? "NOT_COLLECTED")}
-                      </StatusBadge>
-                      {order.deliveryDetail?.codCollectedAmountPaise ? (
-                        <span className="font-black text-[#163B5C]">
-                          {formatMoney(
-                            order.deliveryDetail.codCollectedAmountPaise,
-                            order.currency,
-                          )}
-                        </span>
-                      ) : null}
-                    </div>
-                    <Info
-                      label="Collected at"
-                      value={
-                        order.deliveryDetail?.codCollectedAt
-                          ? formatDateTime(order.deliveryDetail.codCollectedAt)
-                          : "Not collected"
-                      }
-                    />
-                    <Info
-                      label="Verified at"
-                      value={
-                        order.deliveryDetail?.codVerifiedAt
-                          ? formatDateTime(order.deliveryDetail.codVerifiedAt)
-                          : "Awaiting admin verification"
-                      }
-                    />
-                    <Info
-                      label="Collection note"
-                      value={order.deliveryDetail?.codCollectionNote ?? "No collection note"}
-                    />
-                    <Info
-                      label="Verification note"
-                      value={order.deliveryDetail?.codVerificationNote ?? "No verification note"}
-                    />
-                  </div>
-                </PagePanel>
-              ) : null}
-
               <PagePanel>
                 <SectionHeading
                   title="Order charges"
@@ -744,33 +693,5 @@ function friendlyAssignmentLabel(status?: string | null) {
 }
 
 function friendlyTimelineLabel(status?: string | null) {
-  if (status === "COLLECTED" || status === "VERIFIED") {
-    return "COD collected";
-  }
-
   return friendlyDeliveryLabel(status);
-}
-
-function isCodTrackingVisible(order: AccountOrderDetail) {
-  const detail = order.deliveryDetail;
-  return Boolean(
-    detail?.codCollectionStatus &&
-    (detail.codCollectionStatus !== "NOT_COLLECTED" ||
-      detail.codCollectedAmountPaise ||
-      detail.codCollectedAt ||
-      detail.codVerifiedAt),
-  );
-}
-
-function codCollectionTone(status?: string | null) {
-  if (status === "VERIFIED") {
-    return "success";
-  }
-  if (status === "REJECTED") {
-    return "danger";
-  }
-  if (status === "COLLECTED") {
-    return "warning";
-  }
-  return "info";
 }

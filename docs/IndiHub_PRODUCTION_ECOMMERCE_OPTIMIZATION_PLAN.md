@@ -15,7 +15,7 @@ For the current 1HandIndia Phase 1 codebase, the safest rollout order is:
 2. Add PostgreSQL full-text/GIN indexes for product search.
 3. Add cursor pagination to public product lists, admin orders, audit logs, notifications, seller orders, and B2B lists.
 4. Add Nginx and API-level rate limiting for search, auth, checkout, admin, and public API routes.
-5. Add PgBouncer/runtime connection-pool configuration before production deployment.
+5. Add VPS PostgreSQL runtime connection-pool configuration before production deployment.
 6. Add Redis caching for homepage/catalog/settings/read-heavy APIs, with explicit invalidation.
 7. Keep current atomic inventory decrement, then add explicit row locking if concurrency tests show contention.
 8. Add materialized analytics views once real order volume begins.
@@ -31,7 +31,7 @@ For the current 1HandIndia Phase 1 codebase, the safest rollout order is:
 | Partial indexes | Implemented | Raw SQL migration adds partial indexes for live approved products, approved sellers, and open fulfilment orders. |
 | Partition orders table | Not implemented | This should be a later migration, not a Phase 1 quick patch. |
 | Redis caching | Partially implemented | Redis/BullMQ exists for email queue jobs when `REDIS_URL` is configured. API response caching is not yet implemented. |
-| PgBouncer pooling | Config prepared | Runtime `DATABASE_URL`, migration `DATABASE_DIRECT_URL`, and future `DATABASE_READ_URL` are documented/configured. Actual production pooler must be provided by the DB host. |
+| VPS PostgreSQL pooling | Config prepared | Runtime `DATABASE_URL`, migration `DATABASE_DIRECT_URL`, and future `DATABASE_READ_URL` are documented/configured. Production target is the client's own PostgreSQL server. PgBouncer can run on the VPS when traffic grows, but Neon-style managed pooling is not the production assumption. |
 | Full-text search with GIN | Implemented | Migration adds `pg_trgm` and GIN indexes; public product search now uses ranked PostgreSQL full-text search. |
 | Search/API rate limiting | Implemented | Nginx deployment snippet protects the VPS before Node, and the NestJS API has route-aware in-memory rate limiting for single-instance launch. |
 | Inventory row locking | Atomic safety plus test | Checkout uses transaction plus atomic conditional decrement. New concurrency test proves two customers cannot oversell one stock unit. |
@@ -47,7 +47,7 @@ This section answers what is required before the first real production launch, a
 | Proper indexing | Yes | Done in code | Apply the new SQL migration in staging and verify hot queries with `EXPLAIN (ANALYZE, BUFFERS)`. |
 | Partial indexes | Yes | Done in code | Apply `20260601090000_production_ecommerce_optimizations` in staging/production migration flow. |
 | Full-text search with GIN | Yes | Done in code | Apply migration, then test catalogue search against staging data. |
-| PgBouncer connection pooling | Yes | Config-ready | Put the provider pooled URL in `DATABASE_URL` and direct migration URL in `DATABASE_DIRECT_URL` before deployment. |
+| PostgreSQL connection pooling | Yes | Config-ready | Put the VPS runtime PostgreSQL URL in `DATABASE_URL`. If PgBouncer is installed on the VPS, use the PgBouncer runtime URL there and keep the direct PostgreSQL URL in `DATABASE_DIRECT_URL`. |
 | Cursor pagination | Recommended before production | Done for major large lists | Keep backward-compatible page/limit, but use cursor for large product/order/log/B2B/finance screens. |
 | Search/API rate limiting | Yes | Done in code/docs | Install the Nginx snippet on the VPS, keep the API private on localhost, and leave API in-memory limiting enabled for the first single-instance launch. |
 | Redis caching | Recommended before production | Partly done | Redis/BullMQ email queue is wired. Add API response caching for homepage, CMS, category tree, public stores, and safe catalogue reads. |
@@ -61,7 +61,7 @@ This section answers what is required before the first real production launch, a
 Before the first production launch, the optimization must-do list is:
 
 1. Apply the production SQL migration in staging and production.
-2. Configure PgBouncer or the managed provider's pooled runtime connection.
+2. Configure the VPS PostgreSQL runtime URL, and add PgBouncer on the VPS if expected traffic or worker count requires it.
 3. Run staging query-plan checks for product search, product lists, order lists, audit logs, notifications, B2B, and finance lists.
 4. Install the Nginx rate-limit snippet for `/api/products`, auth, checkout/cart/order, admin, and public API routes.
 5. Keep API rate limiting enabled and set `INDIHUB_TRUST_PROXY_HEADERS=true` only when the Node API port is private behind Nginx.
@@ -83,7 +83,7 @@ These items are already acceptable for early production:
 ### Implemented On 2026-06-01
 
 - Added `prisma/migrations/20260601090000_production_ecommerce_optimizations/migration.sql` with partial indexes, GIN product search indexes, and cursor/list hot-path indexes.
-- Added pooled/direct/read database URL configuration through `.env.example`, `packages/config`, and `prisma.config.ts`.
+- Added VPS PostgreSQL runtime/direct/read database URL configuration through `.env.example`, `packages/config`, and `prisma.config.ts`.
 - Added cursor pagination helpers in `apps/api/src/common/pagination.ts`.
 - Updated public product search to use ranked PostgreSQL full-text search with safe parameterized Prisma raw SQL.
 - Added cursor support to product, order, audit, notification, B2B, and key finance list APIs.
@@ -119,9 +119,9 @@ Implementation approach:
 Recommended env shape:
 
 ```env
-DATABASE_URL="postgresql://primary-runtime-pool/indihub?schema=public"
-DATABASE_DIRECT_URL="postgresql://primary-direct/indihub?schema=public"
-DATABASE_READ_URL="postgresql://read-replica-runtime-pool/indihub?schema=public"
+DATABASE_URL="postgresql://indihub_app:change_me@127.0.0.1:5432/indihub?schema=public"
+DATABASE_DIRECT_URL="postgresql://indihub_owner:change_me@127.0.0.1:5432/indihub?schema=public"
+DATABASE_READ_URL=""
 ```
 
 Good first read-replica candidates:
@@ -272,28 +272,29 @@ Recommended service shape:
 - `cache.delByPrefix(prefix)` for CMS/catalog invalidation.
 - Fallback to direct DB reads if Redis is unavailable, with a warning log.
 
-### 3.6 PgBouncer Connection Pooling
+### 3.6 VPS PostgreSQL Connection Pooling
 
 **Recommendation:** Required before real production traffic.
 
-Next.js, NestJS, workers, migrations, and serverless-like deployments can create many database connections. PgBouncer keeps PostgreSQL stable.
+NestJS API workers, background workers, migrations, and admin tools can create many database connections. For the first production launch, the target is the client's own PostgreSQL server on the VPS or private VPS network. PgBouncer is optional at very low traffic, but recommended once API/worker process counts increase.
 
 Recommended split:
 
-- Runtime app uses pooled URL: `DATABASE_URL`.
-- Prisma CLI/migrations use direct URL: `DATABASE_DIRECT_URL`.
-- Read replica, if used later, has its own pooled URL: `DATABASE_READ_URL`.
+- Runtime app uses `DATABASE_URL`.
+- If PgBouncer runs on the VPS, `DATABASE_URL` points to PgBouncer, usually `127.0.0.1:6432`.
+- Prisma CLI/migrations and large imports use direct PostgreSQL through `DATABASE_DIRECT_URL`, usually `127.0.0.1:5432`.
+- Read replica, if used later, has its own runtime URL: `DATABASE_READ_URL`.
 
 Code/docs changes needed:
 
-- Update `.env.example` with pooled/direct/read URL comments.
-- Update `prisma.config.ts` to prefer `DATABASE_DIRECT_URL` for migrations when available.
-- Keep `packages/database/src/index.ts` runtime on pooled `DATABASE_URL`.
-- Document provider-specific pool limits.
+- Keep `.env.example` focused on VPS PostgreSQL URLs and pool variables.
+- Keep `prisma.config.ts` preferring non-empty `DATABASE_DIRECT_URL` for migrations when available.
+- Keep `packages/database/src/index.ts` runtime on `DATABASE_URL`.
+- Tune `PG_POOL_MAX` per Node process, not globally. For one API process plus one worker on a small VPS, start with API `PG_POOL_MAX=10` and worker `PG_POOL_MAX=4` if they have separate process env files.
 
 Deployment note:
 
-- Prisma plus PgBouncer should be tested with the exact provider pooler. Do not assume local PostgreSQL behavior equals managed production behavior.
+- Neon or any other hosted database can remain a development/staging test database. Production readiness should be verified against the actual VPS PostgreSQL server before launch.
 
 ### 3.7 Full-Text Search With GIN
 
@@ -508,7 +509,7 @@ Run refresh jobs through the worker on a schedule after order/payment flows are 
 
 ### Phase A - Safe Pre-Production Hardening
 
-- Add PgBouncer/direct URL env documentation.
+- Add VPS PostgreSQL runtime/direct URL env documentation.
 - Add raw SQL migration for partial indexes and search GIN indexes.
 - Update public product search to use indexed full-text search.
 - Add cursor pagination helper and migrate public products plus admin orders first.
@@ -540,7 +541,7 @@ Run refresh jobs through the worker on a schedule after order/payment flows are 
 - API 429 responses are verified for excessive anonymous search requests.
 - Checkout concurrency test proves no oversell.
 - Redis outage fallback proves public pages still work.
-- PgBouncer production-like connection test passes under load.
+- VPS PostgreSQL connection test passes under load. If PgBouncer is installed, test through PgBouncer for runtime traffic and through direct PostgreSQL for migrations.
 - Analytics refresh can run without blocking checkout/order writes.
 - Backup and restore are tested before partitioning or major SQL migrations.
 
@@ -552,7 +553,7 @@ For this codebase, the highest-value immediate production optimizations are:
 2. Partial indexes for public products, active sellers, orders, logs, and notifications.
 3. Cursor pagination for large lists.
 4. Nginx/API rate limiting for search, auth, checkout, admin, and public API traffic.
-5. PgBouncer runtime pooling.
+5. VPS PostgreSQL runtime pooling, with PgBouncer on the VPS when traffic requires it.
 6. Redis caching for read-heavy public/CMS/catalog responses.
 7. Checkout stock concurrency test around the existing atomic decrement.
 

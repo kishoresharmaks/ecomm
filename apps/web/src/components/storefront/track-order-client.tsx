@@ -158,30 +158,6 @@ function TrackedOrderPanel({ order }: { order: PublicTrackedOrder }) {
         <DeliveryProgress currentStatus={order.deliveryDetail?.status ?? order.deliveryStatus} />
       </section>
 
-      {isCodTrackingVisible(order) ? (
-        <section className="mt-7">
-          <SectionHeading title="COD collection" description="Cash collection is recorded by delivery and verified by admin finance." />
-          <div className="mt-4 rounded-md border border-[#E5E7EB] bg-[#F8FAFC] p-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <StatusBadge tone={codCollectionTone(order.deliveryDetail?.codCollectionStatus)}>
-                COD {statusLabel(order.deliveryDetail?.codCollectionStatus ?? "NOT_COLLECTED")}
-              </StatusBadge>
-              {order.deliveryDetail?.codCollectedAmountPaise ? (
-                <span className="text-sm font-black text-[#163B5C]">
-                  {formatMoney(order.deliveryDetail.codCollectedAmountPaise, order.currency)}
-                </span>
-              ) : null}
-            </div>
-            <div className="mt-4 grid gap-3 text-sm font-semibold text-[#667085] md:grid-cols-2">
-              <Info label="Collected at" value={order.deliveryDetail?.codCollectedAt ? formatDateTime(order.deliveryDetail.codCollectedAt) : "Not collected"} />
-              <Info label="Verified at" value={order.deliveryDetail?.codVerifiedAt ? formatDateTime(order.deliveryDetail.codVerifiedAt) : "Awaiting admin verification"} />
-              <Info label="Collection note" value={order.deliveryDetail?.codCollectionNote ?? "No collection note"} />
-              <Info label="Verification note" value={order.deliveryDetail?.codVerificationNote ?? "No verification note"} />
-            </div>
-          </div>
-        </section>
-      ) : null}
-
       <section className="mt-7">
         <SectionHeading title="Items" description={`${order.items.length} item${order.items.length === 1 ? "" : "s"} in this order.`} />
         <div className="mt-4 overflow-hidden rounded-md border border-[#E5E7EB]">
@@ -314,27 +290,6 @@ function buildTrackingTimeline(order: PublicTrackedOrder) {
   ].sort((left, right) => new Date(right.createdAt ?? 0).getTime() - new Date(left.createdAt ?? 0).getTime());
 }
 
-function isCodTrackingVisible(order: PublicTrackedOrder) {
-  const detail = order.deliveryDetail;
-  return Boolean(
-    detail?.codCollectionStatus &&
-      (detail.codCollectionStatus !== "NOT_COLLECTED" || detail.codCollectedAmountPaise || detail.codCollectedAt || detail.codVerifiedAt)
-  );
-}
-
-function codCollectionTone(status?: string | null) {
-  if (status === "VERIFIED") {
-    return "success";
-  }
-  if (status === "REJECTED") {
-    return "danger";
-  }
-  if (status === "COLLECTED") {
-    return "warning";
-  }
-  return "info";
-}
-
 function friendlyDeliveryLabel(status?: string | null) {
   switch (status) {
     case "PENDING":
@@ -355,10 +310,6 @@ function friendlyDeliveryLabel(status?: string | null) {
 }
 
 function friendlyTimelineLabel(status?: string | null) {
-  if (status === "COLLECTED" || status === "VERIFIED") {
-    return "COD collected";
-  }
-
   return friendlyDeliveryLabel(status);
 }
 
