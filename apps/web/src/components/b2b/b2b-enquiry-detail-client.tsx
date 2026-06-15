@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { ArrowLeft, CheckCircle2, MessageSquareReply, PackageSearch, XCircle } from "lucide-react";
+import { ArrowLeft, CheckCircle2, FileText, MessageSquareReply, PackageSearch, XCircle } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
 import { useConfirmationDialog } from "@/components/shared/confirmation-dialog";
@@ -212,6 +212,29 @@ export function B2BEnquiryDetailClient({ enquiryId }: { enquiryId: string }) {
                 </div>
               </div>
             </B2BPanel>
+
+            {enquiry.b2bOrder ? (
+              <B2BPanel>
+                <div className="flex items-start gap-3">
+                  <span className="grid h-10 w-10 place-items-center rounded-md bg-[#FFF0EA] text-[#ED3500]">
+                    <FileText className="h-4 w-4" aria-hidden="true" />
+                  </span>
+                  <div>
+                    <h2 className="text-lg font-black text-[#1F2933]">B2B order</h2>
+                    <div className="mt-2 grid gap-1 text-sm font-semibold leading-6 text-[#667085]">
+                      <p>{enquiry.b2bOrder.orderNumber}</p>
+                      <p>Proforma {enquiry.b2bOrder.proformaInvoiceNumber}</p>
+                      <p>{formatMoney(enquiry.b2bOrder.subtotalPaise)}</p>
+                    </div>
+                    <Button asChild className="mt-4" size="sm">
+                      <Link href={`/b2b/orders/${encodeURIComponent(enquiry.b2bOrder.orderNumber)}`}>
+                        Open order
+                      </Link>
+                    </Button>
+                  </div>
+                </div>
+              </B2BPanel>
+            ) : null}
           </aside>
         </div>
       ) : null}

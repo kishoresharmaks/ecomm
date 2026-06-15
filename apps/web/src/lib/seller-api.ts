@@ -419,10 +419,65 @@ export type B2BEnquiry = {
       fullName?: string | null;
     } | null;
   }>;
+  b2bOrder?: SellerB2BOrder | null;
+};
+
+export type SellerB2BOrderStatus =
+  | "PROFORMA_ISSUED"
+  | "PO_SUBMITTED"
+  | "PO_ACCEPTED"
+  | "IN_FULFILMENT"
+  | "FULFILLED"
+  | "CANCELLED";
+
+export type SellerB2BOrder = {
+  id: string;
+  orderNumber: string;
+  enquiryId: string;
+  businessBuyerId: string;
+  sellerId?: string | null;
+  productId?: string | null;
+  selectedResponseId?: string | null;
+  status: SellerB2BOrderStatus;
+  proformaInvoiceNumber: string;
+  proformaIssuedAt?: string;
+  proformaExpiresAt?: string | null;
+  purchaseOrderNumber?: string | null;
+  purchaseOrderFileKey?: string | null;
+  purchaseOrderNote?: string | null;
+  purchaseOrderSubmittedAt?: string | null;
+  purchaseOrderAcceptedAt?: string | null;
+  fulfilledAt?: string | null;
+  quantity: number;
+  unitPricePaise?: number | null;
+  subtotalPaise?: number | null;
+  currency?: string;
+  businessBuyer?: B2BEnquiry["businessBuyer"] | null;
+  product?: ProductSummary | null;
+  seller?: SellerSummary | null;
+  selectedResponse?: NonNullable<B2BEnquiry["responses"]>[number] | null;
+  enquiry?: B2BEnquiry | null;
+  events?: Array<{
+    id: string;
+    status: SellerB2BOrderStatus;
+    note?: string | null;
+    createdAt?: string;
+    actor?: {
+      email?: string | null;
+      fullName?: string | null;
+    } | null;
+  }>;
 };
 
 export type PaginatedB2BEnquiries = {
   items: B2BEnquiry[];
+  total: number;
+  page: number;
+  limit: number;
+};
+
+export type PaginatedSellerB2BOrders = {
+  items: SellerB2BOrder[];
   total: number;
   page: number;
   limit: number;
@@ -778,6 +833,25 @@ export function respondSellerB2BEnquiry(
       method: "POST",
       body: JSON.stringify(payload),
     },
+    auth,
+  );
+}
+
+export function listSellerB2BOrders(
+  auth: IndihubAuthHeaders,
+  query: { search?: string; status?: string; page?: number; limit?: number } = {},
+) {
+  return indihubFetch<PaginatedSellerB2BOrders>(
+    `/api/seller/b2b-orders${queryString(query)}`,
+    undefined,
+    auth,
+  );
+}
+
+export function getSellerB2BOrder(auth: IndihubAuthHeaders, orderNumber: string) {
+  return indihubFetch<SellerB2BOrder>(
+    `/api/seller/b2b-orders/${encodeURIComponent(orderNumber)}`,
+    undefined,
     auth,
   );
 }

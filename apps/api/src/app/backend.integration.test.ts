@@ -5,6 +5,7 @@ import { Test } from "@nestjs/testing";
 import {
   ApprovalStatus,
   B2BEnquiryStatus,
+  B2BOrderStatus,
   CartStatus,
   CategoryStatus,
   CodCollectionSource,
@@ -5216,7 +5217,102 @@ integrationDescribe("1HandIndia backend integration", () => {
     expect(finalisedEnquiry.body).toMatchObject({
       id: enquiryId,
       status: B2BEnquiryStatus.FINALISED,
+      b2bOrder: expect.objectContaining({
+        status: B2BOrderStatus.PROFORMA_ISSUED,
+        quantity: 25,
+        unitPricePaise: 10500,
+        subtotalPaise: 262500,
+        selectedResponseId: expect.any(String),
+        proformaInvoiceNumber: expect.stringContaining("1HI-PFI-"),
+        orderNumber: expect.stringContaining("1HI-B2B-"),
+      }),
     });
+    const finalisedBody = finalisedEnquiry.body as { b2bOrder: { orderNumber: string } };
+    const b2bOrderNumber = finalisedBody.b2bOrder.orderNumber;
+
+    await request(app.getHttpServer())
+      .get(`/api/seller/b2b-orders/${b2bOrderNumber}`)
+      .set(authHeader(data.otherSellerUser.id))
+      .expect(404);
+
+    const sellerB2BOrder = await request(app.getHttpServer())
+      .get(`/api/seller/b2b-orders/${b2bOrderNumber}`)
+      .set(authHeader(data.sellerUser.id))
+      .expect(200);
+    expect(sellerB2BOrder.body).toMatchObject({
+      orderNumber: b2bOrderNumber,
+      status: B2BOrderStatus.PROFORMA_ISSUED,
+      businessBuyerId: data.businessBuyer.id,
+    });
+
+    const poSubmitted = await request(app.getHttpServer())
+      .patch(`/api/b2b/orders/${b2bOrderNumber}/purchase-order`)
+      .set(authHeader(data.businessBuyerUser.id))
+      .send({
+        purchaseOrderNumber: `${safeRunCode()}-PO-001`,
+        purchaseOrderFileKey: `private/b2b/${safeRunCode()}-po-001.pdf`,
+        note: "Integration buyer submitted PO against proforma.",
+      })
+      .expect(200);
+    expect(poSubmitted.body).toMatchObject({
+      orderNumber: b2bOrderNumber,
+      status: B2BOrderStatus.PO_SUBMITTED,
+      purchaseOrderNumber: `${safeRunCode()}-PO-001`,
+    });
+
+    const adminB2BOrders = await request(app.getHttpServer())
+      .get(`/api/admin/b2b-orders?search=${encodeURIComponent(b2bOrderNumber)}`)
+      .set(adminSessionHeader)
+      .expect(200);
+    expect(adminB2BOrders.body.items).toEqual(
+      expect.arrayContaining([expect.objectContaining({ orderNumber: b2bOrderNumber })]),
+    );
+
+    const poAccepted = await request(app.getHttpServer())
+      .patch(`/api/admin/b2b-orders/${b2bOrderNumber}/status`)
+      .set(adminSessionHeader)
+      .send({ status: B2BOrderStatus.PO_ACCEPTED, note: "PO verified in integration test." })
+      .expect(200);
+    expect(poAccepted.body).toMatchObject({
+      orderNumber: b2bOrderNumber,
+      status: B2BOrderStatus.PO_ACCEPTED,
+      purchaseOrderAcceptedAt: expect.any(String),
+    });
+
+    await request(app.getHttpServer())
+      .patch(`/api/b2b/orders/${b2bOrderNumber}/purchase-order`)
+      .set(authHeader(data.businessBuyerUser.id))
+      .send({
+        purchaseOrderNumber: `${safeRunCode()}-PO-002`,
+        note: "PO edits should be locked after admin acceptance.",
+      })
+      .expect(400);
+
+    const inFulfilment = await request(app.getHttpServer())
+      .patch(`/api/admin/b2b-orders/${b2bOrderNumber}/status`)
+      .set(adminSessionHeader)
+      .send({ status: B2BOrderStatus.IN_FULFILMENT, note: "B2B fulfilment started." })
+      .expect(200);
+    expect(inFulfilment.body).toMatchObject({
+      status: B2BOrderStatus.IN_FULFILMENT,
+    });
+
+    const fulfilled = await request(app.getHttpServer())
+      .patch(`/api/admin/b2b-orders/${b2bOrderNumber}/status`)
+      .set(adminSessionHeader)
+      .send({ status: B2BOrderStatus.FULFILLED, note: "B2B order fulfilled." })
+      .expect(200);
+    expect(fulfilled.body).toMatchObject({
+      orderNumber: b2bOrderNumber,
+      status: B2BOrderStatus.FULFILLED,
+      fulfilledAt: expect.any(String),
+    });
+
+    await request(app.getHttpServer())
+      .patch(`/api/admin/b2b-orders/${b2bOrderNumber}/status`)
+      .set(adminSessionHeader)
+      .send({ status: B2BOrderStatus.CANCELLED, note: "Fulfilled B2B orders should stay locked." })
+      .expect(400);
 
     await request(app.getHttpServer())
       .patch(`/api/admin/b2b-enquiries/${enquiryId}/status`)

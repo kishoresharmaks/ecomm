@@ -77,6 +77,16 @@ export const b2bEnquiryStatuses = [
 ] as const;
 export type B2BEnquiryStatus = (typeof b2bEnquiryStatuses)[number];
 
+export const b2bOrderStatuses = [
+  "PROFORMA_ISSUED",
+  "PO_SUBMITTED",
+  "PO_ACCEPTED",
+  "IN_FULFILMENT",
+  "FULFILLED",
+  "CANCELLED"
+] as const;
+export type B2BOrderStatus = (typeof b2bOrderStatuses)[number];
+
 export const supportRequestTopics = [
   "ORDER",
   "PAYMENT",

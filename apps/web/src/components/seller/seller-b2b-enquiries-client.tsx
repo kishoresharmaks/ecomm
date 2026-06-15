@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useState } from "react";
-import { ArrowLeft, MessageSquareReply, MessageSquareText, Search, Send } from "lucide-react";
+import { ArrowLeft, FileText, MessageSquareReply, MessageSquareText, Search, Send } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
 import { formatMoney } from "@/lib/storefront-api";
@@ -149,6 +149,14 @@ export function SellerB2BEnquiriesClient() {
                   </p>
                   <p className="mt-3 text-sm leading-6 text-[#1F2933]">{enquiry.message}</p>
                   <p className="mt-2 text-xs font-semibold text-[#667085]">{formatDateTime(enquiry.createdAt)}</p>
+                  {enquiry.b2bOrder ? (
+                    <Button asChild size="sm" variant="outline" className="mt-3">
+                      <Link href={`/seller/b2b-orders/${encodeURIComponent(enquiry.b2bOrder.orderNumber)}`}>
+                        <FileText className="h-4 w-4" aria-hidden="true" />
+                        Open B2B order
+                      </Link>
+                    </Button>
+                  ) : null}
                   <div className="mt-4 grid gap-2">
                     {(enquiry.responses ?? []).slice(0, 3).map((response) => (
                       <div key={response.id} className="rounded-md border border-[#E5E7EB] bg-white p-3 text-sm">
@@ -312,6 +320,21 @@ export function SellerB2BEnquiryDetailClient({ enquiryId }: { enquiryId: string 
                 <p>{enquiry.businessBuyer?.user?.email ?? "Email unavailable"}</p>
               </div>
             </SellerPanel>
+
+            {enquiry.b2bOrder ? (
+              <SellerPanel>
+                <SectionHeading title="B2B order" description={`Proforma ${enquiry.b2bOrder.proformaInvoiceNumber}`} />
+                <div className="mt-4 grid gap-2 text-sm font-semibold leading-6 text-[#667085]">
+                  <p>{enquiry.b2bOrder.orderNumber}</p>
+                  <p>{formatMoney(enquiry.b2bOrder.subtotalPaise)}</p>
+                </div>
+                <Button asChild size="sm" className="mt-4">
+                  <Link href={`/seller/b2b-orders/${encodeURIComponent(enquiry.b2bOrder.orderNumber)}`}>
+                    Open B2B order
+                  </Link>
+                </Button>
+              </SellerPanel>
+            ) : null}
 
             <SellerPanel>
               {canRespond ? (

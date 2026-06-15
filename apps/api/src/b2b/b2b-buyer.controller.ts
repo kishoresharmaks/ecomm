@@ -6,6 +6,7 @@ import { Roles } from "../auth/decorators/roles.decorator";
 import type { RequestUser } from "../auth/types/indihub-request";
 import { B2BService } from "./b2b.service";
 import { CreateB2BEnquiryDto } from "./dto/b2b-enquiry.dto";
+import { B2BOrderQueryDto, SubmitB2BPurchaseOrderDto } from "./dto/b2b-order.dto";
 import { B2BEnquiryQueryDto } from "./dto/b2b-query.dto";
 import { CreateBusinessBuyerAddressDto, UpdateBusinessBuyerAddressDto } from "./dto/business-buyer-address.dto";
 import { UpdateBusinessBuyerProfileDto, UpsertBusinessBuyerProfileDto } from "./dto/business-buyer-profile.dto";
@@ -80,6 +81,31 @@ export class B2BBuyerController {
   @ApiOperation({ summary: "Submit a B2B product or seller enquiry." })
   createEnquiry(@CurrentUser() actor: RequestUser, @Body() dto: CreateB2BEnquiryDto) {
     return this.b2bService.createEnquiry(actor, dto);
+  }
+
+  @Get("orders")
+  @Roles(RoleCode.BUSINESS_BUYER)
+  @ApiOperation({ summary: "List B2B proforma and purchase-order workflow records for the buyer." })
+  listOrders(@CurrentUser() actor: RequestUser, @Query() query: B2BOrderQueryDto) {
+    return this.b2bService.listMyB2BOrders(actor, query);
+  }
+
+  @Get("orders/:orderNumber")
+  @Roles(RoleCode.BUSINESS_BUYER)
+  @ApiOperation({ summary: "Read buyer-visible B2B order and proforma detail." })
+  getOrder(@CurrentUser() actor: RequestUser, @Param("orderNumber") orderNumber: string) {
+    return this.b2bService.getMyB2BOrder(actor, orderNumber);
+  }
+
+  @Patch("orders/:orderNumber/purchase-order")
+  @Roles(RoleCode.BUSINESS_BUYER)
+  @ApiOperation({ summary: "Submit or update purchase order details for a B2B proforma." })
+  submitPurchaseOrder(
+    @CurrentUser() actor: RequestUser,
+    @Param("orderNumber") orderNumber: string,
+    @Body() dto: SubmitB2BPurchaseOrderDto,
+  ) {
+    return this.b2bService.submitPurchaseOrder(actor, orderNumber, dto);
   }
 
   @Get("enquiries/:enquiryId")

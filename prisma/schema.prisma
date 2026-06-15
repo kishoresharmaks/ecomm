@@ -492,6 +492,15 @@ enum B2BEnquiryStatus {
   CANCELLED
 }
 
+enum B2BOrderStatus {
+  PROFORMA_ISSUED
+  PO_SUBMITTED
+  PO_ACCEPTED
+  IN_FULFILMENT
+  FULFILLED
+  CANCELLED
+}
+
 enum ContentStatus {
   DRAFT
   IN_REVIEW
@@ -749,6 +758,8 @@ model User {
   deliveryPartnerApplications DeliveryPartnerApplication[] @relation("DeliveryPartnerApplicationApplicant")
   reviewedDeliveryPartnerApplications DeliveryPartnerApplication[] @relation("DeliveryPartnerApplicationReviewer")
   b2bResponses       B2BEnquiryResponse[]
+  createdB2BOrders   B2BOrder[]          @relation("B2BOrderCreatedBy")
+  b2bOrderEvents     B2BOrderEvent[]     @relation("B2BOrderEventActor")
   supportRequests    SupportRequest[]
   notificationLogs   NotificationLog[]
   auditLogs          AuditLog[]
@@ -984,6 +995,7 @@ model Seller {
   courierCodRemittances        CourierCodRemittance[]
   courierProviderSettings      SellerCourierProviderSetting[]
   b2bEnquiries                 B2BEnquiry[]
+  b2bOrders                    B2BOrder[]
   commissionRules              CommissionRule[]
   payoutProfile                SellerPayoutProfile?
   ledgerEntries                SellerLedgerEntry[]
@@ -1241,6 +1253,7 @@ model BusinessBuyer {
   user         User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
   addresses    BusinessBuyerAddress[]
   enquiries    B2BEnquiry[]
+  b2bOrders    B2BOrder[]
 
   @@index([status])
   @@map("business_buyers")
@@ -1526,6 +1539,7 @@ model Product {
   orderItems     OrderItem[]
   wishlistItems  WishlistItem[]
   b2bEnquiries   B2BEnquiry[]
+  b2bOrders      B2BOrder[]
   dealProductEnrollments DealProductEnrollment[]
   couponEligibilities    CouponProductEligibility[]
   reviews        ProductReview[]
@@ -3348,6 +3362,7 @@ model B2BEnquiry {
   product         Product?             @relation(fields: [productId], references: [id])
   seller          Seller?              @relation(fields: [sellerId], references: [id])
   responses       B2BEnquiryResponse[]
+  b2bOrder        B2BOrder?
 
   @@index([businessBuyerId])
   @@index([sellerId])
@@ -3366,10 +3381,74 @@ model B2BEnquiryResponse {
   createdAt        DateTime   @default(now()) @map("created_at")
   enquiry          B2BEnquiry @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
   responder        User       @relation(fields: [responderUserId], references: [id])
+  selectedB2BOrders B2BOrder[] @relation("B2BOrderSelectedResponse")
 
   @@index([enquiryId])
   @@index([responderUserId])
   @@map("b2b_enquiry_responses")
+}
+
+model B2BOrder {
+  id                       String              @id @default(uuid()) @db.Uuid
+  orderNumber              String              @unique @map("order_number")
+  enquiryId                String              @unique @map("enquiry_id") @db.Uuid
+  businessBuyerId          String              @map("business_buyer_id") @db.Uuid
+  sellerId                 String?             @map("seller_id") @db.Uuid
+  productId                String?             @map("product_id") @db.Uuid
+  selectedResponseId       String?             @map("selected_response_id") @db.Uuid
+  status                   B2BOrderStatus      @default(PROFORMA_ISSUED)
+  proformaInvoiceNumber    String              @unique @map("proforma_invoice_number")
+  proformaIssuedAt         DateTime            @default(now()) @map("proforma_issued_at")
+  proformaExpiresAt        DateTime?           @map("proforma_expires_at")
+  purchaseOrderNumber      String?             @map("purchase_order_number")
+  purchaseOrderFileKey     String?             @map("purchase_order_file_key")
+  purchaseOrderNote        String?             @map("purchase_order_note")
+  purchaseOrderSubmittedAt DateTime?           @map("purchase_order_submitted_at")
+  purchaseOrderAcceptedAt  DateTime?           @map("purchase_order_accepted_at")
+  fulfilledAt              DateTime?           @map("fulfilled_at")
+  quantity                 Int
+  unitPricePaise           Int?                @map("unit_price_paise")
+  subtotalPaise            Int?                @map("subtotal_paise")
+  currency                 String              @default("INR")
+  termsSnapshot            Json?               @map("terms_snapshot")
+  createdByUserId          String?             @map("created_by_user_id") @db.Uuid
+  createdAt                DateTime            @default(now()) @map("created_at")
+  updatedAt                DateTime            @updatedAt @map("updated_at")
+  enquiry                  B2BEnquiry          @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
+  businessBuyer            BusinessBuyer       @relation(fields: [businessBuyerId], references: [id], onDelete: Cascade)
+  seller                   Seller?             @relation(fields: [sellerId], references: [id], onDelete: SetNull)
+  product                  Product?            @relation(fields: [productId], references: [id], onDelete: SetNull)
+  selectedResponse         B2BEnquiryResponse? @relation("B2BOrderSelectedResponse", fields: [selectedResponseId], references: [id], onDelete: SetNull)
+  createdBy                User?               @relation("B2BOrderCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  events                   B2BOrderEvent[]
+
+  @@index([businessBuyerId])
+  @@index([sellerId])
+  @@index([productId])
+  @@index([selectedResponseId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([businessBuyerId, status, createdAt])
+  @@index([sellerId, status, createdAt])
+  @@map("b2b_orders")
+}
+
+model B2BOrderEvent {
+  id          String         @id @default(uuid()) @db.Uuid
+  b2bOrderId  String         @map("b2b_order_id") @db.Uuid
+  actorUserId String?        @map("actor_user_id") @db.Uuid
+  status      B2BOrderStatus
+  note        String?
+  payload     Json?
+  createdAt   DateTime       @default(now()) @map("created_at")
+  b2bOrder    B2BOrder       @relation(fields: [b2bOrderId], references: [id], onDelete: Cascade)
+  actor       User?          @relation("B2BOrderEventActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([b2bOrderId])
+  @@index([actorUserId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("b2b_order_events")
 }
 
 model Banner {

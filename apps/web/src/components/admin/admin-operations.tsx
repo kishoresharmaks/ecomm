@@ -631,6 +631,48 @@ type B2BEnquiryRecord = {
     createdAt?: string;
     responder?: UserRecord | null;
   }>;
+  b2bOrder?: B2BOrderRecord | null;
+};
+
+type B2BOrderRecord = {
+  id: string;
+  orderNumber: string;
+  enquiryId: string;
+  businessBuyerId: string;
+  sellerId?: string | null;
+  productId?: string | null;
+  selectedResponseId?: string | null;
+  status: string;
+  proformaInvoiceNumber: string;
+  proformaIssuedAt?: string;
+  proformaExpiresAt?: string | null;
+  purchaseOrderNumber?: string | null;
+  purchaseOrderFileKey?: string | null;
+  purchaseOrderNote?: string | null;
+  purchaseOrderSubmittedAt?: string | null;
+  purchaseOrderAcceptedAt?: string | null;
+  fulfilledAt?: string | null;
+  quantity: number;
+  unitPricePaise?: number | null;
+  subtotalPaise?: number | null;
+  currency?: string;
+  businessBuyer?: BusinessBuyerRecord | null;
+  seller?: SellerRecord | null;
+  product?: ProductRecord | null;
+  selectedResponse?: {
+    id: string;
+    responseMessage: string;
+    quotedPricePaise?: number | null;
+    createdAt?: string;
+    responder?: UserRecord | null;
+  } | null;
+  events?: Array<{
+    id: string;
+    status: string;
+    note?: string | null;
+    createdAt?: string;
+    actor?: UserRecord | null;
+  }>;
 };
 
 type SupportRequestRecord = {
@@ -4572,7 +4614,10 @@ export function AdminB2BEnquiriesPageClient() {
       adminRequest(`/api/admin/b2b-enquiries/${enquiryId}/finalise`, auth.authHeaders, {
         method: "PATCH",
       }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-b2b-enquiries"] }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin-b2b-enquiries"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-b2b-orders"] });
+    },
   });
   const items = listItems(query.data);
 
@@ -4649,7 +4694,7 @@ export function AdminB2BEnquiriesPageClient() {
                 onFinalise={() =>
                   confirmation.requestConfirmation({
                     title: "Finalise B2B enquiry?",
-                    description: `${item.businessBuyer?.companyName ?? "This buyer"} will be marked finalised. This is the closing operational state for the Phase 1 quotation flow.`,
+                    description: `${item.businessBuyer?.companyName ?? "This buyer"} will be marked finalised and a B2B order with proforma invoice will be issued for PO processing.`,
                     confirmLabel: "Finalise enquiry",
                     tone: "warning",
                     onConfirm: () => finalise.mutate(item.id),
@@ -4668,6 +4713,106 @@ export function AdminB2BEnquiriesPageClient() {
                   approve.isPending ||
                   finalise.isPending
                 }
+              />
+            ),
+          },
+        ]}
+      />
+    </AdminResourceChrome>
+  );
+}
+
+export function AdminB2BOrdersPageClient() {
+  const auth = useAdminAuth();
+  const queryClient = useQueryClient();
+  const [search, setSearch] = useState("");
+  const confirmation = useAdminConfirmation();
+  const query = useAdminList<B2BOrderRecord>(
+    "admin-b2b-orders",
+    "/api/admin/b2b-orders",
+    auth.authHeaders,
+    search,
+  );
+  const updateStatus = useMutation({
+    mutationFn: ({ orderNumber, status }: { orderNumber: string; status: string }) =>
+      adminRequest(`/api/admin/b2b-orders/${encodeURIComponent(orderNumber)}/status`, auth.authHeaders, {
+        method: "PATCH",
+        body: JSON.stringify({ status, note: "Updated from admin B2B order console." }),
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-b2b-orders"] }),
+  });
+  const items = listItems(query.data);
+
+  return (
+    <AdminResourceChrome
+      title="B2B orders"
+      description="Manage proforma invoices, buyer purchase orders, and B2B fulfilment lifecycle."
+      icon={<ClipboardList className="h-5 w-5" />}
+      search={search}
+      setSearch={setSearch}
+      query={query}
+      total={totalItems(query.data, items.length)}
+    >
+      {confirmation.dialog}
+      <AdminTable
+        items={items}
+        isLoading={query.isLoading}
+        emptyTitle="No B2B orders found"
+        columns={[
+          {
+            header: "Order",
+            cell: (item) => (
+              <EntityTitle
+                title={item.orderNumber}
+                subtitle={`Proforma ${item.proformaInvoiceNumber}`}
+              />
+            ),
+          },
+          {
+            header: "Buyer / seller",
+            cell: (item) => (
+              <SmallStack
+                lines={[
+                  item.businessBuyer?.companyName ?? "Business buyer",
+                  item.seller?.storeName ?? "No seller",
+                  item.product?.name ?? "General procurement",
+                ]}
+              />
+            ),
+          },
+          {
+            header: "Status",
+            cell: (item) => <StatusBadge tone={statusTone(item.status)}>{humanize(item.status)}</StatusBadge>,
+          },
+          {
+            header: "Commercials",
+            cell: (item) => (
+              <SmallStack
+                lines={[
+                  `Qty ${item.quantity}`,
+                  `Unit ${formatPaise(item.unitPricePaise ?? 0, item.currency ?? "INR")}`,
+                  `Subtotal ${formatPaise(item.subtotalPaise ?? 0, item.currency ?? "INR")}`,
+                  item.purchaseOrderNumber ? `PO ${item.purchaseOrderNumber}` : "PO not submitted",
+                ]}
+              />
+            ),
+          },
+          {
+            header: "Actions",
+            className: "min-w-[300px]",
+            cell: (item) => (
+              <B2BOrderAction
+                status={item.status}
+                disabled={updateStatus.isPending}
+                onStatus={(status) => {
+                  confirmation.requestConfirmation({
+                    title: `Move B2B order to ${humanize(status)}?`,
+                    description: `${item.orderNumber} will move from ${humanize(item.status)} to ${humanize(status)}.`,
+                    confirmLabel: humanize(status),
+                    ...(status === "CANCELLED" ? { tone: "warning" as const } : {}),
+                    onConfirm: () => updateStatus.mutate({ orderNumber: item.orderNumber, status }),
+                  });
+                }}
               />
             ),
           },
@@ -11821,12 +11966,83 @@ function B2BAction({
           {status === "BUYER_CONFIRMED"
             ? "Buyer confirmed this quotation. Approve it to move it toward finalisation."
             : status === "ADMIN_APPROVED"
-              ? "Admin approval is done. Finalise when the manual order or offline processing is ready."
+              ? "Admin approval is done. Finalise to issue a proforma invoice and open PO processing."
               : "This enquiry is locked for further responses."}
         </p>
       )}
     </div>
   );
+}
+
+function B2BOrderAction({
+  status,
+  onStatus,
+  disabled,
+}: {
+  status: string;
+  onStatus: (status: string) => void;
+  disabled?: boolean;
+}) {
+  const statusOptions = b2bOrderAdminStatusOptions(status);
+  const [nextStatus, setNextStatus] = useState(statusOptions[0] ?? "");
+  const statusSelectOptions = useMemo<AdminSelectOption[]>(
+    () => statusOptions.map((item) => ({ value: item, label: humanize(item) })),
+    [statusOptions],
+  );
+
+  useEffect(() => {
+    setNextStatus(b2bOrderAdminStatusOptions(status)[0] ?? "");
+  }, [status]);
+
+  if (!statusOptions.length) {
+    return (
+      <p className="text-xs font-semibold leading-5 text-[#667085]">
+        This B2B order is locked in its current commercial state.
+      </p>
+    );
+  }
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      <AdminListbox
+        label="B2B order status"
+        value={nextStatus}
+        options={statusSelectOptions}
+        onChange={setNextStatus}
+        compact
+        className="min-w-48 [&>span]:sr-only"
+        buttonClassName="bg-white"
+      />
+      <Button
+        type="button"
+        size="sm"
+        onClick={() => onStatus(nextStatus)}
+        disabled={disabled || !nextStatus}
+      >
+        Update
+      </Button>
+    </div>
+  );
+}
+
+function b2bOrderAdminStatusOptions(status: string) {
+  if (status === "PROFORMA_ISSUED") {
+    return ["CANCELLED"];
+  }
+
+  if (status === "PO_SUBMITTED") {
+    return ["PO_ACCEPTED", "CANCELLED"];
+  }
+
+  if (status === "PO_ACCEPTED") {
+    return ["IN_FULFILMENT", "CANCELLED"];
+  }
+
+  if (status === "IN_FULFILMENT") {
+    return ["FULFILLED", "CANCELLED"];
+  }
+
+  return [];
 }
 
 function b2bAdminStatusOptions(status: string) {
@@ -13924,7 +14140,7 @@ function HomepageSectionFields({
       </div>
       {form.sectionType === "deal_strip" ? (
         <p className="rounded-md bg-[#FFF7E6] px-3 py-2 text-xs font-semibold text-[#B54708]">
-          For Flash Sale, selected products are shown first. If no products are selected, active discounted products are used until the end date.
+          For Flash Sale, selected products are shown first. The end date powers the live storefront timer; if no products are selected, active discounted products are used until that time.
         </p>
       ) : null}
 

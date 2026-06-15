@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { Building2, FilePlus2, LayoutDashboard, ListChecks, UserRound } from "lucide-react";
+import { Building2, FilePlus2, FileText, LayoutDashboard, ListChecks, UserRound } from "lucide-react";
 import { cn } from "@indihub/ui";
 import { StorefrontFrame } from "@/components/storefront/storefront-frame";
 
@@ -12,6 +12,7 @@ const b2bNav = [
   { label: "Company profile", href: "/b2b/company-profile", icon: Building2 },
   { label: "New enquiry", href: "/b2b/enquiries/new", icon: FilePlus2 },
   { label: "My enquiries", href: "/b2b/enquiries", icon: ListChecks },
+  { label: "B2B orders", href: "/b2b/orders", icon: FileText },
   { label: "Register", href: "/b2b/register", icon: UserRound }
 ];
 

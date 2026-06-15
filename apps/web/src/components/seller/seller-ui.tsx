@@ -52,6 +52,7 @@ const sellerNavIcons: Record<string, ReactNode> = {
   "/seller/returns": <RotateCcw className="h-4 w-4" aria-hidden="true" />,
   "/seller/reviews": <Star className="h-4 w-4" aria-hidden="true" />,
   "/seller/b2b-enquiries": <MessageSquareText className="h-4 w-4" aria-hidden="true" />,
+  "/seller/b2b-orders": <ReceiptText className="h-4 w-4" aria-hidden="true" />,
   "/seller/reports/sales": <BarChart3 className="h-4 w-4" aria-hidden="true" />,
   "/seller/subscription": <CreditCard className="h-4 w-4" aria-hidden="true" />,
   "/seller/finance/wallet": <WalletCards className="h-4 w-4" aria-hidden="true" />,

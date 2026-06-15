@@ -92,6 +92,14 @@ export type BusinessBuyerEnquiryStatus =
   | "CLOSED"
   | "CANCELLED";
 
+export type B2BOrderStatus =
+  | "PROFORMA_ISSUED"
+  | "PO_SUBMITTED"
+  | "PO_ACCEPTED"
+  | "IN_FULFILMENT"
+  | "FULFILLED"
+  | "CANCELLED";
+
 export type BusinessBuyerEnquiry = {
   id: string;
   businessBuyerId: string;
@@ -105,10 +113,63 @@ export type BusinessBuyerEnquiry = {
   product?: B2BEnquiryProduct | null;
   seller?: SellerSummary | null;
   responses?: B2BEnquiryResponse[];
+  b2bOrder?: B2BOrder | null;
+};
+
+export type B2BOrderEvent = {
+  id: string;
+  status: B2BOrderStatus;
+  note?: string | null;
+  payload?: unknown;
+  createdAt?: string;
+  actor?: {
+    email?: string | null;
+    fullName?: string | null;
+  } | null;
+};
+
+export type B2BOrder = {
+  id: string;
+  orderNumber: string;
+  enquiryId: string;
+  businessBuyerId: string;
+  sellerId?: string | null;
+  productId?: string | null;
+  selectedResponseId?: string | null;
+  status: B2BOrderStatus;
+  proformaInvoiceNumber: string;
+  proformaIssuedAt?: string;
+  proformaExpiresAt?: string | null;
+  purchaseOrderNumber?: string | null;
+  purchaseOrderFileKey?: string | null;
+  purchaseOrderNote?: string | null;
+  purchaseOrderSubmittedAt?: string | null;
+  purchaseOrderAcceptedAt?: string | null;
+  fulfilledAt?: string | null;
+  quantity: number;
+  unitPricePaise?: number | null;
+  subtotalPaise?: number | null;
+  currency?: string;
+  termsSnapshot?: unknown;
+  createdAt?: string;
+  updatedAt?: string;
+  businessBuyer?: BusinessBuyerProfile | null;
+  product?: B2BEnquiryProduct | null;
+  seller?: SellerSummary | null;
+  selectedResponse?: B2BEnquiryResponse | null;
+  enquiry?: BusinessBuyerEnquiry | null;
+  events?: B2BOrderEvent[];
 };
 
 export type PaginatedBusinessBuyerEnquiries = {
   items: BusinessBuyerEnquiry[];
+  total: number;
+  page: number;
+  limit: number;
+};
+
+export type PaginatedB2BOrders = {
+  items: B2BOrder[];
   total: number;
   page: number;
   limit: number;
@@ -119,6 +180,12 @@ export type BusinessBuyerEnquiryPayload = {
   sellerId?: string | undefined;
   quantity: number;
   message: string;
+};
+
+export type BusinessBuyerPurchaseOrderPayload = {
+  purchaseOrderNumber: string;
+  purchaseOrderFileKey?: string | undefined;
+  note?: string | undefined;
 };
 
 export function getBusinessBuyerProfile(auth: IndihubAuthHeaders) {
@@ -213,6 +280,32 @@ export function confirmBusinessBuyerEnquiry(auth: IndihubAuthHeaders, enquiryId:
     `/api/b2b/enquiries/${encodeURIComponent(enquiryId)}/confirm`,
     {
       method: "PATCH"
+    },
+    auth
+  );
+}
+
+export function listBusinessBuyerB2BOrders(
+  auth: IndihubAuthHeaders,
+  query: { search?: string; status?: string; page?: number; limit?: number } = {}
+) {
+  return indihubFetch<PaginatedB2BOrders>(`/api/b2b/orders${queryString(query)}`, undefined, auth);
+}
+
+export function getBusinessBuyerB2BOrder(auth: IndihubAuthHeaders, orderNumber: string) {
+  return indihubFetch<B2BOrder>(`/api/b2b/orders/${encodeURIComponent(orderNumber)}`, undefined, auth);
+}
+
+export function submitBusinessBuyerPurchaseOrder(
+  auth: IndihubAuthHeaders,
+  orderNumber: string,
+  payload: BusinessBuyerPurchaseOrderPayload
+) {
+  return indihubFetch<B2BOrder>(
+    `/api/b2b/orders/${encodeURIComponent(orderNumber)}/purchase-order`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(payload)
     },
     auth
   );

@@ -1,0 +1,197 @@
+"use client";
+
+import Link from "next/link";
+import { FormEvent, useState } from "react";
+import { ArrowLeft, FileText, Search } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
+import { getSellerB2BOrder, listSellerB2BOrders, type SellerB2BOrder } from "@/lib/seller-api";
+import {
+  SellerAuthNotice,
+  SellerEmptyState,
+  SellerErrorPanel,
+  SellerOnboardingRequired,
+  SellerPanel,
+  SellerSelect,
+  SellerSkeleton,
+  SellerStatusPill,
+  formatDateTime,
+  isSellerOnboardingRequiredError,
+  useSellerAuth,
+} from "./seller-ui";
+import { formatMoney } from "@/lib/storefront-api";
+
+const orderStatuses = ["", "PROFORMA_ISSUED", "PO_SUBMITTED", "PO_ACCEPTED", "IN_FULFILMENT", "FULFILLED", "CANCELLED"];
+
+export function SellerB2BOrdersClient() {
+  const sellerAuth = useSellerAuth();
+  const [search, setSearch] = useState("");
+  const [submittedSearch, setSubmittedSearch] = useState("");
+  const [status, setStatus] = useState("");
+
+  const ordersQuery = useQuery({
+    queryKey: ["seller-b2b-orders", sellerAuth.authKey, submittedSearch, status],
+    queryFn: () =>
+      listSellerB2BOrders(sellerAuth.authHeaders, {
+        search: submittedSearch,
+        status,
+        limit: 30,
+      }),
+    enabled: sellerAuth.enabled,
+    retry: false,
+  });
+
+  function submitSearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSubmittedSearch(search.trim());
+  }
+
+  if (!sellerAuth.enabled) {
+    return <SellerAuthNotice />;
+  }
+
+  if (ordersQuery.error && isSellerOnboardingRequiredError(ordersQuery.error)) {
+    return <SellerOnboardingRequired message="Complete seller onboarding before viewing B2B proforma and PO orders." />;
+  }
+
+  const orders = ordersQuery.data?.items ?? [];
+
+  return (
+    <SellerPanel>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <SectionHeading title="B2B orders" description="Finalised B2B enquiries that now have proforma invoices and PO tracking." />
+        <form onSubmit={submitSearch} className="flex w-full gap-2 lg:max-w-md">
+          <label className="relative flex-1">
+            <span className="sr-only">Search B2B orders</span>
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#667085]" />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search order, proforma, PO"
+              className="h-11 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] pl-10 pr-3 text-sm font-semibold text-[#1F2933] outline-none focus:border-[#ED3500] focus:bg-white"
+            />
+          </label>
+          <Button type="submit">
+            <Search className="h-4 w-4" aria-hidden="true" />
+            Search
+          </Button>
+        </form>
+      </div>
+
+      <div className="mt-5 max-w-xs">
+        <SellerSelect label="B2B order status" name="status" value={status} onChange={setStatus}>
+          {orderStatuses.map((option) => (
+            <option key={option || "all"} value={option}>
+              {option ? option.replace(/_/g, " ") : "All B2B order statuses"}
+            </option>
+          ))}
+        </SellerSelect>
+      </div>
+
+      <div className="mt-5 grid gap-4">
+        {ordersQuery.isLoading ? <SellerSkeleton /> : null}
+        {ordersQuery.error ? <SellerErrorPanel error={ordersQuery.error} onRetry={() => void ordersQuery.refetch()} /> : null}
+        {!ordersQuery.isLoading && orders.length === 0 ? (
+          <SellerEmptyState title="No B2B orders found" message="B2B orders appear after admin finalises a buyer-confirmed quotation." />
+        ) : null}
+        {orders.map((order) => (
+          <Link key={order.id} href={`/seller/b2b-orders/${encodeURIComponent(order.orderNumber)}`} className="block rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-4 transition hover:border-[#ED3500]">
+            <B2BOrderHeader order={order} />
+          </Link>
+        ))}
+      </div>
+    </SellerPanel>
+  );
+}
+
+export function SellerB2BOrderDetailClient({ orderNumber }: { orderNumber: string }) {
+  const sellerAuth = useSellerAuth();
+  const orderQuery = useQuery({
+    queryKey: ["seller-b2b-order", sellerAuth.authKey, orderNumber],
+    queryFn: () => getSellerB2BOrder(sellerAuth.authHeaders, orderNumber),
+    enabled: sellerAuth.enabled,
+    retry: false,
+  });
+
+  if (!sellerAuth.enabled) {
+    return <SellerAuthNotice />;
+  }
+
+  if (orderQuery.error && isSellerOnboardingRequiredError(orderQuery.error)) {
+    return <SellerOnboardingRequired message="Complete seller onboarding before viewing B2B order detail." />;
+  }
+
+  const order = orderQuery.data;
+
+  return (
+    <div className="grid gap-5">
+      <div>
+        <Button asChild variant="ghost">
+          <Link href="/seller/b2b-orders">
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+            Back to B2B orders
+          </Link>
+        </Button>
+      </div>
+      {orderQuery.isLoading ? <SellerSkeleton /> : null}
+      {orderQuery.error ? <SellerErrorPanel error={orderQuery.error} onRetry={() => void orderQuery.refetch()} /> : null}
+      {order ? (
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <SellerPanel>
+            <B2BOrderHeader order={order} />
+            <div className="mt-5 grid gap-3 rounded-lg border border-[#E5E7EB] bg-white p-4 text-sm font-semibold leading-6 text-[#667085] md:grid-cols-2">
+              <Info label="Buyer" value={order.businessBuyer?.companyName ?? "Business buyer"} />
+              <Info label="Contact" value={order.businessBuyer?.contactPhone ?? "Phone unavailable"} />
+              <Info label="Product/store" value={order.product?.name ?? order.seller?.storeName ?? "General procurement"} />
+              <Info label="PO number" value={order.purchaseOrderNumber ?? "Not submitted"} />
+              <Info label="PO file" value={order.purchaseOrderFileKey ?? "Not attached"} />
+              <Info label="PO note" value={order.purchaseOrderNote ?? "No buyer note"} />
+            </div>
+          </SellerPanel>
+          <SellerPanel>
+            <SectionHeading title="Timeline" description="Commercial order events from proforma to fulfilment." />
+            <div className="mt-4 grid gap-3">
+              {(order.events ?? []).map((event) => (
+                <div key={event.id} className="rounded-md border border-[#E5E7EB] bg-[#F8FAFC] p-3 text-sm">
+                  <SellerStatusPill status={event.status} />
+                  <p className="mt-2 font-semibold leading-6 text-[#667085]">{event.note ?? "Status updated."}</p>
+                  <p className="mt-1 text-xs font-bold text-[#667085]">{formatDateTime(event.createdAt)}</p>
+                </div>
+              ))}
+            </div>
+          </SellerPanel>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function B2BOrderHeader({ order }: { order: SellerB2BOrder }) {
+  return (
+    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="grid h-10 w-10 place-items-center rounded-md bg-[#FFF0EA] text-[#ED3500]">
+            <FileText className="h-4 w-4" aria-hidden="true" />
+          </span>
+          <h2 className="text-xl font-black text-[#1F2933]">{order.orderNumber}</h2>
+          <SellerStatusPill status={order.status} />
+        </div>
+        <p className="mt-3 text-sm font-semibold leading-6 text-[#667085]">
+          Proforma {order.proformaInvoiceNumber} / Qty {order.quantity}
+        </p>
+        <p className="text-xs font-bold text-[#667085]">Issued {formatDateTime(order.proformaIssuedAt)}</p>
+      </div>
+      <StatusBadge tone="info">{formatMoney(order.subtotalPaise)}</StatusBadge>
+    </div>
+  );
+}
+
+function Info({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-xs font-black uppercase tracking-wide text-[#667085]">{label}</p>
+      <p className="mt-1 break-words text-sm font-black text-[#1F2933]">{value}</p>
+    </div>
+  );
+}
