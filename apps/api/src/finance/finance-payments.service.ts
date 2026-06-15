@@ -27,6 +27,7 @@ import {
   FinanceOfflinePaymentVerificationDto,
   FinancePaymentCollectionQueryDto,
 } from "./dto/finance.dto";
+import { FinanceCalculatorService } from "./finance-calculator.service";
 
 const offlinePaymentProviders = [PaymentProvider.BANK_TRANSFER, PaymentProvider.MANUAL] as const;
 
@@ -35,6 +36,7 @@ export class FinancePaymentsService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(NotificationsService) private readonly notifications: NotificationsService,
+    @Inject(FinanceCalculatorService) private readonly financeCalculator: FinanceCalculatorService,
   ) {}
 
   async dashboard() {
@@ -66,11 +68,7 @@ export class FinancePaymentsService {
       }),
       this.paymentMetric({ provider: PaymentProvider.MANUAL, status: PaymentStatus.PENDING }),
       this.paymentMetric({ provider: PaymentProvider.RAZORPAY, status: PaymentStatus.PAID }),
-      this.prisma.client.orderSellerSplit.aggregate({
-        where: { settlementStatus: SellerSettlementStatus.ELIGIBLE },
-        _count: { _all: true },
-        _sum: { sellerSubtotalPaise: true },
-      }),
+      this.eligibleSettlementDueMetric(),
       this.prisma.client.sellerPayout.aggregate({
         where: {
           status: { in: [SellerPayoutStatus.PENDING_APPROVAL, SellerPayoutStatus.APPROVED] },
@@ -93,10 +91,7 @@ export class FinancePaymentsService {
         bankTransferPending,
         manualPending,
         onlinePaid,
-        settlementDue: this.aggregateMetric(
-          settlementDue._count._all,
-          settlementDue._sum.sellerSubtotalPaise,
-        ),
+        settlementDue,
         payoutPending: this.aggregateMetric(
           payoutPending._count._all,
           payoutPending._sum.netPayablePaise,
@@ -385,6 +380,39 @@ export class FinancePaymentsService {
         _sum: { amountPaise: true },
       })
       .then((result) => this.aggregateMetric(result._count._all, result._sum.amountPaise));
+  }
+
+  private async eligibleSettlementDueMetric() {
+    const splits = await this.prisma.client.orderSellerSplit.findMany({
+      where: {
+        payoutId: null,
+        sellerStatus: { not: SellerOrderStatus.CANCELLED },
+        settlementStatus: SellerSettlementStatus.ELIGIBLE,
+        order: {
+          orderStatus: OrderStatus.DELIVERED,
+          paymentStatus: { in: [PaymentStatus.PAID, PaymentStatus.NOT_REQUIRED] },
+        },
+      },
+      include: {
+        order: {
+          include: {
+            items: {
+              include: {
+                product: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    let amountPaise = 0;
+    for (const split of splits) {
+      const calculation = await this.financeCalculator.calculateSplit(split);
+      amountPaise += calculation.netPayablePaise;
+    }
+
+    return this.aggregateMetric(splits.length, amountPaise);
   }
 
   private recentPayments() {

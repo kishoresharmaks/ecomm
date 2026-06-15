@@ -2,11 +2,13 @@
 
 Last updated: 2026-05-26
 
+> Historical scope update note. As of 08-06-2026, active work follows `docs/IndiHub_FULL_IMPLEMENTATION_SCOPE_GOVERNANCE.md`; selected finance/payment/payout features must be implemented completely rather than treated as Phase 1-only.
+
 ## Decision
 
-Phase 1 now includes a separate finance workspace at `/finance`.
+The product includes a separate finance workspace at `/finance`.
 
-This is a manual finance operations workspace. RazorpayX payout automation, automated bank reconciliation, and delivery partner payout automation remain future scope.
+This is a finance operations workspace. RazorpayX payout automation, automated bank reconciliation, and delivery partner payout automation are selectable expansion areas; if selected, they must be implemented as complete provider-backed workflows.
 
 ## Access Model
 

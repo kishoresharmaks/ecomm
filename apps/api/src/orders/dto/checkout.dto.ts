@@ -134,6 +134,13 @@ export class CheckoutShippingAddressDto {
 }
 
 export class PlaceOrderDto {
+  @ApiPropertyOptional({ example: "mobile_cart_01HX6D9T0QZP7N6P8K3R2B5C4D" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  @Matches(/^[A-Za-z0-9:_-]{12,120}$/)
+  idempotencyKey?: string;
+
   @ApiPropertyOptional({ example: "f2c7311c-6666-4444-8888-1b9c960acabc" })
   @IsOptional()
   @IsUUID()
@@ -184,6 +191,12 @@ export class PlaceOrderDto {
   @IsString()
   @MaxLength(500)
   customerNote?: string;
+
+  @ApiPropertyOptional({ example: "SAVE10" })
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z0-9_-]{3,32}$/)
+  couponCode?: string;
 
   @ApiPropertyOptional({ example: "GB" })
   @IsOptional()

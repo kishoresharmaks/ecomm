@@ -79,6 +79,28 @@ const trackingStatuses: CourierTrackingStatus[] = [
 
 const deliveryModes: DeliveryMode[] = ["LOCAL_DELIVERY_PARTNER", "THIRD_PARTY_COURIER", "STORE_PICKUP", "MANUAL_TRANSPORT"];
 
+type DeliveryPartnerManagementContext = {
+  basePath?: string;
+  assignmentBoardHref?: string;
+  listHelpText?: string;
+  profileHelpText?: string;
+  availabilityNoteSource?: string;
+};
+
+const defaultDeliveryPartnerContext: Required<DeliveryPartnerManagementContext> = {
+  basePath: "/courier/local-delivery/partners",
+  assignmentBoardHref: "/courier/local-delivery",
+  listHelpText: "Courier Manager can edit service coverage and availability only.",
+  profileHelpText: "Courier Manager can edit delivery profile data only. User account, roles, passwords, and finance verification stay outside this workspace.",
+  availabilityNoteSource: "courier workspace",
+};
+
+function deliveryPartnerContext(
+  context: DeliveryPartnerManagementContext = {},
+): Required<DeliveryPartnerManagementContext> {
+  return { ...defaultDeliveryPartnerContext, ...context };
+}
+
 export function CourierDashboardClient() {
   const auth = useAdminAuth();
   const dashboardQuery = useQuery({
@@ -469,7 +491,8 @@ export function CourierLocalDeliveryClient() {
   );
 }
 
-export function CourierDeliveryPartnersClient() {
+export function CourierDeliveryPartnersClient(contextProps: DeliveryPartnerManagementContext = {}) {
+  const context = deliveryPartnerContext(contextProps);
   const auth = useAdminAuth();
   const [search, setSearch] = useState("");
   const [availability, setAvailability] = useState("");
@@ -562,16 +585,16 @@ export function CourierDeliveryPartnersClient() {
           <div>
             <h2 className="text-lg font-black text-[#1F2933]">Delivery partner operations</h2>
             <p className="mt-1 text-sm font-semibold text-[#667085]">
-              {filteredPartners.length} partners visible. Courier Manager can edit service coverage and availability only.
+              {filteredPartners.length} partners visible. {context.listHelpText}
             </p>
           </div>
           <Button asChild variant="outline">
-            <Link href="/courier/local-delivery">Assignment board</Link>
+            <Link href={context.assignmentBoardHref}>Assignment board</Link>
           </Button>
         </div>
         <div className="divide-y divide-[#E5E7EB]">
           {filteredPartners.map((partner) => (
-            <DeliveryPartnerRow key={partner.id} partner={partner} />
+            <DeliveryPartnerRow key={partner.id} partner={partner} basePath={context.basePath} />
           ))}
           {!partnersQuery.isLoading && filteredPartners.length === 0 ? <EmptyRow message="No delivery partners found." /> : null}
         </div>
@@ -580,7 +603,11 @@ export function CourierDeliveryPartnersClient() {
   );
 }
 
-export function CourierDeliveryPartnerDetailClient({ userId }: { userId: string }) {
+export function CourierDeliveryPartnerDetailClient({
+  userId,
+  ...contextProps
+}: { userId: string } & DeliveryPartnerManagementContext) {
+  const context = deliveryPartnerContext(contextProps);
   const auth = useAdminAuth();
   const queryClient = useQueryClient();
   const partnerQuery = useQuery({
@@ -606,7 +633,12 @@ export function CourierDeliveryPartnerDetailClient({ userId }: { userId: string 
   });
   const availabilityMutation = useMutation({
     mutationFn: (isAvailable: boolean) =>
-      updateCourierDeliveryPartnerAvailability(auth.authHeaders, userId, isAvailable, isAvailable ? "Resumed from courier workspace." : "Paused from courier workspace."),
+      updateCourierDeliveryPartnerAvailability(
+        auth.authHeaders,
+        userId,
+        isAvailable,
+        isAvailable ? `Resumed from ${context.availabilityNoteSource}.` : `Paused from ${context.availabilityNoteSource}.`,
+      ),
     onSuccess: async () => {
       await invalidateCourierQueries(queryClient);
       await queryClient.invalidateQueries({ queryKey: ["courier-delivery-partner"] });
@@ -648,7 +680,7 @@ export function CourierDeliveryPartnerDetailClient({ userId }: { userId: string 
           </div>
           <div className="flex flex-wrap gap-2">
             <Button asChild variant="outline">
-              <Link href="/courier/local-delivery/partners">Back to partners</Link>
+              <Link href={context.basePath}>Back to partners</Link>
             </Button>
             <Button
               type="button"
@@ -674,7 +706,7 @@ export function CourierDeliveryPartnerDetailClient({ userId }: { userId: string 
       <section className="rounded-lg border border-[#D8E2EA] bg-white p-4 shadow-sm">
         <div className="mb-4">
           <h2 className="text-lg font-black text-[#1F2933]">Operational profile</h2>
-          <p className="mt-1 text-sm font-semibold text-[#667085]">Courier Manager can edit delivery profile data only. User account, roles, passwords, and finance verification stay outside this workspace.</p>
+          <p className="mt-1 text-sm font-semibold text-[#667085]">{context.profileHelpText}</p>
         </div>
         <div className="grid gap-4 lg:grid-cols-2">
           <TextInput label="Phone" value={form.phone} onChange={(value) => setForm((current) => ({ ...current, phone: value }))} />
@@ -1276,7 +1308,13 @@ function LocalDeliveryRow({ shipment, partners }: { shipment: CourierShipmentRec
   );
 }
 
-function DeliveryPartnerRow({ partner }: { partner: CourierDeliveryPartnerRecord }) {
+function DeliveryPartnerRow({
+  partner,
+  basePath,
+}: {
+  partner: CourierDeliveryPartnerRecord;
+  basePath: string;
+}) {
   const profile = partner.deliveryProfile;
 
   return (
@@ -1319,7 +1357,7 @@ function DeliveryPartnerRow({ partner }: { partner: CourierDeliveryPartnerRecord
       </div>
       <div className="flex justify-end">
         <Button asChild variant="outline">
-          <Link href={`/courier/local-delivery/partners/${partner.id}`}>Open profile</Link>
+          <Link href={`${basePath}/${partner.id}`}>Open profile</Link>
         </Button>
       </div>
     </article>

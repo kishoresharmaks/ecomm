@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { CreditCard, MapPin, Truck } from "lucide-react";
+import { CreditCard, Loader2, MapPin, TicketPercent, Truck, X } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, StatusBadge } from "@indihub/ui";
 import { CustomerAuthNotice } from "@/components/auth/customer-auth-notice";
@@ -26,6 +26,13 @@ import {
   type RazorpayOrderResponse,
   type PlaceOrderPayload,
 } from "@/lib/storefront-api";
+import {
+  couponApplyErrorMessage,
+  couponFeedbackClassName,
+  normalizeCouponCodeInput,
+  validateCouponCodeInput,
+  type CouponFeedback,
+} from "./coupon-feedback";
 import { StorefrontFrame } from "./storefront-frame";
 import { StorefrontProductAttributeChips } from "./storefront-product-attributes";
 import {
@@ -124,6 +131,10 @@ export function CheckoutPageClient() {
   const [paymentReference, setPaymentReference] = useState("");
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [couponInput, setCouponInput] = useState("");
+  const [appliedCouponCode, setAppliedCouponCode] = useState<string | null>(null);
+  const [pendingCouponCode, setPendingCouponCode] = useState<string | null>(null);
+  const [couponFeedback, setCouponFeedback] = useState<CouponFeedback | null>(null);
 
   const cartQuery = useQuery({
     queryKey: ["cart", customerAuth.authKey],
@@ -154,11 +165,12 @@ export function CheckoutPageClient() {
       buyerCountryCode: market.countryCode,
       deliveryPreference,
       paymentMethod,
+      ...(appliedCouponCode ? { couponCode: appliedCouponCode } : {}),
       ...(deliveryPreference !== "STORE_PICKUP" && selectedSavedAddress
         ? { addressId: selectedSavedAddress.id }
         : {}),
     }),
-    [deliveryPreference, market.countryCode, paymentMethod, selectedSavedAddress],
+    [appliedCouponCode, deliveryPreference, market.countryCode, paymentMethod, selectedSavedAddress],
   );
   const checkoutSummaryQuery = useQuery({
     queryKey: ["checkout-summary", customerAuth.authKey, checkoutSummaryOptions],
@@ -171,10 +183,68 @@ export function CheckoutPageClient() {
   const checkoutTotals = {
     itemCount: checkoutSummaryQuery.data?.itemCount ?? totals.itemCount,
     subtotalPaise: checkoutSummaryQuery.data?.subtotalPaise ?? totals.subtotalPaise,
+    buyerSubtotalMinor: checkoutSummaryQuery.data?.buyerSubtotalMinor ?? market.convert(totals.subtotalPaise),
+    payableSubtotalPaise:
+      checkoutSummaryQuery.data?.payableSubtotalPaise ?? checkoutSummaryQuery.data?.subtotalPaise ?? totals.subtotalPaise,
+    buyerPayableSubtotalMinor:
+      checkoutSummaryQuery.data?.buyerPayableSubtotalMinor ??
+      checkoutSummaryQuery.data?.buyerSubtotalMinor ??
+      market.convert(totals.subtotalPaise),
     shippingPaise: checkoutSummaryQuery.data?.shippingPaise ?? 0,
+    buyerShippingMinor: checkoutSummaryQuery.data?.buyerShippingMinor ?? 0,
     platformFeePaise: checkoutSummaryQuery.data?.platformFeePaise ?? 0,
+    buyerPlatformFeeMinor: checkoutSummaryQuery.data?.buyerPlatformFeeMinor ?? 0,
+    couponDiscountPaise: checkoutSummaryQuery.data?.couponDiscountPaise ?? 0,
+    buyerCouponDiscountMinor: checkoutSummaryQuery.data?.buyerCouponDiscountMinor ?? 0,
+    coupon: checkoutSummaryQuery.data?.coupon ?? null,
     totalPaise: checkoutSummaryQuery.data?.totalPaise ?? totals.subtotalPaise,
+    buyerTotalMinor: checkoutSummaryQuery.data?.buyerTotalMinor ?? market.convert(totals.subtotalPaise),
+    buyerCurrency: checkoutSummaryQuery.data?.buyerCurrency ?? market.market.currency,
+    buyerLocale: market.market.locale,
   };
+  const couponIsApplying = Boolean(pendingCouponCode && checkoutSummaryQuery.isFetching);
+  const couponApplied = Boolean(appliedCouponCode && checkoutTotals.coupon && !pendingCouponCode);
+
+  useEffect(() => {
+    if (!pendingCouponCode || checkoutSummaryQuery.isFetching) {
+      return;
+    }
+
+    if (checkoutSummaryQuery.isSuccess) {
+      const appliedCoupon = checkoutSummaryQuery.data?.coupon;
+      const appliedCode = appliedCoupon?.code;
+      if (appliedCoupon && appliedCode && normalizeCouponCodeInput(appliedCode) === pendingCouponCode) {
+        setCouponFeedback({
+          tone: "success",
+          message: `${appliedCode} applied. ${appliedCoupon.title}`,
+        });
+      } else {
+        setAppliedCouponCode(null);
+        setCouponFeedback({
+          tone: "danger",
+          message: "This coupon is not valid for the items in your cart.",
+        });
+      }
+      setPendingCouponCode(null);
+      return;
+    }
+
+    if (checkoutSummaryQuery.isError) {
+      setAppliedCouponCode(null);
+      setPendingCouponCode(null);
+      setCouponFeedback({
+        tone: "danger",
+        message: couponApplyErrorMessage(checkoutSummaryQuery.error),
+      });
+    }
+  }, [
+    checkoutSummaryQuery.data?.coupon,
+    checkoutSummaryQuery.error,
+    checkoutSummaryQuery.isError,
+    checkoutSummaryQuery.isFetching,
+    checkoutSummaryQuery.isSuccess,
+    pendingCouponCode,
+  ]);
   const paymentOptions = useMemo(
     () =>
       configuredPaymentOptions.map((option) => {
@@ -190,10 +260,13 @@ export function CheckoutPageClient() {
         return {
           ...option,
           enabled: false,
-          note: `Cash on delivery is available up to ${formatMoney(option.maxOrderPaise)}. Current total is ${formatMoney(checkoutTotals.totalPaise)}.`,
+          note:
+            checkoutTotals.buyerCurrency !== "INR"
+              ? `Cash on delivery is available up to ${formatMoney(option.maxOrderPaise)} INR (~${market.format(option.maxOrderPaise)}). Current total is ${formatMoney(checkoutTotals.buyerTotalMinor, checkoutTotals.buyerCurrency, checkoutTotals.buyerLocale)}.`
+              : `Cash on delivery is available up to ${formatMoney(option.maxOrderPaise)}. Current total is ${formatMoney(checkoutTotals.totalPaise)}.`,
         };
       }),
-    [configuredPaymentOptions, checkoutTotals.totalPaise],
+    [configuredPaymentOptions, checkoutTotals.buyerCurrency, checkoutTotals.buyerLocale, checkoutTotals.buyerTotalMinor, checkoutTotals.totalPaise, market],
   );
   const selectedPaymentOption = paymentOptions.find((option) => option.method === paymentMethod);
   const bankTransferDetails =
@@ -263,16 +336,19 @@ export function CheckoutPageClient() {
           ? { paymentReference: paymentReference.trim() }
           : {}),
         ...(customerNote.trim() ? { customerNote: customerNote.trim() } : {}),
+        ...(appliedCouponCode ? { couponCode: appliedCouponCode } : {}),
       };
 
-      if (useSavedAddress && selectedSavedAddress) {
-        payload.addressId = selectedSavedAddress.id;
-      } else {
-        const validation = validateAddress(manualAddress ?? initialAddress);
-        if (validation) {
-          throw new Error(validation);
+      if (deliveryPreference !== "STORE_PICKUP") {
+        if (useSavedAddress && selectedSavedAddress) {
+          payload.addressId = selectedSavedAddress.id;
+        } else {
+          const validation = validateAddress(manualAddress ?? initialAddress);
+          if (validation) {
+            throw new Error(validation);
+          }
+          payload.shippingAddress = cleanAddress(manualAddress ?? initialAddress);
         }
-        payload.shippingAddress = cleanAddress(manualAddress ?? initialAddress);
       }
 
       const order = await placeOrder(customerAuth.authHeaders, payload);
@@ -309,7 +385,13 @@ export function CheckoutPageClient() {
       router.push(`/checkout/success/${order.orderNumber}`);
     },
     onError: (error) =>
-      setFormError(error instanceof Error ? error.message : "Unable to place order."),
+      setFormError(
+        appliedCouponCode && error instanceof Error && error.message.toLowerCase().includes("coupon")
+          ? couponApplyErrorMessage(error)
+          : error instanceof Error
+            ? error.message
+            : "Unable to place order.",
+      ),
   });
 
   function submit(event: FormEvent<HTMLFormElement>) {
@@ -317,6 +399,32 @@ export function CheckoutPageClient() {
     setFormError(null);
     const form = new FormData(event.currentTarget);
     orderMutation.mutate(showManualAddress ? addressFromForm(form) : undefined);
+  }
+
+  function applyCoupon() {
+    const code = normalizeCouponCodeInput(couponInput);
+    const validation = validateCouponCodeInput(code);
+
+    if (validation) {
+      setCouponFeedback(validation);
+      setAppliedCouponCode(null);
+      setPendingCouponCode(null);
+      return;
+    }
+
+    setFormError(null);
+    setCouponFeedback(null);
+    setPendingCouponCode(code);
+    setAppliedCouponCode(code);
+    setCouponInput(code);
+  }
+
+  function removeCoupon() {
+    setAppliedCouponCode(null);
+    setPendingCouponCode(null);
+    setCouponInput("");
+    setCouponFeedback(null);
+    setFormError(null);
   }
 
   return (
@@ -588,54 +696,127 @@ export function CheckoutPageClient() {
             <StorefrontSkeleton className="mt-5 h-40" />
           ) : cartQuery.data?.items.length ? (
             <div className="mt-5 space-y-4">
-              {cartQuery.data.items.map((item) => (
-                <div
-                  key={item.id}
-                  className="flex justify-between gap-3 border-b border-[#E5E7EB] pb-3 text-sm"
-                >
-                  <div>
-                    <span className="font-semibold text-[#667085]">
-                      {item.productVariant.product.name} x {item.quantity}
-                    </span>
-                    <StorefrontProductAttributeChips
-                      product={item.productVariant.product}
-                      limit={2}
-                      variant="inline"
-                    />
+              {cartQuery.data.items.map((item) => {
+                const originalUnitPrice =
+                  item.originalUnitPricePaise && item.originalUnitPricePaise > item.unitPricePaise
+                    ? item.originalUnitPricePaise
+                    : item.productVariant.originalPricePaise && item.productVariant.originalPricePaise > item.unitPricePaise
+                      ? item.productVariant.originalPricePaise
+                      : null;
+                const activeDeal = item.activeDeal ?? item.productVariant.activeDeal ?? null;
+
+                return (
+                  <div
+                    key={item.id}
+                    className="flex justify-between gap-3 border-b border-[#E5E7EB] pb-3 text-sm"
+                  >
+                    <div>
+                      <span className="font-semibold text-[#667085]">
+                        {item.productVariant.product.name} x {item.quantity}
+                      </span>
+                      <StorefrontProductAttributeChips
+                        product={item.productVariant.product}
+                        limit={2}
+                        variant="inline"
+                      />
+                      {activeDeal ? (
+                        <p className="mt-1 text-xs font-black text-[#ED3500]">{activeDeal.discountBps / 100}% deal applied</p>
+                      ) : null}
+                    </div>
+                    <div className="text-right">
+                      <span className="font-black text-[#1F2933]">
+                        {market.format(item.quantity * item.unitPricePaise)}
+                      </span>
+                      {originalUnitPrice ? (
+                        <p className="text-xs font-bold text-[#98A2B3] line-through">{market.format(item.quantity * originalUnitPrice)}</p>
+                      ) : null}
+                    </div>
                   </div>
-                  <span className="font-black text-[#1F2933]">
-                    {market.format(item.quantity * item.unitPricePaise)}
-                  </span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <p className="mt-5 text-sm font-semibold text-[#667085]">Cart is empty.</p>
           )}
           <div className="mt-5 space-y-3 border-t border-[#E5E7EB] pt-5 text-sm font-semibold text-[#667085]">
+            <div className="rounded-2xl border border-[#FAD7CB] bg-[#FFFCFB] p-3">
+              <label className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.12em] text-[#ED3500]">
+                <TicketPercent className="h-4 w-4" />
+                Coupon
+              </label>
+              <div className="mt-3 flex gap-2">
+                <input
+                  value={couponInput}
+                  onChange={(event) => {
+                    setCouponInput(event.target.value.toUpperCase());
+                    if (!couponIsApplying && couponFeedback?.tone !== "success") {
+                      setCouponFeedback(null);
+                    }
+                  }}
+                  placeholder="Enter coupon code"
+                  className={`${storefrontInputClassName} h-11 flex-1 bg-white text-sm`}
+                  disabled={couponIsApplying || couponApplied}
+                />
+                {couponApplied ? (
+                  <button
+                    type="button"
+                    onClick={removeCoupon}
+                    className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-[#FAD7CB] bg-white text-[#ED3500] transition hover:bg-[#FFF2ED]"
+                    aria-label="Remove coupon"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                ) : (
+                  <Button type="button" variant="secondary" onClick={applyCoupon} disabled={couponIsApplying}>
+                    {couponIsApplying ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                        Applying
+                      </>
+                    ) : (
+                      "Apply"
+                    )}
+                  </Button>
+                )}
+              </div>
+              {couponFeedback ? (
+                <p
+                  className={`mt-2 text-xs font-bold ${couponFeedbackClassName(couponFeedback.tone)}`}
+                  role={couponFeedback.tone === "danger" ? "alert" : "status"}
+                  aria-live="polite"
+                >
+                  {couponFeedback.message}
+                </p>
+              ) : null}
+            </div>
             <StorefrontSummaryRow label="Items" value={checkoutTotals.itemCount} />
             <StorefrontSummaryRow
               label="Subtotal"
-              value={market.format(checkoutTotals.subtotalPaise)}
+              value={formatMoney(checkoutTotals.buyerSubtotalMinor, checkoutTotals.buyerCurrency, checkoutTotals.buyerLocale)}
             />
+            {checkoutTotals.couponDiscountPaise > 0 ? (
+              <StorefrontSummaryRow
+                label={`Coupon ${checkoutTotals.coupon?.code ?? ""}`.trim()}
+                value={`-${formatMoney(checkoutTotals.buyerCouponDiscountMinor, checkoutTotals.buyerCurrency, checkoutTotals.buyerLocale)}`}
+              />
+            ) : null}
             <StorefrontSummaryRow
               label="Shipping"
-              value={market.format(checkoutTotals.shippingPaise)}
+              value={formatMoney(checkoutTotals.buyerShippingMinor, checkoutTotals.buyerCurrency, checkoutTotals.buyerLocale)}
             />
             <StorefrontSummaryRow
               label="Platform fee"
-              value={market.format(checkoutTotals.platformFeePaise)}
+              value={formatMoney(checkoutTotals.buyerPlatformFeeMinor, checkoutTotals.buyerCurrency, checkoutTotals.buyerLocale)}
             />
             <StorefrontSummaryRow
               className="border-t border-[#E5E7EB] pt-4 text-base"
               label="Total"
-              value={market.format(checkoutTotals.totalPaise)}
+              value={formatMoney(checkoutTotals.buyerTotalMinor, checkoutTotals.buyerCurrency, checkoutTotals.buyerLocale)}
               strong
             />
-            {market.market.currency !== "INR" ? (
+            {checkoutTotals.buyerCurrency !== "INR" ? (
               <p className="text-xs font-semibold text-[#667085]">
-                Base total: {formatMoney(checkoutTotals.totalPaise)}. Final rate is locked by the
-                API when the order is placed.
+                Base total: {formatMoney(checkoutTotals.totalPaise)}. Final buyer-currency rate is locked by the API when the order is placed.
               </p>
             ) : null}
           </div>
@@ -647,7 +828,7 @@ export function CheckoutPageClient() {
               retryLabel="Retry cart"
             />
           ) : null}
-          {checkoutSummaryQuery.isError ? (
+          {checkoutSummaryQuery.isError && !couponFeedback ? (
             <StorefrontErrorPanel
               className="mt-5"
               error={checkoutSummaryQuery.error}

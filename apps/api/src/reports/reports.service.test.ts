@@ -45,7 +45,17 @@ describe("ReportsService", () => {
     prisma.client.seller.findUnique.mockResolvedValue({ id: "seller_1" });
     tx.orderSellerSplit.aggregate.mockResolvedValue({
       _count: 75,
-      _sum: { sellerSubtotalPaise: 900000, commissionPaise: 45000 }
+      _sum: {
+        sellerSubtotalPaise: 900000,
+        commissionPaise: 45000,
+        gstOnCommissionPaise: 8100,
+        tdsPaise: 9000,
+        tcsPaise: 4500,
+        platformFeePaise: 12000,
+        couponSellerFundedDiscountPaise: 15000,
+        couponAdjustmentPaise: 2000,
+        refundAdjustmentPaise: -5000
+      }
     });
     tx.orderSellerSplit.findMany.mockResolvedValue(Array.from({ length: 50 }, (_, index) => ({ id: `split_${index}` })));
     tx.product.count.mockResolvedValueOnce(8);
@@ -60,7 +70,14 @@ describe("ReportsService", () => {
       orderCount: 75,
       totalSalesPaise: 900000,
       commissionPaise: 45000,
-      netSalesPaise: 855000,
+      gstOnCommissionPaise: 8100,
+      tdsPaise: 9000,
+      tcsPaise: 4500,
+      platformFeePaise: 12000,
+      couponSellerFundedDiscountPaise: 15000,
+      couponAdjustmentPaise: 2000,
+      refundAdjustmentPaise: -5000,
+      netSalesPaise: 803400,
       products: 8,
       lowStockCount: 32,
       b2bEnquiries: 4
@@ -73,7 +90,14 @@ describe("ReportsService", () => {
       _count: true,
       _sum: {
         sellerSubtotalPaise: true,
-        commissionPaise: true
+        commissionPaise: true,
+        gstOnCommissionPaise: true,
+        tdsPaise: true,
+        tcsPaise: true,
+        platformFeePaise: true,
+        couponSellerFundedDiscountPaise: true,
+        couponAdjustmentPaise: true,
+        refundAdjustmentPaise: true
       }
     });
   });

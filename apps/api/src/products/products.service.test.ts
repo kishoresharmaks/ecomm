@@ -18,21 +18,46 @@ describe("ProductsService", () => {
         findFirst: vi.fn(),
       },
       product: {
+        create: vi.fn(),
         findUnique: vi.fn(),
         findFirst: vi.fn(),
         update: vi.fn(),
       },
+      productImage: {
+        createMany: vi.fn(),
+      },
       productVariant: {
+        create: vi.fn(),
         findUnique: vi.fn(),
+      },
+      inventoryMovement: {
+        create: vi.fn(),
+      },
+      hsnMaster: {
+        findFirst: vi.fn(),
+      },
+      setting: {
+        findUnique: vi.fn(),
+      },
+      productReview: {
+        groupBy: vi.fn().mockResolvedValue([]),
       },
       auditLog: {
         create: vi.fn(),
       },
+      $transaction: vi.fn(),
     },
   };
 
   beforeEach(() => {
     vi.clearAllMocks();
+    prisma.client.setting.findUnique.mockResolvedValue(null);
+    prisma.client.hsnMaster.findFirst.mockResolvedValue(null);
+    prisma.client.productImage.createMany.mockResolvedValue({ count: 0 });
+    prisma.client.inventoryMovement.create.mockResolvedValue({});
+    prisma.client.$transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) =>
+      callback(prisma.client),
+    );
   });
 
   const marketplaceEssentials = {
@@ -135,6 +160,88 @@ describe("ProductsService", () => {
     ).rejects.toBeInstanceOf(BadRequestException);
 
     expect(prisma.client.category.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("auto approves a valid seller product when the admin product rule is enabled", async () => {
+    const createdProduct = {
+      id: "product_auto",
+      name: "Premium Rice",
+      status: ProductStatus.ACTIVE,
+      approvalStatus: ApprovalStatus.APPROVED,
+      sellerId: "seller_1",
+      categoryId: "category_1",
+      seller: {
+        userId: "user_seller",
+        storeName: "Indi Local",
+        user: { email: "seller@example.com" },
+      },
+    };
+    prisma.client.seller.findUnique.mockResolvedValue({
+      id: "seller_1",
+      status: SellerStatus.APPROVED,
+      approvalStatus: ApprovalStatus.APPROVED,
+    });
+    prisma.client.category.findFirst.mockResolvedValue({
+      id: "category_1",
+      status: "ACTIVE",
+      defaultHsnCode: null,
+      defaultGstRatePercent: null,
+      productTemplate: null,
+    });
+    prisma.client.setting.findUnique.mockResolvedValue({ value: true });
+    prisma.client.product.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce(createdProduct);
+    prisma.client.product.create.mockResolvedValue(createdProduct);
+    prisma.client.productVariant.findUnique.mockResolvedValue(null);
+    prisma.client.productVariant.create.mockResolvedValue({
+      id: "variant_1",
+      stockQuantity: 20,
+    });
+    const service = new ProductsService(prisma as never, notifications as never);
+
+    const result = await service.createSellerProduct(
+      { id: "user_seller", clerkUserId: null, email: "seller@example.com", roles: [] },
+      {
+        categoryId: "category_1",
+        name: "Premium Rice",
+        description: "High quality local rice",
+        attributes: marketplaceEssentials,
+        variants: [{ pricePaise: 55000, stockQuantity: 20 }],
+      },
+    );
+
+    expect(result).toMatchObject({
+      status: ProductStatus.ACTIVE,
+      approvalStatus: ApprovalStatus.APPROVED,
+    });
+    expect(prisma.client.product.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        status: ProductStatus.ACTIVE,
+        approvalStatus: ApprovalStatus.APPROVED,
+      }),
+    });
+    expect(prisma.client.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: "product.auto_approved",
+        entityType: "product",
+        entityId: "product_auto",
+        newValue: expect.objectContaining({
+          autoApproved: true,
+          approvalStatus: ApprovalStatus.APPROVED,
+        }),
+      }),
+    });
+    expect(notifications.notifyEvent).toHaveBeenCalledWith({
+      eventCode: "PRODUCT_APPROVED",
+      recipientType: EmailRecipientType.SELLER,
+      recipient: "seller@example.com",
+      userId: "user_seller",
+      variables: {
+        productName: "Premium Rice",
+        sellerName: "Indi Local",
+        note: "Auto approved by marketplace product settings.",
+      },
+    });
+    expect(notifications.notifyAdminEvent).not.toHaveBeenCalled();
   });
 
   it("approves a submitted product, activates it, audits the decision, and notifies the seller", async () => {

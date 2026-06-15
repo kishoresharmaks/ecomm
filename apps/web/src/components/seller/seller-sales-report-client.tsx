@@ -79,7 +79,7 @@ export function SellerSalesReportClient() {
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <SellerMetric label="Gross sales" value={formatMoney(report.summary.totalSalesPaise)} note="Seller order subtotal" />
             <SellerMetric label="Commission" value={formatMoney(report.summary.commissionPaise)} note="Marketplace commission" />
-            <SellerMetric label="Net sales" value={formatMoney(report.summary.netSalesPaise)} note="Gross minus commission" />
+            <SellerMetric label="Net sales" value={formatMoney(report.summary.netSalesPaise)} note="After commission, tax, fees, coupons, and adjustments" />
             <SellerMetric label="Orders" value={report.summary.orderCount} note={`${report.summary.products} products tracked`} />
           </div>
 

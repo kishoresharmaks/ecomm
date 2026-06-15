@@ -140,8 +140,17 @@ export function SellerProductsClient({
   const saveMutation = useMutation({
     mutationFn: ({ productId, payload }: { productId?: string | undefined; payload: SellerProductPayload }) =>
       productId ? updateSellerProduct(sellerAuth.authHeaders, productId, payload) : createSellerProduct(sellerAuth.authHeaders, payload),
-    onSuccess: (_, variables) => {
-      setNotice(variables.productId ? "Product updated and sent for approval." : "Product submitted for admin approval.");
+    onSuccess: (product, variables) => {
+      const isLive = product.approvalStatus === "APPROVED" && product.status === "ACTIVE";
+      setNotice(
+        isLive
+          ? variables.productId
+            ? "Product updated and published."
+            : "Product created and published."
+          : variables.productId
+            ? "Product updated and sent for approval."
+            : "Product submitted for admin approval.",
+      );
       setDraftImages([]);
       setDraftVariants([emptyDraftVariant()]);
       setSelectedCategoryId(categories[0]?.id ?? "");

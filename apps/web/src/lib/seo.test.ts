@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { buildBreadcrumbJsonLd, metadataFromSeo, privateRobotsDisallow, publicRobotsAllow, robotsFromDirective } from "./seo";
+import {
+  buildBreadcrumbJsonLd,
+  buildProductJsonLd,
+  metadataFromSeo,
+  privateRobotsDisallow,
+  publicRobotsAllow,
+  robotsFromDirective,
+} from "./seo";
 
 describe("seo helpers", () => {
   it("maps robots directives into Next metadata robots values", () => {
@@ -53,7 +60,7 @@ describe("seo helpers", () => {
     expect(metadata.openGraph).toMatchObject({
       images: [
         {
-          url: "http://localhost:4000/api/storage/public-image?key=indihub%2Fcms%2Fhomepage-hero.jpg",
+          url: "http://192.168.1.3:4000/api/storage/public-image?key=indihub%2Fcms%2Fhomepage-hero.jpg",
           alt: "Local marketplace homepage"
         }
       ]
@@ -61,7 +68,7 @@ describe("seo helpers", () => {
     expect(metadata.twitter).toMatchObject({
       card: "summary_large_image",
       images: [
-        "http://localhost:4000/api/storage/public-image?key=indihub%2Fcms%2Fhomepage-hero.jpg"
+        "http://192.168.1.3:4000/api/storage/public-image?key=indihub%2Fcms%2Fhomepage-hero.jpg"
       ]
     });
   });
@@ -76,8 +83,58 @@ describe("seo helpers", () => {
       "@type": "BreadcrumbList",
       itemListElement: [
         expect.objectContaining({ position: 1, name: "Home" }),
-        expect.objectContaining({ position: 2, item: "http://localhost:3000/products/headset" })
+        expect.objectContaining({ position: 2, item: "http://192.168.1.3:3000/products/headset" })
       ]
+    });
+  });
+
+  it("adds product aggregateRating only when approved review summary exists", () => {
+    const product = {
+      id: "product_1",
+      sellerId: "seller_1",
+      categoryId: "category_1",
+      name: "Premium Rice",
+      slug: "premium-rice",
+      description: "High quality rice.",
+      status: "ACTIVE",
+      approvalStatus: "APPROVED",
+      category: { id: "category_1", name: "Groceries", slug: "groceries" },
+      seller: { id: "seller_1", storeName: "Indi Local", slug: "indi-local" },
+      images: [],
+      variants: [
+        {
+          id: "variant_1",
+          sku: "RICE-1",
+          pricePaise: 45000,
+          currency: "INR",
+          stockQuantity: 12,
+          status: "ACTIVE",
+        },
+      ],
+      reviewSummary: {
+        averageRating: null,
+        reviewCount: 0,
+        distribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+      },
+    };
+
+    expect(buildProductJsonLd(product).aggregateRating).toBeUndefined();
+
+    expect(
+      buildProductJsonLd({
+        ...product,
+        reviewSummary: {
+          averageRating: 4.5,
+          reviewCount: 8,
+          distribution: { 1: 0, 2: 0, 3: 1, 4: 3, 5: 4 },
+        },
+      }),
+    ).toMatchObject({
+      aggregateRating: {
+        "@type": "AggregateRating",
+        ratingValue: 4.5,
+        reviewCount: 8,
+      },
     });
   });
 

@@ -113,6 +113,61 @@ describe("AuthUsersService", () => {
     expect(tx.wishlist.upsert).not.toHaveBeenCalled();
     expect(notifications.notifyEvent).not.toHaveBeenCalled();
   });
+
+  it("preserves app-edited customer profile fields during repeated auth sync", async () => {
+    const tx = createAuthTx();
+    tx.user.findFirst.mockResolvedValue({
+      id: "user_3",
+      clerkUserId: "clerk_customer",
+      email: "customer@example.com",
+      fullName: "App Edited Name",
+      phone: "9876543210",
+      customer: {
+        displayName: "App Display",
+      },
+    });
+    tx.user.update.mockResolvedValue({
+      id: "user_3",
+      clerkUserId: "clerk_customer",
+      email: "customer@example.com",
+      fullName: "App Edited Name",
+      phone: "9876543210",
+      status: UserStatus.ACTIVE,
+    });
+    tx.role.upsert.mockResolvedValue({ id: "role_customer", code: RoleCode.CUSTOMER });
+    tx.customer.upsert.mockResolvedValue({ id: "customer_3", userId: "user_3" });
+
+    const service = new AuthUsersService(createPrisma(tx), notifications as never);
+
+    await service.syncAuthUser({
+      clerkUserId: "clerk_customer",
+      email: "customer@example.com",
+      fullName: "Stale Clerk Name",
+    });
+
+    expect(tx.user.update).toHaveBeenCalledWith({
+      where: { id: "user_3" },
+      data: {
+        clerkUserId: "clerk_customer",
+        email: "customer@example.com",
+        phone: "9876543210",
+        fullName: "App Edited Name",
+        status: UserStatus.ACTIVE,
+      },
+    });
+    expect(tx.customer.upsert).toHaveBeenCalledWith({
+      where: { userId: "user_3" },
+      update: {
+        displayName: "App Display",
+        status: UserStatus.ACTIVE,
+      },
+      create: {
+        userId: "user_3",
+        displayName: "Stale Clerk Name",
+        status: UserStatus.ACTIVE,
+      },
+    });
+  });
 });
 
 function createAuthTx() {

@@ -131,6 +131,30 @@ integrationDescribe("1HandIndia backend integration", () => {
     await app?.close();
   }, 60000);
 
+  async function progressSellerToProcessing(
+    orderNumber: string,
+    sellerUserId: string,
+    note: string,
+  ) {
+    await request(app.getHttpServer())
+      .patch(`/api/seller/orders/${orderNumber}/status`)
+      .set(authHeader(sellerUserId))
+      .send({
+        sellerStatus: SellerOrderStatus.ACCEPTED,
+        note: `${note} Seller accepted first.`,
+      })
+      .expect(200);
+
+    return request(app.getHttpServer())
+      .patch(`/api/seller/orders/${orderNumber}/status`)
+      .set(authHeader(sellerUserId))
+      .send({
+        sellerStatus: SellerOrderStatus.PROCESSING,
+        note,
+      })
+      .expect(200);
+  }
+
   it("keeps health public and blocks admin routes without the admin role", async () => {
     const health = await request(app.getHttpServer()).get("/api/health").expect(200);
     expect(health.body).toMatchObject({ ok: true, service: "indihub-api" });
@@ -459,10 +483,13 @@ integrationDescribe("1HandIndia backend integration", () => {
         ),
       )
       .mockResolvedValueOnce(
-        new Response(JSON.stringify([{ Message: "No records found", Status: "Error", PostOffice: null }]), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        }),
+        new Response(
+          JSON.stringify([{ Message: "No records found", Status: "Error", PostOffice: null }]),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        ),
       );
 
     try {
@@ -702,9 +729,9 @@ integrationDescribe("1HandIndia backend integration", () => {
       .get("/api/products")
       .query({ search: runId, limit: 20 })
       .expect(200);
-    const publicProduct = (publicProducts.body.items as Array<{ id?: string; seller?: unknown }>).find(
-      (item) => item.id === data.product.id,
-    );
+    const publicProduct = (
+      publicProducts.body.items as Array<{ id?: string; seller?: unknown }>
+    ).find((item) => item.id === data.product.id);
     expect(publicProduct?.seller).toBeTruthy();
     expectPublicProductSellerPayloadSafe(publicProduct?.seller);
   }, 30000);
@@ -841,6 +868,12 @@ integrationDescribe("1HandIndia backend integration", () => {
           newStatus: OrderStatus.CONFIRMED,
         }),
       ]),
+    );
+
+    await progressSellerToProcessing(
+      orderNumber,
+      data.sellerUser.id,
+      "Seller packed before manual courier dispatch.",
     );
 
     const delivery = await request(app.getHttpServer())
@@ -1114,6 +1147,12 @@ integrationDescribe("1HandIndia backend integration", () => {
         expect.objectContaining({ sellerId: data.otherSeller.id, status: DeliveryStatus.PENDING }),
       ]);
 
+      await progressSellerToProcessing(
+        orderNumber,
+        data.sellerUser.id,
+        "First seller packed before dispatching their own package.",
+      );
+
       const firstSellerDispatched = await request(app.getHttpServer())
         .patch(`/api/seller/orders/${orderNumber}/delivery`)
         .set(authHeader(data.sellerUser.id))
@@ -1153,6 +1192,165 @@ integrationDescribe("1HandIndia backend integration", () => {
       await clearActiveCustomerCart(prisma, data.customer.id);
     }
   }, 20000);
+
+  it("keeps multi-seller local orders out of delivery partner assignment until every seller packs", async () => {
+    const otherSellerProduct = await prisma.product.create({
+      data: {
+        sellerId: data.otherSeller.id,
+        categoryId: data.category.id,
+        name: `${runId} Other Seller Delivery Gate Product`,
+        slug: `${runId}-other-seller-delivery-gate-product`,
+        description: "Second seller product used to verify delivery partner readiness gates.",
+        status: ProductStatus.ACTIVE,
+        approvalStatus: ApprovalStatus.APPROVED,
+        searchText: `${runId} other seller delivery gate product`,
+        variants: {
+          create: {
+            sku: `${runId}-OTHER-DELIVERY-GATE-SKU`,
+            variantName: "1 Unit",
+            pricePaise: 8000,
+            mrpPaise: 10000,
+            stockQuantity: 10,
+            status: VariantStatus.ACTIVE,
+          },
+        },
+      },
+      include: { variants: true },
+    });
+    const otherSellerVariant = otherSellerProduct.variants[0];
+    if (!otherSellerVariant) {
+      throw new Error("Other seller delivery gate variant was not created.");
+    }
+
+    let orderNumber: string | undefined;
+    try {
+      await clearActiveCustomerCart(prisma, data.customer.id);
+      await request(app.getHttpServer())
+        .post("/api/cart/items")
+        .set(authHeader(data.customerUser.id))
+        .send({
+          productVariantId: data.productVariant.id,
+          quantity: 1,
+        })
+        .expect(201);
+      await request(app.getHttpServer())
+        .post("/api/cart/items")
+        .set(authHeader(data.customerUser.id))
+        .send({
+          productVariantId: otherSellerVariant.id,
+          quantity: 1,
+        })
+        .expect(201);
+
+      const order = await request(app.getHttpServer())
+        .post("/api/account/orders")
+        .set(authHeader(data.customerUser.id))
+        .send({
+          shippingAddress: {
+            fullName: "1HandIndia Multi Seller Delivery Customer",
+            phone: "9876543210",
+            line1: "48 Multi Seller Delivery Street",
+            city: "Coimbatore",
+            state: "Tamil Nadu",
+            pincode: "641012",
+          },
+          deliveryMode: DeliveryMode.LOCAL_DELIVERY_PARTNER,
+          paymentMethod: "MANUAL",
+          buyerCountryCode: "IN",
+          shippingPaise: 0,
+        })
+        .expect(201);
+
+      orderNumber = order.body.orderNumber as string;
+      expect(order.body.sellerSplits).toHaveLength(2);
+
+      const firstSellerPacked = await progressSellerToProcessing(
+        orderNumber,
+        data.sellerUser.id,
+        "Only the first seller packed.",
+      );
+      expect(firstSellerPacked.body.deliveryStatus).toBe(DeliveryStatus.PENDING);
+      expect(firstSellerPacked.body.deliveryDetail).toMatchObject({
+        status: DeliveryStatus.PENDING,
+        deliveryPartnerUserId: null,
+        assignmentStatus: DeliveryAssignmentStatus.UNASSIGNED,
+      });
+
+      const unassignedQueue = await request(app.getHttpServer())
+        .get("/api/admin/delivery/unassigned-orders")
+        .query({ search: orderNumber })
+        .set(adminSessionHeader)
+        .expect(200);
+      expect(unassignedQueue.body.items).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ orderNumber })]),
+      );
+
+      await request(app.getHttpServer())
+        .post(`/api/admin/delivery/orders/${orderNumber}/auto-assign`)
+        .set(adminSessionHeader)
+        .expect(400);
+      await request(app.getHttpServer())
+        .patch(`/api/admin/delivery/orders/${orderNumber}/assignment`)
+        .set(adminSessionHeader)
+        .send({
+          deliveryPartnerUserId: data.deliveryPartnerUser.id,
+          assignmentNote: "Should wait for every seller package.",
+        })
+        .expect(400);
+      await request(app.getHttpServer())
+        .patch(`/api/admin/orders/${orderNumber}/delivery`)
+        .set(adminSessionHeader)
+        .send({
+          deliveryMode: DeliveryMode.LOCAL_DELIVERY_PARTNER,
+          deliveryPartnerUserId: data.deliveryPartnerUser.id,
+          status: DeliveryStatus.PACKED,
+          deliveryNote: "Should wait for every seller package.",
+        })
+        .expect(400);
+
+      const allSellersPacked = await progressSellerToProcessing(
+        orderNumber,
+        data.otherSellerUser.id,
+        "Second seller packed, so delivery assignment is now allowed.",
+      );
+      expect(allSellersPacked.body.deliveryDetail).toMatchObject({
+        status: DeliveryStatus.PACKED,
+        deliveryPartnerUserId: data.deliveryPartnerUser.id,
+        assignmentStatus: DeliveryAssignmentStatus.ASSIGNED,
+        partnerName: data.deliveryPartnerUser.fullName,
+      });
+
+      const customerOrderAfterAssignment = await request(app.getHttpServer())
+        .get(`/api/account/orders/${orderNumber}`)
+        .set(authHeader(data.customerUser.id))
+        .expect(200);
+      expect(customerOrderAfterAssignment.body.deliveryDetail).toMatchObject({
+        status: DeliveryStatus.PACKED,
+        assignmentStatus: DeliveryAssignmentStatus.ASSIGNED,
+        partnerName: data.deliveryPartnerUser.fullName,
+        partnerPhone: "9876543210",
+        deliveryPartner: expect.objectContaining({
+          id: data.deliveryPartnerUser.id,
+          fullName: data.deliveryPartnerUser.fullName,
+          phone: "9876543210",
+        }),
+      });
+
+      const deliveryPartnerAssignedOrder = await request(app.getHttpServer())
+        .get(`/api/delivery/orders/${orderNumber}`)
+        .set(authHeader(data.deliveryPartnerUser.id))
+        .expect(200);
+      expect(deliveryPartnerAssignedOrder.body.items).toHaveLength(2);
+    } finally {
+      if (orderNumber) {
+        await request(app.getHttpServer())
+          .patch(`/api/account/orders/${orderNumber}/cancel`)
+          .set(authHeader(data.customerUser.id))
+          .send({ note: "Reset stock after multi-seller delivery readiness assertion" });
+      }
+      await clearActiveCustomerCart(prisma, data.customer.id);
+    }
+  }, 30000);
 
   it("keeps COD pending, marks verified Razorpay paid, and preserves payment status during seller updates", async () => {
     const razorpayKeySecret = `${runId}_rzp_secret`;
@@ -1551,6 +1749,103 @@ integrationDescribe("1HandIndia backend integration", () => {
         where: { id: data.productVariant.id },
         data: { stockQuantity: 20 },
       });
+    }
+  });
+
+  it("enforces step-by-step order, seller, and delivery status transitions", async () => {
+    let orderNumber: string | undefined;
+
+    await setCheckoutPaymentFlowSettings(prisma, {
+      codEnabled: false,
+      codMaxOrderPaise: 0,
+      codInstructions: "Pay cash to the delivery partner when the order is delivered.",
+      razorpayEnabled: false,
+      razorpayKeyId: "",
+      razorpayKeySecret: "",
+      bankTransferEnabled: false,
+      manualEnabled: true,
+    });
+
+    try {
+      await clearActiveCustomerCart(prisma, data.customer.id);
+      await request(app.getHttpServer())
+        .post("/api/cart/items")
+        .set(authHeader(data.customerUser.id))
+        .send({
+          productVariantId: data.productVariant.id,
+          quantity: 1,
+        })
+        .expect(201);
+
+      const order = await request(app.getHttpServer())
+        .post("/api/account/orders")
+        .set(authHeader(data.customerUser.id))
+        .send({
+          shippingAddress: {
+            fullName: "1HandIndia Step Customer",
+            phone: "9876543210",
+            line1: "12 Step Status Street",
+            city: "Coimbatore",
+            state: "Tamil Nadu",
+            pincode: "641012",
+          },
+          deliveryMode: DeliveryMode.THIRD_PARTY_COURIER,
+          paymentMethod: "MANUAL",
+          buyerCountryCode: "IN",
+          shippingPaise: 0,
+        })
+        .expect(201);
+      orderNumber = order.body.orderNumber as string;
+
+      const skippedAdminStatus = await request(app.getHttpServer())
+        .patch(`/api/admin/orders/${orderNumber}/status`)
+        .set(adminSessionHeader)
+        .send({
+          orderStatus: OrderStatus.DELIVERED,
+          note: "Should not skip order steps.",
+        })
+        .expect(400);
+      expect(skippedAdminStatus.body.message).toBe(
+        "Order status must move step by step. Placed can only move to Confirmed.",
+      );
+
+      const skippedSellerStatus = await request(app.getHttpServer())
+        .patch(`/api/seller/orders/${orderNumber}/status`)
+        .set(authHeader(data.sellerUser.id))
+        .send({
+          sellerStatus: SellerOrderStatus.PROCESSING,
+          note: "Should not skip seller acceptance.",
+        })
+        .expect(400);
+      expect(skippedSellerStatus.body.message).toBe(
+        "Seller order status must move step by step. Pending can only move to Accepted.",
+      );
+
+      await progressSellerToProcessing(
+        orderNumber,
+        data.sellerUser.id,
+        "Seller packed after accepting for delivery step test.",
+      );
+
+      const skippedDeliveryStatus = await request(app.getHttpServer())
+        .patch(`/api/seller/orders/${orderNumber}/delivery`)
+        .set(authHeader(data.sellerUser.id))
+        .send({
+          status: DeliveryStatus.IN_TRANSIT,
+          deliveryNote: "Should not skip dispatch.",
+        })
+        .expect(400);
+      expect(skippedDeliveryStatus.body.message).toBe(
+        "Delivery status must move step by step. Packed can only move to Dispatched.",
+      );
+    } finally {
+      if (orderNumber) {
+        await request(app.getHttpServer())
+          .patch(`/api/account/orders/${orderNumber}/cancel`)
+          .set(authHeader(data.customerUser.id))
+          .send({ note: "Reset stock after transition guard assertion" });
+      }
+      await clearActiveCustomerCart(prisma, data.customer.id);
     }
   });
 
@@ -2069,6 +2364,33 @@ integrationDescribe("1HandIndia backend integration", () => {
           status: DeliveryStatus.DELIVERED,
         }),
       ]);
+
+      const deliveredDetailReadback = await request(app.getHttpServer())
+        .get(`/api/delivery/orders/${orderNumber}`)
+        .set(authHeader(data.deliveryPartnerUser.id))
+        .expect(200);
+      expect(deliveredDetailReadback.body).toMatchObject({
+        orderNumber,
+        deliveryStatus: DeliveryStatus.DELIVERED,
+        deliveryDetail: {
+          deliveryPartnerUserId: data.deliveryPartnerUser.id,
+          assignmentStatus: DeliveryAssignmentStatus.ACCEPTED,
+        },
+      });
+
+      const deliveredListReadback = await request(app.getHttpServer())
+        .get("/api/delivery/orders")
+        .query({ deliveryStatus: DeliveryStatus.DELIVERED })
+        .set(authHeader(data.deliveryPartnerUser.id))
+        .expect(200);
+      expect(deliveredListReadback.body.items).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            orderNumber,
+            deliveryStatus: DeliveryStatus.DELIVERED,
+          }),
+        ]),
+      );
 
       const verifiedCod = await request(app.getHttpServer())
         .patch(`/api/admin/orders/${orderNumber}/cod-verification`)
@@ -2641,6 +2963,14 @@ integrationDescribe("1HandIndia backend integration", () => {
           note: "Seller accepted before delivery assignment.",
         })
         .expect(200);
+      await request(app.getHttpServer())
+        .patch(`/api/seller/orders/${orderNumber}/status`)
+        .set(authHeader(data.sellerUser.id))
+        .send({
+          sellerStatus: SellerOrderStatus.PROCESSING,
+          note: "Seller packed before delivery assignment.",
+        })
+        .expect(200);
 
       const assigned = await request(app.getHttpServer())
         .patch(`/api/admin/orders/${orderNumber}/delivery`)
@@ -2696,6 +3026,24 @@ integrationDescribe("1HandIndia backend integration", () => {
       expect(deliveryPartnerAssignedDelivery.trackingReference).toBe(generatedTrackingReference);
       expect(deliveryPartnerAssignedDelivery.assignmentStatus).toBe(
         DeliveryAssignmentStatus.ASSIGNED,
+      );
+      expect(deliveryPartnerAssignedOrder.body.shipments).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            seller: expect.objectContaining({
+              storeName: data.seller.storeName,
+              contactPhone: "9876543210",
+              pickupAddress: expect.objectContaining({
+                line1: "Integration Street",
+                area: "RS Puram",
+                city: "Coimbatore",
+                state: "Tamil Nadu",
+                pincode: "641012",
+                countryCode: "IN",
+              }),
+            }),
+          }),
+        ]),
       );
 
       await request(app.getHttpServer())
@@ -2767,6 +3115,11 @@ integrationDescribe("1HandIndia backend integration", () => {
           shippingPaise: 0,
         })
         .expect(201);
+      await progressSellerToProcessing(
+        sequenceOrder.body.orderNumber as string,
+        data.sellerUser.id,
+        "Seller packed before the second delivery assignment.",
+      );
       const secondAssigned = await request(app.getHttpServer())
         .patch(`/api/admin/orders/${sequenceOrder.body.orderNumber}/delivery`)
         .set(adminSessionHeader)
@@ -2817,14 +3170,11 @@ integrationDescribe("1HandIndia backend integration", () => {
         .expect(201);
       const autoOrderNumber = autoOrder.body.orderNumber as string;
 
-      const packedAutoAssigned = await request(app.getHttpServer())
-        .patch(`/api/seller/orders/${autoOrderNumber}/status`)
-        .set(authHeader(data.sellerUser.id))
-        .send({
-          sellerStatus: SellerOrderStatus.PROCESSING,
-          note: "Seller packed this order for pickup.",
-        })
-        .expect(200);
+      const packedAutoAssigned = await progressSellerToProcessing(
+        autoOrderNumber,
+        data.sellerUser.id,
+        "Seller packed this order for pickup.",
+      );
       expect(packedAutoAssigned.body.deliveryDetail).toMatchObject({
         status: DeliveryStatus.PACKED,
         deliveryPartnerUserId: data.deliveryPartnerUser.id,
@@ -2859,14 +3209,11 @@ integrationDescribe("1HandIndia backend integration", () => {
           shippingPaise: 0,
         })
         .expect(201);
-      const fallbackAssigned = await request(app.getHttpServer())
-        .patch(`/api/seller/orders/${fallbackOrder.body.orderNumber}/status`)
-        .set(authHeader(data.sellerUser.id))
-        .send({
-          sellerStatus: SellerOrderStatus.PROCESSING,
-          note: "Seller packed fallback-route order.",
-        })
-        .expect(200);
+      const fallbackAssigned = await progressSellerToProcessing(
+        fallbackOrder.body.orderNumber as string,
+        data.sellerUser.id,
+        "Seller packed fallback-route order.",
+      );
       const fallbackAssignedDelivery = fallbackAssigned.body.deliveryDetail as {
         assignmentNote: string;
         assignmentStatus: DeliveryAssignmentStatus;
@@ -2951,6 +3298,26 @@ integrationDescribe("1HandIndia backend integration", () => {
         .expect(200);
       expect(unassignedQueue.body.items).not.toEqual(
         expect.arrayContaining([expect.objectContaining({ orderNumber: autoOrderNumber })]),
+      );
+
+      const blockedTrackingEdit = await request(app.getHttpServer())
+        .patch(`/api/delivery/orders/${orderNumber}/delivery`)
+        .set(authHeader(data.deliveryPartnerUser.id))
+        .send({
+          status: DeliveryStatus.IN_TRANSIT,
+          trackingReference: `${generatedTrackingReference}-EDITED`,
+          deliveryNote: "Delivery partner should not edit tracking reference.",
+        })
+        .expect(400);
+      expect(blockedTrackingEdit.body.message).toContain(
+        "Tracking reference is generated during assignment",
+      );
+      const storedAfterBlockedTrackingEdit = await prisma.order.findUniqueOrThrow({
+        where: { orderNumber },
+        include: { deliveryDetail: true },
+      });
+      expect(storedAfterBlockedTrackingEdit.deliveryDetail?.trackingReference).toBe(
+        generatedTrackingReference,
       );
 
       const inTransit = await request(app.getHttpServer())
@@ -3233,14 +3600,11 @@ integrationDescribe("1HandIndia backend integration", () => {
       .expect(201);
     const courierOrderNumber = courierOrder.body.orderNumber as string;
 
-    const packedCourierOrder = await request(app.getHttpServer())
-      .patch(`/api/seller/orders/${courierOrderNumber}/status`)
-      .set(authHeader(data.sellerUser.id))
-      .send({
-        sellerStatus: SellerOrderStatus.PROCESSING,
-        note: "Seller packed third-party courier order.",
-      })
-      .expect(200);
+    const packedCourierOrder = await progressSellerToProcessing(
+      courierOrderNumber,
+      data.sellerUser.id,
+      "Seller packed third-party courier order.",
+    );
     expect(packedCourierOrder.body.deliveryDetail).toMatchObject({
       deliveryMode: DeliveryMode.THIRD_PARTY_COURIER,
       status: DeliveryStatus.PACKED,
@@ -3283,14 +3647,11 @@ integrationDescribe("1HandIndia backend integration", () => {
       .expect(201);
     const pickupOrderNumber = pickupOrder.body.orderNumber as string;
 
-    const packedPickupOrder = await request(app.getHttpServer())
-      .patch(`/api/seller/orders/${pickupOrderNumber}/status`)
-      .set(authHeader(data.sellerUser.id))
-      .send({
-        sellerStatus: SellerOrderStatus.PROCESSING,
-        note: "Seller packed store pickup order.",
-      })
-      .expect(200);
+    const packedPickupOrder = await progressSellerToProcessing(
+      pickupOrderNumber,
+      data.sellerUser.id,
+      "Seller packed store pickup order.",
+    );
     expect(packedPickupOrder.body.deliveryDetail).toMatchObject({
       deliveryMode: DeliveryMode.STORE_PICKUP,
       status: DeliveryStatus.PACKED,
@@ -3380,14 +3741,11 @@ integrationDescribe("1HandIndia backend integration", () => {
       }
       const expectedCodAmountPaise = orderBody.totalPaise;
 
-      await request(app.getHttpServer())
-        .patch(`/api/seller/orders/${orderNumber}/status`)
-        .set(authHeader(data.sellerUser.id))
-        .send({
-          sellerStatus: SellerOrderStatus.PROCESSING,
-          note: "Seller packed courier COD package.",
-        })
-        .expect(200);
+      await progressSellerToProcessing(
+        orderNumber,
+        data.sellerUser.id,
+        "Seller packed courier COD package.",
+      );
 
       const booked = await request(app.getHttpServer())
         .post(`/api/admin/courier-shipments/${shipmentNumber}/book`)
@@ -5466,11 +5824,22 @@ integrationDescribe("1HandIndia backend integration", () => {
         name: "Integration Support User",
         email: `${runId}-support@1handindia.test`,
         phone: "9876543210",
+        topic: "GENERAL",
+        requesterType: "GUEST",
+        preferredContactChannel: "EMAIL",
         subject: "Integration support request",
+        orderNumber: `${runId}-ORDER-FREE-TEXT`,
         message: "This public support request verifies the backend support API.",
       })
       .expect(201);
-    expect(support.body).toMatchObject({ subject: "Integration support request" });
+    expect(support.body).toMatchObject({
+      subject: "Integration support request",
+      topic: "GENERAL",
+      requesterType: "GUEST",
+      preferredContactChannel: "EMAIL",
+      source: "WEB_CONTACT",
+      orderNumber: `${runId}-ORDER-FREE-TEXT`,
+    });
 
     await request(app.getHttpServer())
       .get("/api/admin/settings")
@@ -6647,6 +7016,14 @@ async function seedHighVolumeAutoAssignmentData(
           status: PaymentStatus.PENDING,
         },
       },
+      sellerSplits: {
+        create: {
+          sellerId: data.seller.id,
+          sellerSubtotalPaise: 50_000,
+          netPayablePaise: 50_000,
+          sellerStatus: SellerOrderStatus.PROCESSING,
+        },
+      },
     },
   });
 
@@ -6999,7 +7376,9 @@ async function cleanupIntegrationData(prisma: PrismaClient) {
     where: { product: { sellerId: { in: sellerIds } } },
   });
   await prisma.productVariant.deleteMany({
-    where: { OR: [{ id: { in: productVariantIds } }, { product: { sellerId: { in: sellerIds } } }] },
+    where: {
+      OR: [{ id: { in: productVariantIds } }, { product: { sellerId: { in: sellerIds } } }],
+    },
   });
   await prisma.product.deleteMany({
     where: { OR: [{ id: { in: productIds } }, { sellerId: { in: sellerIds } }] },

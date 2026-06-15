@@ -517,6 +517,12 @@ const emailTemplates = [
     category: EmailTemplateCategory.SUPPORT,
     subject: "New support request",
   },
+  {
+    code: "SUPPORT_REQUEST_RESPONDED",
+    name: "Support request response",
+    category: EmailTemplateCategory.SUPPORT,
+    subject: "Response to your support request",
+  },
 ] as const;
 
 const emailTriggerRules = [
@@ -645,6 +651,12 @@ const emailTriggerRules = [
     EmailRecipientType.ADMIN,
     EmailTemplateCategory.SUPPORT,
     "SUPPORT_REQUEST_ALERT",
+  ],
+  [
+    "SUPPORT_REQUEST_RESPONDED",
+    EmailRecipientType.SUPPORT_REQUESTER,
+    EmailTemplateCategory.SUPPORT,
+    "SUPPORT_REQUEST_RESPONDED",
   ],
 ] as const;
 

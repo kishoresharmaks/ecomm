@@ -141,6 +141,7 @@ export type CourierShipmentRecord = {
   deliveryMode: DeliveryMode;
   status: string;
   assignmentStatus?: DeliveryAssignmentStatus | null;
+  assignmentExpiresAt?: string | null;
   routingFailed?: boolean;
   routingFailureReason?: string | null;
   routingFailureNote?: string | null;

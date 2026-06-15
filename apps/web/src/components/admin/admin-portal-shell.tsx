@@ -22,6 +22,7 @@ import {
 import {
   Activity,
   ArrowRight,
+  BadgePercent,
   BarChart3,
   Bell,
   BookOpen,
@@ -41,10 +42,12 @@ import {
   Package,
   PanelLeft,
   ReceiptText,
+  RotateCcw,
   Search,
   Settings,
   ShieldCheck,
   ShoppingBag,
+  Star,
   Store,
   Tags,
   Truck,
@@ -65,7 +68,9 @@ const iconByHref: Array<[string, typeof LayoutDashboard]> = [
   ["/admin/settings", Settings],
   ["/admin/audit-logs", ReceiptText],
   ["/admin/storage", Database],
+  ["/admin/search", Search],
   ["/admin/payments", Landmark],
+  ["/admin/refunds", WalletCards],
   ["/admin/email", Mail],
   ["/admin/notifications", Bell],
   ["/finance", WalletCards],
@@ -77,13 +82,18 @@ const iconByHref: Array<[string, typeof LayoutDashboard]> = [
   ["/admin/seller-subscriptions", CreditCard],
   ["/admin/reports", Activity],
   ["/admin/delivery-partner-applications", Truck],
+  ["/admin/delivery-partners", Truck],
   ["/admin/delivery", Truck],
   ["/admin/locations", Home],
   ["/admin/categories", Tags],
   ["/admin/cms", BookOpen],
   ["/admin/support", ShieldCheck],
   ["/admin/b2b-enquiries", Building2],
+  ["/admin/reviews", Star],
+  ["/admin/returns", RotateCcw],
   ["/admin/orders", ClipboardList],
+  ["/admin/deals", BadgePercent],
+  ["/admin/coupons", BadgePercent],
   ["/admin/products", ShoppingBag],
   ["/admin/sellers", Store],
   ["/admin/business-buyers", Building2],
@@ -216,17 +226,6 @@ export function AdminPortalShell({
                     <p className="mt-2 max-w-4xl text-sm font-semibold leading-6 text-[#667085]">
                       {description}
                     </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Button asChild variant="outline">
-                      <Link href="/admin/sellers/approvals">Seller approvals</Link>
-                    </Button>
-                    <Button asChild variant="outline">
-                      <Link href="/admin/products/approvals">Product approvals</Link>
-                    </Button>
-                    <Button asChild>
-                      <Link href="/admin/orders">Active orders</Link>
-                    </Button>
                   </div>
                 </div>
               </div>

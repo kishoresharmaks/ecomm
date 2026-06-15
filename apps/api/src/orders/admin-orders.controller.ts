@@ -22,6 +22,12 @@ export class AdminOrdersController {
     return this.ordersService.listAdminOrders(query);
   }
 
+  @Get("summary")
+  @ApiOperation({ summary: "Get admin order summary counts." })
+  getOrderSummary() {
+    return this.ordersService.getAdminOrderSummary();
+  }
+
   @Get(":orderNumber")
   @ApiOperation({ summary: "Read admin order detail." })
   getOrder(@Param("orderNumber") orderNumber: string) {

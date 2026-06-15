@@ -53,7 +53,7 @@ type SeoFallback = {
   type?: "website" | "article";
 };
 
-export const siteUrl = (process.env.NEXT_PUBLIC_WEB_URL ?? "http://localhost:3000").replace(/\/$/, "");
+export const siteUrl = (process.env.NEXT_PUBLIC_WEB_URL ?? "http://192.168.1.3:3000").replace(/\/$/, "");
 
 export const publicRobotsAllow = ["/", "/seller/register", "/b2b/register"] as const;
 
@@ -210,6 +210,7 @@ export function buildProductJsonLd(product: ProductSummary) {
   const brandName = productAttributeString(product, "brand") ?? product.seller.storeName;
   const gtin = productAttributeString(product, "gtin");
   const condition = productAttributeString(product, "condition");
+  const reviewSummary = product.reviewSummary;
 
   return {
     "@context": "https://schema.org",
@@ -237,7 +238,17 @@ export function buildProductJsonLd(product: ProductSummary) {
             name: product.seller.storeName
           }
         }
-      : undefined
+      : undefined,
+    aggregateRating:
+      reviewSummary?.reviewCount && reviewSummary.averageRating
+        ? {
+            "@type": "AggregateRating",
+            ratingValue: reviewSummary.averageRating,
+            reviewCount: reviewSummary.reviewCount,
+            bestRating: 5,
+            worstRating: 1
+          }
+        : undefined
   };
 }
 

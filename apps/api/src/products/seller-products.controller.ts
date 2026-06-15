@@ -27,13 +27,13 @@ export class SellerProductsController {
   }
 
   @Post()
-  @ApiOperation({ summary: "Submit a seller product for admin approval." })
+  @ApiOperation({ summary: "Submit a seller product; admin settings decide manual or automatic approval." })
   createSellerProduct(@CurrentUser() actor: RequestUser, @Body() dto: CreateSellerProductDto) {
     return this.productsService.createSellerProduct(actor, dto);
   }
 
   @Patch(":productId")
-  @ApiOperation({ summary: "Update a seller-owned product and send it back for approval." })
+  @ApiOperation({ summary: "Update a seller-owned product; admin settings decide manual or automatic approval." })
   updateSellerProduct(
     @CurrentUser() actor: RequestUser,
     @Param("productId") productId: string,

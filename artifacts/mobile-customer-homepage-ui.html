@@ -1,0 +1,809 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>1HandIndia Customer App Home Mockup</title>
+    <style>
+      :root {
+        --brand: #ed3500;
+        --brand-dark: #b92800;
+        --paper: #fffcfb;
+        --ink: #151515;
+        --muted: #6f6a67;
+        --line: #e5e7eb;
+        --soft: #fff3ef;
+        --green: #198754;
+        --gold: #f2a900;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background:
+          radial-gradient(circle at 25% 8%, rgba(237, 53, 0, 0.12), transparent 28%),
+          linear-gradient(135deg, #f7f7f7, #ffffff 45%, #f5ebe7);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+        color: var(--ink);
+      }
+
+      .canvas {
+        width: 1080px;
+        height: 1920px;
+        display: grid;
+        place-items: center;
+      }
+
+      .phone {
+        position: relative;
+        width: 430px;
+        height: 932px;
+        overflow: hidden;
+        border-radius: 46px;
+        background: var(--paper);
+        box-shadow:
+          0 34px 90px rgba(37, 23, 18, 0.22),
+          0 0 0 10px #191919,
+          0 0 0 12px #2b2b2b;
+      }
+
+      .speaker {
+        position: absolute;
+        top: 13px;
+        left: 50%;
+        z-index: 6;
+        width: 118px;
+        height: 28px;
+        transform: translateX(-50%);
+        border-radius: 999px;
+        background: #151515;
+      }
+
+      .screen {
+        height: 100%;
+        overflow: hidden;
+        background:
+          linear-gradient(180deg, rgba(237, 53, 0, 0.08), rgba(255, 252, 251, 0) 27%),
+          var(--paper);
+      }
+
+      .status {
+        height: 52px;
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        padding: 0 28px 8px;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .status-icons {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+
+      .dot {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: #191919;
+      }
+
+      .battery {
+        width: 22px;
+        height: 11px;
+        border: 1.6px solid #191919;
+        border-radius: 3px;
+        position: relative;
+      }
+
+      .battery::before {
+        content: "";
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        height: 5px;
+        width: 14px;
+        border-radius: 2px;
+        background: #191919;
+      }
+
+      .battery::after {
+        content: "";
+        position: absolute;
+        top: 3px;
+        right: -4px;
+        width: 2px;
+        height: 5px;
+        border-radius: 0 2px 2px 0;
+        background: #191919;
+      }
+
+      .header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 20px 12px;
+      }
+
+      .location {
+        min-width: 0;
+      }
+
+      .label {
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 700;
+        line-height: 1.2;
+      }
+
+      .place {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        margin-top: 3px;
+        color: var(--ink);
+        font-size: 17px;
+        font-weight: 900;
+      }
+
+      .header-actions {
+        display: flex;
+        gap: 9px;
+      }
+
+      .icon-button {
+        width: 40px;
+        height: 40px;
+        display: grid;
+        place-items: center;
+        border: 1px solid rgba(237, 53, 0, 0.18);
+        border-radius: 15px;
+        background: #ffffff;
+        color: var(--brand);
+        font-size: 17px;
+        font-weight: 900;
+        box-shadow: 0 8px 18px rgba(237, 53, 0, 0.08);
+      }
+
+      .search-wrap {
+        padding: 0 20px 14px;
+      }
+
+      .search {
+        height: 52px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: #ffffff;
+        padding: 0 15px;
+        color: #8a817d;
+        font-size: 14px;
+        font-weight: 650;
+        box-shadow: 0 12px 30px rgba(26, 18, 15, 0.05);
+      }
+
+      .content {
+        height: 740px;
+        overflow: hidden;
+        padding: 0 20px 102px;
+      }
+
+      .hero {
+        height: 178px;
+        position: relative;
+        overflow: hidden;
+        border-radius: 26px;
+        background:
+          linear-gradient(135deg, rgba(94, 26, 0, 0.9), rgba(237, 53, 0, 0.78)),
+          linear-gradient(90deg, #f4d2bd, #fee4d7);
+        color: #ffffff;
+      }
+
+      .hero::before {
+        content: "";
+        position: absolute;
+        right: -48px;
+        top: -38px;
+        width: 210px;
+        height: 210px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.13);
+      }
+
+      .hero::after {
+        content: "";
+        position: absolute;
+        right: 22px;
+        bottom: 18px;
+        width: 134px;
+        height: 100px;
+        border-radius: 30px;
+        background:
+          linear-gradient(145deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.05)),
+          linear-gradient(135deg, #f8c8a8, #ffffff);
+        box-shadow:
+          -54px 18px 0 -14px rgba(255, 255, 255, 0.24),
+          -28px -34px 0 -23px rgba(255, 255, 255, 0.42);
+      }
+
+      .hero-copy {
+        position: relative;
+        z-index: 2;
+        max-width: 226px;
+        padding: 23px 22px;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        height: 24px;
+        padding: 0 9px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.18);
+        font-size: 10px;
+        font-weight: 850;
+      }
+
+      .hero h1 {
+        margin: 10px 0 7px;
+        font-size: 24px;
+        line-height: 1.06;
+        letter-spacing: 0;
+      }
+
+      .hero p {
+        margin: 0;
+        color: rgba(255, 255, 255, 0.88);
+        font-size: 11px;
+        font-weight: 650;
+        line-height: 1.45;
+      }
+
+      .hero-action {
+        margin-top: 12px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        height: 34px;
+        padding: 0 14px;
+        border-radius: 12px;
+        background: #ffffff;
+        color: var(--brand-dark);
+        font-size: 12px;
+        font-weight: 900;
+      }
+
+      .section-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin: 18px 0 11px;
+      }
+
+      .section-head h2 {
+        margin: 0;
+        font-size: 18px;
+        line-height: 1.1;
+        letter-spacing: 0;
+      }
+
+      .section-head span {
+        color: var(--brand);
+        font-size: 12px;
+        font-weight: 900;
+      }
+
+      .category-row {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 10px;
+      }
+
+      .category {
+        min-width: 0;
+        display: grid;
+        gap: 7px;
+        place-items: center;
+        text-align: center;
+      }
+
+      .category-visual {
+        width: 58px;
+        height: 58px;
+        display: grid;
+        place-items: center;
+        border-radius: 20px;
+        background: #ffffff;
+        border: 1px solid rgba(237, 53, 0, 0.16);
+        box-shadow: 0 10px 20px rgba(46, 31, 23, 0.07);
+      }
+
+      .category-visual span {
+        width: 30px;
+        height: 30px;
+        border-radius: 10px;
+        background: var(--brand);
+        display: block;
+      }
+
+      .category:nth-child(2) .category-visual span {
+        background: #198754;
+        border-radius: 50% 50% 12px 12px;
+      }
+
+      .category:nth-child(3) .category-visual span {
+        background: #334155;
+        clip-path: polygon(50% 0, 100% 42%, 82% 100%, 18% 100%, 0 42%);
+      }
+
+      .category:nth-child(4) .category-visual span {
+        background: #f2a900;
+        border-radius: 50%;
+      }
+
+      .category:nth-child(5) .category-visual span {
+        background: #7c3aed;
+        border-radius: 8px 18px 8px 18px;
+      }
+
+      .category strong {
+        color: #393431;
+        font-size: 10px;
+        font-weight: 850;
+        line-height: 1.15;
+      }
+
+      .store-strip {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        height: 70px;
+        margin-top: 16px;
+        padding: 0 15px;
+        border: 1px solid rgba(25, 135, 84, 0.15);
+        border-radius: 22px;
+        background: linear-gradient(90deg, #f0fff7, #ffffff);
+      }
+
+      .store-logo {
+        width: 45px;
+        height: 45px;
+        display: grid;
+        place-items: center;
+        flex: 0 0 auto;
+        border-radius: 16px;
+        background: var(--green);
+        color: #ffffff;
+        font-size: 18px;
+        font-weight: 950;
+      }
+
+      .store-text {
+        min-width: 0;
+        flex: 1;
+      }
+
+      .store-text strong {
+        display: block;
+        font-size: 13px;
+        font-weight: 900;
+      }
+
+      .store-text span {
+        display: block;
+        margin-top: 2px;
+        color: #547062;
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .product-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+      }
+
+      .product {
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        background: #ffffff;
+        box-shadow: 0 12px 24px rgba(20, 16, 14, 0.05);
+      }
+
+      .product-art {
+        height: 102px;
+        position: relative;
+        overflow: hidden;
+        background:
+          linear-gradient(145deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0)),
+          linear-gradient(135deg, #fff0e8, #ffd8c8);
+      }
+
+      .product:nth-child(2) .product-art {
+        background: linear-gradient(135deg, #eefcf4, #c7f0d9);
+      }
+
+      .product:nth-child(3) .product-art {
+        background: linear-gradient(135deg, #f3f4f6, #dbeafe);
+      }
+
+      .product:nth-child(4) .product-art {
+        background: linear-gradient(135deg, #fff9df, #fde68a);
+      }
+
+      .product-art::before {
+        content: "";
+        position: absolute;
+        left: 26px;
+        top: 22px;
+        width: 74px;
+        height: 74px;
+        border-radius: 22px;
+        background: rgba(255, 255, 255, 0.75);
+        box-shadow: 42px 18px 0 -18px rgba(255, 255, 255, 0.58);
+      }
+
+      .product-art::after {
+        content: "";
+        position: absolute;
+        right: 18px;
+        bottom: 16px;
+        width: 54px;
+        height: 54px;
+        border-radius: 18px;
+        background: rgba(237, 53, 0, 0.86);
+      }
+
+      .product:nth-child(2) .product-art::after {
+        background: rgba(25, 135, 84, 0.82);
+        border-radius: 50%;
+      }
+
+      .product:nth-child(3) .product-art::after {
+        background: rgba(51, 65, 85, 0.88);
+        clip-path: polygon(50% 0, 100% 42%, 80% 100%, 20% 100%, 0 42%);
+      }
+
+      .product:nth-child(4) .product-art::after {
+        background: rgba(242, 169, 0, 0.9);
+        border-radius: 50% 50% 18px 18px;
+      }
+
+      .product-body {
+        padding: 11px 12px 13px;
+      }
+
+      .product-body h3 {
+        margin: 0;
+        font-size: 13px;
+        line-height: 1.25;
+        letter-spacing: 0;
+      }
+
+      .seller {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 10px;
+        font-weight: 700;
+      }
+
+      .price-line {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: 9px;
+      }
+
+      .price {
+        color: var(--ink);
+        font-size: 14px;
+        font-weight: 950;
+      }
+
+      .add {
+        width: 31px;
+        height: 31px;
+        display: grid;
+        place-items: center;
+        border-radius: 12px;
+        background: var(--brand);
+        color: #ffffff;
+        font-size: 19px;
+        font-weight: 900;
+      }
+
+      .order-card {
+        margin-top: 18px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-height: 80px;
+        border: 1px solid rgba(237, 53, 0, 0.12);
+        border-radius: 24px;
+        background: #ffffff;
+        padding: 14px;
+        box-shadow: 0 13px 28px rgba(237, 53, 0, 0.06);
+      }
+
+      .order-mark {
+        width: 45px;
+        height: 45px;
+        display: grid;
+        place-items: center;
+        flex: 0 0 auto;
+        border-radius: 16px;
+        background: var(--soft);
+        color: var(--brand);
+        font-size: 18px;
+        font-weight: 950;
+      }
+
+      .order-copy {
+        min-width: 0;
+        flex: 1;
+      }
+
+      .order-copy strong {
+        display: block;
+        font-size: 13px;
+        font-weight: 950;
+      }
+
+      .order-copy span {
+        display: block;
+        margin-top: 3px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .progress {
+        width: 74px;
+        height: 6px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: #f1d7cf;
+      }
+
+      .progress span {
+        display: block;
+        width: 68%;
+        height: 100%;
+        background: var(--brand);
+      }
+
+      .bottom-tabs {
+        position: absolute;
+        left: 16px;
+        right: 16px;
+        bottom: 16px;
+        height: 74px;
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        align-items: center;
+        border: 1px solid rgba(229, 231, 235, 0.9);
+        border-radius: 27px;
+        background: rgba(255, 255, 255, 0.94);
+        box-shadow: 0 -8px 30px rgba(35, 26, 22, 0.11);
+        backdrop-filter: blur(20px);
+      }
+
+      .tab {
+        display: grid;
+        gap: 5px;
+        place-items: center;
+        color: #8d8784;
+        font-size: 10px;
+        font-weight: 800;
+      }
+
+      .tab-icon {
+        width: 23px;
+        height: 23px;
+        display: grid;
+        place-items: center;
+        border-radius: 9px;
+        font-size: 14px;
+        font-weight: 950;
+      }
+
+      .tab.active {
+        color: var(--brand);
+      }
+
+      .tab.active .tab-icon {
+        background: var(--soft);
+      }
+
+      .caption {
+        position: absolute;
+        left: 50%;
+        bottom: 56px;
+        transform: translateX(-50%);
+        color: rgba(38, 30, 27, 0.62);
+        font-size: 17px;
+        font-weight: 800;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="canvas">
+      <section class="phone" aria-label="1HandIndia customer mobile app home screen mockup">
+        <div class="speaker"></div>
+        <div class="screen">
+          <div class="status">
+            <span>9:41</span>
+            <div class="status-icons" aria-hidden="true">
+              <span class="dot"></span>
+              <span class="dot"></span>
+              <span class="dot"></span>
+              <span class="battery"></span>
+            </div>
+          </div>
+
+          <header class="header">
+            <div class="location">
+              <div class="label">Delivering to</div>
+              <div class="place">Salem 636001</div>
+            </div>
+            <div class="header-actions">
+              <div class="icon-button">B</div>
+              <div class="icon-button">C</div>
+            </div>
+          </header>
+
+          <div class="search-wrap">
+            <div class="search">Search products, stores, categories</div>
+          </div>
+
+          <div class="content">
+            <section class="hero">
+              <div class="hero-copy">
+                <span class="eyebrow">1HandIndia Express</span>
+                <h1>Local stores. One smart checkout.</h1>
+        <p>Essentials, fashion and more from approved sellers near you.</p>
+                <div class="hero-action">Start Shopping</div>
+              </div>
+            </section>
+
+            <div class="section-head">
+              <h2>Shop by category</h2>
+              <span>View all</span>
+            </div>
+
+            <div class="category-row">
+              <div class="category">
+                <div class="category-visual"><span></span></div>
+                <strong>Grocery</strong>
+              </div>
+              <div class="category">
+                <div class="category-visual"><span></span></div>
+                <strong>Fresh</strong>
+              </div>
+              <div class="category">
+                <div class="category-visual"><span></span></div>
+                <strong>Fashion</strong>
+              </div>
+              <div class="category">
+                <div class="category-visual"><span></span></div>
+                <strong>Home</strong>
+              </div>
+              <div class="category">
+                <div class="category-visual"><span></span></div>
+                <strong>Beauty</strong>
+              </div>
+            </div>
+
+            <div class="store-strip">
+              <div class="store-logo">1H</div>
+              <div class="store-text">
+                <strong>Nearby approved stores</strong>
+                <span>12 sellers delivering to your area today</span>
+              </div>
+              <span class="section-head span">Open</span>
+            </div>
+
+            <div class="section-head">
+              <h2>Fresh picks</h2>
+              <span>See more</span>
+            </div>
+
+            <div class="product-grid">
+              <article class="product">
+                <div class="product-art"></div>
+                <div class="product-body">
+                  <h3>Daily essentials combo</h3>
+                  <div class="seller">Sri Market Store</div>
+                  <div class="price-line">
+                    <span class="price">Rs 549</span>
+                    <span class="add">+</span>
+                  </div>
+                </div>
+              </article>
+              <article class="product">
+                <div class="product-art"></div>
+                <div class="product-body">
+                  <h3>Farm fresh vegetables</h3>
+                  <div class="seller">Green Valley</div>
+                  <div class="price-line">
+                    <span class="price">Rs 189</span>
+                    <span class="add">+</span>
+                  </div>
+                </div>
+              </article>
+              <article class="product">
+                <div class="product-art"></div>
+                <div class="product-body">
+                  <h3>Cotton casual shirt</h3>
+                  <div class="seller">Urban Looms</div>
+                  <div class="price-line">
+                    <span class="price">Rs 899</span>
+                    <span class="add">+</span>
+                  </div>
+                </div>
+              </article>
+              <article class="product">
+                <div class="product-art"></div>
+                <div class="product-body">
+                  <h3>Kitchen starter set</h3>
+                  <div class="seller">Home Point</div>
+                  <div class="price-line">
+                    <span class="price">Rs 1,299</span>
+                    <span class="add">+</span>
+                  </div>
+                </div>
+              </article>
+            </div>
+
+            <div class="order-card">
+              <div class="order-mark">T</div>
+              <div class="order-copy">
+                <strong>Order #1H1028 is out for delivery</strong>
+                <span>Expected today before 7:30 PM</span>
+              </div>
+              <div class="progress"><span></span></div>
+            </div>
+          </div>
+
+          <nav class="bottom-tabs">
+            <div class="tab active">
+              <div class="tab-icon">H</div>
+              <span>Home</span>
+            </div>
+            <div class="tab">
+              <div class="tab-icon">S</div>
+              <span>Search</span>
+            </div>
+            <div class="tab">
+              <div class="tab-icon">C</div>
+              <span>Cart</span>
+            </div>
+            <div class="tab">
+              <div class="tab-icon">O</div>
+              <span>Orders</span>
+            </div>
+            <div class="tab">
+              <div class="tab-icon">A</div>
+              <span>Account</span>
+            </div>
+          </nav>
+        </div>
+      </section>
+      <div class="caption">1HandIndia customer mobile app home UI concept</div>
+    </main>
+  </body>
+</html>

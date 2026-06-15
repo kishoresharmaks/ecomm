@@ -21,6 +21,7 @@ import type { RequestUser } from "../auth/types/indihub-request";
 import { EMAIL_TRIGGER_EVENTS } from "../notifications/email-trigger-catalog";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { ReturnsService } from "../returns/returns.service";
 import { SellerSubscriptionsService } from "../sellers/seller-subscriptions.service";
 import { readBooleanSetting, readNumberSetting } from "../settings/setting-value-utils";
 import { UpsertPaymentConfigurationDto } from "./dto/payment-config.dto";
@@ -104,6 +105,9 @@ export class PaymentsService {
     @Optional()
     @Inject(SellerSubscriptionsService)
     private readonly sellerSubscriptions?: SellerSubscriptionsService,
+    @Optional()
+    @Inject(ReturnsService)
+    private readonly returnsService?: ReturnsService,
   ) {}
 
   async readiness() {
@@ -674,6 +678,11 @@ export class PaymentsService {
       await this.sellerSubscriptions?.handleRazorpaySubscriptionWebhook(payload, eventId);
     if (sellerSubscriptionResult?.handled) {
       return sellerSubscriptionResult;
+    }
+
+    const refundResult = await this.returnsService?.handleRazorpayRefundWebhook(payload, eventId);
+    if (refundResult?.handled) {
+      return { received: true, ...refundResult };
     }
 
     const event = String(payload.event ?? "");

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { brandConfig } from "@indihub/config";
+import { ConfiguredOriginRedirect } from "@/components/auth/configured-origin-redirect";
 import { Providers } from "@/components/providers";
 import { siteUrl } from "@/lib/seo";
 import "../styles/globals.css";
@@ -23,6 +24,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en">
       <body>
+        <ConfiguredOriginRedirect />
         <Providers>{children}</Providers>
       </body>
     </html>

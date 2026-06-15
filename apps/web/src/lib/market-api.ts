@@ -39,3 +39,13 @@ export function convertBaseMinorToMarket(baseMinor: number | null | undefined, m
 
   return Math.round((value / 100) * market.rate * 100);
 }
+
+export function marketNeedsRefresh(market?: Pick<MarketCurrency, "expiresAt"> | null, now = Date.now()) {
+  const expiresAt = market?.expiresAt;
+  if (!expiresAt) {
+    return true;
+  }
+
+  const timestamp = new Date(expiresAt).getTime();
+  return !Number.isFinite(timestamp) || now >= timestamp;
+}

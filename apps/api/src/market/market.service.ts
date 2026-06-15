@@ -1,8 +1,17 @@
-import { BadRequestException, Inject, Injectable, ServiceUnavailableException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
 import { Prisma } from "@indihub/database";
 import { PrismaService } from "../prisma/prisma.service";
 
 const FRANKFURTER_BASE_URL = "https://api.frankfurter.dev/v2";
+
+type CurrencyRateRecord = {
+  baseCurrency: string;
+  quoteCurrency: string;
+  rate: Prisma.Decimal;
+  provider: string;
+  fetchedAt: Date;
+  expiresAt: Date;
+};
 
 export type MarketCurrencySnapshot = {
   countryCode: string;
@@ -19,6 +28,9 @@ export type MarketCurrencySnapshot = {
 
 @Injectable()
 export class MarketService {
+  private readonly logger = new Logger(MarketService.name);
+  private readonly refreshPromises = new Map<string, Promise<CurrencyRateRecord>>();
+
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async getMarketCurrency(countryCode = "IN", options: { requireFresh?: boolean } = {}): Promise<MarketCurrencySnapshot> {
@@ -66,14 +78,16 @@ export class MarketService {
     });
 
     if (cached && cached.expiresAt > now) {
+      this.logger.debug(`FX cache hit ${baseCurrency}->${country.currency} via ${provider}`);
       return this.snapshotFromRate(country, cached, false);
     }
 
     try {
-      const refreshed = await this.fetchAndStoreRate(baseCurrency, country.currency, provider);
+      const refreshed = await this.fetchAndStoreRateCoalesced(baseCurrency, country.currency, provider);
       return this.snapshotFromRate(country, refreshed, false);
     } catch {
       if (cached && !options.requireFresh) {
+        this.logger.warn(`FX provider unavailable; serving stale ${baseCurrency}->${country.currency} via ${provider}`);
         return this.snapshotFromRate(country, cached, true);
       }
 
@@ -91,6 +105,37 @@ export class MarketService {
     }
 
     return Math.round((baseMinor / 100) * market.rate * 100);
+  }
+
+  private async fetchAndStoreRateCoalesced(baseCurrency: string, quoteCurrency: string, provider: string) {
+    const key = `${baseCurrency}:${quoteCurrency}:${provider}`;
+    const existing = this.refreshPromises.get(key);
+
+    if (existing) {
+      this.logger.debug(`FX refresh coalesced ${baseCurrency}->${quoteCurrency} via ${provider}`);
+      return existing;
+    }
+
+    const startedAt = Date.now();
+    const refreshPromise = this.fetchAndStoreRate(baseCurrency, quoteCurrency, provider)
+      .then((rate) => {
+        this.logger.log(
+          `FX refresh complete ${baseCurrency}->${quoteCurrency} via ${provider} in ${Date.now() - startedAt}ms`,
+        );
+        return rate;
+      })
+      .catch((error: unknown) => {
+        this.logger.warn(
+          `FX refresh failed ${baseCurrency}->${quoteCurrency} via ${provider} in ${Date.now() - startedAt}ms`,
+        );
+        throw error;
+      })
+      .finally(() => {
+        this.refreshPromises.delete(key);
+      });
+
+    this.refreshPromises.set(key, refreshPromise);
+    return refreshPromise;
   }
 
   private async fetchAndStoreRate(baseCurrency: string, quoteCurrency: string, provider: string) {

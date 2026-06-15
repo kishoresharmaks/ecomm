@@ -21,7 +21,9 @@ import {
 } from "../checkout/checkout-pricing.service";
 import { CheckoutDeliveryPreference } from "../checkout/dto/delivery-routing.dto";
 import type { DeliveryRoutingAddress } from "../checkout/delivery-routing.service";
+import { CouponsService, type CouponCheckoutItem } from "../coupons/coupons.service";
 import { CustomersService } from "../customers/customers.service";
+import { DealPricingService } from "../deals/deal-pricing.service";
 import { MarketService } from "../market/market.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { AddCartItemDto, UpdateCartItemDto } from "./dto/cart-item.dto";
@@ -53,25 +55,25 @@ export class CartService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(CustomersService) private readonly customersService: CustomersService,
     @Inject(CheckoutPricingService) private readonly checkoutPricing: CheckoutPricingService,
+    @Inject(CouponsService) private readonly couponsService: CouponsService,
+    @Inject(DealPricingService) private readonly dealPricing: DealPricingService,
     @Inject(MarketService) private readonly marketService: MarketService,
   ) {}
 
   async getCart(actor: RequestUser) {
     const customer = await this.customersService.ensureCustomerForUser(actor);
-    const cart = await this.ensureActiveCart(customer.id);
+    const activeCart = await this.ensureActiveCart(customer.id);
 
-    return this.prisma.client.cart.findUniqueOrThrow({
-      where: { id: cart.id },
+    const cart = await this.prisma.client.cart.findUniqueOrThrow({
+      where: { id: activeCart.id },
       include: cartInclude,
     });
+    return this.withDealCartPrices(cart);
   }
 
   async getCheckoutSummary(actor: RequestUser, query: CheckoutSummaryQueryDto) {
     const cart = await this.getCart(actor);
-    const subtotalPaise = cart.items.reduce(
-      (total, item) => total + item.quantity * item.unitPricePaise,
-      0,
-    );
+    const subtotalPaise = cart.items.reduce((total, item) => total + item.quantity * item.unitPricePaise, 0);
     const itemCount = cart.items.reduce((total, item) => total + item.quantity, 0);
     const deliveryOptions = await this.checkoutSummaryDeliveryOptions(cart.customerId, query);
     const charges = await this.checkoutPricing.calculateCharges(
@@ -84,27 +86,65 @@ export class CartService {
       deliveryPreference: deliveryOptions.deliveryPreference ?? null,
     });
     const market = await this.marketService.getMarketCurrency(query.buyerCountryCode ?? "IN");
+    const coupon = await this.couponsService.previewCoupon(actor, {
+      ...(query.couponCode !== undefined ? { couponCode: query.couponCode } : {}),
+      customerId: cart.customerId,
+      items: this.checkoutCouponItems(cart.items),
+      subtotalPaise,
+      shippingPaise: charges.shippingPaise,
+      shippingSnapshot: charges.snapshot,
+      currency: market.baseCurrency,
+    });
+    const finalCharges = coupon
+      ? await this.checkoutPricing.applyCouponAdjustments(charges, this.prisma.client, {
+          merchandiseDiscountPaise: coupon.merchandiseDiscountPaise,
+          shippingDiscountPaise: coupon.shippingDiscountPaise,
+          snapshot: coupon.snapshot,
+        })
+      : {
+          ...charges,
+          payableSubtotalPaise: charges.subtotalPaise,
+          payableShippingPaise: charges.shippingPaise,
+          couponDiscountPaise: 0,
+        };
     const buyerSubtotalMinor = this.marketService.convertMinorUnits(charges.subtotalPaise, market);
-    const buyerShippingMinor = this.marketService.convertMinorUnits(charges.shippingPaise, market);
+    const buyerPayableSubtotalMinor = this.marketService.convertMinorUnits(
+      finalCharges.payableSubtotalPaise,
+      market,
+    );
+    const buyerShippingMinor = this.marketService.convertMinorUnits(finalCharges.shippingPaise, market);
     const buyerPlatformFeeMinor = this.marketService.convertMinorUnits(
-      charges.platformFeePaise,
+      finalCharges.platformFeePaise,
+      market,
+    );
+    const buyerCouponDiscountMinor = this.marketService.convertMinorUnits(
+      coupon?.discountPaise ?? 0,
       market,
     );
 
     return {
       itemCount,
       subtotalPaise: charges.subtotalPaise,
-      shippingPaise: charges.shippingPaise,
-      platformFeePaise: charges.platformFeePaise,
-      totalPaise: charges.totalPaise,
+      payableSubtotalPaise: finalCharges.payableSubtotalPaise,
+      shippingPaise: finalCharges.shippingPaise,
+      platformFeePaise: finalCharges.platformFeePaise,
+      couponDiscountPaise: coupon?.discountPaise ?? 0,
+      couponMerchandiseDiscountPaise: coupon?.merchandiseDiscountPaise ?? 0,
+      couponShippingDiscountPaise: coupon?.shippingDiscountPaise ?? 0,
+      couponPlatformFundedDiscountPaise: coupon?.platformFundedDiscountPaise ?? 0,
+      couponSellerFundedDiscountPaise: coupon?.sellerFundedDiscountPaise ?? 0,
+      coupon: this.couponsService.publicReadback(coupon),
+      totalPaise: finalCharges.totalPaise,
       currency: market.baseCurrency,
       buyerCountryCode: market.countryCode,
       buyerCurrency: market.currency,
       buyerSubtotalMinor,
+      buyerPayableSubtotalMinor,
       buyerShippingMinor,
       buyerPlatformFeeMinor,
-      buyerTotalMinor: buyerSubtotalMinor + buyerShippingMinor + buyerPlatformFeeMinor,
-      feeSnapshot: charges.snapshot,
+      buyerCouponDiscountMinor,
+      buyerTotalMinor: this.marketService.convertMinorUnits(finalCharges.totalPaise, market),
+      feeSnapshot: finalCharges.snapshot,
     };
   }
 
@@ -191,6 +231,32 @@ export class CartService {
     };
   }
 
+  private checkoutCouponItems(
+    items: Array<{
+      id: string;
+      sellerId: string;
+      quantity: number;
+      unitPricePaise: number;
+      productVariant: {
+        product: {
+          id: string;
+          categoryId: string;
+          name: string;
+        };
+      };
+    }>,
+  ): CouponCheckoutItem[] {
+    return items.map((item) => ({
+      key: item.id,
+      sellerId: item.sellerId,
+      productId: item.productVariant.product.id,
+      categoryId: item.productVariant.product.categoryId,
+      quantity: item.quantity,
+      lineTotalPaise: item.quantity * item.unitPricePaise,
+      productName: item.productVariant.product.name,
+    }));
+  }
+
   async addItem(actor: RequestUser, dto: AddCartItemDto) {
     const customer = await this.customersService.ensureCustomerForUser(actor);
     const cart = await this.ensureActiveCart(customer.id);
@@ -206,6 +272,11 @@ export class CartService {
     const nextQuantity = (existingItem?.quantity ?? 0) + dto.quantity;
 
     this.ensureStockAvailable(variant.stockQuantity, nextQuantity);
+    const price = await this.dealPricing.resolveVariantPrice(
+      variant,
+      variant.productId,
+      this.prisma.client,
+    );
 
     await this.prisma.client.cartItem.upsert({
       where: {
@@ -216,7 +287,7 @@ export class CartService {
       },
       update: {
         quantity: nextQuantity,
-        unitPricePaise: variant.pricePaise,
+        unitPricePaise: price.effectiveUnitPricePaise,
         currency: variant.currency,
       },
       create: {
@@ -224,7 +295,7 @@ export class CartService {
         productVariantId: dto.productVariantId,
         sellerId: variant.product.sellerId,
         quantity: dto.quantity,
-        unitPricePaise: variant.pricePaise,
+        unitPricePaise: price.effectiveUnitPricePaise,
         currency: variant.currency,
       },
     });
@@ -239,12 +310,17 @@ export class CartService {
     const variant = await this.getActiveVariantOrThrow(cartItem.productVariantId);
 
     this.ensureStockAvailable(variant.stockQuantity, dto.quantity);
+    const price = await this.dealPricing.resolveVariantPrice(
+      variant,
+      variant.productId,
+      this.prisma.client,
+    );
 
     await this.prisma.client.cartItem.update({
       where: { id: cartItemId },
       data: {
         quantity: dto.quantity,
-        unitPricePaise: variant.pricePaise,
+        unitPricePaise: price.effectiveUnitPricePaise,
         currency: variant.currency,
       },
     });
@@ -313,6 +389,57 @@ export class CartService {
     }
 
     return variant;
+  }
+
+  private async withDealCartPrices<
+    T extends {
+      customerId: string;
+      items: Array<{
+        quantity: number;
+        unitPricePaise: number;
+        productVariant?: {
+          productId: string;
+          pricePaise: number;
+          currency: string;
+        } & Record<string, unknown>;
+      }>;
+    },
+  >(cart: T) {
+    const items = await Promise.all(
+      cart.items.map(async (item) => {
+        const productVariant = item.productVariant;
+        if (!productVariant) {
+          return item;
+        }
+
+        const price = await this.dealPricing.resolveVariantPrice(
+          productVariant,
+          productVariant.productId,
+          this.prisma.client,
+        );
+        const decoratedVariant = {
+          ...productVariant,
+          pricePaise: price.effectiveUnitPricePaise,
+          originalPricePaise: price.originalUnitPricePaise,
+          dealPricePaise: price.dealSnapshot ? price.effectiveUnitPricePaise : null,
+          dealDiscountBps: price.dealDiscountBps,
+          dealDiscountPaise: price.dealDiscountPaise,
+          activeDeal: price.dealSnapshot,
+        };
+
+        return {
+          ...item,
+          unitPricePaise: price.effectiveUnitPricePaise,
+          originalUnitPricePaise: price.originalUnitPricePaise,
+          dealDiscountBps: price.dealDiscountBps,
+          dealDiscountPaise: price.dealDiscountPaise,
+          activeDeal: price.dealSnapshot,
+          productVariant: decoratedVariant,
+        };
+      }),
+    );
+
+    return { ...cart, items };
   }
 
   private async getCartItemOrThrow(cartId: string, cartItemId: string) {

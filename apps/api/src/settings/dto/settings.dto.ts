@@ -131,6 +131,86 @@ export class UpsertMapRoutingSettingsDto {
   fallbackToHaversine!: boolean;
 }
 
+export class UpsertContactSettingsDto {
+  @ApiPropertyOptional({ example: "support@1handindia.com" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  @Matches(/^$|^[^\s@]+@[^\s@]+\.[^\s@]+$/)
+  supportEmail?: string;
+
+  @ApiPropertyOptional({ example: "+91 98765 43210" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  @Matches(/^$|^[0-9+()\-\s]{6,40}$/)
+  supportPhone?: string;
+
+  @ApiPropertyOptional({ example: "+91 98765 43210" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  @Matches(/^$|^[0-9+()\-\s]{6,40}$/)
+  whatsappNumber?: string;
+
+  @ApiPropertyOptional({ example: "https://wa.me/919876543210" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  @Matches(/^$|^https?:\/\/.+/i)
+  whatsappUrl?: string;
+
+  @ApiPropertyOptional({ example: "1HandIndia Marketplace, Bengaluru, Karnataka" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  businessAddress?: string;
+
+  @ApiPropertyOptional({ example: "Monday to Saturday, 10:00 AM - 6:00 PM IST" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  workingHours?: string;
+
+  @ApiPropertyOptional({ example: "We usually respond within 1 business day." })
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  responseSla?: string;
+
+  @ApiPropertyOptional({ example: "https://maps.google.com/?q=1HandIndia" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  @Matches(/^$|^https?:\/\/.+/i)
+  mapUrl?: string;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  enableEmail?: boolean;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  enablePhone?: boolean;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  enableWhatsapp?: boolean;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  enableAddress?: boolean;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  enableMap?: boolean;
+}
+
 export class EmailProviderConfigDto {
   @ApiPropertyOptional({ example: "xkeysib-..." })
   @IsOptional()

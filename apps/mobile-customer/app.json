@@ -1,0 +1,93 @@
+{
+  "expo": {
+    "name": "1HandIndia",
+    "slug": "onehandindia-customer",
+    "scheme": "onehandindia",
+    "version": "0.1.1",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "icon": "./assets/icon.png",
+    "backgroundColor": "#FFFCFB",
+    "primaryColor": "#ED3500",
+    "splash": {
+      "image": "./assets/splash-logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FFFCFB"
+    },
+    "android": {
+      "package": "com.onehandindia.customer",
+      "versionCode": 2,
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "1handindia.com",
+              "pathPrefix": "/stores"
+            },
+            {
+              "scheme": "https",
+              "host": "www.1handindia.com",
+              "pathPrefix": "/stores"
+            },
+            {
+              "scheme": "https",
+              "host": "1handindia.com",
+              "pathPrefix": "/store"
+            },
+            {
+              "scheme": "https",
+              "host": "www.1handindia.com",
+              "pathPrefix": "/store"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FFFCFB"
+      }
+    },
+    "ios": {
+      "bundleIdentifier": "com.onehandindia.customer",
+      "buildNumber": "2",
+      "supportsTablet": true,
+      "associatedDomains": ["applinks:1handindia.com", "applinks:www.1handindia.com"],
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow 1HandIndia to use your location to help fill delivery addresses.",
+          "isIosBackgroundLocationEnabled": false,
+          "isAndroidBackgroundLocationEnabled": false
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-logo.png",
+          "imageWidth": 220,
+          "resizeMode": "contain",
+          "backgroundColor": "#FFFCFB"
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "00000000-0000-0000-0000-000000000000"
+      }
+    }
+  }
+}

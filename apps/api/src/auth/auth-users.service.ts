@@ -20,6 +20,13 @@ export class AuthUsersService {
         where: {
           OR: [{ clerkUserId: dto.clerkUserId }, { email: dto.email }],
         },
+        include: {
+          customer: {
+            select: {
+              displayName: true,
+            },
+          },
+        },
       });
 
       const user = existingUser
@@ -30,8 +37,8 @@ export class AuthUsersService {
             data: {
               clerkUserId: dto.clerkUserId,
               email: dto.email,
-              phone: dto.phone ?? null,
-              fullName: dto.fullName ?? null,
+              phone: existingUser.phone ?? dto.phone ?? null,
+              fullName: existingUser.fullName ?? dto.fullName ?? null,
               status: UserStatus.ACTIVE,
             },
           })
@@ -75,7 +82,7 @@ export class AuthUsersService {
             userId: user.id,
           },
           update: {
-            displayName: dto.fullName ?? user.email,
+            displayName: existingUser?.customer?.displayName ?? dto.fullName ?? user.email,
             status: UserStatus.ACTIVE,
           },
           create: {

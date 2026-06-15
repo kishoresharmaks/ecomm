@@ -4,6 +4,7 @@ import type { RequestUser } from "../auth/types/indihub-request";
 import { LocationsService } from "../locations/locations.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateCustomerAddressDto, UpdateCustomerAddressDto } from "./dto/customer-address.dto";
+import { UpdateCustomerBrowsingLocationDto } from "./dto/customer-browsing-location.dto";
 import { UpdateCustomerProfileDto } from "./dto/customer-profile.dto";
 
 @Injectable()
@@ -95,6 +96,92 @@ export class CustomersService {
     });
 
     return this.getProfile(actor);
+  }
+
+  async getBrowsingLocation(actor: RequestUser) {
+    const customer = await this.ensureCustomerForUser(actor);
+
+    const savedCustomer = await this.prisma.client.customer.findUniqueOrThrow({
+      where: { id: customer.id },
+      select: customerBrowsingLocationSelect
+    });
+
+    return {
+      location: this.customerBrowsingLocation(savedCustomer)
+    };
+  }
+
+  async updateBrowsingLocation(actor: RequestUser, dto: UpdateCustomerBrowsingLocationDto) {
+    const customer = await this.ensureCustomerForUser(actor);
+    const location = {
+      label: dto.label.trim(),
+      countryCode: dto.countryCode?.trim() || "IN",
+      stateCode: trimOrNull(dto.stateCode),
+      cityCode: trimOrNull(dto.cityCode),
+      localAreaCode: trimOrNull(dto.localAreaCode),
+      pincode: trimOrNull(dto.pincode)
+    };
+
+    const updatedCustomer = await this.prisma.client.customer.update({
+      where: { id: customer.id },
+      data: {
+        browsingLocationLabel: location.label,
+        browsingCountryCode: location.countryCode,
+        browsingStateCode: location.stateCode,
+        browsingCityCode: location.cityCode,
+        browsingLocalAreaCode: location.localAreaCode,
+        browsingPincode: location.pincode
+      },
+      select: customerBrowsingLocationSelect
+    });
+    const updatedLocation = this.customerBrowsingLocation(updatedCustomer);
+
+    await this.prisma.client.auditLog.create({
+      data: {
+        actor: { connect: { id: actor.id } },
+        action: "customer.browsing_location.updated",
+        entityType: "customer",
+        entityId: customer.id,
+        ...(updatedLocation ? { newValue: updatedLocation } : {})
+      }
+    });
+
+    return {
+      location: updatedLocation
+    };
+  }
+
+  async clearBrowsingLocation(actor: RequestUser) {
+    const customer = await this.ensureCustomerForUser(actor);
+    const existing = await this.prisma.client.customer.findUniqueOrThrow({
+      where: { id: customer.id },
+      select: customerBrowsingLocationSelect
+    });
+    const existingLocation = this.customerBrowsingLocation(existing);
+
+    await this.prisma.client.customer.update({
+      where: { id: customer.id },
+      data: {
+        browsingLocationLabel: null,
+        browsingCountryCode: null,
+        browsingStateCode: null,
+        browsingCityCode: null,
+        browsingLocalAreaCode: null,
+        browsingPincode: null
+      }
+    });
+
+    await this.prisma.client.auditLog.create({
+      data: {
+        actor: { connect: { id: actor.id } },
+        action: "customer.browsing_location.cleared",
+        entityType: "customer",
+        entityId: customer.id,
+        ...(existingLocation ? { oldValue: existingLocation } : {})
+      }
+    });
+
+    return { deleted: true };
   }
 
   async listAddresses(actor: RequestUser) {
@@ -377,4 +464,42 @@ export class CustomersService {
       create: { customerId }
     });
   }
+
+  private customerBrowsingLocation(customer: CustomerBrowsingLocationRow) {
+    if (!customer.browsingLocationLabel) {
+      return null;
+    }
+
+    return {
+      label: customer.browsingLocationLabel,
+      ...(customer.browsingCountryCode ? { countryCode: customer.browsingCountryCode } : {}),
+      ...(customer.browsingStateCode ? { stateCode: customer.browsingStateCode } : {}),
+      ...(customer.browsingCityCode ? { cityCode: customer.browsingCityCode } : {}),
+      ...(customer.browsingLocalAreaCode ? { localAreaCode: customer.browsingLocalAreaCode } : {}),
+      ...(customer.browsingPincode ? { pincode: customer.browsingPincode } : {})
+    };
+  }
+}
+
+const customerBrowsingLocationSelect = {
+  browsingLocationLabel: true,
+  browsingCountryCode: true,
+  browsingStateCode: true,
+  browsingCityCode: true,
+  browsingLocalAreaCode: true,
+  browsingPincode: true
+} as const;
+
+type CustomerBrowsingLocationRow = {
+  browsingLocationLabel: string | null;
+  browsingCountryCode: string | null;
+  browsingStateCode: string | null;
+  browsingCityCode: string | null;
+  browsingLocalAreaCode: string | null;
+  browsingPincode: string | null;
+};
+
+function trimOrNull(value: string | null | undefined) {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
 }

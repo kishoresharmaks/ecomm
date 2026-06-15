@@ -22,4 +22,10 @@ export class StorefrontController {
   listDeals(@Query() query: ProductQueryDto) {
     return this.storefrontService.listDeals(query);
   }
+
+  @Get("contact")
+  @ApiOperation({ summary: "Read public contact and support channel configuration." })
+  getContactConfig() {
+    return this.storefrontService.getContactConfig();
+  }
 }

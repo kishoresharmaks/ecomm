@@ -55,6 +55,8 @@ type PolicyName =
   | "productDetail"
   | "searchAnonymous"
   | "searchAuthenticated"
+  | "searchSuggestionsAnonymous"
+  | "searchSuggestionsAuthenticated"
   | "public";
 
 const oneMinute = 60_000;
@@ -95,6 +97,18 @@ const defaultPolicies: Record<PolicyName, RateLimitPolicy> = {
     max: 100,
     windowMs: oneMinute,
     message: "Too many searches. Please wait a minute and try again.",
+  },
+  searchSuggestionsAnonymous: {
+    name: "search-suggestions-anonymous",
+    max: 20,
+    windowMs: oneMinute,
+    message: "Too many search suggestions. Please wait a minute and try again.",
+  },
+  searchSuggestionsAuthenticated: {
+    name: "search-suggestions-authenticated",
+    max: 60,
+    windowMs: oneMinute,
+    message: "Too many search suggestions. Please wait a minute and try again.",
   },
   public: {
     name: "public",
@@ -172,7 +186,14 @@ export class RequestRateLimiter {
     route: { method: string; pathname: string; hasSearchQuery: boolean },
     authenticatedPrincipal: string | null,
   ): PolicyName {
-    if (route.pathname === "/products" && route.method === "GET" && route.hasSearchQuery) {
+    if (route.pathname === "/search/suggestions" && route.method === "GET") {
+      return authenticatedPrincipal ? "searchSuggestionsAuthenticated" : "searchSuggestionsAnonymous";
+    }
+
+    if (
+      (route.pathname === "/search" && route.method === "GET") ||
+      (route.pathname === "/products" && route.method === "GET" && route.hasSearchQuery)
+    ) {
       return authenticatedPrincipal ? "searchAuthenticated" : "searchAnonymous";
     }
 
@@ -291,6 +312,8 @@ export function rateLimitOptionsFromEnv(env: NodeJS.ProcessEnv = process.env): R
       productDetail: maxOverride(env.INDIHUB_RATE_LIMIT_PRODUCT_DETAIL_PER_MINUTE),
       searchAnonymous: maxOverride(env.INDIHUB_RATE_LIMIT_SEARCH_ANON_PER_MINUTE),
       searchAuthenticated: maxOverride(env.INDIHUB_RATE_LIMIT_SEARCH_AUTH_PER_MINUTE),
+      searchSuggestionsAnonymous: maxOverride(env.INDIHUB_RATE_LIMIT_SEARCH_SUGGESTIONS_ANON_PER_MINUTE),
+      searchSuggestionsAuthenticated: maxOverride(env.INDIHUB_RATE_LIMIT_SEARCH_SUGGESTIONS_AUTH_PER_MINUTE),
       public: maxOverride(env.INDIHUB_RATE_LIMIT_PUBLIC_PER_MINUTE),
     },
   };

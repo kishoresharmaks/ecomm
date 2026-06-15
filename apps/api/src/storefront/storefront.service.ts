@@ -1,9 +1,12 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable, Logger, Optional } from "@nestjs/common";
 import {
   ApprovalStatus,
   CategoryStatus,
   ContentStatus,
+  DealProductEnrollmentStatus,
+  DealStatus,
   Prisma,
+  ProductReviewStatus,
   ProductStatus,
   SellerStatus,
   UserStatus,
@@ -12,9 +15,11 @@ import {
 import { isSoldResaleProduct } from "@indihub/shared-types";
 import { CmsService } from "../cms/cms.service";
 import { paginationFromQuery } from "../common/pagination";
+import { DealPricingService } from "../deals/deal-pricing.service";
 import { ProductQueryDto } from "../products/dto/product-query.dto";
 import { PrismaService } from "../prisma/prisma.service";
 import { PublicSellerQueryDto } from "../sellers/dto/public-seller-query.dto";
+import { contactSettingKey, contactSettingsFromSetting, publicContactConfig } from "../settings/contact-settings";
 import { isTransientPrismaConnectionError, retryTransientPrismaRead } from "../prisma/transient-read-retry";
 
 const publicSellerProfileSelect = {
@@ -168,6 +173,12 @@ const homePayloadCache = new Map<string, { expiresAt: number; value: unknown }>(
 type PublicSellerLocationMatchLevel = keyof typeof publicSellerLocationMatchRanks;
 type PublicProduct = Prisma.ProductGetPayload<{ include: typeof publicProductInclude }>;
 type PublicSellerRecord = Prisma.SellerGetPayload<{ select: typeof publicSellerSelect }>;
+
+type PublicReviewSummary = {
+  averageRating: number | null;
+  reviewCount: number;
+  distribution: Record<1 | 2 | 3 | 4 | 5, number>;
+};
 type HomepageSectionRecord = {
   sectionType: string;
   config: Prisma.JsonValue;
@@ -189,6 +200,9 @@ export class StorefrontService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(CmsService) private readonly cms: CmsService,
+    @Optional()
+    @Inject(DealPricingService)
+    private readonly dealPricing?: DealPricingService,
   ) {}
 
   async getHome(query: PublicSellerQueryDto = {}) {
@@ -327,6 +341,14 @@ export class StorefrontService {
 
   async listDeals(query: ProductQueryDto = {}) {
     return retryTransientPrismaRead(() => this.listDealsPayload(query));
+  }
+
+  async getContactConfig() {
+    const setting = await this.prisma.client.setting.findUnique({
+      where: { key: contactSettingKey },
+    });
+
+    return publicContactConfig(contactSettingsFromSetting(setting));
   }
 
   private async listDealsPayload(query: ProductQueryDto = {}) {
@@ -474,7 +496,7 @@ export class StorefrontService {
       take: input.take * 3,
     });
 
-    return this.publicVisibleProducts(products).slice(0, input.take);
+    return this.decoratePublicProducts(this.publicVisibleProducts(products).slice(0, input.take));
   }
 
   private async resolveHomeDealProducts(
@@ -514,7 +536,7 @@ export class StorefrontService {
     );
     const dealItemByProductId = new Map(dealItems.map((item) => [item.sourceId, item]));
 
-    return productIds.flatMap((productId) => {
+    const selectedProducts = productIds.flatMap((productId) => {
       const product = productById.get(productId);
       const dealItem = dealItemByProductId.get(productId);
       return product
@@ -530,6 +552,8 @@ export class StorefrontService {
           ]
         : [];
     });
+
+    return this.decoratePublicProducts(selectedProducts);
   }
 
   private async listDiscountedProducts(input: {
@@ -537,33 +561,133 @@ export class StorefrontService {
     candidateLimit?: number;
     resultLimit?: number;
   } = {}) {
+    const activeDealProductIds = await this.activeDealProductIds();
     const products = await this.prisma.client.product.findMany({
       where: {
-        ...publicProductWhere,
-        ...this.publicProductQueryWhere(input.query ?? {}),
-        variants: {
-          some: {
-            status: VariantStatus.ACTIVE,
-            mrpPaise: { not: null },
+        AND: [
+          publicProductWhere,
+          this.publicProductQueryWhere(input.query ?? {}),
+          {
+            OR: [
+              ...(activeDealProductIds.length ? [{ id: { in: activeDealProductIds } }] : []),
+              {
+                variants: {
+                  some: {
+                    status: VariantStatus.ACTIVE,
+                    mrpPaise: { not: null },
+                  },
+                },
+              },
+            ],
           },
-        },
+        ],
       },
       include: publicProductInclude,
       orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }],
       take: input.candidateLimit ?? 24,
     });
 
+    const decoratedProducts = await this.decoratePublicProducts(products);
     const discountedProducts = this.sortDealProducts(
-      products.filter(
+      decoratedProducts.filter(
         (product) =>
           !isSoldResaleProduct(product) &&
-          discountedVariantScore(product).discountPercent > 0,
+          ((product as PublicProduct & { activeDeal?: unknown }).activeDeal ||
+            discountedVariantScore(product).discountPercent > 0),
       ),
     );
 
     return typeof input.resultLimit === "number"
       ? discountedProducts.slice(0, input.resultLimit)
       : discountedProducts;
+  }
+
+  private async activeDealProductIds() {
+    const now = new Date();
+    const enrollments = await this.prisma.client.dealProductEnrollment.findMany({
+      where: {
+        status: DealProductEnrollmentStatus.ENROLLED,
+        deal: {
+          status: DealStatus.PUBLISHED,
+          startsAt: { lte: now },
+          endsAt: { gte: now },
+        },
+      },
+      select: { productId: true },
+      distinct: ["productId"],
+      take: 500,
+    });
+    return enrollments.map((enrollment) => enrollment.productId);
+  }
+
+  private async decoratePublicProducts<T extends { id: string; variants: Array<{ pricePaise: number } & Record<string, unknown>> }>(
+    products: T[],
+  ) {
+    const decoratedProducts = this.dealPricing ? await this.dealPricing.applyActiveDealsToProducts(products) : products;
+    const reviewSummaries = await this.reviewSummariesForProducts(decoratedProducts.map((product) => product.id));
+
+    return decoratedProducts.map((product) => ({
+      ...product,
+      reviewSummary: reviewSummaries.get(product.id) ?? this.emptyReviewSummary(),
+    }));
+  }
+
+  private async reviewSummariesForProducts(productIds: string[]) {
+    const summaries = new Map<string, PublicReviewSummary>();
+    if (!productIds.length) {
+      return summaries;
+    }
+
+    const where = {
+      productId: { in: productIds },
+      status: ProductReviewStatus.APPROVED,
+    };
+    const [aggregates, distributionRows] = await Promise.all([
+      this.prisma.client.productReview.groupBy({
+        by: ["productId"],
+        where,
+        _avg: { rating: true },
+        _count: { _all: true },
+      }),
+      this.prisma.client.productReview.groupBy({
+        by: ["productId", "rating"],
+        where,
+        _count: { _all: true },
+      }),
+    ]);
+
+    for (const aggregate of aggregates) {
+      summaries.set(aggregate.productId, {
+        ...this.emptyReviewSummary(),
+        averageRating:
+          aggregate._avg.rating === null ? null : Math.round(aggregate._avg.rating * 10) / 10,
+        reviewCount: aggregate._count._all,
+      });
+    }
+
+    for (const row of distributionRows) {
+      const summary = summaries.get(row.productId) ?? this.emptyReviewSummary();
+      if (row.rating >= 1 && row.rating <= 5) {
+        summary.distribution[row.rating as 1 | 2 | 3 | 4 | 5] = row._count._all;
+      }
+      summaries.set(row.productId, summary);
+    }
+
+    return summaries;
+  }
+
+  private emptyReviewSummary(): PublicReviewSummary {
+    return {
+      averageRating: null,
+      reviewCount: 0,
+      distribution: {
+        1: 0,
+        2: 0,
+        3: 0,
+        4: 0,
+        5: 0,
+      },
+    };
   }
 
   private publicProductQueryWhere(query: ProductQueryDto): Prisma.ProductWhereInput {

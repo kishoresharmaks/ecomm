@@ -1,7 +1,7 @@
 # 1HandIndia Scope Change - Seller Subscription Plans
 
 **Date:** 2026-05-25  
-**Status:** User-approved Phase 1 addition  
+**Status:** User-approved product addition  
 **Area:** Seller onboarding, seller center, admin operations
 
 ## Requested Change
@@ -18,7 +18,9 @@ Add seller subscription plan management for 1HandIndia sellers.
 - Admin seller operations can review a seller's plan and manually change the seller's current plan/status.
 - Subscription plan and assignment changes are audit logged.
 
-## Not Included Unless Separately Approved
+## Selectable Related Full Implementations
+
+These related areas are not excluded as generic future scope. If selected, each must be implemented as a complete production workflow:
 
 - Online recurring payment collection.
 - Payment gateway subscription API integration.
@@ -27,4 +29,4 @@ Add seller subscription plan management for 1HandIndia sellers.
 
 ## Implementation Note
 
-Phase 1 treats seller subscriptions as an admin-managed operational control. Payment collection can be connected later through Razorpay or another provider after the client confirms commercial terms and provider account readiness.
+Seller subscriptions currently work as an admin-managed operational control. Payment collection can be connected through Razorpay or another provider after the client confirms commercial terms and provider account readiness, and should be implemented end to end when selected.

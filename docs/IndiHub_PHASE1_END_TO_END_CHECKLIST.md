@@ -1,12 +1,15 @@
 # 1HandIndia Phase 1 End-to-End Implementation Checklist
 
 **Project:** 1HandIndia Multi-Vendor Ecommerce Marketplace  
-**Document Type:** End-to-End Build Checklist and Progress Tracker  
+**Document Type:** Historical End-to-End Build Checklist and Progress Tracker  
 **Prepared Date:** 23-05-2026  
 **Scope Source:** `docs/IndiHub_Final_Scope_Requirement_Confirmation_Phase1.md`  
+**Active Scope Governance:** `docs/IndiHub_FULL_IMPLEMENTATION_SCOPE_GOVERNANCE.md`  
 **Implementation Source:** `docs/IndiHub_IMPLEMENTATION_START_PHASE1.md`  
 **Approved Phase 1 Budget:** INR 200,000  
-**Current Build Direction:** Backend-first, then frontend integration  
+**Current Build Direction:** Full production implementation for selected features  
+
+> This checklist is retained for historical build progress. From 08-06-2026 onward, selected features follow the full implementation governance rule and must not be reduced to Phase 1-only or basic-only scope.
 
 ## 1. Status Legend
 
@@ -17,17 +20,17 @@
 | NEXT | Recommended immediate implementation item. |
 | TODO | Not yet implemented in the application. |
 | CLIENT | Waiting for client/provider details, content, account approval, or decision. |
-| FUTURE | Not included in frozen Phase 1; later phase or change request only. |
+| SELECTABLE | Not currently implemented, but available for full implementation when selected. |
 
 ## 2. Current Project Snapshot
 
 | Area | Current Status | Notes |
 |---|---|---|
-| Scope freeze | DONE | Phase 1 feature scope is frozen for INR 200,000. |
+| Historical scope record | DONE | Original Phase 1 budget/scope record is retained for INR 200,000 approval history. |
 | Brand name | DONE | Brand name is locked as 1HandIndia. |
 | Logo | CLIENT | Logo will be designed later. Temporary text logo can be used. |
 | Brand colors | DONE | Elegant color palette is documented in `docs/IndiHub_BRAND_DIRECTION.md`. |
-| Tech stack | DONE | Final Phase 1 stack is locked. |
+| Tech stack | DONE | Current product stack is locked. |
 | UI screen plan | DONE | UI screen list and database plan are documented. |
 | UI mockup images | DONE | Planning images exist under `docs/ui-screen-images/`. |
 | Monorepo scaffold | DONE | Turborepo + pnpm workspace exists. |
@@ -79,7 +82,7 @@
 
 | # | Item | Status | Notes |
 |---|---|---|---|
-| 1 | Prisma schema foundation | DONE | Core Phase 1 entities are modeled. |
+| 1 | Prisma schema foundation | DONE | Core marketplace entities are modeled. |
 | 2 | Prisma 7 configuration | DONE | Config exists through `prisma.config.ts`. |
 | 3 | Generated Prisma client | DONE | Client generated under database package. |
 | 4 | UUID primary keys | DONE | Schema uses UUID IDs for business tables. |
@@ -150,7 +153,7 @@
 | 6 | Seller approval audit logs | DONE | Approval actions are audited. |
 | 7 | Seller suspension API | DONE | Admin seller suspension/unsuspension API exists. |
 | 8 | Seller profile update API | DONE | Seller can read/update store profile and address. |
-| 9 | Seller document upload flow | TODO | Optional if client collects KYC/private documents in Phase 1. |
+| 9 | Seller document upload flow | TODO | Implement fully if client collects KYC/private documents. |
 | 10 | Seller sales summary API | DONE | `GET /api/seller/reports/sales` exists. |
 
 ### 6.4 Categories and Products
@@ -167,7 +170,7 @@
 | 8 | Product images | DONE | Product image model and DTO support. |
 | 9 | Inventory movement on product stock | DONE | Stock changes create movement records. |
 | 10 | Product search-ready data structure | DONE | Search text field and public query support. |
-| 11 | Advanced search engine | FUTURE | Meilisearch/OpenSearch later, not Phase 1. |
+| 11 | Advanced search engine | SELECTABLE | Implement Meilisearch/OpenSearch fully when advanced catalogue search is selected. |
 | 12 | Public image upload adapter | DONE | Upload request API exists; active provider credentials/base URL are still required for live use. |
 
 ### 6.5 Customer Account, Wishlist, Cart, Checkout, and Orders
@@ -187,8 +190,8 @@
 | 10 | Payment placeholder record | DONE | Payment record created during order flow. |
 | 11 | Seller split records | DONE | Order seller splits are created. |
 | 12 | Order status event timeline | DONE | Status events are recorded. |
-| 13 | Basic cancellation API | DONE | Customer cancellation API restores stock and updates order state. |
-| 14 | Refund/update handling | TODO | Only needed if refund handling is enabled in Phase 1. |
+| 13 | Cancellation API | DONE | Customer cancellation API restores stock and updates order state. |
+| 14 | Refund/update handling | TODO | Implement fully when refund handling is selected. |
 
 ### 6.6 Admin and Seller Order Management
 
@@ -206,7 +209,7 @@
 | 10 | Customer-facing delivery status source | DONE | Delivery status exists in order/delivery records. |
 | 11 | Delivery partner web workspace | DONE | `/delivery`, `/delivery/orders`, and `/delivery/orders/[orderNumber]` for assigned manual delivery tasks. |
 | 12 | Delivery partner assignment API | DONE | Admin assigns active `DELIVERY_PARTNER` users to orders; partners see only assigned orders. |
-| 13 | Live courier API tracking | FUTURE | Later change request only. |
+| 13 | Live courier API tracking | SELECTABLE | Implement booking, tracking, webhook, failure handling, and admin visibility when selected. |
 
 ### 6.7 B2B Buyer and Enquiry Flow
 
@@ -221,8 +224,8 @@
 | 7 | Seller B2B enquiry API | DONE | Seller reads/responds to assigned enquiries. |
 | 8 | Admin B2B enquiry API | DONE | Admin reads all, responds, updates status. |
 | 9 | B2B audit logs | DONE | B2B actions create audit records. |
-| 10 | Advanced RFQ/PO workflow | FUTURE | Not included in Phase 1. |
-| 11 | Quotation comparison engine | FUTURE | Later phase only. |
+| 10 | Advanced RFQ/PO workflow | SELECTABLE | Implement the full B2B RFQ/PO workflow when selected. |
+| 11 | Quotation comparison engine | SELECTABLE | Implement the full quotation comparison workflow when selected. |
 
 ### 6.8 CMS, Content, Support, Settings, Reports, and Audit
 
@@ -260,8 +263,8 @@
 | 10 | Email service adapter | DONE | Resend, SendGrid, SMTP bridge/dev-log provider path exists. |
 | 11 | Email queue jobs | DONE | API enqueues BullMQ jobs when Redis is configured; worker processes them. |
 | 12 | Seller/product/order/B2B/support event emails | DONE | Core backend events trigger notification logs/jobs. |
-| 13 | SMS/WhatsApp automation | FUTURE | Not included in Phase 1. |
-| 14 | Push notifications | FUTURE | Later with mobile app. |
+| 13 | SMS/WhatsApp automation | SELECTABLE | Implement provider-backed notifications completely when selected. |
+| 14 | Push notifications | SELECTABLE | Implement with mobile/app notification flows when selected. |
 
 ## 7. Frontend UI Checklist
 
@@ -285,6 +288,7 @@
 | 14 | Shared dashboard layouts | DONE | Admin, seller, B2B, customer account, and finance shells are wired with responsive navigation/layout patterns. |
 | 15 | Form system | DONE | Customer, seller, B2B, admin settings, checkout, support, and finance forms are implemented with typed payload handling and visible error states. |
 | 16 | Operational table/list system | DONE | Admin tables, action menus, filters, mobile cards, seller lists, B2B lists, and finance record panels are implemented. |
+| 17 | Customer mobile Clerk Google OAuth readiness | OPS | Before mobile production release, enable Google OAuth in Clerk, add `onehandindia://sso-callback`, set `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY`, verify `/auth/sync-current-user`, and test in an Expo dev-client or standalone Android build. |
 
 ### 7.2 Public Storefront Screens
 
@@ -360,9 +364,9 @@
 | 1 | Admin sign in | `/admin/login` | DONE | Standalone admin login uses DB-backed admin sessions and blocks Clerk/local-dev admin bypass. |
 | 2 | Admin dashboard | `/admin` | DONE | Live dashboard, support, audit, and summary data are wired. |
 | 3 | Customers | `/admin/customers` | DONE | Customer list, filters, status actions, and guarded disable modal are wired. |
-| 4 | Customer detail | `/admin/customers` | DONE | Phase 1 customer operations are covered in the customer list surface; no separate detail route is required yet. |
+| 4 | Customer detail | `/admin/customers` | DONE | Customer operations are covered in the customer list surface; add a full detail route when selected. |
 | 5 | Sellers | `/admin/sellers` | DONE | Seller list, approval, rejection, suspension, and guarded modals are wired. |
-| 6 | Seller detail | `/admin/sellers` | DONE | Phase 1 seller operational data is surfaced in the seller list and approval screens. |
+| 6 | Seller detail | `/admin/sellers` | DONE | Seller operational data is surfaced in the seller list and approval screens; add a full detail route when selected. |
 | 7 | Seller approval queue | `/admin/sellers/approvals` | DONE | Pending sellers load from the admin API and approval actions call the backend. |
 | 8 | Business buyers | `/admin/business-buyers` | DONE | Business buyer list and status actions are wired. |
 | 9 | Categories | `/admin/categories` | DONE | Category list, create, edit, archive, and parent clearing are wired. |
@@ -372,7 +376,7 @@
 | 13 | Order detail | `/admin/orders/[orderNumber]` | DONE | Order detail, item summary, timeline, status, and delivery controls are wired. |
 | 14 | Manual delivery update | `/admin/orders/[orderNumber]` | DONE | Manual courier/delivery update is handled on the order detail screen. |
 | 15 | B2B enquiries | `/admin/b2b-enquiries` | DONE | B2B list, response, status, approve, and finalise actions are wired with guarded modals. |
-| 16 | B2B enquiry detail | `/admin/b2b-enquiries` | DONE | Phase 1 B2B admin operations are covered in the list/action surface. |
+| 16 | B2B enquiry detail | `/admin/b2b-enquiries` | DONE | B2B admin operations are covered in the list/action surface; add a full detail route when selected. |
 | 17 | Banners | `/admin/cms` | DONE | Unified content management handles homepage banners. |
 | 18 | Homepage content | `/admin/cms` and `/` | DONE | Unified content management handles homepage banners with upload/preview and sections with guided non-JSON create/edit fields, repeatable item rows, dynamic selection from existing categories, approved products, and approved stores, plus storefront rendering through `GET /api/cms/banners` and `GET /api/cms/homepage-sections`. |
 | 19 | CMS pages | `/admin/cms` | DONE | Unified content management handles CMS pages with inline editing. |
@@ -403,9 +407,9 @@
 | 4 | Redis connection | DONE | BullMQ uses `REDIS_URL` when configured. |
 | 5 | Email notification processor | DONE | Worker processes `email.notifications` jobs. |
 | 6 | Notification retry handling | DONE | BullMQ retry attempts and admin notification retry API exist. |
-| 7 | Basic report snapshot job | TODO | Optional after live reports are stable. |
+| 7 | Report snapshot job | TODO | Optional after live reports are stable. |
 | 8 | Audit rollup job | TODO | Optional; audit log table already works without rollup. |
-| 9 | Future search indexing job | FUTURE | Only if Meilisearch/advanced search is added later. |
+| 9 | Search indexing job | SELECTABLE | Implement when Meilisearch/advanced search is selected. |
 
 ## 9. Client and Third-Party Dependency Checklist
 
@@ -468,25 +472,25 @@
 |---|---|---|---|
 | 1 | Transactional email service and adapter | DONE | Notification backend is now wired. |
 | 2 | Worker email queue processors | DONE | Worker can process email notification jobs when Redis is configured. |
-| 3 | API tests for critical backend flows | DONE | Unit and PostgreSQL-backed integration tests are complete for the Phase 1 backend surface. |
+| 3 | API tests for critical backend flows | DONE | Unit and PostgreSQL-backed integration tests cover the implemented backend surface. |
 | 4 | Clerk/admin auth/session wiring | DONE | Clerk customer/seller/B2B sessions and standalone admin session flow are wired. |
 | 5 | TanStack Query API layer | DONE | Query provider and auth-aware fetch helper are in place. |
 | 6 | Storefront product browsing UI | DONE | Homepage, categories, category products, search, and product detail are wired to public APIs. |
 | 7 | Cart, checkout, and order UI | DONE | Cart, saved-address checkout, order placement, order success, and public tracking screens are wired to customer APIs. |
 | 8 | Customer account UI | DONE | Sign-in/sign-up routes, profile, addresses, wishlist, order history/detail, and support screens are wired. |
 | 9 | Public store profile and CMS pages | DONE | Store profile, contact, about, and policy routes are wired. |
-| 10 | Seller product/order/B2B UI | DONE | Seller center is operational for Phase 1 flows. |
-| 11 | Admin catalogue/order/CMS/report UI | DONE | Admin operations are implemented across the Phase 1 surface. |
-| 12 | B2B buyer UI | DONE | Business buyer flow is operational for Phase 1 quotation lifecycle. |
+| 10 | Seller product/order/B2B UI | DONE | Seller center is operational for implemented flows. |
+| 11 | Admin catalogue/order/CMS/report UI | DONE | Admin operations are implemented across the current surface. |
+| 12 | B2B buyer UI | DONE | Business buyer flow is operational for the implemented quotation lifecycle. |
 | 13 | Payment adapter and checkout method toggles | DONE | Admin-managed Razorpay, COD, bank transfer, and manual payment configuration, Razorpay Checkout handoff, server-side checkout signature verification, signed webhook handling, COD max enforcement, and checkout concurrency protection are implemented; live Razorpay use depends on client/provider keys and dashboard webhook setup. |
 | 14 | Public image upload | DONE | Seller profile/product images and storage readiness paths are implemented; real provider credentials/base URL are deployment configuration. |
 | 15 | Branded confirmation modal pass | DONE | High-impact destructive or lifecycle-changing actions use proper branded confirmation modals. |
 | 16 | Full browser E2E test pass | NEXT | Required before client demo/final deployment. |
 | 17 | Deployment setup | TODO | Needs hosting, database, Redis, env vars, domain decisions, provider accounts, and backups. |
 
-## 12. Phase 1 Acceptance Checklist
+## 12. Product Acceptance Checklist
 
-Phase 1 can be called ready for final client review only when all items below are complete.
+The product surface can be called ready for final client review only when all selected items below are complete.
 
 | # | Acceptance Item | Status | Notes |
 |---|---|---|---|
@@ -499,10 +503,10 @@ Phase 1 can be called ready for final client review only when all items below ar
 | 7 | Cart, checkout, and order placement work | PARTIAL | Backend and frontend screens exist with saved-address checkout, customer bearer-token auth, admin-driven COD/Razorpay/bank/manual availability, Razorpay Checkout handoff, pending/failed payment messaging, and duplicate checkout-submit protection; final live flow depends on product data, enabled settings, and provider test/live keys. |
 | 8 | Admin and seller order management works | DONE | Admin/seller order list/detail, status updates, and delivery controls are wired. |
 | 9 | Manual delivery/courier tracking works | DONE | Backend, public tracking, admin delivery update, and seller delivery update surfaces are wired. |
-| 10 | Basic B2B enquiry flow works | DONE | Buyer enquiry creation/list/detail, seller response, buyer confirmation, admin approval, and finalisation are wired. |
+| 10 | B2B enquiry flow works | DONE | Buyer enquiry creation/list/detail, seller response, buyer confirmation, admin approval, and finalisation are wired. |
 | 11 | CMS and policy pages are manageable | DONE | Admin content management and public CMS/policy fallback routes are wired; final client content is still a client dependency. |
 | 12 | Support/contact flow works | DONE | Public contact, authenticated customer support, and admin support management are wired. |
-| 13 | Basic reports are visible to admin | DONE | Admin reports are visible and exclude cancelled order revenue where required. |
+| 13 | Reports are visible to admin | DONE | Admin reports are visible and exclude cancelled order revenue where required. |
 | 14 | Audit logs are available | DONE | Admin audit log surface is wired. |
 | 15 | Transactional email notifications are configured | DONE | Backend service, queue, logs, retries, and event triggers exist. |
 | 16 | Payment readiness is completed | DONE | Admin/finance-managed Razorpay/COD/bank/manual configuration, bank-transfer destination/reference capture, Razorpay Checkout script handoff, server-side checkout signature verification, webhook handling, setting masking, COD max enforcement, and checkout concurrency protection exist; live Razorpay use still needs approved provider keys, deployed webhook configuration, and a test transaction. |
@@ -511,29 +515,29 @@ Phase 1 can be called ready for final client review only when all items below ar
 | 19 | Full QA corrections are completed | TODO | Browser testing cycle and any resulting fixes are pending. |
 | 20 | Deployment preparation is completed | TODO | Hosting/env/domain/provider setup pending. |
 
-## 13. Explicitly Not Included in Phase 1
+## 13. Selectable Full Implementation Backlog
 
-These items must not be added to the INR 200,000 Phase 1 build unless approved as change requests.
+These items were outside the original INR 200,000 build, but are now selectable full implementation areas under `docs/IndiHub_FULL_IMPLEMENTATION_SCOPE_GOVERNANCE.md`.
 
 | Item | Status | Notes |
 |---|---|---|
-| Native Android customer app | FUTURE | Later phase. |
-| Native iOS customer app | FUTURE | Later phase. |
-| Dedicated seller mobile app | FUTURE | Later phase. |
-| Play Store/App Store publishing | FUTURE | Later phase and separate account charges. |
-| Live courier API tracking | FUTURE | Later phase. |
-| Delivery partner mobile app | FUTURE | Web workspace is Phase 1; mobile app is later phase. |
-| GPS tracking, OTP delivery, proof of delivery | FUTURE | Later logistics upgrade. |
-| Automated seller payouts | FUTURE | Later finance/provider upgrade. |
-| Advanced B2B RFQ, PO upload, approval workflow | FUTURE | Later B2B upgrade. |
-| Realtime buyer-seller chat | FUTURE | Later engagement upgrade. |
-| Chatbot | FUTURE | Later automation upgrade. |
-| Abandoned cart automation | FUTURE | Later marketing upgrade. |
-| Loyalty/rewards | FUTURE | Later marketing upgrade. |
-| Advanced analytics | FUTURE | Later analytics upgrade. |
-| Multi-language and multi-currency | FUTURE | Later expansion upgrade. |
-| SMS/WhatsApp automation | FUTURE | Later notification upgrade. |
-| Bulk promotional email/newsletter system | FUTURE | Later marketing upgrade. |
+| Native Android customer app | SELECTABLE | Full customer mobile app implementation when selected. |
+| Native iOS customer app | SELECTABLE | Full customer mobile app implementation when selected. |
+| Dedicated seller mobile app | SELECTABLE | Full seller operations app implementation when selected. |
+| Play Store/App Store publishing | SELECTABLE | Requires store accounts and release workflow. |
+| Live courier API tracking | SELECTABLE | Full courier provider workflow when selected. |
+| Delivery partner mobile app | SELECTABLE | Full delivery partner app when selected. |
+| GPS tracking, OTP delivery, proof of delivery | SELECTABLE | Full logistics proof and tracking workflow when selected. |
+| Automated seller payouts | SELECTABLE | Full finance/provider workflow when selected. |
+| Advanced B2B RFQ, PO upload, approval workflow | SELECTABLE | Full B2B procurement workflow when selected. |
+| Realtime buyer-seller chat | SELECTABLE | Full communication workflow when selected. |
+| Chatbot | SELECTABLE | Full support/sales automation workflow when selected. |
+| Abandoned cart automation | SELECTABLE | Full marketing automation workflow when selected. |
+| Loyalty/rewards | SELECTABLE | Full loyalty workflow when selected. |
+| Advanced analytics | SELECTABLE | Full analytics workflow when selected. |
+| Multi-language and multi-currency | SELECTABLE | Full localization/market workflow when selected. |
+| SMS/WhatsApp automation | SELECTABLE | Full provider-backed notification workflow when selected. |
+| Bulk promotional email/newsletter system | SELECTABLE | Full marketing email workflow when selected. |
 
 ## 14. Immediate Next Stage Definition
 

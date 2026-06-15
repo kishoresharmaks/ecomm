@@ -6,32 +6,29 @@ import { Button, cn } from "@indihub/ui";
 import { useMarket } from "@/components/market/market-context";
 import { type LocationArea } from "@/lib/location-api";
 import { useLocationAreaStore, useLocationCatalog } from "@/components/locations/location-store";
-import { formatLocalAreaLabel, normalizeLocalAreaSearchValue } from "@/components/locations/location-utils";
-import { useStorefrontLocation } from "./storefront-location-context";
 import {
-  browsingLocationLabel,
-  normalizeBrowsingLocation,
-} from "./storefront-location-utils";
+  formatLocalAreaLabel,
+  normalizeLocalAreaSearchValue,
+} from "@/components/locations/location-utils";
+import { useStorefrontLocation } from "./storefront-location-context";
+import { browsingLocationLabel, normalizeBrowsingLocation } from "./storefront-location-utils";
 
 type StorefrontLocationPickerProps = {
   mobile?: boolean;
   compact?: boolean;
+  utility?: boolean;
   className?: string;
 };
 
 export function StorefrontLocationPicker({
   mobile = false,
   compact = false,
+  utility = false,
   className,
 }: StorefrontLocationPickerProps) {
   const market = useMarket();
-  const {
-    activeLocation,
-    prefillLocation,
-    source,
-    setManualLocation,
-    resetLocationPreference,
-  } = useStorefrontLocation();
+  const { activeLocation, prefillLocation, source, setManualLocation, resetLocationPreference } =
+    useStorefrontLocation();
   const [open, setOpen] = useState(false);
   const [countryCode, setCountryCode] = useState(activeLocation?.countryCode ?? market.countryCode);
   const [stateCode, setStateCode] = useState(activeLocation?.stateCode ?? "");
@@ -89,21 +86,22 @@ export function StorefrontLocationPicker({
   const shouldShowAreaSuggestions =
     Boolean(countryCode) &&
     areaSearch.trim().length > 0 &&
-    normalizeLocalAreaSearchValue(areaSearch) !==
-      normalizeLocalAreaSearchValue(selectedAreaLabel);
+    normalizeLocalAreaSearchValue(areaSearch) !== normalizeLocalAreaSearchValue(selectedAreaLabel);
 
   const hasManualOverride = source === "manual";
   const triggerToneClass = mobile
     ? "w-full justify-between rounded-[22px] border border-[#D8E2EA] bg-white px-4 py-3 text-left shadow-sm"
-    : compact
-      ? "w-full min-w-0 justify-between rounded-full border border-[#D8E2EA] bg-[#FCFDFE] px-3 py-2.5 text-left shadow-sm"
-      : "min-w-[220px] justify-between rounded-full border border-[#D8E2EA] bg-white/85 px-4 py-2.5 text-left shadow-sm backdrop-blur";
+    : utility
+      ? "max-w-full justify-start rounded-none border border-transparent bg-transparent px-0 py-0 text-left shadow-none hover:border-transparent"
+      : compact
+        ? "w-full min-w-0 justify-between rounded-full border border-[#D8E2EA] bg-[#FCFDFE] px-3 py-2.5 text-left shadow-sm"
+        : "min-w-[220px] justify-between rounded-full border border-[#D8E2EA] bg-white/85 px-4 py-2.5 text-left shadow-sm backdrop-blur";
   const triggerLabel = compact
-    ? activeLocation?.areaName ??
+    ? (activeLocation?.areaName ??
       activeLocation?.cityName ??
       activeLocation?.stateName ??
       activeLocation?.countryName ??
-      "All stores"
+      "All stores")
     : browsingLocationLabel(activeLocation);
 
   function applyLocation() {
@@ -111,18 +109,17 @@ export function StorefrontLocationPicker({
     const selectedCityName = city?.name ?? selectedArea?.city?.name;
     const next = normalizeBrowsingLocation({
       countryCode,
-      countryName: country?.name ?? selectedArea?.city?.subdivision?.country?.name ?? market.market.countryName,
+      countryName:
+        country?.name ??
+        selectedArea?.city?.subdivision?.country?.name ??
+        market.market.countryName,
       ...(stateCode ? { stateCode } : {}),
       ...(selectedStateName ? { stateName: selectedStateName } : {}),
       ...(cityCode ? { cityCode } : {}),
       ...(selectedCityName ? { cityName: selectedCityName } : {}),
       ...(localAreaCode ? { localAreaCode } : {}),
-      ...((area?.name ?? areaSearch)
-        ? { areaName: area?.name ?? areaSearch }
-        : {}),
-      ...((area?.postalCode ?? pincode)
-        ? { pincode: area?.postalCode ?? pincode }
-        : {}),
+      ...((area?.name ?? areaSearch) ? { areaName: area?.name ?? areaSearch } : {}),
+      ...((area?.postalCode ?? pincode) ? { pincode: area?.postalCode ?? pincode } : {}),
     });
     setManualLocation(next);
     setOpen(false);
@@ -139,32 +136,41 @@ export function StorefrontLocationPicker({
         type="button"
         onClick={() => setOpen((current) => !current)}
         className={cn(
-          "inline-flex items-center gap-3 text-[#163B5C] transition hover:border-[#ED3500] hover:text-[#ED3500]",
+          "inline-flex items-center text-[#163B5C] transition hover:border-[#ED3500] hover:text-[#ED3500]",
+          utility ? "gap-1.5" : "gap-3",
           triggerToneClass,
         )}
         aria-expanded={open}
       >
         <span
           className={cn(
-            "grid place-items-center rounded-full bg-[#FFF0EC] text-[#ED3500]",
-            compact ? "h-8 w-8" : "h-9 w-9",
+            "grid place-items-center rounded-full",
+            utility ? "h-5 w-5 bg-transparent text-[#667085]" : "bg-[#FFF0EC] text-[#ED3500]",
+            utility ? "" : compact ? "h-8 w-8" : "h-9 w-9",
           )}
         >
-          <MapPin className="h-4 w-4" aria-hidden="true" />
+          <MapPin className={cn("h-4 w-4", utility && "h-3.5 w-3.5")} aria-hidden="true" />
         </span>
-        <span className="min-w-0 flex-1">
-          {compact ? (
-            <span className="block truncate text-sm font-black text-[#163B5C]">
-              {triggerLabel}
-            </span>
+        <span className={cn("min-w-0", utility ? "inline-flex items-center gap-1" : "flex-1")}>
+          {utility ? (
+            <>
+              <span className="hidden text-[13px] font-semibold text-[#667085] xl:inline">
+                Delivering to:
+              </span>
+              <span className="truncate text-[13px] font-black text-[#ED3500]">{triggerLabel}</span>
+            </>
+          ) : compact ? (
+            <span className="block truncate text-sm font-black text-[#163B5C]">{triggerLabel}</span>
           ) : (
             <>
               <span className="block text-[11px] font-black uppercase tracking-[0.18em] text-[#667085]">
-                {hasManualOverride ? "Browsing near" : source === "saved-address" ? "Saved address" : "Stores"}
+                {hasManualOverride
+                  ? "Browsing near"
+                  : source === "saved-address"
+                    ? "Saved address"
+                    : "Stores"}
               </span>
-              <span className="block truncate text-sm font-black">
-                {triggerLabel}
-              </span>
+              <span className="block truncate text-sm font-black">{triggerLabel}</span>
             </>
           )}
         </span>
@@ -175,10 +181,14 @@ export function StorefrontLocationPicker({
       </button>
 
       {open ? (
-          <div
-            className={cn(
-              "absolute right-0 z-50 mt-3 flex max-h-[78svh] w-full flex-col overflow-hidden rounded-2xl border border-[#D8E2EA] bg-white shadow-2xl",
-            mobile ? "left-0 min-w-0" : "min-w-[340px] max-w-[380px]",
+        <div
+          className={cn(
+            "absolute right-0 z-50 mt-3 flex max-h-[78svh] w-full flex-col overflow-hidden rounded-2xl border border-[#D8E2EA] bg-white shadow-2xl",
+            mobile
+              ? "left-0 min-w-0"
+              : utility
+                ? "left-0 right-auto min-w-[340px] max-w-[380px]"
+                : "min-w-[340px] max-w-[380px]",
           )}
         >
           <div className="border-b border-[#E5E7EB] px-5 py-4">
@@ -280,7 +290,10 @@ export function StorefrontLocationPicker({
                     </span>
                   </span>
                   <ChevronDown
-                    className={cn("h-4 w-4 shrink-0 text-[#667085] transition", showRefinements ? "rotate-180" : "")}
+                    className={cn(
+                      "h-4 w-4 shrink-0 text-[#667085] transition",
+                      showRefinements ? "rotate-180" : "",
+                    )}
                     aria-hidden="true"
                   />
                 </button>
@@ -288,9 +301,7 @@ export function StorefrontLocationPicker({
                 {showRefinements ? (
                   <div className="space-y-3">
                     <label className="space-y-2">
-                      <span className="block text-sm font-bold text-[#425466]">
-                        Local area
-                      </span>
+                      <span className="block text-sm font-bold text-[#425466]">Local area</span>
                       <input
                         value={areaSearch}
                         onChange={(event) => {
@@ -336,7 +347,9 @@ export function StorefrontLocationPicker({
                             ))
                           ) : (
                             <div className="px-3 py-2 text-sm font-semibold text-[#667085]">
-                              {areasStore.isLoading ? "Searching areas..." : "No matching local areas"}
+                              {areasStore.isLoading
+                                ? "Searching areas..."
+                                : "No matching local areas"}
                             </div>
                           )}
                         </div>
@@ -344,9 +357,7 @@ export function StorefrontLocationPicker({
                     </label>
 
                     <label className="space-y-2">
-                      <span className="block text-sm font-bold text-[#425466]">
-                        Postal code
-                      </span>
+                      <span className="block text-sm font-bold text-[#425466]">Postal code</span>
                       <input
                         value={pincode}
                         onChange={(event) => setPincode(event.target.value)}
@@ -358,7 +369,6 @@ export function StorefrontLocationPicker({
                 ) : null}
               </div>
             ) : null}
-
           </div>
 
           <div className="border-t border-[#E5E7EB] bg-white px-5 py-4">
@@ -402,9 +412,7 @@ function SelectField({
 }) {
   return (
     <label className="space-y-2">
-      <span className="block text-sm font-bold text-[#425466]">
-        {label}
-      </span>
+      <span className="block text-sm font-bold text-[#425466]">{label}</span>
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}

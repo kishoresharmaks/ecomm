@@ -5,6 +5,9 @@ import { brandConfig } from "@indihub/config";
 import { NotificationStatus, prisma } from "@indihub/database";
 import { WorkerEmailDelivery } from "./email-delivery";
 import { EMAIL_QUEUE_NAME, type EmailJobPayload, type EmailProviderConfig } from "./email-job";
+import { startDeliveryAssignmentTimeoutPolling } from "./delivery-assignment-timeout-worker";
+import { startReturnPickupTimeoutPolling } from "./return-pickup-timeout-worker";
+import { startSearchIndexPolling } from "./search-index-worker";
 
 const logger = pino({
   name: "indihub-worker",
@@ -27,6 +30,10 @@ logger.info(
   },
   "1HandIndia worker scaffold ready",
 );
+
+startSearchIndexPolling(logger);
+startDeliveryAssignmentTimeoutPolling(logger);
+startReturnPickupTimeoutPolling(logger);
 
 const redisUrl = process.env.REDIS_URL;
 const emailDelivery = new WorkerEmailDelivery(logger);

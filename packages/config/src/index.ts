@@ -48,7 +48,7 @@ export const serverEnvSchema = z.object({
   PG_POOL_KEEP_ALIVE_INITIAL_DELAY_MS: z.coerce.number().int().positive().optional(),
   PG_POOL_ALLOW_EXIT_ON_IDLE: z.enum(["true", "false", "1", "0", "yes", "no", "on", "off"]).optional(),
   API_PORT: z.coerce.number().int().positive().default(4000),
-  API_CORS_ORIGINS: z.string().default("http://localhost:3000"),
+  API_CORS_ORIGINS: z.string().default("http://192.168.1.3:3000"),
   REDIS_URL: z.string().optional(),
   CLERK_SECRET_KEY: z.string().optional(),
   CLERK_WEBHOOK_SECRET: z.string().optional(),
@@ -78,8 +78,8 @@ export const serverEnvSchema = z.object({
 
 export const publicWebEnvSchema = z.object({
   NEXT_PUBLIC_APP_NAME: z.string().default("1HandIndia"),
-  NEXT_PUBLIC_WEB_URL: z.string().url().default("http://localhost:3000"),
-  NEXT_PUBLIC_API_URL: z.string().url().default("http://localhost:4000"),
+  NEXT_PUBLIC_WEB_URL: z.string().url().default("http://192.168.1.3:3000"),
+  NEXT_PUBLIC_API_URL: z.string().url().default("http://192.168.1.3:4000"),
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z.string().optional(),
 });
 

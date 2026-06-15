@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { ProductListingClient } from "@/components/storefront/product-listing-client";
+import { StorefrontSearchClient } from "@/components/storefront/storefront-search-client";
 import { metadataFromSeo } from "@/lib/seo";
 
 export async function generateMetadata({ searchParams }: { searchParams: Promise<{ q?: string }> }): Promise<Metadata> {
@@ -18,5 +18,5 @@ export async function generateMetadata({ searchParams }: { searchParams: Promise
 export default async function SearchPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
   const params = await searchParams;
 
-  return <ProductListingClient mode="search" initialSearch={params.q ?? ""} />;
+  return <StorefrontSearchClient initialSearch={params.q ?? ""} />;
 }

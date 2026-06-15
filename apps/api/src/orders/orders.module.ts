@@ -1,6 +1,8 @@
 import { Module } from "@nestjs/common";
 import { CheckoutPricingModule } from "../checkout/checkout-pricing.module";
+import { CouponsModule } from "../coupons/coupons.module";
 import { CustomersModule } from "../customers/customers.module";
+import { DealsModule } from "../deals/deals.module";
 import { FinanceModule } from "../finance/finance.module";
 import { LocationsModule } from "../locations/locations.module";
 import { MapsModule } from "../maps/maps.module";
@@ -31,7 +33,7 @@ import { PublicOrdersController } from "./public-orders.controller";
 import { SellerOrdersController } from "./seller-orders.controller";
 
 @Module({
-  imports: [CheckoutPricingModule, CustomersModule, FinanceModule, LocationsModule, MapsModule, MarketModule, NotificationsModule, PaymentsModule],
+  imports: [CheckoutPricingModule, CouponsModule, CustomersModule, DealsModule, FinanceModule, LocationsModule, MapsModule, MarketModule, NotificationsModule, PaymentsModule],
   controllers: [
     CustomerOrdersController,
     AdminOrdersController,

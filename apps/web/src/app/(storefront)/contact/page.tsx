@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { ContactPageClient } from "@/components/cms/contact-page-client";
 import { JsonLd } from "@/components/seo/json-ld";
 import { buildWebPageJsonLd, metadataFromSeo, resolveSeoEntry } from "@/lib/seo";
@@ -16,7 +17,9 @@ export default function ContactPage() {
   return (
     <>
       <JsonLd data={buildWebPageJsonLd({ title: "Contact 1HandIndia", description: "Contact the 1HandIndia support team for marketplace support.", path: "/contact" })} />
-      <ContactPageClient />
+      <Suspense fallback={null}>
+        <ContactPageClient />
+      </Suspense>
     </>
   );
 }

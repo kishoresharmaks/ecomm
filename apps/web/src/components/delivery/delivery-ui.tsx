@@ -12,6 +12,7 @@ import {
   LogIn,
   PackageCheck,
   RefreshCw,
+  RotateCcw,
   ShieldCheck,
   Truck,
   Wallet,
@@ -37,6 +38,7 @@ export type DeliveryAuthState = {
 const deliveryNav = [
   { href: "/delivery", label: "Dashboard", icon: LayoutDashboard },
   { href: "/delivery/orders", label: "Assigned orders", icon: ClipboardList },
+  { href: "/delivery/returns", label: "Return pickups", icon: RotateCcw },
   { href: "/delivery/wallet", label: "Wallet", icon: Wallet },
   { href: "/delivery/profile", label: "Profile", icon: UserRound }
 ];

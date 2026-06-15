@@ -1,5 +1,7 @@
 # 1HandIndia Phase 1 Implementation Start
 
+> Historical implementation log. As of 08-06-2026, active scope decisions follow `docs/IndiHub_FULL_IMPLEMENTATION_SCOPE_GOVERNANCE.md`; selected features must be implemented completely and should not be reduced by the older Phase 1 boundary.
+
 **Project:** 1HandIndia Multi-Vendor Ecommerce Marketplace  
 **Document Type:** Implementation Milestone Note  
 **Start Date:** 23-05-2026  

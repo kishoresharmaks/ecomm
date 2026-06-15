@@ -5,6 +5,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
 } from "@nestjs/common";
 import {
   ApprovalStatus,
@@ -12,6 +13,7 @@ import {
   DocumentStatus,
   EmailRecipientType,
   ProductStatus,
+  ProductReviewStatus,
   Prisma,
   RoleCode,
   SellerStatus,
@@ -27,6 +29,7 @@ import type {
   CourierProviderAdapterSnapshot,
 } from "../orders/courier-adapters/courier-adapter.types";
 import { PrismaService } from "../prisma/prisma.service";
+import { SearchIndexService } from "../search/search-index.service";
 import { createSlug } from "../common/slug";
 import {
   normalizeStorageImageReference,
@@ -81,6 +84,12 @@ const publicSellerLocationMatchRanks = {
 export type PublicSellerLocationMatchLevel = keyof typeof publicSellerLocationMatchRanks;
 type PublicSellerRecord = Prisma.SellerGetPayload<{ select: typeof publicSellerSelect }>;
 
+type PublicReviewSummary = {
+  averageRating: number | null;
+  reviewCount: number;
+  distribution: Record<1 | 2 | 3 | 4 | 5, number>;
+};
+
 const sellerProfileInclude = {
   user: true,
   profile: true,
@@ -109,6 +118,9 @@ export class SellersService {
     @Inject(SellerSubscriptionsService)
     private readonly sellerSubscriptions: SellerSubscriptionsService,
     @Inject(CourierAdapterRegistry) private readonly courierAdapters: CourierAdapterRegistry,
+    @Optional()
+    @Inject(SearchIndexService)
+    private readonly searchIndex?: SearchIndexService,
   ) {}
 
   async registerSeller(actor: RequestUser, dto: CreateSellerOnboardingDto) {
@@ -279,6 +291,7 @@ export class SellersService {
       ),
     ]);
 
+    await this.enqueueSellerSearchIndex(seller.id, "seller-registration-submitted");
     return seller;
   }
 
@@ -315,16 +328,19 @@ export class SellersService {
       throw new NotFoundException("Store profile not found.");
     }
 
-    const productCount = await this.prisma.client.product.count({
-      where: {
-        sellerId: seller.id,
-        status: ProductStatus.ACTIVE,
-        approvalStatus: ApprovalStatus.APPROVED,
-        deletedAt: null,
-      },
-    });
+    const [productCount, reviewSummaries] = await Promise.all([
+      this.prisma.client.product.count({
+        where: {
+          sellerId: seller.id,
+          status: ProductStatus.ACTIVE,
+          approvalStatus: ApprovalStatus.APPROVED,
+          deletedAt: null,
+        },
+      }),
+      this.reviewSummariesForSellers([seller.id]),
+    ]);
 
-    return this.toPublicSellerResponse(seller, productCount);
+    return this.toPublicSellerResponse(seller, productCount, "NONE", reviewSummaries.get(seller.id));
   }
 
   async listPublicSellers(query: PublicSellerQueryDto = {}) {
@@ -354,6 +370,7 @@ export class SellersService {
     const productCountBySeller = new Map(
       productCounts.map((count) => [count.sellerId, count._count._all]),
     );
+    const reviewSummaries = await this.reviewSummariesForSellers(sellerIds);
 
     const hasLocationPreference = Boolean(
       query.countryCode ||
@@ -368,6 +385,7 @@ export class SellersService {
         seller,
         productCountBySeller.get(seller.id) ?? 0,
         this.resolvePublicSellerLocationMatchLevel(seller.addresses, query),
+        reviewSummaries.get(seller.id),
       ),
     );
 
@@ -393,6 +411,7 @@ export class SellersService {
     seller: PublicSellerRecord,
     productCount: number,
     locationMatchLevel: PublicSellerLocationMatchLevel = "NONE",
+    reviewSummary: PublicReviewSummary = this.emptyReviewSummary(),
   ) {
     return {
       id: seller.id,
@@ -418,6 +437,65 @@ export class SellersService {
       locationMatchLevel,
       _count: {
         products: productCount,
+      },
+      reviewSummary,
+    };
+  }
+
+  private async reviewSummariesForSellers(sellerIds: string[]) {
+    const summaries = new Map<string, PublicReviewSummary>();
+    if (!sellerIds.length) {
+      return summaries;
+    }
+
+    const where = {
+      sellerId: { in: sellerIds },
+      status: ProductReviewStatus.APPROVED,
+    };
+    const [aggregates, distributionRows] = await Promise.all([
+      this.prisma.client.productReview.groupBy({
+        by: ["sellerId"],
+        where,
+        _avg: { rating: true },
+        _count: { _all: true },
+      }),
+      this.prisma.client.productReview.groupBy({
+        by: ["sellerId", "rating"],
+        where,
+        _count: { _all: true },
+      }),
+    ]);
+
+    for (const aggregate of aggregates) {
+      summaries.set(aggregate.sellerId, {
+        ...this.emptyReviewSummary(),
+        averageRating:
+          aggregate._avg.rating === null ? null : Math.round(aggregate._avg.rating * 10) / 10,
+        reviewCount: aggregate._count._all,
+      });
+    }
+
+    for (const row of distributionRows) {
+      const summary = summaries.get(row.sellerId) ?? this.emptyReviewSummary();
+      if (row.rating >= 1 && row.rating <= 5) {
+        summary.distribution[row.rating as 1 | 2 | 3 | 4 | 5] = row._count._all;
+      }
+      summaries.set(row.sellerId, summary);
+    }
+
+    return summaries;
+  }
+
+  private emptyReviewSummary(): PublicReviewSummary {
+    return {
+      averageRating: null,
+      reviewCount: 0,
+      distribution: {
+        1: 0,
+        2: 0,
+        3: 0,
+        4: 0,
+        5: 0,
       },
     };
   }
@@ -822,7 +900,26 @@ export class SellersService {
       });
     });
 
+    await this.enqueueSellerSearchIndex(seller.id, "seller-profile-updated");
     return this.toSellerProfileResponse(seller);
+  }
+
+  private async enqueueSellerSearchIndex(sellerId: string, reason: string) {
+    try {
+      await this.searchIndex?.enqueueSeller(sellerId, { reason });
+      const products = await this.prisma.client.product.findMany({
+        where: { sellerId },
+        select: { id: true, categoryId: true },
+      });
+      await Promise.all(
+        products.flatMap((product) => [
+          this.searchIndex?.enqueueProduct(product.id, { reason: `${reason}:product-rollup` }),
+          this.searchIndex?.enqueueCategory(product.categoryId, { reason: `${reason}:category-rollup` }),
+        ]),
+      );
+    } catch {
+      // Search indexing is retryable background work; seller writes remain the source of truth.
+    }
   }
 
   async syncMyCourierPickup(actor: RequestUser, providerCodeParam: string) {

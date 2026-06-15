@@ -1,9 +1,9 @@
 # 1HandIndia In-Memory Storage, Search, and Database Wireflow
 
 **Project:** 1HandIndia Multi-Vendor Ecommerce Marketplace  
-**Scope:** Phase 1 implemented code and locked architecture notes  
-**Generated From:** `prisma/schema.prisma`, `apps/api`, `apps/web`, `apps/worker`, and Phase 1 planning documents  
-**Last Reviewed:** 2026-06-02
+**Scope:** Current implemented code and locked architecture notes  
+**Generated From:** `prisma/schema.prisma`, `apps/api`, `apps/web`, `apps/worker`, and planning documents  
+**Last Reviewed:** 2026-06-08
 
 ## 1. Short Answer
 
@@ -16,9 +16,9 @@ In-memory storage is used only for temporary runtime work:
 - Browser-side React Query cache.
 - API process-local rate-limit buckets.
 - Temporary Maps inside service methods for grouping, lookup, and calculations.
-- Redis-backed BullMQ jobs when `REDIS_URL` is configured.
+- Redis-backed BullMQ jobs when `REDIS_URL` is configured for non-search background work.
 
-Search is currently PostgreSQL-backed. Public product search uses PostgreSQL full-text ranking plus `ILIKE` fallback. Admin, seller, B2B, support, finance, HSN, CMS, and location searches use filtered Prisma queries over indexed columns.
+Search is PostgreSQL-backed. Advanced storefront search uses `SearchDocument` rows, a generated `tsvector` column, GIN full-text indexes, `pg_trgm` indexes, cursor pagination, and DB-backed `SearchIndexJob` rows. Redis is not used for search indexing, search caching, or search rate limiting.
 
 ## 2. In-Memory Storage Usage
 
@@ -71,6 +71,8 @@ Policies include:
 | `productDetail` | Product detail reads |
 | `searchAnonymous` | Anonymous product search |
 | `searchAuthenticated` | Authenticated product search |
+| `searchSuggestionsAnonymous` | Anonymous search suggestions |
+| `searchSuggestionsAuthenticated` | Authenticated search suggestions |
 | `public` | Other public API traffic |
 
 Important limitation:
@@ -78,7 +80,8 @@ Important limitation:
 - This Map is per running API process.
 - It clears on API restart.
 - It does not automatically share counters across multiple API instances.
-- The locked stack says Redis should be used for production-grade distributed rate limits, but the current implementation is process-local.
+- Nginx/CDN limits are the shared production protection layer.
+- Redis is not required for search rate limiting in the current implementation.
 
 Wireflow:
 
@@ -98,11 +101,10 @@ Current implemented queue:
 
 - `email.notifications`
 
-Worker scaffold also lists future queue names:
+Worker scaffold also lists future non-search queue names:
 
 - `reports.basic`
 - `audit.rollups`
-- `future.search-index`
 - `future.integration-retries`
 
 Current important behavior:
@@ -164,58 +166,56 @@ These must remain PostgreSQL-backed:
 
 ## 3. Search Implementation
 
-### 3.1 Public Storefront Product Search
+### 3.1 Public Storefront Advanced Search
 
-Public product search starts from the web search page:
+Public storefront search starts from the web search page:
 
 ```text
 /search?q=keyword
 ```
 
-The web page renders `ProductListingClient`, then calls:
+The web page renders `StorefrontSearchClient`, then calls:
 
 ```text
-GET /api/products?search=keyword&pagination=cursor&limit=24
+GET /api/search?q=keyword&limit=24
+GET /api/search/suggestions?q=keyword&limit=8
 ```
 
 Backend path:
 
 ```text
-ProductsController.listProducts
-  -> ProductsService.listPublicProducts
-  -> ProductsService.listPublicProductsByFullTextSearch
-  -> PostgreSQL raw SQL
+SearchController.search
+  -> SearchService.search
+  -> SearchDocument ranked SQL
+  -> hydrate returned product/store/category IDs
 ```
 
 Search SQL uses:
 
-- `to_tsvector('simple', product.name + product.description + product.search_text)`
-- `plainto_tsquery('simple', search)`
-- `ts_rank(...)` for result ranking
-- `ILIKE` fallback on `name`, `description`, and `search_text`
+- `SearchDocument.search_vector`, generated from title, subtitle, and search text.
+- `websearch_to_tsquery('simple', q)`.
+- GIN full-text index on `search_vector`.
+- `pg_trgm` indexes on normalized title, subtitle, and search text.
+- Exact title, prefix, full-text rank, trigram similarity, stock, deal, rating, review, and freshness boosts.
 
-Only valid public products are returned:
+Only valid public entities are returned:
 
-- Product is not deleted.
-- Product is `ACTIVE`.
-- Product approval is `APPROVED`.
-- Seller is not deleted.
-- Seller status is `APPROVED`.
-- Seller approval is `APPROVED`.
-- Category is not deleted.
-- Category is `ACTIVE`.
-- Resale/sold condition products without active stock are filtered out.
+- Product/store/category search documents must be `VISIBLE`.
+- Products must be active, approved, not deleted, in an active category, and sold by an approved seller.
+- Stores must be approved sellers.
+- Categories must be active and not deleted.
+- Public hydration repeats the same visibility checks before returning data.
 
-Search order:
+Search is cursor-paginated and does not run a total-count query. Result order is:
 
 ```text
-rank DESC, product.created_at DESC, product.id DESC
+sortKey DESC, score DESC, sourceUpdatedAt DESC, searchDocument.id DESC
 ```
 
 Cursor pagination encodes:
 
 ```text
-rank + createdAt + id
+sort + sortKey + score + sortDate + id
 ```
 
 Wireflow:
@@ -223,18 +223,51 @@ Wireflow:
 ```mermaid
 flowchart LR
   Header[Storefront Header Search] --> SearchPage[/search?q=keyword]
-  SearchPage --> Listing[ProductListingClient]
-  Listing --> API[GET /api/products?search=keyword]
-  API --> Service[ProductsService]
-  Service --> SQL[PostgreSQL full-text SQL]
-  SQL --> Rank[Rank product IDs]
-  Rank --> Hydrate[Fetch product cards by IDs]
+  Header --> Suggest[GET /api/search/suggestions]
+  SearchPage --> Listing[StorefrontSearchClient]
+  Listing --> API[GET /api/search]
+  API --> Service[SearchService]
+  Service --> SQL[PostgreSQL SearchDocument SQL]
+  SQL --> Rank[Rank document IDs]
+  Rank --> Hydrate[Hydrate products stores categories]
   Hydrate --> Listing
 ```
 
-### 3.2 Product Search Text
+### 3.2 Search Documents and Index Jobs
 
-The `Product.searchText` column is generated when sellers create or update products.
+`SearchDocument` is the PostgreSQL search index table. It stores indexed rows for:
+
+- `PRODUCT`
+- `STORE`
+- `CATEGORY`
+
+The table stores:
+
+- Title and normalized title.
+- Subtitle and normalized subtitle.
+- Normalized searchable text.
+- Entity, category, seller, slug, image, price, stock, deal, rating, review, rank, and visibility fields.
+- A generated `tsvector` column indexed with GIN.
+- Trigram GIN indexes for partial and typo-like matches.
+
+`SearchIndexJob` is the durable DB-backed indexing queue. Product, seller, and category changes enqueue jobs with a dedupe key. API/admin and worker processors claim jobs with `FOR UPDATE SKIP LOCKED`, retry failures with attempt counts, and save the last error note.
+
+Worker flow:
+
+```mermaid
+flowchart LR
+  Change[Product/Seller/Category Change] --> Job[(SearchIndexJob)]
+  Worker[Worker or Admin Process] --> Claim[FOR UPDATE SKIP LOCKED]
+  Claim --> Build[Build SearchDocument]
+  Build --> Doc[(SearchDocument)]
+  Build --> Done[COMPLETED or FAILED with retry]
+```
+
+`GET /api/products` remains backward compatible for existing product-list pages. New advanced search UI and suggestions use `GET /api/search` and `GET /api/search/suggestions`.
+
+### 3.3 Product Search Text
+
+The `Product.searchText` column is still generated when sellers create or update products.
 
 It is built from:
 
@@ -242,14 +275,9 @@ It is built from:
 - Product description.
 - String and number product attributes.
 
-It is trimmed and capped to 1000 characters.
+It remains useful as one source field for product search-document generation.
 
-Purpose:
-
-- Keep product attributes searchable without adding a separate search engine in Phase 1.
-- Allow future migration to Meilisearch/OpenSearch with a ready search document shape.
-
-### 3.3 Seller and Admin Product Search
+### 3.4 Seller and Admin Product Search
 
 Seller and admin product list pages do not use the public full-text raw SQL path.
 
@@ -263,7 +291,7 @@ searchText contains search
 
 They also apply page-specific filters such as seller ID, category ID, product status, and approval status.
 
-### 3.4 Location Search
+### 3.5 Location Search
 
 Location search is backed by location tables:
 
@@ -291,7 +319,7 @@ Then the API searches:
 - Postal code.
 - Area code.
 
-### 3.5 Other Search Surfaces
+### 3.6 Other Search Surfaces
 
 Other searches are filtered list queries, mainly `contains` filters over indexed fields.
 
@@ -314,23 +342,35 @@ Other searches are filtered list queries, mainly `contains` filters over indexed
 | Support | Name, email, subject |
 | Email templates/logs | Code, name, subject, recipient |
 
-### 3.6 Future Search Upgrade Path
+### 3.7 PostgreSQL Advanced Search Path
 
-The locked stack keeps Meilisearch as a future upgrade.
+The selected advanced search implementation is PostgreSQL-only.
 
-Recommended future flow:
+No Redis dependency is used for:
+
+- Search indexing jobs.
+- Search response cache.
+- Search rate-limit counters.
+- Search suggestions.
+
+Large-traffic protection is handled by:
+
+- Nginx/CDN `limit_req` in front of `/api/search` and `/api/search/suggestions`.
+- Optional Nginx anonymous GET micro-cache with `proxy_cache_lock`.
+- App-level process-local limits as a secondary guard.
+- PostgreSQL GIN/trigram indexes, statement timeout, cursor pagination, and strict request budgets.
 
 ```mermaid
 flowchart LR
-  ProductChange[Product Create/Update/Approval] --> DB[(PostgreSQL)]
-  ProductChange --> Job[Redis BullMQ future.search-index]
-  Job --> SearchIndex[Meilisearch/OpenSearch]
-  CustomerSearch[Customer Search] --> API[NestJS Search API]
-  API --> SearchIndex
-  API --> DB
+  Client[Customer Search] --> Edge[Nginx/CDN limits and micro-cache]
+  Edge --> API[NestJS Search API]
+  API --> Docs[(PostgreSQL SearchDocument)]
+  Docs --> API
+  API --> Hydrate[(PostgreSQL Products Stores Categories)]
+  Hydrate --> Client
 ```
 
-Do not add Meilisearch in Phase 1 unless it becomes an approved change request.
+Admin full reindex is exposed through the admin search endpoints and writes audit logs. Search query plans can be inspected through the admin `EXPLAIN` endpoint before production traffic is opened.
 
 ## 4. Complete Database Design Wireflow
 
@@ -737,7 +777,7 @@ flowchart LR
 Use this wording when explaining the architecture:
 
 ```text
-The project uses PostgreSQL as the permanent source of truth. In-memory state is limited to temporary runtime caches, browser query caching, API rate-limit buckets, and Redis/BullMQ queue memory for background email jobs. Product search in Phase 1 is handled directly in PostgreSQL using full-text ranking and indexed filters. The database is designed around multi-role users, sellers, products, carts, orders split by sellers, payments, manual delivery, COD verification, B2B enquiries, finance settlement, CMS, notifications, settings, and audit logs.
+The project uses PostgreSQL as the permanent source of truth. In-memory state is limited to temporary runtime caches, browser query caching, API rate-limit buckets, and Redis/BullMQ queue memory for background email jobs. Current product search is handled directly in PostgreSQL using full-text ranking and indexed filters. The database is designed around multi-role users, sellers, products, carts, orders split by sellers, payments, delivery, COD verification, B2B enquiries, finance settlement, CMS, notifications, settings, and audit logs.
 ```
 
 ## 7. Production Notes
@@ -747,6 +787,6 @@ The project uses PostgreSQL as the permanent source of truth. In-memory state is
 - Keep Redis queue payloads minimal and non-secret.
 - Keep provider secrets in environment variables or admin-managed secure settings, not in public responses.
 - Keep search source data in PostgreSQL first.
-- Add Meilisearch only after Phase 1 if typo tolerance, facets, and large-catalog ranking become required.
+- Keep selected advanced marketplace search on PostgreSQL search documents, GIN indexes, trigram indexes, and DB-backed indexing jobs unless the product owner explicitly approves a separate search-engine migration later.
 - Keep all money fields in minor units, such as paise, as the schema already does.
 - Keep audit logs for admin, seller, product, order, delivery, finance, settings, and policy-sensitive actions.

@@ -1,14 +1,20 @@
-import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { CategoryStatus, ProductTemplateStatus } from "@indihub/database";
 import { createSlug } from "../common/slug";
 import { PrismaService } from "../prisma/prisma.service";
+import { SearchIndexService } from "../search/search-index.service";
 import { normalizePublicImageReference } from "../storage/storage-image";
 import type { RequestUser } from "../auth/types/indihub-request";
 import { CreateCategoryDto, UpdateCategoryDto } from "./dto/create-category.dto";
 
 @Injectable()
 export class CategoriesService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Optional()
+    @Inject(SearchIndexService)
+    private readonly searchIndex?: SearchIndexService,
+  ) {}
 
   private readonly productTemplateInclude = {
     fields: {
@@ -137,6 +143,7 @@ export class CategoriesService {
       }
     });
 
+    await this.enqueueCategorySearchIndex(category.id, "category-created");
     return category;
   }
 
@@ -193,6 +200,7 @@ export class CategoriesService {
       }
     });
 
+    await this.enqueueCategorySearchIndex(category.id, "category-updated");
     return category;
   }
 
@@ -228,7 +236,26 @@ export class CategoriesService {
       }
     });
 
+    await this.enqueueCategorySearchIndex(category.id, "category-archived");
     return category;
+  }
+
+  private async enqueueCategorySearchIndex(categoryId: string, reason: string) {
+    try {
+      await this.searchIndex?.enqueueCategory(categoryId, { reason });
+      const products = await this.prisma.client.product.findMany({
+        where: { categoryId },
+        select: { id: true, sellerId: true },
+      });
+      await Promise.all(
+        products.flatMap((product) => [
+          this.searchIndex?.enqueueProduct(product.id, { reason: `${reason}:product-rollup` }),
+          this.searchIndex?.enqueueSeller(product.sellerId, { reason: `${reason}:seller-rollup` }),
+        ]),
+      );
+    } catch {
+      // Search indexing is retryable background work; category writes remain the source of truth.
+    }
   }
 
   private async getCategoryOrThrow(categoryId: string) {

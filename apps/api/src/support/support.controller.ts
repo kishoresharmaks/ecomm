@@ -5,7 +5,12 @@ import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { Public } from "../auth/decorators/public.decorator";
 import { Roles } from "../auth/decorators/roles.decorator";
 import type { RequestUser } from "../auth/types/indihub-request";
-import { CreateSupportRequestDto, SupportRequestQueryDto, UpdateSupportRequestDto } from "./dto/support-request.dto";
+import {
+  AuthenticatedSupportRequestDto,
+  CreateSupportRequestDto,
+  SupportRequestQueryDto,
+  UpdateSupportRequestDto,
+} from "./dto/support-request.dto";
 import { SupportService } from "./support.service";
 
 @ApiTags("Support")
@@ -20,11 +25,18 @@ export class SupportController {
     return this.supportService.createPublicRequest(dto);
   }
 
-  @Roles(RoleCode.CUSTOMER, RoleCode.BUSINESS_BUYER, RoleCode.SELLER)
+  @Roles(RoleCode.CUSTOMER, RoleCode.BUSINESS_BUYER, RoleCode.SELLER, RoleCode.DELIVERY_PARTNER)
   @Post("authenticated")
   @ApiOperation({ summary: "Create a support request linked to the authenticated user." })
-  createAuthenticatedRequest(@CurrentUser() actor: RequestUser, @Body() dto: CreateSupportRequestDto) {
-    return this.supportService.createPublicRequest(dto, actor);
+  createAuthenticatedRequest(@CurrentUser() actor: RequestUser, @Body() dto: AuthenticatedSupportRequestDto) {
+    return this.supportService.createAuthenticatedRequest(actor, dto);
+  }
+
+  @Roles(RoleCode.CUSTOMER)
+  @Get("me")
+  @ApiOperation({ summary: "List support requests for the authenticated customer." })
+  listMyRequests(@CurrentUser() actor: RequestUser, @Query() query: SupportRequestQueryDto) {
+    return this.supportService.listCustomerRequests(actor, query);
   }
 
   @Roles(RoleCode.ADMIN)
@@ -45,4 +57,3 @@ export class SupportController {
     return this.supportService.updateRequest(actor, requestId, dto);
   }
 }
-

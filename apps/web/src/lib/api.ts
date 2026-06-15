@@ -1,12 +1,12 @@
-export const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+export const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://192.168.1.3:4000";
 export const apiRequestTimeoutMs = Number(process.env.NEXT_PUBLIC_API_TIMEOUT_MS ?? 8000);
-const localApiBasePattern = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i;
+const privateApiBasePattern = /^https?:\/\/(127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?(\/|$)/i;
 export const skipDefaultLocalApiOnServer =
   typeof window === "undefined" &&
   process.env.NODE_ENV === "production" &&
   !process.env.NEXT_PUBLIC_API_URL &&
   process.env.INDIHUB_ALLOW_LOCAL_API_BUILD_FETCH !== "true" &&
-  localApiBasePattern.test(apiBaseUrl);
+  privateApiBasePattern.test(apiBaseUrl);
 
 type BearerTokenOptions = {
   skipCache?: boolean;
@@ -93,13 +93,15 @@ export function userFacingApiErrorMessage(error: unknown) {
 
 async function request(path: string, init: RequestInit | undefined, auth: IndihubAuthHeaders | undefined, options: BearerTokenOptions) {
   if (skipDefaultLocalApiOnServer) {
-    throw new Error("Skipping default localhost API fetch during production server rendering.");
+    throw new Error("Skipping default private API fetch during production server rendering.");
   }
 
   const bearerToken = await bearerTokenForRequest(auth, options);
+  const acceptsEncryptedResponse = bearerToken && canDecryptEncryptedResponses();
   const headers = new Headers({
     "Content-Type": "application/json",
     ...(bearerToken ? { Authorization: `Bearer ${bearerToken}` } : {}),
+    ...(acceptsEncryptedResponse ? { "x-indihub-accept-encrypted-response": "A256GCM" } : {}),
     ...(auth?.platformUserId ? { "x-indihub-user-id": auth.platformUserId } : {}),
     ...(auth?.clerkUserId && !bearerToken ? { "x-clerk-user-id": auth.clerkUserId } : {})
   });
@@ -230,6 +232,10 @@ async function decryptResponseBody<T>(body: unknown, bearerToken?: string | null
     throw new IndihubApiError("Encrypted response cannot be opened without the active session.", 0);
   }
 
+  if (!canDecryptEncryptedResponses()) {
+    throw new IndihubApiError("Encrypted response cannot be opened on this HTTP dev origin. Restart the API and web dev servers, then try again.", 0);
+  }
+
   const context = new TextEncoder().encode(`indihub-response-v1:${bearerToken}`);
   const keyBytes = await globalThis.crypto.subtle.digest("SHA-256", context);
   const key = await globalThis.crypto.subtle.importKey("raw", keyBytes, "AES-GCM", false, ["decrypt"]);
@@ -244,6 +250,16 @@ async function decryptResponseBody<T>(body: unknown, bearerToken?: string | null
   );
 
   return JSON.parse(new TextDecoder().decode(decrypted)) as T;
+}
+
+function canDecryptEncryptedResponses() {
+  const subtle = globalThis.crypto?.subtle;
+  return Boolean(
+    subtle &&
+      typeof subtle.digest === "function" &&
+      typeof subtle.importKey === "function" &&
+      typeof subtle.decrypt === "function",
+  );
 }
 
 function isEncryptedResponseEnvelope(value: unknown): value is EncryptedResponseEnvelope {

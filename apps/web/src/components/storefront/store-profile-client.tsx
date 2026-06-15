@@ -10,9 +10,9 @@ import {
   MapPin,
   PackageCheck,
   RefreshCw,
-  ShieldCheck,
   ShoppingBag,
   ShoppingCart,
+  Star,
   Store,
   type LucideIcon,
 } from "lucide-react";
@@ -87,6 +87,8 @@ export function StoreProfileClient({ slug }: { slug: string }) {
   const logoUrl = store?.profile?.logoUrl ?? null;
   const productCount = store?._count?.products ?? productsQuery.data?.items.length ?? 0;
   const memberSince = formatMonthYear(store?.createdAt ?? store?.profile?.createdAt);
+  const storeReviewCount = store?.reviewSummary?.reviewCount ?? 0;
+  const storeAverageRating = store?.reviewSummary?.averageRating ?? null;
 
   async function toggleWishlist(product: ProductSummary) {
     try {
@@ -162,7 +164,12 @@ export function StoreProfileClient({ slug }: { slug: string }) {
                 <div className="relative z-10 -mt-8 px-5 pb-5 md:px-8">
                   <div className="grid grid-cols-3 overflow-hidden rounded-2xl border border-[#E5E7EB] bg-white shadow-[0_18px_44px_rgba(22,59,92,0.12)]">
                     <StoreStatCard icon={ShoppingBag} label="Products" value={`${productCount.toLocaleString("en-IN")} live products`} />
-                    <StoreStatCard icon={ShieldCheck} label="Status" value="Approved for selling" tone="success" />
+                    <StoreStatCard
+                      icon={Star}
+                      label="Rating"
+                      value={storeReviewCount ? `${storeAverageRating?.toFixed(1)} from ${storeReviewCount} reviews` : "No reviews yet"}
+                      tone={storeReviewCount ? "success" : "neutral"}
+                    />
                     <StoreStatCard icon={CalendarDays} label="Member since" value={memberSince ?? "Recently joined"} />
                   </div>
                 </div>
@@ -301,8 +308,15 @@ function StoreProductTile({
   const variant = primaryVariant(product);
   const hasStock = Boolean(variant && variant.stockQuantity > 0);
   const stockStatus = getStorefrontStockStatus(variant?.stockQuantity);
-  const mrp = variant?.mrpPaise && variant.mrpPaise > variant.pricePaise ? variant.mrpPaise : null;
+  const activeDeal = variant?.activeDeal ?? product.activeDeal ?? null;
+  const dealOriginalPrice =
+    activeDeal && variant?.originalPricePaise && variant.originalPricePaise > variant.pricePaise
+      ? variant.originalPricePaise
+      : null;
+  const mrp = dealOriginalPrice ?? (variant?.mrpPaise && variant.mrpPaise > variant.pricePaise ? variant.mrpPaise : null);
   const href = `/products/${product.slug}` as Route;
+  const reviewCount = product.reviewSummary?.reviewCount ?? 0;
+  const averageRating = product.reviewSummary?.averageRating ?? null;
 
   function handleWishlistClick(event: MouseEvent<HTMLButtonElement>) {
     event.preventDefault();
@@ -313,6 +327,11 @@ function StoreProductTile({
   return (
     <article className="group grid min-h-full overflow-hidden rounded-2xl border border-[#E5E7EB] bg-white shadow-sm transition hover:-translate-y-0.5 hover:border-[#ED3500] hover:shadow-[0_22px_48px_rgba(22,59,92,0.10)] xl:grid-cols-[220px_1fr]">
       <Link href={href} className="relative block aspect-square overflow-hidden bg-[#FFF5F1] xl:aspect-auto xl:min-h-full">
+        {activeDeal ? (
+          <span className="absolute left-3 top-3 z-10 rounded-full bg-[#ED3500] px-2.5 py-1 text-[10px] font-black uppercase text-white shadow-[0_10px_20px_rgba(237,53,0,0.24)]">
+            Deal
+          </span>
+        ) : null}
         <StorefrontImage
           src={displayImageUrl}
           alt={product.images[0]?.altText ?? product.name}
@@ -354,6 +373,11 @@ function StoreProductTile({
           </h2>
         </Link>
 
+        <div className="mt-2 flex min-h-5 items-center gap-1.5 text-[11px] font-black text-[#667085]">
+          <Star className={cn("h-3.5 w-3.5", reviewCount ? "fill-[#ED3500] text-[#ED3500]" : "text-[#98A2B3]")} aria-hidden="true" />
+          {reviewCount ? <span>{averageRating?.toFixed(1)} ({reviewCount})</span> : <span>No reviews yet</span>}
+        </div>
+
         <span className={cn("mt-3 inline-flex w-fit items-center gap-1 rounded-full px-2 py-1 text-[10px] font-black sm:gap-1.5 sm:px-3 sm:text-xs", storefrontStockBadgeClass(stockStatus.tone))}>
           <PackageCheck className="h-3.5 w-3.5" aria-hidden="true" />
           {stockStatus.label}
@@ -365,6 +389,11 @@ function StoreProductTile({
               {variant ? market.format(variant.pricePaise) : "Price pending"}
             </p>
             {mrp ? <p className="text-sm font-semibold text-[#98A2B3] line-through">{market.format(mrp)}</p> : null}
+            {activeDeal ? (
+              <p className="mt-1 w-fit rounded bg-[#FFF0EC] px-2 py-0.5 text-[10px] font-black text-[#ED3500]">
+                {activeDeal.discountBps / 100}% deal applied
+              </p>
+            ) : null}
             {variant && market.market.currency !== variant.currency ? (
               <p className="mt-1 text-xs font-bold text-[#667085]">{formatMoney(variant.pricePaise, variant.currency)} base</p>
             ) : null}

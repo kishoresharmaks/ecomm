@@ -77,6 +77,42 @@ export const b2bEnquiryStatuses = [
 ] as const;
 export type B2BEnquiryStatus = (typeof b2bEnquiryStatuses)[number];
 
+export const supportRequestTopics = [
+  "ORDER",
+  "PAYMENT",
+  "DELIVERY",
+  "SELLER",
+  "B2B",
+  "DOWNLOAD_APP",
+  "GENERAL"
+] as const;
+export type SupportRequestTopic = (typeof supportRequestTopics)[number];
+
+export const supportRequesterTypes = [
+  "CUSTOMER",
+  "SELLER",
+  "BUSINESS_BUYER",
+  "DELIVERY_PARTNER",
+  "GUEST"
+] as const;
+export type SupportRequesterType = (typeof supportRequesterTypes)[number];
+
+export const supportContactChannels = ["EMAIL", "PHONE", "WHATSAPP"] as const;
+export type SupportContactChannel = (typeof supportContactChannels)[number];
+
+export const supportRequestSources = [
+  "WEB_CONTACT",
+  "WEB_ACCOUNT_SUPPORT",
+  "WEB_SELLER_SUPPORT",
+  "WEB_B2B_SUPPORT",
+  "API",
+  "MOBILE_APP"
+] as const;
+export type SupportRequestSource = (typeof supportRequestSources)[number];
+
+export const publicSupportRequestSources = ["WEB_CONTACT", "WEB_ACCOUNT_SUPPORT"] as const;
+export type PublicSupportRequestSource = (typeof publicSupportRequestSources)[number];
+
 export type Money = {
   amountPaise: number;
   currency: "INR";

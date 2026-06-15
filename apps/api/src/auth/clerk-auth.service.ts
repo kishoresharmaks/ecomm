@@ -35,6 +35,8 @@ type ClerkErrorDetails = {
   status?: number;
 };
 
+const DEFAULT_DEV_WEB_ORIGIN = "http://192.168.1.3:3000";
+
 @Injectable()
 export class ClerkAuthService {
   async verifyAuthorizationHeader(authorizationHeader?: string | string[]) {
@@ -55,14 +57,13 @@ export class ClerkAuthService {
     }
 
     try {
+      const authorizedParties = this.clerkAuthorizedParties();
       const payload = await verifyToken(token, {
         ...(secretKey ? { secretKey } : {}),
         ...(jwtKey ? { jwtKey } : {}),
         clockSkewInMs: this.clerkClockSkewInMs(),
         ...(this.envValue("CLERK_JWT_AUDIENCE") ? { audience: this.envValue("CLERK_JWT_AUDIENCE") } : {}),
-        ...(this.envValue("CLERK_AUTHORIZED_PARTIES")
-          ? { authorizedParties: this.envValue("CLERK_AUTHORIZED_PARTIES")?.split(",").map((party) => party.trim()).filter(Boolean) }
-          : {})
+        ...(authorizedParties.length ? { authorizedParties } : {})
       });
 
       if (!payload.sub || typeof payload.sub !== "string") {
@@ -226,6 +227,11 @@ export class ClerkAuthService {
       return "Clerk frontend and backend keys do not match this signed-in session. Use matching Clerk keys, then sign out and sign in again.";
     }
 
+    if (text.includes("authorized party") || text.includes("authorized-parties") || text.includes("azp")) {
+      const expectedOrigin = this.clerkAuthorizedParties()[0] ?? DEFAULT_DEV_WEB_ORIGIN;
+      return `Clerk session was issued for a different web origin. Open 1HandIndia at ${expectedOrigin}, then sign out and sign in again.`;
+    }
+
     if (text.includes("jwk") || text.includes("fetch failed") || text.includes("network") || text.includes("enotfound")) {
       return "Clerk token verification failed in the API. Add CLERK_JWT_KEY for local verification or ensure the API can reach Clerk.";
     }
@@ -324,6 +330,43 @@ export class ClerkAuthService {
     }
 
     return this.isProduction() ? 10_000 : 120_000;
+  }
+
+  private clerkAuthorizedParties() {
+    const configured = [
+      ...this.envList("CLERK_AUTHORIZED_PARTIES"),
+      this.envValue("NEXT_PUBLIC_WEB_URL"),
+      ...this.envList("API_CORS_ORIGINS")
+    ];
+    const origins = configured.map((origin) => this.normalizeOrigin(origin)).filter((origin): origin is string => Boolean(origin));
+
+    if (!origins.length && !this.isProduction()) {
+      origins.push(DEFAULT_DEV_WEB_ORIGIN);
+    }
+
+    return [...new Set(origins)];
+  }
+
+  private envList(name: string) {
+    return (
+      this.envValue(name)
+        ?.split(",")
+        .map((value) => value.trim().replace(/^["']|["']$/g, ""))
+        .filter(Boolean) ?? []
+    );
+  }
+
+  private normalizeOrigin(value?: string) {
+    const trimmed = value?.trim().replace(/^["']|["']$/g, "");
+    if (!trimmed || trimmed === "*") {
+      return null;
+    }
+
+    try {
+      return new URL(trimmed).origin;
+    } catch {
+      return null;
+    }
   }
 
   private primaryEmail(user: ClerkBackendUser) {

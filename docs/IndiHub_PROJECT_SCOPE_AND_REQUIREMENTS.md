@@ -46,7 +46,7 @@ The target is not to copy Flipkart. The target is to build a professional market
 - Tracks orders.
 - Saves wishlist items.
 - Reviews products and sellers.
-- Uses the responsive website in Phase 1. Native customer mobile app is a future upgrade.
+- Uses the responsive website. If a native customer mobile app is selected, it must be implemented as a complete customer app experience.
 
 ### Seller / Marketplace Seller / Hyperlocal Store / Wholesale Distributor
 
@@ -58,8 +58,8 @@ The target is not to copy Flipkart. The target is to build a professional market
 - Manages stock and pricing.
 - Processes received orders.
 - Handles enquiries.
-- Views basic sales summary.
-- Uses seller dashboard in Phase 1. Seller mobile app is a future upgrade.
+- Views sales summary.
+- Uses seller dashboard. If a seller mobile app is selected, it must be implemented as a complete seller operations experience.
 - Joins as a hyperlocal store when local radius delivery, store pickup, or nearby discovery applies.
 - Adds store location and contact details.
 - Sells through 1HandIndia.
@@ -89,11 +89,11 @@ The target is not to copy Flipkart. The target is to build a professional market
 - Assists buyers and sellers.
 - Escalates disputes to admin.
 
-## 5. Frozen Phase 1 Feature Groups
+## 5. Current Product Feature Groups
 
-Phase 1 is frozen as a web-first marketplace build for the approved budget of INR 200,000.
+Historical Phase 1 documents are retained for approval and budget traceability.
 
-The final Phase 1 source of truth is `docs/IndiHub_Final_Scope_Requirement_Confirmation_Phase1.md`.
+The active implementation source of truth is `docs/IndiHub_FULL_IMPLEMENTATION_SCOPE_GOVERNANCE.md`. When a feature is selected, build the complete production marketplace version across the required backend, UI, permissions, audit, settings, provider, and test surfaces.
 
 ### Marketplace Website
 
@@ -106,7 +106,7 @@ The final Phase 1 source of truth is `docs/IndiHub_Final_Scope_Requirement_Confi
 - Cart and checkout.
 - Order placement.
 - Order history.
-- Basic tracking through manual admin/seller status updates.
+- Tracking through admin/seller status updates.
 
 ### B2C Shopping
 
@@ -117,7 +117,7 @@ The final Phase 1 source of truth is `docs/IndiHub_Final_Scope_Requirement_Confi
 - Checkout.
 - Order tracking.
 - Customer support.
-- Basic support/contact request.
+- Support/contact request.
 
 ### Seller Center
 
@@ -127,7 +127,7 @@ The final Phase 1 source of truth is `docs/IndiHub_Final_Scope_Requirement_Confi
 - Stock management.
 - Order management.
 - Sales summary.
-- Basic sales summary.
+- Sales summary.
 
 ### Hyperlocal Store Flow
 
@@ -141,7 +141,7 @@ The final Phase 1 source of truth is `docs/IndiHub_Final_Scope_Requirement_Confi
 
 - Business buyer registration.
 - Company and GST details.
-- Basic product-wise enquiry/request quotation workflow.
+- Product-wise enquiry/request quotation workflow.
 - Product-wise quotation request.
 - Manual seller/admin response support.
 
@@ -158,12 +158,12 @@ The final Phase 1 source of truth is `docs/IndiHub_Final_Scope_Requirement_Confi
 - Manual commission management.
 - Report management.
 - Policy page management.
-- Basic audit logs.
+- Audit logs.
 
 ### Mobile Apps
 
-- Native Android, iOS, and seller mobile apps are future upgrades.
-- Phase 1 website must be mobile-friendly and responsive.
+- The website must be mobile-friendly and responsive.
+- Native Android, iOS, and seller mobile apps are selectable product surfaces. If selected, they must be implemented as complete mobile app experiences with auth, navigation, role workflows, API integration, error states, and release readiness.
 
 ### Courier and Delivery
 
@@ -174,7 +174,7 @@ The final Phase 1 source of truth is `docs/IndiHub_Final_Scope_Requirement_Confi
 - Delivery partner web workspace for admin-assigned manual delivery tasks.
 - Admin can assign active delivery partner users to orders.
 - Delivery partners can update assigned delivery progress without changing payment state.
-- Courier provider details can be stored for future integration.
+- Courier provider integrations can be added when selected and must include provider adapter setup, admin configuration, shipment booking/tracking flows, failure handling, and operational visibility.
 - Store pickup or click-and-collect.
 
 ### Payment, Commission, and Payouts
@@ -184,8 +184,8 @@ The final Phase 1 source of truth is `docs/IndiHub_Final_Scope_Requirement_Confi
 - Cash on delivery if approved.
 - Manual bank transfer if approved.
 - Commission rules.
-- Basic order receipt.
-- Basic tax/GST fields if required.
+- Order receipt.
+- Tax/GST fields if required.
 
 ### Communication
 
@@ -200,19 +200,21 @@ The final Phase 1 source of truth is `docs/IndiHub_Final_Scope_Requirement_Confi
 
 ### Analytics and Reports
 
-- Basic sales report.
-- Basic seller report.
-- Basic product report.
-- Basic enquiry report.
+- Sales report.
+- Seller report.
+- Product report.
+- Enquiry report.
 
 ### Platform Safety
 
 - Seller KYC.
 - Product moderation.
 - Role-based permissions.
-- Basic audit logs.
+- Audit logs.
 
-### Future Upgrade Features
+### Selectable Full Implementation Feature Groups
+
+The following areas are no longer labelled as generic future upgrades. If selected, each must be planned and implemented as a complete production feature:
 
 - Native Android customer app.
 - Native iOS customer app.
@@ -345,9 +347,9 @@ All third-party fees, approval delays, and provider limitations must be treated 
 
 ## 9. Open Decisions Before Coding
 
-- Confirm final technology stack details before scaffolding.
-- Confirm web-first Phase 1 project structure.
-- Native Android, iOS, and seller apps are future upgrades.
+- Confirm final technology stack details before major structure changes.
+- Confirm the active full implementation scope for the selected feature.
+- Confirm whether native Android, iOS, or seller apps are part of the selected implementation.
 - Payment provider name.
 - Courier provider name.
 - Delivery partner user onboarding process for admin-assigned manual delivery tasks.
@@ -359,14 +361,14 @@ All third-party fees, approval delays, and provider limitations must be treated 
 - Whether COD is allowed.
 - Whether store pickup is allowed at launch.
 - Seller commission model.
-- Seller subscription model for future phase.
+- Seller subscription model.
 - Return and refund rules.
-- B2B quotation approval rules for future advanced workflow.
-- GST invoice rules for future automation.
-- Languages required for future multi-language support.
-- Currencies required for future multi-currency support.
+- B2B quotation approval rules.
+- GST invoice rules.
+- Languages required for multi-language support, if selected.
+- Currencies required for multi-currency support, if selected.
 - Hosting provider.
-- Final timeline for frozen Phase 1.
+- Final timeline for the selected full implementation scope.
 
 ## 10. Definition of Ready
 

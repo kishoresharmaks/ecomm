@@ -17,9 +17,13 @@ export class SellerProfileController {
   @Get()
   @Header("Cache-Control", "no-store")
   @ApiOperation({ summary: "Read the authenticated seller store profile." })
-  async getProfile(@CurrentUser() actor: RequestUser, @Headers("authorization") authorizationHeader: string | undefined) {
+  async getProfile(
+    @CurrentUser() actor: RequestUser,
+    @Headers("authorization") authorizationHeader: string | undefined,
+    @Headers("x-indihub-accept-encrypted-response") acceptEncryptedResponse: string | undefined,
+  ) {
     const response = await this.sellersService.getMySellerProfile(actor);
-    return encryptForBearerSession(authorizationHeader, response);
+    return encryptForBearerSession(authorizationHeader, response, acceptEncryptedResponse);
   }
 
   @Patch()
@@ -28,10 +32,11 @@ export class SellerProfileController {
   async updateProfile(
     @CurrentUser() actor: RequestUser,
     @Body() dto: UpdateSellerProfileDto,
-    @Headers("authorization") authorizationHeader: string | undefined
+    @Headers("authorization") authorizationHeader: string | undefined,
+    @Headers("x-indihub-accept-encrypted-response") acceptEncryptedResponse: string | undefined,
   ) {
     const response = await this.sellersService.updateMySellerProfile(actor, dto);
-    return encryptForBearerSession(authorizationHeader, response);
+    return encryptForBearerSession(authorizationHeader, response, acceptEncryptedResponse);
   }
 
   @Post("courier-pickups/:providerCode/sync")
@@ -40,9 +45,10 @@ export class SellerProfileController {
   async syncCourierPickup(
     @CurrentUser() actor: RequestUser,
     @Param("providerCode") providerCode: string,
-    @Headers("authorization") authorizationHeader: string | undefined
+    @Headers("authorization") authorizationHeader: string | undefined,
+    @Headers("x-indihub-accept-encrypted-response") acceptEncryptedResponse: string | undefined,
   ) {
     const response = await this.sellersService.syncMyCourierPickup(actor, providerCode);
-    return encryptForBearerSession(authorizationHeader, response);
+    return encryptForBearerSession(authorizationHeader, response, acceptEncryptedResponse);
   }
 }

@@ -18,7 +18,35 @@ describe("AuthSyncController", () => {
 
     const controller = new AuthSyncController(authUsersService as never, clerkAuthService as never);
 
-    const result = await controller.syncCurrentUser("Bearer token", {
+    const result = await controller.syncCurrentUser("Bearer token", undefined, {
+      email: "customer@example.com",
+      defaultRole: RoleCode.ADMIN
+    });
+
+    expect(result).toEqual({ synced: true });
+
+    expect(clerkAuthService.resolveSessionProfile).toHaveBeenCalledWith("Bearer token", {
+      email: "customer@example.com",
+      defaultRole: RoleCode.CUSTOMER
+    });
+  });
+
+  it("encrypts current-user sync only when the client advertises encrypted response support", async () => {
+    const profile = {
+      clerkUserId: "clerk_1",
+      email: "customer@example.com",
+      defaultRole: RoleCode.CUSTOMER
+    };
+    const authUsersService = {
+      syncAuthUser: vi.fn().mockResolvedValue({ synced: true })
+    };
+    const clerkAuthService = {
+      resolveSessionProfile: vi.fn().mockResolvedValue(profile)
+    };
+
+    const controller = new AuthSyncController(authUsersService as never, clerkAuthService as never);
+
+    const result = await controller.syncCurrentUser("Bearer token", "A256GCM", {
       email: "customer@example.com",
       defaultRole: RoleCode.ADMIN
     });

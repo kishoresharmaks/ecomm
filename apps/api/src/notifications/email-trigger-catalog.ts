@@ -43,6 +43,7 @@ export const EMAIL_TRIGGER_EVENTS = {
   B2B_ENQUIRY_RESPONSE_BUYER: "B2B_ENQUIRY_RESPONSE_BUYER",
   SUPPORT_REQUEST_RECEIVED: "SUPPORT_REQUEST_RECEIVED",
   SUPPORT_REQUEST_ADMIN_ALERT: "SUPPORT_REQUEST_ADMIN_ALERT",
+  SUPPORT_REQUEST_RESPONDED: "SUPPORT_REQUEST_RESPONDED",
 } as const;
 
 export const emailTriggerCatalog: EmailTriggerCatalogItem[] = [
@@ -316,7 +317,7 @@ export const emailTriggerCatalog: EmailTriggerCatalogItem[] = [
     category: EmailTemplateCategory.SUPPORT,
     recipientType: EmailRecipientType.SUPPORT_REQUESTER,
     defaultTemplateCode: "SUPPORT_REQUEST_RECEIVED",
-    variableKeys: ["name", "subject", "requestId"],
+    variableKeys: ["name", "subject", "requestId", "topic", "orderNumber"],
   },
   {
     eventCode: EMAIL_TRIGGER_EVENTS.SUPPORT_REQUEST_ADMIN_ALERT,
@@ -324,7 +325,15 @@ export const emailTriggerCatalog: EmailTriggerCatalogItem[] = [
     category: EmailTemplateCategory.SUPPORT,
     recipientType: EmailRecipientType.ADMIN,
     defaultTemplateCode: "SUPPORT_REQUEST_ALERT",
-    variableKeys: ["name", "email", "subject", "requestId"],
+    variableKeys: ["name", "email", "subject", "requestId", "topic", "requesterType", "orderNumber"],
+  },
+  {
+    eventCode: EMAIL_TRIGGER_EVENTS.SUPPORT_REQUEST_RESPONDED,
+    eventName: "Support request response",
+    category: EmailTemplateCategory.SUPPORT,
+    recipientType: EmailRecipientType.SUPPORT_REQUESTER,
+    defaultTemplateCode: "SUPPORT_REQUEST_RESPONDED",
+    variableKeys: ["name", "subject", "requestId", "responseMessage"],
   },
 ];
 

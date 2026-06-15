@@ -60,7 +60,14 @@ export function ProductQuickViewModal({ product, open, onClose }: ProductQuickVi
   const hasStock = Boolean(variant && variant.stockQuantity > 0);
   const stockStatus = getStorefrontStockStatus(variant?.stockQuantity);
   const imageUrl = product?.images[imageIndex]?.url ?? (product ? primaryImage(product) : null);
-  const mrp = variant?.mrpPaise && variant.mrpPaise > variant.pricePaise ? variant.mrpPaise : null;
+  const deal = variant?.activeDeal ?? product?.activeDeal ?? null;
+  const originalDealPrice =
+    variant?.originalPricePaise && variant.originalPricePaise > variant.pricePaise
+      ? variant.originalPricePaise
+      : null;
+  const mrp =
+    originalDealPrice ??
+    (variant?.mrpPaise && variant.mrpPaise > variant.pricePaise ? variant.mrpPaise : null);
   const isWishlisted = product ? wishlist.hasWishlistProduct(product.id) : false;
   const isWishlistPending = product ? wishlist.isPendingProductId === product.id : false;
   const detailHref = product ? (`/products/${product.slug}` as Route) : ("/search" as Route);
@@ -185,6 +192,7 @@ export function ProductQuickViewModal({ product, open, onClose }: ProductQuickVi
                     {isEnquiryOnly ? "Enquiry required" : stockStatus.label}
                   </StatusBadge>
                   <StatusBadge tone="info">{product.category.name}</StatusBadge>
+                  {deal ? <StatusBadge tone="warning">Deal</StatusBadge> : null}
                   {product.isFeatured ? <StatusBadge tone="warning">Featured</StatusBadge> : null}
                 </div>
 
@@ -199,6 +207,7 @@ export function ProductQuickViewModal({ product, open, onClose }: ProductQuickVi
                   {mrp ? (
                     <p className="mt-1 text-sm font-semibold text-[#98A2B3] line-through">{market.format(mrp)}</p>
                   ) : null}
+                  {deal ? <p className="mt-1 text-xs font-black text-[#ED3500]">{deal.discountBps / 100}% deal applied</p> : null}
                   {variant && market.market.currency !== variant.currency ? (
                     <p className="mt-2 text-xs font-bold text-[#667085]">
                       {formatMoney(variant.pricePaise, variant.currency)} base seller price

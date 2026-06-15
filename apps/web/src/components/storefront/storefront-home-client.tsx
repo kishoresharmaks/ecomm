@@ -3,18 +3,29 @@
 import Link from "next/link";
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
-import { type FormEvent, type MouseEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type FormEvent,
+  type MouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ArrowRight,
+  BadgePercent,
   BadgeCheck,
   ChevronLeft,
   ChevronRight,
   Clock3,
-  Eye,
   Heart,
+  Headphones,
   LocateFixed,
   MapPin,
   PackageCheck,
+  RotateCcw,
   Search,
   ShieldCheck,
   ShoppingBag,
@@ -22,25 +33,32 @@ import {
   Sparkles,
   Store,
   Truck,
+  type LucideIcon,
   UserRound,
   UsersRound,
   Zap,
 } from "lucide-react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { cn } from "@indihub/ui";
 import { CustomerAuthNotice } from "@/components/auth/customer-auth-notice";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
 import { useMarket } from "@/components/market/market-context";
+import { listCustomerOrders } from "@/lib/account-api";
+import { composePersonalizedHomeRails } from "@/lib/personalized-home-ranking";
+import { readRecentProducts, type RecentProductSnapshot } from "@/lib/recent-products";
 import { useStorefrontLocation } from "@/components/storefront/storefront-location-context";
 import {
-  addCartItem,
+  formatMoney,
+  getCart,
   getStorefrontHome,
   primaryImage,
   primaryVariant,
+  type CartSummary,
   type CategorySummary,
   type HomepageBanner,
   type HomepageSection,
   type HomepageSectionItem,
+  type OrderSummary,
   type ProductSummary,
   type StoreProfile,
   type StorefrontHomePayload,
@@ -52,6 +70,7 @@ import {
 } from "./storefront-location-utils";
 import { StorefrontFrame } from "./storefront-frame";
 import { StorefrontImage } from "./storefront-image";
+import { StorefrontLocationPicker } from "./storefront-location-picker";
 import { getStorefrontStockStatus, storefrontStockBadgeClass } from "./storefront-stock-status";
 import {
   StorefrontEmptyState,
@@ -59,6 +78,58 @@ import {
   StorefrontSkeleton,
 } from "./storefront-ui";
 import { useStorefrontWishlist } from "./use-storefront-wishlist";
+
+const HERO_CAROUSEL_INTERVAL_MS = 5000;
+const QUICK_CATEGORY_LIMIT = 8;
+// empirical minimum to distinguish tap drift from intentional swipe
+const SWIPE_THRESHOLD_PX = 12;
+
+type CustomerQuickAction = {
+  label: string;
+  href: string;
+  icon: LucideIcon;
+  desktopDescription: string;
+};
+
+// hardcoded for now; promote to CMS only if customer quick actions need admin control
+const customerQuickActions = [
+  {
+    label: "Track order",
+    href: "/track-order",
+    icon: Truck,
+    desktopDescription: "Check delivery updates",
+  },
+  {
+    label: "Reorder",
+    href: "/account/orders",
+    icon: RotateCcw,
+    desktopDescription: "Buy again from past orders",
+  },
+  {
+    label: "Wishlist",
+    href: "/account/wishlist",
+    icon: Heart,
+    desktopDescription: "Saved products",
+  },
+  {
+    label: "Support",
+    href: "/contact",
+    icon: Headphones,
+    desktopDescription: "Get help fast",
+  },
+  {
+    label: "Offers",
+    href: "/deals",
+    icon: BadgePercent,
+    desktopDescription: "Live deals",
+  },
+  {
+    label: "Nearby stores",
+    href: "/stores",
+    icon: Store,
+    desktopDescription: "Local shops",
+  },
+] satisfies CustomerQuickAction[];
 
 export function StorefrontHomeClient({
   initialHome = null,
@@ -84,44 +155,39 @@ export function StorefrontHomeClient({
   });
 
   const home = homeQuery.data;
-  const featuredProducts = home?.productRails.featured.length
+  const heroProducts = home?.productRails.featured.length
     ? home.productRails.featured
     : home?.productRails.latest ?? [];
-  const trendingProducts = uniqueProducts([
-    ...(home?.productRails.featured ?? []),
-    ...(home?.productRails.latest ?? []),
-  ]).slice(0, 8);
-  const dealProducts = home?.productRails.deals ?? [];
+  const productRailSections = useMemo(() => buildStorefrontProductRails(home), [home]);
   const topCategories = home?.categories ?? [];
   const liveCategorySection = findSection(home?.homepageSections, "featured_categories");
-  const featuredProductSection = findSection(home?.homepageSections, "featured_products");
   const categorySectionTitle = liveCategorySection?.title || "Shop by Category";
   const categorySectionDescription =
     stringValue(liveCategorySection?.config?.subtitle) ||
     stringValue(liveCategorySection?.config?.description) ||
     "Explore our top categories and find what you need";
-  const featuredProductTitle = featuredProductSection?.title || "Trending Now";
-  const featuredProductDescription =
-    stringValue(featuredProductSection?.config?.subtitle) ||
-    stringValue(featuredProductSection?.config?.description) ||
-    "Live products loved by marketplace shoppers";
   const storesLocationLabel =
     storefrontLocation.source === "global"
       ? "Top rated stores"
       : `Top rated stores in and around ${browsingLocationHeadline(storefrontLocation.activeLocation)}`;
   const serviceItems = normalizeHomepageItems(home?.serviceBadges?.config?.items);
   const sellerCtaConfig = home?.sellerCta?.config ?? null;
+  const customSections = standaloneHomepageSections(home?.homepageSections);
 
   return (
     <StorefrontFrame initialMenus={home?.menus}>
       <main className="bg-[#FFFCFB] pb-8">
+        <MobileCustomerAppTop categories={topCategories} isLoading={homeQuery.isLoading} />
+
         <HomepageHero
           home={home}
           isLoading={homeQuery.isLoading}
-          products={featuredProducts}
+          products={heroProducts}
           browsingLocation={storefrontLocation.activeLocation}
           locationSource={storefrontLocation.source}
         />
+
+        <CustomerQuickActions variant="desktop" />
 
         {homeQuery.isError ? (
           <section className="mx-auto max-w-[1440px] px-4 pt-5 sm:px-6 lg:px-10">
@@ -131,6 +197,11 @@ export function StorefrontHomeClient({
 
         <StatsStrip home={home} isLoading={homeQuery.isLoading} />
 
+        <PersonalizedHomeSections
+          home={home}
+          isLoading={homeQuery.isLoading}
+        />
+
         <div className="flex flex-col">
           <CategoryShowcase
             categories={topCategories}
@@ -139,26 +210,21 @@ export function StorefrontHomeClient({
             description={categorySectionDescription}
           />
 
-          <div>
-            {dealProducts.length || homeQuery.isLoading ? (
-              <DealRail
-                products={dealProducts}
-                isLoading={homeQuery.isLoading}
-                section={findSection(home?.homepageSections, "deal_strip")}
-              />
-            ) : null}
-          </div>
-
-          <div>
-            <ProductRailSection
-              title={featuredProductTitle}
-              description={featuredProductDescription}
-              products={trendingProducts}
-              isLoading={homeQuery.isLoading}
-              promoProduct={trendingProducts[0]}
-              promoTone="orange"
-            />
-          </div>
+          {productRailSections.map((rail) =>
+            rail.products.length || homeQuery.isLoading ? (
+              <div key={rail.id}>
+                <ProductRailSection
+                  title={rail.title}
+                  description={rail.description}
+                  href={rail.href}
+                  products={rail.products}
+                  isLoading={homeQuery.isLoading}
+                  promoProduct={rail.products[0]}
+                  promoTone={rail.promoTone}
+                />
+              </div>
+            ) : null,
+          )}
 
           <div>
             <StoresNearYou
@@ -167,6 +233,8 @@ export function StorefrontHomeClient({
               locationLabel={storesLocationLabel}
             />
           </div>
+
+          <CustomHomepageSections sections={customSections} />
         </div>
 
         <SellerCta section={home?.sellerCta ?? null} config={sellerCtaConfig} />
@@ -181,6 +249,186 @@ export function StorefrontHomeClient({
       </main>
     </StorefrontFrame>
   );
+}
+
+function MobileCustomerAppTop({
+  categories,
+  isLoading,
+}: {
+  categories: CategorySummary[];
+  isLoading: boolean;
+}) {
+  const router = useRouter();
+  const [query, setQuery] = useState("");
+  const quickCategories = categories.slice(0, QUICK_CATEGORY_LIMIT);
+
+  function submitSearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmed = query.trim();
+    router.push((trimmed ? `/search?q=${encodeURIComponent(trimmed)}` : "/search") as Route);
+  }
+
+  return (
+    <section className="mx-auto max-w-[760px] px-3 pb-1 pt-3 sm:px-4 lg:hidden">
+      <div className="rounded-[24px] border border-[#FFE0D6] bg-white p-3 shadow-[0_16px_38px_rgba(22,59,92,0.07)]">
+        <div className="flex min-w-0 items-center gap-2">
+          <StorefrontLocationPicker mobile compact className="min-w-0 flex-1" />
+        </div>
+
+        <form onSubmit={submitSearch} className="relative mt-3">
+          <label htmlFor="mobile-home-search" className="sr-only">
+            Search products, stores, or brands
+          </label>
+          <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[#ED3500]" aria-hidden="true" />
+          <input
+            id="mobile-home-search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search products, stores, brands..."
+            className="h-12 w-full rounded-[18px] border border-[#FFE0D6] bg-[#FFF9F6] pl-11 pr-[88px] text-sm font-bold text-[#111827] outline-none transition placeholder:text-[#98A2B3] focus:border-[#ED3500] focus:bg-white focus:ring-4 focus:ring-[#ED3500]/10"
+          />
+          <button
+            type="submit"
+            className="absolute right-1.5 top-1.5 h-9 rounded-full bg-[#ED3500] px-4 text-xs font-black text-white shadow-[0_12px_22px_rgba(237,53,0,0.22)]"
+          >
+            Search
+          </button>
+        </form>
+
+        <CustomerQuickActions variant="mobile" />
+
+        <div className="mt-3 overflow-hidden">
+          <div
+            className={cn(
+              "indihub-scroll-rail flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+              quickCategories.length < 4 ? "justify-start" : "",
+            )}
+            aria-label="Quick categories"
+          >
+            {isLoading
+              ? Array.from({ length: 4 }).map((_, index) => (
+                  <StorefrontSkeleton key={index} className="h-20 w-[74px] shrink-0 rounded-[18px] bg-[#FFF4EF]" />
+                ))
+              : quickCategories.map((category, index) => (
+                  <MobileQuickCategoryItem
+                    key={category.id}
+                    category={category}
+                    accent={categoryAccent(index)}
+                  />
+                ))}
+            <HomepageItemLink
+              href="/categories"
+              className="flex h-20 w-[74px] shrink-0 snap-start flex-col items-center justify-center gap-2 rounded-[18px] border border-[#FFE0D6] bg-[#FFF7F3] text-center text-[11px] font-black text-[#ED3500]"
+              aria-label="View all categories"
+            >
+              <span className="grid h-10 w-10 place-items-center rounded-full bg-white shadow-sm">
+                <ShoppingBag className="h-5 w-5" aria-hidden="true" />
+              </span>
+              <span>All</span>
+            </HomepageItemLink>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function CustomerQuickActions({ variant }: { variant: "desktop" | "mobile" }) {
+  if (variant === "mobile") {
+    return (
+      <nav className="mt-3" aria-label="Customer quick actions">
+        <div className="indihub-scroll-rail flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {customerQuickActions.map((action) => (
+            <HomepageItemLink
+              key={action.href}
+              href={action.href}
+              className="flex h-[78px] w-[76px] shrink-0 snap-start flex-col items-center justify-center gap-2 rounded-[18px] border border-[#FFE0D6] bg-[#FFF9F6] px-2 text-center text-[11px] font-black leading-[13px] text-[#1F2933] transition active:scale-[0.98]"
+            >
+              <span className="grid h-9 w-9 place-items-center rounded-full bg-white text-[#ED3500] shadow-sm">
+                <action.icon className="h-[18px] w-[18px]" aria-hidden="true" strokeWidth={2.4} />
+              </span>
+              <span className="line-clamp-2">{action.label}</span>
+            </HomepageItemLink>
+          ))}
+        </div>
+      </nav>
+    );
+  }
+
+  return (
+    <section className="hidden bg-[#FFFCFB] px-4 pt-5 sm:px-6 lg:block lg:px-10" aria-label="Customer quick actions">
+      <div className="mx-auto grid max-w-[1360px] grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
+        {customerQuickActions.map((action) => (
+          <HomepageItemLink
+            key={action.href}
+            href={action.href}
+            className="group flex min-h-[86px] items-center gap-3 rounded-[18px] border border-[#F1D7CF] bg-white px-4 py-3 shadow-[0_14px_38px_rgba(22,59,92,0.06)] transition hover:-translate-y-0.5 hover:border-[#ED3500]/40 hover:shadow-[0_20px_46px_rgba(22,59,92,0.09)]"
+          >
+            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#FFF0EC] text-[#ED3500] transition group-hover:bg-[#ED3500] group-hover:text-white">
+              <action.icon className="h-5 w-5" aria-hidden="true" strokeWidth={2.3} />
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-black text-[#1F2933]">{action.label}</span>
+              <span className="mt-1 block truncate text-xs font-bold text-[#667085]">{action.desktopDescription}</span>
+            </span>
+          </HomepageItemLink>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function MobileQuickCategoryItem({
+  category,
+  accent,
+}: {
+  category: CategorySummary;
+  accent: CategoryAccent;
+}) {
+  return (
+    <Link
+      href={`/categories/${category.slug}` as Route}
+      className="flex h-20 w-[74px] shrink-0 snap-start flex-col items-center justify-center gap-2 rounded-[18px] border border-[#F4E5DE] bg-white px-2 text-center shadow-[0_8px_20px_rgba(22,59,92,0.05)] active:scale-[0.98]"
+    >
+      <span
+        className={cn(
+          "grid h-10 w-10 place-items-center overflow-hidden rounded-full",
+          accent.imageBg,
+        )}
+      >
+        <StorefrontImage
+          src={category.imageUrl?.trim() || null}
+          alt={category.name}
+          sizes="40px"
+          fallbackLabel={category.name}
+          showFallbackLabel={false}
+          allowExternalRemote
+          className="object-contain p-2"
+        />
+      </span>
+      <span className="line-clamp-2 min-h-7 text-[11px] font-black leading-[14px] text-[#1F2933]">
+        {category.name}
+      </span>
+    </Link>
+  );
+}
+
+function usePrefersReducedMotion() {
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+    function updatePreference() {
+      setPrefersReducedMotion(mediaQuery.matches);
+    }
+
+    updatePreference();
+    mediaQuery.addEventListener("change", updatePreference);
+    return () => mediaQuery.removeEventListener("change", updatePreference);
+  }, []);
+
+  return prefersReducedMotion;
 }
 
 function HomepageHero({
@@ -198,7 +446,15 @@ function HomepageHero({
 }) {
   const router = useRouter();
   const [query, setQuery] = useState("");
-  const banner = home?.banners[0] ?? null;
+  const banners = home?.banners ?? [];
+  const [activeBannerIndex, setActiveBannerIndex] = useState(0);
+  const [isCarouselPaused, setIsCarouselPaused] = useState(false);
+  const prefersReducedMotion = usePrefersReducedMotion();
+  const swipeStartRef = useRef<{ x: number; y: number; pointerId: number } | null>(null);
+  const suppressNextClickRef = useRef(false);
+  const hasMultipleBanners = banners.length > 1;
+  const normalizedBannerIndex = banners.length ? activeBannerIndex % banners.length : 0;
+  const banner = banners[normalizedBannerIndex] ?? null;
   const title = banner?.title?.trim() || "";
   const subtitle =
     banner?.subtitle?.trim() ||
@@ -213,10 +469,103 @@ function HomepageHero({
       ? "Set your location"
       : browsingLocationLabel(browsingLocation);
 
+  useEffect(() => {
+    if (!banners.length) {
+      setActiveBannerIndex(0);
+      return;
+    }
+
+    setActiveBannerIndex((current) => Math.min(current, banners.length - 1));
+  }, [banners.length]);
+
+  useEffect(() => {
+    if (!hasMultipleBanners || isCarouselPaused || prefersReducedMotion) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setActiveBannerIndex((current) => (current + 1) % banners.length);
+    }, HERO_CAROUSEL_INTERVAL_MS);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [
+    activeBannerIndex,
+    banners.length,
+    hasMultipleBanners,
+    isCarouselPaused,
+    prefersReducedMotion,
+  ]);
+
   function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmed = query.trim();
     router.push((trimmed ? `/search?q=${encodeURIComponent(trimmed)}` : "/search") as Route);
+  }
+
+  function setDesktopPauseState(next: boolean) {
+    if (typeof window === "undefined" || window.matchMedia("(min-width: 1024px)").matches) {
+      setIsCarouselPaused(next);
+    }
+  }
+
+  function selectBanner(index: number) {
+    setActiveBannerIndex(index);
+  }
+
+  function moveBanner(direction: -1 | 1) {
+    if (!banners.length) {
+      return;
+    }
+
+    setActiveBannerIndex((current) => (current + direction + banners.length) % banners.length);
+  }
+
+  function handlePointerDown(event: ReactPointerEvent<HTMLElement>) {
+    if (!hasMultipleBanners) {
+      return;
+    }
+
+    swipeStartRef.current = {
+      x: event.clientX,
+      y: event.clientY,
+      pointerId: event.pointerId,
+    };
+    suppressNextClickRef.current = false;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }
+
+  function handlePointerUp(event: ReactPointerEvent<HTMLElement>) {
+    const start = swipeStartRef.current;
+    swipeStartRef.current = null;
+
+    if (!start || !hasMultipleBanners) {
+      return;
+    }
+
+    const horizontalDelta = event.clientX - start.x;
+    const verticalDelta = event.clientY - start.y;
+    const absHorizontalDelta = Math.abs(horizontalDelta);
+    const absVerticalDelta = Math.abs(verticalDelta);
+
+    if (absHorizontalDelta >= SWIPE_THRESHOLD_PX && absHorizontalDelta > absVerticalDelta) {
+      suppressNextClickRef.current = true;
+      moveBanner(horizontalDelta < 0 ? 1 : -1);
+      window.setTimeout(() => {
+        suppressNextClickRef.current = false;
+      }, 350);
+    }
+
+    event.currentTarget.releasePointerCapture?.(start.pointerId);
+  }
+
+  function handleClickCapture(event: MouseEvent<HTMLElement>) {
+    if (!suppressNextClickRef.current) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    suppressNextClickRef.current = false;
   }
 
   if (!banner) {
@@ -228,7 +577,21 @@ function HomepageHero({
   }
 
   return (
-    <section className="mx-auto max-w-[1440px] px-4 pt-2 sm:px-6 lg:px-10 lg:pt-4">
+    <section
+      className="mx-auto max-w-[1440px] px-4 pt-2 sm:px-6 lg:px-10 lg:pt-4"
+      aria-roledescription={hasMultipleBanners ? "carousel" : undefined}
+      aria-label={hasMultipleBanners ? "Homepage promotions" : undefined}
+      onMouseEnter={() => setDesktopPauseState(true)}
+      onMouseLeave={() => setDesktopPauseState(false)}
+      onFocusCapture={() => setDesktopPauseState(true)}
+      onBlurCapture={() => setDesktopPauseState(false)}
+      onPointerDown={handlePointerDown}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={() => {
+        swipeStartRef.current = null;
+      }}
+      onClickCapture={handleClickCapture}
+    >
       <div className="relative isolate min-h-[270px] overflow-hidden rounded-[22px] border border-[#FFE4DC] bg-[linear-gradient(104deg,#fff_0%,#fff_42%,#fff1ec_100%)] shadow-[0_18px_50px_rgba(237,53,0,0.07)] sm:rounded-[18px] lg:min-h-[540px] lg:shadow-[0_24px_80px_rgba(237,53,0,0.08)]">
         <div className="absolute inset-0 opacity-80 [background-image:radial-gradient(circle_at_18%_62%,rgba(237,53,0,0.14)_0,transparent_16%),radial-gradient(circle_at_78%_24%,rgba(237,53,0,0.10)_0,transparent_18%)]" />
         <div className="absolute right-[12%] top-8 hidden h-16 w-24 bg-[radial-gradient(#ED3500_1.2px,transparent_1.2px)] [background-size:10px_10px] opacity-25 lg:block" />
@@ -295,6 +658,44 @@ function HomepageHero({
           <MobileHeroVisual banner={banner} products={products} isLoading={isLoading} />
           <HeroVisual banner={banner} products={products} isLoading={isLoading} />
         </div>
+
+        {hasMultipleBanners ? (
+          <>
+            <button
+              type="button"
+              onClick={() => moveBanner(-1)}
+              aria-label="Previous homepage banner"
+              className="absolute bottom-4 left-5 z-20 grid h-9 w-9 place-items-center rounded-full border border-[#FFE0D6] bg-white/94 text-[#ED3500] shadow-[0_12px_24px_rgba(22,59,92,0.10)] transition hover:-translate-x-0.5 hover:border-[#ED3500] lg:bottom-auto lg:left-6 lg:top-1/2 lg:h-11 lg:w-11 lg:-translate-y-1/2"
+            >
+              <ChevronLeft className="h-5 w-5" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              onClick={() => moveBanner(1)}
+              aria-label="Next homepage banner"
+              className="absolute bottom-4 right-5 z-20 grid h-9 w-9 place-items-center rounded-full border border-[#FFE0D6] bg-white/94 text-[#ED3500] shadow-[0_12px_24px_rgba(22,59,92,0.10)] transition hover:translate-x-0.5 hover:border-[#ED3500] lg:bottom-auto lg:right-6 lg:top-1/2 lg:h-11 lg:w-11 lg:-translate-y-1/2"
+            >
+              <ChevronRight className="h-5 w-5" aria-hidden="true" />
+            </button>
+            <div className="absolute bottom-5 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-white/92 px-2.5 py-2 shadow-[0_10px_22px_rgba(22,59,92,0.10)] lg:bottom-7">
+              {banners.map((item, index) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => selectBanner(index)}
+                  className={cn(
+                    "h-2.5 rounded-full transition",
+                    index === normalizedBannerIndex
+                      ? "w-6 bg-[#ED3500]"
+                      : "w-2.5 bg-[#F2B8A7] hover:bg-[#ED3500]/70",
+                  )}
+                  aria-label={`Show banner ${index + 1}`}
+                  aria-current={index === normalizedBannerIndex ? "true" : undefined}
+                />
+              ))}
+            </div>
+          </>
+        ) : null}
       </div>
     </section>
   );
@@ -406,6 +807,7 @@ function HeroVisual({
 function HeroProductCard({ product, className }: { product: ProductSummary; className: string }) {
   const market = useMarket();
   const variant = primaryVariant(product);
+  const activeDeal = getActiveDeal(product, variant);
 
   return (
     <Link
@@ -419,6 +821,11 @@ function HeroProductCard({ product, className }: { product: ProductSummary; clas
         <Heart className="h-3.5 w-3.5" aria-hidden="true" />
       </div>
       <div className="relative aspect-square overflow-hidden rounded-[14px] bg-[#FFF4EF]">
+        {activeDeal ? (
+          <span className="absolute left-2 top-2 z-10 rounded-full bg-[#ED3500] px-2 py-1 text-[9px] font-black uppercase text-white shadow-sm">
+            Deal
+          </span>
+        ) : null}
         <StorefrontImage
           src={primaryImage(product)}
           alt={product.name}
@@ -470,6 +877,375 @@ function StatsStrip({ home, isLoading }: { home: StorefrontHomePayload | undefin
       </div>
     </section>
   );
+}
+
+type PersonalizedProduct = {
+  categoryId?: string | null;
+  categoryName?: string | null;
+  categorySlug?: string | null;
+  id: string;
+  name: string;
+  slug: string;
+  imageUrl: string | null;
+  sellerId?: string | null;
+  sellerName: string;
+  sellerSlug?: string | null;
+  pricePaise: number | null;
+  mrpPaise: number | null;
+  badge?: string;
+  viewedAt?: string | null;
+};
+
+function PersonalizedHomeSections({
+  home,
+  isLoading,
+}: {
+  home: StorefrontHomePayload | undefined;
+  isLoading: boolean;
+}) {
+  const customerAuth = useCustomerAuth();
+  const [recentProducts, setRecentProducts] = useState<RecentProductSnapshot[]>([]);
+  const cartQuery = useQuery({
+    queryKey: ["cart", customerAuth.authKey],
+    queryFn: () => getCart(customerAuth.authHeaders),
+    enabled: customerAuth.enabled,
+    retry: false,
+    staleTime: 30_000,
+  });
+  const ordersQuery = useQuery({
+    queryKey: ["account-orders", customerAuth.authKey, "home-personalized"],
+    queryFn: () => listCustomerOrders(customerAuth.authHeaders, { limit: 8 }),
+    enabled: customerAuth.enabled,
+    retry: false,
+    staleTime: 60_000,
+  });
+
+  useEffect(() => {
+    function refreshRecentProducts() {
+      setRecentProducts(readRecentProducts());
+    }
+
+    refreshRecentProducts();
+    window.addEventListener("focus", refreshRecentProducts);
+    window.addEventListener("storage", refreshRecentProducts);
+    return () => {
+      window.removeEventListener("focus", refreshRecentProducts);
+      window.removeEventListener("storage", refreshRecentProducts);
+    };
+  }, []);
+
+  const cartProducts = useMemo(() => productsFromCart(cartQuery.data), [cartQuery.data]);
+  // Recent history is platform-local; storage differs, but both surfaces normalize to the same in-memory shape before filtering.
+  const recentlyViewedProducts = useMemo(() => recentProducts.map(productFromRecentSnapshot), [recentProducts]);
+  const buyAgainProducts = useMemo(() => productsFromOrders(ordersQuery.data?.items ?? []), [ordersQuery.data?.items]);
+  const baseRecommendedProducts = useMemo(
+    () =>
+      uniquePersonalizedProducts(
+        [
+          ...(home?.productRails.deals ?? []),
+          ...(home?.productRails.featured ?? []),
+          ...(home?.productRails.latest ?? []),
+        ].map((product) => productFromSummary(product, product.activeDeal ? "Deal" : undefined)),
+      ).slice(0, 10),
+    [home?.productRails.deals, home?.productRails.featured, home?.productRails.latest],
+  );
+  const personalizedRails = useMemo(
+    () =>
+      composePersonalizedHomeRails({
+        buyAgainProducts,
+        cartProducts,
+        recentlyViewedProducts,
+        recommendedProducts: baseRecommendedProducts,
+      }),
+    [baseRecommendedProducts, buyAgainProducts, cartProducts, recentlyViewedProducts],
+  );
+  const hasAnySection =
+    (cartQuery.data?.items.length ?? 0) > 0 ||
+    personalizedRails.continueProducts.length > 0 ||
+    personalizedRails.recentlyViewedProducts.length > 0 ||
+    personalizedRails.buyAgainProducts.length > 0 ||
+    personalizedRails.recommendedProducts.length > 0 ||
+    isLoading;
+
+  if (!hasAnySection) {
+    return null;
+  }
+
+  return (
+    <section className="mx-auto max-w-[1360px] px-4 py-5 sm:px-6 lg:px-10 lg:py-6" aria-label="Personalized shopping">
+      <CartReminder cart={cartQuery.data} />
+      <div className="grid gap-5">
+        <PersonalizedProductRail
+          title="Continue shopping"
+          description="Pick up items still in your cart."
+          href="/cart"
+          icon={ShoppingCart}
+          products={personalizedRails.continueProducts.slice(0, 8)}
+          isLoading={cartQuery.isLoading && customerAuth.enabled}
+        />
+        <PersonalizedProductRail
+          title="Recently viewed"
+          description="Products you checked on this device."
+          href="/search"
+          icon={Clock3}
+          products={personalizedRails.recentlyViewedProducts}
+          isLoading={false}
+        />
+        <PersonalizedProductRail
+          title="Recommended for you"
+          description="Fresh picks from current marketplace rails."
+          href="/search"
+          icon={Sparkles}
+          products={personalizedRails.recommendedProducts}
+          isLoading={isLoading}
+        />
+        <PersonalizedProductRail
+          title="Buy again from previous orders"
+          description="Open products from your recent orders."
+          href="/account/orders"
+          icon={RotateCcw}
+          products={personalizedRails.buyAgainProducts}
+          isLoading={ordersQuery.isLoading && customerAuth.enabled}
+        />
+      </div>
+    </section>
+  );
+}
+
+function CartReminder({ cart }: { cart: CartSummary | undefined }) {
+  const items = cart?.items ?? [];
+  if (!items.length) {
+    return null;
+  }
+
+  const itemCount = items.reduce((total, item) => total + Math.max(0, item.quantity), 0);
+  const subtotal = items.reduce((total, item) => total + Math.max(0, item.quantity) * Math.max(0, item.unitPricePaise ?? 0), 0);
+  const currency = items[0]?.currency ?? "INR";
+
+  return (
+    <div className="mb-5 flex flex-col gap-3 rounded-[20px] border border-[#FFE0D6] bg-white p-4 shadow-[0_18px_46px_rgba(22,59,92,0.07)] sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex min-w-0 items-center gap-3">
+        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[#FFF0EC] text-[#ED3500]">
+          <ShoppingCart className="h-5 w-5" aria-hidden="true" />
+        </span>
+        <div className="min-w-0">
+          <h2 className="text-base font-black text-[#1F2933]">Cart reminder</h2>
+          <p className="mt-1 text-sm font-bold text-[#667085]">
+            {itemCount} item{itemCount === 1 ? "" : "s"} waiting in cart
+            {subtotal > 0 ? ` - ${formatMoney(subtotal, currency)}` : ""}.
+          </p>
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <HomepageItemLink href="/cart" className="inline-flex h-10 items-center rounded-full border border-[#FFE0D6] bg-white px-4 text-sm font-black text-[#ED3500]">
+          View cart
+        </HomepageItemLink>
+        <HomepageItemLink href="/checkout" className="inline-flex h-10 items-center rounded-full bg-[#ED3500] px-4 text-sm font-black text-white shadow-[0_12px_24px_rgba(237,53,0,0.20)]">
+          Checkout
+        </HomepageItemLink>
+      </div>
+    </div>
+  );
+}
+
+function PersonalizedProductRail({
+  description,
+  href,
+  icon: Icon,
+  isLoading,
+  products,
+  title,
+}: {
+  description: string;
+  href: string;
+  icon: LucideIcon;
+  isLoading: boolean;
+  products: PersonalizedProduct[];
+  title: string;
+}) {
+  if (!isLoading && !products.length) {
+    return null;
+  }
+
+  return (
+    <div className="min-w-0">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#FFF0EC] text-[#ED3500]">
+            <Icon className="h-[18px] w-[18px]" aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <h2 className="truncate text-xl font-black text-[#111827]">{title}</h2>
+            <p className="mt-0.5 hidden text-sm font-semibold text-[#667085] sm:block">{description}</p>
+          </div>
+        </div>
+        <HomepageItemLink href={href} className="inline-flex shrink-0 items-center gap-1.5 text-sm font-black text-[#ED3500]">
+          View all <ArrowRight className="h-4 w-4" aria-hidden="true" />
+        </HomepageItemLink>
+      </div>
+      <ScrollRail ariaLabel={title} controls={false}>
+        {isLoading
+          ? Array.from({ length: 5 }).map((_, index) => (
+              <StorefrontSkeleton key={index} className="h-[258px] w-[154px] shrink-0 rounded-[20px] bg-white sm:w-[176px]" />
+            ))
+          : products.map((product) => <PersonalizedProductCard key={`${title}-${product.id}-${product.slug}`} product={product} />)}
+      </ScrollRail>
+    </div>
+  );
+}
+
+function PersonalizedProductCard({ product }: { product: PersonalizedProduct }) {
+  const market = useMarket();
+
+  return (
+    <Link
+      href={`/products/${product.slug}` as Route}
+      className="group flex h-[258px] w-[154px] shrink-0 snap-start flex-col overflow-hidden rounded-[20px] border border-[#E8EDF2] bg-white p-2.5 shadow-[0_10px_24px_rgba(22,59,92,0.05)] transition hover:border-[#ED3500] hover:shadow-[0_18px_38px_rgba(22,59,92,0.09)] sm:w-[176px]"
+    >
+      <span className="relative h-[118px] shrink-0 overflow-hidden rounded-[16px] border border-[#F7ECE7] bg-[#FFF8F5] sm:h-[126px]">
+        {product.badge ? (
+          <span className="absolute left-2 top-2 z-10 rounded-full bg-[#ED3500] px-2 py-0.5 text-[9px] font-black uppercase text-white">
+            {product.badge}
+          </span>
+        ) : null}
+        <StorefrontImage
+          src={product.imageUrl}
+          alt={product.name}
+          sizes="164px"
+          fallbackLabel={product.categoryName ?? "Marketplace"}
+          allowExternalRemote
+          className="object-contain p-3 transition group-hover:scale-105"
+        />
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col px-1 pb-0.5 pt-3">
+        <span className="line-clamp-2 min-h-10 text-[13px] font-black leading-5 text-[#1F2933] sm:text-sm">{product.name}</span>
+        <span className="mt-2 line-clamp-1 min-h-4 text-[11px] font-bold text-[#98A2B3]">{product.sellerName}</span>
+        <span className="mt-auto flex min-h-6 items-baseline gap-2">
+          <span className="truncate text-[15px] font-black text-[#ED3500]">
+            {product.pricePaise !== null ? market.format(product.pricePaise) : "View price"}
+          </span>
+          {product.mrpPaise && product.pricePaise && product.mrpPaise > product.pricePaise ? (
+            <span className="truncate text-[11px] font-bold text-[#98A2B3] line-through">{market.format(product.mrpPaise)}</span>
+          ) : null}
+        </span>
+        <span className="mt-1.5 line-clamp-1 min-h-4 text-[11px] font-extrabold text-[#98A2B3]">
+          {product.categoryName ?? "Marketplace"}
+        </span>
+      </span>
+    </Link>
+  );
+}
+
+function productsFromCart(cart: CartSummary | undefined) {
+  return uniquePersonalizedProducts(
+    (cart?.items ?? [])
+      .map((item) =>
+        item.productVariant?.product
+          ? productFromSummary(item.productVariant.product, "In cart", {
+              mrpPaise: item.productVariant.mrpPaise ?? null,
+              pricePaise: item.productVariant.pricePaise ?? item.unitPricePaise ?? null,
+            })
+          : null,
+      )
+      .filter((item): item is PersonalizedProduct => Boolean(item)),
+  );
+}
+
+function productsFromOrders(orders: OrderSummary[]) {
+  const orderedProducts = orders.flatMap((order, orderIndex) =>
+    order.items
+      .map((item): { orderIndex: number; orderedAtMs: number; product: PersonalizedProduct } | null => {
+        if (!item.product?.slug) {
+          return null;
+        }
+
+        const product = productFromSummary(item.product, "Ordered", {
+          mrpPaise: item.originalUnitPricePaise ?? null,
+          pricePaise: item.unitPricePaise,
+        });
+
+        return {
+          orderIndex,
+          orderedAtMs: timestampMs(order.createdAt),
+          product: {
+            ...product,
+            sellerId: item.sellerId ?? item.seller?.id ?? product.sellerId ?? null,
+            sellerName: item.seller?.storeName ?? product.sellerName,
+            sellerSlug: item.seller?.slug ?? product.sellerSlug ?? null,
+          },
+        };
+      })
+      .filter((item): item is { orderIndex: number; orderedAtMs: number; product: PersonalizedProduct } => Boolean(item)),
+  );
+
+  orderedProducts.sort((left, right) => right.orderedAtMs - left.orderedAtMs || left.orderIndex - right.orderIndex);
+
+  return orderedProducts.map((item) => item.product).slice(0, 20);
+}
+
+function timestampMs(value: string | null | undefined) {
+  const parsed = value ? Date.parse(value) : Number.NaN;
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function productFromSummary(
+  product: ProductSummary,
+  badge?: string,
+  priceOverride: { mrpPaise?: number | null; pricePaise?: number | null } = {},
+): PersonalizedProduct {
+  const variant = primaryVariant(product);
+
+  return {
+    id: product.id,
+    name: product.name,
+    slug: product.slug,
+    imageUrl: primaryImage(product),
+    categoryId: product.categoryId ?? product.category?.id ?? null,
+    categoryName: product.category?.name ?? "Marketplace",
+    categorySlug: product.category?.slug ?? null,
+    sellerId: product.sellerId ?? product.seller?.id ?? null,
+    sellerName: product.seller?.storeName ?? "1HandIndia seller",
+    sellerSlug: product.seller?.slug ?? null,
+    pricePaise: priceOverride.pricePaise ?? variant?.pricePaise ?? null,
+    mrpPaise: priceOverride.mrpPaise ?? variant?.mrpPaise ?? null,
+    ...(badge ? { badge } : {}),
+  };
+}
+
+function productFromRecentSnapshot(product: RecentProductSnapshot): PersonalizedProduct {
+  return {
+    id: product.id,
+    name: product.name,
+    slug: product.slug,
+    imageUrl: product.imageUrl,
+    categoryId: product.categoryId ?? null,
+    categoryName: product.categoryName ?? "Marketplace",
+    categorySlug: product.categorySlug ?? null,
+    sellerId: product.sellerId ?? null,
+    sellerName: product.sellerName ?? "1HandIndia seller",
+    sellerSlug: product.sellerSlug ?? null,
+    pricePaise: product.pricePaise,
+    mrpPaise: product.mrpPaise,
+    badge: "Viewed",
+    viewedAt: product.viewedAt,
+  };
+}
+
+function uniquePersonalizedProducts(products: PersonalizedProduct[]) {
+  const seen = new Set<string>();
+  const unique: PersonalizedProduct[] = [];
+
+  for (const product of products) {
+    const key = product.id || product.slug;
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    unique.push(product);
+  }
+
+  return unique;
 }
 
 function CategoryShowcase({
@@ -792,6 +1568,7 @@ function WideStoreCard({ store }: { store: StoreProfile }) {
 function ProductRailSection({
   title,
   description,
+  href,
   products,
   isLoading,
   promoProduct,
@@ -799,6 +1576,7 @@ function ProductRailSection({
 }: {
   title: string;
   description: string;
+  href: string;
   products: ProductSummary[];
   isLoading: boolean;
   promoProduct: ProductSummary | undefined;
@@ -806,7 +1584,7 @@ function ProductRailSection({
 }) {
   return (
     <section className="mx-auto max-w-[1360px] px-4 py-5 sm:px-6 lg:px-10 lg:py-6">
-      <MobileSectionHeader title={title} href="/search" />
+      <MobileSectionHeader title={title} href={href} />
       <div className="grid items-stretch gap-3 lg:grid-cols-[minmax(260px,320px)_minmax(0,1fr)]">
         <div className="hidden lg:block">
           <PromoPanel product={promoProduct} tone={promoTone} title={title} description={description} />
@@ -830,278 +1608,6 @@ function ProductRailSection({
         </div>
       </div>
     </section>
-  );
-}
-
-function DealRail({
-  products,
-  isLoading,
-  section,
-}: {
-  products: ProductSummary[];
-  isLoading: boolean;
-  section?: HomepageSection | null;
-}) {
-  const endsAt = stringValue(section?.config?.timerEndsAt) || stringValue(section?.config?.endsAt);
-  const timer = useCountdownParts(endsAt);
-  const title = section?.title || "Flash Sale";
-  const description =
-    stringValue(section?.config?.subtitle) ||
-    stringValue(section?.config?.description) ||
-    "Limited time offer, grab now!";
-  const headline = description || title;
-
-  return (
-    <section className="mx-auto max-w-[1360px] px-4 py-5 sm:px-6 lg:px-10 lg:py-6">
-      <div className="relative overflow-visible bg-transparent lg:rounded-[28px] lg:border lg:border-[#FFF0EC] lg:bg-white lg:p-8 lg:shadow-[0_24px_70px_rgba(22,59,92,0.08)]">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="flex min-w-0 items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-2">
-              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#FFF0EC] text-[#ED3500] lg:h-10 lg:w-10">
-                <Zap className="h-5 w-5 fill-[#ED3500]" aria-hidden="true" />
-              </span>
-              <div className="min-w-0">
-                <h2 className="block text-2xl font-black tracking-normal text-[#111827] lg:hidden">{title}</h2>
-                <h2 className="hidden text-xs font-black uppercase tracking-wide text-[#ED3500] lg:block">{title}</h2>
-                <p className="mt-1 hidden text-xl font-black tracking-normal text-[#111827] sm:text-2xl lg:block lg:text-3xl">
-                  {headline}
-                </p>
-              </div>
-            </div>
-            <HomepageItemLink href="/deals" className="inline-flex shrink-0 items-center gap-2 text-sm font-black text-[#ED3500] lg:hidden">
-              View all <ArrowRight className="h-5 w-5" aria-hidden="true" />
-            </HomepageItemLink>
-          </div>
-
-          {timer ? <DealCountdown timer={timer} /> : null}
-        </div>
-
-        <DealHeroScroller ariaLabel={title}>
-          {isLoading
-            ? Array.from({ length: 4 }).map((_, index) => (
-                <StorefrontSkeleton key={index} className="h-[472px] w-[260px] shrink-0 rounded-[22px] bg-[#FFF8F5] sm:w-[272px] lg:w-[276px] xl:w-[292px]" />
-              ))
-            : products.map((product) => (
-                <DealHeroProductCard
-                  key={product.id}
-                  product={product}
-                />
-              ))}
-        </DealHeroScroller>
-      </div>
-    </section>
-  );
-}
-
-function DealCountdown({ timer }: { timer: Array<{ label: string; value: string }> }) {
-  return (
-    <div className="inline-flex w-fit items-center gap-2 rounded-[16px] bg-[#FFF0EC] px-4 py-2 text-[#ED3500] shadow-[0_12px_28px_rgba(237,53,0,0.08)] sm:px-5 lg:gap-3 lg:rounded-[22px] lg:py-3">
-      <Clock3 className="hidden h-6 w-6 shrink-0 lg:block" aria-hidden="true" />
-      {timer.map((part, index) => (
-        <span key={part.label} className="flex items-start gap-2">
-          <span className="text-center">
-            <span className="block text-2xl font-black leading-none tracking-normal sm:text-3xl">{part.value}</span>
-            <span className="mt-1 block text-[10px] font-semibold text-[#7A8496]">{shortCountdownLabel(part.label)}</span>
-          </span>
-          {index < timer.length - 1 ? (
-            <span className="pt-0.5 text-2xl font-black leading-none text-[#ED3500] sm:text-3xl">:</span>
-          ) : null}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-function DealHeroScroller({
-  children,
-  ariaLabel,
-}: {
-  children: ReactNode;
-  ariaLabel: string;
-}) {
-  const railRef = useRef<HTMLDivElement | null>(null);
-
-  function scrollDeals(direction: -1 | 1) {
-    railRef.current?.scrollBy({
-      left: direction * Math.max((railRef.current?.clientWidth ?? 720) - 72, 304),
-      behavior: "smooth",
-    });
-  }
-
-  return (
-    <div className="relative mt-4 overflow-hidden lg:mt-7">
-      <button
-        type="button"
-        aria-label="Previous deals"
-        onClick={() => scrollDeals(-1)}
-        className="absolute -left-5 top-1/2 z-10 hidden h-14 w-14 -translate-y-1/2 place-items-center rounded-full border border-[#FFE0D6] bg-white text-[#ED3500] shadow-[0_16px_38px_rgba(22,59,92,0.12)] transition hover:-translate-x-0.5 hover:border-[#ED3500] lg:grid xl:-left-7"
-      >
-        <ChevronLeft className="h-6 w-6" aria-hidden="true" />
-      </button>
-      <div
-        ref={railRef}
-        aria-label={ariaLabel}
-        className="indihub-scroll-rail flex max-w-full snap-x snap-mandatory gap-3 overflow-x-auto pb-3 pt-1 [scrollbar-width:none] lg:gap-4 [&::-webkit-scrollbar]:hidden"
-      >
-        {children}
-      </div>
-      <button
-        type="button"
-        aria-label="Next deals"
-        onClick={() => scrollDeals(1)}
-        className="absolute -right-5 top-1/2 z-10 hidden h-14 w-14 -translate-y-1/2 place-items-center rounded-full border border-[#FFE0D6] bg-white text-[#ED3500] shadow-[0_16px_38px_rgba(22,59,92,0.12)] transition hover:translate-x-0.5 hover:border-[#ED3500] lg:grid xl:-right-7"
-      >
-        <ChevronRight className="h-6 w-6" aria-hidden="true" />
-      </button>
-    </div>
-  );
-}
-
-function DealHeroProductCard({ product }: { product: ProductSummary }) {
-  const market = useMarket();
-  const customerAuth = useCustomerAuth();
-  const wishlist = useStorefrontWishlist();
-  const queryClient = useQueryClient();
-  const [cardMessage, setCardMessage] = useState("");
-  const variant = primaryVariant(product);
-  const mrp = variant?.mrpPaise && variant.mrpPaise > variant.pricePaise ? variant.mrpPaise : null;
-  const discount = mrp && variant ? Math.round(((mrp - variant.pricePaise) / mrp) * 100) : null;
-  const stockStatus = getStorefrontStockStatus(variant?.stockQuantity);
-  const dealBadge = dealBadgeLabel(product.campaignBadge, discount);
-  const href = product.campaignLinkUrl?.trim() || `/products/${product.slug}`;
-  const categoryLabel = product.category.name;
-  const canAddToCart = Boolean(customerAuth.enabled && variant && stockStatus.isAvailable && variant.status === "ACTIVE");
-  const isWishlisted = wishlist.hasWishlistProduct(product.id);
-  const isWishlistPending = wishlist.isPendingProductId === product.id;
-  const addMutation = useMutation({
-    mutationFn: () => {
-      if (!customerAuth.enabled) {
-        throw new Error("Sign in before using cart actions.");
-      }
-      if (!variant) {
-        throw new Error("This product is not available for cart.");
-      }
-
-      return addCartItem(customerAuth.authHeaders, variant.id, 1);
-    },
-    onSuccess: () => {
-      setCardMessage("Added to cart.");
-      void queryClient.invalidateQueries({ queryKey: ["cart", customerAuth.authKey] });
-    },
-    onError: (error) => {
-      setCardMessage(error instanceof Error ? error.message : "Unable to add product.");
-    },
-  });
-
-  async function handleWishlistClick(event: MouseEvent<HTMLButtonElement>) {
-    event.preventDefault();
-    event.stopPropagation();
-    setCardMessage("");
-
-    try {
-      const action = await wishlist.toggleWishlist(product.id);
-      setCardMessage(action === "add" ? "Saved to wishlist." : "Removed from wishlist.");
-    } catch (error) {
-      setCardMessage(error instanceof Error ? error.message : "Unable to update wishlist.");
-    }
-  }
-
-  return (
-    <article className="flex h-[308px] w-[174px] shrink-0 snap-start flex-col overflow-hidden rounded-[16px] border border-[#E8EDF2] bg-white shadow-[0_12px_28px_rgba(22,59,92,0.05)] transition hover:-translate-y-0.5 hover:border-[#ED3500] hover:shadow-[0_20px_44px_rgba(22,59,92,0.10)] sm:h-[472px] sm:w-[272px] sm:rounded-[22px] sm:border-[#FFE0D6] lg:w-[276px] xl:w-[292px]">
-      <div className="relative h-[150px] shrink-0 overflow-hidden bg-white sm:h-[184px] sm:bg-[radial-gradient(circle_at_50%_44%,rgba(237,53,0,0.10),transparent_42%),linear-gradient(135deg,#fff_0%,#FFF0EC_100%)]">
-        <HomepageItemLink href={href} className="absolute inset-0 block" aria-label={`View ${product.name}`}>
-          <StorefrontImage
-            src={primaryImage(product)}
-            alt={product.name}
-            sizes="292px"
-            fallbackLabel={product.category.name}
-            allowExternalRemote
-            className="object-contain p-4 transition duration-500 hover:scale-105 sm:p-5"
-          />
-        </HomepageItemLink>
-        <button
-          type="button"
-          onClick={(event) => void handleWishlistClick(event)}
-          disabled={isWishlistPending}
-          aria-label={isWishlisted ? `Remove ${product.name} from wishlist` : `Save ${product.name} to wishlist`}
-          className={cn(
-            "absolute right-3 top-3 grid h-8 w-8 place-items-center rounded-full bg-white text-[#ED3500] shadow-[0_12px_24px_rgba(22,59,92,0.12)] transition hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ED3500] sm:h-10 sm:w-10",
-            isWishlisted && "bg-[#FFF0EC] text-[#ED3500]",
-            isWishlistPending && "cursor-wait opacity-70",
-          )}
-        >
-          <Heart className={cn("h-4 w-4 sm:h-5 sm:w-5", isWishlisted && "fill-current")} aria-hidden="true" strokeWidth={2} />
-        </button>
-        {dealBadge ? (
-          <span className="absolute left-3 top-3 max-w-[calc(100%-4.5rem)] truncate rounded-[8px] bg-[#ED3500] px-2.5 py-1.5 text-[10px] font-black text-white shadow-[0_12px_24px_rgba(237,53,0,0.24)] sm:bottom-3 sm:top-auto sm:rounded-full sm:px-3 sm:text-xs">
-            {dealBadge}
-          </span>
-        ) : null}
-      </div>
-
-      <div className="flex min-w-0 flex-1 flex-col p-3 sm:p-4">
-        <span className="hidden w-fit max-w-full truncate rounded-full bg-[#FFF8F5] px-2.5 py-1 text-[10px] font-black uppercase text-[#ED3500] sm:inline-flex">
-          {categoryLabel}
-        </span>
-        <HomepageItemLink href={href} className="block sm:mt-3">
-          <span className="line-clamp-2 min-h-10 text-sm font-black leading-5 tracking-normal text-[#1F2933] sm:min-h-11 sm:text-[17px] sm:leading-[22px]">
-            {product.name}
-          </span>
-        </HomepageItemLink>
-        <span className="mt-2 hidden min-w-0 items-center gap-1.5 text-[11px] font-black uppercase tracking-normal text-[#7A8496] sm:flex">
-          <Store className="h-3.5 w-3.5 shrink-0 text-[#667085]" aria-hidden="true" />
-          <span className="truncate">{product.seller.storeName}</span>
-          <BadgeCheck className="h-3.5 w-3.5 shrink-0 fill-[#ED3500] text-white" aria-hidden="true" />
-        </span>
-        <span className="mt-2 flex min-w-0 items-baseline gap-2 sm:mt-3">
-          <span className="text-2xl font-black leading-none tracking-normal text-[#1F2933] sm:text-2xl sm:text-[#ED3500]">
-            {variant ? market.format(variant.pricePaise) : "Price pending"}
-          </span>
-          {mrp ? <span className="truncate text-xs font-black text-[#7A8496] line-through sm:text-sm">{market.format(mrp)}</span> : null}
-        </span>
-        <span
-          className={cn(
-            "mt-3 inline-flex w-fit max-w-full items-center gap-1.5 rounded-[8px] px-2.5 py-1.5 text-xs font-black sm:rounded-full sm:px-3",
-            storefrontStockBadgeClass(stockStatus.tone),
-          )}
-        >
-          <PackageCheck className="h-4 w-4 shrink-0" aria-hidden="true" />
-          <span className="truncate">{stockStatus.label}</span>
-        </span>
-        <div className="mt-auto hidden grid-cols-[1fr_auto] gap-2 pt-4 sm:grid">
-          {customerAuth.enabled ? (
-            <button
-              type="button"
-              disabled={!canAddToCart || addMutation.isPending}
-              onClick={() => addMutation.mutate()}
-              className={cn(
-                "inline-flex h-11 items-center justify-center gap-2 rounded-full bg-[#ED3500] px-4 text-sm font-black text-white shadow-[0_14px_24px_rgba(237,53,0,0.22)] transition hover:-translate-y-0.5 hover:bg-[#d52f00]",
-                (!canAddToCart || addMutation.isPending) && "cursor-not-allowed bg-[#F2B5A5] shadow-none hover:translate-y-0 hover:bg-[#F2B5A5]",
-              )}
-            >
-              <ShoppingCart className="h-4 w-4" aria-hidden="true" />
-              {!variant ? "Unavailable" : !stockStatus.isAvailable ? "Out of stock" : addMutation.isPending ? "Adding" : "Add to Cart"}
-            </button>
-          ) : (
-            <HomepageItemLink
-              href="/sign-in"
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-[#ED3500] px-4 text-sm font-black text-white shadow-[0_14px_24px_rgba(237,53,0,0.22)] transition hover:-translate-y-0.5 hover:bg-[#d52f00]"
-            >
-              <ShoppingCart className="h-4 w-4" aria-hidden="true" />
-              Sign in
-            </HomepageItemLink>
-          )}
-          <HomepageItemLink
-            href={href}
-            aria-label={`View ${product.name}`}
-            className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#E8EDF2] bg-white text-[#7A8496] shadow-[0_10px_20px_rgba(22,59,92,0.06)] transition hover:-translate-y-0.5 hover:border-[#ED3500] hover:text-[#ED3500]"
-          >
-            <Eye className="h-5 w-5" aria-hidden="true" />
-          </HomepageItemLink>
-        </div>
-        {cardMessage ? <p className="mt-2 hidden min-h-4 truncate text-xs font-bold text-[#667085] sm:block">{cardMessage}</p> : <span className="mt-2 hidden min-h-4 sm:block" aria-hidden="true" />}
-      </div>
-    </article>
   );
 }
 
@@ -1204,6 +1710,136 @@ function ServiceBadges({ items }: { items: NormalizedHomepageItem[] }) {
   );
 }
 
+function CustomHomepageSections({ sections }: { sections: HomepageSection[] }) {
+  if (!sections.length) {
+    return null;
+  }
+
+  return (
+    <>
+      {sections.map((section) => (
+        <CustomHomepageSection key={section.id} section={section} />
+      ))}
+    </>
+  );
+}
+
+function CustomHomepageSection({ section }: { section: HomepageSection }) {
+  const config = section.config ?? {};
+  const items = normalizeHomepageItems(config.items);
+  const eyebrow = stringValue(config.eyebrow) || humanize(section.sectionType);
+  const description =
+    stringValue(config.subtitle) ||
+    stringValue(config.description);
+  const ctaLabel = stringValue(config.ctaLabel);
+  const ctaUrl = stringValue(config.ctaUrl) || stringValue(config.ctaHref);
+
+  if (!items.length && !description && (!ctaLabel || !ctaUrl)) {
+    return null;
+  }
+
+  return (
+    <section className="mx-auto max-w-[1360px] px-4 py-5 sm:px-6 lg:px-10 lg:py-6">
+      <div className="overflow-hidden rounded-[18px] border border-[#FFE0D6] bg-white p-5 shadow-[0_12px_32px_rgba(22,59,92,0.05)] lg:p-7">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0">
+            {eyebrow ? (
+              <span className="mb-2 inline-flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-[#ED3500]">
+                <span className="h-1 w-5 rounded-full bg-[#ED3500]" aria-hidden="true" />
+                {eyebrow}
+              </span>
+            ) : null}
+            <h2 className="text-2xl font-black tracking-normal text-[#111827] sm:text-3xl">
+              {section.title}
+            </h2>
+            {description ? (
+              <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-[#667085]">
+                {description}
+              </p>
+            ) : null}
+          </div>
+          {ctaLabel && ctaUrl ? (
+            <HomepageItemLink
+              href={ctaUrl}
+              className="inline-flex h-10 w-fit shrink-0 items-center gap-2 rounded-full border border-[#FFE0D6] bg-[#FFF7F3] px-4 text-sm font-black !text-[#ED3500] transition hover:-translate-y-0.5 hover:border-[#ED3500]/50 hover:!text-[#c92b00]"
+            >
+              {ctaLabel} <ArrowRight className="h-4 w-4" aria-hidden="true" />
+            </HomepageItemLink>
+          ) : null}
+        </div>
+
+        {items.length ? (
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {items.map((item, index) => (
+              <CustomHomepageItemCard
+                key={`${section.id}-${item.label}-${index}`}
+                item={item}
+                accent={categoryAccent(index)}
+              />
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function CustomHomepageItemCard({
+  item,
+  accent,
+}: {
+  item: NormalizedHomepageItem;
+  accent: CategoryAccent;
+}) {
+  return (
+    <HomepageItemLink
+      href={item.linkUrl}
+      className="group flex min-h-[156px] min-w-0 flex-col overflow-hidden rounded-[16px] border border-[#E8EDF2] bg-[#FFFCFB] p-4 text-left shadow-[0_10px_24px_rgba(22,59,92,0.04)] transition hover:-translate-y-0.5 hover:border-[#FFD8CC] hover:shadow-[0_18px_38px_rgba(22,59,92,0.08)]"
+    >
+      <span className="flex min-w-0 items-start gap-3">
+        <span
+          className={cn(
+            "grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-[14px]",
+            accent.imageBg,
+          )}
+        >
+          {item.imageUrl ? (
+            <StorefrontImage
+              src={item.imageUrl}
+              alt={item.label}
+              sizes="56px"
+              fallbackLabel={item.label}
+              showFallbackLabel={false}
+              allowExternalRemote
+              className="object-contain p-2 transition duration-300 group-hover:scale-105"
+            />
+          ) : (
+            <Sparkles className={cn("h-6 w-6", accent.text)} aria-hidden="true" />
+          )}
+        </span>
+        <span className="min-w-0 flex-1">
+          {item.badge ? (
+            <span className="mb-1 inline-flex max-w-full rounded-full bg-[#FFF0EC] px-2 py-0.5 text-[10px] font-black uppercase text-[#ED3500]">
+              <span className="truncate">{item.badge}</span>
+            </span>
+          ) : null}
+          <span className="line-clamp-2 text-base font-black leading-5 text-[#111827]">
+            {item.label}
+          </span>
+        </span>
+      </span>
+      {item.description ? (
+        <span className="mt-3 line-clamp-2 text-sm font-semibold leading-6 text-[#667085]">
+          {item.description}
+        </span>
+      ) : null}
+      <span className={cn("mt-auto flex items-center gap-2 pt-4 text-xs font-black", accent.text)}>
+        Explore <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+      </span>
+    </HomepageItemLink>
+  );
+}
+
 function PromoPanel({
   product,
   tone,
@@ -1278,10 +1914,12 @@ function CompactProductCard({
   const market = useMarket();
   const wishlist = useStorefrontWishlist();
   const variant = primaryVariant(product);
-  const mrp = variant?.mrpPaise && variant.mrpPaise > variant.pricePaise ? variant.mrpPaise : null;
+  const activeDeal = getActiveDeal(product, variant);
+  const dealOriginalPrice = getDealOriginalPrice(variant);
+  const mrp = dealOriginalPrice ?? (variant?.mrpPaise && variant.mrpPaise > variant.pricePaise ? variant.mrpPaise : null);
   const discount = mrp && variant ? Math.round(((mrp - variant.pricePaise) / mrp) * 100) : null;
   const stockStatus = getStorefrontStockStatus(variant?.stockQuantity);
-  const campaignBadge = product.campaignBadge?.trim();
+  const campaignBadge = activeDeal ? `${activeDeal.discountBps / 100}% DEAL` : product.campaignBadge?.trim();
   const isWishlisted = wishlist.hasWishlistProduct(product.id);
   const isWishlistPending = wishlist.isPendingProductId === product.id;
 
@@ -1346,7 +1984,7 @@ function CompactProductCard({
         </div>
         {discount ? (
           <span className="mt-1 w-fit rounded bg-[#FFF0EC] px-2 py-0.5 text-[10px] font-black text-[#ED3500]">
-            {discount}% OFF
+            {activeDeal ? `${discount}% DEAL` : `${discount}% OFF`}
           </span>
         ) : null}
         <span
@@ -1489,35 +2127,33 @@ function findSection(sections: HomepageSection[] | undefined, type: string) {
   return sections?.find((section) => section.sectionType === type) ?? null;
 }
 
+const INLINE_HOMEPAGE_SECTION_TYPES = new Set([
+  "featured_categories",
+  "featured_products",
+  "deal_strip",
+  "seller_cta",
+  "service_badges",
+  "trust_highlights",
+]);
+
+function standaloneHomepageSections(sections: HomepageSection[] | undefined) {
+  return sections?.filter((section) => !INLINE_HOMEPAGE_SECTION_TYPES.has(section.sectionType)) ?? [];
+}
+
 function stringValue(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function shortCountdownLabel(label: string) {
-  if (label === "Hours") {
-    return "Hrs";
-  }
-
-  if (label === "Mins") {
-    return "Mins";
-  }
-
-  if (label === "Secs") {
-    return "Secs";
-  }
-
-  return label;
+function getActiveDeal(product: ProductSummary, variant: ReturnType<typeof primaryVariant>) {
+  return variant?.activeDeal ?? product.activeDeal ?? null;
 }
 
-function dealBadgeLabel(value: unknown, discount: number | null) {
-  const badge = stringValue(value);
-
-  if (badge) {
-    const numericBadge = badge.match(/^(\d+(?:\.\d+)?)%?$/);
-    return numericBadge ? `${numericBadge[1]}% OFF` : badge;
+function getDealOriginalPrice(variant: ReturnType<typeof primaryVariant>) {
+  if (!variant?.activeDeal || !variant.originalPricePaise || variant.originalPricePaise <= variant.pricePaise) {
+    return null;
   }
 
-  return discount ? `${discount}% OFF` : "";
+  return variant.originalPricePaise;
 }
 
 function humanize(value: string) {
@@ -1570,6 +2206,124 @@ function heroProductPosition(index: number) {
   return positions[index] ?? "left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2";
 }
 
+type StorefrontProductRailDefinition = {
+  description: string;
+  href: string;
+  id: string;
+  products: ProductSummary[];
+  promoTone: "orange" | "soft";
+  title: string;
+};
+
+function buildStorefrontProductRails(home: StorefrontHomePayload | undefined): StorefrontProductRailDefinition[] {
+  if (!home) {
+    return [
+      {
+        id: "todays-deals",
+        title: "Today's Deals",
+        description: "Live offers and limited-time marketplace prices.",
+        href: "/deals",
+        products: [],
+        promoTone: "orange",
+      },
+      {
+        id: "best-sellers",
+        title: "Best Sellers",
+        description: "Top featured picks from verified sellers.",
+        href: "/search?sort=rating",
+        products: [],
+        promoTone: "soft",
+      },
+      {
+        id: "new-arrivals",
+        title: "New Arrivals",
+        description: "Freshly approved products added to the marketplace.",
+        href: "/search?sort=newest",
+        products: [],
+        promoTone: "soft",
+      },
+      {
+        id: "nearby-products",
+        title: "Nearby Products",
+        description: "Products from stores matched to your selected location.",
+        href: "/stores",
+        products: [],
+        promoTone: "soft",
+      },
+    ];
+  }
+
+  const allProducts = uniqueProducts([
+    ...home.productRails.deals,
+    ...home.productRails.featured,
+    ...home.productRails.latest,
+  ]);
+  const todayDeals = uniqueProducts(home.productRails.deals).slice(0, 10);
+  const bestSellers = distinctRailProducts(
+    uniqueProducts(home.productRails.featured),
+    todayDeals,
+  ).slice(0, 10);
+  const newArrivals = distinctRailProducts(
+    uniqueProducts(home.productRails.latest),
+    [...todayDeals, ...bestSellers],
+  ).slice(0, 10);
+  const nearbyProducts = distinctRailProducts(
+    productsFromNearbyStores(allProducts, home.storesNearYou),
+    [...todayDeals, ...bestSellers, ...newArrivals],
+  ).slice(0, 10);
+
+  return [
+    {
+      id: "todays-deals",
+      title: "Today's Deals",
+      description: "Live offers and limited-time marketplace prices.",
+      href: "/deals",
+      products: todayDeals,
+      promoTone: "orange",
+    },
+    {
+      id: "best-sellers",
+      title: "Best Sellers",
+      description: "Top featured picks from verified sellers.",
+      href: "/search?sort=rating",
+      products: bestSellers.length ? bestSellers : uniqueProducts(home.productRails.featured).slice(0, 10),
+      promoTone: "soft",
+    },
+    {
+      id: "new-arrivals",
+      title: "New Arrivals",
+      description: "Freshly approved products added to the marketplace.",
+      href: "/search?sort=newest",
+      products: newArrivals.length ? newArrivals : uniqueProducts(home.productRails.latest).slice(0, 10),
+      promoTone: "soft",
+    },
+    {
+      id: "nearby-products",
+      title: "Nearby Products",
+      description: "Products from stores matched to your selected location.",
+      href: "/stores",
+      products: nearbyProducts.length ? nearbyProducts : productsFromNearbyStores(allProducts, home.storesNearYou).slice(0, 10),
+      promoTone: "soft",
+    },
+  ];
+}
+
+function distinctRailProducts(products: ProductSummary[], usedProducts: ProductSummary[]) {
+  const used = new Set(usedProducts.map((product) => product.id));
+  return products.filter((product) => !used.has(product.id));
+}
+
+function productsFromNearbyStores(products: ProductSummary[], stores: StoreProfile[]) {
+  const nearbySellerIds = new Set(stores.map((store) => store.id));
+  if (!nearbySellerIds.size) {
+    return [];
+  }
+
+  return uniqueProducts(
+    products.filter((product) => nearbySellerIds.has(product.sellerId) || nearbySellerIds.has(product.seller?.id)),
+  );
+}
+
 function uniqueProducts(products: ProductSummary[]) {
   const seen = new Set<string>();
   return products.filter((product) => {
@@ -1604,60 +2358,5 @@ function defaultSellerCtaItems(): NormalizedHomepageItem[] {
       linkUrl: "/seller/register",
       badge: "",
     },
-  ];
-}
-
-type CountdownPart = { label: string; value: string };
-
-const COUNTDOWN_PLACEHOLDER: CountdownPart[] = [
-  { label: "Hours", value: "--" },
-  { label: "Mins", value: "--" },
-  { label: "Secs", value: "--" },
-];
-
-function useCountdownParts(value: string) {
-  const [now, setNow] = useState<number | null>(null);
-
-  useEffect(() => {
-    if (!isValidCountdownTarget(value)) {
-      setNow(null);
-      return;
-    }
-
-    setNow(Date.now());
-    const intervalId = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(intervalId);
-  }, [value]);
-
-  return useMemo(() => {
-    if (!isValidCountdownTarget(value)) {
-      return null;
-    }
-    if (now === null) {
-      return COUNTDOWN_PLACEHOLDER;
-    }
-    return buildStaticCountdown(value, now);
-  }, [now, value]);
-}
-
-function isValidCountdownTarget(value: string) {
-  if (!value) {
-    return false;
-  }
-  const target = new Date(value);
-  return !Number.isNaN(target.getTime());
-}
-
-function buildStaticCountdown(value: string, now: number) {
-  const target = new Date(value);
-  const delta = Math.max(0, target.getTime() - now);
-  const hours = Math.floor(delta / 3_600_000);
-  const minutes = Math.floor((delta % 3_600_000) / 60_000);
-  const seconds = Math.floor((delta % 60_000) / 1000);
-
-  return [
-    { label: "Hours", value: String(hours).padStart(2, "0") },
-    { label: "Mins", value: String(minutes).padStart(2, "0") },
-    { label: "Secs", value: String(seconds).padStart(2, "0") },
   ];
 }

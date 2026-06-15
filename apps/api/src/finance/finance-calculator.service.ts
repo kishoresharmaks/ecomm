@@ -44,11 +44,13 @@ export class FinanceCalculatorService {
     let tdsPaise = 0;
     let tcsPaise = 0;
     let platformFeePaise = 0;
+    let couponSellerFundedDiscountPaise = 0;
 
     for (const item of items) {
       const categoryId = item.product.categoryId;
       const rule = await this.resolveRule(split.sellerId, categoryId, split.order.createdAt, ruleCache, tx);
       const lineAmount = item.lineTotalPaise;
+      const lineCouponSellerFundedDiscountPaise = item.couponSellerFundedDiscountPaise ?? 0;
       const lineCommission = rule ? this.amountForRule(rule.commissionType, rule.commissionValueBps, rule.commissionFixedPaise, lineAmount) : 0;
       const linePlatformFee = rule ? this.amountForRule(rule.platformFeeType, rule.platformFeeValueBps, rule.platformFeeFixedPaise, lineAmount) : 0;
       const lineGst = rule ? this.percentOf(lineCommission + linePlatformFee, rule.gstRateBps) : 0;
@@ -64,12 +66,14 @@ export class FinanceCalculatorService {
       tdsPaise += lineTds;
       tcsPaise += lineTcs;
       platformFeePaise += linePlatformFee;
+      couponSellerFundedDiscountPaise += lineCouponSellerFundedDiscountPaise;
 
       lineSnapshots.push({
         orderItemId: item.id,
         productId: item.productId,
         categoryId,
         lineTotalPaise: lineAmount,
+        couponSellerFundedDiscountPaise: lineCouponSellerFundedDiscountPaise,
         ruleId: rule?.id ?? null,
         ruleName: rule?.name ?? "No commission rule",
         commissionPaise: lineCommission,
@@ -82,7 +86,13 @@ export class FinanceCalculatorService {
 
     const deductionsPaise = commissionPaise + gstOnCommissionPaise + tdsPaise + tcsPaise + platformFeePaise;
     const refundAdjustmentPaise = split.refundAdjustmentPaise ?? 0;
-    const netPayablePaise = split.sellerSubtotalPaise - deductionsPaise + refundAdjustmentPaise;
+    const couponAdjustmentPaise = split.couponAdjustmentPaise ?? 0;
+    const netPayablePaise =
+      split.sellerSubtotalPaise -
+      deductionsPaise -
+      couponSellerFundedDiscountPaise +
+      refundAdjustmentPaise +
+      couponAdjustmentPaise;
     const ruleIdList = Array.from(ruleIds);
 
     return {
@@ -96,8 +106,10 @@ export class FinanceCalculatorService {
       refundAdjustmentPaise,
       netPayablePaise,
       snapshot: {
-        calculationVersion: 1,
+        calculationVersion: 2,
         rulesUsed: ruleIdList,
+        sellerFundedCouponDiscountPaise: couponSellerFundedDiscountPaise,
+        couponAdjustmentPaise,
         lines: lineSnapshots
       }
     } satisfies SplitFinanceCalculation;

@@ -1,36 +1,36 @@
 # 1HandIndia UI Screen List and Database Plan
 
 **Project:** 1HandIndia Multi-Vendor Ecommerce Marketplace  
-**Document Type:** Phase 1 UI and Database Planning  
+**Document Type:** Product UI and Database Planning  
 **Prepared By:** Kishoresharma  
 **Prepared Date:** 23-05-2026  
-**Scope Source:** `docs/IndiHub_Final_Scope_Requirement_Confirmation_Phase1.md`  
-**Phase 1 Budget:** INR 200,000  
-**Build Direction:** Web-first marketplace  
+**Scope Governance:** `docs/IndiHub_FULL_IMPLEMENTATION_SCOPE_GOVERNANCE.md`  
+**Historical Budget:** INR 200,000  
+**Build Direction:** Full marketplace implementation  
 
 ## 1. Purpose
 
-This document prepares the Phase 1 UI screen list and database plan before development starts.
+This document prepares the product UI screen list and database plan.
 
-It follows the frozen Phase 1 scope:
+It follows the active full implementation rule:
 
-- Customer storefront.
-- Customer account.
+- Customer storefront and account.
 - Seller dashboard for marketplace sellers, hyperlocal stores, and wholesale distributors.
-- Basic B2B enquiry flow.
+- B2B buyer workflow.
 - Admin control panel.
 - Cart, checkout, and order flow.
-- Manual delivery/courier tracking.
-- Delivery partner web workspace for assigned manual delivery tasks.
-- Payment readiness.
+- Delivery/courier tracking and delivery partner workspace.
+- Payment, finance, payout, and provider readiness.
 - Transactional email notifications.
-- Basic reports, CMS pages, and audit logs.
+- Reports, CMS pages, and audit logs.
 
-Native mobile apps, delivery partner mobile app, live courier API, GPS/OTP/proof-of-delivery automation, automated payouts, chatbot, advanced analytics, advanced B2B workflows, SMS/WhatsApp automation, and multi-language/multi-currency are future upgrades.
+Native mobile apps, delivery partner mobile app, live courier API, GPS/OTP/proof-of-delivery automation, automated payouts, chatbot, advanced analytics, advanced B2B workflows, SMS/WhatsApp automation, and multi-language/multi-currency are selectable feature groups. If selected, they must be implemented completely.
 
 ## 2. UI Area Map
 
-| Area | User Type | Phase 1 Purpose |
+Customer and seller must be planned as separate applications. They may share the same monorepo, API, database, design tokens, and deployment foundation, but their app shells, navigation, authentication entry points, QA checklists, release readiness, and future mobile app plans should remain separate.
+
+| Area | User Type | Product Purpose |
 |---|---|---|
 | Public storefront | Guest and customer | Browse products, stores, categories, and policies. |
 | Customer account | Customer / B2C buyer | Manage profile, addresses, wishlist, orders, and support/contact requests. |
@@ -45,7 +45,7 @@ Native mobile apps, delivery partner mobile app, live courier API, GPS/OTP/proof
 |---|---|---|---|---|
 | 1 | Homepage | `/` | Must | Main shopping entry with banners, categories, featured products, and seller highlights. |
 | 2 | Category Listing | `/categories` | Must | Show all active categories. |
-| 3 | Category Detail / Product List | `/categories/[slug]` | Must | Show products under selected category with basic filters. |
+| 3 | Category Detail / Product List | `/categories/[slug]` | Must | Show products under selected category with usable marketplace filters. |
 | 4 | Product Search Results | `/search` | Must | Search products by keyword with filters and sorting. |
 | 5 | Product Detail | `/products/[slug]` | Must | Product images, price, stock, seller info, add to cart, wishlist, B2B enquiry. |
 | 6 | Seller / Store Profile | `/stores/[slug]` | Must | Public seller/local shop page with products and store details. |
@@ -68,7 +68,7 @@ Native mobile apps, delivery partner mobile app, live courier API, GPS/OTP/proof
 | 1 | Customer Sign In | `/sign-in` | Must | Customer login through selected auth provider. |
 | 2 | Customer Sign Up | `/sign-up` | Must | Customer registration. |
 | 3 | Account Dashboard | `/account` | Must | Summary of orders, addresses, wishlist, and profile. |
-| 4 | Profile | `/account/profile` | Must | Customer name, phone, email, and basic profile data. |
+| 4 | Profile | `/account/profile` | Must | Customer name, phone, email, and profile data. |
 | 5 | Address Book | `/account/addresses` | Must | Add, edit, delete delivery addresses. |
 | 6 | Wishlist | `/account/wishlist` | Must | Saved products. |
 | 7 | Order History | `/account/orders` | Must | Customer orders with payment and delivery status. |
@@ -77,7 +77,7 @@ Native mobile apps, delivery partner mobile app, live courier API, GPS/OTP/proof
 
 ## 5. Seller Operational Screens
 
-Marketplace sellers, hyperlocal stores, and wholesale distributors use the same seller center in Phase 1, while the operational type remains available for delivery, commission, SLA, and discovery rules.
+Marketplace sellers, hyperlocal stores, and wholesale distributors use the same seller center, while the operational type remains available for delivery, commission, SLA, and discovery rules.
 
 | # | Screen | Suggested Route | Priority | Purpose |
 |---|---|---|---|---|
@@ -94,7 +94,7 @@ Marketplace sellers, hyperlocal stores, and wholesale distributors use the same 
 | 11 | Delivery Update | `/seller/orders/[orderNumber]/delivery` | Must | Manual delivery partner/courier details and delivery status update. |
 | 12 | B2B Enquiries | `/seller/b2b-enquiries` | Must | Product-wise B2B enquiries visible to seller. |
 | 13 | B2B Enquiry Detail | `/seller/b2b-enquiries/[id]` | Must | View enquiry and send manual response. |
-| 14 | Sales Summary | `/seller/reports/sales` | Should | Basic sales summary for seller. |
+| 14 | Sales Summary | `/seller/reports/sales` | Should | Operational sales summary for seller. |
 | 15 | Seller Subscription | `/seller/subscription` | Must | Current seller plan, status, limits, and admin-managed subscription note. |
 
 ## 6. Delivery Partner Screens
@@ -107,7 +107,7 @@ Marketplace sellers, hyperlocal stores, and wholesale distributors use the same 
 
 ## 7. B2B Buyer Screens
 
-Phase 1 supports basic enquiry and request quotation flow only.
+B2B buyer screens support enquiry and quotation workflows. If advanced RFQ, PO upload, comparison, or approval is selected, implement the full workflow rather than a partial add-on.
 
 | # | Screen | Suggested Route | Priority | Purpose |
 |---|---|---|---|---|
@@ -143,16 +143,16 @@ Phase 1 supports basic enquiry and request quotation flow only.
 | 18 | Homepage Content | `/admin/cms/homepage` | Must | Manage sections, featured categories/products. |
 | 19 | CMS Pages | `/admin/cms/pages` | Must | Manage About, Contact, policies. |
 | 20 | Support / Contact Requests | `/admin/support-requests` | Must | View and respond to contact/support requests. |
-| 21 | Reports Overview | `/admin/reports` | Must | Basic sales, seller, product, and enquiry reports. |
+| 21 | Reports Overview | `/admin/reports` | Must | Sales, seller, product, finance, and enquiry reports. |
 | 22 | Sales Report | `/admin/reports/sales` | Must | Date-wise sales summary. |
 | 23 | Seller Report | `/admin/reports/sellers` | Must | Seller-wise product/order summary. |
 | 24 | Product Report | `/admin/reports/products` | Must | Product-wise stock and sales summary. |
 | 25 | Enquiry Report | `/admin/reports/enquiries` | Must | B2B/contact enquiry summary. |
 | 26 | Commission Settings | `/admin/settings/commissions` | Must | Manual commission or percentage setup. |
-| 27 | Shipping Settings | `/admin/settings/shipping` | Must | Basic shipping charge rules and delivery modes. |
+| 27 | Shipping Settings | `/admin/settings/shipping` | Must | Shipping charge rules and delivery modes. |
 | 28 | Payment Settings | `/admin/settings/payments` | Should | Payment readiness settings and provider status. |
 | 29 | Email Settings | `/admin/settings/email` | Must | Sender name, sender email, provider status, template toggles. |
-| 30 | Admin Users / Roles | `/admin/settings/users` | Must | Basic admin users and role assignment. |
+| 30 | Admin Users / Roles | `/admin/settings/users` | Must | Admin users and role assignment. |
 | 31 | Seller Subscriptions | `/admin/seller-subscriptions` | Must | Create seller plans, choose default onboarding plan, and assign plans to sellers. |
 | 32 | Audit Logs | `/admin/audit-logs` | Must | Sensitive action history. |
 | 33 | General Settings | `/admin/settings/general` | Must | Brand, contact, support, and business settings. |
@@ -177,7 +177,7 @@ Phase 1 supports basic enquiry and request quotation flow only.
 | Confirmation dialog | Delete, disable, approve, reject |
 | Toast / alert | Form and action feedback |
 | Timeline component | Order status and audit history |
-| Basic chart cards | Admin reports and seller sales summary |
+| Chart cards | Admin reports and seller sales summary |
 
 ## 10. Database Design Principles
 
@@ -187,7 +187,7 @@ Core rules:
 
 - Use UUID primary keys.
 - Store money in paise as integer fields where practical.
-- Store currency code even if Phase 1 uses only INR.
+- Store currency code even if the current launch uses INR.
 - Use explicit status fields instead of deleting important business records.
 - Use soft delete fields for sellers, products, categories, and CMS pages.
 - Keep payment status, order status, delivery status, and seller status separate.
@@ -214,7 +214,7 @@ Initial roles:
 - `business_buyer`
 - `admin`
 
-Future roles:
+Selectable roles:
 
 - `support_staff`
 - `delivery_partner`
@@ -236,7 +236,7 @@ Future roles:
 | `sellers` | Seller operational profile | `id`, `user_id`, `seller_type`, `store_name`, `slug`, `status`, `approval_status`, `commission_type`, `commission_value` |
 | `seller_profiles` | Store presentation and contact details | `id`, `seller_id`, `logo_url`, `banner_url`, `description`, `contact_name`, `contact_phone`, `contact_email` |
 | `seller_addresses` | Store address and area | `id`, `seller_id`, `line1`, `line2`, `area`, `city`, `state`, `pincode`, `latitude`, `longitude` |
-| `seller_documents` | Basic seller KYC files if collected | `id`, `seller_id`, `document_type`, `file_url`, `status` |
+| `seller_documents` | Seller KYC files if collected | `id`, `seller_id`, `document_type`, `file_url`, `status` |
 | `seller_subscription_plans` | Admin-managed seller plan master | `id`, `code`, `name`, `price_paise`, `billing_cycle`, `is_default`, `is_active`, `product_limit` |
 | `seller_subscriptions` | Seller plan assignment history | `id`, `seller_id`, `plan_id`, `status`, `is_current`, `started_at`, `current_period_end`, `created_by` |
 
@@ -345,7 +345,7 @@ Delivery mode enum:
 - `LOCAL_DELIVERY_PARTNER`
 - `THIRD_PARTY_COURIER`
 
-Phase 1 supports `DELIVERY_PARTNER` users for local partner assignment. Third-party courier details remain manual order-level data until live courier integrations are separately approved.
+The product supports `DELIVERY_PARTNER` users for local partner assignment. If live courier integration is selected, implement provider booking, tracking, failure handling, and admin visibility end to end.
 
 ### 11.9 Payment Readiness
 
@@ -361,7 +361,7 @@ Payment provider enum:
 - `BANK_TRANSFER`
 - `MANUAL`
 
-### 11.10 Basic B2B Enquiry
+### 11.10 B2B Enquiry
 
 | Table | Purpose | Important Fields |
 |---|---|---|
@@ -388,7 +388,7 @@ B2B enquiry status enum:
 
 | Table | Purpose | Important Fields |
 |---|---|---|
-| `support_requests` | Basic contact/support form submissions | `id`, `user_id`, `name`, `email`, `phone`, `subject`, `message`, `status`, `admin_note` |
+| `support_requests` | Contact/support form submissions | `id`, `user_id`, `name`, `email`, `phone`, `subject`, `message`, `status`, `admin_note` |
 
 Support request status enum:
 
@@ -405,7 +405,7 @@ Support request status enum:
 | `notification_logs` | Notification send history | `id`, `user_id`, `channel`, `template_code`, `recipient`, `status`, `provider_message_id`, `error_message`, `created_at` |
 | `email_settings` | Email provider config reference | `id`, `provider`, `sender_name`, `sender_email`, `is_enabled` |
 
-Phase 1 email template codes:
+Application email template codes:
 
 - `CUSTOMER_ACCOUNT_CREATED`
 - `SELLER_REGISTRATION_RECEIVED`
@@ -439,7 +439,7 @@ Phase 1 email template codes:
 | `audit_logs` | Sensitive action trail | `id`, `actor_user_id`, `action`, `entity_type`, `entity_id`, `old_value`, `new_value`, `ip_address`, `created_at` |
 | `report_snapshots` | Optional cached report data | `id`, `report_type`, `date_from`, `date_to`, `payload`, `created_at` |
 
-Audit actions required in Phase 1:
+Required audit actions:
 
 - Seller approved/rejected/suspended.
 - Product approved/rejected.
@@ -528,7 +528,7 @@ Initial seed data should include:
 - Default email templates.
 - CMS pages for privacy, terms, refund/return, shipping, and seller policy.
 - Sample categories if client has not yet provided final category data.
-- Basic homepage sections.
+- Homepage sections.
 
 ## 15. Build Order Recommendation
 
@@ -544,7 +544,7 @@ Initial seed data should include:
 | 8 | Orders and seller order view | Seller/admin operations depend on order data. |
 | 9 | Manual delivery details | Order tracking depends on delivery status. |
 | 10 | Transactional emails | Trigger after auth, seller, product, order, and B2B events exist. |
-| 11 | Basic B2B enquiry flow | Depends on users, products, sellers, and business buyers. |
+| 11 | B2B enquiry flow | Depends on users, products, sellers, and business buyers. |
 | 12 | CMS pages and banners | Can be built parallel after admin base. |
 | 13 | Reports and audit logs | Reports depend on real transactional data. |
 | 14 | Final QA and launch preparation | Full role and flow verification. |
@@ -572,23 +572,23 @@ These files are planning images only. They are not screenshots from a coded appl
 Confirm these decisions before creating Prisma schema:
 
 - Use Clerk as auth provider, with app-owned roles in PostgreSQL.
-- Use INR as Phase 1 currency.
+- Use INR as the current launch currency unless multi-currency is selected.
 - Store money as integer paise fields.
 - Use seller-managed stock.
-- Use basic product variants from the beginning.
+- Use product variants from the beginning.
 - Marketplace seller, hyperlocal store, and wholesale distributor use the seller table with `seller_type`; legal business entity type remains separate.
 - Delivery partner details are manual fields on order delivery records with optional assignment to an active delivery partner user.
 - Delivery partner is a separate web role for assigned manual delivery tasks only.
-- No automated seller payout tables are active in Phase 1.
+- Seller payout tables should be active when payout workflows are selected.
 - Keep audit logs from the first admin/seller actions.
 
-## 18. Phase 1 Acceptance Checklist For This Plan
+## 18. Product Acceptance Checklist For This Plan
 
 This UI and database plan is ready when:
 
-- Every frozen Phase 1 feature maps to at least one screen.
+- Every selected product feature maps to at least one screen or documented backend-only workflow.
 - Every screen has supporting database entities.
 - Marketplace seller, hyperlocal store, and wholesale distributor are handled under one seller operational model.
 - Delivery partner details are manual and can be assigned to a delivery partner web role.
 - Email notifications have template and log tables.
-- Future upgrade features are not required for Phase 1 launch.
+- Selected expansion features follow the full implementation governance rule.

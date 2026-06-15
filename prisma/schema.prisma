@@ -96,6 +96,31 @@ enum ProductStatus {
   ARCHIVED
 }
 
+enum ProductReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  HIDDEN
+}
+
+enum SearchDocumentEntityType {
+  PRODUCT
+  STORE
+  CATEGORY
+}
+
+enum SearchDocumentVisibilityStatus {
+  VISIBLE
+  HIDDEN
+}
+
+enum SearchIndexJobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
 enum VariantStatus {
   ACTIVE
   INACTIVE
@@ -126,6 +151,22 @@ enum ProductListingMode {
   CART
   ENQUIRY_ONLY
   CART_AND_ENQUIRY
+}
+
+enum DealStatus {
+  DRAFT
+  PUBLISHED
+  CANCELLED
+}
+
+enum DealParticipationStatus {
+  ACCEPTED
+  DECLINED
+}
+
+enum DealProductEnrollmentStatus {
+  ENROLLED
+  REMOVED
 }
 
 enum InventoryMovementType {
@@ -166,6 +207,109 @@ enum PaymentStatus {
   FAILED
   REFUNDED
   NOT_REQUIRED
+}
+
+enum OrderItemLifecycleStatus {
+  ACTIVE
+  PARTIALLY_CANCELLED
+  CANCELLED
+  RETURN_REQUESTED
+  RETURNED
+  PARTIALLY_REFUNDED
+  REFUNDED
+  REPLACEMENT_REQUESTED
+  REPLACED
+}
+
+enum ReturnRequestStatus {
+  PENDING_REVIEW
+  AUTO_APPROVED
+  APPROVED
+  PICKUP_PENDING
+  PICKED_UP
+  IN_TRANSIT
+  RECEIVED
+  QC_PASSED
+  QC_FAILED
+  RESOLVED
+  REJECTED
+  CANCELLED
+}
+
+enum ReturnRequestItemStatus {
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+  PICKUP_PENDING
+  PICKED_UP
+  RECEIVED
+  QC_PASSED
+  QC_FAILED
+  REFUND_REQUESTED
+  REPLACEMENT_CREATED
+  CLOSED
+}
+
+enum ReturnRequestResolution {
+  REFUND
+  REPLACEMENT
+  PARTIAL_REFUND
+  REJECTED
+}
+
+enum RefundRequestStatus {
+  DRAFT
+  PENDING_REVIEW
+  APPROVED
+  INITIATED
+  PROCESSING
+  SUCCESS
+  FAILED
+  RETRY_PENDING
+  CANCELLED
+}
+
+enum RefundTransactionStatus {
+  INITIATED
+  PROCESSING
+  SUCCESS
+  FAILED
+  CANCELLED
+}
+
+enum RefundMethod {
+  RAZORPAY
+  COD_CASH
+  BANK_TRANSFER
+  UPI
+  MANUAL
+}
+
+enum RefundReason {
+  ORDER_CANCELLED
+  ITEM_CANCELLED
+  RETURN_REFUND
+  RETURN_PARTIAL_REFUND
+  SELLER_NON_FULFILMENT
+  DAMAGED_LOST_SHIPMENT
+  GOODWILL_ADJUSTMENT
+  RTO_REFUND
+  ADMIN_ADJUSTMENT
+}
+
+enum ReverseShipmentMode {
+  PLATFORM_PICKUP
+  CUSTOMER_SELF_SHIP
+}
+
+enum ReverseShipmentStatus {
+  REQUESTED
+  ASSIGNED
+  PICKED_UP
+  IN_TRANSIT
+  RECEIVED
+  FAILED
+  CANCELLED
 }
 
 enum DeliveryStatus {
@@ -376,6 +520,39 @@ enum SupportRequestStatus {
   CLOSED
 }
 
+enum SupportRequestTopic {
+  ORDER
+  PAYMENT
+  DELIVERY
+  SELLER
+  B2B
+  DOWNLOAD_APP
+  GENERAL
+}
+
+enum SupportRequesterType {
+  CUSTOMER
+  SELLER
+  BUSINESS_BUYER
+  DELIVERY_PARTNER
+  GUEST
+}
+
+enum SupportContactChannel {
+  EMAIL
+  PHONE
+  WHATSAPP
+}
+
+enum SupportRequestSource {
+  WEB_CONTACT
+  WEB_ACCOUNT_SUPPORT
+  WEB_SELLER_SUPPORT
+  WEB_B2B_SUPPORT
+  API
+  MOBILE_APP
+}
+
 enum NotificationChannel {
   EMAIL
   SMS
@@ -451,9 +628,49 @@ enum SellerLedgerEntryType {
   TDS_DEDUCTION
   TCS_DEDUCTION
   PLATFORM_FEE
+  COUPON_DISCOUNT
   REFUND_ADJUSTMENT
   MANUAL_ADJUSTMENT
   PAYOUT_PAID
+}
+
+enum CouponStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum CouponDiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+  FREE_SHIPPING
+}
+
+enum CouponFundingSource {
+  PLATFORM
+  SELLER
+}
+
+enum CouponSellerParticipationStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  REMOVED
+}
+
+enum CouponRedemptionStatus {
+  ACTIVE
+  PARTIALLY_ADJUSTED
+  FULLY_REVERSED
+}
+
+enum CouponAdjustmentReason {
+  ORDER_CANCELLED
+  PARTIAL_CANCELLED
+  REFUND_ADJUSTMENT
+  SHIPPING_NON_REFUNDABLE
+  ADMIN_ADJUSTMENT
 }
 
 enum SellerStatementStatus {
@@ -537,6 +754,22 @@ model User {
   auditLogs          AuditLog[]
   adminCredential    AdminCredential?
   adminSessions      AdminSession[]
+  createdDeals       Deal[] @relation("DealCreatedBy")
+  updatedDeals       Deal[] @relation("DealUpdatedBy")
+  createdCoupons     Coupon[] @relation("CouponCreatedBy")
+  updatedCoupons     Coupon[] @relation("CouponUpdatedBy")
+  couponAdjustments  CouponRedemptionAdjustment[] @relation("CouponAdjustmentCreatedBy")
+  moderatedProductReviews ProductReview[] @relation("ProductReviewModerator")
+  createdReturnRequests ReturnRequest[] @relation("ReturnRequestCreatedBy")
+  reviewedReturnRequests ReturnRequest[] @relation("ReturnRequestReviewedBy")
+  returnRequestNotes ReturnRequestNote[] @relation("ReturnRequestNoteCreatedBy")
+  createdRefundRequests RefundRequest[] @relation("RefundRequestCreatedBy")
+  reviewedRefundRequests RefundRequest[] @relation("RefundRequestReviewedBy")
+  refundTransactions RefundTransaction[] @relation("RefundTransactionCreatedBy")
+  reverseShipmentAssignments ReverseShipment[] @relation("ReverseShipmentAssignedPartner")
+  reverseShipmentUpdates ReverseShipmentEvent[] @relation("ReverseShipmentEventCreatedBy")
+  reverseShipmentAssignmentAttempts ReverseShipmentAssignmentAttempt[] @relation("ReverseShipmentAssignmentAttemptPartner")
+  createdReverseShipmentAssignmentAttempts ReverseShipmentAssignmentAttempt[] @relation("ReverseShipmentAssignmentAttemptAssignedBy")
 
   @@index([status, createdAt])
   @@map("users")
@@ -631,17 +864,28 @@ model RolePermission {
 }
 
 model Customer {
-  id          String            @id @default(uuid()) @db.Uuid
-  userId      String            @unique @map("user_id") @db.Uuid
-  displayName String?           @map("display_name")
-  status      UserStatus        @default(ACTIVE)
-  createdAt   DateTime          @default(now()) @map("created_at")
-  updatedAt   DateTime          @updatedAt @map("updated_at")
-  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  addresses   CustomerAddress[]
-  wishlist    Wishlist?
-  carts       Cart[]
-  orders      Order[]
+  id                    String            @id @default(uuid()) @db.Uuid
+  userId                String            @unique @map("user_id") @db.Uuid
+  displayName           String?           @map("display_name")
+  browsingLocationLabel String?           @map("browsing_location_label")
+  browsingCountryCode   String?           @map("browsing_country_code")
+  browsingStateCode     String?           @map("browsing_state_code")
+  browsingCityCode      String?           @map("browsing_city_code")
+  browsingLocalAreaCode String?           @map("browsing_local_area_code")
+  browsingPincode       String?           @map("browsing_pincode")
+  status                UserStatus        @default(ACTIVE)
+  createdAt             DateTime          @default(now()) @map("created_at")
+  updatedAt             DateTime          @updatedAt @map("updated_at")
+  user                  User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  addresses             CustomerAddress[]
+  wishlist              Wishlist?
+  carts                 Cart[]
+  orders                Order[]
+  productReviews ProductReview[]
+  couponEligibilities CouponCustomerEligibility[]
+  couponRedemptions CouponRedemption[]
+  returnRequests ReturnRequest[]
+  refundRequests RefundRequest[]
 
   @@index([status, createdAt])
   @@map("customers")
@@ -745,6 +989,15 @@ model Seller {
   ledgerEntries                SellerLedgerEntry[]
   payouts                      SellerPayout[]
   statements                   SellerStatement[]
+  dealParticipations           DealParticipation[]
+  dealProductEnrollments       DealProductEnrollment[]
+  couponEligibilities          CouponSellerEligibility[]
+  couponParticipations         CouponSellerParticipation[]
+  productReviews               ProductReview[]
+  returnItems                  ReturnRequestItem[]
+  returnNotes                  ReturnRequestNote[]
+  refundItems                  RefundRequestItem[]
+  reverseShipments             ReverseShipment[]
 
   @@index([status])
   @@index([approvalStatus])
@@ -1173,6 +1426,8 @@ model Category {
   products        Product[]
   hsnMasterEntries HsnMaster[]
   commissionRules CommissionRule[]
+  deals           Deal[]
+  couponEligibilities CouponCategoryEligibility[]
 
   @@index([parentId])
   @@index([productTemplateId])
@@ -1271,6 +1526,10 @@ model Product {
   orderItems     OrderItem[]
   wishlistItems  WishlistItem[]
   b2bEnquiries   B2BEnquiry[]
+  dealProductEnrollments DealProductEnrollment[]
+  couponEligibilities    CouponProductEligibility[]
+  reviews        ProductReview[]
+  returnItems    ReturnRequestItem[]
 
   @@index([sellerId])
   @@index([categoryId])
@@ -1323,6 +1582,7 @@ model ProductVariant {
   inventoryMovements InventoryMovement[]
   cartItems          CartItem[]
   orderItems         OrderItem[]
+  returnItems        ReturnRequestItem[]
 
   @@index([productId])
   @@index([status])
@@ -1347,6 +1607,274 @@ model InventoryMovement {
   @@index([productVariantId])
   @@index([movementType])
   @@map("inventory_movements")
+}
+
+model Deal {
+  id                 String                  @id @default(uuid()) @db.Uuid
+  title              String
+  description        String?
+  categoryId         String                  @map("category_id") @db.Uuid
+  discountBps        Int                     @map("discount_bps")
+  joinDeadline       DateTime                @map("join_deadline")
+  startsAt           DateTime                @map("starts_at")
+  endsAt             DateTime                @map("ends_at")
+  status             DealStatus              @default(DRAFT)
+  maxSellers         Int?                    @map("max_sellers")
+  maxProducts        Int?                    @map("max_products")
+  publishedAt        DateTime?               @map("published_at")
+  cancelledAt        DateTime?               @map("cancelled_at")
+  createdById        String?                 @map("created_by") @db.Uuid
+  updatedById        String?                 @map("updated_by") @db.Uuid
+  createdAt          DateTime                @default(now()) @map("created_at")
+  updatedAt          DateTime                @updatedAt @map("updated_at")
+  category           Category                @relation(fields: [categoryId], references: [id])
+  createdBy          User?                   @relation("DealCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy          User?                   @relation("DealUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  participations     DealParticipation[]
+  productEnrollments DealProductEnrollment[]
+  orderItems         OrderItem[]
+
+  @@index([categoryId])
+  @@index([status, startsAt, endsAt])
+  @@index([joinDeadline])
+  @@index([createdById])
+  @@index([updatedById])
+  @@map("deals")
+}
+
+model DealParticipation {
+  id         String                  @id @default(uuid()) @db.Uuid
+  dealId     String                  @map("deal_id") @db.Uuid
+  sellerId   String                  @map("seller_id") @db.Uuid
+  status     DealParticipationStatus
+  acceptedAt DateTime?               @map("accepted_at")
+  declinedAt DateTime?               @map("declined_at")
+  createdAt  DateTime                @default(now()) @map("created_at")
+  updatedAt  DateTime                @updatedAt @map("updated_at")
+  deal       Deal                    @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  seller     Seller                  @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@unique([dealId, sellerId])
+  @@index([sellerId, status])
+  @@index([dealId, status])
+  @@map("deal_participations")
+}
+
+model DealProductEnrollment {
+  id        String                      @id @default(uuid()) @db.Uuid
+  dealId    String                      @map("deal_id") @db.Uuid
+  sellerId  String                      @map("seller_id") @db.Uuid
+  productId String                      @map("product_id") @db.Uuid
+  status    DealProductEnrollmentStatus @default(ENROLLED)
+  enrolledAt DateTime?                  @map("enrolled_at")
+  removedAt DateTime?                   @map("removed_at")
+  createdAt DateTime                    @default(now()) @map("created_at")
+  updatedAt DateTime                    @updatedAt @map("updated_at")
+  deal      Deal                        @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  seller    Seller                      @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  product   Product                     @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([dealId, productId])
+  @@index([dealId, status])
+  @@index([sellerId, status])
+  @@index([productId, status])
+  @@map("deal_product_enrollments")
+}
+
+model Coupon {
+  id                     String                       @id @default(uuid()) @db.Uuid
+  code                   String                       @unique
+  title                  String
+  description            String?
+  status                 CouponStatus                 @default(DRAFT)
+  discountType           CouponDiscountType           @map("discount_type")
+  fundingSource          CouponFundingSource          @default(PLATFORM) @map("funding_source")
+  discountValueBps       Int?                         @map("discount_value_bps")
+  discountAmountPaise    Int?                         @map("discount_amount_paise")
+  maxDiscountPaise       Int?                         @map("max_discount_paise")
+  minSubtotalPaise       Int?                         @map("min_subtotal_paise")
+  maxSubtotalPaise       Int?                         @map("max_subtotal_paise")
+  totalUsageLimit        Int?                         @map("total_usage_limit")
+  perCustomerLimit       Int?                         @map("per_customer_limit")
+  redeemedCount          Int                          @default(0) @map("redeemed_count")
+  isMarketplaceWide      Boolean                      @default(true) @map("is_marketplace_wide")
+  firstOrderOnly         Boolean                      @default(false) @map("first_order_only")
+  startsAt               DateTime?                    @map("starts_at")
+  endsAt                 DateTime?                    @map("ends_at")
+  activatedAt            DateTime?                    @map("activated_at")
+  pausedAt               DateTime?                    @map("paused_at")
+  archivedAt             DateTime?                    @map("archived_at")
+  internalNote           String?                      @map("internal_note")
+  createdById            String?                      @map("created_by") @db.Uuid
+  updatedById            String?                      @map("updated_by") @db.Uuid
+  createdAt              DateTime                     @default(now()) @map("created_at")
+  updatedAt              DateTime                     @updatedAt @map("updated_at")
+  createdBy              User?                        @relation("CouponCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy              User?                        @relation("CouponUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  sellerEligibilities    CouponSellerEligibility[]
+  productEligibilities   CouponProductEligibility[]
+  categoryEligibilities  CouponCategoryEligibility[]
+  customerEligibilities  CouponCustomerEligibility[]
+  sellerParticipations   CouponSellerParticipation[]
+  redemptions            CouponRedemption[]
+  usageCounter           CouponUsageCounter?
+  orders                 Order[]
+
+  @@index([status, startsAt, endsAt])
+  @@index([fundingSource, status])
+  @@index([isMarketplaceWide, status])
+  @@index([createdAt])
+  @@index([createdById])
+  @@index([updatedById])
+  @@map("coupons")
+}
+
+model CouponUsageCounter {
+  couponId                    String   @id @map("coupon_id") @db.Uuid
+  usedCount                   Int      @default(0) @map("used_count")
+  discountPaise               Int      @default(0) @map("discount_paise")
+  platformFundedDiscountPaise Int      @default(0) @map("platform_funded_discount_paise")
+  sellerFundedDiscountPaise   Int      @default(0) @map("seller_funded_discount_paise")
+  version                     Int      @default(0)
+  updatedAt                   DateTime @updatedAt @map("updated_at")
+  coupon                      Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+
+  @@index([usedCount])
+  @@map("coupon_usage_counters")
+}
+
+model CouponSellerEligibility {
+  id        String   @id @default(uuid()) @db.Uuid
+  couponId  String   @map("coupon_id") @db.Uuid
+  sellerId  String   @map("seller_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  coupon    Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  seller    Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@unique([couponId, sellerId])
+  @@index([sellerId])
+  @@map("coupon_seller_eligibilities")
+}
+
+model CouponProductEligibility {
+  id        String   @id @default(uuid()) @db.Uuid
+  couponId  String   @map("coupon_id") @db.Uuid
+  productId String   @map("product_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  coupon    Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([couponId, productId])
+  @@index([productId])
+  @@map("coupon_product_eligibilities")
+}
+
+model CouponCategoryEligibility {
+  id         String   @id @default(uuid()) @db.Uuid
+  couponId   String   @map("coupon_id") @db.Uuid
+  categoryId String   @map("category_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at")
+  coupon     Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([couponId, categoryId])
+  @@index([categoryId])
+  @@map("coupon_category_eligibilities")
+}
+
+model CouponCustomerEligibility {
+  id         String   @id @default(uuid()) @db.Uuid
+  couponId   String   @map("coupon_id") @db.Uuid
+  customerId String   @map("customer_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at")
+  coupon     Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([couponId, customerId])
+  @@index([customerId])
+  @@map("coupon_customer_eligibilities")
+}
+
+model CouponSellerParticipation {
+  id         String                          @id @default(uuid()) @db.Uuid
+  couponId   String                          @map("coupon_id") @db.Uuid
+  sellerId   String                          @map("seller_id") @db.Uuid
+  status     CouponSellerParticipationStatus @default(PENDING)
+  acceptedAt DateTime?                       @map("accepted_at")
+  declinedAt DateTime?                       @map("declined_at")
+  removedAt  DateTime?                       @map("removed_at")
+  lockedAt   DateTime?                       @map("locked_at")
+  note       String?
+  createdAt  DateTime                        @default(now()) @map("created_at")
+  updatedAt  DateTime                        @updatedAt @map("updated_at")
+  coupon     Coupon                          @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  seller     Seller                          @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@unique([couponId, sellerId])
+  @@index([sellerId, status])
+  @@index([couponId, status])
+  @@map("coupon_seller_participations")
+}
+
+model CouponRedemption {
+  id                           String                  @id @default(uuid()) @db.Uuid
+  couponId                     String                  @map("coupon_id") @db.Uuid
+  orderId                      String                  @unique @map("order_id") @db.Uuid
+  customerId                   String                  @map("customer_id") @db.Uuid
+  codeSnapshot                 String                  @map("code_snapshot")
+  titleSnapshot                String                  @map("title_snapshot")
+  discountTypeSnapshot         CouponDiscountType      @map("discount_type_snapshot")
+  fundingSourceSnapshot        CouponFundingSource     @map("funding_source_snapshot")
+  status                       CouponRedemptionStatus  @default(ACTIVE)
+  merchandiseBasisPaise        Int                     @default(0) @map("merchandise_basis_paise")
+  shippingBasisPaise           Int                     @default(0) @map("shipping_basis_paise")
+  merchandiseDiscountPaise     Int                     @default(0) @map("merchandise_discount_paise")
+  shippingDiscountPaise        Int                     @default(0) @map("shipping_discount_paise")
+  discountPaise                Int                     @default(0) @map("discount_paise")
+  platformFundedDiscountPaise  Int                     @default(0) @map("platform_funded_discount_paise")
+  sellerFundedDiscountPaise    Int                     @default(0) @map("seller_funded_discount_paise")
+  adjustmentPaise              Int                     @default(0) @map("adjustment_paise")
+  currency                     String                  @default("INR")
+  snapshot                     Json?                   @map("snapshot")
+  reversedAt                   DateTime?               @map("reversed_at")
+  createdAt                    DateTime                @default(now()) @map("created_at")
+  updatedAt                    DateTime                @updatedAt @map("updated_at")
+  coupon                       Coupon                  @relation(fields: [couponId], references: [id])
+  order                        Order                   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  customer                     Customer                @relation(fields: [customerId], references: [id])
+  adjustments                  CouponRedemptionAdjustment[]
+
+  @@index([couponId, status, createdAt])
+  @@index([customerId, couponId, status])
+  @@index([customerId, createdAt])
+  @@map("coupon_redemptions")
+}
+
+model CouponRedemptionAdjustment {
+  id                              String                 @id @default(uuid()) @db.Uuid
+  couponRedemptionId              String                 @map("coupon_redemption_id") @db.Uuid
+  orderId                         String                 @map("order_id") @db.Uuid
+  orderItemId                     String?                @map("order_item_id") @db.Uuid
+  orderSellerSplitId              String?                @map("order_seller_split_id") @db.Uuid
+  reason                          CouponAdjustmentReason
+  discountReversedPaise           Int                    @default(0) @map("discount_reversed_paise")
+  merchandiseDiscountReversedPaise Int                   @default(0) @map("merchandise_discount_reversed_paise")
+  shippingDiscountReversedPaise   Int                    @default(0) @map("shipping_discount_reversed_paise")
+  note                            String?
+  createdById                     String?                @map("created_by") @db.Uuid
+  createdAt                       DateTime               @default(now()) @map("created_at")
+  redemption                      CouponRedemption       @relation(fields: [couponRedemptionId], references: [id], onDelete: Cascade)
+  order                           Order                  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderItem                       OrderItem?             @relation(fields: [orderItemId], references: [id], onDelete: SetNull)
+  orderSellerSplit                OrderSellerSplit?      @relation(fields: [orderSellerSplitId], references: [id], onDelete: SetNull)
+  createdBy                       User?                  @relation("CouponAdjustmentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([couponRedemptionId, createdAt])
+  @@index([orderId, createdAt])
+  @@index([orderItemId])
+  @@index([orderSellerSplitId])
+  @@index([createdById])
+  @@map("coupon_redemption_adjustments")
 }
 
 model Cart {
@@ -1402,6 +1930,7 @@ model CheckoutSession {
 model Order {
   id                      String             @id @default(uuid()) @db.Uuid
   orderNumber             String             @unique @map("order_number")
+  idempotencyKey          String?            @map("idempotency_key")
   customerId              String             @map("customer_id") @db.Uuid
   orderStatus             OrderStatus        @default(PLACED) @map("order_status")
   paymentStatus           PaymentStatus      @default(PENDING) @map("payment_status")
@@ -1409,6 +1938,16 @@ model Order {
   subtotalPaise           Int                @map("subtotal_paise")
   shippingPaise           Int                @default(0) @map("shipping_paise")
   platformFeePaise        Int                @default(0) @map("platform_fee_paise")
+  couponId                String?            @map("coupon_id") @db.Uuid
+  couponCode              String?            @map("coupon_code")
+  couponTitle             String?            @map("coupon_title")
+  couponDiscountPaise     Int                @default(0) @map("coupon_discount_paise")
+  couponMerchandiseDiscountPaise Int         @default(0) @map("coupon_merchandise_discount_paise")
+  couponShippingDiscountPaise Int            @default(0) @map("coupon_shipping_discount_paise")
+  couponPlatformFundedDiscountPaise Int      @default(0) @map("coupon_platform_funded_discount_paise")
+  couponSellerFundedDiscountPaise Int        @default(0) @map("coupon_seller_funded_discount_paise")
+  couponAdjustmentPaise   Int                @default(0) @map("coupon_adjustment_paise")
+  couponSnapshot          Json?              @map("coupon_snapshot")
   totalPaise              Int                @map("total_paise")
   currency                String             @default("INR")
   baseCurrency            String             @default("INR") @map("base_currency")
@@ -1426,6 +1965,7 @@ model Order {
   shippingAddressSnapshot Json?              @map("shipping_address_snapshot")
   createdAt               DateTime           @default(now()) @map("created_at")
   updatedAt               DateTime           @updatedAt @map("updated_at")
+  coupon                  Coupon?            @relation(fields: [couponId], references: [id], onDelete: SetNull)
   customer                Customer           @relation(fields: [customerId], references: [id])
   items                   OrderItem[]
   sellerSplits            OrderSellerSplit[]
@@ -1440,8 +1980,17 @@ model Order {
   deliveryAssignmentAttempts DeliveryAssignmentAttempt[]
   payments                Payment[]
   deliveryPartnerWalletEntries DeliveryPartnerWalletEntry[]
+  productReviews          ProductReview[]
+  couponRedemption        CouponRedemption?
+  couponAdjustments       CouponRedemptionAdjustment[]
+  returnRequests          ReturnRequest[]
+  returnItems             ReturnRequestItem[]
+  refundRequests          RefundRequest[]
+  reverseShipments        ReverseShipment[]
 
   @@index([customerId])
+  @@index([couponId])
+  @@index([couponCode])
   @@index([orderStatus])
   @@index([paymentStatus])
   @@index([deliveryStatus])
@@ -1450,6 +1999,7 @@ model Order {
   @@index([orderStatus, createdAt])
   @@index([paymentStatus, createdAt])
   @@index([deliveryStatus, createdAt])
+  @@unique([customerId, idempotencyKey], map: "orders_customer_id_idempotency_key_key")
   @@map("orders")
 }
 
@@ -1462,19 +2012,146 @@ model OrderItem {
   productNameSnapshot String         @map("product_name_snapshot")
   variantSnapshot     Json?          @map("variant_snapshot")
   quantity            Int
+  activeQuantity      Int            @default(0) @map("active_quantity")
+  cancelledQuantity   Int            @default(0) @map("cancelled_quantity")
+  returnedQuantity    Int            @default(0) @map("returned_quantity")
+  refundedQuantity    Int            @default(0) @map("refunded_quantity")
+  replacementQuantity Int            @default(0) @map("replacement_quantity")
+  retainedQuantity    Int            @default(0) @map("retained_quantity")
+  lifecycleStatus     OrderItemLifecycleStatus @default(ACTIVE) @map("lifecycle_status")
   unitPricePaise      Int            @map("unit_price_paise")
   lineTotalPaise      Int            @map("line_total_paise")
+  cancelledAmountPaise Int           @default(0) @map("cancelled_amount_paise")
+  returnedAmountPaise Int            @default(0) @map("returned_amount_paise")
+  refundedAmountPaise Int            @default(0) @map("refunded_amount_paise")
+  replacementAmountPaise Int         @default(0) @map("replacement_amount_paise")
   currency            String         @default("INR")
+  originalUnitPricePaise Int?        @map("original_unit_price_paise")
+  dealDiscountBps     Int?           @map("deal_discount_bps")
+  dealDiscountPaise   Int            @default(0) @map("deal_discount_paise")
+  dealId              String?        @map("deal_id") @db.Uuid
+  dealSnapshot        Json?          @map("deal_snapshot")
+  couponDiscountPaise Int            @default(0) @map("coupon_discount_paise")
+  couponPlatformFundedDiscountPaise Int @default(0) @map("coupon_platform_funded_discount_paise")
+  couponSellerFundedDiscountPaise Int @default(0) @map("coupon_seller_funded_discount_paise")
+  couponAdjustmentPaise Int          @default(0) @map("coupon_adjustment_paise")
+  couponSnapshot      Json?          @map("coupon_snapshot")
+  returnPolicySnapshot Json?         @map("return_policy_snapshot")
   createdAt           DateTime       @default(now()) @map("created_at")
+  updatedAt           DateTime       @updatedAt @map("updated_at")
   order               Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product             Product        @relation(fields: [productId], references: [id])
   productVariant      ProductVariant @relation(fields: [productVariantId], references: [id])
   seller              Seller         @relation(fields: [sellerId], references: [id])
+  deal                Deal?          @relation(fields: [dealId], references: [id])
+  productReviews      ProductReview[]
+  couponAdjustments   CouponRedemptionAdjustment[]
+  returnItems         ReturnRequestItem[]
+  refundItems         RefundRequestItem[]
 
   @@index([orderId])
   @@index([sellerId])
   @@index([productId])
+  @@index([dealId])
+  @@index([couponDiscountPaise])
+  @@index([lifecycleStatus])
+  @@index([orderId, lifecycleStatus])
+  @@index([sellerId, lifecycleStatus])
   @@map("order_items")
+}
+
+model ProductReview {
+  id                 String              @id @default(uuid()) @db.Uuid
+  productId          String              @map("product_id") @db.Uuid
+  sellerId           String              @map("seller_id") @db.Uuid
+  customerId         String              @map("customer_id") @db.Uuid
+  orderId            String              @map("order_id") @db.Uuid
+  orderItemId        String              @map("order_item_id") @db.Uuid
+  rating             Int
+  title              String?
+  comment            String?
+  status             ProductReviewStatus @default(PENDING)
+  adminNote          String?             @map("admin_note")
+  isVerifiedPurchase Boolean             @default(true) @map("is_verified_purchase")
+  submittedAt        DateTime            @default(now()) @map("submitted_at")
+  publishedAt        DateTime?           @map("published_at")
+  moderatedAt        DateTime?           @map("moderated_at")
+  moderatedById      String?             @map("moderated_by_id") @db.Uuid
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @updatedAt @map("updated_at")
+  product            Product             @relation(fields: [productId], references: [id])
+  seller             Seller              @relation(fields: [sellerId], references: [id])
+  customer           Customer            @relation(fields: [customerId], references: [id])
+  order              Order               @relation(fields: [orderId], references: [id])
+  orderItem          OrderItem           @relation(fields: [orderItemId], references: [id])
+  moderatedBy        User?               @relation("ProductReviewModerator", fields: [moderatedById], references: [id], onDelete: SetNull)
+
+  @@unique([customerId, productId])
+  @@index([productId, status, createdAt])
+  @@index([sellerId, status, createdAt])
+  @@index([customerId, createdAt])
+  @@index([status, createdAt])
+  @@index([orderId])
+  @@index([orderItemId])
+  @@index([moderatedById])
+  @@map("product_reviews")
+}
+
+model SearchDocument {
+  id               String                         @id @default(uuid()) @db.Uuid
+  entityType       SearchDocumentEntityType       @map("entity_type")
+  entityId         String                         @map("entity_id") @db.Uuid
+  title            String
+  normalizedTitle  String                         @map("normalized_title")
+  subtitle         String?
+  normalizedSubtitle String?                      @map("normalized_subtitle")
+  searchText       String                         @map("search_text")
+  slug             String?
+  imageUrl         String?                        @map("image_url")
+  categoryId       String?                        @map("category_id") @db.Uuid
+  sellerId         String?                        @map("seller_id") @db.Uuid
+  minPricePaise    Int?                           @map("min_price_paise")
+  maxPricePaise    Int?                           @map("max_price_paise")
+  ratingAverage    Decimal?                       @map("rating_average") @db.Decimal(3, 2)
+  reviewCount      Int                            @default(0) @map("review_count")
+  inStock          Boolean                        @default(false) @map("in_stock")
+  hasDeal          Boolean                        @default(false) @map("has_deal")
+  dealDiscountBps  Int                            @default(0) @map("deal_discount_bps")
+  rankBoost        Int                            @default(0) @map("rank_boost")
+  visibilityStatus SearchDocumentVisibilityStatus @default(HIDDEN) @map("visibility_status")
+  searchVector     Unsupported("tsvector")?       @map("search_vector")
+  sourceUpdatedAt  DateTime?                      @map("source_updated_at")
+  createdAt        DateTime                       @default(now()) @map("created_at")
+  updatedAt        DateTime                       @updatedAt @map("updated_at")
+
+  @@unique([entityType, entityId])
+  @@index([entityType, visibilityStatus, updatedAt])
+  @@index([categoryId, entityType, visibilityStatus])
+  @@index([sellerId, entityType, visibilityStatus])
+  @@index([visibilityStatus, rankBoost, updatedAt])
+  @@map("search_documents")
+}
+
+model SearchIndexJob {
+  id           String                  @id @default(uuid()) @db.Uuid
+  entityType   SearchDocumentEntityType @map("entity_type")
+  entityId     String                  @map("entity_id") @db.Uuid
+  dedupeKey    String                  @unique @map("dedupe_key")
+  status       SearchIndexJobStatus    @default(PENDING)
+  attempts     Int                     @default(0)
+  maxAttempts  Int                     @default(5) @map("max_attempts")
+  availableAt  DateTime                @default(now()) @map("available_at")
+  lockedAt     DateTime?               @map("locked_at")
+  completedAt  DateTime?               @map("completed_at")
+  lastError    String?                 @map("last_error")
+  payload      Json?
+  createdAt    DateTime                @default(now()) @map("created_at")
+  updatedAt    DateTime                @updatedAt @map("updated_at")
+
+  @@index([status, availableAt, createdAt])
+  @@index([entityType, entityId])
+  @@index([lockedAt])
+  @@map("search_index_jobs")
 }
 
 model OrderSellerSplit {
@@ -1488,6 +2165,11 @@ model OrderSellerSplit {
   tdsPaise              Int                    @default(0) @map("tds_paise")
   tcsPaise              Int                    @default(0) @map("tcs_paise")
   platformFeePaise      Int                    @default(0) @map("platform_fee_paise")
+  couponDiscountPaise   Int                    @default(0) @map("coupon_discount_paise")
+  couponPlatformFundedDiscountPaise Int        @default(0) @map("coupon_platform_funded_discount_paise")
+  couponSellerFundedDiscountPaise Int          @default(0) @map("coupon_seller_funded_discount_paise")
+  couponAdjustmentPaise Int                    @default(0) @map("coupon_adjustment_paise")
+  couponSnapshot        Json?                  @map("coupon_snapshot")
   refundAdjustmentPaise Int                    @default(0) @map("refund_adjustment_paise")
   netPayablePaise       Int                    @default(0) @map("net_payable_paise")
   settlementStatus      SellerSettlementStatus @default(NOT_ELIGIBLE) @map("settlement_status")
@@ -1504,6 +2186,9 @@ model OrderSellerSplit {
   payout                SellerPayout?          @relation(fields: [payoutId], references: [id])
   ledgerEntries         SellerLedgerEntry[]
   shipment              OrderShipment?
+  couponAdjustments     CouponRedemptionAdjustment[]
+  returnItems           ReturnRequestItem[]
+  refundItems           RefundRequestItem[]
 
   @@unique([orderId, sellerId])
   @@index([sellerId])
@@ -1531,6 +2216,7 @@ model OrderShipment {
   assignedAt               DateTime?                @map("assigned_at")
   acceptedAt               DateTime?                @map("accepted_at")
   rejectedAt               DateTime?                @map("rejected_at")
+  assignmentExpiresAt      DateTime?                @map("assignment_expires_at")
   assignmentNote           String?                  @map("assignment_note")
   deliveryPartnerUserId    String?                  @map("delivery_partner_user_id") @db.Uuid
   partnerName              String?                  @map("partner_name")
@@ -1585,6 +2271,7 @@ model OrderShipment {
   @@index([sellerId, status, createdAt])
   @@index([orderId, sellerId, status])
   @@index([deliveryPartnerUserId, assignmentStatus, status])
+  @@index([assignmentExpiresAt, assignmentStatus])
   @@index([deliveryMode, status, createdAt])
   @@index([courierProviderCode, courierTrackingStatus])
   @@index([routingFailed, createdAt])
@@ -1652,6 +2339,287 @@ model OrderStatusEvent {
   @@map("order_status_events")
 }
 
+model ReturnRequest {
+  id                  String                @id @default(uuid()) @db.Uuid
+  requestNumber       String                @unique @map("request_number")
+  orderId             String                @map("order_id") @db.Uuid
+  customerId          String                @map("customer_id") @db.Uuid
+  status              ReturnRequestStatus   @default(PENDING_REVIEW)
+  resolution          ReturnRequestResolution @default(REFUND)
+  reason              String
+  note                String?
+  autoApproved        Boolean               @default(false) @map("auto_approved")
+  totalQuantity       Int                   @default(0) @map("total_quantity")
+  requestedAmountPaise Int                  @default(0) @map("requested_amount_paise")
+  approvedAmountPaise Int                   @default(0) @map("approved_amount_paise")
+  couponAdjustmentPaise Int                 @default(0) @map("coupon_adjustment_paise")
+  currency            String                @default("INR")
+  requestedAt         DateTime              @default(now()) @map("requested_at")
+  reviewedAt          DateTime?             @map("reviewed_at")
+  reviewedById        String?               @map("reviewed_by") @db.Uuid
+  createdById         String?               @map("created_by") @db.Uuid
+  createdAt           DateTime              @default(now()) @map("created_at")
+  updatedAt           DateTime              @updatedAt @map("updated_at")
+  order               Order                 @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  customer            Customer              @relation(fields: [customerId], references: [id])
+  reviewedBy          User?                 @relation("ReturnRequestReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  createdBy           User?                 @relation("ReturnRequestCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  items               ReturnRequestItem[]
+  refundRequests      RefundRequest[]
+  reverseShipments    ReverseShipment[]
+  reverseShipmentAssignmentAttempts ReverseShipmentAssignmentAttempt[]
+  notes               ReturnRequestNote[]
+
+  @@index([customerId, status, createdAt])
+  @@index([orderId])
+  @@index([status, createdAt])
+  @@index([createdAt])
+  @@index([reviewedById])
+  @@index([createdById])
+  @@map("return_requests")
+}
+
+model ReturnRequestItem {
+  id                  String                  @id @default(uuid()) @db.Uuid
+  returnRequestId     String                  @map("return_request_id") @db.Uuid
+  orderId             String                  @map("order_id") @db.Uuid
+  orderItemId         String                  @map("order_item_id") @db.Uuid
+  orderSellerSplitId  String                  @map("order_seller_split_id") @db.Uuid
+  sellerId            String                  @map("seller_id") @db.Uuid
+  productId           String                  @map("product_id") @db.Uuid
+  productVariantId    String                  @map("product_variant_id") @db.Uuid
+  quantity            Int
+  status              ReturnRequestItemStatus @default(PENDING_REVIEW)
+  resolution          ReturnRequestResolution @default(REFUND)
+  reason              String
+  requestedRefundPaise Int                    @default(0) @map("requested_refund_paise")
+  approvedRefundPaise Int                     @default(0) @map("approved_refund_paise")
+  couponAdjustmentPaise Int                   @default(0) @map("coupon_adjustment_paise")
+  couponPlatformFundedAdjustmentPaise Int     @default(0) @map("coupon_platform_funded_adjustment_paise")
+  couponSellerFundedAdjustmentPaise Int       @default(0) @map("coupon_seller_funded_adjustment_paise")
+  qcNote              String?                 @map("qc_note")
+  sellerNote          String?                 @map("seller_note")
+  createdAt           DateTime                @default(now()) @map("created_at")
+  updatedAt           DateTime                @updatedAt @map("updated_at")
+  returnRequest       ReturnRequest           @relation(fields: [returnRequestId], references: [id], onDelete: Cascade)
+  order               Order                   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderItem           OrderItem               @relation(fields: [orderItemId], references: [id])
+  orderSellerSplit    OrderSellerSplit        @relation(fields: [orderSellerSplitId], references: [id])
+  seller              Seller                  @relation(fields: [sellerId], references: [id])
+  product             Product                 @relation(fields: [productId], references: [id])
+  productVariant      ProductVariant          @relation(fields: [productVariantId], references: [id])
+  refundItems         RefundRequestItem[]
+
+  @@index([returnRequestId])
+  @@index([orderId])
+  @@index([orderItemId])
+  @@index([sellerId, status])
+  @@index([orderSellerSplitId])
+  @@index([status, createdAt])
+  @@map("return_request_items")
+}
+
+model ReturnRequestNote {
+  id              String        @id @default(uuid()) @db.Uuid
+  returnRequestId String        @map("return_request_id") @db.Uuid
+  sellerId        String?       @map("seller_id") @db.Uuid
+  note            String
+  createdById     String?       @map("created_by") @db.Uuid
+  createdAt       DateTime      @default(now()) @map("created_at")
+  returnRequest   ReturnRequest @relation(fields: [returnRequestId], references: [id], onDelete: Cascade)
+  seller          Seller?       @relation(fields: [sellerId], references: [id], onDelete: SetNull)
+  createdBy       User?         @relation("ReturnRequestNoteCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([returnRequestId, createdAt])
+  @@index([sellerId, createdAt])
+  @@index([createdById])
+  @@map("return_request_notes")
+}
+
+model RefundRequest {
+  id                  String              @id @default(uuid()) @db.Uuid
+  refundNumber        String              @unique @map("refund_number")
+  orderId             String              @map("order_id") @db.Uuid
+  customerId          String              @map("customer_id") @db.Uuid
+  paymentId           String?             @map("payment_id") @db.Uuid
+  returnRequestId     String?             @map("return_request_id") @db.Uuid
+  status              RefundRequestStatus @default(PENDING_REVIEW)
+  reason              RefundReason
+  method              RefundMethod?
+  amountPaise         Int                 @default(0) @map("amount_paise")
+  couponAdjustmentPaise Int               @default(0) @map("coupon_adjustment_paise")
+  sellerFundedCouponAdjustmentPaise Int   @default(0) @map("seller_funded_coupon_adjustment_paise")
+  platformFundedCouponAdjustmentPaise Int @default(0) @map("platform_funded_coupon_adjustment_paise")
+  currency            String              @default("INR")
+  note                String?
+  approvedAt          DateTime?           @map("approved_at")
+  reviewedAt          DateTime?           @map("reviewed_at")
+  reviewedById        String?             @map("reviewed_by") @db.Uuid
+  createdById         String?             @map("created_by") @db.Uuid
+  createdAt           DateTime            @default(now()) @map("created_at")
+  updatedAt           DateTime            @updatedAt @map("updated_at")
+  order               Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  customer            Customer            @relation(fields: [customerId], references: [id])
+  payment             Payment?            @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  returnRequest       ReturnRequest?      @relation(fields: [returnRequestId], references: [id], onDelete: SetNull)
+  reviewedBy          User?               @relation("RefundRequestReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  createdBy           User?               @relation("RefundRequestCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  items               RefundRequestItem[]
+  transactions        RefundTransaction[]
+
+  @@index([orderId])
+  @@index([customerId, status, createdAt])
+  @@index([paymentId])
+  @@index([status, createdAt])
+  @@index([returnRequestId])
+  @@index([reviewedById])
+  @@index([createdById])
+  @@map("refund_requests")
+}
+
+model RefundRequestItem {
+  id                  String            @id @default(uuid()) @db.Uuid
+  refundRequestId     String            @map("refund_request_id") @db.Uuid
+  returnRequestItemId String?           @map("return_request_item_id") @db.Uuid
+  orderItemId         String            @map("order_item_id") @db.Uuid
+  orderSellerSplitId  String            @map("order_seller_split_id") @db.Uuid
+  sellerId            String            @map("seller_id") @db.Uuid
+  quantity            Int
+  amountPaise         Int               @default(0) @map("amount_paise")
+  couponAdjustmentPaise Int             @default(0) @map("coupon_adjustment_paise")
+  sellerFundedCouponAdjustmentPaise Int @default(0) @map("seller_funded_coupon_adjustment_paise")
+  platformFundedCouponAdjustmentPaise Int @default(0) @map("platform_funded_coupon_adjustment_paise")
+  createdAt           DateTime          @default(now()) @map("created_at")
+  refundRequest       RefundRequest     @relation(fields: [refundRequestId], references: [id], onDelete: Cascade)
+  returnRequestItem   ReturnRequestItem? @relation(fields: [returnRequestItemId], references: [id], onDelete: SetNull)
+  orderItem           OrderItem         @relation(fields: [orderItemId], references: [id])
+  orderSellerSplit    OrderSellerSplit  @relation(fields: [orderSellerSplitId], references: [id])
+  seller              Seller            @relation(fields: [sellerId], references: [id])
+
+  @@index([refundRequestId])
+  @@index([returnRequestItemId])
+  @@index([orderItemId])
+  @@index([sellerId, createdAt])
+  @@index([orderSellerSplitId])
+  @@map("refund_request_items")
+}
+
+model RefundTransaction {
+  id                  String                  @id @default(uuid()) @db.Uuid
+  refundRequestId     String                  @map("refund_request_id") @db.Uuid
+  paymentId           String?                 @map("payment_id") @db.Uuid
+  provider            PaymentProvider?
+  method              RefundMethod
+  status              RefundTransactionStatus @default(INITIATED)
+  amountPaise         Int                     @map("amount_paise")
+  currency            String                  @default("INR")
+  providerRefundId    String?                 @map("provider_refund_id")
+  idempotencyKey      String                  @unique @map("idempotency_key")
+  manualReference     String?                 @map("manual_reference")
+  paidAt              DateTime?               @map("paid_at")
+  failureReason       String?                 @map("failure_reason")
+  rawResponse         Json?                   @map("raw_response")
+  createdById         String?                 @map("created_by") @db.Uuid
+  processedAt         DateTime?               @map("processed_at")
+  createdAt           DateTime                @default(now()) @map("created_at")
+  updatedAt           DateTime                @updatedAt @map("updated_at")
+  refundRequest       RefundRequest           @relation(fields: [refundRequestId], references: [id], onDelete: Cascade)
+  payment             Payment?                @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  createdBy           User?                   @relation("RefundTransactionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([provider, providerRefundId])
+  @@index([refundRequestId])
+  @@index([paymentId])
+  @@index([status, createdAt])
+  @@index([createdById])
+  @@map("refund_transactions")
+}
+
+model ReverseShipment {
+  id                    String                @id @default(uuid()) @db.Uuid
+  returnRequestId        String                @map("return_request_id") @db.Uuid
+  orderId                String                @map("order_id") @db.Uuid
+  sellerId               String                @map("seller_id") @db.Uuid
+  assignedPartnerUserId  String?               @map("assigned_partner_user_id") @db.Uuid
+  mode                   ReverseShipmentMode   @default(PLATFORM_PICKUP)
+  status                 ReverseShipmentStatus @default(REQUESTED)
+  assignmentStatus       DeliveryAssignmentStatus @default(UNASSIGNED) @map("assignment_status")
+  awbNumber              String?               @unique @map("awb_number")
+  courierName            String?               @map("courier_name")
+  trackingReference      String?               @map("tracking_reference")
+  proofReference         String?               @map("proof_reference")
+  pickupProofReference   String?               @map("pickup_proof_reference")
+  receiptProofReference  String?               @map("receipt_proof_reference")
+  pickupNote             String?               @map("pickup_note")
+  receivedByName         String?               @map("received_by_name")
+  assignedAt             DateTime?             @map("assigned_at")
+  acceptedAt             DateTime?             @map("accepted_at")
+  rejectedAt             DateTime?             @map("rejected_at")
+  assignmentExpiresAt    DateTime?             @map("assignment_expires_at")
+  assignmentNote         String?               @map("assignment_note")
+  pickedUpAt             DateTime?             @map("picked_up_at")
+  receivedAt             DateTime?             @map("received_at")
+  createdAt              DateTime              @default(now()) @map("created_at")
+  updatedAt              DateTime              @updatedAt @map("updated_at")
+  returnRequest          ReturnRequest         @relation(fields: [returnRequestId], references: [id], onDelete: Cascade)
+  order                  Order                 @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  seller                 Seller                @relation(fields: [sellerId], references: [id])
+  assignedPartner        User?                 @relation("ReverseShipmentAssignedPartner", fields: [assignedPartnerUserId], references: [id], onDelete: SetNull)
+  events                 ReverseShipmentEvent[]
+  assignmentAttempts     ReverseShipmentAssignmentAttempt[]
+
+  @@index([returnRequestId])
+  @@index([sellerId, status])
+  @@index([assignedPartnerUserId, status])
+  @@index([assignedPartnerUserId, assignmentStatus, status])
+  @@index([orderId])
+  @@index([status, createdAt])
+  @@index([assignmentStatus, status, createdAt])
+  @@index([assignmentExpiresAt, assignmentStatus])
+  @@map("reverse_shipments")
+}
+
+model ReverseShipmentAssignmentAttempt {
+  id                String                          @id @default(uuid()) @db.Uuid
+  returnRequestId   String                          @map("return_request_id") @db.Uuid
+  reverseShipmentId String                          @map("reverse_shipment_id") @db.Uuid
+  partnerUserId     String                          @map("partner_user_id") @db.Uuid
+  source            DeliveryAssignmentAttemptSource
+  status            DeliveryAssignmentStatus
+  note              String?
+  assignedById      String?                         @map("assigned_by_id") @db.Uuid
+  respondedAt       DateTime?                       @map("responded_at")
+  createdAt         DateTime                        @default(now()) @map("created_at")
+  updatedAt         DateTime                        @updatedAt @map("updated_at")
+  returnRequest     ReturnRequest                   @relation(fields: [returnRequestId], references: [id], onDelete: Cascade)
+  reverseShipment   ReverseShipment                 @relation(fields: [reverseShipmentId], references: [id], onDelete: Cascade)
+  partner           User                            @relation("ReverseShipmentAssignmentAttemptPartner", fields: [partnerUserId], references: [id], onDelete: Cascade)
+  assignedBy        User?                           @relation("ReverseShipmentAssignmentAttemptAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull)
+
+  @@index([returnRequestId, createdAt])
+  @@index([reverseShipmentId, createdAt])
+  @@index([partnerUserId, status])
+  @@index([source, status])
+  @@index([assignedById])
+  @@map("reverse_shipment_assignment_attempts")
+}
+
+model ReverseShipmentEvent {
+  id                String                @id @default(uuid()) @db.Uuid
+  reverseShipmentId String                @map("reverse_shipment_id") @db.Uuid
+  oldStatus         ReverseShipmentStatus? @map("old_status")
+  newStatus         ReverseShipmentStatus @map("new_status")
+  note              String?
+  createdById       String?               @map("created_by") @db.Uuid
+  createdAt         DateTime              @default(now()) @map("created_at")
+  reverseShipment   ReverseShipment       @relation(fields: [reverseShipmentId], references: [id], onDelete: Cascade)
+  createdBy         User?                 @relation("ReverseShipmentEventCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([reverseShipmentId, createdAt])
+  @@index([createdById])
+  @@map("reverse_shipment_events")
+}
+
 model DeliveryDetail {
   id                      String              @id @default(uuid()) @db.Uuid
   orderId                 String              @unique @map("order_id") @db.Uuid
@@ -1668,6 +2636,7 @@ model DeliveryDetail {
   assignedAt              DateTime?           @map("assigned_at")
   acceptedAt              DateTime?           @map("accepted_at")
   rejectedAt              DateTime?           @map("rejected_at")
+  assignmentExpiresAt     DateTime?           @map("assignment_expires_at")
   assignmentNote          String?             @map("assignment_note")
   shippingChargeSnapshot  Json?               @map("shipping_charge_snapshot")
   codSurchargeSnapshot    Json?               @map("cod_surcharge_snapshot")
@@ -1708,6 +2677,7 @@ model DeliveryDetail {
   @@index([courierProviderCode, courierTrackingStatus])
   @@index([routingFailed, createdAt])
   @@index([assignmentStatus, status])
+  @@index([assignmentExpiresAt, assignmentStatus])
   @@index([codCollectionStatus, codCollectedById])
   @@index([codCollectionStatus, codVerifiedById])
   @@map("delivery_details")
@@ -2143,6 +3113,8 @@ model Payment {
   updatedAt         DateTime        @updatedAt @map("updated_at")
   order             Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
   events            PaymentEvent[]
+  refundRequests    RefundRequest[]
+  refundTransactions RefundTransaction[]
 
   @@index([orderId])
   @@index([status])
@@ -2563,22 +3535,32 @@ model CmsMenuItem {
 }
 
 model SupportRequest {
-  id        String               @id @default(uuid()) @db.Uuid
-  userId    String?              @map("user_id") @db.Uuid
-  name      String
-  email     String
-  phone     String?
-  subject   String
-  message   String
-  status    SupportRequestStatus @default(OPEN)
-  adminNote String?              @map("admin_note")
-  createdAt DateTime             @default(now()) @map("created_at")
-  updatedAt DateTime             @updatedAt @map("updated_at")
-  user      User?                @relation(fields: [userId], references: [id])
+  id                      String                @id @default(uuid()) @db.Uuid
+  userId                  String?               @map("user_id") @db.Uuid
+  name                    String
+  email                   String
+  phone                   String?
+  topic                   SupportRequestTopic   @default(GENERAL)
+  requesterType           SupportRequesterType  @default(CUSTOMER) @map("requester_type")
+  preferredContactChannel SupportContactChannel @default(EMAIL) @map("preferred_contact_channel")
+  source                  SupportRequestSource  @default(WEB_CONTACT)
+  orderNumber             String?               @map("order_number")
+  subject                 String
+  message                 String
+  status                  SupportRequestStatus  @default(OPEN)
+  adminNote               String?               @map("admin_note")
+  responseMessage         String?               @map("response_message")
+  respondedAt             DateTime?             @map("responded_at")
+  createdAt               DateTime              @default(now()) @map("created_at")
+  updatedAt               DateTime              @updatedAt @map("updated_at")
+  user                    User?                 @relation(fields: [userId], references: [id])
 
   @@index([userId])
   @@index([status])
   @@index([status, createdAt])
+  @@index([topic, status])
+  @@index([source, createdAt])
+  @@index([orderNumber])
   @@map("support_requests")
 }
 

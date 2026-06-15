@@ -6,9 +6,9 @@ Build 1HandIndia as a production-grade multi-vendor marketplace portal with a pr
 
 The system should be designed for long-term growth, not as a one-page ecommerce demo.
 
-For the approved INR 200,000 Phase 1 build, follow the locked stack in `docs/IndiHub_FINAL_TECH_STACK_LOCK.md`. This blueprint includes future-ready direction, but future items such as native mobile apps, live courier API, automated payouts, SMS/WhatsApp automation, advanced analytics, realtime chat, and advanced B2B RFQ/PO workflows are not active Phase 1 deliverables unless separately approved.
+Follow the locked stack in `docs/IndiHub_FINAL_TECH_STACK_LOCK.md` and the active scope rule in `docs/IndiHub_FULL_IMPLEMENTATION_SCOPE_GOVERNANCE.md`. From 08-06-2026 onward, selected features are implemented as complete production marketplace features, not as generic Phase 1 shortcuts.
 
-## 2. Phase 1 Locked Stack Direction
+## 2. Current Locked Stack Direction
 
 ### Web Application
 
@@ -48,14 +48,13 @@ For the approved INR 200,000 Phase 1 build, follow the locked stack in `docs/Ind
 
 ### Mobile Apps
 
-- Native mobile apps are not part of Phase 1.
-- React Native with Expo is the recommended future mobile direction after a separate mobile phase is approved.
-- The Phase 1 API should remain mobile-ready.
+- React Native with Expo is the recommended mobile direction when native customer, seller, or delivery partner apps are selected.
+- The API should remain mobile-ready, with stable auth, pagination, errors, and role-specific endpoints.
 
 ### Search
 
-- PostgreSQL indexed search for Phase 1 basic product search and filters.
-- Meilisearch can be added later through a search service boundary for advanced faceting, typo tolerance, and high-scale product navigation.
+- PostgreSQL indexed search is the current product search implementation.
+- Meilisearch can be added through a search service boundary when advanced faceting, typo tolerance, and high-scale product navigation are selected.
 
 ### Authentication
 
@@ -64,16 +63,16 @@ For the approved INR 200,000 Phase 1 build, follow the locked stack in `docs/Ind
 
 ### Integrations
 
-- Payment gateway: Razorpay-ready adapter for Phase 1.
-- Courier: manual delivery/courier tracking for Phase 1; Shiprocket/Delhivery later.
+- Payment gateway: Razorpay-ready adapter with admin-managed credentials and verification flows.
+- Courier: current delivery/courier tracking exists; Shiprocket/Delhivery or another courier provider should be implemented end to end when selected.
 - Email: Resend, SendGrid, SMTP, or client-approved provider.
-- SMS/OTP: future upgrade unless separately approved.
-- WhatsApp: future upgrade unless separately approved.
-- Push notifications: future mobile-app upgrade.
+- SMS/OTP: selectable provider-backed feature.
+- WhatsApp: selectable provider-backed feature.
+- Push notifications: selectable mobile/app notification feature.
 
 ## 3. Recommended App Structure
 
-When implementation starts, use this locked Phase 1 monorepo structure:
+Use this locked product monorepo structure:
 
 ```text
 indihub/
@@ -91,7 +90,7 @@ indihub/
   docs/
 ```
 
-Future native mobile apps can later be added as `apps/mobile-customer/` and `apps/mobile-seller/`.
+Native mobile apps can be added as `apps/mobile-customer/`, `apps/mobile-seller/`, or `apps/mobile-delivery/` when selected for full implementation.
 
 ## 4. Main Web Areas
 

@@ -2,7 +2,7 @@
 
 Last updated: 2026-05-28
 
-This document tracks every Phase 1 application email that the 1HandIndia backend sends, where it is triggered, who receives it, and how admins can audit delivery.
+This document tracks every application email that the 1HandIndia backend sends, where it is triggered, who receives it, and how admins can audit delivery.
 
 ## How Email Sending Works
 
@@ -155,6 +155,7 @@ Trigger behavior:
 | `B2B_ENQUIRY_RESPONSE_BUYER`           | `B2B`      | `B2B_ENQUIRY_RESPONSE`         | Business buyer   | Seller/admin adds quotation response                                         | `apps/api/src/b2b/b2b.service.ts`                                                                                                        |
 | `SUPPORT_REQUEST_RECEIVED`             | `SUPPORT`  | `SUPPORT_REQUEST_RECEIVED`     | Submitter        | Customer/public user submits support request                                 | `apps/api/src/support/support.service.ts`                                                                                                |
 | `SUPPORT_REQUEST_ADMIN_ALERT`          | `SUPPORT`  | `SUPPORT_REQUEST_ALERT`        | Admin recipients | Customer/public user submits support request                                 | `apps/api/src/support/support.service.ts`                                                                                                |
+| `SUPPORT_REQUEST_RESPONDED`            | `SUPPORT`  | `SUPPORT_REQUEST_RESPONDED`    | Submitter        | Admin sends `responseMessage` while marking a request `RESPONDED`            | `apps/api/src/support/support.service.ts`                                                                                                |
 
 ## What Is Not App-Tracked
 

@@ -55,6 +55,18 @@ export type CheckoutCharges = {
   deliveryRoutings?: CheckoutSellerPackageDeliveryRouting[];
 };
 
+export type CheckoutCouponAdjustments = {
+  merchandiseDiscountPaise?: number;
+  shippingDiscountPaise?: number;
+  snapshot?: Prisma.InputJsonValue;
+};
+
+export type CheckoutAdjustedCharges = CheckoutCharges & {
+  payableSubtotalPaise: number;
+  payableShippingPaise: number;
+  couponDiscountPaise: number;
+};
+
 @Injectable()
 export class CheckoutPricingService {
   constructor(
@@ -211,6 +223,75 @@ export class CheckoutPricingService {
     };
   }
 
+  async applyCouponAdjustments(
+    charges: CheckoutCharges,
+    client: PricingClient = this.prisma.client,
+    adjustments: CheckoutCouponAdjustments = {},
+  ): Promise<CheckoutAdjustedCharges> {
+    const merchandiseDiscountPaise = Math.min(
+      this.nonNegativeInt(adjustments.merchandiseDiscountPaise ?? 0),
+      charges.subtotalPaise,
+    );
+    const shippingDiscountPaise = Math.min(
+      this.nonNegativeInt(adjustments.shippingDiscountPaise ?? 0),
+      charges.shippingPaise,
+    );
+    const payableSubtotalPaise = this.nonNegativeInt(
+      charges.subtotalPaise - merchandiseDiscountPaise,
+    );
+    const payableShippingPaise = this.nonNegativeInt(charges.shippingPaise - shippingDiscountPaise);
+    const settings = await this.pricingSettings(client);
+    const settingMap = new Map(settings.map((setting) => [setting.key, setting.value]));
+    const platformFeeEnabled = this.booleanSetting(settingMap.get(settingKeys.platformFeeEnabled), false);
+    const platformFeeType = this.platformFeeType(settingMap.get(settingKeys.platformFeeType));
+    const platformFeeValueBps = this.nonNegativeInt(
+      this.numberSetting(settingMap.get(settingKeys.platformFeeValueBps), 0),
+    );
+    const platformFeeFixedPaise = this.nonNegativeInt(
+      this.numberSetting(settingMap.get(settingKeys.platformFeeFixedPaise), 0),
+    );
+    const platformFeePaise = platformFeeEnabled
+      ? this.calculatePlatformFee(
+          payableSubtotalPaise,
+          platformFeeType,
+          platformFeeValueBps,
+          platformFeeFixedPaise,
+        )
+      : 0;
+
+    return {
+      ...charges,
+      shippingPaise: payableShippingPaise,
+      platformFeePaise,
+      totalPaise: payableSubtotalPaise + payableShippingPaise + platformFeePaise,
+      payableSubtotalPaise,
+      payableShippingPaise,
+      couponDiscountPaise: merchandiseDiscountPaise + shippingDiscountPaise,
+      snapshot: {
+        ...this.jsonObject(charges.snapshot),
+        coupon: {
+          merchandiseDiscountPaise,
+          shippingDiscountPaise,
+          totalDiscountPaise: merchandiseDiscountPaise + shippingDiscountPaise,
+          subtotalBeforeCouponPaise: charges.subtotalPaise,
+          subtotalAfterCouponPaise: payableSubtotalPaise,
+          shippingBeforeCouponPaise: charges.shippingPaise,
+          shippingAfterCouponPaise: payableShippingPaise,
+          platformFeeBasePaise: payableSubtotalPaise,
+          couponSnapshot: adjustments.snapshot ?? null,
+        },
+        platformFee: {
+          enabled: platformFeeEnabled,
+          type: platformFeeType,
+          valueBps: platformFeeValueBps,
+          fixedPaise: platformFeeFixedPaise,
+          amountPaise: platformFeePaise,
+          basePaise: payableSubtotalPaise,
+        },
+      },
+    };
+  }
+
   private shouldResolveDelivery(options: CheckoutChargeDeliveryOptions) {
     return Boolean(
       options.deliveryPreference ||
@@ -278,5 +359,13 @@ export class CheckoutPricingService {
 
   private nonNegativeInt(value: number) {
     return Math.max(0, Math.round(value));
+  }
+
+  private jsonObject(value: Prisma.InputJsonValue): Prisma.InputJsonObject {
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      return value as Prisma.InputJsonObject;
+    }
+
+    return {};
   }
 }

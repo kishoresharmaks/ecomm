@@ -239,7 +239,14 @@ export class ReportsService {
         _count: true,
         _sum: {
           sellerSubtotalPaise: true,
-          commissionPaise: true
+          commissionPaise: true,
+          gstOnCommissionPaise: true,
+          tdsPaise: true,
+          tcsPaise: true,
+          platformFeePaise: true,
+          couponSellerFundedDiscountPaise: true,
+          couponAdjustmentPaise: true,
+          refundAdjustmentPaise: true
         }
       });
       const splits = await tx.orderSellerSplit.findMany({
@@ -285,13 +292,38 @@ export class ReportsService {
 
     const totalSalesPaise = summary._sum.sellerSubtotalPaise ?? 0;
     const commissionPaise = summary._sum.commissionPaise ?? 0;
+    const gstOnCommissionPaise = summary._sum.gstOnCommissionPaise ?? 0;
+    const tdsPaise = summary._sum.tdsPaise ?? 0;
+    const tcsPaise = summary._sum.tcsPaise ?? 0;
+    const platformFeePaise = summary._sum.platformFeePaise ?? 0;
+    const couponSellerFundedDiscountPaise =
+      summary._sum.couponSellerFundedDiscountPaise ?? 0;
+    const couponAdjustmentPaise = summary._sum.couponAdjustmentPaise ?? 0;
+    const refundAdjustmentPaise = summary._sum.refundAdjustmentPaise ?? 0;
+    const netSalesPaise =
+      totalSalesPaise -
+      commissionPaise -
+      gstOnCommissionPaise -
+      tdsPaise -
+      tcsPaise -
+      platformFeePaise -
+      couponSellerFundedDiscountPaise +
+      couponAdjustmentPaise +
+      refundAdjustmentPaise;
 
     return {
       summary: {
         orderCount: summary._count,
         totalSalesPaise,
         commissionPaise,
-        netSalesPaise: totalSalesPaise - commissionPaise,
+        gstOnCommissionPaise,
+        tdsPaise,
+        tcsPaise,
+        platformFeePaise,
+        couponSellerFundedDiscountPaise,
+        couponAdjustmentPaise,
+        refundAdjustmentPaise,
+        netSalesPaise,
         products,
         lowStockCount,
         b2bEnquiries

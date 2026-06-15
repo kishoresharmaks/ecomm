@@ -15,6 +15,7 @@ import {
   ProductAttributeFieldType,
   ProductAttributeScope,
   ProductListingMode,
+  ProductReviewStatus,
   ProductStatus,
   ProductTemplateStatus,
   SellerStatus,
@@ -41,7 +42,10 @@ import { createSlug } from "../common/slug";
 import { EMAIL_TRIGGER_EVENTS } from "../notifications/email-trigger-catalog";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { SearchIndexService } from "../search/search-index.service";
+import { readBooleanSetting } from "../settings/setting-value-utils";
 import { SellerSubscriptionsService } from "../sellers/seller-subscriptions.service";
+import { DealPricingService } from "../deals/deal-pricing.service";
 import {
   normalizeStorageImageReference,
   safeStorageFolderSegment,
@@ -120,6 +124,8 @@ const publicProductInclude = {
   },
 };
 
+const productAutoApproveSettingKey = "products.auto_approve.enabled";
+
 type ProductSearchCursor = {
   rank: number | string;
   createdAt: string;
@@ -137,6 +143,12 @@ type ProductListRow = {
   createdAt: Date;
 };
 
+type ProductReviewSummary = {
+  averageRating: number | null;
+  reviewCount: number;
+  distribution: Record<1 | 2 | 3 | 4 | 5, number>;
+};
+
 @Injectable()
 export class ProductsService {
   constructor(
@@ -145,6 +157,12 @@ export class ProductsService {
     @Optional()
     @Inject(SellerSubscriptionsService)
     private readonly sellerSubscriptions?: SellerSubscriptionsService,
+    @Optional()
+    @Inject(DealPricingService)
+    private readonly dealPricing?: DealPricingService,
+    @Optional()
+    @Inject(SearchIndexService)
+    private readonly searchIndex?: SearchIndexService,
   ) {}
 
   async listPublicProducts(query: ProductQueryDto) {
@@ -191,7 +209,8 @@ export class ProductsService {
       throw new NotFoundException("Product not found.");
     }
 
-    return product;
+    const [decoratedProduct] = await this.decoratePublicProducts([product]);
+    return decoratedProduct ?? product;
   }
 
   async listSellerProducts(actor: RequestUser, query: ProductQueryDto) {
@@ -290,6 +309,19 @@ export class ProductsService {
     const listingMode = category.productTemplate?.listingMode ?? ProductListingMode.CART;
     const slug = await this.createUniqueProductSlug(dto.name);
     const variantInputs = await this.prepareVariantInputs(dto.name, variants);
+    const autoApproveProduct = await this.isProductAutoApprovalEnabled();
+    const nextProductStatus = autoApproveProduct ? ProductStatus.ACTIVE : ProductStatus.INACTIVE;
+    const nextApprovalStatus = autoApproveProduct
+      ? ApprovalStatus.APPROVED
+      : ApprovalStatus.PENDING_APPROVAL;
+
+    if (autoApproveProduct) {
+      this.ensureProductApprovalReadiness({
+        attributes,
+        hsnCode: productTaxFields.hsnCode,
+        gstRatePercent: productTaxFields.gstRatePercent,
+      });
+    }
 
     const productId = await this.prisma.client.$transaction(async (tx) => {
       const product = await tx.product.create({
@@ -299,8 +331,8 @@ export class ProductsService {
           name: dto.name,
           slug,
           description: dto.description,
-          status: ProductStatus.INACTIVE,
-          approvalStatus: ApprovalStatus.PENDING_APPROVAL,
+          status: nextProductStatus,
+          approvalStatus: nextApprovalStatus,
           listingMode,
           attributes: this.jsonObjectOrNull(attributes),
           hsnCode: productTaxFields.hsnCode,
@@ -358,13 +390,15 @@ export class ProductsService {
       await tx.auditLog.create({
         data: {
           actor: { connect: { id: actor.id } },
-          action: "product.submitted",
+          action: autoApproveProduct ? "product.auto_approved" : "product.submitted",
           entityType: "product",
           entityId: product.id,
           newValue: {
             name: product.name,
             sellerId: seller.id,
+            status: product.status,
             approvalStatus: product.approvalStatus,
+            autoApproved: autoApproveProduct,
           },
         },
       });
@@ -373,22 +407,13 @@ export class ProductsService {
     });
 
     const product = await this.getProductByIdOrThrow(productId);
-    await Promise.all([
-      this.notifications.notifyEvent({
-        eventCode: EMAIL_TRIGGER_EVENTS.PRODUCT_SUBMITTED_SELLER,
-        recipientType: EmailRecipientType.SELLER,
-        recipient: product.seller.user.email,
-        userId: product.seller.userId,
-        variables: {
-          productName: product.name,
-          sellerName: product.seller.storeName,
-        },
-      }),
-      this.notifications.notifyAdminEvent(EMAIL_TRIGGER_EVENTS.PRODUCT_SUBMITTED_ADMIN, {
-        productName: product.name,
-        sellerName: product.seller.storeName,
-      }),
-    ]);
+    await this.enqueueProductSearchIndex(
+      product.id,
+      autoApproveProduct ? "product-auto-approved" : "product-submitted",
+      product.sellerId,
+      product.categoryId,
+    );
+    await this.notifyProductSubmission(product, autoApproveProduct);
 
     return product;
   }
@@ -434,6 +459,19 @@ export class ProductsService {
       };
     });
     const listingMode = category.productTemplate?.listingMode ?? ProductListingMode.CART;
+    const autoApproveProduct = await this.isProductAutoApprovalEnabled();
+    const nextProductStatus = autoApproveProduct ? ProductStatus.ACTIVE : ProductStatus.INACTIVE;
+    const nextApprovalStatus = autoApproveProduct
+      ? ApprovalStatus.APPROVED
+      : ApprovalStatus.PENDING_APPROVAL;
+
+    if (autoApproveProduct) {
+      this.ensureProductApprovalReadiness({
+        attributes: attributes ?? existing.attributes,
+        hsnCode: productTaxFields?.hsnCode ?? existing.hsnCode,
+        gstRatePercent: productTaxFields?.gstRatePercent ?? existing.gstRatePercent,
+      });
+    }
 
     const updatedProductId = await this.prisma.client.$transaction(async (tx) => {
       const product = await tx.product.update({
@@ -462,8 +500,8 @@ export class ProductsService {
                 ),
               }
             : {}),
-          status: ProductStatus.INACTIVE,
-          approvalStatus: ApprovalStatus.PENDING_APPROVAL,
+          status: nextProductStatus,
+          approvalStatus: nextApprovalStatus,
         },
       });
 
@@ -503,6 +541,7 @@ export class ProductsService {
             name: product.name,
             status: product.status,
             approvalStatus: product.approvalStatus,
+            autoApproved: autoApproveProduct,
           },
         },
       });
@@ -511,22 +550,13 @@ export class ProductsService {
     });
 
     const product = await this.getProductByIdOrThrow(updatedProductId);
-    await Promise.all([
-      this.notifications.notifyEvent({
-        eventCode: EMAIL_TRIGGER_EVENTS.PRODUCT_SUBMITTED_SELLER,
-        recipientType: EmailRecipientType.SELLER,
-        recipient: product.seller.user.email,
-        userId: product.seller.userId,
-        variables: {
-          productName: product.name,
-          sellerName: product.seller.storeName,
-        },
-      }),
-      this.notifications.notifyAdminEvent(EMAIL_TRIGGER_EVENTS.PRODUCT_SUBMITTED_ADMIN, {
-        productName: product.name,
-        sellerName: product.seller.storeName,
-      }),
-    ]);
+    await this.enqueueProductSearchIndex(
+      product.id,
+      autoApproveProduct ? "product-auto-approved-update" : "product-updated",
+      product.sellerId,
+      product.categoryId,
+    );
+    await this.notifyProductSubmission(product, autoApproveProduct);
 
     return product;
   }
@@ -553,6 +583,7 @@ export class ProductsService {
       },
     });
 
+    await this.enqueueProductSearchIndex(product.id, "product-archived", product.sellerId, product.categoryId);
     return product;
   }
 
@@ -593,6 +624,7 @@ export class ProductsService {
       },
     });
 
+    await this.enqueueProductSearchIndex(updatedProduct.id, "admin-product-archived", updatedProduct.sellerId, updatedProduct.categoryId);
     return this.getProductByIdOrThrow(productId);
   }
 
@@ -710,11 +742,29 @@ export class ProductsService {
       },
     });
 
+    await this.enqueueProductSearchIndex(product.id, approved ? "product-approved" : "product-rejected", product.sellerId, product.categoryId);
     return product;
   }
 
   private pagination(query: ProductQueryDto) {
     return paginationFromQuery(query);
+  }
+
+  private async enqueueProductSearchIndex(
+    productId: string,
+    reason: string,
+    sellerId?: string | null,
+    categoryId?: string | null,
+  ) {
+    try {
+      await Promise.all([
+        this.searchIndex?.enqueueProduct(productId, { reason }),
+        sellerId ? this.searchIndex?.enqueueSeller(sellerId, { reason: `${reason}:seller-rollup` }) : undefined,
+        categoryId ? this.searchIndex?.enqueueCategory(categoryId, { reason: `${reason}:category-rollup` }) : undefined,
+      ]);
+    } catch {
+      // Search indexing is retryable background work; product writes remain the source of truth.
+    }
   }
 
   private shouldUseCursorPagination(query: ProductQueryDto) {
@@ -920,10 +970,82 @@ export class ProductsService {
     });
     const productById = new Map(products.map((product) => [product.id, product]));
 
-    return productIds.flatMap((productId) => {
+    const orderedProducts = productIds.flatMap((productId) => {
       const product = productById.get(productId);
       return product && !isSoldResaleProduct(product) ? [product] : [];
     });
+
+    return this.decoratePublicProducts(orderedProducts);
+  }
+
+  private async decoratePublicProducts<T extends { id: string; variants: Array<{ pricePaise: number } & Record<string, unknown>> }>(
+    products: T[],
+  ) {
+    const decoratedProducts = this.dealPricing ? await this.dealPricing.applyActiveDealsToProducts(products) : products;
+    const reviewSummaries = await this.reviewSummariesForProducts(decoratedProducts.map((product) => product.id));
+
+    return decoratedProducts.map((product) => ({
+      ...product,
+      reviewSummary: reviewSummaries.get(product.id) ?? this.emptyReviewSummary(),
+    }));
+  }
+
+  private async reviewSummariesForProducts(productIds: string[]) {
+    const summaries = new Map<string, ProductReviewSummary>();
+    if (!productIds.length) {
+      return summaries;
+    }
+
+    const where = {
+      productId: { in: productIds },
+      status: ProductReviewStatus.APPROVED,
+    };
+    const [aggregates, distributionRows] = await Promise.all([
+      this.prisma.client.productReview.groupBy({
+        by: ["productId"],
+        where,
+        _avg: { rating: true },
+        _count: { _all: true },
+      }),
+      this.prisma.client.productReview.groupBy({
+        by: ["productId", "rating"],
+        where,
+        _count: { _all: true },
+      }),
+    ]);
+
+    for (const aggregate of aggregates) {
+      summaries.set(aggregate.productId, {
+        ...this.emptyReviewSummary(),
+        averageRating:
+          aggregate._avg.rating === null ? null : Math.round(aggregate._avg.rating * 10) / 10,
+        reviewCount: aggregate._count._all,
+      });
+    }
+
+    for (const row of distributionRows) {
+      const summary = summaries.get(row.productId) ?? this.emptyReviewSummary();
+      if (row.rating >= 1 && row.rating <= 5) {
+        summary.distribution[row.rating as 1 | 2 | 3 | 4 | 5] = row._count._all;
+      }
+      summaries.set(row.productId, summary);
+    }
+
+    return summaries;
+  }
+
+  private emptyReviewSummary(): ProductReviewSummary {
+    return {
+      averageRating: null,
+      reviewCount: 0,
+      distribution: {
+        1: 0,
+        2: 0,
+        3: 0,
+        4: 0,
+        5: 0,
+      },
+    };
   }
 
   private encodeProductSearchCursor(row: ProductSearchRow) {
@@ -1043,6 +1165,54 @@ export class ProductsService {
     }
 
     return product;
+  }
+
+  private async isProductAutoApprovalEnabled() {
+    const setting = await this.prisma.client.setting.findUnique({
+      where: { key: productAutoApproveSettingKey },
+      select: { value: true },
+    });
+
+    return readBooleanSetting(setting?.value, false);
+  }
+
+  private notifyProductSubmission(
+    product: {
+      name: string;
+      seller: { storeName: string; userId: string; user: { email: string } };
+    },
+    autoApproved: boolean,
+  ) {
+    if (autoApproved) {
+      return this.notifications.notifyEvent({
+        eventCode: EMAIL_TRIGGER_EVENTS.PRODUCT_APPROVED,
+        recipientType: EmailRecipientType.SELLER,
+        recipient: product.seller.user.email,
+        userId: product.seller.userId,
+        variables: {
+          productName: product.name,
+          sellerName: product.seller.storeName,
+          note: "Auto approved by marketplace product settings.",
+        },
+      });
+    }
+
+    return Promise.all([
+      this.notifications.notifyEvent({
+        eventCode: EMAIL_TRIGGER_EVENTS.PRODUCT_SUBMITTED_SELLER,
+        recipientType: EmailRecipientType.SELLER,
+        recipient: product.seller.user.email,
+        userId: product.seller.userId,
+        variables: {
+          productName: product.name,
+          sellerName: product.seller.storeName,
+        },
+      }),
+      this.notifications.notifyAdminEvent(EMAIL_TRIGGER_EVENTS.PRODUCT_SUBMITTED_ADMIN, {
+        productName: product.name,
+        sellerName: product.seller.storeName,
+      }),
+    ]);
   }
 
   private async prepareVariantInputs(productName: string, variants: ProductVariantDto[]) {

@@ -5,11 +5,19 @@ import { PrismaService } from "../prisma/prisma.service";
 import {
   SettingsQueryDto,
   UpsertCheckoutPlatformFeeDto,
+  UpsertContactSettingsDto,
   UpsertDeliveryPartnerPayoutSettingsDto,
   UpsertEmailSettingDto,
   UpsertMapRoutingSettingsDto,
   UpsertSettingDto,
 } from "./dto/settings.dto";
+import {
+  adminContactConfig,
+  contactSettingGroup,
+  contactSettingKey,
+  contactSettingsFromSetting,
+  normalizeContactSettings,
+} from "./contact-settings";
 import {
   deliveryPartnerPayoutSettingGroup,
   deliveryPartnerPayoutSettingKeys,
@@ -101,6 +109,14 @@ export class SettingsService {
   async getMapRoutingSettings() {
     const settings = await readMapRoutingSettings(this.prisma.client);
     return mapRoutingSettingsReadback(settings);
+  }
+
+  async getContactSettings() {
+    const setting = await this.prisma.client.setting.findUnique({
+      where: { key: contactSettingKey },
+    });
+
+    return adminContactConfig(contactSettingsFromSetting(setting));
   }
 
   async upsertSetting(actor: RequestUser, key: string, dto: UpsertSettingDto) {
@@ -422,6 +438,45 @@ export class SettingsService {
       ...mapRoutingSettingsReadback(normalized),
       settings: settings.map((setting) => this.sanitizeSetting(setting)),
     };
+  }
+
+  async upsertContactSettings(actor: RequestUser, dto: UpsertContactSettingsDto) {
+    const existing = await this.prisma.client.setting.findUnique({
+      where: { key: contactSettingKey },
+    });
+    const previous = contactSettingsFromSetting(existing);
+    const normalized = normalizeContactSettings({
+      ...previous,
+      ...dto,
+    });
+
+    const setting = await this.prisma.client.setting.upsert({
+      where: { key: contactSettingKey },
+      update: {
+        group: contactSettingGroup,
+        valueType: SettingValueType.JSON,
+        value: normalized as Prisma.InputJsonObject,
+      },
+      create: {
+        key: contactSettingKey,
+        group: contactSettingGroup,
+        valueType: SettingValueType.JSON,
+        value: normalized as Prisma.InputJsonObject,
+      },
+    });
+
+    await this.prisma.client.auditLog.create({
+      data: {
+        actorUserId: actor.id,
+        action: "settings.contact.updated",
+        entityType: "contact_settings",
+        entityId: setting.id,
+        oldValue: previous as Prisma.InputJsonObject,
+        newValue: normalized as Prisma.InputJsonObject,
+      },
+    });
+
+    return adminContactConfig(normalized);
   }
 
   async getEmailSetting() {

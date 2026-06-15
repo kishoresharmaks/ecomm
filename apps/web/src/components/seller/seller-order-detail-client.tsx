@@ -8,17 +8,22 @@ import {
   ChevronDown,
   ChevronUp,
   ClipboardList,
+  CreditCard,
   Download,
   ExternalLink,
   MapPin,
   Navigation,
   Package,
+  PackageCheck,
   Printer,
+  ShoppingBag,
   Truck,
   XCircle,
+  type LucideIcon,
 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, SectionHeading, StatusBadge, cn } from "@indihub/ui";
+import type { StatusTone } from "@indihub/ui";
 import {
   coordinatesFromSnapshot,
   formatCoordinates,
@@ -26,6 +31,10 @@ import {
   googleMapsSearchUrl,
 } from "@/lib/map-navigation";
 import { formatMoney } from "@/lib/storefront-api";
+import {
+  OrderStatusTimeline,
+  type OrderStatusTimelineEvent,
+} from "@/components/shared/order-status-timeline";
 import {
   fetchSellerPackageLabel,
   getSellerOrder,
@@ -70,15 +79,15 @@ const deliveryModeLabels: Record<(typeof deliveryModes)[number], string> = {
   THIRD_PARTY_COURIER: "Third-party courier service",
   MANUAL_TRANSPORT: "Manual transport",
 };
-const deliveryStatuses = [
+const deliveryProgressionStatuses = [
   "NOT_ASSIGNED",
   "PENDING",
   "PACKED",
   "DISPATCHED",
   "IN_TRANSIT",
   "DELIVERED",
-  "CANCELLED",
 ] as const;
+const deliveryStatuses = [...deliveryProgressionStatuses, "CANCELLED"] as const;
 type DeliveryStatus = (typeof deliveryStatuses)[number];
 
 const sellerStatusFlow: Array<{
@@ -356,13 +365,44 @@ export function SellerOrderDetailClient({ orderNumber }: { orderNumber: string }
   const isTerminalSellerStatus =
     currentSellerStatus === "DELIVERED" || currentSellerStatus === "CANCELLED";
   const canCancelSellerPackage = canSellerCancelPackage(currentSellerStatus, currentDeliveryStatus);
-  const selectableDeliveryStatuses =
-    canCancelSellerPackage || currentDeliveryStatus === "CANCELLED"
-      ? deliveryStatuses
-      : deliveryStatuses.filter((status) => status !== "CANCELLED");
+  const selectableDeliveryStatuses = nextDeliveryStatusOptions(
+    currentDeliveryStatus,
+    canCancelSellerPackage,
+  );
+  const timelineEvents = buildTrackingTimeline(order);
+  const statusSummaryItems: SellerStatusSummaryItem[] = [
+    {
+      label: "Order status",
+      value: orderStatusText(order.orderStatus),
+      detail: "Customer order workflow",
+      status: order.orderStatus,
+      icon: ShoppingBag,
+    },
+    {
+      label: "Payment status",
+      value: paymentStatusText(order.paymentStatus),
+      detail: "Payment collection state",
+      status: order.paymentStatus,
+      icon: CreditCard,
+    },
+    {
+      label: "Delivery status",
+      value: deliveryStatusText(order.deliveryStatus),
+      detail: "Overall delivery progress",
+      status: order.deliveryStatus,
+      icon: Truck,
+    },
+    {
+      label: "Your fulfilment",
+      value: sellerFulfilmentStatusText(currentSellerStatus),
+      detail: "This store package",
+      status: currentSellerStatus,
+      icon: PackageCheck,
+    },
+  ];
 
   return (
-    <div className="grid gap-5">
+    <div className="grid gap-4">
       <div>
         <Button asChild variant="ghost" size="sm">
           <Link href="/seller/orders">
@@ -380,42 +420,60 @@ export function SellerOrderDetailClient({ orderNumber }: { orderNumber: string }
         </StatusBadge>
       ) : null}
 
-      <SellerPanel>
-        <div className="grid gap-5 lg:grid-cols-[1fr_auto] lg:items-start">
-          <div>
-            <p className="text-sm font-bold text-[#667085]">
-              Placed on {formatDateTime(order.createdAt)}
-            </p>
-            <h2 className="mt-2 text-2xl font-black text-[#1F2933]">{order.orderNumber}</h2>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <SellerStatusPill status={order.orderStatus} />
-              <SellerStatusPill status={order.paymentStatus} />
-              <SellerStatusPill status={order.deliveryStatus} />
-              <SellerStatusPill status={sellerSplit?.sellerStatus} />
+      <SellerPanel className="overflow-hidden p-0">
+        <div className="grid lg:grid-cols-[minmax(0,1fr)_280px]">
+          <div className="p-4 sm:p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-[#667085]">
+                  Placed on {formatDateTime(order.createdAt)}
+                </p>
+                <h2 className="mt-1 break-words text-2xl font-black text-[#1F2933]">
+                  {order.orderNumber}
+                </h2>
+              </div>
+              <StatusBadge tone={statusSummaryTone(currentSellerStatus)}>
+                Next: {nextSellerStatus ? sellerActionLabel(nextSellerStatus) : "No seller action"}
+              </StatusBadge>
+            </div>
+            <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              {statusSummaryItems.map((item) => (
+                <SellerStatusSummary key={item.label} item={item} />
+              ))}
             </div>
           </div>
-          <div className="rounded-md bg-[#FFFCFB] p-4 text-right">
+          <div className="border-t border-[#F2D5CC] bg-[#FFFCFB] p-4 text-left lg:border-l lg:border-t-0 lg:text-right">
             <p className="text-sm font-bold text-[#667085]">Seller subtotal</p>
-            <p className="mt-1 text-3xl font-black text-[#163B5C]">
+            <p className="mt-1 text-3xl font-black leading-tight text-[#163B5C]">
               {formatMoney(sellerSplit?.sellerSubtotalPaise ?? order.totalPaise, order.currency)}
             </p>
             {sellerSplit ? (
-              <p className="mt-1 text-xs font-semibold text-[#667085]">
-                Commission {formatMoney(sellerSplit.commissionPaise, order.currency)}
-              </p>
+              <div className="mt-2 space-y-1 text-xs font-semibold text-[#667085]">
+                <p>Commission {formatMoney(sellerSplit.commissionPaise, order.currency)}</p>
+                {(sellerSplit.couponSellerFundedDiscountPaise ?? 0) > 0 ? (
+                  <p className="font-black text-[#9F2600]">
+                    Seller-funded coupon -{formatMoney(sellerSplit.couponSellerFundedDiscountPaise ?? 0, order.currency)}
+                  </p>
+                ) : null}
+                {(sellerSplit.couponPlatformFundedDiscountPaise ?? 0) > 0 ? (
+                  <p className="font-bold text-[#0F8A5F]">
+                    Platform-funded coupon shown to buyer, seller payout unaffected
+                  </p>
+                ) : null}
+              </div>
             ) : null}
           </div>
         </div>
       </SellerPanel>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
-        <div className="grid gap-5">
-          <SellerPanel>
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_400px]">
+        <div className="grid content-start gap-4">
+          <SellerPanel className="p-4">
             <SectionHeading
               title="Store items"
               description="Items in this order that belong to this store."
             />
-            <div className="mt-5 overflow-hidden rounded-lg border border-[#E5E7EB]">
+            <div className="mt-4 overflow-hidden rounded-lg border border-[#E5E7EB]">
               {sellerItems.map((item) => (
                 <div
                   key={item.id}
@@ -447,7 +505,7 @@ export function SellerOrderDetailClient({ orderNumber }: { orderNumber: string }
           </SellerPanel>
 
           {sellerShipment ? (
-            <SellerPanel>
+            <SellerPanel className="p-4">
               <div className="flex items-center gap-3">
                 <span className="grid h-10 w-10 place-items-center rounded-md bg-[#F8FAFC] text-[#163B5C]">
                   <Package className="h-5 w-5" aria-hidden="true" />
@@ -457,7 +515,7 @@ export function SellerOrderDetailClient({ orderNumber }: { orderNumber: string }
                   description="This store's own shipment package."
                 />
               </div>
-              <div className="mt-5 grid gap-3 text-sm font-semibold text-[#667085] sm:grid-cols-2">
+              <div className="mt-4 grid gap-3 text-sm font-semibold text-[#667085] sm:grid-cols-2">
                 <Info label="Package" value={sellerShipment.shipmentNumber} />
                 <Info label="Status" value={statusLabel(sellerShipment.status)} />
                 <Info
@@ -478,7 +536,7 @@ export function SellerOrderDetailClient({ orderNumber }: { orderNumber: string }
                   value={formatMoney(sellerShipment.shippingPaise, order.currency)}
                 />
               </div>
-              <div className="mt-5 grid gap-3">
+              <div className="mt-4 grid gap-3">
                 {(sellerShipment.packages ?? []).map((shipmentPackage) => {
                   const labelBusy = labelActionPackageId === shipmentPackage.id;
                   const canEditPackage =
@@ -653,35 +711,26 @@ export function SellerOrderDetailClient({ orderNumber }: { orderNumber: string }
             </SellerPanel>
           ) : null}
 
-          <SellerPanel>
+          <SellerPanel className="p-4">
             <SectionHeading
               title="Status timeline"
               description="Recent status changes for order and delivery operations."
             />
-            <div className="mt-5 grid gap-3">
-              {buildTrackingTimeline(order).map((event) => (
-                <div key={event.id} className="rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-4">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <StatusBadge tone="info">{event.kind}</StatusBadge>
-                    <p className="font-black text-[#1F2933]">{statusLabel(event.newStatus)}</p>
-                  </div>
-                  <p className="mt-2 text-sm font-semibold text-[#667085]">
-                    {formatDateTime(event.createdAt)}
-                  </p>
-                  {event.note ? (
-                    <p className="mt-2 text-sm leading-6 text-[#667085]">{event.note}</p>
-                  ) : null}
-                </div>
-              ))}
-              {buildTrackingTimeline(order).length === 0 ? (
-                <p className="text-sm font-semibold text-[#667085]">No timeline events yet.</p>
-              ) : null}
-            </div>
+            <OrderStatusTimeline
+              className="mt-4"
+              events={timelineEvents}
+              orderCreatedAt={order.createdAt}
+              currentOrderStatus={order.orderStatus}
+              currentSellerStatus={currentSellerStatus}
+              currentDeliveryStatus={currentDeliveryStatus}
+              formatDateTime={formatDateTime}
+              emptyText="No seller timeline events yet."
+            />
           </SellerPanel>
         </div>
 
-        <div className="grid gap-5">
-          <SellerPanel>
+        <div className="grid content-start gap-4">
+          <SellerPanel className="p-4">
             <div className="flex items-center gap-3">
               <span className="grid h-10 w-10 place-items-center rounded-md bg-[#EAF1F7] text-[#163B5C]">
                 <ClipboardList className="h-5 w-5" aria-hidden="true" />
@@ -691,7 +740,7 @@ export function SellerOrderDetailClient({ orderNumber }: { orderNumber: string }
                 description="Move this package through the normal fulfilment flow."
               />
             </div>
-            <div className="mt-5 grid gap-4">
+            <div className="mt-4 grid gap-3">
               <div className="rounded-lg border border-[#D8E2EA] bg-[#F8FAFC] p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
@@ -773,7 +822,7 @@ export function SellerOrderDetailClient({ orderNumber }: { orderNumber: string }
             </div>
           </SellerPanel>
 
-          <SellerPanel>
+          <SellerPanel className="p-4">
             <button
               type="button"
               onClick={() => setShowDeliveryDetails((current) => !current)}
@@ -811,7 +860,7 @@ export function SellerOrderDetailClient({ orderNumber }: { orderNumber: string }
               </div>
             </div>
             {showDeliveryDetails ? (
-              <form onSubmit={submitDelivery} className="mt-5 grid gap-4">
+              <form onSubmit={submitDelivery} className="mt-4 grid gap-3">
                 <SellerSelect
                   label="Delivery mode"
                   name="deliveryMode"
@@ -835,6 +884,9 @@ export function SellerOrderDetailClient({ orderNumber }: { orderNumber: string }
                     </option>
                   ))}
                 </SellerSelect>
+                <p className="-mt-1 text-xs font-bold leading-5 text-[#667085]">
+                  Delivery updates move one step at a time. Direct jumps are blocked.
+                </p>
                 <SellerField
                   label="Partner name"
                   name="partnerName"
@@ -871,7 +923,7 @@ export function SellerOrderDetailClient({ orderNumber }: { orderNumber: string }
             ) : null}
           </SellerPanel>
 
-          <SellerPanel>
+          <SellerPanel className="p-4">
             <SectionHeading
               title="Customer delivery address"
               description="Checkout snapshot for dispatch coordination."
@@ -984,6 +1036,174 @@ function Info({ label, value }: { label: string; value?: string | number | null 
   );
 }
 
+type SellerStatusSummaryItem = {
+  label: string;
+  value: string;
+  detail: string;
+  status?: string | null;
+  icon: LucideIcon;
+};
+
+const statusSummaryCardClasses: Record<StatusTone, string> = {
+  neutral: "border-[#E5E7EB] bg-[#F8FAFC]",
+  success: "border-[#BFEAD9] bg-[#F3FBF7]",
+  warning: "border-[#FFD4C8] bg-[#FFFCFB]",
+  danger: "border-[#F5B7B7] bg-[#FFF7F7]",
+  info: "border-[#C5D8E8] bg-[#F8FAFC]",
+};
+
+const statusSummaryIconClasses: Record<StatusTone, string> = {
+  neutral: "bg-white text-[#667085]",
+  success: "bg-[#E9F7F1] text-[#0F8A5F]",
+  warning: "bg-[#FFF0EC] text-[#ED3500]",
+  danger: "bg-[#FDECEC] text-[#B42318]",
+  info: "bg-[#EAF1F7] text-[#163B5C]",
+};
+
+function SellerStatusSummary({ item }: { item: SellerStatusSummaryItem }) {
+  const Icon = item.icon;
+  const tone = statusSummaryTone(item.status);
+
+  return (
+    <div
+      className={cn(
+        "flex min-w-0 items-start gap-3 rounded-lg border p-3",
+        statusSummaryCardClasses[tone],
+      )}
+    >
+      <span
+        className={cn(
+          "grid h-9 w-9 shrink-0 place-items-center rounded-md",
+          statusSummaryIconClasses[tone],
+        )}
+      >
+        <Icon className="h-4 w-4" aria-hidden="true" />
+      </span>
+      <span className="min-w-0">
+        <span className="block text-[11px] font-black uppercase tracking-wide text-[#667085]">
+          {item.label}
+        </span>
+        <span className="mt-0.5 block text-sm font-black leading-5 text-[#1F2933]">
+          {item.value}
+        </span>
+        <span className="mt-0.5 block text-xs font-semibold leading-4 text-[#667085]">
+          {item.detail}
+        </span>
+      </span>
+    </div>
+  );
+}
+
+function orderStatusText(status?: string | null) {
+  if (status === "PLACED") {
+    return "Order placed";
+  }
+  if (status === "PROCESSING") {
+    return "Order processing";
+  }
+  if (status === "DELIVERED") {
+    return "Order delivered";
+  }
+  if (status === "CANCELLED") {
+    return "Order cancelled";
+  }
+  return status ? `Order ${sentenceStatus(status)}` : "Order status not set";
+}
+
+function paymentStatusText(status?: string | null) {
+  if (status === "PENDING") {
+    return "Payment pending";
+  }
+  if (status === "PAID" || status === "CAPTURED") {
+    return "Payment received";
+  }
+  if (status === "FAILED") {
+    return "Payment failed";
+  }
+  if (status === "REFUNDED") {
+    return "Payment refunded";
+  }
+  return status ? `Payment ${sentenceStatus(status)}` : "Payment status not set";
+}
+
+function deliveryStatusText(status?: string | null) {
+  if (status === "NOT_ASSIGNED") {
+    return "Delivery not assigned";
+  }
+  if (status === "PENDING") {
+    return "Delivery pending";
+  }
+  if (status === "PACKED") {
+    return "Package packed";
+  }
+  if (status === "DISPATCHED") {
+    return "Package dispatched";
+  }
+  if (status === "IN_TRANSIT") {
+    return "Package in transit";
+  }
+  if (status === "DELIVERED") {
+    return "Package delivered";
+  }
+  if (status === "CANCELLED") {
+    return "Delivery cancelled";
+  }
+  return status ? statusLabel(status) : "Delivery status not set";
+}
+
+function sellerFulfilmentStatusText(status: SellerStatus) {
+  if (status === "PENDING") {
+    return "Seller acceptance pending";
+  }
+  if (status === "ACCEPTED") {
+    return "Order accepted by store";
+  }
+  if (status === "PROCESSING") {
+    return "Items packed";
+  }
+  if (status === "DISPATCHED") {
+    return "Package dispatched";
+  }
+  if (status === "DELIVERED") {
+    return "Package delivered";
+  }
+  return "Seller package cancelled";
+}
+
+function sentenceStatus(status: string) {
+  return statusLabel(status).toLowerCase();
+}
+
+function statusSummaryTone(status?: string | null): StatusTone {
+  if (!status) {
+    return "neutral";
+  }
+  if (
+    [
+      "ACTIVE",
+      "APPROVED",
+      "PAID",
+      "CAPTURED",
+      "DELIVERED",
+      "COMPLETED",
+      "ACCEPTED",
+    ].includes(status)
+  ) {
+    return "success";
+  }
+  if (
+    ["PENDING", "PENDING_APPROVAL", "PLACED", "PROCESSING", "IN_TRANSIT", "PACKED"].includes(
+      status,
+    )
+  ) {
+    return "warning";
+  }
+  if (["REJECTED", "SUSPENDED", "CANCELLED", "FAILED", "REFUNDED", "ARCHIVED"].includes(status)) {
+    return "danger";
+  }
+  return "info";
+}
+
 function SellerStatusStep({
   step,
   currentStatus,
@@ -1058,6 +1278,32 @@ function nextSellerWorkflowStatus(current: SellerStatus): SellerStatus | null {
   return null;
 }
 
+function nextDeliveryWorkflowStatus(current: DeliveryStatus): DeliveryStatus | null {
+  const index = deliveryProgressionStatuses.indexOf(
+    current as (typeof deliveryProgressionStatuses)[number],
+  );
+  return index >= 0 && index < deliveryProgressionStatuses.length - 1
+    ? (deliveryProgressionStatuses[index + 1] ?? null)
+    : null;
+}
+
+function nextDeliveryStatusOptions(current: DeliveryStatus, canCancel: boolean) {
+  if (current === "DELIVERED" || current === "CANCELLED") {
+    return [current];
+  }
+
+  const options: DeliveryStatus[] = [current];
+  const nextStatus = nextDeliveryWorkflowStatus(current);
+  if (nextStatus) {
+    options.push(nextStatus);
+  }
+  if (canCancel && !options.includes("CANCELLED")) {
+    options.push("CANCELLED");
+  }
+
+  return options;
+}
+
 function canSellerCancelPackage(sellerStatus: SellerStatus, deliveryStatus: DeliveryStatus) {
   return (
     ["PENDING", "ACCEPTED", "PROCESSING"].includes(sellerStatus) &&
@@ -1125,7 +1371,9 @@ function isDeliveryStatus(value: string): value is (typeof deliveryStatuses)[num
   return deliveryStatuses.includes(value as (typeof deliveryStatuses)[number]);
 }
 
-function buildTrackingTimeline(order: NonNullable<Awaited<ReturnType<typeof getSellerOrder>>>) {
+function buildTrackingTimeline(
+  order: NonNullable<Awaited<ReturnType<typeof getSellerOrder>>>,
+): OrderStatusTimelineEvent[] {
   return [
     ...(order.deliveryDetail?.events ?? []).map((event) => ({
       id: `delivery-${event.id}`,

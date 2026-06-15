@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import {
   ApprovalStatus,
   CartStatus,
@@ -19,6 +19,7 @@ import {
 } from "@indihub/database";
 import type { RequestUser } from "../auth/types/indihub-request";
 import { CustomersService } from "../customers/customers.service";
+import { DealPricingService } from "../deals/deal-pricing.service";
 import { LocationsService } from "../locations/locations.service";
 import { PaymentsService } from "../payments/payments.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -274,6 +275,9 @@ export class DeliveryRoutingService {
     @Inject(CustomersService) private readonly customersService: CustomersService,
     @Inject(LocationsService) private readonly locationsService: LocationsService,
     @Inject(PaymentsService) private readonly paymentsService: PaymentsService,
+    @Optional()
+    @Inject(DealPricingService)
+    private readonly dealPricing?: DealPricingService,
   ) {}
 
   async resolveCustomerCheckoutDelivery(actor: RequestUser, dto: ResolveCheckoutDeliveryDto) {
@@ -283,6 +287,7 @@ export class DeliveryRoutingService {
         customerId: customer.id,
         status: CartStatus.ACTIVE,
       },
+      orderBy: { createdAt: "desc" },
       include: {
         items: true,
       },
@@ -292,10 +297,6 @@ export class DeliveryRoutingService {
       throw new BadRequestException("Cart is empty.");
     }
 
-    const subtotalPaise = cart.items.reduce(
-      (total, item) => total + item.quantity * item.unitPricePaise,
-      0,
-    );
     const address = await this.resolveCustomerAddress(customer.id, {
       deliveryPreference: dto.deliveryPreference,
       ...(dto.addressId !== undefined ? { addressId: dto.addressId } : {}),
@@ -303,6 +304,10 @@ export class DeliveryRoutingService {
     });
 
     const sellerPackages = await this.checkoutPreviewSellerPackages(cart.items, this.prisma.client);
+    const subtotalPaise = sellerPackages.reduce(
+      (total, sellerPackage) => total + sellerPackage.subtotalPaise,
+      0,
+    );
     const shipmentQuotes = await Promise.all(
       sellerPackages.map(async (sellerPackage) => {
         const quote = await this.resolveDelivery(
@@ -655,7 +660,10 @@ export class DeliveryRoutingService {
         variant.packageWeightGrams ?? this.jsonNumber(variant.attributes, "packageWeightGrams"),
         500,
       );
-      current.subtotalPaise += item.quantity * variant.pricePaise;
+      const price = this.dealPricing
+        ? await this.dealPricing.resolveVariantPrice(variant, variant.productId, client)
+        : null;
+      current.subtotalPaise += item.quantity * (price?.effectiveUnitPricePaise ?? variant.pricePaise);
       current.package.weightGrams += itemWeightGrams * item.quantity;
       current.package.lengthCm = Math.max(
         current.package.lengthCm,

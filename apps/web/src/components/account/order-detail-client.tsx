@@ -6,20 +6,26 @@ import {
   ArrowLeft,
   Ban,
   CheckCircle2,
-  Clock3,
   CreditCard,
+  Headphones,
   MapPin,
   Package,
+  PackageCheck,
   ReceiptText,
+  ShoppingBag,
+  Star,
   Truck,
   type LucideIcon,
 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
-import { marketplaceProductCardFields } from "@indihub/shared-types";
 import { CustomerAuthNotice } from "@/components/auth/customer-auth-notice";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
 import { useConfirmationDialog } from "@/components/shared/confirmation-dialog";
+import {
+  OrderStatusTimeline,
+  type OrderStatusTimelineEvent,
+} from "@/components/shared/order-status-timeline";
 import { StorefrontImage } from "@/components/storefront/storefront-image";
 import { AccountShell } from "./account-shell";
 import {
@@ -30,20 +36,22 @@ import {
   TextAreaField,
   formatDateTime,
   statusLabel,
+  statusTone,
 } from "./account-ui";
-import { cancelCustomerOrder, getAccountOrder } from "@/lib/account-api";
-import { customerDeliveryModeLabel } from "@/lib/delivery-labels";
+import {
+  cancelCustomerOrder,
+  getAccountOrder,
+  getOrderReviewOptions,
+  submitProductReview,
+  type OrderReviewOptions,
+  type SubmitProductReviewPayload,
+} from "@/lib/account-api";
 import {
   canCustomerSelfCancelOrder,
   customerCancellationUnavailableReason,
   hasOrderLeftSeller,
 } from "@/lib/order-cancellation";
-import {
-  formatMoney,
-  formatOrderTotal,
-  primaryImage,
-  type ProductSummary,
-} from "@/lib/storefront-api";
+import { formatMoney, formatOrderBaseAmount, formatOrderBuyerAmount, formatOrderTotal, primaryImage } from "@/lib/storefront-api";
 
 type AccountOrderDetail = Awaited<ReturnType<typeof getAccountOrder>>;
 
@@ -51,6 +59,7 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
   const queryClient = useQueryClient();
   const customerAuth = useCustomerAuth();
   const [notice, setNotice] = useState<string | null>(null);
+  const [noticeTone, setNoticeTone] = useState<"success" | "danger">("success");
   const confirmation = useConfirmationDialog();
 
   const orderQuery = useQuery({
@@ -63,14 +72,40 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
   const cancelMutation = useMutation({
     mutationFn: (note?: string) => cancelCustomerOrder(customerAuth.authHeaders, orderNumber, note),
     onSuccess: () => {
+      setNoticeTone("success");
       setNotice("Order cancelled.");
       void queryClient.invalidateQueries({
         queryKey: ["account-order", customerAuth.authKey, orderNumber],
       });
       void queryClient.invalidateQueries({ queryKey: ["account-orders", customerAuth.authKey] });
     },
-    onError: (error) =>
-      setNotice(error instanceof Error ? error.message : "Order cancellation failed."),
+    onError: (error) => {
+      setNoticeTone("danger");
+      setNotice(error instanceof Error ? error.message : "Order cancellation failed.");
+    },
+  });
+
+  const reviewOptionsQuery = useQuery({
+    queryKey: ["account-order-review-options", customerAuth.authKey, orderNumber],
+    queryFn: () => getOrderReviewOptions(customerAuth.authHeaders, orderNumber),
+    enabled: customerAuth.enabled && Boolean(orderQuery.data),
+    retry: false,
+  });
+
+  const reviewMutation = useMutation({
+    mutationFn: (payload: SubmitProductReviewPayload) =>
+      submitProductReview(customerAuth.authHeaders, payload),
+    onSuccess: () => {
+      setNoticeTone("success");
+      setNotice("Review submitted for admin approval.");
+      void queryClient.invalidateQueries({
+        queryKey: ["account-order-review-options", customerAuth.authKey, orderNumber],
+      });
+    },
+    onError: (error) => {
+      setNoticeTone("danger");
+      setNotice(error instanceof Error ? error.message : "Review submission failed.");
+    },
   });
 
   function cancelOrder(event: FormEvent<HTMLFormElement>) {
@@ -80,7 +115,7 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
     setNotice(null);
     confirmation.requestConfirmation({
       title: "Cancel this order?",
-      description: `Order ${orderNumber} will move to cancelled status. Seller fulfilment, delivery, and report totals will use this updated lifecycle state.`,
+      description: `This will cancel order ${orderNumber}. You can place a new order again if needed.`,
       confirmLabel: "Cancel order",
       onConfirm: () => cancelMutation.mutate(note || undefined),
     });
@@ -92,15 +127,14 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
   const cancellationUnavailableReason = order ? customerCancellationUnavailableReason(order) : null;
   const shouldShowSupportLink = order ? hasOrderLeftSeller(order) : false;
   const timeline = order ? buildTrackingTimeline(order) : [];
-  const deliveryStatus = order?.deliveryDetail?.status ?? order?.deliveryStatus ?? null;
-  const itemCount = order?.items.reduce((total, item) => total + item.quantity, 0) ?? 0;
-  const packageCount = order?.shipments?.length ?? 0;
-  const visiblePackageCount = packageCount || 1;
+  const deliveryStatus = order ? effectiveCustomerDeliveryStatus(order) : null;
+  const canShowDeliveryAssignment = order ? customerDeliveryAssignmentReady(order) : false;
+  const latestPayment = order?.payments?.[0] ?? null;
 
   return (
     <AccountShell
       title="Order detail"
-      description={`Order ${orderNumber} with item, payment, delivery, and support information in one place.`}
+      description={`Review status, delivery, payment, and items for order ${orderNumber}.`}
     >
       {confirmation.confirmationDialog}
       {!customerAuth.enabled ? <CustomerAuthNotice /> : null}
@@ -118,69 +152,36 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
       {orderQuery.error ? (
         <ErrorPanel error={orderQuery.error} onRetry={() => void orderQuery.refetch()} />
       ) : null}
+      {notice ? (
+        <div className="mb-4">
+          <StatusBadge tone={noticeTone}>{notice}</StatusBadge>
+        </div>
+      ) : null}
 
       {order ? (
         <div className="grid gap-4">
-          <section className="overflow-hidden rounded-xl border border-[#C5D8E8] bg-[#163B5C] shadow-sm">
-            <div className="grid gap-5 p-5 text-white lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start lg:p-6">
-              <div>
-                <Button
-                  asChild
-                  variant="ghost"
-                  size="sm"
-                  className="-ml-2 text-white hover:bg-white/10"
-                >
-                  <Link href="/account/orders">
-                    <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-                    Back to orders
-                  </Link>
-                </Button>
-                <p className="mt-4 text-xs font-black uppercase tracking-[0.18em] text-[#FFD7C8]">
-                  Placed on {formatDateTime(order.createdAt)}
-                </p>
-                <h2 className="mt-2 break-words text-2xl font-black tracking-normal md:text-4xl">
-                  {order.orderNumber}
-                </h2>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <StatusPill status={order.orderStatus} />
-                  <StatusPill status={order.paymentStatus} />
-                  <StatusPill status={order.deliveryStatus} />
-                </div>
+          <section className="rounded-xl border border-[#D8E2EA] bg-white p-5 shadow-sm lg:p-6">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <ContextStatusPill
+                  status={order.orderStatus}
+                  label={customerOrderStatusLabel(order.orderStatus)}
+                />
+                <ContextStatusPill
+                  status={order.paymentStatus}
+                  label={customerPaymentStatusLabel(order.paymentStatus)}
+                />
+                <ContextStatusPill
+                  status={deliveryStatus ?? order.deliveryStatus}
+                  label={friendlyDeliveryLabel(deliveryStatus ?? order.deliveryStatus)}
+                />
               </div>
-              <div className="rounded-lg bg-white p-4 text-left text-[#163B5C] shadow-sm lg:min-w-64 lg:text-right">
-                <p className="text-xs font-black uppercase tracking-wide text-[#667085]">
-                  Order total
-                </p>
-                <p className="mt-1 text-3xl font-black">{formatOrderTotal(order)}</p>
-                {order.buyerCurrency && order.buyerCurrency !== order.currency ? (
-                  <p className="mt-1 text-xs font-bold text-[#667085]">
-                    Base total {formatMoney(order.totalPaise, order.currency)} at{" "}
-                    {order.fxProvider ?? "FX"} rate {order.fxRate ?? "locked"}
-                  </p>
-                ) : null}
-              </div>
-            </div>
-            <div className="grid border-t border-white/15 bg-[#0F2D47]/80 sm:grid-cols-2 xl:grid-cols-4">
-              <OrderHeroMetric
-                icon={Package}
-                label="Items"
-                value={`${itemCount} item${itemCount === 1 ? "" : "s"}`}
-              />
-              <OrderHeroMetric
-                icon={Truck}
-                label="Delivery"
-                value={friendlyDeliveryLabel(deliveryStatus)}
-              />
-              <OrderHeroMetric
-                icon={ReceiptText}
-                label="Packages"
-                value={`${visiblePackageCount} package${visiblePackageCount === 1 ? "" : "s"}`}
-              />
-              <OrderHeroMetric
-                icon={Clock3}
-                label="Last update"
-                value={timeline[0] ? formatDateTime(timeline[0].createdAt) : "Awaiting update"}
-              />
+              <h2 className="mt-3 break-words text-2xl font-black tracking-normal text-[#0B1828] md:text-3xl">
+                Order #{order.orderNumber}
+              </h2>
+              <p className="mt-2 text-sm font-semibold leading-6 text-[#667085]">
+                Placed on {formatDateTime(order.createdAt)}
+              </p>
             </div>
           </section>
 
@@ -190,7 +191,7 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
                 <div className="border-b border-[#E5E7EB] p-5">
                   <SectionHeading
                     title="Delivery progress"
-                    description="Current movement of this order from placement to delivery."
+                    description="From confirmation to delivery."
                   />
                 </div>
                 <DeliveryProgress currentStatus={deliveryStatus} />
@@ -198,12 +199,15 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
 
               <PagePanel>
                 <SectionHeading
-                  title="Items"
-                  description="Products and seller details recorded when the order was placed."
+                  title={`Items in this order (${order.items.length})`}
+                  description="Products included in this order."
                 />
                 <div className="mt-5 overflow-hidden rounded-lg border border-[#E5E7EB]">
                   {order.items.map((item) => {
                     const imageUrl = item.product ? primaryImage(item.product) : null;
+                    const reviewOption = reviewOptionsQuery.data?.items.find(
+                      (option) => option.orderItemId === item.id,
+                    );
 
                     return (
                       <div
@@ -231,9 +235,6 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
                               Seller: {item.seller.storeName}
                             </p>
                           ) : null}
-                          {item.product ? (
-                            <OrderItemProductEssentials product={item.product} />
-                          ) : null}
                         </div>
                         <div className="text-left md:text-right">
                           <p className="text-sm font-semibold text-[#667085]">
@@ -243,6 +244,16 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
                             {formatMoney(item.lineTotalPaise, item.currency)}
                           </p>
                         </div>
+                        {reviewOption ? (
+                          <div className="md:col-span-3">
+                            <OrderItemReviewBox
+                              key={`${reviewOption.orderItemId}-${reviewOption.existingReview?.updatedAt ?? "new"}`}
+                              option={reviewOption}
+                              isPending={reviewMutation.isPending}
+                              onSubmit={(payload) => reviewMutation.mutate(payload)}
+                            />
+                          </div>
+                        ) : null}
                       </div>
                     );
                   })}
@@ -251,43 +262,23 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
 
               <PagePanel>
                 <SectionHeading
-                  title="Timeline"
-                  description="Order and delivery events from seller, delivery, and admin updates."
+                  title="Order timeline"
+                  description="A short history of important updates."
                 />
-                <div className="mt-5 grid gap-3">
-                  {timeline.slice(0, 8).map((event, index) => (
-                    <div key={event.id} className="grid grid-cols-[28px_1fr] gap-3">
-                      <span
-                        className={`mt-1 grid h-7 w-7 place-items-center rounded-full border text-xs font-black ${
-                          index === 0
-                            ? "border-[#163B5C] bg-[#163B5C] text-white"
-                            : "border-[#D8E2EA] bg-[#F8FAFC] text-[#667085]"
-                        }`}
-                      >
-                        {index + 1}
-                      </span>
-                      <div className="rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-4">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <StatusBadge tone="info">{event.kind}</StatusBadge>
-                          <p className="font-black text-[#1F2933]">
-                            {friendlyTimelineLabel(event.newStatus)}
-                          </p>
-                        </div>
-                        <p className="mt-2 text-sm font-semibold text-[#667085]">
-                          {formatDateTime(event.createdAt)}
-                        </p>
-                        {event.note ? (
-                          <p className="mt-2 text-sm leading-6 text-[#667085]">{event.note}</p>
-                        ) : null}
-                      </div>
-                    </div>
-                  ))}
-                  {timeline.length === 0 ? (
-                    <p className="text-sm font-semibold text-[#667085]">
-                      No timeline events found.
-                    </p>
-                  ) : null}
-                </div>
+                <OrderStatusTimeline
+                  className="mt-5"
+                  events={timeline}
+                  orderCreatedAt={order.createdAt}
+                  currentOrderStatus={order.orderStatus}
+                  currentDeliveryStatus={deliveryStatus}
+                  formatDateTime={formatDateTime}
+                  emptyText="No timeline events found."
+                  compact
+                  showSources={false}
+                  showNotes={false}
+                  showFooter={false}
+                  showStateBadges={false}
+                />
               </PagePanel>
             </div>
 
@@ -297,10 +288,7 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
                   <span className="grid h-10 w-10 place-items-center rounded-md bg-[#EAF1F7] text-[#163B5C]">
                     <MapPin className="h-5 w-5" aria-hidden="true" />
                   </span>
-                  <SectionHeading
-                    title="Delivery address"
-                    description="Snapshot saved at checkout."
-                  />
+                  <SectionHeading title="Delivery address" description="Saved at checkout." />
                 </div>
                 <div className="mt-4 text-sm font-semibold leading-6 text-[#667085]">
                   <p className="font-black text-[#1F2933]">
@@ -325,128 +313,64 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
                   <span className="grid h-10 w-10 place-items-center rounded-md bg-[#FFF0EC] text-[#ED3500]">
                     <Truck className="h-5 w-5" aria-hidden="true" />
                   </span>
-                  <SectionHeading
-                    title="Delivery"
-                    description="Delivery updates and tracking details."
-                  />
+                  <SectionHeading title="Tracking" description="Partner and tracking details." />
                 </div>
                 <div className="mt-4 grid gap-3 text-sm font-semibold text-[#667085]">
                   <Info
-                    label="Mode"
-                    value={customerDeliveryModeLabel(order.deliveryDetail?.deliveryMode)}
-                  />
-                  <Info
                     label="Partner"
-                    value={order.deliveryDetail?.partnerName ?? "Not assigned"}
-                  />
-                  <Info
-                    label="Phone"
-                    value={order.deliveryDetail?.partnerPhone ?? "Not assigned"}
-                  />
-                  <Info
-                    label="Tracking"
-                    value={order.deliveryDetail?.trackingReference ?? "Not assigned"}
-                  />
-                  <Info
-                    label="Estimate"
                     value={
-                      order.deliveryDetail?.estimatedDeliveryDate
-                        ? formatDateTime(order.deliveryDetail.estimatedDeliveryDate)
-                        : "Not assigned"
+                      canShowDeliveryAssignment
+                        ? customerDeliveryPartnerName(order.deliveryDetail)
+                        : "Assigned after packing"
                     }
                   />
                   <Info
-                    label="Status"
-                    value={friendlyDeliveryLabel(
-                      order.deliveryDetail?.status ?? order.deliveryStatus,
-                    )}
+                    label="Phone"
+                    value={
+                      canShowDeliveryAssignment
+                        ? customerDeliveryPartnerPhone(order.deliveryDetail)
+                        : "Shown after assignment"
+                    }
                   />
                   <Info
-                    label="Assignment"
-                    value={friendlyAssignmentLabel(order.deliveryDetail?.assignmentStatus)}
+                    label="Tracking ID"
+                    value={
+                      canShowDeliveryAssignment
+                        ? (order.deliveryDetail?.trackingReference ?? "Not generated yet")
+                        : "Shown after pickup"
+                    }
                   />
                   <Info
-                    label="Note"
-                    value={order.deliveryDetail?.deliveryNote ?? "No delivery note yet"}
+                    label="Current step"
+                    value={trackingStatusLabel(deliveryStatus ?? order.deliveryStatus)}
                   />
                 </div>
               </PagePanel>
 
-              {order.shipments?.length ? (
-                <PagePanel>
-                  <div className="flex items-center gap-3">
-                    <span className="grid h-10 w-10 place-items-center rounded-md bg-[#F8FAFC] text-[#163B5C]">
-                      <Package className="h-5 w-5" aria-hidden="true" />
-                    </span>
-                    <SectionHeading
-                      title="Seller packages"
-                      description="Each seller ships their own package."
-                    />
-                  </div>
-                  <div className="mt-4 grid gap-3">
-                    {order.shipments.map((shipment) => (
-                      <div
-                        key={shipment.id}
-                        className="rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-4 text-sm"
-                      >
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div>
-                            <p className="font-black text-[#1F2933]">{shipment.shipmentNumber}</p>
-                            <p className="mt-1 font-semibold text-[#667085]">
-                              {shipment.seller?.storeName ?? "Seller package"}
-                            </p>
-                          </div>
-                          <StatusPill status={shipment.status} />
-                        </div>
-                        <div className="mt-3 grid gap-2 font-semibold text-[#667085] sm:grid-cols-2">
-                          <Info
-                            label="Mode"
-                            value={customerDeliveryModeLabel(shipment.deliveryMode)}
-                          />
-                          <Info
-                            label="Assignment"
-                            value={friendlyAssignmentLabel(shipment.assignmentStatus)}
-                          />
-                          <Info
-                            label="Subtotal"
-                            value={formatMoney(shipment.subtotalPaise, order.currency)}
-                          />
-                          <Info
-                            label="Shipping share"
-                            value={formatMoney(shipment.shippingPaise, order.currency)}
-                          />
-                          <Info
-                            label="Tracking"
-                            value={shipment.trackingReference ?? "Not assigned"}
-                          />
-                          <Info
-                            label="Estimate"
-                            value={
-                              shipment.estimatedDeliveryDate
-                                ? formatDateTime(shipment.estimatedDeliveryDate)
-                                : "Not assigned"
-                            }
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </PagePanel>
-              ) : null}
-
               <PagePanel>
-                <SectionHeading
-                  title="Order charges"
-                  description="Checkout fee snapshot saved with this order."
-                />
+                <div className="flex items-center gap-3">
+                  <span className="grid h-10 w-10 place-items-center rounded-md bg-[#F8FAFC] text-[#163B5C]">
+                    <ReceiptText className="h-5 w-5" aria-hidden="true" />
+                  </span>
+                  <SectionHeading title="Order summary" description="Charges saved at checkout." />
+                </div>
                 <div className="mt-4 grid gap-3 text-sm font-semibold text-[#667085]">
-                  <Info label="Subtotal" value={formatMoney(order.subtotalPaise, order.currency)} />
-                  <Info label="Shipping" value={formatMoney(order.shippingPaise, order.currency)} />
+                  <Info label="Subtotal" value={formatOrderBuyerAmount(order, order.buyerSubtotalMinor, order.subtotalPaise)} />
+                  {(order.couponDiscountPaise ?? 0) > 0 ? (
+                    <Info
+                      label={`Coupon ${order.couponCode ?? ""}`.trim()}
+                      value={`-${formatOrderBuyerAmount(order, order.buyerCouponDiscountMinor, order.couponDiscountPaise ?? 0)}`}
+                    />
+                  ) : null}
+                  <Info label="Shipping" value={formatOrderBuyerAmount(order, order.buyerShippingMinor, order.shippingPaise)} />
                   <Info
                     label="Platform fee"
-                    value={formatMoney(order.platformFeePaise, order.currency)}
+                    value={formatOrderBuyerAmount(order, order.buyerPlatformFeeMinor, order.platformFeePaise)}
                   />
                   <Info label="Total" value={formatOrderTotal(order)} />
+                  {formatOrderBaseAmount(order, order.totalPaise) ? (
+                    <Info label="Base total" value={formatOrderBaseAmount(order, order.totalPaise) ?? ""} />
+                  ) : null}
                 </div>
               </PagePanel>
 
@@ -455,48 +379,33 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
                   <span className="grid h-10 w-10 place-items-center rounded-md bg-[#E9F7F1] text-[#0F8A5F]">
                     <CreditCard className="h-5 w-5" aria-hidden="true" />
                   </span>
-                  <SectionHeading title="Payment" description="Latest payment attempt status." />
+                  <SectionHeading
+                    title="Payment details"
+                    description="Method, status, and amount."
+                  />
                 </div>
-                <div className="mt-4 grid gap-3">
-                  {(order.payments ?? []).slice(0, 2).map((payment) => (
-                    <div
-                      key={payment.id}
-                      className="rounded-md border border-[#E5E7EB] bg-[#F8FAFC] p-3 text-sm"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-black text-[#1F2933]">
-                          {statusLabel(payment.provider)}
-                        </span>
-                        <StatusPill status={payment.status} />
-                      </div>
-                      <p className="mt-1 font-semibold text-[#667085]">
-                        {formatMoney(payment.amountPaise, payment.currency)}
-                      </p>
-                    </div>
-                  ))}
-                  {(order.payments ?? []).length === 0 ? (
-                    <p className="text-sm font-semibold text-[#667085]">
-                      No payment attempt found.
-                    </p>
-                  ) : null}
+                <div className="mt-4 grid gap-3 text-sm font-semibold text-[#667085]">
+                  <Info
+                    label="Method"
+                    value={latestPayment ? statusLabel(latestPayment.provider) : "Not recorded"}
+                  />
+                  <Info
+                    label="Status"
+                    value={statusLabel(latestPayment?.status ?? order.paymentStatus)}
+                  />
                 </div>
               </PagePanel>
 
               <PagePanel>
                 <div className="flex items-center gap-3">
-                  <span className="grid h-10 w-10 place-items-center rounded-md bg-[#FDECEC] text-[#D64545]">
-                    <Ban className="h-5 w-5" aria-hidden="true" />
+                  <span className="grid h-10 w-10 place-items-center rounded-md bg-[#FFF0EC] text-[#ED3500]">
+                    <Headphones className="h-5 w-5" aria-hidden="true" />
                   </span>
-                  <SectionHeading title="Cancellation" description="Available before dispatch." />
+                  <SectionHeading
+                    title="Help & cancellation"
+                    description="Get support or cancel before dispatch."
+                  />
                 </div>
-
-                {notice ? (
-                  <div className="mt-4">
-                    <StatusBadge tone={cancelMutation.isError ? "danger" : "success"}>
-                      {notice}
-                    </StatusBadge>
-                  </div>
-                ) : null}
 
                 {canCancel ? (
                   <form onSubmit={cancelOrder} className="mt-5 grid gap-4">
@@ -507,14 +416,17 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
                       rows={3}
                     />
                     <Button type="submit" variant="outline" disabled={cancelMutation.isPending}>
+                      <Ban className="h-4 w-4" aria-hidden="true" />
                       {cancelMutation.isPending ? "Cancelling..." : "Cancel order"}
                     </Button>
                   </form>
                 ) : (
                   <div className="mt-5 grid gap-3">
-                    <p className="text-sm font-semibold leading-6 text-[#667085]">
-                      {cancellationUnavailableReason}
-                    </p>
+                    {cancellationUnavailableReason ? (
+                      <p className="text-sm font-semibold leading-6 text-[#667085]">
+                        {cancellationUnavailableReason}
+                      </p>
+                    ) : null}
                     {shouldShowSupportLink ? (
                       <Button asChild variant="outline">
                         <Link href="/account/support">Contact support</Link>
@@ -531,60 +443,242 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
   );
 }
 
-function OrderHeroMetric({
-  icon: Icon,
-  label,
-  value,
+type ReviewOptionItem = OrderReviewOptions["items"][number];
+
+function OrderItemReviewBox({
+  option,
+  isPending,
+  onSubmit,
 }: {
-  icon: LucideIcon;
-  label: string;
-  value: string;
+  option: ReviewOptionItem;
+  isPending: boolean;
+  onSubmit: (payload: SubmitProductReviewPayload) => void;
 }) {
+  const existingReview = option.existingReview;
+  const [rating, setRating] = useState(existingReview?.rating ?? 5);
+  const [title, setTitle] = useState(existingReview?.title ?? "");
+  const [comment, setComment] = useState(existingReview?.comment ?? "");
+
+  if (!option.eligible) {
+    return (
+      <div className="rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] px-4 py-3 text-sm font-semibold text-[#667085]">
+        {option.reason ?? "Reviews are available after paid and delivered orders."}
+      </div>
+    );
+  }
+
+  function submitReview(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const payload: SubmitProductReviewPayload = {
+      orderItemId: option.orderItemId,
+      rating,
+    };
+    const cleanTitle = title.trim();
+    const cleanComment = comment.trim();
+    if (cleanTitle) {
+      payload.title = cleanTitle;
+    }
+    if (cleanComment) {
+      payload.comment = cleanComment;
+    }
+    onSubmit(payload);
+  }
+
   return (
-    <div className="flex min-w-0 items-center gap-3 border-b border-white/10 px-5 py-4 text-white last:border-b-0 sm:border-r sm:last:border-r-0 xl:border-b-0">
-      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-white/10 text-[#FFD7C8]">
-        <Icon className="h-5 w-5" aria-hidden="true" />
-      </span>
-      <span className="min-w-0">
-        <span className="block text-xs font-black uppercase tracking-wide text-white/60">
-          {label}
-        </span>
-        <span className="mt-0.5 block truncate text-sm font-black">{value}</span>
-      </span>
-    </div>
+    <form onSubmit={submitReview} className="rounded-lg border border-[#FFE0D6] bg-[#FFF8F5] p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-sm font-black text-[#1F2933]">Rate this product</p>
+          <p className="mt-1 text-xs font-semibold text-[#667085]">
+            {existingReview
+              ? "Editing will send the review back to admin approval."
+              : "Submitted reviews appear publicly after admin approval."}
+          </p>
+        </div>
+        {existingReview ? <StatusPill status={existingReview.status} /> : null}
+      </div>
+
+      <div className="mt-3 flex items-center gap-1" role="radiogroup" aria-label="Review rating">
+        {[1, 2, 3, 4, 5].map((value) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => setRating(value)}
+            className={`grid h-9 w-9 place-items-center rounded-full border transition ${
+              value <= rating
+                ? "border-[#ED3500] bg-white text-[#ED3500]"
+                : "border-[#E5E7EB] bg-white text-[#98A2B3]"
+            }`}
+            aria-label={`${value} star`}
+            aria-pressed={value === rating}
+          >
+            <Star
+              className={`h-4 w-4 ${value <= rating ? "fill-[#ED3500]" : ""}`}
+              aria-hidden="true"
+            />
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,280px)_1fr]">
+        <label className="grid gap-1 text-sm font-black text-[#1F2933]">
+          Title
+          <input
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            maxLength={120}
+            placeholder="Short review title"
+            className="h-10 rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-semibold text-[#1F2933] outline-none transition placeholder:text-[#98A2B3] focus:border-[#ED3500] focus:ring-2 focus:ring-[#ED3500]/10"
+          />
+        </label>
+        <label className="grid gap-1 text-sm font-black text-[#1F2933]">
+          Review
+          <textarea
+            value={comment}
+            onChange={(event) => setComment(event.target.value)}
+            maxLength={2000}
+            rows={3}
+            placeholder="Share product quality, fit, packing, or usage feedback"
+            className="min-h-20 rounded-md border border-[#D8E2EA] bg-white px-3 py-2 text-sm font-semibold text-[#1F2933] outline-none transition placeholder:text-[#98A2B3] focus:border-[#ED3500] focus:ring-2 focus:ring-[#ED3500]/10"
+          />
+        </label>
+      </div>
+
+      {existingReview?.adminNote ? (
+        <p className="mt-3 rounded-md bg-white px-3 py-2 text-xs font-semibold text-[#667085]">
+          Admin note: {existingReview.adminNote}
+        </p>
+      ) : null}
+
+      <Button
+        type="submit"
+        size="sm"
+        className="mt-3 rounded-full bg-[#ED3500]"
+        disabled={isPending}
+      >
+        {isPending ? "Submitting" : existingReview ? "Update review" : "Submit review"}
+      </Button>
+    </form>
   );
 }
 
+function ContextStatusPill({ status, label }: { status?: string | null; label: string }) {
+  return <StatusBadge tone={statusTone(status)}>{label}</StatusBadge>;
+}
+
+function customerOrderStatusLabel(status?: string | null) {
+  switch (status) {
+    case "PLACED":
+    case "PENDING":
+      return "Order confirmed";
+    case "PROCESSING":
+      return "Order in progress";
+    case "COMPLETED":
+      return "Order completed";
+    case "CANCELLED":
+      return "Order cancelled";
+    default:
+      return `Order ${statusLabel(status).toLowerCase()}`;
+  }
+}
+
+function customerPaymentStatusLabel(status?: string | null) {
+  switch (status) {
+    case "PAID":
+      return "Payment received";
+    case "PENDING":
+      return "Payment pending";
+    case "FAILED":
+      return "Payment failed";
+    case "REFUNDED":
+      return "Payment refunded";
+    default:
+      return `Payment ${statusLabel(status).toLowerCase()}`;
+  }
+}
+
 function DeliveryProgress({ currentStatus }: { currentStatus?: string | null }) {
-  const steps = ["PENDING", "PACKED", "DISPATCHED", "IN_TRANSIT", "DELIVERED"];
-  const currentIndex = steps.indexOf(currentStatus ?? "");
+  const steps: Array<{ status: string; label: string; helper: string; icon: LucideIcon }> = [
+    {
+      status: "PENDING",
+      label: "Placed",
+      helper: "Order received",
+      icon: ShoppingBag,
+    },
+    {
+      status: "PACKED",
+      label: "Packed",
+      helper: "Ready for pickup",
+      icon: Package,
+    },
+    {
+      status: "DISPATCHED",
+      label: "Picked up",
+      helper: "With delivery",
+      icon: PackageCheck,
+    },
+    {
+      status: "IN_TRANSIT",
+      label: "Out for delivery",
+      helper: "On the way",
+      icon: Truck,
+    },
+    {
+      status: "DELIVERED",
+      label: "Delivered",
+      helper: "Completed",
+      icon: CheckCircle2,
+    },
+  ];
+  const currentIndex = Math.max(
+    0,
+    steps.findIndex((step) => step.status === (currentStatus ?? "PENDING")),
+  );
   const isCancelled = currentStatus === "CANCELLED";
 
   return (
     <div className="p-5">
-      <div className="grid overflow-hidden rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] sm:grid-cols-5">
-        {steps.map((step, index) => {
-          const complete = !isCancelled && currentIndex >= index;
-          return (
-            <div
-              key={step}
-              className={`flex items-center gap-3 border-b border-[#E5E7EB] p-3 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0 ${
-                complete ? "bg-[#E9F7F1]" : "bg-white"
-              }`}
-            >
-              <span
-                className={`grid h-8 w-8 shrink-0 place-items-center rounded-full ${
-                  complete ? "bg-[#0F8A5F] text-white" : "bg-[#F8FAFC] text-[#98A2B3]"
-                }`}
+      <div className="rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-4">
+        <div className="grid gap-4 sm:grid-cols-5">
+          {steps.map((step, index) => {
+            const Icon = step.icon;
+            const done = !isCancelled && currentIndex > index;
+            const current = !isCancelled && currentIndex === index;
+            const active = done || current;
+            return (
+              <div
+                key={step.status}
+                className="relative grid min-w-0 grid-cols-[40px_1fr] gap-3 sm:block sm:text-center"
               >
-                <CheckCircle2 size={16} />
-              </span>
-              <span className="min-w-0 text-sm font-black text-[#1F2933]">
-                {friendlyDeliveryLabel(step)}
-              </span>
-            </div>
-          );
-        })}
+                {index < steps.length - 1 ? (
+                  <span
+                    className={`absolute left-5 top-10 h-[calc(100%+1rem)] w-px sm:left-[calc(50%+24px)] sm:right-[calc(-50%+24px)] sm:top-5 sm:h-px sm:w-auto ${
+                      done ? "bg-[#0F8A5F]" : "bg-[#D8E2EA]"
+                    }`}
+                    aria-hidden="true"
+                  />
+                ) : null}
+                <span
+                  className={`relative z-10 grid h-10 w-10 shrink-0 place-items-center rounded-full border shadow-sm sm:mx-auto ${
+                    active
+                      ? "border-[#0F8A5F] bg-[#0F8A5F] text-white"
+                      : "border-[#D8E2EA] bg-white text-[#98A2B3]"
+                  }`}
+                >
+                  <Icon className="h-4 w-4" aria-hidden="true" />
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-sm font-black leading-5 text-[#1F2933]">
+                    {step.label}
+                  </span>
+                  <span className="mt-0.5 block text-xs font-semibold leading-4 text-[#667085]">
+                    {current ? "Current step" : step.helper}
+                  </span>
+                </span>
+              </div>
+            );
+          })}
+        </div>
       </div>
       {isCancelled ? (
         <div className="mt-3 rounded-md border border-[#F5B7B7] bg-[#FDECEC] p-3 text-sm font-black text-[#8A1F1F]">
@@ -593,38 +687,6 @@ function DeliveryProgress({ currentStatus }: { currentStatus?: string | null }) 
       ) : null}
     </div>
   );
-}
-
-function OrderItemProductEssentials({ product }: { product: ProductSummary }) {
-  const chips = marketplaceProductCardFields
-    .map((field) => {
-      const value = displayOrderAttributeValue(product.attributes?.[field.key]);
-      return value ? `${field.label}: ${value}` : null;
-    })
-    .filter((value): value is string => Boolean(value))
-    .slice(0, 3);
-
-  if (!chips.length) {
-    return null;
-  }
-
-  return <p className="mt-2 text-xs font-semibold text-[#98A2B3]">{chips.join(" | ")}</p>;
-}
-
-function displayOrderAttributeValue(value: unknown) {
-  if (Array.isArray(value)) {
-    return value
-      .map((item) => String(item))
-      .filter(Boolean)
-      .join(", ");
-  }
-  if (typeof value === "boolean") {
-    return value ? "Yes" : "No";
-  }
-  if (typeof value === "number" || typeof value === "string") {
-    return String(value);
-  }
-  return "";
 }
 
 function Info({ label, value }: { label: string; value: string }) {
@@ -636,7 +698,65 @@ function Info({ label, value }: { label: string; value: string }) {
   );
 }
 
-function buildTrackingTimeline(order: AccountOrderDetail) {
+const customerDeliveryStatusRank: Record<string, number> = {
+  NOT_ASSIGNED: 0,
+  PENDING: 1,
+  PACKED: 2,
+  DISPATCHED: 3,
+  IN_TRANSIT: 4,
+  DELIVERED: 5,
+  CANCELLED: 6,
+};
+
+function effectiveCustomerDeliveryStatus(order: NonNullable<AccountOrderDetail>) {
+  const actualStatus = order.deliveryDetail?.status ?? order.deliveryStatus ?? "PENDING";
+  if (
+    !customerSellerPackagesReady(order) &&
+    customerDeliveryRank(actualStatus) >= customerDeliveryRank("PACKED")
+  ) {
+    return "PENDING";
+  }
+  return actualStatus;
+}
+
+function customerDeliveryAssignmentReady(order: NonNullable<AccountOrderDetail>) {
+  return (
+    customerSellerPackagesReady(order) &&
+    ["ASSIGNED", "ACCEPTED"].includes(order.deliveryDetail?.assignmentStatus ?? "")
+  );
+}
+
+function customerSellerPackagesReady(order: NonNullable<AccountOrderDetail>) {
+  const shipments = order.shipments ?? [];
+  const activeShipments = shipments.filter((shipment) => shipment.status !== "CANCELLED");
+
+  return (
+    activeShipments.length > 0 &&
+    activeShipments.every(
+      (shipment) =>
+        customerDeliveryRank(shipment.status) >= customerDeliveryRank("PACKED") &&
+        shipment.status !== "CANCELLED",
+    )
+  );
+}
+
+function customerDeliveryRank(status?: string | null) {
+  return customerDeliveryStatusRank[status ?? ""] ?? 0;
+}
+
+function customerDeliveryPartnerName(
+  delivery?: NonNullable<NonNullable<AccountOrderDetail>["deliveryDetail"]> | null,
+) {
+  return delivery?.partnerName ?? delivery?.deliveryPartner?.fullName ?? "Not assigned";
+}
+
+function customerDeliveryPartnerPhone(
+  delivery?: NonNullable<NonNullable<AccountOrderDetail>["deliveryDetail"]> | null,
+) {
+  return delivery?.partnerPhone ?? delivery?.deliveryPartner?.phone ?? "Not assigned";
+}
+
+function buildTrackingTimeline(order: AccountOrderDetail): OrderStatusTimelineEvent[] {
   return [
     ...(order.deliveryDetail?.events ?? []).map((event) => ({
       id: `delivery-${event.id}`,
@@ -661,7 +781,7 @@ function buildTrackingTimeline(order: AccountOrderDetail) {
 function friendlyDeliveryLabel(status?: string | null) {
   switch (status) {
     case "PENDING":
-      return "Assigned to partner";
+      return "Delivery pending";
     case "PACKED":
       return "Packed for pickup";
     case "DISPATCHED":
@@ -677,21 +797,21 @@ function friendlyDeliveryLabel(status?: string | null) {
   }
 }
 
-function friendlyAssignmentLabel(status?: string | null) {
+function trackingStatusLabel(status?: string | null) {
   switch (status) {
-    case "ASSIGNED":
-      return "Assigned to delivery partner";
-    case "ACCEPTED":
-      return "Accepted by delivery partner";
-    case "REJECTED":
-      return "Waiting for reassignment";
+    case "PENDING":
+      return "Waiting for packing";
+    case "PACKED":
+      return "Ready for pickup";
+    case "DISPATCHED":
+      return "Picked up by partner";
+    case "IN_TRANSIT":
+      return "Out for delivery";
+    case "DELIVERED":
+      return "Delivered";
     case "CANCELLED":
-      return "Assignment cancelled";
+      return "Delivery cancelled";
     default:
-      return "Not assigned yet";
+      return statusLabel(status ?? "PENDING");
   }
-}
-
-function friendlyTimelineLabel(status?: string | null) {
-  return friendlyDeliveryLabel(status);
 }

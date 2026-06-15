@@ -43,7 +43,7 @@ The platform supports B2C customer shopping, B2B business enquiries, seller prod
 - Checkout flow.
 - Order placement.
 - Order history.
-- Basic order tracking.
+- Order tracking.
 - Seller review viewing.
 - Seller rating viewing.
 - Product review viewing.
@@ -77,7 +77,7 @@ The platform supports B2C customer shopping, B2B business enquiries, seller prod
 - Product description management.
 - Product order status management.
 - Received order viewing.
-- Basic sales summary viewing.
+- Sales summary viewing.
 - Business enquiry viewing.
 - B2B quotation request viewing.
 - Seller/store profile page.
@@ -103,12 +103,12 @@ The platform supports B2C customer shopping, B2B business enquiries, seller prod
 - Admin enquiry viewing.
 - Seller enquiry viewing.
 - Manual quotation response support.
-- Special business pricing in future phase.
-- Advanced RFQ workflow in future phase.
-- Quotation comparison in future phase.
-- PO upload in future phase.
-- B2B approval flow in future phase.
-- Downloadable business invoice support in future phase.
+- Special business pricing as selectable full implementation.
+- Advanced RFQ workflow as selectable full implementation.
+- Quotation comparison as selectable full implementation.
+- PO upload as selectable full implementation.
+- B2B approval flow as selectable full implementation.
+- Downloadable business invoice support as selectable full implementation.
 
 *5. Admin Panel Features*
 
@@ -129,7 +129,7 @@ The platform supports B2C customer shopping, B2B business enquiries, seller prod
 - Seller product approval.
 - Seller product rejection.
 - Order management.
-- Basic order status management.
+- Order status management.
 - Sales report viewing.
 - Product report viewing.
 - Seller report viewing.
@@ -137,14 +137,14 @@ The platform supports B2C customer shopping, B2B business enquiries, seller prod
 - Commission report viewing.
 - Manual commission management.
 - Percentage-based commission configuration.
-- Basic support enquiry management.
+- Support enquiry management.
 - Platform rule management.
 - Admin-level control over marketplace content.
 
 *6. Mobile App Features*
 
-- Android customer app in future scope.
-- iOS customer app in future scope.
+- Android customer app as selectable full implementation.
+- iOS customer app as selectable full implementation.
 - Mobile app connected with same website login.
 - Mobile app connected with same product data.
 - Mobile app connected with same customer data.
@@ -180,7 +180,7 @@ The platform supports B2C customer shopping, B2B business enquiries, seller prod
 - Area-based seller discovery.
 - City-based seller discovery.
 - Seller/store page for each seller.
-- Store pickup or click-and-collect in future scope.
+- Store pickup or click-and-collect as selectable full implementation.
 - Customer can view products from one store.
 - Customer can compare sellers.
 - Local seller trust badge option.
@@ -197,22 +197,22 @@ The platform supports B2C customer shopping, B2B business enquiries, seller prod
 - Payment gateway readiness.
 - Payment provider transaction charges handled separately.
 - Commission tracking for sellers.
-- Manual commission handling in Phase 1.
-- Automated seller payout in future phase.
-- Payout history in future phase.
-- GST invoice configuration in future phase if required.
-- Advanced tax reports in future phase if required.
+- Commission handling.
+- Automated seller payout as selectable full implementation.
+- Payout history as selectable full implementation.
+- GST invoice configuration if required.
+- Advanced tax reports if required.
 
 *9. Delivery and Shipping Features*
 
-- Basic order delivery status updates.
-- Manual delivery status management in Phase 1.
+- Order delivery status updates.
+- Delivery status management.
 - Shipping partner details can be added if required.
-- Courier API integration in future phase.
-- Shiprocket integration in future phase.
-- Delhivery integration in future phase.
-- Live tracking in future phase where supported.
-- Store pickup option in future phase.
+- Courier API integration as selectable full implementation.
+- Shiprocket integration as selectable full implementation.
+- Delhivery integration as selectable full implementation.
+- Live tracking as selectable full implementation where supported.
+- Store pickup option as selectable full implementation.
 - Delivery update notifications if notification services are configured.
 
 *10. Reviews, Ratings, and Trust Features*
@@ -227,8 +227,8 @@ The platform supports B2C customer shopping, B2B business enquiries, seller prod
 - Business document verification.
 - Product moderation by admin.
 - Seller approval before selling.
-- Admin dispute control in future phase.
-- Return evidence handling in future phase.
+- Admin dispute control as selectable full implementation.
+- Return evidence handling as selectable full implementation.
 
 *11. Returns, Refunds, and Support Features*
 
@@ -237,8 +237,8 @@ The platform supports B2C customer shopping, B2B business enquiries, seller prod
 - Cancellation workflow.
 - Dispute handling workflow.
 - Admin support enquiry management.
-- Customer support or ticket system in future scope.
-- Vendor support handling in future scope.
+- Customer support or ticket system as selectable full implementation.
+- Vendor support handling as selectable full implementation.
 - Return and refund policy page.
 - Seller policy page.
 - Privacy policy page.
@@ -257,15 +257,15 @@ The platform supports B2C customer shopping, B2B business enquiries, seller prod
 - Paid promotion placements.
 - Featured seller placement.
 - Festival campaign support.
-- Abandoned cart reminders in future phase.
-- Loyalty or reward system in future phase.
-- Chatbot in future phase.
+- Abandoned cart reminders as selectable full implementation.
+- Loyalty or reward system as selectable full implementation.
+- Chatbot as selectable full implementation.
 
 *13. Search, Discovery, and SEO Features*
 
 - Product search.
 - Category-based browsing.
-- Basic filter options.
+- Filter options.
 - Seller-based browsing.
 - Stock-based product visibility.
 - Hyperlocal store discovery.
@@ -275,34 +275,34 @@ The platform supports B2C customer shopping, B2B business enquiries, seller prod
 - Seller terms page.
 - Contact page.
 - Support page.
-- Advanced search and saved alerts in future phase.
+- Advanced search and saved alerts as selectable full implementation.
 
 *14. Reports and Analytics Features*
 
-- Basic order reports.
-- Basic seller reports.
-- Basic product reports.
-- Basic enquiry reports.
-- Basic sales reports.
+- Order reports.
+- Seller reports.
+- Product reports.
+- Enquiry reports.
+- Sales reports.
 - Commission reports.
-- Advanced sales analytics in future phase.
-- Vendor performance analytics in future phase.
-- Product performance analytics in future phase.
-- Customer analytics in future phase.
-- B2B enquiry analytics in future phase.
-- Commission analytics in future phase.
+- Advanced sales analytics as selectable full implementation.
+- Vendor performance analytics as selectable full implementation.
+- Product performance analytics as selectable full implementation.
+- Customer analytics as selectable full implementation.
+- B2B enquiry analytics as selectable full implementation.
+- Commission analytics as selectable full implementation.
 
 *15. Communication Features*
 
 - Admin and seller can view B2B enquiries.
 - Manual response support for enquiries.
 - Transactional email notifications for account creation, seller approval, order placed, order updates, order delivered, B2B enquiry, and support/contact requests.
-- SMS notification option in future phase.
-- WhatsApp notification option in future phase.
-- Push notification option in future mobile app phase.
-- Buyer-seller chat in future phase.
-- Support ticket communication in future phase.
-- Chatbot communication in future phase.
+- SMS notification option as selectable full implementation.
+- WhatsApp notification option as selectable full implementation.
+- Push notification option as selectable full implementation.
+- Buyer-seller chat as selectable full implementation.
+- Support ticket communication as selectable full implementation.
+- Chatbot communication as selectable full implementation.
 
 *16. Security and Control Features*
 
@@ -315,9 +315,9 @@ The platform supports B2C customer shopping, B2B business enquiries, seller prod
 - User suspension option.
 - Seller suspension option.
 - Admin-managed marketplace rules.
-- Basic role-based access control.
-- Data backup option in future phase.
-- Basic admin audit log option.
+- Role-based access control.
+- Data backup option as selectable full implementation.
+- Admin audit log option.
 
 *17. Future Phase Features*
 
@@ -344,7 +344,7 @@ The platform supports B2C customer shopping, B2B business enquiries, seller prod
 - Support ticket system.
 - Store pickup or click-and-collect.
 
-*18. Phase 1 Approved Website Scope*
+*18. Current Website Scope*
 
 - Core marketplace website.
 - Mobile-friendly responsive design.
@@ -353,17 +353,17 @@ The platform supports B2C customer shopping, B2B business enquiries, seller prod
 - Hyperlocal store selling support.
 - Product listing.
 - Cart and checkout.
-- Basic order tracking.
-- Basic B2B enquiry.
+- Order tracking.
+- B2B enquiry.
 - Request quotation option.
 - Admin dashboard.
 - Seller approval.
 - Product management.
 - Order management.
-- Basic reports.
+- Reports.
 - Manual commission management.
 
-*19. Not Included in Starter Phase 1 Budget*
+*19. Third-Party Charges Not Included in Development Cost*
 
 - Domain purchase or renewal.
 - Hosting or server charges.
@@ -378,21 +378,16 @@ The platform supports B2C customer shopping, B2B business enquiries, seller prod
 - Logistics partner charges.
 - Google Play Store developer account charges.
 - Apple App Store developer account charges.
-- Mobile app development.
-- Advanced B2B workflow.
-- Automated seller payouts.
-- Courier automation.
-- Advanced analytics.
-- Chatbot.
-- Future feature upgrades beyond approved scope.
+- Mobile app store account charges.
+- Provider activation, approval, wallet balance, or per-use fees.
 
 *20. Important Scope Note*
 
-- Phase 1 focuses on the starter website scope.
-- Mobile app development is separate unless approved.
-- Advanced marketplace features are separate unless approved.
+- Active implementation follows full feature completion when a feature is selected.
+- Mobile app development can be selected and implemented as a complete feature.
+- Advanced marketplace features can be selected and implemented as complete features.
 - Third-party charges are separate from development cost.
-- Any extra feature will be discussed and quoted separately.
+- Any additional feature can be discussed with timeline/provider dependencies clearly separated.
 - Current approved project budget is INR 200,000.
 
 *Prepared for client sharing.*

@@ -9,7 +9,7 @@
 
 These 10 optimizations are valid for a serious production ecommerce platform, but they should not all be applied at the same time.
 
-For the current 1HandIndia Phase 1 codebase, the safest rollout order is:
+For the current 1HandIndia codebase, the safest rollout order is:
 
 1. Keep current Prisma schema indexes and add production-only SQL indexes for hot read paths.
 2. Add PostgreSQL full-text/GIN indexes for product search.
@@ -29,7 +29,7 @@ For the current 1HandIndia Phase 1 codebase, the safest rollout order is:
 | Read replicas | Not implemented | The database package currently uses one `DATABASE_URL` runtime connection. |
 | Proper indexing | Implemented and expanded | Prisma schema has baseline indexes, and `20260601090000_production_ecommerce_optimizations` adds hot-path list/search indexes. |
 | Partial indexes | Implemented | Raw SQL migration adds partial indexes for live approved products, approved sellers, and open fulfilment orders. |
-| Partition orders table | Not implemented | This should be a later migration, not a Phase 1 quick patch. |
+| Partition orders table | Not implemented | This should be a later major migration, not a quick patch. |
 | Redis caching | Partially implemented | Redis/BullMQ exists for email queue jobs when `REDIS_URL` is configured. API response caching is not yet implemented. |
 | VPS PostgreSQL pooling | Config prepared | Runtime `DATABASE_URL`, migration `DATABASE_DIRECT_URL`, and future `DATABASE_READ_URL` are documented/configured. Production target is the client's own PostgreSQL server. PgBouncer can run on the VPS when traffic grows, but Neon-style managed pooling is not the production assumption. |
 | Full-text search with GIN | Implemented | Migration adds `pg_trgm` and GIN indexes; public product search now uses ranked PostgreSQL full-text search. |
@@ -40,7 +40,7 @@ For the current 1HandIndia Phase 1 codebase, the safest rollout order is:
 
 ## 2A. Before Production Requirement Status
 
-This section answers what is required before the first real production launch, and what is already done enough for the current Phase 1 codebase.
+This section answers what is required before the first real production launch, and what is already done enough for the current codebase.
 
 | Optimization | Needed Before First Production Launch? | Current State | Before-Launch Action |
 |---|---|---|---|
@@ -52,7 +52,7 @@ This section answers what is required before the first real production launch, a
 | Search/API rate limiting | Yes | Done in code/docs | Install the Nginx snippet on the VPS, keep the API private on localhost, and leave API in-memory limiting enabled for the first single-instance launch. |
 | Redis caching | Recommended before production | Partly done | Redis/BullMQ email queue is wired. Add API response caching for homepage, CMS, category tree, public stores, and safe catalogue reads. |
 | Inventory row locking / stock safety | Core safety is done | Concurrency-tested | Current checkout uses atomic conditional stock decrement and has a two-customer low-stock race test. Explicit `FOR UPDATE` can be added later if high contention appears. |
-| Materialized views for analytics | Not required for first launch | Not done | Live aggregate reports are acceptable for Phase 1. Add materialized views after real reporting volume grows. |
+| Materialized views for analytics | Not required for first launch | Not done | Live aggregate reports are acceptable for the early production launch. Add materialized views after real reporting volume grows. |
 | Read replicas | Not required for first launch | Not done | Add only after production read traffic proves the need. Avoid replicas for checkout, payments, inventory, admin sessions, and payouts. |
 | Partition orders table | Not required for first launch | Not done | Add only after large order/log volume and after staging backup/restore rehearsal. |
 
@@ -78,7 +78,7 @@ These items are already acceptable for early production:
 - Search abuse protection is available at both Nginx and NestJS API layers for a single Ubuntu VPS launch.
 - Checkout stock decrement is atomic, guarded by stock availability, and covered by a low-stock concurrency test.
 - Redis/BullMQ is already wired for email queue jobs when `REDIS_URL` is configured.
-- Reports use database aggregates and can stay live-query based during early Phase 1.
+- Reports use database aggregates and can stay live-query based during the early production launch.
 
 ### Implemented On 2026-06-01
 
@@ -242,7 +242,7 @@ Recommended future strategy:
 - Consider partitioning large append-only logs too: `audit_logs`, `notification_logs`, `order_status_events`, `payment_events`.
 - Build the migration in staging with restore rehearsal before production.
 
-Do not start by partitioning only because it sounds advanced. For Phase 1 and early production, strong indexes plus PgBouncer plus caching will give safer gains.
+Do not start by partitioning only because it sounds advanced. For the current launch and early production, strong indexes plus PgBouncer plus caching will give safer gains.
 
 ### 3.5 Redis Caching
 
@@ -298,11 +298,11 @@ Deployment note:
 
 ### 3.7 Full-Text Search With GIN
 
-**Recommendation:** Immediate improvement for Phase 1 product search.
+**Recommendation:** Immediate improvement for current product search.
 
 Current product search uses string `contains` filters. That is acceptable during early development, but it will not scale well for a real catalogue.
 
-Use PostgreSQL search for Phase 1, keeping the future Meilisearch/OpenSearch boundary open.
+Use PostgreSQL search for the current implementation, keeping the Meilisearch/OpenSearch boundary open for full advanced search.
 
 Suggested SQL:
 
@@ -467,7 +467,7 @@ VPS safety rules:
 
 **Recommendation:** Add after launch or before launch if seeded data is large.
 
-Current reports use live aggregates. That is good for correctness and Phase 1 simplicity, but materialized views are better once orders grow.
+Current reports use live aggregates. That is good for correctness during early production, but materialized views are better once orders grow.
 
 Suggested materialized views:
 

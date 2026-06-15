@@ -8,16 +8,17 @@ This workspace is for the 1HandIndia multi-vendor ecommerce marketplace. Treat i
 
 Before making project decisions or writing code, read these files in order:
 
-1. `docs/IndiHub_Final_Scope_Requirement_Confirmation_Phase1.md`
-2. `docs/IndiHub_PROJECT_SCOPE_AND_REQUIREMENTS.md`
-3. `docs/IndiHub_BUILD_BLUEPRINT_MNC_PORTAL.md`
-4. `docs/IndiHub_FINAL_TECH_STACK_LOCK.md`
-5. `docs/IndiHub_TECH_STACK_DECISION.md`
-6. `docs/IndiHub_REQUIREMENT_COLLECTION_CHECKLIST.md`
-7. `docs/IndiHub_BRAND_DIRECTION.md`
-8. `docs/IndiHub_UI_SCREEN_LIST_AND_DATABASE_PLAN.md`
-9. `docs/WORKSPACE_SKILL_LOADING_GUIDE.md`
-10. `.agents/skills/beeshub-marketplace/SKILL.md`
+1. `docs/IndiHub_FULL_IMPLEMENTATION_SCOPE_GOVERNANCE.md`
+2. `docs/IndiHub_Final_Scope_Requirement_Confirmation_Phase1.md`
+3. `docs/IndiHub_PROJECT_SCOPE_AND_REQUIREMENTS.md`
+4. `docs/IndiHub_BUILD_BLUEPRINT_MNC_PORTAL.md`
+5. `docs/IndiHub_FINAL_TECH_STACK_LOCK.md`
+6. `docs/IndiHub_TECH_STACK_DECISION.md`
+7. `docs/IndiHub_REQUIREMENT_COLLECTION_CHECKLIST.md`
+8. `docs/IndiHub_BRAND_DIRECTION.md`
+9. `docs/IndiHub_UI_SCREEN_LIST_AND_DATABASE_PLAN.md`
+10. `docs/WORKSPACE_SKILL_LOADING_GUIDE.md`
+11. `.agents/skills/beeshub-marketplace/SKILL.md`
 
 ## Product Target
 
@@ -33,15 +34,17 @@ Build 1HandIndia as a professional marketplace portal with the operational depth
 - Advanced analytics.
 - Trust, safety, support, and audit controls.
 
+Customer and seller experiences must be treated as separate applications, even when they share the same monorepo, backend, database, brand system, or web deployment. Plan screens, navigation, authentication entry points, QA flows, and future mobile apps separately for customer and seller.
+
 Do not copy Flipkart branding, UI, protected content, or proprietary design. The requirement is only to match the seriousness, polish, and feature completeness expected from a large ecommerce marketplace.
 
 ## Scope Rule
 
-The final scope source is:
+The active implementation governance source is:
 
-`docs/IndiHub_Final_Scope_Requirement_Confirmation_Phase1.md`
+`docs/IndiHub_FULL_IMPLEMENTATION_SCOPE_GOVERNANCE.md`
 
-If a feature is missing from that document, treat it as a change request unless the user explicitly adds it.
+Historical Phase 1 documents remain useful for budget, client approval, and earlier implementation context, but they no longer limit the completeness of selected features. If the user approves or asks for a feature, implement the complete production marketplace version across the required backend, UI, permissions, audit, settings, provider, and test surfaces.
 
 ## Skill Guidance
 
@@ -70,17 +73,19 @@ Use these skill types during future work:
 - Make the UI polished, responsive, and operationally useful.
 - Prefer structured documents and typed schemas over ad hoc notes.
 - Before a major implementation step, confirm the chosen stack and generated app structure.
-- Use `docs/IndiHub_FINAL_TECH_STACK_LOCK.md` as the current locked Phase 1 technology source.
+- Do not use generic Phase 1, basic-only, future-scope, or later-upgrade language to reduce an actively selected feature.
+- Use `docs/IndiHub_FINAL_TECH_STACK_LOCK.md` as the current locked product technology source.
 
 ## Current Status
 
-Last updated: 2026-05-26.
+Last updated: 2026-06-08.
 
 Foundation and scope:
 
 - Documentation workspace is prepared.
-- Phase 1 is frozen as a web-first marketplace build.
-- Phase 1 technology stack is locked.
+- Historical Phase 1 documents are retained for budget and approval history.
+- Active scope governance now requires full production implementation for any selected feature.
+- The current product technology stack is locked.
 - Approved project budget is INR 200,000.
 - UI screen list and database plan are prepared.
 - Brand palette is locked for all web portals: primary `#ED3500`, secondary `#FFFCFB`.
@@ -92,23 +97,23 @@ Completed or substantially implemented:
 - Admin now uses a standalone email/password login and DB-backed admin session tokens. Admin API routes do not accept Clerk sessions or local-dev user headers for admin-only access.
 - Admin portal UI now uses an admin-only login gate: `/admin` shows the standalone admin login when signed out, signed-out admin subroutes return to the requested route after login, stored admin sessions are revalidated through `/api/admin/auth/me`, and the full admin sidebar/navigation only appears after standalone admin authentication.
 - Clerk JWT verification was fixed for local development. Matching frontend/backend Clerk keys are required, and `CLERK_JWT_KEY` is supported.
-- Customer module is implemented end to end for Phase 1: account overview, profile, addresses, wishlist, cart, checkout, order placement, order history/detail, cancellation, public order tracking, and support requests.
+- Customer module is implemented end to end: account overview, profile, addresses, wishlist, cart, checkout, order placement, order history/detail, cancellation, public order tracking, and support requests.
 - Customer backend APIs are implemented for profile, addresses, wishlist, cart, checkout/orders, tracking, cancellation, and support.
 - Customer bugs already fixed include concurrent customer/wishlist creation, default address promotion, suspended-seller checkout/wishlist blocks, stale stock decrement, unavailable variant selection, and read-only profile email.
 - Storefront product listing/detail, cart, checkout, order success, tracking, CMS policy pages, CMS homepage banners/sections, and public support/contact flows are present.
 - Buyer checkout platform fee is implemented separately from seller commission/settlement fees. Admin settings can enable percentage-of-subtotal or fixed-per-order buyer-facing platform fee through an atomic save, checkout/cart read server-priced totals, and orders store INR plus buyer-currency fee snapshots.
 - Razorpay/COD payments are now wired beyond backend readiness: admins can configure Razorpay test/live mode, key ID, key secret, webhook secret, COD enablement, COD max order value/instructions, bank transfer, and manual payment from `/admin/payments`; Razorpay checkout orders are created server-side, the storefront opens Razorpay Checkout for Razorpay orders, checkout callback signatures are verified server-side before payment state refresh, verified captured Razorpay payments mark the order payment status as `PAID`, COD orders remain `PENDING`, webhook signatures use raw-body validation, late failed webhooks cannot downgrade an already paid payment, and duplicate checkout submits for the same cart are blocked transactionally.
-- Finance Manager workspace is implemented as a manual Phase 1 finance surface: `FINANCE` users sign into `/finance` with standalone back-office credentials, admins can also access it, finance users are blocked from full admin-only routes, and the workspace covers dashboard metrics, COD collection verification, bank transfer verification with UTR/reference capture, payment status control, settlements, payouts, ledger, statements, reports, payment settings, and checkout platform fee controls.
+- Finance Manager workspace is implemented as a back-office finance surface: `FINANCE` users sign into `/finance` with standalone credentials, admins can also access it, finance users are blocked from full admin-only routes, and the workspace covers dashboard metrics, COD collection verification, bank transfer verification with UTR/reference capture, payment status control, settlements, payouts, ledger, statements, reports, payment settings, and checkout platform fee controls.
 - Seller/admin/B2B backend foundation is present: seller product submission, admin product approval, B2B enquiry/response flow, admin readback, CMS, support, settings, reports, audit logs, payment readiness, notification logs, and storage readiness.
-- Seller center is implemented and verified for Phase 1 operations: authenticated onboarding/registration, pending/approved seller states, dashboard, viewport-aware seller sidebar/navigation, profile editing with normalized location selectors, asset-key-based logo/banner upload, product list/create/edit/archive with asset-key-based product images, seller order list/detail, seller-side order status updates, manual delivery updates, B2B enquiry response, and sales report screens.
+- Seller center is implemented and verified for marketplace operations: authenticated onboarding/registration, pending/approved seller states, dashboard, viewport-aware seller sidebar/navigation, profile editing with normalized location selectors, asset-key-based logo/banner upload, product list/create/edit/archive with asset-key-based product images, seller order list/detail, seller-side order status updates, manual delivery updates, B2B enquiry response, and sales report screens.
 - Seller order fulfilment is wired end to end: seller status changes update the seller split transactionally, roll up order/delivery status where appropriate, write seller/order/delivery timeline events, preserve the existing payment status during fulfilment updates, keep settlement eligibility aligned for delivered paid orders, and return only that seller's own order items/split in seller APIs.
-- Delivery partner web workspace is implemented as an approved Phase 1 scope update: admins can assign an active `DELIVERY_PARTNER` user from the admin order delivery form, delivery partners can open `/delivery`, `/delivery/orders`, and `/delivery/orders/[orderNumber]`, only assigned orders are visible, delivery progress/tracking/date/note updates roll into normal order/delivery/seller timelines, delivery partners can record COD cash collected with amount and note, admin verifies/rejects the collection from the admin order detail, COD remains `PENDING` until admin verification marks it `PAID`, and live courier API/mobile/GPS/OTP/proof-of-delivery/payout automation remains future scope.
+- Delivery partner web workspace is implemented: admins can assign an active `DELIVERY_PARTNER` user from the admin order delivery form, delivery partners can open `/delivery`, `/delivery/orders`, and `/delivery/orders/[orderNumber]`, only assigned orders are visible, delivery progress/tracking/date/note updates roll into normal order/delivery/seller timelines, delivery partners can record COD cash collected with amount and note, and admin verifies/rejects the collection from the admin order detail before COD is marked `PAID`.
 - Seller finance is implemented as a standalone module: admin-managed commission/GST/TDS/TCS/platform-fee rules, settlement drafts, payout approval/mark-paid flow, append-only seller ledger, and downloadable seller statements, with seller read-only wallet/payout/statement pages.
-- Seller-requested manual payouts are implemented for Phase 1: sellers maintain private bank/UPI payout details, see eligible delivered/paid payout availability, request the full currently eligible manual payout, and the backend transactionally locks eligible order splits to prevent duplicate requests. Admin finance keeps approve/reject/mark-paid controls, manual payment references, audit logs, events, statements, and ledger posting. RazorpayX/automated payouts are intentionally left as a future provider behind the same status flow.
-- B2B buyer portal frontend is implemented for Phase 1: `/b2b`, `/b2b/register`, `/b2b/company-profile`, `/b2b/enquiries`, `/b2b/enquiries/new`, `/b2b/enquiries/[id]`, `/b2b/sign-in`, and `/b2b/sign-up`. It supports first-time business profile onboarding from a signed-in customer account, normalized procurement addresses, enquiry list/search/status filtering, product/seller enquiry creation, response detail display, buyer-side cancellation, buyer quotation confirmation, and admin approval/finalisation.
+- Seller-requested manual payouts are implemented: sellers maintain private bank/UPI payout details, see eligible delivered/paid payout availability, request the full currently eligible manual payout, and the backend transactionally locks eligible order splits to prevent duplicate requests. Admin finance keeps approve/reject/mark-paid controls, manual payment references, audit logs, events, statements, and ledger posting.
+- B2B buyer portal frontend is implemented: `/b2b`, `/b2b/register`, `/b2b/company-profile`, `/b2b/enquiries`, `/b2b/enquiries/new`, `/b2b/enquiries/[id]`, `/b2b/sign-in`, and `/b2b/sign-up`. It supports first-time business profile onboarding from a signed-in customer account, normalized procurement addresses, enquiry list/search/status filtering, product/seller enquiry creation, response detail display, buyer-side cancellation, buyer quotation confirmation, and admin approval/finalisation.
 - B2B enquiry status workflow is now enforced end to end: seller/admin responses move enquiries to `RESPONDED`, buyers can confirm responded quotations as `BUYER_CONFIRMED`, admins can approve confirmed enquiries as `ADMIN_APPROVED`, and admins can finalise approved enquiries as `FINALISED`. Seller responses and buyer cancellations are locked after buyer confirmation.
 - Public store pages are present through `/stores` and `/stores/[slug]`, so approved sellers can have customer-facing storefront pages.
-- Admin control panel is implemented for Phase 1 operations: dashboard, customers, users/roles, sellers, seller approvals, products/product approvals, orders/order detail, B2B enquiries, business buyers, support, CMS pages/banners/sections, categories, reports, locations/import coverage, notifications, payment readiness, storage readiness, audit logs, and platform settings.
+- Admin control panel is implemented for marketplace operations: dashboard, customers, users/roles, sellers, seller approvals, products/product approvals, orders/order detail, B2B enquiries, business buyers, support, CMS pages/banners/sections, categories, reports, locations/import coverage, notifications, payment readiness, storage readiness, audit logs, and platform settings.
 - Transactional email tracking is fully documented and surfaced in admin notifications: app-owned account, seller, product, order, payment, B2B, and support emails create notification logs with rendered subject/body, context variables, provider id/error, status, retry support, and a full event matrix in `docs/IndiHub_EMAIL_NOTIFICATION_TRACKING.md`. Supported app providers are SMTP bridge/dev log, Brevo, Resend, and SendGrid. Clerk and provider-side emails remain outside app logs by design.
 - Admin dashboard has been redesigned as a compact operations command center with a polished welcome header, tighter live KPI cards, operations chart, quick actions, recent orders, platform health, and sales analytics. The `/admin` route hides the normal page-title band so the dashboard has a dedicated executive layout while other admin pages keep breadcrumbs and actions.
 - Admin homepage banner create/edit is structured for non-technical operation: title, subtitle, managed image upload/preview, link, status, and sort order. Published banners power the storefront hero through `GET /api/cms/banners`.

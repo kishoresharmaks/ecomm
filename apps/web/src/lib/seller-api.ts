@@ -5,6 +5,8 @@ import type { SellerDocumentType } from "./seller-document-upload";
 import type {
   CategorySummary,
   ProductImage,
+  ProductReviewStatus,
+  ProductReviewSummary,
   ProductSummary,
   ProductVariant,
   SellerAddress,
@@ -431,6 +433,13 @@ export type SellerSalesReport = {
     orderCount: number;
     totalSalesPaise: number;
     commissionPaise: number;
+    gstOnCommissionPaise: number;
+    tdsPaise: number;
+    tcsPaise: number;
+    platformFeePaise: number;
+    couponSellerFundedDiscountPaise: number;
+    couponAdjustmentPaise: number;
+    refundAdjustmentPaise: number;
     netSalesPaise: number;
     products: number;
     lowStockCount: number;
@@ -446,6 +455,55 @@ export type SellerSalesReport = {
     order: SellerOrder;
   }>;
   lowStockProducts: Array<ProductVariant & { product: ProductSummary }>;
+};
+
+export type SellerReviewRecord = {
+  id: string;
+  productId: string;
+  orderItemId: string;
+  rating: number;
+  title?: string | null;
+  comment?: string | null;
+  status: ProductReviewStatus;
+  isVerifiedPurchase: boolean;
+  submittedAt?: string;
+  publishedAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  product: {
+    id: string;
+    name: string;
+    slug: string;
+    imageUrl?: string | null;
+  };
+  customer: {
+    displayName: string;
+  };
+  order: {
+    orderNumber: string;
+    createdAt?: string;
+  };
+  orderItem: {
+    id: string;
+    productNameSnapshot: string;
+  };
+};
+
+export type PaginatedSellerReviews = {
+  items: SellerReviewRecord[];
+  total: number;
+  page: number;
+  limit: number;
+};
+
+export type SellerReviewSummary = {
+  seller: {
+    id: string;
+    storeName: string;
+    slug: string;
+  };
+  summary: ProductReviewSummary;
+  statusCounts: Record<ProductReviewStatus, number>;
 };
 
 export function getSellerProfile(auth: IndihubAuthHeaders) {
@@ -730,6 +788,28 @@ export function getSellerSalesReport(
 ) {
   return indihubFetch<SellerSalesReport>(
     `/api/seller/reports/sales${queryString(query)}`,
+    undefined,
+    auth,
+  );
+}
+
+export function getSellerReviewSummary(auth: IndihubAuthHeaders) {
+  return indihubFetch<SellerReviewSummary>("/api/seller/reviews/summary", undefined, auth);
+}
+
+export function listSellerReviews(
+  auth: IndihubAuthHeaders,
+  query: {
+    search?: string;
+    status?: ProductReviewStatus;
+    rating?: number;
+    productId?: string;
+    page?: number;
+    limit?: number;
+  } = {},
+) {
+  return indihubFetch<PaginatedSellerReviews>(
+    `/api/seller/reviews${queryString(query)}`,
     undefined,
     auth,
   );

@@ -8,6 +8,13 @@
     "node": ">=22.0.0",
     "pnpm": ">=10.0.0"
   },
+  "pnpm": {
+    "overrides": {
+      "@hono/node-server": "1.19.13",
+      "postcss": "8.5.15",
+      "uuid": "11.1.1"
+    }
+  },
   "scripts": {
     "dev": "turbo dev",
     "build": "pnpm db:generate && turbo build",
@@ -25,6 +32,7 @@
     "locations:import": "tsx scripts/locations/import-locations.ts --mode import",
     "locations:refresh": "tsx scripts/locations/import-locations.ts --mode refresh",
     "locations:import:india": "tsx scripts/locations/import-india-pincodes.ts --mode refresh",
+    "search:reindex": "tsx scripts/search/reindex-search.ts",
     "storage:normalize-image-keys": "tsx scripts/storage/normalize-public-image-keys.ts --apply",
     "dev:web": "pnpm --filter @indihub/web dev",
     "dev:api": "pnpm --filter @indihub/api dev",

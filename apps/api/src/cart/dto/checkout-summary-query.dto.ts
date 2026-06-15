@@ -20,6 +20,12 @@ export class CheckoutSummaryQueryDto {
   @Matches(/^[A-Z]{2}$/)
   buyerCountryCode?: string;
 
+  @ApiPropertyOptional({ example: "SAVE10" })
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z0-9_-]{3,32}$/)
+  couponCode?: string;
+
   @ApiPropertyOptional({ enum: CheckoutDeliveryPreference })
   @IsOptional()
   @IsEnum(CheckoutDeliveryPreference)

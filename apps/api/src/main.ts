@@ -3,6 +3,7 @@ import { ValidationPipe } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import { AppModule } from "./app/app.module";
+import { createCorsOptions } from "./app/cors";
 import { createRateLimitMiddleware, rateLimitOptionsFromEnv } from "./rate-limit/request-rate-limiter";
 
 async function bootstrap() {
@@ -11,15 +12,7 @@ async function bootstrap() {
     rawBody: true
   });
 
-  const allowedOrigins = (process.env.API_CORS_ORIGINS ?? "http://localhost:3000")
-    .split(",")
-    .map((origin) => origin.trim())
-    .filter(Boolean);
-
-  app.enableCors({
-    origin: allowedOrigins,
-    credentials: true
-  });
+  app.enableCors(createCorsOptions());
 
   app.use(createRateLimitMiddleware(rateLimitOptionsFromEnv()));
 
@@ -44,10 +37,12 @@ async function bootstrap() {
   SwaggerModule.setup("api/docs", app, document);
 
   const port = Number(process.env.API_PORT ?? 4000);
-  await app.listen(port);
+  const host = process.env.API_HOST?.trim() || "0.0.0.0";
+  const publicHost = process.env.API_PUBLIC_HOST?.trim() || host;
+  await app.listen(port, host);
 
-  console.log(`1HandIndia API listening on http://localhost:${port}/api`);
-  console.log(`1HandIndia API docs available on http://localhost:${port}/api/docs`);
+  console.log(`1HandIndia API listening on http://${publicHost}:${port}/api`);
+  console.log(`1HandIndia API docs available on http://${publicHost}:${port}/api/docs`);
 }
 
 bootstrap().catch((error) => {

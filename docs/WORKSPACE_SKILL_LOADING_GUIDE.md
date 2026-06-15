@@ -8,6 +8,7 @@ Before planning or coding, read:
 
 - `AGENTS.md`
 - `README.md`
+- `docs/IndiHub_FULL_IMPLEMENTATION_SCOPE_GOVERNANCE.md`
 - `docs/IndiHub_Final_Scope_Requirement_Confirmation_Phase1.md`
 - `docs/IndiHub_PROJECT_SCOPE_AND_REQUIREMENTS.md`
 - `docs/IndiHub_BUILD_BLUEPRINT_MNC_PORTAL.md`
@@ -18,6 +19,8 @@ Before planning or coding, read:
 - `.agents/skills/beeshub-marketplace/SKILL.md`
 
 ## 2. Skills to Use by Task
+
+Before using any skill for implementation planning, apply the full implementation governance rule: if a feature is selected, plan and build the complete production version rather than a Phase 1 shortcut.
 
 ### Client Documents and Scope Writing
 
@@ -156,11 +159,11 @@ Use it as the 1HandIndia-specific operating guide. It captures the project goal,
 ## 4. Before Coding Checklist
 
 - Read project context.
-- Confirm the locked Phase 1 technology stack.
+- Confirm the locked product technology stack.
 - Read `docs/IndiHub_FINAL_TECH_STACK_LOCK.md`.
 - Confirm folder structure.
 - Confirm database provider.
 - Confirm auth strategy.
-- Confirm initial implementation milestone.
-- Confirm frozen web-first Phase 1 scope.
-- Confirm INR 200,000 milestone timeline.
+- Confirm the selected full implementation scope.
+- Confirm the delivery sequence for the selected feature if it is too large for one pass.
+- Confirm any provider/account readiness blockers separately from implementation work.

@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { Prisma, SellerStatementStatus } from "@indihub/database";
+import { Prisma, SellerPayoutStatus, SellerStatementStatus } from "@indihub/database";
 import {
   cursorPageFromTimestampItems,
   cursorPaginationFromQuery,
@@ -80,6 +80,19 @@ export class SellerStatementsService {
   }
 
   async generateStatement(dto: GenerateStatementDto, actor: RequestUser) {
+    const payout = await this.prisma.client.sellerPayout.findUnique({
+      where: { id: dto.payoutId },
+      include: { seller: true }
+    });
+
+    if (!payout) {
+      throw new NotFoundException("Seller payout not found.");
+    }
+
+    if (payout.status !== SellerPayoutStatus.APPROVED && payout.status !== SellerPayoutStatus.PAID) {
+      throw new BadRequestException("Statements can be generated only after payout approval.");
+    }
+
     const existing = await this.prisma.client.sellerStatement.findFirst({
       where: {
         payoutId: dto.payoutId,
@@ -93,15 +106,6 @@ export class SellerStatementsService {
 
     if (existing) {
       return existing;
-    }
-
-    const payout = await this.prisma.client.sellerPayout.findUnique({
-      where: { id: dto.payoutId },
-      include: { seller: true }
-    });
-
-    if (!payout) {
-      throw new NotFoundException("Seller payout not found.");
     }
 
     const statement = await this.prisma.client.sellerStatement.create({

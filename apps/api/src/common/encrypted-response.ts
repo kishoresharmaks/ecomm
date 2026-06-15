@@ -11,7 +11,15 @@ export type EncryptedResponseEnvelope = {
   data: string;
 };
 
-export function encryptForBearerSession<T>(authorizationHeader: string | undefined, payload: T): T | EncryptedResponseEnvelope {
+export function encryptForBearerSession<T>(
+  authorizationHeader: string | undefined,
+  payload: T,
+  acceptedEncryptionHeader?: string | string[],
+): T | EncryptedResponseEnvelope {
+  if (!acceptsEncryptedResponse(acceptedEncryptionHeader)) {
+    return payload;
+  }
+
   const bearerToken = authorizationHeader?.match(/^Bearer\s+(.+)$/i)?.[1]?.trim();
   if (!bearerToken) {
     return payload;
@@ -32,4 +40,14 @@ export function encryptForBearerSession<T>(authorizationHeader: string | undefin
     tag: cipher.getAuthTag().toString("base64"),
     data: encrypted.toString("base64"),
   };
+}
+
+function acceptsEncryptedResponse(header?: string | string[]) {
+  const value = Array.isArray(header) ? header.join(",") : header;
+  return Boolean(
+    value
+      ?.split(",")
+      .map((item) => item.trim().toUpperCase())
+      .some((item) => item === responseEncryptionAlgorithm || item === "TRUE" || item === "1"),
+  );
 }

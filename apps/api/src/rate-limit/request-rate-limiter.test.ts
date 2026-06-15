@@ -57,6 +57,45 @@ describe("RequestRateLimiter", () => {
     expect(decision.policy.name).toBe("search-authenticated");
   });
 
+  it("uses the same search budget for the dedicated advanced search endpoint", () => {
+    const limiter = new RequestRateLimiter({
+      now: () => 1_000,
+      policies: { searchAnonymous: { max: 1 } },
+    });
+
+    expect(limiter.check(request({ url: "/api/search?q=watch" })).allowed).toBe(true);
+    const decision = limiter.check(request({ url: "/api/search?q=watch" }));
+
+    expect(decision.allowed).toBe(false);
+    expect(decision.policy.name).toBe("search-anonymous");
+  });
+
+  it("uses a stricter suggestions budget for anonymous typeahead traffic", () => {
+    const limiter = new RequestRateLimiter({
+      now: () => 1_000,
+      policies: { searchSuggestionsAnonymous: { max: 1 } },
+    });
+
+    expect(limiter.check(request({ url: "/api/search/suggestions?q=wa" })).allowed).toBe(true);
+    const decision = limiter.check(request({ url: "/api/search/suggestions?q=wa" }));
+
+    expect(decision.allowed).toBe(false);
+    expect(decision.policy.name).toBe("search-suggestions-anonymous");
+  });
+
+  it("uses the authenticated suggestions budget when a user identity is present", () => {
+    const limiter = new RequestRateLimiter({
+      now: () => 1_000,
+      policies: { searchSuggestionsAuthenticated: { max: 1 } },
+    });
+
+    expect(limiter.check(request({ url: "/api/search/suggestions?q=wa", platformUserId: "customer-1" })).allowed).toBe(true);
+    const decision = limiter.check(request({ url: "/api/search/suggestions?q=wa", platformUserId: "customer-1" }));
+
+    expect(decision.allowed).toBe(false);
+    expect(decision.policy.name).toBe("search-suggestions-authenticated");
+  });
+
   it("prefers a stable platform user id over a bearer token for user-based limits", () => {
     const limiter = new RequestRateLimiter({
       now: () => 1_000,
@@ -93,10 +132,13 @@ describe("RequestRateLimiter", () => {
       INDIHUB_API_RATE_LIMIT_ENABLED: "true",
       INDIHUB_TRUST_PROXY_HEADERS: "true",
       INDIHUB_RATE_LIMIT_SEARCH_ANON_PER_MINUTE: "7",
+      INDIHUB_RATE_LIMIT_SEARCH_SUGGESTIONS_ANON_PER_MINUTE: "3",
     });
     const limiter = new RequestRateLimiter({ ...options, now: () => 1_000 });
     const decision = limiter.check(request());
+    const suggestionsDecision = limiter.check(request({ url: "/api/search/suggestions?q=wa" }));
 
     expect(decision.policy.max).toBe(7);
+    expect(suggestionsDecision.policy.max).toBe(3);
   });
 });

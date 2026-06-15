@@ -6,8 +6,8 @@ Use this checklist before development starts. It prevents missing business detai
 
 - Working brand name: 1HandIndia.
 - Approved project budget: INR 200,000.
-- Frozen Phase 1: Web-first marketplace build.
-- Future upgrades: Native mobile apps, delivery partner mobile app, live courier API/GPS/OTP/proof-of-delivery automation, automated payouts, chatbot, advanced analytics, advanced B2B workflows, multi-language, and multi-currency.
+- Historical Phase 1: Web-first marketplace budget and approval record.
+- Active implementation rule: selected features are built as complete production marketplace features. Native mobile apps, delivery partner mobile app, live courier API/GPS/OTP/proof-of-delivery automation, automated payouts, chatbot, advanced analytics, advanced B2B workflows, multi-language, and multi-currency are selectable full implementation areas.
 - Logo: To be designed later.
 - Brand colors: See `docs/IndiHub_BRAND_DIRECTION.md`.
 - Technology stack: See `docs/IndiHub_TECH_STACK_DECISION.md`.

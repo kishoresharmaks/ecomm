@@ -4,7 +4,7 @@ Date: 2026-05-24
 
 ## Summary
 
-The frozen Phase 1 scope was originally India-first with INR as the active platform currency. Multi-currency was listed as a future upgrade. This note records the approved expansion to prepare 1HandIndia for a small set of overseas markets while keeping INR as the seller and accounting base currency.
+The original scope was India-first with INR as the active platform currency. This note records the approved expansion to prepare 1HandIndia for a small set of overseas markets while keeping INR as the seller and accounting base currency. As of 08-06-2026, selected market/currency features follow the full implementation governance rule.
 
 ## Approved Change
 

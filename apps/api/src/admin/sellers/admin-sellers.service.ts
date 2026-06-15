@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import {
   ApprovalStatus,
   EmailRecipientType,
@@ -12,6 +12,7 @@ import { paginationFromQuery } from "../../common/pagination";
 import { EMAIL_TRIGGER_EVENTS } from "../../notifications/email-trigger-catalog";
 import { NotificationsService } from "../../notifications/notifications.service";
 import { PrismaService } from "../../prisma/prisma.service";
+import { SearchIndexService } from "../../search/search-index.service";
 import { RequestUser } from "../../auth/types/indihub-request";
 import {
   SellerApprovalDecision,
@@ -25,6 +26,9 @@ export class AdminSellersService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(NotificationsService) private readonly notifications: NotificationsService,
+    @Optional()
+    @Inject(SearchIndexService)
+    private readonly searchIndex?: SearchIndexService,
   ) {}
 
   async listSellers(query: SellerQueryDto) {
@@ -192,6 +196,10 @@ export class AdminSellersService {
       },
     });
 
+    await this.enqueueSellerSearchIndex(
+      updatedSeller.id,
+      updatedSeller.approvalStatus === ApprovalStatus.APPROVED ? "seller-approved" : "seller-rejected",
+    );
     return updatedSeller;
   }
 
@@ -260,7 +268,29 @@ export class AdminSellersService {
       },
     });
 
+    await this.enqueueSellerSearchIndex(
+      updatedSeller.id,
+      dto.suspended ? "seller-suspended" : "seller-unsuspended",
+    );
     return updatedSeller;
+  }
+
+  private async enqueueSellerSearchIndex(sellerId: string, reason: string) {
+    try {
+      await this.searchIndex?.enqueueSeller(sellerId, { reason });
+      const products = await this.prisma.client.product.findMany({
+        where: { sellerId },
+        select: { id: true, categoryId: true },
+      });
+      await Promise.all(
+        products.flatMap((product) => [
+          this.searchIndex?.enqueueProduct(product.id, { reason: `${reason}:product-rollup` }),
+          this.searchIndex?.enqueueCategory(product.categoryId, { reason: `${reason}:category-rollup` }),
+        ]),
+      );
+    } catch {
+      // Search indexing is retryable background work; seller moderation remains the source of truth.
+    }
   }
 
   private async getSellerOrThrow(sellerId: string) {

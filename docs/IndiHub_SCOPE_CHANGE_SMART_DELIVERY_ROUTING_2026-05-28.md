@@ -2,7 +2,7 @@
 
 ## Approved Change
 
-The delivery system is upgraded from basic manual mode selection into a smart routing and shipping charge foundation.
+The delivery system is upgraded from manual mode selection into a smart routing and shipping charge foundation.
 
 Customer checkout now exposes only:
 

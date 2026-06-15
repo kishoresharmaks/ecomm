@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
@@ -47,6 +48,7 @@ import {
   type DeliveryRoutingQuote,
 } from "../checkout/delivery-routing.service";
 import { CheckoutDeliveryPreference } from "../checkout/dto/delivery-routing.dto";
+import { CouponsService, type CouponCheckoutItem } from "../coupons/coupons.service";
 import {
   createdAtCursorOrderBy,
   createdAtCursorWhere,
@@ -55,6 +57,7 @@ import {
   paginationFromQuery,
 } from "../common/pagination";
 import { CustomersService } from "../customers/customers.service";
+import { DealPricingService } from "../deals/deal-pricing.service";
 import {
   DeliveryPartnerPayoutQueryDto,
   MarkPayoutPaidDto,
@@ -149,6 +152,10 @@ const orderInclude = {
       seller: {
         include: {
           user: true,
+          profile: true,
+          addresses: {
+            orderBy: { createdAt: "asc" as const },
+          },
         },
       },
       orderSellerSplit: true,
@@ -257,7 +264,8 @@ type OrderWithRelations = Prisma.OrderGetPayload<{ include: typeof orderInclude 
 type DeliveryPartnerPayoutWithRelations = Prisma.DeliveryPartnerPayoutGetPayload<{
   include: typeof deliveryPartnerPayoutInclude;
 }>;
-type OrderShipmentPackageWithRelations = OrderWithRelations["shipments"][number]["packages"][number];
+type OrderShipmentPackageWithRelations =
+  OrderWithRelations["shipments"][number]["packages"][number];
 type DeliveryPartnerWithProfile = Prisma.UserGetPayload<{
   include: { deliveryProfile: true };
 }>;
@@ -319,6 +327,11 @@ const defaultCodCashLimitPaise = 500000;
 const deliveryCodCashLimitSettingKey = "delivery.defaultCodCashLimitPaise";
 const deliveryRoutingRetryIntervalMs = 15 * 60 * 1000;
 const deliveryRoutingRetryWindowMs = 2 * 60 * 60 * 1000;
+const deliveryAssignmentAcceptanceWindowMinutes = 110;
+const deliveryAssignmentAcceptanceWindowMs =
+  deliveryAssignmentAcceptanceWindowMinutes * 60 * 1000;
+const deliveryAssignmentExpiredNote =
+  "Delivery partner assignment auto-released after 110 minutes without acceptance.";
 const labelDownloadBlockedStatuses = new Set<CourierShipmentStatus>([
   CourierShipmentStatus.CANCELLED,
   CourierShipmentStatus.FAILED,
@@ -354,6 +367,44 @@ const orderStatusRank = {
   [OrderStatus.DELIVERED]: 4,
   [OrderStatus.CANCELLED]: 5,
 } satisfies Record<OrderStatus, number>;
+
+const sellerStatusFlow: readonly SellerOrderStatus[] = [
+  SellerOrderStatus.PENDING,
+  SellerOrderStatus.ACCEPTED,
+  SellerOrderStatus.PROCESSING,
+  SellerOrderStatus.DISPATCHED,
+  SellerOrderStatus.DELIVERED,
+];
+
+const deliveryStatusFlow: readonly DeliveryStatus[] = [
+  DeliveryStatus.NOT_ASSIGNED,
+  DeliveryStatus.PENDING,
+  DeliveryStatus.PACKED,
+  DeliveryStatus.DISPATCHED,
+  DeliveryStatus.IN_TRANSIT,
+  DeliveryStatus.DELIVERED,
+];
+
+const orderStatusFlow: readonly OrderStatus[] = [
+  OrderStatus.PLACED,
+  OrderStatus.CONFIRMED,
+  OrderStatus.PROCESSING,
+  OrderStatus.SHIPPED,
+  OrderStatus.DELIVERED,
+];
+
+function workflowStatusLabel(status: string) {
+  return status
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function nextWorkflowStatus<T extends string>(flow: readonly T[], current: T) {
+  const index = flow.indexOf(current);
+  return index >= 0 && index < flow.length - 1 ? flow[index + 1] : null;
+}
 
 const dispatchedSellerStatuses = new Set<SellerOrderStatus>([
   SellerOrderStatus.DISPATCHED,
@@ -398,11 +449,15 @@ type DeliveryPartnerWalletReadClient = Pick<
 
 @Injectable()
 export class OrdersService {
+  private readonly logger = new Logger(OrdersService.name);
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(CheckoutPricingService) private readonly checkoutPricing: CheckoutPricingService,
     @Inject(DeliveryRoutingService) private readonly deliveryRouting: DeliveryRoutingService,
     @Inject(CustomersService) private readonly customersService: CustomersService,
+    @Inject(DealPricingService) private readonly dealPricing: DealPricingService,
+    @Inject(CouponsService) private readonly couponsService: CouponsService,
     @Inject(SellerLedgerService) private readonly sellerLedgerService: SellerLedgerService,
     @Inject(LocationsService) private readonly locationsService: LocationsService,
     @Inject(RouteDistanceService) private readonly routeDistance: RouteDistanceService,
@@ -413,28 +468,44 @@ export class OrdersService {
 
   async placeOrder(actor: RequestUser, dto: PlaceOrderDto) {
     const customer = await this.customersService.ensureCustomerForUser(actor);
+    const idempotencyKey = this.normalizeOrderIdempotencyKey(dto.idempotencyKey);
+    const existingIdempotentOrder = idempotencyKey
+      ? await this.findCustomerOrderByIdempotencyKey(customer.id, idempotencyKey)
+      : null;
+    if (existingIdempotentOrder) {
+      return existingIdempotentOrder;
+    }
+
     const cart = await this.prisma.client.cart.findFirst({
       where: {
         customerId: customer.id,
         status: CartStatus.ACTIVE,
       },
+      orderBy: { createdAt: "desc" },
       include: {
         items: true,
       },
     });
 
     if (!cart?.items.length) {
+      const recoveredIdempotentOrder = idempotencyKey
+        ? await this.findCustomerOrderByIdempotencyKey(customer.id, idempotencyKey)
+        : null;
+      if (recoveredIdempotentOrder) {
+        return recoveredIdempotentOrder;
+      }
+
       throw new BadRequestException("Cart is empty.");
     }
 
     const shippingAddressSnapshot = await this.resolveShippingAddressSnapshot(customer.id, dto);
-    const buyerCountryCode = dto.buyerCountryCode ?? shippingAddressSnapshot.countryCode ?? "IN";
+    const buyerCountryCode = dto.buyerCountryCode ?? shippingAddressSnapshot?.countryCode ?? "IN";
     const market = await this.marketService.buildCheckoutSnapshot(buyerCountryCode);
     const orderNumber = await this.createOrderNumber();
     const payment = this.resolvePayment(dto.paymentMethod);
     const deliveryPreference = this.resolveCheckoutDeliveryPreference(dto);
 
-    const orderId = await this.prisma.client.$transaction(async (tx) => {
+    const orderPlacement = await this.prisma.client.$transaction(async (tx) => {
       const cartClaim = await tx.cart.updateMany({
         where: {
           id: cart.id,
@@ -447,6 +518,19 @@ export class OrdersService {
       });
 
       if (cartClaim.count !== 1) {
+        if (idempotencyKey) {
+          const recoveredOrder = await tx.order.findFirst({
+            where: {
+              customerId: customer.id,
+              idempotencyKey,
+            },
+            include: orderInclude,
+          });
+          if (recoveredOrder) {
+            return { orderId: recoveredOrder.id, recovered: true };
+          }
+        }
+
         throw new BadRequestException(
           "This cart is already checked out. Refresh the cart before placing another order.",
         );
@@ -496,27 +580,52 @@ export class OrdersService {
           throw new BadRequestException(`Insufficient stock for ${product.name}.`);
         }
 
-        validatedItems.push({ item, variant, product });
+        const price = await this.dealPricing.resolveVariantPrice(variant, product.id, tx);
+        validatedItems.push({ item, variant, product, price });
       }
 
       const subtotalPaise = validatedItems.reduce(
-        (total, { item, variant }) => total + item.quantity * variant.pricePaise,
+        (total, { item, price }) => total + item.quantity * price.effectiveUnitPricePaise,
         0,
       );
       const sellerPackages = this.checkoutSellerPackages(validatedItems);
-      const charges = await this.checkoutPricing.calculateSellerPackageCharges(
+      const baseCharges = await this.checkoutPricing.calculateSellerPackageCharges(
         subtotalPaise,
         sellerPackages,
         tx,
         {
-        ...(dto.deliveryPreference !== undefined || dto.deliveryMode === undefined
-          ? { deliveryPreference }
-          : {}),
-        ...(dto.deliveryMode !== undefined ? { deliveryMode: dto.deliveryMode } : {}),
-        address: shippingAddressSnapshot,
-        paymentMethod: dto.paymentMethod,
+          ...(dto.deliveryPreference !== undefined || dto.deliveryMode === undefined
+            ? { deliveryPreference }
+            : {}),
+          ...(dto.deliveryMode !== undefined ? { deliveryMode: dto.deliveryMode } : {}),
+          address: shippingAddressSnapshot,
+          paymentMethod: dto.paymentMethod,
         },
       );
+      const coupon = await this.couponsService.reserveCouponForOrder(
+        {
+          ...(dto.couponCode !== undefined ? { couponCode: dto.couponCode } : {}),
+          customerId: customer.id,
+          items: this.orderCouponItems(validatedItems),
+          subtotalPaise,
+          shippingPaise: baseCharges.shippingPaise,
+          shippingSnapshot: baseCharges.snapshot,
+          currency: market.baseCurrency,
+        },
+        tx,
+      );
+      const charges = coupon
+        ? await this.checkoutPricing.applyCouponAdjustments(baseCharges, tx, {
+            merchandiseDiscountPaise: coupon.merchandiseDiscountPaise,
+            shippingDiscountPaise: coupon.shippingDiscountPaise,
+            snapshot: coupon.snapshot,
+          })
+        : {
+            ...baseCharges,
+            payableSubtotalPaise: baseCharges.subtotalPaise,
+            payableShippingPaise: baseCharges.shippingPaise,
+            couponDiscountPaise: 0,
+          };
       const { shippingPaise, platformFeePaise, totalPaise } = charges;
       const deliveryRoutings = charges.deliveryRoutings ?? [];
       const deliveryRoutingBySeller = new Map(
@@ -530,7 +639,7 @@ export class OrdersService {
       const buyerSubtotalMinor = this.marketService.convertMinorUnits(subtotalPaise, market);
       const buyerShippingMinor = this.marketService.convertMinorUnits(shippingPaise, market);
       const buyerPlatformFeeMinor = this.marketService.convertMinorUnits(platformFeePaise, market);
-      const buyerTotalMinor = buyerSubtotalMinor + buyerShippingMinor + buyerPlatformFeeMinor;
+      const buyerTotalMinor = this.marketService.convertMinorUnits(totalPaise, market);
       const checkoutPaymentMethod = await this.paymentsService.checkoutMethodSnapshot(
         dto.paymentMethod,
         totalPaise,
@@ -551,7 +660,7 @@ export class OrdersService {
           customerId: customer.id,
           cartId: cart.id,
           status: CheckoutStatus.COMPLETED,
-          shippingAddressSnapshot,
+          shippingAddressSnapshot: shippingAddressSnapshot ?? Prisma.JsonNull,
           paymentMethod: dto.paymentMethod,
           deliveryMode: resolvedDeliveryMode,
         },
@@ -560,6 +669,7 @@ export class OrdersService {
       const order = await tx.order.create({
         data: {
           orderNumber,
+          idempotencyKey,
           customerId: customer.id,
           orderStatus: OrderStatus.PLACED,
           paymentStatus: payment.status,
@@ -567,6 +677,15 @@ export class OrdersService {
           subtotalPaise,
           shippingPaise,
           platformFeePaise,
+          couponId: coupon?.couponId ?? null,
+          couponCode: coupon?.code ?? null,
+          couponTitle: coupon?.title ?? null,
+          couponDiscountPaise: coupon?.discountPaise ?? 0,
+          couponMerchandiseDiscountPaise: coupon?.merchandiseDiscountPaise ?? 0,
+          couponShippingDiscountPaise: coupon?.shippingDiscountPaise ?? 0,
+          couponPlatformFundedDiscountPaise: coupon?.platformFundedDiscountPaise ?? 0,
+          couponSellerFundedDiscountPaise: coupon?.sellerFundedDiscountPaise ?? 0,
+          couponSnapshot: coupon?.snapshot ?? Prisma.JsonNull,
           totalPaise,
           currency: market.baseCurrency,
           baseCurrency: market.baseCurrency,
@@ -590,7 +709,7 @@ export class OrdersService {
             isStale: market.isStale,
           },
           checkoutFeeSnapshot: charges.snapshot,
-          shippingAddressSnapshot,
+          shippingAddressSnapshot: shippingAddressSnapshot ?? Prisma.JsonNull,
         },
       });
 
@@ -613,8 +732,10 @@ export class OrdersService {
         }>
       >();
 
-      for (const { item, variant, product } of validatedItems) {
-        const lineTotalPaise = item.quantity * variant.pricePaise;
+      for (const { item, variant, product, price } of validatedItems) {
+        const lineTotalPaise = item.quantity * price.effectiveUnitPricePaise;
+        const lineDealDiscountPaise = item.quantity * price.dealDiscountPaise;
+        const couponAllocation = this.couponsService.itemAllocation(coupon, item.id);
         sellerTotals.set(
           product.sellerId,
           (sellerTotals.get(product.sellerId) ?? 0) + lineTotalPaise,
@@ -632,9 +753,36 @@ export class OrdersService {
               variantName: variant.variantName,
             },
             quantity: item.quantity,
-            unitPricePaise: variant.pricePaise,
+            activeQuantity: item.quantity,
+            retainedQuantity: item.quantity,
+            unitPricePaise: price.effectiveUnitPricePaise,
             lineTotalPaise,
             currency: variant.currency,
+            originalUnitPricePaise: price.dealSnapshot ? price.originalUnitPricePaise : null,
+            dealDiscountBps: price.dealDiscountBps,
+            dealDiscountPaise: lineDealDiscountPaise,
+            dealId: price.dealSnapshot?.dealId ?? null,
+            dealSnapshot: price.dealSnapshot
+              ? {
+                  ...price.dealSnapshot,
+                  originalUnitPricePaise: price.originalUnitPricePaise,
+                  effectiveUnitPricePaise: price.effectiveUnitPricePaise,
+                  unitDiscountPaise: price.dealDiscountPaise,
+                  lineDiscountPaise: lineDealDiscountPaise,
+                }
+              : Prisma.JsonNull,
+            couponDiscountPaise: couponAllocation?.discountPaise ?? 0,
+            couponPlatformFundedDiscountPaise:
+              couponAllocation?.platformFundedDiscountPaise ?? 0,
+            couponSellerFundedDiscountPaise:
+              couponAllocation?.sellerFundedDiscountPaise ?? 0,
+            couponSnapshot: couponAllocation
+              ? {
+                  ...coupon!.snapshot,
+                  allocation: couponAllocation,
+                }
+              : Prisma.JsonNull,
+            returnPolicySnapshot: this.orderItemReturnPolicySnapshot(product.attributes),
           },
         });
         const allocations = sellerItemAllocations.get(product.sellerId) ?? [];
@@ -691,12 +839,24 @@ export class OrdersService {
       for (const [sellerId, sellerSubtotalPaise] of sellerTotals.entries()) {
         const shipmentRouting = deliveryRoutingBySeller.get(sellerId) ?? summaryRouting;
         const shipmentRoutingFailedAt = shipmentRouting?.routingFailed ? routedAt : null;
+        const couponSellerAllocation = this.couponsService.sellerAllocation(coupon, sellerId);
         const sellerSplit = await tx.orderSellerSplit.create({
           data: {
             orderId: order.id,
             sellerId,
             sellerSubtotalPaise,
             commissionPaise: 0,
+            couponDiscountPaise: couponSellerAllocation?.discountPaise ?? 0,
+            couponPlatformFundedDiscountPaise:
+              couponSellerAllocation?.platformFundedDiscountPaise ?? 0,
+            couponSellerFundedDiscountPaise:
+              couponSellerAllocation?.sellerFundedDiscountPaise ?? 0,
+            couponSnapshot: couponSellerAllocation
+              ? {
+                  ...coupon!.snapshot,
+                  sellerAllocation: couponSellerAllocation,
+                }
+              : Prisma.JsonNull,
             settlementStatus: SellerSettlementStatus.NOT_ELIGIBLE,
             sellerStatus: SellerOrderStatus.PENDING,
           },
@@ -776,12 +936,19 @@ export class OrdersService {
           routedAt: summaryRouting ? routedAt : null,
           shippingChargeSnapshot: charges.snapshot.shipping ?? Prisma.JsonNull,
           codSurchargeSnapshot: summaryRouting?.codSurchargeSnapshot ?? Prisma.JsonNull,
-          assignmentNote:
-            summaryRoutingFailedAt
-              ? (summaryRouting?.routingFailureNote ?? null)
-              : "Seller package routes are stored on individual shipments.",
+          assignmentNote: summaryRoutingFailedAt
+            ? (summaryRouting?.routingFailureNote ?? null)
+            : "Seller package routes are stored on individual shipments.",
         },
       });
+
+      await this.couponsService.recordRedemption(
+        tx,
+        order.id,
+        customer.id,
+        market.baseCurrency,
+        coupon,
+      );
 
       await tx.payment.create({
         data: {
@@ -816,6 +983,11 @@ export class OrdersService {
             subtotalPaise,
             shippingPaise,
             platformFeePaise,
+            couponCode: coupon?.code ?? null,
+            couponDiscountPaise: coupon?.discountPaise ?? 0,
+            couponMerchandiseDiscountPaise: coupon?.merchandiseDiscountPaise ?? 0,
+            couponShippingDiscountPaise: coupon?.shippingDiscountPaise ?? 0,
+            couponFundingSource: coupon?.fundingSource ?? null,
             totalPaise,
             buyerCurrency: market.currency,
             buyerPlatformFeeMinor,
@@ -829,18 +1001,22 @@ export class OrdersService {
         },
       });
 
-      return order.id;
+      return { orderId: order.id, recovered: false };
     });
 
-    const order = await this.getOrderByIdOrThrow(orderId);
-    await this.notifyOrderPlaced(order);
-    await this.notifyShipmentRoutingOperations(order);
+    const order = await this.getOrderByIdOrThrow(orderPlacement.orderId);
+    if (!orderPlacement.recovered) {
+      await this.runOrderPlacedSideEffects(order);
+    }
     return order;
   }
 
   async listCustomerOrders(actor: RequestUser, query: OrderQueryDto) {
     const customer = await this.customersService.ensureCustomerForUser(actor);
-    const result = await this.listOrders({ ...this.orderQueryWhere(query), customerId: customer.id }, query);
+    const result = await this.listOrders(
+      { ...this.orderQueryWhere(query), customerId: customer.id },
+      query,
+    );
     return {
       ...result,
       items: result.items.map((order) => this.customerSafeOrder(order)),
@@ -885,6 +1061,13 @@ export class OrdersService {
       subtotalPaise: order.subtotalPaise,
       shippingPaise: order.shippingPaise,
       platformFeePaise: order.platformFeePaise,
+      couponCode: order.couponCode,
+      couponTitle: order.couponTitle,
+      couponDiscountPaise: order.couponDiscountPaise,
+      couponMerchandiseDiscountPaise: order.couponMerchandiseDiscountPaise,
+      couponShippingDiscountPaise: order.couponShippingDiscountPaise,
+      couponPlatformFundedDiscountPaise: order.couponPlatformFundedDiscountPaise,
+      couponSellerFundedDiscountPaise: order.couponSellerFundedDiscountPaise,
       totalPaise: order.totalPaise,
       currency: order.currency,
       buyerCountryCode: order.buyerCountryCode,
@@ -892,6 +1075,11 @@ export class OrdersService {
       buyerSubtotalMinor: order.buyerSubtotalMinor,
       buyerShippingMinor: order.buyerShippingMinor,
       buyerPlatformFeeMinor: order.buyerPlatformFeeMinor,
+      buyerPayableSubtotalMinor: this.orderBuyerMinor(
+        order,
+        Math.max(0, order.subtotalPaise - (order.couponMerchandiseDiscountPaise ?? 0)),
+      ),
+      buyerCouponDiscountMinor: this.orderBuyerMinor(order, order.couponDiscountPaise ?? 0),
       buyerTotalMinor: order.buyerTotalMinor,
       fxRate: order.fxRate?.toString() ?? null,
       fxProvider: order.fxProvider,
@@ -915,6 +1103,14 @@ export class OrdersService {
         unitPricePaise: item.unitPricePaise,
         lineTotalPaise: item.lineTotalPaise,
         currency: item.currency,
+        originalUnitPricePaise: item.originalUnitPricePaise,
+        dealDiscountBps: item.dealDiscountBps,
+        dealDiscountPaise: item.dealDiscountPaise,
+        dealId: item.dealId,
+        dealSnapshot: item.dealSnapshot,
+        couponDiscountPaise: item.couponDiscountPaise,
+        couponPlatformFundedDiscountPaise: item.couponPlatformFundedDiscountPaise,
+        couponSellerFundedDiscountPaise: item.couponSellerFundedDiscountPaise,
         product: item.product
           ? {
               name: item.product.name,
@@ -1020,13 +1216,14 @@ export class OrdersService {
         data: {
           status: DeliveryStatus.CANCELLED,
           assignmentStatus: DeliveryAssignmentStatus.CANCELLED,
+          assignmentExpiresAt: null,
         },
       });
 
       if (existing.deliveryDetail) {
         await tx.deliveryDetail.update({
           where: { orderId: existing.id },
-          data: { status: DeliveryStatus.CANCELLED },
+          data: { status: DeliveryStatus.CANCELLED, assignmentExpiresAt: null },
         });
       }
 
@@ -1053,6 +1250,13 @@ export class OrdersService {
           });
         }
       }
+
+      await this.couponsService.recordOrderCancellationAdjustment(
+        tx,
+        existing,
+        actor,
+        dto.note ?? "Customer cancelled order.",
+      );
 
       await tx.orderStatusEvent.create({
         data: {
@@ -1095,6 +1299,45 @@ export class OrdersService {
 
   async listAdminOrders(query: OrderQueryDto) {
     return this.listOrders(this.orderQueryWhere(query), query);
+  }
+
+  async getAdminOrderSummary() {
+    const [totalOrders, pendingOrders, completedOrders, inDeliveryOrders, cancelledOrders] =
+      await Promise.all([
+        this.prisma.client.order.count(),
+        this.prisma.client.order.count({
+          where: {
+            orderStatus: { in: [OrderStatus.PLACED, OrderStatus.CONFIRMED] },
+          },
+        }),
+        this.prisma.client.order.count({
+          where: {
+            orderStatus: OrderStatus.DELIVERED,
+          },
+        }),
+        this.prisma.client.order.count({
+          where: {
+            orderStatus: { notIn: [OrderStatus.CANCELLED, OrderStatus.DELIVERED] },
+            deliveryStatus: {
+              in: [DeliveryStatus.PACKED, DeliveryStatus.DISPATCHED, DeliveryStatus.IN_TRANSIT],
+            },
+          },
+        }),
+        this.prisma.client.order.count({
+          where: {
+            orderStatus: OrderStatus.CANCELLED,
+          },
+        }),
+      ]);
+
+    return {
+      totalOrders,
+      pendingOrders,
+      completedOrders,
+      inDeliveryOrders,
+      cancelledOrders,
+      generatedAt: new Date().toISOString(),
+    };
   }
 
   async getAdminOrder(orderNumber: string) {
@@ -1273,6 +1516,12 @@ export class OrdersService {
     await this.getDeliveryPartnerUserOrThrow(actor.id);
 
     const payoutId = await this.prisma.client.$transaction(async (tx) => {
+      await tx.$queryRaw`
+        SELECT id
+        FROM users
+        WHERE id = ${actor.id}::uuid
+        FOR UPDATE
+      `;
       const summary = await this.deliveryPartnerWalletSummary(actor.id, tx);
       if (!summary.payoutRequestsEnabled) {
         throw new BadRequestException("Delivery partner payout requests are disabled by admin.");
@@ -1378,11 +1627,7 @@ export class OrdersService {
     return this.deliveryPartnerPayoutReadback(payout);
   }
 
-  async approveDeliveryPartnerPayout(
-    payoutId: string,
-    dto: PayoutActionDto,
-    actor: RequestUser,
-  ) {
+  async approveDeliveryPartnerPayout(payoutId: string, dto: PayoutActionDto, actor: RequestUser) {
     await this.prisma.client.$transaction(async (tx) => {
       const payout = await tx.deliveryPartnerPayout.findUnique({ where: { id: payoutId } });
       if (!payout) {
@@ -1422,11 +1667,7 @@ export class OrdersService {
     return this.getDeliveryPartnerPayout(payoutId);
   }
 
-  async rejectDeliveryPartnerPayout(
-    payoutId: string,
-    dto: PayoutActionDto,
-    actor: RequestUser,
-  ) {
+  async rejectDeliveryPartnerPayout(payoutId: string, dto: PayoutActionDto, actor: RequestUser) {
     const rejectableStatuses: DeliveryPartnerPayoutStatus[] = [
       DeliveryPartnerPayoutStatus.REQUESTED,
       DeliveryPartnerPayoutStatus.APPROVED,
@@ -1595,6 +1836,7 @@ export class OrdersService {
       deliveryStatus: {
         in: [DeliveryStatus.PACKED, DeliveryStatus.PENDING],
       },
+      ...this.deliveryPartnerReadyOrderWhere(),
       deliveryDetail: {
         is: {
           assignmentStatus: {
@@ -1692,6 +1934,7 @@ export class OrdersService {
     ) {
       throw new BadRequestException("Auto assignment is available after the order is packed.");
     }
+    this.assertOrderReadyForDeliveryPartnerAssignment(order);
     if (order.deliveryDetail?.deliveryMode !== DeliveryMode.LOCAL_DELIVERY_PARTNER) {
       throw new BadRequestException(
         "Auto assignment is only available for Local Delivery Partner mode.",
@@ -1712,6 +1955,11 @@ export class OrdersService {
     const partnerUserId = dto.deliveryPartnerUserId ?? null;
     const isUnassign = !partnerUserId;
     const now = new Date();
+    const assignmentExpiresAt = isUnassign ? null : this.deliveryAssignmentExpiresAt(now);
+
+    if (!isUnassign) {
+      this.assertOrderReadyForDeliveryPartnerAssignment(order);
+    }
 
     const orderId = await this.prisma.client.$transaction(async (tx) => {
       if (partnerUserId) {
@@ -1760,6 +2008,7 @@ export class OrdersService {
           assignedAt: isUnassign ? null : now,
           acceptedAt: null,
           rejectedAt: null,
+          assignmentExpiresAt,
           assignmentNote: dto.assignmentNote ?? null,
           ...(nextTrackingReference ? { trackingReference: nextTrackingReference } : {}),
         },
@@ -1772,6 +2021,7 @@ export class OrdersService {
             ? DeliveryAssignmentStatus.UNASSIGNED
             : DeliveryAssignmentStatus.ASSIGNED,
           assignedAt: isUnassign ? null : now,
+          assignmentExpiresAt,
           assignmentNote: dto.assignmentNote ?? null,
           trackingReference: nextTrackingReference ?? null,
         },
@@ -1791,6 +2041,7 @@ export class OrdersService {
           assignedAt: isUnassign ? null : now,
           acceptedAt: null,
           rejectedAt: null,
+          assignmentExpiresAt,
           assignmentNote: dto.assignmentNote ?? null,
         },
       });
@@ -1877,6 +2128,11 @@ export class OrdersService {
     }
 
     const updatedOrderId = await this.prisma.client.$transaction(async (tx) => {
+      const assignmentNow = new Date();
+      const shipmentAssignmentExpiresAt =
+        nextModeUsesLocalPartner && dto.deliveryPartnerUserId
+          ? this.deliveryAssignmentExpiresAt(assignmentNow)
+          : null;
       const updatedShipment = await tx.orderShipment.update({
         where: { id: shipment.id },
         data: {
@@ -1897,9 +2153,11 @@ export class OrdersService {
                   nextModeUsesLocalPartner && dto.deliveryPartnerUserId
                     ? DeliveryAssignmentStatus.ASSIGNED
                     : DeliveryAssignmentStatus.UNASSIGNED,
-                assignedAt: nextModeUsesLocalPartner && dto.deliveryPartnerUserId ? new Date() : null,
+                assignedAt:
+                  nextModeUsesLocalPartner && dto.deliveryPartnerUserId ? assignmentNow : null,
                 acceptedAt: null,
                 rejectedAt: null,
+                assignmentExpiresAt: shipmentAssignmentExpiresAt,
               }
             : nextModeUsesLocalPartner
               ? {}
@@ -1909,6 +2167,7 @@ export class OrdersService {
                   assignedAt: null,
                   acceptedAt: null,
                   rejectedAt: null,
+                  assignmentExpiresAt: null,
                 }),
           ...(dto.trackingReference !== undefined
             ? { trackingReference: this.normalizeTrackingReference(dto.trackingReference) }
@@ -1923,13 +2182,15 @@ export class OrdersService {
           ...(dto.deliveryNote !== undefined ? { deliveryNote: dto.deliveryNote ?? null } : {}),
           ...(dto.receiverName !== undefined ? { receiverName: dto.receiverName ?? null } : {}),
           ...(dto.proofNote !== undefined ? { proofNote: dto.proofNote ?? null } : {}),
-          ...(dto.proofReference !== undefined ? { proofReference: dto.proofReference ?? null } : {}),
+          ...(dto.proofReference !== undefined
+            ? { proofReference: dto.proofReference ?? null }
+            : {}),
           ...(dto.status !== undefined ? { status: dto.status } : {}),
           routingFailed: false,
           routingFailureReason: null,
           routingFailureNote: null,
           routingPermanentFailureAt: null,
-          routingLastAttemptAt: new Date(),
+          routingLastAttemptAt: assignmentNow,
           assignmentNote:
             dto.deliveryNote ??
             (nextMode === DeliveryMode.MANUAL_TRANSPORT
@@ -1940,7 +2201,12 @@ export class OrdersService {
 
       const allShipments = await tx.orderShipment.findMany({
         where: { orderId: order.id },
-        select: { deliveryMode: true, routingFailed: true, routingFailureReason: true, routingFailureNote: true },
+        select: {
+          deliveryMode: true,
+          routingFailed: true,
+          routingFailureReason: true,
+          routingFailureNote: true,
+        },
       });
       const nextSummaryMode = this.summaryDeliveryMode(
         allShipments.map((item) => item.deliveryMode),
@@ -2104,7 +2370,19 @@ export class OrdersService {
       );
     }
 
+    const now = new Date();
+    if (this.deliveryAssignmentExpired(order.deliveryDetail.assignmentExpiresAt, now)) {
+      await this.releaseExpiredDeliveryAssignmentForPartner(order, actor.id, now);
+      throw new BadRequestException(
+        "This delivery assignment expired because it was not accepted within 110 minutes. Refresh your assigned orders.",
+      );
+    }
+
     const accepting = dto.decision === DeliveryAssignmentDecision.ACCEPT;
+    if (accepting) {
+      this.assertOrderReadyForDeliveryPartnerAssignment(order);
+    }
+
     const orderId = await this.prisma.client.$transaction(async (tx) => {
       const respondedAt = new Date();
       const deliveryUpdate = await tx.deliveryDetail.updateMany({
@@ -2118,6 +2396,7 @@ export class OrdersService {
               assignmentStatus: DeliveryAssignmentStatus.ACCEPTED,
               acceptedAt: respondedAt,
               rejectedAt: null,
+              assignmentExpiresAt: null,
               assignmentNote: dto.note ?? order.deliveryDetail!.assignmentNote,
             }
           : {
@@ -2125,6 +2404,7 @@ export class OrdersService {
               assignmentStatus: DeliveryAssignmentStatus.REJECTED,
               rejectedAt: respondedAt,
               acceptedAt: null,
+              assignmentExpiresAt: null,
               assignmentNote: dto.note ?? "Rejected by delivery partner.",
             },
       });
@@ -2175,6 +2455,7 @@ export class OrdersService {
               assignmentStatus: DeliveryAssignmentStatus.ACCEPTED,
               acceptedAt: respondedAt,
               rejectedAt: null,
+              assignmentExpiresAt: null,
               assignmentNote: dto.note ?? order.deliveryDetail!.assignmentNote,
             }
           : {
@@ -2182,6 +2463,7 @@ export class OrdersService {
               assignmentStatus: DeliveryAssignmentStatus.REJECTED,
               rejectedAt: respondedAt,
               acceptedAt: null,
+              assignmentExpiresAt: null,
               assignmentNote: dto.note ?? "Rejected by delivery partner.",
             },
       });
@@ -2241,6 +2523,7 @@ export class OrdersService {
     if (order.deliveryDetail.assignmentStatus !== DeliveryAssignmentStatus.ACCEPTED) {
       throw new BadRequestException("Accept the delivery assignment before recording attempts.");
     }
+    this.assertOrderReadyForDeliveryPartnerAssignment(order);
 
     const orderId = await this.prisma.client.$transaction(async (tx) => {
       const attemptedAt = dto.attemptedAt ? new Date(dto.attemptedAt) : new Date();
@@ -2340,6 +2623,10 @@ export class OrdersService {
 
     if (!dto.orderStatus && !dto.paymentStatus) {
       throw new BadRequestException("At least one status must be provided.");
+    }
+
+    if (dto.orderStatus) {
+      this.assertOrderStatusTransition(existing.orderStatus, dto.orderStatus);
     }
 
     const isCancellingOrder =
@@ -2471,6 +2758,7 @@ export class OrdersService {
           data: {
             status: DeliveryStatus.CANCELLED,
             assignmentStatus: DeliveryAssignmentStatus.CANCELLED,
+            assignmentExpiresAt: null,
           },
         });
 
@@ -2480,6 +2768,7 @@ export class OrdersService {
             data: {
               status: DeliveryStatus.CANCELLED,
               assignmentStatus: DeliveryAssignmentStatus.CANCELLED,
+              assignmentExpiresAt: null,
             },
           });
         }
@@ -2487,6 +2776,13 @@ export class OrdersService {
         await this.sellerLedgerService.recordRefundAdjustmentForOrder(
           tx,
           existing.id,
+          actor,
+          dto.note ?? "Order cancelled by admin.",
+        );
+
+        await this.couponsService.recordOrderCancellationAdjustment(
+          tx,
+          existing,
           actor,
           dto.note ?? "Order cancelled by admin.",
         );
@@ -2842,9 +3138,7 @@ export class OrdersService {
         order.deliveryStatus,
         nextSplits,
       );
-      const nextDeliveryStatus = requestedDeliveryStatus
-        ? this.advanceDeliveryStatus(rollupDeliveryStatus, requestedDeliveryStatus)
-        : rollupDeliveryStatus;
+      const nextDeliveryStatus = rollupDeliveryStatus;
       const orderStatusChanged = nextOrderStatus !== order.orderStatus;
       const deliveryStatusChanged = nextDeliveryStatus !== order.deliveryStatus;
       const deliveryDetailStatusChanged =
@@ -2986,7 +3280,10 @@ export class OrdersService {
     });
 
     let order = await this.getOrderByIdOrThrow(result.orderId);
-    if (result.deliveryStatusChanged && result.nextDeliveryStatus === DeliveryStatus.PACKED) {
+    if (
+      result.nextDeliveryStatus === DeliveryStatus.PACKED &&
+      this.orderReadyForDeliveryPartnerAssignment(order)
+    ) {
       order = await this.autoAssignPackedDelivery(
         order,
         actor,
@@ -3052,6 +3349,22 @@ export class OrdersService {
     }
 
     const previousDelivery = order.deliveryDetail;
+    const requestedTrackingReference =
+      dto.trackingReference !== undefined
+        ? this.normalizeTrackingReference(dto.trackingReference)
+        : undefined;
+    if (options.deliveryPartnerOnly && dto.trackingReference !== undefined) {
+      const existingTrackingReference = previousDelivery?.trackingReference ?? null;
+      if (requestedTrackingReference !== existingTrackingReference) {
+        throw new BadRequestException(
+          "Tracking reference is generated during assignment and cannot be edited by delivery partners.",
+        );
+      }
+    }
+
+    if (options.deliveryPartnerOnly) {
+      this.assertOrderReadyForDeliveryPartnerAssignment(order);
+    }
     if (
       options.deliveryPartnerOnly &&
       previousDelivery?.assignmentStatus !== DeliveryAssignmentStatus.ACCEPTED
@@ -3075,6 +3388,9 @@ export class OrdersService {
         "Local delivery partners can only be assigned when delivery mode is Local Delivery Partner.",
       );
     }
+    if (canAssignDeliveryPartner && dto.deliveryPartnerUserId) {
+      this.assertOrderReadyForDeliveryPartnerAssignment(order);
+    }
     const nextDeliveryPartnerUserId =
       canAssignDeliveryPartner && nextModeUsesLocalPartner
         ? (dto.deliveryPartnerUserId ?? null)
@@ -3087,10 +3403,6 @@ export class OrdersService {
       Boolean(previousDelivery?.deliveryPartnerUserId);
     const shouldUpdatePartnerAssignment =
       canAssignDeliveryPartner || shouldClearLocalPartnerForMode;
-    const requestedTrackingReference =
-      dto.trackingReference !== undefined
-        ? this.normalizeTrackingReference(dto.trackingReference)
-        : undefined;
     const manualTrackingReference = requestedTrackingReference ?? undefined;
     const trackingReferenceProvided = manualTrackingReference !== undefined;
     const shouldGenerateTrackingReference = this.shouldGenerateTrackingReference({
@@ -3110,12 +3422,34 @@ export class OrdersService {
     const sellerShipment = seller
       ? order.shipments.find((shipment) => shipment.sellerId === seller.id)
       : null;
+    const sellerSplitForDeliveryAggregate = seller
+      ? order.sellerSplits.find((sellerSplit) => sellerSplit.sellerId === seller.id)
+      : null;
+    const derivedSellerStatusForDeliveryAggregate = seller
+      ? this.sellerStatusFromDeliveryStatus(nextStatus)
+      : null;
+    const aggregateSplitsForDeliveryStatus =
+      seller && sellerSplitForDeliveryAggregate && derivedSellerStatusForDeliveryAggregate
+        ? this.replaceSellerSplitStatus(
+            order.sellerSplits,
+            sellerSplitForDeliveryAggregate.id,
+            derivedSellerStatusForDeliveryAggregate,
+          )
+        : order.sellerSplits;
+    const nextOrderDeliveryStatus = seller
+      ? this.resolveDeliveryStatusFromSellerSplits(
+          order.deliveryStatus,
+          aggregateSplitsForDeliveryStatus,
+        )
+      : nextStatus;
 
-    if ((options.sellerOnly || options.deliveryPartnerOnly) && previousDelivery?.status) {
-      this.assertDeliveryStatusTransition(previousDelivery.status, nextStatus);
-    }
-    if (options.sellerOnly && sellerShipment?.status) {
-      this.assertDeliveryStatusTransition(sellerShipment.status, nextStatus);
+    if (dto.status !== undefined) {
+      this.assertDeliveryStatusTransition(
+        options.sellerOnly && sellerShipment?.status
+          ? sellerShipment.status
+          : (previousDelivery?.status ?? order.deliveryStatus),
+        nextStatus,
+      );
     }
     if (options.sellerOnly && nextStatus === DeliveryStatus.CANCELLED) {
       const split = order.sellerSplits.find((sellerSplit) => sellerSplit.sellerId === seller?.id);
@@ -3131,6 +3465,9 @@ export class OrdersService {
       }
 
       const assignmentNow = new Date();
+      const assignmentExpiresAt = nextDeliveryPartnerUserId
+        ? this.deliveryAssignmentExpiresAt(assignmentNow)
+        : null;
       const nextTrackingReference =
         manualTrackingReference !== undefined
           ? manualTrackingReference
@@ -3157,6 +3494,7 @@ export class OrdersService {
                 assignedAt: nextDeliveryPartnerUserId ? assignmentNow : null,
                 acceptedAt: null,
                 rejectedAt: null,
+                assignmentExpiresAt,
                 assignmentNote: nextDeliveryPartnerUserId
                   ? (dto.deliveryNote ?? "Delivery partner assigned by admin.")
                   : (dto.deliveryNote ?? "Delivery partner unassigned for this delivery mode."),
@@ -3179,7 +3517,7 @@ export class OrdersService {
           ...(dto.proofReference !== undefined
             ? { proofReference: dto.proofReference ?? null }
             : {}),
-          status: nextStatus,
+          status: nextOrderDeliveryStatus,
         },
         create: {
           orderId: order.id,
@@ -3197,6 +3535,7 @@ export class OrdersService {
                   ? DeliveryAssignmentStatus.ASSIGNED
                   : DeliveryAssignmentStatus.UNASSIGNED,
                 assignedAt: nextDeliveryPartnerUserId ? assignmentNow : null,
+                assignmentExpiresAt,
                 assignmentNote: nextDeliveryPartnerUserId
                   ? (dto.deliveryNote ?? "Delivery partner assigned by admin.")
                   : (dto.deliveryNote ?? "Delivery partner unassigned for this delivery mode."),
@@ -3211,7 +3550,7 @@ export class OrdersService {
           receiverName: dto.receiverName ?? null,
           proofNote: dto.proofNote ?? null,
           proofReference: dto.proofReference ?? null,
-          status: nextStatus,
+          status: nextOrderDeliveryStatus,
         },
       });
 
@@ -3267,6 +3606,7 @@ export class OrdersService {
             assignedAt: nextDeliveryPartnerUserId ? assignmentNow : null,
             acceptedAt: null,
             rejectedAt: null,
+            assignmentExpiresAt,
             assignmentNote: nextDeliveryPartnerUserId
               ? (dto.deliveryNote ?? "Delivery partner assigned by admin.")
               : (dto.deliveryNote ?? "Delivery partner unassigned for this delivery mode."),
@@ -3360,8 +3700,9 @@ export class OrdersService {
         });
       }
 
-      const deliveryStatusChanged = nextStatus !== order.deliveryStatus;
-      const deliveryDetailStatusChanged = nextStatus !== (previousDelivery?.status ?? null);
+      const deliveryStatusChanged = nextOrderDeliveryStatus !== order.deliveryStatus;
+      const deliveryDetailStatusChanged =
+        nextOrderDeliveryStatus !== (previousDelivery?.status ?? null);
       if (deliveryDetailStatusChanged) {
         await tx.orderStatusEvent.create({
           data: {
@@ -3504,7 +3845,7 @@ export class OrdersService {
         await this.markSellerSplitsSettlementEligible(tx, order.id);
       }
 
-      if (nextStatus === DeliveryStatus.DELIVERED) {
+      if (delivery.status === DeliveryStatus.DELIVERED) {
         await this.creditLocalDeliveryPartnerEarnings(tx, {
           orderId: order.id,
           deliveryDetailId: delivery.id,
@@ -3533,7 +3874,7 @@ export class OrdersService {
       return {
         orderId: order.id,
         deliveryStatusChanged,
-        nextStatus,
+        nextStatus: delivery.status,
         orderStatusChanged,
         nextOrderStatus,
         codCollectionRecorded: Boolean(codCollectionData),
@@ -3543,9 +3884,9 @@ export class OrdersService {
 
     let orderWithDelivery = await this.getOrderByIdOrThrow(result.orderId);
     if (
-      result.deliveryStatusChanged &&
       result.nextStatus === DeliveryStatus.PACKED &&
-      !result.deliveryPartnerAssigned
+      !result.deliveryPartnerAssigned &&
+      this.orderReadyForDeliveryPartnerAssignment(orderWithDelivery)
     ) {
       orderWithDelivery = await this.autoAssignPackedDelivery(
         orderWithDelivery,
@@ -3608,7 +3949,14 @@ export class OrdersService {
   private customerSafeOrder(order: OrderWithRelations) {
     return {
       ...order,
-      deliveryDetail: this.customerSafeDeliveryDetail(order.deliveryDetail, { publicLookup: false }),
+      buyerPayableSubtotalMinor: this.orderBuyerMinor(
+        order,
+        Math.max(0, order.subtotalPaise - (order.couponMerchandiseDiscountPaise ?? 0)),
+      ),
+      buyerCouponDiscountMinor: this.orderBuyerMinor(order, order.couponDiscountPaise ?? 0),
+      deliveryDetail: this.customerSafeDeliveryDetail(order.deliveryDetail, {
+        publicLookup: false,
+      }),
       sellerSplits: order.sellerSplits.map((split) => ({
         ...split,
         shipment: split.shipment
@@ -3621,6 +3969,37 @@ export class OrdersService {
     };
   }
 
+  private orderBuyerMinor(
+    order: Pick<OrderWithRelations, "buyerCurrency" | "currency" | "fxRate">,
+    baseMinor: number,
+  ) {
+    if (!order.buyerCurrency || order.buyerCurrency === order.currency) {
+      return baseMinor;
+    }
+
+    const rate = order.fxRate?.toNumber();
+    if (!rate || !Number.isFinite(rate) || rate <= 0) {
+      return null;
+    }
+
+    return Math.round((Math.max(0, baseMinor) / 100) * rate * 100);
+  }
+
+  private normalizeOrderIdempotencyKey(value: string | undefined) {
+    const key = value?.trim();
+    return key || null;
+  }
+
+  private findCustomerOrderByIdempotencyKey(customerId: string, idempotencyKey: string) {
+    return this.prisma.client.order.findFirst({
+      where: {
+        customerId,
+        idempotencyKey,
+      },
+      include: orderInclude,
+    });
+  }
+
   private customerSafeDeliveryDetail(
     delivery: OrderWithRelations["deliveryDetail"],
     options: { publicLookup: boolean },
@@ -3631,11 +4010,31 @@ export class OrdersService {
 
     return {
       deliveryMode: delivery.deliveryMode,
-      partnerName: options.publicLookup ? null : delivery.partnerName,
-      partnerPhone: options.publicLookup ? null : delivery.partnerPhone,
+      partnerName: options.publicLookup
+        ? null
+        : (delivery.partnerName ?? delivery.deliveryPartner?.fullName ?? null),
+      partnerPhone: options.publicLookup
+        ? null
+        : (delivery.partnerPhone ??
+          delivery.deliveryPartner?.deliveryProfile?.phone ??
+          delivery.deliveryPartner?.phone ??
+          null),
+      deliveryPartner:
+        options.publicLookup || !delivery.deliveryPartner
+          ? null
+          : {
+              id: delivery.deliveryPartner.id,
+              fullName: delivery.deliveryPartner.fullName,
+              phone:
+                delivery.deliveryPartner.deliveryProfile?.phone ??
+                delivery.deliveryPartner.phone ??
+                null,
+              vehicleNumber: delivery.deliveryPartner.deliveryProfile?.vehicleNumber ?? null,
+            },
       assignmentStatus: delivery.assignmentStatus,
       assignedAt: delivery.assignedAt,
       acceptedAt: delivery.acceptedAt,
+      assignmentExpiresAt: options.publicLookup ? null : delivery.assignmentExpiresAt,
       trackingReference: options.publicLookup ? null : delivery.trackingReference,
       estimatedDeliveryDate: delivery.estimatedDeliveryDate,
       deliveryNote: delivery.deliveryNote,
@@ -3651,7 +4050,9 @@ export class OrdersService {
   }
 
   private customerSafeShipmentReadback(
-    shipment: OrderWithRelations["shipments"][number] | NonNullable<OrderWithRelations["sellerSplits"][number]["shipment"]>,
+    shipment:
+      | OrderWithRelations["shipments"][number]
+      | NonNullable<OrderWithRelations["sellerSplits"][number]["shipment"]>,
     options: { publicLookup: boolean },
   ) {
     const seller = "seller" in shipment ? shipment.seller : null;
@@ -3672,8 +4073,28 @@ export class OrdersService {
       deliveryMode: shipment.deliveryMode,
       status: shipment.status,
       assignmentStatus: shipment.assignmentStatus,
-      partnerName: options.publicLookup ? null : shipment.partnerName,
-      partnerPhone: options.publicLookup ? null : shipment.partnerPhone,
+      assignmentExpiresAt: options.publicLookup ? null : shipment.assignmentExpiresAt,
+      partnerName: options.publicLookup
+        ? null
+        : (shipment.partnerName ?? shipment.deliveryPartner?.fullName ?? null),
+      partnerPhone: options.publicLookup
+        ? null
+        : (shipment.partnerPhone ??
+          shipment.deliveryPartner?.deliveryProfile?.phone ??
+          shipment.deliveryPartner?.phone ??
+          null),
+      deliveryPartner:
+        options.publicLookup || !shipment.deliveryPartner
+          ? null
+          : {
+              id: shipment.deliveryPartner.id,
+              fullName: shipment.deliveryPartner.fullName,
+              phone:
+                shipment.deliveryPartner.deliveryProfile?.phone ??
+                shipment.deliveryPartner.phone ??
+                null,
+              vehicleNumber: shipment.deliveryPartner.deliveryProfile?.vehicleNumber ?? null,
+            },
       trackingReference: options.publicLookup ? null : shipment.trackingReference,
       estimatedDeliveryDate: shipment.estimatedDeliveryDate,
       deliveryNote: shipment.deliveryNote,
@@ -3711,14 +4132,17 @@ export class OrdersService {
       courierTrackingStatus: courierPackage?.trackingStatus ?? CourierShipmentStatus.NOT_BOOKED,
       courierTrackingStatusLabel: courierPackage?.trackingStatusLabel ?? null,
       trackingUrl: courierPackage?.trackingUrl ?? null,
-      shipmentBookedAt: courierPackage?.bookedAt ?? courierPackage?.courierConsignment.bookedAt ?? null,
+      shipmentBookedAt:
+        courierPackage?.bookedAt ?? courierPackage?.courierConsignment.bookedAt ?? null,
       canDownloadLabel: false,
       labelDownloadUrl: null,
     };
   }
 
   private shipmentReadback(
-    shipment: OrderWithRelations["shipments"][number] | NonNullable<OrderWithRelations["sellerSplits"][number]["shipment"]>,
+    shipment:
+      | OrderWithRelations["shipments"][number]
+      | NonNullable<OrderWithRelations["sellerSplits"][number]["shipment"]>,
     options: { sellerLabelAccess: boolean },
   ) {
     return {
@@ -3743,9 +4167,9 @@ export class OrdersService {
     const courierPackage = shipmentPackage.courierPackages[0] ?? null;
     const canDownloadLabel = Boolean(
       options.sellerLabelAccess &&
-        shipmentPackage.deliveryMode === DeliveryMode.THIRD_PARTY_COURIER &&
-        courierPackage?.labelUrl &&
-        !labelDownloadBlockedStatuses.has(courierPackage.trackingStatus),
+      shipmentPackage.deliveryMode === DeliveryMode.THIRD_PARTY_COURIER &&
+      courierPackage?.labelUrl &&
+      !labelDownloadBlockedStatuses.has(courierPackage.trackingStatus),
     );
 
     return {
@@ -3776,14 +4200,17 @@ export class OrdersService {
       updatedAt: shipmentPackage.updatedAt,
       awbNumber: courierPackage?.awbNumber ?? null,
       courierName: courierPackage?.courierName ?? null,
-      courierCode: courierPackage?.courierCode ?? courierPackage?.courierConsignment.providerCode ?? null,
+      courierCode:
+        courierPackage?.courierCode ?? courierPackage?.courierConsignment.providerCode ?? null,
       courierTrackingStatus: courierPackage?.trackingStatus ?? CourierShipmentStatus.NOT_BOOKED,
       courierTrackingStatusLabel: courierPackage?.trackingStatusLabel ?? null,
       trackingUrl: courierPackage?.trackingUrl ?? null,
-      shippingZone: courierPackage?.shippingZone ?? courierPackage?.courierConsignment.shippingZone ?? null,
+      shippingZone:
+        courierPackage?.shippingZone ?? courierPackage?.courierConsignment.shippingZone ?? null,
       providerRawStatus: courierPackage?.providerRawStatus ?? null,
       providerRawStatusCode: courierPackage?.providerRawStatusCode ?? null,
-      shipmentBookedAt: courierPackage?.bookedAt ?? courierPackage?.courierConsignment.bookedAt ?? null,
+      shipmentBookedAt:
+        courierPackage?.bookedAt ?? courierPackage?.courierConsignment.bookedAt ?? null,
       canDownloadLabel,
       labelDownloadUrl: canDownloadLabel
         ? `/api/seller/packages/${encodeURIComponent(shipmentPackage.id)}/label`
@@ -3813,8 +4240,15 @@ export class OrdersService {
       throw new BadRequestException("Delivered or cancelled seller orders cannot be changed.");
     }
 
-    if (sellerStatusRank[next] <= sellerStatusRank[current]) {
-      throw new BadRequestException("Seller order status can only move forward.");
+    const expected = nextWorkflowStatus(sellerStatusFlow, current);
+    if (next !== expected) {
+      throw new BadRequestException(
+        expected
+          ? `Seller order status must move step by step. ${workflowStatusLabel(
+              current,
+            )} can only move to ${workflowStatusLabel(expected)}.`
+          : "Seller order status cannot move beyond its final step.",
+      );
     }
   }
 
@@ -3857,8 +4291,123 @@ export class OrdersService {
       throw new BadRequestException("Delivered or cancelled deliveries cannot be changed.");
     }
 
-    if (deliveryStatusRank[next] < deliveryStatusRank[current]) {
-      throw new BadRequestException("Delivery status cannot move backwards.");
+    if (next === DeliveryStatus.CANCELLED) {
+      return;
+    }
+
+    const expected = nextWorkflowStatus(deliveryStatusFlow, current);
+    if (next !== expected) {
+      throw new BadRequestException(
+        expected
+          ? `Delivery status must move step by step. ${workflowStatusLabel(
+              current,
+            )} can only move to ${workflowStatusLabel(expected)}.`
+          : "Delivery status cannot move beyond its final step.",
+      );
+    }
+  }
+
+  private assertOrderStatusTransition(current: OrderStatus, next: OrderStatus) {
+    if (current === next) {
+      return;
+    }
+
+    if (current === OrderStatus.DELIVERED || current === OrderStatus.CANCELLED) {
+      throw new BadRequestException("Delivered or cancelled orders cannot be changed.");
+    }
+
+    if (next === OrderStatus.CANCELLED) {
+      return;
+    }
+
+    const expected = nextWorkflowStatus(orderStatusFlow, current);
+    if (next !== expected) {
+      throw new BadRequestException(
+        expected
+          ? `Order status must move step by step. ${workflowStatusLabel(
+              current,
+            )} can only move to ${workflowStatusLabel(expected)}.`
+          : "Order status cannot move beyond its final step.",
+      );
+    }
+  }
+
+  private deliveryPartnerReadyOrderWhere(): Prisma.OrderWhereInput {
+    return {
+      sellerSplits: {
+        some: {
+          sellerStatus: {
+            not: SellerOrderStatus.CANCELLED,
+          },
+          shipment: {
+            is: {
+              status: {
+                in: [DeliveryStatus.PACKED, DeliveryStatus.DISPATCHED, DeliveryStatus.IN_TRANSIT],
+              },
+            },
+          },
+        },
+        none: {
+          sellerStatus: {
+            not: SellerOrderStatus.CANCELLED,
+          },
+          OR: [
+            {
+              sellerStatus: {
+                in: [SellerOrderStatus.PENDING, SellerOrderStatus.ACCEPTED],
+              },
+            },
+            {
+              shipment: {
+                is: null,
+              },
+            },
+            {
+              shipment: {
+                is: {
+                  status: {
+                    in: [DeliveryStatus.NOT_ASSIGNED, DeliveryStatus.PENDING],
+                  },
+                },
+              },
+            },
+          ],
+        },
+      },
+    };
+  }
+
+  private orderReadyForDeliveryPartnerAssignment(
+    order: Pick<OrderWithRelations, "sellerSplits" | "shipments">,
+  ) {
+    const activeSplits = order.sellerSplits.filter(
+      (split) => split.sellerStatus !== SellerOrderStatus.CANCELLED,
+    );
+
+    return (
+      activeSplits.length > 0 &&
+      activeSplits.every((split) => {
+        const shipment = order.shipments.find((item) => item.orderSellerSplitId === split.id);
+
+        return (
+          sellerStatusRank[split.sellerStatus] >= sellerStatusRank[SellerOrderStatus.PROCESSING] &&
+          Boolean(
+            shipment &&
+            deliveryStatusRank[shipment.status] >= deliveryStatusRank[DeliveryStatus.PACKED] &&
+            shipment.status !== DeliveryStatus.CANCELLED,
+          )
+        );
+      })
+    );
+  }
+
+  private assertOrderReadyForDeliveryPartnerAssignment(
+    order: Pick<OrderWithRelations, "sellerSplits" | "shipments">,
+  ) {
+    if (!this.orderReadyForDeliveryPartnerAssignment(order)) {
+      throw new BadRequestException(
+        "Delivery partner assignment is available only after every active seller has packed their items.",
+      );
     }
   }
 
@@ -3932,7 +4481,7 @@ export class OrdersService {
     }
 
     if (
-      activeSplits.some(
+      activeSplits.every(
         (split) =>
           split.sellerStatus === SellerOrderStatus.DISPATCHED ||
           split.sellerStatus === SellerOrderStatus.DELIVERED,
@@ -3941,7 +4490,12 @@ export class OrdersService {
       return this.advanceDeliveryStatus(currentStatus, DeliveryStatus.DISPATCHED);
     }
 
-    if (activeSplits.some((split) => split.sellerStatus === SellerOrderStatus.PROCESSING)) {
+    if (
+      activeSplits.every(
+        (split) =>
+          sellerStatusRank[split.sellerStatus] >= sellerStatusRank[SellerOrderStatus.PROCESSING],
+      )
+    ) {
       return this.advanceDeliveryStatus(currentStatus, DeliveryStatus.PACKED);
     }
 
@@ -4036,6 +4590,9 @@ export class OrdersService {
     if (order.deliveryDetail?.deliveryMode !== DeliveryMode.LOCAL_DELIVERY_PARTNER) {
       return order;
     }
+    if (!this.orderReadyForDeliveryPartnerAssignment(order)) {
+      return order;
+    }
 
     if (
       order.deliveryDetail?.deliveryPartnerUserId &&
@@ -4083,6 +4640,7 @@ export class OrdersService {
             assignedAt: null,
             acceptedAt: null,
             rejectedAt: null,
+            assignmentExpiresAt: null,
             assignmentNote,
           },
           create: {
@@ -4107,6 +4665,7 @@ export class OrdersService {
               ? courierFallback.codSurchargeSnapshot
               : Prisma.JsonNull,
             assignmentStatus: DeliveryAssignmentStatus.UNASSIGNED,
+            assignmentExpiresAt: null,
             assignmentNote,
           },
         });
@@ -4355,7 +4914,7 @@ export class OrdersService {
     const attempts = await this.prisma.client.deliveryAssignmentAttempt.findMany({
       where: {
         orderId,
-        status: DeliveryAssignmentStatus.REJECTED,
+        status: { in: [DeliveryAssignmentStatus.REJECTED, DeliveryAssignmentStatus.CANCELLED] },
       },
       select: {
         partnerUserId: true,
@@ -4986,7 +5545,9 @@ export class OrdersService {
         continue;
       }
 
-      const shippingAddress = this.readShippingAddressSnapshot(shipment.order.shippingAddressSnapshot);
+      const shippingAddress = this.readShippingAddressSnapshot(
+        shipment.order.shippingAddressSnapshot,
+      );
       const distanceResult = await this.deliveryPartnerEarningDistance(
         tx,
         shipment.seller.addresses[0],
@@ -5061,8 +5622,7 @@ export class OrdersService {
               codBonusPaise,
               formulaPaise,
               customerShippingPaise,
-              freeDeliveryPlatformSubsidyEnabled:
-                settings.freeDeliveryPlatformSubsidyEnabled,
+              freeDeliveryPlatformSubsidyEnabled: settings.freeDeliveryPlatformSubsidyEnabled,
               platformSubsidyPaise,
             },
           },
@@ -5109,12 +5669,7 @@ export class OrdersService {
         ? {
             latitude: pickupAddress.latitude,
             longitude: pickupAddress.longitude,
-            label: [
-              "Seller pickup",
-              pickupAddress.line1,
-              pickupAddress.city,
-              pickupAddress.pincode,
-            ]
+            label: ["Seller pickup", pickupAddress.line1, pickupAddress.city, pickupAddress.pincode]
               .filter(Boolean)
               .join(", "),
           }
@@ -5254,11 +5809,11 @@ export class OrdersService {
     const hasProfile = Boolean(user.deliveryProfile);
     const hasServiceCoverage = Boolean(
       profile.serviceCountryCode ||
-        profile.serviceStateCode ||
-        profile.serviceCityCode ||
-        profile.servicePincodes.length > 0 ||
-        profile.serviceLocalAreaCodes.length > 0 ||
-        profile.serviceRadiusKm,
+      profile.serviceStateCode ||
+      profile.serviceCityCode ||
+      profile.servicePincodes.length > 0 ||
+      profile.serviceLocalAreaCodes.length > 0 ||
+      profile.serviceRadiusKm,
     );
     const codLimitExceeded =
       profile.effectiveCodCashLimitPaise >= 0 &&
@@ -5457,7 +6012,24 @@ export class OrdersService {
       ...(query.deliveryStatus ? { deliveryStatus: query.deliveryStatus } : {}),
       ...(query.search
         ? {
-            OR: [{ orderNumber: { contains: query.search, mode: "insensitive" } }],
+            OR: [
+              { orderNumber: { contains: query.search, mode: "insensitive" } },
+              {
+                customer: {
+                  is: {
+                    user: {
+                      is: {
+                        OR: [
+                          { email: { contains: query.search, mode: "insensitive" } },
+                          { fullName: { contains: query.search, mode: "insensitive" } },
+                          { phone: { contains: query.search, mode: "insensitive" } },
+                        ],
+                      },
+                    },
+                  },
+                },
+              },
+            ],
           }
         : {}),
     };
@@ -5581,6 +6153,11 @@ export class OrdersService {
   }
 
   private async resolveShippingAddressSnapshot(customerId: string, dto: PlaceOrderDto) {
+    const deliveryPreference = this.resolveCheckoutDeliveryPreference(dto);
+    if (deliveryPreference === CheckoutDeliveryPreference.STORE_PICKUP) {
+      return null;
+    }
+
     if (dto.addressId) {
       const address = await this.customersService.getAddressForCustomerOrThrow(
         customerId,
@@ -5605,9 +6182,7 @@ export class OrdersService {
         locationSource: address.locationSource,
         accuracyMeters: address.accuracyMeters === null ? null : Number(address.accuracyMeters),
         locationConfidenceScore:
-          address.locationConfidenceScore === null
-            ? null
-            : Number(address.locationConfidenceScore),
+          address.locationConfidenceScore === null ? null : Number(address.locationConfidenceScore),
       };
     }
 
@@ -5702,6 +6277,49 @@ export class OrdersService {
     }
   }
 
+  private orderItemReturnPolicySnapshot(attributes: Prisma.JsonValue | null) {
+    const attributeRecord =
+      attributes && typeof attributes === "object" && !Array.isArray(attributes)
+        ? (attributes as Record<string, unknown>)
+        : {};
+
+    return {
+      returnEligibility:
+        this.stringAttribute(attributeRecord.returnEligibility) ??
+        this.stringAttribute(attributeRecord.returnPolicy) ??
+        "Returnable",
+      warranty: this.stringAttribute(attributeRecord.warranty) ?? null,
+      capturedAt: new Date().toISOString(),
+    };
+  }
+
+  private stringAttribute(value: unknown) {
+    return typeof value === "string" && value.trim() ? value.trim() : null;
+  }
+
+  private orderCouponItems(
+    items: Array<{
+      item: { id: string; quantity: number };
+      price: { effectiveUnitPricePaise: number };
+      product: {
+        id: string;
+        sellerId: string;
+        categoryId: string;
+        name: string;
+      };
+    }>,
+  ): CouponCheckoutItem[] {
+    return items.map(({ item, price, product }) => ({
+      key: item.id,
+      sellerId: product.sellerId,
+      productId: product.id,
+      categoryId: product.categoryId,
+      quantity: item.quantity,
+      lineTotalPaise: item.quantity * price.effectiveUnitPricePaise,
+      productName: product.name,
+    }));
+  }
+
   private checkoutSellerPackages(
     items: Array<{
       item: { quantity: number };
@@ -5712,6 +6330,9 @@ export class OrdersService {
         packageHeightCm?: number | null;
         attributes?: Prisma.JsonValue | null;
         pricePaise: number;
+      };
+      price: {
+        effectiveUnitPricePaise: number;
       };
       product: {
         sellerId: string;
@@ -5737,26 +6358,24 @@ export class OrdersService {
       }
     >();
 
-    for (const { item, variant, product } of items) {
-      const current =
-        packages.get(product.sellerId) ??
-        {
-          sellerId: product.sellerId,
-          sellerType: product.seller.sellerType,
-          subtotalPaise: 0,
-          package: {
-            weightGrams: 0,
-            lengthCm: 20,
-            breadthCm: 15,
-            heightCm: 8,
-            itemCount: 0,
-          },
-        };
+    for (const { item, variant, product, price } of items) {
+      const current = packages.get(product.sellerId) ?? {
+        sellerId: product.sellerId,
+        sellerType: product.seller.sellerType,
+        subtotalPaise: 0,
+        package: {
+          weightGrams: 0,
+          lengthCm: 20,
+          breadthCm: 15,
+          heightCm: 8,
+          itemCount: 0,
+        },
+      };
       const itemWeightGrams = this.positiveInt(
         variant.packageWeightGrams ?? this.jsonNumber(variant.attributes, "packageWeightGrams"),
         500,
       );
-      current.subtotalPaise += item.quantity * variant.pricePaise;
+      current.subtotalPaise += item.quantity * price.effectiveUnitPricePaise;
       current.package.weightGrams += itemWeightGrams * item.quantity;
       current.package.lengthCm = Math.max(
         current.package.lengthCm,
@@ -5796,7 +6415,11 @@ export class OrdersService {
     routings: Array<{ quote: DeliveryRoutingQuote }>,
     fallback: DeliveryRoutingQuote | null,
   ) {
-    return routings.find((routing) => routing.quote.routingFailed)?.quote ?? routings[0]?.quote ?? fallback;
+    return (
+      routings.find((routing) => routing.quote.routingFailed)?.quote ??
+      routings[0]?.quote ??
+      fallback
+    );
   }
 
   private summaryDeliveryMode(modes: DeliveryMode[], fallback?: DeliveryMode) {
@@ -5813,9 +6436,7 @@ export class OrdersService {
     return DeliveryMode.THIRD_PARTY_COURIER;
   }
 
-  private shipmentRoutingAssignmentNote(
-    routing: DeliveryRoutingQuote | null,
-  ) {
+  private shipmentRoutingAssignmentNote(routing: DeliveryRoutingQuote | null) {
     if (!routing) {
       return null;
     }
@@ -6023,6 +6644,22 @@ export class OrdersService {
     return snapshot;
   }
 
+  private async runOrderPlacedSideEffects(order: Awaited<ReturnType<OrdersService["getAdminOrder"]>>) {
+    await Promise.allSettled([
+      this.notifyOrderPlaced(order),
+      this.notifyShipmentRoutingOperations(order),
+    ]).then((results) => {
+      for (const [index, result] of results.entries()) {
+        if (result.status === "rejected") {
+          const label = index === 0 ? "order placed notifications" : "shipment routing notifications";
+          this.logger.warn(
+            `Order ${order.orderNumber} placed, but ${label} failed: ${this.errorMessage(result.reason)}`,
+          );
+        }
+      }
+    });
+  }
+
   private async notifyOrderPlaced(order: Awaited<ReturnType<OrdersService["getAdminOrder"]>>) {
     const customerEmail = order.customer.user.email;
     const sellerEmails = [
@@ -6060,6 +6697,10 @@ export class OrdersService {
         totalPaise: order.totalPaise,
       }),
     ]);
+  }
+
+  private errorMessage(error: unknown) {
+    return error instanceof Error ? error.message : String(error);
   }
 
   private async notifyShipmentRoutingOperations(
@@ -6393,7 +7034,9 @@ export class OrdersService {
     return providerCode || null;
   }
 
-  private routingPackageFromSnapshot(value: Prisma.JsonValue | null | undefined): DeliveryRoutingPackage | null {
+  private routingPackageFromSnapshot(
+    value: Prisma.JsonValue | null | undefined,
+  ): DeliveryRoutingPackage | null {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
       return null;
     }
@@ -6531,6 +7174,106 @@ export class OrdersService {
     );
   }
 
+  private deliveryAssignmentExpiresAt(assignedAt: Date) {
+    return new Date(assignedAt.getTime() + deliveryAssignmentAcceptanceWindowMs);
+  }
+
+  private deliveryAssignmentExpired(expiresAt: Date | null | undefined, now: Date) {
+    return Boolean(expiresAt && expiresAt.getTime() <= now.getTime());
+  }
+
+  private async releaseExpiredDeliveryAssignmentForPartner(
+    order: OrderWithRelations,
+    partnerUserId: string,
+    now: Date,
+  ) {
+    const delivery = order.deliveryDetail;
+    if (!delivery) {
+      return;
+    }
+
+    await this.prisma.client.$transaction(async (tx) => {
+      const released = await tx.deliveryDetail.updateMany({
+        where: {
+          id: delivery.id,
+          deliveryPartnerUserId: partnerUserId,
+          assignmentStatus: DeliveryAssignmentStatus.ASSIGNED,
+          assignmentExpiresAt: { lte: now },
+        },
+        data: {
+          deliveryPartnerUserId: null,
+          assignmentStatus: DeliveryAssignmentStatus.UNASSIGNED,
+          assignedAt: null,
+          acceptedAt: null,
+          rejectedAt: now,
+          assignmentExpiresAt: null,
+          assignmentNote: deliveryAssignmentExpiredNote,
+        },
+      });
+
+      if (released.count !== 1) {
+        return;
+      }
+
+      await tx.deliveryAssignmentAttempt.updateMany({
+        where: {
+          deliveryDetailId: delivery.id,
+          partnerUserId,
+          status: DeliveryAssignmentStatus.ASSIGNED,
+        },
+        data: {
+          status: DeliveryAssignmentStatus.CANCELLED,
+          respondedAt: now,
+          note: deliveryAssignmentExpiredNote,
+        },
+      });
+
+      await tx.orderShipment.updateMany({
+        where: {
+          orderId: order.id,
+          deliveryPartnerUserId: partnerUserId,
+          assignmentStatus: DeliveryAssignmentStatus.ASSIGNED,
+          status: { notIn: [DeliveryStatus.DELIVERED, DeliveryStatus.CANCELLED] },
+        },
+        data: {
+          deliveryPartnerUserId: null,
+          assignmentStatus: DeliveryAssignmentStatus.UNASSIGNED,
+          assignedAt: null,
+          acceptedAt: null,
+          rejectedAt: now,
+          assignmentExpiresAt: null,
+          assignmentNote: deliveryAssignmentExpiredNote,
+        },
+      });
+
+      await tx.deliveryEvent.create({
+        data: {
+          deliveryDetailId: delivery.id,
+          oldStatus: delivery.status,
+          newStatus: delivery.status,
+          note: deliveryAssignmentExpiredNote,
+          updatedById: null,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actorUserId: null,
+          action: "order.delivery_assignment.expired",
+          entityType: "order",
+          entityId: order.id,
+          oldValue: this.deliveryAuditValue(delivery),
+          newValue: {
+            orderNumber: order.orderNumber,
+            assignmentStatus: DeliveryAssignmentStatus.UNASSIGNED,
+            expiredPartnerUserId: partnerUserId,
+            note: deliveryAssignmentExpiredNote,
+          },
+        },
+      });
+    });
+  }
+
   private toDeliveryPartnerOrder(order: OrderWithRelations) {
     return {
       id: order.id,
@@ -6571,6 +7314,15 @@ export class OrdersService {
               id: shipment.seller.id,
               storeName: shipment.seller.storeName,
               slug: shipment.seller.slug,
+              contactName:
+                shipment.seller.profile?.contactName ??
+                shipment.seller.user.fullName ??
+                shipment.seller.storeName,
+              contactPhone:
+                shipment.seller.profile?.contactPhone ?? shipment.seller.user.phone ?? null,
+              contactEmail:
+                shipment.seller.profile?.contactEmail ?? shipment.seller.user.email ?? null,
+              pickupAddress: this.sellerPickupAddressReadback(shipment.seller),
             }
           : null,
         subtotalPaise: shipment.subtotalPaise,
@@ -6588,6 +7340,7 @@ export class OrdersService {
         routingPermanentFailureAt: shipment.routingPermanentFailureAt,
         status: shipment.status,
         assignmentStatus: shipment.assignmentStatus,
+        assignmentExpiresAt: shipment.assignmentExpiresAt,
         deliveryPartnerUserId: shipment.deliveryPartnerUserId,
         partnerName: shipment.partnerName,
         partnerPhone: shipment.partnerPhone,
@@ -6630,6 +7383,7 @@ export class OrdersService {
             assignedAt: order.deliveryDetail.assignedAt,
             acceptedAt: order.deliveryDetail.acceptedAt,
             rejectedAt: order.deliveryDetail.rejectedAt,
+            assignmentExpiresAt: order.deliveryDetail.assignmentExpiresAt,
             assignmentNote: order.deliveryDetail.assignmentNote,
             trackingReference: order.deliveryDetail.trackingReference,
             estimatedDeliveryDate: order.deliveryDetail.estimatedDeliveryDate,
@@ -6687,6 +7441,29 @@ export class OrdersService {
     };
   }
 
+  private sellerPickupAddressReadback(seller: OrderWithRelations["shipments"][number]["seller"]) {
+    const address = seller?.addresses?.[0];
+    if (!address) {
+      return null;
+    }
+
+    return {
+      line1: address.line1,
+      line2: address.line2,
+      area: address.area,
+      city: address.city,
+      state: address.state,
+      pincode: address.pincode,
+      country: address.country,
+      countryCode: address.countryCode,
+      latitude: address.latitude?.toString() ?? null,
+      longitude: address.longitude?.toString() ?? null,
+      locationSource: address.locationSource ?? null,
+      accuracyMeters: address.accuracyMeters?.toString() ?? null,
+      locationConfidenceScore: address.locationConfidenceScore?.toString() ?? null,
+    };
+  }
+
   private async resolveSeller(actor: RequestUser) {
     const seller = await this.prisma.client.seller.findUnique({
       where: { userId: actor.id },
@@ -6713,6 +7490,7 @@ export class OrdersService {
     assignedAt?: Date | null;
     acceptedAt?: Date | null;
     rejectedAt?: Date | null;
+    assignmentExpiresAt?: Date | null;
     assignmentNote?: string | null;
     shippingChargeSnapshot?: Prisma.JsonValue | null;
     codSurchargeSnapshot?: Prisma.JsonValue | null;
@@ -6749,6 +7527,7 @@ export class OrdersService {
       assignedAt: delivery.assignedAt?.toISOString() ?? null,
       acceptedAt: delivery.acceptedAt?.toISOString() ?? null,
       rejectedAt: delivery.rejectedAt?.toISOString() ?? null,
+      assignmentExpiresAt: delivery.assignmentExpiresAt?.toISOString() ?? null,
       assignmentNote: delivery.assignmentNote ?? null,
       shippingChargeSnapshot: delivery.shippingChargeSnapshot ?? null,
       codSurchargeSnapshot: delivery.codSurchargeSnapshot ?? null,

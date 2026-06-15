@@ -6,6 +6,7 @@ import { Roles } from "../auth/decorators/roles.decorator";
 import type { RequestUser } from "../auth/types/indihub-request";
 import { CustomersService } from "./customers.service";
 import { CreateCustomerAddressDto, UpdateCustomerAddressDto } from "./dto/customer-address.dto";
+import { UpdateCustomerBrowsingLocationDto } from "./dto/customer-browsing-location.dto";
 import { UpdateCustomerProfileDto } from "./dto/customer-profile.dto";
 import { WishlistItemDto } from "./dto/wishlist.dto";
 
@@ -25,6 +26,24 @@ export class CustomersController {
   @ApiOperation({ summary: "Update customer profile basics." })
   updateProfile(@CurrentUser() actor: RequestUser, @Body() dto: UpdateCustomerProfileDto) {
     return this.customersService.updateProfile(actor, dto);
+  }
+
+  @Get("browsing-location")
+  @ApiOperation({ summary: "Read the customer saved browsing location." })
+  getBrowsingLocation(@CurrentUser() actor: RequestUser) {
+    return this.customersService.getBrowsingLocation(actor);
+  }
+
+  @Patch("browsing-location")
+  @ApiOperation({ summary: "Update the customer saved browsing location." })
+  updateBrowsingLocation(@CurrentUser() actor: RequestUser, @Body() dto: UpdateCustomerBrowsingLocationDto) {
+    return this.customersService.updateBrowsingLocation(actor, dto);
+  }
+
+  @Delete("browsing-location")
+  @ApiOperation({ summary: "Clear the customer saved browsing location." })
+  clearBrowsingLocation(@CurrentUser() actor: RequestUser) {
+    return this.customersService.clearBrowsingLocation(actor);
   }
 
   @Get("addresses")
@@ -73,4 +92,3 @@ export class CustomersController {
     return this.customersService.removeWishlistItem(actor, productId);
   }
 }
-

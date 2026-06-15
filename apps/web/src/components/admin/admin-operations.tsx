@@ -30,6 +30,7 @@ import {
   KeyRound,
   Landmark,
   Mail,
+  MapPin,
   Package,
   Phone,
   Plus,
@@ -51,9 +52,12 @@ import { Button, cn, StatusBadge, type StatusTone } from "@indihub/ui";
 import {
   marketplaceProductAdminSummaryFields,
   marketplaceProductRequiredEssentialFields,
+  supportRequesterTypes,
+  supportRequestTopics,
 } from "@indihub/shared-types";
 import { useAdminAuth } from "@/components/admin/admin-auth-context";
 import { EmailSettingsPanel } from "@/components/admin/admin-email-workspace";
+import { OrderStatusTimeline } from "@/components/shared/order-status-timeline";
 import {
   AdminActionMenu,
   AdminConfirmationDialog as HeadlessAdminConfirmationDialog,
@@ -66,9 +70,11 @@ import {
   type AdminActionItem,
   type AdminSelectOption,
 } from "@/components/admin/admin-ux";
+import { ContactSettingsPanel } from "@/components/admin/settings/contact-settings";
 import { CheckoutFeeSettings } from "@/components/admin/settings/checkout-fee-settings";
 import { DeliveryPartnerPayoutSettings } from "@/components/admin/settings/delivery-partner-payout-settings";
 import { MapRoutingSettings } from "@/components/admin/settings/map-routing-settings";
+import { ProductApprovalSettings } from "@/components/admin/settings/product-approval-settings";
 import { SellerPayoutSettings } from "@/components/admin/settings/seller-payout-settings";
 import { readBooleanSettingValue } from "@/components/admin/settings/setting-value-utils";
 import {
@@ -194,11 +200,35 @@ type SellerRecord = {
     fileUrl: string;
     status: string;
   }>;
+  addresses?: SellerAddressRecord[];
   _count?: {
     products?: number;
     orderSplits?: number;
     b2bEnquiries?: number;
   };
+};
+
+type AddressSnapshotRecord = {
+  fullName?: string | null;
+  phone?: string | null;
+  line1?: string | null;
+  line2?: string | null;
+  area?: string | null;
+  city?: string | null;
+  state?: string | null;
+  pincode?: string | null;
+  country?: string | null;
+  countryCode?: string | null;
+  latitude?: number | string | null;
+  longitude?: number | string | null;
+  locationSource?: string | null;
+  accuracyMeters?: number | string | null;
+  locationConfidenceScore?: number | string | null;
+};
+
+type SellerAddressRecord = AddressSnapshotRecord & {
+  id?: string;
+  sellerId?: string;
 };
 
 type ProductRecord = {
@@ -242,6 +272,13 @@ type OrderRecord = {
   subtotalPaise: number;
   shippingPaise: number;
   platformFeePaise: number;
+  couponCode?: string | null;
+  couponTitle?: string | null;
+  couponDiscountPaise?: number;
+  couponMerchandiseDiscountPaise?: number;
+  couponShippingDiscountPaise?: number;
+  couponPlatformFundedDiscountPaise?: number;
+  couponSellerFundedDiscountPaise?: number;
   totalPaise: number;
   currency: string;
   buyerCurrency?: string | null;
@@ -250,6 +287,7 @@ type OrderRecord = {
   buyerCountryCode?: string | null;
   createdAt?: string;
   updatedAt?: string;
+  shippingAddressSnapshot?: AddressSnapshotRecord | null;
   customer?: { user?: UserRecord };
   items?: Array<{
     id: string;
@@ -263,6 +301,11 @@ type OrderRecord = {
     id: string;
     sellerStatus: string;
     sellerSubtotalPaise: number;
+    commissionPaise?: number;
+    couponDiscountPaise?: number;
+    couponPlatformFundedDiscountPaise?: number;
+    couponSellerFundedDiscountPaise?: number;
+    couponAdjustmentPaise?: number;
     seller?: SellerRecord | null;
   }>;
   shipments?: Array<{
@@ -276,6 +319,7 @@ type OrderRecord = {
     deliveryMode: string;
     status: string;
     assignmentStatus?: string | null;
+    assignmentExpiresAt?: string | null;
     partnerName?: string | null;
     partnerPhone?: string | null;
     deliveryPartnerUserId?: string | null;
@@ -348,6 +392,7 @@ type OrderRecord = {
     assignedAt?: string | null;
     acceptedAt?: string | null;
     rejectedAt?: string | null;
+    assignmentExpiresAt?: string | null;
     assignmentNote?: string | null;
     trackingReference?: string | null;
     estimatedDeliveryDate?: string | null;
@@ -389,6 +434,15 @@ type OrderRecord = {
     note?: string | null;
     createdAt?: string;
   }>;
+};
+
+type AdminOrderSummaryRecord = {
+  totalOrders: number;
+  pendingOrders: number;
+  completedOrders: number;
+  inDeliveryOrders: number;
+  cancelledOrders: number;
+  generatedAt?: string;
 };
 
 type DeliveryCodHandoverReport = {
@@ -584,11 +638,19 @@ type SupportRequestRecord = {
   name: string;
   email: string;
   phone?: string | null;
+  topic?: string;
+  requesterType?: string;
+  preferredContactChannel?: string;
+  source?: string;
+  orderNumber?: string | null;
   subject: string;
   message: string;
   status: string;
   adminNote?: string | null;
+  responseMessage?: string | null;
+  respondedAt?: string | null;
   createdAt?: string;
+  updatedAt?: string;
   user?: UserRecord | null;
 };
 
@@ -1124,17 +1186,48 @@ const userProfileFilterOptions: AdminSelectOption[] = [
   { value: "SELLER", label: "Seller" },
   { value: "BUSINESS_BUYER", label: "B2B buyer" },
 ];
-const orderStatuses = ["PLACED", "CONFIRMED", "PROCESSING", "SHIPPED", "DELIVERED", "CANCELLED"];
+const orderProgressionStatuses = ["PLACED", "CONFIRMED", "PROCESSING", "SHIPPED", "DELIVERED"];
 const paymentStatuses = ["PENDING", "PAID", "FAILED", "REFUNDED", "NOT_REQUIRED"];
-const deliveryStatuses = [
+type AdminOrderTab = "ALL" | "PENDING" | "PROCESSING" | "PACKED" | "DELIVERED" | "CANCELLED" | "REFUNDED";
+const adminOrderTabs: Array<{ value: AdminOrderTab; label: string }> = [
+  { value: "ALL", label: "All orders" },
+  { value: "PENDING", label: "Pending" },
+  { value: "PROCESSING", label: "Processing" },
+  { value: "PACKED", label: "Packed" },
+  { value: "DELIVERED", label: "Delivered" },
+  { value: "CANCELLED", label: "Cancelled" },
+  { value: "REFUNDED", label: "Refunded" },
+];
+const deliveryProgressionStatuses = [
   "NOT_ASSIGNED",
   "PENDING",
   "PACKED",
   "DISPATCHED",
   "IN_TRANSIT",
   "DELIVERED",
-  "CANCELLED",
 ];
+
+function nextStepStatusOptions(progressStatuses: readonly string[], currentStatus: string) {
+  if (currentStatus === "CANCELLED") {
+    return [currentStatus];
+  }
+
+  const options = [currentStatus];
+  const index = progressStatuses.indexOf(currentStatus);
+  const nextStatus =
+    index >= 0 && index < progressStatuses.length - 1 ? progressStatuses[index + 1] : null;
+
+  if (nextStatus) {
+    options.push(nextStatus);
+  }
+
+  const finalStatus = progressStatuses[progressStatuses.length - 1];
+  if (currentStatus !== finalStatus && !options.includes("CANCELLED")) {
+    options.push("CANCELLED");
+  }
+
+  return options;
+}
 const deliveryModeOptions: AdminSelectOption[] = [
   {
     value: "STORE_PICKUP",
@@ -1194,6 +1287,24 @@ const courierProviderModeOptions: AdminSelectOption[] = [
 const deliveryPartnerUnassignedValue = "__UNASSIGNED__";
 const b2bManualAdminStatuses = ["IN_REVIEW", "CLOSED", "CANCELLED"];
 const supportStatuses = ["OPEN", "IN_REVIEW", "RESPONDED", "CLOSED"];
+type SupportStatusFilter = "ALL" | (typeof supportStatuses)[number];
+type SupportTopicFilter = "ALL" | (typeof supportRequestTopics)[number];
+type SupportRequesterTypeFilter = "ALL" | (typeof supportRequesterTypes)[number];
+const supportStatusFilterOptions: AdminSelectOption[] = [
+  { value: "ALL", label: "All status" },
+  ...supportStatuses.map((status) => ({ value: status, label: humanize(status) })),
+];
+const supportTopicFilterOptions: AdminSelectOption[] = [
+  { value: "ALL", label: "All topics" },
+  ...supportRequestTopics.map((topic) => ({ value: topic, label: humanize(topic) })),
+];
+const supportRequesterTypeFilterOptions: AdminSelectOption[] = [
+  { value: "ALL", label: "All requester types" },
+  ...supportRequesterTypes.map((requesterType) => ({
+    value: requesterType,
+    label: humanize(requesterType),
+  })),
+];
 const notificationStatuses = ["PENDING", "SENT", "FAILED", "SKIPPED"] as const;
 type NotificationStatusFilter = "ALL" | (typeof notificationStatuses)[number];
 const notificationStatusFilterOptions: AdminSelectOption[] = [
@@ -2155,92 +2266,696 @@ export function AdminProductsPageClient({
 export function AdminOrdersPageClient() {
   const auth = useAdminAuth();
   const [search, setSearch] = useState("");
+  const [activeTab, setActiveTab] = useState<AdminOrderTab>("ALL");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const orderFilters = useMemo(() => adminOrderTabParams(activeTab), [activeTab]);
   const query = useAdminList<OrderRecord>(
     "admin-orders",
     "/api/admin/orders",
     auth.authHeaders,
     search,
+    "search",
+    orderFilters,
+    page,
+    pageSize,
   );
+  const summaryQuery = useQuery({
+    queryKey: ["admin-orders-summary", auth.authHeaders],
+    enabled: Boolean(auth.authHeaders.bearerToken),
+    queryFn: () =>
+      indihubFetch<AdminOrderSummaryRecord>(
+        "/api/admin/orders/summary",
+        undefined,
+        auth.authHeaders,
+      ),
+  });
   const items = listItems(query.data);
+  const total = totalItems(query.data, items.length);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, activeTab, pageSize]);
 
   return (
     <AdminResourceChrome
       title="Orders"
       description="Monitor platform orders, seller splits, payment state, buyer currency, and delivery status."
       icon={<ClipboardList className="h-5 w-5" />}
-      search={search}
-      setSearch={setSearch}
       query={query}
-      total={totalItems(query.data, items.length)}
+      total={total}
     >
-      <AdminTable
-        items={items}
+      <AdminOrdersBoard
+        orders={items}
+        total={total}
+        page={page}
+        pageSize={pageSize}
+        search={search}
+        setSearch={setSearch}
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        summary={summaryQuery.data}
+        summaryLoading={summaryQuery.isLoading}
         isLoading={query.isLoading}
-        emptyTitle="No orders found"
-        columns={[
-          {
-            header: "Order",
-            cell: (item) => (
-              <EntityTitle
-                title={item.orderNumber}
-                subtitle={item.customer?.user?.email ?? formatDate(item.createdAt)}
-                actionHref={`/admin/orders/${item.orderNumber}`}
-              />
-            ),
-          },
-          {
-            header: "Status",
-            cell: (item) => (
-              <div className="flex flex-wrap gap-1.5">
-                <StatusBadge tone={statusTone(item.orderStatus)}>
-                  {humanize(item.orderStatus)}
-                </StatusBadge>
-                <StatusBadge tone={statusTone(item.paymentStatus)}>
-                  {humanize(item.paymentStatus)}
-                </StatusBadge>
-                <StatusBadge tone={statusTone(item.deliveryStatus)}>
-                  {humanize(item.deliveryStatus)}
-                </StatusBadge>
-              </div>
-            ),
-          },
-          {
-            header: "Value",
-            cell: (item) => (
-              <SmallStack
-                lines={[
-                  formatPaise(item.totalPaise, item.currency),
-                  item.buyerCurrency
-                    ? `${formatMinor(item.buyerTotalMinor ?? 0, item.buyerCurrency)} buyer total`
-                    : "INR buyer total",
-                  item.buyerCountryCode ? `Market ${item.buyerCountryCode}` : "Default market",
-                ]}
-              />
-            ),
-          },
-          {
-            header: "Items",
-            cell: (item) => (
-              <SmallStack
-                lines={[
-                  `${item.items?.length ?? 0} order items`,
-                  `${item.sellerSplits?.length ?? 0} seller splits`,
-                  formatDate(item.updatedAt ?? item.createdAt),
-                ]}
-              />
-            ),
-          },
-          {
-            header: "Action",
-            cell: (item) => (
-              <Button asChild size="sm" variant="outline">
-                <Link href={`/admin/orders/${item.orderNumber}`}>Open order</Link>
-              </Button>
-            ),
-          },
-        ]}
+        isFetching={query.isFetching}
+        onRefresh={() => {
+          void query.refetch();
+          void summaryQuery.refetch();
+        }}
+        setPage={setPage}
+        setPageSize={setPageSize}
       />
     </AdminResourceChrome>
+  );
+}
+
+function AdminOrdersBoard({
+  orders,
+  total,
+  page,
+  pageSize,
+  search,
+  setSearch,
+  activeTab,
+  setActiveTab,
+  summary,
+  summaryLoading,
+  isLoading,
+  isFetching,
+  onRefresh,
+  setPage,
+  setPageSize,
+}: {
+  orders: OrderRecord[];
+  total: number;
+  page: number;
+  pageSize: number;
+  search: string;
+  setSearch: (value: string) => void;
+  activeTab: AdminOrderTab;
+  setActiveTab: (value: AdminOrderTab) => void;
+  summary?: AdminOrderSummaryRecord | undefined;
+  summaryLoading?: boolean | undefined;
+  isLoading?: boolean | undefined;
+  isFetching?: boolean | undefined;
+  onRefresh: () => void;
+  setPage: (value: number) => void;
+  setPageSize: (value: number) => void;
+}) {
+  const hasFilters = Boolean(search.trim()) || activeTab !== "ALL";
+
+  const resetFilters = () => {
+    setSearch("");
+    setActiveTab("ALL");
+    setPage(1);
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-5">
+        <AdminOrderMetricCard
+          label="Total orders"
+          value={summaryCount(summary?.totalOrders, total, summaryLoading)}
+          detail="All platform orders"
+          icon={<ShoppingBag className="h-5 w-5" aria-hidden="true" />}
+          active={activeTab === "ALL"}
+          onSelect={() => setActiveTab("ALL")}
+        />
+        <AdminOrderMetricCard
+          label="Pending"
+          value={summaryCount(summary?.pendingOrders, null, summaryLoading)}
+          detail={summaryPercent(summary?.pendingOrders, summary?.totalOrders)}
+          tone="warning"
+          icon={<CalendarDays className="h-5 w-5" aria-hidden="true" />}
+          active={activeTab === "PENDING"}
+          onSelect={() => setActiveTab("PENDING")}
+        />
+        <AdminOrderMetricCard
+          label="Completed"
+          value={summaryCount(summary?.completedOrders, null, summaryLoading)}
+          detail={summaryPercent(summary?.completedOrders, summary?.totalOrders)}
+          tone="success"
+          icon={<CheckCircle2 className="h-5 w-5" aria-hidden="true" />}
+          active={activeTab === "DELIVERED"}
+          onSelect={() => setActiveTab("DELIVERED")}
+        />
+        <AdminOrderMetricCard
+          label="In delivery"
+          value={summaryCount(summary?.inDeliveryOrders, null, summaryLoading)}
+          detail={summaryPercent(summary?.inDeliveryOrders, summary?.totalOrders)}
+          tone="info"
+          icon={<Truck className="h-5 w-5" aria-hidden="true" />}
+          active={activeTab === "PACKED"}
+          onSelect={() => setActiveTab("PACKED")}
+        />
+        <AdminOrderMetricCard
+          label="Cancelled"
+          value={summaryCount(summary?.cancelledOrders, null, summaryLoading)}
+          detail={summaryPercent(summary?.cancelledOrders, summary?.totalOrders)}
+          tone="danger"
+          icon={<XCircle className="h-5 w-5" aria-hidden="true" />}
+          active={activeTab === "CANCELLED"}
+          onSelect={() => setActiveTab("CANCELLED")}
+        />
+      </div>
+
+      <div className="overflow-hidden rounded-xl border border-[#D8E2EA] bg-white shadow-sm">
+        <div className="grid gap-3 border-b border-[#E5E7EB] p-4 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,0.75fr)_auto_auto] xl:items-center">
+          <AdminOrderTabs activeTab={activeTab} onChange={setActiveTab} />
+          <label className="relative block">
+            <span className="sr-only">Search orders</span>
+            <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#667085]" />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search by order ID, buyer email, name, or phone..."
+              className="h-12 w-full rounded-md border border-[#D8E2EA] bg-white pl-11 pr-3 text-sm font-semibold text-[#1F2933] outline-none transition placeholder:text-[#667085] focus:border-[#ED3500] focus:ring-2 focus:ring-[#FFE0D6]"
+            />
+          </label>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-12 px-5"
+            onClick={resetFilters}
+            disabled={!hasFilters}
+          >
+            Reset
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-12 px-5"
+            onClick={onRefresh}
+            disabled={isFetching}
+          >
+            <RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
+            Refresh
+          </Button>
+        </div>
+
+        <div className="hidden overflow-x-auto 2xl:block">
+          <table className="min-w-full table-fixed text-left">
+            <thead className="bg-[#F8FAFC]">
+              <tr className="border-b border-[#E5E7EB] text-xs font-black uppercase tracking-wide text-[#344054]">
+                <th className="w-[17%] px-5 py-4">Order</th>
+                <th className="w-[43%] px-5 py-4">Status and progress</th>
+                <th className="w-[13%] px-5 py-4">Amount</th>
+                <th className="w-[17%] px-5 py-4">Items and details</th>
+                <th className="w-[10%] px-5 py-4 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#E5E7EB]">
+              {orders.map((order) => (
+                <AdminOrderTableRow key={order.id} order={order} />
+              ))}
+              <AdminOrdersEmptyState isLoading={isLoading} isEmpty={!orders.length} colSpan={5} />
+            </tbody>
+          </table>
+        </div>
+
+        <div className="space-y-3 bg-[#F8FAFC] p-3 2xl:hidden">
+          {orders.map((order) => (
+            <AdminOrderMobileCard key={order.id} order={order} />
+          ))}
+          {isLoading ? (
+            <p className="rounded-lg border border-[#D8E2EA] bg-white p-5 text-center text-sm font-semibold text-[#667085]">
+              Loading orders...
+            </p>
+          ) : null}
+          {!isLoading && !orders.length ? (
+            <p className="rounded-lg border border-[#D8E2EA] bg-white p-5 text-center text-sm font-semibold text-[#667085]">
+              No orders found.
+            </p>
+          ) : null}
+        </div>
+
+        <UsersRolesPagination
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          isLoading={isLoading || isFetching}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+          itemLabel="orders"
+        />
+      </div>
+    </div>
+  );
+}
+
+function AdminOrderTabs({
+  activeTab,
+  onChange,
+}: {
+  activeTab: AdminOrderTab;
+  onChange: (value: AdminOrderTab) => void;
+}) {
+  return (
+    <div className="flex min-w-0 gap-1 overflow-x-auto rounded-lg bg-[#F8FAFC] p-1">
+      {adminOrderTabs.map((tab) => (
+        <button
+          key={tab.value}
+          type="button"
+          onClick={() => onChange(tab.value)}
+          className={cn(
+            "shrink-0 rounded-md px-3 py-2 text-sm font-black transition",
+            activeTab === tab.value
+              ? "bg-white text-[#ED3500] shadow-sm ring-1 ring-[#FFE0D6]"
+              : "text-[#344054] hover:bg-white hover:text-[#ED3500]",
+          )}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function AdminOrderMetricCard({
+  label,
+  value,
+  detail,
+  icon,
+  tone = "info",
+  active,
+  onSelect,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  icon: ReactNode;
+  tone?: "info" | "success" | "warning" | "danger";
+  active?: boolean | undefined;
+  onSelect: () => void;
+}) {
+  const iconClass =
+    tone === "success"
+      ? "bg-[#DDF8E8] text-[#0F8A5F]"
+      : tone === "warning"
+        ? "bg-[#FFF2D6] text-[#B7791F]"
+        : tone === "danger"
+          ? "bg-[#FDECEC] text-[#B42318]"
+          : "bg-[#EAF1F7] text-[#1D4F91]";
+
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={cn(
+        "flex min-h-[118px] items-center gap-4 rounded-xl border bg-white p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-[#C5D8E8] hover:shadow-md",
+        active ? "border-[#ED3500] ring-2 ring-[#FFE0D6]" : "border-[#D8E2EA]",
+      )}
+    >
+      <span className={`grid h-14 w-14 shrink-0 place-items-center rounded-full ${iconClass}`}>
+        {icon}
+      </span>
+      <span className="min-w-0">
+        <span className="block text-sm font-bold text-[#344054]">{label}</span>
+        <span className="mt-2 block text-2xl font-black text-[#0B1F3A]">{value}</span>
+        <span className="mt-1 block text-xs font-semibold text-[#667085]">{detail}</span>
+      </span>
+    </button>
+  );
+}
+
+function AdminOrderTableRow({ order }: { order: OrderRecord }) {
+  const notice = adminOrderRowNotice(order);
+
+  return (
+    <tr className="align-middle transition-colors hover:bg-[#FFFCFB]">
+      <td className="px-5 py-5">
+        <AdminOrderIdentity order={order} />
+      </td>
+      <td className="px-5 py-5">
+        <AdminOrderProgressTrack order={order} />
+        <AdminOrderNotice notice={notice} className="mt-3" />
+      </td>
+      <td className="px-5 py-5">
+        <AdminOrderAmount order={order} />
+      </td>
+      <td className="px-5 py-5">
+        <AdminOrderDetails order={order} />
+      </td>
+      <td className="px-5 py-5 text-right">
+        <Button asChild size="sm" variant="outline" className="border-[#FFD0C2] text-[#ED3500]">
+          <Link href={`/admin/orders/${order.orderNumber}`}>View details</Link>
+        </Button>
+      </td>
+    </tr>
+  );
+}
+
+function AdminOrderMobileCard({ order }: { order: OrderRecord }) {
+  return (
+    <div className="rounded-xl border border-[#D8E2EA] bg-white p-4 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <AdminOrderIdentity order={order} />
+        <Button asChild size="sm" variant="outline" className="border-[#FFD0C2] text-[#ED3500]">
+          <Link href={`/admin/orders/${order.orderNumber}`}>View details</Link>
+        </Button>
+      </div>
+      <div className="mt-4">
+        <AdminOrderProgressTrack order={order} compact />
+        <AdminOrderNotice notice={adminOrderRowNotice(order)} className="mt-3" />
+      </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <AdminOrderAmount order={order} />
+        <AdminOrderDetails order={order} />
+      </div>
+    </div>
+  );
+}
+
+function AdminOrderIdentity({ order }: { order: OrderRecord }) {
+  return (
+    <div className="min-w-0">
+      <Link
+        href={`/admin/orders/${order.orderNumber}`}
+        className="break-words text-sm font-black text-[#0B1F3A] hover:text-[#ED3500]"
+      >
+        {order.orderNumber}
+      </Link>
+      <p className="mt-1 truncate text-sm font-semibold text-[#667085]">
+        {order.customer?.user?.email ?? "Customer email unavailable"}
+      </p>
+      <StatusBadge tone="info" className="mt-2">
+        Market {order.buyerCountryCode ?? "IN"}
+      </StatusBadge>
+    </div>
+  );
+}
+
+function AdminOrderProgressTrack({
+  order,
+  compact = false,
+}: {
+  order: OrderRecord;
+  compact?: boolean;
+}) {
+  const steps = adminOrderProgressSteps(order);
+
+  return (
+    <div className={cn("grid gap-2", compact ? "grid-cols-2 sm:grid-cols-5" : "grid-cols-5")}>
+      {steps.map((step, index) => (
+        <div key={step.key} className="relative min-w-0">
+          {!compact && index > 0 ? (
+            <span className="absolute right-1/2 top-4 h-px w-full bg-[#D8E2EA]" aria-hidden="true" />
+          ) : null}
+          <div className="relative z-10 flex min-w-0 flex-col items-center text-center">
+            <span
+              className={cn(
+                "grid h-8 w-8 place-items-center rounded-full border text-xs font-black shadow-sm",
+                step.tone === "success" && "border-[#A6E9BE] bg-[#ECFDF3] text-[#0F8A5F]",
+                step.tone === "warning" && "border-[#FFD58A] bg-[#FFF7E6] text-[#B7791F]",
+                step.tone === "danger" && "border-[#F4B8B8] bg-[#FDECEC] text-[#B42318]",
+                step.tone === "info" && "border-[#B8D7F0] bg-[#F0F7FF] text-[#163B5C]",
+                step.tone === "neutral" && "border-[#D8E2EA] bg-white text-[#98A2B3]",
+              )}
+            >
+              {step.done ? <CheckCircle2 className="h-4 w-4" /> : step.index}
+            </span>
+            <p
+              className={cn(
+                "mt-2 text-xs font-black",
+                step.tone === "neutral" ? "text-[#667085]" : "text-[#1F2933]",
+              )}
+            >
+              {step.label}
+            </p>
+            <p className="mt-0.5 text-xs font-semibold text-[#667085]">{step.value}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AdminOrderNotice({
+  notice,
+  className,
+}: {
+  notice: { tone: "success" | "warning" | "danger" | "info"; text: string };
+  className?: string | undefined;
+}) {
+  const toneClass =
+    notice.tone === "success"
+      ? "border-[#B7EACB] bg-[#ECFDF3] text-[#067647]"
+      : notice.tone === "danger"
+        ? "border-[#F4B8B8] bg-[#FDECEC] text-[#B42318]"
+        : notice.tone === "warning"
+          ? "border-[#FFD9B8] bg-[#FFF4ED] text-[#C4320A]"
+          : "border-[#B8D7F0] bg-[#F0F7FF] text-[#175CD3]";
+
+  return (
+    <p className={cn("rounded-md border px-3 py-2 text-xs font-bold leading-5", toneClass, className)}>
+      {notice.text}
+    </p>
+  );
+}
+
+function AdminOrderAmount({ order }: { order: OrderRecord }) {
+  return (
+    <div className="space-y-1 text-sm font-semibold text-[#667085]">
+      <p className="text-base font-black text-[#0B1F3A]">{formatPaise(order.totalPaise, order.currency)}</p>
+      <p>Buyer total</p>
+      <p className="text-[#163B5C]">
+        {formatMinor(order.buyerTotalMinor ?? order.totalPaise, order.buyerCurrency ?? order.currency)}
+      </p>
+    </div>
+  );
+}
+
+function AdminOrderDetails({ order }: { order: OrderRecord }) {
+  return (
+    <div className="space-y-1 text-sm font-semibold text-[#667085]">
+      <p className="font-black text-[#1F2933]">{countLabel(order.items?.length ?? 0, "item")}</p>
+      <p>{countLabel(order.sellerSplits?.length ?? 0, "seller split")}</p>
+      <p>{formatDate(order.updatedAt ?? order.createdAt)}</p>
+    </div>
+  );
+}
+
+function AdminOrdersEmptyState({
+  isLoading,
+  isEmpty,
+  colSpan,
+}: {
+  isLoading?: boolean | undefined;
+  isEmpty: boolean;
+  colSpan: number;
+}) {
+  if (isLoading) {
+    return (
+      <tr>
+        <td colSpan={colSpan} className="px-4 py-10 text-center text-sm font-semibold text-[#667085]">
+          Loading orders...
+        </td>
+      </tr>
+    );
+  }
+
+  if (!isEmpty) {
+    return null;
+  }
+
+  return (
+    <tr>
+      <td colSpan={colSpan} className="px-4 py-10 text-center text-sm font-semibold text-[#667085]">
+        No orders found.
+      </td>
+    </tr>
+  );
+}
+
+function adminOrderTabParams(tab: AdminOrderTab): Record<string, string | undefined> {
+  switch (tab) {
+    case "PENDING":
+      return { orderStatus: "PLACED" };
+    case "PROCESSING":
+      return { orderStatus: "PROCESSING" };
+    case "PACKED":
+      return { deliveryStatus: "PACKED" };
+    case "DELIVERED":
+      return { orderStatus: "DELIVERED" };
+    case "CANCELLED":
+      return { orderStatus: "CANCELLED" };
+    case "REFUNDED":
+      return { paymentStatus: "REFUNDED" };
+    default:
+      return {};
+  }
+}
+
+function summaryCount(
+  value: number | null | undefined,
+  fallback: number | null,
+  loading?: boolean | undefined,
+) {
+  if (loading && value === undefined && fallback === null) {
+    return "...";
+  }
+
+  return (value ?? fallback ?? 0).toLocaleString("en-IN");
+}
+
+function summaryPercent(value?: number | null, total?: number | null) {
+  if (!total || value === null || value === undefined) {
+    return "0.0% of total";
+  }
+
+  return `${((value / total) * 100).toFixed(1)}% of total`;
+}
+
+function adminOrderProgressSteps(order: OrderRecord) {
+  const cancelled = order.orderStatus === "CANCELLED" || order.deliveryStatus === "CANCELLED";
+  const paymentPaid = ["PAID", "NOT_REQUIRED"].includes(order.paymentStatus);
+  const deliveryPacked = ["PACKED", "DISPATCHED", "IN_TRANSIT", "DELIVERED"].includes(
+    order.deliveryStatus,
+  );
+  const inTransit = ["DISPATCHED", "IN_TRANSIT", "DELIVERED"].includes(order.deliveryStatus);
+  const delivered = order.orderStatus === "DELIVERED" || order.deliveryStatus === "DELIVERED";
+
+  return [
+    {
+      key: "placed",
+      index: 1,
+      label: "Placed",
+      value: formatDate(order.createdAt),
+      done: !cancelled,
+      tone: cancelled ? "danger" : "success",
+    },
+    {
+      key: "payment",
+      index: 2,
+      label: "Payment",
+      value: humanize(order.paymentStatus),
+      done: paymentPaid,
+      tone:
+        order.paymentStatus === "FAILED"
+          ? "danger"
+          : paymentPaid
+            ? "success"
+            : "warning",
+    },
+    {
+      key: "packed",
+      index: 3,
+      label: "Packed",
+      value: deliveryPacked ? humanize(order.deliveryStatus) : "Pending",
+      done: deliveryPacked,
+      tone: cancelled ? "danger" : deliveryPacked ? "info" : "neutral",
+    },
+    {
+      key: "transit",
+      index: 4,
+      label: "In transit",
+      value: inTransit ? humanize(order.deliveryStatus) : "-",
+      done: inTransit,
+      tone: delivered ? "success" : inTransit ? "info" : "neutral",
+    },
+    {
+      key: "delivered",
+      index: 5,
+      label: "Delivered",
+      value: delivered ? humanize(order.deliveryStatus) : "-",
+      done: delivered,
+      tone: cancelled ? "danger" : delivered ? "success" : "neutral",
+    },
+  ] as const;
+}
+
+function adminOrderRowNotice(order: OrderRecord): {
+  tone: "success" | "warning" | "danger" | "info";
+  text: string;
+} {
+  if (order.orderStatus === "CANCELLED" || order.deliveryStatus === "CANCELLED") {
+    return { tone: "danger", text: "Order is cancelled. No further fulfilment should continue." };
+  }
+
+  if (order.orderStatus === "DELIVERED" || order.deliveryStatus === "DELIVERED") {
+    return { tone: "success", text: "Order delivered successfully." };
+  }
+
+  if (order.paymentStatus === "PENDING") {
+    return {
+      tone: "warning",
+      text: "Payment is not confirmed yet. Seller action may still be pending.",
+    };
+  }
+
+  if (order.deliveryStatus === "PACKED") {
+    return { tone: "info", text: "Package is packed and ready for pickup or dispatch." };
+  }
+
+  if (["DISPATCHED", "IN_TRANSIT"].includes(order.deliveryStatus)) {
+    return { tone: "info", text: "Delivery is moving toward the customer." };
+  }
+
+  if (order.orderStatus === "PROCESSING") {
+    return { tone: "info", text: "Seller is preparing the order for packing." };
+  }
+
+  return { tone: "warning", text: "Waiting for seller, payment, or delivery progress." };
+}
+
+function AdminOrderStatusSummary({
+  order,
+  compact = false,
+}: {
+  order: Pick<OrderRecord, "orderStatus" | "paymentStatus" | "deliveryStatus">;
+  compact?: boolean;
+}) {
+  const entries = [
+    {
+      key: "order",
+      label: "Order",
+      value: order.orderStatus,
+      detail: orderStatusHelp(order.orderStatus),
+    },
+    {
+      key: "payment",
+      label: "Payment",
+      value: order.paymentStatus,
+      detail: paymentStatusHelp(order.paymentStatus),
+    },
+    {
+      key: "delivery",
+      label: "Delivery",
+      value: order.deliveryStatus,
+      detail: deliveryStatusHelp(order.deliveryStatus),
+    },
+  ];
+
+  if (compact) {
+    return (
+      <div className="flex flex-wrap gap-2">
+        {entries.map((entry) => (
+          <StatusBadge key={entry.key} tone={statusTone(entry.value)} className="gap-1.5">
+            <span className="font-black">{entry.label}:</span>
+            <span>{humanize(entry.value)}</span>
+          </StatusBadge>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid min-w-[260px] gap-2">
+      {entries.map((entry) => (
+        <div
+          key={entry.key}
+          className="grid gap-2 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] px-3 py-2 sm:grid-cols-[76px_1fr]"
+        >
+          <span className="text-[11px] font-black uppercase tracking-[0.12em] text-[#667085]">
+            {entry.label}
+          </span>
+          <div className="min-w-0">
+            <StatusBadge tone={statusTone(entry.value)}>{humanize(entry.value)}</StatusBadge>
+            <p className="mt-1 text-xs font-semibold leading-5 text-[#667085]">{entry.detail}</p>
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -3320,17 +4035,7 @@ export function AdminOrderDetailPageClient({ orderNumber }: { orderNumber: strin
                     {order.customer?.user?.email ?? "Customer email unavailable"}
                   </p>
                 </div>
-                <div className="flex flex-wrap gap-1.5">
-                  <StatusBadge tone={statusTone(order.orderStatus)}>
-                    {humanize(order.orderStatus)}
-                  </StatusBadge>
-                  <StatusBadge tone={statusTone(order.paymentStatus)}>
-                    {humanize(order.paymentStatus)}
-                  </StatusBadge>
-                  <StatusBadge tone={statusTone(order.deliveryStatus)}>
-                    {humanize(order.deliveryStatus)}
-                  </StatusBadge>
-                </div>
+                <AdminOrderStatusSummary order={order} compact />
               </div>
               <div className="mt-5 grid gap-3 sm:grid-cols-4">
                 <MetricCard
@@ -3348,10 +4053,18 @@ export function AdminOrderDetailPageClient({ orderNumber }: { orderNumber: strin
                   label="Platform fee"
                   value={formatPaise(order.platformFeePaise ?? 0, order.currency)}
                 />
+                {(order.couponDiscountPaise ?? 0) > 0 ? (
+                  <MetricCard
+                    label={`Coupon ${order.couponCode ?? ""}`.trim()}
+                    value={`-${formatPaise(order.couponDiscountPaise ?? 0, order.currency)}`}
+                  />
+                ) : null}
                 <MetricCard label="Seller splits" value={`${order.sellerSplits?.length ?? 0}`} />
                 <MetricCard label="Packages" value={`${order.shipments?.length ?? 0}`} />
               </div>
             </Panel>
+
+            <AdminOrderAddressSection order={order} />
 
             <Panel title="Order items">
               <div className="divide-y divide-[#E5E7EB]">
@@ -3665,21 +4378,28 @@ export function AdminOrderDetailPageClient({ orderNumber }: { orderNumber: strin
             ) : null}
 
             <Panel title="Timeline">
-              <Timeline
+              <OrderStatusTimeline
                 events={[
                   ...(order.deliveryDetail?.events ?? []).map((event) => ({
                     id: `delivery-${event.id}`,
-                    label: `Delivery ${humanize(event.newStatus)}`,
+                    kind: "Delivery",
+                    newStatus: event.newStatus,
                     note: event.note ?? null,
-                    date: event.createdAt ?? null,
+                    createdAt: event.createdAt ?? null,
                   })),
                   ...(order.statusEvents ?? []).map((event) => ({
                     id: `status-${event.id}`,
-                    label: `${humanize(event.statusType)} ${humanize(event.newStatus)}`,
+                    kind: event.statusType,
+                    newStatus: event.newStatus,
                     note: event.note ?? null,
-                    date: event.createdAt ?? null,
+                    createdAt: event.createdAt ?? null,
                   })),
                 ]}
+                orderCreatedAt={order.createdAt}
+                currentOrderStatus={order.orderStatus}
+                currentDeliveryStatus={order.deliveryStatus}
+                formatDateTime={formatDate}
+                emptyText="No order timeline events yet."
               />
             </Panel>
             <Panel title="Delivery attempts and proof">
@@ -4040,29 +4760,50 @@ export function AdminSupportPageClient() {
   const auth = useAdminAuth();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<SupportStatusFilter>("ALL");
+  const [topicFilter, setTopicFilter] = useState<SupportTopicFilter>("ALL");
+  const [requesterTypeFilter, setRequesterTypeFilter] =
+    useState<SupportRequesterTypeFilter>("ALL");
+  const fixedParams = useMemo(
+    () => ({
+      status: statusFilter === "ALL" ? undefined : statusFilter,
+      topic: topicFilter === "ALL" ? undefined : topicFilter,
+      requesterType: requesterTypeFilter === "ALL" ? undefined : requesterTypeFilter,
+    }),
+    [requesterTypeFilter, statusFilter, topicFilter],
+  );
   const query = useAdminList<SupportRequestRecord>(
     "admin-support",
     "/api/admin/support-requests",
     auth.authHeaders,
     search,
+    "search",
+    fixedParams,
   );
   const updateSupport = useMutation({
     mutationFn: ({
       requestId,
       status,
       adminNote,
+      responseMessage,
     }: {
       requestId: string;
       status: string;
       adminNote?: string | undefined;
+      responseMessage?: string | undefined;
     }) =>
       adminRequest(`/api/admin/support-requests/${requestId}`, auth.authHeaders, {
         method: "PATCH",
-        body: JSON.stringify({ status, adminNote }),
+        body: JSON.stringify({ status, adminNote, responseMessage }),
       }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-support"] }),
   });
   const items = listItems(query.data);
+  const hasFilters =
+    Boolean(search.trim()) ||
+    statusFilter !== "ALL" ||
+    topicFilter !== "ALL" ||
+    requesterTypeFilter !== "ALL";
 
   return (
     <AdminResourceChrome
@@ -4074,6 +4815,44 @@ export function AdminSupportPageClient() {
       query={query}
       total={items.length}
     >
+      <Panel>
+        <div className="grid gap-3 md:grid-cols-3">
+          <AdminListbox
+            label="Status"
+            value={statusFilter}
+            options={supportStatusFilterOptions}
+            onChange={(value) => setStatusFilter(value as SupportStatusFilter)}
+          />
+          <AdminListbox
+            label="Topic"
+            value={topicFilter}
+            options={supportTopicFilterOptions}
+            onChange={(value) => setTopicFilter(value as SupportTopicFilter)}
+          />
+          <AdminListbox
+            label="Requester type"
+            value={requesterTypeFilter}
+            options={supportRequesterTypeFilterOptions}
+            onChange={(value) => setRequesterTypeFilter(value as SupportRequesterTypeFilter)}
+          />
+        </div>
+        {hasFilters ? (
+          <Button
+            type="button"
+            variant="outline"
+            className="mt-4"
+            onClick={() => {
+              setSearch("");
+              setStatusFilter("ALL");
+              setTopicFilter("ALL");
+              setRequesterTypeFilter("ALL");
+            }}
+          >
+            <X className="h-4 w-4" />
+            Clear filters
+          </Button>
+        ) : null}
+      </Panel>
       <AdminTable
         items={items}
         isLoading={query.isLoading}
@@ -4081,11 +4860,41 @@ export function AdminSupportPageClient() {
         columns={[
           {
             header: "Requester",
-            cell: (item) => <EntityTitle title={item.name} subtitle={item.email} />,
+            cell: (item) => (
+              <SmallStack
+                lines={[
+                  item.name,
+                  item.email,
+                  item.phone ?? "",
+                  item.user?.fullName ? `Linked: ${item.user.fullName}` : "",
+                ]}
+              />
+            ),
+          },
+          {
+            header: "Context",
+            cell: (item) => (
+              <SmallStack
+                lines={[
+                  humanize(item.topic ?? "GENERAL"),
+                  humanize(item.requesterType ?? "CUSTOMER"),
+                  item.orderNumber ? `Order ${item.orderNumber}` : "",
+                  humanize(item.source ?? "WEB_CONTACT"),
+                ]}
+              />
+            ),
           },
           {
             header: "Subject",
-            cell: (item) => <SmallStack lines={[item.subject, truncate(item.message, 100)]} />,
+            cell: (item) => (
+              <SmallStack
+                lines={[
+                  item.subject,
+                  truncate(item.message, 100),
+                  item.responseMessage ? `Response: ${truncate(item.responseMessage, 80)}` : "",
+                ]}
+              />
+            ),
           },
           {
             header: "Status",
@@ -4108,11 +4917,14 @@ export function AdminSupportPageClient() {
               <SupportAction
                 status={item.status}
                 note={item.adminNote ?? null}
-                onSubmit={(status, adminNote) =>
+                responseMessage={item.responseMessage ?? null}
+                respondedAt={item.respondedAt ?? null}
+                onSubmit={(status, adminNote, responseMessage) =>
                   updateSupport.mutate({
                     requestId: item.id,
                     status,
                     ...(adminNote !== undefined ? { adminNote } : {}),
+                    ...(responseMessage !== undefined ? { responseMessage } : {}),
                   })
                 }
                 disabled={updateSupport.isPending}
@@ -4645,6 +5457,16 @@ export function AdminSettingsPageClient() {
             key: "email",
             label: "Email",
             panel: <EmailSettingsPanel />,
+          },
+          {
+            key: "contact",
+            label: "Contact",
+            panel: <ContactSettingsPanel />,
+          },
+          {
+            key: "catalogue-rules",
+            label: "Catalogue rules",
+            panel: <ProductApprovalSettings settings={settings} />,
           },
           {
             key: "courier-integrations",
@@ -8071,6 +8893,191 @@ function MetricCard({ label, value }: { label: string; value: string }) {
   );
 }
 
+function AdminOrderAddressSection({ order }: { order: OrderRecord }) {
+  const shipments = order.shipments ?? [];
+
+  return (
+    <Panel title="Address and pickup details">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+        <AdminOrderAddressCard
+          title="Customer delivery address"
+          subtitle="Saved checkout snapshot"
+          icon={<MapPin className="h-5 w-5" aria-hidden="true" />}
+          name={order.shippingAddressSnapshot?.fullName ?? order.customer?.user?.fullName}
+          phone={order.shippingAddressSnapshot?.phone ?? order.customer?.user?.phone}
+          email={order.customer?.user?.email}
+          address={order.shippingAddressSnapshot ?? null}
+          emptyText="No delivery address snapshot was saved for this order."
+        />
+
+        <div className="grid gap-3">
+          {shipments.length ? (
+            shipments.map((shipment) => {
+              const seller = shipment.seller;
+              const pickupAddress = firstSellerPickupAddress(seller);
+              const contactName =
+                seller?.profile?.contactName ?? seller?.user?.fullName ?? seller?.storeName;
+              const contactPhone = seller?.profile?.contactPhone ?? seller?.user?.phone;
+              const contactEmail = seller?.profile?.contactEmail ?? seller?.user?.email;
+
+              return (
+                <AdminOrderAddressCard
+                  key={shipment.id}
+                  title={seller?.storeName ?? "Seller pickup address"}
+                  subtitle={`${shipment.shipmentNumber} / ${humanize(shipment.deliveryMode)}`}
+                  icon={<Store className="h-5 w-5" aria-hidden="true" />}
+                  name={contactName}
+                  phone={contactPhone}
+                  email={contactEmail}
+                  address={pickupAddress}
+                  emptyText="No seller pickup address is saved. Ask the seller to update the store profile before courier booking."
+                  footer={
+                    <div className="flex flex-wrap gap-2">
+                      <StatusBadge tone={statusTone(shipment.status)}>
+                        {humanize(shipment.status)}
+                      </StatusBadge>
+                      <StatusBadge tone={statusTone(shipment.assignmentStatus ?? "UNASSIGNED")}>
+                        {humanize(shipment.assignmentStatus ?? "UNASSIGNED")}
+                      </StatusBadge>
+                    </div>
+                  }
+                />
+              );
+            })
+          ) : (
+            <div className="rounded-lg border border-dashed border-[#D8E2EA] bg-[#F8FAFC] p-4">
+              <div className="flex items-start gap-3">
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-white text-[#667085]">
+                  <Store className="h-5 w-5" aria-hidden="true" />
+                </span>
+                <div>
+                  <p className="font-black text-[#1F2933]">Seller pickup address unavailable</p>
+                  <p className="mt-1 text-sm font-semibold leading-6 text-[#667085]">
+                    Seller package records are not available for this order yet.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
+function AdminOrderAddressCard({
+  title,
+  subtitle,
+  icon,
+  name,
+  phone,
+  email,
+  address,
+  emptyText,
+  footer,
+}: {
+  title: string;
+  subtitle: string;
+  icon: ReactNode;
+  name?: string | null | undefined;
+  phone?: string | null | undefined;
+  email?: string | null | undefined;
+  address?: AddressSnapshotRecord | null | undefined;
+  emptyText: string;
+  footer?: ReactNode | undefined;
+}) {
+  const addressLines = adminAddressLines(address);
+  const coordinates = addressCoordinates(address);
+
+  return (
+    <div className="rounded-lg border border-[#D8E2EA] bg-white p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-md bg-[#FFF0EC] text-[#ED3500]">
+            {icon}
+          </span>
+          <div className="min-w-0">
+            <h3 className="break-words font-black text-[#1F2933]">{title}</h3>
+            <p className="mt-1 text-xs font-bold uppercase tracking-wide text-[#667085]">
+              {subtitle}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-2 sm:grid-cols-3">
+        <AdminOrderContactLine
+          icon={<UsersRound className="h-4 w-4" aria-hidden="true" />}
+          label="Contact"
+          value={name}
+        />
+        <AdminOrderContactLine
+          icon={<Phone className="h-4 w-4" aria-hidden="true" />}
+          label="Phone"
+          value={phone}
+        />
+        <AdminOrderContactLine
+          icon={<Mail className="h-4 w-4" aria-hidden="true" />}
+          label="Email"
+          value={email}
+        />
+      </div>
+
+      <div className="mt-4 rounded-md border border-[#E5E7EB] bg-[#F8FAFC] p-3">
+        {addressLines.length ? (
+          <div className="space-y-1 text-sm font-semibold leading-6 text-[#344054]">
+            {addressLines.map((line, index) => (
+              <p key={`${line}-${index}`}>{line}</p>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm font-semibold leading-6 text-[#8A4B32]">{emptyText}</p>
+        )}
+
+        <div className="mt-3 flex flex-wrap gap-2">
+          {address?.pincode ? <StatusBadge tone="info">Pincode {address.pincode}</StatusBadge> : null}
+          {address?.locationSource ? (
+            <StatusBadge tone="neutral">{humanize(address.locationSource)}</StatusBadge>
+          ) : null}
+          {coordinates ? (
+            <a
+              href={`https://www.google.com/maps/search/?api=1&query=${coordinates.latitude},${coordinates.longitude}`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 rounded-full border border-[#B8D7F0] bg-[#F0F7FF] px-2.5 py-1 text-xs font-black text-[#163B5C] transition hover:border-[#7DB6E8] hover:bg-white"
+            >
+              <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
+              Open map pin
+            </a>
+          ) : null}
+        </div>
+      </div>
+
+      {footer ? <div className="mt-3">{footer}</div> : null}
+    </div>
+  );
+}
+
+function AdminOrderContactLine({
+  icon,
+  label,
+  value,
+}: {
+  icon: ReactNode;
+  label: string;
+  value?: string | null | undefined;
+}) {
+  return (
+    <div className="min-w-0 rounded-md border border-[#E5E7EB] bg-[#F8FAFC] px-3 py-2">
+      <div className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wide text-[#667085]">
+        {icon}
+        {label}
+      </div>
+      <p className="mt-1 truncate text-sm font-black text-[#1F2933]">{value || "Not saved"}</p>
+    </div>
+  );
+}
+
 function ReadinessCard({
   title,
   ready,
@@ -9188,6 +10195,7 @@ function UsersRolesPagination({
   isLoading,
   onPageChange,
   onPageSizeChange,
+  itemLabel = "users",
 }: {
   page: number;
   pageSize: number;
@@ -9195,6 +10203,7 @@ function UsersRolesPagination({
   isLoading?: boolean | undefined;
   onPageChange: (page: number) => void;
   onPageSizeChange: (pageSize: number) => void;
+  itemLabel?: string | undefined;
 }) {
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const currentPage = Math.min(page, pageCount);
@@ -9206,8 +10215,8 @@ function UsersRolesPagination({
     <div className="flex flex-col gap-3 border-t border-[#E5E7EB] bg-white px-4 py-4 md:flex-row md:items-center md:justify-between">
       <div className="text-sm font-semibold text-[#667085]">
         {isLoading
-          ? "Loading users..."
-          : `Showing ${firstItem.toLocaleString("en-IN")}-${lastItem.toLocaleString("en-IN")} of ${total.toLocaleString("en-IN")} users`}
+          ? `Loading ${itemLabel}...`
+          : `Showing ${firstItem.toLocaleString("en-IN")}-${lastItem.toLocaleString("en-IN")} of ${total.toLocaleString("en-IN")} ${itemLabel}`}
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <AdminListbox
@@ -10839,20 +11848,30 @@ function b2bAdminStatusOptions(status: string) {
 function SupportAction({
   status,
   note,
+  responseMessage,
+  respondedAt,
   onSubmit,
   disabled,
 }: {
   status: string;
   note?: string | null | undefined;
-  onSubmit: (status: string, note?: string) => void;
+  responseMessage?: string | null | undefined;
+  respondedAt?: string | null | undefined;
+  onSubmit: (status: string, note?: string, responseMessage?: string) => void;
   disabled?: boolean;
 }) {
   const [nextStatus, setNextStatus] = useState(status);
   const [adminNote, setAdminNote] = useState(note ?? "");
+  const [publicResponse, setPublicResponse] = useState(responseMessage ?? "");
   const supportStatusOptions = useMemo<AdminSelectOption[]>(
     () => supportStatuses.map((item) => ({ value: item, label: humanize(item) })),
     [],
   );
+  useEffect(() => {
+    setNextStatus(status);
+    setAdminNote(note ?? "");
+    setPublicResponse(responseMessage ?? "");
+  }, [note, responseMessage, status]);
   return (
     <div className="space-y-2">
       <AdminListbox
@@ -10870,10 +11889,25 @@ function SupportAction({
         placeholder="Internal resolution note"
         className="min-h-20 w-full rounded-md border border-[#D8E2EA] px-3 py-2 text-sm font-semibold text-[#1F2933]"
       />
+      <textarea
+        value={publicResponse}
+        onChange={(event) => setPublicResponse(event.target.value)}
+        placeholder="Public response email message"
+        className="min-h-24 w-full rounded-md border border-[#D8E2EA] px-3 py-2 text-sm font-semibold text-[#1F2933]"
+      />
+      {respondedAt ? (
+        <p className="text-xs font-bold text-[#667085]">
+          Response sent {formatDate(respondedAt)}.
+        </p>
+      ) : nextStatus === "RESPONDED" && publicResponse.trim() ? (
+        <p className="text-xs font-bold text-[#667085]">
+          Saving as responded will send this public response once.
+        </p>
+      ) : null}
       <Button
         type="button"
         size="sm"
-        onClick={() => onSubmit(nextStatus, adminNote)}
+        onClick={() => onSubmit(nextStatus, adminNote, publicResponse)}
         disabled={disabled}
       >
         Update request
@@ -10896,15 +11930,28 @@ function OrderStatusForm({
   const [orderStatus, setOrderStatus] = useState(currentOrderStatus);
   const [paymentStatus, setPaymentStatus] = useState(currentPaymentStatus);
   const [note, setNote] = useState("");
+  const allowedOrderStatuses = useMemo(
+    () => nextStepStatusOptions(orderProgressionStatuses, currentOrderStatus),
+    [currentOrderStatus],
+  );
+
+  useEffect(() => {
+    setOrderStatus(currentOrderStatus);
+    setPaymentStatus(currentPaymentStatus);
+  }, [currentOrderStatus, currentPaymentStatus]);
+
   return (
     <Panel title="Order and payment status">
       <div className="space-y-3">
         <LabeledSelect
           label="Order status"
           value={orderStatus}
-          values={orderStatuses}
+          values={allowedOrderStatuses}
           onChange={setOrderStatus}
         />
+        <p className="text-xs font-bold leading-5 text-[#667085]">
+          Order progress moves one step at a time. Direct jumps are blocked.
+        </p>
         <LabeledSelect
           label="Payment status"
           value={paymentStatus}
@@ -11000,6 +12047,10 @@ function DeliveryForm({
     (delivery?.deliveryPartnerUserId === form.deliveryPartnerUserId
       ? delivery?.deliveryPartner
       : null);
+  const allowedDeliveryStatuses = useMemo(
+    () => nextStepStatusOptions(deliveryProgressionStatuses, delivery?.status ?? form.status),
+    [delivery?.status, form.status],
+  );
 
   useEffect(() => {
     setForm({
@@ -11115,9 +12166,12 @@ function DeliveryForm({
         <LabeledSelect
           label="Delivery status"
           value={form.status}
-          values={deliveryStatuses}
+          values={allowedDeliveryStatuses}
           onChange={(status) => setForm((current) => ({ ...current, status }))}
         />
+        <p className="text-xs font-bold leading-5 text-[#667085]">
+          Delivery progress moves one step at a time from assignment to delivery.
+        </p>
         <AdminListbox
           label="Delivery mode"
           value={form.deliveryMode}
@@ -11365,33 +12419,6 @@ function LabeledSelect({
       onChange={onChange}
       buttonClassName="bg-white"
     />
-  );
-}
-
-function Timeline({
-  events,
-}: {
-  events: Array<{
-    id: string;
-    label: string;
-    note?: string | null | undefined;
-    date?: string | null | undefined;
-  }>;
-}) {
-  if (!events.length) {
-    return <p className="text-sm font-semibold text-[#667085]">No order timeline events yet.</p>;
-  }
-
-  return (
-    <div className="space-y-4">
-      {events.map((event) => (
-        <div key={event.id} className="border-l-2 border-[#D8E2EA] pl-4">
-          <p className="font-black text-[#1F2933]">{event.label}</p>
-          <p className="mt-1 text-sm font-semibold text-[#667085]">{formatDate(event.date)}</p>
-          {event.note ? <p className="mt-1 text-sm text-[#667085]">{event.note}</p> : null}
-        </div>
-      ))}
-    </div>
   );
 }
 
@@ -14373,7 +15400,7 @@ function contentRecordSubtitle(item: CmsPageRecord | BannerRecord | HomepageSect
   if ("sectionType" in item) {
     return humanize(item.sectionType);
   }
-  return item.subtitle || item.linkUrl || "Homepage banner";
+  return item.subtitle || bannerRecordLifecycle(item).label;
 }
 
 function contentRecordDetails(item: CmsPageRecord | BannerRecord | HomepageSectionRecord) {
@@ -14390,11 +15417,45 @@ function contentRecordDetails(item: CmsPageRecord | BannerRecord | HomepageSecti
       homepageSectionConfigSummary(item.config),
     ];
   }
+  const bannerVisibility = bannerRecordLifecycle(item);
   return [
     `Sort ${item.sortOrder}`,
-    item.imageUrl ? "Image set" : "No image set",
+    `Mobile visibility: ${bannerVisibility.label}`,
+    bannerScheduleSummary(item),
+    item.imageUrl ? "Desktop image set" : "No desktop image set",
+    item.mobileImageUrl ? "Mobile image set" : "Mobile uses desktop image",
     item.linkUrl ? `Links to ${item.linkUrl}` : "No link set",
   ];
+}
+
+function bannerRecordLifecycle(item: BannerRecord) {
+  if (item.status !== "PUBLISHED") {
+    return { label: humanize(item.status) };
+  }
+
+  const now = Date.now();
+  const startsAt = timestampOrNull(item.startsAt);
+  const endsAt = timestampOrNull(item.endsAt);
+
+  if (startsAt !== null && startsAt > now) {
+    return { label: `Scheduled until ${formatDate(item.startsAt)}` };
+  }
+
+  if (endsAt !== null && endsAt < now) {
+    return { label: `Expired at ${formatDate(item.endsAt)}` };
+  }
+
+  return { label: "Live on web and mobile" };
+}
+
+function bannerScheduleSummary(item: BannerRecord) {
+  if (!item.startsAt && !item.endsAt) {
+    return "No schedule window";
+  }
+
+  return `Runs ${item.startsAt ? formatDate(item.startsAt) : "now"} to ${
+    item.endsAt ? formatDate(item.endsAt) : "no end"
+  }`;
 }
 
 function homepageSectionConfigSummary(config?: Record<string, unknown> | null) {
@@ -15340,6 +16401,114 @@ function statusTone(status?: string | null): StatusTone {
   return "info";
 }
 
+function orderStatusHelp(status?: string | null) {
+  switch (status) {
+    case "PLACED":
+      return "Customer placed the order; seller action may still be pending.";
+    case "CONFIRMED":
+      return "Order is confirmed for fulfilment.";
+    case "PROCESSING":
+      return "At least one seller is preparing the order.";
+    case "SHIPPED":
+      return "Order has left the seller or courier hub.";
+    case "DELIVERED":
+      return "Order fulfilment is complete.";
+    case "CANCELLED":
+      return "Order was cancelled and should not continue fulfilment.";
+    case "PENDING":
+      return "Order is waiting for the next operational step.";
+    default:
+      return "Current order workflow state.";
+  }
+}
+
+function paymentStatusHelp(status?: string | null) {
+  switch (status) {
+    case "PENDING":
+      return "Payment is not confirmed yet, or COD/offline payment needs verification.";
+    case "PAID":
+      return "Payment is confirmed.";
+    case "FAILED":
+      return "Payment failed or was rejected.";
+    case "REFUNDED":
+      return "Payment was refunded.";
+    case "NOT_REQUIRED":
+      return "No payment collection is required for this order.";
+    default:
+      return "Current buyer payment state.";
+  }
+}
+
+function deliveryStatusHelp(status?: string | null) {
+  switch (status) {
+    case "PENDING":
+    case "NOT_ASSIGNED":
+      return "Delivery has not started yet.";
+    case "PACKED":
+      return "Package is packed and ready for pickup or dispatch.";
+    case "DISPATCHED":
+      return "Package has left the seller or pickup point.";
+    case "PICKED_UP":
+      return "Delivery partner or courier has picked up the package.";
+    case "IN_TRANSIT":
+      return "Package is moving toward the customer.";
+    case "OUT_FOR_DELIVERY":
+      return "Package is out for final delivery.";
+    case "DELIVERED":
+      return "Package was delivered to the customer.";
+    case "FAILED":
+      return "Delivery attempt failed and needs follow-up.";
+    case "CANCELLED":
+      return "Delivery was cancelled.";
+    case "RETURNED":
+      return "Package was returned.";
+    default:
+      return "Current delivery movement state.";
+  }
+}
+
+function firstSellerPickupAddress(seller?: SellerRecord | null): SellerAddressRecord | null {
+  return seller?.addresses?.[0] ?? null;
+}
+
+function adminAddressLines(address?: AddressSnapshotRecord | null) {
+  if (!address) {
+    return [];
+  }
+
+  return [
+    address.line1,
+    address.line2,
+    address.area,
+    [address.city, address.state, address.pincode].filter(Boolean).join(", "),
+    address.country ?? address.countryCode,
+  ].filter((line): line is string => Boolean(line?.trim()));
+}
+
+function addressCoordinates(address?: AddressSnapshotRecord | null) {
+  const latitude = numericAddressCoordinate(address?.latitude);
+  const longitude = numericAddressCoordinate(address?.longitude);
+
+  if (latitude === null || longitude === null) {
+    return null;
+  }
+
+  return { latitude, longitude };
+}
+
+function numericAddressCoordinate(value: number | string | null | undefined) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value.trim());
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
 function humanize(value?: string | null) {
   if (!value) {
     return "";
@@ -16099,4 +17268,13 @@ function dateTimeLocalToIso(value: string) {
 
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "" : date.toISOString();
+}
+
+function timestampOrNull(value?: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const timestamp = new Date(value).getTime();
+  return Number.isNaN(timestamp) ? null : timestamp;
 }

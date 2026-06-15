@@ -207,6 +207,7 @@ export class SellerLedgerService {
       });
 
       await this.createDeductionEntry(tx, payout, split, SellerLedgerEntryType.COMMISSION_DEDUCTION, split.commissionPaise, "Marketplace commission", actor);
+      await this.createDeductionEntry(tx, payout, split, SellerLedgerEntryType.COUPON_DISCOUNT, split.couponSellerFundedDiscountPaise, "Seller-funded coupon discount", actor);
       await this.createDeductionEntry(tx, payout, split, SellerLedgerEntryType.GST_ON_COMMISSION, split.gstOnCommissionPaise, "GST on commission", actor);
       await this.createDeductionEntry(tx, payout, split, SellerLedgerEntryType.TDS_DEDUCTION, split.tdsPaise, "TDS deduction", actor);
       await this.createDeductionEntry(tx, payout, split, SellerLedgerEntryType.TCS_DEDUCTION, split.tcsPaise, "TCS deduction", actor);

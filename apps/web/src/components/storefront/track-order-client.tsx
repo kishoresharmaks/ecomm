@@ -6,8 +6,12 @@ import type { ReactNode } from "react";
 import { CheckCircle2, ClipboardList, MapPin, PackageCheck, RefreshCw, Search, Truck } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
+import {
+  OrderStatusTimeline,
+  type OrderStatusTimelineEvent,
+} from "@/components/shared/order-status-timeline";
 import { customerDeliveryModeLabel } from "@/lib/delivery-labels";
-import { formatMoney, formatOrderTotal, trackOrder, type PublicTrackedOrder } from "@/lib/storefront-api";
+import { formatMoney, formatOrderBaseAmount, formatOrderBuyerAmount, formatOrderTotal, trackOrder, type PublicTrackedOrder } from "@/lib/storefront-api";
 import { StorefrontFrame } from "./storefront-frame";
 import {
   StorefrontEmptyState,
@@ -106,6 +110,7 @@ export function TrackOrderClient() {
 }
 
 function TrackedOrderPanel({ order }: { order: PublicTrackedOrder }) {
+  const timeline = buildTrackingTimeline(order);
   const shippingLocation = [
     order.shippingLocation?.city,
     order.shippingLocation?.state,
@@ -179,30 +184,32 @@ function TrackedOrderPanel({ order }: { order: PublicTrackedOrder }) {
       <section className="mt-7">
         <SectionHeading title="Order charges" description="Checkout charges locked for this order." />
         <div className="mt-4 grid gap-3 rounded-md border border-[#E5E7EB] bg-[#F8FAFC] p-4 text-sm font-semibold text-[#667085] md:grid-cols-2">
-          <Info label="Subtotal" value={formatMoney(order.subtotalPaise, order.currency)} />
-          <Info label="Shipping" value={formatMoney(order.shippingPaise, order.currency)} />
-          <Info label="Platform fee" value={formatMoney(order.platformFeePaise, order.currency)} />
+          <Info label="Subtotal" value={formatOrderBuyerAmount(order, order.buyerPayableSubtotalMinor ?? order.buyerSubtotalMinor, order.subtotalPaise)} />
+          {(order.couponDiscountPaise ?? 0) > 0 ? (
+            <Info
+              label={`Coupon ${order.couponCode ?? ""}`.trim()}
+              value={`-${formatOrderBuyerAmount(order, order.buyerCouponDiscountMinor, order.couponDiscountPaise ?? 0)}`}
+            />
+          ) : null}
+          <Info label="Shipping" value={formatOrderBuyerAmount(order, order.buyerShippingMinor, order.shippingPaise)} />
+          <Info label="Platform fee" value={formatOrderBuyerAmount(order, order.buyerPlatformFeeMinor, order.platformFeePaise)} />
           <Info label="Total" value={formatOrderTotal(order)} />
+          {formatOrderBaseAmount(order, order.totalPaise) ? <Info label="Base total" value={formatOrderBaseAmount(order, order.totalPaise) ?? ""} /> : null}
         </div>
       </section>
 
-      {buildTrackingTimeline(order).length ? (
+      {timeline.length || order.createdAt ? (
         <section className="mt-7">
           <SectionHeading title="Tracking timeline" description="Latest delivery and order events from admin, seller, and delivery updates." />
-          <div className="mt-4 grid gap-3">
-            {buildTrackingTimeline(order).map((event) => (
-              <div key={event.id} className="rounded-md border border-[#E5E7EB] bg-white p-4">
-                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <StatusBadge tone="info">{event.kind}</StatusBadge>
-                    <p className="text-sm font-black text-[#1F2933]">{friendlyTimelineLabel(event.newStatus)}</p>
-                  </div>
-                  <p className="text-xs font-bold text-[#667085]">{formatDateTime(event.createdAt)}</p>
-                </div>
-                {event.note ? <p className="mt-2 text-sm font-semibold text-[#667085]">{event.note}</p> : null}
-              </div>
-            ))}
-          </div>
+          <OrderStatusTimeline
+            className="mt-4"
+            events={timeline}
+            orderCreatedAt={order.createdAt}
+            currentOrderStatus={order.orderStatus}
+            currentDeliveryStatus={order.deliveryDetail?.status ?? order.deliveryStatus}
+            formatDateTime={formatDateTime}
+            emptyText="No tracking timeline events yet."
+          />
         </section>
       ) : null}
     </StorefrontPanel>
@@ -271,7 +278,7 @@ function Info({ label, value }: { label: string; value: string }) {
   return <StorefrontInfoItem label={label} value={value} />;
 }
 
-function buildTrackingTimeline(order: PublicTrackedOrder) {
+function buildTrackingTimeline(order: PublicTrackedOrder): OrderStatusTimelineEvent[] {
   return [
     ...(order.deliveryDetail?.events ?? []).map((event) => ({
       id: `delivery-${event.id}`,
@@ -307,10 +314,6 @@ function friendlyDeliveryLabel(status?: string | null) {
     default:
       return statusLabel(status);
   }
-}
-
-function friendlyTimelineLabel(status?: string | null) {
-  return friendlyDeliveryLabel(status);
 }
 
 function statusLabel(status?: string | null) {

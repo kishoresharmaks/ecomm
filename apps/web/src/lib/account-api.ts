@@ -1,6 +1,18 @@
 import { indihubFetch, type IndihubAuthHeaders } from "./api";
 import type { LocationSource } from "./maps-api";
-import type { OrderSummary, ProductImage, ProductVariant, SellerSummary } from "./storefront-api";
+import type {
+  OrderSummary,
+  ProductImage,
+  ProductReviewStatus,
+  ProductVariant,
+  SellerSummary,
+} from "./storefront-api";
+import type {
+  SupportContactChannel,
+  SupportRequesterType,
+  SupportRequestSource,
+  SupportRequestTopic,
+} from "@indihub/shared-types";
 
 export type CustomerUser = {
   id: string;
@@ -135,6 +147,10 @@ export type AccountOrder = OrderSummary & {
     sellerId: string;
     sellerSubtotalPaise: number;
     commissionPaise: number;
+    couponDiscountPaise?: number;
+    couponPlatformFundedDiscountPaise?: number;
+    couponSellerFundedDiscountPaise?: number;
+    couponAdjustmentPaise?: number;
     sellerStatus: string;
     seller?: SellerSummary;
   }>;
@@ -171,20 +187,91 @@ export type PaginatedAccountOrders = {
 };
 
 export type SupportRequestPayload = {
-  name: string;
-  email: string;
+  name?: string;
+  email?: string;
   phone?: string;
+  topic: SupportRequestTopic;
+  requesterType?: SupportRequesterType;
+  preferredContactChannel: SupportContactChannel;
   subject: string;
+  orderNumber?: string;
   message: string;
 };
 
 export type SupportRequest = SupportRequestPayload & {
   id: string;
   userId?: string | null;
+  source?: SupportRequestSource;
   status: string;
   adminNote?: string | null;
+  responseMessage?: string | null;
+  respondedAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
+};
+
+export type CustomerProductReview = {
+  id: string;
+  productId: string;
+  sellerId: string;
+  orderId: string;
+  orderItemId: string;
+  rating: number;
+  title?: string | null;
+  comment?: string | null;
+  status: ProductReviewStatus;
+  adminNote?: string | null;
+  isVerifiedPurchase: boolean;
+  submittedAt?: string;
+  publishedAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  product: {
+    id: string;
+    name: string;
+    slug: string;
+    imageUrl?: string | null;
+  };
+  seller: {
+    id: string;
+    storeName: string;
+    slug: string;
+  };
+};
+
+export type OrderReviewOptions = {
+  orderNumber: string;
+  orderStatus: string;
+  paymentStatus: string;
+  deliveryStatus: string;
+  eligible: boolean;
+  reason?: string | null;
+  items: Array<{
+    orderItemId: string;
+    productId: string;
+    productNameSnapshot: string;
+    product?: {
+      id: string;
+      name: string;
+      slug: string;
+      imageUrl?: string | null;
+    } | null;
+    seller?: {
+      id: string;
+      storeName: string;
+      slug: string;
+    } | null;
+    eligible: boolean;
+    reason?: string | null;
+    existingReview?: CustomerProductReview | null;
+  }>;
+};
+
+export type SubmitProductReviewPayload = {
+  orderItemId: string;
+  rating: number;
+  title?: string;
+  comment?: string;
 };
 
 export function getCustomerProfile(auth: IndihubAuthHeaders) {
@@ -288,6 +375,25 @@ export function cancelCustomerOrder(auth: IndihubAuthHeaders, orderNumber: strin
       body: JSON.stringify(note?.trim() ? { note: note.trim() } : {})
     },
     auth
+  );
+}
+
+export function getOrderReviewOptions(auth: IndihubAuthHeaders, orderNumber: string) {
+  return indihubFetch<OrderReviewOptions>(
+    `/api/account/reviews/orders/${encodeURIComponent(orderNumber)}`,
+    undefined,
+    auth,
+  );
+}
+
+export function submitProductReview(auth: IndihubAuthHeaders, payload: SubmitProductReviewPayload) {
+  return indihubFetch<CustomerProductReview>(
+    "/api/account/reviews",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    auth,
   );
 }
 

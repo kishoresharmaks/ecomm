@@ -3,6 +3,7 @@
 import { ReactNode, createContext, useContext, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
+import { useMarket } from "@/components/market/market-context";
 import { listCustomerAddresses } from "@/lib/account-api";
 import {
   defaultBrowsingLocationFromAddresses,
@@ -28,6 +29,7 @@ const StorefrontLocationContext = createContext<StorefrontLocationContextValue |
 
 export function StorefrontLocationProvider({ children }: { children: ReactNode }) {
   const customerAuth = useCustomerAuth();
+  const market = useMarket();
   const [hasLoadedStorage, setHasLoadedStorage] = useState(false);
   const [manualLocation, setManualLocationState] = useState<StorefrontBrowsingLocation | null>(null);
 
@@ -90,6 +92,13 @@ export function StorefrontLocationProvider({ children }: { children: ReactNode }
       },
     };
   }, [addressesQuery.isLoading, hasLoadedStorage, manualLocation, prefillLocation]);
+
+  useEffect(() => {
+    const countryCode = value.activeLocation?.countryCode?.trim().toUpperCase();
+    if (countryCode && countryCode !== market.countryCode) {
+      market.setCountryCode(countryCode);
+    }
+  }, [market.countryCode, market.setCountryCode, value.activeLocation?.countryCode]);
 
   return (
     <StorefrontLocationContext.Provider value={value}>

@@ -13,19 +13,25 @@
 **Logo Status:** To be designed later  
 **Brand Colors:** See `docs/IndiHub_BRAND_DIRECTION.md`  
 **Technology Stack:** Locked in `docs/IndiHub_FINAL_TECH_STACK_LOCK.md`  
-**Document Status:** Phase 1 features frozen after client approval. Scope update on 26-05-2026 adds a manual delivery partner web workspace and admin assignment workflow.
+**Document Status:** Historical Phase 1 approval and budget record. Scope update on 26-05-2026 added a manual delivery partner web workspace and admin assignment workflow. Scope update on 08-06-2026 added admin-controlled product ratings and reviews for verified delivered/paid purchases. Active development governance moved on 08-06-2026 to `docs/IndiHub_FULL_IMPLEMENTATION_SCOPE_GOVERNANCE.md`.
 
 ## 1. Document Purpose
 
-This document locks the final Phase 1 feature scope for the 1HandIndia ecommerce marketplace.
+This document records the original Phase 1 feature scope for the 1HandIndia ecommerce marketplace.
 
-After this document is approved, the features listed under **Frozen Phase 1 Included Scope** will be treated as the confirmed development scope for the approved budget of **INR 200,000**.
+The features listed under the original included scope remain useful for budget and approval traceability.
 
-Any feature, automation, integration, mobile app, workflow, or major change not listed as included in this document will be treated as a separate change request or later phase.
+As of 08-06-2026, this document no longer limits implementation completeness for selected features. Active work follows `docs/IndiHub_FULL_IMPLEMENTATION_SCOPE_GOVERNANCE.md`: when a feature is selected, build the full production-ready feature across the required backend, UI, permissions, audit, settings, provider, and test surfaces.
 
-## 2. Phase 1 Build Direction
+## 1A. Active Full Implementation Amendment
 
-1HandIndia Phase 1 will be a **web-first multi-vendor ecommerce marketplace**.
+From 08-06-2026 onward, do not use generic Phase 1, basic-only, future-scope, or later-upgrade language to reduce the completeness of an approved feature.
+
+Historical exclusions in this document are retained for context only. If the user selects one of those areas for development, treat it as a full implementation item rather than a partial add-on.
+
+## 2. Original Build Direction
+
+The original approved build was a **web-first multi-vendor ecommerce marketplace**.
 
 The first build will focus on:
 
@@ -34,20 +40,22 @@ The first build will focus on:
 - Hyperlocal store selling support.
 - Product catalogue management.
 - Cart, checkout, and order management.
-- Basic B2B enquiry and quotation request flow.
+- B2B enquiry and quotation request flow.
 - Admin control panel.
 - Payment gateway readiness.
 - Manual delivery and order tracking workflow.
 - Manual delivery partner/courier detail tracking.
 - Delivery partner web workspace for admin-assigned manual delivery tasks.
 - Transactional email notifications.
-- Basic reports, CMS pages, and audit records.
+- Reports, CMS pages, and audit records.
 
-Native Android app, native iOS app, seller mobile app, automated payouts, courier API live tracking, chatbot, advanced analytics, and other heavy automation features are not part of the INR 200,000 frozen Phase 1 build. They are listed later as future upgrades.
+Native Android app, native iOS app, seller mobile app, automated payouts, courier API live tracking, chatbot, advanced analytics, and other heavy automation features are no longer dismissed as generic future upgrades. If any of them is selected for development, it must be scoped and implemented as a complete production feature.
 
-## 3. Frozen Phase 1 Included Scope
+For the 08-06-2026 ratings and reviews scope update, the active rule is the same: if review dispute handling, seller replies, review photos, abuse automation, or mobile review flows are selected, implement them completely.
 
-The following features are locked for Phase 1.
+## 3. Original Included Scope
+
+The following features were locked for the original approved scope.
 
 ### 3.1 Customer Storefront
 
@@ -56,7 +64,7 @@ The following features are locked for Phase 1.
 - Category browsing.
 - Product listing page.
 - Product search.
-- Basic filters by category, price, and seller/store where applicable.
+- Marketplace filters by category, price, and seller/store where applicable.
 - Product detail page.
 - Product image display.
 - Product description display.
@@ -64,19 +72,20 @@ The following features are locked for Phase 1.
 - Product stock status display.
 - Seller/store details on product pages.
 - Seller/store profile page.
-- Basic wishlist or saved products.
+- Product ratings and reviews, limited to verified delivered and paid customer purchases, with admin approval before public display.
+- Wishlist or saved products.
 - Cart management.
 - Checkout flow.
 - Order placement.
 - Customer order history.
-- Basic order tracking using admin/seller-updated order status.
+- Order tracking using admin/seller-updated order status.
 - Mobile-friendly website layout.
 
 ### 3.2 Customer Account
 
 - Customer registration.
 - Customer login.
-- Customer profile basics.
+- Customer profile fields.
 - Customer address details.
 - Customer order history.
 - Customer support/contact request option.
@@ -93,7 +102,7 @@ The following features are locked for Phase 1.
 - Store banner upload placeholder or later upload support.
 - Store address, area, and city details.
 - Store contact details.
-- Basic business information collection.
+- Business information collection.
 - Seller subscription plan selection during onboarding.
 - Default seller subscription plan assignment if the seller does not choose a specific plan.
 - Approved scope update on 31-05-2026: paid monthly/yearly seller subscription plans use Razorpay recurring payment authorisation after admin approval.
@@ -108,8 +117,8 @@ The following features are locked for Phase 1.
 - Manage product stock.
 - Manage product description.
 - View received orders.
-- Update basic order status.
-- View basic sales summary.
+- Update order status.
+- View sales summary.
 - View B2B enquiries related to seller products where applicable.
 - Seller/store profile page.
 
@@ -132,16 +141,16 @@ The following features are locked for Phase 1.
 - Remove item from cart.
 - Checkout form.
 - Delivery address selection or entry.
-- Basic shipping charge rule if client confirms it before development.
+- Shipping charge rule if client confirms it before development.
 - Order placement.
 - Order number generation.
 - Order item details.
 - Order status tracking.
 - Seller order view.
 - Admin order view.
-- Basic cancellation handling if finalized before development.
+- Cancellation handling if finalized before development.
 
-### 3.6 Basic B2B Enquiry Flow
+### 3.6 B2B Enquiry Flow
 
 - Business buyer registration.
 - Business buyer login.
@@ -152,13 +161,13 @@ The following features are locked for Phase 1.
 - Admin can view B2B enquiries.
 - Seller can view B2B enquiries for their products.
 - Manual seller/admin response support.
-- Basic enquiry status tracking.
+- Enquiry status tracking.
 
 ### 3.7 Admin Panel
 
 - Admin login.
 - Admin dashboard.
-- Basic website summary.
+- Website summary.
 - Customer management.
 - Seller management.
 - Business buyer management.
@@ -174,14 +183,14 @@ The following features are locked for Phase 1.
 - Homepage content management.
 - Policy page management.
 - Order management.
-- Basic order status management.
-- Basic sales report.
-- Basic seller report.
-- Basic product report.
-- Basic enquiry report.
+- Order status management.
+- Sales report.
+- Seller report.
+- Product report.
+- Enquiry report.
 - Manual commission setup.
-- Basic support enquiry management.
-- Basic audit log records for sensitive admin actions.
+- Support enquiry management.
+- Audit log records for sensitive admin actions.
 
 ### 3.8 Content and Policy Pages
 
@@ -193,7 +202,7 @@ The following features are locked for Phase 1.
 - Refund or return policy page.
 - Shipping policy page, if content is provided.
 - Seller policy page, if content is provided.
-- Basic support information.
+- Support information.
 
 ### 3.9 Payment and Billing Readiness
 
@@ -202,11 +211,11 @@ The following features are locked for Phase 1.
 - Online payment activation only after payment provider approval.
 - Cash on delivery can be enabled only if the client confirms it before development.
 - Manual bank transfer can be enabled only if the client confirms it before development.
-- Manual finance workspace is included as a Phase 1 scope update: Admin and Finance Manager users can verify COD and bank transfer collections, mark eligible offline payments paid/rejected, review seller settlements/payouts/ledger/statements, and manage payment settings.
-- Bank transfer settings include platform bank/UPI destination, instructions, and customer UTR/reference capture. Automated bank reconciliation is future scope.
+- Finance workspace was added as a scope update: Admin and Finance Manager users can verify COD and bank transfer collections, mark eligible offline payments paid/rejected, review seller settlements/payouts/ledger/statements, and manage payment settings.
+- Bank transfer settings include platform bank/UPI destination, instructions, and customer UTR/reference capture. Automated bank reconciliation is a selectable full implementation area.
 - Approved scope update on 31-05-2026: Razorpay recurring billing is included for paid seller subscription plans. Production use still depends on Razorpay account approval, valid keys, webhook setup, and provider subscription support.
-- Basic order receipt.
-- Basic tax/GST fields where required for product/order records.
+- Order receipt.
+- Tax/GST fields where required for product/order records.
 - Payment gateway transaction charges are not included in development cost.
 - Payment provider setup charges are not included in development cost.
 
@@ -221,9 +230,9 @@ The following features are locked for Phase 1.
 - Estimated delivery date entry, if applicable.
 - Delivery note entry for admin/seller reference.
 - Customer-facing delivery status display from manual updates.
-- Basic shipping charge rule if finalized before development.
+- Shipping charge rules if finalized before development.
 - Store pickup or click-and-collect option if client confirms it before development.
-- Courier provider details can be stored for future integration.
+- Courier provider details can be stored for provider integration.
 - Admin can assign an active user with the Delivery Partner role to an order.
 - Delivery partners can log in to the web workspace to view only assigned orders.
 - Delivery partners can view order items, customer delivery address, payment visibility, and delivery timeline.
@@ -233,7 +242,7 @@ The following features are locked for Phase 1.
 - Admin can verify or reject delivery partner COD collection from the admin order detail screen.
 - COD payments remain pending after delivery until admin verifies collected cash and marks payment paid.
 
-Phase 1 delivery partner support is web-only and manual. It does not include a delivery mobile app, GPS tracking, courier API tracking, delivery OTP verification, proof-of-delivery upload, or delivery partner payout settlement.
+Delivery partner web support is implemented. Delivery mobile app, GPS tracking, courier API tracking, delivery OTP verification, proof-of-delivery upload, and delivery partner payout settlement are selectable full implementation areas when chosen.
 
 ### 3.11 Roles, Access, and Audit
 
@@ -244,15 +253,15 @@ Phase 1 delivery partner support is web-only and manual. It does not include a d
 - Business buyers can access only their own enquiries and orders.
 - Admin can manage platform data.
 - Finance Manager can access finance/payment APIs and cannot access full admin management surfaces.
-- Basic audit log records for seller approval, seller subscription changes, product approval, order status changes, commission changes, and policy updates.
+- Audit log records for seller approval, seller subscription changes, product approval, order status changes, commission changes, and policy updates.
 
 ### 3.12 Transactional Email Notifications
 
-Phase 1 includes basic transactional email notifications.
+The application includes transactional email notifications.
 
 Email provider charges, domain email setup charges, SMTP charges, and third-party email service charges are separate from the development budget.
 
-Included Phase 1 email types:
+Application email types:
 
 - Customer account created email.
 - Customer login/security notification if supported by the selected auth provider.
@@ -274,8 +283,8 @@ Included Phase 1 email types:
 - Order packed/processing email.
 - Order shipped/dispatched email using manual status update.
 - Order delivered email.
-- Order cancelled email, if cancellation is enabled in Phase 1.
-- Basic refund/update email, if refund handling is enabled in Phase 1.
+- Order cancelled email, if cancellation is enabled.
+- Refund/update email, if refund handling is enabled.
 - B2B enquiry submitted email to business buyer.
 - B2B enquiry alert email to admin.
 - B2B enquiry alert email to seller where applicable.
@@ -283,13 +292,13 @@ Included Phase 1 email types:
 - Contact/support request received email.
 - Contact/support request alert email to admin.
 
-Email templates will be basic branded templates using the 1HandIndia name and approved brand colors. Advanced marketing campaigns, abandoned cart automation, newsletter systems, segmentation, and bulk promotional emails are not included in Phase 1.
+Email templates use the 1HandIndia name and approved brand colors. Advanced marketing campaigns, abandoned cart automation, newsletter systems, segmentation, and bulk promotional emails are selectable full implementation areas when chosen.
 
-## 4. Phase 1 Not Included / Future Upgrade Scope
+## 4. Historical Exclusions Now Treated As Selectable Full Implementations
 
-The following features are **not included** in the INR 200,000 frozen Phase 1 build.
+The following features were not included in the original INR 200,000 frozen build.
 
-They can be planned as Phase 2, Phase 3, or separate change requests.
+As of 08-06-2026, if the user selects any of these, implement it as a complete production feature under `docs/IndiHub_FULL_IMPLEMENTATION_SCOPE_GOVERNANCE.md`.
 
 - Native Android customer app.
 - Native iOS customer app.
@@ -332,17 +341,17 @@ They can be planned as Phase 2, Phase 3, or separate change requests.
 - Advanced review and dispute workflow.
 - Advanced fraud, trust, and safety automation.
 
-## 5. Confirmed Phase 1 User Types
+## 5. Original Confirmed User Types
 
-Phase 1 will support the following user types:
+The original approved build supported the following user types:
 
 - Customer / B2C Buyer.
 - Seller, including marketplace seller, hyperlocal store, and wholesale distributor operational types.
-- Business Buyer / B2B Buyer for basic enquiry flow.
+- Business Buyer / B2B Buyer for enquiry flow.
 - Delivery Partner for admin-assigned manual delivery tasks.
 - Admin Team.
 
-Delivery Partner / Courier Partner is a web workspace role for assigned manual delivery tasks only. Dedicated support staff logins and delivery mobile apps are not included in frozen Phase 1 unless added through a change request.
+Delivery Partner / Courier Partner is a web workspace role for assigned delivery tasks. Dedicated support staff logins and delivery mobile apps are selectable full implementation areas.
 
 ## 6. Third-Party Services and Client Responsibilities
 
@@ -391,7 +400,7 @@ The client must provide or confirm the following before development starts:
 - Seller approval rules.
 - Commission rules.
 - Payment method decision.
-- Razorpay account details, if online payment is required in Phase 1.
+- Razorpay account details, if online payment is required.
 - Razorpay subscription/recurring billing support enabled on the merchant account if paid seller plans are used.
 - Cash on delivery decision.
 - Manual bank transfer decision.
@@ -407,9 +416,9 @@ The client must provide or confirm the following before development starts:
 - Social media links, if required.
 - Homepage banner content, if available.
 
-## 8. Estimated Phase 1 Timeline
+## 8. Historical Estimated Timeline
 
-The estimated Phase 1 timeline is **8 to 12 weeks** after:
+The original estimated timeline was **8 to 12 weeks** after:
 
 - Advance payment is received.
 - Required client details are provided.
@@ -434,15 +443,17 @@ Timeline can change if client content, product data, provider approvals, or feed
 
 ## 9. Payment Terms
 
-Total approved Phase 1 budget: **INR 200,000**
+Total historical approved budget: **INR 200,000**
 
 - 40% advance payment to start the project: **INR 80,000**
 - 30% after UI design and first working demo approval: **INR 60,000**
 - 30% before final deployment and handover: **INR 60,000**
 
-## 10. Change Request Rule
+## 10. Historical Change Request Rule
 
-After this feature freeze, any new feature or change outside the frozen Phase 1 included scope will be treated as a change request.
+The original feature freeze treated new work as a change request.
+
+As of 08-06-2026, active development uses the full implementation governance rule. User-approved feature requests are no longer reduced by the historical Phase 1 boundary.
 
 Change requests may affect:
 
@@ -454,38 +465,38 @@ Change requests may affect:
 
 No extra feature will be added without client discussion and approval.
 
-## 11. Phase 1 Acceptance Rule
+## 11. Current Acceptance Rule
 
-Phase 1 will be considered ready for final review when:
+Selected product work is ready for final review when:
 
-- The frozen customer storefront flow is working.
+- The selected customer storefront flow is working.
 - Seller onboarding and product management are working.
 - Admin can manage sellers, products, orders, content, and reports.
-- Basic B2B enquiry flow is working.
+- B2B enquiry flow is working.
 - Cart, checkout, and order placement are working.
 - Payment readiness is completed based on available provider details.
-- Basic delivery/order status workflow is working.
+- Delivery/order status workflow is working.
 - Manual delivery partner/courier details can be stored and shown on orders where applicable.
 - Admin can assign delivery partners to orders and delivery partners can update assigned delivery progress without changing payment status.
-- Transactional email notifications are configured for the agreed Phase 1 events.
+- Transactional email notifications are configured for the selected events.
 - Policy and content pages are available.
 - Role access rules are checked.
-- Basic audit log records are available.
+- Audit log records are available.
 - Final corrections from the agreed review cycle are completed.
 
 ## 12. Client Confirmation
 
 By approving this document, the client confirms:
 
-- The brand name for Phase 1 is 1HandIndia.
-- The approved Phase 1 budget is INR 200,000.
-- Phase 1 is a web-first marketplace build.
-- The features listed in Section 3 are included in the frozen Phase 1 scope.
-- The features listed in Section 4 are not included in the INR 200,000 Phase 1 build.
+- The brand name is 1HandIndia.
+- The historical approved budget is INR 200,000.
+- The original approved build was web-first.
+- The features listed in Section 3 were included in the original frozen scope.
+- The features listed in Section 4 are now selectable full implementation areas when chosen.
 - Seller operational types are marketplace seller, hyperlocal store, and wholesale distributor; legal business entity type remains separate.
-- Delivery Partner / Courier Partner is handled through a manual web workspace for assigned orders, while live courier API/mobile tracking remains a later phase.
+- Delivery Partner / Courier Partner is handled through a web workspace for assigned orders, while live courier API/mobile tracking can be selected for full implementation.
 - Transactional email notifications are included, but third-party email service charges are separate.
-- Any additional feature after this freeze will be handled as a change request or later phase.
+- Additional selected features follow the active full implementation governance rule.
 - Third-party fees, provider approvals, hosting, domain, and account charges are separate from development cost.
 
 ## 13. Approval Sign-Off

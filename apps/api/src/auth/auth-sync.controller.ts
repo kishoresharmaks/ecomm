@@ -38,6 +38,7 @@ export class AuthSyncController {
   @ApiHeader({ name: "Authorization", required: true })
   async syncCurrentUser(
     @Headers("authorization") authorizationHeader: string | undefined,
+    @Headers("x-indihub-accept-encrypted-response") acceptEncryptedResponse: string | undefined,
     @Body() dto: SyncCurrentUserDto
   ) {
     const profile = await this.clerkAuthService.resolveSessionProfile(authorizationHeader, {
@@ -45,6 +46,6 @@ export class AuthSyncController {
       defaultRole: RoleCode.CUSTOMER
     });
     const response = await this.authUsersService.syncAuthUser(profile);
-    return encryptForBearerSession(authorizationHeader, response);
+    return encryptForBearerSession(authorizationHeader, response, acceptEncryptedResponse);
   }
 }

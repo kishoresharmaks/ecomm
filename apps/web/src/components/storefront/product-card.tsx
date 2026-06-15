@@ -3,7 +3,7 @@
 import Link from "next/link";
 import type { Route } from "next";
 import { useState, type MouseEvent } from "react";
-import { Eye, FilePlus2, Heart, PackageCheck, ShoppingCart, Store } from "lucide-react";
+import { Eye, FilePlus2, Heart, PackageCheck, ShoppingCart, Star, Store } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Button, cn } from "@indihub/ui";
 import { useMarket } from "@/components/market/market-context";
@@ -30,12 +30,21 @@ export function ProductCard({ product, onAddToCart, isAdding = false }: ProductC
   const href = `/products/${product.slug}` as Route;
   const hasStock = Boolean(variant && variant.stockQuantity > 0);
   const stockStatus = getStorefrontStockStatus(variant?.stockQuantity);
-  const mrp = variant?.mrpPaise && variant.mrpPaise > variant.pricePaise ? variant.mrpPaise : null;
+  const deal = variant?.activeDeal ?? product.activeDeal ?? null;
+  const originalDealPrice =
+    variant?.originalPricePaise && variant.originalPricePaise > variant.pricePaise
+      ? variant.originalPricePaise
+      : null;
+  const mrp =
+    originalDealPrice ??
+    (variant?.mrpPaise && variant.mrpPaise > variant.pricePaise ? variant.mrpPaise : null);
   const isWishlisted = wishlist.hasWishlistProduct(product.id);
   const isWishlistPending = wishlist.isPendingProductId === product.id;
   const listingMode = product.listingMode ?? "CART";
   const isEnquiryOnly = listingMode === "ENQUIRY_ONLY";
-  const campaignBadge = product.campaignBadge?.trim();
+  const campaignBadge = product.campaignBadge?.trim() || (deal ? "Deal" : "");
+  const reviewCount = product.reviewSummary?.reviewCount ?? 0;
+  const averageRating = product.reviewSummary?.averageRating ?? null;
   const cartQuery = useQuery({
     queryKey: ["cart", customerAuth.authKey],
     queryFn: () => getCart(customerAuth.authHeaders),
@@ -131,6 +140,15 @@ export function ProductCard({ product, onAddToCart, isAdding = false }: ProductC
           </h3>
         </Link>
 
+        <div className="mt-2 flex min-h-5 items-center gap-1.5 text-[11px] font-black text-[#667085]">
+          <Star className={cn("h-3.5 w-3.5", reviewCount ? "fill-[#ED3500] text-[#ED3500]" : "text-[#98A2B3]")} aria-hidden="true" />
+          {reviewCount ? (
+            <span>{averageRating?.toFixed(1)} ({reviewCount})</span>
+          ) : (
+            <span>No reviews yet</span>
+          )}
+        </div>
+
         <span
           className={cn(
             "mt-3 inline-flex w-fit items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-black",
@@ -144,9 +162,14 @@ export function ProductCard({ product, onAddToCart, isAdding = false }: ProductC
         <div className="mt-auto flex flex-col gap-2 pt-3 sm:flex-row sm:items-end sm:justify-between sm:gap-3 sm:pt-5">
           <div className="min-w-0">
             <p className="truncate text-base font-black text-[#163B5C] sm:text-xl">
-              {variant ? market.format(variant.pricePaise) : "Price pending"}
-            </p>
+            {variant ? market.format(variant.pricePaise) : "Price pending"}
+          </p>
             {mrp ? <p className="text-xs font-semibold text-[#98A2B3] line-through">{market.format(mrp)}</p> : null}
+            {deal ? (
+              <p className="mt-1 text-[11px] font-black text-[#ED3500]">
+                {deal.discountBps / 100}% deal price
+              </p>
+            ) : null}
             {variant && market.market.currency !== variant.currency ? (
               <p className="mt-1 text-[11px] font-bold text-[#667085]">{formatMoney(variant.pricePaise, variant.currency)} base</p>
             ) : null}

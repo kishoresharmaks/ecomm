@@ -58,7 +58,7 @@ describe("indihubFetch", () => {
 
   it("decrypts encrypted bearer-token responses", async () => {
     const envelope = await encryptedEnvelope("session-token", { synced: true });
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       new Response(JSON.stringify(envelope), {
         status: 200,
         headers: { "content-type": "application/json" }
@@ -68,6 +68,7 @@ describe("indihubFetch", () => {
     await expect(indihubFetch<{ synced: true }>("/api/auth/sync-current-user", undefined, { bearerToken: "session-token" })).resolves.toEqual({
       synced: true
     });
+    expect(new Headers((fetchMock.mock.calls[0]?.[1] as RequestInit).headers).get("x-indihub-accept-encrypted-response")).toBe("A256GCM");
   });
 });
 

@@ -4,7 +4,7 @@ Date: 2026-05-31
 
 ## Decision
 
-Live third-party courier API booking is approved as an explicit scope change over the frozen Phase 1 manual courier baseline.
+Live third-party courier API booking is approved as a product expansion over the earlier manual courier baseline.
 
 The implementation must stay provider-portable:
 
@@ -29,7 +29,9 @@ Courier COD collection remains auditable through package-level courier COD remit
 
 For Shiprocket, COD remittance verification starts with provider report import and admin/finance verification. This avoids hardcoding an unstable provider-specific COD remittance API and keeps the finance workflow provider-portable.
 
-## Still Future Scope Unless Separately Approved
+## Selectable Related Full Implementations
+
+These related areas are not excluded as generic future scope. If selected, each must be implemented as a complete production workflow:
 
 - Delivery partner mobile app.
 - Live GPS tracking.

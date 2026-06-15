@@ -7,6 +7,50 @@ export type DeliveryOrderPage = {
   limit: number;
 };
 
+export type DeliveryPickupAddress = {
+  line1?: string | null;
+  line2?: string | null;
+  area?: string | null;
+  city?: string | null;
+  state?: string | null;
+  pincode?: string | null;
+  country?: string | null;
+  countryCode?: string | null;
+  latitude?: number | string | null;
+  longitude?: number | string | null;
+  locationSource?: string | null;
+  accuracyMeters?: number | string | null;
+  locationConfidenceScore?: number | string | null;
+};
+
+export type DeliveryOrderShipment = {
+  id: string;
+  shipmentNumber: string;
+  sellerId: string;
+  seller?: {
+    id: string;
+    storeName: string;
+    slug: string;
+    contactName?: string | null;
+    contactPhone?: string | null;
+    contactEmail?: string | null;
+    pickupAddress?: DeliveryPickupAddress | null;
+  } | null;
+  subtotalPaise: number;
+  shippingPaise: number;
+  codSurchargePaise: number;
+  deliveryMode: string;
+  status: string;
+  assignmentStatus?: string | null;
+  assignmentExpiresAt?: string | null;
+  deliveryPartnerUserId?: string | null;
+  partnerName?: string | null;
+  partnerPhone?: string | null;
+  trackingReference?: string | null;
+  estimatedDeliveryDate?: string | null;
+  deliveryNote?: string | null;
+};
+
 export type DeliveryOrder = {
   id: string;
   orderNumber: string;
@@ -51,6 +95,7 @@ export type DeliveryOrder = {
       slug: string;
     } | null;
   }>;
+  shipments?: DeliveryOrderShipment[];
   payments?: Array<{
     id: string;
     provider: string;
@@ -76,6 +121,7 @@ export type DeliveryOrder = {
     assignedAt?: string | null;
     acceptedAt?: string | null;
     rejectedAt?: string | null;
+    assignmentExpiresAt?: string | null;
     assignmentNote?: string | null;
     trackingReference?: string | null;
     estimatedDeliveryDate?: string | null;
@@ -274,7 +320,13 @@ export type DeliveryAttemptPayload = {
 
 export function listDeliveryOrders(
   auth: IndihubAuthHeaders,
-  query: { search?: string; deliveryStatus?: string; paymentStatus?: string; page?: number; limit?: number } = {}
+  query: {
+    search?: string;
+    deliveryStatus?: string;
+    paymentStatus?: string;
+    page?: number;
+    limit?: number;
+  } = {},
 ) {
   const params = new URLSearchParams();
   Object.entries(query).forEach(([key, value]) => {
@@ -283,51 +335,63 @@ export function listDeliveryOrders(
     }
   });
 
-  return indihubFetch<DeliveryOrderPage>(`/api/delivery/orders${params.size ? `?${params.toString()}` : ""}`, undefined, auth);
+  return indihubFetch<DeliveryOrderPage>(
+    `/api/delivery/orders${params.size ? `?${params.toString()}` : ""}`,
+    undefined,
+    auth,
+  );
 }
 
 export function getDeliveryOrder(auth: IndihubAuthHeaders, orderNumber: string) {
-  return indihubFetch<DeliveryOrder>(`/api/delivery/orders/${encodeURIComponent(orderNumber)}`, undefined, auth);
+  return indihubFetch<DeliveryOrder>(
+    `/api/delivery/orders/${encodeURIComponent(orderNumber)}`,
+    undefined,
+    auth,
+  );
 }
 
-export function updateDeliveryOrder(auth: IndihubAuthHeaders, orderNumber: string, payload: DeliveryUpdatePayload) {
+export function updateDeliveryOrder(
+  auth: IndihubAuthHeaders,
+  orderNumber: string,
+  payload: DeliveryUpdatePayload,
+) {
   return indihubFetch<DeliveryOrder>(
     `/api/delivery/orders/${encodeURIComponent(orderNumber)}/delivery`,
     {
       method: "PATCH",
-      body: JSON.stringify(removeEmptyValues(payload))
+      body: JSON.stringify(removeEmptyValues(payload)),
     },
-    auth
+    auth,
   );
 }
 
 export function respondDeliveryAssignment(
   auth: IndihubAuthHeaders,
   orderNumber: string,
-  payload: DeliveryAssignmentDecisionPayload
+  payload: DeliveryAssignmentDecisionPayload,
 ) {
   return indihubFetch<DeliveryOrder>(
     `/api/delivery/orders/${encodeURIComponent(orderNumber)}/assignment`,
     {
       method: "PATCH",
-      body: JSON.stringify(removeEmptyValues(payload))
+      body: JSON.stringify(removeEmptyValues(payload)),
     },
-    auth
+    auth,
   );
 }
 
 export function createDeliveryAttempt(
   auth: IndihubAuthHeaders,
   orderNumber: string,
-  payload: DeliveryAttemptPayload
+  payload: DeliveryAttemptPayload,
 ) {
   return indihubFetch<DeliveryOrder>(
     `/api/delivery/orders/${encodeURIComponent(orderNumber)}/attempts`,
     {
       method: "POST",
-      body: JSON.stringify(removeEmptyValues(payload))
+      body: JSON.stringify(removeEmptyValues(payload)),
     },
-    auth
+    auth,
   );
 }
 
@@ -335,7 +399,10 @@ export function getDeliveryProfile(auth: IndihubAuthHeaders) {
   return indihubFetch<DeliveryPartnerProfileAccount>("/api/delivery/profile", undefined, auth);
 }
 
-export function getDeliveryWallet(auth: IndihubAuthHeaders, query: { page?: number; limit?: number } = {}) {
+export function getDeliveryWallet(
+  auth: IndihubAuthHeaders,
+  query: { page?: number; limit?: number } = {},
+) {
   const params = new URLSearchParams();
   Object.entries(query).forEach(([key, value]) => {
     if (value !== undefined) {
@@ -346,7 +413,7 @@ export function getDeliveryWallet(auth: IndihubAuthHeaders, query: { page?: numb
   return indihubFetch<DeliveryPartnerWallet>(
     `/api/delivery/wallet${params.size ? `?${params.toString()}` : ""}`,
     undefined,
-    auth
+    auth,
   );
 }
 
@@ -355,26 +422,28 @@ export function requestDeliveryWalletPayout(auth: IndihubAuthHeaders, payload: {
     "/api/delivery/wallet/payout-requests",
     {
       method: "POST",
-      body: JSON.stringify(removeEmptyValues(payload))
+      body: JSON.stringify(removeEmptyValues(payload)),
     },
-    auth
+    auth,
   );
 }
 
 export function updateDeliveryProfile(
   auth: IndihubAuthHeaders,
-  payload: DeliveryPartnerProfileUpdatePayload
+  payload: DeliveryPartnerProfileUpdatePayload,
 ) {
   return indihubFetch<DeliveryPartnerProfileAccount>(
     "/api/delivery/profile",
     {
       method: "PATCH",
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
     },
-    auth
+    auth,
   );
 }
 
 function removeEmptyValues<T extends Record<string, unknown>>(value: T) {
-  return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, entry === "" ? undefined : entry]));
+  return Object.fromEntries(
+    Object.entries(value).map(([key, entry]) => [key, entry === "" ? undefined : entry]),
+  );
 }

@@ -7,6 +7,7 @@ import type { RequestUser } from "../auth/types/indihub-request";
 import {
   SettingsQueryDto,
   UpsertCheckoutPlatformFeeDto,
+  UpsertContactSettingsDto,
   UpsertDeliveryPartnerPayoutSettingsDto,
   UpsertEmailSettingDto,
   UpsertMapRoutingSettingsDto,
@@ -80,6 +81,21 @@ export class SettingsController {
     @Body() dto: UpsertMapRoutingSettingsDto,
   ) {
     return this.settingsService.upsertMapRoutingSettings(actor, dto);
+  }
+
+  @Get("contact")
+  @ApiOperation({ summary: "Read public contact/support center settings." })
+  getContactSettings() {
+    return this.settingsService.getContactSettings();
+  }
+
+  @Put("contact")
+  @ApiOperation({ summary: "Update public contact/support center settings." })
+  upsertContactSettings(
+    @CurrentUser() actor: RequestUser,
+    @Body() dto: UpsertContactSettingsDto,
+  ) {
+    return this.settingsService.upsertContactSettings(actor, dto);
   }
 
   @Put(":key")

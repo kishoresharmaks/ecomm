@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { Route } from "next";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -22,7 +22,6 @@ import {
 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, SectionHeading, cn } from "@indihub/ui";
-import { marketplaceProductSpecificationFields } from "@indihub/shared-types";
 import { CustomerAuthNotice } from "@/components/auth/customer-auth-notice";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
 import { useMarket } from "@/components/market/market-context";
@@ -31,11 +30,14 @@ import {
   formatMoney,
   getProduct,
   isPurchasableVariant,
+  listProductReviews,
   primaryImage,
   primaryVariant,
+  type PaginatedProductReviews,
   type ProductSummary,
   type ProductVariant,
 } from "@/lib/storefront-api";
+import { rememberRecentProduct } from "@/lib/recent-products";
 import { StorefrontFrame } from "./storefront-frame";
 import { StorefrontImage } from "./storefront-image";
 import { displayStorefrontAttributeValue } from "./storefront-product-attributes";
@@ -77,12 +79,39 @@ export function ProductDetailClient({ slug }: { slug: string }) {
   const listingMode = product?.listingMode ?? "CART";
   const isEnquiryOnly = listingMode === "ENQUIRY_ONLY";
   const canAddToCart = listingMode !== "ENQUIRY_ONLY";
+  const purchaseModeBadge = publicPurchaseModeLabel(listingMode);
   const specificationRows = product ? productSpecificationRows(product, selectedVariant) : [];
   const serviceHighlights = productServiceHighlights();
+  const activeDeal = selectedVariant?.activeDeal ?? product?.activeDeal ?? null;
+  const reviewsQuery = useQuery({
+    queryKey: ["product-reviews", product?.id],
+    queryFn: () => {
+      if (!product) {
+        throw new Error("Product is still loading.");
+      }
+      return listProductReviews(product.id, { limit: 5 });
+    },
+    enabled: Boolean(product?.id),
+  });
+  const reviewSummary = reviewsQuery.data?.summary ?? product?.reviewSummary ?? null;
+  const reviewCount = reviewSummary?.reviewCount ?? 0;
+  const averageRating = reviewSummary?.averageRating ?? null;
+  const originalDealPrice =
+    selectedVariant?.originalPricePaise && selectedVariant.originalPricePaise > selectedVariant.pricePaise
+      ? selectedVariant.originalPricePaise
+      : null;
   const discountPercent =
-    selectedVariant?.mrpPaise && selectedVariant.mrpPaise > selectedVariant.pricePaise
+    activeDeal
+      ? activeDeal.discountBps / 100
+      : selectedVariant?.mrpPaise && selectedVariant.mrpPaise > selectedVariant.pricePaise
       ? Math.round(((selectedVariant.mrpPaise - selectedVariant.pricePaise) / selectedVariant.mrpPaise) * 100)
       : null;
+
+  useEffect(() => {
+    if (product) {
+      rememberRecentProduct(product);
+    }
+  }, [product]);
 
   const addMutation = useMutation({
     mutationFn: async () => {
@@ -211,7 +240,7 @@ export function ProductDetailClient({ slug }: { slug: string }) {
               <div className="relative order-1 h-[min(112vw,520px)] min-h-[340px] overflow-hidden rounded-[22px] bg-[radial-gradient(circle_at_50%_48%,rgba(237,53,0,0.10),transparent_32%),linear-gradient(135deg,#fff_0%,#FFF4EF_100%)] md:order-2 md:h-[520px] md:min-h-0 lg:h-[clamp(430px,calc(100svh-300px),560px)]">
                 {discountPercent ? (
                   <span className="absolute right-5 top-5 z-10 rounded-full bg-[#ED3500] px-4 py-2 text-sm font-black text-white shadow-[0_12px_24px_rgba(237,53,0,0.24)]">
-                    {discountPercent}% OFF
+                    {activeDeal ? "Deal" : `${discountPercent}% OFF`}
                   </span>
                 ) : null}
                 <div className="absolute inset-5 z-0 flex items-center justify-center md:inset-7 lg:inset-9">
@@ -237,7 +266,10 @@ export function ProductDetailClient({ slug }: { slug: string }) {
                     {isEnquiryOnly ? "Enquiry required" : stockStatus.label}
                   </span>
                   <span className="rounded-full bg-[#EAF4FF] px-3 py-1 text-xs font-black text-[#175CD3]">{product.category.name}</span>
-                  <span className="rounded-full bg-[#EAFBF2] px-3 py-1 text-xs font-black text-[#0F8A5F]">{listingModeLabel(listingMode)}</span>
+                  {purchaseModeBadge ? (
+                    <span className="rounded-full bg-[#EAFBF2] px-3 py-1 text-xs font-black text-[#0F8A5F]">{purchaseModeBadge}</span>
+                  ) : null}
+                  {activeDeal ? <span className="rounded-full bg-[#FFF0EC] px-3 py-1 text-xs font-black text-[#ED3500]">Deal</span> : null}
                 </div>
                 <div className="flex shrink-0 gap-2">
                   <Button type="button" variant="outline" size="sm" onClick={() => void handleShare()} className="hidden rounded-full md:inline-flex">
@@ -268,7 +300,9 @@ export function ProductDetailClient({ slug }: { slug: string }) {
               <div className="mt-4 flex flex-wrap items-center gap-4 text-sm font-semibold text-[#667085]">
                 <span className="inline-flex items-center gap-1.5 text-[#ED3500]">
                   <Star className="h-4 w-4 fill-[#ED3500]" aria-hidden="true" />
-                  <span className="font-black">Verified seller</span>
+                  <span className="font-black">
+                    {reviewCount ? `${averageRating?.toFixed(1)} (${reviewCount} reviews)` : "No reviews yet"}
+                  </span>
                 </span>
                 <span className="h-4 w-px bg-[#E5E7EB]" aria-hidden="true" />
                 <span className="inline-flex items-center gap-1.5">
@@ -283,14 +317,18 @@ export function ProductDetailClient({ slug }: { slug: string }) {
                   <span className="text-4xl font-black leading-none tracking-normal text-[#ED3500]">
                     {selectedVariant ? market.format(selectedVariant.pricePaise) : "Price pending"}
                   </span>
-                  {selectedVariant?.mrpPaise && selectedVariant.mrpPaise > selectedVariant.pricePaise ? (
+                  {originalDealPrice ? (
+                    <span className="text-xl font-black text-[#98A2B3] line-through">
+                      {market.format(originalDealPrice)}
+                    </span>
+                  ) : selectedVariant?.mrpPaise && selectedVariant.mrpPaise > selectedVariant.pricePaise ? (
                     <span className="text-xl font-black text-[#98A2B3] line-through">
                       {market.format(selectedVariant.mrpPaise)}
                     </span>
                   ) : null}
                   {discountPercent ? (
                     <span className="mb-1 rounded-full bg-[#FFF0EC] px-3 py-1 text-xs font-black text-[#ED3500]">
-                      {discountPercent}% OFF
+                      {activeDeal ? `${discountPercent}% deal` : `${discountPercent}% OFF`}
                     </span>
                   ) : null}
                 </div>
@@ -403,9 +441,9 @@ export function ProductDetailClient({ slug }: { slug: string }) {
                 </div>
               ) : null}
 
-              <div className="mt-6 grid grid-cols-2 gap-0 border-t border-[#E5E7EB] pt-5 md:grid-cols-4">
+              <div className="mt-6 grid grid-cols-2 gap-0 border-t border-[#E5E7EB] pt-5">
                 <ProductTrustItem icon={<Store className="h-5 w-5" />} label="Sold by" value={product.seller.storeName} />
-                <ProductTrustItem icon={<ShieldCheck className="h-5 w-5" />} label="Seller Approval" value="Verified" />
+                <ProductTrustItem icon={<ShieldCheck className="h-5 w-5" />} label="Verified seller" value="Checked by 1HandIndia" />
                </div>
             </div>
           </section>
@@ -429,10 +467,14 @@ export function ProductDetailClient({ slug }: { slug: string }) {
           {(product.description || specificationRows.length) ? (
             <section className="mx-auto max-w-[1440px] px-4 pb-4 md:px-6 lg:px-10">
               <div className="rounded-[20px] border border-[#E5E7EB] bg-white p-5 shadow-sm">
-                <p className="text-base font-black text-[#1F2933]">Product information</p>
+                <p className="text-base font-black text-[#1F2933]">Product details</p>
                 {product.description ? (
                   <p className="mt-3 max-w-4xl text-sm font-semibold leading-7 text-[#667085]">
                     {product.description}
+                  </p>
+                ) : specificationRows.length ? (
+                  <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-[#667085]">
+                    Helpful details shared by the seller so you can compare this item before buying.
                   </p>
                 ) : null}
                 {specificationRows.length ? (
@@ -449,6 +491,10 @@ export function ProductDetailClient({ slug }: { slug: string }) {
             </section>
           ) : null}
 
+          <section className="mx-auto max-w-[1440px] px-4 pb-4 md:px-6 lg:px-10">
+            <ProductReviewsSection reviews={reviewsQuery.data} isLoading={reviewsQuery.isLoading} />
+          </section>
+
           <section className="mx-auto max-w-[1440px] px-4 pb-14 md:px-6 lg:px-10">
             <div className="rounded-[20px] border border-[#E5E7EB] bg-white p-5 shadow-sm">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -456,15 +502,15 @@ export function ProductDetailClient({ slug }: { slug: string }) {
                   title="Buying support"
                   description={
                     isEnquiryOnly
-                      ? "This listing is handled through enquiry and seller follow-up instead of direct cart checkout."
+                      ? "Send an enquiry and the seller will follow up with availability and next steps."
                       : listingMode === "CART_AND_ENQUIRY"
-                        ? "Customers can order normally, and business buyers can also request a quotation."
-                        : "Customers can place normal orders for this product."
+                        ? "Order online, or request a quote if you need bulk quantity or business pricing support."
+                        : "Order online with secure checkout, order updates, and customer support."
                   }
                 />
                 <div className="grid gap-3 text-sm font-semibold text-[#667085] md:grid-cols-3 lg:flex lg:items-center">
-                  <SupportPoint icon={<PackageCheck className="h-5 w-5" />} text="Manual order and delivery status updates supported." />
-                  <SupportPoint icon={<Heart className="h-5 w-5" />} text="Seller approval and product moderation verified." />
+                  <SupportPoint icon={<PackageCheck className="h-5 w-5" />} text="Track your order status from your account." />
+                  <SupportPoint icon={<Heart className="h-5 w-5" />} text="Listed by a seller checked by 1HandIndia." />
                   {product && listingMode !== "CART" ? (
                     <Button asChild variant="outline" className="rounded-full border-[#ED3500] text-[#ED3500]">
                       <Link href={`/b2b/enquiries/new?productId=${encodeURIComponent(product.id)}` as Route}>
@@ -494,6 +540,99 @@ export function ProductDetailClient({ slug }: { slug: string }) {
   );
 }
 
+function ProductReviewsSection({
+  reviews,
+  isLoading,
+}: {
+  reviews: PaginatedProductReviews | undefined;
+  isLoading: boolean;
+}) {
+  const summary = reviews?.summary;
+  const reviewCount = summary?.reviewCount ?? 0;
+  const averageRating = summary?.averageRating ?? null;
+  const items = reviews?.items ?? [];
+
+  return (
+    <div className="rounded-[20px] border border-[#E5E7EB] bg-white p-5 shadow-sm">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <SectionHeading
+          title="Customer reviews"
+          description={
+            reviewCount
+              ? `${averageRating?.toFixed(1)} average from ${reviewCount} customer ${reviewCount === 1 ? "review" : "reviews"}.`
+              : "Customer reviews from verified purchases will appear here."
+          }
+        />
+        <div className="flex items-center gap-2 rounded-full border border-[#FFE0D6] bg-[#FFF8F5] px-4 py-2 text-sm font-black text-[#ED3500]">
+          <Star className={cn("h-4 w-4", reviewCount && "fill-[#ED3500]")} aria-hidden="true" />
+          {reviewCount ? averageRating?.toFixed(1) : "New"}
+        </div>
+      </div>
+
+      {summary ? (
+        <div className="mt-5 grid gap-2 sm:grid-cols-5">
+          {[5, 4, 3, 2, 1].map((rating) => {
+            const count = summary.distribution[rating as 1 | 2 | 3 | 4 | 5] ?? 0;
+            const percent = reviewCount ? Math.round((count / reviewCount) * 100) : 0;
+            return (
+              <div key={rating} className="rounded-2xl bg-[#F8FAFC] px-3 py-2">
+                <div className="flex items-center justify-between text-xs font-black text-[#1F2933]">
+                  <span>{rating} star</span>
+                  <span>{count}</span>
+                </div>
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#E5E7EB]">
+                  <div className="h-full rounded-full bg-[#ED3500]" style={{ width: `${percent}%` }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+
+      <div className="mt-5 grid gap-3">
+        {isLoading ? (
+          <StorefrontSkeleton className="h-28 bg-[#F8FAFC]" />
+        ) : items.length ? (
+          items.map((review) => (
+            <article key={review.id} className="rounded-2xl border border-[#E5E7EB] bg-white p-4">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <div className="flex items-center gap-1 text-[#ED3500]">
+                    {Array.from({ length: 5 }).map((_, index) => (
+                      <Star
+                        key={index}
+                        className={cn("h-4 w-4", index < review.rating && "fill-[#ED3500]")}
+                        aria-hidden="true"
+                      />
+                    ))}
+                  </div>
+                  {review.title ? <p className="mt-2 text-sm font-black text-[#1F2933]">{review.title}</p> : null}
+                  {review.comment ? (
+                    <p className="mt-1 text-sm font-semibold leading-6 text-[#667085]">{review.comment}</p>
+                  ) : null}
+                </div>
+                <div className="text-left text-xs font-bold text-[#667085] sm:text-right">
+                  <p>{review.customer.displayName}</p>
+                  {review.isVerifiedPurchase ? (
+                    <p className="mt-1 inline-flex items-center gap-1 text-[#0F8A5F]">
+                      <BadgeCheck className="h-3.5 w-3.5" aria-hidden="true" />
+                      Verified purchase
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            </article>
+          ))
+        ) : (
+          <div className="rounded-2xl bg-[#F8FAFC] px-4 py-6 text-sm font-semibold text-[#667085]">
+            No customer reviews yet.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ProductTrustItem({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
   return (
     <div className="flex min-w-0 items-center gap-2 border-r border-[#E5E7EB] px-3 py-2 last:border-r-0 md:justify-center">
@@ -518,6 +657,34 @@ function SupportPoint({ icon, text }: { icon: ReactNode; text: string }) {
 }
 
 type SpecificationRow = { scope: "PRODUCT" | "VARIANT"; label: string; value: string };
+
+const publicProductDetailFields = [
+  { key: "brand", label: "Brand" },
+  { key: "condition", label: "Condition" },
+  { key: "unitOfMeasure", label: "Sold as" },
+  { key: "returnEligibility", label: "Return policy" },
+  { key: "warranty", label: "Warranty" },
+  { key: "countryOfOrigin", label: "Country of origin" },
+] as const;
+
+const publicProductDetailFieldKeys = new Set<string>(publicProductDetailFields.map((field) => field.key));
+
+const hiddenPublicProductDetailKeys = new Set<string>([
+  "gstRatePercent",
+  "hsnCode",
+  "packageWeightGrams",
+  "packageLengthCm",
+  "packageWidthCm",
+  "packageBreadthCm",
+  "packageHeightCm",
+  "gtin",
+  "searchTags",
+  "seoTitle",
+  "seoDescription",
+  "manufacturerAddress",
+  "packerName",
+  "importerName",
+]);
 
 function productServiceHighlights() {
   return [
@@ -551,8 +718,8 @@ function productServiceHighlights() {
 
 function productSpecificationRows(product: ProductSummary, selectedVariant: ProductVariant | null | undefined): SpecificationRow[] {
   const fields = product.category.productTemplate?.fields ?? [];
-  const marketplaceRows: SpecificationRow[] = marketplaceProductSpecificationFields.flatMap((field) => {
-    const value = displayMarketplaceAttributeValue(field.key, productMarketplaceValue(product, field.key));
+  const productDetailRows: SpecificationRow[] = publicProductDetailFields.flatMap((field) => {
+    const value = displayAttributeValue(product.attributes?.[field.key]);
 
     return value
       ? [
@@ -564,11 +731,11 @@ function productSpecificationRows(product: ProductSummary, selectedVariant: Prod
         ]
       : [];
   });
-  const marketplaceFieldKeys = new Set<string>(marketplaceProductSpecificationFields.map((field) => field.key));
 
   const templateRows: SpecificationRow[] = fields
     .filter((field) => field.scope === "PRODUCT" || Boolean(selectedVariant))
-    .filter((field) => field.scope !== "PRODUCT" || !marketplaceFieldKeys.has(field.fieldKey))
+    .filter((field) => !hiddenPublicProductDetailKeys.has(field.fieldKey))
+    .filter((field) => field.scope !== "PRODUCT" || !publicProductDetailFieldKeys.has(field.fieldKey))
     .sort((first, second) => first.sortOrder - second.sortOrder || first.label.localeCompare(second.label))
     .flatMap((field) => {
       const source = field.scope === "VARIANT" ? selectedVariant?.attributes : product.attributes;
@@ -585,49 +752,21 @@ function productSpecificationRows(product: ProductSummary, selectedVariant: Prod
         : [];
     });
 
-  return [...marketplaceRows, ...templateRows];
-}
-
-function productMarketplaceValue(product: ProductSummary, key: string) {
-  if (key === "hsnCode") {
-    return product.attributes?.hsnCode ?? product.hsnCode;
-  }
-
-  if (key === "gstRatePercent") {
-    return product.attributes?.gstRatePercent ?? product.gstRatePercent;
-  }
-
-  return product.attributes?.[key];
-}
-
-function displayMarketplaceAttributeValue(key: string, value: unknown) {
-  const displayValue = displayStorefrontAttributeValue(value);
-  if (!displayValue) {
-    return "";
-  }
-
-  if (key === "gstRatePercent") {
-    return `${displayValue}%`;
-  }
-
-  if (key === "packageWeightGrams") {
-    return `${displayValue} g`;
-  }
-
-  if (key === "packageLengthCm" || key === "packageWidthCm" || key === "packageHeightCm") {
-    return `${displayValue} cm`;
-  }
-
-  return displayValue;
+  return [...productDetailRows, ...templateRows];
 }
 
 function displayAttributeValue(value: unknown) {
   return displayStorefrontAttributeValue(value);
 }
 
-function listingModeLabel(value: string) {
-  return value
-    .replace(/_/g, " ")
-    .toLowerCase()
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+function publicPurchaseModeLabel(value: string) {
+  if (value === "ENQUIRY_ONLY") {
+    return "Enquiry only";
+  }
+
+  if (value === "CART_AND_ENQUIRY") {
+    return "Quote available";
+  }
+
+  return null;
 }

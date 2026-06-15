@@ -17,6 +17,9 @@ describe("ClerkAuthService", () => {
   const originalEnv = {
     CLERK_SECRET_KEY: process.env.CLERK_SECRET_KEY,
     CLERK_JWT_KEY: process.env.CLERK_JWT_KEY,
+    CLERK_AUTHORIZED_PARTIES: process.env.CLERK_AUTHORIZED_PARTIES,
+    NEXT_PUBLIC_WEB_URL: process.env.NEXT_PUBLIC_WEB_URL,
+    API_CORS_ORIGINS: process.env.API_CORS_ORIGINS,
     NODE_ENV: process.env.NODE_ENV
   };
 
@@ -25,6 +28,9 @@ describe("ClerkAuthService", () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     process.env.CLERK_SECRET_KEY = "sk_test_local";
     delete process.env.CLERK_JWT_KEY;
+    delete process.env.CLERK_AUTHORIZED_PARTIES;
+    delete process.env.NEXT_PUBLIC_WEB_URL;
+    delete process.env.API_CORS_ORIGINS;
     process.env.NODE_ENV = "test";
     clerkMocks.createClerkClient.mockReturnValue({
       sessions: {
@@ -40,6 +46,9 @@ describe("ClerkAuthService", () => {
     vi.restoreAllMocks();
     restoreEnv("CLERK_SECRET_KEY", originalEnv.CLERK_SECRET_KEY);
     restoreEnv("CLERK_JWT_KEY", originalEnv.CLERK_JWT_KEY);
+    restoreEnv("CLERK_AUTHORIZED_PARTIES", originalEnv.CLERK_AUTHORIZED_PARTIES);
+    restoreEnv("NEXT_PUBLIC_WEB_URL", originalEnv.NEXT_PUBLIC_WEB_URL);
+    restoreEnv("API_CORS_ORIGINS", originalEnv.API_CORS_ORIGINS);
     restoreEnv("NODE_ENV", originalEnv.NODE_ENV);
   });
 
@@ -52,8 +61,42 @@ describe("ClerkAuthService", () => {
     expect(clerkMocks.verifyToken).toHaveBeenCalledWith(
       tokenWithSessionId(),
       expect.objectContaining({
+        authorizedParties: ["http://192.168.1.3:3000"],
         clockSkewInMs: 120_000
       })
+    );
+  });
+
+  it("normalizes Clerk authorized-party origins from explicit and public web config", async () => {
+    process.env.CLERK_AUTHORIZED_PARTIES = '"http://192.168.1.3:3000", http://192.168.1.3:3000/sign-in';
+    process.env.NEXT_PUBLIC_WEB_URL = "http://192.168.1.4:3000";
+    process.env.API_CORS_ORIGINS = "http://192.168.1.5:3000";
+    clerkMocks.verifyToken.mockResolvedValue({ sub: "user_123" });
+
+    const service = new ClerkAuthService();
+
+    await expect(service.verifyBearerToken(tokenWithSessionId())).resolves.toBe("user_123");
+    expect(clerkMocks.verifyToken).toHaveBeenCalledWith(
+      tokenWithSessionId(),
+      expect.objectContaining({
+        authorizedParties: ["http://192.168.1.3:3000", "http://192.168.1.4:3000", "http://192.168.1.5:3000"]
+      })
+    );
+  });
+
+  it("returns an actionable IP-origin error when Clerk rejects the token azp", async () => {
+    process.env.CLERK_AUTHORIZED_PARTIES = "http://192.168.1.3:3000";
+    clerkMocks.verifyToken.mockRejectedValueOnce(
+      Object.assign(new Error('Invalid JWT Authorized party claim (azp) "http://localhost:3000". Expected "http://192.168.1.3:3000".'), {
+        reason: "token-invalid-authorized-parties"
+      })
+    );
+    clerkMocks.verifySession.mockRejectedValueOnce(new Error("fetch failed"));
+
+    const service = new ClerkAuthService();
+
+    await expect(service.verifyBearerToken(tokenWithSessionId())).rejects.toThrow(
+      /Open 1HandIndia at http:\/\/192\.168\.1\.3:3000/,
     );
   });
 

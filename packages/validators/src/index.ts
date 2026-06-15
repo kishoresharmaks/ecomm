@@ -6,7 +6,10 @@ import {
   orderStatuses,
   paymentStatuses,
   sellerStatuses,
-  sellerTypes
+  sellerTypes,
+  supportContactChannels,
+  supportRequesterTypes,
+  supportRequestTopics
 } from "@indihub/shared-types";
 
 export const indianPhoneSchema = z
@@ -96,8 +99,18 @@ export const supportRequestSchema = z.object({
   name: z.string().trim().min(2).max(120),
   email: z.string().trim().email(),
   phone: indianPhoneSchema.optional(),
+  topic: z.enum(supportRequestTopics).default("GENERAL"),
+  requesterType: z.enum(supportRequesterTypes).default("CUSTOMER"),
+  preferredContactChannel: z.enum(supportContactChannels).default("EMAIL"),
+  orderNumber: z.string().trim().max(80).optional(),
   subject: z.string().trim().min(3).max(180),
   message: z.string().trim().min(10).max(2500)
+});
+
+export const authenticatedSupportRequestSchema = supportRequestSchema.extend({
+  name: z.string().trim().min(2).max(120).optional(),
+  email: z.string().trim().email().optional(),
+  phone: indianPhoneSchema.optional()
 });
 
 export type SellerRegistrationInput = z.infer<typeof sellerRegistrationSchema>;
@@ -106,3 +119,4 @@ export type CheckoutInput = z.infer<typeof checkoutSchema>;
 export type DeliveryUpdateInput = z.infer<typeof deliveryUpdateSchema>;
 export type B2BEnquiryInput = z.infer<typeof b2bEnquirySchema>;
 export type SupportRequestInput = z.infer<typeof supportRequestSchema>;
+export type AuthenticatedSupportRequestInput = z.infer<typeof authenticatedSupportRequestSchema>;
