@@ -64,6 +64,14 @@
       "expo-router",
       "expo-secure-store",
       [
+        "@sentry/react-native/expo",
+        {
+          "organization": "demo-n0b",
+          "project": "react-native",
+          "url": "https://sentry.io/"
+        }
+      ],
+      [
         "expo-location",
         {
           "locationWhenInUsePermission": "Allow 1HandIndia to use your location to help fill delivery addresses.",
@@ -75,7 +83,7 @@
         "expo-splash-screen",
         {
           "image": "./assets/splash-logo.png",
-          "imageWidth": 220,
+          "imageWidth": 280,
           "resizeMode": "contain",
           "backgroundColor": "#FFFCFB"
         }

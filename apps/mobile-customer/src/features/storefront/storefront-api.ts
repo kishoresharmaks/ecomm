@@ -1,6 +1,6 @@
 import { deleteNoContent, getJson, patchJson, postJson, type MobileAuthHeaders } from "../../lib/api";
 import type { LocationArea, ProductSummary, SelectedLocation, StorefrontSearchResponse, StorefrontSuggestionsResponse } from "../../types/storefront";
-import type { MobileCategory, MobileStore } from "../../types/mobile-home";
+import type { MobileCategory, MobileProduct, MobileStore } from "../../types/mobile-home";
 
 export type MobileCartSummary = {
   id: string;
@@ -304,9 +304,14 @@ export type MobileOrderDetail = Omit<MobileOrderSummary, "items"> & {
   } | null;
   items: Array<{
     id: string;
+    activeQuantity?: number | null;
+    cancelledQuantity?: number | null;
     productNameSnapshot: string;
     variantSnapshot?: unknown;
     quantity: number;
+    returnedQuantity?: number | null;
+    returnPolicySnapshot?: unknown;
+    lifecycleStatus?: string | null;
     unitPricePaise: number;
     lineTotalPaise: number;
     currency?: string;
@@ -375,6 +380,151 @@ export type MobileOrderListResponse = {
   items: MobileOrderSummary[];
   total?: number;
   nextCursor?: string | null;
+};
+
+export type MobileReturnRequestStatus =
+  | "PENDING_REVIEW"
+  | "AUTO_APPROVED"
+  | "APPROVED"
+  | "PICKUP_PENDING"
+  | "PICKED_UP"
+  | "IN_TRANSIT"
+  | "RECEIVED"
+  | "QC_PASSED"
+  | "QC_FAILED"
+  | "RESOLVED"
+  | "REJECTED"
+  | "CANCELLED"
+  | string;
+
+export type MobileReturnItemStatus =
+  | "PENDING_REVIEW"
+  | "APPROVED"
+  | "REJECTED"
+  | "PICKUP_PENDING"
+  | "PICKED_UP"
+  | "RECEIVED"
+  | "QC_PASSED"
+  | "QC_FAILED"
+  | "REFUND_REQUESTED"
+  | "REPLACEMENT_CREATED"
+  | "CLOSED"
+  | string;
+
+export type MobileReturnResolution = "REFUND" | "REPLACEMENT" | "PARTIAL_REFUND" | "REJECTED";
+export type MobileCreateReturnResolution = "REFUND" | "REPLACEMENT";
+export type MobileReverseShipmentMode = "PLATFORM_PICKUP" | "CUSTOMER_SELF_SHIP";
+
+export type MobileReturnAddress = {
+  area?: string | null;
+  city?: string | null;
+  country?: string | null;
+  fullName?: string | null;
+  line1?: string | null;
+  line2?: string | null;
+  phone?: string | null;
+  pincode?: string | null;
+  state?: string | null;
+};
+
+export type MobileReturnRequestItem = {
+  id: string;
+  orderItemId?: string;
+  productName: string;
+  quantity: number;
+  status: MobileReturnItemStatus;
+  sellerId?: string | null;
+  sellerName?: string | null;
+  seller?: {
+    storeName?: string | null;
+    slug?: string | null;
+  } | null;
+  product?: Partial<MobileProduct> & {
+    imageUrl?: string | null;
+    images?: Array<{ url?: string | null; altText?: string | null }> | null;
+  } | null;
+  variantSnapshot?: unknown;
+  resolution?: MobileReturnResolution | null;
+  reason?: string | null;
+  requestedRefundPaise?: number | null;
+  approvedRefundPaise?: number | null;
+  qcNote?: string | null;
+  sellerNote?: string | null;
+};
+
+export type MobileReverseShipment = {
+  id: string;
+  sellerId?: string | null;
+  mode: MobileReverseShipmentMode;
+  status: string;
+  assignmentStatus?: string | null;
+  awbNumber?: string | null;
+  courierName?: string | null;
+  trackingReference?: string | null;
+  trackingUrl?: string | null;
+  estimatedPickupDate?: string | null;
+  pickedUpAt?: string | null;
+  receivedAt?: string | null;
+  pickupNote?: string | null;
+  deliveryNote?: string | null;
+  proofNote?: string | null;
+};
+
+export type MobileReturnRequest = {
+  id: string;
+  requestNumber: string;
+  status: MobileReturnRequestStatus;
+  resolution: MobileReturnResolution;
+  reason: string;
+  note?: string | null;
+  autoApproved?: boolean;
+  totalQuantity: number;
+  requestedAmountPaise?: number | null;
+  approvedAmountPaise?: number | null;
+  couponAdjustmentPaise?: number | null;
+  currency: string;
+  requestedAt?: string | null;
+  reviewedAt?: string | null;
+  createdAt: string;
+  order: {
+    orderNumber: string;
+    orderStatus?: string;
+    paymentStatus?: string;
+    deliveryStatus?: string;
+  };
+  pickupAddress?: MobileReturnAddress | null;
+  customerName?: string | null;
+  items: MobileReturnRequestItem[];
+  reverseShipments?: MobileReverseShipment[];
+  notes?: Array<{ note?: string | null }>;
+};
+
+export type MobileReturnListQuery = {
+  cursor?: string | null;
+  limit?: number;
+  search?: string;
+  status?: string;
+};
+
+export type MobileReturnListResponse = {
+  items: MobileReturnRequest[];
+  limit?: number;
+  pageInfo?: {
+    hasNextPage: boolean;
+    nextCursor: string | null;
+  };
+  nextCursor?: string | null;
+};
+
+export type MobileCreateReturnPayload = {
+  resolution: MobileCreateReturnResolution;
+  reason: string;
+  note?: string;
+  reverseShipmentMode?: MobileReverseShipmentMode;
+  items: Array<{
+    orderItemId: string;
+    quantity: number;
+  }>;
 };
 
 export type MobileTrackedOrder = {
@@ -815,6 +965,34 @@ export function cancelCustomerOrder(auth: MobileAuthHeaders, orderNumber: string
     body: {
       ...(reason?.trim() ? { note: reason.trim() } : {}),
     },
+  });
+}
+
+export function createCustomerReturn(auth: MobileAuthHeaders, orderNumber: string, payload: MobileCreateReturnPayload) {
+  return postJson<MobileReturnRequest>({
+    path: `/account/orders/${encodeURIComponent(orderNumber)}/returns`,
+    auth,
+    body: payload,
+  });
+}
+
+export function listCustomerReturns(auth: MobileAuthHeaders, query: MobileReturnListQuery = {}) {
+  return getJson<MobileReturnListResponse>({
+    path: "/account/returns",
+    auth,
+    searchParams: {
+      cursor: query.cursor,
+      limit: query.limit ?? 25,
+      search: query.search,
+      status: query.status,
+    },
+  });
+}
+
+export function getCustomerReturn(auth: MobileAuthHeaders, requestNumber: string) {
+  return getJson<MobileReturnRequest>({
+    path: `/account/returns/${encodeURIComponent(requestNumber)}`,
+    auth,
   });
 }
 

@@ -2476,18 +2476,63 @@ sudo journalctl -u postgresql -f
 
 ### 37.3 Sentry
 
-If Sentry is enabled:
+Sentry is wired for the web app and native customer app. Treat this as mandatory production observability unless the client explicitly chooses a different provider.
 
 ```env
+# Web runtime
+NEXT_PUBLIC_SENTRY_DSN="https://..."
 SENTRY_DSN="https://..."
+SENTRY_ENVIRONMENT="production"
+NEXT_PUBLIC_ENABLE_SENTRY_EXAMPLE="false"
+
+# Web build/source-map upload
+SENTRY_ORG="demo-n0b"
+SENTRY_PROJECT="javascript-nextjs"
+SENTRY_AUTH_TOKEN="set-in-ci-or-server-secret-store"
+
+# Native customer app runtime
+EXPO_PUBLIC_SENTRY_DSN="https://..."
+EXPO_PUBLIC_APP_ENV="production"
+EXPO_PUBLIC_ENABLE_SENTRY_EXAMPLE="false"
+
+# Optional only if a proxy/webview blocks direct Sentry requests
+EXPO_PUBLIC_SENTRY_TUNNEL_URL=""
 ```
 
-Then verify:
+Do not commit `SENTRY_AUTH_TOKEN`. Put it in CI, server secret storage, or EAS secrets only.
 
-1. API errors report.
-2. Web errors report.
-3. Source maps are handled according to deployment policy.
-4. Sensitive data is not sent.
+Web production checklist:
+
+1. `@sentry/nextjs` is installed in `apps/web`.
+2. `apps/web/instrumentation-client.ts`, `sentry.server.config.ts`, `sentry.edge.config.ts`, and `instrumentation.ts` exist.
+3. `apps/web/src/app/global-error.tsx` captures app-level render errors.
+4. `apps/web/next.config.mjs` wraps config with `withSentryConfig`.
+5. Web tunnel route is `/_1hi/relay`; verify this path is not blocked by browser extensions, CDN rules, WAF, or Nginx.
+6. Web replay privacy remains strict: default PII off, inputs/text/media masked.
+7. Source maps upload during production build when `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, and `SENTRY_PROJECT` are present.
+8. `/sentry-example-page` stays disabled in production unless `NEXT_PUBLIC_ENABLE_SENTRY_EXAMPLE=true` is intentionally set for a short verification window.
+9. Trigger one captured test error, confirm it appears in Sentry with readable release/source-map context, then disable the example flag again.
+
+Native customer app production checklist:
+
+1. `@sentry/react-native` is installed in `apps/mobile-customer`.
+2. `apps/mobile-customer/app.json` includes the `@sentry/react-native/expo` plugin.
+3. `apps/mobile-customer/app/_layout.tsx` initializes and wraps the root with mobile telemetry.
+4. `apps/mobile-customer/src/lib/mobile-telemetry.ts` is used by screens instead of calling Sentry directly.
+5. Mobile telemetry keeps PII out of events: default PII off, screenshots off, sanitized event properties only.
+6. `SENTRY_AUTH_TOKEN` is available to EAS/CI for source maps and native debug symbols.
+7. `EXPO_PUBLIC_ENABLE_SENTRY_EXAMPLE=false` in normal production builds.
+8. Build a production/internal app, trigger the mobile Sentry test screen only during verification, confirm the event appears in Sentry, then keep the trigger disabled.
+9. If using EAS, set Sentry secrets through EAS/CI. Do not rely on local `.env` for cloud builds.
+
+Final verification:
+
+1. Web client errors report.
+2. Web server/edge errors report.
+3. Native customer app errors report.
+4. Source maps and native debug symbols resolve stack traces.
+5. Sensitive data is not sent.
+6. Sentry example routes/screens are disabled after verification.
 
 ## 38. Deployment Update Procedure
 

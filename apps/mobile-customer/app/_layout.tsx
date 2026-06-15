@@ -7,8 +7,11 @@ import { useEffect, useMemo } from "react";
 import { MobileCustomerAuthProvider, useMobileCustomerAuth } from "../src/auth/mobile-auth-context";
 import { useMobileMarket } from "../src/features/market/mobile-market";
 import { getBrowsingLocation } from "../src/features/storefront/storefront-api";
+import { initMobileTelemetry, withMobileTelemetry } from "../src/lib/mobile-telemetry";
 import { createQueryClient } from "../src/lib/query-client";
 import { useLocationStore } from "../src/state/location-store";
+
+initMobileTelemetry();
 
 const tokenCache = {
   async getToken(key: string) {
@@ -19,7 +22,7 @@ const tokenCache = {
   },
 };
 
-export default function RootLayout() {
+function RootLayout() {
   const queryClient = useMemo(() => createQueryClient(), []);
 
   return (
@@ -40,11 +43,15 @@ export default function RootLayout() {
             <Stack.Screen name="deals" />
             <Stack.Screen name="track-order" />
             <Stack.Screen name="orders/[orderNumber]" />
+            <Stack.Screen name="orders/[orderNumber]/return" />
             <Stack.Screen name="account/profile" />
             <Stack.Screen name="account/addresses" />
             <Stack.Screen name="account/location" />
             <Stack.Screen name="account/wishlist" />
             <Stack.Screen name="account/support" />
+            <Stack.Screen name="account/returns" />
+            <Stack.Screen name="account/returns/[requestNumber]" />
+            <Stack.Screen name="sentry-example" />
             <Stack.Screen name="checkout" />
             <Stack.Screen name="checkout/success/[orderNumber]" />
             <Stack.Screen name="auth/sign-in" />
@@ -54,6 +61,8 @@ export default function RootLayout() {
     </ClerkProvider>
   );
 }
+
+export default withMobileTelemetry(RootLayout);
 
 function MobileMarketLocationSync() {
   const selectedLocation = useLocationStore((state) => state.selectedLocation);

@@ -123,7 +123,7 @@
 | 5 | Swagger/OpenAPI setup | DONE | API docs available at `/api/docs`. |
 | 6 | Health endpoint | DONE | `/api/health` returns 200. |
 | 7 | Pino logger integration | PARTIAL | Worker uses Pino; API structured logging can be hardened before deployment. |
-| 8 | Sentry-ready integration | TODO | Add only when client/project details are ready. |
+| 8 | Sentry-ready integration | DONE | Web uses `@sentry/nextjs` with client/server/edge config, route transition capture, global error capture, masked replay, source-map upload hooks, and `/_1hi/relay` tunnel route. Native customer app uses `@sentry/react-native` with Expo plugin, root wrapper, sanitized telemetry helpers, optional tunnel URL, and non-crashing verification screen. Production still needs host/EAS secrets and live test-event confirmation. |
 
 ### 6.2 Auth, Users, RBAC, and Admin Bootstrap
 
@@ -560,5 +560,6 @@ Done criteria for the next stage:
 - Verify B2B registration, company profile, enquiry creation, cancellation, quotation confirmation, admin approval, and finalisation in browser.
 - Verify admin dashboard, customers, users/roles, sellers, products, orders, B2B, support, CMS, categories, reports, finance, locations, notifications, storage, payment configuration/readiness, audit logs, and settings in browser.
 - Verify mobile responsive behavior for customer, seller, B2B, and admin surfaces.
+- Verify production Sentry readiness: web and mobile DSNs configured, Sentry auth token available only in CI/EAS secrets, source maps uploaded, example trigger flags disabled, web tunnel route reachable, mobile Expo Sentry plugin present, and one test event from web plus one test event from the native customer app visible in Sentry.
 - Re-run `pnpm db:validate`, API typecheck/lint/test, and web typecheck/lint/test/build after QA fixes.
-- Prepare deployment checklist after hosting, database, Redis, domain, Clerk, public image provider/base URL, Razorpay, email, backup, and monitoring details are confirmed.
+- Prepare deployment checklist after hosting, database, domain, Clerk, public image provider/base URL, Razorpay, email, backup, and monitoring details are confirmed.

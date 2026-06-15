@@ -1,6 +1,7 @@
 import {
   CreditCardIcon,
   DeliveryBox01Icon,
+  DeliveryReturn01Icon,
   HeadsetIcon,
   Home01Icon,
   PackageIcon,
@@ -44,6 +45,9 @@ import {
   SignInRequiredState,
   StatusPill,
 } from "../../src/features/account/account-ui";
+import { orderCanStartReturn } from "../../src/features/returns/return-eligibility";
+import { isMobileReturnsEnabled } from "../../src/features/returns/return-feature";
+import { returnsCopy } from "../../src/features/returns/return-copy";
 import { resolveImageUrl } from "../../src/lib/image-url";
 import { colors } from "../../src/theme";
 
@@ -53,6 +57,7 @@ export default function OrderDetailScreen() {
   const customerAuth = useMobileCustomerAuth();
   const queryClient = useQueryClient();
   const router = useRouter();
+  const returnCopy = returnsCopy();
   const [cancelNote, setCancelNote] = useState("");
   const [paymentRetryMessage, setPaymentRetryMessage] = useState("");
   const [paymentRetryProgress, setPaymentRetryProgress] = useState<string | null>(null);
@@ -210,6 +215,7 @@ export default function OrderDetailScreen() {
   }
 
   const canCancel = orderCanBeCancelled(order);
+  const canStartReturn = isMobileReturnsEnabled(customerAuth.authKey) && orderCanStartReturn(order);
   const canRetryPayment = canRetryRazorpayPayment(order);
   const address = readShippingAddress(order);
   const timeline = buildTimeline(order);
@@ -345,6 +351,21 @@ export default function OrderDetailScreen() {
             <Text style={styles.secondaryButtonText}>Contact support</Text>
           </Pressable>
         </Section>
+
+        {canStartReturn ? (
+          <Section icon={DeliveryReturn01Icon} title={returnCopy.accountEntryTitle}>
+            <Text style={styles.helpText}>{returnCopy.returnOrderHelp}</Text>
+            <Pressable
+              accessibilityHint="Open the return request form for this order"
+              accessibilityRole="button"
+              style={styles.primaryActionButton}
+              onPress={() => router.push(`/orders/${encodeURIComponent(order.orderNumber)}/return` as never)}
+            >
+              <HugeiconsIcon color={colors.surface} icon={DeliveryReturn01Icon} size={19} strokeWidth={2.2} />
+              <Text style={styles.primaryActionButtonText}>{returnCopy.returnCta}</Text>
+            </Pressable>
+          </Section>
+        ) : null}
 
         <View style={styles.cancelCard}>
           <Text style={styles.cancelTitle}>{canCancel ? "Cancellation available" : "Cancellation locked"}</Text>

@@ -3,6 +3,7 @@ import {
   ArrowRight02Icon,
   Camera01Icon,
   CheckmarkBadge02Icon,
+  DeliveryReturn01Icon,
   Edit02Icon,
   HeadsetIcon,
   HeartIcon,
@@ -34,6 +35,8 @@ import {
 } from "../../src/features/storefront/storefront-api";
 import { accountErrorMessage } from "../../src/features/account/account-ui";
 import { useLocationStore } from "../../src/state/location-store";
+import { isMobileReturnsEnabled } from "../../src/features/returns/return-feature";
+import { returnsCopy } from "../../src/features/returns/return-copy";
 import { colors } from "../../src/theme";
 
 const CARD_BG = "#FFFFFF";
@@ -64,6 +67,8 @@ export default function AccountScreen() {
   const selectedLocation = useLocationStore((state) => state.selectedLocation);
   const setSelectedLocation = useLocationStore((state) => state.setSelectedLocation);
   const entrance = useRef(new Animated.Value(0)).current;
+  const returnsEnabled = isMobileReturnsEnabled(customerAuth.authKey);
+  const returnCopy = returnsCopy();
 
   const profileQuery = useQuery({
     queryKey: ["mobile-account-profile", customerAuth.authKey],
@@ -142,6 +147,17 @@ export default function AccountScreen() {
       ? { ...item, text: selectedLocation.label || item.text }
       : item,
   );
+  const supportSettingsRows = [
+    ...(returnsEnabled
+      ? [{
+          href: "/account/returns" as Href,
+          icon: DeliveryReturn01Icon,
+          text: returnCopy.accountEntryText,
+          title: returnCopy.accountEntryTitle,
+        }]
+      : []),
+    ...supportRows,
+  ];
   const animatedStyle = {
     opacity: entrance,
     transform: [
@@ -238,7 +254,7 @@ export default function AccountScreen() {
 
         <SectionTitle title="Support & more" />
         <View style={styles.listCard}>
-          {supportRows.map((item) => (
+          {supportSettingsRows.map((item) => (
             <SettingsRow
               icon={item.icon}
               isLast={false}

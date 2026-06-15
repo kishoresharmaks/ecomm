@@ -1,8 +1,10 @@
 import process from "node:process";
 import { URL } from "node:url";
 import { config as loadEnv } from "dotenv";
+import { withSentryConfig } from "@sentry/nextjs";
 
 loadEnv({ path: "../../.env", quiet: true });
+loadEnv({ path: "../../.env.sentry-build-plugin", quiet: true });
 
 const isWindows = process.platform === "win32";
 const defaultDevWebUrl = "http://192.168.1.3:3000";
@@ -40,7 +42,15 @@ const nextConfig = {
   ]
 };
 
-export default nextConfig;
+export default withSentryConfig(nextConfig, {
+  org: process.env.SENTRY_ORG ?? "demo-n0b",
+  project: process.env.SENTRY_PROJECT ?? "javascript-nextjs",
+  authToken: process.env.SENTRY_AUTH_TOKEN,
+  widenClientFileUpload: true,
+  tunnelRoute: "/_1hi/relay",
+  hideSourceMaps: true,
+  silent: !process.env.CI,
+});
 
 function resolveAllowedDevOrigins() {
   const origins = [

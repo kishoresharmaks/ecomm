@@ -159,6 +159,10 @@ export function StorefrontHomeClient({
     ? home.productRails.featured
     : home?.productRails.latest ?? [];
   const productRailSections = useMemo(() => buildStorefrontProductRails(home), [home]);
+  const todaysDealsRail = productRailSections.find((rail) => rail.id === "todays-deals");
+  const bestSellersRail = productRailSections.find((rail) => rail.id === "best-sellers");
+  const newArrivalsRail = productRailSections.find((rail) => rail.id === "new-arrivals");
+  const nearbyProductsRail = productRailSections.find((rail) => rail.id === "nearby-products");
   const topCategories = home?.categories ?? [];
   const liveCategorySection = findSection(home?.homepageSections, "featured_categories");
   const categorySectionTitle = liveCategorySection?.title || "Shop by Category";
@@ -187,20 +191,11 @@ export function StorefrontHomeClient({
           locationSource={storefrontLocation.source}
         />
 
-        <CustomerQuickActions variant="desktop" />
-
         {homeQuery.isError ? (
           <section className="mx-auto max-w-[1440px] px-4 pt-5 sm:px-6 lg:px-10">
             <StorefrontErrorPanel error={homeQuery.error} onRetry={() => void homeQuery.refetch()} />
           </section>
         ) : null}
-
-        <StatsStrip home={home} isLoading={homeQuery.isLoading} />
-
-        <PersonalizedHomeSections
-          home={home}
-          isLoading={homeQuery.isLoading}
-        />
 
         <div className="flex flex-col">
           <CategoryShowcase
@@ -210,21 +205,27 @@ export function StorefrontHomeClient({
             description={categorySectionDescription}
           />
 
-          {productRailSections.map((rail) =>
-            rail.products.length || homeQuery.isLoading ? (
-              <div key={rail.id}>
-                <ProductRailSection
-                  title={rail.title}
-                  description={rail.description}
-                  href={rail.href}
-                  products={rail.products}
-                  isLoading={homeQuery.isLoading}
-                  promoProduct={rail.products[0]}
-                  promoTone={rail.promoTone}
-                />
-              </div>
-            ) : null,
-          )}
+          <HomeProductRail rail={todaysDealsRail} isLoading={homeQuery.isLoading} />
+
+          <PersonalizedHomeSections
+            home={home}
+            isLoading={homeQuery.isLoading}
+            surface="recommended"
+            slots={["recommended"]}
+          />
+
+          <HomeProductRail rail={bestSellersRail} isLoading={homeQuery.isLoading} />
+
+          <PersonalizedHomeSections
+            home={home}
+            isLoading={homeQuery.isLoading}
+            surface="retention"
+            slots={["buyAgain", "cartReminder", "continueShopping", "recentlyViewed"]}
+          />
+
+          <HomeProductRail rail={newArrivalsRail} isLoading={homeQuery.isLoading} />
+
+          <HomeProductRail rail={nearbyProductsRail} isLoading={homeQuery.isLoading} />
 
           <div>
             <StoresNearYou
@@ -234,10 +235,14 @@ export function StorefrontHomeClient({
             />
           </div>
 
+          <CustomerQuickActions variant="desktop" />
+
           <CustomHomepageSections sections={customSections} />
         </div>
 
         <SellerCta section={home?.sellerCta ?? null} config={sellerCtaConfig} />
+
+        <StatsStrip home={home} isLoading={homeQuery.isLoading} />
 
         {serviceItems.length ? <ServiceBadges items={serviceItems} /> : null}
 
@@ -896,12 +901,39 @@ type PersonalizedProduct = {
   viewedAt?: string | null;
 };
 
+type PersonalizedHomeSlot =
+  | "cartReminder"
+  | "continueShopping"
+  | "recentlyViewed"
+  | "recommended"
+  | "buyAgain";
+
+type PersonalizedHomeSurface = "default" | "recommended" | "retention";
+
+const DEFAULT_PERSONALIZED_HOME_SLOTS: PersonalizedHomeSlot[] = [
+  "cartReminder",
+  "continueShopping",
+  "recentlyViewed",
+  "recommended",
+  "buyAgain",
+];
+
+const PERSONALIZED_HOME_SURFACES: Record<PersonalizedHomeSurface, string> = {
+  default: "bg-[#FFFCFB]",
+  recommended: "bg-white",
+  retention: "bg-[linear-gradient(180deg,#FFFCFB_0%,#FFF7F3_100%)]",
+};
+
 function PersonalizedHomeSections({
   home,
   isLoading,
+  surface = "default",
+  slots = DEFAULT_PERSONALIZED_HOME_SLOTS,
 }: {
   home: StorefrontHomePayload | undefined;
   isLoading: boolean;
+  surface?: PersonalizedHomeSurface;
+  slots?: PersonalizedHomeSlot[];
 }) {
   const customerAuth = useCustomerAuth();
   const [recentProducts, setRecentProducts] = useState<RecentProductSnapshot[]>([]);
@@ -959,54 +991,79 @@ function PersonalizedHomeSections({
       }),
     [baseRecommendedProducts, buyAgainProducts, cartProducts, recentlyViewedProducts],
   );
+  const showCartReminder = slots.includes("cartReminder");
+  const showContinueShopping = slots.includes("continueShopping");
+  const showRecentlyViewed = slots.includes("recentlyViewed");
+  const showRecommended = slots.includes("recommended");
+  const showBuyAgain = slots.includes("buyAgain");
+  const cartReminderVisible = showCartReminder && (cartQuery.data?.items.length ?? 0) > 0;
+  const continueShoppingVisible =
+    showContinueShopping &&
+    (personalizedRails.continueProducts.length > 0 || (cartQuery.isLoading && customerAuth.enabled));
+  const recentlyViewedVisible =
+    showRecentlyViewed && personalizedRails.recentlyViewedProducts.length > 0;
+  const recommendedVisible =
+    showRecommended && (personalizedRails.recommendedProducts.length > 0 || isLoading);
+  const buyAgainVisible =
+    showBuyAgain &&
+    (personalizedRails.buyAgainProducts.length > 0 || (ordersQuery.isLoading && customerAuth.enabled));
   const hasAnySection =
-    (cartQuery.data?.items.length ?? 0) > 0 ||
-    personalizedRails.continueProducts.length > 0 ||
-    personalizedRails.recentlyViewedProducts.length > 0 ||
-    personalizedRails.buyAgainProducts.length > 0 ||
-    personalizedRails.recommendedProducts.length > 0 ||
-    isLoading;
+    cartReminderVisible ||
+    continueShoppingVisible ||
+    recentlyViewedVisible ||
+    recommendedVisible ||
+    buyAgainVisible;
 
   if (!hasAnySection) {
     return null;
   }
 
   return (
-    <section className="mx-auto max-w-[1360px] px-4 py-5 sm:px-6 lg:px-10 lg:py-6" aria-label="Personalized shopping">
-      <CartReminder cart={cartQuery.data} />
-      <div className="grid gap-5">
-        <PersonalizedProductRail
-          title="Continue shopping"
-          description="Pick up items still in your cart."
-          href="/cart"
-          icon={ShoppingCart}
-          products={personalizedRails.continueProducts.slice(0, 8)}
-          isLoading={cartQuery.isLoading && customerAuth.enabled}
-        />
-        <PersonalizedProductRail
-          title="Recently viewed"
-          description="Products you checked on this device."
-          href="/search"
-          icon={Clock3}
-          products={personalizedRails.recentlyViewedProducts}
-          isLoading={false}
-        />
-        <PersonalizedProductRail
-          title="Recommended for you"
-          description="Fresh picks from current marketplace rails."
-          href="/search"
-          icon={Sparkles}
-          products={personalizedRails.recommendedProducts}
-          isLoading={isLoading}
-        />
-        <PersonalizedProductRail
-          title="Buy again from previous orders"
-          description="Open products from your recent orders."
-          href="/account/orders"
-          icon={RotateCcw}
-          products={personalizedRails.buyAgainProducts}
-          isLoading={ordersQuery.isLoading && customerAuth.enabled}
-        />
+    <section className={cn("py-6 sm:py-7 lg:py-9", PERSONALIZED_HOME_SURFACES[surface])} aria-label="Personalized shopping">
+      <div className="mx-auto max-w-[1360px] px-4 sm:px-6 lg:px-10">
+        {showCartReminder ? <CartReminder cart={cartQuery.data} /> : null}
+        <div className="grid gap-5">
+          {showContinueShopping ? (
+            <PersonalizedProductRail
+              title="Continue shopping"
+              description="Pick up items still in your cart."
+              href="/cart"
+              icon={ShoppingCart}
+              products={personalizedRails.continueProducts.slice(0, 8)}
+              isLoading={cartQuery.isLoading && customerAuth.enabled}
+            />
+          ) : null}
+          {showRecentlyViewed ? (
+            <PersonalizedProductRail
+              title="Recently viewed"
+              description="Products you checked on this device."
+              href="/search"
+              icon={Clock3}
+              products={personalizedRails.recentlyViewedProducts}
+              isLoading={false}
+            />
+          ) : null}
+          {showRecommended ? (
+            <PersonalizedProductRail
+              title="Recommended for you"
+              description="Fresh picks from current marketplace rails."
+              href="/search"
+              icon={Sparkles}
+              products={personalizedRails.recommendedProducts}
+              isLoading={isLoading}
+            />
+          ) : null}
+          {showBuyAgain ? (
+            <PersonalizedProductRail
+              title="Buy again from previous orders"
+              description="Open products from your recent orders."
+              href="/account/orders"
+              icon={RotateCcw}
+              products={personalizedRails.buyAgainProducts}
+              isLoading={ordersQuery.isLoading && customerAuth.enabled}
+            />
+          ) : null}
+        </div>
       </div>
     </section>
   );
@@ -1260,48 +1317,50 @@ function CategoryShowcase({
   description: string;
 }) {
   return (
-    <section className="mx-auto max-w-[1360px] px-4 py-6 sm:px-6 lg:px-10 lg:py-12">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <span className="mb-4 hidden items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-[#ED3500] sm:inline-flex">
-            <span className="h-1 w-5 rounded-full bg-[#ED3500]" aria-hidden="true" />
-            Categories
-          </span>
-          <h2 className="text-3xl font-black tracking-normal text-[#111827] sm:text-4xl lg:text-[40px] lg:leading-none">
-            {title}
-          </h2>
-          {description ? (
-            <p className="mt-2 text-base font-semibold text-[#7A8496] sm:text-lg">{description}</p>
-          ) : null}
+    <section className="relative overflow-hidden bg-[linear-gradient(180deg,#FFFCFB_0%,#FFF8F4_100%)] py-7 sm:py-8 lg:py-12">
+      <div className="mx-auto max-w-[1360px] px-4 sm:px-6 lg:px-10">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <span className="mb-4 hidden items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-[#ED3500] sm:inline-flex">
+              <span className="h-1 w-5 rounded-full bg-[#ED3500]" aria-hidden="true" />
+              Categories
+            </span>
+            <h2 className="text-3xl font-black tracking-normal text-[#111827] sm:text-4xl lg:text-[40px] lg:leading-none">
+              {title}
+            </h2>
+            {description ? (
+              <p className="mt-2 text-base font-semibold text-[#7A8496] sm:text-lg">{description}</p>
+            ) : null}
+          </div>
+          <HomepageItemLink
+            href="/categories"
+            className="inline-flex h-10 w-fit items-center gap-2 rounded-full border border-[#FFE0D6] bg-white px-4 text-sm font-black !text-[#ED3500] shadow-sm transition hover:-translate-y-0.5 hover:border-[#ED3500]/50 hover:bg-[#FFF7F3] hover:!text-[#c92b00]"
+          >
+            View all categories <ArrowRight className="h-4 w-4" aria-hidden="true" />
+          </HomepageItemLink>
         </div>
-        <HomepageItemLink
-          href="/categories"
-          className="inline-flex h-10 w-fit items-center gap-2 rounded-full border border-[#FFE0D6] bg-white px-4 text-sm font-black !text-[#ED3500] shadow-sm transition hover:-translate-y-0.5 hover:border-[#ED3500]/50 hover:bg-[#FFF7F3] hover:!text-[#c92b00]"
-        >
-          View all categories <ArrowRight className="h-4 w-4" aria-hidden="true" />
-        </HomepageItemLink>
+        <div className="mt-5 grid grid-cols-2 gap-2.5 sm:hidden">
+          {isLoading
+            ? Array.from({ length: 4 }).map((_, index) => (
+                <StorefrontSkeleton key={index} className="h-[132px] rounded-[16px] bg-white" />
+              ))
+            : categories.slice(0, 4).map((category, index) => (
+                <MobileCategoryTile key={category.id} category={category} accent={categoryAccent(index)} />
+              ))}
+        </div>
+        <div className="mt-7 hidden gap-5 sm:grid sm:grid-cols-2 lg:mt-9 lg:grid-cols-4">
+          {isLoading
+            ? Array.from({ length: 8 }).map((_, index) => (
+                <StorefrontSkeleton key={index} className="h-[348px] rounded-[20px] bg-white" />
+              ))
+            : categories.slice(0, 8).map((category, index) => (
+                <CategoryTile key={category.id} category={category} accent={categoryAccent(index)} />
+              ))}
+        </div>
+        {!isLoading && !categories.length ? (
+          <StorefrontEmptyState className="mt-5" message="No active categories are available yet." />
+        ) : null}
       </div>
-      <div className="mt-5 grid grid-cols-2 gap-2.5 sm:hidden">
-        {isLoading
-          ? Array.from({ length: 4 }).map((_, index) => (
-              <StorefrontSkeleton key={index} className="h-[132px] rounded-[16px] bg-white" />
-            ))
-          : categories.slice(0, 4).map((category, index) => (
-              <MobileCategoryTile key={category.id} category={category} accent={categoryAccent(index)} />
-            ))}
-      </div>
-      <div className="mt-7 hidden gap-5 sm:grid sm:grid-cols-2 lg:mt-9 lg:grid-cols-4">
-        {isLoading
-          ? Array.from({ length: 8 }).map((_, index) => (
-              <StorefrontSkeleton key={index} className="h-[348px] rounded-[20px] bg-white" />
-            ))
-          : categories.slice(0, 8).map((category, index) => (
-              <CategoryTile key={category.id} category={category} accent={categoryAccent(index)} />
-            ))}
-      </div>
-      {!isLoading && !categories.length ? (
-        <StorefrontEmptyState className="mt-5" message="No active categories are available yet." />
-      ) : null}
     </section>
   );
 }
@@ -1565,6 +1624,32 @@ function WideStoreCard({ store }: { store: StoreProfile }) {
   );
 }
 
+function HomeProductRail({
+  rail,
+  isLoading,
+}: {
+  rail: StorefrontProductRailDefinition | undefined;
+  isLoading: boolean;
+}) {
+  if (!rail || (!rail.products.length && !isLoading && !rail.showWhenEmpty)) {
+    return null;
+  }
+
+  return (
+    <ProductRailSection
+      title={rail.title}
+      description={rail.description}
+      href={rail.href}
+      products={rail.products}
+      isLoading={isLoading}
+      promoProduct={rail.products[0]}
+      promoTone={rail.promoTone}
+      surface={rail.surface}
+      {...(rail.timerEndsAt ? { timerEndsAt: rail.timerEndsAt } : {})}
+    />
+  );
+}
+
 function ProductRailSection({
   title,
   description,
@@ -1573,6 +1658,8 @@ function ProductRailSection({
   isLoading,
   promoProduct,
   promoTone,
+  surface,
+  timerEndsAt,
 }: {
   title: string;
   description: string;
@@ -1581,30 +1668,60 @@ function ProductRailSection({
   isLoading: boolean;
   promoProduct: ProductSummary | undefined;
   promoTone: "orange" | "soft";
+  surface: ProductRailSurface;
+  timerEndsAt?: string;
 }) {
+  const surfaceStyle = PRODUCT_RAIL_SURFACES[surface];
+  const showTimer = surface === "deals" && Boolean(timerEndsAt);
+
   return (
-    <section className="mx-auto max-w-[1360px] px-4 py-5 sm:px-6 lg:px-10 lg:py-6">
-      <MobileSectionHeader title={title} href={href} />
-      <div className="grid items-stretch gap-3 lg:grid-cols-[minmax(260px,320px)_minmax(0,1fr)]">
-        <div className="hidden lg:block">
-          <PromoPanel product={promoProduct} tone={promoTone} title={title} description={description} />
+    <section className={cn("py-6 sm:py-7 lg:py-10", surfaceStyle.sectionClassName)}>
+      <div className="mx-auto max-w-[1360px] px-4 sm:px-6 lg:px-10">
+        <MobileSectionHeader title={title} href={href} />
+        {showTimer ? (
+          <div className="mb-3 lg:hidden">
+            <DealCountdown endsAt={timerEndsAt ?? ""} />
+          </div>
+        ) : null}
+        <div className="hidden lg:flex lg:items-end lg:justify-between lg:gap-4">
+          <div>
+            <h2 className="text-2xl font-black tracking-normal text-[#111827]">{title}</h2>
+            {description ? <p className="mt-1 text-sm font-semibold text-[#7A8496]">{description}</p> : null}
+          </div>
+          <div className="flex shrink-0 items-center gap-3">
+            {showTimer ? <DealCountdown endsAt={timerEndsAt ?? ""} /> : null}
+            <HomepageItemLink href={href} className="inline-flex w-fit items-center gap-2 text-xs font-black text-[#ED3500] transition hover:text-[#c92b00]">
+              View all <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+            </HomepageItemLink>
+          </div>
         </div>
-        <div className="min-w-0">
-          <ScrollRail ariaLabel={title} controls={false}>
-            {isLoading
-              ? Array.from({ length: 5 }).map((_, index) => (
-                  <StorefrontSkeleton key={index} className="h-[268px] w-[154px] shrink-0 rounded-[16px] bg-white sm:h-[292px] sm:w-[170px] lg:h-[368px] lg:w-[188px]" />
-                ))
-              : products.map((product) => (
-                  <CompactProductCard
-                    key={product.id}
-                    product={product}
-                  />
-                ))}
-          </ScrollRail>
-          {!isLoading && !products.length ? (
-            <StorefrontEmptyState className="mt-5" message="No approved products are available for this rail yet." />
-          ) : null}
+        <div className={cn("mt-4 grid items-stretch gap-4 lg:mt-6", surfaceStyle.gridClassName)}>
+          <div className="hidden lg:block">
+            <PromoPanel
+              product={promoProduct}
+              tone={promoTone}
+              title={surfaceStyle.promoTitle}
+              description={surfaceStyle.promoDescription ?? description}
+              {...(showTimer && timerEndsAt ? { timerEndsAt } : {})}
+            />
+          </div>
+          <div className="min-w-0">
+            <ScrollRail ariaLabel={title} controls={false}>
+              {isLoading
+                ? Array.from({ length: 5 }).map((_, index) => (
+                    <StorefrontSkeleton key={index} className="h-[268px] w-[154px] shrink-0 rounded-[16px] bg-white sm:h-[292px] sm:w-[170px] lg:h-[368px] lg:w-[188px]" />
+                  ))
+                : products.map((product) => (
+                    <CompactProductCard
+                      key={product.id}
+                      product={product}
+                    />
+                  ))}
+            </ScrollRail>
+            {!isLoading && !products.length ? (
+              <StorefrontEmptyState className="mt-5" message="No approved products are available for this rail yet." />
+            ) : null}
+          </div>
         </div>
       </div>
     </section>
@@ -1840,16 +1957,94 @@ function CustomHomepageItemCard({
   );
 }
 
+function DealCountdown({
+  endsAt,
+  tone = "dark",
+}: {
+  endsAt: string;
+  tone?: "dark" | "light";
+}) {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  const countdown = dealCountdownLabel(endsAt, now);
+
+  if (!countdown) {
+    return null;
+  }
+
+  const isLight = tone === "light";
+
+  return (
+    <span
+      className={cn(
+        "inline-flex h-10 items-center gap-2 rounded-full border px-3 text-xs font-black shadow-[0_12px_24px_rgba(22,59,92,0.08)]",
+        isLight
+          ? "border-white/24 bg-white/14 text-white backdrop-blur"
+          : "border-[#FFE0D6] bg-[#FFF7F3] text-[#B42318]",
+      )}
+    >
+      <Clock3 className="h-4 w-4 shrink-0" aria-hidden="true" />
+      <span className={cn("hidden sm:inline", isLight ? "text-white/84" : "text-[#7A271A]")}>
+        {countdown.expired ? "Sale ended" : "Ends in"}
+      </span>
+      <span className="tabular-nums">{countdown.label}</span>
+    </span>
+  );
+}
+
+function dealCountdownLabel(value: string, now: number) {
+  const target = Date.parse(value);
+
+  if (!Number.isFinite(target)) {
+    return null;
+  }
+
+  const remainingMs = target - now;
+
+  if (remainingMs <= 0) {
+    return { expired: true, label: "00:00:00" };
+  }
+
+  const totalSeconds = Math.floor(remainingMs / 1000);
+  const days = Math.floor(totalSeconds / 86_400);
+  const hours = Math.floor((totalSeconds % 86_400) / 3_600);
+  const minutes = Math.floor((totalSeconds % 3_600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (days > 0) {
+    return {
+      expired: false,
+      label: `${days}d ${padCountdownPart(hours)}h ${padCountdownPart(minutes)}m`,
+    };
+  }
+
+  return {
+    expired: false,
+    label: `${padCountdownPart(hours)}:${padCountdownPart(minutes)}:${padCountdownPart(seconds)}`,
+  };
+}
+
+function padCountdownPart(value: number) {
+  return String(value).padStart(2, "0");
+}
+
 function PromoPanel({
   product,
   tone,
   title,
   description,
+  timerEndsAt,
 }: {
   product: ProductSummary | undefined;
   tone: "orange" | "soft";
   title: string;
   description: string;
+  timerEndsAt?: string;
 }) {
   const market = useMarket();
   const variant = product ? primaryVariant(product) : null;
@@ -1876,6 +2071,11 @@ function PromoPanel({
         <p className={cn("mt-3 max-w-[20ch] text-sm font-bold leading-6", tone === "orange" ? "text-white/88" : "text-[#596276]")}>
           {description || (product ? product.name : "Hot products from approved sellers")}
         </p>
+        {timerEndsAt ? (
+          <div className="mt-5">
+            <DealCountdown endsAt={timerEndsAt} tone={tone === "orange" ? "light" : "dark"} />
+          </div>
+        ) : null}
         <HomepageItemLink
           href={product ? `/products/${product.slug}` : "/search"}
           className={cn(
@@ -1888,12 +2088,18 @@ function PromoPanel({
         </HomepageItemLink>
       </div>
       {product ? (
-        <span className="pointer-events-none absolute -bottom-1 right-2 z-0 h-36 w-36 opacity-95">
+        <span
+          className={cn(
+            "pointer-events-none absolute bottom-4 right-4 z-0 h-32 w-32 overflow-hidden rounded-[24px] p-3 opacity-95 lg:h-36 lg:w-36",
+            tone === "orange" ? "bg-white/16" : "bg-white/72",
+          )}
+        >
           <StorefrontImage
             src={primaryImage(product)}
             alt={product.name}
             sizes="180px"
             fallbackLabel={product.category.name}
+            showFallbackLabel={false}
             allowExternalRemote
             className="object-contain"
           />
@@ -1941,21 +2147,23 @@ function CompactProductCard({
         stockStatus.tone === "danger" ? "border-[#FFD1C4]" : "border-[#E8EDF2]",
       )}
     >
-      <div className="relative h-[124px] shrink-0 overflow-hidden bg-[#FFF8F5] sm:h-[142px] lg:h-[168px]">
+      <div className="relative h-[124px] shrink-0 overflow-hidden bg-[linear-gradient(180deg,#FFF8F5_0%,#FFFFFF_100%)] p-2 sm:h-[142px] sm:p-3 lg:h-[168px]">
         <Link href={`/products/${product.slug}` as Route} className="absolute inset-0 block">
           {campaignBadge ? (
             <span className="absolute left-3 top-3 z-10 hidden max-w-[120px] truncate rounded-full bg-[#ED3500] px-2.5 py-1 text-[10px] font-black text-white shadow-[0_8px_18px_rgba(237,53,0,0.20)] lg:block">
               {campaignBadge}
             </span>
           ) : null}
-          <StorefrontImage
-            src={primaryImage(product)}
-            alt={product.name}
-            sizes="(max-width: 640px) 154px, (max-width: 1024px) 170px, 188px"
-            fallbackLabel={product.category.name}
-            allowExternalRemote
-            className="object-contain p-4 transition duration-500 group-hover:scale-105 lg:p-5"
-          />
+          <span className="absolute inset-2 grid place-items-center overflow-hidden rounded-[14px] bg-white/72 sm:inset-3 lg:inset-4">
+            <StorefrontImage
+              src={primaryImage(product)}
+              alt={product.name}
+              sizes="(max-width: 640px) 138px, (max-width: 1024px) 146px, 156px"
+              fallbackLabel={product.category.name}
+              allowExternalRemote
+              className="object-contain transition duration-500 group-hover:scale-105"
+            />
+          </span>
         </Link>
         <button
           type="button"
@@ -2206,12 +2414,51 @@ function heroProductPosition(index: number) {
   return positions[index] ?? "left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2";
 }
 
+type ProductRailSurface = "deals" | "best" | "new" | "nearby";
+
+type ProductRailSurfaceStyle = {
+  gridClassName: string;
+  promoDescription?: string;
+  promoTitle: string;
+  sectionClassName: string;
+};
+
+const PRODUCT_RAIL_SURFACES: Record<ProductRailSurface, ProductRailSurfaceStyle> = {
+  deals: {
+    gridClassName: "lg:grid-cols-[minmax(280px,340px)_minmax(0,1fr)]",
+    promoDescription: "A sharper lead pick for deal hunters.",
+    promoTitle: "Deal of the day",
+    sectionClassName: "bg-white",
+  },
+  best: {
+    gridClassName: "lg:grid-cols-[minmax(240px,300px)_minmax(0,1fr)]",
+    promoDescription: "Popular products with stronger buyer signal.",
+    promoTitle: "Top rated pick",
+    sectionClassName: "bg-[linear-gradient(180deg,#FFF7F3_0%,#FFFCFB_100%)]",
+  },
+  new: {
+    gridClassName: "lg:grid-cols-[minmax(240px,300px)_minmax(0,1fr)]",
+    promoDescription: "Freshly listed products from verified sellers.",
+    promoTitle: "Just arrived",
+    sectionClassName: "bg-white",
+  },
+  nearby: {
+    gridClassName: "lg:grid-cols-[minmax(240px,300px)_minmax(0,1fr)]",
+    promoDescription: "Products matched to nearby store availability.",
+    promoTitle: "Local pick",
+    sectionClassName: "bg-[linear-gradient(180deg,#FFFCFB_0%,#FFF8F4_100%)]",
+  },
+};
+
 type StorefrontProductRailDefinition = {
   description: string;
   href: string;
   id: string;
   products: ProductSummary[];
   promoTone: "orange" | "soft";
+  showWhenEmpty?: boolean;
+  surface: ProductRailSurface;
+  timerEndsAt?: string;
   title: string;
 };
 
@@ -2225,6 +2472,7 @@ function buildStorefrontProductRails(home: StorefrontHomePayload | undefined): S
         href: "/deals",
         products: [],
         promoTone: "orange",
+        surface: "deals",
       },
       {
         id: "best-sellers",
@@ -2233,6 +2481,7 @@ function buildStorefrontProductRails(home: StorefrontHomePayload | undefined): S
         href: "/search?sort=rating",
         products: [],
         promoTone: "soft",
+        surface: "best",
       },
       {
         id: "new-arrivals",
@@ -2241,6 +2490,7 @@ function buildStorefrontProductRails(home: StorefrontHomePayload | undefined): S
         href: "/search?sort=newest",
         products: [],
         promoTone: "soft",
+        surface: "new",
       },
       {
         id: "nearby-products",
@@ -2249,6 +2499,7 @@ function buildStorefrontProductRails(home: StorefrontHomePayload | undefined): S
         href: "/stores",
         products: [],
         promoTone: "soft",
+        surface: "nearby",
       },
     ];
   }
@@ -2259,6 +2510,21 @@ function buildStorefrontProductRails(home: StorefrontHomePayload | undefined): S
     ...home.productRails.latest,
   ]);
   const todayDeals = uniqueProducts(home.productRails.deals).slice(0, 10);
+  const dealSection = findSection(home.homepageSections, "deal_strip");
+  const dealConfig = dealSection?.config ?? null;
+  const dealTitle = dealSection?.title?.trim() || "Today's Deals";
+  const dealDescription =
+    stringValue(dealConfig?.subtitle) ||
+    stringValue(dealConfig?.description) ||
+    "Live offers and limited-time marketplace prices.";
+  const dealHref =
+    stringValue(dealConfig?.ctaUrl) ||
+    stringValue(dealConfig?.ctaHref) ||
+    "/deals";
+  const dealTimerEndsAt =
+    stringValue(dealConfig?.timerEndsAt) ||
+    stringValue(dealConfig?.endsAt) ||
+    undefined;
   const bestSellers = distinctRailProducts(
     uniqueProducts(home.productRails.featured),
     todayDeals,
@@ -2275,11 +2541,14 @@ function buildStorefrontProductRails(home: StorefrontHomePayload | undefined): S
   return [
     {
       id: "todays-deals",
-      title: "Today's Deals",
-      description: "Live offers and limited-time marketplace prices.",
-      href: "/deals",
+      title: dealTitle,
+      description: dealDescription,
+      href: dealHref,
       products: todayDeals,
       promoTone: "orange",
+      showWhenEmpty: Boolean(dealSection),
+      surface: "deals",
+      ...(dealTimerEndsAt ? { timerEndsAt: dealTimerEndsAt } : {}),
     },
     {
       id: "best-sellers",
@@ -2288,6 +2557,7 @@ function buildStorefrontProductRails(home: StorefrontHomePayload | undefined): S
       href: "/search?sort=rating",
       products: bestSellers.length ? bestSellers : uniqueProducts(home.productRails.featured).slice(0, 10),
       promoTone: "soft",
+      surface: "best",
     },
     {
       id: "new-arrivals",
@@ -2296,6 +2566,7 @@ function buildStorefrontProductRails(home: StorefrontHomePayload | undefined): S
       href: "/search?sort=newest",
       products: newArrivals.length ? newArrivals : uniqueProducts(home.productRails.latest).slice(0, 10),
       promoTone: "soft",
+      surface: "new",
     },
     {
       id: "nearby-products",
@@ -2304,6 +2575,7 @@ function buildStorefrontProductRails(home: StorefrontHomePayload | undefined): S
       href: "/stores",
       products: nearbyProducts.length ? nearbyProducts : productsFromNearbyStores(allProducts, home.storesNearYou).slice(0, 10),
       promoTone: "soft",
+      surface: "nearby",
     },
   ];
 }
