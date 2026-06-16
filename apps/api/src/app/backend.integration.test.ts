@@ -5244,13 +5244,16 @@ integrationDescribe("1HandIndia backend integration", () => {
       status: B2BOrderStatus.PROFORMA_ISSUED,
       businessBuyerId: data.businessBuyer.id,
     });
+    const purchaseOrderFileKey =
+      `indihub/b2b/purchase-orders/${data.businessBuyer.id}/${b2bOrderNumber}/` +
+      `20260615193000-${safeRunCode().toLowerCase()}-po-001.pdf`;
 
     const poSubmitted = await request(app.getHttpServer())
       .patch(`/api/b2b/orders/${b2bOrderNumber}/purchase-order`)
       .set(authHeader(data.businessBuyerUser.id))
       .send({
         purchaseOrderNumber: `${safeRunCode()}-PO-001`,
-        purchaseOrderFileKey: `private/b2b/${safeRunCode()}-po-001.pdf`,
+        purchaseOrderFileKey,
         note: "Integration buyer submitted PO against proforma.",
       })
       .expect(200);
@@ -5258,6 +5261,7 @@ integrationDescribe("1HandIndia backend integration", () => {
       orderNumber: b2bOrderNumber,
       status: B2BOrderStatus.PO_SUBMITTED,
       purchaseOrderNumber: `${safeRunCode()}-PO-001`,
+      purchaseOrderFileKey,
     });
 
     const adminB2BOrders = await request(app.getHttpServer())

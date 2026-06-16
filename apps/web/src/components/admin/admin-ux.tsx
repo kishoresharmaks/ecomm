@@ -205,48 +205,51 @@ export function AdminListbox({
         </span>
       ) : null}
       <Listbox value={value} onChange={onChange} disabled={disabled}>
-        <div className="relative">
-          <ListboxButton
-            className={cn(
-              "flex w-full items-center justify-between gap-2 rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 text-left text-sm font-semibold text-[#1F2933] outline-none transition hover:bg-white data-focus:border-[#ED3500] data-focus:bg-white data-disabled:cursor-not-allowed data-disabled:opacity-55",
-              compact ? "h-9" : "h-11",
-              buttonClassName
-            )}
-          >
-            <span className={cn("truncate", !selectedOption && "text-[#667085]")}>{selectedOption?.label ?? placeholder}</span>
-            <ChevronDown className="h-4 w-4 shrink-0 text-[#667085]" aria-hidden="true" />
-          </ListboxButton>
-          <ListboxOptions
-            anchor={{ to: "bottom start", gap: "6px", padding: "12px" }}
-            transition
-            className="z-50 max-h-72 w-[var(--button-width)] overflow-auto rounded-lg border border-[#D8E2EA] bg-white p-1 shadow-xl outline-none transition duration-150 data-closed:scale-95 data-closed:opacity-0"
-          >
-            {options.map((option) => (
-              <ListboxOption
-                key={`${option.value}-${option.label}`}
-                value={option.value}
-                disabled={option.disabled ?? false}
-                className={({ focus, disabled: optionDisabled }) =>
-                  cn(
-                    "flex cursor-pointer items-start justify-between gap-3 rounded-md px-3 py-2 text-sm text-[#1F2933]",
-                    focus && "bg-[#FFF0EC]",
-                    optionDisabled && "cursor-not-allowed opacity-45"
-                  )
-                }
-              >
-                {({ selected }) => (
-                  <>
-                    <span className="min-w-0">
-                      <span className="block truncate font-black">{option.label}</span>
-                      {option.description ? <span className="mt-0.5 block text-xs font-semibold text-[#667085]">{option.description}</span> : null}
-                    </span>
-                    {selected ? <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#ED3500]" aria-hidden="true" /> : null}
-                  </>
-                )}
-              </ListboxOption>
-            ))}
-          </ListboxOptions>
-        </div>
+        {({ open }) => (
+          <div className={cn("relative", open && "z-[90]")}>
+            <ListboxButton
+              className={cn(
+                "flex w-full items-center justify-between gap-2 rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 text-left text-sm font-semibold text-[#1F2933] outline-none transition hover:bg-white data-focus:border-[#ED3500] data-focus:bg-white data-disabled:cursor-not-allowed data-disabled:opacity-55",
+                compact ? "h-9" : "h-11",
+                buttonClassName
+              )}
+            >
+              <span className={cn("truncate", !selectedOption && "text-[#667085]")}>
+                {selectedOption?.label ?? placeholder}
+              </span>
+              <ChevronDown className={cn("h-4 w-4 shrink-0 text-[#667085] transition", open && "rotate-180")} aria-hidden="true" />
+            </ListboxButton>
+            <ListboxOptions
+              transition
+              className="absolute left-0 top-[calc(100%+0.375rem)] z-[100] max-h-56 w-full min-w-full overflow-y-auto rounded-md border border-[#D8E2EA] bg-white p-1 shadow-[0_18px_40px_rgba(15,23,42,0.18)] outline-none transition duration-150 data-closed:pointer-events-none data-closed:-translate-y-1 data-closed:scale-[0.98] data-closed:opacity-0 sm:min-w-[18rem]"
+            >
+              {options.map((option) => (
+                <ListboxOption
+                  key={`${option.value}-${option.label}`}
+                  value={option.value}
+                  disabled={option.disabled ?? false}
+                  className={({ focus, disabled: optionDisabled }) =>
+                    cn(
+                      "flex min-h-10 cursor-pointer items-start justify-between gap-3 rounded-md px-3 py-2 text-sm text-[#1F2933]",
+                      focus && "bg-[#FFF0EC]",
+                      optionDisabled && "cursor-not-allowed opacity-45"
+                    )
+                  }
+                >
+                  {({ selected }) => (
+                    <>
+                      <span className="min-w-0">
+                        <span className="block truncate font-black">{option.label}</span>
+                        {option.description ? <span className="mt-0.5 block text-xs font-semibold text-[#667085]">{option.description}</span> : null}
+                      </span>
+                      {selected ? <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#ED3500]" aria-hidden="true" /> : null}
+                    </>
+                  )}
+                </ListboxOption>
+              ))}
+            </ListboxOptions>
+          </div>
+        )}
       </Listbox>
     </div>
   );

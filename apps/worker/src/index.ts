@@ -6,6 +6,7 @@ import { NotificationStatus, prisma } from "@indihub/database";
 import { WorkerEmailDelivery } from "./email-delivery";
 import { EMAIL_QUEUE_NAME, type EmailJobPayload, type EmailProviderConfig } from "./email-job";
 import { startDeliveryAssignmentTimeoutPolling } from "./delivery-assignment-timeout-worker";
+import { startPrivateUploadCleanupPolling } from "./private-upload-cleanup-worker";
 import { startReturnPickupTimeoutPolling } from "./return-pickup-timeout-worker";
 import { startSearchIndexPolling } from "./search-index-worker";
 
@@ -34,6 +35,7 @@ logger.info(
 startSearchIndexPolling(logger);
 startDeliveryAssignmentTimeoutPolling(logger);
 startReturnPickupTimeoutPolling(logger);
+startPrivateUploadCleanupPolling(logger);
 
 const redisUrl = process.env.REDIS_URL;
 const emailDelivery = new WorkerEmailDelivery(logger);
@@ -141,7 +143,10 @@ async function processEmailJob(payload: EmailJobPayload) {
   });
 
   if (!log) {
-    logger.warn({ notificationLogId: payload.notificationLogId }, "Email log not found; skipping job");
+    logger.warn(
+      { notificationLogId: payload.notificationLogId },
+      "Email log not found; skipping job",
+    );
     return;
   }
 
@@ -263,7 +268,10 @@ async function markEmailSkipped(notificationLogId: string, errorMessage: string)
     where: {
       id: notificationLogId,
       status: NotificationStatus.PENDING,
-      OR: [{ providerMessageId: null }, { providerMessageId: { startsWith: emailDeliveryLockPrefix } }],
+      OR: [
+        { providerMessageId: null },
+        { providerMessageId: { startsWith: emailDeliveryLockPrefix } },
+      ],
     },
     data: {
       status: NotificationStatus.SKIPPED,
@@ -319,8 +327,7 @@ function isStaleDeliveryLock(providerMessageId: string) {
   const lockParts = providerMessageId.split(":");
   const lockedAt = Number(lockParts[lockParts.length - 1]);
   return (
-    Number.isFinite(lockedAt) &&
-    Date.now() - lockedAt > emailDeliveryLockStaleMinutes * 60 * 1000
+    Number.isFinite(lockedAt) && Date.now() - lockedAt > emailDeliveryLockStaleMinutes * 60 * 1000
   );
 }
 

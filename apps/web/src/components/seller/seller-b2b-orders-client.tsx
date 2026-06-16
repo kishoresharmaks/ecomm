@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { FormEvent, useState } from "react";
-import { ArrowLeft, FileText, Search } from "lucide-react";
+import { ArrowLeft, ExternalLink, FileText, Search } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
+import { userFacingApiErrorMessage } from "@/lib/api";
+import { openB2BPurchaseOrderDocument } from "@/lib/b2b-po-documents";
 import { getSellerB2BOrder, listSellerB2BOrders, type SellerB2BOrder } from "@/lib/seller-api";
 import {
   SellerAuthNotice,
@@ -106,6 +108,7 @@ export function SellerB2BOrdersClient() {
 
 export function SellerB2BOrderDetailClient({ orderNumber }: { orderNumber: string }) {
   const sellerAuth = useSellerAuth();
+  const [notice, setNotice] = useState<string | null>(null);
   const orderQuery = useQuery({
     queryKey: ["seller-b2b-order", sellerAuth.authKey, orderNumber],
     queryFn: () => getSellerB2BOrder(sellerAuth.authHeaders, orderNumber),
@@ -123,6 +126,20 @@ export function SellerB2BOrderDetailClient({ orderNumber }: { orderNumber: strin
 
   const order = orderQuery.data;
 
+  async function openPurchaseOrder() {
+    setNotice(null);
+
+    try {
+      await openB2BPurchaseOrderDocument(
+        sellerAuth.authHeaders,
+        `/api/seller/b2b-orders/${encodeURIComponent(orderNumber)}/purchase-order/document-access`,
+        `/api/seller/b2b-orders/${encodeURIComponent(orderNumber)}/purchase-order/document`,
+      );
+    } catch (error) {
+      setNotice(userFacingApiErrorMessage(error));
+    }
+  }
+
   return (
     <div className="grid gap-5">
       <div>
@@ -135,6 +152,7 @@ export function SellerB2BOrderDetailClient({ orderNumber }: { orderNumber: strin
       </div>
       {orderQuery.isLoading ? <SellerSkeleton /> : null}
       {orderQuery.error ? <SellerErrorPanel error={orderQuery.error} onRetry={() => void orderQuery.refetch()} /> : null}
+      {notice ? <StatusBadge tone="danger">{notice}</StatusBadge> : null}
       {order ? (
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
           <SellerPanel>
@@ -144,7 +162,22 @@ export function SellerB2BOrderDetailClient({ orderNumber }: { orderNumber: strin
               <Info label="Contact" value={order.businessBuyer?.contactPhone ?? "Phone unavailable"} />
               <Info label="Product/store" value={order.product?.name ?? order.seller?.storeName ?? "General procurement"} />
               <Info label="PO number" value={order.purchaseOrderNumber ?? "Not submitted"} />
-              <Info label="PO file" value={order.purchaseOrderFileKey ?? "Not attached"} />
+              <div>
+                <p className="text-xs font-black uppercase tracking-wide text-[#667085]">PO file</p>
+                {order.purchaseOrderFileKey ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="mt-1"
+                    onClick={() => void openPurchaseOrder()}
+                  >
+                    <ExternalLink className="h-4 w-4" aria-hidden="true" />
+                    View PO
+                  </Button>
+                ) : (
+                  <p className="mt-1 text-sm font-black text-[#1F2933]">Not attached</p>
+                )}
+              </div>
               <Info label="PO note" value={order.purchaseOrderNote ?? "No buyer note"} />
             </div>
           </SellerPanel>

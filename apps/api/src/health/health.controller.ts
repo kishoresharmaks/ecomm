@@ -1,5 +1,5 @@
 import { Controller, Get } from "@nestjs/common";
-import { ApiTags } from "@nestjs/swagger";
+import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import { brandConfig, phaseOneScope } from "@indihub/config";
 import { Public } from "../auth/decorators/public.decorator";
 
@@ -8,6 +8,7 @@ import { Public } from "../auth/decorators/public.decorator";
 @Controller("health")
 export class HealthController {
   @Get()
+  @ApiOperation({ summary: "Read API health and product metadata." })
   getHealth() {
     return {
       ok: true,

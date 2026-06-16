@@ -1,5 +1,5 @@
 import { Controller, Get, Inject } from "@nestjs/common";
-import { ApiOkResponse, ApiTags } from "@nestjs/swagger";
+import { ApiOkResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { RoleCode } from "@indihub/database";
 import { Roles } from "../../auth/decorators/roles.decorator";
 import { AdminDashboardService } from "./admin-dashboard.service";
@@ -11,6 +11,7 @@ export class AdminDashboardController {
   constructor(@Inject(AdminDashboardService) private readonly adminDashboardService: AdminDashboardService) {}
 
   @Get()
+  @ApiOperation({ summary: "Read admin operations dashboard metrics." })
   @ApiOkResponse({ description: "Admin dashboard summary." })
   getSummary() {
     return this.adminDashboardService.getSummary();

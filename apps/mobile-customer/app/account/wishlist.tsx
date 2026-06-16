@@ -3,6 +3,7 @@ import { HugeiconsIcon } from "@hugeicons/react-native";
 import { FlashList } from "@shopify/flash-list";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Stack, useRouter } from "expo-router";
+import { useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { EmptyState } from "../../src/components/empty-state";
 import { RemoteImage } from "../../src/components/remote-image";
@@ -21,6 +22,7 @@ export default function WishlistScreen() {
   const customerAuth = useMobileCustomerAuth();
   const queryClient = useQueryClient();
   const market = useMobileMarket();
+  const [actionError, setActionError] = useState("");
 
   const wishlistQuery = useQuery({
     queryKey: ["mobile-wishlist", customerAuth.authKey],
@@ -30,10 +32,13 @@ export default function WishlistScreen() {
 
   const removeMutation = useMutation({
     mutationFn: (productId: string) => removeWishlistItem(customerAuth.authHeaders, productId),
+    onMutate: () => setActionError(""),
     onSuccess: async () => {
+      setActionError("");
       await queryClient.invalidateQueries({ queryKey: ["mobile-wishlist", customerAuth.authKey] });
       await queryClient.invalidateQueries({ queryKey: ["mobile-account-profile", customerAuth.authKey] });
     },
+    onError: (error) => setActionError(accountErrorMessage(error, "Wishlist item could not be removed.")),
   });
 
   if (customerAuth.status === "loading" || customerAuth.status === "syncing" || wishlistQuery.isLoading) {
@@ -77,14 +82,17 @@ export default function WishlistScreen() {
         data={items}
         keyExtractor={(item) => item.id}
         ListHeaderComponent={
-          <View style={styles.headerCard}>
-            <View style={styles.headerIcon}>
-              <HugeiconsIcon color={colors.primary} icon={HeartIcon} size={30} strokeWidth={2.1} />
+          <View>
+            <View style={styles.headerCard}>
+              <View style={styles.headerIcon}>
+                <HugeiconsIcon color={colors.primary} icon={HeartIcon} size={30} strokeWidth={2.1} />
+              </View>
+              <View style={styles.headerBody}>
+                <Text style={styles.title}>Wishlist</Text>
+                <Text style={styles.subtitle}>{items.length} saved product{items.length === 1 ? "" : "s"}</Text>
+              </View>
             </View>
-            <View style={styles.headerBody}>
-              <Text style={styles.title}>Wishlist</Text>
-              <Text style={styles.subtitle}>{items.length} saved product{items.length === 1 ? "" : "s"}</Text>
-            </View>
+            {actionError ? <Text style={styles.actionError}>{actionError}</Text> : null}
           </View>
         }
         ListEmptyComponent={
@@ -183,6 +191,14 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     lineHeight: 18,
     marginTop: 4,
+  },
+  actionError: {
+    color: colors.danger,
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 18,
+    marginBottom: 12,
+    marginTop: 2,
   },
   emptyCard: {
     backgroundColor: colors.surface,
