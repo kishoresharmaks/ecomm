@@ -2,9 +2,15 @@
 
 import Link from "next/link";
 import { FormEvent, useState } from "react";
-import { ArrowLeft, FileCheck2, FileText, Search } from "lucide-react";
+import { ArrowLeft, ExternalLink, FileCheck2, FileText, Search, UploadCloud } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
+import { userFacingApiErrorMessage } from "@/lib/api";
+import {
+  openB2BPurchaseOrderDocument,
+  uploadB2BPurchaseOrderDocument,
+  validateB2BPurchaseOrderFile,
+} from "@/lib/b2b-po-documents";
 import {
   getBusinessBuyerB2BOrder,
   getBusinessBuyerProfile,
@@ -130,6 +136,9 @@ export function B2BOrderDetailClient({ orderNumber }: { orderNumber: string }) {
   const auth = useB2BAuth();
   const queryClient = useQueryClient();
   const [notice, setNotice] = useState<string | null>(null);
+  const [poFile, setPoFile] = useState<File | null>(null);
+  const [uploadedPoKey, setUploadedPoKey] = useState<string | null>(null);
+  const [isUploadingPo, setIsUploadingPo] = useState(false);
 
   const profileQuery = useQuery({
     queryKey: ["b2b-profile", auth.authKey],
@@ -149,23 +158,81 @@ export function B2BOrderDetailClient({ orderNumber }: { orderNumber: string }) {
       submitBusinessBuyerPurchaseOrder(auth.authHeaders, orderNumber, payload),
     onSuccess: () => {
       setNotice("Purchase order submitted for admin review.");
+      setPoFile(null);
       void queryClient.invalidateQueries({ queryKey: ["b2b-order", auth.authKey, orderNumber] });
       void queryClient.invalidateQueries({ queryKey: ["b2b-orders", auth.authKey] });
     },
     onError: (error) => setNotice(error instanceof Error ? error.message : "Purchase order submission failed."),
   });
 
-  function submitPurchaseOrder(event: FormEvent<HTMLFormElement>) {
+  async function submitPurchaseOrder(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const purchaseOrderFileKey = optionalFormValue(form, "purchaseOrderFileKey");
     const note = optionalFormValue(form, "note");
     setNotice(null);
+
+    let purchaseOrderFileKey = uploadedPoKey ?? order?.purchaseOrderFileKey ?? "";
+
+    try {
+      if (poFile) {
+        setIsUploadingPo(true);
+        purchaseOrderFileKey = await uploadB2BPurchaseOrderDocument(
+          auth.authHeaders,
+          orderNumber,
+          poFile,
+        );
+        setUploadedPoKey(purchaseOrderFileKey);
+      }
+    } catch (error) {
+      setNotice(userFacingApiErrorMessage(error));
+      setIsUploadingPo(false);
+      return;
+    } finally {
+      setIsUploadingPo(false);
+    }
+
+    if (!purchaseOrderFileKey) {
+      setNotice("Upload a purchase order file before submitting PO details.");
+      return;
+    }
+
     poMutation.mutate({
       purchaseOrderNumber: formValue(form, "purchaseOrderNumber"),
-      ...(purchaseOrderFileKey ? { purchaseOrderFileKey } : {}),
+      purchaseOrderFileKey,
       ...(note ? { note } : {}),
     });
+  }
+
+  function selectPoFile(file: File | null) {
+    setUploadedPoKey(null);
+    setNotice(null);
+
+    if (!file) {
+      setPoFile(null);
+      return;
+    }
+
+    try {
+      validateB2BPurchaseOrderFile(file);
+      setPoFile(file);
+    } catch (error) {
+      setPoFile(null);
+      setNotice(userFacingApiErrorMessage(error));
+    }
+  }
+
+  async function openPurchaseOrder() {
+    setNotice(null);
+
+    try {
+      await openB2BPurchaseOrderDocument(
+        auth.authHeaders,
+        `/api/b2b/orders/${encodeURIComponent(orderNumber)}/purchase-order/document-access`,
+        `/api/b2b/orders/${encodeURIComponent(orderNumber)}/purchase-order/document`,
+      );
+    } catch (error) {
+      setNotice(userFacingApiErrorMessage(error));
+    }
   }
 
   const order = orderQuery.data;
@@ -201,16 +268,54 @@ export function B2BOrderDetailClient({ orderNumber }: { orderNumber: string }) {
               {canSubmitPo ? (
                 <form onSubmit={submitPurchaseOrder} className="mt-5 grid gap-4">
                   <B2BField label="Purchase order number" name="purchaseOrderNumber" required defaultValue={order.purchaseOrderNumber ?? null} placeholder="PO-2026-00045" />
-                  <B2BField label="PO file key or URL" name="purchaseOrderFileKey" defaultValue={order.purchaseOrderFileKey ?? null} placeholder="private/b2b/po/file.pdf" />
+                  <label className="grid gap-2">
+                    <span className="text-xs font-bold uppercase tracking-wide text-[#667085]">Purchase order file</span>
+                    <span className="flex min-h-28 flex-col items-center justify-center rounded-xl border border-dashed border-[#F3B199] bg-[#FFF7F4] px-4 py-5 text-center">
+                      <UploadCloud className="h-6 w-6 text-[#ED3500]" aria-hidden="true" />
+                      <span className="mt-2 text-sm font-black text-[#1F2933]">
+                        {poFile?.name ?? "Upload signed PO document"}
+                      </span>
+                      <span className="mt-1 text-xs font-semibold text-[#667085]">
+                        PDF, JPG, PNG, or WebP / max 10 MB
+                      </span>
+                      <input
+                        type="file"
+                        accept="application/pdf,image/jpeg,image/png,image/webp"
+                        onChange={(event) => selectPoFile(event.target.files?.[0] ?? null)}
+                        className="mt-4 block w-full max-w-xs cursor-pointer rounded-md border border-[#F3E7E2] bg-white px-3 py-2 text-xs font-bold text-[#667085] file:mr-3 file:rounded-full file:border-0 file:bg-[#ED3500] file:px-3 file:py-2 file:text-xs file:font-black file:text-white"
+                      />
+                    </span>
+                  </label>
+                  {order.purchaseOrderFileKey || uploadedPoKey ? (
+                    <div className="flex flex-col gap-3 rounded-lg border border-[#F3E7E2] bg-white p-3 text-sm font-semibold text-[#667085] sm:flex-row sm:items-center sm:justify-between">
+                      <span className="break-all">
+                        Current PO: {uploadedPoKey ?? order.purchaseOrderFileKey}
+                      </span>
+                      {order.purchaseOrderFileKey ? (
+                        <Button type="button" variant="ghost" onClick={() => void openPurchaseOrder()}>
+                          <ExternalLink className="h-4 w-4" aria-hidden="true" />
+                          View PO
+                        </Button>
+                      ) : null}
+                    </div>
+                  ) : null}
                   <B2BTextArea label="Buyer note" name="note" defaultValue={order.purchaseOrderNote ?? null} rows={4} placeholder="Internal PO approval note, delivery instructions, or terms reference." />
-                  <Button type="submit" disabled={poMutation.isPending}>
+                  <Button type="submit" disabled={poMutation.isPending || isUploadingPo}>
                     <FileCheck2 className="h-4 w-4" aria-hidden="true" />
-                    {poMutation.isPending ? "Submitting..." : "Submit purchase order"}
+                    {isUploadingPo ? "Uploading PO..." : poMutation.isPending ? "Submitting..." : "Submit purchase order"}
                   </Button>
                 </form>
               ) : (
                 <div className="mt-5 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-4 text-sm font-semibold leading-6 text-[#667085]">
                   Purchase order changes are locked after admin acceptance or closure.
+                  {order.purchaseOrderFileKey ? (
+                    <div className="mt-3">
+                      <Button type="button" variant="ghost" onClick={() => void openPurchaseOrder()}>
+                        <ExternalLink className="h-4 w-4" aria-hidden="true" />
+                        View submitted PO
+                      </Button>
+                    </div>
+                  ) : null}
                 </div>
               )}
             </B2BPanel>

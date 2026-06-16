@@ -1,7 +1,9 @@
 import { SentryExampleClient } from "./sentry-example-client";
+import { privatePageMetadata } from "@/lib/seo";
 
 export const metadata = {
   title: "Sentry Example | 1HandIndia",
+  ...privatePageMetadata
 };
 
 export default function SentryExamplePage() {

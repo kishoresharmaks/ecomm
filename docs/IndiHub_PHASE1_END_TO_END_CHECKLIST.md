@@ -461,7 +461,7 @@
 | 19 | Email event tests | DONE | Notification event paths are covered through product/order/B2B/support flows with disabled-provider log behavior; live provider sending remains deployment configuration. |
 | 20 | Web frontend checks | DONE | `pnpm.cmd --filter @indihub/web typecheck`, `lint`, `test`, and production build passed again after the 2026-05-26 modal/docs refresh. |
 | 21 | Branded confirmation dialog pass | DONE | Native browser `confirm`/`alert`/`prompt` calls are absent; high-impact customer, seller, B2B, admin, finance, and location actions use branded Headless UI confirmation modals. |
-| 22 | Playwright frontend tests | TODO | Add after starting web/API together for browser QA. |
+| 22 | Playwright frontend tests | TODO | Add as the final automated browser-regression layer after manual role and flow QA are accepted. |
 | 23 | Mobile responsive QA | TODO | Required before client demo. |
 | 24 | Security review | TODO | Required before launch. |
 | 25 | Deployment readiness check | TODO | Required after hosting environment is selected. |
@@ -510,7 +510,7 @@ The product surface can be called ready for final client review only when all se
 | 14 | Audit logs are available | DONE | Admin audit log surface is wired. |
 | 15 | Transactional email notifications are configured | DONE | Backend service, queue, logs, retries, and event triggers exist. |
 | 16 | Payment readiness is completed | DONE | Admin/finance-managed Razorpay/COD/bank/manual configuration, bank-transfer destination/reference capture, Razorpay Checkout script handoff, server-side checkout signature verification, webhook handling, setting masking, COD max enforcement, and checkout concurrency protection exist; live Razorpay use still needs approved provider keys, deployed webhook configuration, and a test transaction. |
-| 17 | Role access rules are verified | PARTIAL | Backend/API route tests cover admin, finance, and core role guards; final browser QA across logged-in roles is still pending. |
+| 17 | Role access rules are verified | DONE | Backend/API route tests cover admin, finance, and core role guards; manual browser QA across logged-in roles was completed successfully. Automated Playwright role-regression tests remain a final hardening task. |
 | 18 | Client content is loaded | CLIENT | Needs logo/content/products/policies/settings. |
 | 19 | Full QA corrections are completed | TODO | Browser testing cycle and any resulting fixes are pending. |
 | 20 | Deployment preparation is completed | TODO | Hosting/env/domain/provider setup pending. |

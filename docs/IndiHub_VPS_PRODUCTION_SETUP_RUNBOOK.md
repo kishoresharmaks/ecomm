@@ -54,36 +54,36 @@ Background:
 
 Recommended process list:
 
-| Process | Purpose | Private port |
-|---|---|---:|
-| `@indihub/web` | Customer storefront, account, seller center, B2B, admin, finance, delivery UI | `3000` |
-| `@indihub/api` | REST API, Swagger, auth guards, admin/seller/customer/B2B logic | `4000` |
-| `@indihub/worker` | PostgreSQL search-index polling and non-Redis background maintenance | None |
-| PostgreSQL | Primary database | `5432` |
-| PgBouncer | Optional runtime connection pool | `6432` |
+| Process           | Purpose                                                                       | Private port |
+| ----------------- | ----------------------------------------------------------------------------- | -----------: |
+| `@indihub/web`    | Customer storefront, account, seller center, B2B, admin, finance, delivery UI |       `3000` |
+| `@indihub/api`    | REST API, Swagger, auth guards, admin/seller/customer/B2B logic               |       `4000` |
+| `@indihub/worker` | PostgreSQL search-index polling and non-Redis background maintenance          |         None |
+| PostgreSQL        | Primary database                                                              |       `5432` |
+| PgBouncer         | Optional runtime connection pool                                              |       `6432` |
 
 ## 4. Pre-Hosting Checklist
 
 Collect these before starting:
 
-| Item | Required value |
-|---|---|
-| Main domain | Example: `1handindia.com` |
-| Admin URL | Usually `https://1handindia.com/admin` |
-| API public base | Usually `https://1handindia.com/api` |
-| VPS OS | Ubuntu 22.04 LTS or 24.04 LTS recommended |
-| VPS size | Minimum 4 vCPU, 8 GB RAM for serious launch testing |
-| Database | PostgreSQL 15+ recommended |
-| Node | Node.js 22+ |
-| Package manager | pnpm 10+ |
-| SSL | Certbot or managed certificate |
-| Email provider | Brevo, Resend, SendGrid, or SMTP |
-| Payment provider | Razorpay test and live account |
-| Public image provider | ImageKit or S3-compatible public bucket |
-| Private storage | S3-compatible bucket if document/proof uploads are enabled |
-| Clerk | Production Clerk application and domain configuration |
-| Backups | Database backup path, retention, restore test owner |
-| Monitoring | Uptime monitor, log access, alert recipient |
+| Item                  | Required value                                             |
+| --------------------- | ---------------------------------------------------------- |
+| Main domain           | Example: `1handindia.com`                                  |
+| Admin URL             | Usually `https://1handindia.com/admin`                     |
+| API public base       | Usually `https://1handindia.com/api`                       |
+| VPS OS                | Ubuntu 22.04 LTS or 24.04 LTS recommended                  |
+| VPS size              | Minimum 4 vCPU, 8 GB RAM for serious launch testing        |
+| Database              | PostgreSQL 15+ recommended                                 |
+| Node                  | Node.js 22+                                                |
+| Package manager       | pnpm 10+                                                   |
+| SSL                   | Certbot or managed certificate                             |
+| Email provider        | Brevo, Resend, SendGrid, or SMTP                           |
+| Payment provider      | Razorpay test and live account                             |
+| Public image provider | ImageKit or S3-compatible public bucket                    |
+| Private storage       | S3-compatible bucket if document/proof uploads are enabled |
+| Clerk                 | Production Clerk application and domain configuration      |
+| Backups               | Database backup path, retention, restore test owner        |
+| Monitoring            | Uptime monitor, log access, alert recipient                |
 
 ## 5. Server Preparation
 
@@ -367,12 +367,27 @@ IMAGEKIT_PRIVATE_KEY=""
 Private S3-compatible storage fallback:
 
 ```env
+INDIHUB_PRIVATE_STORAGE_PROVIDER="AUTO"
+INDIHUB_PRIVATE_UPLOAD_ROOT="storage/private"
 S3_ENDPOINT=""
 S3_REGION=""
 S3_BUCKET=""
 S3_ACCESS_KEY_ID=""
 S3_SECRET_ACCESS_KEY=""
 ```
+
+Use `AUTO` for normal VPS operation: the API uses S3 when all private S3 settings are complete, otherwise it falls back to local private storage below `INDIHUB_PRIVATE_UPLOAD_ROOT`. Use `S3` only when private S3 is mandatory and credentials are complete. Use `LOCAL` only when the VPS filesystem is the intended private-file store and its backup is configured.
+
+Private upload cleanup worker:
+
+```env
+PRIVATE_UPLOAD_CLEANUP_WORKER_ENABLED="true"
+PRIVATE_UPLOAD_ORPHAN_RETENTION_HOURS="24"
+PRIVATE_UPLOAD_CLEANUP_INTERVAL_MS="3600000"
+PRIVATE_UPLOAD_CLEANUP_BATCH_SIZE="50"
+```
+
+The worker removes private upload keys/files older than the retention window only when they are still not linked to a seller document or B2B order purchase-order record.
 
 ### 7.11 Maps and location values
 
@@ -2366,34 +2381,85 @@ Confirm:
 
 ## 36. Backup and Restore Setup
 
-### 36.1 Database backup
+### 36.1 Database and local private-file backup
 
-Create backup directory:
+Create backup directories:
 
 ```bash
 sudo mkdir -p /var/backups/indihub/postgres
-sudo chown -R postgres:postgres /var/backups/indihub
+sudo mkdir -p /var/backups/indihub/private-files
+sudo chown -R postgres:postgres /var/backups/indihub/postgres
+sudo chown -R indihub:indihub /var/backups/indihub/private-files
 ```
 
-Manual backup:
+Manual database backup:
 
 ```bash
 sudo -u postgres pg_dump -Fc indihub > /var/backups/indihub/postgres/indihub_$(date +%F_%H%M).dump
 ```
 
+Manual local private-file backup, if `INDIHUB_PRIVATE_STORAGE_PROVIDER=LOCAL` or `AUTO` is using local fallback:
+
+```bash
+sudo -u indihub mkdir -p /var/backups/indihub/private-files/$(date +%F_%H%M)
+sudo -u indihub rsync -a --delete /var/www/indihub/storage/private/ /var/backups/indihub/private-files/$(date +%F_%H%M)/
+```
+
+If `INDIHUB_PRIVATE_UPLOAD_ROOT` is changed, replace `/var/www/indihub/storage/private/` with the resolved production path.
+
 Automate with cron:
 
 ```bash
 sudo crontab -u postgres -e
+sudo crontab -u indihub -e
 ```
 
-Example daily backup at 2:30 AM:
+Example daily database backup at 2:30 AM:
 
 ```cron
 30 2 * * * pg_dump -Fc indihub > /var/backups/indihub/postgres/indihub_$(date +\%F_\%H\%M).dump
 ```
 
-### 36.2 Restore test
+Example daily private-file backup at 2:35 AM:
+
+```cron
+35 2 * * * mkdir -p /var/backups/indihub/private-files/$(date +\%F_\%H\%M) && rsync -a --delete /var/www/indihub/storage/private/ /var/backups/indihub/private-files/$(date +\%F_\%H\%M)/
+```
+
+Keep the database dump timestamp and private-file backup timestamp together. Private upload keys live in PostgreSQL, while LOCAL private file bytes live on disk. Restoring only one side can create broken seller document or B2B purchase-order links.
+
+### 36.2 Restore database and private files together
+
+Stop the application before restore:
+
+```bash
+sudo systemctl stop indihub-api indihub-web indihub-worker
+```
+
+Restore the database from the selected backup window:
+
+```bash
+sudo -u postgres dropdb indihub
+sudo -u postgres createdb indihub
+sudo -u postgres pg_restore -d indihub /var/backups/indihub/postgres/BACKUP_FILE.dump
+```
+
+Restore local private files from the matching timestamped directory:
+
+```bash
+sudo -u indihub rsync -a --delete /var/backups/indihub/private-files/MATCHING_TIMESTAMP/ /var/www/indihub/storage/private/
+```
+
+Then restart and verify:
+
+```bash
+sudo systemctl start indihub-api indihub-web indihub-worker
+curl https://YOUR_DOMAIN/api/health
+```
+
+Verify at least one seller document and one B2B purchase-order document from the restored backup if those features are enabled.
+
+### 36.3 Restore test
 
 At least once before launch:
 
@@ -2401,7 +2467,9 @@ At least once before launch:
 2. Restore the latest backup.
 3. Run `pnpm db:validate` against restore DB.
 4. Confirm key table counts.
-5. Document restore time.
+5. Restore the matching private-file backup into a temporary directory if local private storage is enabled.
+6. Confirm stored private file keys resolve to files.
+7. Document restore time.
 
 Restore example:
 
@@ -2410,7 +2478,7 @@ sudo -u postgres createdb indihub_restore_test
 sudo -u postgres pg_restore -d indihub_restore_test /var/backups/indihub/postgres/BACKUP_FILE.dump
 ```
 
-### 36.3 Asset backup
+### 36.4 Asset backup
 
 Back up:
 
