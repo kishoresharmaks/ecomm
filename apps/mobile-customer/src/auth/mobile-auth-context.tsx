@@ -223,22 +223,59 @@ export function useMobileCustomerAuth() {
 
 export function mobileAuthErrorMessage(error: unknown) {
   if (error instanceof MobileApiError) {
-    return error.message;
+    return sanitizedMobileAuthErrorMessage(error.message, error.status);
   }
 
   if (error && typeof error === "object" && "errors" in error) {
     const clerkErrors = (error as { errors?: Array<{ longMessage?: string; message?: string }> }).errors;
     const firstMessage = clerkErrors?.[0]?.longMessage ?? clerkErrors?.[0]?.message;
     if (firstMessage) {
-      return firstMessage;
+      return sanitizedMobileAuthErrorMessage(firstMessage);
     }
   }
 
   if (error instanceof Error && error.message.trim()) {
-    return error.message;
+    return sanitizedMobileAuthErrorMessage(error.message);
   }
 
   return "Something went wrong. Please try again.";
+}
+
+function sanitizedMobileAuthErrorMessage(message: string, status?: number) {
+  const trimmed = message.trim();
+  const lower = trimmed.toLowerCase();
+
+  if (status === 401 || lower.includes("jwt") || lower.includes("bearer") || lower.includes("session token")) {
+    return "Your session has expired. Please sign in again.";
+  }
+
+  if (status === 403 || lower.includes("forbidden")) {
+    return "You do not have access to this action.";
+  }
+
+  if (status && status >= 500) {
+    return "1HandIndia is taking longer than expected. Please try again.";
+  }
+
+  if (/network|timeout|connection|fetch/i.test(trimmed)) {
+    return "We could not reach 1HandIndia. Check your connection and try again.";
+  }
+
+  if (/invalid.*password|incorrect.*password|invalid.*credential|identifier.*password/i.test(trimmed)) {
+    return "Email or password is incorrect.";
+  }
+
+  if (/verification|otp|code/i.test(trimmed)) {
+    return lower.includes("expired")
+      ? "The verification code has expired. Please request a new one."
+      : "The verification code could not be confirmed. Please try again.";
+  }
+
+  if (/clerk|publishable|secret|token|auth.*provider|unauthorized/i.test(trimmed)) {
+    return "We could not complete sign in. Please try again.";
+  }
+
+  return trimmed || "Something went wrong. Please try again.";
 }
 
 function currentUserPayload(user: ReturnType<typeof useUser>["user"]) {

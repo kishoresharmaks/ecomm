@@ -1,4 +1,4 @@
-import { Type } from "class-transformer";
+import { Transform, Type } from "class-transformer";
 import { ApiPropertyOptional } from "@nestjs/swagger";
 import { IsEnum, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from "class-validator";
 import { B2BEnquiryStatus } from "@indihub/database";
@@ -12,6 +12,7 @@ export class B2BEnquiryQueryDto {
 
   @ApiPropertyOptional({ enum: B2BEnquiryStatus })
   @IsOptional()
+  @Transform(({ value }) => (value === "PENDING" ? B2BEnquiryStatus.SUBMITTED : value))
   @IsEnum(B2BEnquiryStatus)
   status?: B2BEnquiryStatus;
 

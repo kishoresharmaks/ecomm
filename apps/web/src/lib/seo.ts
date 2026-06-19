@@ -62,23 +62,49 @@ export const privateRobotsDisallow = [
   "/account",
   "/checkout",
   "/cart",
+  "/courier",
   "/delivery",
   "/finance",
   "/api",
+  "/sentry-example-page",
   "/sign-in",
   "/sign-up",
+  "/track-order",
+  "/checkout/success",
   "/seller/products",
   "/seller/orders",
   "/seller/profile",
   "/seller/finance",
   "/seller/b2b-enquiries",
+  "/seller/b2b-orders",
+  "/seller/coupons",
+  "/seller/deals",
   "/seller/reports",
+  "/seller/returns",
+  "/seller/reviews",
   "/seller/subscription",
   "/b2b/company-profile",
   "/b2b/enquiries",
+  "/b2b/orders",
   "/b2b/sign-in",
   "/b2b/sign-up"
 ] as const;
+
+export const staticPublicSitemapEntries = [
+  { path: "/", changeFrequency: "daily", priority: 1, source: "homepage" },
+  { path: "/categories", changeFrequency: "daily", priority: 0.8, source: "categories" },
+  { path: "/deals", changeFrequency: "daily", priority: 0.75, source: "deals" },
+  { path: "/stores", changeFrequency: "daily", priority: 0.8, source: "stores" },
+  { path: "/about", changeFrequency: "monthly", priority: 0.45, source: "about" },
+  { path: "/contact", changeFrequency: "monthly", priority: 0.55, source: "support_landing" },
+  { path: "/seller/register", changeFrequency: "weekly", priority: 0.65, source: "seller_landing" },
+  { path: "/b2b/register", changeFrequency: "weekly", priority: 0.65, source: "b2b_landing" },
+  { path: "/privacy-policy", changeFrequency: "monthly", priority: 0.35, source: "policy" },
+  { path: "/refund-return-policy", changeFrequency: "monthly", priority: 0.35, source: "policy" },
+  { path: "/seller-policy", changeFrequency: "monthly", priority: 0.35, source: "policy" },
+  { path: "/shipping-policy", changeFrequency: "monthly", priority: 0.35, source: "policy" },
+  { path: "/terms-and-conditions", changeFrequency: "monthly", priority: 0.35, source: "policy" }
+] satisfies SitemapEntry[];
 
 export function absoluteUrl(pathOrUrl?: string | null) {
   if (!pathOrUrl) {
@@ -112,10 +138,10 @@ export async function resolveSeoEntry(query: { entityType?: SeoEntityType; entit
 export async function fetchSitemapEntries() {
   const entries = await safePublicFetch<SitemapEntry[]>("/api/cms/sitemap");
   if (entries?.length) {
-    return entries;
+    return normalizeSitemapEntries(entries);
   }
 
-  return fallbackSitemapEntries();
+  return normalizeSitemapEntries(await fallbackSitemapEntries());
 }
 
 export function metadataFromSeo(seo: Partial<SeoEntry> | null | undefined, fallback: SeoFallback): Metadata {
@@ -164,6 +190,32 @@ export function robotsFromDirective(directive?: string | null): Metadata["robots
       "max-video-preview": -1
     }
   };
+}
+
+export const privatePageMetadata: Metadata = {
+  robots: robotsFromDirective("noindex,nofollow")
+};
+
+export function isPrivatePath(pathOrUrl: string) {
+  const path = pathOrUrl.startsWith("http") ? new URL(pathOrUrl).pathname : pathOrUrl;
+  return privateRobotsDisallow.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
+}
+
+export function normalizeSitemapEntries(entries: SitemapEntry[]) {
+  const seen = new Set<string>();
+  const normalized: SitemapEntry[] = [];
+
+  for (const entry of entries) {
+    const path = entry.path.startsWith("http") ? new URL(entry.path).pathname : entry.path;
+    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+    if (isPrivatePath(normalizedPath) || seen.has(normalizedPath)) {
+      continue;
+    }
+    seen.add(normalizedPath);
+    normalized.push({ ...entry, path: normalizedPath });
+  }
+
+  return normalized;
 }
 
 export function buildOrganizationJsonLd() {
@@ -394,13 +446,7 @@ async function fallbackSitemapEntries(): Promise<SitemapEntry[]> {
   ]);
 
   return [
-    { path: "/", changeFrequency: "daily", priority: 1, source: "homepage" },
-    { path: "/categories", changeFrequency: "daily", priority: 0.8, source: "categories" },
-    { path: "/stores", changeFrequency: "daily", priority: 0.8, source: "stores" },
-    { path: "/about", changeFrequency: "monthly", priority: 0.45, source: "about" },
-    { path: "/contact", changeFrequency: "monthly", priority: 0.55, source: "support_landing" },
-    { path: "/seller/register", changeFrequency: "weekly", priority: 0.65, source: "seller_landing" },
-    { path: "/b2b/register", changeFrequency: "weekly", priority: 0.65, source: "b2b_landing" },
+    ...staticPublicSitemapEntries,
     ...(categories ?? []).map((category: CategorySummary) => ({ path: `/categories/${category.slug}`, changeFrequency: "daily" as const, priority: 0.75, source: "category" })),
     ...(products?.items ?? []).map((product: ProductSummary) => ({ path: `/products/${product.slug}`, changeFrequency: "daily" as const, priority: 0.7, source: "product" })),
     ...(stores ?? []).map((store: StoreProfile) => ({ path: `/stores/${store.slug}`, changeFrequency: "weekly" as const, priority: 0.65, source: "store" })),

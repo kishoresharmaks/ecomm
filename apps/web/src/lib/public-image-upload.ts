@@ -73,6 +73,7 @@ export async function uploadPublicImage(
         purpose,
         fileName: file.name,
         contentType: file.type,
+        sizeBytes: file.size,
         ...(options.publicId ? { publicId: options.publicId } : {}),
       }),
     },

@@ -1,15 +1,41 @@
-import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, Put, Query } from "@nestjs/common";
-import { ApiOperation, ApiTags } from "@nestjs/swagger";
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Inject,
+  Param,
+  Patch,
+  Post,
+  Put,
+  Query,
+  Res,
+  UploadedFile,
+  UseInterceptors,
+} from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
+import { ApiBody, ApiConsumes, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { RoleCode } from "@indihub/database";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { Roles } from "../auth/decorators/roles.decorator";
 import type { RequestUser } from "../auth/types/indihub-request";
-import { B2BService } from "./b2b.service";
+import { B2BService, type UploadedB2BPurchaseOrderFile } from "./b2b.service";
+import { sendB2BPurchaseOrderDocument } from "./b2b-document-response";
 import { CreateB2BEnquiryDto } from "./dto/b2b-enquiry.dto";
-import { B2BOrderQueryDto, SubmitB2BPurchaseOrderDto } from "./dto/b2b-order.dto";
+import {
+  B2BOrderQueryDto,
+  CreateB2BPurchaseOrderUploadRequestDto,
+  SubmitB2BPurchaseOrderDto,
+} from "./dto/b2b-order.dto";
 import { B2BEnquiryQueryDto } from "./dto/b2b-query.dto";
-import { CreateBusinessBuyerAddressDto, UpdateBusinessBuyerAddressDto } from "./dto/business-buyer-address.dto";
-import { UpdateBusinessBuyerProfileDto, UpsertBusinessBuyerProfileDto } from "./dto/business-buyer-profile.dto";
+import {
+  CreateBusinessBuyerAddressDto,
+  UpdateBusinessBuyerAddressDto,
+} from "./dto/business-buyer-address.dto";
+import {
+  UpdateBusinessBuyerProfileDto,
+  UpsertBusinessBuyerProfileDto,
+} from "./dto/business-buyer-profile.dto";
 
 @ApiTags("B2B Buyer")
 @Controller("b2b")
@@ -57,7 +83,7 @@ export class B2BBuyerController {
   updateAddress(
     @CurrentUser() actor: RequestUser,
     @Param("addressId") addressId: string,
-    @Body() dto: UpdateBusinessBuyerAddressDto
+    @Body() dto: UpdateBusinessBuyerAddressDto,
   ) {
     return this.b2bService.updateAddress(actor, addressId, dto);
   }
@@ -95,6 +121,72 @@ export class B2BBuyerController {
   @ApiOperation({ summary: "Read buyer-visible B2B order and proforma detail." })
   getOrder(@CurrentUser() actor: RequestUser, @Param("orderNumber") orderNumber: string) {
     return this.b2bService.getMyB2BOrder(actor, orderNumber);
+  }
+
+  @Post("orders/:orderNumber/purchase-order/upload-request")
+  @Roles(RoleCode.BUSINESS_BUYER)
+  @ApiOperation({ summary: "Create a B2B purchase-order upload request for S3 or local fallback." })
+  createPurchaseOrderUploadRequest(
+    @CurrentUser() actor: RequestUser,
+    @Param("orderNumber") orderNumber: string,
+    @Body() dto: CreateB2BPurchaseOrderUploadRequestDto,
+  ) {
+    return this.b2bService.createMyPurchaseOrderUploadRequest(actor, orderNumber, dto);
+  }
+
+  @Post("orders/:orderNumber/purchase-order/upload")
+  @Roles(RoleCode.BUSINESS_BUYER)
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024 } }))
+  @ApiConsumes("multipart/form-data")
+  @ApiBody({
+    description:
+      "Multipart local-private-storage upload for a buyer purchase order. The file field must be named `file`. Server validation allows PDF, JPG, PNG, and WebP only, verifies file magic bytes, and rejects files larger than 10 MB. The returned assetKey must be submitted through the purchase-order details endpoint before the 24-hour orphan cleanup window.",
+    schema: {
+      type: "object",
+      required: ["file"],
+      properties: {
+        file: {
+          type: "string",
+          format: "binary",
+          description:
+            "Binary purchase-order file. Allowed: application/pdf, image/jpeg, image/png, image/webp. Maximum size: 10 MB.",
+        },
+      },
+    },
+  })
+  @ApiOperation({ summary: "Upload a B2B purchase-order file through local private storage." })
+  uploadPurchaseOrderFile(
+    @CurrentUser() actor: RequestUser,
+    @Param("orderNumber") orderNumber: string,
+    @UploadedFile() file: UploadedB2BPurchaseOrderFile | undefined,
+  ) {
+    return this.b2bService.uploadMyPurchaseOrderFile(actor, orderNumber, file);
+  }
+
+  @Get("orders/:orderNumber/purchase-order/document-access")
+  @Roles(RoleCode.BUSINESS_BUYER)
+  @ApiOperation({ summary: "Read buyer-authorized purchase-order document access metadata." })
+  getPurchaseOrderDocumentAccess(
+    @CurrentUser() actor: RequestUser,
+    @Param("orderNumber") orderNumber: string,
+  ) {
+    return this.b2bService.getMyPurchaseOrderDocumentAccess(actor, orderNumber);
+  }
+
+  @Get("orders/:orderNumber/purchase-order/document")
+  @Roles(RoleCode.BUSINESS_BUYER)
+  @ApiOperation({ summary: "Open or stream the buyer-authorized purchase-order document." })
+  async openPurchaseOrderDocument(
+    @CurrentUser() actor: RequestUser,
+    @Param("orderNumber") orderNumber: string,
+    @Res({ passthrough: true })
+    response: {
+      redirect: (status: number, url: string) => unknown;
+      set: (headers: Record<string, string>) => unknown;
+    },
+  ) {
+    const access = await this.b2bService.getMyPurchaseOrderDocumentAccess(actor, orderNumber);
+    return sendB2BPurchaseOrderDocument(access, response);
   }
 
   @Patch("orders/:orderNumber/purchase-order")

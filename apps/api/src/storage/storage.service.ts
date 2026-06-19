@@ -3,9 +3,12 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { createHash, createHmac, randomBytes } from "node:crypto";
+import { access, mkdir, writeFile } from "node:fs/promises";
+import { dirname, resolve, sep } from "node:path";
 import { Prisma, RoleCode, SettingValueType } from "@indihub/database";
 import type { RequestUser } from "../auth/types/indihub-request";
 import { PrismaService } from "../prisma/prisma.service";
@@ -38,15 +41,40 @@ const STORAGE_SETTING_KEYS = {
   publicS3Bucket: "storage.public_images.s3.bucket",
   publicS3AccessKeyId: "storage.public_images.s3.access_key_id",
   publicS3SecretAccessKey: "storage.public_images.s3.secret_access_key",
+  privateProvider: "storage.private.provider",
   privateEnabled: "storage.private.enabled",
   privateEndpoint: "storage.private.endpoint",
   privateRegion: "storage.private.region",
   privateBucket: "storage.private.bucket",
   privateAccessKeyId: "storage.private.access_key_id",
   privateSecretAccessKey: "storage.private.secret_access_key",
+  privateLocalRoot: "storage.private.local_root",
 } as const;
 
 const storageConfigKeys = Object.values(STORAGE_SETTING_KEYS);
+const privateDocumentMaxBytes = 10 * 1024 * 1024;
+const publicImageMaxBytes = 5 * 1024 * 1024;
+const publicImageAllowedContentTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+const privateDocumentAllowedContentTypes = new Set([
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+]);
+const privateDocumentTypes = new Set([
+  "ID_PROOF",
+  "SIGNATURE_PROOF",
+  "GST_CERTIFICATE",
+  "PAN_CARD",
+  "ADDRESS_PROOF",
+  "BANK_PROOF",
+  "BUSINESS_REGISTRATION",
+  "OTHER",
+]);
+const b2bPurchaseOrderPrefix = "indihub/b2b/purchase-orders";
+const privateDocumentDownloadTtlSeconds = 300;
+const b2bPurchaseOrderDownloadTtlSeconds = 300;
+const privateUploadOrphanCleanupHours = 24;
 
 type StorageSettingMap = Map<string, Prisma.JsonValue>;
 type StorageSettingWrite = {
@@ -79,9 +107,46 @@ type PublicImageConfig = {
   imageKit: ImageKitConfig;
   s3: PublicS3Config;
 };
+type PrivateStorageProvider = "AUTO" | "S3" | "LOCAL";
+type ActivePrivateStorageProvider = "S3" | "LOCAL";
 type PrivateStorageConfig = PublicS3Config & {
+  provider: PrivateStorageProvider;
+  activeProvider: ActivePrivateStorageProvider;
   enabled: boolean;
+  s3Configured: boolean;
+  localRoot: string;
+  localConfigured: boolean;
 };
+type PrivateDocumentMetadata = {
+  fileName: string;
+  contentType: string;
+  sizeBytes?: number;
+};
+type UploadedPrivateDocumentFile = {
+  originalname: string;
+  mimetype: string;
+  size: number;
+  buffer: Buffer;
+};
+type B2BPurchaseOrderContext = {
+  businessBuyerId: string;
+  orderNumber: string;
+};
+export type PrivateDocumentAccess =
+  | {
+      provider: "s3";
+      url: string;
+      expiresAt: string;
+      fileName: string;
+      contentType: string;
+    }
+  | {
+      provider: "local";
+      filePath: string;
+      fileName: string;
+      contentType: string;
+    };
+export type B2BPurchaseOrderDocumentAccess = PrivateDocumentAccess;
 
 @Injectable()
 export class StorageService {
@@ -103,8 +168,13 @@ export class StorageService {
         s3AccessKeyPreview: this.maskValue(publicImages.s3.accessKeyId),
       },
       privateStorage: {
+        provider: privateStorage.provider,
+        activeProvider: privateStorage.activeProvider,
         enabled: privateStorage.enabled,
         configured: privateStorage.configured,
+        s3Configured: privateStorage.s3Configured,
+        localConfigured: privateStorage.localConfigured,
+        localRoot: privateStorage.localRoot || null,
         endpoint: privateStorage.endpoint || null,
         region: privateStorage.region || null,
         bucket: privateStorage.bucket || null,
@@ -142,8 +212,13 @@ export class StorageService {
         },
       },
       privateStorage: {
+        provider: privateStorage.provider,
+        activeProvider: privateStorage.activeProvider,
         enabled: privateStorage.enabled,
         configured: privateStorage.configured,
+        s3Configured: privateStorage.s3Configured,
+        localConfigured: privateStorage.localConfigured,
+        localRoot: privateStorage.localRoot,
         endpoint: privateStorage.endpoint,
         region: privateStorage.region,
         bucket: privateStorage.bucket,
@@ -275,6 +350,16 @@ export class StorageService {
     }
 
     if (dto.privateStorage) {
+      if (dto.privateStorage.provider !== undefined) {
+        writes.push(
+          this.storageSettingWrite(
+            STORAGE_SETTING_KEYS.privateProvider,
+            "storage",
+            SettingValueType.STRING,
+            dto.privateStorage.provider,
+          ),
+        );
+      }
       if (dto.privateStorage.enabled !== undefined) {
         writes.push(
           this.storageSettingWrite(
@@ -344,6 +429,16 @@ export class StorageService {
           ),
         );
       }
+      if (dto.privateStorage.localRoot !== undefined) {
+        writes.push(
+          this.storageSettingWrite(
+            STORAGE_SETTING_KEYS.privateLocalRoot,
+            "storage",
+            SettingValueType.STRING,
+            this.normalizePrivateLocalRoot(dto.privateStorage.localRoot),
+          ),
+        );
+      }
     }
 
     if (writes.length) {
@@ -377,6 +472,7 @@ export class StorageService {
   }
 
   async createPublicImageUploadRequest(actor: RequestUser, dto: PublicImageUploadRequestDto) {
+    this.validatePublicImageMetadata(dto);
     const settingMap = await this.storageSettingMap();
     const publicImages = this.publicImageConfigFromSettings(settingMap);
 
@@ -397,39 +493,302 @@ export class StorageService {
     actor: RequestUser,
     dto: PrivateDocumentUploadRequestDto,
   ) {
+    this.assertPrivateDocumentType(dto.documentType);
+    this.validatePrivateDocumentMetadata({
+      fileName: dto.fileName,
+      contentType: dto.contentType,
+      sizeBytes: dto.sizeBytes,
+    });
+
     const settingMap = await this.storageSettingMap();
     const privateStorage = this.privateStorageConfigFromSettings(settingMap);
 
     if (!privateStorage.configured) {
-      throw new ServiceUnavailableException(
-        "Private S3 document storage must be enabled before seller document uploads can be used.",
-      );
+      throw new ServiceUnavailableException("Private document storage is not configured.");
     }
 
-    const assetKey = this.createPrivateDocumentAssetKey(actor, dto);
-    const presigned = this.presignS3Object(privateStorage, "PUT", assetKey);
+    if (privateStorage.activeProvider === "S3") {
+      const assetKey = this.createPrivateDocumentAssetKey(actor, dto);
+      const presigned = this.presignS3Object(privateStorage, "PUT", assetKey);
+      await this.recordPrivateUpload({
+        assetKey,
+        provider: "S3",
+        uploadKind: "SELLER_DOCUMENT",
+        actorUserId: actor.id,
+        contentType: dto.contentType,
+        sizeBytes: dto.sizeBytes,
+      });
+
+      return {
+        provider: "s3" as const,
+        method: "PUT" as const,
+        uploadUrl: presigned.url,
+        assetKey,
+        headers: {
+          "Content-Type": dto.contentType.toLowerCase(),
+        },
+        maxBytes: privateDocumentMaxBytes,
+        allowedContentTypes: [...privateDocumentAllowedContentTypes],
+        expiresAt: presigned.expiresAt,
+      };
+    }
 
     return {
-      provider: "s3" as const,
-      method: "PUT" as const,
-      uploadUrl: presigned.url,
-      assetKey,
-      headers: {
-        "Content-Type": dto.contentType.toLowerCase(),
-      },
+      provider: "local" as const,
+      method: "POST" as const,
+      uploadPath: "/api/storage/private-document/upload",
+      maxBytes: privateDocumentMaxBytes,
+      allowedContentTypes: [...privateDocumentAllowedContentTypes],
     };
   }
 
-  async privateDocumentUrl(actor: RequestUser, key: string | undefined) {
+  async saveLocalPrivateDocument(
+    actor: RequestUser,
+    documentType: string | undefined,
+    file: UploadedPrivateDocumentFile | undefined,
+  ) {
+    if (!file) {
+      throw new BadRequestException("Document file is required.");
+    }
+
+    const normalizedDocumentType = this.assertPrivateDocumentType(documentType);
+    this.validatePrivateDocumentMetadata({
+      fileName: file.originalname,
+      contentType: file.mimetype,
+      sizeBytes: file.size,
+    });
+    this.assertPrivateDocumentMagicBytes(file);
+
+    const settingMap = await this.storageSettingMap();
+    const privateStorage = this.privateStorageConfigFromSettings(settingMap);
+
+    if (!privateStorage.configured || privateStorage.activeProvider !== "LOCAL") {
+      throw new ServiceUnavailableException("Local private document storage is not enabled.");
+    }
+
+    const assetKey = this.createPrivateDocumentAssetKey(actor, {
+      documentType: normalizedDocumentType,
+      fileName: file.originalname,
+      contentType: file.mimetype,
+      sizeBytes: file.size,
+    });
+    const filePath = this.privateLocalFilePath(privateStorage, assetKey);
+    await mkdir(dirname(filePath), { recursive: true });
+    await writeFile(filePath, file.buffer);
+    await this.recordPrivateUpload({
+      assetKey,
+      provider: "LOCAL",
+      uploadKind: "SELLER_DOCUMENT",
+      actorUserId: actor.id,
+      contentType: file.mimetype,
+      sizeBytes: file.size,
+    });
+
+    return {
+      provider: "local" as const,
+      assetKey,
+      maxBytes: privateDocumentMaxBytes,
+      allowedContentTypes: [...privateDocumentAllowedContentTypes],
+      orphanCleanupAfterHours: privateUploadOrphanCleanupHours,
+    };
+  }
+
+  async createB2BPurchaseOrderUploadRequest(
+    context: B2BPurchaseOrderContext,
+    metadata: PrivateDocumentMetadata,
+  ) {
+    this.validatePrivateDocumentMetadata(metadata);
+    const settingMap = await this.storageSettingMap();
+    const privateStorage = this.privateStorageConfigFromSettings(settingMap);
+
+    if (!privateStorage.configured) {
+      throw new ServiceUnavailableException("Private document storage is not configured.");
+    }
+
+    if (privateStorage.activeProvider === "S3") {
+      const assetKey = this.createB2BPurchaseOrderAssetKey(context, metadata);
+      const presigned = this.presignS3Object(privateStorage, "PUT", assetKey);
+      await this.recordPrivateUpload({
+        assetKey,
+        provider: "S3",
+        uploadKind: "B2B_PURCHASE_ORDER",
+        actorUserId: context.businessBuyerId,
+        contentType: metadata.contentType,
+        sizeBytes: metadata.sizeBytes,
+      });
+
+      return {
+        provider: "s3" as const,
+        method: "PUT" as const,
+        uploadUrl: presigned.url,
+        assetKey,
+        headers: {
+          "Content-Type": metadata.contentType.toLowerCase(),
+        },
+        maxBytes: privateDocumentMaxBytes,
+        allowedContentTypes: [...privateDocumentAllowedContentTypes],
+        expiresAt: presigned.expiresAt,
+      };
+    }
+
+    return {
+      provider: "local" as const,
+      method: "POST" as const,
+      uploadPath: `/api/b2b/orders/${encodeURIComponent(context.orderNumber)}/purchase-order/upload`,
+      maxBytes: privateDocumentMaxBytes,
+      allowedContentTypes: [...privateDocumentAllowedContentTypes],
+    };
+  }
+
+  async saveLocalB2BPurchaseOrder(
+    context: B2BPurchaseOrderContext,
+    file: UploadedPrivateDocumentFile | undefined,
+  ) {
+    if (!file) {
+      throw new BadRequestException("Purchase order file is required.");
+    }
+
+    this.validatePrivateDocumentMetadata({
+      fileName: file.originalname,
+      contentType: file.mimetype,
+      sizeBytes: file.size,
+    });
+    this.assertPrivateDocumentMagicBytes(file);
+
+    const settingMap = await this.storageSettingMap();
+    const privateStorage = this.privateStorageConfigFromSettings(settingMap);
+
+    if (!privateStorage.configured || privateStorage.activeProvider !== "LOCAL") {
+      throw new ServiceUnavailableException("Local private document storage is not enabled.");
+    }
+
+    const assetKey = this.createB2BPurchaseOrderAssetKey(context, {
+      fileName: file.originalname,
+      contentType: file.mimetype,
+      sizeBytes: file.size,
+    });
+    const filePath = this.privateLocalFilePath(privateStorage, assetKey);
+    await mkdir(dirname(filePath), { recursive: true });
+    await writeFile(filePath, file.buffer);
+    await this.recordPrivateUpload({
+      assetKey,
+      provider: "LOCAL",
+      uploadKind: "B2B_PURCHASE_ORDER",
+      actorUserId: context.businessBuyerId,
+      contentType: file.mimetype,
+      sizeBytes: file.size,
+    });
+
+    return {
+      provider: "local" as const,
+      assetKey,
+      maxBytes: privateDocumentMaxBytes,
+      allowedContentTypes: [...privateDocumentAllowedContentTypes],
+      orphanCleanupAfterHours: privateUploadOrphanCleanupHours,
+    };
+  }
+
+  async b2bPurchaseOrderDocumentAccess(
+    assetKey: string | undefined,
+  ): Promise<B2BPurchaseOrderDocumentAccess> {
+    const normalizedKey = this.normalizeB2BPurchaseOrderKey(assetKey);
+    const settingMap = await this.storageSettingMap();
+    const privateStorage = this.privateStorageConfigFromSettings(settingMap);
+
+    if (!privateStorage.configured) {
+      throw new ServiceUnavailableException("Private document storage is not configured.");
+    }
+
+    const fileName = normalizedKey.split("/").at(-1) ?? "purchase-order";
+    const contentType = this.contentTypeForDocumentKey(normalizedKey);
+
+    if (privateStorage.activeProvider === "S3") {
+      const presigned = this.presignS3Object(
+        privateStorage,
+        "GET",
+        normalizedKey,
+        b2bPurchaseOrderDownloadTtlSeconds,
+      );
+      return {
+        provider: "s3" as const,
+        url: presigned.url,
+        expiresAt: presigned.expiresAt,
+        fileName,
+        contentType,
+      };
+    }
+
+    const filePath = this.privateLocalFilePath(privateStorage, normalizedKey);
+    try {
+      await access(filePath);
+    } catch {
+      throw new NotFoundException("Purchase order file was not found in local storage.");
+    }
+
+    return {
+      provider: "local" as const,
+      filePath,
+      fileName,
+      contentType,
+    };
+  }
+
+  async privateDocumentAccess(
+    actor: RequestUser,
+    key: string | undefined,
+  ): Promise<PrivateDocumentAccess> {
     const normalizedKey = this.normalizePrivateDocumentKeyForActor(actor, key);
     const settingMap = await this.storageSettingMap();
     const privateStorage = this.privateStorageConfigFromSettings(settingMap);
 
     if (!privateStorage.configured) {
-      throw new ServiceUnavailableException("Private S3 document storage is not configured.");
+      throw new ServiceUnavailableException("Private document storage is not configured.");
     }
 
-    return this.presignS3Object(privateStorage, "GET", normalizedKey).url;
+    const fileName = normalizedKey.split("/").at(-1) ?? "private-document";
+    const contentType = this.contentTypeForDocumentKey(normalizedKey);
+
+    if (privateStorage.activeProvider === "S3") {
+      const presigned = this.presignS3Object(
+        privateStorage,
+        "GET",
+        normalizedKey,
+        privateDocumentDownloadTtlSeconds,
+      );
+
+      return {
+        provider: "s3" as const,
+        url: presigned.url,
+        expiresAt: presigned.expiresAt,
+        fileName,
+        contentType,
+      };
+    }
+
+    const filePath = this.privateLocalFilePath(privateStorage, normalizedKey);
+    try {
+      await access(filePath);
+    } catch {
+      throw new NotFoundException("Private document file was not found in local storage.");
+    }
+
+    return {
+      provider: "local" as const,
+      filePath,
+      fileName,
+      contentType,
+    };
+  }
+
+  async privateDocumentUrl(actor: RequestUser, key: string | undefined) {
+    const access = await this.privateDocumentAccess(actor, key);
+    if (access.provider !== "s3") {
+      throw new ServiceUnavailableException(
+        "Private document is available through authenticated streaming.",
+      );
+    }
+
+    return access.url;
   }
 
   private createImageKitUploadRequest(
@@ -474,6 +833,17 @@ export class StorageService {
       .join("/")}`;
   }
 
+  private validatePublicImageMetadata(dto: PublicImageUploadRequestDto) {
+    const contentType = dto.contentType.toLowerCase();
+    if (!publicImageAllowedContentTypes.has(contentType)) {
+      throw new BadRequestException("Image file type is not supported.");
+    }
+    if (dto.sizeBytes !== undefined && dto.sizeBytes > publicImageMaxBytes) {
+      throw new BadRequestException("Public image file size must be 5 MB or less.");
+    }
+    this.imageExtension(dto.fileName, contentType);
+  }
+
   private createS3PublicImageUploadRequest(
     actor: RequestUser,
     dto: PublicImageUploadRequestDto,
@@ -513,16 +883,110 @@ export class StorageService {
     const folder = `indihub/sellers/${this.safeSegment(actor.id)}/documents`;
     const extension = this.documentExtension(dto.fileName, dto.contentType);
     const typeSegment = this.safeSegment(dto.documentType.toLowerCase());
-    const baseName = this.safeSegment(this.fileNameWithoutExtension(dto.fileName)) || typeSegment;
+    const baseName = this.safeDocumentBaseName(dto.fileName) || typeSegment;
+    const timestamp = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
+    const randomSuffix = randomBytes(4).toString("hex");
 
     return this.normalizePublicImageKey(
-      `${folder}/${typeSegment}-${baseName}-${Date.now()}-${randomBytes(4).toString("hex")}${extension}`,
+      `${folder}/${typeSegment}-${baseName}-${timestamp}-${randomSuffix}${extension}`,
     );
   }
 
-  private presignS3Object(s3: PublicS3Config, method: "GET" | "PUT", assetKey: string) {
+  private createB2BPurchaseOrderAssetKey(
+    context: B2BPurchaseOrderContext,
+    metadata: PrivateDocumentMetadata,
+  ) {
+    const extension = this.documentExtension(metadata.fileName, metadata.contentType);
+    const baseName = this.safeDocumentBaseName(metadata.fileName) || "purchase-order";
+    const timestamp = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
+    const fileName = `${timestamp}-${baseName}${extension}`;
+
+    return this.normalizeB2BPurchaseOrderKey(
+      `${b2bPurchaseOrderPrefix}/${this.safeSegment(context.businessBuyerId)}/${this.safeSegment(
+        context.orderNumber,
+      )}/${fileName}`,
+    );
+  }
+
+  private validatePrivateDocumentMetadata(metadata: PrivateDocumentMetadata) {
+    const contentType = metadata.contentType.toLowerCase();
+    if (!privateDocumentAllowedContentTypes.has(contentType)) {
+      throw new BadRequestException("Document must be a PDF, JPG, PNG, or WebP file.");
+    }
+
+    if (metadata.sizeBytes !== undefined) {
+      if (!Number.isFinite(metadata.sizeBytes) || metadata.sizeBytes <= 0) {
+        throw new BadRequestException("Document file size is invalid.");
+      }
+
+      if (metadata.sizeBytes > privateDocumentMaxBytes) {
+        throw new BadRequestException("Document file size must be 10 MB or less.");
+      }
+    }
+
+    this.documentExtension(metadata.fileName, contentType);
+  }
+
+  private assertPrivateDocumentType(value: string | undefined) {
+    const normalized = value?.trim().toUpperCase() ?? "";
+    if (!privateDocumentTypes.has(normalized)) {
+      throw new BadRequestException("Document type is not supported.");
+    }
+
+    return normalized;
+  }
+
+  private assertPrivateDocumentMagicBytes(file: UploadedPrivateDocumentFile) {
+    const contentType = file.mimetype.toLowerCase();
+    const header = file.buffer.subarray(0, 12);
+    const matches =
+      (contentType === "application/pdf" && header.subarray(0, 4).toString("ascii") === "%PDF") ||
+      (contentType === "image/jpeg" &&
+        header.length >= 3 &&
+        header[0] === 0xff &&
+        header[1] === 0xd8 &&
+        header[2] === 0xff) ||
+      (contentType === "image/png" &&
+        header.length >= 8 &&
+        header
+          .subarray(0, 8)
+          .equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) ||
+      (contentType === "image/webp" &&
+        header.length >= 12 &&
+        header.subarray(0, 4).toString("ascii") === "RIFF" &&
+        header.subarray(8, 12).toString("ascii") === "WEBP");
+
+    if (!matches) {
+      throw new BadRequestException("Document file content does not match the declared file type.");
+    }
+  }
+
+  private safeDocumentBaseName(fileName: string) {
+    const withoutExtension = this.fileNameWithoutExtension(fileName);
+    const asciiName = Array.from(withoutExtension.normalize("NFKD"))
+      .filter((character) => {
+        const code = character.charCodeAt(0);
+        return code >= 32 && code <= 126;
+      })
+      .join("");
+
+    return asciiName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 80)
+      .replace(/-+$/g, "");
+  }
+
+  private presignS3Object(
+    s3: PublicS3Config,
+    method: "GET" | "PUT",
+    assetKey: string,
+    expiresSeconds = 900,
+  ) {
     const endpoint = new URL(s3.endpoint);
     const now = new Date();
+    const expiresAt = new Date(now.getTime() + expiresSeconds * 1000).toISOString();
     const amzDate = this.amzDate(now);
     const dateStamp = amzDate.slice(0, 8);
     const credentialScope = `${dateStamp}/${s3.region}/s3/aws4_request`;
@@ -533,7 +997,7 @@ export class StorageService {
       ["X-Amz-Algorithm", "AWS4-HMAC-SHA256"],
       ["X-Amz-Credential", credential],
       ["X-Amz-Date", amzDate],
-      ["X-Amz-Expires", "900"],
+      ["X-Amz-Expires", String(expiresSeconds)],
       ["X-Amz-SignedHeaders", signedHeaders],
     ];
     const canonicalQuery = this.canonicalQueryString(queryParams);
@@ -560,7 +1024,7 @@ export class StorageService {
       .digest("hex");
     const url = `${endpoint.origin}${canonicalUri}?${canonicalQuery}&X-Amz-Signature=${signature}`;
 
-    return { url };
+    return { url, expiresAt };
   }
 
   private folderForPurpose(actor: RequestUser, purpose: PublicImageUploadPurpose) {
@@ -643,7 +1107,10 @@ export class StorageService {
       baseUrl,
       imageKit,
       s3,
-      configured: provider === "S3" ? Boolean(s3.configured && baseUrl) : Boolean(imageKit.configured && baseUrl),
+      configured:
+        provider === "S3"
+          ? Boolean(s3.configured && baseUrl)
+          : Boolean(imageKit.configured && baseUrl),
     };
   }
 
@@ -763,13 +1230,19 @@ export class StorageService {
       .trim()
       .toLowerCase()
       .match(/\.([a-z0-9]+)$/)?.[1];
-    const extension = fromName ? `.${fromName}` : this.extensionForDocumentContentType(contentType);
+    const expectedExtension = this.extensionForDocumentContentType(contentType);
+    const extension = fromName ? `.${fromName}` : expectedExtension;
 
     if (![".pdf", ".jpg", ".jpeg", ".png", ".webp"].includes(extension)) {
       throw new BadRequestException("Document file type is not supported.");
     }
 
-    return extension === ".jpeg" ? ".jpg" : extension;
+    const normalizedExtension = extension === ".jpeg" ? ".jpg" : extension;
+    if (normalizedExtension !== expectedExtension) {
+      throw new BadRequestException("Document file extension does not match the content type.");
+    }
+
+    return normalizedExtension;
   }
 
   private extensionForContentType(contentType: string) {
@@ -819,6 +1292,46 @@ export class StorageService {
     return normalized;
   }
 
+  private normalizeB2BPurchaseOrderKey(key: string | undefined) {
+    const normalized = this.normalizePublicImageKey(key);
+    const prefix = `${b2bPurchaseOrderPrefix}/`;
+
+    if (!normalized.startsWith(prefix)) {
+      throw new BadRequestException("Purchase order file key is invalid.");
+    }
+
+    return normalized;
+  }
+
+  private privateLocalFilePath(privateStorage: PrivateStorageConfig, assetKey: string) {
+    const rootPath = resolve(privateStorage.localRoot);
+    const filePath = resolve(rootPath, assetKey);
+
+    if (filePath !== rootPath && !filePath.startsWith(`${rootPath}${sep}`)) {
+      throw new BadRequestException("Document path is invalid.");
+    }
+
+    return filePath;
+  }
+
+  private contentTypeForDocumentKey(assetKey: string) {
+    const extension = assetKey.toLowerCase().match(/\.([a-z0-9]+)$/)?.[1];
+
+    switch (extension) {
+      case "pdf":
+        return "application/pdf";
+      case "jpg":
+      case "jpeg":
+        return "image/jpeg";
+      case "png":
+        return "image/png";
+      case "webp":
+        return "image/webp";
+      default:
+        return "application/octet-stream";
+    }
+  }
+
   private s3CanonicalUri(endpointPath: string, bucket: string, assetKey: string) {
     const basePath = endpointPath.replace(/\/+$/, "");
     const segments = [...basePath.split("/").filter(Boolean), bucket, ...assetKey.split("/")];
@@ -855,6 +1368,7 @@ export class StorageService {
   }
 
   private privateStorageConfigFromSettings(settingMap: StorageSettingMap): PrivateStorageConfig {
+    const provider = this.privateStorageProviderFromSettings(settingMap);
     const endpoint = this.stringSetting(
       settingMap,
       STORAGE_SETTING_KEYS.privateEndpoint,
@@ -880,7 +1394,17 @@ export class StorageService {
       STORAGE_SETTING_KEYS.privateSecretAccessKey,
       process.env.S3_SECRET_ACCESS_KEY ?? "",
     );
-    const envConfigured = Boolean(endpoint && bucket && accessKeyId && secretAccessKey);
+    const localRoot = this.stringSetting(
+      settingMap,
+      STORAGE_SETTING_KEYS.privateLocalRoot,
+      process.env.INDIHUB_PRIVATE_UPLOAD_ROOT ?? "storage/private",
+    );
+    const normalizedLocalRoot = this.normalizePrivateLocalRoot(localRoot);
+    const s3Configured = Boolean(endpoint && region && bucket && accessKeyId && secretAccessKey);
+    const localConfigured = Boolean(normalizedLocalRoot);
+    const activeProvider: ActivePrivateStorageProvider =
+      provider === "S3" ? "S3" : provider === "LOCAL" ? "LOCAL" : s3Configured ? "S3" : "LOCAL";
+    const envConfigured = activeProvider === "S3" ? s3Configured : localConfigured;
     const enabled = readBooleanSetting(
       settingMap.get(STORAGE_SETTING_KEYS.privateEnabled),
       envConfigured,
@@ -893,8 +1417,36 @@ export class StorageService {
       bucket,
       accessKeyId,
       secretAccessKey,
-      configured: Boolean(enabled && endpoint && bucket && accessKeyId && secretAccessKey),
+      provider,
+      activeProvider,
+      s3Configured,
+      localRoot: normalizedLocalRoot,
+      localConfigured,
+      configured: Boolean(enabled && (activeProvider === "S3" ? s3Configured : localConfigured)),
     };
+  }
+
+  private privateStorageProviderFromSettings(
+    settingMap: StorageSettingMap,
+  ): PrivateStorageProvider {
+    const value = this.stringSetting(
+      settingMap,
+      STORAGE_SETTING_KEYS.privateProvider,
+      process.env.INDIHUB_PRIVATE_STORAGE_PROVIDER ??
+        process.env.PRIVATE_STORAGE_PROVIDER ??
+        "AUTO",
+    ).toUpperCase();
+
+    if (value === "S3" || value === "LOCAL") {
+      return value;
+    }
+
+    return "AUTO";
+  }
+
+  private normalizePrivateLocalRoot(value: string) {
+    const trimmed = value.trim().replace(/\/+$/, "").replace(/\\+$/, "");
+    return trimmed || "storage/private";
   }
 
   private storageSettingWrite(
@@ -921,5 +1473,44 @@ export class StorageService {
     }
 
     return `${value.slice(0, 6)}...${value.slice(-4)}`;
+  }
+
+  private async recordPrivateUpload(input: {
+    assetKey: string;
+    provider: "S3" | "LOCAL";
+    uploadKind: "SELLER_DOCUMENT" | "B2B_PURCHASE_ORDER";
+    actorUserId: string;
+    contentType: string;
+    sizeBytes?: number | undefined;
+  }) {
+    await this.prisma.client.$executeRaw`
+      INSERT INTO private_uploads (
+        asset_key,
+        provider,
+        upload_kind,
+        actor_user_id,
+        content_type,
+        size_bytes,
+        created_at,
+        updated_at
+      )
+      VALUES (
+        ${input.assetKey},
+        ${input.provider},
+        ${input.uploadKind},
+        ${input.actorUserId},
+        ${input.contentType.toLowerCase()},
+        ${input.sizeBytes ?? null},
+        NOW(),
+        NOW()
+      )
+      ON CONFLICT (asset_key) DO UPDATE SET
+        provider = EXCLUDED.provider,
+        upload_kind = EXCLUDED.upload_kind,
+        actor_user_id = EXCLUDED.actor_user_id,
+        content_type = EXCLUDED.content_type,
+        size_bytes = EXCLUDED.size_bytes,
+        updated_at = NOW()
+    `;
   }
 }

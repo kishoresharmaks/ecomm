@@ -575,15 +575,15 @@ function HomepageHero({
 
   if (!banner) {
     return isLoading ? (
-      <section className="mx-auto max-w-[1440px] px-4 pt-2 sm:px-6 lg:px-10 lg:pt-4">
-        <StorefrontSkeleton className="min-h-[270px] rounded-[22px] bg-white/70 lg:min-h-[540px]" />
+      <section className="mx-auto max-w-[1440px] px-4 pt-2 sm:px-6 sm:pt-3 md:px-8 md:pt-4 lg:px-10 lg:pt-5 xl:px-12 2xl:max-w-[1600px] 2xl:px-16">
+        <StorefrontSkeleton className="min-h-[280px] rounded-[22px] bg-white/70 sm:min-h-[320px] md:min-h-[380px] lg:min-h-[480px] xl:min-h-[520px] 2xl:min-h-[560px]" />
       </section>
     ) : null;
   }
 
   return (
     <section
-      className="mx-auto max-w-[1440px] px-4 pt-2 sm:px-6 lg:px-10 lg:pt-4"
+      className="mx-auto max-w-[1440px] px-4 pt-2 sm:px-6 sm:pt-3 md:px-8 md:pt-4 lg:px-10 lg:pt-5 xl:px-12 2xl:max-w-[1600px] 2xl:px-16"
       aria-roledescription={hasMultipleBanners ? "carousel" : undefined}
       aria-label={hasMultipleBanners ? "Homepage promotions" : undefined}
       onMouseEnter={() => setDesktopPauseState(true)}
@@ -597,64 +597,64 @@ function HomepageHero({
       }}
       onClickCapture={handleClickCapture}
     >
-      <div className="relative isolate min-h-[270px] overflow-hidden rounded-[22px] border border-[#FFE4DC] bg-[linear-gradient(104deg,#fff_0%,#fff_42%,#fff1ec_100%)] shadow-[0_18px_50px_rgba(237,53,0,0.07)] sm:rounded-[18px] lg:min-h-[540px] lg:shadow-[0_24px_80px_rgba(237,53,0,0.08)]">
+      <div className="relative isolate min-h-[280px] overflow-hidden rounded-[22px] border border-[#FFE4DC] bg-[linear-gradient(104deg,#fff_0%,#fff_42%,#fff1ec_100%)] shadow-[0_18px_50px_rgba(237,53,0,0.07)] sm:rounded-[18px] sm:min-h-[320px] md:min-h-[380px] md:rounded-[20px] lg:min-h-[480px] lg:shadow-[0_24px_80px_rgba(237,53,0,0.08)] xl:min-h-[520px] xl:rounded-[22px] 2xl:min-h-[560px]">
         <div className="absolute inset-0 opacity-80 [background-image:radial-gradient(circle_at_18%_62%,rgba(237,53,0,0.14)_0,transparent_16%),radial-gradient(circle_at_78%_24%,rgba(237,53,0,0.10)_0,transparent_18%)]" />
-        <div className="absolute right-[12%] top-8 hidden h-16 w-24 bg-[radial-gradient(#ED3500_1.2px,transparent_1.2px)] [background-size:10px_10px] opacity-25 lg:block" />
+        <div className="absolute right-[12%] top-8 hidden h-16 w-24 bg-[radial-gradient(#ED3500_1.2px,transparent_1.2px)] [background-size:10px_10px] opacity-25 lg:block xl:right-[15%] xl:top-10 xl:h-20 xl:w-32" />
 
-        <div className="relative grid min-h-[270px] grid-cols-[minmax(0,1fr)_108px] gap-2 px-5 py-6 sm:grid-cols-[minmax(0,1fr)_180px] sm:gap-3 sm:px-8 lg:min-h-[540px] lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:gap-6 lg:px-16 lg:py-14">
-          <div className="flex max-w-[620px] flex-col justify-center">
+        <div className="relative grid min-h-[280px] grid-cols-1 gap-3 px-5 py-6 sm:grid-cols-[minmax(0,1fr)_140px] sm:gap-4 sm:px-8 sm:py-8 md:grid-cols-[minmax(0,1fr)_180px] md:gap-5 md:px-10 md:py-10 lg:min-h-[480px] lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1fr)] lg:gap-6 lg:px-14 lg:py-12 xl:min-h-[520px] xl:gap-7 xl:px-16 xl:py-14 2xl:min-h-[560px] 2xl:gap-8 2xl:px-18 2xl:py-16">
+          <div className="flex max-w-full flex-col justify-center sm:max-w-[550px] md:max-w-[600px] lg:max-w-[650px] xl:max-w-[700px] 2xl:max-w-[750px]">
             <div className="flex flex-wrap items-center gap-2">
               {eyebrow ? (
-                <span className="rounded-full bg-[#FFF0EC] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-[#ED3500] lg:text-[11px] lg:tracking-[0.14em]">
+                <span className="rounded-full bg-[#FFF0EC] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-[#ED3500] sm:text-[11px] sm:tracking-[0.13em] md:text-[12px] md:tracking-[0.14em] lg:text-[13px] lg:tracking-[0.15em]">
                   {eyebrow}
                 </span>
               ) : null}
-              <span className="hidden items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-[11px] font-black text-[#163B5C] shadow-sm lg:inline-flex">
-                <LocateFixed className="h-3.5 w-3.5 text-[#ED3500]" aria-hidden="true" />
+              <span className="hidden items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-[11px] font-black text-[#163B5C] shadow-sm sm:text-[12px] md:text-[13px] lg:inline-flex lg:text-[14px]">
+                <LocateFixed className="h-3.5 w-3.5 text-[#ED3500] sm:h-4 sm:w-4 md:h-4 md:w-4 lg:h-4 lg:w-4" aria-hidden="true" />
                 {locationText}
               </span>
             </div>
 
-            <h1 className="mt-4 max-w-[12ch] text-[30px] font-black leading-[1.03] tracking-normal text-[#111827] sm:text-5xl lg:mt-5 lg:text-7xl">
+            <h1 className="mt-4 max-w-full text-[26px] font-black leading-[1.08] tracking-normal text-[#111827] sm:mt-5 sm:text-[36px] sm:leading-[1.05] md:text-[44px] md:leading-[1.04] lg:mt-6 lg:text-[56px] lg:leading-[1.03] xl:text-[64px] 2xl:text-[72px]">
               {splitMarketplaceTitle(title)}
             </h1>
             {subtitle ? (
-              <p className="mt-3 max-w-[20ch] text-sm font-semibold leading-6 text-[#596276] sm:text-base sm:leading-7 lg:mt-5 lg:max-w-md">
+              <p className="mt-3 max-w-full text-sm font-semibold leading-6 text-[#596276] sm:mt-4 sm:text-base sm:leading-7 md:text-lg md:leading-8 lg:mt-5 lg:max-w-lg lg:text-xl lg:leading-9 xl:text-xl xl:leading-9 xl:max-w-xl 2xl:text-2xl 2xl:leading-10 2xl:max-w-2xl">
                 {subtitle}
               </p>
             ) : null}
 
-            <div className="mt-5 flex flex-wrap items-center gap-4 lg:mt-7">
+            <div className="mt-5 flex flex-wrap items-center gap-3 sm:mt-6 sm:gap-4 md:mt-7 lg:mt-8 xl:mt-9 xl:gap-5">
               <HomepageItemLink
                 href={ctaHref}
-                className="inline-flex h-12 items-center gap-3 rounded-full bg-[#ED3500] px-5 text-sm font-black text-white shadow-[0_18px_36px_rgba(237,53,0,0.28)] transition hover:-translate-y-0.5 hover:bg-[#d52f00]"
+                className="inline-flex h-11 items-center gap-2.5 rounded-full bg-[#ED3500] px-4 text-xs font-black text-white shadow-[0_18px_36px_rgba(237,53,0,0.28)] transition hover:-translate-y-0.5 hover:bg-[#d52f00] sm:h-12 sm:gap-3 sm:px-5 sm:text-sm md:h-13 md:px-6 lg:h-14 lg:gap-3.5 lg:px-7 lg:text-base xl:h-15 xl:px-8 2xl:h-16 2xl:text-lg"
               >
                 {ctaLabel}
-                <span className="grid h-8 w-8 place-items-center rounded-full bg-white text-[#ED3500]">
-                  <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                <span className="grid h-7 w-7 place-items-center rounded-full bg-white text-[#ED3500] sm:h-8 sm:w-8 md:h-9 md:w-9 lg:h-10 lg:w-10 xl:h-11 xl:w-11 2xl:h-12 2xl:w-12">
+                  <ArrowRight className="h-3.5 w-3.5 sm:h-4 sm:w-4 md:h-4 md:w-4 lg:h-4 lg:w-4 xl:h-5 xl:w-5 2xl:h-5 2xl:w-5" aria-hidden="true" />
                 </span>
               </HomepageItemLink>
               {secondaryCtaLabel && secondaryCtaHref ? (
                 <HomepageItemLink
                   href={secondaryCtaHref}
-                  className="inline-flex h-12 items-center rounded-full border border-[#FFE0D6] bg-white px-5 text-sm font-black text-[#163B5C] shadow-sm transition hover:-translate-y-0.5 hover:border-[#ED3500]/40 hover:text-[#ED3500]"
+                  className="inline-flex h-11 items-center rounded-full border border-[#FFE0D6] bg-white px-4 text-xs font-black text-[#163B5C] shadow-sm transition hover:-translate-y-0.5 hover:border-[#ED3500]/40 hover:text-[#ED3500] sm:h-12 sm:px-5 sm:text-sm md:h-13 md:px-6 lg:h-14 lg:px-7 lg:text-base xl:h-15 xl:px-8 2xl:h-16 2xl:text-lg"
                 >
                   {secondaryCtaLabel}
                 </HomepageItemLink>
               ) : null}
-              <form onSubmit={submitSearch} className="hidden h-12 min-w-[260px] overflow-hidden rounded-full border border-[#FFE0D6] bg-white shadow-sm lg:flex">
+              <form onSubmit={submitSearch} className="hidden h-12 min-w-[240px] flex-1 overflow-hidden rounded-full border border-[#FFE0D6] bg-white shadow-sm md:flex md:min-w-[280px] lg:flex lg:min-w-[320px] xl:min-w-[360px] 2xl:min-w-[400px]">
                 <label htmlFor="home-search" className="sr-only">
                   Search products, stores, or brands
                 </label>
-                <span className="grid w-11 place-items-center text-[#ED3500]">
-                  <Search className="h-4 w-4" aria-hidden="true" />
+                <span className="grid w-11 place-items-center text-[#ED3500] md:w-12 lg:w-13">
+                  <Search className="h-4 w-4 md:h-4.5 md:w-4.5 lg:h-5 lg:w-5" aria-hidden="true" />
                 </span>
                 <input
                   id="home-search"
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="Search marketplace"
-                  className="min-w-0 flex-1 bg-transparent pr-4 text-sm font-semibold text-[#111827] outline-none placeholder:text-[#98A2B3]"
+                  className="min-w-0 flex-1 bg-transparent pr-3 text-sm font-semibold text-[#111827] outline-none placeholder:text-[#98A2B3] sm:pr-4 sm:text-base md:pr-5 md:text-lg lg:pr-6 lg:text-base xl:pr-7 xl:text-lg"
                 />
               </form>
             </div>
@@ -670,29 +670,29 @@ function HomepageHero({
               type="button"
               onClick={() => moveBanner(-1)}
               aria-label="Previous homepage banner"
-              className="absolute bottom-4 left-5 z-20 grid h-9 w-9 place-items-center rounded-full border border-[#FFE0D6] bg-white/94 text-[#ED3500] shadow-[0_12px_24px_rgba(22,59,92,0.10)] transition hover:-translate-x-0.5 hover:border-[#ED3500] lg:bottom-auto lg:left-6 lg:top-1/2 lg:h-11 lg:w-11 lg:-translate-y-1/2"
+              className="absolute bottom-4 left-4 z-20 grid h-8 w-8 place-items-center rounded-full border border-[#FFE0D6] bg-white/94 text-[#ED3500] shadow-[0_12px_24px_rgba(22,59,92,0.10)] transition hover:-translate-x-0.5 hover:border-[#ED3500] sm:bottom-5 sm:left-5 sm:h-9 sm:w-9 md:bottom-6 md:left-6 lg:bottom-auto lg:left-5 lg:top-1/2 lg:h-10 lg:w-10 lg:-translate-y-1/2 xl:left-6 xl:h-11 xl:w-11 2xl:left-7 2xl:h-12 2xl:w-12"
             >
-              <ChevronLeft className="h-5 w-5" aria-hidden="true" />
+              <ChevronLeft className="h-4 w-4 sm:h-5 sm:w-5 lg:h-5 lg:w-5 xl:h-5.5 xl:w-5.5 2xl:h-6 2xl:w-6" aria-hidden="true" />
             </button>
             <button
               type="button"
               onClick={() => moveBanner(1)}
               aria-label="Next homepage banner"
-              className="absolute bottom-4 right-5 z-20 grid h-9 w-9 place-items-center rounded-full border border-[#FFE0D6] bg-white/94 text-[#ED3500] shadow-[0_12px_24px_rgba(22,59,92,0.10)] transition hover:translate-x-0.5 hover:border-[#ED3500] lg:bottom-auto lg:right-6 lg:top-1/2 lg:h-11 lg:w-11 lg:-translate-y-1/2"
+              className="absolute bottom-4 right-4 z-20 grid h-8 w-8 place-items-center rounded-full border border-[#FFE0D6] bg-white/94 text-[#ED3500] shadow-[0_12px_24px_rgba(22,59,92,0.10)] transition hover:translate-x-0.5 hover:border-[#ED3500] sm:bottom-5 sm:right-5 sm:h-9 sm:w-9 md:bottom-6 md:right-6 lg:bottom-auto lg:right-5 lg:top-1/2 lg:h-10 lg:w-10 lg:-translate-y-1/2 xl:right-6 xl:h-11 xl:w-11 2xl:right-7 2xl:h-12 2xl:w-12"
             >
-              <ChevronRight className="h-5 w-5" aria-hidden="true" />
+              <ChevronRight className="h-4 w-4 sm:h-5 sm:w-5 lg:h-5 lg:w-5 xl:h-5.5 xl:w-5.5 2xl:h-6 2xl:w-6" aria-hidden="true" />
             </button>
-            <div className="absolute bottom-5 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-white/92 px-2.5 py-2 shadow-[0_10px_22px_rgba(22,59,92,0.10)] lg:bottom-7">
+            <div className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-white/92 px-2 py-1.5 shadow-[0_10px_22px_rgba(22,59,92,0.10)] sm:bottom-5 sm:px-2.5 sm:py-2 sm:gap-2 md:bottom-6 md:px-3 md:py-2.5 lg:bottom-7 lg:gap-2.5 xl:bottom-8 xl:px-3.5 xl:py-3 xl:gap-3 2xl:bottom-9 2xl:px-4 2xl:py-3.5">
               {banners.map((item, index) => (
                 <button
                   key={item.id}
                   type="button"
                   onClick={() => selectBanner(index)}
                   className={cn(
-                    "h-2.5 rounded-full transition",
+                    "h-2 rounded-full transition sm:h-2.5 md:h-2.5 lg:h-2.5 xl:h-3 xl:gap-3 2xl:h-3.5",
                     index === normalizedBannerIndex
-                      ? "w-6 bg-[#ED3500]"
-                      : "w-2.5 bg-[#F2B8A7] hover:bg-[#ED3500]/70",
+                      ? "w-5 bg-[#ED3500] sm:w-6 md:w-6 lg:w-6 xl:w-7 2xl:w-8"
+                      : "w-2 bg-[#F2B8A7] hover:bg-[#ED3500]/70 sm:w-2.5 md:w-2.5 lg:w-2.5 xl:w-3 2xl:w-3.5",
                   )}
                   aria-label={`Show banner ${index + 1}`}
                   aria-current={index === normalizedBannerIndex ? "true" : undefined}
@@ -730,13 +730,13 @@ function MobileHeroVisual({
         <StorefrontImage
           src={visualImage}
           alt={visualAlt}
-          sizes="(max-width: 640px) 108px, 180px"
+          sizes="(max-width: 640px) 108px, (max-width: 768px) 140px, 180px"
           fallbackLabel={visualLabel}
           showFallbackLabel={false}
           allowExternalRemote
           className={cn(
             "transition duration-500",
-            bannerImage ? "object-cover" : "object-contain p-3"
+            bannerImage ? "object-cover" : "object-contain p-2 sm:p-3"
           )}
         />
       </span>
@@ -758,7 +758,7 @@ function MobileHeroVisual({
     );
   }
 
-  return isLoading ? <StorefrontSkeleton className="h-36 rounded-[18px] bg-white/70 lg:hidden" /> : <span className="lg:hidden" />;
+  return isLoading ? <StorefrontSkeleton className="h-32 rounded-[18px] bg-white/70 sm:h-36 lg:hidden" /> : <span className="lg:hidden" />;
 }
 
 function HeroVisual({
@@ -777,17 +777,17 @@ function HeroVisual({
   const hasProductCards = visualProducts.length > 0;
 
   return (
-    <div className="relative hidden min-h-[420px] items-center justify-center lg:flex">
-      <div className="absolute bottom-11 left-1/2 h-16 w-[420px] -translate-x-1/2 rounded-[50%] bg-white shadow-[0_22px_70px_rgba(22,59,92,0.16)]" />
-      <div className="absolute left-1/2 top-1/2 h-72 w-72 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#ED3500]" />
-      <div className="absolute left-[16%] top-[26%] h-16 w-16 rounded-full bg-[#ED3500]/18 blur-sm" />
+    <div className="relative hidden min-h-[380px] items-center justify-center lg:flex lg:min-h-[420px] xl:min-h-[480px] 2xl:min-h-[520px]">
+      <div className="absolute bottom-11 left-1/2 h-16 w-[380px] -translate-x-1/2 rounded-[50%] bg-white shadow-[0_22px_70px_rgba(22,59,92,0.16)] lg:w-[420px] xl:w-[480px] xl:h-18 2xl:w-[520px] 2xl:h-20" />
+      <div className="absolute left-1/2 top-1/2 h-64 w-64 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#ED3500] lg:h-72 lg:w-72 xl:h-80 xl:w-80 2xl:h-96 2xl:w-96" />
+      <div className="absolute left-[16%] top-[26%] h-14 w-14 rounded-full bg-[#ED3500]/18 blur-sm lg:h-16 lg:w-16 xl:h-18 xl:w-18 2xl:h-20 2xl:w-20" />
 
       {bannerImage ? (
-        <div className="relative z-10 h-[340px] w-[440px] rotate-[-3deg] overflow-hidden rounded-[28px] border border-white/70 bg-white shadow-[0_30px_80px_rgba(22,59,92,0.16)]">
+        <div className="relative z-10 h-[300px] w-[380px] rotate-[-3deg] overflow-hidden rounded-[24px] border border-white/70 bg-white shadow-[0_30px_80px_rgba(22,59,92,0.16)] lg:h-[340px] lg:w-[440px] lg:rounded-[28px] xl:h-[380px] xl:w-[480px] xl:rounded-[30px] 2xl:h-[420px] 2xl:w-[520px] 2xl:rounded-[32px]">
           <StorefrontImage
             src={bannerImage}
             alt={bannerImageAlt}
-            sizes="440px"
+            sizes="(max-width: 1024px) 380px, (max-width: 1280px) 440px, (max-width: 1536px) 480px, 520px"
             fallbackLabel={bannerTitle}
             showFallbackLabel={false}
             allowExternalRemote
@@ -803,7 +803,7 @@ function HeroVisual({
           />
         ))
       ) : isLoading ? (
-        <StorefrontSkeleton className="relative z-10 h-[320px] w-[420px] bg-white/70" />
+        <StorefrontSkeleton className="relative z-10 h-[280px] w-[380px] bg-white/70 lg:h-[320px] lg:w-[420px] xl:h-[360px] xl:w-[480px] 2xl:h-[400px] 2xl:w-[520px]" />
       ) : null}
     </div>
   );
@@ -818,30 +818,30 @@ function HeroProductCard({ product, className }: { product: ProductSummary; clas
     <Link
       href={`/products/${product.slug}` as Route}
       className={cn(
-        "absolute z-10 block w-40 overflow-hidden rounded-[18px] border border-white/80 bg-white p-3 shadow-[0_24px_70px_rgba(22,59,92,0.16)] transition hover:-translate-y-1",
+        "absolute z-10 block w-36 overflow-hidden rounded-[16px] border border-white/80 bg-white p-2.5 shadow-[0_24px_70px_rgba(22,59,92,0.16)] transition hover:-translate-y-1 lg:w-40 lg:rounded-[18px] lg:p-3 xl:w-44 xl:rounded-[20px] xl:p-3.5 2xl:w-48 2xl:rounded-[22px] 2xl:p-4",
         className,
       )}
     >
-      <div className="absolute right-3 top-3 z-10 grid h-7 w-7 place-items-center rounded-full bg-white text-[#9AA4B2] shadow-sm">
-        <Heart className="h-3.5 w-3.5" aria-hidden="true" />
+      <div className="absolute right-2.5 top-2.5 z-10 grid h-6 w-6 place-items-center rounded-full bg-white text-[#9AA4B2] shadow-sm lg:right-3 lg:top-3 lg:h-7 lg:w-7 xl:right-3.5 xl:top-3.5 xl:h-8 xl:w-8 2xl:right-4 2xl:top-4 2xl:h-9 2xl:w-9">
+        <Heart className="h-3 w-3 lg:h-3.5 lg:w-3.5 xl:h-4 xl:w-4 2xl:h-4.5 2xl:w-4.5" aria-hidden="true" />
       </div>
-      <div className="relative aspect-square overflow-hidden rounded-[14px] bg-[#FFF4EF]">
+      <div className="relative aspect-square overflow-hidden rounded-[12px] bg-[#FFF4EF] lg:rounded-[14px] xl:rounded-[16px] 2xl:rounded-[18px]">
         {activeDeal ? (
-          <span className="absolute left-2 top-2 z-10 rounded-full bg-[#ED3500] px-2 py-1 text-[9px] font-black uppercase text-white shadow-sm">
+          <span className="absolute left-2 top-2 z-10 rounded-full bg-[#ED3500] px-1.5 py-0.5 text-[8px] font-black uppercase text-white shadow-sm lg:px-2 lg:py-1 lg:text-[9px] xl:px-2.5 xl:py-1 xl:text-[10px] 2xl:px-3 2xl:py-1.5 2xl:text-[11px]">
             Deal
           </span>
         ) : null}
         <StorefrontImage
           src={primaryImage(product)}
           alt={product.name}
-          sizes="160px"
+          sizes="(max-width: 1024px) 144px, (max-width: 1280px) 160px, (max-width: 1536px) 176px, 192px"
           fallbackLabel={product.category.name}
           allowExternalRemote
         />
       </div>
-      <p className="mt-3 line-clamp-1 text-xs font-black text-[#1F2933]">{product.name}</p>
+      <p className="mt-2.5 line-clamp-1 text-[11px] font-black text-[#1F2933] lg:mt-3 lg:text-xs xl:mt-3.5 xl:text-[13px] 2xl:mt-4 2xl:text-sm">{product.name}</p>
       {variant ? (
-        <p className="mt-1 text-[11px] font-black text-[#ED3500]">
+        <p className="mt-1 text-[10px] font-black text-[#ED3500] lg:mt-1.5 lg:text-[11px] xl:text-[12px] 2xl:text-[13px]">
           From {market.format(variant.pricePaise)}
         </p>
       ) : null}
@@ -1964,12 +1964,22 @@ function DealCountdown({
   endsAt: string;
   tone?: "dark" | "light";
 }) {
-  const [now, setNow] = useState(() => Date.now());
+  const [now, setNow] = useState<number | null>(null);
 
   useEffect(() => {
+    setNow(Date.now());
     const interval = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(interval);
   }, []);
+
+  if (now === null) {
+    // Render skeleton on server, countdown only after client mounts
+    return (
+      <span className="inline-flex h-10 items-center gap-2 rounded-full border px-3 text-xs font-black shadow-[0_12px_24px_rgba(22,59,92,0.08)] border-[#FFE0D6] bg-[#FFF7F3] text-[#B42318] w-24">
+        <span className="animate-pulse">Loading...</span>
+      </span>
+    );
+  }
 
   const countdown = dealCountdownLabel(endsAt, now);
 

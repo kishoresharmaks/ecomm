@@ -2,8 +2,19 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
-import { type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+  type CSSProperties,
+  forwardRef,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import {
   BadgePercent,
@@ -34,6 +45,7 @@ import { AuthActions } from "@/components/auth/auth-actions";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
 import { useMarket } from "@/components/market/market-context";
 import { StorefrontLocationPicker } from "@/components/storefront/storefront-location-picker";
+import { useFloatingHeaderDropdown } from "@/components/storefront/use-floating-header-dropdown";
 import { getWishlist } from "@/lib/account-api";
 import {
   cartTotals,
@@ -66,6 +78,9 @@ const drawerLinks = [
   { label: "Download App", href: "/contact?topic=download-app", icon: Download },
 ] as const;
 const recentSearchStorageKey = "indihub.recent-searches.v1";
+const desktopDropdownCloseDelayMs = 140;
+const desktopDropdownViewportMarginPx = 20;
+const desktopDropdownMaxWidthPx = 820;
 
 export function StorefrontHeader({ initialMenu }: { initialMenu?: CmsMenuItem[] | undefined }) {
   const router = useRouter();
@@ -200,7 +215,7 @@ export function StorefrontHeader({ initialMenu }: { initialMenu?: CmsMenuItem[] 
   return (
     <header
       className={cn(
-        "sticky top-0 z-[80] transform-gpu border-b border-[#f2e4dd] bg-white/96 shadow-[0_16px_44px_rgba(17,24,39,0.08)] backdrop-blur-xl transition-transform duration-300 ease-out motion-reduce:transition-none lg:border-b-0 lg:bg-transparent lg:px-3 lg:pt-2 lg:shadow-none lg:backdrop-blur-none",
+        "sticky top-0 z-[100] transform-gpu border-b border-[#f2e4dd] bg-white/96 shadow-[0_16px_44px_rgba(17,24,39,0.08)] backdrop-blur-xl transition-transform duration-300 ease-out motion-reduce:transition-none lg:border-b-0 lg:bg-transparent lg:px-3 lg:pt-2 lg:shadow-none lg:backdrop-blur-none",
         headerHidden ? "-translate-y-full" : "translate-y-0",
       )}
     >
@@ -243,6 +258,7 @@ export function StorefrontHeader({ initialMenu }: { initialMenu?: CmsMenuItem[] 
               query={query}
               onQueryChange={setQuery}
               onSubmit={submitSearch}
+              floatingSuggestions
               onNavigate={() => {
                 setMobileMenuOpen(false);
                 setMobileSearchOpen(false);
@@ -437,6 +453,7 @@ function SearchForm({
   className,
   inputClassName,
   buttonClassName,
+  floatingSuggestions = false,
 }: {
   query: string;
   onQueryChange: (value: string) => void;
@@ -445,14 +462,21 @@ function SearchForm({
   className?: string;
   inputClassName?: string;
   buttonClassName?: string;
+  floatingSuggestions?: boolean;
 }) {
   const router = useRouter();
   const [focused, setFocused] = useState(false);
   const [debouncedQuery, setDebouncedQuery] = useState(query.trim());
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [activeIndex, setActiveIndex] = useState(-1);
+  const formRef = useRef<HTMLFormElement | null>(null);
+  const suggestionsRef = useRef<HTMLDivElement | null>(null);
   const trimmedQuery = query.trim();
   const shouldShowSuggestions = focused && (trimmedQuery.length >= 2 || recentSearches.length > 0);
+  const closeSuggestions = useCallback(() => {
+    setFocused(false);
+    setActiveIndex(-1);
+  }, []);
   const suggestionsQuery = useQuery({
     queryKey: ["search-suggestions", debouncedQuery],
     queryFn: () => getSearchSuggestions({ q: debouncedQuery, limit: 8 }),
@@ -469,6 +493,14 @@ function SearchForm({
           subtitle: "Recent search",
           href: `/search?q=${encodeURIComponent(term)}`,
         }));
+  const { portalRoot, floatingStyle, updatePosition } = useFloatingHeaderDropdown({
+    open: floatingSuggestions && shouldShowSuggestions,
+    onClose: closeSuggestions,
+    triggerRef: formRef,
+    panelRef: suggestionsRef,
+    maxWidth: 720,
+    matchTriggerWidth: true,
+  });
 
   useEffect(() => {
     const handle = window.setTimeout(() => {
@@ -485,6 +517,12 @@ function SearchForm({
   useEffect(() => {
     setActiveIndex(-1);
   }, [debouncedQuery, focused]);
+
+  useEffect(() => {
+    if (floatingSuggestions && shouldShowSuggestions) {
+      updatePosition();
+    }
+  }, [floatingSuggestions, shouldShowSuggestions, suggestionItems.length, updatePosition]);
 
   function navigateToSuggestion(item: SearchSuggestion | { title: string; href: string }) {
     rememberRecentSearch(item.title);
@@ -517,16 +555,30 @@ function SearchForm({
   }
 
   return (
-    <form onSubmit={onSubmit} className={cn("relative min-w-0", className)}>
+    <form ref={formRef} onSubmit={onSubmit} className={cn("relative min-w-0", className)}>
       <label className="relative block">
         <span className="sr-only">Search products, stores, and brands</span>
         <Search className="pointer-events-none absolute left-5 top-1/2 h-5 w-5 -translate-y-1/2 text-[#ff5a1f]" />
         <input
           value={query}
           onChange={(event) => onQueryChange(event.target.value)}
-          onFocus={() => setFocused(true)}
+          onFocus={() => {
+            setFocused(true);
+            updatePosition();
+          }}
           onBlur={() => {
-            window.setTimeout(() => setFocused(false), 140);
+            window.setTimeout(() => {
+              const activeElement = document.activeElement;
+              if (
+                floatingSuggestions &&
+                activeElement instanceof Node &&
+                suggestionsRef.current?.contains(activeElement)
+              ) {
+                return;
+              }
+
+              setFocused(false);
+            }, 140);
           }}
           onKeyDown={handleKeyDown}
           placeholder="Search products, stores, brands and more..."
@@ -546,41 +598,102 @@ function SearchForm({
         </button>
       </label>
       {shouldShowSuggestions ? (
-        <div className="absolute left-0 right-0 top-[calc(100%+10px)] z-[105] overflow-hidden rounded-[24px] border border-[#f2dcd1] bg-white shadow-[0_26px_70px_rgba(17,24,39,0.18)]">
-          <div className="max-h-[420px] overflow-y-auto p-2">
-            {trimmedQuery.length < 2 ? (
-              <p className="px-3 py-2 text-xs font-black uppercase tracking-[0.16em] text-[#ff5a1f]">
-                Recent searches
-              </p>
-            ) : null}
-
-            {suggestionsQuery.isFetching && trimmedQuery.length >= 2 ? (
-              <div className="px-3 py-3 text-sm font-semibold text-[#667085]">Searching...</div>
-            ) : null}
-
-            {suggestionItems.length ? (
-              <div className="grid gap-1">
-                {suggestionItems.map((item, index) => (
-                  <SearchSuggestionRow
-                    key={`${item.href}-${item.title}`}
-                    item={item}
-                    active={activeIndex === index}
-                    onMouseEnter={() => setActiveIndex(index)}
-                    onNavigate={() => navigateToSuggestion(item)}
-                  />
-                ))}
-              </div>
-            ) : trimmedQuery.length >= 2 && !suggestionsQuery.isFetching ? (
-              <div className="px-3 py-4 text-sm font-semibold text-[#667085]">
-                No matching products, stores, or categories yet.
-              </div>
-            ) : null}
-          </div>
-        </div>
+        floatingSuggestions && portalRoot && floatingStyle ? (
+          createPortal(
+            <SearchSuggestionsPanel
+              ref={suggestionsRef}
+              style={floatingStyle}
+              floating
+              trimmedQuery={trimmedQuery}
+              isFetching={suggestionsQuery.isFetching}
+              suggestionItems={suggestionItems}
+              activeIndex={activeIndex}
+              onActiveIndexChange={setActiveIndex}
+              onNavigate={navigateToSuggestion}
+            />,
+            portalRoot,
+          )
+        ) : (
+          <SearchSuggestionsPanel
+            trimmedQuery={trimmedQuery}
+            isFetching={suggestionsQuery.isFetching}
+            suggestionItems={suggestionItems}
+            activeIndex={activeIndex}
+            onActiveIndexChange={setActiveIndex}
+            onNavigate={navigateToSuggestion}
+          />
+        )
       ) : null}
     </form>
   );
 }
+
+const SearchSuggestionsPanel = forwardRef<
+  HTMLDivElement,
+  {
+    trimmedQuery: string;
+    isFetching: boolean;
+    suggestionItems: Array<SearchSuggestion | { id: string; title: string; subtitle: string; href: string }>;
+    activeIndex: number;
+    onActiveIndexChange: (index: number) => void;
+    onNavigate: (item: SearchSuggestion | { title: string; href: string }) => void;
+    floating?: boolean;
+    style?: CSSProperties;
+  }
+>(function SearchSuggestionsPanel(
+  {
+    trimmedQuery,
+    isFetching,
+    suggestionItems,
+    activeIndex,
+    onActiveIndexChange,
+    onNavigate,
+    floating = false,
+    style,
+  },
+  ref,
+) {
+  return (
+    <div
+      ref={ref}
+      style={style}
+      className={cn(
+        "overflow-hidden rounded-[24px] border border-[#f2dcd1] bg-white shadow-[0_26px_70px_rgba(17,24,39,0.18)]",
+        floating ? "fixed z-[140]" : "absolute left-0 right-0 top-[calc(100%+10px)] z-[105]",
+      )}
+    >
+      <div className="max-h-[420px] overflow-y-auto p-2">
+        {trimmedQuery.length < 2 ? (
+          <p className="px-3 py-2 text-xs font-black uppercase tracking-[0.16em] text-[#ff5a1f]">
+            Recent searches
+          </p>
+        ) : null}
+
+        {isFetching && trimmedQuery.length >= 2 ? (
+          <div className="px-3 py-3 text-sm font-semibold text-[#667085]">Searching...</div>
+        ) : null}
+
+        {suggestionItems.length ? (
+          <div className="grid gap-1">
+            {suggestionItems.map((item, index) => (
+              <SearchSuggestionRow
+                key={`${item.href}-${item.title}`}
+                item={item}
+                active={activeIndex === index}
+                onMouseEnter={() => onActiveIndexChange(index)}
+                onNavigate={() => onNavigate(item)}
+              />
+            ))}
+          </div>
+        ) : trimmedQuery.length >= 2 && !isFetching ? (
+          <div className="px-3 py-4 text-sm font-semibold text-[#667085]">
+            No matching products, stores, or categories yet.
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+});
 
 function SearchSuggestionRow({
   item,
@@ -632,84 +745,221 @@ function SearchSuggestionRow({
 
 function CategoryMenu({ categories }: { categories: CategorySummary[] }) {
   const visibleCategories = categories.slice(0, 8);
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const dropdownRef = useRef<HTMLDivElement | null>(null);
+  const closeTimerRef = useRef<number | null>(null);
+  const clickPinnedRef = useRef(false);
+  const menuId = useId();
+
+  const closeMenu = useCallback(() => {
+    if (closeTimerRef.current) {
+      window.clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+
+    clickPinnedRef.current = false;
+    setOpen(false);
+  }, []);
+
+  const { portalRoot, floatingStyle, updatePosition } = useFloatingHeaderDropdown({
+    open,
+    onClose: closeMenu,
+    triggerRef,
+    panelRef: dropdownRef,
+    maxWidth: desktopDropdownMaxWidthPx,
+    viewportMargin: desktopDropdownViewportMarginPx,
+  });
+
+  useEffect(() => {
+    return () => {
+      if (closeTimerRef.current) {
+        window.clearTimeout(closeTimerRef.current);
+      }
+    };
+  }, []);
+
+  function clearCloseTimer() {
+    if (closeTimerRef.current) {
+      window.clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+  }
+
+  function openMenu() {
+    clearCloseTimer();
+    updatePosition();
+    setOpen(true);
+  }
+
+  function scheduleClose({ force = false }: { force?: boolean } = {}) {
+    if (clickPinnedRef.current && !force) {
+      return;
+    }
+
+    clearCloseTimer();
+    closeTimerRef.current = window.setTimeout(() => {
+      clickPinnedRef.current = false;
+      closeTimerRef.current = null;
+      setOpen(false);
+    }, desktopDropdownCloseDelayMs);
+  }
+
+  function toggleMenu() {
+    clearCloseTimer();
+    if (clickPinnedRef.current) {
+      closeMenu();
+      return;
+    }
+
+    clickPinnedRef.current = true;
+    updatePosition();
+    setOpen(true);
+  }
+
+  function containsActiveMenuElement(target: EventTarget | null) {
+    return (
+      target instanceof Node &&
+      (menuRef.current?.contains(target) || dropdownRef.current?.contains(target))
+    );
+  }
 
   return (
-    <Menu as="div" className="relative shrink-0">
-      <MenuButton className="inline-flex h-[52px] items-center gap-2 rounded-2xl border border-[#eaded8] bg-white px-3 text-sm font-black text-[#101828] shadow-[0_10px_28px_rgba(17,24,39,0.06)] transition hover:border-[#ffb99f] hover:bg-[#fff7f3] hover:text-[#ff5a1f] xl:px-4">
+    <div
+      ref={menuRef}
+      className="relative shrink-0"
+      onMouseEnter={openMenu}
+      onMouseLeave={() => scheduleClose()}
+      onFocus={openMenu}
+      onBlur={(event) => {
+        if (!containsActiveMenuElement(event.relatedTarget)) {
+          scheduleClose({ force: true });
+        }
+      }}
+    >
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={menuId}
+        onClick={toggleMenu}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            openMenu();
+          }
+        }}
+        className={cn(
+          "inline-flex h-[52px] items-center gap-2 rounded-2xl border border-[#eaded8] bg-white px-3 text-sm font-black text-[#101828] shadow-[0_10px_28px_rgba(17,24,39,0.06)] transition hover:border-[#ffb99f] hover:bg-[#fff7f3] hover:text-[#ff5a1f] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#ff5a1f]/15 xl:px-4",
+          open && "border-[#ffb99f] bg-[#fff7f3] text-[#ff5a1f]",
+        )}
+      >
         <Grid3X3 className="h-5 w-5" aria-hidden="true" />
         <span className="hidden xl:inline">All Categories</span>
-        <ChevronDown className="h-4 w-4" aria-hidden="true" />
-      </MenuButton>
-      <MenuItems
-        anchor="bottom start"
-        className="z-[95] mt-3 w-[min(820px,calc(100vw-5rem))] origin-top rounded-[26px] border border-[#f2dcd1] bg-white p-4 shadow-[0_26px_80px_rgba(17,24,39,0.16)] outline-none"
-      >
-        <div className="mb-3 flex items-center justify-between gap-3 border-b border-[#f2e4dd] pb-3">
-          <div>
-            <p className="text-xs font-black uppercase tracking-[0.18em] text-[#ff5a1f]">
-              Shop by category
-            </p>
-            <p className="mt-1 text-sm font-semibold text-[#667085]">
-              Browse marketplace departments and local store collections.
-            </p>
-          </div>
-          <MenuItem>
+        <ChevronDown className={cn("h-4 w-4 transition-transform", open && "rotate-180")} aria-hidden="true" />
+      </button>
+      {open && portalRoot && floatingStyle
+        ? createPortal(
+        <div
+          ref={dropdownRef}
+          id={menuId}
+          role="menu"
+          className="fixed z-[140] origin-top rounded-[26px] border border-[#f2dcd1] bg-white p-4 opacity-100 shadow-[0_26px_80px_rgba(17,24,39,0.18)] outline-none transition duration-150 ease-out motion-reduce:transition-none"
+          style={floatingStyle}
+          onMouseEnter={clearCloseTimer}
+          onMouseLeave={() => scheduleClose()}
+          onFocus={openMenu}
+          onBlur={(event) => {
+            if (!containsActiveMenuElement(event.relatedTarget)) {
+              scheduleClose({ force: true });
+            }
+          }}
+        >
+          <div className="mb-3 flex items-center justify-between gap-3 border-b border-[#f2e4dd] pb-3">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-[#ff5a1f]">
+                Shop by category
+              </p>
+              <p className="mt-1 text-sm font-semibold text-[#667085]">
+                Browse marketplace departments and local store collections.
+              </p>
+            </div>
             <Link
               href="/categories"
-              className="hidden rounded-full bg-[#fff1ea] px-3 py-2 text-xs font-black text-[#ff5a1f] data-focus:bg-[#ff5a1f] data-focus:text-white sm:inline-flex"
+              role="menuitem"
+              onClick={closeMenu}
+              className="hidden rounded-full bg-[#fff1ea] px-3 py-2 text-xs font-black text-[#ff5a1f] transition hover:bg-[#ff5a1f] hover:text-white focus-visible:bg-[#ff5a1f] focus-visible:text-white focus-visible:outline-none sm:inline-flex"
             >
               View all
             </Link>
-          </MenuItem>
-        </div>
-
-        {visibleCategories.length ? (
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            {visibleCategories.map((category, index) => (
-              <MegaCategoryItem key={category.id} category={category} index={index} />
-            ))}
           </div>
-        ) : (
-          <p className="rounded-2xl bg-[#f8fafc] p-4 text-sm font-semibold text-[#667085]">
-            No active categories yet.
-          </p>
-        )}
 
-        <div className="mt-4 grid gap-2 rounded-3xl bg-[#fffaf7] p-3 sm:grid-cols-3">
-          <MegaBenefit icon={<Truck className="h-4 w-4" />} label="Fast local delivery" />
-          <MegaBenefit icon={<ShieldCheck className="h-4 w-4" />} label="Verified sellers" />
-          <MegaBenefit icon={<PackageCheck className="h-4 w-4" />} label="Secure checkout" />
-        </div>
-      </MenuItems>
-    </Menu>
+          {visibleCategories.length ? (
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              {visibleCategories.map((category, index) => (
+                <MegaCategoryItem
+                  key={category.id}
+                  category={category}
+                  index={index}
+                  onNavigate={closeMenu}
+                />
+              ))}
+            </div>
+          ) : (
+            <p className="rounded-2xl bg-[#f8fafc] p-4 text-sm font-semibold text-[#667085]">
+              No active categories yet.
+            </p>
+          )}
+
+          <div className="mt-4 grid gap-2 rounded-3xl bg-[#fffaf7] p-3 sm:grid-cols-3">
+            <MegaBenefit icon={<Truck className="h-4 w-4" />} label="Fast local delivery" />
+            <MegaBenefit icon={<ShieldCheck className="h-4 w-4" />} label="Verified sellers" />
+            <MegaBenefit icon={<PackageCheck className="h-4 w-4" />} label="Secure checkout" />
+          </div>
+        </div>,
+        portalRoot,
+      )
+        : null}
+    </div>
   );
 }
 
-function MegaCategoryItem({ category, index }: { category: CategorySummary; index: number }) {
+function MegaCategoryItem({
+  category,
+  index,
+  onNavigate,
+}: {
+  category: CategorySummary;
+  index: number;
+  onNavigate?: () => void;
+}) {
   const Icon = categoryIcons[index % categoryIcons.length] ?? PackageSearch;
   const productCount = category._count?.products ?? 0;
+  const navigationProps = onNavigate ? { onClick: onNavigate } : {};
 
   return (
-    <MenuItem>
-      <Link
-        href={`/categories/${category.slug}`}
-        className="group flex min-w-0 items-center gap-3 rounded-2xl p-3 transition data-focus:bg-[#fff4ef] data-focus:text-[#ff5a1f]"
-      >
-        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-[#fff1ea] text-[#ff5a1f] transition group-hover:bg-[#ff5a1f] group-hover:text-white">
-          <Icon className="h-5 w-5" aria-hidden="true" />
+    <Link
+      href={`/categories/${category.slug}`}
+      role="menuitem"
+      {...navigationProps}
+      className="group flex min-w-0 items-center gap-3 rounded-2xl p-3 transition hover:bg-[#fff4ef] hover:text-[#ff5a1f] focus-visible:bg-[#fff4ef] focus-visible:text-[#ff5a1f] focus-visible:outline-none"
+    >
+      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-[#fff1ea] text-[#ff5a1f] transition group-hover:bg-[#ff5a1f] group-hover:text-white group-focus-visible:bg-[#ff5a1f] group-focus-visible:text-white">
+        <Icon className="h-5 w-5" aria-hidden="true" />
+      </span>
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-black text-[#101828] group-hover:text-[#ff5a1f] group-focus-visible:text-[#ff5a1f]">
+          {category.name}
         </span>
-        <span className="min-w-0">
-          <span className="block truncate text-sm font-black text-[#101828] group-hover:text-[#ff5a1f]">
-            {category.name}
-          </span>
-          <span className="mt-0.5 block truncate text-xs font-semibold text-[#667085]">
-            {productCount
-              ? `${productCount.toLocaleString("en-IN")} products`
-              : "Explore collection"}
-          </span>
+        <span className="mt-0.5 block truncate text-xs font-semibold text-[#667085]">
+          {productCount
+            ? `${productCount.toLocaleString("en-IN")} products`
+            : "Explore collection"}
         </span>
-      </Link>
-    </MenuItem>
+      </span>
+    </Link>
   );
 }
 
@@ -751,9 +1001,53 @@ function HeaderIconAction({
 }
 
 function AccountMenu() {
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const menuId = useId();
+  const closeMenu = useCallback(() => setOpen(false), []);
+  const { portalRoot, floatingStyle, updatePosition } = useFloatingHeaderDropdown({
+    open,
+    onClose: closeMenu,
+    triggerRef,
+    panelRef,
+    align: "end",
+    minWidth: 288,
+    maxWidth: 288,
+  });
+
+  function toggleMenu() {
+    if (open) {
+      closeMenu();
+      return;
+    }
+
+    updatePosition();
+    setOpen(true);
+  }
+
   return (
-    <Menu as="div" className="relative shrink-0">
-      <MenuButton className="inline-flex h-[52px] items-center gap-2 rounded-2xl border border-[#eaded8] bg-white px-2.5 text-left text-[#101828] shadow-[0_10px_28px_rgba(17,24,39,0.06)] transition hover:border-[#ffb99f] hover:bg-[#fff7f3] hover:text-[#ff5a1f] 2xl:gap-3 2xl:px-3">
+    <div ref={menuRef} className="relative shrink-0">
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={menuId}
+        onClick={toggleMenu}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            updatePosition();
+            setOpen(true);
+          }
+        }}
+        className={cn(
+          "inline-flex h-[52px] items-center gap-2 rounded-2xl border border-[#eaded8] bg-white px-2.5 text-left text-[#101828] shadow-[0_10px_28px_rgba(17,24,39,0.06)] transition hover:border-[#ffb99f] hover:bg-[#fff7f3] hover:text-[#ff5a1f] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#ff5a1f]/15 2xl:gap-3 2xl:px-3",
+          open && "border-[#ffb99f] bg-[#fff7f3] text-[#ff5a1f]",
+        )}
+      >
         <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#fff1ea] text-[#101828]">
           <UserRound className="h-5 w-5" aria-hidden="true" />
         </span>
@@ -761,11 +1055,15 @@ function AccountMenu() {
           <span className="block text-sm font-black">My Account</span>
           <span className="block text-xs font-semibold text-[#667085]">Profile & orders</span>
         </span>
-        <ChevronDown className="hidden h-4 w-4 2xl:block" aria-hidden="true" />
-      </MenuButton>
-      <MenuItems
-        anchor="bottom end"
-        className="z-[95] mt-3 w-72 origin-top-right rounded-[26px] border border-[#f2dcd1] bg-white p-3 shadow-[0_26px_80px_rgba(17,24,39,0.16)] outline-none"
+        <ChevronDown className={cn("hidden h-4 w-4 transition-transform 2xl:block", open && "rotate-180")} aria-hidden="true" />
+      </button>
+      {open && portalRoot && floatingStyle ? createPortal(
+      <div
+        ref={panelRef}
+        id={menuId}
+        role="menu"
+        className="fixed z-[140] w-72 origin-top-right rounded-[26px] border border-[#f2dcd1] bg-white p-3 shadow-[0_26px_80px_rgba(17,24,39,0.16)] outline-none"
+        style={floatingStyle}
       >
         <div className="rounded-3xl bg-[#fffaf7] p-3">
           <p className="text-xs font-black uppercase tracking-[0.18em] text-[#ff5a1f]">Account</p>
@@ -781,22 +1079,25 @@ function AccountMenu() {
             { label: "Addresses", href: "/account/addresses" },
             { label: "Support", href: "/account/support" },
           ].map((item) => (
-            <MenuItem key={item.href}>
-              <Link
-                href={item.href}
-                className="flex items-center justify-between rounded-2xl px-3 py-2.5 text-sm font-bold text-[#101828] data-focus:bg-[#fff4ef] data-focus:text-[#ff5a1f]"
-              >
-                {item.label}
-                <ChevronRight className="h-4 w-4" aria-hidden="true" />
-              </Link>
-            </MenuItem>
+            <Link
+              key={item.href}
+              href={item.href}
+              role="menuitem"
+              onClick={closeMenu}
+              className="flex items-center justify-between rounded-2xl px-3 py-2.5 text-sm font-bold text-[#101828] transition hover:bg-[#fff4ef] hover:text-[#ff5a1f] focus-visible:bg-[#fff4ef] focus-visible:text-[#ff5a1f] focus-visible:outline-none"
+            >
+              {item.label}
+              <ChevronRight className="h-4 w-4" aria-hidden="true" />
+            </Link>
           ))}
         </div>
         <div className="mt-3 border-t border-[#f2e4dd] pt-3">
           <AuthActions />
         </div>
-      </MenuItems>
-    </Menu>
+      </div>,
+      portalRoot,
+    ) : null}
+    </div>
   );
 }
 

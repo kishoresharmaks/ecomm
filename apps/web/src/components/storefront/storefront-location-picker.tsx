@@ -1,11 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import {
+  type CSSProperties,
+  type Dispatch,
+  type SetStateAction,
+  forwardRef,
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
 import { ChevronDown, MapPin, RotateCcw } from "lucide-react";
 import { Button, cn } from "@indihub/ui";
 import { useMarket } from "@/components/market/market-context";
 import { type LocationArea } from "@/lib/location-api";
 import { useLocationAreaStore, useLocationCatalog } from "@/components/locations/location-store";
+import { useFloatingHeaderDropdown } from "@/components/storefront/use-floating-header-dropdown";
 import {
   formatLocalAreaLabel,
   normalizeLocalAreaSearchValue,
@@ -40,6 +52,20 @@ export function StorefrontLocationPicker({
   const [showRefinements, setShowRefinements] = useState(
     Boolean(activeLocation?.localAreaCode || activeLocation?.areaName || activeLocation?.pincode),
   );
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const panelId = useId();
+  const closePanel = useCallback(() => setOpen(false), []);
+  const useFloatingPanel = !mobile;
+  const { portalRoot, floatingStyle, updatePosition } = useFloatingHeaderDropdown({
+    open: useFloatingPanel && open,
+    onClose: closePanel,
+    triggerRef,
+    panelRef,
+    align: utility ? "start" : "end",
+    minWidth: 340,
+    maxWidth: 380,
+  });
 
   useEffect(() => {
     const location = activeLocation ?? null;
@@ -133,14 +159,21 @@ export function StorefrontLocationPicker({
   return (
     <div className={cn("relative", className)}>
       <button
+        ref={triggerRef}
         type="button"
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => {
+          if (!open) {
+            updatePosition();
+          }
+          setOpen((current) => !current);
+        }}
         className={cn(
           "inline-flex items-center text-[#163B5C] transition hover:border-[#ED3500] hover:text-[#ED3500]",
           utility ? "gap-1.5" : "gap-3",
           triggerToneClass,
         )}
         aria-expanded={open}
+        aria-controls={panelId}
       >
         <span
           className={cn(
@@ -180,17 +213,178 @@ export function StorefrontLocationPicker({
         />
       </button>
 
-      {open ? (
-        <div
-          className={cn(
-            "absolute right-0 z-50 mt-3 flex max-h-[78svh] w-full flex-col overflow-hidden rounded-2xl border border-[#D8E2EA] bg-white shadow-2xl",
-            mobile
-              ? "left-0 min-w-0"
-              : utility
-                ? "left-0 right-auto min-w-[340px] max-w-[380px]"
-                : "min-w-[340px] max-w-[380px]",
-          )}
-        >
+      {open && (!useFloatingPanel || !portalRoot || !floatingStyle) ? (
+        <LocationDropdownPanel
+          ref={panelRef}
+          id={panelId}
+          mobile={mobile}
+          utility={utility}
+          prefillLocation={prefillLocation}
+          source={source}
+          resetLocation={resetLocation}
+          countryCode={countryCode}
+          setCountryCode={setCountryCode}
+          state={state}
+          stateCode={stateCode}
+          setStateCode={setStateCode}
+          cityCode={cityCode}
+          setCityCode={setCityCode}
+          localAreaCode={localAreaCode}
+          setLocalAreaCode={setLocalAreaCode}
+          areaSearch={areaSearch}
+          setAreaSearch={setAreaSearch}
+          setSelectedArea={setSelectedArea}
+          pincode={pincode}
+          setPincode={setPincode}
+          showRefinements={showRefinements}
+          setShowRefinements={setShowRefinements}
+          countries={countries}
+          states={states}
+          cities={cities}
+          shouldShowAreaSuggestions={shouldShowAreaSuggestions}
+          areas={areas}
+          areasLoading={areasStore.isLoading}
+          applyLocation={applyLocation}
+          closePanel={closePanel}
+        />
+      ) : null}
+
+      {open && useFloatingPanel && portalRoot && floatingStyle
+        ? createPortal(
+            <LocationDropdownPanel
+              ref={panelRef}
+              id={panelId}
+              floating
+              style={floatingStyle}
+              mobile={mobile}
+              utility={utility}
+              prefillLocation={prefillLocation}
+              source={source}
+              resetLocation={resetLocation}
+              countryCode={countryCode}
+              setCountryCode={setCountryCode}
+              state={state}
+              stateCode={stateCode}
+              setStateCode={setStateCode}
+              cityCode={cityCode}
+              setCityCode={setCityCode}
+              localAreaCode={localAreaCode}
+              setLocalAreaCode={setLocalAreaCode}
+              areaSearch={areaSearch}
+              setAreaSearch={setAreaSearch}
+              setSelectedArea={setSelectedArea}
+              pincode={pincode}
+              setPincode={setPincode}
+              showRefinements={showRefinements}
+              setShowRefinements={setShowRefinements}
+              countries={countries}
+              states={states}
+              cities={cities}
+              shouldShowAreaSuggestions={shouldShowAreaSuggestions}
+              areas={areas}
+              areasLoading={areasStore.isLoading}
+              applyLocation={applyLocation}
+              closePanel={closePanel}
+            />,
+            portalRoot,
+          )
+        : null}
+    </div>
+  );
+}
+
+const LocationDropdownPanel = forwardRef<
+  HTMLDivElement,
+  {
+    id: string;
+    mobile: boolean;
+    utility: boolean;
+    prefillLocation: ReturnType<typeof useStorefrontLocation>["prefillLocation"];
+    source: ReturnType<typeof useStorefrontLocation>["source"];
+    resetLocation: () => void;
+    countryCode: string;
+    setCountryCode: (value: string) => void;
+    state: ReturnType<typeof useLocationCatalog>["states"][number] | undefined;
+    stateCode: string;
+    setStateCode: (value: string) => void;
+    cityCode: string;
+    setCityCode: (value: string) => void;
+    localAreaCode: string;
+    setLocalAreaCode: (value: string) => void;
+    areaSearch: string;
+    setAreaSearch: (value: string) => void;
+    setSelectedArea: (value: LocationArea | null) => void;
+    pincode: string;
+    setPincode: (value: string) => void;
+    showRefinements: boolean;
+    setShowRefinements: Dispatch<SetStateAction<boolean>>;
+    countries: ReturnType<typeof useLocationCatalog>["countries"];
+    states: ReturnType<typeof useLocationCatalog>["states"];
+    cities: ReturnType<typeof useLocationCatalog>["cities"];
+    shouldShowAreaSuggestions: boolean;
+    areas: LocationArea[];
+    areasLoading: boolean;
+    applyLocation: () => void;
+    closePanel: () => void;
+    floating?: boolean;
+    style?: CSSProperties;
+  }
+>(function LocationDropdownPanel(
+  {
+    id,
+    mobile,
+    utility,
+    prefillLocation,
+    source,
+    resetLocation,
+    countryCode,
+    setCountryCode,
+    state,
+    stateCode,
+    setStateCode,
+    cityCode,
+    setCityCode,
+    localAreaCode,
+    setLocalAreaCode,
+    areaSearch,
+    setAreaSearch,
+    setSelectedArea,
+    pincode,
+    setPincode,
+    showRefinements,
+    setShowRefinements,
+    countries,
+    states,
+    cities,
+    shouldShowAreaSuggestions,
+    areas,
+    areasLoading,
+    applyLocation,
+    closePanel,
+    floating = false,
+    style,
+  },
+  ref,
+) {
+  return (
+    <div
+      ref={ref}
+      id={id}
+      style={style}
+      className={cn(
+        "flex max-h-[78svh] flex-col overflow-hidden rounded-2xl border border-[#D8E2EA] bg-white shadow-2xl",
+        floating
+          ? "fixed z-[140]"
+          : "absolute right-0 z-50 mt-3 w-full",
+        !floating && mobile
+          ? "left-0 min-w-0"
+          : !floating && utility
+            ? "left-0 right-auto min-w-[340px] max-w-[380px]"
+            : !floating
+              ? "min-w-[340px] max-w-[380px]"
+              : "",
+      )}
+    >
           <div className="border-b border-[#E5E7EB] px-5 py-4">
             <p className="text-xs font-black uppercase tracking-[0.18em] text-[#ED3500]">
               Store location
@@ -347,7 +541,7 @@ export function StorefrontLocationPicker({
                             ))
                           ) : (
                             <div className="px-3 py-2 text-sm font-semibold text-[#667085]">
-                              {areasStore.isLoading
+                              {areasLoading
                                 ? "Searching areas..."
                                 : "No matching local areas"}
                             </div>
@@ -382,7 +576,7 @@ export function StorefrontLocationPicker({
                 {prefillLocation ? "Use saved address" : "Show all stores"}
               </button>
               <div className="flex gap-2">
-                <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+                <Button type="button" variant="outline" onClick={closePanel}>
                   Close
                 </Button>
                 <Button type="button" onClick={applyLocation} disabled={!countryCode}>
@@ -392,10 +586,8 @@ export function StorefrontLocationPicker({
             </div>
           </div>
         </div>
-      ) : null}
-    </div>
   );
-}
+});
 
 function SelectField({
   label,

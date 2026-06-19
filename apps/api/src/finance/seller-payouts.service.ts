@@ -10,7 +10,7 @@ import {
 import { RequestUser } from "../auth/types/indihub-request";
 import { PrismaService } from "../prisma/prisma.service";
 import { readBooleanSetting, readNumberSetting } from "../settings/setting-value-utils";
-import { MarkPayoutPaidDto, PayoutActionDto, PayoutQueryDto, SellerPayoutRequestDto } from "./dto/finance.dto";
+import { MarkPayoutPaidDto, PayoutActionDto, PayoutQueryDto, SellerPayoutProfileVerificationDto, SellerPayoutRequestDto } from "./dto/finance.dto";
 import { FinanceCalculatorService, SplitFinanceCalculation } from "./finance-calculator.service";
 import { SellerLedgerService } from "./seller-ledger.service";
 
@@ -240,9 +240,65 @@ export class SellerPayoutsService {
     return payout;
   }
 
+  async updateSellerPayoutProfileVerification(sellerId: string, dto: SellerPayoutProfileVerificationDto, actor: RequestUser) {
+    const profile = await this.prisma.client.$transaction(async (tx) => {
+      const seller = await tx.seller.findFirst({
+        where: { id: sellerId, deletedAt: null },
+        include: { payoutProfile: true }
+      });
+
+      if (!seller) {
+        throw new NotFoundException("Seller not found.");
+      }
+      if (!seller.payoutProfile) {
+        throw new BadRequestException("Seller payout profile is not configured.");
+      }
+      if (dto.verified && !this.hasPayoutMethod(seller.payoutProfile)) {
+        throw new BadRequestException("Seller payout profile is incomplete.");
+      }
+
+      const updatedProfile = await tx.sellerPayoutProfile.update({
+        where: { sellerId },
+        data: { isVerified: dto.verified },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actor: { connect: { id: actor.id } },
+          action: dto.verified ? "seller.payout_profile.verified" : "seller.payout_profile.unverified",
+          entityType: "seller_payout_profile",
+          entityId: sellerId,
+          oldValue: {
+            sellerId,
+            isVerified: seller.payoutProfile.isVerified,
+          },
+          newValue: {
+            sellerId,
+            isVerified: updatedProfile.isVerified,
+            note: dto.note,
+          } as Prisma.InputJsonValue,
+        },
+      });
+
+      return updatedProfile;
+    });
+
+    return {
+      accountHolderName: profile.accountHolderName,
+      bankName: profile.bankName,
+      accountNumber: profile.accountNumber,
+      ifscCode: profile.ifscCode,
+      upiId: profile.upiId,
+      isVerified: profile.isVerified,
+    };
+  }
+
   async approvePayout(payoutId: string, dto: PayoutActionDto, actor: RequestUser) {
     await this.prisma.client.$transaction(async (tx) => {
-      const payout = await tx.sellerPayout.findUnique({ where: { id: payoutId } });
+      const payout = await tx.sellerPayout.findUnique({
+        where: { id: payoutId },
+        include: { seller: { include: { payoutProfile: true } } }
+      });
 
       if (!payout) {
         throw new NotFoundException("Seller payout not found.");
@@ -250,6 +306,9 @@ export class SellerPayoutsService {
 
       if (payout.status !== SellerPayoutStatus.PENDING_APPROVAL) {
         throw new BadRequestException("Only payouts pending approval can be approved.");
+      }
+      if (!payout.seller.payoutProfile?.isVerified) {
+        throw new BadRequestException("Seller payout details must be verified before payout approval.");
       }
 
       const splitSummary = await this.payoutSplitSummary(tx, payoutId);

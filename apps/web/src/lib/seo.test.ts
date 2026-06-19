@@ -3,9 +3,11 @@ import {
   buildBreadcrumbJsonLd,
   buildProductJsonLd,
   metadataFromSeo,
+  normalizeSitemapEntries,
   privateRobotsDisallow,
   publicRobotsAllow,
   robotsFromDirective,
+  staticPublicSitemapEntries,
 } from "./seo";
 
 describe("seo helpers", () => {
@@ -141,6 +143,33 @@ describe("seo helpers", () => {
   it("keeps public marketplace landing pages crawlable while excluding private workspaces", () => {
     expect(publicRobotsAllow).toEqual(expect.arrayContaining(["/seller/register", "/b2b/register"]));
     expect(privateRobotsDisallow).not.toContain("/seller");
-    expect(privateRobotsDisallow).toEqual(expect.arrayContaining(["/seller/orders", "/b2b/enquiries"]));
+    expect(privateRobotsDisallow).toEqual(
+      expect.arrayContaining(["/seller/orders", "/b2b/enquiries", "/courier", "/track-order", "/sentry-example-page"]),
+    );
+  });
+
+  it("keeps sitemap fallbacks focused on public discovery routes", () => {
+    expect(staticPublicSitemapEntries.map((entry) => entry.path)).toEqual(
+      expect.arrayContaining(["/", "/deals", "/stores", "/privacy-policy", "/seller/register", "/b2b/register"]),
+    );
+    expect(staticPublicSitemapEntries.map((entry) => entry.path)).not.toEqual(
+      expect.arrayContaining(["/cart", "/checkout", "/track-order"]),
+    );
+  });
+
+  it("deduplicates sitemap entries and drops private routes even when API data includes them", () => {
+    expect(
+      normalizeSitemapEntries([
+        { path: "/", source: "home" },
+        { path: "/", source: "duplicate" },
+        { path: "/products/public-product", source: "product" },
+        { path: "/cart", source: "cart" },
+        { path: "/admin/orders", source: "admin" },
+        { path: "https://www.1handindia.com/seller/orders/ORD-1", source: "seller" },
+      ]),
+    ).toEqual([
+      { path: "/", source: "home" },
+      { path: "/products/public-product", source: "product" },
+    ]);
   });
 });

@@ -16,7 +16,9 @@ import {
   markPayoutPaid,
   rejectDeliveryPartnerPayout,
   rejectPayout,
+  updateSellerPayoutProfileVerification,
   type DeliveryPartnerPayout,
+  type FinanceSeller,
 } from "@/lib/admin-finance-api";
 import { formatMoney } from "@/lib/storefront-api";
 import { FinanceMetric, FinancePageHeader, FinancePanel, FinanceState, FinanceStatus, MoneyBreakup } from "./finance-ui";
@@ -60,6 +62,14 @@ export function AdminPayoutsClient() {
       setTransactionReference("");
       await queryClient.invalidateQueries({ queryKey: ["admin-finance-payouts"] });
     }
+  });
+  const verifyPayoutProfile = useMutation({
+    mutationFn: ({ sellerId, verified }: { sellerId: string; verified: boolean }) =>
+      updateSellerPayoutProfileVerification(auth.authHeaders, sellerId, {
+        verified,
+        note: verified ? "Verified from finance payout review." : "Verification removed from finance payout review.",
+      }),
+    onSuccess: async () => queryClient.invalidateQueries({ queryKey: ["admin-finance-payouts"] })
   });
   const approveDelivery = useMutation({
     mutationFn: (payoutId: string) => approveDeliveryPartnerPayout(auth.authHeaders, payoutId),
@@ -128,7 +138,7 @@ export function AdminPayoutsClient() {
         <FinanceMetric label="Delivery paid" value={formatMoney(deliveryPaidTotal)} note="Marked paid in this list" />
       </div>
       <FinanceState loading={payoutsQuery.isLoading} error={payoutsQuery.error} onRetry={() => void payoutsQuery.refetch()} />
-      <FinanceState error={approve.error ?? reject.error ?? statement.error ?? paid.error} />
+      <FinanceState error={approve.error ?? reject.error ?? statement.error ?? paid.error ?? verifyPayoutProfile.error} />
       <FinanceState loading={deliveryPayoutsQuery.isLoading} error={deliveryPayoutsQuery.error} onRetry={() => void deliveryPayoutsQuery.refetch()} />
       <FinanceState error={approveDelivery.error ?? rejectDelivery.error ?? paidDelivery.error} />
       <div className="grid gap-4">
@@ -136,6 +146,11 @@ export function AdminPayoutsClient() {
           <FinancePanel key={payout.id}>
             <div className="grid gap-5 xl:grid-cols-[1fr_360px]">
               <div>
+                {payout.status === "PENDING_APPROVAL" && !payout.seller?.payoutProfile?.isVerified ? (
+                  <p className="mb-3 rounded-md border border-[#F6DFA7] bg-[#FFF8E8] px-3 py-2 text-sm font-bold text-[#8A5A00]">
+                    Verify seller payout details before approving this payout.
+                  </p>
+                ) : null}
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="text-xl font-black text-[#1F2933]">{payout.payoutNumber}</h3>
                   <FinanceStatus status={payout.status} />
@@ -146,7 +161,21 @@ export function AdminPayoutsClient() {
                 <p className="mt-1 text-xs font-black uppercase tracking-wide text-[#667085]">
                   {payout.settlementRunId ? `Settlement cycle ${payout.settlementRun?.runNumber ?? ""}` : "Seller manual payout request"} / {payout._count?.orderSplits ?? 0} eligible order splits
                 </p>
-                <PayoutMethod seller={payout.seller} />
+                <PayoutMethod
+                  busy={verifyPayoutProfile.isPending}
+                  onToggleVerification={(verified) =>
+                    confirmation.requestConfirmation({
+                      title: verified ? "Verify payout details?" : "Remove payout verification?",
+                      description: verified
+                        ? `${payout.seller?.storeName ?? "This seller"} will be marked verified for manual payouts. Confirm bank or UPI proof before continuing.`
+                        : `${payout.seller?.storeName ?? "This seller"} will return to pending payout verification.`,
+                      confirmLabel: verified ? "Verify details" : "Remove verification",
+                      tone: "warning",
+                      onConfirm: () => verifyPayoutProfile.mutate({ sellerId: payout.sellerId, verified })
+                    })
+                  }
+                  seller={payout.seller}
+                />
                 <p className="mt-3 text-2xl font-black text-[#163B5C]">{formatMoney(payout.netPayablePaise)}</p>
                 <div className="mt-4 flex flex-wrap gap-2">
                   {payout.status === "PENDING_APPROVAL" ? (
@@ -163,7 +192,7 @@ export function AdminPayoutsClient() {
                             onConfirm: () => approve.mutate(payout.id)
                           })
                         }
-                        disabled={approve.isPending}
+                        disabled={approve.isPending || !payout.seller?.payoutProfile?.isVerified}
                       >
                         <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
                         Approve
@@ -356,7 +385,15 @@ function FinanceInput({ label, value, onChange }: { label: string; value: string
   );
 }
 
-function PayoutMethod({ seller }: { seller: { payoutProfile?: { accountHolderName?: string | null; bankName?: string | null; accountNumber?: string | null; ifscCode?: string | null; upiId?: string | null } | null } | null | undefined }) {
+function PayoutMethod({
+  busy,
+  onToggleVerification,
+  seller,
+}: {
+  busy: boolean;
+  onToggleVerification: (verified: boolean) => void;
+  seller: FinanceSeller | null | undefined;
+}) {
   const profile = seller?.payoutProfile;
   if (!profile) {
     return <p className="mt-3 rounded-md border border-[#F5B7B7] bg-[#FDECEC] px-3 py-2 text-sm font-semibold text-[#8A1F1F]">Seller payout method is not configured.</p>;
@@ -369,10 +406,26 @@ function PayoutMethod({ seller }: { seller: { payoutProfile?: { accountHolderNam
 
   return (
     <div className="mt-3 rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 py-2 text-sm font-semibold text-[#667085]">
-      <p className="font-black text-[#1F2933]">{profile.accountHolderName ?? "Account holder not set"}</p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="font-black text-[#1F2933]">{profile.accountHolderName ?? "Account holder not set"}</p>
+        <span className={profile.isVerified ? "text-xs font-black uppercase text-[#0F8A5F]" : "text-xs font-black uppercase text-[#B7791F]"}>
+          {profile.isVerified ? "Verified payout details" : "Pending verification"}
+        </span>
+      </div>
       {upiLine ? <p className="mt-1">{upiLine}</p> : null}
       {bankLine ? <p className="mt-1">{bankLine}</p> : null}
       {!upiLine && !bankLine ? <p className="mt-1 text-[#8A1F1F]">Bank or UPI details are incomplete.</p> : null}
+      <div className="mt-3 flex flex-wrap gap-2">
+        {profile.isVerified ? (
+          <Button type="button" variant="outline" size="sm" onClick={() => onToggleVerification(false)} disabled={busy}>
+            Remove verification
+          </Button>
+        ) : (
+          <Button type="button" size="sm" onClick={() => onToggleVerification(true)} disabled={busy || (!upiLine && !bankLine)}>
+            Verify payout details
+          </Button>
+        )}
+      </div>
     </div>
   );
 }

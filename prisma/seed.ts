@@ -75,6 +75,7 @@ const permissionSeeds = [
   ["finance.workspace.manage", "Manage finance workspace operations", "finance"],
   ["storage.manage", "Manage upload provider readiness", "storage"],
   ["notifications.read", "Read and retry notification logs", "notifications"],
+  ["notifications.manage", "Manage push notification campaigns", "notifications"],
   ["audit.read", "Read audit logs", "audit"],
 ] as const;
 

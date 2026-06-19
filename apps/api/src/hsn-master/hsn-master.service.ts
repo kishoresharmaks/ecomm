@@ -9,7 +9,7 @@ export class HsnMasterService {
 
   listSuggestions(query: HsnMasterQueryDto) {
     const search = query.search?.trim();
-    const limit = query.limit ?? 10;
+    const limit = this.normalizedLimit(query.limit);
     const filters: Prisma.HsnMasterWhereInput[] = [{ isActive: true }];
 
     if (query.categoryId) {
@@ -42,5 +42,13 @@ export class HsnMasterService {
       orderBy: [{ categoryId: "desc" }, { hsnCode: "asc" }],
       take: limit,
     });
+  }
+
+  private normalizedLimit(value: HsnMasterQueryDto["limit"]) {
+    const parsed = Number(value ?? 10);
+    if (!Number.isInteger(parsed) || parsed < 1) {
+      return 10;
+    }
+    return Math.min(parsed, 25);
   }
 }

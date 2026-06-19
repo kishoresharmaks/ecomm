@@ -268,6 +268,14 @@ export function markPayoutPaid(auth: IndihubAuthHeaders, payoutId: string, paylo
   return indihubFetch<SellerPayout>(`/api/admin/finance/payouts/${encodeURIComponent(payoutId)}/mark-paid`, { method: "PATCH", body: JSON.stringify(payload) }, auth);
 }
 
+export function updateSellerPayoutProfileVerification(auth: IndihubAuthHeaders, sellerId: string, payload: { note?: string; verified: boolean }) {
+  return indihubFetch<NonNullable<FinanceSeller["payoutProfile"]>>(
+    `/api/admin/finance/sellers/${encodeURIComponent(sellerId)}/payout-profile/verification`,
+    { method: "PATCH", body: JSON.stringify(payload) },
+    auth
+  );
+}
+
 export function listDeliveryPartnerPayouts(auth: IndihubAuthHeaders, query: Record<string, string | number | undefined> = {}) {
   return indihubFetch<PageResult<DeliveryPartnerPayout>>(`/api/admin/finance/delivery-partner-payouts${queryString(query)}`, undefined, auth);
 }

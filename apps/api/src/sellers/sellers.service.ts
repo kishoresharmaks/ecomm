@@ -38,6 +38,7 @@ import {
 import { CreateSellerOnboardingDto } from "./dto/create-seller-registration.dto";
 import { PublicSellerQueryDto } from "./dto/public-seller-query.dto";
 import { UpdateSellerProfileDto } from "./dto/seller-profile.dto";
+import { RegisterSellerPushTokenDto, RevokeSellerPushTokenDto } from "./dto/seller-push-token.dto";
 import { SellerSubscriptionsService } from "./seller-subscriptions.service";
 
 const publicSellerProfileSelect = {
@@ -902,6 +903,48 @@ export class SellersService {
 
     await this.enqueueSellerSearchIndex(seller.id, "seller-profile-updated");
     return this.toSellerProfileResponse(seller);
+  }
+
+  async registerPushToken(actor: RequestUser, dto: RegisterSellerPushTokenDto) {
+    const seller = await this.getSellerForUserOrThrow(actor.id);
+    const token = dto.token.trim();
+
+    const pushToken = await this.prisma.client.sellerPushToken.upsert({
+      where: { token },
+      update: {
+        sellerId: seller.id,
+        userId: actor.id,
+        platform: dto.platform,
+        deviceId: this.emptyToNull(dto.deviceId),
+        appVersion: this.emptyToNull(dto.appVersion),
+        enabled: true,
+        revokedAt: null,
+        lastSeenAt: new Date(),
+      },
+      create: {
+        sellerId: seller.id,
+        userId: actor.id,
+        token,
+        platform: dto.platform,
+        deviceId: this.emptyToNull(dto.deviceId),
+        appVersion: this.emptyToNull(dto.appVersion),
+      },
+    });
+
+    return { registered: true, tokenId: pushToken.id };
+  }
+
+  async revokePushToken(actor: RequestUser, dto: RevokeSellerPushTokenDto) {
+    await this.prisma.client.sellerPushToken.updateMany({
+      where: { token: dto.token.trim(), userId: actor.id },
+      data: {
+        enabled: false,
+        revokedAt: new Date(),
+        lastSeenAt: new Date(),
+      },
+    });
+
+    return { revoked: true };
   }
 
   private async enqueueSellerSearchIndex(sellerId: string, reason: string) {

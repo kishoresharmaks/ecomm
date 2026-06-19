@@ -129,7 +129,8 @@ describe("SellerPayoutsService seller requests", () => {
           id: "payout-1",
           status: SellerPayoutStatus.PENDING_APPROVAL,
           netPayablePaise: 43_600,
-          note: null
+          note: null,
+          seller: { payoutProfile: { isVerified: true } }
         }),
         updateMany: vi.fn().mockResolvedValue({ count: 0 })
       },
@@ -161,6 +162,48 @@ describe("SellerPayoutsService seller requests", () => {
       )
     ).rejects.toThrow("Payout status changed");
 
+    expect(ledger.postPayoutApprovalEntries).not.toHaveBeenCalled();
+  });
+
+  it("blocks payout approval until seller payout details are verified", async () => {
+    const tx = {
+      sellerPayout: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "payout-1",
+          status: SellerPayoutStatus.PENDING_APPROVAL,
+          netPayablePaise: 43_600,
+          note: null,
+          seller: { payoutProfile: { isVerified: false } }
+        }),
+        updateMany: vi.fn()
+      },
+      orderSellerSplit: {
+        aggregate: vi.fn()
+      }
+    };
+    const prisma = {
+      client: {
+        $transaction: vi.fn((callback) => callback(tx)),
+        sellerPayout: {
+          findFirst: vi.fn()
+        }
+      }
+    } as unknown as PrismaService;
+    const ledger = {
+      postPayoutApprovalEntries: vi.fn()
+    } as unknown as SellerLedgerService;
+    const service = new SellerPayoutsService(prisma, {} as FinanceCalculatorService, ledger);
+
+    await expect(
+      service.approvePayout(
+        "payout-1",
+        { note: "Approve after verification." },
+        { id: "admin-1", clerkUserId: null, email: "admin@example.com", roles: [RoleCode.ADMIN] }
+      )
+    ).rejects.toThrow("Seller payout details must be verified");
+
+    expect(tx.orderSellerSplit.aggregate).not.toHaveBeenCalled();
+    expect(tx.sellerPayout.updateMany).not.toHaveBeenCalled();
     expect(ledger.postPayoutApprovalEntries).not.toHaveBeenCalled();
   });
 
@@ -205,5 +248,108 @@ describe("SellerPayoutsService seller requests", () => {
     ).rejects.toThrow("Payout splits changed");
 
     expect(ledger.postPayoutPaidEntry).not.toHaveBeenCalled();
+  });
+
+  it("verifies a configured seller payout profile and writes audit log", async () => {
+    const tx = {
+      seller: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "seller-1",
+          deletedAt: null,
+          payoutProfile: {
+            sellerId: "seller-1",
+            accountHolderName: "Seller One",
+            bankName: null,
+            accountNumber: null,
+            ifscCode: null,
+            upiId: "seller@upi",
+            isVerified: false
+          }
+        })
+      },
+      sellerPayoutProfile: {
+        update: vi.fn().mockResolvedValue({
+          sellerId: "seller-1",
+          accountHolderName: "Seller One",
+          bankName: null,
+          accountNumber: null,
+          ifscCode: null,
+          upiId: "seller@upi",
+          isVerified: true
+        })
+      },
+      auditLog: {
+        create: vi.fn().mockResolvedValue({})
+      }
+    };
+    const prisma = {
+      client: {
+        $transaction: vi.fn((callback) => callback(tx))
+      }
+    } as unknown as PrismaService;
+    const service = new SellerPayoutsService(prisma, {} as FinanceCalculatorService, {} as SellerLedgerService);
+
+    const result = await service.updateSellerPayoutProfileVerification(
+      "seller-1",
+      { verified: true, note: "Matched bank proof." },
+      { id: "admin-1", clerkUserId: null, email: "admin@example.com", roles: [RoleCode.FINANCE] }
+    );
+
+    expect(result.isVerified).toBe(true);
+    expect(tx.sellerPayoutProfile.update).toHaveBeenCalledWith({
+      where: { sellerId: "seller-1" },
+      data: { isVerified: true }
+    });
+    expect(tx.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: "seller.payout_profile.verified",
+        entityType: "seller_payout_profile",
+        entityId: "seller-1",
+        actor: { connect: { id: "admin-1" } },
+        oldValue: { sellerId: "seller-1", isVerified: false },
+        newValue: { sellerId: "seller-1", isVerified: true, note: "Matched bank proof." }
+      })
+    });
+  });
+
+  it("blocks verification when payout profile details are incomplete", async () => {
+    const tx = {
+      seller: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "seller-1",
+          deletedAt: null,
+          payoutProfile: {
+            accountHolderName: "Seller One",
+            bankName: null,
+            accountNumber: null,
+            ifscCode: null,
+            upiId: null,
+            isVerified: false
+          }
+        })
+      },
+      sellerPayoutProfile: {
+        update: vi.fn()
+      },
+      auditLog: {
+        create: vi.fn()
+      }
+    };
+    const prisma = {
+      client: {
+        $transaction: vi.fn((callback) => callback(tx))
+      }
+    } as unknown as PrismaService;
+    const service = new SellerPayoutsService(prisma, {} as FinanceCalculatorService, {} as SellerLedgerService);
+
+    await expect(
+      service.updateSellerPayoutProfileVerification(
+        "seller-1",
+        { verified: true },
+        { id: "admin-1", clerkUserId: null, email: "admin@example.com", roles: [RoleCode.FINANCE] }
+      )
+    ).rejects.toThrow("Seller payout profile is incomplete");
+
+    expect(tx.sellerPayoutProfile.update).not.toHaveBeenCalled();
   });
 });

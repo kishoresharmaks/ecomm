@@ -6,6 +6,7 @@ import { StatusBar } from "expo-status-bar";
 import { useEffect, useMemo } from "react";
 import { MobileCustomerAuthProvider, useMobileCustomerAuth } from "../src/auth/mobile-auth-context";
 import { useMobileMarket } from "../src/features/market/mobile-market";
+import { useCustomerPushNotifications } from "../src/features/notifications/use-customer-push-notifications";
 import { getBrowsingLocation } from "../src/features/storefront/storefront-api";
 import { initMobileTelemetry, withMobileTelemetry } from "../src/lib/mobile-telemetry";
 import { createQueryClient } from "../src/lib/query-client";
@@ -34,6 +35,7 @@ function RootLayout() {
         <MobileCustomerAuthProvider>
           <BrowsingLocationAccountSync />
           <MobileMarketLocationSync />
+          <CustomerPushRegistration />
           <StatusBar style="dark" />
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="(tabs)" />
@@ -47,6 +49,8 @@ function RootLayout() {
             <Stack.Screen name="account/profile" />
             <Stack.Screen name="account/addresses" />
             <Stack.Screen name="account/location" />
+            <Stack.Screen name="account/notifications" />
+            <Stack.Screen name="account/notification-preferences" />
             <Stack.Screen name="account/wishlist" />
             <Stack.Screen name="account/support" />
             <Stack.Screen name="account/returns" />
@@ -86,5 +90,14 @@ function BrowsingLocationAccountSync() {
     }
   }, [browsingLocationQuery.data?.location, setSelectedLocation]);
 
+  return null;
+}
+
+function CustomerPushRegistration() {
+  const customerAuth = useMobileCustomerAuth();
+  useCustomerPushNotifications({
+    authHeaders: customerAuth.authHeaders,
+    enabled: customerAuth.enabled,
+  });
   return null;
 }

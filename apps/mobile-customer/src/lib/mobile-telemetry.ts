@@ -22,7 +22,7 @@ export function initMobileTelemetry() {
     attachScreenshot: false,
     enableAutoSessionTracking: true,
     environment: process.env.EXPO_PUBLIC_APP_ENV ?? process.env.NODE_ENV,
-    integrations: [Sentry.expoRouterIntegration()],
+    integrations: [Sentry.expoContextIntegration()],
     ...(tunnel ? { tunnel } : {}),
     sendDefaultPii: false,
     tracesSampleRate: process.env.NODE_ENV === "development" ? 1.0 : 0.1,

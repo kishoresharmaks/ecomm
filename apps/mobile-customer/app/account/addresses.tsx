@@ -31,6 +31,7 @@ export default function AddressesScreen() {
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formError, setFormError] = useState("");
+  const [actionError, setActionError] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const addressesQuery = useQuery({
@@ -44,28 +45,37 @@ export default function AddressesScreen() {
       editingId
         ? updateCustomerAddress(customerAuth.authHeaders, editingId, payload)
         : createCustomerAddress(customerAuth.authHeaders, payload),
+    onMutate: () => setActionError(""),
     onSuccess: async () => {
       resetForm();
+      setActionError("");
       await queryClient.invalidateQueries({ queryKey: ["mobile-account-addresses", customerAuth.authKey] });
       await queryClient.invalidateQueries({ queryKey: ["mobile-account-profile", customerAuth.authKey] });
     },
+    onError: (error) => setActionError(accountErrorMessage(error, "Address could not be saved.")),
   });
 
   const defaultMutation = useMutation({
     mutationFn: (addressId: string) => updateCustomerAddress(customerAuth.authHeaders, addressId, { isDefault: true }),
+    onMutate: () => setActionError(""),
     onSuccess: async () => {
+      setActionError("");
       await queryClient.invalidateQueries({ queryKey: ["mobile-account-addresses", customerAuth.authKey] });
       await queryClient.invalidateQueries({ queryKey: ["mobile-account-profile", customerAuth.authKey] });
     },
+    onError: (error) => setActionError(accountErrorMessage(error, "Default address could not be updated.")),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (addressId: string) => deleteCustomerAddress(customerAuth.authHeaders, addressId),
+    onMutate: () => setActionError(""),
     onSuccess: async () => {
       setConfirmDeleteId(null);
+      setActionError("");
       await queryClient.invalidateQueries({ queryKey: ["mobile-account-addresses", customerAuth.authKey] });
       await queryClient.invalidateQueries({ queryKey: ["mobile-account-profile", customerAuth.authKey] });
     },
+    onError: (error) => setActionError(accountErrorMessage(error, "Address could not be deleted.")),
   });
 
   if (customerAuth.status === "loading" || customerAuth.status === "syncing" || addressesQuery.isLoading) {
@@ -145,6 +155,8 @@ export default function AddressesScreen() {
                 <HugeiconsIcon color={colors.surface} icon={PlusSignIcon} size={20} strokeWidth={2.2} />
               </Pressable>
             </View>
+
+            {actionError ? <Text style={styles.actionError}>{actionError}</Text> : null}
 
             {formOpen ? (
               <View style={styles.formCard}>
@@ -270,6 +282,13 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     lineHeight: 18,
     marginTop: 4,
+  },
+  actionError: {
+    color: colors.danger,
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 18,
+    marginBottom: 10,
   },
   addIconButton: {
     alignItems: "center",

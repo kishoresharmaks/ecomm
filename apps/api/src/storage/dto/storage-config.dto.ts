@@ -1,18 +1,26 @@
 import { Type } from "class-transformer";
-import { ApiPropertyOptional } from "@nestjs/swagger";
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import {
   IsBoolean,
   IsEnum,
   IsIn,
+  IsInt,
   IsOptional,
   IsString,
   Matches,
+  Max,
   MaxLength,
+  Min,
   ValidateNested,
 } from "class-validator";
 import { PublicImageUploadPurpose } from "./public-image-upload.dto";
 
 export class PrivateStorageConfigDto {
+  @ApiPropertyOptional({ enum: ["AUTO", "S3", "LOCAL"], example: "AUTO" })
+  @IsOptional()
+  @IsIn(["AUTO", "S3", "LOCAL"])
+  provider?: "AUTO" | "S3" | "LOCAL";
+
   @ApiPropertyOptional({ example: true })
   @IsOptional()
   @IsBoolean()
@@ -52,6 +60,12 @@ export class PrivateStorageConfigDto {
   @IsOptional()
   @IsBoolean()
   clearSecretAccessKey?: boolean;
+
+  @ApiPropertyOptional({ example: "storage/private" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(240)
+  localRoot?: string;
 }
 
 export class PublicImageS3ConfigDto {
@@ -150,24 +164,32 @@ export class UpsertStorageConfigurationDto {
 }
 
 export class PublicImageUploadRequestDto {
-  @ApiPropertyOptional({
+  @ApiProperty({
     enum: PublicImageUploadPurpose,
     example: PublicImageUploadPurpose.SELLER_PRODUCT_IMAGE,
   })
   @IsEnum(PublicImageUploadPurpose)
   purpose!: PublicImageUploadPurpose;
 
-  @ApiPropertyOptional({ example: "product-main.jpg" })
+  @ApiProperty({ example: "product-main.jpg" })
   @IsString()
   @MaxLength(180)
   fileName!: string;
 
-  @ApiPropertyOptional({ example: "image/jpeg" })
+  @ApiProperty({ example: "image/jpeg" })
   @IsString()
   @Matches(/^image\/(jpeg|png|webp|gif)$/i, {
     message: "contentType must be a supported image type.",
   })
   contentType!: string;
+
+  @ApiPropertyOptional({ example: 524288 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(5 * 1024 * 1024)
+  sizeBytes?: number;
 
   @ApiPropertyOptional({ example: "product-main" })
   @IsOptional()
@@ -180,20 +202,27 @@ export class PublicImageUploadRequestDto {
 }
 
 export class PrivateDocumentUploadRequestDto {
-  @ApiPropertyOptional({ example: "ID_PROOF" })
+  @ApiProperty({ example: "ID_PROOF" })
   @IsString()
   @Matches(/^(ID_PROOF|SIGNATURE_PROOF|GST_CERTIFICATE|PAN_CARD|ADDRESS_PROOF|BANK_PROOF|BUSINESS_REGISTRATION|OTHER)$/)
   documentType!: string;
 
-  @ApiPropertyOptional({ example: "gst-certificate.pdf" })
+  @ApiProperty({ example: "gst-certificate.pdf" })
   @IsString()
   @MaxLength(180)
   fileName!: string;
 
-  @ApiPropertyOptional({ example: "application/pdf" })
+  @ApiProperty({ example: "application/pdf" })
   @IsString()
   @Matches(/^(application\/pdf|image\/jpeg|image\/png|image\/webp)$/i, {
     message: "contentType must be PDF, JPG, PNG, or WebP.",
   })
   contentType!: string;
+
+  @ApiProperty({ example: 524288 })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(10 * 1024 * 1024)
+  sizeBytes!: number;
 }

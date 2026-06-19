@@ -8,10 +8,12 @@ import { HugeiconsIcon } from "@hugeicons/react-native";
 import { FlashList } from "@shopify/flash-list";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useRouter } from "expo-router";
+import { useState } from "react";
 import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { EmptyState } from "../../src/components/empty-state";
 import { Screen } from "../../src/components/screen";
 import { useMobileCustomerAuth } from "../../src/auth/mobile-auth-context";
+import { accountErrorMessage } from "../../src/features/account/account-ui";
 import { useMobileMarket } from "../../src/features/market/mobile-market";
 import { getCart, removeCartItem, updateCartItem, type MobileCartSummary } from "../../src/features/storefront/storefront-api";
 import { resolveImageUrl } from "../../src/lib/image-url";
@@ -22,6 +24,7 @@ export default function CartScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const market = useMobileMarket();
+  const [actionError, setActionError] = useState("");
   const cartQueryKey = ["mobile-cart", customerAuth.authKey] as const;
   const cartQuery = useQuery({
     queryKey: cartQueryKey,
@@ -34,11 +37,15 @@ export default function CartScreen() {
   const updateMutation = useMutation({
     mutationFn: ({ cartItemId, quantity }: { cartItemId: string; quantity: number }) =>
       updateCartItem(customerAuth.authHeaders, cartItemId, quantity),
+    onMutate: () => setActionError(""),
     onSuccess: () => void invalidateCart(queryClient, customerAuth.authKey),
+    onError: (error) => setActionError(accountErrorMessage(error, "Cart item could not be updated.")),
   });
   const removeMutation = useMutation({
     mutationFn: (cartItemId: string) => removeCartItem(customerAuth.authHeaders, cartItemId),
+    onMutate: () => setActionError(""),
     onSuccess: () => void invalidateCart(queryClient, customerAuth.authKey),
+    onError: (error) => setActionError(accountErrorMessage(error, "Cart item could not be removed.")),
   });
 
   if (customerAuth.status === "loading" || customerAuth.status === "syncing") {
@@ -118,6 +125,7 @@ export default function CartScreen() {
                 </View>
                 <Text style={styles.summaryTotal}>{market.format(subtotalPaise)}</Text>
               </View>
+              {actionError ? <Text style={styles.actionError}>{actionError}</Text> : null}
               <View style={styles.summaryRow}>
                 <Text style={styles.summaryLabel}>Cart subtotal</Text>
                 <Text style={styles.summaryValue}>{market.format(subtotalPaise)}</Text>
@@ -520,6 +528,13 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     lineHeight: 17,
     marginTop: 8,
+  },
+  actionError: {
+    color: colors.danger,
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 18,
+    marginTop: 10,
   },
   checkoutButton: {
     backgroundColor: colors.primary,

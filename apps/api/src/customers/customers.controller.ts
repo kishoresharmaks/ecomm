@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Inject, Param, Patch, Post } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, Query } from "@nestjs/common";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import { RoleCode } from "@indihub/database";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
@@ -7,7 +7,10 @@ import type { RequestUser } from "../auth/types/indihub-request";
 import { CustomersService } from "./customers.service";
 import { CreateCustomerAddressDto, UpdateCustomerAddressDto } from "./dto/customer-address.dto";
 import { UpdateCustomerBrowsingLocationDto } from "./dto/customer-browsing-location.dto";
+import { CustomerNotificationQueryDto } from "./dto/customer-notification-query.dto";
+import { UpdateCustomerNotificationPreferencesDto } from "./dto/customer-notification-preferences.dto";
 import { UpdateCustomerProfileDto } from "./dto/customer-profile.dto";
+import { RegisterCustomerPushTokenDto, RevokeCustomerPushTokenDto } from "./dto/customer-push-token.dto";
 import { WishlistItemDto } from "./dto/wishlist.dto";
 
 @ApiTags("Customer Account")
@@ -90,5 +93,56 @@ export class CustomersController {
   @ApiOperation({ summary: "Remove a product from customer wishlist." })
   removeWishlistItem(@CurrentUser() actor: RequestUser, @Param("productId") productId: string) {
     return this.customersService.removeWishlistItem(actor, productId);
+  }
+
+  @Post("push-tokens")
+  @ApiOperation({ summary: "Register this device for customer mobile push notifications." })
+  registerPushToken(@CurrentUser() actor: RequestUser, @Body() dto: RegisterCustomerPushTokenDto) {
+    return this.customersService.registerPushToken(actor, dto);
+  }
+
+  @Post("push-tokens/revoke")
+  @ApiOperation({ summary: "Revoke this device's customer mobile push token." })
+  revokePushToken(@CurrentUser() actor: RequestUser, @Body() dto: RevokeCustomerPushTokenDto) {
+    return this.customersService.revokePushToken(actor, dto);
+  }
+
+  @Get("notification-preferences")
+  @ApiOperation({ summary: "Read customer mobile notification preferences." })
+  getNotificationPreferences(@CurrentUser() actor: RequestUser) {
+    return this.customersService.getNotificationPreferences(actor);
+  }
+
+  @Patch("notification-preferences")
+  @ApiOperation({ summary: "Update customer promotional notification preferences." })
+  updateNotificationPreferences(
+    @CurrentUser() actor: RequestUser,
+    @Body() dto: UpdateCustomerNotificationPreferencesDto
+  ) {
+    return this.customersService.updateNotificationPreferences(actor, dto);
+  }
+
+  @Get("notifications")
+  @ApiOperation({ summary: "List customer mobile notifications." })
+  listNotifications(@CurrentUser() actor: RequestUser, @Query() query: CustomerNotificationQueryDto) {
+    return this.customersService.listNotifications(actor, query);
+  }
+
+  @Get("notifications/unread-count")
+  @ApiOperation({ summary: "Read customer unread notification count." })
+  unreadNotificationCount(@CurrentUser() actor: RequestUser) {
+    return this.customersService.unreadNotificationCount(actor);
+  }
+
+  @Patch("notifications/:notificationId/read")
+  @ApiOperation({ summary: "Mark a customer notification as read." })
+  markNotificationRead(@CurrentUser() actor: RequestUser, @Param("notificationId") notificationId: string) {
+    return this.customersService.markNotificationRead(actor, notificationId);
+  }
+
+  @Post("notifications/read-all")
+  @ApiOperation({ summary: "Mark all customer notifications as read." })
+  markAllNotificationsRead(@CurrentUser() actor: RequestUser) {
+    return this.customersService.markAllNotificationsRead(actor);
   }
 }

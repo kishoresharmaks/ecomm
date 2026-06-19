@@ -27,6 +27,7 @@ pnpm-debug.log*
 .cache/
 .tmp/
 .qa-screenshots/
+storage/private/
 tmp-*.png
 IndiHub_Testing_Source_*.zip
 AGENTS.pdf

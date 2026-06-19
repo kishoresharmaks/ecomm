@@ -3,7 +3,7 @@ import type { ExecutionContext } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { RoleCode } from "@indihub/database";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { IS_PUBLIC_KEY, ROLES_KEY } from "../auth.constants";
+import { IS_PUBLIC_KEY, PERMISSIONS_KEY, ROLES_KEY } from "../auth.constants";
 import { RolesGuard } from "./roles.guard";
 
 describe("RolesGuard", () => {
@@ -36,6 +36,38 @@ describe("RolesGuard", () => {
     const guard = new RolesGuard(reflector as unknown as Reflector);
 
     expect(guard.canActivate(createContext({ currentUser: { roles: [RoleCode.SELLER] } }))).toBe(true);
+  });
+
+  it("requires explicit permissions when permission metadata is present", () => {
+    reflector.getAllAndOverride.mockImplementation((key: string) => {
+      if (key === ROLES_KEY) return [RoleCode.ADMIN];
+      if (key === PERMISSIONS_KEY) return ["notifications.manage"];
+      return false;
+    });
+    const guard = new RolesGuard(reflector as unknown as Reflector);
+
+    expect(
+      guard.canActivate(
+        createContext({
+          currentUser: {
+            roles: [RoleCode.ADMIN],
+            permissions: ["notifications.manage"],
+            authProvider: "ADMIN_SESSION",
+          },
+        }),
+      ),
+    ).toBe(true);
+    expect(() =>
+      guard.canActivate(
+        createContext({
+          currentUser: {
+            roles: [RoleCode.ADMIN],
+            permissions: ["notifications.read"],
+            authProvider: "ADMIN_SESSION",
+          },
+        }),
+      ),
+    ).toThrow(ForbiddenException);
   });
 
   it("allows back-office roles only from a standalone back-office session", () => {

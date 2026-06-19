@@ -4,3 +4,7 @@
 
 expo-env.d.ts
 # @end expo-cli
+
+# Native provider credentials; upload/manage through EAS/Firebase and keep local copies private.
+google-services.json
+GoogleService-Info.plist

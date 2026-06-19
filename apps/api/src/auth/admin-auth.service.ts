@@ -19,7 +19,15 @@ type UserWithRoles = Prisma.UserGetPayload<{
   include: {
     userRoles: {
       include: {
-        role: true;
+        role: {
+          include: {
+            rolePermissions: {
+              include: {
+                permission: true;
+              };
+            };
+          };
+        };
       };
     };
   };
@@ -126,7 +134,15 @@ export class AdminAuthService {
           include: {
             userRoles: {
               include: {
-                role: true
+                role: {
+                  include: {
+                    rolePermissions: {
+                      include: {
+                        permission: true
+                      }
+                    }
+                  }
+                }
               }
             }
           }
@@ -192,7 +208,15 @@ export class AdminAuthService {
         adminCredential: true,
         userRoles: {
           include: {
-            role: true
+            role: {
+              include: {
+                rolePermissions: {
+                  include: {
+                    permission: true
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -345,7 +369,16 @@ export class AdminAuthService {
       clerkUserId: user.clerkUserId,
       email: user.email,
       roles: user.userRoles.map((userRole) => userRole.role.code as RoleCode),
+      permissions: uniquePermissions(
+        user.userRoles.flatMap((userRole) =>
+          userRole.role.rolePermissions.map((rolePermission) => rolePermission.permission.code)
+        )
+      ),
       authProvider: "ADMIN_SESSION"
     };
   }
+}
+
+function uniquePermissions(values: string[]) {
+  return Array.from(new Set(values));
 }

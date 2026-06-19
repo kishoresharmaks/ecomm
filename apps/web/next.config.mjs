@@ -10,6 +10,8 @@ const isWindows = process.platform === "win32";
 const defaultDevWebUrl = "http://192.168.1.3:3000";
 const localHostnames = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1"]);
 const allowedDevOrigins = resolveAllowedDevOrigins();
+const appEnvironment = process.env.NEXT_PUBLIC_APP_ENV ?? process.env.NODE_ENV;
+const sentryEnabled = appEnvironment !== "development" || process.env.NEXT_PUBLIC_ENABLE_SENTRY === "true";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -39,10 +41,34 @@ const nextConfig = {
     "@indihub/shared-types",
     "@indihub/ui",
     "@indihub/validators"
-  ]
+  ],
+  async headers() {
+    if (process.env.NODE_ENV === "development") {
+      return [];
+    }
+    return [
+      {
+        source: "/(.*)",
+        headers: [
+          {
+            key: "Content-Security-Policy",
+             value: [
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com https://www.google-analytics.com https://checkout.razorpay.com https://*.razorpay.com https://*.clerk.accounts.dev https://cdn.clerk.com",
+            "style-src 'self' 'unsafe-inline'",
+            "img-src 'self' https: data: blob:",
+            "font-src 'self' data: https://fonts.gstatic.com",
+            "connect-src 'self' https://www.google-analytics.com https://*.clerk.accounts.dev https://api.clerk.com https://clerk-telemetry.com",
+            "frame-src https://checkout.razorpay.com https://*.razorpay.com https://*.clerk.accounts.dev",
+            "worker-src 'self' blob:"
+          ].join("; ")
+          }
+        ]
+      }
+    ];
+  }
 };
 
-export default withSentryConfig(nextConfig, {
+const sentryNextConfig = sentryEnabled ? withSentryConfig(nextConfig, {
   org: process.env.SENTRY_ORG ?? "demo-n0b",
   project: process.env.SENTRY_PROJECT ?? "javascript-nextjs",
   authToken: process.env.SENTRY_AUTH_TOKEN,
@@ -50,7 +76,9 @@ export default withSentryConfig(nextConfig, {
   tunnelRoute: "/_1hi/relay",
   hideSourceMaps: true,
   silent: !process.env.CI,
-});
+}) : nextConfig;
+
+export default sentryNextConfig;
 
 function resolveAllowedDevOrigins() {
   const origins = [

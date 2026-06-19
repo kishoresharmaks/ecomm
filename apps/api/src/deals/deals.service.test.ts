@@ -8,6 +8,7 @@ import {
   ProductListingMode,
   ProductStatus,
   SellerStatus,
+  UserStatus,
 } from "@indihub/database";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DealsService } from "./deals.service";
@@ -50,6 +51,10 @@ function approvedSeller() {
   };
 }
 
+function makeExpoPush() {
+  return { notifyCustomer: vi.fn() };
+}
+
 function createTx() {
   return {
     deal: {
@@ -87,6 +92,7 @@ function createPrisma(tx = createTx()) {
         $transaction: vi.fn((callback) => callback(tx)),
         seller: {
           findUnique: vi.fn().mockResolvedValue(approvedSeller()),
+          findMany: vi.fn().mockResolvedValue([]),
         },
         category: {
           findFirst: vi.fn().mockResolvedValue({ id: "category_root", status: CategoryStatus.ACTIVE }),
@@ -97,8 +103,14 @@ function createPrisma(tx = createTx()) {
           findUnique: vi.fn(),
           findMany: vi.fn(),
         },
+        customer: {
+          findMany: vi.fn().mockResolvedValue([]),
+        },
         auditLog: {
           create: vi.fn(),
+        },
+        notificationLog: {
+          createMany: vi.fn(),
         },
       },
     },
@@ -113,7 +125,7 @@ describe("DealsService", () => {
   it("creates an admin deal using percent input as basis points", async () => {
     const { prisma } = createPrisma();
     prisma.client.deal.create.mockImplementation(async ({ data }) => makeDeal({ ...data, id: "deal_1" }));
-    const service = new DealsService(prisma as never);
+    const service = new DealsService(prisma as never, makeExpoPush() as never);
 
     await service.createDeal(actor as never, {
       title: "  Electronics Deal  ",
@@ -147,10 +159,57 @@ describe("DealsService", () => {
     const tx = createTx();
     tx.deal.findUnique.mockResolvedValue(makeDeal({ joinDeadline: past }));
     const { prisma } = createPrisma(tx);
-    const service = new DealsService(prisma as never);
+    const service = new DealsService(prisma as never, makeExpoPush() as never);
 
     await expect(service.acceptSellerDeal(sellerActor as never, "deal_1")).rejects.toBeInstanceOf(BadRequestException);
     expect(tx.dealParticipation.upsert).not.toHaveBeenCalled();
+  });
+
+  it("sends customer deal push only when a deal transitions to published", async () => {
+    const tx = createTx();
+    tx.deal.findUnique.mockResolvedValue(makeDeal({ status: DealStatus.DRAFT }));
+    tx.deal.update.mockResolvedValue(makeDeal({ status: DealStatus.PUBLISHED }));
+    const { prisma } = createPrisma(tx);
+    prisma.client.deal.findUnique.mockResolvedValue(
+      makeDeal({ category: { id: "category_root", name: "Electronics" } }),
+    );
+    prisma.client.customer.findMany.mockResolvedValue([{ id: "customer_1" }, { id: "customer_2" }]);
+    const expoPush = makeExpoPush();
+    const service = new DealsService(prisma as never, expoPush as never);
+
+    await service.publishDeal(actor as never, "deal_1");
+
+    expect(prisma.client.customer.findMany).toHaveBeenCalledWith({
+      where: {
+        status: UserStatus.ACTIVE,
+        dealAlertsEnabled: true,
+      },
+      select: { id: true },
+    });
+    expect(expoPush.notifyCustomer).toHaveBeenCalledTimes(2);
+    expect(expoPush.notifyCustomer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customerId: "customer_1",
+        type: "DEAL_PUBLISHED",
+        sourceType: "deal",
+        sourceId: "deal_1",
+        promotionalPreference: "dealAlertsEnabled",
+      }),
+    );
+  });
+
+  it("does not republish or resend deal push for an already published deal", async () => {
+    const tx = createTx();
+    tx.deal.findUnique.mockResolvedValue(makeDeal({ status: DealStatus.PUBLISHED }));
+    const { prisma } = createPrisma(tx);
+    const expoPush = makeExpoPush();
+    const service = new DealsService(prisma as never, expoPush as never);
+
+    await service.publishDeal(actor as never, "deal_1");
+
+    expect(tx.deal.update).not.toHaveBeenCalled();
+    expect(prisma.client.auditLog.create).not.toHaveBeenCalled();
+    expect(expoPush.notifyCustomer).not.toHaveBeenCalled();
   });
 
   it("lists published seller deals even when this seller has no matching products", async () => {
@@ -163,7 +222,7 @@ describe("DealsService", () => {
         findMany: productFindMany,
       },
     });
-    const service = new DealsService(prisma as never);
+    const service = new DealsService(prisma as never, makeExpoPush() as never);
 
     await expect(service.listSellerDeals(sellerActor as never)).resolves.toMatchObject({
       items: [
@@ -180,7 +239,7 @@ describe("DealsService", () => {
     tx.deal.findUnique.mockResolvedValue(makeDeal());
     tx.product.findMany.mockResolvedValue([]);
     const { prisma } = createPrisma(tx);
-    const service = new DealsService(prisma as never);
+    const service = new DealsService(prisma as never, makeExpoPush() as never);
 
     await expect(service.acceptSellerDeal(sellerActor as never, "deal_1")).rejects.toBeInstanceOf(BadRequestException);
     expect(tx.dealParticipation.upsert).not.toHaveBeenCalled();
@@ -192,7 +251,7 @@ describe("DealsService", () => {
     tx.dealParticipation.findUnique.mockResolvedValue(null);
     tx.dealParticipation.count.mockResolvedValue(1);
     const { prisma } = createPrisma(tx);
-    const service = new DealsService(prisma as never);
+    const service = new DealsService(prisma as never, makeExpoPush() as never);
 
     await expect(service.acceptSellerDeal(sellerActor as never, "deal_1")).rejects.toBeInstanceOf(ConflictException);
     expect(tx.dealParticipation.upsert).not.toHaveBeenCalled();
@@ -223,7 +282,7 @@ describe("DealsService", () => {
       listingMode: ProductListingMode.CART,
     });
     const { prisma } = createPrisma(tx);
-    const service = new DealsService(prisma as never);
+    const service = new DealsService(prisma as never, makeExpoPush() as never);
 
     await expect(
       service.enrollSellerProducts(sellerActor as never, "deal_1", { productIds: ["product_1"] }),
@@ -262,7 +321,7 @@ describe("DealsService", () => {
       deal: { title: "Existing Deal" },
     });
     const { prisma } = createPrisma(tx);
-    const service = new DealsService(prisma as never);
+    const service = new DealsService(prisma as never, makeExpoPush() as never);
 
     await expect(
       service.enrollSellerProducts(sellerActor as never, "deal_1", { productIds: ["product_1"] }),

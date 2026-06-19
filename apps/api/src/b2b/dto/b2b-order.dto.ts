@@ -1,7 +1,24 @@
-import { Type } from "class-transformer";
+import { Transform, Type } from "class-transformer";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { IsEnum, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from "class-validator";
+import {
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+} from "class-validator";
 import { B2BOrderStatus } from "@indihub/database";
+
+const legacyB2BOrderStatusMap = {
+  PENDING: B2BOrderStatus.PROFORMA_ISSUED,
+  PROCESSING: B2BOrderStatus.IN_FULFILMENT,
+  SHIPPED: B2BOrderStatus.IN_FULFILMENT,
+  DELIVERED: B2BOrderStatus.FULFILLED,
+} as const;
 
 export class B2BOrderQueryDto {
   @ApiPropertyOptional({ example: "PO-2026-001" })
@@ -12,6 +29,7 @@ export class B2BOrderQueryDto {
 
   @ApiPropertyOptional({ enum: B2BOrderStatus })
   @IsOptional()
+  @Transform(({ value }) => legacyB2BOrderStatusMap[value as keyof typeof legacyB2BOrderStatusMap] ?? value)
   @IsEnum(B2BOrderStatus)
   status?: B2BOrderStatus;
 
@@ -49,6 +67,27 @@ export class SubmitB2BPurchaseOrderDto {
   @IsString()
   @MaxLength(1000)
   note?: string;
+}
+
+export class CreateB2BPurchaseOrderUploadRequestDto {
+  @ApiProperty({ example: "approved-po-2026-00045.pdf" })
+  @IsString()
+  @MaxLength(180)
+  fileName!: string;
+
+  @ApiProperty({ example: "application/pdf" })
+  @IsString()
+  @Matches(/^(application\/pdf|image\/jpeg|image\/png|image\/webp)$/i, {
+    message: "contentType must be PDF, JPG, PNG, or WebP.",
+  })
+  contentType!: string;
+
+  @ApiProperty({ example: 524288 })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(10 * 1024 * 1024)
+  sizeBytes!: number;
 }
 
 export class UpdateB2BOrderStatusDto {

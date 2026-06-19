@@ -212,6 +212,18 @@ export class PayoutActionDto {
   note?: string;
 }
 
+export class SellerPayoutProfileVerificationDto {
+  @ApiProperty({ example: true })
+  @IsBoolean()
+  verified!: boolean;
+
+  @ApiPropertyOptional({ example: "Bank proof matched with seller account holder details." })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  note?: string;
+}
+
 export class SellerPayoutRequestDto {
   @ApiPropertyOptional({ example: "Please process this payout in the next manual cycle." })
   @IsOptional()

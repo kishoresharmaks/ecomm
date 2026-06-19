@@ -86,7 +86,13 @@ import {
 import { useLocationAreaStore, useLocationCatalog } from "@/components/locations/location-store";
 import { formatLocalAreaLabel } from "@/components/locations/location-utils";
 import { SellerImageUpload } from "@/components/seller/seller-ui";
-import { IndihubApiError, indihubFetch, type IndihubAuthHeaders } from "@/lib/api";
+import {
+  IndihubApiError,
+  indihubFetch,
+  userFacingApiErrorMessage,
+  type IndihubAuthHeaders,
+} from "@/lib/api";
+import { openB2BPurchaseOrderDocument } from "@/lib/b2b-po-documents";
 import { resolveImageSource } from "@/lib/image-url";
 import {
   type LocationArea,
@@ -1100,8 +1106,13 @@ type StorageReadiness = {
     s3AccessKeyPreview?: string | null;
   };
   privateStorage: {
+    provider?: "AUTO" | "S3" | "LOCAL";
+    activeProvider?: "S3" | "LOCAL";
     enabled: boolean;
     configured: boolean;
+    s3Configured?: boolean;
+    localConfigured?: boolean;
+    localRoot?: string | null;
     endpoint?: string | null;
     region?: string | null;
     bucket?: string | null;
@@ -1110,9 +1121,26 @@ type StorageReadiness = {
 };
 
 type PublicImageProvider = "IMAGEKIT" | "S3";
+type PrivateStorageProvider = "AUTO" | "S3" | "LOCAL";
 
 function publicImageProviderLabel(provider: PublicImageProvider | null | undefined) {
   return provider === "S3" ? "S3-compatible bucket" : "ImageKit";
+}
+
+function privateStorageReadinessDetail(storage: StorageReadiness["privateStorage"] | undefined) {
+  if (!storage) {
+    return "Private document storage";
+  }
+
+  if (storage.activeProvider === "LOCAL") {
+    return `Local fallback: ${storage.localRoot ?? "storage/private"}`;
+  }
+
+  if (storage.activeProvider === "S3") {
+    return storage.bucket ?? "S3-compatible private storage";
+  }
+
+  return storage.bucket ?? storage.localRoot ?? "Private document storage";
 }
 
 type StorageConfiguration = {
@@ -1139,8 +1167,13 @@ type StorageConfiguration = {
     };
   };
   privateStorage: {
+    provider?: PrivateStorageProvider;
+    activeProvider?: "S3" | "LOCAL";
     enabled: boolean;
     configured: boolean;
+    s3Configured?: boolean;
+    localConfigured?: boolean;
+    localRoot?: string;
     endpoint: string;
     region: string;
     bucket: string;
@@ -1163,7 +1196,9 @@ type StorageConfigurationFormState = {
   publicS3AccessKeyId: string;
   publicS3SecretAccessKey: string;
   clearPublicS3SecretAccessKey: boolean;
+  privateProvider: PrivateStorageProvider;
   privateEnabled: boolean;
+  privateLocalRoot: string;
   privateEndpoint: string;
   privateRegion: string;
   privateBucket: string;
@@ -4668,52 +4703,60 @@ export function AdminB2BEnquiriesPageClient() {
             header: "Actions",
             className: "min-w-[360px]",
             cell: (item) => (
-              <B2BAction
-                status={item.status}
-                onStatus={(status) => {
-                  if (["CLOSED", "CANCELLED"].includes(status)) {
+              <div className="space-y-3">
+                <Button asChild size="sm" variant="outline">
+                  <Link href={`/admin/b2b-enquiries/${encodeURIComponent(item.id)}`}>
+                    <Eye className="h-4 w-4" aria-hidden="true" />
+                    View detail
+                  </Link>
+                </Button>
+                <B2BAction
+                  status={item.status}
+                  onStatus={(status) => {
+                    if (["CLOSED", "CANCELLED"].includes(status)) {
+                      confirmation.requestConfirmation({
+                        title: `${humanize(status)} B2B enquiry?`,
+                        description: `${item.businessBuyer?.companyName ?? "This buyer enquiry"} will move to ${humanize(status)} and stop normal quotation progress.`,
+                        confirmLabel: humanize(status),
+                        onConfirm: () => updateStatus.mutate({ enquiryId: item.id, status }),
+                      });
+                      return;
+                    }
+                    updateStatus.mutate({ enquiryId: item.id, status });
+                  }}
+                  onApprove={() =>
                     confirmation.requestConfirmation({
-                      title: `${humanize(status)} B2B enquiry?`,
-                      description: `${item.businessBuyer?.companyName ?? "This buyer enquiry"} will move to ${humanize(status)} and stop normal quotation progress.`,
-                      confirmLabel: humanize(status),
-                      onConfirm: () => updateStatus.mutate({ enquiryId: item.id, status }),
-                    });
-                    return;
+                      title: "Approve confirmed B2B enquiry?",
+                      description: `${item.businessBuyer?.companyName ?? "This buyer"} has confirmed the quotation. Admin approval moves it to the finalisation step.`,
+                      confirmLabel: "Approve enquiry",
+                      tone: "warning",
+                      onConfirm: () => approve.mutate(item.id),
+                    })
                   }
-                  updateStatus.mutate({ enquiryId: item.id, status });
-                }}
-                onApprove={() =>
-                  confirmation.requestConfirmation({
-                    title: "Approve confirmed B2B enquiry?",
-                    description: `${item.businessBuyer?.companyName ?? "This buyer"} has confirmed the quotation. Admin approval moves it to the finalisation step.`,
-                    confirmLabel: "Approve enquiry",
-                    tone: "warning",
-                    onConfirm: () => approve.mutate(item.id),
-                  })
-                }
-                onFinalise={() =>
-                  confirmation.requestConfirmation({
-                    title: "Finalise B2B enquiry?",
-                    description: `${item.businessBuyer?.companyName ?? "This buyer"} will be marked finalised and a B2B order with proforma invoice will be issued for PO processing.`,
-                    confirmLabel: "Finalise enquiry",
-                    tone: "warning",
-                    onConfirm: () => finalise.mutate(item.id),
-                  })
-                }
-                onRespond={(responseMessage, quotedPricePaise) =>
-                  respond.mutate({
-                    enquiryId: item.id,
-                    responseMessage,
-                    ...(quotedPricePaise !== undefined ? { quotedPricePaise } : {}),
-                  })
-                }
-                disabled={
-                  updateStatus.isPending ||
-                  respond.isPending ||
-                  approve.isPending ||
-                  finalise.isPending
-                }
-              />
+                  onFinalise={() =>
+                    confirmation.requestConfirmation({
+                      title: "Finalise B2B enquiry?",
+                      description: `${item.businessBuyer?.companyName ?? "This buyer"} will be marked finalised and a B2B order with proforma invoice will be issued for PO processing.`,
+                      confirmLabel: "Finalise enquiry",
+                      tone: "warning",
+                      onConfirm: () => finalise.mutate(item.id),
+                    })
+                  }
+                  onRespond={(responseMessage, quotedPricePaise) =>
+                    respond.mutate({
+                      enquiryId: item.id,
+                      responseMessage,
+                      ...(quotedPricePaise !== undefined ? { quotedPricePaise } : {}),
+                    })
+                  }
+                  disabled={
+                    updateStatus.isPending ||
+                    respond.isPending ||
+                    approve.isPending ||
+                    finalise.isPending
+                  }
+                />
+              </div>
             ),
           },
         ]}
@@ -4722,10 +4765,248 @@ export function AdminB2BEnquiriesPageClient() {
   );
 }
 
+export function AdminB2BEnquiryDetailPageClient({ enquiryId }: { enquiryId: string }) {
+  const auth = useAdminAuth();
+  const queryClient = useQueryClient();
+  const confirmation = useAdminConfirmation();
+  const [notice, setNotice] = useState<string | null>(null);
+  const query = useQuery({
+    queryKey: ["admin-b2b-enquiry", auth.authHeaders, enquiryId],
+    enabled: Boolean(auth.authHeaders.bearerToken),
+    queryFn: () =>
+      adminRequest<B2BEnquiryRecord>(
+        `/api/admin/b2b-enquiries/${encodeURIComponent(enquiryId)}`,
+        auth.authHeaders,
+      ),
+  });
+  const invalidate = () => {
+    void queryClient.invalidateQueries({ queryKey: ["admin-b2b-enquiry", auth.authHeaders, enquiryId] });
+    void queryClient.invalidateQueries({ queryKey: ["admin-b2b-enquiries"] });
+    void queryClient.invalidateQueries({ queryKey: ["admin-b2b-orders"] });
+  };
+  const updateStatus = useMutation({
+    mutationFn: ({ status }: { status: string }) =>
+      adminRequest(`/api/admin/b2b-enquiries/${enquiryId}/status`, auth.authHeaders, {
+        method: "PATCH",
+        body: JSON.stringify({ status, note: "Updated from admin B2B enquiry detail." }),
+      }),
+    onSuccess: invalidate,
+    onError: (error) => setNotice(userFacingApiErrorMessage(error)),
+  });
+  const respond = useMutation({
+    mutationFn: ({
+      responseMessage,
+      quotedPricePaise,
+    }: {
+      responseMessage: string;
+      quotedPricePaise?: number | undefined;
+    }) =>
+      adminRequest(`/api/admin/b2b-enquiries/${enquiryId}/responses`, auth.authHeaders, {
+        method: "POST",
+        body: JSON.stringify({ responseMessage, quotedPricePaise }),
+      }),
+    onSuccess: invalidate,
+    onError: (error) => setNotice(userFacingApiErrorMessage(error)),
+  });
+  const approve = useMutation({
+    mutationFn: () =>
+      adminRequest(`/api/admin/b2b-enquiries/${enquiryId}/approve`, auth.authHeaders, {
+        method: "PATCH",
+      }),
+    onSuccess: invalidate,
+    onError: (error) => setNotice(userFacingApiErrorMessage(error)),
+  });
+  const finalise = useMutation({
+    mutationFn: () =>
+      adminRequest(`/api/admin/b2b-enquiries/${enquiryId}/finalise`, auth.authHeaders, {
+        method: "PATCH",
+      }),
+    onSuccess: invalidate,
+    onError: (error) => setNotice(userFacingApiErrorMessage(error)),
+  });
+  const enquiry = query.data;
+  const order = enquiry?.b2bOrder ?? null;
+  const disabled =
+    updateStatus.isPending || respond.isPending || approve.isPending || finalise.isPending;
+
+  async function openPurchaseOrder(orderNumber: string) {
+    setNotice(null);
+
+    try {
+      await openB2BPurchaseOrderDocument(
+        auth.authHeaders,
+        `/api/admin/b2b-orders/${encodeURIComponent(orderNumber)}/purchase-order/document-access`,
+        `/api/admin/b2b-orders/${encodeURIComponent(orderNumber)}/purchase-order/document`,
+      );
+    } catch (error) {
+      setNotice(userFacingApiErrorMessage(error));
+    }
+  }
+
+  return (
+    <div className="grid gap-5">
+      <div>
+        <Button asChild variant="ghost">
+          <Link href="/admin/b2b-enquiries">
+            <ArrowRight className="h-4 w-4 rotate-180" aria-hidden="true" />
+            Back to B2B enquiries
+          </Link>
+        </Button>
+      </div>
+      {confirmation.dialog}
+      {notice ? <StatusBadge tone="danger">{notice}</StatusBadge> : null}
+      {query.isLoading ? <AdminSkeletonRows /> : null}
+      {query.error ? (
+        <AdminStatusNotice
+          title="Unable to load B2B enquiry"
+          message={userFacingApiErrorMessage(query.error)}
+          tone="danger"
+        />
+      ) : null}
+      {enquiry ? (
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+          <div className="grid gap-5">
+            <Panel title="Enquiry summary">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-2xl font-black text-[#1F2933]">
+                      {enquiry.businessBuyer?.companyName ?? "Business buyer"}
+                    </h2>
+                    <StatusBadge tone={statusTone(enquiry.status)}>{humanize(enquiry.status)}</StatusBadge>
+                  </div>
+                  <p className="mt-2 text-sm font-semibold leading-6 text-[#667085]">
+                    {enquiry.product?.name ?? enquiry.seller?.storeName ?? "General procurement request"}
+                  </p>
+                </div>
+                <StatusBadge tone="info">Qty {enquiry.quantity}</StatusBadge>
+              </div>
+              <div className="mt-5 grid gap-3 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-4 md:grid-cols-2">
+                <AdminDetailInfo label="Buyer contact" value={enquiry.businessBuyer?.contactName} />
+                <AdminDetailInfo label="Phone" value={enquiry.businessBuyer?.contactPhone} />
+                <AdminDetailInfo label="Seller" value={enquiry.seller?.storeName} />
+                <AdminDetailInfo label="Created" value={formatDate(enquiry.createdAt)} />
+                <AdminDetailInfo label="Product" value={enquiry.product?.name} />
+                <AdminDetailInfo label="GST" value={enquiry.businessBuyer?.gstNumber} />
+              </div>
+              <div className="mt-4 rounded-lg border border-[#E5E7EB] bg-white p-4">
+                <p className="text-xs font-black uppercase tracking-wide text-[#667085]">Buyer message</p>
+                <p className="mt-2 whitespace-pre-wrap text-sm font-semibold leading-6 text-[#1F2933]">
+                  {enquiry.message ?? "No buyer message."}
+                </p>
+              </div>
+            </Panel>
+
+            <Panel title="Responses and quoted prices">
+              <div className="grid gap-3">
+                {(enquiry.responses ?? []).length ? (
+                  (enquiry.responses ?? []).map((response) => (
+                    <div key={response.id} className="rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm font-black text-[#1F2933]">
+                          {response.responder?.fullName ?? response.responder?.email ?? "Responder"}
+                        </p>
+                        <StatusBadge tone="info">
+                          {response.quotedPricePaise
+                            ? formatPaise(response.quotedPricePaise)
+                            : "No quote"}
+                        </StatusBadge>
+                      </div>
+                      <p className="mt-2 whitespace-pre-wrap text-sm font-semibold leading-6 text-[#667085]">
+                        {response.responseMessage}
+                      </p>
+                      <p className="mt-2 text-xs font-bold text-[#667085]">
+                        {formatDate(response.createdAt)}
+                      </p>
+                    </div>
+                  ))
+                ) : (
+                  <p className="rounded-lg border border-dashed border-[#D8E2EA] bg-[#F8FAFC] p-4 text-sm font-semibold text-[#667085]">
+                    No responses have been sent yet.
+                  </p>
+                )}
+              </div>
+            </Panel>
+          </div>
+
+          <aside className="grid h-fit gap-5">
+            <Panel title="Admin actions">
+              <B2BAction
+                status={enquiry.status}
+                onStatus={(status) => {
+                  if (["CLOSED", "CANCELLED"].includes(status)) {
+                    confirmation.requestConfirmation({
+                      title: `${humanize(status)} B2B enquiry?`,
+                      description: `${enquiry.businessBuyer?.companyName ?? "This buyer enquiry"} will move to ${humanize(status)} and stop normal quotation progress.`,
+                      confirmLabel: humanize(status),
+                      onConfirm: () => updateStatus.mutate({ status }),
+                    });
+                    return;
+                  }
+                  updateStatus.mutate({ status });
+                }}
+                onApprove={() =>
+                  confirmation.requestConfirmation({
+                    title: "Approve confirmed B2B enquiry?",
+                    description: "Admin approval moves this buyer-confirmed quotation to finalisation.",
+                    confirmLabel: "Approve enquiry",
+                    tone: "warning",
+                    onConfirm: () => approve.mutate(),
+                  })
+                }
+                onFinalise={() =>
+                  confirmation.requestConfirmation({
+                    title: "Finalise B2B enquiry?",
+                    description: "Finalising issues the proforma invoice and opens PO processing.",
+                    confirmLabel: "Finalise enquiry",
+                    tone: "warning",
+                    onConfirm: () => finalise.mutate(),
+                  })
+                }
+                onRespond={(responseMessage, quotedPricePaise) =>
+                  respond.mutate({
+                    responseMessage,
+                    ...(quotedPricePaise !== undefined ? { quotedPricePaise } : {}),
+                  })
+                }
+                disabled={disabled}
+              />
+            </Panel>
+
+            <Panel title="Linked B2B order">
+              {order ? (
+                <div className="grid gap-3">
+                  <AdminDetailInfo label="Order" value={order.orderNumber} />
+                  <AdminDetailInfo label="Proforma" value={order.proformaInvoiceNumber} />
+                  <AdminDetailInfo label="Order status" value={humanize(order.status)} />
+                  <AdminDetailInfo label="Subtotal" value={formatPaise(order.subtotalPaise ?? 0, order.currency ?? "INR")} />
+                  <AdminDetailInfo label="PO number" value={order.purchaseOrderNumber} />
+                  <AdminDetailInfo label="PO submitted" value={formatDate(order.purchaseOrderSubmittedAt)} />
+                  {order.purchaseOrderFileKey ? (
+                    <Button type="button" variant="outline" onClick={() => void openPurchaseOrder(order.orderNumber)}>
+                      <Eye className="h-4 w-4" aria-hidden="true" />
+                      View PO document
+                    </Button>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="text-sm font-semibold leading-6 text-[#667085]">
+                  No proforma order is linked yet. Finalise the approved enquiry to create one.
+                </p>
+              )}
+            </Panel>
+          </aside>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function AdminB2BOrdersPageClient() {
   const auth = useAdminAuth();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
+  const [documentNotice, setDocumentNotice] = useState<string | null>(null);
   const confirmation = useAdminConfirmation();
   const query = useAdminList<B2BOrderRecord>(
     "admin-b2b-orders",
@@ -4743,6 +5024,20 @@ export function AdminB2BOrdersPageClient() {
   });
   const items = listItems(query.data);
 
+  async function openPurchaseOrder(orderNumber: string) {
+    setDocumentNotice(null);
+
+    try {
+      await openB2BPurchaseOrderDocument(
+        auth.authHeaders,
+        `/api/admin/b2b-orders/${encodeURIComponent(orderNumber)}/purchase-order/document-access`,
+        `/api/admin/b2b-orders/${encodeURIComponent(orderNumber)}/purchase-order/document`,
+      );
+    } catch (error) {
+      setDocumentNotice(userFacingApiErrorMessage(error));
+    }
+  }
+
   return (
     <AdminResourceChrome
       title="B2B orders"
@@ -4754,6 +5049,11 @@ export function AdminB2BOrdersPageClient() {
       total={totalItems(query.data, items.length)}
     >
       {confirmation.dialog}
+      {documentNotice ? (
+        <div className="mb-4">
+          <StatusBadge tone="danger">{documentNotice}</StatusBadge>
+        </div>
+      ) : null}
       <AdminTable
         items={items}
         isLoading={query.isLoading}
@@ -4801,19 +5101,32 @@ export function AdminB2BOrdersPageClient() {
             header: "Actions",
             className: "min-w-[300px]",
             cell: (item) => (
-              <B2BOrderAction
-                status={item.status}
-                disabled={updateStatus.isPending}
-                onStatus={(status) => {
-                  confirmation.requestConfirmation({
-                    title: `Move B2B order to ${humanize(status)}?`,
-                    description: `${item.orderNumber} will move from ${humanize(item.status)} to ${humanize(status)}.`,
-                    confirmLabel: humanize(status),
-                    ...(status === "CANCELLED" ? { tone: "warning" as const } : {}),
-                    onConfirm: () => updateStatus.mutate({ orderNumber: item.orderNumber, status }),
-                  });
-                }}
-              />
+              <div className="flex flex-wrap gap-2">
+                {item.purchaseOrderFileKey ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void openPurchaseOrder(item.orderNumber)}
+                  >
+                    <Eye className="h-4 w-4" aria-hidden="true" />
+                    View PO
+                  </Button>
+                ) : null}
+                <B2BOrderAction
+                  status={item.status}
+                  disabled={updateStatus.isPending}
+                  onStatus={(status) => {
+                    confirmation.requestConfirmation({
+                      title: `Move B2B order to ${humanize(status)}?`,
+                      description: `${item.orderNumber} will move from ${humanize(item.status)} to ${humanize(status)}.`,
+                      confirmLabel: humanize(status),
+                      ...(status === "CANCELLED" ? { tone: "warning" as const } : {}),
+                      onConfirm: () => updateStatus.mutate({ orderNumber: item.orderNumber, status }),
+                    });
+                  }}
+                />
+              </div>
             ),
           },
         ]}
@@ -5641,7 +5954,7 @@ export function AdminSettingsPageClient() {
                   <ReadinessCard
                     title="Private document storage"
                     ready={storageReadiness?.privateStorage.configured ?? false}
-                    detail={storageReadiness?.privateStorage.bucket ?? "S3-compatible storage"}
+                    detail={privateStorageReadinessDetail(storageReadiness?.privateStorage)}
                   />
                 </div>
                 {storageConfigQuery.isLoading ? (
@@ -6724,7 +7037,7 @@ export function AdminStoragePageClient() {
           <ReadinessCard
             title="Private document storage"
             ready={readiness?.privateStorage.configured ?? false}
-            detail={readiness?.privateStorage.bucket ?? "S3-compatible private storage"}
+            detail={privateStorageReadinessDetail(readiness?.privateStorage)}
           />
         </div>
       </div>
@@ -9012,6 +9325,35 @@ function Panel({ title, children }: { title?: string; children: ReactNode }) {
       {title ? <h2 className="mb-4 text-lg font-black text-[#1F2933]">{title}</h2> : null}
       {children}
     </AdminPanel>
+  );
+}
+
+function AdminSkeletonRows() {
+  return (
+    <AdminPanel>
+      <div className="grid gap-3">
+        {[0, 1, 2].map((item) => (
+          <div key={item} className="h-12 animate-pulse rounded-md bg-[#EEF2F6]" />
+        ))}
+      </div>
+    </AdminPanel>
+  );
+}
+
+function AdminDetailInfo({
+  label,
+  value,
+}: {
+  label: string;
+  value?: ReactNode | null | undefined;
+}) {
+  return (
+    <div>
+      <p className="text-xs font-black uppercase tracking-wide text-[#667085]">{label}</p>
+      <p className="mt-1 break-words text-sm font-black text-[#1F2933]">
+        {value ?? "Not available"}
+      </p>
+    </div>
   );
 }
 
@@ -12914,13 +13256,21 @@ function StorageConfigurationForm({
   );
   const publicUploadProviderReady =
     form.publicImageProvider === "S3" ? publicS3Complete : imageKitComplete;
-  const privateComplete = Boolean(
-    form.privateEnabled &&
+  const privateS3Complete = Boolean(
     form.privateEndpoint.trim() &&
+    form.privateRegion.trim() &&
     form.privateBucket.trim() &&
     form.privateAccessKeyId.trim() &&
     privateSecretReady,
   );
+  const privateLocalComplete = Boolean(form.privateLocalRoot.trim());
+  const privateComplete =
+    !form.privateEnabled ||
+    (form.privateProvider === "LOCAL"
+      ? privateLocalComplete
+      : form.privateProvider === "S3"
+        ? privateS3Complete
+        : privateS3Complete || privateLocalComplete);
 
   return (
     <div className="grid gap-5 xl:grid-cols-2">
@@ -13068,20 +13418,47 @@ function StorageConfigurationForm({
             description={
               config.privateStorage.configured
                 ? "Private document settings are ready."
-                : "Add endpoint, bucket, access key, and secret before enabling document storage."
+                : "Use S3 for production private documents or local fallback for simple VPS mode."
             }
             checked={form.privateEnabled}
             onChange={(privateEnabled) => setForm((current) => ({ ...current, privateEnabled }))}
             disabled={disabled}
           />
+          <AdminListbox
+            label="Private storage provider"
+            value={form.privateProvider}
+            options={[
+              { value: "AUTO", label: "Auto: S3 when ready, else local" },
+              { value: "S3", label: "S3-compatible private bucket" },
+              { value: "LOCAL", label: "Local server storage fallback" },
+            ]}
+            onChange={(privateProvider) =>
+              setForm((current) => ({
+                ...current,
+                privateProvider: privateProvider as PrivateStorageProvider,
+              }))
+            }
+            buttonClassName="bg-white"
+          />
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge tone={config.privateStorage.configured ? "success" : "danger"}>
               {config.privateStorage.configured ? "Ready" : "Needs setup"}
+            </StatusBadge>
+            <StatusBadge tone="info">
+              {config.privateStorage.activeProvider ?? form.privateProvider}
             </StatusBadge>
             {config.privateStorage.accessKeyPreview ? (
               <StatusBadge tone="info">{config.privateStorage.accessKeyPreview}</StatusBadge>
             ) : null}
           </div>
+          <PaymentInput
+            label="Local private upload root"
+            value={form.privateLocalRoot}
+            placeholder="storage/private"
+            onChange={(privateLocalRoot) =>
+              setForm((current) => ({ ...current, privateLocalRoot }))
+            }
+          />
           <div className="grid gap-3 md:grid-cols-2">
             <PaymentInput
               label="Endpoint"
@@ -13124,10 +13501,15 @@ function StorageConfigurationForm({
               }
             />
           </div>
-          {form.privateEnabled && !privateComplete ? (
+          {form.privateEnabled && form.privateProvider !== "LOCAL" && !privateS3Complete ? (
             <p className="text-xs font-bold text-[#D64545]">
-              Endpoint, bucket, access key ID, and secret access key are required when private
-              storage is enabled.
+              Endpoint, region, bucket, access key ID, and secret access key are required for S3
+              private storage.
+            </p>
+          ) : null}
+          {form.privateEnabled && form.privateProvider !== "S3" && !privateLocalComplete ? (
+            <p className="text-xs font-bold text-[#D64545]">
+              Local private upload root is required for local fallback.
             </p>
           ) : null}
         </div>
@@ -13137,9 +13519,7 @@ function StorageConfigurationForm({
         <Button
           type="button"
           onClick={() => onSubmit(storageConfigurationPayload(form))}
-          disabled={
-            disabled || !publicUploadProviderReady || (form.privateEnabled && !privateComplete)
-          }
+          disabled={disabled || !publicUploadProviderReady || !privateComplete}
         >
           <KeyRound size={16} /> Save storage configuration
         </Button>
@@ -13163,7 +13543,9 @@ function storageConfigurationFormState(
     publicS3AccessKeyId: config.publicImages.s3.accessKeyId ?? "",
     publicS3SecretAccessKey: "",
     clearPublicS3SecretAccessKey: false,
+    privateProvider: config.privateStorage.provider ?? "AUTO",
     privateEnabled: config.privateStorage.enabled,
+    privateLocalRoot: config.privateStorage.localRoot ?? "storage/private",
     privateEndpoint: config.privateStorage.endpoint ?? "",
     privateRegion: config.privateStorage.region ?? "",
     privateBucket: config.privateStorage.bucket ?? "",
@@ -13195,7 +13577,9 @@ function storageConfigurationPayload(form: StorageConfigurationFormState) {
       },
     },
     privateStorage: {
+      provider: form.privateProvider,
       enabled: form.privateEnabled,
+      localRoot: form.privateLocalRoot.trim() || "storage/private",
       endpoint: form.privateEndpoint.trim(),
       region: form.privateRegion.trim(),
       bucket: form.privateBucket.trim(),

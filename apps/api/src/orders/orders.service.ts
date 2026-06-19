@@ -31,6 +31,7 @@ import {
   Prisma,
   ProductListingMode,
   ProductStatus,
+  PushNotificationType,
   RoleCode,
   SellerStatus,
   SellerType,
@@ -68,6 +69,7 @@ import { LocationsService } from "../locations/locations.service";
 import { RouteDistanceService, type RouteDistanceResult } from "../maps/route-distance.service";
 import { MarketService } from "../market/market.service";
 import { EMAIL_TRIGGER_EVENTS } from "../notifications/email-trigger-catalog";
+import { ExpoPushService } from "../notifications/expo-push.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PaymentsService } from "../payments/payments.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -463,6 +465,7 @@ export class OrdersService {
     @Inject(RouteDistanceService) private readonly routeDistance: RouteDistanceService,
     @Inject(MarketService) private readonly marketService: MarketService,
     @Inject(NotificationsService) private readonly notifications: NotificationsService,
+    @Inject(ExpoPushService) private readonly expoPush: ExpoPushService,
     @Inject(PaymentsService) private readonly paymentsService: PaymentsService,
   ) {}
 
@@ -6662,12 +6665,12 @@ export class OrdersService {
 
   private async notifyOrderPlaced(order: Awaited<ReturnType<OrdersService["getAdminOrder"]>>) {
     const customerEmail = order.customer.user.email;
-    const sellerEmails = [
-      ...new Set(
+    const sellerRecipients = [
+      ...new Map(
         order.sellerSplits
-          .map((split) => split.seller.user.email)
-          .filter((email): email is string => Boolean(email)),
-      ),
+          .filter((split) => split.seller.user.email)
+          .map((split) => [split.sellerId, split]),
+      ).values(),
     ];
 
     await Promise.all([
@@ -6681,14 +6684,45 @@ export class OrdersService {
           totalPaise: order.totalPaise,
         },
       }),
-      ...sellerEmails.map((recipient) =>
+      this.expoPush.notifyCustomer({
+        customerId: order.customerId,
+        type: PushNotificationType.ORDER_PLACED,
+        templateCode: "CUSTOMER_ORDER_PLACED_PUSH",
+        eventCode: "customer.order.placed",
+        title: "Order placed",
+        body: `Order ${order.orderNumber} has been placed successfully.`,
+        href: `/orders/${order.orderNumber}`,
+        sourceType: "order",
+        sourceId: order.id,
+        data: {
+          type: "order",
+          orderNumber: order.orderNumber,
+          href: `/orders/${order.orderNumber}`,
+        },
+      }),
+      ...sellerRecipients.map((split) =>
         this.notifications.notifyEvent({
           eventCode: EMAIL_TRIGGER_EVENTS.ORDER_RECEIVED_SELLER,
           recipientType: EmailRecipientType.SELLER,
-          recipient,
+          recipient: split.seller.user.email,
+          userId: split.seller.userId,
           variables: {
             orderNumber: order.orderNumber,
-            totalPaise: order.totalPaise,
+            totalPaise: split.sellerSubtotalPaise,
+          },
+        }),
+      ),
+      ...sellerRecipients.map((split) =>
+        this.expoPush.notifySeller({
+          sellerId: split.sellerId,
+          templateCode: "SELLER_ORDER_RECEIVED_PUSH",
+          eventCode: "seller.order.received",
+          title: "New order received",
+          body: `Order ${order.orderNumber} is ready for seller action.`,
+          data: {
+            type: "seller_order",
+            orderNumber: order.orderNumber,
+            href: `/orders/${order.orderNumber}`,
           },
         }),
       ),
@@ -6813,17 +6847,39 @@ export class OrdersService {
       return;
     }
 
-    await this.notifications.notifyEvent({
-      eventCode,
-      recipientType: EmailRecipientType.CUSTOMER,
-      recipient: order.customer.user.email,
-      userId: order.customer.userId,
-      variables: {
-        orderNumber: order.orderNumber,
-        orderStatus: status,
-        note: note ?? "",
-      },
-    });
+    await Promise.all([
+      this.notifications.notifyEvent({
+        eventCode,
+        recipientType: EmailRecipientType.CUSTOMER,
+        recipient: order.customer.user.email,
+        userId: order.customer.userId,
+        variables: {
+          orderNumber: order.orderNumber,
+          orderStatus: status,
+          note: note ?? "",
+        },
+      }),
+      ...(status === OrderStatus.DELIVERED
+        ? [
+            this.expoPush.notifyCustomer({
+              customerId: order.customerId,
+              type: PushNotificationType.ORDER_DELIVERED,
+              templateCode: "CUSTOMER_ORDER_DELIVERED_PUSH",
+              eventCode: "customer.order.delivered",
+              title: "Order delivered",
+              body: `Order ${order.orderNumber} has been delivered.`,
+              href: `/orders/${order.orderNumber}`,
+              sourceType: "order",
+              sourceId: order.id,
+              data: {
+                type: "order",
+                orderNumber: order.orderNumber,
+                href: `/orders/${order.orderNumber}`,
+              },
+            }),
+          ]
+        : []),
+    ]);
   }
 
   private async notifyCustomerDeliveryStatus(
@@ -6837,17 +6893,39 @@ export class OrdersService {
       return;
     }
 
-    await this.notifications.notifyEvent({
-      eventCode,
-      recipientType: EmailRecipientType.CUSTOMER,
-      recipient: order.customer.user.email,
-      userId: order.customer.userId,
-      variables: {
-        orderNumber: order.orderNumber,
-        deliveryStatus: status,
-        note: note ?? "",
-      },
-    });
+    await Promise.all([
+      this.notifications.notifyEvent({
+        eventCode,
+        recipientType: EmailRecipientType.CUSTOMER,
+        recipient: order.customer.user.email,
+        userId: order.customer.userId,
+        variables: {
+          orderNumber: order.orderNumber,
+          deliveryStatus: status,
+          note: note ?? "",
+        },
+      }),
+      ...(status === DeliveryStatus.DELIVERED
+        ? [
+            this.expoPush.notifyCustomer({
+              customerId: order.customerId,
+              type: PushNotificationType.ORDER_DELIVERED,
+              templateCode: "CUSTOMER_ORDER_DELIVERED_PUSH",
+              eventCode: "customer.order.delivered",
+              title: "Order delivered",
+              body: `Order ${order.orderNumber} has been delivered.`,
+              href: `/orders/${order.orderNumber}`,
+              sourceType: "order",
+              sourceId: order.id,
+              data: {
+                type: "order",
+                orderNumber: order.orderNumber,
+                href: `/orders/${order.orderNumber}`,
+              },
+            }),
+          ]
+        : []),
+    ]);
   }
 
   private async notifyCustomerPaymentStatus(

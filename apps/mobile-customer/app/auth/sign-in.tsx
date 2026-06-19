@@ -15,6 +15,7 @@ import {
 } from "react-native";
 import { mobileAuthErrorMessage, useMobileCustomerAuth } from "../../src/auth/mobile-auth-context";
 import { Screen } from "../../src/components/screen";
+import { useCustomerPushNotificationStatus } from "../../src/features/notifications/use-customer-push-notifications";
 import { colors } from "../../src/theme";
 
 type AuthMode = "sign-in" | "sign-up" | "verify-email";
@@ -26,6 +27,7 @@ export default function SignInScreen() {
   const router = useRouter();
   const customerAuth = useMobileCustomerAuth();
   const { isSignedIn, signOut } = useAuth();
+  const pushStatus = useCustomerPushNotificationStatus();
   const signIn = useSignIn();
   const signUp = useSignUp();
   const { startSSOFlow } = useSSO();
@@ -168,6 +170,7 @@ export default function SignInScreen() {
     setError(null);
     setSubmitAction("sign-out");
     try {
+      await pushStatus.revoke();
       await signOut();
       setShouldAutoContinue(false);
       setSyncRetryCount(0);

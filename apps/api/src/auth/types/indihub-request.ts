@@ -5,6 +5,7 @@ export type RequestUser = {
   clerkUserId: string | null;
   email: string;
   roles: RoleCode[];
+  permissions?: string[];
   authProvider?: "ADMIN_SESSION" | "CLERK" | "DEV";
 };
 

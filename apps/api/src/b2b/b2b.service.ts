@@ -28,12 +28,19 @@ import {
 } from "../common/pagination";
 import { LocationsService } from "../locations/locations.service";
 import { EMAIL_TRIGGER_EVENTS } from "../notifications/email-trigger-catalog";
+import { ExpoPushService } from "../notifications/expo-push.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { SellerSubscriptionsService } from "../sellers/seller-subscriptions.service";
+import {
+  StorageService,
+  type B2BPurchaseOrderDocumentAccess,
+} from "../storage/storage.service";
+import { safeStorageFolderSegment } from "../storage/storage-image";
 import { CreateB2BEnquiryDto } from "./dto/b2b-enquiry.dto";
 import {
   B2BOrderQueryDto,
+  CreateB2BPurchaseOrderUploadRequestDto,
   SubmitB2BPurchaseOrderDto,
   UpdateB2BOrderStatusDto,
 } from "./dto/b2b-order.dto";
@@ -191,6 +198,14 @@ const terminalB2BOrderStatuses = new Set<B2BOrderStatus>([
   B2BOrderStatus.FULFILLED,
   B2BOrderStatus.CANCELLED,
 ]);
+const b2bPurchaseOrderScanStatus = "NOT_SCANNED" as const;
+
+export type UploadedB2BPurchaseOrderFile = {
+  originalname: string;
+  mimetype: string;
+  size: number;
+  buffer: Buffer;
+};
 
 @Injectable()
 export class B2BService {
@@ -198,6 +213,8 @@ export class B2BService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(LocationsService) private readonly locationsService: LocationsService,
     @Inject(NotificationsService) private readonly notifications: NotificationsService,
+    @Inject(ExpoPushService) private readonly expoPush: ExpoPushService,
+    @Inject(StorageService) private readonly storageService: StorageService,
     @Optional()
     @Inject(SellerSubscriptionsService)
     private readonly sellerSubscriptions?: SellerSubscriptionsService,
@@ -470,6 +487,20 @@ export class B2BService {
             },
           })
         : Promise.resolve(null),
+      enquiry.seller
+        ? this.expoPush.notifySeller({
+            sellerId: enquiry.seller.id,
+            templateCode: "SELLER_B2B_ENQUIRY_PUSH",
+            eventCode: "seller.b2b.enquiry.received",
+            title: "New B2B enquiry",
+            body: `${enquiry.businessBuyer.companyName} requested ${enquiry.quantity} units.`,
+            data: {
+              type: "seller_b2b_enquiry",
+              enquiryId: enquiry.id,
+              href: `/b2b-enquiries/${enquiry.id}`,
+            },
+          })
+        : Promise.resolve(null),
       this.notifications.notifyAdminEvent(EMAIL_TRIGGER_EVENTS.B2B_ENQUIRY_SUBMITTED_ADMIN, {
         companyName: enquiry.businessBuyer.companyName,
         enquiryId: enquiry.id,
@@ -611,12 +642,68 @@ export class B2BService {
     });
   }
 
+  async createMyPurchaseOrderUploadRequest(
+    actor: RequestUser,
+    orderNumber: string,
+    dto: CreateB2BPurchaseOrderUploadRequestDto,
+  ) {
+    const order = await this.getMyB2BOrder(actor, orderNumber);
+    this.assertBuyerCanEditPurchaseOrder(order.status);
+
+    return this.storageService.createB2BPurchaseOrderUploadRequest(
+      {
+        businessBuyerId: order.businessBuyerId,
+        orderNumber: order.orderNumber,
+      },
+      {
+        fileName: dto.fileName,
+        contentType: dto.contentType,
+        sizeBytes: dto.sizeBytes,
+      },
+    );
+  }
+
+  async uploadMyPurchaseOrderFile(
+    actor: RequestUser,
+    orderNumber: string,
+    file: UploadedB2BPurchaseOrderFile | undefined,
+  ) {
+    const order = await this.getMyB2BOrder(actor, orderNumber);
+    this.assertBuyerCanEditPurchaseOrder(order.status);
+    const upload = await this.storageService.saveLocalB2BPurchaseOrder(
+      {
+        businessBuyerId: order.businessBuyerId,
+        orderNumber: order.orderNumber,
+      },
+      file,
+    );
+
+    return {
+      ...upload,
+      scanStatus: b2bPurchaseOrderScanStatus,
+      orphanCleanupAfterHours: 24,
+    };
+  }
+
+  async getMyPurchaseOrderDocumentAccess(
+    actor: RequestUser,
+    orderNumber: string,
+  ): Promise<B2BPurchaseOrderDocumentAccess> {
+    const order = await this.getMyB2BOrder(actor, orderNumber);
+    return this.purchaseOrderDocumentAccessForOrder(order.purchaseOrderFileKey);
+  }
+
   async submitPurchaseOrder(actor: RequestUser, orderNumber: string, dto: SubmitB2BPurchaseOrderDto) {
     const existing = await this.getMyB2BOrder(actor, orderNumber);
 
-    if (!buyerEditableB2BOrderStatuses.has(existing.status)) {
-      throw new BadRequestException("Purchase order can only be submitted before admin acceptance.");
+    this.assertBuyerCanEditPurchaseOrder(existing.status);
+    const purchaseOrderFileKey = dto.purchaseOrderFileKey?.trim() || existing.purchaseOrderFileKey;
+    if (!purchaseOrderFileKey) {
+      throw new BadRequestException("Upload a purchase order file before submitting PO details.");
     }
+    this.assertB2BPurchaseOrderFileKeyForOrder(existing, purchaseOrderFileKey);
+    const previousPurchaseOrderFileKey = existing.purchaseOrderFileKey ?? null;
+    const note = dto.note?.trim() || null;
 
     const submitted = await this.prisma.client.$transaction(async (tx) => {
       const updated = await tx.b2BOrder.update({
@@ -624,8 +711,8 @@ export class B2BService {
         data: {
           status: B2BOrderStatus.PO_SUBMITTED,
           purchaseOrderNumber: dto.purchaseOrderNumber.trim(),
-          purchaseOrderFileKey: dto.purchaseOrderFileKey?.trim() || null,
-          purchaseOrderNote: dto.note?.trim() || null,
+          purchaseOrderFileKey,
+          purchaseOrderNote: note,
           purchaseOrderSubmittedAt: new Date(),
         },
       });
@@ -635,10 +722,12 @@ export class B2BService {
           b2bOrderId: updated.id,
           actorUserId: actor.id,
           status: updated.status,
-          note: dto.note?.trim() || "Business buyer submitted purchase order details.",
+          note: note || "Business buyer submitted purchase order details.",
           payload: {
             purchaseOrderNumber: updated.purchaseOrderNumber,
+            previousPurchaseOrderFileKey,
             purchaseOrderFileKey: updated.purchaseOrderFileKey,
+            scanStatus: b2bPurchaseOrderScanStatus,
           },
         },
       });
@@ -654,7 +743,9 @@ export class B2BService {
             status: updated.status,
             orderNumber: updated.orderNumber,
             purchaseOrderNumber: updated.purchaseOrderNumber,
+            previousPurchaseOrderFileKey,
             purchaseOrderFileKey: updated.purchaseOrderFileKey,
+            scanStatus: b2bPurchaseOrderScanStatus,
           },
         },
       });
@@ -678,12 +769,27 @@ export class B2BService {
     });
   }
 
+  async getSellerPurchaseOrderDocumentAccess(
+    actor: RequestUser,
+    orderNumber: string,
+  ): Promise<B2BPurchaseOrderDocumentAccess> {
+    const order = await this.getSellerB2BOrder(actor, orderNumber);
+    return this.purchaseOrderDocumentAccessForOrder(order.purchaseOrderFileKey);
+  }
+
   async listAdminB2BOrders(query: B2BOrderQueryDto) {
     return this.listB2BOrders(this.b2bOrderWhere(query), query);
   }
 
   async getAdminB2BOrder(orderNumber: string) {
     return this.getB2BOrderOrThrow({ orderNumber: this.normalizeB2BOrderNumber(orderNumber) });
+  }
+
+  async getAdminPurchaseOrderDocumentAccess(
+    orderNumber: string,
+  ): Promise<B2BPurchaseOrderDocumentAccess> {
+    const order = await this.getAdminB2BOrder(orderNumber);
+    return this.purchaseOrderDocumentAccessForOrder(order.purchaseOrderFileKey);
   }
 
   async updateB2BOrderStatusAsAdmin(actor: RequestUser, orderNumber: string, dto: UpdateB2BOrderStatusDto) {
@@ -893,9 +999,10 @@ export class B2BService {
 
   private b2bOrderWhere(query: B2BOrderQueryDto): Prisma.B2BOrderWhereInput {
     const search = query.search?.trim();
+    const status = this.normalizeB2BOrderStatus(query.status);
 
     return {
-      ...(query.status ? { status: query.status } : {}),
+      ...(status ? { status } : {}),
       ...(search
         ? {
             OR: [
@@ -911,11 +1018,25 @@ export class B2BService {
     };
   }
 
+  private normalizeB2BOrderStatus(status?: B2BOrderStatus | "PENDING" | "PROCESSING" | "SHIPPED" | "DELIVERED") {
+    if (status === "PENDING") {
+      return B2BOrderStatus.PROFORMA_ISSUED;
+    }
+    if (status === "PROCESSING" || status === "SHIPPED") {
+      return B2BOrderStatus.IN_FULFILMENT;
+    }
+    if (status === "DELIVERED") {
+      return B2BOrderStatus.FULFILLED;
+    }
+    return status;
+  }
+
   private enquiryWhere(query: B2BEnquiryQueryDto): Prisma.B2BEnquiryWhereInput {
     const search = query.search?.trim();
+    const status = this.normalizeEnquiryStatus(query.status);
 
     return {
-      ...(query.status ? { status: query.status } : {}),
+      ...(status ? { status } : {}),
       ...(query.productId ? { productId: query.productId } : {}),
       ...(query.sellerId ? { sellerId: query.sellerId } : {}),
       ...(search
@@ -929,6 +1050,10 @@ export class B2BService {
           }
         : {}),
     };
+  }
+
+  private normalizeEnquiryStatus(status?: B2BEnquiryStatus | "PENDING") {
+    return status === "PENDING" ? B2BEnquiryStatus.SUBMITTED : status;
   }
 
   private async createResponse(
@@ -1287,6 +1412,45 @@ export class B2BService {
     return orderNumber.trim().toUpperCase();
   }
 
+  private assertBuyerCanEditPurchaseOrder(status: B2BOrderStatus) {
+    if (!buyerEditableB2BOrderStatuses.has(status)) {
+      throw new BadRequestException(
+        "Purchase order can only be uploaded or replaced before admin acceptance.",
+      );
+    }
+  }
+
+  private async purchaseOrderDocumentAccessForOrder(
+    purchaseOrderFileKey: string | null | undefined,
+  ) {
+    if (!purchaseOrderFileKey) {
+      throw new NotFoundException("Purchase order file is not attached yet.");
+    }
+
+    return this.storageService.b2bPurchaseOrderDocumentAccess(purchaseOrderFileKey);
+  }
+
+  private assertB2BPurchaseOrderFileKeyForOrder(
+    order: {
+      businessBuyerId: string;
+      orderNumber: string;
+    },
+    fileKey: string,
+  ) {
+    const expectedPrefix = `indihub/b2b/purchase-orders/${safeStorageFolderSegment(
+      order.businessBuyerId,
+    )}/${safeStorageFolderSegment(order.orderNumber)}/`;
+    const normalized = fileKey.trim().replaceAll("\\", "/").replace(/^\/+/, "");
+
+    if (
+      !normalized.startsWith(expectedPrefix) ||
+      normalized.includes("..") ||
+      normalized.includes("://")
+    ) {
+      throw new BadRequestException("Purchase order file key does not belong to this B2B order.");
+    }
+  }
+
   private async getBusinessBuyerForUserOrThrow(userId: string) {
     const businessBuyer = await this.prisma.client.businessBuyer.findUnique({
       where: { userId },
@@ -1392,6 +1556,7 @@ export class B2BService {
     status: B2BOrderStatus;
     proformaInvoiceNumber: string;
     purchaseOrderNumber?: string | null;
+    purchaseOrderFileKey?: string | null;
     quantity: number;
     unitPricePaise?: number | null;
     subtotalPaise?: number | null;
@@ -1407,6 +1572,7 @@ export class B2BService {
       status: order.status,
       proformaInvoiceNumber: order.proformaInvoiceNumber,
       purchaseOrderNumber: order.purchaseOrderNumber ?? null,
+      purchaseOrderFileKey: order.purchaseOrderFileKey ?? null,
       quantity: order.quantity,
       unitPricePaise: order.unitPricePaise ?? null,
       subtotalPaise: order.subtotalPaise ?? null,

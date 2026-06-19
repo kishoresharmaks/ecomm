@@ -15,12 +15,15 @@ import {
   NotificationChannel,
   NotificationStatus,
   Prisma,
+  PushNotificationType,
   ProductListingMode,
   ProductStatus,
   SellerStatus,
+  UserStatus,
 } from "@indihub/database";
 import type { RequestUser } from "../auth/types/indihub-request";
 import { paginationFromQuery } from "../common/pagination";
+import { ExpoPushService } from "../notifications/expo-push.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateDealDto, DealQueryDto, EnrollDealProductsDto, UpdateDealDto } from "./dto/deal.dto";
 
@@ -68,7 +71,10 @@ const sellerDealInclude = {
 
 @Injectable()
 export class DealsService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(ExpoPushService) private readonly expoPush: ExpoPushService,
+  ) {}
 
   async createDeal(actor: RequestUser, dto: CreateDealDto) {
     const data = await this.dealData(dto, this.prisma.client);
@@ -210,10 +216,13 @@ export class DealsService {
 
   async publishDeal(actor: RequestUser, dealId: string) {
     const now = new Date();
-    const deal = await this.prisma.client.$transaction(async (tx) => {
+    const result = await this.prisma.client.$transaction(async (tx) => {
       const existing = await this.getDealOrThrow(dealId, tx);
       if (existing.status === DealStatus.CANCELLED) {
         throw new BadRequestException("Cancelled deals cannot be published.");
+      }
+      if (existing.status === DealStatus.PUBLISHED) {
+        return { deal: existing, transitionedToPublished: false };
       }
       if (existing.endsAt <= now) {
         throw new BadRequestException("Deal end date must be in the future before publishing.");
@@ -222,16 +231,23 @@ export class DealsService {
         throw new BadRequestException("Deal dates are invalid.");
       }
 
-      return tx.deal.update({
-        where: { id: dealId },
-        data: {
-          status: DealStatus.PUBLISHED,
-          publishedAt: now,
-          updatedById: actor.id,
-        },
-        include: adminDealInclude,
-      });
+      return {
+        deal: await tx.deal.update({
+          where: { id: dealId },
+          data: {
+            status: DealStatus.PUBLISHED,
+            publishedAt: now,
+            updatedById: actor.id,
+          },
+          include: adminDealInclude,
+        }),
+        transitionedToPublished: true,
+      };
     });
+
+    if (!result.transitionedToPublished) {
+      return result.deal;
+    }
 
     await Promise.all([
       this.prisma.client.auditLog.create({
@@ -239,14 +255,15 @@ export class DealsService {
           actorUserId: actor.id,
           action: "deal.published",
           entityType: "deal",
-          entityId: deal.id,
-          newValue: this.dealAuditValue(deal),
+          entityId: result.deal.id,
+          newValue: this.dealAuditValue(result.deal),
         },
       }),
-      this.createSellerDealNotifications(deal.id),
+      this.createSellerDealNotifications(result.deal.id),
+      this.createCustomerDealNotifications(result.deal.id),
     ]);
 
-    return deal;
+    return result.deal;
   }
 
   async cancelDeal(actor: RequestUser, dealId: string) {
@@ -824,6 +841,46 @@ export class DealsService {
       })),
       skipDuplicates: true,
     });
+  }
+
+  private async createCustomerDealNotifications(dealId: string) {
+    const deal = await this.prisma.client.deal.findUnique({
+      where: { id: dealId },
+      include: { category: true },
+    });
+    if (!deal || deal.status !== DealStatus.PUBLISHED) {
+      return;
+    }
+
+    const customers = await this.prisma.client.customer.findMany({
+      where: {
+        status: UserStatus.ACTIVE,
+        dealAlertsEnabled: true,
+      },
+      select: { id: true },
+    });
+
+    await Promise.allSettled(
+      customers.map((customer) =>
+        this.expoPush.notifyCustomer({
+          customerId: customer.id,
+          type: PushNotificationType.DEAL_PUBLISHED,
+          templateCode: "CUSTOMER_DEAL_PUBLISHED_PUSH",
+          eventCode: "deal.published.customer",
+          title: `${deal.title} is live`,
+          body: `${deal.discountBps / 100}% off selected ${deal.category.name} products.`,
+          href: "/deals",
+          sourceType: "deal",
+          sourceId: deal.id,
+          promotionalPreference: "dealAlertsEnabled",
+          data: {
+            type: "deal",
+            dealId: deal.id,
+            href: "/deals",
+          },
+        }),
+      ),
+    );
   }
 
   private dealAuditValue(deal: {

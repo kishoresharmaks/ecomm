@@ -38,6 +38,7 @@ import {
   LockKeyhole,
   LogOut,
   Mail,
+  Megaphone,
   Menu as MenuIcon,
   Package,
   PanelLeft,
@@ -72,6 +73,7 @@ const iconByHref: Array<[string, typeof LayoutDashboard]> = [
   ["/admin/payments", Landmark],
   ["/admin/refunds", WalletCards],
   ["/admin/email", Mail],
+  ["/admin/push-campaigns", Megaphone],
   ["/admin/notifications", Bell],
   ["/finance", WalletCards],
   ["/admin/finance/ledger", WalletCards],
@@ -175,15 +177,15 @@ export function AdminPortalShell({
         </DialogPanel>
       </Dialog>
 
-      <div className="grid min-h-screen lg:grid-cols-[288px_minmax(0,1fr)]">
-        <aside className="hidden bg-[#163B5C] text-white lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col">
+      <div className="grid min-h-screen bg-[#163B5C] lg:grid-cols-[288px_minmax(0,1fr)]">
+        <aside className="hidden bg-[#163B5C] text-white lg:sticky lg:top-0 lg:flex lg:h-dvh lg:flex-col">
           <div className="border-b border-white/10 p-5">
             <AdminBrand />
           </div>
           <AdminSidebarContent pathname={pathname} />
         </aside>
 
-        <section className="min-w-0">
+        <section className="min-w-0 bg-[#FFFCFB]">
           <header className="sticky top-0 z-30 border-b border-[#E5E7EB] bg-[#FFFCFB]/95 backdrop-blur">
             <div className="flex min-h-16 items-center gap-3 px-4 py-3 lg:px-6">
               <button

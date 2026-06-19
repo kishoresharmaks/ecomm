@@ -1,11 +1,20 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { ApprovalStatus, ProductStatus, SellerStatus, UserStatus } from "@indihub/database";
+import { ApprovalStatus, Prisma, ProductStatus, SellerStatus, UserStatus } from "@indihub/database";
 import type { RequestUser } from "../auth/types/indihub-request";
+import {
+  createdAtCursorOrderBy,
+  createdAtCursorWhere,
+  cursorPageFromItems,
+  cursorPaginationFromQuery
+} from "../common/pagination";
 import { LocationsService } from "../locations/locations.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateCustomerAddressDto, UpdateCustomerAddressDto } from "./dto/customer-address.dto";
 import { UpdateCustomerBrowsingLocationDto } from "./dto/customer-browsing-location.dto";
+import { CustomerNotificationQueryDto } from "./dto/customer-notification-query.dto";
+import { UpdateCustomerNotificationPreferencesDto } from "./dto/customer-notification-preferences.dto";
 import { UpdateCustomerProfileDto } from "./dto/customer-profile.dto";
+import { RegisterCustomerPushTokenDto, RevokeCustomerPushTokenDto } from "./dto/customer-push-token.dto";
 
 @Injectable()
 export class CustomersService {
@@ -440,6 +449,142 @@ export class CustomersService {
     });
 
     return this.getWishlist(actor);
+  }
+
+  async registerPushToken(actor: RequestUser, dto: RegisterCustomerPushTokenDto) {
+    const customer = await this.ensureCustomerForUser(actor);
+    const token = dto.token.trim();
+
+    const pushToken = await this.prisma.client.customerPushToken.upsert({
+      where: { token },
+      update: {
+        customerId: customer.id,
+        userId: actor.id,
+        platform: dto.platform,
+        deviceId: trimOrNull(dto.deviceId),
+        appVersion: trimOrNull(dto.appVersion),
+        enabled: true,
+        revokedAt: null,
+        lastSeenAt: new Date()
+      },
+      create: {
+        customerId: customer.id,
+        userId: actor.id,
+        token,
+        platform: dto.platform,
+        deviceId: trimOrNull(dto.deviceId),
+        appVersion: trimOrNull(dto.appVersion)
+      }
+    });
+
+    return { registered: true, tokenId: pushToken.id };
+  }
+
+  async revokePushToken(actor: RequestUser, dto: RevokeCustomerPushTokenDto) {
+    await this.ensureCustomerForUser(actor);
+
+    await this.prisma.client.customerPushToken.updateMany({
+      where: { token: dto.token.trim(), userId: actor.id },
+      data: {
+        enabled: false,
+        revokedAt: new Date(),
+        lastSeenAt: new Date()
+      }
+    });
+
+    return { revoked: true };
+  }
+
+  async getNotificationPreferences(actor: RequestUser) {
+    const customer = await this.ensureCustomerForUser(actor);
+    return this.prisma.client.customer.findUniqueOrThrow({
+      where: { id: customer.id },
+      select: {
+        dealAlertsEnabled: true,
+        marketingCampaignsEnabled: true
+      }
+    });
+  }
+
+  async updateNotificationPreferences(actor: RequestUser, dto: UpdateCustomerNotificationPreferencesDto) {
+    const customer = await this.ensureCustomerForUser(actor);
+    const updated = await this.prisma.client.customer.update({
+      where: { id: customer.id },
+      data: {
+        ...(dto.dealAlertsEnabled !== undefined ? { dealAlertsEnabled: dto.dealAlertsEnabled } : {}),
+        ...(dto.marketingCampaignsEnabled !== undefined ? { marketingCampaignsEnabled: dto.marketingCampaignsEnabled } : {})
+      },
+      select: {
+        dealAlertsEnabled: true,
+        marketingCampaignsEnabled: true
+      }
+    });
+
+    await this.prisma.client.auditLog.create({
+      data: {
+        actor: { connect: { id: actor.id } },
+        action: "customer.notification_preferences.updated",
+        entityType: "customer",
+        entityId: customer.id,
+        newValue: updated
+      }
+    });
+
+    return updated;
+  }
+
+  async listNotifications(actor: RequestUser, query: CustomerNotificationQueryDto) {
+    const customer = await this.ensureCustomerForUser(actor);
+    const { take, cursor } = cursorPaginationFromQuery(query, { defaultLimit: 20, maxLimit: 50 });
+    const cursorWhere = createdAtCursorWhere(cursor) as Prisma.CustomerNotificationWhereInput | undefined;
+    const where: Prisma.CustomerNotificationWhereInput = { customerId: customer.id };
+    const items = await this.prisma.client.customerNotification.findMany({
+      where: cursorWhere ? { AND: [where, cursorWhere] } : where,
+      orderBy: createdAtCursorOrderBy(),
+      take: take + 1
+    });
+    const page = cursorPageFromItems(items, take);
+
+    return { ...page, limit: take };
+  }
+
+  async unreadNotificationCount(actor: RequestUser) {
+    const customer = await this.ensureCustomerForUser(actor);
+    const count = await this.prisma.client.customerNotification.count({
+      where: { customerId: customer.id, readAt: null }
+    });
+
+    return { count };
+  }
+
+  async markNotificationRead(actor: RequestUser, notificationId: string) {
+    const customer = await this.ensureCustomerForUser(actor);
+    const notification = await this.prisma.client.customerNotification.findFirst({
+      where: { id: notificationId, customerId: customer.id }
+    });
+
+    if (!notification) {
+      throw new NotFoundException("Notification not found.");
+    }
+
+    if (notification.readAt) {
+      return notification;
+    }
+
+    return this.prisma.client.customerNotification.update({
+      where: { id: notificationId },
+      data: { readAt: new Date() }
+    });
+  }
+
+  async markAllNotificationsRead(actor: RequestUser) {
+    const customer = await this.ensureCustomerForUser(actor);
+    const result = await this.prisma.client.customerNotification.updateMany({
+      where: { customerId: customer.id, readAt: null },
+      data: { readAt: new Date() }
+    });
+
+    return { updated: result.count };
   }
 
   async getAddressForCustomerOrThrow(customerId: string, addressId: string) {

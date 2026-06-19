@@ -37,6 +37,7 @@ import { accountErrorMessage } from "../../src/features/account/account-ui";
 import { useLocationStore } from "../../src/state/location-store";
 import { isMobileReturnsEnabled } from "../../src/features/returns/return-feature";
 import { returnsCopy } from "../../src/features/returns/return-copy";
+import { useCustomerPushNotificationStatus } from "../../src/features/notifications/use-customer-push-notifications";
 import { colors } from "../../src/theme";
 
 const CARD_BG = "#FFFFFF";
@@ -50,7 +51,7 @@ const profileRows = [
   { href: "/account/addresses", icon: Home01Icon, text: "Manage your delivery addresses", title: "Addresses" },
   { href: "/account/location", icon: Location01Icon, text: "Browse and manage saved locations", title: "Saved locations" },
   { icon: LockPasswordIcon, text: "Update your account password", title: "Change password" },
-  { icon: Notification02Icon, text: "Manage email and push notifications", title: "Notification preferences" },
+  { href: "/account/notifications" as Href, icon: Notification02Icon, text: "Inbox and push preferences", title: "Notifications" },
 ] satisfies Array<{ href?: Href; icon: IconSvgElement; text: string; title: string }>;
 
 const supportRows = [
@@ -63,6 +64,7 @@ const supportRows = [
 export default function AccountScreen() {
   const customerAuth = useMobileCustomerAuth();
   const { isSignedIn, signOut } = useAuth();
+  const pushStatus = useCustomerPushNotificationStatus();
   const router = useRouter();
   const selectedLocation = useLocationStore((state) => state.selectedLocation);
   const setSelectedLocation = useLocationStore((state) => state.setSelectedLocation);
@@ -268,7 +270,9 @@ export default function AccountScreen() {
             danger
             icon={Logout03Icon}
             isLast
-            onPress={() => void signOut()}
+            onPress={() => {
+              void pushStatus.revoke()?.finally(() => signOut());
+            }}
             text="Sign out from your account"
             title="Sign out"
           />

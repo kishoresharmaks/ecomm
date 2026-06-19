@@ -62,8 +62,8 @@ describe("AuthGuard", () => {
       status: UserStatus.ACTIVE
     });
     prisma.client.userRole.findMany.mockResolvedValue([
-      { role: { code: RoleCode.ADMIN } },
-      { role: { code: RoleCode.SELLER } }
+      { role: { code: RoleCode.ADMIN, rolePermissions: [{ permission: { code: "notifications.manage" } }] } },
+      { role: { code: RoleCode.SELLER, rolePermissions: [{ permission: { code: "seller.product.manage" } }] } }
     ]);
     const guard = new AuthGuard(reflector as unknown as Reflector, prisma as never, adminAuthService as never, clerkAuthService as never);
 
@@ -77,7 +77,8 @@ describe("AuthGuard", () => {
         id: "user_1",
         clerkUserId: "clerk_1",
         email: "admin@example.com",
-        roles: [RoleCode.ADMIN, RoleCode.SELLER]
+        roles: [RoleCode.ADMIN, RoleCode.SELLER],
+        permissions: ["notifications.manage", "seller.product.manage"]
       }
     });
   });
@@ -95,7 +96,7 @@ describe("AuthGuard", () => {
       email: "customer@example.com",
       status: UserStatus.ACTIVE
     });
-    prisma.client.userRole.findMany.mockResolvedValue([{ role: { code: RoleCode.CUSTOMER } }]);
+    prisma.client.userRole.findMany.mockResolvedValue([{ role: { code: RoleCode.CUSTOMER, rolePermissions: [] } }]);
     const guard = new AuthGuard(reflector as unknown as Reflector, prisma as never, adminAuthService as never, clerkAuthService as never);
 
     await expect(guard.canActivate(createContext(request))).resolves.toBe(true);

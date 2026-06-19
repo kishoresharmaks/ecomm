@@ -68,7 +68,15 @@ export class AuthGuard implements CanActivate {
         userId: user.id
       },
       include: {
-        role: true
+        role: {
+          include: {
+            rolePermissions: {
+              include: {
+                permission: true
+              }
+            }
+          }
+        }
       }
     });
 
@@ -77,6 +85,11 @@ export class AuthGuard implements CanActivate {
       clerkUserId: user.clerkUserId,
       email: user.email,
       roles: userRoles.map((userRole) => userRole.role.code as RoleCode),
+      permissions: uniquePermissions(
+        userRoles.flatMap((userRole) =>
+          userRole.role.rolePermissions.map((rolePermission) => rolePermission.permission.code)
+        )
+      ),
       authProvider: clerkUserId ? "CLERK" : "DEV"
     };
 
@@ -115,4 +128,8 @@ export class AuthGuard implements CanActivate {
     }
     return value;
   }
+}
+
+function uniquePermissions(values: string[]) {
+  return Array.from(new Set(values));
 }
