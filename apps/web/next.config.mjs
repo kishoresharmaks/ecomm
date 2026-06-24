@@ -107,14 +107,15 @@ function buildContentSecurityPolicy() {
     "https://www.google-analytics.com",
     "https://static.cloudflareinsights.com",
   ];
+  const turnstileOrigins = ["https://challenges.cloudflare.com"];
   const sentryOrigins = [webOrigin ? `${webOrigin}/_1hi/relay` : null];
 
   const directives = [
     ["default-src", "'self'"],
     ["base-uri", "'self'"],
     ["object-src", "'none'"],
-    ["script-src", "'self'", "'unsafe-inline'", "'unsafe-eval'", ...analyticsOrigins, ...razorpayOrigins, ...clerkOrigins],
-    ["style-src", "'self'", "'unsafe-inline'"],
+    ["script-src", "'self'", "'unsafe-inline'", "'unsafe-eval'", ...analyticsOrigins, ...razorpayOrigins, ...clerkOrigins, ...turnstileOrigins],
+    ["style-src", "'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
     ["img-src", "'self'", "https:", "data:", "blob:", ...extraImageOrigins],
     ["font-src", "'self'", "data:", "https://fonts.gstatic.com"],
     [
@@ -123,10 +124,11 @@ function buildContentSecurityPolicy() {
       apiOrigin,
       ...analyticsOrigins,
       ...clerkOrigins,
+      ...turnstileOrigins,
       ...sentryOrigins,
       ...extraConnectOrigins,
     ],
-    ["frame-src", ...razorpayOrigins, ...clerkOrigins, ...extraFrameOrigins],
+    ["frame-src", ...razorpayOrigins, ...clerkOrigins, ...turnstileOrigins, ...extraFrameOrigins],
     ["worker-src", "'self'", "blob:"],
     ["manifest-src", "'self'"],
     ["form-action", "'self'", ...razorpayOrigins],
