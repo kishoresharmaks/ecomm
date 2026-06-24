@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { AlertTriangle, Clock, LifeBuoy, ShieldCheck, Store, Truck, Wrench } from "lucide-react";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@indihub/ui";
 import { useAdminAuth } from "@/components/admin/admin-auth-context";
@@ -36,6 +36,16 @@ const scopeDescriptions: Record<MaintenanceScope, string> = {
 };
 
 export function MaintenanceGate({ scope, children, block = true }: MaintenanceGateProps) {
+  return (
+    <Suspense fallback={<>{children}</>}>
+      <MaintenanceGateContent scope={scope} block={block}>
+        {children}
+      </MaintenanceGateContent>
+    </Suspense>
+  );
+}
+
+function MaintenanceGateContent({ scope, children, block = true }: MaintenanceGateProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const admin = useAdminAuth();
