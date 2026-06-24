@@ -16,6 +16,7 @@ const sentryEnabled = appEnvironment !== "development" || process.env.NEXT_PUBLI
 
 const webOrigin = originFromUrl(process.env.NEXT_PUBLIC_WEB_URL);
 const apiOrigin = originFromUrl(process.env.NEXT_PUBLIC_API_URL);
+const clerkFrontendOrigin = originFromUrl(process.env.NEXT_PUBLIC_CLERK_FRONTEND_API);
 const extraConnectOrigins = parseCsvOrigins(process.env.NEXT_PUBLIC_CSP_CONNECT_SRC);
 const extraImageOrigins = parseCsvOrigins(process.env.NEXT_PUBLIC_CSP_IMG_SRC);
 const extraFrameOrigins = parseCsvOrigins(process.env.NEXT_PUBLIC_CSP_FRAME_SRC);
@@ -98,9 +99,14 @@ function buildContentSecurityPolicy() {
     "https://api.clerk.com",
     "https://cdn.clerk.com",
     "https://clerk-telemetry.com",
+    clerkFrontendOrigin,
   ];
   const razorpayOrigins = ["https://checkout.razorpay.com", "https://*.razorpay.com"];
-  const analyticsOrigins = ["https://www.googletagmanager.com", "https://www.google-analytics.com"];
+  const analyticsOrigins = [
+    "https://www.googletagmanager.com",
+    "https://www.google-analytics.com",
+    "https://static.cloudflareinsights.com",
+  ];
   const sentryOrigins = [webOrigin ? `${webOrigin}/_1hi/relay` : null];
 
   const directives = [
