@@ -46,7 +46,7 @@ export function resolveImageUrl(value?: string | null) {
 }
 
 function isStorageImageKey(value: string) {
-  return /^(indihub|categories|products|sellers|stores|banners|homepage|cms)\//i.test(value);
+  return /^(1handindia|indihub|categories|products|sellers|stores|banners|homepage|cms)\//i.test(value);
 }
 
 function publicStorageImageUrl(apiUrl: string, key: string) {
@@ -55,7 +55,7 @@ function publicStorageImageUrl(apiUrl: string, key: string) {
 
 function cmsPublicPathToStorageKey(value: string) {
   const normalized = value.replaceAll("\\", "/").replace(/^\/+/, "");
-  return normalized.startsWith("indihub/") ? normalized : `indihub/${normalized}`;
+  return /^(1handindia|indihub)\//i.test(normalized) ? normalized : `1handindia/${normalized}`;
 }
 
 function isCmsPublicPathUrl(value: string) {

@@ -132,17 +132,17 @@ function WishlistCard({
   return (
     <View style={styles.productCard}>
       <Pressable style={styles.productBody} onPress={() => router.push(`/product/${product.slug}`)}>
-        <RemoteImage fallbackLabel={product.name} style={styles.productImage} uri={imageUrl} />
+        <RemoteImage fallbackLabel={product.name} resizeMode="cover" style={styles.productImage} uri={imageUrl} />
         <View style={styles.productInfo}>
-          <Text numberOfLines={2} style={styles.productName}>{product.name}</Text>
-          <Text numberOfLines={1} style={styles.productMeta}>{product.seller?.storeName ?? "1HandIndia seller"}</Text>
-          <Text style={styles.productPrice}>{formatPrice(firstVariant?.pricePaise)}</Text>
+          <Text numberOfLines={2} ellipsizeMode="tail" style={styles.productName}>{product.name}</Text>
+          <Text numberOfLines={1} ellipsizeMode="tail" style={styles.productMeta}>{product.seller?.storeName ?? "1HandIndia seller"}</Text>
+          <Text numberOfLines={1} ellipsizeMode="tail" style={styles.productPrice}>{formatPrice(firstVariant?.pricePaise)}</Text>
         </View>
       </Pressable>
       <View style={styles.cardActions}>
         <Pressable style={styles.viewButton} onPress={() => router.push(`/product/${product.slug}`)}>
           <HugeiconsIcon color={colors.surface} icon={ShoppingCart01Icon} size={16} strokeWidth={2.2} />
-          <Text style={styles.viewButtonText}>View</Text>
+          <Text numberOfLines={1} ellipsizeMode="tail" style={styles.viewButtonText}>View</Text>
         </Pressable>
         <Pressable disabled={removing} style={styles.removeButton} onPress={onRemove}>
           {removing ? <ActivityIndicator color={colors.danger} size="small" /> : <HugeiconsIcon color={colors.danger} icon={Delete02Icon} size={18} strokeWidth={2.1} />}

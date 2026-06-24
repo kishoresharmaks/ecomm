@@ -1254,11 +1254,11 @@ export class SellersService {
   }
 
   private sellerUploadFolder(userId: string, suffix: string) {
-    return `indihub/sellers/${safeStorageFolderSegment(userId)}/${suffix}`;
+    return `1handindia/sellers/${safeStorageFolderSegment(userId)}/${suffix}`;
   }
 
   private sellerDocumentFolder(userId: string) {
-    return `indihub/sellers/${safeStorageFolderSegment(userId)}/documents`;
+    return `1handindia/sellers/${safeStorageFolderSegment(userId)}/documents`;
   }
 
   private normalizeSellerDocuments(
@@ -1316,7 +1316,8 @@ export class SellersService {
       );
     }
 
-    if (!normalized.startsWith(`${requiredFolder}/`)) {
+    const legacyFolder = requiredFolder.replace(/^1handindia\//, "indihub/");
+    if (!normalized.startsWith(`${requiredFolder}/`) && !normalized.startsWith(`${legacyFolder}/`)) {
       throw new BadRequestException(
         `${documentType.replaceAll("_", " ")} document must be uploaded through the signed seller document flow.`,
       );

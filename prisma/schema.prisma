@@ -20,9 +20,80 @@ enum RoleCode {
   BUSINESS_BUYER
   ADMIN
   SUPPORT_STAFF
+  CHAT_SUPPORT
   DELIVERY_PARTNER
   FINANCE
   COURIER_MANAGER
+}
+
+enum ChatConversationStatus {
+  OPEN
+  WAITING_FOR_STAFF
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum ChatConversationPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum ChatConversationSensitivity {
+  NORMAL
+  DISPUTE
+  FRAUD_REVIEW
+  LEGAL_HOLD
+}
+
+enum ChatRequesterType {
+  CUSTOMER
+  SELLER
+  BUSINESS_BUYER
+  DELIVERY_PARTNER
+}
+
+enum ChatMessageSenderType {
+  USER
+  BOT
+  SUPPORT_AGENT
+  ADMIN
+  SYSTEM
+}
+
+enum ChatMessageType {
+  TEXT
+  GUIDED_ACTION
+  STAFF_HANDOVER
+  INTERNAL_NOTE
+  SYSTEM_EVENT
+}
+
+enum ChatEscalationReason {
+  USER_REQUESTED_STAFF
+  BOT_UNCERTAIN
+  AI_UNAVAILABLE
+  RATE_LIMITED
+  SLA_RISK
+  SENSITIVE_TOPIC
+  ADMIN_ESCALATED
+}
+
+enum ChatAiRunStatus {
+  NOT_USED
+  SKIPPED
+  SUCCEEDED
+  FAILED
+  ESCALATED
+}
+
+enum ChatRateLimitAction {
+  MESSAGE_SEND
+  CONVERSATION_CREATE
+  AI_CALL
+  BOT_TURN
 }
 
 enum SellerType {
@@ -792,8 +863,8 @@ model User {
   notificationLogs                         NotificationLog[]
   customerPushTokens                       CustomerPushToken[]
   sellerPushTokens                         SellerPushToken[]
-  createdPushNotificationCampaigns         PushNotificationCampaign[]          @relation("PushCampaignCreatedBy")
-  updatedPushNotificationCampaigns         PushNotificationCampaign[]          @relation("PushCampaignUpdatedBy")
+  createdPushNotificationCampaigns         PushNotificationCampaign[]         @relation("PushCampaignCreatedBy")
+  updatedPushNotificationCampaigns         PushNotificationCampaign[]         @relation("PushCampaignUpdatedBy")
   auditLogs                                AuditLog[]
   adminCredential                          AdminCredential?
   adminSessions                            AdminSession[]
@@ -813,6 +884,13 @@ model User {
   reverseShipmentUpdates                   ReverseShipmentEvent[]             @relation("ReverseShipmentEventCreatedBy")
   reverseShipmentAssignmentAttempts        ReverseShipmentAssignmentAttempt[] @relation("ReverseShipmentAssignmentAttemptPartner")
   createdReverseShipmentAssignmentAttempts ReverseShipmentAssignmentAttempt[] @relation("ReverseShipmentAssignmentAttemptAssignedBy")
+  chatConversations                        ChatConversation[]                 @relation("ChatConversationUser")
+  assignedChatConversations                ChatConversation[]                 @relation("ChatConversationAssignedAgent")
+  chatMessages                             ChatMessage[]                      @relation("ChatMessageSender")
+  chatAssignments                          ChatAssignment[]                   @relation("ChatAssignmentAssignee")
+  createdChatAssignments                   ChatAssignment[]                   @relation("ChatAssignmentCreatedBy")
+  chatConversationEvents                   ChatConversationEvent[]            @relation("ChatConversationEventActor")
+  chatBotRuns                              ChatBotRun[]                       @relation("ChatBotRunUser")
 
   @@index([status, createdAt])
   @@map("users")
@@ -907,32 +985,32 @@ model RolePermission {
 }
 
 model Customer {
-  id                    String                      @id @default(uuid()) @db.Uuid
-  userId                String                      @unique @map("user_id") @db.Uuid
-  displayName           String?                     @map("display_name")
-  browsingLocationLabel String?                     @map("browsing_location_label")
-  browsingCountryCode   String?                     @map("browsing_country_code")
-  browsingStateCode     String?                     @map("browsing_state_code")
-  browsingCityCode      String?                     @map("browsing_city_code")
-  browsingLocalAreaCode String?                     @map("browsing_local_area_code")
-  browsingPincode       String?                     @map("browsing_pincode")
-  dealAlertsEnabled     Boolean                     @default(true) @map("deal_alerts_enabled")
-  marketingCampaignsEnabled Boolean                 @default(true) @map("marketing_campaigns_enabled")
-  status                UserStatus                  @default(ACTIVE)
-  createdAt             DateTime                    @default(now()) @map("created_at")
-  updatedAt             DateTime                    @updatedAt @map("updated_at")
-  user                  User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  addresses             CustomerAddress[]
-  wishlist              Wishlist?
-  carts                 Cart[]
-  orders                Order[]
-  productReviews        ProductReview[]
-  couponEligibilities   CouponCustomerEligibility[]
-  couponRedemptions     CouponRedemption[]
-  pushTokens            CustomerPushToken[]
-  notifications         CustomerNotification[]
-  returnRequests        ReturnRequest[]
-  refundRequests        RefundRequest[]
+  id                        String                      @id @default(uuid()) @db.Uuid
+  userId                    String                      @unique @map("user_id") @db.Uuid
+  displayName               String?                     @map("display_name")
+  browsingLocationLabel     String?                     @map("browsing_location_label")
+  browsingCountryCode       String?                     @map("browsing_country_code")
+  browsingStateCode         String?                     @map("browsing_state_code")
+  browsingCityCode          String?                     @map("browsing_city_code")
+  browsingLocalAreaCode     String?                     @map("browsing_local_area_code")
+  browsingPincode           String?                     @map("browsing_pincode")
+  dealAlertsEnabled         Boolean                     @default(true) @map("deal_alerts_enabled")
+  marketingCampaignsEnabled Boolean                     @default(true) @map("marketing_campaigns_enabled")
+  status                    UserStatus                  @default(ACTIVE)
+  createdAt                 DateTime                    @default(now()) @map("created_at")
+  updatedAt                 DateTime                    @updatedAt @map("updated_at")
+  user                      User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  addresses                 CustomerAddress[]
+  wishlist                  Wishlist?
+  carts                     Cart[]
+  orders                    Order[]
+  productReviews            ProductReview[]
+  couponEligibilities       CouponCustomerEligibility[]
+  couponRedemptions         CouponRedemption[]
+  pushTokens                CustomerPushToken[]
+  notifications             CustomerNotification[]
+  returnRequests            ReturnRequest[]
+  refundRequests            RefundRequest[]
 
   @@index([status, createdAt])
   @@index([dealAlertsEnabled])
@@ -1085,20 +1163,20 @@ model Seller {
 }
 
 model SellerPushToken {
-  id           String   @id @default(uuid()) @db.Uuid
-  sellerId     String   @map("seller_id") @db.Uuid
-  userId       String   @map("user_id") @db.Uuid
-  token        String   @unique
-  platform     String
-  deviceId     String?  @map("device_id")
-  appVersion   String?  @map("app_version")
-  enabled      Boolean  @default(true)
-  lastSeenAt   DateTime @default(now()) @map("last_seen_at")
-  revokedAt    DateTime? @map("revoked_at")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
-  seller       Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id         String    @id @default(uuid()) @db.Uuid
+  sellerId   String    @map("seller_id") @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  token      String    @unique
+  platform   String
+  deviceId   String?   @map("device_id")
+  appVersion String?   @map("app_version")
+  enabled    Boolean   @default(true)
+  lastSeenAt DateTime  @default(now()) @map("last_seen_at")
+  revokedAt  DateTime? @map("revoked_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  seller     Seller    @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([sellerId, enabled])
   @@index([userId, enabled])
@@ -1647,6 +1725,7 @@ model Product {
   couponEligibilities    CouponProductEligibility[]
   reviews                ProductReview[]
   returnItems            ReturnRequestItem[]
+  chatConversations      ChatConversation[]
 
   @@index([sellerId])
   @@index([categoryId])
@@ -2104,6 +2183,7 @@ model Order {
   returnItems                       ReturnRequestItem[]
   refundRequests                    RefundRequest[]
   reverseShipments                  ReverseShipment[]
+  chatConversations                 ChatConversation[]
 
   @@unique([customerId, idempotencyKey], map: "orders_customer_id_idempotency_key_key")
   @@index([customerId])
@@ -3452,20 +3532,21 @@ model PaymentEvent {
 }
 
 model B2BEnquiry {
-  id              String               @id @default(uuid()) @db.Uuid
-  businessBuyerId String               @map("business_buyer_id") @db.Uuid
-  productId       String?              @map("product_id") @db.Uuid
-  sellerId        String?              @map("seller_id") @db.Uuid
-  quantity        Int
-  message         String
-  status          B2BEnquiryStatus     @default(SUBMITTED)
-  createdAt       DateTime             @default(now()) @map("created_at")
-  updatedAt       DateTime             @updatedAt @map("updated_at")
-  businessBuyer   BusinessBuyer        @relation(fields: [businessBuyerId], references: [id], onDelete: Cascade)
-  product         Product?             @relation(fields: [productId], references: [id])
-  seller          Seller?              @relation(fields: [sellerId], references: [id])
-  responses       B2BEnquiryResponse[]
-  b2bOrder        B2BOrder?
+  id                String               @id @default(uuid()) @db.Uuid
+  businessBuyerId   String               @map("business_buyer_id") @db.Uuid
+  productId         String?              @map("product_id") @db.Uuid
+  sellerId          String?              @map("seller_id") @db.Uuid
+  quantity          Int
+  message           String
+  status            B2BEnquiryStatus     @default(SUBMITTED)
+  createdAt         DateTime             @default(now()) @map("created_at")
+  updatedAt         DateTime             @updatedAt @map("updated_at")
+  businessBuyer     BusinessBuyer        @relation(fields: [businessBuyerId], references: [id], onDelete: Cascade)
+  product           Product?             @relation(fields: [productId], references: [id])
+  seller            Seller?              @relation(fields: [sellerId], references: [id])
+  responses         B2BEnquiryResponse[]
+  b2bOrder          B2BOrder?
+  chatConversations ChatConversation[]
 
   @@index([businessBuyerId])
   @@index([sellerId])
@@ -3736,6 +3817,7 @@ model SupportRequest {
   createdAt               DateTime              @default(now()) @map("created_at")
   updatedAt               DateTime              @updatedAt @map("updated_at")
   user                    User?                 @relation(fields: [userId], references: [id])
+  chatConversations       ChatConversation[]
 
   @@index([userId])
   @@index([status])
@@ -3744,6 +3826,173 @@ model SupportRequest {
   @@index([source, createdAt])
   @@index([orderNumber])
   @@map("support_requests")
+}
+
+model ChatConversation {
+  id                  String                      @id @default(uuid()) @db.Uuid
+  userId              String                      @map("user_id") @db.Uuid
+  assignedToUserId    String?                     @map("assigned_to_user_id") @db.Uuid
+  orderId             String?                     @map("order_id") @db.Uuid
+  productId           String?                     @map("product_id") @db.Uuid
+  b2bEnquiryId        String?                     @map("b2b_enquiry_id") @db.Uuid
+  supportRequestId    String?                     @map("support_request_id") @db.Uuid
+  requesterType       ChatRequesterType           @map("requester_type")
+  topic               SupportRequestTopic         @default(GENERAL)
+  subject             String
+  status              ChatConversationStatus      @default(OPEN)
+  priority            ChatConversationPriority    @default(NORMAL)
+  sensitivity         ChatConversationSensitivity @default(NORMAL)
+  escalationReason    ChatEscalationReason?       @map("escalation_reason")
+  handoverRequestedAt DateTime?                   @map("handover_requested_at")
+  firstResponseDueAt  DateTime?                   @map("first_response_due_at")
+  nextResponseDueAt   DateTime?                   @map("next_response_due_at")
+  slaBreachedAt       DateTime?                   @map("sla_breached_at")
+  lastMessageAt       DateTime                    @default(now()) @map("last_message_at")
+  lastUserMessageAt   DateTime?                   @map("last_user_message_at")
+  lastStaffMessageAt  DateTime?                   @map("last_staff_message_at")
+  userUnreadCount     Int                         @default(0) @map("user_unread_count")
+  staffUnreadCount    Int                         @default(0) @map("staff_unread_count")
+  retentionUntil      DateTime?                   @map("retention_until")
+  metadata            Json?
+  createdAt           DateTime                    @default(now()) @map("created_at")
+  updatedAt           DateTime                    @updatedAt @map("updated_at")
+  user                User                        @relation("ChatConversationUser", fields: [userId], references: [id], onDelete: Cascade)
+  assignedTo          User?                       @relation("ChatConversationAssignedAgent", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  order               Order?                      @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  product             Product?                    @relation(fields: [productId], references: [id], onDelete: SetNull)
+  b2bEnquiry          B2BEnquiry?                 @relation(fields: [b2bEnquiryId], references: [id], onDelete: SetNull)
+  supportRequest      SupportRequest?             @relation(fields: [supportRequestId], references: [id], onDelete: SetNull)
+  messages            ChatMessage[]
+  assignments         ChatAssignment[]
+  events              ChatConversationEvent[]
+  botRuns             ChatBotRun[]
+
+  @@index([userId, lastMessageAt])
+  @@index([assignedToUserId, status, lastMessageAt])
+  @@index([status, sensitivity, lastMessageAt])
+  @@index([requesterType, status, lastMessageAt])
+  @@index([priority, status, lastMessageAt])
+  @@index([sensitivity, status, lastMessageAt])
+  @@index([firstResponseDueAt])
+  @@index([slaBreachedAt])
+  @@index([orderId])
+  @@index([productId])
+  @@index([b2bEnquiryId])
+  @@index([supportRequestId])
+  @@map("chat_conversations")
+}
+
+model ChatMessage {
+  id             String                @id @default(uuid()) @db.Uuid
+  conversationId String                @map("conversation_id") @db.Uuid
+  senderUserId   String?               @map("sender_user_id") @db.Uuid
+  senderType     ChatMessageSenderType @map("sender_type")
+  messageType    ChatMessageType       @default(TEXT) @map("message_type")
+  body           String
+  visibleToUser  Boolean               @default(true) @map("visible_to_user")
+  metadata       Json?
+  readByUserAt   DateTime?             @map("read_by_user_at")
+  readByStaffAt  DateTime?             @map("read_by_staff_at")
+  createdAt      DateTime              @default(now()) @map("created_at")
+  conversation   ChatConversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender         User?                 @relation("ChatMessageSender", fields: [senderUserId], references: [id], onDelete: SetNull)
+
+  @@index([conversationId, createdAt])
+  @@index([senderUserId, createdAt])
+  @@index([senderType, createdAt])
+  @@map("chat_messages")
+}
+
+model ChatAssignment {
+  id             String           @id @default(uuid()) @db.Uuid
+  conversationId String           @map("conversation_id") @db.Uuid
+  assignedToId   String?          @map("assigned_to_id") @db.Uuid
+  createdById    String?          @map("created_by_id") @db.Uuid
+  action         String
+  note           String?
+  createdAt      DateTime         @default(now()) @map("created_at")
+  conversation   ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  assignedTo     User?            @relation("ChatAssignmentAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  createdBy      User?            @relation("ChatAssignmentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([conversationId, createdAt])
+  @@index([assignedToId, createdAt])
+  @@index([createdById, createdAt])
+  @@map("chat_assignments")
+}
+
+model ChatConversationEvent {
+  id             String           @id @default(uuid()) @db.Uuid
+  conversationId String           @map("conversation_id") @db.Uuid
+  actorUserId    String?          @map("actor_user_id") @db.Uuid
+  eventType      String           @map("event_type")
+  oldValue       Json?            @map("old_value")
+  newValue       Json?            @map("new_value")
+  metadata       Json?
+  createdAt      DateTime         @default(now()) @map("created_at")
+  conversation   ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  actor          User?            @relation("ChatConversationEventActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([conversationId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([eventType, createdAt])
+  @@map("chat_conversation_events")
+}
+
+model ChatBotRun {
+  id             String           @id @default(uuid()) @db.Uuid
+  conversationId String           @map("conversation_id") @db.Uuid
+  userId         String?          @map("user_id") @db.Uuid
+  provider       String?
+  model          String?
+  promptVersion  String?          @map("prompt_version")
+  sourceIds      String[]         @default([]) @map("source_ids")
+  status         ChatAiRunStatus  @default(NOT_USED)
+  tokenCount     Int              @default(0) @map("token_count")
+  latencyMs      Int?             @map("latency_ms")
+  errorClass     String?          @map("error_class")
+  createdAt      DateTime         @default(now()) @map("created_at")
+  conversation   ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user           User?            @relation("ChatBotRunUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([conversationId, createdAt])
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@map("chat_bot_runs")
+}
+
+model ChatRateLimitBucket {
+  id        String              @id @default(uuid()) @db.Uuid
+  scopeKey  String              @map("scope_key")
+  action    ChatRateLimitAction
+  bucketKey String              @map("bucket_key")
+  count     Int                 @default(0)
+  expiresAt DateTime            @map("expires_at")
+  createdAt DateTime            @default(now()) @map("created_at")
+  updatedAt DateTime            @updatedAt @map("updated_at")
+
+  @@unique([scopeKey, action, bucketKey])
+  @@index([action, expiresAt])
+  @@index([expiresAt])
+  @@map("chat_rate_limit_buckets")
+}
+
+model ChatAiUsageSummary {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @map("user_id")
+  usageDate    DateTime @map("usage_date") @db.Date
+  provider     String   @default("disabled")
+  model        String   @default("none")
+  callCount    Int      @default(0) @map("call_count")
+  tokenCount   Int      @default(0) @map("token_count")
+  failureCount Int      @default(0) @map("failure_count")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, usageDate, provider, model])
+  @@index([usageDate])
+  @@index([userId, usageDate])
+  @@map("chat_ai_usage_summaries")
 }
 
 model NotificationTemplate {
@@ -3807,32 +4056,32 @@ model EmailTheme {
 }
 
 model NotificationLog {
-  id                String              @id @default(uuid()) @db.Uuid
-  userId            String?             @map("user_id") @db.Uuid
-  customerNotificationId String?        @map("customer_notification_id") @db.Uuid
-  customerPushTokenId String?           @map("customer_push_token_id") @db.Uuid
-  pushCampaignBatchId String?           @map("push_campaign_batch_id") @db.Uuid
-  channel           NotificationChannel
-  templateCode      String              @map("template_code")
-  eventCode         String?             @map("event_code")
-  recipientType     EmailRecipientType? @map("recipient_type")
-  triggerRuleId     String?             @map("trigger_rule_id") @db.Uuid
-  recipient         String
-  subject           String?
-  body              String?
-  variables         Json?
-  status            NotificationStatus  @default(PENDING)
-  providerMessageId String?             @map("provider_message_id")
-  errorMessage      String?             @map("error_message")
-  scheduledFor      DateTime?           @map("scheduled_for")
-  sentAt            DateTime?           @map("sent_at")
-  createdAt         DateTime            @default(now()) @map("created_at")
-  user              User?               @relation(fields: [userId], references: [id])
-  customerNotification CustomerNotification? @relation(fields: [customerNotificationId], references: [id], onDelete: SetNull)
-  customerPushToken CustomerPushToken?   @relation(fields: [customerPushTokenId], references: [id], onDelete: SetNull)
-  pushCampaignBatch PushNotificationCampaignBatch? @relation(fields: [pushCampaignBatchId], references: [id], onDelete: SetNull)
-  pushReceipt       PushNotificationReceipt?
-  triggerRule       EmailTriggerRule?   @relation(fields: [triggerRuleId], references: [id], onDelete: SetNull)
+  id                     String                         @id @default(uuid()) @db.Uuid
+  userId                 String?                        @map("user_id") @db.Uuid
+  customerNotificationId String?                        @map("customer_notification_id") @db.Uuid
+  customerPushTokenId    String?                        @map("customer_push_token_id") @db.Uuid
+  pushCampaignBatchId    String?                        @map("push_campaign_batch_id") @db.Uuid
+  channel                NotificationChannel
+  templateCode           String                         @map("template_code")
+  eventCode              String?                        @map("event_code")
+  recipientType          EmailRecipientType?            @map("recipient_type")
+  triggerRuleId          String?                        @map("trigger_rule_id") @db.Uuid
+  recipient              String
+  subject                String?
+  body                   String?
+  variables              Json?
+  status                 NotificationStatus             @default(PENDING)
+  providerMessageId      String?                        @map("provider_message_id")
+  errorMessage           String?                        @map("error_message")
+  scheduledFor           DateTime?                      @map("scheduled_for")
+  sentAt                 DateTime?                      @map("sent_at")
+  createdAt              DateTime                       @default(now()) @map("created_at")
+  user                   User?                          @relation(fields: [userId], references: [id])
+  customerNotification   CustomerNotification?          @relation(fields: [customerNotificationId], references: [id], onDelete: SetNull)
+  customerPushToken      CustomerPushToken?             @relation(fields: [customerPushTokenId], references: [id], onDelete: SetNull)
+  pushCampaignBatch      PushNotificationCampaignBatch? @relation(fields: [pushCampaignBatchId], references: [id], onDelete: SetNull)
+  pushReceipt            PushNotificationReceipt?
+  triggerRule            EmailTriggerRule?              @relation(fields: [triggerRuleId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([customerNotificationId])
@@ -3855,21 +4104,21 @@ model NotificationLog {
 }
 
 model CustomerNotification {
-  id          String                    @id @default(uuid()) @db.Uuid
-  customerId  String                    @map("customer_id") @db.Uuid
-  type        PushNotificationType
-  title       String
-  body        String
-  imageUrl    String?                   @map("image_url")
-  href        String?
-  sourceType  String                    @map("source_type")
-  sourceId    String                    @map("source_id")
-  metadata    Json?
-  readAt      DateTime?                 @map("read_at")
-  createdAt   DateTime                  @default(now()) @map("created_at")
-  updatedAt   DateTime                  @updatedAt @map("updated_at")
-  customer    Customer                  @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  logs        NotificationLog[]
+  id         String               @id @default(uuid()) @db.Uuid
+  customerId String               @map("customer_id") @db.Uuid
+  type       PushNotificationType
+  title      String
+  body       String
+  imageUrl   String?              @map("image_url")
+  href       String?
+  sourceType String               @map("source_type")
+  sourceId   String               @map("source_id")
+  metadata   Json?
+  readAt     DateTime?            @map("read_at")
+  createdAt  DateTime             @default(now()) @map("created_at")
+  updatedAt  DateTime             @updatedAt @map("updated_at")
+  customer   Customer             @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  logs       NotificationLog[]
 
   @@unique([customerId, type, sourceType, sourceId])
   @@index([customerId, readAt, createdAt])
@@ -3880,29 +4129,29 @@ model CustomerNotification {
 }
 
 model PushNotificationCampaign {
-  id           String                         @id @default(uuid()) @db.Uuid
-  title        String
-  body         String
-  imageAssetKey String?                       @map("image_asset_key")
-  imageUrl     String?                        @map("image_url")
-  href         String?
-  segmentFilter Json                          @map("segment_filter")
-  status       PushNotificationCampaignStatus @default(DRAFT)
-  previewCount Int                            @default(0) @map("preview_count")
-  targetedCount Int                           @default(0) @map("targeted_count")
-  sentCount    Int                            @default(0) @map("sent_count")
-  failedCount  Int                            @default(0) @map("failed_count")
-  revokedCount Int                            @default(0) @map("revoked_count")
-  scheduledAt  DateTime?                      @map("scheduled_at")
-  sentAt       DateTime?                      @map("sent_at")
-  cancelledAt  DateTime?                      @map("cancelled_at")
-  createdById  String?                        @map("created_by_id") @db.Uuid
-  updatedById  String?                        @map("updated_by_id") @db.Uuid
-  createdAt    DateTime                       @default(now()) @map("created_at")
-  updatedAt    DateTime                       @updatedAt @map("updated_at")
-  createdBy    User?                          @relation("PushCampaignCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  updatedBy    User?                          @relation("PushCampaignUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
-  batches      PushNotificationCampaignBatch[]
+  id            String                          @id @default(uuid()) @db.Uuid
+  title         String
+  body          String
+  imageAssetKey String?                         @map("image_asset_key")
+  imageUrl      String?                         @map("image_url")
+  href          String?
+  segmentFilter Json                            @map("segment_filter")
+  status        PushNotificationCampaignStatus  @default(DRAFT)
+  previewCount  Int                             @default(0) @map("preview_count")
+  targetedCount Int                             @default(0) @map("targeted_count")
+  sentCount     Int                             @default(0) @map("sent_count")
+  failedCount   Int                             @default(0) @map("failed_count")
+  revokedCount  Int                             @default(0) @map("revoked_count")
+  scheduledAt   DateTime?                       @map("scheduled_at")
+  sentAt        DateTime?                       @map("sent_at")
+  cancelledAt   DateTime?                       @map("cancelled_at")
+  createdById   String?                         @map("created_by_id") @db.Uuid
+  updatedById   String?                         @map("updated_by_id") @db.Uuid
+  createdAt     DateTime                        @default(now()) @map("created_at")
+  updatedAt     DateTime                        @updatedAt @map("updated_at")
+  createdBy     User?                           @relation("PushCampaignCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy     User?                           @relation("PushCampaignUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  batches       PushNotificationCampaignBatch[]
 
   @@index([status, scheduledAt])
   @@index([createdAt])
@@ -3911,21 +4160,21 @@ model PushNotificationCampaign {
 }
 
 model PushNotificationCampaignBatch {
-  id          String                      @id @default(uuid()) @db.Uuid
-  campaignId  String                      @map("campaign_id") @db.Uuid
-  status      PushNotificationBatchStatus @default(PENDING)
-  recipientTokenIds String[]              @default([]) @map("recipient_token_ids") @db.Uuid
-  ticketIds   String[]                    @default([]) @map("ticket_ids")
-  ticketErrors Json?                      @map("ticket_errors")
-  claimedBy   String?                     @map("claimed_by")
-  claimedAt   DateTime?                   @map("claimed_at")
-  doneAt      DateTime?                   @map("done_at")
-  attemptCount Int                        @default(0) @map("attempt_count")
-  createdAt   DateTime                    @default(now()) @map("created_at")
-  updatedAt   DateTime                    @updatedAt @map("updated_at")
-  campaign    PushNotificationCampaign    @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  logs        NotificationLog[]
-  receipts    PushNotificationReceipt[]
+  id                String                      @id @default(uuid()) @db.Uuid
+  campaignId        String                      @map("campaign_id") @db.Uuid
+  status            PushNotificationBatchStatus @default(PENDING)
+  recipientTokenIds String[]                    @default([]) @map("recipient_token_ids") @db.Uuid
+  ticketIds         String[]                    @default([]) @map("ticket_ids")
+  ticketErrors      Json?                       @map("ticket_errors")
+  claimedBy         String?                     @map("claimed_by")
+  claimedAt         DateTime?                   @map("claimed_at")
+  doneAt            DateTime?                   @map("done_at")
+  attemptCount      Int                         @default(0) @map("attempt_count")
+  createdAt         DateTime                    @default(now()) @map("created_at")
+  updatedAt         DateTime                    @updatedAt @map("updated_at")
+  campaign          PushNotificationCampaign    @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  logs              NotificationLog[]
+  receipts          PushNotificationReceipt[]
 
   @@index([campaignId, status])
   @@index([status, claimedAt])
@@ -3934,24 +4183,24 @@ model PushNotificationCampaignBatch {
 }
 
 model PushNotificationReceipt {
-  id          String                        @id @default(uuid()) @db.Uuid
-  notificationLogId String                  @unique @map("notification_log_id") @db.Uuid
-  customerPushTokenId String?               @map("customer_push_token_id") @db.Uuid
-  campaignBatchId String?                   @map("campaign_batch_id") @db.Uuid
-  ticketId    String?                       @map("ticket_id")
-  receiptId   String?                       @map("receipt_id")
-  status      PushNotificationReceiptStatus @default(PENDING)
-  providerStatus String?                    @map("provider_status")
-  providerDetails Json?                     @map("provider_details")
-  errorCode   String?                       @map("error_code")
-  errorMessage String?                      @map("error_message")
-  checkAfter  DateTime?                     @map("check_after")
-  checkedAt   DateTime?                     @map("checked_at")
-  createdAt   DateTime                      @default(now()) @map("created_at")
-  updatedAt   DateTime                      @updatedAt @map("updated_at")
-  notificationLog NotificationLog           @relation(fields: [notificationLogId], references: [id], onDelete: Cascade)
-  customerPushToken CustomerPushToken?      @relation(fields: [customerPushTokenId], references: [id], onDelete: SetNull)
-  campaignBatch PushNotificationCampaignBatch? @relation(fields: [campaignBatchId], references: [id], onDelete: SetNull)
+  id                  String                         @id @default(uuid()) @db.Uuid
+  notificationLogId   String                         @unique @map("notification_log_id") @db.Uuid
+  customerPushTokenId String?                        @map("customer_push_token_id") @db.Uuid
+  campaignBatchId     String?                        @map("campaign_batch_id") @db.Uuid
+  ticketId            String?                        @map("ticket_id")
+  receiptId           String?                        @map("receipt_id")
+  status              PushNotificationReceiptStatus  @default(PENDING)
+  providerStatus      String?                        @map("provider_status")
+  providerDetails     Json?                          @map("provider_details")
+  errorCode           String?                        @map("error_code")
+  errorMessage        String?                        @map("error_message")
+  checkAfter          DateTime?                      @map("check_after")
+  checkedAt           DateTime?                      @map("checked_at")
+  createdAt           DateTime                       @default(now()) @map("created_at")
+  updatedAt           DateTime                       @updatedAt @map("updated_at")
+  notificationLog     NotificationLog                @relation(fields: [notificationLogId], references: [id], onDelete: Cascade)
+  customerPushToken   CustomerPushToken?             @relation(fields: [customerPushTokenId], references: [id], onDelete: SetNull)
+  campaignBatch       PushNotificationCampaignBatch? @relation(fields: [campaignBatchId], references: [id], onDelete: SetNull)
 
   @@index([status, checkAfter])
   @@index([ticketId])

@@ -50,11 +50,13 @@ import {
 } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { EmptyState } from "../../src/components/empty-state";
+import { DealCard } from "../../src/components/deal-card";
 import { Screen } from "../../src/components/screen";
 import { useMobileCustomerAuth, type MobileCustomerAuthStatus } from "../../src/auth/mobile-auth-context";
 import { useMobileHome } from "../../src/features/home/use-mobile-home";
 import { composePersonalizedHomeRails } from "../../src/features/home/personalized-ranking";
 import { announceCurrencyChange, useMobileMarket } from "../../src/features/market/mobile-market";
+import { withStorefrontMaintenance } from "../../src/features/maintenance/mobile-maintenance-gate";
 import { getCart, listCustomerOrders, listLocationCountries, searchLocationAreas, type MobileLocationCountry } from "../../src/features/storefront/storefront-api";
 import { resolveImageUrl } from "../../src/lib/image-url";
 import { useLocationStore } from "../../src/state/location-store";
@@ -136,6 +138,11 @@ const QUICK_ACTION_TILE_GAP = 14;
 const PERSONALIZED_RAIL_SIDE_PADDING = 20;
 const PERSONALIZED_RAIL_CARD_GAP = 16;
 
+// Standard product card dimensions - consistent across all card types
+const STANDARD_CARD_WIDTH = 160;
+const STANDARD_IMAGE_HEIGHT = 120;
+const CARDS_PER_VIEW = 3; // Show only 3 products per view
+
 const trustItems = [
   { title: "Verified Sellers", subtitle: "Trusted & safe", icon: Shield01Icon, color: colors.primary, background: "#FFF2EE" },
   { title: "Best Prices", subtitle: "Great deals", icon: Award01Icon, color: "#15935D", background: "#EAF9EF" },
@@ -204,7 +211,7 @@ const featuredCategories = [
   },
 ] satisfies FeaturedCategory[];
 
-export default function HomeScreen() {
+function HomeScreen() {
   const selectedLocation = useLocationStore((state) => state.selectedLocation);
   const homeQuery = useMobileHome(selectedLocation);
   const feedItems = useMemo(() => buildFeed(homeQuery.data), [homeQuery.data]);
@@ -226,6 +233,8 @@ export default function HomeScreen() {
     </Screen>
   );
 }
+
+export default withStorefrontMaintenance(HomeScreen);
 
 function HomeHeader({ selectedLocation }: { selectedLocation: SelectedLocation }) {
   const router = useRouter();
@@ -834,6 +843,8 @@ function MobilePersonalizedRail({
   products: MobilePersonalizedProduct[];
   title: string;
 }) {
+  // Limit to 3 products per view for consistency
+  const displayedProducts = products.slice(0, CARDS_PER_VIEW);
   const { width } = useWindowDimensions();
   const cardWidth = personalizedRailCardWidth(width, cardVariant);
 
@@ -867,29 +878,29 @@ function MobilePersonalizedRail({
         snapToInterval={snapInterval}
       >
         {isLoading
-          ? [0, 1, 2, 3].map((item, index) => (
-              <View key={`personalized-${title}-${item}`} style={index === 3 ? null : styles.personalizedRailItem}>
-                <View
-                  style={[
-                    styles.personalizedSkeleton,
-                    cardVariant !== "standard" ? styles.recommendedSkeleton : null,
-                    { width: cardWidth },
-                  ]}
-                />
-              </View>
-            ))
-          : products.map((product, index) => (
+          ? [0, 1, 2].map((item, index) => (
+            <View key={`personalized-${title}-${item}`} style={index === 2 ? null : styles.personalizedRailItem}>
               <View
-                key={`${title}-${product.id}-${product.slug}`}
-                style={index === products.length - 1 ? null : styles.personalizedRailItem}
-              >
-                {cardVariant !== "standard" ? (
-                  <MobileRecommendedProductCard cardWidth={cardWidth} product={product} variant={cardVariant} />
-                ) : (
-                  <MobilePersonalizedProductCard cardWidth={cardWidth} product={product} />
-                )}
-              </View>
-            ))}
+                style={[
+                  styles.personalizedSkeleton,
+                  cardVariant !== "standard" ? styles.recommendedSkeleton : null,
+                  { width: cardWidth },
+                ]}
+              />
+            </View>
+          ))
+          : displayedProducts.map((product, index) => (
+            <View
+              key={`${title}-${product.id}-${product.slug}`}
+              style={index === displayedProducts.length - 1 ? null : styles.personalizedRailItem}
+            >
+              {cardVariant !== "standard" ? (
+                <MobileRecommendedProductCard cardWidth={cardWidth} product={product} variant={cardVariant} />
+              ) : (
+                <MobilePersonalizedProductCard cardWidth={cardWidth} product={product} />
+              )}
+            </View>
+          ))}
       </ScrollView>
     </View>
   );
@@ -1029,7 +1040,7 @@ function MobileBuyAgainCard({ product }: { product: MobilePersonalizedProduct })
         <View style={styles.buyAgainContentRow}>
           <View style={styles.buyAgainThumb}>
             {imageUrl ? (
-              <RemoteImage resizeMode="contain" style={styles.buyAgainImage} uri={imageUrl} />
+              <RemoteImage resizeMode="cover" style={styles.buyAgainImage} uri={imageUrl} />
             ) : (
               <ProductImageFallback compact />
             )}
@@ -1040,24 +1051,24 @@ function MobileBuyAgainCard({ product }: { product: MobilePersonalizedProduct })
           <View style={styles.buyAgainCopy}>
             <View style={styles.buyAgainMetaRow}>
               <View style={styles.buyAgainTag}>
-                <Text style={styles.buyAgainTagText}>Previously ordered</Text>
+                <Text numberOfLines={1} ellipsizeMode="tail" style={styles.buyAgainTagText}>Previously ordered</Text>
               </View>
-              <Text style={[styles.buyAgainStockPill, stock.available ? styles.buyAgainStockIn : styles.buyAgainStockOut]}>
+              <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.buyAgainStockPill, stock.available ? styles.buyAgainStockIn : styles.buyAgainStockOut]}>
                 {stock.label}
               </Text>
             </View>
-            <Text numberOfLines={2} style={styles.buyAgainProductName}>
+            <Text numberOfLines={2} ellipsizeMode="tail" style={styles.buyAgainProductName}>
               {product.name}
             </Text>
-            <Text numberOfLines={1} style={styles.buyAgainSeller}>
+            <Text numberOfLines={1} ellipsizeMode="tail" style={styles.buyAgainSeller}>
               {product.sellerName}
             </Text>
             <View style={styles.buyAgainPriceRow}>
-              <Text numberOfLines={1} style={styles.buyAgainPrice}>
+              <Text numberOfLines={1} ellipsizeMode="tail" style={styles.buyAgainPrice}>
                 {product.pricePaise !== null ? market.format(product.pricePaise) : "View price"}
               </Text>
               {product.mrpPaise && product.pricePaise && product.mrpPaise > product.pricePaise ? (
-                <Text numberOfLines={1} style={styles.buyAgainMrp}>
+                <Text numberOfLines={1} ellipsizeMode="tail" style={styles.buyAgainMrp}>
                   {market.format(product.mrpPaise)}
                 </Text>
               ) : null}
@@ -1066,11 +1077,18 @@ function MobileBuyAgainCard({ product }: { product: MobilePersonalizedProduct })
         </View>
         <View style={[styles.buyAgainButton, compact ? styles.buyAgainButtonCompact : null]}>
           <HugeiconsIcon color={colors.surface} icon={ShoppingCart01Icon} size={18} strokeWidth={2.2} />
-          <Text style={styles.buyAgainButtonText}>Buy Again</Text>
+          <Text numberOfLines={1} ellipsizeMode="tail" style={styles.buyAgainButtonText}>Buy Again</Text>
         </View>
       </Pressable>
     </Link>
   );
+}
+
+function truncateText(text: string, maxLength: number = 12): string {
+  if (text.length <= maxLength) {
+    return text;
+  }
+  return text.substring(0, maxLength) + "...";
 }
 
 function MobileRecommendedProductCard({
@@ -1085,7 +1103,8 @@ function MobileRecommendedProductCard({
   const market = useMobileMarket();
   const imageUrl = resolveImageUrl(product.imageUrl);
   const isLead = variant === "lead";
-  const imageHeight = isLead ? 154 : 118;
+  // Use standard image height for consistency
+  const imageHeight = STANDARD_IMAGE_HEIGHT;
   const badge = premiumBadgeLabel(product);
   const stock = stockPillState(product);
   const hasRating = typeof product.rating === "number" && product.rating > 0;
@@ -1103,13 +1122,13 @@ function MobileRecommendedProductCard({
       >
         <View style={[styles.recommendedImageWrap, isLead ? styles.recommendedImageWrapLead : styles.recommendedImageWrapCompact, { height: imageHeight }]}>
           {imageUrl ? (
-            <RemoteImage resizeMode="contain" style={styles.recommendedProductImage} uri={imageUrl} />
+            <RemoteImage resizeMode="cover" style={styles.recommendedProductImage} uri={imageUrl} />
           ) : (
             <ProductImageFallback compact={!isLead} />
           )}
           <View style={styles.recommendedBadge}>
-            <Text numberOfLines={1} style={styles.recommendedBadgeText}>
-              {badge}
+            <Text numberOfLines={1} ellipsizeMode="tail" style={styles.recommendedBadgeText}>
+              {truncateText(badge, 8)}
             </Text>
           </View>
           <View style={styles.recommendedHeartButton}>
@@ -1117,47 +1136,41 @@ function MobileRecommendedProductCard({
           </View>
         </View>
         <View style={[styles.recommendedBody, isLead ? styles.recommendedBodyLead : styles.recommendedBodyCompact]}>
-          <Text numberOfLines={2} style={[styles.recommendedProductName, isLead ? styles.recommendedProductNameLead : null]}>
-            {product.name}
-          </Text>
-          <Text numberOfLines={1} style={[styles.recommendedSellerName, isLead ? styles.recommendedSellerNameLead : null]}>
-            {product.sellerName}
+          <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.recommendedProductName, isLead ? styles.recommendedProductNameLead : null]}>
+            {truncateText(product.name, 25)}
           </Text>
           <View style={styles.recommendedMetaRow}>
-            <Text numberOfLines={1} style={styles.recommendedCategoryPill}>
-              {product.categoryName ?? "Marketplace"}
+            <Text
+              numberOfLines={1}
+              ellipsizeMode="tail"
+              style={styles.recommendedCategoryPillText}
+            >
+              {product.categoryName || "Marketplace"}
             </Text>
             {hasRating ? (
               <View style={styles.recommendedRatingRow}>
                 <HugeiconsIcon color="#22C55E" icon={StarIcon} size={13} strokeWidth={2.5} />
-                <Text numberOfLines={1} style={styles.recommendedRatingText}>
+                <Text numberOfLines={1} ellipsizeMode="tail" style={styles.recommendedRatingText}>
                   {product.rating?.toFixed(1)}
                 </Text>
               </View>
             ) : (
-              <Text numberOfLines={1} style={styles.recommendedFreshPill}>
+              <Text numberOfLines={1} ellipsizeMode="tail" style={styles.recommendedFreshPill}>
                 New
               </Text>
             )}
           </View>
           <View style={styles.recommendedFooter}>
             <View style={styles.recommendedPriceBlock}>
-              <Text numberOfLines={1} style={styles.recommendedPrice}>
+              <Text numberOfLines={1} ellipsizeMode="tail" style={styles.recommendedPrice}>
                 {product.pricePaise !== null ? market.format(product.pricePaise) : "View price"}
               </Text>
               {product.mrpPaise && product.pricePaise && product.mrpPaise > product.pricePaise ? (
-                <Text numberOfLines={1} style={styles.recommendedMrp}>
+                <Text numberOfLines={1} ellipsizeMode="tail" style={styles.recommendedMrp}>
                   {market.format(product.mrpPaise)}
                 </Text>
               ) : null}
             </View>
-            <Text style={[styles.recommendedStockPill, stock.available ? styles.recommendedStockIn : styles.recommendedStockOut]}>
-              {stock.label}
-            </Text>
-          </View>
-          <View style={[styles.recommendedCta, isLead ? styles.recommendedCtaLead : styles.recommendedCtaCompact]}>
-            <Text style={styles.recommendedCtaText}>View Product</Text>
-            {isLead ? <Text style={styles.recommendedCtaArrow}>{">"}</Text> : null}
           </View>
         </View>
       </Pressable>
@@ -1174,7 +1187,8 @@ function MobilePersonalizedProductCard({
 }) {
   const market = useMobileMarket();
   const imageUrl = resolveImageUrl(product.imageUrl);
-  const imageHeight = Math.round(cardWidth * 0.72);
+  // Use standard image height for consistency
+  const imageHeight = STANDARD_IMAGE_HEIGHT;
 
   return (
     <Link asChild href={`/product/${product.slug}` as Href}>
@@ -1187,28 +1201,28 @@ function MobilePersonalizedProductCard({
       >
         <View style={[styles.personalizedProductImageWrap, { height: imageHeight }]}>
           {imageUrl ? (
-            <RemoteImage resizeMode="contain" style={styles.personalizedProductImage} uri={imageUrl} />
+            <RemoteImage resizeMode="cover" style={styles.personalizedProductImage} uri={imageUrl} />
           ) : (
             <ProductImageFallback />
           )}
-          {product.badge ? <Text style={styles.personalizedProductBadge}>{product.badge}</Text> : null}
+          {product.badge ? <Text numberOfLines={1} ellipsizeMode="tail" style={styles.personalizedProductBadge}>{product.badge}</Text> : null}
           <View style={styles.productHeartButton}>
             <HugeiconsIcon color="#8A94A6" icon={HeartIcon} size={20} strokeWidth={1.9} />
           </View>
         </View>
-        <Text numberOfLines={2} style={styles.personalizedProductName}>
-          {product.name}
-        </Text>
         <View style={styles.personalizedProductDetails}>
-          <Text numberOfLines={1} style={styles.personalizedProductSeller}>
-            {product.sellerName}
+          <Text numberOfLines={1} ellipsizeMode="tail" style={styles.personalizedProductName}>
+            {truncateText(product.name, 20)}
+          </Text>
+          <Text numberOfLines={1} ellipsizeMode="tail" style={styles.personalizedProductSeller}>
+            {truncateText(product.sellerName, 10)}
           </Text>
           <View style={styles.personalizedPriceRow}>
-            <Text numberOfLines={1} style={styles.personalizedPrice}>
+            <Text numberOfLines={1} ellipsizeMode="tail" style={styles.personalizedPrice}>
               {product.pricePaise !== null ? market.format(product.pricePaise) : "View price"}
             </Text>
             {product.mrpPaise && product.pricePaise && product.mrpPaise > product.pricePaise ? (
-              <Text numberOfLines={1} style={styles.personalizedMrp}>
+              <Text numberOfLines={1} ellipsizeMode="tail" style={styles.personalizedMrp}>
                 {market.format(product.mrpPaise)}
               </Text>
             ) : null}
@@ -1217,14 +1231,14 @@ function MobilePersonalizedProductCard({
             {product.rating ? (
               <>
                 <HugeiconsIcon color="#15935D" icon={StarIcon} size={14} strokeWidth={2.5} />
-                <Text style={styles.personalizedRatingText}>
+                <Text numberOfLines={1} ellipsizeMode="tail" style={styles.personalizedRatingText}>
                   {product.rating.toFixed(1)}
                   {product.reviewCount ? ` (${product.reviewCount})` : ""}
                 </Text>
               </>
             ) : (
-              <Text numberOfLines={1} style={styles.personalizedRatingPlaceholder}>
-                {product.categoryName ?? "Marketplace"}
+              <Text numberOfLines={1} ellipsizeMode="tail" style={styles.personalizedRatingPlaceholder}>
+                {truncateText(product.categoryName ?? "Marketplace", 10)}
               </Text>
             )}
           </View>
@@ -1348,11 +1362,11 @@ function AdminSection({ section, products }: { section: MobileHomepageSection; p
           ) : null}
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.flashProducts}>
-          {(products.length ? products : []).slice(0, 6).map((product) => (
+          {(products.length ? products : []).slice(0, CARDS_PER_VIEW).map((product) => (
             <DealProductCard key={product.id} formatPrice={market.format} product={product} timerEndsAt={timerEndsAt} />
           ))}
           {!products.length
-            ? items.slice(0, 6).map((item, index) => <AdminMiniCard key={`${section.id}-${index}`} item={item} timerEndsAt={timerEndsAt} />)
+            ? items.slice(0, CARDS_PER_VIEW).map((item, index) => <AdminMiniCard key={`${section.id}-${index}`} item={item} timerEndsAt={timerEndsAt} />)
             : null}
         </ScrollView>
       </View>
@@ -1374,7 +1388,7 @@ function AdminSection({ section, products }: { section: MobileHomepageSection; p
       {description ? <Text style={styles.sectionDescription}>{description}</Text> : null}
       {products.length ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.productScrollContent} style={styles.productScroll}>
-          {products.slice(0, 10).map((product) => (
+          {products.slice(0, CARDS_PER_VIEW).map((product) => (
             <MarketplaceProductCard key={product.id} formatPrice={market.format} product={product} />
           ))}
         </ScrollView>
@@ -1431,38 +1445,7 @@ function DealProductCard({
   product: MobileProduct;
   timerEndsAt: string;
 }) {
-  const { width } = useWindowDimensions();
-  const cardWidth = Math.min(176, Math.max(154, Math.floor((width - 52) / 2)));
-  const imageHeight = Math.min(142, Math.max(118, Math.round(cardWidth * 0.8)));
-  const cardHeight = imageHeight + 126;
-  const imageUrl = resolveImageUrl(product.images?.[0]?.url);
-  const variant = product.variants?.[0];
-  const price = variant?.pricePaise;
-  const mrp = variant?.mrpPaise ?? null;
-  const discount = discountPercent(price, mrp);
-
-  return (
-    <Link href={`/product/${product.slug}`} style={[styles.dealCard, { minHeight: cardHeight, width: cardWidth }]}>
-      <View>
-        <View style={[styles.dealImageWrap, { height: imageHeight }]}>
-          {imageUrl ? <RemoteImage resizeMode="contain" style={styles.dealImage} uri={imageUrl} /> : <ProductImageFallback />}
-          {discount ? <Text style={styles.dealDiscountBadge}>Deal</Text> : null}
-          <View style={styles.productHeartButton}>
-            <HugeiconsIcon color="#667085" icon={HeartIcon} size={18} strokeWidth={1.8} />
-          </View>
-          {product.images && product.images.length > 1 ? <ImageDots count={product.images.length} /> : null}
-        </View>
-        <Text numberOfLines={2} style={styles.dealName}>
-          {product.name}
-        </Text>
-        <View style={styles.priceRow}>
-          <Text style={styles.dealPrice}>{typeof price === "number" ? formatPrice(price) : "View price"}</Text>
-          {mrp ? <Text style={styles.mrpText}>{formatPrice(mrp)}</Text> : null}
-        </View>
-        <Text style={styles.dealCta}>View deal</Text>
-      </View>
-    </Link>
-  );
+  return <DealCard formatPrice={formatPrice} product={product} />;
 }
 
 function ProductSection({
@@ -1526,9 +1509,8 @@ function MarketplaceProductCard({
   formatPrice: (pricePaise?: number | null) => string;
   product: MobileProduct;
 }) {
-  const { width } = useWindowDimensions();
-  const cardWidth = Math.min(178, Math.max(156, Math.floor((width - 58) / 2)));
-  const imageHeight = Math.min(146, Math.max(122, Math.round(cardWidth * 0.76)));
+  const cardWidth = STANDARD_CARD_WIDTH;
+  const imageHeight = STANDARD_IMAGE_HEIGHT;
   const cardHeight = imageHeight + 132;
   const imageUrl = resolveImageUrl(product.images?.[0]?.url);
   const variant = product.variants?.[0];
@@ -1540,7 +1522,7 @@ function MarketplaceProductCard({
 
   return (
     <Link href={`/product/${product.slug}`} style={[styles.productCard, { minHeight: cardHeight, width: cardWidth }]}>
-      <View>
+      <View style={styles.productCardContent}>
         <View style={[styles.productImageWrap, { height: imageHeight }]}>
           {imageUrl ? <RemoteImage resizeMode="cover" style={styles.productImage} uri={imageUrl} /> : <ProductImageFallback />}
           {discount ? <Text style={styles.productDiscountBadge}>Deal</Text> : null}
@@ -1549,25 +1531,27 @@ function MarketplaceProductCard({
           </View>
           {product.images && product.images.length > 1 ? <ImageDots count={product.images.length} /> : null}
         </View>
-        <Text numberOfLines={2} style={styles.productName}>
-          {product.name}
-        </Text>
-        <Text numberOfLines={1} style={styles.productSeller}>
-          {product.seller?.storeName ?? "1HandIndia seller"}
-        </Text>
-        <View style={styles.priceRow}>
-          <Text style={styles.productPrice}>{typeof price === "number" ? formatPrice(price) : "View price"}</Text>
-          {mrp ? <Text style={styles.productMrp}>{formatPrice(mrp)}</Text> : null}
-        </View>
-        {rating ? (
-          <View style={styles.productRatingRow}>
-            <HugeiconsIcon color="#15935D" icon={StarIcon} size={14} strokeWidth={2.5} />
-            <Text numberOfLines={1} style={styles.productRatingText}>
-              {rating.toFixed(1)}
-              {reviewCount ? ` (${reviewCount})` : ""}
-            </Text>
+        <View style={styles.productTextContainer}>
+          <Text numberOfLines={2} ellipsizeMode="tail" style={styles.productName}>
+            {product.name}
+          </Text>
+          <Text numberOfLines={1} ellipsizeMode="tail" style={styles.productSeller}>
+            {product.seller?.storeName ?? "1HandIndia seller"}
+          </Text>
+          <View style={styles.priceRow}>
+            <Text numberOfLines={1} ellipsizeMode="tail" style={styles.productPrice}>{typeof price === "number" ? formatPrice(price) : "View price"}</Text>
+            {mrp ? <Text numberOfLines={1} ellipsizeMode="tail" style={styles.productMrp}>{formatPrice(mrp)}</Text> : null}
           </View>
-        ) : null}
+          {rating ? (
+            <View style={styles.productRatingRow}>
+              <HugeiconsIcon color="#15935D" icon={StarIcon} size={14} strokeWidth={2.5} />
+              <Text numberOfLines={1} ellipsizeMode="tail" style={styles.productRatingText}>
+                {rating.toFixed(1)}
+                {reviewCount ? ` (${reviewCount})` : ""}
+              </Text>
+            </View>
+          ) : null}
+        </View>
       </View>
     </Link>
   );
@@ -1592,7 +1576,7 @@ function StoreStrip({ stores }: { stores: MobileStore[] }) {
     <View style={styles.section}>
       <SectionHeader actionHref={"/local-shops" as Href} title="Local Shops" />
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.storeScrollContent} style={styles.storeScroll}>
-        {stores.slice(0, 8).map((store) => {
+        {stores.slice(0, CARDS_PER_VIEW).map((store) => {
           const logoUrl = resolveImageUrl(store.profile?.logoUrl);
           const rating = store.reviewSummary?.averageRating;
           const reviewCount = store.reviewSummary?.reviewCount ?? 0;
@@ -3144,17 +3128,26 @@ const styles = StyleSheet.create({
     minHeight: 24,
   },
   recommendedCategoryPill: {
-    backgroundColor: "#FFF2EE",
-    borderRadius: 999,
-    color: "#6B7280",
-    flex: 1,
-    fontFamily: "Plus Jakarta Sans",
-    fontSize: 9.8,
-    fontWeight: "900",
-    overflow: "hidden",
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-  },
+  backgroundColor: "#FFF5F0",
+  borderRadius: 9999,
+  paddingHorizontal: 12,
+  paddingVertical: 6,
+  borderWidth: 1,
+  borderColor: "#FFE2D5",
+  alignItems: "center",
+  justifyContent: "center",
+  maxWidth: 110,
+  minHeight: 28,
+},
+
+recommendedCategoryPillText: {
+  color: "#E85D2A",
+  fontSize: 11,
+  fontWeight: "700",
+  letterSpacing: 0.2,
+  textAlign: "center",
+  flexShrink: 1,
+},
   recommendedRatingRow: {
     alignItems: "center",
     backgroundColor: "#F0FDF4",
@@ -3260,7 +3253,7 @@ const styles = StyleSheet.create({
   personalizedProductCard: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
-    borderRadius: 24,
+    borderRadius: 12,
     borderWidth: 1,
     elevation: 3,
     height: 286,
@@ -3278,7 +3271,7 @@ const styles = StyleSheet.create({
   personalizedProductImageWrap: {
     backgroundColor: "#FFFAF8",
     borderColor: "#F8ECE6",
-    borderRadius: 20,
+    borderRadius: 10,
     borderWidth: 1,
     overflow: "hidden",
     position: "relative",
@@ -3289,28 +3282,29 @@ const styles = StyleSheet.create({
   },
   personalizedProductBadge: {
     backgroundColor: colors.primary,
-    borderRadius: 999,
+    borderRadius: 6,
     color: colors.surface,
     fontFamily: "Plus Jakarta Sans",
     fontSize: 10,
     fontWeight: "900",
     left: 7,
     overflow: "hidden",
-    paddingHorizontal: 7,
-    paddingVertical: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
     position: "absolute",
     top: 7,
+    zIndex: 2,
   },
   personalizedProductName: {
     color: colors.ink,
     fontFamily: "Plus Jakarta Sans",
     fontSize: 13.2,
-    fontWeight: "900",
+    fontWeight: "700",
     lineHeight: 18,
-    marginTop: 12,
     minHeight: 36,
   },
   personalizedProductDetails: {
+    gap: 6,
     flex: 1,
     justifyContent: "space-between",
     paddingTop: 6,
@@ -3859,16 +3853,17 @@ const styles = StyleSheet.create({
   },
   productDiscountBadge: {
     backgroundColor: colors.primary,
-    borderRadius: 999,
+    borderRadius: 6,
     color: colors.surface,
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "900",
     left: 8,
     overflow: "hidden",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
     position: "absolute",
     top: 8,
+    zIndex: 2,
   },
   priceRow: {
     alignItems: "center",
@@ -3989,21 +3984,27 @@ const styles = StyleSheet.create({
   productCard: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
-    borderRadius: 24,
+    borderRadius: 12,
     borderWidth: 1,
     elevation: 3,
     marginRight: 18,
     overflow: "hidden",
-    padding: 10,
+    padding: 12,
     shadowColor: colors.primary,
     shadowOffset: { height: 12, width: 0 },
     shadowOpacity: 0.07,
     shadowRadius: 26,
   },
+  productCardContent: {
+    gap: 10,
+  },
+  productTextContainer: {
+    gap: 6,
+  },
   productImageWrap: {
     backgroundColor: "#FFFAF8",
     borderColor: "#F8ECE6",
-    borderRadius: 20,
+    borderRadius: 10,
     borderWidth: 1,
     overflow: "hidden",
     position: "relative",
@@ -4030,24 +4031,24 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     elevation: 3,
-    height: 38,
+    height: 36,
     justifyContent: "center",
     position: "absolute",
-    right: 9,
+    right: 8,
     shadowColor: colors.primary,
     shadowOffset: { height: 6, width: 0 },
     shadowOpacity: 0.08,
     shadowRadius: 16,
-    top: 9,
-    width: 38,
+    top: 8,
+    width: 36,
+    zIndex: 2,
   },
   productName: {
     color: colors.ink,
     fontFamily: "Plus Jakarta Sans",
     fontSize: 14,
-    fontWeight: "900",
+    fontWeight: "700",
     lineHeight: 19.5,
-    marginTop: 12,
     minHeight: 39,
   },
   productSeller: {
@@ -4055,7 +4056,6 @@ const styles = StyleSheet.create({
     fontFamily: "Plus Jakarta Sans",
     fontSize: 11.5,
     fontWeight: "800",
-    marginTop: 6,
   },
   productBadgeRow: {
     alignItems: "center",

@@ -42,6 +42,11 @@ const roleSeeds = [
     name: "Courier Manager",
     description: "Courier and delivery operations workspace user.",
   },
+  {
+    code: RoleCode.CHAT_SUPPORT,
+    name: "Chat Support Agent",
+    description: "Restricted support chat workspace user without full admin or finance access.",
+  },
 ];
 
 const permissionSeeds = [
@@ -69,6 +74,13 @@ const permissionSeeds = [
   ["delivery.update", "Update delivery records", "delivery"],
   ["cms.manage", "Manage CMS pages and banners", "cms"],
   ["support.manage", "Manage support requests", "support"],
+  ["chat.read", "Read permitted support chat conversations", "chat"],
+  ["chat.reply", "Reply to permitted support chat conversations", "chat"],
+  ["chat.manage", "Manage permitted support chat status, priority, and notes", "chat"],
+  ["chat.claim", "Claim unassigned normal support chat conversations", "chat"],
+  ["chat.settings", "Manage chatbot settings, AI limits, SLA, and retention", "chat"],
+  ["chat.export", "Export chat records", "chat"],
+  ["chat.audit.read", "Read chat-specific audit history", "chat"],
   ["reports.read", "Read operational reports", "reports"],
   ["settings.manage", "Manage platform settings", "settings"],
   ["payments.manage", "Manage payment readiness and webhooks", "payments"],
@@ -704,6 +716,30 @@ const defaultSettings = [
   ["shipping.default_charge_paise", "shipping", SettingValueType.NUMBER, 0],
   ["seller.commission.default_type", "commissions", SettingValueType.STRING, "MANUAL"],
   ["seller.commission.default_value", "commissions", SettingValueType.NUMBER, 0],
+  ["maintenance.storefront.enabled", "maintenance", SettingValueType.BOOLEAN, false],
+  [
+    "maintenance.storefront.message",
+    "maintenance",
+    SettingValueType.STRING,
+    "We are updating the shopping experience. Please check back shortly.",
+  ],
+  ["maintenance.storefront.eta", "maintenance", SettingValueType.STRING, ""],
+  ["maintenance.seller.enabled", "maintenance", SettingValueType.BOOLEAN, false],
+  [
+    "maintenance.seller.message",
+    "maintenance",
+    SettingValueType.STRING,
+    "Seller Center is under maintenance. Please check back shortly.",
+  ],
+  ["maintenance.seller.eta", "maintenance", SettingValueType.STRING, ""],
+  ["maintenance.delivery.enabled", "maintenance", SettingValueType.BOOLEAN, false],
+  [
+    "maintenance.delivery.message",
+    "maintenance",
+    SettingValueType.STRING,
+    "Delivery Partner workspace is under maintenance. Please check back shortly.",
+  ],
+  ["maintenance.delivery.eta", "maintenance", SettingValueType.STRING, ""],
 ] as const;
 
 const defaultSubscriptionPlans = [
@@ -872,6 +908,9 @@ async function seedSystemReferenceData() {
     where: { code: RoleCode.BUSINESS_BUYER },
   });
   const financeRole = await prisma.role.findUniqueOrThrow({ where: { code: RoleCode.FINANCE } });
+  const chatSupportRole = await prisma.role.findUniqueOrThrow({
+    where: { code: RoleCode.CHAT_SUPPORT },
+  });
   const adminPermissions = await prisma.permission.findMany();
 
   for (const permission of adminPermissions) {
@@ -958,6 +997,23 @@ async function seedSystemReferenceData() {
       update: {},
       create: {
         roleId: financeRole.id,
+        permissionId: permission.id,
+      },
+    });
+  }
+
+  for (const code of ["chat.read", "chat.reply", "chat.manage", "chat.claim"]) {
+    const permission = await prisma.permission.findUniqueOrThrow({ where: { code } });
+    await prisma.rolePermission.upsert({
+      where: {
+        roleId_permissionId: {
+          roleId: chatSupportRole.id,
+          permissionId: permission.id,
+        },
+      },
+      update: {},
+      create: {
+        roleId: chatSupportRole.id,
         permissionId: permission.id,
       },
     });

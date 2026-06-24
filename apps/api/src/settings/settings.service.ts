@@ -3,11 +3,13 @@ import { Prisma, SettingValueType } from "@indihub/database";
 import type { RequestUser } from "../auth/types/indihub-request";
 import { PrismaService } from "../prisma/prisma.service";
 import {
+  MaintenanceScopeDto,
   SettingsQueryDto,
   UpsertCheckoutPlatformFeeDto,
   UpsertContactSettingsDto,
   UpsertDeliveryPartnerPayoutSettingsDto,
   UpsertEmailSettingDto,
+  UpsertMaintenanceSettingsDto,
   UpsertMapRoutingSettingsDto,
   UpsertSettingDto,
 } from "./dto/settings.dto";
@@ -45,8 +47,32 @@ const checkoutPlatformFeeKeys = {
   valueBps: "checkout.platform_fee.value_bps",
   fixedPaise: "checkout.platform_fee.fixed_paise",
 } as const;
+export const chatSupportSettingKeys = {
+  enabled: "support.chat.enabled",
+} as const;
+const maintenanceSettingGroup = "maintenance";
+const maintenanceScopes = ["storefront", "seller", "delivery"] as const;
+const maintenanceSettingKeys = Object.fromEntries(
+  maintenanceScopes.map((scope) => [
+    scope,
+    {
+      enabled: `maintenance.${scope}.enabled`,
+      message: `maintenance.${scope}.message`,
+      eta: `maintenance.${scope}.eta`,
+    },
+  ]),
+) as Record<MaintenanceScope, { enabled: string; message: string; eta: string }>;
+const allMaintenanceSettingKeys = maintenanceScopes.flatMap((scope) =>
+  Object.values(maintenanceSettingKeys[scope]),
+);
+const defaultMaintenanceMessages: Record<MaintenanceScope, string> = {
+  storefront: "We are updating the shopping experience. Please check back shortly.",
+  seller: "Seller Center is under maintenance. Please check back shortly.",
+  delivery: "Delivery Partner workspace is under maintenance. Please check back shortly.",
+};
 
 type CheckoutPlatformFeeType = "PERCENTAGE" | "FIXED" | "MANUAL";
+type MaintenanceScope = (typeof maintenanceScopes)[number];
 type SettingLike = {
   key: string;
   group: string;
@@ -117,6 +143,27 @@ export class SettingsService {
     });
 
     return adminContactConfig(contactSettingsFromSetting(setting));
+  }
+
+  async getChatSupportConfig() {
+    const setting = await this.prisma.client.setting.findUnique({
+      where: { key: chatSupportSettingKeys.enabled },
+    });
+    return {
+      enabled: this.booleanSetting(setting?.value, true),
+    };
+  }
+
+  async getMaintenanceSettings() {
+    const settings = await this.prisma.client.setting.findMany({
+      where: {
+        key: {
+          in: allMaintenanceSettingKeys,
+        },
+      },
+    });
+
+    return this.maintenanceReadback(settings);
   }
 
   async upsertSetting(actor: RequestUser, key: string, dto: UpsertSettingDto) {
@@ -479,6 +526,71 @@ export class SettingsService {
     return adminContactConfig(normalized);
   }
 
+  async upsertMaintenanceSettings(actor: RequestUser, dto: UpsertMaintenanceSettingsDto) {
+    const seenScopes = new Set<MaintenanceScope>();
+    const normalized = dto.scopes.map((scopeDto) => this.normalizeMaintenanceScope(scopeDto));
+
+    for (const scope of normalized) {
+      if (seenScopes.has(scope.scope)) {
+        throw new BadRequestException(`Duplicate maintenance scope: ${scope.scope}.`);
+      }
+      seenScopes.add(scope.scope);
+    }
+
+    const writes = normalized.flatMap((scope) => {
+      const keys = maintenanceSettingKeys[scope.scope];
+      return [
+        this.settingWrite(keys.enabled, maintenanceSettingGroup, SettingValueType.BOOLEAN, scope.enabled),
+        this.settingWrite(keys.message, maintenanceSettingGroup, SettingValueType.STRING, scope.message),
+        this.settingWrite(keys.eta, maintenanceSettingGroup, SettingValueType.STRING, scope.eta),
+      ];
+    });
+
+    const updatedSettings = await this.prisma.client.$transaction(async (tx) => {
+      const before = await tx.setting.findMany({
+        where: {
+          key: {
+            in: allMaintenanceSettingKeys,
+          },
+        },
+      });
+
+      for (const write of writes) {
+        await tx.setting.upsert({
+          where: { key: write.key },
+          update: {
+            value: write.value,
+            valueType: write.valueType,
+            group: write.group,
+          },
+          create: write,
+        });
+      }
+
+      const after = await tx.setting.findMany({
+        where: {
+          key: {
+            in: allMaintenanceSettingKeys,
+          },
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actorUserId: actor.id,
+          action: "settings.maintenance.updated",
+          entityType: "maintenance_settings",
+          oldValue: { scopes: this.maintenanceReadback(before) },
+          newValue: { scopes: this.maintenanceReadback(after) },
+        },
+      });
+
+      return after;
+    });
+
+    return this.maintenanceReadback(updatedSettings);
+  }
+
   async getEmailSetting() {
     const setting = await this.ensureEmailSetting();
     return this.emailSettingReadback(setting);
@@ -564,6 +676,43 @@ export class SettingsService {
       valueBps: this.numberSetting(settingMap.get(checkoutPlatformFeeKeys.valueBps), 0),
       fixedPaise: this.numberSetting(settingMap.get(checkoutPlatformFeeKeys.fixedPaise), 0),
     };
+  }
+
+  private maintenanceReadback(settings: SettingLike[]) {
+    const settingMap = new Map(settings.map((setting) => [setting.key, setting.value]));
+
+    return maintenanceScopes.map((scope) => {
+      const keys = maintenanceSettingKeys[scope];
+      const defaultMessage = defaultMaintenanceMessages[scope];
+      return {
+        scope,
+        enabled: this.booleanSetting(settingMap.get(keys.enabled), false),
+        message: this.publicTextSetting(settingMap.get(keys.message), defaultMessage, 240),
+        eta: this.publicTextSetting(settingMap.get(keys.eta), "", 160),
+      };
+    });
+  }
+
+  private normalizeMaintenanceScope(input: MaintenanceScopeDto) {
+    return {
+      scope: input.scope,
+      enabled: input.enabled,
+      message: this.trimPublicText(input.message, 240, defaultMaintenanceMessages[input.scope]),
+      eta: this.trimPublicText(input.eta, 160, ""),
+    };
+  }
+
+  private publicTextSetting(value: Prisma.JsonValue | undefined, fallback: string, maxLength: number) {
+    if (typeof value !== "string") {
+      return fallback;
+    }
+
+    return this.trimPublicText(value, maxLength, fallback);
+  }
+
+  private trimPublicText(value: string | undefined, maxLength: number, fallback: string) {
+    const trimmed = value?.trim() ?? "";
+    return (trimmed || fallback).slice(0, maxLength);
   }
 
   private sanitizeSetting<

@@ -1,7 +1,7 @@
 import { IsBoolean, IsEnum, IsOptional, IsString, Max, MaxLength, Min } from "class-validator";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { Type } from "class-transformer";
-import { ApprovalStatus, SellerStatus, SellerType } from "@indihub/database";
+import { ApprovalStatus, DocumentStatus, SellerStatus, SellerType } from "@indihub/database";
 
 export enum SellerApprovalDecision {
   APPROVE = "APPROVE",
@@ -61,6 +61,18 @@ export class SellerSuspensionDto {
   suspended!: boolean;
 
   @ApiPropertyOptional({ example: "Missing required business documents." })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  note?: string;
+}
+
+export class SellerDocumentStatusDto {
+  @ApiProperty({ enum: DocumentStatus, example: DocumentStatus.APPROVED })
+  @IsEnum(DocumentStatus)
+  status!: DocumentStatus;
+
+  @ApiPropertyOptional({ example: "Document verified by admin." })
   @IsOptional()
   @IsString()
   @MaxLength(1000)

@@ -10,6 +10,7 @@ import { AuthModule } from "../auth/auth.module";
 import { B2BModule } from "../b2b/b2b.module";
 import { CartModule } from "../cart/cart.module";
 import { CategoriesModule } from "../categories/categories.module";
+import { ChatModule } from "../chat/chat.module";
 import { CmsModule } from "../cms/cms.module";
 import { CouponsModule } from "../coupons/coupons.module";
 import { CustomersModule } from "../customers/customers.module";
@@ -55,6 +56,7 @@ import { SupportModule } from "../support/support.module";
     DeliveryPartnerApplicationsModule,
     DealsModule,
     CartModule,
+    ChatModule,
     B2BModule,
     CategoriesModule,
     CmsModule,

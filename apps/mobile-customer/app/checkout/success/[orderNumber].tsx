@@ -13,10 +13,11 @@ import { EmptyState } from "../../../src/components/empty-state";
 import { Screen } from "../../../src/components/screen";
 import { useMobileCustomerAuth } from "../../../src/auth/mobile-auth-context";
 import { formatMoney, formatOrderBaseAmount, formatOrderDisplayTotal } from "../../../src/features/market/mobile-market";
+import { withStorefrontMaintenance } from "../../../src/features/maintenance/mobile-maintenance-gate";
 import { getCustomerOrder } from "../../../src/features/storefront/storefront-api";
 import { colors } from "../../../src/theme";
 
-export default function CheckoutSuccessScreen() {
+function CheckoutSuccessScreen() {
   const params = useLocalSearchParams<{
     orderNumber?: string;
     totalPaise?: string;
@@ -168,6 +169,8 @@ export default function CheckoutSuccessScreen() {
     </Screen>
   );
 }
+
+export default withStorefrontMaintenance(CheckoutSuccessScreen);
 
 function formatStatus(value: string) {
   return value

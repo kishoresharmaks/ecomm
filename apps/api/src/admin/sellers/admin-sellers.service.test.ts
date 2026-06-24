@@ -15,6 +15,9 @@ describe("AdminSellersService", () => {
   const notifications = {
     notifyEvent: vi.fn(),
   };
+  const storage = {
+    privateDocumentAccess: vi.fn(),
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -47,7 +50,7 @@ describe("AdminSellersService", () => {
       profile: null,
       addresses: [],
     });
-    const service = new AdminSellersService(createPrisma(tx), notifications as never);
+    const service = new AdminSellersService(createPrisma(tx), notifications as never, storage as never);
 
     const result = await service.updateSellerApproval(
       "seller_1",
@@ -125,7 +128,7 @@ describe("AdminSellersService", () => {
       profile: null,
       addresses: [],
     });
-    const service = new AdminSellersService(createPrisma(tx), notifications as never);
+    const service = new AdminSellersService(createPrisma(tx), notifications as never, storage as never);
 
     await service.updateSellerApproval("seller_paid", { decision: SellerApprovalDecision.APPROVE });
 
@@ -151,7 +154,7 @@ describe("AdminSellersService", () => {
   it("throws when an approval decision targets a missing seller", async () => {
     const tx = createSellerTx();
     tx.seller.findFirst.mockResolvedValue(null);
-    const service = new AdminSellersService(createPrisma(tx), notifications as never);
+    const service = new AdminSellersService(createPrisma(tx), notifications as never, storage as never);
 
     await expect(
       service.updateSellerApproval("missing_seller", { decision: SellerApprovalDecision.REJECT }),

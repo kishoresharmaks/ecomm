@@ -73,6 +73,7 @@ import {
 import { ContactSettingsPanel } from "@/components/admin/settings/contact-settings";
 import { CheckoutFeeSettings } from "@/components/admin/settings/checkout-fee-settings";
 import { DeliveryPartnerPayoutSettings } from "@/components/admin/settings/delivery-partner-payout-settings";
+import { MaintenanceSettingsPanel } from "@/components/admin/settings/maintenance-settings";
 import { MapRoutingSettings } from "@/components/admin/settings/map-routing-settings";
 import { ProductApprovalSettings } from "@/components/admin/settings/product-approval-settings";
 import { SellerPayoutSettings } from "@/components/admin/settings/seller-payout-settings";
@@ -93,6 +94,10 @@ import {
   type IndihubAuthHeaders,
 } from "@/lib/api";
 import { openB2BPurchaseOrderDocument } from "@/lib/b2b-po-documents";
+import {
+  downloadSellerAuditWorkbook,
+  type AdminSellerExportRecord,
+} from "@/lib/admin-seller-excel-export";
 import { resolveImageSource } from "@/lib/image-url";
 import {
   type LocationArea,
@@ -1952,6 +1957,7 @@ export function AdminSellersPageClient() {
   const auth = useAdminAuth();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
+  const [exportNotice, setExportNotice] = useState<string | null>(null);
   const confirmation = useAdminConfirmation();
   const query = useAdminList<SellerRecord>(
     "admin-sellers",
@@ -1981,6 +1987,22 @@ export function AdminSellersPageClient() {
       }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-sellers"] }),
   });
+  const exportSeller = useMutation({
+    mutationFn: async (seller: SellerRecord) => {
+      const exportRecord = await adminRequest<AdminSellerExportRecord>(
+        `/api/admin/sellers/${seller.id}/export`,
+        auth.authHeaders,
+      );
+      await downloadSellerAuditWorkbook(exportRecord, {
+        generatedBy: auth.user?.email ?? "Admin user",
+        sourceUrl: `${window.location.origin}/admin/sellers`,
+      });
+      return seller.storeName;
+    },
+    onMutate: () => setExportNotice(null),
+    onSuccess: (storeName) => setExportNotice(`Seller audit workbook downloaded for ${storeName}.`),
+    onError: (error) => setExportNotice(userFacingApiErrorMessage(error)),
+  });
   const items = listItems(query.data);
 
   return (
@@ -1994,6 +2016,13 @@ export function AdminSellersPageClient() {
       total={totalItems(query.data, items.length)}
     >
       {confirmation.dialog}
+      {exportNotice ? (
+        <AdminStatusNotice
+          title={exportSeller.isError ? "Export failed" : "Export ready"}
+          message={exportNotice}
+          tone={exportSeller.isError ? "danger" : "success"}
+        />
+      ) : null}
       <AdminTable
         items={items}
         isLoading={query.isLoading}
@@ -2119,6 +2148,13 @@ export function AdminSellersPageClient() {
                       }),
                     disabled: approve.isPending,
                     destructive: true,
+                  },
+                  {
+                    label: exportSeller.isPending ? "Preparing Excel..." : "Download Excel",
+                    description: "Generate the complete seller audit workbook",
+                    icon: <Download className="h-4 w-4 text-[#163B5C]" />,
+                    onSelect: () => exportSeller.mutate(item),
+                    disabled: exportSeller.isPending,
                   },
                   {
                     label: item.status === "SUSPENDED" ? "Unsuspend seller" : "Suspend seller",
@@ -5925,6 +5961,11 @@ export function AdminSettingsPageClient() {
             key: "catalogue-rules",
             label: "Catalogue rules",
             panel: <ProductApprovalSettings settings={settings} />,
+          },
+          {
+            key: "maintenance",
+            label: "Maintenance",
+            panel: <MaintenanceSettingsPanel settings={settings} />,
           },
           {
             key: "courier-integrations",

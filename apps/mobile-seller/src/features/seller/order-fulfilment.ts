@@ -133,7 +133,7 @@ export function validateDeliveryForm(
     }
   }
 
-  if (action === "PROCESSING" || action === "PACKED") {
+  if (action === "PACKED") {
     payload.status = "PACKED";
   }
 

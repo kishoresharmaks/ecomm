@@ -1437,13 +1437,16 @@ export class B2BService {
     },
     fileKey: string,
   ) {
-    const expectedPrefix = `indihub/b2b/purchase-orders/${safeStorageFolderSegment(
+    const expectedPrefix = `1handindia/b2b/purchase-orders/${safeStorageFolderSegment(
+      order.businessBuyerId,
+    )}/${safeStorageFolderSegment(order.orderNumber)}/`;
+    const legacyExpectedPrefix = `indihub/b2b/purchase-orders/${safeStorageFolderSegment(
       order.businessBuyerId,
     )}/${safeStorageFolderSegment(order.orderNumber)}/`;
     const normalized = fileKey.trim().replaceAll("\\", "/").replace(/^\/+/, "");
 
     if (
-      !normalized.startsWith(expectedPrefix) ||
+      (!normalized.startsWith(expectedPrefix) && !normalized.startsWith(legacyExpectedPrefix)) ||
       normalized.includes("..") ||
       normalized.includes("://")
     ) {

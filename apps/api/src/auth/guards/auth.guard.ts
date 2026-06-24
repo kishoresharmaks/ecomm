@@ -101,7 +101,7 @@ export class AuthGuard implements CanActivate {
   }
 
   private isBackOfficeRole(role: RoleCode) {
-    return role === RoleCode.ADMIN || role === RoleCode.FINANCE || role === RoleCode.COURIER_MANAGER;
+    return role === RoleCode.ADMIN || role === RoleCode.FINANCE || role === RoleCode.COURIER_MANAGER || role === RoleCode.CHAT_SUPPORT;
   }
 
   private async resolveClerkUserId(request: IndiHubRequest) {

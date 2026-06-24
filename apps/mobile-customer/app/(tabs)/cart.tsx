@@ -15,11 +15,12 @@ import { Screen } from "../../src/components/screen";
 import { useMobileCustomerAuth } from "../../src/auth/mobile-auth-context";
 import { accountErrorMessage } from "../../src/features/account/account-ui";
 import { useMobileMarket } from "../../src/features/market/mobile-market";
+import { withStorefrontMaintenance } from "../../src/features/maintenance/mobile-maintenance-gate";
 import { getCart, removeCartItem, updateCartItem, type MobileCartSummary } from "../../src/features/storefront/storefront-api";
 import { resolveImageUrl } from "../../src/lib/image-url";
 import { colors } from "../../src/theme";
 
-export default function CartScreen() {
+function CartScreen() {
   const customerAuth = useMobileCustomerAuth();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -170,6 +171,8 @@ export default function CartScreen() {
     </Screen>
   );
 }
+
+export default withStorefrontMaintenance(CartScreen);
 
 function CartItemRow({
   busy,

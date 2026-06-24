@@ -22,6 +22,7 @@ import { Button, StatusBadge, cn, type StatusTone } from "@indihub/ui";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
 import { DevAuthPanel } from "@/components/dev-auth/dev-auth-panel";
 import { useDevAuth } from "@/components/dev-auth/dev-auth-context";
+import { DeliveryMaintenanceGate } from "@/components/maintenance/maintenance-mode";
 import { userFacingApiErrorMessage, type IndihubAuthHeaders } from "@/lib/api";
 import { getOwnDeliveryPartnerApplication } from "@/lib/delivery-partner-application-api";
 
@@ -99,40 +100,42 @@ export function DeliveryShell({
   }, [needsApplication, pathname, router]);
 
   return (
-    <div className="min-h-screen bg-[#F7F4EE]">
-      <aside className="fixed inset-y-0 left-0 z-20 hidden w-72 border-r border-white/10 bg-[#123A5A] text-white lg:block">
-        <DeliverySidebar pathname={pathname} accessStatus={accessStatus} />
-      </aside>
-      <main className="lg:pl-72">
-        <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-10">
-          <div className="mb-6 border-b border-[#D8E2EA] pb-5">
-            <p className="text-xs font-black uppercase tracking-[0.22em] text-[#ED3500]">Delivery partner</p>
-            <h1 className="mt-2 text-3xl font-black text-[#123A5A] sm:text-4xl">{title}</h1>
-            <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-[#536579]">{description}</p>
-            <div className="mt-4 flex flex-wrap gap-2 lg:hidden">
-              {deliveryNav.map((item) => (
-                <Button key={item.href} asChild variant={pathname === item.href ? "primary" : "outline"} size="sm">
-                  <Link href={item.href}>
-                    <item.icon className="h-4 w-4" aria-hidden="true" />
-                    {item.label}
-                  </Link>
-                </Button>
-              ))}
+    <DeliveryMaintenanceGate>
+      <div className="min-h-screen bg-[#F7F4EE]">
+        <aside className="fixed inset-y-0 left-0 z-20 hidden w-72 border-r border-white/10 bg-[#123A5A] text-white lg:block">
+          <DeliverySidebar pathname={pathname} accessStatus={accessStatus} />
+        </aside>
+        <main className="lg:pl-72">
+          <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-10">
+            <div className="mb-6 border-b border-[#D8E2EA] pb-5">
+              <p className="text-xs font-black uppercase tracking-[0.22em] text-[#ED3500]">Delivery partner</p>
+              <h1 className="mt-2 text-3xl font-black text-[#123A5A] sm:text-4xl">{title}</h1>
+              <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-[#536579]">{description}</p>
+              <div className="mt-4 flex flex-wrap gap-2 lg:hidden">
+                {deliveryNav.map((item) => (
+                  <Button key={item.href} asChild variant={pathname === item.href ? "primary" : "outline"} size="sm">
+                    <Link href={item.href}>
+                      <item.icon className="h-4 w-4" aria-hidden="true" />
+                      {item.label}
+                    </Link>
+                  </Button>
+                ))}
+              </div>
             </div>
+            <DeliveryAuthNotice />
+            {isDeliveryPartner ? (
+              children
+            ) : (
+              <DeliveryAccessGate
+                status={accessStatus}
+                error={accessQuery.error}
+                onRetry={() => void accessQuery.refetch()}
+              />
+            )}
           </div>
-          <DeliveryAuthNotice />
-          {isDeliveryPartner ? (
-            children
-          ) : (
-            <DeliveryAccessGate
-              status={accessStatus}
-              error={accessQuery.error}
-              onRetry={() => void accessQuery.refetch()}
-            />
-          )}
-        </div>
-      </main>
-    </div>
+        </main>
+      </div>
+    </DeliveryMaintenanceGate>
   );
 }
 

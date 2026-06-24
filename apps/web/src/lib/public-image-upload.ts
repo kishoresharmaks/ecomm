@@ -47,6 +47,14 @@ type UploadOptions = {
 const maxImageBytes = 5 * 1024 * 1024;
 const allowedImageTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 
+// Recommended image dimensions for consistent display
+const RECOMMENDED_PRODUCT_IMAGE_WIDTH = 800;
+const RECOMMENDED_PRODUCT_IMAGE_HEIGHT = 600;
+const MIN_PRODUCT_IMAGE_WIDTH = 400;
+const MIN_PRODUCT_IMAGE_HEIGHT = 300;
+const MAX_PRODUCT_IMAGE_WIDTH = 2000;
+const MAX_PRODUCT_IMAGE_HEIGHT = 1500;
+
 export function validatePublicImageFile(file: File) {
   if (!allowedImageTypes.has(file.type)) {
     throw new Error("Upload a JPG, PNG, WebP, or GIF image.");
@@ -57,6 +65,54 @@ export function validatePublicImageFile(file: File) {
   }
 }
 
+export async function validateImageDimensions(file: File): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve({ width: img.width, height: img.height });
+    };
+    
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Unable to read image dimensions."));
+    };
+    
+    img.src = url;
+  });
+}
+
+export function validateProductImageDimensions(width: number, height: number): void {
+  if (width < MIN_PRODUCT_IMAGE_WIDTH || height < MIN_PRODUCT_IMAGE_HEIGHT) {
+    throw new Error(
+      `Image too small. Minimum dimensions: ${MIN_PRODUCT_IMAGE_WIDTH}x${MIN_PRODUCT_IMAGE_HEIGHT}px. ` +
+      `Recommended: ${RECOMMENDED_PRODUCT_IMAGE_WIDTH}x${RECOMMENDED_PRODUCT_IMAGE_HEIGHT}px.`
+    );
+  }
+  
+  if (width > MAX_PRODUCT_IMAGE_WIDTH || height > MAX_PRODUCT_IMAGE_HEIGHT) {
+    throw new Error(
+      `Image too large. Maximum dimensions: ${MAX_PRODUCT_IMAGE_WIDTH}x${MAX_PRODUCT_IMAGE_HEIGHT}px. ` +
+      `Recommended: ${RECOMMENDED_PRODUCT_IMAGE_WIDTH}x${RECOMMENDED_PRODUCT_IMAGE_HEIGHT}px.`
+    );
+  }
+  
+  // Check aspect ratio (should be close to 4:3 for product images)
+  const aspectRatio = width / height;
+  const targetAspectRatio = RECOMMENDED_PRODUCT_IMAGE_WIDTH / RECOMMENDED_PRODUCT_IMAGE_HEIGHT;
+  const aspectRatioTolerance = 0.3;
+  
+  if (Math.abs(aspectRatio - targetAspectRatio) > aspectRatioTolerance) {
+    console.warn(
+      `Image aspect ratio (${width}:${height}) differs from recommended ratio ` +
+      `(${RECOMMENDED_PRODUCT_IMAGE_WIDTH}:${RECOMMENDED_PRODUCT_IMAGE_HEIGHT}). ` +
+      `Images may appear cropped or distorted.`
+    );
+  }
+}
+
 export async function uploadPublicImage(
   auth: IndihubAuthHeaders,
   file: File,
@@ -64,6 +120,12 @@ export async function uploadPublicImage(
   options: UploadOptions = {},
 ) {
   validatePublicImageFile(file);
+
+  // Validate dimensions for product images
+  if (purpose === "SELLER_PRODUCT_IMAGE") {
+    const dimensions = await validateImageDimensions(file);
+    validateProductImageDimensions(dimensions.width, dimensions.height);
+  }
 
   const uploadRequest = await indihubFetch<PublicImageUploadRequest>(
     "/api/storage/public-image/upload-request",

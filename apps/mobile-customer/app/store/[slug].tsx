@@ -25,6 +25,7 @@ import { EmptyState } from "../../src/components/empty-state";
 import { RemoteImage } from "../../src/components/remote-image";
 import { useMobileCustomerAuth } from "../../src/auth/mobile-auth-context";
 import { useMobileMarket } from "../../src/features/market/mobile-market";
+import { withStorefrontMaintenance } from "../../src/features/maintenance/mobile-maintenance-gate";
 import {
   addWishlistItem,
   getStoreProfile,
@@ -65,7 +66,7 @@ const defaultFilters: StoreProductFilters = {
   rating: "all",
 };
 
-export default function StoreDetailScreen() {
+function StoreDetailScreen() {
   const params = useLocalSearchParams<{ slug?: string }>();
   const slug = typeof params.slug === "string" ? params.slug : "";
   const router = useRouter();
@@ -263,6 +264,8 @@ export default function StoreDetailScreen() {
     </SafeAreaView>
   );
 }
+
+export default withStorefrontMaintenance(StoreDetailScreen);
 
 function StoreHeader({
   activeTab,

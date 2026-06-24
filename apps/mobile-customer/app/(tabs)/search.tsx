@@ -16,6 +16,7 @@ import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, Text
 import { SafeAreaView } from "react-native-safe-area-context";
 import { RemoteImage } from "../../src/components/remote-image";
 import { useMobileMarket } from "../../src/features/market/mobile-market";
+import { withStorefrontMaintenance } from "../../src/features/maintenance/mobile-maintenance-gate";
 import { getSearchSuggestions, listCategories, searchStorefront } from "../../src/features/storefront/storefront-api";
 import { resolveImageUrl } from "../../src/lib/image-url";
 import { useSearchHistoryStore } from "../../src/state/search-history-store";
@@ -58,7 +59,7 @@ const filterOptions: Array<{ value: SearchTypeFilter; label: string; description
   { value: "category", label: "Categories", description: "Product departments" },
 ];
 
-export default function SearchScreen() {
+function SearchScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ q?: string; type?: string }>();
   const market = useMobileMarket();
@@ -321,6 +322,8 @@ export default function SearchScreen() {
     </SafeAreaView>
   );
 }
+
+export default withStorefrontMaintenance(SearchScreen);
 
 function SuggestionsSection({
   isLoading,

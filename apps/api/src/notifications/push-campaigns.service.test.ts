@@ -70,7 +70,15 @@ describe("PushCampaignsService", () => {
         customer: expect.objectContaining({
           status: UserStatus.ACTIVE,
           marketingCampaignsEnabled: true,
-          browsingCountryCode: "IN",
+          AND: [
+            {
+              OR: [
+                { browsingCountryCode: "IN" },
+                { addresses: { some: { countryCode: "IN" } } },
+                { AND: [{ browsingCountryCode: null }, { addresses: { none: {} } }] },
+              ],
+            },
+          ],
         }),
       }),
     });

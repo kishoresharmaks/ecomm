@@ -5,12 +5,14 @@ import {
   IsDefined,
   IsEmail,
   IsEnum,
+  IsArray,
   IsIn,
   IsInt,
   IsOptional,
   IsString,
   Matches,
   Max,
+  ArrayMinSize,
   MaxLength,
   Min,
   MinLength,
@@ -40,6 +42,43 @@ export class SettingsQueryDto {
   @IsString()
   @MaxLength(80)
   group?: string;
+}
+
+export class MaintenanceScopeDto {
+  @ApiProperty({ example: "storefront", enum: ["storefront", "seller", "delivery"] })
+  @IsIn(["storefront", "seller", "delivery"])
+  scope!: "storefront" | "seller" | "delivery";
+
+  @ApiProperty({ example: false })
+  @IsBoolean()
+  enabled!: boolean;
+
+  @ApiPropertyOptional({
+    example: "We are updating this workspace. Please check back shortly.",
+    description: "Public-facing maintenance message shown to users.",
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(240)
+  message?: string;
+
+  @ApiPropertyOptional({
+    example: "Expected back by 3 PM IST",
+    description: "Public-facing free-text ETA shown to users.",
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  eta?: string;
+}
+
+export class UpsertMaintenanceSettingsDto {
+  @ApiProperty({ type: [MaintenanceScopeDto] })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => MaintenanceScopeDto)
+  scopes!: MaintenanceScopeDto[];
 }
 
 export class UpsertCheckoutPlatformFeeDto {

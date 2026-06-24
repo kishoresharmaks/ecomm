@@ -62,10 +62,10 @@ describe("StorageService", () => {
       provider: "imagekit",
       urlEndpoint: "https://ik.imagekit.io/indihub",
       publicKey: "imagekit-public-key",
-      folder: "indihub/sellers/user_seller/products",
+      folder: "1handindia/sellers/user_seller/products",
       fileName: expect.stringMatching(/^Main_Product-\d+-[a-f0-9]{8}\.jpg$/),
       assetKey: expect.stringMatching(
-        /^indihub\/sellers\/user_seller\/products\/Main_Product-\d+-[a-f0-9]{8}\.jpg$/,
+        /^1handindia\/sellers\/user_seller\/products\/Main_Product-\d+-[a-f0-9]{8}\.jpg$/,
       ),
     });
   });
@@ -91,7 +91,7 @@ describe("StorageService", () => {
       provider: "imagekit",
       urlEndpoint: "https://ik.imagekit.io/saved-indihub",
       publicKey: "saved-public",
-      folder: "indihub/admin/admin_1/banners",
+      folder: "1handindia/admin/admin_1/banners",
     });
   });
 
@@ -219,7 +219,7 @@ describe("StorageService", () => {
     }
 
     expect(result.assetKey).toBe(
-      "indihub/b2b/purchase-orders/buyer_1/1HI-B2B-20260615-ABC123/20260523100000-signed-po-final.pdf",
+      "1handindia/b2b/purchase-orders/buyer_1/1HI-B2B-20260615-ABC123/20260523100000-signed-po-final.pdf",
     );
     expect(result.uploadUrl).toContain("X-Amz-Expires=900");
     expect(result.headers).toMatchObject({ "Content-Type": "application/pdf" });
@@ -348,7 +348,7 @@ describe("StorageService", () => {
     }
 
     expect(result.assetKey).toMatch(
-      /^indihub\/sellers\/seller_1\/documents\/gst_certificate-gst-certificate-20260523100000-[a-f0-9]{8}\.pdf$/,
+      /^1handindia\/sellers\/seller_1\/documents\/gst_certificate-gst-certificate-20260523100000-[a-f0-9]{8}\.pdf$/,
     );
     expect(result.uploadUrl).toContain("X-Amz-Expires=900");
     expect(result.headers).toMatchObject({ "Content-Type": "application/pdf" });
@@ -423,7 +423,7 @@ describe("StorageService", () => {
       );
 
       expect(result.assetKey).toMatch(
-        /^indihub\/sellers\/seller_1\/documents\/gst_certificate-gst-certificate-20260523100000-[a-f0-9]{8}\.pdf$/,
+        /^1handindia\/sellers\/seller_1\/documents\/gst_certificate-gst-certificate-20260523100000-[a-f0-9]{8}\.pdf$/,
       );
       await expect(readFile(join(root, result.assetKey), "utf8")).resolves.toContain("%PDF-1.4");
     } finally {
@@ -583,7 +583,7 @@ describe("StorageService", () => {
       },
     });
     expect(result.assetKey).toMatch(
-      /^indihub\/sellers\/seller_1\/products\/Main_Product-\d+-[a-f0-9]{8}\.jpg$/,
+      /^1handindia\/sellers\/seller_1\/products\/Main_Product-\d+-[a-f0-9]{8}\.jpg$/,
     );
     expect(result.uploadUrl).toContain("https://s3.example.com/indihub-public/");
     expect(result.uploadUrl).toContain("X-Amz-Algorithm=AWS4-HMAC-SHA256");

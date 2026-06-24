@@ -1719,6 +1719,6 @@ export class ProductsService {
   }
 
   private sellerUploadFolder(userId: string, suffix: string) {
-    return `indihub/sellers/${safeStorageFolderSegment(userId)}/${suffix}`;
+    return `1handindia/sellers/${safeStorageFolderSegment(userId)}/${suffix}`;
   }
 }

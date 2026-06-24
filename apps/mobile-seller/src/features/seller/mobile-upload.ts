@@ -5,6 +5,7 @@ export type MobileUploadFile = {
   uri: string;
   name: string;
   mimeType: string;
+  sizeBytes?: number | null | undefined;
 };
 
 type UploadProgress = (progress: number) => void;
@@ -83,6 +84,7 @@ export async function uploadSellerPrivateDocument(
     documentType,
     fileName: file.name,
     contentType: file.mimeType,
+    sizeBytes: await fileSizeBytes(file),
   });
 
   if (request.provider === "s3") {
@@ -196,42 +198,51 @@ async function signedJson<T>(path: string, auth: MobileAuthHeaders, body: unknow
   return (await response.json()) as T;
 }
 
-async function putFile(url: string, file: MobileUploadFile, headers: Record<string, string> | undefined, onProgress?: UploadProgress) {
-  return new Promise<void>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("PUT", url);
-
-    Object.entries(headers ?? { "Content-Type": file.mimeType }).forEach(([key, value]) => {
-      xhr.setRequestHeader(key, value);
+async function putFile(
+  url: string,
+  file: MobileUploadFile,
+  headers: Record<string, string> | undefined,
+  onProgress?: UploadProgress,
+) {
+  try {
+    const FileSystem = await import("expo-file-system/legacy");
+    const result = await FileSystem.uploadAsync(url, file.uri, {
+      httpMethod: "PUT",
+      uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+      headers: headers ?? { "Content-Type": file.mimeType },
     });
 
-    xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable && onProgress) {
-        onProgress(event.loaded / event.total);
-      }
-    };
+    if (result.status < 200 || result.status >= 300) {
+      throw new Error(uploadFailureMessage(result.status, result.body));
+    }
 
-    xhr.onload = () => {
-      if (xhr.status < 200 || xhr.status >= 300) {
-        reject(new Error("File upload failed. Please retry."));
-        return;
-      }
-      onProgress?.(1);
-      resolve();
-    };
+    onProgress?.(1);
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("Storage upload failed")) {
+      throw error;
+    }
 
-    xhr.onerror = () => reject(new Error("Unable to reach the upload service."));
+    throw new Error(
+      error instanceof Error && error.message
+        ? `Storage upload could not read or send the selected file: ${error.message}`
+        : "Storage upload could not read or send the selected file.",
+      { cause: error },
+    );
+  }
+}
 
-    // For S3 PUT, we need to send the file content directly
-    fetch(file.uri)
-      .then((response) => response.blob())
-      .then((blob) => {
-        xhr.send(blob);
-      })
-      .catch((error) => {
-        reject(new Error(`Failed to read file: ${error}`));
-      });
-  });
+async function fileSizeBytes(file: MobileUploadFile) {
+  if (typeof file.sizeBytes === "number" && Number.isFinite(file.sizeBytes) && file.sizeBytes > 0) {
+    return Math.round(file.sizeBytes);
+  }
+
+  const FileSystem = await import("expo-file-system/legacy");
+  const info = await FileSystem.getInfoAsync(file.uri);
+  if (info.exists && typeof info.size === "number" && Number.isFinite(info.size) && info.size > 0) {
+    return Math.round(info.size);
+  }
+
+  throw new Error("Could not read the selected file size. Please choose the document again.");
 }
 
 async function bearerHeaders(auth: MobileAuthHeaders) {
@@ -259,4 +270,27 @@ function reactNativeFormDataFile(file: MobileUploadFile) {
     name: file.name,
     type: file.mimeType,
   } as unknown as Blob;
+}
+
+function uploadFailureMessage(status: number, responseText: string) {
+  const storageMessage = storageErrorMessage(responseText);
+  if (storageMessage) {
+    return `Storage upload failed (HTTP ${status}): ${storageMessage}`;
+  }
+
+  if (status === 403) {
+    return "Storage upload was rejected by S3. Check the signed URL expiry, bucket policy, and CORS PUT configuration.";
+  }
+
+  return `Storage upload failed with HTTP ${status}. Please retry or ask admin to check storage settings.`;
+}
+
+function storageErrorMessage(responseText: string) {
+  const message = responseText.match(/<Message>([^<]+)<\/Message>/i)?.[1]?.trim();
+  if (message) {
+    return message;
+  }
+
+  const code = responseText.match(/<Code>([^<]+)<\/Code>/i)?.[1]?.trim();
+  return code ?? "";
 }

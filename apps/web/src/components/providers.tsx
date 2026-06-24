@@ -7,6 +7,8 @@ import { ReactNode, useState } from "react";
 import { DevAuthProvider } from "./dev-auth/dev-auth-context";
 import { AdminAuthProvider } from "./admin/admin-auth-context";
 import { ClerkCustomerAuthProvider, LocalCustomerAuthProvider } from "./auth/indihub-auth-context";
+import { ChatSocketProvider } from "./chat/chat-socket-context";
+import { ChatWidget } from "./chat/chat-widget";
 import { MarketProvider } from "./market/market-context";
 import { StorefrontLocationProvider } from "./storefront/storefront-location-context";
 
@@ -18,7 +20,8 @@ export function Providers({ children }: { children: ReactNode }) {
     clerkPublishableKey &&
       !pathname.startsWith("/admin") &&
       !pathname.startsWith("/finance") &&
-      !pathname.startsWith("/courier"),
+      !pathname.startsWith("/courier") &&
+      !pathname.startsWith("/support"),
   );
   const [queryClient] = useState(
     () =>
@@ -39,11 +42,21 @@ export function Providers({ children }: { children: ReactNode }) {
           <DevAuthProvider>
             {shouldUseClerk ? (
               <ClerkCustomerAuthProvider>
-                <StorefrontLocationProvider>{children}</StorefrontLocationProvider>
+                <ChatSocketProvider>
+                  <StorefrontLocationProvider>
+                    {children}
+                    <ChatWidget />
+                  </StorefrontLocationProvider>
+                </ChatSocketProvider>
               </ClerkCustomerAuthProvider>
             ) : (
               <LocalCustomerAuthProvider>
-                <StorefrontLocationProvider>{children}</StorefrontLocationProvider>
+                <ChatSocketProvider>
+                  <StorefrontLocationProvider>
+                    {children}
+                    <ChatWidget />
+                  </StorefrontLocationProvider>
+                </ChatSocketProvider>
               </LocalCustomerAuthProvider>
             )}
           </DevAuthProvider>

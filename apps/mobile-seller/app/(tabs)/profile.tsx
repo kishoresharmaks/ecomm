@@ -3,20 +3,28 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as DocumentPicker from "expo-document-picker";
 import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
-import { Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useMobileSellerAuth } from "../../src/auth/mobile-seller-auth-context";
-import { Button, Card, CollapsibleSection, Field, Header, LoadingState, Screen, StatusChip, Toast } from "../../src/components/screen";
-import { getSellerProfile, updateSellerProfile, type SellerVerificationDocumentPayload, type SellerDocumentType } from "../../src/features/seller/seller-api";
-import { uploadPublicSellerImage, uploadSellerPrivateDocument, type MobileUploadFile } from "../../src/features/seller/mobile-upload";
+import { Button, CollapsibleSection, Field, LoadingState, Screen, StatusChip, Toast } from "../../src/components/screen";
 import { launchSellerImageLibraryAsync } from "../../src/features/seller/image-picker";
+import { uploadPublicSellerImage, uploadSellerPrivateDocument, type MobileUploadFile } from "../../src/features/seller/mobile-upload";
 import { buildSellerPayoutProfilePayload } from "../../src/features/seller/profile-payout";
 import { validateSellerContactPhone } from "../../src/features/seller/profile-validation";
+import {
+  getSellerProfile,
+  updateSellerProfile,
+  type SellerDocumentType,
+  type SellerVerificationDocumentPayload,
+} from "../../src/features/seller/seller-api";
+import { colors, spacing } from "../../src/theme";
 
 type FieldErrors = {
   storeName?: string;
   contactEmail?: string;
   contactPhone?: string;
 };
+
+type ToastState = { visible: boolean; message: string; type: "success" | "error" };
 
 export default function SellerProfileScreen() {
   const auth = useMobileSellerAuth();
@@ -57,13 +65,13 @@ export default function SellerProfileScreen() {
   const [documents, setDocuments] = useState<SellerVerificationDocumentPayload[]>([]);
   const [uploadingSection, setUploadingSection] = useState<string | null>(null);
   const [errors, setErrors] = useState<FieldErrors>({});
-  const [toast, setToast] = useState<{ visible: boolean; message: string; type: "success" | "error" }>({ visible: false, message: "", type: "success" });
+  const [toast, setToast] = useState<ToastState>({ visible: false, message: "", type: "success" });
 
   const hasUnsavedChanges = useMemo(() => {
     if (!profileQuery.data) return false;
     const current = fields;
     const original = profileQuery.data;
-    
+
     return (
       current.storeName !== (original.storeName ?? "") ||
       current.description !== (original.description ?? "") ||
@@ -85,26 +93,38 @@ export default function SellerProfileScreen() {
       current.bankName !== (original.payoutProfile?.bankName ?? "") ||
       current.ifscCode !== (original.payoutProfile?.ifscCode ?? "") ||
       current.accountNumber.trim() !== "" ||
-      current.upiId !== ""
+      current.upiId !== "" ||
+      documents.length > 0
     );
-  }, [fields, profileQuery.data]);
+  }, [documents.length, fields, profileQuery.data]);
+
+  const storeInitials = useMemo(() => initials(fields.storeName || profileQuery.data?.storeName || "Seller"), [fields.storeName, profileQuery.data?.storeName]);
+  const payoutState = profileQuery.data?.payoutProfile?.isVerified
+    ? "Verified"
+    : profileQuery.data?.payoutProfile
+      ? "Saved"
+      : "Not added";
+  const addressState = fields.city || fields.pincode ? "Added" : "Missing";
+  const mediaState = fields.logoUrl && fields.bannerUrl ? "Complete" : fields.logoUrl || fields.bannerUrl ? "Partial" : "Missing";
+
+  const dismissToast = useCallback(() => setToast((current) => ({ ...current, visible: false })), []);
 
   const validateForm = useCallback(() => {
     const newErrors: FieldErrors = {};
-    
+
     if (!fields.storeName.trim()) {
       newErrors.storeName = "Store name is required";
     }
-    
+
     if (fields.contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fields.contactEmail)) {
       newErrors.contactEmail = "Invalid email format";
     }
-    
+
     const phoneError = validateSellerContactPhone(fields.contactPhone);
     if (phoneError) {
       newErrors.contactPhone = phoneError;
     }
-    
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   }, [fields]);
@@ -131,9 +151,9 @@ export default function SellerProfileScreen() {
         bannerUrl: profileQuery.data.bannerUrl ?? null,
         accountHolderName: payout?.accountHolderName ?? "",
         bankName: payout?.bankName ?? "",
-        accountNumber: "", // Never pre-fill actual account number for security
+        accountNumber: "",
         ifscCode: payout?.ifscCode ?? "",
-        upiId: "", // Never pre-fill actual UPI ID for security
+        upiId: "",
       });
     }
   }, [profileQuery.data]);
@@ -157,7 +177,15 @@ export default function SellerProfileScreen() {
         businessType: fields.businessType,
         gstNumber: fields.gstNumber,
         panNumber: fields.panNumber,
-        address: { line1: fields.line1, line2: fields.line2, city: fields.city, state: fields.state, pincode: fields.pincode, country: "India", countryCode: "IN" },
+        address: {
+          line1: fields.line1,
+          line2: fields.line2,
+          city: fields.city,
+          state: fields.state,
+          pincode: fields.pincode,
+          country: "India",
+          countryCode: "IN",
+        },
         logoUrl: fields.logoUrl,
         bannerUrl: fields.bannerUrl,
         ...(payoutProfile ? { payoutProfile } : {}),
@@ -168,15 +196,16 @@ export default function SellerProfileScreen() {
       startTransition(() => {
         queryClient.invalidateQueries({ queryKey: ["seller-profile", auth.authKey] });
       });
-      setToast({ visible: true, message: "Profile saved successfully!", type: "success" });
+      setDocuments([]);
+      setToast({ visible: true, message: "Profile saved successfully.", type: "success" });
       setErrors({});
     },
     onError: (error: Error) => {
-      setToast({ visible: true, message: error.message || "Failed to save profile", type: "error" });
+      setToast({ visible: true, message: error.message || "Failed to save profile.", type: "error" });
     },
   });
 
-  const updateField = useCallback(<K extends keyof typeof fields>(key: K, value: typeof fields[K]) => {
+  const updateField = useCallback(<K extends keyof typeof fields>(key: K, value: (typeof fields)[K]) => {
     setFields((prev) => ({ ...prev, [key]: value }));
     if (errors[key as keyof FieldErrors]) {
       setErrors((prev) => ({ ...prev, [key]: undefined }));
@@ -186,23 +215,21 @@ export default function SellerProfileScreen() {
   const uploadLogo = useCallback(async () => {
     setUploadingSection("logo");
     try {
-      const result = await launchSellerImageLibraryAsync({
-        quality: 0.82,
-        allowsEditing: true,
-      });
+      const result = await launchSellerImageLibraryAsync({ quality: 0.82, allowsEditing: true });
       if (!result.canceled && result.assets[0]) {
         const asset = result.assets[0];
         const file: MobileUploadFile = {
           uri: asset.uri,
           name: asset.fileName ?? `seller-logo-${Date.now()}.jpg`,
           mimeType: asset.mimeType ?? "image/jpeg",
+          sizeBytes: asset.fileSize,
         };
         const uploaded = await uploadPublicSellerImage(auth.authHeaders, file, "SELLER_LOGO");
         updateField("logoUrl", uploaded.assetKey);
-        setToast({ visible: true, message: "Logo uploaded successfully!", type: "success" });
+        setToast({ visible: true, message: "Logo uploaded. Save profile to publish it.", type: "success" });
       }
-    } catch {
-      setToast({ visible: true, message: "Failed to upload logo. Please try again.", type: "error" });
+    } catch (error) {
+      setToast({ visible: true, message: uploadErrorMessage(error, "Failed to upload logo. Please try again."), type: "error" });
     } finally {
       setUploadingSection(null);
     }
@@ -211,23 +238,21 @@ export default function SellerProfileScreen() {
   const uploadBanner = useCallback(async () => {
     setUploadingSection("banner");
     try {
-      const result = await launchSellerImageLibraryAsync({
-        quality: 0.82,
-        allowsEditing: true,
-      });
+      const result = await launchSellerImageLibraryAsync({ quality: 0.82, allowsEditing: true });
       if (!result.canceled && result.assets[0]) {
         const asset = result.assets[0];
         const file: MobileUploadFile = {
           uri: asset.uri,
           name: asset.fileName ?? `seller-banner-${Date.now()}.jpg`,
           mimeType: asset.mimeType ?? "image/jpeg",
+          sizeBytes: asset.fileSize,
         };
         const uploaded = await uploadPublicSellerImage(auth.authHeaders, file, "SELLER_BANNER");
         updateField("bannerUrl", uploaded.assetKey);
-        setToast({ visible: true, message: "Banner uploaded successfully!", type: "success" });
+        setToast({ visible: true, message: "Banner uploaded. Save profile to publish it.", type: "success" });
       }
-    } catch {
-      setToast({ visible: true, message: "Failed to upload banner. Please try again.", type: "error" });
+    } catch (error) {
+      setToast({ visible: true, message: uploadErrorMessage(error, "Failed to upload banner. Please try again."), type: "error" });
     } finally {
       setUploadingSection(null);
     }
@@ -248,12 +273,13 @@ export default function SellerProfileScreen() {
         uri: asset.uri,
         name: asset.name ?? `document-${Date.now()}`,
         mimeType: asset.mimeType ?? "application/pdf",
+        sizeBytes: asset.size,
       };
       const uploaded = await uploadSellerPrivateDocument(auth.authHeaders, file, documentType);
-      setDocuments((current) => [...current.filter((d) => d.documentType !== documentType), { documentType, fileUrl: uploaded.assetKey }]);
-      setToast({ visible: true, message: "Document uploaded successfully!", type: "success" });
-    } catch {
-      setToast({ visible: true, message: "Failed to upload document. Please try again.", type: "error" });
+      setDocuments((current) => [...current.filter((document) => document.documentType !== documentType), { documentType, fileUrl: uploaded.assetKey }]);
+      setToast({ visible: true, message: `${documentLabel(documentType)} uploaded. Save profile to submit it.`, type: "success" });
+    } catch (error) {
+      setToast({ visible: true, message: uploadErrorMessage(error, "Failed to upload document. Please try again."), type: "error" });
     } finally {
       setUploadingSection(null);
     }
@@ -264,115 +290,434 @@ export default function SellerProfileScreen() {
   }
 
   return (
-    <Screen contentContainerStyle={{ gap: 16 }}>
-      <Header title="Store profile" subtitle="Update seller-facing store details, contact, logo, and payout profile data." />
-        
-        <Card>
-          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-            <StatusChip label={profileQuery.data?.status ?? "SELLER"} tone={profileQuery.data?.status === "APPROVED" ? "success" : "warning"} />
-            {hasUnsavedChanges && <Text style={{ color: "#F59E0B", fontSize: 12, fontWeight: "800" }}>Unsaved changes</Text>}
+    <Screen scroll={false} contentContainerStyle={styles.shell}>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <View style={styles.hero}>
+          <View style={styles.bannerPreview}>
+            <Text style={styles.bannerText}>{fields.bannerUrl ? "Banner ready" : "Store banner"}</Text>
           </View>
-          
-          <CollapsibleSection title="Store Details" defaultOpen>
-            <Field label="Store name *" value={fields.storeName} onChangeText={(v) => updateField("storeName", v)} {...(errors.storeName ? { error: errors.storeName } : {})} />
-            <Field label="Description" value={fields.description} onChangeText={(v) => updateField("description", v)} multiline numberOfLines={4} />
-            
-            <View style={{ gap: 8, marginTop: 8 }}>
-              <Button title={uploadingSection === "logo" ? "Uploading..." : fields.logoUrl ? "Replace logo" : "Upload logo"} onPress={uploadLogo} loading={uploadingSection === "logo"} />
-              <Button tone="secondary" title={uploadingSection === "banner" ? "Uploading..." : fields.bannerUrl ? "Replace banner" : "Upload banner"} onPress={uploadBanner} loading={uploadingSection === "banner"} />
-              {fields.logoUrl && <Text style={{ color: "#22C55E", fontSize: 12, fontWeight: "800" }}>✓ Logo uploaded</Text>}
-              {fields.bannerUrl && <Text style={{ color: "#22C55E", fontSize: 12, fontWeight: "800" }}>✓ Banner uploaded</Text>}
+          <View style={styles.heroBody}>
+            <View style={styles.logoMark}>
+              <Text style={styles.logoText}>{storeInitials}</Text>
             </View>
-          </CollapsibleSection>
-        </Card>
+            <View style={styles.heroCopy}>
+              <Text style={styles.eyebrow}>Seller profile</Text>
+              <Text numberOfLines={2} style={styles.heroTitle}>{fields.storeName || "Store profile"}</Text>
+              <Text numberOfLines={2} style={styles.heroSubtitle}>
+                {fields.description || "Keep store identity, verification, contact, and payout details production-ready."}
+              </Text>
+            </View>
+          </View>
+          <View style={styles.statusRow}>
+            <StatusChip label={profileQuery.data?.status ?? "SELLER"} tone={profileQuery.data?.status === "APPROVED" ? "success" : "warning"} />
+            {hasUnsavedChanges ? <Text style={styles.unsavedPill}>Unsaved changes</Text> : <Text style={styles.savedPill}>All changes saved</Text>}
+          </View>
+        </View>
 
-        <CollapsibleSection title="Contact Information">
-          <Field label="Contact name" value={fields.contactName} onChangeText={(v) => updateField("contactName", v)} />
-          <Field keyboardType="phone-pad" label="Contact phone" value={fields.contactPhone} onChangeText={(v) => updateField("contactPhone", v)} {...(errors.contactPhone ? { error: errors.contactPhone } : {})} />
-          <Field keyboardType="email-address" label="Contact email" value={fields.contactEmail} onChangeText={(v) => updateField("contactEmail", v)} autoCapitalize="none" {...(errors.contactEmail ? { error: errors.contactEmail } : {})} />
+        <View style={styles.insightGrid}>
+          <ProfileInsight label="Media" value={mediaState} tone={mediaState === "Complete" ? "success" : "warning"} />
+          <ProfileInsight label="Payout" value={payoutState} tone={payoutState === "Verified" ? "success" : payoutState === "Saved" ? "info" : "warning"} />
+          <ProfileInsight label="Address" value={addressState} tone={addressState === "Added" ? "success" : "warning"} />
+          <ProfileInsight label="Documents" value={documents.length ? `${documents.length} staged` : "Optional"} tone={documents.length ? "success" : "info"} />
+        </View>
+
+        <CollapsibleSection title="Storefront identity" defaultOpen>
+          <Field label="Store name *" value={fields.storeName} onChangeText={(value) => updateField("storeName", value)} error={errors.storeName} />
+          <Field label="Description" value={fields.description} onChangeText={(value) => updateField("description", value)} multiline numberOfLines={4} />
+          <View style={styles.uploadGrid}>
+            <UploadTile
+              title={fields.logoUrl ? "Replace logo" : "Upload logo"}
+              subtitle={fields.logoUrl ? "Logo selected" : "Square store mark"}
+              active={Boolean(fields.logoUrl)}
+              loading={uploadingSection === "logo"}
+              onPress={uploadLogo}
+            />
+            <UploadTile
+              title={fields.bannerUrl ? "Replace banner" : "Upload banner"}
+              subtitle={fields.bannerUrl ? "Banner selected" : "Wide storefront image"}
+              active={Boolean(fields.bannerUrl)}
+              loading={uploadingSection === "banner"}
+              onPress={uploadBanner}
+            />
+          </View>
         </CollapsibleSection>
 
-        <CollapsibleSection title="Business Details">
-          <Field label="Business legal name" value={fields.businessLegalName} onChangeText={(v) => updateField("businessLegalName", v)} />
-          <Field label="Business type" value={fields.businessType} onChangeText={(v) => updateField("businessType", v)} />
-          <Field label="GST number" value={fields.gstNumber} onChangeText={(v) => updateField("gstNumber", v)} autoCapitalize="characters" />
-          <Field label="PAN number" value={fields.panNumber} onChangeText={(v) => updateField("panNumber", v)} autoCapitalize="characters" />
+        <CollapsibleSection title="Contact information" defaultOpen>
+          <Field label="Contact name" value={fields.contactName} onChangeText={(value) => updateField("contactName", value)} />
+          <Field keyboardType="phone-pad" label="Contact phone" value={fields.contactPhone} onChangeText={(value) => updateField("contactPhone", value)} error={errors.contactPhone} />
+          <Field keyboardType="email-address" label="Contact email" value={fields.contactEmail} onChangeText={(value) => updateField("contactEmail", value)} autoCapitalize="none" error={errors.contactEmail} />
         </CollapsibleSection>
 
-        <CollapsibleSection title="Business Address">
-          <Field label="Address line 1" value={fields.line1} onChangeText={(v) => updateField("line1", v)} />
-          <Field label="Address line 2" value={fields.line2} onChangeText={(v) => updateField("line2", v)} />
-          <Field label="City" value={fields.city} onChangeText={(v) => updateField("city", v)} />
-          <Field label="State" value={fields.state} onChangeText={(v) => updateField("state", v)} />
-          <Field keyboardType="number-pad" label="Pincode" value={fields.pincode} onChangeText={(v) => updateField("pincode", v)} />
+        <CollapsibleSection title="Business details">
+          <Field label="Business legal name" value={fields.businessLegalName} onChangeText={(value) => updateField("businessLegalName", value)} />
+          <Field label="Business type" value={fields.businessType} onChangeText={(value) => updateField("businessType", value)} />
+          <Field label="GST number" value={fields.gstNumber} onChangeText={(value) => updateField("gstNumber", value)} autoCapitalize="characters" />
+          <Field label="PAN number" value={fields.panNumber} onChangeText={(value) => updateField("panNumber", value)} autoCapitalize="characters" />
         </CollapsibleSection>
 
-        <CollapsibleSection title="Payout Profile">
-          <Text style={{ color: "#6B7280", fontSize: 12, marginBottom: 12 }}>Secure banking details for seller settlements</Text>
-          <Field 
-            label="Account holder name" 
-            value={fields.accountHolderName} 
-            onChangeText={(v) => updateField("accountHolderName", v)} 
-            placeholder={profileQuery.data?.payoutProfile?.accountHolderName ?? "Enter account holder name"} 
-          />
-          <Field 
-            label="Bank name" 
-            value={fields.bankName} 
-            onChangeText={(v) => updateField("bankName", v)} 
-            placeholder={profileQuery.data?.payoutProfile?.bankName ?? "Enter bank name"} 
-          />
-          <Field 
-            label="Account number" 
-            value={fields.accountNumber} 
-            onChangeText={(v) => updateField("accountNumber", v)} 
-            secureTextEntry 
-            placeholder={profileQuery.data?.payoutProfile?.maskedAccountNumber ? `Saved: ${profileQuery.data.payoutProfile.maskedAccountNumber}` : "Enter account number"} 
-          />
-          <Field 
-            label="IFSC code" 
-            value={fields.ifscCode} 
-            onChangeText={(v) => updateField("ifscCode", v)} 
-            autoCapitalize="characters" 
-            placeholder={profileQuery.data?.payoutProfile?.ifscCode ?? "Enter IFSC code"} 
-          />
-          <Field 
-            label="UPI ID" 
-            placeholder={profileQuery.data?.payoutProfile?.maskedUpiId ? `Saved: ${profileQuery.data.payoutProfile.maskedUpiId}` : "e.g., yourname@upi"} 
-            value={fields.upiId} 
-            onChangeText={(v) => updateField("upiId", v)} 
-            autoCapitalize="none" 
-          />
-          {profileQuery.data?.payoutProfile?.isVerified && (
-            <Text style={{ color: "#22C55E", fontSize: 12, fontWeight: "800" }}>✓ Payout details verified</Text>
-          )}
+        <CollapsibleSection title="Business address">
+          <Field label="Address line 1" value={fields.line1} onChangeText={(value) => updateField("line1", value)} />
+          <Field label="Address line 2" value={fields.line2} onChangeText={(value) => updateField("line2", value)} />
+          <View style={styles.twoColumn}>
+            <View style={styles.column}>
+              <Field label="City" value={fields.city} onChangeText={(value) => updateField("city", value)} />
+            </View>
+            <View style={styles.column}>
+              <Field label="State" value={fields.state} onChangeText={(value) => updateField("state", value)} />
+            </View>
+          </View>
+          <Field keyboardType="number-pad" label="Pincode" value={fields.pincode} onChangeText={(value) => updateField("pincode", value)} />
         </CollapsibleSection>
 
-        <CollapsibleSection title="Documents">
-          <Text style={{ color: "#6B7280", fontSize: 12, marginBottom: 12 }}>Upload verification documents for faster approval</Text>
-          <Button tone="secondary" title={uploadingSection === "GST_CERTIFICATE" ? "Uploading..." : "Upload GST certificate"} onPress={() => uploadDocument("GST_CERTIFICATE")} loading={uploadingSection === "GST_CERTIFICATE"} />
-          <Button tone="secondary" title={uploadingSection === "PAN_CARD" ? "Uploading..." : "Upload PAN card"} onPress={() => uploadDocument("PAN_CARD")} loading={uploadingSection === "PAN_CARD"} />
-          <Button tone="secondary" title={uploadingSection === "BUSINESS_REGISTRATION" ? "Uploading..." : "Upload business registration"} onPress={() => uploadDocument("BUSINESS_REGISTRATION")} loading={uploadingSection === "BUSINESS_REGISTRATION"} />
-          {documents.map((doc) => (
-            <Text key={doc.documentType} style={{ color: "#22C55E", fontSize: 12, fontWeight: "800" }}>
-              ✓ {doc.documentType}: {doc.fileUrl.slice(0, 30)}...
+        <CollapsibleSection title="Payout profile">
+          <Text style={styles.helperText}>Banking details are used only for seller settlements. Saved account and UPI values stay masked.</Text>
+          <Field
+            label="Account holder name"
+            value={fields.accountHolderName}
+            onChangeText={(value) => updateField("accountHolderName", value)}
+            placeholder={profileQuery.data?.payoutProfile?.accountHolderName ?? "Enter account holder name"}
+          />
+          <Field
+            label="Bank name"
+            value={fields.bankName}
+            onChangeText={(value) => updateField("bankName", value)}
+            placeholder={profileQuery.data?.payoutProfile?.bankName ?? "Enter bank name"}
+          />
+          <Field
+            label="Account number"
+            value={fields.accountNumber}
+            onChangeText={(value) => updateField("accountNumber", value)}
+            secureTextEntry
+            placeholder={profileQuery.data?.payoutProfile?.maskedAccountNumber ? `Saved: ${profileQuery.data.payoutProfile.maskedAccountNumber}` : "Enter account number"}
+          />
+          <Field
+            label="IFSC code"
+            value={fields.ifscCode}
+            onChangeText={(value) => updateField("ifscCode", value)}
+            autoCapitalize="characters"
+            placeholder={profileQuery.data?.payoutProfile?.ifscCode ?? "Enter IFSC code"}
+          />
+          <Field
+            label="UPI ID"
+            value={fields.upiId}
+            onChangeText={(value) => updateField("upiId", value)}
+            autoCapitalize="none"
+            placeholder={profileQuery.data?.payoutProfile?.maskedUpiId ? `Saved: ${profileQuery.data.payoutProfile.maskedUpiId}` : "e.g., yourname@upi"}
+          />
+          {profileQuery.data?.payoutProfile?.isVerified ? <Text style={styles.successText}>Payout details verified</Text> : null}
+        </CollapsibleSection>
+
+        <CollapsibleSection title="Verification documents">
+          <Text style={styles.helperText}>Upload current business documents for faster admin review.</Text>
+          <DocumentUploadButton type="GST_CERTIFICATE" uploadingSection={uploadingSection} onPress={uploadDocument} />
+          <DocumentUploadButton type="PAN_CARD" uploadingSection={uploadingSection} onPress={uploadDocument} />
+          <DocumentUploadButton type="BUSINESS_REGISTRATION" uploadingSection={uploadingSection} onPress={uploadDocument} />
+          {documents.map((document) => (
+            <Text key={document.documentType} style={styles.successText}>
+              {documentLabel(document.documentType)} staged for save
             </Text>
           ))}
         </CollapsibleSection>
+      </ScrollView>
 
-        <View style={{ gap: 12 }}>
-          <Button disabled={mutation.isPending || !fields.storeName || !auth.enabled} title={mutation.isPending ? "Saving..." : "Save profile"} onPress={() => mutation.mutate()} loading={mutation.isPending} />
-          
-          <Button
-            tone="secondary"
-            title="Sign out"
-            onPress={() => {
-              void clerk.signOut();
-              router.replace("/auth/sign-in");
-            }}
-          />
-        </View>
+      <View style={styles.bottomBar}>
+        <Button
+          disabled={mutation.isPending || !fields.storeName.trim() || !auth.enabled}
+          title={mutation.isPending ? "Saving..." : hasUnsavedChanges ? "Save profile" : "Saved"}
+          onPress={() => mutation.mutate()}
+          loading={mutation.isPending}
+          style={styles.saveButton}
+        />
+        <Button
+          tone="secondary"
+          title="Sign out"
+          onPress={() => {
+            void clerk.signOut();
+            router.replace("/auth/sign-in");
+          }}
+          style={styles.signOutButton}
+        />
+      </View>
 
-        <Toast visible={toast.visible} message={toast.message} type={toast.type} onDismiss={() => setToast((prev) => ({ ...prev, visible: false }))} />
+      <Toast visible={toast.visible} message={toast.message} type={toast.type} onDismiss={dismissToast} />
     </Screen>
   );
 }
+
+function ProfileInsight({ label, value, tone }: { label: string; value: string; tone: "success" | "warning" | "info" }) {
+  return (
+    <View style={styles.insight}>
+      <View style={[styles.insightDot, tone === "success" ? styles.dotSuccess : tone === "warning" ? styles.dotWarning : null]} />
+      <Text style={styles.insightLabel}>{label}</Text>
+      <Text style={styles.insightValue}>{value}</Text>
+    </View>
+  );
+}
+
+function UploadTile({
+  active,
+  loading,
+  onPress,
+  subtitle,
+  title,
+}: {
+  active: boolean;
+  loading: boolean;
+  onPress: () => void;
+  subtitle: string;
+  title: string;
+}) {
+  return (
+    <Pressable accessibilityRole="button" disabled={loading} onPress={onPress} style={[styles.uploadTile, active ? styles.uploadTileActive : null, loading ? styles.disabledTile : null]}>
+      <Text style={styles.uploadTitle}>{loading ? "Uploading..." : title}</Text>
+      <Text style={styles.uploadSubtitle}>{subtitle}</Text>
+    </Pressable>
+  );
+}
+
+function DocumentUploadButton({
+  onPress,
+  type,
+  uploadingSection,
+}: {
+  onPress: (type: SellerDocumentType) => void;
+  type: SellerDocumentType;
+  uploadingSection: string | null;
+}) {
+  const loading = uploadingSection === type;
+  return (
+    <Button
+      tone="secondary"
+      title={loading ? "Uploading..." : `Upload ${documentLabel(type).toLowerCase()}`}
+      onPress={() => onPress(type)}
+      loading={loading}
+    />
+  );
+}
+
+function documentLabel(type: SellerDocumentType) {
+  return type
+    .split("_")
+    .map((part) => part.charAt(0) + part.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function initials(value: string) {
+  const parts = value.trim().split(/\s+/).filter(Boolean);
+  const first = parts[0] ?? "SL";
+  const second = parts[1];
+  const letters = second ? `${first.charAt(0)}${second.charAt(0)}` : first.slice(0, 2);
+  return letters.toUpperCase();
+}
+
+function uploadErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error && error.message.trim() ? error.message : fallback;
+}
+
+const styles = StyleSheet.create({
+  shell: {
+    flex: 1,
+    gap: 0,
+    paddingHorizontal: 0,
+    paddingTop: 0,
+  },
+  content: {
+    gap: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.xxl,
+  },
+  hero: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    overflow: "hidden",
+  },
+  bannerPreview: {
+    minHeight: 96,
+    justifyContent: "flex-end",
+    padding: spacing.lg,
+    backgroundColor: colors.ink,
+  },
+  bannerText: {
+    alignSelf: "flex-start",
+    color: colors.surface,
+    fontSize: 12,
+    fontWeight: "900",
+    textTransform: "uppercase",
+  },
+  heroBody: {
+    flexDirection: "row",
+    gap: spacing.md,
+    padding: spacing.lg,
+  },
+  logoMark: {
+    alignItems: "center",
+    backgroundColor: colors.primary,
+    borderColor: colors.surface,
+    borderRadius: 8,
+    borderWidth: 3,
+    height: 64,
+    justifyContent: "center",
+    marginTop: -40,
+    width: 64,
+  },
+  logoText: {
+    color: colors.surface,
+    fontSize: 20,
+    fontWeight: "900",
+  },
+  heroCopy: {
+    flex: 1,
+    gap: spacing.xs,
+  },
+  eyebrow: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: "900",
+    textTransform: "uppercase",
+  },
+  heroTitle: {
+    color: colors.ink,
+    fontSize: 24,
+    fontWeight: "900",
+    lineHeight: 29,
+  },
+  heroSubtitle: {
+    color: colors.muted,
+    fontSize: 13,
+    fontWeight: "700",
+    lineHeight: 19,
+  },
+  statusRow: {
+    alignItems: "center",
+    borderTopColor: colors.border,
+    borderTopWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    padding: spacing.lg,
+  },
+  unsavedPill: {
+    backgroundColor: "#FEF3C7",
+    borderRadius: 999,
+    color: "#92400E",
+    fontSize: 12,
+    fontWeight: "900",
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  savedPill: {
+    backgroundColor: "#DCFCE7",
+    borderRadius: 999,
+    color: "#166534",
+    fontSize: 12,
+    fontWeight: "900",
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  insightGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+  },
+  insight: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexBasis: "48%",
+    flexGrow: 1,
+    gap: spacing.xs,
+    minHeight: 88,
+    padding: spacing.md,
+  },
+  insightDot: {
+    backgroundColor: colors.primary,
+    borderRadius: 999,
+    height: 8,
+    width: 8,
+  },
+  dotSuccess: {
+    backgroundColor: colors.success,
+  },
+  dotWarning: {
+    backgroundColor: colors.warning,
+  },
+  insightLabel: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  insightValue: {
+    color: colors.ink,
+    fontSize: 16,
+    fontWeight: "900",
+  },
+  uploadGrid: {
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  uploadTile: {
+    backgroundColor: colors.softSurface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderStyle: "dashed",
+    borderWidth: 1,
+    flex: 1,
+    minHeight: 92,
+    justifyContent: "center",
+    padding: spacing.md,
+  },
+  uploadTileActive: {
+    backgroundColor: "#ECFDF5",
+    borderColor: "#86EFAC",
+    borderStyle: "solid",
+  },
+  disabledTile: {
+    opacity: 0.65,
+  },
+  uploadTitle: {
+    color: colors.ink,
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  uploadSubtitle: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "700",
+    marginTop: spacing.xs,
+  },
+  twoColumn: {
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  column: {
+    flex: 1,
+  },
+  helperText: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 18,
+  },
+  successText: {
+    color: "#166534",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  bottomBar: {
+    backgroundColor: colors.surface,
+    borderTopColor: colors.border,
+    borderTopWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    padding: spacing.lg,
+  },
+  saveButton: {
+    flex: 1.3,
+  },
+  signOutButton: {
+    flex: 1,
+  },
+});

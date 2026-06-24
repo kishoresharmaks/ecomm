@@ -5,6 +5,7 @@ import { brandConfig } from "@indihub/config";
 import { NotificationStatus, prisma } from "@indihub/database";
 import { WorkerEmailDelivery } from "./email-delivery";
 import { EMAIL_QUEUE_NAME, type EmailJobPayload, type EmailProviderConfig } from "./email-job";
+import { startChatAutoClosePolling } from "./chat-auto-close-worker";
 import { startDeliveryAssignmentTimeoutPolling } from "./delivery-assignment-timeout-worker";
 import { startPrivateUploadCleanupPolling } from "./private-upload-cleanup-worker";
 import { startPushCampaignPolling } from "./push-campaign-worker";
@@ -34,6 +35,7 @@ logger.info(
 );
 
 startSearchIndexPolling(logger);
+startChatAutoClosePolling(logger);
 startDeliveryAssignmentTimeoutPolling(logger);
 startReturnPickupTimeoutPolling(logger);
 startPrivateUploadCleanupPolling(logger);

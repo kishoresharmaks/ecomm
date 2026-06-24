@@ -17,6 +17,7 @@ import { MobileAddressForm, emptyMobileAddressForm } from "../src/components/mob
 import { Screen } from "../src/components/screen";
 import { useMobileCustomerAuth } from "../src/auth/mobile-auth-context";
 import { formatMoney, useMobileMarket } from "../src/features/market/mobile-market";
+import { withStorefrontMaintenance } from "../src/features/maintenance/mobile-maintenance-gate";
 import { checkoutPaymentOptions, type CheckoutPaymentOption } from "../src/features/storefront/checkout-payment-options";
 import {
   assertCheckoutCartReady,
@@ -98,7 +99,7 @@ const feedItems: CheckoutFeedItem[] = [
   { id: "summary", type: "summary" },
 ];
 
-export default function CheckoutScreen() {
+function CheckoutScreen() {
   const customerAuth = useMobileCustomerAuth();
   const queryClient = useQueryClient();
   const router = useRouter();
@@ -667,6 +668,8 @@ export default function CheckoutScreen() {
     </Screen>
   );
 }
+
+export default withStorefrontMaintenance(CheckoutScreen);
 
 function CheckoutSection({
   addresses,

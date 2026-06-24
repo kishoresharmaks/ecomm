@@ -8,10 +8,11 @@ import { ActivityIndicator, Pressable, RefreshControl, StyleSheet, Text, useWind
 import { EmptyState } from "../src/components/empty-state";
 import { ProductCard } from "../src/components/product-card";
 import { useMobileMarket } from "../src/features/market/mobile-market";
+import { withStorefrontMaintenance } from "../src/features/maintenance/mobile-maintenance-gate";
 import { listStorefrontDeals } from "../src/features/storefront/storefront-api";
 import { colors } from "../src/theme";
 
-export default function DealsScreen() {
+function DealsScreen() {
   const { width } = useWindowDimensions();
   const market = useMobileMarket();
   const dealsQuery = useInfiniteQuery({
@@ -71,6 +72,8 @@ export default function DealsScreen() {
     </View>
   );
 }
+
+export default withStorefrontMaintenance(DealsScreen);
 
 function DealsHeader({ count, isLoading }: { count: number; isLoading: boolean }) {
   return (

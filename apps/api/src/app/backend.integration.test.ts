@@ -5954,6 +5954,115 @@ integrationDescribe("1HandIndia backend integration", () => {
       .get("/api/admin/settings")
       .set(adminSessionHeader)
       .expect(200);
+    const settingsPutRequest = request(app.getHttpServer()) as ReturnType<typeof request> & {
+      put: (url: string) => ReturnType<ReturnType<typeof request>["patch"]>;
+    };
+    const defaultMaintenance = await request(app.getHttpServer())
+      .get("/api/settings/maintenance")
+      .expect(200);
+    expect((defaultMaintenance as unknown as { headers: Record<string, string> }).headers["cache-control"]).toBe(
+      "public, max-age=30, stale-while-revalidate=60",
+    );
+    expect(defaultMaintenance.body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          scope: "storefront",
+          enabled: false,
+          message: expect.any(String),
+          eta: "",
+        }),
+        expect.objectContaining({
+          scope: "seller",
+          enabled: false,
+          message: expect.any(String),
+          eta: "",
+        }),
+        expect.objectContaining({
+          scope: "delivery",
+          enabled: false,
+          message: expect.any(String),
+          eta: "",
+        }),
+      ]),
+    );
+    expect(JSON.stringify(defaultMaintenance.body)).not.toContain("id");
+    expect(JSON.stringify(defaultMaintenance.body)).not.toContain("valueType");
+    await settingsPutRequest
+      .put("/api/admin/settings/maintenance")
+      .set(authHeader(data.customerUser.id))
+      .send({
+        scopes: [
+          {
+            scope: "storefront",
+            enabled: true,
+            message: "Public shopping pause.",
+            eta: "Expected back by 3 PM IST",
+          },
+        ],
+      })
+      .expect(401);
+    const savedMaintenance = await settingsPutRequest
+      .put("/api/admin/settings/maintenance")
+      .set(adminSessionHeader)
+      .send({
+        scopes: [
+          {
+            scope: "storefront",
+            enabled: true,
+            message: "Public shopping pause.",
+            eta: "Expected back by 3 PM IST",
+          },
+          {
+            scope: "seller",
+            enabled: true,
+            message: "Seller tools are paused.",
+            eta: "",
+          },
+          {
+            scope: "delivery",
+            enabled: false,
+            message: "Delivery workspace is available.",
+            eta: "",
+          },
+        ],
+      })
+      .expect(200);
+    expect(savedMaintenance.body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          scope: "storefront",
+          enabled: true,
+          message: "Public shopping pause.",
+          eta: "Expected back by 3 PM IST",
+        }),
+        expect.objectContaining({
+          scope: "seller",
+          enabled: true,
+          message: "Seller tools are paused.",
+          eta: "",
+        }),
+        expect.objectContaining({
+          scope: "delivery",
+          enabled: false,
+        }),
+      ]),
+    );
+    const maintenanceReadback = await request(app.getHttpServer())
+      .get("/api/settings/maintenance")
+      .expect(200);
+    expect(maintenanceReadback.body).toEqual(savedMaintenance.body);
+    const maintenanceAudit = await prisma.auditLog.findFirst({
+      where: {
+        action: "settings.maintenance.updated",
+        actorUserId: data.adminUser.id,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    expect(maintenanceAudit?.newValue).toMatchObject({
+      scopes: expect.arrayContaining([
+        expect.objectContaining({ scope: "storefront", enabled: true }),
+      ]),
+    });
     await request(app.getHttpServer())
       .get("/api/admin/reports")
       .set(adminSessionHeader)

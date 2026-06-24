@@ -33,6 +33,7 @@ import {
 import { type ReactNode, useRef, useState } from "react";
 import { Button, StatusBadge, cn } from "@indihub/ui";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
+import { MaintenanceGate } from "@/components/maintenance/maintenance-mode";
 import { StorefrontImage } from "@/components/storefront/storefront-image";
 import { IndihubApiError, userFacingApiErrorMessage } from "@/lib/api";
 import type { IndihubAuthHeaders } from "@/lib/api";
@@ -87,13 +88,14 @@ export function SellerWorkspaceShell({
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
-    <main className="min-h-screen bg-[#F6F3EC] text-[#1F2933]">
-      <div className="grid min-h-screen lg:grid-cols-[300px_minmax(0,1fr)]">
-        <aside className="hidden border-r border-[#D9E2EA] bg-[#123A5A] text-white lg:block">
-          <SellerSidebar pathname={pathname} />
-        </aside>
+    <MaintenanceGate scope="seller">
+      <main className="min-h-screen bg-[#F6F3EC] text-[#1F2933]">
+        <div className="grid min-h-screen lg:grid-cols-[300px_minmax(0,1fr)]">
+          <aside className="hidden border-r border-[#D9E2EA] bg-[#123A5A] text-white lg:block">
+            <SellerSidebar pathname={pathname} />
+          </aside>
 
-        <section className="min-w-0">
+          <section className="min-w-0">
           <div className="sticky top-0 z-30 border-b border-[#D9E2EA] bg-white/95 px-4 py-3 backdrop-blur lg:hidden">
             <div className="flex items-center justify-between gap-3">
               <Link href="/seller" className="flex items-center gap-3">
@@ -131,9 +133,10 @@ export function SellerWorkspaceShell({
             </header>
             {children}
           </div>
-        </section>
-      </div>
-    </main>
+          </section>
+        </div>
+      </main>
+    </MaintenanceGate>
   );
 }
 

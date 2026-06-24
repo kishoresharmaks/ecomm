@@ -48,6 +48,20 @@ type LocalPrivateDocumentUploadResult = {
   allowedContentTypes: string[];
 };
 
+type SellerDocumentAccess =
+  | {
+      provider: "s3";
+      url: string;
+      expiresAt: string;
+      fileName: string;
+      contentType: string;
+    }
+  | {
+      provider: "local";
+      fileName: string;
+      contentType: string;
+    };
+
 type UploadOptions = {
   onProgress?: (progress: number) => void;
 };
@@ -110,6 +124,43 @@ export async function uploadSellerDocument(
     fileUrl: localUpload.assetKey,
     fileName: file.name,
   };
+}
+
+export async function openSellerDocument(auth: IndihubAuthHeaders, assetKey: string) {
+  const popup = window.open("", "_blank");
+
+  try {
+    const access = await indihubFetch<SellerDocumentAccess>(
+      `/api/storage/private-document/access?key=${encodeURIComponent(assetKey)}`,
+      undefined,
+      auth,
+    );
+
+    if (access.provider === "s3") {
+      openPopupOrNavigate(popup, access.url);
+      return;
+    }
+
+    const response = await authenticatedDocumentFetch(auth, assetKey, false);
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    openPopupOrNavigate(popup, url);
+
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  } catch (error) {
+    popup?.close();
+    throw error;
+  }
+}
+
+function openPopupOrNavigate(popup: Window | null, url: string) {
+  if (popup) {
+    popup.opener = null;
+    popup.location.href = url;
+    return;
+  }
+
+  window.location.href = url;
 }
 
 function uploadSignedDocument(
@@ -218,6 +269,37 @@ async function uploadLocalDocumentAttempt(
     form.append("file", file);
     request.send(form);
   });
+}
+
+async function authenticatedDocumentFetch(
+  auth: IndihubAuthHeaders,
+  assetKey: string,
+  skipCache: boolean,
+): Promise<Response> {
+  const headers = await buildAuthHeaders(auth, { skipCache });
+  const response = await fetch(
+    `${apiBaseUrl}/api/storage/private-document?key=${encodeURIComponent(assetKey)}`,
+    { headers },
+  );
+
+  if (response.status === 401 && auth.getBearerToken && !skipCache) {
+    return authenticatedDocumentFetch(auth, assetKey, true);
+  }
+
+  if (!response.ok) {
+    throw await documentFetchError(response);
+  }
+
+  return response;
+}
+
+async function documentFetchError(response: Response) {
+  const contentType = response.headers.get("content-type") ?? "";
+  const details = contentType.includes("application/json")
+    ? await response.json()
+    : await response.text();
+  const message = errorMessageFromDetails(details) || `Request failed with status ${response.status}`;
+  return new IndihubApiError(message, response.status, details);
 }
 
 function xhrApiError(request: XMLHttpRequest) {

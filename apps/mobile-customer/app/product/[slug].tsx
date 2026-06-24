@@ -16,6 +16,7 @@ import { ProductCard } from "../../src/components/product-card";
 import { Screen } from "../../src/components/screen";
 import { useMobileCustomerAuth } from "../../src/auth/mobile-auth-context";
 import { useMobileMarket } from "../../src/features/market/mobile-market";
+import { withStorefrontMaintenance } from "../../src/features/maintenance/mobile-maintenance-gate";
 import { addCartItem, getCart, getProduct, listProducts } from "../../src/features/storefront/storefront-api";
 import { resolveImageUrl } from "../../src/lib/image-url";
 import { useRecentProductsStore } from "../../src/state/recent-products-store";
@@ -50,7 +51,7 @@ type ProductDetailFeedItem =
   | { id: "seller"; type: "seller"; product: ProductSummary }
   | { id: "recommendations"; type: "recommendations"; products: MobileProduct[] };
 
-export default function ProductDetailScreen() {
+function ProductDetailScreen() {
   const params = useLocalSearchParams<{ slug?: string }>();
   const slug = typeof params.slug === "string" ? params.slug : "";
   const router = useRouter();
@@ -252,6 +253,8 @@ export default function ProductDetailScreen() {
     </Screen>
   );
 }
+
+export default withStorefrontMaintenance(ProductDetailScreen);
 
 function ProductDetailFeed({
   formatPrice,

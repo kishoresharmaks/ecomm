@@ -16,6 +16,7 @@ import { RemoteImage } from "../src/components/remote-image";
 import { Screen } from "../src/components/screen";
 import { accountErrorMessage, formatDate, formatDateTime, formatStatus, StatusPill } from "../src/features/account/account-ui";
 import { formatMoney, formatOrderDisplayTotal } from "../src/features/market/mobile-market";
+import { withStorefrontMaintenance } from "../src/features/maintenance/mobile-maintenance-gate";
 import { trackOrder, type MobileTrackedOrder } from "../src/features/storefront/storefront-api";
 import { resolveImageUrl } from "../src/lib/image-url";
 import { colors } from "../src/theme";
@@ -26,7 +27,7 @@ type TimelineItem = {
   note: string | null;
 };
 
-export default function TrackOrderScreen() {
+function TrackOrderScreen() {
   const customerAuth = useMobileCustomerAuth();
   const [orderNumber, setOrderNumber] = useState("");
   const [contact, setContact] = useState("");
@@ -115,6 +116,8 @@ export default function TrackOrderScreen() {
     </Screen>
   );
 }
+
+export default withStorefrontMaintenance(TrackOrderScreen);
 
 function Field({
   autoCapitalize,

@@ -160,11 +160,28 @@ export class StorageController {
 
     response.set({
       "Content-Type": access.contentType,
-      "Content-Disposition": `attachment; filename="${safeDownloadFileName(access.fileName)}"`,
+      "Content-Disposition": `inline; filename="${safeDownloadFileName(access.fileName)}"`,
       "Cache-Control": "private, max-age=0, no-store",
     });
 
     return new StreamableFile(createReadStream(access.filePath));
+  }
+
+  @Get("private-document/access")
+  @Roles(RoleCode.ADMIN, RoleCode.SELLER)
+  @ApiOperation({ summary: "Read private document access metadata for authenticated viewing." })
+  async privateDocumentAccess(@CurrentUser() actor: RequestUser, @Query("key") key: string | undefined) {
+    const access = await this.storageService.privateDocumentAccess(actor, key);
+
+    if (access.provider === "s3") {
+      return access;
+    }
+
+    return {
+      provider: "local" as const,
+      fileName: access.fileName,
+      contentType: access.contentType,
+    };
   }
 }
 

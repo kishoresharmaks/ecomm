@@ -1,10 +1,12 @@
-import { Body, Controller, Get, Inject, Param, Put, Query } from "@nestjs/common";
+import { Body, Controller, Get, Header, Inject, Param, Put, Query } from "@nestjs/common";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import { RoleCode } from "@indihub/database";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
+import { Public } from "../auth/decorators/public.decorator";
 import { Roles } from "../auth/decorators/roles.decorator";
 import type { RequestUser } from "../auth/types/indihub-request";
 import {
+  UpsertMaintenanceSettingsDto,
   SettingsQueryDto,
   UpsertCheckoutPlatformFeeDto,
   UpsertContactSettingsDto,
@@ -98,9 +100,32 @@ export class SettingsController {
     return this.settingsService.upsertContactSettings(actor, dto);
   }
 
+  @Put("maintenance")
+  @ApiOperation({ summary: "Atomically update portal maintenance mode settings." })
+  upsertMaintenanceSettings(
+    @CurrentUser() actor: RequestUser,
+    @Body() dto: UpsertMaintenanceSettingsDto,
+  ) {
+    return this.settingsService.upsertMaintenanceSettings(actor, dto);
+  }
+
   @Put(":key")
   @ApiOperation({ summary: "Create or update one platform setting." })
   upsertSetting(@CurrentUser() actor: RequestUser, @Param("key") key: string, @Body() dto: UpsertSettingDto) {
     return this.settingsService.upsertSetting(actor, key, dto);
+  }
+}
+
+@ApiTags("Public Settings")
+@Public()
+@Controller("settings")
+export class PublicSettingsController {
+  constructor(@Inject(SettingsService) private readonly settingsService: SettingsService) {}
+
+  @Get("maintenance")
+  @Header("Cache-Control", "public, max-age=30, stale-while-revalidate=60")
+  @ApiOperation({ summary: "Read public maintenance mode settings." })
+  getMaintenanceSettings() {
+    return this.settingsService.getMaintenanceSettings();
   }
 }

@@ -20,6 +20,7 @@ import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, T
 import { SafeAreaView } from "react-native-safe-area-context";
 import { EmptyState } from "../../src/components/empty-state";
 import { RemoteImage } from "../../src/components/remote-image";
+import { withStorefrontMaintenance } from "../../src/features/maintenance/mobile-maintenance-gate";
 import { listStores, type MobileStoreLocationQuery } from "../../src/features/storefront/storefront-api";
 import { resolveImageUrl } from "../../src/lib/image-url";
 import { useLocationStore } from "../../src/state/location-store";
@@ -40,7 +41,7 @@ const filters = [
 
 const sortCycle: StoreSort[] = ["RELEVANCE", "RATING", "PRODUCTS", "NEWEST"];
 
-export default function LocalShopsScreen() {
+function LocalShopsScreen() {
   const router = useRouter();
   const selectedLocation = useLocationStore((state) => state.selectedLocation);
   const [searchText, setSearchText] = useState("");
@@ -202,6 +203,8 @@ export default function LocalShopsScreen() {
     </SafeAreaView>
   );
 }
+
+export default withStorefrontMaintenance(LocalShopsScreen);
 
 function LocalShopIllustration() {
   return (

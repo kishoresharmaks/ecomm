@@ -39,6 +39,7 @@ import {
   LogOut,
   Mail,
   Megaphone,
+  MessageCircle,
   Menu as MenuIcon,
   Package,
   PanelLeft,
@@ -89,6 +90,7 @@ const iconByHref: Array<[string, typeof LayoutDashboard]> = [
   ["/admin/locations", Home],
   ["/admin/categories", Tags],
   ["/admin/cms", BookOpen],
+  ["/admin/chat", MessageCircle],
   ["/admin/support", ShieldCheck],
   ["/admin/b2b-enquiries", Building2],
   ["/admin/reviews", Star],
@@ -122,18 +124,19 @@ export function AdminPortalShell({
   );
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const isAdminUser = auth.user?.roles.includes("ADMIN") ?? false;
+  const isChatSupportUser = auth.user?.roles.includes("CHAT_SUPPORT") ?? false;
 
   useEffect(() => {
     if (auth.isReady && auth.isAuthenticated && pathname === "/admin/login") {
-      router.replace(isAdminUser ? "/admin" : "/finance");
+      router.replace(isAdminUser ? "/admin" : isChatSupportUser ? "/support/chat" : "/finance");
     }
-  }, [auth.isAuthenticated, auth.isReady, isAdminUser, pathname, router]);
+  }, [auth.isAuthenticated, auth.isReady, isAdminUser, isChatSupportUser, pathname, router]);
 
   useEffect(() => {
     if (auth.isReady && auth.isAuthenticated && !isAdminUser && pathname !== "/admin/login") {
-      router.replace("/finance");
+      router.replace(isChatSupportUser ? "/support/chat" : "/finance");
     }
-  }, [auth.isAuthenticated, auth.isReady, isAdminUser, pathname, router]);
+  }, [auth.isAuthenticated, auth.isReady, isAdminUser, isChatSupportUser, pathname, router]);
 
   if (
     !auth.isReady ||

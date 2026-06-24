@@ -228,6 +228,8 @@ export function LoadingState({ message = "Loading..." }: { message?: string }) {
 }
 
 export function Toast({ visible, message, type = "info", onDismiss }: { visible: boolean; message: string; type?: "success" | "error" | "info"; onDismiss: () => void }) {
+  const insets = useSafeAreaInsets();
+
   useEffect(() => {
     if (visible) {
       const timer = setTimeout(onDismiss, 3000);
@@ -238,7 +240,7 @@ export function Toast({ visible, message, type = "info", onDismiss }: { visible:
   if (!visible) return null;
 
   return (
-    <View style={[styles.toast, type === "success" ? styles.toastSuccess : type === "error" ? styles.toastError : null]}>
+    <View style={[styles.toast, { bottom: Math.max(spacing.xl, insets.bottom + spacing.lg) }, type === "success" ? styles.toastSuccess : type === "error" ? styles.toastError : null]}>
       <Text style={styles.toastText}>{message}</Text>
     </View>
   );
@@ -474,7 +476,6 @@ const styles = StyleSheet.create({
   },
   toast: {
     position: "absolute",
-    bottom: spacing.xl,
     left: spacing.lg,
     right: spacing.lg,
     backgroundColor: colors.ink,

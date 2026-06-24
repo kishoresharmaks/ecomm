@@ -148,6 +148,7 @@ export default function NewSellerProductScreen() {
         uri: asset.uri,
         name: asset.fileName ?? `seller-product-${Date.now()}.jpg`,
         mimeType: asset.mimeType ?? "image/jpeg",
+        sizeBytes: asset.fileSize,
       };
       const uploaded = await uploadPublicSellerImage(auth.authHeaders, file, "SELLER_PRODUCT_IMAGE");
       dispatch({

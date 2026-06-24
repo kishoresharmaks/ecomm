@@ -17,6 +17,7 @@ export const adminNav = [
   { group: "Commerce", label: "B2B enquiries", href: "/admin/b2b-enquiries" },
   { group: "Commerce", label: "B2B orders", href: "/admin/b2b-orders" },
   { group: "Commerce", label: "Support", href: "/admin/support" },
+  { group: "Commerce", label: "Chat support", href: "/admin/chat" },
   { group: "Content", label: "Content management", href: "/admin/cms" },
   { group: "Locations", label: "Locations", href: "/admin/locations" },
   { group: "Locations", label: "Location import", href: "/admin/locations/import" },

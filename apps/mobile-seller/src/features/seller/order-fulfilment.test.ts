@@ -79,6 +79,17 @@ describe("validateDeliveryForm", () => {
     expect(result.errors.trackingReference).toBe("Tracking reference is required for courier dispatch.");
   });
 
+  it("does not turn processing into packed delivery status", () => {
+    const result = validateDeliveryForm(
+      orderWith({ sellerSplits: [{ id: "split_1", sellerStatus: "ACCEPTED" }] }),
+      "PROCESSING",
+      createDeliveryForm(orderWith({})),
+    );
+
+    expect(result.valid).toBe(true);
+    expect(result.payload.status).toBeUndefined();
+  });
+
   it("rejects invalid COD collected values above seller payable amount", () => {
     const result = validateDeliveryForm(
       orderWith({

@@ -1,6 +1,7 @@
 import { Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import {
   ApprovalStatus,
+  DocumentStatus,
   EmailRecipientType,
   PaymentStatus,
   Prisma,
@@ -13,10 +14,12 @@ import { EMAIL_TRIGGER_EVENTS } from "../../notifications/email-trigger-catalog"
 import { NotificationsService } from "../../notifications/notifications.service";
 import { PrismaService } from "../../prisma/prisma.service";
 import { SearchIndexService } from "../../search/search-index.service";
+import { StorageService } from "../../storage/storage.service";
 import { RequestUser } from "../../auth/types/indihub-request";
 import {
   SellerApprovalDecision,
   SellerApprovalDto,
+  SellerDocumentStatusDto,
   SellerQueryDto,
   SellerSuspensionDto,
 } from "./dto/seller-approval.dto";
@@ -26,6 +29,7 @@ export class AdminSellersService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(NotificationsService) private readonly notifications: NotificationsService,
+    @Inject(StorageService) private readonly storageService: StorageService,
     @Optional()
     @Inject(SearchIndexService)
     private readonly searchIndex?: SearchIndexService,
@@ -90,6 +94,57 @@ export class AdminSellersService {
 
   async getSeller(sellerId: string) {
     return this.getSellerOrThrow(sellerId);
+  }
+
+  async getSellerExport(sellerId: string) {
+    const seller = await this.getSellerOrThrow(sellerId, {
+      productLimit: null,
+      orderSplitLimit: null,
+    });
+    const documentIds = seller.documents.map((document) => document.id);
+    const notes = await this.prisma.client.auditLog.findMany({
+      where: {
+        OR: [
+          { entityType: "seller", entityId: sellerId },
+          ...(documentIds.length
+            ? [{ entityType: "seller_document", entityId: { in: documentIds } }]
+            : []),
+        ],
+      },
+      include: {
+        actor: {
+          select: {
+            id: true,
+            email: true,
+            fullName: true,
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return {
+      ...seller,
+      notes,
+    };
+  }
+
+  async getSellerDocumentAccess(sellerId: string, documentId: string, actor: RequestUser) {
+    const document = await this.prisma.client.sellerDocument.findFirst({
+      where: {
+        id: documentId,
+        sellerId,
+        seller: {
+          deletedAt: null,
+        },
+      },
+    });
+
+    if (!document) {
+      throw new NotFoundException("Seller document not found.");
+    }
+
+    return this.storageService.privateDocumentAccess(actor, document.fileUrl);
   }
 
   getPendingSellers() {
@@ -275,6 +330,59 @@ export class AdminSellersService {
     return updatedSeller;
   }
 
+  async updateSellerDocumentStatus(
+    sellerId: string,
+    documentId: string,
+    dto: SellerDocumentStatusDto,
+    actor: RequestUser,
+  ) {
+    const updatedDocument = await this.prisma.client.$transaction(async (tx) => {
+      const document = await tx.sellerDocument.findFirst({
+        where: {
+          id: documentId,
+          sellerId,
+          seller: { deletedAt: null },
+        },
+      });
+
+      if (!document) {
+        throw new NotFoundException("Seller document not found.");
+      }
+
+      const nextDocument = await tx.sellerDocument.update({
+        where: { id: document.id },
+        data: { status: dto.status },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actor: { connect: { id: actor.id } },
+          action:
+            dto.status === DocumentStatus.APPROVED
+              ? "seller.document.verified"
+              : "seller.document.status_updated",
+          entityType: "seller_document",
+          entityId: document.id,
+          oldValue: {
+            sellerId,
+            documentType: document.documentType,
+            status: document.status,
+          },
+          newValue: {
+            sellerId,
+            documentType: nextDocument.documentType,
+            status: nextDocument.status,
+            note: dto.note,
+          },
+        },
+      });
+
+      return nextDocument;
+    });
+
+    return updatedDocument;
+  }
+
   private async enqueueSellerSearchIndex(sellerId: string, reason: string) {
     try {
       await this.searchIndex?.enqueueSeller(sellerId, { reason });
@@ -293,7 +401,12 @@ export class AdminSellersService {
     }
   }
 
-  private async getSellerOrThrow(sellerId: string) {
+  private async getSellerOrThrow(
+    sellerId: string,
+    options: { productLimit?: number | null; orderSplitLimit?: number | null } = {},
+  ) {
+    const productTake = options.productLimit === undefined ? 25 : options.productLimit;
+    const orderSplitTake = options.orderSplitLimit === undefined ? 25 : options.orderSplitLimit;
     const seller = await this.prisma.client.seller.findFirst({
       where: { id: sellerId, deletedAt: null },
       include: {
@@ -315,14 +428,23 @@ export class AdminSellersService {
             images: true,
           },
           orderBy: { createdAt: "desc" },
-          take: 25,
+          ...(productTake ? { take: productTake } : {}),
         },
         orderSplits: {
           include: {
             order: true,
           },
           orderBy: { createdAt: "desc" },
-          take: 25,
+          ...(orderSplitTake ? { take: orderSplitTake } : {}),
+        },
+        _count: {
+          select: {
+            products: true,
+            orderSplits: true,
+            b2bEnquiries: true,
+            documents: true,
+            addresses: true,
+          },
         },
       },
     });

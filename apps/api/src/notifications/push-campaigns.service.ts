@@ -266,15 +266,37 @@ export class PushCampaignsService {
   }
 
   private segmentWhere(filter: NormalizedSegmentFilter): Prisma.CustomerPushTokenWhereInput {
+    const locationFilters: Prisma.CustomerWhereInput[] = [];
+    if (filter.countryCode) {
+      locationFilters.push({
+        OR: [
+          { browsingCountryCode: filter.countryCode },
+          { addresses: { some: { countryCode: filter.countryCode } } },
+          { AND: [{ browsingCountryCode: null }, { addresses: { none: {} } }] },
+        ],
+      });
+    }
+    if (filter.stateCode) {
+      locationFilters.push({
+        OR: [
+          { browsingStateCode: filter.stateCode },
+          { addresses: { some: { stateCode: filter.stateCode } } },
+        ],
+      });
+    }
+    if (filter.city) {
+      locationFilters.push({
+        addresses: { some: { city: { equals: filter.city, mode: "insensitive" } } },
+      });
+    }
+
     return {
       enabled: true,
       revokedAt: null,
       customer: {
         status: UserStatus.ACTIVE,
         marketingCampaignsEnabled: true,
-        ...(filter.countryCode ? { browsingCountryCode: filter.countryCode } : {}),
-        ...(filter.stateCode ? { browsingStateCode: filter.stateCode } : {}),
-        ...(filter.city ? { addresses: { some: { city: { equals: filter.city, mode: "insensitive" } } } } : {}),
+        ...(locationFilters.length ? { AND: locationFilters } : {}),
       },
     };
   }

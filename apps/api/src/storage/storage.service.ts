@@ -71,7 +71,10 @@ const privateDocumentTypes = new Set([
   "BUSINESS_REGISTRATION",
   "OTHER",
 ]);
-const b2bPurchaseOrderPrefix = "indihub/b2b/purchase-orders";
+const storageKeyRoot = "1handindia";
+const legacyStorageKeyRoot = "indihub";
+const b2bPurchaseOrderPrefix = `${storageKeyRoot}/b2b/purchase-orders`;
+const legacyB2BPurchaseOrderPrefix = `${legacyStorageKeyRoot}/b2b/purchase-orders`;
 const privateDocumentDownloadTtlSeconds = 300;
 const b2bPurchaseOrderDownloadTtlSeconds = 300;
 const privateUploadOrphanCleanupHours = 24;
@@ -880,7 +883,7 @@ export class StorageService {
   }
 
   private createPrivateDocumentAssetKey(actor: RequestUser, dto: PrivateDocumentUploadRequestDto) {
-    const folder = `indihub/sellers/${this.safeSegment(actor.id)}/documents`;
+    const folder = `${storageKeyRoot}/sellers/${this.safeSegment(actor.id)}/documents`;
     const extension = this.documentExtension(dto.fileName, dto.contentType);
     const typeSegment = this.safeSegment(dto.documentType.toLowerCase());
     const baseName = this.safeDocumentBaseName(dto.fileName) || typeSegment;
@@ -1042,15 +1045,15 @@ export class StorageService {
 
     switch (purpose) {
       case PublicImageUploadPurpose.SELLER_LOGO:
-        return `indihub/sellers/${actorSegment}/profile/logo`;
+        return `${storageKeyRoot}/sellers/${actorSegment}/profile/logo`;
       case PublicImageUploadPurpose.SELLER_BANNER:
-        return `indihub/sellers/${actorSegment}/profile/banner`;
+        return `${storageKeyRoot}/sellers/${actorSegment}/profile/banner`;
       case PublicImageUploadPurpose.SELLER_PRODUCT_IMAGE:
-        return `indihub/sellers/${actorSegment}/products`;
+        return `${storageKeyRoot}/sellers/${actorSegment}/products`;
       case PublicImageUploadPurpose.ADMIN_BANNER:
-        return `indihub/admin/${actorSegment}/banners`;
+        return `${storageKeyRoot}/admin/${actorSegment}/banners`;
       case PublicImageUploadPurpose.CATEGORY_IMAGE:
-        return `indihub/admin/${actorSegment}/categories`;
+        return `${storageKeyRoot}/admin/${actorSegment}/categories`;
     }
   }
 
@@ -1283,9 +1286,10 @@ export class StorageService {
   private normalizePrivateDocumentKeyForActor(actor: RequestUser, key: string | undefined) {
     const normalized = this.normalizePublicImageKey(key);
     const isAdmin = actor.roles.includes(RoleCode.ADMIN);
-    const sellerPrefix = `indihub/sellers/${this.safeSegment(actor.id)}/documents/`;
+    const sellerPrefix = `${storageKeyRoot}/sellers/${this.safeSegment(actor.id)}/documents/`;
+    const legacySellerPrefix = `${legacyStorageKeyRoot}/sellers/${this.safeSegment(actor.id)}/documents/`;
 
-    if (!isAdmin && !normalized.startsWith(sellerPrefix)) {
+    if (!isAdmin && !normalized.startsWith(sellerPrefix) && !normalized.startsWith(legacySellerPrefix)) {
       throw new ForbiddenException("You can only access your own seller documents.");
     }
 
@@ -1295,8 +1299,9 @@ export class StorageService {
   private normalizeB2BPurchaseOrderKey(key: string | undefined) {
     const normalized = this.normalizePublicImageKey(key);
     const prefix = `${b2bPurchaseOrderPrefix}/`;
+    const legacyPrefix = `${legacyB2BPurchaseOrderPrefix}/`;
 
-    if (!normalized.startsWith(prefix)) {
+    if (!normalized.startsWith(prefix) && !normalized.startsWith(legacyPrefix)) {
       throw new BadRequestException("Purchase order file key is invalid.");
     }
 

@@ -37,6 +37,7 @@ const backOfficeRoleCodes = new Set<RoleCode>([
   RoleCode.ADMIN,
   RoleCode.FINANCE,
   RoleCode.COURIER_MANAGER,
+  RoleCode.CHAT_SUPPORT,
 ]);
 
 @Injectable()

@@ -2,6 +2,7 @@
 
 import { ReactNode, Suspense } from "react";
 import type { CmsMenuItem } from "@/lib/storefront-api";
+import { StorefrontMaintenanceGate } from "@/components/maintenance/maintenance-mode";
 import { StorefrontFooter } from "./storefront-footer";
 import { StorefrontHeader } from "./storefront-header";
 import { StorefrontMobileTabs } from "./storefront-mobile-tabs";
@@ -20,15 +21,17 @@ export function StorefrontFrame({
   initialMenus?: StorefrontFrameMenus | undefined;
 }) {
   return (
-    <div className="min-h-screen bg-[#FAF7F0] text-[#1F2933]">
-      <Suspense fallback={<div className="h-[160px] bg-[#FAF7F0]" />}>
-        <StorefrontHeader initialMenu={initialMenus?.header} />
-      </Suspense>
-      <div className="pb-28 lg:pb-0">
-        {children}
-        <StorefrontFooter initialFooterMenu={initialMenus?.footer} initialLegalMenu={initialMenus?.legal} />
+    <StorefrontMaintenanceGate>
+      <div className="min-h-screen bg-[#FAF7F0] text-[#1F2933]">
+        <Suspense fallback={<div className="h-[160px] bg-[#FAF7F0]" />}>
+          <StorefrontHeader initialMenu={initialMenus?.header} />
+        </Suspense>
+        <div className="pb-28 lg:pb-0">
+          {children}
+          <StorefrontFooter initialFooterMenu={initialMenus?.footer} initialLegalMenu={initialMenus?.legal} />
+        </div>
+        <StorefrontMobileTabs />
       </div>
-      <StorefrontMobileTabs />
-    </div>
+    </StorefrontMaintenanceGate>
   );
 }
