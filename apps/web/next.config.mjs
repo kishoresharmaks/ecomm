@@ -12,6 +12,7 @@ const localHostnames = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1"]);
 const allowedDevOrigins = resolveAllowedDevOrigins();
 const appEnvironment = process.env.NEXT_PUBLIC_APP_ENV ?? process.env.NODE_ENV;
 const sentryEnabled = appEnvironment !== "development" || process.env.NEXT_PUBLIC_ENABLE_SENTRY === "true";
+const publicApiOrigin = originFromUrl(process.env.NEXT_PUBLIC_API_URL);
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -57,7 +58,14 @@ const nextConfig = {
             "style-src 'self' 'unsafe-inline'",
             "img-src 'self' https: data: blob:",
             "font-src 'self' data: https://fonts.gstatic.com",
-            "connect-src 'self' https://www.google-analytics.com https://*.clerk.accounts.dev https://api.clerk.com https://clerk-telemetry.com",
+            [
+              "connect-src 'self'",
+              publicApiOrigin,
+              "https://www.google-analytics.com",
+              "https://*.clerk.accounts.dev",
+              "https://api.clerk.com",
+              "https://clerk-telemetry.com"
+            ].filter(Boolean).join(" "),
             "frame-src https://checkout.razorpay.com https://*.razorpay.com https://*.clerk.accounts.dev",
             "worker-src 'self' blob:"
           ].join("; ")
@@ -103,6 +111,19 @@ function hostnameFromOrigin(origin) {
 
   try {
     return new URL(value).hostname;
+  } catch {
+    return null;
+  }
+}
+
+function originFromUrl(value) {
+  const normalizedValue = value?.trim().replace(/^["']|["']$/g, "");
+  if (!normalizedValue) {
+    return null;
+  }
+
+  try {
+    return new URL(normalizedValue).origin;
   } catch {
     return null;
   }
