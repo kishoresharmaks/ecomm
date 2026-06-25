@@ -16,10 +16,12 @@ const sentryEnabled = appEnvironment !== "development" || process.env.NEXT_PUBLI
 
 const webOrigin = originFromUrl(process.env.NEXT_PUBLIC_WEB_URL);
 const apiOrigin = originFromUrl(process.env.NEXT_PUBLIC_API_URL);
+const apiWebSocketOrigin = apiOrigin ? apiOrigin.replace(/^https:/, "wss:").replace(/^http:/, "ws:") : null;
 const clerkFrontendOrigin = originFromUrl(process.env.NEXT_PUBLIC_CLERK_FRONTEND_API);
 const extraConnectOrigins = parseCsvOrigins(process.env.NEXT_PUBLIC_CSP_CONNECT_SRC);
 const extraImageOrigins = parseCsvOrigins(process.env.NEXT_PUBLIC_CSP_IMG_SRC);
 const extraFrameOrigins = parseCsvOrigins(process.env.NEXT_PUBLIC_CSP_FRAME_SRC);
+const imageKitUploadOrigin = "https://upload.imagekit.io";
 const imageRemotePatterns = buildImageRemotePatterns();
 
 /** @type {import('next').NextConfig} */
@@ -122,6 +124,8 @@ function buildContentSecurityPolicy() {
       "connect-src",
       "'self'",
       apiOrigin,
+      apiWebSocketOrigin,
+      imageKitUploadOrigin,
       ...analyticsOrigins,
       ...clerkOrigins,
       ...turnstileOrigins,
