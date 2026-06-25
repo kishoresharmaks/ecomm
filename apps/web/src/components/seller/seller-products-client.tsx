@@ -1318,6 +1318,7 @@ function ProductGalleryUploader({
         <div>
           <p className="text-sm font-black text-[#1F2933]">Image upload</p>
           <p className="mt-1 text-sm leading-6 text-[#667085]">Upload up to 10 images. Select one primary image for catalogue cards.</p>
+          <p className="mt-1 text-xs font-semibold leading-5 text-[#667085]">Recommended ratio: 4:3 landscape. Best fit: 1200 x 900 px or similar.</p>
         </div>
         <Button type="button" variant="outline" size="sm" onClick={() => inputRef.current?.click()} disabled={disabled || uploading || remaining <= 0}>
           <ImagePlus className="h-4 w-4" aria-hidden="true" />
@@ -1346,7 +1347,7 @@ function ProductGalleryUploader({
           <ImagePlus className="mx-auto h-9 w-9 text-[#ED3500]" aria-hidden="true" />
           <span className="mt-3 block text-sm font-black text-[#1F2933]">Upload product images</span>
           <span className="mt-1 block text-sm text-[#667085]">Drag support depends on browser, click here to browse.</span>
-          <span className="mt-1 block text-xs font-semibold text-[#667085]">PNG, JPG, WebP, or GIF. Keep each image under your storage provider limit.</span>
+          <span className="mt-1 block text-xs font-semibold text-[#667085]">Use 4:3 landscape images. PNG, JPG, WebP, or GIF. Keep each image under your storage provider limit.</span>
         </button>
       ) : null}
 
