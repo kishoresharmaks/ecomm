@@ -30,7 +30,7 @@ import {
   UserRound,
   X
 } from "lucide-react";
-import { type ReactNode, useRef, useState } from "react";
+import { type ComponentPropsWithoutRef, type ReactNode, useRef, useState } from "react";
 import { Button, StatusBadge, cn } from "@indihub/ui";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
 import { MaintenanceGate } from "@/components/maintenance/maintenance-mode";
@@ -38,6 +38,7 @@ import { StorefrontImage } from "@/components/storefront/storefront-image";
 import { IndihubApiError, userFacingApiErrorMessage } from "@/lib/api";
 import type { IndihubAuthHeaders } from "@/lib/api";
 import { uploadPublicImage, type PublicImageUploadPurpose } from "@/lib/public-image-upload";
+import type { SellerProfile } from "@/lib/seller-api";
 import { sellerNav } from "@/lib/portal-nav";
 
 const clerkEnabled = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
@@ -45,6 +46,8 @@ const clerkEnabled = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 const sellerNavIcons: Record<string, ReactNode> = {
   "/seller": <LayoutDashboard className="h-4 w-4" aria-hidden="true" />,
   "/seller/profile": <Store className="h-4 w-4" aria-hidden="true" />,
+  "/seller/store-profile": <Store className="h-4 w-4" aria-hidden="true" />,
+  "/seller/pending-approval": <AlertCircle className="h-4 w-4" aria-hidden="true" />,
   "/seller/register": <UserRound className="h-4 w-4" aria-hidden="true" />,
   "/seller/products": <Boxes className="h-4 w-4" aria-hidden="true" />,
   "/seller/deals": <BadgePercent className="h-4 w-4" aria-hidden="true" />,
@@ -272,7 +275,7 @@ export function SellerAuthNotice() {
             Sign in or create an account to continue with seller onboarding and seller center.
           </span>
           <Button asChild variant="outline" size="sm">
-            <Link href="/sign-in?redirect_url=/seller/register">
+            <Link href="/seller/sign-in?redirect_url=/seller/register">
               <LogIn size={16} /> Sign in
             </Link>
           </Button>
@@ -302,8 +305,19 @@ export function SellerAuthNotice() {
   );
 }
 
-export function SellerPanel({ children, className }: { children: ReactNode; className?: string }) {
-  return <section className={cn("rounded-lg border border-[#D9E2EA] bg-white p-5 shadow-sm", className)}>{children}</section>;
+export function SellerPanel({
+  children,
+  className,
+  ...props
+}: ComponentPropsWithoutRef<"section"> & { children: ReactNode }) {
+  return (
+    <section
+      className={cn("rounded-lg border border-[#D9E2EA] bg-white p-5 shadow-sm", className)}
+      {...props}
+    >
+      {children}
+    </section>
+  );
 }
 
 export function SellerMetric({
@@ -361,6 +375,16 @@ export function SellerOnboardingRequired({ message = "Create a seller profile fo
 
 export function isSellerOnboardingRequiredError(error: unknown) {
   return error instanceof IndihubApiError && [403, 404].includes(error.status);
+}
+
+export function isSellerApproved(profile?: Pick<SellerProfile, "status" | "approvalStatus"> | null) {
+  return profile?.status === "APPROVED" && profile?.approvalStatus === "APPROVED";
+}
+
+export function isSellerPendingReview(
+  profile?: Pick<SellerProfile, "status" | "approvalStatus"> | null,
+) {
+  return !isSellerApproved(profile);
 }
 
 export function SellerErrorPanel({ error, onRetry }: { error: Error; onRetry?: () => void }) {

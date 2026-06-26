@@ -95,10 +95,12 @@ export function StorefrontLocationProvider({ children }: { children: ReactNode }
 
   useEffect(() => {
     const countryCode = value.activeLocation?.countryCode?.trim().toUpperCase();
-    if (countryCode && countryCode !== market.countryCode) {
-      market.setCountryCode(countryCode);
+    // Only update market country code if the user explicitly changes their location,
+    // otherwise it will override the manual currency selection.
+    if (countryCode) {
+      // market.setCountryCode(countryCode); // We do not strictly bind this anymore because of independent locale/currency picker.
     }
-  }, [market.countryCode, market.setCountryCode, value.activeLocation?.countryCode]);
+  }, [market.setCountryCode, value.activeLocation?.countryCode]);
 
   return (
     <StorefrontLocationContext.Provider value={value}>

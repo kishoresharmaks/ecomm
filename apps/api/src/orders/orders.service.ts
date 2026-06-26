@@ -33,6 +33,7 @@ import {
   ProductStatus,
   PushNotificationType,
   RoleCode,
+  ReturnRequestStatus,
   SellerStatus,
   SellerType,
   SellerOrderStatus,
@@ -114,6 +115,33 @@ const orderInclude = {
         },
       },
       productVariant: true,
+      returnItems: {
+        select: {
+          id: true,
+          returnRequestId: true,
+          quantity: true,
+          status: true,
+          resolution: true,
+          requestedRefundPaise: true,
+          approvedRefundPaise: true,
+          createdAt: true,
+          returnRequest: {
+            select: {
+              requestNumber: true,
+              status: true,
+              resolution: true,
+            },
+          },
+        },
+        where: {
+          returnRequest: {
+            status: {
+              notIn: [ReturnRequestStatus.REJECTED, ReturnRequestStatus.CANCELLED],
+            },
+          },
+        },
+        orderBy: { createdAt: "desc" as const },
+      },
     },
   },
   sellerSplits: {
@@ -1103,6 +1131,12 @@ export class OrdersService {
         productNameSnapshot: item.productNameSnapshot,
         variantSnapshot: item.variantSnapshot,
         quantity: item.quantity,
+        activeQuantity: item.activeQuantity,
+        cancelledQuantity: item.cancelledQuantity,
+        returnedQuantity: item.returnedQuantity,
+        refundedQuantity: item.refundedQuantity,
+        replacementQuantity: item.replacementQuantity,
+        lifecycleStatus: item.lifecycleStatus,
         unitPricePaise: item.unitPricePaise,
         lineTotalPaise: item.lineTotalPaise,
         currency: item.currency,
@@ -1114,6 +1148,18 @@ export class OrdersService {
         couponDiscountPaise: item.couponDiscountPaise,
         couponPlatformFundedDiscountPaise: item.couponPlatformFundedDiscountPaise,
         couponSellerFundedDiscountPaise: item.couponSellerFundedDiscountPaise,
+        returnPolicySnapshot: item.returnPolicySnapshot,
+        returnItems: item.returnItems.map((returnItem) => ({
+          id: returnItem.id,
+          returnRequestId: returnItem.returnRequestId,
+          quantity: returnItem.quantity,
+          status: returnItem.status,
+          resolution: returnItem.resolution,
+          requestedRefundPaise: returnItem.requestedRefundPaise,
+          approvedRefundPaise: returnItem.approvedRefundPaise,
+          createdAt: returnItem.createdAt,
+          returnRequest: returnItem.returnRequest,
+        })),
         product: item.product
           ? {
               name: item.product.name,
@@ -3951,17 +3997,66 @@ export class OrdersService {
 
   private customerSafeOrder(order: OrderWithRelations) {
     return {
-      ...order,
+      id: order.id,
+      orderNumber: order.orderNumber,
+      orderStatus: order.orderStatus,
+      paymentStatus: order.paymentStatus,
+      deliveryStatus: order.deliveryStatus,
+      subtotalPaise: order.subtotalPaise,
+      shippingPaise: order.shippingPaise,
+      platformFeePaise: order.platformFeePaise,
+      couponCode: order.couponCode,
+      couponTitle: order.couponTitle,
+      couponDiscountPaise: order.couponDiscountPaise,
+      couponMerchandiseDiscountPaise: order.couponMerchandiseDiscountPaise,
+      couponShippingDiscountPaise: order.couponShippingDiscountPaise,
+      couponPlatformFundedDiscountPaise: order.couponPlatformFundedDiscountPaise,
+      couponSellerFundedDiscountPaise: order.couponSellerFundedDiscountPaise,
+      totalPaise: order.totalPaise,
+      currency: order.currency,
+      buyerCountryCode: order.buyerCountryCode,
+      buyerCurrency: order.buyerCurrency,
+      buyerSubtotalMinor: order.buyerSubtotalMinor,
+      buyerShippingMinor: order.buyerShippingMinor,
+      buyerPlatformFeeMinor: order.buyerPlatformFeeMinor,
+      buyerTotalMinor: order.buyerTotalMinor,
+      fxRate: order.fxRate?.toString() ?? null,
+      fxProvider: order.fxProvider,
+      fxRateFetchedAt: order.fxRateFetchedAt,
+      shippingAddressSnapshot: order.shippingAddressSnapshot,
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
       buyerPayableSubtotalMinor: this.orderBuyerMinor(
         order,
         Math.max(0, order.subtotalPaise - (order.couponMerchandiseDiscountPaise ?? 0)),
       ),
       buyerCouponDiscountMinor: this.orderBuyerMinor(order, order.couponDiscountPaise ?? 0),
+      items: order.items.map((item) => this.customerSafeOrderItem(item)),
+      payments: order.payments.map((payment) => ({
+        id: payment.id,
+        provider: payment.provider,
+        method: payment.method,
+        amountPaise: payment.amountPaise,
+        currency: payment.currency,
+        status: payment.status,
+        createdAt: payment.createdAt,
+      })),
       deliveryDetail: this.customerSafeDeliveryDetail(order.deliveryDetail, {
         publicLookup: false,
       }),
       sellerSplits: order.sellerSplits.map((split) => ({
-        ...split,
+        id: split.id,
+        orderId: split.orderId,
+        sellerId: split.sellerId,
+        sellerSubtotalPaise: split.sellerSubtotalPaise,
+        couponDiscountPaise: split.couponDiscountPaise,
+        couponPlatformFundedDiscountPaise: split.couponPlatformFundedDiscountPaise,
+        couponSellerFundedDiscountPaise: split.couponSellerFundedDiscountPaise,
+        couponAdjustmentPaise: split.couponAdjustmentPaise,
+        sellerStatus: split.sellerStatus,
+        createdAt: split.createdAt,
+        updatedAt: split.updatedAt,
+        seller: this.customerSafeSellerSummary(split.seller),
         shipment: split.shipment
           ? this.customerSafeShipmentReadback(split.shipment, { publicLookup: false })
           : null,
@@ -3969,6 +4064,84 @@ export class OrdersService {
       shipments: order.shipments.map((shipment) =>
         this.customerSafeShipmentReadback(shipment, { publicLookup: false }),
       ),
+      customerDeliveryTimeline: this.customerDeliveryTimeline(order),
+      statusEvents: order.statusEvents.map((event) => ({
+        id: event.id,
+        statusType: event.statusType,
+        oldStatus: event.oldStatus,
+        newStatus: event.newStatus,
+        note: event.note,
+        createdAt: event.createdAt,
+      })),
+    };
+  }
+
+  private customerSafeOrderItem(item: OrderWithRelations["items"][number]) {
+    return {
+      id: item.id,
+      sellerId: item.sellerId,
+      productNameSnapshot: item.productNameSnapshot,
+      variantSnapshot: item.variantSnapshot,
+      quantity: item.quantity,
+      activeQuantity: item.activeQuantity,
+      cancelledQuantity: item.cancelledQuantity,
+      returnedQuantity: item.returnedQuantity,
+      refundedQuantity: item.refundedQuantity,
+      replacementQuantity: item.replacementQuantity,
+      lifecycleStatus: item.lifecycleStatus,
+      unitPricePaise: item.unitPricePaise,
+      lineTotalPaise: item.lineTotalPaise,
+      currency: item.currency,
+      originalUnitPricePaise: item.originalUnitPricePaise,
+      dealDiscountBps: item.dealDiscountBps,
+      dealDiscountPaise: item.dealDiscountPaise,
+      dealId: item.dealId,
+      dealSnapshot: item.dealSnapshot,
+      couponDiscountPaise: item.couponDiscountPaise,
+      couponPlatformFundedDiscountPaise: item.couponPlatformFundedDiscountPaise,
+      couponSellerFundedDiscountPaise: item.couponSellerFundedDiscountPaise,
+      returnPolicySnapshot: item.returnPolicySnapshot,
+      returnItems: item.returnItems.map((returnItem) => ({
+        id: returnItem.id,
+        returnRequestId: returnItem.returnRequestId,
+        quantity: returnItem.quantity,
+        status: returnItem.status,
+        resolution: returnItem.resolution,
+        requestedRefundPaise: returnItem.requestedRefundPaise,
+        approvedRefundPaise: returnItem.approvedRefundPaise,
+        createdAt: returnItem.createdAt,
+        returnRequest: returnItem.returnRequest,
+      })),
+      product: item.product
+        ? {
+            id: item.product.id,
+            name: item.product.name,
+            slug: item.product.slug,
+            images: item.product.images.map((image) => ({
+              id: image.id,
+              url: image.url,
+              altText: image.altText,
+              sortOrder: image.sortOrder,
+              isPrimary: image.isPrimary,
+            })),
+          }
+        : null,
+      seller: this.customerSafeSellerSummary(item.seller),
+    };
+  }
+
+  private customerSafeSellerSummary(seller: OrderWithRelations["items"][number]["seller"] | null) {
+    if (!seller) {
+      return null;
+    }
+
+    return {
+      id: seller.id,
+      storeName: seller.storeName,
+      slug: seller.slug,
+      sellerType: seller.sellerType,
+      status: seller.status,
+      approvalStatus: seller.approvalStatus,
     };
   }
 

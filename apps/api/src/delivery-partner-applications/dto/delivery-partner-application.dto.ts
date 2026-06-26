@@ -10,12 +10,12 @@ import {
   IsLongitude,
   IsOptional,
   IsString,
-  Matches,
   Max,
   MaxLength,
   Min,
 } from "class-validator";
 import { DeliveryPartnerApplicationStatus, LocationSource } from "@indihub/database";
+import { IsValidPhoneNumber } from "../../common/validators/is-phone-number.validator";
 
 export const deliveryPartnerApplicationDecisions = ["APPROVE", "REJECT"] as const;
 export type DeliveryPartnerApplicationDecision = (typeof deliveryPartnerApplicationDecisions)[number];
@@ -57,13 +57,13 @@ export class DeliveryPartnerApplicationDto {
   @MaxLength(160)
   email!: string;
 
-  @ApiProperty({ example: "9876543210" })
-  @Matches(/^[6-9]\d{9}$/)
+  @ApiProperty({ example: "+919876543210" })
+  @IsValidPhoneNumber()
   phone!: string;
 
-  @ApiPropertyOptional({ example: "9123456780" })
+  @ApiPropertyOptional({ example: "+919123456780" })
   @IsOptional()
-  @Matches(/^[6-9]\d{9}$/)
+  @IsValidPhoneNumber()
   alternatePhone?: string;
 
   @ApiProperty({ example: "Bike" })

@@ -56,11 +56,6 @@ export class PrivateStorageConfigDto {
   @MaxLength(240)
   secretAccessKey?: string;
 
-  @ApiPropertyOptional({ example: false })
-  @IsOptional()
-  @IsBoolean()
-  clearSecretAccessKey?: boolean;
-
   @ApiPropertyOptional({ example: "storage/private" })
   @IsOptional()
   @IsString()
@@ -99,10 +94,6 @@ export class PublicImageS3ConfigDto {
   @MaxLength(240)
   secretAccessKey?: string;
 
-  @ApiPropertyOptional({ example: false })
-  @IsOptional()
-  @IsBoolean()
-  clearSecretAccessKey?: boolean;
 }
 
 export class PublicImageImageKitConfigDto {
@@ -118,10 +109,6 @@ export class PublicImageImageKitConfigDto {
   @MaxLength(240)
   privateKey?: string;
 
-  @ApiPropertyOptional({ example: false })
-  @IsOptional()
-  @IsBoolean()
-  clearPrivateKey?: boolean;
 }
 
 export class PublicImageConfigDto {

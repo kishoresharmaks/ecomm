@@ -737,7 +737,7 @@ function SellerSignInGate({
         </div>
         <div className="flex flex-wrap gap-3">
           <Button asChild>
-            <Link href="/sign-in?redirect_url=/seller/register">
+            <Link href="/seller/sign-in?redirect_url=/seller/register">
               <LogIn size={16} /> Sign in
             </Link>
           </Button>

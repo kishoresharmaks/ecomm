@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { Heart, LayoutDashboard, LifeBuoy, MapPin, PackageCheck, UserRound } from "lucide-react";
+import { Heart, LayoutDashboard, LifeBuoy, MapPin, PackageCheck, RotateCcw, UserRound } from "lucide-react";
 import { cn } from "@indihub/ui";
 import { StorefrontFrame } from "@/components/storefront/storefront-frame";
 
@@ -13,6 +13,7 @@ const accountNav = [
   { label: "Addresses", href: "/account/addresses", icon: MapPin },
   { label: "Wishlist", href: "/account/wishlist", icon: Heart },
   { label: "Orders", href: "/account/orders", icon: PackageCheck },
+  { label: "Returns", href: "/account/returns", icon: RotateCcw },
   { label: "Support", href: "/account/support", icon: LifeBuoy }
 ];
 

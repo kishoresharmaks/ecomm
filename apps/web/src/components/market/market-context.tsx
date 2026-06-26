@@ -13,22 +13,39 @@ type MarketContextValue = {
   error: Error | null;
   convert: (baseMinor?: number | null) => number;
   format: (baseMinor?: number | null) => string;
+  language: string;
+  setLanguage: (lang: string) => void;
 };
 
 const MarketContext = createContext<MarketContextValue | null>(null);
 const storageKey = "indihub.market.country";
+const languageStorageKey = "indihub.market.language";
 const marketCacheStorageKey = "indihub.market.currency-cache";
 const buyerCurrencyQueryRoots = new Set(["checkout-summary"]);
 
 export function MarketProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const [countryCode, setCountryCodeState] = useState("IN");
+  const [language, setLanguageState] = useState("en");
   const [marketsByCountry, setMarketsByCountry] = useState<Record<string, MarketCurrency>>({});
 
   useEffect(() => {
-    const stored = window.localStorage.getItem(storageKey);
-    if (stored) {
-      setCountryCodeState(stored);
+    try {
+      const stored = window.localStorage.getItem(storageKey);
+      if (stored) {
+        setCountryCodeState(stored);
+      }
+    } catch {
+      // Ignored
+    }
+
+    try {
+      const storedLang = window.localStorage.getItem(languageStorageKey);
+      if (storedLang) {
+        setLanguageState(storedLang);
+      }
+    } catch {
+      // Ignored
     }
 
     setMarketsByCountry(readMarketCache());
@@ -64,7 +81,11 @@ export function MarketProvider({ children }: { children: ReactNode }) {
   const setCountryCode = useCallback(
     (nextCountryCode: string) => {
       const normalized = nextCountryCode.trim().toUpperCase() || "IN";
-      window.localStorage.setItem(storageKey, normalized);
+      try {
+        window.localStorage.setItem(storageKey, normalized);
+      } catch {
+        // Ignored
+      }
       setCountryCodeState(normalized);
       void queryClient.invalidateQueries({
         predicate: (query) => {
@@ -76,6 +97,19 @@ export function MarketProvider({ children }: { children: ReactNode }) {
     [queryClient],
   );
 
+  const setLanguage = useCallback(
+    (nextLang: string) => {
+      const normalized = nextLang.trim().toLowerCase() || "en";
+      try {
+        window.localStorage.setItem(languageStorageKey, normalized);
+      } catch {
+        // Ignored
+      }
+      setLanguageState(normalized);
+    },
+    [],
+  );
+
   const value = useMemo<MarketContextValue>(
     () => ({
       countryCode,
@@ -84,9 +118,11 @@ export function MarketProvider({ children }: { children: ReactNode }) {
       isLoading: marketQuery.isLoading,
       error: marketQuery.error instanceof Error ? marketQuery.error : null,
       convert: (baseMinor?: number | null) => convertBaseMinorToMarket(baseMinor, market),
-      format: (baseMinor?: number | null) => formatMoney(convertBaseMinorToMarket(baseMinor, market), market.currency, market.locale)
+      format: (baseMinor?: number | null) => formatMoney(convertBaseMinorToMarket(baseMinor, market), market.currency, market.locale),
+      language,
+      setLanguage
     }),
-    [countryCode, market, marketQuery.error, marketQuery.isLoading, setCountryCode]
+    [countryCode, market, marketQuery.error, marketQuery.isLoading, setCountryCode, language, setLanguage]
   );
 
   return <MarketContext.Provider value={value}>{children}</MarketContext.Provider>;

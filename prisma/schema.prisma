@@ -2316,7 +2316,7 @@ model SearchDocument {
   dealDiscountBps    Int                            @default(0) @map("deal_discount_bps")
   rankBoost          Int                            @default(0) @map("rank_boost")
   visibilityStatus   SearchDocumentVisibilityStatus @default(HIDDEN) @map("visibility_status")
-  searchVector       Unsupported("tsvector")?       @map("search_vector")
+  searchVector       Unsupported("tsvector")?       @default(dbgenerated("((setweight(to_tsvector('simple'::regconfig, COALESCE(normalized_title, ''::text)), 'A'::\"char\") || setweight(to_tsvector('simple'::regconfig, COALESCE(normalized_subtitle, ''::text)), 'B'::\"char\")) || setweight(to_tsvector('simple'::regconfig, COALESCE(search_text, ''::text)), 'C'::\"char\"))")) @map("search_vector")
   sourceUpdatedAt    DateTime?                      @map("source_updated_at")
   createdAt          DateTime                       @default(now()) @map("created_at")
   updatedAt          DateTime                       @updatedAt @map("updated_at")
@@ -3303,8 +3303,9 @@ model Payment {
   amountPaise        Int                 @map("amount_paise")
   currency           String              @default("INR")
   status             PaymentStatus       @default(PENDING)
-  providerOrderId    String?             @map("provider_order_id")
-  providerPaymentId  String?             @map("provider_payment_id")
+  providerOrderId                    String?             @map("provider_order_id")
+  providerOrderCreationInProgress    Boolean             @default(false) @map("provider_order_creation_in_progress")
+  providerPaymentId                  String?             @map("provider_payment_id")
   rawResponse        Json?               @map("raw_response")
   createdAt          DateTime            @default(now()) @map("created_at")
   updatedAt          DateTime            @updatedAt @map("updated_at")
@@ -3321,6 +3322,20 @@ model Payment {
   @@index([provider, status, createdAt])
   @@index([provider, providerOrderId])
   @@map("payments")
+}
+
+model RazorpayWebhookEvent {
+  id              String    @id @default(cuid())
+  provider        String
+  providerEventId String
+  eventType       String
+  status          String    @default("PROCESSING") // PROCESSING | DONE | FAILED
+  payloadHash     String?
+  processedAt     DateTime?
+  createdAt       DateTime  @default(now())
+
+  @@unique([provider, providerEventId])
+  @@index([provider, providerEventId])
 }
 
 model CurrencyRate {

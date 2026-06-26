@@ -13,6 +13,6 @@ export class CreateB2BResponseDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  @Min(0)
+  @Min(1, { message: "quotedPricePaise must represent a positive price (minimum 1 paise)" })
   quotedPricePaise?: number;
 }

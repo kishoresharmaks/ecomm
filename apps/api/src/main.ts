@@ -1,16 +1,23 @@
 import "reflect-metadata";
 import { ValidationPipe } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
+import type { NestExpressApplication } from "@nestjs/platform-express";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
+import helmet from "helmet";
 import { AppModule } from "./app/app.module";
 import { createCorsOptions } from "./app/cors";
 import { createRateLimitMiddleware, rateLimitOptionsFromEnv } from "./rate-limit/request-rate-limiter";
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bufferLogs: true,
     rawBody: true
   });
+
+  app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
+
+  app.useBodyParser("json", { limit: "1mb" });
+  app.useBodyParser("urlencoded", { limit: "1mb", extended: true });
 
   app.enableCors(createCorsOptions());
 

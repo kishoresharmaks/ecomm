@@ -12,9 +12,11 @@ import {
   Package,
   PackageCheck,
   ReceiptText,
+  RotateCcw,
   ShoppingBag,
   Star,
   Truck,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -33,24 +35,36 @@ import {
   PagePanel,
   SkeletonBlock,
   StatusPill,
-  TextAreaField,
   formatDateTime,
   statusLabel,
   statusTone,
 } from "./account-ui";
 import {
   cancelCustomerOrder,
+  createCustomerItemCancellation,
+  createCustomerReturnRequest,
   getAccountOrder,
   getOrderReviewOptions,
   submitProductReview,
+  type CreateCustomerCancellationPayload,
+  type CreateCustomerReturnPayload,
   type OrderReviewOptions,
   type SubmitProductReviewPayload,
 } from "@/lib/account-api";
+import { hasOrderLeftSeller } from "@/lib/order-cancellation";
 import {
-  canCustomerSelfCancelOrder,
-  customerCancellationUnavailableReason,
-  hasOrderLeftSeller,
-} from "@/lib/order-cancellation";
+  cancellableQuantityOf,
+  deliveredItemReturnState,
+  isOrderDelivered,
+  isOrderCancellable,
+  isOrderReturnable,
+  orderCancellationUnavailableReason,
+  orderReturnUnavailableReason,
+  returnPolicyDescription,
+  summarizeSelection,
+  type CustomerResolution,
+  type OrderDetailItem,
+} from "@/lib/order-returns";
 import { formatMoney, formatOrderBaseAmount, formatOrderBuyerAmount, formatOrderTotal, primaryImage } from "@/lib/storefront-api";
 
 type AccountOrderDetail = Awaited<ReturnType<typeof getAccountOrder>>;
@@ -61,6 +75,14 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeTone, setNoticeTone] = useState<"success" | "danger">("success");
   const confirmation = useConfirmationDialog();
+  const [showCancellationDrawer, setShowCancellationDrawer] = useState(false);
+  const [showReturnDrawer, setShowReturnDrawer] = useState(false);
+  const [selectedItems, setSelectedItems] = useState<Map<string, number>>(new Map());
+  const [returnResolution, setReturnResolution] = useState<CustomerResolution>("REFUND");
+  const [returnReason, setReturnReason] = useState("");
+  const [returnNote, setReturnNote] = useState("");
+  const [cancellationReason, setCancellationReason] = useState("");
+  const [cancellationNote, setCancellationNote] = useState("");
 
   const orderQuery = useQuery({
     queryKey: ["account-order", customerAuth.authKey, orderNumber],
@@ -108,28 +130,176 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
     },
   });
 
-  function cancelOrder(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const note = String(form.get("note") ?? "").trim();
+  const partialCancelMutation = useMutation({
+    mutationFn: (payload: CreateCustomerCancellationPayload) =>
+      createCustomerItemCancellation(customerAuth.authHeaders, orderNumber, payload),
+    onSuccess: () => {
+      setNoticeTone("success");
+      setNotice("Items cancelled successfully.");
+      setShowCancellationDrawer(false);
+      setSelectedItems(new Map());
+      setCancellationReason("");
+      setCancellationNote("");
+      void queryClient.invalidateQueries({
+        queryKey: ["account-order", customerAuth.authKey, orderNumber],
+      });
+      void queryClient.invalidateQueries({ queryKey: ["account-orders", customerAuth.authKey] });
+    },
+    onError: (error) => {
+      setNoticeTone("danger");
+      setNotice(error instanceof Error ? error.message : "Partial cancellation failed.");
+    },
+  });
+
+  const returnMutation = useMutation({
+    mutationFn: (payload: CreateCustomerReturnPayload) =>
+      createCustomerReturnRequest(customerAuth.authHeaders, orderNumber, payload),
+    onSuccess: () => {
+      setNoticeTone("success");
+      setNotice("Return request submitted successfully.");
+      setShowReturnDrawer(false);
+      setSelectedItems(new Map());
+      setReturnReason("");
+      setReturnNote("");
+      void queryClient.invalidateQueries({
+        queryKey: ["account-order", customerAuth.authKey, orderNumber],
+      });
+      void queryClient.invalidateQueries({ queryKey: ["account-returns", customerAuth.authKey] });
+    },
+    onError: (error) => {
+      setNoticeTone("danger");
+      setNotice(error instanceof Error ? error.message : "Return request failed.");
+    },
+  });
+
+  function handlePartialCancellation() {
+    if (selectedItems.size === 0) {
+      setNoticeTone("danger");
+      setNotice("Please select at least one item to cancel.");
+      return;
+    }
+
+    const items: CreateCustomerCancellationPayload["items"] = [];
+    for (const [itemId, quantity] of selectedItems.entries()) {
+      if (quantity > 0) {
+        items.push({ orderItemId: itemId, quantity });
+      }
+    }
+
+    setNotice(null);
+    const payload: CreateCustomerCancellationPayload = { items };
+    const cleanReason = cancellationReason.trim();
+    const cleanNote = cancellationNote.trim();
+    if (cleanReason) {
+      payload.reason = cleanReason;
+    }
+    if (cleanNote) {
+      payload.note = cleanNote;
+    }
+
+    confirmation.requestConfirmation({
+      title: "Cancel selected items?",
+      description: "This will cancel the selected items and quantities from your order.",
+      confirmLabel: "Cancel items",
+      onConfirm: () => partialCancelMutation.mutate(payload),
+    });
+  }
+
+  function handleReturnRequest() {
+    if (selectedItems.size === 0) {
+      setNoticeTone("danger");
+      setNotice("Please select at least one item to return.");
+      return;
+    }
+
+    if (!returnReason.trim()) {
+      setNoticeTone("danger");
+      setNotice("Please provide a reason for the return.");
+      return;
+    }
+
+    const items: CreateCustomerReturnPayload["items"] = [];
+    for (const [itemId, quantity] of selectedItems.entries()) {
+      if (quantity > 0) {
+        items.push({ orderItemId: itemId, quantity });
+      }
+    }
+
+    const payload: CreateCustomerReturnPayload = {
+      resolution: returnResolution,
+      reason: returnReason.trim(),
+      items,
+    };
+    const cleanNote = returnNote.trim();
+    if (cleanNote) {
+      payload.note = cleanNote;
+    }
+
     setNotice(null);
     confirmation.requestConfirmation({
-      title: "Cancel this order?",
-      description: `This will cancel order ${orderNumber}. You can place a new order again if needed.`,
-      confirmLabel: "Cancel order",
-      onConfirm: () => cancelMutation.mutate(note || undefined),
+      title: `Request ${returnResolution === "REFUND" ? "refund" : "replacement"}?`,
+      description: "This will submit a return request for the selected items.",
+      confirmLabel: "Submit request",
+      onConfirm: () => returnMutation.mutate(payload),
     });
+  }
+
+  function toggleItemSelection(itemId: string, maxQuantity: number) {
+    const currentQuantity = selectedItems.get(itemId) || 0;
+    const newSelection = new Map(selectedItems);
+
+    if (currentQuantity > 0) {
+      newSelection.delete(itemId);
+    } else {
+      newSelection.set(itemId, maxQuantity);
+    }
+
+    setSelectedItems(newSelection);
+  }
+
+  function updateItemQuantity(itemId: string, quantity: number, maxQuantity: number) {
+    const newSelection = new Map(selectedItems);
+    if (quantity <= 0) {
+      newSelection.delete(itemId);
+    } else {
+      newSelection.set(itemId, Math.min(quantity, maxQuantity));
+    }
+    setSelectedItems(newSelection);
+  }
+
+  function openCancellationDrawer() {
+    setSelectedItems(new Map());
+    setCancellationReason("");
+    setCancellationNote("");
+    setShowCancellationDrawer(true);
+  }
+
+  function openReturnDrawer(resolution: CustomerResolution = "REFUND") {
+    setSelectedItems(new Map());
+    setReturnResolution(resolution);
+    setReturnReason("");
+    setReturnNote("");
+    setShowReturnDrawer(true);
   }
 
   const order = orderQuery.data;
   const address = order?.shippingAddressSnapshot;
-  const canCancel = order ? canCustomerSelfCancelOrder(order) : false;
-  const cancellationUnavailableReason = order ? customerCancellationUnavailableReason(order) : null;
+  const canCancel = order ? isOrderCancellable(order) : false;
+  const cancellationUnavailableReason = order ? orderCancellationUnavailableReason(order) : null;
   const shouldShowSupportLink = order ? hasOrderLeftSeller(order) : false;
   const timeline = order ? buildTrackingTimeline(order) : [];
   const deliveryStatus = order ? effectiveCustomerDeliveryStatus(order) : null;
   const canShowDeliveryAssignment = order ? customerDeliveryAssignmentReady(order) : false;
   const latestPayment = order?.payments?.[0] ?? null;
+  const canReturn = order ? isOrderReturnable(order) : false;
+  const isDelivered = order ? isOrderDelivered(order) : false;
+  const returnUnavailableReason = order ? orderReturnUnavailableReason(order) : null;
+  const hasCancellableItems = order
+    ? order.items.some((item) => cancellableQuantityOf(item) > 0)
+    : false;
+  const hasReturnableItems = order
+    ? canReturn && order.items.some((item) => deliveredItemReturnState(item).kind === "returnable")
+    : false;
 
   return (
     <AccountShell
@@ -208,6 +378,9 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
                     const reviewOption = reviewOptionsQuery.data?.items.find(
                       (option) => option.orderItemId === item.id,
                     );
+                    const returnState = isDelivered ? deliveredItemReturnState(item) : null;
+                    const cancellableQty = canCancel ? cancellableQuantityOf(item) : 0;
+                    const policyDescription = returnPolicyDescription(item);
 
                     return (
                       <div
@@ -235,6 +408,54 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
                               Seller: {item.seller.storeName}
                             </p>
                           ) : null}
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <span className="inline-flex items-center rounded-full bg-[#F8FAFC] px-2 py-1 text-xs font-bold text-[#667085]">
+                              Policy: {policyDescription}
+                            </span>
+                            {cancellableQty > 0 ? (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-[#FFF7E6] px-2 py-1 text-xs font-bold text-[#9A5B00]">
+                                <Ban className="h-3 w-3" aria-hidden="true" />
+                                {cancellableQty} cancellable
+                              </span>
+                            ) : null}
+                            {returnState ? (
+                              returnState.kind === "returnable" ? (
+                                canReturn ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-[#EAF1F7] px-2 py-1 text-xs font-bold text-[#163B5C]">
+                                    <RotateCcw className="h-3 w-3" aria-hidden="true" />
+                                    Returnable ({returnState.availableQuantity} available)
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-[#F8FAFC] px-2 py-1 text-xs font-bold text-[#667085]">
+                                    {returnUnavailableReason}
+                                  </span>
+                                )
+                              ) : returnState.kind === "non-returnable" ? (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-[#FDECEC] px-2 py-1 text-xs font-bold text-[#8A1F1F]">
+                                  Non-returnable: {returnState.reason}
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-[#F8FAFC] px-2 py-1 text-xs font-bold text-[#667085]">
+                                  {canReturn ? returnState.reason : returnUnavailableReason}
+                                </span>
+                              )
+                            ) : null}
+                            {item.returnItems?.length ? (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-[#ECFDF3] px-2 py-1 text-xs font-bold text-[#067647]">
+                                Return request: {item.returnItems[0]?.returnRequest.requestNumber}
+                              </span>
+                            ) : null}
+                            {(item.cancelledQuantity ?? 0) > 0 ? (
+                              <span className="inline-flex items-center rounded-full bg-[#FDECEC] px-2 py-1 text-xs font-bold text-[#8A1F1F]">
+                                {item.cancelledQuantity} cancelled
+                              </span>
+                            ) : null}
+                            {(item.returnedQuantity ?? 0) > 0 ? (
+                              <span className="inline-flex items-center rounded-full bg-[#EAF1F7] px-2 py-1 text-xs font-bold text-[#163B5C]">
+                                {item.returnedQuantity} returned
+                              </span>
+                            ) : null}
+                          </div>
                         </div>
                         <div className="text-left md:text-right">
                           <p className="text-sm font-semibold text-[#667085]">
@@ -402,41 +623,404 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
                     <Headphones className="h-5 w-5" aria-hidden="true" />
                   </span>
                   <SectionHeading
-                    title="Help & cancellation"
-                    description="Get support or cancel before dispatch."
+                    title="Help & actions"
+                    description="Cancel, return, or get support for this order."
                   />
                 </div>
 
-                {canCancel ? (
-                  <form onSubmit={cancelOrder} className="mt-5 grid gap-4">
-                    <TextAreaField
-                      label="Cancellation note"
-                      name="note"
-                      placeholder="Reason for cancellation"
-                      rows={3}
-                    />
-                    <Button type="submit" variant="outline" disabled={cancelMutation.isPending}>
-                      <Ban className="h-4 w-4" aria-hidden="true" />
-                      {cancelMutation.isPending ? "Cancelling..." : "Cancel order"}
-                    </Button>
-                  </form>
-                ) : (
-                  <div className="mt-5 grid gap-3">
-                    {cancellationUnavailableReason ? (
-                      <p className="text-sm font-semibold leading-6 text-[#667085]">
-                        {cancellationUnavailableReason}
-                      </p>
-                    ) : null}
-                    {shouldShowSupportLink ? (
-                      <Button asChild variant="outline">
-                        <Link href="/account/support">Contact support</Link>
+                <div className="mt-5 grid gap-3">
+                  {canCancel ? (
+                    <div className="grid gap-3">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          setNotice(null);
+                          confirmation.requestConfirmation({
+                            title: "Cancel this order?",
+                            description: `This will cancel order ${orderNumber}. You can place a new order again if needed.`,
+                            confirmLabel: "Cancel order",
+                            onConfirm: () => cancelMutation.mutate(undefined),
+                          });
+                        }}
+                        disabled={cancelMutation.isPending}
+                      >
+                        <Ban className="h-4 w-4" aria-hidden="true" />
+                        {cancelMutation.isPending ? "Cancelling..." : "Cancel order"}
                       </Button>
-                    ) : null}
-                  </div>
-                )}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={openCancellationDrawer}
+                        disabled={!hasCancellableItems || partialCancelMutation.isPending}
+                      >
+                        <Ban className="h-4 w-4" aria-hidden="true" />
+                        Cancel selected items
+                      </Button>
+                    </div>
+                  ) : null}
+
+                  {hasReturnableItems ? (
+                    <div className="grid gap-3">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => openReturnDrawer("REFUND")}
+                        disabled={returnMutation.isPending}
+                      >
+                        <RotateCcw className="h-4 w-4" aria-hidden="true" />
+                        Request refund
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => openReturnDrawer("REPLACEMENT")}
+                        disabled={returnMutation.isPending}
+                      >
+                        <PackageCheck className="h-4 w-4" aria-hidden="true" />
+                        Request replacement
+                      </Button>
+                    </div>
+                  ) : null}
+
+                  {!canCancel && !hasReturnableItems ? (
+                    <div className="grid gap-3">
+                      {isDelivered && returnUnavailableReason ? (
+                        <p className="text-sm font-semibold leading-6 text-[#667085]">
+                          {returnUnavailableReason}
+                        </p>
+                      ) : cancellationUnavailableReason ? (
+                        <p className="text-sm font-semibold leading-6 text-[#667085]">
+                          {cancellationUnavailableReason}
+                        </p>
+                      ) : null}
+                      {shouldShowSupportLink ? (
+                        <Button asChild variant="outline">
+                          <Link href="/account/support">Contact support</Link>
+                        </Button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
               </PagePanel>
             </div>
           </div>
+
+          {/* Partial Cancellation Drawer */}
+          {showCancellationDrawer && order ? (
+            <div className="fixed inset-0 z-50 flex justify-end bg-black/50">
+              <div className="h-full w-full max-w-2xl overflow-y-auto bg-white p-6 shadow-xl">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-xl font-black text-[#1F2933]">Cancel selected items</h3>
+                  <p className="mt-1 text-sm font-semibold leading-6 text-[#667085]">
+                    Choose only pre-dispatch items and quantities. Delivered orders use the return flow.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowCancellationDrawer(false)}
+                  disabled={partialCancelMutation.isPending}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+
+              <div className="space-y-4">
+                {order.items.filter((item) => cancellableQuantityOf(item) > 0).length === 0 ? (
+                  <div className="rounded-md border border-dashed border-[#D8E2EA] bg-[#F8FAFC] p-4 text-sm font-semibold text-[#667085]">
+                    No item quantities are currently eligible for customer self-cancellation.
+                  </div>
+                ) : null}
+                {order.items
+                  .filter((item) => cancellableQuantityOf(item) > 0)
+                  .map((item) => {
+                    const maxQuantity = cancellableQuantityOf(item);
+                    const selectedQuantity = selectedItems.get(item.id) || 0;
+
+                    return (
+                      <div key={item.id} className="flex flex-col gap-3 rounded-md border border-[#E5E7EB] p-3 sm:flex-row sm:items-center">
+                        <input
+                          type="checkbox"
+                          checked={selectedQuantity > 0}
+                          onChange={() => toggleItemSelection(item.id, maxQuantity)}
+                          className="h-4 w-4 rounded border-[#D8E2EA]"
+                          disabled={partialCancelMutation.isPending}
+                          aria-label={`Select ${item.productNameSnapshot} for cancellation`}
+                        />
+                        <div className="flex-1">
+                          <p className="text-sm font-bold text-[#1F2933]">{item.productNameSnapshot}</p>
+                          <p className="text-xs font-semibold text-[#667085]">
+                            {formatMoney(item.unitPricePaise, item.currency)} each / {maxQuantity} available
+                          </p>
+                        </div>
+                        {selectedQuantity > 0 && (
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => updateItemQuantity(item.id, selectedQuantity - 1, maxQuantity)}
+                              className="h-8 w-8 rounded-md border border-[#D8E2EA] bg-[#F8FAFC] text-sm font-bold hover:bg-[#EAF1F7]"
+                              disabled={partialCancelMutation.isPending}
+                            >
+                              -
+                            </button>
+                            <span className="text-sm font-bold text-[#1F2933] w-8 text-center">
+                              {selectedQuantity}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => updateItemQuantity(item.id, selectedQuantity + 1, maxQuantity)}
+                              className="h-8 w-8 rounded-md border border-[#D8E2EA] bg-[#F8FAFC] text-sm font-bold hover:bg-[#EAF1F7]"
+                              disabled={partialCancelMutation.isPending || selectedQuantity >= maxQuantity}
+                            >
+                              +
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+              </div>
+
+              {selectedItems.size > 0 ? (
+                <div className="mt-4 p-4 bg-[#F8FAFC] rounded-md">
+                  <SelectionSummaryDisplay
+                    items={order.items}
+                    selection={selectedItems}
+                    currency={order.currency}
+                    amountLabel="Estimated refund"
+                  />
+                </div>
+              ) : null}
+
+              <div className="mt-4 grid gap-4">
+                <label className="grid gap-2">
+                  <span className="text-xs font-bold uppercase tracking-wide text-[#667085]">
+                    Reason (optional)
+                  </span>
+                  <input
+                    type="text"
+                    value={cancellationReason}
+                    onChange={(event) => setCancellationReason(event.target.value)}
+                    maxLength={160}
+                    placeholder="Ordered by mistake, changed quantity, or duplicate order"
+                    className="h-11 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 text-sm font-semibold text-[#1F2933] outline-none transition focus:border-[#ED3500] focus:bg-white"
+                    disabled={partialCancelMutation.isPending}
+                  />
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-xs font-bold uppercase tracking-wide text-[#667085]">
+                    Note (optional)
+                  </span>
+                  <textarea
+                    value={cancellationNote}
+                    onChange={(event) => setCancellationNote(event.target.value)}
+                    maxLength={1000}
+                    rows={3}
+                    placeholder="Add any detail for support or refund review."
+                    className="w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 py-3 text-sm font-semibold text-[#1F2933] outline-none transition focus:border-[#ED3500] focus:bg-white"
+                    disabled={partialCancelMutation.isPending}
+                  />
+                </label>
+              </div>
+
+              <div className="mt-4 flex gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowCancellationDrawer(false)}
+                  disabled={partialCancelMutation.isPending}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handlePartialCancellation}
+                  disabled={selectedItems.size === 0 || partialCancelMutation.isPending}
+                >
+                  {partialCancelMutation.isPending ? "Processing..." : "Submit cancellation"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {/* Return Request Drawer */}
+        {showReturnDrawer && order ? (
+          <div className="fixed inset-0 z-50 flex justify-end bg-black/50">
+            <div className="h-full w-full max-w-2xl overflow-y-auto bg-white p-6 shadow-xl">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-xl font-black text-[#1F2933]">
+                    Request {returnResolution === "REPLACEMENT" ? "replacement" : "refund"}
+                  </h3>
+                  <p className="mt-1 text-sm font-semibold leading-6 text-[#667085]">
+                    Select delivered eligible items. Replacement stays an explicit choice and is not auto-selected.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowReturnDrawer(false)}
+                  disabled={returnMutation.isPending}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+
+              <div className="space-y-4">
+                {order.items.filter((item) => deliveredItemReturnState(item).kind === "returnable").length === 0 ? (
+                  <div className="rounded-md border border-dashed border-[#D8E2EA] bg-[#F8FAFC] p-4 text-sm font-semibold text-[#667085]">
+                    No delivered items are currently eligible for a new refund or replacement request.
+                  </div>
+                ) : null}
+                {order.items
+                  .filter((item) => {
+                    const state = deliveredItemReturnState(item);
+                    return state.kind === "returnable";
+                  })
+                  .map((item) => {
+                    const state = deliveredItemReturnState(item);
+                    const maxQuantity = state.kind === "returnable" ? state.availableQuantity : 0;
+                    const selectedQuantity = selectedItems.get(item.id) || 0;
+
+                    return (
+                      <div key={item.id} className="flex flex-col gap-3 rounded-md border border-[#E5E7EB] p-3 sm:flex-row sm:items-center">
+                        <input
+                          type="checkbox"
+                          checked={selectedQuantity > 0}
+                          onChange={() => toggleItemSelection(item.id, maxQuantity)}
+                          className="h-4 w-4 rounded border-[#D8E2EA]"
+                          disabled={returnMutation.isPending}
+                          aria-label={`Select ${item.productNameSnapshot} for ${returnResolution.toLowerCase()}`}
+                        />
+                        <div className="flex-1">
+                          <p className="text-sm font-bold text-[#1F2933]">{item.productNameSnapshot}</p>
+                          <p className="text-xs font-semibold text-[#667085]">
+                            {formatMoney(item.unitPricePaise, item.currency)} each / {maxQuantity} returnable
+                          </p>
+                        </div>
+                        {selectedQuantity > 0 && (
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => updateItemQuantity(item.id, selectedQuantity - 1, maxQuantity)}
+                              className="h-8 w-8 rounded-md border border-[#D8E2EA] bg-[#F8FAFC] text-sm font-bold hover:bg-[#EAF1F7]"
+                              disabled={returnMutation.isPending}
+                            >
+                              -
+                            </button>
+                            <span className="text-sm font-bold text-[#1F2933] w-8 text-center">
+                              {selectedQuantity}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => updateItemQuantity(item.id, selectedQuantity + 1, maxQuantity)}
+                              className="h-8 w-8 rounded-md border border-[#D8E2EA] bg-[#F8FAFC] text-sm font-bold hover:bg-[#EAF1F7]"
+                              disabled={returnMutation.isPending || selectedQuantity >= maxQuantity}
+                            >
+                              +
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+              </div>
+
+              {selectedItems.size > 0 ? (
+                <div className="mt-4 p-4 bg-[#F8FAFC] rounded-md">
+                  <SelectionSummaryDisplay
+                    items={order.items}
+                    selection={selectedItems}
+                    currency={order.currency}
+                    amountLabel={returnResolution === "REPLACEMENT" ? "Selected item value" : "Estimated refund"}
+                  />
+                </div>
+              ) : null}
+
+              <div className="mt-4 space-y-4">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wide text-[#667085] mb-2">
+                    Resolution
+                  </label>
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setReturnResolution("REFUND")}
+                      className={`flex-1 rounded-md border px-4 py-2 text-sm font-bold transition ${
+                        returnResolution === "REFUND"
+                          ? "border-[#ED3500] bg-[#FFF0EC] text-[#ED3500]"
+                          : "border-[#D8E2EA] bg-[#F8FAFC] text-[#667085] hover:bg-[#EAF1F7]"
+                      }`}
+                    >
+                      Refund
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setReturnResolution("REPLACEMENT")}
+                      className={`flex-1 rounded-md border px-4 py-2 text-sm font-bold transition ${
+                        returnResolution === "REPLACEMENT"
+                          ? "border-[#ED3500] bg-[#FFF0EC] text-[#ED3500]"
+                          : "border-[#D8E2EA] bg-[#F8FAFC] text-[#667085] hover:bg-[#EAF1F7]"
+                      }`}
+                    >
+                      Replacement
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wide text-[#667085] mb-2">
+                    Reason
+                  </label>
+                  <input
+                    type="text"
+                    value={returnReason}
+                    onChange={(e) => setReturnReason(e.target.value)}
+                    placeholder="Why are you returning this item?"
+                    required
+                    className="h-11 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 text-sm font-semibold text-[#1F2933] outline-none transition focus:border-[#ED3500] focus:bg-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wide text-[#667085] mb-2">
+                    Additional note (optional)
+                  </label>
+                  <textarea
+                    value={returnNote}
+                    onChange={(e) => setReturnNote(e.target.value)}
+                    placeholder="Any additional details about your return"
+                    rows={3}
+                    className="w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 py-3 text-sm font-semibold text-[#1F2933] outline-none transition focus:border-[#ED3500] focus:bg-white"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-4 flex gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowReturnDrawer(false)}
+                  disabled={returnMutation.isPending}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleReturnRequest}
+                  disabled={selectedItems.size === 0 || returnMutation.isPending}
+                >
+                  {returnMutation.isPending ? "Processing..." : "Submit return request"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : null}
         </div>
       ) : null}
     </AccountShell>
@@ -444,6 +1028,49 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
 }
 
 type ReviewOptionItem = OrderReviewOptions["items"][number];
+
+function SelectionSummaryDisplay({
+  items,
+  selection,
+  currency,
+  amountLabel,
+}: {
+  items: OrderDetailItem[];
+  selection: Map<string, number>;
+  currency: string;
+  amountLabel: string;
+}) {
+  const summary = summarizeSelection(items, selection);
+
+  if (summary.itemCount === 0) {
+    return null;
+  }
+
+  return (
+    <div className="grid gap-2 text-sm">
+      <div className="flex justify-between">
+        <span className="font-semibold text-[#667085]">Selected items:</span>
+        <span className="font-bold text-[#1F2933]">{summary.itemCount}</span>
+      </div>
+      <div className="flex justify-between">
+        <span className="font-semibold text-[#667085]">Total quantity:</span>
+        <span className="font-bold text-[#1F2933]">{summary.quantityTotal}</span>
+      </div>
+      <div className="flex justify-between">
+        <span className="font-semibold text-[#667085]">{amountLabel}:</span>
+        <span className="font-bold text-[#163B5C]">
+          {summary.approximate ? "Up to " : ""}
+          {formatMoney(summary.refundPaise, currency)}
+        </span>
+      </div>
+      {summary.approximate ? (
+        <p className="rounded-md bg-white px-3 py-2 text-xs font-semibold leading-5 text-[#667085]">
+          Coupon or discount allocation can make the final amount slightly lower. This estimate is indicative until the backend confirms it.
+        </p>
+      ) : null}
+    </div>
+  );
+}
 
 function OrderItemReviewBox({
   option,

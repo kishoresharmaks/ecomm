@@ -52,6 +52,27 @@ const STORAGE_SETTING_KEYS = {
 } as const;
 
 const storageConfigKeys = Object.values(STORAGE_SETTING_KEYS);
+type SavedStorageSecret =
+  | "PUBLIC_IMAGEKIT_PRIVATE_KEY"
+  | "PUBLIC_S3_SECRET_ACCESS_KEY"
+  | "PRIVATE_S3_SECRET_ACCESS_KEY";
+const savedStorageSecretSettings: Record<
+  SavedStorageSecret,
+  { key: (typeof STORAGE_SETTING_KEYS)[keyof typeof STORAGE_SETTING_KEYS]; action: string }
+> = {
+  PUBLIC_IMAGEKIT_PRIVATE_KEY: {
+    key: STORAGE_SETTING_KEYS.publicImageKitPrivateKey,
+    action: "storage.public_images.imagekit.private_key.cleared",
+  },
+  PUBLIC_S3_SECRET_ACCESS_KEY: {
+    key: STORAGE_SETTING_KEYS.publicS3SecretAccessKey,
+    action: "storage.public_images.s3.secret_access_key.cleared",
+  },
+  PRIVATE_S3_SECRET_ACCESS_KEY: {
+    key: STORAGE_SETTING_KEYS.privateSecretAccessKey,
+    action: "storage.private.s3.secret_access_key.cleared",
+  },
+};
 const privateDocumentMaxBytes = 10 * 1024 * 1024;
 const publicImageMaxBytes = 5 * 1024 * 1024;
 const publicImageAllowedContentTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
@@ -269,16 +290,7 @@ export class StorageService {
             ),
           );
         }
-        if (dto.publicImages.imageKit.clearPrivateKey) {
-          writes.push(
-            this.storageSettingWrite(
-              STORAGE_SETTING_KEYS.publicImageKitPrivateKey,
-              "storage",
-              SettingValueType.STRING,
-              "",
-            ),
-          );
-        } else if (dto.publicImages.imageKit.privateKey?.trim()) {
+        if (dto.publicImages.imageKit.privateKey?.trim()) {
           writes.push(
             this.storageSettingWrite(
               STORAGE_SETTING_KEYS.publicImageKitPrivateKey,
@@ -330,16 +342,7 @@ export class StorageService {
             ),
           );
         }
-        if (dto.publicImages.s3.clearSecretAccessKey) {
-          writes.push(
-            this.storageSettingWrite(
-              STORAGE_SETTING_KEYS.publicS3SecretAccessKey,
-              "storage",
-              SettingValueType.STRING,
-              "",
-            ),
-          );
-        } else if (dto.publicImages.s3.secretAccessKey?.trim()) {
+        if (dto.publicImages.s3.secretAccessKey?.trim()) {
           writes.push(
             this.storageSettingWrite(
               STORAGE_SETTING_KEYS.publicS3SecretAccessKey,
@@ -413,16 +416,7 @@ export class StorageService {
           ),
         );
       }
-      if (dto.privateStorage.clearSecretAccessKey) {
-        writes.push(
-          this.storageSettingWrite(
-            STORAGE_SETTING_KEYS.privateSecretAccessKey,
-            "storage",
-            SettingValueType.STRING,
-            "",
-          ),
-        );
-      } else if (dto.privateStorage.secretAccessKey?.trim()) {
+      if (dto.privateStorage.secretAccessKey?.trim()) {
         writes.push(
           this.storageSettingWrite(
             STORAGE_SETTING_KEYS.privateSecretAccessKey,
@@ -470,6 +464,32 @@ export class StorageService {
         },
       });
     }
+
+    return this.adminStorageConfiguration();
+  }
+
+  async clearSavedStorageSecret(actor: RequestUser, secret: SavedStorageSecret) {
+    const setting = savedStorageSecretSettings[secret];
+    const deleteResult = await this.prisma.client.setting.deleteMany({
+      where: { key: setting.key },
+    });
+    const savedSettingExisted = deleteResult.count > 0;
+
+    await this.prisma.client.auditLog.create({
+      data: {
+        actorUserId: actor.id,
+        action: setting.action,
+        entityType: "storage_configuration",
+        oldValue: {
+          key: setting.key,
+          savedSecretConfigured: savedSettingExisted,
+        },
+        newValue: {
+          key: setting.key,
+          savedSecretConfigured: false,
+        },
+      },
+    });
 
     return this.adminStorageConfiguration();
   }

@@ -31,12 +31,12 @@ export class RazorpayConfigDto {
   @MaxLength(240)
   webhookSecret?: string;
 
-  @ApiPropertyOptional({ example: false })
+  @ApiPropertyOptional({ example: false, description: "WARNING: Setting this to true will clear the stored key secret. This action cannot be undone." })
   @IsOptional()
   @IsBoolean()
   clearKeySecret?: boolean;
 
-  @ApiPropertyOptional({ example: false })
+  @ApiPropertyOptional({ example: false, description: "WARNING: Setting this to true will clear the stored webhook secret. This action cannot be undone." })
   @IsOptional()
   @IsBoolean()
   clearWebhookSecret?: boolean;

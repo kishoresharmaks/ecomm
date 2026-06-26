@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Inject,
   Patch,
@@ -78,6 +79,31 @@ export class StorageController {
     @Body() dto: UpsertStorageConfigurationDto,
   ) {
     return this.storageService.updateStorageConfiguration(actor, dto);
+  }
+
+  @Delete("configuration/public-images/imagekit/private-key")
+  @Roles(RoleCode.ADMIN)
+  @ApiOperation({ summary: "Clear the saved ImageKit private key from DB-backed storage settings." })
+  clearImageKitPrivateKey(@CurrentUser() actor: RequestUser) {
+    return this.storageService.clearSavedStorageSecret(actor, "PUBLIC_IMAGEKIT_PRIVATE_KEY");
+  }
+
+  @Delete("configuration/public-images/s3/secret-access-key")
+  @Roles(RoleCode.ADMIN)
+  @ApiOperation({
+    summary: "Clear the saved public-image S3 secret access key from DB-backed storage settings.",
+  })
+  clearPublicS3SecretAccessKey(@CurrentUser() actor: RequestUser) {
+    return this.storageService.clearSavedStorageSecret(actor, "PUBLIC_S3_SECRET_ACCESS_KEY");
+  }
+
+  @Delete("configuration/private-storage/s3/secret-access-key")
+  @Roles(RoleCode.ADMIN)
+  @ApiOperation({
+    summary: "Clear the saved private-storage S3 secret access key from DB-backed storage settings.",
+  })
+  clearPrivateStorageSecretAccessKey(@CurrentUser() actor: RequestUser) {
+    return this.storageService.clearSavedStorageSecret(actor, "PRIVATE_S3_SECRET_ACCESS_KEY");
   }
 
   @Post("public-image/upload-request")

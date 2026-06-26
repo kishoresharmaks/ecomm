@@ -1,7 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { IsEnum, IsIn, IsOptional, IsString, Max, MaxLength, Min, MinLength } from "class-validator";
+import { IsArray, IsBoolean, IsEnum, IsIn, IsOptional, IsString, Max, MaxLength, Min, MinLength } from "class-validator";
 import { Type } from "class-transformer";
 import { RoleCode, UserStatus } from "@indihub/database";
+import { IsValidPhoneNumber } from "../../../common/validators/is-phone-number.validator";
 
 export class AdminUserQueryDto {
   @ApiPropertyOptional({ enum: UserStatus })
@@ -78,10 +79,9 @@ export class SetBackOfficePasswordDto {
 }
 
 export class UpdateDeliveryPartnerProfileDto {
-  @ApiPropertyOptional({ example: "9876543210" })
+  @ApiPropertyOptional({ example: "+919876543210" })
   @IsOptional()
-  @IsString()
-  @MaxLength(20)
+  @IsValidPhoneNumber()
   phone?: string;
 
   @ApiPropertyOptional({ example: "TN 30 AB 1234" })
@@ -90,10 +90,10 @@ export class UpdateDeliveryPartnerProfileDto {
   @MaxLength(40)
   vehicleNumber?: string;
 
-  @ApiPropertyOptional({ example: "true" })
+  @ApiPropertyOptional({ example: true })
   @IsOptional()
-  @IsString()
-  isAvailable?: string;
+  @IsBoolean()
+  isAvailable?: boolean;
 
   @ApiPropertyOptional({ example: 100 })
   @IsOptional()
@@ -119,17 +119,17 @@ export class UpdateDeliveryPartnerProfileDto {
   @MaxLength(80)
   serviceCityCode?: string;
 
-  @ApiPropertyOptional({ example: "636304,636001" })
+  @ApiPropertyOptional({ example: ["636304", "636001"] })
   @IsOptional()
-  @IsString()
-  @MaxLength(1000)
-  servicePincodes?: string;
+  @IsArray()
+  @IsString({ each: true })
+  servicePincodes?: string[];
 
-  @ApiPropertyOptional({ example: "IN-TN-SLM-MUTHU" })
+  @ApiPropertyOptional({ example: ["IN-TN-SLM-MUTHU", "IN-TN-SLM-ANNA"] })
   @IsOptional()
-  @IsString()
-  @MaxLength(1000)
-  serviceLocalAreaCodes?: string;
+  @IsArray()
+  @IsString({ each: true })
+  serviceLocalAreaCodes?: string[];
 
   @ApiPropertyOptional({ example: 500000 })
   @IsOptional()

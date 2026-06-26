@@ -565,48 +565,90 @@ export class PaymentsService {
       };
     }
 
-    const response = await fetch("https://api.razorpay.com/v1/orders", {
-      method: "POST",
-      headers: {
-        Authorization: `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString("base64")}`,
-        "Content-Type": "application/json",
+    const paymentId = payment.id;
+    const amountPaise = payment.amountPaise;
+
+    // Step 1: Atomically claim this payment for order creation
+    const claimed = await this.prisma.client.payment.updateMany({
+      where: {
+        id: paymentId,
+        providerOrderId: null,
+        providerOrderCreationInProgress: false,
       },
-      body: JSON.stringify({
-        amount: payment.amountPaise,
-        currency: payment.currency,
-        receipt: order.orderNumber,
-        notes: {
-          indihubOrderId: order.id,
-          orderNumber: order.orderNumber,
-        },
-      }),
+      data: { providerOrderCreationInProgress: true },
     });
 
-    if (!response.ok) {
-      throw new ServiceUnavailableException(
-        `Razorpay order creation failed with status ${response.status}: ${await response.text()}`,
-      );
+    if (claimed.count === 0) {
+      const existing = await this.prisma.client.payment.findUnique({
+        where: { id: paymentId },
+      });
+      if (existing?.providerOrderId) {
+        return {
+          keyId,
+          razorpayOrderId: existing.providerOrderId,
+          amountPaise: existing.amountPaise,
+          currency: existing.currency,
+          orderNumber: order.orderNumber,
+        };
+      }
+      throw new Error('Provider order creation already in progress for this payment');
     }
 
-    const data = (await response.json()) as { id?: string };
-    if (!data.id) {
-      throw new ServiceUnavailableException(
-        "Razorpay order creation did not return a provider order id.",
-      );
+    // Step 2: Create provider order — release lock on failure
+    let providerOrderId: string;
+    try {
+      const response = await fetch("https://api.razorpay.com/v1/orders", {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString("base64")}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          amount: amountPaise,
+          currency: payment.currency,
+          receipt: order.orderNumber,
+          notes: {
+            indihubOrderId: order.id,
+            orderNumber: order.orderNumber,
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        throw new ServiceUnavailableException(
+          `Razorpay order creation failed with status ${response.status}: ${await response.text()}`,
+        );
+      }
+
+      const data = (await response.json()) as { id?: string };
+      if (!data.id) {
+        throw new ServiceUnavailableException(
+          "Razorpay order creation did not return a provider order id.",
+        );
+      }
+      providerOrderId = data.id;
+    } catch (err) {
+      await this.prisma.client.payment.update({
+        where: { id: paymentId },
+        data: { providerOrderCreationInProgress: false },
+      });
+      console.error('Razorpay order creation failed', { paymentId });
+      throw err;
     }
 
+    // Step 3: Store providerOrderId and release lock atomically
     await this.prisma.client.payment.update({
-      where: { id: payment.id },
+      where: { id: paymentId },
       data: {
         provider: PaymentProvider.RAZORPAY,
-        providerOrderId: data.id,
-        rawResponse: data as Prisma.InputJsonValue,
+        providerOrderId,
+        providerOrderCreationInProgress: false,
       },
     });
 
     return {
       keyId,
-      razorpayOrderId: data.id,
+      razorpayOrderId: providerOrderId,
       amountPaise: payment.amountPaise,
       currency: payment.currency,
       orderNumber: order.orderNumber,
@@ -825,12 +867,8 @@ export class PaymentsService {
       const paymentUpdate = await tx.payment.updateMany({
         where: {
           id: currentPayment.id,
-          ...(nextStatus === PaymentStatus.FAILED
-            ? {
-                status: { not: PaymentStatus.PAID },
-                order: { paymentStatus: { not: PaymentStatus.PAID } },
-              }
-            : {}),
+          status: currentPayment.status,
+          providerPaymentId: currentPayment.providerPaymentId,
         },
         data: {
           status: nextStatus,

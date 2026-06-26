@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
@@ -476,6 +477,8 @@ const refundDetailInclude = {
 
 @Injectable()
 export class ReturnsService {
+  private readonly logger = new Logger(ReturnsService.name);
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(CustomersService) private readonly customers: CustomersService,
@@ -1778,46 +1781,131 @@ export class ReturnsService {
       return { handled: false };
     }
 
-    const nextStatus = this.razorpayRefundTransactionStatus(refundEntity.status);
-    await this.prisma.client.$transaction(async (tx) => {
-      await tx.refundTransaction.update({
-        where: { id: transaction.id },
-        data: {
-          status: nextStatus,
-          providerRefundId: refundEntity.id,
-          rawResponse: {
-            ...payload,
-            ...(eventId ? { razorpayEventId: eventId } : {}),
-          } as Prisma.InputJsonValue,
-          processedAt:
-            nextStatus === RefundTransactionStatus.SUCCESS ? new Date() : transaction.processedAt,
-          failureReason:
-            nextStatus === RefundTransactionStatus.FAILED
-              ? this.providerFailureReason(refundEntity.raw)
-              : transaction.failureReason,
-        },
-      });
+    const razorpayEventId = eventId?.trim();
 
-      if (nextStatus === RefundTransactionStatus.SUCCESS) {
-        await this.completeRefundInTransaction(tx, transaction.refundRequestId, null, {
-          method: RefundMethod.RAZORPAY,
-          note: "Razorpay refund webhook confirmed refund success.",
-        });
-      } else if (nextStatus === RefundTransactionStatus.FAILED) {
-        await tx.refundRequest.update({
-          where: { id: transaction.refundRequestId },
+    // Step 1: Claim the event atomically — reject duplicates
+    if (razorpayEventId) {
+      try {
+        await this.prisma.client.razorpayWebhookEvent.create({
           data: {
-            status: RefundRequestStatus.RETRY_PENDING,
-            note: this.providerFailureReason(refundEntity.raw),
+            provider: 'razorpay',
+            providerEventId: razorpayEventId,
+            eventType: 'refund.processed',
+            status: 'PROCESSING',
           },
         });
-      } else {
-        await tx.refundRequest.update({
-          where: { id: transaction.refundRequestId },
-          data: { status: RefundRequestStatus.PROCESSING },
+      } catch (e) {
+        if (e && typeof e === 'object' && 'code' in e && (e as { code?: unknown }).code === 'P2002') {
+          // Duplicate event — already processed or in progress
+          this.logger.warn(`Duplicate refund webhook event skipped: ${razorpayEventId}`);
+          return { handled: true, received: true, duplicate: true };
+        }
+        throw e;
+      }
+    }
+
+    // Step 2: Lock the refund request row before any side effects
+    const claimed = await this.prisma.client.refundRequest.updateMany({
+      where: {
+        id: transaction.refundRequestId,
+        status: { not: RefundRequestStatus.SUCCESS },
+      },
+      data: { status: RefundRequestStatus.PROCESSING },
+    });
+
+    if (claimed.count === 0) {
+      this.logger.warn(`Refund already completed, skipping: ${transaction.refundRequestId}`);
+      if (razorpayEventId) {
+        await this.prisma.client.razorpayWebhookEvent.update({
+          where: { provider_providerEventId: { provider: 'razorpay', providerEventId: razorpayEventId } },
+          data: { status: 'DONE', processedAt: new Date() },
         });
       }
-    });
+      return { handled: true, received: true, alreadyComplete: true };
+    }
+
+    // Step 3: Validate amount/currency BEFORE calling completeRefundInTransaction()
+    if (refundEntity.amount !== transaction.amountPaise) {
+      this.logger.error(
+        `Refund amount mismatch: webhook=${refundEntity.amount} internal=${transaction.amountPaise}`
+      );
+      if (razorpayEventId) {
+        await this.prisma.client.razorpayWebhookEvent.update({
+          where: { provider_providerEventId: { provider: 'razorpay', providerEventId: razorpayEventId } },
+          data: { status: 'FAILED', processedAt: new Date() },
+        });
+      }
+      throw new Error('Refund amount mismatch — aborting');
+    }
+
+    const nextStatus = this.razorpayRefundTransactionStatus(refundEntity.status);
+    try {
+      await this.prisma.client.$transaction(async (tx) => {
+        await tx.refundTransaction.update({
+          where: { id: transaction.id },
+          data: {
+            status: nextStatus,
+            providerRefundId: refundEntity.id,
+            rawResponse: {
+              ...payload,
+              ...(eventId ? { razorpayEventId: eventId } : {}),
+            } as Prisma.InputJsonValue,
+            processedAt:
+              nextStatus === RefundTransactionStatus.SUCCESS ? new Date() : transaction.processedAt,
+            failureReason:
+              nextStatus === RefundTransactionStatus.FAILED
+                ? this.providerFailureReason(refundEntity.raw)
+                : transaction.failureReason,
+          },
+        });
+
+        if (nextStatus === RefundTransactionStatus.SUCCESS) {
+          await this.completeRefundInTransaction(tx, transaction.refundRequestId, null, {
+            method: RefundMethod.RAZORPAY,
+            note: "Razorpay refund webhook confirmed refund success.",
+          });
+        } else if (nextStatus === RefundTransactionStatus.FAILED) {
+          await tx.refundRequest.update({
+            where: { id: transaction.refundRequestId },
+            data: {
+              status: RefundRequestStatus.RETRY_PENDING,
+              note: this.providerFailureReason(refundEntity.raw),
+            },
+          });
+        } else {
+          await tx.refundRequest.update({
+            where: { id: transaction.refundRequestId },
+            data: { status: RefundRequestStatus.PROCESSING },
+          });
+        }
+      });
+    } catch (error) {
+      if (razorpayEventId) {
+        await this.prisma.client.razorpayWebhookEvent.update({
+          where: {
+            provider_providerEventId: {
+              provider: "razorpay",
+              providerEventId: razorpayEventId,
+            },
+          },
+          data: { status: "FAILED", processedAt: new Date() },
+        });
+      }
+      throw error;
+    }
+
+    // Step 4: Mark event DONE after completeRefundInTransaction() succeeds
+    if (razorpayEventId) {
+      await this.prisma.client.razorpayWebhookEvent.update({
+        where: {
+          provider_providerEventId: {
+            provider: "razorpay",
+            providerEventId: razorpayEventId,
+          },
+        },
+        data: { status: "DONE", processedAt: new Date() },
+      });
+    }
 
     return { handled: true, refundNumber: transaction.refundRequest.refundNumber };
   }
@@ -3854,6 +3942,10 @@ export class ReturnsService {
       }
     }
     return "Refund provider did not complete the refund.";
+  }
+
+  private isUniqueConstraintError(error: unknown) {
+    return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
   }
 
   private extractRazorpayRefundEntity(payload: Record<string, unknown>) {

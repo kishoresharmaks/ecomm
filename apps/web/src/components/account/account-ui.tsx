@@ -1,5 +1,5 @@
 import { AlertCircle, Inbox, RefreshCw } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ComponentPropsWithoutRef, ReactNode } from "react";
 import { Button, StatusBadge, type StatusTone, cn } from "@indihub/ui";
 import { IndihubApiError } from "@/lib/api";
 
@@ -63,8 +63,19 @@ export function ErrorPanel({ error, onRetry }: { error: Error; onRetry?: () => v
   );
 }
 
-export function PagePanel({ children, className }: { children: ReactNode; className?: string }) {
-  return <section className={cn("rounded-lg border border-[#E5E7EB] bg-white p-5 shadow-sm", className)}>{children}</section>;
+export function PagePanel({
+  children,
+  className,
+  ...props
+}: ComponentPropsWithoutRef<"section"> & { children: ReactNode }) {
+  return (
+    <section
+      className={cn("rounded-lg border border-[#E5E7EB] bg-white p-5 shadow-sm", className)}
+      {...props}
+    >
+      {children}
+    </section>
+  );
 }
 
 export function SkeletonBlock({ className = "h-72" }: { className?: string }) {

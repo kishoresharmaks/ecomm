@@ -1,6 +1,7 @@
 "use client";
 
 import { type ReactNode, useEffect, useMemo, useState } from "react";
+import DOMPurify from "isomorphic-dompurify";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Bell,
@@ -2341,7 +2342,7 @@ function ThemePreviewPanel({ tokens }: { tokens: EmailThemeTokens }) {
         <p className="text-sm font-black text-[#1F2933]">Theme preview</p>
         <div
           className="mt-4 max-h-[420px] overflow-auto rounded-md border border-[#E5E7EB]"
-          dangerouslySetInnerHTML={{ __html: previewHtml }}
+          dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(previewHtml) }}
         />
       </div>
       <div className="rounded-lg border border-[#D8E2EA] bg-[#F8FAFC] p-4">
@@ -2465,7 +2466,7 @@ function PreviewPanel({ subject, bodyHtml }: { subject: string; bodyHtml: string
         <p className="text-xs font-black uppercase tracking-wide text-[#667085]">Body</p>
         <div
           className="mt-2 max-h-[420px] overflow-auto rounded-md border border-[#E5E7EB]"
-          dangerouslySetInnerHTML={{ __html: bodyHtml }}
+          dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(bodyHtml) }}
         />
       </div>
     </div>

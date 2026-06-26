@@ -1192,7 +1192,6 @@ type StorageConfiguration = {
 type StorageConfigurationFormState = {
   imageKitPublicKey: string;
   imageKitPrivateKey: string;
-  clearImageKitPrivateKey: boolean;
   publicImageProvider: PublicImageProvider;
   publicImageBaseUrl: string;
   publicS3Endpoint: string;
@@ -1200,7 +1199,6 @@ type StorageConfigurationFormState = {
   publicS3Bucket: string;
   publicS3AccessKeyId: string;
   publicS3SecretAccessKey: string;
-  clearPublicS3SecretAccessKey: boolean;
   privateProvider: PrivateStorageProvider;
   privateEnabled: boolean;
   privateLocalRoot: string;
@@ -1209,7 +1207,17 @@ type StorageConfigurationFormState = {
   privateBucket: string;
   privateAccessKeyId: string;
   privateSecretAccessKey: string;
-  clearPrivateSecretAccessKey: boolean;
+};
+
+type StorageSecretClearTarget =
+  | "imageKitPrivateKey"
+  | "publicS3SecretAccessKey"
+  | "privateSecretAccessKey";
+
+const storageSecretClearPaths: Record<StorageSecretClearTarget, string> = {
+  imageKitPrivateKey: "/api/storage/configuration/public-images/imagekit/private-key",
+  publicS3SecretAccessKey: "/api/storage/configuration/public-images/s3/secret-access-key",
+  privateSecretAccessKey: "/api/storage/configuration/private-storage/s3/secret-access-key",
 };
 
 type TableColumn<T> = {
@@ -5846,6 +5854,20 @@ export function AdminSettingsPageClient() {
       ]);
     },
   });
+  const clearStorageSecret = useMutation({
+    mutationFn: (target: StorageSecretClearTarget) =>
+      indihubFetch<StorageConfiguration>(
+        storageSecretClearPaths[target],
+        { method: "DELETE" },
+        auth.authHeaders,
+      ),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["admin-storage-readiness"] }),
+        queryClient.invalidateQueries({ queryKey: ["admin-storage-configuration"] }),
+      ]);
+    },
+  });
   const paymentReadiness = paymentReadinessQuery.data;
   const storageReadiness = storageReadinessQuery.data;
 
@@ -6017,6 +6039,13 @@ export function AdminSettingsPageClient() {
                     tone="danger"
                   />
                 ) : null}
+                {clearStorageSecret.isError ? (
+                  <PanelStatus
+                    title="Storage secret not cleared"
+                    message={mutationErrorMessage(clearStorageSecret.error)}
+                    tone="danger"
+                  />
+                ) : null}
                 {updateStorageConfig.isSuccess ? (
                   <AdminStatusNotice
                     title="Storage configuration saved"
@@ -6024,11 +6053,20 @@ export function AdminSettingsPageClient() {
                     tone="success"
                   />
                 ) : null}
+                {clearStorageSecret.isSuccess ? (
+                  <AdminStatusNotice
+                    title="Saved storage secret cleared"
+                    message="The saved credential was removed from database-backed settings."
+                    tone="success"
+                  />
+                ) : null}
                 {storageConfigQuery.data ? (
                   <StorageConfigurationForm
                     config={storageConfigQuery.data}
-                    disabled={updateStorageConfig.isPending}
+                    disabled={updateStorageConfig.isPending || clearStorageSecret.isPending}
                     onSubmit={(payload) => updateStorageConfig.mutate(payload)}
+                    onClearSecret={(target) => clearStorageSecret.mutate(target)}
+                    clearingSecret={clearStorageSecret.isPending}
                   />
                 ) : null}
                 <Panel title="Storage tools">
@@ -13258,11 +13296,15 @@ function PaymentConfigurationForm({
 function StorageConfigurationForm({
   config,
   onSubmit,
+  onClearSecret,
   disabled,
+  clearingSecret,
 }: {
   config: StorageConfiguration;
   onSubmit: (payload: unknown) => void;
+  onClearSecret: (target: StorageSecretClearTarget) => void;
   disabled?: boolean;
+  clearingSecret?: boolean;
 }) {
   const [form, setForm] = useState<StorageConfigurationFormState>(() =>
     storageConfigurationFormState(config),
@@ -13272,19 +13314,15 @@ function StorageConfigurationForm({
     setForm(storageConfigurationFormState(config));
   }, [config]);
 
-  const imageKitPrivateKeyReady = form.clearImageKitPrivateKey
-    ? Boolean(form.imageKitPrivateKey.trim())
-    : Boolean(config.publicImages.imageKit.privateKeyConfigured || form.imageKitPrivateKey.trim());
-  const publicS3SecretReady = form.clearPublicS3SecretAccessKey
-    ? Boolean(form.publicS3SecretAccessKey.trim())
-    : Boolean(
-        config.publicImages.s3.secretAccessKeyConfigured || form.publicS3SecretAccessKey.trim(),
-      );
-  const privateSecretReady = form.clearPrivateSecretAccessKey
-    ? Boolean(form.privateSecretAccessKey.trim())
-    : Boolean(
-        config.privateStorage.secretAccessKeyConfigured || form.privateSecretAccessKey.trim(),
-      );
+  const imageKitPrivateKeyReady = Boolean(
+    config.publicImages.imageKit.privateKeyConfigured || form.imageKitPrivateKey.trim(),
+  );
+  const publicS3SecretReady = Boolean(
+    config.publicImages.s3.secretAccessKeyConfigured || form.publicS3SecretAccessKey.trim(),
+  );
+  const privateSecretReady = Boolean(
+    config.privateStorage.secretAccessKeyConfigured || form.privateSecretAccessKey.trim(),
+  );
   const imageKitComplete = Boolean(
     form.publicImageBaseUrl.trim() && form.imageKitPublicKey.trim() && imageKitPrivateKeyReady,
   );
@@ -13373,10 +13411,9 @@ function StorageConfigurationForm({
                 label="ImageKit private key"
                 configured={config.publicImages.imageKit.privateKeyConfigured}
                 value={form.imageKitPrivateKey}
-                clear={form.clearImageKitPrivateKey}
-                onClear={(clearImageKitPrivateKey) =>
-                  setForm((current) => ({ ...current, clearImageKitPrivateKey }))
-                }
+                clearLabel="Clear saved ImageKit private key"
+                clearDisabled={disabled || clearingSecret || !config.publicImages.imageKit.privateKeyConfigured}
+                onClear={() => onClearSecret("imageKitPrivateKey")}
                 onChange={(imageKitPrivateKey) =>
                   setForm((current) => ({ ...current, imageKitPrivateKey }))
                 }
@@ -13420,10 +13457,9 @@ function StorageConfigurationForm({
                 label="Secret access key"
                 configured={config.publicImages.s3.secretAccessKeyConfigured}
                 value={form.publicS3SecretAccessKey}
-                clear={form.clearPublicS3SecretAccessKey}
-                onClear={(clearPublicS3SecretAccessKey) =>
-                  setForm((current) => ({ ...current, clearPublicS3SecretAccessKey }))
-                }
+                clearLabel="Clear saved public S3 secret"
+                clearDisabled={disabled || clearingSecret || !config.publicImages.s3.secretAccessKeyConfigured}
+                onClear={() => onClearSecret("publicS3SecretAccessKey")}
                 onChange={(publicS3SecretAccessKey) =>
                   setForm((current) => ({ ...current, publicS3SecretAccessKey }))
                 }
@@ -13533,10 +13569,9 @@ function StorageConfigurationForm({
               label="Secret access key"
               configured={config.privateStorage.secretAccessKeyConfigured}
               value={form.privateSecretAccessKey}
-              clear={form.clearPrivateSecretAccessKey}
-              onClear={(clearPrivateSecretAccessKey) =>
-                setForm((current) => ({ ...current, clearPrivateSecretAccessKey }))
-              }
+              clearLabel="Clear saved private S3 secret"
+              clearDisabled={disabled || clearingSecret || !config.privateStorage.secretAccessKeyConfigured}
+              onClear={() => onClearSecret("privateSecretAccessKey")}
               onChange={(privateSecretAccessKey) =>
                 setForm((current) => ({ ...current, privateSecretAccessKey }))
               }
@@ -13575,7 +13610,6 @@ function storageConfigurationFormState(
   return {
     imageKitPublicKey: config.publicImages.imageKit.publicKey ?? "",
     imageKitPrivateKey: "",
-    clearImageKitPrivateKey: false,
     publicImageProvider: config.publicImages.provider ?? "IMAGEKIT",
     publicImageBaseUrl: config.publicImages.baseUrl ?? "",
     publicS3Endpoint: config.publicImages.s3.endpoint ?? "",
@@ -13583,7 +13617,6 @@ function storageConfigurationFormState(
     publicS3Bucket: config.publicImages.s3.bucket ?? "",
     publicS3AccessKeyId: config.publicImages.s3.accessKeyId ?? "",
     publicS3SecretAccessKey: "",
-    clearPublicS3SecretAccessKey: false,
     privateProvider: config.privateStorage.provider ?? "AUTO",
     privateEnabled: config.privateStorage.enabled,
     privateLocalRoot: config.privateStorage.localRoot ?? "storage/private",
@@ -13592,7 +13625,6 @@ function storageConfigurationFormState(
     privateBucket: config.privateStorage.bucket ?? "",
     privateAccessKeyId: config.privateStorage.accessKeyId ?? "",
     privateSecretAccessKey: "",
-    clearPrivateSecretAccessKey: false,
   };
 }
 
@@ -13604,7 +13636,6 @@ function storageConfigurationPayload(form: StorageConfigurationFormState) {
       imageKit: {
         publicKey: form.imageKitPublicKey.trim(),
         ...(form.imageKitPrivateKey.trim() ? { privateKey: form.imageKitPrivateKey.trim() } : {}),
-        clearPrivateKey: form.clearImageKitPrivateKey,
       },
       s3: {
         endpoint: form.publicS3Endpoint.trim(),
@@ -13614,7 +13645,6 @@ function storageConfigurationPayload(form: StorageConfigurationFormState) {
         ...(form.publicS3SecretAccessKey.trim()
           ? { secretAccessKey: form.publicS3SecretAccessKey.trim() }
           : {}),
-        clearSecretAccessKey: form.clearPublicS3SecretAccessKey,
       },
     },
     privateStorage: {
@@ -13628,7 +13658,6 @@ function storageConfigurationPayload(form: StorageConfigurationFormState) {
       ...(form.privateSecretAccessKey.trim()
         ? { secretAccessKey: form.privateSecretAccessKey.trim() }
         : {}),
-      clearSecretAccessKey: form.clearPrivateSecretAccessKey,
     },
   };
 }
@@ -13662,16 +13691,22 @@ function SecretPaymentInput({
   configured,
   value,
   clear,
+  clearLabel,
+  clearDisabled,
   onChange,
   onClear,
 }: {
   label: string;
   configured: boolean;
   value: string;
-  clear: boolean;
+  clear?: boolean;
+  clearLabel?: string;
+  clearDisabled?: boolean;
   onChange: (value: string) => void;
-  onClear: (value: boolean) => void;
+  onClear?: (value: boolean) => void;
 }) {
+  const hasClearControl = Boolean(onClear);
+
   return (
     <div>
       <div className="flex items-center justify-between gap-2">
@@ -13687,14 +13722,26 @@ function SecretPaymentInput({
         onChange={(event) => onChange(event.target.value)}
         className="mt-1 h-10 w-full rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold text-[#1F2933]"
       />
-      <label className="mt-2 flex items-center gap-2 text-xs font-bold text-[#667085]">
-        <input
-          type="checkbox"
-          checked={clear}
-          onChange={(event) => onClear(event.target.checked)}
-        />
-        Clear saved value
-      </label>
+      {hasClearControl && typeof clear === "boolean" ? (
+        <label className="mt-2 flex items-center gap-2 text-xs font-bold text-[#667085]">
+          <input
+            type="checkbox"
+            checked={clear}
+            onChange={(event) => onClear?.(event.target.checked)}
+          />
+          {clearLabel ?? "Clear saved value"}
+        </label>
+      ) : null}
+      {hasClearControl && typeof clear !== "boolean" ? (
+        <button
+          type="button"
+          onClick={() => onClear?.(true)}
+          disabled={clearDisabled}
+          className="mt-2 inline-flex h-8 items-center gap-2 rounded-md border border-[#FFD0C2] px-2.5 text-xs font-black text-[#ED3500] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Trash2 size={14} /> {clearLabel ?? "Clear saved value"}
+        </button>
+      ) : null}
     </div>
   );
 }

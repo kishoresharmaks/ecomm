@@ -239,8 +239,7 @@ export class UpdateSellerProfileDto {
 
   @ApiPropertyOptional({ example: "+919876543210" })
   @IsOptional()
-  @IsString()
-  @MaxLength(30)
+  @Matches(/^\+?[0-9][0-9\s()-]{6,24}$/)
   contactPhone?: string;
 
   @ApiPropertyOptional({ example: "seller@example.com" })

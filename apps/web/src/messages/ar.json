@@ -1,0 +1,31 @@
+{
+  "header": {
+    "home": "الرئيسية",
+    "categories": "الفئات",
+    "stores": "المتاجر",
+    "search_placeholder": "ابحث عن أي شيء...",
+    "download_app": "حمل التطبيق",
+    "help_support": "المساعدة والدعم",
+    "sell_on_platform": "البيع على المنصة",
+    "free_delivery": "توصيل مجاني للطلبات المحلية المحددة التي تزيد عن",
+    "smart_shopping": "تسوق ذكي، بائعين موثوقين.",
+    "wishlist": "قائمة الرغبات",
+    "cart": "السلة",
+    "my_account": "حسابي",
+    "profile_orders": "الملف الشخصي والطلبات",
+    "all_categories": "جميع الفئات",
+    "explore_all_categories": "اكتشف جميع الفئات"
+  },
+  "home": {
+    "add_to_cart": "أضف إلى السلة",
+    "view_all": "عرض الكل",
+    "view_all_stores": "عرض جميع المتاجر",
+    "view_all_categories": "عرض جميع الفئات",
+    "featured_categories": "الفئات المميزة",
+    "featured_products": "المنتجات المميزة",
+    "top_stores": "أفضل المتاجر",
+    "view_price": "عرض السعر",
+    "price_pending": "السعر قيد الانتظار",
+    "from": "يبدأ من {price}"
+  }
+}

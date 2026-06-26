@@ -18,6 +18,7 @@ import {
   SellerSkeleton,
   SellerStatusPill,
   formatDateTime,
+  isSellerApproved,
   isSellerOnboardingRequiredError,
   statusLabel,
   useSellerAuth
@@ -69,7 +70,7 @@ export function SellerDashboardClient() {
 
   const profile = profileQuery.data;
   const report = reportQuery.data;
-  const sellerReady = profile?.status === "APPROVED" && profile?.approvalStatus === "APPROVED";
+  const sellerReady = isSellerApproved(profile);
 
   return (
     <div className="grid gap-5">
@@ -82,7 +83,7 @@ export function SellerDashboardClient() {
               <p className="mt-1 text-sm leading-6 text-[#9F2600]">Profile and onboarding can be updated now. Product publishing and order operations unlock after admin approval.</p>
             </div>
             <Button asChild variant="outline">
-              <Link href="/seller/register">Review onboarding</Link>
+              <Link href="/seller/pending-approval">Review approval status</Link>
             </Button>
           </div>
         </SellerPanel>
@@ -136,7 +137,7 @@ export function SellerDashboardClient() {
               </Button>
             ) : null}
             <Button asChild variant="outline">
-              <Link href="/seller/profile">Edit profile</Link>
+              <Link href="/seller/store-profile">Edit profile</Link>
             </Button>
             <Button asChild>
               <Link href="/seller/products">

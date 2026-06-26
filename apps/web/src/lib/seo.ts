@@ -74,6 +74,8 @@ export const privateRobotsDisallow = [
   "/seller/products",
   "/seller/orders",
   "/seller/profile",
+  "/seller/store-profile",
+  "/seller/pending-approval",
   "/seller/finance",
   "/seller/b2b-enquiries",
   "/seller/b2b-orders",

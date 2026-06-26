@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { IsEmail, IsEnum, IsOptional, IsString, Matches, MaxLength, MinLength } from "class-validator";
+import { IsEmail, IsEnum, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
 import { RoleCode } from "@indihub/database";
+import { IsValidPhoneNumber } from "../../common/validators/is-phone-number.validator";
 
 export class SyncAuthUserDto {
   @ApiProperty({ example: "user_2abc123" })
@@ -13,9 +14,9 @@ export class SyncAuthUserDto {
   @IsEmail()
   email!: string;
 
-  @ApiPropertyOptional({ example: "9876543210" })
+  @ApiPropertyOptional({ example: "+919876543210" })
   @IsOptional()
-  @Matches(/^[6-9]\d{9}$/)
+  @IsValidPhoneNumber()
   phone?: string;
 
   @ApiPropertyOptional({ example: "Vignesh Kumar" })
@@ -29,4 +30,3 @@ export class SyncAuthUserDto {
   @IsEnum(RoleCode)
   defaultRole?: RoleCode;
 }
-

@@ -65,14 +65,14 @@ export class ProductVariantDto {
   @ApiProperty({ example: 59900, description: "Selling price in paise." })
   @Type(() => Number)
   @IsInt()
-  @Min(0)
+  @Min(1)
   pricePaise!: number;
 
   @ApiPropertyOptional({ example: 69900, description: "MRP in paise." })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  @Min(0)
+  @Min(1)
   mrpPaise?: number;
 
   @ApiPropertyOptional({ example: 25 })

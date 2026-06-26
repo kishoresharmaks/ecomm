@@ -45,6 +45,7 @@ import { AuthActions } from "@/components/auth/auth-actions";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
 import { useMarket } from "@/components/market/market-context";
 import { StorefrontLocationPicker } from "@/components/storefront/storefront-location-picker";
+import { StorefrontLocalePicker } from "@/components/storefront/storefront-locale-picker";
 import { useFloatingHeaderDropdown } from "@/components/storefront/use-floating-header-dropdown";
 import { getWishlist } from "@/lib/account-api";
 import {
@@ -57,6 +58,7 @@ import {
   type CmsMenuItem,
   type SearchSuggestion,
 } from "@/lib/storefront-api";
+import { useTranslations } from "next-intl";
 
 type HeaderNavItem = {
   label: string;
@@ -69,13 +71,13 @@ const staticStorefrontDataStaleMs = 5 * 60 * 1000;
 const categoryIcons = [PackageSearch, Store, ShoppingCart, BadgePercent, PackageCheck, ShieldCheck];
 
 const drawerLinks = [
-  { label: "Home", href: "/", icon: Home },
-  { label: "All Categories", href: "/categories", icon: Grid3X3 },
-  { label: "Hyperlocal Stores", href: "/stores", icon: Store },
+  { label: "Home", translationKey: "home", href: "/", icon: Home },
+  { label: "All Categories", translationKey: "categories", href: "/categories", icon: Grid3X3 },
+  { label: "Hyperlocal Stores", translationKey: "stores", href: "/stores", icon: Store },
   { label: "Track Order", href: "/track-order", icon: Truck },
-  { label: "Wishlist", href: "/account/wishlist", icon: Heart },
-  { label: "Help & Support", href: "/contact", icon: Headphones },
-  { label: "Download App", href: "/contact?topic=download-app", icon: Download },
+  { label: "Wishlist", translationKey: "wishlist", href: "/account/wishlist", icon: Heart },
+  { label: "Help & Support", translationKey: "help_support", href: "/contact", icon: Headphones },
+  { label: "Download App", translationKey: "download_app", href: "/contact?topic=download-app", icon: Download },
 ] as const;
 const recentSearchStorageKey = "indihub.recent-searches.v1";
 const desktopDropdownCloseDelayMs = 140;
@@ -83,6 +85,7 @@ const desktopDropdownViewportMarginPx = 20;
 const desktopDropdownMaxWidthPx = 820;
 
 export function StorefrontHeader({ initialMenu }: { initialMenu?: CmsMenuItem[] | undefined }) {
+  const t = useTranslations("header");
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -224,7 +227,7 @@ export function StorefrontHeader({ initialMenu }: { initialMenu?: CmsMenuItem[] 
           <div className="mx-auto flex h-11 items-center justify-between gap-5 px-5 xl:px-7 2xl:px-8">
             <div className="flex min-w-0 items-center gap-3">
               <StorefrontLocationPicker utility compact className="w-auto min-w-0 max-w-[360px]" />
-              <CurrencyBadge />
+              <StorefrontLocalePicker className="hidden xl:block" />
             </div>
 
             <DeliveryPromoCopy />
@@ -237,13 +240,13 @@ export function StorefrontHeader({ initialMenu }: { initialMenu?: CmsMenuItem[] 
                 href="/contact?topic=download-app"
                 icon={<Smartphone className="h-4 w-4" />}
               >
-                Download app
+                {t("download_app")}
               </UtilityLink>
               <UtilityLink href="/contact" icon={<CircleHelp className="h-4 w-4" />}>
-                Help & support
+                {t("help_support")}
               </UtilityLink>
               <UtilityLink href="/seller/register" icon={<Store className="h-4 w-4" />}>
-                Sell on platform
+                {t("sell_on_platform")}
               </UtilityLink>
             </nav>
           </div>
@@ -271,13 +274,13 @@ export function StorefrontHeader({ initialMenu }: { initialMenu?: CmsMenuItem[] 
             <div className="flex shrink-0 items-center gap-1 xl:gap-2">
               <HeaderIconAction
                 href="/account/wishlist"
-                label="Wishlist"
+                label={t("wishlist")}
                 icon={<Heart className="h-5 w-5" />}
                 badge={wishlistCount}
               />
               <HeaderIconAction
                 href="/cart"
-                label="Cart"
+                label={t("cart")}
                 icon={<ShoppingCart className="h-5 w-5" />}
                 badge={cartProductCount}
               />
@@ -303,26 +306,26 @@ export function StorefrontHeader({ initialMenu }: { initialMenu?: CmsMenuItem[] 
             <div className="ml-auto flex shrink-0 items-center gap-0.5 sm:gap-1">
               <MobileRoundAction
                 asButton
-                label="Search"
+                label={t("search_placeholder")}
                 icon={<Search className="h-5 w-5" />}
                 onClick={() => setMobileSearchOpen((current) => !current)}
                 active={mobileSearchOpen}
               />
               <MobileRoundAction
                 href="/account/wishlist"
-                label="Wishlist"
+                label={t("wishlist")}
                 icon={<Heart className="h-5 w-5" />}
                 badge={wishlistCount}
               />
               <MobileRoundAction
                 href="/cart"
-                label="Cart"
+                label={t("cart")}
                 icon={<ShoppingCart className="h-5 w-5" />}
                 badge={cartProductCount}
               />
               <MobileRoundAction
                 href="/account"
-                label="Account"
+                label={t("my_account")}
                 icon={<UserRound className="h-5 w-5" />}
               />
             </div>
@@ -361,54 +364,23 @@ export function StorefrontHeader({ initialMenu }: { initialMenu?: CmsMenuItem[] 
   );
 }
 
-function CurrencyBadge() {
-  const market = useMarket();
-  const updatedAt = market.market.fetchedAt ? shortRateAge(market.market.fetchedAt) : "";
-
-  return (
-    <span
-      aria-label={`Active currency ${market.market.currency} for ${market.market.countryName}`}
-      className="hidden shrink-0 rounded-full border border-[#f2e4dd] bg-white px-3 py-1.5 text-[12px] font-black text-[#ED3500] shadow-sm xl:inline-flex"
-      title={updatedAt ? `Currency rates updated ${updatedAt}` : undefined}
-    >
-      {market.market.currency} · {market.market.countryName}
-    </span>
-  );
-}
-
 function DeliveryPromoCopy() {
   const market = useMarket();
+  const t = useTranslations("header");
 
   return (
     <div className="hidden min-w-0 flex-1 items-center justify-center gap-2 text-[13px] font-bold text-[#26364b] xl:flex">
       <Truck className="h-4 w-4 text-[#0f8a5f]" aria-hidden="true" />
       <span className="truncate">
-        Free delivery on selected local orders above{" "}
+        {t("free_delivery")}{" "}
         <span className="text-[#0f8a5f]">{market.format(49_900)}</span>
       </span>
     </div>
   );
 }
 
-function shortRateAge(value: string) {
-  const timestamp = new Date(value).getTime();
-  if (!Number.isFinite(timestamp)) {
-    return "";
-  }
-
-  const ageMinutes = Math.max(0, Math.round((Date.now() - timestamp) / 60_000));
-  if (ageMinutes < 1) {
-    return "just now";
-  }
-
-  if (ageMinutes < 60) {
-    return `${ageMinutes} min ago`;
-  }
-
-  return `${Math.round(ageMinutes / 60)} hr ago`;
-}
-
 function BrandBlock() {
+  const t = useTranslations("header");
   return (
     <Link
       href="/"
@@ -423,7 +395,7 @@ function BrandBlock() {
           1Hand<span className="text-[#ff5a1f]">India</span>
         </span>
         <span className="mt-1 hidden truncate text-xs font-semibold text-[#667085] xl:block">
-          Smart shopping, verified sellers.
+          {t("smart_shopping")}
         </span>
       </span>
     </Link>
@@ -464,6 +436,7 @@ function SearchForm({
   buttonClassName?: string;
   floatingSuggestions?: boolean;
 }) {
+  const t = useTranslations("header");
   const router = useRouter();
   const [focused, setFocused] = useState(false);
   const [debouncedQuery, setDebouncedQuery] = useState(query.trim());
@@ -581,7 +554,7 @@ function SearchForm({
             }, 140);
           }}
           onKeyDown={handleKeyDown}
-          placeholder="Search products, stores, brands and more..."
+          placeholder={t("search_placeholder")}
           className={cn(
             "w-full border text-[#101828] outline-none transition placeholder:text-[#98a2b3] focus:border-[#ff5a1f] focus:ring-4 focus:ring-[#ff5a1f]/10",
             inputClassName,
@@ -744,6 +717,7 @@ function SearchSuggestionRow({
 }
 
 function CategoryMenu({ categories }: { categories: CategorySummary[] }) {
+  const t = useTranslations("header");
   const visibleCategories = categories.slice(0, 8);
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -857,7 +831,7 @@ function CategoryMenu({ categories }: { categories: CategorySummary[] }) {
         )}
       >
         <Grid3X3 className="h-5 w-5" aria-hidden="true" />
-        <span className="hidden xl:inline">All Categories</span>
+        <span className="hidden xl:inline">{t("all_categories")}</span>
         <ChevronDown className={cn("h-4 w-4 transition-transform", open && "rotate-180")} aria-hidden="true" />
       </button>
       {open && portalRoot && floatingStyle
@@ -1001,6 +975,7 @@ function HeaderIconAction({
 }
 
 function AccountMenu() {
+  const t = useTranslations("header");
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -1052,8 +1027,8 @@ function AccountMenu() {
           <UserRound className="h-5 w-5" aria-hidden="true" />
         </span>
         <span className="hidden 2xl:block">
-          <span className="block text-sm font-black">My Account</span>
-          <span className="block text-xs font-semibold text-[#667085]">Profile & orders</span>
+          <span className="block text-sm font-black">{t("my_account")}</span>
+          <span className="block text-xs font-semibold text-[#667085]">{t("profile_orders")}</span>
         </span>
         <ChevronDown className={cn("hidden h-4 w-4 transition-transform 2xl:block", open && "rotate-180")} aria-hidden="true" />
       </button>
@@ -1173,6 +1148,8 @@ function MobileDrawer({
   wishlistCount: number;
   cmsItems: HeaderNavItem[];
 }) {
+  const t = useTranslations("header");
+
   return (
     <div className="fixed inset-0 z-[120] lg:hidden">
       <button
@@ -1206,17 +1183,19 @@ function MobileDrawer({
 
           <div className="mt-4">
             <StorefrontLocationPicker mobile compact />
+            <StorefrontLocalePicker mobile />
           </div>
 
           <div className="mt-5 grid gap-2">
             {drawerLinks.map((item) => {
               const Icon = item.icon;
+              const label = "translationKey" in item ? t(item.translationKey as any) : item.label;
 
               return (
                 <DrawerLink
                   key={`${item.href}-${item.label}`}
                   href={item.href}
-                  label={item.label}
+                  label={label}
                   icon={<Icon className="h-5 w-5" aria-hidden="true" />}
                   badge={item.href === "/account/wishlist" ? wishlistCount : undefined}
                   onNavigate={onClose}
@@ -1225,7 +1204,7 @@ function MobileDrawer({
             })}
             <DrawerLink
               href="/cart"
-              label="Cart"
+              label={t("cart")}
               icon={<ShoppingCart className="h-5 w-5" />}
               badge={cartCount}
               onNavigate={onClose}

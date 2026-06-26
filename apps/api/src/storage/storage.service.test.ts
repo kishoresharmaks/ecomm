@@ -9,18 +9,48 @@ import { assertManagedImageReference, normalizePublicImageReference } from "./st
 import { StorageService } from "./storage.service";
 import type { PrismaService } from "../prisma/prisma.service";
 
-function createStorageService(settings: Record<string, unknown> = {}) {
-  const rows = Object.entries(settings).map(([key, value]) => ({ key, value }));
+type MockSettingUpsertInput = {
+  where: { key: string };
+  update: { value?: unknown };
+  create: { value: unknown };
+};
+
+type MockSettingDeleteManyInput = {
+  where: { key: string };
+};
+
+function createStorageServiceContext(settings: Record<string, unknown> = {}) {
+  const rows = new Map(Object.entries(settings));
   const prisma = {
     client: {
       $executeRaw: vi.fn(async () => 1),
+      $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
+        callback(prisma.client),
+      ),
       setting: {
-        findMany: vi.fn(async () => rows),
+        findMany: vi.fn(async () =>
+          Array.from(rows.entries()).map(([key, value]) => ({ key, value })),
+        ),
+        upsert: vi.fn(async ({ where, update, create }: MockSettingUpsertInput) => {
+          rows.set(where.key, update.value ?? create.value);
+          return { key: where.key, value: rows.get(where.key) };
+        }),
+        deleteMany: vi.fn(async ({ where }: MockSettingDeleteManyInput) => {
+          const existed = rows.delete(where.key);
+          return { count: existed ? 1 : 0 };
+        }),
+      },
+      auditLog: {
+        create: vi.fn(async (input: unknown) => input),
       },
     },
   } as unknown as PrismaService;
 
-  return new StorageService(prisma);
+  return { service: new StorageService(prisma), prisma, rows };
+}
+
+function createStorageService(settings: Record<string, unknown> = {}) {
+  return createStorageServiceContext(settings).service;
 }
 
 describe("StorageService", () => {
@@ -174,6 +204,63 @@ describe("StorageService", () => {
         s3Configured: true,
         bucket: "indihub-private",
       },
+    });
+  });
+
+  it("does not clear storage secrets through configuration updates", async () => {
+    const { service, rows } = createStorageServiceContext({
+      "storage.public_images.provider": "IMAGEKIT",
+      "storage.public_images.base_url": "https://ik.imagekit.io/saved-indihub",
+      "storage.public_images.imagekit.public_key": "saved-public",
+      "storage.public_images.imagekit.private_key": "saved-private",
+      "storage.public_images.s3.secret_access_key": "public-secret",
+      "storage.private.secret_access_key": "private-secret",
+    });
+
+    await service.updateStorageConfiguration(
+      { id: "admin_1", clerkUserId: null, email: "admin@example.com", roles: [RoleCode.ADMIN] },
+      {
+        publicImages: {
+          imageKit: {
+            publicKey: "saved-public",
+            clearPrivateKey: true,
+          } as never,
+          s3: {
+            clearSecretAccessKey: true,
+          } as never,
+        },
+        privateStorage: {
+          clearSecretAccessKey: true,
+        } as never,
+      },
+    );
+
+    expect(rows.get("storage.public_images.imagekit.private_key")).toBe("saved-private");
+    expect(rows.get("storage.public_images.s3.secret_access_key")).toBe("public-secret");
+    expect(rows.get("storage.private.secret_access_key")).toBe("private-secret");
+  });
+
+  it("clears saved storage secrets through an explicit audited action", async () => {
+    const { service, prisma, rows } = createStorageServiceContext({
+      "storage.public_images.provider": "S3",
+      "storage.public_images.s3.secret_access_key": "public-secret",
+    });
+
+    await service.clearSavedStorageSecret(
+      { id: "admin_1", clerkUserId: null, email: "admin@example.com", roles: [RoleCode.ADMIN] },
+      "PUBLIC_S3_SECRET_ACCESS_KEY",
+    );
+
+    expect(rows.has("storage.public_images.s3.secret_access_key")).toBe(false);
+    expect(prisma.client.setting.deleteMany).toHaveBeenCalledWith({
+      where: { key: "storage.public_images.s3.secret_access_key" },
+    });
+    expect(prisma.client.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        actorUserId: "admin_1",
+        action: "storage.public_images.s3.secret_access_key.cleared",
+        entityType: "storage_configuration",
+      }),
     });
   });
 

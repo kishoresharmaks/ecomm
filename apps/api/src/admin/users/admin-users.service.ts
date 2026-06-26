@@ -714,13 +714,15 @@ export class AdminUsersService {
     };
   }
 
-  private booleanValue(value: string) {
-    return value === "true" || value === "1" || value === "yes";
+  private booleanValue(value: boolean | string) {
+    return typeof value === "boolean"
+      ? value
+      : value === "true" || value === "1" || value === "yes";
   }
 
-  private csvValues(value: string) {
-    return value
-      .split(",")
+  private csvValues(value: string | string[]) {
+    const values = Array.isArray(value) ? value : value.split(",");
+    return values
       .map((item) => item.trim())
       .filter(Boolean);
   }

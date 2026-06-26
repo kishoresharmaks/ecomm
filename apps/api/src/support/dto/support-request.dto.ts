@@ -21,9 +21,9 @@ export class CreateSupportRequestDto {
   @IsEmail()
   email!: string;
 
-  @ApiPropertyOptional({ example: "9876543210" })
+  @ApiPropertyOptional({ example: "+919876543210" })
   @IsOptional()
-  @Matches(/^[6-9]\d{9}$/)
+  @Matches(/^\+?[0-9][0-9\s()-]{6,24}$/)
   phone?: string;
 
   @ApiProperty({ enum: supportRequestTopics, example: "ORDER" })
@@ -53,7 +53,7 @@ export class CreateSupportRequestDto {
   @ApiProperty({ example: "I need help with my order delivery status." })
   @IsString()
   @MinLength(10)
-  @MaxLength(3000)
+  @MaxLength(500)
   message!: string;
 }
 
@@ -70,9 +70,9 @@ export class AuthenticatedSupportRequestDto {
   @IsEmail()
   email?: string;
 
-  @ApiPropertyOptional({ example: "9876543210" })
+  @ApiPropertyOptional({ example: "+919876543210" })
   @IsOptional()
-  @Matches(/^[6-9]\d{9}$/)
+  @Matches(/^\+?[0-9][0-9\s()-]{6,24}$/)
   phone?: string;
 
   @ApiProperty({ enum: supportRequestTopics, example: "ORDER" })
@@ -103,7 +103,7 @@ export class AuthenticatedSupportRequestDto {
   @ApiProperty({ example: "I need help with my order delivery status." })
   @IsString()
   @MinLength(10)
-  @MaxLength(3000)
+  @MaxLength(500)
   message!: string;
 }
 
@@ -116,13 +116,13 @@ export class UpdateSupportRequestDto {
   @ApiPropertyOptional({ example: "Customer was contacted and issue was resolved." })
   @IsOptional()
   @IsString()
-  @MaxLength(2000)
+  @MaxLength(500)
   adminNote?: string;
 
   @ApiPropertyOptional({ example: "Thanks for contacting us. We checked your order and shared the next step." })
   @IsOptional()
   @IsString()
-  @MaxLength(3000)
+  @MaxLength(500)
   responseMessage?: string;
 }
 

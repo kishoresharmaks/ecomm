@@ -63,6 +63,7 @@ import {
   type StoreProfile,
   type StorefrontHomePayload,
 } from "@/lib/storefront-api";
+import { useTranslations } from "next-intl";
 import {
   browsingLocationHeadline,
   browsingLocationLabel,
@@ -811,6 +812,7 @@ function HeroVisual({
 
 function HeroProductCard({ product, className }: { product: ProductSummary; className: string }) {
   const market = useMarket();
+  const t = useTranslations("home");
   const variant = primaryVariant(product);
   const activeDeal = getActiveDeal(product, variant);
 
@@ -842,7 +844,7 @@ function HeroProductCard({ product, className }: { product: ProductSummary; clas
       <p className="mt-2.5 line-clamp-1 text-[11px] font-black text-[#1F2933] lg:mt-3 lg:text-xs xl:mt-3.5 xl:text-[13px] 2xl:mt-4 2xl:text-sm">{product.name}</p>
       {variant ? (
         <p className="mt-1 text-[10px] font-black text-[#ED3500] lg:mt-1.5 lg:text-[11px] xl:text-[12px] 2xl:text-[13px]">
-          From {market.format(variant.pricePaise)}
+          {t("from_price", { price: market.format(variant.pricePaise) })}
         </p>
       ) : null}
     </Link>
@@ -1153,6 +1155,7 @@ function PersonalizedProductRail({
 
 function PersonalizedProductCard({ product }: { product: PersonalizedProduct }) {
   const market = useMarket();
+  const t = useTranslations("home");
 
   return (
     <Link
@@ -1179,7 +1182,7 @@ function PersonalizedProductCard({ product }: { product: PersonalizedProduct }) 
         <span className="mt-2 line-clamp-1 min-h-4 text-[11px] font-bold text-[#98A2B3]">{product.sellerName}</span>
         <span className="mt-auto flex min-h-6 items-baseline gap-2">
           <span className="truncate text-[15px] font-black text-[#ED3500]">
-            {product.pricePaise !== null ? market.format(product.pricePaise) : "View price"}
+            {product.pricePaise !== null ? market.format(product.pricePaise) : t("view_price")}
           </span>
           {product.mrpPaise && product.pricePaise && product.mrpPaise > product.pricePaise ? (
             <span className="truncate text-[11px] font-bold text-[#98A2B3] line-through">{market.format(product.mrpPaise)}</span>
@@ -1316,6 +1319,7 @@ function CategoryShowcase({
   title: string;
   description: string;
 }) {
+  const t = useTranslations("home");
   return (
     <section className="relative overflow-hidden bg-[linear-gradient(180deg,#FFFCFB_0%,#FFF8F4_100%)] py-7 sm:py-8 lg:py-12">
       <div className="mx-auto max-w-[1360px] px-4 sm:px-6 lg:px-10">
@@ -1336,7 +1340,7 @@ function CategoryShowcase({
             href="/categories"
             className="inline-flex h-10 w-fit items-center gap-2 rounded-full border border-[#FFE0D6] bg-white px-4 text-sm font-black !text-[#ED3500] shadow-sm transition hover:-translate-y-0.5 hover:border-[#ED3500]/50 hover:bg-[#FFF7F3] hover:!text-[#c92b00]"
           >
-            View all categories <ArrowRight className="h-4 w-4" aria-hidden="true" />
+            {t("view_all_categories")} <ArrowRight className="h-4 w-4" aria-hidden="true" />
           </HomepageItemLink>
         </div>
         <div className="mt-5 grid grid-cols-2 gap-2.5 sm:hidden">
@@ -1536,11 +1540,12 @@ function StoresNearYou({
   isLoading: boolean;
   locationLabel: string;
 }) {
+  const t = useTranslations("home");
   return (
     <section className="mx-auto max-w-[1360px] px-4 py-5 sm:px-6 lg:px-10 lg:py-6">
-      <MobileSectionHeader title="Stores Near You" href="/stores" accent={false} />
+      <MobileSectionHeader title={t("top_stores")} href="/stores" accent={false} />
       <div className="hidden lg:block">
-        <SectionTitle title="Stores Near You" description={locationLabel} href="/stores" action="View all stores" />
+        <SectionTitle title={t("top_stores")} description={locationLabel} href="/stores" action={t("view_all_stores")} />
       </div>
       <div className="relative mt-2 lg:mt-5">
         <span className="pointer-events-none absolute -left-3 top-1/2 z-10 hidden h-10 w-10 -translate-y-1/2 place-items-center rounded-full border border-[#FFE0D6] bg-white text-[#ED3500] shadow-[0_10px_24px_rgba(22,59,92,0.10)] lg:grid">
@@ -1673,6 +1678,7 @@ function ProductRailSection({
 }) {
   const surfaceStyle = PRODUCT_RAIL_SURFACES[surface];
   const showTimer = surface === "deals" && Boolean(timerEndsAt);
+  const t = useTranslations("home");
 
   return (
     <section className={cn("py-6 sm:py-7 lg:py-10", surfaceStyle.sectionClassName)}>
@@ -1691,7 +1697,7 @@ function ProductRailSection({
           <div className="flex shrink-0 items-center gap-3">
             {showTimer ? <DealCountdown endsAt={timerEndsAt ?? ""} /> : null}
             <HomepageItemLink href={href} className="inline-flex w-fit items-center gap-2 text-xs font-black text-[#ED3500] transition hover:text-[#c92b00]">
-              View all <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+              {t("view_all")} <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
             </HomepageItemLink>
           </div>
         </div>
@@ -1729,6 +1735,7 @@ function ProductRailSection({
 }
 
 function MobileSectionHeader({ title, href, accent = true }: { title: string; href: string; accent?: boolean }) {
+  const t = useTranslations("home");
   return (
     <div className="mb-4 flex items-center justify-between gap-3 lg:hidden">
       <h2 className="flex min-w-0 items-center gap-2 text-2xl font-black tracking-normal text-[#111827]">
@@ -1736,7 +1743,7 @@ function MobileSectionHeader({ title, href, accent = true }: { title: string; hr
         <span className="truncate">{title}</span>
       </h2>
       <HomepageItemLink href={href} className="inline-flex shrink-0 items-center gap-2 text-sm font-black text-[#ED3500]">
-        View all <ArrowRight className="h-5 w-5" aria-hidden="true" />
+        {t("view_all")} <ArrowRight className="h-5 w-5" aria-hidden="true" />
       </HomepageItemLink>
     </div>
   );
@@ -2129,6 +2136,7 @@ function CompactProductCard({
 }) {
   const market = useMarket();
   const wishlist = useStorefrontWishlist();
+  const t = useTranslations("home");
   const variant = primaryVariant(product);
   const activeDeal = getActiveDeal(product, variant);
   const dealOriginalPrice = getDealOriginalPrice(variant);
@@ -2196,7 +2204,7 @@ function CompactProductCard({
         <p className="mt-1 line-clamp-1 text-[11px] font-bold text-[#98A2B3]">{product.seller.storeName}</p>
         <div className="mt-2 flex min-w-0 items-baseline gap-2">
           <span className="text-sm font-black text-[#1F2933] lg:text-base">
-            {variant ? market.format(variant.pricePaise) : "Price pending"}
+            {variant ? market.format(variant.pricePaise) : t("price_pending")}
           </span>
           {mrp ? <span className="hidden truncate text-xs font-semibold text-[#98A2B3] line-through lg:inline">{market.format(mrp)}</span> : null}
         </div>

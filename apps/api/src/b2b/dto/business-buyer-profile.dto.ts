@@ -10,7 +10,9 @@ export class UpsertBusinessBuyerProfileDto {
 
   @ApiPropertyOptional({ example: "33ABCDE1234F1Z5" })
   @IsOptional()
-  @Matches(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][A-Z0-9]Z[A-Z0-9]$/)
+  @Matches(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/, {
+    message: "gstNumber must be a valid GSTIN.",
+  })
   gstNumber?: string;
 
   @ApiProperty({ example: "Vignesh Kumar" })
@@ -19,8 +21,8 @@ export class UpsertBusinessBuyerProfileDto {
   @MaxLength(120)
   contactName!: string;
 
-  @ApiProperty({ example: "9876543210" })
-  @Matches(/^[6-9]\d{9}$/)
+  @ApiProperty({ example: "+919876543210" })
+  @Matches(/^\+?[0-9][0-9\s()-]{6,24}$/)
   contactPhone!: string;
 }
 

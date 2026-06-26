@@ -11,6 +11,7 @@ import { ChatSocketProvider } from "./chat/chat-socket-context";
 import { ChatWidget } from "./chat/chat-widget";
 import { MarketProvider } from "./market/market-context";
 import { StorefrontLocationProvider } from "./storefront/storefront-location-context";
+import { I18nProvider } from "./i18n/i18n-provider";
 
 const clerkPublishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
@@ -44,8 +45,10 @@ export function Providers({ children }: { children: ReactNode }) {
               <ClerkCustomerAuthProvider>
                 <ChatSocketProvider>
                   <StorefrontLocationProvider>
-                    {children}
-                    <ChatWidget />
+                    <I18nProvider>
+                      {children}
+                      <ChatWidget />
+                    </I18nProvider>
                   </StorefrontLocationProvider>
                 </ChatSocketProvider>
               </ClerkCustomerAuthProvider>
@@ -53,8 +56,10 @@ export function Providers({ children }: { children: ReactNode }) {
               <LocalCustomerAuthProvider>
                 <ChatSocketProvider>
                   <StorefrontLocationProvider>
-                    {children}
-                    <ChatWidget />
+                    <I18nProvider>
+                      {children}
+                      <ChatWidget />
+                    </I18nProvider>
                   </StorefrontLocationProvider>
                 </ChatSocketProvider>
               </LocalCustomerAuthProvider>

@@ -13,6 +13,12 @@ import type {
   SupportRequestSource,
   SupportRequestTopic,
 } from "@indihub/shared-types";
+import type {
+  CursorPage,
+  ReturnDetail,
+  ReturnListQuery,
+  ReturnSummary,
+} from "./returns-api";
 
 export type CustomerUser = {
   id: string;
@@ -274,6 +280,46 @@ export type SubmitProductReviewPayload = {
   comment?: string;
 };
 
+export type CustomerCancellationItemInput = {
+  orderItemId: string;
+  quantity: number;
+};
+
+export type CreateCustomerCancellationPayload = {
+  items?: CustomerCancellationItemInput[];
+  reason?: string;
+  note?: string;
+};
+
+export type CustomerCancellationResult = {
+  data: {
+    orderNumber: string;
+    cancelledQuantity: number;
+    cancelledGrossPaise: number;
+    buyerRefundPaise: number;
+    couponAdjustmentPaise: number;
+    sellerFundedCouponAdjustmentPaise: number;
+    platformFundedCouponAdjustmentPaise: number;
+    refundRequest?: {
+      id: string;
+      refundNumber: string;
+      status: string;
+      amountPaise: number;
+      currency: string;
+      createdAt?: string;
+    } | null;
+    orderStatus: string;
+  };
+};
+
+export type CreateCustomerReturnPayload = {
+  resolution: "REFUND" | "REPLACEMENT" | "PARTIAL_REFUND" | "REJECTED";
+  reason: string;
+  note?: string;
+  items: CustomerCancellationItemInput[];
+  reverseShipmentMode?: "PLATFORM_PICKUP" | "CUSTOMER_SELF_SHIP";
+};
+
 export function getCustomerProfile(auth: IndihubAuthHeaders) {
   return indihubFetch<CustomerProfile>("/api/account/profile", undefined, auth);
 }
@@ -375,6 +421,57 @@ export function cancelCustomerOrder(auth: IndihubAuthHeaders, orderNumber: strin
       body: JSON.stringify(note?.trim() ? { note: note.trim() } : {})
     },
     auth
+  );
+}
+
+export function createCustomerItemCancellation(
+  auth: IndihubAuthHeaders,
+  orderNumber: string,
+  payload: CreateCustomerCancellationPayload,
+) {
+  return indihubFetch<CustomerCancellationResult>(
+    `/api/account/orders/${encodeURIComponent(orderNumber)}/cancellations`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    auth,
+  );
+}
+
+export function createCustomerReturnRequest(
+  auth: IndihubAuthHeaders,
+  orderNumber: string,
+  payload: CreateCustomerReturnPayload,
+) {
+  return indihubFetch<ReturnDetail>(
+    `/api/account/orders/${encodeURIComponent(orderNumber)}/returns`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    auth,
+  );
+}
+
+export function listCustomerReturns(auth: IndihubAuthHeaders, query: ReturnListQuery = {}) {
+  const params = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== null && value !== "") {
+      params.set(key, String(value));
+    }
+  }
+
+  const suffix = params.size ? `?${params.toString()}` : "";
+  return indihubFetch<CursorPage<ReturnSummary>>(`/api/account/returns${suffix}`, undefined, auth);
+}
+
+export function getCustomerReturnDetail(auth: IndihubAuthHeaders, requestNumber: string) {
+  return indihubFetch<ReturnDetail>(
+    `/api/account/returns/${encodeURIComponent(requestNumber)}`,
+    undefined,
+    auth,
   );
 }
 

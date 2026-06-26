@@ -89,7 +89,7 @@ export class UpsertCommissionRuleDto {
   @IsOptional()
   @Type(() => Number)
   @Min(0)
-  @Max(100)
+  @Max(10000)
   commissionRatePercent?: number;
 
   @ApiPropertyOptional({ example: 2500 })

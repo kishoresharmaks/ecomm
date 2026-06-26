@@ -11,12 +11,12 @@ import {
   IsOptional,
   IsString,
   IsUUID,
-  Matches,
   Max,
   MaxLength,
   Min,
 } from "class-validator";
 import { DeliveryAssignmentStatus, DeliveryAttemptReason, UserStatus } from "@indihub/database";
+import { IsValidPhoneNumber } from "../../common/validators/is-phone-number.validator";
 
 export enum DeliveryAssignmentDecision {
   ACCEPT = "ACCEPT",
@@ -99,9 +99,9 @@ export class DeliveryPartnerPayoutRequestDto {
 }
 
 export class UpdateDeliveryPartnerProfileDto {
-  @ApiPropertyOptional({ example: "9876543210" })
+  @ApiPropertyOptional({ example: "+919876543210" })
   @IsOptional()
-  @Matches(/^[6-9]\d{9}$/)
+  @IsValidPhoneNumber()
   phone?: string;
 
   @ApiPropertyOptional({ example: "TN 30 AB 1234" })
@@ -202,9 +202,9 @@ export class CourierDeliveryPartnerAvailabilityDto {
 }
 
 export class UpdateOwnDeliveryPartnerProfileDto {
-  @ApiPropertyOptional({ example: "9876543210" })
+  @ApiPropertyOptional({ example: "+919876543210" })
   @IsOptional()
-  @Matches(/^[6-9]\d{9}$/)
+  @IsValidPhoneNumber()
   phone?: string;
 
   @ApiPropertyOptional({ example: "TN 30 AB 1234" })

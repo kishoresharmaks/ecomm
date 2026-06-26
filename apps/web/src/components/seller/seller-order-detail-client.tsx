@@ -131,13 +131,19 @@ const sellerStatusRank: Record<SellerStatus, number> = {
   CANCELLED: 5,
 };
 
-export function SellerOrderDetailClient({ orderNumber }: { orderNumber: string }) {
+export function SellerOrderDetailClient({
+  orderNumber,
+  initialSection = "overview",
+}: {
+  orderNumber: string;
+  initialSection?: "overview" | "delivery";
+}) {
   const queryClient = useQueryClient();
   const sellerAuth = useSellerAuth();
   const [notice, setNotice] = useState<string | null>(null);
   const [statusNote, setStatusNote] = useState("");
   const [selectedDeliveryStatus, setSelectedDeliveryStatus] = useState<DeliveryStatus>("PENDING");
-  const [showDeliveryDetails, setShowDeliveryDetails] = useState(false);
+  const [showDeliveryDetails, setShowDeliveryDetails] = useState(initialSection === "delivery");
   const [labelActionPackageId, setLabelActionPackageId] = useState<string | null>(null);
   const [packageDrafts, setPackageDrafts] = useState<
     Record<string, { weightGrams: string; lengthCm: string; breadthCm: string; heightCm: string }>
@@ -410,6 +416,12 @@ export function SellerOrderDetailClient({ orderNumber }: { orderNumber: string }
             Back to orders
           </Link>
         </Button>
+        <Button asChild variant="outline" size="sm">
+          <Link href={`/seller/orders/${encodeURIComponent(orderNumber)}/delivery`}>
+            <Truck className="h-4 w-4" aria-hidden="true" />
+            Delivery update
+          </Link>
+        </Button>
       </div>
 
       {notice ? (
@@ -468,7 +480,7 @@ export function SellerOrderDetailClient({ orderNumber }: { orderNumber: string }
 
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_400px]">
         <div className="grid content-start gap-4">
-          <SellerPanel className="p-4">
+      <SellerPanel className="p-4" id="delivery-details">
             <SectionHeading
               title="Store items"
               description="Items in this order that belong to this store."

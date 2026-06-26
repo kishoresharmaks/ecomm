@@ -21,9 +21,9 @@ export class UpdateDeliveryDto {
   @MaxLength(80)
   courierProviderCode?: string;
 
-  @ApiPropertyOptional({ example: "9876543210" })
+  @ApiPropertyOptional({ example: "+919876543210" })
   @IsOptional()
-  @Matches(/^[6-9]\d{9}$/)
+  @Matches(/^\+?[0-9][0-9\s()-]{6,24}$/)
   partnerPhone?: string;
 
   @ApiPropertyOptional({ example: "2d6f5f7c-0b6a-4d65-93b8-3c5b8c62d6f1" })

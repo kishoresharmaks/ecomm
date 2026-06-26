@@ -1,0 +1,31 @@
+{
+  "header": {
+    "home": "होम",
+    "categories": "श्रेणियां",
+    "stores": "स्टोर्स",
+    "search_placeholder": "कुछ भी खोजें...",
+    "download_app": "ऐप डाउनलोड करें",
+    "help_support": "सहायता और समर्थन",
+    "sell_on_platform": "प्लेटफ़ॉर्म पर बेचें",
+    "free_delivery": "ऊपर के स्थानीय ऑर्डर पर मुफ्त डिलीवरी",
+    "smart_shopping": "स्मार्ट शॉपिंग, सत्यापित विक्रेता।",
+    "wishlist": "विशलिस्ट",
+    "cart": "कार्ट",
+    "my_account": "मेरा खाता",
+    "profile_orders": "प्रोफ़ाइल और ऑर्डर",
+    "all_categories": "सभी श्रेणियां",
+    "explore_all_categories": "सभी श्रेणियां देखें"
+  },
+  "home": {
+    "add_to_cart": "कार्ट में डालें",
+    "view_all": "सभी देखें",
+    "view_all_stores": "सभी स्टोर देखें",
+    "view_all_categories": "सभी श्रेणियां देखें",
+    "featured_categories": "चुनिंदा श्रेणियां",
+    "featured_products": "प्रमुख उत्पाद",
+    "top_stores": "शीर्ष स्टोर्स",
+    "view_price": "कीमत देखें",
+    "price_pending": "कीमत लंबित",
+    "from": "{price} से"
+  }
+}

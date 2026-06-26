@@ -673,6 +673,12 @@ export type OrderSummary = {
       variantName?: string | null;
     } | null;
     quantity: number;
+    activeQuantity?: number;
+    cancelledQuantity?: number;
+    returnedQuantity?: number;
+    refundedQuantity?: number;
+    replacementQuantity?: number;
+    lifecycleStatus?: string | null;
     unitPricePaise: number;
     lineTotalPaise: number;
     currency: string;
@@ -684,6 +690,26 @@ export type OrderSummary = {
     couponDiscountPaise?: number;
     couponPlatformFundedDiscountPaise?: number;
     couponSellerFundedDiscountPaise?: number;
+    returnPolicySnapshot?: {
+      returnEligibility?: string | null;
+      warranty?: string | null;
+      capturedAt?: string | null;
+    } | null;
+    returnItems?: Array<{
+      id: string;
+      returnRequestId: string;
+      quantity: number;
+      status: string;
+      resolution: string;
+      requestedRefundPaise: number;
+      approvedRefundPaise: number;
+      createdAt?: string;
+      returnRequest: {
+        requestNumber: string;
+        status: string;
+        resolution: string;
+      };
+    }>;
     product?: ProductSummary;
     seller?: SellerSummary;
   }>;

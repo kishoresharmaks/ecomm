@@ -1,0 +1,31 @@
+{
+  "header": {
+    "home": "Home",
+    "categories": "Categories",
+    "stores": "Stores",
+    "search_placeholder": "Search anything...",
+    "download_app": "Download app",
+    "help_support": "Help & support",
+    "sell_on_platform": "Sell on platform",
+    "free_delivery": "Free delivery on selected local orders above",
+    "smart_shopping": "Smart shopping, verified sellers.",
+    "wishlist": "Wishlist",
+    "cart": "Cart",
+    "my_account": "My Account",
+    "profile_orders": "Profile & orders",
+    "all_categories": "All Categories",
+    "explore_all_categories": "Explore all categories"
+  },
+  "home": {
+    "add_to_cart": "Add to cart",
+    "view_all": "View all",
+    "view_all_stores": "View all stores",
+    "view_all_categories": "View all categories",
+    "featured_categories": "Featured Categories",
+    "featured_products": "Featured Products",
+    "top_stores": "Top Stores",
+    "view_price": "View price",
+    "price_pending": "Price pending",
+    "from": "From {price}"
+  }
+}

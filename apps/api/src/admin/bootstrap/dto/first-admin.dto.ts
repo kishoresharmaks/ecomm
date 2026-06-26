@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { IsEmail, IsOptional, IsString, Matches, MaxLength, MinLength } from "class-validator";
+import { IsEmail, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
+import { IsValidPhoneNumber } from "../../../common/validators/is-phone-number.validator";
 
 export class FirstAdminDto {
   @ApiProperty({ example: "admin@example.com" })
@@ -18,8 +19,8 @@ export class FirstAdminDto {
   @MaxLength(120)
   fullName?: string;
 
-  @ApiPropertyOptional({ example: "9876543210" })
+  @ApiPropertyOptional({ example: "+919876543210" })
   @IsOptional()
-  @Matches(/^[6-9]\d{9}$/)
+  @IsValidPhoneNumber()
   phone?: string;
 }

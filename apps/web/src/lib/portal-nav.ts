@@ -69,7 +69,7 @@ export const courierNav = [
 
 export const sellerNav = [
   { label: "Dashboard", href: "/seller" },
-  { label: "Store profile", href: "/seller/profile" },
+  { label: "Store profile", href: "/seller/store-profile" },
   { label: "Onboarding", href: "/seller/register" },
   { label: "Products", href: "/seller/products" },
   { label: "Deals", href: "/seller/deals" },

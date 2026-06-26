@@ -16,16 +16,17 @@ export function AuthPageClient({
 }: {
   mode: "sign-in" | "sign-up";
   defaultRedirectUrl?: string;
-  audience?: "customer" | "b2b";
+  audience?: "customer" | "seller" | "b2b";
 }) {
   const isSignIn = mode === "sign-in";
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const redirectUrl = safeRedirectPath(searchParams.get("redirect_url")) ?? defaultRedirectUrl;
-  const isSellerOnboarding = redirectUrl === "/seller/register";
+  const isSellerOnboarding = audience === "seller" || redirectUrl === "/seller/register";
   const isB2B = audience === "b2b" || redirectUrl.startsWith("/b2b");
+  const routeIsSeller = pathname.startsWith("/seller");
   const routeIsB2B = pathname.startsWith("/b2b");
-  const signInPath = routeIsB2B ? "/b2b/sign-in" : "/sign-in";
+  const signInPath = routeIsSeller ? "/seller/sign-in" : routeIsB2B ? "/b2b/sign-in" : "/sign-in";
   const signUpPath = routeIsB2B ? "/b2b/sign-up" : "/sign-up";
   const switchPath = isSignIn ? signUpPath : signInPath;
   const switchHref = `${switchPath}?redirect_url=${encodeURIComponent(redirectUrl)}`;
