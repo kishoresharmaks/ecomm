@@ -692,7 +692,6 @@ const styles = StyleSheet.create({
     top: 16,
     right: 16,
     backgroundColor: "rgba(255, 255, 255, 0.2)",
-    backdropFilter: "blur(10px)",
     borderRadius: 12,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.3)",
