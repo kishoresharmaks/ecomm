@@ -196,6 +196,17 @@ function StoreDetailScreen() {
             isLoading={storeQuery.isLoading}
             isProductsLoading={productsQuery.isLoading}
             onBack={() => router.back()}
+            onB2BEnquiry={() => {
+              const storeId = store?.id;
+              if (!storeId) return;
+              if (!customerAuth.enabled) {
+                router.push("/auth/sign-in" as never);
+                return;
+              }
+              const params = new URLSearchParams({ sellerId: storeId });
+              if (store?.storeName) params.set("sellerName", store.storeName);
+              router.push((`/account/b2b/enquiries/new?${params.toString()}`) as never);
+            }}
             onClearFilters={() => setFilters(defaultFilters)}
             onOpenFilter={() => setFilterOpen(true)}
             productCount={visibleProducts.length}
@@ -275,6 +286,7 @@ function StoreHeader({
   isLoading,
   isProductsLoading,
   onBack,
+  onB2BEnquiry,
   onClearFilters,
   onOpenFilter,
   productCount,
@@ -293,6 +305,7 @@ function StoreHeader({
   isLoading: boolean;
   isProductsLoading: boolean;
   onBack: () => void;
+  onB2BEnquiry: () => void;
   onClearFilters: () => void;
   onOpenFilter: () => void;
   productCount: number;
@@ -367,6 +380,14 @@ function StoreHeader({
           <View style={styles.benefitDivider} />
           <BenefitItem icon={Shield01Icon} title="Secure payments" subtitle="100% secure" />
         </View>
+
+        {/* B2B Enquiry CTA — only shown when store is active (id present) */}
+        {store?.id ? (
+          <Pressable style={styles.b2bEnquiryBtn} onPress={onB2BEnquiry}>
+            <Text style={styles.b2bEnquiryBtnText}>B2B Enquiry</Text>
+            <Text style={styles.b2bEnquiryBtnSub}>Request bulk quote from this seller</Text>
+          </Pressable>
+        ) : null}
 
         <View style={styles.productsPanel}>
           <View style={styles.searchBox}>
@@ -865,6 +886,18 @@ const styles = StyleSheet.create({
     height: 48,
     width: 1,
   },
+  b2bEnquiryBtn: {
+    alignItems: "center",
+    borderColor: colors.primary,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    marginHorizontal: 16,
+    marginTop: 8,
+    padding: 14,
+  },
+  b2bEnquiryBtnText: { color: colors.primary, fontSize: 15, fontWeight: "800" },
+  b2bEnquiryBtnSub: { color: colors.muted, fontSize: 12, marginTop: 3 },
+
   benefitItem: {
     alignItems: "center",
     flex: 1,

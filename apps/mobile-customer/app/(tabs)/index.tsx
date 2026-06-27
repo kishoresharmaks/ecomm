@@ -1106,7 +1106,7 @@ function MobileRecommendedProductCard({
   // Use standard image height for consistency
   const imageHeight = STANDARD_IMAGE_HEIGHT;
   const badge = premiumBadgeLabel(product);
-  const stock = stockPillState(product);
+  const _stock = stockPillState(product);
   const hasRating = typeof product.rating === "number" && product.rating > 0;
 
   return (

@@ -55,6 +55,16 @@ function RootLayout() {
             <Stack.Screen name="account/support" />
             <Stack.Screen name="account/returns" />
             <Stack.Screen name="account/returns/[requestNumber]" />
+            {/* B2B workspace */}
+            <Stack.Screen name="account/b2b/index" />
+            <Stack.Screen name="account/b2b/profile" />
+            <Stack.Screen name="account/b2b/addresses" />
+            <Stack.Screen name="account/b2b/address-form" />
+            <Stack.Screen name="account/b2b/enquiries/index" />
+            <Stack.Screen name="account/b2b/enquiries/new" />
+            <Stack.Screen name="account/b2b/enquiries/[enquiryId]" />
+            <Stack.Screen name="account/b2b/orders/index" />
+            <Stack.Screen name="account/b2b/orders/[orderNumber]" />
             <Stack.Screen name="sentry-example" />
             <Stack.Screen name="checkout" />
             <Stack.Screen name="checkout/success/[orderNumber]" />

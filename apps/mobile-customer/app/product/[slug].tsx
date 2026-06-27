@@ -553,12 +553,28 @@ function ProductActionBar({
   product: ProductSummary;
   selectedVariant: ProductVariant | null;
 }) {
+  const router = useRouter();
+  const isEnquiryOnly = product.listingMode === "ENQUIRY_ONLY";
+  const isOutOfStock = Boolean(selectedVariant && selectedVariant.stockQuantity <= 0);
+  // Wire to product.isRegionRestricted when the API exposes that field.
+  const isRegionRestricted = false;
+
   const unavailableReason =
-    product.listingMode === "ENQUIRY_ONLY"
-      ? "This product is enquiry-only."
-      : selectedVariant && selectedVariant.stockQuantity <= 0
+    isEnquiryOnly
+      ? null // ENQUIRY_ONLY: B2B CTA replaces the cart button entirely
+      : isOutOfStock
         ? "Selected option is out of stock."
         : "";
+
+  function handleB2BCTA() {
+    if (!isSignedIn) {
+      router.push("/auth/sign-in" as never);
+      return;
+    }
+    const params = new URLSearchParams({ productId: product.id });
+    if (product.name) params.set("productName", product.name);
+    router.push((`/account/b2b/enquiries/new?${params.toString()}`) as never);
+  }
 
   return (
     <View style={styles.actionWrap}>
@@ -572,23 +588,57 @@ function ProductActionBar({
         </View>
       ) : null}
       {unavailableReason ? <Text style={styles.actionHelp}>{unavailableReason}</Text> : null}
-      <Pressable
-        disabled={isBusy || (isSignedIn && !isInCart && !canAddToCart)}
-        style={[styles.addButton, isBusy || (isSignedIn && !isInCart && !canAddToCart) ? styles.addButtonDisabled : null]}
-        onPress={isSignedIn ? (isInCart ? onGoToCart : onAdd) : onSignIn}
-      >
-        {isBusy ? (
-          <ActivityIndicator color={colors.surface} />
-        ) : (
-          <>
-            <HugeiconsIcon color={colors.surface} icon={ShoppingCart01Icon} size={22} strokeWidth={2.2} />
-            <Text style={styles.addButtonText}>{isSignedIn ? (isInCart ? "Go to cart" : "Add to cart") : "Sign in to add"}</Text>
-          </>
-        )}
-      </Pressable>
+
+      {isEnquiryOnly ? (
+        /* ENQUIRY_ONLY: B2B request-quote button is the only CTA */
+        <Pressable
+          disabled={isRegionRestricted}
+          style={[styles.addButton, isRegionRestricted ? styles.addButtonDisabled : null]}
+          onPress={isRegionRestricted ? undefined : handleB2BCTA}
+        >
+          <Text style={styles.addButtonText}>
+            {isRegionRestricted
+              ? "Not available in your region"
+              : isSignedIn
+                ? "Request Quote (B2B)"
+                : "Sign in to request quote"}
+          </Text>
+        </Pressable>
+      ) : (
+        <>
+          {/* Primary add-to-cart button */}
+          <Pressable
+            disabled={isBusy || (isSignedIn && !isInCart && !canAddToCart)}
+            style={[styles.addButton, isBusy || (isSignedIn && !isInCart && !canAddToCart) ? styles.addButtonDisabled : null]}
+            onPress={isSignedIn ? (isInCart ? onGoToCart : onAdd) : onSignIn}
+          >
+            {isBusy ? (
+              <ActivityIndicator color={colors.surface} />
+            ) : (
+              <>
+                <HugeiconsIcon color={colors.surface} icon={ShoppingCart01Icon} size={22} strokeWidth={2.2} />
+                <Text style={styles.addButtonText}>{isSignedIn ? (isInCart ? "Go to cart" : "Add to cart") : "Sign in to add"}</Text>
+              </>
+            )}
+          </Pressable>
+          {/* Secondary B2B CTA — always visible, even out-of-stock */}
+          <Pressable
+            disabled={isRegionRestricted}
+            style={[styles.b2bSecondaryButton, isRegionRestricted ? styles.b2bSecondaryButtonDisabled : null]}
+            onPress={isRegionRestricted ? undefined : handleB2BCTA}
+          >
+            <Text style={[styles.b2bSecondaryButtonText, isRegionRestricted ? { color: colors.muted } : null]}>
+              {isRegionRestricted
+                ? "B2B not available in your region"
+                : "Request Quote (B2B)"}
+            </Text>
+          </Pressable>
+        </>
+      )}
     </View>
   );
 }
+
 
 function productImages(product: ProductSummary): ProductImage[] {
   return product.images;
@@ -1023,5 +1073,22 @@ const styles = StyleSheet.create({
     color: colors.surface,
     fontSize: 16,
     fontWeight: "900",
+  },
+  b2bSecondaryButton: {
+    alignItems: "center",
+    borderColor: colors.primary,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    justifyContent: "center",
+    minHeight: 48,
+    marginTop: 6,
+  },
+  b2bSecondaryButtonDisabled: {
+    borderColor: "#C0C8D4",
+  },
+  b2bSecondaryButtonText: {
+    color: colors.primary,
+    fontSize: 15,
+    fontWeight: "700",
   },
 });

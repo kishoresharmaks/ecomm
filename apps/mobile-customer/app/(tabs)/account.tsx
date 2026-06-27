@@ -1,6 +1,7 @@
 import {
   ArrowLeft02Icon,
   ArrowRight02Icon,
+  Building04Icon,
   Camera01Icon,
   CheckmarkBadge02Icon,
   DeliveryReturn01Icon,
@@ -239,6 +240,23 @@ export default function AccountScreen() {
           <View style={styles.overviewDivider} />
           <OverviewMetric color="#1475FF" icon={Location01Icon} label="Addresses" value={String(addressCount)} />
         </View>
+
+        {/* B2B Workspace Entry */}
+        <SectionTitle title="Business (B2B)" />
+        <Pressable
+          accessibilityRole="button"
+          style={styles.b2bCard}
+          onPress={() => router.push("/account/b2b" as never)}
+        >
+          <View style={styles.b2bIconWrap}>
+            <HugeiconsIcon color={colors.primary} icon={Building04Icon} size={26} strokeWidth={2} />
+          </View>
+          <View style={styles.b2bCardBody}>
+            <Text style={styles.b2bCardTitle}>B2B Workspace</Text>
+            <Text style={styles.b2bCardSub}>Enquiries, quotations and purchase orders</Text>
+          </View>
+          <HugeiconsIcon color={MUTED} icon={ArrowRight02Icon} size={22} strokeWidth={2.2} />
+        </Pressable>
 
         <SectionTitle title="Profile settings" />
         <View style={styles.listCard}>
@@ -665,4 +683,31 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "900",
   },
+  b2bCard: {
+    alignItems: "center",
+    backgroundColor: CARD_BG,
+    borderColor: BORDER,
+    borderRadius: 18,
+    borderWidth: 1,
+    elevation: 1,
+    flexDirection: "row",
+    gap: 14,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    shadowColor: colors.primary,
+    shadowOffset: { height: 4, width: 0 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+  },
+  b2bIconWrap: {
+    alignItems: "center",
+    backgroundColor: "#FFF4EF",
+    borderRadius: 12,
+    height: 46,
+    justifyContent: "center",
+    width: 46,
+  },
+  b2bCardBody: { flex: 1, minWidth: 0 },
+  b2bCardTitle: { color: TEXT, fontSize: 15, fontWeight: "900" },
+  b2bCardSub: { color: MUTED, fontSize: 13, fontWeight: "700", marginTop: 3 },
 });
