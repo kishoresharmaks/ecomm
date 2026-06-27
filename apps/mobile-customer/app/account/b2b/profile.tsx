@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Stack, useRouter } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -14,11 +14,12 @@ import {
 } from "react-native";
 import { Screen } from "../../../src/components/screen";
 import { useMobileCustomerAuth } from "../../../src/auth/mobile-auth-context";
+import { B2BCustomerAuthGate } from "../../../src/features/b2b/b2b-customer-auth-gate";
 import { MobileApiError } from "../../../src/lib/api";
 import { getB2BProfile, upsertB2BProfile } from "../../../src/lib/mobile-b2b-api";
 import { colors, spacing } from "../../../src/theme";
 
-export default function B2BProfileScreen() {
+function B2BProfileContent() {
   const customerAuth = useMobileCustomerAuth();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -38,23 +39,40 @@ export default function B2BProfileScreen() {
 
   const existing = profileQuery.data;
 
-  const [companyName, setCompanyName] = useState(existing?.companyName ?? "");
-  const [gstNumber, setGstNumber] = useState(existing?.gstNumber ?? "");
-  const [contactName, setContactName] = useState(existing?.contactName ?? "");
-  const [contactPhone, setContactPhone] = useState(existing?.contactPhone ?? "");
+  const [companyName, setCompanyName] = useState("");
+  const [gstNumber, setGstNumber] = useState("");
+  const [contactName, setContactName] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [saveError, setSaveError] = useState("");
+  const [hydratedKey, setHydratedKey] = useState<string | null>(null);
 
-  // Sync form when query loads for existing profile
-  const previousData = profileQuery.data;
-  const [initialised, setInitialised] = useState(false);
-  if (previousData && !initialised) {
-    setCompanyName(previousData.companyName);
-    setGstNumber(previousData.gstNumber ?? "");
-    setContactName(previousData.contactName);
-    setContactPhone(previousData.contactPhone);
-    setInitialised(true);
-  }
+  useEffect(() => {
+    if (existing && hydratedKey !== existing.id) {
+      setCompanyName(existing.companyName);
+      setGstNumber(existing.gstNumber ?? "");
+      setContactName(existing.contactName);
+      setContactPhone(existing.contactPhone);
+      setHydratedKey(existing.id);
+      return;
+    }
+
+    const newProfileKey = `new:${customerAuth.authKey}`;
+    if (isNewProfile && hydratedKey !== newProfileKey) {
+      setCompanyName("");
+      setGstNumber("");
+      setContactName(customerAuth.userProfile.fullName ?? "");
+      setContactPhone(customerAuth.userProfile.phone ?? "");
+      setHydratedKey(newProfileKey);
+    }
+  }, [
+    customerAuth.authKey,
+    customerAuth.userProfile.fullName,
+    customerAuth.userProfile.phone,
+    existing,
+    hydratedKey,
+    isNewProfile,
+  ]);
 
   const saveMutation = useMutation({
     mutationFn: () =>
@@ -176,6 +194,14 @@ export default function B2BProfileScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
     </Screen>
+  );
+}
+
+export default function B2BProfileScreen() {
+  return (
+    <B2BCustomerAuthGate>
+      <B2BProfileContent />
+    </B2BCustomerAuthGate>
   );
 }
 

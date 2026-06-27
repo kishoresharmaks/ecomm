@@ -7,11 +7,12 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import { Screen } from "../../../src/components/screen";
 import { EmptyState } from "../../../src/components/empty-state";
 import { useMobileCustomerAuth } from "../../../src/auth/mobile-auth-context";
+import { B2BAuthGate } from "../../../src/features/b2b/b2b-auth-gate";
 import { deleteB2BAddress, listB2BAddresses } from "../../../src/lib/mobile-b2b-api";
 import { colors, spacing } from "../../../src/theme";
 import type { BusinessBuyerAddress } from "../../../src/features/b2b/b2b-types";
 
-export default function B2BAddressesScreen() {
+function B2BAddressesContent() {
   const customerAuth = useMobileCustomerAuth();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -37,22 +38,7 @@ export default function B2BAddressesScreen() {
   const addresses: BusinessBuyerAddress[] = addressesQuery.data ?? [];
 
   return (
-    <Screen padded={false}>
-      <Stack.Screen
-        options={{
-          headerShown: true,
-          title: "Procurement Addresses",
-          headerRight: () => (
-            <Pressable
-              onPress={() => router.push("/account/b2b/address-form" as never)}
-              style={{ marginRight: spacing.md }}
-            >
-              <HugeiconsIcon color={colors.primary} icon={PlusSignIcon} size={24} strokeWidth={2.2} />
-            </Pressable>
-          ),
-        }}
-      />
-
+    <>
       {addressesQuery.isLoading ? (
         <View style={styles.center}>
           <ActivityIndicator color={colors.primary} />
@@ -102,7 +88,37 @@ export default function B2BAddressesScreen() {
           </Pressable>
         </ScrollView>
       )}
+    </>
+  );
+}
+
+export default function B2BAddressesScreen() {
+  return (
+    <Screen padded={false}>
+      <Stack.Screen
+        options={{
+          headerShown: true,
+          title: "Procurement Addresses",
+          headerRight: () => <HeaderAddButton />,
+        }}
+      />
+      <B2BAuthGate>
+        <B2BAddressesContent />
+      </B2BAuthGate>
     </Screen>
+  );
+}
+
+function HeaderAddButton() {
+  const router = useRouter();
+
+  return (
+    <Pressable
+      onPress={() => router.push("/account/b2b/address-form" as never)}
+      style={{ marginRight: spacing.md }}
+    >
+      <HugeiconsIcon color={colors.primary} icon={PlusSignIcon} size={24} strokeWidth={2.2} />
+    </Pressable>
   );
 }
 

@@ -4,6 +4,7 @@ import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View
 import { Screen } from "../../../../src/components/screen";
 import { EmptyState } from "../../../../src/components/empty-state";
 import { useMobileCustomerAuth } from "../../../../src/auth/mobile-auth-context";
+import { B2BAuthGate } from "../../../../src/features/b2b/b2b-auth-gate";
 import {
   canCancelEnquiry,
   canConfirmEnquiry,
@@ -13,7 +14,7 @@ import {
 import { cancelB2BEnquiry, confirmB2BEnquiry, getB2BEnquiry } from "../../../../src/lib/mobile-b2b-api";
 import { colors, spacing } from "../../../../src/theme";
 
-export default function B2BEnquiryDetailScreen() {
+function B2BEnquiryDetailContent() {
   const customerAuth = useMobileCustomerAuth();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -133,7 +134,7 @@ export default function B2BEnquiryDetailScreen() {
                 <Text style={styles.responseMessage}>{resp.responseMessage}</Text>
                 {resp.quotedPricePaise ? (
                   <Text style={styles.quotedPrice}>
-                    Quoted price: ₹{(resp.quotedPricePaise / 100).toFixed(2)}
+                    Quoted: Rs. {(resp.quotedPricePaise / 100).toFixed(2)}
                   </Text>
                 ) : null}
               </View>
@@ -149,7 +150,7 @@ export default function B2BEnquiryDetailScreen() {
               router.push(`/account/b2b/orders/${enq.b2bOrder!.orderNumber}` as never)
             }
           >
-            <Text style={styles.orderLinkText}>View B2B Order →</Text>
+            <Text style={styles.orderLinkText}>View B2B Order</Text>
           </Pressable>
         ) : null}
 
@@ -214,6 +215,19 @@ export default function B2BEnquiryDetailScreen() {
           ) : null}
         </View>
       </ScrollView>
+    </Screen>
+  );
+}
+
+export default function B2BEnquiryDetailScreen() {
+  const params = useLocalSearchParams<{ enquiryId: string }>();
+  const enquiryId = params.enquiryId ?? "";
+  return (
+    <Screen>
+      <Stack.Screen options={{ headerShown: true, title: "Enquiry" }} />
+      <B2BAuthGate requireProfile={false}>
+        <B2BEnquiryDetailContent />
+      </B2BAuthGate>
     </Screen>
   );
 }

@@ -198,6 +198,12 @@ export type POUploadRequestResponse = {
   expiresAt?: string | null;
 };
 
+export type POUploadRequestPayload = {
+  contentType: string;
+  fileName: string;
+  sizeBytes: number;
+};
+
 export type PODocumentAccessResponse = {
   url?: string | null;
   assetKey?: string | null;

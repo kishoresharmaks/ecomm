@@ -1,4 +1,4 @@
-import {
+﻿import {
   BadRequestException,
   ForbiddenException,
   Inject,
@@ -1510,6 +1510,7 @@ export class StorageService {
   }) {
     await this.prisma.client.$executeRaw`
       INSERT INTO private_uploads (
+        id,
         asset_key,
         provider,
         upload_kind,
@@ -1520,6 +1521,7 @@ export class StorageService {
         updated_at
       )
       VALUES (
+        gen_random_uuid(),
         ${input.assetKey},
         ${input.provider},
         ${input.uploadKind},

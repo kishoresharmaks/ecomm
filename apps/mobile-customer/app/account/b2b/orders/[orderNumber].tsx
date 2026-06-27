@@ -1,7 +1,3 @@
-// expo-document-picker, expo-file-system, expo-sharing are required lazily inside
-// their respective handler functions to avoid native-module-not-found crashes when
-// the module is evaluated before the native layer is linked (dev/test environments).
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 const getDocumentPicker = () => require("expo-document-picker") as typeof import("expo-document-picker");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const getFileSystem = () => require("expo-file-system") as typeof import("expo-file-system");
@@ -22,6 +18,7 @@ import {
 import { Screen } from "../../../../src/components/screen";
 import { EmptyState } from "../../../../src/components/empty-state";
 import { useMobileCustomerAuth } from "../../../../src/auth/mobile-auth-context";
+import { B2BAuthGate } from "../../../../src/features/b2b/b2b-auth-gate";
 import {
   canSubmitPO,
   ORDER_STATUS_COLOR,
@@ -197,10 +194,10 @@ function B2BOrderDetailContent({ order }: { order: B2BOrder }) {
         <InfoCard label="Proforma issued" value={formatDate(order.proformaIssuedAt)} />
       ) : null}
       {order.unitPricePaise ? (
-        <InfoCard label="Unit price" value={`₹${(order.unitPricePaise / 100).toFixed(2)}`} />
+        <InfoCard label="Unit price" value={`Rs. ${(order.unitPricePaise / 100).toFixed(2)}`} />
       ) : null}
       {order.subtotalPaise ? (
-        <InfoCard label="Subtotal" value={`₹${(order.subtotalPaise / 100).toFixed(2)}`} />
+        <InfoCard label="Subtotal" value={`Rs. ${(order.subtotalPaise / 100).toFixed(2)}`} />
       ) : null}
       {order.proformaExpiresAt ? (
         <InfoCard label="Proforma expires" value={formatDate(order.proformaExpiresAt)} />
@@ -246,7 +243,7 @@ function B2BOrderDetailContent({ order }: { order: B2BOrder }) {
           <View style={styles.uploadRow}>
             {uploadState === "done" ? (
               <View style={styles.uploadSuccessRow}>
-                <Text style={styles.uploadSuccessText}>✓ Document uploaded</Text>
+                <Text style={styles.uploadSuccessText}>Done - Document uploaded</Text>
               </View>
             ) : (
               <Pressable
@@ -286,9 +283,9 @@ function B2BOrderDetailContent({ order }: { order: B2BOrder }) {
             ) : (
               <Text style={styles.submitBtnText}>
                 {submitState === "error"
-                  ? "Could not submit — tap to retry"
+                  ? "Could not submit - tap to retry"
                   : submitState === "done"
-                    ? "PO submitted ✓"
+                    ? "PO submitted - done"
                     : "Submit purchase order"}
               </Text>
             )}
@@ -382,7 +379,9 @@ export default function B2BOrderDetailScreen() {
       <Stack.Screen
         options={{ headerShown: true, title: orderQuery.data.proformaInvoiceNumber }}
       />
-      <B2BOrderDetailContent order={orderQuery.data} />
+      <B2BAuthGate requireProfile={false}>
+        <B2BOrderDetailContent order={orderQuery.data} />
+      </B2BAuthGate>
     </Screen>
   );
 }

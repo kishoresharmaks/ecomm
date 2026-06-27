@@ -99,8 +99,9 @@ export async function uploadPO(
 ): Promise<POUploadResult> {
   // Step 1: request upload instructions.
   const instructions = await createPOUploadRequest(auth, orderNumber, {
-    mimeType: file.mimeType,
+    contentType: file.mimeType,
     fileName: file.name,
+    sizeBytes: file.size,
   });
 
   // Step 2: signed upload path (preferred).
@@ -132,8 +133,9 @@ export async function uploadPO(
 
     // Multipart fallback with a fresh upload request (stale presigned URL is not reused).
     const fallbackInstructions = await createPOUploadRequest(auth, orderNumber, {
-      mimeType: file.mimeType,
+      contentType: file.mimeType,
       fileName: file.name,
+      sizeBytes: file.size,
     });
     const result = await uploadPOMultipart(
       auth,

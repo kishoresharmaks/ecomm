@@ -14,6 +14,7 @@ import {
 } from "react-native";
 import { Screen } from "../../../../src/components/screen";
 import { useMobileCustomerAuth } from "../../../../src/auth/mobile-auth-context";
+import { B2BAuthGate } from "../../../../src/features/b2b/b2b-auth-gate";
 import { MobileApiError } from "../../../../src/lib/api";
 import {
   createB2BEnquiry,
@@ -25,7 +26,7 @@ import type { ProductSummary } from "../../../../src/types/storefront";
 import type { MobileStore } from "../../../../src/types/mobile-home";
 import { colors, spacing } from "../../../../src/theme";
 
-export default function B2BNewEnquiryScreen() {
+function B2BNewEnquiryContent() {
   const customerAuth = useMobileCustomerAuth();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -461,6 +462,17 @@ export default function B2BNewEnquiryScreen() {
           </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
+    </Screen>
+  );
+}
+
+export default function B2BNewEnquiryScreen() {
+  return (
+    <Screen>
+      <Stack.Screen options={{ headerShown: true, title: "New B2B Enquiry" }} />
+      <B2BAuthGate>
+        <B2BNewEnquiryContent />
+      </B2BAuthGate>
     </Screen>
   );
 }

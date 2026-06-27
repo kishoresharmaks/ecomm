@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -14,6 +14,7 @@ import {
 } from "react-native";
 import { Screen } from "../../../src/components/screen";
 import { useMobileCustomerAuth } from "../../../src/auth/mobile-auth-context";
+import { B2BAuthGate } from "../../../src/features/b2b/b2b-auth-gate";
 import { MobileApiError } from "../../../src/lib/api";
 import { createB2BAddress, listB2BAddresses, updateB2BAddress } from "../../../src/lib/mobile-b2b-api";
 import { colors, spacing } from "../../../src/theme";
@@ -30,7 +31,7 @@ const EMPTY: BusinessBuyerAddressPayload = {
   countryCode: "IN",
 };
 
-export default function B2BAddressFormScreen() {
+function B2BAddressFormContent() {
   const customerAuth = useMobileCustomerAuth();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -46,8 +47,14 @@ export default function B2BAddressFormScreen() {
 
   const existing = addressesQuery.data?.find((a) => a.id === addressId);
 
-  const [form, setForm] = useState<BusinessBuyerAddressPayload>(() => {
-    if (!existing) return EMPTY;
+  // Fix: do NOT lazy-init from `existing` — it is always undefined on the
+  // first render because the query hasn't resolved yet.
+  // Instead, start with EMPTY and hydrate via useEffect once data arrives.
+  const [form, setForm] = useState<BusinessBuyerAddressPayload>(EMPTY);
+  const [hydrated, setHydrated] = useState(!isEdit); // create mode is immediately ready
+
+  useEffect(() => {
+    if (!existing) return;
     const payload: BusinessBuyerAddressPayload = {
       line1: existing.line1,
       city: existing.city,
@@ -61,8 +68,9 @@ export default function B2BAddressFormScreen() {
     if (existing.stateCode) payload.stateCode = existing.stateCode;
     if (existing.cityCode) payload.cityCode = existing.cityCode;
     if (existing.localAreaCode) payload.localAreaCode = existing.localAreaCode;
-    return payload;
-  });
+    setForm(payload);
+    setHydrated(true);
+  }, [existing]);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [saveError, setSaveError] = useState("");
 
@@ -102,6 +110,19 @@ export default function B2BAddressFormScreen() {
     setSaveError("");
     if (!validate()) return;
     saveMutation.mutate();
+  }
+
+  // In edit mode: show a spinner until the existing address data has been
+  // fetched from the cache/network and hydrated into form state.
+  if (isEdit && !hydrated) {
+    return (
+      <Screen>
+        <Stack.Screen options={{ headerShown: true, title: "Edit Address" }} />
+        <View style={styles.center}>
+          <ActivityIndicator color={colors.primary} />
+        </View>
+      </Screen>
+    );
   }
 
   return (
@@ -178,6 +199,21 @@ export default function B2BAddressFormScreen() {
   );
 }
 
+export default function B2BAddressFormScreen() {
+  const params = useLocalSearchParams<{ addressId?: string }>();
+  const isEdit = Boolean(params.addressId);
+  return (
+    <Screen padded={false}>
+      <Stack.Screen
+        options={{ headerShown: true, title: isEdit ? "Edit Address" : "Add Address" }}
+      />
+      <B2BAuthGate requireProfile={false}>
+        <B2BAddressFormContent />
+      </B2BAuthGate>
+    </Screen>
+  );
+}
+
 function Field({
   error,
   keyboardType,
@@ -210,6 +246,7 @@ function Field({
 }
 
 const styles = StyleSheet.create({
+  center: { alignItems: "center", flex: 1, justifyContent: "center" },
   content: { gap: spacing.md, paddingBottom: spacing.xxl, paddingHorizontal: spacing.lg, paddingTop: spacing.lg },
   field: { gap: spacing.xs },
   fieldLabel: { color: colors.ink, fontSize: 14, fontWeight: "600" },

@@ -29,6 +29,7 @@ import type {
   B2BOrder,
   PaginatedB2BEnquiries,
   PaginatedB2BOrders,
+  POUploadRequestPayload,
   POUploadRequestResponse,
   PODocumentAccessResponse,
 } from "../features/b2b/b2b-types";
@@ -184,7 +185,7 @@ export function getB2BOrder(auth: MobileAuthHeaders, orderNumber: string): Promi
 export function createPOUploadRequest(
   auth: MobileAuthHeaders,
   orderNumber: string,
-  payload: { mimeType: string; fileName: string },
+  payload: POUploadRequestPayload,
 ): Promise<POUploadRequestResponse> {
   return withServerRetry(() =>
     postJson({

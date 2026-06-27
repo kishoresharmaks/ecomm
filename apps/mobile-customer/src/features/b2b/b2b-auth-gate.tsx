@@ -10,6 +10,7 @@ import { colors, spacing } from "../../theme";
 
 type B2BAuthGateProps = {
   children: ReactNode;
+  requireProfile?: boolean;
 };
 
 /**
@@ -28,7 +29,7 @@ type B2BAuthGateProps = {
  * The 5xx auto-retry-once-after-2s is performed by the API client layer
  * (mobile-b2b-api.ts withServerRetry). This gate only handles the final error.
  */
-export function B2BAuthGate({ children }: B2BAuthGateProps) {
+export function B2BAuthGate({ children, requireProfile = true }: B2BAuthGateProps) {
   const customerAuth = useMobileCustomerAuth();
   const router = useRouter();
   const [redirecting, setRedirecting] = useState(false);
@@ -36,7 +37,7 @@ export function B2BAuthGate({ children }: B2BAuthGateProps) {
   const profileQuery = useQuery({
     queryKey: ["b2b-profile-gate", customerAuth.authKey],
     queryFn: () => getB2BProfile(customerAuth.authHeaders),
-    enabled: customerAuth.enabled,
+    enabled: customerAuth.enabled && requireProfile,
     retry: (failureCount, error) => {
       if (error instanceof MobileApiError) {
         // Never retry auth/forbidden/not-found errors.
@@ -52,6 +53,7 @@ export function B2BAuthGate({ children }: B2BAuthGateProps) {
 
   // 404 redirect — must happen in useEffect, never during render.
   const needsOnboarding =
+    requireProfile &&
     profileQuery.isError &&
     profileQuery.error instanceof MobileApiError &&
     profileQuery.error.status === 404;
@@ -81,6 +83,10 @@ export function B2BAuthGate({ children }: B2BAuthGateProps) {
         </Pressable>
       </View>
     );
+  }
+
+  if (!requireProfile) {
+    return <>{children}</>;
   }
 
   if (profileQuery.isLoading || redirecting) {
