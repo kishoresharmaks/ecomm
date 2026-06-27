@@ -58,32 +58,44 @@ const verificationDocuments: Array<{
   type: SellerDocumentType;
   label: string;
   description: string;
+  required: boolean;
 }> = [
   {
     type: "ID_PROOF",
     label: "ID proof",
     description: "PAN, Aadhaar, passport, or business-authorized ID proof.",
+    required: true,
   },
   {
     type: "SIGNATURE_PROOF",
     label: "Signature proof",
     description: "Signed declaration, signature image, or authorization letter.",
+    required: true,
   },
   {
     type: "GST_CERTIFICATE",
     label: "GST certificate",
-    description: "Optional for GST-registered sellers.",
+    description: "For GST-registered sellers. Upload your GST registration certificate.",
+    required: false,
   },
-  { type: "PAN_CARD", label: "PAN card", description: "Business or proprietor PAN proof." },
+  {
+    type: "FSSAI_CERTIFICATE",
+    label: "FSSAI certificate",
+    description: "Required for food product sellers. Upload your FSSAI license or registration certificate.",
+    required: false,
+  },
+  { type: "PAN_CARD", label: "PAN card", description: "Business or proprietor PAN proof.", required: true },
   {
     type: "ADDRESS_PROOF",
     label: "Address proof",
     description: "Shop, office, or pickup address proof.",
+    required: true,
   },
   {
     type: "BANK_PROOF",
     label: "Bank proof",
     description: "Cancelled cheque or bank proof for payouts.",
+    required: true,
   },
 ];
 
@@ -266,11 +278,6 @@ export function SellerRegistrationForm() {
                     tone={sellerQuery.data.approvalStatus === "APPROVED" ? "success" : "warning"}
                   >
                     {sellerQuery.data.approvalStatus?.replace(/_/g, " ") ?? "Pending approval"}
-                  </StatusBadge>
-                  <StatusBadge
-                    tone={sellerQuery.data.status === "APPROVED" ? "success" : "warning"}
-                  >
-                    {sellerQuery.data.status?.replace(/_/g, " ") ?? "Pending"}
                   </StatusBadge>
                   {sellerQuery.data.subscriptionPlan ? (
                     <StatusBadge tone="info">{sellerQuery.data.subscriptionPlan.name}</StatusBadge>
@@ -766,7 +773,7 @@ function DocumentUploadField({
   disabled,
   onUploaded,
 }: {
-  document: { type: SellerDocumentType; label: string; description: string };
+  document: { type: SellerDocumentType; label: string; description: string; required: boolean };
   value?: SellerDocumentUploadResult | undefined;
   authHeaders: IndihubAuthHeaders;
   disabled?: boolean;
@@ -798,15 +805,44 @@ function DocumentUploadField({
   }
 
   return (
-    <label className="block rounded-md border border-[#D8E2EA] bg-[#F8FAFC] p-3">
+    <label
+      className={`block rounded-md border p-3 transition ${
+        value
+          ? "border-[#32B877] bg-[#F0FDF6]"
+          : document.required
+            ? "border-[#F5B7B7] bg-[#FFF8F8]"
+            : "border-[#D8E2EA] bg-[#F8FAFC]"
+      }`}
+    >
       <span className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <span>
-          <span className="block text-sm font-black text-[#1F2933]">{document.label}</span>
+        <span className="min-w-0 flex-1">
+          <span className="flex flex-wrap items-center gap-1.5">
+            <span className="text-sm font-black text-[#1F2933]">{document.label}</span>
+            {document.required ? (
+              <span className="text-sm font-black text-[#ED3500]" aria-label="Required">*</span>
+            ) : null}
+            {document.required ? (
+              <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide bg-[#FFF0EC] text-[#ED3500]">
+                Required
+              </span>
+            ) : (
+              <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide bg-[#F3F4F6] text-[#9CA3AF]">
+                Optional
+              </span>
+            )}
+          </span>
           <span className="mt-1 block text-xs font-semibold leading-5 text-[#667085]">
-            {value ? value.fileName : document.description}
+            {value ? (
+              <span className="flex items-center gap-1 text-[#0F8A5F]">
+                <span>✓</span>
+                <span>{value.fileName}</span>
+              </span>
+            ) : (
+              document.description
+            )}
           </span>
         </span>
-        <span className="inline-flex h-9 items-center gap-2 rounded-md border border-[#D8E2EA] bg-white px-3 text-xs font-black text-[#163B5C]">
+        <span className="inline-flex h-9 shrink-0 items-center gap-2 rounded-md border border-[#D8E2EA] bg-white px-3 text-xs font-black text-[#163B5C]">
           {status.type === "uploading" ? (
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
           ) : (

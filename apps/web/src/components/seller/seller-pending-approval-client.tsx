@@ -57,16 +57,21 @@ export function SellerPendingApprovalClient() {
   const profile = profileQuery.data;
   const rejected = profile?.approvalStatus === "REJECTED" || profile?.status === "REJECTED";
   const suspended = profile?.status === "SUSPENDED";
+  const pending = profile?.approvalStatus === "PENDING" || profile?.approvalStatus === "PENDING_APPROVAL";
   const headline = suspended
     ? "Seller account is suspended"
     : rejected
       ? "Seller application needs attention"
-      : "Seller profile is under review";
+      : pending
+        ? "Seller profile is under review"
+        : "Seller profile is under review";
   const message = suspended
     ? "Seller operations are currently restricted. Review your profile details and contact admin support if you need clarification."
     : rejected
-      ? "Your seller application was not approved yet. Review onboarding details, update any missing information, and resubmit or contact admin if needed."
-      : "You can still review onboarding details and maintain store information while admin approval is pending.";
+      ? "Your seller application was not approved. Review onboarding details, update any missing information, and resubmit or contact admin if needed."
+      : pending
+        ? "Your seller profile is currently under admin review. You can update your onboarding details and maintain store information while waiting for approval. Product publishing and order operations will unlock after approval."
+        : "You can still review onboarding details and maintain store information while admin approval is pending.";
 
   if (!profile || isSellerApproved(profile)) {
     return null;
@@ -82,7 +87,6 @@ export function SellerPendingApprovalClient() {
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-2xl font-black text-[#1F2933]">{profile.storeName}</h2>
-              <SellerStatusPill status={profile.status} />
               <SellerStatusPill status={profile.approvalStatus} />
             </div>
             <p className="mt-3 text-sm font-semibold leading-6 text-[#9F2600]">

@@ -125,7 +125,7 @@ describe("PaymentsService", () => {
       status: PaymentStatus.PAID,
     });
     expect(prisma.client.payment.updateMany).toHaveBeenCalledWith({
-      where: { id: "payment_1" },
+      where: { id: "payment_1", status: PaymentStatus.PENDING, providerPaymentId: null },
       data: {
         status: PaymentStatus.PAID,
         providerPaymentId: "pay_1",
@@ -321,11 +321,25 @@ describe("PaymentsService", () => {
       status: PaymentStatus.PAID,
     });
     expect(prisma.client.payment.updateMany).toHaveBeenCalledWith({
-      where: { id: "payment_1" },
-      data: expect.objectContaining({
+      where: { id: "payment_1", status: PaymentStatus.PENDING, providerPaymentId: null },
+      data: {
         status: PaymentStatus.PAID,
         providerPaymentId: "pay_1",
-      }),
+        rawResponse: expect.objectContaining({
+          checkoutResponse: expect.objectContaining({
+            razorpayOrderId: "order_1",
+            razorpayPaymentId: "pay_1",
+            signatureVerified: true,
+          }),
+          providerPayment: expect.objectContaining({
+            amount: 100,
+            currency: "INR",
+            id: "pay_1",
+            order_id: "order_1",
+            status: "captured",
+          }),
+        }),
+      },
     });
     expect(notifications.notifyEvent).toHaveBeenCalledWith({
       eventCode: "PAYMENT_SUCCESS",

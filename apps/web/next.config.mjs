@@ -89,7 +89,7 @@ function productionSecurityHeaders() {
     },
     {
       key: "Permissions-Policy",
-      value: "camera=(), microphone=(), geolocation=(self), payment=(self)",
+      value: "camera=(), microphone=(), geolocation=(self), payment=(self \"https://api.razorpay.com\")",
     },
   ];
 }
@@ -128,6 +128,7 @@ function buildContentSecurityPolicy() {
       imageKitUploadOrigin,
       "https://*.amazonaws.com",
       ...analyticsOrigins,
+      ...razorpayOrigins,
       ...clerkOrigins,
       ...turnstileOrigins,
       ...sentryOrigins,

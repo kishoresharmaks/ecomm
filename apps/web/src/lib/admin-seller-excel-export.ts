@@ -882,6 +882,8 @@ function documentLinkLabel(documentType: string) {
   switch (documentType) {
     case "GST_CERTIFICATE":
       return "View GST Certificate";
+    case "FSSAI_CERTIFICATE":
+      return "View FSSAI Certificate";
     case "PAN_CARD":
       return "View PAN Card";
     case "BANK_PROOF":

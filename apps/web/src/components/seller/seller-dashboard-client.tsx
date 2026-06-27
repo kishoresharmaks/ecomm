@@ -119,7 +119,6 @@ export function SellerDashboardClient() {
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-2xl font-black text-[#1F2933]">{profile?.storeName}</h2>
-                <SellerStatusPill status={profile?.status} />
                 <SellerStatusPill status={profile?.approvalStatus} />
               </div>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-[#667085]">

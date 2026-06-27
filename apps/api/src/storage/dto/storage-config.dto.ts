@@ -191,7 +191,7 @@ export class PublicImageUploadRequestDto {
 export class PrivateDocumentUploadRequestDto {
   @ApiProperty({ example: "ID_PROOF" })
   @IsString()
-  @Matches(/^(ID_PROOF|SIGNATURE_PROOF|GST_CERTIFICATE|PAN_CARD|ADDRESS_PROOF|BANK_PROOF|BUSINESS_REGISTRATION|OTHER)$/)
+  @Matches(/^(ID_PROOF|SIGNATURE_PROOF|GST_CERTIFICATE|FSSAI_CERTIFICATE|PAN_CARD|ADDRESS_PROOF|BANK_PROOF|BUSINESS_REGISTRATION|OTHER)$/)
   documentType!: string;
 
   @ApiProperty({ example: "gst-certificate.pdf" })

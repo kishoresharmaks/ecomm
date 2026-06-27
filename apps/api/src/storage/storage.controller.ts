@@ -145,6 +145,7 @@ export class StorageController {
             "ID_PROOF",
             "SIGNATURE_PROOF",
             "GST_CERTIFICATE",
+            "FSSAI_CERTIFICATE",
             "PAN_CARD",
             "ADDRESS_PROOF",
             "BANK_PROOF",

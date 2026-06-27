@@ -20,6 +20,7 @@ import {
   getCheckoutSummary,
   getCheckoutPaymentMethods,
   placeOrder,
+  cancelRazorpayOrder,
   verifyRazorpayPayment,
   type CheckoutAddress,
   type CheckoutPaymentMethodRecord,
@@ -356,28 +357,39 @@ export function CheckoutPageClient() {
         return order;
       }
 
+      let providerOrder;
       try {
-        const providerOrder = await createRazorpayProviderOrder(
+        providerOrder = await createRazorpayProviderOrder(
           customerAuth.authHeaders,
           order.orderNumber,
         );
-        const checkoutResponse = await openRazorpayCheckout(providerOrder);
-        if (!checkoutResponse) {
-          return order;
-        }
+      } catch (error) {
+        // Failed to create Razorpay provider order — cancel the placed order
+        await cancelRazorpayOrder(customerAuth.authHeaders, order.orderNumber).catch(() => null);
+        throw new Error("Could not initiate payment. Order has been cancelled. Please try again.");
+      }
 
+      const checkoutResponse = await openRazorpayCheckout(providerOrder);
+
+      if (!checkoutResponse) {
+        // User dismissed the Razorpay modal — cancel the order
+        await cancelRazorpayOrder(customerAuth.authHeaders, order.orderNumber).catch(() => null);
+        throw new Error("Payment was cancelled. Your order has not been placed.");
+      }
+
+      try {
         const verification = await verifyRazorpayPayment(customerAuth.authHeaders, {
           razorpayOrderId: checkoutResponse.razorpay_order_id,
           razorpayPaymentId: checkoutResponse.razorpay_payment_id,
           razorpaySignature: checkoutResponse.razorpay_signature,
         });
-
         return { ...order, paymentStatus: verification.status };
       } catch (error) {
+        // Payment verification failed — cancel the order
+        await cancelRazorpayOrder(customerAuth.authHeaders, order.orderNumber).catch(() => null);
         const message =
-          error instanceof Error ? error.message : "Razorpay payment could not be completed.";
-        setFormError(`Order ${order.orderNumber} was placed, but ${message}`);
-        return order;
+          error instanceof Error ? error.message : "Payment verification failed.";
+        throw new Error(`${message} Your order has been cancelled.`);
       }
     },
     onSuccess: (order) => {
@@ -867,8 +879,8 @@ async function openRazorpayCheckout(providerOrder: RazorpayOrderResponse) {
       },
     });
 
-    checkout.on("payment.failed", (response) => {
-      reject(new Error(response.error?.description ?? "Razorpay payment failed."));
+    checkout.on("payment.failed", (_response) => {
+      resolve(null);
     });
     checkout.open();
   });

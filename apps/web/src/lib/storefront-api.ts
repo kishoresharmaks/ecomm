@@ -1243,6 +1243,14 @@ export function verifyRazorpayPayment(
   );
 }
 
+export function cancelRazorpayOrder(auth: IndihubAuthHeaders, orderNumber: string) {
+  return indihubFetch<{ orderNumber: string; cancelled: boolean }>(
+    `/api/payments/razorpay/orders/${encodeURIComponent(orderNumber)}/cancel`,
+    { method: "PATCH" },
+    auth,
+  );
+}
+
 export function getCheckoutPaymentMethods(auth: IndihubAuthHeaders) {
   return indihubFetch<CheckoutPaymentMethodsResponse>(
     "/api/payments/checkout-methods",

@@ -11,9 +11,14 @@ import {
 import { createHmac, timingSafeEqual } from "node:crypto";
 import {
   EmailRecipientType,
+  DeliveryStatus,
+  InventoryMovementType,
+  OrderStatus,
   PaymentProvider,
   PaymentStatus,
   Prisma,
+  SellerOrderStatus,
+  SellerSettlementStatus,
   SettingValueType,
   StatusEventType,
 } from "@indihub/database";
@@ -522,6 +527,108 @@ export class PaymentsService {
         `${method.label} is not available for checkout. ${method.note}`,
       );
     }
+  }
+
+  async cancelRazorpayOrder(actor: RequestUser, orderNumber: string) {
+    const order = await this.prisma.client.order.findFirst({
+      where: { orderNumber },
+      include: {
+        customer: true,
+        items: true,
+        payments: true,
+        deliveryDetail: true,
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundException("Order not found.");
+    }
+
+    if (order.customer.userId !== actor.id) {
+      throw new ForbiddenException("Order does not belong to the authenticated customer.");
+    }
+
+    if (order.orderStatus === OrderStatus.CANCELLED) {
+      return { orderNumber, cancelled: true };
+    }
+
+    const razorpayPayment = order.payments.find(
+      (p) => p.provider === PaymentProvider.RAZORPAY && p.status === PaymentStatus.PENDING,
+    );
+
+    if (!razorpayPayment) {
+      throw new BadRequestException("This order cannot be cancelled: no pending Razorpay payment found.");
+    }
+
+    await this.prisma.client.$transaction(async (tx) => {
+      // Restore stock for all items
+      for (const item of order.items) {
+        await tx.productVariant.update({
+          where: { id: item.productVariantId },
+          data: { stockQuantity: { increment: item.quantity } },
+        });
+        await tx.inventoryMovement.create({
+          data: {
+            productVariantId: item.productVariantId,
+            movementType: InventoryMovementType.RETURN,
+            quantity: item.quantity,
+            reason: "Razorpay payment cancelled by customer",
+            referenceType: "order",
+            referenceId: order.id,
+            createdById: actor.id,
+          },
+        });
+      }
+
+      // Cancel the order
+      await tx.order.update({
+        where: { id: order.id },
+        data: {
+          orderStatus: OrderStatus.CANCELLED,
+          deliveryStatus: DeliveryStatus.CANCELLED,
+          paymentStatus: PaymentStatus.NOT_REQUIRED,
+        },
+      });
+
+      // Cancel the pending Razorpay payment
+      await tx.payment.update({
+        where: { id: razorpayPayment.id },
+        data: { status: PaymentStatus.FAILED },
+      });
+
+      // Cancel seller splits and shipments
+      await tx.orderSellerSplit.updateMany({
+        where: { orderId: order.id },
+        data: {
+          sellerStatus: SellerOrderStatus.CANCELLED,
+          settlementStatus: SellerSettlementStatus.CANCELLED,
+          payoutId: null,
+        },
+      });
+      await tx.orderShipment.updateMany({
+        where: { orderId: order.id },
+        data: { status: DeliveryStatus.CANCELLED },
+      });
+      if (order.deliveryDetail) {
+        await tx.deliveryDetail.update({
+          where: { orderId: order.id },
+          data: { status: DeliveryStatus.CANCELLED },
+        });
+      }
+
+      // Audit log
+      await tx.auditLog.create({
+        data: {
+          actorUserId: actor.id,
+          action: "order.cancelled.razorpay_dismissed",
+          entityType: "order",
+          entityId: order.id,
+          newValue: { orderNumber, reason: "Razorpay payment cancelled by customer" },
+        },
+      });
+    });
+
+    return { orderNumber, cancelled: true };
   }
 
   async createRazorpayOrder(actor: RequestUser, orderNumber: string) {

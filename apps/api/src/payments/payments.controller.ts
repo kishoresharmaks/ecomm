@@ -12,7 +12,9 @@ import { PaymentsService } from "./payments.service";
 @ApiTags("Payments")
 @Controller()
 export class PaymentsController {
-  constructor(@Inject(PaymentsService) private readonly paymentsService: PaymentsService) {}
+  constructor(
+    @Inject(PaymentsService) private readonly paymentsService: PaymentsService,
+  ) {}
 
   @Get("admin/payments/readiness")
   @Roles(RoleCode.ADMIN, RoleCode.FINANCE)
@@ -54,6 +56,16 @@ export class PaymentsController {
   @ApiOperation({ summary: "Verify Razorpay Checkout payment signature and refresh payment state." })
   verifyRazorpayPayment(@CurrentUser() actor: RequestUser, @Body() dto: VerifyRazorpayPaymentDto) {
     return this.paymentsService.verifyRazorpayPayment(actor, dto);
+  }
+
+  @Patch("payments/razorpay/orders/:orderNumber/cancel")
+  @Roles(RoleCode.CUSTOMER)
+  @ApiOperation({ summary: "Cancel an unpaid Razorpay order when the user dismisses or payment fails." })
+  cancelRazorpayOrder(
+    @CurrentUser() actor: RequestUser,
+    @Param("orderNumber") orderNumber: string,
+  ) {
+    return this.paymentsService.cancelRazorpayOrder(actor, orderNumber);
   }
 
   @Public()
