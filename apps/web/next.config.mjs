@@ -126,6 +126,7 @@ function buildContentSecurityPolicy() {
       apiOrigin,
       apiWebSocketOrigin,
       imageKitUploadOrigin,
+      "https://*.amazonaws.com",
       ...analyticsOrigins,
       ...clerkOrigins,
       ...turnstileOrigins,
