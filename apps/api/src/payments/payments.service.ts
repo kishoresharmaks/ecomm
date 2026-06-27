@@ -454,11 +454,15 @@ export class PaymentsService {
           method: "RAZORPAY",
           label: "Razorpay",
           enabled:
+            totalPaise >= 100 &&
             this.booleanSetting(settingMap, PAYMENT_SETTING_KEYS.razorpayEnabled, false) &&
             razorpayKeys.configured,
-          note: razorpayKeys.configured
-            ? "Pay online using Razorpay Checkout."
-            : "Razorpay keys are not configured.",
+          note:
+            totalPaise < 100 && totalPaise > 0
+              ? "Minimum order amount for Razorpay is INR 1.00."
+              : razorpayKeys.configured
+                ? "Pay online using Razorpay Checkout."
+                : "Razorpay keys are not configured.",
         },
         {
           method: "COD",
