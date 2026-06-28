@@ -1,8 +1,9 @@
-import { Inject, Injectable, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, UnauthorizedException } from "@nestjs/common";
 import { createHash, randomBytes } from "node:crypto";
 import { Prisma, RoleCode, UserStatus } from "@indihub/database";
 import { PrismaService } from "../prisma/prisma.service";
 import { hashAdminPassword, verifyAdminPassword } from "./admin-password";
+import { AdminChangePasswordDto } from "./dto/admin-change-password.dto";
 import { AdminLoginDto } from "./dto/admin-login.dto";
 import type { RequestUser } from "./types/indihub-request";
 
@@ -200,6 +201,74 @@ export class AdminAuthService {
 
   async me(actor: RequestUser) {
     return actor;
+  }
+
+  async changePassword(
+    authorizationHeader: string | undefined,
+    actor: RequestUser,
+    dto: AdminChangePasswordDto,
+  ) {
+    const token = this.readBearerToken(authorizationHeader);
+    if (!token?.startsWith(adminTokenPrefix)) {
+      throw new UnauthorizedException("Admin session has expired. Sign in again.");
+    }
+
+    if (dto.currentPassword === dto.newPassword) {
+      throw new BadRequestException("New password must be different from current password.");
+    }
+
+    const credential = await this.prisma.client.adminCredential.findUnique({
+      where: { userId: actor.id },
+    });
+    if (!credential) {
+      throw new BadRequestException("Admin password is not configured for this account.");
+    }
+
+    const passwordValid = await verifyAdminPassword(
+      dto.currentPassword,
+      credential.passwordSalt,
+      credential.passwordHash,
+    );
+    if (!passwordValid) {
+      throw new UnauthorizedException("Current password is incorrect.");
+    }
+
+    const hashed = await hashAdminPassword(dto.newPassword);
+    const currentTokenHash = this.hashToken(token);
+    await this.prisma.client.$transaction(async (tx) => {
+      await tx.adminCredential.update({
+        where: { id: credential.id },
+        data: {
+          passwordHash: hashed.hash,
+          passwordSalt: hashed.salt,
+          passwordAlgorithm: "scrypt",
+          passwordUpdatedAt: new Date(),
+          failedLoginCount: 0,
+          lockedUntil: null,
+        },
+      });
+      await tx.adminSession.updateMany({
+        where: {
+          userId: actor.id,
+          tokenHash: { not: currentTokenHash },
+          revokedAt: null,
+        },
+        data: { revokedAt: new Date() },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorUserId: actor.id,
+          action: "admin.auth.password_changed",
+          entityType: "admin_credential",
+          entityId: credential.id,
+          newValue: {
+            otherSessionsRevoked: true,
+          },
+        },
+      });
+    });
+
+    return { updated: true };
   }
 
   private async findUserByEmail(email: string) {

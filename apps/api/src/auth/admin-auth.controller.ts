@@ -5,6 +5,7 @@ import { CurrentUser } from "./decorators/current-user.decorator";
 import { Public } from "./decorators/public.decorator";
 import { Roles } from "./decorators/roles.decorator";
 import { AdminAuthService } from "./admin-auth.service";
+import { AdminChangePasswordDto } from "./dto/admin-change-password.dto";
 import { AdminLoginDto } from "./dto/admin-login.dto";
 import type { RequestUser } from "./types/indihub-request";
 
@@ -36,6 +37,18 @@ export class AdminAuthController {
   @ApiOperation({ summary: "Read the current standalone admin session user." })
   me(@CurrentUser() actor: RequestUser) {
     return this.adminAuthService.me(actor);
+  }
+
+  @Post("change-password")
+  @Roles(RoleCode.ADMIN, RoleCode.FINANCE, RoleCode.COURIER_MANAGER)
+  @ApiHeader({ name: "Authorization", required: true })
+  @ApiOperation({ summary: "Change the current standalone back-office password." })
+  changePassword(
+    @Headers("authorization") authorizationHeader: string | undefined,
+    @CurrentUser() actor: RequestUser,
+    @Body() dto: AdminChangePasswordDto,
+  ) {
+    return this.adminAuthService.changePassword(authorizationHeader, actor, dto);
   }
 }
 

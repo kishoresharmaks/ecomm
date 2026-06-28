@@ -1863,10 +1863,13 @@ export function AdminUsersPageClient() {
       ),
   });
   const setBackOfficePassword = useMutation({
-    mutationFn: ({ userId, password }: { userId: string; password: string }) =>
+    mutationFn: ({ userId, password, note }: { userId: string; password: string; note?: string }) =>
       adminRequest(`/api/admin/users/${userId}/backoffice-password`, auth.authHeaders, {
         method: "PUT",
-        body: JSON.stringify({ password, note: "Credential updated from admin user console." }),
+        body: JSON.stringify({
+          password,
+          note: note?.trim() || "Credential updated from admin user console.",
+        }),
       }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-users"] }),
   });
@@ -1997,8 +2000,12 @@ export function AdminUsersPageClient() {
         onStatus={requestUserStatus}
         onAddRole={(userId, roleCode) => updateRole.mutate({ userId, roleCode, action: "add" })}
         onRemoveRole={requestRoleRemoval}
-        onSetBackOfficePassword={(userId, password) =>
-          setBackOfficePassword.mutate({ userId, password })
+        onSetBackOfficePassword={(userId, password, note) =>
+          setBackOfficePassword.mutate({
+            userId,
+            password,
+            ...(note ? { note } : {}),
+          })
         }
         onUpdateDeliveryProfile={(userId, payload) =>
           updateDeliveryProfile.mutate({ userId, payload })
@@ -10840,7 +10847,7 @@ function UsersRolesTable({
   onStatus: (userId: string, status: string) => void;
   onAddRole: (userId: string, roleCode: PlatformRoleCode) => void;
   onRemoveRole: (userId: string, roleCode: PlatformRoleCode) => void;
-  onSetBackOfficePassword: (userId: string, password: string) => void;
+  onSetBackOfficePassword: (userId: string, password: string, note?: string) => void;
   onUpdateDeliveryProfile: (userId: string, payload: Record<string, string>) => void;
   disabled?: boolean | undefined;
 }) {
@@ -11266,7 +11273,7 @@ function UserDetailsDialog({
   onStatus: (status: string) => void;
   onAddRole: (userId: string, roleCode: PlatformRoleCode) => void;
   onRemoveRole: (userId: string, roleCode: PlatformRoleCode) => void;
-  onSetBackOfficePassword: (userId: string, password: string) => void;
+  onSetBackOfficePassword: (userId: string, password: string, note?: string) => void;
   onUpdateDeliveryProfile: (userId: string, payload: Record<string, string>) => void;
   disabled?: boolean | undefined;
 }) {
@@ -12164,44 +12171,79 @@ function BackOfficePasswordControl({
   disabled,
 }: {
   user: UserRecord;
-  onSetPassword: (userId: string, password: string) => void;
+  onSetPassword: (userId: string, password: string, note?: string) => void;
   disabled?: boolean | undefined;
 }) {
   const roles = userRoleCodes(user);
   const backOfficeUser = roles.includes("ADMIN") || roles.includes("FINANCE") || roles.includes("COURIER_MANAGER");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [note, setNote] = useState("");
+  const [saved, setSaved] = useState(false);
 
   if (!backOfficeUser) {
     return null;
   }
 
+  const mismatch = Boolean(confirmPassword) && password !== confirmPassword;
+
   return (
     <div className="mt-3 rounded-md border border-[#D8E2EA] bg-[#F8FAFC] p-3">
-      <label className="block">
-        <span className="text-xs font-black uppercase tracking-wide text-[#667085]">
-          Back-office password
-        </span>
+      <p className="text-xs font-black uppercase tracking-wide text-[#667085]">
+        Back-office password
+      </p>
+      <div className="mt-2 grid gap-2 sm:grid-cols-2">
         <input
           type="password"
           value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          placeholder="Set or rotate password"
-          className="mt-2 h-10 w-full rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-semibold text-[#1F2933] outline-none focus:border-[#ED3500]"
+          onChange={(event) => {
+            setPassword(event.target.value);
+            setSaved(false);
+          }}
+          placeholder="New password"
+          autoComplete="new-password"
+          className="h-10 w-full rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-semibold text-[#1F2933] outline-none focus:border-[#ED3500]"
+        />
+        <input
+          type="password"
+          value={confirmPassword}
+          onChange={(event) => {
+            setConfirmPassword(event.target.value);
+            setSaved(false);
+          }}
+          placeholder="Confirm password"
+          autoComplete="new-password"
+          className="h-10 w-full rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-semibold text-[#1F2933] outline-none focus:border-[#ED3500]"
+        />
+      </div>
+      <label className="mt-2 block">
+        <span className="sr-only">Password change note</span>
+        <input
+          type="text"
+          value={note}
+          onChange={(event) => setNote(event.target.value)}
+          placeholder="Audit note, e.g. rotated for finance manager"
+          className="h-10 w-full rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-semibold text-[#1F2933] outline-none focus:border-[#ED3500]"
         />
       </label>
+      {mismatch ? <p className="mt-2 text-xs font-black text-[#B42318]">Passwords do not match.</p> : null}
+      {saved ? <p className="mt-2 text-xs font-black text-[#0F8A5F]">Password update submitted.</p> : null}
       <Button
         type="button"
         size="sm"
         variant="outline"
         className="mt-2"
         onClick={() => {
-          onSetPassword(user.id, password);
+          onSetPassword(user.id, password, note);
           setPassword("");
+          setConfirmPassword("");
+          setNote("");
+          setSaved(true);
         }}
-        disabled={disabled || password.length < 8}
+        disabled={disabled || password.length < 8 || password !== confirmPassword}
       >
         <KeyRound className="h-4 w-4" />
-        Save password
+        Rotate password
       </Button>
       <p className="mt-2 text-xs font-semibold text-[#667085]">
         Required for standalone Admin, Finance, or Courier workspace sign in.

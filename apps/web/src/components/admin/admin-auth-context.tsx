@@ -26,6 +26,7 @@ type AdminAuthContextValue = AdminAuthState & {
   isAuthenticated: boolean;
   authHeaders: IndihubAuthHeaders;
   login: (email: string, password: string) => Promise<void>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   logout: () => Promise<void>;
 };
 
@@ -110,6 +111,16 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
         };
         localStorage.setItem(storageKey, JSON.stringify(nextState));
         setState(nextState);
+      },
+      changePassword: async (currentPassword, newPassword) => {
+        await indihubFetch(
+          "/api/admin/auth/change-password",
+          {
+            method: "POST",
+            body: JSON.stringify({ currentPassword, newPassword }),
+          },
+          { bearerToken: state.token },
+        );
       },
       logout: async () => {
         const token = state.token;

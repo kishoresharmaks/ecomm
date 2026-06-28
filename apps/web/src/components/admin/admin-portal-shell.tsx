@@ -11,6 +11,7 @@ import {
   Dialog,
   DialogBackdrop,
   DialogPanel,
+  DialogTitle,
   Disclosure,
   DisclosureButton,
   DisclosurePanel,
@@ -33,6 +34,7 @@ import {
   CreditCard,
   Database,
   Home,
+  KeyRound,
   Landmark,
   LayoutDashboard,
   LockKeyhole,
@@ -60,6 +62,7 @@ import {
   X,
 } from "lucide-react";
 import { Button, StatusBadge, cn } from "@indihub/ui";
+import { userFacingApiErrorMessage } from "@/lib/api";
 import { adminNav } from "@/lib/portal-nav";
 import { useAdminAuth } from "./admin-auth-context";
 
@@ -429,51 +432,226 @@ function AdminRouteSearch({ onNavigate }: { onNavigate?: () => void }) {
 
 function AdminSessionMenu() {
   const auth = useAdminAuth();
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
 
   return (
-    <Menu>
-      <MenuButton className="flex h-11 items-center gap-2 rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-black text-[#1F2933] transition hover:bg-[#FFFCFB] focus:outline-none data-focus:ring-2 data-focus:ring-[#ED3500]">
-        <span className="grid h-7 w-7 place-items-center rounded-md bg-[#ECFDF3] text-[#0F8A5F]">
-          <ShieldCheck className="h-4 w-4" aria-hidden="true" />
-        </span>
-        <span className="hidden max-w-40 truncate md:block">{auth.user?.email}</span>
-        <ChevronDown className="h-4 w-4 text-[#667085]" aria-hidden="true" />
-      </MenuButton>
-      <MenuItems
-        anchor={{ to: "bottom end", gap: "8px", padding: "12px" }}
-        transition
-        className="z-50 w-72 rounded-lg border border-[#D8E2EA] bg-white p-1 shadow-xl outline-none transition duration-150 data-closed:scale-95 data-closed:opacity-0"
-      >
-        <div className="border-b border-[#E5E7EB] px-3 py-3">
-          <div className="flex items-start gap-3">
-            <span className="grid h-10 w-10 place-items-center rounded-md bg-[#EAF1F7] text-[#163B5C]">
-              <UserCircle className="h-5 w-5" aria-hidden="true" />
-            </span>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-black text-[#1F2933]">{auth.user?.email}</p>
-              <p className="mt-1 text-xs font-semibold text-[#667085]">
-                Expires {formatDate(auth.expiresAt)}
-              </p>
+    <>
+      <Menu>
+        <MenuButton className="flex h-11 items-center gap-2 rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-black text-[#1F2933] transition hover:bg-[#FFFCFB] focus:outline-none data-focus:ring-2 data-focus:ring-[#ED3500]">
+          <span className="grid h-7 w-7 place-items-center rounded-md bg-[#ECFDF3] text-[#0F8A5F]">
+            <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+          </span>
+          <span className="hidden max-w-40 truncate md:block">{auth.user?.email}</span>
+          <ChevronDown className="h-4 w-4 text-[#667085]" aria-hidden="true" />
+        </MenuButton>
+        <MenuItems
+          anchor={{ to: "bottom end", gap: "8px", padding: "12px" }}
+          transition
+          className="z-50 w-72 rounded-lg border border-[#D8E2EA] bg-white p-1 shadow-xl outline-none transition duration-150 data-closed:scale-95 data-closed:opacity-0"
+        >
+          <div className="border-b border-[#E5E7EB] px-3 py-3">
+            <div className="flex items-start gap-3">
+              <span className="grid h-10 w-10 place-items-center rounded-md bg-[#EAF1F7] text-[#163B5C]">
+                <UserCircle className="h-5 w-5" aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-black text-[#1F2933]">{auth.user?.email}</p>
+                <p className="mt-1 text-xs font-semibold text-[#667085]">
+                  Expires {formatDate(auth.expiresAt)}
+                </p>
+              </div>
             </div>
           </div>
+          <MenuItem>
+            {({ focus }) => (
+              <button
+                type="button"
+                onClick={() => setPasswordDialogOpen(true)}
+                className={cn(
+                  "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm font-black text-[#1F2933]",
+                  focus && "bg-[#F8FAFC]",
+                )}
+              >
+                <KeyRound className="h-4 w-4" aria-hidden="true" />
+                Change password
+              </button>
+            )}
+          </MenuItem>
+          <MenuItem>
+            {({ focus }) => (
+              <button
+                type="button"
+                onClick={() => auth.logout()}
+                className={cn(
+                  "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm font-black text-[#B42318]",
+                  focus && "bg-[#FFF0EC]",
+                )}
+              >
+                <LogOut className="h-4 w-4" aria-hidden="true" />
+                Sign out
+              </button>
+            )}
+          </MenuItem>
+        </MenuItems>
+      </Menu>
+      <AdminChangePasswordDialog
+        open={passwordDialogOpen}
+        onClose={() => setPasswordDialogOpen(false)}
+      />
+    </>
+  );
+}
+
+function AdminChangePasswordDialog({
+  open,
+  onClose,
+}: {
+  open: boolean;
+  onClose: () => void;
+}) {
+  const auth = useAdminAuth();
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [notice, setNotice] = useState<{ tone: "success" | "danger"; message: string } | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (!open) {
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setNotice(null);
+      setIsSaving(false);
+    }
+  }, [open]);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setNotice(null);
+
+    if (newPassword !== confirmPassword) {
+      setNotice({ tone: "danger", message: "New password and confirmation do not match." });
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      await auth.changePassword(currentPassword, newPassword);
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setNotice({ tone: "success", message: "Password changed. Other active admin sessions were signed out." });
+    } catch (error) {
+      setNotice({ tone: "danger", message: userFacingApiErrorMessage(error) });
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onClose={onClose} className="relative z-[100]">
+      <DialogBackdrop
+        transition
+        className="fixed inset-0 bg-[#101828]/50 transition duration-200 data-closed:opacity-0"
+      />
+      <div className="fixed inset-0 w-screen overflow-y-auto px-4 py-6">
+        <div className="flex min-h-full items-center justify-center">
+          <DialogPanel
+            transition
+            className="w-full max-w-md rounded-lg bg-white p-5 shadow-2xl transition duration-200 data-closed:scale-95 data-closed:opacity-0"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <DialogTitle className="text-xl font-black text-[#0B1F3A]">
+                  Change admin password
+                </DialogTitle>
+                <p className="mt-1 text-sm font-semibold text-[#667085]">
+                  Update your standalone back-office login password.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-[#D8E2EA] text-[#667085] transition hover:border-[#ED3500] hover:text-[#ED3500]"
+                aria-label="Close password dialog"
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </div>
+
+            {notice ? (
+              <div className="mt-4">
+                <StatusBadge tone={notice.tone}>{notice.message}</StatusBadge>
+              </div>
+            ) : null}
+
+            <form onSubmit={submit} className="mt-5 space-y-4">
+              <AdminPasswordField
+                label="Current password"
+                value={currentPassword}
+                onChange={setCurrentPassword}
+                autoComplete="current-password"
+              />
+              <AdminPasswordField
+                label="New password"
+                value={newPassword}
+                onChange={setNewPassword}
+                autoComplete="new-password"
+              />
+              <AdminPasswordField
+                label="Confirm new password"
+                value={confirmPassword}
+                onChange={setConfirmPassword}
+                autoComplete="new-password"
+              />
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <Button type="button" variant="ghost" onClick={onClose} disabled={isSaving}>
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={
+                    isSaving ||
+                    currentPassword.length < 8 ||
+                    newPassword.length < 8 ||
+                    confirmPassword.length < 8
+                  }
+                >
+                  <KeyRound className="h-4 w-4" aria-hidden="true" />
+                  {isSaving ? "Saving..." : "Save password"}
+                </Button>
+              </div>
+            </form>
+          </DialogPanel>
         </div>
-        <MenuItem>
-          {({ focus }) => (
-            <button
-              type="button"
-              onClick={() => auth.logout()}
-              className={cn(
-                "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm font-black text-[#B42318]",
-                focus && "bg-[#FFF0EC]",
-              )}
-            >
-              <LogOut className="h-4 w-4" aria-hidden="true" />
-              Sign out
-            </button>
-          )}
-        </MenuItem>
-      </MenuItems>
-    </Menu>
+      </div>
+    </Dialog>
+  );
+}
+
+function AdminPasswordField({
+  label,
+  value,
+  onChange,
+  autoComplete,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  autoComplete: string;
+}) {
+  return (
+    <label className="block">
+      <span className="text-xs font-black uppercase tracking-wide text-[#667085]">{label}</span>
+      <input
+        type="password"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        autoComplete={autoComplete}
+        className="mt-2 h-11 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 text-sm font-semibold text-[#1F2933] outline-none focus:border-[#ED3500] focus:bg-white"
+      />
+    </label>
   );
 }
 
