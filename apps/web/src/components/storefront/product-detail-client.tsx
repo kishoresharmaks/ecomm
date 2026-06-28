@@ -44,7 +44,6 @@ import { displayStorefrontAttributeValue } from "./storefront-product-attributes
 import { getStorefrontStockStatus } from "./storefront-stock-status";
 import {
   StorefrontErrorPanel,
-  StorefrontNotice,
   StorefrontQuantityStepper,
   StorefrontSkeleton,
 } from "./storefront-ui";
@@ -58,6 +57,7 @@ export function ProductDetailClient({ slug }: { slug: string }) {
   const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [notice, setNotice] = useState<string | null>(null);
+  const [noticeVisible, setNoticeVisible] = useState(false);
   const wishlist = useStorefrontWishlist();
 
   const productQuery = useQuery({
@@ -113,6 +113,21 @@ export function ProductDetailClient({ slug }: { slug: string }) {
     }
   }, [product]);
 
+  useEffect(() => {
+    if (!notice) {
+      setNoticeVisible(false);
+      return;
+    }
+
+    setNoticeVisible(true);
+    const closeTimer = window.setTimeout(() => setNoticeVisible(false), 2600);
+    const clearTimer = window.setTimeout(() => setNotice(null), 3000);
+    return () => {
+      window.clearTimeout(closeTimer);
+      window.clearTimeout(clearTimer);
+    };
+  }, [notice]);
+
   const addMutation = useMutation({
     mutationFn: async () => {
       if (!product) {
@@ -159,22 +174,44 @@ export function ProductDetailClient({ slug }: { slug: string }) {
       return;
     }
 
-    const shareUrl = window.location.href;
+    const shareUrl = `${window.location.origin}/products/${product.slug}`;
+    const shareText = productShareText(product, selectedVariant);
+    const clipboardText = `${product.name}\n${shareText}\n${shareUrl}`;
     try {
       if (navigator.share) {
-        await navigator.share({ title: product.name, url: shareUrl });
-        return;
+        try {
+          await navigator.share({
+            title: product.name,
+            text: shareText,
+            url: shareUrl,
+          });
+          return;
+        } catch (error) {
+          if (isShareAbort(error)) {
+            return;
+          }
+          console.error("Product native share failed", error);
+        }
       }
 
-      await navigator.clipboard.writeText(shareUrl);
+      await copyProductShareText(clipboardText);
       setNotice("Product link copied.");
-    } catch {
-      setNotice("Unable to share this product right now.");
+    } catch (error) {
+      console.error("Product share fallback failed", error);
+      setNotice("Unable to share this product right now. Please try again.");
     }
   }
 
   return (
     <StorefrontFrame>
+      <ProductToast
+        message={notice}
+        visible={noticeVisible}
+        onClose={() => {
+          setNoticeVisible(false);
+          setNotice(null);
+        }}
+      />
       {productQuery.isLoading ? (
         <section className="mx-auto grid max-w-[1440px] gap-4 px-4 py-6 md:grid-cols-[minmax(0,1fr)_420px] md:px-6 lg:grid-cols-[minmax(0,1fr)_560px] lg:px-10">
           <StorefrontSkeleton className="min-h-[460px] bg-white" />
@@ -272,7 +309,7 @@ export function ProductDetailClient({ slug }: { slug: string }) {
                   {activeDeal ? <span className="rounded-full bg-[#FFF0EC] px-3 py-1 text-xs font-black text-[#ED3500]">Deal</span> : null}
                 </div>
                 <div className="flex shrink-0 gap-2">
-                  <Button type="button" variant="outline" size="sm" onClick={() => void handleShare()} className="hidden rounded-full md:inline-flex">
+                  <Button type="button" variant="outline" size="sm" onClick={() => void handleShare()} className="rounded-full">
                     <Share2 size={15} /> Share
                   </Button>
                   <Button
@@ -432,8 +469,6 @@ export function ProductDetailClient({ slug }: { slug: string }) {
                       : "Wishlist"}
                 </Button>
               </div>
-
-              {notice ? <StorefrontNotice className="mt-5">{notice}</StorefrontNotice> : null}
 
               {!customerAuth.enabled ? (
                 <div className="mt-6">
@@ -645,6 +680,46 @@ function ProductTrustItem({ icon, label, value }: { icon: ReactNode; label: stri
   );
 }
 
+function ProductToast({
+  message,
+  visible,
+  onClose,
+}: {
+  message: string | null;
+  visible: boolean;
+  onClose: () => void;
+}) {
+  if (!message) {
+    return null;
+  }
+
+  return (
+    <div
+      className={cn(
+        "fixed right-4 top-[calc(env(safe-area-inset-top)+128px)] z-[150] w-[min(360px,calc(100vw-2rem))] rounded-lg border border-[#D8E2EA] bg-white px-4 py-3 text-sm font-black text-[#163B5C] shadow-[0_18px_44px_rgba(15,23,42,0.18)] transition-all duration-300 ease-out md:right-6 md:top-36",
+        visible ? "translate-x-0 opacity-100" : "translate-x-8 opacity-0",
+      )}
+      role="status"
+      aria-live="polite"
+    >
+      <div className="flex items-start gap-3">
+        <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[#EAFBF2] text-[#0F8A5F]">
+          <BadgeCheck className="h-4 w-4" aria-hidden="true" />
+        </span>
+        <p className="min-w-0 flex-1 leading-5">{message}</p>
+        <button
+          type="button"
+          className="rounded-full px-1 text-[#667085] transition hover:bg-[#F8FAFC] hover:text-[#1F2933]"
+          onClick={onClose}
+          aria-label="Dismiss notification"
+        >
+          x
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function SupportPoint({ icon, text }: { icon: ReactNode; text: string }) {
   return (
     <span className="flex items-center gap-3">
@@ -769,4 +844,40 @@ function publicPurchaseModeLabel(value: string) {
   }
 
   return null;
+}
+
+function productShareText(product: ProductSummary, variant: ProductVariant | null) {
+  const description = product.description?.trim();
+  const priceText = variant ? `Price: ${formatMoney(variant.pricePaise, variant.currency)}.` : "";
+  const sellerText = product.seller?.storeName ? `Sold by ${product.seller.storeName}.` : "";
+
+  return [description, priceText, sellerText].filter(Boolean).join(" ");
+}
+
+function isShareAbort(error: unknown) {
+  return error instanceof DOMException && (error.name === "AbortError" || error.name === "NotAllowedError");
+}
+
+async function copyProductShareText(text: string) {
+  if (navigator.clipboard?.writeText && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textArea = document.createElement("textarea");
+  textArea.value = text;
+  textArea.setAttribute("readonly", "");
+  textArea.style.position = "fixed";
+  textArea.style.left = "-9999px";
+  textArea.style.top = "0";
+  document.body.appendChild(textArea);
+  textArea.select();
+  try {
+    const copied = document.execCommand("copy");
+    if (!copied) {
+      throw new Error("Clipboard copy command returned false.");
+    }
+  } finally {
+    document.body.removeChild(textArea);
+  }
 }

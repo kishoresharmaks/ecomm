@@ -187,8 +187,12 @@ function CheckoutScreen() {
   );
   const paymentMethodsError =
     paymentMethodsQuery.error instanceof Error ? paymentMethodsQuery.error.message : paymentMethodsQuery.isError ? "Payment methods could not load." : "";
+  const deliveryServiceabilityError = deliveryPreference === "DELIVER_TO_ADDRESS"
+    ? serviceabilityCheckoutError(checkoutSummaryQuery.error)
+    : "";
   const summaryError =
-    checkoutSummaryQuery.error instanceof Error ? checkoutSummaryQuery.error.message : checkoutSummaryQuery.isError ? "Checkout totals could not load." : "";
+    deliveryServiceabilityError ||
+    (checkoutSummaryQuery.error instanceof Error ? checkoutSummaryQuery.error.message : checkoutSummaryQuery.isError ? "Checkout totals could not load." : "");
   const checkoutDataBlockedReason =
     paymentMethodsError ||
     (deliveryPreference === "DELIVER_TO_ADDRESS" && !selectedAddress
@@ -319,7 +323,7 @@ function CheckoutScreen() {
         throw new Error("Enter the bank transfer reference or UTR.");
       }
       if (checkoutSummaryQuery.isError) {
-        throw new Error(summaryError || "Checkout totals could not load.");
+        throw new Error(summaryError || "Checkout totals could not load. Please retry before placing the order.");
       }
       if (checkoutSummaryQuery.isFetching) {
         throw new Error("Refreshing checkout totals. Try again in a moment.");
@@ -1123,7 +1127,24 @@ function isCartEmptyError(error: unknown) {
   return error instanceof Error && error.message.toLowerCase().includes("cart is empty");
 }
 
+function serviceabilityCheckoutError(error: unknown) {
+  if (!(error instanceof MobileApiError) || error.status !== 400) {
+    return "";
+  }
+
+  const message = error.message.trim();
+  if (!message.toLowerCase().includes("not serviceable")) {
+    return "";
+  }
+
+  return "Delivery is not available for this address yet. Please choose another saved address, add a different delivery location, or select pickup if it is available.";
+}
+
 function isRecoverableOrderPlacementError(error: unknown) {
+  if (serviceabilityCheckoutError(error)) {
+    return false;
+  }
+
   if (isCartEmptyError(error)) {
     return true;
   }

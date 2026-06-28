@@ -2,11 +2,10 @@
 
 import Link from "next/link";
 import type { Route } from "next";
-import { useRouter } from "next/navigation";
-import { ArrowRight, CheckCircle2, Heart, ShoppingCart, Trash2 } from "lucide-react";
+import { Check, MoreVertical, PackageCheck, ShoppingCart, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
+import { Button, SectionHeading, StatusBadge, cn } from "@indihub/ui";
 import { CustomerAuthNotice } from "@/components/auth/customer-auth-notice";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
 import { useMarket } from "@/components/market/market-context";
@@ -14,16 +13,17 @@ import { useConfirmationDialog } from "@/components/shared/confirmation-dialog";
 import { StorefrontImage } from "@/components/storefront/storefront-image";
 import { AccountShell } from "./account-shell";
 import { EmptyState, ErrorPanel, PagePanel, SkeletonBlock } from "./account-ui";
-import { getWishlist, removeWishlistItem, type WishlistProduct } from "@/lib/account-api";
-import { addCartItem, formatMoney, isPurchasableVariant } from "@/lib/storefront-api";
+import { getWishlist, removeWishlistItem, type WishlistProduct, type WishlistSummary } from "@/lib/account-api";
+import { addCartItem, isPurchasableVariant, type ProductVariant } from "@/lib/storefront-api";
+
+type WishlistItem = WishlistSummary["items"][number];
 
 export function WishlistClient() {
   const queryClient = useQueryClient();
-  const router = useRouter();
   const customerAuth = useCustomerAuth();
   const market = useMarket();
   const [notice, setNotice] = useState<string | null>(null);
-  const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const confirmation = useConfirmationDialog();
 
   const wishlistQuery = useQuery({
@@ -33,84 +33,113 @@ export function WishlistClient() {
     retry: false
   });
 
-  const removeMutation = useMutation({
-    mutationFn: (productId: string) => removeWishlistItem(customerAuth.authHeaders, productId),
-    onSuccess: () => {
-      setNotice("Product removed from wishlist.");
-      void queryClient.invalidateQueries({ queryKey: ["account-wishlist", customerAuth.authKey] });
-      void queryClient.invalidateQueries({ queryKey: ["account-profile", customerAuth.authKey] });
-    },
-    onError: (error) => setNotice(error instanceof Error ? error.message : "Unable to remove product.")
-  });
-
-  const cartMutation = useMutation({
-    mutationFn: (product: WishlistProduct) => {
-      const variant = primaryWishlistVariant(product);
-      if (!customerAuth.enabled) {
-        throw new Error("Sign in before using cart actions.");
-      }
-      if (!variant) {
-        throw new Error("This product has no active variant.");
-      }
-
-      return addCartItem(customerAuth.authHeaders, variant.id, 1);
-    },
-    onSuccess: () => {
-      setNotice("Product added to cart.");
-      void queryClient.invalidateQueries({ queryKey: ["cart", customerAuth.authKey] });
-    },
-    onError: (error) => setNotice(error instanceof Error ? error.message : "Unable to add product to cart.")
-  });
-
   const items = wishlistQuery.data?.items ?? [];
-  const selectedItem = useMemo(() => {
-    const firstAvailable = items.find((item) => primaryWishlistVariant(item.product));
-    return items.find((item) => item.product.id === selectedProductId) ?? firstAvailable ?? null;
-  }, [items, selectedProductId]);
-  const selectedProduct = selectedItem?.product ?? null;
-  const selectedVariant = selectedProduct ? primaryWishlistVariant(selectedProduct) : null;
-  const selectedImage = selectedProduct
-    ? selectedProduct.images.find((entry) => entry.isPrimary)?.url ?? selectedProduct.images[0]?.url ?? null
-    : null;
+  const purchasableItems = useMemo(() => items.filter((item) => primaryWishlistVariant(item.product)), [items]);
+  const selectedItems = useMemo(
+    () => items.filter((item) => selectedIds.has(item.product.id) && primaryWishlistVariant(item.product)),
+    [items, selectedIds],
+  );
+  const summary = useMemo(() => wishlistSummary(items, selectedItems), [items, selectedItems]);
+  const allPurchasableSelected = purchasableItems.length > 0 && purchasableItems.every((item) => selectedIds.has(item.product.id));
 
   useEffect(() => {
     if (!items.length) {
-      setSelectedProductId(null);
+      setSelectedIds(new Set());
       return;
     }
 
-    if (!selectedProductId || !items.some((item) => item.product.id === selectedProductId)) {
-      const firstAvailable = items.find((item) => primaryWishlistVariant(item.product));
-      setSelectedProductId(firstAvailable?.product.id ?? items[0]?.product.id ?? null);
-    }
-  }, [items, selectedProductId]);
+    setSelectedIds((current) => {
+      const availableIds = new Set(items.map((item) => item.product.id));
+      const next = new Set([...current].filter((id) => availableIds.has(id)));
+      if (next.size === current.size) {
+        return current;
+      }
+      return next;
+    });
+  }, [items]);
 
-  function checkoutSelectedProduct() {
-    if (!customerAuth.enabled) {
-      setNotice("Sign in before checkout.");
+  const removeMutation = useMutation({
+    mutationFn: async (productIds: string[]) => {
+      for (const productId of productIds) {
+        await removeWishlistItem(customerAuth.authHeaders, productId);
+      }
+    },
+    onSuccess: (_, productIds) => {
+      setNotice(productIds.length === 1 ? "Product removed from wishlist." : `${productIds.length} products removed from wishlist.`);
+      setSelectedIds((current) => {
+        const next = new Set(current);
+        productIds.forEach((id) => next.delete(id));
+        return next;
+      });
+      void queryClient.invalidateQueries({ queryKey: ["account-wishlist", customerAuth.authKey] });
+      void queryClient.invalidateQueries({ queryKey: ["account-profile", customerAuth.authKey] });
+    },
+    onError: (error) => setNotice(error instanceof Error ? error.message : "Unable to remove selected products.")
+  });
+
+  const cartMutation = useMutation({
+    mutationFn: async (products: WishlistProduct[]) => {
+      if (!customerAuth.enabled) {
+        throw new Error("Sign in before using cart actions.");
+      }
+
+      for (const product of products) {
+        const variant = primaryWishlistVariant(product);
+        if (!variant) {
+          continue;
+        }
+        await addCartItem(customerAuth.authHeaders, variant.id, 1);
+      }
+    },
+    onSuccess: (_, products) => {
+      setNotice(products.length === 1 ? "Product added to cart." : `${products.length} selected products added to cart.`);
+      void queryClient.invalidateQueries({ queryKey: ["cart", customerAuth.authKey] });
+    },
+    onError: (error) => setNotice(error instanceof Error ? error.message : "Unable to add selected products to cart.")
+  });
+
+  function toggleProduct(productId: string) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(productId)) {
+        next.delete(productId);
+      } else {
+        next.add(productId);
+      }
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    setSelectedIds((current) => {
+      if (allPurchasableSelected) {
+        return new Set();
+      }
+      const next = new Set(current);
+      purchasableItems.forEach((item) => next.add(item.product.id));
+      return next;
+    });
+  }
+
+  function addSelectedToCart() {
+    if (!selectedItems.length) {
+      setNotice("Select available products before adding to cart.");
       return;
     }
-    if (!selectedProduct || !selectedVariant) {
-      setNotice("Select an available product before checkout.");
+    cartMutation.mutate(selectedItems.map((item) => item.product));
+  }
+
+  function removeSelected() {
+    if (!selectedItems.length) {
+      setNotice("Select products before removing.");
       return;
     }
-
-    window.sessionStorage.setItem(
-      "indihub.directCheckout.v1",
-      JSON.stringify({
-        variantId: selectedVariant.id,
-        quantity: 1,
-        productName: selectedProduct.name,
-        productSlug: selectedProduct.slug,
-        imageUrl: selectedImage,
-        sellerName: selectedProduct.seller.storeName,
-        variantName: selectedVariant.variantName,
-        sku: selectedVariant.sku,
-        pricePaise: selectedVariant.pricePaise,
-        currency: selectedVariant.currency,
-      }),
-    );
-    router.push(`/checkout?directProductVariantId=${encodeURIComponent(selectedVariant.id)}&directQuantity=1&source=wishlist`);
+    confirmation.requestConfirmation({
+      title: "Remove selected products?",
+      description: `${selectedItems.length} selected product${selectedItems.length === 1 ? "" : "s"} will be removed from your wishlist.`,
+      confirmLabel: "Remove selected",
+      onConfirm: () => removeMutation.mutate(selectedItems.map((item) => item.product.id))
+    });
   }
 
   return (
@@ -119,11 +148,32 @@ export function WishlistClient() {
       {!customerAuth.enabled ? <CustomerAuthNotice /> : null}
 
       <PagePanel>
-        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-          <SectionHeading title="Saved products" description="Wishlist items are tied to the customer account and active approved products." />
-          <Button asChild variant="outline">
-            <Link href="/search">Find products</Link>
-          </Button>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <SectionHeading
+            title={`Saved products (${items.length})`}
+            description="All your saved items in one place. Select and move to cart or remove."
+          />
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={toggleSelectAll}
+              disabled={!purchasableItems.length}
+              className="inline-flex h-10 items-center gap-2 rounded-md px-3 text-sm font-black text-[#1F2933] transition hover:bg-[#FFF3EE] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <span className={cn("grid h-5 w-5 place-items-center rounded border", allPurchasableSelected ? "border-[#ED3500] bg-[#ED3500] text-white" : "border-[#D0D5DD] bg-white")}>
+                {allPurchasableSelected ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : null}
+              </span>
+              Select all ({purchasableItems.length})
+            </button>
+            <Button type="button" variant="outline" disabled={!selectedItems.length || removeMutation.isPending} onClick={removeSelected}>
+              <Trash2 className="h-4 w-4" aria-hidden="true" />
+              Remove selected
+            </Button>
+            <Button type="button" disabled={!selectedItems.length || cartMutation.isPending} onClick={addSelectedToCart}>
+              <ShoppingCart className="h-4 w-4" aria-hidden="true" />
+              Add selected to cart
+            </Button>
+          </div>
         </div>
 
         {notice ? (
@@ -132,9 +182,8 @@ export function WishlistClient() {
           </div>
         ) : null}
 
-        <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="grid gap-4">
-          {wishlistQuery.isLoading ? <SkeletonBlock className="h-60" /> : null}
+        <div className="mt-5">
+          {wishlistQuery.isLoading ? <SkeletonBlock className="h-72" /> : null}
           {wishlistQuery.error ? <ErrorPanel error={wishlistQuery.error} onRetry={() => void wishlistQuery.refetch()} /> : null}
           {!wishlistQuery.isLoading && items.length === 0 ? (
             <EmptyState
@@ -148,140 +197,260 @@ export function WishlistClient() {
             />
           ) : null}
 
-          {items.map((item) => {
-            const product = item.product;
-            const variant = primaryWishlistVariant(product);
-            const image = product.images.find((entry) => entry.isPrimary)?.url ?? product.images[0]?.url ?? null;
-            const isSelected = selectedProduct?.id === product.id;
+          {items.length ? (
+            <div className="overflow-hidden rounded-lg border border-[#E5E7EB] bg-white">
+              <div className="hidden grid-cols-[44px_minmax(280px,1fr)_160px_150px_150px_44px] border-b border-[#E5E7EB] bg-[#F8FAFC] px-4 py-3 text-xs font-black uppercase tracking-wide text-[#667085] lg:grid">
+                <span />
+                <span>Product details</span>
+                <span>Price</span>
+                <span>Added on</span>
+                <span>Availability</span>
+                <span />
+              </div>
 
-            return (
-              <article
-                key={item.id}
-                className={`grid gap-4 rounded-lg border p-4 transition md:grid-cols-[140px_1fr_auto] ${
-                  isSelected ? "border-[#ED3500] bg-[#FFFCFB] shadow-sm" : "border-[#E5E7EB] bg-[#F8FAFC]"
-                }`}
-              >
-                <Link href={`/products/${product.slug}` as Route} className="relative aspect-[4/3] overflow-hidden rounded-md bg-[#EAF1F7]">
-                  <StorefrontImage src={image} alt={product.name} sizes="180px" fallbackLabel="Product" />
-                </Link>
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <StatusBadge tone="info">
-                      <Heart className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
-                      Saved
-                    </StatusBadge>
-                    <span className="text-xs font-bold uppercase tracking-wide text-[#667085]">{product.seller.storeName}</span>
-                  </div>
-                  <Link href={`/products/${product.slug}` as Route} className="mt-2 block text-lg font-black text-[#1F2933] hover:text-[#163B5C]">
-                    {product.name}
-                  </Link>
-                  <p className="mt-2 line-clamp-2 text-sm leading-6 text-[#667085]">{product.description}</p>
-                  <p className="mt-3 text-xl font-black text-[#163B5C]">
-                    {variant ? market.format(variant.pricePaise) : "Price pending"}
-                  </p>
-                  {variant && market.market.currency !== variant.currency ? (
-                    <p className="mt-1 text-xs font-bold text-[#667085]">{formatMoney(variant.pricePaise, variant.currency)} base seller price</p>
-                  ) : null}
-                  {!variant ? <p className="mt-2 text-xs font-bold text-[#B42318]">No active purchasable variant.</p> : null}
-                </div>
-                <div className="flex flex-wrap gap-2 md:flex-col md:items-end">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={isSelected ? "secondary" : "outline"}
-                    disabled={!variant}
-                    onClick={() => setSelectedProductId(product.id)}
-                  >
-                    <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-                    {isSelected ? "Selected" : "Select"}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    disabled={!variant || cartMutation.isPending}
-                    onClick={() => cartMutation.mutate(product)}
-                  >
-                    <ShoppingCart className="h-4 w-4" aria-hidden="true" />
-                    Add to cart
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={removeMutation.isPending}
-                    onClick={() =>
+              {items.map((item) => {
+                const product = item.product;
+                const variant = primaryWishlistVariant(product);
+                const isSelected = selectedIds.has(product.id);
+                return (
+                  <WishlistRow
+                    item={item}
+                    key={item.id}
+                    marketFormat={(amount) => market.format(amount)}
+                    selected={isSelected}
+                    variant={variant}
+                    onToggle={() => variant ? toggleProduct(product.id) : undefined}
+                    onAddToCart={() => cartMutation.mutate([product])}
+                    onRemove={() =>
                       confirmation.requestConfirmation({
                         title: "Remove wishlist product?",
-                        description: `"${product.name}" will be removed from saved products. The item remains available in product search if it is still active.`,
+                        description: `"${product.name}" will be removed from saved products.`,
                         confirmLabel: "Remove product",
-                        onConfirm: () => removeMutation.mutate(product.id)
+                        onConfirm: () => removeMutation.mutate([product.id])
                       })
                     }
-                  >
-                    <Trash2 className="h-4 w-4" aria-hidden="true" />
-                    Remove
-                  </Button>
-                </div>
-              </article>
-            );
-          })}
-          </div>
-
-          <aside className="h-fit rounded-lg border border-[#E5E7EB] bg-white p-4 shadow-sm xl:sticky xl:top-24 xl:order-none">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-xs font-black uppercase tracking-[0.12em] text-[#ED3500]">Selected product</p>
-                <h2 className="mt-1 text-lg font-black text-[#1F2933]">Direct checkout</h2>
-              </div>
-              <StatusBadge tone={selectedVariant ? "success" : "warning"}>{selectedVariant ? "Ready" : "Select"}</StatusBadge>
+                    disabled={cartMutation.isPending || removeMutation.isPending}
+                  />
+                );
+              })}
             </div>
-
-            {selectedProduct && selectedVariant ? (
-              <div className="mt-4">
-                <div className="relative aspect-[4/3] overflow-hidden rounded-md bg-[#EAF1F7]">
-                  <StorefrontImage src={selectedImage} alt={selectedProduct.name} sizes="360px" fallbackLabel="Product" />
-                </div>
-                <div className="mt-4 space-y-3">
-                  <div>
-                    <p className="line-clamp-2 text-base font-black text-[#1F2933]">{selectedProduct.name}</p>
-                    <p className="mt-1 text-sm font-bold text-[#667085]">{selectedProduct.seller.storeName}</p>
-                  </div>
-                  <div className="rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-3 text-sm">
-                    <div className="flex justify-between gap-3">
-                      <span className="font-semibold text-[#667085]">Variant</span>
-                      <span className="text-right font-black text-[#1F2933]">{selectedVariant.variantName ?? selectedVariant.sku}</span>
-                    </div>
-                    <div className="mt-2 flex justify-between gap-3">
-                      <span className="font-semibold text-[#667085]">Quantity</span>
-                      <span className="font-black text-[#1F2933]">1</span>
-                    </div>
-                    <div className="mt-2 flex justify-between gap-3">
-                      <span className="font-semibold text-[#667085]">Stock</span>
-                      <span className="font-black text-[#1F2933]">{selectedVariant.stockQuantity}</span>
-                    </div>
-                  </div>
-                  <div className="flex items-end justify-between gap-4 border-t border-[#E5E7EB] pt-4">
-                    <span className="text-sm font-bold text-[#667085]">Payable now</span>
-                    <span className="text-2xl font-black text-[#163B5C]">{market.format(selectedVariant.pricePaise)}</span>
-                  </div>
-                  <Button type="button" className="w-full" onClick={checkoutSelectedProduct}>
-                    Checkout selected
-                    <ArrowRight className="h-4 w-4" aria-hidden="true" />
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <p className="mt-4 rounded-lg border border-dashed border-[#D0D5DD] bg-[#F8FAFC] p-4 text-sm font-semibold text-[#667085]">
-                Select an available saved product to review its checkout summary.
-              </p>
-            )}
-          </aside>
+          ) : null}
         </div>
       </PagePanel>
+
+      {items.length ? (
+        <section className="mt-5 grid gap-5 lg:grid-cols-[1fr_1fr_1.2fr]">
+          <SummaryCard title="Wishlist Summary">
+            <SummaryLine label="Total items" value={summary.totalItems} />
+            <SummaryLine label="In stock" value={summary.inStock} />
+            <SummaryLine label="Low stock" value={summary.lowStock} />
+            <SummaryLine label="Total value" value={market.format(summary.totalValue)} strong />
+          </SummaryCard>
+
+          <SummaryCard>
+            <div className="flex items-center gap-2 text-sm font-black text-[#064C35]">
+              <PackageCheck className="h-4 w-4" aria-hidden="true" />
+              You save
+            </div>
+            <p className="mt-3 text-3xl font-black text-[#16A34A]">{market.format(summary.savings)}</p>
+            <p className="mt-3 text-sm font-semibold text-[#667085]">
+              Total MRP: <span className="line-through">{market.format(summary.mrpTotal)}</span>
+            </p>
+            <p className="mt-2 text-sm font-semibold text-[#667085]">Total discount: {summary.discountPercent}%</p>
+          </SummaryCard>
+
+          <SummaryCard title={`Selected Items (${selectedItems.length})`}>
+            <SummaryLine label="Total price" value={market.format(summary.selectedValue)} strong />
+            <Button type="button" className="mt-4 w-full" disabled={!selectedItems.length || cartMutation.isPending} onClick={addSelectedToCart}>
+              <ShoppingCart className="h-4 w-4" aria-hidden="true" />
+              Add selected to cart
+            </Button>
+            <Button type="button" className="mt-3 w-full" variant="outline" disabled={!selectedItems.length || removeMutation.isPending} onClick={removeSelected}>
+              <Trash2 className="h-4 w-4" aria-hidden="true" />
+              Remove selected
+            </Button>
+          </SummaryCard>
+        </section>
+      ) : null}
     </AccountShell>
+  );
+}
+
+function WishlistRow({
+  item,
+  marketFormat,
+  selected,
+  variant,
+  onToggle,
+  onAddToCart,
+  onRemove,
+  disabled,
+}: {
+  item: WishlistItem;
+  marketFormat: (amountPaise: number) => string;
+  selected: boolean;
+  variant: ProductVariant | null;
+  onToggle: () => void | undefined;
+  onAddToCart: () => void;
+  onRemove: () => void;
+  disabled: boolean;
+}) {
+  const product = item.product;
+  const image = product.images.find((entry) => entry.isPrimary)?.url ?? product.images[0]?.url ?? null;
+  const originalPrice = originalVariantPrice(variant);
+  const discountPercent = discountBps(variant);
+  const lowStock = Boolean(variant && variant.stockQuantity > 0 && variant.stockQuantity <= 3);
+
+  return (
+    <article className="grid gap-4 border-b border-[#E5E7EB] px-4 py-4 last:border-b-0 lg:grid-cols-[44px_minmax(280px,1fr)_160px_150px_150px_44px] lg:items-center">
+      <button
+        type="button"
+        onClick={onToggle}
+        disabled={!variant || disabled}
+        className={cn("grid h-6 w-6 place-items-center rounded border transition", selected ? "border-[#ED3500] bg-[#ED3500] text-white" : "border-[#D0D5DD] bg-white", (!variant || disabled) && "cursor-not-allowed opacity-45")}
+        aria-label={selected ? `Unselect ${product.name}` : `Select ${product.name}`}
+      >
+        {selected ? <Check className="h-4 w-4" aria-hidden="true" /> : null}
+      </button>
+
+      <div className="flex min-w-0 gap-3">
+        <Link href={`/products/${product.slug}` as Route} className="relative h-20 w-20 shrink-0 overflow-hidden rounded-md bg-[#EAF1F7]">
+          <StorefrontImage src={image} alt={product.name} sizes="80px" fallbackLabel="Product" />
+        </Link>
+        <div className="min-w-0">
+          <Link href={`/products/${product.slug}` as Route} className="line-clamp-2 text-base font-black text-[#1F2933] hover:text-[#ED3500]">
+            {product.name}
+          </Link>
+          <p className="mt-1 text-sm font-semibold text-[#667085]">
+            {variant?.variantName ?? variant?.sku ?? "Variant unavailable"}
+          </p>
+          <p className="mt-1 text-xs font-semibold text-[#667085]">Added to wishlist from {product.seller.storeName}</p>
+        </div>
+      </div>
+
+      <div>
+        <p className="text-base font-black text-[#1F2933]">{variant ? marketFormat(variant.pricePaise) : "Price pending"}</p>
+        {originalPrice && variant ? <p className="text-sm font-bold text-[#98A2B3] line-through">{marketFormat(originalPrice)}</p> : null}
+        {discountPercent > 0 ? <span className="mt-2 inline-flex rounded-full bg-[#DCFCE7] px-2 py-1 text-xs font-black text-[#16803A]">{discountPercent}% OFF</span> : null}
+      </div>
+
+      <p className="text-sm font-bold text-[#667085]">{formatWishlistDate(item.createdAt)}</p>
+
+      <div>
+        {variant && variant.stockQuantity > 0 ? (
+          <>
+            <p className={cn("text-sm font-black", lowStock ? "text-[#ED3500]" : "text-[#16803A]")}>{lowStock ? "Low Stock" : "In Stock"}</p>
+            <p className="mt-1 text-xs font-semibold text-[#667085]">{lowStock ? `Only ${variant.stockQuantity} left` : "Ships Soon"}</p>
+          </>
+        ) : (
+          <>
+            <p className="text-sm font-black text-[#B42318]">Unavailable</p>
+            <p className="mt-1 text-xs font-semibold text-[#667085]">Cannot add to cart</p>
+          </>
+        )}
+      </div>
+
+      <div className="flex gap-2 lg:justify-end">
+        <button type="button" className="grid h-9 w-9 place-items-center rounded-md text-[#667085] transition hover:bg-[#FFF3EE] hover:text-[#ED3500]" onClick={onAddToCart} disabled={!variant || disabled} aria-label={`Add ${product.name} to cart`}>
+          <ShoppingCart className="h-4 w-4" aria-hidden="true" />
+        </button>
+        <button type="button" className="grid h-9 w-9 place-items-center rounded-md text-[#667085] transition hover:bg-[#FFF3EE] hover:text-[#ED3500]" onClick={onRemove} disabled={disabled} aria-label={`Remove ${product.name}`}>
+          <MoreVertical className="h-4 w-4" aria-hidden="true" />
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function SummaryCard({ children, title }: { children: React.ReactNode; title?: string }) {
+  return (
+    <section className="rounded-lg border border-[#E5E7EB] bg-white p-5 shadow-sm">
+      {title ? <h2 className="mb-4 text-base font-black text-[#1F2933]">{title}</h2> : null}
+      {children}
+    </section>
+  );
+}
+
+function SummaryLine({ label, value, strong = false }: { label: string; value: React.ReactNode; strong?: boolean }) {
+  return (
+    <div className="mt-3 flex items-center justify-between gap-4 text-sm">
+      <span className="font-semibold text-[#667085]">{label}</span>
+      <span className={strong ? "font-black text-[#163B5C]" : "font-black text-[#1F2933]"}>{value}</span>
+    </div>
   );
 }
 
 function primaryWishlistVariant(product: WishlistProduct) {
   return product.variants.find(isPurchasableVariant) ?? null;
+}
+
+function originalVariantPrice(variant: ProductVariant | null) {
+  if (!variant) {
+    return null;
+  }
+
+  const original = variant.originalPricePaise ?? variant.mrpPaise ?? null;
+  return original && original > variant.pricePaise ? original : null;
+}
+
+function discountBps(variant: ProductVariant | null) {
+  const original = originalVariantPrice(variant);
+  if (!variant || !original) {
+    return 0;
+  }
+
+  return Math.round(((original - variant.pricePaise) / original) * 100);
+}
+
+function wishlistSummary(items: WishlistItem[], selectedItems: WishlistItem[]) {
+  const totals = items.reduce(
+    (result, item) => {
+      const variant = primaryWishlistVariant(item.product);
+      if (!variant) {
+        return result;
+      }
+
+      const original = originalVariantPrice(variant) ?? variant.pricePaise;
+      result.totalValue += variant.pricePaise;
+      result.mrpTotal += original;
+      result.savings += Math.max(0, original - variant.pricePaise);
+      if (variant.stockQuantity > 3) {
+        result.inStock += 1;
+      } else if (variant.stockQuantity > 0) {
+        result.lowStock += 1;
+      }
+      return result;
+    },
+    { totalValue: 0, mrpTotal: 0, savings: 0, inStock: 0, lowStock: 0 },
+  );
+
+  const selectedValue = selectedItems.reduce((total, item) => {
+    const variant = primaryWishlistVariant(item.product);
+    return total + (variant?.pricePaise ?? 0);
+  }, 0);
+  const discountPercent = totals.mrpTotal > 0 ? Math.round((totals.savings / totals.mrpTotal) * 10000) / 100 : 0;
+
+  return {
+    ...totals,
+    discountPercent,
+    selectedValue,
+    totalItems: items.length,
+  };
+}
+
+function formatWishlistDate(value?: string) {
+  if (!value) {
+    return "Recently";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "Recently";
+  }
+
+  return new Intl.DateTimeFormat("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(date);
 }
