@@ -146,6 +146,19 @@ export class PlaceOrderDto {
   @IsUUID()
   addressId?: string;
 
+  @ApiPropertyOptional({ example: "b9b5f7ec-64f8-42d3-a2ff-82fd11fb0421" })
+  @IsOptional()
+  @IsUUID()
+  directProductVariantId?: string;
+
+  @ApiPropertyOptional({ example: 1, default: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(99)
+  directQuantity?: number;
+
   @ApiPropertyOptional({ type: CheckoutShippingAddressDto })
   @IsOptional()
   @ValidateNested()

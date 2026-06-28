@@ -93,6 +93,8 @@ export function AdminActionMenu({
       </MenuButton>
       <MenuItems
         anchor={{ to: align === "end" ? "bottom end" : "bottom start", gap: "8px", padding: "12px" }}
+        modal={false}
+        portal
         transition
         className="z-50 w-64 origin-top-right rounded-lg border border-[#D8E2EA] bg-white p-1 shadow-xl outline-none transition duration-150 data-closed:scale-95 data-closed:opacity-0"
       >
@@ -158,6 +160,8 @@ export function AdminFilterPopover({
       </PopoverButton>
       <PopoverPanel
         anchor={{ to: "bottom end", gap: "8px", padding: "12px" }}
+        modal={false}
+        portal
         transition
         className="z-40 w-[min(22rem,calc(100vw-2rem))] rounded-lg border border-[#D8E2EA] bg-white p-4 shadow-xl outline-none transition duration-150 data-closed:scale-95 data-closed:opacity-0"
       >

@@ -2,12 +2,16 @@ import { ApiPropertyOptional } from "@nestjs/swagger";
 import { Type } from "class-transformer";
 import {
   IsEnum,
+  IsInt,
   IsLatitude,
   IsLongitude,
   IsOptional,
   IsString,
+  IsUUID,
   Matches,
+  Max,
   MaxLength,
+  Min,
 } from "class-validator";
 import {
   CheckoutDeliveryPreference,
@@ -19,6 +23,19 @@ export class CheckoutSummaryQueryDto {
   @IsOptional()
   @Matches(/^[A-Z]{2}$/)
   buyerCountryCode?: string;
+
+  @ApiPropertyOptional({ example: "b9b5f7ec-64f8-42d3-a2ff-82fd11fb0421" })
+  @IsOptional()
+  @IsUUID()
+  directProductVariantId?: string;
+
+  @ApiPropertyOptional({ example: 1, default: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(99)
+  directQuantity?: number;
 
   @ApiPropertyOptional({ example: "SAVE10" })
   @IsOptional()

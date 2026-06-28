@@ -400,6 +400,8 @@ export type CheckoutSummary = {
 
 export type CheckoutSummaryOptions = {
   buyerCountryCode?: string;
+  directProductVariantId?: string;
+  directQuantity?: number;
   couponCode?: string;
   deliveryPreference?: "STORE_PICKUP" | "DELIVER_TO_ADDRESS";
   addressId?: string;
@@ -441,6 +443,8 @@ export type CheckoutAddress = {
 
 export type PlaceOrderPayload = {
   addressId?: string;
+  directProductVariantId?: string;
+  directQuantity?: number;
   shippingAddress?: CheckoutAddress;
   deliveryPreference?: "STORE_PICKUP" | "DELIVER_TO_ADDRESS";
   deliveryMode?: "STORE_PICKUP" | "LOCAL_DELIVERY_PARTNER" | "THIRD_PARTY_COURIER" | "MANUAL_TRANSPORT";
@@ -1120,6 +1124,10 @@ export function getCheckoutSummary(
   const summaryOptions = typeof options === "string" ? { buyerCountryCode: options } : options;
   const query = new URLSearchParams();
   query.set("buyerCountryCode", summaryOptions.buyerCountryCode ?? "IN");
+  if (summaryOptions.directProductVariantId) {
+    query.set("directProductVariantId", summaryOptions.directProductVariantId);
+    query.set("directQuantity", String(summaryOptions.directQuantity ?? 1));
+  }
   if (summaryOptions.deliveryPreference) {
     query.set("deliveryPreference", summaryOptions.deliveryPreference);
   }

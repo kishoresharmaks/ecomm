@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { CreditCard, Loader2, MapPin, TicketPercent, Truck, X } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -35,6 +35,7 @@ import {
   type CouponFeedback,
 } from "./coupon-feedback";
 import { StorefrontFrame } from "./storefront-frame";
+import { StorefrontImage } from "./storefront-image";
 import { StorefrontProductAttributeChips } from "./storefront-product-attributes";
 import {
   StorefrontErrorPanel,
@@ -83,6 +84,19 @@ type RazorpayCheckoutInstance = {
   on: (eventName: "payment.failed", handler: (response: RazorpayFailureResponse) => void) => void;
 };
 
+type DirectCheckoutSnapshot = {
+  variantId: string;
+  quantity: number;
+  productName: string;
+  productSlug: string;
+  imageUrl: string | null;
+  sellerName: string;
+  variantName?: string | null;
+  sku?: string | null;
+  pricePaise: number;
+  currency: string;
+};
+
 declare global {
   interface Window {
     Razorpay?: new (options: RazorpayCheckoutOptions) => RazorpayCheckoutInstance;
@@ -119,9 +133,11 @@ const fallbackPaymentOptions: CheckoutPaymentMethodRecord[] = [
 ];
 
 const manualAddressId = "manual";
+const directCheckoutStorageKey = "indihub.directCheckout.v1";
 
 export function CheckoutPageClient() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const customerAuth = useCustomerAuth();
   const market = useMarket();
@@ -136,6 +152,10 @@ export function CheckoutPageClient() {
   const [appliedCouponCode, setAppliedCouponCode] = useState<string | null>(null);
   const [pendingCouponCode, setPendingCouponCode] = useState<string | null>(null);
   const [couponFeedback, setCouponFeedback] = useState<CouponFeedback | null>(null);
+  const directProductVariantId = searchParams.get("directProductVariantId") ?? undefined;
+  const directQuantity = normalizeDirectQuantity(searchParams.get("directQuantity"));
+  const isDirectCheckout = Boolean(directProductVariantId);
+  const [directSnapshot, setDirectSnapshot] = useState<DirectCheckoutSnapshot | null>(null);
 
   const cartQuery = useQuery({
     queryKey: ["cart", customerAuth.authKey],
@@ -164,6 +184,9 @@ export function CheckoutPageClient() {
   const checkoutSummaryOptions = useMemo(
     () => ({
       buyerCountryCode: market.countryCode,
+      ...(directProductVariantId
+        ? { directProductVariantId, directQuantity }
+        : {}),
       deliveryPreference,
       paymentMethod,
       ...(appliedCouponCode ? { couponCode: appliedCouponCode } : {}),
@@ -171,7 +194,7 @@ export function CheckoutPageClient() {
         ? { addressId: selectedSavedAddress.id }
         : {}),
     }),
-    [appliedCouponCode, deliveryPreference, market.countryCode, paymentMethod, selectedSavedAddress],
+    [appliedCouponCode, deliveryPreference, directProductVariantId, directQuantity, market.countryCode, paymentMethod, selectedSavedAddress],
   );
   const checkoutSummaryQuery = useQuery({
     queryKey: ["checkout-summary", customerAuth.authKey, checkoutSummaryOptions],
@@ -205,6 +228,23 @@ export function CheckoutPageClient() {
   };
   const couponIsApplying = Boolean(pendingCouponCode && checkoutSummaryQuery.isFetching);
   const couponApplied = Boolean(appliedCouponCode && checkoutTotals.coupon && !pendingCouponCode);
+  const hasCheckoutItem = isDirectCheckout
+    ? checkoutTotals.itemCount > 0
+    : Boolean(cartQuery.data?.items.length);
+
+  useEffect(() => {
+    if (!directProductVariantId || typeof window === "undefined") {
+      setDirectSnapshot(null);
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(window.sessionStorage.getItem(directCheckoutStorageKey) ?? "null") as DirectCheckoutSnapshot | null;
+      setDirectSnapshot(parsed?.variantId === directProductVariantId ? parsed : null);
+    } catch {
+      setDirectSnapshot(null);
+    }
+  }, [directProductVariantId]);
 
   useEffect(() => {
     if (!pendingCouponCode || checkoutSummaryQuery.isFetching) {
@@ -310,8 +350,8 @@ export function CheckoutPageClient() {
 
   const orderMutation = useMutation({
     mutationFn: async (manualAddress?: CheckoutAddress) => {
-      if (!cartQuery.data?.items.length) {
-        throw new Error("Cart is empty.");
+      if (!hasCheckoutItem) {
+        throw new Error(isDirectCheckout ? "Selected product is unavailable for checkout." : "Cart is empty.");
       }
       if (!selectedPaymentOption?.enabled) {
         throw new Error(
@@ -332,6 +372,9 @@ export function CheckoutPageClient() {
         deliveryPreference,
         paymentMethod,
         buyerCountryCode: market.countryCode,
+        ...(directProductVariantId
+          ? { directProductVariantId, directQuantity }
+          : {}),
         ...((paymentMethod === "BANK_TRANSFER" || paymentMethod === "MANUAL") &&
         paymentReference.trim()
           ? { paymentReference: paymentReference.trim() }
@@ -691,7 +734,7 @@ export function CheckoutPageClient() {
             size="lg"
             disabled={
               !customerAuth.enabled ||
-              !cartQuery.data?.items.length ||
+              !hasCheckoutItem ||
               !hasEnabledPaymentMethod ||
               orderMutation.isPending
             }
@@ -706,7 +749,28 @@ export function CheckoutPageClient() {
 
         <StorefrontPanel as="aside" className="h-fit">
           <h2 className="text-lg font-black text-[#1F2933]">Checkout summary</h2>
-          {cartQuery.isLoading ? (
+          {isDirectCheckout ? (
+            <div className="mt-5 rounded-lg border border-[#FAD7CB] bg-[#FFFCFB] p-3">
+              <div className="flex gap-3">
+                <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-md bg-[#EAF1F7]">
+                  <StorefrontImage src={directSnapshot?.imageUrl ?? null} alt={directSnapshot?.productName ?? "Selected product"} sizes="80px" fallbackLabel="Item" />
+                </div>
+                <div className="min-w-0">
+                  <StatusBadge tone="success">Direct checkout</StatusBadge>
+                  <p className="mt-2 line-clamp-2 text-sm font-black text-[#1F2933]">
+                    {directSnapshot?.productName ?? "Selected wishlist product"}
+                  </p>
+                  <p className="mt-1 text-xs font-bold text-[#667085]">
+                    {directSnapshot?.sellerName ?? "Seller"}{directSnapshot?.variantName ? ` · ${directSnapshot.variantName}` : ""}
+                  </p>
+                  <p className="mt-2 text-sm font-black text-[#163B5C]">
+                    Qty {directQuantity}
+                    {directSnapshot ? ` · ${formatMoney(directSnapshot.pricePaise * directQuantity, directSnapshot.currency)}` : ""}
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : cartQuery.isLoading ? (
             <StorefrontSkeleton className="mt-5 h-40" />
           ) : cartQuery.data?.items.length ? (
             <div className="mt-5 space-y-4">
@@ -1077,4 +1141,13 @@ function nullableFiniteNumber(value: number | string | null | undefined) {
 
   const parsed = typeof value === "number" ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function normalizeDirectQuantity(value: string | null) {
+  const parsed = Number(value ?? 1);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    return 1;
+  }
+
+  return Math.min(parsed, 99);
 }

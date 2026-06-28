@@ -385,6 +385,8 @@ function AdminRouteSearch({ onNavigate }: { onNavigate?: () => void }) {
         />
         <ComboboxOptions
           anchor={{ to: "bottom start", gap: "8px", padding: "12px" }}
+          modal={false}
+          portal
           transition
           className="z-50 max-h-80 w-[var(--input-width)] overflow-auto rounded-lg border border-[#D8E2EA] bg-white p-1 shadow-xl outline-none transition duration-150 data-closed:scale-95 data-closed:opacity-0"
         >
@@ -446,6 +448,8 @@ function AdminSessionMenu() {
         </MenuButton>
         <MenuItems
           anchor={{ to: "bottom end", gap: "8px", padding: "12px" }}
+          modal={false}
+          portal
           transition
           className="z-50 w-72 rounded-lg border border-[#D8E2EA] bg-white p-1 shadow-xl outline-none transition duration-150 data-closed:scale-95 data-closed:opacity-0"
         >

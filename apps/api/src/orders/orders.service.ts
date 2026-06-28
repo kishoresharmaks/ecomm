@@ -507,18 +507,21 @@ export class OrdersService {
       return existingIdempotentOrder;
     }
 
-    const cart = await this.prisma.client.cart.findFirst({
-      where: {
-        customerId: customer.id,
-        status: CartStatus.ACTIVE,
-      },
-      orderBy: { createdAt: "desc" },
-      include: {
-        items: true,
-      },
-    });
+    const isDirectCheckout = Boolean(dto.directProductVariantId);
+    const cart = isDirectCheckout
+      ? null
+      : await this.prisma.client.cart.findFirst({
+          where: {
+            customerId: customer.id,
+            status: CartStatus.ACTIVE,
+          },
+          orderBy: { createdAt: "desc" },
+          include: {
+            items: true,
+          },
+        });
 
-    if (!cart?.items.length) {
+    if (!isDirectCheckout && !cart?.items.length) {
       const recoveredIdempotentOrder = idempotencyKey
         ? await this.findCustomerOrderByIdempotencyKey(customer.id, idempotencyKey)
         : null;
@@ -537,39 +540,51 @@ export class OrdersService {
     const deliveryPreference = this.resolveCheckoutDeliveryPreference(dto);
 
     const orderPlacement = await this.prisma.client.$transaction(async (tx) => {
-      const cartClaim = await tx.cart.updateMany({
-        where: {
-          id: cart.id,
-          customerId: customer.id,
-          status: CartStatus.ACTIVE,
-        },
-        data: {
-          status: CartStatus.CHECKED_OUT,
-        },
-      });
+      if (cart) {
+        const cartClaim = await tx.cart.updateMany({
+          where: {
+            id: cart.id,
+            customerId: customer.id,
+            status: CartStatus.ACTIVE,
+          },
+          data: {
+            status: CartStatus.CHECKED_OUT,
+          },
+        });
 
-      if (cartClaim.count !== 1) {
-        if (idempotencyKey) {
-          const recoveredOrder = await tx.order.findFirst({
-            where: {
-              customerId: customer.id,
-              idempotencyKey,
-            },
-            include: orderInclude,
-          });
-          if (recoveredOrder) {
-            return { orderId: recoveredOrder.id, recovered: true };
+        if (cartClaim.count !== 1) {
+          if (idempotencyKey) {
+            const recoveredOrder = await tx.order.findFirst({
+              where: {
+                customerId: customer.id,
+                idempotencyKey,
+              },
+              include: orderInclude,
+            });
+            if (recoveredOrder) {
+              return { orderId: recoveredOrder.id, recovered: true };
+            }
           }
-        }
 
-        throw new BadRequestException(
-          "This cart is already checked out. Refresh the cart before placing another order.",
-        );
+          throw new BadRequestException(
+            "This cart is already checked out. Refresh the cart before placing another order.",
+          );
+        }
       }
 
       const validatedItems = [];
 
-      for (const item of cart.items) {
+      const checkoutItems = dto.directProductVariantId
+        ? [
+            {
+              id: `direct:${dto.directProductVariantId}`,
+              productVariantId: dto.directProductVariantId,
+              quantity: dto.directQuantity ?? 1,
+            },
+          ]
+        : (cart?.items ?? []);
+
+      for (const item of checkoutItems) {
         const variant = await tx.productVariant.findFirst({
           where: {
             id: item.productVariantId,
@@ -689,7 +704,7 @@ export class OrdersService {
       const checkout = await tx.checkoutSession.create({
         data: {
           customerId: customer.id,
-          cartId: cart.id,
+          cartId: cart?.id ?? null,
           status: CheckoutStatus.COMPLETED,
           shippingAddressSnapshot: shippingAddressSnapshot ?? Prisma.JsonNull,
           paymentMethod: dto.paymentMethod,

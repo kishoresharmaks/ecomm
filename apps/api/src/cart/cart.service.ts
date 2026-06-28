@@ -49,6 +49,20 @@ const cartInclude = {
   },
 };
 
+type CheckoutSummaryItem = {
+  id: string;
+  sellerId: string;
+  quantity: number;
+  unitPricePaise: number;
+  productVariant: {
+    product: {
+      id: string;
+      categoryId: string;
+      name: string;
+    };
+  };
+};
+
 @Injectable()
 export class CartService {
   constructor(
@@ -72,10 +86,11 @@ export class CartService {
   }
 
   async getCheckoutSummary(actor: RequestUser, query: CheckoutSummaryQueryDto) {
-    const cart = await this.getCart(actor);
-    const subtotalPaise = cart.items.reduce((total, item) => total + item.quantity * item.unitPricePaise, 0);
-    const itemCount = cart.items.reduce((total, item) => total + item.quantity, 0);
-    const deliveryOptions = await this.checkoutSummaryDeliveryOptions(cart.customerId, query);
+    const customer = await this.customersService.ensureCustomerForUser(actor);
+    const checkoutItems = await this.checkoutSummaryItems(actor, query);
+    const subtotalPaise = checkoutItems.reduce((total: number, item: CheckoutSummaryItem) => total + item.quantity * item.unitPricePaise, 0);
+    const itemCount = checkoutItems.reduce((total: number, item: CheckoutSummaryItem) => total + item.quantity, 0);
+    const deliveryOptions = await this.checkoutSummaryDeliveryOptions(customer.id, query);
     const charges = await this.checkoutPricing.calculateCharges(
       subtotalPaise,
       this.prisma.client,
@@ -88,8 +103,8 @@ export class CartService {
     const market = await this.marketService.getMarketCurrency(query.buyerCountryCode ?? "IN");
     const coupon = await this.couponsService.previewCoupon(actor, {
       ...(query.couponCode !== undefined ? { couponCode: query.couponCode } : {}),
-      customerId: cart.customerId,
-      items: this.checkoutCouponItems(cart.items),
+      customerId: customer.id,
+      items: this.checkoutCouponItems(checkoutItems),
       subtotalPaise,
       shippingPaise: charges.shippingPaise,
       shippingSnapshot: charges.snapshot,
@@ -255,6 +270,37 @@ export class CartService {
       lineTotalPaise: item.quantity * item.unitPricePaise,
       productName: item.productVariant.product.name,
     }));
+  }
+
+  private async checkoutSummaryItems(
+    actor: RequestUser,
+    query: CheckoutSummaryQueryDto,
+  ): Promise<CheckoutSummaryItem[]> {
+    if (!query.directProductVariantId) {
+      return (await this.getCart(actor)).items;
+    }
+
+    const quantity = query.directQuantity ?? 1;
+    const variant = await this.getActiveVariantOrThrow(query.directProductVariantId);
+    this.ensureStockAvailable(variant.stockQuantity, quantity);
+    const price = await this.dealPricing.resolveVariantPrice(
+      variant,
+      variant.productId,
+      this.prisma.client,
+    );
+
+    return [
+      {
+        id: `direct:${variant.id}`,
+        sellerId: variant.product.sellerId,
+        quantity,
+        unitPricePaise: price.effectiveUnitPricePaise,
+        productVariant: {
+          ...variant,
+          product: variant.product,
+        },
+      },
+    ];
   }
 
   async addItem(actor: RequestUser, dto: AddCartItemDto) {

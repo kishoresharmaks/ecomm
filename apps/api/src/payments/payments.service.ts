@@ -447,6 +447,7 @@ export class PaymentsService {
       PAYMENT_SETTING_KEYS.bankTransferEnabled,
       false,
     );
+    const razorpayAmountAllowed = totalPaise === 0 || totalPaise >= 100;
 
     return {
       methods: [
@@ -454,7 +455,7 @@ export class PaymentsService {
           method: "RAZORPAY",
           label: "Razorpay",
           enabled:
-            totalPaise >= 100 &&
+            razorpayAmountAllowed &&
             this.booleanSetting(settingMap, PAYMENT_SETTING_KEYS.razorpayEnabled, false) &&
             razorpayKeys.configured,
           note:
