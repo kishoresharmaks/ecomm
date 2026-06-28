@@ -7,6 +7,7 @@ export const ENQUIRY_STATUS_LABEL: Record<B2BEnquiryStatus, string> = {
   SUBMITTED: "Submitted",
   IN_REVIEW: "In Review",
   RESPONDED: "Responded",
+  NEGOTIATING: "Negotiating",
   BUYER_CONFIRMED: "Confirmed",
   ADMIN_APPROVED: "Approved",
   FINALISED: "Finalised",
@@ -18,6 +19,7 @@ export const ENQUIRY_STATUS_COLOR: Record<B2BEnquiryStatus, string> = {
   SUBMITTED: colors.warning,
   IN_REVIEW: colors.warning,
   RESPONDED: "#1475FF",
+  NEGOTIATING: "#1475FF",
   BUYER_CONFIRMED: colors.primary,
   ADMIN_APPROVED: colors.success,
   FINALISED: colors.success,
@@ -26,7 +28,7 @@ export const ENQUIRY_STATUS_COLOR: Record<B2BEnquiryStatus, string> = {
 };
 
 /** Statuses from which the buyer can cancel. */
-const CANCELLABLE_STATUSES: B2BEnquiryStatus[] = ["SUBMITTED", "IN_REVIEW", "RESPONDED"];
+const CANCELLABLE_STATUSES: B2BEnquiryStatus[] = ["SUBMITTED", "IN_REVIEW", "RESPONDED", "NEGOTIATING"];
 
 /** Returns true when the buyer is permitted to cancel the enquiry. */
 export function canCancelEnquiry(status: B2BEnquiryStatus): boolean {
@@ -35,7 +37,7 @@ export function canCancelEnquiry(status: B2BEnquiryStatus): boolean {
 
 /** Returns true when the buyer is permitted to confirm the quoted price. */
 export function canConfirmEnquiry(status: B2BEnquiryStatus): boolean {
-  return status === "RESPONDED";
+  return status === "RESPONDED" || status === "NEGOTIATING";
 }
 
 // ─── Order Status ─────────────────────────────────────────────────────────────

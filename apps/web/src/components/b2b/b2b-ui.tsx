@@ -160,6 +160,10 @@ export function statusTone(status?: string | null): StatusTone {
     return "success";
   }
 
+  if (status === "NEGOTIATING") {
+    return "info";
+  }
+
   if (["PENDING", "SUBMITTED", "IN_REVIEW"].includes(status)) {
     return "warning";
   }

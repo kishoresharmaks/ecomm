@@ -5,6 +5,10 @@ import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { Roles } from "../auth/decorators/roles.decorator";
 import type { RequestUser } from "../auth/types/indihub-request";
 import { B2BService } from "./b2b.service";
+import {
+  B2BEnquiryDetailQueryDto,
+  SendB2BMessageDto,
+} from "./dto/b2b-message.dto";
 import { B2BEnquiryQueryDto } from "./dto/b2b-query.dto";
 import { CreateB2BResponseDto } from "./dto/b2b-response.dto";
 import { UpdateB2BEnquiryStatusDto } from "./dto/b2b-status.dto";
@@ -23,14 +27,27 @@ export class AdminB2BController {
 
   @Get(":enquiryId")
   @ApiOperation({ summary: "Read admin B2B enquiry detail." })
-  getEnquiry(@Param("enquiryId") enquiryId: string) {
-    return this.b2bService.getAdminEnquiry(enquiryId);
+  getEnquiry(
+    @Param("enquiryId") enquiryId: string,
+    @Query() query: B2BEnquiryDetailQueryDto,
+  ) {
+    return this.b2bService.getAdminEnquiryDetail(enquiryId, query);
   }
 
   @Post(":enquiryId/responses")
   @ApiOperation({ summary: "Add a manual admin response to a B2B enquiry." })
   respond(@CurrentUser() actor: RequestUser, @Param("enquiryId") enquiryId: string, @Body() dto: CreateB2BResponseDto) {
     return this.b2bService.respondAsAdmin(actor, enquiryId, dto);
+  }
+
+  @Post(":enquiryId/messages")
+  @ApiOperation({ summary: "Send an admin message in an active B2B negotiation." })
+  sendMessage(
+    @CurrentUser() actor: RequestUser,
+    @Param("enquiryId") enquiryId: string,
+    @Body() dto: SendB2BMessageDto,
+  ) {
+    return this.b2bService.sendMessageAsAdmin(actor, enquiryId, dto);
   }
 
   @Patch(":enquiryId/status")
@@ -53,5 +70,18 @@ export class AdminB2BController {
   @ApiOperation({ summary: "Finalise an admin-approved B2B enquiry." })
   finalise(@CurrentUser() actor: RequestUser, @Param("enquiryId") enquiryId: string) {
     return this.b2bService.finaliseEnquiry(actor, enquiryId);
+  }
+}
+
+@ApiTags("Admin B2B Analytics")
+@Roles(RoleCode.ADMIN)
+@Controller("admin/b2b")
+export class AdminB2BAnalyticsController {
+  constructor(@Inject(B2BService) private readonly b2bService: B2BService) {}
+
+  @Get("analytics")
+  @ApiOperation({ summary: "Read B2B negotiation and commission analytics." })
+  analytics(@Query() query: { from?: string; to?: string }) {
+    return this.b2bService.getAdminB2BAnalytics(query);
   }
 }

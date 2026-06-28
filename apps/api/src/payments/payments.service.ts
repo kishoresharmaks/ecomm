@@ -499,6 +499,20 @@ export class PaymentsService {
     };
   }
 
+  async b2bBankTransferInstructions(totalPaise = 0, client: PaymentSettingClient = this.prisma.client) {
+    const methods = await this.checkoutMethods(totalPaise, client);
+    const bankTransfer = methods.methods.find((method) => method.method === "BANK_TRANSFER");
+
+    return {
+      enabled: Boolean(bankTransfer?.enabled),
+      configured: Boolean(bankTransfer?.bankTransferDetails?.configured),
+      label: bankTransfer?.label ?? "Bank transfer",
+      note: bankTransfer?.note ?? "Bank transfer details are not configured.",
+      instructions: bankTransfer?.instructions ?? "",
+      bankTransferDetails: bankTransfer?.bankTransferDetails ?? null,
+    };
+  }
+
   async checkoutMethodSnapshot(
     paymentMethod: string,
     totalPaise = 0,

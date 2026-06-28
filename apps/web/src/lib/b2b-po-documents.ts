@@ -69,9 +69,39 @@ export async function uploadB2BPurchaseOrderDocument(
   orderNumber: string,
   file: File,
 ) {
+  return uploadB2BPrivateOrderDocument(
+    auth,
+    orderNumber,
+    file,
+    "purchase-order",
+    "purchase order",
+  );
+}
+
+export async function uploadB2BPaymentProofDocument(
+  auth: IndihubAuthHeaders,
+  orderNumber: string,
+  file: File,
+) {
+  return uploadB2BPrivateOrderDocument(
+    auth,
+    orderNumber,
+    file,
+    "payment-proof",
+    "payment proof",
+  );
+}
+
+async function uploadB2BPrivateOrderDocument(
+  auth: IndihubAuthHeaders,
+  orderNumber: string,
+  file: File,
+  routeSegment: "purchase-order" | "payment-proof",
+  label: string,
+) {
   validateB2BPurchaseOrderFile(file);
   const uploadRequest = await indihubFetch<B2BPurchaseOrderUploadRequest>(
-    `/api/b2b/orders/${encodeURIComponent(orderNumber)}/purchase-order/upload-request`,
+    `/api/b2b/orders/${encodeURIComponent(orderNumber)}/${routeSegment}/upload-request`,
     {
       method: "POST",
       body: JSON.stringify({
@@ -91,7 +121,7 @@ export async function uploadB2BPurchaseOrderDocument(
     });
 
     if (!response.ok) {
-      throw new Error("Purchase order upload failed. Please retry.");
+      throw new Error(`${capitalize(label)} upload failed. Please retry.`);
     }
 
     return uploadRequest.assetKey;
@@ -203,4 +233,8 @@ function openPopupOrNavigate(popup: Window | null, url: string) {
   }
 
   window.location.href = url;
+}
+
+function capitalize(value: string) {
+  return value ? `${value.charAt(0).toUpperCase()}${value.slice(1)}` : value;
 }

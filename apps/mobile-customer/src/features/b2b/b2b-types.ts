@@ -7,6 +7,7 @@ export type B2BEnquiryStatus =
   | "SUBMITTED"
   | "IN_REVIEW"
   | "RESPONDED"
+  | "NEGOTIATING"
   | "BUYER_CONFIRMED"
   | "ADMIN_APPROVED"
   | "FINALISED"
@@ -106,6 +107,26 @@ export type B2BEnquiryResponse = {
   } | null;
 };
 
+export type B2BEnquiryMessage = {
+  id: string;
+  enquiryId: string;
+  senderUserId: string;
+  message: string;
+  createdAt?: string;
+  updatedAt?: string;
+  sending?: boolean;
+  failed?: boolean;
+  sender?: {
+    email?: string | null;
+    fullName?: string | null;
+  } | null;
+};
+
+export type B2BEnquiryMessagePage = {
+  items: B2BEnquiryMessage[];
+  nextCursor: string | null;
+};
+
 export type BusinessBuyerEnquiry = {
   id: string;
   businessBuyerId: string;
@@ -119,6 +140,7 @@ export type BusinessBuyerEnquiry = {
   product?: B2BEnquiryProduct | null;
   seller?: B2BEnquirySellerSummary | null;
   responses?: B2BEnquiryResponse[];
+  messages?: B2BEnquiryMessagePage;
   b2bOrder?: { id: string; orderNumber: string } | null;
 };
 
@@ -151,6 +173,9 @@ export type B2BOrder = {
   quantity: number;
   unitPricePaise?: number | null;
   subtotalPaise?: number | null;
+  commissionRateBps?: number;
+  commissionAmountPaise?: number;
+  sellerPayoutAmountPaise?: number;
   currency?: string;
   createdAt?: string;
   updatedAt?: string;

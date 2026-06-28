@@ -79,6 +79,10 @@ const drawerLinks = [
   { label: "Help & Support", translationKey: "help_support", href: "/contact", icon: Headphones },
   { label: "Download App", translationKey: "download_app", href: "/contact?topic=download-app", icon: Download },
 ] as const;
+type DrawerTranslationKey = Extract<
+  (typeof drawerLinks)[number],
+  { translationKey: string }
+>["translationKey"];
 const recentSearchStorageKey = "indihub.recent-searches.v1";
 const desktopDropdownCloseDelayMs = 140;
 const desktopDropdownViewportMarginPx = 20;
@@ -1189,7 +1193,10 @@ function MobileDrawer({
           <div className="mt-5 grid gap-2">
             {drawerLinks.map((item) => {
               const Icon = item.icon;
-              const label = "translationKey" in item ? t(item.translationKey as any) : item.label;
+              const label =
+                "translationKey" in item
+                  ? t(item.translationKey as DrawerTranslationKey)
+                  : item.label;
 
               return (
                 <DrawerLink

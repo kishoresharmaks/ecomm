@@ -92,6 +92,7 @@ const iconByHref: Array<[string, typeof LayoutDashboard]> = [
   ["/admin/cms", BookOpen],
   ["/admin/chat", MessageCircle],
   ["/admin/support", ShieldCheck],
+  ["/admin/b2b/analytics", BarChart3],
   ["/admin/b2b-enquiries", Building2],
   ["/admin/reviews", Star],
   ["/admin/returns", RotateCcw],
@@ -272,7 +273,7 @@ function AdminSidebarContent({
   const activeItem = findActiveItem(pathname);
 
   return (
-    <nav className="min-h-0 flex-1 overflow-y-auto p-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <nav className="min-h-0 flex-1 overflow-y-auto p-4 [overflow-anchor:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       <div className="space-y-3">
         {groups.map((group) => {
           const groupActive = group.items.some((item) => item.href === activeItem?.href);

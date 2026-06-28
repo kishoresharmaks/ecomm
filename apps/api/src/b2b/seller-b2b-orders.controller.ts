@@ -4,7 +4,7 @@ import { RoleCode } from "@indihub/database";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { Roles } from "../auth/decorators/roles.decorator";
 import type { RequestUser } from "../auth/types/indihub-request";
-import { sendB2BPurchaseOrderDocument } from "./b2b-document-response";
+import { sendB2BDocument, sendB2BPurchaseOrderDocument } from "./b2b-document-response";
 import { B2BService } from "./b2b.service";
 import { B2BOrderQueryDto } from "./dto/b2b-order.dto";
 
@@ -24,6 +24,54 @@ export class SellerB2BOrdersController {
   @ApiOperation({ summary: "Read seller-visible B2B proforma and PO order detail." })
   getOrder(@CurrentUser() actor: RequestUser, @Param("orderNumber") orderNumber: string) {
     return this.b2bService.getSellerB2BOrder(actor, orderNumber);
+  }
+
+  @Get(":orderNumber/proforma-invoice/document-access")
+  @ApiOperation({ summary: "Read seller-authorized proforma invoice access metadata." })
+  getProformaInvoiceDocumentAccess(
+    @CurrentUser() actor: RequestUser,
+    @Param("orderNumber") orderNumber: string,
+  ) {
+    return this.b2bService.getSellerProformaInvoiceDocumentAccess(actor, orderNumber);
+  }
+
+  @Get(":orderNumber/proforma-invoice")
+  @ApiOperation({ summary: "Open or stream the seller-authorized proforma invoice." })
+  async openProformaInvoiceDocument(
+    @CurrentUser() actor: RequestUser,
+    @Param("orderNumber") orderNumber: string,
+    @Res({ passthrough: true })
+    response: {
+      redirect: (status: number, url: string) => unknown;
+      set: (headers: Record<string, string>) => unknown;
+    },
+  ) {
+    const access = await this.b2bService.getSellerProformaInvoiceDocumentAccess(actor, orderNumber);
+    return sendB2BDocument(access, response, "proforma-invoice.pdf");
+  }
+
+  @Get(":orderNumber/tax-invoice/document-access")
+  @ApiOperation({ summary: "Read seller-authorized final tax invoice access metadata." })
+  getTaxInvoiceDocumentAccess(
+    @CurrentUser() actor: RequestUser,
+    @Param("orderNumber") orderNumber: string,
+  ) {
+    return this.b2bService.getSellerTaxInvoiceDocumentAccess(actor, orderNumber);
+  }
+
+  @Get(":orderNumber/tax-invoice")
+  @ApiOperation({ summary: "Open or stream the seller-authorized final tax invoice." })
+  async openTaxInvoiceDocument(
+    @CurrentUser() actor: RequestUser,
+    @Param("orderNumber") orderNumber: string,
+    @Res({ passthrough: true })
+    response: {
+      redirect: (status: number, url: string) => unknown;
+      set: (headers: Record<string, string>) => unknown;
+    },
+  ) {
+    const access = await this.b2bService.getSellerTaxInvoiceDocumentAccess(actor, orderNumber);
+    return sendB2BDocument(access, response, "tax-invoice.pdf");
   }
 
   @Get(":orderNumber/purchase-order/document-access")

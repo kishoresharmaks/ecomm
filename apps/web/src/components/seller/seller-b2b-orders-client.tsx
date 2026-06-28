@@ -140,6 +140,34 @@ export function SellerB2BOrderDetailClient({ orderNumber }: { orderNumber: strin
     }
   }
 
+  async function openProformaInvoice() {
+    setNotice(null);
+
+    try {
+      await openB2BPurchaseOrderDocument(
+        sellerAuth.authHeaders,
+        `/api/seller/b2b-orders/${encodeURIComponent(orderNumber)}/proforma-invoice/document-access`,
+        `/api/seller/b2b-orders/${encodeURIComponent(orderNumber)}/proforma-invoice`,
+      );
+    } catch (error) {
+      setNotice(userFacingApiErrorMessage(error));
+    }
+  }
+
+  async function openTaxInvoice() {
+    setNotice(null);
+
+    try {
+      await openB2BPurchaseOrderDocument(
+        sellerAuth.authHeaders,
+        `/api/seller/b2b-orders/${encodeURIComponent(orderNumber)}/tax-invoice/document-access`,
+        `/api/seller/b2b-orders/${encodeURIComponent(orderNumber)}/tax-invoice`,
+      );
+    } catch (error) {
+      setNotice(userFacingApiErrorMessage(error));
+    }
+  }
+
   return (
     <div className="grid gap-5">
       <div>
@@ -159,9 +187,40 @@ export function SellerB2BOrderDetailClient({ orderNumber }: { orderNumber: strin
             <B2BOrderHeader order={order} />
             <div className="mt-5 grid gap-3 rounded-lg border border-[#E5E7EB] bg-white p-4 text-sm font-semibold leading-6 text-[#667085] md:grid-cols-2">
               <Info label="Buyer" value={order.businessBuyer?.companyName ?? "Business buyer"} />
-              <Info label="Contact" value={order.businessBuyer?.contactPhone ?? "Phone unavailable"} />
+              <Info label="Contact" value={order.businessBuyer?.contactPhone ?? "Hidden until B2B payment is confirmed"} />
               <Info label="Product/store" value={order.product?.name ?? order.seller?.storeName ?? "General procurement"} />
               <Info label="PO number" value={order.purchaseOrderNumber ?? "Not submitted"} />
+              <Info label="Payment status" value={(order.paymentStatus ?? "PENDING").replace(/_/g, " ")} />
+              <Info label="Payment due" value={formatDateTime(order.paymentDueAt)} />
+              <Info label="Paid amount" value={formatMoney(order.paidAmountPaise)} />
+              <Info label="Seller payout" value={formatMoney(order.sellerPayoutAmountPaise)} />
+              <Info label="Payout status" value={payoutStatusText(order)} />
+              <Info label="Fulfilment controls" value={fulfilmentLockText(order)} />
+              <div>
+                <p className="text-xs font-black uppercase tracking-wide text-[#667085]">Final tax invoice</p>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="mt-1"
+                  disabled={order.status !== "FULFILLED"}
+                  onClick={() => void openTaxInvoice()}
+                >
+                  <ExternalLink className="h-4 w-4" aria-hidden="true" />
+                  Open invoice
+                </Button>
+              </div>
+              <div>
+                <p className="text-xs font-black uppercase tracking-wide text-[#667085]">Proforma</p>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="mt-1"
+                  onClick={() => void openProformaInvoice()}
+                >
+                  <ExternalLink className="h-4 w-4" aria-hidden="true" />
+                  View proforma
+                </Button>
+              </div>
               <div>
                 <p className="text-xs font-black uppercase tracking-wide text-[#667085]">PO file</p>
                 {order.purchaseOrderFileKey ? (
@@ -202,22 +261,73 @@ export function SellerB2BOrderDetailClient({ orderNumber }: { orderNumber: strin
 function B2BOrderHeader({ order }: { order: SellerB2BOrder }) {
   return (
     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-      <div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="grid h-10 w-10 place-items-center rounded-md bg-[#FFF0EA] text-[#ED3500]">
-            <FileText className="h-4 w-4" aria-hidden="true" />
-          </span>
-          <h2 className="text-xl font-black text-[#1F2933]">{order.orderNumber}</h2>
-          <SellerStatusPill status={order.status} />
-        </div>
-        <p className="mt-3 text-sm font-semibold leading-6 text-[#667085]">
-          Proforma {order.proformaInvoiceNumber} / Qty {order.quantity}
-        </p>
-        <p className="text-xs font-bold text-[#667085]">Issued {formatDateTime(order.proformaIssuedAt)}</p>
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="grid h-10 w-10 place-items-center rounded-md bg-[#FFF0EA] text-[#ED3500]">
+              <FileText className="h-4 w-4" aria-hidden="true" />
+            </span>
+            <h2 className="text-xl font-black text-[#1F2933]">{order.orderNumber}</h2>
+            <SellerStatusPill status={order.status} />
+            <StatusBadge tone={paymentTone(order.paymentStatus)}>
+              {(order.paymentStatus ?? "PENDING").replace(/_/g, " ")}
+            </StatusBadge>
+          </div>
+          <p className="mt-3 text-sm font-semibold leading-6 text-[#667085]">
+            Proforma {order.proformaInvoiceNumber} / Qty {order.quantity}
+          </p>
+          <p className="text-xs font-bold text-[#667085]">Issued {formatDateTime(order.proformaIssuedAt)}</p>
       </div>
       <StatusBadge tone="info">{formatMoney(order.subtotalPaise)}</StatusBadge>
     </div>
   );
+}
+
+function paymentTone(status?: string | null): "success" | "warning" | "danger" | "info" {
+  if (status === "PAID" || status === "NOT_REQUIRED") {
+    return "success";
+  }
+  if (status === "OVERDUE") {
+    return "danger";
+  }
+  if (status === "SUBMITTED_FOR_VERIFICATION" || status === "PARTIALLY_PAID") {
+    return "info";
+  }
+  return "warning";
+}
+
+function fulfilmentLockText(order: SellerB2BOrder) {
+  if (order.status === "IN_FULFILMENT" || order.status === "FULFILLED") {
+    return "Unlocked";
+  }
+  if (order.status !== "PO_ACCEPTED") {
+    return "Locked until PO is accepted";
+  }
+  if (order.paymentStatus !== "PAID" && order.paymentStatus !== "NOT_REQUIRED") {
+    return "Locked until payment is cleared";
+  }
+  return "Ready to unlock";
+}
+
+function payoutStatusText(order: SellerB2BOrder) {
+  if (order.paymentStatus !== "PAID") {
+    return "Waiting for verified payment";
+  }
+  if (order.status !== "FULFILLED") {
+    return "Eligible after fulfilment";
+  }
+  if (order.settlementStatus === "PAID") {
+    return "Paid";
+  }
+  if (order.settlementStatus === "APPROVED") {
+    return "Approved for payout";
+  }
+  if (order.settlementStatus === "DRAFTED" || order.payoutId) {
+    return "In payout batch";
+  }
+  if (order.settlementStatus === "ELIGIBLE") {
+    return "Eligible for payout";
+  }
+  return "Pending finance review";
 }
 
 function Info({ label, value }: { label: string; value: string }) {

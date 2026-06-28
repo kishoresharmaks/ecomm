@@ -40,6 +40,7 @@
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "4.25.2",
     "react-native-svg": "15.15.4",
+    "socket.io-client": "^4.8.1",
     "regenerator-runtime": "0.13.11",
     "expo-document-picker": "~56.0.0",
     "expo-file-system": "~18.0.12",

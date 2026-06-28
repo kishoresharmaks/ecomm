@@ -800,7 +800,13 @@ export class SellerSubscriptionsService {
   }
 
   async ensureCanUseSellerB2B(sellerId: string) {
-    await this.ensureSellerSubscriptionAllowsOperation(sellerId, "respond to B2B enquiries");
+    const { plan } = await this.ensureSellerSubscriptionAllowsOperation(
+      sellerId,
+      "respond to B2B enquiries",
+    );
+    if (!plan?.b2bEnquiryLimit || plan.b2bEnquiryLimit <= 0) {
+      throw new ForbiddenException("Upgrade your subscription plan to respond to B2B enquiries.");
+    }
   }
 
   async expirePastGracePeriods() {

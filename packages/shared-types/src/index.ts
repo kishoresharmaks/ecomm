@@ -69,6 +69,7 @@ export const b2bEnquiryStatuses = [
   "SUBMITTED",
   "IN_REVIEW",
   "RESPONDED",
+  "NEGOTIATING",
   "BUYER_CONFIRMED",
   "ADMIN_APPROVED",
   "FINALISED",

@@ -1,5 +1,16 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { ApprovalStatus, OrderStatus, PaymentStatus, Prisma, SellerOrderStatus, SellerPayoutStatus, SellerSettlementStatus, SellerStatus } from "@indihub/database";
+import {
+  ApprovalStatus,
+  B2BOrderStatus,
+  B2BPaymentStatus,
+  OrderStatus,
+  PaymentStatus,
+  Prisma,
+  SellerOrderStatus,
+  SellerPayoutStatus,
+  SellerSettlementStatus,
+  SellerStatus,
+} from "@indihub/database";
 import {
   createdAtCursorOrderBy,
   createdAtCursorWhere,
@@ -38,6 +49,8 @@ type PayoutRequestCalculation = {
   split: PayoutRequestSplit;
   calculation: SplitFinanceCalculation;
 };
+
+type B2BPayoutOrder = Prisma.B2BOrderGetPayload<Record<string, never>>;
 
 @Injectable()
 export class SellerPayoutsService {
@@ -117,7 +130,7 @@ export class SellerPayoutsService {
         }
       },
       settlementRun: { select: { id: true, runNumber: true, status: true } },
-      _count: { select: { orderSplits: true, ledgerEntries: true, statements: true } }
+      _count: { select: { orderSplits: true, b2bOrders: true, ledgerEntries: true, statements: true } }
     } satisfies Prisma.SellerPayoutInclude;
   }
 
@@ -191,6 +204,28 @@ export class SellerPayoutsService {
         }
       }
 
+      for (const order of availability.b2bOrders) {
+        const updated = await tx.b2BOrder.updateMany({
+          where: {
+            id: order.id,
+            sellerId,
+            payoutId: null,
+            status: B2BOrderStatus.FULFILLED,
+            paymentStatus: B2BPaymentStatus.PAID,
+            settlementStatus: { in: [SellerSettlementStatus.NOT_ELIGIBLE, SellerSettlementStatus.ELIGIBLE] },
+          },
+          data: {
+            payoutId: payout.id,
+            settlementStatus: SellerSettlementStatus.DRAFTED,
+            settlementEligibleAt: order.settlementEligibleAt ?? new Date(),
+          },
+        });
+
+        if (updated.count !== 1) {
+          throw new ConflictException("Eligible B2B payout amount changed while creating this request. Refresh and try again.");
+        }
+      }
+
       await this.createEvent(tx, payout.id, "payout.requested_by_seller", SellerPayoutStatus.DRAFT, SellerPayoutStatus.PENDING_APPROVAL, actor, dto.note);
       await this.audit(
         tx,
@@ -202,6 +237,7 @@ export class SellerPayoutsService {
           sellerId,
           payoutNumber: payout.payoutNumber,
           eligibleSplitCount: availability.eligibleSplitCount,
+          eligibleB2BOrderCount: availability.eligibleB2BOrderCount,
           netPayablePaise: availability.netPayablePaise,
           note: dto.note
         }
@@ -226,6 +262,9 @@ export class SellerPayoutsService {
           include: {
             order: true
           },
+          orderBy: { createdAt: "asc" }
+        },
+        b2bOrders: {
           orderBy: { createdAt: "asc" }
         },
         events: { orderBy: { createdAt: "asc" } },
@@ -313,10 +352,10 @@ export class SellerPayoutsService {
 
       const splitSummary = await this.payoutSplitSummary(tx, payoutId);
       if (splitSummary.count < 1) {
-        throw new BadRequestException("Payout has no linked order splits.");
+        throw new BadRequestException("Payout has no linked order or B2B sources.");
       }
       if (splitSummary.netPayablePaise !== payout.netPayablePaise) {
-        throw new ConflictException("Payout split totals changed. Refresh and try again.");
+        throw new ConflictException("Payout source totals changed. Refresh and try again.");
       }
 
       const payoutUpdate = await tx.sellerPayout.updateMany({
@@ -343,8 +382,22 @@ export class SellerPayoutsService {
           settledAt: new Date()
         }
       });
-      if (splitUpdate.count !== splitSummary.count) {
+      if (splitUpdate.count !== splitSummary.splitCount) {
         throw new ConflictException("Payout splits changed. Refresh and try again.");
+      }
+
+      const b2bUpdate = await tx.b2BOrder.updateMany({
+        where: {
+          payoutId,
+          settlementStatus: SellerSettlementStatus.DRAFTED
+        },
+        data: {
+          settlementStatus: SellerSettlementStatus.APPROVED,
+          settledAt: new Date()
+        }
+      });
+      if (b2bUpdate.count !== splitSummary.b2bOrderCount) {
+        throw new ConflictException("B2B payout sources changed. Refresh and try again.");
       }
 
       await this.ledger.postPayoutApprovalEntries(tx, payoutId, actor);
@@ -394,6 +447,17 @@ export class SellerPayoutsService {
         }
       });
 
+      await tx.b2BOrder.updateMany({
+        where: {
+          payoutId,
+          settlementStatus: { in: [SellerSettlementStatus.DRAFTED, SellerSettlementStatus.APPROVED] }
+        },
+        data: {
+          payoutId: null,
+          settlementStatus: SellerSettlementStatus.ELIGIBLE
+        }
+      });
+
       await this.createEvent(tx, payoutId, "payout.rejected", payout.status, SellerPayoutStatus.REJECTED, actor, dto.note);
       await this.audit(tx, actor, "finance.payout.rejected", payoutId, { status: payout.status }, { status: SellerPayoutStatus.REJECTED, note: dto.note });
 
@@ -419,10 +483,10 @@ export class SellerPayoutsService {
 
       const splitSummary = await this.payoutSplitSummary(tx, payoutId);
       if (splitSummary.count < 1) {
-        throw new BadRequestException("Payout has no linked order splits.");
+        throw new BadRequestException("Payout has no linked order or B2B sources.");
       }
       if (splitSummary.netPayablePaise !== payout.netPayablePaise) {
-        throw new ConflictException("Payout split totals changed. Refresh and try again.");
+        throw new ConflictException("Payout source totals changed. Refresh and try again.");
       }
 
       const payoutUpdate = await tx.sellerPayout.updateMany({
@@ -446,8 +510,18 @@ export class SellerPayoutsService {
           settlementStatus: SellerSettlementStatus.PAID
         }
       });
-      if (splitUpdate.count !== splitSummary.count) {
+      if (splitUpdate.count !== splitSummary.splitCount) {
         throw new ConflictException("Payout splits changed. Refresh and try again.");
+      }
+
+      const b2bUpdate = await tx.b2BOrder.updateMany({
+        where: { payoutId, settlementStatus: SellerSettlementStatus.APPROVED },
+        data: {
+          settlementStatus: SellerSettlementStatus.PAID
+        }
+      });
+      if (b2bUpdate.count !== splitSummary.b2bOrderCount) {
+        throw new ConflictException("B2B payout sources changed. Refresh and try again.");
       }
 
       await this.ledger.postPayoutPaidEntry(tx, payoutId, actor);
@@ -490,15 +564,24 @@ export class SellerPayoutsService {
   }
 
   private async payoutSplitSummary(tx: Prisma.TransactionClient, payoutId: string) {
-    const summary = await tx.orderSellerSplit.aggregate({
-      where: { payoutId },
-      _count: { _all: true },
-      _sum: { netPayablePaise: true }
-    });
+    const [summary, b2bSummary] = await Promise.all([
+      tx.orderSellerSplit.aggregate({
+        where: { payoutId },
+        _count: { _all: true },
+        _sum: { netPayablePaise: true }
+      }),
+      tx.b2BOrder.aggregate({
+        where: { payoutId },
+        _count: { _all: true },
+        _sum: { sellerPayoutAmountPaise: true }
+      })
+    ]);
 
     return {
-      count: summary._count._all,
-      netPayablePaise: summary._sum.netPayablePaise ?? 0
+      splitCount: summary._count._all,
+      b2bOrderCount: b2bSummary._count._all,
+      count: summary._count._all + b2bSummary._count._all,
+      netPayablePaise: (summary._sum.netPayablePaise ?? 0) + (b2bSummary._sum.sellerPayoutAmountPaise ?? 0)
     };
   }
 
@@ -537,7 +620,7 @@ export class SellerPayoutsService {
   }
 
   private async calculateSellerPayoutAvailability(tx: Prisma.TransactionClient, sellerId: string) {
-    const [seller, settings, splits] = await Promise.all([
+    const [seller, settings, splits, b2bOrders] = await Promise.all([
       tx.seller.findUnique({
         where: { id: sellerId },
         include: {
@@ -568,6 +651,16 @@ export class SellerPayoutsService {
           }
         },
         orderBy: { createdAt: "asc" }
+      }),
+      tx.b2BOrder.findMany({
+        where: {
+          sellerId,
+          payoutId: null,
+          status: B2BOrderStatus.FULFILLED,
+          paymentStatus: B2BPaymentStatus.PAID,
+          settlementStatus: { in: [SellerSettlementStatus.NOT_ELIGIBLE, SellerSettlementStatus.ELIGIBLE] },
+        },
+        orderBy: { createdAt: "asc" }
       })
     ]);
 
@@ -594,8 +687,21 @@ export class SellerPayoutsService {
       totals.refundAdjustmentPaise += calculation.refundAdjustmentPaise;
       totals.netPayablePaise += calculation.netPayablePaise;
     }
+    const eligibleB2BOrders: B2BPayoutOrder[] = [];
+    for (const order of b2bOrders) {
+      if (order.sellerPayoutAmountPaise <= 0) {
+        continue;
+      }
+      eligibleB2BOrders.push(order);
+      totals.grossSalesPaise += order.buyerPayableAmountPaise;
+      totals.commissionPaise += order.commissionAmountPaise;
+      totals.netPayablePaise += order.sellerPayoutAmountPaise;
+    }
 
-    const orderDates = calculations.map(({ split }) => split.order.createdAt);
+    const orderDates = [
+      ...calculations.map(({ split }) => split.order.createdAt),
+      ...eligibleB2BOrders.map((order) => order.createdAt),
+    ];
     const sellerReady = seller.status === SellerStatus.APPROVED && seller.approvalStatus === ApprovalStatus.APPROVED && !seller.deletedAt;
     const hasPayoutMethod = this.hasPayoutMethod(seller.payoutProfile);
 
@@ -604,9 +710,11 @@ export class SellerPayoutsService {
       sellerReady,
       hasPayoutMethod,
       eligibleSplitCount: calculations.length,
+      eligibleB2BOrderCount: eligibleB2BOrders.length,
       periodFrom: orderDates.length ? new Date(Math.min(...orderDates.map((date) => date.getTime()))) : null,
       periodTo: orderDates.length ? new Date(Math.max(...orderDates.map((date) => date.getTime()))) : null,
       calculations,
+      b2bOrders: eligibleB2BOrders,
       ...totals
     };
   }
@@ -620,6 +728,7 @@ export class SellerPayoutsService {
       sellerReady: availability.sellerReady,
       hasPayoutMethod: availability.hasPayoutMethod,
       eligibleSplitCount: availability.eligibleSplitCount,
+      eligibleB2BOrderCount: availability.eligibleB2BOrderCount,
       periodFrom: availability.periodFrom?.toISOString() ?? null,
       periodTo: availability.periodTo?.toISOString() ?? null,
       grossSalesPaise: availability.grossSalesPaise,
@@ -641,6 +750,7 @@ export class SellerPayoutsService {
     sellerReady: boolean;
     hasPayoutMethod: boolean;
     eligibleSplitCount: number;
+    eligibleB2BOrderCount?: number;
     netPayablePaise: number;
     minimumPayoutPaise: number;
   }) {
@@ -655,7 +765,7 @@ export class SellerPayoutsService {
     if (!availability.hasPayoutMethod) {
       blockers.push("Add bank account or UPI payout details in seller profile.");
     }
-    if (availability.eligibleSplitCount === 0 || availability.netPayablePaise <= 0) {
+    if (availability.eligibleSplitCount + (availability.eligibleB2BOrderCount ?? 0) === 0 || availability.netPayablePaise <= 0) {
       blockers.push("No delivered and paid orders are currently eligible for payout.");
     }
     if (availability.netPayablePaise > 0 && availability.netPayablePaise < availability.minimumPayoutPaise) {

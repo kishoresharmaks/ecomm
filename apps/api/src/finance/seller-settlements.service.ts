@@ -1,5 +1,14 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { OrderStatus, PaymentStatus, Prisma, SellerOrderStatus, SellerPayoutStatus, SellerSettlementStatus } from "@indihub/database";
+import {
+  B2BOrderStatus,
+  B2BPaymentStatus,
+  OrderStatus,
+  PaymentStatus,
+  Prisma,
+  SellerOrderStatus,
+  SellerPayoutStatus,
+  SellerSettlementStatus,
+} from "@indihub/database";
 import {
   createdAtCursorOrderBy,
   createdAtCursorWhere,
@@ -29,6 +38,7 @@ type DraftSplit = Prisma.OrderSellerSplitGetPayload<{
 type SellerDraft = {
   sellerId: string;
   splits: Array<{ split: DraftSplit; calculation: SplitFinanceCalculation }>;
+  b2bOrders: Prisma.B2BOrderGetPayload<Record<string, never>>[];
 };
 
 type FinanceTotals = {
@@ -138,44 +148,68 @@ export class SellerSettlementsService {
     }
 
     const run = await this.prisma.client.$transaction(async (tx) => {
-      const splits = await tx.orderSellerSplit.findMany({
-        where: {
-          payoutId: null,
-          sellerStatus: { not: SellerOrderStatus.CANCELLED },
-          settlementStatus: { in: [SellerSettlementStatus.NOT_ELIGIBLE, SellerSettlementStatus.ELIGIBLE] },
-          order: {
-            orderStatus: OrderStatus.DELIVERED,
-            paymentStatus: { in: [PaymentStatus.PAID, PaymentStatus.NOT_REQUIRED] },
+      const [splits, b2bOrders] = await Promise.all([
+        tx.orderSellerSplit.findMany({
+          where: {
+            payoutId: null,
+            sellerStatus: { not: SellerOrderStatus.CANCELLED },
+            settlementStatus: { in: [SellerSettlementStatus.NOT_ELIGIBLE, SellerSettlementStatus.ELIGIBLE] },
+            order: {
+              orderStatus: OrderStatus.DELIVERED,
+              paymentStatus: { in: [PaymentStatus.PAID, PaymentStatus.NOT_REQUIRED] },
+              createdAt: {
+                gte: dateFrom,
+                lte: dateTo
+              }
+            }
+          },
+          include: {
+            order: {
+              include: {
+                items: {
+                  include: {
+                    product: true
+                  }
+                }
+              }
+            }
+          },
+          orderBy: { createdAt: "asc" }
+        }),
+        tx.b2BOrder.findMany({
+          where: {
+            payoutId: null,
+            sellerId: { not: null },
+            status: B2BOrderStatus.FULFILLED,
+            paymentStatus: B2BPaymentStatus.PAID,
+            settlementStatus: { in: [SellerSettlementStatus.NOT_ELIGIBLE, SellerSettlementStatus.ELIGIBLE] },
             createdAt: {
               gte: dateFrom,
               lte: dateTo
             }
-          }
-        },
-        include: {
-          order: {
-            include: {
-              items: {
-                include: {
-                  product: true
-                }
-              }
-            }
-          }
-        },
-        orderBy: { createdAt: "asc" }
-      });
+          },
+          orderBy: { createdAt: "asc" }
+        })
+      ]);
 
-      if (!splits.length) {
-        throw new BadRequestException("No eligible seller order splits found for this settlement period.");
+      if (!splits.length && !b2bOrders.length) {
+        throw new BadRequestException("No eligible seller order or B2B payout sources found for this settlement period.");
       }
 
       const drafts = new Map<string, SellerDraft>();
       for (const split of splits) {
         const calculation = await this.calculator.calculateSplit(split, tx);
-        const sellerDraft = drafts.get(split.sellerId) ?? { sellerId: split.sellerId, splits: [] };
+        const sellerDraft = drafts.get(split.sellerId) ?? { sellerId: split.sellerId, splits: [], b2bOrders: [] };
         sellerDraft.splits.push({ split, calculation });
         drafts.set(split.sellerId, sellerDraft);
+      }
+      for (const order of b2bOrders) {
+        if (!order.sellerId || order.sellerPayoutAmountPaise <= 0) {
+          continue;
+        }
+        const sellerDraft = drafts.get(order.sellerId) ?? { sellerId: order.sellerId, splits: [], b2bOrders: [] };
+        sellerDraft.b2bOrders.push(order);
+        drafts.set(order.sellerId, sellerDraft);
       }
 
       const runNumber = this.makeRunNumber();
@@ -240,6 +274,30 @@ export class SellerSettlementsService {
             throw new ConflictException("Settlement eligibility changed while creating this draft. Refresh and try again.");
           }
         }
+        for (const order of sellerDraft.b2bOrders) {
+          const b2bUpdate = await tx.b2BOrder.updateMany({
+            where: {
+              id: order.id,
+              payoutId: null,
+              sellerId: sellerDraft.sellerId,
+              status: B2BOrderStatus.FULFILLED,
+              paymentStatus: B2BPaymentStatus.PAID,
+              settlementStatus: { in: [SellerSettlementStatus.NOT_ELIGIBLE, SellerSettlementStatus.ELIGIBLE] },
+              createdAt: {
+                gte: dateFrom,
+                lte: dateTo
+              }
+            },
+            data: {
+              payoutId: payout.id,
+              settlementStatus: SellerSettlementStatus.DRAFTED,
+              settlementEligibleAt: order.settlementEligibleAt ?? new Date()
+            }
+          });
+          if (b2bUpdate.count !== 1) {
+            throw new ConflictException("B2B settlement eligibility changed while creating this draft. Refresh and try again.");
+          }
+        }
 
         this.addTotals(runTotals, totals);
       }
@@ -260,7 +318,8 @@ export class SellerSettlementsService {
             periodFrom: dto.dateFrom,
             periodTo: dto.dateTo,
             payoutCount: drafts.size,
-            splitCount: splits.length
+            splitCount: splits.length,
+            b2bOrderCount: b2bOrders.length
           }
         }
       });
@@ -344,6 +403,11 @@ export class SellerSettlementsService {
       totals.platformFeePaise += calculation.platformFeePaise;
       totals.refundAdjustmentPaise += calculation.refundAdjustmentPaise;
       totals.netPayablePaise += calculation.netPayablePaise;
+    }
+    for (const order of draft.b2bOrders) {
+      totals.grossSalesPaise += order.buyerPayableAmountPaise;
+      totals.commissionPaise += order.commissionAmountPaise;
+      totals.netPayablePaise += order.sellerPayoutAmountPaise;
     }
 
     return totals;

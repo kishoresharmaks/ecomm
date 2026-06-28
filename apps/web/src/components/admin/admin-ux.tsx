@@ -206,7 +206,7 @@ export function AdminListbox({
       ) : null}
       <Listbox value={value} onChange={onChange} disabled={disabled}>
         {({ open }) => (
-          <div className={cn("relative", open && "z-[90]")}>
+          <div className="relative">
             <ListboxButton
               className={cn(
                 "flex w-full items-center justify-between gap-2 rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 text-left text-sm font-semibold text-[#1F2933] outline-none transition hover:bg-white data-focus:border-[#ED3500] data-focus:bg-white data-disabled:cursor-not-allowed data-disabled:opacity-55",
@@ -220,8 +220,11 @@ export function AdminListbox({
               <ChevronDown className={cn("h-4 w-4 shrink-0 text-[#667085] transition", open && "rotate-180")} aria-hidden="true" />
             </ListboxButton>
             <ListboxOptions
+              anchor={{ to: "bottom start", gap: "6px", padding: "12px" }}
+              modal={false}
+              portal
               transition
-              className="absolute left-0 top-[calc(100%+0.375rem)] z-[100] max-h-56 w-full min-w-full overflow-y-auto rounded-md border border-[#D8E2EA] bg-white p-1 shadow-[0_18px_40px_rgba(15,23,42,0.18)] outline-none transition duration-150 data-closed:pointer-events-none data-closed:-translate-y-1 data-closed:scale-[0.98] data-closed:opacity-0 sm:min-w-[18rem]"
+              className="z-[70] max-h-56 w-[var(--button-width)] min-w-[var(--button-width)] overflow-y-auto rounded-md border border-[#D8E2EA] bg-white p-1 shadow-[0_18px_40px_rgba(15,23,42,0.18)] outline-none transition duration-150 data-closed:pointer-events-none data-closed:-translate-y-1 data-closed:scale-[0.98] data-closed:opacity-0 sm:min-w-[18rem]"
             >
               {options.map((option) => (
                 <ListboxOption

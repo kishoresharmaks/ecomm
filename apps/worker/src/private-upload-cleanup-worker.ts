@@ -126,6 +126,17 @@ async function findCleanupCandidates(limit: number, retentionHours: number) {
         SELECT 1
         FROM b2b_orders bo
         WHERE bo.purchase_order_file_key = pu.asset_key
+           OR bo.proforma_invoice_file_key = pu.asset_key
+      )
+      AND NOT EXISTS (
+        SELECT 1
+        FROM b2b_payment_proofs bpp
+        WHERE bpp.proof_file_key = pu.asset_key
+      )
+      AND NOT EXISTS (
+        SELECT 1
+        FROM b2b_proforma_invoice_revisions bpir
+        WHERE bpir.file_key = pu.asset_key
       )
     ORDER BY pu.created_at ASC
     LIMIT ${take}

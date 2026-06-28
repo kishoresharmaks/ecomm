@@ -26,6 +26,7 @@ import type {
   BusinessBuyerEnquiry,
   BusinessBuyerEnquiryPayload,
   BusinessBuyerPurchaseOrderPayload,
+  B2BEnquiryMessage,
   B2BOrder,
   PaginatedB2BEnquiries,
   PaginatedB2BOrders,
@@ -145,8 +146,23 @@ export function createB2BEnquiry(
 export function getB2BEnquiry(
   auth: MobileAuthHeaders,
   enquiryId: string,
+  query: { messageCursor?: string; messageLimit?: number } = {},
 ): Promise<BusinessBuyerEnquiry> {
-  return getJson({ path: `/b2b/enquiries/${encodeURIComponent(enquiryId)}`, auth });
+  return getJson({ path: `/b2b/enquiries/${encodeURIComponent(enquiryId)}${queryString(query)}`, auth });
+}
+
+export function sendB2BEnquiryMessage(
+  auth: MobileAuthHeaders,
+  enquiryId: string,
+  message: string,
+): Promise<B2BEnquiryMessage> {
+  return withServerRetry(() =>
+    postJson({
+      path: `/b2b/enquiries/${encodeURIComponent(enquiryId)}/messages`,
+      auth,
+      body: { message },
+    }),
+  );
 }
 
 export function cancelB2BEnquiry(
@@ -161,9 +177,14 @@ export function cancelB2BEnquiry(
 export function confirmB2BEnquiry(
   auth: MobileAuthHeaders,
   enquiryId: string,
+  responseId?: string,
 ): Promise<BusinessBuyerEnquiry> {
   return withServerRetry(() =>
-    patchJson({ path: `/b2b/enquiries/${encodeURIComponent(enquiryId)}/confirm`, auth }),
+    patchJson({
+      path: `/b2b/enquiries/${encodeURIComponent(enquiryId)}/confirm`,
+      auth,
+      body: responseId ? { responseId } : {},
+    }),
   );
 }
 

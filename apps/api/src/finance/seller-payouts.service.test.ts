@@ -44,6 +44,14 @@ describe("SellerPayoutsService seller requests", () => {
         findMany: vi.fn().mockResolvedValue([split]),
         updateMany: vi.fn().mockResolvedValue({ count: 1 })
       },
+      b2BOrder: {
+        findMany: vi.fn().mockResolvedValue([]),
+        updateMany: vi.fn(),
+        aggregate: vi.fn().mockResolvedValue({
+          _count: { _all: 0 },
+          _sum: { sellerPayoutAmountPaise: 0 }
+        })
+      },
       sellerPayout: {
         create: vi.fn().mockResolvedValue({ id: "payout-1", payoutNumber: "PO-TEST" })
       },
@@ -139,6 +147,12 @@ describe("SellerPayoutsService seller requests", () => {
           _count: { _all: 1 },
           _sum: { netPayablePaise: 43_600 }
         })
+      },
+      b2BOrder: {
+        aggregate: vi.fn().mockResolvedValue({
+          _count: { _all: 0 },
+          _sum: { sellerPayoutAmountPaise: 0 }
+        })
       }
     };
     const prisma = {
@@ -178,6 +192,9 @@ describe("SellerPayoutsService seller requests", () => {
         updateMany: vi.fn()
       },
       orderSellerSplit: {
+        aggregate: vi.fn()
+      },
+      b2BOrder: {
         aggregate: vi.fn()
       }
     };
@@ -224,6 +241,13 @@ describe("SellerPayoutsService seller requests", () => {
           _sum: { netPayablePaise: 43_600 }
         }),
         updateMany: vi.fn().mockResolvedValue({ count: 0 })
+      },
+      b2BOrder: {
+        aggregate: vi.fn().mockResolvedValue({
+          _count: { _all: 0 },
+          _sum: { sellerPayoutAmountPaise: 0 }
+        }),
+        updateMany: vi.fn()
       }
     };
     const prisma = {

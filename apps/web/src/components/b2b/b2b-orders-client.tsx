@@ -8,6 +8,7 @@ import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
 import { userFacingApiErrorMessage } from "@/lib/api";
 import {
   openB2BPurchaseOrderDocument,
+  uploadB2BPaymentProofDocument,
   uploadB2BPurchaseOrderDocument,
   validateB2BPurchaseOrderFile,
 } from "@/lib/b2b-po-documents";
@@ -15,8 +16,10 @@ import {
   getBusinessBuyerB2BOrder,
   getBusinessBuyerProfile,
   listBusinessBuyerB2BOrders,
+  submitBusinessBuyerPaymentProof,
   submitBusinessBuyerPurchaseOrder,
   type B2BOrder,
+  type B2BPaymentProofPayload,
   type BusinessBuyerPurchaseOrderPayload,
 } from "@/lib/business-buyer-api";
 import { B2BAuthNotice, useB2BAuth } from "./b2b-auth";
@@ -139,6 +142,8 @@ export function B2BOrderDetailClient({ orderNumber }: { orderNumber: string }) {
   const [poFile, setPoFile] = useState<File | null>(null);
   const [uploadedPoKey, setUploadedPoKey] = useState<string | null>(null);
   const [isUploadingPo, setIsUploadingPo] = useState(false);
+  const [proofFile, setProofFile] = useState<File | null>(null);
+  const [isUploadingProof, setIsUploadingProof] = useState(false);
 
   const profileQuery = useQuery({
     queryKey: ["b2b-profile", auth.authKey],
@@ -163,6 +168,18 @@ export function B2BOrderDetailClient({ orderNumber }: { orderNumber: string }) {
       void queryClient.invalidateQueries({ queryKey: ["b2b-orders", auth.authKey] });
     },
     onError: (error) => setNotice(error instanceof Error ? error.message : "Purchase order submission failed."),
+  });
+
+  const paymentMutation = useMutation({
+    mutationFn: (payload: B2BPaymentProofPayload) =>
+      submitBusinessBuyerPaymentProof(auth.authHeaders, orderNumber, payload),
+    onSuccess: () => {
+      setNotice("Payment proof submitted for finance verification.");
+      setProofFile(null);
+      void queryClient.invalidateQueries({ queryKey: ["b2b-order", auth.authKey, orderNumber] });
+      void queryClient.invalidateQueries({ queryKey: ["b2b-orders", auth.authKey] });
+    },
+    onError: (error) => setNotice(userFacingApiErrorMessage(error)),
   });
 
   async function submitPurchaseOrder(event: FormEvent<HTMLFormElement>) {
@@ -235,6 +252,60 @@ export function B2BOrderDetailClient({ orderNumber }: { orderNumber: string }) {
     }
   }
 
+  async function openProformaInvoice() {
+    setNotice(null);
+
+    try {
+      await openB2BPurchaseOrderDocument(
+        auth.authHeaders,
+        `/api/b2b/orders/${encodeURIComponent(orderNumber)}/proforma-invoice/document-access`,
+        `/api/b2b/orders/${encodeURIComponent(orderNumber)}/proforma-invoice`,
+      );
+    } catch (error) {
+      setNotice(userFacingApiErrorMessage(error));
+    }
+  }
+
+  async function openTaxInvoice() {
+    setNotice(null);
+
+    try {
+      await openB2BPurchaseOrderDocument(
+        auth.authHeaders,
+        `/api/b2b/orders/${encodeURIComponent(orderNumber)}/tax-invoice/document-access`,
+        `/api/b2b/orders/${encodeURIComponent(orderNumber)}/tax-invoice`,
+      );
+    } catch (error) {
+      setNotice(userFacingApiErrorMessage(error));
+    }
+  }
+
+  async function submitPaymentProof(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!proofFile) {
+      setNotice("Upload a bank receipt before submitting payment proof.");
+      return;
+    }
+    const form = new FormData(event.currentTarget);
+    setNotice(null);
+
+    try {
+      setIsUploadingProof(true);
+      const proofFileKey = await uploadB2BPaymentProofDocument(auth.authHeaders, orderNumber, proofFile);
+      paymentMutation.mutate({
+        method: "BANK_TRANSFER",
+        amountPaise: Math.round(Number(formValue(form, "amountRupees")) * 100),
+        currency: order?.currency ?? "INR",
+        referenceNumber: formValue(form, "referenceNumber"),
+        proofFileKey,
+      });
+    } catch (error) {
+      setNotice(userFacingApiErrorMessage(error));
+    } finally {
+      setIsUploadingProof(false);
+    }
+  }
+
   const order = orderQuery.data;
   const canSubmitPo = order ? ["PROFORMA_ISSUED", "PO_SUBMITTED"].includes(order.status) : false;
 
@@ -263,6 +334,29 @@ export function B2BOrderDetailClient({ orderNumber }: { orderNumber: string }) {
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
           <div className="grid gap-5">
             <B2BOrderCommercialPanel order={order} />
+            <B2BProformaPanel order={order} onOpen={openProformaInvoice} />
+            <B2BFinalTaxInvoicePanel order={order} onOpen={openTaxInvoice} />
+            <B2BOrderPaymentPanel
+              order={order}
+              proofFile={proofFile}
+              isSubmitting={paymentMutation.isPending || isUploadingProof}
+              onProofFile={(file) => {
+                setNotice(null);
+                if (!file) {
+                  setProofFile(null);
+                  return;
+                }
+                try {
+                  validateB2BPurchaseOrderFile(file);
+                  setProofFile(file);
+                } catch (error) {
+                  setProofFile(null);
+                  setNotice(userFacingApiErrorMessage(error));
+                }
+              }}
+              onSubmit={submitPaymentProof}
+            />
+            <B2BPaymentProofHistory order={order} />
             <B2BPanel>
               <SectionHeading title="Purchase order" description="Submit the buyer PO reference once the proforma is approved internally." />
               {canSubmitPo ? (
@@ -374,9 +468,193 @@ function B2BOrderCommercialPanel({ order }: { order: B2BOrder }) {
         <Info label="Product/store" value={order.product?.name ?? order.seller?.storeName ?? "General procurement"} />
         <Info label="Quantity" value={String(order.quantity)} />
         <Info label="Unit price" value={formatMoney(order.unitPricePaise)} />
-        <Info label="Subtotal" value={formatMoney(order.subtotalPaise)} />
+        <Info label="Buyer payable" value={formatMoney(order.buyerPayableAmountPaise ?? order.subtotalPaise)} />
         <Info label="Proforma expires" value={formatDateTime(order.proformaExpiresAt)} />
+        <Info label="Payment due" value={formatDateTime(order.paymentDueAt)} />
+        <Info label="Payment status" value={(order.paymentStatus ?? "PENDING").replace(/_/g, " ")} />
         <Info label="PO number" value={order.purchaseOrderNumber ?? "Not submitted"} />
+      </div>
+    </B2BPanel>
+  );
+}
+
+function B2BProformaPanel({ order, onOpen }: { order: B2BOrder; onOpen: () => void }) {
+  return (
+    <B2BPanel>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <SectionHeading title="Proforma invoice" description="Download the current commercial proforma before submitting PO and payment." />
+        <Button type="button" variant="outline" onClick={onOpen}>
+          <ExternalLink className="h-4 w-4" aria-hidden="true" />
+          Download PDF
+        </Button>
+      </div>
+      <div className="mt-4 grid gap-3 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-4 text-sm font-semibold text-[#667085] md:grid-cols-3">
+        <Info label="Invoice number" value={order.proformaInvoiceNumber} />
+        <Info label="Issued" value={formatDateTime(order.proformaIssuedAt)} />
+        <Info label="Expires" value={formatDateTime(order.proformaExpiresAt)} />
+      </div>
+    </B2BPanel>
+  );
+}
+
+function B2BFinalTaxInvoicePanel({ order, onOpen }: { order: B2BOrder; onOpen: () => Promise<void> }) {
+  const available = order.status === "FULFILLED";
+
+  return (
+    <B2BPanel>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <SectionHeading
+          title="Final tax invoice"
+          description={available ? "Download the server-generated final tax invoice PDF." : "Available after seller fulfilment is complete."}
+        />
+        <Button
+          type="button"
+          variant={available ? "outline" : "ghost"}
+          disabled={!available}
+          onClick={() => void onOpen()}
+        >
+          <ExternalLink className="h-4 w-4" aria-hidden="true" />
+          Open invoice
+        </Button>
+      </div>
+    </B2BPanel>
+  );
+}
+
+function B2BOrderPaymentPanel({
+  order,
+  proofFile,
+  isSubmitting,
+  onProofFile,
+  onSubmit,
+}: {
+  order: B2BOrder;
+  proofFile: File | null;
+  isSubmitting: boolean;
+  onProofFile: (file: File | null) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  const paymentStatus = order.paymentStatus ?? "PENDING";
+  const locked = ["PAID", "NOT_REQUIRED", "REFUNDED"].includes(paymentStatus);
+  const defaultAmount = ((order.buyerPayableAmountPaise ?? order.subtotalPaise ?? 0) / 100).toFixed(2);
+  const bankTransfer = order.paymentInstructions?.bankTransfer;
+  const bankDetails = bankTransfer?.bankTransferDetails;
+  const bankConfigured = Boolean(bankTransfer?.enabled && bankTransfer.configured && bankDetails);
+
+  return (
+    <B2BPanel>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <SectionHeading title="Payment proof" description="Submit bank transfer details for finance verification." />
+        <StatusBadge tone={paymentStatus === "PAID" || paymentStatus === "NOT_REQUIRED" ? "success" : paymentStatus === "OVERDUE" ? "danger" : "warning"}>
+          {paymentStatus.replace(/_/g, " ")}
+        </StatusBadge>
+      </div>
+      <div className="mt-4 grid gap-3 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-4 text-sm font-semibold text-[#667085] md:grid-cols-3">
+        <Info label="Buyer payable" value={formatMoney(order.buyerPayableAmountPaise ?? order.subtotalPaise)} />
+        <Info label="Paid amount" value={formatMoney(order.paidAmountPaise)} />
+        <Info label="Due date" value={formatDateTime(order.paymentDueAt)} />
+      </div>
+      <div className="mt-4 grid gap-3 rounded-lg border border-[#F3E7E2] bg-[#FFF7F4] p-4 text-sm font-semibold text-[#667085] md:grid-cols-2">
+        <Info label="Payment method" value={bankTransfer?.label ?? "Bank transfer"} />
+        <Info label="Account holder" value={bankDetails?.accountHolderName || "Not configured"} />
+        <Info label="Bank" value={bankDetails?.bankName || "Not configured"} />
+        <Info label="Account number" value={bankDetails?.accountNumber || "Not configured"} />
+        <Info label="IFSC" value={bankDetails?.ifscCode || "Not configured"} />
+        <Info label="UPI" value={bankDetails?.upiId || "Not configured"} />
+        <Info label="Reference" value={bankDetails?.referenceRequired === false ? "Reference optional" : "UTR / NEFT / RTGS reference required"} />
+        <Info label="Instructions" value={bankTransfer?.instructions || bankTransfer?.note || "Transfer to the configured platform bank account."} />
+      </div>
+      {!bankConfigured && !locked ? (
+        <p className="mt-4 rounded-lg border border-[#FEDF89] bg-[#FFFAEB] p-4 text-sm font-bold text-[#B54708]">
+          Bank transfer is not fully configured by admin yet. Please wait for finance instructions before transferring funds.
+        </p>
+      ) : null}
+      {locked ? (
+        <p className="mt-4 rounded-lg border border-[#D1FADF] bg-[#F6FEF9] p-4 text-sm font-bold text-[#027A48]">
+          Payment is complete for this B2B order.
+        </p>
+      ) : (
+        <form onSubmit={onSubmit} className="mt-5 grid gap-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <B2BField label="UTR / bank reference" name="referenceNumber" required placeholder="UTR1234567890" />
+            <B2BField label="Amount paid in rupees" name="amountRupees" required defaultValue={defaultAmount} placeholder="100000.00" />
+          </div>
+          <label className="grid gap-2">
+            <span className="text-xs font-bold uppercase tracking-wide text-[#667085]">Bank receipt</span>
+            <span className="flex min-h-24 flex-col items-center justify-center rounded-xl border border-dashed border-[#F3B199] bg-[#FFF7F4] px-4 py-5 text-center">
+              <UploadCloud className="h-6 w-6 text-[#ED3500]" aria-hidden="true" />
+              <span className="mt-2 text-sm font-black text-[#1F2933]">
+                {proofFile?.name ?? "Upload receipt or screenshot"}
+              </span>
+              <span className="mt-1 text-xs font-semibold text-[#667085]">PDF, JPG, PNG, or WebP / max 10 MB</span>
+              <input
+                type="file"
+                accept="application/pdf,image/jpeg,image/png,image/webp"
+                onChange={(event) => onProofFile(event.target.files?.[0] ?? null)}
+                className="mt-4 block w-full max-w-xs cursor-pointer rounded-md border border-[#F3E7E2] bg-white px-3 py-2 text-xs font-bold text-[#667085] file:mr-3 file:rounded-full file:border-0 file:bg-[#ED3500] file:px-3 file:py-2 file:text-xs file:font-black file:text-white"
+              />
+            </span>
+          </label>
+          <Button type="submit" disabled={isSubmitting}>
+            <FileCheck2 className="h-4 w-4" aria-hidden="true" />
+            {isSubmitting ? "Submitting proof..." : "Submit payment proof"}
+          </Button>
+        </form>
+      )}
+    </B2BPanel>
+  );
+}
+
+function B2BPaymentProofHistory({ order }: { order: B2BOrder }) {
+  const proofs = order.paymentProofs ?? [];
+
+  return (
+    <B2BPanel>
+      <SectionHeading title="Payment proof history" description="All submitted receipts and finance decisions remain visible for audit." />
+      <div className="mt-4 overflow-hidden rounded-lg border border-[#E5E7EB]">
+        <table className="min-w-full divide-y divide-[#E5E7EB] text-sm">
+          <thead className="bg-[#F8FAFC] text-left text-xs font-black uppercase tracking-wide text-[#667085]">
+            <tr>
+              <th className="px-3 py-3">Date</th>
+              <th className="px-3 py-3">Reference</th>
+              <th className="px-3 py-3">Amount</th>
+              <th className="px-3 py-3">Status</th>
+              <th className="px-3 py-3">Finance note</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#E5E7EB] bg-white">
+            {proofs.length ? (
+              proofs.map((proof) => (
+                <tr key={proof.id}>
+                  <td className="px-3 py-3 font-semibold text-[#667085]">{formatDateTime(proof.submittedAt)}</td>
+                  <td className="px-3 py-3 font-black text-[#1F2933]">{proof.referenceNumber ?? "Manual"}</td>
+                  <td className="px-3 py-3 font-black text-[#163B5C]">
+                    {formatMoney(proof.amountPaise)}
+                    {(proof.overpaymentAmountPaise ?? 0) > 0 ? (
+                      <span className="mt-1 block text-xs text-[#B54708]">
+                        Overpayment {formatMoney(proof.overpaymentAmountPaise)}
+                      </span>
+                    ) : null}
+                  </td>
+                  <td className="px-3 py-3">
+                    <StatusBadge tone={proof.status === "VERIFIED" ? "success" : proof.status === "REJECTED" || proof.status === "RAZORPAY_FAILED" ? "danger" : "warning"}>
+                      {proof.status.replace(/_/g, " ")}
+                    </StatusBadge>
+                  </td>
+                  <td className="px-3 py-3 font-semibold text-[#667085]">
+                    {proof.rejectionReason ?? proof.note ?? "Awaiting review"}
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td className="px-3 py-5 font-semibold text-[#667085]" colSpan={5}>
+                  No payment proof has been submitted yet.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
     </B2BPanel>
   );

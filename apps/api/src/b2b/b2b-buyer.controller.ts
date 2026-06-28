@@ -20,13 +20,18 @@ import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { Roles } from "../auth/decorators/roles.decorator";
 import type { RequestUser } from "../auth/types/indihub-request";
 import { B2BService, type UploadedB2BPurchaseOrderFile } from "./b2b.service";
-import { sendB2BPurchaseOrderDocument } from "./b2b-document-response";
+import { sendB2BDocument, sendB2BPurchaseOrderDocument } from "./b2b-document-response";
 import { CreateB2BEnquiryDto } from "./dto/b2b-enquiry.dto";
 import {
   B2BOrderQueryDto,
   CreateB2BPurchaseOrderUploadRequestDto,
+  SubmitB2BPaymentProofDto,
   SubmitB2BPurchaseOrderDto,
 } from "./dto/b2b-order.dto";
+import {
+  B2BEnquiryDetailQueryDto,
+  SendB2BMessageDto,
+} from "./dto/b2b-message.dto";
 import { B2BEnquiryQueryDto } from "./dto/b2b-query.dto";
 import {
   CreateBusinessBuyerAddressDto,
@@ -123,6 +128,58 @@ export class B2BBuyerController {
     return this.b2bService.getMyB2BOrder(actor, orderNumber);
   }
 
+  @Get("orders/:orderNumber/proforma-invoice/document-access")
+  @Roles(RoleCode.BUSINESS_BUYER)
+  @ApiOperation({ summary: "Read buyer-authorized proforma invoice access metadata." })
+  getProformaInvoiceDocumentAccess(
+    @CurrentUser() actor: RequestUser,
+    @Param("orderNumber") orderNumber: string,
+  ) {
+    return this.b2bService.getMyProformaInvoiceDocumentAccess(actor, orderNumber);
+  }
+
+  @Get("orders/:orderNumber/proforma-invoice")
+  @Roles(RoleCode.BUSINESS_BUYER)
+  @ApiOperation({ summary: "Open or stream the current buyer proforma invoice." })
+  async openProformaInvoiceDocument(
+    @CurrentUser() actor: RequestUser,
+    @Param("orderNumber") orderNumber: string,
+    @Res({ passthrough: true })
+    response: {
+      redirect: (status: number, url: string) => unknown;
+      set: (headers: Record<string, string>) => unknown;
+    },
+  ) {
+    const access = await this.b2bService.getMyProformaInvoiceDocumentAccess(actor, orderNumber);
+    return sendB2BDocument(access, response, "proforma-invoice.pdf");
+  }
+
+  @Get("orders/:orderNumber/tax-invoice/document-access")
+  @Roles(RoleCode.BUSINESS_BUYER)
+  @ApiOperation({ summary: "Read buyer-authorized final tax invoice access metadata." })
+  getTaxInvoiceDocumentAccess(
+    @CurrentUser() actor: RequestUser,
+    @Param("orderNumber") orderNumber: string,
+  ) {
+    return this.b2bService.getMyTaxInvoiceDocumentAccess(actor, orderNumber);
+  }
+
+  @Get("orders/:orderNumber/tax-invoice")
+  @Roles(RoleCode.BUSINESS_BUYER)
+  @ApiOperation({ summary: "Open or stream the buyer final tax invoice." })
+  async openTaxInvoiceDocument(
+    @CurrentUser() actor: RequestUser,
+    @Param("orderNumber") orderNumber: string,
+    @Res({ passthrough: true })
+    response: {
+      redirect: (status: number, url: string) => unknown;
+      set: (headers: Record<string, string>) => unknown;
+    },
+  ) {
+    const access = await this.b2bService.getMyTaxInvoiceDocumentAccess(actor, orderNumber);
+    return sendB2BDocument(access, response, "tax-invoice.pdf");
+  }
+
   @Post("orders/:orderNumber/purchase-order/upload-request")
   @Roles(RoleCode.BUSINESS_BUYER)
   @ApiOperation({ summary: "Create a B2B purchase-order upload request for S3 or local fallback." })
@@ -200,11 +257,75 @@ export class B2BBuyerController {
     return this.b2bService.submitPurchaseOrder(actor, orderNumber, dto);
   }
 
+  @Post("orders/:orderNumber/payment-proof/upload-request")
+  @Roles(RoleCode.BUSINESS_BUYER)
+  @ApiOperation({ summary: "Create a B2B payment-proof upload request for S3 or local fallback." })
+  createPaymentProofUploadRequest(
+    @CurrentUser() actor: RequestUser,
+    @Param("orderNumber") orderNumber: string,
+    @Body() dto: CreateB2BPurchaseOrderUploadRequestDto,
+  ) {
+    return this.b2bService.createMyPaymentProofUploadRequest(actor, orderNumber, dto);
+  }
+
+  @Post("orders/:orderNumber/payment-proof/upload")
+  @Roles(RoleCode.BUSINESS_BUYER)
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024 } }))
+  @ApiConsumes("multipart/form-data")
+  @ApiBody({
+    description:
+      "Multipart local-private-storage upload for a buyer bank transfer receipt. The file field must be named `file`. Server validation allows PDF, JPG, PNG, and WebP only, verifies file magic bytes, and rejects files larger than 10 MB.",
+    schema: {
+      type: "object",
+      required: ["file"],
+      properties: {
+        file: {
+          type: "string",
+          format: "binary",
+        },
+      },
+    },
+  })
+  @ApiOperation({ summary: "Upload a B2B payment-proof file through local private storage." })
+  uploadPaymentProofFile(
+    @CurrentUser() actor: RequestUser,
+    @Param("orderNumber") orderNumber: string,
+    @UploadedFile() file: UploadedB2BPurchaseOrderFile | undefined,
+  ) {
+    return this.b2bService.uploadMyPaymentProofFile(actor, orderNumber, file);
+  }
+
+  @Post("orders/:orderNumber/payment-proof")
+  @Roles(RoleCode.BUSINESS_BUYER)
+  @ApiOperation({ summary: "Submit bank-transfer payment proof for a B2B order." })
+  submitPaymentProof(
+    @CurrentUser() actor: RequestUser,
+    @Param("orderNumber") orderNumber: string,
+    @Body() dto: SubmitB2BPaymentProofDto,
+  ) {
+    return this.b2bService.submitMyB2BPaymentProof(actor, orderNumber, dto);
+  }
+
   @Get("enquiries/:enquiryId")
   @Roles(RoleCode.BUSINESS_BUYER)
   @ApiOperation({ summary: "Read a submitted B2B enquiry." })
-  getEnquiry(@CurrentUser() actor: RequestUser, @Param("enquiryId") enquiryId: string) {
-    return this.b2bService.getMyEnquiry(actor, enquiryId);
+  getEnquiry(
+    @CurrentUser() actor: RequestUser,
+    @Param("enquiryId") enquiryId: string,
+    @Query() query: B2BEnquiryDetailQueryDto,
+  ) {
+    return this.b2bService.getMyEnquiryDetail(actor, enquiryId, query);
+  }
+
+  @Post("enquiries/:enquiryId/messages")
+  @Roles(RoleCode.BUSINESS_BUYER)
+  @ApiOperation({ summary: "Send a buyer message in an active B2B negotiation." })
+  sendMessage(
+    @CurrentUser() actor: RequestUser,
+    @Param("enquiryId") enquiryId: string,
+    @Body() dto: SendB2BMessageDto,
+  ) {
+    return this.b2bService.sendMessageAsBuyer(actor, enquiryId, dto);
   }
 
   @Patch("enquiries/:enquiryId/cancel")
@@ -217,7 +338,11 @@ export class B2BBuyerController {
   @Patch("enquiries/:enquiryId/confirm")
   @Roles(RoleCode.BUSINESS_BUYER)
   @ApiOperation({ summary: "Confirm a responded B2B quotation for admin approval." })
-  confirmEnquiry(@CurrentUser() actor: RequestUser, @Param("enquiryId") enquiryId: string) {
-    return this.b2bService.confirmMyEnquiry(actor, enquiryId);
+  confirmEnquiry(
+    @CurrentUser() actor: RequestUser,
+    @Param("enquiryId") enquiryId: string,
+    @Body() dto: { responseId?: string } = {},
+  ) {
+    return this.b2bService.confirmMyEnquiry(actor, enquiryId, dto.responseId);
   }
 }

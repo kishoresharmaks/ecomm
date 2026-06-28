@@ -31,6 +31,10 @@ describe("SellerSettlementsService concurrency guards", () => {
         findMany: vi.fn().mockResolvedValue([split]),
         updateMany: vi.fn().mockResolvedValue({ count: 0 })
       },
+      b2BOrder: {
+        findMany: vi.fn().mockResolvedValue([]),
+        updateMany: vi.fn()
+      },
       sellerSettlementRun: {
         create: vi.fn().mockResolvedValue({ id: "run-1", runNumber: "SET-TEST" }),
         update: vi.fn()

@@ -1,6 +1,6 @@
 import { StreamableFile } from "@nestjs/common";
 import { createReadStream } from "node:fs";
-import type { B2BPurchaseOrderDocumentAccess } from "../storage/storage.service";
+import type { PrivateDocumentAccess } from "../storage/storage.service";
 
 type B2BDocumentResponse = {
   redirect: (status: number, url: string) => unknown;
@@ -8,8 +8,16 @@ type B2BDocumentResponse = {
 };
 
 export function sendB2BPurchaseOrderDocument(
-  access: B2BPurchaseOrderDocumentAccess,
+  access: PrivateDocumentAccess,
   response: B2BDocumentResponse,
+) {
+  return sendB2BDocument(access, response, "purchase-order");
+}
+
+export function sendB2BDocument(
+  access: PrivateDocumentAccess,
+  response: B2BDocumentResponse,
+  fallbackFileName = "document",
 ) {
   if (access.provider === "s3") {
     response.redirect(302, access.url);
@@ -18,13 +26,13 @@ export function sendB2BPurchaseOrderDocument(
 
   response.set({
     "Content-Type": access.contentType,
-    "Content-Disposition": `inline; filename="${safeDownloadFileName(access.fileName)}"`,
+    "Content-Disposition": `inline; filename="${safeDownloadFileName(access.fileName, fallbackFileName)}"`,
     "Cache-Control": "private, max-age=0, no-store",
   });
 
   return new StreamableFile(createReadStream(access.filePath));
 }
 
-function safeDownloadFileName(fileName: string) {
-  return fileName.replace(/["\\]/g, "").slice(0, 120) || "purchase-order";
+function safeDownloadFileName(fileName: string, fallbackFileName: string) {
+  return fileName.replace(/["\\]/g, "").slice(0, 120) || fallbackFileName;
 }

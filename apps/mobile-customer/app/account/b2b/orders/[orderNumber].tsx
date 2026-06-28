@@ -1,10 +1,8 @@
-const getDocumentPicker = () => require("expo-document-picker") as typeof import("expo-document-picker");
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const getFileSystem = () => require("expo-file-system") as typeof import("expo-file-system");
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const getSharing = () => require("expo-sharing") as typeof import("expo-sharing");
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system";
 import { Stack, useLocalSearchParams } from "expo-router";
+import * as Sharing from "expo-sharing";
 import { useState } from "react";
 import {
   ActivityIndicator,
@@ -61,7 +59,6 @@ function B2BOrderDetailContent({ order }: { order: B2BOrder }) {
     setUploadState("idle");
 
     // Step 1: Pick file
-    const DocumentPicker = getDocumentPicker();
     const result = await DocumentPicker.getDocumentAsync({
       type: [
         "application/pdf",
@@ -154,8 +151,6 @@ function B2BOrderDetailContent({ order }: { order: B2BOrder }) {
       }
 
       // Download to temp file
-      const FileSystem = getFileSystem();
-      const Sharing = getSharing();
       const fileName = `po-${order.orderNumber}.pdf`;
       const dest = `${FileSystem.cacheDirectory ?? ""}${fileName}`;
       await FileSystem.downloadAsync(url, dest);

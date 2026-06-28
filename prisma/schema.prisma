@@ -556,6 +556,7 @@ enum B2BEnquiryStatus {
   SUBMITTED
   IN_REVIEW
   RESPONDED
+  NEGOTIATING
   BUYER_CONFIRMED
   ADMIN_APPROVED
   FINALISED
@@ -570,6 +571,48 @@ enum B2BOrderStatus {
   IN_FULFILMENT
   FULFILLED
   CANCELLED
+}
+
+enum B2BPaymentStatus {
+  PENDING
+  SUBMITTED_FOR_VERIFICATION
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  REFUNDED
+  NOT_REQUIRED
+}
+
+enum B2BProofStatus {
+  SUBMITTED
+  VERIFIED
+  REJECTED
+  RAZORPAY_FAILED
+}
+
+enum B2BPaymentMethod {
+  BANK_TRANSFER
+  MANUAL
+  RAZORPAY
+}
+
+enum B2BAuditActorType {
+  ADMIN
+  FINANCE
+  SYSTEM
+}
+
+enum B2BAdminAction {
+  EXTEND_PAYMENT_DUE_DATE
+  SET_NOT_REQUIRED
+  UNLOCK_FULFILMENT
+  CANCEL_OVERDUE_ORDER
+  REGENERATE_PROFORMA
+  RECORD_MANUAL_PAYMENT
+  VERIFY_PAYMENT_PROOF
+  REJECT_PAYMENT_PROOF
+  ISSUE_REFUND
+  PAYMENT_OVERDUE
 }
 
 enum ContentStatus {
@@ -651,6 +694,7 @@ enum PushNotificationType {
   DEAL_PUBLISHED
   ORDER_PLACED
   ORDER_DELIVERED
+  B2B_ENQUIRY_MESSAGE
   CAMPAIGN
 }
 
@@ -731,7 +775,9 @@ enum SellerPayoutStatus {
 
 enum SellerLedgerEntryType {
   ORDER_EARNING
+  B2B_ORDER_EARNING
   COMMISSION_DEDUCTION
+  B2B_COMMISSION
   GST_ON_COMMISSION
   TDS_DEDUCTION
   TCS_DEDUCTION
@@ -859,6 +905,12 @@ model User {
   b2bResponses                             B2BEnquiryResponse[]
   createdB2BOrders                         B2BOrder[]                         @relation("B2BOrderCreatedBy")
   b2bOrderEvents                           B2BOrderEvent[]                    @relation("B2BOrderEventActor")
+  submittedB2BPaymentProofs                B2BPaymentProof[]                  @relation("B2BPaymentProofSubmittedBy")
+  reviewedB2BPaymentProofs                 B2BPaymentProof[]                  @relation("B2BPaymentProofReviewedBy")
+  verifiedB2BPayments                      B2BOrder[]                         @relation("B2BOrderPaymentVerifiedBy")
+  unlockedB2BFulfilments                   B2BOrder[]                         @relation("B2BOrderFulfilmentUnlockedBy")
+  generatedB2BProformaRevisions            B2BProformaInvoiceRevision[]       @relation("B2BProformaRevisionGeneratedBy")
+  b2bAdminAuditLogs                        B2BAdminAuditLog[]                 @relation("B2BAdminAuditLogActor")
   supportRequests                          SupportRequest[]
   notificationLogs                         NotificationLog[]
   customerPushTokens                       CustomerPushToken[]
@@ -888,6 +940,7 @@ model User {
   assignedChatConversations                ChatConversation[]                 @relation("ChatConversationAssignedAgent")
   chatMessages                             ChatMessage[]                      @relation("ChatMessageSender")
   chatAssignments                          ChatAssignment[]                   @relation("ChatAssignmentAssignee")
+  b2bEnquiryMessages                       B2BEnquiryMessage[]
   createdChatAssignments                   ChatAssignment[]                   @relation("ChatAssignmentCreatedBy")
   chatConversationEvents                   ChatConversationEvent[]            @relation("ChatConversationEventActor")
   chatBotRuns                              ChatBotRun[]                       @relation("ChatBotRunUser")
@@ -3447,6 +3500,7 @@ model SellerPayout {
   seller                Seller               @relation(fields: [sellerId], references: [id])
   settlementRun         SellerSettlementRun? @relation(fields: [settlementRunId], references: [id])
   orderSplits           OrderSellerSplit[]
+  b2bOrders             B2BOrder[]
   ledgerEntries         SellerLedgerEntry[]
   events                SellerPayoutEvent[]
   statements            SellerStatement[]
@@ -3560,6 +3614,7 @@ model B2BEnquiry {
   product           Product?             @relation(fields: [productId], references: [id])
   seller            Seller?              @relation(fields: [sellerId], references: [id])
   responses         B2BEnquiryResponse[]
+  messages          B2BEnquiryMessage[]
   b2bOrder          B2BOrder?
   chatConversations ChatConversation[]
 
@@ -3587,6 +3642,21 @@ model B2BEnquiryResponse {
   @@map("b2b_enquiry_responses")
 }
 
+model B2BEnquiryMessage {
+  id           String     @id @default(uuid()) @db.Uuid
+  enquiryId    String     @map("enquiry_id") @db.Uuid
+  senderUserId String     @map("sender_user_id") @db.Uuid
+  message      String     @db.Text
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+  enquiry      B2BEnquiry @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
+  sender       User       @relation(fields: [senderUserId], references: [id])
+
+  @@index([enquiryId, createdAt])
+  @@index([senderUserId])
+  @@map("b2b_enquiry_messages")
+}
+
 model B2BOrder {
   id                       String              @id @default(uuid()) @db.Uuid
   orderNumber              String              @unique @map("order_number")
@@ -3599,16 +3669,39 @@ model B2BOrder {
   proformaInvoiceNumber    String              @unique @map("proforma_invoice_number")
   proformaIssuedAt         DateTime            @default(now()) @map("proforma_issued_at")
   proformaExpiresAt        DateTime?           @map("proforma_expires_at")
+  proformaInvoiceFileKey   String?             @map("proforma_invoice_file_key")
+  taxInvoiceNumber         String?             @unique @map("tax_invoice_number")
+  taxInvoiceIssuedAt       DateTime?           @map("tax_invoice_issued_at")
+  taxInvoiceFileKey        String?             @map("tax_invoice_file_key")
   purchaseOrderNumber      String?             @map("purchase_order_number")
   purchaseOrderFileKey     String?             @map("purchase_order_file_key")
   purchaseOrderNote        String?             @map("purchase_order_note")
   purchaseOrderSubmittedAt DateTime?           @map("purchase_order_submitted_at")
   purchaseOrderAcceptedAt  DateTime?           @map("purchase_order_accepted_at")
   fulfilledAt              DateTime?           @map("fulfilled_at")
+  payoutId                 String?             @map("payout_id") @db.Uuid
+  settlementStatus         SellerSettlementStatus @default(NOT_ELIGIBLE) @map("settlement_status")
+  settlementEligibleAt     DateTime?           @map("settlement_eligible_at")
+  settledAt                DateTime?           @map("settled_at")
   quantity                 Int
   unitPricePaise           Int?                @map("unit_price_paise")
   subtotalPaise            Int?                @map("subtotal_paise")
+  commissionRateBps        Int                 @default(0) @map("commission_rate_bps")
+  commissionAmountPaise    Int                 @default(0) @map("commission_amount_paise")
+  sellerPayoutAmountPaise  Int                 @default(0) @map("seller_payout_amount_paise")
   currency                 String              @default("INR")
+  paymentStatus            B2BPaymentStatus    @default(PENDING) @map("payment_status")
+  paymentMethod            B2BPaymentMethod?   @map("payment_method")
+  buyerPayableAmountPaise  Int                 @default(0) @map("buyer_payable_amount_paise")
+  paidAmountPaise          Int                 @default(0) @map("paid_amount_paise")
+  paidAt                   DateTime?           @map("paid_at")
+  paymentDueAt             DateTime            @map("payment_due_at")
+  paymentOverdueAt         DateTime?           @map("payment_overdue_at")
+  paymentVerifiedById      String?             @map("payment_verified_by_id") @db.Uuid
+  paymentVerifiedAt        DateTime?           @map("payment_verified_at")
+  fulfilmentUnlockedById   String?             @map("fulfilment_unlocked_by_id") @db.Uuid
+  fulfilmentUnlockedAt     DateTime?           @map("fulfilment_unlocked_at")
+  fulfilmentUnlockNote     String?             @map("fulfilment_unlock_note")
   termsSnapshot            Json?               @map("terms_snapshot")
   createdByUserId          String?             @map("created_by_user_id") @db.Uuid
   createdAt                DateTime            @default(now()) @map("created_at")
@@ -3619,16 +3712,27 @@ model B2BOrder {
   product                  Product?            @relation(fields: [productId], references: [id], onDelete: SetNull)
   selectedResponse         B2BEnquiryResponse? @relation("B2BOrderSelectedResponse", fields: [selectedResponseId], references: [id], onDelete: SetNull)
   createdBy                User?               @relation("B2BOrderCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  paymentVerifiedBy        User?               @relation("B2BOrderPaymentVerifiedBy", fields: [paymentVerifiedById], references: [id], onDelete: SetNull)
+  fulfilmentUnlockedBy     User?               @relation("B2BOrderFulfilmentUnlockedBy", fields: [fulfilmentUnlockedById], references: [id], onDelete: SetNull)
+  payout                   SellerPayout?       @relation(fields: [payoutId], references: [id], onDelete: SetNull)
   events                   B2BOrderEvent[]
+  paymentProofs            B2BPaymentProof[]
+  proformaRevisions        B2BProformaInvoiceRevision[]
+  adminAuditLogs           B2BAdminAuditLog[]
 
   @@index([businessBuyerId])
   @@index([sellerId])
   @@index([productId])
   @@index([selectedResponseId])
+  @@index([payoutId])
   @@index([status])
+  @@index([paymentStatus])
+  @@index([settlementStatus])
+  @@index([paymentDueAt])
   @@index([createdAt])
   @@index([businessBuyerId, status, createdAt])
   @@index([sellerId, status, createdAt])
+  @@index([sellerId, settlementStatus, createdAt])
   @@map("b2b_orders")
 }
 
@@ -3648,6 +3752,75 @@ model B2BOrderEvent {
   @@index([status])
   @@index([createdAt])
   @@map("b2b_order_events")
+}
+
+model B2BPaymentProof {
+  id                     String           @id @default(uuid()) @db.Uuid
+  b2bOrderId             String           @map("b2b_order_id") @db.Uuid
+  method                 B2BPaymentMethod
+  amountPaise            Int              @map("amount_paise")
+  currency               String           @default("INR")
+  overpaymentAmountPaise Int              @default(0) @map("overpayment_amount_paise")
+  referenceNumber        String?          @map("reference_number")
+  proofFileKey           String?          @map("proof_file_key")
+  razorpayPaymentId      String?          @map("razorpay_payment_id")
+  submittedByUserId      String           @map("submitted_by_user_id") @db.Uuid
+  submittedAt            DateTime         @default(now()) @map("submitted_at")
+  status                 B2BProofStatus   @default(SUBMITTED)
+  reviewedByUserId       String?          @map("reviewed_by_user_id") @db.Uuid
+  reviewedAt             DateTime?        @map("reviewed_at")
+  rejectionReason        String?          @map("rejection_reason")
+  note                   String?
+  createdAt              DateTime         @default(now()) @map("created_at")
+  updatedAt              DateTime         @updatedAt @map("updated_at")
+  order                  B2BOrder         @relation(fields: [b2bOrderId], references: [id], onDelete: Cascade)
+  submittedBy            User             @relation("B2BPaymentProofSubmittedBy", fields: [submittedByUserId], references: [id], onDelete: Restrict)
+  reviewedBy             User?            @relation("B2BPaymentProofReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([b2bOrderId])
+  @@index([submittedByUserId])
+  @@index([reviewedByUserId])
+  @@index([referenceNumber, status])
+  @@index([status, submittedAt])
+  @@map("b2b_payment_proofs")
+}
+
+model B2BProformaInvoiceRevision {
+  id                String    @id @default(uuid()) @db.Uuid
+  b2bOrderId        String    @map("b2b_order_id") @db.Uuid
+  invoiceNumber     String    @map("invoice_number")
+  fileKey           String    @map("file_key")
+  issuedAt          DateTime  @map("issued_at")
+  expiresAt         DateTime? @map("expires_at")
+  generatedByUserId String?   @map("generated_by_user_id") @db.Uuid
+  reason            String?
+  createdAt         DateTime  @default(now()) @map("created_at")
+  order             B2BOrder  @relation(fields: [b2bOrderId], references: [id], onDelete: Cascade)
+  generatedBy       User?     @relation("B2BProformaRevisionGeneratedBy", fields: [generatedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([b2bOrderId])
+  @@index([createdAt])
+  @@map("b2b_proforma_invoice_revisions")
+}
+
+model B2BAdminAuditLog {
+  id             String             @id @default(uuid()) @db.Uuid
+  b2bOrderId     String             @map("b2b_order_id") @db.Uuid
+  actorId        String?            @map("actor_id") @db.Uuid
+  actorType      B2BAuditActorType  @map("actor_type")
+  action         B2BAdminAction
+  reason         String
+  beforeSnapshot Json?              @map("before_snapshot")
+  afterSnapshot  Json?              @map("after_snapshot")
+  createdAt      DateTime           @default(now()) @map("created_at")
+  order          B2BOrder           @relation(fields: [b2bOrderId], references: [id], onDelete: Cascade)
+  actor          User?              @relation("B2BAdminAuditLogActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([b2bOrderId])
+  @@index([actorId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("b2b_admin_audit_logs")
 }
 
 model Banner {

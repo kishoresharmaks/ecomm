@@ -5,6 +5,10 @@ import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { Roles } from "../auth/decorators/roles.decorator";
 import type { RequestUser } from "../auth/types/indihub-request";
 import { B2BService } from "./b2b.service";
+import {
+  B2BEnquiryDetailQueryDto,
+  SendB2BMessageDto,
+} from "./dto/b2b-message.dto";
 import { B2BEnquiryQueryDto } from "./dto/b2b-query.dto";
 import { CreateB2BResponseDto } from "./dto/b2b-response.dto";
 
@@ -22,8 +26,12 @@ export class SellerB2BController {
 
   @Get(":enquiryId")
   @ApiOperation({ summary: "Read seller-visible B2B enquiry detail." })
-  getEnquiry(@CurrentUser() actor: RequestUser, @Param("enquiryId") enquiryId: string) {
-    return this.b2bService.getSellerEnquiry(actor, enquiryId);
+  getEnquiry(
+    @CurrentUser() actor: RequestUser,
+    @Param("enquiryId") enquiryId: string,
+    @Query() query: B2BEnquiryDetailQueryDto,
+  ) {
+    return this.b2bService.getSellerEnquiryDetail(actor, enquiryId, query);
   }
 
   @Post(":enquiryId/responses")
@@ -31,5 +39,14 @@ export class SellerB2BController {
   respond(@CurrentUser() actor: RequestUser, @Param("enquiryId") enquiryId: string, @Body() dto: CreateB2BResponseDto) {
     return this.b2bService.respondAsSeller(actor, enquiryId, dto);
   }
-}
 
+  @Post(":enquiryId/messages")
+  @ApiOperation({ summary: "Send a seller message in an active B2B negotiation." })
+  sendMessage(
+    @CurrentUser() actor: RequestUser,
+    @Param("enquiryId") enquiryId: string,
+    @Body() dto: SendB2BMessageDto,
+  ) {
+    return this.b2bService.sendMessageAsSeller(actor, enquiryId, dto);
+  }
+}

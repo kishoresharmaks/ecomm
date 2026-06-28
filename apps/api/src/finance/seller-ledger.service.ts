@@ -184,7 +184,8 @@ export class SellerLedgerService {
     const payout = await tx.sellerPayout.findUnique({
       where: { id: payoutId },
       include: {
-        orderSplits: true
+        orderSplits: true,
+        b2bOrders: true
       }
     });
 
@@ -212,6 +213,54 @@ export class SellerLedgerService {
       await this.createDeductionEntry(tx, payout, split, SellerLedgerEntryType.TDS_DEDUCTION, split.tdsPaise, "TDS deduction", actor);
       await this.createDeductionEntry(tx, payout, split, SellerLedgerEntryType.TCS_DEDUCTION, split.tcsPaise, "TCS deduction", actor);
       await this.createDeductionEntry(tx, payout, split, SellerLedgerEntryType.PLATFORM_FEE, split.platformFeePaise, "Seller settlement fee", actor);
+    }
+
+    for (const order of payout.b2bOrders) {
+      const existing = await tx.sellerLedgerEntry.findFirst({
+        where: {
+          payoutId: payout.id,
+          referenceType: "b2b_order",
+          referenceId: order.id,
+          entryType: SellerLedgerEntryType.B2B_ORDER_EARNING
+        },
+        select: { id: true }
+      });
+      if (existing) {
+        continue;
+      }
+
+      await this.createEntry(tx, {
+        sellerId: payout.sellerId,
+        payoutId: payout.id,
+        entryType: SellerLedgerEntryType.B2B_ORDER_EARNING,
+        description: `B2B order payout for ${order.orderNumber}`,
+        creditPaise: order.buyerPayableAmountPaise,
+        referenceType: "b2b_order",
+        referenceId: order.id,
+        createdById: actor.id,
+        metadata: {
+          orderNumber: order.orderNumber,
+          commissionRateBps: order.commissionRateBps,
+          sellerPayoutAmountPaise: order.sellerPayoutAmountPaise
+        }
+      });
+
+      if (order.commissionAmountPaise > 0) {
+        await this.createEntry(tx, {
+          sellerId: payout.sellerId,
+          payoutId: payout.id,
+          entryType: SellerLedgerEntryType.B2B_COMMISSION,
+          description: `B2B platform commission for ${order.orderNumber}`,
+          debitPaise: order.commissionAmountPaise,
+          referenceType: "b2b_order",
+          referenceId: order.id,
+          createdById: actor.id,
+          metadata: {
+            orderNumber: order.orderNumber,
+            commissionRateBps: order.commissionRateBps
+          }
+        });
+      }
     }
   }
 

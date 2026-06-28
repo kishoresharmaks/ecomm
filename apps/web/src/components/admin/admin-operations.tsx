@@ -3,13 +3,17 @@
 import Link from "next/link";
 import {
   type Dispatch,
+  type FormEvent,
+  type RefObject,
   type ReactNode,
   type SetStateAction,
   useEffect,
   useId,
   useMemo,
+  useRef,
   useState,
 } from "react";
+import { io } from "socket.io-client";
 import { Description, Dialog, DialogBackdrop, DialogPanel, DialogTitle } from "@headlessui/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -29,13 +33,17 @@ import {
   FolderOpen,
   KeyRound,
   Landmark,
+  Loader2,
   Mail,
   MapPin,
+  MessageSquare,
+  MessageSquareText,
   Package,
   Phone,
   Plus,
   RefreshCw,
   Search,
+  Send,
   Settings,
   ShieldAlert,
   ShieldCheck,
@@ -88,6 +96,7 @@ import { useLocationAreaStore, useLocationCatalog } from "@/components/locations
 import { formatLocalAreaLabel } from "@/components/locations/location-utils";
 import { SellerImageUpload } from "@/components/seller/seller-ui";
 import {
+  apiBaseUrl,
   IndihubApiError,
   indihubFetch,
   userFacingApiErrorMessage,
@@ -642,7 +651,41 @@ type B2BEnquiryRecord = {
     createdAt?: string;
     responder?: UserRecord | null;
   }>;
+  messages?: {
+    items: B2BEnquiryMessageRecord[];
+    nextCursor: string | null;
+  };
   b2bOrder?: B2BOrderRecord | null;
+};
+
+type B2BEnquiryMessageRecord = {
+  id: string;
+  enquiryId: string;
+  senderUserId: string;
+  message: string;
+  createdAt?: string;
+  updatedAt?: string;
+  sender?: UserRecord | null;
+};
+
+type B2BRealtimeMessageEvent = {
+  enquiryId: string;
+  data: {
+    id: string;
+    senderUserId: string;
+    senderName: string;
+    senderRole: "BUYER" | "SELLER" | "ADMIN";
+    message: string;
+    createdAt: string;
+  };
+};
+
+type B2BRealtimeStatusEvent = {
+  enquiryId: string;
+  data: {
+    previousStatus: string;
+    newStatus: string;
+  };
 };
 
 type B2BOrderRecord = {
@@ -657,6 +700,9 @@ type B2BOrderRecord = {
   proformaInvoiceNumber: string;
   proformaIssuedAt?: string;
   proformaExpiresAt?: string | null;
+  taxInvoiceNumber?: string | null;
+  taxInvoiceIssuedAt?: string | null;
+  taxInvoiceFileKey?: string | null;
   purchaseOrderNumber?: string | null;
   purchaseOrderFileKey?: string | null;
   purchaseOrderNote?: string | null;
@@ -667,6 +713,13 @@ type B2BOrderRecord = {
   unitPricePaise?: number | null;
   subtotalPaise?: number | null;
   currency?: string;
+  proformaInvoiceFileKey?: string | null;
+  paymentStatus?: string | null;
+  paymentMethod?: string | null;
+  buyerPayableAmountPaise?: number | null;
+  paidAmountPaise?: number | null;
+  paymentDueAt?: string | null;
+  paymentOverdueAt?: string | null;
   businessBuyer?: BusinessBuyerRecord | null;
   seller?: SellerRecord | null;
   product?: ProductRecord | null;
@@ -4813,13 +4866,20 @@ export function AdminB2BEnquiryDetailPageClient({ enquiryId }: { enquiryId: stri
   const auth = useAdminAuth();
   const queryClient = useQueryClient();
   const confirmation = useAdminConfirmation();
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [messages, setMessages] = useState<B2BEnquiryMessageRecord[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [liveStatus, setLiveStatus] = useState<string | null>(null);
+  const [isLoadingOlder, setIsLoadingOlder] = useState(false);
+  const [newMessageCount, setNewMessageCount] = useState(0);
   const query = useQuery({
     queryKey: ["admin-b2b-enquiry", auth.authHeaders, enquiryId],
     enabled: Boolean(auth.authHeaders.bearerToken),
     queryFn: () =>
       adminRequest<B2BEnquiryRecord>(
-        `/api/admin/b2b-enquiries/${encodeURIComponent(enquiryId)}`,
+        `/api/admin/b2b-enquiries/${encodeURIComponent(enquiryId)}?messageLimit=50`,
         auth.authHeaders,
       ),
   });
@@ -4868,10 +4928,154 @@ export function AdminB2BEnquiryDetailPageClient({ enquiryId }: { enquiryId: stri
     onSuccess: invalidate,
     onError: (error) => setNotice(userFacingApiErrorMessage(error)),
   });
+  const sendMessage = useMutation({
+    mutationFn: (message: string) =>
+      adminRequest<B2BEnquiryMessageRecord>(
+        `/api/admin/b2b-enquiries/${enquiryId}/messages`,
+        auth.authHeaders,
+        {
+          method: "POST",
+          body: JSON.stringify({ message }),
+        },
+      ),
+    onMutate: (message) => {
+      const optimistic: B2BEnquiryMessageRecord = {
+        id: `temp-${Date.now()}`,
+        enquiryId,
+        senderUserId: auth.user?.id ?? "admin",
+        message,
+        createdAt: new Date().toISOString(),
+        sender: auth.user
+          ? { id: auth.user.id, email: auth.user.email, fullName: "You" } as UserRecord
+          : null,
+      };
+      setMessages((current) => orderB2BMessages([...current, optimistic]));
+      requestAnimationFrame(() => scrollAdminB2BThreadToBottom(scrollRef, setNewMessageCount, "smooth"));
+      return { optimisticId: optimistic.id };
+    },
+    onSuccess: (created, _message, context) => {
+      setMessages((current) =>
+        orderB2BMessages(current.map((message) => (message.id === context?.optimisticId ? created : message))),
+      );
+      void queryClient.invalidateQueries({ queryKey: ["admin-b2b-enquiry", auth.authHeaders, enquiryId] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-b2b-enquiries"] });
+    },
+    onError: (error, _message, context) => {
+      setMessages((current) => current.filter((message) => message.id !== context?.optimisticId));
+      setNotice(userFacingApiErrorMessage(error));
+    },
+  });
   const enquiry = query.data;
   const order = enquiry?.b2bOrder ?? null;
+  const status = liveStatus ?? enquiry?.status ?? "";
+  const canMessage = ["RESPONDED", "NEGOTIATING"].includes(status);
   const disabled =
-    updateStatus.isPending || respond.isPending || approve.isPending || finalise.isPending;
+    updateStatus.isPending || respond.isPending || approve.isPending || finalise.isPending || sendMessage.isPending;
+
+  useEffect(() => {
+    if (!enquiry) {
+      return;
+    }
+
+    setLiveStatus(enquiry.status);
+    setMessages(orderB2BMessages(enquiry.messages?.items ?? []));
+    setNextCursor(enquiry.messages?.nextCursor ?? null);
+    requestAnimationFrame(() => scrollAdminB2BThreadToBottom(scrollRef, setNewMessageCount, "auto"));
+  }, [enquiry]);
+
+  useEffect(() => {
+    if (!auth.authHeaders.bearerToken || !enquiryId) {
+      return;
+    }
+
+    const socket = io(`${apiBaseUrl}/b2b`, {
+      auth: { token: auth.authHeaders.bearerToken },
+      withCredentials: true,
+      transports: ["websocket"],
+    });
+
+    socket.on("connect", () => socket.emit("b2b.enquiry.join", { enquiryId }));
+    socket.io.on("reconnect", () => {
+      socket.emit("b2b.enquiry.join", { enquiryId });
+      void queryClient.invalidateQueries({ queryKey: ["admin-b2b-enquiry", auth.authHeaders, enquiryId] });
+    });
+    socket.on("b2b.enquiry.message", (payload: B2BRealtimeMessageEvent) => {
+      if (payload.enquiryId !== enquiryId) {
+        return;
+      }
+      const nearBottom = isAdminB2BThreadNearBottom(scrollRef);
+      setMessages((current) =>
+        orderB2BMessages([
+          ...current,
+          {
+            id: payload.data.id,
+            enquiryId,
+            senderUserId: payload.data.senderUserId,
+            message: payload.data.message,
+            createdAt: payload.data.createdAt,
+            sender: { fullName: payload.data.senderName } as UserRecord,
+          },
+        ]),
+      );
+      if (nearBottom) {
+        requestAnimationFrame(() => scrollAdminB2BThreadToBottom(scrollRef, setNewMessageCount, "smooth"));
+      } else {
+        setNewMessageCount((count) => count + 1);
+      }
+    });
+    socket.on("b2b.enquiry.status_changed", (payload: B2BRealtimeStatusEvent) => {
+      if (payload.enquiryId === enquiryId) {
+        setLiveStatus(payload.data.newStatus);
+      }
+    });
+    socket.on("b2b.enquiry.quotation_added", () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin-b2b-enquiry", auth.authHeaders, enquiryId] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-b2b-enquiries"] });
+    });
+
+    return () => {
+      socket.emit("b2b.enquiry.leave", { enquiryId });
+      socket.disconnect();
+    };
+  }, [auth.authHeaders, auth.authHeaders.bearerToken, enquiryId, queryClient]);
+
+  async function loadOlderMessages() {
+    if (!nextCursor || isLoadingOlder) {
+      return;
+    }
+
+    const container = scrollRef.current;
+    const previousHeight = container?.scrollHeight ?? 0;
+    setIsLoadingOlder(true);
+    try {
+      const page = await adminRequest<B2BEnquiryRecord>(
+        `/api/admin/b2b-enquiries/${encodeURIComponent(enquiryId)}?messageCursor=${encodeURIComponent(nextCursor)}&messageLimit=50`,
+        auth.authHeaders,
+      );
+      setMessages((current) => orderB2BMessages([...(page.messages?.items ?? []), ...current]));
+      setNextCursor(page.messages?.nextCursor ?? null);
+      requestAnimationFrame(() => {
+        if (container) {
+          container.scrollTop = container.scrollHeight - previousHeight;
+        }
+      });
+    } catch (error) {
+      setNotice(userFacingApiErrorMessage(error));
+    } finally {
+      setIsLoadingOlder(false);
+    }
+  }
+
+  function submitMessage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const message = draft.trim();
+    if (!message) {
+      return;
+    }
+    setNotice(null);
+    setDraft("");
+    sendMessage.mutate(message);
+  }
 
   async function openPurchaseOrder(orderNumber: string) {
     setNotice(null);
@@ -4917,7 +5121,7 @@ export function AdminB2BEnquiryDetailPageClient({ enquiryId }: { enquiryId: stri
                     <h2 className="text-2xl font-black text-[#1F2933]">
                       {enquiry.businessBuyer?.companyName ?? "Business buyer"}
                     </h2>
-                    <StatusBadge tone={statusTone(enquiry.status)}>{humanize(enquiry.status)}</StatusBadge>
+                    <StatusBadge tone={statusTone(status)}>{humanize(status)}</StatusBadge>
                   </div>
                   <p className="mt-2 text-sm font-semibold leading-6 text-[#667085]">
                     {enquiry.product?.name ?? enquiry.seller?.storeName ?? "General procurement request"}
@@ -4971,12 +5175,105 @@ export function AdminB2BEnquiryDetailPageClient({ enquiryId }: { enquiryId: stri
                 )}
               </div>
             </Panel>
+
+            <Panel title="Negotiation chat">
+              <div className="overflow-hidden rounded-lg border border-[#E5E7EB] bg-white">
+                <div className="flex flex-col gap-2 border-b border-[#E5E7EB] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-black text-[#1F2933]">Buyer, seller, and admin thread</p>
+                    <p className="text-xs font-semibold text-[#667085]">
+                      Live negotiation messages stay attached to this enquiry for review.
+                    </p>
+                  </div>
+                  <StatusBadge tone={canMessage ? "info" : "neutral"}>
+                    {canMessage ? "Open for messages" : "Messages locked"}
+                  </StatusBadge>
+                </div>
+
+                <div
+                  ref={scrollRef}
+                  className="max-h-[520px] overflow-y-auto bg-[#F8FAFC] px-4 py-5"
+                  onScroll={() => {
+                    if (scrollRef.current?.scrollTop === 0 && nextCursor) {
+                      void loadOlderMessages();
+                    }
+                    if (isAdminB2BThreadNearBottom(scrollRef)) {
+                      setNewMessageCount(0);
+                    }
+                  }}
+                >
+                  {nextCursor ? (
+                    <div className="mb-4 flex justify-center">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={isLoadingOlder}
+                        onClick={() => void loadOlderMessages()}
+                      >
+                        {isLoadingOlder ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
+                        Load older
+                      </Button>
+                    </div>
+                  ) : null}
+
+                  <div className="grid gap-3">
+                    <AdminB2BInitialRequestCard enquiry={enquiry} />
+                    {messages.map((message) => (
+                      <AdminB2BMessageBubble
+                        key={message.id}
+                        message={message}
+                        isSelf={message.senderUserId === auth.user?.id || message.id.startsWith("temp-")}
+                      />
+                    ))}
+                  </div>
+
+                  {newMessageCount ? (
+                    <button
+                      type="button"
+                      onClick={() => scrollAdminB2BThreadToBottom(scrollRef, setNewMessageCount, "smooth")}
+                      className="sticky bottom-4 left-1/2 mt-4 -translate-x-1/2 rounded-full bg-[#123A5A] px-4 py-2 text-xs font-black text-white shadow-lg"
+                    >
+                      {newMessageCount} new message{newMessageCount > 1 ? "s" : ""}
+                    </button>
+                  ) : null}
+                </div>
+
+                {canMessage ? (
+                  <form onSubmit={submitMessage} className="border-t border-[#E5E7EB] bg-white p-4">
+                    <div className="flex items-end gap-3">
+                      <label className="flex-1">
+                        <span className="sr-only">Admin negotiation message</span>
+                        <textarea
+                          value={draft}
+                          onChange={(event) => setDraft(event.target.value.slice(0, 2000))}
+                          rows={1}
+                          maxLength={2000}
+                          placeholder="Write an admin negotiation message..."
+                          className="max-h-32 min-h-11 w-full resize-none rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 py-3 text-sm font-semibold text-[#1F2933] outline-none transition focus:border-[#ED3500] focus:bg-white"
+                        />
+                      </label>
+                      <Button type="submit" disabled={!draft.trim() || sendMessage.isPending}>
+                        {sendMessage.isPending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Send className="h-4 w-4" aria-hidden="true" />}
+                        Send
+                      </Button>
+                    </div>
+                  </form>
+                ) : (
+                  <div className="border-t border-[#E5E7EB] bg-white p-4">
+                    <StatusBadge tone="neutral">
+                      Messages open after the first quotation and lock after buyer confirmation, finalisation, closure, or cancellation.
+                    </StatusBadge>
+                  </div>
+                )}
+              </div>
+            </Panel>
           </div>
 
           <aside className="grid h-fit gap-5">
             <Panel title="Admin actions">
               <B2BAction
-                status={enquiry.status}
+                status={status}
                 onStatus={(status) => {
                   if (["CLOSED", "CANCELLED"].includes(status)) {
                     confirmation.requestConfirmation({
@@ -5066,6 +5363,24 @@ export function AdminB2BOrdersPageClient() {
       }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-b2b-orders"] }),
   });
+  const b2bOrderAction = useMutation({
+    mutationFn: ({
+      orderNumber,
+      path,
+      method = "PATCH",
+      payload,
+    }: {
+      orderNumber: string;
+      path: string;
+      method?: "PATCH" | "POST";
+      payload: Record<string, unknown>;
+    }) =>
+      adminRequest(`/api/admin/b2b-orders/${encodeURIComponent(orderNumber)}${path}`, auth.authHeaders, {
+        method,
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-b2b-orders"] }),
+  });
   const items = listItems(query.data);
 
   async function openPurchaseOrder(orderNumber: string) {
@@ -5076,6 +5391,34 @@ export function AdminB2BOrdersPageClient() {
         auth.authHeaders,
         `/api/admin/b2b-orders/${encodeURIComponent(orderNumber)}/purchase-order/document-access`,
         `/api/admin/b2b-orders/${encodeURIComponent(orderNumber)}/purchase-order/document`,
+      );
+    } catch (error) {
+      setDocumentNotice(userFacingApiErrorMessage(error));
+    }
+  }
+
+  async function openProformaInvoice(orderNumber: string) {
+    setDocumentNotice(null);
+
+    try {
+      await openB2BPurchaseOrderDocument(
+        auth.authHeaders,
+        `/api/admin/b2b-orders/${encodeURIComponent(orderNumber)}/proforma-invoice/document-access`,
+        `/api/admin/b2b-orders/${encodeURIComponent(orderNumber)}/proforma-invoice`,
+      );
+    } catch (error) {
+      setDocumentNotice(userFacingApiErrorMessage(error));
+    }
+  }
+
+  async function openTaxInvoice(orderNumber: string) {
+    setDocumentNotice(null);
+
+    try {
+      await openB2BPurchaseOrderDocument(
+        auth.authHeaders,
+        `/api/admin/b2b-orders/${encodeURIComponent(orderNumber)}/tax-invoice/document-access`,
+        `/api/admin/b2b-orders/${encodeURIComponent(orderNumber)}/tax-invoice`,
       );
     } catch (error) {
       setDocumentNotice(userFacingApiErrorMessage(error));
@@ -5126,7 +5469,15 @@ export function AdminB2BOrdersPageClient() {
           },
           {
             header: "Status",
-            cell: (item) => <StatusBadge tone={statusTone(item.status)}>{humanize(item.status)}</StatusBadge>,
+            cell: (item) => (
+              <SmallStack
+                lines={[
+                  `Order: ${humanize(item.status)}`,
+                  `Payment: ${humanize(item.paymentStatus ?? "PENDING")}`,
+                  item.paymentDueAt ? `Due ${formatDate(item.paymentDueAt)}` : "Due date not set",
+                ]}
+              />
+            ),
           },
           {
             header: "Commercials",
@@ -5135,7 +5486,8 @@ export function AdminB2BOrdersPageClient() {
                 lines={[
                   `Qty ${item.quantity}`,
                   `Unit ${formatPaise(item.unitPricePaise ?? 0, item.currency ?? "INR")}`,
-                  `Subtotal ${formatPaise(item.subtotalPaise ?? 0, item.currency ?? "INR")}`,
+                  `Buyer payable ${formatPaise(item.buyerPayableAmountPaise ?? item.subtotalPaise ?? 0, item.currency ?? "INR")}`,
+                  `Paid ${formatPaise(item.paidAmountPaise ?? 0, item.currency ?? "INR")}`,
                   item.purchaseOrderNumber ? `PO ${item.purchaseOrderNumber}` : "PO not submitted",
                 ]}
               />
@@ -5157,6 +5509,26 @@ export function AdminB2BOrdersPageClient() {
                     View PO
                   </Button>
                 ) : null}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void openProformaInvoice(item.orderNumber)}
+                >
+                  <Eye className="h-4 w-4" aria-hidden="true" />
+                  View proforma
+                </Button>
+                {item.status === "FULFILLED" ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void openTaxInvoice(item.orderNumber)}
+                  >
+                    <Eye className="h-4 w-4" aria-hidden="true" />
+                    Tax invoice
+                  </Button>
+                ) : null}
                 <B2BOrderAction
                   status={item.status}
                   disabled={updateStatus.isPending}
@@ -5169,6 +5541,18 @@ export function AdminB2BOrdersPageClient() {
                       onConfirm: () => updateStatus.mutate({ orderNumber: item.orderNumber, status }),
                     });
                   }}
+                />
+                <B2BOrderFinanceActions
+                  order={item}
+                  disabled={b2bOrderAction.isPending}
+                  onAction={(path, payload, method = "PATCH") =>
+                    b2bOrderAction.mutate({
+                      orderNumber: item.orderNumber,
+                      path,
+                      payload,
+                      method,
+                    })
+                  }
                 />
               </div>
             ),
@@ -12304,7 +12688,7 @@ function B2BAction({
   const [nextStatus, setNextStatus] = useState(statusOptions[0] ?? "");
   const [message, setMessage] = useState("");
   const [price, setPrice] = useState("");
-  const canRespond = ["SUBMITTED", "IN_REVIEW", "RESPONDED"].includes(status);
+  const canRespond = ["SUBMITTED", "IN_REVIEW", "RESPONDED", "NEGOTIATING"].includes(status);
   const canManuallyUpdate = statusOptions.length > 0;
   const canApprove = status === "BUYER_CONFIRMED";
   const canFinalise = status === "ADMIN_APPROVED";
@@ -12446,6 +12830,90 @@ function B2BOrderAction({
   );
 }
 
+function AdminB2BInitialRequestCard({ enquiry }: { enquiry: B2BEnquiryRecord }) {
+  return (
+    <article className="rounded-lg border border-[#D8E2EA] bg-white p-4">
+      <div className="flex items-start gap-3">
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-[#EAF1F7] text-[#163B5C]">
+          <MessageSquareText className="h-4 w-4" aria-hidden="true" />
+        </span>
+        <div>
+          <StatusBadge tone="neutral">Initial request</StatusBadge>
+          <h3 className="mt-2 text-base font-black text-[#1F2933]">
+            {enquiry.product?.name ?? enquiry.businessBuyer?.companyName ?? "Procurement enquiry"}
+          </h3>
+          <p className="mt-2 whitespace-pre-wrap text-sm font-semibold leading-6 text-[#667085]">
+            {enquiry.message ?? "No buyer message."}
+          </p>
+          <p className="mt-2 text-xs font-bold text-[#667085]">
+            Qty {enquiry.quantity} / {formatDate(enquiry.createdAt)}
+          </p>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function AdminB2BMessageBubble({
+  message,
+  isSelf,
+}: {
+  message: B2BEnquiryMessageRecord;
+  isSelf: boolean;
+}) {
+  return (
+    <div className={cn("flex", isSelf ? "justify-end" : "justify-start")}>
+      <article
+        className={cn(
+          "max-w-[min(78%,640px)] rounded-lg px-4 py-3 text-sm shadow-sm",
+          isSelf ? "bg-[#123A5A] text-white" : "border border-[#E5E7EB] bg-white text-[#1F2933]",
+        )}
+      >
+        <div className="mb-1 flex items-center gap-2 text-xs font-black opacity-80">
+          <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
+          {message.sender?.fullName ?? message.sender?.email ?? (isSelf ? "You" : "Participant")}
+        </div>
+        <p className="whitespace-pre-wrap leading-6">{message.message}</p>
+        <p className="mt-2 text-[11px] font-semibold opacity-70">{formatDate(message.createdAt)}</p>
+      </article>
+    </div>
+  );
+}
+
+function orderB2BMessages(messages: B2BEnquiryMessageRecord[]) {
+  const byId = new Map<string, B2BEnquiryMessageRecord>();
+  for (const message of messages) {
+    byId.set(message.id, message);
+  }
+  return Array.from(byId.values()).sort(
+    (left, right) => dateValue(left.createdAt) - dateValue(right.createdAt),
+  );
+}
+
+function isAdminB2BThreadNearBottom(scrollRef: RefObject<HTMLDivElement | null>) {
+  const container = scrollRef.current;
+  if (!container) {
+    return true;
+  }
+  return container.scrollHeight - container.scrollTop - container.clientHeight < 120;
+}
+
+function scrollAdminB2BThreadToBottom(
+  scrollRef: RefObject<HTMLDivElement | null>,
+  setNewMessageCount: Dispatch<SetStateAction<number>>,
+  behavior: ScrollBehavior,
+) {
+  const container = scrollRef.current;
+  if (container) {
+    container.scrollTo({ top: container.scrollHeight, behavior });
+    setNewMessageCount(0);
+  }
+}
+
+function dateValue(value?: string | null) {
+  return value ? new Date(value).getTime() : 0;
+}
+
 function b2bOrderAdminStatusOptions(status: string) {
   if (status === "PROFORMA_ISSUED") {
     return ["CANCELLED"];
@@ -12475,7 +12943,7 @@ function b2bAdminStatusOptions(status: string) {
     return ["CLOSED", "CANCELLED"];
   }
 
-  if (status === "RESPONDED") {
+  if (status === "RESPONDED" || status === "NEGOTIATING") {
     return ["IN_REVIEW", "CLOSED", "CANCELLED"];
   }
 
@@ -12610,6 +13078,112 @@ function OrderStatusForm({
         </Button>
       </div>
     </Panel>
+  );
+}
+
+function B2BOrderFinanceActions({
+  order,
+  disabled,
+  onAction,
+}: {
+  order: B2BOrderRecord;
+  disabled?: boolean;
+  onAction: (path: string, payload: Record<string, unknown>, method?: "PATCH" | "POST") => void;
+}) {
+  const [reason, setReason] = useState("");
+  const [amount, setAmount] = useState("");
+  const [reference, setReference] = useState("");
+  const reasonText = reason.trim();
+  const amountPaise = Math.round(Number(amount) * 100);
+  const canSendReason = reasonText.length >= 3;
+  const canSendMoney = canSendReason && Number.isFinite(amountPaise) && amountPaise > 0;
+
+  return (
+    <div className="grid min-w-[260px] gap-2 rounded-md border border-[#E5E7EB] bg-[#F8FAFC] p-2">
+      <input
+        value={reason}
+        onChange={(event) => setReason(event.target.value)}
+        placeholder="Required audit reason"
+        className="h-9 rounded-md border border-[#D8E2EA] bg-white px-2 text-xs font-semibold text-[#1F2933]"
+      />
+      <div className="grid grid-cols-2 gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={disabled || !canSendReason}
+          onClick={() => onAction("/set-not-required", { reason: reasonText })}
+        >
+          No payment
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={disabled || !canSendReason || order.status !== "PO_ACCEPTED"}
+          onClick={() => onAction("/unlock-fulfilment", { reason: reasonText })}
+        >
+          Unlock
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={disabled || !canSendReason}
+          onClick={() => onAction("/regenerate-proforma", { reason: reasonText }, "POST")}
+        >
+          Regenerate PI
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={disabled || !canSendReason}
+          onClick={() => onAction("/cancel", { reason: reasonText })}
+        >
+          Cancel
+        </Button>
+      </div>
+      <div className="grid grid-cols-[1fr_1fr] gap-2">
+        <input
+          value={amount}
+          onChange={(event) => setAmount(event.target.value)}
+          placeholder="Amount INR"
+          className="h-9 rounded-md border border-[#D8E2EA] bg-white px-2 text-xs font-semibold text-[#1F2933]"
+        />
+        <input
+          value={reference}
+          onChange={(event) => setReference(event.target.value)}
+          placeholder="Reference"
+          className="h-9 rounded-md border border-[#D8E2EA] bg-white px-2 text-xs font-semibold text-[#1F2933]"
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <Button
+          type="button"
+          size="sm"
+          disabled={disabled || !canSendMoney || reference.trim().length < 3}
+          onClick={() =>
+            onAction("/manual-payment", {
+              amountPaise,
+              referenceNumber: reference.trim(),
+              reason: reasonText,
+            })
+          }
+        >
+          Manual pay
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={disabled || !canSendMoney}
+          onClick={() => onAction("/refund", { amountPaise, reason: reasonText }, "POST")}
+        >
+          Refund
+        </Button>
+      </div>
+    </div>
   );
 }
 

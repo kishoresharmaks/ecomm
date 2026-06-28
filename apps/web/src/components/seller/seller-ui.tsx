@@ -653,6 +653,10 @@ function statusTone(status?: string | null) {
     return "success";
   }
 
+  if (status === "NEGOTIATING") {
+    return "info";
+  }
+
   if (["PENDING", "PENDING_APPROVAL", "PLACED", "PROCESSING", "IN_TRANSIT", "SUBMITTED", "IN_REVIEW", "PACKED"].includes(status)) {
     return "warning";
   }

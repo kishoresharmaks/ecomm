@@ -97,8 +97,17 @@ const storageKeyRoot = "1handindia";
 const legacyStorageKeyRoot = "indihub";
 const b2bPurchaseOrderPrefix = `${storageKeyRoot}/b2b/purchase-orders`;
 const legacyB2BPurchaseOrderPrefix = `${legacyStorageKeyRoot}/b2b/purchase-orders`;
+const b2bPaymentProofPrefix = `${storageKeyRoot}/b2b/payment-proofs`;
+const legacyB2BPaymentProofPrefix = `${legacyStorageKeyRoot}/b2b/payment-proofs`;
+const b2bProformaInvoicePrefix = `${storageKeyRoot}/b2b/proforma-invoices`;
+const legacyB2BProformaInvoicePrefix = `${legacyStorageKeyRoot}/b2b/proforma-invoices`;
+const b2bTaxInvoicePrefix = `${storageKeyRoot}/b2b/tax-invoices`;
+const legacyB2BTaxInvoicePrefix = `${legacyStorageKeyRoot}/b2b/tax-invoices`;
 const privateDocumentDownloadTtlSeconds = 300;
 const b2bPurchaseOrderDownloadTtlSeconds = 300;
+const b2bPaymentProofDownloadTtlSeconds = 300;
+const b2bProformaInvoiceDownloadTtlSeconds = 300;
+const b2bTaxInvoiceDownloadTtlSeconds = 300;
 const privateUploadOrphanCleanupHours = 24;
 
 type StorageSettingMap = Map<string, Prisma.JsonValue>;
@@ -156,6 +165,7 @@ type UploadedPrivateDocumentFile = {
 type B2BPurchaseOrderContext = {
   businessBuyerId: string;
   orderNumber: string;
+  actorUserId?: string | null;
 };
 export type PrivateDocumentAccess =
   | {
@@ -172,6 +182,9 @@ export type PrivateDocumentAccess =
       contentType: string;
     };
 export type B2BPurchaseOrderDocumentAccess = PrivateDocumentAccess;
+export type B2BPaymentProofDocumentAccess = PrivateDocumentAccess;
+export type B2BProformaInvoiceDocumentAccess = PrivateDocumentAccess;
+export type B2BTaxInvoiceDocumentAccess = PrivateDocumentAccess;
 
 @Injectable()
 export class StorageService {
@@ -636,7 +649,7 @@ export class StorageService {
         assetKey,
         provider: "S3",
         uploadKind: "B2B_PURCHASE_ORDER",
-        actorUserId: context.businessBuyerId,
+        actorUserId: context.actorUserId ?? context.businessBuyerId,
         contentType: metadata.contentType,
         sizeBytes: metadata.sizeBytes,
       });
@@ -698,7 +711,102 @@ export class StorageService {
       assetKey,
       provider: "LOCAL",
       uploadKind: "B2B_PURCHASE_ORDER",
-      actorUserId: context.businessBuyerId,
+      actorUserId: context.actorUserId ?? context.businessBuyerId,
+      contentType: file.mimetype,
+      sizeBytes: file.size,
+    });
+
+    return {
+      provider: "local" as const,
+      assetKey,
+      maxBytes: privateDocumentMaxBytes,
+      allowedContentTypes: [...privateDocumentAllowedContentTypes],
+      orphanCleanupAfterHours: privateUploadOrphanCleanupHours,
+    };
+  }
+
+  async createB2BPaymentProofUploadRequest(
+    context: B2BPurchaseOrderContext,
+    metadata: PrivateDocumentMetadata,
+  ) {
+    this.validatePrivateDocumentMetadata(metadata);
+    const settingMap = await this.storageSettingMap();
+    const privateStorage = this.privateStorageConfigFromSettings(settingMap);
+
+    if (!privateStorage.configured) {
+      throw new ServiceUnavailableException("Private document storage is not configured.");
+    }
+
+    if (privateStorage.activeProvider === "S3") {
+      const assetKey = this.createB2BPaymentProofAssetKey(context, metadata);
+      const presigned = this.presignS3Object(privateStorage, "PUT", assetKey);
+      await this.recordPrivateUpload({
+        assetKey,
+        provider: "S3",
+        uploadKind: "B2B_PAYMENT_PROOF",
+        actorUserId: context.actorUserId ?? context.businessBuyerId,
+        contentType: metadata.contentType,
+        sizeBytes: metadata.sizeBytes,
+      });
+
+      return {
+        provider: "s3" as const,
+        method: "PUT" as const,
+        uploadUrl: presigned.url,
+        assetKey,
+        headers: {
+          "Content-Type": metadata.contentType.toLowerCase(),
+        },
+        maxBytes: privateDocumentMaxBytes,
+        allowedContentTypes: [...privateDocumentAllowedContentTypes],
+        expiresAt: presigned.expiresAt,
+      };
+    }
+
+    return {
+      provider: "local" as const,
+      method: "POST" as const,
+      uploadPath: `/api/b2b/orders/${encodeURIComponent(context.orderNumber)}/payment-proof/upload`,
+      maxBytes: privateDocumentMaxBytes,
+      allowedContentTypes: [...privateDocumentAllowedContentTypes],
+    };
+  }
+
+  async saveLocalB2BPaymentProof(
+    context: B2BPurchaseOrderContext,
+    file: UploadedPrivateDocumentFile | undefined,
+  ) {
+    if (!file) {
+      throw new BadRequestException("Payment proof file is required.");
+    }
+
+    this.validatePrivateDocumentMetadata({
+      fileName: file.originalname,
+      contentType: file.mimetype,
+      sizeBytes: file.size,
+    });
+    this.assertPrivateDocumentMagicBytes(file);
+
+    const settingMap = await this.storageSettingMap();
+    const privateStorage = this.privateStorageConfigFromSettings(settingMap);
+
+    if (!privateStorage.configured || privateStorage.activeProvider !== "LOCAL") {
+      throw new ServiceUnavailableException("Local private document storage is not enabled.");
+    }
+
+    const assetKey = this.createB2BPaymentProofAssetKey(context, {
+      fileName: file.originalname,
+      contentType: file.mimetype,
+      sizeBytes: file.size,
+    });
+    const filePath = this.privateLocalFilePath(privateStorage, assetKey);
+    await mkdir(dirname(filePath), { recursive: true });
+    await writeFile(filePath, file.buffer);
+    await this.recordPrivateUpload({
+      assetKey,
+      provider: "LOCAL",
+      uploadKind: "B2B_PAYMENT_PROOF",
+      actorUserId: context.actorUserId ?? context.businessBuyerId,
       contentType: file.mimetype,
       sizeBytes: file.size,
     });
@@ -930,6 +1038,252 @@ export class StorageService {
         context.orderNumber,
       )}/${fileName}`,
     );
+  }
+
+  async saveB2BProformaInvoicePdf(
+    context: B2BPurchaseOrderContext,
+    metadata: { fileName: string },
+    buffer: Buffer,
+  ) {
+    if (!buffer.length) {
+      throw new BadRequestException("Proforma invoice PDF is empty.");
+    }
+    if (buffer.length > privateDocumentMaxBytes) {
+      throw new BadRequestException("Proforma invoice PDF must be 10 MB or less.");
+    }
+
+    const settingMap = await this.storageSettingMap();
+    const privateStorage = this.privateStorageConfigFromSettings(settingMap);
+
+    if (!privateStorage.configured) {
+      throw new ServiceUnavailableException("Private document storage is not configured.");
+    }
+
+    const assetKey = this.createB2BProformaInvoiceAssetKey(context, metadata);
+    const contentType = "application/pdf";
+
+    if (privateStorage.activeProvider === "S3") {
+      const presigned = this.presignS3Object(privateStorage, "PUT", assetKey);
+      const body = buffer.buffer.slice(
+        buffer.byteOffset,
+        buffer.byteOffset + buffer.byteLength,
+      ) as ArrayBuffer;
+      const response = await fetch(presigned.url, {
+        method: "PUT",
+        headers: { "Content-Type": contentType },
+        body,
+      });
+      if (!response.ok) {
+        throw new ServiceUnavailableException("Could not upload proforma invoice PDF.");
+      }
+      await this.recordPrivateUpload({
+        assetKey,
+        provider: "S3",
+        uploadKind: "B2B_PROFORMA_INVOICE",
+        actorUserId: context.actorUserId ?? null,
+        contentType,
+        sizeBytes: buffer.length,
+      });
+
+      return { provider: "s3" as const, assetKey };
+    }
+
+    const filePath = this.privateLocalFilePath(privateStorage, assetKey);
+    await mkdir(dirname(filePath), { recursive: true });
+    await writeFile(filePath, buffer);
+    await this.recordPrivateUpload({
+      assetKey,
+      provider: "LOCAL",
+      uploadKind: "B2B_PROFORMA_INVOICE",
+      actorUserId: context.actorUserId ?? null,
+      contentType,
+      sizeBytes: buffer.length,
+    });
+
+    return { provider: "local" as const, assetKey };
+  }
+
+  async b2bProformaInvoiceDocumentAccess(
+    assetKey: string | undefined,
+  ): Promise<B2BProformaInvoiceDocumentAccess> {
+    const normalizedKey = this.normalizeB2BProformaInvoiceKey(assetKey);
+    return this.privateB2BDocumentAccess(
+      normalizedKey,
+      "Proforma invoice file was not found in local storage.",
+      b2bProformaInvoiceDownloadTtlSeconds,
+    );
+  }
+
+  async saveB2BTaxInvoicePdf(
+    context: B2BPurchaseOrderContext,
+    metadata: { fileName: string },
+    buffer: Buffer,
+  ) {
+    if (!buffer.length) {
+      throw new BadRequestException("Tax invoice PDF is empty.");
+    }
+    if (buffer.length > privateDocumentMaxBytes) {
+      throw new BadRequestException("Tax invoice PDF must be 10 MB or less.");
+    }
+
+    const settingMap = await this.storageSettingMap();
+    const privateStorage = this.privateStorageConfigFromSettings(settingMap);
+
+    if (!privateStorage.configured) {
+      throw new ServiceUnavailableException("Private document storage is not configured.");
+    }
+
+    const assetKey = this.createB2BTaxInvoiceAssetKey(context, metadata);
+    const contentType = "application/pdf";
+
+    if (privateStorage.activeProvider === "S3") {
+      const presigned = this.presignS3Object(privateStorage, "PUT", assetKey);
+      const body = buffer.buffer.slice(
+        buffer.byteOffset,
+        buffer.byteOffset + buffer.byteLength,
+      ) as ArrayBuffer;
+      const response = await fetch(presigned.url, {
+        method: "PUT",
+        headers: { "Content-Type": contentType },
+        body,
+      });
+      if (!response.ok) {
+        throw new ServiceUnavailableException("Could not upload tax invoice PDF.");
+      }
+      await this.recordPrivateUpload({
+        assetKey,
+        provider: "S3",
+        uploadKind: "B2B_TAX_INVOICE",
+        actorUserId: context.actorUserId ?? null,
+        contentType,
+        sizeBytes: buffer.length,
+      });
+
+      return { provider: "s3" as const, assetKey };
+    }
+
+    const filePath = this.privateLocalFilePath(privateStorage, assetKey);
+    await mkdir(dirname(filePath), { recursive: true });
+    await writeFile(filePath, buffer);
+    await this.recordPrivateUpload({
+      assetKey,
+      provider: "LOCAL",
+      uploadKind: "B2B_TAX_INVOICE",
+      actorUserId: context.actorUserId ?? null,
+      contentType,
+      sizeBytes: buffer.length,
+    });
+
+    return { provider: "local" as const, assetKey };
+  }
+
+  async b2bTaxInvoiceDocumentAccess(
+    assetKey: string | undefined,
+  ): Promise<B2BTaxInvoiceDocumentAccess> {
+    const normalizedKey = this.normalizeB2BTaxInvoiceKey(assetKey);
+    return this.privateB2BDocumentAccess(
+      normalizedKey,
+      "Tax invoice file was not found in local storage.",
+      b2bTaxInvoiceDownloadTtlSeconds,
+    );
+  }
+
+  async b2bPaymentProofDocumentAccess(
+    assetKey: string | undefined,
+  ): Promise<B2BPaymentProofDocumentAccess> {
+    const normalizedKey = this.normalizeB2BPaymentProofKey(assetKey);
+    return this.privateB2BDocumentAccess(
+      normalizedKey,
+      "Payment proof file was not found in local storage.",
+      b2bPaymentProofDownloadTtlSeconds,
+    );
+  }
+
+  private createB2BPaymentProofAssetKey(
+    context: B2BPurchaseOrderContext,
+    metadata: PrivateDocumentMetadata,
+  ) {
+    const extension = this.documentExtension(metadata.fileName, metadata.contentType);
+    const baseName = this.safeDocumentBaseName(metadata.fileName) || "payment-proof";
+    const timestamp = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
+    const fileName = `${timestamp}-${baseName}${extension}`;
+
+    return this.normalizeB2BPaymentProofKey(
+      `${b2bPaymentProofPrefix}/${this.safeSegment(context.businessBuyerId)}/${this.safeSegment(
+        context.orderNumber,
+      )}/${fileName}`,
+    );
+  }
+
+  private createB2BProformaInvoiceAssetKey(
+    context: B2BPurchaseOrderContext,
+    metadata: { fileName: string },
+  ) {
+    const baseName = this.safeDocumentBaseName(metadata.fileName) || "proforma-invoice";
+    const timestamp = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
+    const fileName = `${timestamp}-${baseName}.pdf`;
+
+    return this.normalizeB2BProformaInvoiceKey(
+      `${b2bProformaInvoicePrefix}/${this.safeSegment(context.businessBuyerId)}/${this.safeSegment(
+        context.orderNumber,
+      )}/${fileName}`,
+    );
+  }
+
+  private createB2BTaxInvoiceAssetKey(
+    context: B2BPurchaseOrderContext,
+    metadata: { fileName: string },
+  ) {
+    const baseName = this.safeDocumentBaseName(metadata.fileName) || "tax-invoice";
+    const timestamp = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
+    const fileName = `${timestamp}-${baseName}.pdf`;
+
+    return this.normalizeB2BTaxInvoiceKey(
+      `${b2bTaxInvoicePrefix}/${this.safeSegment(context.businessBuyerId)}/${this.safeSegment(
+        context.orderNumber,
+      )}/${fileName}`,
+    );
+  }
+
+  private async privateB2BDocumentAccess(
+    normalizedKey: string,
+    notFoundMessage: string,
+    expiresSeconds: number,
+  ): Promise<PrivateDocumentAccess> {
+    const settingMap = await this.storageSettingMap();
+    const privateStorage = this.privateStorageConfigFromSettings(settingMap);
+
+    if (!privateStorage.configured) {
+      throw new ServiceUnavailableException("Private document storage is not configured.");
+    }
+
+    const fileName = normalizedKey.split("/").at(-1) ?? "document";
+    const contentType = this.contentTypeForDocumentKey(normalizedKey);
+
+    if (privateStorage.activeProvider === "S3") {
+      const presigned = this.presignS3Object(privateStorage, "GET", normalizedKey, expiresSeconds);
+      return {
+        provider: "s3" as const,
+        url: presigned.url,
+        expiresAt: presigned.expiresAt,
+        fileName,
+        contentType,
+      };
+    }
+
+    const filePath = this.privateLocalFilePath(privateStorage, normalizedKey);
+    try {
+      await access(filePath);
+    } catch {
+      throw new NotFoundException(notFoundMessage);
+    }
+
+    return {
+      provider: "local" as const,
+      filePath,
+      fileName,
+      contentType,
+    };
   }
 
   private validatePrivateDocumentMetadata(metadata: PrivateDocumentMetadata) {
@@ -1329,6 +1683,42 @@ export class StorageService {
     return normalized;
   }
 
+  private normalizeB2BPaymentProofKey(key: string | undefined) {
+    const normalized = this.normalizePublicImageKey(key);
+    const prefix = `${b2bPaymentProofPrefix}/`;
+    const legacyPrefix = `${legacyB2BPaymentProofPrefix}/`;
+
+    if (!normalized.startsWith(prefix) && !normalized.startsWith(legacyPrefix)) {
+      throw new BadRequestException("Payment proof file key is invalid.");
+    }
+
+    return normalized;
+  }
+
+  private normalizeB2BProformaInvoiceKey(key: string | undefined) {
+    const normalized = this.normalizePublicImageKey(key);
+    const prefix = `${b2bProformaInvoicePrefix}/`;
+    const legacyPrefix = `${legacyB2BProformaInvoicePrefix}/`;
+
+    if (!normalized.startsWith(prefix) && !normalized.startsWith(legacyPrefix)) {
+      throw new BadRequestException("Proforma invoice file key is invalid.");
+    }
+
+    return normalized;
+  }
+
+  private normalizeB2BTaxInvoiceKey(key: string | undefined) {
+    const normalized = this.normalizePublicImageKey(key);
+    const prefix = `${b2bTaxInvoicePrefix}/`;
+    const legacyPrefix = `${legacyB2BTaxInvoicePrefix}/`;
+
+    if (!normalized.startsWith(prefix) && !normalized.startsWith(legacyPrefix)) {
+      throw new BadRequestException("Tax invoice file key is invalid.");
+    }
+
+    return normalized;
+  }
+
   private privateLocalFilePath(privateStorage: PrivateStorageConfig, assetKey: string) {
     const rootPath = resolve(privateStorage.localRoot);
     const filePath = resolve(rootPath, assetKey);
@@ -1504,8 +1894,13 @@ export class StorageService {
   private async recordPrivateUpload(input: {
     assetKey: string;
     provider: "S3" | "LOCAL";
-    uploadKind: "SELLER_DOCUMENT" | "B2B_PURCHASE_ORDER";
-    actorUserId: string;
+    uploadKind:
+      | "SELLER_DOCUMENT"
+      | "B2B_PURCHASE_ORDER"
+      | "B2B_PAYMENT_PROOF"
+      | "B2B_PROFORMA_INVOICE"
+      | "B2B_TAX_INVOICE";
+    actorUserId: string | null;
     contentType: string;
     sizeBytes?: number | undefined;
   }) {

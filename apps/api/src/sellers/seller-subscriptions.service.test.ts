@@ -306,6 +306,40 @@ describe("SellerSubscriptionsService recurring billing", () => {
     });
   });
 
+  it("blocks B2B responses when the active plan has no B2B enquiry limit", async () => {
+    const tx = createTx();
+    const plan = makePlan({ b2bEnquiryLimit: 0 });
+    const prisma = createPrisma(tx);
+    prisma.client.sellerSubscription.findFirst.mockResolvedValue({
+      ...makeSubscription({ plan, status: SellerSubscriptionStatus.ACTIVE }),
+      payments: [],
+    });
+    prisma.client.seller.findUnique.mockResolvedValue(
+      makeSeller({ plan, subscriptionStatus: SellerSubscriptionStatus.ACTIVE }),
+    );
+    const service = new SellerSubscriptionsService(prisma as never);
+
+    await expect(service.ensureCanUseSellerB2B("seller_1")).rejects.toThrow(
+      "Upgrade your subscription plan to respond to B2B enquiries.",
+    );
+  });
+
+  it("allows B2B responses when the active plan has a positive B2B enquiry limit", async () => {
+    const tx = createTx();
+    const plan = makePlan({ b2bEnquiryLimit: 10 });
+    const prisma = createPrisma(tx);
+    prisma.client.sellerSubscription.findFirst.mockResolvedValue({
+      ...makeSubscription({ plan, status: SellerSubscriptionStatus.ACTIVE }),
+      payments: [],
+    });
+    prisma.client.seller.findUnique.mockResolvedValue(
+      makeSeller({ plan, subscriptionStatus: SellerSubscriptionStatus.ACTIVE }),
+    );
+    const service = new SellerSubscriptionsService(prisma as never);
+
+    await expect(service.ensureCanUseSellerB2B("seller_1")).resolves.toBeUndefined();
+  });
+
   it("cancels Razorpay subscriptions at period end", async () => {
     const tx = createTx();
     const plan = makePlan({ pricePaise: 99900 });

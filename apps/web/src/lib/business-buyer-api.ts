@@ -82,10 +82,29 @@ export type B2BEnquiryResponse = {
   } | null;
 };
 
+export type B2BEnquiryMessage = {
+  id: string;
+  enquiryId: string;
+  senderUserId: string;
+  message: string;
+  createdAt?: string;
+  updatedAt?: string;
+  sender?: {
+    email?: string | null;
+    fullName?: string | null;
+  } | null;
+};
+
+export type B2BEnquiryMessagePage = {
+  items: B2BEnquiryMessage[];
+  nextCursor: string | null;
+};
+
 export type BusinessBuyerEnquiryStatus =
   | "SUBMITTED"
   | "IN_REVIEW"
   | "RESPONDED"
+  | "NEGOTIATING"
   | "BUYER_CONFIRMED"
   | "ADMIN_APPROVED"
   | "FINALISED"
@@ -100,6 +119,62 @@ export type B2BOrderStatus =
   | "FULFILLED"
   | "CANCELLED";
 
+export type B2BPaymentStatus =
+  | "PENDING"
+  | "SUBMITTED_FOR_VERIFICATION"
+  | "PARTIALLY_PAID"
+  | "PAID"
+  | "OVERDUE"
+  | "REFUNDED"
+  | "NOT_REQUIRED";
+
+export type B2BPaymentMethod = "BANK_TRANSFER" | "MANUAL" | "RAZORPAY";
+export type B2BProofStatus = "SUBMITTED" | "VERIFIED" | "REJECTED" | "RAZORPAY_FAILED";
+
+export type B2BBankTransferDetails = {
+  configured: boolean;
+  accountHolderName?: string | null;
+  bankName?: string | null;
+  accountNumber?: string | null;
+  ifscCode?: string | null;
+  branch?: string | null;
+  upiId?: string | null;
+  instructions?: string | null;
+  referenceRequired?: boolean;
+};
+
+export type B2BPaymentInstructions = {
+  bankTransfer?: {
+    enabled: boolean;
+    configured: boolean;
+    label?: string;
+    note?: string;
+    instructions?: string | null;
+    bankTransferDetails?: B2BBankTransferDetails | null;
+  } | null;
+};
+
+export type B2BPaymentProof = {
+  id: string;
+  b2bOrderId: string;
+  method: B2BPaymentMethod;
+  amountPaise: number;
+  currency: string;
+  overpaymentAmountPaise?: number;
+  referenceNumber?: string | null;
+  proofFileKey?: string | null;
+  submittedByUserId: string;
+  submittedAt?: string;
+  status: B2BProofStatus;
+  reviewedAt?: string | null;
+  rejectionReason?: string | null;
+  note?: string | null;
+  reviewedBy?: {
+    email?: string | null;
+    fullName?: string | null;
+  } | null;
+};
+
 export type BusinessBuyerEnquiry = {
   id: string;
   businessBuyerId: string;
@@ -113,6 +188,7 @@ export type BusinessBuyerEnquiry = {
   product?: B2BEnquiryProduct | null;
   seller?: SellerSummary | null;
   responses?: B2BEnquiryResponse[];
+  messages?: B2BEnquiryMessagePage;
   b2bOrder?: B2BOrder | null;
 };
 
@@ -140,16 +216,35 @@ export type B2BOrder = {
   proformaInvoiceNumber: string;
   proformaIssuedAt?: string;
   proformaExpiresAt?: string | null;
+  taxInvoiceNumber?: string | null;
+  taxInvoiceIssuedAt?: string | null;
+  taxInvoiceFileKey?: string | null;
   purchaseOrderNumber?: string | null;
   purchaseOrderFileKey?: string | null;
   purchaseOrderNote?: string | null;
   purchaseOrderSubmittedAt?: string | null;
   purchaseOrderAcceptedAt?: string | null;
   fulfilledAt?: string | null;
+  payoutId?: string | null;
+  settlementStatus?: "NOT_ELIGIBLE" | "ELIGIBLE" | "DRAFTED" | "APPROVED" | "PAID" | "CANCELLED" | "ADJUSTED";
+  settlementEligibleAt?: string | null;
+  settledAt?: string | null;
   quantity: number;
   unitPricePaise?: number | null;
   subtotalPaise?: number | null;
+  commissionRateBps?: number;
+  commissionAmountPaise?: number;
+  sellerPayoutAmountPaise?: number;
   currency?: string;
+  proformaInvoiceFileKey?: string | null;
+  paymentStatus?: B2BPaymentStatus;
+  paymentMethod?: B2BPaymentMethod | null;
+  buyerPayableAmountPaise?: number | null;
+  paidAmountPaise?: number | null;
+  paymentDueAt?: string | null;
+  paymentOverdueAt?: string | null;
+  paymentVerifiedAt?: string | null;
+  fulfilmentUnlockedAt?: string | null;
   termsSnapshot?: unknown;
   createdAt?: string;
   updatedAt?: string;
@@ -159,6 +254,8 @@ export type B2BOrder = {
   selectedResponse?: B2BEnquiryResponse | null;
   enquiry?: BusinessBuyerEnquiry | null;
   events?: B2BOrderEvent[];
+  paymentProofs?: B2BPaymentProof[];
+  paymentInstructions?: B2BPaymentInstructions;
 };
 
 export type PaginatedBusinessBuyerEnquiries = {
@@ -265,6 +362,29 @@ export function getBusinessBuyerEnquiry(auth: IndihubAuthHeaders, enquiryId: str
   return indihubFetch<BusinessBuyerEnquiry>(`/api/b2b/enquiries/${encodeURIComponent(enquiryId)}`, undefined, auth);
 }
 
+export function getBusinessBuyerEnquiryDetail(
+  auth: IndihubAuthHeaders,
+  enquiryId: string,
+  query: { messageCursor?: string; messageLimit?: number } = {}
+) {
+  return indihubFetch<BusinessBuyerEnquiry>(
+    `/api/b2b/enquiries/${encodeURIComponent(enquiryId)}${queryString(query)}`,
+    undefined,
+    auth
+  );
+}
+
+export function sendBusinessBuyerB2BMessage(auth: IndihubAuthHeaders, enquiryId: string, message: string) {
+  return indihubFetch<B2BEnquiryMessage>(
+    `/api/b2b/enquiries/${encodeURIComponent(enquiryId)}/messages`,
+    {
+      method: "POST",
+      body: JSON.stringify({ message })
+    },
+    auth
+  );
+}
+
 export function cancelBusinessBuyerEnquiry(auth: IndihubAuthHeaders, enquiryId: string) {
   return indihubFetch<BusinessBuyerEnquiry>(
     `/api/b2b/enquiries/${encodeURIComponent(enquiryId)}/cancel`,
@@ -275,11 +395,12 @@ export function cancelBusinessBuyerEnquiry(auth: IndihubAuthHeaders, enquiryId: 
   );
 }
 
-export function confirmBusinessBuyerEnquiry(auth: IndihubAuthHeaders, enquiryId: string) {
+export function confirmBusinessBuyerEnquiry(auth: IndihubAuthHeaders, enquiryId: string, responseId?: string) {
   return indihubFetch<BusinessBuyerEnquiry>(
     `/api/b2b/enquiries/${encodeURIComponent(enquiryId)}/confirm`,
     {
-      method: "PATCH"
+      method: "PATCH",
+      body: JSON.stringify(responseId ? { responseId } : {})
     },
     auth
   );
@@ -308,6 +429,29 @@ export function submitBusinessBuyerPurchaseOrder(
       body: JSON.stringify(payload)
     },
     auth
+  );
+}
+
+export type B2BPaymentProofPayload = {
+  method: "BANK_TRANSFER";
+  amountPaise: number;
+  currency: string;
+  referenceNumber: string;
+  proofFileKey: string;
+};
+
+export function submitBusinessBuyerPaymentProof(
+  auth: IndihubAuthHeaders,
+  orderNumber: string,
+  payload: B2BPaymentProofPayload,
+) {
+  return indihubFetch<B2BOrder>(
+    `/api/b2b/orders/${encodeURIComponent(orderNumber)}/payment-proof`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    auth,
   );
 }
 

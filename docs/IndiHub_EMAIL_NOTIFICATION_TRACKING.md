@@ -1,6 +1,6 @@
 # 1HandIndia Email Notification Tracking
 
-Last updated: 2026-05-28
+Last updated: 2026-06-28
 
 This document tracks every application email that the 1HandIndia backend sends, where it is triggered, who receives it, and how admins can audit delivery.
 
@@ -153,6 +153,9 @@ Trigger behavior:
 | `B2B_ENQUIRY_SUBMITTED_SELLER`         | `B2B`      | `B2B_ENQUIRY_ALERT`            | Seller           | Buyer submits seller-targeted B2B enquiry                                    | `apps/api/src/b2b/b2b.service.ts`                                                                                                        |
 | `B2B_ENQUIRY_SUBMITTED_ADMIN`          | `B2B`      | `B2B_ENQUIRY_ALERT`            | Admin recipients | Buyer submits B2B enquiry                                                    | `apps/api/src/b2b/b2b.service.ts`                                                                                                        |
 | `B2B_ENQUIRY_RESPONSE_BUYER`           | `B2B`      | `B2B_ENQUIRY_RESPONSE`         | Business buyer   | Seller/admin adds quotation response                                         | `apps/api/src/b2b/b2b.service.ts`                                                                                                        |
+| `B2B_ENQUIRY_CONFIRMED_SELLER`         | `B2B`      | `B2B_ENQUIRY_CONFIRMED_SELLER` | Seller           | Business buyer confirms the latest quotation for admin approval              | `apps/api/src/b2b/b2b.service.ts`                                                                                                        |
+| `B2B_ENQUIRY_MESSAGE_BUYER`            | `B2B`      | `B2B_ENQUIRY_MESSAGE_BUYER`    | Business buyer   | Seller/admin sends a B2B negotiation chat message                            | `apps/api/src/b2b/b2b.service.ts`                                                                                                        |
+| `B2B_ENQUIRY_MESSAGE_SELLER`           | `B2B`      | `B2B_ENQUIRY_MESSAGE_SELLER`   | Seller           | Buyer/admin sends a B2B negotiation chat message                             | `apps/api/src/b2b/b2b.service.ts`                                                                                                        |
 | `SUPPORT_REQUEST_RECEIVED`             | `SUPPORT`  | `SUPPORT_REQUEST_RECEIVED`     | Submitter        | Customer/public user submits support request                                 | `apps/api/src/support/support.service.ts`                                                                                                |
 | `SUPPORT_REQUEST_ADMIN_ALERT`          | `SUPPORT`  | `SUPPORT_REQUEST_ALERT`        | Admin recipients | Customer/public user submits support request                                 | `apps/api/src/support/support.service.ts`                                                                                                |
 | `SUPPORT_REQUEST_RESPONDED`            | `SUPPORT`  | `SUPPORT_REQUEST_RESPONDED`    | Submitter        | Admin sends `responseMessage` while marking a request `RESPONDED`            | `apps/api/src/support/support.service.ts`                                                                                                |
