@@ -43,6 +43,7 @@ import {
   VariantStatus,
 } from "@indihub/database";
 import type { RequestUser } from "../auth/types/indihub-request";
+import { assertCheckoutDeliveryServiceable } from "../checkout/checkout-serviceability";
 import { CheckoutPricingService } from "../checkout/checkout-pricing.service";
 import {
   DeliveryRoutingService,
@@ -648,6 +649,10 @@ export class OrdersService {
           paymentMethod: dto.paymentMethod,
         },
       );
+      assertCheckoutDeliveryServiceable(baseCharges, {
+        addressProvided: shippingAddressSnapshot !== null,
+        deliveryPreference,
+      });
       const coupon = await this.couponsService.reserveCouponForOrder(
         {
           ...(dto.couponCode !== undefined ? { couponCode: dto.couponCode } : {}),

@@ -11,6 +11,7 @@ import { LocationFields } from "@/components/locations/location-fields";
 import { MapLocationPicker } from "@/components/maps/map-location-picker";
 import { useMarket } from "@/components/market/market-context";
 import { listCustomerAddresses } from "@/lib/account-api";
+import { IndihubApiError } from "@/lib/api";
 import { customerDeliveryOptions } from "@/lib/delivery-labels";
 import {
   cartTotals,
@@ -231,6 +232,14 @@ export function CheckoutPageClient() {
   const hasCheckoutItem = isDirectCheckout
     ? checkoutTotals.itemCount > 0
     : Boolean(cartQuery.data?.items.length);
+  const deliveryServiceabilityError = deliveryPreference === "DELIVER_TO_ADDRESS"
+    ? serviceabilityCheckoutError(checkoutSummaryQuery.error)
+    : null;
+  const checkoutBlockedMessage = deliveryServiceabilityError
+    ? deliveryServiceabilityError
+    : checkoutSummaryQuery.isError
+      ? "We could not confirm the latest checkout total. Please retry before placing the order."
+      : null;
 
   useEffect(() => {
     if (!directProductVariantId || typeof window === "undefined") {
@@ -352,6 +361,9 @@ export function CheckoutPageClient() {
     mutationFn: async (manualAddress?: CheckoutAddress) => {
       if (!hasCheckoutItem) {
         throw new Error(isDirectCheckout ? "Selected product is unavailable for checkout." : "Cart is empty.");
+      }
+      if (checkoutBlockedMessage) {
+        throw new Error(checkoutBlockedMessage);
       }
       if (!selectedPaymentOption?.enabled) {
         throw new Error(
@@ -735,6 +747,7 @@ export function CheckoutPageClient() {
             disabled={
               !customerAuth.enabled ||
               !hasCheckoutItem ||
+              Boolean(checkoutBlockedMessage) ||
               !hasEnabledPaymentMethod ||
               orderMutation.isPending
             }
@@ -906,13 +919,17 @@ export function CheckoutPageClient() {
               retryLabel="Retry cart"
             />
           ) : null}
-          {checkoutSummaryQuery.isError && !couponFeedback ? (
-            <StorefrontErrorPanel
-              className="mt-5"
-              error={checkoutSummaryQuery.error}
-              onRetry={() => void checkoutSummaryQuery.refetch()}
-              retryLabel="Retry totals"
-            />
+          {checkoutBlockedMessage && !couponFeedback ? (
+            <StorefrontNotice
+              tone={deliveryServiceabilityError ? "warning" : "danger"}
+              className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <span>{checkoutBlockedMessage}</span>
+              <Button type="button" variant="outline" size="sm" onClick={() => void checkoutSummaryQuery.refetch()}>
+                <Loader2 className={checkoutSummaryQuery.isFetching ? "h-4 w-4 animate-spin" : "hidden"} aria-hidden="true" />
+                Retry delivery check
+              </Button>
+            </StorefrontNotice>
           ) : null}
         </StorefrontPanel>
       </section>
@@ -1150,4 +1167,17 @@ function normalizeDirectQuantity(value: string | null) {
   }
 
   return Math.min(parsed, 99);
+}
+
+function serviceabilityCheckoutError(error: unknown) {
+  if (!(error instanceof IndihubApiError) || error.status !== 400) {
+    return null;
+  }
+
+  const message = error.message.trim();
+  if (!message.toLowerCase().includes("not serviceable")) {
+    return null;
+  }
+
+  return "Delivery is not available for this address yet. Please choose another saved address, enter a different delivery location, or select store pickup if it is available.";
 }
