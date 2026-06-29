@@ -1320,6 +1320,119 @@ function CategoryShowcase({
   description: string;
 }) {
   const t = useTranslations("home");
+  const categoryRailRef = useRef<HTMLDivElement | null>(null);
+  const hoverScrollDirectionRef = useRef<"left" | "right" | null>(null);
+  const hoverScrollSpeedRef = useRef(0);
+  const animationFrameRef = useRef<number | null>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+  const hasScrollableCategories = isLoading || categories.length > 4;
+
+  function updateCategoryScrollState() {
+    const rail = categoryRailRef.current;
+    if (!rail) {
+      return;
+    }
+
+    setCanScrollLeft(rail.scrollLeft > 4);
+    setCanScrollRight(rail.scrollLeft + rail.clientWidth < rail.scrollWidth - 4);
+  }
+
+  function scrollCategories(direction: "left" | "right") {
+    const rail = categoryRailRef.current;
+    if (!rail) {
+      return;
+    }
+
+    rail.scrollBy({
+      left: direction === "left" ? -rail.clientWidth * 0.85 : rail.clientWidth * 0.85,
+      behavior: "smooth",
+    });
+  }
+
+  function stopHoverScroll() {
+    hoverScrollDirectionRef.current = null;
+    hoverScrollSpeedRef.current = 0;
+    if (animationFrameRef.current !== null) {
+      window.cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+  }
+
+  function startHoverScroll() {
+    if (animationFrameRef.current !== null) {
+      return;
+    }
+
+    const step = () => {
+      const rail = categoryRailRef.current;
+      const direction = hoverScrollDirectionRef.current;
+      const speed = hoverScrollSpeedRef.current;
+      if (!rail || !direction || speed <= 0) {
+        animationFrameRef.current = null;
+        return;
+      }
+
+      rail.scrollLeft += direction === "left" ? -speed : speed;
+      updateCategoryScrollState();
+      animationFrameRef.current = window.requestAnimationFrame(step);
+    };
+
+    animationFrameRef.current = window.requestAnimationFrame(step);
+  }
+
+  function handleCategoryPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.pointerType !== "mouse" || !hasScrollableCategories) {
+      return;
+    }
+    if (window.matchMedia("(max-width: 639px)").matches) {
+      return;
+    }
+
+    const rail = categoryRailRef.current;
+    if (!rail) {
+      return;
+    }
+
+    const rect = rail.getBoundingClientRect();
+    const edgeSize = Math.min(150, rect.width * 0.18);
+    const distanceFromLeft = event.clientX - rect.left;
+    const distanceFromRight = rect.right - event.clientX;
+
+    if (distanceFromLeft < edgeSize && rail.scrollLeft > 0) {
+      hoverScrollDirectionRef.current = "left";
+      hoverScrollSpeedRef.current = Math.max(3, ((edgeSize - distanceFromLeft) / edgeSize) * 18);
+      startHoverScroll();
+      return;
+    }
+
+    if (distanceFromRight < edgeSize && rail.scrollLeft + rail.clientWidth < rail.scrollWidth - 4) {
+      hoverScrollDirectionRef.current = "right";
+      hoverScrollSpeedRef.current = Math.max(3, ((edgeSize - distanceFromRight) / edgeSize) * 18);
+      startHoverScroll();
+      return;
+    }
+
+    stopHoverScroll();
+  }
+
+  useEffect(() => {
+    const rail = categoryRailRef.current;
+    if (!rail) {
+      return undefined;
+    }
+
+    updateCategoryScrollState();
+    rail.addEventListener("scroll", updateCategoryScrollState, { passive: true });
+    window.addEventListener("resize", updateCategoryScrollState);
+
+    return () => {
+      rail.removeEventListener("scroll", updateCategoryScrollState);
+      window.removeEventListener("resize", updateCategoryScrollState);
+      stopHoverScroll();
+    };
+  }, [categories.length, isLoading]);
+
   return (
     <section className="relative overflow-hidden bg-[linear-gradient(180deg,#FFFCFB_0%,#FFF8F4_100%)] py-7 sm:py-8 lg:py-12">
       <div className="mx-auto max-w-[1360px] px-4 sm:px-6 lg:px-10">
@@ -1336,30 +1449,69 @@ function CategoryShowcase({
               <p className="mt-2 text-base font-semibold text-[#7A8496] sm:text-lg">{description}</p>
             ) : null}
           </div>
-          <HomepageItemLink
-            href="/categories"
-            className="inline-flex h-10 w-fit items-center gap-2 rounded-full border border-[#FFE0D6] bg-white px-4 text-sm font-black !text-[#ED3500] shadow-sm transition hover:-translate-y-0.5 hover:border-[#ED3500]/50 hover:bg-[#FFF7F3] hover:!text-[#c92b00]"
+          <div className="flex items-center gap-2">
+            {hasScrollableCategories ? (
+              <div className="hidden items-center gap-2 sm:flex" aria-label="Category carousel controls">
+                <button
+                  type="button"
+                  onClick={() => scrollCategories("left")}
+                  disabled={!canScrollLeft}
+                  className="grid h-10 w-10 place-items-center rounded-full border border-[#FFE0D6] bg-white text-[#ED3500] shadow-sm transition hover:-translate-y-0.5 hover:border-[#ED3500]/50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0"
+                  aria-label="Scroll categories left"
+                >
+                  <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => scrollCategories("right")}
+                  disabled={!canScrollRight}
+                  className="grid h-10 w-10 place-items-center rounded-full border border-[#FFE0D6] bg-white text-[#ED3500] shadow-sm transition hover:-translate-y-0.5 hover:border-[#ED3500]/50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0"
+                  aria-label="Scroll categories right"
+                >
+                  <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </div>
+            ) : null}
+            <HomepageItemLink
+              href="/categories"
+              className="inline-flex h-10 w-fit items-center gap-2 rounded-full border border-[#FFE0D6] bg-white px-4 text-sm font-black !text-[#ED3500] shadow-sm transition hover:-translate-y-0.5 hover:border-[#ED3500]/50 hover:bg-[#FFF7F3] hover:!text-[#c92b00]"
+            >
+              {t("view_all_categories")} <ArrowRight className="h-4 w-4" aria-hidden="true" />
+            </HomepageItemLink>
+          </div>
+        </div>
+        <div
+          className="relative mt-5 lg:mt-9"
+          onPointerMove={handleCategoryPointerMove}
+          onPointerLeave={stopHoverScroll}
+        >
+          {hasScrollableCategories ? (
+            <>
+              <div className="pointer-events-none absolute bottom-0 left-0 top-0 z-10 hidden w-14 bg-gradient-to-r from-[#FFF9F5] to-transparent sm:block" aria-hidden="true" />
+              <div className="pointer-events-none absolute bottom-0 right-0 top-0 z-10 hidden w-14 bg-gradient-to-l from-[#FFF9F5] to-transparent sm:block" aria-hidden="true" />
+            </>
+          ) : null}
+          <div
+            ref={categoryRailRef}
+            className="flex snap-x gap-3 overflow-x-auto overscroll-x-contain scroll-smooth pb-2 [scrollbar-width:none] sm:gap-5 [&::-webkit-scrollbar]:hidden"
+            aria-label="Shop by category"
           >
-            {t("view_all_categories")} <ArrowRight className="h-4 w-4" aria-hidden="true" />
-          </HomepageItemLink>
-        </div>
-        <div className="mt-5 grid grid-cols-2 gap-2.5 sm:hidden">
-          {isLoading
-            ? Array.from({ length: 4 }).map((_, index) => (
-                <StorefrontSkeleton key={index} className="h-[132px] rounded-[16px] bg-white" />
-              ))
-            : categories.slice(0, 4).map((category, index) => (
-                <MobileCategoryTile key={category.id} category={category} accent={categoryAccent(index)} />
-              ))}
-        </div>
-        <div className="mt-7 hidden gap-5 sm:grid sm:grid-cols-2 lg:mt-9 lg:grid-cols-4">
-          {isLoading
-            ? Array.from({ length: 8 }).map((_, index) => (
-                <StorefrontSkeleton key={index} className="h-[348px] rounded-[20px] bg-white" />
-              ))
-            : categories.slice(0, 8).map((category, index) => (
-                <CategoryTile key={category.id} category={category} accent={categoryAccent(index)} />
-              ))}
+            {isLoading
+              ? Array.from({ length: 8 }).map((_, index) => (
+                  <StorefrontSkeleton
+                    key={index}
+                    className="h-[132px] min-w-[calc(50%-6px)] snap-start rounded-[16px] bg-white sm:h-[348px] sm:min-w-[280px] lg:min-w-[292px]"
+                  />
+                ))
+              : categories.map((category, index) => (
+                  <div key={category.id} className="min-w-[calc(50%-6px)] snap-start sm:min-w-[280px] lg:min-w-[292px]">
+                    <MobileCategoryTile category={category} accent={categoryAccent(index)} />
+                    <div className="hidden sm:block">
+                      <CategoryTile category={category} accent={categoryAccent(index)} />
+                    </div>
+                  </div>
+                ))}
+          </div>
         </div>
         {!isLoading && !categories.length ? (
           <StorefrontEmptyState className="mt-5" message="No active categories are available yet." />
@@ -1373,7 +1525,7 @@ function MobileCategoryTile({ category, accent }: { category: CategorySummary; a
   return (
     <Link
       href={`/categories/${category.slug}` as Route}
-      className="group flex min-h-[132px] min-w-0 flex-col overflow-hidden rounded-[16px] border border-[#E8EDF2] bg-white p-3 text-left shadow-[0_10px_24px_rgba(22,59,92,0.05)] transition active:scale-[0.98]"
+      className="group flex min-h-[132px] min-w-0 flex-col overflow-hidden rounded-[16px] border border-[#E8EDF2] bg-white p-3 text-left shadow-[0_10px_24px_rgba(22,59,92,0.05)] transition active:scale-[0.98] sm:hidden"
     >
       <span
         className={cn(
