@@ -1,0 +1,4 @@
+Contact: https://1handindia.com/contact
+Expires: 2027-06-01T00:00:00Z
+Preferred-Languages: en, hi
+Canonical: https://1handindia.com/.well-known/security.txt
