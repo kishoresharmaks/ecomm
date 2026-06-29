@@ -57,7 +57,7 @@ const verificationDocuments: Array<{
   {
     type: "ID_PROOF",
     label: "ID proof",
-    description: "PAN, Aadhaar, passport, or business-authorized ID proof.",
+    description: "Aadhaar, passport, voter ID, driving licence, or business-authorized ID proof.",
     required: true,
   },
   {
@@ -78,7 +78,7 @@ const verificationDocuments: Array<{
     description: "Required for food product sellers. Upload your FSSAI license or registration certificate.",
     required: false,
   },
-  { type: "PAN_CARD", label: "PAN card", description: "Business or proprietor PAN proof.", required: true },
+  { type: "PAN_CARD", label: "PAN card", description: "Business or proprietor PAN proof if available.", required: false },
   {
     type: "ADDRESS_PROOF",
     label: "Address proof",

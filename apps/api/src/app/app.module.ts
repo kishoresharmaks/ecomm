@@ -33,6 +33,7 @@ import { ReportsModule } from "../reports/reports.module";
 import { ReturnsModule } from "../returns/returns.module";
 import { ReviewsModule } from "../reviews/reviews.module";
 import { SearchModule } from "../search/search.module";
+import { ServiceMarketplaceModule } from "../services-marketplace/service-marketplace.module";
 import { SellersModule } from "../sellers/sellers.module";
 import { SettingsModule } from "../settings/settings.module";
 import { StorageModule } from "../storage/storage.module";
@@ -74,6 +75,7 @@ import { SupportModule } from "../support/support.module";
     ReturnsModule,
     ReviewsModule,
     SearchModule,
+    ServiceMarketplaceModule,
     SellersModule,
     SupportModule,
     SettingsModule,

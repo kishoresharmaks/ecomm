@@ -8,7 +8,7 @@ loadEnv({ path: "../../.env.sentry-build-plugin", quiet: true });
 
 const isWindows = process.platform === "win32";
 const isDevelopment = process.env.NODE_ENV === "development";
-const defaultDevWebUrl = "http://192.168.1.3:3000";
+const defaultDevWebUrl = "http://192.168.1.2:3000";
 const localHostnames = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1"]);
 const allowedDevOrigins = resolveAllowedDevOrigins();
 const appEnvironment = process.env.NEXT_PUBLIC_APP_ENV ?? process.env.NODE_ENV;

@@ -13,7 +13,11 @@ import {
   Min
 } from "class-validator";
 import { ApiProperty, ApiPropertyOptional, PartialType } from "@nestjs/swagger";
-import { SellerSubscriptionBillingCycle, SellerSubscriptionStatus } from "@indihub/database";
+import {
+  SellerSubscriptionBillingCycle,
+  SellerSubscriptionPlanAudience,
+  SellerSubscriptionStatus,
+} from "@indihub/database";
 
 export class SellerSubscriptionPlanQueryDto {
   @ApiPropertyOptional({ example: "starter" })
@@ -26,6 +30,11 @@ export class SellerSubscriptionPlanQueryDto {
   @Type(() => Boolean)
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({ enum: SellerSubscriptionPlanAudience })
+  @IsOptional()
+  @IsEnum(SellerSubscriptionPlanAudience)
+  audience?: SellerSubscriptionPlanAudience;
 
   @ApiPropertyOptional({ example: 1 })
   @IsOptional()
@@ -75,6 +84,11 @@ export class CreateSellerSubscriptionPlanDto {
   @IsOptional()
   @IsEnum(SellerSubscriptionBillingCycle)
   billingCycle?: SellerSubscriptionBillingCycle;
+
+  @ApiPropertyOptional({ enum: SellerSubscriptionPlanAudience })
+  @IsOptional()
+  @IsEnum(SellerSubscriptionPlanAudience)
+  audience?: SellerSubscriptionPlanAudience;
 
   @ApiPropertyOptional({ example: 25 })
   @IsOptional()

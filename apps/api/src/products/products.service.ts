@@ -18,6 +18,7 @@ import {
   ProductReviewStatus,
   ProductStatus,
   ProductTemplateStatus,
+  SellerCapability,
   SellerStatus,
   VariantStatus,
 } from "@indihub/database";
@@ -280,7 +281,10 @@ export class ProductsService {
 
   async createSellerProduct(actor: RequestUser, dto: CreateSellerProductDto) {
     const seller = await this.resolveApprovedSeller(actor);
-    await this.sellerSubscriptions?.ensureCanCreateProduct(seller.id);
+    if (!this.sellerSubscriptions) {
+      throw new ForbiddenException("Seller subscription rules are unavailable. Try again later.");
+    }
+    await this.sellerSubscriptions.ensureCanCreateProduct(seller.id);
     const images = this.normalizeProductImages(
       dto.images,
       "Product images",
@@ -1100,6 +1104,10 @@ export class ProductsService {
       seller.approvalStatus !== ApprovalStatus.APPROVED
     ) {
       throw new ForbiddenException("Seller approval is required for product operations.");
+    }
+
+    if (seller.enabledCapabilities?.length && !seller.enabledCapabilities.includes(SellerCapability.RETAIL)) {
+      throw new ForbiddenException("Retail capability is required for product operations.");
     }
 
     return seller;

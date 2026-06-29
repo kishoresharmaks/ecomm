@@ -100,6 +100,12 @@ enum SellerType {
   MARKETPLACE_SELLER
   HYPERLOCAL_STORE
   WHOLESALE_DISTRIBUTOR
+  SERVICE_PROVIDER
+}
+
+enum SellerCapability {
+  RETAIL
+  SERVICE
 }
 
 enum SellerBusinessType {
@@ -124,6 +130,12 @@ enum SellerSubscriptionBillingCycle {
   MONTHLY
   YEARLY
   LIFETIME
+}
+
+enum SellerSubscriptionPlanAudience {
+  RETAIL
+  SERVICE
+  ALL
 }
 
 enum SellerSubscriptionStatus {
@@ -776,8 +788,10 @@ enum SellerPayoutStatus {
 enum SellerLedgerEntryType {
   ORDER_EARNING
   B2B_ORDER_EARNING
+  SERVICE_EARNING
   COMMISSION_DEDUCTION
   B2B_COMMISSION
+  SERVICE_COMMISSION
   GST_ON_COMMISSION
   TDS_DEDUCTION
   TCS_DEDUCTION
@@ -786,6 +800,87 @@ enum SellerLedgerEntryType {
   REFUND_ADJUSTMENT
   MANUAL_ADJUSTMENT
   PAYOUT_PAID
+}
+
+enum ServiceListingStatus {
+  DRAFT
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
+enum ServiceVisitMode {
+  CUSTOMER_LOCATION
+  PROVIDER_LOCATION
+  REMOTE
+}
+
+enum ServicePricingModel {
+  FIXED_PRICE
+  QUOTE_FIRST
+  INSPECTION_FEE
+}
+
+enum ServicePaymentMode {
+  FULL_PAYMENT
+  ADVANCE_PAYMENT
+  INSPECTION_FEE
+  PAY_AT_VISIT
+}
+
+enum ServiceBookingStatus {
+  REQUESTED
+  ACCEPTED
+  QUOTE_SENT
+  QUOTE_ACCEPTED
+  QUOTE_EXPIRED
+  QUOTE_REJECTED
+  CLOSED_AFTER_INSPECTION
+  REJECTED
+  CANCELLED
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETION_SUBMITTED
+  COMPLETION_DISPUTED
+  COMPLETED
+  CANCELLED_AFTER_DISPUTE
+}
+
+enum ServiceCancellationPolicy {
+  FLEXIBLE
+  MODERATE
+  STRICT
+}
+
+enum ServiceCancellationInitiator {
+  CUSTOMER
+  PROVIDER
+  ADMIN
+  SYSTEM
+}
+
+enum ServiceQuoteStatus {
+  SENT
+  ACCEPTED
+  REJECTED
+  EXPIRED
+  WITHDRAWN
+}
+
+enum ServicePaymentPurpose {
+  FULL_PAYMENT
+  ADVANCE_PAYMENT
+  INSPECTION_FEE
+  FINAL_QUOTE
+  PAY_AT_VISIT
+}
+
+enum ServiceDisputeResolution {
+  COMPLETE_BOOKING
+  CANCEL_AFTER_DISPUTE
+  REFUND_CUSTOMER
+  RELEASE_TO_PROVIDER
+  PARTIAL_REFUND
 }
 
 enum CouponStatus {
@@ -879,6 +974,12 @@ model User {
   customer                                 Customer?
   seller                                   Seller?
   businessBuyer                            BusinessBuyer?
+  cancelledServiceBookings                 ServiceBooking[]                   @relation("ServiceBookingCancelledBy")
+  confirmedServiceBookings                 ServiceBooking[]                   @relation("ServiceBookingCompletionConfirmedBy")
+  serviceQuotesSent                        ServiceQuote[]                     @relation("ServiceQuoteSentBy")
+  serviceDisputesRaised                    ServiceDispute[]                   @relation("ServiceDisputeRaisedBy")
+  serviceDisputesResolved                  ServiceDispute[]                   @relation("ServiceDisputeResolvedBy")
+  serviceReviewReplies                     ServiceReviewReply[]               @relation("ServiceReviewReplyProvider")
   userRoles                                UserRole[]
   inventoryMovements                       InventoryMovement[]
   orderStatusEvents                        OrderStatusEvent[]
@@ -1057,6 +1158,8 @@ model Customer {
   wishlist                  Wishlist?
   carts                     Cart[]
   orders                    Order[]
+  serviceBookings           ServiceBooking[]
+  serviceReviews            ServiceReview[]
   productReviews            ProductReview[]
   couponEligibilities       CouponCustomerEligibility[]
   couponRedemptions         CouponRedemption[]
@@ -1156,6 +1259,10 @@ model Seller {
   id                           String                         @id @default(uuid()) @db.Uuid
   userId                       String                         @unique @map("user_id") @db.Uuid
   sellerType                   SellerType                     @map("seller_type")
+  primaryCapability            SellerCapability               @default(RETAIL) @map("primary_capability")
+  enabledCapabilities          SellerCapability[]             @default([RETAIL]) @map("enabled_capabilities")
+  serviceRating                Decimal?                       @map("service_rating") @db.Decimal(3, 2)
+  serviceReviewCount           Int                            @default(0) @map("service_review_count")
   storeName                    String                         @map("store_name")
   slug                         String                         @unique
   status                       SellerStatus                   @default(DRAFT)
@@ -1177,6 +1284,11 @@ model Seller {
   addresses                    SellerAddress[]
   documents                    SellerDocument[]
   products                     Product[]
+  serviceListings              ServiceListing[]
+  serviceBookings              ServiceBooking[]
+  servicePayments              ServicePayment[]
+  serviceSettlements           ServiceBookingSettlement[]
+  serviceReviews               ServiceReview[]
   cartItems                    CartItem[]
   orderItems                   OrderItem[]
   orderSplits                  OrderSellerSplit[]
@@ -1208,6 +1320,8 @@ model Seller {
   @@index([status])
   @@index([approvalStatus])
   @@index([sellerType])
+  @@index([primaryCapability])
+  @@index([enabledCapabilities], type: Gin)
   @@index([subscriptionPlanId])
   @@index([subscriptionStatus])
   @@index([deletedAt, createdAt])
@@ -1359,6 +1473,7 @@ model SellerSubscriptionPlan {
   code                  String                         @unique
   name                  String
   description           String?
+  audience              SellerSubscriptionPlanAudience @default(RETAIL)
   pricePaise            Int                            @default(0) @map("price_paise")
   currency              String                         @default("INR")
   billingCycle          SellerSubscriptionBillingCycle @default(MONTHLY) @map("billing_cycle")
@@ -1379,6 +1494,7 @@ model SellerSubscriptionPlan {
   subscriptions         SellerSubscription[]
 
   @@index([isActive, sortOrder])
+  @@index([audience, isActive, sortOrder])
   @@index([isDefault])
   @@index([providerPlanId])
   @@map("seller_subscription_plans")
@@ -1671,6 +1787,7 @@ model Category {
   children              Category[]                  @relation("CategoryHierarchy")
   productTemplate       ProductTemplate?            @relation(fields: [productTemplateId], references: [id])
   products              Product[]
+  serviceListings       ServiceListing[]
   hsnMasterEntries      HsnMaster[]
   commissionRules       CommissionRule[]
   deals                 Deal[]
@@ -3501,6 +3618,7 @@ model SellerPayout {
   settlementRun         SellerSettlementRun? @relation(fields: [settlementRunId], references: [id])
   orderSplits           OrderSellerSplit[]
   b2bOrders             B2BOrder[]
+  serviceSettlements    ServiceBookingSettlement[]
   ledgerEntries         SellerLedgerEntry[]
   events                SellerPayoutEvent[]
   statements            SellerStatement[]
@@ -3535,6 +3653,8 @@ model SellerLedgerEntry {
   sellerId           String                @map("seller_id") @db.Uuid
   orderId            String?               @map("order_id") @db.Uuid
   orderSellerSplitId String?               @map("order_seller_split_id") @db.Uuid
+  serviceBookingId   String?               @map("service_booking_id") @db.Uuid
+  serviceSettlementId String?              @map("service_settlement_id") @db.Uuid
   payoutId           String?               @map("payout_id") @db.Uuid
   entryType          SellerLedgerEntryType @map("entry_type")
   description        String
@@ -3549,10 +3669,14 @@ model SellerLedgerEntry {
   createdAt          DateTime              @default(now()) @map("created_at")
   seller             Seller                @relation(fields: [sellerId], references: [id])
   orderSellerSplit   OrderSellerSplit?     @relation(fields: [orderSellerSplitId], references: [id])
+  serviceBooking     ServiceBooking?       @relation(fields: [serviceBookingId], references: [id])
+  serviceSettlement  ServiceBookingSettlement? @relation(fields: [serviceSettlementId], references: [id])
   payout             SellerPayout?         @relation(fields: [payoutId], references: [id])
 
   @@index([sellerId, createdAt])
   @@index([orderSellerSplitId])
+  @@index([serviceBookingId])
+  @@index([serviceSettlementId])
   @@index([payoutId])
   @@index([entryType])
   @@map("seller_ledger_entries")
@@ -3598,6 +3722,346 @@ model PaymentEvent {
 
   @@index([paymentId])
   @@map("payment_events")
+}
+
+model ServiceListing {
+  id                         String                    @id @default(uuid()) @db.Uuid
+  sellerId                   String                    @map("seller_id") @db.Uuid
+  categoryId                 String                    @map("category_id") @db.Uuid
+  title                      String
+  slug                       String                    @unique
+  description                String
+  status                     ServiceListingStatus      @default(DRAFT)
+  approvalStatus             ApprovalStatus            @default(DRAFT) @map("approval_status")
+  pricingModel               ServicePricingModel       @default(FIXED_PRICE) @map("pricing_model")
+  paymentMode                ServicePaymentMode        @default(FULL_PAYMENT) @map("payment_mode")
+  cancellationPolicy         ServiceCancellationPolicy @default(FLEXIBLE) @map("cancellation_policy")
+  basePricePaise             Int?                      @map("base_price_paise")
+  inspectionFeePaise         Int                       @default(0) @map("inspection_fee_paise")
+  advanceAmountPaise         Int                       @default(0) @map("advance_amount_paise")
+  currency                   String                    @default("INR")
+  quoteTtlHours              Int                       @default(48) @map("quote_ttl_hours")
+  serviceDurationMinutes     Int?                      @map("service_duration_minutes")
+  allowedVisitModes          ServiceVisitMode[]        @default([CUSTOMER_LOCATION]) @map("allowed_visit_modes")
+  highlights                 String[]                  @default([])
+  inclusions                 String[]                  @default([])
+  exclusions                 String[]                  @default([])
+  requirements               String[]                  @default([])
+  serviceRating              Decimal?                  @map("service_rating") @db.Decimal(3, 2)
+  serviceReviewCount         Int                       @default(0) @map("service_review_count")
+  searchText                 String?                   @map("search_text")
+  createdAt                  DateTime                  @default(now()) @map("created_at")
+  updatedAt                  DateTime                  @updatedAt @map("updated_at")
+  deletedAt                  DateTime?                 @map("deleted_at")
+  seller                     Seller                    @relation(fields: [sellerId], references: [id])
+  category                   Category                  @relation(fields: [categoryId], references: [id])
+  packages                   ServicePackage[]
+  images                     ServiceListingImage[]
+  areas                      ServiceArea[]
+  bookings                   ServiceBooking[]
+  reviews                    ServiceReview[]
+
+  @@index([sellerId])
+  @@index([categoryId])
+  @@index([status])
+  @@index([approvalStatus])
+  @@index([pricingModel])
+  @@index([paymentMode])
+  @@index([deletedAt, status, approvalStatus, createdAt])
+  @@index([categoryId, status, approvalStatus, createdAt])
+  @@index([sellerId, deletedAt, createdAt])
+  @@map("service_listings")
+}
+
+model ServicePackage {
+  id               String         @id @default(uuid()) @db.Uuid
+  serviceListingId String         @map("service_listing_id") @db.Uuid
+  name             String
+  description      String?
+  pricePaise       Int            @map("price_paise")
+  mrpPaise         Int?           @map("mrp_paise")
+  currency         String         @default("INR")
+  durationMinutes  Int?           @map("duration_minutes")
+  sortOrder        Int            @default(0) @map("sort_order")
+  isActive         Boolean        @default(true) @map("is_active")
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
+  listing          ServiceListing @relation(fields: [serviceListingId], references: [id], onDelete: Cascade)
+  bookings         ServiceBooking[]
+
+  @@index([serviceListingId])
+  @@index([isActive, sortOrder])
+  @@map("service_packages")
+}
+
+model ServiceListingImage {
+  id               String         @id @default(uuid()) @db.Uuid
+  serviceListingId String         @map("service_listing_id") @db.Uuid
+  url              String
+  altText          String?        @map("alt_text")
+  sortOrder        Int            @default(0) @map("sort_order")
+  isPrimary        Boolean        @default(false) @map("is_primary")
+  createdAt        DateTime       @default(now()) @map("created_at")
+  listing          ServiceListing @relation(fields: [serviceListingId], references: [id], onDelete: Cascade)
+
+  @@index([serviceListingId])
+  @@map("service_listing_images")
+}
+
+model ServiceArea {
+  id               String         @id @default(uuid()) @db.Uuid
+  serviceListingId String         @map("service_listing_id") @db.Uuid
+  label            String?
+  countryCode      String?        @map("country_code")
+  stateCode        String?        @map("state_code")
+  cityCode         String?        @map("city_code")
+  localAreaCode    String?        @map("local_area_code")
+  pincode          String?
+  latitude         Decimal?       @db.Decimal(10, 7)
+  longitude        Decimal?       @db.Decimal(10, 7)
+  radiusKm         Int?           @map("radius_km")
+  isActive         Boolean        @default(true) @map("is_active")
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
+  listing          ServiceListing @relation(fields: [serviceListingId], references: [id], onDelete: Cascade)
+
+  @@index([serviceListingId])
+  @@index([countryCode, stateCode, cityCode])
+  @@index([localAreaCode])
+  @@index([pincode])
+  @@index([isActive])
+  @@map("service_areas")
+}
+
+model ServiceBooking {
+  id                         String                       @id @default(uuid()) @db.Uuid
+  bookingNumber              String                       @unique @map("booking_number")
+  customerId                 String                       @map("customer_id") @db.Uuid
+  sellerId                   String                       @map("seller_id") @db.Uuid
+  serviceListingId           String                       @map("service_listing_id") @db.Uuid
+  servicePackageId           String?                      @map("service_package_id") @db.Uuid
+  status                     ServiceBookingStatus         @default(REQUESTED)
+  visitMode                  ServiceVisitMode             @map("visit_mode")
+  paymentMode                ServicePaymentMode           @map("payment_mode")
+  cancellationPolicy         ServiceCancellationPolicy    @map("cancellation_policy")
+  scheduledStartAt           DateTime?                    @map("scheduled_start_at")
+  scheduledEndAt             DateTime?                    @map("scheduled_end_at")
+  addressSnapshot            Json?                        @map("address_snapshot")
+  customerIssue              String                       @map("customer_issue")
+  customerNote               String?                      @map("customer_note")
+  providerNote               String?                      @map("provider_note")
+  cancellationReason         String?                      @map("cancellation_reason")
+  cancellationInitiator      ServiceCancellationInitiator? @map("cancellation_initiator")
+  cancelledById              String?                      @map("cancelled_by") @db.Uuid
+  cancelledAt                DateTime?                    @map("cancelled_at")
+  completionNote             String?                      @map("completion_note")
+  completionImages           String[]                     @default([]) @map("completion_images")
+  completionSubmittedAt      DateTime?                    @map("completion_submitted_at")
+  completionConfirmedById    String?                      @map("completion_confirmed_by") @db.Uuid
+  completionConfirmedAt      DateTime?                    @map("completion_confirmed_at")
+  subtotalPaise              Int                          @default(0) @map("subtotal_paise")
+  inspectionFeePaise         Int                          @default(0) @map("inspection_fee_paise")
+  advanceAmountPaise         Int                          @default(0) @map("advance_amount_paise")
+  totalPayablePaise          Int                          @default(0) @map("total_payable_paise")
+  paidAmountPaise            Int                          @default(0) @map("paid_amount_paise")
+  currency                   String                       @default("INR")
+  createdAt                  DateTime                     @default(now()) @map("created_at")
+  updatedAt                  DateTime                     @updatedAt @map("updated_at")
+  customer                   Customer                     @relation(fields: [customerId], references: [id])
+  seller                     Seller                       @relation(fields: [sellerId], references: [id])
+  listing                    ServiceListing               @relation(fields: [serviceListingId], references: [id])
+  package                    ServicePackage?              @relation(fields: [servicePackageId], references: [id])
+  cancelledBy                User?                        @relation("ServiceBookingCancelledBy", fields: [cancelledById], references: [id])
+  completionConfirmedBy      User?                        @relation("ServiceBookingCompletionConfirmedBy", fields: [completionConfirmedById], references: [id])
+  quotes                     ServiceQuote[]
+  payments                   ServicePayment[]
+  disputes                   ServiceDispute[]
+  settlement                 ServiceBookingSettlement?
+  reviews                    ServiceReview[]
+  ledgerEntries              SellerLedgerEntry[]
+
+  @@index([customerId, createdAt])
+  @@index([sellerId, createdAt])
+  @@index([serviceListingId])
+  @@index([servicePackageId])
+  @@index([status])
+  @@index([scheduledStartAt])
+  @@index([paymentMode, status])
+  @@map("service_bookings")
+}
+
+model ServiceQuote {
+  id             String             @id @default(uuid()) @db.Uuid
+  bookingId      String             @map("booking_id") @db.Uuid
+  quoteNumber    String             @unique @map("quote_number")
+  status         ServiceQuoteStatus @default(SENT)
+  subtotalPaise  Int                @default(0) @map("subtotal_paise")
+  totalPaise     Int                @default(0) @map("total_paise")
+  currency       String             @default("INR")
+  note           String?
+  expiresAt      DateTime           @map("expires_at")
+  sentById       String?            @map("sent_by") @db.Uuid
+  sentAt         DateTime           @default(now()) @map("sent_at")
+  acceptedAt     DateTime?          @map("accepted_at")
+  rejectedAt     DateTime?          @map("rejected_at")
+  expiredAt      DateTime?          @map("expired_at")
+  createdAt      DateTime           @default(now()) @map("created_at")
+  updatedAt      DateTime           @updatedAt @map("updated_at")
+  booking        ServiceBooking     @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  sentBy         User?              @relation("ServiceQuoteSentBy", fields: [sentById], references: [id])
+  lineItems      ServiceQuoteLineItem[]
+
+  @@index([bookingId])
+  @@index([status])
+  @@index([expiresAt])
+  @@map("service_quotes")
+}
+
+model ServiceQuoteLineItem {
+  id           String       @id @default(uuid()) @db.Uuid
+  quoteId      String       @map("quote_id") @db.Uuid
+  description  String
+  quantity     Int          @default(1)
+  unitPaise    Int          @map("unit_paise")
+  totalPaise   Int          @map("total_paise")
+  sortOrder    Int          @default(0) @map("sort_order")
+  quote        ServiceQuote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+
+  @@index([quoteId])
+  @@map("service_quote_line_items")
+}
+
+model ServicePayment {
+  id                  String                @id @default(uuid()) @db.Uuid
+  bookingId           String                @map("booking_id") @db.Uuid
+  sellerId            String                @map("seller_id") @db.Uuid
+  provider            PaymentProvider
+  purpose             ServicePaymentPurpose
+  amountPaise         Int                   @map("amount_paise")
+  currency            String                @default("INR")
+  status              PaymentStatus         @default(PENDING)
+  providerOrderId     String?               @map("provider_order_id")
+  providerPaymentId   String?               @map("provider_payment_id")
+  referenceNumber     String?               @map("reference_number")
+  rawResponse         Json?                 @map("raw_response")
+  paidAt              DateTime?             @map("paid_at")
+  createdAt           DateTime              @default(now()) @map("created_at")
+  updatedAt           DateTime              @updatedAt @map("updated_at")
+  booking             ServiceBooking        @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  seller              Seller                @relation(fields: [sellerId], references: [id])
+  events              ServicePaymentEvent[]
+
+  @@unique([provider, providerOrderId])
+  @@unique([provider, providerPaymentId])
+  @@index([bookingId])
+  @@index([sellerId, createdAt])
+  @@index([status])
+  @@index([provider, status, createdAt])
+  @@map("service_payments")
+}
+
+model ServicePaymentEvent {
+  id        String         @id @default(uuid()) @db.Uuid
+  paymentId String         @map("payment_id") @db.Uuid
+  eventType String         @map("event_type")
+  oldStatus PaymentStatus? @map("old_status")
+  newStatus PaymentStatus? @map("new_status")
+  payload   Json?
+  createdAt DateTime       @default(now()) @map("created_at")
+  payment   ServicePayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId])
+  @@map("service_payment_events")
+}
+
+model ServiceDispute {
+  id          String                    @id @default(uuid()) @db.Uuid
+  bookingId   String                    @map("booking_id") @db.Uuid
+  raisedById  String                    @map("raised_by") @db.Uuid
+  reason      String
+  evidence    String[]                  @default([])
+  adminNote   String?                   @map("admin_note")
+  resolution  ServiceDisputeResolution?
+  resolvedById String?                  @map("resolved_by") @db.Uuid
+  resolvedAt  DateTime?                 @map("resolved_at")
+  createdAt   DateTime                  @default(now()) @map("created_at")
+  updatedAt   DateTime                  @updatedAt @map("updated_at")
+  booking     ServiceBooking            @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  raisedBy    User                      @relation("ServiceDisputeRaisedBy", fields: [raisedById], references: [id])
+  resolvedBy  User?                     @relation("ServiceDisputeResolvedBy", fields: [resolvedById], references: [id])
+
+  @@index([bookingId])
+  @@index([raisedById])
+  @@index([resolvedAt])
+  @@map("service_disputes")
+}
+
+model ServiceBookingSettlement {
+  id                       String                 @id @default(uuid()) @db.Uuid
+  bookingId                String                 @unique @map("booking_id") @db.Uuid
+  sellerId                 String                 @map("seller_id") @db.Uuid
+  payoutId                 String?                @map("payout_id") @db.Uuid
+  grossAmountPaise         Int                    @default(0) @map("gross_amount_paise")
+  inspectionFeeGrossPaise  Int                    @default(0) @map("inspection_fee_gross_paise")
+  commissionPaise          Int                    @default(0) @map("commission_paise")
+  gstOnCommissionPaise     Int                    @default(0) @map("gst_on_commission_paise")
+  tdsPaise                 Int                    @default(0) @map("tds_paise")
+  tcsPaise                 Int                    @default(0) @map("tcs_paise")
+  platformFeePaise         Int                    @default(0) @map("platform_fee_paise")
+  refundAdjustmentPaise    Int                    @default(0) @map("refund_adjustment_paise")
+  netPayablePaise          Int                    @default(0) @map("net_payable_paise")
+  status                   SellerSettlementStatus @default(ELIGIBLE)
+  currency                 String                 @default("INR")
+  financeSnapshot          Json?                  @map("finance_snapshot")
+  createdAt                DateTime               @default(now()) @map("created_at")
+  updatedAt                DateTime               @updatedAt @map("updated_at")
+  booking                  ServiceBooking         @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  seller                   Seller                 @relation(fields: [sellerId], references: [id])
+  payout                   SellerPayout?          @relation(fields: [payoutId], references: [id])
+  ledgerEntries            SellerLedgerEntry[]
+
+  @@index([sellerId, status, createdAt])
+  @@index([payoutId, status])
+  @@index([status])
+  @@map("service_booking_settlements")
+}
+
+model ServiceReview {
+  id               String              @id @default(uuid()) @db.Uuid
+  bookingId        String              @map("booking_id") @db.Uuid
+  serviceListingId String              @map("service_listing_id") @db.Uuid
+  customerId       String              @map("customer_id") @db.Uuid
+  sellerId         String              @map("seller_id") @db.Uuid
+  rating           Int
+  body             String?
+  isVisible        Boolean             @default(true) @map("is_visible")
+  createdAt        DateTime            @default(now()) @map("created_at")
+  updatedAt        DateTime            @updatedAt @map("updated_at")
+  booking          ServiceBooking      @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  listing          ServiceListing      @relation(fields: [serviceListingId], references: [id], onDelete: Cascade)
+  customer         Customer            @relation(fields: [customerId], references: [id])
+  seller           Seller              @relation(fields: [sellerId], references: [id])
+  reply            ServiceReviewReply?
+
+  @@unique([bookingId, customerId])
+  @@index([serviceListingId, isVisible, createdAt])
+  @@index([sellerId, isVisible, createdAt])
+  @@index([customerId, createdAt])
+  @@map("service_reviews")
+}
+
+model ServiceReviewReply {
+  id          String        @id @default(uuid()) @db.Uuid
+  reviewId    String        @unique @map("review_id") @db.Uuid
+  providerId  String        @map("provider_id") @db.Uuid
+  body        String
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+  review      ServiceReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  provider    User          @relation("ServiceReviewReplyProvider", fields: [providerId], references: [id])
+
+  @@index([providerId])
+  @@map("service_review_replies")
 }
 
 model B2BEnquiry {

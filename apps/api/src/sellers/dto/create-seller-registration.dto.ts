@@ -1,7 +1,9 @@
 import { Type } from "class-transformer";
 import {
   ArrayMaxSize,
+  ArrayMinSize,
   IsEmail,
+  IsArray,
   IsEnum,
   IsIn,
   IsLatitude,
@@ -18,7 +20,7 @@ import {
   ValidateNested,
 } from "class-validator";
 import { ApiProperty, ApiPropertyOptional, OmitType } from "@nestjs/swagger";
-import { SellerBusinessType, SellerType } from "@indihub/database";
+import { SellerBusinessType, SellerCapability, SellerType } from "@indihub/database";
 
 const locationSources = ["GPS", "MAP_PICK", "MANUAL", "REVERSE_GEOCODE"] as const;
 
@@ -132,6 +134,19 @@ export class CreateSellerRegistrationDto {
   @ApiProperty({ enum: SellerType })
   @IsEnum(SellerType)
   sellerType!: SellerType;
+
+  @ApiPropertyOptional({ enum: SellerCapability, example: SellerCapability.RETAIL })
+  @IsOptional()
+  @IsEnum(SellerCapability)
+  primaryCapability?: SellerCapability;
+
+  @ApiPropertyOptional({ enum: SellerCapability, isArray: true, example: [SellerCapability.RETAIL] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(2)
+  @IsEnum(SellerCapability, { each: true })
+  enabledCapabilities?: SellerCapability[];
 
   @ApiProperty({ example: "Vignesh Local Mart" })
   @IsString()

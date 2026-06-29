@@ -1,5 +1,10 @@
 import { indihubFetch, type IndihubAuthHeaders } from "./api";
-import type { SellerProfile, SellerSubscriptionPlan, SellerSubscriptionStatus } from "./seller-api";
+import type {
+  SellerProfile,
+  SellerSubscriptionPlan,
+  SellerSubscriptionPlanAudience,
+  SellerSubscriptionStatus,
+} from "./seller-api";
 
 export type PageResult<T> = {
   items: T[];
@@ -12,6 +17,7 @@ export type SellerSubscriptionPlanPayload = {
   code?: string;
   name?: string;
   description?: string;
+  audience?: SellerSubscriptionPlanAudience;
   pricePaise?: number;
   currency?: string;
   billingCycle?: "MONTHLY" | "YEARLY" | "LIFETIME";
@@ -31,7 +37,7 @@ export type AssignSellerSubscriptionPayload = {
   note?: string;
 };
 
-export function listAdminSellerSubscriptionPlans(auth: IndihubAuthHeaders, query: { search?: string; isActive?: boolean; page?: number; limit?: number } = {}) {
+export function listAdminSellerSubscriptionPlans(auth: IndihubAuthHeaders, query: { search?: string; isActive?: boolean; audience?: SellerSubscriptionPlanAudience; page?: number; limit?: number } = {}) {
   return indihubFetch<PageResult<SellerSubscriptionPlan>>(`/api/admin/seller-subscriptions/plans${queryString(query)}`, undefined, auth);
 }
 

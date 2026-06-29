@@ -16,7 +16,9 @@ import {
   ProductReviewStatus,
   Prisma,
   RoleCode,
+  SellerCapability,
   SellerStatus,
+  SellerType,
   UserStatus,
 } from "@indihub/database";
 import type { RequestUser } from "../auth/types/indihub-request";
@@ -30,6 +32,7 @@ import type {
 } from "../orders/courier-adapters/courier-adapter.types";
 import { PrismaService } from "../prisma/prisma.service";
 import { SearchIndexService } from "../search/search-index.service";
+import { StorefrontService } from "../storefront/storefront.service";
 import { createSlug } from "../common/slug";
 import {
   normalizeStorageImageReference,
@@ -37,7 +40,7 @@ import {
 } from "../storage/storage-image";
 import { CreateSellerOnboardingDto } from "./dto/create-seller-registration.dto";
 import { PublicSellerQueryDto } from "./dto/public-seller-query.dto";
-import { UpdateSellerProfileDto } from "./dto/seller-profile.dto";
+import { UpdateMySellerCapabilitiesDto, UpdateSellerProfileDto } from "./dto/seller-profile.dto";
 import { RegisterSellerPushTokenDto, RevokeSellerPushTokenDto } from "./dto/seller-push-token.dto";
 import { SellerSubscriptionsService } from "./seller-subscriptions.service";
 
@@ -122,12 +125,16 @@ export class SellersService {
     @Optional()
     @Inject(SearchIndexService)
     private readonly searchIndex?: SearchIndexService,
+    @Optional()
+    @Inject(StorefrontService)
+    private readonly storefrontService?: StorefrontService,
   ) {}
 
   async registerSeller(actor: RequestUser, dto: CreateSellerOnboardingDto) {
     const location = await this.locationsService.resolveAddressLocation(dto.address);
     const documents = this.normalizeSellerDocuments(actor.id, dto.documents);
     const slug = await this.createUniqueSlug(dto.storeName);
+    const capabilities = this.resolveRegistrationCapabilities(dto);
     const seller = await this.prisma.client.$transaction(async (tx) => {
       const existingSeller = await tx.seller.findUnique({ where: { userId: actor.id } });
 
@@ -173,6 +180,7 @@ export class SellersService {
       const selectedPlan = await this.sellerSubscriptions.resolveRegistrationPlan(
         tx,
         dto.subscriptionPlanId,
+        capabilities.primaryCapability,
       );
       const subscriptionStartedAt = selectedPlan ? new Date() : null;
       const subscriptionStatus = this.sellerSubscriptions.initialRegistrationStatus(selectedPlan);
@@ -181,6 +189,8 @@ export class SellersService {
         data: {
           userId: user.id,
           sellerType: dto.sellerType,
+          primaryCapability: capabilities.primaryCapability,
+          enabledCapabilities: capabilities.enabledCapabilities,
           storeName: dto.storeName,
           slug,
           status: SellerStatus.PENDING_APPROVAL,
@@ -253,6 +263,8 @@ export class SellersService {
           entityId: seller.id,
           newValue: {
             sellerType: seller.sellerType,
+            primaryCapability: seller.primaryCapability,
+            enabledCapabilities: seller.enabledCapabilities,
             storeName: seller.storeName,
             approvalStatus: seller.approvalStatus,
             subscriptionPlanId: selectedPlan?.id,
@@ -294,6 +306,21 @@ export class SellersService {
 
     await this.enqueueSellerSearchIndex(seller.id, "seller-registration-submitted");
     return seller;
+  }
+
+  private resolveRegistrationCapabilities(dto: CreateSellerOnboardingDto) {
+    const defaultPrimary =
+      dto.sellerType === SellerType.SERVICE_PROVIDER ? SellerCapability.SERVICE : SellerCapability.RETAIL;
+    const primaryCapability = dto.primaryCapability ?? defaultPrimary;
+    const enabledCapabilities = [
+      ...new Set(dto.enabledCapabilities?.length ? dto.enabledCapabilities : [primaryCapability]),
+    ];
+
+    if (!enabledCapabilities.includes(primaryCapability)) {
+      enabledCapabilities.push(primaryCapability);
+    }
+
+    return { primaryCapability, enabledCapabilities };
   }
 
   private getSellerByIdOrThrow(tx: Prisma.TransactionClient, sellerId: string) {
@@ -574,6 +601,74 @@ export class SellersService {
   async getMySellerProfile(actor: RequestUser) {
     const seller = await this.getSellerForUserOrThrow(actor.id);
     return this.toSellerProfileResponse(seller);
+  }
+
+  async updateMySellerCapabilities(actor: RequestUser, dto: UpdateMySellerCapabilitiesDto) {
+    const existing = await this.getSellerForUserOrThrow(actor.id);
+    const enabledCapabilities = [...new Set(dto.enabledCapabilities)];
+
+    if (!enabledCapabilities.length) {
+      throw new BadRequestException("At least one seller capability is required.");
+    }
+
+    const primaryCapability = dto.primaryCapability ?? existing.primaryCapability;
+    if (!enabledCapabilities.includes(primaryCapability)) {
+      throw new BadRequestException("Primary capability must be enabled.");
+    }
+
+    const removedCapabilities = existing.enabledCapabilities.filter(
+      (capability) => !enabledCapabilities.includes(capability),
+    );
+    if (removedCapabilities.length) {
+      throw new BadRequestException("Seller capabilities can be added here, but not removed.");
+    }
+
+    const sellerType =
+      primaryCapability === SellerCapability.SERVICE &&
+      existing.sellerType === SellerType.MARKETPLACE_SELLER
+        ? SellerType.SERVICE_PROVIDER
+        : primaryCapability === SellerCapability.RETAIL &&
+            existing.sellerType === SellerType.SERVICE_PROVIDER
+          ? SellerType.MARKETPLACE_SELLER
+          : existing.sellerType;
+
+    const updated = await this.prisma.client.$transaction(async (tx) => {
+      const seller = await tx.seller.update({
+        where: { id: existing.id },
+        data: {
+          primaryCapability,
+          enabledCapabilities,
+          sellerType,
+        },
+        include: sellerProfileInclude,
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actor: { connect: { id: actor.id } },
+          action: "seller.capabilities.updated",
+          entityType: "seller",
+          entityId: existing.id,
+          oldValue: {
+            sellerType: existing.sellerType,
+            primaryCapability: existing.primaryCapability,
+            enabledCapabilities: existing.enabledCapabilities,
+          },
+          newValue: {
+            sellerType: seller.sellerType,
+            primaryCapability: seller.primaryCapability,
+            enabledCapabilities: seller.enabledCapabilities,
+            reason: dto.reason ?? "Seller capability added from seller workspace.",
+          },
+        },
+      });
+
+      return seller;
+    });
+
+    await this.enqueueSellerSearchIndex(updated.id, "seller-capabilities-updated");
+    this.storefrontService?.clearHomeCache();
+    return this.toSellerProfileResponse(updated);
   }
 
   async updateMySellerProfile(actor: RequestUser, dto: UpdateSellerProfileDto) {
@@ -902,6 +997,7 @@ export class SellersService {
     });
 
     await this.enqueueSellerSearchIndex(seller.id, "seller-profile-updated");
+    this.storefrontService?.clearHomeCache();
     return this.toSellerProfileResponse(seller);
   }
 
@@ -1104,6 +1200,8 @@ export class SellersService {
       storeName: seller.storeName,
       slug: seller.slug,
       sellerType: seller.sellerType,
+      primaryCapability: seller.primaryCapability,
+      enabledCapabilities: seller.enabledCapabilities,
       status: seller.status,
       approvalStatus: seller.approvalStatus,
       subscriptionStatus: seller.subscriptionStatus,

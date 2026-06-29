@@ -23,8 +23,8 @@ export class SellerSubscriptionsController {
   @Get("seller/subscription-plans")
   @ApiOperation({ summary: "List public seller subscription plans." })
   @ApiOkResponse({ description: "Active seller subscription plans for onboarding." })
-  listPublicPlans() {
-    return this.subscriptions.listPublicPlans();
+  listPublicPlans(@Query() query: SellerSubscriptionPlanQueryDto) {
+    return this.subscriptions.listPublicPlans(query.audience);
   }
 
   @Roles(RoleCode.SELLER)

@@ -85,7 +85,7 @@ describe("seo helpers", () => {
       "@type": "BreadcrumbList",
       itemListElement: [
         expect.objectContaining({ position: 1, name: "Home" }),
-        expect.objectContaining({ position: 2, item: "http://192.168.1.3:3000/products/headset" })
+        expect.objectContaining({ position: 2, item: "http://192.168.1.2:3000/products/headset" })
       ]
     });
   });

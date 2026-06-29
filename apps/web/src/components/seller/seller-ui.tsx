@@ -26,11 +26,13 @@ import {
   Star,
   Store,
   WalletCards,
+  Wrench,
   UploadCloud,
   UserRound,
   X
 } from "lucide-react";
 import { type ComponentPropsWithoutRef, type ReactNode, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Button, StatusBadge, cn } from "@indihub/ui";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
 import { MaintenanceGate } from "@/components/maintenance/maintenance-mode";
@@ -38,7 +40,7 @@ import { StorefrontImage } from "@/components/storefront/storefront-image";
 import { IndihubApiError, userFacingApiErrorMessage } from "@/lib/api";
 import type { IndihubAuthHeaders } from "@/lib/api";
 import { uploadPublicImage, type PublicImageUploadPurpose } from "@/lib/public-image-upload";
-import type { SellerProfile } from "@/lib/seller-api";
+import { getSellerProfile, type SellerCapability, type SellerProfile } from "@/lib/seller-api";
 import { sellerNav } from "@/lib/portal-nav";
 
 const clerkEnabled = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
@@ -50,6 +52,9 @@ const sellerNavIcons: Record<string, ReactNode> = {
   "/seller/pending-approval": <AlertCircle className="h-4 w-4" aria-hidden="true" />,
   "/seller/register": <UserRound className="h-4 w-4" aria-hidden="true" />,
   "/seller/products": <Boxes className="h-4 w-4" aria-hidden="true" />,
+  "/seller/services": <Wrench className="h-4 w-4" aria-hidden="true" />,
+  "/seller/service-bookings": <ClipboardList className="h-4 w-4" aria-hidden="true" />,
+  "/seller/service-calendar": <BarChart3 className="h-4 w-4" aria-hidden="true" />,
   "/seller/deals": <BadgePercent className="h-4 w-4" aria-hidden="true" />,
   "/seller/coupons": <BadgePercent className="h-4 w-4" aria-hidden="true" />,
   "/seller/orders": <ShoppingBag className="h-4 w-4" aria-hidden="true" />,
@@ -65,16 +70,6 @@ const sellerNavIcons: Record<string, ReactNode> = {
 };
 
 const sellerFinanceRoutes = new Set(["/seller/subscription", "/seller/finance/wallet", "/seller/finance/payouts", "/seller/finance/statements"]);
-const sellerNavGroups = [
-  {
-    label: "Store",
-    items: sellerNav.filter((item) => !sellerFinanceRoutes.has(item.href))
-  },
-  {
-    label: "Finance",
-    items: sellerNav.filter((item) => sellerFinanceRoutes.has(item.href))
-  }
-];
 
 export function SellerWorkspaceShell({
   title,
@@ -89,13 +84,21 @@ export function SellerWorkspaceShell({
 }) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const sellerAuth = useSellerAuth();
+  const profileQuery = useQuery({
+    queryKey: ["seller-profile", sellerAuth.authKey, "shell"],
+    queryFn: () => getSellerProfile(sellerAuth.authHeaders),
+    enabled: sellerAuth.enabled,
+    retry: false
+  });
+  const visibleNav = filterSellerNav(profileQuery.data);
 
   return (
     <MaintenanceGate scope="seller">
       <main className="min-h-screen bg-[#F6F3EC] text-[#1F2933]">
         <div className="grid min-h-screen lg:grid-cols-[300px_minmax(0,1fr)]">
           <aside className="hidden border-r border-[#D9E2EA] bg-[#123A5A] text-white lg:block">
-            <SellerSidebar pathname={pathname} />
+            <SellerSidebar pathname={pathname} items={visibleNav} profile={profileQuery.data} />
           </aside>
 
           <section className="min-w-0">
@@ -115,7 +118,7 @@ export function SellerWorkspaceShell({
             </div>
             {mobileOpen ? (
               <nav className="mt-3 grid gap-1 rounded-lg border border-[#D9E2EA] bg-white p-2 shadow-sm">
-                {sellerNav.map((item) => (
+                {visibleNav.map((item) => (
                   <SellerNavLink key={item.href} item={item} pathname={pathname} onClick={() => setMobileOpen(false)} />
                 ))}
                 <SellerLogoutButton className="mt-1 w-full justify-start" onClick={() => setMobileOpen(false)} />
@@ -143,7 +146,18 @@ export function SellerWorkspaceShell({
   );
 }
 
-function SellerSidebar({ pathname }: { pathname: string }) {
+function SellerSidebar({
+  pathname,
+  items,
+  profile
+}: {
+  pathname: string;
+  items: SellerNavItem[];
+  profile?: SellerProfile | undefined;
+}) {
+  const groups = sellerNavGroups(items);
+  const operationCopy = operationSummary(profile);
+
   return (
     <div className="sticky top-0 flex h-screen min-h-0 flex-col overflow-hidden px-4 py-4">
       <Link href="/seller" className="flex shrink-0 items-center gap-3 rounded-lg border border-white/10 bg-white/[0.04] p-3">
@@ -156,7 +170,7 @@ function SellerSidebar({ pathname }: { pathname: string }) {
 
       <nav className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1 [scrollbar-color:rgba(255,255,255,0.28)_transparent] [scrollbar-width:thin]">
         <div className="space-y-4">
-          {sellerNavGroups.map((group) => (
+          {groups.map((group) => (
             <div key={group.label}>
               <p className="px-2 pb-2 text-[11px] font-black uppercase tracking-[0.14em] text-[#BFD4E5]">{group.label}</p>
               <div className="grid gap-1">
@@ -170,8 +184,8 @@ function SellerSidebar({ pathname }: { pathname: string }) {
       </nav>
 
       <div className="mt-4 shrink-0 rounded-lg border border-white/10 bg-white/[0.06] p-3">
-        <p className="text-sm font-black leading-5">Store operations</p>
-        <p className="mt-1 text-xs leading-5 text-[#DCE8F2]">Catalogue, orders, delivery, and enquiries in one place.</p>
+        <p className="text-sm font-black leading-5">{operationCopy.title}</p>
+        <p className="mt-1 text-xs leading-5 text-[#DCE8F2]">{operationCopy.description}</p>
         <div className="mt-3 flex flex-wrap gap-2">
           <Button asChild variant="outline" size="sm" className="h-9 border-white/20 bg-white/10 px-3 text-white hover:bg-white/15">
             <Link href="/">
@@ -208,7 +222,7 @@ function SellerNavLink({
   pathname,
   onClick
 }: {
-  item: { label: string; href: string };
+  item: SellerNavItem;
   pathname: string;
   onClick?: () => void;
 }) {
@@ -233,6 +247,69 @@ function SellerNavLink({
       <span className="truncate text-current">{item.label}</span>
     </Link>
   );
+}
+
+type SellerNavItem = (typeof sellerNav)[number];
+
+function sellerNavGroups(items: SellerNavItem[]) {
+  return [
+    {
+      label: "Store",
+      items: items.filter((item) => !sellerFinanceRoutes.has(item.href))
+    },
+    {
+      label: "Finance",
+      items: items.filter((item) => sellerFinanceRoutes.has(item.href))
+    }
+  ].filter((group) => group.items.length > 0);
+}
+
+function filterSellerNav(profile?: SellerProfile | null) {
+  const capabilities = sellerCapabilities(profile);
+  return sellerNav.filter((item) => {
+    if (item.capability === "ALL") {
+      return true;
+    }
+
+    return capabilities.includes(item.capability);
+  });
+}
+
+function sellerCapabilities(profile?: SellerProfile | null): SellerCapability[] {
+  if (!profile) {
+    return ["RETAIL", "SERVICE"];
+  }
+
+  if (profile.enabledCapabilities?.length) {
+    return profile.enabledCapabilities;
+  }
+
+  return profile.primaryCapability ? [profile.primaryCapability] : ["RETAIL"];
+}
+
+function operationSummary(profile?: SellerProfile | null) {
+  const capabilities = sellerCapabilities(profile);
+  const retail = capabilities.includes("RETAIL");
+  const service = capabilities.includes("SERVICE");
+
+  if (service && !retail) {
+    return {
+      title: "Service operations",
+      description: "Services, bookings, calendar, subscription, and payouts in one place."
+    };
+  }
+
+  if (retail && service) {
+    return {
+      title: "Store and service operations",
+      description: "Products, orders, services, bookings, and finance in one place."
+    };
+  }
+
+  return {
+    title: "Store operations",
+    description: "Catalogue, orders, delivery, and enquiries in one place."
+  };
 }
 
 export function useSellerAuth() {

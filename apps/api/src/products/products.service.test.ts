@@ -85,6 +85,12 @@ describe("ProductsService", () => {
     };
   }
 
+  function sellerSubscriptionAllowsProductCreation() {
+    return {
+      ensureCanCreateProduct: vi.fn().mockResolvedValue(undefined),
+    };
+  }
+
   it("keeps new public product details visible when stock is zero", async () => {
     prisma.client.product.findFirst.mockResolvedValue(publicProductWithStock("New", 0));
     const service = new ProductsService(prisma as never, notifications as never);
@@ -144,7 +150,11 @@ describe("ProductsService", () => {
       status: SellerStatus.APPROVED,
       approvalStatus: ApprovalStatus.APPROVED,
     });
-    const service = new ProductsService(prisma as never, notifications as never);
+    const service = new ProductsService(
+      prisma as never,
+      notifications as never,
+      sellerSubscriptionAllowsProductCreation() as never,
+    );
 
     await expect(
       service.createSellerProduct(
@@ -160,6 +170,36 @@ describe("ProductsService", () => {
     ).rejects.toBeInstanceOf(BadRequestException);
 
     expect(prisma.client.category.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("checks seller subscription product limits before creating products", async () => {
+    const sellerSubscriptions = {
+      ensureCanCreateProduct: vi.fn().mockRejectedValue(
+        new ForbiddenException("Your seller plan allows 25 products. Upgrade the subscription plan to add more products."),
+      ),
+    };
+    prisma.client.seller.findUnique.mockResolvedValue({
+      id: "seller_1",
+      status: SellerStatus.APPROVED,
+      approvalStatus: ApprovalStatus.APPROVED,
+    });
+    const service = new ProductsService(prisma as never, notifications as never, sellerSubscriptions as never);
+
+    await expect(
+      service.createSellerProduct(
+        { id: "user_seller", clerkUserId: null, email: "seller@example.com", roles: [] },
+        {
+          categoryId: "category_1",
+          name: "Product 26",
+          description: "Should be blocked by the seller plan",
+          variants: [{ pricePaise: 55000, stockQuantity: 20 }],
+        },
+      ),
+    ).rejects.toThrow("Your seller plan allows 25 products. Upgrade the subscription plan to add more products.");
+
+    expect(sellerSubscriptions.ensureCanCreateProduct).toHaveBeenCalledWith("seller_1");
+    expect(prisma.client.category.findFirst).not.toHaveBeenCalled();
+    expect(prisma.client.product.create).not.toHaveBeenCalled();
   });
 
   it("auto approves a valid seller product when the admin product rule is enabled", async () => {
@@ -196,7 +236,11 @@ describe("ProductsService", () => {
       id: "variant_1",
       stockQuantity: 20,
     });
-    const service = new ProductsService(prisma as never, notifications as never);
+    const service = new ProductsService(
+      prisma as never,
+      notifications as never,
+      sellerSubscriptionAllowsProductCreation() as never,
+    );
 
     const result = await service.createSellerProduct(
       { id: "user_seller", clerkUserId: null, email: "seller@example.com", roles: [] },

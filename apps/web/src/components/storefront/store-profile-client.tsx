@@ -14,6 +14,7 @@ import {
   ShoppingCart,
   Star,
   Store,
+  Wrench,
   type LucideIcon,
 } from "lucide-react";
 import { useState, type MouseEvent } from "react";
@@ -31,6 +32,7 @@ import {
   primaryVariant,
   type ProductSummary,
 } from "@/lib/storefront-api";
+import { listPublicServices, type ServiceListing } from "@/lib/service-marketplace-api";
 import { StorefrontFrame } from "./storefront-frame";
 import { StorefrontImage } from "./storefront-image";
 import { getStorefrontStockStatus, storefrontStockBadgeClass } from "./storefront-stock-status";
@@ -60,6 +62,11 @@ export function StoreProfileClient({ slug }: { slug: string }) {
   const productsQuery = useQuery({
     queryKey: ["products", "store", storeQuery.data?.id],
     queryFn: () => listProducts({ sellerId: storeQuery.data?.id ?? "", limit: 24 }),
+    enabled: Boolean(storeQuery.data?.id),
+  });
+  const servicesQuery = useQuery({
+    queryKey: ["public-services", "store", storeQuery.data?.id],
+    queryFn: () => listPublicServices({ sellerId: storeQuery.data?.id ?? "", limit: 12 }),
     enabled: Boolean(storeQuery.data?.id),
   });
   const addMutation = useMutation({
@@ -231,6 +238,28 @@ export function StoreProfileClient({ slug }: { slug: string }) {
                 </div>
               ) : null}
             </section>
+
+            <section className="mx-auto max-w-7xl px-5 pb-12 lg:px-6">
+              <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                <SectionHeading title="Store services" description="Approved service listings from this provider." />
+                <Button type="button" variant="outline" onClick={() => void servicesQuery.refetch()} disabled={servicesQuery.isFetching}>
+                  <RefreshCw className={cn("h-4 w-4", servicesQuery.isFetching && "animate-spin")} aria-hidden="true" />
+                  Refresh
+                </Button>
+              </div>
+              <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {servicesQuery.isLoading ? (
+                  Array.from({ length: 3 }).map((_, index) => <StorefrontSkeleton key={index} className="h-64 bg-white" />)
+                ) : servicesQuery.data?.items.length ? (
+                  servicesQuery.data.items.map((service) => <StoreServiceTile key={service.id} service={service} />)
+                ) : (
+                  <StorefrontEmptyState className="sm:col-span-2 lg:col-span-3" message="No approved services are live for this store yet." />
+                )}
+              </div>
+              {servicesQuery.isError ? (
+                <StorefrontErrorPanel className="mt-6" error={servicesQuery.error} onRetry={() => void servicesQuery.refetch()} />
+              ) : null}
+            </section>
           </>
         ) : null}
 
@@ -241,6 +270,54 @@ export function StoreProfileClient({ slug }: { slug: string }) {
         ) : null}
       </main>
     </StorefrontFrame>
+  );
+}
+
+function StoreServiceTile({ service }: { service: ServiceListing }) {
+  const imageUrl = service.images?.find((image) => image.isPrimary)?.url ?? service.images?.[0]?.url ?? service.seller.profile?.logoUrl ?? null;
+  const rating = Number(service.serviceRating ?? service.seller.serviceRating ?? 0);
+  const reviewCount = service.serviceReviewCount ?? service.seller.serviceReviewCount ?? 0;
+
+  return (
+    <article className="group overflow-hidden rounded-2xl border border-[#E5E7EB] bg-white shadow-sm transition hover:-translate-y-0.5 hover:border-[#ED3500] hover:shadow-[0_22px_48px_rgba(22,59,92,0.10)]">
+      <Link href={`/services/${service.slug}` as Route} className="relative block aspect-[4/3] overflow-hidden bg-[#FFF5F1]">
+        <StorefrontImage
+          src={imageUrl}
+          alt={service.title}
+          sizes="(max-width: 640px) 100vw, 33vw"
+          fallbackLabel={service.title}
+          className="transition duration-500 group-hover:scale-105"
+        />
+      </Link>
+      <div className="p-4">
+        <div className="flex flex-wrap gap-2">
+          <span className="inline-flex items-center gap-1 rounded-full bg-[#FFF0EC] px-2.5 py-1 text-[10px] font-black uppercase text-[#ED3500]">
+            <Wrench className="h-3.5 w-3.5" />
+            {service.pricingModel.replace(/_/g, " ")}
+          </span>
+          {reviewCount ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-[#F8FAFC] px-2.5 py-1 text-[10px] font-black text-[#667085]">
+              <Star className="h-3.5 w-3.5 fill-[#ED3500] text-[#ED3500]" />
+              {rating.toFixed(1)}
+            </span>
+          ) : null}
+        </div>
+        <Link href={`/services/${service.slug}` as Route} className="mt-3 block">
+          <h2 className="line-clamp-2 text-lg font-black leading-6 text-[#1F2933] group-hover:text-[#163B5C]">{service.title}</h2>
+        </Link>
+        <p className="mt-2 line-clamp-2 text-sm leading-6 text-[#667085]">{service.description}</p>
+        <div className="mt-4 flex items-center justify-between gap-3">
+          <p className="text-sm font-black text-[#163B5C]">
+            {service.pricingModel === "QUOTE_FIRST"
+              ? "Request quote"
+              : formatMoney(service.basePricePaise ?? service.inspectionFeePaise ?? service.packages?.[0]?.pricePaise ?? 0, service.currency)}
+          </p>
+          <Button asChild size="sm">
+            <Link href={`/services/${service.slug}` as Route}>Book</Link>
+          </Button>
+        </div>
+      </div>
+    </article>
   );
 }
 

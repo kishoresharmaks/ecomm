@@ -35,7 +35,7 @@ type ClerkErrorDetails = {
   status?: number;
 };
 
-const DEFAULT_DEV_WEB_ORIGIN = "http://192.168.1.3:3000";
+const DEFAULT_DEV_WEB_ORIGIN = "http://192.168.1.2:3000";
 
 @Injectable()
 export class ClerkAuthService {

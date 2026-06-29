@@ -11,7 +11,9 @@ import {
   ProductListingMode,
   ProductTemplateStatus,
   RoleCode,
+  SellerCapability,
   SellerSubscriptionBillingCycle,
+  SellerSubscriptionPlanAudience,
   SellerSubscriptionStatus,
   SettingValueType,
   UserStatus,
@@ -895,6 +897,7 @@ const defaultSubscriptionPlans = [
     pricePaise: 0,
     currency: "INR",
     billingCycle: SellerSubscriptionBillingCycle.MONTHLY,
+    audience: SellerSubscriptionPlanAudience.RETAIL,
     productLimit: 25,
     featuredProductLimit: 0,
     b2bEnquiryLimit: 25,
@@ -911,6 +914,7 @@ const defaultSubscriptionPlans = [
     pricePaise: 99900,
     currency: "INR",
     billingCycle: SellerSubscriptionBillingCycle.MONTHLY,
+    audience: SellerSubscriptionPlanAudience.RETAIL,
     productLimit: 250,
     featuredProductLimit: 5,
     b2bEnquiryLimit: 250,
@@ -926,6 +930,7 @@ const defaultSubscriptionPlans = [
     pricePaise: 999900,
     currency: "INR",
     billingCycle: SellerSubscriptionBillingCycle.YEARLY,
+    audience: SellerSubscriptionPlanAudience.RETAIL,
     productLimit: 1000,
     featuredProductLimit: 25,
     b2bEnquiryLimit: null,
@@ -933,6 +938,40 @@ const defaultSubscriptionPlans = [
     isDefault: false,
     isActive: true,
     sortOrder: 30,
+  },
+  {
+    code: "SERVICE_STARTER",
+    name: "Service Starter",
+    description:
+      "Default onboarding plan for service providers. Suitable for appointment, quote, and local service setup.",
+    pricePaise: 0,
+    currency: "INR",
+    billingCycle: SellerSubscriptionBillingCycle.MONTHLY,
+    audience: SellerSubscriptionPlanAudience.SERVICE,
+    productLimit: 0,
+    featuredProductLimit: 0,
+    b2bEnquiryLimit: 0,
+    commissionDiscountBps: 0,
+    isDefault: true,
+    isActive: true,
+    sortOrder: 10,
+  },
+  {
+    code: "SERVICE_GROWTH_MONTHLY",
+    name: "Service Growth Monthly",
+    description:
+      "Paid service-provider plan for higher booking volume, featured service capacity, and recurring billing readiness.",
+    pricePaise: 79900,
+    currency: "INR",
+    billingCycle: SellerSubscriptionBillingCycle.MONTHLY,
+    audience: SellerSubscriptionPlanAudience.SERVICE,
+    productLimit: 0,
+    featuredProductLimit: 10,
+    b2bEnquiryLimit: 0,
+    commissionDiscountBps: 0,
+    isDefault: false,
+    isActive: true,
+    sortOrder: 20,
   },
 ] as const;
 
@@ -1633,6 +1672,7 @@ async function seedSellerSubscriptionPlans() {
       await prisma.sellerSubscriptionPlan.updateMany({
         where: {
           code: { not: plan.code },
+          audience: plan.audience,
         },
         data: {
           isDefault: false,
@@ -1648,6 +1688,7 @@ async function seedSellerSubscriptionPlans() {
         pricePaise: plan.pricePaise,
         currency: plan.currency,
         billingCycle: plan.billingCycle,
+        audience: plan.audience,
         productLimit: plan.productLimit,
         featuredProductLimit: plan.featuredProductLimit,
         b2bEnquiryLimit: plan.b2bEnquiryLimit,
@@ -1660,14 +1701,15 @@ async function seedSellerSubscriptionPlans() {
     });
   }
 
-  const defaultPlan = await prisma.sellerSubscriptionPlan.findFirst({
+  const defaultPlans = await prisma.sellerSubscriptionPlan.findMany({
     where: {
       isDefault: true,
       isActive: true,
     },
+    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
   });
 
-  if (!defaultPlan) {
+  if (!defaultPlans.length) {
     return;
   }
 
@@ -1678,10 +1720,24 @@ async function seedSellerSubscriptionPlans() {
     select: {
       id: true,
       createdAt: true,
+      primaryCapability: true,
+      enabledCapabilities: true,
     },
   });
 
   for (const seller of sellersWithoutPlan) {
+    const audience = seller.enabledCapabilities.includes(SellerCapability.SERVICE)
+      ? SellerSubscriptionPlanAudience.SERVICE
+      : SellerSubscriptionPlanAudience.RETAIL;
+    const defaultPlan =
+      defaultPlans.find((plan) => plan.audience === audience) ??
+      defaultPlans.find((plan) => plan.audience === SellerSubscriptionPlanAudience.ALL) ??
+      defaultPlans[0];
+
+    if (!defaultPlan) {
+      continue;
+    }
+
     await prisma.seller.update({
       where: { id: seller.id },
       data: {

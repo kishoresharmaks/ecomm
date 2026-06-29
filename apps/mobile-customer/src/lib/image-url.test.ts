@@ -7,7 +7,7 @@ const originalWebUrl = process.env.EXPO_PUBLIC_WEB_URL;
 describe("resolveImageUrl", () => {
   beforeEach(() => {
     process.env.EXPO_PUBLIC_API_URL = "http://192.168.1.3:4000/api";
-    process.env.EXPO_PUBLIC_WEB_URL = "http://192.168.1.3:3000";
+    process.env.EXPO_PUBLIC_WEB_URL = "http://192.168.1.2:3000";
   });
 
   afterEach(() => {
@@ -19,7 +19,7 @@ describe("resolveImageUrl", () => {
     expect(resolveImageUrl("/cms/homepage-local-marketplace-hero.svg")).toBe(
       "http://192.168.1.3:4000/api/storage/public-image?key=1handindia%2Fcms%2Fhomepage-local-marketplace-hero.svg",
     );
-    expect(resolveImageUrl("http://192.168.1.3:3000/cms/homepage-local-marketplace-hero.svg")).toBe(
+    expect(resolveImageUrl("http://192.168.1.2:3000/cms/homepage-local-marketplace-hero.svg")).toBe(
       "http://192.168.1.3:4000/api/storage/public-image?key=1handindia%2Fcms%2Fhomepage-local-marketplace-hero.svg",
     );
   });

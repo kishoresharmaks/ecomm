@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   Store,
   Upload,
+  Wrench,
 } from "lucide-react";
 import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
@@ -32,7 +33,9 @@ import {
   listSellerProducts,
   listSellerSubscriptionPlans,
   onboardSeller,
+  updateSellerCapabilities,
   type SellerBusinessType,
+  type SellerCapability,
   type SellerOnboardingPayload,
   type SellerSubscriptionPlan,
 } from "@/lib/seller-api";
@@ -63,7 +66,7 @@ const verificationDocuments: Array<{
   {
     type: "ID_PROOF",
     label: "ID proof",
-    description: "PAN, Aadhaar, passport, or business-authorized ID proof.",
+    description: "Aadhaar, passport, voter ID, driving licence, or business-authorized ID proof.",
     required: true,
   },
   {
@@ -84,7 +87,7 @@ const verificationDocuments: Array<{
     description: "Required for food product sellers. Upload your FSSAI license or registration certificate.",
     required: false,
   },
-  { type: "PAN_CARD", label: "PAN card", description: "Business or proprietor PAN proof.", required: true },
+  { type: "PAN_CARD", label: "PAN card", description: "Business or proprietor PAN proof if available.", required: false },
   {
     type: "ADDRESS_PROOF",
     label: "Address proof",
@@ -108,6 +111,7 @@ export function SellerRegistrationForm() {
   const auth = useCustomerAuth();
   const queryClient = useQueryClient();
   const [state, setState] = useState<SubmitState>({ status: "idle" });
+  const [commerceMode, setCommerceMode] = useState<"RETAIL" | "SERVICE">("RETAIL");
   const [selectedPlanId, setSelectedPlanId] = useState("");
   const [documents, setDocuments] = useState<SellerDocumentUploadResult[]>([]);
 
@@ -119,8 +123,8 @@ export function SellerRegistrationForm() {
   });
 
   const plansQuery = useQuery({
-    queryKey: ["seller-subscription-plans"],
-    queryFn: listSellerSubscriptionPlans,
+    queryKey: ["seller-subscription-plans", commerceMode],
+    queryFn: () => listSellerSubscriptionPlans({ audience: commerceMode }),
   });
   const productsQuery = useQuery({
     queryKey: ["seller-onboarding-products", auth.authKey],
@@ -146,6 +150,31 @@ export function SellerRegistrationForm() {
     },
   });
 
+  const capabilityMutation = useMutation({
+    mutationFn: (payload: { capability: SellerCapability; primaryCapability: SellerCapability }) => {
+      const existingCapabilities = sellerCapabilities(sellerQuery.data);
+      return updateSellerCapabilities(auth.authHeaders, {
+        enabledCapabilities: [...new Set([...existingCapabilities, payload.capability])],
+        primaryCapability: payload.primaryCapability,
+        reason:
+          payload.capability === "RETAIL"
+            ? "Adding retail selling after service provider onboarding."
+            : "Adding service provider capability after retail seller onboarding.",
+      });
+    },
+    onSuccess: async () => {
+      setState({ status: "success", message: "Seller capability updated. New listings still follow normal admin approval." });
+      await queryClient.invalidateQueries({ queryKey: ["seller-onboarding-profile", auth.authKey] });
+      await queryClient.invalidateQueries({ queryKey: ["seller-profile", `seller:${auth.authKey}`] });
+    },
+    onError: (error) => {
+      setState({
+        status: "error",
+        message: error instanceof Error ? error.message : "Seller capability update failed.",
+      });
+    },
+  });
+
   const currentEmail = auth.userProfile?.email;
   const currentName = useMemo(() => auth.userProfile?.fullName ?? "", [auth.userProfile?.fullName]);
   const currentPhone = normalizeIndianPhone(auth.userProfile?.phone);
@@ -153,12 +182,7 @@ export function SellerRegistrationForm() {
   const existingDocuments = existingSeller?.documents ?? [];
   const selectedDocuments = documents;
   const allDocuments = [...existingDocuments, ...selectedDocuments];
-  const idVerified = hasChecklistDocumentType(allDocuments, [
-    "ID_PROOF",
-    "PAN_CARD",
-    "GST_CERTIFICATE",
-    "BUSINESS_REGISTRATION",
-  ]);
+  const idVerified = hasChecklistDocumentType(allDocuments, ["ID_PROOF"]);
   const signatureVerified = hasChecklistDocumentType(allDocuments, ["SIGNATURE_PROOF"]);
   const listingCreated = Boolean(productsQuery.data?.total);
   const stockAdded = Boolean(
@@ -190,6 +214,10 @@ export function SellerRegistrationForm() {
     }
   }, [defaultPlanId, selectedPlanId]);
 
+  useEffect(() => {
+    setSelectedPlanId(defaultPlanId);
+  }, [commerceMode, defaultPlanId]);
+
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setState({ status: "idle" });
@@ -208,8 +236,15 @@ export function SellerRegistrationForm() {
     const accuracyMeters = nullableNumberValue(form, "accuracyMeters");
     const locationConfidenceScore = nullableNumberValue(form, "locationConfidenceScore");
 
+    const sellerType =
+      commerceMode === "SERVICE"
+        ? "SERVICE_PROVIDER"
+        : (formValue(form, "sellerType") as SellerOnboardingPayload["sellerType"]);
+
     onboardingMutation.mutate({
-      sellerType: formValue(form, "sellerType") as SellerOnboardingPayload["sellerType"],
+      sellerType,
+      primaryCapability: commerceMode,
+      enabledCapabilities: [commerceMode],
       storeName: formValue(form, "storeName"),
       ...(businessLegalName ? { businessLegalName } : {}),
       ...(businessType ? { businessType } : {}),
@@ -256,6 +291,10 @@ export function SellerRegistrationForm() {
   }
 
   if (sellerQuery.data) {
+    const enabledCapabilities = sellerCapabilities(sellerQuery.data);
+    const canAddRetail = !enabledCapabilities.includes("RETAIL");
+    const canAddService = !enabledCapabilities.includes("SERVICE");
+
     return (
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="rounded-lg border border-[#BFEAD9] bg-white p-5 shadow-sm">
@@ -279,10 +318,60 @@ export function SellerRegistrationForm() {
                   >
                     {sellerQuery.data.approvalStatus?.replace(/_/g, " ") ?? "Pending approval"}
                   </StatusBadge>
+                  {enabledCapabilities.map((capability) => (
+                    <StatusBadge key={capability} tone={capability === "SERVICE" ? "info" : "neutral"}>
+                      {capability.toLowerCase()} enabled
+                    </StatusBadge>
+                  ))}
                   {sellerQuery.data.subscriptionPlan ? (
                     <StatusBadge tone="info">{sellerQuery.data.subscriptionPlan.name}</StatusBadge>
                   ) : null}
                 </div>
+                {(canAddRetail || canAddService || state.status !== "idle") ? (
+                  <div className="mt-4 grid gap-3 rounded-md border border-[#D9E2EA] bg-[#F8FAFC] p-3">
+                    {canAddRetail ? (
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-sm font-black text-[#1F2933]">Add retail selling</p>
+                          <p className="mt-1 text-xs font-semibold leading-5 text-[#667085]">
+                            Convert this service provider account into a seller account with product catalogue access.
+                          </p>
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={capabilityMutation.isPending}
+                          onClick={() => capabilityMutation.mutate({ capability: "RETAIL", primaryCapability: "RETAIL" })}
+                        >
+                          <Store className="h-4 w-4" aria-hidden="true" />
+                          Add retail
+                        </Button>
+                      </div>
+                    ) : null}
+                    {canAddService ? (
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-sm font-black text-[#1F2933]">Add service provider capability</p>
+                          <p className="mt-1 text-xs font-semibold leading-5 text-[#667085]">
+                            Enable service listings, quote requests, bookings, and service workflow access.
+                          </p>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={capabilityMutation.isPending}
+                          onClick={() => capabilityMutation.mutate({ capability: "SERVICE", primaryCapability: sellerQuery.data.primaryCapability ?? "RETAIL" })}
+                        >
+                          <Wrench className="h-4 w-4" aria-hidden="true" />
+                          Add services
+                        </Button>
+                      </div>
+                    ) : null}
+                    {state.status === "success" ? <StatusBadge tone="success">{state.message}</StatusBadge> : null}
+                    {state.status === "error" ? <StatusBadge tone="danger">{state.message}</StatusBadge> : null}
+                  </div>
+                ) : null}
               </div>
             </div>
             <Button asChild>
@@ -292,7 +381,7 @@ export function SellerRegistrationForm() {
             </Button>
           </div>
         </div>
-        <OnboardingCompletionStatus status={onboardingStatus} />
+        <OnboardingCompletionStatus status={onboardingStatus} commerceMode={primarySellerCapability(sellerQuery.data)} />
       </div>
     );
   }
@@ -317,6 +406,63 @@ export function SellerRegistrationForm() {
   return (
     <form onSubmit={onSubmit} className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
       <div className="grid gap-5">
+        <section className="rounded-lg border border-[#E5E7EB] bg-white p-5 shadow-sm">
+          <div className="flex items-start gap-3">
+            <span className="grid h-11 w-11 place-items-center rounded-md bg-[#FFF0EC] text-[#ED3500]">
+              {commerceMode === "SERVICE" ? <Wrench className="h-5 w-5" aria-hidden="true" /> : <Store className="h-5 w-5" aria-hidden="true" />}
+            </span>
+            <SectionHeading
+              title="Choose seller mode"
+              description="Retail sellers manage products and delivery orders. Service providers manage service listings, appointments, quotes, and completion."
+            />
+          </div>
+          <div className="mt-5 grid gap-3 md:grid-cols-2">
+            {[
+              {
+                value: "RETAIL" as const,
+                title: "Retail seller",
+                description: "Sell products through catalogue, cart, checkout, delivery, and retail payouts.",
+                icon: Store,
+              },
+              {
+                value: "SERVICE" as const,
+                title: "Service provider",
+                description: "Offer repair, installation, maintenance, consultation, and local/remote services.",
+                icon: Wrench,
+              },
+            ].map((option) => {
+              const Icon = option.icon;
+              const active = commerceMode === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setCommerceMode(option.value)}
+                  className={`rounded-lg border p-4 text-left transition ${
+                    active
+                      ? "border-[#ED3500] bg-[#FFF6F3] shadow-sm"
+                      : "border-[#E5E7EB] bg-white hover:border-[#ED3500]/50"
+                  }`}
+                  aria-pressed={active}
+                >
+                  <span className="flex items-center gap-3">
+                    <span className={`grid h-10 w-10 place-items-center rounded-md ${active ? "bg-[#ED3500] text-white" : "bg-[#EAF1F7] text-[#123A5A]"}`}>
+                      <Icon className="h-5 w-5" aria-hidden="true" />
+                    </span>
+                    <span>
+                      <span className="block text-sm font-black text-[#1F2933]">{option.title}</span>
+                      <span className="mt-1 block text-xs font-bold uppercase tracking-wide text-[#667085]">
+                        {option.value === "SERVICE" ? "Bookings and quotes" : "Products and orders"}
+                      </span>
+                    </span>
+                  </span>
+                  <span className="mt-3 block text-sm leading-6 text-[#667085]">{option.description}</span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
         <section className="rounded-lg border border-[#E5E7EB] bg-white p-5 shadow-sm">
           <div className="flex items-start gap-3">
             <span className="grid h-11 w-11 place-items-center rounded-md bg-[#EAF1F7] text-[#163B5C]">
@@ -344,11 +490,17 @@ export function SellerRegistrationForm() {
             </span>
             <SectionHeading
               title="ID and signature verification"
-              description="Upload the required proof documents before final review. Admin can approve or reject each document."
+              description={
+                commerceMode === "SERVICE"
+                  ? "Upload only the proofs needed for service-provider review. PAN and tax documents can be added later if required."
+                  : "Upload proof documents for final review. PAN is optional unless admin asks for it."
+              }
             />
           </div>
           <div className="mt-5 grid gap-3">
-            {verificationDocuments.map((document) => (
+            {verificationDocuments
+              .filter((document) => commerceMode === "RETAIL" || !["PAN_CARD", "GST_CERTIFICATE", "FSSAI_CERTIFICATE"].includes(document.type))
+              .map((document) => (
               <DocumentUploadField
                 key={document.type}
                 document={document}
@@ -372,48 +524,68 @@ export function SellerRegistrationForm() {
               <Store className="h-5 w-5" aria-hidden="true" />
             </span>
             <SectionHeading
-              title="Store and pickup details"
-              description="Add the display name and pickup address used for seller verification and fulfilment."
+              title={commerceMode === "SERVICE" ? "Service profile and coverage" : "Store and pickup details"}
+              description={
+                commerceMode === "SERVICE"
+                  ? "Add the service display name, contact details, and base coverage address used for review."
+                  : "Add the display name and pickup address used for seller verification and fulfilment."
+              }
             />
           </div>
 
           <div className="mt-5 grid gap-4 md:grid-cols-2">
-            <Field label="Store name" name="storeName" required placeholder="Enter your store name" />
-            <label className="space-y-2">
-              <span className="block text-sm font-bold text-[#1F2933]">Seller type</span>
-              <select
-                name="sellerType"
-                required
-                className="h-11 w-full rounded-md border border-[#E5E7EB] bg-white px-3 text-sm outline-none focus:border-[#ED3500]"
-              >
-                {sellerTypes.map((type) => (
-                  <option key={type.value} value={type.value}>
-                    {type.label}
-                  </option>
-                ))}
-              </select>
-            </label>
             <Field
-              label="Business legal name"
-              name="businessLegalName"
-              placeholder="Registered business or proprietor name"
+              label={commerceMode === "SERVICE" ? "Service business name" : "Store name"}
+              name="storeName"
+              required
+              placeholder={commerceMode === "SERVICE" ? "Enter your service business name" : "Enter your store name"}
             />
-            <label className="space-y-2">
-              <span className="block text-sm font-bold text-[#1F2933]">Business type</span>
-              <select
-                name="businessType"
-                className="h-11 w-full rounded-md border border-[#E5E7EB] bg-white px-3 text-sm outline-none focus:border-[#ED3500]"
-              >
-                <option value="">Select business type</option>
-                {businessTypes.map((type) => (
-                  <option key={type.value} value={type.value}>
-                    {type.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <Field label="GST number" name="gstNumber" placeholder="33ABCDE1234F1Z5" />
-            <Field label="PAN number" name="panNumber" placeholder="ABCDE1234F" />
+            {commerceMode === "RETAIL" ? (
+              <label className="space-y-2">
+                <span className="block text-sm font-bold text-[#1F2933]">Seller type</span>
+                <select
+                  name="sellerType"
+                  required
+                  className="h-11 w-full rounded-md border border-[#E5E7EB] bg-white px-3 text-sm outline-none focus:border-[#ED3500]"
+                >
+                  {sellerTypes.map((type) => (
+                    <option key={type.value} value={type.value}>
+                      {type.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <div className="rounded-md border border-[#D9E2EA] bg-[#F8FAFC] p-3">
+                <p className="text-sm font-black text-[#1F2933]">Seller type</p>
+                <p className="mt-1 text-sm font-semibold text-[#667085]">Service provider</p>
+              </div>
+            )}
+            {commerceMode === "RETAIL" ? (
+              <>
+                <Field
+                  label="Business legal name"
+                  name="businessLegalName"
+                  placeholder="Registered business or proprietor name"
+                />
+                <label className="space-y-2">
+                  <span className="block text-sm font-bold text-[#1F2933]">Business type</span>
+                  <select
+                    name="businessType"
+                    className="h-11 w-full rounded-md border border-[#E5E7EB] bg-white px-3 text-sm outline-none focus:border-[#ED3500]"
+                  >
+                    <option value="">Select business type</option>
+                    {businessTypes.map((type) => (
+                      <option key={type.value} value={type.value}>
+                        {type.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <Field label="GST number" name="gstNumber" placeholder="33ABCDE1234F1Z5" />
+                <Field label="PAN number" name="panNumber" placeholder="ABCDE1234F" />
+              </>
+            ) : null}
             <Field
               label="Contact name"
               name="contactName"
@@ -435,6 +607,12 @@ export function SellerRegistrationForm() {
                 rows={4}
                 className="w-full rounded-md border border-[#E5E7EB] bg-white px-3 py-3 text-sm outline-none focus:border-[#ED3500]"
                 placeholder="Describe your store, products, service area, and fulfilment capacity"
+                key={commerceMode}
+                defaultValue={
+                  commerceMode === "SERVICE"
+                    ? "Describe your services, visit modes, coverage area, inspection policy, and operating hours."
+                    : undefined
+                }
               />
             </label>
             <div className="md:col-span-2">
@@ -444,14 +622,20 @@ export function SellerRegistrationForm() {
                 defaultPlanId={defaultPlanId}
                 loading={plansQuery.isLoading}
                 error={plansQuery.error}
+                audience={commerceMode}
                 onChange={setSelectedPlanId}
               />
             </div>
           </div>
 
           <div className="mt-5 grid gap-4">
-            <Field label="Address line 1" name="line1" required placeholder="Building and street" />
-            <Field label="Address line 2" name="line2" placeholder="Landmark or floor" />
+            <Field
+              label={commerceMode === "SERVICE" ? "Service base address" : "Address line 1"}
+              name="line1"
+              required
+              placeholder={commerceMode === "SERVICE" ? "Office, workshop, or operating base" : "Building and street"}
+            />
+            <Field label="Address line 2" name="line2" placeholder={commerceMode === "SERVICE" ? "Coverage landmark or floor" : "Landmark or floor"} />
             <LocationFields
               defaultValue={{ countryCode: "IN" }}
               inputClassName="h-11 w-full rounded-md border border-[#E5E7EB] bg-white px-3 text-sm outline-none focus:border-[#ED3500]"
@@ -477,7 +661,7 @@ export function SellerRegistrationForm() {
       </div>
 
       <aside className="self-start xl:sticky xl:top-8">
-        <OnboardingCompletionStatus status={onboardingStatus} />
+        <OnboardingCompletionStatus status={onboardingStatus} commerceMode={commerceMode} />
       </aside>
     </form>
   );
@@ -495,7 +679,13 @@ type OnboardingStatusValue = {
 
 type OnboardingStatusItemState = "complete" | "current" | "pending";
 
-function OnboardingCompletionStatus({ status }: { status: OnboardingStatusValue }) {
+function OnboardingCompletionStatus({
+  status,
+  commerceMode,
+}: {
+  status: OnboardingStatusValue;
+  commerceMode: "RETAIL" | "SERVICE";
+}) {
   const sections = [
     {
       title: "Email Verification",
@@ -511,18 +701,25 @@ function OnboardingCompletionStatus({ status }: { status: OnboardingStatusValue 
       ],
     },
     {
-      title: "Store & Pickup Details",
+      title: commerceMode === "SERVICE" ? "Service Profile & Coverage" : "Store & Pickup Details",
       items: [
         { key: "display", label: "Display Name", complete: status.displayNameReady },
-        { key: "pickup", label: "Pickup Address", complete: status.pickupAddressReady },
+        {
+          key: "pickup",
+          label: commerceMode === "SERVICE" ? "Service Base Address" : "Pickup Address",
+          complete: status.pickupAddressReady,
+        },
       ],
     },
     {
-      title: "Listing & Stock Availability",
-      items: [
-        { key: "listing", label: "Listing Created", complete: status.listingCreated },
-        { key: "stock", label: "Stock Added", complete: status.stockAdded },
-      ],
+      title: commerceMode === "SERVICE" ? "Service Listing Readiness" : "Listing & Stock Availability",
+      items:
+        commerceMode === "SERVICE"
+          ? [{ key: "listing", label: "First Service Listing", complete: status.listingCreated }]
+          : [
+              { key: "listing", label: "Listing Created", complete: status.listingCreated },
+              { key: "stock", label: "Stock Added", complete: status.stockAdded },
+            ],
     },
   ];
   const allItems = sections.flatMap((section) => section.items);
@@ -619,6 +816,7 @@ function PlanPicker({
   defaultPlanId,
   loading,
   error,
+  audience,
   onChange,
 }: {
   plans: SellerSubscriptionPlan[];
@@ -626,6 +824,7 @@ function PlanPicker({
   defaultPlanId: string;
   loading: boolean;
   error: Error | null;
+  audience: "RETAIL" | "SERVICE";
   onChange: (planId: string) => void;
 }) {
   return (
@@ -635,8 +834,12 @@ function PlanPicker({
           <CreditCard className="h-5 w-5" aria-hidden="true" />
         </span>
         <SectionHeading
-          title="Seller subscription plan"
-          description="Choose the plan for onboarding. Paid monthly and yearly plans are authorised after admin approval."
+          title={audience === "SERVICE" ? "Service subscription plan" : "Seller subscription plan"}
+          description={
+            audience === "SERVICE"
+              ? "Choose the service-provider plan for bookings, quotes, featured service slots, and recurring billing readiness."
+              : "Choose the plan for onboarding. Paid monthly and yearly plans are authorised after admin approval."
+          }
         />
       </div>
 
@@ -650,7 +853,7 @@ function PlanPicker({
       ) : null}
       {!loading && plans.length === 0 ? (
         <p className="mt-4 text-sm font-semibold text-[#667085]">
-          No active plans configured. Admin default will be applied during review.
+          No active {audience === "SERVICE" ? "service" : "seller"} plans configured. Admin default will be applied during review.
         </p>
       ) : null}
 
@@ -685,8 +888,9 @@ function PlanPicker({
                   {plan.description ?? "Seller onboarding plan."}
                 </p>
                 <p className="mt-2 text-xs font-bold text-[#667085]">
-                  Products {limitLabel(plan.productLimit)} / Featured{" "}
-                  {limitLabel(plan.featuredProductLimit)} / B2B {limitLabel(plan.b2bEnquiryLimit)}
+                  {audience === "SERVICE"
+                    ? `Featured service slots ${limitLabel(plan.featuredProductLimit)}`
+                    : `Products ${limitLabel(plan.productLimit)} / Featured ${limitLabel(plan.featuredProductLimit)} / B2B ${limitLabel(plan.b2bEnquiryLimit)}`}
                 </p>
                 {plan.pricePaise > 0 && plan.billingCycle !== "LIFETIME" ? (
                   <p className="mt-2 text-xs font-bold text-[#8A5A00]">
@@ -945,6 +1149,30 @@ function nullableNumberValue(form: FormData, name: string) {
 
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function sellerCapabilities(seller?: { enabledCapabilities?: SellerCapability[]; primaryCapability?: SellerCapability; sellerType?: string } | null) {
+  if (!seller) {
+    return [] as SellerCapability[];
+  }
+
+  if (seller.enabledCapabilities?.length) {
+    return seller.enabledCapabilities;
+  }
+
+  if (seller.primaryCapability) {
+    return [seller.primaryCapability];
+  }
+
+  return [seller.sellerType === "SERVICE_PROVIDER" ? "SERVICE" : "RETAIL"] as SellerCapability[];
+}
+
+function primarySellerCapability(seller?: { primaryCapability?: SellerCapability; sellerType?: string } | null) {
+  if (seller?.primaryCapability) {
+    return seller.primaryCapability;
+  }
+
+  return seller?.sellerType === "SERVICE_PROVIDER" ? "SERVICE" : "RETAIL";
 }
 
 function hasChecklistDocumentType(

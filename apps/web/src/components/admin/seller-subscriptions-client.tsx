@@ -16,7 +16,12 @@ import {
   type PageResult,
   type SellerSubscriptionPlanPayload
 } from "@/lib/seller-subscription-admin-api";
-import type { SellerProfile, SellerSubscriptionPlan, SellerSubscriptionStatus } from "@/lib/seller-api";
+import type {
+  SellerProfile,
+  SellerSubscriptionPlan,
+  SellerSubscriptionPlanAudience,
+  SellerSubscriptionStatus,
+} from "@/lib/seller-api";
 import { formatMoney } from "@/lib/storefront-api";
 
 type PlanFormState = {
@@ -24,6 +29,7 @@ type PlanFormState = {
   code: string;
   name: string;
   description: string;
+  audience: SellerSubscriptionPlanAudience;
   priceRupees: string;
   currency: string;
   billingCycle: "MONTHLY" | "YEARLY" | "LIFETIME";
@@ -40,6 +46,7 @@ const emptyPlanForm: PlanFormState = {
   code: "",
   name: "",
   description: "",
+  audience: "RETAIL",
   priceRupees: "0",
   currency: "INR",
   billingCycle: "MONTHLY",
@@ -56,6 +63,12 @@ const billingCycleOptions: AdminSelectOption[] = [
   { value: "MONTHLY", label: "Monthly" },
   { value: "YEARLY", label: "Yearly" },
   { value: "LIFETIME", label: "Lifetime" }
+];
+
+const audienceOptions: AdminSelectOption[] = [
+  { value: "RETAIL", label: "Retail sellers", description: "Product catalogue and order fulfilment plans." },
+  { value: "SERVICE", label: "Service providers", description: "Service listing, booking, quote, and visit plans." },
+  { value: "ALL", label: "Retail and service", description: "Shared plan available to both onboarding paths." },
 ];
 
 const assignmentStatusOptions: AdminSelectOption[] = [
@@ -93,7 +106,7 @@ export function AdminSellerSubscriptionsClient() {
 
   const plans = plansQuery.data?.items ?? [];
   const sellers = sellersQuery.data?.items ?? [];
-  const defaultPlan = plans.find((plan) => plan.isDefault);
+  const selectedSeller = sellers.find((seller) => seller.id === assignment.sellerId);
   const activePlans = useMemo(() => plans.filter((plan) => plan.isActive), [plans]);
   const sellerOptions = useMemo<AdminSelectOption[]>(
     () => [
@@ -109,9 +122,15 @@ export function AdminSellerSubscriptionsClient() {
   const planOptions = useMemo<AdminSelectOption[]>(
     () => [
       { value: "", label: "Select plan" },
-      ...activePlans.map((plan) => ({ value: plan.id, label: plan.name, description: plan.code }))
+      ...activePlans
+        .filter((plan) => planMatchesSellerCapabilities(plan, selectedSeller))
+        .map((plan) => ({
+          value: plan.id,
+          label: plan.name,
+          description: `${plan.code} / ${audienceLabel(plan.audience)}`,
+        }))
     ],
-    [activePlans]
+    [activePlans, selectedSeller]
   );
 
   const savePlan = useMutation({
@@ -146,22 +165,24 @@ export function AdminSellerSubscriptionsClient() {
 
   function submitPlan(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const isServicePlan = planForm.audience === "SERVICE";
     const payload: SellerSubscriptionPlanPayload = {
       code: planForm.code.trim().toUpperCase(),
       name: planForm.name.trim(),
       description: planForm.description.trim(),
+      audience: planForm.audience,
       pricePaise: rupeesToPaise(planForm.priceRupees),
       currency: planForm.currency.trim().toUpperCase() || "INR",
       billingCycle: planForm.billingCycle,
-      commissionDiscountBps: numberOrZero(planForm.commissionDiscountBps),
+      commissionDiscountBps: isServicePlan ? 0 : numberOrZero(planForm.commissionDiscountBps),
       isDefault: planForm.isDefault,
       isActive: planForm.isActive,
       sortOrder: numberOrZero(planForm.sortOrder)
     };
 
-    const productLimit = optionalNumber(planForm.productLimit);
+    const productLimit = isServicePlan ? 0 : optionalNumber(planForm.productLimit);
     const featuredProductLimit = optionalNumber(planForm.featuredProductLimit);
-    const b2bEnquiryLimit = optionalNumber(planForm.b2bEnquiryLimit);
+    const b2bEnquiryLimit = isServicePlan ? 0 : optionalNumber(planForm.b2bEnquiryLimit);
     if (productLimit !== undefined) {
       payload.productLimit = productLimit;
     }
@@ -181,6 +202,7 @@ export function AdminSellerSubscriptionsClient() {
       code: plan.code,
       name: plan.name,
       description: plan.description ?? "",
+      audience: plan.audience,
       priceRupees: String((plan.pricePaise ?? 0) / 100),
       currency: plan.currency,
       billingCycle: plan.billingCycle,
@@ -194,11 +216,26 @@ export function AdminSellerSubscriptionsClient() {
     });
   }
 
+  function updatePlanAudience(audience: SellerSubscriptionPlanAudience) {
+    setPlanForm((current) => ({
+      ...current,
+      audience,
+      ...(audience === "SERVICE"
+        ? {
+            productLimit: "0",
+            b2bEnquiryLimit: "0",
+            commissionDiscountBps: "0"
+          }
+        : {})
+    }));
+  }
+
   return (
     <div className="grid gap-5">
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <SummaryTile label="Plans" value={plans.length} note={`${activePlans.length} active`} />
-        <SummaryTile label="Default plan" value={defaultPlan?.name ?? "Not set"} note="Used during seller onboarding" />
+        <SummaryTile label="Retail default" value={defaultPlanByAudience(plans, "RETAIL")?.name ?? "Not set"} note="Product seller onboarding" />
+        <SummaryTile label="Service default" value={defaultPlanByAudience(plans, "SERVICE")?.name ?? "Not set"} note="Service provider onboarding" />
         <SummaryTile label="Assigned sellers" value={plans.reduce((total, plan) => total + (plan._count?.currentSellers ?? 0), 0)} note="Current plan links" />
         <SummaryTile label="Billing attention" value={sellers.filter((seller) => ["PENDING_PAYMENT", "EXPIRED"].includes(seller.subscriptionStatus ?? "")).length} note="Payment pending or expired" />
       </div>
@@ -215,6 +252,12 @@ export function AdminSellerSubscriptionsClient() {
           <form onSubmit={submitPlan} className="mt-5 grid gap-3">
             <AdminField label="Plan code" value={planForm.code} onChange={(code) => setPlanForm({ ...planForm, code })} required placeholder="STARTER_FREE" />
             <AdminField label="Plan name" value={planForm.name} onChange={(name) => setPlanForm({ ...planForm, name })} required placeholder="Starter Free" />
+            <AdminListbox
+              label="Plan audience"
+              value={planForm.audience}
+              options={audienceOptions}
+              onChange={(audience) => updatePlanAudience(audience as SellerSubscriptionPlanAudience)}
+            />
             <label className="space-y-2">
               <span className="block text-xs font-bold uppercase tracking-wide text-[#667085]">Description</span>
               <textarea
@@ -235,16 +278,30 @@ export function AdminSellerSubscriptionsClient() {
               />
             </div>
 
-            <div className="grid gap-3 md:grid-cols-3">
-              <AdminField label="Products" type="number" min={0} value={planForm.productLimit} onChange={(productLimit) => setPlanForm({ ...planForm, productLimit })} placeholder="Unlimited" />
-              <AdminField label="Featured" type="number" min={0} value={planForm.featuredProductLimit} onChange={(featuredProductLimit) => setPlanForm({ ...planForm, featuredProductLimit })} placeholder="0" />
-              <AdminField label="B2B enquiries" type="number" min={0} value={planForm.b2bEnquiryLimit} onChange={(b2bEnquiryLimit) => setPlanForm({ ...planForm, b2bEnquiryLimit })} placeholder="Unlimited" />
-            </div>
+            {planForm.audience === "SERVICE" ? (
+              <>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <AdminField label="Featured services" type="number" min={0} value={planForm.featuredProductLimit} onChange={(featuredProductLimit) => setPlanForm({ ...planForm, featuredProductLimit })} placeholder="0" />
+                  <AdminField label="Display order" type="number" min={0} value={planForm.sortOrder} onChange={(sortOrder) => setPlanForm({ ...planForm, sortOrder })} />
+                </div>
+                <p className="rounded-md border border-[#D9E2EA] bg-[#F8FAFC] px-3 py-2 text-xs font-semibold leading-5 text-[#667085]">
+                  Retail product capacity and B2B enquiry limits are disabled for service-provider plans.
+                </p>
+              </>
+            ) : (
+              <>
+                <div className="grid gap-3 md:grid-cols-3">
+                  <AdminField label="Products" type="number" min={0} value={planForm.productLimit} onChange={(productLimit) => setPlanForm({ ...planForm, productLimit })} placeholder="Unlimited" />
+                  <AdminField label="Featured products" type="number" min={0} value={planForm.featuredProductLimit} onChange={(featuredProductLimit) => setPlanForm({ ...planForm, featuredProductLimit })} placeholder="0" />
+                  <AdminField label="B2B enquiries" type="number" min={0} value={planForm.b2bEnquiryLimit} onChange={(b2bEnquiryLimit) => setPlanForm({ ...planForm, b2bEnquiryLimit })} placeholder="Unlimited" />
+                </div>
 
-            <div className="grid gap-3 md:grid-cols-2">
-              <AdminField label="Discount bps" type="number" min={0} value={planForm.commissionDiscountBps} onChange={(commissionDiscountBps) => setPlanForm({ ...planForm, commissionDiscountBps })} />
-              <AdminField label="Sort order" type="number" min={0} value={planForm.sortOrder} onChange={(sortOrder) => setPlanForm({ ...planForm, sortOrder })} />
-            </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <AdminField label="Commission discount bps" type="number" min={0} value={planForm.commissionDiscountBps} onChange={(commissionDiscountBps) => setPlanForm({ ...planForm, commissionDiscountBps })} />
+                  <AdminField label="Display order" type="number" min={0} value={planForm.sortOrder} onChange={(sortOrder) => setPlanForm({ ...planForm, sortOrder })} />
+                </div>
+              </>
+            )}
 
             <AdminSwitch
               label="Use as default onboarding plan"
@@ -292,6 +349,9 @@ export function AdminSellerSubscriptionsClient() {
                       <div className="flex flex-wrap items-center gap-2">
                         <h3 className="text-lg font-black text-[#1F2933]">{plan.name}</h3>
                         {plan.isDefault ? <StatusBadge tone="success">Default</StatusBadge> : null}
+                        <StatusBadge tone={plan.audience === "SERVICE" ? "info" : plan.audience === "ALL" ? "warning" : "neutral"}>
+                          {audienceLabel(plan.audience)}
+                        </StatusBadge>
                         <StatusBadge tone={plan.isActive ? "success" : "danger"}>{plan.isActive ? "Active" : "Inactive"}</StatusBadge>
                         <StatusBadge tone="info">{humanize(plan.billingCycle)}</StatusBadge>
                       </div>
@@ -300,7 +360,9 @@ export function AdminSellerSubscriptionsClient() {
                         {formatMoney(plan.pricePaise, plan.currency)} / {humanize(plan.billingCycle)}
                       </p>
                       <p className="mt-1 text-sm font-semibold text-[#667085]">
-                        Products {limitLabel(plan.productLimit)} / Featured {limitLabel(plan.featuredProductLimit)} / B2B {limitLabel(plan.b2bEnquiryLimit)}
+                        {plan.audience === "SERVICE"
+                          ? `Service feature slots ${limitLabel(plan.featuredProductLimit)}`
+                          : `Products ${limitLabel(plan.productLimit)} / Featured ${limitLabel(plan.featuredProductLimit)} / B2B ${limitLabel(plan.b2bEnquiryLimit)}`}
                       </p>
                       <p className="mt-1 text-xs font-bold text-[#667085]">
                         {plan._count?.currentSellers ?? 0} sellers currently assigned / {plan._count?.subscriptions ?? 0} historical assignments
@@ -340,7 +402,7 @@ export function AdminSellerSubscriptionsClient() {
                 assignPlan.mutate();
               }}
             >
-              <AdminSelect label="Seller" value={assignment.sellerId} options={sellerOptions} onChange={(sellerId) => setAssignment({ ...assignment, sellerId })} required />
+              <AdminSelect label="Seller" value={assignment.sellerId} options={sellerOptions} onChange={(sellerId) => setAssignment({ ...assignment, sellerId, planId: "" })} required />
               <AdminSelect label="Plan" value={assignment.planId} options={planOptions} onChange={(planId) => setAssignment({ ...assignment, planId })} required />
               <AdminSelect
                 label="Status"
@@ -499,6 +561,41 @@ function optionalNumber(value: string) {
 
 function limitLabel(value?: number | null) {
   return value === null || value === undefined ? "Unlimited" : value;
+}
+
+function defaultPlanByAudience(plans: SellerSubscriptionPlan[], audience: SellerSubscriptionPlanAudience) {
+  return (
+    plans.find((plan) => plan.isDefault && plan.audience === audience) ??
+    plans.find((plan) => plan.isDefault && plan.audience === "ALL")
+  );
+}
+
+function audienceLabel(audience: SellerSubscriptionPlanAudience) {
+  if (audience === "SERVICE") {
+    return "Service";
+  }
+  if (audience === "ALL") {
+    return "Shared";
+  }
+  return "Retail";
+}
+
+function planMatchesSellerCapabilities(plan: SellerSubscriptionPlan, seller?: SellerProfile) {
+  if (!seller || plan.audience === "ALL") {
+    return true;
+  }
+
+  const capabilities =
+    seller.enabledCapabilities?.length
+      ? seller.enabledCapabilities
+      : seller.primaryCapability
+        ? [seller.primaryCapability]
+        : ["RETAIL"];
+  if (plan.audience === "SERVICE") {
+    return capabilities.includes("SERVICE");
+  }
+
+  return capabilities.includes("RETAIL");
 }
 
 function humanize(value?: string | null) {

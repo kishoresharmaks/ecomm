@@ -12,6 +12,7 @@ import { startPrivateUploadCleanupPolling } from "./private-upload-cleanup-worke
 import { startPushCampaignPolling } from "./push-campaign-worker";
 import { startReturnPickupTimeoutPolling } from "./return-pickup-timeout-worker";
 import { startSearchIndexPolling } from "./search-index-worker";
+import { startServiceQuoteExpiryPolling } from "./service-quote-expiry-worker";
 
 const logger = pino({
   name: "indihub-worker",
@@ -42,6 +43,7 @@ startDeliveryAssignmentTimeoutPolling(logger);
 startReturnPickupTimeoutPolling(logger);
 startPrivateUploadCleanupPolling(logger);
 startPushCampaignPolling(logger);
+startServiceQuoteExpiryPolling(logger);
 
 const redisUrl = process.env.REDIS_URL;
 const emailDelivery = new WorkerEmailDelivery(logger);

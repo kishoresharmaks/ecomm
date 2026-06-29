@@ -14,8 +14,10 @@ import {
   PaymentStatus,
   Prisma,
   ProductStatus,
+  SellerCapability,
   SellerStatus,
   SellerSubscriptionBillingCycle,
+  SellerSubscriptionPlanAudience,
   SellerSubscriptionProviderEventStatus,
   SellerSubscriptionStatus,
 } from "@indihub/database";
@@ -43,6 +45,7 @@ type SellerSubscriptionPlanForBilling = {
   pricePaise: number;
   currency: string;
   billingCycle: SellerSubscriptionBillingCycle;
+  audience: SellerSubscriptionPlanAudience;
   productLimit?: number | null;
   providerPlanId?: string | null;
   providerPlanVersion?: number | null;
@@ -84,15 +87,23 @@ const sellerSubscriptionGraceDays = 7;
 export class SellerSubscriptionsService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  async listPublicPlans() {
+  async listPublicPlans(audience: SellerSubscriptionPlanAudience = SellerSubscriptionPlanAudience.RETAIL) {
+    const scopedAudience = this.normalizePlanAudience(audience);
     const items = await this.prisma.client.sellerSubscriptionPlan.findMany({
-      where: { isActive: true },
+      where: {
+        isActive: true,
+        audience: { in: this.audienceMatch(scopedAudience) },
+      },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     });
 
     return {
       items,
-      defaultPlanId: items.find((plan) => plan.isDefault)?.id ?? items[0]?.id ?? null,
+      defaultPlanId:
+        items.find((plan) => plan.isDefault && plan.audience === scopedAudience)?.id ??
+        items.find((plan) => plan.isDefault && plan.audience === SellerSubscriptionPlanAudience.ALL)?.id ??
+        items[0]?.id ??
+        null,
     };
   }
 
@@ -100,6 +111,7 @@ export class SellerSubscriptionsService {
     const { page, skip, take } = paginationFromQuery(query);
     const where: Prisma.SellerSubscriptionPlanWhereInput = {
       ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
+      ...(query.audience ? { audience: query.audience } : {}),
       ...(query.search
         ? {
             OR: [
@@ -139,7 +151,10 @@ export class SellerSubscriptionsService {
       this.assertDefaultAllowed(dto);
 
       if (dto.isDefault) {
-        await tx.sellerSubscriptionPlan.updateMany({ data: { isDefault: false } });
+        await tx.sellerSubscriptionPlan.updateMany({
+          where: { audience: this.normalizePlanAudience(dto.audience) },
+          data: { isDefault: false },
+        });
       }
 
       const plan = await tx.sellerSubscriptionPlan.create({
@@ -172,9 +187,11 @@ export class SellerSubscriptionsService {
 
       this.assertDefaultAllowed(dto, existing);
 
+      const nextAudience = this.normalizePlanAudience(dto.audience ?? existing.audience);
+
       if (dto.isDefault) {
         await tx.sellerSubscriptionPlan.updateMany({
-          where: { id: { not: planId } },
+          where: { id: { not: planId }, audience: nextAudience },
           data: { isDefault: false },
         });
       }
@@ -214,7 +231,7 @@ export class SellerSubscriptionsService {
       }
 
       await tx.sellerSubscriptionPlan.updateMany({
-        where: { id: { not: planId } },
+        where: { id: { not: planId }, audience: existing.audience },
         data: { isDefault: false },
       });
 
@@ -261,6 +278,8 @@ export class SellerSubscriptionsService {
       if (!plan) {
         throw new BadRequestException("Select an active seller subscription plan.");
       }
+
+      this.assertPlanMatchesSellerCapabilities(plan, seller.enabledCapabilities);
 
       const status = dto.status ?? this.defaultStatusForPlan(plan);
       const currentPeriodEnd = dto.currentPeriodEnd ? new Date(dto.currentPeriodEnd) : null;
@@ -840,17 +859,24 @@ export class SellerSubscriptionsService {
     return { expired: expired.length };
   }
 
-  async resolveRegistrationPlan(tx: Prisma.TransactionClient, planId?: string) {
+  async resolveRegistrationPlan(
+    tx: Prisma.TransactionClient,
+    planId: string | undefined,
+    primaryCapability: SellerCapability = SellerCapability.RETAIL,
+  ) {
+    const audience = this.audienceFromCapability(primaryCapability);
+
     if (planId) {
       const selectedPlan = await tx.sellerSubscriptionPlan.findFirst({
         where: {
           id: planId,
           isActive: true,
+          audience: { in: this.audienceMatch(audience) },
         },
       });
 
       if (!selectedPlan) {
-        throw new BadRequestException("Select an active seller subscription plan.");
+        throw new BadRequestException("Select an active subscription plan for this onboarding type.");
       }
 
       return selectedPlan;
@@ -860,6 +886,7 @@ export class SellerSubscriptionsService {
       where: {
         isDefault: true,
         isActive: true,
+        audience,
       },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     });
@@ -868,9 +895,23 @@ export class SellerSubscriptionsService {
       return defaultPlan;
     }
 
+    const sharedDefaultPlan = await tx.sellerSubscriptionPlan.findFirst({
+      where: {
+        isDefault: true,
+        isActive: true,
+        audience: SellerSubscriptionPlanAudience.ALL,
+      },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    });
+
+    if (sharedDefaultPlan) {
+      return sharedDefaultPlan;
+    }
+
     return tx.sellerSubscriptionPlan.findFirst({
       where: {
         isActive: true,
+        audience: { in: this.audienceMatch(audience) },
       },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     });
@@ -1484,6 +1525,7 @@ export class SellerSubscriptionsService {
       pricePaise: dto.pricePaise ?? 0,
       currency: dto.currency?.trim().toUpperCase() ?? "INR",
       billingCycle: dto.billingCycle ?? SellerSubscriptionBillingCycle.MONTHLY,
+      audience: this.normalizePlanAudience(dto.audience),
       productLimit: dto.productLimit ?? null,
       featuredProductLimit: dto.featuredProductLimit ?? null,
       b2bEnquiryLimit: dto.b2bEnquiryLimit ?? null,
@@ -1510,6 +1552,7 @@ export class SellerSubscriptionsService {
       ...(dto.pricePaise !== undefined ? { pricePaise: dto.pricePaise } : {}),
       ...(dto.currency !== undefined ? { currency: dto.currency.trim().toUpperCase() } : {}),
       ...(dto.billingCycle !== undefined ? { billingCycle: dto.billingCycle } : {}),
+      ...(dto.audience !== undefined ? { audience: dto.audience } : {}),
       ...(dto.productLimit !== undefined ? { productLimit: dto.productLimit } : {}),
       ...(dto.featuredProductLimit !== undefined ? { featuredProductLimit: dto.featuredProductLimit } : {}),
       ...(dto.b2bEnquiryLimit !== undefined ? { b2bEnquiryLimit: dto.b2bEnquiryLimit } : {}),
@@ -1528,7 +1571,10 @@ export class SellerSubscriptionsService {
     };
   }
 
-  private assertDefaultAllowed(dto: SellerPlanWriteDto, existing?: { isDefault: boolean; isActive: boolean }) {
+  private assertDefaultAllowed(
+    dto: SellerPlanWriteDto,
+    existing?: { isDefault: boolean; isActive: boolean; audience?: SellerSubscriptionPlanAudience },
+  ) {
     const nextIsDefault = dto.isDefault ?? existing?.isDefault ?? false;
     const nextIsActive = dto.isActive ?? existing?.isActive ?? true;
 
@@ -1661,6 +1707,7 @@ export class SellerSubscriptionsService {
   private auditPlanValue(plan: {
     code: string;
     name: string;
+    audience?: SellerSubscriptionPlanAudience;
     pricePaise: number;
     currency: string;
     billingCycle: string;
@@ -1674,6 +1721,7 @@ export class SellerSubscriptionsService {
     return {
       code: plan.code,
       name: plan.name,
+      audience: plan.audience ?? SellerSubscriptionPlanAudience.RETAIL,
       pricePaise: plan.pricePaise,
       currency: plan.currency,
       billingCycle: plan.billingCycle,
@@ -1684,5 +1732,41 @@ export class SellerSubscriptionsService {
       providerPlanId: plan.providerPlanId ?? null,
       providerPlanVersion: plan.providerPlanVersion ?? null,
     };
+  }
+
+  private audienceFromCapability(capability: SellerCapability) {
+    return capability === SellerCapability.SERVICE
+      ? SellerSubscriptionPlanAudience.SERVICE
+      : SellerSubscriptionPlanAudience.RETAIL;
+  }
+
+  private audienceMatch(audience: SellerSubscriptionPlanAudience) {
+    return audience === SellerSubscriptionPlanAudience.ALL
+      ? [SellerSubscriptionPlanAudience.ALL]
+      : [audience, SellerSubscriptionPlanAudience.ALL];
+  }
+
+  private normalizePlanAudience(audience?: SellerSubscriptionPlanAudience) {
+    return audience ?? SellerSubscriptionPlanAudience.RETAIL;
+  }
+
+  private assertPlanMatchesSellerCapabilities(
+    plan: { audience: SellerSubscriptionPlanAudience },
+    enabledCapabilities: SellerCapability[],
+  ) {
+    if (plan.audience === SellerSubscriptionPlanAudience.ALL) {
+      return;
+    }
+
+    const requiredCapability =
+      plan.audience === SellerSubscriptionPlanAudience.SERVICE
+        ? SellerCapability.SERVICE
+        : SellerCapability.RETAIL;
+
+    if (!enabledCapabilities.includes(requiredCapability)) {
+      throw new BadRequestException(
+        `Selected plan requires ${plan.audience.toLowerCase()} seller capability.`,
+      );
+    }
   }
 }

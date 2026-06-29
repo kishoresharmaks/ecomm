@@ -16,15 +16,15 @@ function checkOrigin(origin: string | undefined, env: NodeJS.ProcessEnv) {
 describe("createCorsOptions", () => {
   it("allows the configured LAN web origin", () => {
     expect(
-      checkOrigin("http://192.168.1.3:3000", {
-        API_CORS_ORIGINS: "http://192.168.1.3:3000",
+      checkOrigin("http://192.168.1.2:3000", {
+        API_CORS_ORIGINS: "http://192.168.1.2:3000",
       }),
     ).toBe(true);
   });
 
   it("trims spaces and quotes in configured origins", () => {
-    expect(parseCorsOrigins('"http://192.168.1.3:3000", http://10.0.0.5:3000')).toEqual(
-      new Set(["http://192.168.1.3:3000", "http://10.0.0.5:3000"]),
+    expect(parseCorsOrigins('"http://192.168.1.2:3000", http://10.0.0.5:3000')).toEqual(
+      new Set(["http://192.168.1.2:3000", "http://10.0.0.5:3000"]),
     );
   });
 

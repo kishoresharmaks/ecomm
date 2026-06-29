@@ -2,9 +2,12 @@ import { Body, Controller, Get, Inject, Param, Post, Query } from "@nestjs/commo
 import { ApiCreatedResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { Public } from "../auth/decorators/public.decorator";
+import { Roles } from "../auth/decorators/roles.decorator";
 import type { RequestUser } from "../auth/types/indihub-request";
+import { RoleCode } from "@indihub/database";
 import { CreateSellerOnboardingDto } from "./dto/create-seller-registration.dto";
 import { PublicSellerQueryDto } from "./dto/public-seller-query.dto";
+import { UpdateMySellerCapabilitiesDto } from "./dto/seller-profile.dto";
 import { SellersService } from "./sellers.service";
 
 @ApiTags("sellers")
@@ -17,6 +20,17 @@ export class SellersController {
   @ApiCreatedResponse({ description: "Seller registration submitted for admin approval." })
   registerSeller(@CurrentUser() actor: RequestUser, @Body() dto: CreateSellerOnboardingDto) {
     return this.sellersService.registerSeller(actor, dto);
+  }
+
+  @Roles(RoleCode.SELLER)
+  @Post("capabilities")
+  @ApiOperation({ summary: "Add retail or service capability to the authenticated seller account." })
+  @ApiCreatedResponse({ description: "Seller capabilities updated." })
+  updateMySellerCapabilities(
+    @CurrentUser() actor: RequestUser,
+    @Body() dto: UpdateMySellerCapabilitiesDto,
+  ) {
+    return this.sellersService.updateMySellerCapabilities(actor, dto);
   }
 
   @Public()

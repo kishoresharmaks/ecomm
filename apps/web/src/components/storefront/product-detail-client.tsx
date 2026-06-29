@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import type { Route } from "next";
+import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useState } from "react";
 import {
   ArrowLeft,
@@ -17,6 +18,7 @@ import {
   Share2,
   ShieldCheck,
   ShoppingCart,
+  Zap,
   Star,
   Store,
 } from "lucide-react";
@@ -49,7 +51,10 @@ import {
 } from "./storefront-ui";
 import { useStorefrontWishlist } from "./use-storefront-wishlist";
 
+const directCheckoutStorageKey = "indihub.directCheckout.v1";
+
 export function ProductDetailClient({ slug }: { slug: string }) {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const customerAuth = useCustomerAuth();
   const market = useMarket();
@@ -202,6 +207,48 @@ export function ProductDetailClient({ slug }: { slug: string }) {
     }
   }
 
+  function handleBuyNow() {
+    if (!product) {
+      setNotice("Product is still loading.");
+      return;
+    }
+    if (!customerAuth.enabled) {
+      setNotice("Sign in before checkout.");
+      return;
+    }
+    if (!selectedVariant) {
+      setNotice("Select an active product variant.");
+      return;
+    }
+    if (!hasStock) {
+      setNotice("This variant is out of stock.");
+      return;
+    }
+
+    const directCheckoutUrl = `/checkout?directProductVariantId=${encodeURIComponent(selectedVariant.id)}&directQuantity=${quantity}` as Route;
+    try {
+      window.sessionStorage.setItem(
+        directCheckoutStorageKey,
+        JSON.stringify({
+          variantId: selectedVariant.id,
+          quantity,
+          productName: product.name,
+          productSlug: product.slug,
+          imageUrl,
+          sellerName: product.seller.storeName,
+          variantName: selectedVariant.variantName ?? null,
+          sku: selectedVariant.sku ?? null,
+          pricePaise: selectedVariant.pricePaise,
+          currency: selectedVariant.currency,
+        }),
+      );
+    } catch {
+      // Checkout still works from the URL; the snapshot only improves the summary preview.
+    }
+
+    router.push(directCheckoutUrl);
+  }
+
   return (
     <StorefrontFrame>
       <ProductToast
@@ -309,9 +356,6 @@ export function ProductDetailClient({ slug }: { slug: string }) {
                   {activeDeal ? <span className="rounded-full bg-[#FFF0EC] px-3 py-1 text-xs font-black text-[#ED3500]">Deal</span> : null}
                 </div>
                 <div className="flex shrink-0 gap-2">
-                  <Button type="button" variant="outline" size="sm" onClick={() => void handleShare()} className="rounded-full">
-                    <Share2 size={15} /> Share
-                  </Button>
                   <Button
                     type="button"
                     variant="outline"
@@ -430,8 +474,15 @@ export function ProductDetailClient({ slug }: { slug: string }) {
                     >
                       <ShoppingCart size={18} /> {!selectedVariant ? "Unavailable" : !hasStock ? "Out of stock" : addMutation.isPending ? "Adding" : "Add to cart"}
                     </Button>
-                    <Button asChild variant="outline" size="lg" className="min-w-[160px] rounded-full border-[#ED3500] text-[#ED3500] hover:bg-[#FFF0EC]">
-                      <Link href="/cart">View cart</Link>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="lg"
+                      disabled={!selectedVariant || !hasStock}
+                      onClick={handleBuyNow}
+                      className="min-w-[160px] rounded-full border-[#ED3500] text-[#ED3500] hover:bg-[#FFF0EC]"
+                    >
+                      <Zap size={18} /> Buy now
                     </Button>
                   </>
                 ) : (
@@ -448,25 +499,8 @@ export function ProductDetailClient({ slug }: { slug: string }) {
                     </Button>
                   </>
                 )}
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="lg"
-                  disabled={!product || isWishlistPending}
-                  onClick={() => void handleWishlistToggle()}
-                  className={cn(
-                    "rounded-full",
-                    isWishlisted && "border-[#ED3500] bg-[#FFF0EC] text-[#9F2600] hover:bg-[#FFE5DB]",
-                  )}
-                >
-                  <Heart size={18} className={cn(isWishlisted && "fill-current")} />
-                  {isWishlistPending
-                    ? wishlist.pendingAction === "remove"
-                      ? "Removing"
-                      : "Saving"
-                    : isWishlisted
-                      ? "Saved"
-                      : "Wishlist"}
+                <Button type="button" variant="outline" size="lg" onClick={() => void handleShare()} className="min-w-[140px] rounded-full">
+                  <Share2 size={18} /> Share
                 </Button>
               </div>
 

@@ -1,6 +1,7 @@
 import { ApiPropertyOptional } from "@nestjs/swagger";
 import {
   ArrayMaxSize,
+  ArrayMinSize,
   IsArray,
   IsBoolean,
   IsEmail,
@@ -19,7 +20,7 @@ import {
   ValidateNested,
 } from "class-validator";
 import { Type } from "class-transformer";
-import { SellerBusinessType } from "@indihub/database";
+import { SellerBusinessType, SellerCapability } from "@indihub/database";
 import { SellerVerificationDocumentDto } from "./create-seller-registration.dto";
 
 const locationSources = ["GPS", "MAP_PICK", "MANUAL", "REVERSE_GEOCODE"] as const;
@@ -273,4 +274,28 @@ export class UpdateSellerProfileDto {
   @ValidateNested({ each: true })
   @Type(() => SellerVerificationDocumentDto)
   documents?: SellerVerificationDocumentDto[];
+}
+
+export class UpdateMySellerCapabilitiesDto {
+  @ApiPropertyOptional({
+    enum: SellerCapability,
+    isArray: true,
+    example: [SellerCapability.RETAIL, SellerCapability.SERVICE],
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(2)
+  @IsEnum(SellerCapability, { each: true })
+  enabledCapabilities!: SellerCapability[];
+
+  @ApiPropertyOptional({ enum: SellerCapability, example: SellerCapability.RETAIL })
+  @IsOptional()
+  @IsEnum(SellerCapability)
+  primaryCapability?: SellerCapability;
+
+  @ApiPropertyOptional({ example: "Adding retail selling after service provider onboarding." })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  reason?: string;
 }

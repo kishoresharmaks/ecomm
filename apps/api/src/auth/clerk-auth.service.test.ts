@@ -61,14 +61,14 @@ describe("ClerkAuthService", () => {
     expect(clerkMocks.verifyToken).toHaveBeenCalledWith(
       tokenWithSessionId(),
       expect.objectContaining({
-        authorizedParties: ["http://192.168.1.3:3000"],
+        authorizedParties: ["http://192.168.1.2:3000"],
         clockSkewInMs: 120_000
       })
     );
   });
 
   it("normalizes Clerk authorized-party origins from explicit and public web config", async () => {
-    process.env.CLERK_AUTHORIZED_PARTIES = '"http://192.168.1.3:3000", http://192.168.1.3:3000/sign-in';
+    process.env.CLERK_AUTHORIZED_PARTIES = '"http://192.168.1.2:3000", http://192.168.1.2:3000/sign-in';
     process.env.NEXT_PUBLIC_WEB_URL = "http://192.168.1.4:3000";
     process.env.API_CORS_ORIGINS = "http://192.168.1.5:3000";
     clerkMocks.verifyToken.mockResolvedValue({ sub: "user_123" });
@@ -79,15 +79,15 @@ describe("ClerkAuthService", () => {
     expect(clerkMocks.verifyToken).toHaveBeenCalledWith(
       tokenWithSessionId(),
       expect.objectContaining({
-        authorizedParties: ["http://192.168.1.3:3000", "http://192.168.1.4:3000", "http://192.168.1.5:3000"]
+        authorizedParties: ["http://192.168.1.2:3000", "http://192.168.1.4:3000", "http://192.168.1.5:3000"]
       })
     );
   });
 
   it("returns an actionable IP-origin error when Clerk rejects the token azp", async () => {
-    process.env.CLERK_AUTHORIZED_PARTIES = "http://192.168.1.3:3000";
+    process.env.CLERK_AUTHORIZED_PARTIES = "http://192.168.1.2:3000";
     clerkMocks.verifyToken.mockRejectedValueOnce(
-      Object.assign(new Error('Invalid JWT Authorized party claim (azp) "http://localhost:3000". Expected "http://192.168.1.3:3000".'), {
+      Object.assign(new Error('Invalid JWT Authorized party claim (azp) "http://localhost:3000". Expected "http://192.168.1.2:3000".'), {
         reason: "token-invalid-authorized-parties"
       })
     );

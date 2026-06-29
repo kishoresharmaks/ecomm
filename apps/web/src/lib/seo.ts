@@ -53,7 +53,7 @@ type SeoFallback = {
   type?: "website" | "article";
 };
 
-export const siteUrl = (process.env.NEXT_PUBLIC_WEB_URL ?? "http://192.168.1.3:3000").replace(/\/$/, "");
+export const siteUrl = (process.env.NEXT_PUBLIC_WEB_URL ?? "http://192.168.1.2:3000").replace(/\/$/, "");
 
 export const publicRobotsAllow = ["/", "/seller/register", "/b2b/register"] as const;
 

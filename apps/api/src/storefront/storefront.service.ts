@@ -351,6 +351,12 @@ export class StorefrontService {
     return publicContactConfig(contactSettingsFromSetting(setting));
   }
 
+  clearHomeCache() {
+    this.logger.debug("Clearing storefront home cache");
+    homeOptionalReadCache.clear();
+    homePayloadCache.clear();
+  }
+
   private async listDealsPayload(query: ProductQueryDto = {}) {
     const { page, skip, take } = paginationFromQuery(query, { defaultLimit: 24, maxLimit: 100 });
     const homepageSections = await this.cms.listPublishedHomepageSections({

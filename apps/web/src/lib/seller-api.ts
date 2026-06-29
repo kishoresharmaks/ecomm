@@ -35,6 +35,10 @@ type SellerPayoutProfileSummary = {
 
 export type SellerProfile = Omit<SellerSummary, "profile"> & {
   id: string;
+  primaryCapability?: SellerCapability;
+  enabledCapabilities?: SellerCapability[];
+  serviceRating?: number | string | null;
+  serviceReviewCount?: number;
   profile?: SellerProfileDetails | null;
   payoutProfile?: SellerPayoutProfileSummary | null;
   subscriptionStatus?: SellerSubscriptionStatus;
@@ -69,6 +73,8 @@ export type SellerBusinessType =
   | "PUBLIC_LIMITED"
   | "OTHER";
 
+export type SellerCapability = "RETAIL" | "SERVICE";
+
 export type SellerVerificationDocument = {
   documentType: SellerDocumentType;
   fileUrl?: string;
@@ -79,6 +85,7 @@ export type SellerVerificationDocument = {
 };
 
 export type SellerSubscriptionBillingCycle = "MONTHLY" | "YEARLY" | "LIFETIME";
+export type SellerSubscriptionPlanAudience = "RETAIL" | "SERVICE" | "ALL";
 export type SellerSubscriptionStatus =
   | "TRIALING"
   | "ACTIVE"
@@ -91,6 +98,7 @@ export type SellerSubscriptionPlan = {
   code: string;
   name: string;
   description?: string | null;
+  audience: SellerSubscriptionPlanAudience;
   pricePaise: number;
   currency: string;
   billingCycle: SellerSubscriptionBillingCycle;
@@ -266,7 +274,9 @@ export type SellerCourierPickupSyncResult = {
 };
 
 export type SellerOnboardingPayload = {
-  sellerType: "MARKETPLACE_SELLER" | "HYPERLOCAL_STORE" | "WHOLESALE_DISTRIBUTOR";
+  sellerType: "MARKETPLACE_SELLER" | "HYPERLOCAL_STORE" | "WHOLESALE_DISTRIBUTOR" | "SERVICE_PROVIDER";
+  primaryCapability?: SellerCapability;
+  enabledCapabilities?: SellerCapability[];
   storeName: string;
   businessLegalName?: string;
   businessType?: SellerBusinessType;
@@ -425,6 +435,12 @@ export type B2BEnquiry = {
     nextCursor: string | null;
   };
   b2bOrder?: SellerB2BOrder | null;
+};
+
+export type SellerCapabilitiesPayload = {
+  enabledCapabilities: SellerCapability[];
+  primaryCapability?: SellerCapability;
+  reason?: string;
 };
 
 export type B2BEnquiryMessage = {
@@ -641,8 +657,19 @@ export function onboardSeller(auth: IndihubAuthHeaders, payload: SellerOnboardin
   );
 }
 
-export function listSellerSubscriptionPlans() {
-  return indihubFetch<SellerSubscriptionPlanList>("/api/seller/subscription-plans");
+export function updateSellerCapabilities(auth: IndihubAuthHeaders, payload: SellerCapabilitiesPayload) {
+  return indihubFetch<SellerProfile>(
+    "/api/sellers/capabilities",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    auth,
+  );
+}
+
+export function listSellerSubscriptionPlans(query: { audience?: SellerSubscriptionPlanAudience } = {}) {
+  return indihubFetch<SellerSubscriptionPlanList>(`/api/seller/subscription-plans${queryString(query)}`);
 }
 
 export function getSellerSubscription(auth: IndihubAuthHeaders) {

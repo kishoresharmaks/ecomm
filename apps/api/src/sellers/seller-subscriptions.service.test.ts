@@ -4,8 +4,10 @@ import {
   ApprovalStatus,
   PaymentProvider,
   PaymentStatus,
+  ProductStatus,
   SellerStatus,
   SellerSubscriptionBillingCycle,
+  SellerSubscriptionPlanAudience,
   SellerSubscriptionProviderEventStatus,
   SellerSubscriptionStatus,
 } from "@indihub/database";
@@ -20,6 +22,7 @@ type TestPlan = {
   pricePaise: number;
   currency: string;
   billingCycle: SellerSubscriptionBillingCycle;
+  audience: SellerSubscriptionPlanAudience;
   productLimit: number;
   featuredProductLimit: number;
   b2bEnquiryLimit: number;
@@ -306,6 +309,49 @@ describe("SellerSubscriptionsService recurring billing", () => {
     });
   });
 
+  it("blocks the 26th active product when the seller plan allows 25 products", async () => {
+    const tx = createTx();
+    const plan = makePlan({ pricePaise: 0, productLimit: 25 });
+    const prisma = createPrisma(tx);
+    prisma.client.sellerSubscription.findFirst.mockResolvedValue({
+      ...makeSubscription({ plan, status: SellerSubscriptionStatus.ACTIVE }),
+      payments: [],
+    });
+    prisma.client.seller.findUnique.mockResolvedValue(
+      makeSeller({ plan, subscriptionStatus: SellerSubscriptionStatus.ACTIVE }),
+    );
+    prisma.client.product.count.mockResolvedValue(25);
+    const service = new SellerSubscriptionsService(prisma as never);
+
+    await expect(service.ensureCanCreateProduct("seller_1")).rejects.toThrow(
+      "Your seller plan allows 25 products. Upgrade the subscription plan to add more products.",
+    );
+    expect(prisma.client.product.count).toHaveBeenCalledWith({
+      where: {
+        sellerId: "seller_1",
+        deletedAt: null,
+        status: { not: ProductStatus.ARCHIVED },
+      },
+    });
+  });
+
+  it("allows product creation below the seller plan product limit", async () => {
+    const tx = createTx();
+    const plan = makePlan({ pricePaise: 0, productLimit: 25 });
+    const prisma = createPrisma(tx);
+    prisma.client.sellerSubscription.findFirst.mockResolvedValue({
+      ...makeSubscription({ plan, status: SellerSubscriptionStatus.ACTIVE }),
+      payments: [],
+    });
+    prisma.client.seller.findUnique.mockResolvedValue(
+      makeSeller({ plan, subscriptionStatus: SellerSubscriptionStatus.ACTIVE }),
+    );
+    prisma.client.product.count.mockResolvedValue(24);
+    const service = new SellerSubscriptionsService(prisma as never);
+
+    await expect(service.ensureCanCreateProduct("seller_1")).resolves.toBeUndefined();
+  });
+
   it("blocks B2B responses when the active plan has no B2B enquiry limit", async () => {
     const tx = createTx();
     const plan = makePlan({ b2bEnquiryLimit: 0 });
@@ -452,6 +498,7 @@ function makePlan(overrides: Partial<TestPlan> = {}): TestPlan {
     pricePaise: 99900,
     currency: "INR",
     billingCycle: SellerSubscriptionBillingCycle.MONTHLY,
+    audience: SellerSubscriptionPlanAudience.RETAIL,
     productLimit: 100,
     featuredProductLimit: 5,
     b2bEnquiryLimit: 50,
