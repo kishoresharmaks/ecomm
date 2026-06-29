@@ -32,6 +32,8 @@
     "locations:import": "tsx scripts/locations/import-locations.ts --mode import",
     "locations:refresh": "tsx scripts/locations/import-locations.ts --mode refresh",
     "locations:import:india": "tsx scripts/locations/import-india-pincodes.ts --mode refresh",
+    "email:seed:production": "tsx scripts/email/seed-production-email.ts",
+    "email:seed:production:dry": "tsx scripts/email/seed-production-email.ts --dry-run",
     "search:reindex": "tsx scripts/search/reindex-search.ts",
     "storage:normalize-image-keys": "tsx scripts/storage/normalize-public-image-keys.ts --apply",
     "dev:web": "pnpm --filter @indihub/web dev",
