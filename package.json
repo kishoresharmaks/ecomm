@@ -29,6 +29,7 @@
     "db:seed": "tsx prisma/seed.ts --mode schema",
     "db:seed:system": "tsx prisma/seed.ts --mode system",
     "db:seed:bootstrap": "tsx prisma/seed.ts --mode bootstrap",
+    "db:seed:demo-services": "tsx scripts/services/seed-demo-services.ts",
     "locations:import": "tsx scripts/locations/import-locations.ts --mode import",
     "locations:refresh": "tsx scripts/locations/import-locations.ts --mode refresh",
     "locations:import:india": "tsx scripts/locations/import-india-pincodes.ts --mode refresh",

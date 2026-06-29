@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { type FormEvent, useState } from "react";
+import { useRouter } from "next/navigation";
+import { type FormEvent, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, BadgeCheck, CalendarDays, CheckCircle2, Clock, MapPin, Search, ShieldCheck, Star, Wrench } from "lucide-react";
 import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
@@ -110,7 +111,7 @@ function ServicesDirectory() {
   );
 }
 
-function ServiceCard({ service }: { service: ServiceListing }) {
+export function ServiceCard({ service }: { service: ServiceListing }) {
   return (
     <Link href={`/services/${service.slug}`} className="group overflow-hidden rounded-lg border border-[#E5E7EB] bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-[0_18px_50px_rgba(22,59,92,0.12)]">
       <span className="relative block aspect-[4/3] bg-[#F8FAFC]">
@@ -143,6 +144,7 @@ function ServiceCard({ service }: { service: ServiceListing }) {
 function ServiceDetail({ slug }: { slug: string }) {
   const customerAuth = useCustomerAuth();
   const queryClient = useQueryClient();
+  const router = useRouter();
   const [notice, setNotice] = useState<string | null>(null);
   const [selectedVisitMode, setSelectedVisitMode] = useState<ServiceVisitMode>("CUSTOMER_LOCATION");
   const [selectedPackageId, setSelectedPackageId] = useState("");
@@ -167,8 +169,8 @@ function ServiceDetail({ slug }: { slug: string }) {
       return createCustomerServiceBooking(customerAuth.authHeaders, payload);
     },
     onSuccess: (booking) => {
-      setNotice(`Service booking ${booking.bookingNumber} created. Provider will review your request.`);
       void queryClient.invalidateQueries({ queryKey: ["customer-service-bookings", customerAuth.authKey] });
+      router.push(`/account/service-bookings/${encodeURIComponent(booking.bookingNumber)}`);
     },
     onError: (error) => setNotice(error instanceof Error ? error.message : "Unable to book this service right now."),
   });
@@ -176,14 +178,28 @@ function ServiceDetail({ slug }: { slug: string }) {
   const service = serviceQuery.data;
   const addresses = addressesQuery.data ?? [];
   const selectedAddress = addresses.find((address) => address.id === selectedAddressId) ?? addresses.find((address) => address.isDefault) ?? addresses[0];
+  const activeVisitMode = resolveVisitMode(service, selectedVisitMode);
+  const needsCustomerAddress = activeVisitMode === "CUSTOMER_LOCATION";
+
+  useEffect(() => {
+    if (!service?.allowedVisitModes.length) {
+      return;
+    }
+    if (!service.allowedVisitModes.includes(selectedVisitMode)) {
+      setSelectedVisitMode(resolveVisitMode(service, selectedVisitMode));
+    }
+  }, [selectedVisitMode, service?.allowedVisitModes]);
 
   function submitBooking(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!service) {
+      return;
+    }
     const form = new FormData(event.currentTarget);
-    const manualSnapshot = manualAddressSnapshot(form);
+    const visitMode = resolveVisitMode(service, selectedVisitMode);
     const payload: ServiceBookingPayload = {
       serviceSlug: slug,
-      visitMode: selectedVisitMode,
+      visitMode,
       customerIssue: formValue(form, "customerIssue"),
     };
     if (selectedPackageId) {
@@ -197,11 +213,15 @@ function ServiceDetail({ slug }: { slug: string }) {
     if (customerNote) {
       payload.customerNote = customerNote;
     }
-    if (selectedAddress?.id) {
-      payload.addressId = selectedAddress.id;
-    } else {
-      payload.addressSnapshot = manualSnapshot;
+    if (visitMode === "CUSTOMER_LOCATION") {
+      const manualSnapshot = manualAddressSnapshot(form);
+      if (selectedAddress?.id) {
+        payload.addressId = selectedAddress.id;
+      } else {
+        payload.addressSnapshot = manualSnapshot;
+      }
     }
+    setNotice(null);
     bookingMutation.mutate(payload);
   }
 
@@ -267,7 +287,7 @@ function ServiceDetail({ slug }: { slug: string }) {
                   {!customerAuth.enabled ? <CustomerAuthNotice /> : null}
                   <label className="space-y-2">
                     <span className="text-xs font-bold uppercase tracking-wide text-[#667085]">Visit mode</span>
-                    <select value={selectedVisitMode} onChange={(event) => setSelectedVisitMode(event.target.value as ServiceVisitMode)} className="h-11 w-full rounded-md border border-[#E5E7EB] px-3 text-sm font-semibold">
+                    <select value={activeVisitMode} onChange={(event) => setSelectedVisitMode(event.target.value as ServiceVisitMode)} className="h-11 w-full rounded-md border border-[#E5E7EB] px-3 text-sm font-semibold">
                       {service.allowedVisitModes.map((mode) => (
                         <option key={mode} value={mode}>{mode.replace(/_/g, " ")}</option>
                       ))}
@@ -284,16 +304,26 @@ function ServiceDetail({ slug }: { slug: string }) {
                       </select>
                     </label>
                   ) : null}
-                  <label className="space-y-2">
-                    <span className="text-xs font-bold uppercase tracking-wide text-[#667085]">Saved address</span>
-                    <select value={selectedAddress?.id ?? ""} onChange={(event) => setSelectedAddressId(event.target.value)} className="h-11 w-full rounded-md border border-[#E5E7EB] px-3 text-sm font-semibold" disabled={!addresses.length}>
-                      {addresses.length ? addresses.map((address) => (
-                        <option key={address.id} value={address.id}>{address.label ?? address.line1} · {address.city} {address.pincode}</option>
-                      )) : <option value="">Use manual location below</option>}
-                    </select>
-                  </label>
-                  {!addresses.length ? <ManualAddressFields /> : null}
-                  {service.serviceability && !service.serviceability.serviceable ? (
+                  {needsCustomerAddress ? (
+                    <>
+                      <label className="space-y-2">
+                        <span className="text-xs font-bold uppercase tracking-wide text-[#667085]">Saved address</span>
+                        <select value={selectedAddress?.id ?? ""} onChange={(event) => setSelectedAddressId(event.target.value)} className="h-11 w-full rounded-md border border-[#E5E7EB] px-3 text-sm font-semibold" disabled={!addresses.length}>
+                          {addresses.length ? addresses.map((address) => (
+                            <option key={address.id} value={address.id}>{address.label ?? address.line1} · {address.city} {address.pincode}</option>
+                          )) : <option value="">Use manual location below</option>}
+                        </select>
+                      </label>
+                      {!addresses.length ? <ManualAddressFields /> : null}
+                    </>
+                  ) : (
+                    <StorefrontNotice>
+                      {activeVisitMode === "REMOTE"
+                        ? "This is a remote service. No service address will be sent with the booking."
+                        : "You will visit the provider location. The provider will share the address after confirming the booking."}
+                    </StorefrontNotice>
+                  )}
+                  {needsCustomerAddress && service.serviceability && !service.serviceability.serviceable ? (
                     <StorefrontNotice tone="warning">{service.serviceability.reason ?? unavailableText}</StorefrontNotice>
                   ) : null}
                   <label className="space-y-2">
@@ -417,4 +447,14 @@ function manualAddressSnapshot(form: FormData) {
     pincode: formValue(form, "pincode"),
     countryCode: formValue(form, "countryCode") || "IN",
   };
+}
+
+function resolveVisitMode(service: ServiceListing | undefined, selectedVisitMode: ServiceVisitMode): ServiceVisitMode {
+  if (!service?.allowedVisitModes.length) {
+    return selectedVisitMode;
+  }
+  if (service.allowedVisitModes.includes(selectedVisitMode)) {
+    return selectedVisitMode;
+  }
+  return service.allowedVisitModes[0] ?? "CUSTOMER_LOCATION";
 }

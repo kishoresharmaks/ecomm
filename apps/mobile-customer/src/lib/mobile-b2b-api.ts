@@ -49,12 +49,18 @@ function queryString(query: Record<string, string | number | undefined>): string
   return params.size ? `?${params.toString()}` : "";
 }
 
-/** Retry a mutation once after 2 s on 5xx. Re-throws on second failure. */
-async function withServerRetry<T>(fn: () => Promise<T>): Promise<T> {
+/** Retry a mutation once after 2 s on 5xx, and only retry network failures for keyed/idempotent creates. */
+async function withServerRetry<T>(
+  fn: () => Promise<T>,
+  options: { retryNetworkErrors?: boolean } = {},
+): Promise<T> {
   try {
     return await fn();
   } catch (error) {
-    if (error instanceof MobileApiError && error.status >= 500) {
+    if (
+      error instanceof MobileApiError &&
+      (error.status >= 500 || (options.retryNetworkErrors && error.status === 0))
+    ) {
       await new Promise((resolve) => setTimeout(resolve, 2000));
       return fn();
     }
@@ -140,7 +146,9 @@ export function createB2BEnquiry(
   auth: MobileAuthHeaders,
   payload: BusinessBuyerEnquiryPayload,
 ): Promise<BusinessBuyerEnquiry> {
-  return withServerRetry(() => postJson({ path: "/b2b/enquiries", auth, body: payload }));
+  return withServerRetry(() => postJson({ path: "/b2b/enquiries", auth, body: payload }), {
+    retryNetworkErrors: Boolean(payload.idempotencyKey),
+  });
 }
 
 export function getB2BEnquiry(

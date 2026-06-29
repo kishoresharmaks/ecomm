@@ -360,6 +360,10 @@ export function listCustomerServiceBookings(auth: IndihubAuthHeaders, query: { s
   return indihubFetch<PaginatedServiceBookings>(`/api/account/service-bookings${queryString(query)}`, undefined, auth);
 }
 
+export function getCustomerServiceBooking(auth: IndihubAuthHeaders, bookingNumber: string) {
+  return indihubFetch<ServiceBooking>(`/api/account/service-bookings/${encodeURIComponent(bookingNumber)}`, undefined, auth);
+}
+
 export function acceptCustomerServiceQuote(auth: IndihubAuthHeaders, bookingNumber: string) {
   return indihubFetch<ServiceBooking>(
     `/api/account/service-bookings/${encodeURIComponent(bookingNumber)}/quotes/accept`,

@@ -15,6 +15,7 @@ import {
   Logout03Icon,
   Notification02Icon,
   PackageIcon,
+  Wrench01Icon,
   QuestionIcon,
   Shield01Icon,
   UserCircleIcon,
@@ -38,6 +39,10 @@ import { accountErrorMessage } from "../../src/features/account/account-ui";
 import { useLocationStore } from "../../src/state/location-store";
 import { isMobileReturnsEnabled } from "../../src/features/returns/return-feature";
 import { returnsCopy } from "../../src/features/returns/return-copy";
+import { serviceKeys } from "../../src/features/services/service-query-keys";
+import { listCustomerServiceBookings } from "../../src/features/services/services-api";
+import { isActiveServiceBookingStatus } from "../../src/features/services/utils/bookingActions";
+import { serviceStatusLabel } from "../../src/features/services/service-ui";
 import { useCustomerPushNotificationStatus } from "../../src/features/notifications/use-customer-push-notifications";
 import { colors } from "../../src/theme";
 
@@ -93,6 +98,12 @@ export default function AccountScreen() {
     queryFn: () => getBrowsingLocation(customerAuth.authHeaders),
     enabled: customerAuth.enabled,
   });
+  const serviceBookingsQuery = useQuery({
+    queryKey: serviceKeys.bookings(customerAuth.authKey, "account-preview"),
+    queryFn: () => listCustomerServiceBookings(customerAuth.authHeaders, { limit: 10 }),
+    enabled: customerAuth.enabled,
+    retry: false,
+  });
 
   useEffect(() => {
     Animated.spring(entrance, {
@@ -141,6 +152,9 @@ export default function AccountScreen() {
   const wishlistCount = wishlistQuery.data?.items.length ?? profile?.wishlist?.items?.length ?? 0;
   const addressCount = profile?.addresses?.length ?? 0;
   const ordersCount = profile?._count?.orders ?? ordersQuery.data?.total ?? orders.length;
+  const serviceBookings = serviceBookingsQuery.data?.items ?? [];
+  const activeServiceBookingCount = serviceBookings.filter((booking) => isActiveServiceBookingStatus(booking.status)).length;
+  const latestServiceBooking = serviceBookings[0] ?? null;
   const displayName =
     profile?.displayName ?? profile?.user?.fullName ?? customerAuth.userProfile.fullName ?? customerAuth.userProfile.email ?? "1HandIndia customer";
   const email = profile?.user?.email ?? customerAuth.userProfile.email ?? "";
@@ -257,6 +271,24 @@ export default function AccountScreen() {
           </View>
           <HugeiconsIcon color={MUTED} icon={ArrowRight02Icon} size={22} strokeWidth={2.2} />
         </Pressable>
+
+        <SectionTitle title="Services" />
+        <View style={styles.listCard}>
+          <SettingsRow
+            icon={Wrench01Icon}
+            isLast
+            onPress={() => router.push("/account/service-bookings" as never)}
+            text="Track service requests, quotes and reviews"
+            title="Service Bookings"
+          />
+        </View>
+        {latestServiceBooking ? (
+          <Pressable style={styles.serviceSummaryCard} onPress={() => router.push("/account/service-bookings" as never)}>
+            <Text style={styles.serviceSummaryKicker}>{activeServiceBookingCount} active</Text>
+            <Text numberOfLines={1} style={styles.serviceSummaryTitle}>{latestServiceBooking.serviceName}</Text>
+            <Text style={styles.serviceSummaryText}>Latest status: {serviceStatusLabel(latestServiceBooking.status)}</Text>
+          </Pressable>
+        ) : null}
 
         <SectionTitle title="Profile settings" />
         <View style={styles.listCard}>
@@ -458,6 +490,32 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     lineHeight: 18,
     marginTop: 12,
+  },
+  serviceSummaryCard: {
+    backgroundColor: "#FFF7ED",
+    borderColor: BORDER,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginTop: 10,
+    padding: 14,
+  },
+  serviceSummaryKicker: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: "900",
+    textTransform: "uppercase",
+  },
+  serviceSummaryTitle: {
+    color: TEXT,
+    fontSize: 16,
+    fontWeight: "900",
+    marginTop: 6,
+  },
+  serviceSummaryText: {
+    color: MUTED,
+    fontSize: 13,
+    fontWeight: "800",
+    marginTop: 4,
   },
   header: {
     alignItems: "center",

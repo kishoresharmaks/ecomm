@@ -17,7 +17,9 @@ import {
   primaryVariant,
   type ProductSummary
 } from "@/lib/storefront-api";
+import { listPublicServices } from "@/lib/service-marketplace-api";
 import { ProductCard } from "./product-card";
+import { ServiceCard } from "./services-marketplace-client";
 import { StorefrontFrame } from "./storefront-frame";
 import { StorefrontCategoryCard } from "./storefront-category-card";
 import {
@@ -68,6 +70,16 @@ export function ProductListingClient({ mode, categorySlug, initialSearch = "" }:
       return mode === "deals" ? listStorefrontDeals(query) : listProducts(query);
     },
     enabled: mode !== "categories" && !isSearchMode && (mode !== "category" || Boolean(categoryId))
+  });
+  const servicesQuery = useQuery({
+    queryKey: ["public-services", "category", categoryId, submittedSearch],
+    queryFn: () =>
+      listPublicServices({
+        categoryId: categoryId ?? "",
+        ...(submittedSearch ? { search: submittedSearch } : {}),
+        limit: 24,
+      }),
+    enabled: mode === "category" && Boolean(categoryId),
   });
   const searchProductsQuery = useInfiniteQuery({
     queryKey: ["products", "cursor", mode, categoryId, submittedSearch],
@@ -131,6 +143,22 @@ export function ProductListingClient({ mode, categorySlug, initialSearch = "" }:
       ? `Showing matching approved products for "${submittedSearch}".`
       : "Showing live approved products."
     : `${productsQuery.data?.total ?? 0} ${mode === "deals" ? "deals" : "products"} found.`;
+  const serviceItems = servicesQuery.data?.items ?? [];
+  const hasServiceResults = mode === "category" && (servicesQuery.isLoading || serviceItems.length > 0 || servicesQuery.isError);
+  const showProductEmptyState =
+    !productsLoading &&
+    !productItems.length &&
+    !(mode === "category" && (servicesQuery.isLoading || serviceItems.length > 0));
+  const showProductSection =
+    mode !== "categories" &&
+    !(mode === "category" && !productsLoading && !productItems.length && (servicesQuery.isLoading || serviceItems.length > 0));
+  const resultTitle = submittedSearch
+    ? `Results for "${submittedSearch}"`
+    : mode === "deals"
+      ? "Live deals"
+      : mode === "category" && hasServiceResults
+        ? "Product results"
+        : "Product results";
 
   return (
     <StorefrontFrame>
@@ -166,7 +194,7 @@ export function ProductListingClient({ mode, categorySlug, initialSearch = "" }:
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search products"
+              placeholder={mode === "category" ? "Search products or services" : "Search products"}
               className={cn(storefrontInputClassName, "pl-10")}
             />
           </label>
@@ -209,11 +237,11 @@ export function ProductListingClient({ mode, categorySlug, initialSearch = "" }:
         </StorefrontSection>
       ) : null}
 
-      {mode !== "categories" ? (
+      {showProductSection ? (
         <StorefrontSection>
           <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <SectionHeading
-              title={submittedSearch ? `Results for "${submittedSearch}"` : mode === "deals" ? "Live deals" : "Product results"}
+              title={resultTitle}
               description={productResultDescription}
             />
             {mode === "category" ? (
@@ -243,9 +271,9 @@ export function ProductListingClient({ mode, categorySlug, initialSearch = "" }:
                   isAdding={addMutation.isPending}
                 />
               ))
-            ) : (
+            ) : showProductEmptyState ? (
               <StorefrontEmptyState className="col-span-2 md:col-span-3 lg:col-span-full" message="No matching approved products are live yet." />
-            )}
+            ) : null}
           </div>
 
           {isSearchMode && searchProductsQuery.hasNextPage ? (
@@ -282,6 +310,45 @@ export function ProductListingClient({ mode, categorySlug, initialSearch = "" }:
                   void categoryQuery.refetch();
                 }
               }}
+            />
+          ) : null}
+        </StorefrontSection>
+      ) : null}
+
+      {hasServiceResults ? (
+        <StorefrontSection>
+          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+            <SectionHeading
+              title="Service results"
+              description={`${servicesQuery.data?.total ?? 0} services found in this category.`}
+            />
+            <Button asChild variant="outline">
+              <Link href="/services">
+                All services <ArrowRight size={16} />
+              </Link>
+            </Button>
+          </div>
+
+          {servicesQuery.isLoading ? (
+            <div className="mt-5 grid gap-4 sm:mt-6 sm:grid-cols-2 lg:grid-cols-3">
+              {Array.from({ length: 3 }).map((_, index) => (
+                <StorefrontSkeleton key={index} className="h-80" />
+              ))}
+            </div>
+          ) : serviceItems.length ? (
+            <div className="mt-5 grid gap-4 sm:mt-6 sm:grid-cols-2 lg:grid-cols-3">
+              {serviceItems.map((service) => (
+                <ServiceCard key={service.id} service={service} />
+              ))}
+            </div>
+          ) : null}
+
+          {servicesQuery.isError ? (
+            <StorefrontErrorPanel
+              className="mt-6"
+              error={servicesQuery.error}
+              onRetry={() => void servicesQuery.refetch()}
+              retryLabel="Retry services"
             />
           ) : null}
         </StorefrontSection>

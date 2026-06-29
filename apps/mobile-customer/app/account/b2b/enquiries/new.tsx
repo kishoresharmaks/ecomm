@@ -85,6 +85,7 @@ function B2BNewEnquiryContent() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [submitError, setSubmitError] = useState("");
   const [rateLimited, setRateLimited] = useState(false);
+  const enquiryIdempotencyRef = useRef<{ signature: string; key: string } | null>(null);
 
   // ─── Product debounce ─────────────────────────────────────────────────────
   const handleProductSearchChange = useCallback((text: string) => {
@@ -140,14 +141,22 @@ function B2BNewEnquiryContent() {
       // Product takes precedence; sellerId is dropped when productId is set.
       const productId = selectedProduct?.id;
       const sellerId = productId ? undefined : selectedSeller?.id;
-      return createB2BEnquiry(customerAuth.authHeaders, {
-        ...(productId ? { productId } : {}),
-        ...(sellerId ? { sellerId } : {}),
+      const payload = {
+        productId: productId ?? null,
+        sellerId: sellerId ?? null,
         quantity: parseInt(quantity, 10) || 1,
         message: message.trim(),
+      };
+      return createB2BEnquiry(customerAuth.authHeaders, {
+        idempotencyKey: getB2BEnquiryIdempotencyKey(payload),
+        ...(payload.productId ? { productId: payload.productId } : {}),
+        ...(payload.sellerId ? { sellerId: payload.sellerId } : {}),
+        quantity: payload.quantity,
+        message: payload.message,
       });
     },
     onSuccess: (data) => {
+      enquiryIdempotencyRef.current = null;
       void queryClient.invalidateQueries({ queryKey: ["b2b-enquiries", customerAuth.authKey] });
       router.replace(`/account/b2b/enquiries/${data.id}` as never);
     },
@@ -175,6 +184,28 @@ function B2BNewEnquiryContent() {
     setRateLimited(false);
     if (!validate()) return;
     createMutation.mutate();
+  }
+
+  function getB2BEnquiryIdempotencyKey(payload: {
+    productId: string | null;
+    sellerId: string | null;
+    quantity: number;
+    message: string;
+  }) {
+    const signature = [
+      payload.productId ?? "",
+      payload.sellerId ?? "",
+      payload.quantity,
+      payload.message,
+    ].join("|");
+
+    if (enquiryIdempotencyRef.current?.signature === signature) {
+      return enquiryIdempotencyRef.current.key;
+    }
+
+    const key = createMobileB2BEnquiryIdempotencyKey(payload.productId ?? payload.sellerId ?? "general");
+    enquiryIdempotencyRef.current = { signature, key };
+    return key;
   }
 
   // ─── Profile missing (404) ────────────────────────────────────────────────
@@ -475,6 +506,13 @@ export default function B2BNewEnquiryScreen() {
       </B2BAuthGate>
     </Screen>
   );
+}
+
+function createMobileB2BEnquiryIdempotencyKey(scope: string) {
+  const safeScope = scope.replace(/[^A-Za-z0-9_-]/g, "").slice(0, 32) || "b2b";
+  const timestamp = Date.now().toString(36);
+  const random = Math.random().toString(36).slice(2, 12);
+  return `mobile_b2b_${safeScope}_${timestamp}_${random}`;
 }
 
 const styles = StyleSheet.create({

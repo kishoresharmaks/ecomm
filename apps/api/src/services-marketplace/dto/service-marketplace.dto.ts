@@ -12,6 +12,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   Max,
   MaxLength,
   Min,
@@ -396,6 +397,13 @@ export class ServiceListingQueryDto {
 }
 
 export class CreateServiceBookingDto {
+  @ApiPropertyOptional({ example: "mobile_service_ac-repair_01HX6D9T0QZP7N6P8K3R2B5C4D" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  @Matches(/^[A-Za-z0-9:_-]{12,120}$/)
+  idempotencyKey?: string;
+
   @ApiProperty({ example: "service-slug" })
   @IsString()
   @MinLength(2)

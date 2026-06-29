@@ -79,7 +79,7 @@ export const serverEnvSchema = z.object({
 export const publicWebEnvSchema = z.object({
   NEXT_PUBLIC_APP_NAME: z.string().default("1HandIndia"),
   NEXT_PUBLIC_WEB_URL: z.string().url().default("http://192.168.1.2:3000"),
-  NEXT_PUBLIC_API_URL: z.string().url().default("http://192.168.1.3:4000"),
+  NEXT_PUBLIC_API_URL: z.string().url().default("http://192.168.1.2:4000"),
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z.string().optional(),
 });
 

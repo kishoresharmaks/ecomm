@@ -607,19 +607,42 @@ export class B2BService {
 
   async createEnquiry(actor: RequestUser, dto: CreateB2BEnquiryDto) {
     const businessBuyer = await this.getBusinessBuyerForUserOrThrow(actor.id);
+    const idempotencyKey = this.normalizeIdempotencyKey(dto.idempotencyKey);
+    const existingIdempotentEnquiry = idempotencyKey
+      ? await this.findB2BEnquiryByIdempotencyKey(businessBuyer.id, idempotencyKey)
+      : null;
+    if (existingIdempotentEnquiry) {
+      return existingIdempotentEnquiry;
+    }
+
     const resolved = await this.resolveProductAndSeller(dto);
 
+    let createdNew = true;
     const createdEnquiry = await this.prisma.client.b2BEnquiry.create({
       data: {
         businessBuyerId: businessBuyer.id,
+        idempotencyKey,
         productId: resolved.productId,
         sellerId: resolved.sellerId,
         quantity: dto.quantity,
         message: dto.message,
         status: B2BEnquiryStatus.SUBMITTED,
       },
+    }).catch(async (error: unknown) => {
+      if (idempotencyKey && this.isUniqueConstraintError(error)) {
+        const recovered = await this.findB2BEnquiryByIdempotencyKey(businessBuyer.id, idempotencyKey);
+        if (recovered) {
+          createdNew = false;
+          return recovered;
+        }
+      }
+      throw error;
     });
     const enquiry = await this.getEnquiryOrThrow({ id: createdEnquiry.id });
+
+    if (!createdNew) {
+      return enquiry;
+    }
 
     await this.prisma.client.auditLog.create({
       data: {
@@ -2871,6 +2894,25 @@ export class B2BService {
     }
 
     return b2bOrder;
+  }
+
+  private normalizeIdempotencyKey(value: string | undefined) {
+    const key = value?.trim();
+    return key || null;
+  }
+
+  private findB2BEnquiryByIdempotencyKey(businessBuyerId: string, idempotencyKey: string) {
+    return this.prisma.client.b2BEnquiry.findFirst({
+      where: {
+        businessBuyerId,
+        idempotencyKey,
+      },
+      include: enquiryInclude,
+    });
+  }
+
+  private isUniqueConstraintError(error: unknown) {
+    return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
   }
 
   private async createB2BOrderForFinalisedEnquiry(actor: RequestUser, enquiryId: string) {

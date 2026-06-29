@@ -62,7 +62,7 @@ describe("seo helpers", () => {
     expect(metadata.openGraph).toMatchObject({
       images: [
         {
-          url: "http://192.168.1.3:4000/api/storage/public-image?key=indihub%2Fcms%2Fhomepage-hero.jpg",
+          url: "http://192.168.1.2:4000/api/storage/public-image?key=indihub%2Fcms%2Fhomepage-hero.jpg",
           alt: "Local marketplace homepage"
         }
       ]
@@ -70,7 +70,7 @@ describe("seo helpers", () => {
     expect(metadata.twitter).toMatchObject({
       card: "summary_large_image",
       images: [
-        "http://192.168.1.3:4000/api/storage/public-image?key=indihub%2Fcms%2Fhomepage-hero.jpg"
+        "http://192.168.1.2:4000/api/storage/public-image?key=indihub%2Fcms%2Fhomepage-hero.jpg"
       ]
     });
   });

@@ -1,4 +1,4 @@
-export const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://192.168.1.3:4000";
+export const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://192.168.1.2:4000";
 export const apiRequestTimeoutMs = Number(process.env.NEXT_PUBLIC_API_TIMEOUT_MS ?? 8000);
 const privateApiBasePattern = /^https?:\/\/(127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?(\/|$)/i;
 export const skipDefaultLocalApiOnServer =

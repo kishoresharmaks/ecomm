@@ -491,6 +491,14 @@ export class ServiceMarketplaceService {
 
   async createCustomerBooking(actor: RequestUser, dto: CreateServiceBookingDto) {
     const customer = await this.customersService.ensureCustomerForUser(actor);
+    const idempotencyKey = this.normalizeIdempotencyKey(dto.idempotencyKey);
+    const existingIdempotentBooking = idempotencyKey
+      ? await this.findCustomerBookingByIdempotencyKey(customer.id, idempotencyKey)
+      : null;
+    if (existingIdempotentBooking) {
+      return existingIdempotentBooking;
+    }
+
     const listing = await this.prisma.client.serviceListing.findFirst({
       where: {
         slug: dto.serviceSlug,
@@ -524,9 +532,11 @@ export class ServiceMarketplaceService {
         ? new Date(scheduledStartAt.getTime() + listing.serviceDurationMinutes * 60_000)
         : null;
 
+    let createdNew = true;
     const booking = await this.prisma.client.$transaction(async (tx) => {
       const bookingCreateData: Prisma.ServiceBookingUncheckedCreateInput = {
         bookingNumber,
+        idempotencyKey,
         customerId: customer.id,
         sellerId: listing.sellerId,
         serviceListingId: listing.id,
@@ -561,29 +571,42 @@ export class ServiceMarketplaceService {
         };
       }
 
-      const booking = await tx.serviceBooking.create({
-        data: bookingCreateData,
+      const booking = await tx.serviceBooking.create({ data: bookingCreateData }).catch(async (error: unknown) => {
+        if (idempotencyKey && this.isPrismaUniqueConstraintError(error)) {
+          const recovered = await tx.serviceBooking.findFirst({
+            where: { customerId: customer.id, idempotencyKey },
+          });
+          if (recovered) {
+            createdNew = false;
+            return recovered;
+          }
+        }
+        throw error;
       });
 
-      await tx.auditLog.create({
-        data: {
-          actor: { connect: { id: actor.id } },
-          action: "service_booking.requested",
-          entityType: "service_booking",
-          entityId: booking.id,
-          newValue: {
-            bookingNumber: booking.bookingNumber,
-            serviceListingId: listing.id,
-            sellerId: listing.sellerId,
+      if (createdNew) {
+        await tx.auditLog.create({
+          data: {
+            actor: { connect: { id: actor.id } },
+            action: "service_booking.requested",
+            entityType: "service_booking",
+            entityId: booking.id,
+            newValue: {
+              bookingNumber: booking.bookingNumber,
+              serviceListingId: listing.id,
+              sellerId: listing.sellerId,
+            },
           },
-        },
-      });
+        });
+      }
 
       return booking;
     });
 
     const fullBooking = await this.getCustomerBooking(actor, booking.bookingNumber);
-    await this.notifyBooking(fullBooking, "service_booking_requested");
+    if (createdNew) {
+      await this.notifyBooking(fullBooking, "service_booking_requested");
+    }
     return fullBooking;
   }
 
@@ -1290,6 +1313,25 @@ export class ServiceMarketplaceService {
       }
     }
     return { serviceable: false, reason: "This service provider does not currently serve the selected location." };
+  }
+
+  private normalizeIdempotencyKey(value: string | undefined) {
+    const key = value?.trim();
+    return key || null;
+  }
+
+  private findCustomerBookingByIdempotencyKey(customerId: string, idempotencyKey: string) {
+    return this.prisma.client.serviceBooking.findFirst({
+      where: {
+        customerId,
+        idempotencyKey,
+      },
+      include: serviceBookingInclude,
+    });
+  }
+
+  private isPrismaUniqueConstraintError(error: unknown) {
+    return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
   }
 
   private async resolveBookingAddress(customerId: string, dto: CreateServiceBookingDto) {

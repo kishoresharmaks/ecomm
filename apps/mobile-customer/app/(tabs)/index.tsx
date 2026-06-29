@@ -59,6 +59,9 @@ import { announceCurrencyChange, useMobileMarket } from "../../src/features/mark
 import { withStorefrontMaintenance } from "../../src/features/maintenance/mobile-maintenance-gate";
 import { getCart, listCustomerOrders, listLocationCountries, searchLocationAreas, type MobileLocationCountry } from "../../src/features/storefront/storefront-api";
 import { resolveImageUrl } from "../../src/lib/image-url";
+import { serviceKeys } from "../../src/features/services/service-query-keys";
+import { ServiceCard } from "../../src/features/services/service-ui";
+import { listPublicServices } from "../../src/features/services/services-api";
 import { useLocationStore } from "../../src/state/location-store";
 import { useRecentProductsStore, type RecentProductSnapshot } from "../../src/state/recent-products-store";
 import { colors } from "../../src/theme";
@@ -80,6 +83,7 @@ type HomeFeedItem =
   | { id: "personalized"; type: "personalized"; home: MobileHome }
   | { id: "trust"; type: "trust" }
   | { id: "categories"; type: "categories"; categories: MobileCategory[] }
+  | { id: "services"; type: "services" }
   | { id: string; type: "admin-section"; section: MobileHomepageSection; products: MobileProduct[] }
   | { actionHref: Href; badge?: string; icon: IconSvgElement; id: string; products: MobileProduct[]; title: string; type: "product-rail"; variant: ProductRailVariant }
   | { id: "stores"; type: "stores"; stores: MobileStore[] };
@@ -518,6 +522,10 @@ function HomeFeedCard({ item }: { item: HomeFeedItem }) {
     return <CategoryStrip categories={item.categories} />;
   }
 
+  if (item.type === "services") {
+    return <ServicesRail />;
+  }
+
   if (item.type === "admin-section") {
     return <AdminSection products={item.products} section={item.section} />;
   }
@@ -619,6 +627,52 @@ function HeroCarousel({ banners }: { banners: MobileBanner[] }) {
           ))}
         </View>
       ) : null}
+    </View>
+  );
+}
+
+function ServicesRail() {
+  const router = useRouter();
+  const selectedLocation = useLocationStore((state) => state.selectedLocation);
+  const locationKey = [selectedLocation.countryCode, selectedLocation.stateCode, selectedLocation.cityCode, selectedLocation.localAreaCode, selectedLocation.pincode]
+    .filter(Boolean)
+    .join(":") || null;
+  const servicesQuery = useQuery({
+    queryKey: serviceKeys.list("home", locationKey),
+    queryFn: () => listPublicServices({ location: selectedLocation, limit: 6 }),
+    retry: false,
+    staleTime: 60_000,
+  });
+  const services = servicesQuery.data?.items ?? [];
+
+  if (servicesQuery.isError || (!servicesQuery.isLoading && services.length === 0)) {
+    return null;
+  }
+
+  return (
+    <View style={styles.servicesRailWrap}>
+      <View style={styles.sectionHeadingRow}>
+        <View style={styles.sectionHeadingCopy}>
+          <Text style={styles.sectionTitle}>Services</Text>
+          <Text style={styles.sectionSubtitle}>Book trusted help from nearby providers</Text>
+        </View>
+        <Pressable style={styles.sectionActionButton} onPress={() => router.push("/services" as never)}>
+          <Text style={styles.sectionActionText}>Browse all</Text>
+        </Pressable>
+      </View>
+      {servicesQuery.isLoading ? (
+        <ScrollView horizontal contentContainerStyle={styles.servicesRailContent} showsHorizontalScrollIndicator={false}>
+          {[0, 1, 2].map((item) => (
+            <View key={item} style={styles.serviceSkeleton} />
+          ))}
+        </ScrollView>
+      ) : (
+        <ScrollView horizontal contentContainerStyle={styles.servicesRailContent} showsHorizontalScrollIndicator={false}>
+          {services.map((service) => (
+            <ServiceCard compact key={service.id} service={service} onPress={() => router.push(`/services/${service.slug}` as never)} />
+          ))}
+        </ScrollView>
+      )}
     </View>
   );
 }
@@ -1742,6 +1796,7 @@ function buildFeed(home?: MobileHome): HomeFeedItem[] {
     { id: "personalized", type: "personalized", home },
     { id: "trust", type: "trust" },
     { id: "categories", type: "categories", categories: home.categories },
+    { id: "services", type: "services" },
     ...customSections.map((section) => ({
       id: `section-${section.id}`,
       type: "admin-section" as const,
@@ -3698,6 +3753,51 @@ recommendedCategoryPillText: {
     fontWeight: "700",
     lineHeight: 19,
     marginTop: 7,
+  },
+  servicesRailWrap: {
+    marginTop: 30,
+    paddingHorizontal: 20,
+  },
+  servicesRailContent: {
+    gap: 12,
+    paddingRight: 20,
+  },
+  sectionHeadingRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 12,
+    justifyContent: "space-between",
+    marginBottom: 14,
+  },
+  sectionHeadingCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  sectionSubtitle: {
+    color: colors.muted,
+    fontSize: 13,
+    fontWeight: "700",
+    lineHeight: 18,
+    marginTop: 4,
+  },
+  sectionActionButton: {
+    backgroundColor: "#FFF2EE",
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  sectionActionText: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  serviceSkeleton: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    height: 118,
+    width: 260,
   },
   categoryScroll: {
     marginTop: 18,

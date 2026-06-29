@@ -1,5 +1,6 @@
-const DEFAULT_API_URL = "http://192.168.1.3:4000/api";
+const DEFAULT_API_URL = "http://192.168.1.2:4000/api";
 const REQUEST_TIMEOUT_MS = 12000;
+const CREATE_REQUEST_TIMEOUT_MS = 30000;
 
 export type BearerTokenOptions = {
   skipCache?: boolean;
@@ -17,6 +18,7 @@ export type ApiRequestOptions = {
   auth?: MobileAuthHeaders;
   searchParams?: Record<string, string | number | null | undefined>;
   signal?: AbortSignal;
+  timeoutMs?: number;
 };
 
 export class MobileApiError extends Error {
@@ -38,7 +40,7 @@ export async function getJson<T>(options: ApiRequestOptions): Promise<T> {
 }
 
 export async function postJson<T>(options: ApiRequestOptions & { body?: unknown }): Promise<T> {
-  return requestJson<T>("POST", options);
+  return requestJson<T>("POST", { timeoutMs: CREATE_REQUEST_TIMEOUT_MS, ...options });
 }
 
 export async function patchJson<T>(options: ApiRequestOptions & { body?: unknown }): Promise<T> {
@@ -94,7 +96,11 @@ async function send(
 ) {
   const url = buildApiUrl(options.path, options.searchParams);
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, options.timeoutMs ?? REQUEST_TIMEOUT_MS);
   const abortListener = () => controller.abort();
   options.signal?.addEventListener("abort", abortListener, { once: true });
 
@@ -115,6 +121,13 @@ async function send(
   } catch (error) {
     if (error instanceof MobileApiError) {
       throw error;
+    }
+
+    if (timedOut) {
+      throw new MobileApiError(
+        "This is taking longer than usual. We are checking whether your request was completed, so please do not submit again yet.",
+        0,
+      );
     }
 
     throw new MobileApiError("We could not reach 1HandIndia. Check your connection and try again.", 0);

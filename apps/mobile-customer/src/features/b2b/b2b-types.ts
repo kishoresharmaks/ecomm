@@ -202,6 +202,7 @@ export type PaginatedB2BOrders = {
 };
 
 export type BusinessBuyerEnquiryPayload = {
+  idempotencyKey?: string;
   productId?: string;
   sellerId?: string;
   quantity: number;

@@ -3836,6 +3836,7 @@ model ServiceArea {
 model ServiceBooking {
   id                         String                       @id @default(uuid()) @db.Uuid
   bookingNumber              String                       @unique @map("booking_number")
+  idempotencyKey             String?                      @map("idempotency_key")
   customerId                 String                       @map("customer_id") @db.Uuid
   sellerId                   String                       @map("seller_id") @db.Uuid
   serviceListingId           String                       @map("service_listing_id") @db.Uuid
@@ -3887,6 +3888,7 @@ model ServiceBooking {
   @@index([status])
   @@index([scheduledStartAt])
   @@index([paymentMode, status])
+  @@unique([customerId, idempotencyKey], map: "service_bookings_customer_id_idempotency_key_key")
   @@map("service_bookings")
 }
 
@@ -4067,6 +4069,7 @@ model ServiceReviewReply {
 model B2BEnquiry {
   id                String               @id @default(uuid()) @db.Uuid
   businessBuyerId   String               @map("business_buyer_id") @db.Uuid
+  idempotencyKey    String?              @map("idempotency_key")
   productId         String?              @map("product_id") @db.Uuid
   sellerId          String?              @map("seller_id") @db.Uuid
   quantity          Int
@@ -4087,6 +4090,7 @@ model B2BEnquiry {
   @@index([status])
   @@index([businessBuyerId, status, createdAt])
   @@index([sellerId, status, createdAt])
+  @@unique([businessBuyerId, idempotencyKey], map: "b2b_enquiries_business_buyer_id_idempotency_key_key")
   @@map("b2b_enquiries")
 }
 

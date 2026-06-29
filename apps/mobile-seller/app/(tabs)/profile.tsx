@@ -1,6 +1,5 @@
 import { useAuth } from "@clerk/clerk-expo";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import * as DocumentPicker from "expo-document-picker";
 import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -261,7 +260,7 @@ export default function SellerProfileScreen() {
   const uploadDocument = useCallback(async (documentType: SellerDocumentType) => {
     setUploadingSection(documentType);
     try {
-      const result = await DocumentPicker.getDocumentAsync({
+      const result = await pickDocument({
         type: ["application/pdf", "image/jpeg", "image/png"],
         copyToCacheDirectory: true,
       });
@@ -511,7 +510,16 @@ function initials(value: string) {
 }
 
 function uploadErrorMessage(error: unknown, fallback: string) {
-  return error instanceof Error && error.message.trim() ? error.message : fallback;
+  const message = error instanceof Error ? error.message.trim() : "";
+  if (message.includes("ExpoDocumentPicker") || message.includes("native module")) {
+    return "Document picker is not available in this app build. Rebuild the Expo dev app after installing expo-document-picker.";
+  }
+  return message || fallback;
+}
+
+async function pickDocument(options: Parameters<typeof import("expo-document-picker").getDocumentAsync>[0]) {
+  const DocumentPicker = await import("expo-document-picker");
+  return DocumentPicker.getDocumentAsync(options);
 }
 
 const styles = StyleSheet.create({

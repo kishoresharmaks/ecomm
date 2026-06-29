@@ -1,5 +1,4 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
 import { Stack, useLocalSearchParams } from "expo-router";
 import * as Sharing from "expo-sharing";
@@ -59,16 +58,23 @@ function B2BOrderDetailContent({ order }: { order: B2BOrder }) {
     setUploadState("idle");
 
     // Step 1: Pick file
-    const result = await DocumentPicker.getDocumentAsync({
-      type: [
-        "application/pdf",
-        "image/jpeg",
-        "image/png",
-        "image/webp",
-      ],
-      copyToCacheDirectory: true,
-      multiple: false,
-    });
+    let result: Awaited<ReturnType<typeof import("expo-document-picker").getDocumentAsync>>;
+    try {
+      result = await pickDocument({
+        type: [
+          "application/pdf",
+          "image/jpeg",
+          "image/png",
+          "image/webp",
+        ],
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+    } catch (error) {
+      setUploadState("interrupted");
+      setUploadError(documentPickerErrorMessage(error));
+      return;
+    }
 
     if (result.canceled || !result.assets?.[0]) return;
 
@@ -392,6 +398,19 @@ function InfoCard({ label, value }: { label: string; value: string }) {
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+}
+
+async function pickDocument(options: Parameters<typeof import("expo-document-picker").getDocumentAsync>[0]) {
+  const DocumentPicker = await import("expo-document-picker");
+  return DocumentPicker.getDocumentAsync(options);
+}
+
+function documentPickerErrorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  if (message.includes("ExpoDocumentPicker") || message.includes("native module")) {
+    return "Document picker is not available in this app build. Rebuild the Expo dev app after installing expo-document-picker.";
+  }
+  return message || "Could not open document picker. Try again.";
 }
 
 const styles = StyleSheet.create({
