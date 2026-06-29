@@ -20,8 +20,21 @@ test-results/
 # Logs
 *.log
 .logs/
+logs/
 npm-debug.log*
 pnpm-debug.log*
+
+# Local agent/workspace metadata
+.agents/
+.claude/
+.codex/
+.codex-dev-logs/
+.codex-run/
+.codex-screenshots/
+.codex-temp/
+.dev-logs/
+.devin/
+.vscode/
 
 # Local caches and temp files
 .cache/
@@ -31,12 +44,16 @@ storage/private/
 tmp-*.png
 IndiHub_Testing_Source_*.zip
 AGENTS.pdf
+artifacts/
+audit-fixes/
+
+# Private production/security notes
+docs/production/
 
 # OS/editor
 .DS_Store
 Thumbs.db
 .idea/
-.vscode/
 
 # Generated Prisma client cache
 prisma/generated/
