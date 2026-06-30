@@ -1,9 +1,9 @@
-const DEFAULT_DEV_WEB_ORIGIN = "http://192.168.1.2:3000";
+const DEFAULT_CORS_ORIGINS = "https://1handindia.com,https://www.1handindia.com,https://api.1handindia.com";
 
 type CorsOriginCallback = (error: Error | null, allow?: boolean) => void;
 
 export function createCorsOptions(env: NodeJS.ProcessEnv = process.env) {
-  const allowedOrigins = parseCorsOrigins(env.API_CORS_ORIGINS ?? DEFAULT_DEV_WEB_ORIGIN);
+  const allowedOrigins = parseCorsOrigins(env.API_CORS_ORIGINS ?? DEFAULT_CORS_ORIGINS);
   const productionLike = isProductionLike(env);
 
   return {

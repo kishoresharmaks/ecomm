@@ -172,6 +172,69 @@ export class UpdateSellerCourierProviderSettingDto {
   isActive?: boolean;
 }
 
+export class UpdateSellerServiceAreaDto {
+  @ApiPropertyOptional({ example: "Salem doorstep service radius" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  label?: string;
+
+  @ApiPropertyOptional({ example: "IN" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(8)
+  countryCode?: string;
+
+  @ApiPropertyOptional({ example: "IN-TN" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  stateCode?: string;
+
+  @ApiPropertyOptional({ example: "IN-TN-SALEM" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(48)
+  cityCode?: string;
+
+  @ApiPropertyOptional({ example: "IN-TN-SALEM-METTU-STREET" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  localAreaCode?: string;
+
+  @ApiPropertyOptional({ example: "636001" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  pincode?: string;
+
+  @ApiPropertyOptional({ example: 11.6643 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsLatitude()
+  latitude?: number;
+
+  @ApiPropertyOptional({ example: 78.146 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsLongitude()
+  longitude?: number;
+
+  @ApiPropertyOptional({ example: 12 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  @Max(500)
+  radiusKm?: number;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}
+
 export class UpdateSellerProfileDto {
   @ApiPropertyOptional({ example: "1HandIndia Local Store" })
   @IsOptional()
@@ -267,6 +330,14 @@ export class UpdateSellerProfileDto {
   @ValidateNested({ each: true })
   @Type(() => UpdateSellerCourierProviderSettingDto)
   courierSettings?: UpdateSellerCourierProviderSettingDto[];
+
+  @ApiPropertyOptional({ type: [UpdateSellerServiceAreaDto] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @ValidateNested({ each: true })
+  @Type(() => UpdateSellerServiceAreaDto)
+  serviceAreas?: UpdateSellerServiceAreaDto[];
 
   @ApiPropertyOptional({ type: [SellerVerificationDocumentDto] })
   @IsOptional()

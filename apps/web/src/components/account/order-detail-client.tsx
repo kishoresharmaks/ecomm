@@ -398,9 +398,7 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
                         <div>
                           <p className="font-black text-[#1F2933]">{item.productNameSnapshot}</p>
                           <p className="mt-1 text-sm font-semibold text-[#667085]">
-                            {item.variantSnapshot?.variantName ??
-                              item.variantSnapshot?.sku ??
-                              "Default"}{" "}
+                            {item.variantSnapshot?.variantName ?? "Default"}{" "}
                             x {item.quantity}
                           </p>
                           {item.seller?.storeName ? (

@@ -61,7 +61,7 @@ export function StorefrontFooter({
           <div>
             <Link href="/" className="inline-flex items-center gap-2" aria-label="1HandIndia home">
               <span className="grid h-10 w-10 place-items-center overflow-hidden rounded-full bg-white shadow-[0_10px_22px_rgba(237,53,0,0.14)]">
-                <img src={brandLogoSrc} alt="" className="h-full w-full object-cover" loading="lazy" />
+                <img src={brandLogoSrc} alt="1HandIndia logo" title="1HandIndia logo" className="h-full w-full object-cover" loading="lazy" />
               </span>
               <span className="text-2xl font-black tracking-normal text-[#111827]">
                 Hand<span className="text-[#ED3500]">India</span>

@@ -17,6 +17,9 @@ export type StorefrontBrowsingLocation = {
   localAreaCode?: string;
   areaName?: string;
   pincode?: string;
+  latitude?: number;
+  longitude?: number;
+  accuracyMeters?: number;
 };
 
 export function defaultBrowsingLocationFromAddresses(
@@ -37,6 +40,8 @@ export function defaultBrowsingLocationFromAddresses(
     ...(address.localAreaCode ? { localAreaCode: address.localAreaCode } : {}),
     ...(address.area ? { areaName: address.area } : {}),
     ...(address.pincode ? { pincode: address.pincode } : {}),
+    ...validCoordinates(address.latitude, address.longitude),
+    ...validAccuracy(address.accuracyMeters),
   });
 }
 
@@ -62,6 +67,8 @@ export function normalizeBrowsingLocation(
       : {}),
     ...(location?.areaName?.trim() ? { areaName: location.areaName.trim() } : {}),
     ...(location?.pincode?.trim() ? { pincode: location.pincode.trim() } : {}),
+    ...validCoordinates(location?.latitude, location?.longitude),
+    ...validAccuracy(location?.accuracyMeters),
   };
 }
 
@@ -103,6 +110,9 @@ export function browsingLocationQuery(
     ...(location.cityCode ? { cityCode: location.cityCode } : {}),
     ...(location.localAreaCode ? { localAreaCode: location.localAreaCode } : {}),
     ...(location.pincode ? { pincode: location.pincode } : {}),
+    ...(location.latitude !== undefined ? { latitude: location.latitude } : {}),
+    ...(location.longitude !== undefined ? { longitude: location.longitude } : {}),
+    ...(location.accuracyMeters !== undefined ? { accuracyMeters: location.accuracyMeters } : {}),
     ...(limit ? { limit } : {}),
   };
 }
@@ -118,6 +128,8 @@ export function locationMatchLabel(level: StoreLocationMatchLevel | undefined) {
   switch (level) {
     case "LOCAL_AREA":
       return "In your area";
+    case "PINCODE":
+      return "Same pincode";
     case "CITY":
       return "Same city";
     case "STATE":
@@ -127,6 +139,39 @@ export function locationMatchLabel(level: StoreLocationMatchLevel | undefined) {
     default:
       return "Marketplace";
   }
+}
+
+function validCoordinates(
+  latitude: number | string | null | undefined,
+  longitude: number | string | null | undefined,
+) {
+  const parsedLatitude = typeof latitude === "string" ? Number(latitude) : latitude;
+  const parsedLongitude = typeof longitude === "string" ? Number(longitude) : longitude;
+
+  if (
+    typeof parsedLatitude === "number" &&
+    Number.isFinite(parsedLatitude) &&
+    parsedLatitude >= -90 &&
+    parsedLatitude <= 90 &&
+    typeof parsedLongitude === "number" &&
+    Number.isFinite(parsedLongitude) &&
+    parsedLongitude >= -180 &&
+    parsedLongitude <= 180
+  ) {
+    return {
+      latitude: parsedLatitude,
+      longitude: parsedLongitude,
+    };
+  }
+
+  return {};
+}
+
+function validAccuracy(value: number | string | null | undefined) {
+  const parsed = typeof value === "string" ? Number(value) : value;
+  return typeof parsed === "number" && Number.isFinite(parsed) && parsed >= 0
+    ? { accuracyMeters: parsed }
+    : {};
 }
 
 export function sellerLocationLabel(address?: SellerAddress | PublicStoreAddress | null) {

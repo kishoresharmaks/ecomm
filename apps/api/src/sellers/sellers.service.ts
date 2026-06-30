@@ -99,6 +99,9 @@ const sellerProfileInclude = {
   profile: true,
   payoutProfile: true,
   addresses: true,
+  serviceAreas: {
+    orderBy: [{ createdAt: "asc" as const }, { id: "asc" as const }],
+  },
   courierProviderSettings: {
     orderBy: { providerCode: "asc" },
   },
@@ -329,6 +332,9 @@ export class SellersService {
       include: {
         profile: true,
         addresses: true,
+        serviceAreas: {
+          orderBy: [{ createdAt: "asc" as const }, { id: "asc" as const }],
+        },
         documents: true,
         user: true,
         subscriptionPlan: true,
@@ -721,6 +727,7 @@ export class SellersService {
     }
 
     const courierSettings = this.normalizeCourierProviderSettings(dto.courierSettings);
+    const serviceAreas = this.normalizeSellerServiceAreas(dto.serviceAreas);
     if (dto.courierSettings !== undefined && courierSettings.length) {
       const configuredProviders = await this.prisma.client.courierProviderSetting.findMany({
         where: { providerCode: { in: courierSettings.map((setting) => setting.providerCode) } },
@@ -859,6 +866,18 @@ export class SellersService {
                 updatedByUserId: actor.id,
               },
             },
+          });
+        }
+      }
+
+      if (dto.serviceAreas !== undefined) {
+        await tx.sellerServiceArea.deleteMany({ where: { sellerId: existing.id } });
+        if (serviceAreas.length) {
+          await tx.sellerServiceArea.createMany({
+            data: serviceAreas.map((area) => ({
+              ...area,
+              sellerId: existing.id,
+            })),
           });
         }
       }
@@ -1254,6 +1273,21 @@ export class SellersService {
         cityCode: address.cityCode,
         localAreaCode: address.localAreaCode,
       })),
+      serviceAreas: seller.serviceAreas.map((area) => ({
+        id: area.id,
+        label: area.label,
+        countryCode: area.countryCode,
+        stateCode: area.stateCode,
+        cityCode: area.cityCode,
+        localAreaCode: area.localAreaCode,
+        pincode: area.pincode,
+        latitude: area.latitude?.toString() ?? null,
+        longitude: area.longitude?.toString() ?? null,
+        radiusKm: area.radiusKm,
+        isActive: area.isActive,
+        createdAt: area.createdAt,
+        updatedAt: area.updatedAt,
+      })),
       courierProviderSettings: seller.courierProviderSettings.map((setting) => ({
         providerCode: setting.providerCode,
         pickupLocationName: setting.pickupLocationName,
@@ -1523,5 +1557,55 @@ export class SellersService {
         isActive: setting.isActive ?? true,
       };
     });
+  }
+
+  private normalizeSellerServiceAreas(areas: UpdateSellerProfileDto["serviceAreas"]) {
+    const seen = new Set<string>();
+
+    return (areas ?? [])
+      .map((area, index) => {
+        const normalized = {
+          label: this.emptyToNull(area.label) ?? `Service area ${index + 1}`,
+          countryCode: this.emptyToNull(area.countryCode)?.toUpperCase() ?? null,
+          stateCode: this.emptyToNull(area.stateCode)?.toUpperCase() ?? null,
+          cityCode: this.emptyToNull(area.cityCode)?.toUpperCase() ?? null,
+          localAreaCode: this.emptyToNull(area.localAreaCode)?.toUpperCase() ?? null,
+          pincode: this.emptyToNull(area.pincode) ?? null,
+          latitude: area.latitude ?? null,
+          longitude: area.longitude ?? null,
+          radiusKm: area.radiusKm ?? null,
+          isActive: area.isActive ?? true,
+        };
+
+        if (
+          !normalized.countryCode &&
+          !normalized.stateCode &&
+          !normalized.cityCode &&
+          !normalized.localAreaCode &&
+          !normalized.pincode &&
+          normalized.latitude === null &&
+          normalized.longitude === null
+        ) {
+          return null;
+        }
+
+        const dedupeKey = [
+          normalized.countryCode,
+          normalized.stateCode,
+          normalized.cityCode,
+          normalized.localAreaCode,
+          normalized.pincode,
+          normalized.latitude,
+          normalized.longitude,
+          normalized.radiusKm,
+        ].join("|");
+        if (seen.has(dedupeKey)) {
+          return null;
+        }
+        seen.add(dedupeKey);
+
+        return normalized;
+      })
+      .filter((area): area is NonNullable<typeof area> => Boolean(area));
   }
 }

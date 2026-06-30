@@ -12,6 +12,7 @@ type StorefrontImageProps = {
   sizes: string;
   className?: string;
   priority?: boolean;
+  title?: string;
   fallbackLabel?: string;
   showFallbackLabel?: boolean;
   fallbackImageSrc?: string;
@@ -26,6 +27,7 @@ export function StorefrontImage({
   sizes,
   className,
   priority = false,
+  title,
   fallbackLabel,
   showFallbackLabel = true,
   fallbackImageSrc = brandFallbackImageSrc,
@@ -33,6 +35,9 @@ export function StorefrontImage({
 }: StorefrontImageProps) {
   const [failed, setFailed] = useState(false);
   const resolvedSrc = resolveImageSource(src);
+  const imageTitle = title ?? (alt || undefined);
+  const fallbackAlt = fallbackLabel ? `${fallbackLabel} image` : alt;
+  const fallbackTitle = title ?? (fallbackAlt || undefined);
 
   useEffect(() => {
     setFailed(false);
@@ -43,6 +48,7 @@ export function StorefrontImage({
       <img
         src={resolvedSrc}
         alt={alt}
+        title={imageTitle}
         loading={priority ? "eager" : "lazy"}
         decoding="async"
         referrerPolicy="no-referrer"
@@ -54,15 +60,19 @@ export function StorefrontImage({
 
   if (resolvedSrc && !failed && isAllowedImageSource(resolvedSrc)) {
     return (
-      <Image
-        src={resolvedSrc}
-        alt={alt}
-        fill
-        priority={priority}
-        sizes={sizes}
-        className={cn("object-cover", className)}
-        onError={() => setFailed(true)}
-      />
+      <span className="relative block h-full w-full">
+        <Image
+          src={resolvedSrc}
+          alt={alt}
+          title={imageTitle}
+          fill
+          preload={priority}
+          loading={priority ? "eager" : undefined}
+          sizes={sizes}
+          className={cn("object-cover", className)}
+          onError={() => setFailed(true)}
+        />
+      </span>
     );
   }
 
@@ -71,6 +81,7 @@ export function StorefrontImage({
       <img
         src={resolvedSrc}
         alt={alt}
+        title={imageTitle}
         loading={priority ? "eager" : "lazy"}
         decoding="async"
         referrerPolicy="no-referrer"
@@ -84,7 +95,8 @@ export function StorefrontImage({
     <div className={cn("relative flex h-full w-full flex-col items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_50%_30%,#FFFFFF_0%,#FFF4EF_46%,#FFE5DB_100%)] p-4 text-center", className)}>
       <img
         src={fallbackImageSrc}
-        alt=""
+        alt={fallbackAlt}
+        title={fallbackTitle}
         loading={priority ? "eager" : "lazy"}
         decoding="async"
         className="h-full max-h-[78%] w-full max-w-[78%] object-contain drop-shadow-[0_12px_24px_rgba(237,53,0,0.16)]"

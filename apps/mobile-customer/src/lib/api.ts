@@ -1,4 +1,4 @@
-const DEFAULT_API_URL = "http://192.168.1.2:4000/api";
+const DEFAULT_API_URL = "https://api.1handindia.com/api";
 const REQUEST_TIMEOUT_MS = 12000;
 const CREATE_REQUEST_TIMEOUT_MS = 30000;
 
@@ -32,7 +32,16 @@ export class MobileApiError extends Error {
 }
 
 export function apiBaseUrl() {
-  return (process.env.EXPO_PUBLIC_API_URL?.trim() || DEFAULT_API_URL).replace(/\/$/, "");
+  const configuredUrl = process.env.EXPO_PUBLIC_API_URL?.trim();
+  if (configuredUrl) {
+    return configuredUrl.replace(/\/$/, "");
+  }
+
+  if (process.env.NODE_ENV === "development") {
+    return DEFAULT_API_URL;
+  }
+
+  throw new Error("EXPO_PUBLIC_API_URL is required for customer mobile builds.");
 }
 
 export async function getJson<T>(options: ApiRequestOptions): Promise<T> {
@@ -41,6 +50,10 @@ export async function getJson<T>(options: ApiRequestOptions): Promise<T> {
 
 export async function postJson<T>(options: ApiRequestOptions & { body?: unknown }): Promise<T> {
   return requestJson<T>("POST", { timeoutMs: CREATE_REQUEST_TIMEOUT_MS, ...options });
+}
+
+export async function putJson<T>(options: ApiRequestOptions & { body?: unknown }): Promise<T> {
+  return requestJson<T>("PUT", { timeoutMs: CREATE_REQUEST_TIMEOUT_MS, ...options });
 }
 
 export async function patchJson<T>(options: ApiRequestOptions & { body?: unknown }): Promise<T> {
@@ -56,7 +69,7 @@ export async function deleteNoContent(options: ApiRequestOptions): Promise<void>
 }
 
 async function requestJson<T>(
-  method: "GET" | "POST" | "PATCH",
+  method: "GET" | "POST" | "PUT" | "PATCH",
   options: ApiRequestOptions & { body?: unknown },
 ): Promise<T> {
   const result = await requestRaw(method, options, { retryUnauthorized: true });
@@ -68,7 +81,7 @@ async function requestJson<T>(
 }
 
 async function requestRaw(
-  method: "GET" | "POST" | "PATCH" | "DELETE",
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
   options: ApiRequestOptions & { body?: unknown },
   settings: { retryUnauthorized: boolean },
 ) {
@@ -90,7 +103,7 @@ async function requestRaw(
 }
 
 async function send(
-  method: "GET" | "POST" | "PATCH" | "DELETE",
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
   options: ApiRequestOptions & { body?: unknown },
   tokenOptions: BearerTokenOptions,
 ) {
@@ -110,10 +123,10 @@ async function send(
       method,
       headers: {
         Accept: "application/json",
-        ...(method === "POST" || method === "PATCH" ? { "Content-Type": "application/json" } : {}),
+        ...(method === "POST" || method === "PUT" || method === "PATCH" ? { "Content-Type": "application/json" } : {}),
         ...(bearerToken ? { Authorization: `Bearer ${bearerToken}` } : {}),
       },
-      ...(method === "POST" || method === "PATCH" ? { body: JSON.stringify(options.body ?? {}) } : {}),
+      ...(method === "POST" || method === "PUT" || method === "PATCH" ? { body: JSON.stringify(options.body ?? {}) } : {}),
       signal: controller.signal,
     });
 
@@ -138,15 +151,23 @@ async function send(
 }
 
 async function bearerTokenForRequest(options: ApiRequestOptions, tokenOptions: BearerTokenOptions) {
-  if (options.auth?.getBearerToken) {
+  return resolveMobileBearerToken(options.auth, tokenOptions) ?? options.token ?? null;
+}
+
+export async function resolveMobileBearerToken(auth?: MobileAuthHeaders, tokenOptions: BearerTokenOptions = {}) {
+  if (!auth) {
+    return null;
+  }
+
+  if (auth.getBearerToken) {
     try {
-      return (await options.auth.getBearerToken(tokenOptions)) ?? options.auth.bearerToken ?? options.token ?? null;
+      return (await auth.getBearerToken(tokenOptions)) ?? auth.bearerToken ?? null;
     } catch {
-      return options.auth.bearerToken ?? options.token ?? null;
+      return auth.bearerToken ?? null;
     }
   }
 
-  return options.auth?.bearerToken ?? options.token ?? null;
+  return auth.bearerToken ?? null;
 }
 
 function buildApiUrl(path: string, searchParams?: ApiRequestOptions["searchParams"]) {

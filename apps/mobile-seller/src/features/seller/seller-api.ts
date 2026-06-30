@@ -38,6 +38,7 @@ export type SellerProfile = {
     isVerified?: boolean;
   } | null;
   addresses?: SellerAddress[];
+  serviceAreas?: SellerServiceArea[];
   subscriptionPlan?: SellerSubscriptionPlan | null;
 };
 
@@ -53,6 +54,22 @@ export type SellerAddress = {
   stateCode?: string;
   cityCode?: string;
   localAreaCode?: string;
+};
+
+export type SellerServiceArea = {
+  id?: string;
+  label?: string | null;
+  countryCode?: string | null;
+  stateCode?: string | null;
+  cityCode?: string | null;
+  localAreaCode?: string | null;
+  pincode?: string | null;
+  latitude?: number | string | null;
+  longitude?: number | string | null;
+  radiusKm?: number | null;
+  isActive?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export type SellerDocumentType =
@@ -106,6 +123,7 @@ export type SellerProfilePayload = {
     upiId?: string;
   };
   address?: SellerAddress;
+  serviceAreas?: SellerServiceArea[];
   documents?: SellerVerificationDocumentPayload[];
 };
 

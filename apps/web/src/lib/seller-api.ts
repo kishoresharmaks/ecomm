@@ -33,6 +33,22 @@ type SellerPayoutProfileSummary = {
   isVerified?: boolean;
 };
 
+export type SellerServiceArea = {
+  id?: string;
+  label?: string | null;
+  countryCode?: string | null;
+  stateCode?: string | null;
+  cityCode?: string | null;
+  localAreaCode?: string | null;
+  pincode?: string | null;
+  latitude?: number | string | null;
+  longitude?: number | string | null;
+  radiusKm?: number | null;
+  isActive?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
 export type SellerProfile = Omit<SellerSummary, "profile"> & {
   id: string;
   primaryCapability?: SellerCapability;
@@ -54,6 +70,7 @@ export type SellerProfile = Omit<SellerSummary, "profile"> & {
     status?: string;
   } | null;
   addresses: SellerProfileAddress[];
+  serviceAreas?: SellerServiceArea[];
   courierProviderSettings?: Array<{
     providerCode: string;
     pickupLocationName?: string | null;
@@ -259,6 +276,7 @@ export type SellerProfilePayload = {
     pickupLocationName?: string | undefined;
     isActive?: boolean | undefined;
   }>;
+  serviceAreas?: SellerServiceArea[];
   documents?: Array<{
     documentType: SellerDocumentType;
     fileUrl: string;

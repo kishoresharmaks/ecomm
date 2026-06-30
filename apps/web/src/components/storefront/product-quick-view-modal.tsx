@@ -215,13 +215,6 @@ export function ProductQuickViewModal({ product, open, onClose }: ProductQuickVi
                   ) : null}
                 </div>
 
-                {variant ? (
-                  <div className="mt-5 rounded-lg border border-[#E8EDF2] bg-[#FCFDFE] px-4 py-3 text-sm font-semibold text-[#667085]">
-                    SKU <span className="font-black text-[#1F2933]">{variant.sku}</span>
-                    {variant.variantName ? <span> / {variant.variantName}</span> : null}
-                  </div>
-                ) : null}
-
                 {notice ? <StorefrontNotice className="mt-5">{notice}</StorefrontNotice> : null}
 
                 <div className="mt-6">
@@ -266,22 +259,22 @@ export function ProductQuickViewModal({ product, open, onClose }: ProductQuickVi
                   )}
                 </div>
 
-                <div className="mt-4 flex flex-wrap items-center gap-3">
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
                   <Button
                     type="button"
                     variant="outline"
-                    size="sm"
+                    size="lg"
                     disabled={isWishlistPending}
                     onClick={() => void handleWishlistToggle()}
                     className={cn(
-                      "rounded-full",
+                      "h-12 rounded-md border-[#D8E2EA] text-[#163B5C] hover:border-[#ED3500] hover:bg-[#FFF0EC] hover:text-[#ED3500]",
                       isWishlisted && "border-[#ED3500] bg-[#FFF0EC] text-[#9F2600] hover:bg-[#FFE5DB]",
                     )}
                   >
-                    <Heart className={cn("h-4 w-4", isWishlisted && "fill-current")} aria-hidden="true" />
-                    {isWishlisted ? "Saved" : "Add wishlist"}
+                    <Heart className={cn("h-5 w-5", isWishlisted && "fill-current")} aria-hidden="true" />
+                    {isWishlisted ? "Saved to wishlist" : "Add to wishlist"}
                   </Button>
-                  <Button asChild variant="ghost" size="sm" className="rounded-full text-[#163B5C]">
+                  <Button asChild variant="outline" size="lg" className="h-12 rounded-md border-[#D8E2EA] text-[#163B5C] hover:border-[#163B5C] hover:bg-[#F4F7FA]">
                     <Link href={detailHref}>
                       Full details <ArrowRight className="h-4 w-4" aria-hidden="true" />
                     </Link>

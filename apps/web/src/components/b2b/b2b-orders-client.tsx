@@ -326,7 +326,7 @@ export function B2BOrderDetailClient({ orderNumber }: { orderNumber: string }) {
       {orderQuery.error ? <B2BErrorPanel error={orderQuery.error} onRetry={() => void orderQuery.refetch()} /> : null}
       {notice ? (
         <div className="mb-5">
-          <StatusBadge tone={poMutation.isError ? "danger" : "success"}>{notice}</StatusBadge>
+          <StatusBadge tone={poMutation.isError || paymentMutation.isError ? "danger" : "success"}>{notice}</StatusBadge>
         </div>
       ) : null}
 

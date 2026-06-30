@@ -62,7 +62,7 @@ describe("seo helpers", () => {
     expect(metadata.openGraph).toMatchObject({
       images: [
         {
-          url: "http://192.168.1.2:4000/api/storage/public-image?key=indihub%2Fcms%2Fhomepage-hero.jpg",
+          url: "https://api.1handindia.com/api/storage/public-image?key=indihub%2Fcms%2Fhomepage-hero.jpg",
           alt: "Local marketplace homepage"
         }
       ]
@@ -70,7 +70,7 @@ describe("seo helpers", () => {
     expect(metadata.twitter).toMatchObject({
       card: "summary_large_image",
       images: [
-        "http://192.168.1.2:4000/api/storage/public-image?key=indihub%2Fcms%2Fhomepage-hero.jpg"
+        "https://api.1handindia.com/api/storage/public-image?key=indihub%2Fcms%2Fhomepage-hero.jpg"
       ]
     });
   });
@@ -85,7 +85,7 @@ describe("seo helpers", () => {
       "@type": "BreadcrumbList",
       itemListElement: [
         expect.objectContaining({ position: 1, name: "Home" }),
-        expect.objectContaining({ position: 2, item: "http://192.168.1.2:3000/products/headset" })
+        expect.objectContaining({ position: 2, item: "https://1handindia.com/products/headset" })
       ]
     });
   });

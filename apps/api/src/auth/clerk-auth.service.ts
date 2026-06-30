@@ -35,7 +35,7 @@ type ClerkErrorDetails = {
   status?: number;
 };
 
-const DEFAULT_DEV_WEB_ORIGIN = "http://192.168.1.2:3000";
+const DEFAULT_WEB_ORIGIN = "https://1handindia.com";
 
 @Injectable()
 export class ClerkAuthService {
@@ -228,7 +228,7 @@ export class ClerkAuthService {
     }
 
     if (text.includes("authorized party") || text.includes("authorized-parties") || text.includes("azp")) {
-      const expectedOrigin = this.clerkAuthorizedParties()[0] ?? DEFAULT_DEV_WEB_ORIGIN;
+      const expectedOrigin = this.clerkAuthorizedParties()[0] ?? DEFAULT_WEB_ORIGIN;
       return `Clerk session was issued for a different web origin. Open 1HandIndia at ${expectedOrigin}, then sign out and sign in again.`;
     }
 
@@ -341,7 +341,7 @@ export class ClerkAuthService {
     const origins = configured.map((origin) => this.normalizeOrigin(origin)).filter((origin): origin is string => Boolean(origin));
 
     if (!origins.length && !this.isProduction()) {
-      origins.push(DEFAULT_DEV_WEB_ORIGIN);
+      origins.push(DEFAULT_WEB_ORIGIN);
     }
 
     return [...new Set(origins)];

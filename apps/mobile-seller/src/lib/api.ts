@@ -1,4 +1,4 @@
-const DEFAULT_API_URL = "http://localhost:4000/api";
+const DEFAULT_API_URL = "https://api.1handindia.com/api";
 const REQUEST_TIMEOUT_MS = 12000;
 
 export type BearerTokenOptions = {

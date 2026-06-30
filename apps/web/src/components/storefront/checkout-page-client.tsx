@@ -93,7 +93,6 @@ type DirectCheckoutSnapshot = {
   imageUrl: string | null;
   sellerName: string;
   variantName?: string | null;
-  sku?: string | null;
   pricePaise: number;
   currency: string;
 };

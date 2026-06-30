@@ -322,7 +322,7 @@ function WishlistRow({
             {product.name}
           </Link>
           <p className="mt-1 text-sm font-semibold text-[#667085]">
-            {variant?.variantName ?? variant?.sku ?? "Variant unavailable"}
+            {variant?.variantName ?? "Variant unavailable"}
           </p>
           <p className="mt-1 text-xs font-semibold text-[#667085]">Added to wishlist from {product.seller.storeName}</p>
         </div>

@@ -1686,7 +1686,7 @@ function SectionHeader({
     <View style={styles.sectionHeader}>
       <Text style={styles.sectionTitle}>{title}</Text>
       <Link href={actionHref} style={styles.viewAll}>
-        {actionLabel}  â†’
+        {actionLabel}  ->
       </Link>
     </View>
   );

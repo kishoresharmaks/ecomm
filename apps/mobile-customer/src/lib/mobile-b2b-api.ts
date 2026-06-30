@@ -16,6 +16,8 @@ import {
   MobileApiError,
   patchJson,
   postJson,
+  putJson,
+  resolveMobileBearerToken,
   type MobileAuthHeaders,
 } from "./api";
 import type {
@@ -78,30 +80,7 @@ export function upsertB2BProfile(
   auth: MobileAuthHeaders,
   payload: BusinessBuyerProfilePayload,
 ): Promise<BusinessBuyerProfile> {
-  return withServerRetry(() =>
-    fetch(`${apiBaseUrl()}/b2b/profile`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        ...(auth.bearerToken ? { Authorization: `Bearer ${auth.bearerToken}` } : {}),
-      },
-      body: JSON.stringify(payload),
-    }).then(async (res) => {
-      if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        let message = "Could not save business profile.";
-        try {
-          const parsed = JSON.parse(text) as { message?: unknown };
-          if (typeof parsed.message === "string") message = parsed.message;
-          else if (Array.isArray(parsed.message)) message = parsed.message.join(", ");
-        } catch {
-          // ignore parsing error
-        }
-        throw new MobileApiError(message, res.status);
-      }
-      return res.json() as Promise<BusinessBuyerProfile>;
-    }),
-  );
+  return withServerRetry(() => putJson({ path: "/b2b/profile", auth, body: payload }));
 }
 
 // ─── Addresses ────────────────────────────────────────────────────────────────
@@ -239,10 +218,10 @@ export async function uploadPOMultipart(
   const formData = new FormData();
   formData.append("file", { uri: fileUri, type: mimeType, name: fileName } as unknown as Blob);
 
-  const bearerToken = auth.bearerToken;
   const url = `${apiBaseUrl()}/b2b/orders/${encodeURIComponent(orderNumber)}/purchase-order/upload`;
 
-  const doUpload = async (): Promise<{ assetKey: string }> => {
+  const doUpload = async (tokenOptions: { skipCache?: boolean } = {}): Promise<{ assetKey: string }> => {
+    const bearerToken = await resolveMobileBearerToken(auth, tokenOptions);
     const res = await fetch(url, {
       method: "POST",
       headers: bearerToken ? { Authorization: `Bearer ${bearerToken}` } : {},
@@ -253,16 +232,31 @@ export async function uploadPOMultipart(
       let message = "Upload failed.";
       try {
         const parsed = JSON.parse(text) as { message?: unknown };
-        if (typeof parsed.message === "string") message = parsed.message;
+        if (typeof parsed.message === "string") {
+          message = parsed.message;
+        } else if (Array.isArray(parsed.message)) {
+          message = parsed.message.join(", ");
+        }
       } catch {
         // ignore parsing error
       }
-      throw new MobileApiError(message, res.status);
+      const error = new MobileApiError(message, res.status);
+      if (res.status === 401) {
+        auth.onUnauthorized?.(error);
+      }
+      throw error;
     }
     return res.json() as Promise<{ assetKey: string }>;
   };
 
-  return withServerRetry(doUpload);
+  try {
+    return await withServerRetry(() => doUpload());
+  } catch (error) {
+    if (error instanceof MobileApiError && error.status === 401 && auth.getBearerToken) {
+      return withServerRetry(() => doUpload({ skipCache: true }));
+    }
+    throw error;
+  }
 }
 
 export function submitPurchaseOrder(

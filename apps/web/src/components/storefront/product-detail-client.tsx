@@ -237,7 +237,6 @@ export function ProductDetailClient({ slug }: { slug: string }) {
           imageUrl,
           sellerName: product.seller.storeName,
           variantName: selectedVariant.variantName ?? null,
-          sku: selectedVariant.sku ?? null,
           pricePaise: selectedVariant.pricePaise,
           currency: selectedVariant.currency,
         }),
@@ -423,10 +422,11 @@ export function ProductDetailClient({ slug }: { slug: string }) {
                 <div className="mt-6">
                   <p className="text-sm font-black text-[#1F2933]">Variant</p>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    {product.variants.map((variant) => {
+                    {product.variants.map((variant, index) => {
                       const available = isPurchasableVariant(variant);
                       const variantStockStatus = getStorefrontStockStatus(variant.stockQuantity);
                       const label = variant.status !== "ACTIVE" ? "Unavailable" : variantStockStatus.label;
+                      const variantLabel = variant.variantName?.trim() || `Option ${index + 1}`;
 
                       return (
                         <button
@@ -441,7 +441,7 @@ export function ProductDetailClient({ slug }: { slug: string }) {
                               : "border-[#D8E2EA] bg-white text-[#1F2933] hover:border-[#ED3500]",
                           )}
                         >
-                          <span className="block">{variant.variantName ?? variant.sku}</span>
+                          <span className="block">{variantLabel}</span>
                           <span className="block text-xs font-semibold text-[#667085]">{label}</span>
                         </button>
                       );

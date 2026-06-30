@@ -3,7 +3,7 @@
 import { type ChangeEvent, FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import type { Route } from "next";
-import { CreditCard, ExternalLink, FileText, Loader2, Store, Truck, Upload } from "lucide-react";
+import { CreditCard, ExternalLink, FileText, Loader2, MapPinned, Store, Truck, Upload } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
 import { LocationFields } from "@/components/locations/location-fields";
@@ -19,9 +19,17 @@ import {
   syncSellerCourierPickup,
   updateSellerProfile,
   type SellerBusinessType,
+  type SellerProfile,
   type SellerProfilePayload,
+  type SellerServiceArea,
   type SellerVerificationDocument,
 } from "@/lib/seller-api";
+import {
+  SellerServiceAreaEditor,
+  createEmptySellerServiceAreaDraft,
+  createSellerServiceAreaDraftId,
+  type SellerServiceAreaDraft,
+} from "./seller-service-area-editor";
 import {
   SellerAuthNotice,
   SellerErrorPanel,
@@ -101,6 +109,7 @@ export function SellerProfileClient() {
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [bannerUrl, setBannerUrl] = useState<string | null>(null);
   const [documents, setDocuments] = useState<SellerDocumentUploadResult[]>([]);
+  const [serviceAreas, setServiceAreas] = useState<SellerServiceAreaDraft[]>([]);
 
   const profileQuery = useQuery({
     queryKey: ["seller-profile", sellerAuth.authKey],
@@ -141,6 +150,11 @@ export function SellerProfileClient() {
     if (profileQuery.data) {
       setLogoUrl(profileQuery.data.profile?.logoUrl ?? null);
       setBannerUrl(profileQuery.data.profile?.bannerUrl ?? null);
+      setServiceAreas(
+        sellerHasServiceCapability(profileQuery.data)
+          ? profileServiceAreasToDraft(profileQuery.data.serviceAreas, profileQuery.data.addresses[0])
+          : [],
+      );
       setDocuments([]);
     }
   }, [profileQuery.data]);
@@ -207,6 +221,11 @@ export function SellerProfileClient() {
             ],
           }
         : {}),
+      ...(sellerHasServiceCapability(profileQuery.data)
+        ? {
+            serviceAreas: draftServiceAreasToPayload(serviceAreas),
+          }
+        : {}),
     });
   }
 
@@ -237,6 +256,7 @@ export function SellerProfileClient() {
     (setting) => setting.providerCode === "SHIPROCKET",
   );
   const profileBusy = mutation.isPending || pickupSyncMutation.isPending;
+  const hasServiceCapability = sellerHasServiceCapability(profile);
 
   return (
     <div className="grid gap-5">
@@ -454,6 +474,52 @@ export function SellerProfileClient() {
           </div>
         </SellerPanel>
 
+        {hasServiceCapability ? (
+          <SellerPanel className="xl:col-span-2">
+            <div className="flex items-start gap-3">
+              <span className="grid h-10 w-10 place-items-center rounded-md bg-[#FFF0EC] text-[#ED3500]">
+                <MapPinned className="h-5 w-5" aria-hidden="true" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <SectionHeading
+                    title="Service coverage defaults"
+                    description="Saved areas are used as quick defaults while creating seller service listings."
+                  />
+                </div>
+                <SellerServiceAreaEditor
+                  areas={serviceAreas}
+                  disabled={profileBusy}
+                  addLabel="Add coverage location"
+                  emptyMessage="No default service coverage saved. Add the areas where your service team can visit customers."
+                  actionPrefix={
+                    address ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          setServiceAreas((current) => [
+                            ...current,
+                            draftServiceAreaFromAddress(address),
+                          ])
+                        }
+                        disabled={profileBusy}
+                        className="seller-service-area-action-button"
+                      >
+                        <MapPinned className="h-4 w-4" aria-hidden="true" />
+                        Use store address
+                      </Button>
+                    ) : null
+                  }
+                  createArea={emptyDraftServiceArea}
+                  onChange={setServiceAreas}
+                />
+              </div>
+            </div>
+          </SellerPanel>
+        ) : null}
+
         <SellerPanel>
           <SectionHeading
             title="Store address"
@@ -664,6 +730,135 @@ function sellerPayoutProfilePayload(form: FormData): SellerProfilePayload["payou
   };
 
   return Object.values(payload).some(Boolean) ? payload : undefined;
+}
+
+function sellerHasServiceCapability(profile?: SellerProfile | null) {
+  return Boolean(
+    profile?.primaryCapability === "SERVICE" ||
+      profile?.enabledCapabilities?.includes("SERVICE"),
+  );
+}
+
+function profileServiceAreasToDraft(
+  areas: SellerServiceArea[] | undefined,
+  address: SellerProfile["addresses"][number] | undefined,
+) {
+  const savedAreas = (areas ?? []).map((area) => draftServiceAreaFromProfile(area));
+  if (savedAreas.length) {
+    return savedAreas;
+  }
+
+  return address ? [draftServiceAreaFromAddress(address)] : [];
+}
+
+function draftServiceAreaFromProfile(area: SellerServiceArea): SellerServiceAreaDraft {
+  return {
+    id: area.id ?? draftAreaId(),
+    label: area.label ?? "",
+    countryCode: area.countryCode ?? "",
+    stateCode: area.stateCode ?? "",
+    cityCode: area.cityCode ?? "",
+    localAreaCode: area.localAreaCode ?? "",
+    pincode: area.pincode ?? "",
+    latitude: stringifyOptional(area.latitude),
+    longitude: stringifyOptional(area.longitude),
+    radiusKm: stringifyOptional(area.radiusKm),
+    isActive: area.isActive ?? true,
+  };
+}
+
+function draftServiceAreaFromAddress(address: SellerProfile["addresses"][number]): SellerServiceAreaDraft {
+  return {
+    id: draftAreaId(),
+    label: [address.area, address.city].filter(Boolean).join(" / ") || "Primary service area",
+    countryCode: address.countryCode ?? "IN",
+    stateCode: address.stateCode ?? "",
+    cityCode: address.cityCode ?? "",
+    localAreaCode: address.localAreaCode ?? "",
+    pincode: address.pincode ?? "",
+    latitude: stringifyOptional(address.latitude),
+    longitude: stringifyOptional(address.longitude),
+    radiusKm: "10",
+    isActive: true,
+  };
+}
+
+function emptyDraftServiceArea(): SellerServiceAreaDraft {
+  return createEmptySellerServiceAreaDraft({
+    label: "",
+    countryCode: "IN",
+    stateCode: "",
+    cityCode: "",
+    localAreaCode: "",
+    pincode: "",
+    latitude: "",
+    longitude: "",
+    radiusKm: "10",
+    isActive: true,
+  });
+}
+
+function draftServiceAreasToPayload(areas: SellerServiceAreaDraft[]): NonNullable<SellerProfilePayload["serviceAreas"]> {
+  return areas
+    .map((area) => {
+      const latitude = optionalNumber(area.latitude);
+      const longitude = optionalNumber(area.longitude);
+      const radiusKm = optionalNumber(area.radiusKm);
+      const payload: NonNullable<SellerProfilePayload["serviceAreas"]>[number] = {
+        isActive: area.isActive,
+      };
+      const label = optionalString(area.label);
+      const countryCode = optionalString(area.countryCode);
+      const stateCode = optionalString(area.stateCode);
+      const cityCode = optionalString(area.cityCode);
+      const localAreaCode = optionalString(area.localAreaCode);
+      const pincode = optionalString(area.pincode);
+      if (label) payload.label = label;
+      if (countryCode) payload.countryCode = countryCode;
+      if (stateCode) payload.stateCode = stateCode;
+      if (cityCode) payload.cityCode = cityCode;
+      if (localAreaCode) payload.localAreaCode = localAreaCode;
+      if (pincode) payload.pincode = pincode;
+      if (latitude !== undefined) payload.latitude = latitude;
+      if (longitude !== undefined) payload.longitude = longitude;
+      if (radiusKm !== undefined) payload.radiusKm = radiusKm;
+
+      const hasCoverage = Boolean(
+        payload.countryCode ||
+          payload.stateCode ||
+          payload.cityCode ||
+          payload.localAreaCode ||
+          payload.pincode ||
+          payload.latitude !== undefined ||
+          payload.longitude !== undefined,
+      );
+
+      return hasCoverage ? payload : null;
+    })
+    .filter((area): area is NonNullable<typeof area> => Boolean(area));
+}
+
+function optionalString(value: string) {
+  const trimmed = value.trim();
+  return trimmed || undefined;
+}
+
+function optionalNumber(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function stringifyOptional(value: unknown) {
+  return value === null || value === undefined ? "" : String(value);
+}
+
+function draftAreaId() {
+  return createSellerServiceAreaDraftId();
 }
 
 function nullableFormValue(form: FormData, name: string) {

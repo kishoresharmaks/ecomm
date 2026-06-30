@@ -35,6 +35,23 @@ describe("SellersService profile readback", () => {
       profile: null,
       payoutProfile: null,
       addresses: [],
+      serviceAreas: [
+        {
+          id: "area_1",
+          label: "Salem service radius",
+          countryCode: "IN",
+          stateCode: "IN-TN",
+          cityCode: "IN-TN-SALEM",
+          localAreaCode: null,
+          pincode: "636001",
+          latitude: null,
+          longitude: null,
+          radiusKm: 12,
+          isActive: true,
+          createdAt: new Date("2026-01-01T00:00:00.000Z"),
+          updatedAt: new Date("2026-01-02T00:00:00.000Z"),
+        },
+      ],
       courierProviderSettings: [],
       documents: [],
       subscriptionPlan: null,
@@ -66,6 +83,16 @@ describe("SellersService profile readback", () => {
     expect(profile.enabledCapabilities).toEqual([
       SellerCapability.RETAIL,
       SellerCapability.SERVICE,
+    ]);
+    expect(profile.serviceAreas).toEqual([
+      expect.objectContaining({
+        label: "Salem service radius",
+        countryCode: "IN",
+        stateCode: "IN-TN",
+        cityCode: "IN-TN-SALEM",
+        pincode: "636001",
+        radiusKm: 12,
+      }),
     ]);
   });
 });

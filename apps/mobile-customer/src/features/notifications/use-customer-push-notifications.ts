@@ -4,6 +4,7 @@ import * as Notifications from "expo-notifications";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Platform } from "react-native";
 import type { MobileAuthHeaders } from "../../lib/api";
+import { captureMobileException } from "../../lib/mobile-telemetry";
 import { openCustomerNotification } from "./customer-notification-routing";
 import { registerCustomerPushToken, revokeCustomerPushToken } from "./customer-notifications-api";
 
@@ -52,26 +53,21 @@ export function useCustomerPushNotifications(auth: { authHeaders: MobileAuthHead
   }, []);
 
   const register = useCallback(async () => {
-    console.log("[Push Notifications] Starting registration...");
     if (!auth.enabled) {
-      console.log("[Push Notifications] Auth not enabled, skipping registration");
       void revokeRegisteredToken();
       updateState("checking", setState);
       return;
     }
     if (!canUseNativePush) {
-      console.log("[Push Notifications] Native push not available (Expo Go)");
       updateState("expo-go-unsupported", setState);
       return;
     }
     if (!Device.isDevice) {
-      console.log("[Push Notifications] Not a physical device");
       updateState("device-unsupported", setState);
       return;
     }
 
     try {
-      console.log("[Push Notifications] Setting up notification channel...");
       if (Platform.OS === "android") {
         await Notifications.setNotificationChannelAsync("customer-alerts", {
           importance: Notifications.AndroidImportance.HIGH,
@@ -79,30 +75,20 @@ export function useCustomerPushNotifications(auth: { authHeaders: MobileAuthHead
         });
       }
 
-      console.log("[Push Notifications] Checking permissions...");
       const existingPermission = await Notifications.getPermissionsAsync();
-      console.log("[Push Notifications] Existing permission status:", existingPermission.status);
-      
       const finalPermission =
         existingPermission.status === "granted"
           ? existingPermission
           : await Notifications.requestPermissionsAsync();
-      
-      console.log("[Push Notifications] Final permission status:", finalPermission.status);
 
       if (finalPermission.status !== "granted") {
-        console.log("[Push Notifications] Permission denied, revoking any existing token");
         await revokeRegisteredToken();
         updateState("permission-denied", setState);
         return;
       }
 
       const projectId = Constants.easConfig?.projectId ?? Constants.expoConfig?.extra?.eas?.projectId;
-      console.log("[Push Notifications] Getting Expo push token with projectId:", projectId);
-      
       const pushToken = (await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined)).data;
-      console.log("[Push Notifications] Got push token:", pushToken.substring(0, 20) + "...");
-      
       const payload: {
         appVersion?: string;
         deviceId?: string;
@@ -119,22 +105,17 @@ export function useCustomerPushNotifications(auth: { authHeaders: MobileAuthHead
       if (deviceId) {
         payload.deviceId = deviceId;
       }
-      console.log("[Push Notifications] Registering token with backend:", { platform: payload.platform, deviceId: payload.deviceId, appVersion: payload.appVersion });
       
       const previousToken = registeredTokenRef.current;
       if (previousToken && previousToken.token !== pushToken) {
-        console.log("[Push Notifications] Revoking previous token");
         await revokeRegisteredToken(previousToken);
       }
       
-      const result = await registerCustomerPushToken(auth.authHeaders, payload);
-      console.log("[Push Notifications] Backend registration result:", result);
-      
+      await registerCustomerPushToken(auth.authHeaders, payload);
       registeredTokenRef.current = { authHeaders: auth.authHeaders, token: pushToken };
       updateState("registered", setState);
-      console.log("[Push Notifications] Registration successful");
     } catch (error) {
-      console.error("[Push Notifications] Registration failed:", error);
+      captureMobileException(error, "customer-push-registration", { pushState: latestState });
       updateState("unavailable", setState);
     }
   }, [auth.authHeaders, auth.enabled, revokeRegisteredToken]);

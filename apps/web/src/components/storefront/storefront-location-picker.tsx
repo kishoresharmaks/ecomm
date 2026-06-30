@@ -116,7 +116,7 @@ export function StorefrontLocationPicker({
 
   const hasManualOverride = source === "manual";
   const triggerToneClass = mobile
-    ? "w-full justify-between rounded-[22px] border border-[#D8E2EA] bg-white px-4 py-3 text-left shadow-sm"
+    ? "h-11 w-full justify-between rounded-2xl border border-[#D8E2EA] bg-white px-3 text-left text-[13px] shadow-sm"
     : utility
       ? "max-w-full justify-start rounded-none border border-transparent bg-transparent px-0 py-0 text-left shadow-none hover:border-transparent"
       : compact
@@ -179,10 +179,10 @@ export function StorefrontLocationPicker({
           className={cn(
             "grid place-items-center rounded-full",
             utility ? "h-5 w-5 bg-transparent text-[#667085]" : "bg-[#FFF0EC] text-[#ED3500]",
-            utility ? "" : compact ? "h-8 w-8" : "h-9 w-9",
+            utility ? "" : mobile ? "h-7 w-7" : compact ? "h-8 w-8" : "h-9 w-9",
           )}
         >
-          <MapPin className={cn("h-4 w-4", utility && "h-3.5 w-3.5")} aria-hidden="true" />
+          <MapPin className={cn("h-4 w-4", (utility || mobile) && "h-3.5 w-3.5")} aria-hidden="true" />
         </span>
         <span className={cn("min-w-0", utility ? "inline-flex items-center gap-1" : "flex-1")}>
           {utility ? (
@@ -372,7 +372,8 @@ const LocationDropdownPanel = forwardRef<
       id={id}
       style={style}
       className={cn(
-        "flex max-h-[78svh] flex-col overflow-hidden rounded-2xl border border-[#D8E2EA] bg-white shadow-2xl",
+        "flex flex-col overflow-hidden rounded-2xl border border-[#D8E2EA] bg-white shadow-2xl",
+        mobile ? "max-h-[min(64svh,430px)]" : "max-h-[78svh]",
         floating
           ? "fixed z-[140]"
           : "absolute right-0 z-50 mt-3 w-full",
@@ -385,17 +386,24 @@ const LocationDropdownPanel = forwardRef<
               : "",
       )}
     >
-          <div className="border-b border-[#E5E7EB] px-5 py-4">
-            <p className="text-xs font-black uppercase tracking-[0.18em] text-[#ED3500]">
+          <div className={cn("border-b border-[#E5E7EB]", mobile ? "px-4 py-3" : "px-5 py-4")}>
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-[#ED3500]">
               Store location
             </p>
-            <h3 className="mt-2 text-xl font-black text-[#163B5C]">Choose browsing location</h3>
-            <p className="mt-2 text-sm font-semibold leading-6 text-[#667085]">
+            <h3 className={cn("mt-1.5 font-black text-[#163B5C]", mobile ? "text-lg" : "text-xl")}>
+              Choose browsing location
+            </h3>
+            <p className={cn("mt-1.5 font-semibold text-[#667085]", mobile ? "text-xs leading-5" : "text-sm leading-6")}>
               Start with a country, then refine by state, city, local area, or pincode.
             </p>
           </div>
 
-          <div className="min-h-0 space-y-4 overflow-y-auto overscroll-contain px-5 py-5">
+          <div
+            className={cn(
+              "min-h-0 overflow-y-auto overscroll-contain",
+              mobile ? "space-y-3 px-4 py-4" : "space-y-4 px-5 py-5",
+            )}
+          >
             {prefillLocation ? (
               <button
                 type="button"
@@ -469,7 +477,7 @@ const LocationDropdownPanel = forwardRef<
             </div>
 
             {countryCode ? (
-              <div className="space-y-3 rounded-2xl border border-[#E5E7EB] bg-[#FCFDFE] p-4">
+              <div className={cn("space-y-3 rounded-2xl border border-[#E5E7EB] bg-[#FCFDFE]", mobile ? "p-3" : "p-4")}>
                 <button
                   type="button"
                   onClick={() => setShowRefinements((current) => !current)}
@@ -479,7 +487,7 @@ const LocationDropdownPanel = forwardRef<
                     <span className="block text-sm font-black text-[#163B5C]">
                       Add area or pincode
                     </span>
-                    <span className="mt-1 block text-sm font-semibold text-[#667085]">
+                    <span className={cn("mt-1 block font-semibold text-[#667085]", mobile ? "text-xs leading-5" : "text-sm")}>
                       Optional. Use this only when you want tighter local store matching.
                     </span>
                   </span>
@@ -565,7 +573,7 @@ const LocationDropdownPanel = forwardRef<
             ) : null}
           </div>
 
-          <div className="border-t border-[#E5E7EB] bg-white px-5 py-4">
+          <div className={cn("border-t border-[#E5E7EB] bg-white", mobile ? "px-4 py-3" : "px-5 py-4")}>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <button
                 type="button"

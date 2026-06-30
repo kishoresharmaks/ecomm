@@ -1149,7 +1149,7 @@ export class OrdersService {
       items: order.items.map((item) => ({
         id: item.id,
         productNameSnapshot: item.productNameSnapshot,
-        variantSnapshot: item.variantSnapshot,
+        variantSnapshot: this.customerSafeVariantSnapshot(item.variantSnapshot),
         quantity: item.quantity,
         activeQuantity: item.activeQuantity,
         cancelledQuantity: item.cancelledQuantity,
@@ -4101,7 +4101,7 @@ export class OrdersService {
       id: item.id,
       sellerId: item.sellerId,
       productNameSnapshot: item.productNameSnapshot,
-      variantSnapshot: item.variantSnapshot,
+      variantSnapshot: this.customerSafeVariantSnapshot(item.variantSnapshot),
       quantity: item.quantity,
       activeQuantity: item.activeQuantity,
       cancelledQuantity: item.cancelledQuantity,
@@ -4571,6 +4571,19 @@ export class OrdersService {
         },
       },
     };
+  }
+
+  private customerSafeVariantSnapshot(value: Prisma.JsonValue | null) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return null;
+    }
+
+    const snapshot = value as Record<string, unknown>;
+    const variantName = typeof snapshot.variantName === "string" && snapshot.variantName.trim()
+      ? snapshot.variantName.trim()
+      : null;
+
+    return variantName ? { variantName } : null;
   }
 
   private orderReadyForDeliveryPartnerAssignment(

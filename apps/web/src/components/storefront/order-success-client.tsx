@@ -285,7 +285,7 @@ function PaymentNotice({ payment }: { payment: ReturnType<typeof paymentSummary>
 
 function OrderItemCard({ item, order }: { item: OrderSummary["items"][number]; order: OrderSummary }) {
   const imageUrl = item.product ? primaryImage(item.product) : null;
-  const variantLabel = item.variantSnapshot?.variantName ?? item.variantSnapshot?.sku ?? "Default";
+  const variantLabel = item.variantSnapshot?.variantName ?? "Default";
   const deliveryEstimate = itemDeliveryEstimate(item, order);
   const itemSavings = itemSavingsPaise(item);
 

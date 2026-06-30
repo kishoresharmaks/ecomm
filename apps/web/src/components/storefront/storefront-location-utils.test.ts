@@ -43,6 +43,9 @@ describe("storefront location helpers", () => {
         cityCode: "in-tn-slm",
         localAreaCode: "in-tn-slm-fr",
         area: "Fairlands",
+        latitude: "11.6643",
+        longitude: "78.146",
+        accuracyMeters: "40",
         isDefault: true,
       },
     ]);
@@ -57,6 +60,9 @@ describe("storefront location helpers", () => {
       localAreaCode: "IN-TN-SLM-FR",
       areaName: "Fairlands",
       pincode: "636016",
+      latitude: 11.6643,
+      longitude: 78.146,
+      accuracyMeters: 40,
     });
     expect(browsingLocationLabel(location)).toBe("Fairlands, Salem, Tamil Nadu, India");
     expect(browsingLocationHeadline(location)).toBe("Salem");
@@ -75,6 +81,9 @@ describe("storefront location helpers", () => {
           localAreaCode: "IN-TN-SLM-FR",
           areaName: "Fairlands",
           pincode: "636016",
+          latitude: 11.6643,
+          longitude: 78.146,
+          accuracyMeters: 40,
         },
         6,
       ),
@@ -84,6 +93,9 @@ describe("storefront location helpers", () => {
       cityCode: "IN-TN-SLM",
       localAreaCode: "IN-TN-SLM-FR",
       pincode: "636016",
+      latitude: 11.6643,
+      longitude: 78.146,
+      accuracyMeters: 40,
       limit: 6,
     });
   });

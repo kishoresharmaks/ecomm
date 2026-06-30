@@ -1282,6 +1282,7 @@ model Seller {
   subscriptionPayments         SellerSubscriptionPayment[]
   profile                      SellerProfile?
   addresses                    SellerAddress[]
+  serviceAreas                 SellerServiceArea[]
   documents                    SellerDocument[]
   products                     Product[]
   serviceListings              ServiceListing[]
@@ -1398,6 +1399,31 @@ model SellerAddress {
   @@index([city, area])
   @@index([countryCode, stateCode, cityCode])
   @@map("seller_addresses")
+}
+
+model SellerServiceArea {
+  id            String   @id @default(uuid()) @db.Uuid
+  sellerId      String   @map("seller_id") @db.Uuid
+  label         String?
+  countryCode   String?  @map("country_code")
+  stateCode     String?  @map("state_code")
+  cityCode      String?  @map("city_code")
+  localAreaCode String?  @map("local_area_code")
+  pincode       String?
+  latitude      Decimal? @db.Decimal(10, 7)
+  longitude     Decimal? @db.Decimal(10, 7)
+  radiusKm      Int?     @map("radius_km")
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  seller        Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([sellerId])
+  @@index([sellerId, isActive])
+  @@index([countryCode, stateCode, cityCode])
+  @@index([localAreaCode])
+  @@index([pincode])
+  @@map("seller_service_areas")
 }
 
 model SellerCourierProviderSetting {

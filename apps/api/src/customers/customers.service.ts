@@ -16,6 +16,21 @@ import { UpdateCustomerNotificationPreferencesDto } from "./dto/customer-notific
 import { UpdateCustomerProfileDto } from "./dto/customer-profile.dto";
 import { RegisterCustomerPushTokenDto, RevokeCustomerPushTokenDto } from "./dto/customer-push-token.dto";
 
+const customerWishlistProductVariantSelect = {
+  id: true,
+  variantName: true,
+  pricePaise: true,
+  mrpPaise: true,
+  currency: true,
+  stockQuantity: true,
+  packageWeightGrams: true,
+  packageLengthCm: true,
+  packageBreadthCm: true,
+  packageHeightCm: true,
+  status: true,
+  attributes: true,
+} satisfies Prisma.ProductVariantSelect;
+
 @Injectable()
 export class CustomersService {
   constructor(
@@ -390,7 +405,10 @@ export class CustomersService {
               include: {
                 seller: true,
                 images: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
-                variants: { orderBy: { createdAt: "asc" } }
+                variants: {
+                  select: customerWishlistProductVariantSelect,
+                  orderBy: { createdAt: "asc" },
+                }
               }
             }
           },

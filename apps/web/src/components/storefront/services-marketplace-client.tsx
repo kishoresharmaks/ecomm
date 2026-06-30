@@ -97,8 +97,8 @@ function ServicesDirectory() {
           {servicesQuery.error ? <StorefrontErrorPanel error={servicesQuery.error} onRetry={() => void servicesQuery.refetch()} retryLabel="Retry services" /> : null}
 
           <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {services.map((service) => (
-              <ServiceCard key={service.id} service={service} />
+            {services.map((service, index) => (
+              <ServiceCard key={service.id} service={service} priority={index === 0} />
             ))}
           </div>
 
@@ -111,11 +111,11 @@ function ServicesDirectory() {
   );
 }
 
-export function ServiceCard({ service }: { service: ServiceListing }) {
+export function ServiceCard({ service, priority = false }: { service: ServiceListing; priority?: boolean }) {
   return (
     <Link href={`/services/${service.slug}`} className="group overflow-hidden rounded-lg border border-[#E5E7EB] bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-[0_18px_50px_rgba(22,59,92,0.12)]">
       <span className="relative block aspect-[4/3] bg-[#F8FAFC]">
-        <StorefrontImage src={primaryServiceImage(service)} alt={service.title} sizes="(min-width: 1024px) 33vw, 100vw" fallbackLabel={service.title} />
+        <StorefrontImage src={primaryServiceImage(service)} alt={service.title} priority={priority} sizes="(min-width: 1024px) 33vw, 100vw" fallbackLabel={service.title} />
       </span>
       <span className="block p-4">
         <span className="flex flex-wrap gap-2">

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type FormEvent, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CalendarDays, CheckCircle2, Clock, Eye, Plus, Search, Send, Trash2, Wrench } from "lucide-react";
 import { Button, StatusBadge } from "@indihub/ui";
@@ -29,11 +29,19 @@ import {
   type ServiceVisitMode,
 } from "@/lib/service-marketplace-api";
 import { listCategories, formatMoney } from "@/lib/storefront-api";
+import { getSellerProfile, type SellerProfile, type SellerServiceArea } from "@/lib/seller-api";
+import {
+  SellerServiceAreaEditor,
+  createEmptySellerServiceAreaDraft,
+  createSellerServiceAreaDraftId,
+  type SellerServiceAreaDraft,
+} from "./seller-service-area-editor";
 import {
   SellerAuthNotice,
   SellerEmptyState,
   SellerErrorPanel,
   SellerField,
+  SellerImageUpload,
   SellerMetric,
   SellerOnboardingRequired,
   SellerPanel,
@@ -211,6 +219,15 @@ function SellerServiceForm() {
   const sellerAuth = useSellerAuth();
   const [notice, setNotice] = useState<string | null>(null);
   const [pricingModel, setPricingModel] = useState<ServicePricingModel>("FIXED_PRICE");
+  const [coverImageUrl, setCoverImageUrl] = useState<string | null>(null);
+  const [serviceAreas, setServiceAreas] = useState<SellerServiceAreaDraft[]>([emptyDraftServiceArea()]);
+
+  const profileQuery = useQuery({
+    queryKey: ["seller-profile", sellerAuth.authKey, "service-defaults"],
+    queryFn: () => getSellerProfile(sellerAuth.authHeaders),
+    enabled: sellerAuth.enabled,
+    retry: false,
+  });
 
   const categoriesQuery = useQuery({
     queryKey: ["seller-service-categories"],
@@ -228,6 +245,12 @@ function SellerServiceForm() {
     onError: (error) => setNotice(error instanceof Error ? error.message : "Service save failed."),
   });
 
+  useEffect(() => {
+    if (profileQuery.data) {
+      setServiceAreas(serviceAreasFromProfile(profileQuery.data));
+    }
+  }, [profileQuery.data]);
+
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -239,24 +262,7 @@ function SellerServiceForm() {
       .map((mode) => (form.get(`visitMode:${mode.value}`) ? mode.value : null))
       .filter((mode): mode is ServiceVisitMode => Boolean(mode));
 
-    const stateCode = optionalFormValue(form, "stateCode");
-    const cityCode = optionalFormValue(form, "cityCode");
-    const localAreaCode = optionalFormValue(form, "localAreaCode");
-    const pincode = optionalFormValue(form, "pincode");
-    const latitude = numberOrUndefined(formValue(form, "latitude"));
-    const longitude = numberOrUndefined(formValue(form, "longitude"));
-    const area: ServiceArea = {
-      label: optionalFormValue(form, "areaLabel") ?? "Primary service area",
-      countryCode: optionalFormValue(form, "countryCode") ?? "IN",
-      radiusKm: numberOrUndefined(formValue(form, "radiusKm")) ?? 10,
-      isActive: true,
-    };
-    if (stateCode) area.stateCode = stateCode;
-    if (cityCode) area.cityCode = cityCode;
-    if (localAreaCode) area.localAreaCode = localAreaCode;
-    if (pincode) area.pincode = pincode;
-    if (latitude !== undefined) area.latitude = latitude;
-    if (longitude !== undefined) area.longitude = longitude;
+    const areas = draftServiceAreasToPayload(serviceAreas);
 
     const payload: ServiceListingPayload = {
       categoryId: formValue(form, "categoryId"),
@@ -275,14 +281,25 @@ function SellerServiceForm() {
       highlights: lines(formValue(form, "highlights")),
       inclusions: lines(formValue(form, "inclusions")),
       requirements: lines(formValue(form, "requirements")),
+      images: coverImageUrl
+        ? [
+            {
+              url: coverImageUrl,
+              altText: title,
+              sortOrder: 0,
+              isPrimary: true,
+            },
+          ]
+        : [],
       packages: packageFromForm(form),
-      areas: [area],
+      areas,
     };
 
     saveMutation.mutate(payload);
   }
 
   const categories = flattenCategories(categoriesQuery.data ?? []);
+  const serviceAreaCount = Math.max(serviceAreas.filter((area) => area.isActive).length, 1);
 
   if (categoriesQuery.isLoading) {
     return <SellerSkeleton />;
@@ -345,6 +362,23 @@ function SellerServiceForm() {
         </SellerPanel>
 
         <SellerPanel>
+          <h2 className="text-xl font-black text-[#123A5A]">Service image</h2>
+          <div className="mt-4">
+            <SellerImageUpload
+              label="Service cover image"
+              description="Upload a clear service photo shown on service cards, store pages, and service detail."
+              value={coverImageUrl}
+              onChange={setCoverImageUrl}
+              authHeaders={sellerAuth.authHeaders}
+              purpose="SELLER_PRODUCT_IMAGE"
+              previewLabel="SERVICE"
+              aspectClass="aspect-[4/3]"
+              disabled={saveMutation.isPending}
+            />
+          </div>
+        </SellerPanel>
+
+        <SellerPanel>
           <h2 className="text-xl font-black text-[#123A5A]">Availability and coverage</h2>
           <div className="mt-4 grid gap-4 md:grid-cols-2">
             <div className="md:col-span-2">
@@ -358,15 +392,23 @@ function SellerServiceForm() {
                 ))}
               </div>
             </div>
-            <SellerField label="Area label" name="areaLabel" placeholder="Salem doorstep radius" />
-            <SellerField label="Country code" name="countryCode" defaultValue="IN" />
-            <SellerField label="State code" name="stateCode" placeholder="IN-TN" />
-            <SellerField label="City code" name="cityCode" placeholder="IN-TN-SALEM" />
-            <SellerField label="Local area code" name="localAreaCode" placeholder="Existing local area code" />
-            <SellerField label="Pincode" name="pincode" placeholder="636001" />
-            <SellerField label="Latitude" name="latitude" type="number" step="0.000001" placeholder="11.6643" />
-            <SellerField label="Longitude" name="longitude" type="number" step="0.000001" placeholder="78.1460" />
-            <SellerField label="Radius km" name="radiusKm" type="number" min={1} defaultValue={10} />
+            <div className="md:col-span-2">
+              <div className="rounded-md border border-[#D9E2EA] bg-white p-4">
+                <p className="text-xs font-bold uppercase tracking-wide text-[#667085]">Serviceable areas</p>
+                <p className="mt-1 text-sm font-semibold leading-6 text-[#667085]">
+                  Profile defaults are prefilled here. Select the exact country, state, city, and local area from the database, then use GPS for radius-based doorstep jobs.
+                </p>
+                <SellerServiceAreaEditor
+                  areas={serviceAreas}
+                  disabled={saveMutation.isPending}
+                  minimumAreas={1}
+                  addLabel="Add service location"
+                  emptyMessage="Add at least one serviceable location for this listing."
+                  createArea={emptyDraftServiceArea}
+                  onChange={setServiceAreas}
+                />
+              </div>
+            </div>
           </div>
         </SellerPanel>
 
@@ -384,6 +426,10 @@ function SellerServiceForm() {
         <SellerPanel>
           <h2 className="text-lg font-black text-[#123A5A]">Approval summary</h2>
           <p className="mt-2 text-sm leading-6 text-[#667085]">Services are submitted inactive and become visible after admin approval.</p>
+          <div className="mt-4 grid gap-2 rounded-md border border-[#D9E2EA] bg-[#F8FAFC] p-3 text-sm font-bold text-[#1F2933]">
+            <span>Image: {coverImageUrl ? "Uploaded" : "Not uploaded"}</span>
+            <span>Coverage areas: {serviceAreaCount}</span>
+          </div>
           <Button type="submit" className="mt-4 w-full" disabled={saveMutation.isPending}>
             {saveMutation.isPending ? "Submitting..." : "Submit service"}
           </Button>
@@ -633,11 +679,115 @@ function servicePriceLabel(service: ServiceListing) {
   return `Starts at ${formatMoney(service.basePricePaise ?? service.packages?.[0]?.pricePaise ?? 0, service.currency)}`;
 }
 
+function serviceAreasFromProfile(profile?: SellerProfile | null): SellerServiceAreaDraft[] {
+  const saved = (profile?.serviceAreas ?? []).map((area) => draftServiceAreaFromProfile(area));
+  if (saved.length) {
+    return saved;
+  }
+
+  const address = profile?.addresses[0];
+  return address ? [draftServiceAreaFromAddress(address)] : [emptyDraftServiceArea()];
+}
+
+function draftServiceAreaFromProfile(area: SellerServiceArea): SellerServiceAreaDraft {
+  return {
+    id: area.id ?? draftAreaId(),
+    label: area.label ?? "",
+    countryCode: area.countryCode ?? "IN",
+    stateCode: area.stateCode ?? "",
+    cityCode: area.cityCode ?? "",
+    localAreaCode: area.localAreaCode ?? "",
+    pincode: area.pincode ?? "",
+    latitude: stringifyOptional(area.latitude),
+    longitude: stringifyOptional(area.longitude),
+    radiusKm: stringifyOptional(area.radiusKm),
+    isActive: area.isActive ?? true,
+  };
+}
+
+function draftServiceAreaFromAddress(address: SellerProfile["addresses"][number]): SellerServiceAreaDraft {
+  return {
+    id: draftAreaId(),
+    label: [address.area, address.city].filter(Boolean).join(" / ") || "Primary service area",
+    countryCode: address.countryCode ?? "IN",
+    stateCode: address.stateCode ?? "",
+    cityCode: address.cityCode ?? "",
+    localAreaCode: address.localAreaCode ?? "",
+    pincode: address.pincode ?? "",
+    latitude: stringifyOptional(address.latitude),
+    longitude: stringifyOptional(address.longitude),
+    radiusKm: "10",
+    isActive: true,
+  };
+}
+
+function emptyDraftServiceArea(): SellerServiceAreaDraft {
+  return createEmptySellerServiceAreaDraft({
+    label: "Primary service area",
+    countryCode: "IN",
+    stateCode: "",
+    cityCode: "",
+    localAreaCode: "",
+    pincode: "",
+    latitude: "",
+    longitude: "",
+    radiusKm: "10",
+    isActive: true,
+  });
+}
+
+function draftServiceAreasToPayload(areas: SellerServiceAreaDraft[]): ServiceArea[] {
+  const cleaned = areas
+    .map((area) => {
+      const latitude = numberOrUndefined(area.latitude);
+      const longitude = numberOrUndefined(area.longitude);
+      const radiusKm = numberOrUndefined(area.radiusKm);
+      const payload: ServiceArea = {
+        label: optionalText(area.label) ?? "Primary service area",
+        countryCode: optionalText(area.countryCode) ?? "IN",
+        isActive: area.isActive,
+      };
+      const stateCode = optionalText(area.stateCode);
+      const cityCode = optionalText(area.cityCode);
+      const localAreaCode = optionalText(area.localAreaCode);
+      const pincode = optionalText(area.pincode);
+      if (stateCode) payload.stateCode = stateCode;
+      if (cityCode) payload.cityCode = cityCode;
+      if (localAreaCode) payload.localAreaCode = localAreaCode;
+      if (pincode) payload.pincode = pincode;
+      if (latitude !== undefined) payload.latitude = latitude;
+      if (longitude !== undefined) payload.longitude = longitude;
+      if (radiusKm !== undefined) payload.radiusKm = radiusKm;
+
+      return payload;
+    })
+    .filter((area) => area.isActive);
+
+  return cleaned.length ? cleaned : [{ label: "Primary service area", countryCode: "IN", radiusKm: 10, isActive: true }];
+}
+
+function optionalText(value: string) {
+  const trimmed = value.trim();
+  return trimmed || undefined;
+}
+
+function stringifyOptional(value: unknown) {
+  return value === null || value === undefined ? "" : String(value);
+}
+
+function draftAreaId() {
+  return createSellerServiceAreaDraftId();
+}
+
 function lines(value: string) {
   return value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
 }
 
 function numberOrUndefined(value: string) {
+  if (!value.trim()) {
+    return undefined;
+  }
+
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
 }

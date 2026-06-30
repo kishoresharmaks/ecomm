@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 
-const DEFAULT_WEB_URL = "http://192.168.1.2:3000";
+const DEFAULT_WEB_URL = "https://1handindia.com";
 const LOCAL_HOSTNAMES = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"]);
 
 export function ConfiguredOriginRedirect() {

@@ -51,8 +51,8 @@ export function StorefrontLocalePicker({ mobile = false, className }: Storefront
   const triggerLabel = `${activeLanguage?.code.toUpperCase()} · ${market.market.currency}`;
 
   const triggerToneClass = mobile
-    ? "w-full justify-between rounded-[22px] border border-[#D8E2EA] bg-[#F8FAFC] px-4 py-3 text-left shadow-sm mt-2"
-    : "inline-flex items-center gap-1.5 rounded-full border border-[#D8E2EA] bg-white/85 py-1.5 px-3 text-[13px] font-bold text-[#344054] shadow-sm transition hover:bg-[#F8FAFC] hover:text-[#163B5C]";
+    ? "flex h-11 w-full items-center justify-between gap-3 rounded-2xl border border-[#D8E2EA] bg-white px-3 text-left text-[13px] font-black text-[#163B5C] shadow-sm transition hover:border-[#ED3500] hover:text-[#ED3500]"
+    : "inline-flex h-8 items-center justify-between gap-2 rounded-full border border-[#D8E2EA] bg-white px-2.5 text-[13px] font-black text-[#344054] shadow-sm transition hover:border-[#ED3500]/35 hover:bg-white hover:text-[#163B5C]";
 
   return (
     <div className={cn("relative", className)}>
@@ -69,9 +69,11 @@ export function StorefrontLocalePicker({ mobile = false, className }: Storefront
         aria-expanded={open}
         aria-controls={panelId}
       >
-        <div className="flex items-center gap-1.5">
-          <Globe className="h-4 w-4 shrink-0 text-[#667085]" aria-hidden="true" />
-          <span className="flex-1 text-left">{triggerLabel}</span>
+        <div className="flex min-w-0 items-center gap-2">
+          <span className={cn("grid shrink-0 place-items-center rounded-full bg-[#F1F5F9] text-[#667085]", mobile ? "h-7 w-7" : "h-5 w-5")}>
+            <Globe className="h-3.5 w-3.5" aria-hidden="true" />
+          </span>
+          <span className="min-w-0 flex-1 truncate text-left">{triggerLabel}</span>
         </div>
         <ChevronDown
           className={cn("h-4 w-4 shrink-0 text-[#667085] transition", open ? "rotate-180" : "")}
@@ -124,15 +126,16 @@ const LocaleDropdownPanel = forwardRef<
       style={style}
       className={cn(
         "flex flex-col overflow-hidden rounded-2xl border border-[#D8E2EA] bg-white shadow-2xl",
+        mobile ? "max-h-[min(54svh,360px)] overflow-y-auto overscroll-contain" : "",
         floating ? "fixed z-[140]" : "absolute z-50 mt-2 w-full",
         !floating && mobile ? "left-0 min-w-0" : !floating ? "right-0 min-w-[280px]" : "",
       )}
     >
-      <div className="p-4">
-        <h3 className="text-xs font-black uppercase tracking-[0.18em] text-[#ED3500]">
+      <div className={mobile ? "p-3" : "p-4"}>
+        <h3 className="text-xs font-black uppercase tracking-[0.14em] text-[#ED3500]">
           Language
         </h3>
-        <div className="mt-3 grid gap-1">
+        <div className="mt-2 grid gap-1">
           {LANGUAGES.map((lang) => {
             const isActive = market.language === lang.code;
             return (
@@ -156,11 +159,11 @@ const LocaleDropdownPanel = forwardRef<
         </div>
       </div>
       
-      <div className="border-t border-[#E5E7EB] p-4">
-        <h3 className="text-xs font-black uppercase tracking-[0.18em] text-[#ED3500]">
+      <div className={cn("border-t border-[#E5E7EB]", mobile ? "p-3" : "p-4")}>
+        <h3 className="text-xs font-black uppercase tracking-[0.14em] text-[#ED3500]">
           Currency
         </h3>
-        <div className="mt-3 grid gap-1">
+        <div className="mt-2 grid gap-1">
           {MARKETS.map((m) => {
             const isActive = market.countryCode === m.code;
             return (

@@ -1,5 +1,5 @@
-import { Controller, Get, Inject, Query } from "@nestjs/common";
-import { ApiOperation, ApiTags } from "@nestjs/swagger";
+import { Controller, Get, Headers, Inject, Query } from "@nestjs/common";
+import { ApiHeader, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { Public } from "../auth/decorators/public.decorator";
 import { ProductQueryDto } from "../products/dto/product-query.dto";
 import { PublicSellerQueryDto } from "../sellers/dto/public-seller-query.dto";
@@ -13,8 +13,21 @@ export class StorefrontController {
 
   @Get("home")
   @ApiOperation({ summary: "Read the dynamic storefront homepage payload." })
-  getHome(@Query() query: PublicSellerQueryDto) {
-    return this.storefrontService.getHome(query);
+  @ApiHeader({ name: "Authorization", required: false })
+  getHome(
+    @Query() query: PublicSellerQueryDto,
+    @Headers("authorization") authorizationHeader: string | undefined,
+    @Headers("x-clerk-user-id") clerkUserId: string | undefined,
+    @Headers("x-indihub-dev-clerk-id") devClerkUserId: string | undefined,
+    @Headers("x-indihub-user-id") platformUserId: string | undefined,
+  ) {
+    const optionalClerkUserId = clerkUserId ?? devClerkUserId;
+    const options = {
+      ...(authorizationHeader ? { authorizationHeader } : {}),
+      ...(optionalClerkUserId ? { clerkUserId: optionalClerkUserId } : {}),
+      ...(platformUserId ? { platformUserId } : {}),
+    };
+    return this.storefrontService.getHome(query, options);
   }
 
   @Get("deals")

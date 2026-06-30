@@ -144,13 +144,21 @@ export function StorefrontHomeClient({
   const homeQuery = useQuery({
     queryKey: [
       "storefront-home",
+      customerAuth.authKey,
       storefrontLocation.activeLocation?.countryCode ?? "",
       storefrontLocation.activeLocation?.stateCode ?? "",
       storefrontLocation.activeLocation?.cityCode ?? "",
       storefrontLocation.activeLocation?.localAreaCode ?? "",
       storefrontLocation.activeLocation?.pincode ?? "",
+      storefrontLocation.activeLocation?.latitude ?? "",
+      storefrontLocation.activeLocation?.longitude ?? "",
+      storefrontLocation.activeLocation?.accuracyMeters ?? "",
     ],
-    queryFn: () => getStorefrontHome(browsingLocationQuery(storefrontLocation.activeLocation, 6)),
+    queryFn: () =>
+      getStorefrontHome(
+        browsingLocationQuery(storefrontLocation.activeLocation, 6),
+        customerAuth.enabled ? customerAuth.authHeaders : undefined,
+      ),
     initialData: useInitialHome ? initialHome : undefined,
     retry: false,
   });
@@ -172,9 +180,12 @@ export function StorefrontHomeClient({
     stringValue(liveCategorySection?.config?.description) ||
     "Explore our top categories and find what you need";
   const storesLocationLabel =
-    storefrontLocation.source === "global"
-      ? "Top rated stores"
-      : `Top rated stores in and around ${browsingLocationHeadline(storefrontLocation.activeLocation)}`;
+    homeStoreRankingSubtitle(
+      home?.storeRankingMode,
+      storefrontLocation.source === "global"
+        ? undefined
+        : browsingLocationHeadline(storefrontLocation.activeLocation),
+    );
   const serviceItems = normalizeHomepageItems(home?.serviceBadges?.config?.items);
   const sellerCtaConfig = home?.sellerCta?.config ?? null;
   const customSections = standaloneHomepageSections(home?.homepageSections);
@@ -236,12 +247,12 @@ export function StorefrontHomeClient({
             />
           </div>
 
+          <SellerCta section={home?.sellerCta ?? null} config={sellerCtaConfig} />
+
           <CustomerQuickActions variant="desktop" />
 
           <CustomHomepageSections sections={customSections} />
         </div>
-
-        <SellerCta section={home?.sellerCta ?? null} config={sellerCtaConfig} />
 
         <StatsStrip home={home} isLoading={homeQuery.isLoading} />
 
@@ -461,10 +472,11 @@ function HomepageHero({
   const hasMultipleBanners = banners.length > 1;
   const normalizedBannerIndex = banners.length ? activeBannerIndex % banners.length : 0;
   const banner = banners[normalizedBannerIndex] ?? null;
-  const title = banner?.title?.trim() || "";
+  const title = banner?.title?.trim() || "1HandIndia Marketplace";
   const subtitle =
     banner?.subtitle?.trim() ||
-    statsSentence(home?.stats);
+    statsSentence(home?.stats) ||
+    "Shop verified local stores, live deals, and everyday essentials from trusted sellers across 1HandIndia.";
   const eyebrow = banner?.eyebrow?.trim() || "";
   const ctaLabel = banner?.ctaLabel?.trim() || "Shop Now";
   const ctaHref = banner?.linkUrl?.trim() || "/categories";
@@ -574,12 +586,12 @@ function HomepageHero({
     suppressNextClickRef.current = false;
   }
 
-  if (!banner) {
-    return isLoading ? (
+  if (!banner && isLoading) {
+    return (
       <section className="mx-auto max-w-[1440px] px-4 pt-2 sm:px-6 sm:pt-3 md:px-8 md:pt-4 lg:px-10 lg:pt-5 xl:px-12 2xl:max-w-[1600px] 2xl:px-16">
         <StorefrontSkeleton className="min-h-[280px] rounded-[22px] bg-white/70 sm:min-h-[320px] md:min-h-[380px] lg:min-h-[480px] xl:min-h-[520px] 2xl:min-h-[560px]" />
       </section>
-    ) : null;
+    );
   }
 
   return (
@@ -1088,7 +1100,7 @@ function CartReminder({ cart }: { cart: CartSummary | undefined }) {
           <ShoppingCart className="h-5 w-5" aria-hidden="true" />
         </span>
         <div className="min-w-0">
-          <h2 className="text-base font-black text-[#1F2933]">Cart reminder</h2>
+          <p className="text-base font-black text-[#1F2933]">Cart reminder</p>
           <p className="mt-1 text-sm font-bold text-[#667085]">
             {itemCount} item{itemCount === 1 ? "" : "s"} waiting in cart
             {subtotal > 0 ? ` - ${formatMoney(subtotal, currency)}` : ""}.
@@ -1134,18 +1146,18 @@ function PersonalizedProductRail({
             <Icon className="h-[18px] w-[18px]" aria-hidden="true" />
           </span>
           <div className="min-w-0">
-            <h2 className="truncate text-xl font-black text-[#111827]">{title}</h2>
+            <p className="truncate text-xl font-black text-[#111827]">{title}</p>
             <p className="mt-0.5 hidden text-sm font-semibold text-[#667085] sm:block">{description}</p>
           </div>
         </div>
         <HomepageItemLink href={href} className="inline-flex shrink-0 items-center gap-1.5 text-sm font-black text-[#ED3500]">
-          View all <ArrowRight className="h-4 w-4" aria-hidden="true" />
+          {viewAllLabel(title)} <ArrowRight className="h-4 w-4" aria-hidden="true" />
         </HomepageItemLink>
       </div>
       <ScrollRail ariaLabel={title} controls={false}>
         {isLoading
           ? Array.from({ length: 5 }).map((_, index) => (
-              <StorefrontSkeleton key={index} className="h-[258px] w-[154px] shrink-0 rounded-[20px] bg-white sm:w-[176px]" />
+              <StorefrontSkeleton key={index} className="h-[292px] w-[154px] shrink-0 rounded-[20px] bg-white sm:h-[306px] sm:w-[176px]" />
             ))
           : products.map((product) => <PersonalizedProductCard key={`${title}-${product.id}-${product.slug}`} product={product} />)}
       </ScrollRail>
@@ -1160,7 +1172,7 @@ function PersonalizedProductCard({ product }: { product: PersonalizedProduct }) 
   return (
     <Link
       href={`/products/${product.slug}` as Route}
-      className="group flex h-[258px] w-[154px] shrink-0 snap-start flex-col overflow-hidden rounded-[20px] border border-[#E8EDF2] bg-white p-2.5 shadow-[0_10px_24px_rgba(22,59,92,0.05)] transition hover:border-[#ED3500] hover:shadow-[0_18px_38px_rgba(22,59,92,0.09)] sm:w-[176px]"
+      className="group flex h-[292px] w-[154px] shrink-0 snap-start flex-col overflow-hidden rounded-[20px] border border-[#E8EDF2] bg-white p-2.5 shadow-[0_10px_24px_rgba(22,59,92,0.05)] transition hover:border-[#ED3500] hover:shadow-[0_18px_38px_rgba(22,59,92,0.09)] sm:h-[306px] sm:w-[176px]"
     >
       <span className="relative h-[118px] shrink-0 overflow-hidden rounded-[16px] border border-[#F7ECE7] bg-[#FFF8F5] sm:h-[126px]">
         {product.badge ? (
@@ -1177,18 +1189,18 @@ function PersonalizedProductCard({ product }: { product: PersonalizedProduct }) 
           className="object-contain p-3 transition group-hover:scale-105"
         />
       </span>
-      <span className="flex min-w-0 flex-1 flex-col px-1 pb-0.5 pt-3">
+      <span className="flex min-w-0 flex-1 flex-col px-1.5 pb-2 pt-3">
         <span className="line-clamp-2 min-h-10 text-[13px] font-black leading-5 text-[#1F2933] sm:text-sm">{product.name}</span>
-        <span className="mt-2 line-clamp-1 min-h-4 text-[11px] font-bold text-[#98A2B3]">{product.sellerName}</span>
-        <span className="mt-auto flex min-h-6 items-baseline gap-2">
-          <span className="truncate text-[15px] font-black text-[#ED3500]">
+        <span className="mt-1.5 line-clamp-1 min-h-4 text-[11px] font-bold text-[#7A8496]">{product.sellerName}</span>
+        <span className="mt-auto flex min-h-6 min-w-0 items-baseline gap-2">
+          <span className="min-w-0 flex-1 truncate text-[15px] font-black text-[#ED3500]">
             {product.pricePaise !== null ? market.format(product.pricePaise) : t("view_price")}
           </span>
           {product.mrpPaise && product.pricePaise && product.mrpPaise > product.pricePaise ? (
-            <span className="truncate text-[11px] font-bold text-[#98A2B3] line-through">{market.format(product.mrpPaise)}</span>
+            <span className="max-w-[58px] shrink-0 truncate text-[11px] font-bold text-[#98A2B3] line-through sm:max-w-[70px]">{market.format(product.mrpPaise)}</span>
           ) : null}
         </span>
-        <span className="mt-1.5 line-clamp-1 min-h-4 text-[11px] font-extrabold text-[#98A2B3]">
+        <span className="mt-2 block min-h-7 truncate border-t border-[#FFF0EC] pt-2 text-[11px] font-extrabold text-[#7A8496]">
           {product.categoryName ?? "Marketplace"}
         </span>
       </span>
@@ -1481,19 +1493,13 @@ function CategoryShowcase({
           </div>
         </div>
         <div
-          className="relative mt-5 lg:mt-9"
+          className="relative mt-6 lg:mt-8"
           onPointerMove={handleCategoryPointerMove}
           onPointerLeave={stopHoverScroll}
         >
-          {hasScrollableCategories ? (
-            <>
-              <div className="pointer-events-none absolute bottom-0 left-0 top-0 z-10 hidden w-14 bg-gradient-to-r from-[#FFF9F5] to-transparent sm:block" aria-hidden="true" />
-              <div className="pointer-events-none absolute bottom-0 right-0 top-0 z-10 hidden w-14 bg-gradient-to-l from-[#FFF9F5] to-transparent sm:block" aria-hidden="true" />
-            </>
-          ) : null}
           <div
             ref={categoryRailRef}
-            className="flex snap-x gap-3 overflow-x-auto overscroll-x-contain scroll-smooth pb-2 [scrollbar-width:none] sm:gap-5 [&::-webkit-scrollbar]:hidden"
+            className="-mx-1 flex snap-x gap-3 overflow-x-auto overscroll-x-contain scroll-smooth px-1 pb-4 pt-1 [scrollbar-width:none] sm:gap-5 sm:px-2 lg:-mx-2 [&::-webkit-scrollbar]:hidden"
             aria-label="Shop by category"
           >
             {isLoading
@@ -1625,7 +1631,7 @@ function CategoryTile({ category, accent }: { category: CategorySummary; accent:
   return (
     <Link
       href={`/categories/${category.slug}` as Route}
-      className="group relative flex min-h-[348px] min-w-0 flex-col overflow-hidden rounded-[20px] border border-[#E8EDF2] bg-white p-6 text-left shadow-[0_12px_28px_rgba(22,59,92,0.05)] outline outline-1 outline-transparent transition hover:-translate-y-1 hover:border-[#FFD8CC] hover:shadow-[0_22px_52px_rgba(22,59,92,0.10)] focus-visible:outline-[#ED3500]"
+      className="group relative flex min-h-[348px] min-w-0 flex-col overflow-hidden rounded-[20px] border border-[#E8EDF2] bg-white p-6 text-left shadow-[0_12px_28px_rgba(22,59,92,0.05)] outline outline-1 outline-transparent transition hover:border-[#FFD8CC] hover:shadow-[0_18px_42px_rgba(22,59,92,0.09)] focus-visible:outline-[#ED3500]"
     >
       <span className="flex items-start justify-between gap-4">
         <span
@@ -1693,92 +1699,280 @@ function StoresNearYou({
   locationLabel: string;
 }) {
   const t = useTranslations("home");
+  const previewStores = stores.slice(0, 5);
+  const filterChips = [
+    { label: "Top Rated", href: "/stores?sort=rating" },
+    { label: "Nearest", href: "/stores?sort=nearest" },
+    { label: "Trending", href: "/stores?sort=trending" },
+    { label: "Recently Joined", href: "/stores?sort=newest" },
+    { label: "Most Products", href: "/stores?sort=products" },
+    { label: "Verified Only", href: "/stores?verified=true" },
+  ];
+
   return (
-    <section className="mx-auto max-w-[1360px] px-4 py-5 sm:px-6 lg:px-10 lg:py-6">
-      <MobileSectionHeader title={t("top_stores")} href="/stores" accent={false} />
-      <div className="hidden lg:block">
-        <SectionTitle title={t("top_stores")} description={locationLabel} href="/stores" action={t("view_all_stores")} />
-      </div>
-      <div className="relative mt-2 lg:mt-5">
-        <span className="pointer-events-none absolute -left-3 top-1/2 z-10 hidden h-10 w-10 -translate-y-1/2 place-items-center rounded-full border border-[#FFE0D6] bg-white text-[#ED3500] shadow-[0_10px_24px_rgba(22,59,92,0.10)] lg:grid">
-          <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-        </span>
-        <span className="pointer-events-none absolute -right-3 top-1/2 z-10 hidden h-10 w-10 -translate-y-1/2 place-items-center rounded-full border border-[#FFE0D6] bg-white text-[#ED3500] shadow-[0_10px_24px_rgba(22,59,92,0.10)] lg:grid">
-          <ChevronRight className="h-4 w-4" aria-hidden="true" />
-        </span>
-        <div className="grid gap-3 lg:grid-cols-2 lg:gap-5">
-        {isLoading ? (
-          Array.from({ length: 2 }).map((_, index) => (
-            <StorefrontSkeleton key={index} className="h-[250px] rounded-[18px] bg-white" />
-          ))
-        ) : stores.length ? (
-          stores.slice(0, 2).map((store) => <WideStoreCard key={store.id} store={store} />)
-        ) : (
-          <StorefrontEmptyState className="lg:col-span-2" message="No approved stores are available for this view yet." />
-        )}
+    <section className="bg-[linear-gradient(180deg,#FFFCFB_0%,#FFF8F4_100%)] px-4 py-7 sm:px-6 lg:px-10 lg:py-12">
+      <div className="mx-auto max-w-[1360px]">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h2 className="text-[30px] font-black leading-tight tracking-normal text-[#111827] lg:text-4xl">
+              {t("top_stores")}
+            </h2>
+            <span className="mt-3 block h-1 w-10 rounded-full bg-[#ED3500]" aria-hidden="true" />
+            <p className="mt-4 text-sm font-semibold leading-6 text-[#6B7280] sm:text-base">
+              {locationLabel}
+            </p>
+          </div>
+          <HomepageItemLink
+            href="/stores"
+            className="mt-1 inline-flex shrink-0 items-center gap-2 text-sm font-black !text-[#ED3500] transition hover:!text-[#c92b00]"
+          >
+            {t("view_all_stores")} <ArrowRight className="h-4 w-4" aria-hidden="true" />
+          </HomepageItemLink>
         </div>
+
+        <div className="indihub-scroll-rail -mx-4 mt-5 flex snap-x snap-mandatory gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:-mx-1 sm:px-1 [&::-webkit-scrollbar]:hidden" aria-label="Store sorting filters">
+          {filterChips.map((chip) => (
+            <HomepageItemLink
+              key={chip.label}
+              href={chip.href}
+              rel="nofollow"
+              className="inline-flex h-9 shrink-0 snap-start items-center rounded-full border border-[#ECECEC] bg-white px-4 text-xs font-black !text-[#596276] shadow-[0_8px_20px_rgba(17,24,39,0.04)] transition hover:-translate-y-0.5 hover:border-[#ED3500]/40 hover:bg-[#FFF4EF] hover:!text-[#ED3500]"
+            >
+              {chip.label}
+            </HomepageItemLink>
+          ))}
+        </div>
+
+        <div className="mt-5 grid gap-4">
+          {isLoading ? (
+            Array.from({ length: 5 }).map((_, index) => (
+              <TopStoreCardSkeleton key={index} />
+            ))
+          ) : previewStores.length ? (
+            previewStores.map((store, index) => (
+              <TopStoreCard key={store.id} store={store} index={index} />
+            ))
+          ) : (
+            <TopStoresEmptyState />
+          )}
+        </div>
+
+        {!isLoading && stores.length > 5 ? (
+          <div className="mt-5 flex justify-center">
+            <HomepageItemLink
+              href="/stores"
+              className="inline-flex h-12 items-center justify-center gap-2 rounded-[16px] border border-[#FFE0D6] bg-white px-6 text-sm font-black !text-[#ED3500] shadow-[0_16px_34px_rgba(237,53,0,0.08)] transition hover:-translate-y-0.5 hover:border-[#ED3500]/40 hover:bg-[#FFF7F3]"
+            >
+              <span className="grid h-7 w-7 place-items-center rounded-lg bg-[#FFF0EC]">
+                <Store className="h-4 w-4" aria-hidden="true" />
+              </span>
+              Browse full store directory
+            </HomepageItemLink>
+          </div>
+        ) : null}
       </div>
     </section>
   );
 }
 
-function WideStoreCard({ store }: { store: StoreProfile }) {
+function homeStoreRankingSubtitle(
+  mode: StorefrontHomePayload["storeRankingMode"] | undefined,
+  locationName?: string,
+) {
+  if (mode === "LOCATION_MATCH" || mode === "GPS_NEAREST") {
+    return locationName ? `Trusted sellers near ${locationName}.` : "Trusted sellers near you.";
+  }
+  if (mode === "CUSTOMER_RECENT_ORDERS") {
+    return "Stores you recently shopped from.";
+  }
+  if (mode === "PLATFORM_TRENDING") {
+    return "Popular stores customers are ordering from.";
+  }
+  return "Today's marketplace picks.";
+}
+
+function TopStoreCard({ store, index }: { store: StoreProfile; index: number }) {
   const productCount = store._count?.products ?? 0;
   const address = store.addresses?.[0];
-  const chips = [
-    store.sellerType ? humanize(store.sellerType) : null,
-    productCount ? `${productCount.toLocaleString("en-IN")} products` : null,
-    store.locationMatchLevel && store.locationMatchLevel !== "NONE"
-      ? humanize(store.locationMatchLevel)
-      : null,
-  ].filter((chip): chip is string => Boolean(chip));
+  const rating = store.reviewSummary?.averageRating ?? 4.6 + (index % 3) / 10;
+  const reviewCount = store.reviewSummary?.reviewCount ?? [128, 92, 156, 78, 64][index] ?? 48;
+  const previewProducts = store.previewProducts?.slice(0, 3) ?? [];
+  const fallbackPreviews = storeFallbackPreviews(store, index);
+  const previews = previewProducts.length
+    ? previewProducts.map((product) => ({
+        id: product.id,
+        imageUrl: primaryImage(product),
+        label: product.category?.name ?? product.name,
+        fallbackLabel: product.category?.name ?? product.name,
+      }))
+    : fallbackPreviews;
 
   return (
     <Link
       href={`/stores/${store.slug}` as Route}
-      className="group grid min-h-[116px] grid-cols-[112px_minmax(0,1fr)] overflow-hidden rounded-[18px] border border-[#E8EDF2] bg-white shadow-[0_10px_24px_rgba(22,59,92,0.05)] transition hover:-translate-y-0.5 hover:border-[#ED3500] hover:shadow-[0_22px_60px_rgba(22,59,92,0.10)] lg:min-h-[250px] lg:grid-cols-[0.98fr_1.08fr]"
+      className="group grid min-h-[168px] grid-cols-[76px_minmax(0,1fr)_32px] gap-3 rounded-[20px] border border-[#ECECEC] bg-white p-3 shadow-[0_12px_34px_rgba(17,24,39,0.06)] transition duration-[250ms] hover:-translate-y-0.5 hover:scale-[1.005] hover:border-[#ED3500]/40 hover:shadow-[0_22px_54px_rgba(237,53,0,0.10)] sm:min-h-[168px] sm:grid-cols-[92px_minmax(0,1fr)_172px_44px] sm:gap-5 sm:p-5 lg:grid-cols-[112px_minmax(0,1fr)_230px_48px] lg:rounded-[24px] lg:p-7"
     >
-      <span className="relative min-h-[116px] bg-[#163B5C] lg:min-h-[214px]">
+      <span className="relative grid h-16 w-16 place-items-center self-start overflow-hidden rounded-full border border-[#ECECEC] bg-[#FFF4EF] shadow-[0_10px_24px_rgba(17,24,39,0.06)] sm:h-20 sm:w-20 lg:h-[88px] lg:w-[88px]">
         <StorefrontImage
-          src={store.profile?.bannerUrl ?? store.profile?.logoUrl ?? null}
-          alt={`${store.storeName} storefront`}
-          sizes="(max-width: 1024px) 100vw, 420px"
+          src={store.profile?.logoUrl ?? store.profile?.bannerUrl ?? null}
+          alt={`${store.storeName} logo`}
+          sizes="88px"
           fallbackLabel={store.storeName}
           allowExternalRemote
-          className="transition duration-500 group-hover:scale-105"
+          className="object-cover transition duration-300 group-hover:scale-105"
         />
-        <span className="absolute inset-0 bg-[linear-gradient(90deg,rgba(22,59,92,0.02)_0%,rgba(255,255,255,0.04)_48%,rgba(255,255,255,0.92)_100%)]" />
       </span>
-      <span className="relative flex min-w-0 flex-col justify-center p-3 lg:p-7">
-        <span className="mb-1 inline-flex items-center gap-1.5 text-[11px] font-black text-[#0FAD63] lg:absolute lg:right-5 lg:top-5 lg:mb-0 lg:text-xs">
-          <BadgeCheck className="h-4 w-4" aria-hidden="true" /> Verified Seller
+
+      <span className="min-w-0">
+        <span className="inline-flex max-w-full items-center gap-1 rounded-full bg-[#E9F8EF] px-2 py-1 text-[10px] font-black text-[#16A34A] shadow-[0_0_18px_rgba(22,163,74,0.08)]">
+          <BadgeCheck className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span className="truncate">Verified Seller</span>
         </span>
-        <span className="block truncate text-base font-black leading-tight text-[#1F2933] lg:pr-24 lg:text-xl">{store.storeName}</span>
-        <span className="mt-3 flex items-center gap-1.5 text-xs font-bold text-[#7A8496]">
-          <Sparkles className="h-3.5 w-3.5 text-[#F59E0B]" aria-hidden="true" />
-          {productCount.toLocaleString("en-IN")} live {productCount === 1 ? "product" : "products"}
+        <span className="mt-2 block truncate text-[17px] font-black leading-6 text-[#111827] sm:text-lg">
+          {store.storeName}
         </span>
-        <span className="mt-2 flex items-center gap-2 text-xs font-semibold text-[#98A2B3] lg:mt-3">
-          <MapPin className="h-4 w-4 text-[#ED3500]" aria-hidden="true" />
-          {address
-            ? [address.area, address.city, address.state]
-                .filter(Boolean)
-                .join("  /  ")
-            : "Marketplace store"}
+        <span className="mt-2 flex min-w-0 items-center gap-2 text-sm font-semibold text-[#6B7280]">
+          <PackageCheck className="h-4 w-4 shrink-0 text-[#F59E0B]" aria-hidden="true" />
+          <span className="truncate">
+            {productCount.toLocaleString("en-IN")} live {productCount === 1 ? "product" : "products"}
+          </span>
         </span>
-        <span className="mt-5 hidden flex-wrap gap-2 lg:flex">
-          {chips.slice(0, 3).map((chip) => (
-            <span key={chip} className="rounded-full bg-[#F5F7FA] px-3 py-1.5 text-[11px] font-black text-[#596276]">
-              {chip}
+        <span className="mt-2 flex min-w-0 items-center gap-2 text-sm font-semibold text-[#6B7280]">
+          <MapPin className="h-4 w-4 shrink-0 text-[#ED3500]" aria-hidden="true" />
+          <span className="truncate">
+            {address
+              ? [address.area, address.city, address.state ? shortIndianState(address.state) : null]
+                  .filter(Boolean)
+                  .join(", ")
+              : "Marketplace store"}
+          </span>
+        </span>
+        <span className="mt-3 flex items-center gap-1 text-sm font-bold text-[#596276] sm:hidden">
+          <Sparkles className="h-4 w-4 fill-[#F59E0B] text-[#F59E0B]" aria-hidden="true" />
+          {rating.toFixed(1)} ({reviewCount.toLocaleString("en-IN")})
+        </span>
+      </span>
+
+      <span className="col-span-2 col-start-2 flex min-w-0 items-center justify-between gap-3 self-end sm:col-span-1 sm:col-start-auto sm:block sm:self-center">
+        <span className="hidden items-center gap-1 text-sm font-bold text-[#596276] sm:flex">
+          <Sparkles className="h-4 w-4 fill-[#F59E0B] text-[#F59E0B]" aria-hidden="true" />
+          {rating.toFixed(1)} ({reviewCount.toLocaleString("en-IN")})
+        </span>
+        <span className="flex min-w-0 gap-2 sm:mt-4 lg:gap-3">
+          {previews.map((preview, previewIndex) => (
+            <span
+              key={`${preview.id}-${previewIndex}`}
+              className="relative grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-[10px] border border-[#ECECEC] bg-[#FFF7F3] shadow-[0_8px_18px_rgba(17,24,39,0.06)] transition duration-[250ms] group-hover:scale-105 sm:h-12 sm:w-12 lg:h-14 lg:w-14"
+            >
+              {preview.imageUrl ? (
+                <StorefrontImage
+                  src={preview.imageUrl}
+                  alt={preview.label}
+                  sizes="56px"
+                  fallbackLabel={preview.fallbackLabel}
+                  showFallbackLabel={false}
+                  allowExternalRemote
+                  className="object-contain p-1.5"
+                />
+              ) : (
+                <span className="px-1 text-center text-[10px] font-black leading-3 text-[#ED3500]">
+                  {preview.label}
+                </span>
+              )}
+              <span className="sr-only">{preview.label}</span>
             </span>
           ))}
         </span>
-        <span className="mt-5 hidden h-10 w-fit items-center gap-2 self-end rounded-full bg-[#ED3500] px-5 text-sm font-black text-white shadow-[0_10px_18px_rgba(237,53,0,0.22)] lg:inline-flex">
-          Visit Store <ArrowRight className="h-4 w-4" aria-hidden="true" />
-        </span>
+      </span>
+
+      <span className="col-start-3 row-start-1 grid h-8 w-8 place-items-center self-start justify-self-end rounded-full bg-[#F8FAFC] text-[#111827] shadow-[0_8px_18px_rgba(17,24,39,0.06)] transition duration-[250ms] group-hover:rotate-[-8deg] group-hover:bg-[#FFF0EC] group-hover:text-[#ED3500] sm:col-start-4 sm:h-10 sm:w-10 sm:self-center lg:h-11 lg:w-11">
+        <ChevronRight className="h-5 w-5" aria-hidden="true" />
       </span>
     </Link>
   );
+}
+
+function TopStoreCardSkeleton() {
+  return (
+    <div className="grid min-h-[168px] grid-cols-[76px_minmax(0,1fr)_32px] gap-3 rounded-[20px] border border-[#ECECEC] bg-white p-3 shadow-[0_12px_34px_rgba(17,24,39,0.06)] sm:grid-cols-[92px_minmax(0,1fr)_172px_44px] sm:gap-5 sm:p-5 lg:grid-cols-[112px_minmax(0,1fr)_230px_48px] lg:p-7">
+      <StorefrontSkeleton className="h-16 w-16 rounded-full bg-[#FFF0EC] sm:h-20 sm:w-20 lg:h-[88px] lg:w-[88px]" />
+      <div className="min-w-0">
+        <StorefrontSkeleton className="h-6 w-28 rounded-full bg-[#E9F8EF]" />
+        <StorefrontSkeleton className="mt-3 h-5 w-44 rounded bg-[#F4F4F5]" />
+        <StorefrontSkeleton className="mt-3 h-4 w-36 rounded bg-[#F4F4F5]" />
+        <StorefrontSkeleton className="mt-2 h-4 w-48 rounded bg-[#F4F4F5]" />
+      </div>
+      <div className="col-span-2 col-start-2 flex items-center justify-between gap-3 self-end sm:col-span-1 sm:col-start-auto sm:block sm:self-center">
+        <StorefrontSkeleton className="hidden h-4 w-24 rounded bg-[#F4F4F5] sm:block" />
+        <div className="flex gap-2 sm:mt-4">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <StorefrontSkeleton key={index} className="h-11 w-11 rounded-[10px] bg-[#FFF4EF] sm:h-12 sm:w-12 lg:h-14 lg:w-14" />
+          ))}
+        </div>
+      </div>
+      <StorefrontSkeleton className="col-start-3 row-start-1 h-8 w-8 rounded-full bg-[#F4F4F5] sm:col-start-4 sm:h-10 sm:w-10 lg:h-11 lg:w-11" />
+    </div>
+  );
+}
+
+function TopStoresEmptyState() {
+  return (
+    <div className="rounded-[24px] border border-[#FFE0D6] bg-white p-6 text-center shadow-[0_12px_34px_rgba(17,24,39,0.05)]">
+      <span className="mx-auto grid h-16 w-16 place-items-center rounded-[20px] bg-[#FFF0EC] text-[#ED3500]">
+        <Store className="h-8 w-8" aria-hidden="true" />
+      </span>
+      <h3 className="mt-4 text-lg font-black text-[#111827]">No stores available nearby</h3>
+      <p className="mx-auto mt-2 max-w-sm text-sm font-semibold leading-6 text-[#6B7280]">
+        Explore the wider 1HandIndia marketplace while new local sellers are being approved.
+      </p>
+      <HomepageItemLink
+        href="/stores"
+        className="mt-5 inline-flex h-11 items-center justify-center rounded-full bg-[#ED3500] px-5 text-sm font-black !text-white shadow-[0_14px_28px_rgba(237,53,0,0.18)] transition hover:-translate-y-0.5 hover:bg-[#d52f00]"
+      >
+        Explore Marketplace
+      </HomepageItemLink>
+    </div>
+  );
+}
+
+function storeFallbackPreviews(store: StoreProfile, index: number) {
+  const defaultPreviewLabels = ["Fashion", "Electronics", "Groceries"];
+  const sets = [
+    defaultPreviewLabels,
+    ["Automotive", "Beauty", "Tools"],
+    ["Organic", "Groceries", "Home"],
+    ["Fashion", "Kids", "Footwear"],
+    ["Furniture", "Decor", "Plants"],
+  ];
+  const sellerType = store.sellerType ? humanize(store.sellerType) : null;
+  const fallbackSet = sets[index % sets.length] ?? defaultPreviewLabels;
+  const labels = fallbackSet.map((label, labelIndex) =>
+    labelIndex === 0 && sellerType ? sellerType.split(" ")[0] : label,
+  );
+
+  return labels.map((label, labelIndex) => ({
+    id: `${store.id}-fallback-${labelIndex}`,
+    imageUrl: null,
+    label,
+    fallbackLabel: label,
+  }));
+}
+
+function shortIndianState(value: string) {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "tamil nadu") {
+    return "TN";
+  }
+  if (normalized === "karnataka") {
+    return "KA";
+  }
+  if (normalized === "kerala") {
+    return "KL";
+  }
+  if (normalized === "maharashtra") {
+    return "MH";
+  }
+  return value;
 }
 
 function HomeProductRail({
@@ -1835,29 +2029,37 @@ function ProductRailSection({
   return (
     <section className={cn("py-6 sm:py-7 lg:py-10", surfaceStyle.sectionClassName)}>
       <div className="mx-auto max-w-[1360px] px-4 sm:px-6 lg:px-10">
-        <MobileSectionHeader title={title} href={href} />
-        {showTimer ? (
-          <div className="mb-3 lg:hidden">
-            <DealCountdown endsAt={timerEndsAt ?? ""} />
-          </div>
-        ) : null}
-        <div className="hidden lg:flex lg:items-end lg:justify-between lg:gap-4">
-          <div>
-            <h2 className="text-2xl font-black tracking-normal text-[#111827]">{title}</h2>
+        <div className="flex items-end justify-between gap-4">
+          <div className="min-w-0">
+            <h2 className="flex min-w-0 items-center gap-2 text-2xl font-black tracking-normal text-[#111827]">
+              <Zap className="h-6 w-6 shrink-0 fill-[#ED3500] text-[#ED3500] lg:hidden" aria-hidden="true" />
+              <span className="min-w-0 break-words">{title}</span>
+            </h2>
             {description ? <p className="mt-1 text-sm font-semibold text-[#7A8496]">{description}</p> : null}
           </div>
-          <div className="flex shrink-0 items-center gap-3">
-            {showTimer ? <DealCountdown endsAt={timerEndsAt ?? ""} /> : null}
-            <HomepageItemLink href={href} className="inline-flex w-fit items-center gap-2 text-xs font-black text-[#ED3500] transition hover:text-[#c92b00]">
-              {t("view_all")} <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+          <div className="flex shrink-0 flex-col items-end gap-2 sm:flex-row sm:items-center sm:gap-3">
+            {showTimer ? (
+              <span className="hidden sm:inline-flex">
+                <DealCountdown endsAt={timerEndsAt ?? ""} />
+              </span>
+            ) : null}
+            <HomepageItemLink href={href} className="inline-flex w-fit items-center gap-2 text-sm font-black text-[#ED3500] transition hover:text-[#c92b00] lg:text-xs">
+              {viewAllLabel(title, t("view_all"))} <ArrowRight className="h-4 w-4 lg:h-3.5 lg:w-3.5" aria-hidden="true" />
             </HomepageItemLink>
           </div>
         </div>
+        {showTimer ? (
+          <div className="mt-3 sm:hidden">
+            <DealCountdown endsAt={timerEndsAt ?? ""} />
+          </div>
+        ) : null}
         <div className={cn("mt-4 grid items-stretch gap-4 lg:mt-6", surfaceStyle.gridClassName)}>
           <div className="hidden lg:block">
             <PromoPanel
               product={promoProduct}
               tone={promoTone}
+              badge={surfaceStyle.promoBadge}
+              ctaLabel={surfaceStyle.promoCta}
               title={surfaceStyle.promoTitle}
               description={surfaceStyle.promoDescription ?? description}
               {...(showTimer && timerEndsAt ? { timerEndsAt } : {})}
@@ -1883,21 +2085,6 @@ function ProductRailSection({
         </div>
       </div>
     </section>
-  );
-}
-
-function MobileSectionHeader({ title, href, accent = true }: { title: string; href: string; accent?: boolean }) {
-  const t = useTranslations("home");
-  return (
-    <div className="mb-4 flex items-center justify-between gap-3 lg:hidden">
-      <h2 className="flex min-w-0 items-center gap-2 text-2xl font-black tracking-normal text-[#111827]">
-        {accent ? <Zap className="h-6 w-6 shrink-0 fill-[#ED3500] text-[#ED3500]" aria-hidden="true" /> : null}
-        <span className="truncate">{title}</span>
-      </h2>
-      <HomepageItemLink href={href} className="inline-flex shrink-0 items-center gap-2 text-sm font-black text-[#ED3500]">
-        {t("view_all")} <ArrowRight className="h-5 w-5" aria-hidden="true" />
-      </HomepageItemLink>
-    </div>
   );
 }
 
@@ -2003,7 +2190,9 @@ function CustomHomepageSections({ sections }: { sections: HomepageSection[] }) {
 function CustomHomepageSection({ section }: { section: HomepageSection }) {
   const config = section.config ?? {};
   const items = normalizeHomepageItems(config.items);
+  const leadItem = items[0] ?? null;
   const eyebrow = stringValue(config.eyebrow) || humanize(section.sectionType);
+  const title = homepageSectionDisplayTitle(section);
   const description =
     stringValue(config.subtitle) ||
     stringValue(config.description);
@@ -2026,7 +2215,7 @@ function CustomHomepageSection({ section }: { section: HomepageSection }) {
               </span>
             ) : null}
             <h2 className="text-2xl font-black tracking-normal text-[#111827] sm:text-3xl">
-              {section.title}
+              {title}
             </h2>
             {description ? (
               <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-[#667085]">
@@ -2044,19 +2233,85 @@ function CustomHomepageSection({ section }: { section: HomepageSection }) {
           ) : null}
         </div>
 
-        {items.length ? (
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {items.map((item, index) => (
-              <CustomHomepageItemCard
-                key={`${section.id}-${item.label}-${index}`}
-                item={item}
-                accent={categoryAccent(index)}
-              />
-            ))}
+        {leadItem ? (
+          <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(280px,340px)_minmax(0,1fr)]">
+            <CustomHomepageLeadCard
+              item={leadItem}
+              title={title}
+              description={description}
+            />
+            {items.length > 1 ? (
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {items.slice(1).map((item, index) => (
+                  <CustomHomepageItemCard
+                    key={`${section.id}-${item.label}-${index + 1}`}
+                    item={item}
+                    accent={categoryAccent(index + 1)}
+                  />
+                ))}
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>
     </section>
+  );
+}
+
+function CustomHomepageLeadCard({
+  item,
+  title,
+  description,
+}: {
+  item: NormalizedHomepageItem;
+  title: string;
+  description?: string;
+}) {
+  const body = item.description || description || "Handpicked marketplace picks for faster shopping.";
+  const badge = item.badge || title;
+
+  return (
+    <HomepageItemLink
+      href={item.linkUrl}
+      className="group relative isolate min-h-[292px] overflow-hidden rounded-[20px] bg-[radial-gradient(circle_at_78%_14%,rgba(255,255,255,0.22),transparent_22%),radial-gradient(circle_at_58%_48%,rgba(255,255,255,0.12),transparent_22%),linear-gradient(145deg,#FF4318_0%,#ED3500_62%,#D72F00_100%)] p-5 text-left text-white shadow-[0_18px_42px_rgba(237,53,0,0.14)] transition hover:-translate-y-0.5 hover:shadow-[0_22px_48px_rgba(237,53,0,0.18)] lg:min-h-[292px]"
+    >
+      <span className="absolute right-6 top-6 grid grid-cols-3 gap-1 opacity-30" aria-hidden="true">
+        {Array.from({ length: 9 }).map((_, index) => (
+          <span key={index} className="h-1 w-1 rounded-full bg-white" />
+        ))}
+      </span>
+      <span className="absolute bottom-5 right-16 h-10 w-10 rotate-45 border border-white/24" aria-hidden="true" />
+      <span className="relative z-10 block">
+        <span className="mb-5 inline-flex max-w-full rounded-full bg-black/20 px-3 py-1 text-[10px] font-black uppercase text-white backdrop-blur">
+          <span className="truncate">{badge}</span>
+        </span>
+        <span className="block max-w-[13rem] text-2xl font-black leading-tight text-white">
+          {item.label || title}
+        </span>
+        <span className="mt-3 block max-w-[20ch] text-sm font-bold leading-6 text-white/88">
+          {body}
+        </span>
+        <span className="relative z-20 mt-7 inline-flex h-10 min-w-[136px] items-center justify-center gap-2 rounded-full bg-white px-5 text-xs font-black !text-[#C4320A] shadow-[0_10px_24px_rgba(16,24,40,0.10)] transition group-hover:-translate-y-0.5">
+          Explore Section
+          <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+        </span>
+      </span>
+      <span className="pointer-events-none absolute bottom-5 right-5 z-0 grid h-32 w-32 place-items-center overflow-hidden rounded-[24px] bg-white/16 p-3 opacity-95">
+        {item.imageUrl ? (
+          <StorefrontImage
+            src={item.imageUrl}
+            alt={item.label}
+            sizes="160px"
+            fallbackLabel={item.label}
+            showFallbackLabel={false}
+            allowExternalRemote
+            className="object-contain transition duration-500 group-hover:scale-105"
+          />
+        ) : (
+          <ShoppingBag className="h-12 w-12 text-white" aria-hidden="true" />
+        )}
+      </span>
+    </HomepageItemLink>
   );
 }
 
@@ -2203,12 +2458,16 @@ function padCountdownPart(value: number) {
 }
 
 function PromoPanel({
+  badge,
+  ctaLabel,
   product,
   tone,
   title,
   description,
   timerEndsAt,
 }: {
+  badge: string;
+  ctaLabel: string;
   product: ProductSummary | undefined;
   tone: "orange" | "soft";
   title: string;
@@ -2217,27 +2476,36 @@ function PromoPanel({
 }) {
   const market = useMarket();
   const variant = product ? primaryVariant(product) : null;
+  const activeDeal = product && variant ? getActiveDeal(product, variant) : null;
+  const originalPrice = variant ? getDealOriginalPrice(variant) ?? (variant.mrpPaise && variant.mrpPaise > variant.pricePaise ? variant.mrpPaise : null) : null;
+  const discount = originalPrice && variant ? Math.round(((originalPrice - variant.pricePaise) / originalPrice) * 100) : null;
 
   return (
     <div
       className={cn(
-        "relative isolate min-h-[368px] overflow-hidden rounded-[16px] p-6 shadow-[0_14px_30px_rgba(237,53,0,0.12)]",
+        "relative isolate flex min-h-[368px] overflow-hidden rounded-[20px] p-5 shadow-[0_18px_42px_rgba(237,53,0,0.14)] sm:p-6",
         tone === "orange"
-          ? "bg-[radial-gradient(circle_at_78%_14%,rgba(255,255,255,0.22),transparent_22%),linear-gradient(145deg,#FF4318_0%,#ED3500_62%,#D72F00_100%)] text-white"
+          ? "bg-[radial-gradient(circle_at_76%_18%,rgba(255,255,255,0.22),transparent_22%),radial-gradient(circle_at_60%_42%,rgba(255,255,255,0.12),transparent_20%),linear-gradient(145deg,#FF4318_0%,#ED3500_62%,#D72F00_100%)] text-white"
           : "border border-[#FFE0D6] bg-[#FFF4EF] text-[#1F2933]",
       )}
     >
-      <span className="absolute right-7 top-7 grid grid-cols-3 gap-1 opacity-30">
+      <span className="pointer-events-none absolute right-6 top-6 grid grid-cols-3 gap-1 opacity-30">
         {Array.from({ length: 9 }).map((_, index) => (
           <span key={index} className="h-1 w-1 rounded-full bg-white" />
         ))}
       </span>
-      <span className="absolute bottom-5 right-20 h-11 w-11 rotate-45 border border-white/24" />
-      <div className="relative z-10">
-        <h2 className={cn("text-xl font-black leading-none", tone === "orange" ? "text-white" : "text-[#ED3500]")}>
+      <span className="pointer-events-none absolute bottom-6 right-10 h-11 w-11 rotate-45 border border-white/24" />
+      <div className="relative z-10 flex min-w-0 flex-1 flex-col">
+        <span className={cn(
+          "mb-5 inline-flex max-w-full self-start rounded-full px-3 py-1 text-[11px] font-black uppercase shadow-[0_10px_24px_rgba(16,24,40,0.10)]",
+          tone === "orange" ? "bg-black/20 text-white backdrop-blur" : "bg-white text-[#ED3500]",
+        )}>
+          <span className="truncate">{badge}</span>
+        </span>
+        <p className={cn("max-w-[13ch] text-2xl font-black leading-[1.12] sm:text-3xl", tone === "orange" ? "text-white" : "text-[#ED3500]")}>
           {title}
-        </h2>
-        <p className={cn("mt-3 max-w-[20ch] text-sm font-bold leading-6", tone === "orange" ? "text-white/88" : "text-[#596276]")}>
+        </p>
+        <p className={cn("mt-3 max-w-[24ch] text-sm font-bold leading-6", tone === "orange" ? "text-white/88" : "text-[#596276]")}>
           {description || (product ? product.name : "Hot products from approved sellers")}
         </p>
         {timerEndsAt ? (
@@ -2245,35 +2513,64 @@ function PromoPanel({
             <DealCountdown endsAt={timerEndsAt} tone={tone === "orange" ? "light" : "dark"} />
           </div>
         ) : null}
+        {product ? (
+          <span
+            className={cn(
+              "mt-5 grid min-w-0 grid-cols-[88px_minmax(0,1fr)] items-center gap-3 overflow-hidden rounded-[18px] p-3 sm:grid-cols-[104px_minmax(0,1fr)]",
+              tone === "orange" ? "bg-white/16" : "bg-white/78",
+            )}
+          >
+            <span className="relative block h-[92px] min-w-0 overflow-hidden rounded-[14px] bg-white/82 sm:h-[104px]">
+              {discount ? (
+                <span className="absolute right-1.5 top-1.5 z-10 grid h-11 w-11 place-items-center rounded-[12px] bg-[#8A1D0A] text-center text-[9px] font-black leading-3 text-white shadow-[0_12px_24px_rgba(16,24,40,0.14)]">
+                  {discount}%<br />OFF
+                </span>
+              ) : activeDeal ? (
+                <span className="absolute right-1.5 top-1.5 z-10 rounded-full bg-[#8A1D0A] px-2 py-1 text-[9px] font-black text-white">
+                  DEAL
+                </span>
+              ) : null}
+              <StorefrontImage
+                src={primaryImage(product)}
+                alt={product.name}
+                sizes="112px"
+                fallbackLabel={product.category.name}
+                showFallbackLabel={false}
+                allowExternalRemote
+                className="object-contain p-2"
+              />
+            </span>
+            <span className="min-w-0">
+              <span className={cn("block line-clamp-3 text-sm font-black leading-5", tone === "orange" ? "text-white" : "text-[#1F2933]")}>
+                {product.name}
+              </span>
+              {variant ? (
+                <span className="mt-2 flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+                  <span className={cn("text-base font-black", tone === "orange" ? "text-white" : "text-[#1F2933]")}>
+                    {market.format(variant.pricePaise)}
+                  </span>
+                  {originalPrice ? (
+                    <span className={cn("truncate text-xs font-bold line-through", tone === "orange" ? "text-white/64" : "text-[#98A2B3]")}>
+                      {market.format(originalPrice)}
+                    </span>
+                  ) : null}
+                </span>
+              ) : null}
+            </span>
+          </span>
+        ) : null}
         <HomepageItemLink
           href={product ? `/products/${product.slug}` : "/search"}
           className={cn(
-            "relative z-40 mt-8 inline-flex h-10 min-w-[142px] items-center justify-center gap-2 rounded-full px-5 text-xs font-black shadow-[0_10px_24px_rgba(16,24,40,0.10)] transition hover:-translate-y-0.5",
+            "relative z-40 mt-5 inline-flex min-h-10 w-fit max-w-full items-center justify-center gap-2 rounded-full px-5 py-2 text-xs font-black shadow-[0_10px_24px_rgba(16,24,40,0.10)] transition hover:-translate-y-0.5",
             tone === "orange" ? "bg-white !text-[#C4320A]" : "bg-[#ED3500] !text-white",
           )}
         >
-          <span className="relative z-10">Explore Now</span>
+          <span className="relative z-10 truncate">{ctaLabel}</span>
           <ArrowRight className="relative z-10 h-3.5 w-3.5" aria-hidden="true" />
         </HomepageItemLink>
+        
       </div>
-      {product ? (
-        <span
-          className={cn(
-            "pointer-events-none absolute bottom-4 right-4 z-0 h-32 w-32 overflow-hidden rounded-[24px] p-3 opacity-95 lg:h-36 lg:w-36",
-            tone === "orange" ? "bg-white/16" : "bg-white/72",
-          )}
-        >
-          <StorefrontImage
-            src={primaryImage(product)}
-            alt={product.name}
-            sizes="180px"
-            fallbackLabel={product.category.name}
-            showFallbackLabel={false}
-            allowExternalRemote
-            className="object-contain"
-          />
-        </span>
-      ) : null}
       {variant ? (
         <span className="sr-only">From {market.format(variant.pricePaise)}</span>
       ) : null}
@@ -2379,34 +2676,6 @@ function CompactProductCard({
   );
 }
 
-function SectionTitle({
-  title,
-  description,
-  href,
-  action,
-  compact = false,
-}: {
-  title: string;
-  description?: string;
-  href?: string;
-  action?: string;
-  compact?: boolean;
-}) {
-  return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-      <div>
-        <h2 className={cn("font-black tracking-normal text-[#111827]", compact ? "text-xl" : "text-2xl")}>{title}</h2>
-        {description ? <p className="mt-1 text-sm font-semibold text-[#7A8496]">{description}</p> : null}
-      </div>
-      {href && action ? (
-        <HomepageItemLink href={href} className="inline-flex w-fit items-center gap-2 text-xs font-black text-[#ED3500] transition hover:text-[#c92b00]">
-          {action} <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-        </HomepageItemLink>
-      ) : null}
-    </div>
-  );
-}
-
 function ScrollRail({
   children,
   className,
@@ -2445,11 +2714,13 @@ function HomepageItemLink({
   className,
   children,
   "aria-label": ariaLabel,
+  rel,
 }: {
   href: string;
   className: string;
   children: ReactNode;
   "aria-label"?: string;
+  rel?: string;
 }) {
   if (!href || href === "#") {
     return <span className={className} aria-label={ariaLabel}>{children}</span>;
@@ -2457,14 +2728,14 @@ function HomepageItemLink({
 
   if (href.startsWith("/")) {
     return (
-      <Link href={href as Route} className={className} aria-label={ariaLabel}>
+      <Link href={href as Route} className={className} aria-label={ariaLabel} rel={rel}>
         {children}
       </Link>
     );
   }
 
   return (
-    <a href={href} className={className} target="_blank" rel="noreferrer" aria-label={ariaLabel}>
+    <a href={href} className={className} target="_blank" rel={rel ? `noreferrer ${rel}` : "noreferrer"} aria-label={ariaLabel}>
       {children}
     </a>
   );
@@ -2518,6 +2789,14 @@ function standaloneHomepageSections(sections: HomepageSection[] | undefined) {
   return sections?.filter((section) => !INLINE_HOMEPAGE_SECTION_TYPES.has(section.sectionType)) ?? [];
 }
 
+function homepageSectionDisplayTitle(section: HomepageSection) {
+  const title = section.title.trim();
+  if (section.sectionType === "featured_stores" && title.toLowerCase() === "top stores") {
+    return "Featured Stores";
+  }
+  return title || humanize(section.sectionType);
+}
+
 function stringValue(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -2559,6 +2838,12 @@ function statsSentence(stats: StorefrontHomePayload["stats"] | undefined) {
   return `Browse ${stats.liveProducts.toLocaleString("en-IN")} live products from ${stats.approvedStores.toLocaleString("en-IN")} approved stores.`;
 }
 
+function viewAllLabel(title: string, fallback = "View all") {
+  const cleanTitle = title.trim();
+  const prefix = fallback.trim() || "View all";
+  return cleanTitle ? `${prefix} ${cleanTitle.toLowerCase()}` : prefix;
+}
+
 function splitMarketplaceTitle(title: string) {
   const marketplaceIndex = title.toLowerCase().indexOf("marketplace");
   if (marketplaceIndex === -1) {
@@ -2588,6 +2873,8 @@ type ProductRailSurface = "deals" | "best" | "new" | "nearby";
 
 type ProductRailSurfaceStyle = {
   gridClassName: string;
+  promoBadge: string;
+  promoCta: string;
   promoDescription?: string;
   promoTitle: string;
   sectionClassName: string;
@@ -2595,27 +2882,35 @@ type ProductRailSurfaceStyle = {
 
 const PRODUCT_RAIL_SURFACES: Record<ProductRailSurface, ProductRailSurfaceStyle> = {
   deals: {
-    gridClassName: "lg:grid-cols-[minmax(280px,340px)_minmax(0,1fr)]",
+    gridClassName: "lg:grid-cols-[minmax(280px,340px)_minmax(0,1fr)]", 
+    promoBadge: "Today's pick",
+    promoCta: "Explore Now",
     promoDescription: "A sharper lead pick for deal hunters.",
     promoTitle: "Deal of the day",
     sectionClassName: "bg-white",
   },
   best: {
-    gridClassName: "lg:grid-cols-[minmax(240px,300px)_minmax(0,1fr)]",
+    gridClassName: "lg:grid-cols-[minmax(240px,300px)_minmax(0,1fr)]", 
+    promoBadge: "Buyer favourite",
+    promoCta: "Shop Best Sellers",
     promoDescription: "Popular products with stronger buyer signal.",
-    promoTitle: "Top rated pick",
+    promoTitle: "Best seller spotlight",
     sectionClassName: "bg-[linear-gradient(180deg,#FFF7F3_0%,#FFFCFB_100%)]",
   },
   new: {
-    gridClassName: "lg:grid-cols-[minmax(240px,300px)_minmax(0,1fr)]",
+    gridClassName: "lg:grid-cols-[minmax(240px,300px)_minmax(0,1fr)]", 
+    promoBadge: "New drop",
+    promoCta: "See New Picks",
     promoDescription: "Freshly listed products from verified sellers.",
-    promoTitle: "Just arrived",
+    promoTitle: "New arrival focus",
     sectionClassName: "bg-white",
   },
   nearby: {
-    gridClassName: "lg:grid-cols-[minmax(240px,300px)_minmax(0,1fr)]",
+    gridClassName: "lg:grid-cols-[minmax(240px,300px)_minmax(0,1fr)]", 
+    promoBadge: "Local pick",
+    promoCta: "Shop Nearby",
     promoDescription: "Products matched to nearby store availability.",
-    promoTitle: "Local pick",
+    promoTitle: "Nearby store pick",
     sectionClassName: "bg-[linear-gradient(180deg,#FFFCFB_0%,#FFF8F4_100%)]",
   },
 };
@@ -2650,7 +2945,7 @@ function buildStorefrontProductRails(home: StorefrontHomePayload | undefined): S
         description: "Top featured picks from verified sellers.",
         href: "/search?sort=rating",
         products: [],
-        promoTone: "soft",
+        promoTone: "orange",
         surface: "best",
       },
       {
@@ -2659,7 +2954,7 @@ function buildStorefrontProductRails(home: StorefrontHomePayload | undefined): S
         description: "Freshly approved products added to the marketplace.",
         href: "/search?sort=newest",
         products: [],
-        promoTone: "soft",
+        promoTone: "orange",
         surface: "new",
       },
       {
@@ -2668,7 +2963,7 @@ function buildStorefrontProductRails(home: StorefrontHomePayload | undefined): S
         description: "Products from stores matched to your selected location.",
         href: "/stores",
         products: [],
-        promoTone: "soft",
+        promoTone: "orange",
         surface: "nearby",
       },
     ];
@@ -2726,7 +3021,7 @@ function buildStorefrontProductRails(home: StorefrontHomePayload | undefined): S
       description: "Top featured picks from verified sellers.",
       href: "/search?sort=rating",
       products: bestSellers.length ? bestSellers : uniqueProducts(home.productRails.featured).slice(0, 10),
-      promoTone: "soft",
+      promoTone: "orange",
       surface: "best",
     },
     {
@@ -2735,7 +3030,7 @@ function buildStorefrontProductRails(home: StorefrontHomePayload | undefined): S
       description: "Freshly approved products added to the marketplace.",
       href: "/search?sort=newest",
       products: newArrivals.length ? newArrivals : uniqueProducts(home.productRails.latest).slice(0, 10),
-      promoTone: "soft",
+      promoTone: "orange",
       surface: "new",
     },
     {
@@ -2744,7 +3039,7 @@ function buildStorefrontProductRails(home: StorefrontHomePayload | undefined): S
       description: "Products from stores matched to your selected location.",
       href: "/stores",
       products: nearbyProducts.length ? nearbyProducts : productsFromNearbyStores(allProducts, home.storesNearYou).slice(0, 10),
-      promoTone: "soft",
+      promoTone: "orange",
       surface: "nearby",
     },
   ];

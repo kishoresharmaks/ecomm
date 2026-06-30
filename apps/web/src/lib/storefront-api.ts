@@ -115,7 +115,7 @@ export type ActiveDealSummary = {
 
 export type ProductVariant = {
   id: string;
-  sku: string;
+  sku?: string | null;
   variantName?: string | null;
   pricePaise: number;
   mrpPaise?: number | null;
@@ -195,7 +195,24 @@ export type PublicStoreAddress = {
   countryCode?: string | null;
 };
 
-export type StoreLocationMatchLevel = "LOCAL_AREA" | "CITY" | "STATE" | "COUNTRY" | "NONE";
+export type StoreLocationMatchLevel = "LOCAL_AREA" | "PINCODE" | "CITY" | "STATE" | "COUNTRY" | "NONE";
+export type StoreRankingMode =
+  | "LOCATION_MATCH"
+  | "GPS_NEAREST"
+  | "CUSTOMER_RECENT_ORDERS"
+  | "PLATFORM_TRENDING"
+  | "DAILY_ROTATION";
+export type StoreRankingReason =
+  | "LOCAL_AREA_AND_PINCODE"
+  | "LOCAL_AREA"
+  | "PINCODE"
+  | "CITY"
+  | "STATE"
+  | "COUNTRY"
+  | "GPS_NEAREST"
+  | "CUSTOMER_RECENT_ORDER"
+  | "PLATFORM_TRENDING"
+  | "DAILY_ROTATION";
 
 export type StoreProfile = {
   id: string;
@@ -215,6 +232,9 @@ export type StoreProfile = {
     products?: number;
   };
   reviewSummary?: ProductReviewSummary;
+  previewProducts?: ProductSummary[];
+  rankingReason?: StoreRankingReason;
+  distanceMeters?: number | null;
 };
 
 export type StoreLocationQuery = {
@@ -223,6 +243,9 @@ export type StoreLocationQuery = {
   cityCode?: string;
   localAreaCode?: string;
   pincode?: string;
+  latitude?: number;
+  longitude?: number;
+  accuracyMeters?: number;
   limit?: number;
 };
 
@@ -622,6 +645,7 @@ export type StorefrontHomePayload = {
   homepageSections: HomepageSection[];
   categories: CategorySummary[];
   storesNearYou: StoreProfile[];
+  storeRankingMode?: StoreRankingMode;
   productRails: {
     featured: ProductSummary[];
     latest: ProductSummary[];
@@ -1078,7 +1102,7 @@ export function listStores(query: StoreLocationQuery = {}) {
   return indihubFetch<StoreProfile[]>(`/api/sellers${suffix}`);
 }
 
-export function getStorefrontHome(query: StoreLocationQuery = {}) {
+export function getStorefrontHome(query: StoreLocationQuery = {}, auth?: IndihubAuthHeaders) {
   const params = new URLSearchParams();
 
   for (const [key, value] of Object.entries(query)) {
@@ -1088,7 +1112,7 @@ export function getStorefrontHome(query: StoreLocationQuery = {}) {
   }
 
   const suffix = params.size ? `?${params.toString()}` : "";
-  return indihubFetch<StorefrontHomePayload>(`/api/storefront/home${suffix}`);
+  return indihubFetch<StorefrontHomePayload>(`/api/storefront/home${suffix}`, undefined, auth);
 }
 
 export function getStorefrontContact() {

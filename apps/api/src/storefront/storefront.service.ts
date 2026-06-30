@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { Inject, Injectable, Logger, Optional } from "@nestjs/common";
 import {
   ApprovalStatus,
@@ -13,6 +14,7 @@ import {
   VariantStatus,
 } from "@indihub/database";
 import { isSoldResaleProduct } from "@indihub/shared-types";
+import { ClerkAuthService } from "../auth/clerk-auth.service";
 import { CmsService } from "../cms/cms.service";
 import { paginationFromQuery } from "../common/pagination";
 import { DealPricingService } from "../deals/deal-pricing.service";
@@ -21,38 +23,19 @@ import { PrismaService } from "../prisma/prisma.service";
 import { PublicSellerQueryDto } from "../sellers/dto/public-seller-query.dto";
 import { contactSettingKey, contactSettingsFromSetting, publicContactConfig } from "../settings/contact-settings";
 import { isTransientPrismaConnectionError, retryTransientPrismaRead } from "../prisma/transient-read-retry";
+import {
+  StorefrontStoreRankingService,
+  type PublicStoreSellerRecord,
+  type StoreLocationMatchLevel,
+  type StoreRankingMode,
+  type StoreRankingReason,
+} from "./storefront-store-ranking.service";
 
 const publicSellerProfileSelect = {
   logoUrl: true,
   bannerUrl: true,
   description: true,
 };
-
-const publicSellerAddressSelect = {
-  area: true,
-  city: true,
-  state: true,
-  country: true,
-  countryCode: true,
-  stateCode: true,
-  cityCode: true,
-  localAreaCode: true,
-  pincode: true,
-};
-
-const publicSellerSelect = {
-  id: true,
-  storeName: true,
-  slug: true,
-  sellerType: true,
-  createdAt: true,
-  profile: {
-    select: publicSellerProfileSelect,
-  },
-  addresses: {
-    select: publicSellerAddressSelect,
-  },
-} satisfies Prisma.SellerSelect;
 
 const productTemplateInclude = {
   fields: {
@@ -77,6 +60,21 @@ const publicCategoryCardSelect = {
   defaultTaxDescription: true,
   sortOrder: true,
 } satisfies Prisma.CategorySelect;
+
+const publicProductVariantSelect = {
+  id: true,
+  variantName: true,
+  pricePaise: true,
+  mrpPaise: true,
+  currency: true,
+  stockQuantity: true,
+  packageWeightGrams: true,
+  packageLengthCm: true,
+  packageBreadthCm: true,
+  packageHeightCm: true,
+  status: true,
+  attributes: true,
+} satisfies Prisma.ProductVariantSelect;
 
 const publicProductInclude = {
   category: {
@@ -109,21 +107,7 @@ const publicProductInclude = {
     take: 4,
   },
   variants: {
-    select: {
-      id: true,
-      sku: true,
-      variantName: true,
-      pricePaise: true,
-      mrpPaise: true,
-      currency: true,
-      stockQuantity: true,
-      packageWeightGrams: true,
-      packageLengthCm: true,
-      packageBreadthCm: true,
-      packageHeightCm: true,
-      status: true,
-      attributes: true,
-    },
+    select: publicProductVariantSelect,
     where: {
       status: VariantStatus.ACTIVE,
     },
@@ -149,14 +133,6 @@ const publicProductWhere: Prisma.ProductWhereInput = {
   },
 };
 
-const publicSellerLocationMatchRanks = {
-  NONE: 0,
-  COUNTRY: 1,
-  STATE: 2,
-  CITY: 3,
-  LOCAL_AREA: 4,
-} as const;
-
 const DEAL_SECTION_TYPE = "deal_strip";
 const HOME_OPTIONAL_READ_TIMEOUT_MS = positiveIntegerEnv(
   "STOREFRONT_HOME_OPTIONAL_READ_TIMEOUT_MS",
@@ -170,9 +146,8 @@ const HOME_PAYLOAD_CACHE_TTL_MS = positiveIntegerEnv("STOREFRONT_HOME_CACHE_TTL_
 const homeOptionalReadCache = new Map<string, { expiresAt: number; value: unknown }>();
 const homePayloadCache = new Map<string, { expiresAt: number; value: unknown }>();
 
-type PublicSellerLocationMatchLevel = keyof typeof publicSellerLocationMatchRanks;
 type PublicProduct = Prisma.ProductGetPayload<{ include: typeof publicProductInclude }>;
-type PublicSellerRecord = Prisma.SellerGetPayload<{ select: typeof publicSellerSelect }>;
+type PublicSellerRecord = PublicStoreSellerRecord;
 
 type PublicReviewSummary = {
   averageRating: number | null;
@@ -193,6 +168,13 @@ type HomepageDealItem = {
   linkUrl: string | null;
 };
 
+type HomeRequestOptions = {
+  authorizationHeader?: string;
+  clerkUserId?: string;
+  platformUserId?: string;
+  customerId?: string | null;
+};
+
 @Injectable()
 export class StorefrontService {
   private readonly logger = new Logger(StorefrontService.name);
@@ -200,20 +182,27 @@ export class StorefrontService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(CmsService) private readonly cms: CmsService,
+    @Inject(StorefrontStoreRankingService)
+    private readonly storeRanking: StorefrontStoreRankingService,
+    @Optional()
+    @Inject(ClerkAuthService)
+    private readonly clerkAuthService?: ClerkAuthService,
     @Optional()
     @Inject(DealPricingService)
     private readonly dealPricing?: DealPricingService,
   ) {}
 
-  async getHome(query: PublicSellerQueryDto = {}) {
-    const cacheKey = `home:${this.homeLocationCacheKey(query)}`;
+  async getHome(query: PublicSellerQueryDto = {}, options: HomeRequestOptions = {}) {
+    const customerId =
+      options.customerId ?? (await this.resolveOptionalHomepageCustomerId(options)) ?? null;
+    const cacheKey = `home:${this.homeLocationCacheKey(query)}:${this.homeViewerCacheKey(customerId)}`;
     const cached = this.readHomePayloadCache(cacheKey);
     if (cached) {
       return cached;
     }
 
     try {
-      const payload = await retryTransientPrismaRead(() => this.getHomePayload(query));
+      const payload = await retryTransientPrismaRead(() => this.getHomePayload(query, { customerId }));
       this.writeHomePayloadCache(cacheKey, payload);
       return payload;
     } catch (error) {
@@ -231,7 +220,10 @@ export class StorefrontService {
     }
   }
 
-  private async getHomePayload(query: PublicSellerQueryDto = {}) {
+  private async getHomePayload(
+    query: PublicSellerQueryDto = {},
+    options: { customerId?: string | null } = {},
+  ) {
     const [banners, homepageSections, headerMenu, footerMenu, legalMenu] = await Promise.all([
       this.cms.listPublishedBanners(),
       this.cms.listPublishedHomepageSections({ includeInactiveSchedule: true }),
@@ -267,9 +259,9 @@ export class StorefrontService {
       ),
       this.optionalHomeRead(
         "home nearby stores",
-        `home:stores:${this.homeLocationCacheKey(query)}`,
-        () => this.listHomeStores(query),
-        [],
+        `home:stores:${this.homeLocationCacheKey(query)}:${this.homeViewerCacheKey(options.customerId)}`,
+        () => this.listHomeStores(query, options),
+        { stores: [], mode: "DAILY_ROTATION" as StoreRankingMode },
       ),
       this.optionalHomeRead(
         "featured home products",
@@ -321,7 +313,8 @@ export class StorefrontService {
       banners,
       homepageSections: liveHomepageSections,
       categories: liveCategories,
-      storesNearYou,
+      storesNearYou: storesNearYou.stores,
+      storeRankingMode: storesNearYou.mode,
       productRails: {
         featured: featuredProducts,
         latest: latestProducts,
@@ -433,62 +426,63 @@ export class StorefrontService {
     });
   }
 
-  private async listHomeStores(query: PublicSellerQueryDto) {
-    const limit = query.limit ?? 6;
-    const sellers = await this.prisma.client.seller.findMany({
-      where: {
-        status: SellerStatus.APPROVED,
-        approvalStatus: ApprovalStatus.APPROVED,
-        deletedAt: null,
-      },
-      select: publicSellerSelect,
-      orderBy: { storeName: "asc" },
+  private async listHomeStores(
+    query: PublicSellerQueryDto,
+    options: { customerId?: string | null } = {},
+  ) {
+    const ranked = await this.storeRanking.rankHomeStores({
+      query,
+      customerId: options.customerId ?? null,
     });
-    const sellerIds = sellers.map((seller) => seller.id);
-    const productCounts = sellerIds.length
-      ? await this.prisma.client.product.groupBy({
-          by: ["sellerId"],
-          where: {
-            ...publicProductWhere,
-            sellerId: { in: sellerIds },
-          },
-          _count: { _all: true },
-        })
-      : [];
-    const productCountBySeller = new Map(
-      productCounts.map((count) => [count.sellerId, count._count._all]),
-    );
-    const hasLocationPreference = Boolean(
-      query.countryCode ||
-        query.stateCode ||
-        query.cityCode ||
-        query.localAreaCode ||
-        query.pincode,
-    );
-    const rankedSellers = sellers.map((seller) =>
-      this.toPublicSellerResponse(
-        seller,
-        productCountBySeller.get(seller.id) ?? 0,
-        this.resolvePublicSellerLocationMatchLevel(seller.addresses, query),
+    const sellerIds = ranked.stores.map((store) => store.seller.id);
+    const [previewProductsBySeller, reviewSummaries] = await Promise.all([
+      this.listStorePreviewProducts(sellerIds),
+      this.reviewSummariesForSellers(sellerIds),
+    ]);
+
+    return {
+      mode: ranked.mode,
+      stores: ranked.stores.map((rankedStore) =>
+        this.toPublicSellerResponse(
+          rankedStore.seller,
+          rankedStore.productCount,
+          rankedStore.locationMatchLevel,
+          previewProductsBySeller.get(rankedStore.seller.id) ?? [],
+          reviewSummaries.get(rankedStore.seller.id),
+          rankedStore.rankingReason,
+          rankedStore.distanceMeters,
+        ),
       ),
-    );
+    };
+  }
 
-    if (hasLocationPreference) {
-      rankedSellers.sort((left, right) => {
-        const rankDelta =
-          publicSellerLocationMatchRanks[right.locationMatchLevel] -
-          publicSellerLocationMatchRanks[left.locationMatchLevel];
-        if (rankDelta !== 0) {
-          return rankDelta;
-        }
-
-        return left.storeName.localeCompare(right.storeName, undefined, {
-          sensitivity: "base",
-        });
-      });
+  private async listStorePreviewProducts(sellerIds: string[]) {
+    const previews = new Map<string, PublicProduct[]>();
+    if (!sellerIds.length) {
+      return previews;
     }
 
-    return rankedSellers.slice(0, limit);
+    const products = await this.prisma.client.product.findMany({
+      where: {
+        ...publicProductWhere,
+        sellerId: { in: sellerIds },
+      },
+      include: publicProductInclude,
+      orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }],
+      take: Math.min(sellerIds.length * 6, 180),
+    });
+
+    for (const product of await this.decoratePublicProducts(this.publicVisibleProducts(products))) {
+      const sellerProducts = previews.get(product.sellerId) ?? [];
+      if (sellerProducts.length >= 3) {
+        continue;
+      }
+
+      sellerProducts.push(product);
+      previews.set(product.sellerId, sellerProducts);
+    }
+
+    return previews;
   }
 
   private async listHomeProducts(input: {
@@ -696,6 +690,50 @@ export class StorefrontService {
     };
   }
 
+  private async reviewSummariesForSellers(sellerIds: string[]) {
+    const summaries = new Map<string, PublicReviewSummary>();
+    if (!sellerIds.length) {
+      return summaries;
+    }
+
+    const where = {
+      sellerId: { in: sellerIds },
+      status: ProductReviewStatus.APPROVED,
+    };
+    const [aggregates, distributionRows] = await Promise.all([
+      this.prisma.client.productReview.groupBy({
+        by: ["sellerId"],
+        where,
+        _avg: { rating: true },
+        _count: { _all: true },
+      }),
+      this.prisma.client.productReview.groupBy({
+        by: ["sellerId", "rating"],
+        where,
+        _count: { _all: true },
+      }),
+    ]);
+
+    for (const aggregate of aggregates) {
+      summaries.set(aggregate.sellerId, {
+        ...this.emptyReviewSummary(),
+        averageRating:
+          aggregate._avg.rating === null ? null : Math.round(aggregate._avg.rating * 10) / 10,
+        reviewCount: aggregate._count._all,
+      });
+    }
+
+    for (const row of distributionRows) {
+      const summary = summaries.get(row.sellerId) ?? this.emptyReviewSummary();
+      if (row.rating >= 1 && row.rating <= 5) {
+        summary.distribution[row.rating as 1 | 2 | 3 | 4 | 5] = row._count._all;
+      }
+      summaries.set(row.sellerId, summary);
+    }
+
+    return summaries;
+  }
+
   private publicProductQueryWhere(query: ProductQueryDto): Prisma.ProductWhereInput {
     return {
       ...(query.categoryId ? { categoryId: query.categoryId } : {}),
@@ -854,8 +892,67 @@ export class StorefrontService {
       query.cityCode ?? "",
       query.localAreaCode ?? "",
       query.pincode ?? "",
+      query.latitude ?? "",
+      query.longitude ?? "",
+      query.accuracyMeters ?? "",
       query.limit ?? "",
     ].join("|");
+  }
+
+  private homeViewerCacheKey(customerId?: string | null) {
+    if (!customerId) {
+      return "guest";
+    }
+    return `customer:${createHash("sha256").update(customerId).digest("hex").slice(0, 16)}`;
+  }
+
+  private async resolveOptionalHomepageCustomerId(options: HomeRequestOptions) {
+    try {
+      const userWhere = await this.resolveOptionalHomepageUserWhere(options);
+      if (!userWhere) {
+        return null;
+      }
+
+      const user = await this.prisma.client.user.findFirst({
+        where: userWhere,
+        select: {
+          customer: {
+            select: {
+              id: true,
+              status: true,
+            },
+          },
+        },
+      });
+
+      return user?.customer?.status === UserStatus.ACTIVE ? user.customer.id : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async resolveOptionalHomepageUserWhere(options: HomeRequestOptions) {
+    if (options.authorizationHeader && this.clerkAuthService) {
+      const clerkUserId = await this.clerkAuthService.verifyAuthorizationHeader(
+        options.authorizationHeader,
+      );
+      return { clerkUserId };
+    }
+
+    if (this.allowDevAuth()) {
+      if (options.platformUserId) {
+        return { id: options.platformUserId };
+      }
+      if (options.clerkUserId) {
+        return { clerkUserId: options.clerkUserId };
+      }
+    }
+
+    return null;
+  }
+
+  private allowDevAuth() {
+    return process.env.NODE_ENV !== "production" || process.env.INDIHUB_ALLOW_DEV_AUTH === "true";
   }
 
   private withLiveProductCounts<
@@ -884,7 +981,11 @@ export class StorefrontService {
   private toPublicSellerResponse(
     seller: PublicSellerRecord,
     productCount: number,
-    locationMatchLevel: PublicSellerLocationMatchLevel = "NONE",
+    locationMatchLevel: StoreLocationMatchLevel = "NONE",
+    previewProducts: PublicProduct[] = [],
+    reviewSummary: PublicReviewSummary = this.emptyReviewSummary(),
+    rankingReason: StoreRankingReason = "DAILY_ROTATION",
+    distanceMeters: number | null = null,
   ) {
     return {
       id: seller.id,
@@ -910,76 +1011,11 @@ export class StorefrontService {
       _count: {
         products: productCount,
       },
+      reviewSummary,
+      previewProducts,
+      rankingReason,
+      distanceMeters,
     };
-  }
-
-  private resolvePublicSellerLocationMatchLevel(
-    addresses: Array<{
-      countryCode?: string | null;
-      stateCode?: string | null;
-      cityCode?: string | null;
-      localAreaCode?: string | null;
-      pincode?: string | null;
-    }>,
-    query: PublicSellerQueryDto,
-  ): PublicSellerLocationMatchLevel {
-    let bestMatch: PublicSellerLocationMatchLevel = "NONE";
-
-    for (const address of addresses) {
-      const level = this.resolveAddressLocationMatchLevel(address, query);
-      if (publicSellerLocationMatchRanks[level] > publicSellerLocationMatchRanks[bestMatch]) {
-        bestMatch = level;
-      }
-
-      if (bestMatch === "LOCAL_AREA") {
-        return bestMatch;
-      }
-    }
-
-    return bestMatch;
-  }
-
-  private resolveAddressLocationMatchLevel(
-    address: {
-      countryCode?: string | null;
-      stateCode?: string | null;
-      cityCode?: string | null;
-      localAreaCode?: string | null;
-      pincode?: string | null;
-    },
-    query: PublicSellerQueryDto,
-  ): PublicSellerLocationMatchLevel {
-    const countryCode = query.countryCode?.trim().toUpperCase();
-    const stateCode = query.stateCode?.trim().toUpperCase();
-    const cityCode = query.cityCode?.trim().toUpperCase();
-    const localAreaCode = query.localAreaCode?.trim().toUpperCase();
-    const pincode = query.pincode?.trim().toUpperCase();
-    const addressCountry = address.countryCode?.trim().toUpperCase();
-    const addressState = address.stateCode?.trim().toUpperCase();
-    const addressCity = address.cityCode?.trim().toUpperCase();
-    const addressLocalArea = address.localAreaCode?.trim().toUpperCase();
-    const addressPincode = address.pincode?.trim().toUpperCase();
-
-    if (
-      (localAreaCode && addressLocalArea === localAreaCode) ||
-      (pincode && addressPincode === pincode)
-    ) {
-      return "LOCAL_AREA";
-    }
-
-    if (cityCode && addressCity === cityCode) {
-      return "CITY";
-    }
-
-    if (stateCode && addressState === stateCode) {
-      return "STATE";
-    }
-
-    if (countryCode && addressCountry === countryCode) {
-      return "COUNTRY";
-    }
-
-    return "NONE";
   }
 }
 

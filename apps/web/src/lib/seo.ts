@@ -53,7 +53,7 @@ type SeoFallback = {
   type?: "website" | "article";
 };
 
-export const siteUrl = (process.env.NEXT_PUBLIC_WEB_URL ?? "http://192.168.1.2:3000").replace(/\/$/, "");
+export const siteUrl = (process.env.NEXT_PUBLIC_WEB_URL ?? "https://1handindia.com").replace(/\/$/, "");
 
 export const publicRobotsAllow = ["/", "/seller/register", "/b2b/register"] as const;
 
@@ -272,7 +272,6 @@ export function buildProductJsonLd(product: ProductSummary) {
     name: product.name,
     description: product.description,
     image: resolvedImage ? [resolvedImage] : undefined,
-    sku: variant?.sku,
     brand: {
       "@type": "Brand",
       name: brandName

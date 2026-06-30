@@ -11,7 +11,7 @@
       "developmentClient": true,
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_URL": "http://192.168.1.2:4000/api"
+        "EXPO_PUBLIC_API_URL": "https://api.1handindia.com/api"
       }
     },
     "preview": {
@@ -20,11 +20,14 @@
       },
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_URL": "http://192.168.1.2:4000/api"
+        "EXPO_PUBLIC_API_URL": "https://api.1handindia.com/api"
       }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api.1handindia.com/api"
+      }
     }
   }
 }

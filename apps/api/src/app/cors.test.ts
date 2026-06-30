@@ -14,18 +14,27 @@ function checkOrigin(origin: string | undefined, env: NodeJS.ProcessEnv) {
 }
 
 describe("createCorsOptions", () => {
-  it("allows the configured LAN web origin", () => {
+  it("allows the configured production web origin", () => {
     expect(
-      checkOrigin("http://192.168.1.2:3000", {
-        API_CORS_ORIGINS: "http://192.168.1.2:3000",
+      checkOrigin("https://1handindia.com", {
+        API_CORS_ORIGINS: "https://1handindia.com,https://www.1handindia.com,https://api.1handindia.com",
       }),
     ).toBe(true);
   });
 
   it("trims spaces and quotes in configured origins", () => {
-    expect(parseCorsOrigins('"http://192.168.1.2:3000", http://10.0.0.5:3000')).toEqual(
-      new Set(["http://192.168.1.2:3000", "http://10.0.0.5:3000"]),
+    expect(parseCorsOrigins('"https://1handindia.com", https://api.1handindia.com')).toEqual(
+      new Set(["https://1handindia.com", "https://api.1handindia.com"]),
     );
+  });
+
+  it("allows the API origin when explicitly configured", () => {
+    expect(
+      checkOrigin("https://api.1handindia.com", {
+        API_CORS_ORIGINS: "https://1handindia.com,https://www.1handindia.com,https://api.1handindia.com",
+        NODE_ENV: "production",
+      }),
+    ).toBe(true);
   });
 
   it("allows private network origins during development", () => {

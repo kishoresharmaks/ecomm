@@ -10,6 +10,7 @@ import {
   MapPin,
   PackageCheck,
   RefreshCw,
+  Share2,
   ShoppingBag,
   ShoppingCart,
   Star,
@@ -97,6 +98,50 @@ export function StoreProfileClient({ slug }: { slug: string }) {
   const storeReviewCount = store?.reviewSummary?.reviewCount ?? 0;
   const storeAverageRating = store?.reviewSummary?.averageRating ?? null;
 
+  async function handleShareStore() {
+    if (!store) {
+      setNotice("Store is still loading.");
+      return;
+    }
+
+    const shareUrl = `${window.location.origin}/stores/${store.slug}`;
+    const location = sellerLocationLabel(address);
+    const description = store.profile?.description?.trim();
+    const shareText = [
+      description,
+      `${store.storeName} on 1HandIndia.`,
+      productCount ? `${productCount.toLocaleString("en-IN")} live products.` : null,
+      location !== "Location not shared" ? location : null,
+    ]
+      .filter(Boolean)
+      .join(" ");
+    const clipboardText = `${store.storeName}\n${shareText}\n${shareUrl}`;
+
+    try {
+      if (navigator.share) {
+        try {
+          await navigator.share({
+            title: store.storeName,
+            text: shareText,
+            url: shareUrl,
+          });
+          return;
+        } catch (error) {
+          if (isShareAbort(error)) {
+            return;
+          }
+          console.error("Store native share failed", error);
+        }
+      }
+
+      await copyStoreShareText(clipboardText);
+      setNotice("Store link copied.");
+    } catch (error) {
+      console.error("Store share fallback failed", error);
+      setNotice("Unable to share this store right now. Please try again.");
+    }
+  }
+
   async function toggleWishlist(product: ProductSummary) {
     try {
       const action = await wishlist.toggleWishlist(product.id);
@@ -127,18 +172,18 @@ export function StoreProfileClient({ slug }: { slug: string }) {
         {store ? (
           <>
             <section className="mx-auto max-w-7xl px-5 pb-8 lg:px-6">
-              <div className="overflow-hidden rounded-[26px] border border-[#E8DCD6] bg-white shadow-[0_24px_70px_rgba(22,59,92,0.10)]">
-                <div className="relative isolate min-h-[250px] overflow-hidden bg-[#082C62] sm:min-h-[300px] md:min-h-[340px]">
+              <div className="overflow-hidden rounded-[26px] border border-[#FFE0D6] bg-white shadow-[0_18px_54px_rgba(22,59,92,0.08)]">
+                <div className="relative isolate min-h-[250px] overflow-hidden bg-[#FFF7F3] sm:min-h-[300px] md:min-h-[340px]">
                   {bannerUrl ? (
-                    <span className="absolute inset-0 -z-20 opacity-30">
+                    <span className="absolute inset-0 -z-20 opacity-20">
                       <StorefrontImage src={bannerUrl} alt={`${store.storeName} banner`} priority sizes="100vw" fallbackLabel={store.storeName} />
                     </span>
                   ) : null}
-                  <span className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_72%_18%,rgba(237,53,0,0.32),transparent_30%),linear-gradient(135deg,#06224D_0%,#083A7C_48%,#071B35_100%)]" />
-                  <span className="absolute inset-0 -z-10 opacity-25 [background-image:radial-gradient(rgba(255,255,255,0.42)_1px,transparent_1px)] [background-size:18px_18px]" />
+                  <span className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_74%_18%,rgba(237,53,0,0.16),transparent_30%),linear-gradient(135deg,#FFFFFF_0%,#FFF7F3_58%,#FFF0EC_100%)]" />
+                  <span className="absolute inset-0 -z-10 opacity-45 [background-image:radial-gradient(rgba(237,53,0,0.18)_1px,transparent_1px)] [background-size:18px_18px]" />
 
-                  <div className="grid min-h-[250px] grid-cols-[48px_minmax(0,1fr)_76px] items-center gap-2 p-4 pb-12 text-white sm:min-h-[300px] sm:grid-cols-[88px_minmax(0,1fr)_176px] sm:gap-5 sm:p-7 sm:pb-16 md:min-h-[340px] md:grid-cols-[112px_minmax(0,1fr)_320px] md:gap-8 md:p-12 md:pb-20">
-                    <span className="relative grid h-12 w-12 shrink-0 place-items-center self-center overflow-hidden rounded-full border-[3px] border-white bg-white text-base font-black text-[#163B5C] shadow-[0_16px_40px_rgba(0,0,0,0.22)] sm:h-[5.5rem] sm:w-[5.5rem] sm:border-4 sm:text-2xl md:h-28 md:w-28 md:border-[6px] md:text-3xl">
+                  <div className="grid min-h-[250px] grid-cols-[48px_minmax(0,1fr)_76px] items-center gap-2 p-4 pb-12 text-[#0B1824] sm:min-h-[300px] sm:grid-cols-[88px_minmax(0,1fr)_176px] sm:gap-5 sm:p-7 sm:pb-16 md:min-h-[340px] md:grid-cols-[112px_minmax(0,1fr)_320px] md:gap-8 md:p-12 md:pb-20">
+                    <span className="relative grid h-12 w-12 shrink-0 place-items-center self-center overflow-hidden rounded-full border-[3px] border-white bg-white text-base font-black text-[#163B5C] shadow-[0_14px_34px_rgba(22,59,92,0.14)] sm:h-[5.5rem] sm:w-[5.5rem] sm:border-4 sm:text-2xl md:h-28 md:w-28 md:border-[6px] md:text-3xl">
                       <StorefrontImage
                         src={logoUrl}
                         alt={`${store.storeName} logo`}
@@ -151,17 +196,28 @@ export function StoreProfileClient({ slug }: { slug: string }) {
                     </span>
 
                     <div className="min-w-0 self-center">
-                      <span className="inline-flex rounded-full border border-white/25 bg-white/12 px-2.5 py-0.5 text-[10px] font-black sm:px-3 sm:py-1 sm:text-xs">
+                      <span className="inline-flex rounded-full border border-[#FFD8CA] bg-white/80 px-2.5 py-0.5 text-[10px] font-black text-[#ED3500] sm:px-3 sm:py-1 sm:text-xs">
                         Marketplace
                       </span>
-                      <h1 className="mt-2 whitespace-normal text-[16px] font-black leading-5 tracking-normal text-white sm:mt-4 sm:text-3xl sm:leading-tight md:text-5xl">
+                      <h1 className="mt-2 whitespace-normal text-[16px] font-black leading-5 tracking-normal text-[#0B1824] sm:mt-4 sm:text-3xl sm:leading-tight md:text-5xl">
                         {store.storeName}
                       </h1>
-                      {/* <p className="mt-2 line-clamp-2 max-w-2xl text-[11px] font-semibold leading-4 text-white/88 sm:mt-3 sm:line-clamp-3 sm:text-sm sm:leading-6 md:text-base md:leading-7">
+                      {/* <p className="mt-2 line-clamp-2 max-w-2xl text-[11px] font-semibold leading-4 text-[#475467] sm:mt-3 sm:line-clamp-3 sm:text-sm sm:leading-6 md:text-base md:leading-7">
                         {store.profile?.description ??
                           "Approved 1HandIndia seller profile with products, store details, and customer-facing catalog."}
                       </p> */}
-                      
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void handleShareStore()}
+                          className="rounded-full border-[#FFD1C4] bg-white/85 text-[#163B5C] shadow-sm hover:border-[#ED3500] hover:bg-white hover:text-[#ED3500]"
+                        >
+                          <Share2 className="h-4 w-4" aria-hidden="true" />
+                          Share store
+                        </Button>
+                      </div>
                     </div>
 
                     <HeroLogoStand />
@@ -169,15 +225,15 @@ export function StoreProfileClient({ slug }: { slug: string }) {
                 </div>
 
                 <div className="relative z-10 -mt-8 px-5 pb-5 md:px-8">
-                  <div className="grid grid-cols-3 overflow-hidden rounded-2xl border border-[#E5E7EB] bg-white shadow-[0_18px_44px_rgba(22,59,92,0.12)]">
-                    <StoreStatCard icon={ShoppingBag} label="Products" value={`${productCount.toLocaleString("en-IN")} live products`} />
+                  <div className="grid grid-cols-3 divide-x divide-[#E5E7EB] overflow-hidden rounded-2xl border border-[#E5E7EB] bg-white shadow-[0_18px_44px_rgba(22,59,92,0.10)]">
+                    <StoreStatCard icon={ShoppingBag} label="Live products" value={productCount.toLocaleString("en-IN")} />
                     <StoreStatCard
                       icon={Star}
-                      label="Rating"
-                      value={storeReviewCount ? `${storeAverageRating?.toFixed(1)} from ${storeReviewCount} reviews` : "No reviews yet"}
+                      label={storeReviewCount ? `${storeReviewCount.toLocaleString("en-IN")} reviews` : "Reviews yet"}
+                      value={storeReviewCount ? `${storeAverageRating?.toFixed(1)}/5` : "No"}
                       tone={storeReviewCount ? "success" : "neutral"}
                     />
-                    <StoreStatCard icon={CalendarDays} label="Member since" value={memberSince ?? "Recently joined"} />
+                    <StoreStatCard icon={CalendarDays} label="Member since" value={memberSince ?? "New"} />
                   </div>
                 </div>
               </div>
@@ -331,7 +387,6 @@ function HeroLogoStand() {
         loading="eager"
         aria-hidden="true"
       />
-      <span className="pointer-events-none absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-[#082C62] to-transparent sm:w-14 md:w-20" />
     </div>
   );
 }
@@ -348,15 +403,23 @@ function StoreStatCard({
   tone?: "neutral" | "success";
 }) {
   return (
-    <div className="flex min-w-0 items-center gap-2 border-r border-[#E8EDF2] p-3 last:border-r-0 sm:gap-4 sm:p-5">
-      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-[#E8EDF2] bg-[#F8FAFC] text-[#163B5C] sm:h-12 sm:w-12">
+    <div className="flex min-h-[110px] min-w-0 flex-col items-center justify-center gap-3 px-3 py-5 text-center sm:min-h-[124px] sm:px-5">
+      <span
+        className={cn(
+          "grid h-11 w-11 shrink-0 place-items-center rounded-xl border bg-[#F8FAFC]",
+          tone === "success"
+            ? "border-[#BFEAD9] text-[#0F8A5F]"
+            : "border-[#E8EDF2] text-[#163B5C]",
+        )}
+      >
         <Icon className="h-5 w-5" aria-hidden="true" />
       </span>
-      <span className="min-w-0">
-        <span className="block text-[10px] font-bold uppercase tracking-wide text-[#667085] sm:text-xs">{label}</span>
-        <span className={cn("mt-1 block text-xs font-black leading-5 text-[#1F2933] sm:text-sm", tone === "success" && "text-[#0F8A5F]")}>
+
+      <span className="min-w-0 space-y-1">
+        <span className={cn("block text-sm font-black leading-5 text-[#1F2933] sm:text-base", tone === "success" && "text-[#0F8A5F]")}>
           {value}
         </span>
+        <span className="block text-[10px] font-bold uppercase tracking-[0.08em] text-[#667085] sm:text-[11px] sm:tracking-[0.12em]">{label}</span>
       </span>
     </div>
   );
@@ -507,4 +570,32 @@ function formatMonthYear(value?: string | null) {
   }
 
   return new Intl.DateTimeFormat("en-IN", { month: "short", year: "numeric" }).format(date);
+}
+
+function isShareAbort(error: unknown) {
+  return error instanceof DOMException && (error.name === "AbortError" || error.name === "NotAllowedError");
+}
+
+async function copyStoreShareText(text: string) {
+  if (navigator.clipboard?.writeText && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textArea = document.createElement("textarea");
+  textArea.value = text;
+  textArea.setAttribute("readonly", "");
+  textArea.style.position = "fixed";
+  textArea.style.left = "-9999px";
+  textArea.style.top = "0";
+  document.body.appendChild(textArea);
+  textArea.select();
+  try {
+    const copied = document.execCommand("copy");
+    if (!copied) {
+      throw new Error("Clipboard copy command returned false.");
+    }
+  } finally {
+    document.body.removeChild(textArea);
+  }
 }

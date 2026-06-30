@@ -21,6 +21,21 @@ const publicSellerProfileSelect = {
   description: true,
 };
 
+const publicProductVariantSelect = {
+  id: true,
+  variantName: true,
+  pricePaise: true,
+  mrpPaise: true,
+  currency: true,
+  stockQuantity: true,
+  packageWeightGrams: true,
+  packageLengthCm: true,
+  packageBreadthCm: true,
+  packageHeightCm: true,
+  status: true,
+  attributes: true,
+} satisfies Prisma.ProductVariantSelect;
+
 const publicProductInclude = {
   category: {
     include: {
@@ -49,6 +64,7 @@ const publicProductInclude = {
     orderBy: [{ sortOrder: "asc" as const }, { createdAt: "asc" as const }],
   },
   variants: {
+    select: publicProductVariantSelect,
     orderBy: [{ createdAt: "asc" as const }],
   },
 };

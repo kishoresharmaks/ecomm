@@ -61,16 +61,16 @@ describe("ClerkAuthService", () => {
     expect(clerkMocks.verifyToken).toHaveBeenCalledWith(
       tokenWithSessionId(),
       expect.objectContaining({
-        authorizedParties: ["http://192.168.1.2:3000"],
+        authorizedParties: ["https://1handindia.com"],
         clockSkewInMs: 120_000
       })
     );
   });
 
   it("normalizes Clerk authorized-party origins from explicit and public web config", async () => {
-    process.env.CLERK_AUTHORIZED_PARTIES = '"http://192.168.1.2:3000", http://192.168.1.2:3000/sign-in';
-    process.env.NEXT_PUBLIC_WEB_URL = "http://192.168.1.4:3000";
-    process.env.API_CORS_ORIGINS = "http://192.168.1.5:3000";
+    process.env.CLERK_AUTHORIZED_PARTIES = '"https://1handindia.com", https://1handindia.com/sign-in';
+    process.env.NEXT_PUBLIC_WEB_URL = "https://www.1handindia.com";
+    process.env.API_CORS_ORIGINS = "https://api.1handindia.com";
     clerkMocks.verifyToken.mockResolvedValue({ sub: "user_123" });
 
     const service = new ClerkAuthService();
@@ -79,15 +79,15 @@ describe("ClerkAuthService", () => {
     expect(clerkMocks.verifyToken).toHaveBeenCalledWith(
       tokenWithSessionId(),
       expect.objectContaining({
-        authorizedParties: ["http://192.168.1.2:3000", "http://192.168.1.4:3000", "http://192.168.1.5:3000"]
+        authorizedParties: ["https://1handindia.com", "https://www.1handindia.com", "https://api.1handindia.com"]
       })
     );
   });
 
   it("returns an actionable IP-origin error when Clerk rejects the token azp", async () => {
-    process.env.CLERK_AUTHORIZED_PARTIES = "http://192.168.1.2:3000";
+    process.env.CLERK_AUTHORIZED_PARTIES = "https://1handindia.com";
     clerkMocks.verifyToken.mockRejectedValueOnce(
-      Object.assign(new Error('Invalid JWT Authorized party claim (azp) "http://localhost:3000". Expected "http://192.168.1.2:3000".'), {
+      Object.assign(new Error('Invalid JWT Authorized party claim (azp) "http://localhost:3000". Expected "https://1handindia.com".'), {
         reason: "token-invalid-authorized-parties"
       })
     );
@@ -96,7 +96,7 @@ describe("ClerkAuthService", () => {
     const service = new ClerkAuthService();
 
     await expect(service.verifyBearerToken(tokenWithSessionId())).rejects.toThrow(
-      /Open 1HandIndia at http:\/\/192\.168\.1\.3:3000/,
+      /Open 1HandIndia at https:\/\/1handindia\.com/,
     );
   });
 

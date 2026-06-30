@@ -39,6 +39,7 @@ import {
   UserRound,
   X,
 } from "lucide-react";
+import { useUser } from "@clerk/nextjs";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@indihub/ui";
 import { AuthActions } from "@/components/auth/auth-actions";
@@ -67,6 +68,7 @@ type HeaderNavItem = {
 };
 
 const brandLogoSrc = "/brand/1handindia_logo.png";
+const clerkEnabled = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 const staticStorefrontDataStaleMs = 5 * 60 * 1000;
 const categoryIcons = [PackageSearch, Store, ShoppingCart, BadgePercent, PackageCheck, ShieldCheck];
 
@@ -330,7 +332,7 @@ export function StorefrontHeader({ initialMenu }: { initialMenu?: CmsMenuItem[] 
               <MobileRoundAction
                 href="/account"
                 label={t("my_account")}
-                icon={<UserRound className="h-5 w-5" />}
+                icon={<MobileAccountAvatar />}
               />
             </div>
           </div>
@@ -360,6 +362,7 @@ export function StorefrontHeader({ initialMenu }: { initialMenu?: CmsMenuItem[] 
               cartCount={cartProductCount}
               wishlistCount={wishlistCount}
               cmsItems={cmsItems}
+              pathname={pathname}
             />,
             drawerPortal,
           )
@@ -979,6 +982,25 @@ function HeaderIconAction({
 }
 
 function AccountMenu() {
+  if (clerkEnabled) {
+    return <ClerkAccountMenu />;
+  }
+
+  return <AccountMenuShell />;
+}
+
+function ClerkAccountMenu() {
+  const { user, isSignedIn } = useUser();
+  const googleImageUrl = isSignedIn ? googleProfileImageUrl(user) : null;
+
+  return (
+    <AccountMenuShell
+      imageUrl={googleImageUrl}
+    />
+  );
+}
+
+function AccountMenuShell({ imageUrl }: { imageUrl?: string | null }) {
   const t = useTranslations("header");
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -1023,13 +1045,11 @@ function AccountMenu() {
           }
         }}
         className={cn(
-          "inline-flex h-[52px] items-center gap-2 rounded-2xl border border-[#eaded8] bg-white px-2.5 text-left text-[#101828] shadow-[0_10px_28px_rgba(17,24,39,0.06)] transition hover:border-[#ffb99f] hover:bg-[#fff7f3] hover:text-[#ff5a1f] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#ff5a1f]/15 2xl:gap-3 2xl:px-3",
+          "inline-flex h-[52px] items-center gap-2 rounded-[22px] border border-[#eaded8] bg-white px-2 text-left text-[#101828] shadow-[0_10px_28px_rgba(17,24,39,0.06)] transition hover:border-[#ffb99f] hover:bg-[#fff7f3] hover:text-[#ff5a1f] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#ff5a1f]/15 2xl:gap-3 2xl:px-3",
           open && "border-[#ffb99f] bg-[#fff7f3] text-[#ff5a1f]",
         )}
       >
-        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#fff1ea] text-[#101828]">
-          <UserRound className="h-5 w-5" aria-hidden="true" />
-        </span>
+        <CustomerProfileAvatar imageUrl={imageUrl ?? null} size="desktop" />
         <span className="hidden 2xl:block">
           <span className="block text-sm font-black">{t("my_account")}</span>
           <span className="block text-xs font-semibold text-[#667085]">{t("profile_orders")}</span>
@@ -1080,6 +1100,26 @@ function AccountMenu() {
   );
 }
 
+function MobileAccountAvatar() {
+  if (clerkEnabled) {
+    return <ClerkMobileAccountAvatar />;
+  }
+
+  return <CustomerProfileAvatar size="mobile" />;
+}
+
+function ClerkMobileAccountAvatar() {
+  const { user, isSignedIn } = useUser();
+  const googleImageUrl = isSignedIn ? googleProfileImageUrl(user) : null;
+
+  return (
+    <CustomerProfileAvatar
+      imageUrl={googleImageUrl}
+      size="mobile"
+    />
+  );
+}
+
 function MobileRoundAction({
   href,
   label,
@@ -1123,6 +1163,61 @@ function MobileRoundAction({
   );
 }
 
+function CustomerProfileAvatar({
+  imageUrl,
+  size = "desktop",
+}: {
+  imageUrl?: string | null;
+  size?: "desktop" | "mobile";
+}) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const displayImage = imageUrl && !imageFailed ? imageUrl : null;
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [imageUrl]);
+
+  return (
+    <span
+      className={cn(
+        "relative grid shrink-0 place-items-center overflow-hidden rounded-full border bg-[#fff1ea] text-[#101828]",
+        size === "mobile"
+          ? "h-8 w-8 border-[#ffe2d7]"
+          : "h-10 w-10 border-[#ffe2d7] shadow-[0_10px_24px_rgba(255,90,31,0.12)]",
+      )}
+      aria-hidden="true"
+    >
+      {displayImage ? (
+        <img
+          src={displayImage}
+          alt=""
+          loading="eager"
+          referrerPolicy="no-referrer"
+          className="h-full w-full object-cover"
+          onError={() => setImageFailed(true)}
+        />
+      ) : (
+        <>
+          <span className="absolute inset-0 bg-[radial-gradient(circle_at_30%_22%,#fff_0%,#fff6f2_34%,#ffe4d9_100%)]" />
+          <UserRound className={cn("relative text-[#101828]", size === "mobile" ? "h-4 w-4" : "h-5 w-5")} />
+        </>
+      )}
+    </span>
+  );
+}
+
+function googleProfileImageUrl(user: ReturnType<typeof useUser>["user"]) {
+  if (!user) {
+    return null;
+  }
+
+  const googleAccount = user.externalAccounts?.find((account) =>
+    String(account.provider).toLowerCase().includes("google"),
+  );
+
+  return googleAccount?.imageUrl || null;
+}
+
 function BadgeBubble({ count }: { count?: number | undefined }) {
   if (!count || count <= 0) {
     return null;
@@ -1143,6 +1238,7 @@ function MobileDrawer({
   cartCount,
   wishlistCount,
   cmsItems,
+  pathname,
 }: {
   query: string;
   onQueryChange: (value: string) => void;
@@ -1151,46 +1247,52 @@ function MobileDrawer({
   cartCount: number;
   wishlistCount: number;
   cmsItems: HeaderNavItem[];
+  pathname: string;
 }) {
   const t = useTranslations("header");
 
   return (
-    <div className="fixed inset-0 z-[120] lg:hidden">
+    <div className="fixed inset-0 z-[120] lg:hidden" role="dialog" aria-modal="true" aria-label="Mobile navigation">
       <button
         type="button"
         className="absolute inset-0 bg-[#101828]/36 backdrop-blur-sm"
         aria-label="Close mobile menu"
         onClick={onClose}
       />
-      <aside className="indihub-mobile-side-drawer absolute inset-y-3 left-3 flex w-[min(380px,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-[30px] border border-[#f2dcd1] bg-white shadow-[0_28px_90px_rgba(17,24,39,0.24)]">
-        <div className="flex items-center gap-3 border-b border-[#f2e4dd] px-4 py-4">
-          <MobileBrandLogo />
-          <button
-            type="button"
-            onClick={onClose}
-            className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-[#fff1ea] text-[#101828] transition hover:bg-[#ff5a1f] hover:text-white"
-            aria-label="Close menu"
-          >
-            <X className="h-5 w-5" aria-hidden="true" />
-          </button>
+      <aside className="indihub-mobile-side-drawer absolute inset-y-1.5 left-1.5 flex max-h-[calc(100svh-0.75rem)] w-[min(390px,calc(100vw-0.75rem))] flex-col overflow-hidden rounded-[24px] border border-[#f2dcd1] bg-white shadow-[0_28px_90px_rgba(17,24,39,0.24)] sm:inset-y-3 sm:left-3 sm:max-h-[calc(100svh-1.5rem)] sm:w-[min(400px,calc(100vw-1.5rem))] sm:rounded-[30px]">
+        <div className="shrink-0 border-b border-[#f2e4dd] bg-white px-4 pb-2.5 pt-[max(0.625rem,env(safe-area-inset-top))] sm:py-4">
+          <div className="flex items-center gap-3">
+            <MobileBrandLogo />
+            <button
+              type="button"
+              onClick={onClose}
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#fff1ea] text-[#101828] transition hover:bg-[#ff5a1f] hover:text-white focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#ff5a1f]/15"
+              aria-label="Close menu"
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </div>
+          <p className="mt-1.5 text-[11px] font-semibold leading-4 text-[#667085]">
+            Shop local stores, track orders, and manage your account.
+          </p>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-2.5 sm:px-4 sm:py-4">
           <SearchForm
             query={query}
             onQueryChange={onQueryChange}
             onSubmit={onSearchSubmit}
             onNavigate={onClose}
-            inputClassName="h-12 rounded-2xl border-[#eaded8] bg-[#fffaf7] pl-11 pr-[86px] text-sm shadow-sm"
-            buttonClassName="right-1.5 top-1.5 h-9 px-4"
+            inputClassName="h-11 rounded-2xl border-[#eaded8] bg-[#fffaf7] pl-10 pr-[82px] text-sm shadow-sm"
+            buttonClassName="right-1 top-1 h-9 px-3.5"
           />
 
-          <div className="mt-4">
-            <StorefrontLocationPicker mobile compact />
+          <div className="mt-2.5 grid gap-1.5 rounded-[20px] border border-[#f2e4dd] bg-[#fffaf7] p-2">
+            <StorefrontLocationPicker mobile compact className="min-w-0" />
             <StorefrontLocalePicker mobile />
           </div>
 
-          <div className="mt-5 grid gap-2">
+          <nav className="mt-3 grid gap-1" aria-label="Mobile storefront navigation">
             {drawerLinks.map((item) => {
               const Icon = item.icon;
               const label =
@@ -1205,6 +1307,7 @@ function MobileDrawer({
                   label={label}
                   icon={<Icon className="h-5 w-5" aria-hidden="true" />}
                   badge={item.href === "/account/wishlist" ? wishlistCount : undefined}
+                  active={isActiveDrawerHref(pathname, item.href)}
                   onNavigate={onClose}
                 />
               );
@@ -1214,22 +1317,24 @@ function MobileDrawer({
               label={t("cart")}
               icon={<ShoppingCart className="h-5 w-5" />}
               badge={cartCount}
+              active={isActiveDrawerHref(pathname, "/cart")}
               onNavigate={onClose}
             />
-          </div>
+          </nav>
 
           {cmsItems.length ? (
             <div className="mt-5 border-t border-[#f2e4dd] pt-4">
-              <p className="px-1 text-xs font-black uppercase tracking-[0.18em] text-[#ff5a1f]">
+              <p className="px-1 text-[11px] font-black uppercase tracking-[0.16em] text-[#ff5a1f]">
                 Explore
               </p>
-              <div className="mt-2 grid gap-2">
+              <div className="mt-2 grid gap-1.5">
                 {cmsItems.slice(0, 4).map((item) => (
                   <DrawerLink
                     key={`${item.href}-${item.label}`}
                     href={item.href}
                     label={item.label}
                     icon={<ChevronRight className="h-5 w-5" />}
+                    active={isActiveDrawerHref(pathname, item.href)}
                     onNavigate={onClose}
                   />
                 ))}
@@ -1237,22 +1342,22 @@ function MobileDrawer({
             </div>
           ) : null}
 
-          <div className="mt-5 rounded-3xl bg-[#fffaf7] p-4">
+          <div className="mt-4 rounded-[20px] border border-[#f2e4dd] bg-[#fffaf7] p-3">
             <p className="text-sm font-black text-[#101828]">Seller partner?</p>
-            <p className="mt-1 text-sm font-semibold leading-6 text-[#667085]">
+            <p className="mt-1 text-xs font-semibold leading-5 text-[#667085]">
               List your store and sell to nearby customers.
             </p>
             <Link
               href="/seller/register"
               onClick={onClose}
-              className="mt-3 inline-flex h-11 w-full items-center justify-center rounded-2xl bg-[#ff5a1f] text-sm font-black text-white shadow-[0_14px_30px_rgba(255,90,31,0.25)]"
+              className="mt-3 inline-flex h-10 w-full items-center justify-center rounded-2xl bg-[#ff5a1f] text-sm font-black text-white shadow-[0_14px_30px_rgba(255,90,31,0.22)] transition hover:bg-[#d93d0c] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#ff5a1f]/20"
             >
               Sell on 1HandIndia
             </Link>
           </div>
         </div>
 
-        <div className="border-t border-[#f2e4dd] px-4 py-4">
+        <div className="shrink-0 border-t border-[#f2e4dd] bg-white px-3 py-2 [padding-bottom:max(0.5rem,env(safe-area-inset-bottom))]">
           <AuthActions />
         </div>
       </aside>
@@ -1265,21 +1370,33 @@ function DrawerLink({
   label,
   icon,
   badge,
+  active = false,
   onNavigate,
 }: {
   href: string;
   label: string;
   icon: ReactNode;
   badge?: number | undefined;
+  active?: boolean;
   onNavigate: () => void;
 }) {
   return (
     <DrawerAnchor
       href={href}
       onNavigate={onNavigate}
-      className="relative flex min-h-[52px] items-center gap-3 rounded-2xl border border-transparent px-3 py-2.5 text-sm font-black text-[#101828] transition hover:border-[#f2dcd1] hover:bg-[#fff7f3] hover:text-[#ff5a1f]"
+      className={cn(
+        "relative flex min-h-[42px] items-center gap-2.5 rounded-2xl border px-2.5 py-1.5 text-[13px] font-black transition focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#ff5a1f]/15",
+        active
+          ? "border-[#ffb99f] bg-[#fff4ef] text-[#ff5a1f]"
+          : "border-transparent text-[#101828] hover:border-[#f2dcd1] hover:bg-[#fff7f3] hover:text-[#ff5a1f]",
+      )}
     >
-      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-[#fff1ea] text-[#ff5a1f]">
+      <span
+        className={cn(
+          "grid h-8 w-8 shrink-0 place-items-center rounded-full transition",
+          active ? "bg-[#ff5a1f] text-white" : "bg-[#fff1ea] text-[#ff5a1f]",
+        )}
+      >
         {icon}
       </span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
@@ -1287,6 +1404,14 @@ function DrawerLink({
       <ChevronRight className="h-4 w-4 shrink-0 text-[#98a2b3]" aria-hidden="true" />
     </DrawerAnchor>
   );
+}
+
+function isActiveDrawerHref(pathname: string, href: string) {
+  if (href === "/") {
+    return pathname === "/";
+  }
+
+  return pathname === href || pathname.startsWith(`${href}/`);
 }
 
 function UtilityLink({

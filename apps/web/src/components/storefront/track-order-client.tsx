@@ -171,7 +171,7 @@ function TrackedOrderPanel({ order }: { order: PublicTrackedOrder }) {
               <div>
                 <p className="font-black text-[#1F2933]">{item.productNameSnapshot}</p>
                 <p className="mt-1 text-sm font-semibold text-[#667085]">
-                  {item.variantSnapshot?.variantName ?? item.variantSnapshot?.sku ?? "Default"} x {item.quantity}
+                  {item.variantSnapshot?.variantName ?? "Default"} x {item.quantity}
                 </p>
                 {item.seller ? <p className="mt-1 text-xs font-bold text-[#667085]">Sold by {item.seller.storeName}</p> : null}
               </div>
