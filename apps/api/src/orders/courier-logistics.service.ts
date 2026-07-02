@@ -2528,20 +2528,24 @@ export class CourierLogisticsService {
       declaredValuePaise: shipmentPackage.declaredValuePaise,
       shippingPaise: shipmentPackage.shippingPaise,
       codSurchargePaise: shipmentPackage.codSurchargePaise,
-      order: {
-        id: shipmentPackage.order.id,
-        orderNumber: shipmentPackage.order.orderNumber,
-        paymentStatus: shipmentPackage.order.paymentStatus,
-        deliveryStatus: shipmentPackage.order.deliveryStatus,
-        shippingAddressSnapshot: shipmentPackage.order.shippingAddressSnapshot,
-        createdAt: shipmentPackage.order.createdAt.toISOString(),
-      },
-      seller: {
-        id: shipmentPackage.seller.id,
-        storeName: shipmentPackage.seller.storeName,
-        sellerType: shipmentPackage.seller.sellerType,
-      },
-      orderShipment: omitShipment
+      order: shipmentPackage.order
+        ? {
+            id: shipmentPackage.order.id,
+            orderNumber: shipmentPackage.order.orderNumber,
+            paymentStatus: shipmentPackage.order.paymentStatus,
+            deliveryStatus: shipmentPackage.order.deliveryStatus,
+            shippingAddressSnapshot: shipmentPackage.order.shippingAddressSnapshot,
+            createdAt: shipmentPackage.order.createdAt.toISOString(),
+          }
+        : null,
+      seller: shipmentPackage.seller
+        ? {
+            id: shipmentPackage.seller.id,
+            storeName: shipmentPackage.seller.storeName,
+            sellerType: shipmentPackage.seller.sellerType,
+          }
+        : null,
+      orderShipment: omitShipment || !shipmentPackage.orderShipment
         ? (null as any)
         : {
             id: shipmentPackage.orderShipment.id,
@@ -2647,18 +2651,22 @@ export class CourierLogisticsService {
       courierProviderCode: shipment.courierProviderCode,
       deliveryPartnerUserId: shipment.deliveryPartnerUserId,
       assignmentNote: shipment.assignmentNote,
-      order: {
-        id: shipment.order.id,
-        orderNumber: shipment.order.orderNumber,
-        paymentStatus: shipment.order.paymentStatus,
-        deliveryStatus: shipment.order.deliveryStatus,
-        shippingAddressSnapshot: shipment.order.shippingAddressSnapshot,
-      },
-      seller: {
-        id: shipment.seller.id,
-        storeName: shipment.seller.storeName,
-        sellerType: shipment.seller.sellerType,
-      },
+      order: shipment.order
+        ? {
+            id: shipment.order.id,
+            orderNumber: shipment.order.orderNumber,
+            paymentStatus: shipment.order.paymentStatus,
+            deliveryStatus: shipment.order.deliveryStatus,
+            shippingAddressSnapshot: shipment.order.shippingAddressSnapshot,
+          }
+        : null,
+      seller: shipment.seller
+        ? {
+            id: shipment.seller.id,
+            storeName: shipment.seller.storeName,
+            sellerType: shipment.seller.sellerType,
+          }
+        : null,
       deliveryPartner: shipment.deliveryPartner
         ? {
             id: shipment.deliveryPartner.id,
