@@ -155,6 +155,7 @@ const serviceRefundInclude = {
 
 type ServiceBookingRecord = Prisma.ServiceBookingGetPayload<{ include: typeof serviceBookingInclude }>;
 type ServiceListingRecord = Prisma.ServiceListingGetPayload<{ include: typeof serviceListingInclude }>;
+type ServiceBookingAddressSnapshot = Record<string, unknown>;
 type ServiceBookingTransitionPatch = {
   providerNote?: string;
   scheduledStartAt?: string;
@@ -294,6 +295,7 @@ export class ServiceMarketplaceService {
   async listPublicServices(query: ServiceListingQueryDto) {
     const { page, skip, take } = paginationFromQuery(query, { defaultLimit: 20 });
     const where = this.publicServiceWhere(query);
+    const serviceabilityLocation = await this.resolveServiceabilityLocation(query);
     const [items, total] = await Promise.all([
       this.prisma.client.serviceListing.findMany({
         where,
@@ -306,7 +308,7 @@ export class ServiceMarketplaceService {
     ]);
 
     return {
-      items: items.map((item) => this.decorateServiceability(item, query)),
+      items: items.map((item) => this.decorateServiceability(item, serviceabilityLocation)),
       total,
       page,
       limit: take,
@@ -334,7 +336,7 @@ export class ServiceMarketplaceService {
       throw new NotFoundException("Service not found.");
     }
 
-    return this.decorateServiceability(listing, query);
+    return this.decorateServiceability(listing, await this.resolveServiceabilityLocation(query));
   }
 
   async listSellerServices(actor: RequestUser, query: ServiceListingQueryDto) {
@@ -655,12 +657,17 @@ export class ServiceMarketplaceService {
       throw new BadRequestException("Selected visit mode is not available for this service.");
     }
 
-    const addressSnapshot = await this.resolveBookingAddress(customer.id, dto);
-    const serviceable = this.isListingServiceable(listing, addressSnapshot);
-    if (!serviceable.serviceable) {
-      throw new BadRequestException(
-        serviceable.reason ?? "This service is not available for the selected location.",
-      );
+    const addressSnapshot =
+      dto.visitMode === ServiceVisitMode.CUSTOMER_LOCATION
+        ? await this.resolveBookingAddress(customer.id, dto)
+        : null;
+    if (dto.visitMode === ServiceVisitMode.CUSTOMER_LOCATION) {
+      const serviceable = this.isListingServiceable(listing, addressSnapshot);
+      if (!serviceable.serviceable) {
+        throw new BadRequestException(
+          serviceable.reason ?? "This service is not available for the selected location.",
+        );
+      }
     }
 
     const selectedPackage = (dto.servicePackageId
@@ -3605,9 +3612,60 @@ export class ServiceMarketplaceService {
     };
   }
 
-  private decorateServiceability<T extends ServiceListingRecord>(listing: T, query: ServiceListingQueryDto) {
+  private decorateServiceability<T extends ServiceListingRecord>(
+    listing: T,
+    query: Partial<ServiceListingQueryDto> | Record<string, unknown> | null,
+  ) {
     const serviceability = this.isListingServiceable(listing, query);
     return { ...listing, serviceability };
+  }
+
+  private async resolveServiceabilityLocation(
+    location: Partial<ServiceListingQueryDto> | Record<string, unknown> | null,
+  ) {
+    if (!location) {
+      return null;
+    }
+
+    const countryCode = stringLocation(location, "countryCode")?.toUpperCase() ?? "IN";
+    const stateCode = stringLocation(location, "stateCode")?.toUpperCase();
+    const cityCode = stringLocation(location, "cityCode")?.toUpperCase();
+    const localAreaCode = stringLocation(location, "localAreaCode")?.toUpperCase();
+    const pincode = stringLocation(location, "pincode");
+    const baseLocation: ServiceBookingAddressSnapshot = {
+      ...location,
+      countryCode,
+      ...(stateCode ? { stateCode } : {}),
+      ...(cityCode ? { cityCode } : {}),
+      ...(localAreaCode ? { localAreaCode } : {}),
+    };
+
+    if (!localAreaCode && !pincode) {
+      return baseLocation;
+    }
+
+    const matchedArea = await this.findMatchingLocationArea({
+      countryCode,
+      localAreaCode: localAreaCode ?? null,
+      pincode,
+      city: stringLocation(location, "city"),
+      state: stringLocation(location, "state"),
+    });
+    if (!matchedArea) {
+      return baseLocation;
+    }
+
+    return {
+      ...baseLocation,
+      localAreaCode: matchedArea.code,
+      pincode: pincode ?? matchedArea.postalCode ?? undefined,
+      city: matchedArea.city.name,
+      cityCode: matchedArea.city.code,
+      state: matchedArea.city.subdivision.name,
+      stateCode: matchedArea.city.subdivision.code,
+      country: matchedArea.city.subdivision.country.name,
+      countryCode: matchedArea.city.subdivision.country.code,
+    };
   }
 
   private isListingServiceable(listing: Pick<ServiceListingRecord, "areas">, location: Partial<ServiceListingQueryDto> | Record<string, unknown> | null) {
@@ -3617,10 +3675,13 @@ export class ServiceMarketplaceService {
     if (!location) {
       return { serviceable: false, reason: "Select your service location to check availability." };
     }
-    const countryCode = stringLocation(location, "countryCode");
-    const stateCode = stringLocation(location, "stateCode");
-    const cityCode = stringLocation(location, "cityCode");
-    const localAreaCode = stringLocation(location, "localAreaCode");
+    const countryCode = stringLocation(location, "countryCode")?.toUpperCase() ?? null;
+    const stateCode = stringLocation(location, "stateCode")?.toUpperCase() ?? null;
+    const cityCode = stringLocation(location, "cityCode")?.toUpperCase() ?? null;
+    const localAreaCode = stringLocation(location, "localAreaCode")?.toUpperCase() ?? null;
+    const state = stringLocation(location, "state");
+    const city = stringLocation(location, "city");
+    const country = stringLocation(location, "country");
     const pincode = stringLocation(location, "pincode");
     const latitude = numberLocation(location, "latitude");
     const longitude = numberLocation(location, "longitude");
@@ -3631,6 +3692,9 @@ export class ServiceMarketplaceService {
       if (area.cityCode && cityCode && area.cityCode === cityCode) return { serviceable: true, matchLevel: "CITY" };
       if (area.stateCode && stateCode && area.stateCode === stateCode && !area.cityCode) return { serviceable: true, matchLevel: "STATE" };
       if (area.countryCode && countryCode && area.countryCode === countryCode && !area.stateCode) return { serviceable: true, matchLevel: "COUNTRY" };
+      if (area.label && city && sameLocationText(area.label, city) && !area.localAreaCode && !area.pincode) return { serviceable: true, matchLevel: "CITY_TEXT" };
+      if (area.label && state && sameLocationText(area.label, state) && !area.cityCode && !area.localAreaCode && !area.pincode) return { serviceable: true, matchLevel: "STATE_TEXT" };
+      if (area.label && country && sameLocationText(area.label, country) && !area.stateCode && !area.cityCode && !area.localAreaCode && !area.pincode) return { serviceable: true, matchLevel: "COUNTRY_TEXT" };
       if (area.radiusKm && area.latitude && area.longitude && latitude !== null && longitude !== null) {
         const distanceKm = haversineKm(Number(area.latitude), Number(area.longitude), latitude, longitude);
         if (distanceKm <= area.radiusKm) {
@@ -3687,7 +3751,109 @@ export class ServiceMarketplaceService {
         longitude: address.longitude ? Number(address.longitude) : null,
       };
     }
-    return dto.addressSnapshot ?? null;
+    if (!dto.addressSnapshot) {
+      return null;
+    }
+    return this.enrichManualBookingAddress(dto.addressSnapshot);
+  }
+
+  private async enrichManualBookingAddress(address: ServiceBookingAddressSnapshot) {
+    const snapshot: ServiceBookingAddressSnapshot = { ...address };
+    const countryCode = stringLocation(snapshot, "countryCode")?.toUpperCase() ?? "IN";
+    const localAreaCode = stringLocation(snapshot, "localAreaCode")?.toUpperCase();
+    const pincode = stringLocation(snapshot, "pincode");
+    const city = stringLocation(snapshot, "city");
+    const state = stringLocation(snapshot, "state");
+
+    snapshot.countryCode = countryCode;
+
+    const matchedArea = await this.findMatchingLocationArea({
+      countryCode,
+      localAreaCode: localAreaCode ?? null,
+      pincode,
+      city,
+      state,
+    });
+    if (!matchedArea) {
+      return snapshot;
+    }
+
+    snapshot.localAreaCode = matchedArea.code;
+    snapshot.area = stringLocation(snapshot, "area") ?? matchedArea.name;
+    snapshot.pincode = stringLocation(snapshot, "pincode") ?? matchedArea.postalCode ?? "";
+    snapshot.city = matchedArea.city.name;
+    snapshot.cityCode = matchedArea.city.code;
+    snapshot.state = matchedArea.city.subdivision.name;
+    snapshot.stateCode = matchedArea.city.subdivision.code;
+    snapshot.country = matchedArea.city.subdivision.country.name;
+    snapshot.countryCode = matchedArea.city.subdivision.country.code;
+    return snapshot;
+  }
+
+  private async findMatchingLocationArea(input: {
+    countryCode: string;
+    localAreaCode?: string | null;
+    pincode?: string | null;
+    city?: string | null;
+    state?: string | null;
+  }) {
+    const localAreaCode = input.localAreaCode ?? null;
+    const pincode = input.pincode ?? null;
+    if (!localAreaCode && !pincode) {
+      return null;
+    }
+    const areaLookup: Prisma.LocationAreaWhereInput = localAreaCode
+      ? { code: localAreaCode }
+      : { postalCode: pincode ?? "" };
+
+    const baseWhere: Prisma.LocationAreaWhereInput = {
+      active: true,
+      ...areaLookup,
+      city: {
+        active: true,
+        subdivision: {
+          active: true,
+          country: { code: input.countryCode, enabled: true },
+        },
+      },
+    };
+
+    const scopedWhere: Prisma.LocationAreaWhereInput = {
+      ...baseWhere,
+      city: {
+        active: true,
+        ...(input.city ? { name: { equals: input.city, mode: "insensitive" } } : {}),
+        subdivision: {
+          active: true,
+          ...(input.state ? { name: { equals: input.state, mode: "insensitive" } } : {}),
+          country: { code: input.countryCode, enabled: true },
+        },
+      },
+    };
+    const where = input.localAreaCode || input.city || input.state ? scopedWhere : baseWhere;
+    const fallbackWhere = localAreaCode ? null : baseWhere;
+
+    const query = {
+      include: {
+        city: {
+          include: {
+            subdivision: {
+              include: { country: true },
+            },
+          },
+        },
+      },
+      orderBy: [{ sortOrder: "asc" as const }, { name: "asc" as const }],
+    };
+
+    const area = await this.prisma.client.locationArea.findFirst({ where, ...query });
+    if (area || !fallbackWhere || where === fallbackWhere) {
+      return area;
+    }
+    return this.prisma.client.locationArea.findFirst({
+      where: fallbackWhere,
+      ...query,
+    });
   }
 
   private bookingPricing(listing: ServiceListingRecord, selectedPackage: ServiceListingRecord["packages"][number] | null) {
@@ -4037,6 +4203,14 @@ function numberLocation(location: Partial<ServiceListingQueryDto> | Record<strin
   const value = location[key as keyof typeof location];
   const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function sameLocationText(left: string, right: string) {
+  return normalizeLocationText(left) === normalizeLocationText(right);
+}
+
+function normalizeLocationText(value: string) {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {

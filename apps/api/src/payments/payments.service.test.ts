@@ -54,6 +54,9 @@ describe("PaymentsService", () => {
         findUnique: vi.fn(),
         create: vi.fn(),
       },
+      serviceRefundRequest: {
+        aggregate: vi.fn(),
+      },
       sellerLedgerEntry: {
         create: vi.fn(),
       },
@@ -115,6 +118,7 @@ describe("PaymentsService", () => {
     prisma.client.serviceBooking.update.mockResolvedValue(createServiceBookingRecord({ paidAmountPaise: 500 }));
     prisma.client.serviceBookingSettlement.findUnique.mockResolvedValue(null);
     prisma.client.serviceBookingSettlement.create.mockResolvedValue({ id: "service_settlement_1" });
+    prisma.client.serviceRefundRequest.aggregate.mockResolvedValue({ _sum: { amountPaise: 0 } });
     prisma.client.sellerLedgerEntry.create.mockResolvedValue({});
     financeCalculator.calculateServiceBooking.mockResolvedValue(createServiceFinanceCalculation());
     prisma.client.order.updateMany.mockResolvedValue({ count: 1 });

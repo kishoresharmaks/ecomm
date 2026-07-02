@@ -18,6 +18,12 @@ import {
   type ServiceVisitMode,
 } from "@/lib/service-marketplace-api";
 import { formatMoney } from "@/lib/storefront-api";
+import {
+  buildCustomerServiceBookingPayload,
+  serviceLocationQueryFromAddress,
+  serviceLocationQueryFromManualAddress,
+  type ManualServiceAddressInput,
+} from "./service-booking-payload";
 import { StorefrontFrame } from "./storefront-frame";
 import { StorefrontImage } from "./storefront-image";
 import { StorefrontEmptyState, StorefrontErrorPanel, StorefrontNotice, StorefrontSkeleton } from "./storefront-ui";
@@ -149,16 +155,31 @@ function ServiceDetail({ slug }: { slug: string }) {
   const [selectedVisitMode, setSelectedVisitMode] = useState<ServiceVisitMode>("CUSTOMER_LOCATION");
   const [selectedPackageId, setSelectedPackageId] = useState("");
   const [selectedAddressId, setSelectedAddressId] = useState("");
-
-  const serviceQuery = useQuery({
-    queryKey: ["public-service", slug],
-    queryFn: () => getPublicService(slug),
+  const [manualAddress, setManualAddress] = useState<ManualServiceAddressInput>({
+    city: "",
+    state: "",
+    pincode: "",
+    countryCode: "IN",
   });
   const addressesQuery = useQuery({
     queryKey: ["account-addresses", customerAuth.authKey, "service-booking"],
     queryFn: () => listCustomerAddresses(customerAuth.authHeaders),
     enabled: customerAuth.enabled,
     retry: false,
+  });
+
+  const addresses = addressesQuery.data ?? [];
+  const selectedAddress = addresses.find((address) => address.id === selectedAddressId) ?? null;
+  const selectedLocationQuery =
+    selectedVisitMode === "CUSTOMER_LOCATION"
+      ? selectedAddress
+        ? serviceLocationQueryFromAddress(selectedAddress)
+        : serviceLocationQueryFromManualAddress(manualAddress)
+      : {};
+  const hasSelectedLocationForServiceability = Object.keys(selectedLocationQuery).length > 0;
+  const serviceQuery = useQuery({
+    queryKey: ["public-service", slug, selectedLocationQuery],
+    queryFn: () => getPublicService(slug, selectedLocationQuery),
   });
 
   const bookingMutation = useMutation({
@@ -176,10 +197,10 @@ function ServiceDetail({ slug }: { slug: string }) {
   });
 
   const service = serviceQuery.data;
-  const addresses = addressesQuery.data ?? [];
-  const selectedAddress = addresses.find((address) => address.id === selectedAddressId) ?? addresses.find((address) => address.isDefault) ?? addresses[0];
   const activeVisitMode = resolveVisitMode(service, selectedVisitMode);
   const needsCustomerAddress = activeVisitMode === "CUSTOMER_LOCATION";
+  const selectedServiceAddress = needsCustomerAddress ? selectedAddress : null;
+  const showManualAddress = needsCustomerAddress && !selectedServiceAddress;
 
   useEffect(() => {
     if (!service?.allowedVisitModes.length) {
@@ -197,30 +218,18 @@ function ServiceDetail({ slug }: { slug: string }) {
     }
     const form = new FormData(event.currentTarget);
     const visitMode = resolveVisitMode(service, selectedVisitMode);
-    const payload: ServiceBookingPayload = {
+    const scheduledStartAt = optionalFormValue(form, "scheduledStartAt");
+    const customerNote = optionalFormValue(form, "customerNote");
+    const payload = buildCustomerServiceBookingPayload({
       serviceSlug: slug,
       visitMode,
       customerIssue: formValue(form, "customerIssue"),
-    };
-    if (selectedPackageId) {
-      payload.servicePackageId = selectedPackageId;
-    }
-    const scheduledStartAt = formValue(form, "scheduledStartAt");
-    if (scheduledStartAt) {
-      payload.scheduledStartAt = new Date(scheduledStartAt).toISOString();
-    }
-    const customerNote = optionalFormValue(form, "customerNote");
-    if (customerNote) {
-      payload.customerNote = customerNote;
-    }
-    if (visitMode === "CUSTOMER_LOCATION") {
-      const manualSnapshot = manualAddressSnapshot(form);
-      if (selectedAddress?.id) {
-        payload.addressId = selectedAddress.id;
-      } else {
-        payload.addressSnapshot = manualSnapshot;
-      }
-    }
+      selectedPackageId,
+      selectedAddress: selectedServiceAddress,
+      manualAddress,
+      ...(scheduledStartAt ? { scheduledStartAt } : {}),
+      ...(customerNote ? { customerNote } : {}),
+    });
     setNotice(null);
     bookingMutation.mutate(payload);
   }
@@ -308,13 +317,14 @@ function ServiceDetail({ slug }: { slug: string }) {
                     <>
                       <label className="space-y-2">
                         <span className="text-xs font-bold uppercase tracking-wide text-[#667085]">Saved address</span>
-                        <select value={selectedAddress?.id ?? ""} onChange={(event) => setSelectedAddressId(event.target.value)} className="h-11 w-full rounded-md border border-[#E5E7EB] px-3 text-sm font-semibold" disabled={!addresses.length}>
-                          {addresses.length ? addresses.map((address) => (
+                        <select value={selectedAddressId} onChange={(event) => setSelectedAddressId(event.target.value)} className="h-11 w-full rounded-md border border-[#E5E7EB] px-3 text-sm font-semibold">
+                          <option value="">Use manual location below</option>
+                          {addresses.map((address) => (
                             <option key={address.id} value={address.id}>{address.label ?? address.line1} · {address.city} {address.pincode}</option>
-                          )) : <option value="">Use manual location below</option>}
+                          ))}
                         </select>
                       </label>
-                      {!addresses.length ? <ManualAddressFields /> : null}
+                      {showManualAddress ? <ManualAddressFields value={manualAddress} onChange={(patch) => setManualAddress((current) => ({ ...current, ...patch }))} /> : null}
                     </>
                   ) : (
                     <StorefrontNotice>
@@ -323,8 +333,11 @@ function ServiceDetail({ slug }: { slug: string }) {
                         : "You will visit the provider location. The provider will share the address after confirming the booking."}
                     </StorefrontNotice>
                   )}
-                  {needsCustomerAddress && service.serviceability && !service.serviceability.serviceable ? (
+                  {needsCustomerAddress && hasSelectedLocationForServiceability && service.serviceability && !service.serviceability.serviceable ? (
                     <StorefrontNotice tone="warning">{service.serviceability.reason ?? unavailableText}</StorefrontNotice>
+                  ) : null}
+                  {needsCustomerAddress && !hasSelectedLocationForServiceability ? (
+                    <StorefrontNotice tone="warning">Select your service location to check availability.</StorefrontNotice>
                   ) : null}
                   <label className="space-y-2">
                     <span className="text-xs font-bold uppercase tracking-wide text-[#667085]">Preferred date and time</span>
@@ -371,14 +384,20 @@ function ServiceDetail({ slug }: { slug: string }) {
   );
 }
 
-function ManualAddressFields() {
+function ManualAddressFields({
+  value,
+  onChange,
+}: {
+  value: ManualServiceAddressInput;
+  onChange: (patch: Partial<ManualServiceAddressInput>) => void;
+}) {
   return (
     <div className="grid gap-3 rounded-md border border-[#E5E7EB] bg-[#F8FAFC] p-3">
       <p className="flex items-center gap-2 text-sm font-black text-[#123A5A]"><MapPin className="h-4 w-4" /> Service location</p>
-      <input name="city" className="h-10 rounded-md border border-[#E5E7EB] px-3 text-sm font-semibold" placeholder="City" />
-      <input name="state" className="h-10 rounded-md border border-[#E5E7EB] px-3 text-sm font-semibold" placeholder="State" />
-      <input name="pincode" className="h-10 rounded-md border border-[#E5E7EB] px-3 text-sm font-semibold" placeholder="Pincode" />
-      <input name="countryCode" defaultValue="IN" className="h-10 rounded-md border border-[#E5E7EB] px-3 text-sm font-semibold" placeholder="Country code" />
+      <input value={value.city ?? ""} onChange={(event) => onChange({ city: event.target.value })} className="h-10 rounded-md border border-[#E5E7EB] px-3 text-sm font-semibold" placeholder="City" />
+      <input value={value.state ?? ""} onChange={(event) => onChange({ state: event.target.value })} className="h-10 rounded-md border border-[#E5E7EB] px-3 text-sm font-semibold" placeholder="State" />
+      <input value={value.pincode ?? ""} onChange={(event) => onChange({ pincode: event.target.value })} className="h-10 rounded-md border border-[#E5E7EB] px-3 text-sm font-semibold" placeholder="Pincode" />
+      <input value={value.countryCode ?? "IN"} onChange={(event) => onChange({ countryCode: event.target.value })} className="h-10 rounded-md border border-[#E5E7EB] px-3 text-sm font-semibold" placeholder="Country code" />
     </div>
   );
 }
@@ -438,15 +457,6 @@ function formValue(form: FormData, name: string) {
 function optionalFormValue(form: FormData, name: string) {
   const value = formValue(form, name);
   return value ? value : undefined;
-}
-
-function manualAddressSnapshot(form: FormData) {
-  return {
-    city: formValue(form, "city"),
-    state: formValue(form, "state"),
-    pincode: formValue(form, "pincode"),
-    countryCode: formValue(form, "countryCode") || "IN",
-  };
 }
 
 function resolveVisitMode(service: ServiceListing | undefined, selectedVisitMode: ServiceVisitMode): ServiceVisitMode {
