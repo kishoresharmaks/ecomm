@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, BadgeCheck, CalendarDays, CheckCircle2, Clock, MapPin, Search, ShieldCheck, Star, Wrench } from "lucide-react";
 import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
@@ -20,6 +20,8 @@ import {
 import { formatMoney } from "@/lib/storefront-api";
 import {
   buildCustomerServiceBookingPayload,
+  hasManualServiceLocationInput,
+  isManualServiceLocationReadyForQuery,
   serviceLocationQueryFromAddress,
   serviceLocationQueryFromManualAddress,
   type ManualServiceAddressInput,
@@ -170,16 +172,25 @@ function ServiceDetail({ slug }: { slug: string }) {
 
   const addresses = addressesQuery.data ?? [];
   const selectedAddress = addresses.find((address) => address.id === selectedAddressId) ?? null;
+  const selectedAddressLocationQuery = useMemo(() => serviceLocationQueryFromAddress(selectedAddress), [selectedAddress]);
+  const manualLocationQuery = useMemo(
+    () => serviceLocationQueryFromManualAddress(manualAddress),
+    [manualAddress.countryCode, manualAddress.pincode],
+  );
+  const debouncedManualLocationQuery = useDebouncedValue(manualLocationQuery, 450);
   const selectedLocationQuery =
     selectedVisitMode === "CUSTOMER_LOCATION"
       ? selectedAddress
-        ? serviceLocationQueryFromAddress(selectedAddress)
-        : serviceLocationQueryFromManualAddress(manualAddress)
+        ? selectedAddressLocationQuery
+        : debouncedManualLocationQuery
       : {};
   const hasSelectedLocationForServiceability = Object.keys(selectedLocationQuery).length > 0;
+  const manualLocationHasInput = hasManualServiceLocationInput(manualAddress);
+  const manualLocationReadyForCheck = isManualServiceLocationReadyForQuery(manualAddress);
   const serviceQuery = useQuery({
     queryKey: ["public-service", slug, selectedLocationQuery],
     queryFn: () => getPublicService(slug, selectedLocationQuery),
+    placeholderData: (previousData) => previousData,
   });
 
   const bookingMutation = useMutation({
@@ -201,6 +212,12 @@ function ServiceDetail({ slug }: { slug: string }) {
   const needsCustomerAddress = activeVisitMode === "CUSTOMER_LOCATION";
   const selectedServiceAddress = needsCustomerAddress ? selectedAddress : null;
   const showManualAddress = needsCustomerAddress && !selectedServiceAddress;
+  const currentLocationReadyForServiceability = needsCustomerAddress && (Boolean(selectedServiceAddress) || manualLocationReadyForCheck);
+  const isCheckingServiceability =
+    needsCustomerAddress &&
+    currentLocationReadyForServiceability &&
+    serviceQuery.isFetching &&
+    !serviceQuery.isLoading;
 
   useEffect(() => {
     if (!service?.allowedVisitModes.length) {
@@ -246,7 +263,7 @@ function ServiceDetail({ slug }: { slug: string }) {
           </Button>
         </section>
 
-        {serviceQuery.isLoading ? (
+        {serviceQuery.isLoading && !service ? (
           <section className="mx-auto max-w-7xl px-5 pb-12 lg:px-6">
             <StorefrontSkeleton className="h-[520px]" />
           </section>
@@ -333,10 +350,19 @@ function ServiceDetail({ slug }: { slug: string }) {
                         : "You will visit the provider location. The provider will share the address after confirming the booking."}
                     </StorefrontNotice>
                   )}
-                  {needsCustomerAddress && hasSelectedLocationForServiceability && service.serviceability && !service.serviceability.serviceable ? (
+                  {needsCustomerAddress && isCheckingServiceability ? (
+                    <StorefrontNotice>Checking service availability for this pincode...</StorefrontNotice>
+                  ) : null}
+                  {needsCustomerAddress && currentLocationReadyForServiceability && service.serviceability?.serviceable ? (
+                    <StorefrontNotice tone="success">This service is available at the selected location.</StorefrontNotice>
+                  ) : null}
+                  {needsCustomerAddress && currentLocationReadyForServiceability && service.serviceability && !service.serviceability.serviceable && !isCheckingServiceability ? (
                     <StorefrontNotice tone="warning">{service.serviceability.reason ?? unavailableText}</StorefrontNotice>
                   ) : null}
-                  {needsCustomerAddress && !hasSelectedLocationForServiceability ? (
+                  {needsCustomerAddress && showManualAddress && manualLocationHasInput && !manualLocationReadyForCheck ? (
+                    <StorefrontNotice>Enter the full 6-digit pincode to check service availability.</StorefrontNotice>
+                  ) : null}
+                  {needsCustomerAddress && !currentLocationReadyForServiceability && (!showManualAddress || !manualLocationHasInput) ? (
                     <StorefrontNotice tone="warning">Select your service location to check availability.</StorefrontNotice>
                   ) : null}
                   <label className="space-y-2">
@@ -396,10 +422,41 @@ function ManualAddressFields({
       <p className="flex items-center gap-2 text-sm font-black text-[#123A5A]"><MapPin className="h-4 w-4" /> Service location</p>
       <input value={value.city ?? ""} onChange={(event) => onChange({ city: event.target.value })} className="h-10 rounded-md border border-[#E5E7EB] px-3 text-sm font-semibold" placeholder="City" />
       <input value={value.state ?? ""} onChange={(event) => onChange({ state: event.target.value })} className="h-10 rounded-md border border-[#E5E7EB] px-3 text-sm font-semibold" placeholder="State" />
-      <input value={value.pincode ?? ""} onChange={(event) => onChange({ pincode: event.target.value })} className="h-10 rounded-md border border-[#E5E7EB] px-3 text-sm font-semibold" placeholder="Pincode" />
-      <input value={value.countryCode ?? "IN"} onChange={(event) => onChange({ countryCode: event.target.value })} className="h-10 rounded-md border border-[#E5E7EB] px-3 text-sm font-semibold" placeholder="Country code" />
+      <input
+        value={value.pincode ?? ""}
+        onChange={(event) => onChange({ pincode: cleanManualPincodeInput(event.target.value, value.countryCode) })}
+        className="h-10 rounded-md border border-[#E5E7EB] px-3 text-sm font-semibold"
+        placeholder="Pincode"
+        inputMode="numeric"
+        autoComplete="postal-code"
+        maxLength={6}
+      />
+      <input
+        value={value.countryCode ?? "IN"}
+        onChange={(event) => onChange({ countryCode: event.target.value.trim().toUpperCase() })}
+        className="h-10 rounded-md border border-[#E5E7EB] px-3 text-sm font-semibold"
+        placeholder="Country code"
+      />
     </div>
   );
+}
+
+function useDebouncedValue<T>(value: T, delayMs: number) {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => setDebouncedValue(value), delayMs);
+    return () => window.clearTimeout(timeoutId);
+  }, [delayMs, value]);
+
+  return debouncedValue;
+}
+
+function cleanManualPincodeInput(value: string, countryCode?: string | null) {
+  if ((countryCode?.trim().toUpperCase() || "IN") === "IN") {
+    return value.replace(/\D/g, "").slice(0, 6);
+  }
+  return value.trim().toUpperCase().slice(0, 12);
 }
 
 function MiniStat({ icon: Icon, label, value }: { icon: typeof Wrench; label: string; value: string }) {

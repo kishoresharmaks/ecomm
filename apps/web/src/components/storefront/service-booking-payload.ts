@@ -81,11 +81,28 @@ export function serviceLocationQueryFromAddress(address: CustomerAddress | null 
 
 export function serviceLocationQueryFromManualAddress(input: ManualServiceAddressInput | null | undefined): ServiceQuery {
   const pincode = cleanText(input?.pincode);
-  const countryCode = cleanText(input?.countryCode) || "IN";
-  if (!pincode) {
+  const countryCode = (cleanText(input?.countryCode) || "IN").toUpperCase();
+  if (!isManualServiceLocationReadyForQuery(input)) {
     return {};
   }
   return { countryCode, pincode };
+}
+
+export function isManualServiceLocationReadyForQuery(input: ManualServiceAddressInput | null | undefined) {
+  const pincode = cleanText(input?.pincode);
+  const countryCode = (cleanText(input?.countryCode) || "IN").toUpperCase();
+  if (!pincode) {
+    return false;
+  }
+  if (countryCode === "IN") {
+    return /^\d{6}$/.test(pincode);
+  }
+  return pincode.length >= 3;
+}
+
+export function hasManualServiceLocationInput(input: ManualServiceAddressInput | null | undefined) {
+  const countryCode = (cleanText(input?.countryCode) || "IN").toUpperCase();
+  return Boolean(cleanText(input?.city) || cleanText(input?.state) || cleanText(input?.pincode) || countryCode !== "IN");
 }
 
 function cleanText(value: string | null | undefined) {

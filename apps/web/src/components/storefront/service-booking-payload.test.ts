@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   buildCustomerServiceBookingPayload,
+  hasManualServiceLocationInput,
+  isManualServiceLocationReadyForQuery,
   serviceLocationQueryFromAddress,
   serviceLocationQueryFromManualAddress,
 } from "./service-booking-payload";
@@ -76,7 +78,15 @@ describe("service booking payload helpers", () => {
       countryCode: "IN",
       pincode: "636114",
     });
+    expect(serviceLocationQueryFromManualAddress({ city: "Salem", state: "Tamil Nadu", pincode: "63", countryCode: "IN" })).toEqual({});
     expect(serviceLocationQueryFromManualAddress({ city: "Salem", state: "Tamil Nadu", pincode: "", countryCode: "IN" })).toEqual({});
+  });
+
+  it("waits for a complete manual pincode before serviceability checks", () => {
+    expect(hasManualServiceLocationInput({ city: "", state: "", pincode: "", countryCode: "IN" })).toBe(false);
+    expect(hasManualServiceLocationInput({ city: "Salem", state: "", pincode: "", countryCode: "IN" })).toBe(true);
+    expect(isManualServiceLocationReadyForQuery({ city: "Salem", state: "Tamil Nadu", pincode: "6361", countryCode: "IN" })).toBe(false);
+    expect(isManualServiceLocationReadyForQuery({ city: "Salem", state: "Tamil Nadu", pincode: "636114", countryCode: "IN" })).toBe(true);
   });
 });
 

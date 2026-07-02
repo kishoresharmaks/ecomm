@@ -2,12 +2,34 @@
 
 import Link from "next/link";
 import { type FormEvent, useState } from "react";
-import { ArrowLeft, CheckCircle2, CreditCard, Loader2, MessageSquareWarning, Search, Star, Wrench, XCircle } from "lucide-react";
+import {
+  ArrowLeft,
+  CheckCircle2,
+  ChevronRight,
+  CreditCard,
+  Gauge,
+  Loader2,
+  MessageSquareWarning,
+  Search,
+  Star,
+  Wrench,
+  XCircle,
+} from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
 import { CustomerAuthNotice } from "@/components/auth/customer-auth-notice";
 import { AccountShell } from "./account-shell";
-import { EmptyState, ErrorPanel, PagePanel, SkeletonBlock, StatusPill, formatDateTime, formValue, optionalFormValue } from "./account-ui";
+import {
+  AccountMetric,
+  EmptyState,
+  ErrorPanel,
+  PagePanel,
+  SkeletonBlock,
+  StatusPill,
+  formatDateTime,
+  formValue,
+  optionalFormValue,
+} from "./account-ui";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
 import {
   acceptCustomerServiceQuote,
@@ -55,33 +77,50 @@ export function ServiceBookingsClient() {
           .includes(submittedSearch.toLowerCase()),
       )
     : bookings;
+  const awaitingActionCount = bookings.filter((booking) => ["QUOTE_SENT", "COMPLETION_SUBMITTED"].includes(booking.status)).length;
+  const upcomingCount = bookings.filter((booking) => booking.scheduledStartAt && new Date(booking.scheduledStartAt).getTime() >= Date.now()).length;
+  const completedCount = bookings.filter((booking) => booking.status === "COMPLETED").length;
 
   return (
     <AccountShell title="Service bookings" description="Track service requests, quotes, provider updates, disputes, and reviews.">
       {!customerAuth.enabled ? <CustomerAuthNotice /> : null}
 
-      <PagePanel>
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <SectionHeading title="Booking history" description="Open a service booking to manage quotes, completion, dispute, and review actions." />
-          <form onSubmit={submit} className="flex w-full gap-2 lg:max-w-md">
-            <label className="relative flex-1">
-              <span className="sr-only">Search service booking</span>
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#667085]" />
-              <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search booking or service"
-                className="h-11 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] pl-10 pr-3 text-sm font-semibold text-[#1F2933] outline-none focus:border-[#ED3500] focus:bg-white"
+      <div className="grid gap-4">
+        <PagePanel>
+          <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+            <div className="max-w-3xl">
+              <SectionHeading
+                title="Booking history"
+                description="Open a service booking to manage quotes, completion, dispute, and review actions."
               />
-            </label>
-            <Button type="submit">
-              <Search className="h-4 w-4" aria-hidden="true" />
-              Search
-            </Button>
-          </form>
-        </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <AccountMetric label="Total bookings" value={bookings.length} note="Recent requests and older history" />
+                <AccountMetric label="Awaiting action" value={awaitingActionCount} note="Quotes or completion confirmations" />
+                <AccountMetric label="Upcoming" value={upcomingCount} note="Scheduled service visits ahead" />
+                <AccountMetric label="Completed" value={completedCount} note="Closed bookings with review access" />
+              </div>
+            </div>
 
-        <div className="mt-5 grid gap-3">
+            <form onSubmit={submit} className="flex w-full gap-2 xl:max-w-md">
+              <label className="relative flex-1">
+                <span className="sr-only">Search service booking</span>
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#667085]" />
+                <input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search booking or service"
+                  className="h-11 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] pl-10 pr-3 text-sm font-semibold text-[#1F2933] outline-none focus:border-[#ED3500] focus:bg-white"
+                />
+              </label>
+              <Button type="submit">
+                <Search className="h-4 w-4" aria-hidden="true" />
+                Search
+              </Button>
+            </form>
+          </div>
+        </PagePanel>
+
+        <div className="grid gap-3">
           {bookingsQuery.isLoading ? <SkeletonBlock className="h-72" /> : null}
           {bookingsQuery.error ? <ErrorPanel error={bookingsQuery.error} onRetry={() => void bookingsQuery.refetch()} /> : null}
           {!bookingsQuery.isLoading && filteredBookings.length === 0 ? (
@@ -96,11 +135,15 @@ export function ServiceBookingsClient() {
             />
           ) : null}
 
-          {filteredBookings.map((booking) => (
-            <ServiceBookingCard key={booking.id} booking={booking} />
-          ))}
+          {filteredBookings.length ? (
+            <div className="grid gap-3">
+              {filteredBookings.map((booking) => (
+                <ServiceBookingCard key={booking.id} booking={booking} />
+              ))}
+            </div>
+          ) : null}
         </div>
-      </PagePanel>
+      </div>
     </AccountShell>
   );
 }
@@ -238,19 +281,18 @@ export function ServiceBookingDetailClient({ bookingNumber }: { bookingNumber: s
   const activeQuote = booking?.quotes?.find((quote) => quote.status === "SENT") ?? null;
   const latestDispute = booking?.disputes?.[0] ?? null;
   const latestReview = booking?.reviews?.[0] ?? null;
+  const overviewSections = [
+    { id: "booking-overview", label: "Overview" },
+    { id: "booking-payment", label: "Quote & payment" },
+    { id: "booking-actions", label: "Actions" },
+    ...(latestDispute ? [{ id: "booking-dispute", label: "Dispute" }] : []),
+    ...(latestReview ? [{ id: "booking-review", label: "Review" }] : []),
+  ];
+  const duePaise = booking ? Math.max(0, booking.totalPayablePaise - booking.paidAmountPaise) : 0;
 
   return (
     <AccountShell title="Service booking detail" description={`Track service booking ${bookingNumber}.`}>
       {!customerAuth.enabled ? <CustomerAuthNotice /> : null}
-
-      <div className="mb-5">
-        <Button asChild variant="ghost" size="sm">
-          <Link href="/account/service-bookings">
-            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-            Back to service bookings
-          </Link>
-        </Button>
-      </div>
 
       {bookingQuery.isLoading ? <SkeletonBlock /> : null}
       {bookingQuery.error ? <ErrorPanel error={bookingQuery.error} onRetry={() => void bookingQuery.refetch()} /> : null}
@@ -264,42 +306,70 @@ export function ServiceBookingDetailClient({ bookingNumber }: { bookingNumber: s
         <div className="grid gap-4">
           <PagePanel>
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div>
+              <div className="min-w-0">
+                <div className="mb-4 flex flex-wrap items-center gap-2">
+                  <Button asChild variant="ghost" size="sm" className="-ml-2">
+                    <Link href="/account/service-bookings">
+                      <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                      Back to bookings
+                    </Link>
+                  </Button>
+                </div>
                 <div className="flex flex-wrap gap-2">
                   <StatusPill status={booking.status} />
                   <StatusBadge tone="info">{booking.visitMode.replace(/_/g, " ")}</StatusBadge>
                   <StatusBadge tone="neutral">{booking.paymentMode.replace(/_/g, " ")}</StatusBadge>
+                  <StatusBadge tone="neutral">{booking.cancellationPolicy.replace(/_/g, " ")}</StatusBadge>
                 </div>
-                <h2 className="mt-3 text-2xl font-black text-[#123A5A]">{booking.bookingNumber}</h2>
-                <p className="mt-2 text-sm font-semibold text-[#667085]">
-                  Created {formatDateTime(booking.createdAt)} by {booking.seller.storeName}
+                <h2 className="mt-3 text-2xl font-black text-[#123A5A] md:text-3xl">{booking.bookingNumber}</h2>
+                <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-[#667085]">
+                  {booking.listing.title} by {booking.seller.storeName}. Created {formatDateTime(booking.createdAt)}.
                 </p>
               </div>
-              <Button asChild variant="outline">
-                <Link href={`/services/${booking.listing.slug}`}>View service</Link>
+              <Button asChild variant="outline" className="shrink-0">
+                <Link href={`/services/${booking.listing.slug}`}>
+                  View service
+                  <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                </Link>
               </Button>
+            </div>
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <AccountMetric label="Total payable" value={formatMoney(booking.totalPayablePaise, booking.currency)} note="Captured from the booking summary" />
+              <AccountMetric label="Paid so far" value={formatMoney(booking.paidAmountPaise, booking.currency)} note="Recorded customer payments" />
+              <AccountMetric label="Balance due" value={formatMoney(duePaise, booking.currency)} note="Pending amount on this booking" />
+              <AccountMetric label="Schedule" value={formatDateTime(booking.scheduledStartAt)} note={booking.scheduledEndAt ? `Ends ${formatDateTime(booking.scheduledEndAt)}` : "No end time recorded"} />
+            </div>
+
+            <div className="mt-5 flex flex-wrap gap-2">
+              {overviewSections.map((section) => (
+                <Button key={section.id} asChild variant="outline" size="sm">
+                  <a href={`#${section.id}`}>{section.label}</a>
+                </Button>
+              ))}
             </div>
           </PagePanel>
 
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
             <div className="grid gap-4">
-              <PagePanel>
-                <SectionHeading title={booking.listing.title} description="Service summary and customer issue." />
+              <PagePanel id="booking-overview" className="scroll-mt-24">
+                <SectionHeading title="Overview" description="Service summary, customer issue, and booking context." />
                 <div className="mt-5 grid gap-3 md:grid-cols-3">
                   <Info label="Package" value={booking.package?.name ?? "Provider recommended"} />
-                  <Info label="Scheduled" value={formatDateTime(booking.scheduledStartAt)} />
-                  <Info label="Total" value={formatMoney(booking.totalPayablePaise, booking.currency)} />
+                  <Info label="Technician" value={booking.assignedTechnician?.name ?? "Not assigned yet"} />
+                  <Info label="Location" value={booking.visitMode.replace(/_/g, " ")} />
                 </div>
                 <div className="mt-5 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-4 text-sm leading-6 text-[#667085]">
                   <p className="font-black text-[#1F2933]">Issue details</p>
                   <p className="mt-2">{booking.customerIssue}</p>
                   {booking.customerNote ? <p className="mt-2">Note: {booking.customerNote}</p> : null}
                   {booking.providerNote ? <p className="mt-2">Provider note: {booking.providerNote}</p> : null}
+                  {booking.addressSnapshot ? <p className="mt-2">Service address is captured in the booking record.</p> : null}
                 </div>
               </PagePanel>
 
-              <PagePanel>
-                <SectionHeading title="Quote and payment" description="Provider quote, payable amount, and recorded service payments." />
+              <PagePanel id="booking-payment" className="scroll-mt-24">
+                <SectionHeading title="Quote & payment" description="Provider quote, payable amount, and recorded service payments." />
                 <div className="mt-5 grid gap-3">
                   {booking.quotes?.length ? booking.quotes.map((quote) => <QuoteRow key={quote.id} quote={quote} />) : <Info label="Quote" value="No quote sent yet" />}
                   <PaymentSummary booking={booking} />
@@ -323,7 +393,7 @@ export function ServiceBookingDetailClient({ bookingNumber }: { bookingNumber: s
               </PagePanel>
 
               {latestDispute ? (
-                <PagePanel>
+                <PagePanel id="booking-dispute" className="scroll-mt-24">
                   <SectionHeading title="Dispute" description="Latest dispute raised for this service booking." />
                   <p className="mt-4 text-sm font-semibold leading-6 text-[#667085]">{latestDispute.reason}</p>
                   <div className="mt-3 flex flex-wrap gap-2">
@@ -334,7 +404,7 @@ export function ServiceBookingDetailClient({ bookingNumber }: { bookingNumber: s
               ) : null}
 
               {latestReview ? (
-                <PagePanel>
+                <PagePanel id="booking-review" className="scroll-mt-24">
                   <SectionHeading title="Review" description="Your submitted review for this service." />
                   <p className="mt-4 text-sm font-black text-[#123A5A]">{latestReview.rating}/5 stars</p>
                   {latestReview.body ? <p className="mt-2 text-sm leading-6 text-[#667085]">{latestReview.body}</p> : null}
@@ -342,12 +412,35 @@ export function ServiceBookingDetailClient({ bookingNumber }: { bookingNumber: s
               ) : null}
             </div>
 
-            <CustomerServiceActions
-              booking={booking}
-              activeQuote={activeQuote}
-              pending={actionMutation.isPending}
-              onAction={(action, form) => actionMutation.mutate(form ? { action, form } : { action })}
-            />
+            <div className="grid gap-4 xl:sticky xl:top-6 xl:self-start">
+              <PagePanel className="h-fit">
+                <SectionHeading title="At a glance" description="Key booking context and current progress." />
+                <div className="mt-5 grid gap-3">
+                  <div className="rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-4">
+                    <div className="flex items-center gap-2 text-sm font-bold text-[#667085]">
+                      <Gauge className="h-4 w-4" aria-hidden="true" />
+                      Current stage
+                    </div>
+                    <p className="mt-2 text-sm font-black text-[#1F2933]">{serviceBookingStageLabel(booking.status)}</p>
+                    <p className="mt-1 text-xs font-semibold leading-5 text-[#667085]">{serviceBookingStageNote(booking.status)}</p>
+                  </div>
+
+                  <Info label="Provider" value={booking.seller.storeName} />
+                  <Info label="Payment mode" value={booking.paymentMode.replace(/_/g, " ")} />
+                  <Info label="Visit mode" value={booking.visitMode.replace(/_/g, " ")} />
+                  <Info label="Scheduled" value={formatDateTime(booking.scheduledStartAt)} />
+                </div>
+              </PagePanel>
+
+              <div id="booking-actions" className="scroll-mt-24">
+                <CustomerServiceActions
+                  booking={booking}
+                  activeQuote={activeQuote}
+                  pending={actionMutation.isPending}
+                  onAction={(action, form) => actionMutation.mutate(form ? { action, form } : { action })}
+                />
+              </div>
+            </div>
           </div>
         </div>
       ) : null}
@@ -369,7 +462,7 @@ function ServiceBookingCard({ booking }: { booking: ServiceBooking }) {
           <p className="text-lg font-black text-[#1F2933]">{booking.bookingNumber}</p>
           <p className="mt-1 text-sm font-bold text-[#123A5A]">{booking.listing.title}</p>
           <p className="mt-1 text-sm font-semibold text-[#667085]">
-            {formatDateTime(booking.createdAt)} - {booking.seller.storeName}
+            {formatDateTime(booking.createdAt)} · {booking.seller.storeName}
           </p>
         </div>
       </div>
@@ -377,6 +470,10 @@ function ServiceBookingCard({ booking }: { booking: ServiceBooking }) {
         <StatusPill status={booking.status} />
         <StatusBadge tone="info">{booking.visitMode.replace(/_/g, " ")}</StatusBadge>
         <span className="text-base font-black text-[#163B5C]">{formatMoney(booking.totalPayablePaise, booking.currency)}</span>
+        <span className="inline-flex items-center gap-1 text-sm font-bold text-[#ED3500]">
+          Open
+          <ChevronRight className="h-4 w-4" aria-hidden="true" />
+        </span>
       </div>
     </Link>
   );
@@ -588,6 +685,66 @@ function SummaryMetric({ label, value }: { label: string; value: string }) {
       <p className="mt-2 text-sm font-black text-[#1F2933]">{value}</p>
     </div>
   );
+}
+
+function serviceBookingStageLabel(status: ServiceBooking["status"]) {
+  switch (status) {
+    case "REQUESTED":
+      return "Request received";
+    case "ACCEPTED":
+    case "QUOTE_SENT":
+      return "Waiting for quote action";
+    case "QUOTE_ACCEPTED":
+    case "SCHEDULED":
+      return "Scheduled for service";
+    case "IN_PROGRESS":
+      return "Service in progress";
+    case "COMPLETION_SUBMITTED":
+      return "Completion awaiting confirmation";
+    case "COMPLETION_DISPUTED":
+      return "Completion disputed";
+    case "COMPLETED":
+      return "Completed";
+    case "QUOTE_REJECTED":
+    case "QUOTE_EXPIRED":
+    case "REJECTED":
+    case "CANCELLED":
+    case "CANCELLED_AFTER_DISPUTE":
+    case "CLOSED_AFTER_INSPECTION":
+      return "Closed";
+    default:
+      return "In progress";
+  }
+}
+
+function serviceBookingStageNote(status: ServiceBooking["status"]) {
+  switch (status) {
+    case "REQUESTED":
+      return "The provider has not responded yet.";
+    case "ACCEPTED":
+    case "QUOTE_SENT":
+      return "Review the quote and decide the next step.";
+    case "QUOTE_ACCEPTED":
+    case "SCHEDULED":
+      return "Keep this booking on your radar for the scheduled visit.";
+    case "IN_PROGRESS":
+      return "The provider is actively working on the service.";
+    case "COMPLETION_SUBMITTED":
+      return "Confirm completion once the service outcome looks right.";
+    case "COMPLETION_DISPUTED":
+      return "A dispute is open. Review updates and evidence together.";
+    case "COMPLETED":
+      return "The booking is closed and ready for review if you have not submitted one.";
+    case "QUOTE_REJECTED":
+    case "QUOTE_EXPIRED":
+    case "REJECTED":
+    case "CANCELLED":
+    case "CANCELLED_AFTER_DISPUTE":
+    case "CLOSED_AFTER_INSPECTION":
+      return "This booking is no longer active.";
+    default:
+      return "Use the action panel on the right when the provider requests a response.";
+  }
 }
 
 function actionSuccessMessage(action: string) {
