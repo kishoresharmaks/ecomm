@@ -84,6 +84,7 @@ export type CourierPackageRecord = {
   packageNumber: string;
   deliveryMode: DeliveryMode;
   status: PackageStatus;
+  storedStatus?: PackageStatus;
   weightGrams?: number | null;
   lengthCm?: number | null;
   breadthCm?: number | null;
@@ -104,7 +105,7 @@ export type CourierPackageRecord = {
     storeName: string;
     sellerType: string;
   };
-  orderShipment: CourierShipmentRecord;
+  orderShipment?: CourierShipmentRecord | null;
   latestCourierPackage?: {
     id: string;
     awbNumber?: string | null;

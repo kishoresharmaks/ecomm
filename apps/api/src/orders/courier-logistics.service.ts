@@ -2184,6 +2184,39 @@ export class CourierLogisticsService {
     }
   }
 
+  private packageStatusFromDeliveryStatus(status: DeliveryStatus, deliveryMode: DeliveryMode) {
+    switch (status) {
+      case DeliveryStatus.PACKED:
+        return deliveryMode === DeliveryMode.THIRD_PARTY_COURIER
+          ? OrderShipmentPackageStatus.READY_FOR_BOOKING
+          : OrderShipmentPackageStatus.PACKING_PENDING;
+      case DeliveryStatus.DISPATCHED:
+        return OrderShipmentPackageStatus.PICKED_UP;
+      case DeliveryStatus.IN_TRANSIT:
+        return OrderShipmentPackageStatus.IN_TRANSIT;
+      case DeliveryStatus.DELIVERED:
+        return OrderShipmentPackageStatus.DELIVERED;
+      case DeliveryStatus.CANCELLED:
+        return OrderShipmentPackageStatus.CANCELLED;
+      default:
+        return deliveryMode === DeliveryMode.THIRD_PARTY_COURIER
+          ? OrderShipmentPackageStatus.READY_FOR_BOOKING
+          : OrderShipmentPackageStatus.PACKING_PENDING;
+    }
+  }
+
+  private effectivePackageStatus(
+    storedStatus: OrderShipmentPackageStatus,
+    parentDeliveryStatus: DeliveryStatus | null,
+    deliveryMode: DeliveryMode,
+  ) {
+    if (parentDeliveryStatus === DeliveryStatus.DELIVERED || parentDeliveryStatus === DeliveryStatus.CANCELLED) {
+      return this.packageStatusFromDeliveryStatus(parentDeliveryStatus, deliveryMode);
+    }
+
+    return storedStatus;
+  }
+
   private mapCourierStatus(status?: string | null) {
     const normalized = status?.trim().toUpperCase().replace(/[\s-]+/g, "_") ?? "";
     if (["BOOKED", "MANIFESTED", "SHIPMENT_BOOKED"].includes(normalized)) {
@@ -2511,7 +2544,16 @@ export class CourierLogisticsService {
   private courierPackageReadback(
     shipmentPackage: Prisma.OrderShipmentPackageGetPayload<{ include: ReturnType<CourierLogisticsService["courierPackageInclude"]> }>,
     omitShipment = false,
+    shipmentContext?: Prisma.OrderShipmentGetPayload<{ include: ReturnType<CourierLogisticsService["routingShipmentInclude"]> }>,
   ) {
+    const packageOrder = shipmentPackage.order ?? shipmentContext?.order ?? null;
+    const packageSeller = shipmentPackage.seller ?? shipmentContext?.seller ?? null;
+    const packageShipment = shipmentPackage.orderShipment ?? shipmentContext ?? null;
+    const effectivePackageStatus = this.effectivePackageStatus(
+      shipmentPackage.status,
+      packageShipment?.status ?? packageOrder?.deliveryStatus ?? null,
+      shipmentPackage.deliveryMode,
+    );
     const courierPackage = shipmentPackage.courierPackages[0] ?? null;
     const canDownloadLabel = Boolean(
       courierPackage?.labelUrl && !labelDownloadBlockedStatuses.has(courierPackage.trackingStatus),
@@ -2520,7 +2562,8 @@ export class CourierLogisticsService {
       id: shipmentPackage.id,
       packageNumber: shipmentPackage.packageNumber,
       deliveryMode: shipmentPackage.deliveryMode as any,
-      status: shipmentPackage.status as any,
+      status: effectivePackageStatus as any,
+      storedStatus: shipmentPackage.status as any,
       weightGrams: shipmentPackage.weightGrams,
       lengthCm: shipmentPackage.lengthCm,
       breadthCm: shipmentPackage.breadthCm,
@@ -2528,76 +2571,83 @@ export class CourierLogisticsService {
       declaredValuePaise: shipmentPackage.declaredValuePaise,
       shippingPaise: shipmentPackage.shippingPaise,
       codSurchargePaise: shipmentPackage.codSurchargePaise,
-      order: shipmentPackage.order
+      order: packageOrder
         ? {
-            id: shipmentPackage.order.id,
-            orderNumber: shipmentPackage.order.orderNumber,
-            paymentStatus: shipmentPackage.order.paymentStatus,
-            deliveryStatus: shipmentPackage.order.deliveryStatus,
-            shippingAddressSnapshot: shipmentPackage.order.shippingAddressSnapshot,
-            createdAt: shipmentPackage.order.createdAt.toISOString(),
+            id: packageOrder.id,
+            orderNumber: packageOrder.orderNumber,
+            paymentStatus: packageOrder.paymentStatus,
+            deliveryStatus: packageOrder.deliveryStatus,
+            shippingAddressSnapshot: packageOrder.shippingAddressSnapshot,
+            createdAt: packageOrder.createdAt.toISOString(),
           }
         : null,
-      seller: shipmentPackage.seller
+      seller: packageSeller
         ? {
-            id: shipmentPackage.seller.id,
-            storeName: shipmentPackage.seller.storeName,
-            sellerType: shipmentPackage.seller.sellerType,
+            id: packageSeller.id,
+            storeName: packageSeller.storeName,
+            sellerType: packageSeller.sellerType,
           }
         : null,
-      orderShipment: omitShipment || !shipmentPackage.orderShipment
+      orderShipment: omitShipment || !packageShipment
         ? (null as any)
         : {
-            id: shipmentPackage.orderShipment.id,
-            shipmentNumber: shipmentPackage.orderShipment.shipmentNumber,
-            deliveryMode: shipmentPackage.orderShipment.deliveryMode as any,
-            status: shipmentPackage.orderShipment.status,
-            assignmentStatus: shipmentPackage.orderShipment.assignmentStatus as any,
-            assignmentExpiresAt: shipmentPackage.orderShipment.assignmentExpiresAt?.toISOString() ?? null,
-            routingFailed: shipmentPackage.orderShipment.routingFailed,
-            routingFailureReason: shipmentPackage.orderShipment.routingFailureReason,
-            routingFailureNote: shipmentPackage.orderShipment.routingFailureNote,
-            routingFirstFailedAt: shipmentPackage.orderShipment.routingFirstFailedAt?.toISOString() ?? null,
-            routingPermanentFailureAt: shipmentPackage.orderShipment.routingPermanentFailureAt?.toISOString() ?? null,
-            courierProviderCode: shipmentPackage.orderShipment.courierProviderCode,
-            deliveryPartnerUserId: shipmentPackage.orderShipment.deliveryPartnerUserId,
-            assignmentNote: shipmentPackage.orderShipment.assignmentNote,
-            order: {
-              id: shipmentPackage.order.id,
-              orderNumber: shipmentPackage.order.orderNumber,
-              paymentStatus: shipmentPackage.order.paymentStatus,
-              deliveryStatus: shipmentPackage.order.deliveryStatus,
-              shippingAddressSnapshot: shipmentPackage.order.shippingAddressSnapshot,
-            },
-            seller: {
-              id: shipmentPackage.seller.id,
-              storeName: shipmentPackage.seller.storeName,
-              sellerType: shipmentPackage.seller.sellerType,
-            },
-            deliveryPartner: shipmentPackage.orderShipment.deliveryPartner
+            id: packageShipment.id,
+            shipmentNumber: packageShipment.shipmentNumber,
+            deliveryMode: packageShipment.deliveryMode as any,
+            status: packageShipment.status,
+            assignmentStatus: packageShipment.assignmentStatus as any,
+            assignmentExpiresAt: packageShipment.assignmentExpiresAt?.toISOString() ?? null,
+            routingFailed: packageShipment.routingFailed,
+            routingFailureReason: packageShipment.routingFailureReason,
+            routingFailureNote: packageShipment.routingFailureNote,
+            routingFirstFailedAt: packageShipment.routingFirstFailedAt?.toISOString() ?? null,
+            routingPermanentFailureAt: packageShipment.routingPermanentFailureAt?.toISOString() ?? null,
+            courierProviderCode: packageShipment.courierProviderCode,
+            deliveryPartnerUserId: packageShipment.deliveryPartnerUserId,
+            assignmentNote: packageShipment.assignmentNote,
+            order: packageOrder
               ? {
-                  id: shipmentPackage.orderShipment.deliveryPartner.id,
-                  email: shipmentPackage.orderShipment.deliveryPartner.email,
-                  fullName: shipmentPackage.orderShipment.deliveryPartner.fullName,
-                  phone: shipmentPackage.orderShipment.deliveryPartner.phone,
+                  id: packageOrder.id,
+                  orderNumber: packageOrder.orderNumber,
+                  paymentStatus: packageOrder.paymentStatus,
+                  deliveryStatus: packageOrder.deliveryStatus,
+                  shippingAddressSnapshot: packageOrder.shippingAddressSnapshot,
+                }
+              : null,
+            seller: packageSeller
+              ? {
+                  id: packageSeller.id,
+                  storeName: packageSeller.storeName,
+                  sellerType: packageSeller.sellerType,
+                }
+              : null,
+            deliveryPartner: packageShipment.deliveryPartner
+              ? {
+                  id: packageShipment.deliveryPartner.id,
+                  email: packageShipment.deliveryPartner.email,
+                  fullName: packageShipment.deliveryPartner.fullName,
+                  phone: packageShipment.deliveryPartner.phone,
                 }
               : null,
             firstPackage: null,
-            packageCount: shipmentPackage.orderShipment._count?.packages ?? 1,
+            packageCount:
+              (packageShipment as { _count?: { packages?: number }; packages?: unknown[] })._count?.packages ??
+              (packageShipment as { packages?: unknown[] }).packages?.length ??
+              1,
           },
       latestCourierPackage: courierPackage,
       courierTrackingStatus:
         (courierPackage?.trackingStatus ??
-        shipmentPackage.orderShipment.courierShipment?.trackingStatus ??
+        packageShipment?.courierShipment?.trackingStatus ??
         CourierShipmentStatus.NOT_BOOKED) as any,
-      awbNumber: courierPackage?.awbNumber ?? shipmentPackage.orderShipment.courierShipment?.awbNumber ?? null,
+      awbNumber: courierPackage?.awbNumber ?? packageShipment?.courierShipment?.awbNumber ?? null,
       courierName: courierPackage?.courierName ?? null,
       courierCode:
         courierPackage?.courierCode ??
         courierPackage?.courierConsignment.providerCode ??
-        shipmentPackage.orderShipment.courierProviderCode ??
+        packageShipment?.courierProviderCode ??
         null,
-      trackingUrl: courierPackage?.trackingUrl ?? shipmentPackage.orderShipment.courierShipment?.trackingUrl ?? null,
+      trackingUrl: courierPackage?.trackingUrl ?? packageShipment?.courierShipment?.trackingUrl ?? null,
       canBookCourier: shipmentPackage.deliveryMode === DeliveryMode.THIRD_PARTY_COURIER,
       canDownloadLabel,
       labelDownloadUrl: canDownloadLabel ? `/api/courier/packages/${shipmentPackage.id}/label` : null,
@@ -2675,7 +2725,7 @@ export class CourierLogisticsService {
             phone: shipment.deliveryPartner.phone,
           }
         : null,
-      firstPackage: shipment.packages[0] ? this.courierPackageReadback(shipment.packages[0] as any, true) : null,
+      firstPackage: shipment.packages[0] ? this.courierPackageReadback(shipment.packages[0] as any, true, shipment) : null,
       packageCount: shipment.packages.length,
     };
   }

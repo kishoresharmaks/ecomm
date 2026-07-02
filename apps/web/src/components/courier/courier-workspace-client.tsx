@@ -53,6 +53,7 @@ import {
   type CourierTrackingStatus,
   type DeliveryMode,
   type DeliveryPartnerOption,
+  type PackageStatus,
 } from "@/lib/courier-api";
 
 const moneyFormatter = new Intl.NumberFormat("en-IN", {
@@ -285,6 +286,7 @@ export function CourierPackageDetailClient({ packageId }: { packageId: string })
 
   const pkg = packageQuery.data;
   const latest = pkg.latestCourierPackage;
+  const packageDisplayStatus = effectivePackageStatus(pkg);
 
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
@@ -294,9 +296,14 @@ export function CourierPackageDetailClient({ packageId }: { packageId: string })
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-2xl font-black text-[#153C55]">{pkg.packageNumber}</h2>
-                <StatusBadge tone={statusTone(pkg.status)}>{label(pkg.status)}</StatusBadge>
+                <StatusBadge tone={statusTone(packageDisplayStatus)}>{label(packageDisplayStatus)}</StatusBadge>
                 <StatusBadge tone={modeTone(pkg.deliveryMode)}>{label(pkg.deliveryMode)}</StatusBadge>
               </div>
+              {pkg.storedStatus && pkg.storedStatus !== packageDisplayStatus ? (
+                <p className="mt-1 text-xs font-semibold text-[#667085]">
+                  Stored package state: {label(pkg.storedStatus)}
+                </p>
+              ) : null}
               <p className="mt-2 text-sm font-semibold text-[#667085]">
                 {pkg.order.orderNumber} / {pkg.seller.storeName} / {new Date(pkg.order.createdAt).toLocaleString("en-IN")}
               </p>
@@ -1150,35 +1157,39 @@ function CourierPackageTable({ packages, total }: { packages: CourierPackageReco
             </tr>
           </thead>
           <tbody className="divide-y divide-[#E5E7EB]">
-            {packages.map((pkg) => (
-              <tr key={pkg.id}>
-                <td className="px-4 py-3">
-                  <p className="font-black text-[#153C55]">{pkg.packageNumber}</p>
-                  <p className="mt-1 text-xs font-semibold text-[#667085]">{pkg.order.orderNumber}</p>
-                  <div className="mt-2 flex flex-wrap gap-1">
-                    <StatusBadge tone={statusTone(pkg.status)}>{label(pkg.status)}</StatusBadge>
-                  </div>
-                </td>
-                <td className="px-4 py-3 font-semibold text-[#1F2933]">{pkg.seller.storeName}</td>
-                <td className="px-4 py-3 font-semibold text-[#667085]">{addressText(pkg.order.shippingAddressSnapshot)}</td>
-                <td className="px-4 py-3">
-                  <StatusBadge tone={modeTone(pkg.deliveryMode)}>{label(pkg.deliveryMode)}</StatusBadge>
-                </td>
-                <td className="px-4 py-3">
-                  <p className="font-black text-[#1F2933]">{pkg.courierCode ?? "Not booked"}</p>
-                  <p className="mt-1 text-xs font-semibold text-[#667085]">AWB: {pkg.awbNumber ?? "Pending"}</p>
-                  <p className="mt-1 text-xs font-semibold text-[#667085]">{label(pkg.courierTrackingStatus)}</p>
-                </td>
-                <td className="px-4 py-3">
-                  <StatusBadge tone={pkg.canDownloadLabel ? "success" : "warning"}>{pkg.canDownloadLabel ? "Ready" : "Not ready"}</StatusBadge>
-                </td>
-                <td className="px-4 py-3 text-right">
-                  <Button asChild variant="outline">
-                    <Link href={`/courier/packages/${pkg.id}`}>Open</Link>
-                  </Button>
-                </td>
-              </tr>
-            ))}
+            {packages.map((pkg) => {
+              const packageDisplayStatus = effectivePackageStatus(pkg);
+
+              return (
+                <tr key={pkg.id}>
+                  <td className="px-4 py-3">
+                    <p className="font-black text-[#153C55]">{pkg.packageNumber}</p>
+                    <p className="mt-1 text-xs font-semibold text-[#667085]">{pkg.order.orderNumber}</p>
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      <StatusBadge tone={statusTone(packageDisplayStatus)}>{label(packageDisplayStatus)}</StatusBadge>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 font-semibold text-[#1F2933]">{pkg.seller.storeName}</td>
+                  <td className="px-4 py-3 font-semibold text-[#667085]">{addressText(pkg.order.shippingAddressSnapshot)}</td>
+                  <td className="px-4 py-3">
+                    <StatusBadge tone={modeTone(pkg.deliveryMode)}>{label(pkg.deliveryMode)}</StatusBadge>
+                  </td>
+                  <td className="px-4 py-3">
+                    <p className="font-black text-[#1F2933]">{pkg.courierCode ?? "Not booked"}</p>
+                    <p className="mt-1 text-xs font-semibold text-[#667085]">AWB: {pkg.awbNumber ?? "Pending"}</p>
+                    <p className="mt-1 text-xs font-semibold text-[#667085]">{label(pkg.courierTrackingStatus)}</p>
+                  </td>
+                  <td className="px-4 py-3">
+                    <StatusBadge tone={pkg.canDownloadLabel ? "success" : "warning"}>{pkg.canDownloadLabel ? "Ready" : "Not ready"}</StatusBadge>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <Button asChild variant="outline">
+                      <Link href={`/courier/packages/${pkg.id}`}>Open</Link>
+                    </Button>
+                  </td>
+                </tr>
+              );
+            })}
             {packages.length === 0 ? (
               <tr>
                 <td colSpan={7} className="px-4 py-10 text-center font-semibold text-[#667085]">
@@ -1431,12 +1442,14 @@ function CourierRemittanceRow({ remittance }: { remittance: CourierCodRemittance
 }
 
 function PackageSummaryRow({ pkg }: { pkg: CourierPackageRecord }) {
+  const packageDisplayStatus = effectivePackageStatus(pkg);
+
   return (
     <Link href={`/courier/packages/${pkg.id}`} className="grid gap-3 px-4 py-3 transition hover:bg-[#F8FAFC] md:grid-cols-[1fr_auto] md:items-center">
       <div>
         <div className="flex flex-wrap items-center gap-2">
           <p className="font-black text-[#153C55]">{pkg.packageNumber}</p>
-          <StatusBadge tone={statusTone(pkg.status)}>{label(pkg.status)}</StatusBadge>
+          <StatusBadge tone={statusTone(packageDisplayStatus)}>{label(packageDisplayStatus)}</StatusBadge>
           <StatusBadge tone={modeTone(pkg.deliveryMode)}>{label(pkg.deliveryMode)}</StatusBadge>
         </div>
         <p className="mt-1 text-sm font-semibold text-[#667085]">
@@ -1836,6 +1849,19 @@ function dimensions(pkg: CourierPackageRecord) {
     return "Not set";
   }
   return `${pkg.lengthCm} x ${pkg.breadthCm} x ${pkg.heightCm} cm`;
+}
+
+function effectivePackageStatus(pkg: CourierPackageRecord): PackageStatus {
+  const parentDeliveryStatus = pkg.orderShipment?.status ?? pkg.order.deliveryStatus;
+
+  if (parentDeliveryStatus === "DELIVERED") {
+    return "DELIVERED";
+  }
+  if (parentDeliveryStatus === "CANCELLED") {
+    return "CANCELLED";
+  }
+
+  return pkg.status;
 }
 
 function addressText(value: unknown) {
