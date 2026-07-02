@@ -191,8 +191,15 @@ export class PublicImageUploadRequestDto {
 export class PrivateDocumentUploadRequestDto {
   @ApiProperty({ example: "ID_PROOF" })
   @IsString()
-  @Matches(/^(ID_PROOF|SIGNATURE_PROOF|GST_CERTIFICATE|FSSAI_CERTIFICATE|PAN_CARD|ADDRESS_PROOF|BANK_PROOF|BUSINESS_REGISTRATION|OTHER)$/)
+  @Matches(/^(ID_PROOF|SIGNATURE_PROOF|GST_CERTIFICATE|FSSAI_CERTIFICATE|PAN_CARD|ADDRESS_PROOF|BANK_PROOF|BUSINESS_REGISTRATION|SERVICE_COMPLETION_PROOF|SERVICE_DISPUTE_EVIDENCE|OTHER)$/)
   documentType!: string;
+
+  @ApiPropertyOptional({ example: "SRV-20260702-ABC123" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  @Matches(/^[A-Za-z0-9._-]+$/)
+  serviceBookingNumber?: string;
 
   @ApiProperty({ example: "gst-certificate.pdf" })
   @IsString()

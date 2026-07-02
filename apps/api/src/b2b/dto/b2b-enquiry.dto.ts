@@ -1,6 +1,7 @@
 import { Type } from "class-transformer";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { IsInt, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, MinLength } from "class-validator";
+import { IsEnum, IsInt, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, MinLength } from "class-validator";
+import { B2BTransportMode } from "@indihub/database";
 
 export class CreateB2BEnquiryDto {
   @ApiPropertyOptional({ example: "mobile_b2b_01HX6D9T0QZP7N6P8K3R2B5C4D" })
@@ -32,4 +33,15 @@ export class CreateB2BEnquiryDto {
   @MinLength(10)
   @MaxLength(2000)
   message!: string;
+
+  @ApiPropertyOptional({ enum: B2BTransportMode, default: B2BTransportMode.SELLER_ARRANGED_TRANSPORT })
+  @IsOptional()
+  @IsEnum(B2BTransportMode)
+  transportMode?: B2BTransportMode;
+
+  @ApiPropertyOptional({ example: "Deliver to Coimbatore warehouse; seller-arranged courier preferred." })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  transportNote?: string;
 }

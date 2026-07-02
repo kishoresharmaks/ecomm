@@ -1,5 +1,5 @@
 import type pino from "pino";
-import { prisma, ServiceBookingStatus, ServiceQuoteStatus } from "@indihub/database";
+import { prisma, PushNotificationType, ServiceBookingStatus, ServiceQuoteStatus } from "@indihub/database";
 
 type Logger = pino.Logger;
 
@@ -53,7 +53,10 @@ export async function expireServiceQuotes(limit = 100) {
       booking: {
         select: {
           id: true,
+          bookingNumber: true,
+          customerId: true,
           status: true,
+          listing: { select: { title: true } },
         },
       },
     },
@@ -89,6 +92,43 @@ export async function expireServiceQuotes(limit = 100) {
               quoteStatus: ServiceQuoteStatus.EXPIRED,
               bookingStatus: ServiceBookingStatus.QUOTE_EXPIRED,
               expiredAt: now.toISOString(),
+            },
+          },
+        });
+        await tx.customerNotification.upsert({
+          where: {
+            customerId_type_sourceType_sourceId: {
+              customerId: quote.booking.customerId,
+              type: PushNotificationType.SERVICE_BOOKING,
+              sourceType: "service_quote",
+              sourceId: quote.id,
+            },
+          },
+          update: {
+            title: "Service quote expired",
+            body: `${quote.booking.listing.title} quote expired. Ask the provider for a revised quote from your booking page.`,
+            href: `/account/service-bookings/${quote.booking.bookingNumber}`,
+            readAt: null,
+            metadata: {
+              bookingId: quote.bookingId,
+              quoteId: quote.id,
+              bookingNumber: quote.booking.bookingNumber,
+              status: ServiceBookingStatus.QUOTE_EXPIRED,
+            },
+          },
+          create: {
+            customerId: quote.booking.customerId,
+            type: PushNotificationType.SERVICE_BOOKING,
+            title: "Service quote expired",
+            body: `${quote.booking.listing.title} quote expired. Ask the provider for a revised quote from your booking page.`,
+            href: `/account/service-bookings/${quote.booking.bookingNumber}`,
+            sourceType: "service_quote",
+            sourceId: quote.id,
+            metadata: {
+              bookingId: quote.bookingId,
+              quoteId: quote.id,
+              bookingNumber: quote.booking.bookingNumber,
+              status: ServiceBookingStatus.QUOTE_EXPIRED,
             },
           },
         });

@@ -46,12 +46,15 @@ function FinanceDashboardView({ dashboard }: { dashboard: FinanceDashboard }) {
     { label: "Online paid", metric: metrics.onlinePaid, icon: CreditCard, tone: "green" },
     { label: "Settlement due", metric: metrics.settlementDue, icon: ReceiptText, tone: "blue" },
     { label: "Payout pending", metric: metrics.payoutPending, icon: WalletCards, tone: "orange" },
-    { label: "Payout paid", metric: metrics.payoutPaid, icon: CheckCircle2, tone: "green" }
+    { label: "Payout paid", metric: metrics.payoutPaid, icon: CheckCircle2, tone: "green" },
+    { label: "Service cash due", metric: metrics.serviceReceivableOpen, icon: ReceiptText, tone: "orange" },
+    { label: "Service cash disputed", metric: metrics.serviceReceivableDisputed, icon: AlertCircle, tone: "orange" },
+    { label: "Service cash cleared", metric: metrics.serviceReceivableSettled, icon: CheckCircle2, tone: "green" }
   ] as const;
 
   return (
     <div className="space-y-5">
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5">
         {cards.map((card) => {
           const Icon = card.icon;
           return (

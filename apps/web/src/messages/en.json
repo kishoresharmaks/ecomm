@@ -26,6 +26,7 @@
     "top_stores": "Top Stores",
     "view_price": "View price",
     "price_pending": "Price pending",
-    "from": "From {price}"
+    "from": "From {price}",
+    "from_price": "From {price}"
   }
 }

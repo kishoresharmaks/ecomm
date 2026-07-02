@@ -1,5 +1,15 @@
 import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
-import { ApprovalStatus, B2BEnquiryStatus, OrderStatus, Prisma, ProductStatus } from "@indihub/database";
+import {
+  ApprovalStatus,
+  B2BEnquiryStatus,
+  B2BOrderStatus,
+  OrderStatus,
+  PaymentStatus,
+  Prisma,
+  ProductStatus,
+  ServiceBookingStatus,
+  ServiceListingStatus,
+} from "@indihub/database";
 import type { RequestUser } from "../auth/types/indihub-request";
 import { PrismaService } from "../prisma/prisma.service";
 import { ReportQueryDto } from "./dto/report-query.dto";
@@ -232,8 +242,51 @@ export class ReportsService {
       sellerId: seller.id,
       order: this.reportableOrderWhere(createdAt)
     };
+    const b2bEnquiryWhere: Prisma.B2BEnquiryWhereInput = {
+      sellerId: seller.id,
+      ...(createdAt ? { createdAt } : {})
+    };
+    const b2bOrderWhere: Prisma.B2BOrderWhereInput = {
+      sellerId: seller.id,
+      ...(createdAt ? { createdAt } : {})
+    };
+    const reportableB2BOrderWhere: Prisma.B2BOrderWhereInput = {
+      ...b2bOrderWhere,
+      status: { not: B2BOrderStatus.CANCELLED }
+    };
+    const serviceBookingWhere: Prisma.ServiceBookingWhereInput = {
+      sellerId: seller.id,
+      ...(createdAt ? { createdAt } : {})
+    };
+    const reportableServiceBookingWhere: Prisma.ServiceBookingWhereInput = {
+      ...serviceBookingWhere,
+      status: { notIn: [ServiceBookingStatus.CANCELLED, ServiceBookingStatus.REJECTED, ServiceBookingStatus.CANCELLED_AFTER_DISPUTE] }
+    };
+    const serviceListingWhere: Prisma.ServiceListingWhereInput = {
+      sellerId: seller.id,
+      deletedAt: null
+    };
 
-    const [summary, splits, products, lowStockCount, lowStockProducts, b2bEnquiries] = await this.prisma.client.$transaction(async (tx) => {
+    const [
+      summary,
+      splits,
+      products,
+      lowStockCount,
+      lowStockProducts,
+      b2bEnquiries,
+      b2bEnquiriesByStatus,
+      b2bOrders,
+      b2bOrdersByStatus,
+      b2bOrdersByPaymentStatus,
+      recentB2BOrders,
+      serviceListings,
+      activeServiceListings,
+      serviceBookings,
+      serviceBookingsByStatus,
+      servicePayments,
+      servicePaymentsByStatus,
+      recentServiceBookings,
+    ] = await this.prisma.client.$transaction(async (tx) => {
       const summary = await tx.orderSellerSplit.aggregate({
         where: splitWhere,
         _count: true,
@@ -281,13 +334,146 @@ export class ReportsService {
         orderBy: { stockQuantity: "asc" }
       });
       const b2bEnquiries = await tx.b2BEnquiry.count({
+        where: b2bEnquiryWhere
+      });
+      const b2bEnquiriesByStatus = await tx.b2BEnquiry.groupBy({
+        by: ["status"],
+        where: b2bEnquiryWhere,
+        _count: true
+      });
+      const b2bOrders = await tx.b2BOrder.aggregate({
+        where: reportableB2BOrderWhere,
+        _count: true,
+        _sum: {
+          subtotalPaise: true,
+          buyerPayableAmountPaise: true,
+          paidAmountPaise: true,
+          commissionAmountPaise: true,
+          sellerPayoutAmountPaise: true
+        }
+      });
+      const b2bOrdersByStatus = await tx.b2BOrder.groupBy({
+        by: ["status"],
+        where: b2bOrderWhere,
+        _count: true,
+        _sum: {
+          buyerPayableAmountPaise: true,
+          sellerPayoutAmountPaise: true
+        }
+      });
+      const b2bOrdersByPaymentStatus = await tx.b2BOrder.groupBy({
+        by: ["paymentStatus"],
+        where: b2bOrderWhere,
+        _count: true,
+        _sum: {
+          paidAmountPaise: true,
+          buyerPayableAmountPaise: true
+        }
+      });
+      const recentB2BOrders = await tx.b2BOrder.findMany({
+        where: b2bOrderWhere,
+        include: {
+          businessBuyer: true,
+          product: true
+        },
+        orderBy: { createdAt: "desc" },
+        take: 10
+      });
+      const serviceListings = await tx.serviceListing.count({
+        where: serviceListingWhere
+      });
+      const activeServiceListings = await tx.serviceListing.count({
+        where: {
+          ...serviceListingWhere,
+          status: ServiceListingStatus.ACTIVE,
+          approvalStatus: ApprovalStatus.APPROVED
+        }
+      });
+      const serviceBookings = await tx.serviceBooking.aggregate({
+        where: reportableServiceBookingWhere,
+        _count: true,
+        _sum: {
+          totalPayablePaise: true,
+          paidAmountPaise: true
+        }
+      });
+      const serviceBookingsByStatus = await tx.serviceBooking.groupBy({
+        by: ["status"],
+        where: serviceBookingWhere,
+        _count: true,
+        _sum: {
+          totalPayablePaise: true,
+          paidAmountPaise: true
+        }
+      });
+      const servicePayments = await tx.servicePayment.aggregate({
+        where: {
+          sellerId: seller.id,
+          status: PaymentStatus.PAID,
+          ...(createdAt ? { createdAt } : {})
+        },
+        _count: true,
+        _sum: {
+          amountPaise: true
+        }
+      });
+      const servicePaymentsByStatus = await tx.servicePayment.groupBy({
+        by: ["status"],
         where: {
           sellerId: seller.id,
           ...(createdAt ? { createdAt } : {})
+        },
+        _count: true,
+        _sum: {
+          amountPaise: true
         }
       });
+      const recentServiceBookings = await tx.serviceBooking.findMany({
+        where: serviceBookingWhere,
+        include: {
+          listing: {
+            select: {
+              id: true,
+              title: true,
+              slug: true
+            }
+          },
+          customer: {
+            include: {
+              user: {
+                select: {
+                  email: true,
+                  fullName: true,
+                  phone: true
+                }
+              }
+            }
+          }
+        },
+        orderBy: { createdAt: "desc" },
+        take: 10
+      });
 
-      return [summary, splits, products, lowStockCount, lowStockProducts, b2bEnquiries] as const;
+      return [
+        summary,
+        splits,
+        products,
+        lowStockCount,
+        lowStockProducts,
+        b2bEnquiries,
+        b2bEnquiriesByStatus,
+        b2bOrders,
+        b2bOrdersByStatus,
+        b2bOrdersByPaymentStatus,
+        recentB2BOrders,
+        serviceListings,
+        activeServiceListings,
+        serviceBookings,
+        serviceBookingsByStatus,
+        servicePayments,
+        servicePaymentsByStatus,
+        recentServiceBookings,
+      ] as const;
     });
 
     const totalSalesPaise = summary._sum.sellerSubtotalPaise ?? 0;
@@ -312,6 +498,11 @@ export class ReportsService {
       refundAdjustmentPaise;
 
     return {
+      seller: {
+        id: seller.id,
+        primaryCapability: seller.primaryCapability,
+        enabledCapabilities: seller.enabledCapabilities
+      },
       summary: {
         orderCount: summary._count,
         totalSalesPaise,
@@ -326,7 +517,59 @@ export class ReportsService {
         netSalesPaise,
         products,
         lowStockCount,
-        b2bEnquiries
+        b2bEnquiries,
+        b2bOrders: b2bOrders._count,
+        b2bOrderValuePaise: b2bOrders._sum.buyerPayableAmountPaise ?? 0,
+        serviceBookings: serviceBookings._count,
+        serviceRevenuePaise: servicePayments._sum.amountPaise ?? 0,
+        serviceListings
+      },
+      b2b: {
+        enquiryCount: b2bEnquiries,
+        orderCount: b2bOrders._count,
+        subtotalPaise: b2bOrders._sum.subtotalPaise ?? 0,
+        buyerPayablePaise: b2bOrders._sum.buyerPayableAmountPaise ?? 0,
+        paidAmountPaise: b2bOrders._sum.paidAmountPaise ?? 0,
+        commissionPaise: b2bOrders._sum.commissionAmountPaise ?? 0,
+        sellerPayoutPaise: b2bOrders._sum.sellerPayoutAmountPaise ?? 0,
+        byEnquiryStatus: b2bEnquiriesByStatus.map((item) => ({
+          status: item.status,
+          count: item._count
+        })),
+        byOrderStatus: b2bOrdersByStatus.map((item) => ({
+          status: item.status,
+          count: item._count,
+          buyerPayablePaise: item._sum.buyerPayableAmountPaise ?? 0,
+          sellerPayoutPaise: item._sum.sellerPayoutAmountPaise ?? 0
+        })),
+        byPaymentStatus: b2bOrdersByPaymentStatus.map((item) => ({
+          status: item.paymentStatus,
+          count: item._count,
+          paidAmountPaise: item._sum.paidAmountPaise ?? 0,
+          buyerPayablePaise: item._sum.buyerPayableAmountPaise ?? 0
+        })),
+        recentOrders: recentB2BOrders
+      },
+      services: {
+        listingCount: serviceListings,
+        activeListingCount: activeServiceListings,
+        bookingCount: serviceBookings._count,
+        totalPayablePaise: serviceBookings._sum.totalPayablePaise ?? 0,
+        paidAmountPaise: serviceBookings._sum.paidAmountPaise ?? 0,
+        paidPaymentCount: servicePayments._count,
+        paidPaymentPaise: servicePayments._sum.amountPaise ?? 0,
+        byBookingStatus: serviceBookingsByStatus.map((item) => ({
+          status: item.status,
+          count: item._count,
+          totalPayablePaise: item._sum.totalPayablePaise ?? 0,
+          paidAmountPaise: item._sum.paidAmountPaise ?? 0
+        })),
+        byPaymentStatus: servicePaymentsByStatus.map((item) => ({
+          status: item.status,
+          count: item._count,
+          amountPaise: item._sum.amountPaise ?? 0
+        })),
+        recentBookings: recentServiceBookings
       },
       recentOrders: splits,
       lowStockProducts

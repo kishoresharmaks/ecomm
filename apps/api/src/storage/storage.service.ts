@@ -91,10 +91,14 @@ const privateDocumentTypes = new Set([
   "ADDRESS_PROOF",
   "BANK_PROOF",
   "BUSINESS_REGISTRATION",
+  "SERVICE_COMPLETION_PROOF",
+  "SERVICE_DISPUTE_EVIDENCE",
   "OTHER",
 ]);
 const storageKeyRoot = "1handindia";
 const legacyStorageKeyRoot = "indihub";
+const serviceEvidencePrefix = `${storageKeyRoot}/services`;
+const legacyServiceEvidencePrefix = `${legacyStorageKeyRoot}/services`;
 const b2bPurchaseOrderPrefix = `${storageKeyRoot}/b2b/purchase-orders`;
 const legacyB2BPurchaseOrderPrefix = `${legacyStorageKeyRoot}/b2b/purchase-orders`;
 const b2bPaymentProofPrefix = `${storageKeyRoot}/b2b/payment-proofs`;
@@ -550,7 +554,7 @@ export class StorageService {
       await this.recordPrivateUpload({
         assetKey,
         provider: "S3",
-        uploadKind: "SELLER_DOCUMENT",
+        uploadKind: this.privateDocumentUploadKind(dto.documentType),
         actorUserId: actor.id,
         contentType: dto.contentType,
         sizeBytes: dto.sizeBytes,
@@ -583,6 +587,7 @@ export class StorageService {
     actor: RequestUser,
     documentType: string | undefined,
     file: UploadedPrivateDocumentFile | undefined,
+    serviceBookingNumber?: string,
   ) {
     if (!file) {
       throw new BadRequestException("Document file is required.");
@@ -603,19 +608,24 @@ export class StorageService {
       throw new ServiceUnavailableException("Local private document storage is not enabled.");
     }
 
-    const assetKey = this.createPrivateDocumentAssetKey(actor, {
+    const uploadRequest: PrivateDocumentUploadRequestDto = {
       documentType: normalizedDocumentType,
       fileName: file.originalname,
       contentType: file.mimetype,
       sizeBytes: file.size,
-    });
+    };
+    if (serviceBookingNumber) {
+      uploadRequest.serviceBookingNumber = serviceBookingNumber;
+    }
+
+    const assetKey = this.createPrivateDocumentAssetKey(actor, uploadRequest);
     const filePath = this.privateLocalFilePath(privateStorage, assetKey);
     await mkdir(dirname(filePath), { recursive: true });
     await writeFile(filePath, file.buffer);
     await this.recordPrivateUpload({
       assetKey,
       provider: "LOCAL",
-      uploadKind: "SELLER_DOCUMENT",
+      uploadKind: this.privateDocumentUploadKind(normalizedDocumentType),
       actorUserId: actor.id,
       contentType: file.mimetype,
       sizeBytes: file.size,
@@ -1012,6 +1022,10 @@ export class StorageService {
   }
 
   private createPrivateDocumentAssetKey(actor: RequestUser, dto: PrivateDocumentUploadRequestDto) {
+    if (dto.documentType === "SERVICE_COMPLETION_PROOF" || dto.documentType === "SERVICE_DISPUTE_EVIDENCE") {
+      return this.createServiceEvidenceAssetKey(actor, dto);
+    }
+
     const folder = `${storageKeyRoot}/sellers/${this.safeSegment(actor.id)}/documents`;
     const extension = this.documentExtension(dto.fileName, dto.contentType);
     const typeSegment = this.safeSegment(dto.documentType.toLowerCase());
@@ -1021,6 +1035,37 @@ export class StorageService {
 
     return this.normalizePublicImageKey(
       `${folder}/${typeSegment}-${baseName}-${timestamp}-${randomSuffix}${extension}`,
+    );
+  }
+
+  private privateDocumentUploadKind(documentType: string) {
+    return documentType === "SERVICE_COMPLETION_PROOF" || documentType === "SERVICE_DISPUTE_EVIDENCE"
+      ? "SERVICE_EVIDENCE"
+      : "SELLER_DOCUMENT";
+  }
+
+  private createServiceEvidenceAssetKey(actor: RequestUser, dto: PrivateDocumentUploadRequestDto) {
+    const bookingNumber = this.safeSegment(dto.serviceBookingNumber ?? "");
+    if (!bookingNumber) {
+      throw new BadRequestException("serviceBookingNumber is required for service proof uploads.");
+    }
+
+    const typeSegment =
+      dto.documentType === "SERVICE_COMPLETION_PROOF" ? "completion-proof" : "dispute-evidence";
+    const actorSegment = actor.roles.includes(RoleCode.SELLER)
+      ? "seller"
+      : actor.roles.includes(RoleCode.CUSTOMER)
+        ? "customer"
+        : actor.roles.includes(RoleCode.ADMIN)
+          ? "admin"
+          : "staff";
+    const extension = this.documentExtension(dto.fileName, dto.contentType);
+    const baseName = this.safeDocumentBaseName(dto.fileName) || typeSegment;
+    const timestamp = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
+    const randomSuffix = randomBytes(4).toString("hex");
+
+    return this.normalizeServiceEvidenceKey(
+      `${serviceEvidencePrefix}/${bookingNumber}/${typeSegment}/${actorSegment}-${this.safeSegment(actor.id)}-${timestamp}-${baseName}-${randomSuffix}${extension}`,
     );
   }
 
@@ -1661,14 +1706,49 @@ export class StorageService {
   private normalizePrivateDocumentKeyForActor(actor: RequestUser, key: string | undefined) {
     const normalized = this.normalizePublicImageKey(key);
     const isAdmin = actor.roles.includes(RoleCode.ADMIN);
+    if (isAdmin) {
+      return normalized;
+    }
+    if (this.isOwnServiceEvidenceKey(actor, normalized)) {
+      return normalized;
+    }
     const sellerPrefix = `${storageKeyRoot}/sellers/${this.safeSegment(actor.id)}/documents/`;
     const legacySellerPrefix = `${legacyStorageKeyRoot}/sellers/${this.safeSegment(actor.id)}/documents/`;
 
-    if (!isAdmin && !normalized.startsWith(sellerPrefix) && !normalized.startsWith(legacySellerPrefix)) {
+    if (!normalized.startsWith(sellerPrefix) && !normalized.startsWith(legacySellerPrefix)) {
       throw new ForbiddenException("You can only access your own seller documents.");
     }
 
     return normalized;
+  }
+
+  private normalizeServiceEvidenceKey(key: string | undefined) {
+    const normalized = this.normalizePublicImageKey(key);
+    if (!this.isServiceEvidenceKey(normalized)) {
+      throw new BadRequestException("Service proof file key is invalid.");
+    }
+    return normalized;
+  }
+
+  private isServiceEvidenceKey(key: string) {
+    return (
+      key.startsWith(`${serviceEvidencePrefix}/`) ||
+      key.startsWith(`${legacyServiceEvidencePrefix}/`)
+    );
+  }
+
+  private isOwnServiceEvidenceKey(actor: RequestUser, key: string) {
+    if (!this.isServiceEvidenceKey(key)) {
+      return false;
+    }
+    const actorSegment = actor.roles.includes(RoleCode.SELLER)
+      ? "seller"
+      : actor.roles.includes(RoleCode.CUSTOMER)
+        ? "customer"
+        : actor.roles.includes(RoleCode.ADMIN)
+          ? "admin"
+          : "staff";
+    return key.includes(`/${actorSegment}-${this.safeSegment(actor.id)}-`);
   }
 
   private normalizeB2BPurchaseOrderKey(key: string | undefined) {
@@ -1896,6 +1976,7 @@ export class StorageService {
     provider: "S3" | "LOCAL";
     uploadKind:
       | "SELLER_DOCUMENT"
+      | "SERVICE_EVIDENCE"
       | "B2B_PURCHASE_ORDER"
       | "B2B_PAYMENT_PROOF"
       | "B2B_PROFORMA_INVOICE"

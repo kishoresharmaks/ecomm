@@ -75,6 +75,9 @@ export type B2BEnquiryResponse = {
   id: string;
   responseMessage: string;
   quotedPricePaise?: number | null;
+  transportChargePaise?: number | null;
+  transportEta?: string | null;
+  transportNote?: string | null;
   createdAt?: string;
   responder?: {
     email?: string | null;
@@ -130,6 +133,16 @@ export type B2BPaymentStatus =
 
 export type B2BPaymentMethod = "BANK_TRANSFER" | "MANUAL" | "RAZORPAY";
 export type B2BProofStatus = "SUBMITTED" | "VERIFIED" | "REJECTED" | "RAZORPAY_FAILED";
+export type B2BTransportMode = "STORE_PICKUP" | "SELLER_ARRANGED_TRANSPORT";
+export type B2BTransportStatus =
+  | "NOT_REQUIRED"
+  | "REQUESTED"
+  | "QUOTED"
+  | "READY_FOR_PICKUP"
+  | "DISPATCHED"
+  | "IN_TRANSIT"
+  | "DELIVERED"
+  | "CANCELLED";
 
 export type B2BBankTransferDetails = {
   configured: boolean;
@@ -182,6 +195,8 @@ export type BusinessBuyerEnquiry = {
   sellerId?: string | null;
   quantity: number;
   message: string;
+  transportMode?: B2BTransportMode;
+  transportNote?: string | null;
   status: BusinessBuyerEnquiryStatus;
   createdAt?: string;
   updatedAt?: string;
@@ -240,6 +255,19 @@ export type B2BOrder = {
   paymentStatus?: B2BPaymentStatus;
   paymentMethod?: B2BPaymentMethod | null;
   buyerPayableAmountPaise?: number | null;
+  transportMode?: B2BTransportMode;
+  transportStatus?: B2BTransportStatus;
+  transportChargePaise?: number | null;
+  transportChargeLockedAt?: string | null;
+  transportQuotedAt?: string | null;
+  transportPartnerName?: string | null;
+  transportPartnerPhone?: string | null;
+  transportTrackingRef?: string | null;
+  transportEta?: string | null;
+  transportDispatchedAt?: string | null;
+  transportDeliveredAt?: string | null;
+  transportPickupAddress?: string | null;
+  transportNote?: string | null;
   paidAmountPaise?: number | null;
   paymentDueAt?: string | null;
   paymentOverdueAt?: string | null;
@@ -277,6 +305,8 @@ export type BusinessBuyerEnquiryPayload = {
   sellerId?: string | undefined;
   quantity: number;
   message: string;
+  transportMode?: B2BTransportMode | undefined;
+  transportNote?: string | undefined;
 };
 
 export type BusinessBuyerPurchaseOrderPayload = {

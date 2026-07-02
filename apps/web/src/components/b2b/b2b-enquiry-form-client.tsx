@@ -52,7 +52,7 @@ export function B2BEnquiryFormClient() {
   const selectedProduct = useMemo(() => products.find((product) => product.id === productFromUrl), [productFromUrl, products]);
 
   const createMutation = useMutation({
-    mutationFn: (payload: { productId?: string; sellerId?: string; quantity: number; message: string }) =>
+    mutationFn: (payload: { productId?: string; sellerId?: string; quantity: number; message: string; transportMode?: "STORE_PICKUP" | "SELLER_ARRANGED_TRANSPORT"; transportNote?: string }) =>
       createBusinessBuyerEnquiry(auth.authHeaders, payload),
     onSuccess: (enquiry) => {
       setNotice("Enquiry submitted.");
@@ -66,11 +66,14 @@ export function B2BEnquiryFormClient() {
     const form = new FormData(event.currentTarget);
     const productId = optionalFormValue(form, "productId");
     const sellerId = productId ? undefined : optionalFormValue(form, "sellerId");
+    const transportNote = optionalFormValue(form, "transportNote");
     const payload = {
       ...(productId ? { productId } : {}),
       ...(sellerId ? { sellerId } : {}),
       quantity: Number(formValue(form, "quantity")),
-      message: formValue(form, "message")
+      message: formValue(form, "message"),
+      transportMode: formValue(form, "transportMode") as "STORE_PICKUP" | "SELLER_ARRANGED_TRANSPORT",
+      ...(transportNote ? { transportNote } : {})
     };
 
     setNotice(null);
@@ -145,6 +148,43 @@ export function B2BEnquiryFormClient() {
                 minLength={10}
                 placeholder="Mention product requirements, delivery location, timeline, recurring purchase needs, and quotation expectations."
               />
+
+              <div className="rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-4">
+                <SectionHeading
+                  title="B2B transport preference"
+                  description="Choose pickup if your company will collect from seller. Choose seller-arranged transport when courier or goods transport charge should be added to the quotation."
+                />
+                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                  <label className="rounded-md border border-[#D8E2EA] bg-white p-4">
+                    <input
+                      type="radio"
+                      name="transportMode"
+                      value="SELLER_ARRANGED_TRANSPORT"
+                      defaultChecked
+                      className="mr-2 accent-[#ED3500]"
+                    />
+                    <span className="text-sm font-black text-[#1F2933]">Seller-arranged transport</span>
+                    <p className="mt-2 text-xs font-semibold leading-5 text-[#667085]">
+                      Seller shares courier/transport charge in quotation and later updates tracking manually.
+                    </p>
+                  </label>
+                  <label className="rounded-md border border-[#D8E2EA] bg-white p-4">
+                    <input type="radio" name="transportMode" value="STORE_PICKUP" className="mr-2 accent-[#ED3500]" />
+                    <span className="text-sm font-black text-[#1F2933]">Store pickup</span>
+                    <p className="mt-2 text-xs font-semibold leading-5 text-[#667085]">
+                      Buyer arranges pickup. No B2B transport charge is added by seller.
+                    </p>
+                  </label>
+                </div>
+                <div className="mt-4">
+                  <B2BTextArea
+                    label="Transport note"
+                    name="transportNote"
+                    rows={3}
+                    placeholder="Delivery city, warehouse timing, preferred courier, pickup contact, or unloading instructions."
+                  />
+                </div>
+              </div>
 
               <div className="flex flex-wrap items-center gap-3">
                 <Button type="submit" disabled={createMutation.isPending}>

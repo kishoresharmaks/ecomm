@@ -70,7 +70,7 @@ Collect these before starting:
 | --------------------- | ---------------------------------------------------------- |
 | Main domain           | Example: `1handindia.com`                                  |
 | Admin URL             | Usually `https://1handindia.com/admin`                     |
-| API public base       | Usually `https://1handindia.com/api`                       |
+| API public base       | Usually `https://api.1handindia.com/api` for split-domain deployments, or `https://YOUR_DOMAIN/api` only when Nginx proxies `/api` to NestJS |
 | VPS OS                | Ubuntu 22.04 LTS or 24.04 LTS recommended                  |
 | VPS size              | Minimum 4 vCPU, 8 GB RAM for serious launch testing        |
 | Database              | PostgreSQL 15+ recommended                                 |
@@ -1147,17 +1147,30 @@ In Razorpay Dashboard:
 1. Create or use the business account.
 2. Complete KYC and activation.
 3. Create test keys first.
-4. Configure webhook URL:
+4. Configure webhook URL using the public API base, not the storefront host unless `/api` is reverse-proxied to NestJS:
 
 ```text
-https://YOUR_DOMAIN/api/payments/razorpay/webhook
+https://api.1handindia.com/api/payments/razorpay/webhook
 ```
 
-5. Select payment events used by the app:
+For same-domain deployments, use `https://YOUR_DOMAIN/api/payments/razorpay/webhook` only after `curl https://YOUR_DOMAIN/api/health` returns the NestJS health JSON, not a Next.js HTML page.
+
+5. Before enabling the webhook, test that the URL reaches the API:
+
+```bash
+curl -i -X POST https://api.1handindia.com/api/payments/razorpay/webhook \
+  -H "Content-Type: application/json" \
+  -H "x-razorpay-signature: test" \
+  --data '{"event":"payment.failed","payload":{}}'
+```
+
+Expected result is a JSON `401 Unauthorized` for an invalid signature. A `404` HTML page means the URL is hitting the web app instead of the API.
+
+6. Select payment events used by the app:
    - payment captured
    - payment failed
    - order paid, if enabled in Razorpay account
-6. Copy webhook secret.
+7. Copy webhook secret.
 
 In 1HandIndia Admin:
 
@@ -2929,7 +2942,7 @@ Check:
 2. Correct test/live mode.
 3. Correct key ID and key secret.
 4. Checkout signature verify succeeded.
-5. Webhook URL is `https://YOUR_DOMAIN/api/payments/razorpay/webhook`.
+5. Webhook URL uses the API host, for example `https://api.1handindia.com/api/payments/razorpay/webhook`, unless same-domain `/api` routing is confirmed.
 6. Webhook secret matches Razorpay dashboard.
 7. Payment captured in Razorpay dashboard.
 8. API logs have no webhook signature error.

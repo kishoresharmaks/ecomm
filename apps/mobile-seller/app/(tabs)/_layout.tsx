@@ -13,12 +13,13 @@ import { StyleSheet, type ColorValue, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors } from "../../src/theme";
 
-type TabIconName = "home" | "products" | "orders" | "b2b" | "sales" | "finance" | "profile";
+type TabIconName = "home" | "products" | "orders" | "services" | "b2b" | "sales" | "finance" | "profile";
 
 const tabIcons = {
   home: Home01Icon,
   products: ShoppingBag01Icon,
   orders: PackageIcon,
+  services: Suit02Icon,
   b2b: Suit02Icon,
   sales: ChartIcon,
   finance: DollarSignIcon,
@@ -70,6 +71,7 @@ export default function SellerTabsLayout() {
       <Tabs.Screen name="index" options={{ title: "Home", tabBarIcon: iconRenderer("home") }} />
       <Tabs.Screen name="products" options={{ title: "Products", tabBarIcon: iconRenderer("products") }} />
       <Tabs.Screen name="orders" options={{ title: "Orders", tabBarIcon: iconRenderer("orders") }} />
+      <Tabs.Screen name="services" options={{ title: "Services", tabBarIcon: iconRenderer("services") }} />
       <Tabs.Screen name="b2b" options={{ title: "B2B", tabBarIcon: iconRenderer("b2b") }} />
       <Tabs.Screen name="sales" options={{ title: "Sales", tabBarIcon: iconRenderer("sales") }} />
       <Tabs.Screen name="finance" options={{ title: "Finance", tabBarIcon: iconRenderer("finance") }} />

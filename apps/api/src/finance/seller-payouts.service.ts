@@ -6,6 +6,9 @@ import {
   OrderStatus,
   PaymentStatus,
   Prisma,
+  ServiceReceivableOffsetPolicy,
+  ServiceSellerReceivableStatus,
+  SellerLedgerEntryType,
   SellerOrderStatus,
   SellerPayoutStatus,
   SellerSettlementStatus,
@@ -51,6 +54,7 @@ type PayoutRequestCalculation = {
 };
 
 type B2BPayoutOrder = Prisma.B2BOrderGetPayload<Record<string, never>>;
+type ServicePayoutReceivable = Prisma.ServiceSellerReceivableGetPayload<Record<string, never>>;
 
 @Injectable()
 export class SellerPayoutsService {
@@ -130,7 +134,7 @@ export class SellerPayoutsService {
         }
       },
       settlementRun: { select: { id: true, runNumber: true, status: true } },
-      _count: { select: { orderSplits: true, b2bOrders: true, ledgerEntries: true, statements: true } }
+      _count: { select: { orderSplits: true, b2bOrders: true, serviceSettlements: true, serviceReceivableOffsets: true, ledgerEntries: true, statements: true } }
     } satisfies Prisma.SellerPayoutInclude;
   }
 
@@ -164,6 +168,7 @@ export class SellerPayoutsService {
           tcsPaise: availability.tcsPaise,
           platformFeePaise: availability.platformFeePaise,
           refundAdjustmentPaise: availability.refundAdjustmentPaise,
+          adjustmentPaise: -availability.serviceReceivableOffsetPaise,
           netPayablePaise: availability.netPayablePaise,
           currency: availability.currency,
           note: dto.note?.trim() || "Requested by seller for manual payout."
@@ -226,6 +231,51 @@ export class SellerPayoutsService {
         }
       }
 
+      for (const settlement of availability.serviceSettlements) {
+        const updated = await tx.serviceBookingSettlement.updateMany({
+          where: {
+            id: settlement.id,
+            sellerId,
+            payoutId: null,
+            netPayablePaise: { gt: 0 },
+            status: { in: [SellerSettlementStatus.NOT_ELIGIBLE, SellerSettlementStatus.ELIGIBLE] },
+            booking: {
+              status: { in: ["COMPLETED", "CLOSED_AFTER_INSPECTION"] },
+            },
+          },
+          data: {
+            payoutId: payout.id,
+            status: SellerSettlementStatus.DRAFTED,
+          },
+        });
+
+        if (updated.count !== 1) {
+          throw new ConflictException("Eligible service payout amount changed while creating this request. Refresh and try again.");
+        }
+      }
+
+      for (const offset of availability.receivableOffsets) {
+        const updated = await tx.serviceSellerReceivable.updateMany({
+          where: {
+            id: offset.id,
+            sellerId,
+            payoutOffsetId: null,
+            offsetPolicy: ServiceReceivableOffsetPolicy.AUTO_OFFSET_NEXT_PAYOUT,
+            status: { in: [ServiceSellerReceivableStatus.OPEN, ServiceSellerReceivableStatus.PARTIALLY_SETTLED] },
+          },
+          data: {
+            payoutOffsetId: payout.id,
+            offsetPaise: offset.offsetAmountPaise,
+            offsetScheduledAt: new Date(),
+            offsetAppliedAt: null,
+            status: ServiceSellerReceivableStatus.OFFSET_SCHEDULED,
+          },
+        });
+        if (updated.count !== 1) {
+          throw new ConflictException("Service receivable offset changed while creating this request. Refresh and try again.");
+        }
+      }
+
       await this.createEvent(tx, payout.id, "payout.requested_by_seller", SellerPayoutStatus.DRAFT, SellerPayoutStatus.PENDING_APPROVAL, actor, dto.note);
       await this.audit(
         tx,
@@ -238,6 +288,8 @@ export class SellerPayoutsService {
           payoutNumber: payout.payoutNumber,
           eligibleSplitCount: availability.eligibleSplitCount,
           eligibleB2BOrderCount: availability.eligibleB2BOrderCount,
+          eligibleServiceSettlementCount: availability.eligibleServiceSettlementCount,
+          serviceReceivableOffsetPaise: availability.serviceReceivableOffsetPaise,
           netPayablePaise: availability.netPayablePaise,
           note: dto.note
         }
@@ -265,6 +317,14 @@ export class SellerPayoutsService {
           orderBy: { createdAt: "asc" }
         },
         b2bOrders: {
+          orderBy: { createdAt: "asc" }
+        },
+        serviceSettlements: {
+          include: { booking: true },
+          orderBy: { createdAt: "asc" }
+        },
+        serviceReceivableOffsets: {
+          include: { booking: true },
           orderBy: { createdAt: "asc" }
         },
         events: { orderBy: { createdAt: "asc" } },
@@ -400,6 +460,21 @@ export class SellerPayoutsService {
         throw new ConflictException("B2B payout sources changed. Refresh and try again.");
       }
 
+      const serviceUpdate = await tx.serviceBookingSettlement.updateMany({
+        where: {
+          payoutId,
+          status: SellerSettlementStatus.DRAFTED,
+        },
+        data: {
+          status: SellerSettlementStatus.APPROVED,
+        },
+      });
+      if (serviceUpdate.count !== splitSummary.serviceSettlementCount) {
+        throw new ConflictException("Service payout sources changed. Refresh and try again.");
+      }
+
+      await this.applyServiceReceivableOffsets(tx, payoutId, actor);
+
       await this.ledger.postPayoutApprovalEntries(tx, payoutId, actor);
       await this.createEvent(tx, payoutId, "payout.approved", payout.status, SellerPayoutStatus.APPROVED, actor, dto.note);
       await this.audit(tx, actor, "finance.payout.approved", payoutId, { status: payout.status }, { status: SellerPayoutStatus.APPROVED, note: dto.note });
@@ -456,6 +531,31 @@ export class SellerPayoutsService {
           payoutId: null,
           settlementStatus: SellerSettlementStatus.ELIGIBLE
         }
+      });
+
+      await tx.serviceBookingSettlement.updateMany({
+        where: {
+          payoutId,
+          status: { in: [SellerSettlementStatus.DRAFTED, SellerSettlementStatus.APPROVED] },
+        },
+        data: {
+          payoutId: null,
+          status: SellerSettlementStatus.ELIGIBLE,
+        },
+      });
+
+      await tx.serviceSellerReceivable.updateMany({
+        where: {
+          payoutOffsetId: payoutId,
+          status: { in: [ServiceSellerReceivableStatus.OFFSET_SCHEDULED, ServiceSellerReceivableStatus.OFFSET_APPLIED, ServiceSellerReceivableStatus.PARTIALLY_SETTLED] },
+        },
+        data: {
+          payoutOffsetId: null,
+          offsetPaise: 0,
+          offsetScheduledAt: null,
+          offsetAppliedAt: null,
+          status: ServiceSellerReceivableStatus.OPEN,
+        },
       });
 
       await this.createEvent(tx, payoutId, "payout.rejected", payout.status, SellerPayoutStatus.REJECTED, actor, dto.note);
@@ -524,6 +624,16 @@ export class SellerPayoutsService {
         throw new ConflictException("B2B payout sources changed. Refresh and try again.");
       }
 
+      const serviceUpdate = await tx.serviceBookingSettlement.updateMany({
+        where: { payoutId, status: SellerSettlementStatus.APPROVED },
+        data: {
+          status: SellerSettlementStatus.PAID,
+        },
+      });
+      if (serviceUpdate.count !== splitSummary.serviceSettlementCount) {
+        throw new ConflictException("Service payout sources changed. Refresh and try again.");
+      }
+
       await this.ledger.postPayoutPaidEntry(tx, payoutId, actor);
       await this.createEvent(tx, payoutId, "payout.marked_paid", payout.status, SellerPayoutStatus.PAID, actor, dto.note);
       await this.audit(tx, actor, "finance.payout.paid", payoutId, { status: payout.status }, { status: SellerPayoutStatus.PAID, transactionReference: dto.transactionReference });
@@ -564,7 +674,7 @@ export class SellerPayoutsService {
   }
 
   private async payoutSplitSummary(tx: Prisma.TransactionClient, payoutId: string) {
-    const [summary, b2bSummary] = await Promise.all([
+    const [summary, b2bSummary, serviceSummary, receivableOffsetSummary] = await Promise.all([
       tx.orderSellerSplit.aggregate({
         where: { payoutId },
         _count: { _all: true },
@@ -574,15 +684,119 @@ export class SellerPayoutsService {
         where: { payoutId },
         _count: { _all: true },
         _sum: { sellerPayoutAmountPaise: true }
+      }),
+      tx.serviceBookingSettlement.aggregate({
+        where: { payoutId },
+        _count: { _all: true },
+        _sum: { netPayablePaise: true }
+      }),
+      tx.serviceSellerReceivable.aggregate({
+        where: { payoutOffsetId: payoutId },
+        _count: { _all: true },
+        _sum: { offsetPaise: true }
       })
     ]);
+    const receivableOffsetPaise = receivableOffsetSummary._sum.offsetPaise ?? 0;
 
     return {
       splitCount: summary._count._all,
       b2bOrderCount: b2bSummary._count._all,
-      count: summary._count._all + b2bSummary._count._all,
-      netPayablePaise: (summary._sum.netPayablePaise ?? 0) + (b2bSummary._sum.sellerPayoutAmountPaise ?? 0)
+      serviceSettlementCount: serviceSummary._count._all,
+      count: summary._count._all + b2bSummary._count._all + serviceSummary._count._all,
+      netPayablePaise:
+        (summary._sum.netPayablePaise ?? 0) +
+        (b2bSummary._sum.sellerPayoutAmountPaise ?? 0) +
+        (serviceSummary._sum.netPayablePaise ?? 0) -
+        receivableOffsetPaise
     };
+  }
+
+  private async applyServiceReceivableOffsets(tx: Prisma.TransactionClient, payoutId: string, actor: RequestUser) {
+    const payout = await tx.sellerPayout.findUnique({
+      where: { id: payoutId },
+      select: { id: true, sellerId: true, payoutNumber: true },
+    });
+    if (!payout) {
+      throw new NotFoundException("Seller payout not found.");
+    }
+
+    const offsets = await tx.serviceSellerReceivable.findMany({
+      where: {
+        payoutOffsetId: payoutId,
+        status: ServiceSellerReceivableStatus.OFFSET_SCHEDULED,
+        offsetPaise: { gt: 0 },
+      },
+      orderBy: { createdAt: "asc" },
+    });
+
+    for (const offset of offsets) {
+      const outstandingBeforeOffset = Math.max(
+        0,
+        offset.amountDueToPlatformPaise - offset.settledPaise - offset.waivedPaise - offset.reversalPaise,
+      );
+      const nextStatus =
+        offset.offsetPaise >= outstandingBeforeOffset
+          ? ServiceSellerReceivableStatus.OFFSET_APPLIED
+          : ServiceSellerReceivableStatus.PARTIALLY_SETTLED;
+      const updated = await tx.serviceSellerReceivable.updateMany({
+        where: {
+          id: offset.id,
+          payoutOffsetId: payoutId,
+          status: ServiceSellerReceivableStatus.OFFSET_SCHEDULED,
+        },
+        data: {
+          status: nextStatus,
+          offsetAppliedAt: new Date(),
+        },
+      });
+      if (updated.count !== 1) {
+        throw new ConflictException("Service receivable offset changed while approving payout. Refresh and try again.");
+      }
+
+      await tx.serviceSellerReceivableEvent.create({
+        data: {
+          receivableId: offset.id,
+          eventType: "service_receivable.offset_applied",
+          oldStatus: ServiceSellerReceivableStatus.OFFSET_SCHEDULED,
+          newStatus: nextStatus,
+          amountDeltaPaise: -offset.offsetPaise,
+          oldAmountDuePaise: outstandingBeforeOffset,
+          newAmountDuePaise: Math.max(0, outstandingBeforeOffset - offset.offsetPaise),
+          note: `Offset applied against payout ${payout.payoutNumber}`,
+          actorUserId: actor.id,
+          metadata: {
+            payoutId,
+            payoutNumber: payout.payoutNumber,
+            receivableNumber: offset.receivableNumber,
+          },
+        },
+      });
+
+      const existingLedger = await tx.sellerLedgerEntry.findFirst({
+        where: {
+          payoutId,
+          referenceType: "service_seller_receivable",
+          referenceId: offset.id,
+          entryType: SellerLedgerEntryType.SERVICE_RECEIVABLE_OFFSET,
+        },
+        select: { id: true },
+      });
+      if (!existingLedger) {
+        await this.ledger.createEntry(tx, {
+          sellerId: offset.sellerId,
+          serviceBookingId: offset.bookingId,
+          payoutId,
+          entryType: SellerLedgerEntryType.SERVICE_RECEIVABLE_OFFSET,
+          description: `Service receivable offset against payout ${payout.payoutNumber}`,
+          debitPaise: offset.offsetPaise,
+          currency: offset.currency,
+          referenceType: "service_seller_receivable",
+          referenceId: offset.id,
+          metadata: { receivableNumber: offset.receivableNumber, payoutNumber: payout.payoutNumber },
+          createdById: actor.id,
+        });
+      }
+    }
   }
 
   private createEvent(
@@ -620,7 +834,7 @@ export class SellerPayoutsService {
   }
 
   private async calculateSellerPayoutAvailability(tx: Prisma.TransactionClient, sellerId: string) {
-    const [seller, settings, splits, b2bOrders] = await Promise.all([
+    const [seller, settings, splits, b2bOrders, serviceSettlements, receivables] = await Promise.all([
       tx.seller.findUnique({
         where: { id: sellerId },
         include: {
@@ -661,6 +875,28 @@ export class SellerPayoutsService {
           settlementStatus: { in: [SellerSettlementStatus.NOT_ELIGIBLE, SellerSettlementStatus.ELIGIBLE] },
         },
         orderBy: { createdAt: "asc" }
+      }),
+      tx.serviceBookingSettlement.findMany({
+        where: {
+          sellerId,
+          payoutId: null,
+          status: { in: [SellerSettlementStatus.NOT_ELIGIBLE, SellerSettlementStatus.ELIGIBLE] },
+          netPayablePaise: { gt: 0 },
+          booking: {
+            status: { in: ["COMPLETED", "CLOSED_AFTER_INSPECTION"] },
+          },
+        },
+        include: { booking: true },
+        orderBy: { createdAt: "asc" },
+      }),
+      tx.serviceSellerReceivable.findMany({
+        where: {
+          sellerId,
+          payoutOffsetId: null,
+          status: { in: [ServiceSellerReceivableStatus.OPEN, ServiceSellerReceivableStatus.PARTIALLY_SETTLED] },
+          offsetPolicy: { in: [ServiceReceivableOffsetPolicy.AUTO_OFFSET_NEXT_PAYOUT, ServiceReceivableOffsetPolicy.HOLD_PAYOUT_UNTIL_SETTLED] },
+        },
+        orderBy: { createdAt: "asc" },
       })
     ]);
 
@@ -697,10 +933,44 @@ export class SellerPayoutsService {
       totals.commissionPaise += order.commissionAmountPaise;
       totals.netPayablePaise += order.sellerPayoutAmountPaise;
     }
+    const eligibleServiceSettlements = serviceSettlements.filter((settlement) => settlement.netPayablePaise > 0);
+    for (const settlement of eligibleServiceSettlements) {
+      totals.grossSalesPaise += settlement.grossAmountPaise;
+      totals.commissionPaise += settlement.commissionPaise;
+      totals.gstOnCommissionPaise += settlement.gstOnCommissionPaise;
+      totals.tdsPaise += settlement.tdsPaise;
+      totals.tcsPaise += settlement.tcsPaise;
+      totals.platformFeePaise += settlement.platformFeePaise;
+      totals.refundAdjustmentPaise += settlement.refundAdjustmentPaise;
+      totals.netPayablePaise += settlement.netPayablePaise;
+    }
+
+    const holdReceivableCount = receivables.filter(
+      (receivable) =>
+        receivable.offsetPolicy === ServiceReceivableOffsetPolicy.HOLD_PAYOUT_UNTIL_SETTLED &&
+        this.receivableOutstanding(receivable) > 0,
+    ).length;
+    const receivableOffsets: Array<ServicePayoutReceivable & { offsetAmountPaise: number }> = [];
+    let remainingOffsetCapacity = totals.netPayablePaise;
+    for (const receivable of receivables) {
+      if (receivable.offsetPolicy !== ServiceReceivableOffsetPolicy.AUTO_OFFSET_NEXT_PAYOUT) {
+        continue;
+      }
+      const outstanding = this.receivableOutstanding(receivable);
+      if (outstanding <= 0 || remainingOffsetCapacity <= 0) {
+        continue;
+      }
+      const offsetAmountPaise = Math.min(outstanding, remainingOffsetCapacity);
+      receivableOffsets.push({ ...receivable, offsetAmountPaise });
+      remainingOffsetCapacity -= offsetAmountPaise;
+    }
+    const serviceReceivableOffsetPaise = receivableOffsets.reduce((sum, receivable) => sum + receivable.offsetAmountPaise, 0);
+    totals.netPayablePaise = Math.max(0, totals.netPayablePaise - serviceReceivableOffsetPaise);
 
     const orderDates = [
       ...calculations.map(({ split }) => split.order.createdAt),
       ...eligibleB2BOrders.map((order) => order.createdAt),
+      ...eligibleServiceSettlements.map((settlement) => settlement.booking.createdAt),
     ];
     const sellerReady = seller.status === SellerStatus.APPROVED && seller.approvalStatus === ApprovalStatus.APPROVED && !seller.deletedAt;
     const hasPayoutMethod = this.hasPayoutMethod(seller.payoutProfile);
@@ -711,10 +981,15 @@ export class SellerPayoutsService {
       hasPayoutMethod,
       eligibleSplitCount: calculations.length,
       eligibleB2BOrderCount: eligibleB2BOrders.length,
+      eligibleServiceSettlementCount: eligibleServiceSettlements.length,
+      holdReceivableCount,
+      serviceReceivableOffsetPaise,
       periodFrom: orderDates.length ? new Date(Math.min(...orderDates.map((date) => date.getTime()))) : null,
       periodTo: orderDates.length ? new Date(Math.max(...orderDates.map((date) => date.getTime()))) : null,
       calculations,
       b2bOrders: eligibleB2BOrders,
+      serviceSettlements: eligibleServiceSettlements,
+      receivableOffsets,
       ...totals
     };
   }
@@ -729,6 +1004,9 @@ export class SellerPayoutsService {
       hasPayoutMethod: availability.hasPayoutMethod,
       eligibleSplitCount: availability.eligibleSplitCount,
       eligibleB2BOrderCount: availability.eligibleB2BOrderCount,
+      eligibleServiceSettlementCount: availability.eligibleServiceSettlementCount,
+      serviceReceivableOffsetPaise: availability.serviceReceivableOffsetPaise,
+      holdReceivableCount: availability.holdReceivableCount,
       periodFrom: availability.periodFrom?.toISOString() ?? null,
       periodTo: availability.periodTo?.toISOString() ?? null,
       grossSalesPaise: availability.grossSalesPaise,
@@ -751,6 +1029,8 @@ export class SellerPayoutsService {
     hasPayoutMethod: boolean;
     eligibleSplitCount: number;
     eligibleB2BOrderCount?: number;
+    eligibleServiceSettlementCount?: number;
+    holdReceivableCount?: number;
     netPayablePaise: number;
     minimumPayoutPaise: number;
   }) {
@@ -765,7 +1045,16 @@ export class SellerPayoutsService {
     if (!availability.hasPayoutMethod) {
       blockers.push("Add bank account or UPI payout details in seller profile.");
     }
-    if (availability.eligibleSplitCount + (availability.eligibleB2BOrderCount ?? 0) === 0 || availability.netPayablePaise <= 0) {
+    if ((availability.holdReceivableCount ?? 0) > 0) {
+      blockers.push("Open service cash receivables are configured to hold payouts until settled.");
+    }
+    if (
+      availability.eligibleSplitCount +
+        (availability.eligibleB2BOrderCount ?? 0) +
+        (availability.eligibleServiceSettlementCount ?? 0) ===
+        0 ||
+      availability.netPayablePaise <= 0
+    ) {
       blockers.push("No delivered and paid orders are currently eligible for payout.");
     }
     if (availability.netPayablePaise > 0 && availability.netPayablePaise < availability.minimumPayoutPaise) {
@@ -826,5 +1115,18 @@ export class SellerPayoutsService {
 
   private makePayoutNumber() {
     return `PO-${new Date().toISOString().replace(/\D/g, "").slice(0, 14)}-${Math.floor(Math.random() * 9000 + 1000)}`;
+  }
+
+  private receivableOutstanding(
+    receivable: Pick<ServicePayoutReceivable, "amountDueToPlatformPaise" | "settledPaise" | "waivedPaise" | "reversalPaise" | "offsetPaise">,
+  ) {
+    return Math.max(
+      0,
+      receivable.amountDueToPlatformPaise -
+        receivable.settledPaise -
+        receivable.waivedPaise -
+        receivable.reversalPaise -
+        receivable.offsetPaise,
+    );
   }
 }

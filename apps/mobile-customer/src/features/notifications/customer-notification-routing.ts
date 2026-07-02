@@ -10,6 +10,7 @@ export type CustomerNotificationRoutePayload = {
 const allowedHrefPatterns = [
   /^\/deals$/,
   /^\/orders\/[A-Za-z0-9._-]+$/,
+  /^\/account\/service-bookings\/[A-Za-z0-9._-]+$/,
   /^\/products?\/[A-Za-z0-9._-]+$/,
   /^\/stores?\/[A-Za-z0-9._-]+$/,
   /^\/categories?\/[A-Za-z0-9._-]+$/,

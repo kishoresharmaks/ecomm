@@ -23,6 +23,8 @@ Web: https://1handindia.com
 API: https://1handindia.com/api
 ```
 
+For the current split-domain deployment, provider webhooks must use `https://api.1handindia.com/api/...`. Do not use `https://1handindia.com/api/...` unless the web server is explicitly routing `/api` traffic to the NestJS API.
+
 Before mobile or provider setup, verify the API URL from a browser or terminal:
 
 ```powershell
@@ -341,8 +343,19 @@ EXPO_PUBLIC_RAZORPAY_KEY_ID="rzp_live_replace_me"
 https://api.1handindia.com/api/payments/razorpay/webhook
 ```
 
-6. Enable required payment/refund events.
-7. Never put `RAZORPAY_KEY_SECRET` in web or mobile public env.
+6. Confirm the webhook URL reaches the API before enabling live webhooks:
+
+```powershell
+curl -i -X POST https://api.1handindia.com/api/payments/razorpay/webhook `
+  -H "Content-Type: application/json" `
+  -H "x-razorpay-signature: test" `
+  --data '{"event":"payment.failed","payload":{}}'
+```
+
+Expected result is JSON `401 Unauthorized` for the invalid test signature. A `404` HTML page means the URL is hitting the Next.js web app and Razorpay will disable delivery after repeated failures.
+
+7. Enable required payment/refund events.
+8. Never put `RAZORPAY_KEY_SECRET` in web or mobile public env.
 
 ## 10. Sentry Production Setup
 

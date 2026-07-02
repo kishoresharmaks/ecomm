@@ -415,6 +415,8 @@ export type B2BEnquiry = {
   enquiryType?: string;
   quantity?: number | null;
   message: string;
+  transportMode?: SellerB2BTransportMode;
+  transportNote?: string | null;
   status:
     | "SUBMITTED"
     | "IN_REVIEW"
@@ -441,6 +443,9 @@ export type B2BEnquiry = {
     id: string;
     responseMessage: string;
     quotedPricePaise?: number | null;
+    transportChargePaise?: number | null;
+    transportEta?: string | null;
+    transportNote?: string | null;
     source?: string;
     createdAt?: string;
     responder?: {
@@ -491,6 +496,36 @@ export type SellerB2BPaymentStatus =
   | "REFUNDED"
   | "NOT_REQUIRED";
 
+export type SellerB2BTransportMode = "STORE_PICKUP" | "SELLER_ARRANGED_TRANSPORT";
+export type SellerB2BTransportStatus =
+  | "NOT_REQUIRED"
+  | "REQUESTED"
+  | "QUOTED"
+  | "READY_FOR_PICKUP"
+  | "DISPATCHED"
+  | "IN_TRANSIT"
+  | "DELIVERED"
+  | "CANCELLED";
+
+export type SellerServiceBookingStatus =
+  | "REQUESTED"
+  | "ACCEPTED"
+  | "QUOTE_SENT"
+  | "QUOTE_ACCEPTED"
+  | "QUOTE_EXPIRED"
+  | "QUOTE_REJECTED"
+  | "CLOSED_AFTER_INSPECTION"
+  | "REJECTED"
+  | "CANCELLED"
+  | "SCHEDULED"
+  | "IN_PROGRESS"
+  | "COMPLETION_SUBMITTED"
+  | "COMPLETION_DISPUTED"
+  | "COMPLETED"
+  | "CANCELLED_AFTER_DISPUTE";
+
+export type SellerServicePaymentStatus = "PENDING" | "PAID" | "FAILED" | "REFUNDED" | "NOT_REQUIRED";
+
 export type SellerB2BOrder = {
   id: string;
   orderNumber: string;
@@ -526,6 +561,19 @@ export type SellerB2BOrder = {
   paymentStatus?: SellerB2BPaymentStatus;
   paymentMethod?: "BANK_TRANSFER" | "MANUAL" | "RAZORPAY" | null;
   buyerPayableAmountPaise?: number | null;
+  transportMode?: SellerB2BTransportMode;
+  transportStatus?: SellerB2BTransportStatus;
+  transportChargePaise?: number | null;
+  transportChargeLockedAt?: string | null;
+  transportQuotedAt?: string | null;
+  transportPartnerName?: string | null;
+  transportPartnerPhone?: string | null;
+  transportTrackingRef?: string | null;
+  transportEta?: string | null;
+  transportDispatchedAt?: string | null;
+  transportDeliveredAt?: string | null;
+  transportPickupAddress?: string | null;
+  transportNote?: string | null;
   paidAmountPaise?: number | null;
   paymentDueAt?: string | null;
   paymentVerifiedAt?: string | null;
@@ -562,6 +610,11 @@ export type PaginatedSellerB2BOrders = {
 };
 
 export type SellerSalesReport = {
+  seller?: {
+    id: string;
+    primaryCapability?: SellerCapability;
+    enabledCapabilities?: SellerCapability[];
+  };
   summary: {
     orderCount: number;
     totalSalesPaise: number;
@@ -577,6 +630,79 @@ export type SellerSalesReport = {
     products: number;
     lowStockCount: number;
     b2bEnquiries: number;
+    b2bOrders?: number;
+    b2bOrderValuePaise?: number;
+    serviceBookings?: number;
+    serviceRevenuePaise?: number;
+    serviceListings?: number;
+  };
+  b2b?: {
+    enquiryCount: number;
+    orderCount: number;
+    subtotalPaise: number;
+    buyerPayablePaise: number;
+    paidAmountPaise: number;
+    commissionPaise: number;
+    sellerPayoutPaise: number;
+    byEnquiryStatus: Array<{ status: B2BEnquiry["status"]; count: number }>;
+    byOrderStatus: Array<{
+      status: SellerB2BOrderStatus;
+      count: number;
+      buyerPayablePaise: number;
+      sellerPayoutPaise: number;
+    }>;
+    byPaymentStatus: Array<{
+      status: SellerB2BPaymentStatus;
+      count: number;
+      paidAmountPaise: number;
+      buyerPayablePaise: number;
+    }>;
+    recentOrders: SellerB2BOrder[];
+  };
+  services?: {
+    listingCount: number;
+    activeListingCount: number;
+    bookingCount: number;
+    totalPayablePaise: number;
+    paidAmountPaise: number;
+    paidPaymentCount: number;
+    paidPaymentPaise: number;
+    byBookingStatus: Array<{
+      status: SellerServiceBookingStatus;
+      count: number;
+      totalPayablePaise: number;
+      paidAmountPaise: number;
+    }>;
+    byPaymentStatus: Array<{
+      status: SellerServicePaymentStatus;
+      count: number;
+      amountPaise: number;
+    }>;
+    recentBookings: Array<{
+      id: string;
+      bookingNumber: string;
+      status: SellerServiceBookingStatus;
+      visitMode: "CUSTOMER_LOCATION" | "PROVIDER_LOCATION" | "REMOTE";
+      paymentMode: "FULL_PAYMENT" | "ADVANCE_PAYMENT" | "INSPECTION_FEE" | "PAY_AT_VISIT";
+      scheduledStartAt?: string | null;
+      totalPayablePaise: number;
+      paidAmountPaise: number;
+      currency: string;
+      createdAt?: string;
+      listing?: {
+        id: string;
+        title: string;
+        slug: string;
+      } | null;
+      customer?: {
+        displayName?: string | null;
+        user?: {
+          email?: string | null;
+          fullName?: string | null;
+          phone?: string | null;
+        } | null;
+      } | null;
+    }>;
   };
   recentOrders: Array<{
     id: string;
@@ -918,7 +1044,13 @@ export function getSellerB2BEnquiry(
 export function respondSellerB2BEnquiry(
   auth: IndihubAuthHeaders,
   enquiryId: string,
-  payload: { responseMessage: string; quotedPricePaise?: number },
+  payload: {
+    responseMessage: string;
+    quotedPricePaise?: number;
+    transportChargePaise?: number;
+    transportEta?: string;
+    transportNote?: string;
+  },
 ) {
   return indihubFetch<B2BEnquiry>(
     `/api/seller/b2b-enquiries/${encodeURIComponent(enquiryId)}/responses`,
@@ -956,6 +1088,33 @@ export function getSellerB2BOrder(auth: IndihubAuthHeaders, orderNumber: string)
   return indihubFetch<SellerB2BOrder>(
     `/api/seller/b2b-orders/${encodeURIComponent(orderNumber)}`,
     undefined,
+    auth,
+  );
+}
+
+export type SellerB2BTransportPayload = {
+  transportMode?: SellerB2BTransportMode;
+  transportStatus?: SellerB2BTransportStatus;
+  transportChargePaise?: number;
+  transportPartnerName?: string;
+  transportPartnerPhone?: string;
+  transportTrackingRef?: string;
+  transportEta?: string;
+  transportPickupAddress?: string;
+  transportNote?: string;
+};
+
+export function updateSellerB2BTransport(
+  auth: IndihubAuthHeaders,
+  orderNumber: string,
+  payload: SellerB2BTransportPayload,
+) {
+  return indihubFetch<SellerB2BOrder>(
+    `/api/seller/b2b-orders/${encodeURIComponent(orderNumber)}/transport`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    },
     auth,
   );
 }

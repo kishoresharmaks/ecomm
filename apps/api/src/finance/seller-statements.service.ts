@@ -14,7 +14,14 @@ import { FinanceListQueryDto, GenerateStatementDto } from "./dto/finance.dto";
 type StatementExport = Prisma.SellerStatementGetPayload<{
   include: {
     seller: { include: { profile: true } };
-    payout: { include: { orderSplits: { include: { order: true } } } };
+    payout: {
+      include: {
+        orderSplits: { include: { order: true } };
+        b2bOrders: true;
+        serviceSettlements: { include: { booking: true } };
+        serviceReceivableOffsets: { include: { booking: true } };
+      };
+    };
   };
 }>;
 
@@ -165,6 +172,21 @@ export class SellerStatementsService {
                 order: true
               },
               orderBy: { createdAt: "asc" }
+            },
+            b2bOrders: {
+              orderBy: { createdAt: "asc" }
+            },
+            serviceSettlements: {
+              include: {
+                booking: true
+              },
+              orderBy: { createdAt: "asc" }
+            },
+            serviceReceivableOffsets: {
+              include: {
+                booking: true
+              },
+              orderBy: { createdAt: "asc" }
             }
           }
         }
@@ -215,10 +237,11 @@ export class SellerStatementsService {
       ["Refund adjustment", statement.refundAdjustmentPaise],
       ["Manual adjustment", statement.adjustmentPaise],
       ["Net payable", statement.netPayablePaise],
-      [],
-      ["Order number", "Gross", "Commission", "GST", "TDS", "TCS", "Seller settlement fee", "Net payable"]
+      []
     ];
 
+    rows.push(["Product order payouts"]);
+    rows.push(["Order number", "Gross", "Commission", "GST", "TDS", "TCS", "Seller settlement fee", "Net payable"]);
     for (const split of statement.payout?.orderSplits ?? []) {
       rows.push([
         split.order.orderNumber,
@@ -229,6 +252,81 @@ export class SellerStatementsService {
         split.tcsPaise,
         split.platformFeePaise,
         split.netPayablePaise
+      ]);
+    }
+
+    rows.push([]);
+    rows.push(["B2B order payouts"]);
+    rows.push(["Order number", "Buyer payable", "Commission", "Seller payout", "Settlement status"]);
+    for (const order of statement.payout?.b2bOrders ?? []) {
+      rows.push([
+        order.orderNumber,
+        order.buyerPayableAmountPaise,
+        order.commissionAmountPaise,
+        order.sellerPayoutAmountPaise,
+        order.settlementStatus
+      ]);
+    }
+
+    rows.push([]);
+    rows.push(["Service booking payouts"]);
+    rows.push([
+      "Booking number",
+      "Gross",
+      "Inspection fee gross",
+      "Commission",
+      "GST",
+      "TDS",
+      "TCS",
+      "Seller settlement fee",
+      "Refund adjustment",
+      "Net payable",
+      "Settlement status"
+    ]);
+    for (const settlement of statement.payout?.serviceSettlements ?? []) {
+      rows.push([
+        settlement.booking.bookingNumber,
+        settlement.grossAmountPaise,
+        settlement.inspectionFeeGrossPaise,
+        settlement.commissionPaise,
+        settlement.gstOnCommissionPaise,
+        settlement.tdsPaise,
+        settlement.tcsPaise,
+        settlement.platformFeePaise,
+        settlement.refundAdjustmentPaise,
+        settlement.netPayablePaise,
+        settlement.status
+      ]);
+    }
+
+    rows.push([]);
+    rows.push(["Service cash receivable offsets"]);
+    rows.push([
+      "Receivable number",
+      "Booking number",
+      "Gross cash collected",
+      "Amount due to platform",
+      "Settled",
+      "Waived",
+      "Reversed",
+      "Offset in payout",
+      "Outstanding after offset",
+      "Status",
+      "Offset policy"
+    ]);
+    for (const receivable of statement.payout?.serviceReceivableOffsets ?? []) {
+      rows.push([
+        receivable.receivableNumber,
+        receivable.booking.bookingNumber,
+        receivable.grossCashCollectedPaise,
+        receivable.amountDueToPlatformPaise,
+        receivable.settledPaise,
+        receivable.waivedPaise,
+        receivable.reversalPaise,
+        receivable.offsetPaise,
+        this.serviceReceivableOutstanding(receivable),
+        receivable.status,
+        receivable.offsetPolicy
       ]);
     }
 
@@ -252,6 +350,11 @@ export class SellerStatementsService {
       `Refund adjustment: ${this.rupees(statement.refundAdjustmentPaise)}`,
       `Manual adjustment: ${this.rupees(statement.adjustmentPaise)}`,
       `Net payable: ${this.rupees(statement.netPayablePaise)}`,
+      "",
+      `Product order payouts: ${statement.payout?.orderSplits.length ?? 0}`,
+      `B2B order payouts: ${statement.payout?.b2bOrders.length ?? 0}`,
+      `Service booking payouts: ${statement.payout?.serviceSettlements.length ?? 0}`,
+      `Service cash offsets: ${this.rupees(this.serviceReceivableOffsetTotal(statement))}`,
       "",
       "This statement is generated from 1HandIndia seller finance ledger records."
     ];
@@ -298,6 +401,26 @@ export class SellerStatementsService {
 
   private rupees(paise: number) {
     return `INR ${(paise / 100).toFixed(2)}`;
+  }
+
+  private serviceReceivableOffsetTotal(statement: StatementExport) {
+    return (statement.payout?.serviceReceivableOffsets ?? []).reduce((sum, receivable) => sum + receivable.offsetPaise, 0);
+  }
+
+  private serviceReceivableOutstanding(
+    receivable: Pick<
+      NonNullable<StatementExport["payout"]>["serviceReceivableOffsets"][number],
+      "amountDueToPlatformPaise" | "settledPaise" | "waivedPaise" | "reversalPaise" | "offsetPaise"
+    >
+  ) {
+    return Math.max(
+      0,
+      receivable.amountDueToPlatformPaise -
+        receivable.settledPaise -
+        receivable.waivedPaise -
+        receivable.reversalPaise -
+        receivable.offsetPaise
+    );
   }
 
   private shortDate(date: Date) {

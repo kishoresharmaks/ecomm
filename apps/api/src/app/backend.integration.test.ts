@@ -874,10 +874,10 @@ integrationDescribe("1HandIndia backend integration", () => {
     await progressSellerToProcessing(
       orderNumber,
       data.sellerUser.id,
-      "Seller packed before manual courier dispatch.",
+      "Seller packed before automated courier handoff.",
     );
 
-    const delivery = await request(app.getHttpServer())
+    const blockedSellerDelivery = await request(app.getHttpServer())
       .patch(`/api/seller/orders/${orderNumber}/delivery`)
       .set(authHeader(data.sellerUser.id))
       .send({
@@ -886,7 +886,21 @@ integrationDescribe("1HandIndia backend integration", () => {
         partnerPhone: "9876543210",
         trackingReference: `${runId}-TRK`,
         status: DeliveryStatus.DISPATCHED,
-        deliveryNote: "Seller dispatched through manual courier",
+        deliveryNote: "Seller attempted manual courier dispatch",
+      })
+      .expect(400);
+    expect(blockedSellerDelivery.body.message).toContain("automated delivery");
+
+    const delivery = await request(app.getHttpServer())
+      .patch(`/api/admin/orders/${orderNumber}/delivery`)
+      .set(adminSessionHeader)
+      .send({
+        deliveryMode: DeliveryMode.THIRD_PARTY_COURIER,
+        partnerName: "Manual Courier Test",
+        partnerPhone: "9876543210",
+        trackingReference: `${runId}-TRK`,
+        status: DeliveryStatus.DISPATCHED,
+        deliveryNote: "Operations dispatched through courier",
       })
       .expect(200);
     expect(delivery.body.deliveryStatus).toBe(DeliveryStatus.DISPATCHED);
@@ -1151,32 +1165,26 @@ integrationDescribe("1HandIndia backend integration", () => {
       await progressSellerToProcessing(
         orderNumber,
         data.sellerUser.id,
-        "First seller packed before dispatching their own package.",
+        "First seller packed before operations dispatch.",
       );
 
-      const firstSellerDispatched = await request(app.getHttpServer())
+      const blockedFirstSellerDispatch = await request(app.getHttpServer())
         .patch(`/api/seller/orders/${orderNumber}/delivery`)
         .set(authHeader(data.sellerUser.id))
         .send({
           deliveryMode: DeliveryMode.THIRD_PARTY_COURIER,
           trackingReference: `${runId}-MULTI-SELLER-SHIPMENT`,
           status: DeliveryStatus.DISPATCHED,
-          deliveryNote: "First seller dispatched their own package.",
+          deliveryNote: "First seller attempted their own package dispatch.",
         })
-        .expect(200);
-      expect(firstSellerDispatched.body.shipments).toEqual([
-        expect.objectContaining({
-          sellerId: data.seller.id,
-          status: DeliveryStatus.DISPATCHED,
-          trackingReference: `${runId}-MULTI-SELLER-SHIPMENT`,
-        }),
-      ]);
+        .expect(400);
+      expect(blockedFirstSellerDispatch.body.message).toContain("automated delivery");
 
-      const secondSellerAfterFirstDispatch = await request(app.getHttpServer())
+      const secondSellerAfterBlockedDispatch = await request(app.getHttpServer())
         .get(`/api/seller/orders/${orderNumber}`)
         .set(authHeader(data.otherSellerUser.id))
         .expect(200);
-      expect(secondSellerAfterFirstDispatch.body.shipments).toEqual([
+      expect(secondSellerAfterBlockedDispatch.body.shipments).toEqual([
         expect.objectContaining({
           sellerId: data.otherSeller.id,
           status: DeliveryStatus.PENDING,
@@ -1836,9 +1844,7 @@ integrationDescribe("1HandIndia backend integration", () => {
           deliveryNote: "Should not skip dispatch.",
         })
         .expect(400);
-      expect(skippedDeliveryStatus.body.message).toBe(
-        "Delivery status must move step by step. Packed can only move to Dispatched.",
-      );
+      expect(skippedDeliveryStatus.body.message).toContain("automated delivery");
     } finally {
       if (orderNumber) {
         await request(app.getHttpServer())

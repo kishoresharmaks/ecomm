@@ -6,6 +6,7 @@ import {
   PaymentProvider,
   PaymentStatus,
   Prisma,
+  ServiceSellerReceivableStatus,
   SellerOrderStatus,
   SellerPayoutStatus,
   SellerSettlementStatus,
@@ -49,6 +50,9 @@ export class FinancePaymentsService {
       settlementDue,
       payoutPending,
       payoutPaid,
+      serviceReceivableOpen,
+      serviceReceivableDisputed,
+      serviceReceivableSettled,
       recentPayments,
     ] = await Promise.all([
       this.paymentMetric({ provider: PaymentProvider.COD, status: PaymentStatus.PENDING }),
@@ -81,6 +85,29 @@ export class FinancePaymentsService {
         _count: { _all: true },
         _sum: { netPayablePaise: true },
       }),
+      this.serviceReceivableMetric({
+        status: {
+          in: [
+            ServiceSellerReceivableStatus.OPEN,
+            ServiceSellerReceivableStatus.PARTIALLY_SETTLED,
+            ServiceSellerReceivableStatus.WAIVER_REQUESTED,
+            ServiceSellerReceivableStatus.OFFSET_SCHEDULED,
+          ],
+        },
+      }),
+      this.serviceReceivableMetric({
+        status: ServiceSellerReceivableStatus.DISPUTED,
+      }),
+      this.serviceReceivableMetric({
+        status: {
+          in: [
+            ServiceSellerReceivableStatus.SETTLED,
+            ServiceSellerReceivableStatus.WAIVED,
+            ServiceSellerReceivableStatus.REVERSED,
+            ServiceSellerReceivableStatus.OFFSET_APPLIED,
+          ],
+        },
+      }),
       this.recentPayments(),
     ]);
 
@@ -97,6 +124,9 @@ export class FinancePaymentsService {
           payoutPending._sum.netPayablePaise,
         ),
         payoutPaid: this.aggregateMetric(payoutPaid._count._all, payoutPaid._sum.netPayablePaise),
+        serviceReceivableOpen,
+        serviceReceivableDisputed,
+        serviceReceivableSettled,
       },
       recentPayments,
     };
@@ -318,7 +348,17 @@ export class FinancePaymentsService {
 
   async paymentReports(query: FinancePaymentCollectionQueryDto) {
     const where = this.paymentCollectionWhere(query);
-    const [byProvider, byPaymentStatus, codByCollectionStatus, bySettlementStatus, byPayoutStatus] =
+    const [
+      byProvider,
+      byPaymentStatus,
+      codByCollectionStatus,
+      bySettlementStatus,
+      byServiceSettlementStatus,
+      byPayoutStatus,
+      serviceReceivablesByStatus,
+      serviceReceivablesByTaxStatus,
+      serviceReceivablesByOffsetPolicy,
+    ] =
       await Promise.all([
         this.prisma.client.payment.groupBy({
           by: ["provider"],
@@ -342,10 +382,30 @@ export class FinancePaymentsService {
           _count: { _all: true },
           _sum: { sellerSubtotalPaise: true },
         }),
+        this.prisma.client.serviceBookingSettlement.groupBy({
+          by: ["status"],
+          _count: { _all: true },
+          _sum: { netPayablePaise: true },
+        }),
         this.prisma.client.sellerPayout.groupBy({
           by: ["status"],
           _count: { _all: true },
           _sum: { netPayablePaise: true },
+        }),
+        this.prisma.client.serviceSellerReceivable.groupBy({
+          by: ["status"],
+          _count: { _all: true },
+          _sum: { amountDueToPlatformPaise: true },
+        }),
+        this.prisma.client.serviceSellerReceivable.groupBy({
+          by: ["taxAccrualStatus"],
+          _count: { _all: true },
+          _sum: { amountDueToPlatformPaise: true },
+        }),
+        this.prisma.client.serviceSellerReceivable.groupBy({
+          by: ["offsetPolicy"],
+          _count: { _all: true },
+          _sum: { amountDueToPlatformPaise: true },
         }),
       ]);
 
@@ -366,8 +426,20 @@ export class FinancePaymentsService {
       bySettlementStatus: bySettlementStatus.map((item) =>
         this.groupMetric(item.settlementStatus, item._count._all, item._sum.sellerSubtotalPaise),
       ),
+      byServiceSettlementStatus: byServiceSettlementStatus.map((item) =>
+        this.groupMetric(item.status, item._count._all, item._sum.netPayablePaise),
+      ),
       byPayoutStatus: byPayoutStatus.map((item) =>
         this.groupMetric(item.status, item._count._all, item._sum.netPayablePaise),
+      ),
+      serviceReceivablesByStatus: serviceReceivablesByStatus.map((item) =>
+        this.groupMetric(item.status, item._count._all, item._sum.amountDueToPlatformPaise),
+      ),
+      serviceReceivablesByTaxStatus: serviceReceivablesByTaxStatus.map((item) =>
+        this.groupMetric(item.taxAccrualStatus, item._count._all, item._sum.amountDueToPlatformPaise),
+      ),
+      serviceReceivablesByOffsetPolicy: serviceReceivablesByOffsetPolicy.map((item) =>
+        this.groupMetric(item.offsetPolicy, item._count._all, item._sum.amountDueToPlatformPaise),
       ),
     };
   }
@@ -382,8 +454,21 @@ export class FinancePaymentsService {
       .then((result) => this.aggregateMetric(result._count._all, result._sum.amountPaise));
   }
 
+  private serviceReceivableMetric(where: Prisma.ServiceSellerReceivableWhereInput) {
+    return this.prisma.client.serviceSellerReceivable
+      .aggregate({
+        where,
+        _count: { _all: true },
+        _sum: { amountDueToPlatformPaise: true },
+      })
+      .then((result) =>
+        this.aggregateMetric(result._count._all, result._sum.amountDueToPlatformPaise),
+      );
+  }
+
   private async eligibleSettlementDueMetric() {
-    const splits = await this.prisma.client.orderSellerSplit.findMany({
+    const [splits, serviceSettlements] = await Promise.all([
+      this.prisma.client.orderSellerSplit.findMany({
       where: {
         payoutId: null,
         sellerStatus: { not: SellerOrderStatus.CANCELLED },
@@ -404,15 +489,24 @@ export class FinancePaymentsService {
           },
         },
       },
-    });
+      }),
+      this.prisma.client.serviceBookingSettlement.findMany({
+        where: {
+          payoutId: null,
+          status: SellerSettlementStatus.ELIGIBLE,
+          netPayablePaise: { gt: 0 },
+        },
+      }),
+    ]);
 
     let amountPaise = 0;
     for (const split of splits) {
       const calculation = await this.financeCalculator.calculateSplit(split);
       amountPaise += calculation.netPayablePaise;
     }
+    amountPaise += serviceSettlements.reduce((sum, settlement) => sum + settlement.netPayablePaise, 0);
 
-    return this.aggregateMetric(splits.length, amountPaise);
+    return this.aggregateMetric(splits.length + serviceSettlements.length, amountPaise);
   }
 
   private recentPayments() {

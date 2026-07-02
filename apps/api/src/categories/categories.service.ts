@@ -22,7 +22,7 @@ export class CategoriesService {
     }
   };
 
-  listPublicCategories() {
+  listPublicCategories(): Promise<unknown> {
     return this.prisma.client.category.findMany({
       where: {
         status: CategoryStatus.ACTIVE,
@@ -87,7 +87,7 @@ export class CategoriesService {
     return category;
   }
 
-  listAdminCategories() {
+  listAdminCategories(): Promise<unknown> {
     return this.prisma.client.category.findMany({
       where: {
         deletedAt: null

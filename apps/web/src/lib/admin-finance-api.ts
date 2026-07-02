@@ -94,9 +94,18 @@ export type SellerPayout = {
   seller?: FinanceSeller | null;
   settlementRun?: SellerSettlementRun | null;
   orderSplits?: SellerOrderSplitFinance[];
+  b2bOrders?: Array<{
+    id: string;
+    orderNumber: string;
+    buyerPayableAmountPaise: number;
+    sellerPayoutAmountPaise: number;
+    settlementStatus: string;
+  }>;
+  serviceSettlements?: ServiceSettlementFinance[];
+  serviceReceivableOffsets?: ServiceReceivableOffsetFinance[];
   statements?: SellerStatement[];
   events?: Array<{ id: string; eventType: string; oldStatus?: string | null; newStatus?: string | null; note?: string | null; createdAt?: string }>;
-  _count?: { orderSplits?: number; ledgerEntries?: number; statements?: number };
+  _count?: { orderSplits?: number; b2bOrders?: number; serviceSettlements?: number; serviceReceivableOffsets?: number; ledgerEntries?: number; statements?: number };
   createdAt?: string;
 };
 
@@ -170,6 +179,44 @@ export type SellerOrderSplitFinance = {
     orderStatus: string;
     paymentStatus: string;
     createdAt?: string;
+  };
+};
+
+export type ServiceSettlementFinance = {
+  id: string;
+  grossAmountPaise: number;
+  commissionPaise: number;
+  gstOnCommissionPaise: number;
+  tdsPaise: number;
+  tcsPaise: number;
+  platformFeePaise: number;
+  refundAdjustmentPaise: number;
+  netPayablePaise: number;
+  status: string;
+  currency: string;
+  booking?: {
+    bookingNumber: string;
+    status: string;
+    paymentMode: string;
+    createdAt?: string;
+  };
+};
+
+export type ServiceReceivableOffsetFinance = {
+  id: string;
+  receivableNumber: string;
+  status: string;
+  offsetPolicy: string;
+  grossCashCollectedPaise: number;
+  amountDueToPlatformPaise: number;
+  settledPaise: number;
+  waivedPaise: number;
+  reversalPaise: number;
+  offsetPaise: number;
+  currency: string;
+  booking?: {
+    bookingNumber: string;
+    status: string;
   };
 };
 

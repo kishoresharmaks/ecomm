@@ -1,5 +1,11 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { CommissionType, FinanceRuleScope, Prisma } from "@indihub/database";
+import {
+  CommissionType,
+  FinanceRuleScope,
+  Prisma,
+  ServiceBookingStatus,
+  ServicePaymentMode,
+} from "@indihub/database";
 import { PrismaService } from "../prisma/prisma.service";
 
 type FinanceRule = Prisma.CommissionRuleGetPayload<Record<string, never>>;
@@ -17,9 +23,40 @@ type FinanceSplit = Prisma.OrderSellerSplitGetPayload<{
   };
 }>;
 
+type FinanceServiceBooking = {
+  id: string;
+  bookingNumber: string;
+  sellerId: string;
+  serviceListingId: string;
+  status: ServiceBookingStatus;
+  paymentMode: ServicePaymentMode;
+  createdAt: Date;
+  inspectionFeePaise: number;
+  paidAmountPaise: number;
+  listing: {
+    id: string;
+    title: string;
+    categoryId: string;
+  };
+};
+
 export type SplitFinanceCalculation = {
   commissionRuleId?: string;
   grossSalesPaise: number;
+  commissionPaise: number;
+  gstOnCommissionPaise: number;
+  tdsPaise: number;
+  tcsPaise: number;
+  platformFeePaise: number;
+  refundAdjustmentPaise: number;
+  netPayablePaise: number;
+  snapshot: Prisma.InputJsonValue;
+};
+
+export type ServiceBookingFinanceCalculation = {
+  commissionRuleId?: string;
+  grossAmountPaise: number;
+  inspectionFeeGrossPaise: number;
   commissionPaise: number;
   gstOnCommissionPaise: number;
   tdsPaise: number;
@@ -113,6 +150,86 @@ export class FinanceCalculatorService {
         lines: lineSnapshots
       }
     } satisfies SplitFinanceCalculation;
+  }
+
+  async calculateServiceBooking(
+    booking: FinanceServiceBooking,
+    grossAmountPaise: number,
+    tx: Prisma.TransactionClient = this.prisma.client,
+  ) {
+    const rule = await this.resolveRule(
+      booking.sellerId,
+      booking.listing.categoryId,
+      booking.createdAt,
+      new Map(),
+      tx,
+    );
+    const commissionPaise = rule
+      ? this.amountForRule(
+          rule.commissionType,
+          rule.commissionValueBps,
+          rule.commissionFixedPaise,
+          grossAmountPaise,
+        )
+      : 0;
+    const platformFeePaise = rule
+      ? this.amountForRule(
+          rule.platformFeeType,
+          rule.platformFeeValueBps,
+          rule.platformFeeFixedPaise,
+          grossAmountPaise,
+        )
+      : 0;
+    const gstOnCommissionPaise = rule
+      ? this.percentOf(commissionPaise + platformFeePaise, rule.gstRateBps)
+      : 0;
+    const tdsPaise = rule ? this.percentOf(grossAmountPaise, rule.tdsRateBps) : 0;
+    const tcsPaise = rule ? this.percentOf(grossAmountPaise, rule.tcsRateBps) : 0;
+    const refundAdjustmentPaise = 0;
+    const deductionsPaise =
+      commissionPaise +
+      gstOnCommissionPaise +
+      tdsPaise +
+      tcsPaise +
+      platformFeePaise;
+    const netPayablePaise = Math.max(0, grossAmountPaise - deductionsPaise + refundAdjustmentPaise);
+
+    return {
+      ...(rule ? { commissionRuleId: rule.id } : {}),
+      grossAmountPaise,
+      inspectionFeeGrossPaise: booking.inspectionFeePaise,
+      commissionPaise,
+      gstOnCommissionPaise,
+      tdsPaise,
+      tcsPaise,
+      platformFeePaise,
+      refundAdjustmentPaise,
+      netPayablePaise,
+      snapshot: {
+        calculationVersion: 2,
+        source: "service_booking",
+        ruleId: rule?.id ?? null,
+        ruleName: rule?.name ?? "No commission rule",
+        bookingId: booking.id,
+        bookingNumber: booking.bookingNumber,
+        sellerId: booking.sellerId,
+        serviceListingId: booking.serviceListingId,
+        serviceTitle: booking.listing.title,
+        categoryId: booking.listing.categoryId,
+        bookingStatus: booking.status,
+        paymentMode: booking.paymentMode,
+        grossAmountPaise,
+        paidAmountPaise: booking.paidAmountPaise,
+        inspectionFeeGrossPaise: booking.inspectionFeePaise,
+        commissionPaise,
+        gstOnCommissionPaise,
+        tdsPaise,
+        tcsPaise,
+        platformFeePaise,
+        refundAdjustmentPaise,
+        netPayablePaise,
+      },
+    } satisfies ServiceBookingFinanceCalculation;
   }
 
   private async resolveRule(

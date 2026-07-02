@@ -70,8 +70,12 @@ export function PaymentReportsClient() {
         <ReportPanel title="Payment method summary" items={reportsQuery.data?.byProvider ?? []} />
         <ReportPanel title="Payment status summary" items={reportsQuery.data?.byPaymentStatus ?? []} />
         <ReportPanel title="COD collection status" items={reportsQuery.data?.codByCollectionStatus ?? []} />
-        <ReportPanel title="Settlement status" items={reportsQuery.data?.bySettlementStatus ?? []} />
+        <ReportPanel title="Order settlement status" items={reportsQuery.data?.bySettlementStatus ?? []} />
+        <ReportPanel title="Service settlement status" items={reportsQuery.data?.byServiceSettlementStatus ?? []} />
         <ReportPanel title="Payout status" items={reportsQuery.data?.byPayoutStatus ?? []} />
+        <ReportPanel title="Service cash receivables" items={reportsQuery.data?.serviceReceivablesByStatus ?? []} />
+        <ReportPanel title="Service receivable tax state" items={reportsQuery.data?.serviceReceivablesByTaxStatus ?? []} />
+        <ReportPanel title="Service offset policy" items={reportsQuery.data?.serviceReceivablesByOffsetPolicy ?? []} />
       </section>
     </div>
   );

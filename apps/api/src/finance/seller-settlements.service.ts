@@ -5,6 +5,8 @@ import {
   OrderStatus,
   PaymentStatus,
   Prisma,
+  ServiceReceivableOffsetPolicy,
+  ServiceSellerReceivableStatus,
   SellerOrderStatus,
   SellerPayoutStatus,
   SellerSettlementStatus,
@@ -39,6 +41,9 @@ type SellerDraft = {
   sellerId: string;
   splits: Array<{ split: DraftSplit; calculation: SplitFinanceCalculation }>;
   b2bOrders: Prisma.B2BOrderGetPayload<Record<string, never>>[];
+  serviceSettlements: Prisma.ServiceBookingSettlementGetPayload<{ include: { booking: true } }>[];
+  receivableOffsets: Array<Prisma.ServiceSellerReceivableGetPayload<Record<string, never>> & { offsetAmountPaise: number }>;
+  holdReceivableCount: number;
 };
 
 type FinanceTotals = {
@@ -125,6 +130,15 @@ export class SellerSettlementsService {
                 order: true
               },
               orderBy: { createdAt: "asc" }
+            },
+            b2bOrders: { orderBy: { createdAt: "asc" } },
+            serviceSettlements: {
+              include: { booking: true },
+              orderBy: { createdAt: "asc" }
+            },
+            serviceReceivableOffsets: {
+              include: { booking: true },
+              orderBy: { createdAt: "asc" }
             }
           },
           orderBy: { seller: { storeName: "asc" } }
@@ -148,7 +162,7 @@ export class SellerSettlementsService {
     }
 
     const run = await this.prisma.client.$transaction(async (tx) => {
-      const [splits, b2bOrders] = await Promise.all([
+      const [splits, b2bOrders, serviceSettlements, openServiceReceivables] = await Promise.all([
         tx.orderSellerSplit.findMany({
           where: {
             payoutId: null,
@@ -189,17 +203,46 @@ export class SellerSettlementsService {
             }
           },
           orderBy: { createdAt: "asc" }
+        }),
+        tx.serviceBookingSettlement.findMany({
+          where: {
+            payoutId: null,
+            status: { in: [SellerSettlementStatus.NOT_ELIGIBLE, SellerSettlementStatus.ELIGIBLE] },
+            netPayablePaise: { gt: 0 },
+            booking: {
+              status: { in: ["COMPLETED", "CLOSED_AFTER_INSPECTION"] },
+              createdAt: {
+                gte: dateFrom,
+                lte: dateTo
+              }
+            }
+          },
+          include: { booking: true },
+          orderBy: { createdAt: "asc" }
+        }),
+        tx.serviceSellerReceivable.findMany({
+          where: {
+            payoutOffsetId: null,
+            status: { in: [ServiceSellerReceivableStatus.OPEN, ServiceSellerReceivableStatus.PARTIALLY_SETTLED] },
+            offsetPolicy: {
+              in: [
+                ServiceReceivableOffsetPolicy.AUTO_OFFSET_NEXT_PAYOUT,
+                ServiceReceivableOffsetPolicy.HOLD_PAYOUT_UNTIL_SETTLED
+              ]
+            }
+          },
+          orderBy: { createdAt: "asc" }
         })
       ]);
 
-      if (!splits.length && !b2bOrders.length) {
-        throw new BadRequestException("No eligible seller order or B2B payout sources found for this settlement period.");
+      if (!splits.length && !b2bOrders.length && !serviceSettlements.length) {
+        throw new BadRequestException("No eligible seller order, B2B, or service payout sources found for this settlement period.");
       }
 
       const drafts = new Map<string, SellerDraft>();
       for (const split of splits) {
         const calculation = await this.calculator.calculateSplit(split, tx);
-        const sellerDraft = drafts.get(split.sellerId) ?? { sellerId: split.sellerId, splits: [], b2bOrders: [] };
+        const sellerDraft = this.getOrCreateDraft(drafts, split.sellerId);
         sellerDraft.splits.push({ split, calculation });
         drafts.set(split.sellerId, sellerDraft);
       }
@@ -207,9 +250,33 @@ export class SellerSettlementsService {
         if (!order.sellerId || order.sellerPayoutAmountPaise <= 0) {
           continue;
         }
-        const sellerDraft = drafts.get(order.sellerId) ?? { sellerId: order.sellerId, splits: [], b2bOrders: [] };
+        const sellerDraft = this.getOrCreateDraft(drafts, order.sellerId);
         sellerDraft.b2bOrders.push(order);
         drafts.set(order.sellerId, sellerDraft);
+      }
+      for (const settlement of serviceSettlements) {
+        if (settlement.netPayablePaise <= 0) {
+          continue;
+        }
+        const sellerDraft = this.getOrCreateDraft(drafts, settlement.sellerId);
+        sellerDraft.serviceSettlements.push(settlement);
+        drafts.set(settlement.sellerId, sellerDraft);
+      }
+      for (const receivable of openServiceReceivables) {
+        if (!drafts.has(receivable.sellerId)) {
+          continue;
+        }
+        const sellerDraft = this.getOrCreateDraft(drafts, receivable.sellerId);
+        const outstanding = this.receivableOutstanding(receivable);
+        if (outstanding <= 0) {
+          continue;
+        }
+        if (receivable.offsetPolicy === ServiceReceivableOffsetPolicy.HOLD_PAYOUT_UNTIL_SETTLED) {
+          sellerDraft.holdReceivableCount += 1;
+          continue;
+        }
+        sellerDraft.receivableOffsets.push({ ...receivable, offsetAmountPaise: 0 });
+        drafts.set(receivable.sellerId, sellerDraft);
       }
 
       const runNumber = this.makeRunNumber();
@@ -226,6 +293,10 @@ export class SellerSettlementsService {
 
       const runTotals = this.emptyTotals();
       for (const sellerDraft of drafts.values()) {
+        if (sellerDraft.holdReceivableCount > 0) {
+          throw new BadRequestException("One or more sellers have service cash receivables configured to hold payouts until settled.");
+        }
+        this.applyReceivableOffsetsToDraft(sellerDraft);
         const totals = this.totalsForDraft(sellerDraft);
         const payout = await tx.sellerPayout.create({
           data: {
@@ -235,6 +306,7 @@ export class SellerSettlementsService {
             periodFrom: dateFrom,
             periodTo: dateTo,
             status: SellerPayoutStatus.DRAFT,
+            adjustmentPaise: -sellerDraft.receivableOffsets.reduce((sum, item) => sum + item.offsetAmountPaise, 0),
             ...totals
           }
         });
@@ -298,6 +370,48 @@ export class SellerSettlementsService {
             throw new ConflictException("B2B settlement eligibility changed while creating this draft. Refresh and try again.");
           }
         }
+        for (const settlement of sellerDraft.serviceSettlements) {
+          const serviceUpdate = await tx.serviceBookingSettlement.updateMany({
+            where: {
+              id: settlement.id,
+              payoutId: null,
+              sellerId: sellerDraft.sellerId,
+              netPayablePaise: { gt: 0 },
+              status: { in: [SellerSettlementStatus.NOT_ELIGIBLE, SellerSettlementStatus.ELIGIBLE] }
+            },
+            data: {
+              payoutId: payout.id,
+              status: SellerSettlementStatus.DRAFTED
+            }
+          });
+          if (serviceUpdate.count !== 1) {
+            throw new ConflictException("Service settlement eligibility changed while creating this draft. Refresh and try again.");
+          }
+        }
+        for (const offset of sellerDraft.receivableOffsets) {
+          if (offset.offsetAmountPaise <= 0) {
+            continue;
+          }
+          const offsetUpdate = await tx.serviceSellerReceivable.updateMany({
+            where: {
+              id: offset.id,
+              sellerId: sellerDraft.sellerId,
+              payoutOffsetId: null,
+              offsetPolicy: ServiceReceivableOffsetPolicy.AUTO_OFFSET_NEXT_PAYOUT,
+              status: { in: [ServiceSellerReceivableStatus.OPEN, ServiceSellerReceivableStatus.PARTIALLY_SETTLED] }
+            },
+            data: {
+              payoutOffsetId: payout.id,
+              offsetPaise: offset.offsetAmountPaise,
+              offsetScheduledAt: new Date(),
+              offsetAppliedAt: null,
+              status: ServiceSellerReceivableStatus.OFFSET_SCHEDULED
+            }
+          });
+          if (offsetUpdate.count !== 1) {
+            throw new ConflictException("Service receivable offset changed while creating this draft. Refresh and try again.");
+          }
+        }
 
         this.addTotals(runTotals, totals);
       }
@@ -319,7 +433,9 @@ export class SellerSettlementsService {
             periodTo: dto.dateTo,
             payoutCount: drafts.size,
             splitCount: splits.length,
-            b2bOrderCount: b2bOrders.length
+            b2bOrderCount: b2bOrders.length,
+            serviceSettlementCount: serviceSettlements.length,
+            serviceReceivableOffsetCount: Array.from(drafts.values()).reduce((sum, draft) => sum + draft.receivableOffsets.filter((item) => item.offsetAmountPaise > 0).length, 0)
           }
         }
       });
@@ -409,8 +525,77 @@ export class SellerSettlementsService {
       totals.commissionPaise += order.commissionAmountPaise;
       totals.netPayablePaise += order.sellerPayoutAmountPaise;
     }
+    for (const settlement of draft.serviceSettlements) {
+      totals.grossSalesPaise += settlement.grossAmountPaise;
+      totals.commissionPaise += settlement.commissionPaise;
+      totals.gstOnCommissionPaise += settlement.gstOnCommissionPaise;
+      totals.tdsPaise += settlement.tdsPaise;
+      totals.tcsPaise += settlement.tcsPaise;
+      totals.platformFeePaise += settlement.platformFeePaise;
+      totals.refundAdjustmentPaise += settlement.refundAdjustmentPaise;
+      totals.netPayablePaise += settlement.netPayablePaise;
+    }
+
+    const offsetPaise = draft.receivableOffsets.reduce((sum, receivable) => sum + receivable.offsetAmountPaise, 0);
+    totals.netPayablePaise = Math.max(0, totals.netPayablePaise - offsetPaise);
 
     return totals;
+  }
+
+  private getOrCreateDraft(drafts: Map<string, SellerDraft>, sellerId: string) {
+    const existing = drafts.get(sellerId);
+    if (existing) {
+      return existing;
+    }
+    const draft: SellerDraft = {
+      sellerId,
+      splits: [],
+      b2bOrders: [],
+      serviceSettlements: [],
+      receivableOffsets: [],
+      holdReceivableCount: 0
+    };
+    drafts.set(sellerId, draft);
+    return draft;
+  }
+
+  private applyReceivableOffsetsToDraft(draft: SellerDraft) {
+    let availableNetPaise = 0;
+    for (const { calculation } of draft.splits) {
+      availableNetPaise += calculation.netPayablePaise;
+    }
+    for (const order of draft.b2bOrders) {
+      availableNetPaise += order.sellerPayoutAmountPaise;
+    }
+    for (const settlement of draft.serviceSettlements) {
+      availableNetPaise += settlement.netPayablePaise;
+    }
+
+    for (const receivable of draft.receivableOffsets) {
+      if (availableNetPaise <= 0) {
+        receivable.offsetAmountPaise = 0;
+        continue;
+      }
+      const offsetAmountPaise = Math.min(this.receivableOutstanding(receivable), availableNetPaise);
+      receivable.offsetAmountPaise = offsetAmountPaise;
+      availableNetPaise -= offsetAmountPaise;
+    }
+  }
+
+  private receivableOutstanding(
+    receivable: Pick<
+      Prisma.ServiceSellerReceivableGetPayload<Record<string, never>>,
+      "amountDueToPlatformPaise" | "settledPaise" | "waivedPaise" | "reversalPaise" | "offsetPaise"
+    >
+  ) {
+    return Math.max(
+      0,
+      receivable.amountDueToPlatformPaise -
+        receivable.settledPaise -
+        receivable.waivedPaise -
+        receivable.reversalPaise -
+        receivable.offsetPaise
+    );
   }
 
   private emptyTotals() {

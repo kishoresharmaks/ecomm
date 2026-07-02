@@ -42,7 +42,11 @@ describe("ReportsService", () => {
   it("uses aggregate totals for seller sales instead of the limited recent-order list", async () => {
     const tx = createReportsTx();
     const prisma = createPrisma(tx);
-    prisma.client.seller.findUnique.mockResolvedValue({ id: "seller_1" });
+    prisma.client.seller.findUnique.mockResolvedValue({
+      id: "seller_1",
+      primaryCapability: "RETAIL",
+      enabledCapabilities: ["RETAIL", "SERVICE"]
+    });
     tx.orderSellerSplit.aggregate.mockResolvedValue({
       _count: 75,
       _sum: {
@@ -62,10 +66,42 @@ describe("ReportsService", () => {
     tx.productVariant.count.mockResolvedValueOnce(32);
     tx.productVariant.findMany.mockResolvedValue([]);
     tx.b2BEnquiry.count.mockResolvedValueOnce(4);
+    tx.b2BEnquiry.groupBy.mockResolvedValue([{ status: "RESPONDED", _count: 2 }]);
+    tx.b2BOrder.aggregate.mockResolvedValue({
+      _count: 3,
+      _sum: {
+        subtotalPaise: 180000,
+        buyerPayableAmountPaise: 210000,
+        paidAmountPaise: 120000,
+        commissionAmountPaise: 18000,
+        sellerPayoutAmountPaise: 162000
+      }
+    });
+    tx.b2BOrder.groupBy
+      .mockResolvedValueOnce([{ status: "PO_ACCEPTED", _count: 1, _sum: { buyerPayableAmountPaise: 70000, sellerPayoutAmountPaise: 54000 } }])
+      .mockResolvedValueOnce([{ paymentStatus: "PAID", _count: 1, _sum: { paidAmountPaise: 70000, buyerPayableAmountPaise: 70000 } }]);
+    tx.b2BOrder.findMany.mockResolvedValue([{ id: "b2b_order_1", orderNumber: "B2B-1" }]);
+    tx.serviceListing.count.mockResolvedValueOnce(5).mockResolvedValueOnce(3);
+    tx.serviceBooking.aggregate.mockResolvedValue({
+      _count: 6,
+      _sum: { totalPayablePaise: 420000, paidAmountPaise: 260000 }
+    });
+    tx.serviceBooking.groupBy.mockResolvedValue([{ status: "COMPLETED", _count: 2, _sum: { totalPayablePaise: 140000, paidAmountPaise: 140000 } }]);
+    tx.servicePayment.aggregate.mockResolvedValue({
+      _count: 4,
+      _sum: { amountPaise: 260000 }
+    });
+    tx.servicePayment.groupBy.mockResolvedValue([{ status: "PAID", _count: 4, _sum: { amountPaise: 260000 } }]);
+    tx.serviceBooking.findMany.mockResolvedValue([{ id: "service_booking_1", bookingNumber: "SB-1" }]);
     const service = new ReportsService(prisma as never);
 
     const result = await service.sellerSales({ id: "user_seller", clerkUserId: null, email: "seller@example.com", roles: [] }, {});
 
+    expect(result.seller).toEqual({
+      id: "seller_1",
+      primaryCapability: "RETAIL",
+      enabledCapabilities: ["RETAIL", "SERVICE"]
+    });
     expect(result.summary).toEqual({
       orderCount: 75,
       totalSalesPaise: 900000,
@@ -80,7 +116,25 @@ describe("ReportsService", () => {
       netSalesPaise: 803400,
       products: 8,
       lowStockCount: 32,
-      b2bEnquiries: 4
+      b2bEnquiries: 4,
+      b2bOrders: 3,
+      b2bOrderValuePaise: 210000,
+      serviceBookings: 6,
+      serviceRevenuePaise: 260000,
+      serviceListings: 5
+    });
+    expect(result.b2b).toMatchObject({
+      enquiryCount: 4,
+      orderCount: 3,
+      buyerPayablePaise: 210000,
+      paidAmountPaise: 120000,
+      sellerPayoutPaise: 162000
+    });
+    expect(result.services).toMatchObject({
+      listingCount: 5,
+      activeListingCount: 3,
+      bookingCount: 6,
+      paidPaymentPaise: 260000
     });
     expect(tx.orderSellerSplit.aggregate).toHaveBeenCalledWith({
       where: {
@@ -140,6 +194,18 @@ function createReportsTx() {
       count: vi.fn(),
       findMany: vi.fn()
     },
+    serviceListing: {
+      count: vi.fn()
+    },
+    serviceBooking: {
+      aggregate: vi.fn(),
+      groupBy: vi.fn(),
+      findMany: vi.fn()
+    },
+    servicePayment: {
+      aggregate: vi.fn(),
+      groupBy: vi.fn()
+    },
     orderSellerSplit: {
       aggregate: vi.fn(),
       groupBy: vi.fn(),
@@ -150,6 +216,11 @@ function createReportsTx() {
     },
     b2BEnquiry: {
       count: vi.fn(),
+      groupBy: vi.fn(),
+      findMany: vi.fn()
+    },
+    b2BOrder: {
+      aggregate: vi.fn(),
       groupBy: vi.fn(),
       findMany: vi.fn()
     },

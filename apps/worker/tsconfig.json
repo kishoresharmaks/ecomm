@@ -1,7 +1,6 @@
 {
   "extends": "@indihub/tsconfig/base.json",
   "compilerOptions": {
-    "baseUrl": ".",
     "noEmit": true,
     "paths": {
       "@/*": ["./src/*"]

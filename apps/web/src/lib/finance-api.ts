@@ -16,6 +16,9 @@ export type FinanceDashboard = {
     settlementDue: FinanceMetric;
     payoutPending: FinanceMetric;
     payoutPaid: FinanceMetric;
+    serviceReceivableOpen: FinanceMetric;
+    serviceReceivableDisputed: FinanceMetric;
+    serviceReceivableSettled: FinanceMetric;
   };
   recentPayments: FinancePaymentCollection[];
 };
@@ -85,7 +88,11 @@ export type FinancePaymentReports = {
   byPaymentStatus: FinanceReportGroup[];
   codByCollectionStatus: FinanceReportGroup[];
   bySettlementStatus: FinanceReportGroup[];
+  byServiceSettlementStatus: FinanceReportGroup[];
   byPayoutStatus: FinanceReportGroup[];
+  serviceReceivablesByStatus: FinanceReportGroup[];
+  serviceReceivablesByTaxStatus: FinanceReportGroup[];
+  serviceReceivablesByOffsetPolicy: FinanceReportGroup[];
 };
 
 export type FinancePaymentQuery = Record<string, string | number | undefined>;

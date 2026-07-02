@@ -12,7 +12,7 @@ import {
   Min,
   MinLength,
 } from "class-validator";
-import { B2BPaymentMethod, B2BProofStatus, B2BOrderStatus } from "@indihub/database";
+import { B2BPaymentMethod, B2BProofStatus, B2BOrderStatus, B2BTransportMode, B2BTransportStatus } from "@indihub/database";
 
 const legacyB2BOrderStatusMap = {
   PENDING: B2BOrderStatus.PROFORMA_ISSUED,
@@ -243,4 +243,60 @@ export class UpdateB2BOrderStatusDto {
   @IsString()
   @MaxLength(1000)
   note?: string;
+}
+
+export class UpdateB2BTransportDto {
+  @ApiPropertyOptional({ enum: B2BTransportMode })
+  @IsOptional()
+  @IsEnum(B2BTransportMode)
+  transportMode?: B2BTransportMode;
+
+  @ApiPropertyOptional({ enum: B2BTransportStatus })
+  @IsOptional()
+  @IsEnum(B2BTransportStatus)
+  transportStatus?: B2BTransportStatus;
+
+  @ApiPropertyOptional({ example: 250000 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(100_000_000)
+  transportChargePaise?: number;
+
+  @ApiPropertyOptional({ example: "Delhivery Surface" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  transportPartnerName?: string;
+
+  @ApiPropertyOptional({ example: "+919876543210" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  transportPartnerPhone?: string;
+
+  @ApiPropertyOptional({ example: "AWB123456789IN" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  transportTrackingRef?: string;
+
+  @ApiPropertyOptional({ example: "Expected delivery by 2026-07-08." })
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  transportEta?: string;
+
+  @ApiPropertyOptional({ example: "Seller warehouse, Coimbatore. Pickup after payment clearance." })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  transportPickupAddress?: string;
+
+  @ApiPropertyOptional({ example: "Packed in 4 cartons; buyer requested surface transport." })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  transportNote?: string;
 }

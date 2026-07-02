@@ -15,7 +15,7 @@ export class AdminCategoriesController {
 
   @Get()
   @ApiOperation({ summary: "List all non-archived categories for admin management." })
-  listAdminCategories() {
+  listAdminCategories(): Promise<unknown> {
     return this.categoriesService.listAdminCategories();
   }
 

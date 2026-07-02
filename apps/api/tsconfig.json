@@ -1,7 +1,6 @@
 {
   "extends": "@indihub/tsconfig/nestjs.json",
   "compilerOptions": {
-    "baseUrl": ".",
     "noEmit": true,
     "module": "ESNext",
     "moduleResolution": "Bundler",

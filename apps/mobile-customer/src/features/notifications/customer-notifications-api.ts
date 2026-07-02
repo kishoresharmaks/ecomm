@@ -1,6 +1,6 @@
 import { getJson, patchJson, postJson, type MobileAuthHeaders } from "../../lib/api";
 
-export type CustomerNotificationType = "DEAL_PUBLISHED" | "ORDER_PLACED" | "ORDER_DELIVERED" | "CAMPAIGN";
+export type CustomerNotificationType = "DEAL_PUBLISHED" | "ORDER_PLACED" | "ORDER_DELIVERED" | "B2B_ENQUIRY_MESSAGE" | "SERVICE_BOOKING" | "CAMPAIGN";
 
 export type CustomerNotification = {
   id: string;

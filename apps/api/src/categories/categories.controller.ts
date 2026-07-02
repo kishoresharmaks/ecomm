@@ -11,7 +11,7 @@ export class CategoriesController {
   @Public()
   @Get()
   @ApiOperation({ summary: "List active public categories for storefront browsing." })
-  listPublicCategories() {
+  listPublicCategories(): Promise<unknown> {
     return this.categoriesService.listPublicCategories();
   }
 
@@ -22,4 +22,3 @@ export class CategoriesController {
     return this.categoriesService.getPublicCategory(slug);
   }
 }
-

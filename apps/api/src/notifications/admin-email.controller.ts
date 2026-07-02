@@ -28,7 +28,7 @@ export class AdminEmailController {
 
   @Get("templates")
   @ApiOperation({ summary: "List transactional email templates." })
-  listTemplates(@Query() query: EmailTemplateQueryDto) {
+  listTemplates(@Query() query: EmailTemplateQueryDto): Promise<unknown> {
     return this.notificationsService.listTemplates(query);
   }
 

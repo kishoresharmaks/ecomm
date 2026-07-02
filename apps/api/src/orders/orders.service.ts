@@ -451,6 +451,10 @@ const dispatchedCustomerCancellationMessage =
   "This order has already been dispatched. Please contact support for cancellation or refund help.";
 const dispatchedSellerCancellationMessage =
   "This seller package has already been dispatched. Contact admin to handle return or refund.";
+const automatedSellerDeliveryModes = new Set<DeliveryMode>([
+  DeliveryMode.LOCAL_DELIVERY_PARTNER,
+  DeliveryMode.THIRD_PARTY_COURIER,
+]);
 
 type TrackableAddressSnapshot = {
   fullName: string | null;
@@ -3156,6 +3160,10 @@ export class OrdersService {
       const currentShipment = order.shipments.find(
         (shipment) => shipment.orderSellerSplitId === split.id,
       );
+      this.assertSellerStatusAllowedForDeliveryMode(
+        dto.sellerStatus,
+        currentShipment?.deliveryMode ?? order.deliveryDetail?.deliveryMode ?? null,
+      );
       this.assertSellerStatusTransition(
         split.sellerStatus,
         dto.sellerStatus,
@@ -3418,6 +3426,15 @@ export class OrdersService {
     }
 
     const previousDelivery = order.deliveryDetail;
+    const sellerShipmentForPermission = seller
+      ? order.shipments.find((shipment) => shipment.sellerId === seller.id)
+      : null;
+    if (options.sellerOnly) {
+      this.assertSellerDeliveryUpdateAllowed(
+        dto,
+        sellerShipmentForPermission?.deliveryMode ?? order.deliveryDetail?.deliveryMode ?? null,
+      );
+    }
     const requestedTrackingReference =
       dto.trackingReference !== undefined
         ? this.normalizeTrackingReference(dto.trackingReference)
@@ -3834,7 +3851,7 @@ export class OrdersService {
         }
       }
 
-      if (options.deliveryPartnerOnly) {
+      if (!seller) {
         const derivedSellerStatus = this.sellerStatusFromDeliveryStatus(nextStatus);
         if (derivedSellerStatus) {
           for (const split of order.sellerSplits) {
@@ -3871,7 +3888,11 @@ export class OrdersService {
                 statusType: StatusEventType.SELLER,
                 oldStatus: oldSellerStatus,
                 newStatus: derivedSellerStatus,
-                note: dto.deliveryNote ?? "Delivery partner updated delivery status.",
+                note:
+                  dto.deliveryNote ??
+                  (options.deliveryPartnerOnly
+                    ? "Delivery partner updated delivery status."
+                    : "Operations updated delivery status."),
                 createdById: actor.id,
               },
             });
@@ -3880,7 +3901,7 @@ export class OrdersService {
       }
 
       const nextOrderStatus =
-        seller || options.deliveryPartnerOnly
+        seller || sellerStatusChanged
           ? this.resolveOrderStatusFromSellerSplits(order.orderStatus, nextSplits)
           : order.orderStatus;
       const orderStatusChanged = nextOrderStatus !== order.orderStatus;
@@ -4444,6 +4465,56 @@ export class OrdersService {
               current,
             )} can only move to ${workflowStatusLabel(expected)}.`
           : "Seller order status cannot move beyond its final step.",
+      );
+    }
+  }
+
+  private assertSellerStatusAllowedForDeliveryMode(
+    next: SellerOrderStatus,
+    deliveryMode?: DeliveryMode | null,
+  ) {
+    if (!deliveryMode || !automatedSellerDeliveryModes.has(deliveryMode)) {
+      return;
+    }
+
+    if (next === SellerOrderStatus.DISPATCHED || next === SellerOrderStatus.DELIVERED) {
+      throw new BadRequestException(
+        "This order uses automated delivery. Sellers can accept and mark packed; dispatch and delivery are updated by courier, delivery partner, or admin operations.",
+      );
+    }
+  }
+
+  private assertSellerDeliveryUpdateAllowed(
+    dto: UpdateDeliveryDto,
+    deliveryMode?: DeliveryMode | null,
+  ) {
+    if (!deliveryMode || !automatedSellerDeliveryModes.has(deliveryMode)) {
+      return;
+    }
+
+    const blockedFields = [
+      dto.deliveryMode,
+      dto.partnerName,
+      dto.partnerPhone,
+      dto.trackingReference,
+      dto.estimatedDeliveryDate,
+      dto.deliveryNote,
+      dto.receiverName,
+      dto.proofNote,
+      dto.proofReference,
+      dto.codCollected,
+      dto.codCollectedAmountPaise,
+      dto.codCollectionNote,
+    ].some((value) => value !== undefined);
+    const blockedStatus =
+      dto.status !== undefined &&
+      dto.status !== DeliveryStatus.PENDING &&
+      dto.status !== DeliveryStatus.PACKED &&
+      dto.status !== DeliveryStatus.CANCELLED;
+
+    if (blockedFields || blockedStatus) {
+      throw new BadRequestException(
+        "This order uses automated delivery. Transport partner, tracking, ETA, proof, COD, dispatch, and delivered updates must come from courier, delivery partner, or admin operations.",
       );
     }
   }

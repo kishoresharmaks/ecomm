@@ -19,7 +19,10 @@ type LedgerEntryInput = {
   creditPaise?: number;
   orderId?: string | null;
   orderSellerSplitId?: string | null;
+  serviceBookingId?: string | null;
+  serviceSettlementId?: string | null;
   payoutId?: string | null;
+  currency?: string;
   referenceType?: string;
   referenceId?: string;
   metadata?: Prisma.InputJsonValue;
@@ -166,12 +169,15 @@ export class SellerLedgerService {
         sellerId: input.sellerId,
         orderId: input.orderId ?? null,
         orderSellerSplitId: input.orderSellerSplitId ?? null,
+        serviceBookingId: input.serviceBookingId ?? null,
+        serviceSettlementId: input.serviceSettlementId ?? null,
         payoutId: input.payoutId ?? null,
         entryType: input.entryType,
         description: input.description,
         debitPaise,
         creditPaise,
         balanceAfterPaise,
+        currency: input.currency ?? "INR",
         referenceType: input.referenceType ?? null,
         referenceId: input.referenceId ?? null,
         createdById: input.createdById ?? null,
@@ -185,7 +191,12 @@ export class SellerLedgerService {
       where: { id: payoutId },
       include: {
         orderSplits: true,
-        b2bOrders: true
+        b2bOrders: true,
+        serviceSettlements: {
+          include: {
+            booking: true
+          }
+        }
       }
     });
 
@@ -261,6 +272,50 @@ export class SellerLedgerService {
           }
         });
       }
+    }
+
+    for (const settlement of payout.serviceSettlements) {
+      await tx.sellerLedgerEntry.updateMany({
+        where: {
+          serviceSettlementId: settlement.id,
+          payoutId: null
+        },
+        data: {
+          payoutId: payout.id
+        }
+      });
+
+      const existingServiceEarning = await tx.sellerLedgerEntry.findFirst({
+        where: {
+          serviceSettlementId: settlement.id,
+          entryType: SellerLedgerEntryType.SERVICE_EARNING
+        },
+        select: { id: true }
+      });
+
+      if (existingServiceEarning) {
+        continue;
+      }
+
+      await this.createEntry(tx, {
+        sellerId: payout.sellerId,
+        serviceBookingId: settlement.bookingId,
+        serviceSettlementId: settlement.id,
+        payoutId: payout.id,
+        entryType: SellerLedgerEntryType.SERVICE_EARNING,
+        description: `Service earning for ${settlement.booking.bookingNumber}`,
+        creditPaise: settlement.grossAmountPaise,
+        currency: settlement.currency,
+        referenceType: "service_booking_settlement",
+        referenceId: settlement.id,
+        createdById: actor.id
+      });
+
+      await this.createServiceDeductionEntry(tx, payout, settlement, SellerLedgerEntryType.SERVICE_COMMISSION, settlement.commissionPaise, "Service commission", actor);
+      await this.createServiceDeductionEntry(tx, payout, settlement, SellerLedgerEntryType.GST_ON_COMMISSION, settlement.gstOnCommissionPaise, "GST on service commission", actor);
+      await this.createServiceDeductionEntry(tx, payout, settlement, SellerLedgerEntryType.TDS_DEDUCTION, settlement.tdsPaise, "TDS deduction", actor);
+      await this.createServiceDeductionEntry(tx, payout, settlement, SellerLedgerEntryType.TCS_DEDUCTION, settlement.tcsPaise, "TCS deduction", actor);
+      await this.createServiceDeductionEntry(tx, payout, settlement, SellerLedgerEntryType.PLATFORM_FEE, settlement.platformFeePaise, "Service settlement fee", actor);
     }
   }
 
@@ -357,6 +412,34 @@ export class SellerLedgerService {
       debitPaise: amountPaise,
       referenceType: "order_split",
       referenceId: split.id,
+      createdById: actor.id
+    });
+  }
+
+  private async createServiceDeductionEntry(
+    tx: Prisma.TransactionClient,
+    payout: { id: string; sellerId: string; payoutNumber: string },
+    settlement: { id: string; bookingId: string; currency: string },
+    entryType: SellerLedgerEntryType,
+    amountPaise: number,
+    label: string,
+    actor: RequestUser
+  ) {
+    if (amountPaise <= 0) {
+      return;
+    }
+
+    await this.createEntry(tx, {
+      sellerId: payout.sellerId,
+      serviceBookingId: settlement.bookingId,
+      serviceSettlementId: settlement.id,
+      payoutId: payout.id,
+      entryType,
+      description: `${label} for payout ${payout.payoutNumber}`,
+      debitPaise: amountPaise,
+      currency: settlement.currency,
+      referenceType: "service_booking_settlement",
+      referenceId: settlement.id,
       createdById: actor.id
     });
   }

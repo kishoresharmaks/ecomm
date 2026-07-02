@@ -3,22 +3,27 @@
 import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { ArrowLeft, ExternalLink, FileText, Search } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
 import { userFacingApiErrorMessage } from "@/lib/api";
 import { openB2BPurchaseOrderDocument } from "@/lib/b2b-po-documents";
-import { getSellerB2BOrder, listSellerB2BOrders, type SellerB2BOrder } from "@/lib/seller-api";
+import { getSellerB2BOrder, listSellerB2BOrders, updateSellerB2BTransport, type SellerB2BOrder, type SellerB2BTransportMode, type SellerB2BTransportStatus } from "@/lib/seller-api";
 import {
   SellerAuthNotice,
   SellerEmptyState,
   SellerErrorPanel,
+  SellerField,
   SellerOnboardingRequired,
   SellerPanel,
   SellerSelect,
   SellerSkeleton,
   SellerStatusPill,
+  SellerTextArea,
   formatDateTime,
+  formValue,
   isSellerOnboardingRequiredError,
+  optionalFormValue,
+  rupeesToPaise,
   useSellerAuth,
 } from "./seller-ui";
 import { formatMoney } from "@/lib/storefront-api";
@@ -108,6 +113,7 @@ export function SellerB2BOrdersClient() {
 
 export function SellerB2BOrderDetailClient({ orderNumber }: { orderNumber: string }) {
   const sellerAuth = useSellerAuth();
+  const queryClient = useQueryClient();
   const [notice, setNotice] = useState<string | null>(null);
   const orderQuery = useQuery({
     queryKey: ["seller-b2b-order", sellerAuth.authKey, orderNumber],
@@ -125,6 +131,25 @@ export function SellerB2BOrderDetailClient({ orderNumber }: { orderNumber: strin
   }
 
   const order = orderQuery.data;
+  const transportMutation = useMutation({
+    mutationFn: (payload: {
+      transportMode?: SellerB2BTransportMode;
+      transportStatus?: SellerB2BTransportStatus;
+      transportChargePaise?: number;
+      transportPartnerName?: string;
+      transportPartnerPhone?: string;
+      transportTrackingRef?: string;
+      transportEta?: string;
+      transportPickupAddress?: string;
+      transportNote?: string;
+    }) => updateSellerB2BTransport(sellerAuth.authHeaders, orderNumber, payload),
+    onSuccess: async () => {
+      setNotice("B2B transport details updated.");
+      await queryClient.invalidateQueries({ queryKey: ["seller-b2b-order", sellerAuth.authKey, orderNumber] });
+      await queryClient.invalidateQueries({ queryKey: ["seller-b2b-orders", sellerAuth.authKey] });
+    },
+    onError: (error) => setNotice(userFacingApiErrorMessage(error)),
+  });
 
   async function openPurchaseOrder() {
     setNotice(null);
@@ -240,6 +265,11 @@ export function SellerB2BOrderDetailClient({ orderNumber }: { orderNumber: strin
               <Info label="PO note" value={order.purchaseOrderNote ?? "No buyer note"} />
             </div>
           </SellerPanel>
+          <SellerB2BTransportPanel
+            order={order}
+            isSaving={transportMutation.isPending}
+            onSubmit={(payload) => transportMutation.mutate(payload)}
+          />
           <SellerPanel>
             <SectionHeading title="Timeline" description="Commercial order events from proforma to fulfilment." />
             <div className="mt-4 grid gap-3">
@@ -279,6 +309,102 @@ function B2BOrderHeader({ order }: { order: SellerB2BOrder }) {
       </div>
       <StatusBadge tone="info">{formatMoney(order.subtotalPaise)}</StatusBadge>
     </div>
+  );
+}
+
+function SellerB2BTransportPanel({
+  order,
+  isSaving,
+  onSubmit,
+}: {
+  order: SellerB2BOrder;
+  isSaving: boolean;
+  onSubmit: (payload: {
+    transportMode?: SellerB2BTransportMode;
+    transportStatus?: SellerB2BTransportStatus;
+    transportChargePaise?: number;
+    transportPartnerName?: string;
+    transportPartnerPhone?: string;
+    transportTrackingRef?: string;
+    transportEta?: string;
+    transportPickupAddress?: string;
+    transportNote?: string;
+  }) => void;
+}) {
+  const chargeLocked = Boolean(order.transportChargeLockedAt) || order.status !== "PROFORMA_ISSUED" || (order.paidAmountPaise ?? 0) > 0 || order.paymentStatus !== "PENDING";
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const charge = optionalFormValue(form, "transportCharge");
+    const transportPartnerName = optionalFormValue(form, "transportPartnerName");
+    const transportPartnerPhone = optionalFormValue(form, "transportPartnerPhone");
+    const transportTrackingRef = optionalFormValue(form, "transportTrackingRef");
+    const transportEta = optionalFormValue(form, "transportEta");
+    const transportPickupAddress = optionalFormValue(form, "transportPickupAddress");
+    const transportNote = optionalFormValue(form, "transportNote");
+    onSubmit({
+      transportMode: formValue(form, "transportMode") as SellerB2BTransportMode,
+      transportStatus: formValue(form, "transportStatus") as SellerB2BTransportStatus,
+      ...(charge && !chargeLocked ? { transportChargePaise: rupeesToPaise(charge) } : {}),
+      ...(transportPartnerName ? { transportPartnerName } : {}),
+      ...(transportPartnerPhone ? { transportPartnerPhone } : {}),
+      ...(transportTrackingRef ? { transportTrackingRef } : {}),
+      ...(transportEta ? { transportEta } : {}),
+      ...(transportPickupAddress ? { transportPickupAddress } : {}),
+      ...(transportNote ? { transportNote } : {}),
+    });
+  }
+
+  return (
+    <SellerPanel>
+      <SectionHeading
+        title="B2B transport"
+        description="Update seller-arranged courier or buyer pickup details for this B2B order. This is separate from normal customer delivery."
+      />
+      <div className="mt-4 grid gap-3 rounded-lg border border-[#E5E7EB] bg-white p-4 text-sm font-semibold leading-6 text-[#667085] md:grid-cols-2">
+        <Info label="Current mode" value={transportLabel(order.transportMode)} />
+        <Info label="Current status" value={(order.transportStatus ?? "REQUESTED").replace(/_/g, " ")} />
+        <Info label="Transport charge" value={formatMoney(order.transportChargePaise ?? 0)} />
+        <Info label="Buyer payable" value={formatMoney(order.buyerPayableAmountPaise ?? order.subtotalPaise)} />
+        <Info label="Partner" value={order.transportPartnerName ?? "Not added"} />
+        <Info label="Tracking" value={order.transportTrackingRef ?? "Not added"} />
+      </div>
+      {chargeLocked ? (
+        <p className="mt-4 rounded-lg border border-[#FEDF89] bg-[#FFFAEB] p-3 text-xs font-bold leading-5 text-[#B54708]">
+          Transport charge is locked after PO submission or payment activity. You can still update courier, pickup, ETA, tracking, and notes.
+        </p>
+      ) : null}
+      <form onSubmit={submit} className="mt-5 grid gap-4">
+        <div className="grid gap-4 md:grid-cols-2">
+          <SellerSelect label="Transport mode" name="transportMode" defaultValue={order.transportMode ?? "SELLER_ARRANGED_TRANSPORT"}>
+            <option value="SELLER_ARRANGED_TRANSPORT">Seller-arranged transport</option>
+            <option value="STORE_PICKUP">Store pickup by buyer</option>
+          </SellerSelect>
+          <SellerSelect label="Transport status" name="transportStatus" defaultValue={order.transportStatus ?? "REQUESTED"}>
+            {["REQUESTED", "QUOTED", "READY_FOR_PICKUP", "DISPATCHED", "IN_TRANSIT", "DELIVERED", "CANCELLED"].map((status) => (
+              <option key={status} value={status}>{status.replace(/_/g, " ")}</option>
+            ))}
+          </SellerSelect>
+          <SellerField
+            label="Transport charge"
+            name="transportCharge"
+            type="number"
+            min={0}
+            step="0.01"
+            defaultValue={((order.transportChargePaise ?? 0) / 100).toFixed(2)}
+            readOnly={chargeLocked}
+          />
+          <SellerField label="Transport partner" name="transportPartnerName" defaultValue={order.transportPartnerName ?? ""} placeholder="Courier or goods carrier name" />
+          <SellerField label="Partner phone" name="transportPartnerPhone" defaultValue={order.transportPartnerPhone ?? ""} placeholder="+91..." />
+          <SellerField label="Tracking / LR / AWB" name="transportTrackingRef" defaultValue={order.transportTrackingRef ?? ""} placeholder="AWB / LR / docket number" />
+          <SellerField label="ETA" name="transportEta" defaultValue={order.transportEta ?? ""} placeholder="Expected delivery date or window" />
+          <SellerField label="Pickup address" name="transportPickupAddress" defaultValue={order.transportPickupAddress ?? ""} placeholder="Warehouse or store pickup point" />
+        </div>
+        <SellerTextArea label="Transport note" name="transportNote" rows={3} defaultValue={order.transportNote ?? ""} placeholder="Packing, dispatch proof note, unloading instructions, or buyer coordination details." />
+        <Button type="submit" disabled={isSaving}>{isSaving ? "Saving..." : "Save B2B transport"}</Button>
+      </form>
+    </SellerPanel>
   );
 }
 
@@ -328,6 +454,13 @@ function payoutStatusText(order: SellerB2BOrder) {
     return "Eligible for payout";
   }
   return "Pending finance review";
+}
+
+function transportLabel(value?: string | null) {
+  if (value === "STORE_PICKUP") {
+    return "Store pickup by buyer";
+  }
+  return "Seller-arranged B2B transport";
 }
 
 function Info({ label, value }: { label: string; value: string }) {

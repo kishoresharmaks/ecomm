@@ -22,7 +22,7 @@ export class AdminProductsController {
 
   @Get("approvals")
   @ApiOperation({ summary: "List products waiting for admin moderation." })
-  listPendingProducts() {
+  listPendingProducts(): Promise<unknown> {
     return this.productsService.listPendingAdminProducts();
   }
 

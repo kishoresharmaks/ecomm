@@ -1,4 +1,4 @@
-import { Controller, Get, Inject, Param, Query, Res } from "@nestjs/common";
+import { Body, Controller, Get, Inject, Param, Patch, Query, Res } from "@nestjs/common";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import { RoleCode } from "@indihub/database";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
@@ -6,7 +6,7 @@ import { Roles } from "../auth/decorators/roles.decorator";
 import type { RequestUser } from "../auth/types/indihub-request";
 import { sendB2BDocument, sendB2BPurchaseOrderDocument } from "./b2b-document-response";
 import { B2BService } from "./b2b.service";
-import { B2BOrderQueryDto } from "./dto/b2b-order.dto";
+import { B2BOrderQueryDto, UpdateB2BTransportDto } from "./dto/b2b-order.dto";
 
 @ApiTags("Seller B2B Orders")
 @Roles(RoleCode.SELLER)
@@ -24,6 +24,16 @@ export class SellerB2BOrdersController {
   @ApiOperation({ summary: "Read seller-visible B2B proforma and PO order detail." })
   getOrder(@CurrentUser() actor: RequestUser, @Param("orderNumber") orderNumber: string) {
     return this.b2bService.getSellerB2BOrder(actor, orderNumber);
+  }
+
+  @Patch(":orderNumber/transport")
+  @ApiOperation({ summary: "Update seller-arranged B2B pickup, courier, transport charge, and tracking details." })
+  updateTransport(
+    @CurrentUser() actor: RequestUser,
+    @Param("orderNumber") orderNumber: string,
+    @Body() dto: UpdateB2BTransportDto,
+  ) {
+    return this.b2bService.updateSellerB2BTransport(actor, orderNumber, dto);
   }
 
   @Get(":orderNumber/proforma-invoice/document-access")

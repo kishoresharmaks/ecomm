@@ -9,13 +9,13 @@ import { Button, SectionHeading } from "@indihub/ui";
 import { formatMoney } from "@/lib/storefront-api";
 import { getSellerProfile, getSellerSalesReport } from "@/lib/seller-api";
 import {
-  SellerAuthNotice,
   SellerEmptyState,
   SellerErrorPanel,
   SellerMetric,
   SellerOnboardingRequired,
   SellerPanel,
   SellerSkeleton,
+  SellerStartWelcome,
   SellerStatusPill,
   formatDateTime,
   isSellerApproved,
@@ -43,7 +43,9 @@ export function SellerDashboardClient() {
   });
 
   if (!sellerAuth.enabled) {
-    return <SellerAuthNotice />;
+    return (
+      <SellerStartWelcome message="Welcome. Choose how you want to join 1HandIndia, then sign in or create an account to submit the onboarding form." />
+    );
   }
 
   if (profileQuery.isLoading || (hasSellerProfile && reportQuery.isLoading)) {

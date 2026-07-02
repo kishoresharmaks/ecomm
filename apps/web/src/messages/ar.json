@@ -26,6 +26,7 @@
     "top_stores": "أفضل المتاجر",
     "view_price": "عرض السعر",
     "price_pending": "السعر قيد الانتظار",
-    "from": "يبدأ من {price}"
+    "from": "يبدأ من {price}",
+    "from_price": "يبدأ من {price}"
   }
 }

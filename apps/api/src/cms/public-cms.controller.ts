@@ -24,7 +24,7 @@ export class PublicCmsController {
 
   @Get("pages")
   @ApiOperation({ summary: "List published CMS or policy pages." })
-  listPages() {
+  listPages(): Promise<unknown> {
     return this.cmsService.listPublishedPages();
   }
 

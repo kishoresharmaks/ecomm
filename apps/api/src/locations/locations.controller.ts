@@ -63,7 +63,7 @@ export class AdminLocationsController {
 
   @Get("countries")
   @ApiOperation({ summary: "List all market countries for administration." })
-  listCountries() {
+  listCountries(): Promise<unknown> {
     return this.locationsService.listAdminCountries();
   }
 
@@ -75,7 +75,7 @@ export class AdminLocationsController {
 
   @Get("import-runs")
   @ApiOperation({ summary: "List recent location import and refresh runs." })
-  listImportRuns() {
+  listImportRuns(): Promise<unknown> {
     return this.locationsService.listAdminImportRuns();
   }
 

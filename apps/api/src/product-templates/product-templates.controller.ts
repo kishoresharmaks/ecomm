@@ -18,7 +18,7 @@ export class ProductTemplatesController {
 
   @Get()
   @ApiOperation({ summary: "List dynamic product templates for category and seller form management." })
-  listTemplates() {
+  listTemplates(): Promise<unknown> {
     return this.productTemplatesService.listTemplates();
   }
 

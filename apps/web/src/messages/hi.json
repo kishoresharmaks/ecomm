@@ -26,6 +26,7 @@
     "top_stores": "शीर्ष स्टोर्स",
     "view_price": "कीमत देखें",
     "price_pending": "कीमत लंबित",
-    "from": "{price} से"
+    "from": "{price} से",
+    "from_price": "{price} से"
   }
 }

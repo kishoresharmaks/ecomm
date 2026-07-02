@@ -11,18 +11,29 @@ import {
 import { createHmac, timingSafeEqual } from "node:crypto";
 import {
   EmailRecipientType,
+  DeliveryAssignmentStatus,
   DeliveryStatus,
   InventoryMovementType,
+  OrderItemLifecycleStatus,
   OrderStatus,
+  OrderShipmentPackageStatus,
   PaymentProvider,
   PaymentStatus,
   Prisma,
+  RefundMethod,
+  RefundRequestStatus,
+  RefundTransactionStatus,
+  SellerLedgerEntryType,
   SellerOrderStatus,
   SellerSettlementStatus,
   SettingValueType,
+  ServiceBookingStatus,
+  ServicePaymentCollectionType,
+  ServicePaymentSettlementTreatment,
   StatusEventType,
 } from "@indihub/database";
 import type { RequestUser } from "../auth/types/indihub-request";
+import { FinanceCalculatorService } from "../finance/finance-calculator.service";
 import { EMAIL_TRIGGER_EVENTS } from "../notifications/email-trigger-catalog";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -57,6 +68,8 @@ const paymentConfigKeys = Object.values(PAYMENT_SETTING_KEYS);
 const defaultCodInstructions = "Pay cash to the delivery partner when the order is delivered.";
 const defaultBankTransferInstructions =
   "Transfer the order amount to the platform bank or UPI account and enter the UTR/reference for finance verification.";
+const razorpayWebhookPath = "/api/payments/razorpay/webhook";
+const providerOrderStaleLockMs = 2 * 60 * 1000;
 
 type RazorpayPaymentWithOrder = Prisma.PaymentGetPayload<{
   include: {
@@ -71,6 +84,35 @@ type RazorpayPaymentWithOrder = Prisma.PaymentGetPayload<{
     };
   };
 }>;
+
+type RazorpayServicePaymentWithBooking = Prisma.ServicePaymentGetPayload<{
+  include: {
+    booking: {
+      include: {
+        customer: {
+          include: {
+            user: true;
+          };
+        };
+        seller: {
+          include: {
+            user: true;
+          };
+        };
+        listing: true;
+        payments: true;
+        settlement: true;
+      };
+    };
+  };
+}>;
+
+type RazorpayPayableRecord = {
+  provider: PaymentProvider;
+  amountPaise: number;
+  currency: string;
+  providerOrderId: string | null;
+};
 
 type RazorpayPaymentEntity = {
   id?: string | undefined;
@@ -89,6 +131,14 @@ type RazorpayFetchedPayment = {
   [key: string]: unknown;
 };
 
+type RazorpayRefundEntity = {
+  id: string | null;
+  paymentId: string | null;
+  status: unknown;
+  amount: number | null;
+  raw: Record<string, unknown>;
+};
+
 type PaymentSettingMap = Map<string, Prisma.JsonValue>;
 type PaymentSettingWrite = {
   key: string;
@@ -97,6 +147,7 @@ type PaymentSettingWrite = {
   value: Prisma.InputJsonValue;
 };
 type PaymentSettingClient = Prisma.TransactionClient | PrismaService["client"];
+type RazorpayUnpaidOrderCancellationReason = "CUSTOMER_DISMISSED" | "PAYMENT_FAILED";
 
 type CheckoutPaymentMethodSnapshot = Awaited<
   ReturnType<PaymentsService["checkoutMethods"]>
@@ -113,6 +164,9 @@ export class PaymentsService {
     @Optional()
     @Inject(ReturnsService)
     private readonly returnsService?: ReturnsService,
+    @Optional()
+    @Inject(FinanceCalculatorService)
+    private readonly financeCalculator?: FinanceCalculatorService,
   ) {}
 
   async readiness() {
@@ -161,7 +215,8 @@ export class PaymentsService {
         keyIdPreview: this.maskValue(razorpayKeys.keyId),
         keySecretConfigured: Boolean(razorpayKeys.keySecret),
         webhookSecretConfigured: Boolean(webhookSecret),
-        webhookPath: "/api/payments/razorpay/webhook",
+        webhookPath: razorpayWebhookPath,
+        webhookUrl: this.absoluteApiUrl(razorpayWebhookPath),
       },
       cod: {
         enabled: this.booleanSetting(settingMap, PAYMENT_SETTING_KEYS.codEnabled, false),
@@ -579,72 +634,15 @@ export class PaymentsService {
       throw new BadRequestException("This order cannot be cancelled: no pending Razorpay payment found.");
     }
 
-    await this.prisma.client.$transaction(async (tx) => {
-      // Restore stock for all items
-      for (const item of order.items) {
-        await tx.productVariant.update({
-          where: { id: item.productVariantId },
-          data: { stockQuantity: { increment: item.quantity } },
-        });
-        await tx.inventoryMovement.create({
-          data: {
-            productVariantId: item.productVariantId,
-            movementType: InventoryMovementType.RETURN,
-            quantity: item.quantity,
-            reason: "Razorpay payment cancelled by customer",
-            referenceType: "order",
-            referenceId: order.id,
-            createdById: actor.id,
-          },
-        });
-      }
-
-      // Cancel the order
-      await tx.order.update({
-        where: { id: order.id },
-        data: {
-          orderStatus: OrderStatus.CANCELLED,
-          deliveryStatus: DeliveryStatus.CANCELLED,
-          paymentStatus: PaymentStatus.NOT_REQUIRED,
-        },
-      });
-
-      // Cancel the pending Razorpay payment
-      await tx.payment.update({
-        where: { id: razorpayPayment.id },
-        data: { status: PaymentStatus.FAILED },
-      });
-
-      // Cancel seller splits and shipments
-      await tx.orderSellerSplit.updateMany({
-        where: { orderId: order.id },
-        data: {
-          sellerStatus: SellerOrderStatus.CANCELLED,
-          settlementStatus: SellerSettlementStatus.CANCELLED,
-          payoutId: null,
-        },
-      });
-      await tx.orderShipment.updateMany({
-        where: { orderId: order.id },
-        data: { status: DeliveryStatus.CANCELLED },
-      });
-      if (order.deliveryDetail) {
-        await tx.deliveryDetail.update({
-          where: { orderId: order.id },
-          data: { status: DeliveryStatus.CANCELLED },
-        });
-      }
-
-      // Audit log
-      await tx.auditLog.create({
-        data: {
-          actorUserId: actor.id,
-          action: "order.cancelled.razorpay_dismissed",
-          entityType: "order",
-          entityId: order.id,
-          newValue: { orderNumber, reason: "Razorpay payment cancelled by customer" },
-        },
-      });
+    await this.cancelUnpaidRazorpayOrder(razorpayPayment.id, {
+      reason: "CUSTOMER_DISMISSED",
+      actorUserId: actor.id,
+      eventType: "razorpay.checkout.dismissed",
+      payload: {
+        orderNumber,
+        note: "Razorpay payment cancelled by customer",
+      } as Prisma.InputJsonValue,
+      providerPaymentId: razorpayPayment.providerPaymentId,
     });
 
     return { orderNumber, cancelled: true };
@@ -781,6 +779,172 @@ export class PaymentsService {
     };
   }
 
+  async createServiceRazorpayOrder(actor: RequestUser, bookingNumber: string, paymentId: string) {
+    const payment = await this.prisma.client.servicePayment.findFirst({
+      where: {
+        id: paymentId,
+        booking: { bookingNumber },
+      },
+      include: {
+        booking: {
+          include: {
+            customer: { include: { user: true } },
+            seller: { include: { user: true } },
+            listing: true,
+            payments: true,
+            settlement: true,
+          },
+        },
+      },
+    });
+
+    if (!payment) {
+      throw new NotFoundException("Service payment not found for this booking.");
+    }
+
+    this.ensureCustomerOwnsServicePayment(actor, payment);
+    this.ensureServicePaymentCanUseRazorpay(payment);
+    await this.ensureCheckoutMethodAllowed("RAZORPAY", payment.amountPaise);
+    const { keyId, keySecret } = await this.getRazorpayKeys();
+
+    if (payment.providerOrderId) {
+      return this.serviceRazorpayOrderResponse(keyId, payment);
+    }
+
+    const staleCreationLockBefore = new Date(Date.now() - providerOrderStaleLockMs);
+    const claimed = await this.prisma.client.servicePayment.updateMany({
+      where: {
+        id: payment.id,
+        providerOrderId: null,
+        status: { in: [PaymentStatus.PENDING, PaymentStatus.FAILED] },
+        OR: [
+          { providerOrderCreationInProgress: false },
+          {
+            providerOrderCreationInProgress: true,
+            updatedAt: { lt: staleCreationLockBefore },
+          },
+        ],
+      },
+      data: {
+        providerOrderCreationInProgress: true,
+        status: PaymentStatus.PENDING,
+      },
+    });
+
+    if (claimed.count === 0) {
+      const existing = await this.prisma.client.servicePayment.findUnique({
+        where: { id: payment.id },
+        include: {
+          booking: {
+            include: {
+              customer: { include: { user: true } },
+              seller: { include: { user: true } },
+              listing: true,
+              payments: true,
+              settlement: true,
+            },
+          },
+        },
+      });
+      if (existing?.providerOrderId) {
+        return this.serviceRazorpayOrderResponse(keyId, existing);
+      }
+      throw new Error("Provider order creation already in progress for this service payment.");
+    }
+
+    let providerOrderId: string;
+    try {
+      const response = await fetch("https://api.razorpay.com/v1/orders", {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString("base64")}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          amount: payment.amountPaise,
+          currency: payment.currency,
+          receipt: payment.booking.bookingNumber,
+          notes: {
+            indihubServiceBookingId: payment.bookingId,
+            bookingNumber: payment.booking.bookingNumber,
+            servicePaymentId: payment.id,
+            sellerId: payment.sellerId,
+            purpose: payment.purpose,
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        throw new ServiceUnavailableException(
+          `Razorpay service payment order creation failed with status ${response.status}: ${await response.text()}`,
+        );
+      }
+
+      const data = (await response.json()) as { id?: string };
+      if (!data.id) {
+        throw new ServiceUnavailableException(
+          "Razorpay service payment order creation did not return a provider order id.",
+        );
+      }
+      providerOrderId = data.id;
+    } catch (error) {
+      await this.prisma.client.servicePayment.update({
+        where: { id: payment.id },
+        data: { providerOrderCreationInProgress: false },
+      });
+      console.error("Razorpay service payment order creation failed", { servicePaymentId: payment.id });
+      throw error;
+    }
+
+    const updated = await this.prisma.client.servicePayment.update({
+      where: { id: payment.id },
+      data: {
+        providerOrderId,
+        providerOrderCreationInProgress: false,
+        status: PaymentStatus.PENDING,
+        events: {
+          create: {
+            eventType: "service_payment.razorpay_order_created",
+            oldStatus: payment.status,
+            newStatus: PaymentStatus.PENDING,
+            payload: {
+              bookingNumber: payment.booking.bookingNumber,
+              providerOrderId,
+              actorUserId: actor.id,
+            },
+          },
+        },
+      },
+      include: {
+        booking: {
+          include: {
+            customer: { include: { user: true } },
+            seller: { include: { user: true } },
+            listing: true,
+            payments: true,
+            settlement: true,
+          },
+        },
+      },
+    });
+
+    await this.prisma.client.auditLog.create({
+      data: {
+        actorUserId: actor.id,
+        action: "service_payment.razorpay_order_created",
+        entityType: "service_booking",
+        entityId: payment.bookingId,
+        newValue: {
+          bookingNumber: payment.booking.bookingNumber,
+          servicePaymentId: payment.id,
+          providerOrderId,
+        },
+      },
+    });
+
+    return this.serviceRazorpayOrderResponse(keyId, updated);
+  }
+
   async verifyRazorpayPayment(actor: RequestUser, dto: VerifyRazorpayPaymentDto) {
     const { keyId, keySecret } = await this.getRazorpayKeys();
     const payment = await this.prisma.client.payment.findFirst({
@@ -834,6 +998,190 @@ export class PaymentsService {
     );
   }
 
+  async verifyServiceRazorpayPayment(
+    actor: RequestUser,
+    bookingNumber: string,
+    dto: VerifyRazorpayPaymentDto,
+  ) {
+    const { keyId, keySecret } = await this.getRazorpayKeys();
+    const payment = await this.prisma.client.servicePayment.findFirst({
+      where: {
+        provider: PaymentProvider.RAZORPAY,
+        providerOrderId: dto.razorpayOrderId,
+      },
+      include: {
+        booking: {
+          include: {
+            customer: { include: { user: true } },
+            seller: { include: { user: true } },
+            listing: true,
+            payments: true,
+            settlement: true,
+          },
+        },
+      },
+    });
+
+    if (!payment) {
+      throw new NotFoundException("Razorpay service payment record not found for this provider order.");
+    }
+
+    if (payment.booking.bookingNumber !== bookingNumber) {
+      throw new BadRequestException("Razorpay payment does not belong to this service booking.");
+    }
+
+    this.ensureCustomerOwnsServicePayment(actor, payment);
+    this.verifyCheckoutSignature(dto, payment.providerOrderId, keySecret);
+    const providerPayment = await this.fetchRazorpayPayment(
+      keyId,
+      keySecret,
+      dto.razorpayPaymentId,
+    );
+    this.ensureProviderPaymentMatchesRecord(payment, providerPayment, dto.razorpayPaymentId);
+
+    const nextStatus = this.mapRazorpayPaymentStatus(providerPayment.status);
+    return this.recordServicePaymentStatus(
+      payment,
+      nextStatus,
+      "service_payment.razorpay_checkout_verified",
+      {
+        providerPayment,
+        checkoutResponse: {
+          bookingNumber,
+          razorpayOrderId: dto.razorpayOrderId,
+          razorpayPaymentId: dto.razorpayPaymentId,
+          signatureVerified: true,
+        },
+      } as Prisma.InputJsonValue,
+      dto.razorpayPaymentId,
+      actor.id,
+    );
+  }
+
+  async initiateServiceRefund(
+    refundNumber: string,
+    actor: RequestUser,
+    options: { method?: RefundMethod; note?: string } = {},
+  ) {
+    const refund = await this.prisma.client.serviceRefundRequest.findUnique({
+      where: { refundNumber },
+      include: { servicePayment: true },
+    });
+    if (!refund) {
+      throw new NotFoundException("Service refund request not found.");
+    }
+    const allowedStatuses = new Set<RefundRequestStatus>([
+      RefundRequestStatus.PENDING_REVIEW,
+      RefundRequestStatus.APPROVED,
+      RefundRequestStatus.FAILED,
+      RefundRequestStatus.RETRY_PENDING,
+    ]);
+    if (!allowedStatuses.has(refund.status)) {
+      throw new BadRequestException("Service refund is not ready for Razorpay initiation.");
+    }
+    if (options.method && options.method !== RefundMethod.RAZORPAY) {
+      throw new BadRequestException("Use manual-record for offline or manual service refunds.");
+    }
+    if (!refund.servicePayment?.providerPaymentId || refund.servicePayment.provider !== PaymentProvider.RAZORPAY) {
+      throw new BadRequestException("Razorpay service refund requires a captured Razorpay service payment.");
+    }
+
+    const transaction = await this.prisma.client.$transaction(async (tx) => {
+      await this.lockServiceRefundRequest(tx, refund.id);
+      const attemptCount = await tx.serviceRefundTransaction.count({
+        where: { serviceRefundRequestId: refund.id },
+      });
+      const idempotencyKey = this.serviceRefundIdempotencyKey(refund.refundNumber, attemptCount + 1);
+      const transaction = await tx.serviceRefundTransaction.create({
+        data: {
+          serviceRefundRequestId: refund.id,
+          servicePaymentId: refund.servicePaymentId,
+          provider: PaymentProvider.RAZORPAY,
+          method: RefundMethod.RAZORPAY,
+          status: RefundTransactionStatus.PROCESSING,
+          amountPaise: refund.amountPaise,
+          currency: refund.currency,
+          idempotencyKey,
+          createdById: actor.id,
+        },
+      });
+      await tx.serviceRefundRequest.update({
+        where: { id: refund.id },
+        data: {
+          status: RefundRequestStatus.PROCESSING,
+          method: RefundMethod.RAZORPAY,
+          approvedAt: refund.approvedAt ?? new Date(),
+          reviewedAt: new Date(),
+          reviewedById: actor.id,
+          note: options.note ?? refund.note,
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorUserId: actor.id,
+          action: "service_refund.razorpay_initiated",
+          entityType: "service_refund_request",
+          entityId: refund.id,
+          newValue: { refundNumber, amountPaise: refund.amountPaise, note: options.note ?? null },
+        },
+      });
+      return transaction;
+    });
+
+    const { keySecret } = await this.getRazorpayKeys();
+    const providerResult = await this.createRazorpayRefund({
+      keySecret,
+      paymentId: refund.servicePayment.providerPaymentId,
+      amountPaise: refund.amountPaise,
+      idempotencyKey: transaction.idempotencyKey ?? this.serviceRefundIdempotencyKey(refund.refundNumber, 1),
+      refundNumber,
+    });
+
+    const nextTransactionStatus = this.razorpayRefundTransactionStatus(providerResult.status);
+    const providerRefundId = typeof providerResult.id === "string" ? providerResult.id : null;
+    await this.prisma.client.$transaction(async (tx) => {
+      await tx.serviceRefundTransaction.update({
+        where: { id: transaction.id },
+        data: {
+          status: nextTransactionStatus,
+          providerRefundId,
+          providerResponse: providerResult as Prisma.InputJsonValue,
+          processedAt: nextTransactionStatus === RefundTransactionStatus.SUCCESS ? new Date() : null,
+          failureReason:
+            nextTransactionStatus === RefundTransactionStatus.FAILED
+              ? this.providerFailureReason(providerResult)
+              : null,
+        },
+      });
+
+      if (nextTransactionStatus === RefundTransactionStatus.SUCCESS) {
+        await this.completeServiceRefundInTransaction(tx, refund.id, actor, {
+          method: RefundMethod.RAZORPAY,
+          note: options.note ?? "Razorpay service refund processed.",
+        });
+      } else if (nextTransactionStatus === RefundTransactionStatus.FAILED) {
+        await tx.serviceRefundRequest.update({
+          where: { id: refund.id },
+          data: {
+            status: RefundRequestStatus.RETRY_PENDING,
+            note: this.providerFailureReason(providerResult),
+          },
+        });
+      }
+    });
+
+    return this.prisma.client.serviceRefundRequest.findUnique({
+      where: { refundNumber },
+      include: {
+        booking: { include: { customer: { include: { user: true } }, seller: true, listing: true } },
+        customer: { include: { user: true } },
+        seller: true,
+        servicePayment: true,
+        transactions: { orderBy: { createdAt: "desc" } },
+      },
+    });
+  }
+
   async handleRazorpayWebhook(
     signature: string | undefined,
     payload: Record<string, unknown>,
@@ -851,6 +1199,11 @@ export class PaymentsService {
     const refundResult = await this.returnsService?.handleRazorpayRefundWebhook(payload, eventId);
     if (refundResult?.handled) {
       return { received: true, ...refundResult };
+    }
+
+    const serviceRefundResult = await this.handleServiceRazorpayRefundWebhook(payload, eventId);
+    if (serviceRefundResult.handled) {
+      return { received: true, ...serviceRefundResult };
     }
 
     const event = String(payload.event ?? "");
@@ -895,12 +1248,71 @@ export class PaymentsService {
     });
 
     if (!payment) {
-      return { received: true, ignored: true };
+      return this.handleServiceRazorpayWebhook(event, paymentEntity, payload, eventId);
     }
 
     this.ensureRazorpayEntityMatchesRecord(payment, paymentEntity);
 
     return this.recordPaymentStatus(
+      payment,
+      nextStatus,
+      event,
+      {
+        ...payload,
+        ...(eventId ? { razorpayEventId: eventId } : {}),
+      } as Prisma.InputJsonValue,
+      paymentEntity.id,
+    );
+  }
+
+  private async handleServiceRazorpayWebhook(
+    event: string,
+    paymentEntity: RazorpayPaymentEntity,
+    payload: Record<string, unknown>,
+    eventId?: string,
+  ) {
+    const nextStatus =
+      event === "payment.captured" || event === "order.paid"
+        ? PaymentStatus.PAID
+        : event === "payment.failed"
+          ? PaymentStatus.FAILED
+          : undefined;
+
+    if (!nextStatus) {
+      return { received: true, ignored: true };
+    }
+
+    const paymentLookup: Prisma.ServicePaymentWhereInput[] = [
+      ...(paymentEntity.id ? [{ providerPaymentId: paymentEntity.id }] : []),
+      ...(paymentEntity.orderId ? [{ providerOrderId: paymentEntity.orderId }] : []),
+    ];
+
+    if (!paymentLookup.length) {
+      return { received: true, ignored: true };
+    }
+
+    const payment = await this.prisma.client.servicePayment.findFirst({
+      where: { OR: paymentLookup },
+      include: {
+        booking: {
+          include: {
+            customer: { include: { user: true } },
+            seller: { include: { user: true } },
+            listing: true,
+            payments: true,
+            settlement: true,
+          },
+        },
+      },
+    });
+
+    if (!payment) {
+      return { received: true, ignored: true };
+    }
+
+    this.ensureRazorpayEntityMatchesRecord(payment, paymentEntity);
+
+    return this.recordServicePaymentStatus(
       payment,
       nextStatus,
       event,
@@ -990,6 +1402,15 @@ export class PaymentsService {
         };
       }
 
+      if (nextStatus === PaymentStatus.FAILED) {
+        return this.cancelUnpaidRazorpayOrderInTransaction(tx, currentPayment.id, {
+          reason: "PAYMENT_FAILED",
+          eventType,
+          payload,
+          providerPaymentId: nextProviderPaymentId,
+        });
+      }
+
       const paymentUpdate = await tx.payment.updateMany({
         where: {
           id: currentPayment.id,
@@ -1043,26 +1464,12 @@ export class PaymentsService {
       });
 
       if (statusChanged) {
-        const orderUpdate = await tx.order.updateMany({
+        await tx.order.updateMany({
           where: {
             id: currentPayment.orderId,
-            ...(nextStatus === PaymentStatus.FAILED
-              ? { paymentStatus: { not: PaymentStatus.PAID } }
-              : {}),
           },
           data: { paymentStatus: nextStatus },
         });
-        if (orderUpdate.count !== 1 && nextStatus === PaymentStatus.FAILED) {
-          return {
-            received: true,
-            ignored: true,
-            paymentId: currentPayment.id,
-            status: PaymentStatus.PAID,
-            reason: "paid_payment_is_terminal",
-            notify: false,
-            notificationPayment: currentPayment,
-          };
-        }
         await tx.orderStatusEvent.create({
           data: {
             orderId: currentPayment.orderId,
@@ -1079,9 +1486,7 @@ export class PaymentsService {
         ignored: false,
         paymentId: currentPayment.id,
         status: nextStatus,
-        notify:
-          statusChanged &&
-          (nextStatus === PaymentStatus.PAID || nextStatus === PaymentStatus.FAILED),
+        notify: statusChanged && nextStatus === PaymentStatus.PAID,
         notificationPayment: currentPayment,
       };
     });
@@ -1100,7 +1505,7 @@ export class PaymentsService {
         userId: result.notificationPayment.order.customer.userId,
         variables: {
           orderNumber: result.notificationPayment.order.orderNumber,
-          paymentStatus: nextStatus,
+          paymentStatus: result.status,
         },
       });
     }
@@ -1111,7 +1516,7 @@ export class PaymentsService {
         ignored: result.ignored,
         paymentId: result.paymentId,
         status: result.status,
-        reason: result.reason,
+        reason: "reason" in result ? result.reason : undefined,
       };
     }
 
@@ -1120,6 +1525,1069 @@ export class PaymentsService {
       paymentId: result.paymentId,
       status: result.status,
     };
+  }
+
+  private async cancelUnpaidRazorpayOrder(
+    paymentId: string,
+    options: {
+      reason: RazorpayUnpaidOrderCancellationReason;
+      eventType: string;
+      payload: Prisma.InputJsonValue;
+      providerPaymentId?: string | null;
+      actorUserId?: string | null;
+    },
+  ) {
+    const result = await this.prisma.client.$transaction((tx) =>
+      this.cancelUnpaidRazorpayOrderInTransaction(tx, paymentId, options),
+    );
+
+    if (options.reason === "PAYMENT_FAILED" && result.notify) {
+      await this.notifications.notifyEvent({
+        eventCode: EMAIL_TRIGGER_EVENTS.PAYMENT_FAILED,
+        recipientType: EmailRecipientType.CUSTOMER,
+        recipient: result.notificationPayment.order.customer.user.email,
+        userId: result.notificationPayment.order.customer.userId,
+        variables: {
+          orderNumber: result.notificationPayment.order.orderNumber,
+          paymentStatus: PaymentStatus.FAILED,
+        },
+      });
+    }
+
+    return result;
+  }
+
+  private async cancelUnpaidRazorpayOrderInTransaction(
+    tx: Prisma.TransactionClient,
+    paymentId: string,
+    options: {
+      reason: RazorpayUnpaidOrderCancellationReason;
+      eventType: string;
+      payload: Prisma.InputJsonValue;
+      providerPaymentId?: string | null;
+      actorUserId?: string | null;
+    },
+  ) {
+    const currentPayment = await tx.payment.findUnique({
+      where: { id: paymentId },
+      include: {
+        order: {
+          include: {
+            customer: { include: { user: true } },
+            items: true,
+            deliveryDetail: true,
+          },
+        },
+      },
+    });
+
+    if (!currentPayment) {
+      throw new NotFoundException("Razorpay payment record no longer exists.");
+    }
+
+    if (currentPayment.provider !== PaymentProvider.RAZORPAY) {
+      return {
+        received: true,
+        ignored: true,
+        paymentId: currentPayment.id,
+        status: currentPayment.status,
+        reason: "not_razorpay_payment",
+        notify: false,
+        notificationPayment: currentPayment,
+      };
+    }
+
+    if (
+      currentPayment.status === PaymentStatus.PAID ||
+      currentPayment.order.paymentStatus === PaymentStatus.PAID
+    ) {
+      return {
+        received: true,
+        ignored: true,
+        paymentId: currentPayment.id,
+        status: PaymentStatus.PAID,
+        reason: "paid_payment_is_terminal",
+        notify: false,
+        notificationPayment: currentPayment,
+      };
+    }
+
+    const orderAlreadyCancelled = currentPayment.order.orderStatus === OrderStatus.CANCELLED;
+    const nextProviderPaymentId =
+      options.providerPaymentId ?? currentPayment.providerPaymentId ?? null;
+    const paymentStatusChanged = currentPayment.status !== PaymentStatus.FAILED;
+    const providerPaymentChanged = Boolean(
+      nextProviderPaymentId && nextProviderPaymentId !== currentPayment.providerPaymentId,
+    );
+    const note =
+      options.reason === "CUSTOMER_DISMISSED"
+        ? "Razorpay checkout was cancelled by the customer."
+        : "Razorpay reported payment failure before capture.";
+
+    if (
+      !paymentStatusChanged &&
+      !providerPaymentChanged &&
+      orderAlreadyCancelled &&
+      currentPayment.order.paymentStatus === PaymentStatus.NOT_REQUIRED
+    ) {
+      return {
+        received: true,
+        ignored: true,
+        paymentId: currentPayment.id,
+        status: currentPayment.status,
+        reason: "duplicate_event",
+        notify: false,
+        notificationPayment: currentPayment,
+      };
+    }
+
+    if (paymentStatusChanged || providerPaymentChanged) {
+      const paymentUpdate = await tx.payment.updateMany({
+        where: {
+          id: currentPayment.id,
+          status: currentPayment.status,
+          providerPaymentId: currentPayment.providerPaymentId,
+        },
+        data: {
+          status: PaymentStatus.FAILED,
+          providerPaymentId: nextProviderPaymentId,
+          rawResponse: options.payload,
+        },
+      });
+
+      if (paymentUpdate.count !== 1) {
+        const latestPayment = await tx.payment.findUnique({
+          where: { id: currentPayment.id },
+          include: {
+            order: {
+              include: {
+                customer: { include: { user: true } },
+              },
+            },
+          },
+        });
+        return {
+          received: true,
+          ignored: true,
+          paymentId: currentPayment.id,
+          status: latestPayment?.status ?? currentPayment.status,
+          reason:
+            latestPayment?.status === PaymentStatus.PAID ||
+            latestPayment?.order.paymentStatus === PaymentStatus.PAID
+              ? "paid_payment_is_terminal"
+              : "payment_status_conflict",
+          notify: false,
+          notificationPayment: latestPayment ?? currentPayment,
+        };
+      }
+
+      await tx.paymentEvent.create({
+        data: {
+          paymentId: currentPayment.id,
+          eventType: options.eventType,
+          oldStatus: currentPayment.status,
+          newStatus: PaymentStatus.FAILED,
+          payload: options.payload,
+        },
+      });
+    }
+
+    if (!orderAlreadyCancelled) {
+      const restorableItems = currentPayment.order.items
+        .map((item) => ({
+          ...item,
+          restoreQuantity:
+            item.activeQuantity > 0 || item.cancelledQuantity > 0
+              ? item.activeQuantity
+              : item.quantity,
+        }))
+        .filter((item) => item.restoreQuantity > 0);
+
+      for (const item of restorableItems) {
+        await tx.productVariant.update({
+          where: { id: item.productVariantId },
+          data: { stockQuantity: { increment: item.restoreQuantity } },
+        });
+
+        await tx.inventoryMovement.create({
+          data: {
+            productVariantId: item.productVariantId,
+            movementType: InventoryMovementType.RETURN,
+            quantity: item.restoreQuantity,
+            reason: note,
+            referenceType: "order",
+            referenceId: currentPayment.orderId,
+            createdById: options.actorUserId ?? null,
+          },
+        });
+
+        await tx.orderItem.update({
+          where: { id: item.id },
+          data: {
+            activeQuantity: 0,
+            retainedQuantity: 0,
+            cancelledQuantity: { increment: item.restoreQuantity },
+            cancelledAmountPaise: { increment: item.restoreQuantity * item.unitPricePaise },
+            lifecycleStatus: OrderItemLifecycleStatus.CANCELLED,
+          },
+        });
+      }
+
+      await tx.order.update({
+        where: { id: currentPayment.orderId },
+        data: {
+          orderStatus: OrderStatus.CANCELLED,
+          deliveryStatus: DeliveryStatus.CANCELLED,
+          paymentStatus: PaymentStatus.NOT_REQUIRED,
+        },
+      });
+
+      await tx.orderSellerSplit.updateMany({
+        where: { orderId: currentPayment.orderId },
+        data: {
+          sellerStatus: SellerOrderStatus.CANCELLED,
+          settlementStatus: SellerSettlementStatus.CANCELLED,
+          settlementEligibleAt: null,
+          payoutId: null,
+        },
+      });
+
+      await tx.orderShipment.updateMany({
+        where: { orderId: currentPayment.orderId },
+        data: {
+          status: DeliveryStatus.CANCELLED,
+          assignmentStatus: DeliveryAssignmentStatus.CANCELLED,
+          assignmentExpiresAt: null,
+        },
+      });
+
+      await tx.orderShipmentPackage.updateMany({
+        where: {
+          orderId: currentPayment.orderId,
+          status: {
+            notIn: [
+              OrderShipmentPackageStatus.DELIVERED,
+              OrderShipmentPackageStatus.CANCELLED,
+              OrderShipmentPackageStatus.FAILED,
+              OrderShipmentPackageStatus.RTO_DELIVERED,
+            ],
+          },
+        },
+        data: {
+          status: OrderShipmentPackageStatus.CANCELLED,
+          cancelledAt: new Date(),
+        },
+      });
+
+      if (currentPayment.order.deliveryDetail) {
+        await tx.deliveryDetail.update({
+          where: { orderId: currentPayment.orderId },
+          data: {
+            status: DeliveryStatus.CANCELLED,
+            assignmentStatus: DeliveryAssignmentStatus.CANCELLED,
+            assignmentExpiresAt: null,
+          },
+        });
+      }
+
+      await tx.orderStatusEvent.create({
+        data: {
+          orderId: currentPayment.orderId,
+          statusType: StatusEventType.ORDER,
+          oldStatus: currentPayment.order.orderStatus,
+          newStatus: OrderStatus.CANCELLED,
+          note,
+          createdById: options.actorUserId ?? null,
+        },
+      });
+
+      if (currentPayment.order.paymentStatus !== PaymentStatus.NOT_REQUIRED) {
+        await tx.orderStatusEvent.create({
+          data: {
+            orderId: currentPayment.orderId,
+            statusType: StatusEventType.PAYMENT,
+            oldStatus: currentPayment.order.paymentStatus,
+            newStatus: PaymentStatus.NOT_REQUIRED,
+            note,
+            createdById: options.actorUserId ?? null,
+          },
+        });
+      }
+
+      await tx.orderStatusEvent.create({
+        data: {
+          orderId: currentPayment.orderId,
+          statusType: StatusEventType.DELIVERY,
+          oldStatus: currentPayment.order.deliveryStatus,
+          newStatus: DeliveryStatus.CANCELLED,
+          note,
+          createdById: options.actorUserId ?? null,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actorUserId: options.actorUserId ?? null,
+          action:
+            options.reason === "CUSTOMER_DISMISSED"
+              ? "order.cancelled.razorpay_dismissed"
+              : "order.cancelled.razorpay_payment_failed",
+          entityType: "order",
+          entityId: currentPayment.orderId,
+          oldValue: {
+            orderStatus: currentPayment.order.orderStatus,
+            paymentStatus: currentPayment.order.paymentStatus,
+            deliveryStatus: currentPayment.order.deliveryStatus,
+            paymentId: currentPayment.id,
+          },
+          newValue: {
+            orderNumber: currentPayment.order.orderNumber,
+            orderStatus: OrderStatus.CANCELLED,
+            paymentStatus: PaymentStatus.NOT_REQUIRED,
+            paymentAttemptStatus: PaymentStatus.FAILED,
+            deliveryStatus: DeliveryStatus.CANCELLED,
+            reason: options.reason,
+          },
+        },
+      });
+    }
+
+    return {
+      received: true,
+      ignored: false,
+      paymentId: currentPayment.id,
+      status: PaymentStatus.FAILED,
+      notify: paymentStatusChanged,
+      notificationPayment: currentPayment,
+    };
+  }
+
+  private async recordServicePaymentStatus(
+    payment: RazorpayServicePaymentWithBooking,
+    nextStatus: PaymentStatus,
+    eventType: string,
+    payload: Prisma.InputJsonValue,
+    providerPaymentId?: string,
+    actorUserId?: string,
+  ) {
+    if (payment.provider !== PaymentProvider.RAZORPAY) {
+      return { received: true, ignored: true, reason: "not_razorpay_service_payment" };
+    }
+
+    const result = await this.prisma.client.$transaction(async (tx) => {
+      const currentPayment = await tx.servicePayment.findUnique({
+        where: { id: payment.id },
+        include: {
+          booking: {
+            include: {
+              customer: { include: { user: true } },
+              seller: { include: { user: true } },
+              listing: true,
+              payments: true,
+              settlement: true,
+            },
+          },
+        },
+      });
+
+      if (!currentPayment) {
+        throw new NotFoundException("Razorpay service payment record no longer exists.");
+      }
+
+      if (currentPayment.status === PaymentStatus.PAID && nextStatus !== PaymentStatus.PAID) {
+        return {
+          received: true,
+          ignored: true,
+          paymentId: currentPayment.id,
+          status: currentPayment.status,
+          reason: "paid_payment_is_terminal",
+          notify: false,
+          notificationPayment: currentPayment,
+          settlement: null,
+        };
+      }
+
+      const nextProviderPaymentId = providerPaymentId ?? currentPayment.providerPaymentId ?? null;
+      const statusChanged = currentPayment.status !== nextStatus;
+      const providerPaymentChanged = Boolean(
+        nextProviderPaymentId && nextProviderPaymentId !== currentPayment.providerPaymentId,
+      );
+
+      if (
+        currentPayment.status === PaymentStatus.PAID &&
+        nextStatus === PaymentStatus.PAID &&
+        currentPayment.providerPaymentId &&
+        providerPaymentChanged
+      ) {
+        return {
+          received: true,
+          ignored: true,
+          paymentId: currentPayment.id,
+          status: currentPayment.status,
+          reason: "paid_payment_is_terminal",
+          notify: false,
+          notificationPayment: currentPayment,
+          settlement: null,
+        };
+      }
+
+      if (!statusChanged && !providerPaymentChanged) {
+        return {
+          received: true,
+          ignored: true,
+          paymentId: currentPayment.id,
+          status: currentPayment.status,
+          reason: "duplicate_event",
+          notify: false,
+          notificationPayment: currentPayment,
+          settlement: null,
+        };
+      }
+
+      const paymentUpdate = await tx.servicePayment.updateMany({
+        where: {
+          id: currentPayment.id,
+          status: currentPayment.status,
+          providerPaymentId: currentPayment.providerPaymentId,
+        },
+        data: {
+          status: nextStatus,
+          providerPaymentId: nextProviderPaymentId,
+          rawResponse: payload as Prisma.InputJsonValue,
+          paidAt:
+            nextStatus === PaymentStatus.PAID
+              ? currentPayment.paidAt ?? new Date()
+              : nextStatus === PaymentStatus.FAILED
+                ? null
+                : currentPayment.paidAt,
+        },
+      });
+
+      if (paymentUpdate.count !== 1) {
+        const latestPayment = await tx.servicePayment.findUnique({
+          where: { id: currentPayment.id },
+          include: {
+            booking: {
+              include: {
+                customer: { include: { user: true } },
+                seller: { include: { user: true } },
+                listing: true,
+                payments: true,
+                settlement: true,
+              },
+            },
+          },
+        });
+        return {
+          received: true,
+          ignored: true,
+          paymentId: currentPayment.id,
+          status: latestPayment?.status ?? currentPayment.status,
+          reason:
+            latestPayment?.status === PaymentStatus.PAID
+              ? "paid_payment_is_terminal"
+              : "payment_status_conflict",
+          notify: false,
+          notificationPayment: latestPayment ?? currentPayment,
+          settlement: null,
+        };
+      }
+
+      await tx.servicePaymentEvent.create({
+        data: {
+          paymentId: currentPayment.id,
+          eventType,
+          oldStatus: currentPayment.status,
+          newStatus: nextStatus,
+          payload: payload as Prisma.InputJsonValue,
+        },
+      });
+
+      const paidAggregate = await tx.servicePayment.aggregate({
+        where: {
+          bookingId: currentPayment.bookingId,
+          status: PaymentStatus.PAID,
+        },
+        _sum: { amountPaise: true },
+      });
+      const paidAmountPaise = paidAggregate._sum.amountPaise ?? 0;
+      const updatedBooking = await tx.serviceBooking.update({
+        where: { id: currentPayment.bookingId },
+        data: { paidAmountPaise },
+        include: {
+          customer: { include: { user: true } },
+          seller: { include: { user: true } },
+          listing: true,
+          payments: true,
+          settlement: true,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actorUserId: actorUserId ?? null,
+          action: "service_payment.razorpay_status_updated",
+          entityType: "service_booking",
+          entityId: currentPayment.bookingId,
+          oldValue: {
+            paymentId: currentPayment.id,
+            status: currentPayment.status,
+            providerPaymentId: currentPayment.providerPaymentId,
+          },
+          newValue: {
+            paymentId: currentPayment.id,
+            status: nextStatus,
+            providerPaymentId: nextProviderPaymentId,
+            paidAmountPaise,
+            eventType,
+          },
+        },
+      });
+
+      const settlement = await this.createServiceSettlementIfEligible(
+        {
+          ...currentPayment,
+          status: nextStatus,
+          providerPaymentId: nextProviderPaymentId,
+          booking: updatedBooking,
+        },
+        tx,
+      );
+
+      return {
+        received: true,
+        ignored: false,
+        paymentId: currentPayment.id,
+        status: nextStatus,
+        notify:
+          statusChanged &&
+          (nextStatus === PaymentStatus.PAID || nextStatus === PaymentStatus.FAILED),
+        notificationPayment: {
+          ...currentPayment,
+          status: nextStatus,
+          booking: updatedBooking,
+        },
+        settlement,
+      };
+    });
+
+    if (
+      result.notify &&
+      (nextStatus === PaymentStatus.PAID || nextStatus === PaymentStatus.FAILED)
+    ) {
+      await this.notifications.notifyEvent({
+        eventCode:
+          nextStatus === PaymentStatus.PAID
+            ? EMAIL_TRIGGER_EVENTS.PAYMENT_SUCCESS
+            : EMAIL_TRIGGER_EVENTS.PAYMENT_FAILED,
+        recipientType: EmailRecipientType.CUSTOMER,
+        recipient: result.notificationPayment.booking.customer.user.email,
+        userId: result.notificationPayment.booking.customer.userId,
+        variables: {
+          orderNumber: result.notificationPayment.booking.bookingNumber,
+          bookingNumber: result.notificationPayment.booking.bookingNumber,
+          serviceTitle: result.notificationPayment.booking.listing.title,
+          paymentStatus: nextStatus,
+          note: `Service payment for ${result.notificationPayment.booking.listing.title}`,
+        },
+      });
+    }
+
+    if (result.ignored) {
+      return {
+        received: result.received,
+        ignored: result.ignored,
+        paymentId: result.paymentId,
+        status: result.status,
+        reason: "reason" in result ? result.reason : undefined,
+      };
+    }
+
+    return {
+      received: result.received,
+      paymentId: result.paymentId,
+      status: result.status,
+    };
+  }
+
+  private async createServiceSettlementIfEligible(
+    payment: RazorpayServicePaymentWithBooking,
+    tx: Prisma.TransactionClient,
+  ) {
+    const booking = payment.booking;
+    const settlementEligibleStatuses: ServiceBookingStatus[] = [
+      ServiceBookingStatus.COMPLETED,
+      ServiceBookingStatus.CLOSED_AFTER_INSPECTION,
+    ];
+    if (!settlementEligibleStatuses.includes(booking.status)) {
+      return null;
+    }
+    if (booking.settlement) {
+      return booking.settlement;
+    }
+
+    const grossDue =
+      booking.status === ServiceBookingStatus.CLOSED_AFTER_INSPECTION
+        ? booking.inspectionFeePaise
+        : booking.totalPayablePaise;
+    const committedRefundPaise = await this.serviceRefundCommittedPaise(tx, booking.id);
+    const platformCollectedGross = Math.min(
+      grossDue,
+      booking.payments
+        .filter(
+          (item) =>
+            (item.status === PaymentStatus.PAID || item.status === PaymentStatus.REFUNDED) &&
+            item.settlementTreatment === ServicePaymentSettlementTreatment.PAYOUT_ELIGIBLE &&
+            item.collectionType !== ServicePaymentCollectionType.PROVIDER_CASH,
+        )
+        .reduce((sum, item) => sum + item.amountPaise, 0) - committedRefundPaise,
+    );
+    if (grossDue <= 0 || platformCollectedGross <= 0) {
+      return null;
+    }
+
+    const existing = await tx.serviceBookingSettlement.findUnique({
+      where: { bookingId: booking.id },
+    });
+    if (existing) {
+      return existing;
+    }
+
+    const calculation = await this.calculateServiceSettlement(booking, platformCollectedGross, tx);
+    const settlement = await tx.serviceBookingSettlement.create({
+      data: {
+        bookingId: booking.id,
+        sellerId: booking.sellerId,
+        grossAmountPaise: calculation.grossAmountPaise,
+        inspectionFeeGrossPaise: calculation.inspectionFeeGrossPaise,
+        commissionPaise: calculation.commissionPaise,
+        gstOnCommissionPaise: calculation.gstOnCommissionPaise,
+        tdsPaise: calculation.tdsPaise,
+        tcsPaise: calculation.tcsPaise,
+        platformFeePaise: calculation.platformFeePaise,
+        refundAdjustmentPaise: calculation.refundAdjustmentPaise,
+        netPayablePaise: calculation.netPayablePaise,
+        status: SellerSettlementStatus.ELIGIBLE,
+        currency: booking.currency,
+        financeSnapshot: calculation.snapshot,
+      },
+    });
+    await tx.sellerLedgerEntry.create({
+      data: {
+        sellerId: booking.sellerId,
+        serviceBookingId: booking.id,
+        serviceSettlementId: settlement.id,
+        entryType: SellerLedgerEntryType.SERVICE_EARNING,
+        description: `Service earning for ${booking.bookingNumber}`,
+        creditPaise: platformCollectedGross,
+        currency: booking.currency,
+        referenceType: "service_booking",
+        referenceId: booking.id,
+      },
+    });
+    await this.createServiceSettlementDeductionEntries(tx, booking, settlement.id, calculation);
+    await tx.auditLog.create({
+      data: {
+        action: "service_settlement.created",
+        entityType: "service_booking",
+        entityId: booking.id,
+        newValue: {
+          gross: calculation.grossAmountPaise,
+          commission: calculation.commissionPaise,
+          net: calculation.netPayablePaise,
+          grossDue,
+          platformCollectedGross,
+          source: "service_payment_razorpay",
+        },
+      },
+    });
+    return settlement;
+  }
+
+  private async calculateServiceSettlement(
+    booking: RazorpayServicePaymentWithBooking["booking"],
+    grossAmountPaise: number,
+    tx: Prisma.TransactionClient,
+  ) {
+    if (this.financeCalculator) {
+      return this.financeCalculator.calculateServiceBooking(booking, grossAmountPaise, tx);
+    }
+
+    const commissionPaise = Math.floor((grossAmountPaise * 500) / 10_000);
+    const netPayablePaise = Math.max(0, grossAmountPaise - commissionPaise);
+    return {
+      grossAmountPaise,
+      inspectionFeeGrossPaise: booking.inspectionFeePaise,
+      commissionPaise,
+      gstOnCommissionPaise: 0,
+      tdsPaise: 0,
+      tcsPaise: 0,
+      platformFeePaise: 0,
+      refundAdjustmentPaise: 0,
+      netPayablePaise,
+      snapshot: {
+        calculationVersion: 1,
+        source: "service_booking_fallback",
+        commissionRateBps: 500,
+        bookingStatus: booking.status,
+        paymentMode: booking.paymentMode,
+        paidAmountPaise: booking.paidAmountPaise,
+      } as Prisma.InputJsonValue,
+    };
+  }
+
+  private async createServiceSettlementDeductionEntries(
+    tx: Prisma.TransactionClient,
+    booking: RazorpayServicePaymentWithBooking["booking"],
+    serviceSettlementId: string,
+    calculation: Awaited<ReturnType<PaymentsService["calculateServiceSettlement"]>>,
+  ) {
+    const deductions: Array<{
+      entryType: SellerLedgerEntryType;
+      amountPaise: number;
+      description: string;
+    }> = [
+      {
+        entryType: SellerLedgerEntryType.SERVICE_COMMISSION,
+        amountPaise: calculation.commissionPaise,
+        description: `Service commission for ${booking.bookingNumber}`,
+      },
+      {
+        entryType: SellerLedgerEntryType.GST_ON_COMMISSION,
+        amountPaise: calculation.gstOnCommissionPaise,
+        description: `GST on service commission for ${booking.bookingNumber}`,
+      },
+      {
+        entryType: SellerLedgerEntryType.TDS_DEDUCTION,
+        amountPaise: calculation.tdsPaise,
+        description: `TDS deduction for service ${booking.bookingNumber}`,
+      },
+      {
+        entryType: SellerLedgerEntryType.TCS_DEDUCTION,
+        amountPaise: calculation.tcsPaise,
+        description: `TCS deduction for service ${booking.bookingNumber}`,
+      },
+      {
+        entryType: SellerLedgerEntryType.PLATFORM_FEE,
+        amountPaise: calculation.platformFeePaise,
+        description: `Service settlement fee for ${booking.bookingNumber}`,
+      },
+    ];
+
+    for (const deduction of deductions) {
+      if (deduction.amountPaise <= 0) {
+        continue;
+      }
+      await tx.sellerLedgerEntry.create({
+        data: {
+          sellerId: booking.sellerId,
+          serviceBookingId: booking.id,
+          serviceSettlementId,
+          entryType: deduction.entryType,
+          description: deduction.description,
+          debitPaise: deduction.amountPaise,
+          currency: booking.currency,
+          referenceType: "service_booking",
+          referenceId: booking.id,
+        },
+      });
+    }
+  }
+
+  private async serviceRefundCommittedPaise(tx: Prisma.TransactionClient, bookingId: string) {
+    const aggregate = await tx.serviceRefundRequest.aggregate({
+      where: {
+        bookingId,
+        status: { notIn: [RefundRequestStatus.CANCELLED, RefundRequestStatus.FAILED] },
+      },
+      _sum: { amountPaise: true },
+    });
+    return aggregate._sum.amountPaise ?? 0;
+  }
+
+  private async handleServiceRazorpayRefundWebhook(payload: Record<string, unknown>, eventId?: string) {
+    const refundEntity = this.extractRazorpayRefundEntity(payload);
+    if (!refundEntity?.id) {
+      return { handled: false };
+    }
+
+    const lookup: Prisma.ServiceRefundTransactionWhereInput[] = [
+      { provider: PaymentProvider.RAZORPAY, providerRefundId: refundEntity.id },
+      ...(refundEntity.paymentId
+        ? [
+            {
+              provider: PaymentProvider.RAZORPAY,
+              refundRequest: {
+                servicePayment: {
+                  providerPaymentId: refundEntity.paymentId,
+                },
+              },
+              status: { in: [RefundTransactionStatus.INITIATED, RefundTransactionStatus.PROCESSING] },
+            } satisfies Prisma.ServiceRefundTransactionWhereInput,
+          ]
+        : []),
+    ];
+    const transaction = await this.prisma.client.serviceRefundTransaction.findFirst({
+      where: { OR: lookup },
+      include: { refundRequest: true },
+      orderBy: { createdAt: "desc" },
+    });
+    if (!transaction) {
+      return { handled: false };
+    }
+
+    if (eventId) {
+      try {
+        await this.prisma.client.razorpayWebhookEvent.create({
+          data: {
+            provider: "razorpay",
+            providerEventId: `service:${eventId}`,
+            eventType: String(payload.event ?? "refund.webhook"),
+            status: "PROCESSING",
+          },
+        });
+      } catch (error) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+          return { handled: true, received: true, duplicate: true };
+        }
+        throw error;
+      }
+    }
+
+    if (refundEntity.amount !== null && refundEntity.amount !== transaction.amountPaise) {
+      if (eventId) {
+        await this.prisma.client.razorpayWebhookEvent.update({
+          where: { provider_providerEventId: { provider: "razorpay", providerEventId: `service:${eventId}` } },
+          data: { status: "FAILED", processedAt: new Date() },
+        });
+      }
+      throw new BadRequestException("Service refund amount mismatch in Razorpay webhook.");
+    }
+
+    const nextStatus = this.razorpayRefundTransactionStatus(refundEntity.status);
+    await this.prisma.client.$transaction(async (tx) => {
+      await tx.serviceRefundTransaction.update({
+        where: { id: transaction.id },
+        data: {
+          status: nextStatus,
+          providerRefundId: refundEntity.id,
+          providerResponse: {
+            ...payload,
+            ...(eventId ? { razorpayEventId: eventId } : {}),
+          } as Prisma.InputJsonValue,
+          processedAt:
+            nextStatus === RefundTransactionStatus.SUCCESS ? new Date() : transaction.processedAt,
+          failureReason:
+            nextStatus === RefundTransactionStatus.FAILED
+              ? this.providerFailureReason(refundEntity.raw)
+              : transaction.failureReason,
+        },
+      });
+
+      if (nextStatus === RefundTransactionStatus.SUCCESS) {
+        await this.completeServiceRefundInTransaction(tx, transaction.serviceRefundRequestId, null, {
+          method: RefundMethod.RAZORPAY,
+          note: "Razorpay refund webhook confirmed service refund success.",
+        });
+      } else if (nextStatus === RefundTransactionStatus.FAILED) {
+        await tx.serviceRefundRequest.update({
+          where: { id: transaction.serviceRefundRequestId },
+          data: {
+            status: RefundRequestStatus.RETRY_PENDING,
+            note: this.providerFailureReason(refundEntity.raw),
+          },
+        });
+      } else {
+        await tx.serviceRefundRequest.update({
+          where: { id: transaction.serviceRefundRequestId },
+          data: { status: RefundRequestStatus.PROCESSING },
+        });
+      }
+    });
+
+    if (eventId) {
+      await this.prisma.client.razorpayWebhookEvent.update({
+        where: { provider_providerEventId: { provider: "razorpay", providerEventId: `service:${eventId}` } },
+        data: { status: "DONE", processedAt: new Date() },
+      });
+    }
+
+    return { handled: true, received: true, refundTransactionId: transaction.id };
+  }
+
+  private async createRazorpayRefund(input: {
+    keySecret: string;
+    paymentId: string;
+    amountPaise: number;
+    idempotencyKey: string;
+    refundNumber: string;
+  }) {
+    const { keyId } = await this.getRazorpayKeys();
+    const response = await fetch(
+      `https://api.razorpay.com/v1/payments/${encodeURIComponent(input.paymentId)}/refund`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${Buffer.from(`${keyId}:${input.keySecret}`).toString("base64")}`,
+          "Content-Type": "application/json",
+          "X-Razorpay-Idempotency-Key": input.idempotencyKey,
+        },
+        body: JSON.stringify({
+          amount: input.amountPaise,
+          speed: "normal",
+          notes: {
+            serviceRefundNumber: input.refundNumber,
+          },
+        }),
+      },
+    );
+
+    const body = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!response.ok) {
+      return {
+        ...body,
+        status: "failed",
+        errorStatusCode: response.status,
+        description:
+          typeof body.error === "object" && body.error && "description" in body.error
+            ? String((body.error as { description?: unknown }).description ?? "")
+            : `Razorpay refund failed with status ${response.status}.`,
+      };
+    }
+    return body;
+  }
+
+  private async completeServiceRefundInTransaction(
+    tx: Prisma.TransactionClient,
+    refundId: string,
+    actor: RequestUser | null,
+    options: { method: RefundMethod; note: string },
+  ) {
+    const refund = await tx.serviceRefundRequest.findUnique({
+      where: { id: refundId },
+      include: {
+        booking: { include: { payments: true } },
+        servicePayment: true,
+      },
+    });
+    if (!refund) {
+      throw new NotFoundException("Service refund request not found.");
+    }
+    if (refund.status === RefundRequestStatus.SUCCESS) {
+      return refund;
+    }
+    await tx.serviceRefundRequest.update({
+      where: { id: refund.id },
+      data: {
+        status: RefundRequestStatus.SUCCESS,
+        method: options.method,
+        reviewedAt: new Date(),
+        reviewedById: actor?.id ?? null,
+        note: options.note,
+      },
+    });
+
+    if (refund.servicePayment) {
+      const totalRefundedForPayment = await tx.serviceRefundRequest.aggregate({
+        where: {
+          servicePaymentId: refund.servicePayment.id,
+          status: RefundRequestStatus.SUCCESS,
+        },
+        _sum: { amountPaise: true },
+      });
+      if ((totalRefundedForPayment._sum.amountPaise ?? 0) >= refund.servicePayment.amountPaise) {
+        await tx.servicePayment.update({
+          where: { id: refund.servicePayment.id },
+          data: { status: PaymentStatus.REFUNDED },
+        });
+      }
+    }
+
+    const totalSuccessfulRefunds = await tx.serviceRefundRequest.aggregate({
+      where: { bookingId: refund.bookingId, status: RefundRequestStatus.SUCCESS },
+      _sum: { amountPaise: true },
+    });
+    const grossPaid = await tx.servicePayment.aggregate({
+      where: {
+        bookingId: refund.bookingId,
+        status: { in: [PaymentStatus.PAID, PaymentStatus.REFUNDED] },
+      },
+      _sum: { amountPaise: true },
+    });
+    await tx.serviceBooking.update({
+      where: { id: refund.bookingId },
+      data: {
+        paidAmountPaise: Math.max(0, (grossPaid._sum.amountPaise ?? 0) - (totalSuccessfulRefunds._sum.amountPaise ?? 0)),
+      },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        actorUserId: actor?.id ?? null,
+        action: "service_refund.completed",
+        entityType: "service_refund_request",
+        entityId: refund.id,
+        oldValue: { status: refund.status },
+        newValue: { status: RefundRequestStatus.SUCCESS, method: options.method },
+      },
+    });
+    return refund;
+  }
+
+  private razorpayRefundTransactionStatus(status: unknown) {
+    if (status === "processed") {
+      return RefundTransactionStatus.SUCCESS;
+    }
+    if (status === "failed") {
+      return RefundTransactionStatus.FAILED;
+    }
+    return RefundTransactionStatus.PROCESSING;
+  }
+
+  private providerFailureReason(payload: Record<string, unknown>) {
+    const error = payload.error;
+    if (error && typeof error === "object" && !Array.isArray(error)) {
+      const description = (error as Record<string, unknown>).description;
+      if (typeof description === "string" && description.trim()) {
+        return description.trim();
+      }
+    }
+    const description = payload.description;
+    if (typeof description === "string" && description.trim()) {
+      return description.trim();
+    }
+    return "Refund provider did not complete the refund.";
+  }
+
+  private extractRazorpayRefundEntity(payload: Record<string, unknown>): RazorpayRefundEntity | null {
+    const payloadRecord = payload.payload;
+    if (!payloadRecord || typeof payloadRecord !== "object" || Array.isArray(payloadRecord)) {
+      return null;
+    }
+    const refundWrapper = (payloadRecord as Record<string, unknown>).refund;
+    if (!refundWrapper || typeof refundWrapper !== "object" || Array.isArray(refundWrapper)) {
+      return null;
+    }
+    const entity = (refundWrapper as Record<string, unknown>).entity;
+    if (!entity || typeof entity !== "object" || Array.isArray(entity)) {
+      return null;
+    }
+    const refund = entity as Record<string, unknown>;
+    return {
+      id: typeof refund.id === "string" ? refund.id : null,
+      paymentId: typeof refund.payment_id === "string" ? refund.payment_id : null,
+      status: refund.status,
+      amount: typeof refund.amount === "number" ? refund.amount : null,
+      raw: refund,
+    };
+  }
+
+  private serviceRefundIdempotencyKey(refundNumber: string, attempt: number) {
+    return `service-refund:${refundNumber}:${attempt}`;
+  }
+
+  private async lockServiceRefundRequest(tx: Prisma.TransactionClient, refundRequestId: string) {
+    await tx.$queryRaw`SELECT id FROM service_refund_requests WHERE id = ${refundRequestId}::uuid FOR UPDATE`;
   }
 
   private async verifyWebhookSignature(
@@ -1199,7 +2667,7 @@ export class PaymentsService {
   }
 
   private ensureRazorpayEntityMatchesRecord(
-    payment: RazorpayPaymentWithOrder,
+    payment: RazorpayPayableRecord,
     paymentEntity: RazorpayPaymentEntity,
   ) {
     if (paymentEntity.amount !== undefined && paymentEntity.amount !== payment.amountPaise) {
@@ -1216,7 +2684,7 @@ export class PaymentsService {
   }
 
   private ensureProviderPaymentMatchesRecord(
-    payment: RazorpayPaymentWithOrder,
+    payment: RazorpayPayableRecord,
     providerPayment: RazorpayFetchedPayment,
     razorpayPaymentId: string,
   ) {
@@ -1283,6 +2751,57 @@ export class PaymentsService {
     return { keyId, keySecret };
   }
 
+  private serviceRazorpayOrderResponse(keyId: string, payment: RazorpayServicePaymentWithBooking) {
+    if (!payment.providerOrderId) {
+      throw new ServiceUnavailableException("Razorpay service payment order id is not available yet.");
+    }
+    return {
+      keyId,
+      razorpayOrderId: payment.providerOrderId,
+      amountPaise: payment.amountPaise,
+      currency: payment.currency,
+      bookingNumber: payment.booking.bookingNumber,
+      servicePaymentId: payment.id,
+      purpose: payment.purpose,
+    };
+  }
+
+  private ensureCustomerOwnsServicePayment(
+    actor: RequestUser,
+    payment: RazorpayServicePaymentWithBooking,
+  ) {
+    if (payment.booking.customer.userId !== actor.id) {
+      throw new ForbiddenException("Service payment does not belong to the authenticated customer.");
+    }
+  }
+
+  private ensureServicePaymentCanUseRazorpay(payment: RazorpayServicePaymentWithBooking) {
+    if (payment.provider !== PaymentProvider.RAZORPAY) {
+      throw new BadRequestException("This service payment is not payable through Razorpay.");
+    }
+    if (payment.amountPaise < 100) {
+      throw new BadRequestException("Minimum Razorpay amount is INR 1.00.");
+    }
+    const terminalPaymentStatuses: PaymentStatus[] = [
+      PaymentStatus.PAID,
+      PaymentStatus.REFUNDED,
+      PaymentStatus.NOT_REQUIRED,
+    ];
+    if (terminalPaymentStatuses.includes(payment.status)) {
+      throw new BadRequestException("This service payment is already closed.");
+    }
+    const blockedStatuses: ServiceBookingStatus[] = [
+      ServiceBookingStatus.CANCELLED,
+      ServiceBookingStatus.CANCELLED_AFTER_DISPUTE,
+      ServiceBookingStatus.REJECTED,
+      ServiceBookingStatus.QUOTE_REJECTED,
+      ServiceBookingStatus.QUOTE_EXPIRED,
+    ];
+    if (blockedStatuses.includes(payment.booking.status)) {
+      throw new BadRequestException("This service booking is no longer payable.");
+    }
+  }
+
   private async getRazorpayWebhookSecret() {
     const settingMap = await this.paymentSettingMap();
     return this.razorpayWebhookSecretFromSettings(settingMap);
@@ -1334,6 +2853,23 @@ export class PaymentsService {
       PAYMENT_SETTING_KEYS.razorpayWebhookSecret,
       process.env.RAZORPAY_WEBHOOK_SECRET ?? "",
     );
+  }
+
+  private absoluteApiUrl(path: string) {
+    const configuredBase =
+      process.env.API_PUBLIC_URL?.trim() || process.env.NEXT_PUBLIC_API_URL?.trim() || "";
+
+    if (!configuredBase) {
+      return null;
+    }
+
+    const base = configuredBase.replace(/\/+$/, "");
+    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+    if (base.toLowerCase().endsWith("/api") && normalizedPath.toLowerCase().startsWith("/api/")) {
+      return `${base}${normalizedPath.slice(4)}`;
+    }
+
+    return `${base}${normalizedPath}`;
   }
 
   private bankTransferDetailsFromSettings(settingMap: PaymentSettingMap) {

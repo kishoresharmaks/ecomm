@@ -17,6 +17,8 @@ import {
   B2BPaymentMethod,
   B2BPaymentStatus,
   B2BProofStatus,
+  B2BTransportMode,
+  B2BTransportStatus,
   EmailRecipientType,
   NotificationChannel,
   NotificationStatus,
@@ -69,6 +71,7 @@ import {
   SubmitB2BPurchaseOrderDto,
   SubmitB2BPaymentProofDto,
   UpdateB2BOrderStatusDto,
+  UpdateB2BTransportDto,
   VerifyB2BPaymentProofDto,
 } from "./dto/b2b-order.dto";
 import { B2BEnquiryQueryDto } from "./dto/b2b-query.dto";
@@ -626,6 +629,8 @@ export class B2BService {
         sellerId: resolved.sellerId,
         quantity: dto.quantity,
         message: dto.message,
+        transportMode: dto.transportMode ?? B2BTransportMode.SELLER_ARRANGED_TRANSPORT,
+        transportNote: dto.transportNote?.trim() || null,
         status: B2BEnquiryStatus.SUBMITTED,
       },
     }).catch(async (error: unknown) => {
@@ -1150,6 +1155,7 @@ export class B2BService {
           purchaseOrderFileKey,
           purchaseOrderNote: note,
           purchaseOrderSubmittedAt: new Date(),
+          transportChargeLockedAt: existing.transportChargeLockedAt ?? new Date(),
         },
       });
 
@@ -1234,6 +1240,7 @@ export class B2BService {
         data: {
           paymentStatus: B2BPaymentStatus.SUBMITTED_FOR_VERIFICATION,
           paymentMethod: B2BPaymentMethod.BANK_TRANSFER,
+          transportChargeLockedAt: existing.transportChargeLockedAt ?? new Date(),
         },
       });
 
@@ -1306,6 +1313,94 @@ export class B2BService {
   ): Promise<B2BTaxInvoiceDocumentAccess> {
     const order = await this.getSellerB2BOrder(actor, orderNumber);
     return this.taxInvoiceDocumentAccessForOrder(order, actor);
+  }
+
+  async updateSellerB2BTransport(actor: RequestUser, orderNumber: string, dto: UpdateB2BTransportDto) {
+    const existing = await this.getSellerB2BOrder(actor, orderNumber);
+    const transportMode = dto.transportMode ?? existing.transportMode ?? B2BTransportMode.SELLER_ARRANGED_TRANSPORT;
+    const transportStatus = this.normalizeB2BTransportStatus(
+      transportMode,
+      dto.transportStatus ?? existing.transportStatus,
+    );
+    const currentCharge = existing.transportChargePaise ?? 0;
+    const requestedCharge = dto.transportChargePaise ?? currentCharge;
+    const nextCharge = transportMode === B2BTransportMode.STORE_PICKUP ? 0 : requestedCharge;
+    const chargeChanged = nextCharge !== currentCharge;
+
+    if (chargeChanged && !this.canChangeB2BTransportCharge(existing)) {
+      throw new BadRequestException(
+        "Transport charge is locked after PO submission or payment activity. Update courier and tracking details only.",
+      );
+    }
+
+    const now = new Date();
+    const updated = await this.prisma.client.$transaction(async (tx) => {
+      const updated = await tx.b2BOrder.update({
+        where: { id: existing.id },
+        data: {
+          transportMode,
+          transportStatus,
+          transportChargePaise: nextCharge,
+          transportQuotedAt: chargeChanged || !existing.transportQuotedAt ? now : existing.transportQuotedAt,
+          transportPartnerName: dto.transportPartnerName?.trim() || existing.transportPartnerName || null,
+          transportPartnerPhone: dto.transportPartnerPhone?.trim() || existing.transportPartnerPhone || null,
+          transportTrackingRef: dto.transportTrackingRef?.trim() || existing.transportTrackingRef || null,
+          transportEta: dto.transportEta?.trim() || existing.transportEta || null,
+          transportPickupAddress: dto.transportPickupAddress?.trim() || existing.transportPickupAddress || null,
+          transportNote: dto.transportNote?.trim() || existing.transportNote || null,
+          ...(chargeChanged
+            ? {
+                buyerPayableAmountPaise: Math.max(
+                  0,
+                  (existing.buyerPayableAmountPaise ?? existing.subtotalPaise ?? 0) - currentCharge + nextCharge,
+                ),
+                proformaInvoiceFileKey: null,
+              }
+            : {}),
+          ...(transportStatus === B2BTransportStatus.DISPATCHED && !existing.transportDispatchedAt
+            ? { transportDispatchedAt: now }
+            : {}),
+          ...(transportStatus === B2BTransportStatus.DELIVERED && !existing.transportDeliveredAt
+            ? { transportDeliveredAt: now }
+            : {}),
+        },
+      });
+
+      await tx.b2BOrderEvent.create({
+        data: {
+          b2bOrderId: updated.id,
+          actorUserId: actor.id,
+          status: updated.status,
+          note: this.b2bTransportEventNote(updated.transportMode, updated.transportStatus),
+          payload: {
+            transportMode: updated.transportMode,
+            transportStatus: updated.transportStatus,
+            transportChargePaise: updated.transportChargePaise,
+            transportPartnerName: updated.transportPartnerName,
+            transportTrackingRef: updated.transportTrackingRef,
+            transportEta: updated.transportEta,
+            chargeChanged,
+          },
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actor: { connect: { id: actor.id } },
+          action: "b2b.order.transport_updated",
+          entityType: "b2b_order",
+          entityId: updated.id,
+          oldValue: this.b2bOrderAuditValue(existing),
+          newValue: this.b2bOrderAuditValue(updated),
+        },
+      });
+
+      return updated;
+    });
+
+    return this.withB2BOrderPaymentInstructions(
+      this.maskB2BOrderForSeller(await this.getB2BOrderOrThrow({ id: updated.id })),
+    );
   }
 
   async listAdminB2BOrders(query: B2BOrderQueryDto) {
@@ -2393,6 +2488,41 @@ export class B2BService {
     return Boolean(value?.paymentStatus && counterpartyVisibleB2BPaymentStatuses.has(value.paymentStatus));
   }
 
+  private canChangeB2BTransportCharge(order: {
+    status: B2BOrderStatus;
+    paymentStatus?: B2BPaymentStatus | null;
+    paidAmountPaise?: number | null;
+    transportChargeLockedAt?: Date | string | null;
+  }) {
+    return (
+      !order.transportChargeLockedAt &&
+      order.status === B2BOrderStatus.PROFORMA_ISSUED &&
+      (!order.paymentStatus || order.paymentStatus === B2BPaymentStatus.PENDING) &&
+      (order.paidAmountPaise ?? 0) === 0
+    );
+  }
+
+  private normalizeB2BTransportStatus(mode: B2BTransportMode, status?: B2BTransportStatus | null) {
+    if (mode === B2BTransportMode.STORE_PICKUP) {
+      return status && status !== B2BTransportStatus.REQUESTED ? status : B2BTransportStatus.READY_FOR_PICKUP;
+    }
+    if (!status || status === B2BTransportStatus.NOT_REQUIRED) {
+      return B2BTransportStatus.REQUESTED;
+    }
+    return status;
+  }
+
+  private b2bTransportEventNote(mode?: B2BTransportMode | null, status?: B2BTransportStatus | null) {
+    if (mode === B2BTransportMode.STORE_PICKUP) {
+      return `B2B store pickup updated to ${this.humanizeB2BTransport(status)}.`;
+    }
+    return `B2B seller-arranged transport updated to ${this.humanizeB2BTransport(status)}.`;
+  }
+
+  private humanizeB2BTransport(value?: string | null) {
+    return value ? value.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (char) => char.toUpperCase()) : "Not provided";
+  }
+
   private maskSellerForBuyer(seller?: Record<string, unknown> | null) {
     if (!seller) {
       return seller;
@@ -2656,6 +2786,9 @@ export class B2BService {
           responderUserId: actor.id,
           responseMessage: dto.responseMessage,
           quotedPricePaise: dto.quotedPricePaise ?? null,
+          transportChargePaise: dto.transportChargePaise ?? null,
+          transportEta: dto.transportEta?.trim() || null,
+          transportNote: dto.transportNote?.trim() || null,
         },
       });
 
@@ -2682,6 +2815,7 @@ export class B2BService {
             status: enquiry.status,
             responseId: response.id,
             quotedPricePaise: response.quotedPricePaise,
+            transportChargePaise: response.transportChargePaise,
           },
         },
       });
@@ -2695,7 +2829,7 @@ export class B2BService {
       totalAmountPaise:
         response.quotedPricePaise === null || response.quotedPricePaise === undefined
           ? null
-          : response.quotedPricePaise * enquiry.quantity,
+          : response.quotedPricePaise * enquiry.quantity + (response.transportChargePaise ?? 0),
       currency: "INR",
       createdAt: response.createdAt.toISOString(),
     });
@@ -2932,12 +3066,22 @@ export class B2BService {
     const selectedResponse = this.selectResponseForB2BOrder(enquiry.responses);
     const unitPricePaise = selectedResponse?.quotedPricePaise ?? null;
     const subtotalPaise = unitPricePaise === null ? null : unitPricePaise * enquiry.quantity;
+    const transportMode = enquiry.transportMode ?? B2BTransportMode.SELLER_ARRANGED_TRANSPORT;
+    const quotedTransportChargePaise = selectedResponse?.transportChargePaise ?? 0;
+    const transportChargePaise =
+      transportMode === B2BTransportMode.STORE_PICKUP ? 0 : Math.max(0, quotedTransportChargePaise);
+    const transportStatus =
+      transportMode === B2BTransportMode.STORE_PICKUP
+        ? B2BTransportStatus.NOT_REQUIRED
+        : transportChargePaise > 0
+          ? B2BTransportStatus.QUOTED
+          : B2BTransportStatus.REQUESTED;
     const commissionRateBps = await this.resolveB2BCommissionRateBps(enquiry);
     const commissionAmountPaise =
       subtotalPaise === null ? 0 : Math.floor((subtotalPaise * commissionRateBps) / 10_000);
     const sellerPayoutAmountPaise =
       subtotalPaise === null ? 0 : Math.max(0, subtotalPaise - commissionAmountPaise);
-    const buyerPayableAmountPaise = subtotalPaise ?? 0;
+    const buyerPayableAmountPaise = (subtotalPaise ?? 0) + transportChargePaise;
     const orderNumber = await this.createUniqueB2BOrderNumber();
     const proformaInvoiceNumber = await this.createUniqueProformaInvoiceNumber();
     const proformaExpiresAt = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000);
@@ -2964,6 +3108,12 @@ export class B2BService {
           currency: "INR",
           paymentStatus: B2BPaymentStatus.PENDING,
           buyerPayableAmountPaise,
+          transportMode,
+          transportStatus,
+          transportChargePaise,
+          transportQuotedAt: selectedResponse?.transportChargePaise === null || selectedResponse?.transportChargePaise === undefined ? null : new Date(),
+          transportEta: selectedResponse?.transportEta ?? null,
+          transportNote: selectedResponse?.transportNote ?? enquiry.transportNote ?? null,
           paymentDueAt,
           createdByUserId: actor.id,
           termsSnapshot: {
@@ -2977,6 +3127,11 @@ export class B2BService {
             quotedPricePaise: selectedResponse?.quotedPricePaise ?? null,
             quantity: enquiry.quantity,
             subtotalPaise,
+            transportMode,
+            transportStatus,
+            transportChargePaise,
+            transportEta: selectedResponse?.transportEta ?? null,
+            transportNote: selectedResponse?.transportNote ?? enquiry.transportNote ?? null,
             buyerPayableAmountPaise,
             commissionRateBps,
             commissionAmountPaise,
@@ -2998,6 +3153,9 @@ export class B2BService {
             orderNumber: b2bOrder.orderNumber,
             proformaInvoiceNumber: b2bOrder.proformaInvoiceNumber,
             proformaExpiresAt: b2bOrder.proformaExpiresAt?.toISOString(),
+            transportMode: b2bOrder.transportMode,
+            transportStatus: b2bOrder.transportStatus,
+            transportChargePaise: b2bOrder.transportChargePaise,
             paymentDueAt: b2bOrder.paymentDueAt.toISOString(),
           },
         },
@@ -3044,6 +3202,14 @@ export class B2BService {
       unitPricePaise?: number | null;
       subtotalPaise?: number | null;
       buyerPayableAmountPaise: number;
+      transportMode?: B2BTransportMode | null;
+      transportStatus?: B2BTransportStatus | null;
+      transportChargePaise?: number | null;
+      transportPartnerName?: string | null;
+      transportTrackingRef?: string | null;
+      transportEta?: string | null;
+      transportPickupAddress?: string | null;
+      transportNote?: string | null;
       commissionRateBps: number;
       commissionAmountPaise: number;
       sellerPayoutAmountPaise: number;
@@ -3073,6 +3239,11 @@ export class B2BService {
       `Quantity: ${order.quantity}`,
       `Unit price: ${this.moneyForPdf(order.unitPricePaise ?? 0, order.currency)}`,
       `Subtotal: ${this.moneyForPdf(order.subtotalPaise ?? order.buyerPayableAmountPaise, order.currency)}`,
+      `B2B transport mode: ${this.humanizeB2BTransport(order.transportMode)}`,
+      `B2B transport status: ${this.humanizeB2BTransport(order.transportStatus)}`,
+      `B2B transport charge: ${this.moneyForPdf(order.transportChargePaise ?? 0, order.currency)}`,
+      `B2B transport ETA: ${order.transportEta ?? "Not provided"}`,
+      `B2B transport note: ${order.transportNote ?? "Not provided"}`,
       `Buyer payable: ${this.moneyForPdf(order.buyerPayableAmountPaise, order.currency)}`,
       "",
       `Platform commission: ${order.commissionRateBps} bps / ${this.moneyForPdf(order.commissionAmountPaise, order.currency)}`,
@@ -3108,6 +3279,14 @@ export class B2BService {
       quantity: number;
       unitPricePaise?: number | null;
       subtotalPaise?: number | null;
+      transportMode?: B2BTransportMode | null;
+      transportStatus?: B2BTransportStatus | null;
+      transportChargePaise?: number | null;
+      transportPartnerName?: string | null;
+      transportTrackingRef?: string | null;
+      transportEta?: string | null;
+      transportPickupAddress?: string | null;
+      transportNote?: string | null;
       commissionRateBps: number;
       commissionAmountPaise: number;
       sellerPayoutAmountPaise: number;
@@ -3138,6 +3317,11 @@ export class B2BService {
       `Quantity: ${order.quantity}`,
       `Unit price: ${this.moneyForPdf(order.unitPricePaise ?? 0, order.currency)}`,
       `Subtotal: ${this.moneyForPdf(order.subtotalPaise ?? order.buyerPayableAmountPaise, order.currency)}`,
+      `B2B transport mode: ${this.humanizeB2BTransport(order.transportMode)}`,
+      `B2B transport status: ${this.humanizeB2BTransport(order.transportStatus)}`,
+      `B2B transport charge: ${this.moneyForPdf(order.transportChargePaise ?? 0, order.currency)}`,
+      `B2B transport partner: ${order.transportPartnerName ?? "Not provided"}`,
+      `B2B tracking reference: ${order.transportTrackingRef ?? "Not provided"}`,
       `Buyer payable: ${this.moneyForPdf(order.buyerPayableAmountPaise, order.currency)}`,
       `Paid amount: ${this.moneyForPdf(order.paidAmountPaise, order.currency)}`,
       "",
@@ -3210,6 +3394,9 @@ export class B2BService {
     responses: Array<{
       id: string;
       quotedPricePaise?: number | null;
+      transportChargePaise?: number | null;
+      transportEta?: string | null;
+      transportNote?: string | null;
       responseMessage: string;
       createdAt: Date;
     }>,
@@ -3970,6 +4157,14 @@ export class B2BService {
     unitPricePaise?: number | null;
     subtotalPaise?: number | null;
     buyerPayableAmountPaise: number;
+    transportMode?: B2BTransportMode | null;
+    transportStatus?: B2BTransportStatus | null;
+    transportChargePaise?: number | null;
+    transportPartnerName?: string | null;
+    transportTrackingRef?: string | null;
+    transportEta?: string | null;
+    transportPickupAddress?: string | null;
+    transportNote?: string | null;
     commissionRateBps: number;
     commissionAmountPaise: number;
     sellerPayoutAmountPaise: number;
@@ -4236,6 +4431,13 @@ export class B2BService {
     unitPricePaise?: number | null;
     subtotalPaise?: number | null;
     buyerPayableAmountPaise?: number | null;
+    transportMode?: B2BTransportMode | null;
+    transportStatus?: B2BTransportStatus | null;
+    transportChargePaise?: number | null;
+    transportChargeLockedAt?: Date | string | null;
+    transportPartnerName?: string | null;
+    transportTrackingRef?: string | null;
+    transportEta?: string | null;
     paymentStatus?: B2BPaymentStatus;
     paymentMethod?: B2BPaymentMethod | null;
     paidAmountPaise?: number | null;
@@ -4264,6 +4466,13 @@ export class B2BService {
       unitPricePaise: order.unitPricePaise ?? null,
       subtotalPaise: order.subtotalPaise ?? null,
       buyerPayableAmountPaise: order.buyerPayableAmountPaise ?? null,
+      transportMode: order.transportMode ?? null,
+      transportStatus: order.transportStatus ?? null,
+      transportChargePaise: order.transportChargePaise ?? null,
+      transportChargeLockedAt: this.auditDate(order.transportChargeLockedAt),
+      transportPartnerName: order.transportPartnerName ?? null,
+      transportTrackingRef: order.transportTrackingRef ?? null,
+      transportEta: order.transportEta ?? null,
       paymentStatus: order.paymentStatus ?? null,
       paymentMethod: order.paymentMethod ?? null,
       paidAmountPaise: order.paidAmountPaise ?? null,

@@ -1335,6 +1335,9 @@ const customerDeliveryStatusRank: Record<string, number> = {
 
 function effectiveCustomerDeliveryStatus(order: NonNullable<AccountOrderDetail>) {
   const actualStatus = order.deliveryDetail?.status ?? order.deliveryStatus ?? "PENDING";
+  if (actualStatus === "CANCELLED" || actualStatus === "DELIVERED") {
+    return actualStatus;
+  }
   if (
     !customerSellerPackagesReady(order) &&
     customerDeliveryRank(actualStatus) >= customerDeliveryRank("PACKED")

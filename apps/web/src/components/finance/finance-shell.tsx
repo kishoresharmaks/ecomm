@@ -36,6 +36,7 @@ const iconByHref: Array<[string, typeof LayoutDashboard]> = [
   ["/finance/ledger", WalletCards],
   ["/finance/payouts", CreditCard],
   ["/finance/settlements", ClipboardList],
+  ["/finance/service-receivables", ReceiptText],
   ["/finance/payment-status", BadgeIndianRupee],
   ["/finance/bank-transfers", Landmark],
   ["/finance/cod-collections", IndianRupee],

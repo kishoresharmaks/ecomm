@@ -13,8 +13,8 @@ export default async function SellerOrderDeliveryPage({
 
   return (
     <SellerWorkspaceShell
-      title={`Delivery update ${orderNumber}`}
-      description="Update delivery mode, partner details, tracking reference, and delivery status for this seller package."
+      title={`Logistics view ${orderNumber}`}
+      description="Review route, assignment, tracking, package readiness, and courier label status for this seller package."
       actions={
         <Button asChild variant="outline" size="sm">
           <Link href={`/seller/orders/${encodeURIComponent(orderNumber)}`}>
@@ -34,9 +34,11 @@ export default async function SellerOrderDeliveryPage({
               <p className="text-xs font-black uppercase tracking-[0.14em] text-[#ED3500]">
                 Delivery workflow
               </p>
-              <h2 className="mt-1 text-xl font-black text-[#1F2933]">Standalone delivery update</h2>
+              <h2 className="mt-1 text-xl font-black text-[#1F2933]">Automation-first logistics</h2>
               <p className="mt-1 text-sm font-semibold leading-6 text-[#667085]">
-                Use this page when you want to work only on courier, partner, tracking, and delivery status fields.
+                Sellers prepare the package and download labels. Dispatch, tracking, proof, COD,
+                and delivery completion are handled by courier, delivery partner, or admin
+                operations.
               </p>
             </div>
           </div>

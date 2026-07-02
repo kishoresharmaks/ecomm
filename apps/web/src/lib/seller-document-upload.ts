@@ -15,6 +15,8 @@ export type SellerDocumentType =
   | "ADDRESS_PROOF"
   | "BANK_PROOF"
   | "BUSINESS_REGISTRATION"
+  | "SERVICE_COMPLETION_PROOF"
+  | "SERVICE_DISPUTE_EVIDENCE"
   | "OTHER";
 
 export type SellerDocumentUploadResult = {
@@ -65,6 +67,7 @@ type SellerDocumentAccess =
 
 type UploadOptions = {
   onProgress?: (progress: number) => void;
+  serviceBookingNumber?: string;
 };
 
 const maxDocumentBytes = 10 * 1024 * 1024;
@@ -97,6 +100,7 @@ export async function uploadSellerDocument(
         fileName: file.name,
         contentType: file.type,
         sizeBytes: file.size,
+        ...(options.serviceBookingNumber ? { serviceBookingNumber: options.serviceBookingNumber } : {}),
       }),
     },
     auth,
@@ -117,7 +121,7 @@ export async function uploadSellerDocument(
     file,
     documentType,
     uploadRequest,
-    options.onProgress,
+    options,
   );
 
   return {
@@ -202,14 +206,14 @@ async function uploadLocalDocument(
   file: File,
   documentType: SellerDocumentType,
   uploadRequest: Extract<PrivateDocumentUploadRequest, { provider: "local" }>,
-  onProgress?: (progress: number) => void,
+  options: UploadOptions,
 ) {
   try {
-    return await uploadLocalDocumentAttempt(auth, file, documentType, uploadRequest, onProgress, false);
+    return await uploadLocalDocumentAttempt(auth, file, documentType, uploadRequest, options, false);
   } catch (error) {
     if (error instanceof IndihubApiError && error.status === 401 && auth.getBearerToken) {
       try {
-        return await uploadLocalDocumentAttempt(auth, file, documentType, uploadRequest, onProgress, true);
+        return await uploadLocalDocumentAttempt(auth, file, documentType, uploadRequest, options, true);
       } catch (retryError) {
         if (retryError instanceof IndihubApiError && retryError.status === 401) {
           auth.onUnauthorized?.(retryError);
@@ -231,7 +235,7 @@ async function uploadLocalDocumentAttempt(
   file: File,
   documentType: SellerDocumentType,
   uploadRequest: Extract<PrivateDocumentUploadRequest, { provider: "local" }>,
-  onProgress: ((progress: number) => void) | undefined,
+  options: UploadOptions,
   skipCache: boolean,
 ) {
   const authHeaders = await buildAuthHeaders(auth, { skipCache });
@@ -245,8 +249,8 @@ async function uploadLocalDocumentAttempt(
     });
 
     request.upload.onprogress = (event) => {
-      if (event.lengthComputable && onProgress) {
-        onProgress(Math.round((event.loaded / event.total) * 100));
+      if (event.lengthComputable && options.onProgress) {
+        options.onProgress(Math.round((event.loaded / event.total) * 100));
       }
     };
 
@@ -267,6 +271,9 @@ async function uploadLocalDocumentAttempt(
 
     const form = new FormData();
     form.append("documentType", documentType);
+    if (options.serviceBookingNumber) {
+      form.append("serviceBookingNumber", options.serviceBookingNumber);
+    }
     form.append("file", file);
     request.send(form);
   });

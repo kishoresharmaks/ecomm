@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { type FormEvent, useState } from "react";
-import { ArrowLeft, CheckCircle2, MessageSquareWarning, Search, Star, Wrench, XCircle } from "lucide-react";
+import { ArrowLeft, CheckCircle2, CreditCard, Loader2, MessageSquareWarning, Search, Star, Wrench, XCircle } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
 import { CustomerAuthNotice } from "@/components/auth/customer-auth-notice";
@@ -11,15 +11,22 @@ import { EmptyState, ErrorPanel, PagePanel, SkeletonBlock, StatusPill, formatDat
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
 import {
   acceptCustomerServiceQuote,
+  confirmCustomerServiceCashCollection,
   confirmCustomerServiceCompletion,
   createCustomerServiceReview,
+  createCustomerServiceRazorpayOrder,
+  disputeCustomerServiceCashCollection,
   getCustomerServiceBooking,
   listCustomerServiceBookings,
   raiseCustomerServiceDispute,
   rejectCustomerServiceQuote,
+  verifyCustomerServiceRazorpayPayment,
   type ServiceBooking,
+  type ServicePayment,
   type ServiceQuote,
 } from "@/lib/service-marketplace-api";
+import { openRazorpayCheckout } from "@/lib/razorpay-checkout";
+import { uploadSellerDocument } from "@/lib/seller-document-upload";
 import { formatMoney } from "@/lib/storefront-api";
 
 export function ServiceBookingsClient() {
@@ -103,6 +110,7 @@ export function ServiceBookingDetailClient({ bookingNumber }: { bookingNumber: s
   const queryClient = useQueryClient();
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeTone, setNoticeTone] = useState<"success" | "danger" | "warning">("success");
+  const [activePaymentId, setActivePaymentId] = useState<string | null>(null);
 
   const bookingQuery = useQuery({
     queryKey: ["customer-service-booking", customerAuth.authKey, bookingNumber],
@@ -112,7 +120,15 @@ export function ServiceBookingDetailClient({ bookingNumber }: { bookingNumber: s
   });
 
   const actionMutation = useMutation({
-    mutationFn: ({ action, form }: { action: "acceptQuote" | "rejectQuote" | "confirmCompletion" | "dispute" | "review"; form?: FormData }): Promise<unknown> => {
+    mutationFn: async ({
+      action,
+      form,
+      payment,
+    }: {
+      action: "acceptQuote" | "rejectQuote" | "confirmCompletion" | "dispute" | "review" | "confirmCash" | "disputeCash";
+      form?: FormData;
+      payment?: ServicePayment;
+    }): Promise<unknown> => {
       if (action === "acceptQuote") {
         return acceptCustomerServiceQuote(customerAuth.authHeaders, bookingNumber);
       }
@@ -125,14 +141,42 @@ export function ServiceBookingDetailClient({ bookingNumber }: { bookingNumber: s
       if (action === "dispute") {
         const selectedReason = formValue(form ?? new FormData(), "reason");
         const description = optionalFormValue(form ?? new FormData(), "description");
-        const rawEvidence = optionalFormValue(form ?? new FormData(), "evidence");
+        const workingForm = form ?? new FormData();
+        const rawEvidence = optionalFormValue(workingForm, "evidence");
         const reason = description ? `${selectedReason} - ${description}` : selectedReason;
-        const payload: { reason: string; evidence?: string[] } = { reason };
+        const payload: { reason: string; evidence?: string[]; evidenceKeys?: string[] } = { reason };
         const evidence = rawEvidence?.split(",").map((item) => item.trim()).filter(Boolean);
         if (evidence?.length) {
           payload.evidence = evidence;
         }
+        const evidenceFiles = workingForm.getAll("evidenceFiles").filter((item): item is File => item instanceof File && item.size > 0);
+        if (evidenceFiles.length) {
+          const uploaded = await Promise.all(
+            evidenceFiles.slice(0, 8).map((file) =>
+              uploadSellerDocument(customerAuth.authHeaders, file, "SERVICE_DISPUTE_EVIDENCE", {
+                serviceBookingNumber: bookingNumber,
+              }),
+            ),
+          );
+          payload.evidenceKeys = uploaded.map((item) => item.fileUrl);
+        }
         return raiseCustomerServiceDispute(customerAuth.authHeaders, bookingNumber, payload);
+      }
+      if (action === "confirmCash") {
+        if (!payment) throw new Error("Cash payment record is required.");
+        const note = form ? optionalFormValue(form, "note") : undefined;
+        return confirmCustomerServiceCashCollection(
+          customerAuth.authHeaders,
+          bookingNumber,
+          payment.id,
+          note ? { note } : {},
+        );
+      }
+      if (action === "disputeCash") {
+        if (!payment) throw new Error("Cash payment record is required.");
+        return disputeCustomerServiceCashCollection(customerAuth.authHeaders, bookingNumber, payment.id, {
+          reason: formValue(form ?? new FormData(), "reason"),
+        });
       }
       const rating = Number(formValue(form ?? new FormData(), "rating"));
       const body = optionalFormValue(form ?? new FormData(), "body");
@@ -147,6 +191,46 @@ export function ServiceBookingDetailClient({ bookingNumber }: { bookingNumber: s
     onError: (error) => {
       setNoticeTone("danger");
       setNotice(error instanceof Error ? error.message : "Service booking action failed.");
+    },
+  });
+
+  const paymentMutation = useMutation({
+    mutationFn: async (payment: ServicePayment) => {
+      setActivePaymentId(payment.id);
+      const providerOrder = await createCustomerServiceRazorpayOrder(
+        customerAuth.authHeaders,
+        bookingNumber,
+        payment.id,
+      );
+      const checkoutResponse = await openRazorpayCheckout(
+        providerOrder,
+        `Service booking ${providerOrder.bookingNumber}`,
+      );
+      if (!checkoutResponse) {
+        throw new Error("Payment was not completed. You can retry from this booking.");
+      }
+      return verifyCustomerServiceRazorpayPayment(customerAuth.authHeaders, bookingNumber, {
+        razorpayOrderId: checkoutResponse.razorpay_order_id,
+        razorpayPaymentId: checkoutResponse.razorpay_payment_id,
+        razorpaySignature: checkoutResponse.razorpay_signature,
+      });
+    },
+    onSuccess: (result) => {
+      setNoticeTone(result.status === "PAID" ? "success" : "warning");
+      setNotice(
+        result.status === "PAID"
+          ? "Service payment completed successfully."
+          : "Razorpay payment is still pending. Refresh this booking after provider confirmation.",
+      );
+      setActivePaymentId(null);
+      void queryClient.invalidateQueries({ queryKey: ["customer-service-booking", customerAuth.authKey, bookingNumber] });
+      void queryClient.invalidateQueries({ queryKey: ["customer-service-bookings", customerAuth.authKey] });
+    },
+    onError: (error) => {
+      setNoticeTone("danger");
+      setNotice(error instanceof Error ? error.message : "Service payment could not be completed.");
+      setActivePaymentId(null);
+      void queryClient.invalidateQueries({ queryKey: ["customer-service-booking", customerAuth.authKey, bookingNumber] });
     },
   });
 
@@ -218,17 +302,22 @@ export function ServiceBookingDetailClient({ bookingNumber }: { bookingNumber: s
                 <SectionHeading title="Quote and payment" description="Provider quote, payable amount, and recorded service payments." />
                 <div className="mt-5 grid gap-3">
                   {booking.quotes?.length ? booking.quotes.map((quote) => <QuoteRow key={quote.id} quote={quote} />) : <Info label="Quote" value="No quote sent yet" />}
+                  <PaymentSummary booking={booking} />
                   {booking.payments?.length ? booking.payments.map((payment) => (
-                    <div key={payment.id} className="flex flex-col gap-2 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-4 sm:flex-row sm:items-center sm:justify-between">
-                      <div>
-                        <p className="text-sm font-black text-[#1F2933]">{payment.purpose.replace(/_/g, " ")}</p>
-                        <p className="mt-1 text-xs font-semibold text-[#667085]">{payment.referenceNumber ?? formatDateTime(payment.createdAt)}</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <StatusPill status={payment.status} />
-                        <span className="font-black text-[#163B5C]">{formatMoney(payment.amountPaise, payment.currency)}</span>
-                      </div>
-                    </div>
+                    <PaymentRow
+                      key={payment.id}
+                      payment={payment}
+                      bookingNumber={booking.bookingNumber}
+                      pending={paymentMutation.isPending && activePaymentId === payment.id}
+                      disabled={paymentMutation.isPending || actionMutation.isPending}
+                      onPay={() => paymentMutation.mutate(payment)}
+                      onConfirmCash={(form) => {
+                        actionMutation.mutate(
+                          form ? { action: "confirmCash", payment, form } : { action: "confirmCash", payment },
+                        );
+                      }}
+                      onDisputeCash={(form) => actionMutation.mutate({ action: "disputeCash", payment, form })}
+                    />
                   )) : <Info label="Payments" value="No payment records yet" />}
                 </div>
               </PagePanel>
@@ -339,6 +428,7 @@ function CustomerServiceActions({
               </select>
               <textarea name="description" rows={3} placeholder="Describe the issue" className="rounded-md border border-[#D8E2EA] px-3 py-2 text-sm font-semibold" />
               <input name="evidence" placeholder="Evidence URLs or references, comma-separated" className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold" />
+              <input name="evidenceFiles" type="file" multiple accept="application/pdf,image/jpeg,image/png,image/webp" className="rounded-md border border-[#D8E2EA] bg-white px-3 py-2 text-sm font-semibold" />
               <Button type="submit" variant="outline" disabled={pending}>
                 <MessageSquareWarning className="h-4 w-4" aria-hidden="true" />
                 Raise dispute
@@ -389,9 +479,111 @@ function QuoteRow({ quote }: { quote: ServiceQuote }) {
   );
 }
 
+function PaymentSummary({ booking }: { booking: ServiceBooking }) {
+  const duePaise = Math.max(0, booking.totalPayablePaise - booking.paidAmountPaise);
+  const pendingOnlineCount = booking.payments?.filter((payment) => payment.provider === "RAZORPAY" && ["PENDING", "FAILED"].includes(payment.status)).length ?? 0;
+  const refundPaise = booking.refundRequests
+    ?.filter((refund) => !["FAILED", "CANCELLED"].includes(refund.status))
+    .reduce((sum, refund) => sum + refund.amountPaise, 0) ?? 0;
+
+  return (
+    <div className="grid gap-4 rounded-lg border border-[#E5E7EB] bg-white p-4 sm:grid-cols-4">
+      <SummaryMetric label="Paid" value={formatMoney(booking.paidAmountPaise, booking.currency)} />
+      <SummaryMetric label="Balance due" value={formatMoney(duePaise, booking.currency)} />
+      <SummaryMetric label="Refunds" value={formatMoney(refundPaise, booking.currency)} />
+      <SummaryMetric label="Online action" value={pendingOnlineCount ? `${pendingOnlineCount} Razorpay payment pending` : "No online payment pending"} />
+    </div>
+  );
+}
+
+function PaymentRow({
+  payment,
+  bookingNumber,
+  pending,
+  disabled,
+  onPay,
+  onConfirmCash,
+  onDisputeCash,
+}: {
+  payment: ServicePayment;
+  bookingNumber: string;
+  pending: boolean;
+  disabled: boolean;
+  onPay: () => void;
+  onConfirmCash: (form?: FormData) => void;
+  onDisputeCash: (form: FormData) => void;
+}) {
+  const payableOnline = payment.provider === "RAZORPAY" && (payment.status === "PENDING" || payment.status === "FAILED");
+  const providerCash = payment.collectionType === "PROVIDER_CASH";
+  const cashAwaitingCustomer = providerCash && ["RECORDED", "REOPENED"].includes(payment.cashCollectionStatus ?? "");
+  const providerReference = payment.providerPaymentId ?? payment.providerOrderId ?? payment.referenceNumber;
+  const actionLabel = payment.status === "FAILED" ? "Retry payment" : "Pay now";
+
+  return (
+    <div className="grid gap-3 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-sm font-black text-[#1F2933]">{payment.purpose.replace(/_/g, " ")}</p>
+          <StatusBadge tone={payment.provider === "RAZORPAY" ? "info" : "neutral"}>{payment.provider.replace(/_/g, " ")}</StatusBadge>
+        </div>
+        <p className="mt-1 text-xs font-semibold text-[#667085]">
+          {providerReference ?? `Created ${formatDateTime(payment.createdAt)}`}
+        </p>
+        {payableOnline ? (
+          <p className="mt-2 text-xs font-bold text-[#8A3A20]">
+            Complete this online payment to keep service booking {bookingNumber} moving.
+          </p>
+        ) : providerCash ? (
+          <p className="mt-2 text-xs font-bold text-[#667085]">
+            Provider recorded cash collection. Confirm only if the amount was actually paid.
+          </p>
+        ) : payment.provider === "MANUAL" && payment.status === "PENDING" ? (
+          <p className="mt-2 text-xs font-bold text-[#667085]">
+            Pay-at-visit or offline payment will be updated by the provider or admin after collection.
+          </p>
+        ) : null}
+      </div>
+      <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+        <StatusPill status={payment.status} />
+        <span className="font-black text-[#163B5C]">{formatMoney(payment.amountPaise, payment.currency)}</span>
+        {payableOnline ? (
+          <Button type="button" size="sm" disabled={disabled} onClick={onPay}>
+            {pending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <CreditCard className="h-4 w-4" aria-hidden="true" />}
+            {pending ? "Opening" : actionLabel}
+          </Button>
+        ) : null}
+      </div>
+      {cashAwaitingCustomer ? (
+        <div className="grid gap-2 rounded-lg border border-[#F0E4DE] bg-white p-3 sm:col-span-2">
+          <Button type="button" size="sm" disabled={disabled} onClick={() => onConfirmCash()}>
+            <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+            Confirm cash paid
+          </Button>
+          <form onSubmit={(event) => { event.preventDefault(); onDisputeCash(new FormData(event.currentTarget)); }} className="grid gap-2 sm:grid-cols-[1fr_auto]">
+            <input name="reason" required minLength={5} placeholder="Dispute reason" className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold" />
+            <Button type="submit" variant="outline" size="sm" disabled={disabled}>
+              <MessageSquareWarning className="h-4 w-4" aria-hidden="true" />
+              Dispute
+            </Button>
+          </form>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function Info({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-4">
+      <p className="text-xs font-bold uppercase tracking-wide text-[#667085]">{label}</p>
+      <p className="mt-2 text-sm font-black text-[#1F2933]">{value}</p>
+    </div>
+  );
+}
+
+function SummaryMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
       <p className="text-xs font-bold uppercase tracking-wide text-[#667085]">{label}</p>
       <p className="mt-2 text-sm font-black text-[#1F2933]">{value}</p>
     </div>
@@ -410,6 +602,10 @@ function actionSuccessMessage(action: string) {
       return "Dispute raised.";
     case "review":
       return "Review submitted.";
+    case "confirmCash":
+      return "Cash collection confirmed.";
+    case "disputeCash":
+      return "Cash collection disputed.";
     default:
       return "Service booking updated.";
   }

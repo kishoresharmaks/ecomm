@@ -235,7 +235,9 @@ export function OrderStatusTimeline({
                 ? formatDateTime(row.date)
                 : row.state === "upcoming"
                   ? "Upcoming"
-                  : "In progress"}
+                  : row.state === "cancelled"
+                    ? "Cancelled"
+                    : "In progress"}
             </div>
           </div>
         );

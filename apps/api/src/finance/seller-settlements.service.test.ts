@@ -35,6 +35,14 @@ describe("SellerSettlementsService concurrency guards", () => {
         findMany: vi.fn().mockResolvedValue([]),
         updateMany: vi.fn()
       },
+      serviceBookingSettlement: {
+        findMany: vi.fn().mockResolvedValue([]),
+        updateMany: vi.fn()
+      },
+      serviceSellerReceivable: {
+        findMany: vi.fn().mockResolvedValue([]),
+        updateMany: vi.fn()
+      },
       sellerSettlementRun: {
         create: vi.fn().mockResolvedValue({ id: "run-1", runNumber: "SET-TEST" }),
         update: vi.fn()

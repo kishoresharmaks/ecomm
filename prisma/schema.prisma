@@ -373,6 +373,9 @@ enum RefundReason {
   ITEM_CANCELLED
   RETURN_REFUND
   RETURN_PARTIAL_REFUND
+  SERVICE_BOOKING_CANCELLED
+  SERVICE_DISPUTE_REFUND
+  SERVICE_DISPUTE_PARTIAL_REFUND
   SELLER_NON_FULFILMENT
   DAMAGED_LOST_SHIPMENT
   GOODWILL_ADJUSTMENT
@@ -608,6 +611,22 @@ enum B2BPaymentMethod {
   RAZORPAY
 }
 
+enum B2BTransportMode {
+  STORE_PICKUP
+  SELLER_ARRANGED_TRANSPORT
+}
+
+enum B2BTransportStatus {
+  NOT_REQUIRED
+  REQUESTED
+  QUOTED
+  READY_FOR_PICKUP
+  DISPATCHED
+  IN_TRANSIT
+  DELIVERED
+  CANCELLED
+}
+
 enum B2BAuditActorType {
   ADMIN
   FINANCE
@@ -625,6 +644,7 @@ enum B2BAdminAction {
   REJECT_PAYMENT_PROOF
   ISSUE_REFUND
   PAYMENT_OVERDUE
+  UPDATE_TRANSPORT
 }
 
 enum ContentStatus {
@@ -707,6 +727,7 @@ enum PushNotificationType {
   ORDER_PLACED
   ORDER_DELIVERED
   B2B_ENQUIRY_MESSAGE
+  SERVICE_BOOKING
   CAMPAIGN
 }
 
@@ -798,6 +819,14 @@ enum SellerLedgerEntryType {
   PLATFORM_FEE
   COUPON_DISCOUNT
   REFUND_ADJUSTMENT
+  SERVICE_RECEIVABLE_OPENED
+  SERVICE_RECEIVABLE_SETTLED
+  SERVICE_RECEIVABLE_WAIVED
+  SERVICE_RECEIVABLE_REVERSED
+  SERVICE_RECEIVABLE_OFFSET
+  SERVICE_REFUND_HOLD
+  SERVICE_REFUND_REVERSAL
+  SERVICE_CANCELLATION_FEE
   MANUAL_ADJUSTMENT
   PAYOUT_PAID
 }
@@ -873,6 +902,77 @@ enum ServicePaymentPurpose {
   INSPECTION_FEE
   FINAL_QUOTE
   PAY_AT_VISIT
+}
+
+enum ServicePaymentCollectionType {
+  PLATFORM_ONLINE
+  PLATFORM_OFFLINE
+  PROVIDER_CASH
+}
+
+enum ServicePaymentSettlementTreatment {
+  PAYOUT_ELIGIBLE
+  PLATFORM_RECEIVABLE
+  TRACK_ONLY
+}
+
+enum ServiceCashCollectionStatus {
+  NOT_APPLICABLE
+  RECORDED
+  CUSTOMER_CONFIRMED
+  CUSTOMER_DISPUTED
+  ADMIN_VERIFIED
+  ADMIN_PARTIALLY_VERIFIED
+  REJECTED
+  REOPENED
+}
+
+enum ServiceCashDisputeResolution {
+  CUSTOMER_CONFIRMED
+  ADMIN_FORCE_CONFIRMED
+  PARTIALLY_ACCEPTED
+  REJECTED
+  REOPENED_FOR_EVIDENCE
+}
+
+enum ServiceSellerReceivableStatus {
+  PROVISIONAL
+  OPEN
+  PARTIALLY_SETTLED
+  SETTLED
+  WAIVER_REQUESTED
+  WAIVED
+  DISPUTED
+  REVERSED
+  OFFSET_SCHEDULED
+  OFFSET_APPLIED
+}
+
+enum ServiceSellerReceivableSource {
+  PROVIDER_CASH_COLLECTION
+  ADMIN_ADJUSTMENT
+  REVERSAL
+  PAYOUT_OFFSET
+}
+
+enum ServiceReceivableOffsetPolicy {
+  MANUAL_ONLY
+  AUTO_OFFSET_NEXT_PAYOUT
+  HOLD_PAYOUT_UNTIL_SETTLED
+}
+
+enum ServiceReceivableTaxAccrualStatus {
+  PROVISIONAL
+  ACCRUED
+  REVERSED
+  NOT_APPLICABLE
+}
+
+enum ServiceReceivableWaiverApprovalStatus {
+  NOT_REQUESTED
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 enum ServiceDisputeResolution {
@@ -976,9 +1076,20 @@ model User {
   businessBuyer                            BusinessBuyer?
   cancelledServiceBookings                 ServiceBooking[]                   @relation("ServiceBookingCancelledBy")
   confirmedServiceBookings                 ServiceBooking[]                   @relation("ServiceBookingCompletionConfirmedBy")
+  serviceCashCollections                   ServicePayment[]                   @relation("ServicePaymentCashCollectedBy")
   serviceQuotesSent                        ServiceQuote[]                     @relation("ServiceQuoteSentBy")
+  serviceQuotesWithdrawn                   ServiceQuote[]                     @relation("ServiceQuoteWithdrawnBy")
   serviceDisputesRaised                    ServiceDispute[]                   @relation("ServiceDisputeRaisedBy")
   serviceDisputesResolved                  ServiceDispute[]                   @relation("ServiceDisputeResolvedBy")
+  createdServiceRefundRequests             ServiceRefundRequest[]             @relation("ServiceRefundRequestCreatedBy")
+  reviewedServiceRefundRequests            ServiceRefundRequest[]             @relation("ServiceRefundRequestReviewedBy")
+  createdServiceRefundTransactions         ServiceRefundTransaction[]         @relation("ServiceRefundTransactionCreatedBy")
+  serviceReceivablesVerified               ServiceSellerReceivable[]          @relation("ServiceReceivableVerifiedBy")
+  serviceReceivablesDisputed               ServiceSellerReceivable[]          @relation("ServiceReceivableDisputedBy")
+  serviceReceivablesResolved               ServiceSellerReceivable[]          @relation("ServiceReceivableResolvedBy")
+  serviceReceivableWaiverRequests          ServiceSellerReceivable[]          @relation("ServiceReceivableWaiverRequestedBy")
+  serviceReceivableWaiverApprovals         ServiceSellerReceivable[]          @relation("ServiceReceivableWaiverApprovedBy")
+  serviceReceivableEvents                  ServiceSellerReceivableEvent[]     @relation("ServiceReceivableEventActor")
   serviceReviewReplies                     ServiceReviewReply[]               @relation("ServiceReviewReplyProvider")
   userRoles                                UserRole[]
   inventoryMovements                       InventoryMovement[]
@@ -1167,6 +1278,7 @@ model Customer {
   notifications             CustomerNotification[]
   returnRequests            ReturnRequest[]
   refundRequests            RefundRequest[]
+  serviceRefundRequests     ServiceRefundRequest[]
 
   @@index([status, createdAt])
   @@index([dealAlertsEnabled])
@@ -1283,12 +1395,17 @@ model Seller {
   profile                      SellerProfile?
   addresses                    SellerAddress[]
   serviceAreas                 SellerServiceArea[]
+  serviceTechnicians           SellerServiceTechnician[]
+  serviceAvailabilityRules     SellerServiceAvailabilityRule[]
+  serviceBlockedWindows        SellerServiceBlockedWindow[]
   documents                    SellerDocument[]
   products                     Product[]
   serviceListings              ServiceListing[]
   serviceBookings              ServiceBooking[]
   servicePayments              ServicePayment[]
   serviceSettlements           ServiceBookingSettlement[]
+  serviceReceivables           ServiceSellerReceivable[]
+  serviceRefundRequests        ServiceRefundRequest[]
   serviceReviews               ServiceReview[]
   cartItems                    CartItem[]
   orderItems                   OrderItem[]
@@ -1424,6 +1541,55 @@ model SellerServiceArea {
   @@index([localAreaCode])
   @@index([pincode])
   @@map("seller_service_areas")
+}
+
+model SellerServiceTechnician {
+  id        String           @id @default(uuid()) @db.Uuid
+  sellerId  String           @map("seller_id") @db.Uuid
+  name      String
+  phone     String?
+  email     String?
+  skills    String[]         @default([])
+  isActive  Boolean          @default(true) @map("is_active")
+  createdAt DateTime         @default(now()) @map("created_at")
+  updatedAt DateTime         @updatedAt @map("updated_at")
+  seller    Seller           @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  bookings  ServiceBooking[]
+
+  @@index([sellerId, isActive])
+  @@map("seller_service_technicians")
+}
+
+model SellerServiceAvailabilityRule {
+  id          String   @id @default(uuid()) @db.Uuid
+  sellerId    String   @map("seller_id") @db.Uuid
+  dayOfWeek   Int      @map("day_of_week")
+  startMinute Int      @map("start_minute")
+  endMinute   Int      @map("end_minute")
+  capacity    Int      @default(1)
+  note        String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  seller      Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([sellerId, dayOfWeek, isActive])
+  @@map("seller_service_availability_rules")
+}
+
+model SellerServiceBlockedWindow {
+  id        String   @id @default(uuid()) @db.Uuid
+  sellerId  String   @map("seller_id") @db.Uuid
+  startsAt  DateTime @map("starts_at")
+  endsAt    DateTime @map("ends_at")
+  reason    String?
+  isFullDay Boolean  @default(false) @map("is_full_day")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  seller    Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([sellerId, startsAt, endsAt])
+  @@map("seller_service_blocked_windows")
 }
 
 model SellerCourierProviderSetting {
@@ -3645,6 +3811,7 @@ model SellerPayout {
   orderSplits           OrderSellerSplit[]
   b2bOrders             B2BOrder[]
   serviceSettlements    ServiceBookingSettlement[]
+  serviceReceivableOffsets ServiceSellerReceivable[] @relation("ServiceReceivablePayoutOffset")
   ledgerEntries         SellerLedgerEntry[]
   events                SellerPayoutEvent[]
   statements            SellerStatement[]
@@ -3873,6 +4040,7 @@ model ServiceBooking {
   cancellationPolicy         ServiceCancellationPolicy    @map("cancellation_policy")
   scheduledStartAt           DateTime?                    @map("scheduled_start_at")
   scheduledEndAt             DateTime?                    @map("scheduled_end_at")
+  assignedTechnicianId       String?                      @map("assigned_technician_id") @db.Uuid
   addressSnapshot            Json?                        @map("address_snapshot")
   customerIssue              String                       @map("customer_issue")
   customerNote               String?                      @map("customer_note")
@@ -3883,9 +4051,21 @@ model ServiceBooking {
   cancelledAt                DateTime?                    @map("cancelled_at")
   completionNote             String?                      @map("completion_note")
   completionImages           String[]                     @default([]) @map("completion_images")
+  completionProofKeys        String[]                     @default([]) @map("completion_proof_keys")
   completionSubmittedAt      DateTime?                    @map("completion_submitted_at")
   completionConfirmedById    String?                      @map("completion_confirmed_by") @db.Uuid
   completionConfirmedAt      DateTime?                    @map("completion_confirmed_at")
+  technicianEnRouteAt        DateTime?                    @map("technician_en_route_at")
+  technicianArrivedAt        DateTime?                    @map("technician_arrived_at")
+  technicianCheckInAt        DateTime?                    @map("technician_check_in_at")
+  technicianCheckOutAt       DateTime?                    @map("technician_check_out_at")
+  technicianFieldStatusNote  String?                      @map("technician_field_status_note")
+  technicianFieldProofKeys   String[]                     @default([]) @map("technician_field_proof_keys")
+  technicianLastLatitude     Decimal?                     @map("technician_last_latitude") @db.Decimal(10, 7)
+  technicianLastLongitude    Decimal?                     @map("technician_last_longitude") @db.Decimal(10, 7)
+  cancellationFeePaise       Int                          @default(0) @map("cancellation_fee_paise")
+  cancellationRefundPaise    Int                          @default(0) @map("cancellation_refund_paise")
+  cancellationPolicySnapshot Json?                        @map("cancellation_policy_snapshot")
   subtotalPaise              Int                          @default(0) @map("subtotal_paise")
   inspectionFeePaise         Int                          @default(0) @map("inspection_fee_paise")
   advanceAmountPaise         Int                          @default(0) @map("advance_amount_paise")
@@ -3898,12 +4078,15 @@ model ServiceBooking {
   seller                     Seller                       @relation(fields: [sellerId], references: [id])
   listing                    ServiceListing               @relation(fields: [serviceListingId], references: [id])
   package                    ServicePackage?              @relation(fields: [servicePackageId], references: [id])
+  assignedTechnician         SellerServiceTechnician?      @relation(fields: [assignedTechnicianId], references: [id], onDelete: SetNull)
   cancelledBy                User?                        @relation("ServiceBookingCancelledBy", fields: [cancelledById], references: [id])
   completionConfirmedBy      User?                        @relation("ServiceBookingCompletionConfirmedBy", fields: [completionConfirmedById], references: [id])
   quotes                     ServiceQuote[]
   payments                   ServicePayment[]
   disputes                   ServiceDispute[]
   settlement                 ServiceBookingSettlement?
+  sellerReceivables          ServiceSellerReceivable[]
+  refundRequests             ServiceRefundRequest[]
   reviews                    ServiceReview[]
   ledgerEntries              SellerLedgerEntry[]
 
@@ -3913,6 +4096,7 @@ model ServiceBooking {
   @@index([servicePackageId])
   @@index([status])
   @@index([scheduledStartAt])
+  @@index([assignedTechnicianId, scheduledStartAt])
   @@index([paymentMode, status])
   @@unique([customerId, idempotencyKey], map: "service_bookings_customer_id_idempotency_key_key")
   @@map("service_bookings")
@@ -3932,11 +4116,15 @@ model ServiceQuote {
   sentAt         DateTime           @default(now()) @map("sent_at")
   acceptedAt     DateTime?          @map("accepted_at")
   rejectedAt     DateTime?          @map("rejected_at")
+  withdrawnAt    DateTime?          @map("withdrawn_at")
+  withdrawnById  String?            @map("withdrawn_by") @db.Uuid
+  withdrawalNote String?            @map("withdrawal_note")
   expiredAt      DateTime?          @map("expired_at")
   createdAt      DateTime           @default(now()) @map("created_at")
   updatedAt      DateTime           @updatedAt @map("updated_at")
   booking        ServiceBooking     @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   sentBy         User?              @relation("ServiceQuoteSentBy", fields: [sentById], references: [id])
+  withdrawnBy    User?              @relation("ServiceQuoteWithdrawnBy", fields: [withdrawnById], references: [id])
   lineItems      ServiceQuoteLineItem[]
 
   @@index([bookingId])
@@ -3960,31 +4148,56 @@ model ServiceQuoteLineItem {
 }
 
 model ServicePayment {
-  id                  String                @id @default(uuid()) @db.Uuid
-  bookingId           String                @map("booking_id") @db.Uuid
-  sellerId            String                @map("seller_id") @db.Uuid
-  provider            PaymentProvider
-  purpose             ServicePaymentPurpose
-  amountPaise         Int                   @map("amount_paise")
-  currency            String                @default("INR")
-  status              PaymentStatus         @default(PENDING)
-  providerOrderId     String?               @map("provider_order_id")
-  providerPaymentId   String?               @map("provider_payment_id")
-  referenceNumber     String?               @map("reference_number")
-  rawResponse         Json?                 @map("raw_response")
-  paidAt              DateTime?             @map("paid_at")
-  createdAt           DateTime              @default(now()) @map("created_at")
-  updatedAt           DateTime              @updatedAt @map("updated_at")
-  booking             ServiceBooking        @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  seller              Seller                @relation(fields: [sellerId], references: [id])
-  events              ServicePaymentEvent[]
+  id                              String                            @id @default(uuid()) @db.Uuid
+  bookingId                       String                            @map("booking_id") @db.Uuid
+  sellerId                        String                            @map("seller_id") @db.Uuid
+  provider                        PaymentProvider
+  purpose                         ServicePaymentPurpose
+  collectionType                  ServicePaymentCollectionType      @default(PLATFORM_ONLINE) @map("collection_type")
+  settlementTreatment             ServicePaymentSettlementTreatment @default(PAYOUT_ELIGIBLE) @map("settlement_treatment")
+  cashCollectionStatus            ServiceCashCollectionStatus       @default(NOT_APPLICABLE) @map("cash_collection_status")
+  amountPaise                     Int                               @map("amount_paise")
+  currency                        String                            @default("INR")
+  status                          PaymentStatus                     @default(PENDING)
+  idempotencyKey                  String?                           @map("idempotency_key")
+  cashCollectionEventId           String?                           @map("cash_collection_event_id")
+  attemptNumber                   Int                               @default(1) @map("attempt_number")
+  providerOrderId                 String?                           @map("provider_order_id")
+  providerOrderCreationInProgress Boolean                           @default(false) @map("provider_order_creation_in_progress")
+  providerPaymentId               String?                           @map("provider_payment_id")
+  referenceNumber                 String?                           @map("reference_number")
+  cashCollectedById               String?                           @map("cash_collected_by") @db.Uuid
+  cashCollectedAt                 DateTime?                         @map("cash_collected_at")
+  customerCashConfirmedAt         DateTime?                         @map("customer_cash_confirmed_at")
+  adminCashVerifiedAt             DateTime?                         @map("admin_cash_verified_at")
+  cashDisputedAt                  DateTime?                         @map("cash_disputed_at")
+  cashDisputeReason               String?                           @map("cash_dispute_reason")
+  cashDisputeResolution           ServiceCashDisputeResolution?     @map("cash_dispute_resolution")
+  cashResolutionNote              String?                           @map("cash_resolution_note")
+  rawResponse                     Json?                             @map("raw_response")
+  paidAt                          DateTime?                         @map("paid_at")
+  createdAt                       DateTime                          @default(now()) @map("created_at")
+  updatedAt                       DateTime                          @updatedAt @map("updated_at")
+  booking                         ServiceBooking                    @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  seller                          Seller                            @relation(fields: [sellerId], references: [id])
+  cashCollectedBy                 User?                             @relation("ServicePaymentCashCollectedBy", fields: [cashCollectedById], references: [id])
+  events                          ServicePaymentEvent[]
+  sellerReceivables               ServiceSellerReceivable[]
+  refundRequests                  ServiceRefundRequest[]
+  refundTransactions              ServiceRefundTransaction[]
 
   @@unique([provider, providerOrderId])
   @@unique([provider, providerPaymentId])
+  @@unique([bookingId, sellerId, idempotencyKey], map: "service_payments_booking_seller_idempotency_key_key")
+  @@unique([bookingId, sellerId, cashCollectionEventId], map: "service_payments_booking_seller_cash_event_key")
   @@index([bookingId])
   @@index([sellerId, createdAt])
   @@index([status])
   @@index([provider, status, createdAt])
+  @@index([collectionType, status, createdAt])
+  @@index([settlementTreatment, status, createdAt])
+  @@index([cashCollectionStatus, createdAt])
+  @@index([cashCollectedById, createdAt])
   @@map("service_payments")
 }
 
@@ -4002,14 +4215,114 @@ model ServicePaymentEvent {
   @@map("service_payment_events")
 }
 
+model ServiceSellerReceivable {
+  id                       String                        @id @default(uuid()) @db.Uuid
+  receivableNumber         String                        @unique @map("receivable_number")
+  sellerId                 String                        @map("seller_id") @db.Uuid
+  bookingId                String                        @map("booking_id") @db.Uuid
+  servicePaymentId         String?                       @map("service_payment_id") @db.Uuid
+  payoutOffsetId           String?                       @map("payout_offset_id") @db.Uuid
+  source                   ServiceSellerReceivableSource
+  status                   ServiceSellerReceivableStatus @default(PROVISIONAL)
+  offsetPolicy             ServiceReceivableOffsetPolicy @default(MANUAL_ONLY) @map("offset_policy")
+  taxAccrualStatus         ServiceReceivableTaxAccrualStatus       @default(PROVISIONAL) @map("tax_accrual_status")
+  waiverApprovalStatus     ServiceReceivableWaiverApprovalStatus   @default(NOT_REQUESTED) @map("waiver_approval_status")
+  grossCashCollectedPaise  Int                           @default(0) @map("gross_cash_collected_paise")
+  commissionPaise          Int                           @default(0) @map("commission_paise")
+  gstOnCommissionPaise     Int                           @default(0) @map("gst_on_commission_paise")
+  tdsPaise                 Int                           @default(0) @map("tds_paise")
+  tcsPaise                 Int                           @default(0) @map("tcs_paise")
+  platformFeePaise         Int                           @default(0) @map("platform_fee_paise")
+  reversalPaise            Int                           @default(0) @map("reversal_paise")
+  waivedPaise              Int                           @default(0) @map("waived_paise")
+  settledPaise             Int                           @default(0) @map("settled_paise")
+  offsetPaise              Int                           @default(0) @map("offset_paise")
+  amountDueToPlatformPaise Int                           @default(0) @map("amount_due_to_platform_paise")
+  currency                 String                        @default("INR")
+  idempotencyKey           String?                       @map("idempotency_key")
+  cashCollectionEventId    String?                       @map("cash_collection_event_id")
+  provisionalUntil         DateTime?                     @map("provisional_until")
+  verifiedById             String?                       @map("verified_by") @db.Uuid
+  verifiedAt               DateTime?                     @map("verified_at")
+  taxAccruedAt             DateTime?                     @map("tax_accrued_at")
+  taxReversedAt            DateTime?                     @map("tax_reversed_at")
+  disputedById             String?                       @map("disputed_by") @db.Uuid
+  disputedAt               DateTime?                     @map("disputed_at")
+  disputeReason            String?                       @map("dispute_reason")
+  resolution               ServiceCashDisputeResolution? @map("resolution")
+  resolvedById             String?                       @map("resolved_by") @db.Uuid
+  resolvedAt               DateTime?                     @map("resolved_at")
+  resolutionNote           String?                       @map("resolution_note")
+  waiverRequestedById      String?                       @map("waiver_requested_by") @db.Uuid
+  waiverRequestedAt        DateTime?                     @map("waiver_requested_at")
+  waiverRequestedPaise     Int                           @default(0) @map("waiver_requested_paise")
+  waiverApprovedById       String?                       @map("waiver_approved_by") @db.Uuid
+  waiverApprovedAt         DateTime?                     @map("waiver_approved_at")
+  waiverLimitPaise         Int?                          @map("waiver_limit_paise")
+  waiverReason             String?                       @map("waiver_reason")
+  waivedAt                 DateTime?                     @map("waived_at")
+  offsetScheduledAt        DateTime?                     @map("offset_scheduled_at")
+  offsetAppliedAt          DateTime?                     @map("offset_applied_at")
+  note                     String?
+  financeSnapshot          Json?                         @map("finance_snapshot")
+  createdAt                DateTime                      @default(now()) @map("created_at")
+  updatedAt                DateTime                      @updatedAt @map("updated_at")
+  seller                   Seller                        @relation(fields: [sellerId], references: [id])
+  booking                  ServiceBooking                @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  servicePayment           ServicePayment?               @relation(fields: [servicePaymentId], references: [id], onDelete: SetNull)
+  payoutOffset             SellerPayout?                 @relation("ServiceReceivablePayoutOffset", fields: [payoutOffsetId], references: [id])
+  verifiedBy               User?                         @relation("ServiceReceivableVerifiedBy", fields: [verifiedById], references: [id])
+  disputedBy               User?                         @relation("ServiceReceivableDisputedBy", fields: [disputedById], references: [id])
+  resolvedBy               User?                         @relation("ServiceReceivableResolvedBy", fields: [resolvedById], references: [id])
+  waiverRequestedBy        User?                         @relation("ServiceReceivableWaiverRequestedBy", fields: [waiverRequestedById], references: [id])
+  waiverApprovedBy         User?                         @relation("ServiceReceivableWaiverApprovedBy", fields: [waiverApprovedById], references: [id])
+  events                   ServiceSellerReceivableEvent[]
+
+  @@unique([sellerId, bookingId, idempotencyKey], map: "service_receivables_seller_booking_idempotency_key_key")
+  @@index([sellerId, status, createdAt])
+  @@index([bookingId, status])
+  @@index([servicePaymentId])
+  @@index([status, createdAt])
+  @@index([payoutOffsetId, status])
+  @@index([cashCollectionEventId])
+  @@index([source, createdAt])
+  @@map("service_seller_receivables")
+}
+
+model ServiceSellerReceivableEvent {
+  id              String                        @id @default(uuid()) @db.Uuid
+  receivableId    String                        @map("receivable_id") @db.Uuid
+  eventType       String                        @map("event_type")
+  oldStatus       ServiceSellerReceivableStatus? @map("old_status")
+  newStatus       ServiceSellerReceivableStatus? @map("new_status")
+  resolution      ServiceCashDisputeResolution?
+  amountDeltaPaise Int?                          @map("amount_delta_paise")
+  oldAmountDuePaise Int?                         @map("old_amount_due_paise")
+  newAmountDuePaise Int?                         @map("new_amount_due_paise")
+  note            String?
+  actorUserId     String?                       @map("actor_user_id") @db.Uuid
+  metadata        Json?
+  createdAt       DateTime                      @default(now()) @map("created_at")
+  receivable      ServiceSellerReceivable       @relation(fields: [receivableId], references: [id], onDelete: Cascade)
+  actor           User?                         @relation("ServiceReceivableEventActor", fields: [actorUserId], references: [id])
+
+  @@index([receivableId])
+  @@index([actorUserId])
+  @@index([createdAt])
+  @@map("service_seller_receivable_events")
+}
+
 model ServiceDispute {
   id          String                    @id @default(uuid()) @db.Uuid
   bookingId   String                    @map("booking_id") @db.Uuid
   raisedById  String                    @map("raised_by") @db.Uuid
   reason      String
   evidence    String[]                  @default([])
+  evidenceKeys String[]                 @default([]) @map("evidence_keys")
   adminNote   String?                   @map("admin_note")
   resolution  ServiceDisputeResolution?
+  refundAmountPaise Int                 @default(0) @map("refund_amount_paise")
+  refundRequestId String?               @map("refund_request_id") @db.Uuid
   resolvedById String?                  @map("resolved_by") @db.Uuid
   resolvedAt  DateTime?                 @map("resolved_at")
   createdAt   DateTime                  @default(now()) @map("created_at")
@@ -4017,11 +4330,82 @@ model ServiceDispute {
   booking     ServiceBooking            @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   raisedBy    User                      @relation("ServiceDisputeRaisedBy", fields: [raisedById], references: [id])
   resolvedBy  User?                     @relation("ServiceDisputeResolvedBy", fields: [resolvedById], references: [id])
+  refundRequest ServiceRefundRequest?   @relation(fields: [refundRequestId], references: [id], onDelete: SetNull)
 
   @@index([bookingId])
   @@index([raisedById])
+  @@index([refundRequestId])
   @@index([resolvedAt])
   @@map("service_disputes")
+}
+
+model ServiceRefundRequest {
+  id                 String              @id @default(uuid()) @db.Uuid
+  refundNumber       String              @unique @map("refund_number")
+  bookingId          String              @map("booking_id") @db.Uuid
+  customerId         String              @map("customer_id") @db.Uuid
+  sellerId           String              @map("seller_id") @db.Uuid
+  servicePaymentId   String?             @map("service_payment_id") @db.Uuid
+  status             RefundRequestStatus @default(PENDING_REVIEW)
+  reason             RefundReason
+  method             RefundMethod?
+  amountPaise        Int                 @default(0) @map("amount_paise")
+  currency           String              @default("INR")
+  note               String?
+  providerRefundId   String?             @map("provider_refund_id")
+  approvedAt         DateTime?           @map("approved_at")
+  reviewedAt         DateTime?           @map("reviewed_at")
+  reviewedById       String?             @map("reviewed_by") @db.Uuid
+  createdById        String?             @map("created_by") @db.Uuid
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @updatedAt @map("updated_at")
+  booking            ServiceBooking      @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  customer           Customer            @relation(fields: [customerId], references: [id])
+  seller             Seller              @relation(fields: [sellerId], references: [id])
+  servicePayment     ServicePayment?     @relation(fields: [servicePaymentId], references: [id], onDelete: SetNull)
+  reviewedBy         User?               @relation("ServiceRefundRequestReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  createdBy          User?               @relation("ServiceRefundRequestCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  disputes           ServiceDispute[]
+  transactions       ServiceRefundTransaction[]
+
+  @@index([bookingId])
+  @@index([customerId, status, createdAt])
+  @@index([sellerId, status, createdAt])
+  @@index([servicePaymentId])
+  @@index([status, createdAt])
+  @@index([reviewedById])
+  @@index([createdById])
+  @@map("service_refund_requests")
+}
+
+model ServiceRefundTransaction {
+  id                     String                  @id @default(uuid()) @db.Uuid
+  serviceRefundRequestId String                  @map("service_refund_request_id") @db.Uuid
+  servicePaymentId       String?                 @map("service_payment_id") @db.Uuid
+  provider               PaymentProvider?
+  method                 RefundMethod
+  status                 RefundTransactionStatus @default(INITIATED)
+  amountPaise            Int                     @map("amount_paise")
+  currency               String                  @default("INR")
+  idempotencyKey         String?                 @unique @map("idempotency_key")
+  manualReference        String?                 @map("manual_reference")
+  paidAt                 DateTime?               @map("paid_at")
+  providerRefundId       String?                 @map("provider_refund_id")
+  providerResponse       Json?                   @map("provider_response")
+  failureReason          String?                 @map("failure_reason")
+  processedAt            DateTime?               @map("processed_at")
+  createdById            String?                 @map("created_by") @db.Uuid
+  createdAt              DateTime                @default(now()) @map("created_at")
+  refundRequest          ServiceRefundRequest    @relation(fields: [serviceRefundRequestId], references: [id], onDelete: Cascade)
+  servicePayment         ServicePayment?         @relation(fields: [servicePaymentId], references: [id], onDelete: SetNull)
+  createdBy              User?                   @relation("ServiceRefundTransactionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([serviceRefundRequestId])
+  @@index([servicePaymentId])
+  @@index([providerRefundId])
+  @@index([createdById])
+  @@index([status, createdAt])
+  @@map("service_refund_transactions")
 }
 
 model ServiceBookingSettlement {
@@ -4100,6 +4484,8 @@ model B2BEnquiry {
   sellerId          String?              @map("seller_id") @db.Uuid
   quantity          Int
   message           String
+  transportMode     B2BTransportMode   @default(SELLER_ARRANGED_TRANSPORT) @map("transport_mode")
+  transportNote     String?             @map("transport_note")
   status            B2BEnquiryStatus     @default(SUBMITTED)
   createdAt         DateTime             @default(now()) @map("created_at")
   updatedAt         DateTime             @updatedAt @map("updated_at")
@@ -4126,6 +4512,9 @@ model B2BEnquiryResponse {
   responderUserId   String     @map("responder_user_id") @db.Uuid
   responseMessage   String     @map("response_message")
   quotedPricePaise  Int?       @map("quoted_price_paise")
+  transportChargePaise Int?    @map("transport_charge_paise")
+  transportEta       String?    @map("transport_eta")
+  transportNote      String?    @map("transport_note")
   createdAt         DateTime   @default(now()) @map("created_at")
   enquiry           B2BEnquiry @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
   responder         User       @relation(fields: [responderUserId], references: [id])
@@ -4187,6 +4576,19 @@ model B2BOrder {
   paymentStatus            B2BPaymentStatus    @default(PENDING) @map("payment_status")
   paymentMethod            B2BPaymentMethod?   @map("payment_method")
   buyerPayableAmountPaise  Int                 @default(0) @map("buyer_payable_amount_paise")
+  transportMode            B2BTransportMode    @default(SELLER_ARRANGED_TRANSPORT) @map("transport_mode")
+  transportStatus          B2BTransportStatus  @default(REQUESTED) @map("transport_status")
+  transportChargePaise     Int                 @default(0) @map("transport_charge_paise")
+  transportChargeLockedAt  DateTime?           @map("transport_charge_locked_at")
+  transportQuotedAt        DateTime?           @map("transport_quoted_at")
+  transportPartnerName     String?             @map("transport_partner_name")
+  transportPartnerPhone    String?             @map("transport_partner_phone")
+  transportTrackingRef     String?             @map("transport_tracking_ref")
+  transportEta             String?             @map("transport_eta")
+  transportDispatchedAt    DateTime?           @map("transport_dispatched_at")
+  transportDeliveredAt     DateTime?           @map("transport_delivered_at")
+  transportPickupAddress   String?             @map("transport_pickup_address")
+  transportNote            String?             @map("transport_note")
   paidAmountPaise          Int                 @default(0) @map("paid_amount_paise")
   paidAt                   DateTime?           @map("paid_at")
   paymentDueAt             DateTime            @map("payment_due_at")

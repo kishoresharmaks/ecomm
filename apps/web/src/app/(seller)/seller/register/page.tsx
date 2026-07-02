@@ -13,12 +13,18 @@ export async function generateMetadata(): Promise<Metadata> {
   });
 }
 
-export default function SellerRegisterPage() {
+export default async function SellerRegisterPage({
+  searchParams
+}: {
+  searchParams: Promise<{ mode?: string }>;
+}) {
+  const params = await searchParams;
+
   return (
     <>
       <JsonLd data={buildWebPageJsonLd({ title: "Sell on 1HandIndia", description: "Register as a seller on the 1HandIndia marketplace.", path: "/seller/register" })} />
       <SellerWorkspaceShell title="Seller onboarding" description="Submit store and pickup details for review. After approval, product and order operations unlock.">
-        <SellerRegistrationForm />
+        <SellerRegistrationForm initialMode={params.mode ?? null} />
       </SellerWorkspaceShell>
     </>
   );

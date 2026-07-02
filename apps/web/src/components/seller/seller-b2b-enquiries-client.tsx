@@ -82,10 +82,27 @@ export function SellerB2BEnquiriesClient() {
   });
 
   const responseMutation = useMutation({
-    mutationFn: ({ enquiryId, responseMessage, quotedPricePaise }: { enquiryId: string; responseMessage: string; quotedPricePaise?: number }) =>
+    mutationFn: ({
+      enquiryId,
+      responseMessage,
+      quotedPricePaise,
+      transportChargePaise,
+      transportEta,
+      transportNote
+    }: {
+      enquiryId: string;
+      responseMessage: string;
+      quotedPricePaise?: number;
+      transportChargePaise?: number;
+      transportEta?: string;
+      transportNote?: string;
+    }) =>
       respondSellerB2BEnquiry(sellerAuth.authHeaders, enquiryId, {
         responseMessage,
-        ...(quotedPricePaise !== undefined ? { quotedPricePaise } : {})
+        ...(quotedPricePaise !== undefined ? { quotedPricePaise } : {}),
+        ...(transportChargePaise !== undefined ? { transportChargePaise } : {}),
+        ...(transportEta ? { transportEta } : {}),
+        ...(transportNote ? { transportNote } : {})
       }),
     onSuccess: () => {
       setNotice("B2B response added.");
@@ -104,11 +121,17 @@ export function SellerB2BEnquiriesClient() {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const quoted = optionalFormValue(form, "quotedPrice");
+    const transportCharge = optionalFormValue(form, "transportCharge");
+    const transportEta = optionalFormValue(form, "transportEta");
+    const transportNote = optionalFormValue(form, "transportNote");
     setNotice(null);
     responseMutation.mutate({
       enquiryId,
       responseMessage: formValue(form, "responseMessage"),
-      ...(quoted ? { quotedPricePaise: rupeesToPaise(quoted) } : {})
+      ...(quoted ? { quotedPricePaise: rupeesToPaise(quoted) } : {}),
+      ...(transportCharge ? { transportChargePaise: rupeesToPaise(transportCharge) } : {}),
+      ...(transportEta ? { transportEta } : {}),
+      ...(transportNote ? { transportNote } : {})
     });
     event.currentTarget.reset();
   }
@@ -215,6 +238,9 @@ export function SellerB2BEnquiriesClient() {
                   <form onSubmit={(event) => respond(event, enquiry.id)} className="grid gap-3 rounded-md border border-[#E5E7EB] bg-white p-4">
                     <SellerTextArea label="Seller response" name="responseMessage" required rows={4} placeholder="Share availability, lead time, and offer details." />
                     <SellerField label="Quoted unit price" name="quotedPrice" type="number" min={0} step="0.01" placeholder="450.00" />
+                    <SellerField label="B2B transport charge" name="transportCharge" type="number" min={0} step="0.01" placeholder="2500.00" />
+                    <SellerField label="Transport ETA" name="transportEta" placeholder="3-5 working days after payment" />
+                    <SellerTextArea label="Transport note" name="transportNote" rows={3} placeholder="Courier/goods transport plan, pickup point, or charge assumptions." />
                     <Button type="submit" disabled={responseMutation.isPending}>
                       <Send className="h-4 w-4" aria-hidden="true" />
                       {responseMutation.isPending ? "Sending..." : "Send response"}
@@ -255,10 +281,25 @@ export function SellerB2BEnquiryDetailClient({ enquiryId }: { enquiryId: string 
   });
 
   const responseMutation = useMutation({
-    mutationFn: ({ responseMessage, quotedPricePaise }: { responseMessage: string; quotedPricePaise?: number }) =>
+    mutationFn: ({
+      responseMessage,
+      quotedPricePaise,
+      transportChargePaise,
+      transportEta,
+      transportNote
+    }: {
+      responseMessage: string;
+      quotedPricePaise?: number;
+      transportChargePaise?: number;
+      transportEta?: string;
+      transportNote?: string;
+    }) =>
       respondSellerB2BEnquiry(sellerAuth.authHeaders, enquiryId, {
         responseMessage,
-        ...(quotedPricePaise !== undefined ? { quotedPricePaise } : {})
+        ...(quotedPricePaise !== undefined ? { quotedPricePaise } : {}),
+        ...(transportChargePaise !== undefined ? { transportChargePaise } : {}),
+        ...(transportEta ? { transportEta } : {}),
+        ...(transportNote ? { transportNote } : {})
       }),
     onSuccess: () => {
       setNotice("B2B response added.");
@@ -408,10 +449,16 @@ export function SellerB2BEnquiryDetailClient({ enquiryId }: { enquiryId: string 
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const quoted = optionalFormValue(form, "quotedPrice");
+    const transportCharge = optionalFormValue(form, "transportCharge");
+    const transportEta = optionalFormValue(form, "transportEta");
+    const transportNote = optionalFormValue(form, "transportNote");
     setNotice(null);
     responseMutation.mutate({
       responseMessage: formValue(form, "responseMessage"),
-      ...(quoted ? { quotedPricePaise: rupeesToPaise(quoted) } : {})
+      ...(quoted ? { quotedPricePaise: rupeesToPaise(quoted) } : {}),
+      ...(transportCharge ? { transportChargePaise: rupeesToPaise(transportCharge) } : {}),
+      ...(transportEta ? { transportEta } : {}),
+      ...(transportNote ? { transportNote } : {})
     });
     event.currentTarget.reset();
   }
@@ -539,9 +586,15 @@ export function SellerB2BEnquiryDetailClient({ enquiryId }: { enquiryId: string 
                             <p className="mt-1 text-xs font-semibold text-[#667085]">{formatDateTime(response.createdAt)}</p>
                           </div>
                         </div>
-                        {response.quotedPricePaise ? <StatusBadge tone="success">{formatMoney(response.quotedPricePaise)}</StatusBadge> : null}
+                        <div className="flex flex-wrap gap-2">
+                          {response.quotedPricePaise ? <StatusBadge tone="success">Unit {formatMoney(response.quotedPricePaise)}</StatusBadge> : null}
+                          <StatusBadge tone="info">Transport {formatMoney(response.transportChargePaise ?? 0)}</StatusBadge>
+                        </div>
                       </div>
                       <p className="mt-4 text-sm font-semibold leading-7 text-[#667085]">{response.responseMessage}</p>
+                      <p className="mt-2 text-xs font-semibold leading-5 text-[#667085]">
+                        ETA {response.transportEta ?? "Not provided"} / {response.transportNote ?? enquiry.transportNote ?? "No transport note"}
+                      </p>
                     </article>
                   );})
                 ) : (
@@ -652,6 +705,9 @@ export function SellerB2BEnquiryDetailClient({ enquiryId }: { enquiryId: string 
                   <SectionHeading title="Send response" description="Share availability, lead time, and quoted unit price." />
                   <SellerTextArea label="Seller response" name="responseMessage" required rows={5} placeholder="Share availability, lead time, and offer details." />
                   <SellerField label="Quoted unit price" name="quotedPrice" type="number" min={0} step="0.01" placeholder="450.00" />
+                  <SellerField label="B2B transport charge" name="transportCharge" type="number" min={0} step="0.01" placeholder="2500.00" />
+                  <SellerField label="Transport ETA" name="transportEta" placeholder="3-5 working days after payment" />
+                  <SellerTextArea label="Transport note" name="transportNote" rows={3} placeholder="Courier/goods transport plan, pickup point, or charge assumptions." />
                   <Button type="submit" disabled={responseMutation.isPending}>
                     <Send className="h-4 w-4" aria-hidden="true" />
                     {responseMutation.isPending ? "Sending..." : "Send response"}

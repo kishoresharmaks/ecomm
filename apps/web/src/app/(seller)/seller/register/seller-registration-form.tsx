@@ -14,6 +14,7 @@ import {
   LogIn,
   RefreshCw,
   ShieldCheck,
+  Sparkles,
   Store,
   Upload,
   Wrench,
@@ -107,11 +108,14 @@ type SubmitState =
   | { status: "success"; message: string }
   | { status: "error"; message: string };
 
-export function SellerRegistrationForm() {
+type SellerRegistrationMode = SellerCapability | "BOTH";
+
+export function SellerRegistrationForm({ initialMode }: { initialMode?: string | null } = {}) {
   const auth = useCustomerAuth();
   const queryClient = useQueryClient();
   const [state, setState] = useState<SubmitState>({ status: "idle" });
-  const [commerceMode, setCommerceMode] = useState<"RETAIL" | "SERVICE">("RETAIL");
+  const requestedMode = registrationModeFromQuery(initialMode);
+  const [commerceMode, setCommerceMode] = useState<SellerRegistrationMode>(requestedMode);
   const [selectedPlanId, setSelectedPlanId] = useState("");
   const [documents, setDocuments] = useState<SellerDocumentUploadResult[]>([]);
 
@@ -124,7 +128,7 @@ export function SellerRegistrationForm() {
 
   const plansQuery = useQuery({
     queryKey: ["seller-subscription-plans", commerceMode],
-    queryFn: () => listSellerSubscriptionPlans({ audience: commerceMode }),
+    queryFn: () => listSellerSubscriptionPlans({ audience: primaryCapabilityForMode(commerceMode) }),
   });
   const productsQuery = useQuery({
     queryKey: ["seller-onboarding-products", auth.authKey],
@@ -207,6 +211,8 @@ export function SellerRegistrationForm() {
     plans.find((plan) => plan.isDefault)?.id ??
     plans[0]?.id ??
     "";
+  const primaryCapability = primaryCapabilityForMode(commerceMode);
+  const primaryLabel = registrationModeLabel(commerceMode).toLowerCase();
 
   useEffect(() => {
     if (!selectedPlanId && defaultPlanId) {
@@ -217,6 +223,10 @@ export function SellerRegistrationForm() {
   useEffect(() => {
     setSelectedPlanId(defaultPlanId);
   }, [commerceMode, defaultPlanId]);
+
+  useEffect(() => {
+    setCommerceMode(requestedMode);
+  }, [requestedMode]);
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -240,11 +250,10 @@ export function SellerRegistrationForm() {
       commerceMode === "SERVICE"
         ? "SERVICE_PROVIDER"
         : (formValue(form, "sellerType") as SellerOnboardingPayload["sellerType"]);
-
     onboardingMutation.mutate({
       sellerType,
-      primaryCapability: commerceMode,
-      enabledCapabilities: [commerceMode],
+      primaryCapability,
+      enabledCapabilities: enabledCapabilitiesForMode(commerceMode),
       storeName: formValue(form, "storeName"),
       ...(businessLegalName ? { businessLegalName } : {}),
       ...(businessType ? { businessType } : {}),
@@ -409,26 +418,35 @@ export function SellerRegistrationForm() {
         <section className="rounded-lg border border-[#E5E7EB] bg-white p-5 shadow-sm">
           <div className="flex items-start gap-3">
             <span className="grid h-11 w-11 place-items-center rounded-md bg-[#FFF0EC] text-[#ED3500]">
-              {commerceMode === "SERVICE" ? <Wrench className="h-5 w-5" aria-hidden="true" /> : <Store className="h-5 w-5" aria-hidden="true" />}
+              {registrationModeIcon(commerceMode)}
             </span>
             <SectionHeading
               title="Choose seller mode"
-              description="Retail sellers manage products and delivery orders. Service providers manage service listings, appointments, quotes, and completion."
+              description="Choose retail, services, or both. The seller center menu and reports will match the capability you register."
             />
           </div>
-          <div className="mt-5 grid gap-3 md:grid-cols-2">
+          <div className="mt-5 grid gap-3 xl:grid-cols-3">
             {[
               {
                 value: "RETAIL" as const,
                 title: "Retail seller",
                 description: "Sell products through catalogue, cart, checkout, delivery, and retail payouts.",
+                label: "Products and orders",
                 icon: Store,
               },
               {
                 value: "SERVICE" as const,
                 title: "Service provider",
                 description: "Offer repair, installation, maintenance, consultation, and local/remote services.",
+                label: "Bookings and quotes",
                 icon: Wrench,
+              },
+              {
+                value: "BOTH" as const,
+                title: "Retail + services",
+                description: "Use one business profile for product selling and service bookings together.",
+                label: "Combined profile",
+                icon: Sparkles,
               },
             ].map((option) => {
               const Icon = option.icon;
@@ -452,7 +470,7 @@ export function SellerRegistrationForm() {
                     <span>
                       <span className="block text-sm font-black text-[#1F2933]">{option.title}</span>
                       <span className="mt-1 block text-xs font-bold uppercase tracking-wide text-[#667085]">
-                        {option.value === "SERVICE" ? "Bookings and quotes" : "Products and orders"}
+                        {option.label}
                       </span>
                     </span>
                   </span>
@@ -491,7 +509,7 @@ export function SellerRegistrationForm() {
             <SectionHeading
               title="ID and signature verification"
               description={
-                commerceMode === "SERVICE"
+                isServiceOnlyMode(commerceMode)
                   ? "Upload only the proofs needed for service-provider review. PAN and tax documents can be added later if required."
                   : "Upload proof documents for final review. PAN is optional unless admin asks for it."
               }
@@ -499,7 +517,7 @@ export function SellerRegistrationForm() {
           </div>
           <div className="mt-5 grid gap-3">
             {verificationDocuments
-              .filter((document) => commerceMode === "RETAIL" || !["PAN_CARD", "GST_CERTIFICATE", "FSSAI_CERTIFICATE"].includes(document.type))
+              .filter((document) => !isServiceOnlyMode(commerceMode) || !["PAN_CARD", "GST_CERTIFICATE", "FSSAI_CERTIFICATE"].includes(document.type))
               .map((document) => (
               <DocumentUploadField
                 key={document.type}
@@ -524,23 +542,25 @@ export function SellerRegistrationForm() {
               <Store className="h-5 w-5" aria-hidden="true" />
             </span>
             <SectionHeading
-              title={commerceMode === "SERVICE" ? "Service profile and coverage" : "Store and pickup details"}
+              title={isServiceOnlyMode(commerceMode) ? "Service profile and coverage" : "Store and pickup details"}
               description={
-                commerceMode === "SERVICE"
+                isServiceOnlyMode(commerceMode)
                   ? "Add the service display name, contact details, and base coverage address used for review."
-                  : "Add the display name and pickup address used for seller verification and fulfilment."
+                  : commerceMode === "BOTH"
+                    ? "Add the business display name and operating address used for retail fulfilment and service coverage review."
+                    : "Add the display name and pickup address used for seller verification and fulfilment."
               }
             />
           </div>
 
           <div className="mt-5 grid gap-4 md:grid-cols-2">
             <Field
-              label={commerceMode === "SERVICE" ? "Service business name" : "Store name"}
+              label={isServiceOnlyMode(commerceMode) ? "Service business name" : "Store name"}
               name="storeName"
               required
-              placeholder={commerceMode === "SERVICE" ? "Enter your service business name" : "Enter your store name"}
+              placeholder={isServiceOnlyMode(commerceMode) ? "Enter your service business name" : "Enter your store name"}
             />
-            {commerceMode === "RETAIL" ? (
+            {!isServiceOnlyMode(commerceMode) ? (
               <label className="space-y-2">
                 <span className="block text-sm font-bold text-[#1F2933]">Seller type</span>
                 <select
@@ -561,7 +581,7 @@ export function SellerRegistrationForm() {
                 <p className="mt-1 text-sm font-semibold text-[#667085]">Service provider</p>
               </div>
             )}
-            {commerceMode === "RETAIL" ? (
+            {!isServiceOnlyMode(commerceMode) ? (
               <>
                 <Field
                   label="Business legal name"
@@ -609,8 +629,10 @@ export function SellerRegistrationForm() {
                 placeholder="Describe your store, products, service area, and fulfilment capacity"
                 key={commerceMode}
                 defaultValue={
-                  commerceMode === "SERVICE"
+                  isServiceOnlyMode(commerceMode)
                     ? "Describe your services, visit modes, coverage area, inspection policy, and operating hours."
+                    : commerceMode === "BOTH"
+                      ? "Describe your products, service categories, coverage area, fulfilment capacity, and operating hours."
                     : undefined
                 }
               />
@@ -622,7 +644,8 @@ export function SellerRegistrationForm() {
                 defaultPlanId={defaultPlanId}
                 loading={plansQuery.isLoading}
                 error={plansQuery.error}
-                audience={commerceMode}
+                audience={primaryCapability}
+                mode={commerceMode}
                 onChange={setSelectedPlanId}
               />
             </div>
@@ -630,12 +653,12 @@ export function SellerRegistrationForm() {
 
           <div className="mt-5 grid gap-4">
             <Field
-              label={commerceMode === "SERVICE" ? "Service base address" : "Address line 1"}
+              label={isServiceOnlyMode(commerceMode) ? "Service base address" : "Address line 1"}
               name="line1"
               required
-              placeholder={commerceMode === "SERVICE" ? "Office, workshop, or operating base" : "Building and street"}
+              placeholder={isServiceOnlyMode(commerceMode) ? "Office, workshop, or operating base" : "Building and street"}
             />
-            <Field label="Address line 2" name="line2" placeholder={commerceMode === "SERVICE" ? "Coverage landmark or floor" : "Landmark or floor"} />
+            <Field label="Address line 2" name="line2" placeholder={isServiceOnlyMode(commerceMode) ? "Coverage landmark or floor" : "Landmark or floor"} />
             <LocationFields
               defaultValue={{ countryCode: "IN" }}
               inputClassName="h-11 w-full rounded-md border border-[#E5E7EB] bg-white px-3 text-sm outline-none focus:border-[#ED3500]"
@@ -647,7 +670,7 @@ export function SellerRegistrationForm() {
             />
 
             <Button type="submit" disabled={onboardingMutation.isPending}>
-              {onboardingMutation.isPending ? "Submitting..." : "Submit for review"}
+              {onboardingMutation.isPending ? "Submitting..." : `Submit ${primaryLabel} profile for review`}
             </Button>
 
             {state.status === "success" ? (
@@ -684,8 +707,10 @@ function OnboardingCompletionStatus({
   commerceMode,
 }: {
   status: OnboardingStatusValue;
-  commerceMode: "RETAIL" | "SERVICE";
+  commerceMode: SellerRegistrationMode;
 }) {
+  const serviceOnly = isServiceOnlyMode(commerceMode);
+  const combined = commerceMode === "BOTH";
   const sections = [
     {
       title: "Email Verification",
@@ -701,20 +726,20 @@ function OnboardingCompletionStatus({
       ],
     },
     {
-      title: commerceMode === "SERVICE" ? "Service Profile & Coverage" : "Store & Pickup Details",
+      title: serviceOnly ? "Service Profile & Coverage" : combined ? "Store, Pickup & Coverage" : "Store & Pickup Details",
       items: [
         { key: "display", label: "Display Name", complete: status.displayNameReady },
         {
           key: "pickup",
-          label: commerceMode === "SERVICE" ? "Service Base Address" : "Pickup Address",
+          label: serviceOnly ? "Service Base Address" : combined ? "Pickup / Service Base Address" : "Pickup Address",
           complete: status.pickupAddressReady,
         },
       ],
     },
     {
-      title: commerceMode === "SERVICE" ? "Service Listing Readiness" : "Listing & Stock Availability",
+      title: serviceOnly ? "Service Listing Readiness" : combined ? "Retail & Service Readiness" : "Listing & Stock Availability",
       items:
-        commerceMode === "SERVICE"
+        serviceOnly
           ? [{ key: "listing", label: "First Service Listing", complete: status.listingCreated }]
           : [
               { key: "listing", label: "Listing Created", complete: status.listingCreated },
@@ -817,6 +842,7 @@ function PlanPicker({
   loading,
   error,
   audience,
+  mode,
   onChange,
 }: {
   plans: SellerSubscriptionPlan[];
@@ -825,8 +851,10 @@ function PlanPicker({
   loading: boolean;
   error: Error | null;
   audience: "RETAIL" | "SERVICE";
+  mode: SellerRegistrationMode;
   onChange: (planId: string) => void;
 }) {
+  const combined = mode === "BOTH";
   return (
     <section className="rounded-lg border border-[#D9E2EA] bg-[#F8FAFC] p-4">
       <div className="flex items-start gap-3">
@@ -834,9 +862,11 @@ function PlanPicker({
           <CreditCard className="h-5 w-5" aria-hidden="true" />
         </span>
         <SectionHeading
-          title={audience === "SERVICE" ? "Service subscription plan" : "Seller subscription plan"}
+          title={combined ? "Combined seller subscription plan" : audience === "SERVICE" ? "Service subscription plan" : "Seller subscription plan"}
           description={
-            audience === "SERVICE"
+            combined
+              ? "Combined onboarding uses the retail/default seller plan now; service capability is enabled on the same verified profile."
+              : audience === "SERVICE"
               ? "Choose the service-provider plan for bookings, quotes, featured service slots, and recurring billing readiness."
               : "Choose the plan for onboarding. Paid monthly and yearly plans are authorised after admin approval."
           }
@@ -853,7 +883,7 @@ function PlanPicker({
       ) : null}
       {!loading && plans.length === 0 ? (
         <p className="mt-4 text-sm font-semibold text-[#667085]">
-          No active {audience === "SERVICE" ? "service" : "seller"} plans configured. Admin default will be applied during review.
+          No active {combined ? "combined" : audience === "SERVICE" ? "service" : "seller"} plans configured. Admin default will be applied during review.
         </p>
       ) : null}
 
@@ -888,7 +918,9 @@ function PlanPicker({
                   {plan.description ?? "Seller onboarding plan."}
                 </p>
                 <p className="mt-2 text-xs font-bold text-[#667085]">
-                  {audience === "SERVICE"
+                  {combined
+                    ? `Products ${limitLabel(plan.productLimit)} / Featured ${limitLabel(plan.featuredProductLimit)} / Services enabled`
+                    : audience === "SERVICE"
                     ? `Featured service slots ${limitLabel(plan.featuredProductLimit)}`
                     : `Products ${limitLabel(plan.productLimit)} / Featured ${limitLabel(plan.featuredProductLimit)} / B2B ${limitLabel(plan.b2bEnquiryLimit)}`}
                 </p>
@@ -1173,6 +1205,52 @@ function primarySellerCapability(seller?: { primaryCapability?: SellerCapability
   }
 
   return seller?.sellerType === "SERVICE_PROVIDER" ? "SERVICE" : "RETAIL";
+}
+
+function registrationModeFromQuery(value?: string | null): SellerRegistrationMode {
+  const normalized = value?.trim().toLowerCase();
+
+  if (normalized === "service" || normalized === "services") {
+    return "SERVICE";
+  }
+
+  if (normalized === "both" || normalized === "combined" || normalized === "retail-service") {
+    return "BOTH";
+  }
+
+  return "RETAIL";
+}
+
+function primaryCapabilityForMode(mode: SellerRegistrationMode): SellerCapability {
+  return mode === "SERVICE" ? "SERVICE" : "RETAIL";
+}
+
+function enabledCapabilitiesForMode(mode: SellerRegistrationMode): SellerCapability[] {
+  return mode === "BOTH" ? ["RETAIL", "SERVICE"] : [mode];
+}
+
+function isServiceOnlyMode(mode: SellerRegistrationMode) {
+  return mode === "SERVICE";
+}
+
+function registrationModeLabel(mode: SellerRegistrationMode) {
+  if (mode === "BOTH") {
+    return "combined";
+  }
+
+  return mode === "SERVICE" ? "service" : "retail";
+}
+
+function registrationModeIcon(mode: SellerRegistrationMode) {
+  if (mode === "SERVICE") {
+    return <Wrench className="h-5 w-5" aria-hidden="true" />;
+  }
+
+  if (mode === "BOTH") {
+    return <Sparkles className="h-5 w-5" aria-hidden="true" />;
+  }
+
+  return <Store className="h-5 w-5" aria-hidden="true" />;
 }
 
 function hasChecklistDocumentType(

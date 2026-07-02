@@ -791,6 +791,65 @@ export function listSellerReviews(auth: MobileAuthHeaders, query: Record<string,
   return getJson<PageResult<SellerReview>>({ path: "/seller/reviews", auth, searchParams: query });
 }
 
+export type SellerServiceBooking = {
+  id: string;
+  bookingNumber: string;
+  status: string;
+  scheduledStartAt?: string | null;
+  totalPayablePaise: number;
+  paidAmountPaise: number;
+  currency: string;
+  customerIssue: string;
+  listing?: { title?: string | null };
+  customer?: { displayName?: string | null; user?: { fullName?: string | null; phone?: string | null } | null } | null;
+  assignedTechnician?: { name?: string | null; phone?: string | null } | null;
+  technicianEnRouteAt?: string | null;
+  technicianArrivedAt?: string | null;
+  technicianCheckInAt?: string | null;
+  technicianCheckOutAt?: string | null;
+  technicianFieldProofKeys?: string[];
+};
+
+export type SellerServiceReview = {
+  id: string;
+  rating: number;
+  body?: string | null;
+  isVisible?: boolean;
+  createdAt?: string;
+  listing?: { title?: string | null };
+  booking?: { bookingNumber?: string | null };
+  customer?: { displayName?: string | null; user?: { fullName?: string | null } | null } | null;
+  reply?: { body: string; createdAt?: string } | null;
+};
+
+export function listSellerServiceBookings(auth: MobileAuthHeaders, query: Record<string, string | number | undefined> = {}) {
+  return getJson<PageResult<SellerServiceBooking>>({ path: "/seller/service-bookings", auth, searchParams: query });
+}
+
+export function updateSellerServiceFieldStatus(
+  auth: MobileAuthHeaders,
+  bookingNumber: string,
+  payload: { status: "EN_ROUTE" | "ARRIVED" | "CHECKED_IN" | "CHECKED_OUT"; note?: string; fieldProofKeys?: string[] },
+) {
+  return patchJson<SellerServiceBooking>({
+    path: `/seller/service-bookings/${encodeURIComponent(bookingNumber)}/field-status`,
+    auth,
+    body: payload,
+  });
+}
+
+export function listSellerServiceReviews(auth: MobileAuthHeaders, query: Record<string, string | number | undefined> = {}) {
+  return getJson<PageResult<SellerServiceReview>>({ path: "/seller/service-reviews", auth, searchParams: query });
+}
+
+export function replyToSellerServiceReview(auth: MobileAuthHeaders, reviewId: string, payload: { body: string }) {
+  return postJson<SellerServiceReview>({
+    path: `/seller/service-reviews/${encodeURIComponent(reviewId)}/reply`,
+    auth,
+    body: payload,
+  });
+}
+
 // Coupons
 export type SellerCouponParticipation = {
   id: string;

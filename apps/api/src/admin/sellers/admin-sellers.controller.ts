@@ -34,7 +34,7 @@ export class AdminSellersController {
   @Get("pending")
   @ApiOperation({ summary: "List pending seller registrations." })
   @ApiOkResponse({ description: "Pending seller registrations." })
-  getPendingSellers() {
+  getPendingSellers(): Promise<unknown> {
     return this.adminSellersService.getPendingSellers();
   }
 

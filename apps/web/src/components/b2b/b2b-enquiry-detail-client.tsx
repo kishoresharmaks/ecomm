@@ -543,7 +543,7 @@ function QuotationCard({
 }) {
   const total = response.quotedPricePaise === null || response.quotedPricePaise === undefined
     ? null
-    : response.quotedPricePaise * enquiry.quantity;
+    : response.quotedPricePaise * enquiry.quantity + (response.transportChargePaise ?? 0);
 
   return (
     <article className={cn("rounded-lg border bg-white p-4", isLatest ? "border-[#ED3500]" : "border-[#E5E7EB]")}>
@@ -564,10 +564,16 @@ function QuotationCard({
         </div>
         <div className="flex flex-wrap gap-2">
           <StatusBadge tone="info">Unit {formatMoney(response.quotedPricePaise)}</StatusBadge>
+          <StatusBadge tone="info">Transport {formatMoney(response.transportChargePaise ?? 0)}</StatusBadge>
           <StatusBadge tone="success">Total {formatMoney(total)}</StatusBadge>
         </div>
       </div>
       <p className="mt-4 whitespace-pre-wrap text-sm font-semibold leading-7 text-[#667085]">{response.responseMessage}</p>
+      <div className="mt-4 grid gap-2 rounded-md border border-[#E5E7EB] bg-[#F8FAFC] p-3 text-xs font-semibold leading-5 text-[#667085] md:grid-cols-2">
+        <p><span className="font-black text-[#1F2933]">Buyer preference:</span> {transportLabel(enquiry.transportMode)}</p>
+        <p><span className="font-black text-[#1F2933]">Seller ETA:</span> {response.transportEta ?? "Not provided"}</p>
+        <p className="md:col-span-2"><span className="font-black text-[#1F2933]">Transport note:</span> {response.transportNote ?? enquiry.transportNote ?? "Not provided"}</p>
+      </div>
       {canConfirm ? (
         <Button type="button" size="sm" className="mt-4" disabled={isPending} onClick={onConfirm}>
           <CheckCircle2 size={16} /> Confirm quotation
@@ -575,6 +581,13 @@ function QuotationCard({
       ) : null}
     </article>
   );
+}
+
+function transportLabel(value?: string | null) {
+  if (value === "STORE_PICKUP") {
+    return "Store pickup by buyer";
+  }
+  return "Seller-arranged B2B transport";
 }
 
 function MessageBubble({ message, isSelf }: { message: B2BEnquiryMessage; isSelf: boolean }) {

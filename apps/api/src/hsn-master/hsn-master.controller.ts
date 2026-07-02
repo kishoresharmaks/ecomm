@@ -12,7 +12,7 @@ export class HsnMasterController {
   @Public()
   @Get()
   @ApiOperation({ summary: "Search active HSN/GST suggestions for category defaults and seller product forms." })
-  listSuggestions(@Query() query: HsnMasterQueryDto) {
+  listSuggestions(@Query() query: HsnMasterQueryDto): Promise<unknown> {
     return this.hsnMasterService.listSuggestions(query);
   }
 }

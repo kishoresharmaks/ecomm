@@ -334,6 +334,7 @@ export function B2BOrderDetailClient({ orderNumber }: { orderNumber: string }) {
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
           <div className="grid gap-5">
             <B2BOrderCommercialPanel order={order} />
+            <B2BTransportPanel order={order} />
             <B2BProformaPanel order={order} onOpen={openProformaInvoice} />
             <B2BFinalTaxInvoicePanel order={order} onOpen={openTaxInvoice} />
             <B2BOrderPaymentPanel
@@ -442,7 +443,7 @@ function B2BOrderSummaryCard({ order }: { order: B2BOrder }) {
           <p className="text-xs font-bold text-[#667085]">Proforma {order.proformaInvoiceNumber}</p>
         </div>
         <div className="text-sm font-black text-[#163B5C]">
-          {formatMoney(order.subtotalPaise)}
+          {formatMoney(order.buyerPayableAmountPaise ?? order.subtotalPaise)}
         </div>
       </div>
     </Link>
@@ -469,10 +470,32 @@ function B2BOrderCommercialPanel({ order }: { order: B2BOrder }) {
         <Info label="Quantity" value={String(order.quantity)} />
         <Info label="Unit price" value={formatMoney(order.unitPricePaise)} />
         <Info label="Buyer payable" value={formatMoney(order.buyerPayableAmountPaise ?? order.subtotalPaise)} />
+        <Info label="B2B transport" value={`${transportLabel(order.transportMode)} / ${formatMoney(order.transportChargePaise ?? 0)}`} />
         <Info label="Proforma expires" value={formatDateTime(order.proformaExpiresAt)} />
         <Info label="Payment due" value={formatDateTime(order.paymentDueAt)} />
         <Info label="Payment status" value={(order.paymentStatus ?? "PENDING").replace(/_/g, " ")} />
         <Info label="PO number" value={order.purchaseOrderNumber ?? "Not submitted"} />
+      </div>
+    </B2BPanel>
+  );
+}
+
+function B2BTransportPanel({ order }: { order: B2BOrder }) {
+  return (
+    <B2BPanel>
+      <SectionHeading
+        title="B2B transport"
+        description="This is seller-arranged B2B transport or buyer pickup for this commercial order, separate from normal customer delivery."
+      />
+      <div className="mt-4 grid gap-3 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-4 text-sm font-semibold leading-6 text-[#667085] md:grid-cols-2">
+        <Info label="Mode" value={transportLabel(order.transportMode)} />
+        <Info label="Status" value={(order.transportStatus ?? "REQUESTED").replace(/_/g, " ")} />
+        <Info label="Charge in proforma" value={formatMoney(order.transportChargePaise ?? 0)} />
+        <Info label="ETA" value={order.transportEta ?? "Not provided"} />
+        <Info label="Partner" value={order.transportPartnerName ?? "Seller will update after dispatch"} />
+        <Info label="Tracking reference" value={order.transportTrackingRef ?? "Not available yet"} />
+        <Info label="Pickup address" value={order.transportPickupAddress ?? "Seller will share if pickup applies"} />
+        <Info label="Transport note" value={order.transportNote ?? order.enquiry?.transportNote ?? "No note"} />
       </div>
     </B2BPanel>
   );
@@ -690,4 +713,11 @@ function Info({ label, value }: { label: string; value: string }) {
       <p className="mt-1 text-sm font-black text-[#1F2933]">{value}</p>
     </div>
   );
+}
+
+function transportLabel(value?: string | null) {
+  if (value === "STORE_PICKUP") {
+    return "Store pickup by buyer";
+  }
+  return "Seller-arranged B2B transport";
 }

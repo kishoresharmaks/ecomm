@@ -1107,6 +1107,7 @@ type PaymentConfiguration = {
     keySecretConfigured: boolean;
     webhookSecretConfigured: boolean;
     webhookPath: string;
+    webhookUrl?: string | null;
   };
   cod: {
     enabled: boolean;
@@ -5352,102 +5353,25 @@ export function AdminB2BEnquiryDetailPageClient({ enquiryId }: { enquiryId: stri
 
 export function AdminB2BOrdersPageClient() {
   const auth = useAdminAuth();
-  const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
-  const [documentNotice, setDocumentNotice] = useState<string | null>(null);
-  const confirmation = useAdminConfirmation();
   const query = useAdminList<B2BOrderRecord>(
     "admin-b2b-orders",
     "/api/admin/b2b-orders",
     auth.authHeaders,
     search,
   );
-  const updateStatus = useMutation({
-    mutationFn: ({ orderNumber, status }: { orderNumber: string; status: string }) =>
-      adminRequest(`/api/admin/b2b-orders/${encodeURIComponent(orderNumber)}/status`, auth.authHeaders, {
-        method: "PATCH",
-        body: JSON.stringify({ status, note: "Updated from admin B2B order console." }),
-      }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-b2b-orders"] }),
-  });
-  const b2bOrderAction = useMutation({
-    mutationFn: ({
-      orderNumber,
-      path,
-      method = "PATCH",
-      payload,
-    }: {
-      orderNumber: string;
-      path: string;
-      method?: "PATCH" | "POST";
-      payload: Record<string, unknown>;
-    }) =>
-      adminRequest(`/api/admin/b2b-orders/${encodeURIComponent(orderNumber)}${path}`, auth.authHeaders, {
-        method,
-        body: JSON.stringify(payload),
-      }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-b2b-orders"] }),
-  });
   const items = listItems(query.data);
-
-  async function openPurchaseOrder(orderNumber: string) {
-    setDocumentNotice(null);
-
-    try {
-      await openB2BPurchaseOrderDocument(
-        auth.authHeaders,
-        `/api/admin/b2b-orders/${encodeURIComponent(orderNumber)}/purchase-order/document-access`,
-        `/api/admin/b2b-orders/${encodeURIComponent(orderNumber)}/purchase-order/document`,
-      );
-    } catch (error) {
-      setDocumentNotice(userFacingApiErrorMessage(error));
-    }
-  }
-
-  async function openProformaInvoice(orderNumber: string) {
-    setDocumentNotice(null);
-
-    try {
-      await openB2BPurchaseOrderDocument(
-        auth.authHeaders,
-        `/api/admin/b2b-orders/${encodeURIComponent(orderNumber)}/proforma-invoice/document-access`,
-        `/api/admin/b2b-orders/${encodeURIComponent(orderNumber)}/proforma-invoice`,
-      );
-    } catch (error) {
-      setDocumentNotice(userFacingApiErrorMessage(error));
-    }
-  }
-
-  async function openTaxInvoice(orderNumber: string) {
-    setDocumentNotice(null);
-
-    try {
-      await openB2BPurchaseOrderDocument(
-        auth.authHeaders,
-        `/api/admin/b2b-orders/${encodeURIComponent(orderNumber)}/tax-invoice/document-access`,
-        `/api/admin/b2b-orders/${encodeURIComponent(orderNumber)}/tax-invoice`,
-      );
-    } catch (error) {
-      setDocumentNotice(userFacingApiErrorMessage(error));
-    }
-  }
 
   return (
     <AdminResourceChrome
       title="B2B orders"
-      description="Manage proforma invoices, buyer purchase orders, and B2B fulfilment lifecycle."
+      description="Monitor proforma, PO, payment, and fulfilment state. Open an order detail workspace to perform audited operations."
       icon={<ClipboardList className="h-5 w-5" />}
       search={search}
       setSearch={setSearch}
       query={query}
       total={totalItems(query.data, items.length)}
     >
-      {confirmation.dialog}
-      {documentNotice ? (
-        <div className="mb-4">
-          <StatusBadge tone="danger">{documentNotice}</StatusBadge>
-        </div>
-      ) : null}
       <AdminTable
         items={items}
         isLoading={query.isLoading}
@@ -5502,65 +5426,15 @@ export function AdminB2BOrdersPageClient() {
           },
           {
             header: "Actions",
-            className: "min-w-[300px]",
+            className: "min-w-[160px]",
             cell: (item) => (
               <div className="flex flex-wrap gap-2">
-                {item.purchaseOrderFileKey ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => void openPurchaseOrder(item.orderNumber)}
-                  >
+                <Button asChild size="sm" variant="outline">
+                  <Link href={`/admin/b2b-orders/${encodeURIComponent(item.orderNumber)}`}>
                     <Eye className="h-4 w-4" aria-hidden="true" />
-                    View PO
-                  </Button>
-                ) : null}
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => void openProformaInvoice(item.orderNumber)}
-                >
-                  <Eye className="h-4 w-4" aria-hidden="true" />
-                  View proforma
+                    Detail
+                  </Link>
                 </Button>
-                {item.status === "FULFILLED" ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => void openTaxInvoice(item.orderNumber)}
-                  >
-                    <Eye className="h-4 w-4" aria-hidden="true" />
-                    Tax invoice
-                  </Button>
-                ) : null}
-                <B2BOrderAction
-                  status={item.status}
-                  disabled={updateStatus.isPending}
-                  onStatus={(status) => {
-                    confirmation.requestConfirmation({
-                      title: `Move B2B order to ${humanize(status)}?`,
-                      description: `${item.orderNumber} will move from ${humanize(item.status)} to ${humanize(status)}.`,
-                      confirmLabel: humanize(status),
-                      ...(status === "CANCELLED" ? { tone: "warning" as const } : {}),
-                      onConfirm: () => updateStatus.mutate({ orderNumber: item.orderNumber, status }),
-                    });
-                  }}
-                />
-                <B2BOrderFinanceActions
-                  order={item}
-                  disabled={b2bOrderAction.isPending}
-                  onAction={(path, payload, method = "PATCH") =>
-                    b2bOrderAction.mutate({
-                      orderNumber: item.orderNumber,
-                      path,
-                      payload,
-                      method,
-                    })
-                  }
-                />
               </div>
             ),
           },
@@ -12821,57 +12695,6 @@ function B2BAction({
   );
 }
 
-function B2BOrderAction({
-  status,
-  onStatus,
-  disabled,
-}: {
-  status: string;
-  onStatus: (status: string) => void;
-  disabled?: boolean;
-}) {
-  const statusOptions = b2bOrderAdminStatusOptions(status);
-  const [nextStatus, setNextStatus] = useState(statusOptions[0] ?? "");
-  const statusSelectOptions = useMemo<AdminSelectOption[]>(
-    () => statusOptions.map((item) => ({ value: item, label: humanize(item) })),
-    [statusOptions],
-  );
-
-  useEffect(() => {
-    setNextStatus(b2bOrderAdminStatusOptions(status)[0] ?? "");
-  }, [status]);
-
-  if (!statusOptions.length) {
-    return (
-      <p className="text-xs font-semibold leading-5 text-[#667085]">
-        This B2B order is locked in its current commercial state.
-      </p>
-    );
-  }
-
-  return (
-    <div className="flex flex-wrap gap-2">
-      <AdminListbox
-        label="B2B order status"
-        value={nextStatus}
-        options={statusSelectOptions}
-        onChange={setNextStatus}
-        compact
-        className="min-w-48 [&>span]:sr-only"
-        buttonClassName="bg-white"
-      />
-      <Button
-        type="button"
-        size="sm"
-        onClick={() => onStatus(nextStatus)}
-        disabled={disabled || !nextStatus}
-      >
-        Update
-      </Button>
-    </div>
-  );
-}
-
 function AdminB2BInitialRequestCard({ enquiry }: { enquiry: B2BEnquiryRecord }) {
   return (
     <article className="rounded-lg border border-[#D8E2EA] bg-white p-4">
@@ -12954,26 +12777,6 @@ function scrollAdminB2BThreadToBottom(
 
 function dateValue(value?: string | null) {
   return value ? new Date(value).getTime() : 0;
-}
-
-function b2bOrderAdminStatusOptions(status: string) {
-  if (status === "PROFORMA_ISSUED") {
-    return ["CANCELLED"];
-  }
-
-  if (status === "PO_SUBMITTED") {
-    return ["PO_ACCEPTED", "CANCELLED"];
-  }
-
-  if (status === "PO_ACCEPTED") {
-    return ["IN_FULFILMENT", "CANCELLED"];
-  }
-
-  if (status === "IN_FULFILMENT") {
-    return ["FULFILLED", "CANCELLED"];
-  }
-
-  return [];
 }
 
 function b2bAdminStatusOptions(status: string) {
@@ -13120,112 +12923,6 @@ function OrderStatusForm({
         </Button>
       </div>
     </Panel>
-  );
-}
-
-function B2BOrderFinanceActions({
-  order,
-  disabled,
-  onAction,
-}: {
-  order: B2BOrderRecord;
-  disabled?: boolean;
-  onAction: (path: string, payload: Record<string, unknown>, method?: "PATCH" | "POST") => void;
-}) {
-  const [reason, setReason] = useState("");
-  const [amount, setAmount] = useState("");
-  const [reference, setReference] = useState("");
-  const reasonText = reason.trim();
-  const amountPaise = Math.round(Number(amount) * 100);
-  const canSendReason = reasonText.length >= 3;
-  const canSendMoney = canSendReason && Number.isFinite(amountPaise) && amountPaise > 0;
-
-  return (
-    <div className="grid min-w-[260px] gap-2 rounded-md border border-[#E5E7EB] bg-[#F8FAFC] p-2">
-      <input
-        value={reason}
-        onChange={(event) => setReason(event.target.value)}
-        placeholder="Required audit reason"
-        className="h-9 rounded-md border border-[#D8E2EA] bg-white px-2 text-xs font-semibold text-[#1F2933]"
-      />
-      <div className="grid grid-cols-2 gap-2">
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={disabled || !canSendReason}
-          onClick={() => onAction("/set-not-required", { reason: reasonText })}
-        >
-          No payment
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={disabled || !canSendReason || order.status !== "PO_ACCEPTED"}
-          onClick={() => onAction("/unlock-fulfilment", { reason: reasonText })}
-        >
-          Unlock
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={disabled || !canSendReason}
-          onClick={() => onAction("/regenerate-proforma", { reason: reasonText }, "POST")}
-        >
-          Regenerate PI
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={disabled || !canSendReason}
-          onClick={() => onAction("/cancel", { reason: reasonText })}
-        >
-          Cancel
-        </Button>
-      </div>
-      <div className="grid grid-cols-[1fr_1fr] gap-2">
-        <input
-          value={amount}
-          onChange={(event) => setAmount(event.target.value)}
-          placeholder="Amount INR"
-          className="h-9 rounded-md border border-[#D8E2EA] bg-white px-2 text-xs font-semibold text-[#1F2933]"
-        />
-        <input
-          value={reference}
-          onChange={(event) => setReference(event.target.value)}
-          placeholder="Reference"
-          className="h-9 rounded-md border border-[#D8E2EA] bg-white px-2 text-xs font-semibold text-[#1F2933]"
-        />
-      </div>
-      <div className="grid grid-cols-2 gap-2">
-        <Button
-          type="button"
-          size="sm"
-          disabled={disabled || !canSendMoney || reference.trim().length < 3}
-          onClick={() =>
-            onAction("/manual-payment", {
-              amountPaise,
-              referenceNumber: reference.trim(),
-              reason: reasonText,
-            })
-          }
-        >
-          Manual pay
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={disabled || !canSendMoney}
-          onClick={() => onAction("/refund", { amountPaise, reason: reasonText }, "POST")}
-        >
-          Refund
-        </Button>
-      </div>
-    </div>
   );
 }
 
@@ -13693,6 +13390,9 @@ function PaymentConfigurationForm({
   }, [config]);
 
   const codMaxOrderPaise = rupeesToPaise(form.codMaxOrderRupees);
+  const razorpayWebhookUrl = paymentWebhookUrl(
+    config.razorpay.webhookUrl ?? config.razorpay.webhookPath,
+  );
 
   return (
     <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
@@ -13760,6 +13460,20 @@ function PaymentConfigurationForm({
               readOnly
               className="mt-1 h-10 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 text-sm font-semibold text-[#667085]"
             />
+          </label>
+          <label className="block md:col-span-2">
+            <span className="text-xs font-black uppercase tracking-wide text-[#667085]">
+              Razorpay dashboard webhook URL
+            </span>
+            <input
+              value={razorpayWebhookUrl}
+              readOnly
+              className="mt-1 h-10 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 text-sm font-semibold text-[#1F2933]"
+            />
+            <p className="mt-2 text-xs font-semibold leading-5 text-[#667085]">
+              Use this API-domain URL in Razorpay Dashboard. The storefront domain only works when
+              the server reverse-proxies `/api` traffic to the Nest API.
+            </p>
           </label>
         </div>
       </Panel>
@@ -13907,6 +13621,21 @@ function PaymentConfigurationForm({
       </div>
     </div>
   );
+}
+
+function paymentWebhookUrl(pathOrUrl?: string | null) {
+  const target = pathOrUrl?.trim() || "/api/payments/razorpay/webhook";
+  if (/^https?:\/\//i.test(target)) {
+    return target;
+  }
+
+  const base = apiBaseUrl.replace(/\/+$/, "");
+  const path = target.startsWith("/") ? target : `/${target}`;
+  if (base.toLowerCase().endsWith("/api") && path.toLowerCase().startsWith("/api/")) {
+    return `${base}${path.slice(4)}`;
+  }
+
+  return `${base}${path}`;
 }
 
 function StorageConfigurationForm({

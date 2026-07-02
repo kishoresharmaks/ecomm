@@ -1,12 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   CheckCircle2,
-  ChevronDown,
-  ChevronUp,
   ClipboardList,
   CreditCard,
   Download,
@@ -39,7 +37,6 @@ import {
   fetchSellerPackageLabel,
   getSellerOrder,
   getSellerProfile,
-  updateSellerDelivery,
   updateSellerOrderStatus,
   updateSellerPackage,
 } from "@/lib/seller-api";
@@ -48,12 +45,10 @@ import {
   SellerErrorPanel,
   SellerField,
   SellerPanel,
-  SellerSelect,
   SellerSkeleton,
   SellerStatusPill,
   SellerTextArea,
   formatDateTime,
-  optionalFormValue,
   statusLabel,
   useSellerAuth,
 } from "./seller-ui";
@@ -67,27 +62,27 @@ const sellerStatuses = [
   "CANCELLED",
 ] as const;
 type SellerStatus = (typeof sellerStatuses)[number];
-const deliveryModes = [
-  "STORE_PICKUP",
-  "LOCAL_DELIVERY_PARTNER",
-  "THIRD_PARTY_COURIER",
-  "MANUAL_TRANSPORT",
-] as const;
-const deliveryModeLabels: Record<(typeof deliveryModes)[number], string> = {
+type DeliveryModeValue =
+  | "STORE_PICKUP"
+  | "LOCAL_DELIVERY_PARTNER"
+  | "THIRD_PARTY_COURIER"
+  | "MANUAL_TRANSPORT";
+const deliveryModeLabels: Record<DeliveryModeValue, string> = {
   STORE_PICKUP: "Store pickup",
   LOCAL_DELIVERY_PARTNER: "Local delivery partner (auto assign)",
   THIRD_PARTY_COURIER: "Third-party courier service",
   MANUAL_TRANSPORT: "Manual transport",
 };
-const deliveryProgressionStatuses = [
+const automatedDeliveryModes = new Set(["LOCAL_DELIVERY_PARTNER", "THIRD_PARTY_COURIER"]);
+const deliveryStatuses = [
   "NOT_ASSIGNED",
   "PENDING",
   "PACKED",
   "DISPATCHED",
   "IN_TRANSIT",
   "DELIVERED",
+  "CANCELLED",
 ] as const;
-const deliveryStatuses = [...deliveryProgressionStatuses, "CANCELLED"] as const;
 type DeliveryStatus = (typeof deliveryStatuses)[number];
 
 const sellerStatusFlow: Array<{
@@ -133,7 +128,7 @@ const sellerStatusRank: Record<SellerStatus, number> = {
 
 export function SellerOrderDetailClient({
   orderNumber,
-  initialSection = "overview",
+  initialSection: _initialSection = "overview",
 }: {
   orderNumber: string;
   initialSection?: "overview" | "delivery";
@@ -142,8 +137,6 @@ export function SellerOrderDetailClient({
   const sellerAuth = useSellerAuth();
   const [notice, setNotice] = useState<string | null>(null);
   const [statusNote, setStatusNote] = useState("");
-  const [selectedDeliveryStatus, setSelectedDeliveryStatus] = useState<DeliveryStatus>("PENDING");
-  const [showDeliveryDetails, setShowDeliveryDetails] = useState(initialSection === "delivery");
   const [labelActionPackageId, setLabelActionPackageId] = useState<string | null>(null);
   const [packageDrafts, setPackageDrafts] = useState<
     Record<string, { weightGrams: string; lengthCm: string; breadthCm: string; heightCm: string }>
@@ -178,17 +171,6 @@ export function SellerOrderDetailClient({
     },
     onError: (error) =>
       setNotice(error instanceof Error ? error.message : "Seller status update failed."),
-  });
-
-  const deliveryMutation = useMutation({
-    mutationFn: (payload: Parameters<typeof updateSellerDelivery>[2]) =>
-      updateSellerDelivery(sellerAuth.authHeaders, orderNumber, payload),
-    onSuccess: () => {
-      setNotice("Delivery details updated.");
-      invalidateOrder();
-    },
-    onError: (error) =>
-      setNotice(error instanceof Error ? error.message : "Delivery update failed."),
   });
 
   const packageMutation = useMutation({
@@ -283,23 +265,6 @@ export function SellerOrderDetailClient({
     }
   }
 
-  function submitDelivery(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    setNotice(null);
-    deliveryMutation.mutate({
-      deliveryMode: optionalFormValue(form, "deliveryMode") as Parameters<
-        typeof updateSellerDelivery
-      >[2]["deliveryMode"],
-      partnerName: optionalFormValue(form, "partnerName"),
-      partnerPhone: optionalFormValue(form, "partnerPhone"),
-      trackingReference: optionalFormValue(form, "trackingReference"),
-      estimatedDeliveryDate: optionalFormValue(form, "estimatedDeliveryDate"),
-      deliveryNote: optionalFormValue(form, "deliveryNote"),
-      status: selectedDeliveryStatus,
-    });
-  }
-
   const order = orderQuery.data;
   const sellerId = profileQuery.data?.id;
   const sellerSplit = useMemo(
@@ -334,16 +299,6 @@ export function SellerOrderDetailClient({
       : order.items;
   }, [order, sellerId]);
 
-  useEffect(() => {
-    if (sellerShipment?.status && isDeliveryStatus(sellerShipment.status)) {
-      setSelectedDeliveryStatus(sellerShipment.status);
-    } else if (order?.deliveryDetail?.status && isDeliveryStatus(order.deliveryDetail.status)) {
-      setSelectedDeliveryStatus(order.deliveryDetail.status);
-    } else if (order?.deliveryStatus && isDeliveryStatus(order.deliveryStatus)) {
-      setSelectedDeliveryStatus(order.deliveryStatus);
-    }
-  }, [sellerShipment?.status, order?.deliveryDetail?.status, order?.deliveryStatus]);
-
   if (!sellerAuth.enabled) {
     return <SellerAuthNotice />;
   }
@@ -363,18 +318,16 @@ export function SellerOrderDetailClient({
   const address = order.shippingAddressSnapshot;
   const addressCoordinates = coordinatesFromSnapshot(address);
   const delivery = sellerShipment ?? order.deliveryDetail;
+  const deliveryMode = delivery?.deliveryMode ?? order.deliveryDetail?.deliveryMode ?? "LOCAL_DELIVERY_PARTNER";
+  const isAutomatedDelivery = automatedDeliveryModes.has(deliveryMode);
   const currentSellerStatus = sellerStatusValue(sellerSplit?.sellerStatus);
   const currentDeliveryStatus = deliveryStatusValue(
     sellerShipment?.status ?? order.deliveryDetail?.status ?? order.deliveryStatus,
   );
-  const nextSellerStatus = nextSellerWorkflowStatus(currentSellerStatus);
+  const nextSellerStatus = nextSellerWorkflowStatus(currentSellerStatus, isAutomatedDelivery);
   const isTerminalSellerStatus =
     currentSellerStatus === "DELIVERED" || currentSellerStatus === "CANCELLED";
   const canCancelSellerPackage = canSellerCancelPackage(currentSellerStatus, currentDeliveryStatus);
-  const selectableDeliveryStatuses = nextDeliveryStatusOptions(
-    currentDeliveryStatus,
-    canCancelSellerPackage,
-  );
   const timelineEvents = buildTrackingTimeline(order);
   const statusSummaryItems: SellerStatusSummaryItem[] = [
     {
@@ -419,15 +372,13 @@ export function SellerOrderDetailClient({
         <Button asChild variant="outline" size="sm">
           <Link href={`/seller/orders/${encodeURIComponent(orderNumber)}/delivery`}>
             <Truck className="h-4 w-4" aria-hidden="true" />
-            Delivery update
+            Logistics view
           </Link>
         </Button>
       </div>
 
       {notice ? (
-        <StatusBadge
-          tone={statusMutation.isError || deliveryMutation.isError ? "danger" : "success"}
-        >
+        <StatusBadge tone={statusMutation.isError ? "danger" : "success"}>
           {notice}
         </StatusBadge>
       ) : null}
@@ -534,7 +485,7 @@ export function SellerOrderDetailClient({
                   label="Mode"
                   value={
                     deliveryModeLabels[
-                      sellerShipment.deliveryMode as (typeof deliveryModes)[number]
+                      sellerShipment.deliveryMode as DeliveryModeValue
                     ] ?? statusLabel(sellerShipment.deliveryMode)
                   }
                 />
@@ -780,6 +731,7 @@ export function SellerOrderDetailClient({
                     index={index + 1}
                     currentStatus={currentSellerStatus}
                     step={step}
+                    automatedDelivery={isAutomatedDelivery}
                   />
                 ))}
               </div>
@@ -810,7 +762,9 @@ export function SellerOrderDetailClient({
                 </Button>
               ) : (
                 <div className="rounded-lg border border-[#D8E2EA] bg-[#F8FAFC] p-4 text-sm font-semibold text-[#667085]">
-                  No further seller action is needed for this package.
+                  {isAutomatedDelivery && currentSellerStatus === "PROCESSING"
+                    ? "Packed and ready. Courier, delivery partner, or admin operations will update dispatch and delivery."
+                    : "No further seller action is needed for this package."}
                 </div>
               )}
 
@@ -835,104 +789,61 @@ export function SellerOrderDetailClient({
           </SellerPanel>
 
           <SellerPanel className="p-4">
-            <button
-              type="button"
-              onClick={() => setShowDeliveryDetails((current) => !current)}
-              className="flex w-full items-start justify-between gap-3 text-left"
-              aria-expanded={showDeliveryDetails}
-            >
-              <span className="flex items-center gap-3">
-                <span className="grid h-10 w-10 place-items-center rounded-md bg-[#FFF0EC] text-[#ED3500]">
-                  <Truck className="h-5 w-5" aria-hidden="true" />
-                </span>
-                <span>
-                  <span className="block text-xl font-black text-[#1F2933]">Delivery details</span>
-                  <span className="mt-1 block text-sm font-semibold text-[#667085]">
-                    Optional courier, partner, and tracking details.
-                  </span>
-                </span>
+            <div className="flex items-center gap-3">
+              <span className="grid h-10 w-10 place-items-center rounded-md bg-[#FFF0EC] text-[#ED3500]">
+                <Truck className="h-5 w-5" aria-hidden="true" />
               </span>
-              {showDeliveryDetails ? (
-                <ChevronUp className="mt-2 h-5 w-5 shrink-0 text-[#667085]" aria-hidden="true" />
-              ) : (
-                <ChevronDown className="mt-2 h-5 w-5 shrink-0 text-[#667085]" aria-hidden="true" />
-              )}
-            </button>
-            <div className="mt-4 rounded-lg border border-[#D8E2EA] bg-[#F8FAFC] p-4 text-sm font-semibold text-[#667085]">
-              <Info
-                label="Mode"
-                value={
-                  deliveryModeLabels[delivery?.deliveryMode as (typeof deliveryModes)[number]] ??
-                  statusLabel(delivery?.deliveryMode ?? "LOCAL_DELIVERY_PARTNER")
+              <SectionHeading
+                title="Logistics automation"
+                description={
+                  isAutomatedDelivery
+                    ? "Transport is controlled by courier, delivery partner, or admin operations after seller packing."
+                    : "This delivery mode needs seller or admin coordination."
                 }
               />
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            </div>
+            <div className="mt-4 rounded-lg border border-[#D8E2EA] bg-[#F8FAFC] p-4 text-sm font-semibold text-[#667085]">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Info
+                  label="Mode"
+                  value={
+                    deliveryModeLabels[deliveryMode as DeliveryModeValue] ??
+                    statusLabel(deliveryMode)
+                  }
+                />
                 <Info label="Delivery status" value={statusLabel(currentDeliveryStatus)} />
                 <Info label="Tracking" value={delivery?.trackingReference ?? "Not assigned"} />
+                <Info label="Partner" value={deliveryPartnerLabel(delivery)} />
+                <Info
+                  label="ETA"
+                  value={
+                    delivery?.estimatedDeliveryDate
+                      ? formatDateTime(delivery.estimatedDeliveryDate)
+                      : "Not assigned"
+                  }
+                />
+                <Info label="Assignment" value={statusLabel(delivery?.assignmentStatus ?? "UNASSIGNED")} />
               </div>
             </div>
-            {showDeliveryDetails ? (
-              <form onSubmit={submitDelivery} className="mt-4 grid gap-3">
-                <SellerSelect
-                  label="Delivery mode"
-                  name="deliveryMode"
-                  defaultValue={delivery?.deliveryMode ?? "LOCAL_DELIVERY_PARTNER"}
-                >
-                  {deliveryModes.map((mode) => (
-                    <option key={mode} value={mode}>
-                      {deliveryModeLabels[mode]}
-                    </option>
-                  ))}
-                </SellerSelect>
-                <SellerSelect
-                  label="Delivery status"
-                  name="deliveryStatus"
-                  value={selectedDeliveryStatus}
-                  onChange={(value) => setSelectedDeliveryStatus(value as DeliveryStatus)}
-                >
-                  {selectableDeliveryStatuses.map((status) => (
-                    <option key={status} value={status}>
-                      {statusLabel(status)}
-                    </option>
-                  ))}
-                </SellerSelect>
-                <p className="-mt-1 text-xs font-bold leading-5 text-[#667085]">
-                  Delivery updates move one step at a time. Direct jumps are blocked.
+            <div className="mt-4 rounded-lg border border-[#D8E2EA] bg-white p-4 text-sm font-semibold leading-6 text-[#667085]">
+              {isAutomatedDelivery ? (
+                <p>
+                  Seller action stops at packed. Assignment, AWB, tracking, proof, COD collection,
+                  dispatch, and delivered updates come from the logistics workspace, delivery
+                  partner app, courier webhook, or admin override.
                 </p>
-                <SellerField
-                  label="Partner name"
-                  name="partnerName"
-                  defaultValue={delivery?.partnerName}
-                />
-                <SellerField
-                  label="Partner phone"
-                  name="partnerPhone"
-                  defaultValue={delivery?.partnerPhone}
-                  placeholder="9876543210"
-                />
-                <SellerField
-                  label="Tracking reference"
-                  name="trackingReference"
-                  defaultValue={delivery?.trackingReference}
-                  placeholder="Auto-generated on partner assignment if left blank"
-                />
-                <SellerField
-                  label="Estimated delivery date"
-                  name="estimatedDeliveryDate"
-                  type="date"
-                  defaultValue={toDateInput(delivery?.estimatedDeliveryDate)}
-                />
-                <SellerTextArea
-                  label="Delivery note"
-                  name="deliveryNote"
-                  rows={3}
-                  defaultValue={delivery?.deliveryNote}
-                />
-                <Button type="submit" disabled={deliveryMutation.isPending}>
-                  {deliveryMutation.isPending ? "Saving..." : "Save delivery details"}
-                </Button>
-              </form>
-            ) : null}
+              ) : (
+                <p>
+                  Store pickup and manual transport do not have automated provider tracking. Use the
+                  seller status flow for package progress and coordinate exceptions with admin.
+                </p>
+              )}
+              {delivery?.deliveryNote ? (
+                <p className="mt-3 rounded-md bg-[#F8FAFC] px-3 py-2">
+                  Latest note: {delivery.deliveryNote}
+                </p>
+              ) : null}
+            </div>
           </SellerPanel>
 
           <SellerPanel className="p-4">
@@ -987,14 +898,6 @@ export function SellerOrderDetailClient({
       </div>
     </div>
   );
-}
-
-function toDateInput(value?: string | null) {
-  if (!value) {
-    return "";
-  }
-
-  return new Date(value).toISOString().slice(0, 10);
 }
 
 function positiveDraftNumber(value?: string) {
@@ -1220,16 +1123,20 @@ function SellerStatusStep({
   step,
   currentStatus,
   index,
+  automatedDelivery,
 }: {
   step: (typeof sellerStatusFlow)[number];
   currentStatus: SellerStatus;
   index: number;
+  automatedDelivery: boolean;
 }) {
   const stepRank = sellerStatusRank[step.status];
   const currentRank = sellerStatusRank[currentStatus];
+  const isOperationsStep =
+    automatedDelivery && (step.status === "DISPATCHED" || step.status === "DELIVERED");
   const isDone = currentStatus !== "CANCELLED" && currentRank > stepRank;
   const isCurrent = currentStatus === step.status;
-  const isFuture = currentStatus !== "CANCELLED" && currentRank < stepRank;
+  const isFuture = currentStatus !== "CANCELLED" && currentRank < stepRank && !isOperationsStep;
 
   return (
     <div
@@ -1238,6 +1145,7 @@ function SellerStatusStep({
         isCurrent && "border-[#C5D8E8] bg-[#EAF1F7]",
         isDone && "border-[#BFEAD9] bg-[#E9F7F1]",
         isFuture && "border-[#E5E7EB] bg-white",
+        isOperationsStep && !isDone && !isCurrent && "border-[#D8E2EA] bg-[#F8FAFC]",
         currentStatus === "CANCELLED" && "border-[#E5E7EB] bg-[#F8FAFC] opacity-70",
       )}
     >
@@ -1247,6 +1155,7 @@ function SellerStatusStep({
           isDone && "bg-[#0F8A5F] text-white",
           isCurrent && "bg-[#163B5C] text-white",
           isFuture && "bg-[#F8FAFC] text-[#667085]",
+          isOperationsStep && !isDone && !isCurrent && "bg-white text-[#667085]",
           currentStatus === "CANCELLED" && "bg-white text-[#98A2B3]",
         )}
       >
@@ -1257,9 +1166,14 @@ function SellerStatusStep({
           <span className="text-sm font-black text-[#1F2933]">{step.title}</span>
           {isCurrent ? <StatusBadge tone="info">Current</StatusBadge> : null}
           {isDone ? <StatusBadge tone="success">Done</StatusBadge> : null}
+          {isOperationsStep && !isDone && !isCurrent ? (
+            <StatusBadge tone="neutral">Operations</StatusBadge>
+          ) : null}
         </span>
         <span className="mt-1 block text-xs font-semibold leading-5 text-[#667085]">
-          {step.description}
+          {isOperationsStep && !isDone && !isCurrent
+            ? "Updated by courier, delivery partner, or admin operations."
+            : step.description}
         </span>
       </span>
     </div>
@@ -1274,12 +1188,15 @@ function deliveryStatusValue(value?: string | null): DeliveryStatus {
   return value && isDeliveryStatus(value) ? value : "PENDING";
 }
 
-function nextSellerWorkflowStatus(current: SellerStatus): SellerStatus | null {
+function nextSellerWorkflowStatus(current: SellerStatus, automatedDelivery: boolean): SellerStatus | null {
   if (current === "PENDING") {
     return "ACCEPTED";
   }
   if (current === "ACCEPTED") {
     return "PROCESSING";
+  }
+  if (automatedDelivery) {
+    return null;
   }
   if (current === "PROCESSING") {
     return "DISPATCHED";
@@ -1288,32 +1205,6 @@ function nextSellerWorkflowStatus(current: SellerStatus): SellerStatus | null {
     return "DELIVERED";
   }
   return null;
-}
-
-function nextDeliveryWorkflowStatus(current: DeliveryStatus): DeliveryStatus | null {
-  const index = deliveryProgressionStatuses.indexOf(
-    current as (typeof deliveryProgressionStatuses)[number],
-  );
-  return index >= 0 && index < deliveryProgressionStatuses.length - 1
-    ? (deliveryProgressionStatuses[index + 1] ?? null)
-    : null;
-}
-
-function nextDeliveryStatusOptions(current: DeliveryStatus, canCancel: boolean) {
-  if (current === "DELIVERED" || current === "CANCELLED") {
-    return [current];
-  }
-
-  const options: DeliveryStatus[] = [current];
-  const nextStatus = nextDeliveryWorkflowStatus(current);
-  if (nextStatus) {
-    options.push(nextStatus);
-  }
-  if (canCancel && !options.includes("CANCELLED")) {
-    options.push("CANCELLED");
-  }
-
-  return options;
 }
 
 function canSellerCancelPackage(sellerStatus: SellerStatus, deliveryStatus: DeliveryStatus) {
@@ -1381,6 +1272,27 @@ function isSellerStatus(value: string): value is (typeof sellerStatuses)[number]
 
 function isDeliveryStatus(value: string): value is (typeof deliveryStatuses)[number] {
   return deliveryStatuses.includes(value as (typeof deliveryStatuses)[number]);
+}
+
+function deliveryPartnerLabel(delivery?: {
+  partnerName?: string | null;
+  partnerPhone?: string | null;
+  courierName?: string | null;
+  courierCode?: string | null;
+  deliveryPartner?: {
+    fullName?: string | null;
+    phone?: string | null;
+    vehicleNumber?: string | null;
+  } | null;
+} | null) {
+  const name =
+    delivery?.deliveryPartner?.fullName ??
+    delivery?.partnerName ??
+    delivery?.courierName ??
+    delivery?.courierCode ??
+    null;
+  const phone = delivery?.deliveryPartner?.phone ?? delivery?.partnerPhone ?? null;
+  return [name, phone].filter(Boolean).join(" / ") || "Not assigned";
 }
 
 function buildTrackingTimeline(

@@ -56,6 +56,48 @@ describe("FinanceCalculatorService", () => {
     expect(result.commissionPaise).toBe(1900);
     expect((result.snapshot as { lines: unknown[] }).lines).toHaveLength(2);
   });
+
+  it("uses the same commission rule engine for service booking settlements", async () => {
+    const tx = {
+      commissionRule: {
+        findMany: vi.fn().mockResolvedValue([
+          rule({
+            id: "service_rule",
+            scope: FinanceRuleScope.SELLER_CATEGORY,
+            sellerId: "seller_1",
+            categoryId: "category_1",
+            commissionValueBps: 800,
+            gstRateBps: 1800,
+            tdsRateBps: 100,
+            tcsRateBps: 25,
+            platformFeeType: CommissionType.FIXED,
+            platformFeeFixedPaise: 500,
+          }),
+        ]),
+      },
+    };
+    const service = new FinanceCalculatorService({ client: tx } as never);
+
+    const result = await service.calculateServiceBooking(serviceBooking("category_1") as never, 20_000, tx as never);
+
+    expect(result).toMatchObject({
+      commissionRuleId: "service_rule",
+      grossAmountPaise: 20_000,
+      inspectionFeeGrossPaise: 1_000,
+      commissionPaise: 1_600,
+      platformFeePaise: 500,
+      gstOnCommissionPaise: 378,
+      tdsPaise: 200,
+      tcsPaise: 50,
+      netPayablePaise: 17_272,
+    });
+    expect(result.snapshot).toMatchObject({
+      source: "service_booking",
+      ruleId: "service_rule",
+      categoryId: "category_1",
+      grossAmountPaise: 20_000,
+    });
+  });
 });
 
 function rule(overrides: Record<string, unknown>) {
@@ -108,5 +150,24 @@ function item(id: string, categoryId: string, lineTotalPaise: number) {
     product: {
       categoryId
     }
+  };
+}
+
+function serviceBooking(categoryId: string) {
+  return {
+    id: "booking_1",
+    bookingNumber: "SRV-2026-ABCDEF",
+    sellerId: "seller_1",
+    serviceListingId: "service_listing_1",
+    status: "COMPLETED",
+    paymentMode: "INSPECTION_FEE",
+    createdAt: new Date("2026-05-20T00:00:00.000Z"),
+    inspectionFeePaise: 1_000,
+    paidAmountPaise: 20_000,
+    listing: {
+      id: "service_listing_1",
+      title: "AC repair",
+      categoryId,
+    },
   };
 }

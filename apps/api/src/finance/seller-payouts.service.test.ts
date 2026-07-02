@@ -52,6 +52,22 @@ describe("SellerPayoutsService seller requests", () => {
           _sum: { sellerPayoutAmountPaise: 0 }
         })
       },
+      serviceBookingSettlement: {
+        findMany: vi.fn().mockResolvedValue([]),
+        updateMany: vi.fn(),
+        aggregate: vi.fn().mockResolvedValue({
+          _count: { _all: 0 },
+          _sum: { netPayablePaise: 0 }
+        })
+      },
+      serviceSellerReceivable: {
+        findMany: vi.fn().mockResolvedValue([]),
+        updateMany: vi.fn(),
+        aggregate: vi.fn().mockResolvedValue({
+          _count: { _all: 0 },
+          _sum: { offsetPaise: 0 }
+        })
+      },
       sellerPayout: {
         create: vi.fn().mockResolvedValue({ id: "payout-1", payoutNumber: "PO-TEST" })
       },
@@ -153,6 +169,20 @@ describe("SellerPayoutsService seller requests", () => {
           _count: { _all: 0 },
           _sum: { sellerPayoutAmountPaise: 0 }
         })
+      },
+      serviceBookingSettlement: {
+        aggregate: vi.fn().mockResolvedValue({
+          _count: { _all: 0 },
+          _sum: { netPayablePaise: 0 }
+        }),
+        updateMany: vi.fn()
+      },
+      serviceSellerReceivable: {
+        aggregate: vi.fn().mockResolvedValue({
+          _count: { _all: 0 },
+          _sum: { offsetPaise: 0 }
+        }),
+        findMany: vi.fn().mockResolvedValue([])
       }
     };
     const prisma = {
@@ -195,6 +225,12 @@ describe("SellerPayoutsService seller requests", () => {
         aggregate: vi.fn()
       },
       b2BOrder: {
+        aggregate: vi.fn()
+      },
+      serviceBookingSettlement: {
+        aggregate: vi.fn()
+      },
+      serviceSellerReceivable: {
         aggregate: vi.fn()
       }
     };
@@ -248,6 +284,19 @@ describe("SellerPayoutsService seller requests", () => {
           _sum: { sellerPayoutAmountPaise: 0 }
         }),
         updateMany: vi.fn()
+      },
+      serviceBookingSettlement: {
+        aggregate: vi.fn().mockResolvedValue({
+          _count: { _all: 0 },
+          _sum: { netPayablePaise: 0 }
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 })
+      },
+      serviceSellerReceivable: {
+        aggregate: vi.fn().mockResolvedValue({
+          _count: { _all: 0 },
+          _sum: { offsetPaise: 0 }
+        })
       }
     };
     const prisma = {

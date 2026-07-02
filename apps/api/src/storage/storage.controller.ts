@@ -150,8 +150,14 @@ export class StorageController {
             "ADDRESS_PROOF",
             "BANK_PROOF",
             "BUSINESS_REGISTRATION",
+            "SERVICE_COMPLETION_PROOF",
+            "SERVICE_DISPUTE_EVIDENCE",
             "OTHER",
           ],
+        },
+        serviceBookingNumber: {
+          type: "string",
+          description: "Required for service completion proof and service dispute evidence uploads.",
         },
         file: {
           type: "string",
@@ -166,13 +172,14 @@ export class StorageController {
   uploadPrivateDocument(
     @CurrentUser() actor: RequestUser,
     @Body("documentType") documentType: string | undefined,
+    @Body("serviceBookingNumber") serviceBookingNumber: string | undefined,
     @UploadedFile() file: UploadedPrivateDocumentFile | undefined,
   ) {
-    return this.storageService.saveLocalPrivateDocument(actor, documentType, file);
+    return this.storageService.saveLocalPrivateDocument(actor, documentType, file, serviceBookingNumber);
   }
 
   @Get("private-document")
-  @Roles(RoleCode.ADMIN, RoleCode.SELLER)
+  @Roles(RoleCode.ADMIN, RoleCode.SELLER, RoleCode.CUSTOMER)
   @ApiOperation({ summary: "Open a private document through signed URL or authenticated stream." })
   async privateDocument(
     @CurrentUser() actor: RequestUser,
@@ -195,7 +202,7 @@ export class StorageController {
   }
 
   @Get("private-document/access")
-  @Roles(RoleCode.ADMIN, RoleCode.SELLER)
+  @Roles(RoleCode.ADMIN, RoleCode.SELLER, RoleCode.CUSTOMER)
   @ApiOperation({ summary: "Read private document access metadata for authenticated viewing." })
   async privateDocumentAccess(@CurrentUser() actor: RequestUser, @Query("key") key: string | undefined) {
     const access = await this.storageService.privateDocumentAccess(actor, key);

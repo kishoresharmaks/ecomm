@@ -5,9 +5,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   AlertCircle,
+  ArrowRight,
   BadgePercent,
   BarChart3,
   Boxes,
+  CheckCircle2,
   ClipboardList,
   CreditCard,
   Home,
@@ -23,6 +25,7 @@ import {
   RotateCcw,
   ShieldCheck,
   ShoppingBag,
+  Sparkles,
   Star,
   Store,
   WalletCards,
@@ -55,6 +58,7 @@ const sellerNavIcons: Record<string, ReactNode> = {
   "/seller/services": <Wrench className="h-4 w-4" aria-hidden="true" />,
   "/seller/service-bookings": <ClipboardList className="h-4 w-4" aria-hidden="true" />,
   "/seller/service-calendar": <BarChart3 className="h-4 w-4" aria-hidden="true" />,
+  "/seller/service-reviews": <Star className="h-4 w-4" aria-hidden="true" />,
   "/seller/deals": <BadgePercent className="h-4 w-4" aria-hidden="true" />,
   "/seller/coupons": <BadgePercent className="h-4 w-4" aria-hidden="true" />,
   "/seller/orders": <ShoppingBag className="h-4 w-4" aria-hidden="true" />,
@@ -68,8 +72,6 @@ const sellerNavIcons: Record<string, ReactNode> = {
   "/seller/finance/payouts": <ReceiptText className="h-4 w-4" aria-hidden="true" />,
   "/seller/finance/statements": <ClipboardList className="h-4 w-4" aria-hidden="true" />
 };
-
-const sellerFinanceRoutes = new Set(["/seller/subscription", "/seller/finance/wallet", "/seller/finance/payouts", "/seller/finance/statements"]);
 
 export function SellerWorkspaceShell({
   title,
@@ -92,6 +94,7 @@ export function SellerWorkspaceShell({
     retry: false
   });
   const visibleNav = filterSellerNav(profileQuery.data);
+  const navGroups = sellerNavGroups(visibleNav);
 
   return (
     <MaintenanceGate scope="seller">
@@ -117,10 +120,19 @@ export function SellerWorkspaceShell({
               </Button>
             </div>
             {mobileOpen ? (
-              <nav className="mt-3 grid gap-1 rounded-lg border border-[#D9E2EA] bg-white p-2 shadow-sm">
-                {visibleNav.map((item) => (
-                  <SellerNavLink key={item.href} item={item} pathname={pathname} onClick={() => setMobileOpen(false)} />
-                ))}
+              <nav className="mt-3 max-h-[70vh] overflow-y-auto rounded-lg border border-[#D9E2EA] bg-white p-2 shadow-sm">
+                <div className="grid gap-3">
+                  {navGroups.map((group) => (
+                    <div key={group.label}>
+                      <p className="px-2 pb-1 text-[11px] font-black uppercase tracking-[0.14em] text-[#667085]">{group.label}</p>
+                      <div className="grid gap-1">
+                        {group.items.map((item) => (
+                          <SellerNavLink key={item.href} item={item} pathname={pathname} onClick={() => setMobileOpen(false)} />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
                 <SellerLogoutButton className="mt-1 w-full justify-start" onClick={() => setMobileOpen(false)} />
               </nav>
             ) : null}
@@ -157,35 +169,51 @@ function SellerSidebar({
 }) {
   const groups = sellerNavGroups(items);
   const operationCopy = operationSummary(profile);
+  const capabilities = sellerCapabilities(profile);
+  const storeName = profile?.storeName?.trim() || "Seller Center";
+  const logoUrl = profile?.profile?.logoUrl ?? profile?.profile?.bannerUrl ?? null;
 
   return (
-    <div className="sticky top-0 flex h-screen min-h-0 flex-col overflow-hidden px-4 py-4">
-      <Link href="/seller" className="flex shrink-0 items-center gap-3 rounded-lg border border-white/10 bg-white/[0.04] p-3">
-        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-[#ED3500] text-sm font-black text-white">1HI</span>
+    <div className="sticky top-0 flex h-screen min-h-0 flex-col overflow-hidden px-3 py-3">
+      <Link href="/seller" className="flex shrink-0 items-center gap-3 rounded-lg border border-white/10 bg-white/[0.05] p-3">
+        <span className="relative grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-md bg-[#ED3500] text-sm font-black text-white">
+          {logoUrl ? <StorefrontImage src={logoUrl} alt={storeName} sizes="44px" fallbackLabel={storeName} /> : "1HI"}
+        </span>
         <span className="min-w-0">
-          <span className="block truncate text-lg font-black leading-tight">1HandIndia</span>
-          <span className="block truncate text-xs font-semibold text-[#DCE8F2]">Seller Center</span>
+          <span className="block truncate text-base font-black leading-tight">{storeName}</span>
+          <span className="block truncate text-xs font-semibold text-[#DCE8F2]">1HandIndia Seller Center</span>
         </span>
       </Link>
 
+      <div className="mt-3 shrink-0 rounded-lg border border-white/10 bg-white/[0.04] p-3">
+        <div className="flex flex-wrap gap-2">
+          {capabilities.map((capability) => (
+            <span key={capability} className="inline-flex items-center gap-1 rounded-md bg-white/10 px-2 py-1 text-[11px] font-black uppercase tracking-wide text-white">
+              <Sparkles className="h-3 w-3" aria-hidden="true" />
+              {capability === "SERVICE" ? "Services" : "Retail"}
+            </span>
+          ))}
+        </div>
+        <p className="mt-2 text-xs leading-5 text-[#DCE8F2]">{operationCopy.description}</p>
+      </div>
+
       <nav className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1 [scrollbar-color:rgba(255,255,255,0.28)_transparent] [scrollbar-width:thin]">
-        <div className="space-y-4">
+        <div className="space-y-3">
           {groups.map((group) => (
-            <div key={group.label}>
-              <p className="px-2 pb-2 text-[11px] font-black uppercase tracking-[0.14em] text-[#BFD4E5]">{group.label}</p>
+            <section key={group.label} aria-labelledby={`seller-nav-${group.key}`}>
+              <p id={`seller-nav-${group.key}`} className="px-2 pb-1.5 text-[11px] font-black uppercase tracking-[0.14em] text-[#BFD4E5]">{group.label}</p>
               <div className="grid gap-1">
                 {group.items.map((item) => (
                   <SellerNavLink key={item.href} item={item} pathname={pathname} />
                 ))}
               </div>
-            </div>
+            </section>
           ))}
         </div>
       </nav>
 
       <div className="mt-4 shrink-0 rounded-lg border border-white/10 bg-white/[0.06] p-3">
         <p className="text-sm font-black leading-5">{operationCopy.title}</p>
-        <p className="mt-1 text-xs leading-5 text-[#DCE8F2]">{operationCopy.description}</p>
         <div className="mt-3 flex flex-wrap gap-2">
           <Button asChild variant="outline" size="sm" className="h-9 border-white/20 bg-white/10 px-3 text-white hover:bg-white/15">
             <Link href="/">
@@ -233,15 +261,15 @@ function SellerNavLink({
       href={item.href}
       {...(onClick ? { onClick } : {})}
       className={cn(
-        "flex min-h-11 items-center gap-3 rounded-md px-3 py-2.5 text-sm font-bold transition",
+        "group flex min-h-10 items-center gap-3 rounded-md px-3 py-2 text-sm font-bold transition",
         active
           ? "bg-[#EAF1F7] shadow-sm lg:bg-white"
-          : "text-[#1F2933] hover:bg-[#F6F3EC] lg:text-[#EEF6FB] lg:hover:bg-white/10"
+          : "text-[#1F2933] hover:bg-[#F6F3EC] lg:text-[#DCE8F2] lg:hover:bg-white/10"
       )}
       style={active ? { color: "#123A5A" } : undefined}
       aria-current={active ? "page" : undefined}
     >
-      <span className="grid h-5 w-5 shrink-0 place-items-center text-current">
+      <span className={cn("grid h-5 w-5 shrink-0 place-items-center text-current", active ? "text-[#ED3500]" : "lg:text-[#BFD4E5] lg:group-hover:text-white")}>
         {sellerNavIcons[item.href] ?? <ClipboardList className="h-4 w-4" aria-hidden="true" />}
       </span>
       <span className="truncate text-current">{item.label}</span>
@@ -252,16 +280,14 @@ function SellerNavLink({
 type SellerNavItem = (typeof sellerNav)[number];
 
 function sellerNavGroups(items: SellerNavItem[]) {
-  return [
-    {
-      label: "Store",
-      items: items.filter((item) => !sellerFinanceRoutes.has(item.href))
-    },
-    {
-      label: "Finance",
-      items: items.filter((item) => sellerFinanceRoutes.has(item.href))
-    }
-  ].filter((group) => group.items.length > 0);
+  const order = ["Overview", "Setup", "Retail", "Services", "B2B", "Insights", "Finance"];
+  return order
+    .map((label) => ({
+      key: label.toLowerCase().replace(/\s+/g, "-"),
+      label,
+      items: items.filter((item) => item.group === label)
+    }))
+    .filter((group) => group.items.length > 0);
 }
 
 function filterSellerNav(profile?: SellerProfile | null) {
@@ -277,7 +303,7 @@ function filterSellerNav(profile?: SellerProfile | null) {
 
 function sellerCapabilities(profile?: SellerProfile | null): SellerCapability[] {
   if (!profile) {
-    return ["RETAIL", "SERVICE"];
+    return [];
   }
 
   if (profile.enabledCapabilities?.length) {
@@ -436,17 +462,139 @@ export function SellerEmptyState({
   );
 }
 
+export function SellerStartWelcome({
+  message = "Create one seller profile, then choose whether you want to sell products, offer services, or run both from the same seller center."
+}: {
+  message?: string;
+}) {
+  const options = [
+    {
+      href: "/seller/register?mode=retail",
+      title: "Retail seller",
+      label: "Products only",
+      description: "Sell catalogue products with orders, returns, B2B enquiries, stock alerts, and seller payouts.",
+      action: "Start retail",
+      icon: <Store className="h-5 w-5" aria-hidden="true" />,
+      points: ["Product catalogue", "Customer orders", "B2B enquiries"]
+    },
+    {
+      href: "/seller/register?mode=service",
+      title: "Service provider",
+      label: "Services only",
+      description: "List repair, installation, maintenance, inspection, consultation, and local or remote services.",
+      action: "Start services",
+      icon: <Wrench className="h-5 w-5" aria-hidden="true" />,
+      points: ["Service listings", "Bookings and quotes", "Service calendar"]
+    },
+    {
+      href: "/seller/register?mode=both",
+      title: "Retail + services",
+      label: "Combined profile",
+      description: "Use one verified business profile for product selling and service bookings together.",
+      action: "Start both",
+      icon: <Sparkles className="h-5 w-5" aria-hidden="true" />,
+      points: ["Products and services", "One approval flow", "Shared finance"]
+    }
+  ];
+
+  return (
+    <div className="grid gap-5">
+      <section className="overflow-hidden rounded-lg border border-[#D9E2EA] bg-white shadow-sm">
+        <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_340px]">
+          <div className="bg-[#123A5A] px-5 py-8 text-white sm:px-7 lg:px-8 lg:py-10">
+            <div className="max-w-3xl">
+              <span className="inline-flex items-center gap-2 rounded-md bg-white/10 px-3 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-[#FFDED4]">
+                <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+                Seller Center
+              </span>
+              <h2 className="mt-5 max-w-2xl text-3xl font-black tracking-normal sm:text-4xl">
+                Welcome to 1HandIndia Seller Center
+              </h2>
+              <p className="mt-4 max-w-2xl text-sm font-semibold leading-7 text-[#DCE8F2] sm:text-base">
+                {message}
+              </p>
+              <div className="mt-6 grid gap-3 text-sm font-semibold text-[#DCE8F2] sm:grid-cols-3">
+                {["Verified onboarding", "Capability-based menus", "Admin review workflow"].map((item) => (
+                  <span key={item} className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 shrink-0 text-[#FF9A7A]" aria-hidden="true" />
+                    {item}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-[#FFF7F3] px-5 py-6 sm:px-7 lg:px-6 lg:py-8">
+            <p className="text-sm font-black uppercase tracking-[0.16em] text-[#ED3500]">What happens next</p>
+            <div className="mt-5 grid gap-4">
+              {[
+                ["1", "Choose operation type"],
+                ["2", "Upload business proofs"],
+                ["3", "Submit profile for approval"]
+              ].map(([step, label]) => (
+                <div key={step} className="flex items-center gap-3">
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-[#ED3500] text-sm font-black text-white">{step}</span>
+                  <span className="text-sm font-black text-[#1F2933]">{label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="seller-start-options">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h3 id="seller-start-options" className="text-xl font-black text-[#123A5A]">
+              Choose how you want to register
+            </h3>
+            <p className="mt-1 text-sm font-semibold leading-6 text-[#667085]">
+              You can start with one capability or combine both under the same verified seller profile.
+            </p>
+          </div>
+          <StatusBadge tone="info">No seller profile found</StatusBadge>
+        </div>
+
+        <div className="mt-4 grid gap-4 xl:grid-cols-3">
+          {options.map((option) => (
+            <Link
+              key={option.href}
+              href={option.href}
+              className="group flex h-full flex-col rounded-lg border border-[#D9E2EA] bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-[#ED3500] hover:shadow-md"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <span className="grid h-11 w-11 place-items-center rounded-md bg-[#FFF0EC] text-[#ED3500] transition group-hover:bg-[#ED3500] group-hover:text-white">
+                  {option.icon}
+                </span>
+                <span className="rounded-md bg-[#F8FAFC] px-2.5 py-1 text-xs font-black uppercase tracking-wide text-[#667085]">
+                  {option.label}
+                </span>
+              </div>
+              <h4 className="mt-4 text-lg font-black text-[#1F2933]">{option.title}</h4>
+              <p className="mt-2 flex-1 text-sm font-semibold leading-6 text-[#667085]">{option.description}</p>
+              <div className="mt-4 grid gap-2">
+                {option.points.map((point) => (
+                  <span key={point} className="flex items-center gap-2 text-sm font-bold text-[#1F2933]">
+                    <CheckCircle2 className="h-4 w-4 shrink-0 text-[#0F8A5F]" aria-hidden="true" />
+                    {point}
+                  </span>
+                ))}
+              </div>
+              <span className="mt-5 inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-[#123A5A] px-4 py-2 text-sm font-black text-white transition group-hover:bg-[#ED3500]">
+                {option.action}
+                <ArrowRight className="h-4 w-4" aria-hidden="true" />
+              </span>
+            </Link>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 export function SellerOnboardingRequired({ message = "Create a seller profile for this account before using seller center tools." }: { message?: string }) {
   return (
-    <SellerEmptyState
-      title="Seller onboarding required"
-      message={message}
-      action={
-        <Button asChild>
-          <Link href="/seller/register">Start onboarding</Link>
-        </Button>
-      }
-    />
+    <SellerStartWelcome message={message} />
   );
 }
 
