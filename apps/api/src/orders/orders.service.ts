@@ -3787,7 +3787,7 @@ export class OrdersService {
 
         await tx.orderShipmentPackage.updateMany({
           where: {
-            orderShipment: { orderId: order.id },
+            orderId: order.id,
             status: {
               notIn: [
                 OrderShipmentPackageStatus.DELIVERED,
@@ -3800,6 +3800,7 @@ export class OrdersService {
           data: {
             status: this.packageStatusFromDeliveryStatus(nextStatus, nextMode),
             ...(nextStatus === DeliveryStatus.PACKED ? { readyForBookingAt: new Date() } : {}),
+            ...(nextStatus === DeliveryStatus.DISPATCHED ? { pickedUpAt: new Date() } : {}),
             ...(nextStatus === DeliveryStatus.DELIVERED ? { deliveredAt: new Date() } : {}),
             ...(nextStatus === DeliveryStatus.CANCELLED ? { cancelledAt: new Date() } : {}),
           },
@@ -6807,6 +6808,10 @@ export class OrdersService {
             source: "SELLER_STATUS_COMPATIBILITY_DEFAULT_PACKAGE",
             shipmentNumber: created.shipmentNumber,
           },
+          ...(created.status === DeliveryStatus.PACKED ? { readyForBookingAt: new Date() } : {}),
+          ...(created.status === DeliveryStatus.DISPATCHED ? { pickedUpAt: new Date() } : {}),
+          ...(created.status === DeliveryStatus.DELIVERED ? { deliveredAt: new Date() } : {}),
+          ...(created.status === DeliveryStatus.CANCELLED ? { cancelledAt: new Date() } : {}),
         },
       });
       return;
@@ -6842,6 +6847,7 @@ export class OrdersService {
       data: {
         status: this.packageStatusFromDeliveryStatus(input.nextStatus, shipment.deliveryMode),
         ...(input.nextStatus === DeliveryStatus.PACKED ? { readyForBookingAt: new Date() } : {}),
+        ...(input.nextStatus === DeliveryStatus.DISPATCHED ? { pickedUpAt: new Date() } : {}),
         ...(input.nextStatus === DeliveryStatus.DELIVERED ? { deliveredAt: new Date() } : {}),
         ...(input.nextStatus === DeliveryStatus.CANCELLED ? { cancelledAt: new Date() } : {}),
       },
