@@ -443,6 +443,22 @@ export class CourierLogisticsService {
   }
 
   async getCourierDashboard() {
+    const activePackageWhere: Prisma.OrderShipmentPackageWhereInput = {
+      order: { orderStatus: { not: OrderStatus.CANCELLED }, deliveryStatus: { not: DeliveryStatus.CANCELLED } },
+      orderShipment: { status: { not: DeliveryStatus.CANCELLED } },
+    };
+    const activeCourierPackageWhere: Prisma.CourierConsignmentPackageWhereInput = {
+      order: { orderStatus: { not: OrderStatus.CANCELLED }, deliveryStatus: { not: DeliveryStatus.CANCELLED } },
+      orderShipment: { status: { not: DeliveryStatus.CANCELLED } },
+    };
+    const activeCourierShipmentWhere: Prisma.CourierShipmentWhereInput = {
+      order: { orderStatus: { not: OrderStatus.CANCELLED }, deliveryStatus: { not: DeliveryStatus.CANCELLED } },
+      orderShipment: { status: { not: DeliveryStatus.CANCELLED } },
+    };
+    const activeShipmentWhere: Prisma.OrderShipmentWhereInput = {
+      order: { orderStatus: { not: OrderStatus.CANCELLED }, deliveryStatus: { not: DeliveryStatus.CANCELLED } },
+      status: { not: DeliveryStatus.CANCELLED },
+    };
     const [
       pendingBookings,
       bookingFailures,
@@ -457,6 +473,7 @@ export class CourierLogisticsService {
     ] = await Promise.all([
       this.prisma.client.orderShipmentPackage.count({
         where: {
+          ...activePackageWhere,
           deliveryMode: DeliveryMode.THIRD_PARTY_COURIER,
           status: {
             in: [
@@ -469,6 +486,7 @@ export class CourierLogisticsService {
       }),
       this.prisma.client.courierShipment.count({
         where: {
+          ...activeCourierShipmentWhere,
           OR: [
             { bookingError: { not: null } },
             { trackingStatus: CourierShipmentStatus.FAILED },
@@ -477,15 +495,20 @@ export class CourierLogisticsService {
       }),
       this.prisma.client.courierConsignmentPackage.count({
         where: {
+          ...activeCourierPackageWhere,
           labelUrl: { not: null },
           trackingStatus: { notIn: Array.from(labelDownloadBlockedStatuses) },
         },
       }),
       this.prisma.client.courierConsignmentPackage.count({
-        where: { trackingStatus: CourierShipmentStatus.PICKUP_SCHEDULED },
+        where: {
+          ...activeCourierPackageWhere,
+          trackingStatus: CourierShipmentStatus.PICKUP_SCHEDULED,
+        },
       }),
       this.prisma.client.courierConsignmentPackage.count({
         where: {
+          ...activeCourierPackageWhere,
           trackingStatus: {
             in: [
               CourierShipmentStatus.PICKED_UP,
@@ -497,16 +520,26 @@ export class CourierLogisticsService {
           },
         },
       }),
-      this.prisma.client.courierConsignmentPackage.count({
-        where: { trackingStatus: CourierShipmentStatus.DELIVERED },
+      this.prisma.client.orderShipmentPackage.count({
+        where: {
+          order: { orderStatus: { not: OrderStatus.CANCELLED }, deliveryStatus: { not: DeliveryStatus.CANCELLED } },
+          OR: [
+            { status: OrderShipmentPackageStatus.DELIVERED },
+            { orderShipment: { status: DeliveryStatus.DELIVERED } },
+            { order: { deliveryStatus: DeliveryStatus.DELIVERED } },
+          ],
+        },
       }),
       this.prisma.client.orderShipment.count({
         where: {
+          ...activeShipmentWhere,
+          status: { notIn: [DeliveryStatus.DELIVERED, DeliveryStatus.CANCELLED] },
           OR: [{ routingFailed: true }, { routingPermanentFailureAt: { not: null } }],
         },
       }),
       this.prisma.client.orderShipment.count({
         where: {
+          ...activeShipmentWhere,
           deliveryMode: DeliveryMode.LOCAL_DELIVERY_PARTNER,
           assignmentStatus: {
             in: [DeliveryAssignmentStatus.UNASSIGNED, DeliveryAssignmentStatus.REJECTED],
@@ -516,6 +549,8 @@ export class CourierLogisticsService {
       }),
       this.prisma.client.courierCodRemittance.count({
         where: {
+          order: { orderStatus: { not: OrderStatus.CANCELLED }, deliveryStatus: { not: DeliveryStatus.CANCELLED } },
+          orderShipment: { status: { not: DeliveryStatus.CANCELLED } },
           status: {
             in: [
               CourierCodRemittanceStatus.PENDING,
@@ -683,6 +718,8 @@ export class CourierLogisticsService {
     const take = Math.min(query.limit ?? 50, 100);
     const search = query.search?.trim();
     const where: Prisma.OrderShipmentWhereInput = {
+      order: { orderStatus: { not: OrderStatus.CANCELLED }, deliveryStatus: { not: DeliveryStatus.CANCELLED } },
+      status: { notIn: [DeliveryStatus.DELIVERED, DeliveryStatus.CANCELLED] },
       OR: [{ routingFailed: true }, { routingPermanentFailureAt: { not: null } }],
       ...(search
         ? {

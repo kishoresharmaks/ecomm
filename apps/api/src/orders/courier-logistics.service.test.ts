@@ -11,6 +11,53 @@ import { describe, expect, it, vi } from "vitest";
 import { CourierLogisticsService } from "./courier-logistics.service";
 
 describe("CourierLogisticsService", () => {
+  it("counts courier dashboard metrics across delivery modes and excludes cancelled routing failures", async () => {
+    const prisma = {
+      client: {
+        orderShipmentPackage: {
+          count: vi.fn().mockResolvedValueOnce(6).mockResolvedValueOnce(1),
+        },
+        courierShipment: {
+          count: vi.fn().mockResolvedValue(0),
+        },
+        courierConsignmentPackage: {
+          count: vi.fn().mockResolvedValue(0),
+        },
+        orderShipment: {
+          count: vi.fn().mockResolvedValueOnce(0).mockResolvedValueOnce(0),
+        },
+        courierCodRemittance: {
+          count: vi.fn().mockResolvedValue(0),
+        },
+        courierProviderSetting: {
+          count: vi.fn().mockResolvedValue(0),
+        },
+      },
+    };
+    const service = new CourierLogisticsService(prisma as never, undefined as never);
+
+    const result = await service.getCourierDashboard();
+
+    expect(result.metrics.delivered).toBe(1);
+    expect(prisma.client.orderShipmentPackage.count).toHaveBeenNthCalledWith(2, {
+      where: {
+        order: { orderStatus: { not: "CANCELLED" }, deliveryStatus: { not: "CANCELLED" } },
+        OR: [
+          { status: OrderShipmentPackageStatus.DELIVERED },
+          { orderShipment: { status: DeliveryStatus.DELIVERED } },
+          { order: { deliveryStatus: DeliveryStatus.DELIVERED } },
+        ],
+      },
+    });
+    expect(prisma.client.orderShipment.count).toHaveBeenNthCalledWith(1, {
+      where: {
+        order: { orderStatus: { not: "CANCELLED" }, deliveryStatus: { not: "CANCELLED" } },
+        status: { notIn: [DeliveryStatus.DELIVERED, DeliveryStatus.CANCELLED] },
+        OR: [{ routingFailed: true }, { routingPermanentFailureAt: { not: null } }],
+      },
+    });
+  });
+
   it("lists routing failures when embedded packages omit their own shipment relations", async () => {
     const prisma = {
       client: {
