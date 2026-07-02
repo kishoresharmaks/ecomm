@@ -2439,7 +2439,34 @@ export class CourierLogisticsService {
   private courierCodRemittanceReadback(
     item: Prisma.CourierCodRemittanceGetPayload<{ include: ReturnType<CourierLogisticsService["courierCodRemittanceInclude"]> }>,
   ) {
-    return item;
+    return {
+      id: item.id,
+      providerCode: item.providerCode,
+      awbNumber: item.awbNumber,
+      expectedAmountPaise: item.expectedAmountPaise,
+      collectedAmountPaise: item.collectedAmountPaise,
+      remittedAmountPaise: item.remittedAmountPaise,
+      remittanceReference: item.remittanceReference,
+      reportReference: item.reportReference,
+      status: item.status as any,
+      notes: item.notes,
+      order: {
+        id: item.order.id,
+        orderNumber: item.order.orderNumber,
+        paymentStatus: item.order.paymentStatus,
+        deliveryStatus: item.order.deliveryStatus,
+        totalPaise: item.order.totalPaise,
+        currency: item.order.currency,
+      },
+      orderShipment: {
+        id: item.orderShipment.id,
+        shipmentNumber: item.orderShipment.shipmentNumber,
+      },
+      seller: item.seller ? {
+        id: item.seller.id,
+        storeName: item.seller.storeName,
+      } : null,
+    };
   }
 
   private courierPackageInclude(includeDetail = false) {
@@ -2456,6 +2483,9 @@ export class CourierLogisticsService {
           deliveryPartner: true,
           courierShipment: true,
           courierCodRemittance: true,
+          _count: {
+            select: { packages: true },
+          },
         },
       },
       courierPackages: {
@@ -2480,18 +2510,82 @@ export class CourierLogisticsService {
 
   private courierPackageReadback(
     shipmentPackage: Prisma.OrderShipmentPackageGetPayload<{ include: ReturnType<CourierLogisticsService["courierPackageInclude"]> }>,
+    omitShipment = false,
   ) {
     const courierPackage = shipmentPackage.courierPackages[0] ?? null;
     const canDownloadLabel = Boolean(
       courierPackage?.labelUrl && !labelDownloadBlockedStatuses.has(courierPackage.trackingStatus),
     );
     return {
-      ...shipmentPackage,
+      id: shipmentPackage.id,
+      packageNumber: shipmentPackage.packageNumber,
+      deliveryMode: shipmentPackage.deliveryMode as any,
+      status: shipmentPackage.status as any,
+      weightGrams: shipmentPackage.weightGrams,
+      lengthCm: shipmentPackage.lengthCm,
+      breadthCm: shipmentPackage.breadthCm,
+      heightCm: shipmentPackage.heightCm,
+      declaredValuePaise: shipmentPackage.declaredValuePaise,
+      shippingPaise: shipmentPackage.shippingPaise,
+      codSurchargePaise: shipmentPackage.codSurchargePaise,
+      order: {
+        id: shipmentPackage.order.id,
+        orderNumber: shipmentPackage.order.orderNumber,
+        paymentStatus: shipmentPackage.order.paymentStatus,
+        deliveryStatus: shipmentPackage.order.deliveryStatus,
+        shippingAddressSnapshot: shipmentPackage.order.shippingAddressSnapshot,
+        createdAt: shipmentPackage.order.createdAt.toISOString(),
+      },
+      seller: {
+        id: shipmentPackage.seller.id,
+        storeName: shipmentPackage.seller.storeName,
+        sellerType: shipmentPackage.seller.sellerType,
+      },
+      orderShipment: omitShipment
+        ? (null as any)
+        : {
+            id: shipmentPackage.orderShipment.id,
+            shipmentNumber: shipmentPackage.orderShipment.shipmentNumber,
+            deliveryMode: shipmentPackage.orderShipment.deliveryMode as any,
+            status: shipmentPackage.orderShipment.status,
+            assignmentStatus: shipmentPackage.orderShipment.assignmentStatus as any,
+            assignmentExpiresAt: shipmentPackage.orderShipment.assignmentExpiresAt?.toISOString() ?? null,
+            routingFailed: shipmentPackage.orderShipment.routingFailed,
+            routingFailureReason: shipmentPackage.orderShipment.routingFailureReason,
+            routingFailureNote: shipmentPackage.orderShipment.routingFailureNote,
+            routingFirstFailedAt: shipmentPackage.orderShipment.routingFirstFailedAt?.toISOString() ?? null,
+            routingPermanentFailureAt: shipmentPackage.orderShipment.routingPermanentFailureAt?.toISOString() ?? null,
+            courierProviderCode: shipmentPackage.orderShipment.courierProviderCode,
+            deliveryPartnerUserId: shipmentPackage.orderShipment.deliveryPartnerUserId,
+            assignmentNote: shipmentPackage.orderShipment.assignmentNote,
+            order: {
+              id: shipmentPackage.order.id,
+              orderNumber: shipmentPackage.order.orderNumber,
+              paymentStatus: shipmentPackage.order.paymentStatus,
+              deliveryStatus: shipmentPackage.order.deliveryStatus,
+              shippingAddressSnapshot: shipmentPackage.order.shippingAddressSnapshot,
+            },
+            seller: {
+              id: shipmentPackage.seller.id,
+              storeName: shipmentPackage.seller.storeName,
+              sellerType: shipmentPackage.seller.sellerType,
+            },
+            deliveryPartner: shipmentPackage.orderShipment.deliveryPartner
+              ? {
+                  id: shipmentPackage.orderShipment.deliveryPartner.id,
+                  email: shipmentPackage.orderShipment.deliveryPartner.email,
+                  fullName: shipmentPackage.orderShipment.deliveryPartner.fullName,
+                  phone: shipmentPackage.orderShipment.deliveryPartner.phone,
+                }
+              : null,
+            firstPackage: null,
+            packageCount: shipmentPackage.orderShipment._count?.packages ?? 1,
+          },
       latestCourierPackage: courierPackage,
       courierTrackingStatus:
-        courierPackage?.trackingStatus ??
+        (courierPackage?.trackingStatus ??
         shipmentPackage.orderShipment.courierShipment?.trackingStatus ??
-        CourierShipmentStatus.NOT_BOOKED,
+        CourierShipmentStatus.NOT_BOOKED) as any,
       awbNumber: courierPackage?.awbNumber ?? shipmentPackage.orderShipment.courierShipment?.awbNumber ?? null,
       courierName: courierPackage?.courierName ?? null,
       courierCode:
@@ -2539,8 +2633,41 @@ export class CourierLogisticsService {
     shipment: Prisma.OrderShipmentGetPayload<{ include: ReturnType<CourierLogisticsService["routingShipmentInclude"]> }>,
   ) {
     return {
-      ...shipment,
-      firstPackage: shipment.packages[0] ?? null,
+      id: shipment.id,
+      shipmentNumber: shipment.shipmentNumber,
+      deliveryMode: shipment.deliveryMode as any,
+      status: shipment.status,
+      assignmentStatus: shipment.assignmentStatus as any,
+      assignmentExpiresAt: shipment.assignmentExpiresAt?.toISOString() ?? null,
+      routingFailed: shipment.routingFailed,
+      routingFailureReason: shipment.routingFailureReason,
+      routingFailureNote: shipment.routingFailureNote,
+      routingFirstFailedAt: shipment.routingFirstFailedAt?.toISOString() ?? null,
+      routingPermanentFailureAt: shipment.routingPermanentFailureAt?.toISOString() ?? null,
+      courierProviderCode: shipment.courierProviderCode,
+      deliveryPartnerUserId: shipment.deliveryPartnerUserId,
+      assignmentNote: shipment.assignmentNote,
+      order: {
+        id: shipment.order.id,
+        orderNumber: shipment.order.orderNumber,
+        paymentStatus: shipment.order.paymentStatus,
+        deliveryStatus: shipment.order.deliveryStatus,
+        shippingAddressSnapshot: shipment.order.shippingAddressSnapshot,
+      },
+      seller: {
+        id: shipment.seller.id,
+        storeName: shipment.seller.storeName,
+        sellerType: shipment.seller.sellerType,
+      },
+      deliveryPartner: shipment.deliveryPartner
+        ? {
+            id: shipment.deliveryPartner.id,
+            email: shipment.deliveryPartner.email,
+            fullName: shipment.deliveryPartner.fullName,
+            phone: shipment.deliveryPartner.phone,
+          }
+        : null,
+      firstPackage: shipment.packages[0] ? this.courierPackageReadback(shipment.packages[0] as any, true) : null,
       packageCount: shipment.packages.length,
     };
   }

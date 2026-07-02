@@ -78,7 +78,7 @@ export function ServiceBookingsClient() {
       )
     : bookings;
   const awaitingActionCount = bookings.filter((booking) => ["QUOTE_SENT", "COMPLETION_SUBMITTED"].includes(booking.status)).length;
-  const upcomingCount = bookings.filter((booking) => booking.scheduledStartAt && new Date(booking.scheduledStartAt).getTime() >= Date.now()).length;
+  const upcomingCount = bookings.filter((booking) => ["ACCEPTED", "QUOTE_ACCEPTED", "SCHEDULED", "IN_PROGRESS"].includes(booking.status) && booking.scheduledStartAt && new Date(booking.scheduledStartAt).getTime() >= Date.now()).length;
   const completedCount = bookings.filter((booking) => booking.status === "COMPLETED").length;
 
   return (
@@ -380,6 +380,7 @@ export function ServiceBookingDetailClient({ bookingNumber }: { bookingNumber: s
                       bookingNumber={booking.bookingNumber}
                       pending={paymentMutation.isPending && activePaymentId === payment.id}
                       disabled={paymentMutation.isPending || actionMutation.isPending}
+                      duePaise={duePaise}
                       onPay={() => paymentMutation.mutate(payment)}
                       onConfirmCash={(form) => {
                         actionMutation.mutate(
@@ -578,7 +579,7 @@ function QuoteRow({ quote }: { quote: ServiceQuote }) {
 
 function PaymentSummary({ booking }: { booking: ServiceBooking }) {
   const duePaise = Math.max(0, booking.totalPayablePaise - booking.paidAmountPaise);
-  const pendingOnlineCount = booking.payments?.filter((payment) => payment.provider === "RAZORPAY" && ["PENDING", "FAILED"].includes(payment.status)).length ?? 0;
+  const pendingOnlineCount = duePaise > 0 ? booking.payments?.filter((payment) => payment.provider === "RAZORPAY" && ["PENDING", "FAILED"].includes(payment.status)).length ?? 0 : 0;
   const refundPaise = booking.refundRequests
     ?.filter((refund) => !["FAILED", "CANCELLED"].includes(refund.status))
     .reduce((sum, refund) => sum + refund.amountPaise, 0) ?? 0;
@@ -598,6 +599,7 @@ function PaymentRow({
   bookingNumber,
   pending,
   disabled,
+  duePaise,
   onPay,
   onConfirmCash,
   onDisputeCash,
@@ -606,11 +608,14 @@ function PaymentRow({
   bookingNumber: string;
   pending: boolean;
   disabled: boolean;
+  duePaise: number;
   onPay: () => void;
   onConfirmCash: (form?: FormData) => void;
   onDisputeCash: (form: FormData) => void;
 }) {
-  const payableOnline = payment.provider === "RAZORPAY" && (payment.status === "PENDING" || payment.status === "FAILED");
+  const isFullyPaid = duePaise <= 0;
+  const isObsolete = !isFullyPaid && payment.amountPaise > duePaise;
+  const payableOnline = !isFullyPaid && !isObsolete && payment.provider === "RAZORPAY" && (payment.status === "PENDING" || payment.status === "FAILED");
   const providerCash = payment.collectionType === "PROVIDER_CASH";
   const cashAwaitingCustomer = providerCash && ["RECORDED", "REOPENED"].includes(payment.cashCollectionStatus ?? "");
   const providerReference = payment.providerPaymentId ?? payment.providerOrderId ?? payment.referenceNumber;
@@ -629,6 +634,10 @@ function PaymentRow({
         {payableOnline ? (
           <p className="mt-2 text-xs font-bold text-[#8A3A20]">
             Complete this online payment to keep service booking {bookingNumber} moving.
+          </p>
+        ) : (isFullyPaid || isObsolete) && payment.provider === "RAZORPAY" && (payment.status === "PENDING" || payment.status === "FAILED") ? (
+          <p className="mt-2 text-xs font-bold text-[#667085]">
+            This online payment request is no longer required due to balance updates.
           </p>
         ) : providerCash ? (
           <p className="mt-2 text-xs font-bold text-[#667085]">

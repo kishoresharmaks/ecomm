@@ -175,3 +175,5 @@ Recommended next work:
 
 - Run browser-level end-to-end QA across auth sync, customer checkout, seller approval/product management, B2B enquiries, admin reports/settings, support, and location selectors after starting the web/API servers together.
 - Configure real provider accounts only when the client is ready: Razorpay, email provider, public/private storage providers, production database, production Clerk keys, and production domain/CORS.
+
+- When updating delivery statuses in `orders.service.ts` (e.g., in shared delivery update flows), ensure that both `orderShipment` and `orderShipmentPackage` statuses are updated together. Use `this.packageStatusFromDeliveryStatus` to derive the correct package status, as downstream workspaces (like Courier) depend on `orderShipmentPackage.status`.

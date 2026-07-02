@@ -253,6 +253,8 @@ export function DeliveryOrderDetailClient({ orderNumber }: { orderNumber: string
     order.deliveryDetail?.status ?? order.deliveryStatus,
   );
   const selectableDeliveryStatuses = nextDeliveryStatusOptions(currentDeliveryStatus);
+  const isDelivered = currentDeliveryStatus === "DELIVERED";
+  const inputsDisabled = !canUpdateProgress || isDelivered;
 
   return (
     <div className="grid gap-5">
@@ -355,258 +357,11 @@ export function DeliveryOrderDetailClient({ orderNumber }: { orderNumber: string
         </div>
       ) : null}
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
-        <div className="grid gap-5">
+      <div className="grid gap-5">
+        <div className="grid gap-5 md:grid-cols-2 items-start">
           <div id="seller-pickup" className="scroll-mt-6">
             <SellerPickupStops order={order} />
           </div>
-
-          <DeliveryPanel>
-            <SectionHeading
-              title="Package items"
-              description="Verify item quantity before collecting the package from each seller."
-            />
-            <div className="mt-5 overflow-hidden rounded-md border border-[#E5E7EB]">
-              {(order.items ?? []).map((item) => (
-                <div
-                  key={item.id}
-                  className="grid gap-3 border-b border-[#E5E7EB] bg-[#F8FAFC] p-4 last:border-b-0 md:grid-cols-[1fr_auto]"
-                >
-                  <div>
-                    <p className="font-black text-[#1F2933]">{item.productNameSnapshot}</p>
-                    <p className="mt-1 text-sm font-semibold text-[#667085]">
-                      {item.seller?.storeName ?? "Seller"} / Qty {item.quantity}
-                    </p>
-                  </div>
-                  <StatusBadge tone="info">{item.seller?.slug ?? "seller"}</StatusBadge>
-                </div>
-              ))}
-            </div>
-          </DeliveryPanel>
-
-          <DeliveryPanel>
-            <SectionHeading
-              title="Status timeline"
-              description="Delivery and order status events for this order."
-            />
-            <OrderStatusTimeline
-              className="mt-5"
-              events={timeline}
-              orderCreatedAt={order.createdAt}
-              currentOrderStatus={order.orderStatus}
-              currentDeliveryStatus={order.deliveryDetail?.status ?? order.deliveryStatus}
-              formatDateTime={formatDateTime}
-              emptyText="No delivery timeline events yet."
-            />
-          </DeliveryPanel>
-        </div>
-
-        <div className="grid gap-5">
-          <div id="delivery-update" className="scroll-mt-6">
-            <DeliveryPanel>
-              <div className="flex items-center gap-3">
-                <DeliveryIconTile>
-                  <Truck className="h-5 w-5" aria-hidden="true" />
-                </DeliveryIconTile>
-                <SectionHeading
-                  title="Update delivery"
-                  description="Save pickup, transit, delivery proof, and COD details after accepting the assignment."
-                />
-              </div>
-              <form onSubmit={submit} className="mt-5 grid gap-4">
-                {!canUpdateProgress ? (
-                  <p className="rounded-md border border-[#FFC7B8] bg-[#FFF0EC] p-3 text-sm font-bold leading-6 text-[#9F2600]">
-                    Accept the assignment before updating pickup, out-for-delivery, COD, or proof
-                    details.
-                  </p>
-                ) : null}
-                <DeliverySelect
-                  label="Delivery status"
-                  value={status}
-                  values={selectableDeliveryStatuses}
-                  onChange={(value) => setStatus(value as DeliveryStatusValue)}
-                  disabled={!canUpdateProgress}
-                />
-                <p className="-mt-2 text-xs font-semibold leading-5 text-[#667085]">
-                  Move delivery one step at a time. Direct jumps are blocked.
-                </p>
-                <DeliveryField
-                  label="Tracking reference"
-                  value={trackingReference}
-                  onChange={setTrackingReference}
-                  placeholder="Generated after delivery partner assignment"
-                  disabled
-                />
-                <p className="-mt-2 text-xs font-semibold leading-5 text-[#667085]">
-                  Tracking reference is generated during assignment and cannot be edited by the
-                  delivery partner.
-                </p>
-                <DeliveryField
-                  label="Estimated delivery date"
-                  type="date"
-                  value={estimatedDeliveryDate}
-                  onChange={setEstimatedDeliveryDate}
-                  disabled={!canUpdateProgress}
-                />
-                <DeliveryTextArea
-                  label="Delivery note"
-                  value={deliveryNote}
-                  onChange={setDeliveryNote}
-                  rows={3}
-                  disabled={!canUpdateProgress}
-                />
-                <div className="grid gap-3 rounded-md border border-[#E5E7EB] bg-[#F8FAFC] p-3">
-                  <p className="text-sm font-black text-[#1F2933]">Proof details</p>
-                  <DeliveryField
-                    label="Receiver name"
-                    value={receiverName}
-                    onChange={setReceiverName}
-                    disabled={!canUpdateProgress}
-                  />
-                  <DeliveryTextArea
-                    label="Delivery proof note"
-                    value={proofNote}
-                    onChange={setProofNote}
-                    rows={2}
-                    disabled={!canUpdateProgress}
-                  />
-                  <DeliveryField
-                    label="Manual proof reference"
-                    value={proofReference}
-                    onChange={setProofReference}
-                    disabled={!canUpdateProgress}
-                    placeholder="Image/signature upload later"
-                  />
-                </div>
-                {codPayment ? (
-                  <CodCollectionFields
-                    order={order}
-                    codPayment={codPayment}
-                    collected={codCollected}
-                    amount={codCollectedAmount}
-                    note={codCollectionNote}
-                    onCollectedChange={setCodCollected}
-                    onAmountChange={setCodCollectedAmount}
-                    onNoteChange={setCodCollectionNote}
-                    disabled={!canUpdateProgress}
-                  />
-                ) : null}
-                <Button
-                  type="submit"
-                  disabled={updateMutation.isPending || !canUpdateProgress}
-                  className="sticky bottom-3 z-10 h-12 shadow-lg shadow-[#ED3500]/15 md:static md:shadow-none"
-                >
-                  {updateMutation.isPending ? "Saving..." : "Save delivery update"}
-                </Button>
-              </form>
-            </DeliveryPanel>
-          </div>
-
-          <DeliveryPanel>
-            <SectionHeading
-              title="Delivery attempts"
-              description="Record failed attempt, unreachable customer, address issue, reschedule, or refusal."
-            />
-            <form
-              className="mt-5 grid gap-3"
-              onSubmit={(event) => {
-                event.preventDefault();
-                setNotice(null);
-                attemptMutation.mutate();
-              }}
-            >
-              <DeliverySelect
-                label="Attempt reason"
-                value={attemptReason}
-                values={attemptReasons}
-                onChange={setAttemptReason}
-                disabled={!canUpdateProgress}
-              />
-              <DeliveryTextArea
-                label="Attempt note"
-                value={attemptNote}
-                onChange={setAttemptNote}
-                rows={2}
-                disabled={!canUpdateProgress}
-              />
-              <DeliveryField
-                label="Next attempt date"
-                type="date"
-                value={nextAttemptDate}
-                onChange={setNextAttemptDate}
-                disabled={!canUpdateProgress}
-              />
-              <Button
-                type="submit"
-                variant="outline"
-                disabled={!canUpdateProgress || attemptMutation.isPending}
-              >
-                {attemptMutation.isPending ? "Recording..." : "Record attempt"}
-              </Button>
-            </form>
-            <div className="mt-5 grid gap-2">
-              {(order.deliveryDetail?.attempts ?? []).map((attempt) => (
-                <div
-                  key={attempt.id}
-                  className="rounded-md border border-[#E5E7EB] bg-[#F8FAFC] p-3 text-sm"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <StatusBadge tone="warning">{humanize(attempt.reason)}</StatusBadge>
-                    <span className="font-semibold text-[#667085]">
-                      {formatDateTime(attempt.attemptedAt ?? attempt.createdAt)}
-                    </span>
-                  </div>
-                  {attempt.note ? (
-                    <p className="mt-2 font-semibold leading-6 text-[#667085]">{attempt.note}</p>
-                  ) : null}
-                  {attempt.nextAttemptDate ? (
-                    <p className="mt-1 text-xs font-bold text-[#163B5C]">
-                      Next attempt {formatDateTime(attempt.nextAttemptDate)}
-                    </p>
-                  ) : null}
-                </div>
-              ))}
-              {(order.deliveryDetail?.attempts ?? []).length === 0 ? (
-                <p className="text-sm font-semibold text-[#667085]">No attempts recorded.</p>
-              ) : null}
-            </div>
-          </DeliveryPanel>
-
-          <DeliveryPanel>
-            <div className="flex items-center gap-3">
-              <DeliveryIconTile>
-                <CreditCard className="h-5 w-5" aria-hidden="true" />
-              </DeliveryIconTile>
-              <SectionHeading
-                title="Payment check"
-                description="Delivery partners do not change payment state."
-              />
-            </div>
-            <div className="mt-4 grid gap-3">
-              {(order.payments ?? []).map((payment) => (
-                <div
-                  key={payment.id}
-                  className="rounded-md border border-[#E5E7EB] bg-[#F8FAFC] p-3"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="font-black text-[#1F2933]">{humanize(payment.provider)}</p>
-                    <StatusBadge tone={payment.status === "PAID" ? "success" : "warning"}>
-                      {humanize(payment.status)}
-                    </StatusBadge>
-                  </div>
-                  <p className="mt-1 text-sm font-semibold text-[#667085]">
-                    {formatPaise(payment.amountPaise, payment.currency)}
-                  </p>
-                </div>
-              ))}
-              {isCodPending(order) ? (
-                <p className="rounded-md border border-[#FFC7B8] bg-[#FFF0EC] p-3 text-sm font-bold leading-6 text-[#9F2600]">
-                  COD cash can be recorded from the delivery form. Admin verification marks the
-                  payment paid.
-                </p>
-              ) : null}
-            </div>
-          </DeliveryPanel>
 
           <div id="customer-drop" className="scroll-mt-6">
             <DeliveryPanel>
@@ -622,6 +377,275 @@ export function DeliveryOrderDetailClient({ orderNumber }: { orderNumber: string
               <AddressBlock order={order} />
             </DeliveryPanel>
           </div>
+        </div>
+
+        <div id="delivery-update" className="scroll-mt-6">
+          <DeliveryPanel>
+            <div className="flex items-center gap-3">
+              <DeliveryIconTile>
+                <Truck className="h-5 w-5" aria-hidden="true" />
+              </DeliveryIconTile>
+              <SectionHeading
+                title="Update delivery"
+                description="Save pickup, transit, delivery proof, and COD details after accepting the assignment."
+              />
+            </div>
+            <form onSubmit={submit} className="mt-5 grid gap-4">
+              {!canUpdateProgress ? (
+                <p className="rounded-md border border-[#FFC7B8] bg-[#FFF0EC] p-3 text-sm font-bold leading-6 text-[#9F2600]">
+                  Accept the assignment before updating pickup, out-for-delivery, COD, or proof
+                  details.
+                </p>
+              ) : isDelivered ? (
+                <p className="rounded-md border border-[#BFEAD9] bg-[#E9F7F1] p-3 text-sm font-bold leading-6 text-[#0F8A5F]">
+                  This order has been delivered. Delivery updates are now locked.
+                </p>
+              ) : null}
+              <DeliverySelect
+                label="Delivery status"
+                value={status}
+                values={selectableDeliveryStatuses}
+                onChange={(value) => setStatus(value as DeliveryStatusValue)}
+                disabled={inputsDisabled}
+              />
+              <p className="-mt-2 text-xs font-semibold leading-5 text-[#667085]">
+                Move delivery one step at a time. Direct jumps are blocked.
+              </p>
+              <DeliveryField
+                label="Tracking reference"
+                value={trackingReference}
+                onChange={setTrackingReference}
+                placeholder="Generated after delivery partner assignment"
+                disabled
+              />
+              <p className="-mt-2 text-xs font-semibold leading-5 text-[#667085]">
+                Tracking reference is generated during assignment and cannot be edited by the
+                delivery partner.
+              </p>
+              <DeliveryField
+                label="Estimated delivery date"
+                type="date"
+                value={estimatedDeliveryDate}
+                onChange={setEstimatedDeliveryDate}
+                disabled={inputsDisabled}
+              />
+              <DeliveryTextArea
+                label="Delivery note"
+                value={deliveryNote}
+                onChange={setDeliveryNote}
+                rows={3}
+                disabled={inputsDisabled}
+              />
+              <div className="grid gap-3 rounded-md border border-[#E5E7EB] bg-[#F8FAFC] p-3">
+                <p className="text-sm font-black text-[#1F2933]">Proof details</p>
+                <DeliveryField
+                  label="Receiver name"
+                  value={receiverName}
+                  onChange={setReceiverName}
+                  disabled={inputsDisabled}
+                />
+                <DeliveryTextArea
+                  label="Delivery proof note"
+                  value={proofNote}
+                  onChange={setProofNote}
+                  rows={2}
+                  disabled={inputsDisabled}
+                />
+                <DeliveryField
+                  label="Manual proof reference"
+                  value={proofReference}
+                  onChange={setProofReference}
+                  disabled={inputsDisabled}
+                  placeholder="Image/signature upload later"
+                />
+              </div>
+              {codPayment ? (
+                <CodCollectionFields
+                  order={order}
+                  codPayment={codPayment}
+                  collected={codCollected}
+                  amount={codCollectedAmount}
+                  note={codCollectionNote}
+                  onCollectedChange={setCodCollected}
+                  onAmountChange={setCodCollectedAmount}
+                  onNoteChange={setCodCollectionNote}
+                  disabled={inputsDisabled}
+                />
+              ) : null}
+              <Button
+                type="submit"
+                disabled={updateMutation.isPending || inputsDisabled}
+                className="sticky bottom-3 z-10 h-12 shadow-lg shadow-[#ED3500]/15 md:static md:shadow-none"
+              >
+                {updateMutation.isPending ? "Saving..." : "Save delivery update"}
+              </Button>
+            </form>
+          </DeliveryPanel>
+        </div>
+
+        <div className="grid gap-3">
+          <details className="group rounded-md border border-[#D8E2EA] bg-white">
+            <summary className="flex cursor-pointer items-center justify-between p-4 outline-none group-open:border-b group-open:border-[#D8E2EA] hover:bg-[#F8FAFC]">
+              <div className="flex items-center gap-3">
+                <DeliveryIconTile>
+                  <PackageCheck className="h-5 w-5" aria-hidden="true" />
+                </DeliveryIconTile>
+                <h3 className="font-black text-[#1F2933]">Package items ({order.items?.length ?? 0})</h3>
+              </div>
+            </summary>
+            <div className="p-4 bg-[#F8FAFC]">
+              <div className="overflow-hidden rounded-md border border-[#E5E7EB]">
+                {(order.items ?? []).map((item) => (
+                  <div
+                    key={item.id}
+                    className="grid gap-3 border-b border-[#E5E7EB] bg-white p-4 last:border-b-0 md:grid-cols-[1fr_auto]"
+                  >
+                    <div>
+                      <p className="font-black text-[#1F2933]">{item.productNameSnapshot}</p>
+                      <p className="mt-1 text-sm font-semibold text-[#667085]">
+                        {item.seller?.storeName ?? "Seller"} / Qty {item.quantity}
+                      </p>
+                    </div>
+                    <StatusBadge tone="info">{item.seller?.slug ?? "seller"}</StatusBadge>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </details>
+
+          <details className="group rounded-md border border-[#D8E2EA] bg-white">
+            <summary className="flex cursor-pointer items-center justify-between p-4 outline-none group-open:border-b group-open:border-[#D8E2EA] hover:bg-[#F8FAFC]">
+              <div className="flex items-center gap-3">
+                <DeliveryIconTile>
+                  <MapPin className="h-5 w-5" aria-hidden="true" />
+                </DeliveryIconTile>
+                <h3 className="font-black text-[#1F2933]">Status timeline</h3>
+              </div>
+            </summary>
+            <div className="p-4 bg-[#F8FAFC]">
+              <OrderStatusTimeline
+                events={timeline}
+                orderCreatedAt={order.createdAt}
+                currentOrderStatus={order.orderStatus}
+                currentDeliveryStatus={order.deliveryDetail?.status ?? order.deliveryStatus}
+                formatDateTime={formatDateTime}
+                emptyText="No delivery timeline events yet."
+              />
+            </div>
+          </details>
+
+          <details className="group rounded-md border border-[#D8E2EA] bg-white">
+            <summary className="flex cursor-pointer items-center justify-between p-4 outline-none group-open:border-b group-open:border-[#D8E2EA] hover:bg-[#F8FAFC]">
+              <div className="flex items-center gap-3">
+                <DeliveryIconTile>
+                  <XCircle className="h-5 w-5" aria-hidden="true" />
+                </DeliveryIconTile>
+                <h3 className="font-black text-[#1F2933]">Delivery attempts</h3>
+              </div>
+            </summary>
+            <div className="p-4 bg-[#F8FAFC]">
+              <form
+                className="grid gap-3"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  setNotice(null);
+                  attemptMutation.mutate();
+                }}
+              >
+                <DeliverySelect
+                  label="Attempt reason"
+                  value={attemptReason}
+                  values={attemptReasons}
+                  onChange={setAttemptReason}
+                  disabled={inputsDisabled}
+                />
+                <DeliveryTextArea
+                  label="Attempt note"
+                  value={attemptNote}
+                  onChange={setAttemptNote}
+                  rows={2}
+                  disabled={inputsDisabled}
+                />
+                <DeliveryField
+                  label="Next attempt date"
+                  type="date"
+                  value={nextAttemptDate}
+                  onChange={setNextAttemptDate}
+                  disabled={inputsDisabled}
+                />
+                <Button
+                  type="submit"
+                  variant="outline"
+                  disabled={inputsDisabled || attemptMutation.isPending}
+                >
+                  {attemptMutation.isPending ? "Recording..." : "Record attempt"}
+                </Button>
+              </form>
+              <div className="mt-5 grid gap-2">
+                {(order.deliveryDetail?.attempts ?? []).map((attempt) => (
+                  <div
+                    key={attempt.id}
+                    className="rounded-md border border-[#E5E7EB] bg-white p-3 text-sm"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <StatusBadge tone="warning">{humanize(attempt.reason)}</StatusBadge>
+                      <span className="font-semibold text-[#667085]">
+                        {formatDateTime(attempt.attemptedAt ?? attempt.createdAt)}
+                      </span>
+                    </div>
+                    {attempt.note ? (
+                      <p className="mt-2 font-semibold leading-6 text-[#667085]">{attempt.note}</p>
+                    ) : null}
+                    {attempt.nextAttemptDate ? (
+                      <p className="mt-1 text-xs font-bold text-[#163B5C]">
+                        Next attempt {formatDateTime(attempt.nextAttemptDate)}
+                      </p>
+                    ) : null}
+                  </div>
+                ))}
+                {(order.deliveryDetail?.attempts ?? []).length === 0 ? (
+                  <p className="text-sm font-semibold text-[#667085]">No attempts recorded.</p>
+                ) : null}
+              </div>
+            </div>
+          </details>
+
+          <details className="group rounded-md border border-[#D8E2EA] bg-white">
+            <summary className="flex cursor-pointer items-center justify-between p-4 outline-none group-open:border-b group-open:border-[#D8E2EA] hover:bg-[#F8FAFC]">
+              <div className="flex items-center gap-3">
+                <DeliveryIconTile>
+                  <CreditCard className="h-5 w-5" aria-hidden="true" />
+                </DeliveryIconTile>
+                <h3 className="font-black text-[#1F2933]">Payment check</h3>
+              </div>
+            </summary>
+            <div className="p-4 bg-[#F8FAFC]">
+              <div className="grid gap-3">
+                {(order.payments ?? []).map((payment) => (
+                  <div
+                    key={payment.id}
+                    className="rounded-md border border-[#E5E7EB] bg-white p-3"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="font-black text-[#1F2933]">{humanize(payment.provider)}</p>
+                      <StatusBadge tone={payment.status === "PAID" ? "success" : "warning"}>
+                        {humanize(payment.status)}
+                      </StatusBadge>
+                    </div>
+                    <p className="mt-1 text-sm font-semibold text-[#667085]">
+                      {formatPaise(payment.amountPaise, payment.currency)}
+                    </p>
+                  </div>
+                ))}
+                {isCodPending(order) ? (
+                  <p className="rounded-md border border-[#FFC7B8] bg-[#FFF0EC] p-3 text-sm font-bold leading-6 text-[#9F2600]">
+                    COD cash can be recorded from the delivery form. Admin verification marks the
+                    payment paid.
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          </details>
         </div>
       </div>
     </div>
@@ -675,7 +699,7 @@ function DeliveryWorkflowGuide({
       </div>
 
       <nav
-        className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5"
+        className="mt-5 flex gap-3 overflow-x-auto snap-x pb-4 md:grid md:grid-cols-2 xl:grid-cols-5"
         aria-label="Delivery workflow steps"
       >
         {steps.map((step) => (
@@ -696,7 +720,7 @@ function WorkflowStepCard({ step }: { step: DeliveryWorkflowStep }) {
     <a
       href={step.href}
       className={cn(
-        "group flex min-h-[150px] flex-col rounded-md border p-4 transition hover:-translate-y-0.5 hover:shadow-md",
+        "group flex shrink-0 snap-start w-[280px] md:w-auto min-h-[150px] flex-col rounded-md border p-4 transition hover:-translate-y-0.5 hover:shadow-md",
         active
           ? "border-[#ED3500] bg-[#FFFCFB] shadow-sm"
           : step.state === "done"

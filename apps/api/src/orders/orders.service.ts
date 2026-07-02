@@ -3784,6 +3784,26 @@ export class OrdersService {
             ...(dto.deliveryNote !== undefined ? { deliveryNote: dto.deliveryNote ?? null } : {}),
           },
         });
+
+        await tx.orderShipmentPackage.updateMany({
+          where: {
+            orderShipment: { orderId: order.id },
+            status: {
+              notIn: [
+                OrderShipmentPackageStatus.DELIVERED,
+                OrderShipmentPackageStatus.CANCELLED,
+                OrderShipmentPackageStatus.FAILED,
+                OrderShipmentPackageStatus.RTO_DELIVERED,
+              ],
+            },
+          },
+          data: {
+            status: this.packageStatusFromDeliveryStatus(nextStatus, nextMode),
+            ...(nextStatus === DeliveryStatus.PACKED ? { readyForBookingAt: new Date() } : {}),
+            ...(nextStatus === DeliveryStatus.DELIVERED ? { deliveredAt: new Date() } : {}),
+            ...(nextStatus === DeliveryStatus.CANCELLED ? { cancelledAt: new Date() } : {}),
+          },
+        });
       }
 
       const deliveryStatusChanged = nextOrderDeliveryStatus !== order.deliveryStatus;
@@ -7684,15 +7704,6 @@ export class OrdersService {
         shippingPaise: shipment.shippingPaise,
         codSurchargePaise: shipment.codSurchargePaise,
         deliveryMode: shipment.deliveryMode,
-        courierProviderCode: shipment.courierProviderCode,
-        routingFailed: shipment.routingFailed,
-        routingFailureReason: shipment.routingFailureReason,
-        routingFailureNote: shipment.routingFailureNote,
-        routedAt: shipment.routedAt,
-        routingFirstFailedAt: shipment.routingFirstFailedAt,
-        routingLastAttemptAt: shipment.routingLastAttemptAt,
-        routingRetryCount: shipment.routingRetryCount,
-        routingPermanentFailureAt: shipment.routingPermanentFailureAt,
         status: shipment.status,
         assignmentStatus: shipment.assignmentStatus,
         assignmentExpiresAt: shipment.assignmentExpiresAt,
@@ -7702,13 +7713,6 @@ export class OrdersService {
         trackingReference: shipment.trackingReference,
         estimatedDeliveryDate: shipment.estimatedDeliveryDate,
         deliveryNote: shipment.deliveryNote,
-        codCollectionStatus: shipment.codCollectionStatus,
-        codCollectedAmountPaise: shipment.codCollectedAmountPaise,
-        codCollectedAt: shipment.codCollectedAt,
-        codVerifiedAt: shipment.codVerifiedAt,
-        packages: shipment.packages.map((shipmentPackage) =>
-          this.shipmentPackageReadback(shipmentPackage, { sellerLabelAccess: false }),
-        ),
       })),
       payments: order.payments.map((payment) => ({
         id: payment.id,
@@ -7731,7 +7735,6 @@ export class OrdersService {
                   email: order.deliveryDetail.deliveryPartner.email,
                   phone: order.deliveryDetail.deliveryPartner.phone,
                   fullName: order.deliveryDetail.deliveryPartner.fullName,
-                  deliveryProfile: order.deliveryDetail.deliveryPartner.deliveryProfile,
                 }
               : null,
             assignmentStatus: order.deliveryDetail.assignmentStatus,
