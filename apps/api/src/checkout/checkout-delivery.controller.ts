@@ -125,12 +125,14 @@ export class CourierProvidersController {
   }
 
   @Post()
+  @Roles(RoleCode.ADMIN)
   @ApiOperation({ summary: "Create or update a courier provider routing setting." })
   upsertProvider(@CurrentUser() actor: RequestUser, @Body() dto: UpsertCourierProviderSettingDto) {
     return this.deliveryRouting.upsertCourierProvider(actor, dto);
   }
 
   @Patch(":providerCode")
+  @Roles(RoleCode.ADMIN)
   @ApiOperation({ summary: "Create or update a courier provider by provider code." })
   patchProvider(
     @CurrentUser() actor: RequestUser,
@@ -141,6 +143,7 @@ export class CourierProvidersController {
   }
 
   @Patch(":providerCode/active")
+  @Roles(RoleCode.ADMIN)
   @ApiOperation({ summary: "Activate or deactivate a courier provider." })
   updateProviderActive(
     @CurrentUser() actor: RequestUser,

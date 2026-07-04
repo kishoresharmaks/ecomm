@@ -122,7 +122,7 @@ export function DeliveryShell({
                 ))}
               </div>
             </div>
-            <DeliveryAuthNotice />
+            {pathname !== "/delivery/register" ? <DeliveryAuthNotice /> : null}
             {isDeliveryPartner ? (
               children
             ) : (
@@ -432,7 +432,7 @@ function deliveryAccessStatus(
     return "checking";
   }
 
-  return "checking";
+  return "error";
 }
 
 function sidebarStatusLabel(status: DeliveryAccessStatus, auth: DeliveryAuthState) {

@@ -267,7 +267,20 @@ export function DeliveryOrderDetailClient({ orderNumber }: { orderNumber: string
         </Button>
       </div>
 
-      {notice ? <StatusBadge tone={notice.tone}>{notice.message}</StatusBadge> : null}
+      {notice ? (
+        <div
+          className={cn(
+            "rounded-md border p-4 text-sm font-black",
+            notice.tone === "success"
+              ? "border-[#B7E4CE] bg-[#ECFDF3] text-[#0F8A5F]"
+              : notice.tone === "danger"
+                ? "border-[#F5B7B7] bg-[#FDECEC] text-[#B42318]"
+                : "border-[#D8E2EA] bg-[#F8FAFC] text-[#1F2933]",
+          )}
+        >
+          {notice.message}
+        </div>
+      ) : null}
 
       <DeliveryPanel>
         <div className="grid gap-5 lg:grid-cols-[1fr_auto] lg:items-start">
@@ -414,7 +427,7 @@ export function DeliveryOrderDetailClient({ orderNumber }: { orderNumber: string
               <DeliveryField
                 label="Tracking reference"
                 value={trackingReference}
-                onChange={setTrackingReference}
+                onChange={() => undefined}
                 placeholder="Generated after delivery partner assignment"
                 disabled
               />
@@ -715,10 +728,16 @@ function WorkflowStepCard({ step }: { step: DeliveryWorkflowStep }) {
   const tone = workflowTone(step.state);
   const label = workflowLabel(step.state);
   const active = step.state === "current";
+  function handleClick(event: React.MouseEvent<HTMLAnchorElement>) {
+    event.preventDefault();
+    const id = step.href.replace(/^#/, "");
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
+  }
 
   return (
     <a
       href={step.href}
+      onClick={handleClick}
       className={cn(
         "group flex shrink-0 snap-start w-[280px] md:w-auto min-h-[150px] flex-col rounded-md border p-4 transition hover:-translate-y-0.5 hover:shadow-md",
         active
@@ -1395,7 +1414,7 @@ function codCollectionTone(status?: string | null) {
 }
 
 function formatMinorForInput(value?: number | null) {
-  if (!value) {
+  if (value == null) {
     return "";
   }
 

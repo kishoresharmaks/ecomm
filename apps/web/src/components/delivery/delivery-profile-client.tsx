@@ -174,8 +174,17 @@ export function DeliveryProfileClient() {
           </div>
 
           {notice ? (
-            <div className="rounded-md border border-[#D8E2EA] bg-[#F8FAFC] p-3">
-              <StatusBadge tone={notice.tone}>{notice.message}</StatusBadge>
+            <div
+              className={cn(
+                "rounded-md border p-4 text-sm font-black",
+                notice.tone === "success"
+                  ? "border-[#B7E4CE] bg-[#ECFDF3] text-[#0F8A5F]"
+                  : notice.tone === "danger"
+                    ? "border-[#F5B7B7] bg-[#FDECEC] text-[#B42318]"
+                    : "border-[#D8E2EA] bg-[#F8FAFC] text-[#1F2933]",
+              )}
+            >
+              {notice.message}
             </div>
           ) : null}
 

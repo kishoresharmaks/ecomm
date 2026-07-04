@@ -41,10 +41,16 @@ export function DeliveryReturnsClient() {
   const auth = useDeliveryAuth();
   const [search, setSearch] = useState("");
   const [submittedSearch, setSubmittedSearch] = useState("");
+  const [assignmentStatus, setAssignmentStatus] = useState<"" | "ASSIGNED" | "ACCEPTED">("");
 
   const returnsQuery = useQuery({
-    queryKey: ["delivery-returns", auth.authKey, submittedSearch],
-    queryFn: () => listDeliveryReturns(auth.authHeaders, { search: submittedSearch, limit: 40 }),
+    queryKey: ["delivery-returns", auth.authKey, submittedSearch, assignmentStatus],
+    queryFn: () =>
+      listDeliveryReturns(auth.authHeaders, {
+        search: submittedSearch,
+        ...(assignmentStatus ? { assignmentStatus } : {}),
+        limit: 50,
+      }),
     enabled: auth.enabled,
     retry: false,
   });
@@ -65,8 +71,8 @@ export function DeliveryReturnsClient() {
           title="Return pickup queue"
           description="Accept assigned return pickups, collect from customers, and record seller-store receipt proof."
         />
-        <form onSubmit={submit} className="flex w-full gap-2 xl:max-w-md">
-          <label className="relative flex-1">
+        <form onSubmit={submit} className="flex flex-wrap w-full gap-2 xl:max-w-xl">
+          <label className="relative flex-1 min-w-[200px]">
             <span className="sr-only">Search return pickup</span>
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#667085]" />
             <input
@@ -76,6 +82,15 @@ export function DeliveryReturnsClient() {
               className="h-11 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] pl-10 pr-3 text-sm font-semibold text-[#1F2933] outline-none focus:border-[#ED3500] focus:bg-white"
             />
           </label>
+          <select
+            value={assignmentStatus}
+            onChange={(e) => setAssignmentStatus(e.target.value as "" | "ASSIGNED" | "ACCEPTED")}
+            className="h-11 rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 text-sm font-semibold text-[#1F2933] outline-none focus:border-[#ED3500]"
+          >
+            <option value="">All assignments</option>
+            <option value="ASSIGNED">Assigned (Awaiting)</option>
+            <option value="ACCEPTED">Accepted</option>
+          </select>
           <Button type="submit">
             <Search className="h-4 w-4" aria-hidden="true" />
             Search
@@ -85,7 +100,7 @@ export function DeliveryReturnsClient() {
 
       <div className="mt-5 grid gap-3">
         {returnsQuery.isLoading ? <div className="h-56 animate-pulse rounded-md bg-[#F8FAFC]" /> : null}
-        {returnsQuery.error ? <DeliveryError error={returnsQuery.error as Error} onRetry={() => void returnsQuery.refetch()} /> : null}
+        {returnsQuery.error ? <DeliveryError error={returnsQuery.error} onRetry={() => void returnsQuery.refetch()} /> : null}
         {!returnsQuery.isLoading && returns.length === 0 ? (
           <DeliveryEmptyState
             title="No return pickups"
@@ -215,7 +230,7 @@ export function DeliveryReturnDetailClient({ requestNumber }: { requestNumber: s
   }
 
   if (detailQuery.error) {
-    return <DeliveryError error={detailQuery.error as Error} onRetry={() => void detailQuery.refetch()} />;
+    return <DeliveryError error={detailQuery.error} onRetry={() => void detailQuery.refetch()} />;
   }
 
   if (!detail) {
@@ -223,7 +238,8 @@ export function DeliveryReturnDetailClient({ requestNumber }: { requestNumber: s
   }
 
   const allAccepted = detail.reverseShipments.every((shipment) => shipment.assignmentStatus === "ACCEPTED");
-  const anyPicked = detail.reverseShipments.some((shipment) => shipment.status === "PICKED_UP" || shipment.status === "IN_TRANSIT" || shipment.status === "RECEIVED");
+  const anyPickedOrReceived = detail.reverseShipments.some((shipment) => shipment.status === "PICKED_UP" || shipment.status === "IN_TRANSIT" || shipment.status === "RECEIVED");
+  const anyPickedUp = detail.reverseShipments.some((shipment) => shipment.status === "PICKED_UP");
   const allReceived = detail.reverseShipments.every((shipment) => shipment.status === "RECEIVED");
 
   return (
@@ -243,7 +259,7 @@ export function DeliveryReturnDetailClient({ requestNumber }: { requestNumber: s
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <StatusBadge tone={allAccepted ? "success" : "warning"}>{allAccepted ? "Accepted" : "Awaiting acceptance"}</StatusBadge>
-              <StatusBadge tone={allReceived ? "success" : anyPicked ? "info" : "warning"}>{humanize(detail.status)}</StatusBadge>
+              <StatusBadge tone={allReceived ? "success" : anyPickedOrReceived ? "info" : "warning"}>{humanize(detail.status)}</StatusBadge>
             </div>
             <h2 className="mt-3 text-3xl font-black text-[#123A5A]">{detail.requestNumber}</h2>
             <p className="mt-2 text-sm font-semibold text-[#667085]">
@@ -277,21 +293,50 @@ export function DeliveryReturnDetailClient({ requestNumber }: { requestNumber: s
                     </div>
                   </div>
                   <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                    <input
-                      value={receiverByShipment[shipment.id] ?? ""}
-                      onChange={(event) => setReceiverByShipment((current) => ({ ...current, [shipment.id]: event.target.value }))}
-                      placeholder="Receiver name at seller store"
-                      className="h-11 rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-semibold outline-none focus:border-[#ED3500]"
-                      disabled={shipment.status === "RECEIVED"}
-                    />
-                    <input
-                      value={receiptProofByShipment[shipment.id] ?? ""}
-                      onChange={(event) => setReceiptProofByShipment((current) => ({ ...current, [shipment.id]: event.target.value }))}
-                      placeholder="Receipt proof reference"
-                      className="h-11 rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-semibold outline-none focus:border-[#ED3500]"
-                      disabled={shipment.status === "RECEIVED"}
-                    />
+                    <label className="block">
+                      <span className="mb-1 block text-xs font-black uppercase tracking-wide text-[#667085]">
+                        Receiver name <span className="text-[#B42318]">*</span>
+                      </span>
+                      <input
+                        value={receiverByShipment[shipment.id] ?? ""}
+                        onChange={(event) => setReceiverByShipment((current) => ({ ...current, [shipment.id]: event.target.value }))}
+                        placeholder="Name of person at seller store"
+                        aria-label="Receiver name at seller store"
+                        className={cn(
+                          "h-11 w-full rounded-md border bg-white px-3 text-sm font-semibold outline-none focus:border-[#ED3500]",
+                          !receiverByShipment[shipment.id]?.trim() && shipment.status !== "RECEIVED"
+                            ? "border-[#F5B7B7]"
+                            : "border-[#D8E2EA]",
+                        )}
+                        disabled={shipment.status === "RECEIVED"}
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-xs font-black uppercase tracking-wide text-[#667085]">
+                        Receipt proof <span className="text-[#B42318]">*</span>
+                      </span>
+                      <input
+                        value={receiptProofByShipment[shipment.id] ?? ""}
+                        onChange={(event) => setReceiptProofByShipment((current) => ({ ...current, [shipment.id]: event.target.value }))}
+                        placeholder="Proof reference (photo ID, slip no.)"
+                        aria-label="Receipt proof reference"
+                        className={cn(
+                          "h-11 w-full rounded-md border bg-white px-3 text-sm font-semibold outline-none focus:border-[#ED3500]",
+                          !receiptProofByShipment[shipment.id]?.trim() && shipment.status !== "RECEIVED"
+                            ? "border-[#F5B7B7]"
+                            : "border-[#D8E2EA]",
+                        )}
+                        disabled={shipment.status === "RECEIVED"}
+                      />
+                    </label>
                   </div>
+                  {shipment.status !== "RECEIVED" &&
+                    !["PICKED_UP", "IN_TRANSIT"].includes(shipment.status) === false &&
+                    (!receiverByShipment[shipment.id]?.trim() || !receiptProofByShipment[shipment.id]?.trim()) ? (
+                    <p className="mt-2 text-xs font-semibold text-[#B42318]">
+                      Receiver name and receipt proof are required before recording seller receipt.
+                    </p>
+                  ) : null}
                   <div className="mt-3 flex justify-end">
                     <Button
                       type="button"
@@ -301,12 +346,18 @@ export function DeliveryReturnDetailClient({ requestNumber }: { requestNumber: s
                         shipment.status === "RECEIVED" ||
                         shipment.assignmentStatus !== "ACCEPTED" ||
                         !["PICKED_UP", "IN_TRANSIT"].includes(shipment.status) ||
-                        receiptMutation.isPending
+                        !receiverByShipment[shipment.id]?.trim() ||
+                        !receiptProofByShipment[shipment.id]?.trim() ||
+                        (receiptMutation.isPending && receiptMutation.variables === shipment.id)
                       }
                       onClick={() => receiptMutation.mutate(shipment.id)}
                     >
                       <Store className="h-4 w-4" aria-hidden="true" />
-                      {shipment.status === "RECEIVED" ? "Received" : "Record seller receipt"}
+                      {receiptMutation.isPending && receiptMutation.variables === shipment.id
+                        ? "Saving..."
+                        : shipment.status === "RECEIVED"
+                          ? "Received"
+                          : "Record seller receipt"}
                     </Button>
                   </div>
                 </div>
@@ -360,11 +411,11 @@ export function DeliveryReturnDetailClient({ requestNumber }: { requestNumber: s
                 </>
               ) : (
                 <>
-                  <Button type="button" onClick={() => pickupMutation.mutate("PICKED_UP")} disabled={pickupMutation.isPending || anyPicked}>
+                  <Button type="button" onClick={() => pickupMutation.mutate("PICKED_UP")} disabled={pickupMutation.isPending || anyPickedOrReceived}>
                     <PackageCheck className="h-4 w-4" aria-hidden="true" />
                     Mark picked up
                   </Button>
-                  <Button type="button" variant="outline" onClick={() => pickupMutation.mutate("IN_TRANSIT")} disabled={pickupMutation.isPending || !anyPicked || allReceived}>
+                  <Button type="button" variant="outline" onClick={() => pickupMutation.mutate("IN_TRANSIT")} disabled={pickupMutation.isPending || !anyPickedUp || allReceived}>
                     <Truck className="h-4 w-4" aria-hidden="true" />
                     Mark in transit
                   </Button>

@@ -10,6 +10,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  IsUrl,
   IsUUID,
   MaxLength,
   Min,
@@ -23,7 +24,25 @@ import {
   OrderShipmentPackageStatus,
 } from "@indihub/database";
 
+export const courierPackageQuickFilters = [
+  "PENDING_BOOKINGS",
+  "BOOKING_FAILURES",
+  "LABEL_READY",
+  "PICKUP_SCHEDULED",
+  "IN_TRANSIT",
+  "DELIVERED",
+] as const;
+
+export type CourierPackageQuickFilter = (typeof courierPackageQuickFilters)[number];
+
 export class CourierShipmentQueryDto {
+  @ApiPropertyOptional({ example: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number;
+
   @ApiPropertyOptional({ example: "COURIER_PROVIDER" })
   @IsOptional()
   @IsString()
@@ -50,6 +69,13 @@ export class CourierShipmentQueryDto {
 }
 
 export class CourierPackageQueryDto {
+  @ApiPropertyOptional({ example: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number;
+
   @ApiPropertyOptional({ enum: DeliveryMode })
   @IsOptional()
   @IsEnum(DeliveryMode)
@@ -64,6 +90,11 @@ export class CourierPackageQueryDto {
   @IsOptional()
   @IsEnum(CourierShipmentStatus)
   trackingStatus?: CourierShipmentStatus;
+
+  @ApiPropertyOptional({ enum: courierPackageQuickFilters })
+  @IsOptional()
+  @IsIn(courierPackageQuickFilters)
+  quickFilter?: CourierPackageQuickFilter;
 
   @ApiPropertyOptional({ example: "SHIPROCKET" })
   @IsOptional()
@@ -86,6 +117,13 @@ export class CourierPackageQueryDto {
 }
 
 export class CourierRoutingFailureQueryDto {
+  @ApiPropertyOptional({ example: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number;
+
   @ApiPropertyOptional({ example: "641002" })
   @IsOptional()
   @IsString()
@@ -125,6 +163,13 @@ export class CourierRoutingOverrideDto {
 }
 
 export class CourierLocalDeliveryQueryDto {
+  @ApiPropertyOptional({ example: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number;
+
   @ApiPropertyOptional({ enum: DeliveryAssignmentStatus })
   @IsOptional()
   @IsEnum(DeliveryAssignmentStatus)
@@ -178,6 +223,7 @@ export class BookCourierShipmentDto {
   @ApiPropertyOptional({ example: "https://provider.example/label.pdf" })
   @IsOptional()
   @IsString()
+  @IsUrl({ require_protocol: true, protocols: ["https"] })
   @MaxLength(1000)
   labelUrl?: string;
 
@@ -248,6 +294,13 @@ export class UpdateSellerShipmentPackageDto {
 }
 
 export class CourierCodRemittanceQueryDto {
+  @ApiPropertyOptional({ example: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number;
+
   @ApiPropertyOptional({ enum: CourierCodRemittanceStatus })
   @IsOptional()
   @IsEnum(CourierCodRemittanceStatus)

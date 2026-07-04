@@ -6,6 +6,7 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { isIP } from "node:net";
 import {
   CodCollectionSource,
   CodCollectionStatus,
@@ -28,6 +29,7 @@ import {
   UserStatus,
 } from "@indihub/database";
 import type { RequestUser } from "../auth/types/indihub-request";
+import { paginationFromQuery } from "../common/pagination";
 import { PrismaService } from "../prisma/prisma.service";
 import { CourierAdapterRegistry } from "./courier-adapters/courier-adapter.registry";
 import type {
@@ -117,6 +119,28 @@ const labelDownloadBlockedStatuses = new Set<CourierShipmentStatus>([
   CourierShipmentStatus.RTO_DELIVERED,
 ]);
 
+const closedDeliveryStatuses = new Set<DeliveryStatus>([
+  DeliveryStatus.DELIVERED,
+  DeliveryStatus.CANCELLED,
+]);
+
+const closedOrderStatuses = new Set<OrderStatus>([
+  OrderStatus.DELIVERED,
+  OrderStatus.CANCELLED,
+]);
+
+const closedPackageStatuses = new Set<OrderShipmentPackageStatus>([
+  OrderShipmentPackageStatus.DELIVERED,
+  OrderShipmentPackageStatus.CANCELLED,
+  OrderShipmentPackageStatus.RTO_DELIVERED,
+]);
+
+const blockedCourierLabelHostnames = new Set([
+  "localhost",
+  "ip6-localhost",
+  "ip6-loopback",
+]);
+
 @Injectable()
 export class CourierLogisticsService {
   constructor(
@@ -125,7 +149,7 @@ export class CourierLogisticsService {
   ) {}
 
   async listCourierShipments(query: CourierShipmentQueryDto) {
-    const take = Math.min(query.limit ?? 50, 100);
+    const { page, skip, take } = paginationFromQuery(query, { defaultLimit: 50, maxLimit: 100 });
     const where: Prisma.CourierShipmentWhereInput = {
       ...(query.providerCode ? { providerCode: query.providerCode.trim().toUpperCase() } : {}),
       ...(query.trackingStatus ? { trackingStatus: query.trackingStatus } : {}),
@@ -145,12 +169,13 @@ export class CourierLogisticsService {
         where,
         include: this.courierShipmentInclude(),
         orderBy: [{ updatedAt: "desc" }],
+        skip,
         take,
       }),
       this.prisma.client.courierShipment.count({ where }),
     ]);
 
-    return { items: items.map((item) => this.courierShipmentReadback(item)), total };
+    return { items: items.map((item) => this.courierShipmentReadback(item)), total, page, limit: take };
   }
 
   async bookShipment(actor: RequestUser, shipmentNumber: string, dto: BookCourierShipmentDto) {
@@ -193,6 +218,7 @@ export class CourierLogisticsService {
     if (orderShipment.deliveryMode !== DeliveryMode.THIRD_PARTY_COURIER) {
       throw new BadRequestException("Courier booking is only available for third-party courier packages.");
     }
+    this.assertShipmentOpenForCourierMutation(orderShipment, "book courier");
 
     const provider = await this.prisma.client.courierProviderSetting.findUnique({
       where: { providerCode },
@@ -210,7 +236,10 @@ export class CourierLogisticsService {
     }
     const resolvedAwbNumber = liveBooking?.awbNumber ?? dto.awbNumber?.trim() ?? null;
     const resolvedProviderOrderId = liveBooking?.providerOrderId ?? dto.providerOrderId?.trim() ?? null;
-    const resolvedLabelUrl = liveBooking?.labelUrl ?? dto.labelUrl?.trim() ?? null;
+    const resolvedLabelUrlCandidate = liveBooking?.labelUrl ?? dto.labelUrl?.trim() ?? null;
+    const resolvedLabelUrl = resolvedLabelUrlCandidate
+      ? this.parseSafeCourierLabelUrl(resolvedLabelUrlCandidate).toString()
+      : null;
     const resolvedTrackingUrl = liveBooking?.trackingUrl ?? dto.trackingUrl?.trim() ?? null;
     const status =
       liveBooking?.trackingStatus ??
@@ -446,6 +475,7 @@ export class CourierLogisticsService {
     const activePackageWhere: Prisma.OrderShipmentPackageWhereInput = {
       order: { orderStatus: { not: OrderStatus.CANCELLED }, deliveryStatus: { not: DeliveryStatus.CANCELLED } },
       orderShipment: { status: { not: DeliveryStatus.CANCELLED } },
+      status: { not: OrderShipmentPackageStatus.CANCELLED },
     };
     const activeCourierPackageWhere: Prisma.CourierConsignmentPackageWhereInput = {
       order: { orderStatus: { not: OrderStatus.CANCELLED }, deliveryStatus: { not: DeliveryStatus.CANCELLED } },
@@ -581,48 +611,61 @@ export class CourierLogisticsService {
   }
 
   async listCourierPackages(query: CourierPackageQueryDto) {
-    const take = Math.min(query.limit ?? 50, 100);
+    const { page, skip, take } = paginationFromQuery(query, { defaultLimit: 50, maxLimit: 100 });
     const search = query.search?.trim();
     const providerCode = query.providerCode?.trim().toUpperCase();
-    const where: Prisma.OrderShipmentPackageWhereInput = {
-      ...(query.deliveryMode ? { deliveryMode: query.deliveryMode } : {}),
-      ...(query.packageStatus ? { status: query.packageStatus } : {}),
+    const activePackageWhere: Prisma.OrderShipmentPackageWhereInput = {
+      order: { orderStatus: { not: OrderStatus.CANCELLED }, deliveryStatus: { not: DeliveryStatus.CANCELLED } },
+      orderShipment: { status: { not: DeliveryStatus.CANCELLED } },
+      ...(query.packageStatus ? {} : { status: { not: OrderShipmentPackageStatus.CANCELLED } }),
+    };
+    const filters: Prisma.OrderShipmentPackageWhereInput[] = [
+      ...(query.quickFilter ? [] : [activePackageWhere]),
+      ...(query.deliveryMode ? ([{ deliveryMode: query.deliveryMode }] satisfies Prisma.OrderShipmentPackageWhereInput[]) : []),
+      ...(query.packageStatus ? ([{ status: query.packageStatus }] satisfies Prisma.OrderShipmentPackageWhereInput[]) : []),
       ...(query.trackingStatus
-        ? { courierPackages: { some: { trackingStatus: query.trackingStatus } } }
-        : {}),
+        ? ([{ courierPackages: { some: { trackingStatus: query.trackingStatus } } }] satisfies Prisma.OrderShipmentPackageWhereInput[])
+        : []),
+      this.courierPackageQuickFilterWhere(query.quickFilter),
       ...(providerCode
-        ? {
-            courierPackages: {
-              some: {
-                courierConsignment: { providerCode },
+        ? ([
+            {
+              courierPackages: {
+                some: {
+                  courierConsignment: { providerCode },
+                },
               },
             },
-          }
-        : {}),
+          ] satisfies Prisma.OrderShipmentPackageWhereInput[])
+        : []),
       ...(search
-        ? {
-            OR: [
-              { packageNumber: { contains: search, mode: "insensitive" } },
-              { orderShipment: { shipmentNumber: { contains: search, mode: "insensitive" } } },
-              { order: { orderNumber: { contains: search, mode: "insensitive" } } },
-              { seller: { storeName: { contains: search, mode: "insensitive" } } },
-              { courierPackages: { some: { awbNumber: { contains: search, mode: "insensitive" } } } },
-            ],
-          }
-        : {}),
-    };
+        ? ([
+            {
+              OR: [
+                { packageNumber: { contains: search, mode: "insensitive" } },
+                { orderShipment: { shipmentNumber: { contains: search, mode: "insensitive" } } },
+                { order: { orderNumber: { contains: search, mode: "insensitive" } } },
+                { seller: { storeName: { contains: search, mode: "insensitive" } } },
+                { courierPackages: { some: { awbNumber: { contains: search, mode: "insensitive" } } } },
+              ],
+            },
+          ] satisfies Prisma.OrderShipmentPackageWhereInput[])
+        : []),
+    ].filter((filter) => Object.keys(filter).length > 0);
+    const where: Prisma.OrderShipmentPackageWhereInput = filters.length ? { AND: filters } : {};
 
     const [items, total] = await Promise.all([
       this.prisma.client.orderShipmentPackage.findMany({
         where,
         include: this.courierPackageInclude(),
         orderBy: [{ updatedAt: "desc" }],
+        skip,
         take,
       }),
       this.prisma.client.orderShipmentPackage.count({ where }),
     ]);
 
-    return { items: items.map((item) => this.courierPackageReadback(item)), total };
+    return { items: items.map((item) => this.courierPackageReadback(item)), total, page, limit: take };
   }
 
   async getCourierPackage(packageId: string) {
@@ -642,6 +685,7 @@ export class CourierLogisticsService {
     const shipmentPackage = await this.prisma.client.orderShipmentPackage.findUnique({
       where: { id: packageId },
       include: {
+        order: true,
         orderShipment: true,
       },
     });
@@ -653,6 +697,7 @@ export class CourierLogisticsService {
     if (shipmentPackage.deliveryMode !== DeliveryMode.THIRD_PARTY_COURIER) {
       throw new BadRequestException("Courier booking is only available for third-party courier packages.");
     }
+    this.assertPackageOpenForCourierMutation(shipmentPackage, "book courier");
 
     await this.bookShipment(actor, shipmentPackage.orderShipment.shipmentNumber, dto);
     return this.getCourierPackage(packageId);
@@ -662,6 +707,7 @@ export class CourierLogisticsService {
     const shipmentPackage = await this.prisma.client.orderShipmentPackage.findUnique({
       where: { id: packageId },
       include: {
+        order: true,
         orderShipment: { include: { courierShipment: true } },
         courierPackages: {
           include: { courierConsignment: true },
@@ -673,6 +719,7 @@ export class CourierLogisticsService {
     if (!shipmentPackage) {
       throw new NotFoundException("Courier package not found.");
     }
+    this.assertPackageOpenForCourierMutation(shipmentPackage, "update courier tracking");
 
     const courierPackage = shipmentPackage.courierPackages[0] ?? null;
     const courierShipmentId = shipmentPackage.orderShipment.courierShipment?.id ?? null;
@@ -715,7 +762,7 @@ export class CourierLogisticsService {
   }
 
   async listRoutingFailures(query: CourierRoutingFailureQueryDto) {
-    const take = Math.min(query.limit ?? 50, 100);
+    const { page, skip, take } = paginationFromQuery(query, { defaultLimit: 50, maxLimit: 100 });
     const search = query.search?.trim();
     const where: Prisma.OrderShipmentWhereInput = {
       order: { orderStatus: { not: OrderStatus.CANCELLED }, deliveryStatus: { not: DeliveryStatus.CANCELLED } },
@@ -741,12 +788,13 @@ export class CourierLogisticsService {
         where,
         include: this.routingShipmentInclude(),
         orderBy: [{ routingFirstFailedAt: "asc" }, { updatedAt: "desc" }],
+        skip,
         take,
       }),
       this.prisma.client.orderShipment.count({ where }),
     ]);
 
-    return { items: items.map((item) => this.routingShipmentReadback(item)), total };
+    return { items: items.map((item) => this.routingShipmentReadback(item)), total, page, limit: take };
   }
 
   async overrideRoutingFailure(actor: RequestUser, shipmentId: string, dto: CourierRoutingOverrideDto) {
@@ -758,6 +806,7 @@ export class CourierLogisticsService {
     if (!shipment) {
       throw new NotFoundException("Shipment not found.");
     }
+    this.assertShipmentOpenForCourierMutation(shipment, "override routing");
 
     const nextMode = dto.deliveryMode ?? shipment.deliveryMode;
     const partnerUserId = nextMode === DeliveryMode.LOCAL_DELIVERY_PARTNER ? dto.deliveryPartnerUserId ?? null : null;
@@ -854,10 +903,12 @@ export class CourierLogisticsService {
   }
 
   async listLocalDeliveryQueue(query: CourierLocalDeliveryQueryDto) {
-    const take = Math.min(query.limit ?? 50, 100);
+    const { page, skip, take } = paginationFromQuery(query, { defaultLimit: 50, maxLimit: 100 });
     const search = query.search?.trim();
     const where: Prisma.OrderShipmentWhereInput = {
+      order: { orderStatus: { not: OrderStatus.CANCELLED }, deliveryStatus: { not: DeliveryStatus.CANCELLED } },
       deliveryMode: DeliveryMode.LOCAL_DELIVERY_PARTNER,
+      status: { notIn: [DeliveryStatus.DELIVERED, DeliveryStatus.CANCELLED] },
       ...(query.assignmentStatus ? { assignmentStatus: query.assignmentStatus } : {}),
       ...(search
         ? {
@@ -876,6 +927,7 @@ export class CourierLogisticsService {
         where,
         include: this.routingShipmentInclude(),
         orderBy: [{ updatedAt: "desc" }],
+        skip,
         take,
       }),
       this.prisma.client.orderShipment.count({ where }),
@@ -886,6 +938,8 @@ export class CourierLogisticsService {
       items: items.map((item) => this.routingShipmentReadback(item)),
       partners,
       total,
+      page,
+      limit: take,
     };
   }
 
@@ -904,12 +958,22 @@ export class CourierLogisticsService {
     if (shipment.deliveryMode !== DeliveryMode.LOCAL_DELIVERY_PARTNER) {
       throw new BadRequestException("Local delivery assignment is only available for local delivery shipments.");
     }
+    this.assertShipmentOpenForCourierMutation(shipment, "assign local delivery");
 
     const partnerUserId = dto.deliveryPartnerUserId ?? null;
     if (partnerUserId) {
       await this.assertDeliveryPartnerUser(partnerUserId);
     }
     const now = new Date();
+    const previousPartnerUserId =
+      shipment.deliveryPartnerUserId ?? shipment.order.deliveryDetail?.deliveryPartnerUserId ?? null;
+    const previousAssignmentStatus =
+      shipment.assignmentStatus ?? shipment.order.deliveryDetail?.assignmentStatus ?? null;
+    const shouldRecordNewAttempt =
+      Boolean(partnerUserId) &&
+      (partnerUserId !== previousPartnerUserId ||
+        (previousAssignmentStatus !== DeliveryAssignmentStatus.ASSIGNED &&
+          previousAssignmentStatus !== DeliveryAssignmentStatus.ACCEPTED));
 
     await this.prisma.client.$transaction(async (tx) => {
       const deliveryDetail = await tx.deliveryDetail.upsert({
@@ -937,6 +1001,18 @@ export class CourierLogisticsService {
           assignmentNote: dto.assignmentNote ?? null,
         },
       });
+      await tx.deliveryAssignmentAttempt.updateMany({
+        where: {
+          orderId: shipment.orderId,
+          status: DeliveryAssignmentStatus.ASSIGNED,
+          ...(partnerUserId ? { partnerUserId: { not: partnerUserId } } : {}),
+        },
+        data: {
+          status: DeliveryAssignmentStatus.CANCELLED,
+          respondedAt: now,
+          note: dto.assignmentNote ?? (partnerUserId ? "Local delivery partner reassigned." : "Local delivery partner unassigned."),
+        },
+      });
       await tx.orderShipment.update({
         where: { id: shipment.id },
         data: {
@@ -950,7 +1026,7 @@ export class CourierLogisticsService {
           assignmentNote: dto.assignmentNote ?? null,
         },
       });
-      if (partnerUserId) {
+      if (partnerUserId && shouldRecordNewAttempt) {
         await tx.deliveryAssignmentAttempt.create({
           data: {
             orderId: shipment.orderId,
@@ -1121,7 +1197,8 @@ export class CourierLogisticsService {
       throw new BadRequestException("Courier label download is disabled for this package status.");
     }
 
-    const response = await fetch(courierPackage.labelUrl);
+    const labelUrl = this.parseSafeCourierLabelUrl(courierPackage.labelUrl);
+    const response = await fetch(labelUrl);
     if (!response.ok) {
       throw new BadRequestException("Courier label could not be downloaded from the provider.");
     }
@@ -1161,7 +1238,8 @@ export class CourierLogisticsService {
       throw new BadRequestException("Courier label download is disabled for this package status.");
     }
 
-    const response = await fetch(courierPackage.labelUrl);
+    const labelUrl = this.parseSafeCourierLabelUrl(courierPackage.labelUrl);
+    const response = await fetch(labelUrl);
     if (!response.ok) {
       throw new BadRequestException("Courier label could not be downloaded from the provider.");
     }
@@ -1229,8 +1307,10 @@ export class CourierLogisticsService {
   }
 
   async listCourierCodRemittances(query: CourierCodRemittanceQueryDto) {
-    const take = Math.min(query.limit ?? 50, 100);
+    const { page, skip, take } = paginationFromQuery(query, { defaultLimit: 50, maxLimit: 100 });
     const where: Prisma.CourierCodRemittanceWhereInput = {
+      order: { orderStatus: { not: OrderStatus.CANCELLED }, deliveryStatus: { not: DeliveryStatus.CANCELLED } },
+      orderShipment: { status: { not: DeliveryStatus.CANCELLED } },
       ...(query.status ? { status: query.status } : {}),
       ...(query.providerCode ? { providerCode: query.providerCode.trim().toUpperCase() } : {}),
       ...(query.search?.trim()
@@ -1250,12 +1330,13 @@ export class CourierLogisticsService {
         where,
         include: this.courierCodRemittanceInclude(),
         orderBy: [{ updatedAt: "desc" }],
+        skip,
         take,
       }),
       this.prisma.client.courierCodRemittance.count({ where }),
     ]);
 
-    return { items: items.map((item) => this.courierCodRemittanceReadback(item)), total };
+    return { items: items.map((item) => this.courierCodRemittanceReadback(item)), total, page, limit: take };
   }
 
   async upsertCourierCodRemittance(actor: RequestUser, dto: UpsertCourierCodRemittanceDto) {
@@ -1688,7 +1769,9 @@ export class CourierLogisticsService {
     });
     const orderShipment = await tx.orderShipment.findUniqueOrThrow({
       where: { id: courierShipment.orderShipmentId },
+      include: { order: true },
     });
+    this.assertShipmentOpenForCourierMutation(orderShipment, "update courier tracking");
     const payments = await tx.payment.findMany({
       where: { orderId: courierShipment.orderId },
     });
@@ -2252,6 +2335,198 @@ export class CourierLogisticsService {
     }
 
     return storedStatus;
+  }
+
+  private courierPackageQuickFilterWhere(
+    quickFilter?: CourierPackageQueryDto["quickFilter"],
+  ): Prisma.OrderShipmentPackageWhereInput {
+    const activePackageWhere: Prisma.OrderShipmentPackageWhereInput = {
+      order: { orderStatus: { not: OrderStatus.CANCELLED }, deliveryStatus: { not: DeliveryStatus.CANCELLED } },
+      orderShipment: { status: { not: DeliveryStatus.CANCELLED } },
+      status: { not: OrderShipmentPackageStatus.CANCELLED },
+    };
+    switch (quickFilter) {
+      case "PENDING_BOOKINGS":
+        return {
+          ...activePackageWhere,
+          deliveryMode: DeliveryMode.THIRD_PARTY_COURIER,
+          status: {
+            in: [
+              OrderShipmentPackageStatus.PACKING_PENDING,
+              OrderShipmentPackageStatus.READY_FOR_BOOKING,
+              OrderShipmentPackageStatus.BOOKING_PENDING,
+            ],
+          },
+        };
+      case "BOOKING_FAILURES":
+        return {
+          ...activePackageWhere,
+          courierPackages: { some: { trackingStatus: CourierShipmentStatus.FAILED } },
+        };
+      case "LABEL_READY":
+        return {
+          ...activePackageWhere,
+          courierPackages: {
+            some: {
+              labelUrl: { not: null },
+              trackingStatus: { notIn: Array.from(labelDownloadBlockedStatuses) },
+            },
+          },
+        };
+      case "PICKUP_SCHEDULED":
+        return {
+          ...activePackageWhere,
+          courierPackages: { some: { trackingStatus: CourierShipmentStatus.PICKUP_SCHEDULED } },
+        };
+      case "IN_TRANSIT":
+        return {
+          ...activePackageWhere,
+          courierPackages: {
+            some: {
+              trackingStatus: {
+                in: [
+                  CourierShipmentStatus.PICKED_UP,
+                  CourierShipmentStatus.IN_TRANSIT,
+                  CourierShipmentStatus.OUT_FOR_DELIVERY,
+                  CourierShipmentStatus.RTO_INITIATED,
+                  CourierShipmentStatus.RTO_IN_TRANSIT,
+                ],
+              },
+            },
+          },
+        };
+      case "DELIVERED":
+        return {
+          order: { orderStatus: { not: OrderStatus.CANCELLED }, deliveryStatus: { not: DeliveryStatus.CANCELLED } },
+          orderShipment: { status: { not: DeliveryStatus.CANCELLED } },
+          OR: [
+            { status: OrderShipmentPackageStatus.DELIVERED },
+            { orderShipment: { status: DeliveryStatus.DELIVERED } },
+            { order: { deliveryStatus: DeliveryStatus.DELIVERED } },
+          ],
+        };
+      default:
+        return {};
+    }
+  }
+
+  private assertShipmentOpenForCourierMutation(
+    shipment: {
+      status?: DeliveryStatus | null;
+      order?: { orderStatus?: OrderStatus | null; deliveryStatus?: DeliveryStatus | null } | null;
+    },
+    action: string,
+  ) {
+    if (shipment.order?.orderStatus && closedOrderStatuses.has(shipment.order.orderStatus)) {
+      throw new BadRequestException(`Cannot ${action} for a ${shipment.order.orderStatus.toLowerCase()} order.`);
+    }
+    if (shipment.order?.deliveryStatus && closedDeliveryStatuses.has(shipment.order.deliveryStatus)) {
+      throw new BadRequestException(
+        `Cannot ${action} for an order with ${shipment.order.deliveryStatus.toLowerCase()} delivery status.`,
+      );
+    }
+    if (shipment.status && closedDeliveryStatuses.has(shipment.status)) {
+      throw new BadRequestException(`Cannot ${action} for a ${shipment.status.toLowerCase()} shipment.`);
+    }
+  }
+
+  private assertPackageOpenForCourierMutation(
+    shipmentPackage: {
+      status?: OrderShipmentPackageStatus | null;
+      order?: { orderStatus?: OrderStatus | null; deliveryStatus?: DeliveryStatus | null } | null;
+      orderShipment?: { status?: DeliveryStatus | null } | null;
+    },
+    action: string,
+  ) {
+    this.assertShipmentOpenForCourierMutation(
+      {
+        status: shipmentPackage.orderShipment?.status ?? null,
+        order: shipmentPackage.order ?? null,
+      },
+      action,
+    );
+    if (shipmentPackage.status && closedPackageStatuses.has(shipmentPackage.status)) {
+      throw new BadRequestException(`Cannot ${action} for a ${shipmentPackage.status.toLowerCase()} package.`);
+    }
+  }
+
+  private parseSafeCourierLabelUrl(value: string) {
+    let parsed: URL;
+    try {
+      parsed = new URL(value);
+    } catch {
+      throw new BadRequestException("Courier label URL is invalid.");
+    }
+
+    if (parsed.protocol !== "https:") {
+      throw new BadRequestException("Courier label URL must use HTTPS.");
+    }
+
+    const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+    if (
+      blockedCourierLabelHostnames.has(hostname) ||
+      hostname.endsWith(".localhost") ||
+      hostname.endsWith(".local") ||
+      hostname.endsWith(".internal") ||
+      hostname.endsWith(".lan")
+    ) {
+      throw new BadRequestException("Courier label URL host is not allowed.");
+    }
+
+    if (this.isPrivateCourierLabelHostname(hostname)) {
+      throw new BadRequestException("Courier label URL cannot use private network hosts.");
+    }
+
+    return parsed;
+  }
+
+  private isPrivateCourierLabelHostname(hostname: string) {
+    const ipVersion = isIP(hostname);
+    if (ipVersion === 4) {
+      return this.isPrivateIpv4(hostname);
+    }
+    if (ipVersion === 6) {
+      return this.isPrivateIpv6(hostname);
+    }
+    return false;
+  }
+
+  private isPrivateIpv4(hostname: string) {
+    const parts = hostname.split(".").map((part) => Number(part));
+    if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
+      return true;
+    }
+    const first = parts[0]!;
+    const second = parts[1]!;
+    return (
+      first === 0 ||
+      first === 10 ||
+      first === 127 ||
+      (first === 100 && second >= 64 && second <= 127) ||
+      (first === 169 && second === 254) ||
+      (first === 172 && second >= 16 && second <= 31) ||
+      (first === 192 && second === 0) ||
+      (first === 192 && second === 168) ||
+      (first === 198 && (second === 18 || second === 19)) ||
+      (first === 198 && second === 51) ||
+      (first === 203 && second === 0 && parts[2] === 113) ||
+      first >= 224
+    );
+  }
+
+  private isPrivateIpv6(hostname: string) {
+    const normalized = hostname.replace(/^\[|\]$/g, "").toLowerCase();
+    return (
+      normalized === "::1" ||
+      normalized === "::" ||
+      normalized.startsWith("fc") ||
+      normalized.startsWith("fd") ||
+      normalized.startsWith("fe80:") ||
+      normalized.startsWith("::ffff:127.") ||
+      normalized.startsWith("::ffff:10.") ||
+      normalized.startsWith("::ffff:192.168.") ||
+      /^::ffff:172\.(1[6-9]|2[0-9]|3[0-1])\./.test(normalized)
+    );
   }
 
   private mapCourierStatus(status?: string | null) {
@@ -2839,7 +3114,24 @@ export class CourierLogisticsService {
   }
 
   private stableStringify(value: unknown) {
-    return JSON.stringify(value, Object.keys((value as Record<string, unknown>) ?? {}).sort());
+    return JSON.stringify(this.stableJsonValue(value));
+  }
+
+  private stableJsonValue(value: unknown): unknown {
+    if (Array.isArray(value)) {
+      return value.map((item) => this.stableJsonValue(item));
+    }
+    if (value instanceof Date) {
+      return value.toJSON();
+    }
+    if (value && typeof value === "object") {
+      return Object.fromEntries(
+        Object.entries(value as Record<string, unknown>)
+          .sort(([left], [right]) => left.localeCompare(right))
+          .map(([key, nested]) => [key, this.stableJsonValue(nested)]),
+      );
+    }
+    return value;
   }
 
   private safeEqual(expected: string, received: string) {

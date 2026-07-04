@@ -6,7 +6,7 @@ import {
   type IndihubAuthHeaders,
 } from "./api";
 
-export type PageResult<T> = { items: T[]; total: number };
+export type PageResult<T> = { items: T[]; total: number; page?: number; limit?: number };
 
 export type DeliveryMode =
   | "LOCAL_DELIVERY_PARTNER"
@@ -32,7 +32,6 @@ export type PackageStatus =
 
 export type CourierTrackingStatus =
   | "NOT_BOOKED"
-  | "BOOKING_PENDING"
   | "BOOKED"
   | "PICKUP_SCHEDULED"
   | "PICKED_UP"
@@ -45,9 +44,16 @@ export type CourierTrackingStatus =
   | "CANCELLED"
   | "FAILED";
 
-export type DeliveryAssignmentStatus = "UNASSIGNED" | "ASSIGNED" | "ACCEPTED" | "REJECTED";
+export type DeliveryAssignmentStatus = "UNASSIGNED" | "ASSIGNED" | "ACCEPTED" | "REJECTED" | "CANCELLED";
 export type CourierProviderMode = "MANUAL" | "SANDBOX" | "LIVE";
 export type CourierCodRemittanceStatus = "PENDING" | "COURIER_COLLECTED" | "REMITTED" | "VERIFIED" | "DISPUTED" | "REJECTED";
+export type CourierPackageQuickFilter =
+  | "PENDING_BOOKINGS"
+  | "BOOKING_FAILURES"
+  | "LABEL_READY"
+  | "PICKUP_SCHEDULED"
+  | "IN_TRANSIT"
+  | "DELIVERED";
 
 export type CourierDashboard = {
   generatedAt: string;

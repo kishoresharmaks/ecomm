@@ -1,9 +1,11 @@
+import { BadRequestException } from "@nestjs/common";
 import {
   CourierShipmentStatus,
   DeliveryAssignmentStatus,
   DeliveryMode,
   DeliveryStatus,
   OrderShipmentPackageStatus,
+  OrderStatus,
   PaymentStatus,
   SellerType,
 } from "@indihub/database";
@@ -128,6 +130,407 @@ describe("CourierLogisticsService", () => {
       storedStatus: OrderShipmentPackageStatus.PACKING_PENDING,
     });
   });
+
+  it("lists local delivery queue as active work only", async () => {
+    const prisma = {
+      client: {
+        orderShipment: {
+          findMany: vi.fn().mockResolvedValue([]),
+          count: vi.fn().mockResolvedValue(0),
+        },
+      },
+    };
+    const service = new CourierLogisticsService(prisma as never, undefined as never);
+    vi.spyOn(
+      service as unknown as { listActiveDeliveryPartners: () => Promise<unknown[]> },
+      "listActiveDeliveryPartners",
+    ).mockResolvedValue([]);
+
+    const result = await service.listLocalDeliveryQueue({ search: "SHP-1001" });
+
+    expect(result).toEqual({ items: [], partners: [], total: 0, page: 1, limit: 50 });
+    const expectedWhere = {
+      order: { orderStatus: { not: OrderStatus.CANCELLED }, deliveryStatus: { not: DeliveryStatus.CANCELLED } },
+      deliveryMode: DeliveryMode.LOCAL_DELIVERY_PARTNER,
+      status: { notIn: [DeliveryStatus.DELIVERED, DeliveryStatus.CANCELLED] },
+      OR: [
+        { shipmentNumber: { contains: "SHP-1001", mode: "insensitive" } },
+        { order: { orderNumber: { contains: "SHP-1001", mode: "insensitive" } } },
+        { seller: { storeName: { contains: "SHP-1001", mode: "insensitive" } } },
+        { partnerName: { contains: "SHP-1001", mode: "insensitive" } },
+      ],
+    };
+    expect(prisma.client.orderShipment.findMany).toHaveBeenCalledWith({
+      where: expectedWhere,
+      include: expect.any(Object),
+      orderBy: [{ updatedAt: "desc" }],
+      skip: 0,
+      take: 50,
+    });
+    expect(prisma.client.orderShipment.count).toHaveBeenCalledWith({ where: expectedWhere });
+  });
+
+  it("lists courier packages with dashboard quick filters and search composed together", async () => {
+    const prisma = {
+      client: {
+        orderShipmentPackage: {
+          findMany: vi.fn().mockResolvedValue([]),
+          count: vi.fn().mockResolvedValue(0),
+        },
+      },
+    };
+    const service = new CourierLogisticsService(prisma as never, undefined as never);
+
+    await service.listCourierPackages({
+      quickFilter: "IN_TRANSIT",
+      providerCode: "shiprocket",
+      search: "AWB1001",
+    });
+
+    const expectedWhere = {
+      AND: [
+        {
+          order: { orderStatus: { not: OrderStatus.CANCELLED }, deliveryStatus: { not: DeliveryStatus.CANCELLED } },
+          orderShipment: { status: { not: DeliveryStatus.CANCELLED } },
+          status: { not: OrderShipmentPackageStatus.CANCELLED },
+          courierPackages: {
+            some: {
+              trackingStatus: {
+                in: [
+                  CourierShipmentStatus.PICKED_UP,
+                  CourierShipmentStatus.IN_TRANSIT,
+                  CourierShipmentStatus.OUT_FOR_DELIVERY,
+                  CourierShipmentStatus.RTO_INITIATED,
+                  CourierShipmentStatus.RTO_IN_TRANSIT,
+                ],
+              },
+            },
+          },
+        },
+        {
+          courierPackages: {
+            some: {
+              courierConsignment: { providerCode: "SHIPROCKET" },
+            },
+          },
+        },
+        {
+          OR: [
+            { packageNumber: { contains: "AWB1001", mode: "insensitive" } },
+            { orderShipment: { shipmentNumber: { contains: "AWB1001", mode: "insensitive" } } },
+            { order: { orderNumber: { contains: "AWB1001", mode: "insensitive" } } },
+            { seller: { storeName: { contains: "AWB1001", mode: "insensitive" } } },
+            { courierPackages: { some: { awbNumber: { contains: "AWB1001", mode: "insensitive" } } } },
+          ],
+        },
+      ],
+    };
+    expect(prisma.client.orderShipmentPackage.findMany).toHaveBeenCalledWith({
+      where: expectedWhere,
+      include: expect.any(Object),
+      orderBy: [{ updatedAt: "desc" }],
+      skip: 0,
+      take: 50,
+    });
+    expect(prisma.client.orderShipmentPackage.count).toHaveBeenCalledWith({ where: expectedWhere });
+  });
+
+  it("excludes cancelled parent orders from the default courier package list and paginates", async () => {
+    const prisma = {
+      client: {
+        orderShipmentPackage: {
+          findMany: vi.fn().mockResolvedValue([]),
+          count: vi.fn().mockResolvedValue(0),
+        },
+      },
+    };
+    const service = new CourierLogisticsService(prisma as never, undefined as never);
+
+    const result = await service.listCourierPackages({ page: 2, limit: 25 });
+
+    const expectedWhere = {
+      AND: [
+        {
+          order: { orderStatus: { not: OrderStatus.CANCELLED }, deliveryStatus: { not: DeliveryStatus.CANCELLED } },
+          orderShipment: { status: { not: DeliveryStatus.CANCELLED } },
+          status: { not: OrderShipmentPackageStatus.CANCELLED },
+        },
+      ],
+    };
+    expect(result).toEqual({ items: [], total: 0, page: 2, limit: 25 });
+    expect(prisma.client.orderShipmentPackage.findMany).toHaveBeenCalledWith({
+      where: expectedWhere,
+      include: expect.any(Object),
+      orderBy: [{ updatedAt: "desc" }],
+      skip: 25,
+      take: 25,
+    });
+    expect(prisma.client.orderShipmentPackage.count).toHaveBeenCalledWith({ where: expectedWhere });
+  });
+
+  it("lists courier COD remittances as active handoff records only", async () => {
+    const prisma = {
+      client: {
+        courierCodRemittance: {
+          findMany: vi.fn().mockResolvedValue([]),
+          count: vi.fn().mockResolvedValue(0),
+        },
+      },
+    };
+    const service = new CourierLogisticsService(prisma as never, undefined as never);
+
+    await service.listCourierCodRemittances({ search: "AWB1001" });
+
+    const expectedWhere = {
+      order: { orderStatus: { not: OrderStatus.CANCELLED }, deliveryStatus: { not: DeliveryStatus.CANCELLED } },
+      orderShipment: { status: { not: DeliveryStatus.CANCELLED } },
+      OR: [
+        { awbNumber: { contains: "AWB1001", mode: "insensitive" } },
+        { remittanceReference: { contains: "AWB1001", mode: "insensitive" } },
+        { reportReference: { contains: "AWB1001", mode: "insensitive" } },
+        { orderShipment: { shipmentNumber: { contains: "AWB1001", mode: "insensitive" } } },
+        { order: { orderNumber: { contains: "AWB1001", mode: "insensitive" } } },
+      ],
+    };
+    expect(prisma.client.courierCodRemittance.findMany).toHaveBeenCalledWith({
+      where: expectedWhere,
+      include: expect.any(Object),
+      orderBy: [{ updatedAt: "desc" }],
+      skip: 0,
+      take: 50,
+    });
+    expect(prisma.client.courierCodRemittance.count).toHaveBeenCalledWith({ where: expectedWhere });
+  });
+
+  it("stable-stringifies nested webhook payload objects", () => {
+    const service = new CourierLogisticsService({} as never, undefined as never);
+    const stableStringify = (
+      service as unknown as { stableStringify: (value: unknown) => string }
+    ).stableStringify.bind(service);
+
+    expect(
+      stableStringify({
+        z: 1,
+        a: {
+          c: 3,
+          b: [{ y: 2, x: 1 }],
+        },
+      }),
+    ).toBe('{"a":{"b":[{"x":1,"y":2}],"c":3},"z":1}');
+  });
+
+  it("cancels previous local-delivery assignment attempts when reassigning partners", async () => {
+    const tx = courierAssignmentTransactionMocks();
+    const prisma = {
+      client: {
+        orderShipment: {
+          findUnique: vi.fn().mockResolvedValue(
+            localDeliveryShipment({
+              deliveryPartnerUserId: "old-partner",
+              assignmentStatus: DeliveryAssignmentStatus.ASSIGNED,
+            }),
+          ),
+        },
+        user: {
+          findFirst: vi.fn().mockResolvedValue({ id: "new-partner" }),
+        },
+        $transaction: vi.fn((callback) => callback(tx)),
+        orderShipmentPackage: {
+          findMany: vi.fn().mockResolvedValue([]),
+        },
+      },
+    };
+    const service = new CourierLogisticsService(prisma as never, undefined as never);
+
+    await service.assignLocalDeliveryShipment({ id: "admin-1" } as never, "shipment-1", {
+      deliveryPartnerUserId: "new-partner",
+      assignmentNote: "Reassign from courier workspace.",
+    });
+
+    expect(tx.deliveryAssignmentAttempt.updateMany).toHaveBeenCalledWith({
+      where: {
+        orderId: "order-1",
+        status: DeliveryAssignmentStatus.ASSIGNED,
+        partnerUserId: { not: "new-partner" },
+      },
+      data: {
+        status: DeliveryAssignmentStatus.CANCELLED,
+        respondedAt: expect.any(Date),
+        note: "Reassign from courier workspace.",
+      },
+    });
+    expect(tx.deliveryAssignmentAttempt.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        orderId: "order-1",
+        deliveryDetailId: "delivery-detail-1",
+        partnerUserId: "new-partner",
+        source: "MANUAL",
+        status: DeliveryAssignmentStatus.ASSIGNED,
+        assignedById: "admin-1",
+      }),
+    });
+  });
+
+  it("cancels active local-delivery attempts without creating a new attempt when unassigning", async () => {
+    const tx = courierAssignmentTransactionMocks();
+    const prisma = {
+      client: {
+        orderShipment: {
+          findUnique: vi.fn().mockResolvedValue(
+            localDeliveryShipment({
+              deliveryPartnerUserId: "old-partner",
+              assignmentStatus: DeliveryAssignmentStatus.ASSIGNED,
+            }),
+          ),
+        },
+        $transaction: vi.fn((callback) => callback(tx)),
+        orderShipmentPackage: {
+          findMany: vi.fn().mockResolvedValue([]),
+        },
+      },
+    };
+    const service = new CourierLogisticsService(prisma as never, undefined as never);
+
+    await service.assignLocalDeliveryShipment({ id: "admin-1" } as never, "shipment-1", {
+      assignmentNote: "Unassign from courier workspace.",
+    });
+
+    expect(tx.deliveryAssignmentAttempt.updateMany).toHaveBeenCalledWith({
+      where: {
+        orderId: "order-1",
+        status: DeliveryAssignmentStatus.ASSIGNED,
+      },
+      data: {
+        status: DeliveryAssignmentStatus.CANCELLED,
+        respondedAt: expect.any(Date),
+        note: "Unassign from courier workspace.",
+      },
+    });
+    expect(tx.deliveryAssignmentAttempt.create).not.toHaveBeenCalled();
+  });
+
+  it("downloads courier labels only from public HTTPS URLs", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      headers: { get: vi.fn().mockReturnValue("application/pdf") },
+      arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(4)),
+    } as unknown as Response);
+    const prisma = {
+      client: {
+        orderShipmentPackage: {
+          findUnique: vi.fn().mockResolvedValue(courierLabelPackage("https://labels.courier.example/label.pdf")),
+        },
+      },
+    };
+    const service = new CourierLogisticsService(prisma as never, undefined as never);
+
+    const label = await service.getCourierPackageLabel("package-1");
+
+    expect(label).toMatchObject({
+      contentType: "application/pdf",
+      fileName: "PKG-1001-label.pdf",
+    });
+    expect(String(fetchSpy.mock.calls[0]?.[0])).toBe("https://labels.courier.example/label.pdf");
+    fetchSpy.mockRestore();
+  });
+
+  it("blocks private courier label URLs before server-side fetch", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      headers: { get: vi.fn().mockReturnValue("application/pdf") },
+      arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(4)),
+    } as unknown as Response);
+    const prisma = {
+      client: {
+        orderShipmentPackage: {
+          findUnique: vi.fn().mockResolvedValue(courierLabelPackage("https://127.0.0.1/label.pdf")),
+        },
+      },
+    };
+    const service = new CourierLogisticsService(prisma as never, undefined as never);
+
+    await expect(service.getCourierPackageLabel("package-1")).rejects.toThrow(BadRequestException);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
+  });
+
+  it("blocks courier package booking for closed orders and shipments", async () => {
+    const prisma = {
+      client: {
+        orderShipmentPackage: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: "package-1",
+            deliveryMode: DeliveryMode.THIRD_PARTY_COURIER,
+            status: OrderShipmentPackageStatus.READY_FOR_BOOKING,
+            order: {
+              orderStatus: OrderStatus.CANCELLED,
+              deliveryStatus: DeliveryStatus.CANCELLED,
+            },
+            orderShipment: {
+              shipmentNumber: "SHP-1001",
+              status: DeliveryStatus.CANCELLED,
+            },
+          }),
+        },
+      },
+    };
+    const service = new CourierLogisticsService(prisma as never, undefined as never);
+
+    await expect(
+      service.bookPackage({ id: "admin-1" } as never, "package-1", { providerCode: "SHIPROCKET" }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it("blocks routing override for delivered shipments", async () => {
+    const prisma = {
+      client: {
+        orderShipment: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: "shipment-1",
+            deliveryMode: DeliveryMode.THIRD_PARTY_COURIER,
+            status: DeliveryStatus.DELIVERED,
+            order: {
+              orderStatus: OrderStatus.DELIVERED,
+              deliveryStatus: DeliveryStatus.DELIVERED,
+            },
+          }),
+        },
+      },
+    };
+    const service = new CourierLogisticsService(prisma as never, undefined as never);
+
+    await expect(
+      service.overrideRoutingFailure({ id: "admin-1" } as never, "shipment-1", {
+        deliveryMode: DeliveryMode.LOCAL_DELIVERY_PARTNER,
+      }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it("blocks local delivery assignment for cancelled shipments", async () => {
+    const prisma = {
+      client: {
+        orderShipment: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: "shipment-1",
+            deliveryMode: DeliveryMode.LOCAL_DELIVERY_PARTNER,
+            status: DeliveryStatus.CANCELLED,
+            order: {
+              orderStatus: OrderStatus.CANCELLED,
+              deliveryStatus: DeliveryStatus.CANCELLED,
+              deliveryDetail: null,
+            },
+          }),
+        },
+      },
+    };
+    const service = new CourierLogisticsService(prisma as never, undefined as never);
+
+    await expect(
+      service.assignLocalDeliveryShipment({ id: "admin-1" } as never, "shipment-1", {
+        deliveryPartnerUserId: "00000000-0000-4000-8000-000000000001",
+      }),
+    ).rejects.toThrow(BadRequestException);
+  });
 });
 
 function routingFailureShipment() {
@@ -186,6 +589,74 @@ function routingFailureShipment() {
       trackingStatus: CourierShipmentStatus.FAILED,
       awbNumber: "AWB1001",
       trackingUrl: "https://courier.example/track/AWB1001",
+    },
+  };
+}
+
+function courierLabelPackage(labelUrl: string) {
+  return {
+    id: "package-1",
+    packageNumber: "PKG-1001",
+    deliveryMode: DeliveryMode.THIRD_PARTY_COURIER,
+    courierPackages: [
+      {
+        labelUrl,
+        trackingStatus: CourierShipmentStatus.BOOKED,
+        courierConsignment: {
+          providerCode: "SHIPROCKET",
+        },
+      },
+    ],
+  };
+}
+
+function localDeliveryShipment({
+  deliveryPartnerUserId,
+  assignmentStatus,
+}: {
+  deliveryPartnerUserId: string | null;
+  assignmentStatus: DeliveryAssignmentStatus;
+}) {
+  return {
+    id: "shipment-1",
+    orderId: "order-1",
+    deliveryMode: DeliveryMode.LOCAL_DELIVERY_PARTNER,
+    status: DeliveryStatus.PENDING,
+    deliveryPartnerUserId,
+    assignmentStatus,
+    order: {
+      orderStatus: OrderStatus.PROCESSING,
+      deliveryStatus: DeliveryStatus.PENDING,
+      deliveryDetail: {
+        id: "delivery-detail-1",
+        status: DeliveryStatus.PENDING,
+        deliveryPartnerUserId,
+        assignmentStatus,
+      },
+    },
+  };
+}
+
+function courierAssignmentTransactionMocks() {
+  return {
+    deliveryDetail: {
+      upsert: vi.fn().mockResolvedValue({
+        id: "delivery-detail-1",
+        status: DeliveryStatus.PENDING,
+      }),
+    },
+    deliveryAssignmentAttempt: {
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      create: vi.fn().mockResolvedValue({ id: "attempt-1" }),
+    },
+    orderShipment: {
+      update: vi.fn().mockResolvedValue({ id: "shipment-1" }),
+    },
+    deliveryEvent: {
+      create: vi.fn().mockResolvedValue({ id: "event-1" }),
+    },
+    auditLog: {
+      create: vi.fn().mockResolvedValue({ id: "audit-1" }),
     },
   };
 }

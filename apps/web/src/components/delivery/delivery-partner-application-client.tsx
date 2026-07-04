@@ -128,10 +128,19 @@ export function DeliveryPartnerApplicationClient() {
     const serviceRadiusKm = optionalNumberValue(form, "serviceRadiusKm");
     const availabilityNotes = optionalFormValue(form, "availabilityNotes");
 
+    const phone = normalizeIndianPhone(formValue(form, "phone"));
+    if (!phone) {
+      setNotice({
+        tone: "danger",
+        message: "Enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.",
+      });
+      return;
+    }
+
     submitMutation.mutate({
       fullName: formValue(form, "fullName"),
       email: formValue(form, "email"),
-      phone: normalizeIndianPhone(formValue(form, "phone")),
+      phone,
       vehicleType: formValue(form, "vehicleType"),
       vehicleNumber: formValue(form, "vehicleNumber"),
       servicePincodes: pincode ? [pincode] : [],
@@ -201,6 +210,8 @@ export function DeliveryPartnerApplicationClient() {
               required
               defaultValue={application?.phone ?? normalizeIndianPhone(auth.userProfile?.phone) ?? ""}
               placeholder="9876543210"
+              pattern="[6-9][0-9]{9}"
+              title="10-digit Indian mobile number starting with 6, 7, 8, or 9"
             />
             <Field
               label="Alternate mobile"
@@ -341,8 +352,17 @@ export function DeliveryPartnerApplicationClient() {
         </section>
 
         {notice ? (
-          <div className="rounded-md border border-[#D8E2EA] bg-white p-3">
-            <StatusBadge tone={notice.tone}>{notice.message}</StatusBadge>
+          <div
+            className={cn(
+              "rounded-md border p-4 text-sm font-black",
+              notice.tone === "success"
+                ? "border-[#B7E4CE] bg-[#ECFDF3] text-[#0F8A5F]"
+                : notice.tone === "danger"
+                  ? "border-[#F5B7B7] bg-[#FDECEC] text-[#B42318]"
+                  : "border-[#D8E2EA] bg-[#F8FAFC] text-[#1F2933]",
+            )}
+          >
+            {notice.message}
           </div>
         ) : null}
 
@@ -546,6 +566,8 @@ function Field({
   readOnly = false,
   min,
   max,
+  pattern,
+  title,
 }: {
   label: string;
   name: string;
@@ -556,6 +578,8 @@ function Field({
   readOnly?: boolean;
   min?: string;
   max?: string;
+  pattern?: string;
+  title?: string;
 }) {
   return (
     <label className="space-y-2">
@@ -569,6 +593,8 @@ function Field({
         readOnly={readOnly}
         min={min}
         max={max}
+        pattern={pattern}
+        title={title}
         className={inputClassName}
       />
     </label>

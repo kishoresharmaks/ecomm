@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -46,6 +47,7 @@ import {
   type CourierDeliveryPartnerPayload,
   type CourierDeliveryPartnerRecord,
   type CourierPackageRecord,
+  type CourierPackageQuickFilter,
   type CourierProviderPayload,
   type CourierProviderMode,
   type CourierProviderRecord,
@@ -53,6 +55,7 @@ import {
   type CourierTrackingStatus,
   type DeliveryMode,
   type DeliveryPartnerOption,
+  type PageResult,
   type PackageStatus,
 } from "@/lib/courier-api";
 
@@ -64,6 +67,22 @@ const moneyFormatter = new Intl.NumberFormat("en-IN", {
 
 const trackingStatuses: CourierTrackingStatus[] = [
   "NOT_BOOKED",
+  "BOOKED",
+  "PICKUP_SCHEDULED",
+  "PICKED_UP",
+  "IN_TRANSIT",
+  "OUT_FOR_DELIVERY",
+  "DELIVERED",
+  "RTO_INITIATED",
+  "RTO_IN_TRANSIT",
+  "RTO_DELIVERED",
+  "CANCELLED",
+  "FAILED",
+];
+
+const packageStatuses: PackageStatus[] = [
+  "PACKING_PENDING",
+  "READY_FOR_BOOKING",
   "BOOKING_PENDING",
   "BOOKED",
   "PICKUP_SCHEDULED",
@@ -77,6 +96,15 @@ const trackingStatuses: CourierTrackingStatus[] = [
   "CANCELLED",
   "FAILED",
 ];
+
+const packageQuickFilterLabels: Record<CourierPackageQuickFilter, string> = {
+  PENDING_BOOKINGS: "Pending bookings",
+  BOOKING_FAILURES: "Booking failures",
+  LABEL_READY: "Label ready",
+  PICKUP_SCHEDULED: "Pickup scheduled",
+  IN_TRANSIT: "In transit",
+  DELIVERED: "Delivered",
+};
 
 const deliveryModes: DeliveryMode[] = ["LOCAL_DELIVERY_PARTNER", "THIRD_PARTY_COURIER", "STORE_PICKUP", "MANUAL_TRANSPORT"];
 
@@ -147,21 +175,29 @@ export function CourierDashboardClient() {
 
 export function CourierPackagesClient() {
   const auth = useAdminAuth();
+  const searchParams = useSearchParams();
+  const urlQuickFilter = parsePackageQuickFilter(searchParams.get("quickFilter"));
+  const urlPackageStatus = searchParams.get("packageStatus") ?? "";
+  const urlTrackingStatus = searchParams.get("trackingStatus") ?? "";
   const [search, setSearch] = useState("");
   const [deliveryMode, setDeliveryMode] = useState("");
-  const [packageStatus, setPackageStatus] = useState("");
-  const [trackingStatus, setTrackingStatus] = useState("");
+  const [packageStatus, setPackageStatus] = useState(urlPackageStatus);
+  const [trackingStatus, setTrackingStatus] = useState(urlTrackingStatus);
   const [providerCode, setProviderCode] = useState("");
+  const [quickFilter, setQuickFilter] = useState<CourierPackageQuickFilter | "">(urlQuickFilter ?? "");
+  const [page, setPage] = useState(1);
   const query = useMemo(
     () => ({
       ...(search.trim() ? { search: search.trim() } : {}),
       ...(deliveryMode ? { deliveryMode } : {}),
       ...(packageStatus ? { packageStatus } : {}),
       ...(trackingStatus ? { trackingStatus } : {}),
+      ...(quickFilter ? { quickFilter } : {}),
       ...(providerCode.trim() ? { providerCode: providerCode.trim().toUpperCase() } : {}),
+      page,
       limit: 60,
     }),
-    [deliveryMode, packageStatus, providerCode, search, trackingStatus],
+    [deliveryMode, packageStatus, page, providerCode, quickFilter, search, trackingStatus],
   );
 
   const packagesQuery = useQuery({
@@ -178,11 +214,33 @@ export function CourierPackagesClient() {
         packageStatus={packageStatus}
         trackingStatus={trackingStatus}
         providerCode={providerCode}
-        onSearchChange={setSearch}
-        onDeliveryModeChange={setDeliveryMode}
-        onPackageStatusChange={setPackageStatus}
-        onTrackingStatusChange={setTrackingStatus}
-        onProviderCodeChange={setProviderCode}
+        quickFilter={quickFilter}
+        onSearchChange={(value) => {
+          setPage(1);
+          setSearch(value);
+        }}
+        onDeliveryModeChange={(value) => {
+          setPage(1);
+          setDeliveryMode(value);
+        }}
+        onPackageStatusChange={(value) => {
+          setPage(1);
+          setQuickFilter("");
+          setPackageStatus(value);
+        }}
+        onTrackingStatusChange={(value) => {
+          setPage(1);
+          setQuickFilter("");
+          setTrackingStatus(value);
+        }}
+        onProviderCodeChange={(value) => {
+          setPage(1);
+          setProviderCode(value);
+        }}
+        onClearQuickFilter={() => {
+          setPage(1);
+          setQuickFilter("");
+        }}
         onRefresh={() => packagesQuery.refetch()}
       />
       {packagesQuery.isLoading ? <CourierState message="Loading package operations" /> : null}
@@ -193,6 +251,7 @@ export function CourierPackagesClient() {
         />
       ) : null}
       <CourierPackageTable packages={packagesQuery.data?.items ?? []} total={packagesQuery.data?.total ?? 0} />
+      <CourierPagination result={packagesQuery.data} fallbackPage={page} fallbackLimit={60} onPageChange={setPage} />
     </div>
   );
 }
@@ -403,7 +462,8 @@ export function CourierPackageDetailClient({ packageId }: { packageId: string })
 export function CourierRoutingFailuresClient() {
   const auth = useAdminAuth();
   const [search, setSearch] = useState("");
-  const query = useMemo(() => ({ ...(search.trim() ? { search: search.trim() } : {}), limit: 60 }), [search]);
+  const [page, setPage] = useState(1);
+  const query = useMemo(() => ({ ...(search.trim() ? { search: search.trim() } : {}), page, limit: 60 }), [page, search]);
   const failuresQuery = useQuery({
     queryKey: ["courier-routing-failures", auth.authHeaders, query],
     queryFn: () => listCourierRoutingFailures(auth.authHeaders, query),
@@ -412,7 +472,15 @@ export function CourierRoutingFailuresClient() {
 
   return (
     <div className="space-y-4">
-      <SearchBar value={search} onChange={setSearch} placeholder="Search failed shipment, seller, order, or reason" onRefresh={() => failuresQuery.refetch()} />
+      <SearchBar
+        value={search}
+        onChange={(value) => {
+          setPage(1);
+          setSearch(value);
+        }}
+        placeholder="Search failed shipment, seller, order, or reason"
+        onRefresh={() => failuresQuery.refetch()}
+      />
       {failuresQuery.isLoading ? <CourierState message="Loading routing failures" /> : null}
       {failuresQuery.isError ? <CourierState message={errorMessage(failuresQuery.error, "Unable to load routing failures.")} error /> : null}
       <section className="rounded-lg border border-[#D8E2EA] bg-white shadow-sm">
@@ -427,6 +495,7 @@ export function CourierRoutingFailuresClient() {
           {!failuresQuery.isLoading && (failuresQuery.data?.items ?? []).length === 0 ? <EmptyRow message="No routing failures found." /> : null}
         </div>
       </section>
+      <CourierPagination result={failuresQuery.data} fallbackPage={page} fallbackLimit={60} onPageChange={setPage} />
     </div>
   );
 }
@@ -435,13 +504,15 @@ export function CourierLocalDeliveryClient() {
   const auth = useAdminAuth();
   const [search, setSearch] = useState("");
   const [assignmentStatus, setAssignmentStatus] = useState("");
+  const [page, setPage] = useState(1);
   const query = useMemo(
     () => ({
       ...(search.trim() ? { search: search.trim() } : {}),
       ...(assignmentStatus ? { assignmentStatus } : {}),
+      page,
       limit: 60,
     }),
-    [assignmentStatus, search],
+    [assignmentStatus, page, search],
   );
   const queueQuery = useQuery({
     queryKey: ["courier-local-delivery", auth.authHeaders, query],
@@ -457,14 +528,20 @@ export function CourierLocalDeliveryClient() {
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#667085]" aria-hidden="true" />
             <input
               value={search}
-              onChange={(event) => setSearch(event.target.value)}
+              onChange={(event) => {
+                setPage(1);
+                setSearch(event.target.value);
+              }}
               placeholder="Search local shipment, seller, order, or partner"
               className="h-11 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] pl-9 pr-3 text-sm font-semibold text-[#1F2933] outline-none transition focus:border-[#ED3500] focus:bg-white"
             />
           </label>
           <select
             value={assignmentStatus}
-            onChange={(event) => setAssignmentStatus(event.target.value)}
+            onChange={(event) => {
+              setPage(1);
+              setAssignmentStatus(event.target.value);
+            }}
             className="h-11 rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-black text-[#1F2933] outline-none transition focus:border-[#ED3500]"
           >
             <option value="">All assignment states</option>
@@ -472,6 +549,7 @@ export function CourierLocalDeliveryClient() {
             <option value="ASSIGNED">Assigned</option>
             <option value="ACCEPTED">Accepted</option>
             <option value="REJECTED">Rejected</option>
+            <option value="CANCELLED">Cancelled</option>
           </select>
           <Button type="button" variant="outline" onClick={() => queueQuery.refetch()}>
             Refresh
@@ -494,6 +572,7 @@ export function CourierLocalDeliveryClient() {
           {!queueQuery.isLoading && (queueQuery.data?.items ?? []).length === 0 ? <EmptyRow message="No local delivery shipments found." /> : null}
         </div>
       </section>
+      <CourierPagination result={queueQuery.data} fallbackPage={page} fallbackLimit={60} onPageChange={setPage} />
     </div>
   );
 }
@@ -509,6 +588,7 @@ export function CourierDeliveryPartnersClient(contextProps: DeliveryPartnerManag
   const [readiness, setReadiness] = useState("");
   const [workload, setWorkload] = useState("");
   const [codRisk, setCodRisk] = useState("");
+  const [page, setPage] = useState(1);
   const query = useMemo(
     () => ({
       ...(search.trim() ? { search: search.trim() } : {}),
@@ -516,9 +596,10 @@ export function CourierDeliveryPartnersClient(contextProps: DeliveryPartnerManag
       ...(cityCode.trim() ? { cityCode: cityCode.trim() } : {}),
       ...(pincode.trim() ? { pincode: pincode.trim() } : {}),
       ...(localAreaCode.trim() ? { localAreaCode: localAreaCode.trim() } : {}),
+      page,
       limit: 100,
     }),
-    [availability, cityCode, localAreaCode, pincode, search],
+    [availability, cityCode, localAreaCode, page, pincode, search],
   );
   const partnersQuery = useQuery({
     queryKey: ["courier-delivery-partners", auth.authHeaders, query],
@@ -547,33 +628,88 @@ export function CourierDeliveryPartnersClient(contextProps: DeliveryPartnerManag
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#667085]" aria-hidden="true" />
             <input
               value={search}
-              onChange={(event) => setSearch(event.target.value)}
+              onChange={(event) => {
+                setPage(1);
+                setSearch(event.target.value);
+              }}
               placeholder="Search name, email, or phone"
               className="h-11 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] pl-9 pr-3 text-sm font-semibold text-[#1F2933] outline-none transition focus:border-[#ED3500] focus:bg-white"
             />
           </label>
-          <select value={availability} onChange={(event) => setAvailability(event.target.value)} className={selectClassName}>
+          <select
+            value={availability}
+            onChange={(event) => {
+              setPage(1);
+              setAvailability(event.target.value);
+            }}
+            className={selectClassName}
+          >
             <option value="">Any availability</option>
             <option value="available">Available</option>
             <option value="paused">Paused</option>
           </select>
-          <input value={cityCode} onChange={(event) => setCityCode(event.target.value)} placeholder="City code" className={inputClassName} />
-          <input value={pincode} onChange={(event) => setPincode(event.target.value)} placeholder="Pincode" className={inputClassName} />
-          <input value={localAreaCode} onChange={(event) => setLocalAreaCode(event.target.value)} placeholder="Local area code" className={inputClassName} />
+          <input
+            value={cityCode}
+            onChange={(event) => {
+              setPage(1);
+              setCityCode(event.target.value);
+            }}
+            placeholder="City code"
+            className={inputClassName}
+          />
+          <input
+            value={pincode}
+            onChange={(event) => {
+              setPage(1);
+              setPincode(event.target.value);
+            }}
+            placeholder="Pincode"
+            className={inputClassName}
+          />
+          <input
+            value={localAreaCode}
+            onChange={(event) => {
+              setPage(1);
+              setLocalAreaCode(event.target.value);
+            }}
+            placeholder="Local area code"
+            className={inputClassName}
+          />
         </div>
         <div className="mt-3 grid gap-3 md:grid-cols-[1fr_1fr_1fr_auto]">
-          <select value={readiness} onChange={(event) => setReadiness(event.target.value)} className={selectClassName}>
+          <select
+            value={readiness}
+            onChange={(event) => {
+              setPage(1);
+              setReadiness(event.target.value);
+            }}
+            className={selectClassName}
+          >
             <option value="">Any readiness</option>
             <option value="ready">Assignment ready</option>
             <option value="missing-profile">Missing profile</option>
             <option value="no-coverage">No service coverage</option>
           </select>
-          <select value={workload} onChange={(event) => setWorkload(event.target.value)} className={selectClassName}>
+          <select
+            value={workload}
+            onChange={(event) => {
+              setPage(1);
+              setWorkload(event.target.value);
+            }}
+            className={selectClassName}
+          >
             <option value="">Any workload</option>
             <option value="active">Has active workload</option>
             <option value="idle">Idle</option>
           </select>
-          <select value={codRisk} onChange={(event) => setCodRisk(event.target.value)} className={selectClassName}>
+          <select
+            value={codRisk}
+            onChange={(event) => {
+              setPage(1);
+              setCodRisk(event.target.value);
+            }}
+            className={selectClassName}
+          >
             <option value="">Any COD exposure</option>
             <option value="risk">COD limit exceeded</option>
             <option value="clear">COD clear</option>
@@ -606,6 +742,7 @@ export function CourierDeliveryPartnersClient(contextProps: DeliveryPartnerManag
           {!partnersQuery.isLoading && filteredPartners.length === 0 ? <EmptyRow message="No delivery partners found." /> : null}
         </div>
       </section>
+      <CourierPagination result={partnersQuery.data} fallbackPage={page} fallbackLimit={100} onPageChange={setPage} />
     </div>
   );
 }
@@ -880,7 +1017,11 @@ export function CourierCodRemittancesClient() {
     reportReference: "",
     notes: "",
   });
-  const query = useMemo(() => ({ ...(search.trim() ? { search: search.trim() } : {}), ...(status ? { status } : {}), limit: 60 }), [search, status]);
+  const [page, setPage] = useState(1);
+  const query = useMemo(
+    () => ({ ...(search.trim() ? { search: search.trim() } : {}), ...(status ? { status } : {}), page, limit: 60 }),
+    [page, search, status],
+  );
   const remittanceQuery = useQuery({
     queryKey: ["courier-cod-remittances", auth.authHeaders, query],
     queryFn: () => listCourierCodRemittances(auth.authHeaders, query),
@@ -911,14 +1052,20 @@ export function CourierCodRemittancesClient() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#667085]" aria-hidden="true" />
               <input
                 value={search}
-                onChange={(event) => setSearch(event.target.value)}
+                onChange={(event) => {
+                  setPage(1);
+                  setSearch(event.target.value);
+                }}
                 placeholder="Search shipment, AWB, order, report, or reference"
                 className="h-11 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] pl-9 pr-3 text-sm font-semibold text-[#1F2933] outline-none transition focus:border-[#ED3500] focus:bg-white"
               />
             </label>
             <select
               value={status}
-              onChange={(event) => setStatus(event.target.value)}
+              onChange={(event) => {
+                setPage(1);
+                setStatus(event.target.value);
+              }}
               className="h-11 rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-black text-[#1F2933] outline-none transition focus:border-[#ED3500]"
             >
               <option value="">All statuses</option>
@@ -950,6 +1097,7 @@ export function CourierCodRemittancesClient() {
             {!remittanceQuery.isLoading && (remittanceQuery.data?.items ?? []).length === 0 ? <EmptyRow message="No courier COD remittances found." /> : null}
           </div>
         </section>
+        <CourierPagination result={remittanceQuery.data} fallbackPage={page} fallbackLimit={60} onPageChange={setPage} />
       </section>
 
       <CourierFormPanel title="Record COD remittance" description="Enter shipment/AWB plus courier remitted amount. Finance will verify later.">
@@ -978,12 +1126,12 @@ export function CourierCodRemittancesClient() {
 function CourierMetricGrid({ dashboard }: { dashboard: CourierDashboard }) {
   const metrics = dashboard.metrics;
   const cards = [
-    { label: "Pending bookings", value: metrics.pendingBookings, icon: PackageCheck, href: "/courier/packages?packageStatus=READY_FOR_BOOKING", tone: "orange" },
-    { label: "Booking failures", value: metrics.bookingFailures, icon: AlertTriangle, href: "/courier/packages?trackingStatus=FAILED", tone: "red" },
-    { label: "Label ready", value: metrics.labelReady, icon: FileText, href: "/courier/packages", tone: "green" },
-    { label: "Pickup scheduled", value: metrics.pickupScheduled, icon: Truck, href: "/courier/packages", tone: "blue" },
-    { label: "In transit", value: metrics.inTransit, icon: Truck, href: "/courier/packages", tone: "blue" },
-    { label: "Delivered", value: metrics.delivered, icon: CheckCircle2, href: "/courier/packages", tone: "green" },
+    { label: "Pending bookings", value: metrics.pendingBookings, icon: PackageCheck, href: "/courier/packages?quickFilter=PENDING_BOOKINGS", tone: "orange" },
+    { label: "Booking failures", value: metrics.bookingFailures, icon: AlertTriangle, href: "/courier/packages?quickFilter=BOOKING_FAILURES", tone: "red" },
+    { label: "Label ready", value: metrics.labelReady, icon: FileText, href: "/courier/packages?quickFilter=LABEL_READY", tone: "green" },
+    { label: "Pickup scheduled", value: metrics.pickupScheduled, icon: Truck, href: "/courier/packages?quickFilter=PICKUP_SCHEDULED", tone: "blue" },
+    { label: "In transit", value: metrics.inTransit, icon: Truck, href: "/courier/packages?quickFilter=IN_TRANSIT", tone: "blue" },
+    { label: "Delivered", value: metrics.delivered, icon: CheckCircle2, href: "/courier/packages?quickFilter=DELIVERED", tone: "green" },
     { label: "Routing failures", value: metrics.routingFailures, icon: AlertCircle, href: "/courier/routing-failures", tone: "red" },
     { label: "Local pending", value: metrics.localDeliveryPending, icon: MapPinned, href: "/courier/local-delivery", tone: "orange" },
     { label: "Courier COD", value: metrics.courierCodPending, icon: CreditCard, href: "/courier/cod-remittances", tone: "orange" },
@@ -1063,11 +1211,13 @@ function CourierPackageFilters({
   packageStatus,
   trackingStatus,
   providerCode,
+  quickFilter,
   onSearchChange,
   onDeliveryModeChange,
   onPackageStatusChange,
   onTrackingStatusChange,
   onProviderCodeChange,
+  onClearQuickFilter,
   onRefresh,
 }: {
   search: string;
@@ -1075,15 +1225,25 @@ function CourierPackageFilters({
   packageStatus: string;
   trackingStatus: string;
   providerCode: string;
+  quickFilter: CourierPackageQuickFilter | "";
   onSearchChange: (value: string) => void;
   onDeliveryModeChange: (value: string) => void;
   onPackageStatusChange: (value: string) => void;
   onTrackingStatusChange: (value: string) => void;
   onProviderCodeChange: (value: string) => void;
+  onClearQuickFilter: () => void;
   onRefresh: () => void;
 }) {
   return (
     <section className="rounded-lg border border-[#D8E2EA] bg-white p-4 shadow-sm">
+      {quickFilter ? (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 py-2">
+          <span className="text-sm font-black text-[#1F2933]">Showing {packageQuickFilterLabels[quickFilter]}</span>
+          <Button type="button" variant="outline" size="sm" onClick={onClearQuickFilter}>
+            Clear
+          </Button>
+        </div>
+      ) : null}
       <div className="grid gap-3 xl:grid-cols-[1fr_210px_210px_210px_160px_auto]">
         <label className="relative block">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#667085]" aria-hidden="true" />
@@ -1104,13 +1264,11 @@ function CourierPackageFilters({
         </select>
         <select value={packageStatus} onChange={(event) => onPackageStatusChange(event.target.value)} className={selectClassName}>
           <option value="">All package states</option>
-          {trackingStatuses
-            .filter((status) => status !== "NOT_BOOKED")
-            .map((status) => (
-              <option key={status} value={status}>
-                {label(status)}
-              </option>
-            ))}
+          {packageStatuses.map((status) => (
+            <option key={status} value={status}>
+              {label(status)}
+            </option>
+          ))}
         </select>
         <select value={trackingStatus} onChange={(event) => onTrackingStatusChange(event.target.value)} className={selectClassName}>
           <option value="">All tracking states</option>
@@ -1512,6 +1670,49 @@ function CourierFormPanel({ title, description, children }: { title: string; des
   );
 }
 
+function CourierPagination({
+  result,
+  fallbackPage,
+  fallbackLimit,
+  onPageChange,
+}: {
+  result: PageResult<unknown> | undefined;
+  fallbackPage: number;
+  fallbackLimit: number;
+  onPageChange: (page: number) => void;
+}) {
+  if (!result) {
+    return null;
+  }
+
+  const total = result.total;
+  const page = result.page ?? fallbackPage;
+  const limit = result.limit ?? fallbackLimit;
+  const pageCount = Math.max(1, Math.ceil(total / limit));
+  const firstVisible = total === 0 ? 0 : (page - 1) * limit + 1;
+  const lastVisible = Math.min(total, page * limit);
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[#D8E2EA] bg-white px-4 py-3 shadow-sm">
+      <p className="text-sm font-semibold text-[#667085]">
+        Showing <span className="font-black text-[#1F2933]">{firstVisible}-{lastVisible}</span> of{" "}
+        <span className="font-black text-[#1F2933]">{total}</span> records
+      </p>
+      <div className="flex items-center gap-2">
+        <Button type="button" variant="outline" disabled={page <= 1} onClick={() => onPageChange(Math.max(1, page - 1))}>
+          Previous
+        </Button>
+        <span className="min-w-[96px] text-center text-sm font-black text-[#1F2933]">
+          Page {page} of {pageCount}
+        </span>
+        <Button type="button" variant="outline" disabled={page >= pageCount} onClick={() => onPageChange(Math.min(pageCount, page + 1))}>
+          Next
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function SearchBar({
   value,
   onChange,
@@ -1862,6 +2063,10 @@ function effectivePackageStatus(pkg: CourierPackageRecord): PackageStatus {
   }
 
   return pkg.status;
+}
+
+function parsePackageQuickFilter(value: string | null): CourierPackageQuickFilter | null {
+  return value && value in packageQuickFilterLabels ? (value as CourierPackageQuickFilter) : null;
 }
 
 function addressText(value: unknown) {

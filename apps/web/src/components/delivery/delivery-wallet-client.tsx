@@ -51,7 +51,7 @@ export function DeliveryWalletClient() {
 
   return (
     <div className="grid gap-5">
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <DeliveryMetric
           label="Available balance"
           value={formatPaise(summary?.availableBalancePaise ?? 0, summary?.currency ?? "INR")}
@@ -104,12 +104,19 @@ export function DeliveryWalletClient() {
               />
             </div>
             {requestPayout.error ? (
-              <DeliveryError error={requestPayout.error} onRetry={() => requestPayout.reset()} />
+              <DeliveryError error={requestPayout.error} onRetry={() => requestPayout.mutate()} />
             ) : null}
             {requestPayout.isSuccess ? (
-              <p className="mt-4 rounded-md border border-[#BFEAD9] bg-[#E9F7F1] p-3 text-sm font-semibold text-[#064C35]">
-                Payout request sent to finance.
-              </p>
+              <div className="mt-4 flex items-center justify-between gap-3 rounded-md border border-[#BFEAD9] bg-[#E9F7F1] p-3 text-sm font-semibold text-[#064C35]">
+                <span>Payout request sent to finance.</span>
+                <button
+                  type="button"
+                  onClick={() => requestPayout.reset()}
+                  className="text-xs font-black uppercase text-[#064C35] hover:underline"
+                >
+                  Dismiss
+                </button>
+              </div>
             ) : null}
           </div>
           <div className="rounded-md border border-[#E5E7EB] bg-[#F8FAFC] p-4">
