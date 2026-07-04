@@ -1328,9 +1328,9 @@ export class ReturnsService {
         throw new BadRequestException("Accept the return pickup assignment before updating pickup progress.");
       }
 
-      const proofReference = dto.pickupProofReference ?? dto.proofReference;
-      if (dto.status === ReverseShipmentStatus.PICKED_UP && !proofReference?.trim()) {
-        throw new BadRequestException("Pickup proof is required before marking the return picked up.");
+      const proofReference = this.firstTrimmedString(dto.pickupProofReference, dto.proofReference);
+      if (dto.status === ReverseShipmentStatus.PICKED_UP && !proofReference) {
+        throw new BadRequestException("Pickup proof reference is required before marking the return picked up.");
       }
       if (dto.status === ReverseShipmentStatus.RECEIVED && assignedShipments.length > 1) {
         throw new BadRequestException("Receive each seller package separately from the shipment receipt action.");
@@ -1428,9 +1428,9 @@ export class ReturnsService {
       if (shipment.status !== ReverseShipmentStatus.PICKED_UP && shipment.status !== ReverseShipmentStatus.IN_TRANSIT) {
         throw new BadRequestException("Only picked-up return packages can be received by the seller store.");
       }
-      const receiptProof = dto.receiptProofReference ?? dto.proofReference;
-      if (!receiptProof?.trim()) {
-        throw new BadRequestException("Seller receipt proof is required.");
+      const receiptProof = this.firstTrimmedString(dto.receiptProofReference, dto.proofReference);
+      if (!receiptProof) {
+        throw new BadRequestException("Seller receipt proof reference is required.");
       }
       if (!dto.receivedByName?.trim()) {
         throw new BadRequestException("Receiver name is required when the seller store receives a return.");
@@ -1444,10 +1444,10 @@ export class ReturnsService {
           awbNumber: dto.awbNumber ?? shipment.awbNumber,
           courierName: dto.courierName ?? shipment.courierName,
           trackingReference: dto.trackingReference ?? shipment.trackingReference,
-          proofReference: dto.proofReference ?? shipment.proofReference,
+          proofReference: this.trimmedStringOrUndefined(dto.proofReference) ?? shipment.proofReference,
           receiptProofReference: receiptProof,
           pickupNote: dto.note ?? shipment.pickupNote,
-          receivedByName: dto.receivedByName,
+          receivedByName: dto.receivedByName.trim(),
           receivedAt: now,
         },
       });
@@ -3126,13 +3126,13 @@ export class ReturnsService {
     dto: ReversePickupUpdateDto,
     now: Date,
   ): Prisma.ReverseShipmentUpdateInput {
-    const pickupProofReference = dto.pickupProofReference ?? dto.proofReference;
+    const pickupProofReference = this.firstTrimmedString(dto.pickupProofReference, dto.proofReference);
     const data: Prisma.ReverseShipmentUpdateInput = {
       status: dto.status,
       awbNumber: dto.awbNumber ?? shipment.awbNumber,
       courierName: dto.courierName ?? shipment.courierName,
       trackingReference: dto.trackingReference ?? shipment.trackingReference,
-      proofReference: dto.proofReference ?? shipment.proofReference,
+      proofReference: this.trimmedStringOrUndefined(dto.proofReference) ?? shipment.proofReference,
       pickupNote: dto.note ?? shipment.pickupNote,
       ...(dto.status === ReverseShipmentStatus.PICKED_UP ? { pickedUpAt: now } : {}),
       ...(dto.status === ReverseShipmentStatus.RECEIVED ? { receivedAt: now } : {}),
@@ -3141,6 +3141,18 @@ export class ReturnsService {
       data.pickupProofReference = pickupProofReference;
     }
     return data;
+  }
+
+  private firstTrimmedString(...values: Array<string | undefined>) {
+    for (const value of values) {
+      const trimmed = this.trimmedStringOrUndefined(value);
+      if (trimmed) return trimmed;
+    }
+    return undefined;
+  }
+
+  private trimmedStringOrUndefined(value: string | undefined) {
+    return typeof value === "string" && value.trim() ? value.trim() : undefined;
   }
 
   private async applyReverseShipmentReceiptStatus(
@@ -3587,7 +3599,7 @@ export class ReturnsService {
         productName: item.orderItem.productNameSnapshot,
         product: item.product,
         seller: item.seller,
-        variantSnapshot: item.orderItem.variantSnapshot,
+        variantSnapshot: this.variantSnapshotLabel(item.orderItem.variantSnapshot),
         quantity: item.quantity,
         status: item.status,
         resolution: item.resolution,
@@ -3977,6 +3989,24 @@ export class ReturnsService {
 
   private async lockRefundRequest(tx: Prisma.TransactionClient, refundRequestId: string) {
     await tx.$queryRaw`SELECT id FROM refund_requests WHERE id = ${refundRequestId}::uuid FOR UPDATE`;
+  }
+
+  /**
+   * Converts the raw variantSnapshot JSON (e.g. { sku, variantName }) stored on
+   * an order item into a plain display string suitable for direct rendering in
+   * React. Returning the object directly would trigger React Error #31 ("Objects
+   * are not valid as a React child").
+   */
+  private variantSnapshotLabel(value: Prisma.JsonValue | null): string | null {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return null;
+    }
+    const snap = value as Record<string, unknown>;
+    const label =
+      (typeof snap.variantName === "string" && snap.variantName.trim()) ||
+      (typeof snap.sku === "string" && snap.sku.trim()) ||
+      null;
+    return label || null;
   }
 }
 

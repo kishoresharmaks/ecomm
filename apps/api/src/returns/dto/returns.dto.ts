@@ -246,19 +246,28 @@ export class ReversePickupUpdateDto {
   @MaxLength(160)
   trackingReference?: string;
 
-  @ApiPropertyOptional({ example: "proofs/returns/photo-1.jpg" })
+  @ApiPropertyOptional({
+    description: "Legacy stored proof reference string. This endpoint does not upload files.",
+    example: "proofs/returns/reference-1",
+  })
   @IsOptional()
   @IsString()
   @MaxLength(300)
   proofReference?: string;
 
-  @ApiPropertyOptional({ example: "proofs/returns/customer-pickup.jpg" })
+  @ApiPropertyOptional({
+    description: "Stored customer pickup proof reference string. This endpoint does not upload files.",
+    example: "proofs/returns/customer-pickup-reference",
+  })
   @IsOptional()
   @IsString()
   @MaxLength(300)
   pickupProofReference?: string;
 
-  @ApiPropertyOptional({ example: "proofs/returns/seller-receipt.jpg" })
+  @ApiPropertyOptional({
+    description: "Stored seller/store receipt proof reference string. This endpoint does not upload files.",
+    example: "proofs/returns/seller-receipt-reference",
+  })
   @IsOptional()
   @IsString()
   @MaxLength(300)

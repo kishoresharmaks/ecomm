@@ -69,7 +69,7 @@ export function DeliveryReturnsClient() {
       <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <SectionHeading
           title="Return pickup queue"
-          description="Accept assigned return pickups, collect from customers, and record seller-store receipt proof."
+          description="Accept assigned return pickups, collect from customers, and record seller-store receipt proof references."
         />
         <form onSubmit={submit} className="flex flex-wrap w-full gap-2 xl:max-w-xl">
           <label className="relative flex-1 min-w-[200px]">
@@ -278,7 +278,7 @@ export function DeliveryReturnDetailClient({ requestNumber }: { requestNumber: s
         <div className="space-y-5">
           <RouteCard title="Pickup address" icon={<MapPin className="h-5 w-5" />} {...(detail.pickupAddress ? { address: detail.pickupAddress } : {})} />
           <DeliveryPanel>
-            <SectionHeading title="Seller packages" description="Carry each seller package separately and record receipt proof at the seller store." />
+            <SectionHeading title="Seller packages" description="Carry each seller package separately and record receipt proof references at the seller store." />
             <div className="mt-4 grid gap-3">
               {detail.reverseShipments.map((shipment) => (
                 <div key={shipment.id} className="rounded-md border border-[#E5E7EB] bg-[#F8FAFC] p-4">
@@ -313,7 +313,7 @@ export function DeliveryReturnDetailClient({ requestNumber }: { requestNumber: s
                     </label>
                     <label className="block">
                       <span className="mb-1 block text-xs font-black uppercase tracking-wide text-[#667085]">
-                        Receipt proof <span className="text-[#B42318]">*</span>
+                        Receipt proof reference <span className="text-[#B42318]">*</span>
                       </span>
                       <input
                         value={receiptProofByShipment[shipment.id] ?? ""}
@@ -334,7 +334,7 @@ export function DeliveryReturnDetailClient({ requestNumber }: { requestNumber: s
                     !["PICKED_UP", "IN_TRANSIT"].includes(shipment.status) === false &&
                     (!receiverByShipment[shipment.id]?.trim() || !receiptProofByShipment[shipment.id]?.trim()) ? (
                     <p className="mt-2 text-xs font-semibold text-[#B42318]">
-                      Receiver name and receipt proof are required before recording seller receipt.
+                      Receiver name and receipt proof reference are required before recording seller receipt.
                     </p>
                   ) : null}
                   <div className="mt-3 flex justify-end">
