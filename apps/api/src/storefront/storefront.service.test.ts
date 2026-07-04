@@ -4,7 +4,7 @@ import { StorefrontService } from "./storefront.service";
 describe("StorefrontService homepage personalization cache", () => {
   it("does not reuse one customer's ranked stores for another customer", async () => {
     const service = new StorefrontService(
-      { client: {} } as never,
+      { client: { setting: { findUnique: vi.fn().mockResolvedValue(null) } } } as never,
       {
         listPublishedBanners: vi.fn().mockResolvedValue([]),
         listPublishedHomepageSections: vi.fn().mockResolvedValue([]),

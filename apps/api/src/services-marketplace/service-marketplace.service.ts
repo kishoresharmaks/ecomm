@@ -3689,9 +3689,9 @@ export class ServiceMarketplaceService {
     for (const area of listing.areas.filter((item) => item.isActive)) {
       if (area.localAreaCode && localAreaCode && area.localAreaCode === localAreaCode) return { serviceable: true, matchLevel: "LOCAL_AREA" };
       if (area.pincode && pincode && area.pincode === pincode) return { serviceable: true, matchLevel: "PINCODE" };
-      if (area.cityCode && cityCode && area.cityCode === cityCode) return { serviceable: true, matchLevel: "CITY" };
-      if (area.stateCode && stateCode && area.stateCode === stateCode && !area.cityCode) return { serviceable: true, matchLevel: "STATE" };
-      if (area.countryCode && countryCode && area.countryCode === countryCode && !area.stateCode) return { serviceable: true, matchLevel: "COUNTRY" };
+      if (area.cityCode && cityCode && area.cityCode === cityCode && !area.localAreaCode && !area.pincode) return { serviceable: true, matchLevel: "CITY" };
+      if (area.stateCode && stateCode && area.stateCode === stateCode && !area.cityCode && !area.localAreaCode && !area.pincode) return { serviceable: true, matchLevel: "STATE" };
+      if (area.countryCode && countryCode && area.countryCode === countryCode && !area.stateCode && !area.cityCode && !area.localAreaCode && !area.pincode) return { serviceable: true, matchLevel: "COUNTRY" };
       if (area.label && city && sameLocationText(area.label, city) && !area.localAreaCode && !area.pincode) return { serviceable: true, matchLevel: "CITY_TEXT" };
       if (area.label && state && sameLocationText(area.label, state) && !area.cityCode && !area.localAreaCode && !area.pincode) return { serviceable: true, matchLevel: "STATE_TEXT" };
       if (area.label && country && sameLocationText(area.label, country) && !area.stateCode && !area.cityCode && !area.localAreaCode && !area.pincode) return { serviceable: true, matchLevel: "COUNTRY_TEXT" };

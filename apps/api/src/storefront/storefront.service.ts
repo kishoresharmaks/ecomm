@@ -22,6 +22,7 @@ import { ProductQueryDto } from "../products/dto/product-query.dto";
 import { PrismaService } from "../prisma/prisma.service";
 import { PublicSellerQueryDto } from "../sellers/dto/public-seller-query.dto";
 import { contactSettingKey, contactSettingsFromSetting, publicContactConfig } from "../settings/contact-settings";
+import { readBooleanSetting } from "../settings/setting-value-utils";
 import { isTransientPrismaConnectionError, retryTransientPrismaRead } from "../prisma/transient-read-retry";
 import {
   StorefrontStoreRankingService,
@@ -249,6 +250,7 @@ export class StorefrontService {
       latestProducts,
       dealProducts,
       stats,
+      fallbackHeroSetting,
     ] = await Promise.all([
       this.optionalHomeRead("home categories", "home:categories", () => this.listHomeCategories(), []),
       this.optionalHomeRead(
@@ -297,6 +299,15 @@ export class StorefrontService {
         verifiedSellers: 0,
         verifiedSellerPercent: 0,
       }),
+      this.optionalHomeRead(
+        "fallback hero setting",
+        "home:fallback-hero-setting",
+        () =>
+          this.prisma.client.setting?.findUnique
+            ? this.prisma.client.setting.findUnique({ where: { key: "cms.fallback_hero.enabled" } })
+            : Promise.resolve(null),
+        null,
+      ),
     ]);
 
     const categoryCounts = new Map(
@@ -308,9 +319,11 @@ export class StorefrontService {
       liveHomepageSections.find((section) => section.sectionType === "service_badges") ??
       liveHomepageSections.find((section) => section.sectionType === "trust_highlights") ??
       null;
+    const fallbackHeroEnabled = readBooleanSetting(fallbackHeroSetting?.value, true);
 
     return {
       banners,
+      fallbackHeroEnabled,
       homepageSections: liveHomepageSections,
       categories: liveCategories,
       storesNearYou: storesNearYou.stores,

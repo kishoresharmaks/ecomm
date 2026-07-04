@@ -464,6 +464,8 @@ function HomepageHero({
   const router = useRouter();
   const [query, setQuery] = useState("");
   const banners = home?.banners ?? [];
+  const fallbackHeroEnabled = home?.fallbackHeroEnabled ?? true;
+  const showHero = banners.length > 0 || fallbackHeroEnabled;
   const [activeBannerIndex, setActiveBannerIndex] = useState(0);
   const [isCarouselPaused, setIsCarouselPaused] = useState(false);
   const prefersReducedMotion = usePrefersReducedMotion();
@@ -584,6 +586,10 @@ function HomepageHero({
     event.preventDefault();
     event.stopPropagation();
     suppressNextClickRef.current = false;
+  }
+
+  if (!showHero) {
+    return null;
   }
 
   if (!banner && isLoading) {

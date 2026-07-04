@@ -642,6 +642,7 @@ export type StorefrontHomeStats = {
 
 export type StorefrontHomePayload = {
   banners: HomepageBanner[];
+  fallbackHeroEnabled?: boolean;
   homepageSections: HomepageSection[];
   categories: CategorySummary[];
   storesNearYou: StoreProfile[];

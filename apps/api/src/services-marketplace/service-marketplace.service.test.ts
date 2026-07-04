@@ -155,6 +155,31 @@ describe("ServiceMarketplaceService serviceability", () => {
     expect(listing.serviceability).toMatchObject({ serviceable: true, matchLevel: "CITY" });
   });
 
+  it("rejects serviceability when customer pincode does not match pincode-restricted service area", async () => {
+    prisma.client.serviceListing.findFirst.mockResolvedValue(
+      serviceListing({
+        allowedVisitModes: [ServiceVisitMode.CUSTOMER_LOCATION],
+        areas: [{ cityCode: "IN-TN-SLM", pincode: "636114", localAreaCode: "PIN-636114-708A9748", isActive: true }],
+      }),
+    );
+    prisma.client.locationArea.findFirst.mockResolvedValue({
+      ...locationArea(),
+      postalCode: "636139",
+      code: "PIN-636139-12345",
+    });
+
+    const service = createService();
+    const listing = await service.getPublicService("doorstep-repair", {
+      countryCode: "IN",
+      pincode: "636139",
+    });
+
+    expect(listing.serviceability).toMatchObject({
+      serviceable: false,
+      reason: "This service provider does not currently serve the selected location.",
+    });
+  });
+
   function createService() {
     return new ServiceMarketplaceService(
       prisma as never,

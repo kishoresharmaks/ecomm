@@ -7457,6 +7457,37 @@ export function AdminCmsPageClient() {
     queryFn: () =>
       indihubFetch<CategoryRecord[]>("/api/admin/categories", undefined, auth.authHeaders),
   });
+  const cmsSettingsQuery = useQuery({
+    queryKey: ["admin-settings", auth.authHeaders],
+    enabled: Boolean(auth.isAuthenticated),
+    queryFn: () =>
+      indihubFetch<SettingRecord[]>("/api/admin/settings", undefined, auth.authHeaders),
+  });
+  const fallbackHeroSetting = cmsSettingsQuery.data?.find(
+    (s) => s.key === "cms.fallback_hero.enabled",
+  );
+  const fallbackHeroEnabled = fallbackHeroSetting
+    ? readBooleanSettingValue(fallbackHeroSetting.value, true)
+    : true;
+
+  const updateFallbackHeroSetting = useMutation({
+    mutationFn: (enabled: boolean) =>
+      adminRequest("/api/admin/settings/cms.fallback_hero.enabled", auth.authHeaders, {
+        method: "PUT",
+        body: JSON.stringify({
+          key: "cms.fallback_hero.enabled",
+          group: "cms",
+          valueType: "BOOLEAN",
+          value: enabled,
+        }),
+      }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["admin-settings"] }),
+        queryClient.invalidateQueries({ queryKey: ["storefront-home"] }),
+      ]);
+    },
+  });
   const sectionProducts = useAdminList<ProductRecord>(
     "admin-cms-section-products",
     "/api/admin/products",
@@ -7944,36 +7975,70 @@ export function AdminCmsPageClient() {
             label: "Homepage banners",
             badge: bannerItems.length,
             panel: (
-              <div className="grid gap-5 xl:grid-cols-[1fr_420px]">
-                <CmsList
-                  title="Homepage banners"
-                  description="First published banner by sort order controls the storefront hero."
-                  items={bannerItems}
-                  isLoading={banners.isLoading}
-                  removeLabel="Delete"
-                  removeIcon={<Trash2 className="h-4 w-4" />}
-                  disabled={deleteBanner.isPending || updateBanner.isPending}
-                  onEdit={(item) =>
-                    setEditingContent({ kind: "banner", item: item as BannerRecord })
-                  }
-                  onStatus={(item, status) =>
-                    updateBanner.mutate({ bannerId: item.id, payload: { status } })
-                  }
-                  onRemove={(item) =>
-                    confirmation.requestConfirmation({
-                      title: "Delete homepage banner",
-                      description: `"${item.title}" will be permanently removed from homepage banner records.`,
-                      confirmLabel: "Delete banner",
-                      onConfirm: () => deleteBanner.mutate(item.id),
-                    })
-                  }
-                />
-                <BannerCreateForm
-                  authHeaders={auth.authHeaders}
-                  nextSortOrder={nextBannerSortOrder}
-                  onSubmit={(payload) => createBanner.mutate(payload)}
-                  disabled={createBanner.isPending}
-                />
+              <div className="space-y-5">
+                <div className="rounded-md border border-[#D8E2EA] bg-[#F8FAFC] p-5">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-base font-black text-[#123A5A]">
+                          Automatic Fallback Hero Banner
+                        </h4>
+                        <StatusBadge tone={fallbackHeroEnabled ? "success" : "neutral"}>
+                          {fallbackHeroEnabled ? "Enabled" : "Disabled"}
+                        </StatusBadge>
+                      </div>
+                      <p className="mt-1 text-sm font-semibold text-[#536579]">
+                        {fallbackHeroEnabled
+                          ? "When no custom banners are published, a dynamic hero banner showing live product count & top products will be displayed on the storefront."
+                          : "When no custom banners are published, the storefront hero section will be hidden."}
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant={fallbackHeroEnabled ? "outline" : "primary"}
+                      disabled={updateFallbackHeroSetting.isPending}
+                      onClick={() => updateFallbackHeroSetting.mutate(!fallbackHeroEnabled)}
+                    >
+                      {updateFallbackHeroSetting.isPending
+                        ? "Saving..."
+                        : fallbackHeroEnabled
+                          ? "Disable automatic hero"
+                          : "Enable automatic hero"}
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="grid gap-5 xl:grid-cols-[1fr_420px]">
+                  <CmsList
+                    title="Homepage banners"
+                    description="First published banner by sort order controls the storefront hero."
+                    items={bannerItems}
+                    isLoading={banners.isLoading}
+                    removeLabel="Delete"
+                    removeIcon={<Trash2 className="h-4 w-4" />}
+                    disabled={deleteBanner.isPending || updateBanner.isPending}
+                    onEdit={(item) =>
+                      setEditingContent({ kind: "banner", item: item as BannerRecord })
+                    }
+                    onStatus={(item, status) =>
+                      updateBanner.mutate({ bannerId: item.id, payload: { status } })
+                    }
+                    onRemove={(item) =>
+                      confirmation.requestConfirmation({
+                        title: "Delete homepage banner",
+                        description: `"${item.title}" will be permanently removed from homepage banner records.`,
+                        confirmLabel: "Delete banner",
+                        onConfirm: () => deleteBanner.mutate(item.id),
+                      })
+                    }
+                  />
+                  <BannerCreateForm
+                    authHeaders={auth.authHeaders}
+                    nextSortOrder={nextBannerSortOrder}
+                    onSubmit={(payload) => createBanner.mutate(payload)}
+                    disabled={createBanner.isPending}
+                  />
+                </div>
               </div>
             ),
           },
