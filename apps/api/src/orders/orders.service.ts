@@ -1419,6 +1419,7 @@ export class OrdersService {
 
   async listDeliveryPartners(query: DeliveryPartnerQueryDto) {
     const { page, skip, take } = paginationFromQuery(query, { defaultLimit: 50 });
+    const isAvailable = this.optionalBooleanFromQuery(query.isAvailable, "isAvailable");
     const where: Prisma.UserWhereInput = {
       ...(query.status ? { status: query.status } : {}),
       userRoles: {
@@ -1437,11 +1438,11 @@ export class OrdersService {
             ],
           }
         : {}),
-      ...(query.isAvailable !== undefined || query.cityCode || query.pincode || query.localAreaCode
+      ...(isAvailable !== undefined || query.cityCode || query.pincode || query.localAreaCode
         ? {
             deliveryProfile: {
               is: {
-                ...(query.isAvailable !== undefined ? { isAvailable: query.isAvailable } : {}),
+                ...(isAvailable !== undefined ? { isAvailable } : {}),
                 ...(query.cityCode ? { serviceCityCode: query.cityCode } : {}),
                 ...(query.pincode ? { servicePincodes: { has: query.pincode } } : {}),
                 ...(query.localAreaCode
@@ -6217,6 +6218,28 @@ export class OrdersService {
   private optionalText(value?: string | null) {
     const normalized = value?.trim();
     return normalized ? normalized : null;
+  }
+
+  private optionalBooleanFromQuery(value: unknown, field: string) {
+    if (value === undefined || value === null || value === "") {
+      return undefined;
+    }
+
+    if (typeof value === "boolean") {
+      return value;
+    }
+
+    if (typeof value === "string") {
+      const normalized = value.trim().toLowerCase();
+      if (normalized === "true") {
+        return true;
+      }
+      if (normalized === "false") {
+        return false;
+      }
+    }
+
+    throw new BadRequestException(`${field} must be a boolean.`);
   }
 
   private cleanStringArray(value: string[]) {
