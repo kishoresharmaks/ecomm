@@ -17,7 +17,6 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { colors } from "../../src/theme";
 
 type TabIconName = "home" | "categories" | "localShops" | "orders" | "account";
 type TabRoute = "index" | "categories" | "local-shops" | "orders" | "account";

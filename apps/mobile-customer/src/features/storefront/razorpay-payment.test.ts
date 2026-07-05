@@ -25,6 +25,11 @@ vi.mock("react-native", () => ({
   Platform: { OS: "ios" },
 }));
 
+vi.mock("../../lib/mobile-telemetry", () => ({
+  captureMobileException: vi.fn(),
+  trackMobileEvent: vi.fn(),
+}));
+
 import {
   RAZORPAY_CHECKOUT_CANCELLED_ERROR,
   RAZORPAY_CHECKOUT_TIMEOUT_ERROR,

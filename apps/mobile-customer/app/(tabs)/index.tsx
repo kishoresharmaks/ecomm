@@ -53,6 +53,7 @@ import { useQuery } from "@tanstack/react-query";
 import { EmptyState } from "../../src/components/empty-state";
 import { DealCard } from "../../src/components/deal-card";
 import { Screen } from "../../src/components/screen";
+import logoIcon from "../../assets/icon.png";
 import { useMobileCustomerAuth, type MobileCustomerAuthStatus } from "../../src/auth/mobile-auth-context";
 import { useMobileHome } from "../../src/features/home/use-mobile-home";
 import { composePersonalizedHomeRails } from "../../src/features/home/personalized-ranking";
@@ -267,7 +268,7 @@ function HomeHeader({ selectedLocation }: { selectedLocation: SelectedLocation }
           <ImageBackground
             imageStyle={styles.logoImage}
             resizeMode="cover"
-            source={require("../../assets/icon.png")}
+            source={logoIcon}
             style={styles.logoBadge}
           />
           <View>

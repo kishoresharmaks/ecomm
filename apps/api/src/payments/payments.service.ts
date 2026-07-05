@@ -1,8 +1,10 @@
 import {
   BadRequestException,
   ForbiddenException,
+  HttpException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   Optional,
   ServiceUnavailableException,
@@ -155,6 +157,8 @@ type CheckoutPaymentMethodSnapshot = Awaited<
 
 @Injectable()
 export class PaymentsService {
+  private readonly logger = new Logger(PaymentsService.name);
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(NotificationsService) private readonly notifications: NotificationsService,
@@ -649,6 +653,7 @@ export class PaymentsService {
   }
 
   async createRazorpayOrder(actor: RequestUser, orderNumber: string) {
+    this.logger.log(`Razorpay provider order requested for order ${orderNumber}`);
     const { keyId, keySecret } = await this.getRazorpayKeys();
 
     const order = await this.prisma.client.order.findUnique({
@@ -680,6 +685,7 @@ export class PaymentsService {
     }
 
     if (payment.providerOrderId) {
+      this.logger.log(`Reusing Razorpay provider order for order ${order.orderNumber}`);
       return {
         keyId,
         razorpayOrderId: payment.providerOrderId,
@@ -691,13 +697,20 @@ export class PaymentsService {
 
     const paymentId = payment.id;
     const amountPaise = payment.amountPaise;
+    const staleLockCutoff = new Date(Date.now() - providerOrderStaleLockMs);
 
     // Step 1: Atomically claim this payment for order creation
     const claimed = await this.prisma.client.payment.updateMany({
       where: {
         id: paymentId,
         providerOrderId: null,
-        providerOrderCreationInProgress: false,
+        OR: [
+          { providerOrderCreationInProgress: false },
+          {
+            providerOrderCreationInProgress: true,
+            updatedAt: { lte: staleLockCutoff },
+          },
+        ],
       },
       data: { providerOrderCreationInProgress: true },
     });
@@ -707,6 +720,7 @@ export class PaymentsService {
         where: { id: paymentId },
       });
       if (existing?.providerOrderId) {
+        this.logger.log(`Reusing Razorpay provider order after concurrent request for order ${order.orderNumber}`);
         return {
           keyId,
           razorpayOrderId: existing.providerOrderId,
@@ -715,12 +729,16 @@ export class PaymentsService {
           orderNumber: order.orderNumber,
         };
       }
-      throw new Error('Provider order creation already in progress for this payment');
+      this.logger.warn(`Razorpay provider order creation already in progress for order ${order.orderNumber}`);
+      throw new ServiceUnavailableException(
+        "Payment setup is already in progress. Please retry payment from your order in a few seconds.",
+      );
     }
 
     // Step 2: Create provider order — release lock on failure
     let providerOrderId: string;
     try {
+      this.logger.log(`Creating Razorpay provider order for order ${order.orderNumber}`);
       const response = await fetch("https://api.razorpay.com/v1/orders", {
         method: "POST",
         headers: {
@@ -756,7 +774,15 @@ export class PaymentsService {
         where: { id: paymentId },
         data: { providerOrderCreationInProgress: false },
       });
-      console.error('Razorpay order creation failed', { paymentId });
+      this.logger.error(
+        `Razorpay provider order creation failed for order ${order.orderNumber}`,
+        err instanceof Error ? err.stack : undefined,
+        {
+          errorName: err instanceof Error ? err.name : typeof err,
+          httpStatus: err instanceof HttpException ? err.getStatus() : undefined,
+          paymentId,
+        },
+      );
       throw err;
     }
 
@@ -770,6 +796,7 @@ export class PaymentsService {
       },
     });
 
+    this.logger.log(`Created Razorpay provider order for order ${order.orderNumber}`);
     return {
       keyId,
       razorpayOrderId: providerOrderId,
