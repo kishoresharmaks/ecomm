@@ -43,7 +43,8 @@ export default function SignInScreen() {
   const [submitAction, setSubmitAction] = useState<SubmitAction>(null);
   const [syncRetryCount, setSyncRetryCount] = useState(0);
   const [shouldAutoContinue, setShouldAutoContinue] = useState(false);
-  const hasClerkKey = Boolean(process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim());
+  const clerkPublishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim() || "pk_live_Y2xlcmsuMWhhbmRpbmRpYS5jb20k";
+  const hasClerkKey = Boolean(clerkPublishableKey);
   const isSubmitting = submitAction !== null;
   const title =
     mode === "sign-up" ? "Create your account" : mode === "verify-email" ? "Verify email" : "Sign in";

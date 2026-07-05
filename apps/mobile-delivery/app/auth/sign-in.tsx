@@ -20,7 +20,8 @@ export default function DeliverySignInScreen() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"email" | "google" | "sign-out" | null>(null);
-  const hasClerkKey = Boolean(process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim());
+  const clerkPublishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim() || "pk_live_Y2xlcmsuMWhhbmRpbmRpYS5jb20k";
+  const hasClerkKey = Boolean(clerkPublishableKey);
 
   useEffect(() => {
     if (isSignedIn && deliveryAuth.enabled) router.replace("/(tabs)");

@@ -24,12 +24,14 @@ const tokenCache = {
   },
 };
 
+const clerkPublishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim() || "pk_live_Y2xlcmsuMWhhbmRpbmRpYS5jb20k";
+
 function RootLayout() {
   const queryClient = useMemo(() => createQueryClient(), []);
 
   return (
     <ClerkProvider
-      publishableKey={process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? ""}
+      publishableKey={clerkPublishableKey}
       tokenCache={tokenCache}
     >
       <QueryClientProvider client={queryClient}>

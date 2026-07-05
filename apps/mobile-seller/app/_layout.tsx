@@ -14,18 +14,20 @@ initMobileTelemetry();
 
 const tokenCache = {
   async getToken(key: string) {
-    return SecureStore.getItemAsync(key);
+    return safeSecureStoreGet(key);
   },
   async saveToken(key: string, value: string) {
-    return SecureStore.setItemAsync(key, value);
+    return safeSecureStoreSet(key, value);
   },
 };
+
+const clerkPublishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim() || "pk_live_Y2xlcmsuMWhhbmRpbmRpYS5jb20k";
 
 function RootLayout() {
   const queryClient = useMemo(() => createQueryClient(), []);
 
   return (
-    <ClerkProvider publishableKey={process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? ""} tokenCache={tokenCache}>
+    <ClerkProvider publishableKey={clerkPublishableKey} tokenCache={tokenCache}>
       <QueryClientProvider client={queryClient}>
         <MobileSellerAuthProvider>
           <StatusBar style="dark" />
@@ -39,8 +41,9 @@ function RootLayout() {
 function SellerRouteGate() {
   const auth = useMobileSellerAuth();
   const segments = useSegments();
-  const isAuthRoute = segments[0] === "auth";
-  const isSsoCallbackRoute = segments[0] === "sso-callback";
+  const rootSegment = String(segments[0] ?? "");
+  const isAuthRoute = rootSegment === "auth";
+  const isSsoCallbackRoute = rootSegment === "sso-callback";
   const isPublicAuthRoute = isAuthRoute || isSsoCallbackRoute;
   useSellerPushNotifications(auth);
 
@@ -67,6 +70,34 @@ function SellerRouteGate() {
       <Stack.Screen name="orders/[orderNumber]" />
     </Stack>
   );
+}
+
+async function safeSecureStoreGet(key: string) {
+  if (!isValidSecureStoreKey(key)) {
+    return null;
+  }
+
+  try {
+    return await SecureStore.getItemAsync(key);
+  } catch {
+    return null;
+  }
+}
+
+async function safeSecureStoreSet(key: string, value: string) {
+  if (!isValidSecureStoreKey(key)) {
+    return;
+  }
+
+  try {
+    await SecureStore.setItemAsync(key, value);
+  } catch {
+    // Clerk can recover by requesting a fresh session token.
+  }
+}
+
+function isValidSecureStoreKey(key: string) {
+  return /^[A-Za-z0-9._-]+$/.test(key);
 }
 
 export default withMobileTelemetry(RootLayout);
