@@ -110,6 +110,53 @@ describe("PushCampaignsService", () => {
     ).rejects.toThrow("Campaign deep link is not allowed");
   });
 
+  it("returns preview diagnostics and matches short and prefixed state codes", async () => {
+    prisma.client.customerPushToken.count
+      .mockResolvedValueOnce(10)
+      .mockResolvedValueOnce(8)
+      .mockResolvedValueOnce(6)
+      .mockResolvedValueOnce(3)
+      .mockResolvedValueOnce(5)
+      .mockResolvedValueOnce(3);
+    const service = new PushCampaignsService(prisma as never, storage as never);
+
+    await expect(
+      service.previewCampaign({
+        title: "Tamil Nadu offer",
+        body: "Local deals are live.",
+        segmentFilter: { countryCode: "in", stateCode: "tn" },
+      }),
+    ).resolves.toEqual({
+      count: 3,
+      diagnostics: {
+        activeTokens: 8,
+        countryMatchedTokens: 5,
+        finalTokens: 3,
+        optedInTokens: 6,
+        stateMatchedTokens: 3,
+        totalTokens: 10,
+      },
+      segmentFilter: { countryCode: "IN", stateCode: "TN" },
+    });
+
+    expect(prisma.client.customerPushToken.count).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        customer: expect.objectContaining({
+          AND: [
+            expect.any(Object),
+            {
+              OR: [
+                { browsingStateCode: { in: ["TN", "IN-TN"] } },
+                { addresses: { some: { stateCode: { in: ["TN", "IN-TN"] } } } },
+                { addresses: { some: { state: { equals: "TN", mode: "insensitive" } } } },
+              ],
+            },
+          ],
+        }),
+      }),
+    });
+  });
+
   it("prepares idempotent 100-token campaign batches and stores authoritative targeted count", async () => {
     const tokens = Array.from({ length: 205 }, (_, index) => ({ id: `token_${index + 1}` }));
     prisma.client.pushNotificationCampaign.findUnique.mockResolvedValue({

@@ -337,9 +337,27 @@ export function AdminPushCampaignsClient() {
             </div>
 
             {previewMutation.data ? (
-              <div className="flex items-center justify-between rounded-md border border-[#C5D8E8] bg-[#EAF1F7] px-3 py-2 text-sm font-bold text-[#163B5C]">
-                <span>Preview recipients</span>
-                <span>{previewMutation.data.count.toLocaleString("en-IN")}</span>
+              <div className="grid gap-2 rounded-md border border-[#C5D8E8] bg-[#EAF1F7] px-3 py-2 text-sm font-bold text-[#163B5C]">
+                <div className="flex items-center justify-between">
+                  <span>Preview recipients</span>
+                  <span>{previewMutation.data.count.toLocaleString("en-IN")}</span>
+                </div>
+                {previewMutation.data.diagnostics ? (
+                  <div className="grid gap-1.5 text-xs text-[#315C7A]">
+                    <DiagnosticRow label="Saved tokens" value={previewMutation.data.diagnostics.totalTokens} />
+                    <DiagnosticRow label="Active tokens" value={previewMutation.data.diagnostics.activeTokens} />
+                    <DiagnosticRow label="Marketing opted-in" value={previewMutation.data.diagnostics.optedInTokens} />
+                    {previewMutation.data.diagnostics.countryMatchedTokens !== undefined ? (
+                      <DiagnosticRow label="After country" value={previewMutation.data.diagnostics.countryMatchedTokens} />
+                    ) : null}
+                    {previewMutation.data.diagnostics.stateMatchedTokens !== undefined ? (
+                      <DiagnosticRow label="After state" value={previewMutation.data.diagnostics.stateMatchedTokens} />
+                    ) : null}
+                    {previewMutation.data.diagnostics.cityMatchedTokens !== undefined ? (
+                      <DiagnosticRow label="After city" value={previewMutation.data.diagnostics.cityMatchedTokens} />
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             ) : null}
             {notice ? <StatusBadge tone={notice.tone}>{notice.message}</StatusBadge> : null}
@@ -537,6 +555,15 @@ function CampaignField({
         className="h-11 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold outline-none focus:border-[#ED3500]"
       />
     </label>
+  );
+}
+
+function DiagnosticRow({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span>{label}</span>
+      <span>{value.toLocaleString("en-IN")}</span>
+    </div>
   );
 }
 

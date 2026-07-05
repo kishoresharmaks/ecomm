@@ -54,7 +54,6 @@ export function useCustomerPushNotifications(auth: { authHeaders: MobileAuthHead
 
   const register = useCallback(async () => {
     if (!auth.enabled) {
-      void revokeRegisteredToken();
       updateState("checking", setState);
       return;
     }
@@ -135,12 +134,6 @@ export function useCustomerPushNotifications(auth: { authHeaders: MobileAuthHead
       }
     };
   }, [register, revokeRegisteredToken]);
-
-  useEffect(() => {
-    return () => {
-      void revokeRegisteredToken();
-    };
-  }, [revokeRegisteredToken]);
 
   useEffect(() => {
     if (!canUseNativePush) {

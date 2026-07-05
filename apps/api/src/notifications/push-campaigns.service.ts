@@ -22,6 +22,16 @@ type NormalizedSegmentFilter = {
   limit?: number;
 };
 
+type SegmentDiagnostics = {
+  totalTokens: number;
+  activeTokens: number;
+  optedInTokens: number;
+  countryMatchedTokens?: number;
+  stateMatchedTokens?: number;
+  cityMatchedTokens?: number;
+  finalTokens: number;
+};
+
 type CampaignData = {
   title: string;
   body: string;
@@ -130,7 +140,8 @@ export class PushCampaignsService {
 
   async previewCampaign(dto: CreatePushCampaignDto | UpdatePushCampaignDto) {
     const filter = this.normalizeSegmentFilter(dto.segmentFilter);
-    return { count: await this.previewCount(filter), segmentFilter: filter };
+    const diagnostics = await this.segmentDiagnostics(filter);
+    return { count: diagnostics.finalTokens, diagnostics, segmentFilter: filter };
   }
 
   async sendNow(actor: RequestUser, id: string) {
@@ -246,7 +257,7 @@ export class PushCampaignsService {
   private normalizeSegmentFilter(filter: PushCampaignSegmentFilterDto | undefined): NormalizedSegmentFilter {
     return {
       ...(filter?.countryCode?.trim() ? { countryCode: filter.countryCode.trim().toUpperCase() } : {}),
-      ...(filter?.stateCode?.trim() ? { stateCode: filter.stateCode.trim() } : {}),
+      ...(filter?.stateCode?.trim() ? { stateCode: filter.stateCode.trim().toUpperCase() } : {}),
       ...(filter?.city?.trim() ? { city: filter.city.trim() } : {}),
       ...(filter?.limit ? { limit: Math.min(100000, Math.max(1, Math.trunc(filter.limit))) } : {}),
     };
@@ -265,40 +276,116 @@ export class PushCampaignsService {
     });
   }
 
-  private segmentWhere(filter: NormalizedSegmentFilter): Prisma.CustomerPushTokenWhereInput {
+  private async segmentDiagnostics(filter: NormalizedSegmentFilter): Promise<SegmentDiagnostics> {
+    const diagnostics: SegmentDiagnostics = {
+      totalTokens: await this.prisma.client.customerPushToken.count(),
+      activeTokens: await this.prisma.client.customerPushToken.count({ where: this.activeTokenWhere() }),
+      optedInTokens: await this.prisma.client.customerPushToken.count({ where: this.eligibleTokenWhere() }),
+      finalTokens: await this.previewCount(filter),
+    };
+
     const locationFilters: Prisma.CustomerWhereInput[] = [];
     if (filter.countryCode) {
-      locationFilters.push({
-        OR: [
-          { browsingCountryCode: filter.countryCode },
-          { addresses: { some: { countryCode: filter.countryCode } } },
-          { AND: [{ browsingCountryCode: null }, { addresses: { none: {} } }] },
-        ],
+      locationFilters.push(this.countryLocationFilter(filter.countryCode));
+      diagnostics.countryMatchedTokens = await this.prisma.client.customerPushToken.count({
+        where: this.eligibleTokenWhere(locationFilters),
       });
     }
     if (filter.stateCode) {
-      locationFilters.push({
-        OR: [
-          { browsingStateCode: filter.stateCode },
-          { addresses: { some: { stateCode: filter.stateCode } } },
-        ],
+      locationFilters.push(this.stateLocationFilter(filter));
+      diagnostics.stateMatchedTokens = await this.prisma.client.customerPushToken.count({
+        where: this.eligibleTokenWhere(locationFilters),
       });
     }
     if (filter.city) {
-      locationFilters.push({
-        addresses: { some: { city: { equals: filter.city, mode: "insensitive" } } },
+      locationFilters.push(this.cityLocationFilter(filter.city));
+      diagnostics.cityMatchedTokens = await this.prisma.client.customerPushToken.count({
+        where: this.eligibleTokenWhere(locationFilters),
       });
     }
 
+    return diagnostics;
+  }
+
+  private segmentWhere(filter: NormalizedSegmentFilter): Prisma.CustomerPushTokenWhereInput {
+    const locationFilters = this.locationFilters(filter);
+
+    return this.eligibleTokenWhere(locationFilters);
+  }
+
+  private activeTokenWhere(): Prisma.CustomerPushTokenWhereInput {
     return {
       enabled: true,
       revokedAt: null,
+    };
+  }
+
+  private eligibleTokenWhere(locationFilters: Prisma.CustomerWhereInput[] = []): Prisma.CustomerPushTokenWhereInput {
+    return {
+      ...this.activeTokenWhere(),
       customer: {
         status: UserStatus.ACTIVE,
         marketingCampaignsEnabled: true,
         ...(locationFilters.length ? { AND: locationFilters } : {}),
       },
     };
+  }
+
+  private locationFilters(filter: NormalizedSegmentFilter): Prisma.CustomerWhereInput[] {
+    const filters: Prisma.CustomerWhereInput[] = [];
+    if (filter.countryCode) {
+      filters.push(this.countryLocationFilter(filter.countryCode));
+    }
+    if (filter.stateCode) {
+      filters.push(this.stateLocationFilter(filter));
+    }
+    if (filter.city) {
+      filters.push(this.cityLocationFilter(filter.city));
+    }
+    return filters;
+  }
+
+  private countryLocationFilter(countryCode: string): Prisma.CustomerWhereInput {
+    return {
+      OR: [
+        { browsingCountryCode: countryCode },
+        { addresses: { some: { countryCode } } },
+        { AND: [{ browsingCountryCode: null }, { addresses: { none: {} } }] },
+      ],
+    };
+  }
+
+  private stateLocationFilter(filter: NormalizedSegmentFilter): Prisma.CustomerWhereInput {
+    const stateCode = filter.stateCode as string;
+    const stateCodeVariants = this.stateCodeVariants(filter);
+    return {
+      OR: [
+        { browsingStateCode: { in: stateCodeVariants } },
+        { addresses: { some: { stateCode: { in: stateCodeVariants } } } },
+        { addresses: { some: { state: { equals: stateCode, mode: "insensitive" } } } },
+      ],
+    };
+  }
+
+  private cityLocationFilter(city: string): Prisma.CustomerWhereInput {
+    return {
+      OR: [
+        { browsingCityCode: { equals: city, mode: "insensitive" } },
+        { addresses: { some: { cityCode: { equals: city, mode: "insensitive" } } } },
+        { addresses: { some: { city: { equals: city, mode: "insensitive" } } } },
+      ],
+    };
+  }
+
+  private stateCodeVariants(filter: NormalizedSegmentFilter) {
+    const stateCode = filter.stateCode as string;
+    return Array.from(
+      new Set([
+        stateCode,
+        ...(filter.countryCode && !stateCode.includes("-") ? [`${filter.countryCode}-${stateCode}`] : []),
+        ...(stateCode.includes("-") ? [stateCode.split("-").at(-1) as string] : []),
+      ]),
+    );
   }
 
   private normalizeImageKey(value: string | null | undefined) {

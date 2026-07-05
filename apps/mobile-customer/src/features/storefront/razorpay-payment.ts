@@ -17,6 +17,8 @@ export const RAZORPAY_CHECKOUT_INCOMPLETE_ERROR =
   "Order placed, but online payment was not completed.";
 export const RAZORPAY_CHECKOUT_CANCELLED_ERROR =
   "Payment was cancelled. You can retry payment from your order.";
+export const RAZORPAY_CHECKOUT_FAILED_ERROR =
+  "Payment failed in Razorpay. Please retry payment from your order or choose another payment method.";
 export const RAZORPAY_CHECKOUT_TIMEOUT_ERROR =
   "Order placed, but online payment timed out. Please retry payment from your order.";
 export const RAZORPAY_VERIFICATION_ERROR =
@@ -221,6 +223,9 @@ export async function runMobileRazorpayPayment(input: {
           code: error.code,
           orderNumber: error.orderNumber,
           razorpayOrderId: error.razorpayOrderId,
+          razorpayErrorCode: razorpayProviderErrorCode(error.originalError),
+          razorpayErrorDescription: razorpayProviderErrorDescription(error.originalError),
+          razorpayErrorReason: razorpayProviderErrorReason(error.originalError),
           stage: error.stage,
         });
       }
@@ -232,6 +237,9 @@ export async function runMobileRazorpayPayment(input: {
       code: razorpayErrorCode(error, "CHECKOUT_FAILED"),
       orderNumber: providerOrder.orderNumber,
       razorpayOrderId: providerOrder.razorpayOrderId,
+      razorpayErrorCode: razorpayProviderErrorCode(error),
+      razorpayErrorDescription: razorpayProviderErrorDescription(error),
+      razorpayErrorReason: razorpayProviderErrorReason(error),
       stage: "checkout",
     });
     throw new MobileRazorpayPaymentError("checkout", RAZORPAY_CHECKOUT_INCOMPLETE_ERROR, {
@@ -354,7 +362,12 @@ export async function openMobileRazorpayCheckout(
       });
     }
 
-    throw error;
+    throw new MobileRazorpayPaymentError("checkout", razorpayCheckoutErrorMessage(error), {
+      code: "CHECKOUT_FAILED",
+      orderNumber: providerOrder.orderNumber,
+      originalError: error,
+      razorpayOrderId: providerOrder.razorpayOrderId,
+    });
   }
 }
 
@@ -581,7 +594,15 @@ function isRecentTimestamp(value: string | undefined, maxAgeMs: number) {
 function isRazorpayUserCancelled(error: unknown) {
   const code = errorCodeText(error);
   const description = errorDescriptionText(error);
-  return code.includes("CANCEL") || description.includes("cancel") || description.includes("dismiss") || description.includes("back button");
+  const reason = razorpayProviderErrorReason(error).toLowerCase();
+  return (
+    code === "0" ||
+    code.includes("CANCEL") ||
+    description.includes("cancel") ||
+    description.includes("dismiss") ||
+    description.includes("back button") ||
+    reason.includes("cancel")
+  );
 }
 
 function isRazorpayNativeModuleUnavailable(error: unknown) {
@@ -616,6 +637,49 @@ function errorDescriptionText(error: unknown) {
         ? (error as { message?: unknown }).message
         : "";
   return String(candidate ?? "").toLowerCase();
+}
+
+function razorpayCheckoutErrorMessage(error: unknown) {
+  const description = razorpayProviderErrorDescription(error);
+  if (!description) {
+    return RAZORPAY_CHECKOUT_FAILED_ERROR;
+  }
+
+  return `Payment failed in Razorpay: ${description}. Please retry payment from your order or choose another payment method.`;
+}
+
+function razorpayProviderErrorCode(error: unknown) {
+  const direct = objectStringValue(error, "code");
+  const nested = nestedRazorpayErrorValue(error, "code");
+  return direct || nested || "";
+}
+
+function razorpayProviderErrorDescription(error: unknown) {
+  const direct = objectStringValue(error, "description");
+  const nested = nestedRazorpayErrorValue(error, "description");
+  return direct || nested || "";
+}
+
+function razorpayProviderErrorReason(error: unknown) {
+  return nestedRazorpayErrorValue(error, "reason") || objectStringValue(error, "reason") || "";
+}
+
+function nestedRazorpayErrorValue(error: unknown, key: string) {
+  if (!error || typeof error !== "object" || !("error" in error)) {
+    return "";
+  }
+
+  const nested = (error as { error?: unknown }).error;
+  return objectStringValue(nested, key);
+}
+
+function objectStringValue(value: unknown, key: string) {
+  if (!value || typeof value !== "object" || !(key in value)) {
+    return "";
+  }
+
+  const candidate = (value as Record<string, unknown>)[key];
+  return typeof candidate === "string" || typeof candidate === "number" ? String(candidate).trim() : "";
 }
 
 function providerOrderErrorMessage(error: unknown) {

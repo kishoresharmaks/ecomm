@@ -1,16 +1,17 @@
 import { ClerkProvider } from "@clerk/clerk-expo";
-import { QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import { StatusBar } from "expo-status-bar";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { MobileCustomerAuthProvider, useMobileCustomerAuth } from "../src/auth/mobile-auth-context";
 import { useMobileMarket } from "../src/features/market/mobile-market";
 import { useCustomerPushNotifications } from "../src/features/notifications/use-customer-push-notifications";
-import { getBrowsingLocation } from "../src/features/storefront/storefront-api";
+import { getBrowsingLocation, updateBrowsingLocation } from "../src/features/storefront/storefront-api";
 import { initMobileTelemetry, withMobileTelemetry } from "../src/lib/mobile-telemetry";
 import { createQueryClient } from "../src/lib/query-client";
 import { useLocationStore } from "../src/state/location-store";
+import type { SelectedLocation } from "../src/types/storefront";
 
 initMobileTelemetry();
 
@@ -87,7 +88,10 @@ function MobileMarketLocationSync() {
 
 function BrowsingLocationAccountSync() {
   const customerAuth = useMobileCustomerAuth();
+  const queryClient = useQueryClient();
+  const selectedLocation = useLocationStore((state) => state.selectedLocation);
   const setSelectedLocation = useLocationStore((state) => state.setSelectedLocation);
+  const lastSavedLocationKeyRef = useRef<string | null>(null);
   const browsingLocationQuery = useQuery({
     queryKey: ["mobile-browsing-location", customerAuth.authKey, "root-sync"],
     queryFn: () => getBrowsingLocation(customerAuth.authHeaders),
@@ -97,11 +101,71 @@ function BrowsingLocationAccountSync() {
 
   useEffect(() => {
     if (browsingLocationQuery.data?.location) {
+      lastSavedLocationKeyRef.current = locationKeyForSync(browsingLocationQuery.data.location);
       setSelectedLocation(browsingLocationQuery.data.location);
     }
   }, [browsingLocationQuery.data?.location, setSelectedLocation]);
 
+  useEffect(() => {
+    if (!customerAuth.enabled || !isPersistableLocation(selectedLocation)) {
+      return;
+    }
+
+    const selectedKey = locationKeyForSync(selectedLocation);
+    if (!selectedKey || selectedKey === lastSavedLocationKeyRef.current) {
+      return;
+    }
+
+    let cancelled = false;
+    lastSavedLocationKeyRef.current = selectedKey;
+    updateBrowsingLocation(customerAuth.authHeaders, selectedLocation)
+      .then((response) => {
+        if (cancelled) {
+          return;
+        }
+        if (response.location) {
+          lastSavedLocationKeyRef.current = locationKeyForSync(response.location);
+          setSelectedLocation(response.location);
+        }
+        void queryClient.invalidateQueries({ queryKey: ["mobile-browsing-location", customerAuth.authKey] });
+      })
+      .catch(() => {
+        if (!cancelled) {
+          lastSavedLocationKeyRef.current = null;
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [customerAuth.authHeaders, customerAuth.authKey, customerAuth.enabled, queryClient, selectedLocation, setSelectedLocation]);
+
   return null;
+}
+
+function isPersistableLocation(location: SelectedLocation) {
+  return Boolean(
+    location.label.trim() &&
+      location.label !== "Select location" &&
+      location.countryCode?.trim() &&
+      (location.stateCode?.trim() || location.cityCode?.trim() || location.localAreaCode?.trim() || location.pincode?.trim()),
+  );
+}
+
+function locationKeyForSync(location?: SelectedLocation | null) {
+  if (!location) {
+    return null;
+  }
+  return [
+    location.label.trim(),
+    location.countryCode?.trim().toUpperCase(),
+    location.stateCode?.trim(),
+    location.cityCode?.trim(),
+    location.localAreaCode?.trim(),
+    location.pincode?.trim(),
+  ]
+    .filter(Boolean)
+    .join(":");
 }
 
 function CustomerPushRegistration() {

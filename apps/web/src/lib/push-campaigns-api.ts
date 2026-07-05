@@ -18,6 +18,16 @@ export type PushCampaignPayload = {
   segmentFilter?: PushCampaignSegmentFilter;
 };
 
+export type PushCampaignSegmentDiagnostics = {
+  totalTokens: number;
+  activeTokens: number;
+  optedInTokens: number;
+  countryMatchedTokens?: number;
+  stateMatchedTokens?: number;
+  cityMatchedTokens?: number;
+  finalTokens: number;
+};
+
 export type PushCampaignFormState = {
   title: string;
   body: string;
@@ -276,7 +286,7 @@ export function updatePushCampaign(auth: IndihubAuthHeaders, campaignId: string,
 }
 
 export function previewPushCampaign(auth: IndihubAuthHeaders, payload: PushCampaignPayload) {
-  return indihubFetch<{ count: number; segmentFilter: PushCampaignSegmentFilter }>(
+  return indihubFetch<{ count: number; diagnostics?: PushCampaignSegmentDiagnostics; segmentFilter: PushCampaignSegmentFilter }>(
     "/api/admin/push-campaigns/preview",
     { method: "POST", body: JSON.stringify(payload) },
     auth,

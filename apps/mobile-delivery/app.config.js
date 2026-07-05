@@ -2,7 +2,7 @@
 
 const sentryOrganization = process.env.SENTRY_ORG ?? process.env.EXPO_PUBLIC_SENTRY_ORG;
 const sentryProject = process.env.SENTRY_PROJECT ?? process.env.EXPO_PUBLIC_SENTRY_PROJECT;
-const easProjectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID ?? "eadf0335-3b47-49d4-b119-c723e0da945d";
+const easProjectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID;
 const sentryPlugin =
   sentryOrganization && sentryProject
     ? [
@@ -19,10 +19,10 @@ const sentryPlugin =
 
 module.exports = {
   expo: {
-    owner: "onehandindiasteam",
+    owner: "kishorekrishks",
 
     name: "1HandIndia Delivery",
-    slug: "onehandindia",
+    slug: "onehandindia-delivery",
     scheme: "onehandindia-delivery",
     version: "0.1.0",
     orientation: "portrait",

@@ -454,7 +454,7 @@ function CheckoutScreen() {
     },
   });
   const paymentInFlight = isRazorpayActionInFlight(orderMutation.isPending, retryPaymentMutation.isPending);
-  const placeOrderDisabled = createAddressMutation.isPending || paymentInFlight || Boolean(placeOrderBlockedReason) || Boolean(paymentIssue);
+  const placeOrderDisabled = createAddressMutation.isPending || paymentInFlight || Boolean(placeOrderBlockedReason);
 
   orderMutationResetRef.current = orderMutation.reset;
   retryPaymentMutationResetRef.current = retryPaymentMutation.reset;
