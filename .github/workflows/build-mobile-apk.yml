@@ -1,64 +1,74 @@
 name: Build Mobile APK
 
 on:
-  workflow_dispatch: # Allows manual trigger from GitHub Actions tab
+  workflow_dispatch: # Allows manual trigger from GitHub Actions UI
+  push:
+    branches: ["main"]
 
 jobs:
-  build:
-    name: Build Android APK
+  build-android:
+    name: Build Android Release (APK)
     runs-on: ubuntu-latest
     steps:
-      - name: 🏗 Setup repo
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: 🏗 Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: 📦 Setup pnpm
-        uses: pnpm/action-setup@v3
-        with:
-          version: 10
-
-      - name: 🏗 Setup Java
+      - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: 🏗 Setup EAS
-        uses: expo/expo-github-action@v8
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
         with:
-          eas-version: latest
+          version: 10
 
-      - name: 📦 Install dependencies
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
         run: pnpm install
 
-      - name: 🔑 Create credentials.json
-        working-directory: apps/mobile-customer
-        run: |
-          echo '{
-            "android": {
-              "keystore": {
-                "keystorePath": "@onehandindiasteam__onehandindia-customer.jks",
-                "keystorePassword": "${{ secrets.KEYSTORE_PASSWORD }}",
-                "keyAlias": "${{ secrets.KEY_ALIAS }}",
-                "keyPassword": "${{ secrets.KEY_PASSWORD }}"
-              }
-            }
-          }' > credentials.json
+      - name: Make Gradle wrapper executable
+        run: chmod +x apps/mobile-customer/android/gradlew
 
-      - name: 🚀 Build APK
-        working-directory: apps/mobile-customer
-        run: eas build --platform android --profile production --local
+      - name: Decode Keystore
         env:
-          EAS_SKIP_AUTO_FINGERPRINT: 1
-          EAS_NO_VCS: 1
-          EXPO_LOCAL: 1
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$ANDROID_KEYSTORE_B64" ]; then
+            echo "$ANDROID_KEYSTORE_B64" | base64 --decode > apps/mobile-customer/android/app/release.keystore
+          else
+            echo "ANDROID_KEYSTORE_B64 secret is not set. Skipping keystore setup (build will likely fail signing or use debug key)."
+          fi
 
-      - name: 📂 Upload APK artifact
+      - name: Build Android APK (.apk)
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          cd apps/mobile-customer/android
+          
+          # Only apply signing config if the keystore file exists
+          if [ -f "app/release.keystore" ]; then
+            KEYSTORE_PATH=$(pwd)/app/release.keystore
+            ./gradlew assembleRelease \
+              -Pandroid.injected.signing.store.file=$KEYSTORE_PATH \
+              -Pandroid.injected.signing.store.password=$ANDROID_KEYSTORE_PASSWORD \
+              -Pandroid.injected.signing.key.alias=$ANDROID_KEY_ALIAS \
+              -Pandroid.injected.signing.key.password=$ANDROID_KEY_PASSWORD
+          else
+            echo "Warning: release.keystore not found. Building without custom signing config."
+            ./gradlew assembleRelease
+          fi
+
+      - name: Upload Release APK (.apk) Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: 1HandIndia-Customer-APK
-          path: apps/mobile-customer/build-*.apk
+          name: android-release-apk
+          path: apps/mobile-customer/android/app/build/outputs/apk/release/app-release.apk
