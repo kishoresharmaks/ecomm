@@ -16,10 +16,10 @@ initMobileTelemetry();
 
 const tokenCache = {
   async getToken(key: string) {
-    return SecureStore.getItemAsync(key);
+    return safeSecureStoreGet(key);
   },
   async saveToken(key: string, value: string) {
-    return SecureStore.setItemAsync(key, value);
+    return safeSecureStoreSet(key, value);
   },
 };
 
@@ -43,8 +43,9 @@ function DeliveryRouteGate() {
   const auth = useMobileDeliveryAuth();
   const clerkAuth = useAuth();
   const segments = useSegments();
-  const isAuthRoute = segments[0] === "auth";
-  const isSsoCallbackRoute = segments[0] === "sso-callback";
+  const rootSegment = String(segments[0] ?? "");
+  const isAuthRoute = rootSegment === "auth";
+  const isSsoCallbackRoute = rootSegment === "sso-callback";
   const isPublicAuthRoute = isAuthRoute || isSsoCallbackRoute;
   const isAccessBlockedRoute = segments[0] === "access-blocked";
   const accessQuery = useQuery({
@@ -104,6 +105,34 @@ function LoadingMessage({ message }: { message: string }) {
       </Card>
     </Screen>
   );
+}
+
+async function safeSecureStoreGet(key: string) {
+  if (!isValidSecureStoreKey(key)) {
+    return null;
+  }
+
+  try {
+    return await SecureStore.getItemAsync(key);
+  } catch {
+    return null;
+  }
+}
+
+async function safeSecureStoreSet(key: string, value: string) {
+  if (!isValidSecureStoreKey(key)) {
+    return;
+  }
+
+  try {
+    await SecureStore.setItemAsync(key, value);
+  } catch {
+    // Clerk can recover by requesting a fresh session token.
+  }
+}
+
+function isValidSecureStoreKey(key: string) {
+  return /^[A-Za-z0-9._-]+$/.test(key);
 }
 
 export default withMobileTelemetry(RootLayout);

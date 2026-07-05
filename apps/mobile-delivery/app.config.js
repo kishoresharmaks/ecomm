@@ -1,13 +1,18 @@
-/* global module, process */
+/* eslint-disable @typescript-eslint/no-require-imports */
+/* global module, process, require */
+
+const fs = require("node:fs");
 
 const sentryOrganization = process.env.SENTRY_ORG ?? process.env.EXPO_PUBLIC_SENTRY_ORG;
 const sentryProject = process.env.SENTRY_PROJECT ?? process.env.EXPO_PUBLIC_SENTRY_PROJECT;
-const easProjectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID;
+const easProjectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID ?? "9e885388-f7f2-4ca6-bfec-0cbbc58eebb8";
+const androidGoogleServicesFile =
+  process.env.GOOGLE_SERVICES_JSON ?? (fs.existsSync("./google-services.json") ? "./google-services.json" : undefined);
 const sentryPlugin =
   sentryOrganization && sentryProject
     ? [
         [
-          "@sentry/react-native",
+          "@sentry/react-native/expo",
           {
             organization: sentryOrganization,
             project: sentryProject,
@@ -38,6 +43,7 @@ module.exports = {
     android: {
       package: "com.onehandindia.delivery",
       versionCode: 1,
+      ...(androidGoogleServicesFile ? { googleServicesFile: androidGoogleServicesFile } : {}),
       adaptiveIcon: {
         foregroundImage: "./assets/adaptive-icon.png",
         backgroundColor: "#FFFCFB",
