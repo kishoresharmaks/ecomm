@@ -1,7 +1,6 @@
-name: Build Mobile APK
-
+name: Build Mobile APK (Native)
 on:
-  workflow_dispatch: # Allows manual trigger from GitHub Actions UI
+  workflow_dispatch:
   push:
     branches: ["main"]
 
@@ -31,9 +30,15 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
-      - name: Generate Android Folder (Prebuild)
-        working-directory: apps/mobile-customer
-        run: npx expo prebuild --platform android --clean
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('apps/mobile-customer/android/**/*.gradle*', 'apps/mobile-customer/android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
 
       - name: Make Gradle wrapper executable
         run: chmod +x apps/mobile-customer/android/gradlew
@@ -49,14 +54,13 @@ jobs:
           fi
 
       - name: Build Android APK (.apk)
+        working-directory: apps/mobile-customer/android
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          EXPO_PUBLIC_API_URL: ${{ secrets.EXPO_PUBLIC_API_URL }}
         run: |
-          cd apps/mobile-customer/android
-          
-          # Only apply signing config if the keystore file exists
           if [ -f "app/release.keystore" ]; then
             KEYSTORE_PATH=$(pwd)/app/release.keystore
             ./gradlew assembleRelease \
