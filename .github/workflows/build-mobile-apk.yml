@@ -55,6 +55,7 @@ jobs:
         env:
           EAS_SKIP_AUTO_FINGERPRINT: 1
           EAS_NO_VCS: 1
+          EXPO_LOCAL: 1
 
       - name: 📂 Upload APK artifact
         uses: actions/upload-artifact@v4
