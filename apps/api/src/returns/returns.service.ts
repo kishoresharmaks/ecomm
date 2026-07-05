@@ -1133,7 +1133,7 @@ export class ReturnsService {
 
   async respondSellerReturn(actor: RequestUser, requestNumber: string, dto: SellerReturnDecisionDto) {
     const seller = await this.resolveSeller(actor);
-    const returnRequestId = await this.prisma.client.$transaction(async (tx) => {
+    const result = await this.prisma.client.$transaction(async (tx) => {
       const existing = await tx.returnRequest.findFirst({
         where: {
           requestNumber,
@@ -1542,7 +1542,12 @@ export class ReturnsService {
         await this.applyReverseShipmentReceiptStatus(tx, returnRequest.id, targetShipments[0]!.sellerId);
       }
       if (dto.status === ReverseShipmentStatus.FAILED) {
-        await this.failReturnAfterDeliveryQualityCheck(tx, returnRequest, targetShipments, actor, proofReference, dto.note!.trim());
+        const failureProofReference = proofReference;
+        const failureNote = dto.note?.trim();
+        if (!failureProofReference || !failureNote) {
+          throw new BadRequestException("Proof reference and quality failure note are required before cancelling the return pickup.");
+        }
+        await this.failReturnAfterDeliveryQualityCheck(tx, returnRequest, targetShipments, actor, failureProofReference, failureNote);
       }
 
       await tx.auditLog.create({
