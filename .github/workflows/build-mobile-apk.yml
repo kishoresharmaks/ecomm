@@ -31,16 +31,30 @@ jobs:
         uses: expo/expo-github-action@v8
         with:
           eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
 
       - name: 📦 Install dependencies
         run: pnpm install
+
+      - name: 🔑 Create credentials.json
+        working-directory: apps/mobile-customer
+        run: |
+          echo '{
+            "android": {
+              "keystore": {
+                "keystorePath": "@onehandindiasteam__onehandindia-customer.jks",
+                "keystorePassword": "${{ secrets.KEYSTORE_PASSWORD }}",
+                "keyAlias": "${{ secrets.KEY_ALIAS }}",
+                "keyPassword": "${{ secrets.KEY_PASSWORD }}"
+              }
+            }
+          }' > credentials.json
 
       - name: 🚀 Build APK
         working-directory: apps/mobile-customer
         run: eas build --platform android --profile production --local
         env:
           EAS_SKIP_AUTO_FINGERPRINT: 1
+          EAS_NO_VCS: 1
 
       - name: 📂 Upload APK artifact
         uses: actions/upload-artifact@v4
