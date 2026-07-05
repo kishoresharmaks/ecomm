@@ -22,8 +22,7 @@
       "env": {
         "EXPO_PUBLIC_API_URL": "https://api.1handindia.com/api",
         "EXPO_PUBLIC_APP_ENV": "development",
-        "EXPO_PUBLIC_SENTRY_DSN": "https://b5b55078890cb9b7a9fdeb40bdfc35d5@o4509270944514048.ingest.us.sentry.io/4511569286266880",
-        "EXPO_PUBLIC_EAS_PROJECT_ID": "553773e3-8d42-4cf2-9c85-66c64f3c6b72"
+        "EXPO_PUBLIC_SENTRY_DSN": "https://b5b55078890cb9b7a9fdeb40bdfc35d5@o4509270944514048.ingest.us.sentry.io/4511569286266880"
       }
     },
     "production": {

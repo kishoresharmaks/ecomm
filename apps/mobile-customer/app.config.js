@@ -5,7 +5,7 @@ const fs = require("node:fs");
 
 const sentryOrganization = process.env.SENTRY_ORG ?? process.env.EXPO_PUBLIC_SENTRY_ORG;
 const sentryProject = process.env.SENTRY_PROJECT ?? process.env.EXPO_PUBLIC_SENTRY_PROJECT;
-const easProjectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID ?? "553773e3-8d42-4cf2-9c85-66c64f3c6b72";
+const easProjectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID ?? "beab5054-3e1d-46a5-aeb0-11767e1bbdb0";
 const androidGoogleServicesFile =
   process.env.GOOGLE_SERVICES_JSON ?? (fs.existsSync("./google-services.json") ? "./google-services.json" : undefined);
 const sentryPlugin =
@@ -125,6 +125,5 @@ module.exports = {
       router: {},
       ...(easProjectId ? { eas: { projectId: easProjectId } } : {}),
     },
-    owner: "onehandindiasteam",
   },
 };

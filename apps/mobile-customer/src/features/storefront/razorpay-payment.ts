@@ -24,7 +24,7 @@ export const RAZORPAY_VERIFICATION_ERROR =
 export const RAZORPAY_PAYMENT_TIMEOUT_MS = 5 * 60 * 1000;
 export const RAZORPAY_SESSION_MAX_AGE_MS = 30 * 60 * 1000;
 export const RAZORPAY_PROVIDER_ORDER_RETRY_COUNT = 3;
-const RAZORPAY_PAYMENT_SESSION_KEY = "indihub:mobile:razorpay-payment-session";
+const RAZORPAY_PAYMENT_SESSION_KEY = "indihub.mobile.razorpay-payment-session";
 const RAZORPAY_PENDING_ORDER_RETRY_MAX_AGE_MS = 60 * 60 * 1000;
 const RAZORPAY_PENDING_PAYMENT_RETRY_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
@@ -178,7 +178,7 @@ export async function runMobileRazorpayPayment(input: {
       razorpayOrderId: providerOrder.razorpayOrderId,
       stage: "provider-order",
     });
-    await saveRazorpayPaymentSession({
+    await saveRazorpayPaymentSessionBestEffort({
       orderNumber: providerOrder.orderNumber,
       razorpayOrderId: providerOrder.razorpayOrderId,
       amountPaise: providerOrder.amountPaise,
@@ -410,6 +410,18 @@ export async function saveRazorpayPaymentSession(session: MobileRazorpayPaymentS
       lastUpdated: Date.now(),
     }),
   );
+}
+
+async function saveRazorpayPaymentSessionBestEffort(session: MobileRazorpayPaymentSession) {
+  try {
+    await saveRazorpayPaymentSession(session);
+  } catch (error) {
+    captureMobileException(error, "razorpay_session_save_failed", {
+      orderNumber: session.orderNumber,
+      razorpayOrderId: session.razorpayOrderId,
+      stage: "provider-order",
+    });
+  }
 }
 
 export async function recoverRazorpayPaymentSession(now = Date.now()): Promise<MobileRazorpayPaymentSession | null> {
