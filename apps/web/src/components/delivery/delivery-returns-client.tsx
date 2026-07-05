@@ -27,6 +27,7 @@ import {
   type ReturnDetail,
   type ReverseShipmentStatus,
 } from "@/lib/returns-api";
+import { uploadDeliveryProof } from "@/lib/delivery-proof-upload";
 import {
   DeliveryEmptyState,
   DeliveryError,
@@ -163,8 +164,9 @@ export function DeliveryReturnDetailClient({ requestNumber }: { requestNumber: s
   const [notice, setNotice] = useState<{ message: string; tone: "success" | "danger" } | null>(null);
   const [note, setNote] = useState("");
   const [pickupProof, setPickupProof] = useState("");
-  const [trackingReference, setTrackingReference] = useState("");
+  const [pickupProofUploadStatus, setPickupProofUploadStatus] = useState("");
   const [receiptProofByShipment, setReceiptProofByShipment] = useState<Record<string, string>>({});
+  const [receiptProofUploadStatus, setReceiptProofUploadStatus] = useState<Record<string, string>>({});
   const [receiverByShipment, setReceiverByShipment] = useState<Record<string, string>>({});
 
   const detailQuery = useQuery({
@@ -175,10 +177,6 @@ export function DeliveryReturnDetailClient({ requestNumber }: { requestNumber: s
   });
 
   const detail = detailQuery.data;
-
-  useEffect(() => {
-    setTrackingReference(detail?.reverseShipments[0]?.trackingReference ?? "");
-  }, [detail]);
 
   const acceptMutation = useMutation({
     mutationFn: () => acceptDeliveryReturnPickup(auth.authHeaders, requestNumber, notePayload(note)),
@@ -194,7 +192,6 @@ export function DeliveryReturnDetailClient({ requestNumber }: { requestNumber: s
     mutationFn: (status: ReverseShipmentStatus) =>
       updateDeliveryReturnPickup(auth.authHeaders, requestNumber, {
         status,
-        ...(trackingReference.trim() ? { trackingReference: trackingReference.trim() } : {}),
         ...(pickupProof.trim() ? { pickupProofReference: pickupProof.trim() } : {}),
         ...(note.trim() ? { note: note.trim() } : {}),
       }),
@@ -211,6 +208,32 @@ export function DeliveryReturnDetailClient({ requestNumber }: { requestNumber: s
     onSuccess: () => afterMutation("Seller receipt recorded."),
     onError: (error) => showError(error, "Could not record seller receipt."),
   });
+
+  async function uploadPickupProof(file: File | undefined) {
+    if (!file) return;
+    setPickupProofUploadStatus("Uploading proof...");
+    try {
+      const uploaded = await uploadDeliveryProof(auth.authHeaders, file, "RETURN_PICKUP_PROOF");
+      setPickupProof(uploaded.assetKey);
+      setPickupProofUploadStatus("Pickup proof uploaded.");
+    } catch (error) {
+      setPickupProofUploadStatus("");
+      showError(error, "Could not upload pickup proof.");
+    }
+  }
+
+  async function uploadReceiptProof(shipmentId: string, file: File | undefined) {
+    if (!file) return;
+    setReceiptProofUploadStatus((current) => ({ ...current, [shipmentId]: "Uploading proof..." }));
+    try {
+      const uploaded = await uploadDeliveryProof(auth.authHeaders, file, "RETURN_RECEIPT_PROOF");
+      setReceiptProofByShipment((current) => ({ ...current, [shipmentId]: uploaded.assetKey }));
+      setReceiptProofUploadStatus((current) => ({ ...current, [shipmentId]: "Receipt proof uploaded." }));
+    } catch (error) {
+      setReceiptProofUploadStatus((current) => ({ ...current, [shipmentId]: "" }));
+      showError(error, "Could not upload receipt proof.");
+    }
+  }
 
   function afterMutation(message: string) {
     setNotice({ message, tone: "success" });
@@ -293,6 +316,10 @@ export function DeliveryReturnDetailClient({ requestNumber }: { requestNumber: s
                     </div>
                   </div>
                   <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                    <div className="rounded-md border border-[#E5E7EB] bg-white px-3 py-2 sm:col-span-2">
+                      <p className="text-xs font-black uppercase tracking-wide text-[#667085]">Tracking reference</p>
+                      <p className="mt-1 break-words text-sm font-black text-[#1F2933]">{shipment.trackingReference ?? "Generated after pickup"}</p>
+                    </div>
                     <label className="block">
                       <span className="mb-1 block text-xs font-black uppercase tracking-wide text-[#667085]">
                         Receiver name <span className="text-[#B42318]">*</span>
@@ -313,21 +340,27 @@ export function DeliveryReturnDetailClient({ requestNumber }: { requestNumber: s
                     </label>
                     <label className="block">
                       <span className="mb-1 block text-xs font-black uppercase tracking-wide text-[#667085]">
-                        Receipt proof reference <span className="text-[#B42318]">*</span>
+                        Receipt proof file <span className="text-[#B42318]">*</span>
                       </span>
                       <input
-                        value={receiptProofByShipment[shipment.id] ?? ""}
-                        onChange={(event) => setReceiptProofByShipment((current) => ({ ...current, [shipment.id]: event.target.value }))}
-                        placeholder="Proof reference (photo ID, slip no.)"
-                        aria-label="Receipt proof reference"
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp,application/pdf"
+                        onChange={(event) => void uploadReceiptProof(shipment.id, event.target.files?.[0])}
+                        aria-label="Receipt proof file"
                         className={cn(
-                          "h-11 w-full rounded-md border bg-white px-3 text-sm font-semibold outline-none focus:border-[#ED3500]",
+                          "h-11 w-full rounded-md border bg-white px-3 py-2 text-sm font-semibold outline-none focus:border-[#ED3500]",
                           !receiptProofByShipment[shipment.id]?.trim() && shipment.status !== "RECEIVED"
                             ? "border-[#F5B7B7]"
                             : "border-[#D8E2EA]",
                         )}
                         disabled={shipment.status === "RECEIVED"}
                       />
+                      {receiptProofByShipment[shipment.id]?.trim() ? (
+                        <p className="mt-1 break-all text-xs font-semibold text-[#0F8A5F]">{receiptProofByShipment[shipment.id]}</p>
+                      ) : null}
+                      {receiptProofUploadStatus[shipment.id] ? (
+                        <p className="mt-1 text-xs font-semibold text-[#667085]">{receiptProofUploadStatus[shipment.id]}</p>
+                      ) : null}
                     </label>
                   </div>
                   {shipment.status !== "RECEIVED" &&
@@ -370,22 +403,15 @@ export function DeliveryReturnDetailClient({ requestNumber }: { requestNumber: s
           <DeliveryPanel>
             <SectionHeading title="Pickup actions" description="Follow the return pickup steps in order." />
             <label className="mt-4 block">
-              <span className="text-xs font-black uppercase tracking-wide text-[#667085]">Tracking reference</span>
+              <span className="text-xs font-black uppercase tracking-wide text-[#667085]">Pickup proof file</span>
               <input
-                value={trackingReference}
-                onChange={(event) => setTrackingReference(event.target.value)}
-                placeholder="Return tracking reference"
-                className="mt-2 h-11 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 text-sm font-semibold outline-none focus:border-[#ED3500] focus:bg-white"
+                type="file"
+                accept="image/jpeg,image/png,image/webp,application/pdf"
+                onChange={(event) => void uploadPickupProof(event.target.files?.[0])}
+                className="mt-2 h-11 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 py-2 text-sm font-semibold outline-none focus:border-[#ED3500] focus:bg-white"
               />
-            </label>
-            <label className="mt-4 block">
-              <span className="text-xs font-black uppercase tracking-wide text-[#667085]">Pickup proof reference</span>
-              <input
-                value={pickupProof}
-                onChange={(event) => setPickupProof(event.target.value)}
-                placeholder="Photo/file reference after customer pickup"
-                className="mt-2 h-11 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 text-sm font-semibold outline-none focus:border-[#ED3500] focus:bg-white"
-              />
+              {pickupProof ? <p className="mt-2 break-all text-xs font-semibold text-[#0F8A5F]">{pickupProof}</p> : null}
+              {pickupProofUploadStatus ? <p className="mt-1 text-xs font-semibold text-[#667085]">{pickupProofUploadStatus}</p> : null}
             </label>
             <label className="mt-4 block">
               <span className="text-xs font-black uppercase tracking-wide text-[#667085]">Note</span>

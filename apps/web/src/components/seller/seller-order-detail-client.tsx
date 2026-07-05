@@ -445,7 +445,7 @@ export function SellerOrderDetailClient({
                   <div>
                     <p className="font-black text-[#1F2933]">{item.productNameSnapshot}</p>
                     <p className="mt-1 text-sm font-semibold text-[#667085]">
-                      {item.variantSnapshot?.variantName ?? item.variantSnapshot?.sku ?? "Default"}{" "}
+                      {item.variantSnapshot ?? "Default"}{" "}
                       x {item.quantity}
                     </p>
                   </div>

@@ -91,6 +91,7 @@ export type ReturnSummary = {
   status: ReturnRequestStatus;
   resolution: ReturnRequestResolution;
   reason: string;
+  qualityProofKeys?: string[];
   totalQuantity: number;
   requestedAmountPaise: number;
   approvedAmountPaise: number;
@@ -109,6 +110,7 @@ export type ReturnSummary = {
     productName: string;
     quantity: number;
     status: ReturnRequestItemStatus;
+    sellerNote?: string | null;
     sellerId: string;
     sellerName: string;
   }>;
@@ -116,6 +118,7 @@ export type ReturnSummary = {
 
 export type ReturnDetail = Omit<ReturnSummary, "items"> & {
   note?: string | null;
+  qualityProofKeys?: string[];
   autoApproved?: boolean;
   couponAdjustmentPaise?: number;
   requestedAt?: string;
@@ -200,9 +203,23 @@ export type ReturnDetail = Omit<ReturnSummary, "items"> & {
     id: string;
     refundNumber: string;
     status: RefundRequestStatus;
+    method?: RefundMethod | null;
     amountPaise: number;
     currency: string;
+    approvedAt?: string | null;
+    reviewedAt?: string | null;
     createdAt?: string;
+    transactions?: Array<{
+      id: string;
+      method?: RefundMethod | null;
+      status: string;
+      providerRefundId?: string | null;
+      manualReference?: string | null;
+      paidAt?: string | null;
+      processedAt?: string | null;
+      failureReason?: string | null;
+      createdAt?: string;
+    }>;
   }>;
   notes: Array<{
     id: string;
@@ -272,15 +289,35 @@ export type RefundDetail = RefundSummary & {
     platformFundedCouponAdjustmentPaise: number;
     returnRequestItem?: { id: string; status: ReturnRequestItemStatus } | null;
   }>;
+  sellerDeductionImpact?: Array<{
+    sellerId: string;
+    sellerName: string;
+    itemCount: number;
+    quantity: number;
+    refundAmountPaise: number;
+    platformFundedCouponAdjustmentPaise: number;
+    sellerFundedCouponAdjustmentPaise: number;
+    deductionPaise: number;
+    splitIds: string[];
+    paidPayoutIds: string[];
+    pendingPayoutIds: string[];
+    adjustmentMode: "PENDING_PAYOUT_REDUCTION" | "WALLET_DEBIT" | "MIXED";
+    applied: boolean;
+  }>;
   transactions: Array<{
     id: string;
     provider: string;
+    method?: RefundMethod | null;
     providerRefundId?: string | null;
+    manualReference?: string | null;
     status: string;
     amountPaise: number;
     currency: string;
     idempotencyKey?: string | null;
     errorMessage?: string | null;
+    failureReason?: string | null;
+    paidAt?: string | null;
+    processedAt?: string | null;
     createdAt?: string;
     updatedAt?: string;
   }>;

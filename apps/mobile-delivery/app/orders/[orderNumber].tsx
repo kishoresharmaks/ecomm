@@ -26,6 +26,7 @@ import {
   type DeliveryOrder,
   type DeliveryStatus,
 } from "../../src/features/delivery/delivery-api";
+import { pickDeliveryProofImage, uploadDeliveryProofImage } from "../../src/features/delivery/proof-upload";
 import { useMobileDeliveryAuth } from "../../src/auth/mobile-delivery-auth-context";
 
 const progressStatuses: DeliveryStatus[] = ["PACKED", "DISPATCHED", "IN_TRANSIT", "DELIVERED"];
@@ -50,6 +51,7 @@ export default function DeliveryOrderDetailScreen() {
   const [estimatedDeliveryDate, setEstimatedDeliveryDate] = useState("");
   const [receiverName, setReceiverName] = useState("");
   const [proofReference, setProofReference] = useState("");
+  const [proofUploadStatus, setProofUploadStatus] = useState("");
   const [proofNote, setProofNote] = useState("");
   const [codAmount, setCodAmount] = useState("");
   const [codNote, setCodNote] = useState("");
@@ -93,7 +95,6 @@ export default function DeliveryOrderDetailScreen() {
     mutationFn: (status: DeliveryStatus) =>
       updateDeliveryOrder(auth.authHeaders, orderNumber, {
         status,
-        trackingReference: trackingReference.trim() || undefined,
         estimatedDeliveryDate: estimatedDeliveryDate.trim() || undefined,
         deliveryNote: note.trim() || undefined,
         receiverName: status === "DELIVERED" ? receiverName.trim() : undefined,
@@ -135,6 +136,21 @@ export default function DeliveryOrderDetailScreen() {
     onError: (error) => setNotice({ message: error instanceof Error ? error.message : "Attempt recording failed.", tone: "danger" }),
   });
 
+  async function uploadProof() {
+    setProofUploadStatus("");
+    try {
+      const asset = await pickDeliveryProofImage();
+      if (!asset) return;
+      setProofUploadStatus("Uploading proof...");
+      const uploaded = await uploadDeliveryProofImage(auth.authHeaders, asset.uri, asset.fileName);
+      setProofReference(uploaded.assetKey);
+      setProofUploadStatus("Delivery proof uploaded.");
+    } catch (error) {
+      setProofUploadStatus("");
+      setNotice({ message: error instanceof Error ? error.message : "Proof upload failed.", tone: "danger" });
+    }
+  }
+
   return (
     <Screen>
       <Button title="Back to orders" tone="secondary" onPress={() => router.back()} />
@@ -168,10 +184,12 @@ export default function DeliveryOrderDetailScreen() {
           </Card>
           <Card>
             <Text style={sectionTitle}>Delivery progress</Text>
-            <Field label="Tracking reference" value={trackingReference} onChangeText={setTrackingReference} placeholder="Tracking or route reference" />
+            <Text style={mutedText}>Tracking: {trackingReference || "Generated after assignment"}</Text>
             <Field label="Estimated delivery date" value={estimatedDeliveryDate} onChangeText={setEstimatedDeliveryDate} placeholder="YYYY-MM-DD" />
             <Field label="Receiver name" value={receiverName} onChangeText={setReceiverName} placeholder="Required before delivered" />
-            <Field label="Proof reference" value={proofReference} onChangeText={setProofReference} placeholder="Photo/file/signature reference" />
+            <Button title={proofReference ? "Replace proof file" : "Upload proof file"} tone="secondary" onPress={() => void uploadProof()} />
+            {proofReference ? <Text style={successText}>{proofReference}</Text> : null}
+            {proofUploadStatus ? <Text style={mutedText}>{proofUploadStatus}</Text> : null}
             <Field label="Proof note" value={proofNote} onChangeText={setProofNote} placeholder="Handover note" multiline />
             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
               {progressStatuses.map((status) => {
@@ -302,3 +320,4 @@ function addressBlock(address: DeliveryOrder["shippingAddressSnapshot"]) {
 const sectionTitle = { color: "#123A5A", fontSize: 18, fontWeight: "900" } as const;
 const mutedText = { color: "#6B7280", fontWeight: "700", lineHeight: 20 } as const;
 const dangerText = { color: "#B42318", fontWeight: "800" } as const;
+const successText = { color: "#0F8A5F", fontWeight: "800" } as const;

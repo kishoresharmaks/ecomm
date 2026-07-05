@@ -359,16 +359,20 @@ function buildVariantPayload(variant: ProductVariantFormValue) {
   }
   payload.mrpPaise = variant.mrp.trim() ? rupeesToPaise(variant.mrp) : null;
   if (variant.packageWeightGrams.trim()) {
-    payload.packageWeightGrams = integerOrZero(variant.packageWeightGrams);
+    const packageWeightGrams = optionalNonNegativeInteger(variant.packageWeightGrams);
+    if (packageWeightGrams !== undefined) payload.packageWeightGrams = packageWeightGrams;
   }
   if (variant.packageLengthCm.trim()) {
-    payload.packageLengthCm = integerOrZero(variant.packageLengthCm);
+    const packageLengthCm = optionalNonNegativeInteger(variant.packageLengthCm);
+    if (packageLengthCm !== undefined) payload.packageLengthCm = packageLengthCm;
   }
   if (variant.packageBreadthCm.trim()) {
-    payload.packageBreadthCm = integerOrZero(variant.packageBreadthCm);
+    const packageBreadthCm = optionalNonNegativeInteger(variant.packageBreadthCm);
+    if (packageBreadthCm !== undefined) payload.packageBreadthCm = packageBreadthCm;
   }
   if (variant.packageHeightCm.trim()) {
-    payload.packageHeightCm = integerOrZero(variant.packageHeightCm);
+    const packageHeightCm = optionalNonNegativeInteger(variant.packageHeightCm);
+    if (packageHeightCm !== undefined) payload.packageHeightCm = packageHeightCm;
   }
 
   return payload;
@@ -390,8 +394,9 @@ function addStringAttribute(attributes: Record<string, unknown>, key: string, va
 }
 
 function addOptionalNumberAttribute(attributes: Record<string, unknown>, key: string, value: string) {
-  if (value.trim()) {
-    attributes[key] = numberOrZero(value);
+  const parsed = optionalNonNegativeNumber(value);
+  if (parsed !== undefined) {
+    attributes[key] = parsed;
   }
 }
 
@@ -424,6 +429,18 @@ function numberOrZero(value: string) {
 function integerOrZero(value: string) {
   const parsed = Number(value.replace(/,/g, "").trim());
   return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : 0;
+}
+
+function optionalNonNegativeNumber(value: string) {
+  const trimmed = value.replace(/,/g, "").trim();
+  if (!trimmed) return undefined;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
+function optionalNonNegativeInteger(value: string) {
+  const parsed = optionalNonNegativeNumber(value);
+  return parsed === undefined ? undefined : Math.floor(parsed);
 }
 
 function stringFromNumber(value: number | null | undefined) {

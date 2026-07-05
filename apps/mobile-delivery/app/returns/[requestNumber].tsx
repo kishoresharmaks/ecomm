@@ -13,6 +13,7 @@ import {
   type ReturnDetail,
   type ReverseShipmentStatus,
 } from "../../src/features/delivery/returns-api";
+import { pickDeliveryProofImage, uploadDeliveryProofImage } from "../../src/features/delivery/proof-upload";
 import { useMobileDeliveryAuth } from "../../src/auth/mobile-delivery-auth-context";
 
 export default function DeliveryReturnDetailScreen() {
@@ -23,9 +24,10 @@ export default function DeliveryReturnDetailScreen() {
   const requestNumber = String(params.requestNumber ?? "");
   const [notice, setNotice] = useState<{ message: string; tone: "success" | "danger" } | null>(null);
   const [note, setNote] = useState("");
-  const [trackingReference, setTrackingReference] = useState("");
   const [pickupProofReference, setPickupProofReference] = useState("");
+  const [pickupProofUploadStatus, setPickupProofUploadStatus] = useState("");
   const [receiptProofByShipment, setReceiptProofByShipment] = useState<Record<string, string>>({});
+  const [receiptProofUploadStatus, setReceiptProofUploadStatus] = useState<Record<string, string>>({});
   const [receiverByShipment, setReceiverByShipment] = useState<Record<string, string>>({});
 
   const returnQuery = useQuery({
@@ -37,7 +39,6 @@ export default function DeliveryReturnDetailScreen() {
 
   useEffect(() => {
     if (!detail) return;
-    setTrackingReference(detail.reverseShipments[0]?.trackingReference ?? "");
     setPickupProofReference(detail.reverseShipments[0]?.pickupProofReference ?? detail.reverseShipments[0]?.proofReference ?? "");
   }, [detail]);
 
@@ -55,7 +56,6 @@ export default function DeliveryReturnDetailScreen() {
     mutationFn: (status: ReverseShipmentStatus) =>
       updateDeliveryReturnPickup(auth.authHeaders, requestNumber, {
         status,
-        trackingReference: trackingReference.trim() || undefined,
         pickupProofReference: pickupProofReference.trim() || undefined,
         note: note.trim() || undefined,
       }),
@@ -73,10 +73,41 @@ export default function DeliveryReturnDetailScreen() {
     onError: (error) => setNotice({ message: error instanceof Error ? error.message : "Could not record seller receipt.", tone: "danger" }),
   });
 
+  async function uploadPickupProof() {
+    setPickupProofUploadStatus("");
+    try {
+      const asset = await pickDeliveryProofImage();
+      if (!asset) return;
+      setPickupProofUploadStatus("Uploading proof...");
+      const uploaded = await uploadDeliveryProofImage(auth.authHeaders, asset.uri, asset.fileName, "RETURN_PICKUP_PROOF");
+      setPickupProofReference(uploaded.assetKey);
+      setPickupProofUploadStatus("Pickup proof uploaded.");
+    } catch (error) {
+      setPickupProofUploadStatus("");
+      setNotice({ message: error instanceof Error ? error.message : "Proof upload failed.", tone: "danger" });
+    }
+  }
+
+  async function uploadReceiptProof(shipmentId: string) {
+    setReceiptProofUploadStatus((current) => ({ ...current, [shipmentId]: "" }));
+    try {
+      const asset = await pickDeliveryProofImage();
+      if (!asset) return;
+      setReceiptProofUploadStatus((current) => ({ ...current, [shipmentId]: "Uploading proof..." }));
+      const uploaded = await uploadDeliveryProofImage(auth.authHeaders, asset.uri, asset.fileName, "RETURN_RECEIPT_PROOF");
+      setReceiptProofByShipment((current) => ({ ...current, [shipmentId]: uploaded.assetKey }));
+      setReceiptProofUploadStatus((current) => ({ ...current, [shipmentId]: "Receipt proof uploaded." }));
+    } catch (error) {
+      setReceiptProofUploadStatus((current) => ({ ...current, [shipmentId]: "" }));
+      setNotice({ message: error instanceof Error ? error.message : "Proof upload failed.", tone: "danger" });
+    }
+  }
+
   const allAccepted = detail?.reverseShipments.every((shipment) => shipment.assignmentStatus === "ACCEPTED") ?? false;
-  const anyPickedOrLater = detail?.reverseShipments.some((shipment) => ["PICKED_UP", "IN_TRANSIT", "RECEIVED"].includes(shipment.status)) ?? false;
+  const anyPickedOrLater = detail?.reverseShipments.some((shipment) => ["PICKED_UP", "IN_TRANSIT", "RECEIVED", "FAILED", "CANCELLED"].includes(shipment.status)) ?? false;
   const anyPickedUp = detail?.reverseShipments.some((shipment) => shipment.status === "PICKED_UP") ?? false;
   const allReceived = detail?.reverseShipments.every((shipment) => shipment.status === "RECEIVED") ?? false;
+  const qualityFailureReady = Boolean(allAccepted && !anyPickedOrLater && pickupProofReference.trim() && note.trim());
 
   return (
     <Screen>
@@ -90,8 +121,9 @@ export default function DeliveryReturnDetailScreen() {
           <RouteActions detail={detail} />
           <Card>
             <Text style={sectionTitle}>Pickup actions</Text>
-            <Field label="Tracking reference" value={trackingReference} onChangeText={setTrackingReference} placeholder="Return tracking reference" />
-            <Field label="Pickup proof reference" value={pickupProofReference} onChangeText={setPickupProofReference} placeholder="Required before picked up" />
+            <Button title={pickupProofReference ? "Replace pickup proof" : "Upload pickup proof"} tone="secondary" onPress={() => void uploadPickupProof()} />
+            {pickupProofReference ? <Text style={successText}>{pickupProofReference}</Text> : null}
+            {pickupProofUploadStatus ? <Text style={mutedText}>{pickupProofUploadStatus}</Text> : null}
             <Field label="Note" value={note} onChangeText={setNote} placeholder="Pickup or handover note" multiline />
             {!allAccepted ? (
               <View style={{ flexDirection: "row", gap: 10 }}>
@@ -120,6 +152,23 @@ export default function DeliveryReturnDetailScreen() {
             {allAccepted && !pickupProofReference.trim() && !anyPickedOrLater ? (
               <Text style={dangerText}>Pickup proof reference is required before marking picked up.</Text>
             ) : null}
+            {allAccepted && !anyPickedOrLater ? (
+              <>
+                <Text style={mutedText}>
+                  If the package is damaged, missing, mismatched, or not in returnable condition, upload clear proof and write the reason before cancelling the pickup.
+                </Text>
+                <Button
+                  title="Cancel bad-quality pickup"
+                  tone="danger"
+                  disabled={!qualityFailureReady}
+                  loading={pickupMutation.isPending && pickupMutation.variables === "FAILED"}
+                  onPress={() => pickupMutation.mutate("FAILED")}
+                />
+                {!qualityFailureReady ? (
+                  <Text style={dangerText}>Quality cancellation needs a proof reference and note.</Text>
+                ) : null}
+              </>
+            ) : null}
           </Card>
           <Text style={sectionTitle}>Seller packages</Text>
           {detail.reverseShipments.map((shipment) => {
@@ -134,18 +183,16 @@ export default function DeliveryReturnDetailScreen() {
                 </View>
                 <Text style={{ color: "#123A5A", fontSize: 17, fontWeight: "900" }}>{shipment.seller?.storeName ?? "Seller store"}</Text>
                 <Text style={mutedText}>{addressBlock(shipment.seller?.destinationAddress)}</Text>
+                <Text style={mutedText}>Tracking: {shipment.trackingReference ?? "Generated after pickup"}</Text>
                 <Field
                   label="Receiver name"
                   value={receiverByShipment[shipment.id] ?? ""}
                   onChangeText={(value) => setReceiverByShipment((current) => ({ ...current, [shipment.id]: value }))}
                   placeholder="Person receiving at seller store"
                 />
-                <Field
-                  label="Receipt proof reference"
-                  value={receiptProofByShipment[shipment.id] ?? ""}
-                  onChangeText={(value) => setReceiptProofByShipment((current) => ({ ...current, [shipment.id]: value }))}
-                  placeholder="Receipt proof reference"
-                />
+                <Button title={receiptProofByShipment[shipment.id] ? "Replace receipt proof" : "Upload receipt proof"} tone="secondary" onPress={() => void uploadReceiptProof(shipment.id)} />
+                {receiptProofByShipment[shipment.id] ? <Text style={successText}>{receiptProofByShipment[shipment.id]}</Text> : null}
+                {receiptProofUploadStatus[shipment.id] ? <Text style={mutedText}>{receiptProofUploadStatus[shipment.id]}</Text> : null}
                 {canReceive && (!receiver || !receiptProof) ? <Text style={dangerText}>Receiver name and receipt proof reference are required.</Text> : null}
                 <Button
                   title={shipment.status === "RECEIVED" ? "Received" : "Record seller receipt"}
@@ -250,3 +297,4 @@ function addressBlock(address?: AddressSnapshot | null) {
 const sectionTitle = { color: "#123A5A", fontSize: 18, fontWeight: "900" } as const;
 const mutedText = { color: "#6B7280", fontWeight: "700", lineHeight: 20 } as const;
 const dangerText = { color: "#B42318", fontWeight: "800" } as const;
+const successText = { color: "#0F8A5F", fontWeight: "800" } as const;

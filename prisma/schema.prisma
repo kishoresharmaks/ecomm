@@ -2907,6 +2907,7 @@ model ReturnRequest {
   resolution                        ReturnRequestResolution            @default(REFUND)
   reason                            String
   note                              String?
+  qualityProofKeys                  String[]                           @default([]) @map("quality_proof_keys")
   autoApproved                      Boolean                            @default(false) @map("auto_approved")
   totalQuantity                     Int                                @default(0) @map("total_quantity")
   requestedAmountPaise              Int                                @default(0) @map("requested_amount_paise")

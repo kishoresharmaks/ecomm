@@ -40,6 +40,7 @@ import {
   type ReturnSummary,
 } from "@/lib/returns-api";
 import { indihubFetch } from "@/lib/api";
+import { openPrivateProofReference } from "@/lib/delivery-proof-upload";
 import { formatMoney } from "@/lib/storefront-api";
 
 const returnStatusFilters: Array<ReturnRequestStatus | "ALL"> = [
@@ -332,6 +333,7 @@ function AdminReturnDetailPanel({
 }) {
   const auth = useAdminAuth();
   const [selectedPartnerId, setSelectedPartnerId] = useState("");
+  const [proofOpenError, setProofOpenError] = useState<string | null>(null);
   const canReview = detail.status === "PENDING_REVIEW";
   const canCancel = !["RESOLVED", "REJECTED", "CANCELLED"].includes(detail.status);
   const canQc = ["RECEIVED", "PICKED_UP", "IN_TRANSIT", "APPROVED", "AUTO_APPROVED", "PICKUP_PENDING"].includes(detail.status);
@@ -353,6 +355,15 @@ function AdminReturnDetailPanel({
     const assignedPartnerId = detail.reverseShipments.find((shipment) => shipment.assignedPartner?.id)?.assignedPartner?.id ?? "";
     setSelectedPartnerId((current) => current || assignedPartnerId);
   }, [detail.requestNumber, detail.reverseShipments]);
+
+  async function openProof(assetKey: string) {
+    setProofOpenError(null);
+    try {
+      await openPrivateProofReference(auth.authHeaders, assetKey);
+    } catch (error) {
+      setProofOpenError(error instanceof Error ? error.message : "Could not open proof image.");
+    }
+  }
 
   return (
     <div className="space-y-5">
@@ -393,6 +404,25 @@ function AdminReturnDetailPanel({
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
         <section className="space-y-3">
           <PanelTitle icon={<ClipboardCheck className="h-5 w-5" />} title="Items under return" description={detail.reason} />
+          {detail.qualityProofKeys?.length ? (
+            <div className="rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-4">
+              <p className="text-sm font-black text-[#1F2933]">Customer quality images</p>
+              <p className="mt-1 text-xs font-semibold leading-5 text-[#667085]">
+                Use these uploaded proof references while deciding return approval and QC.
+              </p>
+              <div className="mt-3 grid gap-2">
+                {detail.qualityProofKeys.map((key, index) => (
+                  <div key={key} className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-white px-3 py-2 text-xs font-semibold text-[#667085]">
+                    <span className="break-all">Image {index + 1}: {key}</span>
+                    <Button type="button" size="sm" variant="outline" onClick={() => void openProof(key)}>
+                      Open
+                    </Button>
+                  </div>
+                ))}
+              </div>
+              {proofOpenError ? <p className="mt-2 text-xs font-bold text-[#D64545]">{proofOpenError}</p> : null}
+            </div>
+          ) : null}
           {detail.items.map((item) => (
             <div key={item.id} className="rounded-lg border border-[#E5E7EB] bg-white p-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">

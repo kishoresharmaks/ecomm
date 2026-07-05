@@ -16,6 +16,8 @@ import { readBooleanSetting } from "../settings/setting-value-utils";
 import { safeStorageFolderSegment } from "./storage-image";
 import { PublicImageUploadPurpose } from "./dto/public-image-upload.dto";
 import {
+  DeliveryProofUploadPurpose,
+  DeliveryProofUploadRequestDto,
   PrivateDocumentUploadRequestDto,
   PublicImageUploadRequestDto,
   UpsertStorageConfigurationDto,
@@ -93,6 +95,7 @@ const privateDocumentTypes = new Set([
   "BUSINESS_REGISTRATION",
   "SERVICE_COMPLETION_PROOF",
   "SERVICE_DISPUTE_EVIDENCE",
+  "DELIVERY_PROOF",
   "OTHER",
 ]);
 const storageKeyRoot = "1handindia";
@@ -171,6 +174,11 @@ type B2BPurchaseOrderContext = {
   orderNumber: string;
   actorUserId?: string | null;
 };
+type DeliveryProofUploadKind =
+  | "DELIVERY_PROOF"
+  | "RETURN_PICKUP_PROOF"
+  | "RETURN_RECEIPT_PROOF"
+  | "RETURN_QUALITY_IMAGE";
 export type PrivateDocumentAccess =
   | {
       provider: "s3";
@@ -735,6 +743,114 @@ export class StorageService {
     };
   }
 
+  async createDeliveryProofUploadRequest(
+    actor: RequestUser,
+    dto: DeliveryProofUploadRequestDto,
+  ) {
+    const purpose = this.assertDeliveryProofUploadPurpose(actor, dto.purpose);
+    if (purpose === DeliveryProofUploadPurpose.RETURN_QUALITY_IMAGE && dto.contentType.toLowerCase() === "application/pdf") {
+      throw new BadRequestException("Return quality proof must be a JPG, PNG, or WebP image.");
+    }
+    this.validatePrivateDocumentMetadata({
+      fileName: dto.fileName,
+      contentType: dto.contentType,
+      sizeBytes: dto.sizeBytes,
+    });
+
+    const settingMap = await this.storageSettingMap();
+    const privateStorage = this.privateStorageConfigFromSettings(settingMap);
+
+    if (!privateStorage.configured) {
+      throw new ServiceUnavailableException("Private proof storage is not configured.");
+    }
+
+    if (privateStorage.activeProvider === "S3") {
+      const assetKey = this.createDeliveryProofAssetKey(actor, dto, purpose);
+      const presigned = this.presignS3Object(privateStorage, "PUT", assetKey);
+      await this.recordPrivateUpload({
+        assetKey,
+        provider: "S3",
+        uploadKind: this.deliveryProofUploadKind(purpose),
+        actorUserId: actor.id,
+        contentType: dto.contentType,
+        sizeBytes: dto.sizeBytes,
+      });
+
+      return {
+        provider: "s3" as const,
+        method: "PUT" as const,
+        uploadUrl: presigned.url,
+        assetKey,
+        headers: {
+          "Content-Type": dto.contentType.toLowerCase(),
+        },
+        maxBytes: privateDocumentMaxBytes,
+        allowedContentTypes: [...privateDocumentAllowedContentTypes],
+        expiresAt: presigned.expiresAt,
+      };
+    }
+
+    return {
+      provider: "local" as const,
+      method: "POST" as const,
+      uploadPath: "/api/storage/delivery-proof/upload",
+      maxBytes: privateDocumentMaxBytes,
+      allowedContentTypes: [...privateDocumentAllowedContentTypes],
+    };
+  }
+
+  async saveLocalDeliveryProof(
+    actor: RequestUser,
+    file: UploadedPrivateDocumentFile | undefined,
+    purposeInput?: DeliveryProofUploadPurpose,
+  ) {
+    const purpose = this.assertDeliveryProofUploadPurpose(actor, purposeInput);
+    if (purpose === DeliveryProofUploadPurpose.RETURN_QUALITY_IMAGE && file?.mimetype === "application/pdf") {
+      throw new BadRequestException("Return quality proof must be a JPG, PNG, or WebP image.");
+    }
+    if (!file) {
+      throw new BadRequestException("Proof file is required.");
+    }
+
+    this.validatePrivateDocumentMetadata({
+      fileName: file.originalname,
+      contentType: file.mimetype,
+      sizeBytes: file.size,
+    });
+    this.assertPrivateDocumentMagicBytes(file);
+
+    const settingMap = await this.storageSettingMap();
+    const privateStorage = this.privateStorageConfigFromSettings(settingMap);
+
+    if (!privateStorage.configured || privateStorage.activeProvider !== "LOCAL") {
+      throw new ServiceUnavailableException("Local private proof storage is not enabled.");
+    }
+
+    const assetKey = this.createDeliveryProofAssetKey(actor, {
+      fileName: file.originalname,
+      contentType: file.mimetype,
+    }, purpose);
+    const filePath = this.privateLocalFilePath(privateStorage, assetKey);
+    await mkdir(dirname(filePath), { recursive: true });
+    await writeFile(filePath, file.buffer);
+    await this.recordPrivateUpload({
+      assetKey,
+      provider: "LOCAL",
+      uploadKind: this.deliveryProofUploadKind(purpose),
+      actorUserId: actor.id,
+      contentType: file.mimetype,
+      sizeBytes: file.size,
+    });
+
+    return {
+      provider: "local" as const,
+      assetKey,
+      maxBytes: privateDocumentMaxBytes,
+      allowedContentTypes: [...privateDocumentAllowedContentTypes],
+      orphanCleanupAfterHours: privateUploadOrphanCleanupHours,
+    };
+  }
+
   async createB2BPaymentProofUploadRequest(
     context: B2BPurchaseOrderContext,
     metadata: PrivateDocumentMetadata,
@@ -1039,9 +1155,53 @@ export class StorageService {
   }
 
   private privateDocumentUploadKind(documentType: string) {
+    if (documentType === "DELIVERY_PROOF") {
+      return "DELIVERY_PROOF";
+    }
     return documentType === "SERVICE_COMPLETION_PROOF" || documentType === "SERVICE_DISPUTE_EVIDENCE"
       ? "SERVICE_EVIDENCE"
       : "SELLER_DOCUMENT";
+  }
+
+  private createDeliveryProofAssetKey(
+    actor: RequestUser,
+    metadata: Pick<PrivateDocumentMetadata, "fileName" | "contentType">,
+    purpose: DeliveryProofUploadPurpose = DeliveryProofUploadPurpose.DELIVERY_PROOF,
+  ) {
+    const folder = `${storageKeyRoot}/delivery-proofs/${this.safeSegment(purpose.toLowerCase())}/${this.safeSegment(actor.id)}`;
+    const extension = this.documentExtension(metadata.fileName, metadata.contentType);
+    const baseName = this.safeDocumentBaseName(metadata.fileName) || "proof";
+    const timestamp = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
+    const randomSuffix = randomBytes(4).toString("hex");
+
+    return this.normalizePublicImageKey(`${folder}/${baseName}-${timestamp}-${randomSuffix}${extension}`);
+  }
+
+  private assertDeliveryProofUploadPurpose(
+    actor: RequestUser,
+    purposeInput?: DeliveryProofUploadPurpose,
+  ) {
+    const purpose = purposeInput ?? DeliveryProofUploadPurpose.DELIVERY_PROOF;
+    if (!Object.values(DeliveryProofUploadPurpose).includes(purpose)) {
+      throw new BadRequestException("Unsupported proof upload purpose.");
+    }
+    if (purpose === DeliveryProofUploadPurpose.RETURN_QUALITY_IMAGE) {
+      if (!actor.roles.includes(RoleCode.CUSTOMER) && !actor.roles.includes(RoleCode.ADMIN)) {
+        throw new ForbiddenException("Return quality image upload permission is required.");
+      }
+      return purpose;
+    }
+    if (!actor.roles.includes(RoleCode.DELIVERY_PARTNER) && !actor.roles.includes(RoleCode.ADMIN)) {
+      throw new ForbiddenException("Delivery proof upload permission is required.");
+    }
+    return purpose;
+  }
+
+  private deliveryProofUploadKind(purpose: DeliveryProofUploadPurpose): DeliveryProofUploadKind {
+    if (purpose === DeliveryProofUploadPurpose.RETURN_QUALITY_IMAGE) return "RETURN_QUALITY_IMAGE";
+    if (purpose === DeliveryProofUploadPurpose.RETURN_PICKUP_PROOF) return "RETURN_PICKUP_PROOF";
+    if (purpose === DeliveryProofUploadPurpose.RETURN_RECEIPT_PROOF) return "RETURN_RECEIPT_PROOF";
+    return "DELIVERY_PROOF";
   }
 
   private createServiceEvidenceAssetKey(actor: RequestUser, dto: PrivateDocumentUploadRequestDto) {
@@ -1712,6 +1872,9 @@ export class StorageService {
     if (this.isOwnServiceEvidenceKey(actor, normalized)) {
       return normalized;
     }
+    if (this.isOwnReturnQualityProofKey(actor, normalized)) {
+      return normalized;
+    }
     const sellerPrefix = `${storageKeyRoot}/sellers/${this.safeSegment(actor.id)}/documents/`;
     const legacySellerPrefix = `${legacyStorageKeyRoot}/sellers/${this.safeSegment(actor.id)}/documents/`;
 
@@ -1720,6 +1883,15 @@ export class StorageService {
     }
 
     return normalized;
+  }
+
+  private isOwnReturnQualityProofKey(actor: RequestUser, key: string) {
+    return (
+      key.startsWith(`${storageKeyRoot}/delivery-proofs/return_quality_image/`) &&
+      (actor.roles.includes(RoleCode.SELLER) ||
+        (actor.roles.includes(RoleCode.CUSTOMER) &&
+          key.startsWith(`${storageKeyRoot}/delivery-proofs/return_quality_image/${this.safeSegment(actor.id)}/`)))
+    );
   }
 
   private normalizeServiceEvidenceKey(key: string | undefined) {
@@ -1980,7 +2152,11 @@ export class StorageService {
       | "B2B_PURCHASE_ORDER"
       | "B2B_PAYMENT_PROOF"
       | "B2B_PROFORMA_INVOICE"
-      | "B2B_TAX_INVOICE";
+      | "B2B_TAX_INVOICE"
+      | "DELIVERY_PROOF"
+      | "RETURN_PICKUP_PROOF"
+      | "RETURN_RECEIPT_PROOF"
+      | "RETURN_QUALITY_IMAGE";
     actorUserId: string | null;
     contentType: string;
     sizeBytes?: number | undefined;

@@ -21,6 +21,8 @@ import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { Roles } from "../auth/decorators/roles.decorator";
 import type { RequestUser } from "../auth/types/indihub-request";
 import {
+  DeliveryProofUploadPurpose,
+  DeliveryProofUploadRequestDto,
   PrivateDocumentUploadRequestDto,
   PublicImageUploadRequestDto,
   UpsertStorageConfigurationDto,
@@ -176,6 +178,52 @@ export class StorageController {
     @UploadedFile() file: UploadedPrivateDocumentFile | undefined,
   ) {
     return this.storageService.saveLocalPrivateDocument(actor, documentType, file, serviceBookingNumber);
+  }
+
+  @Post("delivery-proof/upload-request")
+  @Roles(RoleCode.ADMIN, RoleCode.DELIVERY_PARTNER, RoleCode.CUSTOMER)
+  @ApiOperation({
+    summary: "Create an S3 signed PUT or local multipart upload request for delivery and return proof files.",
+  })
+  createDeliveryProofUploadRequest(
+    @CurrentUser() actor: RequestUser,
+    @Body() dto: DeliveryProofUploadRequestDto,
+  ) {
+    return this.storageService.createDeliveryProofUploadRequest(actor, dto);
+  }
+
+  @Post("delivery-proof/upload")
+  @Roles(RoleCode.ADMIN, RoleCode.DELIVERY_PARTNER, RoleCode.CUSTOMER)
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024 } }))
+  @ApiConsumes("multipart/form-data")
+  @ApiBody({
+    description:
+      "Multipart local-private-storage upload for delivery and return proof files. The file field must be named `file`. Server validation allows PDF, JPG, PNG, and WebP only and returns an assetKey to submit as proofReference, pickupProofReference, or receiptProofReference.",
+    schema: {
+      type: "object",
+      required: ["purpose", "file"],
+      properties: {
+        purpose: {
+          type: "string",
+          enum: Object.values(DeliveryProofUploadPurpose),
+          description:
+            "Customers may upload RETURN_QUALITY_IMAGE only. Delivery partners/admins may upload delivery, pickup, and receipt proof references.",
+        },
+        file: {
+          type: "string",
+          format: "binary",
+          description: "Binary proof file. Allowed: PDF, JPG, PNG, WebP. Maximum size: 10 MB.",
+        },
+      },
+    },
+  })
+  @ApiOperation({ summary: "Upload delivery or return proof through local private storage." })
+  uploadDeliveryProof(
+    @CurrentUser() actor: RequestUser,
+    @Body("purpose") purpose: DeliveryProofUploadPurpose | undefined,
+    @UploadedFile() file: UploadedPrivateDocumentFile | undefined,
+  ) {
+    return this.storageService.saveLocalDeliveryProof(actor, file, purpose);
   }
 
   @Get("private-document")

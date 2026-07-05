@@ -183,6 +183,39 @@ function ReturnDetailContent({ copy, detail }: { copy: ReturnType<typeof returns
           </View>
         </Section>
 
+        <Section icon={DeliveryReturn01Icon} title="Refund tracking">
+          {detail.refunds?.length ? (
+            detail.refunds.map((refund) => {
+              const latestTransaction = refund.transactions?.[0];
+              return (
+                <View key={refund.id} style={styles.noteBox}>
+                  <View style={styles.refundHeader}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.noteLabel}>{refund.refundNumber}</Text>
+                      <Text style={styles.noteText}>{refundStatusMessage(refund.status)}</Text>
+                    </View>
+                    <StatusPill label={formatReturnStatus(refund.status)} tone={refundStatusTone(refund.status)} />
+                  </View>
+                  <View style={styles.detailGrid}>
+                    <Detail label="Refund amount" value={formatMoney(refund.amountPaise, refund.currency)} />
+                    <Detail label="Method" value={formatReturnStatus(refund.method ?? "PENDING")} />
+                    <Detail label="Latest update" value={formatDateTime(latestTransaction?.processedAt ?? latestTransaction?.paidAt ?? refund.reviewedAt ?? refund.createdAt)} />
+                    <Detail
+                      label="Reference"
+                      value={latestTransaction?.providerRefundId ?? latestTransaction?.manualReference ?? "Not assigned"}
+                    />
+                  </View>
+                  {latestTransaction?.failureReason ? (
+                    <Text style={styles.errorText}>{latestTransaction.failureReason}</Text>
+                  ) : null}
+                </View>
+              );
+            })
+          ) : (
+            <Text style={styles.helpText}>Refund details will appear here after quality check approval.</Text>
+          )}
+        </Section>
+
         <Section icon={Home01Icon} title={copy.pickupAddressTitle}>
           {detail.pickupAddress ? (
             <View>
@@ -240,6 +273,22 @@ function Detail({ label, value }: { label: string; value: string }) {
       <Text numberOfLines={2} style={styles.detailValue}>{value}</Text>
     </View>
   );
+}
+
+function refundStatusTone(status: string) {
+  if (status === "SUCCESS") return "success";
+  if (status === "FAILED" || status === "RETRY_PENDING" || status === "CANCELLED") return "danger";
+  if (status === "PROCESSING" || status === "APPROVED") return "warning";
+  return "neutral";
+}
+
+function refundStatusMessage(status: string) {
+  if (status === "SUCCESS") return "Refund has been completed.";
+  if (status === "PROCESSING") return "Refund is being processed by finance or payment gateway.";
+  if (status === "APPROVED") return "Refund is approved and waiting for payout processing.";
+  if (status === "FAILED" || status === "RETRY_PENDING") return "Refund needs retry or manual finance review.";
+  if (status === "CANCELLED") return "Refund was cancelled.";
+  return "Refund is waiting for review.";
 }
 
 function ReturnItemRow({ currency, item }: { currency: string; item: MobileReturnRequestItem }) {
@@ -412,6 +461,19 @@ const styles = StyleSheet.create({
     marginTop: 12,
     padding: 12,
   },
+  errorText: {
+    backgroundColor: "#FDECEC",
+    borderColor: "#F4B8B8",
+    borderRadius: 14,
+    borderWidth: 1,
+    color: "#B42318",
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 18,
+    marginTop: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
   noteLabel: {
     color: colors.muted,
     fontSize: 11,
@@ -423,6 +485,13 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     lineHeight: 20,
     marginTop: 5,
+  },
+  refundHeader: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: 10,
+    justifyContent: "space-between",
+    marginBottom: 12,
   },
   primaryButton: {
     alignItems: "center",

@@ -33,6 +33,7 @@ import {
   AccessibilityInfo,
   ActivityIndicator,
   Image,
+  ImageBackground,
   type ImageStyle,
   Modal,
   type NativeScrollEvent,
@@ -263,12 +264,15 @@ function HomeHeader({ selectedLocation }: { selectedLocation: SelectedLocation }
     <View style={styles.header}>
       <View style={styles.headerRow}>
         <View style={styles.logoWrap}>
-          <View style={styles.logoBadge}>
-            <Text style={styles.logoBadgeText}>1</Text>
-          </View>
+          <ImageBackground
+            imageStyle={styles.logoImage}
+            resizeMode="cover"
+            source={require("../../assets/icon.png")}
+            style={styles.logoBadge}
+          />
           <View>
             <Text style={styles.logoText}>
-              Hand<Text style={styles.logoAccent}>India</Text>
+              1<Text style={styles.logoAccent}>Hand</Text>India
             </Text>
             <Text style={styles.logoSubtext}>Smart shopping, verified sellers.</Text>
           </View>
@@ -1628,10 +1632,11 @@ function StoreStrip({ stores }: { stores: MobileStore[] }) {
 
   return (
     <View style={styles.section}>
-      <SectionHeader actionHref={"/local-shops" as Href} title="Local Shops" />
+      <SectionHeader actionHref={"/local-shops" as Href} title="Local Shops" icon={Store01Icon} />
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.storeScrollContent} style={styles.storeScroll}>
-        {stores.slice(0, CARDS_PER_VIEW).map((store) => {
+        {stores.map((store) => {
           const logoUrl = resolveImageUrl(store.profile?.logoUrl);
+          const bannerUrl = resolveImageUrl(store.profile?.bannerUrl);
           const rating = store.reviewSummary?.averageRating;
           const reviewCount = store.reviewSummary?.reviewCount ?? 0;
           const distanceLabel = formatStoreDistance(store.distanceMeters) ?? storeMatchLabel(store.locationMatchLevel);
@@ -1639,6 +1644,12 @@ function StoreStrip({ stores }: { stores: MobileStore[] }) {
           return (
             <Link asChild key={store.id} href={`/store/${store.slug}` as Href}>
               <Pressable style={styles.storeCard}>
+                <View style={styles.storeCover}>
+                  {bannerUrl ? (
+                    <RemoteImage resizeMode="cover" style={styles.storeCoverImage} uri={bannerUrl} />
+                  ) : null}
+                </View>
+                
                 <View style={styles.storeLogoSurface}>
                   {logoUrl ? (
                     <RemoteImage resizeMode="cover" style={styles.storeLogo} uri={logoUrl} />
@@ -1646,23 +1657,28 @@ function StoreStrip({ stores }: { stores: MobileStore[] }) {
                     <Text style={styles.storeLogoInitial}>{storeInitials(store.storeName)}</Text>
                   )}
                 </View>
+                
+                <View style={styles.storeRatingLine}>
+                  <HugeiconsIcon color="#F59E0B" icon={StarIcon} size={14} strokeWidth={2.4} />
+                  <Text style={styles.storeRatingBubble}>{rating ? rating.toFixed(1) : "New"}</Text>
+                  {rating && reviewCount > 0 ? (
+                    <Text numberOfLines={1} style={styles.storeReviewText}>
+                      ({reviewCount})
+                    </Text>
+                  ) : null}
+                </View>
+
                 <View style={styles.storeCompactCopy}>
-                  <Text numberOfLines={2} style={styles.storeName}>
+                  <Text numberOfLines={1} style={styles.storeName}>
                     {store.storeName}
                   </Text>
-                  <View style={styles.storeRatingLine}>
-                    <Text style={styles.storeRatingBubble}>{rating ? rating.toFixed(1) : "New"}</Text>
-                    {rating ? <HugeiconsIcon color="#F59E0B" icon={StarIcon} size={13} strokeWidth={2.4} /> : null}
-                    {rating && reviewCount > 0 ? (
-                      <Text numberOfLines={1} style={styles.storeReviewText}>
-                        ({reviewCount})
-                      </Text>
-                    ) : null}
+                  <View style={styles.storeLocationRow}>
+                    <HugeiconsIcon color={colors.primary} icon={Location01Icon} size={14} strokeWidth={2.2} />
+                    <Text numberOfLines={1} style={styles.storeDistanceText}>
+                      {distanceLabel}
+                    </Text>
                   </View>
                 </View>
-                <Text numberOfLines={1} style={styles.storeDistanceText}>
-                  {distanceLabel}
-                </Text>
               </Pressable>
             </Link>
           );
@@ -2314,32 +2330,32 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexDirection: "row",
     flex: 1,
+    gap: 10,
     minWidth: 0,
   },
   logoBadge: {
     alignItems: "center",
-    backgroundColor: colors.primary,
-    borderRadius: 999,
-    elevation: 5,
+    backgroundColor: colors.surface,
+    borderColor: "#FFE1D6",
+    borderRadius: 16,
+    borderWidth: 1,
+    elevation: 4,
     height: 58,
     justifyContent: "center",
-    marginRight: 12,
+    overflow: "hidden",
     shadowColor: colors.primary,
-    shadowOffset: { height: 12, width: 0 },
-    shadowOpacity: 0.16,
-    shadowRadius: 22,
+    shadowOffset: { height: 6, width: 0 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
     width: 58,
   },
-  logoBadgeText: {
-    color: colors.surface,
-    fontFamily: "Plus Jakarta Sans",
-    fontSize: 38,
-    fontWeight: "900",
+  logoImage: {
+    borderRadius: 15,
   },
   logoText: {
     color: colors.ink,
     fontFamily: "Plus Jakarta Sans",
-    fontSize: 27,
+    fontSize: 24,
     fontWeight: "900",
     letterSpacing: 0,
   },
@@ -4277,52 +4293,43 @@ recommendedCategoryPillText: {
     paddingRight: 20,
   },
   storeCard: {
-    alignItems: "center",
     backgroundColor: colors.surface,
     borderColor: "#F3E7E2",
     borderRadius: 20,
     borderWidth: 1,
     elevation: 3,
-    flexDirection: "row",
-    gap: 9,
-    height: 88,
-    marginRight: 12,
+    marginRight: 14,
     overflow: "hidden",
-    padding: 10,
-    position: "relative",
     shadowColor: colors.primary,
     shadowOffset: { height: 8, width: 0 },
-    shadowOpacity: 0.06,
+    shadowOpacity: 0.05,
     shadowRadius: 18,
-    width: 168,
+    width: 260,
   },
-  storeMainRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 12,
+  storeCover: {
+    backgroundColor: "#FFF2EE",
+    height: 70,
     width: "100%",
   },
-  storeContent: {
-    flex: 1,
-    minWidth: 0,
-  },
-  storeTitleLine: {
-    alignItems: "flex-start",
-    flexDirection: "row",
-    gap: 8,
-    minWidth: 0,
+  storeCoverImage: {
+    height: "100%",
+    width: "100%",
   },
   storeLogoSurface: {
     alignItems: "center",
-    backgroundColor: "#FFF2EE",
-    borderColor: "#FBE0D7",
-    borderRadius: 16,
-    borderWidth: 1,
-    flexShrink: 0,
-    height: 44,
+    backgroundColor: colors.surface,
+    borderColor: "#F3E7E2",
+    borderRadius: 999,
+    borderWidth: 1.5,
+    elevation: 1,
+    height: 56,
     justifyContent: "center",
+    left: 14,
     overflow: "hidden",
-    width: 44,
+    position: "absolute",
+    top: 40,
+    width: 56,
+    zIndex: 10,
   },
   storeLogo: {
     height: "100%",
@@ -4330,53 +4337,47 @@ recommendedCategoryPillText: {
   },
   storeLogoInitial: {
     color: colors.primary,
-    fontSize: 16,
+    fontSize: 22,
     fontWeight: "900",
-    letterSpacing: 0,
-  },
-  storeCompactCopy: {
-    flex: 1,
-    minWidth: 0,
-    paddingBottom: 16,
   },
   storeRatingLine: {
     alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.9)",
+    borderColor: "#F3E7E2",
+    borderRadius: 999,
+    borderWidth: 1,
     flexDirection: "row",
-    gap: 3,
-    marginTop: 4,
-    minHeight: 16,
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    position: "absolute",
+    right: 14,
+    top: 14,
   },
   storeRatingBubble: {
     color: colors.ink,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: "900",
   },
   storeReviewText: {
     color: colors.muted,
-    fontSize: 10.5,
+    fontSize: 11,
     fontWeight: "800",
+  },
+  storeCompactCopy: {
+    padding: 14,
+    paddingTop: 32,
+  },
+  storeLocationRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 4,
+    marginTop: 6,
   },
   storeDistanceText: {
-    bottom: 10,
     color: colors.muted,
-    fontSize: 10.5,
+    fontSize: 12,
     fontWeight: "800",
-    left: 63,
-    position: "absolute",
-    right: 10,
-  },
-  storeMatchPill: {
-    backgroundColor: "#EAF9EF",
-    borderRadius: 999,
-    flexShrink: 0,
-    maxWidth: 86,
-    paddingHorizontal: 9,
-    paddingVertical: 6,
-  },
-  storeMatchText: {
-    color: "#087A34",
-    fontSize: 10.5,
-    fontWeight: "900",
   },
   storeName: {
     color: colors.ink,
@@ -4418,13 +4419,6 @@ recommendedCategoryPillText: {
   },
   storeSuccessPillText: {
     color: "#087A34",
-  },
-  storeLocationRow: {
-    alignItems: "center",
-    flex: 1,
-    flexDirection: "row",
-    gap: 6,
-    minWidth: 0,
   },
   storeLocationText: {
     color: colors.muted,

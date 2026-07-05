@@ -29,11 +29,13 @@ import {
   getCourierDashboard,
   getCourierDeliveryPartner,
   getCourierPackage,
+  getCourierReturnPickup,
   listCourierDeliveryPartners,
   listCourierCodRemittances,
   listCourierLocalDelivery,
   listCourierPackages,
   listCourierProviders,
+  listCourierReturnPickups,
   listCourierRoutingFailures,
   overrideCourierRoutingFailure,
   recordCourierCodRemittance,
@@ -58,6 +60,18 @@ import {
   type PageResult,
   type PackageStatus,
 } from "@/lib/courier-api";
+import {
+  ReturnStatusBadge,
+  ResolutionBadge,
+  formatDateTime,
+  humanize,
+} from "@/components/returns/returns-workspace-ui";
+import type {
+  DeliveryAssignmentStatus,
+  ReturnDetail,
+  ReturnRequestStatus,
+  ReturnSummary,
+} from "@/lib/returns-api";
 
 const moneyFormatter = new Intl.NumberFormat("en-IN", {
   style: "currency",
@@ -107,6 +121,24 @@ const packageQuickFilterLabels: Record<CourierPackageQuickFilter, string> = {
 };
 
 const deliveryModes: DeliveryMode[] = ["LOCAL_DELIVERY_PARTNER", "THIRD_PARTY_COURIER", "STORE_PICKUP", "MANUAL_TRANSPORT"];
+const returnPickupStatuses: Array<ReturnRequestStatus | ""> = [
+  "",
+  "APPROVED",
+  "PICKUP_PENDING",
+  "PICKED_UP",
+  "IN_TRANSIT",
+  "RECEIVED",
+  "QC_PASSED",
+  "RESOLVED",
+];
+const returnPickupAssignmentStatuses: Array<DeliveryAssignmentStatus | ""> = [
+  "",
+  "UNASSIGNED",
+  "ASSIGNED",
+  "ACCEPTED",
+  "REJECTED",
+  "CANCELLED",
+];
 
 type DeliveryPartnerManagementContext = {
   basePath?: string;
@@ -573,6 +605,158 @@ export function CourierLocalDeliveryClient() {
         </div>
       </section>
       <CourierPagination result={queueQuery.data} fallbackPage={page} fallbackLimit={60} onPageChange={setPage} />
+    </div>
+  );
+}
+
+export function CourierReturnPickupsClient() {
+  const auth = useAdminAuth();
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState<ReturnRequestStatus | "">("");
+  const [assignmentStatus, setAssignmentStatus] = useState<DeliveryAssignmentStatus | "">("");
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [selectedRequestNumber, setSelectedRequestNumber] = useState("");
+  const query = useMemo(
+    () => ({
+      ...(search.trim() ? { search: search.trim() } : {}),
+      ...(status ? { status } : {}),
+      ...(assignmentStatus ? { assignmentStatus } : {}),
+      limit: 30,
+      ...(cursor ? { cursor } : {}),
+    }),
+    [assignmentStatus, cursor, search, status],
+  );
+  const pickupsQuery = useQuery({
+    queryKey: ["courier-return-pickups", auth.authHeaders, query],
+    queryFn: () => listCourierReturnPickups(auth.authHeaders, query),
+    enabled: auth.isAuthenticated,
+  });
+  const pickups = pickupsQuery.data?.items ?? [];
+
+  useEffect(() => {
+    if (!pickups.length) {
+      setSelectedRequestNumber("");
+      return;
+    }
+    if (!selectedRequestNumber || !pickups.some((pickup) => pickup.requestNumber === selectedRequestNumber)) {
+      setSelectedRequestNumber(pickups[0]?.requestNumber ?? "");
+    }
+  }, [pickups, selectedRequestNumber]);
+
+  const detailQuery = useQuery({
+    queryKey: ["courier-return-pickup-detail", auth.authHeaders, selectedRequestNumber],
+    queryFn: () => getCourierReturnPickup(auth.authHeaders, selectedRequestNumber),
+    enabled: auth.isAuthenticated && Boolean(selectedRequestNumber),
+  });
+
+  function resetCursor() {
+    setCursor(null);
+  }
+
+  return (
+    <div className="space-y-4">
+      <section className="rounded-lg border border-[#D8E2EA] bg-white p-4 shadow-sm">
+        <div className="grid gap-3 xl:grid-cols-[minmax(260px,1fr)_220px_220px_auto]">
+          <label className="relative block">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#667085]" aria-hidden="true" />
+            <input
+              value={search}
+              onChange={(event) => {
+                resetCursor();
+                setSearch(event.target.value);
+              }}
+              placeholder="Search return, replacement, order, customer, or product"
+              className="h-11 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] pl-9 pr-3 text-sm font-semibold text-[#1F2933] outline-none transition focus:border-[#ED3500] focus:bg-white"
+            />
+          </label>
+          <select
+            value={status}
+            onChange={(event) => {
+              resetCursor();
+              setStatus(event.target.value as ReturnRequestStatus | "");
+            }}
+            className={selectClassName}
+          >
+            <option value="">All return states</option>
+            {returnPickupStatuses.filter(Boolean).map((item) => (
+              <option key={item} value={item}>
+                {humanize(item)}
+              </option>
+            ))}
+          </select>
+          <select
+            value={assignmentStatus}
+            onChange={(event) => {
+              resetCursor();
+              setAssignmentStatus(event.target.value as DeliveryAssignmentStatus | "");
+            }}
+            className={selectClassName}
+          >
+            <option value="">All assignment states</option>
+            {returnPickupAssignmentStatuses.filter(Boolean).map((item) => (
+              <option key={item} value={item}>
+                {humanize(item)}
+              </option>
+            ))}
+          </select>
+          <Button type="button" variant="outline" onClick={() => pickupsQuery.refetch()}>
+            Refresh
+          </Button>
+        </div>
+      </section>
+
+      {pickupsQuery.isLoading ? <CourierState message="Loading return pickup monitor" /> : null}
+      {pickupsQuery.isError ? <CourierState message={errorMessage(pickupsQuery.error, "Unable to load return pickups.")} error /> : null}
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+        <section className="rounded-lg border border-[#D8E2EA] bg-white shadow-sm">
+          <div className="border-b border-[#E5E7EB] px-4 py-3">
+            <h2 className="text-lg font-black text-[#1F2933]">Return and replacement pickups</h2>
+            <p className="mt-1 text-sm font-semibold text-[#667085]">
+              {pickups.length} requests loaded from the reverse pickup queue.
+            </p>
+          </div>
+          <div className="divide-y divide-[#E5E7EB]">
+            {pickups.map((pickup) => (
+              <ReturnPickupSummaryRow
+                key={pickup.id}
+                pickup={pickup}
+                active={pickup.requestNumber === selectedRequestNumber}
+                onSelect={() => setSelectedRequestNumber(pickup.requestNumber)}
+              />
+            ))}
+            {!pickupsQuery.isLoading && pickups.length === 0 ? (
+              <EmptyRow message="No return or replacement pickups found for this filter." />
+            ) : null}
+          </div>
+          {pickupsQuery.data?.pageInfo?.hasNextPage ? (
+            <div className="border-t border-[#E5E7EB] p-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setCursor(pickupsQuery.data?.pageInfo?.nextCursor ?? null)}
+                className="w-full"
+              >
+                Load next page
+              </Button>
+            </div>
+          ) : null}
+        </section>
+
+        <section className="rounded-lg border border-[#D8E2EA] bg-white shadow-sm">
+          {detailQuery.isLoading ? (
+            <CourierState message="Loading selected return pickup" />
+          ) : detailQuery.isError ? (
+            <div className="p-4">
+              <CourierState message={errorMessage(detailQuery.error, "Unable to load return pickup detail.")} error />
+            </div>
+          ) : detailQuery.data ? (
+            <ReturnPickupDetailPanel detail={detailQuery.data} />
+          ) : (
+            <EmptyRow message="Select a return pickup to monitor pickup, transit, and store receipt state." />
+          )}
+        </section>
+      </div>
     </div>
   );
 }
@@ -1643,6 +1827,153 @@ function ShipmentSummaryContent({ shipment }: { shipment: CourierShipmentRecord 
   );
 }
 
+function ReturnPickupSummaryRow({
+  pickup,
+  active,
+  onSelect,
+}: {
+  pickup: ReturnSummary;
+  active: boolean;
+  onSelect: () => void;
+}) {
+  const firstItem = pickup.items[0];
+
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={cn(
+        "block w-full px-4 py-3 text-left transition hover:bg-[#FFF7F4]",
+        active && "bg-[#FFF0EC] ring-1 ring-inset ring-[#FFD7CA]",
+      )}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-lg font-black text-[#153C55]">{pickup.requestNumber}</p>
+            <ReturnStatusBadge status={pickup.status} />
+            <ResolutionBadge resolution={pickup.resolution} />
+          </div>
+          <p className="mt-1 text-sm font-semibold text-[#667085]">
+            Order {pickup.order.orderNumber} / {firstItem?.sellerName ?? "Seller"} / {formatDateTime(pickup.createdAt)}
+          </p>
+          <p className="mt-1 line-clamp-1 text-sm font-semibold text-[#344054]">
+            {firstItem?.productName ?? pickup.reason} / Qty {pickup.totalQuantity}
+          </p>
+        </div>
+        <p className="shrink-0 text-sm font-black text-[#153C55]">{money(pickup.requestedAmountPaise)}</p>
+      </div>
+    </button>
+  );
+}
+
+function ReturnPickupDetailPanel({ detail }: { detail: ReturnDetail }) {
+  const activeShipments = detail.reverseShipments;
+
+  return (
+    <div className="space-y-4 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-2xl font-black text-[#153C55]">{detail.requestNumber}</h2>
+            <ReturnStatusBadge status={detail.status} />
+            <ResolutionBadge resolution={detail.resolution} />
+          </div>
+          <p className="mt-2 text-sm font-semibold text-[#667085]">
+            Order {detail.order.orderNumber} / requested {formatDateTime(detail.requestedAt ?? detail.createdAt)}
+          </p>
+        </div>
+        <StatusBadge tone={activeShipments.length ? "info" : "warning"}>
+          {activeShipments.length} reverse shipment{activeShipments.length === 1 ? "" : "s"}
+        </StatusBadge>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-3">
+        <InfoCell label="Customer" value={detail.customer?.name ?? detail.customerName ?? "Customer"} />
+        <InfoCell label="Customer phone" value={detail.customer?.phone ?? "Not available"} />
+        <InfoCell label="Requested value" value={money(detail.requestedAmountPaise)} />
+      </div>
+
+      <article className="rounded-lg border border-[#D8E2EA] bg-[#F8FAFC] p-4">
+        <h3 className="text-base font-black text-[#1F2933]">Customer pickup address</h3>
+        <p className="mt-2 text-sm font-semibold leading-6 text-[#667085]">{returnAddressText(detail.pickupAddress)}</p>
+      </article>
+
+      <article className="rounded-lg border border-[#D8E2EA] bg-white shadow-sm">
+        <div className="border-b border-[#E5E7EB] px-4 py-3">
+          <h3 className="text-base font-black text-[#1F2933]">Reverse shipment monitor</h3>
+          <p className="mt-1 text-sm font-semibold text-[#667085]">
+            Pickup proof and seller/store receipt proof are existing backend reference fields, not direct upload fields.
+          </p>
+        </div>
+        <div className="divide-y divide-[#E5E7EB]">
+          {activeShipments.map((shipment) => (
+            <div key={shipment.id} className="p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-base font-black text-[#153C55]">{shipment.seller?.storeName ?? "Seller store"}</p>
+                    <StatusBadge tone={statusTone(shipment.status)}>{humanize(shipment.status)}</StatusBadge>
+                    <StatusBadge tone={statusTone(shipment.assignmentStatus ?? "UNASSIGNED")}>
+                      {humanize(shipment.assignmentStatus ?? "UNASSIGNED")}
+                    </StatusBadge>
+                  </div>
+                  <p className="mt-1 text-sm font-semibold text-[#667085]">
+                    Mode {humanize(shipment.mode)} / Partner{" "}
+                    {shipment.assignedPartner?.fullName ?? shipment.assignedPartner?.phone ?? "not assigned"}
+                  </p>
+                </div>
+                {shipment.assignmentExpiresAt ? (
+                  <p className="text-xs font-black uppercase tracking-wide text-[#9A5B00]">
+                    Expires {formatDateTime(shipment.assignmentExpiresAt)}
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                <InfoCell label="Seller destination" value={returnAddressText(shipment.seller?.destinationAddress)} />
+                <InfoCell label="AWB / tracking" value={[shipment.awbNumber, shipment.trackingReference].filter(Boolean).join(" / ") || "Not assigned"} />
+                <InfoCell label="Courier" value={shipment.courierName ?? "Not assigned"} />
+                <InfoCell label="Received by" value={shipment.receivedByName ?? "Not received yet"} />
+                <InfoCell label="Pickup proof reference" value={shipment.pickupProofReference ?? shipment.proofReference ?? "Not recorded"} />
+                <InfoCell label="Seller receipt proof reference" value={shipment.receiptProofReference ?? "Not recorded"} />
+              </div>
+
+              {shipment.pickupNote || shipment.assignmentNote ? (
+                <p className="mt-3 rounded-md bg-[#F8FAFC] px-3 py-2 text-sm font-semibold leading-6 text-[#667085]">
+                  {shipment.pickupNote ?? shipment.assignmentNote}
+                </p>
+              ) : null}
+            </div>
+          ))}
+          {!activeShipments.length ? <EmptyRow message="No reverse shipments are attached to this return request yet." /> : null}
+        </div>
+      </article>
+
+      <article className="rounded-lg border border-[#D8E2EA] bg-white shadow-sm">
+        <div className="border-b border-[#E5E7EB] px-4 py-3">
+          <h3 className="text-base font-black text-[#1F2933]">Items</h3>
+        </div>
+        <div className="divide-y divide-[#E5E7EB]">
+          {detail.items.map((item) => (
+            <div key={item.id} className="px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-black text-[#1F2933]">{item.productName}</p>
+                  <p className="mt-1 text-xs font-semibold text-[#667085]">
+                    {item.seller?.storeName ?? item.sellerName ?? "Seller"} / Qty {item.quantity} / {humanize(item.resolution)}
+                  </p>
+                </div>
+                <ReturnStatusBadge status={item.status} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </article>
+    </div>
+  );
+}
+
 function PackageAddressPanel({ pkg }: { pkg: CourierPackageRecord }) {
   const sellerAddress = pkg.seller.storeName;
   return (
@@ -2078,6 +2409,38 @@ function addressText(value: unknown) {
     .map((key) => snapshot[key])
     .filter((item): item is string => typeof item === "string" && item.trim().length > 0);
   return parts.length ? parts.join(", ") : "Address snapshot not available";
+}
+
+function returnAddressText(
+  value?: {
+    fullName?: string | null;
+    phone?: string | null;
+    line1?: string | null;
+    line2?: string | null;
+    area?: string | null;
+    city?: string | null;
+    state?: string | null;
+    pincode?: string | null;
+    country?: string | null;
+  } | null,
+) {
+  if (!value) {
+    return "Address not available";
+  }
+
+  const parts = [
+    value.fullName,
+    value.phone,
+    value.line1,
+    value.line2,
+    value.area,
+    value.city,
+    value.state,
+    value.pincode,
+    value.country,
+  ].filter((item): item is string => Boolean(item?.trim()));
+
+  return parts.length ? parts.join(", ") : "Address not available";
 }
 
 function label(value: string) {

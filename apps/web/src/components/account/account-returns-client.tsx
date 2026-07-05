@@ -19,6 +19,8 @@ import {
 import { AccountShell } from "./account-shell";
 import { EmptyState, ErrorPanel, PagePanel, SkeletonBlock } from "./account-ui";
 import { listCustomerReturns, getCustomerReturnDetail } from "@/lib/account-api";
+import { openPrivateProofReference } from "@/lib/delivery-proof-upload";
+import type { ReturnDetail } from "@/lib/returns-api";
 import { formatMoney } from "@/lib/storefront-api";
 
 export function AccountReturnsClient() {
@@ -157,6 +159,18 @@ function ReturnDetailView({
   onBack: () => void;
   onRetry: () => void;
 }) {
+  const customerAuth = useCustomerAuth();
+  const [proofOpenError, setProofOpenError] = useState<string | null>(null);
+
+  async function openProof(assetKey: string) {
+    setProofOpenError(null);
+    try {
+      await openPrivateProofReference(customerAuth.authHeaders, assetKey);
+    } catch (error) {
+      setProofOpenError(error instanceof Error ? error.message : "Could not open proof image.");
+    }
+  }
+
   if (isLoading) {
     return (
       <PagePanel>
@@ -210,6 +224,22 @@ function ReturnDetailView({
               <>
                 <h3 className="mt-4 text-sm font-bold uppercase tracking-wide text-[#667085]">Note</h3>
                 <p className="mt-2 text-sm font-semibold text-[#1F2933]">{returnDetail.note}</p>
+              </>
+            ) : null}
+            {returnDetail.qualityProofKeys?.length ? (
+              <>
+                <h3 className="mt-4 text-sm font-bold uppercase tracking-wide text-[#667085]">Quality images</h3>
+                <div className="mt-2 grid gap-2">
+                  {returnDetail.qualityProofKeys.map((key, index) => (
+                    <div key={key} className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-[#F8FAFC] px-3 py-2 text-xs font-semibold text-[#667085]">
+                      <span className="break-all">Image {index + 1}: {key}</span>
+                      <Button type="button" size="sm" variant="outline" onClick={() => void openProof(key)}>
+                        Open
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+                {proofOpenError ? <p className="mt-2 text-xs font-bold text-[#D64545]">{proofOpenError}</p> : null}
               </>
             ) : null}
           </div>
@@ -308,20 +338,7 @@ function ReturnDetailView({
             <h3 className="text-sm font-bold uppercase tracking-wide text-[#667085]">Refunds</h3>
             <div className="mt-2 grid gap-2">
               {returnDetail.refunds.map((refund) => (
-                <div key={refund.id} className="grid gap-3 rounded-md border border-[#E5E7EB] bg-[#F8FAFC] p-3">
-                  <div>
-                    <p className="flex items-center gap-2 text-sm font-bold text-[#1F2933]">
-                      <WalletCards className="h-4 w-4 text-[#ED3500]" aria-hidden="true" />
-                      {refund.refundNumber}
-                    </p>
-                    <p className="mt-1 text-xs font-semibold text-[#667085]">{formatReturnDateTime(refund.createdAt)}</p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <RefundStatusBadge status={refund.status} />
-                    <span className="text-sm font-black text-[#163B5C]">{formatMoney(refund.amountPaise, refund.currency)}</span>
-                  </div>
-                  <RefundStepTrack status={refund.status} compact />
-                </div>
+                <CustomerRefundCard key={refund.id} refund={refund} />
               ))}
             </div>
           </div>
@@ -350,4 +367,48 @@ function ReturnDetailView({
       </PagePanel>
     </div>
   );
+}
+
+type CustomerReturnRefund = ReturnDetail["refunds"][number];
+
+function CustomerRefundCard({ refund }: { refund: CustomerReturnRefund }) {
+  const latestTransaction = refund.transactions?.[0];
+
+  return (
+    <div className="grid gap-3 rounded-md border border-[#E5E7EB] bg-[#F8FAFC] p-3">
+      <div>
+        <p className="flex items-center gap-2 text-sm font-bold text-[#1F2933]">
+          <WalletCards className="h-4 w-4 text-[#ED3500]" aria-hidden="true" />
+          {refund.refundNumber}
+        </p>
+        <p className="mt-1 text-xs font-semibold text-[#667085]">{refundStatusMessage(refund.status)}</p>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <RefundStatusBadge status={refund.status} />
+        <span className="text-sm font-black text-[#163B5C]">{formatMoney(refund.amountPaise, refund.currency)}</span>
+      </div>
+      <div className="grid gap-2 text-xs font-semibold text-[#667085] sm:grid-cols-3">
+        <span>Method: {humanize(refund.method ?? "Pending")}</span>
+        <span>Updated: {formatReturnDateTime(latestTransaction?.processedAt ?? latestTransaction?.paidAt ?? refund.reviewedAt ?? refund.createdAt)}</span>
+        <span className="break-all">
+          Reference: {latestTransaction?.providerRefundId ?? latestTransaction?.manualReference ?? "Not assigned"}
+        </span>
+      </div>
+      {latestTransaction?.failureReason ? (
+        <p className="rounded-md border border-[#F4B8B8] bg-[#FDECEC] px-2 py-1 text-xs font-bold text-[#B42318]">
+          {latestTransaction.failureReason}
+        </p>
+      ) : null}
+      <RefundStepTrack status={refund.status} compact />
+    </div>
+  );
+}
+
+function refundStatusMessage(status: string) {
+  if (status === "SUCCESS") return "Refund has been completed.";
+  if (status === "PROCESSING" || status === "INITIATED") return "Refund is being processed.";
+  if (status === "APPROVED") return "Refund is approved and waiting for payout processing.";
+  if (status === "FAILED" || status === "RETRY_PENDING") return "Refund needs retry or finance review.";
+  if (status === "CANCELLED") return "Refund was cancelled.";
+  return "Refund is waiting for review.";
 }

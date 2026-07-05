@@ -316,6 +316,7 @@ export type CreateCustomerReturnPayload = {
   resolution: "REFUND" | "REPLACEMENT" | "PARTIAL_REFUND" | "REJECTED";
   reason: string;
   note?: string;
+  qualityProofKeys?: string[];
   items: CustomerCancellationItemInput[];
   reverseShipmentMode?: "PLATFORM_PICKUP" | "CUSTOMER_SELF_SHIP";
 };

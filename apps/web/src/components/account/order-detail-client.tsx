@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useState } from "react";
 import {
+  ImagePlus,
   ArrowLeft,
   Ban,
   CheckCircle2,
@@ -66,6 +67,7 @@ import {
   type OrderDetailItem,
 } from "@/lib/order-returns";
 import { formatMoney, formatOrderBaseAmount, formatOrderBuyerAmount, formatOrderTotal, primaryImage } from "@/lib/storefront-api";
+import { uploadDeliveryProof } from "@/lib/delivery-proof-upload";
 
 type AccountOrderDetail = Awaited<ReturnType<typeof getAccountOrder>>;
 
@@ -81,6 +83,8 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
   const [returnResolution, setReturnResolution] = useState<CustomerResolution>("REFUND");
   const [returnReason, setReturnReason] = useState("");
   const [returnNote, setReturnNote] = useState("");
+  const [returnQualityProofKeys, setReturnQualityProofKeys] = useState<string[]>([]);
+  const [returnQualityUploadBusy, setReturnQualityUploadBusy] = useState(false);
   const [cancellationReason, setCancellationReason] = useState("");
   const [cancellationNote, setCancellationNote] = useState("");
 
@@ -161,6 +165,7 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
       setSelectedItems(new Map());
       setReturnReason("");
       setReturnNote("");
+      setReturnQualityProofKeys([]);
       void queryClient.invalidateQueries({
         queryKey: ["account-order", customerAuth.authKey, orderNumber],
       });
@@ -234,6 +239,9 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
     if (cleanNote) {
       payload.note = cleanNote;
     }
+    if (returnQualityProofKeys.length) {
+      payload.qualityProofKeys = returnQualityProofKeys;
+    }
 
     setNotice(null);
     confirmation.requestConfirmation({
@@ -279,7 +287,30 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
     setReturnResolution(resolution);
     setReturnReason("");
     setReturnNote("");
+    setReturnQualityProofKeys([]);
     setShowReturnDrawer(true);
+  }
+
+  async function handleReturnQualityImages(files: FileList | null) {
+    const selectedFiles = Array.from(files ?? []).slice(0, Math.max(0, 2 - returnQualityProofKeys.length));
+    if (!selectedFiles.length) return;
+    setReturnQualityUploadBusy(true);
+    setNotice(null);
+    try {
+      const uploadedKeys: string[] = [];
+      for (const file of selectedFiles) {
+        const result = await uploadDeliveryProof(customerAuth.authHeaders, file, "RETURN_QUALITY_IMAGE");
+        uploadedKeys.push(result.assetKey);
+      }
+      setReturnQualityProofKeys((current) => [...current, ...uploadedKeys].slice(0, 2));
+      setNoticeTone("success");
+      setNotice("Return quality images uploaded.");
+    } catch (error) {
+      setNoticeTone("danger");
+      setNotice(error instanceof Error ? error.message : "Return quality image upload failed.");
+    } finally {
+      setReturnQualityUploadBusy(false);
+    }
   }
 
   const order = orderQuery.data;
@@ -398,7 +429,7 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
                         <div>
                           <p className="font-black text-[#1F2933]">{item.productNameSnapshot}</p>
                           <p className="mt-1 text-sm font-semibold text-[#667085]">
-                            {item.variantSnapshot?.variantName ?? "Default"}{" "}
+                            {item.variantSnapshot ?? "Default"}{" "}
                             x {item.quantity}
                           </p>
                           {item.seller?.storeName ? (
@@ -997,6 +1028,48 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
                     className="w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 py-3 text-sm font-semibold text-[#1F2933] outline-none transition focus:border-[#ED3500] focus:bg-white"
                   />
                 </div>
+
+                <div className="rounded-md border border-[#D8E2EA] bg-[#F8FAFC] p-4">
+                  <div className="flex items-start gap-3">
+                    <ImagePlus className="mt-0.5 h-5 w-5 text-[#ED3500]" aria-hidden="true" />
+                    <div>
+                      <p className="text-sm font-black text-[#1F2933]">Return quality images</p>
+                      <p className="mt-1 text-xs font-semibold leading-5 text-[#667085]">
+                        Upload up to 2 clear photos in good light. Show the full product, packaging, label, and a close-up of the damage or mismatch. Avoid blur and do not include personal documents.
+                      </p>
+                    </div>
+                  </div>
+                  <label className="mt-3 inline-flex cursor-pointer items-center rounded-md border border-[#D8E2EA] bg-white px-3 py-2 text-sm font-bold text-[#1F2933] transition hover:border-[#ED3500]">
+                    {returnQualityUploadBusy ? "Uploading..." : "Upload images"}
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      multiple
+                      className="sr-only"
+                      disabled={returnQualityUploadBusy || returnQualityProofKeys.length >= 2}
+                      onChange={(event) => {
+                        void handleReturnQualityImages(event.target.files);
+                        event.currentTarget.value = "";
+                      }}
+                    />
+                  </label>
+                  {returnQualityProofKeys.length ? (
+                    <div className="mt-3 grid gap-2">
+                      {returnQualityProofKeys.map((key, index) => (
+                        <div key={key} className="flex items-center justify-between gap-2 rounded bg-white px-3 py-2 text-xs font-semibold text-[#667085]">
+                          <span className="break-all">Image {index + 1}: {key}</span>
+                          <button
+                            type="button"
+                            className="font-black text-[#D64545]"
+                            onClick={() => setReturnQualityProofKeys((current) => current.filter((item) => item !== key))}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
               </div>
 
               <div className="mt-4 flex gap-3">
@@ -1011,7 +1084,7 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
                 <Button
                   type="button"
                   onClick={handleReturnRequest}
-                  disabled={selectedItems.size === 0 || returnMutation.isPending}
+                  disabled={selectedItems.size === 0 || returnMutation.isPending || returnQualityUploadBusy}
                 >
                   {returnMutation.isPending ? "Processing..." : "Submit return request"}
                 </Button>

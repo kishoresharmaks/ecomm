@@ -5,6 +5,7 @@ import {
   IndihubApiError,
   type IndihubAuthHeaders,
 } from "./api";
+import type { CursorPage, ReturnDetail, ReturnListQuery, ReturnSummary } from "./returns-api";
 
 export type PageResult<T> = { items: T[]; total: number; page?: number; limit?: number };
 
@@ -358,6 +359,14 @@ export function listCourierLocalDelivery(auth: IndihubAuthHeaders, query: Courie
   return indihubFetch<LocalDeliveryResult>(`/api/courier/local-delivery${queryString(query)}`, undefined, auth);
 }
 
+export function listCourierReturnPickups(auth: IndihubAuthHeaders, query: ReturnListQuery = {}) {
+  return indihubFetch<CursorPage<ReturnSummary>>(`/api/courier/return-pickups${queryString(query)}`, undefined, auth);
+}
+
+export function getCourierReturnPickup(auth: IndihubAuthHeaders, requestNumber: string) {
+  return indihubFetch<ReturnDetail>(`/api/courier/return-pickups/${encodeURIComponent(requestNumber)}`, undefined, auth);
+}
+
 export function assignCourierLocalDelivery(auth: IndihubAuthHeaders, shipmentId: string, payload: Record<string, unknown>) {
   return indihubFetch<PageResult<CourierPackageRecord>>(
     `/api/courier/local-delivery/${encodeURIComponent(shipmentId)}/assign`,
@@ -481,12 +490,12 @@ export async function fetchCourierPackageLabel(auth: IndihubAuthHeaders, labelDo
   };
 }
 
-type CourierQuery = Record<string, string | number | boolean | undefined>;
+type CourierQuery = Record<string, string | number | boolean | null | undefined>;
 
 function queryString(query: CourierQuery) {
   const params = new URLSearchParams();
   Object.entries(query).forEach(([key, value]) => {
-    if (value !== undefined && String(value).trim()) {
+    if (value !== undefined && value !== null && String(value).trim()) {
       params.set(key, String(value));
     }
   });

@@ -83,10 +83,11 @@ export function SellerWalletClient() {
                 </span>
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-black text-[#1F2933]">{entry.description}</p>
+                    <p className="font-black text-[#1F2933]">{sellerLedgerTitle(entry)}</p>
                     <SellerStatusPill status={entry.entryType} />
                   </div>
-                  <p className="mt-1 text-sm font-semibold text-[#667085]">{formatDateTime(entry.createdAt)}</p>
+                  <p className="mt-1 text-sm font-semibold text-[#667085]">{sellerLedgerDescription(entry)}</p>
+                  <p className="mt-1 text-xs font-bold text-[#98A2B3]">{formatDateTime(entry.createdAt)}</p>
                 </div>
               </div>
               <div className="text-left md:text-right">
@@ -102,4 +103,31 @@ export function SellerWalletClient() {
       {entries.length === 0 ? <SellerEmptyState title="No wallet entries yet" message="Approved seller payouts and manual adjustments will appear here." /> : null}
     </div>
   );
+}
+
+type SellerLedgerEntryView = NonNullable<Awaited<ReturnType<typeof listSellerLedger>>["items"]>[number];
+
+function sellerLedgerTitle(entry: SellerLedgerEntryView) {
+  if (entry.entryType === "REFUND_ADJUSTMENT") {
+    return "Refund adjustment debit";
+  }
+
+  return entry.description;
+}
+
+function sellerLedgerDescription(entry: SellerLedgerEntryView) {
+  const orderNumber = entry.orderSellerSplit?.order?.orderNumber;
+  const reference = orderNumber ?? entry.referenceId;
+
+  if (entry.entryType === "REFUND_ADJUSTMENT") {
+    return [
+      entry.description,
+      reference ? `Reference ${reference}` : null,
+      entry.payout?.payoutNumber ? `Recovered after payout ${entry.payout.payoutNumber}` : null,
+    ]
+      .filter(Boolean)
+      .join(" / ");
+  }
+
+  return [formatDateTime(entry.createdAt), reference ? `Reference ${reference}` : null].filter(Boolean).join(" / ");
 }

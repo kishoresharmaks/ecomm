@@ -1,4 +1,5 @@
 import * as SecureStore from "expo-secure-store";
+import { DeviceEventEmitter, NativeModules, Platform } from "react-native";
 import { MobileApiError, type MobileAuthHeaders } from "../../lib/api";
 import { colors } from "../../theme";
 import {
@@ -11,7 +12,7 @@ import {
 } from "./storefront-api";
 
 export const RAZORPAY_PROVIDER_ORDER_ERROR =
-  "Order placed, but secure payment could not be started. Please retry payment from your order.";
+  "Order placed, but secure payment could not be started from the mobile app. Please retry payment from your order.";
 export const RAZORPAY_CHECKOUT_INCOMPLETE_ERROR =
   "Order placed, but online payment was not completed.";
 export const RAZORPAY_CHECKOUT_CANCELLED_ERROR =
@@ -93,6 +94,14 @@ export type MobileRazorpaySuccessResponse = {
   razorpay_order_id?: string;
   razorpay_signature?: string;
 };
+
+type NativeRazorpayModule = {
+  open(options: MobileRazorpayCheckoutOptions): void;
+};
+
+const RAZORPAY_PAYMENT_SUCCESS_EVENT = "Razorpay::PAYMENT_SUCCESS";
+const RAZORPAY_PAYMENT_ERROR_EVENT = "Razorpay::PAYMENT_ERROR";
+const RAZORPAY_EXTERNAL_WALLET_EVENT = "Razorpay::EXTERNAL_WALLET_SELECTED";
 
 export class MobileRazorpayPaymentError extends Error {
   readonly stage: MobileRazorpayPaymentStage;
@@ -177,7 +186,7 @@ export async function runMobileRazorpayPayment(input: {
       retryCount: 0,
     });
   } catch (error) {
-    throw new MobileRazorpayPaymentError("provider-order", RAZORPAY_PROVIDER_ORDER_ERROR, {
+    throw new MobileRazorpayPaymentError("provider-order", providerOrderErrorMessage(error), {
       code: razorpayErrorCode(error, "PROVIDER_ORDER_FAILED"),
       orderNumber: input.orderNumber,
       originalError: error,
@@ -264,7 +273,7 @@ export async function createProviderOrderWithRetry(
     }
   }
 
-  throw new MobileRazorpayPaymentError("provider-order", RAZORPAY_PROVIDER_ORDER_ERROR, {
+  throw new MobileRazorpayPaymentError("provider-order", providerOrderErrorMessage(lastError), {
     code: razorpayErrorCode(lastError, "PROVIDER_ORDER_FAILED"),
     orderNumber,
     originalError: lastError,
@@ -275,6 +284,10 @@ export async function openMobileRazorpayCheckout(
   providerOrder: MobileRazorpayOrderResponse,
   prefill?: MobileRazorpayPrefill,
 ): Promise<MobileRazorpaySuccessResponse> {
+  if (Platform.OS === "android") {
+    return openAndroidRazorpayCheckout(providerOrder, prefill);
+  }
+
   const RazorpayCheckout = (await import("react-native-razorpay")).default;
   try {
     return (await RazorpayCheckout.open(buildRazorpayCheckoutOptions(providerOrder, prefill))) as MobileRazorpaySuccessResponse;
@@ -290,6 +303,69 @@ export async function openMobileRazorpayCheckout(
 
     throw error;
   }
+}
+
+function openAndroidRazorpayCheckout(
+  providerOrder: MobileRazorpayOrderResponse,
+  prefill?: MobileRazorpayPrefill,
+): Promise<MobileRazorpaySuccessResponse> {
+  const RazorpayCheckoutModule = NativeModules.RNRazorpayCheckout as NativeRazorpayModule | undefined;
+  if (!RazorpayCheckoutModule?.open) {
+    throw new MobileRazorpayPaymentError(
+      "checkout",
+      "Razorpay is not available in this Android build. Rebuild the app after installing the native payment module.",
+      {
+        code: "CHECKOUT_FAILED",
+        orderNumber: providerOrder.orderNumber,
+        razorpayOrderId: providerOrder.razorpayOrderId,
+      },
+    );
+  }
+
+  return new Promise<MobileRazorpaySuccessResponse>((resolve, reject) => {
+    const removeSubscriptions = () => {
+      successSubscription.remove();
+      errorSubscription.remove();
+      externalWalletSubscription.remove();
+    };
+    const successSubscription = DeviceEventEmitter.addListener(
+      RAZORPAY_PAYMENT_SUCCESS_EVENT,
+      (data: MobileRazorpaySuccessResponse) => {
+        removeSubscriptions();
+        resolve(data);
+      },
+    );
+    const errorSubscription = DeviceEventEmitter.addListener(
+      RAZORPAY_PAYMENT_ERROR_EVENT,
+      (error: unknown) => {
+        removeSubscriptions();
+        if (isRazorpayUserCancelled(error)) {
+          reject(
+            new MobileRazorpayPaymentError("checkout", RAZORPAY_CHECKOUT_CANCELLED_ERROR, {
+              code: "PAYMENT_CANCELLED",
+              orderNumber: providerOrder.orderNumber,
+              originalError: error,
+              razorpayOrderId: providerOrder.razorpayOrderId,
+            }),
+          );
+          return;
+        }
+
+        reject(error);
+      },
+    );
+    const externalWalletSubscription = DeviceEventEmitter.addListener(
+      RAZORPAY_EXTERNAL_WALLET_EVENT,
+      () => undefined,
+    );
+
+    try {
+      RazorpayCheckoutModule.open(buildRazorpayCheckoutOptions(providerOrder, prefill));
+    } catch (error) {
+      removeSubscriptions();
+      reject(error);
+    }
+  });
 }
 
 export function runWithRazorpayTimeout<T>(
@@ -526,6 +602,18 @@ function errorDescriptionText(error: unknown) {
         ? (error as { message?: unknown }).message
         : "";
   return String(candidate ?? "").toLowerCase();
+}
+
+function providerOrderErrorMessage(error: unknown) {
+  if (error instanceof MobileRazorpayPaymentError && error.originalError) {
+    return providerOrderErrorMessage(error.originalError);
+  }
+
+  if (error instanceof MobileApiError && error.message.trim()) {
+    return `${RAZORPAY_PROVIDER_ORDER_ERROR} Payment API status ${error.status}: ${error.message.trim()}`;
+  }
+
+  return RAZORPAY_PROVIDER_ORDER_ERROR;
 }
 
 function isPaymentErrorOptions(value: unknown): value is MobileRazorpayPaymentErrorOptions {

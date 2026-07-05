@@ -69,6 +69,7 @@ function RootLayout() {
             <Stack.Screen name="checkout" />
             <Stack.Screen name="checkout/success/[orderNumber]" />
             <Stack.Screen name="auth/sign-in" />
+            <Stack.Screen name="sso-callback" />
           </Stack>
         </MobileCustomerAuthProvider>
       </QueryClientProvider>

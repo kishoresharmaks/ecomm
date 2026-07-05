@@ -713,28 +713,63 @@ export function getB2BOrderDocumentAccess(auth: MobileAuthHeaders, orderNumber: 
 export type SellerReturn = {
   id: string;
   requestNumber: string;
-  status: "PENDING_REVIEW" | "APPROVED" | "PICKUP_PENDING" | "RECEIVED" | "QC_PASSED" | "RESOLVED" | "REJECTED" | "CANCELLED";
-  orderNumber: string;
-  product: {
-    id: string;
-    name: string;
-    imageUrl?: string | null;
+  status:
+    | "PENDING_REVIEW"
+    | "AUTO_APPROVED"
+    | "APPROVED"
+    | "PICKUP_PENDING"
+    | "PICKED_UP"
+    | "IN_TRANSIT"
+    | "RECEIVED"
+    | "QC_PASSED"
+    | "QC_FAILED"
+    | "RESOLVED"
+    | "REJECTED"
+    | "CANCELLED";
+  resolution?: "REFUND" | "REPLACEMENT" | "PARTIAL_REFUND" | "REJECTED";
+  reason: string;
+  totalQuantity: number;
+  requestedAmountPaise?: number;
+  approvedAmountPaise?: number;
+  qualityProofKeys?: string[];
+  currency?: string;
+  order: {
+    orderNumber: string;
+    orderStatus?: string;
+    paymentStatus?: string;
+    deliveryStatus?: string;
   };
-  customer: {
-    name: string;
+  customerName?: string | null;
+  customerEmail?: string | null;
+  customer?: {
+    id?: string;
+    name?: string | null;
     email?: string | null;
     phone?: string | null;
   };
-  returnReason: string;
-  returnImages?: string[] | null;
-  conditionNotes?: string | null;
+  items: Array<{
+    id: string;
+    orderItemId?: string;
+    productName: string;
+    quantity: number;
+    status: string;
+    sellerId?: string;
+    sellerName?: string;
+    variantSnapshot?: string | null;
+    reason?: string;
+    qcNote?: string | null;
+    sellerNote?: string | null;
+  }>;
+  note?: string | null;
   createdAt: string;
   updatedAt: string;
-  sellerNotes?: Array<{
+  notes?: Array<{
     id: string;
     note: string;
-    createdAt: string;
-  }> | null;
+    sellerId?: string | null;
+    createdAt?: string;
+    createdBy?: { id: string; fullName?: string | null; email?: string | null } | null;
+  }>;
 };
 
 export function listSellerReturns(auth: MobileAuthHeaders, query: Record<string, string | number | undefined> = {}) {
@@ -747,6 +782,22 @@ export function getSellerReturn(auth: MobileAuthHeaders, requestNumber: string) 
 
 export function addSellerReturnNote(auth: MobileAuthHeaders, requestNumber: string, payload: { note: string }) {
   return postJson<SellerReturn>({ path: `/seller/returns/${encodeURIComponent(requestNumber)}/notes`, auth, body: payload });
+}
+
+export function acceptSellerReturn(auth: MobileAuthHeaders, requestNumber: string, note?: string) {
+  return postJson<SellerReturn>({
+    path: `/seller/returns/${encodeURIComponent(requestNumber)}/accept`,
+    auth,
+    body: note?.trim() ? { note: note.trim() } : {},
+  });
+}
+
+export function rejectSellerReturn(auth: MobileAuthHeaders, requestNumber: string, note?: string) {
+  return postJson<SellerReturn>({
+    path: `/seller/returns/${encodeURIComponent(requestNumber)}/reject`,
+    auth,
+    body: note?.trim() ? { note: note.trim() } : {},
+  });
 }
 
 // Reviews

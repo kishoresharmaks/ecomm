@@ -372,6 +372,45 @@ function AdminRefundDetailPanel({
           ))}
 
           <section className="rounded-lg border border-[#D8E2EA] bg-white p-4 shadow-sm">
+            <PanelTitle icon={<WalletCards className="h-5 w-5" />} title="Seller deduction impact" description="Seller payout or wallet impact is applied only after the customer refund succeeds." />
+            <div className="mt-3 grid gap-3">
+              {detail.sellerDeductionImpact?.length ? (
+                detail.sellerDeductionImpact.map((impact) => (
+                  <div key={impact.sellerId} className="rounded-md border border-[#E5E7EB] bg-[#F8FAFC] p-3">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-black text-[#1F2933]">{impact.sellerName}</p>
+                        <p className="mt-1 text-xs font-bold text-[#667085]">
+                          {impact.itemCount} item{impact.itemCount === 1 ? "" : "s"} / Qty {impact.quantity}
+                        </p>
+                      </div>
+                      <StatusBadge tone={impact.applied ? "success" : "warning"}>
+                        {impact.applied ? "Applied" : "Pending refund success"}
+                      </StatusBadge>
+                    </div>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                      <SmallMetric label="Customer refund" value={formatMoney(impact.refundAmountPaise, detail.currency)} />
+                      <SmallMetric label="Seller deduction" value={formatMoney(impact.deductionPaise, detail.currency)} />
+                      <SmallMetric label="Mode" value={sellerDeductionModeLabel(impact.adjustmentMode)} />
+                    </div>
+                    <p className="mt-3 text-xs font-bold leading-5 text-[#667085]">
+                      {impact.adjustmentMode === "WALLET_DEBIT"
+                        ? `Paid payout already exists${impact.paidPayoutIds.length ? ` (${impact.paidPayoutIds.length})` : ""}; a seller ledger debit is used after refund success.`
+                        : impact.adjustmentMode === "MIXED"
+                          ? "Some splits reduce pending payouts while already-paid splits create seller ledger debits."
+                          : "Pending/unpaid payout splits are reduced through existing settlement calculation."}
+                    </p>
+                  </div>
+                ))
+              ) : (
+                <p className="rounded-md border border-dashed border-[#D8E2EA] bg-[#F8FAFC] p-3 text-sm font-semibold text-[#667085]">
+                  Seller deduction impact will appear after refund items are linked to seller splits.
+                </p>
+              )}
+            </div>
+          </section>
+
+          <section className="rounded-lg border border-[#D8E2EA] bg-white p-4 shadow-sm">
             <PanelTitle icon={<WalletCards className="h-5 w-5" />} title="Provider transactions" description="Gateway and manual refund attempts are kept as separate records." />
             <div className="mt-3 grid gap-2">
               {detail.transactions.length ? (
@@ -387,9 +426,9 @@ function AdminRefundDetailPanel({
                     <p className="mt-1 break-all text-xs font-bold text-[#667085]">
                       Provider refund: {transaction.providerRefundId ?? "Not assigned"}
                     </p>
-                    {transaction.errorMessage ? (
+                    {transaction.errorMessage ?? transaction.failureReason ? (
                       <p className="mt-2 rounded-md border border-[#F4B8B8] bg-[#FDECEC] px-2 py-1 text-xs font-bold text-[#B42318]">
-                        {transaction.errorMessage}
+                        {transaction.errorMessage ?? transaction.failureReason}
                       </p>
                     ) : null}
                   </div>
@@ -508,6 +547,12 @@ function AdminRefundDetailPanel({
       </div>
     </div>
   );
+}
+
+function sellerDeductionModeLabel(mode: NonNullable<RefundDetail["sellerDeductionImpact"]>[number]["adjustmentMode"]) {
+  if (mode === "WALLET_DEBIT") return "Wallet debit";
+  if (mode === "MIXED") return "Mixed";
+  return "Pending payout reduction";
 }
 
 function RefundQueueCard({

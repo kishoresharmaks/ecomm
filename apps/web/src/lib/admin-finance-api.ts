@@ -229,6 +229,8 @@ export type SellerLedgerEntry = {
   creditPaise: number;
   balanceAfterPaise: number;
   currency: string;
+  referenceType?: string | null;
+  referenceId?: string | null;
   createdAt?: string;
   payout?: { id: string; payoutNumber: string; status: string } | null;
   orderSellerSplit?: { id: string; order?: { orderNumber: string } } | null;

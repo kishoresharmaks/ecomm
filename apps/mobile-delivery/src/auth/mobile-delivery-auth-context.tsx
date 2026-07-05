@@ -2,6 +2,9 @@ import { useAuth, useUser } from "@clerk/clerk-expo";
 import { PropsWithChildren, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { MobileApiError, postNoContent, type MobileAuthHeaders } from "../lib/api";
 
+const CLERK_TOKEN_RETRY_ATTEMPTS = 10;
+const CLERK_TOKEN_RETRY_DELAY_MS = 500;
+
 export type MobileDeliveryAuthStatus = "loading" | "signed-out" | "syncing" | "ready" | "error";
 
 type MobileDeliveryAuthContextValue = {
@@ -51,7 +54,9 @@ export function MobileDeliveryAuthProvider({ children }: PropsWithChildren) {
   const readBearerToken = useCallback(
     async (options?: { skipCache?: boolean }) => {
       if (!isLoaded || !isSignedIn || !userId) return null;
-      const token = await getTokenRef.current({ skipCache: Boolean(options?.skipCache) });
+      const token = await readClerkTokenWithRetry(() =>
+        getTokenRef.current({ skipCache: Boolean(options?.skipCache) }),
+      );
       if (token && mountedRef.current) setBearerToken((current) => (current === token ? current : token));
       return token;
     },
@@ -86,7 +91,9 @@ export function MobileDeliveryAuthProvider({ children }: PropsWithChildren) {
       }
 
       updateSyncState({ status: "syncing" });
-      const token = await getTokenRef.current({ skipCache: refreshIndex > 0 });
+      const token = await readClerkTokenWithRetry(() =>
+        getTokenRef.current({ skipCache: refreshIndex > 0 }),
+      );
       if (!token) {
         if (!cancelled) {
           setBearerToken(null);
@@ -211,3 +218,21 @@ function currentUserPayload(user: ReturnType<typeof useUser>["user"]) {
   };
 }
 
+async function readClerkTokenWithRetry(readToken: () => Promise<string | null>) {
+  for (let attempt = 0; attempt < CLERK_TOKEN_RETRY_ATTEMPTS; attempt += 1) {
+    const token = await readToken();
+    if (token) {
+      return token;
+    }
+
+    if (attempt < CLERK_TOKEN_RETRY_ATTEMPTS - 1) {
+      await delay(CLERK_TOKEN_RETRY_DELAY_MS);
+    }
+  }
+
+  return null;
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}

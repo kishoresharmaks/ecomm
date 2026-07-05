@@ -8,14 +8,33 @@ import { listSellerReturns } from "../../src/features/seller/seller-api";
 
 const statusTones: Record<string, "info" | "success" | "warning" | "danger"> = {
   PENDING_REVIEW: "warning",
+  AUTO_APPROVED: "success",
   APPROVED: "success",
   PICKUP_PENDING: "info",
+  PICKED_UP: "info",
+  IN_TRANSIT: "info",
   RECEIVED: "info",
   QC_PASSED: "success",
+  QC_FAILED: "danger",
   RESOLVED: "success",
   REJECTED: "danger",
   CANCELLED: "danger",
 };
+
+const statusFilters = [
+  "ALL",
+  "PENDING_REVIEW",
+  "APPROVED",
+  "PICKUP_PENDING",
+  "PICKED_UP",
+  "IN_TRANSIT",
+  "RECEIVED",
+  "QC_PASSED",
+  "QC_FAILED",
+  "RESOLVED",
+  "REJECTED",
+  "CANCELLED",
+];
 
 export default function ReturnsScreen() {
   const auth = useMobileSellerAuth();
@@ -71,7 +90,7 @@ export default function ReturnsScreen() {
         <Card>
           <Text style={{ color: "#374151", fontSize: 14, fontWeight: "700", marginBottom: 8 }}>Status Filter</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: "row", gap: 8 }}>
-            {["ALL", "PENDING_REVIEW", "APPROVED", "PICKUP_PENDING", "RECEIVED", "QC_PASSED", "RESOLVED", "REJECTED", "CANCELLED"].map((status) => (
+            {statusFilters.map((status) => (
               <Button
                 key={status}
                 title={status.replace(/_/g, " ")}
@@ -82,25 +101,33 @@ export default function ReturnsScreen() {
           </ScrollView>
         </Card>
         {filteredReturns.length ? (
-          filteredReturns.map((ret) => (
-            <Card key={ret.id}>
-              <Text style={{ color: "#111827", fontSize: 18, fontWeight: "900" }}>{ret.requestNumber}</Text>
-              <StatusChip
-                label={ret.status.replace(/_/g, " ")}
-                tone={statusTones[ret.status] || "info"}
-              />
-              <Text style={{ color: "#6B7280", fontSize: 14, fontWeight: "600", marginTop: 4 }}>
-                {ret.product.name}
-              </Text>
-              <Text style={{ color: "#6B7280", fontSize: 12 }}>
-                Customer: {ret.customer.name} • Order: {ret.orderNumber}
-              </Text>
-              <Text style={{ color: "#6B7280", fontSize: 10 }}>
-                {new Date(ret.createdAt).toLocaleDateString()}
-              </Text>
-              <Button title="View details" onPress={() => router.push(`/returns/${encodeURIComponent(ret.requestNumber)}` as Href)} />
-            </Card>
-          ))
+          filteredReturns.map((ret) => {
+            const firstItem = ret.items[0];
+            const productLabel = firstItem
+              ? `${firstItem.productName}${ret.items.length > 1 ? ` +${ret.items.length - 1} more` : ""}`
+              : "Return item";
+            const customerLabel = ret.customer?.name ?? ret.customerName ?? "Customer";
+
+            return (
+              <Card key={ret.id}>
+                <Text style={{ color: "#111827", fontSize: 18, fontWeight: "900" }}>{ret.requestNumber}</Text>
+                <StatusChip
+                  label={ret.status.replace(/_/g, " ")}
+                  tone={statusTones[ret.status] || "info"}
+                />
+                <Text style={{ color: "#6B7280", fontSize: 14, fontWeight: "600", marginTop: 4 }}>
+                  {productLabel}
+                </Text>
+                <Text style={{ color: "#6B7280", fontSize: 12 }}>
+                  Customer: {customerLabel} / Order: {ret.order.orderNumber}
+                </Text>
+                <Text style={{ color: "#6B7280", fontSize: 10 }}>
+                  {new Date(ret.createdAt).toLocaleDateString()}
+                </Text>
+                <Button title="View details" onPress={() => router.push(`/returns/${encodeURIComponent(ret.requestNumber)}` as Href)} />
+              </Card>
+            );
+          })
         ) : (
           <EmptyState title="No Returns" message="No return requests found" />
         )}

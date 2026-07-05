@@ -40,17 +40,19 @@ function SellerRouteGate() {
   const auth = useMobileSellerAuth();
   const segments = useSegments();
   const isAuthRoute = segments[0] === "auth";
+  const isSsoCallbackRoute = segments[0] === "sso-callback";
+  const isPublicAuthRoute = isAuthRoute || isSsoCallbackRoute;
   useSellerPushNotifications(auth);
 
-  if (auth.status === "signed-out" && !isAuthRoute) {
+  if (auth.status === "signed-out" && !isPublicAuthRoute) {
     return <Redirect href="/auth/sign-in" />;
   }
 
-  if (auth.status === "error" && !isAuthRoute) {
+  if (auth.status === "error" && !isPublicAuthRoute) {
     return <Redirect href="/auth/sign-in" />;
   }
 
-  if (!isAuthRoute && (auth.status === "loading" || auth.status === "syncing")) {
+  if (!isPublicAuthRoute && (auth.status === "loading" || auth.status === "syncing")) {
     return <LoadingState message="Preparing seller workspace..." />;
   }
 
@@ -58,6 +60,7 @@ function SellerRouteGate() {
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="auth/sign-in" />
+      <Stack.Screen name="sso-callback" />
       <Stack.Screen name="products/new" />
       <Stack.Screen name="products/[id]" />
       <Stack.Screen name="products/detail/[id]" />

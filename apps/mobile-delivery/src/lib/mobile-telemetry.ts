@@ -8,6 +8,10 @@ function isMobileTelemetryEnabled() {
   return appEnv !== "development" || process.env.EXPO_PUBLIC_ENABLE_SENTRY === "true";
 }
 
+function isMobileTelemetryConfigured() {
+  return Boolean(process.env.EXPO_PUBLIC_SENTRY_DSN?.trim() && isMobileTelemetryEnabled());
+}
+
 export function initMobileTelemetry() {
   if (initialized) return;
   initialized = true;
@@ -30,16 +34,15 @@ export function initMobileTelemetry() {
 }
 
 export function withMobileTelemetry<TProps extends object>(Component: ComponentType<TProps>) {
-  if (!isMobileTelemetryEnabled()) return Component;
+  if (!isMobileTelemetryConfigured()) return Component;
   return Sentry.wrap(Component as ComponentType<Record<string, unknown>>) as ComponentType<TProps>;
 }
 
 export function captureMobileError(error: unknown, area: string) {
-  if (process.env.EXPO_PUBLIC_SENTRY_DSN?.trim() && isMobileTelemetryEnabled()) {
+  if (isMobileTelemetryConfigured()) {
     return Sentry.captureException(error, {
       tags: { area, surface: "delivery-mobile" },
     });
   }
   return null;
 }
-

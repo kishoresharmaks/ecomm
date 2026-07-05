@@ -34,6 +34,7 @@ import {
   type DeliveryOrderShipment,
   type DeliveryPickupAddress,
 } from "@/lib/delivery-api";
+import { uploadDeliveryProof } from "@/lib/delivery-proof-upload";
 import {
   OrderStatusTimeline,
   type OrderStatusTimelineEvent,
@@ -85,6 +86,7 @@ export function DeliveryOrderDetailClient({ orderNumber }: { orderNumber: string
   const [receiverName, setReceiverName] = useState("");
   const [proofNote, setProofNote] = useState("");
   const [proofReference, setProofReference] = useState("");
+  const [proofUploadStatus, setProofUploadStatus] = useState("");
   const [attemptReason, setAttemptReason] = useState("CUSTOMER_NOT_REACHABLE");
   const [attemptNote, setAttemptNote] = useState("");
   const [nextAttemptDate, setNextAttemptDate] = useState("");
@@ -200,6 +202,22 @@ export function DeliveryOrderDetailClient({ orderNumber }: { orderNumber: string
   const timeline = useMemo(() => buildTimeline(order), [order]);
   const assignmentStatus = order?.deliveryDetail?.assignmentStatus ?? "UNASSIGNED";
   const canUpdateProgress = assignmentStatus === "ACCEPTED";
+
+  async function uploadProof(file: File | undefined) {
+    if (!file) return;
+    setProofUploadStatus("Uploading proof...");
+    try {
+      const uploaded = await uploadDeliveryProof(auth.authHeaders, file);
+      setProofReference(uploaded.assetKey);
+      setProofUploadStatus("Delivery proof uploaded.");
+    } catch (error) {
+      setProofUploadStatus("");
+      setNotice({
+        message: error instanceof Error ? error.message : "Could not upload delivery proof.",
+        tone: "danger",
+      });
+    }
+  }
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -464,13 +482,20 @@ export function DeliveryOrderDetailClient({ orderNumber }: { orderNumber: string
                   rows={2}
                   disabled={inputsDisabled}
                 />
-                <DeliveryField
-                  label="Manual proof reference"
-                  value={proofReference}
-                  onChange={setProofReference}
-                  disabled={inputsDisabled}
-                  placeholder="Image/signature upload later"
-                />
+                <label className="block">
+                  <span className="mb-1 block text-xs font-black uppercase tracking-wide text-[#667085]">
+                    Delivery proof file
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,application/pdf"
+                    onChange={(event) => void uploadProof(event.target.files?.[0])}
+                    disabled={inputsDisabled}
+                    className="h-11 w-full rounded-md border border-[#D8E2EA] bg-white px-3 py-2 text-sm font-semibold outline-none focus:border-[#ED3500]"
+                  />
+                  {proofReference ? <p className="mt-1 break-all text-xs font-semibold text-[#0F8A5F]">{proofReference}</p> : null}
+                  {proofUploadStatus ? <p className="mt-1 text-xs font-semibold text-[#667085]">{proofUploadStatus}</p> : null}
+                </label>
               </div>
               {codPayment ? (
                 <CodCollectionFields

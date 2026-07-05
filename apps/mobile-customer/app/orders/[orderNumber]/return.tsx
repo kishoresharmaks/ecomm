@@ -29,6 +29,10 @@ import {
 import { isMobileReturnsEnabled } from "../../../src/features/returns/return-feature";
 import { returnsCopy } from "../../../src/features/returns/return-copy";
 import {
+  pickReturnQualityImageFiles,
+  uploadReturnQualityImage,
+} from "../../../src/features/returns/return-quality-upload";
+import {
   createCustomerReturn,
   getCustomerOrder,
   type MobileOrderDetail,
@@ -57,6 +61,9 @@ export default function OrderReturnScreen() {
   const [note, setNote] = useState("");
   const [formError, setFormError] = useState<FormErrorKey>(null);
   const [submitMessage, setSubmitMessage] = useState("");
+  const [qualityProofKeys, setQualityProofKeys] = useState<string[]>([]);
+  const [qualityUploadMessage, setQualityUploadMessage] = useState("");
+  const [qualityUploadBusy, setQualityUploadBusy] = useState(false);
   const [requiresServerRefresh, setRequiresServerRefresh] = useState(false);
 
   const orderQuery = useQuery({
@@ -118,6 +125,7 @@ export default function OrderReturnScreen() {
         resolution,
         reverseShipmentMode,
         ...(note.trim() ? { note: note.trim() } : {}),
+        ...(qualityProofKeys.length ? { qualityProofKeys } : {}),
       });
     },
     retry: false,
@@ -179,6 +187,31 @@ export default function OrderReturnScreen() {
     }
 
     createReturnMutation.mutate();
+  }
+
+  async function handleUploadQualityImages() {
+    if (qualityUploadBusy || qualityProofKeys.length >= 2) {
+      return;
+    }
+
+    setQualityUploadMessage("");
+    setQualityUploadBusy(true);
+    try {
+      const files = await pickReturnQualityImageFiles();
+      const slots = Math.max(0, 2 - qualityProofKeys.length);
+      const uploadedKeys: string[] = [];
+      for (const file of files.slice(0, slots)) {
+        uploadedKeys.push(await uploadReturnQualityImage(customerAuth.authHeaders, file));
+      }
+      if (uploadedKeys.length) {
+        setQualityProofKeys((current) => [...current, ...uploadedKeys].slice(0, 2));
+        setQualityUploadMessage(copy.qualityImagesUploaded);
+      }
+    } catch (error) {
+      setQualityUploadMessage(error instanceof Error ? error.message : "Photo upload failed.");
+    } finally {
+      setQualityUploadBusy(false);
+    }
   }
 
   if (!featureEnabled) {
@@ -254,7 +287,7 @@ export default function OrderReturnScreen() {
   }
 
   const validationMessage = formError ? copy[formError] : "";
-  const submitDisabled = createReturnMutation.isPending || (requiresServerRefresh && orderQuery.isFetching);
+  const submitDisabled = createReturnMutation.isPending || qualityUploadBusy || (requiresServerRefresh && orderQuery.isFetching);
 
   return (
     <Screen padded={false}>
@@ -351,6 +384,31 @@ export default function OrderReturnScreen() {
             value={note}
           />
           <Text style={styles.counterText}>{note.length}/1000</Text>
+        </View>
+
+        <View style={styles.qualityCard}>
+          <Text style={styles.inputLabel}>{copy.qualityImagesTitle}</Text>
+          <Text style={styles.qualityHelp}>{copy.qualityImagesHelp}</Text>
+          <Pressable
+            accessibilityRole="button"
+            disabled={qualityUploadBusy || qualityProofKeys.length >= 2}
+            style={[styles.secondaryButton, qualityUploadBusy || qualityProofKeys.length >= 2 ? styles.disabledButton : null]}
+            onPress={handleUploadQualityImages}
+          >
+            {qualityUploadBusy ? <ActivityIndicator color={colors.primary} /> : null}
+            <Text style={styles.secondaryButtonText}>
+              {qualityUploadBusy ? copy.qualityImagesUploading : copy.qualityImagesUpload}
+            </Text>
+          </Pressable>
+          {qualityProofKeys.map((key, index) => (
+            <View key={key} style={styles.qualityReferenceRow}>
+              <Text numberOfLines={2} style={styles.qualityReferenceText}>Image {index + 1}: {key}</Text>
+              <Pressable accessibilityRole="button" onPress={() => setQualityProofKeys((current) => current.filter((item) => item !== key))}>
+                <Text style={styles.removeText}>Remove</Text>
+              </Pressable>
+            </View>
+          ))}
+          {qualityUploadMessage ? <Text style={styles.uploadMessage}>{qualityUploadMessage}</Text> : null}
         </View>
 
         {validationMessage ? <Text style={styles.errorText}>{validationMessage}</Text> : null}
@@ -646,6 +704,38 @@ const styles = StyleSheet.create({
   noteArea: {
     minHeight: 118,
   },
+  qualityCard: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 20,
+    borderWidth: 1,
+    marginBottom: 14,
+    padding: 14,
+  },
+  qualityHelp: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 18,
+    marginBottom: 12,
+  },
+  qualityReferenceRow: {
+    alignItems: "center",
+    backgroundColor: "#F8FAFC",
+    borderRadius: 12,
+    flexDirection: "row",
+    gap: 10,
+    justifyContent: "space-between",
+    marginTop: 8,
+    padding: 10,
+  },
+  qualityReferenceText: {
+    color: colors.muted,
+    flex: 1,
+    fontSize: 11,
+    fontWeight: "800",
+    lineHeight: 16,
+  },
   primaryButton: {
     alignItems: "center",
     alignSelf: "stretch",
@@ -660,6 +750,27 @@ const styles = StyleSheet.create({
   primaryButtonText: {
     color: colors.surface,
     fontSize: 15,
+    fontWeight: "900",
+  },
+  removeText: {
+    color: colors.danger,
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  secondaryButton: {
+    alignItems: "center",
+    alignSelf: "flex-start",
+    borderColor: colors.border,
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 8,
+    minHeight: 42,
+    paddingHorizontal: 14,
+  },
+  secondaryButtonText: {
+    color: colors.ink,
+    fontSize: 13,
     fontWeight: "900",
   },
   quantityButton: {
@@ -750,5 +861,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "800",
     marginTop: 6,
+  },
+  uploadMessage: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 18,
+    marginTop: 10,
   },
 });

@@ -4675,7 +4675,7 @@ export class OrdersService {
       ? snapshot.variantName.trim()
       : null;
 
-    return variantName ? { variantName } : null;
+    return variantName;
   }
 
   private orderReadyForDeliveryPartnerAssignment(

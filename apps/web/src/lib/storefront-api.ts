@@ -697,10 +697,7 @@ export type OrderSummary = {
     id: string;
     sellerId?: string;
     productNameSnapshot: string;
-    variantSnapshot?: {
-      sku?: string;
-      variantName?: string | null;
-    } | null;
+    variantSnapshot?: string | null;
     quantity: number;
     activeQuantity?: number;
     cancelledQuantity?: number;
@@ -922,10 +919,7 @@ export type PublicTrackedOrder = Pick<
   items: Array<{
     id: string;
     productNameSnapshot: string;
-    variantSnapshot?: {
-      sku?: string;
-      variantName?: string | null;
-    } | null;
+    variantSnapshot?: string | null;
     quantity: number;
     unitPricePaise: number;
     lineTotalPaise: number;

@@ -8,8 +8,9 @@ const { withSentryConfig } = require("@sentry/react-native/metro");
 const projectRoot = __dirname;
 const workspaceRoot = path.resolve(projectRoot, "../..");
 const config = getDefaultConfig(projectRoot);
-const appEnv = process.env.EXPO_PUBLIC_APP_ENV ?? process.env.NODE_ENV;
-const enableSentry = appEnv !== "development" || process.env.EXPO_PUBLIC_ENABLE_SENTRY === "true";
+const sentryOrganization = process.env.SENTRY_ORG ?? process.env.EXPO_PUBLIC_SENTRY_ORG;
+const sentryProject = process.env.SENTRY_PROJECT ?? process.env.EXPO_PUBLIC_SENTRY_PROJECT;
+const enableSentry = Boolean(sentryOrganization && sentryProject && process.env.SENTRY_AUTH_TOKEN);
 
 config.watchFolders = [workspaceRoot];
 config.resolver.nodeModulesPaths = [

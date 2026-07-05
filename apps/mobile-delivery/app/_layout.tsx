@@ -44,6 +44,8 @@ function DeliveryRouteGate() {
   const clerkAuth = useAuth();
   const segments = useSegments();
   const isAuthRoute = segments[0] === "auth";
+  const isSsoCallbackRoute = segments[0] === "sso-callback";
+  const isPublicAuthRoute = isAuthRoute || isSsoCallbackRoute;
   const isAccessBlockedRoute = segments[0] === "access-blocked";
   const accessQuery = useQuery({
     queryKey: ["delivery-access", auth.authKey],
@@ -69,15 +71,15 @@ function DeliveryRouteGate() {
     );
   }
 
-  if (auth.status === "signed-out" && !isAuthRoute) return <Redirect href="/auth/sign-in" />;
-  if ((auth.status === "error" || clerkAuth.isSignedIn === false) && !isAuthRoute) return <Redirect href="/auth/sign-in" />;
-  if (!isAuthRoute && (auth.status === "loading" || auth.status === "syncing")) {
+  if (auth.status === "signed-out" && !isPublicAuthRoute) return <Redirect href="/auth/sign-in" />;
+  if ((auth.status === "error" || clerkAuth.isSignedIn === false) && !isPublicAuthRoute) return <Redirect href="/auth/sign-in" />;
+  if (!isPublicAuthRoute && (auth.status === "loading" || auth.status === "syncing")) {
     return <LoadingMessage message="Preparing delivery workspace..." />;
   }
-  if (auth.enabled && accessQuery.isLoading && !isAuthRoute && !isAccessBlockedRoute) {
+  if (auth.enabled && accessQuery.isLoading && !isPublicAuthRoute && !isAccessBlockedRoute) {
     return <LoadingMessage message="Checking delivery partner approval..." />;
   }
-  if (auth.enabled && accessQuery.isSuccess && !accessQuery.data.isDeliveryPartner && !isAuthRoute && !isAccessBlockedRoute) {
+  if (auth.enabled && accessQuery.isSuccess && !accessQuery.data.isDeliveryPartner && !isPublicAuthRoute && !isAccessBlockedRoute) {
     return <Redirect href="/access-blocked" />;
   }
 
@@ -85,6 +87,7 @@ function DeliveryRouteGate() {
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="auth/sign-in" />
+      <Stack.Screen name="sso-callback" />
       <Stack.Screen name="access-blocked" />
       <Stack.Screen name="orders/[orderNumber]" />
       <Stack.Screen name="returns/[requestNumber]" />
@@ -104,4 +107,3 @@ function LoadingMessage({ message }: { message: string }) {
 }
 
 export default withMobileTelemetry(RootLayout);
-

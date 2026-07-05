@@ -68,6 +68,7 @@ export const courierNav = [
   { group: "Packages", label: "Packages", href: "/courier/packages" },
   { group: "Packages", label: "Routing failures", href: "/courier/routing-failures" },
   { group: "Local delivery", label: "Local delivery", href: "/courier/local-delivery" },
+  { group: "Local delivery", label: "Return pickups", href: "/courier/return-pickups" },
   { group: "Local delivery", label: "Delivery partners", href: "/courier/local-delivery/partners" },
   { group: "Courier setup", label: "Providers", href: "/courier/providers" },
   { group: "COD", label: "COD remittances", href: "/courier/cod-remittances" },

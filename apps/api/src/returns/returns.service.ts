@@ -62,6 +62,8 @@ import {
   ReturnListQueryDto,
   ReturnQcDto,
   ReversePickupUpdateDto,
+  SellerReturnDecision,
+  SellerReturnDecisionDto,
   SellerReturnNoteDto,
   UpdateReturnStatusDto,
 } from "./dto/returns.dto";
@@ -156,6 +158,7 @@ type ReturnSummaryReadbackInput = {
   status: ReturnRequestStatus;
   resolution: ReturnRequestResolution;
   reason: string;
+  qualityProofKeys: string[];
   totalQuantity: number;
   requestedAmountPaise: number;
   approvedAmountPaise: number;
@@ -178,6 +181,7 @@ type ReturnSummaryReadbackInput = {
     id: string;
     quantity: number;
     status: ReturnRequestItemStatus;
+    sellerNote: string | null;
     sellerId: string;
     seller: {
       storeName: string;
@@ -275,9 +279,27 @@ const returnDetailInclude = {
       id: true,
       refundNumber: true,
       status: true,
+      method: true,
       amountPaise: true,
       currency: true,
+      approvedAt: true,
+      reviewedAt: true,
       createdAt: true,
+      transactions: {
+        select: {
+          id: true,
+          method: true,
+          status: true,
+          providerRefundId: true,
+          manualReference: true,
+          paidAt: true,
+          processedAt: true,
+          failureReason: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: "desc" as const },
+        take: 1,
+      },
     },
     orderBy: { createdAt: "desc" as const },
   },
@@ -452,6 +474,13 @@ const refundDetailInclude = {
         },
       },
       seller: { select: { id: true, storeName: true, slug: true } },
+      orderSellerSplit: {
+        select: {
+          id: true,
+          payoutId: true,
+          payout: { select: { id: true, status: true, payoutNumber: true } },
+        },
+      },
       returnRequestItem: { select: { id: true, status: true, resolution: true } },
     },
     orderBy: { createdAt: "asc" as const },
@@ -684,9 +713,9 @@ export class ReturnsService {
     const customer = await this.customers.ensureCustomerForUser(actor);
 
     const requestNumber = await this.createReturnRequestNumber();
-    const refundNumber = await this.createRefundNumber();
+    const qualityProofKeys = this.normalizeReturnQualityProofKeys(dto.qualityProofKeys);
 
-    const returnRequestId = await this.prisma.client.$transaction(async (tx) => {
+    const result = await this.prisma.client.$transaction(async (tx) => {
       const order = await this.getReturnOrderForCustomer(tx, orderNumber, customer.id);
       this.assertOrderCanBeReturned(order);
       await this.lockOrderGraph(tx, order);
@@ -711,14 +740,9 @@ export class ReturnsService {
         (sum, item) => sum + item.couponAdjustmentPaise,
         0,
       );
-      const autoApproved = returnLines.every((line) => line.returnable);
-      const status = autoApproved
-        ? ReturnRequestStatus.AUTO_APPROVED
-        : ReturnRequestStatus.PENDING_REVIEW;
-      const itemStatus = autoApproved
-        ? ReturnRequestItemStatus.APPROVED
-        : ReturnRequestItemStatus.PENDING_REVIEW;
-      const reverseShipmentMode = dto.reverseShipmentMode ?? ReverseShipmentMode.PLATFORM_PICKUP;
+      const autoApproved = false;
+      const status = ReturnRequestStatus.PENDING_REVIEW;
+      const itemStatus = ReturnRequestItemStatus.PENDING_REVIEW;
 
       const returnRequest = await tx.returnRequest.create({
         data: {
@@ -729,6 +753,7 @@ export class ReturnsService {
           resolution: dto.resolution,
           reason: dto.reason,
           note: dto.note ?? null,
+          qualityProofKeys,
           autoApproved,
           totalQuantity,
           requestedAmountPaise,
@@ -774,28 +799,6 @@ export class ReturnsService {
         });
       }
 
-      if (autoApproved) {
-        await this.createReverseShipmentsForReturn(
-          tx,
-          returnRequest.id,
-          order.id,
-          reverseShipmentMode,
-          returnLines,
-        );
-
-        if (this.resolutionNeedsRefund(dto.resolution) && requestedAmountPaise > 0) {
-          await this.createRefundRequestFromReturnItems(tx, {
-            refundNumber,
-            order,
-            returnRequestId: returnRequest.id,
-            returnItems: returnRequest.items,
-            actor,
-            status: RefundRequestStatus.PENDING_REVIEW,
-            note: dto.note ?? "Return request approved; refund awaits finance approval.",
-          });
-        }
-      }
-
       await tx.auditLog.create({
         data: {
           actorUserId: actor.id,
@@ -809,6 +812,7 @@ export class ReturnsService {
             resolution: dto.resolution,
             totalQuantity,
             requestedAmountPaise,
+            qualityProofCount: qualityProofKeys.length,
             autoApproved,
           },
         },
@@ -817,9 +821,7 @@ export class ReturnsService {
       return returnRequest.id;
     });
 
-    await this.tryAutoAssignReversePickupAfterApproval(actor, requestNumber);
-
-    return this.getCustomerReturn(actor, requestNumberFromIdFallback(requestNumber, returnRequestId));
+    return this.getCustomerReturn(actor, requestNumberFromIdFallback(requestNumber, result));
   }
 
   async listCustomerReturns(actor: RequestUser, query: ReturnListQueryDto) {
@@ -854,7 +856,6 @@ export class ReturnsService {
       throw new BadRequestException("Use the QC endpoint for quality-check decisions.");
     }
 
-    const refundNumber = await this.createRefundNumber();
     const returnRequestId = await this.prisma.client.$transaction(async (tx) => {
       const existing = await tx.returnRequest.findUnique({
         where: { requestNumber },
@@ -875,7 +876,7 @@ export class ReturnsService {
       await this.lockReturnRequest(tx, existing.id);
 
       if (dto.status === ReturnRequestStatus.APPROVED || dto.status === ReturnRequestStatus.AUTO_APPROVED) {
-        await this.approveReturnInTransaction(tx, existing, actor, refundNumber, dto.note);
+        await this.approveReturnInTransaction(tx, existing, actor, dto.note);
       } else if (
         dto.status === ReturnRequestStatus.REJECTED ||
         dto.status === ReturnRequestStatus.CANCELLED
@@ -926,12 +927,19 @@ export class ReturnsService {
   }
 
   async recordReturnQc(actor: RequestUser, requestNumber: string, dto: ReturnQcDto) {
+    const refundNumber = await this.createRefundNumber();
     const returnRequestId = await this.prisma.client.$transaction(async (tx) => {
       const existing = await tx.returnRequest.findUnique({
         where: { requestNumber },
         include: {
           items: true,
           refundRequests: true,
+          order: {
+            include: {
+              payments: true,
+              sellerSplits: { include: { payout: true } },
+            },
+          },
         },
       });
       if (!existing) {
@@ -994,19 +1002,37 @@ export class ReturnsService {
           },
         });
         if (this.resolutionNeedsRefund(existing.resolution)) {
-          await tx.refundRequest.updateMany({
-            where: {
+          const openRefund = existing.refundRequests.find(
+            (refund) => refund.status !== RefundRequestStatus.CANCELLED && refund.status !== RefundRequestStatus.SUCCESS,
+          );
+          if (openRefund) {
+            await tx.refundRequest.updateMany({
+              where: {
+                returnRequestId: existing.id,
+                status: RefundRequestStatus.PENDING_REVIEW,
+              },
+              data: {
+                status: RefundRequestStatus.APPROVED,
+                approvedAt: new Date(),
+                reviewedAt: new Date(),
+                reviewedById: actor.id,
+                note: dto.note ?? "Return QC passed; refund approved.",
+              },
+            });
+          } else {
+            await this.createRefundRequestFromReturnItems(tx, {
+              refundNumber,
+              order: existing.order as never,
               returnRequestId: existing.id,
-              status: RefundRequestStatus.PENDING_REVIEW,
-            },
-            data: {
+              returnItems: existing.items.map((item) => ({
+                ...item,
+                approvedRefundPaise: item.approvedRefundPaise || item.requestedRefundPaise,
+              })),
+              actor,
               status: RefundRequestStatus.APPROVED,
-              approvedAt: new Date(),
-              reviewedAt: new Date(),
-              reviewedById: actor.id,
               note: dto.note ?? "Return QC passed; refund approved.",
-            },
-          });
+            });
+          }
         }
       }
 
@@ -1101,6 +1127,130 @@ export class ReturnsService {
         },
       });
     });
+
+    return this.getSellerReturn(actor, requestNumber);
+  }
+
+  async respondSellerReturn(actor: RequestUser, requestNumber: string, dto: SellerReturnDecisionDto) {
+    const seller = await this.resolveSeller(actor);
+    const returnRequestId = await this.prisma.client.$transaction(async (tx) => {
+      const existing = await tx.returnRequest.findFirst({
+        where: {
+          requestNumber,
+          items: { some: { sellerId: seller.id } },
+        },
+        include: {
+          items: true,
+          refundRequests: true,
+          order: {
+            include: {
+              payments: true,
+              sellerSplits: { include: { payout: true } },
+            },
+          },
+        },
+      });
+      if (!existing) {
+        throw new NotFoundException("Return request not found.");
+      }
+      await this.lockReturnRequest(tx, existing.id);
+      if (existing.status !== ReturnRequestStatus.PENDING_REVIEW) {
+        throw new BadRequestException("Only pending return requests can be accepted or rejected by seller.");
+      }
+
+      const sellerItems = existing.items.filter((item) => item.sellerId === seller.id);
+      if (!sellerItems.length) {
+        throw new ForbiddenException("This return request does not include your store items.");
+      }
+      const note = dto.note?.trim();
+
+      if (dto.decision === SellerReturnDecision.REJECT) {
+        await tx.returnRequestItem.updateMany({
+          where: { returnRequestId: existing.id, sellerId: seller.id },
+          data: {
+            status: ReturnRequestItemStatus.REJECTED,
+            sellerNote: note ?? "Seller rejected this return request.",
+          },
+        });
+      } else {
+        for (const item of sellerItems) {
+          await tx.returnRequestItem.update({
+            where: { id: item.id },
+            data: {
+              status: ReturnRequestItemStatus.APPROVED,
+              approvedRefundPaise: item.requestedRefundPaise,
+              sellerNote: note ?? "Seller accepted this return request.",
+            },
+          });
+        }
+        await this.createReverseShipmentsForReturn(
+          tx,
+          existing.id,
+          existing.orderId,
+          ReverseShipmentMode.PLATFORM_PICKUP,
+          sellerItems.map((item) => ({ sellerId: item.sellerId })),
+        );
+      }
+
+      const remainingPending = await tx.returnRequestItem.count({
+        where: { returnRequestId: existing.id, status: ReturnRequestItemStatus.PENDING_REVIEW },
+      });
+      const approvedItems = await tx.returnRequestItem.count({
+        where: { returnRequestId: existing.id, status: ReturnRequestItemStatus.APPROVED },
+      });
+      const approvedAmount = await tx.returnRequestItem.aggregate({
+        where: { returnRequestId: existing.id },
+        _sum: { approvedRefundPaise: true },
+      });
+      let shouldAutoAssign = false;
+      if (remainingPending === 0 && approvedItems > 0) {
+        await tx.returnRequest.update({
+          where: { id: existing.id },
+          data: {
+            status: ReturnRequestStatus.APPROVED,
+            reviewedAt: new Date(),
+            reviewedById: actor.id,
+            approvedAmountPaise: approvedAmount._sum.approvedRefundPaise ?? 0,
+          },
+        });
+        shouldAutoAssign = true;
+      }
+      if (dto.decision === SellerReturnDecision.REJECT && remainingPending === 0 && approvedItems === 0) {
+        await this.closeReturnInTransaction(tx, existing, actor, ReturnRequestStatus.REJECTED, note ?? "Seller rejected the return request.");
+      }
+
+      await tx.returnRequestNote.create({
+        data: {
+          returnRequestId: existing.id,
+          sellerId: seller.id,
+          note:
+            note ??
+            (dto.decision === SellerReturnDecision.ACCEPT
+              ? "Seller accepted the return request."
+              : "Seller rejected the return request."),
+          createdById: actor.id,
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorUserId: actor.id,
+          action:
+            dto.decision === SellerReturnDecision.ACCEPT
+              ? "return.seller.accepted"
+              : "return.seller.rejected",
+          entityType: "return_request",
+          entityId: existing.id,
+          oldValue: { status: existing.status },
+          newValue: { sellerId: seller.id, decision: dto.decision, note: note ?? null },
+        },
+      });
+
+      return { returnRequestId: existing.id, shouldAutoAssign };
+    });
+
+    if (dto.decision === SellerReturnDecision.ACCEPT && result.shouldAutoAssign) {
+      await this.tryAutoAssignReversePickupAfterApproval(actor, requestNumber);
+    }
 
     return this.getSellerReturn(actor, requestNumber);
   }
@@ -1332,6 +1482,14 @@ export class ReturnsService {
       if (dto.status === ReverseShipmentStatus.PICKED_UP && !proofReference) {
         throw new BadRequestException("Pickup proof reference is required before marking the return picked up.");
       }
+      if (dto.status === ReverseShipmentStatus.FAILED) {
+        if (!proofReference) {
+          throw new BadRequestException("Proof reference is required before cancelling a bad-quality return pickup.");
+        }
+        if (!dto.note?.trim()) {
+          throw new BadRequestException("A quality failure note is required before cancelling the return pickup.");
+        }
+      }
       if (dto.status === ReverseShipmentStatus.RECEIVED && assignedShipments.length > 1) {
         throw new BadRequestException("Receive each seller package separately from the shipment receipt action.");
       }
@@ -1351,7 +1509,7 @@ export class ReturnsService {
       for (const shipment of targetShipments) {
         await tx.reverseShipment.update({
           where: { id: shipment.id },
-          data: this.reversePickupUpdateData(shipment, dto, now),
+          data: this.reversePickupUpdateData(shipment, dto, now, returnRequest.requestNumber),
         });
         await tx.reverseShipmentEvent.create({
           data: {
@@ -1382,6 +1540,9 @@ export class ReturnsService {
       }
       if (dto.status === ReverseShipmentStatus.RECEIVED) {
         await this.applyReverseShipmentReceiptStatus(tx, returnRequest.id, targetShipments[0]!.sellerId);
+      }
+      if (dto.status === ReverseShipmentStatus.FAILED) {
+        await this.failReturnAfterDeliveryQualityCheck(tx, returnRequest, targetShipments, actor, proofReference, dto.note!.trim());
       }
 
       await tx.auditLog.create({
@@ -1443,7 +1604,7 @@ export class ReturnsService {
           status: ReverseShipmentStatus.RECEIVED,
           awbNumber: dto.awbNumber ?? shipment.awbNumber,
           courierName: dto.courierName ?? shipment.courierName,
-          trackingReference: dto.trackingReference ?? shipment.trackingReference,
+          trackingReference: this.reversePickupTrackingReference(shipment, dto, returnRequest.requestNumber),
           proofReference: this.trimmedStringOrUndefined(dto.proofReference) ?? shipment.proofReference,
           receiptProofReference: receiptProof,
           pickupNote: dto.note ?? shipment.pickupNote,
@@ -2425,7 +2586,6 @@ export class ReturnsService {
       include: { items: true; refundRequests: true; order: { include: { payments: true; sellerSplits: { include: { payout: true } } } } };
     }>,
     actor: RequestUser,
-    refundNumber: string,
     note?: string,
   ) {
     if (existing.status !== ReturnRequestStatus.PENDING_REVIEW) {
@@ -2465,20 +2625,6 @@ export class ReturnsService {
         sellerId: item.sellerId,
       })),
     );
-    if (this.resolutionNeedsRefund(existing.resolution) && approvedAmountPaise > 0) {
-      await this.createRefundRequestFromReturnItems(tx, {
-        refundNumber,
-        order: existing.order as never,
-        returnRequestId: existing.id,
-        returnItems: existing.items.map((item) => ({
-          ...item,
-          approvedRefundPaise: item.requestedRefundPaise,
-        })),
-        actor,
-        status: RefundRequestStatus.PENDING_REVIEW,
-        note: note ?? "Return approved; refund awaits finance approval.",
-      });
-    }
   }
 
   private async closeReturnInTransaction(
@@ -3122,16 +3268,17 @@ export class ReturnsService {
   }
 
   private reversePickupUpdateData(
-    shipment: { awbNumber: string | null; courierName: string | null; trackingReference: string | null; proofReference: string | null; pickupNote: string | null },
+    shipment: { id: string; awbNumber: string | null; courierName: string | null; trackingReference: string | null; proofReference: string | null; pickupNote: string | null },
     dto: ReversePickupUpdateDto,
     now: Date,
+    requestNumber: string,
   ): Prisma.ReverseShipmentUpdateInput {
     const pickupProofReference = this.firstTrimmedString(dto.pickupProofReference, dto.proofReference);
     const data: Prisma.ReverseShipmentUpdateInput = {
       status: dto.status,
       awbNumber: dto.awbNumber ?? shipment.awbNumber,
       courierName: dto.courierName ?? shipment.courierName,
-      trackingReference: dto.trackingReference ?? shipment.trackingReference,
+      trackingReference: this.reversePickupTrackingReference(shipment, dto, requestNumber),
       proofReference: this.trimmedStringOrUndefined(dto.proofReference) ?? shipment.proofReference,
       pickupNote: dto.note ?? shipment.pickupNote,
       ...(dto.status === ReverseShipmentStatus.PICKED_UP ? { pickedUpAt: now } : {}),
@@ -3141,6 +3288,19 @@ export class ReturnsService {
       data.pickupProofReference = pickupProofReference;
     }
     return data;
+  }
+
+  private reversePickupTrackingReference(
+    shipment: { id: string; trackingReference: string | null },
+    dto: Pick<ReversePickupUpdateDto, "trackingReference">,
+    requestNumber: string,
+  ) {
+    const provided = this.trimmedStringOrUndefined(dto.trackingReference);
+    if (provided) return provided;
+    if (shipment.trackingReference) return shipment.trackingReference;
+    const requestPart = requestNumber.replace(/[^a-zA-Z0-9]/g, "").slice(-18).toUpperCase();
+    const shipmentPart = shipment.id.replace(/[^a-zA-Z0-9]/g, "").slice(-8).toUpperCase();
+    return `RET-${requestPart}-${shipmentPart}`;
   }
 
   private firstTrimmedString(...values: Array<string | undefined>) {
@@ -3153,6 +3313,66 @@ export class ReturnsService {
 
   private trimmedStringOrUndefined(value: string | undefined) {
     return typeof value === "string" && value.trim() ? value.trim() : undefined;
+  }
+
+  private async failReturnAfterDeliveryQualityCheck(
+    tx: Prisma.TransactionClient,
+    returnRequest: Prisma.ReturnRequestGetPayload<{ include: { reverseShipments: true } }>,
+    failedShipments: Array<{ id: string; sellerId: string }>,
+    actor: RequestUser,
+    proofReference: string,
+    note: string,
+  ) {
+    const sellerIds = Array.from(new Set(failedShipments.map((shipment) => shipment.sellerId)));
+    await tx.returnRequest.update({
+      where: { id: returnRequest.id },
+      data: {
+        status: ReturnRequestStatus.QC_FAILED,
+        reviewedAt: new Date(),
+        reviewedById: actor.id,
+      },
+    });
+    await tx.returnRequestItem.updateMany({
+      where: { returnRequestId: returnRequest.id, sellerId: { in: sellerIds } },
+      data: {
+        status: ReturnRequestItemStatus.QC_FAILED,
+        qcNote: note,
+      },
+    });
+    await tx.refundRequest.updateMany({
+      where: {
+        returnRequestId: returnRequest.id,
+        status: { notIn: [RefundRequestStatus.SUCCESS, RefundRequestStatus.CANCELLED] },
+      },
+      data: {
+        status: RefundRequestStatus.CANCELLED,
+        reviewedAt: new Date(),
+        reviewedById: actor.id,
+        note: `Delivery quality check failed: ${note}`,
+      },
+    });
+    await tx.returnRequestNote.create({
+      data: {
+        returnRequestId: returnRequest.id,
+        note: `Delivery cancelled return after package quality check: ${note}`,
+        createdById: actor.id,
+      },
+    });
+    await tx.auditLog.create({
+      data: {
+        actorUserId: actor.id,
+        action: "return.delivery_quality.failed",
+        entityType: "return_request",
+        entityId: returnRequest.id,
+        newValue: {
+          status: ReturnRequestStatus.QC_FAILED,
+          reverseShipmentIds: failedShipments.map((shipment) => shipment.id),
+          sellerIds,
+          proofReference,
+          note,
+        },
+      },
+    });
   }
 
   private async applyReverseShipmentReceiptStatus(
@@ -3477,6 +3697,7 @@ export class ReturnsService {
         status: true,
         resolution: true,
         reason: true,
+        qualityProofKeys: true,
         totalQuantity: true,
         requestedAmountPaise: true,
         approvedAmountPaise: true,
@@ -3502,6 +3723,7 @@ export class ReturnsService {
             id: true,
             quantity: true,
             status: true,
+            sellerNote: true,
             sellerId: true,
             seller: { select: { storeName: true, slug: true } },
             orderItem: { select: { productNameSnapshot: true } },
@@ -3533,6 +3755,7 @@ export class ReturnsService {
       status: request.status,
       resolution: request.resolution,
       reason: request.reason,
+      qualityProofKeys: request.qualityProofKeys,
       totalQuantity: request.totalQuantity,
       requestedAmountPaise: request.requestedAmountPaise,
       approvedAmountPaise: request.approvedAmountPaise,
@@ -3546,6 +3769,7 @@ export class ReturnsService {
         productName: item.orderItem.productNameSnapshot,
         quantity: item.quantity,
         status: item.status,
+        sellerNote: item.sellerNote,
         sellerId: item.sellerId,
         sellerName: item.seller.storeName,
       })),
@@ -3571,6 +3795,7 @@ export class ReturnsService {
       resolution: detail.resolution,
       reason: detail.reason,
       note: detail.note,
+      qualityProofKeys: detail.qualityProofKeys,
       autoApproved: detail.autoApproved,
       totalQuantity: detail.totalQuantity,
       requestedAmountPaise: detail.requestedAmountPaise,
@@ -3701,8 +3926,86 @@ export class ReturnsService {
         platformFundedCouponAdjustmentPaise: item.platformFundedCouponAdjustmentPaise,
         returnRequestItem: item.returnRequestItem,
       })),
+      sellerDeductionImpact: this.refundSellerDeductionImpact(detail),
       transactions: detail.transactions,
     };
+  }
+
+  private refundSellerDeductionImpact(detail: RefundRequestDetail) {
+    const bySeller = new Map<
+      string,
+      {
+        sellerId: string;
+        sellerName: string;
+        itemCount: number;
+        quantity: number;
+        refundAmountPaise: number;
+        platformFundedCouponAdjustmentPaise: number;
+        sellerFundedCouponAdjustmentPaise: number;
+        deductionPaise: number;
+        splitIds: Set<string>;
+        paidPayoutIds: Set<string>;
+        pendingPayoutIds: Set<string>;
+        adjustmentMode: "PENDING_PAYOUT_REDUCTION" | "WALLET_DEBIT" | "MIXED";
+      }
+    >();
+
+    for (const item of detail.items) {
+      const sellerId = item.sellerId;
+      const existing = bySeller.get(sellerId) ?? {
+        sellerId,
+        sellerName: item.seller?.storeName ?? "Seller",
+        itemCount: 0,
+        quantity: 0,
+        refundAmountPaise: 0,
+        platformFundedCouponAdjustmentPaise: 0,
+        sellerFundedCouponAdjustmentPaise: 0,
+        deductionPaise: 0,
+        splitIds: new Set<string>(),
+        paidPayoutIds: new Set<string>(),
+        pendingPayoutIds: new Set<string>(),
+        adjustmentMode: "PENDING_PAYOUT_REDUCTION" as const,
+      };
+
+      existing.itemCount += 1;
+      existing.quantity += item.quantity;
+      existing.refundAmountPaise += item.amountPaise;
+      existing.platformFundedCouponAdjustmentPaise += item.platformFundedCouponAdjustmentPaise;
+      existing.sellerFundedCouponAdjustmentPaise += item.sellerFundedCouponAdjustmentPaise;
+      existing.deductionPaise += item.amountPaise + item.platformFundedCouponAdjustmentPaise;
+      existing.splitIds.add(item.orderSellerSplitId);
+      if (item.orderSellerSplit.payout?.status === SellerPayoutStatus.PAID && item.orderSellerSplit.payoutId) {
+        existing.paidPayoutIds.add(item.orderSellerSplit.payoutId);
+      } else if (item.orderSellerSplit.payoutId) {
+        existing.pendingPayoutIds.add(item.orderSellerSplit.payoutId);
+      }
+      bySeller.set(sellerId, existing);
+    }
+
+    return Array.from(bySeller.values()).map((impact) => {
+      const paidPayout = impact.paidPayoutIds.size > 0;
+      const pendingPayout = impact.pendingPayoutIds.size > 0;
+      return {
+        sellerId: impact.sellerId,
+        sellerName: impact.sellerName,
+        itemCount: impact.itemCount,
+        quantity: impact.quantity,
+        refundAmountPaise: impact.refundAmountPaise,
+        platformFundedCouponAdjustmentPaise: impact.platformFundedCouponAdjustmentPaise,
+        sellerFundedCouponAdjustmentPaise: impact.sellerFundedCouponAdjustmentPaise,
+        deductionPaise: impact.deductionPaise,
+        splitIds: Array.from(impact.splitIds),
+        paidPayoutIds: Array.from(impact.paidPayoutIds),
+        pendingPayoutIds: Array.from(impact.pendingPayoutIds),
+        adjustmentMode:
+          paidPayout && pendingPayout
+            ? "MIXED"
+            : paidPayout
+              ? "WALLET_DEBIT"
+              : "PENDING_PAYOUT_REDUCTION",
+        applied: detail.status === RefundRequestStatus.SUCCESS,
+      };
+    });
   }
 
   private async getReturnDetailOrThrow(requestNumber: string) {
@@ -3714,6 +4017,25 @@ export class ReturnsService {
       throw new NotFoundException("Return request not found.");
     }
     return detail;
+  }
+
+  private normalizeReturnQualityProofKeys(keys: string[] | undefined) {
+    const normalized = Array.from(
+      new Set(
+        (keys ?? [])
+          .map((key) => key.trim())
+          .filter((key) => key.length > 0),
+      ),
+    );
+    if (normalized.length > 2) {
+      throw new BadRequestException("Upload up to 2 return quality images only.");
+    }
+    for (const key of normalized) {
+      if (!/^1handindia\/delivery-proofs\/return_quality_image\//i.test(key)) {
+        throw new BadRequestException("Return quality image reference is invalid.");
+      }
+    }
+    return normalized;
   }
 
   private async getRefundDetailOrThrow(refundNumber: string) {

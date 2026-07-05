@@ -158,7 +158,8 @@ function B2BOrderDetailContent({ order }: { order: B2BOrder }) {
 
       // Download to temp file
       const fileName = `po-${order.orderNumber}.pdf`;
-      const dest = `${FileSystem.cacheDirectory ?? ""}${fileName}`;
+      const cacheDir = (FileSystem as unknown as { cacheDirectory?: string }).cacheDirectory ?? (FileSystem as unknown as { Directories?: { Cache?: string } }).Directories?.Cache ?? "";
+      const dest = `${cacheDir}${fileName}`;
       await FileSystem.downloadAsync(url, dest);
 
       // Open via native sharing

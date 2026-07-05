@@ -5,31 +5,49 @@
   },
   "build": {
     "development": {
+      "environment": "development",
       "developmentClient": true,
       "distribution": "internal",
       "env": {
+        "EXPO_PUBLIC_APP_ENV": "development",
         "EXPO_PUBLIC_API_URL": "https://api.1handindia.com/api",
-        "EXPO_PUBLIC_WEB_URL": "https://1handindia.com"
+        "EXPO_PUBLIC_WEB_URL": "https://1handindia.com",
+        "EXPO_PUBLIC_DELIVERY_MIN_ANDROID_VERSION_CODE": "1",
+        "EXPO_PUBLIC_DELIVERY_UPDATE_URL": "https://1handindia.com/delivery",
+        "EXPO_PUBLIC_EAS_PROJECT_ID": "eadf0335-3b47-49d4-b119-c723e0da945d",
+        "EXPO_PUBLIC_ENABLE_SENTRY": "false"
       },
       "android": {
         "buildType": "apk"
       }
     },
     "preview": {
+      "environment": "preview",
       "distribution": "internal",
       "env": {
+        "EXPO_PUBLIC_APP_ENV": "preview",
         "EXPO_PUBLIC_API_URL": "https://api.1handindia.com/api",
-        "EXPO_PUBLIC_WEB_URL": "https://1handindia.com"
+        "EXPO_PUBLIC_WEB_URL": "https://1handindia.com",
+        "EXPO_PUBLIC_DELIVERY_MIN_ANDROID_VERSION_CODE": "1",
+        "EXPO_PUBLIC_DELIVERY_UPDATE_URL": "https://1handindia.com/delivery",
+        "EXPO_PUBLIC_EAS_PROJECT_ID": "eadf0335-3b47-49d4-b119-c723e0da945d",
+        "EXPO_PUBLIC_ENABLE_SENTRY": "true"
       },
       "android": {
         "buildType": "apk"
       }
     },
     "production": {
+      "environment": "production",
       "autoIncrement": true,
       "env": {
+        "EXPO_PUBLIC_APP_ENV": "production",
         "EXPO_PUBLIC_API_URL": "https://api.1handindia.com/api",
-        "EXPO_PUBLIC_WEB_URL": "https://1handindia.com"
+        "EXPO_PUBLIC_WEB_URL": "https://1handindia.com",
+        "EXPO_PUBLIC_DELIVERY_MIN_ANDROID_VERSION_CODE": "1",
+        "EXPO_PUBLIC_DELIVERY_UPDATE_URL": "https://1handindia.com/delivery",
+        "EXPO_PUBLIC_EAS_PROJECT_ID": "eadf0335-3b47-49d4-b119-c723e0da945d",
+        "EXPO_PUBLIC_ENABLE_SENTRY": "true"
       }
     }
   }

@@ -17,6 +17,14 @@ vi.mock("expo-secure-store", () => ({
   }),
 }));
 
+vi.mock("react-native", () => ({
+  DeviceEventEmitter: {
+    addListener: vi.fn(() => ({ remove: vi.fn() })),
+  },
+  NativeModules: {},
+  Platform: { OS: "ios" },
+}));
+
 import {
   RAZORPAY_CHECKOUT_CANCELLED_ERROR,
   RAZORPAY_CHECKOUT_TIMEOUT_ERROR,

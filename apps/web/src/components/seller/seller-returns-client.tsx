@@ -31,6 +31,7 @@ import {
   type ReturnRequestStatus,
   type ReturnSummary,
 } from "@/lib/returns-api";
+import { openPrivateProofReference } from "@/lib/delivery-proof-upload";
 import { formatMoney } from "@/lib/storefront-api";
 import {
   SellerAuthNotice,
@@ -244,6 +245,18 @@ function SellerReturnDetailPanel({
   isBusy: boolean;
   onAddNote: () => void;
 }) {
+  const sellerAuth = useSellerAuth();
+  const [proofOpenError, setProofOpenError] = useState<string | null>(null);
+
+  async function openProof(assetKey: string) {
+    setProofOpenError(null);
+    try {
+      await openPrivateProofReference(sellerAuth.authHeaders, assetKey);
+    } catch (error) {
+      setProofOpenError(error instanceof Error ? error.message : "Could not open proof image.");
+    }
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -281,6 +294,22 @@ function SellerReturnDetailPanel({
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
         <section className="space-y-3">
           <PanelTitle icon={<PackageCheck className="h-5 w-5" />} title="Store items" description={detail.reason} />
+          {detail.qualityProofKeys?.length ? (
+            <div className="rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-4">
+              <p className="text-sm font-black text-[#1F2933]">Customer quality images</p>
+              <div className="mt-3 grid gap-2">
+                {detail.qualityProofKeys.map((key, index) => (
+                  <div key={key} className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-white px-3 py-2 text-xs font-semibold text-[#667085]">
+                    <span className="break-all">Image {index + 1}: {key}</span>
+                    <Button type="button" size="sm" variant="outline" onClick={() => void openProof(key)}>
+                      Open
+                    </Button>
+                  </div>
+                ))}
+              </div>
+              {proofOpenError ? <p className="mt-2 text-xs font-bold text-[#D64545]">{proofOpenError}</p> : null}
+            </div>
+          ) : null}
           {detail.items.map((item) => (
             <div key={item.id} className="rounded-lg border border-[#E5E7EB] bg-white p-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -471,7 +500,7 @@ function QueueSkeleton() {
 function sellerReturnMetrics(items: ReturnSummary[]) {
   return items.reduce(
     (summary, item) => {
-      const hasMissingNote = item.items.some((returnItem) => !["REJECTED", "CLOSED"].includes(returnItem.status));
+      const hasMissingNote = item.items.some((returnItem) => !returnItem.sellerNote?.trim());
       if (hasMissingNote) summary.needsNote += 1;
       if (["RESOLVED", "REJECTED", "CANCELLED", "QC_FAILED"].includes(item.status)) {
         summary.closed += 1;

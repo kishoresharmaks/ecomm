@@ -85,11 +85,13 @@ export default function OrdersScreen() {
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.signedOutScreen}>
           <OrdersTitleBlock />
-          <View style={styles.emptyPanel}>
-            <EmptyState title="Sign in to view orders" message="Your order history, tracking, and support requests are linked to your 1HandIndia account." />
-            <Pressable style={styles.primaryButton} onPress={() => router.push("/auth/sign-in")}>
-              <Text style={styles.primaryButtonText}>Sign in</Text>
-            </Pressable>
+          <View style={styles.emptyPanelWrap}>
+            <View style={styles.emptyPanel}>
+              <EmptyState title="Sign in to view orders" message="Your order history, tracking, and support requests are linked to your 1HandIndia account." />
+              <Pressable style={styles.primaryButton} onPress={() => router.push("/auth/sign-in")}>
+                <Text style={styles.primaryButtonText}>Sign in</Text>
+              </Pressable>
+            </View>
           </View>
         </View>
       </SafeAreaView>
@@ -101,11 +103,13 @@ export default function OrdersScreen() {
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.signedOutScreen}>
           <OrdersTitleBlock />
-          <View style={styles.emptyPanel}>
-            <EmptyState title="Orders could not load" message={accountErrorMessage(ordersQuery.error, "Check your connection and refresh orders.")} />
-            <Pressable style={styles.primaryButton} onPress={() => void ordersQuery.refetch()}>
-              <Text style={styles.primaryButtonText}>Retry orders</Text>
-            </Pressable>
+          <View style={styles.emptyPanelWrap}>
+            <View style={styles.emptyPanel}>
+              <EmptyState title="Orders could not load" message={accountErrorMessage(ordersQuery.error, "Check your connection and refresh orders.")} />
+              <Pressable style={styles.primaryButton} onPress={() => void ordersQuery.refetch()}>
+                <Text style={styles.primaryButtonText}>Retry orders</Text>
+              </Pressable>
+            </View>
           </View>
         </View>
       </SafeAreaView>
@@ -646,6 +650,11 @@ const styles = StyleSheet.create({
     color: textColor,
     fontSize: 14,
     fontWeight: "900",
+  },
+  emptyPanelWrap: {
+    flex: 1,
+    justifyContent: "center",
+    paddingBottom: 40,
   },
   emptyPanel: {
     backgroundColor: colors.surface,

@@ -477,6 +477,7 @@ export type MobileReturnRequest = {
   resolution: MobileReturnResolution;
   reason: string;
   note?: string | null;
+  qualityProofKeys?: string[];
   autoApproved?: boolean;
   totalQuantity: number;
   requestedAmountPaise?: number | null;
@@ -496,6 +497,28 @@ export type MobileReturnRequest = {
   customerName?: string | null;
   items: MobileReturnRequestItem[];
   reverseShipments?: MobileReverseShipment[];
+  refunds?: Array<{
+    id: string;
+    refundNumber: string;
+    status: string;
+    method?: string | null;
+    amountPaise: number;
+    currency: string;
+    approvedAt?: string | null;
+    reviewedAt?: string | null;
+    createdAt?: string;
+    transactions?: Array<{
+      id: string;
+      method?: string | null;
+      status: string;
+      providerRefundId?: string | null;
+      manualReference?: string | null;
+      paidAt?: string | null;
+      processedAt?: string | null;
+      failureReason?: string | null;
+      createdAt?: string;
+    }>;
+  }>;
   notes?: Array<{ note?: string | null }>;
 };
 
@@ -520,6 +543,7 @@ export type MobileCreateReturnPayload = {
   resolution: MobileCreateReturnResolution;
   reason: string;
   note?: string;
+  qualityProofKeys?: string[];
   reverseShipmentMode?: MobileReverseShipmentMode;
   items: Array<{
     orderItemId: string;

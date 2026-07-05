@@ -1,7 +1,10 @@
 import { useAuth, useSignIn, useSignUp, useSSO } from "@clerk/clerk-expo";
 import * as Linking from "expo-linking";
 import { Stack, useRouter } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
 import { useEffect, useState } from "react";
+
+WebBrowser.maybeCompleteAuthSession();
 import {
   ActivityIndicator,
   KeyboardAvoidingView,

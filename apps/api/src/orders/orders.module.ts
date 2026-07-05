@@ -9,6 +9,7 @@ import { MapsModule } from "../maps/maps.module";
 import { MarketModule } from "../market/market.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { PaymentsModule } from "../payments/payments.module";
+import { ReturnsModule } from "../returns/returns.module";
 import { AdminDeliveryController } from "./admin-delivery.controller";
 import { AdminOrdersController } from "./admin-orders.controller";
 import {
@@ -33,7 +34,7 @@ import { PublicOrdersController } from "./public-orders.controller";
 import { SellerOrdersController } from "./seller-orders.controller";
 
 @Module({
-  imports: [CheckoutPricingModule, CouponsModule, CustomersModule, DealsModule, FinanceModule, LocationsModule, MapsModule, MarketModule, NotificationsModule, PaymentsModule],
+  imports: [CheckoutPricingModule, CouponsModule, CustomersModule, DealsModule, FinanceModule, LocationsModule, MapsModule, MarketModule, NotificationsModule, PaymentsModule, ReturnsModule],
   controllers: [
     CustomerOrdersController,
     AdminOrdersController,

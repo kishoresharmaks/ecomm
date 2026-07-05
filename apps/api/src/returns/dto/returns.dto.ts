@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { Type } from "class-transformer";
 import {
   ArrayMinSize,
+  ArrayMaxSize,
   IsArray,
   IsDateString,
   IsEnum,
@@ -12,6 +13,7 @@ import {
   Max,
   MaxLength,
   Min,
+  Matches,
   ValidateNested,
 } from "class-validator";
 import {
@@ -25,6 +27,11 @@ import {
 } from "@indihub/database";
 
 export enum ReversePickupDecision {
+  ACCEPT = "ACCEPT",
+  REJECT = "REJECT",
+}
+
+export enum SellerReturnDecision {
   ACCEPT = "ACCEPT",
   REJECT = "REJECT",
 }
@@ -94,6 +101,23 @@ export class CreateReturnRequestDto {
   @IsOptional()
   @IsEnum(ReverseShipmentMode)
   reverseShipmentMode?: ReverseShipmentMode;
+
+  @ApiPropertyOptional({
+    type: [String],
+    maxItems: 2,
+    description:
+      "Private storage asset keys for customer-uploaded return quality images. Upload first through /api/storage/delivery-proof/upload-request with purpose RETURN_QUALITY_IMAGE.",
+    example: ["1handindia/delivery-proofs/return_quality_image/user-id/photo.jpg"],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(2)
+  @MaxLength(300, { each: true })
+  @Matches(/^1handindia\/delivery-proofs\/return_quality_image\/.+/i, {
+    each: true,
+    message: "qualityProofKeys must be return quality image asset keys.",
+  })
+  qualityProofKeys?: string[];
 }
 
 export class ReturnListQueryDto {
@@ -179,6 +203,18 @@ export class SellerReturnNoteDto {
   @IsString()
   @MaxLength(1000)
   note!: string;
+}
+
+export class SellerReturnDecisionDto {
+  @ApiProperty({ enum: SellerReturnDecision })
+  @IsEnum(SellerReturnDecision)
+  decision!: SellerReturnDecision;
+
+  @ApiPropertyOptional({ example: "Product issue verified from customer proof images." })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  note?: string;
 }
 
 export class ApproveRefundDto {

@@ -220,3 +220,38 @@ export class PrivateDocumentUploadRequestDto {
   @Max(10 * 1024 * 1024)
   sizeBytes!: number;
 }
+
+export enum DeliveryProofUploadPurpose {
+  DELIVERY_PROOF = "DELIVERY_PROOF",
+  RETURN_PICKUP_PROOF = "RETURN_PICKUP_PROOF",
+  RETURN_RECEIPT_PROOF = "RETURN_RECEIPT_PROOF",
+  RETURN_QUALITY_IMAGE = "RETURN_QUALITY_IMAGE",
+}
+
+export class DeliveryProofUploadRequestDto {
+  @ApiProperty({
+    enum: DeliveryProofUploadPurpose,
+    example: DeliveryProofUploadPurpose.RETURN_QUALITY_IMAGE,
+  })
+  @IsEnum(DeliveryProofUploadPurpose)
+  purpose!: DeliveryProofUploadPurpose;
+
+  @ApiProperty({ example: "return-quality-photo.jpg" })
+  @IsString()
+  @MaxLength(180)
+  fileName!: string;
+
+  @ApiProperty({ example: "image/jpeg" })
+  @IsString()
+  @Matches(/^(application\/pdf|image\/jpeg|image\/png|image\/webp)$/i, {
+    message: "contentType must be PDF, JPG, PNG, or WebP.",
+  })
+  contentType!: string;
+
+  @ApiProperty({ example: 524288 })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(10 * 1024 * 1024)
+  sizeBytes!: number;
+}

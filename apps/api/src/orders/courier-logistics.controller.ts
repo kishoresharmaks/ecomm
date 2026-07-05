@@ -5,6 +5,8 @@ import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { Public } from "../auth/decorators/public.decorator";
 import { Roles } from "../auth/decorators/roles.decorator";
 import type { RequestUser } from "../auth/types/indihub-request";
+import { ReversePickupListQueryDto } from "../returns/dto/returns.dto";
+import { ReturnsService } from "../returns/returns.service";
 import { CourierLogisticsService } from "./courier-logistics.service";
 import {
   CourierDeliveryPartnerAvailabilityDto,
@@ -143,6 +145,7 @@ export class CourierWorkspaceController {
   constructor(
     @Inject(CourierLogisticsService) private readonly courierLogistics: CourierLogisticsService,
     @Inject(OrdersService) private readonly ordersService: OrdersService,
+    @Inject(ReturnsService) private readonly returnsService: ReturnsService,
   ) {}
 
   @Get("dashboard")
@@ -218,6 +221,18 @@ export class CourierWorkspaceController {
   @ApiOperation({ summary: "List local-delivery shipment assignments and delivery partners." })
   listLocalDelivery(@Query() query: CourierLocalDeliveryQueryDto) {
     return this.courierLogistics.listLocalDeliveryQueue(query);
+  }
+
+  @Get("return-pickups")
+  @ApiOperation({ summary: "List reverse return and replacement pickups for courier monitoring." })
+  listReturnPickups(@Query() query: ReversePickupListQueryDto) {
+    return this.returnsService.listAdminReversePickups(query);
+  }
+
+  @Get("return-pickups/:requestNumber")
+  @ApiOperation({ summary: "Read one reverse return or replacement pickup for courier monitoring." })
+  getReturnPickup(@Param("requestNumber") requestNumber: string) {
+    return this.returnsService.getAdminReturn(requestNumber);
   }
 
   @Patch("local-delivery/:shipmentId/assign")

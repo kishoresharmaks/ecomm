@@ -209,6 +209,7 @@ export function SellerProductsClient({
 
   function submitProduct(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (saveMutation.isPending) return;
     const form = new FormData(event.currentTarget);
     const categoryId = formValue(form, "categoryId");
     const category = categories.find((item) => item.id === categoryId);
