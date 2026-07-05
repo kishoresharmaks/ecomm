@@ -31,6 +31,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
+      - name: Generate Android Folder (Prebuild)
+        working-directory: apps/mobile-customer
+        run: npx expo prebuild --platform android --clean
+
       - name: Make Gradle wrapper executable
         run: chmod +x apps/mobile-customer/android/gradlew
 
