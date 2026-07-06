@@ -38,6 +38,7 @@ export type DeliveryOrder = {
   customer?: { email?: string | null; phone?: string | null; fullName?: string | null };
   shippingAddressSnapshot?: AddressSnapshot | null;
   items?: Array<{ id: string; productNameSnapshot: string; quantity: number }>;
+  shipments?: DeliveryOrderShipment[];
   payments?: Array<{ id: string; provider: string; method?: string | null; amountPaise: number; currency: string; status: string }>;
   deliveryDetail?: {
     id: string;
@@ -69,8 +70,56 @@ export type AddressSnapshot = {
   state?: string | null;
   pincode?: string | null;
   country?: string | null;
+  countryCode?: string | null;
   latitude?: number | string | null;
   longitude?: number | string | null;
+  locationSource?: string | null;
+  accuracyMeters?: number | string | null;
+  locationConfidenceScore?: number | string | null;
+};
+
+export type DeliveryPickupAddress = {
+  line1?: string | null;
+  line2?: string | null;
+  area?: string | null;
+  city?: string | null;
+  state?: string | null;
+  pincode?: string | null;
+  country?: string | null;
+  countryCode?: string | null;
+  latitude?: number | string | null;
+  longitude?: number | string | null;
+  locationSource?: string | null;
+  accuracyMeters?: number | string | null;
+  locationConfidenceScore?: number | string | null;
+};
+
+export type DeliveryOrderShipment = {
+  id: string;
+  shipmentNumber: string;
+  sellerId: string;
+  seller?: {
+    id?: string;
+    storeName?: string | null;
+    slug?: string | null;
+    contactName?: string | null;
+    contactPhone?: string | null;
+    contactEmail?: string | null;
+    pickupAddress?: DeliveryPickupAddress | null;
+  } | null;
+  subtotalPaise: number;
+  shippingPaise: number;
+  codSurchargePaise: number;
+  deliveryMode: string;
+  status: string;
+  assignmentStatus?: string | null;
+  assignmentExpiresAt?: string | null;
+  deliveryPartnerUserId?: string | null;
+  partnerName?: string | null;
+  partnerPhone?: string | null;
+  trackingReference?: string | null;
+  estimatedDeliveryDate?: string | null;
+  deliveryNote?: string | null;
 };
 
 export type DeliveryAttempt = {

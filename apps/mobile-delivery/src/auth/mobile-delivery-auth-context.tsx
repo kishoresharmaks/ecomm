@@ -221,18 +221,6 @@ export function mobileDeliveryAuthErrorMessage(error: unknown) {
   return error instanceof Error && error.message ? error.message : "Authentication failed. Please try again.";
 }
 
-function currentUserPayload(user: ReturnType<typeof useUser>["user"]) {
-  const email = user?.primaryEmailAddress?.emailAddress;
-  const phone = user?.primaryPhoneNumber?.phoneNumber;
-  const fullName = user?.fullName ?? [user?.firstName, user?.lastName].filter(Boolean).join(" ");
-
-  return {
-    ...(email ? { email } : {}),
-    ...(phone ? { phone } : {}),
-    ...(fullName ? { fullName } : {}),
-  };
-}
-
 async function readClerkTokenWithRetry(readToken: () => Promise<string | null>) {
   for (let attempt = 0; attempt < CLERK_TOKEN_RETRY_ATTEMPTS; attempt += 1) {
     const token = await readToken();

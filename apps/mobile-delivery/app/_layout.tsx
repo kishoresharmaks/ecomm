@@ -98,7 +98,6 @@ function DeliveryRouteGate() {
     isPublicAuthRoute,
     isAccessBlockedRoute,
     accessQuery.isSuccess,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     accessQuery.data?.isDeliveryPartner,
     router,
   ]);

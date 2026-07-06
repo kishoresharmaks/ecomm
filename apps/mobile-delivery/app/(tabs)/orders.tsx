@@ -7,15 +7,17 @@ import { listDeliveryOrders, findCodPayment, type DeliveryOrder } from "../../sr
 import { useMobileDeliveryAuth } from "../../src/auth/mobile-delivery-auth-context";
 
 const deliveryStatuses = ["", "PENDING", "PACKED", "DISPATCHED", "IN_TRANSIT", "DELIVERED", "CANCELLED"];
+const paymentStatuses = ["", "PENDING", "PAID", "FAILED", "REFUNDED", "NOT_REQUIRED"];
 
 export default function DeliveryOrdersScreen() {
   const auth = useMobileDeliveryAuth();
   const [search, setSearch] = useState("");
   const [submittedSearch, setSubmittedSearch] = useState("");
   const [deliveryStatus, setDeliveryStatus] = useState("");
+  const [paymentStatus, setPaymentStatus] = useState("");
   const ordersQuery = useQuery({
-    queryKey: ["delivery-orders", auth.authKey, submittedSearch, deliveryStatus],
-    queryFn: () => listDeliveryOrders(auth.authHeaders, { search: submittedSearch, deliveryStatus, limit: 40 }),
+    queryKey: ["delivery-orders", auth.authKey, submittedSearch, deliveryStatus, paymentStatus],
+    queryFn: () => listDeliveryOrders(auth.authHeaders, { search: submittedSearch, deliveryStatus, paymentStatus, limit: 40 }),
     enabled: auth.enabled,
   });
   const orders = ordersQuery.data?.items ?? [];
@@ -31,6 +33,12 @@ export default function DeliveryOrdersScreen() {
           selectedValue={deliveryStatus}
           onSelect={setDeliveryStatus}
           options={deliveryStatuses.map((status) => ({ value: status, label: status ? humanize(status) : "All statuses" }))}
+        />
+        <SelectField
+          label="Payment status"
+          selectedValue={paymentStatus}
+          onSelect={setPaymentStatus}
+          options={paymentStatuses.map((status) => ({ value: status, label: status ? humanize(status) : "All payments" }))}
         />
       </View>
       <QueryState loading={ordersQuery.isLoading} error={ordersQuery.error} onRetry={() => void ordersQuery.refetch()} />
@@ -58,4 +66,3 @@ function OrderCard({ order }: { order: DeliveryOrder }) {
     </Link>
   );
 }
-
