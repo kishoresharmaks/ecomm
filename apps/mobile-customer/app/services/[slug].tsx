@@ -34,6 +34,7 @@ import { getPricingLabel } from "../../src/features/services/utils/pricingLabel"
 import { cleanBookingPayload } from "../../src/features/services/utils/payloadCleaners";
 import { useLocationStore } from "../../src/state/location-store";
 import { colors } from "../../src/theme";
+import { resolveImageUrl } from "../../src/lib/image-url";
 
 const timeSlots = ["09:00-11:00", "11:00-13:00", "14:00-16:00", "16:00-18:00"];
 
@@ -74,6 +75,7 @@ export default function ServiceDetailScreen() {
   }, [form, restoreBookingForm, serviceQuery.data, slug]);
 
   const service = serviceQuery.data;
+  const coverImageUrl = resolveImageUrl(service?.coverImageUrl);
   const selectedPackage = useMemo(() => {
     if (!service || !form?.selectedPackageId) {
       return null;
@@ -157,7 +159,7 @@ export default function ServiceDetailScreen() {
       <Screen padded={false}>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <View style={styles.heroCard}>
-            <RemoteImage fallbackLabel={service.name} uri={service.coverImageUrl} style={styles.heroImage} />
+            <RemoteImage fallbackLabel={service.name} uri={coverImageUrl} style={styles.heroImage} />
             <View style={styles.heroBody}>
               <Text style={styles.kicker}>{service.categoryName ?? "Service"}</Text>
               <Text style={styles.title}>{service.name}</Text>

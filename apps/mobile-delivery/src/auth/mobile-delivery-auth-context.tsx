@@ -73,7 +73,22 @@ export function MobileDeliveryAuthProvider({ children }: PropsWithChildren) {
     [updateSyncState],
   );
 
-  const userProfile = useMemo(() => currentUserPayload(user), [user]);
+  // Memoize individual primitive fields so the outer context useMemo
+  // doesn't see a new `userProfile` object reference on every render.
+  const profileEmail = useMemo(() => user?.primaryEmailAddress?.emailAddress, [user]);
+  const profilePhone = useMemo(() => user?.primaryPhoneNumber?.phoneNumber, [user]);
+  const profileFullName = useMemo(
+    () => (user?.fullName ?? [user?.firstName, user?.lastName].filter(Boolean).join(" ")) || undefined,
+    [user],
+  );
+  const userProfile = useMemo(
+    () => ({
+      ...(profileEmail ? { email: profileEmail } : {}),
+      ...(profilePhone ? { phone: profilePhone } : {}),
+      ...(profileFullName ? { fullName: profileFullName } : {}),
+    }),
+    [profileEmail, profilePhone, profileFullName],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -168,7 +183,7 @@ export function MobileDeliveryAuthProvider({ children }: PropsWithChildren) {
     return () => {
       cancelled = true;
     };
-  }, [bearerToken, handleUnauthorized, isSignedIn, isUserLoaded, readBearerToken, refreshIndex, updateSyncState, userId, userProfile.email, userProfile.fullName, userProfile.phone]);
+  }, [bearerToken, handleUnauthorized, isSignedIn, isUserLoaded, readBearerToken, refreshIndex, updateSyncState, userId, profileEmail, profilePhone, profileFullName]);
 
   const refresh = useCallback(() => setRefreshIndex((current) => current + 1), []);
   const value = useMemo<MobileDeliveryAuthContextValue>(

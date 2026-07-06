@@ -13,6 +13,7 @@ import { getCategory, listProducts, addCartItem } from "../../src/features/store
 import { resolveImageUrl } from "../../src/lib/image-url";
 import { useMobileCustomerAuth } from "../../src/auth/mobile-auth-context";
 import { colors } from "../../src/theme";
+import type { MobileCategory } from "../../src/types/mobile-home";
 import type { ProductSummary } from "../../src/types/storefront";
 
 // Sorting options
@@ -295,6 +296,8 @@ function CategoryDetailScreen() {
         }
       >
         <PremiumHeroBanner category={category} productCount={category?._count?.products ?? products.length} />
+
+        <SubcategoryRail category={category} />
         
         <PremiumSearchBar 
           searchText={searchText}
@@ -391,6 +394,36 @@ function CategoryDetailScreen() {
 }
 
 export default withStorefrontMaintenance(CategoryDetailScreen);
+
+function SubcategoryRail({ category }: { category: MobileCategory | undefined }) {
+  const router = useRouter();
+  const children = category?.children ?? [];
+
+  if (!children.length) {
+    return null;
+  }
+
+  return (
+    <View style={styles.subcategorySection}>
+      <View style={styles.subcategoryHeader}>
+        <Text style={styles.subcategoryTitle}>Sub categories</Text>
+        <Text style={styles.subcategoryCount}>{children.length} available</Text>
+      </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.subcategoryRail}>
+        {children.map((child) => {
+          const imageUrl = resolveImageUrl(child.imageUrl);
+          return (
+            <Pressable key={child.id} style={styles.subcategoryCard} onPress={() => router.push(`/category/${child.slug}`)}>
+              <RemoteImage fallbackLabel={child.name} resizeMode="cover" style={styles.subcategoryImage} uri={imageUrl} />
+              <Text numberOfLines={2} style={styles.subcategoryName}>{child.name}</Text>
+              <Text numberOfLines={1} style={styles.subcategoryMeta}>{child._count?.products ?? 0} products</Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
+}
 
 // Premium header component
 function PremiumHeader({ 
@@ -784,6 +817,63 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "500",
     color: "#374151",
+  },
+  subcategorySection: {
+    marginHorizontal: 16,
+    marginTop: 16,
+  },
+  subcategoryHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+  subcategoryTitle: {
+    color: "#1F2937",
+    fontSize: 18,
+    fontWeight: "800",
+  },
+  subcategoryCount: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  subcategoryRail: {
+    gap: 12,
+    paddingRight: 16,
+  },
+  subcategoryCard: {
+    backgroundColor: "#FFFFFF",
+    borderColor: "#E5E7EB",
+    borderRadius: 18,
+    borderWidth: 1,
+    elevation: 2,
+    padding: 10,
+    shadowColor: "#000",
+    shadowOffset: { height: 3, width: 0 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    width: 124,
+  },
+  subcategoryImage: {
+    backgroundColor: "#FFF2ED",
+    borderRadius: 14,
+    height: 76,
+    width: "100%",
+  },
+  subcategoryName: {
+    color: "#1F2937",
+    fontSize: 13,
+    fontWeight: "800",
+    lineHeight: 17,
+    marginTop: 9,
+    minHeight: 34,
+  },
+  subcategoryMeta: {
+    color: "#6B7280",
+    fontSize: 11,
+    fontWeight: "700",
+    marginTop: 4,
   },
   
   // Product grid styles

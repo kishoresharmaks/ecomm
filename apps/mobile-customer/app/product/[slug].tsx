@@ -17,7 +17,7 @@ import { Screen } from "../../src/components/screen";
 import { useMobileCustomerAuth } from "../../src/auth/mobile-auth-context";
 import { useMobileMarket } from "../../src/features/market/mobile-market";
 import { withStorefrontMaintenance } from "../../src/features/maintenance/mobile-maintenance-gate";
-import { addCartItem, getCart, getProduct, listProducts } from "../../src/features/storefront/storefront-api";
+import { addCartItem, addWishlistItem, getCart, getProduct, getWishlist, listProducts, removeWishlistItem } from "../../src/features/storefront/storefront-api";
 import { resolveImageUrl } from "../../src/lib/image-url";
 import { useRecentProductsStore } from "../../src/state/recent-products-store";
 import { colors } from "../../src/theme";
@@ -49,7 +49,14 @@ type ProductDetailFeedItem =
     }
   | { id: "description"; type: "description"; product: ProductSummary }
   | { id: "seller"; type: "seller"; product: ProductSummary }
-  | { id: "recommendations"; type: "recommendations"; products: MobileProduct[] };
+  | {
+      id: "recommendations";
+      isWishlistPending: (productId: string) => boolean;
+      isWished: (productId: string) => boolean;
+      onToggleWishlist: (productId: string, wished: boolean) => void;
+      products: MobileProduct[];
+      type: "recommendations";
+    };
 
 function ProductDetailScreen() {
   const params = useLocalSearchParams<{ slug?: string }>();
@@ -62,6 +69,7 @@ function ProductDetailScreen() {
   const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [addedMessage, setAddedMessage] = useState("");
+  const [pendingWishlistProductId, setPendingWishlistProductId] = useState<string | null>(null);
   const rememberRecentProduct = useRecentProductsStore((state) => state.rememberRecentProduct);
 
   const productQuery = useQuery({
@@ -87,6 +95,16 @@ function ProductDetailScreen() {
     enabled: Boolean(product?.categoryId),
     staleTime: 60_000,
   });
+  const wishlistQuery = useQuery({
+    queryKey: ["mobile-wishlist", customerAuth.authKey],
+    queryFn: () => getWishlist(customerAuth.authHeaders),
+    enabled: customerAuth.enabled,
+    staleTime: 30_000,
+  });
+  const wishlistProductIds = useMemo(
+    () => new Set((wishlistQuery.data?.items ?? []).map((item) => item.productId)),
+    [wishlistQuery.data?.items],
+  );
 
   const selectedVariant = useMemo(
     () => selectVariant(product, selectedVariantId),
@@ -145,12 +163,19 @@ function ProductDetailScreen() {
       ];
 
       if (recommendations.length >= 4) {
-        items.push({ id: "recommendations", type: "recommendations", products: recommendations });
+        items.push({
+          id: "recommendations",
+          isWishlistPending: (productId) => pendingWishlistProductId === productId,
+          isWished: (productId) => wishlistProductIds.has(productId),
+          onToggleWishlist: toggleWishlist,
+          products: recommendations,
+          type: "recommendations",
+        });
       }
 
       return items;
     },
-    [product, quantity, recommendations, selectedImageUrl, selectedVariant],
+    [pendingWishlistProductId, product, quantity, recommendations, selectedImageUrl, selectedVariant, wishlistProductIds],
   );
 
   useEffect(() => {
@@ -184,6 +209,34 @@ function ProductDetailScreen() {
       ]);
     },
   });
+  const wishlistMutation = useMutation({
+    mutationFn: async ({ productId, wished }: { productId: string; wished: boolean }) => {
+      if (wished) {
+        await removeWishlistItem(customerAuth.authHeaders, productId);
+        return;
+      }
+      await addWishlistItem(customerAuth.authHeaders, productId);
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["mobile-wishlist", customerAuth.authKey] }),
+        queryClient.invalidateQueries({ queryKey: ["mobile-account-profile", customerAuth.authKey] }),
+      ]);
+    },
+    onSettled: () => setPendingWishlistProductId(null),
+  });
+
+  function toggleWishlist(productId: string, wished: boolean) {
+    if (customerAuth.status === "loading" || customerAuth.status === "syncing" || wishlistMutation.isPending) {
+      return;
+    }
+    if (!customerAuth.enabled) {
+      router.push("/auth/sign-in");
+      return;
+    }
+    setPendingWishlistProductId(productId);
+    wishlistMutation.mutate({ productId, wished });
+  }
 
   if (!slug) {
     return (
@@ -284,7 +337,15 @@ function ProductDetailFeed({
   }
 
   if (item.type === "recommendations") {
-    return <RecommendationsBlock formatPrice={formatPrice} products={item.products} />;
+    return (
+      <RecommendationsBlock
+        formatPrice={formatPrice}
+        isWishlistPending={item.isWishlistPending}
+        isWished={item.isWished}
+        products={item.products}
+        onToggleWishlist={item.onToggleWishlist}
+      />
+    );
   }
 
   return <DescriptionBlock product={item.product} />;
@@ -513,16 +574,38 @@ function SellerBlock({ product }: { product: ProductSummary }) {
   );
 }
 
-function RecommendationsBlock({ formatPrice, products }: { formatPrice: (pricePaise?: number | null) => string; products: MobileProduct[] }) {
+function RecommendationsBlock({
+  formatPrice,
+  isWishlistPending,
+  isWished,
+  onToggleWishlist,
+  products,
+}: {
+  formatPrice: (pricePaise?: number | null) => string;
+  isWishlistPending: (productId: string) => boolean;
+  isWished: (productId: string) => boolean;
+  onToggleWishlist: (productId: string, wished: boolean) => void;
+  products: MobileProduct[];
+}) {
   return (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>You may also like</Text>
       <ScrollView horizontal contentContainerStyle={styles.recommendationRail} showsHorizontalScrollIndicator={false}>
-        {products.map((product) => (
-          <View key={product.id} style={styles.recommendationCard}>
-            <ProductCard compact formatPrice={formatPrice} product={product} />
-          </View>
-        ))}
+        {products.map((product) => {
+          const wished = isWished(product.id);
+          return (
+            <View key={product.id} style={styles.recommendationCard}>
+              <ProductCard
+                compact
+                formatPrice={formatPrice}
+                isWishlistPending={isWishlistPending(product.id)}
+                isWished={wished}
+                product={product}
+                onToggleWishlist={() => onToggleWishlist(product.id, wished)}
+              />
+            </View>
+          );
+        })}
       </ScrollView>
     </View>
   );

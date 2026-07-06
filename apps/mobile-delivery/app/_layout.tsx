@@ -1,9 +1,9 @@
 import { ClerkProvider, useAuth } from "@clerk/clerk-expo";
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
-import { Redirect, Stack, useSegments } from "expo-router";
+import { Stack, useRouter, useSegments } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import { StatusBar } from "expo-status-bar";
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Linking, Text } from "react-native";
 import { MobileDeliveryAuthProvider, useMobileDeliveryAuth } from "../src/auth/mobile-delivery-auth-context";
 import { Button, Card, Screen } from "../src/components/screen";
@@ -45,11 +45,15 @@ function DeliveryRouteGate() {
   const auth = useMobileDeliveryAuth();
   const clerkAuth = useAuth();
   const segments = useSegments();
+  const router = useRouter();
+  const isNavigatingRef = useRef(false);
+
   const rootSegment = String(segments[0] ?? "");
   const isAuthRoute = rootSegment === "auth";
   const isSsoCallbackRoute = rootSegment === "sso-callback";
   const isPublicAuthRoute = isAuthRoute || isSsoCallbackRoute;
   const isAccessBlockedRoute = segments[0] === "access-blocked";
+
   const accessQuery = useQuery({
     queryKey: ["delivery-access", auth.authKey],
     queryFn: () => getDeliveryAccess(auth.authHeaders),
@@ -57,6 +61,49 @@ function DeliveryRouteGate() {
     retry: false,
   });
 
+  // ─── Navigation guard ────────────────────────────────────────────────────
+  // IMPORTANT: Never render <Redirect> conditionally inside a component that
+  // also calls useSegments(). Doing so creates a loop:
+  //   Redirect → nav state change → useSegments() new ref → re-render → Redirect …
+  // Instead, perform all redirects imperatively inside a useEffect.
+  useEffect(() => {
+    if (isNavigatingRef.current) return;
+
+    let target: string | null = null;
+
+    if (auth.status === "signed-out" && !isPublicAuthRoute) {
+      target = "/auth/sign-in";
+    } else if ((auth.status === "error" || clerkAuth.isSignedIn === false) && !isPublicAuthRoute) {
+      target = "/auth/sign-in";
+    } else if (
+      auth.enabled &&
+      accessQuery.isSuccess &&
+      !accessQuery.data.isDeliveryPartner &&
+      !isPublicAuthRoute &&
+      !isAccessBlockedRoute
+    ) {
+      target = "/access-blocked";
+    }
+
+    if (target) {
+      isNavigatingRef.current = true;
+      router.replace(target as Parameters<typeof router.replace>[0]);
+      // Reset after a tick so future auth changes can trigger again
+      setTimeout(() => { isNavigatingRef.current = false; }, 300);
+    }
+  }, [
+    auth.status,
+    auth.enabled,
+    clerkAuth.isSignedIn,
+    isPublicAuthRoute,
+    isAccessBlockedRoute,
+    accessQuery.isSuccess,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    accessQuery.data?.isDeliveryPartner,
+    router,
+  ]);
+
+  // ─── Blocking UI states ───────────────────────────────────────────────────
   if (versionGate.status === "blocked") {
     return (
       <Screen>
@@ -74,18 +121,15 @@ function DeliveryRouteGate() {
     );
   }
 
-  if (auth.status === "signed-out" && !isPublicAuthRoute) return <Redirect href="/auth/sign-in" />;
-  if ((auth.status === "error" || clerkAuth.isSignedIn === false) && !isPublicAuthRoute) return <Redirect href="/auth/sign-in" />;
   if (!isPublicAuthRoute && (auth.status === "loading" || auth.status === "syncing")) {
     return <LoadingMessage message="Preparing delivery workspace..." />;
   }
+
   if (auth.enabled && accessQuery.isLoading && !isPublicAuthRoute && !isAccessBlockedRoute) {
     return <LoadingMessage message="Checking delivery partner approval..." />;
   }
-  if (auth.enabled && accessQuery.isSuccess && !accessQuery.data.isDeliveryPartner && !isPublicAuthRoute && !isAccessBlockedRoute) {
-    return <Redirect href="/access-blocked" />;
-  }
 
+  // Render the navigator; the useEffect above handles redirects
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(tabs)" />

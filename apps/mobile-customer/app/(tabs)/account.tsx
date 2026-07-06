@@ -2,7 +2,6 @@ import {
   ArrowLeft02Icon,
   ArrowRight02Icon,
   Building04Icon,
-  Camera01Icon,
   CheckmarkBadge02Icon,
   DeliveryReturn01Icon,
   Edit02Icon,
@@ -25,7 +24,7 @@ import { useAuth } from "@clerk/clerk-expo";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useRouter, type Href } from "expo-router";
 import { useEffect, useRef } from "react";
-import { ActivityIndicator, Animated, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Animated, Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { EmptyState } from "../../src/components/empty-state";
 import { Screen } from "../../src/components/screen";
 import { useMobileCustomerAuth } from "../../src/auth/mobile-auth-context";
@@ -56,7 +55,6 @@ const profileRows = [
   { href: "/account/profile", icon: UserCircleIcon, text: "Name, email, phone number", title: "Personal information" },
   { href: "/account/addresses", icon: Home01Icon, text: "Manage your delivery addresses", title: "Addresses" },
   { href: "/account/location", icon: Location01Icon, text: "Browse and manage saved locations", title: "Saved locations" },
-  { icon: LockPasswordIcon, text: "Update your account password", title: "Change password" },
   { href: "/account/notifications" as Href, icon: Notification02Icon, text: "Inbox and push preferences", title: "Notifications" },
 ] satisfies Array<{ href?: Href; icon: IconSvgElement; text: string; title: string }>;
 
@@ -159,7 +157,18 @@ export default function AccountScreen() {
     profile?.displayName ?? profile?.user?.fullName ?? customerAuth.userProfile.fullName ?? customerAuth.userProfile.email ?? "1HandIndia customer";
   const email = profile?.user?.email ?? customerAuth.userProfile.email ?? "";
   const phone = formatPhone(profile?.user?.phone);
-  const profileSettingsRows = profileRows.map((item) =>
+  const profileImageUrl = customerAuth.userProfile.imageUrl;
+  const profileSettingsRows = [
+    ...profileRows,
+    ...(customerAuth.userProfile.canChangePassword
+      ? [{
+          href: "/account/change-password" as Href,
+          icon: LockPasswordIcon,
+          text: "Update your account password",
+          title: "Change password",
+        }]
+      : []),
+  ].map((item) =>
     item.title === "Saved locations"
       ? { ...item, text: selectedLocation.label || item.text }
       : item,
@@ -208,12 +217,13 @@ export default function AccountScreen() {
             <View style={styles.avatarWrap}>
               <View style={styles.avatarGlow} />
               <View style={styles.avatar}>
-                <Text numberOfLines={1} adjustsFontSizeToFit style={styles.avatarText}>
-                  {initials(displayName)}
-                </Text>
-              </View>
-              <View style={styles.cameraButton}>
-                <HugeiconsIcon color="#475467" icon={Camera01Icon} size={21} strokeWidth={2.1} />
+                {profileImageUrl ? (
+                  <Image resizeMode="cover" source={{ uri: profileImageUrl }} style={styles.avatarImage} />
+                ) : (
+                  <Text numberOfLines={1} adjustsFontSizeToFit style={styles.avatarText}>
+                    {initials(displayName)}
+                  </Text>
+                )}
               </View>
             </View>
             <View style={styles.identityBody}>
@@ -227,10 +237,9 @@ export default function AccountScreen() {
               <Text numberOfLines={1} style={styles.identityMeta}>{email || "Add email address"}</Text>
               <Text numberOfLines={1} style={styles.identityMeta}>{phone}</Text>
             </View>
-            <HugeiconsIcon color={MUTED} icon={ArrowRight02Icon} size={22} strokeWidth={2.2} />
           </View>
 
-          <Pressable style={({ pressed }) => [styles.securityStrip, pressed ? styles.pressedLift : null]}>
+          <View style={styles.securityStrip}>
             <View style={styles.securityIconWrap}>
               <HugeiconsIcon color={colors.primary} icon={Shield01Icon} size={31} strokeWidth={2.1} />
             </View>
@@ -238,8 +247,7 @@ export default function AccountScreen() {
               <Text style={styles.securityTitle}>Your account is secure</Text>
               <Text style={styles.securityText}>Secure 1HandIndia session active</Text>
             </View>
-            <HugeiconsIcon color={MUTED} icon={ArrowRight02Icon} size={22} strokeWidth={2.1} />
-          </Pressable>
+          </View>
         </View>
 
         {profileQuery.isError ? (
@@ -295,7 +303,7 @@ export default function AccountScreen() {
           {profileSettingsRows.map((item, index) => (
             <SettingsRow
               icon={item.icon}
-              isLast={index === profileRows.length - 1}
+              isLast={index === profileSettingsRows.length - 1}
               key={item.title}
               onPress={item.href ? () => router.push(item.href as never) : undefined}
               text={item.text}
@@ -433,6 +441,10 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     maxWidth: 88,
   },
+  avatarImage: {
+    height: "100%",
+    width: "100%",
+  },
   avatarWrap: {
     height: 128,
     position: "relative",
@@ -443,24 +455,6 @@ const styles = StyleSheet.create({
     height: 52,
     justifyContent: "center",
     width: 40,
-  },
-  cameraButton: {
-    alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.95)",
-    borderColor: BORDER,
-    borderRadius: 999,
-    borderWidth: 1,
-    bottom: 9,
-    height: 44,
-    justifyContent: "center",
-    position: "absolute",
-    right: 4,
-    shadowColor: "#A64B2A",
-    shadowOffset: { height: 8, width: 0 },
-    shadowOpacity: 0.08,
-    shadowRadius: 18,
-    width: 44,
-    elevation: 2,
   },
   centerState: {
     alignItems: "center",

@@ -873,7 +873,7 @@ export class ProductsService {
     ];
 
     if (query.categoryId) {
-      clauses.push(Prisma.sql`p.category_id = ${query.categoryId}::uuid`);
+      clauses.push(this.publicCategoryAndDescendantsFilterSql(query.categoryId));
     }
     if (query.sellerId) {
       clauses.push(Prisma.sql`p.seller_id = ${query.sellerId}::uuid`);
@@ -951,7 +951,7 @@ export class ProductsService {
     ];
 
     if (query.categoryId) {
-      clauses.push(Prisma.sql`p.category_id = ${query.categoryId}::uuid`);
+      clauses.push(this.publicCategoryAndDescendantsFilterSql(query.categoryId));
     }
     if (query.sellerId) {
       clauses.push(Prisma.sql`p.seller_id = ${query.sellerId}::uuid`);
@@ -972,6 +972,25 @@ export class ProductsService {
           AND pv.status = ${VariantStatus.ACTIVE}
           AND pv.stock_quantity > 0
       )
+    )`;
+  }
+
+  private publicCategoryAndDescendantsFilterSql(categoryId: string) {
+    return Prisma.sql`p.category_id IN (
+      WITH RECURSIVE category_tree AS (
+        SELECT id
+        FROM categories
+        WHERE id = ${categoryId}::uuid
+          AND deleted_at IS NULL
+          AND status = ${CategoryStatus.ACTIVE}
+        UNION ALL
+        SELECT child.id
+        FROM categories child
+        INNER JOIN category_tree parent ON parent.id = child.parent_id
+        WHERE child.deleted_at IS NULL
+          AND child.status = ${CategoryStatus.ACTIVE}
+      )
+      SELECT id FROM category_tree
     )`;
   }
 

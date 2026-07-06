@@ -1,7 +1,7 @@
 import { HeartIcon, ShoppingCart01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react-native";
 import { Link, type Href } from "expo-router";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View, type GestureResponderEvent } from "react-native";
 import { resolveImageUrl } from "../lib/image-url";
 import { colors } from "../theme";
 import type { MobileProduct } from "../types/mobile-home";
@@ -16,11 +16,22 @@ type ProductCardProduct = MobileProduct | ProductSummary;
 type ProductCardProps = {
   compact?: boolean;
   formatPrice?: (pricePaise?: number | null) => string;
+  isWishlistPending?: boolean;
+  isWished?: boolean;
+  onToggleWishlist?: () => void;
   product: ProductCardProduct;
   noMargin?: boolean; // Remove margin when used in grid layouts
 };
 
-export function ProductCard({ compact = false, formatPrice = defaultFormatPrice, product, noMargin = false }: ProductCardProps) {
+export function ProductCard({
+  compact = false,
+  formatPrice = defaultFormatPrice,
+  isWishlistPending = false,
+  isWished = false,
+  onToggleWishlist,
+  product,
+  noMargin = false,
+}: ProductCardProps) {
   const imageUrl = resolveImageUrl(product.images?.[0]?.url);
   const variant = product.variants?.[0];
   const price = variant?.pricePaise;
@@ -35,6 +46,10 @@ export function ProductCard({ compact = false, formatPrice = defaultFormatPrice,
   );
   // Use standard image height for consistency
   const imageHeight = compact ? STANDARD_IMAGE_HEIGHT : STANDARD_IMAGE_HEIGHT;
+  function handleWishlistPress(event: GestureResponderEvent) {
+    event.stopPropagation();
+    onToggleWishlist?.();
+  }
 
   return (
     <Link asChild href={`/product/${product.slug}` as Href}>
@@ -42,9 +57,21 @@ export function ProductCard({ compact = false, formatPrice = defaultFormatPrice,
         <View style={[styles.imageWrap, compact ? styles.imageWrapCompact : null, { height: imageHeight }]}>
           <RemoteImage fallbackLabel={product.name} resizeMode="cover" style={styles.image} uri={imageUrl} />
           {discount ? <Text style={styles.discountBadge}>-{discount}%</Text> : null}
-          <View style={styles.wishlistButton}>
-            <HugeiconsIcon color="#667085" icon={HeartIcon} size={compact ? 17 : 19} strokeWidth={1.8} />
-          </View>
+          <Pressable
+            accessibilityLabel={isWished ? "Remove from wishlist" : "Add to wishlist"}
+            accessibilityRole="button"
+            accessibilityState={{ busy: isWishlistPending, selected: isWished }}
+            disabled={isWishlistPending}
+            hitSlop={8}
+            style={[styles.wishlistButton, isWished ? styles.wishlistButtonActive : null, isWishlistPending ? styles.wishlistButtonDisabled : null]}
+            onPress={handleWishlistPress}
+          >
+            {isWishlistPending ? (
+              <ActivityIndicator color={colors.primary} size="small" />
+            ) : (
+              <HugeiconsIcon color={isWished ? colors.primary : "#667085"} icon={HeartIcon} size={compact ? 17 : 19} strokeWidth={isWished ? 2.6 : 1.8} />
+            )}
+          </Pressable>
         </View>
         <View style={styles.copy}>
           <Text numberOfLines={2} ellipsizeMode="tail" style={[styles.name, compact ? styles.nameCompact : null]}>
@@ -257,5 +284,12 @@ const styles = StyleSheet.create({
     top: 10,
     width: 36,
     zIndex: 2,
+  },
+  wishlistButtonActive: {
+    backgroundColor: "#FFF0EC",
+    borderColor: "#FFCDBD",
+  },
+  wishlistButtonDisabled: {
+    opacity: 0.72,
   },
 });

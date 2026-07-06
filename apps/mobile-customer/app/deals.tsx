@@ -1,20 +1,25 @@
 import { FlashIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react-native";
 import { FlashList } from "@shopify/flash-list";
-import { useInfiniteQuery } from "@tanstack/react-query";
-import { Stack } from "expo-router";
-import { useMemo } from "react";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Stack, useRouter } from "expo-router";
+import { useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, RefreshControl, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { EmptyState } from "../src/components/empty-state";
 import { ProductCard } from "../src/components/product-card";
+import { useMobileCustomerAuth } from "../src/auth/mobile-auth-context";
 import { useMobileMarket } from "../src/features/market/mobile-market";
 import { withStorefrontMaintenance } from "../src/features/maintenance/mobile-maintenance-gate";
-import { listStorefrontDeals } from "../src/features/storefront/storefront-api";
+import { addWishlistItem, getWishlist, listStorefrontDeals, removeWishlistItem } from "../src/features/storefront/storefront-api";
 import { colors } from "../src/theme";
 
 function DealsScreen() {
   const { width } = useWindowDimensions();
+  const router = useRouter();
+  const customerAuth = useMobileCustomerAuth();
+  const queryClient = useQueryClient();
   const market = useMobileMarket();
+  const [pendingWishlistProductId, setPendingWishlistProductId] = useState<string | null>(null);
   const dealsQuery = useInfiniteQuery({
     queryKey: ["mobile-storefront-deals"],
     queryFn: ({ pageParam }) =>
@@ -31,7 +36,45 @@ function DealsScreen() {
     () => dealsQuery.data?.pages.flatMap((page) => page.items) ?? [],
     [dealsQuery.data?.pages],
   );
+  const wishlistQuery = useQuery({
+    queryKey: ["mobile-wishlist", customerAuth.authKey],
+    queryFn: () => getWishlist(customerAuth.authHeaders),
+    enabled: customerAuth.enabled,
+    staleTime: 30_000,
+  });
+  const wishlistProductIds = useMemo(
+    () => new Set((wishlistQuery.data?.items ?? []).map((item) => item.productId)),
+    [wishlistQuery.data?.items],
+  );
+  const wishlistMutation = useMutation({
+    mutationFn: async ({ productId, wished }: { productId: string; wished: boolean }) => {
+      if (wished) {
+        await removeWishlistItem(customerAuth.authHeaders, productId);
+        return;
+      }
+      await addWishlistItem(customerAuth.authHeaders, productId);
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["mobile-wishlist", customerAuth.authKey] }),
+        queryClient.invalidateQueries({ queryKey: ["mobile-account-profile", customerAuth.authKey] }),
+      ]);
+    },
+    onSettled: () => setPendingWishlistProductId(null),
+  });
   const columnCount = width >= 720 ? 3 : 2;
+
+  function toggleWishlist(productId: string, wished: boolean) {
+    if (customerAuth.status === "loading" || customerAuth.status === "syncing" || wishlistMutation.isPending) {
+      return;
+    }
+    if (!customerAuth.enabled) {
+      router.push("/auth/sign-in");
+      return;
+    }
+    setPendingWishlistProductId(productId);
+    wishlistMutation.mutate({ productId, wished });
+  }
 
   return (
     <View style={styles.screen}>
@@ -67,7 +110,22 @@ function DealsScreen() {
             onLoadMore={() => void dealsQuery.fetchNextPage()}
           />
         }
-        renderItem={({ item }) => <ProductCard formatPrice={market.format} product={item} />}
+        renderItem={({ item }) => {
+          const isWished = wishlistProductIds.has(item.id);
+          return (
+            <View style={styles.gridCell}>
+              <ProductCard
+                compact
+                noMargin
+                formatPrice={market.format}
+                isWishlistPending={pendingWishlistProductId === item.id}
+                isWished={isWished}
+                product={item}
+                onToggleWishlist={() => toggleWishlist(item.id, isWished)}
+              />
+            </View>
+          );
+        }}
       />
     </View>
   );
@@ -126,8 +184,12 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingBottom: 110,
-    paddingHorizontal: 10,
+    paddingHorizontal: 14,
     paddingTop: 14,
+  },
+  gridCell: {
+    flex: 1,
+    padding: 5,
   },
   header: {
     alignItems: "center",

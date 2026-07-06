@@ -14,7 +14,10 @@ type MobileCustomerAuthContextValue = {
   status: MobileCustomerAuthStatus;
   error?: string;
   userProfile: {
+    canChangePassword?: boolean;
     email?: string;
+    hasGoogleAccount?: boolean;
+    imageUrl?: string;
     phone?: string;
     fullName?: string;
   };
@@ -289,9 +292,36 @@ function currentUserPayload(user: ReturnType<typeof useUser>["user"]) {
   const email = user?.primaryEmailAddress?.emailAddress ?? user?.emailAddresses[0]?.emailAddress;
   const phone = normalizeIndianPhone(user?.primaryPhoneNumber?.phoneNumber ?? user?.phoneNumbers[0]?.phoneNumber);
   const fullName = user?.fullName ?? [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim();
+  const userWithAuthDetails = user as
+    | (typeof user & {
+        externalAccounts?: Array<{ provider?: string | null; strategy?: string | null }>;
+        hasImage?: boolean;
+        imageUrl?: string | null;
+        passwordEnabled?: boolean;
+        updatePassword?: (params: {
+          currentPassword: string;
+          newPassword: string;
+          signOutOfOtherSessions?: boolean;
+        }) => Promise<unknown>;
+      })
+    | null
+    | undefined;
+  const externalAccounts = userWithAuthDetails?.externalAccounts as
+    | Array<{ provider?: string | null; strategy?: string | null }>
+    | undefined;
+  const hasGoogleAccount = Boolean(
+    externalAccounts?.some((account) =>
+      `${account.provider ?? ""} ${account.strategy ?? ""}`.toLowerCase().includes("google"),
+    ),
+  );
+  const imageUrl = userWithAuthDetails?.imageUrl?.trim();
+  const canChangePassword = Boolean(!hasGoogleAccount && userWithAuthDetails?.updatePassword);
 
   return {
+    ...(canChangePassword ? { canChangePassword } : {}),
     ...(email ? { email } : {}),
+    ...(hasGoogleAccount ? { hasGoogleAccount } : {}),
+    ...(imageUrl ? { imageUrl } : {}),
     ...(phone ? { phone } : {}),
     ...(fullName ? { fullName } : {}),
   };

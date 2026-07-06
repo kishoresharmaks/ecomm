@@ -2,6 +2,7 @@ import { Alert02Icon, Calendar03Icon, Location01Icon, StarIcon } from "@hugeicon
 import { HugeiconsIcon } from "@hugeicons/react-native";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { RemoteImage } from "../../components/remote-image";
+import { resolveImageUrl } from "../../lib/image-url";
 import { colors } from "../../theme";
 import { formatStatus, StatusPill } from "../account/account-ui";
 import { getPricingLabel } from "./utils/pricingLabel";
@@ -17,11 +18,13 @@ export function ServiceCard({
   onPress: () => void;
   service: MobileServiceListing;
 }) {
+  const coverImageUrl = resolveImageUrl(service.coverImageUrl);
+
   return (
     <Pressable accessibilityRole="button" style={({ pressed }) => [styles.serviceCard, compact ? styles.compactCard : null, pressed ? styles.pressed : null]} onPress={onPress}>
       <View style={styles.imageWrap}>
-        {service.coverImageUrl ? (
-          <RemoteImage uri={service.coverImageUrl} style={styles.serviceImage} />
+        {coverImageUrl ? (
+          <RemoteImage fallbackLabel={service.name} uri={coverImageUrl} style={styles.serviceImage} />
         ) : (
           <View style={styles.imageFallback}>
             <HugeiconsIcon color={colors.primary} icon={StarIcon} size={25} strokeWidth={2} />

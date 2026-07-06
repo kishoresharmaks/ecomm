@@ -34,10 +34,12 @@ import {
   ActivityIndicator,
   Image,
   ImageBackground,
+  KeyboardAvoidingView,
   type ImageStyle,
   Modal,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -279,7 +281,7 @@ function HomeHeader({ selectedLocation }: { selectedLocation: SelectedLocation }
           </View>
         </View>
         <View style={styles.headerActions}>
-          <Link asChild href="/account">
+          <Link asChild href="/account/notifications">
             <Pressable style={({ pressed }) => [styles.headerIconButton, pressed ? styles.headerIconButtonPressed : null]}>
               <HugeiconsIcon color={colors.ink} icon={BellDotIcon} size={26} strokeWidth={2} />
               <Text style={styles.notificationDot} />
@@ -356,7 +358,8 @@ function LocationSelectorModal({ open, onClose }: { open: boolean; onClose: () =
   const setSelectedLocation = useLocationStore((state) => state.setSelectedLocation);
   const market = useMobileMarket(selectedLocation.countryCode);
   const [countryCode, setCountryCode] = useState(selectedLocation.countryCode ?? market.countryCode);
-  const [locationSearch, setLocationSearch] = useState("Salem");
+  const [locationSearch, setLocationSearch] = useState(selectedLocation.label === "Select location" ? "" : selectedLocation.label);
+  const debouncedLocationSearch = useDebouncedValue(locationSearch.trim(), 260);
   const countriesQuery = useQuery({
     queryKey: ["mobile-location-countries"],
     queryFn: listLocationCountries,
@@ -364,9 +367,9 @@ function LocationSelectorModal({ open, onClose }: { open: boolean; onClose: () =
     staleTime: 5 * 60_000,
   });
   const locationQuery = useQuery({
-    queryKey: ["location-areas", countryCode, locationSearch],
-    queryFn: () => searchLocationAreas(locationSearch, countryCode),
-    enabled: open && locationSearch.trim().length >= 2,
+    queryKey: ["location-areas", countryCode, debouncedLocationSearch],
+    queryFn: () => searchLocationAreas(debouncedLocationSearch, countryCode),
+    enabled: open && debouncedLocationSearch.length >= 2,
   });
   const countries = countriesQuery.data ?? [];
   const selectedCountry =
@@ -376,8 +379,9 @@ function LocationSelectorModal({ open, onClose }: { open: boolean; onClose: () =
   useEffect(() => {
     if (open) {
       setCountryCode(selectedLocation.countryCode ?? market.countryCode);
+      setLocationSearch(selectedLocation.label === "Select location" ? "" : selectedLocation.label);
     }
-  }, [market.countryCode, open, selectedLocation.countryCode]);
+  }, [market.countryCode, open, selectedLocation.countryCode, selectedLocation.label]);
 
   function selectArea(area: LocationArea) {
     setSelectedLocation(locationFromArea(area));
@@ -401,7 +405,11 @@ function LocationSelectorModal({ open, onClose }: { open: boolean; onClose: () =
 
   return (
     <Modal animationType="slide" onRequestClose={onClose} transparent visible={open}>
-      <View style={styles.modalOverlay}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={0}
+        style={styles.modalOverlay}
+      >
         <View style={styles.locationSheet}>
           <View style={styles.sheetHandle} />
           <View style={styles.sheetHeader}>
@@ -440,7 +448,11 @@ function LocationSelectorModal({ open, onClose }: { open: boolean; onClose: () =
           {locationQuery.isError ? (
             <Text style={styles.locationError}>Could not load locations. Check API connection and try again.</Text>
           ) : null}
-          <ScrollView style={styles.locationResults} keyboardShouldPersistTaps="handled">
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            style={styles.locationResults}
+          >
             {(locationQuery.data ?? []).map((area) => (
               <Pressable key={area.id} style={styles.locationResult} onPress={() => selectArea(area)}>
                 <Text style={styles.locationResultTitle}>{area.name}</Text>
@@ -454,7 +466,7 @@ function LocationSelectorModal({ open, onClose }: { open: boolean; onClose: () =
             ) : null}
           </ScrollView>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -1868,7 +1880,7 @@ function buildMobileProductFeedRails(home: MobileHome, allProducts: MobileProduc
       id: "new-arrivals",
       type: "product-rail" as const,
       title: "New Arrivals",
-      actionHref: "/search?sort=newest" as Href,
+      actionHref: "/new-arrivals" as Href,
       icon: FlashIcon,
       badge: "New",
       products: newArrivals.length ? newArrivals : uniqueProducts(home.productRails.latest).slice(0, 10),
@@ -2213,6 +2225,17 @@ function timestampMs(value?: string) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function useDebouncedValue<T>(value: T, delayMs: number) {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const timeout = setTimeout(() => setDebouncedValue(value), delayMs);
+    return () => clearTimeout(timeout);
+  }, [delayMs, value]);
+
+  return debouncedValue;
+}
+
 function productHasDeal(product: MobileProduct) {
   const variant = product.variants?.[0];
   return Boolean(variant?.mrpPaise && variant.pricePaise && variant.mrpPaise > variant.pricePaise);
@@ -2552,8 +2575,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.secondary,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    maxHeight: "82%",
+    maxHeight: "92%",
     padding: 18,
+    paddingBottom: 10,
   },
   sheetHandle: {
     alignSelf: "center",
@@ -2611,6 +2635,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 15,
     minHeight: 50,
+    minWidth: 0,
   },
   marketSelectorCard: {
     backgroundColor: colors.surface,
@@ -2709,7 +2734,9 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   locationResults: {
+    flexShrink: 1,
     marginTop: 10,
+    maxHeight: 310,
   },
   locationResult: {
     backgroundColor: colors.surface,

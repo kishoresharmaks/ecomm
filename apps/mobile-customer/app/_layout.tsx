@@ -46,10 +46,12 @@ function RootLayout() {
             <Stack.Screen name="store/[slug]" />
             <Stack.Screen name="stores/[slug]" />
             <Stack.Screen name="deals" />
+            <Stack.Screen name="new-arrivals" />
             <Stack.Screen name="track-order" />
             <Stack.Screen name="orders/[orderNumber]" />
             <Stack.Screen name="orders/[orderNumber]/return" />
             <Stack.Screen name="account/profile" />
+            <Stack.Screen name="account/change-password" />
             <Stack.Screen name="account/addresses" />
             <Stack.Screen name="account/location" />
             <Stack.Screen name="account/notifications" />
