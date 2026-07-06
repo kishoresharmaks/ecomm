@@ -19,14 +19,38 @@ permissions:
   contents: read
 
 jobs:
+  prep-matrix:
+    name: Prepare App Matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - id: set-matrix
+        env:
+          SELECTED_APP: ${{ github.event.inputs.app }}
+        run: |
+          case "$SELECTED_APP" in
+            mobile-delivery)
+              echo 'matrix={"app":["mobile-delivery"]}' >> "$GITHUB_OUTPUT"
+              ;;
+            mobile-customer)
+              echo 'matrix={"app":["mobile-customer"]}' >> "$GITHUB_OUTPUT"
+              ;;
+            mobile-seller)
+              echo 'matrix={"app":["mobile-seller"]}' >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo 'matrix={"app":["mobile-delivery","mobile-customer","mobile-seller"]}' >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
   build-android:
+    needs: prep-matrix
     name: Build Android Release (${{ matrix.app }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix:
-        app: [mobile-delivery, mobile-customer, mobile-seller]
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.app == 'all' || inputs.app == matrix.app }}
+      matrix: ${{ fromJson(needs.prep-matrix.outputs.matrix) }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
