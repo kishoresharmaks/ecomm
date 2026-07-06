@@ -181,10 +181,11 @@ function uploadImageKitImage(
         return;
       }
 
+      const uploadedKey = withImageExtension(request.assetKey, file.name, file.type);
       resolve({
-        secureUrl: payload.url ?? `${request.urlEndpoint.replace(/\/+$/, "")}/${request.assetKey}`,
-        assetKey: request.assetKey,
-        publicId: request.assetKey,
+        secureUrl: payload.url ?? `${request.urlEndpoint.replace(/\/+$/, "")}/${uploadedKey}`,
+        assetKey: uploadedKey,
+        publicId: uploadedKey,
         ...(payload.width !== undefined ? { width: payload.width } : {}),
         ...(payload.height !== undefined ? { height: payload.height } : {}),
         ...(payload.size !== undefined ? { bytes: payload.size } : {}),
@@ -247,4 +248,15 @@ function parseImageKitResponse(value: string) {
   } catch {
     return {};
   }
+}
+
+function withImageExtension(assetKey: string, fileName: string, contentType: string) {
+  if (/\.(jpe?g|png|webp|gif)$/i.test(assetKey)) {
+    return assetKey;
+  }
+
+  const extension =
+    fileName.toLowerCase().match(/\.(jpe?g|png|webp|gif)$/)?.[0] ??
+    (contentType === "image/jpeg" ? ".jpg" : contentType === "image/png" ? ".png" : contentType === "image/webp" ? ".webp" : "");
+  return extension ? `${assetKey}${extension}` : assetKey;
 }

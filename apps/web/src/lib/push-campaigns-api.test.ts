@@ -3,6 +3,7 @@ import {
   buildPushCampaignListPath,
   emptyPushCampaignForm,
   isAllowedPushCampaignHref,
+  isManagedCampaignImageKey,
   pushCampaignPayloadFromForm,
   validatePushCampaignForm,
   validatePushCampaignImageFile,
@@ -50,6 +51,16 @@ describe("push campaign API helpers", () => {
     expect(validatePushCampaignForm({ ...emptyPushCampaignForm(), title: "Title", body: "Body", href: "/bad/path" })).toBe(
       "Deep link must match an approved customer app route.",
     );
+    expect(
+      validatePushCampaignForm({
+        ...emptyPushCampaignForm(),
+        title: "Title",
+        body: "Body",
+        imageAssetKey: "1handindia/admin/49832ea9-1311-4e2d-a4a4-1e9e8e/logo.png",
+      }),
+    ).toBe("");
+    expect(isManagedCampaignImageKey("1handindia/admin/49832ea9-1311-4e2d-a4a4-1e9e8e/logo.png")).toBe(true);
+    expect(isManagedCampaignImageKey("1handindia/admin/49832ea9-1311-4e2d-a4a4-1e9e8e")).toBe(false);
     expect(
       validatePushCampaignImageFile({
         name: "push.gif",

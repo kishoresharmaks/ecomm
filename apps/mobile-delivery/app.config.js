@@ -7,7 +7,12 @@ const sentryOrganization = process.env.SENTRY_ORG ?? process.env.EXPO_PUBLIC_SEN
 const sentryProject = process.env.SENTRY_PROJECT ?? process.env.EXPO_PUBLIC_SENTRY_PROJECT;
 const easProjectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID ?? "9e885388-f7f2-4ca6-bfec-0cbbc58eebb8";
 const androidGoogleServicesFile =
-  process.env.GOOGLE_SERVICES_JSON ?? (fs.existsSync("./google-services.json") ? "./google-services.json" : undefined);
+  process.env.GOOGLE_SERVICES_JSON ??
+  (fs.existsSync("./google-services.json")
+    ? "./google-services.json"
+    : fs.existsSync("./android/app/google-services.json")
+      ? "./android/app/google-services.json"
+      : undefined);
 const sentryPlugin =
   sentryOrganization && sentryProject
     ? [

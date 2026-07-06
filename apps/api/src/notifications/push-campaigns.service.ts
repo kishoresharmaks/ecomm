@@ -396,7 +396,7 @@ export class PushCampaignsService {
     if (key.includes("://") || key.startsWith("/api/storage/public-image")) {
       throw new BadRequestException("Campaign image must be a managed public image asset key.");
     }
-    if (!/^indihub\/.+\.(jpe?g|png|webp)$/i.test(key) || key.includes("..")) {
+    if (!/^(?:1handindia|indihub)\/.+\.(jpe?g|png|webp)$/i.test(key) || key.includes("..")) {
       throw new BadRequestException("Campaign image must be a public JPG, PNG, or WebP asset key.");
     }
     return key.replaceAll("\\", "/");

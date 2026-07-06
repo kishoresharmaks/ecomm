@@ -206,7 +206,7 @@ export function isAllowedPushCampaignHref(value: string) {
 
 export function isManagedCampaignImageKey(value: string) {
   const key = value.trim();
-  return /^indihub\/.+\.(jpe?g|png|webp)$/i.test(key) && !key.includes("..") && !key.includes("://");
+  return /^(?:1handindia|indihub)\/.+\.(jpe?g|png|webp)$/i.test(key) && !key.includes("..") && !key.includes("://");
 }
 
 export function validatePushCampaignImageFile(file: Pick<File, "type" | "size" | "name">) {

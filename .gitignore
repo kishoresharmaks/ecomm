@@ -17,6 +17,13 @@ test-results/
 .env.*
 !.env.example
 
+# Credentials & Keyfiles
+*-firebase-adminsdk-*.json
+google-services.json
+GoogleService-Info.plist
+*.keystore
+*.jks
+
 # Logs
 *.log
 .logs/

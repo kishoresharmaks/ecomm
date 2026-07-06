@@ -38,7 +38,7 @@ describe("PushCampaignsService", () => {
     vi.clearAllMocks();
     prisma.client.customerPushToken.count.mockResolvedValue(7);
     prisma.client.customerPushToken.findMany.mockResolvedValue([]);
-    storage.publicImageUrl.mockResolvedValue("https://ik.imagekit.io/indihub/indihub/admin/admin_1/banners/push.webp");
+    storage.publicImageUrl.mockResolvedValue("https://ik.imagekit.io/indihub/1handindia/admin/admin_1/banners/push.webp");
   });
 
   it("validates image keys and href allow-list when creating a campaign", async () => {
@@ -48,17 +48,17 @@ describe("PushCampaignsService", () => {
     await service.createCampaign(actor as never, {
       title: "Festive deal",
       body: "Fresh offers are live.",
-      imageAssetKey: "indihub/admin/admin_1/banners/push.webp",
+      imageAssetKey: "1handindia/admin/admin_1/banners/push.webp",
       href: "/deals",
       segmentFilter: { countryCode: "in" },
     });
 
-    expect(storage.publicImageUrl).toHaveBeenCalledWith("indihub/admin/admin_1/banners/push.webp");
+    expect(storage.publicImageUrl).toHaveBeenCalledWith("1handindia/admin/admin_1/banners/push.webp");
     expect(prisma.client.pushNotificationCampaign.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         href: "/deals",
-        imageAssetKey: "indihub/admin/admin_1/banners/push.webp",
-        imageUrl: "https://ik.imagekit.io/indihub/indihub/admin/admin_1/banners/push.webp",
+        imageAssetKey: "1handindia/admin/admin_1/banners/push.webp",
+        imageUrl: "https://ik.imagekit.io/indihub/1handindia/admin/admin_1/banners/push.webp",
         segmentFilter: { countryCode: "IN" },
         previewCount: 7,
       }),
