@@ -2,6 +2,13 @@ packages:
   - apps/*
   - packages/*
 
+overrides:
+  '@hono/node-server': 1.19.13
+  babel-preset-expo: 56.0.15
+  postcss: 8.5.15
+  semver: 7.8.4
+  uuid: 11.1.1
+
 onlyBuiltDependencies:
   - '@clerk/shared'
   - '@nestjs/core'

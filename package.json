@@ -8,13 +8,6 @@
     "node": ">=22.0.0",
     "pnpm": ">=10.0.0"
   },
-  "pnpm": {
-    "overrides": {
-      "@hono/node-server": "1.19.13",
-      "postcss": "8.5.15",
-      "uuid": "11.1.1"
-    }
-  },
   "scripts": {
     "dev": "turbo dev",
     "build": "pnpm db:generate && turbo build",
