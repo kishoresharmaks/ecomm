@@ -171,7 +171,7 @@ function TrackedOrderPanel({ order }: { order: PublicTrackedOrder }) {
               <div>
                 <p className="font-black text-[#1F2933]">{item.productNameSnapshot}</p>
                 <p className="mt-1 text-sm font-semibold text-[#667085]">
-                  {item.variantSnapshot ?? "Default"} x {item.quantity}
+                  {formatVariantLabel(item.variantSnapshot) ?? "Default"} x {item.quantity}
                 </p>
                 {item.seller ? <p className="mt-1 text-xs font-bold text-[#667085]">Sold by {item.seller.storeName}</p> : null}
               </div>
@@ -329,4 +329,16 @@ function formatDateTime(value?: string | null) {
     dateStyle: "medium",
     timeStyle: "short"
   }).format(new Date(value));
+}
+
+function formatVariantLabel(value: unknown): string | null {
+  if (!value) return null;
+  if (typeof value === "string") return value.trim() || null;
+  if (typeof value === "object" && value !== null) {
+    const snap = value as { variantName?: string; sku?: string };
+    const name = typeof snap.variantName === "string" && snap.variantName.trim() ? snap.variantName.trim() : null;
+    const sku = typeof snap.sku === "string" && snap.sku.trim() ? snap.sku.trim() : null;
+    return name ?? sku ?? null;
+  }
+  return null;
 }

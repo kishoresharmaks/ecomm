@@ -11,13 +11,21 @@ import { StyleSheet, type ColorValue, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors } from "../../src/theme";
 
-const tabIcons = {
-  index: Home01Icon,
-  orders: PackageIcon,
-  returns: DeliveryReturn01Icon,
-  wallet: DollarSignIcon,
-  profile: UserCircleIcon,
-} satisfies Record<string, IconSvgElement>;
+function createTabIcon(icon: IconSvgElement) {
+  return function TabIcon({ color, focused }: { color: ColorValue; focused: boolean }) {
+    return (
+      <View style={[styles.tabIconBubble, focused ? styles.tabIconBubbleActive : null]}>
+        <HugeiconsIcon color={String(color)} icon={icon} size={focused ? 22 : 21} strokeWidth={focused ? 2.25 : 1.9} />
+      </View>
+    );
+  };
+}
+
+const HomeTabIcon = createTabIcon(Home01Icon);
+const OrdersTabIcon = createTabIcon(PackageIcon);
+const ReturnsTabIcon = createTabIcon(DeliveryReturn01Icon);
+const WalletTabIcon = createTabIcon(DollarSignIcon);
+const ProfileTabIcon = createTabIcon(UserCircleIcon);
 
 export default function DeliveryTabsLayout() {
   const insets = useSafeAreaInsets();
@@ -54,24 +62,15 @@ export default function DeliveryTabsLayout() {
         tabBarItemStyle: { borderRadius: 22 },
       }}
     >
-      <Tabs.Screen name="index" options={{ title: "Home", tabBarIcon: iconRenderer("index") }} />
-      <Tabs.Screen name="orders" options={{ title: "Orders", tabBarIcon: iconRenderer("orders") }} />
-      <Tabs.Screen name="returns" options={{ title: "Returns", tabBarIcon: iconRenderer("returns") }} />
-      <Tabs.Screen name="wallet" options={{ title: "Wallet", tabBarIcon: iconRenderer("wallet") }} />
-      <Tabs.Screen name="profile" options={{ title: "Profile", tabBarIcon: iconRenderer("profile") }} />
+      <Tabs.Screen name="index" options={{ title: "Home", tabBarIcon: HomeTabIcon }} />
+      <Tabs.Screen name="orders" options={{ title: "Orders", tabBarIcon: OrdersTabIcon }} />
+      <Tabs.Screen name="returns" options={{ title: "Returns", tabBarIcon: ReturnsTabIcon }} />
+      <Tabs.Screen name="wallet" options={{ title: "Wallet", tabBarIcon: WalletTabIcon }} />
+      <Tabs.Screen name="profile" options={{ title: "Profile", tabBarIcon: ProfileTabIcon }} />
     </Tabs>
   );
 }
 
-function iconRenderer(name: keyof typeof tabIcons) {
-  return function TabIcon({ color, focused }: { color: ColorValue; focused: boolean }) {
-    return (
-      <View style={[styles.tabIconBubble, focused ? styles.tabIconBubbleActive : null]}>
-        <HugeiconsIcon color={String(color)} icon={tabIcons[name]} size={focused ? 22 : 21} strokeWidth={focused ? 2.25 : 1.9} />
-      </View>
-    );
-  };
-}
 
 const styles = StyleSheet.create({
   tabIconBubble: { alignItems: "center", borderRadius: 16, height: 28, justifyContent: "center", width: 30 },

@@ -285,7 +285,7 @@ function PaymentNotice({ payment }: { payment: ReturnType<typeof paymentSummary>
 
 function OrderItemCard({ item, order }: { item: OrderSummary["items"][number]; order: OrderSummary }) {
   const imageUrl = item.product ? primaryImage(item.product) : null;
-  const variantLabel = item.variantSnapshot ?? "Default";
+  const variantLabel = formatVariantLabel(item.variantSnapshot) ?? "Default";
   const deliveryEstimate = itemDeliveryEstimate(item, order);
   const itemSavings = itemSavingsPaise(item);
 
@@ -484,4 +484,16 @@ function formatDateTime(value?: string | Date | null) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function formatVariantLabel(value: unknown): string | null {
+  if (!value) return null;
+  if (typeof value === "string") return value.trim() || null;
+  if (typeof value === "object" && value !== null) {
+    const snap = value as { variantName?: string; sku?: string };
+    const name = typeof snap.variantName === "string" && snap.variantName.trim() ? snap.variantName.trim() : null;
+    const sku = typeof snap.sku === "string" && snap.sku.trim() ? snap.sku.trim() : null;
+    return name ?? sku ?? null;
+  }
+  return null;
 }

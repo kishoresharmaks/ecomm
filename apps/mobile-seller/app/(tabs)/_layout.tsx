@@ -15,16 +15,29 @@ import { colors } from "../../src/theme";
 
 type TabIconName = "home" | "products" | "orders" | "services" | "b2b" | "sales" | "finance" | "profile";
 
-const tabIcons = {
-  home: Home01Icon,
-  products: ShoppingBag01Icon,
-  orders: PackageIcon,
-  services: Suit02Icon,
-  b2b: Suit02Icon,
-  sales: ChartIcon,
-  finance: DollarSignIcon,
-  profile: UserCircleIcon,
-} satisfies Record<TabIconName, IconSvgElement>;
+function createTabIcon(icon: IconSvgElement) {
+  return function TabIcon({ color, focused }: { color: ColorValue; focused: boolean }) {
+    return (
+      <View style={[styles.tabIconBubble, focused ? styles.tabIconBubbleActive : null]}>
+        <HugeiconsIcon
+          color={String(color)}
+          icon={icon}
+          size={focused ? 22 : 21}
+          strokeWidth={focused ? 2.25 : 1.9}
+        />
+      </View>
+    );
+  };
+}
+
+const HomeTabIcon = createTabIcon(Home01Icon);
+const ProductsTabIcon = createTabIcon(ShoppingBag01Icon);
+const OrdersTabIcon = createTabIcon(PackageIcon);
+const ServicesTabIcon = createTabIcon(Suit02Icon);
+const B2bTabIcon = createTabIcon(Suit02Icon);
+const SalesTabIcon = createTabIcon(ChartIcon);
+const FinanceTabIcon = createTabIcon(DollarSignIcon);
+const ProfileTabIcon = createTabIcon(UserCircleIcon);
 
 export default function SellerTabsLayout() {
   const insets = useSafeAreaInsets();
@@ -68,31 +81,16 @@ export default function SellerTabsLayout() {
         },
       }}
     >
-      <Tabs.Screen name="index" options={{ title: "Home", tabBarIcon: iconRenderer("home") }} />
-      <Tabs.Screen name="products" options={{ title: "Products", tabBarIcon: iconRenderer("products") }} />
-      <Tabs.Screen name="orders" options={{ title: "Orders", tabBarIcon: iconRenderer("orders") }} />
-      <Tabs.Screen name="services" options={{ title: "Services", tabBarIcon: iconRenderer("services") }} />
-      <Tabs.Screen name="b2b" options={{ title: "B2B", tabBarIcon: iconRenderer("b2b") }} />
-      <Tabs.Screen name="sales" options={{ title: "Sales", tabBarIcon: iconRenderer("sales") }} />
-      <Tabs.Screen name="finance" options={{ title: "Finance", tabBarIcon: iconRenderer("finance") }} />
-      <Tabs.Screen name="profile" options={{ title: "Profile", tabBarIcon: iconRenderer("profile") }} />
+      <Tabs.Screen name="index" options={{ title: "Home", tabBarIcon: HomeTabIcon }} />
+      <Tabs.Screen name="products" options={{ title: "Products", tabBarIcon: ProductsTabIcon }} />
+      <Tabs.Screen name="orders" options={{ title: "Orders", tabBarIcon: OrdersTabIcon }} />
+      <Tabs.Screen name="services" options={{ title: "Services", tabBarIcon: ServicesTabIcon }} />
+      <Tabs.Screen name="b2b" options={{ title: "B2B", tabBarIcon: B2bTabIcon }} />
+      <Tabs.Screen name="sales" options={{ title: "Sales", tabBarIcon: SalesTabIcon }} />
+      <Tabs.Screen name="finance" options={{ title: "Finance", tabBarIcon: FinanceTabIcon }} />
+      <Tabs.Screen name="profile" options={{ title: "Profile", tabBarIcon: ProfileTabIcon }} />
     </Tabs>
   );
-}
-
-function iconRenderer(name: TabIconName) {
-  return function TabIcon({ color, focused }: { color: ColorValue; focused: boolean }) {
-    return (
-      <View style={[styles.tabIconBubble, focused ? styles.tabIconBubbleActive : null]}>
-        <HugeiconsIcon
-          color={String(color)}
-          icon={tabIcons[name]}
-          size={focused ? 22 : 21}
-          strokeWidth={focused ? 2.25 : 1.9}
-        />
-      </View>
-    );
-  };
 }
 
 const styles = StyleSheet.create({

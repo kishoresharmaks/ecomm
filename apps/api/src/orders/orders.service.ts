@@ -4041,9 +4041,10 @@ export class OrdersService {
   }
 
   private filterOrderForSeller(order: OrderWithRelations, sellerId: string) {
+    const safeOrder = this.customerSafeOrder(order);
     return {
-      ...this.customerSafeOrder(order),
-      items: order.items.filter((item) => item.sellerId === sellerId),
+      ...safeOrder,
+      items: safeOrder.items.filter((item) => item.sellerId === sellerId),
       sellerSplits: order.sellerSplits
         .filter((split) => split.sellerId === sellerId)
         .map((split) => ({
@@ -4667,14 +4668,20 @@ export class OrdersService {
   }
 
   private customerSafeVariantSnapshot(value: Prisma.JsonValue | null) {
-    if (!value || typeof value !== "object" || Array.isArray(value)) {
+    if (!value) {
+      return null;
+    }
+    if (typeof value === "string") {
+      return value.trim() || null;
+    }
+    if (typeof value !== "object" || Array.isArray(value)) {
       return null;
     }
 
     const snapshot = value as Record<string, unknown>;
     const variantName = typeof snapshot.variantName === "string" && snapshot.variantName.trim()
       ? snapshot.variantName.trim()
-      : null;
+      : (typeof snapshot.sku === "string" && snapshot.sku.trim() ? snapshot.sku.trim() : null);
 
     return variantName;
   }

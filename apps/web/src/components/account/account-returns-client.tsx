@@ -265,7 +265,7 @@ function ReturnDetailView({
                 <div>
                   <p className="text-sm font-bold text-[#1F2933]">{item.productName}</p>
                   <p className="mt-1 text-xs font-semibold text-[#667085]">
-                    Qty: {item.quantity} / {item.variantSnapshot ?? "Default variant"} / {item.seller?.storeName ?? item.sellerName ?? "Seller"}
+                    Qty: {item.quantity} / {formatVariantLabel(item.variantSnapshot) ?? "Default variant"} / {item.seller?.storeName ?? item.sellerName ?? "Seller"}
                   </p>
                   <p className="mt-1 text-xs font-semibold text-[#667085]">
                     Requested {formatMoney(item.requestedRefundPaise, returnDetail.currency)}
@@ -411,4 +411,16 @@ function refundStatusMessage(status: string) {
   if (status === "FAILED" || status === "RETRY_PENDING") return "Refund needs retry or finance review.";
   if (status === "CANCELLED") return "Refund was cancelled.";
   return "Refund is waiting for review.";
+}
+
+function formatVariantLabel(value: unknown): string | null {
+  if (!value) return null;
+  if (typeof value === "string") return value.trim() || null;
+  if (typeof value === "object" && value !== null) {
+    const snap = value as { variantName?: string; sku?: string };
+    const name = typeof snap.variantName === "string" && snap.variantName.trim() ? snap.variantName.trim() : null;
+    const sku = typeof snap.sku === "string" && snap.sku.trim() ? snap.sku.trim() : null;
+    return name ?? sku ?? null;
+  }
+  return null;
 }

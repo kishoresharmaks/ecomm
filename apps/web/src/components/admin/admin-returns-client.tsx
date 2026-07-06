@@ -429,7 +429,7 @@ function AdminReturnDetailPanel({
                 <div className="min-w-0">
                   <p className="text-base font-black leading-6 text-[#1F2933]">{item.productName}</p>
                   <p className="mt-1 text-sm font-semibold text-[#667085]">
-                    {item.seller?.storeName ?? item.sellerName} / Qty {item.quantity} / {item.variantSnapshot ?? "Default variant"}
+                    {item.seller?.storeName ?? item.sellerName} / Qty {item.quantity} / {formatVariantLabel(item.variantSnapshot) ?? "Default variant"}
                   </p>
                 </div>
                 <ReturnStatusBadge status={item.status} />
@@ -761,4 +761,16 @@ function formatReturnAddress(address?: {
   return [address.line1, address.line2, address.area, address.city, address.state, address.pincode, address.country]
     .filter(Boolean)
     .join(", ");
+}
+
+function formatVariantLabel(value: unknown): string | null {
+  if (!value) return null;
+  if (typeof value === "string") return value.trim() || null;
+  if (typeof value === "object" && value !== null) {
+    const snap = value as { variantName?: string; sku?: string };
+    const name = typeof snap.variantName === "string" && snap.variantName.trim() ? snap.variantName.trim() : null;
+    const sku = typeof snap.sku === "string" && snap.sku.trim() ? snap.sku.trim() : null;
+    return name ?? sku ?? null;
+  }
+  return null;
 }
