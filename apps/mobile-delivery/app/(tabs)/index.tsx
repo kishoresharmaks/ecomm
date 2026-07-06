@@ -1,12 +1,14 @@
 import { Link } from "expo-router";
 import { Pressable, Text, View } from "react-native";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { colors } from "../../src/theme";
 import { Header, Metric, QueryState, Screen, StatusChip, formatPaise, humanize } from "../../src/components/screen";
 import { listDeliveryOrders, getDeliveryWallet, findCodPayment, type DeliveryOrder } from "../../src/features/delivery/delivery-api";
 import { useMobileDeliveryAuth } from "../../src/auth/mobile-delivery-auth-context";
 
 export default function DeliveryDashboardScreen() {
   const auth = useMobileDeliveryAuth();
+  const queryClient = useQueryClient();
   const ordersQuery = useQuery({
     queryKey: ["delivery-orders", auth.authKey, "dashboard"],
     queryFn: () => listDeliveryOrders(auth.authHeaders, { limit: 50 }),
@@ -23,9 +25,25 @@ export default function DeliveryDashboardScreen() {
   const delivered = orders.filter((order) => order.deliveryStatus === "DELIVERED");
   const codPending = orders.filter((order) => order.paymentStatus === "PENDING" && findCodPayment(order));
 
+  const isRefreshing = ordersQuery.isFetching || walletQuery.isFetching;
+
+  const handleRefresh = async () => {
+    await queryClient.invalidateQueries({ queryKey: ["delivery-orders"] });
+    await queryClient.invalidateQueries({ queryKey: ["delivery-wallet"] });
+    await Promise.all([ordersQuery.refetch(), walletQuery.refetch()]);
+  };
+
   return (
     <Screen>
-      <Header title="Delivery dashboard" subtitle="Assigned order focus, COD visibility, and wallet summary." />
+      <Header
+        title="Delivery dashboard"
+        subtitle="Assigned order focus, COD visibility, and wallet summary."
+        right={
+          <Pressable onPress={handleRefresh} disabled={isRefreshing} style={{ padding: 8, opacity: isRefreshing ? 0.5 : 1 }}>
+            <Text style={{ color: colors.primary, fontSize: 22, fontWeight: "900" }}>↻</Text>
+          </Pressable>
+        }
+      />
       <QueryState loading={ordersQuery.isLoading} error={ordersQuery.error} onRetry={() => void ordersQuery.refetch()} />
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
         <Metric label="Assigned" value={ordersQuery.data?.total ?? orders.length} note="Orders assigned" />
