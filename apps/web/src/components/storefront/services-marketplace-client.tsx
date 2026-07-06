@@ -184,7 +184,6 @@ function ServiceDetail({ slug }: { slug: string }) {
         ? selectedAddressLocationQuery
         : debouncedManualLocationQuery
       : {};
-  const hasSelectedLocationForServiceability = Object.keys(selectedLocationQuery).length > 0;
   const manualLocationHasInput = hasManualServiceLocationInput(manualAddress);
   const manualLocationReadyForCheck = isManualServiceLocationReadyForQuery(manualAddress);
   const serviceQuery = useQuery({

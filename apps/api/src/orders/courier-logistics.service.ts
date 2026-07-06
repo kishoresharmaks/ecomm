@@ -2793,7 +2793,7 @@ export class CourierLogisticsService {
       remittedAmountPaise: item.remittedAmountPaise,
       remittanceReference: item.remittanceReference,
       reportReference: item.reportReference,
-      status: item.status as any,
+      status: item.status,
       notes: item.notes,
       order: {
         id: item.order.id,
@@ -2873,9 +2873,9 @@ export class CourierLogisticsService {
     return {
       id: shipmentPackage.id,
       packageNumber: shipmentPackage.packageNumber,
-      deliveryMode: shipmentPackage.deliveryMode as any,
-      status: effectivePackageStatus as any,
-      storedStatus: shipmentPackage.status as any,
+      deliveryMode: shipmentPackage.deliveryMode,
+      status: effectivePackageStatus,
+      storedStatus: shipmentPackage.status,
       weightGrams: shipmentPackage.weightGrams,
       lengthCm: shipmentPackage.lengthCm,
       breadthCm: shipmentPackage.breadthCm,
@@ -2901,13 +2901,13 @@ export class CourierLogisticsService {
           }
         : null,
       orderShipment: omitShipment || !packageShipment
-        ? (null as any)
+        ? null
         : {
             id: packageShipment.id,
             shipmentNumber: packageShipment.shipmentNumber,
-            deliveryMode: packageShipment.deliveryMode as any,
+            deliveryMode: packageShipment.deliveryMode,
             status: packageShipment.status,
-            assignmentStatus: packageShipment.assignmentStatus as any,
+            assignmentStatus: packageShipment.assignmentStatus,
             assignmentExpiresAt: packageShipment.assignmentExpiresAt?.toISOString() ?? null,
             routingFailed: packageShipment.routingFailed,
             routingFailureReason: packageShipment.routingFailureReason,
@@ -2951,7 +2951,7 @@ export class CourierLogisticsService {
       courierTrackingStatus:
         (courierPackage?.trackingStatus ??
         packageShipment?.courierShipment?.trackingStatus ??
-        CourierShipmentStatus.NOT_BOOKED) as any,
+        CourierShipmentStatus.NOT_BOOKED),
       awbNumber: courierPackage?.awbNumber ?? packageShipment?.courierShipment?.awbNumber ?? null,
       courierName: courierPackage?.courierName ?? null,
       courierCode:
@@ -3001,9 +3001,9 @@ export class CourierLogisticsService {
     return {
       id: shipment.id,
       shipmentNumber: shipment.shipmentNumber,
-      deliveryMode: shipment.deliveryMode as any,
+      deliveryMode: shipment.deliveryMode,
       status: shipment.status,
-      assignmentStatus: shipment.assignmentStatus as any,
+      assignmentStatus: shipment.assignmentStatus,
       assignmentExpiresAt: shipment.assignmentExpiresAt?.toISOString() ?? null,
       routingFailed: shipment.routingFailed,
       routingFailureReason: shipment.routingFailureReason,
@@ -3037,7 +3037,15 @@ export class CourierLogisticsService {
             phone: shipment.deliveryPartner.phone,
           }
         : null,
-      firstPackage: shipment.packages[0] ? this.courierPackageReadback(shipment.packages[0] as any, true, shipment) : null,
+      firstPackage: shipment.packages[0]
+        ? this.courierPackageReadback(
+            shipment.packages[0] as unknown as Prisma.OrderShipmentPackageGetPayload<{
+              include: ReturnType<CourierLogisticsService["courierPackageInclude"]>;
+            }>,
+            true,
+            shipment,
+          )
+        : null,
       packageCount: shipment.packages.length,
     };
   }
