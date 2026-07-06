@@ -1,4 +1,5 @@
 import { indihubFetch, type IndihubAuthHeaders } from "./api";
+import type { OrderVariantSnapshot } from "./order-variant";
 
 export type ReturnRequestStatus =
   | "PENDING_REVIEW"
@@ -139,7 +140,7 @@ export type ReturnDetail = Omit<ReturnSummary, "items"> & {
       seller?: { id: string; storeName: string; slug: string };
       sellerId?: string;
       sellerName?: string;
-      variantSnapshot?: string | null;
+      variantSnapshot?: OrderVariantSnapshot;
       quantity: number;
       status: ReturnRequestItemStatus;
       resolution: ReturnRequestResolution;

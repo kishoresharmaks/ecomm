@@ -1,4 +1,5 @@
 import { indihubFetch, type IndihubAuthHeaders } from "./api";
+import type { OrderVariantSnapshot } from "./order-variant";
 import type { LocationSource } from "./maps-api";
 import type {
   SupportContactChannel,
@@ -697,7 +698,7 @@ export type OrderSummary = {
     id: string;
     sellerId?: string;
     productNameSnapshot: string;
-    variantSnapshot?: string | null;
+    variantSnapshot?: OrderVariantSnapshot;
     quantity: number;
     activeQuantity?: number;
     cancelledQuantity?: number;
@@ -919,7 +920,7 @@ export type PublicTrackedOrder = Pick<
   items: Array<{
     id: string;
     productNameSnapshot: string;
-    variantSnapshot?: string | null;
+    variantSnapshot?: OrderVariantSnapshot;
     quantity: number;
     unitPricePaise: number;
     lineTotalPaise: number;

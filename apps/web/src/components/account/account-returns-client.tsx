@@ -20,6 +20,7 @@ import { AccountShell } from "./account-shell";
 import { EmptyState, ErrorPanel, PagePanel, SkeletonBlock } from "./account-ui";
 import { listCustomerReturns, getCustomerReturnDetail } from "@/lib/account-api";
 import { openPrivateProofReference } from "@/lib/delivery-proof-upload";
+import { formatVariantLabel } from "@/lib/order-variant";
 import type { ReturnDetail } from "@/lib/returns-api";
 import { formatMoney } from "@/lib/storefront-api";
 
@@ -411,16 +412,4 @@ function refundStatusMessage(status: string) {
   if (status === "FAILED" || status === "RETRY_PENDING") return "Refund needs retry or finance review.";
   if (status === "CANCELLED") return "Refund was cancelled.";
   return "Refund is waiting for review.";
-}
-
-function formatVariantLabel(value: unknown): string | null {
-  if (!value) return null;
-  if (typeof value === "string") return value.trim() || null;
-  if (typeof value === "object" && value !== null) {
-    const snap = value as { variantName?: string; sku?: string };
-    const name = typeof snap.variantName === "string" && snap.variantName.trim() ? snap.variantName.trim() : null;
-    const sku = typeof snap.sku === "string" && snap.sku.trim() ? snap.sku.trim() : null;
-    return name ?? sku ?? null;
-  }
-  return null;
 }

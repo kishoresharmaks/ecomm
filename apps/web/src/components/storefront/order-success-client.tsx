@@ -18,6 +18,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Button, SectionHeading, StatusBadge, cn } from "@indihub/ui";
 import { CustomerAuthNotice } from "@/components/auth/customer-auth-notice";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
+import { formatVariantLabel } from "@/lib/order-variant";
 import {
   formatOrderBaseAmount,
   formatOrderBuyerAmount,
@@ -484,16 +485,4 @@ function formatDateTime(value?: string | Date | null) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
-}
-
-function formatVariantLabel(value: unknown): string | null {
-  if (!value) return null;
-  if (typeof value === "string") return value.trim() || null;
-  if (typeof value === "object" && value !== null) {
-    const snap = value as { variantName?: string; sku?: string };
-    const name = typeof snap.variantName === "string" && snap.variantName.trim() ? snap.variantName.trim() : null;
-    const sku = typeof snap.sku === "string" && snap.sku.trim() ? snap.sku.trim() : null;
-    return name ?? sku ?? null;
-  }
-  return null;
 }

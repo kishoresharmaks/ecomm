@@ -32,6 +32,7 @@ import {
   type ReturnSummary,
 } from "@/lib/returns-api";
 import { openPrivateProofReference } from "@/lib/delivery-proof-upload";
+import { formatVariantLabel } from "@/lib/order-variant";
 import { formatMoney } from "@/lib/storefront-api";
 import {
   SellerAuthNotice,
@@ -513,16 +514,4 @@ function sellerReturnMetrics(items: ReturnSummary[]) {
 
 function returnPlural(quantity: number) {
   return quantity === 1 ? "" : "s";
-}
-
-function formatVariantLabel(value: unknown): string | null {
-  if (!value) return null;
-  if (typeof value === "string") return value.trim() || null;
-  if (typeof value === "object" && value !== null) {
-    const snap = value as { variantName?: string; sku?: string };
-    const name = typeof snap.variantName === "string" && snap.variantName.trim() ? snap.variantName.trim() : null;
-    const sku = typeof snap.sku === "string" && snap.sku.trim() ? snap.sku.trim() : null;
-    return name ?? sku ?? null;
-  }
-  return null;
 }
