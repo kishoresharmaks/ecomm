@@ -15,7 +15,12 @@ import {
   MaxLength,
   Min,
 } from "class-validator";
-import { DeliveryAssignmentStatus, DeliveryAttemptReason, UserStatus } from "@indihub/database";
+import {
+  DeliveryAssignmentRejectionReason,
+  DeliveryAssignmentStatus,
+  DeliveryAttemptReason,
+  UserStatus,
+} from "@indihub/database";
 import { IsValidPhoneNumber } from "../../common/validators/is-phone-number.validator";
 
 export enum DeliveryAssignmentDecision {
@@ -301,6 +306,11 @@ export class DeliveryAssignmentDecisionDto {
   @ApiProperty({ enum: DeliveryAssignmentDecision })
   @IsEnum(DeliveryAssignmentDecision)
   decision!: DeliveryAssignmentDecision;
+
+  @ApiPropertyOptional({ enum: DeliveryAssignmentRejectionReason })
+  @IsOptional()
+  @IsEnum(DeliveryAssignmentRejectionReason)
+  rejectionReason?: DeliveryAssignmentRejectionReason;
 
   @ApiPropertyOptional({ example: "Accepted for afternoon delivery." })
   @IsOptional()

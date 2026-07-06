@@ -352,6 +352,29 @@ type DeliveryPartnerAssignmentMetrics = {
   lastAssignmentAt: Map<string, Date>;
 };
 
+type AssignmentOutcomeStatus =
+  | "ASSIGNED"
+  | "NO_ELIGIBLE_PARTNER"
+  | "COURIER_FALLBACK"
+  | "MAX_ATTEMPTS_REACHED"
+  | "SKIPPED";
+
+type AssignmentOutcome = {
+  decision: "ACCEPTED" | "REJECTED";
+  reassignmentAttempted: boolean;
+  reassignmentStatus: AssignmentOutcomeStatus;
+  assignedPartnerUserId: string | null;
+  message: string;
+};
+
+type AutoAssignmentResult = {
+  order: OrderWithRelations;
+  outcomeStatus: AssignmentOutcomeStatus;
+  attempted: boolean;
+  assignedPartnerUserId: string | null;
+  message: string;
+};
+
 const deliveryTrackingReferencePrefix = "1HI-DEL";
 const deliveryTrackingReferenceWidth = 6;
 const defaultCodCashLimitPaise = 500000;
@@ -363,6 +386,7 @@ const deliveryAssignmentAcceptanceWindowMs =
   deliveryAssignmentAcceptanceWindowMinutes * 60 * 1000;
 const deliveryAssignmentExpiredNote =
   "Delivery partner assignment auto-released after 110 minutes without acceptance.";
+const defaultAutoReassignMaxAttemptsPerOrder = 5;
 const labelDownloadBlockedStatuses = new Set<CourierShipmentStatus>([
   CourierShipmentStatus.CANCELLED,
   CourierShipmentStatus.FAILED,
@@ -2015,7 +2039,10 @@ export class OrdersService {
       );
     }
 
-    return this.autoAssignPackedDelivery(order, actor, "Auto assigned by admin.");
+    const result = await this.autoAssignPackedDelivery(order, actor, "Auto assigned by admin.", {
+      enforceAutoReassignCap: false,
+    });
+    return result.order;
   }
 
   async updateAdminDeliveryAssignment(
@@ -2036,6 +2063,10 @@ export class OrdersService {
     }
 
     const orderId = await this.prisma.client.$transaction(async (tx) => {
+      if (delivery?.id) {
+        await this.lockDeliveryDetail(tx, delivery.id);
+      }
+
       if (partnerUserId) {
         await this.assertDeliveryPartnerUser(tx, partnerUserId);
       }
@@ -2171,7 +2202,13 @@ export class OrdersService {
 
     const updated = await this.getOrderByIdOrThrow(orderId);
     if (!isUnassign) {
-      await this.notifyDeliveryPartnerAssigned(updated, dto.assignmentNote);
+      void this.notifyDeliveryPartnerAssigned(updated, dto.assignmentNote).catch((error) => {
+        this.logger.warn(
+          `Delivery partner assignment notification failed for ${updated.orderNumber}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      });
     }
     return updated;
   }
@@ -2422,15 +2459,8 @@ export class OrdersService {
     orderNumber: string,
     dto: DeliveryAssignmentDecisionDto,
   ) {
-    const order = await this.prisma.client.order.findFirst({
-      where: {
-        orderNumber,
-        deliveryDetail: {
-          is: {
-            deliveryPartnerUserId: actor.id,
-          },
-        },
-      },
+    const order = await this.prisma.client.order.findUnique({
+      where: { orderNumber },
       include: orderInclude,
     });
 
@@ -2438,8 +2468,26 @@ export class OrdersService {
       throw new NotFoundException("Assigned delivery order not found.");
     }
 
+    if (order.deliveryDetail.deliveryPartnerUserId !== actor.id) {
+      const priorAttempt = await this.prisma.client.deliveryAssignmentAttempt.findFirst({
+        where: {
+          orderId: order.id,
+          partnerUserId: actor.id,
+        },
+        select: { id: true },
+      });
+      if (priorAttempt) {
+        throw this.assignmentStateException(
+          "ASSIGNMENT_ALREADY_CHANGED",
+          "Assignment changed. Refresh the delivery and try again.",
+        );
+      }
+      throw new NotFoundException("Assigned delivery order not found.");
+    }
+
     if (order.deliveryDetail.assignmentStatus !== DeliveryAssignmentStatus.ASSIGNED) {
-      throw new BadRequestException(
+      throw this.assignmentStateException(
+        "ASSIGNMENT_ALREADY_CHANGED",
         "Only pending delivery assignments can be accepted or rejected.",
       );
     }
@@ -2447,17 +2495,30 @@ export class OrdersService {
     const now = new Date();
     if (this.deliveryAssignmentExpired(order.deliveryDetail.assignmentExpiresAt, now)) {
       await this.releaseExpiredDeliveryAssignmentForPartner(order, actor.id, now);
-      throw new BadRequestException(
+      throw this.assignmentStateException(
+        "ASSIGNMENT_EXPIRED",
         "This delivery assignment expired because it was not accepted within 110 minutes. Refresh your assigned orders.",
       );
     }
 
     const accepting = dto.decision === DeliveryAssignmentDecision.ACCEPT;
     if (accepting) {
-      this.assertOrderReadyForDeliveryPartnerAssignment(order);
+      try {
+        this.assertOrderReadyForDeliveryPartnerAssignment(order);
+      } catch (error) {
+        if (error instanceof BadRequestException) {
+          throw this.assignmentStateException(
+            "ORDER_NOT_READY_FOR_ASSIGNMENT",
+            "Delivery partner assignment is available only after every active seller has packed their items.",
+          );
+        }
+        throw error;
+      }
     }
 
     const orderId = await this.prisma.client.$transaction(async (tx) => {
+      await this.lockDeliveryDetail(tx, order.deliveryDetail!.id);
+
       const respondedAt = new Date();
       const deliveryUpdate = await tx.deliveryDetail.updateMany({
         where: {
@@ -2499,6 +2560,7 @@ export class OrdersService {
         },
         data: {
           status: attemptStatus,
+          rejectionReason: accepting ? null : (dto.rejectionReason ?? null),
           respondedAt,
           note: dto.note ?? (accepting ? "Assignment accepted." : "Assignment rejected."),
         },
@@ -2511,6 +2573,7 @@ export class OrdersService {
             partnerUserId: actor.id,
             source: DeliveryAssignmentAttemptSource.MANUAL,
             status: attemptStatus,
+            rejectionReason: accepting ? null : (dto.rejectionReason ?? null),
             note: dto.note ?? (accepting ? "Assignment accepted." : "Assignment rejected."),
             respondedAt,
           },
@@ -2569,8 +2632,44 @@ export class OrdersService {
     });
 
     const updatedOrder = await this.getOrderByIdOrThrow(orderId);
-    await this.notifyDeliveryAssignmentDecision(updatedOrder, actor, accepting, dto.note);
-    return this.toDeliveryPartnerOrder(updatedOrder);
+    void this.notifyDeliveryAssignmentDecision(updatedOrder, actor, accepting, dto.note).catch((error) => {
+      this.logger.warn(
+        `Delivery assignment decision notification failed for ${updatedOrder.orderNumber}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    });
+
+    if (accepting) {
+      return {
+        ...this.toDeliveryPartnerOrder(updatedOrder),
+        assignmentOutcome: this.assignmentOutcome("ACCEPTED", {
+          reassignmentAttempted: false,
+          reassignmentStatus: "SKIPPED",
+          assignedPartnerUserId: actor.id,
+          message: "Assignment accepted.",
+        }),
+      };
+    }
+
+    const reassignment = await this.autoAssignPackedDelivery(
+      updatedOrder,
+      actor,
+      "Auto reassigned after delivery partner rejection.",
+      {
+        enforceAutoReassignCap: true,
+      },
+    );
+
+    return {
+      ...this.toDeliveryPartnerOrder(reassignment.order),
+      assignmentOutcome: this.assignmentOutcome("REJECTED", {
+        reassignmentAttempted: reassignment.attempted,
+        reassignmentStatus: reassignment.outcomeStatus,
+        assignedPartnerUserId: reassignment.assignedPartnerUserId,
+        message: reassignment.message,
+      }),
+    };
   }
 
   async createDeliveryAttempt(
@@ -3362,11 +3461,13 @@ export class OrdersService {
       result.nextDeliveryStatus === DeliveryStatus.PACKED &&
       this.orderReadyForDeliveryPartnerAssignment(order)
     ) {
-      order = await this.autoAssignPackedDelivery(
+      order = (
+        await this.autoAssignPackedDelivery(
         order,
         actor,
         "Auto assigned when seller marked the order packed.",
-      );
+        )
+      ).order;
     }
     const orderTemplate = result.orderStatusChanged
       ? this.orderStatusTemplate(result.nextOrderStatus)
@@ -4000,11 +4101,13 @@ export class OrdersService {
       !result.deliveryPartnerAssigned &&
       this.orderReadyForDeliveryPartnerAssignment(orderWithDelivery)
     ) {
-      orderWithDelivery = await this.autoAssignPackedDelivery(
+      orderWithDelivery = (
+        await this.autoAssignPackedDelivery(
         orderWithDelivery,
         actor,
         "Auto assigned when delivery became packed.",
-      );
+        )
+      ).order;
     }
     const deliveryTemplate = result.deliveryStatusChanged
       ? this.deliveryStatusTemplate(result.nextStatus)
@@ -4889,18 +4992,19 @@ export class OrdersService {
     order: OrderWithRelations,
     actor: RequestUser,
     note: string,
-  ) {
+    options: { enforceAutoReassignCap?: boolean } = {},
+  ): Promise<AutoAssignmentResult> {
     if (
       order.deliveryStatus !== DeliveryStatus.PACKED &&
       order.deliveryDetail?.status !== DeliveryStatus.PACKED
     ) {
-      return order;
+      return this.autoAssignmentSkipped(order, "Order is not packed for local delivery reassignment.");
     }
     if (order.deliveryDetail?.deliveryMode !== DeliveryMode.LOCAL_DELIVERY_PARTNER) {
-      return order;
+      return this.autoAssignmentSkipped(order, "Order is not in Local Delivery Partner mode.");
     }
     if (!this.orderReadyForDeliveryPartnerAssignment(order)) {
-      return order;
+      return this.autoAssignmentSkipped(order, "Order is not ready for delivery partner assignment.");
     }
 
     if (
@@ -4908,7 +5012,63 @@ export class OrdersService {
       (order.deliveryDetail.assignmentStatus === DeliveryAssignmentStatus.ASSIGNED ||
         order.deliveryDetail.assignmentStatus === DeliveryAssignmentStatus.ACCEPTED)
     ) {
-      return order;
+      return this.autoAssignmentSkipped(order, "Order already has an active delivery partner assignment.");
+    }
+
+    if (options.enforceAutoReassignCap) {
+      const maxAttempts = this.autoReassignMaxAttemptsPerOrder();
+      const existingAutoAttempts = await this.deliveryAutoAssignmentAttemptCount(order.id);
+      if (existingAutoAttempts >= maxAttempts) {
+        const message = `Automatic delivery reassignment stopped after ${existingAutoAttempts} auto attempt(s).`;
+        const orderId = await this.prisma.client.$transaction(async (tx) => {
+          if (order.deliveryDetail?.id) {
+            await this.lockDeliveryDetail(tx, order.deliveryDetail.id);
+          }
+          const delivery = await tx.deliveryDetail.update({
+            where: { orderId: order.id },
+            data: {
+              deliveryPartnerUserId: null,
+              assignmentStatus: DeliveryAssignmentStatus.REJECTED,
+              assignedAt: null,
+              acceptedAt: null,
+              assignmentExpiresAt: null,
+              assignmentNote: message,
+            },
+          });
+          await tx.deliveryEvent.create({
+            data: {
+              deliveryDetailId: delivery.id,
+              oldStatus: order.deliveryDetail?.status ?? null,
+              newStatus: delivery.status,
+              note: message,
+              updatedById: actor.id,
+            },
+          });
+          await tx.auditLog.create({
+            data: {
+              actorUserId: actor.id,
+              action: "order.delivery_assignment.auto_cap_reached",
+              entityType: "order",
+              entityId: order.id,
+              ...(order.deliveryDetail ? { oldValue: this.deliveryAuditValue(order.deliveryDetail) } : {}),
+              newValue: {
+                ...this.deliveryAuditValue(delivery),
+                maxAttempts,
+                existingAutoAttempts,
+              },
+            },
+          });
+          return order.id;
+        });
+        const updated = await this.getOrderByIdOrThrow(orderId);
+        return {
+          order: updated,
+          outcomeStatus: "MAX_ATTEMPTS_REACHED",
+          attempted: false,
+          assignedPartnerUserId: null,
+          message,
+        };
+      }
     }
 
     const selection = await this.chooseBestDeliveryPartner(order);
@@ -4928,7 +5088,16 @@ export class OrdersService {
           courierFallback.fallbackReason ??
           "No local delivery partner matched; routed to courier fallback.")
         : this.noAutoAssignmentNote(selection.diagnostics);
+      const outcomeStatus: AssignmentOutcomeStatus = shouldFallbackToCourier
+        ? "COURIER_FALLBACK"
+        : "NO_ELIGIBLE_PARTNER";
+      const auditAction = shouldFallbackToCourier
+        ? "order.delivery_assignment.courier_fallback"
+        : "order.delivery_assignment.auto_no_match";
       const orderId = await this.prisma.client.$transaction(async (tx) => {
+        if (order.deliveryDetail?.id) {
+          await this.lockDeliveryDetail(tx, order.deliveryDetail.id);
+        }
         const delivery = await tx.deliveryDetail.upsert({
           where: { orderId: order.id },
           update: {
@@ -4992,7 +5161,7 @@ export class OrdersService {
         await tx.auditLog.create({
           data: {
             actorUserId: actor.id,
-            action: "order.delivery_assignment.auto_no_match",
+            action: auditAction,
             entityType: "order",
             entityId: order.id,
             ...(order.deliveryDetail
@@ -5015,10 +5184,17 @@ export class OrdersService {
         return order.id;
       });
 
-      return this.getOrderByIdOrThrow(orderId);
+      const updated = await this.getOrderByIdOrThrow(orderId);
+      return {
+        order: updated,
+        outcomeStatus,
+        attempted: true,
+        assignedPartnerUserId: null,
+        message: assignmentNote,
+      };
     }
 
-    return this.updateAdminDeliveryAssignment(
+    const assigned = await this.updateAdminDeliveryAssignment(
       actor,
       order.orderNumber,
       {
@@ -5027,6 +5203,13 @@ export class OrdersService {
       },
       { source: DeliveryAssignmentAttemptSource.AUTO },
     );
+    return {
+      order: assigned,
+      outcomeStatus: "ASSIGNED",
+      attempted: true,
+      assignedPartnerUserId: candidate.user.id,
+      message: assigned.deliveryDetail?.assignmentNote ?? "Delivery reassigned automatically.",
+    };
   }
 
   private async chooseBestDeliveryPartner(order: OrderWithRelations) {
@@ -5134,6 +5317,57 @@ export class OrdersService {
     }
 
     return parts.join(" ");
+  }
+
+  private autoAssignmentSkipped(order: OrderWithRelations, message: string): AutoAssignmentResult {
+    return {
+      order,
+      outcomeStatus: "SKIPPED",
+      attempted: false,
+      assignedPartnerUserId: order.deliveryDetail?.deliveryPartnerUserId ?? null,
+      message,
+    };
+  }
+
+  private assignmentOutcome(
+    decision: AssignmentOutcome["decision"],
+    input: Omit<AssignmentOutcome, "decision">,
+  ): AssignmentOutcome {
+    return {
+      decision,
+      reassignmentAttempted: input.reassignmentAttempted,
+      reassignmentStatus: input.reassignmentStatus,
+      assignedPartnerUserId: input.assignedPartnerUserId,
+      message: input.message,
+    };
+  }
+
+  private assignmentStateException(
+    code: "ASSIGNMENT_ALREADY_CHANGED" | "ASSIGNMENT_EXPIRED" | "ORDER_NOT_READY_FOR_ASSIGNMENT",
+    message: string,
+  ) {
+    return new BadRequestException({ code, message });
+  }
+
+  private autoReassignMaxAttemptsPerOrder() {
+    const value = Number(process.env.DELIVERY_AUTO_REASSIGN_MAX_ATTEMPTS_PER_ORDER);
+    return Number.isInteger(value) && value > 0 ? value : defaultAutoReassignMaxAttemptsPerOrder;
+  }
+
+  private async deliveryAutoAssignmentAttemptCount(orderId: string) {
+    return this.prisma.client.deliveryAssignmentAttempt.count({
+      where: {
+        orderId,
+        source: DeliveryAssignmentAttemptSource.AUTO,
+      },
+    });
+  }
+
+  private async lockDeliveryDetail(
+    tx: Prisma.TransactionClient,
+    deliveryDetailId: string,
+  ) {
+    await tx.$queryRaw`SELECT id FROM delivery_details WHERE id = ${deliveryDetailId}::uuid FOR UPDATE`;
   }
 
   private noAutoAssignmentNote(diagnostics: DeliveryPartnerAssignmentDiagnostics) {

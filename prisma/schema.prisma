@@ -421,6 +421,15 @@ enum DeliveryAssignmentAttemptSource {
   MANUAL
 }
 
+enum DeliveryAssignmentRejectionReason {
+  CAPACITY_FULL
+  AREA_TOO_FAR
+  VEHICLE_UNAVAILABLE
+  COD_LIMIT_RISK
+  PERSONAL_EMERGENCY
+  OTHER
+}
+
 enum DeliveryAttemptReason {
   CUSTOMER_NOT_REACHABLE
   ADDRESS_ISSUE
@@ -3250,6 +3259,7 @@ model DeliveryAssignmentAttempt {
   partnerUserId    String                          @map("partner_user_id") @db.Uuid
   source           DeliveryAssignmentAttemptSource
   status           DeliveryAssignmentStatus
+  rejectionReason  DeliveryAssignmentRejectionReason? @map("rejection_reason")
   note             String?
   assignedById     String?                         @map("assigned_by_id") @db.Uuid
   respondedAt      DateTime?                       @map("responded_at")

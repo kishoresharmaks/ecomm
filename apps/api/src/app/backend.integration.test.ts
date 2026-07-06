@@ -3234,19 +3234,6 @@ integrationDescribe("1HandIndia backend integration", () => {
       });
       expect(fallbackAssignedDelivery.assignmentNote).toContain("Review route");
 
-      const rejectedAssignment = await request(app.getHttpServer())
-        .patch(`/api/delivery/orders/${autoOrderNumber}/assignment`)
-        .set(authHeader(data.deliveryPartnerUser.id))
-        .send({
-          decision: "REJECT",
-          note: "Route capacity full.",
-        })
-        .expect(200);
-      expect(rejectedAssignment.body.deliveryDetail).toMatchObject({
-        assignmentStatus: DeliveryAssignmentStatus.REJECTED,
-        deliveryPartnerUserId: null,
-      });
-
       const backupDeliveryPartner = await createUserWithRole(
         prisma,
         data.roles,
@@ -3265,11 +3252,22 @@ integrationDescribe("1HandIndia backend integration", () => {
           codCashLimitPaise: 500000,
         },
       });
-      const reassignedAfterReject = await request(app.getHttpServer())
-        .post(`/api/admin/delivery/orders/${autoOrderNumber}/auto-assign`)
-        .set(adminSessionHeader)
-        .expect(201);
-      const reassignedAfterRejectDetail = reassignedAfterReject.body.deliveryDetail as {
+      const rejectedAssignment = await request(app.getHttpServer())
+        .patch(`/api/delivery/orders/${autoOrderNumber}/assignment`)
+        .set(authHeader(data.deliveryPartnerUser.id))
+        .send({
+          decision: "REJECT",
+          rejectionReason: "CAPACITY_FULL",
+          note: "Route capacity full.",
+        })
+        .expect(200);
+      expect(rejectedAssignment.body.assignmentOutcome).toMatchObject({
+        decision: "REJECTED",
+        reassignmentAttempted: true,
+        reassignmentStatus: "ASSIGNED",
+        assignedPartnerUserId: backupDeliveryPartner.id,
+      });
+      const reassignedAfterRejectDetail = rejectedAssignment.body.deliveryDetail as {
         assignmentNote: string;
         assignmentStatus: DeliveryAssignmentStatus;
         deliveryPartnerUserId: string;
@@ -3279,6 +3277,19 @@ integrationDescribe("1HandIndia backend integration", () => {
         deliveryPartnerUserId: backupDeliveryPartner.id,
       });
       expect(reassignedAfterRejectDetail.assignmentNote).toContain("1 rejected partner(s) skipped");
+      const repeatedReject = await request(app.getHttpServer())
+        .patch(`/api/delivery/orders/${autoOrderNumber}/assignment`)
+        .set(authHeader(data.deliveryPartnerUser.id))
+        .send({
+          decision: "REJECT",
+          rejectionReason: "CAPACITY_FULL",
+          note: "Retry after mobile timeout.",
+        })
+        .expect(400);
+      expect(repeatedReject.body).toMatchObject({
+        code: "ASSIGNMENT_ALREADY_CHANGED",
+        message: "Assignment changed. Refresh the delivery and try again.",
+      });
       const packedAutoAssignedOrderId = packedAutoAssigned.body.id as string;
       const assignmentAttempts = await prisma.deliveryAssignmentAttempt.findMany({
         where: { orderId: packedAutoAssignedOrderId },
@@ -3290,6 +3301,7 @@ integrationDescribe("1HandIndia backend integration", () => {
             partnerUserId: data.deliveryPartnerUser.id,
             source: DeliveryAssignmentAttemptSource.AUTO,
             status: DeliveryAssignmentStatus.REJECTED,
+            rejectionReason: "CAPACITY_FULL",
           }),
           expect.objectContaining({
             partnerUserId: backupDeliveryPartner.id,
