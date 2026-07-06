@@ -1002,24 +1002,26 @@ export class OrdersService {
 
       const summaryRoutingFailedAt = summaryRouting?.routingFailed ? routedAt : null;
 
-      await tx.deliveryDetail.create({
-        data: {
-          orderId: order.id,
-          deliveryMode: resolvedDeliveryMode,
-          status: DeliveryStatus.PENDING,
-          deliveryNote: dto.customerNote ?? null,
-          courierProviderCode: summaryRouting?.courierProviderCode ?? null,
-          routingFailed: deliveryRoutings.some((routing) => routing.quote.routingFailed),
-          routingFailureReason: summaryRouting?.routingFailureReason ?? null,
-          routingFailureNote: summaryRouting?.routingFailureNote ?? null,
-          routedAt: summaryRouting ? routedAt : null,
-          shippingChargeSnapshot: charges.snapshot.shipping ?? Prisma.JsonNull,
-          codSurchargeSnapshot: summaryRouting?.codSurchargeSnapshot ?? Prisma.JsonNull,
-          assignmentNote: summaryRoutingFailedAt
-            ? (summaryRouting?.routingFailureNote ?? null)
-            : "Seller package routes are stored on individual shipments.",
-        },
-      });
+      if (resolvedDeliveryMode !== DeliveryMode.STORE_PICKUP) {
+        await tx.deliveryDetail.create({
+          data: {
+            orderId: order.id,
+            deliveryMode: resolvedDeliveryMode,
+            status: DeliveryStatus.PENDING,
+            deliveryNote: dto.customerNote ?? null,
+            courierProviderCode: summaryRouting?.courierProviderCode ?? null,
+            routingFailed: deliveryRoutings.some((routing) => routing.quote.routingFailed),
+            routingFailureReason: summaryRouting?.routingFailureReason ?? null,
+            routingFailureNote: summaryRouting?.routingFailureNote ?? null,
+            routedAt: summaryRouting ? routedAt : null,
+            shippingChargeSnapshot: charges.snapshot.shipping ?? Prisma.JsonNull,
+            codSurchargeSnapshot: summaryRouting?.codSurchargeSnapshot ?? Prisma.JsonNull,
+            assignmentNote: summaryRoutingFailedAt
+              ? (summaryRouting?.routingFailureNote ?? null)
+              : "Seller package routes are stored on individual shipments.",
+          },
+        });
+      }
 
       await this.couponsService.recordRedemption(
         tx,
@@ -1253,6 +1255,14 @@ export class OrdersService {
 
     if (existing.orderStatus === OrderStatus.CANCELLED) {
       throw new BadRequestException("Order is already cancelled.");
+    }
+
+    if (
+      this.isStorePickupOnlyOrder(existing) &&
+      (existing.orderStatus === OrderStatus.DELIVERED ||
+        existing.deliveryStatus === DeliveryStatus.DELIVERED)
+    ) {
+      throw new BadRequestException("Store pickup orders are final after pickup is marked delivered.");
     }
 
     if (
@@ -2026,6 +2036,9 @@ export class OrdersService {
 
   async autoAssignDeliveryPartner(actor: RequestUser, orderNumber: string) {
     const order = await this.getOrderByNumberOrThrow(orderNumber);
+    if (this.isStorePickupOnlyOrder(order)) {
+      throw new BadRequestException("Store pickup orders do not use delivery partner assignment.");
+    }
     if (
       order.deliveryStatus !== DeliveryStatus.PACKED &&
       order.deliveryDetail?.status !== DeliveryStatus.PACKED
@@ -2057,6 +2070,10 @@ export class OrdersService {
     const isUnassign = !partnerUserId;
     const now = new Date();
     const assignmentExpiresAt = isUnassign ? null : this.deliveryAssignmentExpiresAt(now);
+
+    if (!isUnassign && this.isStorePickupOnlyOrder(order)) {
+      throw new BadRequestException("Store pickup orders do not use delivery partner assignment.");
+    }
 
     if (!isUnassign) {
       this.assertOrderReadyForDeliveryPartnerAssignment(order);
@@ -3260,15 +3277,22 @@ export class OrdersService {
       const currentShipment = order.shipments.find(
         (shipment) => shipment.orderSellerSplitId === split.id,
       );
+      const sellerDeliveryMode =
+        currentShipment?.deliveryMode ??
+        order.deliveryDetail?.deliveryMode ??
+        DeliveryMode.LOCAL_DELIVERY_PARTNER;
+      const isStorePickupSellerOrder = sellerDeliveryMode === DeliveryMode.STORE_PICKUP;
       this.assertSellerStatusAllowedForDeliveryMode(
         dto.sellerStatus,
-        currentShipment?.deliveryMode ?? order.deliveryDetail?.deliveryMode ?? null,
+        sellerDeliveryMode,
       );
-      this.assertSellerStatusTransition(
-        split.sellerStatus,
-        dto.sellerStatus,
-        currentShipment?.status,
-      );
+      if (!(isStorePickupSellerOrder && dto.sellerStatus === SellerOrderStatus.DELIVERED)) {
+        this.assertSellerStatusTransition(
+          split.sellerStatus,
+          dto.sellerStatus,
+          currentShipment?.status,
+        );
+      }
 
       const sellerStatusChanged = split.sellerStatus !== dto.sellerStatus;
       if (sellerStatusChanged) {
@@ -3308,7 +3332,11 @@ export class OrdersService {
         nextSplits,
       );
       const requestedDeliveryStatus = this.deliveryStatusFromSellerStatus(dto.sellerStatus);
-      if (requestedDeliveryStatus && currentShipment?.status) {
+      if (
+        requestedDeliveryStatus &&
+        currentShipment?.status &&
+        !(isStorePickupSellerOrder && requestedDeliveryStatus === DeliveryStatus.DELIVERED)
+      ) {
         this.assertDeliveryStatusTransition(currentShipment.status, requestedDeliveryStatus);
       }
       const rollupDeliveryStatus = this.resolveDeliveryStatusFromSellerSplits(
@@ -3320,7 +3348,9 @@ export class OrdersService {
       const deliveryStatusChanged = nextDeliveryStatus !== order.deliveryStatus;
       const deliveryDetailStatusChanged =
         nextDeliveryStatus !== (order.deliveryDetail?.status ?? null);
-      let deliveryDetailIdForWallet = order.deliveryDetail?.id ?? null;
+      let deliveryDetailIdForWallet = isStorePickupSellerOrder
+        ? null
+        : (order.deliveryDetail?.id ?? null);
 
       if (orderStatusChanged || deliveryStatusChanged) {
         await tx.order.update({
@@ -3332,7 +3362,11 @@ export class OrdersService {
         });
       }
 
-      if (deliveryDetailStatusChanged && nextDeliveryStatus !== DeliveryStatus.NOT_ASSIGNED) {
+      if (
+        !isStorePickupSellerOrder &&
+        deliveryDetailStatusChanged &&
+        nextDeliveryStatus !== DeliveryStatus.NOT_ASSIGNED
+      ) {
         const delivery = await tx.deliveryDetail.upsert({
           where: { orderId: order.id },
           update: {
@@ -3341,7 +3375,7 @@ export class OrdersService {
           },
           create: {
             orderId: order.id,
-            deliveryMode: order.deliveryDetail?.deliveryMode ?? DeliveryMode.LOCAL_DELIVERY_PARTNER,
+            deliveryMode: sellerDeliveryMode,
             status: nextDeliveryStatus,
             deliveryNote: note,
           },
@@ -3376,6 +3410,7 @@ export class OrdersService {
         await this.updateSellerShipmentStatusGuarded(tx, {
           orderSellerSplitId: split.id,
           nextStatus: requestedDeliveryStatus,
+          allowDirectDelivered: isStorePickupSellerOrder,
           updateData: {
             status: requestedDeliveryStatus,
             ...(note ? { deliveryNote: note } : {}),
@@ -3390,7 +3425,7 @@ export class OrdersService {
             sellerId: seller.id,
             subtotalPaise: split.sellerSubtotalPaise,
             shippingPaise: 0,
-            deliveryMode: order.deliveryDetail?.deliveryMode ?? DeliveryMode.LOCAL_DELIVERY_PARTNER,
+            deliveryMode: sellerDeliveryMode,
             status: requestedDeliveryStatus,
             deliveryNote: note,
           },
@@ -3562,10 +3597,21 @@ export class OrdersService {
       );
     }
 
+    const sellerShipment = sellerShipmentForPermission;
     const nextStatus = dto.status ?? previousDelivery?.status ?? DeliveryStatus.PENDING;
     const nextMode = options.deliveryPartnerOnly
       ? (previousDelivery?.deliveryMode ?? DeliveryMode.LOCAL_DELIVERY_PARTNER)
-      : (dto.deliveryMode ?? previousDelivery?.deliveryMode ?? DeliveryMode.LOCAL_DELIVERY_PARTNER);
+      : (dto.deliveryMode ??
+        previousDelivery?.deliveryMode ??
+        sellerShipment?.deliveryMode ??
+        DeliveryMode.LOCAL_DELIVERY_PARTNER);
+    const isSellerStorePickupUpdate =
+      options.sellerOnly && nextMode === DeliveryMode.STORE_PICKUP;
+    if (!options.sellerOnly && nextMode === DeliveryMode.STORE_PICKUP) {
+      throw new BadRequestException(
+        "Store pickup status is managed on seller shipments, not delivery partner operations.",
+      );
+    }
     const canAssignDeliveryPartner =
       !options.sellerOnly &&
       !options.deliveryPartnerOnly &&
@@ -3593,22 +3639,24 @@ export class OrdersService {
       canAssignDeliveryPartner || shouldClearLocalPartnerForMode;
     const manualTrackingReference = requestedTrackingReference ?? undefined;
     const trackingReferenceProvided = manualTrackingReference !== undefined;
-    const shouldGenerateTrackingReference = this.shouldGenerateTrackingReference({
-      previousDelivery,
-      dto,
-      options,
-      canAssignDeliveryPartner,
-      trackingReferenceProvided,
-    });
+    const shouldGenerateTrackingReference = isSellerStorePickupUpdate
+      ? false
+      : this.shouldGenerateTrackingReference({
+          previousDelivery,
+          dto,
+          options,
+          canAssignDeliveryPartner,
+          trackingReferenceProvided,
+        });
     const shouldRecordCodCollection =
       dto.codCollected !== undefined ||
       dto.codCollectedAmountPaise !== undefined ||
       dto.codCollectionNote !== undefined;
+    if (isSellerStorePickupUpdate && shouldRecordCodCollection) {
+      throw new BadRequestException("Store pickup orders do not record delivery-partner COD collection.");
+    }
     const codCollectionData = shouldRecordCodCollection
       ? this.codCollectionDeliveryData(order, previousDelivery, actor, dto)
-      : null;
-    const sellerShipment = seller
-      ? order.shipments.find((shipment) => shipment.sellerId === seller.id)
       : null;
     const sellerSplitForDeliveryAggregate = seller
       ? order.sellerSplits.find((sellerSplit) => sellerSplit.sellerId === seller.id)
@@ -3663,86 +3711,88 @@ export class OrdersService {
             ? await this.createDeliveryTrackingReference(tx)
             : undefined;
 
-      const delivery = await tx.deliveryDetail.upsert({
-        where: { orderId: order.id },
-        update: {
-          deliveryMode: nextMode,
-          ...(!options.deliveryPartnerOnly && dto.partnerName !== undefined
-            ? { partnerName: dto.partnerName ?? null }
-            : {}),
-          ...(!options.deliveryPartnerOnly && dto.partnerPhone !== undefined
-            ? { partnerPhone: dto.partnerPhone ?? null }
-            : {}),
-          ...(shouldUpdatePartnerAssignment
-            ? {
-                deliveryPartnerUserId: nextDeliveryPartnerUserId,
-                assignmentStatus: nextDeliveryPartnerUserId
-                  ? DeliveryAssignmentStatus.ASSIGNED
-                  : DeliveryAssignmentStatus.UNASSIGNED,
-                assignedAt: nextDeliveryPartnerUserId ? assignmentNow : null,
-                acceptedAt: null,
-                rejectedAt: null,
-                assignmentExpiresAt,
-                assignmentNote: nextDeliveryPartnerUserId
-                  ? (dto.deliveryNote ?? "Delivery partner assigned by admin.")
-                  : (dto.deliveryNote ?? "Delivery partner unassigned for this delivery mode."),
-              }
-            : {}),
-          ...(codCollectionData ?? {}),
-          ...(nextTrackingReference !== undefined
-            ? { trackingReference: nextTrackingReference }
-            : {}),
-          ...(dto.estimatedDeliveryDate !== undefined
-            ? {
-                estimatedDeliveryDate: dto.estimatedDeliveryDate
-                  ? new Date(dto.estimatedDeliveryDate)
-                  : null,
-              }
-            : {}),
-          ...(dto.deliveryNote !== undefined ? { deliveryNote: dto.deliveryNote ?? null } : {}),
-          ...(dto.receiverName !== undefined ? { receiverName: dto.receiverName ?? null } : {}),
-          ...(dto.proofNote !== undefined ? { proofNote: dto.proofNote ?? null } : {}),
-          ...(dto.proofReference !== undefined
-            ? { proofReference: dto.proofReference ?? null }
-            : {}),
-          status: nextOrderDeliveryStatus,
-        },
-        create: {
-          orderId: order.id,
-          deliveryMode: nextMode,
-          partnerName: options.deliveryPartnerOnly
-            ? (previousDelivery?.partnerName ?? null)
-            : (dto.partnerName ?? null),
-          partnerPhone: options.deliveryPartnerOnly
-            ? (previousDelivery?.partnerPhone ?? null)
-            : (dto.partnerPhone ?? null),
-          ...(shouldUpdatePartnerAssignment
-            ? {
-                deliveryPartnerUserId: nextDeliveryPartnerUserId,
-                assignmentStatus: nextDeliveryPartnerUserId
-                  ? DeliveryAssignmentStatus.ASSIGNED
-                  : DeliveryAssignmentStatus.UNASSIGNED,
-                assignedAt: nextDeliveryPartnerUserId ? assignmentNow : null,
-                assignmentExpiresAt,
-                assignmentNote: nextDeliveryPartnerUserId
-                  ? (dto.deliveryNote ?? "Delivery partner assigned by admin.")
-                  : (dto.deliveryNote ?? "Delivery partner unassigned for this delivery mode."),
-              }
-            : {}),
-          ...(codCollectionData ?? {}),
-          trackingReference: nextTrackingReference ?? null,
-          estimatedDeliveryDate: dto.estimatedDeliveryDate
-            ? new Date(dto.estimatedDeliveryDate)
-            : null,
-          deliveryNote: dto.deliveryNote ?? null,
-          receiverName: dto.receiverName ?? null,
-          proofNote: dto.proofNote ?? null,
-          proofReference: dto.proofReference ?? null,
-          status: nextOrderDeliveryStatus,
-        },
-      });
+      const delivery = isSellerStorePickupUpdate
+        ? null
+        : await tx.deliveryDetail.upsert({
+            where: { orderId: order.id },
+            update: {
+              deliveryMode: nextMode,
+              ...(!options.deliveryPartnerOnly && dto.partnerName !== undefined
+                ? { partnerName: dto.partnerName ?? null }
+                : {}),
+              ...(!options.deliveryPartnerOnly && dto.partnerPhone !== undefined
+                ? { partnerPhone: dto.partnerPhone ?? null }
+                : {}),
+              ...(shouldUpdatePartnerAssignment
+                ? {
+                    deliveryPartnerUserId: nextDeliveryPartnerUserId,
+                    assignmentStatus: nextDeliveryPartnerUserId
+                      ? DeliveryAssignmentStatus.ASSIGNED
+                      : DeliveryAssignmentStatus.UNASSIGNED,
+                    assignedAt: nextDeliveryPartnerUserId ? assignmentNow : null,
+                    acceptedAt: null,
+                    rejectedAt: null,
+                    assignmentExpiresAt,
+                    assignmentNote: nextDeliveryPartnerUserId
+                      ? (dto.deliveryNote ?? "Delivery partner assigned by admin.")
+                      : (dto.deliveryNote ?? "Delivery partner unassigned for this delivery mode."),
+                  }
+                : {}),
+              ...(codCollectionData ?? {}),
+              ...(nextTrackingReference !== undefined
+                ? { trackingReference: nextTrackingReference }
+                : {}),
+              ...(dto.estimatedDeliveryDate !== undefined
+                ? {
+                    estimatedDeliveryDate: dto.estimatedDeliveryDate
+                      ? new Date(dto.estimatedDeliveryDate)
+                      : null,
+                  }
+                : {}),
+              ...(dto.deliveryNote !== undefined ? { deliveryNote: dto.deliveryNote ?? null } : {}),
+              ...(dto.receiverName !== undefined ? { receiverName: dto.receiverName ?? null } : {}),
+              ...(dto.proofNote !== undefined ? { proofNote: dto.proofNote ?? null } : {}),
+              ...(dto.proofReference !== undefined
+                ? { proofReference: dto.proofReference ?? null }
+                : {}),
+              status: nextOrderDeliveryStatus,
+            },
+            create: {
+              orderId: order.id,
+              deliveryMode: nextMode,
+              partnerName: options.deliveryPartnerOnly
+                ? (previousDelivery?.partnerName ?? null)
+                : (dto.partnerName ?? null),
+              partnerPhone: options.deliveryPartnerOnly
+                ? (previousDelivery?.partnerPhone ?? null)
+                : (dto.partnerPhone ?? null),
+              ...(shouldUpdatePartnerAssignment
+                ? {
+                    deliveryPartnerUserId: nextDeliveryPartnerUserId,
+                    assignmentStatus: nextDeliveryPartnerUserId
+                      ? DeliveryAssignmentStatus.ASSIGNED
+                      : DeliveryAssignmentStatus.UNASSIGNED,
+                    assignedAt: nextDeliveryPartnerUserId ? assignmentNow : null,
+                    assignmentExpiresAt,
+                    assignmentNote: nextDeliveryPartnerUserId
+                      ? (dto.deliveryNote ?? "Delivery partner assigned by admin.")
+                      : (dto.deliveryNote ?? "Delivery partner unassigned for this delivery mode."),
+                  }
+                : {}),
+              ...(codCollectionData ?? {}),
+              trackingReference: nextTrackingReference ?? null,
+              estimatedDeliveryDate: dto.estimatedDeliveryDate
+                ? new Date(dto.estimatedDeliveryDate)
+                : null,
+              deliveryNote: dto.deliveryNote ?? null,
+              receiverName: dto.receiverName ?? null,
+              proofNote: dto.proofNote ?? null,
+              proofReference: dto.proofReference ?? null,
+              status: nextOrderDeliveryStatus,
+            },
+          });
 
-      if (shouldUpdatePartnerAssignment) {
+      if (shouldUpdatePartnerAssignment && delivery) {
         const previousPartnerUserId =
           previousDelivery?.deliveryPartnerUserId &&
           previousDelivery.deliveryPartnerUserId !== nextDeliveryPartnerUserId
@@ -3802,15 +3852,17 @@ export class OrdersService {
         });
       }
 
-      await tx.deliveryEvent.create({
-        data: {
-          deliveryDetailId: delivery.id,
-          oldStatus: previousDelivery?.status ?? null,
-          newStatus: delivery.status,
-          note: dto.deliveryNote ?? null,
-          updatedById: actor.id,
-        },
-      });
+      if (delivery) {
+        await tx.deliveryEvent.create({
+          data: {
+            deliveryDetailId: delivery.id,
+            oldStatus: previousDelivery?.status ?? null,
+            newStatus: delivery.status,
+            note: dto.deliveryNote ?? null,
+            updatedById: actor.id,
+          },
+        });
+      }
 
       if (seller) {
         const split = order.sellerSplits.find((sellerSplit) => sellerSplit.sellerId === seller.id);
@@ -3821,6 +3873,7 @@ export class OrdersService {
         await this.updateSellerShipmentStatusGuarded(tx, {
           orderSellerSplitId: split.id,
           nextStatus,
+          allowDirectDelivered: isSellerStorePickupUpdate,
           updateData: {
             deliveryMode: nextMode,
             ...(dto.partnerName !== undefined ? { partnerName: dto.partnerName ?? null } : {}),
@@ -3911,14 +3964,16 @@ export class OrdersService {
 
       const deliveryStatusChanged = nextOrderDeliveryStatus !== order.deliveryStatus;
       const deliveryDetailStatusChanged =
-        nextOrderDeliveryStatus !== (previousDelivery?.status ?? null);
-      if (deliveryDetailStatusChanged) {
+        Boolean(delivery) && nextOrderDeliveryStatus !== (previousDelivery?.status ?? null);
+      if (deliveryStatusChanged || deliveryDetailStatusChanged) {
         await tx.orderStatusEvent.create({
           data: {
             orderId: order.id,
             statusType: StatusEventType.DELIVERY,
-            oldStatus: previousDelivery?.status ?? null,
-            newStatus: delivery.status,
+            oldStatus: isSellerStorePickupUpdate
+              ? (sellerShipment?.status ?? order.deliveryStatus)
+              : (previousDelivery?.status ?? null),
+            newStatus: nextOrderDeliveryStatus,
             note: dto.deliveryNote ?? null,
             createdById: actor.id,
           },
@@ -4032,7 +4087,7 @@ export class OrdersService {
       await tx.order.update({
         where: { id: order.id },
         data: {
-          deliveryStatus: delivery.status,
+          deliveryStatus: nextOrderDeliveryStatus,
           ...(orderStatusChanged ? { orderStatus: nextOrderStatus } : {}),
         },
       });
@@ -4058,7 +4113,11 @@ export class OrdersService {
         await this.markSellerSplitsSettlementEligible(tx, order.id);
       }
 
-      if (delivery.status === DeliveryStatus.DELIVERED) {
+      if (
+        delivery &&
+        delivery.deliveryMode === DeliveryMode.LOCAL_DELIVERY_PARTNER &&
+        delivery.status === DeliveryStatus.DELIVERED
+      ) {
         await this.creditLocalDeliveryPartnerEarnings(tx, {
           orderId: order.id,
           deliveryDetailId: delivery.id,
@@ -4075,7 +4134,14 @@ export class OrdersService {
           entityId: order.id,
           ...(previousDelivery ? { oldValue: this.deliveryAuditValue(previousDelivery) } : {}),
           newValue: {
-            ...this.deliveryAuditValue(delivery),
+            ...(delivery
+              ? this.deliveryAuditValue(delivery)
+              : {
+                  deliveryMode: nextMode,
+                  status: nextOrderDeliveryStatus,
+                  deliveryNote: dto.deliveryNote ?? null,
+                  sellerManagedStorePickup: true,
+                }),
             ...(sellerStatusChanged ? { oldSellerStatus, nextSellerStatus } : {}),
             ...(orderStatusChanged ? { oldOrderStatus: order.orderStatus, nextOrderStatus } : {}),
             ...(codCollectionData ? { codCollectionRecorded: true } : {}),
@@ -4087,7 +4153,7 @@ export class OrdersService {
       return {
         orderId: order.id,
         deliveryStatusChanged,
-        nextStatus: delivery.status,
+        nextStatus: nextOrderDeliveryStatus,
         orderStatusChanged,
         nextOrderStatus,
         codCollectionRecorded: Boolean(codCollectionData),
@@ -4810,6 +4876,19 @@ export class OrdersService {
           )
         );
       })
+    );
+  }
+
+  private isStorePickupOnlyOrder(
+    order: Pick<OrderWithRelations, "deliveryDetail" | "shipments">,
+  ) {
+    if (order.deliveryDetail?.deliveryMode === DeliveryMode.STORE_PICKUP) {
+      return true;
+    }
+
+    return (
+      order.shipments.length > 0 &&
+      order.shipments.every((shipment) => shipment.deliveryMode === DeliveryMode.STORE_PICKUP)
     );
   }
 
@@ -7041,6 +7120,7 @@ export class OrdersService {
     input: {
       orderSellerSplitId: string;
       nextStatus: DeliveryStatus;
+      allowDirectDelivered?: boolean;
       updateData: Prisma.OrderShipmentUpdateManyMutationInput;
       createData: Prisma.OrderShipmentUncheckedCreateInput;
     },
@@ -7081,7 +7161,9 @@ export class OrdersService {
       return;
     }
 
-    this.assertDeliveryStatusTransition(shipment.status, input.nextStatus);
+    if (!(input.allowDirectDelivered && input.nextStatus === DeliveryStatus.DELIVERED)) {
+      this.assertDeliveryStatusTransition(shipment.status, input.nextStatus);
+    }
     const updated = await tx.orderShipment.updateMany({
       where: {
         id: shipment.id,

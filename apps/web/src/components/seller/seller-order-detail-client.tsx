@@ -266,6 +266,63 @@ export function SellerOrderDetailClient({
     }
   }
 
+  function printPackageSlip(shipmentPackage: { packageNumber?: string | null; status?: string | null }) {
+    if (!order) {
+      setNotice("Order details are still loading. Try again in a moment.");
+      return;
+    }
+
+    const printWindow = window.open("", "_blank", "noopener,noreferrer,width=760,height=720");
+    if (!printWindow) {
+      setNotice("Popup blocked. Allow popups to print the package slip.");
+      return;
+    }
+
+    const rows = sellerItems
+      .map(
+        (item) =>
+          `<tr><td>${escapeHtml(item.productNameSnapshot)}</td><td>${escapeHtml(formatVariantLabel(item.variantSnapshot) ?? "Default")}</td><td>${item.quantity}</td></tr>`,
+      )
+      .join("");
+    printWindow.document.write(`<!doctype html>
+      <html>
+        <head>
+          <title>Package slip ${escapeHtml(shipmentPackage.packageNumber ?? order.orderNumber)}</title>
+          <style>
+            body{font-family:Arial,sans-serif;margin:24px;color:#1f2933}
+            .box{border:1px solid #d8e2ea;border-radius:8px;padding:16px;margin-bottom:16px}
+            h1{font-size:20px;margin:0 0 8px}
+            p{margin:4px 0;font-size:13px}
+            table{width:100%;border-collapse:collapse;margin-top:12px}
+            th,td{border:1px solid #e5e7eb;padding:8px;text-align:left;font-size:12px}
+            th{background:#f8fafc}
+            .muted{color:#667085}
+            @media print{button{display:none}}
+          </style>
+        </head>
+        <body>
+          <button onclick="window.print()">Print</button>
+          <div class="box">
+            <h1>1HandIndia package slip</h1>
+            <p><strong>Order:</strong> ${escapeHtml(order.orderNumber)}</p>
+            <p><strong>Package:</strong> ${escapeHtml(shipmentPackage.packageNumber ?? sellerShipment?.shipmentNumber ?? "Package")}</p>
+            <p><strong>Mode:</strong> ${escapeHtml(deliveryModeLabels[deliveryMode as DeliveryModeValue] ?? statusLabel(deliveryMode))}</p>
+            <p><strong>Status:</strong> ${escapeHtml(statusLabel(shipmentPackage.status ?? currentDeliveryStatus))}</p>
+            <p><strong>Seller:</strong> ${escapeHtml(profileQuery.data?.storeName ?? "Seller")}</p>
+          </div>
+          <div class="box">
+            <p class="muted">Use this slip for store pickup or local delivery handover. Courier AWB labels appear only after third-party courier booking.</p>
+            <table>
+              <thead><tr><th>Item</th><th>Variant</th><th>Qty</th></tr></thead>
+              <tbody>${rows || "<tr><td colspan='3'>No seller items found.</td></tr>"}</tbody>
+            </table>
+          </div>
+          <script>window.focus(); window.print();</script>
+        </body>
+      </html>`);
+    printWindow.document.close();
+  }
+
   const order = orderQuery.data;
   const sellerId = profileQuery.data?.id;
   const sellerSplit = useMemo(
@@ -320,14 +377,19 @@ export function SellerOrderDetailClient({
   const addressCoordinates = coordinatesFromSnapshot(address);
   const delivery = sellerShipment ?? order.deliveryDetail;
   const deliveryMode = delivery?.deliveryMode ?? order.deliveryDetail?.deliveryMode ?? "LOCAL_DELIVERY_PARTNER";
+  const isStorePickup = deliveryMode === "STORE_PICKUP";
   const isAutomatedDelivery = automatedDeliveryModes.has(deliveryMode);
   const currentSellerStatus = sellerStatusValue(sellerSplit?.sellerStatus);
   const currentDeliveryStatus = deliveryStatusValue(
     sellerShipment?.status ?? order.deliveryDetail?.status ?? order.deliveryStatus,
   );
-  const nextSellerStatus = nextSellerWorkflowStatus(currentSellerStatus, isAutomatedDelivery);
   const isTerminalSellerStatus =
     currentSellerStatus === "DELIVERED" || currentSellerStatus === "CANCELLED";
+  const nextSellerStatus = isStorePickup
+    ? isTerminalSellerStatus
+      ? null
+      : "DELIVERED"
+    : nextSellerWorkflowStatus(currentSellerStatus, isAutomatedDelivery);
   const canCancelSellerPackage = canSellerCancelPackage(currentSellerStatus, currentDeliveryStatus);
   const timelineEvents = buildTrackingTimeline(order);
   const statusSummaryItems: SellerStatusSummaryItem[] = [
@@ -370,12 +432,14 @@ export function SellerOrderDetailClient({
             Back to orders
           </Link>
         </Button>
-        <Button asChild variant="outline" size="sm">
-          <Link href={`/seller/orders/${encodeURIComponent(orderNumber)}/delivery`}>
-            <Truck className="h-4 w-4" aria-hidden="true" />
-            Logistics view
-          </Link>
-        </Button>
+        {!isStorePickup ? (
+          <Button asChild variant="outline" size="sm">
+            <Link href={`/seller/orders/${encodeURIComponent(orderNumber)}/delivery`}>
+              <Truck className="h-4 w-4" aria-hidden="true" />
+              Logistics view
+            </Link>
+          </Button>
+        ) : null}
       </div>
 
       {notice ? (
@@ -490,15 +554,19 @@ export function SellerOrderDetailClient({
                     ] ?? statusLabel(sellerShipment.deliveryMode)
                   }
                 />
-                <Info label="Tracking" value={sellerShipment.trackingReference ?? "Not assigned"} />
+                {!isStorePickup ? (
+                  <Info label="Tracking" value={sellerShipment.trackingReference ?? "Not assigned"} />
+                ) : null}
                 <Info
                   label="Subtotal"
                   value={formatMoney(sellerShipment.subtotalPaise, order.currency)}
                 />
-                <Info
-                  label="Shipping share"
-                  value={formatMoney(sellerShipment.shippingPaise, order.currency)}
-                />
+                {!isStorePickup ? (
+                  <Info
+                    label="Shipping share"
+                    value={formatMoney(sellerShipment.shippingPaise, order.currency)}
+                  />
+                ) : null}
               </div>
               <div className="mt-4 grid gap-3">
                 {(sellerShipment.packages ?? []).map((shipmentPackage) => {
@@ -524,38 +592,42 @@ export function SellerOrderDetailClient({
                               {shipmentPackage.packageNumber}
                             </p>
                             <StatusBadge tone={shipmentPackage.canDownloadLabel ? "success" : "info"}>
-                              {packageStatusTitle(shipmentPackage)}
+                              {isStorePickup
+                                ? statusLabel(shipmentPackage.status)
+                                : packageStatusTitle(shipmentPackage)}
                             </StatusBadge>
                           </div>
-                          <div className="mt-3 grid gap-2 text-sm font-semibold text-[#667085] sm:grid-cols-2">
-                            <Info
-                              label="AWB"
-                              value={shipmentPackage.awbNumber ?? "Not assigned"}
-                            />
-                            <Info
-                              label="Courier"
-                              value={
-                                shipmentPackage.courierName ??
-                                shipmentPackage.courierCode ??
-                                "Not assigned"
-                              }
-                            />
-                            <Info
-                              label="Tracking"
-                              value={
-                                shipmentPackage.courierTrackingStatusLabel ??
-                                statusLabel(shipmentPackage.courierTrackingStatus)
-                              }
-                            />
-                            <Info
-                              label="Booked"
-                              value={
-                                shipmentPackage.shipmentBookedAt
-                                  ? formatDateTime(shipmentPackage.shipmentBookedAt)
-                                  : "Not booked"
-                              }
-                            />
-                          </div>
+                          {!isStorePickup ? (
+                            <div className="mt-3 grid gap-2 text-sm font-semibold text-[#667085] sm:grid-cols-2">
+                              <Info
+                                label="AWB"
+                                value={shipmentPackage.awbNumber ?? "Not assigned"}
+                              />
+                              <Info
+                                label="Courier"
+                                value={
+                                  shipmentPackage.courierName ??
+                                  shipmentPackage.courierCode ??
+                                  "Not assigned"
+                                }
+                              />
+                              <Info
+                                label="Tracking"
+                                value={
+                                  shipmentPackage.courierTrackingStatusLabel ??
+                                  statusLabel(shipmentPackage.courierTrackingStatus)
+                                }
+                              />
+                              <Info
+                                label="Booked"
+                                value={
+                                  shipmentPackage.shipmentBookedAt
+                                    ? formatDateTime(shipmentPackage.shipmentBookedAt)
+                                    : "Not booked"
+                                }
+                              />
+                            </div>
+                          ) : null}
                           {canEditPackage ? (
                             <div className="mt-4 grid gap-3 rounded-lg border border-[#D8E2EA] bg-white p-3 sm:grid-cols-4">
                               <SellerField
@@ -602,7 +674,7 @@ export function SellerOrderDetailClient({
                           ) : null}
                         </div>
                         <div className="flex flex-wrap gap-2 lg:justify-end">
-                          {canEditPackage ? (
+                          {canEditPackage && !isStorePickup ? (
                             <>
                               <Button
                                 type="button"
@@ -624,7 +696,7 @@ export function SellerOrderDetailClient({
                               </Button>
                             </>
                           ) : null}
-                          {shipmentPackage.canDownloadLabel ? (
+                          {!isStorePickup && shipmentPackage.canDownloadLabel ? (
                             <>
                               <Button
                                 type="button"
@@ -646,10 +718,21 @@ export function SellerOrderDetailClient({
                                 Print
                               </Button>
                             </>
-                          ) : (
+                          ) : !isStorePickup ? (
                             <StatusBadge tone="warning">{packageLabelState(shipmentPackage)}</StatusBadge>
-                          )}
-                          {shipmentPackage.trackingUrl ? (
+                          ) : null}
+                          {shipmentPackage.deliveryMode !== "THIRD_PARTY_COURIER" ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => printPackageSlip(shipmentPackage)}
+                            >
+                              <Printer className="h-4 w-4" aria-hidden="true" />
+                              Print pickup slip
+                            </Button>
+                          ) : null}
+                          {!isStorePickup && shipmentPackage.trackingUrl ? (
                             <Button asChild size="sm" variant="outline">
                               <a
                                 href={shipmentPackage.trackingUrl}
@@ -709,10 +792,12 @@ export function SellerOrderDetailClient({
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <p className="text-xs font-black uppercase tracking-wide text-[#667085]">
-                      Current package state
+                      {isStorePickup ? "Pickup state" : "Current package state"}
                     </p>
                     <p className="mt-1 text-lg font-black text-[#123A5A]">
-                      {sellerActionTitle(currentSellerStatus)}
+                      {isStorePickup
+                        ? storePickupActionTitle(currentSellerStatus)
+                        : sellerActionTitle(currentSellerStatus)}
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -721,10 +806,13 @@ export function SellerOrderDetailClient({
                   </div>
                 </div>
                 <p className="mt-3 text-sm font-semibold leading-6 text-[#667085]">
-                  {sellerActionDescription(currentSellerStatus)}
+                  {isStorePickup
+                    ? storePickupActionDescription(currentSellerStatus)
+                    : sellerActionDescription(currentSellerStatus)}
                 </p>
               </div>
 
+              {!isStorePickup ? (
               <div className="grid gap-2">
                 {sellerStatusFlow.map((step, index) => (
                   <SellerStatusStep
@@ -736,6 +824,7 @@ export function SellerOrderDetailClient({
                   />
                 ))}
               </div>
+              ) : null}
 
               {!isTerminalSellerStatus ? (
                 <SellerTextArea
@@ -759,7 +848,11 @@ export function SellerOrderDetailClient({
                   onClick={() => updateStatus(nextSellerStatus)}
                   className="h-12"
                 >
-                  {statusMutation.isPending ? "Updating..." : sellerActionLabel(nextSellerStatus)}
+                  {statusMutation.isPending
+                    ? "Updating..."
+                    : isStorePickup
+                      ? "Mark pickup delivered"
+                      : sellerActionLabel(nextSellerStatus)}
                 </Button>
               ) : (
                 <div className="rounded-lg border border-[#D8E2EA] bg-[#F8FAFC] p-4 text-sm font-semibold text-[#667085]">
@@ -789,112 +882,116 @@ export function SellerOrderDetailClient({
             </div>
           </SellerPanel>
 
-          <SellerPanel className="p-4">
-            <div className="flex items-center gap-3">
-              <span className="grid h-10 w-10 place-items-center rounded-md bg-[#FFF0EC] text-[#ED3500]">
-                <Truck className="h-5 w-5" aria-hidden="true" />
-              </span>
-              <SectionHeading
-                title="Logistics automation"
-                description={
-                  isAutomatedDelivery
-                    ? "Transport is controlled by courier, delivery partner, or admin operations after seller packing."
-                    : "This delivery mode needs seller or admin coordination."
-                }
-              />
-            </div>
-            <div className="mt-4 rounded-lg border border-[#D8E2EA] bg-[#F8FAFC] p-4 text-sm font-semibold text-[#667085]">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Info
-                  label="Mode"
-                  value={
-                    deliveryModeLabels[deliveryMode as DeliveryModeValue] ??
-                    statusLabel(deliveryMode)
-                  }
-                />
-                <Info label="Delivery status" value={statusLabel(currentDeliveryStatus)} />
-                <Info label="Tracking" value={delivery?.trackingReference ?? "Not assigned"} />
-                <Info label="Partner" value={deliveryPartnerLabel(delivery)} />
-                <Info
-                  label="ETA"
-                  value={
-                    delivery?.estimatedDeliveryDate
-                      ? formatDateTime(delivery.estimatedDeliveryDate)
-                      : "Not assigned"
-                  }
-                />
-                <Info label="Assignment" value={statusLabel(delivery?.assignmentStatus ?? "UNASSIGNED")} />
-              </div>
-            </div>
-            <div className="mt-4 rounded-lg border border-[#D8E2EA] bg-white p-4 text-sm font-semibold leading-6 text-[#667085]">
-              {isAutomatedDelivery ? (
-                <p>
-                  Seller action stops at packed. Assignment, AWB, tracking, proof, COD collection,
-                  dispatch, and delivered updates come from the logistics workspace, delivery
-                  partner app, courier webhook, or admin override.
-                </p>
-              ) : (
-                <p>
-                  Store pickup and manual transport do not have automated provider tracking. Use the
-                  seller status flow for package progress and coordinate exceptions with admin.
-                </p>
-              )}
-              {delivery?.deliveryNote ? (
-                <p className="mt-3 rounded-md bg-[#F8FAFC] px-3 py-2">
-                  Latest note: {delivery.deliveryNote}
-                </p>
-              ) : null}
-            </div>
-          </SellerPanel>
-
-          <SellerPanel className="p-4">
-            <SectionHeading
-              title="Customer delivery address"
-              description="Checkout snapshot for dispatch coordination."
-            />
-            <div className="mt-4 text-sm font-semibold leading-6 text-[#667085]">
-              <p className="font-black text-[#1F2933]">{address?.fullName ?? "Not available"}</p>
-              {address?.phone ? <p>{address.phone}</p> : null}
-              {address?.line1 ? <p>{address.line1}</p> : null}
-              {address?.line2 ? <p>{address.line2}</p> : null}
-              {address?.area ? <p>{address.area}</p> : null}
-              <p>
-                {[address?.city, address?.state, address?.pincode].filter(Boolean).join(", ") ||
-                  "Address not available"}
-              </p>
-              {address?.country || address?.countryCode ? (
-                <p>{address.country ?? address.countryCode}</p>
-              ) : null}
-              {addressCoordinates ? (
-                <div className="mt-4 rounded-xl border border-[#D8E2EA] bg-white p-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <StatusBadge tone="success">Coordinates available</StatusBadge>
-                    {address?.locationSource ? <StatusBadge tone="info">{statusLabel(address.locationSource)}</StatusBadge> : null}
-                    {address?.accuracyMeters ? <StatusBadge tone="info">Accuracy {address.accuracyMeters} m</StatusBadge> : null}
-                  </div>
-                  <p className="mt-2 text-xs font-semibold text-[#667085]">{formatCoordinates(addressCoordinates)}</p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <Button asChild size="sm">
-                      <a href={googleMapsDirectionsUrl(addressCoordinates)} target="_blank" rel="noreferrer">
-                        <Navigation className="h-4 w-4" aria-hidden="true" />
-                        Open route
-                      </a>
-                    </Button>
-                    <Button asChild size="sm" variant="outline">
-                      <a href={googleMapsSearchUrl(addressCoordinates)} target="_blank" rel="noreferrer">
-                        <MapPin className="h-4 w-4" aria-hidden="true" />
-                        View pin
-                      </a>
-                    </Button>
+          {!isStorePickup ? (
+            <>
+              <SellerPanel className="p-4">
+                <div className="flex items-center gap-3">
+                  <span className="grid h-10 w-10 place-items-center rounded-md bg-[#FFF0EC] text-[#ED3500]">
+                    <Truck className="h-5 w-5" aria-hidden="true" />
+                  </span>
+                  <SectionHeading
+                    title="Logistics automation"
+                    description={
+                      isAutomatedDelivery
+                        ? "Transport is controlled by courier, delivery partner, or admin operations after seller packing."
+                        : "This delivery mode needs seller or admin coordination."
+                    }
+                  />
+                </div>
+                <div className="mt-4 rounded-lg border border-[#D8E2EA] bg-[#F8FAFC] p-4 text-sm font-semibold text-[#667085]">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Info
+                      label="Mode"
+                      value={
+                        deliveryModeLabels[deliveryMode as DeliveryModeValue] ??
+                        statusLabel(deliveryMode)
+                      }
+                    />
+                    <Info label="Delivery status" value={statusLabel(currentDeliveryStatus)} />
+                    <Info label="Tracking" value={delivery?.trackingReference ?? "Not assigned"} />
+                    <Info label="Partner" value={deliveryPartnerLabel(delivery)} />
+                    <Info
+                      label="ETA"
+                      value={
+                        delivery?.estimatedDeliveryDate
+                          ? formatDateTime(delivery.estimatedDeliveryDate)
+                          : "Not assigned"
+                      }
+                    />
+                    <Info label="Assignment" value={statusLabel(delivery?.assignmentStatus ?? "UNASSIGNED")} />
                   </div>
                 </div>
-              ) : (
-                <p className="mt-3 rounded-xl border border-[#FFE0D6] bg-[#FFFCFB] px-3 py-2 text-xs font-bold text-[#8A4B32]">
-                  No coordinate pin was saved for this order; use the written address.
-                </p>
-              )}
-            </div>
-          </SellerPanel>
+                <div className="mt-4 rounded-lg border border-[#D8E2EA] bg-white p-4 text-sm font-semibold leading-6 text-[#667085]">
+                  {isAutomatedDelivery ? (
+                    <p>
+                      Seller action stops at packed. Assignment, AWB, tracking, proof, COD collection,
+                      dispatch, and delivered updates come from the logistics workspace, delivery
+                      partner app, courier webhook, or admin override.
+                    </p>
+                  ) : (
+                    <p>
+                      Manual transport does not have automated provider tracking. Use the seller
+                      status flow for package progress and coordinate exceptions with admin.
+                    </p>
+                  )}
+                  {delivery?.deliveryNote ? (
+                    <p className="mt-3 rounded-md bg-[#F8FAFC] px-3 py-2">
+                      Latest note: {delivery.deliveryNote}
+                    </p>
+                  ) : null}
+                </div>
+              </SellerPanel>
+
+              <SellerPanel className="p-4">
+                <SectionHeading
+                  title="Customer delivery address"
+                  description="Checkout snapshot for dispatch coordination."
+                />
+                <div className="mt-4 text-sm font-semibold leading-6 text-[#667085]">
+                  <p className="font-black text-[#1F2933]">{address?.fullName ?? "Not available"}</p>
+                  {address?.phone ? <p>{address.phone}</p> : null}
+                  {address?.line1 ? <p>{address.line1}</p> : null}
+                  {address?.line2 ? <p>{address.line2}</p> : null}
+                  {address?.area ? <p>{address.area}</p> : null}
+                  <p>
+                    {[address?.city, address?.state, address?.pincode].filter(Boolean).join(", ") ||
+                      "Address not available"}
+                  </p>
+                  {address?.country || address?.countryCode ? (
+                    <p>{address.country ?? address.countryCode}</p>
+                  ) : null}
+                  {addressCoordinates ? (
+                    <div className="mt-4 rounded-xl border border-[#D8E2EA] bg-white p-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <StatusBadge tone="success">Coordinates available</StatusBadge>
+                        {address?.locationSource ? <StatusBadge tone="info">{statusLabel(address.locationSource)}</StatusBadge> : null}
+                        {address?.accuracyMeters ? <StatusBadge tone="info">Accuracy {address.accuracyMeters} m</StatusBadge> : null}
+                      </div>
+                      <p className="mt-2 text-xs font-semibold text-[#667085]">{formatCoordinates(addressCoordinates)}</p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Button asChild size="sm">
+                          <a href={googleMapsDirectionsUrl(addressCoordinates)} target="_blank" rel="noreferrer">
+                            <Navigation className="h-4 w-4" aria-hidden="true" />
+                            Open route
+                          </a>
+                        </Button>
+                        <Button asChild size="sm" variant="outline">
+                          <a href={googleMapsSearchUrl(addressCoordinates)} target="_blank" rel="noreferrer">
+                            <MapPin className="h-4 w-4" aria-hidden="true" />
+                            View pin
+                          </a>
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="mt-3 rounded-xl border border-[#FFE0D6] bg-[#FFFCFB] px-3 py-2 text-xs font-bold text-[#8A4B32]">
+                      No coordinate pin was saved for this order; use the written address.
+                    </p>
+                  )}
+                </div>
+              </SellerPanel>
+            </>
+          ) : null}
         </div>
       </div>
     </div>
@@ -926,7 +1023,7 @@ function packageLabelState(shipmentPackage: {
   courierTrackingStatus?: string | null;
 }) {
   if (shipmentPackage.deliveryMode !== "THIRD_PARTY_COURIER") {
-    return "No courier label";
+    return "Courier label not needed";
   }
   if (shipmentPackage.courierTrackingStatus === "CANCELLED" || shipmentPackage.status === "CANCELLED") {
     return "Cancelled";
@@ -941,6 +1038,23 @@ function packageLabelState(shipmentPackage: {
     return "Courier booking pending";
   }
   return "Packing pending";
+}
+
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, (character) => {
+    switch (character) {
+      case "&":
+        return "&amp;";
+      case "<":
+        return "&lt;";
+      case ">":
+        return "&gt;";
+      case '"':
+        return "&quot;";
+      default:
+        return "&#39;";
+    }
+  });
 }
 
 function Info({ label, value }: { label: string; value?: string | number | null }) {
@@ -1225,6 +1339,16 @@ function sellerActionTitle(status: SellerStatus) {
   return statusLabel(status);
 }
 
+function storePickupActionTitle(status: SellerStatus) {
+  if (status === "DELIVERED") {
+    return "Pickup completed";
+  }
+  if (status === "CANCELLED") {
+    return "Pickup cancelled";
+  }
+  return "Ready to confirm pickup";
+}
+
 function sellerActionDescription(status: SellerStatus) {
   if (status === "PENDING") {
     return "Accept the order first. After that, use the same card to mark packed, dispatched, and delivered.";
@@ -1242,6 +1366,16 @@ function sellerActionDescription(status: SellerStatus) {
     return "This seller package is completed.";
   }
   return "This seller package has been cancelled.";
+}
+
+function storePickupActionDescription(status: SellerStatus) {
+  if (status === "DELIVERED") {
+    return "The buyer pickup is marked complete for this store order.";
+  }
+  if (status === "CANCELLED") {
+    return "This pickup order was cancelled.";
+  }
+  return "Confirm this only after the customer has collected the order from the store.";
 }
 
 function sellerActionLabel(status: SellerStatus) {

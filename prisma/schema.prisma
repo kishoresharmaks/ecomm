@@ -1152,6 +1152,7 @@ model User {
   returnRequestNotes                       ReturnRequestNote[]                @relation("ReturnRequestNoteCreatedBy")
   createdRefundRequests                    RefundRequest[]                    @relation("RefundRequestCreatedBy")
   reviewedRefundRequests                   RefundRequest[]                    @relation("RefundRequestReviewedBy")
+  amountAdjustedRefundRequests             RefundRequest[]                    @relation("RefundRequestAmountAdjustedBy")
   refundTransactions                       RefundTransaction[]                @relation("RefundTransactionCreatedBy")
   reverseShipmentAssignments               ReverseShipment[]                  @relation("ReverseShipmentAssignedPartner")
   reverseShipmentUpdates                   ReverseShipmentEvent[]             @relation("ReverseShipmentEventCreatedBy")
@@ -2917,6 +2918,7 @@ model ReturnRequest {
   reason                            String
   note                              String?
   qualityProofKeys                  String[]                           @default([]) @map("quality_proof_keys")
+  refundDestinationSnapshot         Json?                              @map("refund_destination_snapshot")
   autoApproved                      Boolean                            @default(false) @map("auto_approved")
   totalQuantity                     Int                                @default(0) @map("total_quantity")
   requestedAmountPaise              Int                                @default(0) @map("requested_amount_paise")
@@ -3016,6 +3018,11 @@ model RefundRequest {
   reason                              RefundReason
   method                              RefundMethod?
   amountPaise                         Int                 @default(0) @map("amount_paise")
+  approvedAmountPaise                 Int                 @default(0) @map("approved_amount_paise")
+  refundDestinationSnapshot           Json?               @map("refund_destination_snapshot")
+  amountAdjustmentNote                String?             @map("amount_adjustment_note")
+  amountAdjustedAt                    DateTime?           @map("amount_adjusted_at")
+  amountAdjustedById                  String?             @map("amount_adjusted_by") @db.Uuid
   couponAdjustmentPaise               Int                 @default(0) @map("coupon_adjustment_paise")
   sellerFundedCouponAdjustmentPaise   Int                 @default(0) @map("seller_funded_coupon_adjustment_paise")
   platformFundedCouponAdjustmentPaise Int                 @default(0) @map("platform_funded_coupon_adjustment_paise")
@@ -3033,6 +3040,7 @@ model RefundRequest {
   returnRequest                       ReturnRequest?      @relation(fields: [returnRequestId], references: [id], onDelete: SetNull)
   reviewedBy                          User?               @relation("RefundRequestReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
   createdBy                           User?               @relation("RefundRequestCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  amountAdjustedBy                    User?               @relation("RefundRequestAmountAdjustedBy", fields: [amountAdjustedById], references: [id], onDelete: SetNull)
   items                               RefundRequestItem[]
   transactions                        RefundTransaction[]
 
@@ -3043,6 +3051,7 @@ model RefundRequest {
   @@index([returnRequestId])
   @@index([reviewedById])
   @@index([createdById])
+  @@index([amountAdjustedById])
   @@map("refund_requests")
 }
 

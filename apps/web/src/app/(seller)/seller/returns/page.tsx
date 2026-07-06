@@ -5,7 +5,7 @@ export default function SellerReturnsPage() {
   return (
     <SellerWorkspaceShell
       title="Returns"
-      description="Review return requests for this store, follow the pickup and QC steps, and add seller notes for admin and finance."
+      description="Approve or reject return and replacement requests for this store, then follow pickup and QC progress."
     >
       <SellerReturnsClient />
     </SellerWorkspaceShell>

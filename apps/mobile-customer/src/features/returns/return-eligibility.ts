@@ -8,7 +8,25 @@ export type MobileReverseShipmentMode = (typeof mobileReverseShipmentModes)[numb
 
 export type ReturnFormSelection = Record<string, number>;
 
-export function orderCanStartReturn(order: Pick<MobileOrderDetail, "deliveryStatus" | "orderStatus" | "paymentStatus">) {
+export function isDeliveredStorePickupOrder(
+  order: Pick<MobileOrderDetail, "deliveryStatus" | "orderStatus" | "deliveryDetail" | "shipments">,
+) {
+  const delivered = order.orderStatus === "DELIVERED" || order.deliveryStatus === "DELIVERED";
+  const storePickup =
+    order.deliveryDetail?.deliveryMode === "STORE_PICKUP" ||
+    ((order.shipments?.length ?? 0) > 0 &&
+      order.shipments?.every((shipment) => shipment.deliveryMode === "STORE_PICKUP"));
+
+  return delivered && Boolean(storePickup);
+}
+
+export function orderCanStartReturn(
+  order: Pick<MobileOrderDetail, "deliveryStatus" | "orderStatus" | "paymentStatus" | "deliveryDetail" | "shipments">,
+) {
+  if (isDeliveredStorePickupOrder(order)) {
+    return false;
+  }
+
   const delivered = order.orderStatus === "DELIVERED" || order.deliveryStatus === "DELIVERED";
   const paid = order.paymentStatus === "PAID" || order.paymentStatus === "NOT_REQUIRED";
   return delivered && paid;

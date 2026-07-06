@@ -35,6 +35,7 @@ import {
   SellerPayoutStatus,
   SellerSettlementStatus,
   StatusEventType,
+  DeliveryMode,
   UserStatus,
 } from "@indihub/database";
 import type { RequestUser } from "../auth/types/indihub-request";
@@ -49,6 +50,7 @@ import { SellerLedgerService } from "../finance/seller-ledger.service";
 import { PrismaService } from "../prisma/prisma.service";
 import {
   ApproveRefundDto,
+  AdjustRefundAmountDto,
   CreateCancellationDto,
   CreateReturnRequestDto,
   InitiateRefundDto,
@@ -116,6 +118,13 @@ const manualRefundStatusSet = new Set<RefundRequestStatus>([
   RefundRequestStatus.PROCESSING,
 ]);
 
+const refundAmountAdjustmentStatusSet = new Set<RefundRequestStatus>([
+  RefundRequestStatus.PENDING_REVIEW,
+  RefundRequestStatus.APPROVED,
+  RefundRequestStatus.RETRY_PENDING,
+  RefundRequestStatus.FAILED,
+]);
+
 const cancellationBlockedDeliveryStatusSet = new Set<DeliveryStatus>([
   DeliveryStatus.DISPATCHED,
   DeliveryStatus.IN_TRANSIT,
@@ -149,6 +158,20 @@ type ReversePickupAssignmentTarget = Prisma.ReturnRequestGetPayload<{
 type RefundRequestDetail = Prisma.RefundRequestGetPayload<{
   include: typeof refundDetailInclude;
 }>;
+
+type RefundDestinationSnapshot =
+  | {
+      method: "UPI";
+      accountHolderName: string;
+      upiId: string;
+    }
+  | {
+      method: "BANK_TRANSFER";
+      accountHolderName: string;
+      bankName: string;
+      accountNumber: string;
+      ifsc: string;
+    };
 
 type ReturnNumberClient = Pick<Prisma.TransactionClient, "returnRequest" | "refundRequest">;
 
@@ -281,6 +304,10 @@ const returnDetailInclude = {
       status: true,
       method: true,
       amountPaise: true,
+      approvedAmountPaise: true,
+      refundDestinationSnapshot: true,
+      amountAdjustmentNote: true,
+      amountAdjustedAt: true,
       currency: true,
       approvedAt: true,
       reviewedAt: true,
@@ -455,6 +482,7 @@ const refundDetailInclude = {
       requestNumber: true,
       status: true,
       resolution: true,
+      refundDestinationSnapshot: true,
     },
   },
   items: {
@@ -719,6 +747,10 @@ export class ReturnsService {
       const order = await this.getReturnOrderForCustomer(tx, orderNumber, customer.id);
       this.assertOrderCanBeReturned(order);
       await this.lockOrderGraph(tx, order);
+      const refundDestinationSnapshot = this.normalizeRefundDestination(
+        dto.refundDestination,
+        this.requiresManualRefundDestination(order, dto.resolution),
+      );
 
       const requestedItems = this.resolveRequestedItems(order, dto.items);
       const pendingByOrderItem = await this.pendingReturnQuantityByOrderItem(tx, order.id);
@@ -754,6 +786,9 @@ export class ReturnsService {
           reason: dto.reason,
           note: dto.note ?? null,
           qualityProofKeys,
+          ...(refundDestinationSnapshot
+            ? { refundDestinationSnapshot: refundDestinationSnapshot as Prisma.InputJsonValue }
+            : {}),
           autoApproved,
           totalQuantity,
           requestedAmountPaise,
@@ -813,6 +848,7 @@ export class ReturnsService {
             totalQuantity,
             requestedAmountPaise,
             qualityProofCount: qualityProofKeys.length,
+            refundDestinationMethod: refundDestinationSnapshot?.method ?? null,
             autoApproved,
           },
         },
@@ -855,6 +891,13 @@ export class ReturnsService {
     if (dto.status === ReturnRequestStatus.QC_PASSED || dto.status === ReturnRequestStatus.QC_FAILED) {
       throw new BadRequestException("Use the QC endpoint for quality-check decisions.");
     }
+    if (
+      dto.status === ReturnRequestStatus.APPROVED ||
+      dto.status === ReturnRequestStatus.AUTO_APPROVED ||
+      dto.status === ReturnRequestStatus.REJECTED
+    ) {
+      throw new BadRequestException("Seller must approve or reject return and replacement requests from seller returns.");
+    }
 
     const returnRequestId = await this.prisma.client.$transaction(async (tx) => {
       const existing = await tx.returnRequest.findUnique({
@@ -875,12 +918,7 @@ export class ReturnsService {
       }
       await this.lockReturnRequest(tx, existing.id);
 
-      if (dto.status === ReturnRequestStatus.APPROVED || dto.status === ReturnRequestStatus.AUTO_APPROVED) {
-        await this.approveReturnInTransaction(tx, existing, actor, dto.note);
-      } else if (
-        dto.status === ReturnRequestStatus.REJECTED ||
-        dto.status === ReturnRequestStatus.CANCELLED
-      ) {
+      if (dto.status === ReturnRequestStatus.CANCELLED) {
         await this.closeReturnInTransaction(tx, existing, actor, dto.status, dto.note);
       } else {
         await tx.returnRequest.update({
@@ -914,10 +952,6 @@ export class ReturnsService {
 
       return existing.id;
     });
-
-    if (dto.status === ReturnRequestStatus.APPROVED || dto.status === ReturnRequestStatus.AUTO_APPROVED) {
-      await this.tryAutoAssignReversePickupAfterApproval(actor, requestNumber);
-    }
 
     const detail = await this.prisma.client.returnRequest.findUnique({
       where: { id: returnRequestId },
@@ -1670,6 +1704,10 @@ export class ReturnsService {
         reason: true,
         method: true,
         amountPaise: true,
+        approvedAmountPaise: true,
+        refundDestinationSnapshot: true,
+        amountAdjustmentNote: true,
+        amountAdjustedAt: true,
         currency: true,
         createdAt: true,
         order: { select: { orderNumber: true, paymentStatus: true } },
@@ -1691,6 +1729,10 @@ export class ReturnsService {
         reason: item.reason,
         method: item.method,
         amountPaise: item.amountPaise,
+        approvedAmountPaise: item.approvedAmountPaise,
+        refundDestination: this.maskRefundDestination(item.refundDestinationSnapshot),
+        amountAdjustmentNote: item.amountAdjustmentNote,
+        amountAdjustedAt: item.amountAdjustedAt,
         currency: item.currency,
         createdAt: item.createdAt,
         orderNumber: item.order.orderNumber,
@@ -1840,9 +1882,82 @@ export class ReturnsService {
     return this.initiateRefund(actor, refundNumber, dto);
   }
 
+  async adjustRefundAmount(actor: RequestUser, refundNumber: string, dto: AdjustRefundAmountDto) {
+    const refundId = await this.prisma.client.$transaction(async (tx) => {
+      const refund = await tx.refundRequest.findUnique({
+        where: { refundNumber },
+        include: { items: true },
+      });
+      if (!refund) {
+        throw new NotFoundException("Refund request not found.");
+      }
+      await this.lockRefundRequest(tx, refund.id);
+      if (!refundAmountAdjustmentStatusSet.has(refund.status)) {
+        throw new BadRequestException("Refund amount can be adjusted only before successful payment.");
+      }
+      const adjustmentNote = dto.note.trim();
+      if (!adjustmentNote) {
+        throw new BadRequestException("Amount adjustment note is required.");
+      }
+
+      const approvedCap = refund.approvedAmountPaise > 0 ? refund.approvedAmountPaise : refund.amountPaise;
+      if (dto.amountPaise > approvedCap) {
+        throw new BadRequestException("Refund payable amount cannot exceed the approved refundable amount.");
+      }
+
+      const nextItemAmounts = this.distributeRefundItemAmounts(
+        refund.items.map((item) => ({ id: item.id, amountPaise: item.amountPaise })),
+        dto.amountPaise,
+      );
+
+      await tx.refundRequest.update({
+        where: { id: refund.id },
+        data: {
+          amountPaise: dto.amountPaise,
+          amountAdjustmentNote: adjustmentNote,
+          amountAdjustedAt: new Date(),
+          amountAdjustedById: actor.id,
+        },
+      });
+
+      for (const item of nextItemAmounts) {
+        await tx.refundRequestItem.update({
+          where: { id: item.id },
+          data: { amountPaise: item.amountPaise },
+        });
+      }
+
+      await tx.auditLog.create({
+        data: {
+          actorUserId: actor.id,
+          action: "refund.amount_adjusted",
+          entityType: "refund_request",
+          entityId: refund.id,
+          oldValue: { amountPaise: refund.amountPaise },
+          newValue: {
+            amountPaise: dto.amountPaise,
+            approvedAmountPaise: approvedCap,
+            note: adjustmentNote,
+          },
+        },
+      });
+
+      return refund.id;
+    });
+
+    const detail = await this.prisma.client.refundRequest.findUnique({
+      where: { id: refundId },
+      include: refundDetailInclude,
+    });
+    return this.refundDetailReadback(detail!);
+  }
+
   async recordManualRefund(actor: RequestUser, refundNumber: string, dto: ManualRefundDto) {
     if (dto.method === RefundMethod.RAZORPAY) {
       throw new BadRequestException("Use the initiate endpoint for Razorpay refunds.");
+    }
+    if (dto.method === RefundMethod.COD_CASH) {
+      throw new BadRequestException("Cash refunds are not supported. Use UPI or bank transfer.");
     }
 
     const refundId = await this.prisma.client.$transaction(async (tx) => {
@@ -1858,6 +1973,10 @@ export class ReturnsService {
       }
       if (!manualRefundStatusSet.has(refund.status)) {
         throw new BadRequestException("Refund is not ready for manual payment recording.");
+      }
+      const destination = this.readRefundDestination(refund.refundDestinationSnapshot);
+      if (destination && dto.method !== destination.method) {
+        throw new BadRequestException(`Refund must be recorded through ${destination.method}.`);
       }
 
       const idempotencyKey = this.refundIdempotencyKey(
@@ -2109,6 +2228,9 @@ export class ReturnsService {
     if (order.orderStatus === OrderStatus.CANCELLED) {
       throw new BadRequestException("Order is already cancelled.");
     }
+    if (this.isDeliveredStorePickupOrder(order)) {
+      throw new BadRequestException("Store pickup orders are final after pickup is marked delivered.");
+    }
     if (order.orderStatus === OrderStatus.DELIVERED || order.deliveryStatus === DeliveryStatus.DELIVERED) {
       throw new BadRequestException("Delivered orders must use the return flow.");
     }
@@ -2118,12 +2240,25 @@ export class ReturnsService {
   }
 
   private assertOrderCanBeReturned(order: ReturnOrder) {
+    if (this.isDeliveredStorePickupOrder(order)) {
+      throw new BadRequestException("Store pickup orders are final after pickup is marked delivered.");
+    }
     if (order.orderStatus !== OrderStatus.DELIVERED && order.deliveryStatus !== DeliveryStatus.DELIVERED) {
       throw new BadRequestException("Returns are available only after delivery.");
     }
     if (order.paymentStatus !== PaymentStatus.PAID && order.paymentStatus !== PaymentStatus.NOT_REQUIRED) {
       throw new BadRequestException("Returns are available only after payment is completed or not required.");
     }
+  }
+
+  private isDeliveredStorePickupOrder(order: Pick<ReturnOrder, "orderStatus" | "deliveryStatus" | "deliveryDetail" | "shipments">) {
+    const delivered = order.orderStatus === OrderStatus.DELIVERED || order.deliveryStatus === DeliveryStatus.DELIVERED;
+    const storePickup =
+      order.deliveryDetail?.deliveryMode === DeliveryMode.STORE_PICKUP ||
+      (order.shipments.length > 0 &&
+        order.shipments.every((shipment) => shipment.deliveryMode === DeliveryMode.STORE_PICKUP));
+
+    return delivered && storePickup;
   }
 
   private async lockOrderGraph(tx: Prisma.TransactionClient, order: ReturnOrder) {
@@ -2473,6 +2608,7 @@ export class ReturnsService {
         status: input.status,
         reason: input.reason,
         amountPaise,
+        approvedAmountPaise: amountPaise,
         couponAdjustmentPaise,
         sellerFundedCouponAdjustmentPaise,
         platformFundedCouponAdjustmentPaise,
@@ -2536,6 +2672,10 @@ export class ReturnsService {
       0,
     );
     const payment = "payments" in input.order ? this.refundablePayment(input.order as ReturnOrder) : null;
+    const returnRequest = await tx.returnRequest.findUnique({
+      where: { id: input.returnRequestId },
+      select: { refundDestinationSnapshot: true },
+    });
 
     if (amountPaise <= 0) {
       return null;
@@ -2555,6 +2695,10 @@ export class ReturnsService {
             ? RefundReason.RETURN_PARTIAL_REFUND
             : RefundReason.RETURN_REFUND,
         amountPaise,
+        approvedAmountPaise: amountPaise,
+        ...(returnRequest?.refundDestinationSnapshot
+          ? { refundDestinationSnapshot: returnRequest.refundDestinationSnapshot as Prisma.InputJsonValue }
+          : {}),
         couponAdjustmentPaise,
         sellerFundedCouponAdjustmentPaise,
         platformFundedCouponAdjustmentPaise,
@@ -2583,53 +2727,6 @@ export class ReturnsService {
     });
 
     return refund;
-  }
-
-  private async approveReturnInTransaction(
-    tx: Prisma.TransactionClient,
-    existing: Prisma.ReturnRequestGetPayload<{
-      include: { items: true; refundRequests: true; order: { include: { payments: true; sellerSplits: { include: { payout: true } } } } };
-    }>,
-    actor: RequestUser,
-    note?: string,
-  ) {
-    if (existing.status !== ReturnRequestStatus.PENDING_REVIEW) {
-      throw new BadRequestException("Only pending returns can be approved.");
-    }
-    const approvedAmountPaise = existing.items.reduce(
-      (sum, item) => sum + item.requestedRefundPaise,
-      0,
-    );
-    await tx.returnRequest.update({
-      where: { id: existing.id },
-      data: {
-        status: ReturnRequestStatus.APPROVED,
-        reviewedAt: new Date(),
-        reviewedById: actor.id,
-        approvedAmountPaise,
-      },
-    });
-    await tx.returnRequestItem.updateMany({
-      where: { returnRequestId: existing.id },
-      data: {
-        status: ReturnRequestItemStatus.APPROVED,
-      },
-    });
-    for (const item of existing.items) {
-      await tx.returnRequestItem.update({
-        where: { id: item.id },
-        data: { approvedRefundPaise: item.requestedRefundPaise },
-      });
-    }
-    await this.createReverseShipmentsForReturn(
-      tx,
-      existing.id,
-      existing.orderId,
-      ReverseShipmentMode.PLATFORM_PICKUP,
-      existing.items.map((item) => ({
-        sellerId: item.sellerId,
-      })),
-    );
   }
 
   private async closeReturnInTransaction(
@@ -3889,7 +3986,22 @@ export class ReturnsService {
         events: shipment.events,
         assignmentAttempts: shipment.assignmentAttempts,
       })),
-      refunds: detail.refundRequests,
+      refunds: detail.refundRequests.map((refund) => ({
+        id: refund.id,
+        refundNumber: refund.refundNumber,
+        status: refund.status,
+        method: refund.method,
+        amountPaise: refund.amountPaise,
+        approvedAmountPaise: refund.approvedAmountPaise,
+        refundDestination: this.maskRefundDestination(refund.refundDestinationSnapshot),
+        amountAdjustmentNote: refund.amountAdjustmentNote,
+        amountAdjustedAt: refund.amountAdjustedAt,
+        currency: refund.currency,
+        approvedAt: refund.approvedAt,
+        reviewedAt: refund.reviewedAt,
+        createdAt: refund.createdAt,
+        transactions: refund.transactions,
+      })),
       notes: detail.notes.filter((note) => (options.sellerId ? !note.sellerId || note.sellerId === options.sellerId : true)),
     };
   }
@@ -3902,6 +4014,10 @@ export class ReturnsService {
       reason: detail.reason,
       method: detail.method,
       amountPaise: detail.amountPaise,
+      approvedAmountPaise: detail.approvedAmountPaise,
+      refundDestination: this.maskRefundDestination(detail.refundDestinationSnapshot),
+      amountAdjustmentNote: detail.amountAdjustmentNote,
+      amountAdjustedAt: detail.amountAdjustedAt,
       couponAdjustmentPaise: detail.couponAdjustmentPaise,
       sellerFundedCouponAdjustmentPaise: detail.sellerFundedCouponAdjustmentPaise,
       platformFundedCouponAdjustmentPaise: detail.platformFundedCouponAdjustmentPaise,
@@ -4041,6 +4157,137 @@ export class ReturnsService {
       }
     }
     return normalized;
+  }
+
+  private requiresManualRefundDestination(order: ReturnOrder, resolution: ReturnRequestResolution) {
+    if (!this.resolutionNeedsRefund(resolution)) {
+      return false;
+    }
+    const manualRefundProviders: PaymentProvider[] = [
+      PaymentProvider.COD,
+      PaymentProvider.BANK_TRANSFER,
+      PaymentProvider.MANUAL,
+    ];
+    return order.payments.some((payment) =>
+      manualRefundProviders.includes(payment.provider),
+    );
+  }
+
+  private normalizeRefundDestination(
+    destination: CreateReturnRequestDto["refundDestination"],
+    required: boolean,
+  ): RefundDestinationSnapshot | null {
+    if (!destination) {
+      if (required) {
+        throw new BadRequestException("Refund destination is required for COD/offline refunds.");
+      }
+      return null;
+    }
+
+    const accountHolderName = destination.accountHolderName?.trim();
+    if (!accountHolderName) {
+      throw new BadRequestException("Refund account holder name is required.");
+    }
+
+    if (destination.method === RefundMethod.UPI) {
+      const upiId = destination.upiId?.trim();
+      if (!upiId) {
+        throw new BadRequestException("UPI ID is required for UPI refunds.");
+      }
+      return { method: "UPI", accountHolderName, upiId };
+    }
+
+    if (destination.method === RefundMethod.BANK_TRANSFER) {
+      const bankName = destination.bankName?.trim();
+      const accountNumber = destination.accountNumber?.trim();
+      const ifsc = destination.ifsc?.trim().toUpperCase();
+      if (!bankName || !accountNumber || !ifsc) {
+        throw new BadRequestException("Bank name, account number, and IFSC are required for bank refunds.");
+      }
+      return { method: "BANK_TRANSFER", accountHolderName, bankName, accountNumber, ifsc };
+    }
+
+    throw new BadRequestException("Refund destination must be UPI or bank transfer.");
+  }
+
+  private readRefundDestination(value: Prisma.JsonValue | null): RefundDestinationSnapshot | null {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return null;
+    }
+    const record = value as Record<string, unknown>;
+    const method = record.method;
+    const accountHolderName = this.readSnapshotString(record.accountHolderName);
+    if (!accountHolderName) {
+      return null;
+    }
+    if (method === "UPI") {
+      const upiId = this.readSnapshotString(record.upiId);
+      return upiId ? { method: "UPI", accountHolderName, upiId } : null;
+    }
+    if (method === "BANK_TRANSFER") {
+      const bankName = this.readSnapshotString(record.bankName);
+      const accountNumber = this.readSnapshotString(record.accountNumber);
+      const ifsc = this.readSnapshotString(record.ifsc);
+      return bankName && accountNumber && ifsc
+        ? { method: "BANK_TRANSFER", accountHolderName, bankName, accountNumber, ifsc }
+        : null;
+    }
+    return null;
+  }
+
+  private maskRefundDestination(value: Prisma.JsonValue | null) {
+    const destination = this.readRefundDestination(value);
+    if (!destination) {
+      return null;
+    }
+    if (destination.method === "UPI") {
+      const [handle, domain] = destination.upiId.split("@");
+      return {
+        method: destination.method,
+        accountHolderName: destination.accountHolderName,
+        upiId: `${this.maskTail(handle ?? "")}${domain ? `@${domain}` : ""}`,
+      };
+    }
+    return {
+      method: destination.method,
+      accountHolderName: destination.accountHolderName,
+      bankName: destination.bankName,
+      accountNumber: this.maskTail(destination.accountNumber),
+      ifsc: destination.ifsc,
+    };
+  }
+
+  private maskTail(value: string) {
+    if (value.length <= 4) {
+      return "****";
+    }
+    return `${"*".repeat(Math.max(4, value.length - 4))}${value.slice(-4)}`;
+  }
+
+  private distributeRefundItemAmounts(items: Array<{ id: string; amountPaise: number }>, totalPaise: number) {
+    if (!items.length) {
+      return [];
+    }
+    const currentTotal = items.reduce((sum, item) => sum + item.amountPaise, 0);
+    if (currentTotal <= 0) {
+      const base = Math.floor(totalPaise / items.length);
+      let remainder = totalPaise - base * items.length;
+      return items.map((item) => {
+        const amountPaise = base + (remainder > 0 ? 1 : 0);
+        remainder -= remainder > 0 ? 1 : 0;
+        return { id: item.id, amountPaise };
+      });
+    }
+
+    let allocated = 0;
+    return items.map((item, index) => {
+      const amountPaise =
+        index === items.length - 1
+          ? totalPaise - allocated
+          : Math.floor((totalPaise * item.amountPaise) / currentTotal);
+      allocated += amountPaise;
+      return { id: item.id, amountPaise };
+    });
   }
 
   private async getRefundDetailOrThrow(refundNumber: string) {

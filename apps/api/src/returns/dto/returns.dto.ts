@@ -6,6 +6,7 @@ import {
   IsArray,
   IsDateString,
   IsEnum,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -74,6 +75,42 @@ export class CreateCancellationDto {
   note?: string;
 }
 
+export class RefundDestinationDto {
+  @ApiProperty({ enum: [RefundMethod.UPI, RefundMethod.BANK_TRANSFER] })
+  @IsEnum(RefundMethod)
+  @IsIn([RefundMethod.UPI, RefundMethod.BANK_TRANSFER])
+  method!: RefundMethod;
+
+  @ApiProperty({ example: "Krishna Kumar" })
+  @IsString()
+  @MaxLength(120)
+  accountHolderName!: string;
+
+  @ApiPropertyOptional({ example: "krishna@upi" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  upiId?: string;
+
+  @ApiPropertyOptional({ example: "HDFC Bank" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  bankName?: string;
+
+  @ApiPropertyOptional({ example: "123456789012" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  accountNumber?: string;
+
+  @ApiPropertyOptional({ example: "HDFC0001234" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  ifsc?: string;
+}
+
 export class CreateReturnRequestDto {
   @ApiProperty({ enum: ReturnRequestResolution, example: ReturnRequestResolution.REFUND })
   @IsEnum(ReturnRequestResolution)
@@ -118,6 +155,15 @@ export class CreateReturnRequestDto {
     message: "qualityProofKeys must be return quality image asset keys.",
   })
   qualityProofKeys?: string[];
+
+  @ApiPropertyOptional({
+    description: "Required for COD/offline refunds. Cash refunds are not supported.",
+    example: { method: "UPI", accountHolderName: "Krishna Kumar", upiId: "krishna@upi" },
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => RefundDestinationDto)
+  refundDestination?: RefundDestinationDto;
 }
 
 export class ReturnListQueryDto {
@@ -257,6 +303,19 @@ export class ManualRefundDto {
   @IsString()
   @MaxLength(1000)
   note?: string;
+}
+
+export class AdjustRefundAmountDto {
+  @ApiProperty({ example: 49900 })
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  amountPaise!: number;
+
+  @ApiProperty({ example: "Customer accepted lower refund after missing accessory." })
+  @IsString()
+  @MaxLength(1000)
+  note!: string;
 }
 
 export class ReversePickupUpdateDto {

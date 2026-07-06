@@ -102,7 +102,21 @@ export function isOrderDelivered(order: AccountOrder): boolean {
   return order.orderStatus === "DELIVERED" || order.deliveryStatus === "DELIVERED";
 }
 
+export function isDeliveredStorePickupOrder(order: AccountOrder): boolean {
+  const isStorePickup =
+    order.deliveryDetail?.deliveryMode === "STORE_PICKUP" ||
+    (Array.isArray(order.shipments) &&
+      order.shipments.length > 0 &&
+      order.shipments.every((shipment) => shipment.deliveryMode === "STORE_PICKUP"));
+
+  return isStorePickup && isOrderDelivered(order);
+}
+
 export function isOrderReturnable(order: AccountOrder): boolean {
+  if (isDeliveredStorePickupOrder(order)) {
+    return false;
+  }
+
   if (!isOrderDelivered(order)) {
     return false;
   }
@@ -110,6 +124,10 @@ export function isOrderReturnable(order: AccountOrder): boolean {
 }
 
 export function orderReturnUnavailableReason(order: AccountOrder): string {
+  if (isDeliveredStorePickupOrder(order)) {
+    return "Store pickup orders are final after pickup is marked delivered.";
+  }
+
   if (!isOrderDelivered(order)) {
     return "Returns, refunds, and replacements are available only after delivery.";
   }

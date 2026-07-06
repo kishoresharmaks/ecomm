@@ -60,6 +60,7 @@ import {
   isOrderDelivered,
   isOrderCancellable,
   isOrderReturnable,
+  isDeliveredStorePickupOrder,
   orderCancellationUnavailableReason,
   orderReturnUnavailableReason,
   returnPolicyDescription,
@@ -86,6 +87,12 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
   const [returnNote, setReturnNote] = useState("");
   const [returnQualityProofKeys, setReturnQualityProofKeys] = useState<string[]>([]);
   const [returnQualityUploadBusy, setReturnQualityUploadBusy] = useState(false);
+  const [refundMethod, setRefundMethod] = useState<"UPI" | "BANK_TRANSFER">("UPI");
+  const [refundAccountHolderName, setRefundAccountHolderName] = useState("");
+  const [refundUpiId, setRefundUpiId] = useState("");
+  const [refundBankName, setRefundBankName] = useState("");
+  const [refundAccountNumber, setRefundAccountNumber] = useState("");
+  const [refundIfsc, setRefundIfsc] = useState("");
   const [cancellationReason, setCancellationReason] = useState("");
   const [cancellationNote, setCancellationNote] = useState("");
 
@@ -167,6 +174,7 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
       setReturnReason("");
       setReturnNote("");
       setReturnQualityProofKeys([]);
+      resetRefundDestination();
       void queryClient.invalidateQueries({
         queryKey: ["account-order", customerAuth.authKey, orderNumber],
       });
@@ -236,6 +244,40 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
       reason: returnReason.trim(),
       items,
     };
+
+    if (requiresManualRefundDestination) {
+      const accountHolderName = refundAccountHolderName.trim();
+      if (!accountHolderName) {
+        setNoticeTone("danger");
+        setNotice("Enter the refund account holder name.");
+        return;
+      }
+      if (refundMethod === "UPI") {
+        const upiId = refundUpiId.trim();
+        if (!upiId) {
+          setNoticeTone("danger");
+          setNotice("Enter the UPI ID for refund.");
+          return;
+        }
+        payload.refundDestination = { method: "UPI", accountHolderName, upiId };
+      } else {
+        const bankName = refundBankName.trim();
+        const accountNumber = refundAccountNumber.trim();
+        const ifsc = refundIfsc.trim().toUpperCase();
+        if (!bankName || !accountNumber || !ifsc) {
+          setNoticeTone("danger");
+          setNotice("Enter bank name, account number, and IFSC for refund.");
+          return;
+        }
+        payload.refundDestination = {
+          method: "BANK_TRANSFER",
+          accountHolderName,
+          bankName,
+          accountNumber,
+          ifsc,
+        };
+      }
+    }
     const cleanNote = returnNote.trim();
     if (cleanNote) {
       payload.note = cleanNote;
@@ -289,7 +331,17 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
     setReturnReason("");
     setReturnNote("");
     setReturnQualityProofKeys([]);
+    resetRefundDestination();
     setShowReturnDrawer(true);
+  }
+
+  function resetRefundDestination() {
+    setRefundMethod("UPI");
+    setRefundAccountHolderName("");
+    setRefundUpiId("");
+    setRefundBankName("");
+    setRefundAccountNumber("");
+    setRefundIfsc("");
   }
 
   async function handleReturnQualityImages(files: FileList | null) {
@@ -316,13 +368,25 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
 
   const order = orderQuery.data;
   const address = order?.shippingAddressSnapshot;
-  const canCancel = order ? isOrderCancellable(order) : false;
-  const cancellationUnavailableReason = order ? orderCancellationUnavailableReason(order) : null;
+  const storePickupFinal = order ? isDeliveredStorePickupOrder(order) : false;
+  const canCancel = order ? !storePickupFinal && isOrderCancellable(order) : false;
+  const cancellationUnavailableReason = order
+    ? storePickupFinal
+      ? "Store pickup orders are final after pickup is marked delivered."
+      : orderCancellationUnavailableReason(order)
+    : null;
   const shouldShowSupportLink = order ? hasOrderLeftSeller(order) : false;
   const timeline = order ? buildTrackingTimeline(order) : [];
   const deliveryStatus = order ? effectiveCustomerDeliveryStatus(order) : null;
   const canShowDeliveryAssignment = order ? customerDeliveryAssignmentReady(order) : false;
   const latestPayment = order?.payments?.[0] ?? null;
+  const requiresManualRefundDestination =
+    returnResolution === "REFUND" &&
+    Boolean(
+      order?.payments?.some((payment) =>
+        ["COD", "BANK_TRANSFER", "MANUAL"].includes(payment.provider),
+      ) ?? ["COD", "BANK_TRANSFER", "MANUAL"].includes(latestPayment?.provider ?? ""),
+    );
   const canReturn = order ? isOrderReturnable(order) : false;
   const isDelivered = order ? isOrderDelivered(order) : false;
   const returnUnavailableReason = order ? orderReturnUnavailableReason(order) : null;
@@ -737,7 +801,7 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
           </div>
 
           {/* Partial Cancellation Drawer */}
-          {showCancellationDrawer && order ? (
+          {showCancellationDrawer && order && canCancel ? (
             <div className="fixed inset-0 z-50 flex justify-end bg-black/50">
               <div className="h-full w-full max-w-2xl overflow-y-auto bg-white p-6 shadow-xl">
               <div className="flex items-center justify-between mb-4">
@@ -878,7 +942,7 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
         ) : null}
 
         {/* Return Request Drawer */}
-        {showReturnDrawer && order ? (
+        {showReturnDrawer && order && hasReturnableItems ? (
           <div className="fixed inset-0 z-50 flex justify-end bg-black/50">
             <div className="h-full w-full max-w-2xl overflow-y-auto bg-white p-6 shadow-xl">
               <div className="flex items-center justify-between mb-4">
@@ -1029,6 +1093,81 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
                     className="w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 py-3 text-sm font-semibold text-[#1F2933] outline-none transition focus:border-[#ED3500] focus:bg-white"
                   />
                 </div>
+
+                {requiresManualRefundDestination ? (
+                  <div className="rounded-md border border-[#D8E2EA] bg-[#F8FAFC] p-4">
+                    <p className="text-sm font-black text-[#1F2933]">Refund destination</p>
+                    <p className="mt-1 text-xs font-semibold leading-5 text-[#667085]">
+                      COD and offline refunds are paid only through UPI or bank transfer.
+                    </p>
+                    <div className="mt-3 grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setRefundMethod("UPI")}
+                        className={`rounded-md border px-3 py-2 text-sm font-bold transition ${
+                          refundMethod === "UPI"
+                            ? "border-[#ED3500] bg-[#FFF0EC] text-[#ED3500]"
+                            : "border-[#D8E2EA] bg-white text-[#667085]"
+                        }`}
+                      >
+                        UPI
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRefundMethod("BANK_TRANSFER")}
+                        className={`rounded-md border px-3 py-2 text-sm font-bold transition ${
+                          refundMethod === "BANK_TRANSFER"
+                            ? "border-[#ED3500] bg-[#FFF0EC] text-[#ED3500]"
+                            : "border-[#D8E2EA] bg-white text-[#667085]"
+                        }`}
+                      >
+                        Bank
+                      </button>
+                    </div>
+                    <div className="mt-3 grid gap-3">
+                      <input
+                        type="text"
+                        value={refundAccountHolderName}
+                        onChange={(e) => setRefundAccountHolderName(e.target.value)}
+                        placeholder="Account holder name"
+                        className="h-11 w-full rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-semibold text-[#1F2933] outline-none transition focus:border-[#ED3500]"
+                      />
+                      {refundMethod === "UPI" ? (
+                        <input
+                          type="text"
+                          value={refundUpiId}
+                          onChange={(e) => setRefundUpiId(e.target.value)}
+                          placeholder="UPI ID"
+                          className="h-11 w-full rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-semibold text-[#1F2933] outline-none transition focus:border-[#ED3500]"
+                        />
+                      ) : (
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <input
+                            type="text"
+                            value={refundBankName}
+                            onChange={(e) => setRefundBankName(e.target.value)}
+                            placeholder="Bank name"
+                            className="h-11 w-full rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-semibold text-[#1F2933] outline-none transition focus:border-[#ED3500]"
+                          />
+                          <input
+                            type="text"
+                            value={refundIfsc}
+                            onChange={(e) => setRefundIfsc(e.target.value.toUpperCase())}
+                            placeholder="IFSC"
+                            className="h-11 w-full rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-semibold text-[#1F2933] outline-none transition focus:border-[#ED3500]"
+                          />
+                          <input
+                            type="text"
+                            value={refundAccountNumber}
+                            onChange={(e) => setRefundAccountNumber(e.target.value)}
+                            placeholder="Account number"
+                            className="h-11 w-full rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-semibold text-[#1F2933] outline-none transition focus:border-[#ED3500] sm:col-span-2"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : null}
 
                 <div className="rounded-md border border-[#D8E2EA] bg-[#F8FAFC] p-4">
                   <div className="flex items-start gap-3">

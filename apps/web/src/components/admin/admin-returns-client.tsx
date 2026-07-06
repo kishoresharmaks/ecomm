@@ -335,7 +335,7 @@ function AdminReturnDetailPanel({
   const auth = useAdminAuth();
   const [selectedPartnerId, setSelectedPartnerId] = useState("");
   const [proofOpenError, setProofOpenError] = useState<string | null>(null);
-  const canReview = detail.status === "PENDING_REVIEW";
+  const waitingForSeller = detail.status === "PENDING_REVIEW";
   const canCancel = !["RESOLVED", "REJECTED", "CANCELLED"].includes(detail.status);
   const canQc = ["RECEIVED", "PICKED_UP", "IN_TRANSIT", "APPROVED", "AUTO_APPROVED", "PICKUP_PENDING"].includes(detail.status);
   const canManagePickup = detail.reverseShipments.length > 0 && !detail.reverseShipments.some((shipment) =>
@@ -409,7 +409,7 @@ function AdminReturnDetailPanel({
             <div className="rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-4">
               <p className="text-sm font-black text-[#1F2933]">Customer quality images</p>
               <p className="mt-1 text-xs font-semibold leading-5 text-[#667085]">
-                Use these uploaded proof references while deciding return approval and QC.
+                Use these uploaded proof references for operations review and QC.
               </p>
               <div className="mt-3 grid gap-2">
                 {detail.qualityProofKeys.map((key, index) => (
@@ -453,29 +453,20 @@ function AdminReturnDetailPanel({
 
         <aside className="space-y-4">
           <section className="rounded-lg border border-[#D8E2EA] bg-white p-4 shadow-sm">
-            <PanelTitle icon={<ShieldCheck className="h-5 w-5" />} title="Next admin step" description="Use one action at a time." />
+            <PanelTitle icon={<ShieldCheck className="h-5 w-5" />} title="Operations step" description="Seller approval is handled in seller center." />
             <label className="mt-4 block">
               <span className="text-xs font-black uppercase tracking-[0.14em] text-[#667085]">Internal note</span>
               <textarea
                 value={note}
                 onChange={(event) => setNote(event.target.value)}
                 rows={4}
-                placeholder="Add a short reason for the decision."
+                placeholder="Add a short operations note."
                 className="mt-2 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 py-3 text-sm font-semibold text-[#1F2933] outline-none focus:border-[#ED3500] focus:bg-white"
               />
             </label>
             <div className="mt-4 grid gap-2">
-              {canReview ? (
-                <>
-                  <Button type="button" onClick={() => onStatus("APPROVED")} disabled={isBusy}>
-                    <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-                    Approve return
-                  </Button>
-                  <Button type="button" variant="outline" onClick={() => onStatus("REJECTED")} disabled={isBusy}>
-                    <XCircle className="h-4 w-4" aria-hidden="true" />
-                    Reject request
-                  </Button>
-                </>
+              {waitingForSeller ? (
+                <WorkspaceNotice tone="info" title="Waiting for seller" message="The seller must approve or reject this return/replacement request. Admin approval is not required." />
               ) : null}
               {canQc ? (
                 <>
@@ -495,7 +486,7 @@ function AdminReturnDetailPanel({
                   Cancel return case
                 </Button>
               ) : null}
-              {!canReview && !canQc && !canCancel ? (
+              {!waitingForSeller && !canQc && !canCancel ? (
                 <WorkspaceNotice tone="success" title="No pending admin action" message="This return case is closed or waiting for refund completion." />
               ) : null}
             </div>

@@ -27,6 +27,7 @@ import {
   humanize,
 } from "@/components/returns/returns-workspace-ui";
 import {
+  adjustAdminRefundAmount,
   approveAdminRefund,
   getAdminRefund,
   initiateAdminRefund,
@@ -51,7 +52,7 @@ const refundStatusFilters: Array<RefundRequestStatus | "ALL"> = [
   "CANCELLED",
 ];
 
-const refundMethods: RefundMethod[] = ["RAZORPAY", "BANK_TRANSFER", "UPI", "COD_CASH", "MANUAL"];
+const refundMethods: RefundMethod[] = ["RAZORPAY", "BANK_TRANSFER", "UPI", "MANUAL"];
 
 export function AdminRefundsClient() {
   const auth = useAdminAuth();
@@ -64,6 +65,8 @@ export function AdminRefundsClient() {
   const [method, setMethod] = useState<RefundMethod>("RAZORPAY");
   const [manualReference, setManualReference] = useState("");
   const [manualPaidAt, setManualPaidAt] = useState("");
+  const [adjustAmount, setAdjustAmount] = useState("");
+  const [adjustNote, setAdjustNote] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
 
   const refundsQuery = useQuery({
@@ -136,6 +139,16 @@ export function AdminRefundsClient() {
     onError: (error) => setNotice(error instanceof Error ? error.message : "Unable to record manual refund."),
   });
 
+  const adjustMutation = useMutation({
+    mutationFn: (refundNumber: string) =>
+      adjustAdminRefundAmount(auth.authHeaders, refundNumber, {
+        amountPaise: parseAmountPaise(adjustAmount),
+        note: adjustNote.trim(),
+      }),
+    onSuccess: (detail) => handleRefundUpdated(detail, "Refund payable amount adjusted."),
+    onError: (error) => setNotice(error instanceof Error ? error.message : "Unable to adjust refund amount."),
+  });
+
   const metrics = useMemo(() => refundMetrics(refunds), [refunds]);
 
   function handleRefundUpdated(detail: RefundDetail, message: string) {
@@ -143,6 +156,8 @@ export function AdminRefundsClient() {
     setNote("");
     setManualReference("");
     setManualPaidAt("");
+    setAdjustAmount("");
+    setAdjustNote("");
     setSelectedRefundNumber(detail.refundNumber);
     void queryClient.invalidateQueries({ queryKey: ["admin-refunds"] });
     void queryClient.invalidateQueries({ queryKey: ["admin-refund-detail"] });
@@ -154,7 +169,18 @@ export function AdminRefundsClient() {
   }
 
   const selectedDetail = detailQuery.data;
-  const isBusy = approveMutation.isPending || initiateMutation.isPending || retryMutation.isPending || manualMutation.isPending;
+  const isBusy =
+    approveMutation.isPending ||
+    initiateMutation.isPending ||
+    retryMutation.isPending ||
+    manualMutation.isPending ||
+    adjustMutation.isPending;
+
+  useEffect(() => {
+    if (selectedDetail?.refundDestination?.method) {
+      setMethod(selectedDetail.refundDestination.method);
+    }
+  }, [selectedDetail?.refundDestination?.method]);
 
   return (
     <div className="space-y-5">
@@ -263,6 +289,11 @@ export function AdminRefundsClient() {
                 onInitiate={() => initiateMutation.mutate(selectedDetail.refundNumber)}
                 onRetry={() => retryMutation.mutate(selectedDetail.refundNumber)}
                 onManual={() => manualMutation.mutate(selectedDetail.refundNumber)}
+                adjustAmount={adjustAmount}
+                setAdjustAmount={setAdjustAmount}
+                adjustNote={adjustNote}
+                setAdjustNote={setAdjustNote}
+                onAdjust={() => adjustMutation.mutate(selectedDetail.refundNumber)}
               />
             ) : detailQuery.isLoading ? (
               <QueueSkeleton />
@@ -289,11 +320,16 @@ function AdminRefundDetailPanel({
   setManualReference,
   manualPaidAt,
   setManualPaidAt,
+  adjustAmount,
+  setAdjustAmount,
+  adjustNote,
+  setAdjustNote,
   isBusy,
   onApprove,
   onInitiate,
   onRetry,
   onManual,
+  onAdjust,
 }: {
   detail: RefundDetail;
   note: string;
@@ -304,17 +340,24 @@ function AdminRefundDetailPanel({
   setManualReference: (value: string) => void;
   manualPaidAt: string;
   setManualPaidAt: (value: string) => void;
+  adjustAmount: string;
+  setAdjustAmount: (value: string) => void;
+  adjustNote: string;
+  setAdjustNote: (value: string) => void;
   isBusy: boolean;
   onApprove: () => void;
   onInitiate: () => void;
   onRetry: () => void;
   onManual: () => void;
+  onAdjust: () => void;
 }) {
   const canApprove = ["PENDING_REVIEW", "FAILED", "RETRY_PENDING"].includes(detail.status);
   const canInitiate = ["APPROVED", "FAILED", "RETRY_PENDING"].includes(detail.status);
   const canRetry = ["FAILED", "RETRY_PENDING"].includes(detail.status);
   const canManual = ["APPROVED", "FAILED", "RETRY_PENDING", "PROCESSING"].includes(detail.status);
+  const canAdjust = ["PENDING_REVIEW", "APPROVED", "FAILED", "RETRY_PENDING"].includes(detail.status);
   const manualReady = manualReference.trim().length > 0 && manualPaidAt.trim().length > 0;
+  const adjustReady = adjustAmount.trim().length > 0 && adjustNote.trim().length > 0;
 
   return (
     <div className="space-y-5">
@@ -345,8 +388,8 @@ function AdminRefundDetailPanel({
 
       <div className="grid gap-3 sm:grid-cols-3">
         <MoneyMetric label="Refund amount" value={detail.amountPaise} currency={detail.currency} />
+        <MoneyMetric label="Approved cap" value={detail.approvedAmountPaise ?? detail.amountPaise} currency={detail.currency} />
         <MoneyMetric label="Seller coupon adjustment" value={detail.sellerFundedCouponAdjustmentPaise} currency={detail.currency} />
-        <MoneyMetric label="Platform coupon adjustment" value={detail.platformFundedCouponAdjustmentPaise} currency={detail.currency} />
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -444,6 +487,40 @@ function AdminRefundDetailPanel({
 
         <aside className="space-y-4">
           <section className="rounded-lg border border-[#D8E2EA] bg-white p-4 shadow-sm">
+            <PanelTitle icon={<WalletCards className="h-5 w-5" />} title="Payable amount" description="Finance may reduce the payable amount, but it cannot exceed the approved cap." />
+            <div className="mt-4 grid gap-3">
+              <DetailLine label="Approved cap" value={formatMoney(detail.approvedAmountPaise ?? detail.amountPaise, detail.currency)} />
+              {detail.amountAdjustmentNote ? (
+                <DetailLine label="Last adjustment" value={detail.amountAdjustmentNote} />
+              ) : null}
+              <label className="grid gap-2">
+                <span className="text-xs font-black uppercase tracking-[0.14em] text-[#667085]">Payable amount</span>
+                <input
+                  inputMode="decimal"
+                  value={adjustAmount}
+                  onChange={(event) => setAdjustAmount(event.target.value)}
+                  placeholder={(detail.amountPaise / 100).toFixed(2)}
+                  className="h-11 rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 text-sm font-semibold text-[#1F2933] outline-none focus:border-[#ED3500] focus:bg-white"
+                />
+              </label>
+              <label className="grid gap-2">
+                <span className="text-xs font-black uppercase tracking-[0.14em] text-[#667085]">Adjustment note</span>
+                <textarea
+                  value={adjustNote}
+                  onChange={(event) => setAdjustNote(event.target.value)}
+                  rows={3}
+                  placeholder="Required when changing payable amount."
+                  className="rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 py-3 text-sm font-semibold text-[#1F2933] outline-none focus:border-[#ED3500] focus:bg-white"
+                />
+              </label>
+              <Button type="button" variant="outline" onClick={onAdjust} disabled={isBusy || !canAdjust || !adjustReady}>
+                <WalletCards className="h-4 w-4" aria-hidden="true" />
+                Adjust payable amount
+              </Button>
+            </div>
+          </section>
+
+          <section className="rounded-lg border border-[#D8E2EA] bg-white p-4 shadow-sm">
             <PanelTitle icon={<ShieldCheck className="h-5 w-5" />} title="Finance action" description="Approve first, then initiate gateway or record manual refund." />
             <div className="mt-4 grid gap-3">
               <label className="grid gap-2">
@@ -496,6 +573,11 @@ function AdminRefundDetailPanel({
 
           <section className="rounded-lg border border-[#D8E2EA] bg-white p-4 shadow-sm">
             <PanelTitle icon={<Banknote className="h-5 w-5" />} title="Manual record" description="Use only after money is paid outside gateway." />
+            {detail.refundDestination ? (
+              <div className="mb-3 rounded-md border border-[#E5E7EB] bg-[#F8FAFC] p-3 text-sm font-semibold text-[#344054]">
+                {formatRefundDestination(detail.refundDestination)}
+              </div>
+            ) : null}
             <div className="mt-4 grid gap-3">
               <label className="grid gap-2">
                 <span className="text-xs font-black uppercase tracking-[0.14em] text-[#667085]">UTR / reference</span>
@@ -668,4 +750,20 @@ function refundMetrics(items: RefundSummary[]) {
     },
     { review: 0, processing: 0, completed: 0 },
   );
+}
+
+function parseAmountPaise(value: string) {
+  const normalized = value.trim().replace(/,/g, "");
+  const amount = Number(normalized);
+  if (!Number.isFinite(amount) || amount < 0) {
+    throw new Error("Enter a valid refund amount.");
+  }
+  return Math.round(amount * 100);
+}
+
+function formatRefundDestination(destination: NonNullable<RefundDetail["refundDestination"]>) {
+  if (destination.method === "UPI") {
+    return `Pay by UPI to ${destination.accountHolderName} / ${destination.upiId}`;
+  }
+  return `Pay by bank transfer to ${destination.accountHolderName} / ${destination.bankName} / ${destination.accountNumber} / ${destination.ifsc}`;
 }

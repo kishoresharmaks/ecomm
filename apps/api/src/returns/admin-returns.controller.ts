@@ -40,7 +40,7 @@ export class AdminReturnsController {
   }
 
   @Patch(":requestNumber/status")
-  @ApiOperation({ summary: "Approve, reject, cancel, or advance a return request." })
+  @ApiOperation({ summary: "Cancel or advance an operations-managed return request. Seller approval/rejection is handled from seller returns." })
   updateStatus(
     @CurrentUser() actor: RequestUser,
     @Param("requestNumber") requestNumber: string,

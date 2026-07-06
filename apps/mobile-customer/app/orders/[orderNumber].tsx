@@ -45,7 +45,7 @@ import {
   SignInRequiredState,
   StatusPill,
 } from "../../src/features/account/account-ui";
-import { orderCanStartReturn } from "../../src/features/returns/return-eligibility";
+import { isDeliveredStorePickupOrder, orderCanStartReturn } from "../../src/features/returns/return-eligibility";
 import { isMobileReturnsEnabled } from "../../src/features/returns/return-feature";
 import { returnsCopy } from "../../src/features/returns/return-copy";
 import { resolveImageUrl } from "../../src/lib/image-url";
@@ -214,8 +214,9 @@ export default function OrderDetailScreen() {
     );
   }
 
-  const canCancel = orderCanBeCancelled(order);
-  const canStartReturn = isMobileReturnsEnabled(customerAuth.authKey) && orderCanStartReturn(order);
+  const storePickupFinal = isDeliveredStorePickupOrder(order);
+  const canCancel = !storePickupFinal && orderCanBeCancelled(order);
+  const canStartReturn = !storePickupFinal && isMobileReturnsEnabled(customerAuth.authKey) && orderCanStartReturn(order);
   const canRetryPayment = canRetryRazorpayPayment(order);
   const address = readShippingAddress(order);
   const timeline = buildTimeline(order);
@@ -367,36 +368,38 @@ export default function OrderDetailScreen() {
           </Section>
         ) : null}
 
-        <View style={styles.cancelCard}>
-          <Text style={styles.cancelTitle}>{canCancel ? "Cancellation available" : "Cancellation locked"}</Text>
-          <Text style={styles.helpText}>
-            {canCancel
-              ? "You can cancel before dispatch. The backend will re-check the order before accepting it."
-              : "This order has already moved into dispatch, shipment, delivery, or cancellation state."}
-          </Text>
-          {canCancel ? (
-            <>
-              <TextInput
-                multiline
-                onChangeText={setCancelNote}
-                placeholder="Cancellation note optional"
-                placeholderTextColor={colors.muted}
-                style={styles.noteInput}
-                value={cancelNote}
-              />
-              {cancelMutation.isError ? (
-                <Text style={styles.errorText}>{accountErrorMessage(cancelMutation.error, "Cancellation could not be completed.")}</Text>
-              ) : null}
-              <Pressable
-                disabled={cancelMutation.isPending}
-                style={[styles.dangerButton, cancelMutation.isPending ? styles.buttonDisabled : null]}
-                onPress={() => cancelMutation.mutate()}
-              >
-                {cancelMutation.isPending ? <ActivityIndicator color={colors.surface} /> : <Text style={styles.dangerButtonText}>Cancel order</Text>}
-              </Pressable>
-            </>
-          ) : null}
-        </View>
+        {!storePickupFinal ? (
+          <View style={styles.cancelCard}>
+            <Text style={styles.cancelTitle}>{canCancel ? "Cancellation available" : "Cancellation locked"}</Text>
+            <Text style={styles.helpText}>
+              {canCancel
+                ? "You can cancel before dispatch. The backend will re-check the order before accepting it."
+                : "This order has already moved into dispatch, shipment, delivery, or cancellation state."}
+            </Text>
+            {canCancel ? (
+              <>
+                <TextInput
+                  multiline
+                  onChangeText={setCancelNote}
+                  placeholder="Cancellation note optional"
+                  placeholderTextColor={colors.muted}
+                  style={styles.noteInput}
+                  value={cancelNote}
+                />
+                {cancelMutation.isError ? (
+                  <Text style={styles.errorText}>{accountErrorMessage(cancelMutation.error, "Cancellation could not be completed.")}</Text>
+                ) : null}
+                <Pressable
+                  disabled={cancelMutation.isPending}
+                  style={[styles.dangerButton, cancelMutation.isPending ? styles.buttonDisabled : null]}
+                  onPress={() => cancelMutation.mutate()}
+                >
+                  {cancelMutation.isPending ? <ActivityIndicator color={colors.surface} /> : <Text style={styles.dangerButtonText}>Cancel order</Text>}
+                </Pressable>
+              </>
+            ) : null}
+          </View>
+        ) : null}
       </ScrollView>
     </Screen>
   );

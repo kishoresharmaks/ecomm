@@ -3,6 +3,7 @@
 import { FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  CheckCircle2,
   ClipboardCheck,
   MessageSquareText,
   PackageCheck,
@@ -11,6 +12,7 @@ import {
   Send,
   ShieldCheck,
   Truck,
+  XCircle,
 } from "lucide-react";
 import { Button, StatusBadge, cn } from "@indihub/ui";
 import {
@@ -25,8 +27,10 @@ import {
 } from "@/components/returns/returns-workspace-ui";
 import {
   addSellerReturnNote,
+  acceptSellerReturn,
   getSellerReturn,
   listSellerReturns,
+  rejectSellerReturn,
   type ReturnDetail,
   type ReturnRequestStatus,
   type ReturnSummary,
@@ -108,6 +112,24 @@ export function SellerReturnsClient() {
       void queryClient.invalidateQueries({ queryKey: ["seller-return-detail"] });
     },
     onError: (error) => setNotice(error instanceof Error ? error.message : "Unable to add seller note."),
+  });
+
+  const decisionMutation = useMutation({
+    mutationFn: ({ requestNumber, decision }: { requestNumber: string; decision: "ACCEPT" | "REJECT" }) => {
+      const cleanNote = note.trim();
+      const payload = cleanNote ? { note: cleanNote } : {};
+      return decision === "ACCEPT"
+        ? acceptSellerReturn(sellerAuth.authHeaders, requestNumber, payload)
+        : rejectSellerReturn(sellerAuth.authHeaders, requestNumber, payload);
+    },
+    onSuccess: (detail, variables) => {
+      setNotice(variables.decision === "ACCEPT" ? "Return request accepted by seller." : "Return request rejected by seller.");
+      setNote("");
+      setSelectedRequestNumber(detail.requestNumber);
+      void queryClient.invalidateQueries({ queryKey: ["seller-returns"] });
+      void queryClient.invalidateQueries({ queryKey: ["seller-return-detail"] });
+    },
+    onError: (error) => setNotice(error instanceof Error ? error.message : "Unable to update seller return decision."),
   });
 
   const metrics = useMemo(() => sellerReturnMetrics(returns), [returns]);
@@ -215,8 +237,9 @@ export function SellerReturnsClient() {
                 detail={selectedDetail}
                 note={note}
                 setNote={setNote}
-                isBusy={noteMutation.isPending}
+                isBusy={noteMutation.isPending || decisionMutation.isPending}
                 onAddNote={() => noteMutation.mutate(selectedDetail.requestNumber)}
+                onDecision={(decision) => decisionMutation.mutate({ requestNumber: selectedDetail.requestNumber, decision })}
               />
             ) : detailQuery.isLoading ? (
               <QueueSkeleton />
@@ -239,15 +262,18 @@ function SellerReturnDetailPanel({
   setNote,
   isBusy,
   onAddNote,
+  onDecision,
 }: {
   detail: ReturnDetail;
   note: string;
   setNote: (value: string) => void;
   isBusy: boolean;
   onAddNote: () => void;
+  onDecision: (decision: "ACCEPT" | "REJECT") => void;
 }) {
   const sellerAuth = useSellerAuth();
   const [proofOpenError, setProofOpenError] = useState<string | null>(null);
+  const canDecide = detail.status === "PENDING_REVIEW" && detail.items.some((item) => item.status === "PENDING_REVIEW");
 
   async function openProof(assetKey: string) {
     setProofOpenError(null);
@@ -289,7 +315,7 @@ function SellerReturnDetailPanel({
       <WorkspaceNotice
         tone="info"
         title="Seller procedure"
-        message="Review the affected item, keep the product ready for pickup or inspection, add a store note, and wait for admin or finance to complete QC and refund decisions."
+        message="Review the affected item and approve or reject the return request from seller side. Admin will handle only pickup, QC, and refund operations after seller approval."
       />
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -339,6 +365,25 @@ function SellerReturnDetailPanel({
         </section>
 
         <aside className="space-y-4">
+          {canDecide ? (
+            <section className="rounded-lg border border-[#D8E2EA] bg-white p-4 shadow-sm">
+              <PanelTitle icon={<ShieldCheck className="h-5 w-5" />} title="Seller decision" description="Approve or reject this return/replacement request for your store items." />
+              <p className="mt-3 text-sm font-semibold leading-6 text-[#667085]">
+                Add an optional note below before deciding. If approved, reverse pickup starts from operations.
+              </p>
+              <div className="mt-4 grid gap-2">
+                <Button type="button" onClick={() => onDecision("ACCEPT")} disabled={isBusy}>
+                  <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+                  Approve return
+                </Button>
+                <Button type="button" variant="outline" onClick={() => onDecision("REJECT")} disabled={isBusy}>
+                  <XCircle className="h-4 w-4" aria-hidden="true" />
+                  Reject request
+                </Button>
+              </div>
+            </section>
+          ) : null}
+
           <section className="rounded-lg border border-[#D8E2EA] bg-white p-4 shadow-sm">
             <PanelTitle icon={<MessageSquareText className="h-5 w-5" />} title="Add store note" description="Notes are visible to admin and finance teams." />
             <label className="mt-4 block">

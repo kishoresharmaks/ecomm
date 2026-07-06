@@ -544,6 +544,19 @@ export type MobileCreateReturnPayload = {
   reason: string;
   note?: string;
   qualityProofKeys?: string[];
+  refundDestination?:
+    | {
+        method: "UPI";
+        accountHolderName: string;
+        upiId: string;
+      }
+    | {
+        method: "BANK_TRANSFER";
+        accountHolderName: string;
+        bankName: string;
+        accountNumber: string;
+        ifsc: string;
+      };
   reverseShipmentMode?: MobileReverseShipmentMode;
   items: Array<{
     orderItemId: string;

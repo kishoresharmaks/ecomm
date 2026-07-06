@@ -54,6 +54,7 @@ export const financeNav = [
   { group: "Collections", label: "B2B payment proofs", href: "/admin/b2b-payments" },
   { group: "Collections", label: "Payment status", href: "/finance/payment-status" },
   { group: "Collections", label: "Service receivables", href: "/finance/service-receivables" },
+  { group: "Buyer finance", label: "Refunds", href: "/finance/refunds" },
   { group: "Seller finance", label: "Settlements", href: "/finance/settlements" },
   { group: "Seller finance", label: "Payouts", href: "/finance/payouts" },
   { group: "Seller finance", label: "Ledger", href: "/finance/ledger" },

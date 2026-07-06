@@ -15,6 +15,7 @@ import type {
 } from "@indihub/shared-types";
 import type {
   CursorPage,
+  RefundDestination,
   ReturnDetail,
   ReturnListQuery,
   ReturnSummary,
@@ -316,6 +317,7 @@ export type CreateCustomerReturnPayload = {
   resolution: "REFUND" | "REPLACEMENT" | "PARTIAL_REFUND" | "REJECTED";
   reason: string;
   note?: string;
+  refundDestination?: RefundDestination;
   qualityProofKeys?: string[];
   items: CustomerCancellationItemInput[];
   reverseShipmentMode?: "PLATFORM_PICKUP" | "CUSTOMER_SELF_SHIP";

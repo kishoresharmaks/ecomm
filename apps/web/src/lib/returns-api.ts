@@ -43,6 +43,20 @@ export type RefundRequestStatus =
 
 export type RefundMethod = "RAZORPAY" | "COD_CASH" | "BANK_TRANSFER" | "UPI" | "MANUAL";
 
+export type RefundDestination =
+  | {
+      method: "UPI";
+      accountHolderName: string;
+      upiId: string;
+    }
+  | {
+      method: "BANK_TRANSFER";
+      accountHolderName: string;
+      bankName: string;
+      accountNumber: string;
+      ifsc: string;
+    };
+
 export type ReverseShipmentStatus =
   | "REQUESTED"
   | "ASSIGNED"
@@ -206,6 +220,10 @@ export type ReturnDetail = Omit<ReturnSummary, "items"> & {
     status: RefundRequestStatus;
     method?: RefundMethod | null;
     amountPaise: number;
+    approvedAmountPaise?: number;
+    refundDestination?: RefundDestination | null;
+    amountAdjustmentNote?: string | null;
+    amountAdjustedAt?: string | null;
     currency: string;
     approvedAt?: string | null;
     reviewedAt?: string | null;
@@ -238,6 +256,10 @@ export type RefundSummary = {
   reason: string;
   method?: RefundMethod | null;
   amountPaise: number;
+  approvedAmountPaise?: number;
+  refundDestination?: RefundDestination | null;
+  amountAdjustmentNote?: string | null;
+  amountAdjustedAt?: string | null;
   currency: string;
   createdAt?: string;
   orderNumber: string;
@@ -248,6 +270,10 @@ export type RefundSummary = {
 
 export type RefundDetail = RefundSummary & {
   note?: string | null;
+  approvedAmountPaise: number;
+  refundDestination?: RefundDestination | null;
+  amountAdjustmentNote?: string | null;
+  amountAdjustedAt?: string | null;
   couponAdjustmentPaise: number;
   sellerFundedCouponAdjustmentPaise: number;
   platformFundedCouponAdjustmentPaise: number;
@@ -427,6 +453,22 @@ export function addSellerReturnNote(
   );
 }
 
+export function acceptSellerReturn(auth: IndihubAuthHeaders, requestNumber: string, payload: { note?: string } = {}) {
+  return indihubFetch<ReturnDetail>(
+    `/api/seller/returns/${encodeURIComponent(requestNumber)}/accept`,
+    { method: "POST", body: JSON.stringify(removeEmptyValues(payload)) },
+    auth,
+  );
+}
+
+export function rejectSellerReturn(auth: IndihubAuthHeaders, requestNumber: string, payload: { note?: string } = {}) {
+  return indihubFetch<ReturnDetail>(
+    `/api/seller/returns/${encodeURIComponent(requestNumber)}/reject`,
+    { method: "POST", body: JSON.stringify(removeEmptyValues(payload)) },
+    auth,
+  );
+}
+
 export function listDeliveryReturns(auth: IndihubAuthHeaders, query: ReturnListQuery = {}) {
   return indihubFetch<CursorPage<ReturnDetail>>(`/api/delivery/returns${queryString(query)}`, undefined, auth);
 }
@@ -503,6 +545,18 @@ export function getAdminRefund(auth: IndihubAuthHeaders, refundNumber: string) {
 export function approveAdminRefund(auth: IndihubAuthHeaders, refundNumber: string, payload: { note?: string }) {
   return indihubFetch<RefundDetail>(
     `/api/admin/refunds/${encodeURIComponent(refundNumber)}/approve`,
+    { method: "POST", body: JSON.stringify(payload) },
+    auth,
+  );
+}
+
+export function adjustAdminRefundAmount(
+  auth: IndihubAuthHeaders,
+  refundNumber: string,
+  payload: { amountPaise: number; note: string },
+) {
+  return indihubFetch<RefundDetail>(
+    `/api/admin/refunds/${encodeURIComponent(refundNumber)}/adjust-amount`,
     { method: "POST", body: JSON.stringify(payload) },
     auth,
   );

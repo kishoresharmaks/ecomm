@@ -17,6 +17,7 @@ import { accountErrorMessage, formatDate, SignInRequiredState } from "../../../s
 import { formatMoney, useMobileMarket } from "../../../src/features/market/mobile-market";
 import {
   availableReturnQuantity,
+  isDeliveredStorePickupOrder,
   mobileReturnResolutions,
   mobileReverseShipmentModes,
   orderCanStartReturn,
@@ -65,6 +66,12 @@ export default function OrderReturnScreen() {
   const [qualityUploadMessage, setQualityUploadMessage] = useState("");
   const [qualityUploadBusy, setQualityUploadBusy] = useState(false);
   const [requiresServerRefresh, setRequiresServerRefresh] = useState(false);
+  const [refundMethod, setRefundMethod] = useState<"UPI" | "BANK_TRANSFER">("UPI");
+  const [refundAccountHolderName, setRefundAccountHolderName] = useState("");
+  const [refundUpiId, setRefundUpiId] = useState("");
+  const [refundBankName, setRefundBankName] = useState("");
+  const [refundAccountNumber, setRefundAccountNumber] = useState("");
+  const [refundIfsc, setRefundIfsc] = useState("");
 
   const orderQuery = useQuery({
     queryKey: ["mobile-order-detail", customerAuth.authKey, orderNumber],
@@ -112,6 +119,16 @@ export default function OrderReturnScreen() {
       if (validation) {
         throw new Error(copy[validation]);
       }
+      const refundDestination = requiresManualRefundDestination
+        ? buildRefundDestination({
+            method: refundMethod,
+            accountHolderName: refundAccountHolderName,
+            upiId: refundUpiId,
+            bankName: refundBankName,
+            accountNumber: refundAccountNumber,
+            ifsc: refundIfsc,
+          })
+        : null;
 
       trackMobileEvent("return_submit_attempted", {
         itemCount: selectedItems.length,
@@ -126,6 +143,7 @@ export default function OrderReturnScreen() {
         reverseShipmentMode,
         ...(note.trim() ? { note: note.trim() } : {}),
         ...(qualityProofKeys.length ? { qualityProofKeys } : {}),
+        ...(refundDestination ? { refundDestination } : {}),
       });
     },
     retry: false,
@@ -274,7 +292,7 @@ export default function OrderReturnScreen() {
     );
   }
 
-  if (!orderCanStartReturn(order)) {
+  if (isDeliveredStorePickupOrder(order) || !orderCanStartReturn(order)) {
     return (
       <Screen>
         <Stack.Screen options={{ headerShown: true, title: copy.createTitle }} />
@@ -287,6 +305,11 @@ export default function OrderReturnScreen() {
   }
 
   const validationMessage = formError ? copy[formError] : "";
+  const requiresManualRefundDestination =
+    resolution === "REFUND" &&
+    order.payments?.some((payment) =>
+      ["COD", "BANK_TRANSFER", "MANUAL"].includes(payment.provider ?? payment.method),
+    );
   const submitDisabled = createReturnMutation.isPending || qualityUploadBusy || (requiresServerRefresh && orderQuery.isFetching);
 
   return (
@@ -385,6 +408,65 @@ export default function OrderReturnScreen() {
           />
           <Text style={styles.counterText}>{note.length}/1000</Text>
         </View>
+
+        {requiresManualRefundDestination ? (
+          <View style={styles.qualityCard}>
+            <Text style={styles.inputLabel}>Refund destination</Text>
+            <Text style={styles.qualityHelp}>COD and offline refunds are paid only through UPI or bank transfer.</Text>
+            <View style={styles.segmentRow}>
+              <SegmentButton active={refundMethod === "UPI"} label="UPI" onPress={() => setRefundMethod("UPI")} />
+              <SegmentButton active={refundMethod === "BANK_TRANSFER"} label="Bank" onPress={() => setRefundMethod("BANK_TRANSFER")} />
+            </View>
+            <TextInput
+              accessibilityLabel="Refund account holder name"
+              onChangeText={setRefundAccountHolderName}
+              placeholder="Account holder name"
+              placeholderTextColor={colors.muted}
+              style={styles.textInput}
+              value={refundAccountHolderName}
+            />
+            {refundMethod === "UPI" ? (
+              <TextInput
+                accessibilityLabel="UPI ID"
+                autoCapitalize="none"
+                onChangeText={setRefundUpiId}
+                placeholder="UPI ID"
+                placeholderTextColor={colors.muted}
+                style={styles.textInput}
+                value={refundUpiId}
+              />
+            ) : (
+              <>
+                <TextInput
+                  accessibilityLabel="Bank name"
+                  onChangeText={setRefundBankName}
+                  placeholder="Bank name"
+                  placeholderTextColor={colors.muted}
+                  style={styles.textInput}
+                  value={refundBankName}
+                />
+                <TextInput
+                  accessibilityLabel="Account number"
+                  keyboardType="number-pad"
+                  onChangeText={setRefundAccountNumber}
+                  placeholder="Account number"
+                  placeholderTextColor={colors.muted}
+                  style={styles.textInput}
+                  value={refundAccountNumber}
+                />
+                <TextInput
+                  accessibilityLabel="IFSC"
+                  autoCapitalize="characters"
+                  onChangeText={(value) => setRefundIfsc(value.toUpperCase())}
+                  placeholder="IFSC"
+                  placeholderTextColor={colors.muted}
+                  style={styles.textInput}
+                  value={refundIfsc}
+                />
+              </>
+            )}
+          </View>
+        ) : null}
 
         <View style={styles.qualityCard}>
           <Text style={styles.inputLabel}>{copy.qualityImagesTitle}</Text>
@@ -557,6 +639,34 @@ function shouldRequireServerRefresh(error: unknown) {
   }
 
   return false;
+}
+
+function buildRefundDestination(input: {
+  method: "UPI" | "BANK_TRANSFER";
+  accountHolderName: string;
+  upiId: string;
+  bankName: string;
+  accountNumber: string;
+  ifsc: string;
+}) {
+  const accountHolderName = input.accountHolderName.trim();
+  if (!accountHolderName) {
+    throw new Error("Enter the refund account holder name.");
+  }
+  if (input.method === "UPI") {
+    const upiId = input.upiId.trim();
+    if (!upiId) {
+      throw new Error("Enter the UPI ID for refund.");
+    }
+    return { method: "UPI" as const, accountHolderName, upiId };
+  }
+  const bankName = input.bankName.trim();
+  const accountNumber = input.accountNumber.trim();
+  const ifsc = input.ifsc.trim().toUpperCase();
+  if (!bankName || !accountNumber || !ifsc) {
+    throw new Error("Enter bank name, account number, and IFSC for refund.");
+  }
+  return { method: "BANK_TRANSFER" as const, accountHolderName, bankName, accountNumber, ifsc };
 }
 
 const styles = StyleSheet.create({
@@ -855,6 +965,18 @@ const styles = StyleSheet.create({
     minHeight: 92,
     padding: 14,
     textAlignVertical: "top",
+  },
+  textInput: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 16,
+    borderWidth: 1,
+    color: colors.ink,
+    fontSize: 14,
+    fontWeight: "700",
+    minHeight: 48,
+    marginBottom: 10,
+    paddingHorizontal: 14,
   },
   unavailableText: {
     color: colors.danger,

@@ -4,7 +4,7 @@ import { RoleCode } from "@indihub/database";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { Roles } from "../auth/decorators/roles.decorator";
 import type { RequestUser } from "../auth/types/indihub-request";
-import { ApproveRefundDto, InitiateRefundDto, ManualRefundDto } from "./dto/returns.dto";
+import { AdjustRefundAmountDto, ApproveRefundDto, InitiateRefundDto, ManualRefundDto } from "./dto/returns.dto";
 import { ReturnsService } from "./returns.service";
 
 @ApiTags("Admin Refunds")
@@ -21,6 +21,16 @@ export class AdminRefundActionsController {
     @Body() dto: ApproveRefundDto,
   ) {
     return this.returnsService.approveRefund(actor, refundNumber, dto);
+  }
+
+  @Post(":refundNumber/adjust-amount")
+  @ApiOperation({ summary: "Adjust a refund payable amount within the approved cap." })
+  adjustAmount(
+    @CurrentUser() actor: RequestUser,
+    @Param("refundNumber") refundNumber: string,
+    @Body() dto: AdjustRefundAmountDto,
+  ) {
+    return this.returnsService.adjustRefundAmount(actor, refundNumber, dto);
   }
 
   @Post(":refundNumber/initiate")

@@ -13,6 +13,14 @@ describe("mobile return eligibility helpers", () => {
     expect(orderCanStartReturn({ deliveryStatus: "DELIVERED", orderStatus: "SHIPPED", paymentStatus: "NOT_REQUIRED" })).toBe(true);
     expect(orderCanStartReturn({ deliveryStatus: "IN_TRANSIT", orderStatus: "SHIPPED", paymentStatus: "PAID" })).toBe(false);
     expect(orderCanStartReturn({ deliveryStatus: "DELIVERED", orderStatus: "DELIVERED", paymentStatus: "PENDING" })).toBe(false);
+    expect(
+      orderCanStartReturn({
+        deliveryDetail: { deliveryMode: "STORE_PICKUP" },
+        deliveryStatus: "DELIVERED",
+        orderStatus: "DELIVERED",
+        paymentStatus: "PAID",
+      }),
+    ).toBe(false);
   });
 
   it("deducts already returned quantity when deriving available quantity", () => {

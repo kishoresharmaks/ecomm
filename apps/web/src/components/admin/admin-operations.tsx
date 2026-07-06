@@ -4653,6 +4653,7 @@ export function AdminOrderDetailPageClient({ orderNumber }: { orderNumber: strin
               />
             ) : null}
             <DeliveryForm
+              order={order}
               delivery={order.deliveryDetail}
               deliveryPartners={listItems(deliveryPartnersQuery.data)}
               deliveryPartnersLoading={deliveryPartnersQuery.isLoading}
@@ -12992,6 +12993,7 @@ function OrderStatusForm({
 }
 
 function DeliveryForm({
+  order,
   delivery,
   deliveryPartners,
   deliveryPartnersLoading,
@@ -13001,6 +13003,7 @@ function DeliveryForm({
   onAutoAssign,
   disabled,
 }: {
+  order: OrderRecord;
   delivery: OrderRecord["deliveryDetail"];
   deliveryPartners: UserRecord[];
   deliveryPartnersLoading?: boolean;
@@ -13013,9 +13016,17 @@ function DeliveryForm({
   onAutoAssign: () => void;
   disabled?: boolean;
 }) {
+  const isStorePickupOrder =
+    delivery?.deliveryMode === "STORE_PICKUP" ||
+    ((order.shipments ?? []).length > 0 &&
+      (order.shipments ?? []).every((shipment) => shipment.deliveryMode === "STORE_PICKUP"));
+  const effectiveDeliveryMode =
+    delivery?.deliveryMode ??
+    (isStorePickupOrder ? "STORE_PICKUP" : null) ??
+    "LOCAL_DELIVERY_PARTNER";
   const [form, setForm] = useState<DeliveryFormState>({
     status: delivery?.status ?? "PENDING",
-    deliveryMode: delivery?.deliveryMode ?? "LOCAL_DELIVERY_PARTNER",
+    deliveryMode: effectiveDeliveryMode,
     deliveryPartnerUserId: delivery?.deliveryPartnerUserId ?? deliveryPartnerUnassignedValue,
     partnerName: delivery?.partnerName ?? "",
     partnerPhone: delivery?.partnerPhone ?? "",
@@ -13070,7 +13081,7 @@ function DeliveryForm({
   useEffect(() => {
     setForm({
       status: delivery?.status ?? "PENDING",
-      deliveryMode: delivery?.deliveryMode ?? "LOCAL_DELIVERY_PARTNER",
+      deliveryMode: effectiveDeliveryMode,
       deliveryPartnerUserId: delivery?.deliveryPartnerUserId ?? deliveryPartnerUnassignedValue,
       partnerName: delivery?.partnerName ?? "",
       partnerPhone: delivery?.partnerPhone ?? "",
@@ -13081,7 +13092,58 @@ function DeliveryForm({
       proofNote: delivery?.proofNote ?? "",
       proofReference: delivery?.proofReference ?? "",
     });
-  }, [delivery]);
+  }, [delivery, effectiveDeliveryMode]);
+
+  if (isStorePickupOrder) {
+    const storePickupShipments = order.shipments ?? [];
+    const currentStatus =
+      storePickupShipments[0]?.status ?? delivery?.status ?? order.deliveryStatus ?? "PENDING";
+
+    return (
+      <Panel title="Store pickup status">
+        <div className="space-y-3">
+          <div className="rounded-md border border-[#D8E2EA] bg-[#F8FAFC] p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusBadge tone="info">Store pickup</StatusBadge>
+              <StatusBadge tone={statusTone(currentStatus)}>{humanize(currentStatus)}</StatusBadge>
+            </div>
+            <p className="mt-2 text-xs font-bold leading-5 text-[#667085]">
+              Pickup is managed from the seller package status. Delivery partner assignment and
+              auto-assign are not used for this order.
+            </p>
+          </div>
+          {storePickupShipments.length ? (
+            <div className="grid gap-2">
+              {storePickupShipments.map((shipment) => (
+                <div
+                  key={shipment.id}
+                  className="rounded-md border border-[#E5E7EB] bg-white p-3 text-sm font-semibold text-[#667085]"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-black text-[#1F2933]">
+                      {shipment.seller?.storeName ?? shipment.shipmentNumber}
+                    </span>
+                    <StatusBadge tone={statusTone(shipment.status)}>
+                      {humanize(shipment.status)}
+                    </StatusBadge>
+                  </div>
+                  {shipment.deliveryNote ? (
+                    <p className="mt-2 text-xs leading-5">
+                      {shipment.deliveryNote}
+                    </p>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="rounded-md border border-[#E5E7EB] bg-white p-3 text-sm font-semibold text-[#667085]">
+              Seller pickup package details are not available yet.
+            </p>
+          )}
+        </div>
+      </Panel>
+    );
+  }
 
   const selectedPartnerId =
     !isLocalDeliveryMode || form.deliveryPartnerUserId === deliveryPartnerUnassignedValue
