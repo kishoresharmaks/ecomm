@@ -32,8 +32,7 @@ export class MobileApiError extends Error {
 export function apiBaseUrl() {
   const configuredUrl = process.env.EXPO_PUBLIC_API_URL?.trim();
   if (configuredUrl) return configuredUrl.replace(/\/$/, "");
-  if (process.env.NODE_ENV === "development") return DEFAULT_API_URL;
-  throw new Error("EXPO_PUBLIC_API_URL is required for delivery mobile builds.");
+  return DEFAULT_API_URL;
 }
 
 export function webBaseUrl() {

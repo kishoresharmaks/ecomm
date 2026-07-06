@@ -36,12 +36,7 @@ export function apiBaseUrl() {
   if (configuredUrl) {
     return configuredUrl.replace(/\/$/, "");
   }
-
-  if (process.env.NODE_ENV === "development") {
-    return DEFAULT_API_URL;
-  }
-
-  throw new Error("EXPO_PUBLIC_API_URL is required for customer mobile builds.");
+  return DEFAULT_API_URL;
 }
 
 export async function getJson<T>(options: ApiRequestOptions): Promise<T> {

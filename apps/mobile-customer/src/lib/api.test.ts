@@ -16,11 +16,11 @@ describe("mobile customer API base URL", () => {
     expect(apiBaseUrl()).toBe("https://api.1handindia.com/api");
   });
 
-  it("requires an explicit API URL outside development", () => {
+  it("falls back to default production API URL when missing outside development", () => {
     delete process.env.EXPO_PUBLIC_API_URL;
     process.env.NODE_ENV = "production";
 
-    expect(() => apiBaseUrl()).toThrow("EXPO_PUBLIC_API_URL is required for customer mobile builds.");
+    expect(apiBaseUrl()).toBe("https://api.1handindia.com/api");
   });
 });
 

@@ -24,14 +24,14 @@ describe("seller mobile API base URL", () => {
     }
   });
 
-  it("requires explicit API URL outside development", () => {
+  it("falls back to default production API URL when missing outside development", () => {
     const previousUrl = process.env.EXPO_PUBLIC_API_URL;
     const previousNodeEnv = process.env.NODE_ENV;
 
     try {
       delete process.env.EXPO_PUBLIC_API_URL;
       process.env.NODE_ENV = "production";
-      expect(() => apiBaseUrl()).toThrow("EXPO_PUBLIC_API_URL is required");
+      expect(apiBaseUrl()).toBe("https://api.1handindia.com/api");
     } finally {
       restoreEnvValue("NODE_ENV", previousNodeEnv);
       restoreEnvValue("EXPO_PUBLIC_API_URL", previousUrl);
