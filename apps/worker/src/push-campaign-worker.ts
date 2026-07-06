@@ -16,6 +16,7 @@ type ExpoSendResponse = { data?: PushTicket | PushTicket[] };
 type ExpoReceiptResponse = {
   data?: Record<string, { status?: string; message?: string; details?: { error?: string } }>;
 };
+type PushTicketError = { tokenId: string; message: string; errorCode?: string };
 
 const expoSendEndpoint = "https://exp.host/--/api/v2/push/send";
 const expoReceiptEndpoint = "https://exp.host/--/api/v2/push/getReceipts";
@@ -60,20 +61,28 @@ export async function runPushCampaignWorkerTick(workerId: string, limit = 5) {
   await activateDueCampaigns();
   const swept = await sweepStalePushCampaignBatches();
   let claimed = 0;
+  let sent = 0;
+  let failed = 0;
+  let revoked = 0;
+  const ticketErrorSamples: PushTicketError[] = [];
   for (let index = 0; index < limit; index += 1) {
     const batch = await claimNextPushCampaignBatch(workerId);
     if (!batch) {
       break;
     }
-    await sendPushCampaignBatch(batch.id);
+    const result = await sendPushCampaignBatch(batch.id);
     claimed += 1;
+    sent += result.sent;
+    failed += result.failed;
+    revoked += result.revoked;
+    ticketErrorSamples.push(...result.ticketErrors.slice(0, Math.max(0, 10 - ticketErrorSamples.length)));
     if (throttleMs > 0) {
       await sleep(throttleMs);
     }
   }
   const receiptsChecked = await checkPendingPushReceipts();
   await finalizeCompletedCampaigns();
-  return { claimed, swept, receiptsChecked };
+  return { claimed, swept, receiptsChecked, sent, failed, revoked, ticketErrorSamples };
 }
 
 export async function activateDueCampaigns(now = new Date()) {
@@ -133,7 +142,7 @@ export async function sendPushCampaignBatch(batchId: string) {
     include: { campaign: true },
   });
   if (!batch || batch.status !== PushNotificationBatchStatus.CLAIMED) {
-    return { sent: 0, failed: 0, revoked: 0 };
+    return { sent: 0, failed: 0, revoked: 0, notifications: 0, ticketErrors: [] };
   }
 
   const tokens = await prisma.customerPushToken.findMany({
@@ -150,7 +159,7 @@ export async function sendPushCampaignBatch(batchId: string) {
   let failed = 0;
   let revoked = 0;
   const ticketIds: string[] = [];
-  const ticketErrors: Array<{ tokenId: string; message: string; errorCode?: string }> = [];
+  const ticketErrors: PushTicketError[] = [];
 
   for (const token of tokens) {
     const notification = await upsertCampaignNotification(batch.campaign, token.customerId);
@@ -172,7 +181,11 @@ export async function sendPushCampaignBatch(batchId: string) {
       },
     });
 
-    const ticket = await sendExpoPush(token.token, batch.campaign);
+    const ticket: PushTicket = await sendExpoPush(token.token, batch.campaign).catch((error: unknown) => ({
+      status: "error",
+      message: error instanceof Error ? error.message : String(error),
+      details: { error: "ExpoPushRequestFailed" },
+    }));
     const errorCode = ticket.details?.error;
     const ok = ticket.status !== "error" && Boolean(ticket.id);
     if (ok) {
@@ -232,7 +245,7 @@ export async function sendPushCampaignBatch(batchId: string) {
       revokedCount: { increment: revoked },
     },
   });
-  return { sent, failed, revoked, notifications: notificationIdsByCustomer.size };
+  return { sent, failed, revoked, notifications: notificationIdsByCustomer.size, ticketErrors };
 }
 
 export async function checkPendingPushReceipts(now = new Date()) {

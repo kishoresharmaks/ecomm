@@ -37,6 +37,7 @@ import {
   validatePushCampaignImageDimensions,
   validatePushCampaignImageFile,
   type PushCampaign,
+  type PushCampaignBatch,
   type PushCampaignFormState,
   type PushCampaignStatus,
 } from "@/lib/push-campaigns-api";
@@ -487,14 +488,17 @@ export function AdminPushCampaignsClient() {
                   <h3 className="text-sm font-black uppercase tracking-[0.12em] text-[#667085]">Batch state</h3>
                   <div className="mt-3 grid gap-2">
                     {detail.batches?.map((batch) => (
-                      <div key={batch.id} className="flex items-center justify-between gap-2 rounded-md bg-[#F8FAFC] px-3 py-2 text-sm font-bold">
-                        <span>{batch.recipientTokenIds.length.toLocaleString("en-IN")} tokens</span>
-                        <div className="flex items-center gap-2">
-                          <StatusBadge tone={batch.status === "DONE" ? "success" : batch.status === "CLAIMED" ? "info" : "warning"}>
-                            {humanize(batch.status)}
-                          </StatusBadge>
-                          <span className="text-[#667085]">try {batch.attemptCount}</span>
+                      <div key={batch.id} className="grid gap-2 rounded-md bg-[#F8FAFC] px-3 py-2 text-sm font-bold">
+                        <div className="flex items-center justify-between gap-2">
+                          <span>{batch.recipientTokenIds.length.toLocaleString("en-IN")} tokens</span>
+                          <div className="flex items-center gap-2">
+                            <StatusBadge tone={batch.status === "DONE" ? "success" : batch.status === "CLAIMED" ? "info" : "warning"}>
+                              {humanize(batch.status)}
+                            </StatusBadge>
+                            <span className="text-[#667085]">try {batch.attemptCount}</span>
+                          </div>
                         </div>
+                        <BatchTicketErrors batch={batch} />
                       </div>
                     ))}
                     {!detail.batches?.length ? <p className="text-sm font-semibold text-[#667085]">No worker batches yet.</p> : null}
@@ -563,6 +567,25 @@ function DiagnosticRow({ label, value }: { label: string; value: number }) {
     <div className="flex items-center justify-between gap-3">
       <span>{label}</span>
       <span>{value.toLocaleString("en-IN")}</span>
+    </div>
+  );
+}
+
+function BatchTicketErrors({ batch }: { batch: PushCampaignBatch }) {
+  const errors = normalizeTicketErrors(batch.ticketErrors);
+  if (!errors.length) {
+    return null;
+  }
+
+  return (
+    <div className="grid gap-1 rounded-md border border-[#F6C7C7] bg-[#FFF4F4] px-2.5 py-2 text-xs font-bold text-[#9F1D1D]">
+      {errors.slice(0, 3).map((error, index) => (
+        <p key={`${error.message}-${error.errorCode ?? "none"}-${index}`}>
+          Expo rejected {error.count > 1 ? `${error.count} tokens` : "1 token"}: {error.message}
+          {error.errorCode ? ` (${error.errorCode})` : ""}
+        </p>
+      ))}
+      {errors.length > 3 ? <p>{errors.length - 3} more rejection types hidden.</p> : null}
     </div>
   );
 }
@@ -640,6 +663,30 @@ function MetricPill({ label, value }: { label: string; value: number }) {
       {label} {value.toLocaleString("en-IN")}
     </span>
   );
+}
+
+function normalizeTicketErrors(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const grouped = new Map<string, { message: string; errorCode?: string; count: number }>();
+  for (const item of value) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+    const record = item as Record<string, unknown>;
+    const rawMessage = typeof record.message === "string" ? record.message.trim() : "";
+    const rawCode = typeof record.errorCode === "string" ? record.errorCode.trim() : "";
+    const message = rawMessage || rawCode || "Expo push ticket failed.";
+    const key = `${message}|${rawCode}`;
+    const existing = grouped.get(key);
+    if (existing) {
+      existing.count += 1;
+    } else {
+      grouped.set(key, { message, ...(rawCode ? { errorCode: rawCode } : {}), count: 1 });
+    }
+  }
+  return Array.from(grouped.values()).sort((left, right) => right.count - left.count);
 }
 
 function campaignMetrics(campaigns: PushCampaign[], total: number) {
