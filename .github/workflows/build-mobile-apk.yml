@@ -15,6 +15,9 @@ on:
   push:
     branches: ["main"]
 
+permissions:
+  contents: read
+
 jobs:
   build-android:
     name: Build Android Release (${{ matrix.app }})
@@ -49,9 +52,12 @@ jobs:
       - name: Expo Prebuild (Ensure Native Android Project)
         working-directory: apps/${{ matrix.app }}
         env:
-          EXPO_PUBLIC_API_URL: ${{ secrets.EXPO_PUBLIC_API_URL || 'https://api.1handindia.com/api' }}
-          EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY || 'pk_live_Y2xlcmsuMWhhbmRpbmRpYS5jb20k' }}
-        run: npx expo prebuild --platform android --no-install
+          RAW_API_URL: ${{ secrets.EXPO_PUBLIC_API_URL }}
+          RAW_CLERK_KEY: ${{ secrets.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+        run: |
+          export EXPO_PUBLIC_API_URL="${RAW_API_URL:-https://api.1handindia.com/api}"
+          export EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY="${RAW_CLERK_KEY:-pk_live_Y2xlcmsuMWhhbmRpbmRpYS5jb20k}"
+          npx expo prebuild --platform android --no-install
 
       - name: Cache Gradle
         uses: actions/cache@v4
@@ -79,21 +85,31 @@ jobs:
       - name: Build Android APK (.apk)
         working-directory: apps/${{ matrix.app }}/android
         env:
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD || secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.KEY_ALIAS || secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || secrets.ANDROID_KEY_PASSWORD }}
-          EXPO_PUBLIC_API_URL: ${{ secrets.EXPO_PUBLIC_API_URL || 'https://api.1handindia.com/api' }}
-          EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY || 'pk_live_Y2xlcmsuMWhhbmRpbmRpYS5jb20k' }}
+          RAW_API_URL: ${{ secrets.EXPO_PUBLIC_API_URL }}
+          RAW_CLERK_KEY: ${{ secrets.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+          SECRET_KS_PASS_1: ${{ secrets.KEYSTORE_PASSWORD }}
+          SECRET_KS_PASS_2: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          SECRET_ALIAS_1: ${{ secrets.KEY_ALIAS }}
+          SECRET_ALIAS_2: ${{ secrets.ANDROID_KEY_ALIAS }}
+          SECRET_KEY_PASS_1: ${{ secrets.KEY_PASSWORD }}
+          SECRET_KEY_PASS_2: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          if [ -f "app/release.keystore" ]; then
+          export EXPO_PUBLIC_API_URL="${RAW_API_URL:-https://api.1handindia.com/api}"
+          export EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY="${RAW_CLERK_KEY:-pk_live_Y2xlcmsuMWhhbmRpbmRpYS5jb20k}"
+          
+          STORE_PASS="${SECRET_KS_PASS_1:-$SECRET_KS_PASS_2}"
+          ALIAS="${SECRET_ALIAS_1:-$SECRET_ALIAS_2}"
+          KEY_PASS="${SECRET_KEY_PASS_1:-$SECRET_KEY_PASS_2}"
+          
+          if [ -f "app/release.keystore" ] && [ -n "$STORE_PASS" ]; then
             KEYSTORE_PATH=$(pwd)/app/release.keystore
             ./gradlew assembleRelease \
               -Pandroid.injected.signing.store.file=$KEYSTORE_PATH \
-              -Pandroid.injected.signing.store.password=$ANDROID_KEYSTORE_PASSWORD \
-              -Pandroid.injected.signing.key.alias=$ANDROID_KEY_ALIAS \
-              -Pandroid.injected.signing.key.password=$ANDROID_KEY_PASSWORD
+              -Pandroid.injected.signing.store.password=$STORE_PASS \
+              -Pandroid.injected.signing.key.alias=$ALIAS \
+              -Pandroid.injected.signing.key.password=$KEY_PASS
           else
-            echo "Warning: release.keystore not found. Building without custom signing config."
+            echo "Warning: release.keystore or keystore password not found. Building release APK without signing arguments."
             ./gradlew assembleRelease
           fi
 
