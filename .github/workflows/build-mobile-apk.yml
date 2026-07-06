@@ -23,15 +23,10 @@ jobs:
       fail-fast: false
       matrix:
         app: [mobile-delivery, mobile-customer, mobile-seller]
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.app == 'all' || inputs.app == matrix.app }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Filter target app if specified
-        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.app != 'all' && github.event.inputs.app != matrix.app }}
-        run: |
-          echo "Skipping ${{ matrix.app }} because selected app is ${{ github.event.inputs.app }}"
-          exit 0
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
