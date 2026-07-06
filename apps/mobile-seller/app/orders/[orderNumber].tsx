@@ -522,7 +522,7 @@ function createPackageForm(shipmentPackage?: SellerOrderPackage): PackageFormVal
 
 function isCodVisible(order: SellerOrder, deliveryMode: DeliveryFormValues["deliveryMode"]) {
   const codOrder = (order.payments ?? []).some((payment) => payment.method === "COD");
-  return codOrder && ["STORE_PICKUP", "MANUAL_TRANSPORT", "THIRD_PARTY_COURIER"].includes(deliveryMode);
+  return codOrder && ["MANUAL_TRANSPORT", "THIRD_PARTY_COURIER"].includes(deliveryMode);
 }
 
 function labelValue(value: string) {

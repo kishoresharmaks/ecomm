@@ -272,7 +272,7 @@ export function SellerOrderDetailClient({
       return;
     }
 
-    const printWindow = window.open("", "_blank", "noopener,noreferrer,width=760,height=720");
+    const printWindow = window.open("", "_blank", "width=760,height=720");
     if (!printWindow) {
       setNotice("Popup blocked. Allow popups to print the package slip.");
       return;

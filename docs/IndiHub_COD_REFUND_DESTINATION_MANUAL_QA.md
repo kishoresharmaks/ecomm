@@ -16,6 +16,24 @@ Covered changes:
 - Seller deduction math uses the adjusted payable amount after refund success.
 - Finance workspace includes the refunds screen.
 
+**Store Pickup Orders—COD Handling Rule:**
+
+- **Store pickup** = customer picks up order from seller's own store/location.
+- Seller owns and operates the store where customer collects the order.
+- For **COD store-pickup orders**: Cash is collected at the store by store staff (the seller's team).
+- **Automated COD Recording**: When seller marks store-pickup order status as `DELIVERED`:
+  - COD is **automatically** recorded as collected
+  - Order payment status automatically changes to **PAID**
+  - Seller receives **notification** confirming COD collection
+  - **No manual admin action** required
+- COD collected at store-pickup:
+  - ❌ NOT added to seller wallet/payout
+  - ❌ NOT counted in seller commission calculations  
+  - ✅ Automatically tracked in admin/finance system for audit
+  - ✅ Appears as **reference-only** in seller statements (informational, not payable)
+- **Seller cannot manually record COD**: Store-pickup mode hides all COD collection input fields.
+- **COD collection by seller** (manually recordable in seller app) only applies to: `MANUAL_TRANSPORT` and `THIRD_PARTY_COURIER` modes.
+
 ## Test Data Needed
 
 Prepare these orders before testing:
@@ -23,11 +41,11 @@ Prepare these orders before testing:
 - COD delivered order with at least one returnable item.
 - Bank-transfer or manual-payment delivered order with at least one returnable item.
 - Razorpay paid delivered order with at least one returnable item.
-- Store-pickup delivered order, to confirm store-pickup remains final and does not enter return/refund flow.
+- **Store-pickup delivered order (COD variant)**: A store-pickup order where customer paid via COD (collected at the seller's store location). Test that store-pickup remains final and does not enter return/refund flow, and seller cannot record the store-collected COD.
 - Seller/admin/finance accounts:
   - Customer account that owns the test orders.
-  - Seller account for approving returns.
-  - Admin or Finance account for refund processing.
+  - Seller account (store owner) for approving returns and managing orders.
+  - Admin or Finance account for refund processing and store-collected COD tracking.
 
 Do not run seed/bootstrap or DB-writing scripts against staging/production unless approved.
 
@@ -398,6 +416,27 @@ Expected:
 - Return request stores quality image keys.
 - Refund destination behavior still works with uploaded images.
 
+### 24. Store Pickup COD Auto-Collected When Marked Delivered
+
+Steps:
+
+1. Open a delivered **store-pickup COD order** on seller mobile/web app (order where customer paid via COD and picked up from seller's store).
+2. Verify order is currently in `DISPATCHED` or `IN_TRANSIT` state.
+3. Click **Mark as Delivered** or status update button.
+4. Mark the pickup as complete/delivered.
+
+Expected:
+
+- Seller form does NOT show "COD collected" or "COD collection amount" input fields for store-pickup mode.
+- When seller submits "mark delivered", the system automatically:
+  - Records COD as **COLLECTED**
+  - Changes order payment status to **PAID**
+  - Stores the collection timestamp and details
+- Seller receives **notification** confirming: "COD collected at store for order [orderNumber]"
+- Order status shows: Payment = PAID, Delivery = DELIVERED
+- Seller statement shows store-collected COD as reference-only (not added to sellable/payable amount).
+- Admin/Finance can see the auto-recorded COD in audit logs.
+
 ## Database Spot Checks
 
 Run read-only checks against a safe local/dev database:
@@ -447,4 +486,5 @@ Record results:
 | Cash refund rejected | Pending | |
 | Razorpay regression | Pending | |
 | Store pickup regression | Pending | |
+| Store pickup COD auto-collected on delivery | Pending | |
 
