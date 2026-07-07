@@ -40,6 +40,7 @@ import {
 } from "../../../src/features/services/services-api";
 import {
   canRetryServiceRazorpayPayment,
+  clearServiceRazorpayPaymentSession,
   isPaidServiceRazorpayStatus,
   isServiceRazorpayVerificationPendingForPayment,
   recoverServiceRazorpayPaymentSession,
@@ -290,6 +291,19 @@ export default function ServiceBookingDetailScreen() {
       cancelled = true;
     };
   }, [bookingNumber, customerAuth.enabled]);
+
+  useEffect(() => {
+    const payments = bookingQuery.data?.payments;
+    const hasPendingRazorpayPayment = payments?.some(
+      (payment) =>
+        payment.provider?.toUpperCase() === "RAZORPAY" &&
+        (payment.status === "pending" || payment.status === "failed"),
+    );
+    if (!hasPendingRazorpayPayment && paymentSession) {
+      void clearServiceRazorpayPaymentSession();
+      setPaymentSession(null);
+    }
+  }, [bookingQuery.data?.payments, paymentSession]);
 
   if (!bookingNumber) {
     return (

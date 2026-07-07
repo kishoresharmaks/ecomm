@@ -123,7 +123,7 @@ function requiredText(value: string | null | undefined, message: string) {
 function combineDateAndTime(dateValue: string | null, timeSlot: string | null) {
   const date = dateValue?.trim();
   if (!date) {
-    return undefined;
+    throw new Error("Select a preferred service date.");
   }
   const time = timeSlot?.match(/\d{1,2}:\d{2}/)?.[0];
   if (!time) {

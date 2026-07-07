@@ -38,8 +38,9 @@ const TAB_ROUTES: Array<{ name: TabRoute; label: string; iconKey: TabIconName }>
 ];
 
 const ACTIVE_COLOR = "#ED3500";
-const INACTIVE_COLOR = "#808080";
-const ACTIVE_BG = "#FFF2EB";
+const ACTIVE_TEXT_COLOR = "#1F2933";
+const INACTIVE_COLOR = "#8B949E";
+const NAV_BORDER = "#EDE6E1";
 
 // Spring config that mimics Reanimated's spring feel
 const SPRING_CONFIG = { tension: 200, friction: 20, useNativeDriver: true };
@@ -57,25 +58,25 @@ function AnimatedTabItem({
   onPress: () => void;
 }) {
   const scaleAnim = useRef(new Animated.Value(1)).current;
-  const bgOpacity = useRef(new Animated.Value(0)).current;
-  const dotScale = useRef(new Animated.Value(0)).current;
+  const activeOpacity = useRef(new Animated.Value(0)).current;
+  const activeLift = useRef(new Animated.Value(0)).current;
   const pressScale = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     if (isActive) {
       Animated.parallel([
-        Animated.spring(scaleAnim, { toValue: 1, ...SPRING_CONFIG }),
-        Animated.timing(bgOpacity, { toValue: 1, duration: 220, useNativeDriver: true }),
-        Animated.spring(dotScale, { toValue: 1, ...SPRING_CONFIG }),
+        Animated.spring(scaleAnim, { toValue: 1.05, ...SPRING_CONFIG }),
+        Animated.spring(activeLift, { toValue: -3, ...SPRING_CONFIG }),
+        Animated.timing(activeOpacity, { toValue: 1, duration: 180, useNativeDriver: true }),
       ]).start();
     } else {
       Animated.parallel([
         Animated.spring(scaleAnim, { toValue: 1, ...SPRING_OUT_CONFIG }),
-        Animated.timing(bgOpacity, { toValue: 0, duration: 180, useNativeDriver: true }),
-        Animated.spring(dotScale, { toValue: 0, ...SPRING_OUT_CONFIG }),
+        Animated.spring(activeLift, { toValue: 0, ...SPRING_OUT_CONFIG }),
+        Animated.timing(activeOpacity, { toValue: 0, duration: 140, useNativeDriver: true }),
       ]).start();
     }
-  }, [isActive, scaleAnim, bgOpacity, dotScale]);
+  }, [isActive, scaleAnim, activeOpacity, activeLift]);
 
   function handlePressIn() {
     Animated.spring(pressScale, { toValue: 0.93, ...SPRING_CONFIG }).start();
@@ -86,9 +87,9 @@ function AnimatedTabItem({
     onPress();
   }
 
-  const bgScale = bgOpacity.interpolate({
+  const activeScale = activeOpacity.interpolate({
     inputRange: [0, 1],
-    outputRange: [0.7, 1],
+    outputRange: [0.9, 1],
   });
 
   return (
@@ -101,9 +102,9 @@ function AnimatedTabItem({
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
       >
-        <Animated.View style={styles.activeIconShell}>
-          <Animated.View style={[styles.activeGlow, { opacity: bgOpacity, transform: [{ scale: bgScale }] }]} />
-          <Animated.View style={[styles.activeBackground, { opacity: bgOpacity, transform: [{ scale: bgScale }] }]} />
+        <Animated.View style={[styles.activeIconShell, { transform: [{ translateY: activeLift }] }]}>
+          <Animated.View style={[styles.activeRingShadow, { opacity: activeOpacity, transform: [{ scale: activeScale }] }]} />
+          <Animated.View style={[styles.activeRing, { opacity: activeOpacity, transform: [{ scale: activeScale }] }]} />
           <Animated.View style={[styles.iconWrapper, { transform: [{ scale: scaleAnim }] }]}>
             <HugeiconsIcon
               color={isActive ? ACTIVE_COLOR : INACTIVE_COLOR}
@@ -117,21 +118,10 @@ function AnimatedTabItem({
         {/* Label */}
         <Text
           numberOfLines={1}
-          style={[styles.tabLabel, { color: isActive ? ACTIVE_COLOR : INACTIVE_COLOR }]}
+          style={[styles.tabLabel, { color: isActive ? ACTIVE_TEXT_COLOR : INACTIVE_COLOR }]}
         >
           {label}
         </Text>
-
-        {/* Active orange dot */}
-        <Animated.View
-          style={[
-            styles.activeDot,
-            {
-              transform: [{ scale: dotScale }],
-              opacity: dotScale,
-            },
-          ]}
-        />
       </Pressable>
     </Animated.View>
   );
@@ -246,19 +236,19 @@ const styles = StyleSheet.create({
   },
   navbar: {
     alignItems: "center",
-    backgroundColor: "#FFFFFF",
-    borderColor: "rgba(242, 231, 226, 0.8)",
-    borderRadius: 36,
+    backgroundColor: "rgba(255, 255, 255, 0.97)",
+    borderColor: NAV_BORDER,
+    borderRadius: 30,
     borderWidth: 1,
-    elevation: 20,
+    elevation: 16,
     flexDirection: "row",
-    height: 74,
+    height: 72,
     justifyContent: "space-around",
-    paddingHorizontal: 6,
-    shadowColor: "#ED3500",
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.12,
-    shadowRadius: 28,
+    paddingHorizontal: 8,
+    shadowColor: "#111827",
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.1,
+    shadowRadius: 24,
     width: "100%",
   },
   tabItemWrapper: {
@@ -268,56 +258,53 @@ const styles = StyleSheet.create({
   tabItemPressable: {
     alignItems: "center",
     justifyContent: "center",
-    paddingBottom: 4,
-    paddingTop: 4,
+    minHeight: 62,
+    paddingBottom: 2,
+    paddingTop: 6,
     position: "relative",
-    width: 64,
+    width: 66,
   },
   activeIconShell: {
     alignItems: "center",
-    height: 42,
+    height: 38,
     justifyContent: "center",
     position: "relative",
-    width: 52,
+    width: 46,
   },
-  activeBackground: {
-    backgroundColor: ACTIVE_BG,
+  activeRing: {
+    backgroundColor: "#FFFFFF",
+    borderColor: ACTIVE_COLOR,
+    borderWidth: 1.5,
     borderRadius: 999,
-    height: 42,
+    height: 38,
     position: "absolute",
-    width: 42,
+    width: 38,
   },
-  activeGlow: {
-    backgroundColor: "#FFE0D1",
+  activeRingShadow: {
+    backgroundColor: "#FFFFFF",
     borderRadius: 999,
-    height: 52,
+    elevation: 6,
+    height: 38,
     position: "absolute",
-    shadowColor: "#ED3500",
+    shadowColor: "#111827",
     shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.16,
-    shadowRadius: 12,
-    width: 52,
+    shadowOpacity: 0.14,
+    shadowRadius: 10,
+    width: 38,
   },
   iconWrapper: {
     alignItems: "center",
-    height: 42,
+    height: 38,
     justifyContent: "center",
-    width: 42,
+    width: 38,
   },
   tabLabel: {
     fontSize: 10,
-    fontWeight: "800",
+    fontWeight: "900",
     letterSpacing: 0,
     lineHeight: 14,
-    marginTop: 2,
+    marginTop: 1,
     textAlign: "center",
-  },
-  activeDot: {
-    backgroundColor: ACTIVE_COLOR,
-    borderRadius: 999,
-    height: 4,
-    marginTop: 3,
-    width: 4,
   },
   // --- Legacy ---
   tabIconBubble: {

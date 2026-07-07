@@ -25,8 +25,8 @@ const baseBooking: MobileServiceBookingFormValues = {
   visitMode: "customer_location",
   savedAddressId: null,
   addressSnapshot,
-  preferredDate: null,
-  preferredTimeSlot: null,
+  preferredDate: "2026-07-01",
+  preferredTimeSlot: "10:00-12:00",
   customerIssue: "The television turns on but the screen stays blank.",
   customerNote: "Call before arrival.",
 };
@@ -64,6 +64,16 @@ describe("payload cleaners", () => {
     });
     expect(payload.servicePackageId).toBe("pkg-1");
     expect(payload.scheduledStartAt).toContain("2026-07-01");
+  });
+
+  it("requires a preferred date before creating a booking", () => {
+    expect(() =>
+      cleanBookingPayload({
+        ...baseBooking,
+        preferredDate: null,
+        preferredTimeSlot: "10:00-12:00",
+      }),
+    ).toThrow("Select a preferred service date.");
   });
 
   it("requires a selected time slot when scheduling a preferred date", () => {

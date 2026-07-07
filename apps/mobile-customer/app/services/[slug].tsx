@@ -141,6 +141,12 @@ export default function ServiceDetailScreen() {
     if (!form || !service) {
       return;
     }
+    try {
+      cleanBookingPayload(form);
+    } catch (error) {
+      setFormError(accountErrorMessage(error, "Complete the service booking details before continuing."));
+      return;
+    }
     if (!customerAuth.enabled) {
       saveServiceBookingDraft(service.slug, form);
       router.push(`/auth/sign-in?returnTo=/services/${service.slug}&restoreBookingForm=true` as never);
@@ -370,20 +376,20 @@ function visitModeLabel(mode: MobileVisitMode) {
 
 function addressFormToSnapshot(value: ReturnType<typeof emptyMobileAddressForm>): MobileServiceAddressSnapshot {
   return {
-    label: value.label ?? null,
-    fullName: value.fullName,
-    phone: value.phone,
-    line1: value.line1,
-    line2: value.line2 ?? null,
-    area: value.area ?? null,
-    city: value.city,
-    state: value.state,
-    pincode: value.pincode,
-    country: value.country ?? "India",
-    countryCode: value.countryCode ?? "IN",
-    stateCode: value.stateCode ?? null,
-    cityCode: value.cityCode ?? null,
-    localAreaCode: value.localAreaCode ?? null,
+    label: value.label?.trim() || null,
+    fullName: value.fullName.trim(),
+    phone: value.phone.trim(),
+    line1: value.line1.trim(),
+    line2: value.line2?.trim() || null,
+    area: value.area?.trim() || null,
+    city: value.city.trim(),
+    state: value.state.trim(),
+    pincode: value.pincode.trim(),
+    country: value.country?.trim() || "India",
+    countryCode: value.countryCode?.trim() || "IN",
+    stateCode: value.stateCode?.trim() || null,
+    cityCode: value.cityCode?.trim() || null,
+    localAreaCode: value.localAreaCode?.trim() || null,
     latitude: value.latitude ?? null,
     longitude: value.longitude ?? null,
   };
