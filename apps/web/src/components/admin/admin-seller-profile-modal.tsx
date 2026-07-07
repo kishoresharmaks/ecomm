@@ -7,6 +7,7 @@ import { Button, StatusBadge, cn } from "@indihub/ui";
 import { useAdminAuth } from "./admin-auth-context";
 import { StorefrontImage } from "@/components/storefront/storefront-image";
 import { adminRequest, type SellerRecord } from "./admin-operations";
+import { resolveImageSource } from "@/lib/image-url";
 
 function humanize(value?: string | null) {
   return value
@@ -37,10 +38,12 @@ export function AdminSellerProfileModal({
   seller,
   open,
   onClose,
+  onSellerUpdated,
 }: {
   seller: SellerRecord | null;
   open: boolean;
   onClose: () => void;
+  onSellerUpdated?: (seller: SellerRecord) => void;
 }) {
   const auth = useAdminAuth();
   const queryClient = useQueryClient();
@@ -55,9 +58,17 @@ export function AdminSellerProfileModal({
           body: JSON.stringify({ status }),
         }
       ),
-    onSuccess: () => {
+    onSuccess: (updatedDocument: any) => {
       queryClient.invalidateQueries({ queryKey: ["admin-sellers"] });
       queryClient.invalidateQueries({ queryKey: ["admin-seller-approvals"] });
+      if (seller && onSellerUpdated) {
+        onSellerUpdated({
+          ...seller,
+          documents: (seller.documents ?? []).map((doc: any) =>
+            doc.id === updatedDocument.id ? updatedDocument : doc
+          ),
+        });
+      }
     },
   });
 
@@ -174,7 +185,7 @@ export function AdminSellerProfileModal({
                               </div>
                               <div className="mt-2 flex flex-wrap items-center gap-2">
                                 <a
-                                  href={doc.fileUrl}
+                                  href={resolveImageSource(doc.fileUrl) ?? ""}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="inline-flex items-center gap-1.5 rounded bg-white px-2.5 py-1 text-xs font-bold text-[#163B5C] border border-[#D9E2EA] hover:border-[#163B5C] transition"

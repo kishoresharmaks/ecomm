@@ -2272,6 +2272,7 @@ export function AdminSellersPageClient() {
         seller={viewingSeller}
         open={Boolean(viewingSeller)}
         onClose={() => setViewingSeller(null)}
+        onSellerUpdated={setViewingSeller}
       />
     </AdminResourceChrome>
   );
