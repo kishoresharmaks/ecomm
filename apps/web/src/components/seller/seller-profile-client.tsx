@@ -45,6 +45,7 @@ import {
   optionalFormValue,
   useSellerAuth,
 } from "./seller-ui";
+import { EditStoreDetailsModal, EditPayoutModal, EditAddressModal, EditDocumentsModal } from "./seller-profile-modals";
 
 const businessTypes: Array<{ value: SellerBusinessType; label: string }> = [
   { value: "INDIVIDUAL", label: "Individual" },
@@ -104,12 +105,7 @@ const verificationDocuments: Array<{
 export function SellerProfileClient() {
   const queryClient = useQueryClient();
   const sellerAuth = useSellerAuth();
-  const [notice, setNotice] = useState<string | null>(null);
-  const [noticeTone, setNoticeTone] = useState<"success" | "danger">("success");
-  const [logoUrl, setLogoUrl] = useState<string | null>(null);
-  const [bannerUrl, setBannerUrl] = useState<string | null>(null);
-  const [documents, setDocuments] = useState<SellerDocumentUploadResult[]>([]);
-  const [serviceAreas, setServiceAreas] = useState<SellerServiceAreaDraft[]>([]);
+  const [activeModal, setActiveModal] = useState<"STORE_DETAILS" | "PAYOUT" | "ADDRESS" | "DOCUMENTS" | null>(null);
 
   const profileQuery = useQuery({
     queryKey: ["seller-profile", sellerAuth.authKey],
@@ -117,117 +113,6 @@ export function SellerProfileClient() {
     enabled: sellerAuth.enabled,
     retry: false,
   });
-
-  const mutation = useMutation({
-    mutationFn: (payload: SellerProfilePayload) =>
-      updateSellerProfile(sellerAuth.authHeaders, payload),
-    onSuccess: () => {
-      setNoticeTone("success");
-      setNotice("Seller profile updated.");
-      void queryClient.invalidateQueries({ queryKey: ["seller-profile", sellerAuth.authKey] });
-    },
-    onError: (error) => {
-      setNoticeTone("danger");
-      setNotice(error instanceof Error ? error.message : "Seller profile update failed.");
-    },
-  });
-
-  const pickupSyncMutation = useMutation({
-    mutationFn: (providerCode: string) =>
-      syncSellerCourierPickup(sellerAuth.authHeaders, providerCode),
-    onSuccess: (result) => {
-      setNoticeTone("success");
-      setNotice(result.statusLabel ?? `Pickup synced: ${result.pickupLocationName}`);
-      void queryClient.invalidateQueries({ queryKey: ["seller-profile", sellerAuth.authKey] });
-    },
-    onError: (error) => {
-      setNoticeTone("danger");
-      setNotice(error instanceof Error ? error.message : "Pickup sync failed.");
-    },
-  });
-
-  useEffect(() => {
-    if (profileQuery.data) {
-      setLogoUrl(profileQuery.data.profile?.logoUrl ?? null);
-      setBannerUrl(profileQuery.data.profile?.bannerUrl ?? null);
-      setServiceAreas(
-        sellerHasServiceCapability(profileQuery.data)
-          ? profileServiceAreasToDraft(profileQuery.data.serviceAreas, profileQuery.data.addresses[0])
-          : [],
-      );
-      setDocuments([]);
-    }
-  }, [profileQuery.data]);
-
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const existingShiprocketSetting = profileQuery.data?.courierProviderSettings?.find(
-      (setting) => setting.providerCode === "SHIPROCKET",
-    );
-    const shiprocketPickupLocation = optionalFormValue(form, "shiprocketPickupLocation");
-    const payoutProfile = sellerPayoutProfilePayload(form);
-    const coordinates = nullableCoordinatePair(form);
-    const locationSource = nullableFormValue(form, "locationSource") as NonNullable<SellerProfilePayload["address"]>["locationSource"];
-    const accuracyMeters = nullableNumberValue(form, "accuracyMeters");
-    const locationConfidenceScore = nullableNumberValue(form, "locationConfidenceScore");
-    setNotice(null);
-    mutation.mutate({
-      storeName: formValue(form, "storeName"),
-      logoUrl,
-      bannerUrl,
-      description: optionalFormValue(form, "description"),
-      businessLegalName: optionalFormValue(form, "businessLegalName"),
-      businessType: optionalFormValue(form, "businessType") as SellerBusinessType | undefined,
-      gstNumber: optionalFormValue(form, "gstNumber")?.toUpperCase(),
-      panNumber: optionalFormValue(form, "panNumber")?.toUpperCase(),
-      contactName: formValue(form, "contactName"),
-      contactPhone: formValue(form, "contactPhone"),
-      contactEmail: formValue(form, "contactEmail"),
-      ...(payoutProfile ? { payoutProfile } : {}),
-      address: {
-        line1: formValue(form, "line1"),
-        line2: optionalFormValue(form, "line2"),
-        area: optionalFormValue(form, "area"),
-        city: formValue(form, "city"),
-        state: formValue(form, "state"),
-        pincode: formValue(form, "pincode"),
-        country: formValue(form, "country"),
-        countryCode: formValue(form, "countryCode"),
-        stateCode: formValue(form, "stateCode"),
-        cityCode: formValue(form, "cityCode"),
-        localAreaCode: optionalFormValue(form, "localAreaCode"),
-        ...coordinates,
-        locationSource,
-        accuracyMeters,
-        locationConfidenceScore,
-      },
-      ...(documents.length
-        ? {
-            documents: documents.map((document) => ({
-              documentType: document.documentType,
-              fileUrl: document.fileUrl,
-            })),
-          }
-        : {}),
-      ...(shiprocketPickupLocation || existingShiprocketSetting
-        ? {
-            courierSettings: [
-              {
-                providerCode: "SHIPROCKET",
-                pickupLocationName: shiprocketPickupLocation,
-                isActive: Boolean(shiprocketPickupLocation),
-              },
-            ],
-          }
-        : {}),
-      ...(sellerHasServiceCapability(profileQuery.data)
-        ? {
-            serviceAreas: draftServiceAreasToPayload(serviceAreas),
-          }
-        : {}),
-    });
-  }
 
   if (!sellerAuth.enabled) {
     return <SellerAuthNotice />;
@@ -243,374 +128,196 @@ export function SellerProfileClient() {
         <SellerOnboardingRequired message="Submit seller onboarding first, then return here to maintain your store profile." />
       );
     }
-
-    return (
-      <SellerErrorPanel error={profileQuery.error} onRetry={() => void profileQuery.refetch()} />
-    );
+    return <SellerErrorPanel error={profileQuery.error} onRetry={() => void profileQuery.refetch()} />;
   }
 
-  const profile = profileQuery.data;
-  const address = profile?.addresses[0];
-  const payoutProfile = profile?.payoutProfile;
-  const shiprocketSetting = profile?.courierProviderSettings?.find(
-    (setting) => setting.providerCode === "SHIPROCKET",
-  );
-  const profileBusy = mutation.isPending || pickupSyncMutation.isPending;
-  const hasServiceCapability = sellerHasServiceCapability(profile);
+  const profileData = profileQuery.data;
+  const address = profileData?.addresses?.[0];
+  const payoutProfile = profileData?.payoutProfile;
 
   return (
-    <div className="grid gap-5">
-      <SellerPanel>
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="flex items-start gap-3">
-            <span className="grid h-11 w-11 place-items-center rounded-md bg-[#EAF1F7] text-[#163B5C]">
-              <Store className="h-5 w-5" aria-hidden="true" />
-            </span>
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-xl font-black text-[#1F2933]">{profile?.storeName}</h2>
-                <SellerStatusPill status={profile?.status} />
-                <SellerStatusPill status={profile?.approvalStatus} />
-              </div>
-              <p className="mt-1 text-sm font-semibold text-[#667085]">
-                {profile?.user?.email ??
-                  profile?.profile?.contactEmail ??
-                  "Seller contact not available"}
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-            {profile?.status === "APPROVED" &&
-            profile.approvalStatus === "APPROVED" &&
-            profile.slug ? (
-              <Button asChild variant="outline" size="sm">
-                <Link href={`/stores/${profile.slug}` as Route}>
-                  <ExternalLink className="h-4 w-4" aria-hidden="true" />
-                  View public store
-                </Link>
-              </Button>
-            ) : null}
-            {notice ? (
-              <StatusBadge tone={noticeTone}>{notice}</StatusBadge>
-            ) : null}
-          </div>
+    <div className="mx-auto max-w-7xl pb-10">
+      <div className="mb-6 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-black tracking-tight text-[#1F2933]">Store Profile</h1>
+          <p className="mt-1 text-sm font-semibold text-[#667085]">
+            Manage your business details, documents, and address.
+          </p>
         </div>
-      </SellerPanel>
+        <StatusBadge tone={profileData?.status === "APPROVED" ? "success" : "warning"}>
+          {profileData?.status === "APPROVED" ? "Active Store" : "Pending Approval"}
+        </StatusBadge>
+      </div>
 
-      <form onSubmit={submit} className="grid gap-5 xl:grid-cols-[1fr_420px]">
-        <SellerPanel>
-          <SectionHeading
-            title="Store profile"
-            description="Control how your store appears to buyers across product pages and the public store profile."
-          />
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
-            <SellerField
-              label="Store name"
-              name="storeName"
-              required
-              defaultValue={profile?.storeName}
-            />
-            <SellerField
-              label="Business legal name"
-              name="businessLegalName"
-              defaultValue={profile?.profile?.businessLegalName}
-            />
-            <label className="block">
-              <span className="block text-xs font-bold uppercase tracking-wide text-[#667085]">
-                Business type
-              </span>
-              <select
-                name="businessType"
-                defaultValue={profile?.profile?.businessType ?? ""}
-                className="mt-1 h-11 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 text-sm font-semibold text-[#1F2933] outline-none focus:border-[#ED3500] focus:bg-white"
-              >
-                <option value="">Select business type</option>
-                {businessTypes.map((type) => (
-                  <option key={type.value} value={type.value}>
-                    {type.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <SellerField
-              label="GST number"
-              name="gstNumber"
-              defaultValue={profile?.profile?.gstNumber}
-            />
-            <SellerField
-              label="PAN number"
-              name="panNumber"
-              defaultValue={profile?.profile?.panNumber}
-            />
-            <SellerField
-              label="Contact name"
-              name="contactName"
-              required
-              defaultValue={profile?.profile?.contactName ?? profile?.user?.fullName}
-            />
-            <SellerField
-              label="Contact phone"
-              name="contactPhone"
-              required
-              defaultValue={profile?.profile?.contactPhone ?? profile?.user?.phone}
-            />
-            <SellerField
-              label="Contact email"
-              name="contactEmail"
-              type="email"
-              required
-              defaultValue={profile?.profile?.contactEmail ?? profile?.user?.email}
-            />
-            <div className="md:col-span-2">
-              <SellerImageUpload
-                label="Store logo"
-                description="Upload a square logo for store cards, product seller details, and the public store page."
-                value={logoUrl}
-                onChange={setLogoUrl}
-                authHeaders={sellerAuth.authHeaders}
-                purpose="SELLER_LOGO"
-                previewLabel={profile?.storeName?.slice(0, 2).toUpperCase() ?? "1HI"}
-                aspectClass="aspect-square"
-                disabled={profileBusy}
-              />
+      <div className="grid gap-6 md:grid-cols-2">
+        {/* Store Details Card */}
+        <SellerPanel className="flex flex-col">
+          <div className="flex items-center justify-between border-b border-[#D8E2EA] px-6 py-4">
+            <h2 className="text-lg font-bold text-[#1F2933]">Store Details</h2>
+            <Button variant="outline" size="sm" onClick={() => setActiveModal("STORE_DETAILS")}>Edit</Button>
+          </div>
+          <div className="px-6 py-5 flex flex-col gap-4 text-sm font-medium text-[#1F2933]">
+            <div className="flex items-center gap-4">
+              {profileData?.profile?.logoUrl ? (
+                <img src={profileData.profile.logoUrl} alt="Logo" className="h-12 w-12 rounded-full object-cover border" />
+              ) : (
+                <div className="h-12 w-12 rounded-full bg-[#EAF1F7] flex items-center justify-center text-[#163B5C] font-bold">
+                  {profileData?.storeName?.slice(0, 2).toUpperCase()}
+                </div>
+              )}
+              <div>
+                <p className="text-base font-bold">{profileData?.storeName}</p>
+                <p className="text-[#667085]">{profileData?.profile?.businessLegalName || "No legal name set"}</p>
+              </div>
             </div>
-            <div className="md:col-span-2">
-              <SellerImageUpload
-                label="Store banner"
-                description="Upload a wide banner for the public store profile. Use a clean product or storefront image."
-                value={bannerUrl}
-                onChange={setBannerUrl}
-                authHeaders={sellerAuth.authHeaders}
-                purpose="SELLER_BANNER"
-                previewLabel={profile?.storeName ?? "1HandIndia"}
-                aspectClass="aspect-[5/2]"
-                disabled={profileBusy}
-              />
-            </div>
-            <div className="md:col-span-2">
-              <SellerTextArea
-                label="Business description"
-                name="description"
-                defaultValue={profile?.profile?.description}
-                rows={5}
-              />
+            <div className="grid grid-cols-2 gap-y-3 mt-2">
+              <div>
+                <span className="block text-xs text-[#667085]">Contact Name</span>
+                <span>{profileData?.profile?.contactName || "Not set"}</span>
+              </div>
+              <div>
+                <span className="block text-xs text-[#667085]">Phone</span>
+                <span>{profileData?.profile?.contactPhone || "Not set"}</span>
+              </div>
+              <div>
+                <span className="block text-xs text-[#667085]">Email</span>
+                <span>{profileData?.profile?.contactEmail || "Not set"}</span>
+              </div>
+              <div>
+                <span className="block text-xs text-[#667085]">GST/PAN</span>
+                <span>{profileData?.profile?.gstNumber || profileData?.profile?.panNumber || "Not set"}</span>
+              </div>
             </div>
           </div>
         </SellerPanel>
 
-        <SellerPanel>
-          <div className="flex items-start gap-3">
-            <span className="grid h-10 w-10 place-items-center rounded-md bg-[#FFF0EC] text-[#ED3500]">
-              <FileText className="h-5 w-5" aria-hidden="true" />
-            </span>
-            <SectionHeading
-              title="Verification documents"
-              description="Upload proof documents for admin review. Existing uploaded keys stay private."
-            />
+        {/* Payout Information Card */}
+        <SellerPanel className="flex flex-col">
+          <div className="flex items-center justify-between border-b border-[#D8E2EA] px-6 py-4">
+            <h2 className="text-lg font-bold text-[#1F2933]">Payout Information</h2>
+            <Button variant="outline" size="sm" onClick={() => setActiveModal("PAYOUT")}>Edit</Button>
           </div>
-          <div className="mt-5 grid gap-3">
-            {verificationDocuments.map((document) => (
-              <DocumentUploadField
-                key={document.type}
-                document={document}
-                value={documents.find((item) => item.documentType === document.type)}
-                storedDocument={(profile?.documents ?? []).find(
-                  (item) => item.documentType === document.type,
-                )}
-                authHeaders={sellerAuth.authHeaders}
-                disabled={profileBusy}
-                onUploaded={(uploaded) =>
-                  setDocuments((current) => [
-                    ...current.filter((item) => item.documentType !== uploaded.documentType),
-                    uploaded,
-                  ])
-                }
-              />
-            ))}
-          </div>
-        </SellerPanel>
-
-        <SellerPanel>
-          <div className="flex items-start gap-3">
-            <span className="grid h-10 w-10 place-items-center rounded-md bg-[#FFF0EC] text-[#ED3500]">
-              <CreditCard className="h-5 w-5" aria-hidden="true" />
-            </span>
-            <SectionHeading
-              title="Manual payout details"
-              description="Bank or UPI details used by admin when processing seller payout requests."
-            />
-          </div>
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
-            <SellerField
-              label="Account holder name"
-              name="payoutAccountHolderName"
-              defaultValue={payoutProfile?.accountHolderName ?? profile?.profile?.contactName ?? ""}
-              placeholder="Enter account holder name"
-            />
-            <SellerField
-              label="UPI ID"
-              name="payoutUpiId"
-              placeholder={payoutProfile?.maskedUpiId ? `Saved: ${payoutProfile.maskedUpiId}` : "seller@upi"}
-            />
-            <SellerField
-              label="Bank name"
-              name="payoutBankName"
-              defaultValue={payoutProfile?.bankName ?? ""}
-              placeholder="Enter bank name"
-            />
-            <SellerField
-              label="Account number"
-              name="payoutAccountNumber"
-              placeholder={payoutProfile?.maskedAccountNumber ? `Saved: ${payoutProfile.maskedAccountNumber}` : "Enter account number"}
-            />
-            <SellerField
-              label="IFSC code"
-              name="payoutIfscCode"
-              defaultValue={payoutProfile?.ifscCode ?? ""}
-              placeholder="Enter IFSC code"
-            />
+          <div className="px-6 py-5 flex flex-col gap-4 text-sm font-medium text-[#1F2933]">
             {payoutProfile ? (
-              <p className="text-xs font-semibold leading-5 text-[#667085] md:col-span-2">
-                Existing payout details are saved securely. Enter new values only when you want to replace them.
-              </p>
-            ) : null}
+              <div className="grid grid-cols-2 gap-y-4">
+                <div className="col-span-2">
+                  <span className="block text-xs text-[#667085]">Account Holder</span>
+                  <span className="text-base">{payoutProfile.accountHolderName || "Not set"}</span>
+                </div>
+                <div>
+                  <span className="block text-xs text-[#667085]">Bank Name</span>
+                  <span>{payoutProfile.bankName || "Not set"}</span>
+                </div>
+                <div>
+                  <span className="block text-xs text-[#667085]">Account Number</span>
+                  <span>{payoutProfile.maskedAccountNumber || "Not set"}</span>
+                </div>
+                <div>
+                  <span className="block text-xs text-[#667085]">IFSC Code</span>
+                  <span>{payoutProfile.ifscCode || "Not set"}</span>
+                </div>
+                <div>
+                  <span className="block text-xs text-[#667085]">UPI ID</span>
+                  <span>{payoutProfile.maskedUpiId || "Not set"}</span>
+                </div>
+              </div>
+            ) : (
+              <div className="py-6 text-center text-[#667085]">
+                <CreditCard className="mx-auto mb-2 h-8 w-8 opacity-50" />
+                <p>No payout details added yet.</p>
+              </div>
+            )}
           </div>
         </SellerPanel>
 
-        {hasServiceCapability ? (
-          <SellerPanel className="xl:col-span-2">
-            <div className="flex items-start gap-3">
-              <span className="grid h-10 w-10 place-items-center rounded-md bg-[#FFF0EC] text-[#ED3500]">
-                <MapPinned className="h-5 w-5" aria-hidden="true" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <SectionHeading
-                    title="Service coverage defaults"
-                    description="Saved areas are used as quick defaults while creating seller service listings."
-                  />
-                </div>
-                <SellerServiceAreaEditor
-                  areas={serviceAreas}
-                  disabled={profileBusy}
-                  addLabel="Add coverage location"
-                  emptyMessage="No default service coverage saved. Add the areas where your service team can visit customers."
-                  actionPrefix={
-                    address ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          setServiceAreas((current) => [
-                            ...current,
-                            draftServiceAreaFromAddress(address),
-                          ])
-                        }
-                        disabled={profileBusy}
-                        className="seller-service-area-action-button"
-                      >
-                        <MapPinned className="h-4 w-4" aria-hidden="true" />
-                        Use store address
-                      </Button>
-                    ) : null
-                  }
-                  createArea={emptyDraftServiceArea}
-                  onChange={setServiceAreas}
-                />
+        {/* Business Address Card */}
+        <SellerPanel className="flex flex-col">
+          <div className="flex items-center justify-between border-b border-[#D8E2EA] px-6 py-4">
+            <h2 className="text-lg font-bold text-[#1F2933]">Business Address</h2>
+            <Button variant="outline" size="sm" onClick={() => setActiveModal("ADDRESS")}>Edit</Button>
+          </div>
+          <div className="px-6 py-5 flex flex-col gap-4 text-sm font-medium text-[#1F2933]">
+            {address ? (
+              <div>
+                <p>{address.line1}</p>
+                {address.line2 && <p>{address.line2}</p>}
+                <p>{[address.city, address.state, address.pincode].filter(Boolean).join(", ")}</p>
+                <p>{address.country || "India"}</p>
               </div>
-            </div>
-          </SellerPanel>
-        ) : null}
-
-        <SellerPanel>
-          <SectionHeading
-            title="Store address"
-            description="Primary address used for seller operational review and customer trust signals."
-          />
-          <div className="mt-5 grid gap-4">
-            <SellerField
-              label="Address line 1"
-              name="line1"
-              required
-              defaultValue={address?.line1}
-            />
-            <SellerField label="Address line 2" name="line2" defaultValue={address?.line2} />
-            <LocationFields
-              defaultValue={{
-                country: address?.country ?? "India",
-                countryCode: address?.countryCode ?? "IN",
-                state: address?.state,
-                stateCode: address?.stateCode,
-                city: address?.city,
-                cityCode: address?.cityCode,
-                area: address?.area,
-                localAreaCode: address?.localAreaCode,
-                pincode: address?.pincode,
-              }}
-              defaultCountryCode="IN"
-              loadCitiesAcrossCountry
-              disabled={profileBusy}
-              inputClassName="h-11 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 text-sm font-semibold text-[#1F2933] outline-none focus:border-[#ED3500] focus:bg-white"
-            />
-            <MapLocationPicker
-              defaultValue={{
-                latitude: address?.latitude,
-                longitude: address?.longitude,
-                locationSource: address?.locationSource,
-                accuracyMeters: address?.accuracyMeters,
-                locationConfidenceScore: address?.locationConfidenceScore,
-              }}
-              authHeaders={sellerAuth.authHeaders}
-              disabled={profileBusy}
-              radiusPreviewKm={5}
-            />
-            <div className="rounded-md border border-[#D8E2EA] bg-[#F8FAFC] p-3">
-              <div className="flex items-start gap-3">
-                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-white text-[#ED3500]">
-                  <Truck className="h-4 w-4" aria-hidden="true" />
-                </span>
-                <div className="grid flex-1 gap-3">
-                  <SectionHeading
-                    title="Courier pickup"
-                    description="Seller pickup location name used by live courier booking."
-                  />
-                  <SellerField
-                    label="Shiprocket pickup location"
-                    name="shiprocketPickupLocation"
-                    defaultValue={shiprocketSetting?.pickupLocationName ?? ""}
-                    placeholder="Main Warehouse"
-                  />
-                  <div className="flex flex-col gap-3 rounded-md border border-[#D8E2EA] bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
-                    <p className="text-sm font-bold text-[#1F2933]">
-                      {shiprocketSetting?.pickupLocationName
-                        ? `Saved pickup: ${shiprocketSetting.pickupLocationName}`
-                        : "No Shiprocket pickup synced."}
-                    </p>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => pickupSyncMutation.mutate("SHIPROCKET")}
-                      disabled={profileBusy}
-                    >
-                      {pickupSyncMutation.isPending ? (
-                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                      ) : (
-                        <Truck className="h-4 w-4" aria-hidden="true" />
-                      )}
-                      {pickupSyncMutation.isPending ? "Syncing..." : "Sync pickup"}
-                    </Button>
-                  </div>
-                </div>
+            ) : (
+              <div className="py-6 text-center text-[#667085]">
+                <MapPinned className="mx-auto mb-2 h-8 w-8 opacity-50" />
+                <p>No business address added yet.</p>
               </div>
-            </div>
-            <Button type="submit" disabled={profileBusy}>
-              {mutation.isPending ? "Saving..." : "Save profile"}
-            </Button>
+            )}
           </div>
         </SellerPanel>
-      </form>
+
+        {/* Verification Documents Card */}
+        <SellerPanel className="flex flex-col">
+          <div className="flex items-center justify-between border-b border-[#D8E2EA] px-6 py-4">
+            <h2 className="text-lg font-bold text-[#1F2933]">Verification Documents</h2>
+            <Button variant="outline" size="sm" onClick={() => setActiveModal("DOCUMENTS")}>Manage</Button>
+          </div>
+          <div className="px-6 py-5 flex flex-col gap-3 text-sm font-medium text-[#1F2933]">
+            <div className="flex items-center justify-between p-3 rounded-md border border-[#EAF1F7] bg-[#F8FAFC]">
+              <div className="flex items-center gap-3">
+                <FileText className="h-5 w-5 text-[#667085]" />
+                <div>
+                  <p className="font-bold">Documents</p>
+                  <p className="text-xs text-[#667085]">{profileData?.documents?.length || 0} uploaded</p>
+                </div>
+              </div>
+              <StatusBadge tone={(profileData?.documents?.length || 0) > 1 ? "success" : "warning"}>
+                {(profileData?.documents?.length || 0) > 1 ? "Provided" : "Action Needed"}
+              </StatusBadge>
+            </div>
+            <p className="text-xs text-[#667085] mt-2">
+              Upload your ID proof, address proof, and business registrations.
+            </p>
+          </div>
+        </SellerPanel>
+      </div>
+
+      {activeModal === "STORE_DETAILS" && (
+        <EditStoreDetailsModal
+          open={true}
+          onClose={() => setActiveModal(null)}
+          authHeaders={sellerAuth.authHeaders!}
+          authKey={sellerAuth.authKey!}
+          profile={profileData}
+          businessTypes={businessTypes}
+        />
+      )}
+      {activeModal === "PAYOUT" && (
+        <EditPayoutModal
+          open={true}
+          onClose={() => setActiveModal(null)}
+          authHeaders={sellerAuth.authHeaders!}
+          authKey={sellerAuth.authKey!}
+          profile={profileData}
+        />
+      )}
+      {activeModal === "ADDRESS" && (
+        <EditAddressModal
+          open={true}
+          onClose={() => setActiveModal(null)}
+          authHeaders={sellerAuth.authHeaders!}
+          authKey={sellerAuth.authKey!}
+          profile={profileData}
+        />
+      )}
+      {activeModal === "DOCUMENTS" && (
+        <EditDocumentsModal
+          open={true}
+          onClose={() => setActiveModal(null)}
+          authHeaders={sellerAuth.authHeaders!}
+          authKey={sellerAuth.authKey!}
+          profile={profileData}
+          verificationDocuments={verificationDocuments}
+          DocumentUploadField={DocumentUploadField}
+        />
+      )}
     </div>
   );
 }

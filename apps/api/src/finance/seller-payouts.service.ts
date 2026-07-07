@@ -576,6 +576,16 @@ export class SellerPayoutsService {
         },
       });
 
+      await tx.sellerLedgerEntry.updateMany({
+        where: {
+          payoutId,
+          entryType: SellerLedgerEntryType.MANUAL_ADJUSTMENT,
+        },
+        data: {
+          payoutId: null,
+        },
+      });
+
       await this.createEvent(tx, payoutId, "payout.rejected", payout.status, SellerPayoutStatus.REJECTED, actor, dto.note);
       await this.audit(tx, actor, "finance.payout.rejected", payoutId, { status: payout.status }, { status: SellerPayoutStatus.REJECTED, note: dto.note });
 
@@ -692,7 +702,7 @@ export class SellerPayoutsService {
   }
 
   private async payoutSplitSummary(tx: Prisma.TransactionClient, payoutId: string) {
-    const [summary, b2bSummary, serviceSummary, receivableOffsetSummary] = await Promise.all([
+    const [summary, b2bSummary, serviceSummary, receivableOffsetSummary, manualAdjustmentSummary] = await Promise.all([
       tx.orderSellerSplit.aggregate({
         where: { payoutId },
         _count: { _all: true },
@@ -712,9 +722,14 @@ export class SellerPayoutsService {
         where: { payoutOffsetId: payoutId },
         _count: { _all: true },
         _sum: { offsetPaise: true }
+      }),
+      tx.sellerLedgerEntry.aggregate({
+        where: { payoutId, entryType: SellerLedgerEntryType.MANUAL_ADJUSTMENT },
+        _sum: { creditPaise: true, debitPaise: true }
       })
     ]);
     const receivableOffsetPaise = receivableOffsetSummary._sum.offsetPaise ?? 0;
+    const manualAdjustmentPaise = (manualAdjustmentSummary._sum.creditPaise ?? 0) - (manualAdjustmentSummary._sum.debitPaise ?? 0);
 
     return {
       splitCount: summary._count._all,
@@ -725,7 +740,8 @@ export class SellerPayoutsService {
         (summary._sum.netPayablePaise ?? 0) +
         (b2bSummary._sum.sellerPayoutAmountPaise ?? 0) +
         (serviceSummary._sum.netPayablePaise ?? 0) -
-        receivableOffsetPaise
+        receivableOffsetPaise +
+        manualAdjustmentPaise
     };
   }
 

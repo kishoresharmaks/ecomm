@@ -102,6 +102,7 @@ import {
   userFacingApiErrorMessage,
   type IndihubAuthHeaders,
 } from "@/lib/api";
+import { AdminSellerProfileModal } from "@/components/admin/admin-seller-profile-modal";
 import { openB2BPurchaseOrderDocument } from "@/lib/b2b-po-documents";
 import {
   downloadSellerAuditWorkbook,
@@ -186,7 +187,7 @@ type CustomerRecord = {
   };
 };
 
-type SellerRecord = {
+export type SellerRecord = {
   id: string;
   storeName: string;
   slug: string;
@@ -228,7 +229,7 @@ type SellerRecord = {
   };
 };
 
-type AddressSnapshotRecord = {
+export type AddressSnapshotRecord = {
   fullName?: string | null;
   phone?: string | null;
   line1?: string | null;
@@ -246,7 +247,7 @@ type AddressSnapshotRecord = {
   locationConfidenceScore?: number | string | null;
 };
 
-type SellerAddressRecord = AddressSnapshotRecord & {
+export type SellerAddressRecord = AddressSnapshotRecord & {
   id?: string;
   sellerId?: string;
 };
@@ -2027,6 +2028,7 @@ export function AdminSellersPageClient() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [exportNotice, setExportNotice] = useState<string | null>(null);
+  const [viewingSeller, setViewingSeller] = useState<SellerRecord | null>(null);
   const confirmation = useAdminConfirmation();
   const query = useAdminList<SellerRecord>(
     "admin-sellers",
@@ -2191,6 +2193,12 @@ export function AdminSellersPageClient() {
                 label="Seller actions"
                 items={[
                   {
+                    label: "View complete profile",
+                    description: "Review documents and seller details",
+                    icon: <Eye className="h-4 w-4 text-[#163B5C]" />,
+                    onSelect: () => setViewingSeller(item),
+                  },
+                  {
                     label: "Approve seller",
                     description: "Unlock catalogue and order operations",
                     icon: <CheckCircle2 className="h-4 w-4 text-[#0F8A5F]" />,
@@ -2259,6 +2267,11 @@ export function AdminSellersPageClient() {
             ),
           },
         ]}
+      />
+      <AdminSellerProfileModal
+        seller={viewingSeller}
+        open={Boolean(viewingSeller)}
+        onClose={() => setViewingSeller(null)}
       />
     </AdminResourceChrome>
   );
@@ -17449,7 +17462,7 @@ function useAdminList<T>(
   });
 }
 
-function adminRequest<T = unknown>(
+export function adminRequest<T = unknown>(
   path: string,
   authHeaders: IndihubAuthHeaders,
   init?: RequestInit,
