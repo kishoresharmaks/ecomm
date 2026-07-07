@@ -579,12 +579,12 @@ function isRazorpaySessionStatus(value: unknown): value is MobileRazorpayPayment
 
 function isRecentTimestamp(value: string | undefined, maxAgeMs: number) {
   if (!value) {
-    return true;
+    return false;
   }
 
   const timestamp = new Date(value).getTime();
   if (!Number.isFinite(timestamp)) {
-    return true;
+    return false;
   }
 
   const ageMs = Date.now() - timestamp;

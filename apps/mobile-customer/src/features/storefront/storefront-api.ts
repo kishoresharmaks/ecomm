@@ -231,6 +231,7 @@ export type MobileRazorpayVerificationResponse = {
 export type MobileOrderSummary = {
   id: string;
   orderNumber: string;
+  idempotencyKey?: string | null;
   orderStatus: string;
   paymentStatus: string;
   deliveryStatus: string;

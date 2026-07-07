@@ -125,7 +125,10 @@ function combineDateAndTime(dateValue: string | null, timeSlot: string | null) {
   if (!date) {
     return undefined;
   }
-  const time = timeSlot?.match(/\d{1,2}:\d{2}/)?.[0] ?? "09:00";
+  const time = timeSlot?.match(/\d{1,2}:\d{2}/)?.[0];
+  if (!time) {
+    throw new Error("Select a preferred time slot.");
+  }
   const parsed = new Date(`${date}T${time}:00`);
   if (Number.isNaN(parsed.getTime())) {
     throw new Error("Select a valid preferred date and time.");

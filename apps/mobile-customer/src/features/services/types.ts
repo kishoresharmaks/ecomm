@@ -136,12 +136,41 @@ export type BackendServicePayment = {
   id: string;
   provider?: string;
   purpose?: string;
+  collectionType?: string | null;
+  cashCollectionStatus?: string | null;
   amountPaise: number;
   currency: string;
   status: BackendPaymentStatus;
+  providerOrderId?: string | null;
+  providerPaymentId?: string | null;
   referenceNumber?: string | null;
+  description?: string | null;
   paidAt?: string | null;
   createdAt?: string;
+};
+
+export type BackendServiceRazorpayOrderResponse = {
+  keyId: string;
+  razorpayOrderId: string;
+  amountPaise: number;
+  currency: string;
+  bookingNumber: string;
+  servicePaymentId: string;
+  purpose: string;
+};
+
+export type BackendServiceRazorpayVerificationPayload = {
+  razorpayOrderId: string;
+  razorpayPaymentId: string;
+  razorpaySignature: string;
+};
+
+export type BackendServiceRazorpayVerificationResponse = {
+  received: boolean;
+  paymentId: string;
+  status: BackendPaymentStatus;
+  ignored?: boolean;
+  reason?: string;
 };
 
 export type BackendServiceDispute = {
@@ -283,7 +312,13 @@ export type MobileServicePayment = {
   status: MobilePaymentStatus;
   provider: string | null;
   purpose: string | null;
+  collectionType: string | null;
+  cashCollectionStatus: string | null;
+  providerOrderId: string | null;
+  providerPaymentId: string | null;
+  referenceNumber: string | null;
   paidAt: string | null;
+  createdAt: string | null;
   description: string | null;
 };
 

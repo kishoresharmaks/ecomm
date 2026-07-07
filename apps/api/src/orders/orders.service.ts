@@ -4232,6 +4232,7 @@ export class OrdersService {
     return {
       id: order.id,
       orderNumber: order.orderNumber,
+      idempotencyKey: order.idempotencyKey,
       orderStatus: order.orderStatus,
       paymentStatus: order.paymentStatus,
       deliveryStatus: order.deliveryStatus,

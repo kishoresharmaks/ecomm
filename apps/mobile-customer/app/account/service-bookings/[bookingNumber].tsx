@@ -10,7 +10,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Stack, useLocalSearchParams } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { EmptyState } from "../../../src/components/empty-state";
 import { Screen } from "../../../src/components/screen";
@@ -30,22 +30,37 @@ import { formatPaiseLocal, InfoLine } from "../../../src/features/services/servi
 import {
   acceptCustomerServiceQuote,
   cancelCustomerServiceBooking,
+  confirmCustomerServiceCashCollection,
   confirmCustomerServiceCompletion,
   createCustomerServiceReview,
+  disputeCustomerServiceCashCollection,
   getCustomerServiceBooking,
   raiseCustomerServiceDispute,
   rejectCustomerServiceQuote,
 } from "../../../src/features/services/services-api";
-import type { MobileServiceAction, MobileServiceBooking } from "../../../src/features/services/types";
+import {
+  canRetryServiceRazorpayPayment,
+  isPaidServiceRazorpayStatus,
+  isServiceRazorpayVerificationPendingForPayment,
+  recoverServiceRazorpayPaymentSession,
+  runMobileServiceRazorpayPayment,
+  serviceRazorpayStatusRetryMessage,
+  SERVICE_RAZORPAY_VERIFICATION_PENDING_MESSAGE,
+  verifyStoredServiceRazorpayPayment,
+  type MobileServiceRazorpayPaymentSession,
+  type MobileServiceRazorpayPaymentStage,
+} from "../../../src/features/services/service-razorpay-payment";
+import type { MobileServiceAction, MobileServiceBooking, MobileServicePayment } from "../../../src/features/services/types";
 import { getAllowedServiceBookingActions, serviceBookingStatusTone } from "../../../src/features/services/utils/bookingActions";
 import {
   cleanCancellationPayload,
   cleanDisputePayload,
   cleanReviewPayload,
 } from "../../../src/features/services/utils/payloadCleaners";
+import { captureMobileException } from "../../../src/lib/mobile-telemetry";
 import { colors } from "../../../src/theme";
 
-type Sheet = "cancel" | "reject" | "dispute" | "review" | null;
+type Sheet = "cancel" | "reject" | "dispute" | "cash-dispute" | "review" | null;
 
 const disputeReasons = ["Work not completed", "Quality issue", "Incorrect charge", "Provider no-show", "Other"] as const;
 type DisputeReason = (typeof disputeReasons)[number];
@@ -64,6 +79,10 @@ export default function ServiceBookingDetailScreen() {
   const [reviewBody, setReviewBody] = useState("");
   const [actionMessage, setActionMessage] = useState("");
   const [actionError, setActionError] = useState("");
+  const [activePaymentId, setActivePaymentId] = useState<string | null>(null);
+  const [cashDisputePaymentId, setCashDisputePaymentId] = useState<string | null>(null);
+  const [paymentProgressText, setPaymentProgressText] = useState<string | null>(null);
+  const [paymentSession, setPaymentSession] = useState<MobileServiceRazorpayPaymentSession | null>(null);
 
   const bookingQuery = useQuery({
     queryKey: serviceKeys.booking(customerAuth.authKey, bookingNumber ?? ""),
@@ -143,6 +162,135 @@ export default function ServiceBookingDetailScreen() {
     onError: (error) => setActionError(accountErrorMessage(error, "Review could not be submitted.")),
   });
 
+  function setServiceRazorpayStageText(stage: MobileServiceRazorpayPaymentStage) {
+    setPaymentProgressText(
+      stage === "provider-order"
+        ? "Starting secure payment..."
+        : stage === "verification"
+          ? "Verifying payment..."
+          : "Opening Razorpay...",
+    );
+  }
+
+  const paymentMutation = useMutation({
+    mutationFn: async (payment: MobileServicePayment) => {
+      if (!bookingNumber) throw new Error("Booking number is missing.");
+      setActivePaymentId(payment.id);
+      setActionError("");
+      setActionMessage("");
+      const verification = await runMobileServiceRazorpayPayment({
+        auth: customerAuth.authHeaders,
+        bookingNumber,
+        paymentId: payment.id,
+        prefill: customerAuth.userProfile,
+        onStageChange: setServiceRazorpayStageText,
+      });
+      if (!isPaidServiceRazorpayStatus(verification.status)) {
+        throw new Error(serviceRazorpayStatusRetryMessage(verification.status));
+      }
+      return verification;
+    },
+    onSuccess: async () => {
+      setPaymentProgressText(null);
+      setPaymentSession(null);
+      setActionMessage("Service payment completed successfully.");
+      await invalidateBooking(bookingQuery.data);
+    },
+    onError: async (error) => {
+      setPaymentProgressText(null);
+      setActionError(accountErrorMessage(error, "Service payment could not be completed."));
+      setPaymentSession(await recoverServiceRazorpayPaymentSession());
+      await invalidateBooking(bookingQuery.data);
+    },
+    onSettled: () => setActivePaymentId(null),
+  });
+
+  const verifyPaymentMutation = useMutation({
+    mutationFn: async (session: MobileServiceRazorpayPaymentSession) => {
+      setActivePaymentId(session.servicePaymentId);
+      setActionError("");
+      setActionMessage("");
+      const verification = await verifyStoredServiceRazorpayPayment(customerAuth.authHeaders, session, setServiceRazorpayStageText);
+      if (!isPaidServiceRazorpayStatus(verification.status)) {
+        throw new Error(serviceRazorpayStatusRetryMessage(verification.status));
+      }
+      return verification;
+    },
+    onSuccess: async () => {
+      setPaymentProgressText(null);
+      setPaymentSession(null);
+      setActionMessage("Service payment verified successfully.");
+      await invalidateBooking(bookingQuery.data);
+    },
+    onError: async (error) => {
+      setPaymentProgressText(null);
+      setActionError(accountErrorMessage(error, "Payment is received but verification is still pending. Try Verify payment again."));
+      setPaymentSession(await recoverServiceRazorpayPaymentSession());
+      await invalidateBooking(bookingQuery.data);
+    },
+    onSettled: () => setActivePaymentId(null),
+  });
+
+  const cashPaymentMutation = useMutation({
+    mutationFn: async (input: { action: "confirm" | "dispute"; paymentId: string; reason?: string }) => {
+      if (!bookingNumber) throw new Error("Booking number is missing.");
+      setActivePaymentId(input.paymentId);
+      if (input.action === "confirm") {
+        return confirmCustomerServiceCashCollection(customerAuth.authHeaders, bookingNumber, input.paymentId);
+      }
+      return disputeCustomerServiceCashCollection(customerAuth.authHeaders, bookingNumber, input.paymentId, {
+        reason: input.reason ?? "Customer disputed provider cash collection.",
+      });
+    },
+    onSuccess: async (booking, input) => {
+      setSheet(null);
+      setDisputeDescription("");
+      setCashDisputePaymentId(null);
+      setActionMessage(input.action === "confirm" ? "Cash payment confirmed." : "Cash payment dispute submitted.");
+      await invalidateBooking(booking);
+    },
+    onError: (error) => setActionError(accountErrorMessage(error, "Cash payment action could not be completed.")),
+    onSettled: () => setActivePaymentId(null),
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    async function recoverSession() {
+      if (!customerAuth.enabled || !bookingNumber) {
+        return;
+      }
+      let session: MobileServiceRazorpayPaymentSession | null;
+      try {
+        session = await recoverServiceRazorpayPaymentSession();
+      } catch (error) {
+        captureMobileException(error, "service_razorpay_session_recovery_failed", {
+          bookingNumber,
+        });
+        if (!cancelled) {
+          setActionError(
+            "We could not recover the last payment attempt on this device. If payment is still pending, please retry payment from this booking.",
+          );
+        }
+        return;
+      }
+      if (cancelled) {
+        return;
+      }
+      if (session && session.bookingNumber === bookingNumber) {
+        setPaymentSession(session);
+        if (session.status === "checkout_succeeded_verification_pending" && !verifyPaymentMutation.isPending) {
+          verifyPaymentMutation.mutate(session);
+        }
+      }
+    }
+
+    void recoverSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [bookingNumber, customerAuth.enabled]);
+
   if (!bookingNumber) {
     return (
       <Screen>
@@ -194,7 +342,14 @@ export default function ServiceBookingDetailScreen() {
   }
 
   const actions = getAllowedServiceBookingActions(booking.status, { hasReview: Boolean(booking.review) });
-  const busy = actionMutation.isPending || cancelMutation.isPending || disputeMutation.isPending || reviewMutation.isPending;
+  const busy =
+    actionMutation.isPending ||
+    cancelMutation.isPending ||
+    disputeMutation.isPending ||
+    reviewMutation.isPending ||
+    paymentMutation.isPending ||
+    verifyPaymentMutation.isPending ||
+    cashPaymentMutation.isPending;
 
   return (
     <>
@@ -251,19 +406,30 @@ export default function ServiceBookingDetailScreen() {
               </DetailSection>
             ) : null}
 
-            {booking.payments.length ? (
-              <DetailSection title="Payments">
-                {booking.payments.map((payment) => (
-                  <View key={payment.id} style={styles.paymentRow}>
-                    <HugeiconsIcon color={colors.primary} icon={CreditCardIcon} size={20} strokeWidth={2.1} />
-                    <View style={styles.paymentBody}>
-                      <Text style={styles.rowTitle}>{formatPaiseLocal(payment.amountPaise, payment.currency)}</Text>
-                      <Text style={styles.metaText}>{[payment.provider, payment.purpose, formatStatus(payment.status)].filter(Boolean).join(" · ")}</Text>
-                    </View>
-                  </View>
-                ))}
-              </DetailSection>
-            ) : null}
+            <DetailSection title="Payments">
+              {booking.payments.length ? (
+                booking.payments.map((payment) => (
+                  <PaymentRow
+                    key={payment.id}
+                    active={activePaymentId === payment.id}
+                    booking={booking}
+                    disabled={busy}
+                    payment={payment}
+                    progressText={paymentProgressText}
+                    session={paymentSession}
+                    onCashConfirm={() => cashPaymentMutation.mutate({ action: "confirm", paymentId: payment.id })}
+                    onCashDispute={() => {
+                      setCashDisputePaymentId(payment.id);
+                      setSheet("cash-dispute");
+                    }}
+                    onPay={() => paymentMutation.mutate(payment)}
+                    onVerify={(session) => verifyPaymentMutation.mutate(session)}
+                  />
+                ))
+              ) : (
+                <Text style={styles.bodyText}>No payment records yet.</Text>
+              )}
+            </DetailSection>
 
             {booking.dispute ? (
               <DetailSection title="Dispute">
@@ -316,6 +482,24 @@ export default function ServiceBookingDetailScreen() {
         <SheetButton busy={disputeMutation.isPending} label="Submit Dispute" onPress={() => disputeMutation.mutate()} />
       </ActionSheet>
 
+      <ActionSheet visible={sheet === "cash-dispute"} title="Dispute Cash Payment" onClose={() => setSheet(null)}>
+        <Text style={styles.bodyText}>Use this if the provider recorded a cash payment that you did not make, or the amount is incorrect.</Text>
+        <TextInput multiline maxLength={500} placeholder="Describe the cash payment issue" placeholderTextColor={colors.muted} style={styles.sheetInput} value={disputeDescription} onChangeText={setDisputeDescription} />
+        <SheetButton
+          busy={cashPaymentMutation.isPending}
+          label="Submit Cash Dispute"
+          onPress={() => {
+            if (cashDisputePaymentId) {
+              cashPaymentMutation.mutate({
+                action: "dispute",
+                paymentId: cashDisputePaymentId,
+                reason: disputeDescription.trim() || "Customer disputed provider cash collection.",
+              });
+            }
+          }}
+        />
+      </ActionSheet>
+
       <ActionSheet visible={sheet === "review"} title="Rate Your Experience" onClose={() => setSheet(null)}>
         <View style={styles.stars}>
           {[1, 2, 3, 4, 5].map((rating) => (
@@ -357,6 +541,89 @@ function AmountRow({ currency, label, strong = false, value }: { currency: strin
   );
 }
 
+function PaymentRow({
+  active,
+  booking,
+  disabled,
+  onCashConfirm,
+  onCashDispute,
+  onPay,
+  onVerify,
+  payment,
+  progressText,
+  session,
+}: {
+  active: boolean;
+  booking: MobileServiceBooking;
+  disabled: boolean;
+  onCashConfirm: () => void;
+  onCashDispute: () => void;
+  onPay: () => void;
+  onVerify: (session: MobileServiceRazorpayPaymentSession) => void;
+  payment: MobileServicePayment;
+  progressText: string | null;
+  session: MobileServiceRazorpayPaymentSession | null;
+}) {
+  const verificationPending = isServiceRazorpayVerificationPendingForPayment(session, booking.bookingNumber, payment.id);
+  const canPay = canRetryServiceRazorpayPayment(booking, payment) && !verificationPending;
+  const isObsoleteRazorpay =
+    payment.provider?.toUpperCase() === "RAZORPAY" &&
+    (payment.status === "pending" || payment.status === "failed") &&
+    !canPay &&
+    !verificationPending;
+  const providerCash = payment.collectionType === "PROVIDER_CASH";
+  const cashAwaitingCustomer = providerCash && ["RECORDED", "REOPENED"].includes(payment.cashCollectionStatus ?? "");
+  const actionLabel = payment.status === "failed" ? "Retry payment" : "Pay now";
+  const reference = payment.providerPaymentId ?? payment.providerOrderId ?? payment.referenceNumber;
+
+  return (
+    <View style={styles.paymentRow}>
+      <HugeiconsIcon color={colors.primary} icon={CreditCardIcon} size={20} strokeWidth={2.1} />
+      <View style={styles.paymentBody}>
+        <View style={styles.paymentHeader}>
+          <Text style={styles.rowTitle}>{formatPaiseLocal(payment.amountPaise, payment.currency)}</Text>
+          <StatusPill label={payment.status} tone={paymentStatusTone(payment.status)} />
+        </View>
+        <Text style={styles.metaText}>{[payment.provider, payment.purpose].filter(Boolean).join(" | ") || "Payment record"}</Text>
+        <Text style={styles.metaText}>{reference ?? (payment.createdAt ? `Created ${formatDateTime(payment.createdAt)}` : "No provider reference yet")}</Text>
+        {verificationPending ? (
+          <View style={styles.paymentNotice}>
+            <Text style={styles.paymentNoticeText}>{SERVICE_RAZORPAY_VERIFICATION_PENDING_MESSAGE}</Text>
+            <PaymentActionButton
+              disabled={disabled}
+              label={active ? progressText ?? "Verifying payment..." : "Verify payment"}
+              secondary
+              onPress={() => session && onVerify(session)}
+            />
+          </View>
+        ) : null}
+        {canPay ? (
+          <View style={styles.paymentActions}>
+            <PaymentActionButton disabled={disabled} label={active ? progressText ?? "Processing payment..." : actionLabel} onPress={onPay} />
+          </View>
+        ) : null}
+        {isObsoleteRazorpay ? (
+          <Text style={styles.metaText}>This online payment request is no longer required due to balance updates.</Text>
+        ) : null}
+        {cashAwaitingCustomer ? (
+          <View style={styles.paymentActions}>
+            <PaymentActionButton disabled={disabled} label={active ? "Updating..." : "Confirm cash paid"} onPress={onCashConfirm} />
+            <PaymentActionButton disabled={disabled} label="Dispute cash" secondary onPress={onCashDispute} />
+          </View>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+function PaymentActionButton({ disabled, label, onPress, secondary = false }: { disabled: boolean; label: string; onPress: () => void; secondary?: boolean }) {
+  return (
+    <Pressable disabled={disabled} style={[styles.paymentButton, secondary ? styles.paymentButtonSecondary : null, disabled ? styles.disabled : null]} onPress={onPress}>
+      <Text style={[styles.paymentButtonText, secondary ? styles.paymentButtonSecondaryText : null]}>{label}</Text>
+    </Pressable>
+  );
+}
+
 function ActionSheet({ children, onClose, title, visible }: { children: React.ReactNode; onClose: () => void; title: string; visible: boolean }) {
   return (
     <Modal animationType="slide" transparent visible={visible} onRequestClose={onClose}>
@@ -373,6 +640,13 @@ function ActionSheet({ children, onClose, title, visible }: { children: React.Re
       </View>
     </Modal>
   );
+}
+
+function paymentStatusTone(status: string): "neutral" | "success" | "warning" | "danger" {
+  if (status === "paid") return "success";
+  if (status === "failed" || status === "refunded") return "danger";
+  if (status === "pending") return "warning";
+  return "neutral";
 }
 
 function SheetButton({ busy, label, onPress }: { busy: boolean; label: string; onPress: () => void }) {
@@ -517,6 +791,53 @@ const styles = StyleSheet.create({
   },
   paymentBody: {
     flex: 1,
+  },
+  paymentHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+    justifyContent: "space-between",
+  },
+  paymentActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 10,
+  },
+  paymentButton: {
+    alignItems: "center",
+    backgroundColor: colors.primary,
+    borderRadius: 8,
+    minHeight: 38,
+    justifyContent: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  paymentButtonText: {
+    color: colors.surface,
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  paymentButtonSecondary: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderWidth: 1,
+  },
+  paymentButtonSecondaryText: {
+    color: colors.primary,
+  },
+  paymentNotice: {
+    backgroundColor: "#FFF7ED",
+    borderRadius: 8,
+    marginTop: 10,
+    padding: 10,
+  },
+  paymentNoticeText: {
+    color: "#8A3A20",
+    fontSize: 12,
+    fontWeight: "900",
+    lineHeight: 17,
+    marginBottom: 8,
   },
   rowTitle: {
     color: colors.ink,

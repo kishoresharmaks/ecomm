@@ -247,8 +247,14 @@ export function mapServicePayment(raw: BackendServicePayment): MobileServicePaym
     status: mapPaymentStatus(raw.status),
     provider: raw.provider ?? null,
     purpose: raw.purpose ?? null,
+    collectionType: raw.collectionType ?? null,
+    cashCollectionStatus: raw.cashCollectionStatus ?? null,
+    providerOrderId: raw.providerOrderId ?? null,
+    providerPaymentId: raw.providerPaymentId ?? null,
+    referenceNumber: raw.referenceNumber ?? null,
     paidAt: raw.paidAt ?? null,
-    description: raw.referenceNumber ?? null,
+    createdAt: raw.createdAt ?? null,
+    description: raw.description ?? null,
   };
 }
 

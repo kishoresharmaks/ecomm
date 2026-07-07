@@ -886,6 +886,7 @@ export class PaymentsService {
         headers: {
           Authorization: `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString("base64")}`,
           "Content-Type": "application/json",
+          "X-Razorpay-Idempotency-Key": this.serviceProviderOrderIdempotencyKey(payment.id),
         },
         body: JSON.stringify({
           amount: payment.amountPaise,
@@ -2817,6 +2818,13 @@ export class PaymentsService {
     if (terminalPaymentStatuses.includes(payment.status)) {
       throw new BadRequestException("This service payment is already closed.");
     }
+    const balanceDuePaise = Math.max(0, payment.booking.totalPayablePaise - payment.booking.paidAmountPaise);
+    if (balanceDuePaise <= 0) {
+      throw new BadRequestException("This service booking has no payable balance.");
+    }
+    if (payment.amountPaise > balanceDuePaise) {
+      throw new BadRequestException("This service payment request is no longer required due to balance updates.");
+    }
     const blockedStatuses: ServiceBookingStatus[] = [
       ServiceBookingStatus.CANCELLED,
       ServiceBookingStatus.CANCELLED_AFTER_DISPUTE,
@@ -2827,6 +2835,10 @@ export class PaymentsService {
     if (blockedStatuses.includes(payment.booking.status)) {
       throw new BadRequestException("This service booking is no longer payable.");
     }
+  }
+
+  private serviceProviderOrderIdempotencyKey(servicePaymentId: string) {
+    return `service-provider-order:${servicePaymentId}`;
   }
 
   private async getRazorpayWebhookSecret() {

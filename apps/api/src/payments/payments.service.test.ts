@@ -719,6 +719,85 @@ describe("PaymentsService", () => {
     });
   });
 
+  it("sends an idempotency header when creating a Razorpay service provider order", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ id: "service_order_new" }),
+      }),
+    );
+    prisma.client.servicePayment.findFirst.mockResolvedValue(
+      createServicePaymentRecord({ providerOrderId: null }),
+    );
+    prisma.client.setting.findMany.mockResolvedValue([
+      { key: "payments.razorpay.enabled", value: true },
+    ]);
+    prisma.client.servicePayment.updateMany.mockResolvedValue({ count: 1 });
+    prisma.client.servicePayment.update.mockResolvedValue(
+      createServicePaymentRecord({ providerOrderId: "service_order_new" }),
+    );
+    const service = new PaymentsService(prisma as never, notifications as never);
+
+    await service.createServiceRazorpayOrder(
+      { id: "user_customer" } as never,
+      "SRV-2026-ABCDEF",
+      "service_payment_1",
+    );
+
+    expect(fetch).toHaveBeenCalledWith(
+      "https://api.razorpay.com/v1/orders",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          "X-Razorpay-Idempotency-Key": "service-provider-order:service_payment_1",
+        }),
+      }),
+    );
+  });
+
+  it("blocks stale Razorpay service provider order creation when balance is already paid", async () => {
+    vi.stubGlobal("fetch", vi.fn());
+    prisma.client.servicePayment.findFirst.mockResolvedValue(
+      createServicePaymentRecord({
+        providerOrderId: null,
+        booking: createServiceBookingRecord({ paidAmountPaise: 500 }),
+      }),
+    );
+    const service = new PaymentsService(prisma as never, notifications as never);
+
+    await expect(
+      service.createServiceRazorpayOrder(
+        { id: "user_customer" } as never,
+        "SRV-2026-ABCDEF",
+        "service_payment_1",
+      ),
+    ).rejects.toThrow("no payable balance");
+    expect(fetch).not.toHaveBeenCalled();
+    expect(prisma.client.servicePayment.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("blocks obsolete Razorpay service provider order creation when payment exceeds remaining balance", async () => {
+    vi.stubGlobal("fetch", vi.fn());
+    prisma.client.servicePayment.findFirst.mockResolvedValue(
+      createServicePaymentRecord({
+        amountPaise: 500,
+        providerOrderId: null,
+        booking: createServiceBookingRecord({ paidAmountPaise: 100 }),
+      }),
+    );
+    const service = new PaymentsService(prisma as never, notifications as never);
+
+    await expect(
+      service.createServiceRazorpayOrder(
+        { id: "user_customer" } as never,
+        "SRV-2026-ABCDEF",
+        "service_payment_1",
+      ),
+    ).rejects.toThrow("no longer required");
+    expect(fetch).not.toHaveBeenCalled();
+    expect(prisma.client.servicePayment.updateMany).not.toHaveBeenCalled();
+  });
+
   it("creates service settlement with finance rule deductions after a completed Razorpay service payment", async () => {
     const signature = createHmac("sha256", "key_secret")
       .update("service_order_1|service_pay_1")

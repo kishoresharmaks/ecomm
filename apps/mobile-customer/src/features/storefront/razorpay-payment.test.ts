@@ -129,6 +129,27 @@ describe("mobile Razorpay payment helpers", () => {
         payments: [{ id: "payment", method: "RAZORPAY", provider: "RAZORPAY", status: "PENDING" }],
       }),
     ).toBe(false);
+    expect(
+      canRetryRazorpayPayment({
+        paymentStatus: "PENDING",
+        payments: [
+          {
+            id: "payment",
+            method: "RAZORPAY",
+            provider: "RAZORPAY",
+            status: "PENDING",
+            createdAt: "2026-06-13T09:45:00.000Z",
+          },
+        ],
+      }),
+    ).toBe(false);
+    expect(
+      canRetryRazorpayPayment({
+        createdAt: "2026-06-13T09:30:00.000Z",
+        paymentStatus: "PENDING",
+        payments: [{ id: "payment", method: "RAZORPAY", provider: "RAZORPAY", status: "PENDING" }],
+      }),
+    ).toBe(false);
   });
 
   it("keeps duplicate payment actions blocked while either flow is pending", () => {

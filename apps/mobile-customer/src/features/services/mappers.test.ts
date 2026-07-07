@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   mapBookingStatus,
+  mapServicePayment,
   mapPricingModel,
   mapVisitMode,
   ServiceMappingError,
@@ -43,5 +44,28 @@ describe("service mappers", () => {
 
   it("throws a typed error for unknown raw values", () => {
     expect(() => mapPricingModel("NEW_MODEL" as never)).toThrow(ServiceMappingError);
+  });
+
+  it("does not reuse payment reference numbers as descriptions", () => {
+    expect(
+      mapServicePayment({
+        id: "payment-1",
+        amountPaise: 50000,
+        currency: "INR",
+        status: "PENDING",
+        referenceNumber: "UTR123",
+      }).description,
+    ).toBeNull();
+
+    expect(
+      mapServicePayment({
+        id: "payment-2",
+        amountPaise: 50000,
+        currency: "INR",
+        status: "PAID",
+        referenceNumber: "UTR123",
+        description: "Inspection fee",
+      }).description,
+    ).toBe("Inspection fee");
   });
 });

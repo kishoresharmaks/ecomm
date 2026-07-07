@@ -13,6 +13,9 @@ import type {
   BackendPaginatedServices,
   BackendServiceBooking,
   BackendServiceListing,
+  BackendServiceRazorpayOrderResponse,
+  BackendServiceRazorpayVerificationPayload,
+  BackendServiceRazorpayVerificationResponse,
   BackendServiceReview,
   BackendBookingStatus,
 } from "./types";
@@ -70,6 +73,55 @@ export function getCustomerServiceBooking(auth: MobileAuthHeaders, bookingNumber
   return getJson<BackendServiceBooking>({
     path: `/account/service-bookings/${encodeURIComponent(bookingNumber)}`,
     auth,
+  }).then(mapServiceBooking);
+}
+
+export function createCustomerServiceRazorpayOrder(
+  auth: MobileAuthHeaders,
+  bookingNumber: string,
+  paymentId: string,
+) {
+  return postJson<BackendServiceRazorpayOrderResponse>({
+    path: `/account/service-bookings/${encodeURIComponent(bookingNumber)}/payments/${encodeURIComponent(paymentId)}/razorpay-order`,
+    auth,
+  });
+}
+
+export function verifyCustomerServiceRazorpayPayment(
+  auth: MobileAuthHeaders,
+  bookingNumber: string,
+  payload: BackendServiceRazorpayVerificationPayload,
+) {
+  return postJson<BackendServiceRazorpayVerificationResponse>({
+    path: `/account/service-bookings/${encodeURIComponent(bookingNumber)}/payments/razorpay/verify`,
+    auth,
+    body: payload,
+  });
+}
+
+export function confirmCustomerServiceCashCollection(
+  auth: MobileAuthHeaders,
+  bookingNumber: string,
+  paymentId: string,
+  payload: { note?: string } = {},
+) {
+  return postJson<BackendServiceBooking>({
+    path: `/account/service-bookings/${encodeURIComponent(bookingNumber)}/cash-collections/${encodeURIComponent(paymentId)}/confirm`,
+    auth,
+    body: payload,
+  }).then(mapServiceBooking);
+}
+
+export function disputeCustomerServiceCashCollection(
+  auth: MobileAuthHeaders,
+  bookingNumber: string,
+  paymentId: string,
+  payload: { reason: string },
+) {
+  return postJson<BackendServiceBooking>({
+    path: `/account/service-bookings/${encodeURIComponent(bookingNumber)}/cash-collections/${encodeURIComponent(paymentId)}/dispute`,
+    auth,
+    body: payload,
   }).then(mapServiceBooking);
 }
 

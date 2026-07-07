@@ -407,6 +407,7 @@ function CheckoutScreen() {
       const recoveredOrder = await recoverRecentlyPlacedOrder(customerAuth.authHeaders, summary.totalPaise, {
         attempts: isCartEmptyError(error) ? 1 : 4,
         delayMs: 900,
+        idempotencyKey: orderIdempotencyRef.current?.key ?? null,
       });
       if (recoveredOrder && mountedRef.current) {
         orderIdempotencyRef.current = null;
@@ -1159,10 +1160,14 @@ function isRecoverableOrderPlacementError(error: unknown) {
 async function recoverRecentlyPlacedOrder(
   auth: Parameters<typeof listCustomerOrders>[0],
   expectedTotalPaise: number,
-  options: { attempts?: number; delayMs?: number } = {},
+  options: { attempts?: number; delayMs?: number; idempotencyKey?: string | null } = {},
 ) {
   const attempts = Math.max(1, options.attempts ?? 1);
   const delayMs = Math.max(0, options.delayMs ?? 0);
+  const expectedIdempotencyKey = options.idempotencyKey?.trim();
+  if (!expectedIdempotencyKey) {
+    return null;
+  }
 
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
@@ -1170,7 +1175,11 @@ async function recoverRecentlyPlacedOrder(
       const now = Date.now();
       const recoveredOrder =
         orders.items.find((order) => {
-          if (order.totalPaise !== expectedTotalPaise || !order.createdAt) {
+          if (
+            order.idempotencyKey !== expectedIdempotencyKey ||
+            order.totalPaise !== expectedTotalPaise ||
+            !order.createdAt
+          ) {
             return false;
           }
 

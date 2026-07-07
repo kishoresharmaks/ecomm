@@ -66,6 +66,16 @@ describe("payload cleaners", () => {
     expect(payload.scheduledStartAt).toContain("2026-07-01");
   });
 
+  it("requires a selected time slot when scheduling a preferred date", () => {
+    expect(() =>
+      cleanBookingPayload({
+        ...baseBooking,
+        preferredDate: "2026-07-01",
+        preferredTimeSlot: null,
+      }),
+    ).toThrow("Select a preferred time slot.");
+  });
+
   it("includes idempotency key when provided", () => {
     expect(cleanBookingPayload(baseBooking).idempotencyKey).toBe("mobile_service_test_abc123456789");
   });
