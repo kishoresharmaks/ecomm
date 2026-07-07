@@ -89,7 +89,7 @@ const serviceListingInclude = {
     include: {
       user: true,
       profile: true,
-      addresses: true,
+      addresses: { orderBy: { createdAt: "asc" as const } },
     },
   },
   category: true,
@@ -100,7 +100,7 @@ const serviceListingInclude = {
 
 const serviceBookingInclude = {
   customer: { include: { user: true } },
-  seller: { include: { user: true, profile: true } },
+  seller: { include: { user: true, profile: true, addresses: { orderBy: { createdAt: "asc" as const } } } },
   listing: { include: { images: true, category: true } },
   package: true,
   assignedTechnician: true,
@@ -661,7 +661,9 @@ export class ServiceMarketplaceService {
     const addressSnapshot =
       dto.visitMode === ServiceVisitMode.CUSTOMER_LOCATION
         ? await this.resolveBookingAddress(customer.id, dto)
-        : null;
+        : dto.visitMode === ServiceVisitMode.PROVIDER_LOCATION
+          ? this.providerBookingAddress(listing)
+          : null;
     if (dto.visitMode === ServiceVisitMode.CUSTOMER_LOCATION) {
       const serviceable = this.isListingServiceable(listing, addressSnapshot);
       if (!serviceable.serviceable) {
@@ -3898,6 +3900,32 @@ export class ServiceMarketplaceService {
       return null;
     }
     return this.enrichManualBookingAddress(dto.addressSnapshot);
+  }
+
+  private providerBookingAddress(listing: ServiceListingRecord) {
+    const address = listing.seller.addresses[0];
+    if (!address) {
+      throw new BadRequestException("Provider business address is not configured for provider-location bookings.");
+    }
+
+    return {
+      sellerId: listing.sellerId,
+      sellerName: listing.seller.storeName,
+      line1: address.line1,
+      line2: address.line2,
+      area: address.area,
+      city: address.city,
+      state: address.state,
+      pincode: address.pincode,
+      country: address.country,
+      countryCode: address.countryCode,
+      stateCode: address.stateCode,
+      cityCode: address.cityCode,
+      localAreaCode: address.localAreaCode,
+      latitude: address.latitude ? Number(address.latitude) : null,
+      longitude: address.longitude ? Number(address.longitude) : null,
+      addressType: "PROVIDER_BUSINESS_ADDRESS",
+    };
   }
 
   private async enrichManualBookingAddress(address: ServiceBookingAddressSnapshot) {

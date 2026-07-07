@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, BadgeCheck, CalendarDays, CheckCircle2, Clock, MapPin, Search, ShieldCheck, Star, Wrench } from "lucide-react";
+import { ArrowLeft, BadgeCheck, CalendarDays, CheckCircle2, Clock, MapPin, Navigation, Search, ShieldCheck, Star, Wrench } from "lucide-react";
 import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
 import { CustomerAuthNotice } from "@/components/auth/customer-auth-notice";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
@@ -17,7 +17,7 @@ import {
   type ServiceListing,
   type ServiceVisitMode,
 } from "@/lib/service-marketplace-api";
-import { formatMoney } from "@/lib/storefront-api";
+import { formatMoney, type SellerAddress } from "@/lib/storefront-api";
 import {
   buildCustomerServiceBookingPayload,
   hasManualServiceLocationInput,
@@ -209,6 +209,7 @@ function ServiceDetail({ slug }: { slug: string }) {
   const service = serviceQuery.data;
   const activeVisitMode = resolveVisitMode(service, selectedVisitMode);
   const needsCustomerAddress = activeVisitMode === "CUSTOMER_LOCATION";
+  const providerAddress = service?.seller.addresses?.[0] ?? null;
   const selectedServiceAddress = needsCustomerAddress ? selectedAddress : null;
   const showManualAddress = needsCustomerAddress && !selectedServiceAddress;
   const currentLocationReadyForServiceability = needsCustomerAddress && (Boolean(selectedServiceAddress) || manualLocationReadyForCheck);
@@ -342,11 +343,11 @@ function ServiceDetail({ slug }: { slug: string }) {
                       </label>
                       {showManualAddress ? <ManualAddressFields value={manualAddress} onChange={(patch) => setManualAddress((current) => ({ ...current, ...patch }))} /> : null}
                     </>
+                  ) : activeVisitMode === "PROVIDER_LOCATION" ? (
+                    <ProviderAddressPanel address={providerAddress} sellerName={service.seller.storeName} />
                   ) : (
                     <StorefrontNotice>
-                      {activeVisitMode === "REMOTE"
-                        ? "This is a remote service. No service address will be sent with the booking."
-                        : "You will visit the provider location. The provider will share the address after confirming the booking."}
+                      This is a remote service. No service address will be sent with the booking.
                     </StorefrontNotice>
                   )}
                   {needsCustomerAddress && isCheckingServiceability ? (
@@ -376,7 +377,14 @@ function ServiceDetail({ slug }: { slug: string }) {
                     <span className="text-xs font-bold uppercase tracking-wide text-[#667085]">Note</span>
                     <input name="customerNote" className="h-11 w-full rounded-md border border-[#E5E7EB] px-3 text-sm font-semibold" placeholder="Call before visit, preferred language, etc." />
                   </label>
-                  <Button type="submit" disabled={!customerAuth.enabled || bookingMutation.isPending}>
+                  <Button
+                    type="submit"
+                    disabled={
+                      !customerAuth.enabled ||
+                      bookingMutation.isPending ||
+                      (activeVisitMode === "PROVIDER_LOCATION" && !providerAddress)
+                    }
+                  >
                     {bookingMutation.isPending ? "Booking..." : service.pricingModel === "QUOTE_FIRST" ? "Request quote" : "Book service"}
                   </Button>
                   {notice ? <StorefrontNotice tone={notice.includes("created") ? "success" : "warning"}>{notice}</StorefrontNotice> : null}
@@ -440,6 +448,41 @@ function ManualAddressFields({
   );
 }
 
+function ProviderAddressPanel({
+  address,
+  sellerName,
+}: {
+  address: SellerAddress | null;
+  sellerName: string;
+}) {
+  if (!address) {
+    return (
+      <StorefrontNotice tone="warning">
+        Provider-location booking is enabled, but this provider has not published a business address yet.
+      </StorefrontNotice>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-[#FFD8CA] bg-[#FFF7F3] p-4">
+      <div className="flex items-start gap-3">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white text-[#ED3500] shadow-sm">
+          <Navigation className="h-5 w-5" aria-hidden="true" />
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-black text-[#123A5A]">Visit provider location</p>
+          <p className="mt-1 text-sm font-semibold leading-6 text-[#667085]">
+            Customers must visit {sellerName}. This address will be saved with your booking.
+          </p>
+          <p className="mt-3 rounded-lg border border-[#FFE0D6] bg-white p-3 text-sm font-black leading-6 text-[#1F2933]">
+            {formatServiceAddress(address)}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function useDebouncedValue<T>(value: T, delayMs: number) {
   const [debouncedValue, setDebouncedValue] = useState(value);
 
@@ -456,6 +499,22 @@ function cleanManualPincodeInput(value: string, countryCode?: string | null) {
     return value.replace(/\D/g, "").slice(0, 6);
   }
   return value.trim().toUpperCase().slice(0, 12);
+}
+
+function formatServiceAddress(address: {
+  line1?: string | null;
+  line2?: string | null;
+  area?: string | null;
+  city?: string | null;
+  state?: string | null;
+  pincode?: string | null;
+  country?: string | null;
+  countryCode?: string | null;
+}) {
+  const cityLine = [address.city, address.state, address.pincode].filter(Boolean).join(", ");
+  return [address.line1, address.line2, address.area, cityLine, address.country || address.countryCode]
+    .filter(Boolean)
+    .join(", ");
 }
 
 function MiniStat({ icon: Icon, label, value }: { icon: typeof Wrench; label: string; value: string }) {

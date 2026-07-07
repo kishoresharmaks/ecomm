@@ -1333,14 +1333,23 @@ function SellerServiceCalendar() {
               {weekDays.map((day) => {
                 const rule = rules.find((item) => item.dayOfWeek === day.value) ?? defaultRuleForDay(day.value);
                 return (
-                  <div key={day.value} className="grid gap-3 rounded-md border border-[#D9E2EA] bg-[#F8FAFC] p-3 md:grid-cols-[130px_1fr_1fr_100px] md:items-center">
+                  <div key={day.value} className="grid gap-3 rounded-md border border-[#D9E2EA] bg-[#F8FAFC] p-3 md:grid-cols-[130px_1fr_1fr_120px] md:items-center">
                     <label className="flex items-center gap-2 text-sm font-black text-[#123A5A]">
                       <input name={`rule:${day.value}:active`} type="checkbox" defaultChecked={rule.isActive !== false} />
                       {day.label}
                     </label>
-                    <input name={`rule:${day.value}:start`} type="time" defaultValue={minuteToTime(rule.startMinute)} className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold" />
-                    <input name={`rule:${day.value}:end`} type="time" defaultValue={minuteToTime(rule.endMinute)} className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold" />
-                    <input name={`rule:${day.value}:capacity`} type="number" min={1} max={50} defaultValue={rule.capacity ?? 1} className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold" />
+                    <label className="grid gap-1">
+                      <span className="text-[11px] font-black uppercase tracking-wide text-[#667085]">Start time</span>
+                      <input name={`rule:${day.value}:start`} type="time" defaultValue={minuteToTime(rule.startMinute)} className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold" />
+                    </label>
+                    <label className="grid gap-1">
+                      <span className="text-[11px] font-black uppercase tracking-wide text-[#667085]">End time</span>
+                      <input name={`rule:${day.value}:end`} type="time" defaultValue={minuteToTime(rule.endMinute)} className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold" />
+                    </label>
+                    <label className="grid gap-1">
+                      <span className="text-[11px] font-black uppercase tracking-wide text-[#667085]">Capacity</span>
+                      <input name={`rule:${day.value}:capacity`} type="number" min={1} max={50} defaultValue={rule.capacity ?? 1} className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold" />
+                    </label>
                   </div>
                 );
               })}
@@ -1405,30 +1414,42 @@ function SellerServiceCalendar() {
                       Remove
                     </Button>
                   </div>
-                  <input
-                    value={technician.name}
-                    onChange={(event) => updateTechnicianDraft(setTechnicianDrafts, technician.rowId, { name: event.target.value })}
-                    placeholder="Technician name"
-                    className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold"
-                  />
-                  <input
-                    value={technician.phone}
-                    onChange={(event) => updateTechnicianDraft(setTechnicianDrafts, technician.rowId, { phone: event.target.value })}
-                    placeholder="Phone"
-                    className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold"
-                  />
-                  <input
-                    value={technician.email}
-                    onChange={(event) => updateTechnicianDraft(setTechnicianDrafts, technician.rowId, { email: event.target.value })}
-                    placeholder="Email"
-                    className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold"
-                  />
-                  <input
-                    value={technician.skills}
-                    onChange={(event) => updateTechnicianDraft(setTechnicianDrafts, technician.rowId, { skills: event.target.value })}
-                    placeholder="Skills, comma separated"
-                    className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold"
-                  />
+                  <label className="grid gap-1">
+                    <span className="text-[11px] font-black uppercase tracking-wide text-[#667085]">Technician name</span>
+                    <input
+                      value={technician.name}
+                      onChange={(event) => updateTechnicianDraft(setTechnicianDrafts, technician.rowId, { name: event.target.value })}
+                      placeholder="e.g. Kumar"
+                      className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold"
+                    />
+                  </label>
+                  <label className="grid gap-1">
+                    <span className="text-[11px] font-black uppercase tracking-wide text-[#667085]">Phone</span>
+                    <input
+                      value={technician.phone}
+                      onChange={(event) => updateTechnicianDraft(setTechnicianDrafts, technician.rowId, { phone: event.target.value })}
+                      placeholder="Customer-visible contact if assigned"
+                      className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold"
+                    />
+                  </label>
+                  <label className="grid gap-1">
+                    <span className="text-[11px] font-black uppercase tracking-wide text-[#667085]">Email</span>
+                    <input
+                      value={technician.email}
+                      onChange={(event) => updateTechnicianDraft(setTechnicianDrafts, technician.rowId, { email: event.target.value })}
+                      placeholder="technician@example.com"
+                      className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold"
+                    />
+                  </label>
+                  <label className="grid gap-1">
+                    <span className="text-[11px] font-black uppercase tracking-wide text-[#667085]">Skills</span>
+                    <input
+                      value={technician.skills}
+                      onChange={(event) => updateTechnicianDraft(setTechnicianDrafts, technician.rowId, { skills: event.target.value })}
+                      placeholder="Washing machine, AC, installation"
+                      className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold"
+                    />
+                  </label>
                 </div>
               ))}
             </div>
@@ -1472,24 +1493,33 @@ function SellerServiceCalendar() {
                       Remove
                     </Button>
                   </div>
-                  <input
-                    type="datetime-local"
-                    value={window.startsAt}
-                    onChange={(event) => updateBlockedWindowDraft(setBlockedWindowDrafts, window.rowId, { startsAt: event.target.value })}
-                    className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold"
-                  />
-                  <input
-                    type="datetime-local"
-                    value={window.endsAt}
-                    onChange={(event) => updateBlockedWindowDraft(setBlockedWindowDrafts, window.rowId, { endsAt: event.target.value })}
-                    className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold"
-                  />
-                  <input
-                    value={window.reason}
-                    onChange={(event) => updateBlockedWindowDraft(setBlockedWindowDrafts, window.rowId, { reason: event.target.value })}
-                    placeholder="Reason"
-                    className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold"
-                  />
+                  <label className="grid gap-1">
+                    <span className="text-[11px] font-black uppercase tracking-wide text-[#667085]">Blocked from</span>
+                    <input
+                      type="datetime-local"
+                      value={window.startsAt}
+                      onChange={(event) => updateBlockedWindowDraft(setBlockedWindowDrafts, window.rowId, { startsAt: event.target.value })}
+                      className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold"
+                    />
+                  </label>
+                  <label className="grid gap-1">
+                    <span className="text-[11px] font-black uppercase tracking-wide text-[#667085]">Blocked until</span>
+                    <input
+                      type="datetime-local"
+                      value={window.endsAt}
+                      onChange={(event) => updateBlockedWindowDraft(setBlockedWindowDrafts, window.rowId, { endsAt: event.target.value })}
+                      className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold"
+                    />
+                  </label>
+                  <label className="grid gap-1">
+                    <span className="text-[11px] font-black uppercase tracking-wide text-[#667085]">Reason</span>
+                    <input
+                      value={window.reason}
+                      onChange={(event) => updateBlockedWindowDraft(setBlockedWindowDrafts, window.rowId, { reason: event.target.value })}
+                      placeholder="Leave, lunch closure, inventory work"
+                      className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold"
+                    />
+                  </label>
                 </div>
               ))}
             </div>

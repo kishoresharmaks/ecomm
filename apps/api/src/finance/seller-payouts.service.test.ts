@@ -68,6 +68,9 @@ describe("SellerPayoutsService seller requests", () => {
           _sum: { offsetPaise: 0 }
         })
       },
+      sellerLedgerEntry: {
+        findMany: vi.fn().mockResolvedValue([])
+      },
       sellerPayout: {
         create: vi.fn().mockResolvedValue({ id: "payout-1", payoutNumber: "PO-TEST" })
       },
@@ -183,6 +186,11 @@ describe("SellerPayoutsService seller requests", () => {
           _sum: { offsetPaise: 0 }
         }),
         findMany: vi.fn().mockResolvedValue([])
+      },
+      sellerLedgerEntry: {
+        aggregate: vi.fn().mockResolvedValue({
+          _sum: { creditPaise: 0, debitPaise: 0 }
+        })
       }
     };
     const prisma = {
@@ -296,6 +304,11 @@ describe("SellerPayoutsService seller requests", () => {
         aggregate: vi.fn().mockResolvedValue({
           _count: { _all: 0 },
           _sum: { offsetPaise: 0 }
+        })
+      },
+      sellerLedgerEntry: {
+        aggregate: vi.fn().mockResolvedValue({
+          _sum: { creditPaise: 0, debitPaise: 0 }
         })
       }
     };

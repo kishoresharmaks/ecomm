@@ -414,7 +414,9 @@ export type ServiceBooking = {
   paidAmountPaise: number;
   currency: string;
   customer?: { displayName?: string | null; user?: { email?: string | null; fullName?: string | null; phone?: string | null } };
-  seller: SellerSummary;
+  seller: SellerSummary & {
+    addresses?: SellerAddress[];
+  };
   listing: ServiceListing;
   package?: ServicePackage | null;
   assignedTechnician?: ServiceTechnician | null;

@@ -9,7 +9,9 @@ import {
   CreditCard,
   Gauge,
   Loader2,
+  MapPin,
   MessageSquareWarning,
+  Navigation,
   Search,
   Star,
   Wrench,
@@ -49,7 +51,7 @@ import {
 } from "@/lib/service-marketplace-api";
 import { openRazorpayCheckout } from "@/lib/razorpay-checkout";
 import { uploadSellerDocument } from "@/lib/seller-document-upload";
-import { formatMoney } from "@/lib/storefront-api";
+import { formatMoney, type SellerAddress } from "@/lib/storefront-api";
 
 export function ServiceBookingsClient() {
   const customerAuth = useCustomerAuth();
@@ -278,6 +280,7 @@ export function ServiceBookingDetailClient({ bookingNumber }: { bookingNumber: s
   });
 
   const booking = bookingQuery.data;
+  const visitAddress = booking ? bookingVisitAddress(booking) : null;
   const activeQuote = booking?.quotes?.find((quote) => quote.status === "SENT") ?? null;
   const latestDispute = booking?.disputes?.[0] ?? null;
   const latestReview = booking?.reviews?.[0] ?? null;
@@ -359,12 +362,12 @@ export function ServiceBookingDetailClient({ bookingNumber }: { bookingNumber: s
                   <Info label="Technician" value={booking.assignedTechnician?.name ?? "Not assigned yet"} />
                   <Info label="Location" value={booking.visitMode.replace(/_/g, " ")} />
                 </div>
+                <VisitAddressPanel booking={booking} address={visitAddress} />
                 <div className="mt-5 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-4 text-sm leading-6 text-[#667085]">
                   <p className="font-black text-[#1F2933]">Issue details</p>
                   <p className="mt-2">{booking.customerIssue}</p>
                   {booking.customerNote ? <p className="mt-2">Note: {booking.customerNote}</p> : null}
                   {booking.providerNote ? <p className="mt-2">Provider note: {booking.providerNote}</p> : null}
-                  {booking.addressSnapshot ? <p className="mt-2">Service address is captured in the booking record.</p> : null}
                 </div>
               </PagePanel>
 
@@ -464,6 +467,10 @@ function ServiceBookingCard({ booking }: { booking: ServiceBooking }) {
           <p className="mt-1 text-sm font-bold text-[#123A5A]">{booking.listing.title}</p>
           <p className="mt-1 text-sm font-semibold text-[#667085]">
             {formatDateTime(booking.createdAt)} · {booking.seller.storeName}
+          </p>
+          <p className="mt-1 flex items-center gap-1 text-xs font-bold text-[#667085]">
+            <MapPin className="h-3.5 w-3.5 text-[#ED3500]" aria-hidden="true" />
+            {bookingVisitAddressLabel(booking)}
           </p>
         </div>
       </div>
@@ -694,6 +701,109 @@ function SummaryMetric({ label, value }: { label: string; value: string }) {
       <p className="mt-2 text-sm font-black text-[#1F2933]">{value}</p>
     </div>
   );
+}
+
+function VisitAddressPanel({
+  booking,
+  address,
+}: {
+  booking: ServiceBooking;
+  address: string | null;
+}) {
+  const isProviderLocation = booking.visitMode === "PROVIDER_LOCATION";
+  const isCustomerLocation = booking.visitMode === "CUSTOMER_LOCATION";
+
+  return (
+    <div className="mt-5 rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
+      <div className="flex items-start gap-3">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#FFF0EC] text-[#ED3500]">
+          {isProviderLocation ? <Navigation className="h-5 w-5" aria-hidden="true" /> : <MapPin className="h-5 w-5" aria-hidden="true" />}
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-black text-[#123A5A]">
+            {isProviderLocation ? "Provider business address" : isCustomerLocation ? "Customer service address" : "Remote service"}
+          </p>
+          <p className="mt-1 text-sm font-semibold leading-6 text-[#667085]">
+            {isProviderLocation
+              ? "Visit this provider location for the scheduled service."
+              : isCustomerLocation
+                ? "The provider will use this address for the service visit."
+                : "No physical visit address is required for this booking."}
+          </p>
+          {address ? (
+            <p className="mt-3 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-3 text-sm font-black leading-6 text-[#1F2933]">
+              {address}
+            </p>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function bookingVisitAddressLabel(booking: ServiceBooking) {
+  const address = bookingVisitAddress(booking);
+  if (address) {
+    return address;
+  }
+  if (booking.visitMode === "REMOTE") {
+    return "Remote service";
+  }
+  if (booking.visitMode === "PROVIDER_LOCATION") {
+    return "Provider address pending";
+  }
+  return "Customer address pending";
+}
+
+function bookingVisitAddress(booking: ServiceBooking) {
+  const snapshotAddress = formatSnapshotAddress(booking.addressSnapshot);
+  if (snapshotAddress) {
+    return snapshotAddress;
+  }
+  if (booking.visitMode === "PROVIDER_LOCATION") {
+    return formatSellerAddress(booking.seller.addresses?.[0]);
+  }
+  return null;
+}
+
+function formatSnapshotAddress(snapshot: Record<string, unknown> | null | undefined) {
+  if (!snapshot) {
+    return null;
+  }
+  const cityLine = [snapshotText(snapshot, "city"), snapshotText(snapshot, "state"), snapshotText(snapshot, "pincode")]
+    .filter(Boolean)
+    .join(", ");
+  const countryLine = snapshotText(snapshot, "country") || snapshotText(snapshot, "countryCode");
+  const value = [
+    snapshotText(snapshot, "line1"),
+    snapshotText(snapshot, "line2"),
+    snapshotText(snapshot, "area"),
+    cityLine,
+    countryLine,
+  ].filter(Boolean).join(", ");
+
+  return value || null;
+}
+
+function formatSellerAddress(address?: SellerAddress | null) {
+  if (!address) {
+    return null;
+  }
+  const cityLine = [address.city, address.state, address.pincode].filter(Boolean).join(", ");
+  return [address.line1, address.line2, address.area, cityLine, address.country || address.countryCode]
+    .filter(Boolean)
+    .join(", ");
+}
+
+function snapshotText(snapshot: Record<string, unknown>, key: string) {
+  const value = snapshot[key];
+  if (typeof value === "string") {
+    return value.trim();
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+  return "";
 }
 
 function serviceBookingStageLabel(status: ServiceBooking["status"]) {
