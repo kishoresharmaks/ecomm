@@ -232,6 +232,7 @@ const activeScheduleStatuses: ServiceBookingStatus[] = [
   ServiceBookingStatus.QUOTE_ACCEPTED,
   ServiceBookingStatus.IN_PROGRESS,
 ];
+const serviceCalendarTimeZone = "Asia/Kolkata";
 
 @Injectable()
 export class ServiceMarketplaceService {
@@ -922,9 +923,8 @@ export class ServiceMarketplaceService {
     const booking = await this.getSellerBookingOrThrow(seller.id, bookingNumber);
     this.ensureBookingStatus(booking, [ServiceBookingStatus.REQUESTED], "Only requested bookings can be accepted.");
     const scheduledStartAt = dto.scheduledStartAt ? new Date(dto.scheduledStartAt) : booking.scheduledStartAt;
-    if (dto.assignedTechnicianId && !scheduledStartAt) {
-      throw new BadRequestException("A scheduled visit time is required before assigning a technician.");
-    }
+    const assignedTechnicianId = dto.assignedTechnicianId ?? booking.assignedTechnicianId;
+    this.ensureTechnicianScheduled(booking, scheduledStartAt, assignedTechnicianId, "accept");
     const nextStatus =
       booking.listing.pricingModel === ServicePricingModel.QUOTE_FIRST
         ? ServiceBookingStatus.ACCEPTED
@@ -1160,6 +1160,7 @@ export class ServiceMarketplaceService {
       "Booking must be accepted, quoted, or scheduled before work can start.",
     );
     this.ensureServicePaymentGate(booking, "start");
+    this.ensureTechnicianScheduled(booking, booking.scheduledStartAt, booking.assignedTechnicianId, "start");
     const updated = await this.transitionBooking(booking, ServiceBookingStatus.IN_PROGRESS, actor, "service_booking.in_progress");
     await this.notifyBooking(updated, "service_booking_in_progress");
     return updated;
@@ -1176,6 +1177,7 @@ export class ServiceMarketplaceService {
     if (dto.status === "CHECKED_IN") {
       this.ensureServicePaymentGate(booking, "start");
     }
+    this.ensureTechnicianScheduled(booking, booking.scheduledStartAt, booking.assignedTechnicianId, "update field status");
     const now = new Date();
     const location =
       dto.latitude !== undefined && dto.longitude !== undefined
@@ -1240,13 +1242,15 @@ export class ServiceMarketplaceService {
     );
 
     const scheduledStartAt = new Date(dto.scheduledStartAt);
+    const assignedTechnicianId = dto.assignedTechnicianId ?? booking.assignedTechnicianId;
+    this.ensureTechnicianScheduled(booking, scheduledStartAt, assignedTechnicianId, "schedule");
 
     const nextStatus =
       booking.status === ServiceBookingStatus.ACCEPTED ? ServiceBookingStatus.SCHEDULED : booking.status;
     const patch: ServiceBookingTransitionPatch = {
       scheduledStartAt: dto.scheduledStartAt,
       scheduledEndAt: this.scheduledEndAt(scheduledStartAt, booking.listing.serviceDurationMinutes),
-      assignedTechnicianId: dto.assignedTechnicianId ?? booking.assignedTechnicianId ?? null,
+      assignedTechnicianId,
     };
     if (dto.note !== undefined) {
       patch.providerNote = dto.note;
@@ -1261,10 +1265,11 @@ export class ServiceMarketplaceService {
     const booking = await this.getSellerBookingOrThrow(seller.id, bookingNumber);
     this.ensureBookingStatus(
       booking,
-      [ServiceBookingStatus.IN_PROGRESS, ServiceBookingStatus.SCHEDULED, ServiceBookingStatus.QUOTE_ACCEPTED],
-      "Completion can be submitted only after work has started.",
+      [ServiceBookingStatus.IN_PROGRESS],
+      "Completion can be submitted only after technician check-in starts the work.",
     );
     this.ensureServicePaymentGate(booking, "completion");
+    this.ensureTechnicianScheduled(booking, booking.scheduledStartAt, booking.assignedTechnicianId, "complete");
     const patch: ServiceBookingTransitionPatch = { completionNote: dto.completionNote };
     if (dto.completionImages !== undefined) {
       patch.completionImages = dto.completionImages;
@@ -1286,6 +1291,7 @@ export class ServiceMarketplaceService {
   async customerConfirmCompletion(actor: RequestUser, bookingNumber: string) {
     const booking = await this.getCustomerBooking(actor, bookingNumber);
     this.ensureBookingStatus(booking, [ServiceBookingStatus.COMPLETION_SUBMITTED], "Completion is not awaiting confirmation.");
+    this.ensureServiceFullyPaidForCompletion(booking);
     const updated = await this.transitionBooking(booking, ServiceBookingStatus.COMPLETED, actor, "service_booking.completed", {
       completionConfirmedById: actor.id,
     });
@@ -1452,17 +1458,13 @@ export class ServiceMarketplaceService {
         },
       });
       if (status === PaymentStatus.PAID) {
-        const paidAggregate = await tx.servicePayment.aggregate({
-          where: {
-            bookingId: booking.id,
-            status: PaymentStatus.PAID,
-          },
-          _sum: { amountPaise: true },
+        await this.retireCoveredServiceRazorpayPayments(tx, booking, {
+          actorUserId: actor.id,
+          acceptedPayment: payment,
+          eventType: "service_payment.razorpay_not_required_after_manual_payment",
+          reason: "manual_payment_recorded",
         });
-        await tx.serviceBooking.update({
-          where: { id: booking.id },
-          data: { paidAmountPaise: paidAggregate._sum.amountPaise ?? 0 },
-        });
+        await this.refreshBookingPaidAmount(tx, booking.id);
       }
       await tx.auditLog.create({
         data: {
@@ -1487,9 +1489,13 @@ export class ServiceMarketplaceService {
     const booking = await this.getSellerBookingOrThrow(seller.id, bookingNumber);
     const amountPaise = dto.amountPaise;
     const remainingDue = Math.max(0, booking.totalPayablePaise - booking.paidAmountPaise);
+    if (remainingDue <= 0) {
+      throw new BadRequestException("This service booking has no customer balance left to collect.");
+    }
     if (amountPaise > remainingDue) {
       throw new BadRequestException("Cash collection cannot be greater than the customer's remaining due amount.");
     }
+    this.ensureCashCollectionAmountCoversDue(booking, dto, amountPaise, remainingDue);
     const idempotencyKey = this.normalizeCashKey(dto.idempotencyKey) ?? this.defaultCashIdempotencyKey(booking, dto);
     const cashCollectionEventId = this.normalizeCashKey(dto.cashCollectionEventId) ?? idempotencyKey;
     const existing = await this.prisma.client.servicePayment.findFirst({
@@ -1686,6 +1692,12 @@ export class ServiceMarketplaceService {
           note: dto.note,
         });
       }
+      await this.retireCoveredServiceRazorpayPayments(tx, booking, {
+        actorUserId: actor.id,
+        acceptedPayment: payment,
+        eventType: "service_payment.razorpay_not_required_after_cash_confirmation",
+        reason: "provider_cash_customer_confirmed",
+      });
       await this.refreshBookingPaidAmount(tx, booking.id);
       await tx.auditLog.create({
         data: {
@@ -2631,15 +2643,18 @@ export class ServiceMarketplaceService {
       }
     }
 
+    const scheduledLocal = this.serviceCalendarLocalParts(input.scheduledStartAt);
+    const endLocal = this.serviceCalendarLocalParts(endAt);
+
     const rules =
-      overrides.availabilityRules?.filter((rule) => rule.dayOfWeek === input.scheduledStartAt.getDay() && rule.isActive) ??
+      overrides.availabilityRules?.filter((rule) => rule.dayOfWeek === scheduledLocal.dayOfWeek && rule.isActive) ??
       (await client.sellerServiceAvailabilityRule.findMany({
-        where: { sellerId: input.sellerId, dayOfWeek: input.scheduledStartAt.getDay(), isActive: true },
+        where: { sellerId: input.sellerId, dayOfWeek: scheduledLocal.dayOfWeek, isActive: true },
       }));
-    const effectiveRules = rules.length ? rules : defaultServiceAvailabilityRules().filter((rule) => rule.dayOfWeek === input.scheduledStartAt.getDay());
-    const startMinute = input.scheduledStartAt.getHours() * 60 + input.scheduledStartAt.getMinutes();
-    const endMinute = endAt.getHours() * 60 + endAt.getMinutes();
-    if (endAt.toDateString() !== input.scheduledStartAt.toDateString() || endMinute <= startMinute) {
+    const effectiveRules = rules.length ? rules : defaultServiceAvailabilityRules().filter((rule) => rule.dayOfWeek === scheduledLocal.dayOfWeek);
+    const startMinute = scheduledLocal.minuteOfDay;
+    const endMinute = endLocal.minuteOfDay;
+    if (!this.sameServiceCalendarDay(scheduledLocal, endLocal) || endMinute <= startMinute) {
       throw new BadRequestException("Selected service slot must start and end within the same working day.");
     }
     const matchingRule = effectiveRules.find((rule) => startMinute >= rule.startMinute && endMinute <= rule.endMinute);
@@ -2713,6 +2728,40 @@ export class ServiceMarketplaceService {
     return new Date(startAt.getTime() + minutes * 60_000);
   }
 
+  private serviceCalendarLocalParts(date: Date) {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: serviceCalendarTimeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(date);
+    const value = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find((part) => part.type === type)?.value);
+    const year = value("year");
+    const month = value("month");
+    const day = value("day");
+    const hour = value("hour");
+    const minute = value("minute");
+    return {
+      year,
+      month,
+      day,
+      hour,
+      minute,
+      dayOfWeek: new Date(Date.UTC(year, month - 1, day)).getUTCDay(),
+      minuteOfDay: hour * 60 + minute,
+    };
+  }
+
+  private sameServiceCalendarDay(
+    left: ReturnType<ServiceMarketplaceService["serviceCalendarLocalParts"]>,
+    right: ReturnType<ServiceMarketplaceService["serviceCalendarLocalParts"]>,
+  ) {
+    return left.year === right.year && left.month === right.month && left.day === right.day;
+  }
+
   private normalizeCashKey(value: string | undefined) {
     const cleaned = value?.trim();
     return cleaned || null;
@@ -2773,6 +2822,88 @@ export class ServiceMarketplaceService {
       throw new BadRequestException("This payment is not a provider cash collection.");
     }
     return payment;
+  }
+
+  private async retireCoveredServiceRazorpayPayments(
+    tx: Prisma.TransactionClient,
+    booking: Pick<ServiceBookingRecord, "id" | "totalPayablePaise" | "currency">,
+    input: {
+      acceptedPayment: {
+        id: string;
+        purpose: ServicePaymentPurpose;
+        amountPaise: number;
+      };
+      actorUserId: string;
+      eventType: string;
+      reason: string;
+    },
+  ) {
+    const payments = await tx.servicePayment.findMany({
+      where: { bookingId: booking.id },
+      select: {
+        id: true,
+        provider: true,
+        purpose: true,
+        amountPaise: true,
+        status: true,
+      },
+    });
+    const paidPaise = payments
+      .filter((payment) => payment.status === PaymentStatus.PAID)
+      .reduce((sum, payment) => sum + payment.amountPaise, 0);
+    const remainingDuePaise = Math.max(0, booking.totalPayablePaise - paidPaise);
+
+    for (const payment of payments) {
+      if (
+        payment.id === input.acceptedPayment.id ||
+        payment.provider !== PaymentProvider.RAZORPAY ||
+        (payment.status !== PaymentStatus.PENDING && payment.status !== PaymentStatus.FAILED)
+      ) {
+        continue;
+      }
+
+      const samePurposePaidPaise = payments
+        .filter(
+          (candidate) =>
+            candidate.id !== payment.id &&
+            candidate.purpose === payment.purpose &&
+            candidate.status === PaymentStatus.PAID,
+        )
+        .reduce((sum, candidate) => sum + candidate.amountPaise, 0);
+      const coveredBySamePurposePayment =
+        payment.purpose === input.acceptedPayment.purpose &&
+        samePurposePaidPaise >= payment.amountPaise;
+      const exceedsRemainingBalance = payment.amountPaise > remainingDuePaise;
+
+      if (!coveredBySamePurposePayment && !exceedsRemainingBalance) {
+        continue;
+      }
+
+      await tx.servicePayment.update({
+        where: { id: payment.id },
+        data: {
+          status: PaymentStatus.NOT_REQUIRED,
+          providerOrderCreationInProgress: false,
+          events: {
+            create: {
+              eventType: input.eventType,
+              oldStatus: payment.status,
+              newStatus: PaymentStatus.NOT_REQUIRED,
+              payload: {
+                reason: input.reason,
+                actorUserId: input.actorUserId,
+                coveredByPaymentId: input.acceptedPayment.id,
+                coveredPurpose: input.acceptedPayment.purpose,
+                coveredAmountPaise: input.acceptedPayment.amountPaise,
+                samePurposePaidPaise,
+                remainingDuePaise,
+                currency: booking.currency,
+              },
+            },
+          },
+        },
+      });
+    }
   }
 
   private async refreshBookingPaidAmount(tx: Prisma.TransactionClient, bookingId: string) {
@@ -3346,6 +3477,18 @@ export class ServiceMarketplaceService {
           },
         },
       });
+      if (nextPaymentStatus === PaymentStatus.PAID) {
+        await this.retireCoveredServiceRazorpayPayments(tx, receivable.booking, {
+          actorUserId,
+          acceptedPayment: {
+            id: receivable.servicePayment.id,
+            purpose: receivable.servicePayment.purpose,
+            amountPaise: acceptedCashPaise || receivable.servicePayment.amountPaise,
+          },
+          eventType: "service_payment.razorpay_not_required_after_cash_resolution",
+          reason: "provider_cash_admin_resolved",
+        });
+      }
     }
 
     const updated = await tx.serviceSellerReceivable.update({
@@ -3976,6 +4119,41 @@ export class ServiceMarketplaceService {
     }
   }
 
+  private ensureTechnicianScheduled(
+    booking: ServiceBookingRecord,
+    scheduledStartAt: Date | string | null | undefined,
+    assignedTechnicianId: string | null | undefined,
+    action: "accept" | "schedule" | "start" | "update field status" | "complete",
+  ) {
+    if (!scheduledStartAt) {
+      throw new BadRequestException(`Schedule a visit time before you ${action} this service booking.`);
+    }
+    if (!assignedTechnicianId) {
+      throw new BadRequestException(`Assign an active technician before you ${action} this service booking.`);
+    }
+  }
+
+  private ensureCashCollectionAmountCoversDue(
+    booking: ServiceBookingRecord,
+    dto: RecordServiceCashCollectionDto,
+    amountPaise: number,
+    remainingDuePaise: number,
+  ) {
+    const purpose = dto.purpose ?? ServicePaymentPurpose.PAY_AT_VISIT;
+    const mustClearRemainingDue =
+      purpose === ServicePaymentPurpose.PAY_AT_VISIT ||
+      purpose === ServicePaymentPurpose.FINAL_QUOTE ||
+      purpose === ServicePaymentPurpose.FULL_PAYMENT;
+
+    if (!mustClearRemainingDue || amountPaise >= remainingDuePaise) {
+      return;
+    }
+
+    throw new BadRequestException(
+      `Cash collection must match the remaining customer balance. Remaining balance is ${this.formatPaise(remainingDuePaise, booking.currency)}, but entered ${this.formatPaise(amountPaise, booking.currency)}.`,
+    );
+  }
+
   private ensureServicePaymentGate(booking: ServiceBookingRecord, action: "start" | "completion") {
     const paidPaise = booking.paidAmountPaise ?? 0;
     const acceptedQuote = booking.quotes.find((item) => item.status === ServiceQuoteStatus.ACCEPTED);
@@ -4011,6 +4189,28 @@ export class ServiceMarketplaceService {
           ? "Advance payment"
           : "Inspection fee";
     throw new BadRequestException(`${label} is pending. Customer must pay ${this.formatPaise(shortfallPaise, booking.currency)} more before this service can ${action === "start" ? "start" : "be completed"}.`);
+  }
+
+  private ensureServiceFullyPaidForCompletion(booking: ServiceBookingRecord) {
+    const paidPaise = this.confirmedServicePaidPaise(booking);
+    const shortfallPaise = Math.max(0, booking.totalPayablePaise - paidPaise);
+    if (shortfallPaise <= 0) {
+      return;
+    }
+
+    throw new BadRequestException(
+      `Full service payment is pending. Customer must pay ${this.formatPaise(shortfallPaise, booking.currency)} more before completion can be approved.`,
+    );
+  }
+
+  private confirmedServicePaidPaise(booking: Pick<ServiceBookingRecord, "payments" | "refundRequests">) {
+    const paid = booking.payments
+      .filter((payment) => payment.status === PaymentStatus.PAID || payment.status === PaymentStatus.REFUNDED)
+      .reduce((sum, payment) => sum + payment.amountPaise, 0);
+    const refunded = (booking.refundRequests ?? [])
+      .filter((refund) => refund.status === RefundRequestStatus.SUCCESS)
+      .reduce((sum, refund) => sum + refund.amountPaise, 0);
+    return Math.max(0, paid - refunded);
   }
 
   private formatPaise(amountPaise: number, currency: string) {

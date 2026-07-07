@@ -7,7 +7,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Clock, Eye, Mail, MapPin, Navigation, Phone, Plus, Search, Send, Trash2, Wrench } from "lucide-react";
 import { Button, StatusBadge } from "@indihub/ui";
 import { StorefrontImage } from "@/components/storefront/storefront-image";
-import { IndihubApiError } from "@/lib/api";
+import { IndihubApiError, userFacingApiErrorMessage } from "@/lib/api";
 import { coordinatesFromSnapshot, formatCoordinates, googleMapsDirectionsUrl } from "@/lib/map-navigation";
 import { uploadSellerDocument } from "@/lib/seller-document-upload";
 import {
@@ -79,6 +79,60 @@ type SellerServicesClientProps = {
   serviceId?: string;
   bookingNumber?: string;
 };
+
+type SellerActionNotice = {
+  tone: "success" | "danger";
+  message: string;
+};
+
+function SellerActionToast({ notice, onDismiss }: { notice: SellerActionNotice | null; onDismiss: () => void }) {
+  useEffect(() => {
+    if (!notice) return undefined;
+    const timer = window.setTimeout(onDismiss, 7000);
+    return () => window.clearTimeout(timer);
+  }, [notice, onDismiss]);
+
+  if (!notice) return null;
+
+  return (
+    <div className="fixed right-4 top-4 z-50 w-[min(420px,calc(100vw-2rem))] rounded-xl border bg-white p-4 shadow-2xl">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className={notice.tone === "success" ? "text-sm font-black text-[#0F8A5F]" : "text-sm font-black text-[#B42318]"}>
+            {notice.tone === "success" ? "Action saved" : "Action failed"}
+          </p>
+          <p className="mt-1 text-sm font-semibold leading-6 text-[#1F2933]">{notice.message}</p>
+        </div>
+        <button type="button" onClick={onDismiss} className="rounded-md px-2 py-1 text-xs font-black text-[#667085] hover:bg-[#F8FAFC]">
+          Close
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function sellerServiceActionMessage(action: string) {
+  switch (action) {
+    case "accept":
+      return "Service booking accepted and assigned.";
+    case "reschedule":
+      return "Service schedule updated.";
+    case "reject":
+      return "Service booking rejected.";
+    case "start":
+      return "Service booking marked in progress.";
+    case "field":
+      return "Technician field status updated.";
+    case "withdrawQuote":
+      return "Active quote withdrawn.";
+    case "complete":
+      return "Completion submitted for customer approval.";
+    case "payment":
+      return "Cash collection recorded. It will count as paid after customer or admin confirmation.";
+    default:
+      return "Service action completed.";
+  }
+}
 
 type ServiceBookingAddressSnapshot = {
   fullName?: string | number | null;
@@ -539,6 +593,7 @@ function SellerServiceForm({ serviceId }: { serviceId?: string }) {
 function SellerServiceBookings() {
   const sellerAuth = useSellerAuth();
   const queryClient = useQueryClient();
+  const [actionNotice, setActionNotice] = useState<SellerActionNotice | null>(null);
   const bookingsQuery = useQuery({
     queryKey: ["seller-service-bookings", sellerAuth.authKey],
     queryFn: () => listSellerServiceBookings(sellerAuth.authHeaders, { limit: 50 }),
@@ -660,9 +715,13 @@ function SellerServiceBookings() {
       }
       return sellerSendServiceQuote(sellerAuth.authHeaders, booking.bookingNumber, quotePayload);
     },
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
+      setActionNotice({ tone: "success", message: sellerServiceActionMessage(variables.action) });
       void queryClient.invalidateQueries({ queryKey: ["seller-service-bookings", sellerAuth.authKey] });
       void queryClient.invalidateQueries({ queryKey: ["seller-service-calendar", sellerAuth.authKey] });
+    },
+    onError: (error) => {
+      setActionNotice({ tone: "danger", message: userFacingApiErrorMessage(error) });
     },
   });
 
@@ -685,6 +744,7 @@ function SellerServiceBookings() {
 
   return (
     <div className="grid gap-5">
+      <SellerActionToast notice={actionNotice} onDismiss={() => setActionNotice(null)} />
       <div className="grid gap-4 md:grid-cols-3">
         <SellerMetric label="New requests" value={requested} note="Awaiting provider action" />
         <SellerMetric label="Upcoming jobs" value={upcoming} note="Accepted or scheduled" />
@@ -741,6 +801,7 @@ function SellerServiceBookings() {
 function SellerServiceBookingDetail({ bookingNumber }: { bookingNumber?: string }) {
   const sellerAuth = useSellerAuth();
   const queryClient = useQueryClient();
+  const [actionNotice, setActionNotice] = useState<SellerActionNotice | null>(null);
   const bookingQuery = useQuery({
     queryKey: ["seller-service-booking", sellerAuth.authKey, bookingNumber],
     queryFn: () => getSellerServiceBooking(sellerAuth.authHeaders, bookingNumber ?? ""),
@@ -835,10 +896,14 @@ function SellerServiceBookingDetail({ bookingNumber }: { bookingNumber?: string 
       if (note) quotePayload.note = note;
       return sellerSendServiceQuote(sellerAuth.authHeaders, booking.bookingNumber, quotePayload);
     },
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
+      setActionNotice({ tone: "success", message: sellerServiceActionMessage(variables.action) });
       void queryClient.invalidateQueries({ queryKey: ["seller-service-booking", sellerAuth.authKey, bookingNumber] });
       void queryClient.invalidateQueries({ queryKey: ["seller-service-bookings", sellerAuth.authKey] });
       void queryClient.invalidateQueries({ queryKey: ["seller-service-calendar", sellerAuth.authKey] });
+    },
+    onError: (error) => {
+      setActionNotice({ tone: "danger", message: userFacingApiErrorMessage(error) });
     },
   });
 
@@ -853,6 +918,7 @@ function SellerServiceBookingDetail({ bookingNumber }: { bookingNumber?: string 
 
   return (
     <div className="grid gap-5">
+      <SellerActionToast notice={actionNotice} onDismiss={() => setActionNotice(null)} />
       <SellerPanel>
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
@@ -1083,38 +1149,47 @@ function BookingActionPanel({
   onSubmit: (booking: ServiceBooking, action: string, form?: FormData) => void;
 }) {
   const activeTechnicians = technicians ?? [];
+  const remainingDuePaise = Math.max(0, booking.totalPayablePaise - booking.paidAmountPaise);
   return (
     <div className="rounded-lg border border-[#D9E2EA] bg-[#F8FAFC] p-4">
       <p className="text-sm font-black text-[#123A5A]">Provider actions</p>
       <div className="mt-3 grid gap-3">
         {booking.status === "REQUESTED" ? (
           <form onSubmit={(event) => { event.preventDefault(); onSubmit(booking, "accept", new FormData(event.currentTarget)); }} className="grid gap-2">
-            <input name="scheduledStartAt" type="datetime-local" className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold" />
+            <input name="scheduledStartAt" type="datetime-local" required className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold" />
             {activeTechnicians.length ? (
-              <select name="assignedTechnicianId" defaultValue={booking.assignedTechnicianId ?? ""} className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold">
-                <option value="">Assign later</option>
+              <select name="assignedTechnicianId" required defaultValue={booking.assignedTechnicianId ?? ""} className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold">
+                <option value="" disabled>Select technician</option>
                 {activeTechnicians.map((technician) => (
                   <option key={technician.id} value={technician.id}>{technician.name}</option>
                 ))}
               </select>
-            ) : null}
+            ) : (
+              <p className="rounded-md border border-[#F5B7B7] bg-[#FDECEC] px-3 py-2 text-xs font-bold text-[#8A1F1F]">
+                Add an active technician in Service calendar before accepting this booking.
+              </p>
+            )}
             <input name="note" placeholder="Provider note" className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold" />
-            <Button type="submit" size="sm" disabled={pending}><CheckCircle2 className="h-4 w-4" /> Accept</Button>
+            <Button type="submit" size="sm" disabled={pending || !activeTechnicians.length}><CheckCircle2 className="h-4 w-4" /> Accept</Button>
           </form>
         ) : null}
         {["ACCEPTED", "SCHEDULED", "QUOTE_ACCEPTED"].includes(booking.status) ? (
           <form onSubmit={(event) => { event.preventDefault(); onSubmit(booking, "reschedule", new FormData(event.currentTarget)); }} className="grid gap-2 border-t border-[#D9E2EA] pt-3">
             <input name="scheduledStartAt" type="datetime-local" required defaultValue={toLocalDateTimeInput(booking.scheduledStartAt)} className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold" />
             {activeTechnicians.length ? (
-              <select name="assignedTechnicianId" defaultValue={booking.assignedTechnicianId ?? ""} className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold">
-                <option value="">No technician assigned</option>
+              <select name="assignedTechnicianId" required defaultValue={booking.assignedTechnicianId ?? ""} className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold">
+                <option value="" disabled>Select technician</option>
                 {activeTechnicians.map((technician) => (
                   <option key={technician.id} value={technician.id}>{technician.name}</option>
                 ))}
               </select>
-            ) : null}
+            ) : (
+              <p className="rounded-md border border-[#F5B7B7] bg-[#FDECEC] px-3 py-2 text-xs font-bold text-[#8A1F1F]">
+                Add an active technician before scheduling, starting, or completing this booking.
+              </p>
+            )}
             <input name="note" placeholder="Reschedule note" className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold" />
-            <Button type="submit" variant="outline" size="sm" disabled={pending}>Update schedule</Button>
+            <Button type="submit" variant="outline" size="sm" disabled={pending || !activeTechnicians.length}>Update schedule</Button>
           </form>
         ) : null}
         {["ACCEPTED", "IN_PROGRESS"].includes(booking.status) ? (
@@ -1153,14 +1228,14 @@ function BookingActionPanel({
             <Button type="submit" variant="outline" size="sm" disabled={pending}>Update field status</Button>
           </form>
         ) : null}
-        {["IN_PROGRESS", "SCHEDULED", "QUOTE_ACCEPTED"].includes(booking.status) ? (
+        {booking.status === "IN_PROGRESS" ? (
           <form onSubmit={(event) => { event.preventDefault(); onSubmit(booking, "complete", new FormData(event.currentTarget)); }} className="grid gap-2">
             <textarea name="completionNote" required rows={3} placeholder="Completion note" className="rounded-md border border-[#D8E2EA] px-3 py-2 text-sm font-semibold" />
             <input name="completionProofFiles" type="file" multiple accept="application/pdf,image/jpeg,image/png,image/webp" className="rounded-md border border-[#D8E2EA] bg-white px-3 py-2 text-sm font-semibold" />
             <Button type="submit" size="sm" disabled={pending}>Submit completion</Button>
           </form>
         ) : null}
-        {booking.paymentMode === "PAY_AT_VISIT" || booking.paidAmountPaise < booking.totalPayablePaise ? (
+        {remainingDuePaise > 0 ? (
           <form onSubmit={(event) => { event.preventDefault(); onSubmit(booking, "payment", new FormData(event.currentTarget)); }} className="grid gap-2">
             <select name="purpose" className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold">
               <option value="PAY_AT_VISIT">Pay at visit</option>
@@ -1169,10 +1244,10 @@ function BookingActionPanel({
               <option value="ADVANCE_PAYMENT">Advance payment</option>
               <option value="INSPECTION_FEE">Inspection fee</option>
             </select>
-            <input name="amount" type="number" min="0" step="0.01" placeholder="Amount received INR" className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold" />
+            <input name="amount" type="number" min="0.01" step="0.01" defaultValue={remainingDuePaise > 0 ? (remainingDuePaise / 100).toFixed(2) : undefined} placeholder="Amount received INR" className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold" />
             <input name="referenceNumber" placeholder="Reference / cash note" className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold" />
             <p className="rounded-md bg-white px-3 py-2 text-xs font-semibold leading-5 text-[#667085]">
-              Records cash collected by your service person. Customer/admin confirmation controls booking payment; only platform dues from this cash can be settled or offset.
+              Remaining balance: {formatMoney(remainingDuePaise, booking.currency)}. Records cash collected by your service person. Customer/admin confirmation controls booking payment; only platform dues from this cash can be settled or offset.
             </p>
             <Button type="submit" variant="outline" size="sm" disabled={pending}>Record cash collected</Button>
           </form>

@@ -7,8 +7,13 @@ import { useMobileSellerAuth } from "../../src/auth/mobile-seller-auth-context";
 import { Button, CollapsibleSection, Field, LoadingState, Screen, StatusChip, Toast } from "../../src/components/screen";
 import { launchSellerImageLibraryAsync } from "../../src/features/seller/image-picker";
 import { uploadPublicSellerImage, uploadSellerPrivateDocument, type MobileUploadFile } from "../../src/features/seller/mobile-upload";
-import { buildSellerPayoutProfilePayload } from "../../src/features/seller/profile-payout";
-import { optionalSellerProfileText, validateSellerContactPhone } from "../../src/features/seller/profile-validation";
+import {
+  buildSellerProfilePatchPayload,
+  emptySellerProfileFormFields,
+  hasSellerProfileUnsavedChanges,
+  sellerProfileToFormFields,
+} from "../../src/features/seller/profile-save-payload";
+import { validateSellerContactPhone } from "../../src/features/seller/profile-validation";
 import {
   getSellerProfile,
   updateSellerProfile,
@@ -37,29 +42,7 @@ export default function SellerProfileScreen() {
     enabled: auth.enabled,
   });
 
-  const [fields, setFields] = useState({
-    storeName: "",
-    description: "",
-    contactName: "",
-    contactPhone: "",
-    contactEmail: "",
-    businessLegalName: "",
-    businessType: "",
-    gstNumber: "",
-    panNumber: "",
-    line1: "",
-    line2: "",
-    city: "",
-    state: "",
-    pincode: "",
-    logoUrl: null as string | null,
-    bannerUrl: null as string | null,
-    accountHolderName: "",
-    bankName: "",
-    accountNumber: "",
-    ifscCode: "",
-    upiId: "",
-  });
+  const [fields, setFields] = useState(emptySellerProfileFormFields);
 
   const [documents, setDocuments] = useState<SellerVerificationDocumentPayload[]>([]);
   const [uploadingSection, setUploadingSection] = useState<string | null>(null);
@@ -67,34 +50,7 @@ export default function SellerProfileScreen() {
   const [toast, setToast] = useState<ToastState>({ visible: false, message: "", type: "success" });
 
   const hasUnsavedChanges = useMemo(() => {
-    if (!profileQuery.data) return false;
-    const current = fields;
-    const original = profileQuery.data;
-
-    return (
-      current.storeName !== (original.storeName ?? "") ||
-      current.description !== (original.description ?? "") ||
-      current.contactName !== (original.profile?.contactName ?? "") ||
-      current.contactPhone !== (original.profile?.contactPhone ?? "") ||
-      current.contactEmail !== (original.profile?.contactEmail ?? "") ||
-      current.businessLegalName !== (original.profile?.businessLegalName ?? "") ||
-      current.businessType !== (original.profile?.businessType ?? "") ||
-      current.gstNumber !== (original.profile?.gstNumber ?? "") ||
-      current.panNumber !== (original.profile?.panNumber ?? "") ||
-      current.line1 !== (original.addresses?.[0]?.line1 ?? "") ||
-      current.line2 !== (original.addresses?.[0]?.line2 ?? "") ||
-      current.city !== (original.addresses?.[0]?.city ?? "") ||
-      current.state !== (original.addresses?.[0]?.state ?? "") ||
-      current.pincode !== (original.addresses?.[0]?.pincode ?? "") ||
-      current.logoUrl !== (original.logoUrl ?? null) ||
-      current.bannerUrl !== (original.bannerUrl ?? null) ||
-      current.accountHolderName !== (original.payoutProfile?.accountHolderName ?? "") ||
-      current.bankName !== (original.payoutProfile?.bankName ?? "") ||
-      current.ifscCode !== (original.payoutProfile?.ifscCode ?? "") ||
-      current.accountNumber.trim() !== "" ||
-      current.upiId !== "" ||
-      documents.length > 0
-    );
+    return hasSellerProfileUnsavedChanges(profileQuery.data, fields, documents.length);
   }, [documents.length, fields, profileQuery.data]);
 
   const storeInitials = useMemo(() => initials(fields.storeName || profileQuery.data?.storeName || "Seller"), [fields.storeName, profileQuery.data?.storeName]);
@@ -130,30 +86,7 @@ export default function SellerProfileScreen() {
 
   useEffect(() => {
     if (profileQuery.data) {
-      const payout = profileQuery.data.payoutProfile;
-      setFields({
-        storeName: profileQuery.data.storeName ?? "",
-        description: profileQuery.data.description ?? "",
-        contactName: profileQuery.data.profile?.contactName ?? "",
-        contactPhone: profileQuery.data.profile?.contactPhone ?? "",
-        contactEmail: profileQuery.data.profile?.contactEmail ?? "",
-        businessLegalName: profileQuery.data.profile?.businessLegalName ?? "",
-        businessType: profileQuery.data.profile?.businessType ?? "",
-        gstNumber: profileQuery.data.profile?.gstNumber ?? "",
-        panNumber: profileQuery.data.profile?.panNumber ?? "",
-        line1: profileQuery.data.addresses?.[0]?.line1 ?? "",
-        line2: profileQuery.data.addresses?.[0]?.line2 ?? "",
-        city: profileQuery.data.addresses?.[0]?.city ?? "",
-        state: profileQuery.data.addresses?.[0]?.state ?? "",
-        pincode: profileQuery.data.addresses?.[0]?.pincode ?? "",
-        logoUrl: profileQuery.data.logoUrl ?? null,
-        bannerUrl: profileQuery.data.bannerUrl ?? null,
-        accountHolderName: payout?.accountHolderName ?? "",
-        bankName: payout?.bankName ?? "",
-        accountNumber: "",
-        ifscCode: payout?.ifscCode ?? "",
-        upiId: "",
-      });
+      setFields(sellerProfileToFormFields(profileQuery.data));
     }
   }, [profileQuery.data]);
 
@@ -165,36 +98,14 @@ export default function SellerProfileScreen() {
       if (!validateForm()) {
         throw new Error("Please fix validation errors before saving.");
       }
-      const payoutProfile = buildSellerPayoutProfilePayload(fields);
-      const description = optionalSellerProfileText(fields.description);
-      const businessLegalName = optionalSellerProfileText(fields.businessLegalName);
-      const businessType = optionalSellerProfileText(fields.businessType);
-      const gstNumber = optionalSellerProfileText(fields.gstNumber);
-      const panNumber = optionalSellerProfileText(fields.panNumber);
-      return updateSellerProfile(auth.authHeaders, {
-        storeName: fields.storeName,
-        contactName: fields.contactName,
-        contactPhone: fields.contactPhone,
-        contactEmail: fields.contactEmail,
-        ...(description ? { description } : {}),
-        ...(businessLegalName ? { businessLegalName } : {}),
-        ...(businessType ? { businessType } : {}),
-        ...(gstNumber ? { gstNumber } : {}),
-        ...(panNumber ? { panNumber } : {}),
-        address: {
-          line1: fields.line1,
-          line2: fields.line2,
-          city: fields.city,
-          state: fields.state,
-          pincode: fields.pincode,
-          country: "India",
-          countryCode: "IN",
-        },
-        logoUrl: fields.logoUrl,
-        bannerUrl: fields.bannerUrl,
-        ...(payoutProfile ? { payoutProfile } : {}),
-        documents,
-      });
+      const currentProfile = profileQuery.data;
+      if (!currentProfile) {
+        throw new Error("Profile is still loading. Please try again.");
+      }
+      return updateSellerProfile(
+        auth.authHeaders,
+        buildSellerProfilePatchPayload(currentProfile, fields, documents),
+      );
     },
     onSuccess: () => {
       startTransition(() => {
@@ -426,7 +337,7 @@ export default function SellerProfileScreen() {
 
       <View style={styles.bottomBar}>
         <Button
-          disabled={mutation.isPending || !fields.storeName.trim() || !auth.enabled}
+          disabled={mutation.isPending || !fields.storeName.trim() || !auth.enabled || !hasUnsavedChanges}
           title={mutation.isPending ? "Saving..." : hasUnsavedChanges ? "Save profile" : "Saved"}
           onPress={() => mutation.mutate()}
           loading={mutation.isPending}

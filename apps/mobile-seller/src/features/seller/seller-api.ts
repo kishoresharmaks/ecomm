@@ -11,6 +11,9 @@ export type SellerProfile = {
   status: SellerStatus;
   approvalStatus: SellerApprovalStatus;
   subscriptionStatus?: string;
+  /**
+   * Legacy/mobile-normalized aliases. The API source of truth is `profile.*`.
+   */
   logoUrl?: string | null;
   bannerUrl?: string | null;
   description?: string | null;
@@ -21,6 +24,9 @@ export type SellerProfile = {
     status?: string;
   } | null;
   profile?: {
+    logoUrl?: string | null;
+    bannerUrl?: string | null;
+    description?: string | null;
     contactName?: string | null;
     contactPhone?: string | null;
     contactEmail?: string | null;
@@ -112,7 +118,7 @@ export type SellerProfilePayload = {
   contactPhone?: string;
   contactEmail?: string;
   businessLegalName?: string;
-  businessType?: string;
+  businessType?: string | null;
   gstNumber?: string;
   panNumber?: string;
   payoutProfile?: {

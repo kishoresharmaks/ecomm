@@ -13,8 +13,6 @@ import { StyleSheet, type ColorValue, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors } from "../../src/theme";
 
-type TabIconName = "home" | "products" | "orders" | "services" | "b2b" | "sales" | "finance" | "profile";
-
 function createTabIcon(icon: IconSvgElement) {
   return function TabIcon({ color, focused }: { color: ColorValue; focused: boolean }) {
     return (
