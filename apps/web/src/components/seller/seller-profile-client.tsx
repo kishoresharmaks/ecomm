@@ -1,13 +1,10 @@
 "use client";
 
-import { type ChangeEvent, FormEvent, useEffect, useState } from "react";
-import Link from "next/link";
-import type { Route } from "next";
-import { CreditCard, ExternalLink, FileText, Loader2, MapPinned, Store, Truck, Upload } from "lucide-react";
+import { type ChangeEvent, type FormEvent, useState } from "react";
+import { CreditCard, FileText, Loader2, MapPinned, Upload, Wrench } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
-import { LocationFields } from "@/components/locations/location-fields";
-import { MapLocationPicker } from "@/components/maps/map-location-picker";
+import { Button, StatusBadge } from "@indihub/ui";
+import { StorefrontImage } from "@/components/storefront/storefront-image";
 import { type IndihubAuthHeaders } from "@/lib/api";
 import {
   uploadSellerDocument,
@@ -16,7 +13,6 @@ import {
 } from "@/lib/seller-document-upload";
 import {
   getSellerProfile,
-  syncSellerCourierPickup,
   updateSellerProfile,
   type SellerBusinessType,
   type SellerProfile,
@@ -33,19 +29,13 @@ import {
 import {
   SellerAuthNotice,
   SellerErrorPanel,
-  SellerField,
-  SellerImageUpload,
   SellerOnboardingRequired,
   SellerPanel,
   SellerSkeleton,
-  SellerStatusPill,
-  SellerTextArea,
-  formValue,
   isSellerOnboardingRequiredError,
-  optionalFormValue,
   useSellerAuth,
 } from "./seller-ui";
-import { EditStoreDetailsModal, EditPayoutModal, EditAddressModal, EditDocumentsModal } from "./seller-profile-modals";
+import { EditStoreDetailsModal, EditPayoutModal, EditAddressModal, EditDocumentsModal, ProfileModal } from "./seller-profile-modals";
 
 const businessTypes: Array<{ value: SellerBusinessType; label: string }> = [
   { value: "INDIVIDUAL", label: "Individual" },
@@ -103,9 +93,8 @@ const verificationDocuments: Array<{
 ];
 
 export function SellerProfileClient() {
-  const queryClient = useQueryClient();
   const sellerAuth = useSellerAuth();
-  const [activeModal, setActiveModal] = useState<"STORE_DETAILS" | "PAYOUT" | "ADDRESS" | "DOCUMENTS" | null>(null);
+  const [activeModal, setActiveModal] = useState<"STORE_DETAILS" | "PAYOUT" | "ADDRESS" | "SERVICE_AREAS" | "DOCUMENTS" | null>(null);
 
   const profileQuery = useQuery({
     queryKey: ["seller-profile", sellerAuth.authKey],
@@ -134,6 +123,9 @@ export function SellerProfileClient() {
   const profileData = profileQuery.data;
   const address = profileData?.addresses?.[0];
   const payoutProfile = profileData?.payoutProfile;
+  const serviceAreas = profileData?.serviceAreas ?? [];
+  const activeServiceAreas = serviceAreas.filter((area) => area.isActive !== false);
+  const hasServiceCapability = sellerHasServiceCapability(profileData);
 
   return (
     <div className="mx-auto max-w-7xl pb-10">
@@ -159,7 +151,14 @@ export function SellerProfileClient() {
           <div className="px-6 py-5 flex flex-col gap-4 text-sm font-medium text-[#1F2933]">
             <div className="flex items-center gap-4">
               {profileData?.profile?.logoUrl ? (
-                <img src={profileData.profile.logoUrl} alt="Logo" className="h-12 w-12 rounded-full object-cover border" />
+                <span className="block h-12 w-12 overflow-hidden rounded-full border border-[#D8E2EA] bg-[#EAF1F7]">
+                  <StorefrontImage
+                    src={profileData.profile.logoUrl}
+                    alt={`${profileData.storeName} logo`}
+                    sizes="48px"
+                    fallbackLabel={profileData.storeName?.slice(0, 2).toUpperCase()}
+                  />
+                </span>
               ) : (
                 <div className="h-12 w-12 rounded-full bg-[#EAF1F7] flex items-center justify-center text-[#163B5C] font-bold">
                   {profileData?.storeName?.slice(0, 2).toUpperCase()}
@@ -253,6 +252,50 @@ export function SellerProfileClient() {
           </div>
         </SellerPanel>
 
+        {hasServiceCapability ? (
+          <SellerPanel className="flex flex-col">
+            <div className="flex items-center justify-between border-b border-[#D8E2EA] px-6 py-4">
+              <div>
+                <h2 className="text-lg font-bold text-[#1F2933]">Service Coverage</h2>
+                <p className="mt-1 text-xs font-semibold text-[#667085]">Areas customers can request your services from.</p>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => setActiveModal("SERVICE_AREAS")}>Edit</Button>
+            </div>
+            <div className="px-6 py-5 text-sm font-medium text-[#1F2933]">
+              {activeServiceAreas.length ? (
+                <div className="grid gap-3">
+                  {activeServiceAreas.slice(0, 4).map((area, index) => (
+                    <div key={area.id ?? `${area.label}-${index}`} className="rounded-md border border-[#EAF1F7] bg-[#F8FAFC] p-3">
+                      <div className="flex items-start gap-3">
+                        <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-md bg-[#FFF0EC] text-[#ED3500]">
+                          <Wrench className="h-4 w-4" aria-hidden="true" />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="font-bold text-[#1F2933]">{serviceAreaTitle(area)}</p>
+                          <p className="mt-1 text-xs font-semibold leading-5 text-[#667085]">
+                            {serviceAreaMeta(area)}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {activeServiceAreas.length > 4 ? (
+                    <p className="text-xs font-bold text-[#667085]">
+                      +{activeServiceAreas.length - 4} more service coverage areas configured.
+                    </p>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="py-6 text-center text-[#667085]">
+                  <Wrench className="mx-auto mb-2 h-8 w-8 opacity-50" />
+                  <p>No service coverage added yet.</p>
+                  <p className="mt-1 text-xs">Add service areas so customers know where this provider operates.</p>
+                </div>
+              )}
+            </div>
+          </SellerPanel>
+        ) : null}
+
         {/* Verification Documents Card */}
         <SellerPanel className="flex flex-col">
           <div className="flex items-center justify-between border-b border-[#D8E2EA] px-6 py-4">
@@ -295,7 +338,7 @@ export function SellerProfileClient() {
           onClose={() => setActiveModal(null)}
           authHeaders={sellerAuth.authHeaders!}
           authKey={sellerAuth.authKey!}
-          profile={profileData}
+          profile={profileData ?? null}
         />
       )}
       {activeModal === "ADDRESS" && (
@@ -304,7 +347,16 @@ export function SellerProfileClient() {
           onClose={() => setActiveModal(null)}
           authHeaders={sellerAuth.authHeaders!}
           authKey={sellerAuth.authKey!}
-          profile={profileData}
+          profile={profileData ?? null}
+        />
+      )}
+      {activeModal === "SERVICE_AREAS" && (
+        <EditServiceAreasModal
+          open={true}
+          onClose={() => setActiveModal(null)}
+          authHeaders={sellerAuth.authHeaders!}
+          authKey={sellerAuth.authKey!}
+          profile={profileData ?? null}
         />
       )}
       {activeModal === "DOCUMENTS" && (
@@ -319,6 +371,81 @@ export function SellerProfileClient() {
         />
       )}
     </div>
+  );
+}
+
+function EditServiceAreasModal({
+  open,
+  onClose,
+  authHeaders,
+  authKey,
+  profile,
+}: {
+  open: boolean;
+  onClose: () => void;
+  authHeaders: IndihubAuthHeaders;
+  authKey: string;
+  profile: SellerProfile | null;
+}) {
+  const queryClient = useQueryClient();
+  const [areas, setAreas] = useState<SellerServiceAreaDraft[]>(
+    profileServiceAreasToDraft(profile?.serviceAreas, profile?.addresses?.[0]),
+  );
+  const [notice, setNotice] = useState<string | null>(null);
+  const [noticeTone, setNoticeTone] = useState<"success" | "danger">("success");
+
+  const mutation = useMutation({
+    mutationFn: (payload: SellerProfilePayload) => updateSellerProfile(authHeaders, payload),
+    onSuccess: () => {
+      setNoticeTone("success");
+      setNotice("Service coverage updated successfully.");
+      void queryClient.invalidateQueries({ queryKey: ["seller-profile", authKey] });
+      setTimeout(() => onClose(), 1500);
+    },
+    onError: (error) => {
+      setNoticeTone("danger");
+      setNotice(error instanceof Error ? error.message : "Update failed.");
+    },
+  });
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setNotice(null);
+    mutation.mutate({ serviceAreas: draftServiceAreasToPayload(areas) });
+  }
+
+  return (
+    <ProfileModal
+      open={open}
+      onClose={onClose}
+      title="Edit Service Coverage"
+      description="Maintain the locations, pincodes, radius, and GPS hints used for service bookings."
+      isSaving={mutation.isPending}
+    >
+      <form onSubmit={submit}>
+        <div className="max-h-[60vh] overflow-y-auto px-6 py-5">
+          <SellerServiceAreaEditor
+            areas={areas}
+            disabled={mutation.isPending}
+            minimumAreas={0}
+            addLabel="Add service area"
+            emptyMessage="No service coverage added yet. Add at least one area for service bookings."
+            createArea={emptyDraftServiceArea}
+            onChange={setAreas}
+          />
+        </div>
+        <div className="flex items-center justify-between border-t border-[#D8E2EA] bg-[#F8FAFC] px-6 py-4">
+          <div>{notice && <StatusBadge tone={noticeTone}>{notice}</StatusBadge>}</div>
+          <div className="flex gap-3">
+            <Button type="button" variant="outline" onClick={onClose} disabled={mutation.isPending}>Cancel</Button>
+            <Button type="submit" disabled={mutation.isPending}>
+              {mutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Save coverage
+            </Button>
+          </div>
+        </div>
+      </form>
+    </ProfileModal>
   );
 }
 
@@ -430,18 +557,6 @@ function DocumentUploadField({
   );
 }
 
-function sellerPayoutProfilePayload(form: FormData): SellerProfilePayload["payoutProfile"] | undefined {
-  const payload = {
-    accountHolderName: optionalFormValue(form, "payoutAccountHolderName"),
-    bankName: optionalFormValue(form, "payoutBankName"),
-    accountNumber: optionalFormValue(form, "payoutAccountNumber"),
-    ifscCode: optionalFormValue(form, "payoutIfscCode"),
-    upiId: optionalFormValue(form, "payoutUpiId"),
-  };
-
-  return Object.values(payload).some(Boolean) ? payload : undefined;
-}
-
 function sellerHasServiceCapability(profile?: SellerProfile | null) {
   return Boolean(
     profile?.primaryCapability === "SERVICE" ||
@@ -491,6 +606,24 @@ function draftServiceAreaFromAddress(address: SellerProfile["addresses"][number]
     radiusKm: "10",
     isActive: true,
   };
+}
+
+function serviceAreaTitle(area: SellerServiceArea) {
+  return area.label?.trim() || area.pincode || area.cityCode || area.stateCode || area.countryCode || "Service area";
+}
+
+function serviceAreaMeta(area: SellerServiceArea) {
+  const location = [area.localAreaCode, area.cityCode, area.stateCode, area.countryCode]
+    .filter(Boolean)
+    .join(" / ");
+  const parts = [
+    area.pincode ? `Pincode ${area.pincode}` : null,
+    area.radiusKm ? `${area.radiusKm} km radius` : null,
+    area.latitude && area.longitude ? `GPS ${area.latitude}, ${area.longitude}` : null,
+    location || null,
+  ].filter(Boolean);
+
+  return parts.length ? parts.join(" - ") : "Coverage details are saved.";
 }
 
 function emptyDraftServiceArea(): SellerServiceAreaDraft {
@@ -569,43 +702,6 @@ function stringifyOptional(value: unknown) {
 
 function draftAreaId() {
   return createSellerServiceAreaDraftId();
-}
-
-function nullableFormValue(form: FormData, name: string) {
-  if (!form.has(name)) {
-    return undefined;
-  }
-
-  return optionalFormValue(form, name) ?? null;
-}
-
-function nullableCoordinatePair(form: FormData) {
-  const latitude = nullableNumberValue(form, "latitude");
-  const longitude = nullableNumberValue(form, "longitude");
-
-  if (latitude === undefined && longitude === undefined) {
-    return {};
-  }
-
-  if (typeof latitude === "number" && typeof longitude === "number") {
-    return { latitude, longitude };
-  }
-
-  return { latitude: null, longitude: null };
-}
-
-function nullableNumberValue(form: FormData, name: string) {
-  if (!form.has(name)) {
-    return undefined;
-  }
-
-  const value = optionalFormValue(form, name);
-  if (value === undefined) {
-    return null;
-  }
-
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function humanize(value?: string | null) {

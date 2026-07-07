@@ -91,6 +91,7 @@ export function StoreProfileClient({ slug }: { slug: string }) {
 
   const store = storeQuery.data;
   const address = store?.addresses[0];
+  const serviceAreas = (store?.serviceAreas ?? []).filter((area) => area.isActive !== false);
   const bannerUrl = store?.profile?.bannerUrl ?? null;
   const logoUrl = store?.profile?.logoUrl ?? null;
   const productCount = store?._count?.products ?? productsQuery.data?.items.length ?? 0;
@@ -257,6 +258,12 @@ export function StoreProfileClient({ slug }: { slug: string }) {
                   <Store className="h-3.5 w-3.5 text-[#ED3500]" aria-hidden="true" />
                   {locationMatchLabel(store.locationMatchLevel)}
                 </span>
+                {serviceAreas.length ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-[#E8EDF2] bg-white px-3 py-1.5">
+                    <Wrench className="h-3.5 w-3.5 text-[#ED3500]" aria-hidden="true" />
+                    {serviceAreas.length.toLocaleString("en-IN")} service {serviceAreas.length === 1 ? "area" : "areas"}
+                  </span>
+                ) : null}
               </div>
 
               {notice ? <StorefrontNotice className="mt-5">{notice}</StorefrontNotice> : null}
@@ -294,6 +301,32 @@ export function StoreProfileClient({ slug }: { slug: string }) {
                 </div>
               ) : null}
             </section>
+
+            {serviceAreas.length ? (
+              <section className="mx-auto max-w-7xl px-5 pb-12 lg:px-6">
+                <SectionHeading
+                  title="Service coverage"
+                  description="Locations where this provider accepts service bookings."
+                />
+                <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {serviceAreas.map((area, index) => (
+                    <div key={area.id ?? `${area.label}-${index}`} className="rounded-2xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
+                      <div className="flex items-start gap-3">
+                        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#FFF0EC] text-[#ED3500]">
+                          <Wrench className="h-5 w-5" aria-hidden="true" />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="font-black text-[#1F2933]">{publicServiceAreaTitle(area)}</p>
+                          <p className="mt-1 text-sm font-semibold leading-6 text-[#667085]">
+                            {publicServiceAreaMeta(area)}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : null}
 
             <section className="mx-auto max-w-7xl px-5 pb-12 lg:px-6">
               <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
@@ -570,6 +603,36 @@ function formatMonthYear(value?: string | null) {
   }
 
   return new Intl.DateTimeFormat("en-IN", { month: "short", year: "numeric" }).format(date);
+}
+
+function publicServiceAreaTitle(area: {
+  label?: string | null;
+  pincode?: string | null;
+  cityCode?: string | null;
+  stateCode?: string | null;
+  countryCode?: string | null;
+}) {
+  return area.label?.trim() || area.pincode || area.cityCode || area.stateCode || area.countryCode || "Service area";
+}
+
+function publicServiceAreaMeta(area: {
+  pincode?: string | null;
+  radiusKm?: number | null;
+  localAreaCode?: string | null;
+  cityCode?: string | null;
+  stateCode?: string | null;
+  countryCode?: string | null;
+}) {
+  const location = [area.localAreaCode, area.cityCode, area.stateCode, area.countryCode]
+    .filter(Boolean)
+    .join(" / ");
+  const parts = [
+    area.pincode ? `Pincode ${area.pincode}` : null,
+    area.radiusKm ? `${area.radiusKm} km radius` : null,
+    location || null,
+  ].filter(Boolean);
+
+  return parts.length ? parts.join(" - ") : "Coverage details available";
 }
 
 function isShareAbort(error: unknown) {

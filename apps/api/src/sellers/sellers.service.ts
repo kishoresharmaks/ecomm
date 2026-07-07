@@ -75,6 +75,21 @@ const publicSellerSelect = {
   addresses: {
     select: publicSellerAddressSelect,
   },
+  serviceAreas: {
+    where: { isActive: true },
+    select: {
+      id: true,
+      label: true,
+      countryCode: true,
+      stateCode: true,
+      cityCode: true,
+      localAreaCode: true,
+      pincode: true,
+      radiusKm: true,
+      isActive: true,
+    },
+    orderBy: [{ createdAt: "asc" as const }, { id: "asc" as const }],
+  },
 } satisfies Prisma.SellerSelect;
 
 const publicSellerLocationMatchRanks = {
@@ -467,6 +482,17 @@ export class SellersService {
         state: address.state,
         country: address.country,
         countryCode: address.countryCode,
+      })),
+      serviceAreas: seller.serviceAreas.map((area) => ({
+        id: area.id,
+        label: area.label,
+        countryCode: area.countryCode,
+        stateCode: area.stateCode,
+        cityCode: area.cityCode,
+        localAreaCode: area.localAreaCode,
+        pincode: area.pincode,
+        radiusKm: area.radiusKm,
+        isActive: area.isActive,
       })),
       locationMatchLevel,
       _count: {

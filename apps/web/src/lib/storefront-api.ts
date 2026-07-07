@@ -196,6 +196,18 @@ export type PublicStoreAddress = {
   countryCode?: string | null;
 };
 
+export type PublicStoreServiceArea = {
+  id: string;
+  label?: string | null;
+  countryCode?: string | null;
+  stateCode?: string | null;
+  cityCode?: string | null;
+  localAreaCode?: string | null;
+  pincode?: string | null;
+  radiusKm?: number | null;
+  isActive?: boolean;
+};
+
 export type StoreLocationMatchLevel = "LOCAL_AREA" | "PINCODE" | "CITY" | "STATE" | "COUNTRY" | "NONE";
 export type StoreRankingMode =
   | "LOCATION_MATCH"
@@ -228,6 +240,7 @@ export type StoreProfile = {
     createdAt?: string;
   } | null;
   addresses: PublicStoreAddress[];
+  serviceAreas?: PublicStoreServiceArea[];
   locationMatchLevel?: StoreLocationMatchLevel;
   _count?: {
     products?: number;
