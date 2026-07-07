@@ -56,8 +56,8 @@ Seller order and B2B enquiry alerts use Expo Push Service. The mobile app regist
 Native config is generated from `app.config.js`:
 - `expo-notifications` with Android channel `seller-alerts`.
 - iOS `aps-environment` from `EXPO_PUBLIC_APP_ENV` (`development` unless it is `production`).
-- Sentry source-map upload plugin is enabled only when `SENTRY_ORG` and `SENTRY_PROJECT` are provided, with public env fallbacks supported for local config inspection.
-- Metro wraps with `withSentryConfig` so release bundles contain Sentry debug IDs for source-map matching.
+- Sentry runtime telemetry is enabled by `EXPO_PUBLIC_SENTRY_DSN` outside development, or locally with `EXPO_PUBLIC_ENABLE_SENTRY=true`.
+- Sentry source-map/debug-ID Metro wrapping is opt-in for release builds. Set `EXPO_PUBLIC_ENABLE_SENTRY_METRO=true` together with `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, and `SENTRY_PROJECT` only when source-map upload is being validated.
 
 Required EAS/Sentry secrets before release builds:
 
@@ -66,6 +66,12 @@ eas secret:create --name SENTRY_AUTH_TOKEN --value <token>
 eas secret:create --name SENTRY_ORG --value <org-slug>
 eas secret:create --name SENTRY_PROJECT --value <project-slug>
 eas secret:create --name EXPO_PUBLIC_EAS_PROJECT_ID --value <eas-project-id>
+```
+
+Enable Sentry source-map upload only after a normal release build is green:
+
+```powershell
+eas secret:create --name EXPO_PUBLIC_ENABLE_SENTRY_METRO --value true
 ```
 
 Manual E2E checklist still required on real builds/devices:

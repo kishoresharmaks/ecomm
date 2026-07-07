@@ -9,8 +9,9 @@ const projectRoot = __dirname;
 const workspaceRoot = path.resolve(projectRoot, "../..");
 
 const config = getDefaultConfig(projectRoot);
-const appEnv = process.env.EXPO_PUBLIC_APP_ENV ?? process.env.NODE_ENV;
-const enableSentry = appEnv !== "development" || process.env.EXPO_PUBLIC_ENABLE_SENTRY === "true";
+const enableSentryMetro =
+  process.env.EXPO_PUBLIC_ENABLE_SENTRY_METRO === "true" &&
+  Boolean(process.env.SENTRY_AUTH_TOKEN && process.env.SENTRY_ORG && process.env.SENTRY_PROJECT);
 
 config.watchFolders = [workspaceRoot];
 config.resolver.nodeModulesPaths = [
@@ -19,4 +20,4 @@ config.resolver.nodeModulesPaths = [
 ];
 config.resolver.unstable_enablePackageExports = false;
 
-module.exports = enableSentry ? withSentryConfig(config) : config;
+module.exports = enableSentryMetro ? withSentryConfig(config) : config;
