@@ -69,6 +69,8 @@ module.exports = {
       supportsTablet: false,
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
+        NSUserNotificationsUsageDescription:
+          "Allow 1HandIndia Delivery to send assigned-order, return pickup, COD, and route alerts.",
         UIBackgroundModes: ["location", "remote-notification"],
       },
     },

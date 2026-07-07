@@ -2,7 +2,7 @@ import { ApiPropertyOptional } from "@nestjs/swagger";
 import { IsIn, IsOptional, IsString, Matches, MaxLength } from "class-validator";
 
 export class RegisterSellerPushTokenDto {
-  @Matches(/^ExponentPushToken\[[\w-]+\]$/)
+  @Matches(/^Expo(nent)?PushToken\[[\w-]+\]$/)
   @MaxLength(160)
   token!: string;
 
@@ -23,7 +23,7 @@ export class RegisterSellerPushTokenDto {
 }
 
 export class RevokeSellerPushTokenDto {
-  @Matches(/^ExponentPushToken\[[\w-]+\]$/)
+  @Matches(/^Expo(nent)?PushToken\[[\w-]+\]$/)
   @MaxLength(160)
   token!: string;
 }

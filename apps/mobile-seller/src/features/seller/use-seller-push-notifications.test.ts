@@ -9,6 +9,10 @@ vi.mock("expo-router", () => ({
   },
 }));
 
+vi.mock("../../lib/mobile-telemetry", () => ({
+  captureMobileError: vi.fn(),
+}));
+
 vi.mock("react-native", () => ({
   Platform: { OS: "android" },
 }));

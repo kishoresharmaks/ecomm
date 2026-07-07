@@ -1,9 +1,19 @@
-/* global module, process */
+/* eslint-disable @typescript-eslint/no-require-imports */
+/* global module, process, require */
+
+const fs = require("node:fs");
 
 const sentryOrganization = process.env.SENTRY_ORG ?? process.env.EXPO_PUBLIC_SENTRY_ORG;
 const sentryProject = process.env.SENTRY_PROJECT ?? process.env.EXPO_PUBLIC_SENTRY_PROJECT;
 const easProjectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID ?? "e017cb61-41d7-4e0f-9268-573106ddd729";
 const apsEnvironment = process.env.EXPO_PUBLIC_APP_ENV === "production" ? "production" : "development";
+const androidGoogleServicesFile =
+  process.env.GOOGLE_SERVICES_JSON ??
+  (fs.existsSync("./google-services.json")
+    ? "./google-services.json"
+    : fs.existsSync("./android/app/google-services.json")
+      ? "./android/app/google-services.json"
+      : undefined);
 const sentryPlugin =
   sentryOrganization && sentryProject
     ? [
@@ -37,10 +47,12 @@ module.exports = {
     android: {
       package: "com.onehandindia.seller",
       versionCode: 1,
+      ...(androidGoogleServicesFile ? { googleServicesFile: androidGoogleServicesFile } : {}),
       adaptiveIcon: {
         foregroundImage: "./assets/adaptive-icon.png",
         backgroundColor: "#FFFCFB",
       },
+      permissions: ["android.permission.POST_NOTIFICATIONS"],
     },
     ios: {
       bundleIdentifier: "com.onehandindia.seller",
@@ -51,6 +63,8 @@ module.exports = {
       },
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
+        NSUserNotificationsUsageDescription:
+          "Allow 1HandIndia Seller to send you new order, B2B enquiry, subscription, and payout alerts.",
         UIBackgroundModes: ["remote-notification"],
       },
     },

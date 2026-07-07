@@ -10,3 +10,8 @@ export function validateSellerContactPhone(value: string) {
     ? undefined
     : "Enter a valid phone number with 7 to 25 digits/symbols.";
 }
+
+export function optionalSellerProfileText(value: string) {
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}

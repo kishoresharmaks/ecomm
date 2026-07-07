@@ -19,7 +19,7 @@ import {
   MinLength,
   ValidateNested,
 } from "class-validator";
-import { Type } from "class-transformer";
+import { Transform, Type } from "class-transformer";
 import { SellerBusinessType, SellerCapability } from "@indihub/database";
 import { SellerVerificationDocumentDto } from "./create-seller-registration.dto";
 
@@ -276,8 +276,14 @@ export class UpdateSellerProfileDto {
 
   @ApiPropertyOptional({ enum: SellerBusinessType, example: SellerBusinessType.PROPRIETORSHIP })
   @IsOptional()
+  @Transform(({ value }) => {
+    if (typeof value === "string" && value.trim() === "") {
+      return null;
+    }
+    return value;
+  })
   @IsEnum(SellerBusinessType)
-  businessType?: SellerBusinessType;
+  businessType?: SellerBusinessType | null;
 
   @ApiPropertyOptional({ example: "33ABCDE1234F1Z5" })
   @IsOptional()

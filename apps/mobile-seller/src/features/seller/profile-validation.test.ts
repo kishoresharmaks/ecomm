@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validateSellerContactPhone } from "./profile-validation";
+import { optionalSellerProfileText, validateSellerContactPhone } from "./profile-validation";
 
 describe("validateSellerContactPhone", () => {
   it("allows empty optional phone values", () => {
@@ -15,5 +15,16 @@ describe("validateSellerContactPhone", () => {
   it("rejects too-short or non-phone values", () => {
     expect(validateSellerContactPhone("12345")).toBeTruthy();
     expect(validateSellerContactPhone("support@example.com")).toBeTruthy();
+  });
+});
+
+describe("optionalSellerProfileText", () => {
+  it("omits blank optional profile values from mobile payloads", () => {
+    expect(optionalSellerProfileText("")).toBeUndefined();
+    expect(optionalSellerProfileText("   ")).toBeUndefined();
+  });
+
+  it("keeps trimmed non-empty profile values", () => {
+    expect(optionalSellerProfileText(" PROPRIETORSHIP ")).toBe("PROPRIETORSHIP");
   });
 });

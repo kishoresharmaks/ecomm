@@ -6,7 +6,11 @@ import {
   SellerType,
   UserStatus,
 } from "@indihub/database";
+import { plainToInstance } from "class-transformer";
+import { validateSync } from "class-validator";
 import { describe, expect, it, vi } from "vitest";
+import { RegisterSellerPushTokenDto } from "./dto/seller-push-token.dto";
+import { UpdateSellerProfileDto } from "./dto/seller-profile.dto";
 import { SellersService } from "./sellers.service";
 
 describe("SellersService profile readback", () => {
@@ -94,5 +98,23 @@ describe("SellersService profile readback", () => {
         radiusKm: 12,
       }),
     ]);
+  });
+});
+
+describe("seller DTO normalization", () => {
+  it("treats a blank optional business type as empty instead of a Prisma enum value", () => {
+    const dto = plainToInstance(UpdateSellerProfileDto, { businessType: "" });
+
+    expect(validateSync(dto)).toEqual([]);
+    expect(dto.businessType).toBeNull();
+  });
+
+  it("accepts current Expo push token format for seller devices", () => {
+    const dto = plainToInstance(RegisterSellerPushTokenDto, {
+      platform: "android",
+      token: "ExpoPushToken[token-1]",
+    });
+
+    expect(validateSync(dto)).toEqual([]);
   });
 });

@@ -20,6 +20,7 @@ The target quality is a professional marketplace portal similar in seriousness a
 | Document | Purpose |
 |---|---|
 | `docs/IndiHub_FULL_IMPLEMENTATION_SCOPE_GOVERNANCE.md` | Active rule: selected features are implemented fully, not limited by generic Phase 1 scope. |
+| `docs/IndiHub_COMPLETE_E2E_MANUAL_QA_AND_SELLER_COMPLETION_ANALYSIS.md` | Complete manual E2E QA plan, release checklist, and final seller-side feature completion analysis. |
 | `docs/IndiHub_Final_Scope_Requirement_Confirmation_Phase1.md` | Historical client scope confirmation and budget record. |
 | `docs/IndiHub_WhatsApp_Feature_List.md` | WhatsApp-ready feature summary for client sharing. |
 | `docs/IndiHub_PROJECT_SCOPE_AND_REQUIREMENTS.md` | Complete product scope and requirements reference. |

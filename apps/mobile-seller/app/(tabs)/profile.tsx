@@ -8,7 +8,7 @@ import { Button, CollapsibleSection, Field, LoadingState, Screen, StatusChip, To
 import { launchSellerImageLibraryAsync } from "../../src/features/seller/image-picker";
 import { uploadPublicSellerImage, uploadSellerPrivateDocument, type MobileUploadFile } from "../../src/features/seller/mobile-upload";
 import { buildSellerPayoutProfilePayload } from "../../src/features/seller/profile-payout";
-import { validateSellerContactPhone } from "../../src/features/seller/profile-validation";
+import { optionalSellerProfileText, validateSellerContactPhone } from "../../src/features/seller/profile-validation";
 import {
   getSellerProfile,
   updateSellerProfile,
@@ -166,16 +166,21 @@ export default function SellerProfileScreen() {
         throw new Error("Please fix validation errors before saving.");
       }
       const payoutProfile = buildSellerPayoutProfilePayload(fields);
+      const description = optionalSellerProfileText(fields.description);
+      const businessLegalName = optionalSellerProfileText(fields.businessLegalName);
+      const businessType = optionalSellerProfileText(fields.businessType);
+      const gstNumber = optionalSellerProfileText(fields.gstNumber);
+      const panNumber = optionalSellerProfileText(fields.panNumber);
       return updateSellerProfile(auth.authHeaders, {
         storeName: fields.storeName,
-        description: fields.description,
         contactName: fields.contactName,
         contactPhone: fields.contactPhone,
         contactEmail: fields.contactEmail,
-        businessLegalName: fields.businessLegalName,
-        businessType: fields.businessType,
-        gstNumber: fields.gstNumber,
-        panNumber: fields.panNumber,
+        ...(description ? { description } : {}),
+        ...(businessLegalName ? { businessLegalName } : {}),
+        ...(businessType ? { businessType } : {}),
+        ...(gstNumber ? { gstNumber } : {}),
+        ...(panNumber ? { panNumber } : {}),
         address: {
           line1: fields.line1,
           line2: fields.line2,

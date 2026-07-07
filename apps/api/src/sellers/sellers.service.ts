@@ -728,6 +728,7 @@ export class SellersService {
 
     const courierSettings = this.normalizeCourierProviderSettings(dto.courierSettings);
     const serviceAreas = this.normalizeSellerServiceAreas(dto.serviceAreas);
+    const businessType = this.normalizeSellerBusinessType(dto.businessType);
     if (dto.courierSettings !== undefined && courierSettings.length) {
       const configuredProviders = await this.prisma.client.courierProviderSetting.findMany({
         where: { providerCode: { in: courierSettings.map((setting) => setting.providerCode) } },
@@ -774,7 +775,7 @@ export class SellersService {
             ...(dto.businessLegalName !== undefined
               ? { businessLegalName: this.emptyToNull(dto.businessLegalName) }
               : {}),
-            ...(dto.businessType !== undefined ? { businessType: dto.businessType ?? null } : {}),
+            ...(dto.businessType !== undefined ? { businessType } : {}),
             ...(dto.gstNumber !== undefined
               ? { gstNumber: this.normalizeGstNumber(dto.gstNumber) }
               : {}),
@@ -791,7 +792,7 @@ export class SellersService {
             bannerUrl: bannerUrl || null,
             description: dto.description ?? null,
             businessLegalName: this.emptyToNull(dto.businessLegalName),
-            businessType: dto.businessType ?? null,
+            businessType,
             gstNumber: this.normalizeGstNumber(dto.gstNumber),
             panNumber: this.normalizePanNumber(dto.panNumber),
             contactName:
@@ -1474,6 +1475,15 @@ export class SellersService {
     }
 
     return normalized;
+  }
+
+  private normalizeSellerBusinessType(value?: string | null) {
+    const normalized = this.emptyToNull(value);
+    if (!normalized) {
+      return null;
+    }
+
+    return normalized as NonNullable<UpdateSellerProfileDto["businessType"]>;
   }
 
   private emptyToNull(value?: string | null) {

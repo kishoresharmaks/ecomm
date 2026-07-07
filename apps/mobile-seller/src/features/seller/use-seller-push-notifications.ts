@@ -5,6 +5,7 @@ import { router } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Platform } from "react-native";
 import type { MobileAuthHeaders } from "../../lib/api";
+import { captureMobileError } from "../../lib/mobile-telemetry";
 import { registerSellerPushToken, revokeSellerPushToken } from "./seller-api";
 
 export type SellerPushPermissionState =
@@ -113,7 +114,8 @@ export function useSellerPushNotifications(auth: { authHeaders: MobileAuthHeader
       await registerSellerPushToken(auth.authHeaders, payload);
       registeredTokenRef.current = { authHeaders: auth.authHeaders, token: pushToken };
       updateState("registered", setState);
-    } catch {
+    } catch (error) {
+      captureMobileError(error, "seller-push-registration");
       updateState("unavailable", setState);
     }
   }, [auth.authHeaders, auth.enabled, revokeRegisteredToken]);
