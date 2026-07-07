@@ -168,7 +168,7 @@ export class SellerPayoutsService {
           tcsPaise: availability.tcsPaise,
           platformFeePaise: availability.platformFeePaise,
           refundAdjustmentPaise: availability.refundAdjustmentPaise,
-          adjustmentPaise: -availability.serviceReceivableOffsetPaise,
+          adjustmentPaise: availability.manualAdjustmentPaise - availability.serviceReceivableOffsetPaise,
           netPayablePaise: availability.netPayablePaise,
           currency: availability.currency,
           note: dto.note?.trim() || "Requested by seller for manual payout."
@@ -276,6 +276,23 @@ export class SellerPayoutsService {
         }
       }
 
+      for (const entry of availability.manualAdjustments) {
+        const updated = await tx.sellerLedgerEntry.updateMany({
+          where: {
+            id: entry.id,
+            sellerId,
+            payoutId: null,
+            entryType: SellerLedgerEntryType.MANUAL_ADJUSTMENT,
+          },
+          data: {
+            payoutId: payout.id,
+          },
+        });
+        if (updated.count !== 1) {
+          throw new ConflictException("Manual adjustment changed while creating this request. Refresh and try again.");
+        }
+      }
+
       await this.createEvent(tx, payout.id, "payout.requested_by_seller", SellerPayoutStatus.DRAFT, SellerPayoutStatus.PENDING_APPROVAL, actor, dto.note);
       await this.audit(
         tx,
@@ -290,6 +307,7 @@ export class SellerPayoutsService {
           eligibleB2BOrderCount: availability.eligibleB2BOrderCount,
           eligibleServiceSettlementCount: availability.eligibleServiceSettlementCount,
           serviceReceivableOffsetPaise: availability.serviceReceivableOffsetPaise,
+          manualAdjustmentPaise: availability.manualAdjustmentPaise,
           netPayablePaise: availability.netPayablePaise,
           note: dto.note
         }
@@ -343,7 +361,7 @@ export class SellerPayoutsService {
     const profile = await this.prisma.client.$transaction(async (tx) => {
       const seller = await tx.seller.findFirst({
         where: { id: sellerId, deletedAt: null },
-        include: { payoutProfile: true }
+        include: { payoutProfile: true, profile: true }
       });
 
       if (!seller) {
@@ -352,7 +370,7 @@ export class SellerPayoutsService {
       if (!seller.payoutProfile) {
         throw new BadRequestException("Seller payout profile is not configured.");
       }
-      if (dto.verified && !this.hasPayoutMethod(seller.payoutProfile)) {
+      if (dto.verified && !this.hasPayoutMethod(seller.payoutProfile, seller.profile)) {
         throw new BadRequestException("Seller payout profile is incomplete.");
       }
 
@@ -834,11 +852,12 @@ export class SellerPayoutsService {
   }
 
   private async calculateSellerPayoutAvailability(tx: Prisma.TransactionClient, sellerId: string) {
-    const [seller, settings, splits, b2bOrders, serviceSettlements, receivables] = await Promise.all([
+    const [seller, settings, splits, b2bOrders, serviceSettlements, receivables, manualAdjustments] = await Promise.all([
       tx.seller.findUnique({
         where: { id: sellerId },
         include: {
-          payoutProfile: true
+          payoutProfile: true,
+          profile: true
         }
       }),
       this.payoutRequestSettings(tx),
@@ -897,6 +916,14 @@ export class SellerPayoutsService {
           offsetPolicy: { in: [ServiceReceivableOffsetPolicy.AUTO_OFFSET_NEXT_PAYOUT, ServiceReceivableOffsetPolicy.HOLD_PAYOUT_UNTIL_SETTLED] },
         },
         orderBy: { createdAt: "asc" },
+      }),
+      tx.sellerLedgerEntry.findMany({
+        where: {
+          sellerId,
+          payoutId: null,
+          entryType: SellerLedgerEntryType.MANUAL_ADJUSTMENT,
+        },
+        orderBy: { createdAt: "asc" },
       })
     ]);
 
@@ -945,6 +972,10 @@ export class SellerPayoutsService {
       totals.netPayablePaise += settlement.netPayablePaise;
     }
 
+    const manualAdjustmentPaise = manualAdjustments.reduce((sum, entry) => sum + (entry.creditPaise - entry.debitPaise), 0);
+    totals.adjustmentPaise += manualAdjustmentPaise;
+    totals.netPayablePaise += totals.adjustmentPaise;
+
     const holdReceivableCount = receivables.filter(
       (receivable) =>
         receivable.offsetPolicy === ServiceReceivableOffsetPolicy.HOLD_PAYOUT_UNTIL_SETTLED &&
@@ -973,7 +1004,7 @@ export class SellerPayoutsService {
       ...eligibleServiceSettlements.map((settlement) => settlement.booking.createdAt),
     ];
     const sellerReady = seller.status === SellerStatus.APPROVED && seller.approvalStatus === ApprovalStatus.APPROVED && !seller.deletedAt;
-    const hasPayoutMethod = this.hasPayoutMethod(seller.payoutProfile);
+    const hasPayoutMethod = this.hasPayoutMethod(seller.payoutProfile, seller.profile);
 
     return {
       ...settings,
@@ -984,12 +1015,15 @@ export class SellerPayoutsService {
       eligibleServiceSettlementCount: eligibleServiceSettlements.length,
       holdReceivableCount,
       serviceReceivableOffsetPaise,
+      manualAdjustmentPaise,
       periodFrom: orderDates.length ? new Date(Math.min(...orderDates.map((date) => date.getTime()))) : null,
       periodTo: orderDates.length ? new Date(Math.max(...orderDates.map((date) => date.getTime()))) : null,
       calculations,
+      splits,
       b2bOrders: eligibleB2BOrders,
       serviceSettlements: eligibleServiceSettlements,
       receivableOffsets,
+      manualAdjustments,
       ...totals
     };
   }
@@ -1088,13 +1122,17 @@ export class SellerPayoutsService {
     return readNumberSetting(settingMap.get(key), fallback);
   }
 
-  private hasPayoutMethod(profile: { accountHolderName?: string | null; bankName?: string | null; accountNumber?: string | null; ifscCode?: string | null; upiId?: string | null } | null) {
-    if (!profile) {
+  private hasPayoutMethod(
+    payoutProfile: { accountHolderName?: string | null; bankName?: string | null; accountNumber?: string | null; ifscCode?: string | null; upiId?: string | null } | null,
+    sellerProfile?: { contactName?: string | null; businessLegalName?: string | null } | null
+  ) {
+    if (!payoutProfile) {
       return false;
     }
 
-    const hasUpi = Boolean(profile.accountHolderName?.trim() && profile.upiId?.trim());
-    const hasBank = Boolean(profile.accountHolderName?.trim() && profile.bankName?.trim() && profile.accountNumber?.trim() && profile.ifscCode?.trim());
+    const name = payoutProfile.accountHolderName?.trim() || sellerProfile?.contactName?.trim() || sellerProfile?.businessLegalName?.trim();
+    const hasUpi = Boolean(name && payoutProfile.upiId?.trim());
+    const hasBank = Boolean(name && payoutProfile.bankName?.trim() && payoutProfile.accountNumber?.trim() && payoutProfile.ifscCode?.trim());
 
     return hasUpi || hasBank;
   }
@@ -1108,6 +1146,7 @@ export class SellerPayoutsService {
       tcsPaise: 0,
       platformFeePaise: 0,
       refundAdjustmentPaise: 0,
+      adjustmentPaise: 0,
       netPayablePaise: 0,
       currency: "INR"
     };

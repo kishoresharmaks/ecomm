@@ -444,7 +444,8 @@ export function SellerProfileClient() {
             <SellerField
               label="Account holder name"
               name="payoutAccountHolderName"
-              placeholder={payoutProfile?.accountHolderName ?? profile?.profile?.contactName ?? "Enter account holder name"}
+              defaultValue={payoutProfile?.accountHolderName ?? profile?.profile?.contactName ?? ""}
+              placeholder="Enter account holder name"
             />
             <SellerField
               label="UPI ID"
@@ -454,7 +455,8 @@ export function SellerProfileClient() {
             <SellerField
               label="Bank name"
               name="payoutBankName"
-              placeholder={payoutProfile?.bankName ?? "Enter bank name"}
+              defaultValue={payoutProfile?.bankName ?? ""}
+              placeholder="Enter bank name"
             />
             <SellerField
               label="Account number"
@@ -464,7 +466,8 @@ export function SellerProfileClient() {
             <SellerField
               label="IFSC code"
               name="payoutIfscCode"
-              placeholder={payoutProfile?.ifscCode ?? "Enter IFSC code"}
+              defaultValue={payoutProfile?.ifscCode ?? ""}
+              placeholder="Enter IFSC code"
             />
             {payoutProfile ? (
               <p className="text-xs font-semibold leading-5 text-[#667085] md:col-span-2">
