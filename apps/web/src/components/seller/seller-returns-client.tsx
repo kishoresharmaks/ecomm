@@ -169,8 +169,7 @@ export function SellerReturnsClient() {
   const isBusy = noteMutation.isPending || decisionMutation.isPending;
 
   return (
-    <div className="-mx-4 bg-[#F8FAFC] px-4 pb-24 pt-1 sm:-mx-6 sm:px-6 lg:-mx-10 lg:px-10">
-      <div className="mx-auto max-w-[1800px] space-y-6">
+    <div className="space-y-6">
         <ReturnsHeader
           search={search}
           setSearch={setSearch}
@@ -220,7 +219,6 @@ export function SellerReturnsClient() {
           </section>
         </div>
       </div>
-    </div>
   );
 }
 
@@ -238,20 +236,7 @@ function ReturnsHeader({
   isRefreshing: boolean;
 }) {
   return (
-    <div className="flex flex-col gap-4 rounded-2xl border border-[#E2E8F0] bg-white p-4 shadow-sm shadow-slate-200/70 xl:flex-row xl:items-center xl:justify-between">
-      <div className="min-w-0">
-        <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-2 text-xs font-bold text-[#64748B]">
-          <Link href="/seller" className="transition hover:text-[#ED5A2F]">Home</Link>
-          <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
-          <Link href="/seller/orders" className="transition hover:text-[#ED5A2F]">Orders</Link>
-          <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
-          <span className="text-[#0F172A]">Returns</span>
-        </nav>
-        <h2 className="mt-2 text-[36px] font-black leading-tight tracking-normal text-[#0F172A]">Returns</h2>
-        <p className="mt-1 text-sm font-semibold text-[#64748B]">Manage product returns, seller review decisions, pickup progress, and refund readiness in one place.</p>
-      </div>
-
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
         <form onSubmit={onSubmit} className="min-w-0 sm:w-[360px]">
           <label className="relative block">
             <span className="sr-only">Search seller returns</span>
@@ -260,16 +245,15 @@ function ReturnsHeader({
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search order, return ID, customer, SKU, product..."
-              className="h-12 w-full rounded-2xl border border-[#CBD5E1] bg-[#F8FAFC] pl-11 pr-4 text-sm font-semibold text-[#0F172A] outline-none transition placeholder:text-[#94A3B8] focus:border-[#ED5A2F] focus:bg-white focus:ring-4 focus:ring-[#FED7CA]"
+              className="h-12 w-full rounded-2xl border border-[#CBD5E1] bg-white pl-11 pr-4 text-sm font-semibold text-[#0F172A] outline-none transition placeholder:text-[#94A3B8] focus:border-[#ED5A2F] focus:ring-4 focus:ring-[#FED7CA]"
             />
           </label>
         </form>
-        <Button type="button" variant="outline" className="h-12 rounded-2xl" onClick={onRefresh} disabled={isRefreshing}>
+        <Button type="button" variant="outline" className="h-12 rounded-2xl bg-white" onClick={onRefresh} disabled={isRefreshing}>
           <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} aria-hidden="true" />
           Refresh
         </Button>
       </div>
-    </div>
   );
 }
 
