@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { FormEvent, useState, useEffect } from "react";
 import { ArrowRight, PackageCheck, Search, Filter } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Button, SectionHeading } from "@indihub/ui";
@@ -55,6 +55,15 @@ function CheckboxGroup({ label, options, selected, onChange }: { label: string; 
   );
 }
 
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedValue(value), delay);
+    return () => clearTimeout(timer);
+  }, [value, delay]);
+  return debouncedValue;
+}
+
 export function SellerOrdersClient() {
   const sellerAuth = useSellerAuth();
   const [search, setSearch] = useState("");
@@ -63,14 +72,18 @@ export function SellerOrdersClient() {
   const [deliveryStatus, setDeliveryStatus] = useState<string[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<string[]>([]);
 
+  const debouncedOrderStatus = useDebounce(orderStatus, 500);
+  const debouncedDeliveryStatus = useDebounce(deliveryStatus, 500);
+  const debouncedPaymentMethod = useDebounce(paymentMethod, 500);
+
   const ordersQuery = useQuery({
-    queryKey: ["seller-orders", sellerAuth.authKey, submittedSearch, orderStatus, deliveryStatus, paymentMethod],
+    queryKey: ["seller-orders", sellerAuth.authKey, submittedSearch, debouncedOrderStatus, debouncedDeliveryStatus, debouncedPaymentMethod],
     queryFn: () =>
       listSellerOrders(sellerAuth.authHeaders, {
         search: submittedSearch,
-        orderStatus,
-        deliveryStatus,
-        paymentMethod,
+        orderStatus: debouncedOrderStatus,
+        deliveryStatus: debouncedDeliveryStatus,
+        paymentMethod: debouncedPaymentMethod,
         limit: 30
       }),
     enabled: sellerAuth.enabled,
