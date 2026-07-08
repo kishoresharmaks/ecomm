@@ -108,6 +108,12 @@ export class AdminCourierProvidersController {
   ) {
     return this.deliveryRouting.updateCourierProviderActive(actor, providerCode, dto);
   }
+
+  @Post(":providerCode/verify")
+  @ApiOperation({ summary: "Verify courier provider credentials." })
+  verifyProvider(@Param("providerCode") providerCode: string) {
+    return this.deliveryRouting.verifyCourierProvider(providerCode);
+  }
 }
 
 @ApiTags("Courier Providers")
@@ -151,6 +157,13 @@ export class CourierProvidersController {
     @Body() dto: UpdateCourierProviderActiveDto,
   ) {
     return this.deliveryRouting.updateCourierProviderActive(actor, providerCode, dto);
+  }
+
+  @Post(":providerCode/verify")
+  @Roles(RoleCode.ADMIN)
+  @ApiOperation({ summary: "Verify courier provider credentials." })
+  verifyProvider(@Param("providerCode") providerCode: string) {
+    return this.deliveryRouting.verifyCourierProvider(providerCode);
   }
 }
 

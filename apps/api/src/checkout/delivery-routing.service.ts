@@ -886,6 +886,33 @@ export class DeliveryRoutingService {
     return this.courierProviderReadback(provider);
   }
 
+  async verifyCourierProvider(providerCode: string) {
+    const normalized = this.normalizeProviderCode(providerCode);
+    const existing = await this.prisma.client.courierProviderSetting.findUnique({
+      where: { providerCode: normalized },
+    });
+    if (!existing) {
+      throw new NotFoundException("Courier provider not found.");
+    }
+
+    if (!this.courierAdapters) {
+      throw new BadRequestException("Courier adapters are not configured.");
+    }
+
+    const adapterCode = existing.adapterCode ?? normalized;
+    const adapter = this.courierAdapters.getAdapter(adapterCode);
+    if (!adapter) {
+      throw new BadRequestException(`No active courier adapter found for ${adapterCode}.`);
+    }
+
+    if (!adapter.verifyCredentials) {
+      throw new BadRequestException(`Courier adapter ${adapterCode} does not support credential verification.`);
+    }
+
+    const settingsSnapshot = existing as unknown as CourierProviderAdapterSnapshot;
+    return adapter.verifyCredentials(settingsSnapshot);
+  }
+
   async simulateRouting(dto: RoutingSimulatorDto) {
     const address = dto.shippingAddress
       ? await this.createAddressSnapshot(dto.shippingAddress)

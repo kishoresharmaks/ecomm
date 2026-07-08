@@ -143,4 +143,5 @@ export interface CourierAdapter {
   bookShipment(request: CourierBookingRequest): Promise<CourierBookingResult>;
   quoteShipment?(request: CourierRateQuoteRequest): Promise<CourierRateQuoteResult>;
   syncPickupLocation?(request: CourierPickupSyncRequest): Promise<CourierPickupSyncResult>;
+  verifyCredentials?(settings: CourierProviderAdapterSnapshot): Promise<{ success: boolean; message?: string }>;
 }

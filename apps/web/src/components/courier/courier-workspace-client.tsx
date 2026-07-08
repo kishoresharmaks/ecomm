@@ -44,6 +44,7 @@ import {
   updateCourierDeliveryPartnerProfile,
   updateCourierPackageTracking,
   updateCourierProviderActive,
+  verifyCourierProvider,
   type CourierCodRemittance,
   type CourierDashboard,
   type CourierDeliveryPartnerPayload,
@@ -1118,6 +1119,9 @@ export function CourierProvidersClient() {
       await queryClient.invalidateQueries({ queryKey: ["courier-dashboard"] });
     },
   });
+  const verifyMutation = useMutation({
+    mutationFn: () => verifyCourierProvider(auth.authHeaders, form.providerCode),
+  });
 
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_440px]">
@@ -1179,11 +1183,23 @@ export function CourierProvidersClient() {
             />
             Active provider
           </label>
-          <Button type="button" disabled={saveMutation.isPending || form.providerCode.trim().length < 2 || form.displayName.trim().length < 2} onClick={() => saveMutation.mutate()}>
-            <Save className="h-4 w-4" aria-hidden="true" />
-            {saveMutation.isPending ? "Saving..." : "Save provider"}
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button type="button" disabled={saveMutation.isPending || form.providerCode.trim().length < 2 || form.displayName.trim().length < 2} onClick={() => saveMutation.mutate()}>
+              <Save className="h-4 w-4" aria-hidden="true" />
+              {saveMutation.isPending ? "Saving..." : "Save provider"}
+            </Button>
+            <Button type="button" variant="outline" disabled={verifyMutation.isPending || form.providerCode.trim().length < 2} onClick={() => verifyMutation.mutate()}>
+              <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+              {verifyMutation.isPending ? "Verifying..." : "Verify Now"}
+            </Button>
+          </div>
           {saveMutation.isError ? <MutationError error={saveMutation.error} /> : null}
+          {verifyMutation.isError ? <MutationError error={verifyMutation.error} /> : null}
+          {verifyMutation.isSuccess ? (
+            <div className={`mt-2 text-xs font-bold px-3 py-2 rounded bg-white border border-[#D8E2EA] ${verifyMutation.data?.success ? "text-[#0F8A5F]" : "text-[#B42318]"}`}>
+              {verifyMutation.data?.message || (verifyMutation.data?.success ? "Verified successfully" : "Verification failed")}
+            </div>
+          ) : null}
         </div>
       </CourierFormPanel>
     </div>

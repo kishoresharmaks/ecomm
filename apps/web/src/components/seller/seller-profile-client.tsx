@@ -14,6 +14,7 @@ import {
 import {
   getSellerProfile,
   updateSellerProfile,
+  syncSellerCourierPickup,
   type SellerBusinessType,
   type SellerProfile,
   type SellerProfilePayload,
@@ -295,6 +296,21 @@ export function SellerProfileClient() {
             </div>
           </SellerPanel>
         ) : null}
+
+        {/* Courier Settings Card */}
+        <SellerPanel className="flex flex-col">
+          <div className="flex items-center justify-between border-b border-[#D8E2EA] px-6 py-4">
+            <h2 className="text-lg font-bold text-[#1F2933]">Courier Settings</h2>
+          </div>
+          <div className="px-6 py-5 flex flex-col gap-4">
+            <CourierPickupSyncButton 
+              authHeaders={sellerAuth.authHeaders!} 
+              authKey={sellerAuth.authKey!} 
+              providerCode="SHIPROCKET"
+              syncedLocationName={profileData?.courierSettings?.shiprocketPickupLocationName}
+            />
+          </div>
+        </SellerPanel>
 
         {/* Verification Documents Card */}
         <SellerPanel className="flex flex-col">
@@ -711,4 +727,69 @@ function humanize(value?: string | null) {
         .toLowerCase()
         .replace(/\b\w/g, (char) => char.toUpperCase())
     : "Not set";
+}
+
+function CourierPickupSyncButton({
+  authHeaders,
+  authKey,
+  providerCode,
+  syncedLocationName,
+}: {
+  authHeaders: IndihubAuthHeaders;
+  authKey: string;
+  providerCode: string;
+  syncedLocationName?: string | null;
+}) {
+  const queryClient = useQueryClient();
+  const [notice, setNotice] = useState<string | null>(null);
+  const [noticeTone, setNoticeTone] = useState<"success" | "danger">("success");
+
+  const mutation = useMutation({
+    mutationFn: () => syncSellerCourierPickup(authHeaders, providerCode),
+    onSuccess: (res) => {
+      setNoticeTone("success");
+      setNotice(`Synced pickup location as "${res.pickupLocationName}"`);
+      void queryClient.invalidateQueries({ queryKey: ["seller-profile", authKey] });
+    },
+    onError: (error) => {
+      setNoticeTone("danger");
+      setNotice(error instanceof Error ? error.message : "Sync failed. Ensure your address, phone, and email are filled.");
+    },
+  });
+
+  return (
+    <div className="flex flex-col gap-2 rounded-md border border-[#EAF1F7] p-4 bg-[#F8FAFC]">
+      <div className="flex items-start sm:items-center justify-between gap-4 flex-col sm:flex-row">
+        <div>
+          <p className="font-bold text-[#1F2933]">Shiprocket Pickup Location</p>
+          <p className="text-xs text-[#667085] mt-1">
+            {syncedLocationName ? (
+              <span className="text-[#0F8A5F] font-semibold flex items-center gap-1">
+                ✓ Synced: {syncedLocationName}
+              </span>
+            ) : (
+              "Not synced yet"
+            )}
+          </p>
+        </div>
+        <Button 
+          variant="outline" 
+          size="sm" 
+          onClick={() => { setNotice(null); mutation.mutate(); }} 
+          disabled={mutation.isPending}
+          className="shrink-0"
+        >
+          {mutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+          {syncedLocationName ? "Resync Address" : "Sync Now"}
+        </Button>
+      </div>
+      {notice && (
+        <div className="mt-2 text-xs font-bold px-3 py-2 rounded bg-white border border-[#D8E2EA]">
+          <span className={noticeTone === "success" ? "text-[#0F8A5F]" : "text-[#B42318]"}>
+            {notice}
+          </span>
+        </div>
+      )}
+    </div>
+  );
 }

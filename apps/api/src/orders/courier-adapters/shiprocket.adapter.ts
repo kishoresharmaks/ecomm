@@ -243,6 +243,22 @@ export class ShiprocketCourierAdapter implements CourierAdapter {
     }
   }
 
+  async verifyCredentials(settings: CourierProviderAdapterSnapshot): Promise<{ success: boolean; message?: string }> {
+    const baseUrl = normalizeBaseUrl(settings.apiBaseUrl ?? defaultBaseUrl);
+    const email = settings.username?.trim();
+    const password = settings.credentials?.password?.trim();
+    if (!email || !password) {
+      return { success: false, message: "Missing email or password." };
+    }
+
+    try {
+      await this.authenticate(baseUrl, email, password);
+      return { success: true, message: "Successfully authenticated with Shiprocket." };
+    } catch (error) {
+      return { success: false, message: errorMessage(error) };
+    }
+  }
+
   private async authenticate(baseUrl: string, email: string, password: string) {
     const response = await postJson(urlFor(baseUrl, authEndpoint), { email, password });
     const token = readText(response, ["token"]) ?? readText(response, ["data", "token"]);

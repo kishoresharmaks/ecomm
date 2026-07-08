@@ -462,6 +462,14 @@ export function updateCourierProviderActive(auth: IndihubAuthHeaders, providerCo
   );
 }
 
+export function verifyCourierProvider(auth: IndihubAuthHeaders, providerCode: string) {
+  return indihubFetch<{ success: boolean; message?: string }>(
+    `/api/courier/providers/${encodeURIComponent(providerCode)}/verify`,
+    { method: "POST" },
+    auth,
+  );
+}
+
 export function listCourierCodRemittances(auth: IndihubAuthHeaders, query: CourierQuery = {}) {
   return indihubFetch<PageResult<CourierCodRemittance>>(`/api/courier/cod-remittances${queryString(query)}`, undefined, auth);
 }
