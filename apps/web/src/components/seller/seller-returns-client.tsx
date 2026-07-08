@@ -185,7 +185,7 @@ export function SellerReturnsClient() {
           <WorkspaceNotice tone={notice.includes("Unable") ? "danger" : "success"} title={notice.includes("Unable") ? "Action failed" : "Saved"} message={notice} />
         ) : null}
 
-        <div className="grid gap-5 lg:grid-cols-[minmax(320px,35%)_minmax(0,65%)]">
+        <div className="grid gap-5 xl:grid-cols-[340px_minmax(0,1fr)]">
           <section className="min-w-0 rounded-2xl border border-[#E2E8F0] bg-white shadow-sm shadow-slate-200/70">
             <ReturnFilters activeFilter={filter} onChange={setFilter} />
             <ReturnList
@@ -284,7 +284,7 @@ function ReturnsStats({ returns, isLoading }: { returns: ReturnSummary[]; isLoad
   ] as const;
 
   return (
-    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+    <div className="grid gap-4 grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
       {cards.map((card) => (
         <article key={card.label} className="rounded-2xl border border-[#E2E8F0] bg-white p-5 shadow-sm shadow-slate-200/70 transition duration-200 hover:-translate-y-0.5 hover:shadow-md">
           <div className="flex items-center justify-between gap-3">
@@ -456,7 +456,7 @@ function ReturnDetails({
 
       <ReturnStepper detail={detail} />
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0 space-y-5">
           <OrderSummary detail={detail} />
           <ProductCard detail={detail} />
@@ -492,7 +492,7 @@ function ReturnStepper({ detail }: { detail: ReturnDetail }) {
 
   return (
     <div className="rounded-2xl border border-[#E2E8F0] bg-white p-4 shadow-sm shadow-slate-200/70">
-      <div className="grid gap-3 md:grid-cols-3 2xl:grid-cols-6">
+      <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 2xl:grid-cols-6">
         {steps.map((step, index) => (
           <div key={step.label} className="relative min-w-0">
             {index > 0 ? <span className="absolute right-1/2 top-5 hidden h-px w-full bg-[#E2E8F0] 2xl:block" aria-hidden="true" /> : null}
@@ -541,7 +541,7 @@ function OrderSummary({ detail }: { detail: ReturnDetail }) {
 
   return (
     <SectionCard icon={<ReceiptText className="h-5 w-5" />} title="Order Summary">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2">
         {rows.map(([label, value]) => (
           <InfoTile key={label} label={label} value={value} />
         ))}
@@ -555,9 +555,9 @@ function ProductCard({ detail }: { detail: ReturnDetail }) {
     <SectionCard icon={<PackageCheck className="h-5 w-5" />} title="Product Card">
       <div className="grid gap-4">
         {detail.items.map((item) => (
-          <div key={item.id} className="grid gap-4 rounded-2xl border border-[#E2E8F0] bg-[#F8FAFC] p-4 md:grid-cols-[160px_minmax(0,1fr)]">
+          <div key={item.id} className="grid gap-4 rounded-2xl border border-[#E2E8F0] bg-[#F8FAFC] p-4 lg:grid-cols-[160px_minmax(0,1fr)]">
             <ProductThumb label={item.productName} large />
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <InfoTile label="Product Name" value={item.productName} />
               <InfoTile label="Brand / Store" value={item.seller?.storeName ?? item.sellerName ?? "Seller store"} />
               <InfoTile label="SKU" value={item.product?.slug ?? "Not available"} />
@@ -671,7 +671,7 @@ function RefundCard({ detail }: { detail: ReturnDetail }) {
 
   return (
     <SectionCard icon={<WalletCards className="h-5 w-5" />} title="Refund Information">
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {fields.map(([label, value]) => (
           <label key={label} className="block">
             <span className="text-xs font-black uppercase tracking-[0.12em] text-[#64748B]">{label}</span>
@@ -857,7 +857,7 @@ function ProductThumb({ label, large = false }: { label: string; large?: boolean
     <span
       className={cn(
         "grid shrink-0 place-items-center overflow-hidden rounded-2xl border border-[#E2E8F0] bg-gradient-to-br from-[#F8FAFC] to-[#FFF0EC] text-[#ED5A2F]",
-        large ? "h-36 w-full md:w-40" : "h-16 w-16",
+        large ? "h-36 w-full lg:w-40" : "h-16 w-16",
       )}
       aria-label={`${label} product image placeholder`}
       role="img"
