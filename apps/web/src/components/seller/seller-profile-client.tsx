@@ -307,7 +307,7 @@ export function SellerProfileClient() {
               authHeaders={sellerAuth.authHeaders!} 
               authKey={sellerAuth.authKey!} 
               providerCode="SHIPROCKET"
-              syncedLocationName={profileData?.courierSettings?.shiprocketPickupLocationName}
+              syncedLocationName={profileData?.courierProviderSettings?.find(s => s.providerCode === "SHIPROCKET")?.pickupLocationName ?? null}
             />
           </div>
         </SellerPanel>

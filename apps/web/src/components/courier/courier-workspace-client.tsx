@@ -18,6 +18,7 @@ import {
   Save,
   Search,
   Settings,
+  ShieldCheck,
   Truck,
 } from "lucide-react";
 import { Button, StatusBadge, cn } from "@indihub/ui";

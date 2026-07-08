@@ -899,7 +899,8 @@ export class DeliveryRoutingService {
       throw new BadRequestException("Courier adapters are not configured.");
     }
 
-    const adapterCode = existing.adapterCode ?? normalized;
+    const settingsSnapshot = existing.settingsSnapshot as unknown as CourierProviderAdapterSnapshot;
+    const adapterCode = settingsSnapshot?.adapterCode ?? normalized;
     const adapter = this.courierAdapters.getAdapter(adapterCode);
     if (!adapter) {
       throw new BadRequestException(`No active courier adapter found for ${adapterCode}.`);
@@ -909,7 +910,6 @@ export class DeliveryRoutingService {
       throw new BadRequestException(`Courier adapter ${adapterCode} does not support credential verification.`);
     }
 
-    const settingsSnapshot = existing as unknown as CourierProviderAdapterSnapshot;
     return adapter.verifyCredentials(settingsSnapshot);
   }
 

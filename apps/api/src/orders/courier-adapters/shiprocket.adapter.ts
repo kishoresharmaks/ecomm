@@ -7,6 +7,7 @@ import type {
   CourierPickupSyncResult,
   CourierRateQuoteRequest,
   CourierRateQuoteResult,
+  CourierProviderAdapterSnapshot,
 } from "./courier-adapter.types";
 
 type ShiprocketJson = Record<string, unknown>;
