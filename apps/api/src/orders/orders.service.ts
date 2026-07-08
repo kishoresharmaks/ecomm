@@ -6659,11 +6659,16 @@ export class OrdersService {
   }
 
   private orderQueryWhere(query: OrderQueryDto): Prisma.OrderWhereInput {
+    const orderStatus = typeof query.orderStatus === "string" ? [query.orderStatus] : query.orderStatus;
+    const paymentStatus = typeof query.paymentStatus === "string" ? [query.paymentStatus] : query.paymentStatus;
+    const deliveryStatus = typeof query.deliveryStatus === "string" ? [query.deliveryStatus] : query.deliveryStatus;
+    const paymentMethod = typeof query.paymentMethod === "string" ? [query.paymentMethod] : query.paymentMethod;
+
     return {
-      ...(query.orderStatus?.length ? { orderStatus: { in: query.orderStatus } } : {}),
-      ...(query.paymentStatus?.length ? { paymentStatus: { in: query.paymentStatus } } : {}),
-      ...(query.deliveryStatus?.length ? { deliveryStatus: { in: query.deliveryStatus } } : {}),
-      ...(query.paymentMethod?.length ? { payments: { some: { method: { in: query.paymentMethod } } } } : {}),
+      ...(orderStatus?.length ? { orderStatus: { in: orderStatus as OrderStatus[] } } : {}),
+      ...(paymentStatus?.length ? { paymentStatus: { in: paymentStatus as PaymentStatus[] } } : {}),
+      ...(deliveryStatus?.length ? { deliveryStatus: { in: deliveryStatus as DeliveryStatus[] } } : {}),
+      ...(paymentMethod?.length ? { payments: { some: { method: { in: paymentMethod as CheckoutPaymentMethod[] } } } } : {}),
       ...(query.search
         ? {
             OR: [
