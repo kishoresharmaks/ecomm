@@ -1149,18 +1149,26 @@ export class SellersService {
     const pickupLocationName =
       this.emptyToNull(existingSetting?.pickupLocationName) ??
       this.generatePickupLocationName(seller, sellerAddress);
-    const pickupResult = await adapter.syncPickupLocation({
-      providerCode,
-      pickupLocationName,
-      sellerName:
-        this.emptyToNull(seller.profile?.contactName) ??
-        this.emptyToNull(seller.user.fullName) ??
-        seller.storeName,
-      sellerEmail,
-      sellerPhone,
-      sellerAddress: this.toCourierPickupAddress(sellerAddress),
-      settings: snapshot,
-    });
+      
+    let pickupResult;
+    try {
+      pickupResult = await adapter.syncPickupLocation({
+        providerCode,
+        pickupLocationName,
+        sellerName:
+          this.emptyToNull(seller.profile?.contactName) ??
+          this.emptyToNull(seller.user.fullName) ??
+          seller.storeName,
+        sellerEmail,
+        sellerPhone,
+        sellerAddress: this.toCourierPickupAddress(sellerAddress),
+        settings: snapshot,
+      });
+    } catch (error) {
+      throw new BadRequestException(
+        `Failed to sync pickup location with courier provider: ${error instanceof Error ? error.message : "Unknown error"}`
+      );
+    }
 
     const updatedSeller = await this.prisma.client.$transaction(async (tx) => {
       const setting = await tx.sellerCourierProviderSetting.upsert({

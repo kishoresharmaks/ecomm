@@ -3953,6 +3953,7 @@ export class OrdersService {
             },
           },
           data: {
+            deliveryMode: nextMode,
             status: this.packageStatusFromDeliveryStatus(nextStatus, nextMode),
             ...(nextStatus === DeliveryStatus.PACKED ? { readyForBookingAt: new Date() } : {}),
             ...(nextStatus === DeliveryStatus.DISPATCHED ? { pickedUpAt: new Date() } : {}),
@@ -7179,6 +7180,8 @@ export class OrdersService {
     if (updated.count !== 1) {
       throw new BadRequestException("Seller package changed. Refresh the order and try again.");
     }
+    const nextMode = (input.updateData.deliveryMode as DeliveryMode | undefined) ?? shipment.deliveryMode;
+
     await tx.orderShipmentPackage.updateMany({
       where: {
         orderShipmentId: shipment.id,
@@ -7192,7 +7195,8 @@ export class OrdersService {
         },
       },
       data: {
-        status: this.packageStatusFromDeliveryStatus(input.nextStatus, shipment.deliveryMode),
+        deliveryMode: nextMode,
+        status: this.packageStatusFromDeliveryStatus(input.nextStatus, nextMode),
         ...(input.nextStatus === DeliveryStatus.PACKED ? { readyForBookingAt: new Date() } : {}),
         ...(input.nextStatus === DeliveryStatus.DISPATCHED ? { pickedUpAt: new Date() } : {}),
         ...(input.nextStatus === DeliveryStatus.DELIVERED ? { deliveredAt: new Date() } : {}),

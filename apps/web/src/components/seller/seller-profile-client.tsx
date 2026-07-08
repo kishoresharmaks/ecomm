@@ -37,6 +37,7 @@ import {
   useSellerAuth,
 } from "./seller-ui";
 import { EditStoreDetailsModal, EditPayoutModal, EditAddressModal, EditDocumentsModal, ProfileModal } from "./seller-profile-modals";
+import { useConfirmationDialog } from "@/components/shared/confirmation-dialog";
 
 const businessTypes: Array<{ value: SellerBusinessType; label: string }> = [
   { value: "INDIVIDUAL", label: "Individual" },
@@ -741,6 +742,7 @@ function CourierPickupSyncButton({
   syncedLocationName?: string | null;
 }) {
   const queryClient = useQueryClient();
+  const confirmation = useConfirmationDialog();
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeTone, setNoticeTone] = useState<"success" | "danger">("success");
 
@@ -752,8 +754,14 @@ function CourierPickupSyncButton({
       void queryClient.invalidateQueries({ queryKey: ["seller-profile", authKey] });
     },
     onError: (error) => {
-      setNoticeTone("danger");
-      setNotice(error instanceof Error ? error.message : "Sync failed. Ensure your address, phone, and email are filled.");
+      confirmation.requestConfirmation({
+        title: "Sync Failed",
+        description: error instanceof Error ? error.message : "Sync failed. Ensure your address, phone, and email are filled.",
+        confirmLabel: "Understood",
+        cancelLabel: "Close",
+        tone: "danger",
+        onConfirm: () => {}
+      });
     },
   });
 
@@ -783,13 +791,12 @@ function CourierPickupSyncButton({
           {syncedLocationName ? "Resync Address" : "Sync Now"}
         </Button>
       </div>
-      {notice && (
+      {notice && noticeTone === "success" && (
         <div className="mt-2 text-xs font-bold px-3 py-2 rounded bg-white border border-[#D8E2EA]">
-          <span className={noticeTone === "success" ? "text-[#0F8A5F]" : "text-[#B42318]"}>
-            {notice}
-          </span>
+          <span className="text-[#0F8A5F]">{notice}</span>
         </div>
       )}
+      {confirmation.confirmationDialog}
     </div>
   );
 }
