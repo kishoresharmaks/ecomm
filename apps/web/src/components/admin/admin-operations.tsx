@@ -4448,7 +4448,6 @@ export function AdminOrderDetailPageClient({ orderNumber }: { orderNumber: strin
                                 value={
                                   courierForm.note ??
                                   shipment.courierShipment?.trackingStatusLabel ??
-                                  shipment.courierTrackingStatusLabel ??
                                   ""
                                 }
                                 onChange={(value) =>
