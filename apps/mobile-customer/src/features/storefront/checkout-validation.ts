@@ -1,6 +1,7 @@
 import type { MobileCartSummary, MobileCustomerAddressPayload } from "./storefront-api";
 
 const PAYMENT_REFERENCE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9 ./_-]{3,63}$/;
+const COUPON_CODE_PATTERN = /^[A-Z0-9_-]{3,32}$/;
 const INDIAN_PHONE_PATTERN = /^[6-9]\d{9}$/;
 const INDIAN_PINCODE_PATTERN = /^\d{6}$/;
 const INTERNATIONAL_PHONE_PATTERN = /^\+?[0-9][0-9\s()-]{6,24}$/;
@@ -69,6 +70,31 @@ export function cleanMobileCustomerAddressForm(
 }
 
 export const cleanCheckoutAddressForm = cleanMobileCustomerAddressForm;
+
+export function checkoutBuyerCountryCode(
+  input: {
+    selectedMarketCountryCode?: string | null | undefined;
+    deliveryAddressCountryCode?: string | null | undefined;
+  } = {},
+) {
+  return cleanSingleLineText(input.selectedMarketCountryCode).toUpperCase() || "IN";
+}
+
+export function normalizeCheckoutCouponCode(value: string | null | undefined) {
+  return cleanSingleLineText(value).toUpperCase();
+}
+
+export function validateCheckoutCouponCode(value: string | null | undefined) {
+  const code = normalizeCheckoutCouponCode(value);
+  if (!code) {
+    throw new Error("Enter a coupon code to apply.");
+  }
+  if (!COUPON_CODE_PATTERN.test(code)) {
+    throw new Error("Check the coupon code. Use 3-32 letters, numbers, hyphen, or underscore.");
+  }
+
+  return code;
+}
 
 export function calculateLocationConfidenceScore(accuracyMeters: number | null | undefined) {
   const accuracy = typeof accuracyMeters === "number" && Number.isFinite(accuracyMeters) ? Math.max(0, accuracyMeters) : 100;

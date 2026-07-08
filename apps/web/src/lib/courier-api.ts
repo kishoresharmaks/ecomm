@@ -276,6 +276,7 @@ export type CourierProviderPayload = {
   trackingEndpointPath?: string;
   labelEndpointPath?: string;
   cancellationEndpointPath?: string;
+  preferredCourierCompanyId?: string;
   accountCode?: string;
   username?: string;
   apiKey?: string;

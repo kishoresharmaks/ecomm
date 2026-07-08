@@ -415,6 +415,24 @@ export function razorpayStatusRetryMessage(status: string | undefined) {
   return `Order placed, but online payment is ${status ? formatStatusLabel(status) : "pending"}. Please retry payment from your order.`;
 }
 
+export function shouldCancelUnpaidRazorpayOrder(error: unknown) {
+  if (!(error instanceof MobileRazorpayPaymentError)) {
+    return false;
+  }
+
+  if (error.stage === "verification") {
+    return false;
+  }
+
+  return (
+    error.code === "PAYMENT_CANCELLED" ||
+    error.code === "PAYMENT_TIMEOUT" ||
+    error.code === "CHECKOUT_FAILED" ||
+    error.code === "PROVIDER_ORDER_FAILED" ||
+    error.code === "NETWORK_ERROR"
+  );
+}
+
 export async function saveRazorpayPaymentSession(session: MobileRazorpayPaymentSession) {
   await SecureStore.setItemAsync(
     RAZORPAY_PAYMENT_SESSION_KEY,

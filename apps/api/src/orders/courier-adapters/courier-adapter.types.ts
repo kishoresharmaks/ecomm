@@ -8,6 +8,7 @@ export type CourierProviderAdapterSnapshot = {
   trackingEndpointPath?: string | null;
   labelEndpointPath?: string | null;
   cancellationEndpointPath?: string | null;
+  preferredCourierCompanyId?: string | null;
   accountCode?: string | null;
   username?: string | null;
   credentials?: {
@@ -71,6 +72,18 @@ export type CourierBookingRequest = {
   settings: CourierProviderAdapterSnapshot;
 };
 
+export type CourierRateQuoteRequest = {
+  providerCode: string;
+  currency: string;
+  paymentMethod: "COD" | "PREPAID";
+  subtotalPaise: number;
+  codAmountPaise: number;
+  shippingAddress: CourierBookingAddress;
+  sellerAddress: CourierBookingAddress;
+  parcel: CourierBookingPackage;
+  settings: CourierProviderAdapterSnapshot;
+};
+
 export type CourierBookingResult = {
   providerOrderId?: string | null;
   awbNumber?: string | null;
@@ -88,6 +101,23 @@ export type CourierBookingResult = {
   trackingStatusLabel?: string | null;
   bookingPayloadSnapshot: unknown;
   bookingResponseSnapshot: unknown;
+};
+
+export type CourierRateQuoteResult = {
+  serviceable: boolean;
+  providerCode: string;
+  courierCompanyId?: string | null;
+  courierName?: string | null;
+  courierCode?: string | null;
+  freightChargePaise?: number | null;
+  codChargePaise?: number | null;
+  totalChargePaise?: number | null;
+  currency?: string | null;
+  estimatedDeliveryDays?: string | null;
+  shippingZone?: string | null;
+  warning?: string | null;
+  quotePayloadSnapshot: unknown;
+  quoteResponseSnapshot: unknown;
 };
 
 export type CourierPickupSyncRequest = {
@@ -111,5 +141,6 @@ export type CourierPickupSyncResult = {
 export interface CourierAdapter {
   readonly code: string;
   bookShipment(request: CourierBookingRequest): Promise<CourierBookingResult>;
+  quoteShipment?(request: CourierRateQuoteRequest): Promise<CourierRateQuoteResult>;
   syncPickupLocation?(request: CourierPickupSyncRequest): Promise<CourierPickupSyncResult>;
 }

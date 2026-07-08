@@ -21,22 +21,28 @@ import { withStorefrontMaintenance } from "../src/features/maintenance/mobile-ma
 import { checkoutPaymentOptions, type CheckoutPaymentOption } from "../src/features/storefront/checkout-payment-options";
 import {
   assertCheckoutCartReady,
+  checkoutBuyerCountryCode,
   cleanCheckoutAddressForm,
   cleanCheckoutCustomerNote,
   cleanCheckoutPaymentReference,
   checkoutCartSignature,
+  normalizeCheckoutCouponCode,
+  validateCheckoutCouponCode,
 } from "../src/features/storefront/checkout-validation";
 import {
   RAZORPAY_CHECKOUT_CANCELLED_ERROR,
   RAZORPAY_CHECKOUT_TIMEOUT_ERROR,
+  clearRazorpayPaymentSession,
   isPaidRazorpayStatus,
   isRazorpayActionInFlight,
   razorpayStatusRetryMessage,
   recoverPendingRazorpayPayment,
   runMobileRazorpayPayment,
+  shouldCancelUnpaidRazorpayOrder,
   type MobileRazorpayPaymentStage,
 } from "../src/features/storefront/razorpay-payment";
 import {
+  cancelRazorpayOrder,
   createCustomerAddress,
   getCart,
   getCheckoutPaymentMethods,
@@ -68,6 +74,8 @@ type CheckoutFeedItem =
 type CheckoutPaymentIssue = {
   buyerCurrency?: string | null | undefined;
   buyerTotalMinor?: number | null | undefined;
+  canRetry?: boolean;
+  title?: string;
   orderNumber: string;
   totalPaise: number;
   currency: string;
@@ -85,10 +93,17 @@ type CheckoutOrderSuccessSnapshot = {
 
 type CheckoutOrderResult = {
   order: MobileOrderSummary;
+  paymentIssueTitle?: string;
   paymentIssue?: string;
+  paymentCanRetry?: boolean;
 };
 
 type CheckoutStepStatus = "complete" | "active" | "pending";
+
+type CouponFeedback = {
+  message: string;
+  tone: "success" | "danger" | "warning";
+};
 
 const feedItems: CheckoutFeedItem[] = [
   { id: "items", type: "items" },
@@ -110,6 +125,10 @@ function CheckoutScreen() {
   const [paymentMethod, setPaymentMethod] = useState<MobilePaymentMethod>("COD");
   const [paymentReference, setPaymentReference] = useState("");
   const [customerNote, setCustomerNote] = useState("");
+  const [couponInput, setCouponInput] = useState("");
+  const [appliedCouponCode, setAppliedCouponCode] = useState<string | null>(null);
+  const [pendingCouponCode, setPendingCouponCode] = useState<string | null>(null);
+  const [couponFeedback, setCouponFeedback] = useState<CouponFeedback | null>(null);
   const [addressForm, setAddressForm] = useState<MobileCustomerAddressPayload>(() => emptyMobileAddressForm({ isDefault: true }));
   const [addressFormOpen, setAddressFormOpen] = useState(false);
   const [paymentIssue, setPaymentIssue] = useState<CheckoutPaymentIssue | null>(null);
@@ -151,7 +170,10 @@ function CheckoutScreen() {
 
   const addresses = useMemo(() => addressesQuery.data ?? [], [addressesQuery.data]);
   const selectedAddress = selectedAddressId ? addresses.find((address) => address.id === selectedAddressId) : undefined;
-  const buyerCountryCode = normalizeCheckoutCountryCode(selectedAddress?.countryCode ?? selectedBrowsingLocation.countryCode ?? "IN");
+  const buyerCountryCode = checkoutBuyerCountryCode({
+    deliveryAddressCountryCode: selectedAddress?.countryCode,
+    selectedMarketCountryCode: selectedBrowsingLocation.countryCode,
+  });
   const market = useMobileMarket(buyerCountryCode);
   const paymentOptions = useMemo(
     () => checkoutPaymentOptions(paymentMethodsQuery.data, paymentMethodsQuery.isError),
@@ -159,10 +181,19 @@ function CheckoutScreen() {
   );
   const enabledMethods = useMemo(() => paymentOptions.filter((method) => method.enabled), [paymentOptions]);
   const checkoutSummaryQuery = useQuery({
-    queryKey: ["mobile-checkout-summary", customerAuth.authKey, selectedAddressId, deliveryPreference, paymentMethod, buyerCountryCode],
+    queryKey: [
+      "mobile-checkout-summary",
+      customerAuth.authKey,
+      selectedAddressId,
+      deliveryPreference,
+      paymentMethod,
+      buyerCountryCode,
+      appliedCouponCode,
+    ],
     queryFn: () =>
       getCheckoutSummary(customerAuth.authHeaders, {
         buyerCountryCode,
+        ...(appliedCouponCode ? { couponCode: appliedCouponCode } : {}),
         deliveryPreference,
         paymentMethod,
         addressId: deliveryPreference === "DELIVER_TO_ADDRESS" ? selectedAddressId : null,
@@ -173,6 +204,8 @@ function CheckoutScreen() {
   const cartItems = cartQuery.data?.items ?? [];
   const localSubtotal = cartItems.reduce((total, item) => total + item.quantity * (item.unitPricePaise ?? item.productVariant?.pricePaise ?? 0), 0);
   const summary = checkoutSummaryQuery.data ?? fallbackSummary(cartItems.length, localSubtotal);
+  const couponIsApplying = Boolean(pendingCouponCode && checkoutSummaryQuery.isFetching);
+  const couponApplied = Boolean(appliedCouponCode && summary.coupon && !pendingCouponCode);
   const selectedPayment = enabledMethods.find((method) => method.method === paymentMethod);
   const needsReference = paymentMethod === "BANK_TRANSFER" || paymentMethod === "MANUAL";
   const bankReferenceRequired =
@@ -222,6 +255,47 @@ function CheckoutScreen() {
   const placeOrderBlockedReason = createAddressMutation.isPending ? "Saving delivery address..." : checkoutDataBlockedReason;
 
   useEffect(() => {
+    if (!pendingCouponCode || checkoutSummaryQuery.isFetching) {
+      return;
+    }
+
+    if (checkoutSummaryQuery.isSuccess) {
+      const appliedCoupon = checkoutSummaryQuery.data?.coupon;
+      const appliedCode = appliedCoupon?.code;
+      if (appliedCoupon && appliedCode && normalizeCheckoutCouponCode(appliedCode) === pendingCouponCode) {
+        setCouponFeedback({
+          message: `${appliedCode} applied. ${appliedCoupon.title}`,
+          tone: "success",
+        });
+      } else {
+        setAppliedCouponCode(null);
+        setCouponFeedback({
+          message: "This coupon is not valid for the items in your cart.",
+          tone: "danger",
+        });
+      }
+      setPendingCouponCode(null);
+      return;
+    }
+
+    if (checkoutSummaryQuery.isError) {
+      setAppliedCouponCode(null);
+      setPendingCouponCode(null);
+      setCouponFeedback({
+        message: checkoutCouponErrorMessage(checkoutSummaryQuery.error),
+        tone: "danger",
+      });
+    }
+  }, [
+    checkoutSummaryQuery.data?.coupon,
+    checkoutSummaryQuery.error,
+    checkoutSummaryQuery.isError,
+    checkoutSummaryQuery.isFetching,
+    checkoutSummaryQuery.isSuccess,
+    pendingCouponCode,
+  ]);
+
+  useEffect(() => {
     if (selectedAddressId || !addresses.length) {
       return;
     }
@@ -239,6 +313,37 @@ function CheckoutScreen() {
 
     setPaymentMethod(enabledMethods[0]?.method ?? "COD");
   }, [enabledMethods, paymentMethod]);
+
+  function applyCoupon() {
+    try {
+      const code = validateCheckoutCouponCode(couponInput);
+      setCouponFeedback(null);
+      setPendingCouponCode(code);
+      setAppliedCouponCode(code);
+      setCouponInput(code);
+    } catch (error) {
+      setAppliedCouponCode(null);
+      setPendingCouponCode(null);
+      setCouponFeedback({
+        message: error instanceof Error ? error.message : "Check the coupon code and try again.",
+        tone: "warning",
+      });
+    }
+  }
+
+  function updateCouponInput(value: string) {
+    setCouponInput(value.toUpperCase());
+    if (!couponIsApplying && couponFeedback?.tone !== "success") {
+      setCouponFeedback(null);
+    }
+  }
+
+  function removeCoupon() {
+    setAppliedCouponCode(null);
+    setPendingCouponCode(null);
+    setCouponInput("");
+    setCouponFeedback(null);
+  }
 
   useEffect(() => {
     orderIdempotencyRef.current = null;
@@ -334,6 +439,7 @@ function CheckoutScreen() {
 
       const order = await placeOrder(customerAuth.authHeaders, {
         buyerCountryCode,
+        ...(appliedCouponCode ? { couponCode: appliedCouponCode } : {}),
         deliveryPreference,
         idempotencyKey: getOrderIdempotencyKey(latestCart),
         paymentMethod,
@@ -363,9 +469,30 @@ function CheckoutScreen() {
 
         return { order: { ...order, paymentStatus: verification.status } };
       } catch (error) {
+        if (shouldCancelUnpaidRazorpayOrder(error)) {
+          const cancelled = await cancelRazorpayOrder(customerAuth.authHeaders, order.orderNumber)
+            .then((result) => result.cancelled)
+            .catch(() => false);
+
+          if (cancelled) {
+            await clearRazorpayPaymentSession().catch(() => undefined);
+
+            return {
+              order: { ...order, orderStatus: "CANCELLED", paymentStatus: "NOT_REQUIRED", deliveryStatus: "CANCELLED" },
+              paymentIssueTitle: "Payment cancelled",
+              paymentIssue:
+                error instanceof Error
+                  ? `${error.message} The unpaid Razorpay order was cancelled.`
+                  : "Payment was not completed. The unpaid Razorpay order was cancelled.",
+              paymentCanRetry: false,
+            };
+          }
+        }
+
         return {
           order,
           paymentIssue: error instanceof Error ? error.message : "Order placed, but online payment was not completed.",
+          paymentCanRetry: true,
         };
       }
     },
@@ -381,6 +508,8 @@ function CheckoutScreen() {
           orderNumber: result.order.orderNumber,
           buyerCurrency: result.order.buyerCurrency,
           buyerTotalMinor: result.order.buyerTotalMinor,
+          canRetry: result.paymentCanRetry !== false,
+          ...(result.paymentIssueTitle ? { title: result.paymentIssueTitle } : {}),
           totalPaise: result.order.totalPaise,
           currency: result.order.currency,
           message: result.paymentIssue,
@@ -492,6 +621,7 @@ function CheckoutScreen() {
         orderNumber: recovery.order.orderNumber,
         buyerCurrency: recovery.order.buyerCurrency,
         buyerTotalMinor: recovery.order.buyerTotalMinor,
+        canRetry: true,
         totalPaise: recovery.order.totalPaise,
         currency: recovery.order.currency,
         message: recoveredPaymentMessage(recovery.session.status, recovery.order.paymentStatus),
@@ -594,6 +724,10 @@ function CheckoutScreen() {
             addressFormError={createAddressMutation.error}
             addressFormOpen={addressFormOpen}
             cartItems={cartItems}
+            couponApplied={couponApplied}
+            couponFeedback={couponFeedback}
+            couponInput={couponInput}
+            couponIsApplying={couponIsApplying}
             customerNote={customerNote}
             deliveryPreference={deliveryPreference}
             paymentOptions={paymentOptions}
@@ -608,6 +742,7 @@ function CheckoutScreen() {
             selectedPaymentNote={selectedPayment?.note ?? ""}
             setAddressForm={setAddressForm}
             setAddressFormOpen={setAddressFormOpen}
+            setCouponInput={updateCouponInput}
             setCustomerNote={setCustomerNote}
             setDeliveryPreference={setDeliveryPreference}
             setPaymentMethod={setPaymentMethod}
@@ -618,27 +753,31 @@ function CheckoutScreen() {
             summaryLocale={market.market.locale}
             stepNumber={index + 1}
             stepStatus={stepStatuses[index] ?? "pending"}
+            onApplyCoupon={applyCoupon}
             onCreateAddress={() => createAddressMutation.mutate()}
+            onRemoveCoupon={removeCoupon}
           />
         )}
         ListFooterComponent={
           <View style={styles.footer}>
             {paymentIssue ? (
               <View style={styles.paymentIssueCard}>
-                <Text style={styles.paymentIssueTitle}>Payment pending</Text>
+                <Text style={styles.paymentIssueTitle}>{paymentIssue.title ?? "Payment pending"}</Text>
                 <Text style={styles.paymentIssueText}>{paymentIssue.message}</Text>
                 <View style={styles.paymentIssueActions}>
-                  <Pressable
-                    disabled={paymentInFlight}
-                    style={[styles.paymentRetryButton, paymentInFlight ? styles.buttonDisabledLight : null]}
-                    onPress={() => retryPaymentMutation.mutate(paymentIssue)}
-                  >
-                    {retryPaymentMutation.isPending ? (
-                      <ActivityIndicator color={colors.primary} />
-                    ) : (
-                      <Text style={styles.paymentRetryText}>Retry payment</Text>
-                    )}
-                  </Pressable>
+                  {paymentIssue.canRetry !== false ? (
+                    <Pressable
+                      disabled={paymentInFlight}
+                      style={[styles.paymentRetryButton, paymentInFlight ? styles.buttonDisabledLight : null]}
+                      onPress={() => retryPaymentMutation.mutate(paymentIssue)}
+                    >
+                      {retryPaymentMutation.isPending ? (
+                        <ActivityIndicator color={colors.primary} />
+                      ) : (
+                        <Text style={styles.paymentRetryText}>Retry payment</Text>
+                      )}
+                    </Pressable>
+                  ) : null}
                   <Pressable
                     disabled={paymentInFlight}
                     style={[styles.paymentViewButton, paymentInFlight ? styles.buttonDisabledLight : null]}
@@ -682,13 +821,19 @@ function CheckoutSection({
   addressFormError,
   addressFormOpen,
   cartItems,
+  couponApplied,
+  couponFeedback,
+  couponInput,
+  couponIsApplying,
   customerNote,
   deliveryPreference,
   formatCatalogPrice,
   paymentOptions,
   isSummaryLoading,
   item,
+  onApplyCoupon,
   onCreateAddress,
+  onRemoveCoupon,
   orderError,
   paymentMethod,
   paymentReference,
@@ -697,6 +842,7 @@ function CheckoutSection({
   selectedPaymentNote,
   setAddressForm,
   setAddressFormOpen,
+  setCouponInput,
   setCustomerNote,
   setDeliveryPreference,
   setPaymentMethod,
@@ -713,13 +859,19 @@ function CheckoutSection({
   addressFormError: Error | null;
   addressFormOpen: boolean;
   cartItems: MobileCartSummary["items"];
+  couponApplied: boolean;
+  couponFeedback: CouponFeedback | null;
+  couponInput: string;
+  couponIsApplying: boolean;
   customerNote: string;
   deliveryPreference: MobileDeliveryPreference;
   formatCatalogPrice: (pricePaise?: number | null) => string;
   paymentOptions: CheckoutPaymentOption[];
   isSummaryLoading: boolean;
   item: CheckoutFeedItem;
+  onApplyCoupon: () => void;
   onCreateAddress: () => void;
+  onRemoveCoupon: () => void;
   orderError: Error | null;
   paymentMethod: MobilePaymentMethod;
   paymentReference: string;
@@ -728,6 +880,7 @@ function CheckoutSection({
   selectedPaymentNote: string;
   setAddressForm: (value: MobileCustomerAddressPayload) => void;
   setAddressFormOpen: (value: boolean) => void;
+  setCouponInput: (value: string) => void;
   setCustomerNote: (value: string) => void;
   setDeliveryPreference: (value: MobileDeliveryPreference) => void;
   setPaymentMethod: (value: MobilePaymentMethod) => void;
@@ -860,6 +1013,34 @@ function CheckoutSection({
       <SectionTitle icon={ShoppingCart01Icon} status={stepStatus} stepNumber={stepNumber} title="Order summary" />
       {isSummaryLoading ? <Text style={styles.helpText}>Refreshing totals...</Text> : null}
       {summaryError ? <Text style={styles.errorText}>{summaryError}</Text> : null}
+      <View style={styles.couponCard}>
+        <Text style={styles.couponLabel}>Coupon</Text>
+        <View style={styles.couponInputRow}>
+          <TextInput
+            autoCapitalize="characters"
+            autoCorrect={false}
+            editable={!couponIsApplying && !couponApplied}
+            onChangeText={setCouponInput}
+            onSubmitEditing={couponApplied || couponIsApplying ? undefined : onApplyCoupon}
+            placeholder="Enter coupon code"
+            placeholderTextColor={colors.muted}
+            style={[styles.input, styles.couponInput, couponApplied ? styles.inputDisabled : null]}
+            value={couponInput}
+          />
+          {couponApplied ? (
+            <Pressable style={styles.couponRemoveButton} onPress={onRemoveCoupon}>
+              <Text style={styles.couponRemoveText}>Remove</Text>
+            </Pressable>
+          ) : (
+            <Pressable disabled={couponIsApplying} style={[styles.couponApplyButton, couponIsApplying ? styles.buttonDisabledLight : null]} onPress={onApplyCoupon}>
+              {couponIsApplying ? <ActivityIndicator color={colors.primary} size="small" /> : <Text style={styles.couponApplyText}>Apply</Text>}
+            </Pressable>
+          )}
+        </View>
+        {couponFeedback ? (
+          <Text style={[styles.couponFeedback, couponFeedbackStyle(couponFeedback.tone)]}>{couponFeedback.message}</Text>
+        ) : null}
+      </View>
       <SummaryRow label="Items" value={String(summary.itemCount)} />
       <SummaryRow
         label="Subtotal"
@@ -868,7 +1049,10 @@ function CheckoutSection({
       <SummaryRow label="Shipping" value={checkoutSummaryAmount(summary, summary.buyerShippingMinor, summary.shippingPaise, summaryLocale)} />
       <SummaryRow label="Platform fee" value={checkoutSummaryAmount(summary, summary.buyerPlatformFeeMinor, summary.platformFeePaise, summaryLocale)} />
       {summary.couponDiscountPaise ? (
-        <SummaryRow label="Coupon" value={`-${checkoutSummaryAmount(summary, summary.buyerCouponDiscountMinor, summary.couponDiscountPaise, summaryLocale)}`} />
+        <SummaryRow
+          label={`Coupon ${summary.coupon?.code ?? ""}`.trim()}
+          value={`-${checkoutSummaryAmount(summary, summary.buyerCouponDiscountMinor, summary.couponDiscountPaise, summaryLocale)}`}
+        />
       ) : null}
       <View style={styles.totalRow}>
         <Text style={styles.totalLabel}>Total</Text>
@@ -1067,6 +1251,7 @@ function fallbackSummary(itemCount: number, subtotalPaise: number): MobileChecko
     shippingPaise: 0,
     platformFeePaise: 0,
     couponDiscountPaise: 0,
+    coupon: null,
     totalPaise: subtotalPaise,
     currency: "INR",
     buyerCountryCode: "IN",
@@ -1093,8 +1278,36 @@ function checkoutSummaryAmount(
   return formatMoney(baseMinor ?? 0, summary.currency, "en-IN");
 }
 
-function normalizeCheckoutCountryCode(countryCode?: string | null) {
-  return countryCode?.trim().toUpperCase() || "IN";
+function checkoutCouponErrorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message.trim().toLowerCase() : "";
+  if (!message) {
+    return "We could not apply this coupon. Please check the code or try another one.";
+  }
+  if (message.includes("3-32") || message.includes("a-z") || message.includes("0-9")) {
+    return "Check the coupon code. Use 3-32 letters, numbers, hyphen, or underscore.";
+  }
+  if (message.includes("too many") || message.includes("wait")) {
+    return "Too many coupon attempts. Please wait a minute and try again.";
+  }
+  if (message.includes("cannot be applied") || message.includes("not found")) {
+    return "This coupon is not valid for the items in your cart.";
+  }
+  if (message.includes("expired")) {
+    return "This coupon has expired.";
+  }
+
+  return "We could not apply this coupon. Please check the code or try another one.";
+}
+
+function couponFeedbackStyle(tone: CouponFeedback["tone"]) {
+  if (tone === "success") {
+    return styles.couponFeedbackSuccess;
+  }
+  if (tone === "warning") {
+    return styles.couponFeedbackWarning;
+  }
+
+  return styles.couponFeedbackDanger;
 }
 
 function cartErrorMessage(error: unknown) {
@@ -1538,6 +1751,78 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     minHeight: 52,
     paddingHorizontal: 14,
+  },
+  inputDisabled: {
+    backgroundColor: "#F3F4F6",
+    color: "#6B7280",
+  },
+  couponCard: {
+    backgroundColor: "#FFFCFB",
+    borderColor: "#FAD7CB",
+    borderRadius: 20,
+    borderWidth: 1,
+    marginBottom: 12,
+    padding: 12,
+  },
+  couponLabel: {
+    color: colors.primary,
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0,
+    textTransform: "uppercase",
+  },
+  couponInputRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 10,
+  },
+  couponInput: {
+    flex: 1,
+    minHeight: 46,
+  },
+  couponApplyButton: {
+    alignItems: "center",
+    backgroundColor: "#FFF8F5",
+    borderColor: "#F3E7E2",
+    borderRadius: 16,
+    borderWidth: 1,
+    height: 46,
+    justifyContent: "center",
+    paddingHorizontal: 16,
+  },
+  couponApplyText: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  couponRemoveButton: {
+    alignItems: "center",
+    backgroundColor: colors.primary,
+    borderRadius: 16,
+    height: 46,
+    justifyContent: "center",
+    paddingHorizontal: 14,
+  },
+  couponRemoveText: {
+    color: colors.surface,
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  couponFeedback: {
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 17,
+    marginTop: 8,
+  },
+  couponFeedbackSuccess: {
+    color: "#0F8A5F",
+  },
+  couponFeedbackWarning: {
+    color: "#8A5A00",
+  },
+  couponFeedbackDanger: {
+    color: "#B42318",
   },
   noteInput: {
     marginTop: 10,

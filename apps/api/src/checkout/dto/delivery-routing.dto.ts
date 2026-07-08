@@ -343,6 +343,12 @@ export class UpsertCourierProviderSettingDto {
   @MaxLength(240)
   cancellationEndpointPath?: string;
 
+  @ApiPropertyOptional({ example: "43", description: "Provider courier company id to force, for example DTDC inside Shiprocket." })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  preferredCourierCompanyId?: string;
+
   @ApiPropertyOptional({ example: "merchant-account-code" })
   @IsOptional()
   @IsString()

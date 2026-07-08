@@ -205,6 +205,8 @@ describe("ServiceMarketplaceService serviceability", () => {
   });
 
   it("accepts a 10 AM India service slot when the browser sends the equivalent UTC ISO time", async () => {
+    const scheduledStartAt = nextIndiaWednesdayTenAmUtc();
+    const scheduledEndAt = new Date(scheduledStartAt.getTime() + 60 * 60_000);
     const listing = serviceListing({
       serviceDurationMinutes: 60,
       areas: [{ pincode: "636114", isActive: true }],
@@ -217,8 +219,8 @@ describe("ServiceMarketplaceService serviceability", () => {
     prisma.client.serviceBooking.count.mockResolvedValueOnce(0);
     prisma.client.serviceBooking.findFirst.mockResolvedValueOnce(
       serviceBookingRecord(listing, {
-        scheduledStartAt: new Date("2026-07-08T04:30:00.000Z"),
-        scheduledEndAt: new Date("2026-07-08T05:30:00.000Z"),
+        scheduledStartAt,
+        scheduledEndAt,
       }),
     );
 
@@ -227,7 +229,7 @@ describe("ServiceMarketplaceService serviceability", () => {
       serviceSlug: "doorstep-repair",
       visitMode: ServiceVisitMode.CUSTOMER_LOCATION,
       customerIssue: "Issue with water supply in the machine.",
-      scheduledStartAt: "2026-07-08T04:30:00.000Z",
+      scheduledStartAt: scheduledStartAt.toISOString(),
       addressSnapshot: {
         city: "Salem",
         state: "Tamil Nadu",
@@ -238,7 +240,7 @@ describe("ServiceMarketplaceService serviceability", () => {
 
     expect(prisma.client.serviceBooking.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
-        scheduledStartAt: new Date("2026-07-08T04:30:00.000Z"),
+        scheduledStartAt,
       }),
     });
   });
@@ -539,6 +541,16 @@ function servicePayment(overrides: Partial<Record<string, unknown>> = {}) {
     sellerReceivables: [],
     ...overrides,
   };
+}
+
+function nextIndiaWednesdayTenAmUtc() {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() + 1);
+  while (date.getUTCDay() !== 3) {
+    date.setUTCDate(date.getUTCDate() + 1);
+  }
+  date.setUTCHours(4, 30, 0, 0);
+  return date;
 }
 
 function locationArea() {

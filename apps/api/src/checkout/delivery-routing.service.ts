@@ -21,6 +21,13 @@ import type { RequestUser } from "../auth/types/indihub-request";
 import { CustomersService } from "../customers/customers.service";
 import { DealPricingService } from "../deals/deal-pricing.service";
 import { LocationsService } from "../locations/locations.service";
+import { CourierAdapterRegistry } from "../orders/courier-adapters/courier-adapter.registry";
+import type {
+  CourierBookingAddress,
+  CourierBookingPackage,
+  CourierProviderAdapterSnapshot,
+  CourierRateQuoteResult,
+} from "../orders/courier-adapters/courier-adapter.types";
 import { PaymentsService } from "../payments/payments.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { readBooleanSetting, readNumberSetting } from "../settings/setting-value-utils";
@@ -64,6 +71,7 @@ type CourierProviderSettingsSnapshot = {
   trackingEndpointPath?: string | null;
   labelEndpointPath?: string | null;
   cancellationEndpointPath?: string | null;
+  preferredCourierCompanyId?: string | null;
   accountCode?: string | null;
   username?: string | null;
   credentials?: CourierProviderCredentialsSnapshot | null;
@@ -150,6 +158,7 @@ export type DeliveryRoutingQuote = {
   shippingSnapshot: Prisma.InputJsonObject;
   codSurchargeSnapshot: Prisma.InputJsonObject;
   routingSnapshot: Prisma.InputJsonObject;
+  courierRateQuoteSnapshot?: Prisma.InputJsonObject | null;
   packageSnapshot?: Prisma.InputJsonObject | null;
   sellerId?: string | null;
   sellerType?: SellerType | null;
@@ -268,6 +277,26 @@ type LocationMatch = {
   priority: number;
 };
 
+type LiveCourierQuote = {
+  shippingChargePaise: number;
+  codSurchargePaise: number;
+  totalDeliveryChargePaise: number;
+  courierCompanyId: string | null;
+  courierName: string | null;
+  courierCode: string | null;
+  shippingZone: string | null;
+  estimatedDeliveryDays: string | null;
+  snapshot: Prisma.InputJsonObject;
+};
+
+type LiveCourierQuoteOutcome = {
+  quote: LiveCourierQuote | null;
+  routingFailed: boolean;
+  routingFailureReason: DeliveryRoutingFailureReason | null;
+  routingFailureNote: string | null;
+  warnings: string[];
+};
+
 @Injectable()
 export class DeliveryRoutingService {
   constructor(
@@ -278,6 +307,9 @@ export class DeliveryRoutingService {
     @Optional()
     @Inject(DealPricingService)
     private readonly dealPricing?: DealPricingService,
+    @Optional()
+    @Inject(CourierAdapterRegistry)
+    private readonly courierAdapters?: CourierAdapterRegistry,
   ) {}
 
   async resolveCustomerCheckoutDelivery(actor: RequestUser, dto: ResolveCheckoutDeliveryDto) {
@@ -1213,6 +1245,7 @@ export class DeliveryRoutingService {
     fallbackReason: string | null;
     warnings: string[];
     providerChecked: string | null;
+    liveCourierQuote?: LiveCourierQuote | null | undefined;
     sellerId?: string | null | undefined;
     sellerType?: SellerType | null | undefined;
     parcel?: DeliveryRoutingPackage | null | undefined;
@@ -1228,12 +1261,15 @@ export class DeliveryRoutingService {
             input.client,
           );
     const defaultShippingPaise = await this.defaultShippingChargePaise(input.client);
+    const liveCourierQuote = input.liveCourierQuote ?? null;
     const baseShippingPaise =
       input.deliveryMode === DeliveryMode.STORE_PICKUP
         ? 0
-        : (rateMatch?.card.shippingChargePaise ?? defaultShippingPaise);
+        : (liveCourierQuote?.shippingChargePaise ??
+          rateMatch?.card.shippingChargePaise ??
+          defaultShippingPaise);
     const freeShippingApplied =
-      Boolean(
+      !liveCourierQuote && Boolean(
         rateMatch?.card.freeAbovePaise !== null && rateMatch?.card.freeAbovePaise !== undefined,
       ) && input.subtotalPaise >= (rateMatch?.card.freeAbovePaise ?? 0);
     const shippingChargePaise =
@@ -1241,18 +1277,19 @@ export class DeliveryRoutingService {
         ? 0
         : this.nonNegativeInt(baseShippingPaise);
     const codSurchargePaise =
-      input.paymentMethod === CheckoutRoutingPaymentMethod.COD && rateMatch
+      liveCourierQuote?.codSurchargePaise ??
+      (input.paymentMethod === CheckoutRoutingPaymentMethod.COD && rateMatch
         ? this.calculateCodSurcharge(input.subtotalPaise, rateMatch.card)
-        : 0;
+        : 0);
     const partner = input.partnerSelection?.candidate ?? null;
     const warnings = [...input.warnings];
 
-    if (!rateMatch && input.deliveryMode !== DeliveryMode.STORE_PICKUP) {
+    if (!rateMatch && !liveCourierQuote && input.deliveryMode !== DeliveryMode.STORE_PICKUP) {
       warnings.push("No active shipping rate card matched; fallback shipping setting was used.");
     }
 
     const shippingSnapshot: Prisma.InputJsonObject = {
-      source: rateMatch ? "RATE_CARD" : "SETTING_FALLBACK",
+      source: liveCourierQuote ? "LIVE_COURIER_QUOTE" : rateMatch ? "RATE_CARD" : "SETTING_FALLBACK",
       rateCardId: rateMatch?.card.id ?? null,
       rateCardName: rateMatch?.card.name ?? null,
       specificityScore: rateMatch?.specificityScore ?? 0,
@@ -1260,16 +1297,18 @@ export class DeliveryRoutingService {
       baseChargePaise: baseShippingPaise,
       freeAbovePaise: rateMatch?.card.freeAbovePaise ?? null,
       freeShippingApplied,
-      fallbackSettingKey: rateMatch ? null : defaultShippingChargeSettingKey,
+      fallbackSettingKey: liveCourierQuote || rateMatch ? null : defaultShippingChargeSettingKey,
+      liveCourierQuote: liveCourierQuote?.snapshot ?? null,
     };
     const codSurchargeSnapshot: Prisma.InputJsonObject = {
-      source: rateMatch ? "RATE_CARD" : "NONE",
+      source: liveCourierQuote ? "LIVE_COURIER_QUOTE" : rateMatch ? "RATE_CARD" : "NONE",
       rateCardId: rateMatch?.card.id ?? null,
       type: rateMatch?.card.codSurchargeType ?? ShippingCodSurchargeType.NONE,
       flatPaise: rateMatch?.card.codSurchargeFlatPaise ?? 0,
       valueBps: rateMatch?.card.codSurchargeBps ?? 0,
       amountPaise: codSurchargePaise,
       paymentMethod: input.paymentMethod ?? null,
+      liveCourierQuote: liveCourierQuote?.snapshot ?? null,
     };
     const packageSnapshot = this.packageSnapshot(input.parcel, input.packageIsBulky);
     const routingSnapshot: Prisma.InputJsonObject = {
@@ -1284,6 +1323,11 @@ export class DeliveryRoutingService {
       partnerMatchLabel: partner?.matchLabel ?? null,
       partnerSpecificityScore: partner?.specificityScore ?? 0,
       courierProviderCode: input.providerCode,
+      courierCompanyId: liveCourierQuote?.courierCompanyId ?? null,
+      courierName: liveCourierQuote?.courierName ?? null,
+      courierCode: liveCourierQuote?.courierCode ?? null,
+      estimatedDeliveryDays: liveCourierQuote?.estimatedDeliveryDays ?? null,
+      liveCourierQuote: liveCourierQuote?.snapshot ?? null,
       routingFailed: input.routingFailed,
       routingFailureReason: input.routingFailureReason,
       routingFailureNote: input.routingFailureNote,
@@ -1323,6 +1367,7 @@ export class DeliveryRoutingService {
       shippingSnapshot,
       codSurchargeSnapshot,
       routingSnapshot,
+      courierRateQuoteSnapshot: liveCourierQuote?.snapshot ?? null,
       packageSnapshot,
       sellerId: input.sellerId ?? null,
       sellerType: input.sellerType ?? null,
@@ -1345,6 +1390,15 @@ export class DeliveryRoutingService {
   }) {
     const provider = await this.findActiveProviderForCountry(input.address?.countryCode, input.client);
     if (provider) {
+      const liveQuote = await this.resolveLiveCourierQuote({
+        provider,
+        address: input.address,
+        subtotalPaise: input.subtotalPaise,
+        paymentMethod: input.paymentMethod,
+        client: input.client,
+        parcel: input.parcel,
+        sellerId: input.sellerId,
+      });
       return this.quoteForMode({
         deliveryPreference: input.deliveryPreference,
         deliveryMode: DeliveryMode.THIRD_PARTY_COURIER,
@@ -1354,12 +1408,13 @@ export class DeliveryRoutingService {
         client: input.client,
         partnerSelection: input.partnerSelection,
         providerCode: provider.providerCode,
-        routingFailed: false,
-        routingFailureReason: null,
-        routingFailureNote: null,
+        routingFailed: liveQuote.routingFailed,
+        routingFailureReason: liveQuote.routingFailureReason,
+        routingFailureNote: liveQuote.routingFailureNote,
         fallbackReason: input.fallbackReason,
-        warnings: [],
+        warnings: liveQuote.warnings,
         providerChecked: provider.providerCode,
+        liveCourierQuote: liveQuote.quote,
         sellerId: input.sellerId,
         sellerType: input.sellerType,
         parcel: input.parcel,
@@ -1398,6 +1453,156 @@ export class DeliveryRoutingService {
       parcel: input.parcel,
       packageIsBulky: input.packageIsBulky,
     });
+  }
+
+  private async resolveLiveCourierQuote(input: {
+    provider: Prisma.CourierProviderSettingGetPayload<Record<string, never>>;
+    address: DeliveryRoutingAddress | null;
+    subtotalPaise: number;
+    paymentMethod?: string | null | undefined;
+    client: RoutingClient;
+    parcel?: DeliveryRoutingPackage | null | undefined;
+    sellerId?: string | null | undefined;
+  }): Promise<LiveCourierQuoteOutcome> {
+    const settings = this.courierProviderSnapshot(
+      input.provider.settingsSnapshot,
+    ) as CourierProviderAdapterSnapshot;
+    if (
+      input.provider.mode !== CourierProviderMode.LIVE ||
+      !settings.liveApiCallsEnabled
+    ) {
+      return {
+        quote: null,
+        routingFailed: false,
+        routingFailureReason: null,
+        routingFailureNote: null,
+        warnings: [],
+      };
+    }
+
+    const adapter = this.courierAdapters?.getAdapter(
+      settings.adapterCode,
+      input.provider.providerCode,
+    );
+    if (!adapter?.quoteShipment) {
+      return {
+        quote: null,
+        routingFailed: false,
+        routingFailureReason: null,
+        routingFailureNote: null,
+        warnings: [`${input.provider.displayName} does not support live checkout rate quotes yet.`],
+      };
+    }
+
+    const sellerAddress = await this.sellerPickupAddressForQuote(input.sellerId, input.client);
+    if (!sellerAddress?.pincode || !input.address?.pincode) {
+      return {
+        quote: null,
+        routingFailed: false,
+        routingFailureReason: null,
+        routingFailureNote: null,
+        warnings: ["Live courier quote needs seller pickup and customer delivery pincodes."],
+      };
+    }
+
+    try {
+      const result = await adapter.quoteShipment({
+        providerCode: input.provider.providerCode,
+        currency: "INR",
+        paymentMethod:
+          input.paymentMethod === CheckoutRoutingPaymentMethod.COD ? "COD" : "PREPAID",
+        subtotalPaise: input.subtotalPaise,
+        codAmountPaise:
+          input.paymentMethod === CheckoutRoutingPaymentMethod.COD ? input.subtotalPaise : 0,
+        shippingAddress: this.deliveryAddressForCourierQuote(input.address),
+        sellerAddress,
+        parcel: this.courierPackageForQuote(input.parcel, settings.defaultPackage),
+        settings,
+      });
+
+      return this.liveCourierQuoteOutcome(input.provider, settings, result);
+    } catch (error) {
+      return {
+        quote: null,
+        routingFailed: false,
+        routingFailureReason: null,
+        routingFailureNote: null,
+        warnings: [`Live courier quote failed; configured shipping rate was used. ${this.errorMessage(error)}`],
+      };
+    }
+  }
+
+  private liveCourierQuoteOutcome(
+    provider: Prisma.CourierProviderSettingGetPayload<Record<string, never>>,
+    settings: CourierProviderAdapterSnapshot,
+    result: CourierRateQuoteResult,
+  ): LiveCourierQuoteOutcome {
+    const preferredCourierCompanyId = settings.preferredCourierCompanyId?.trim() || null;
+    const snapshot: Prisma.InputJsonObject = {
+      providerCode: provider.providerCode,
+      providerName: provider.displayName,
+      preferredCourierCompanyId,
+      courierCompanyId: result.courierCompanyId ?? null,
+      courierName: result.courierName ?? null,
+      courierCode: result.courierCode ?? null,
+      freightChargePaise: result.freightChargePaise ?? null,
+      codChargePaise: result.codChargePaise ?? null,
+      totalChargePaise: result.totalChargePaise ?? null,
+      currency: result.currency ?? "INR",
+      estimatedDeliveryDays: result.estimatedDeliveryDays ?? null,
+      shippingZone: result.shippingZone ?? null,
+      serviceable: result.serviceable,
+      warning: result.warning ?? null,
+      quotedAt: new Date().toISOString(),
+      request: this.jsonObjectOrNull(result.quotePayloadSnapshot),
+      response: this.jsonObjectOrNull(result.quoteResponseSnapshot),
+    };
+
+    if (!result.serviceable) {
+      const note =
+        result.warning ??
+        (preferredCourierCompanyId
+          ? `Preferred courier company ${preferredCourierCompanyId} is not serviceable for this route.`
+          : "No courier is serviceable for this route.");
+      return {
+        quote: null,
+        routingFailed: true,
+        routingFailureReason: DeliveryRoutingFailureReason.COURIER_UNAVAILABLE,
+        routingFailureNote: note,
+        warnings: [note],
+      };
+    }
+
+    const totalChargePaise = this.nonNegativeInt(result.totalChargePaise ?? 0);
+    if (totalChargePaise <= 0) {
+      return {
+        quote: null,
+        routingFailed: false,
+        routingFailureReason: null,
+        routingFailureNote: null,
+        warnings: ["Live courier quote did not include a positive charge; configured shipping rate was used."],
+      };
+    }
+
+    return {
+      quote: {
+        shippingChargePaise: this.nonNegativeInt(
+          totalChargePaise - this.nonNegativeInt(result.codChargePaise ?? 0),
+        ),
+        codSurchargePaise: this.nonNegativeInt(result.codChargePaise ?? 0),
+        totalDeliveryChargePaise: totalChargePaise,
+        courierCompanyId: result.courierCompanyId ?? null,
+        courierName: result.courierName ?? null,
+        courierCode: result.courierCode ?? null,
+        shippingZone: result.shippingZone ?? null,
+        estimatedDeliveryDays: result.estimatedDeliveryDays ?? null,
+        snapshot,
+      },
+      routingFailed: false,
+      routingFailureReason: null,
+      routingFailureNote: null,
+      warnings: [],
+    };
   }
 
   private async wholesaleBulkyRoutingEnabled(client: RoutingClient) {
@@ -2002,6 +2207,68 @@ export class DeliveryRoutingService {
     return count > 0;
   }
 
+  private async sellerPickupAddressForQuote(
+    sellerId: string | null | undefined,
+    client: RoutingClient,
+  ): Promise<CourierBookingAddress | null> {
+    if (!sellerId) {
+      return null;
+    }
+
+    const seller = await client.seller.findUnique({
+      where: { id: sellerId },
+      include: {
+        addresses: { orderBy: { createdAt: "asc" } },
+        profile: true,
+      },
+    });
+    const address = seller?.addresses[0];
+    if (!seller || !address) {
+      return null;
+    }
+
+    return {
+      fullName: seller.storeName,
+      email: seller.profile?.contactEmail ?? null,
+      phone: seller.profile?.contactPhone ?? null,
+      line1: address.line1,
+      line2: address.line2,
+      area: address.area,
+      city: address.city,
+      state: address.state,
+      pincode: address.pincode,
+      country: address.country,
+      countryCode: address.countryCode,
+    };
+  }
+
+  private deliveryAddressForCourierQuote(address: DeliveryRoutingAddress): CourierBookingAddress {
+    return {
+      fullName: address.fullName ?? "Customer",
+      phone: address.phone ?? null,
+      line1: address.line1 ?? null,
+      line2: address.line2 ?? null,
+      area: address.area ?? null,
+      city: address.city ?? null,
+      state: address.state ?? null,
+      pincode: address.pincode ?? null,
+      country: address.country ?? null,
+      countryCode: address.countryCode ?? null,
+    };
+  }
+
+  private courierPackageForQuote(
+    parcel: DeliveryRoutingPackage | null | undefined,
+    defaults: CourierProviderAdapterSnapshot["defaultPackage"],
+  ): CourierBookingPackage {
+    return {
+      weightGrams: this.positiveInt(parcel?.weightGrams, this.positiveInt(defaults?.weightGrams, 500)),
+      lengthCm: this.positiveInt(parcel?.lengthCm, this.positiveInt(defaults?.lengthCm, 20)),
+      breadthCm: this.positiveInt(parcel?.breadthCm, this.positiveInt(defaults?.breadthCm, 15)),
+      heightCm: this.positiveInt(parcel?.heightCm, this.positiveInt(defaults?.heightCm, 8)),
+    };
+  }
+
   private async defaultShippingChargePaise(client: RoutingClient) {
     const setting = await client.setting.findUnique({
       where: { key: defaultShippingChargeSettingKey },
@@ -2200,6 +2467,10 @@ export class DeliveryRoutingService {
       dto.cancellationEndpointPath,
       currentSnapshot.cancellationEndpointPath,
     );
+    const preferredCourierCompanyId = this.optionalSnapshotText(
+      dto.preferredCourierCompanyId,
+      currentSnapshot.preferredCourierCompanyId,
+    );
     const accountCode = this.optionalSnapshotText(dto.accountCode, currentSnapshot.accountCode);
     const username = this.optionalSnapshotText(dto.username, currentSnapshot.username);
     const apiKey = this.secretSnapshotText(dto.apiKey, currentCredentials.apiKey);
@@ -2239,6 +2510,7 @@ export class DeliveryRoutingService {
       trackingEndpointPath,
       labelEndpointPath,
       cancellationEndpointPath,
+      preferredCourierCompanyId,
       accountCode,
       username,
       credentials: {
@@ -2394,6 +2666,7 @@ export class DeliveryRoutingService {
       trackingEndpointPath: snapshot.trackingEndpointPath ?? null,
       labelEndpointPath: snapshot.labelEndpointPath ?? null,
       cancellationEndpointPath: snapshot.cancellationEndpointPath ?? null,
+      preferredCourierCompanyId: snapshot.preferredCourierCompanyId ?? null,
       accountCode: snapshot.accountCode ?? null,
       username: snapshot.username ?? null,
       apiKeyConfigured: Boolean(credentials.apiKey),
@@ -2639,6 +2912,16 @@ export class DeliveryRoutingService {
     return typeof value === "number" && Number.isFinite(value) && value > 0
       ? Math.round(value)
       : fallback;
+  }
+
+  private jsonObjectOrNull(value: unknown): Prisma.InputJsonObject | null {
+    return value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Prisma.InputJsonObject)
+      : null;
+  }
+
+  private errorMessage(error: unknown) {
+    return error instanceof Error ? error.message : "Unknown error";
   }
 
   private jsonNumber(value: Prisma.JsonValue | null | undefined, key: string) {

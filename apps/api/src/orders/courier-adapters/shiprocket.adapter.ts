@@ -5,6 +5,8 @@ import type {
   CourierBookingResult,
   CourierPickupSyncRequest,
   CourierPickupSyncResult,
+  CourierRateQuoteRequest,
+  CourierRateQuoteResult,
 } from "./courier-adapter.types";
 
 type ShiprocketJson = Record<string, unknown>;
@@ -19,6 +21,81 @@ const defaultPickupEndpoint = "/v1/external/settings/company/addpickup";
 
 export class ShiprocketCourierAdapter implements CourierAdapter {
   readonly code = "SHIPROCKET";
+
+  async quoteShipment(request: CourierRateQuoteRequest): Promise<CourierRateQuoteResult> {
+    const baseUrl = normalizeBaseUrl(request.settings.apiBaseUrl ?? defaultBaseUrl);
+    const email = request.settings.username?.trim();
+    const password = request.settings.credentials?.password?.trim();
+    if (!email || !password) {
+      throw new Error("Shiprocket live rate quote needs API username/email and password.");
+    }
+
+    const token = await this.authenticate(baseUrl, email, password);
+    const quotePayload = this.createServiceabilityParams(request);
+    const quoteResponse = await getJson(
+      `${urlFor(baseUrl, defaultServiceabilityEndpoint)}?${quotePayload.toString()}`,
+      token,
+    );
+    const selectedCourier = selectCourierCompany(
+      quoteResponse,
+      request.settings.preferredCourierCompanyId,
+    );
+
+    if (!selectedCourier) {
+      const preferredCourierCompanyId = request.settings.preferredCourierCompanyId?.trim();
+      return {
+        serviceable: false,
+        providerCode: request.providerCode,
+        courierCompanyId: preferredCourierCompanyId || null,
+        warning: preferredCourierCompanyId
+          ? `Preferred courier company ${preferredCourierCompanyId} is not serviceable for this route.`
+          : "Shiprocket did not return a serviceable courier for this route.",
+        quotePayloadSnapshot: Object.fromEntries(quotePayload.entries()),
+        quoteResponseSnapshot: quoteResponse,
+      };
+    }
+
+    const freightChargePaise = rupeesToPaise(
+      readNumber(selectedCourier, ["freight_charge"]) ??
+        readNumber(selectedCourier, ["rate"]) ??
+        readNumber(selectedCourier, ["charges"]) ??
+        readNumber(selectedCourier, ["shipping_charge"]),
+    );
+    const codChargePaise = rupeesToPaise(
+      readNumber(selectedCourier, ["cod_charges"]) ??
+        readNumber(selectedCourier, ["cod_charge"]) ??
+        readNumber(selectedCourier, ["cod"]),
+    );
+    const totalChargePaise = rupeesToPaise(
+      readNumber(selectedCourier, ["total_charge"]) ??
+        readNumber(selectedCourier, ["total_charges"]) ??
+        readNumber(selectedCourier, ["etd_charge"]),
+    );
+
+    return {
+      serviceable: true,
+      providerCode: request.providerCode,
+      courierCompanyId:
+        readText(selectedCourier, ["courier_company_id"]) ?? readText(selectedCourier, ["id"]),
+      courierName:
+        readText(selectedCourier, ["courier_name"]) ??
+        readText(selectedCourier, ["courier_company_name"]) ??
+        readText(selectedCourier, ["name"]),
+      courierCode: readText(selectedCourier, ["courier_code"]) ?? readText(selectedCourier, ["code"]),
+      freightChargePaise,
+      codChargePaise,
+      totalChargePaise:
+        totalChargePaise ?? (freightChargePaise ?? 0) + (codChargePaise ?? 0),
+      currency: "INR",
+      estimatedDeliveryDays:
+        readText(selectedCourier, ["estimated_delivery_days"]) ??
+        readText(selectedCourier, ["etd"]) ??
+        readText(selectedCourier, ["estimated_delivery"]),
+      shippingZone: readText(selectedCourier, ["zone"]),
+      quotePayloadSnapshot: Object.fromEntries(quotePayload.entries()),
+      quoteResponseSnapshot: quoteResponse,
+    };
+  }
 
   async bookShipment(request: CourierBookingRequest): Promise<CourierBookingResult> {
     const baseUrl = normalizeBaseUrl(request.settings.apiBaseUrl ?? defaultBaseUrl);
@@ -58,7 +135,7 @@ export class ShiprocketCourierAdapter implements CourierAdapter {
     if (!awbNumber && shipmentId) {
       try {
         serviceabilityResponse = await this.fetchServiceability(baseUrl, token, request);
-        const courierCompanyId = readRecommendedCourierCompanyId(serviceabilityResponse);
+        const courierCompanyId = request.settings.preferredCourierCompanyId?.trim() || readRecommendedCourierCompanyId(serviceabilityResponse);
         if (courierCompanyId) {
           awbResponse = await postJson(
             urlFor(baseUrl, defaultAwbEndpoint),
@@ -177,13 +254,17 @@ export class ShiprocketCourierAdapter implements CourierAdapter {
   }
 
   private async fetchServiceability(baseUrl: string, token: string, request: CourierBookingRequest) {
-    const params = new URLSearchParams({
+    const params = this.createServiceabilityParams(request);
+    return getJson(`${urlFor(baseUrl, defaultServiceabilityEndpoint)}?${params.toString()}`, token);
+  }
+
+  private createServiceabilityParams(request: Pick<CourierBookingRequest, "sellerAddress" | "shippingAddress" | "paymentMethod" | "parcel">) {
+    return new URLSearchParams({
       pickup_postcode: requiredText(request.sellerAddress.pincode, "seller pickup pincode"),
       delivery_postcode: requiredText(request.shippingAddress.pincode, "delivery pincode"),
       cod: request.paymentMethod === "COD" ? "1" : "0",
       weight: gramsToKg(request.parcel.weightGrams),
     });
-    return getJson(`${urlFor(baseUrl, defaultServiceabilityEndpoint)}?${params.toString()}`, token);
   }
 
   private createBookingPayload(request: CourierBookingRequest) {
@@ -310,6 +391,25 @@ function readText(value: unknown, path: string[]) {
   return null;
 }
 
+function readNumber(value: unknown, path: string[]) {
+  let current = value;
+  for (const key of path) {
+    if (!current || typeof current !== "object" || Array.isArray(current)) {
+      return null;
+    }
+    current = (current as Record<string, unknown>)[key];
+  }
+  if (typeof current === "number" && Number.isFinite(current)) {
+    return current;
+  }
+  if (typeof current === "string" && current.trim()) {
+    const parsed = Number(current);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
 function readRecommendedCourierCompanyId(value: unknown) {
   const explicit =
     readText(value, ["data", "recommended_courier_company_id"]) ??
@@ -330,6 +430,44 @@ function readRecommendedCourierCompanyId(value: unknown) {
   }
 
   return readText(company, ["courier_company_id"]) ?? readText(company, ["id"]);
+}
+
+function selectCourierCompany(value: unknown, preferredCourierCompanyId?: string | null) {
+  const companies = readAvailableCourierCompanies(value);
+  const preferred = preferredCourierCompanyId?.trim();
+  if (preferred) {
+    return (
+      companies.find((company) => {
+        const id = readText(company, ["courier_company_id"]) ?? readText(company, ["id"]);
+        return id === preferred;
+      }) ?? null
+    );
+  }
+
+  const recommendedId = readRecommendedCourierCompanyId(value);
+  if (recommendedId) {
+    const recommended = companies.find((company) => {
+      const id = readText(company, ["courier_company_id"]) ?? readText(company, ["id"]);
+      return id === recommendedId;
+    });
+    if (recommended) {
+      return recommended;
+    }
+  }
+
+  return companies[0] ?? null;
+}
+
+function readAvailableCourierCompanies(value: unknown) {
+  const data = objectAt(value, ["data"]);
+  const companies = Array.isArray(data?.available_courier_companies)
+    ? data.available_courier_companies
+    : [];
+
+  return companies.filter(
+    (item): item is Record<string, unknown> =>
+      Boolean(item) && typeof item === "object" && !Array.isArray(item),
+  );
 }
 
 function objectAt(value: unknown, path: string[]) {
@@ -369,6 +507,10 @@ function compactText(values: Array<string | null | undefined>) {
 
 function paiseToRupees(value: number) {
   return Number((value / 100).toFixed(2));
+}
+
+function rupeesToPaise(value: number | null) {
+  return value === null ? null : Math.max(0, Math.round(value * 100));
 }
 
 function gramsToKg(value: number) {

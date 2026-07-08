@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   assertCheckoutCartReady,
   calculateLocationConfidenceScore,
+  checkoutBuyerCountryCode,
   cleanCheckoutAddressForm,
   cleanCheckoutCustomerNote,
   cleanCheckoutPaymentReference,
+  normalizeCheckoutCouponCode,
+  validateCheckoutCouponCode,
 } from "./checkout-validation";
 import type { MobileCartSummary } from "./storefront-api";
 
@@ -79,6 +82,29 @@ describe("mobile checkout validation", () => {
     expect(calculateLocationConfidenceScore(100)).toBe(0);
     expect(calculateLocationConfidenceScore(250)).toBe(0);
     expect(calculateLocationConfidenceScore(null)).toBe(0);
+  });
+
+  it("uses selected market country for buyer currency instead of delivery address country", () => {
+    expect(
+      checkoutBuyerCountryCode({
+        deliveryAddressCountryCode: "IN",
+        selectedMarketCountryCode: " ae ",
+      }),
+    ).toBe("AE");
+    expect(
+      checkoutBuyerCountryCode({
+        deliveryAddressCountryCode: "AE",
+        selectedMarketCountryCode: null,
+      }),
+    ).toBe("IN");
+  });
+
+  it("normalizes and validates checkout coupon codes", () => {
+    expect(normalizeCheckoutCouponCode(" save-10 ")).toBe("SAVE-10");
+    expect(validateCheckoutCouponCode(" save_10 ")).toBe("SAVE_10");
+    expect(() => validateCheckoutCouponCode("")).toThrow("Enter a coupon code");
+    expect(() => validateCheckoutCouponCode("no")).toThrow("3-32");
+    expect(() => validateCheckoutCouponCode("SAVE 10")).toThrow("3-32");
   });
 
   it("validates payment references and customer notes", () => {

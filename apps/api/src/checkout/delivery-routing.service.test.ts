@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  CourierProviderMode,
   DeliveryMode,
   DeliveryRoutingFailureReason,
   Prisma,
@@ -124,6 +125,132 @@ describe("DeliveryRoutingService location serviceability", () => {
     );
     expect(payments.checkoutMethods).toHaveBeenCalledWith(104900);
   });
+
+  it("uses a live Shiprocket preferred courier quote as checkout shipping", async () => {
+    const quoteShipment = vi.fn().mockResolvedValue({
+      serviceable: true,
+      providerCode: "SHIPROCKET",
+      courierCompanyId: "43",
+      courierName: "DTDC Surface",
+      courierCode: "DTDC",
+      freightChargePaise: 12000,
+      codChargePaise: 345,
+      totalChargePaise: 12345,
+      currency: "INR",
+      estimatedDeliveryDays: "2-4",
+      shippingZone: "B",
+      quotePayloadSnapshot: { pickup_postcode: "636001", delivery_postcode: "641012" },
+      quoteResponseSnapshot: { data: { available_courier_companies: [] } },
+    });
+    const prisma = {
+      client: {
+        courierProviderSetting: {
+          findMany: vi.fn().mockResolvedValue([
+            {
+              id: "provider-1",
+              providerCode: "SHIPROCKET",
+              displayName: "Shiprocket",
+              mode: CourierProviderMode.LIVE,
+              isActive: true,
+              serviceableCountryCodes: ["IN"],
+              credentialsConfigured: true,
+              webhookSecretConfigured: true,
+              notes: null,
+              createdAt: new Date("2026-07-08T00:00:00.000Z"),
+              updatedAt: new Date("2026-07-08T00:00:00.000Z"),
+              settingsSnapshot: {
+                providerCode: "SHIPROCKET",
+                adapterCode: "SHIPROCKET",
+                preferredCourierCompanyId: "43",
+                username: "shiprocket-user",
+                credentials: { password: "shiprocket-password" },
+                defaultPackage: { weightGrams: 500, lengthCm: 20, breadthCm: 15, heightCm: 8 },
+                liveApiCallsEnabled: true,
+              },
+            },
+          ]),
+        },
+        seller: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: "seller-1",
+            storeName: "Test Seller",
+            profile: { contactEmail: "seller@example.com", contactPhone: "9876543210" },
+            addresses: [
+              {
+                line1: "Seller street",
+                line2: null,
+                area: "Salem",
+                city: "Salem",
+                state: "Tamil Nadu",
+                pincode: "636001",
+                country: "India",
+                countryCode: "IN",
+                createdAt: new Date("2026-07-08T00:00:00.000Z"),
+              },
+            ],
+          }),
+        },
+        shippingRateCard: { findMany: vi.fn().mockResolvedValue([]) },
+        setting: { findUnique: vi.fn().mockResolvedValue(setting("shipping.default_charge_paise", 99900)) },
+      },
+    };
+    const adapters = {
+      getAdapter: vi.fn().mockReturnValue({ quoteShipment }),
+    };
+    const service = new DeliveryRoutingService(
+      prisma as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined,
+      adapters as never,
+    );
+
+    const result = await service.resolveDelivery({
+      requestedDeliveryMode: DeliveryMode.THIRD_PARTY_COURIER,
+      address: {
+        fullName: "Buyer",
+        phone: "9999999999",
+        line1: "Buyer street",
+        city: "Coimbatore",
+        state: "Tamil Nadu",
+        pincode: "641012",
+        country: "India",
+        countryCode: "IN",
+      },
+      subtotalPaise: 50000,
+      paymentMethod: CheckoutRoutingPaymentMethod.COD,
+      sellerId: "seller-1",
+      sellerType: null,
+      package: { weightGrams: 750, lengthCm: 22, breadthCm: 16, heightCm: 10 },
+    });
+
+    expect(result.shippingChargePaise).toBe(12000);
+    expect(result.codSurchargePaise).toBe(345);
+    expect(result.totalDeliveryChargePaise).toBe(12345);
+    expect(result.shippingSnapshot).toMatchObject({
+      source: "LIVE_COURIER_QUOTE",
+      chargePaise: 12000,
+      liveCourierQuote: {
+        preferredCourierCompanyId: "43",
+        courierCompanyId: "43",
+        courierName: "DTDC Surface",
+        totalChargePaise: 12345,
+      },
+    });
+    expect(quoteShipment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerCode: "SHIPROCKET",
+        paymentMethod: "COD",
+        subtotalPaise: 50000,
+        codAmountPaise: 50000,
+        sellerAddress: expect.objectContaining({ pincode: "636001" }),
+        shippingAddress: expect.objectContaining({ pincode: "641012" }),
+        parcel: expect.objectContaining({ weightGrams: 750 }),
+        settings: expect.objectContaining({ preferredCourierCompanyId: "43" }),
+      }),
+    );
+  });
 });
 
 function readyQuote(): DeliveryRoutingQuote {
@@ -159,4 +286,8 @@ function readyQuote(): DeliveryRoutingQuote {
     codSurchargeSnapshot: { type: "NONE" } as Prisma.InputJsonObject,
     routingSnapshot: { matchedRateCardId: "rate-1" } as Prisma.InputJsonObject,
   };
+}
+
+function setting(key: string, value: boolean | number | string) {
+  return { key, value };
 }

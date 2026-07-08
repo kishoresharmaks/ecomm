@@ -46,6 +46,7 @@ import {
   recoverRazorpayPaymentSession,
   runWithRazorpayTimeout,
   saveRazorpayPaymentSession,
+  shouldCancelUnpaidRazorpayOrder,
 } from "./razorpay-payment";
 
 describe("mobile Razorpay payment helpers", () => {
@@ -253,5 +254,29 @@ describe("mobile Razorpay payment helpers", () => {
       orderNumber: "1HI20260613001",
       razorpayOrderId: "order_123",
     });
+  });
+
+  it("cancels only unpaid Razorpay orders that failed before verification", () => {
+    expect(
+      shouldCancelUnpaidRazorpayOrder(
+        new MobileRazorpayPaymentError("checkout", RAZORPAY_CHECKOUT_CANCELLED_ERROR, {
+          code: "PAYMENT_CANCELLED",
+          orderNumber: "1HI20260613001",
+          razorpayOrderId: "order_123",
+        }),
+      ),
+    ).toBe(true);
+
+    expect(
+      shouldCancelUnpaidRazorpayOrder(
+        new MobileRazorpayPaymentError("verification", "Could not verify payment", {
+          code: "VERIFICATION_FAILED",
+          orderNumber: "1HI20260613001",
+          razorpayOrderId: "order_123",
+        }),
+      ),
+    ).toBe(false);
+
+    expect(shouldCancelUnpaidRazorpayOrder(new Error("Other failure"))).toBe(false);
   });
 });

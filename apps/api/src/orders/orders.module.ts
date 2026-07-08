@@ -19,7 +19,7 @@ import {
   FinanceCourierCodRemittancesController,
   SellerCourierPackagesController,
 } from "./courier-logistics.controller";
-import { CourierAdapterRegistry } from "./courier-adapters/courier-adapter.registry";
+import { CourierAdaptersModule } from "./courier-adapters/courier-adapters.module";
 import { CourierLogisticsService } from "./courier-logistics.service";
 import { CustomerOrdersController } from "./customer-orders.controller";
 import { DeliveryPartnerProfileController } from "./delivery-partner-profile.controller";
@@ -34,7 +34,7 @@ import { PublicOrdersController } from "./public-orders.controller";
 import { SellerOrdersController } from "./seller-orders.controller";
 
 @Module({
-  imports: [CheckoutPricingModule, CouponsModule, CustomersModule, DealsModule, FinanceModule, LocationsModule, MapsModule, MarketModule, NotificationsModule, PaymentsModule, ReturnsModule],
+  imports: [CheckoutPricingModule, CourierAdaptersModule, CouponsModule, CustomersModule, DealsModule, FinanceModule, LocationsModule, MapsModule, MarketModule, NotificationsModule, PaymentsModule, ReturnsModule],
   controllers: [
     CustomerOrdersController,
     AdminOrdersController,
@@ -52,7 +52,7 @@ import { SellerOrdersController } from "./seller-orders.controller";
     PublicOrdersController,
     CourierWebhooksController
   ],
-  providers: [OrdersService, CourierLogisticsService, CourierAdapterRegistry],
+  providers: [OrdersService, CourierLogisticsService],
   exports: [OrdersService]
 })
 export class OrdersModule {}

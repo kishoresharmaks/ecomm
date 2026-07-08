@@ -1087,10 +1087,11 @@ export function CourierProvidersClient() {
     serviceableCountryCodes: ["IN"],
     adapterCode: "SHIPROCKET",
     apiBaseUrl: "https://apiv2.shiprocket.in",
-    bookingEndpointPath: "/v1/shipments/book",
+    bookingEndpointPath: "/v1/external/orders/create/adhoc",
     trackingEndpointPath: "/v1/shipments/track",
-    labelEndpointPath: "/v1/shipments/label",
+    labelEndpointPath: "/v1/external/courier/generate/label",
     cancellationEndpointPath: "/v1/shipments/cancel",
+    preferredCourierCompanyId: "",
     defaultPackageWeightGrams: 500,
     defaultPackageLengthCm: 20,
     defaultPackageBreadthCm: 15,
@@ -1155,6 +1156,7 @@ export function CourierProvidersClient() {
           <TextInput label="Tracking endpoint" value={form.trackingEndpointPath ?? ""} onChange={(value) => setForm((current) => ({ ...current, trackingEndpointPath: value }))} />
           <TextInput label="Label endpoint" value={form.labelEndpointPath ?? ""} onChange={(value) => setForm((current) => ({ ...current, labelEndpointPath: value }))} />
           <TextInput label="Cancellation endpoint" value={form.cancellationEndpointPath ?? ""} onChange={(value) => setForm((current) => ({ ...current, cancellationEndpointPath: value }))} />
+          <TextInput label="Preferred courier company id" value={form.preferredCourierCompanyId ?? ""} onChange={(value) => setForm((current) => ({ ...current, preferredCourierCompanyId: value }))} />
           <TextInput label="Account / client code" value={form.accountCode ?? ""} onChange={(value) => setForm((current) => ({ ...current, accountCode: value }))} />
           <TextInput label="API username" value={form.username ?? ""} onChange={(value) => setForm((current) => ({ ...current, username: value }))} />
           <TextInput label="API key / token" value={form.apiKey ?? ""} onChange={(value) => setForm((current) => ({ ...current, apiKey: value }))} />
@@ -2334,6 +2336,7 @@ function cleanProviderPayload(form: CourierProviderPayload): CourierProviderPayl
   assignCleanString(payload, "trackingEndpointPath", form.trackingEndpointPath);
   assignCleanString(payload, "labelEndpointPath", form.labelEndpointPath);
   assignCleanString(payload, "cancellationEndpointPath", form.cancellationEndpointPath);
+  assignCleanString(payload, "preferredCourierCompanyId", form.preferredCourierCompanyId);
   assignCleanString(payload, "accountCode", form.accountCode);
   assignCleanString(payload, "username", form.username);
   assignCleanString(payload, "apiKey", form.apiKey);

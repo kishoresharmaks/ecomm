@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createRazorpayProviderOrder, placeOrder, verifyRazorpayPayment } from "./storefront-api";
+import {
+  cancelRazorpayOrder,
+  createRazorpayProviderOrder,
+  getCheckoutSummary,
+  placeOrder,
+  verifyRazorpayPayment,
+} from "./storefront-api";
 
 const originalApiUrl = process.env.EXPO_PUBLIC_API_URL;
 const originalFetch = globalThis.fetch;
@@ -79,6 +85,29 @@ describe("mobile Razorpay storefront API helpers", () => {
     });
   });
 
+  it("cancels an unpaid Razorpay order through the customer payment endpoint", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        orderNumber: "1HI/2026/001",
+        cancelled: true,
+      }),
+    );
+
+    await cancelRazorpayOrder({ bearerToken: "customer-token" }, "1HI/2026/001");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] ?? [];
+    expect(String(url)).toBe("https://api.example.com/api/payments/razorpay/orders/1HI%2F2026%2F001/cancel");
+    expect(init).toMatchObject({
+      method: "PATCH",
+      body: "{}",
+      headers: expect.objectContaining({
+        Authorization: "Bearer customer-token",
+        "Content-Type": "application/json",
+      }),
+    });
+  });
+
   it("sends checkout idempotency keys when placing customer orders", async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({
@@ -113,6 +142,70 @@ describe("mobile Razorpay storefront API helpers", () => {
       headers: expect.objectContaining({
         Authorization: "Bearer customer-token",
         "Content-Type": "application/json",
+      }),
+    });
+  });
+
+  it("sends coupon codes to checkout summary and order placement", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          buyerCountryCode: "AE",
+          buyerCurrency: "AED",
+          buyerTotalMinor: 4200,
+          coupon: { code: "SAVE10", couponId: "coupon_1", title: "Save 10" },
+          couponDiscountPaise: 1000,
+          currency: "INR",
+          itemCount: 1,
+          platformFeePaise: 0,
+          shippingPaise: 0,
+          subtotalPaise: 12000,
+          totalPaise: 11000,
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          orderNumber: "1HI/2026/003",
+          totalPaise: 11000,
+          currency: "INR",
+          paymentStatus: "PENDING",
+        }),
+      );
+
+    await getCheckoutSummary(
+      { bearerToken: "customer-token" },
+      {
+        buyerCountryCode: "AE",
+        couponCode: "SAVE10",
+        deliveryPreference: "DELIVER_TO_ADDRESS",
+        paymentMethod: "COD",
+      },
+    );
+    await placeOrder(
+      { bearerToken: "customer-token" },
+      {
+        buyerCountryCode: "AE",
+        couponCode: "SAVE10",
+        deliveryPreference: "DELIVER_TO_ADDRESS",
+        idempotencyKey: "mobile_cart_coupon",
+        paymentMethod: "COD",
+      },
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const [summaryUrl] = fetchMock.mock.calls[0] ?? [];
+    expect(String(summaryUrl)).toContain("couponCode=SAVE10");
+    expect(String(summaryUrl)).toContain("buyerCountryCode=AE");
+
+    const [, orderInit] = fetchMock.mock.calls[1] ?? [];
+    expect(orderInit).toMatchObject({
+      method: "POST",
+      body: JSON.stringify({
+        buyerCountryCode: "AE",
+        couponCode: "SAVE10",
+        deliveryPreference: "DELIVER_TO_ADDRESS",
+        idempotencyKey: "mobile_cart_coupon",
+        paymentMethod: "COD",
       }),
     });
   });

@@ -174,6 +174,17 @@ export type MobileCheckoutSummary = {
   shippingPaise: number;
   platformFeePaise: number;
   couponDiscountPaise?: number;
+  coupon?: {
+    couponId: string;
+    code: string;
+    title: string;
+    description?: string | null;
+    discountType: string;
+    fundingSource: string;
+    discountPaise: number;
+    merchandiseDiscountPaise: number;
+    shippingDiscountPaise: number;
+  } | null;
   totalPaise: number;
   currency: string;
   buyerCountryCode: string;
@@ -226,6 +237,11 @@ export type MobileRazorpayVerificationResponse = {
   received: boolean;
   paymentId: string;
   status: string;
+};
+
+export type MobileRazorpayCancelResponse = {
+  orderNumber: string;
+  cancelled: boolean;
 };
 
 export type MobileOrderSummary = {
@@ -711,6 +727,7 @@ export type MobileStoreLocationQuery = {
 
 export type MobilePlaceOrderPayload = {
   addressId?: string;
+  couponCode?: string;
   deliveryPreference: MobileDeliveryPreference;
   idempotencyKey?: string;
   paymentMethod: MobilePaymentMethod;
@@ -934,6 +951,7 @@ export function getCheckoutSummary(
   auth: MobileAuthHeaders,
   options: {
     buyerCountryCode?: string;
+    couponCode?: string | null;
     deliveryPreference?: MobileDeliveryPreference;
     paymentMethod?: MobilePaymentMethod;
     addressId?: string | null;
@@ -944,6 +962,7 @@ export function getCheckoutSummary(
     auth,
     searchParams: {
       buyerCountryCode: options.buyerCountryCode ?? "IN",
+      couponCode: options.couponCode,
       deliveryPreference: options.deliveryPreference,
       paymentMethod: options.paymentMethod,
       addressId: options.addressId,
@@ -978,6 +997,14 @@ export function verifyRazorpayPayment(auth: MobileAuthHeaders, payload: MobileRa
     path: "/payments/razorpay/verify",
     auth,
     body: payload,
+  });
+}
+
+export function cancelRazorpayOrder(auth: MobileAuthHeaders, orderNumber: string) {
+  return patchJson<MobileRazorpayCancelResponse>({
+    path: `/payments/razorpay/orders/${encodeURIComponent(orderNumber)}/cancel`,
+    auth,
+    body: {},
   });
 }
 
