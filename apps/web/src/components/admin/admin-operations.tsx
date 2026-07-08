@@ -4445,7 +4445,12 @@ export function AdminOrderDetailPageClient({ orderNumber }: { orderNumber: strin
                               />
                               <SmallInput
                                 label="Note"
-                                value={courierForm.note ?? ""}
+                                value={
+                                  courierForm.note ??
+                                  shipment.courierShipment?.trackingStatusLabel ??
+                                  shipment.courierTrackingStatusLabel ??
+                                  ""
+                                }
                                 onChange={(value) =>
                                   updateCourierPackageForm(shipment.id, "note", value)
                                 }
