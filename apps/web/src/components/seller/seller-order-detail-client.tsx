@@ -129,7 +129,7 @@ const sellerStatusRank: Record<SellerStatus, number> = {
 
 export function SellerOrderDetailClient({
   orderNumber,
-  initialSection: _initialSection = "overview",
+  initialSection: section = "overview",
 }: {
   orderNumber: string;
   initialSection?: "overview" | "delivery";
@@ -425,22 +425,24 @@ export function SellerOrderDetailClient({
 
   return (
     <div className="grid gap-4">
-      <div>
-        <Button asChild variant="ghost" size="sm">
-          <Link href="/seller/orders">
-            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-            Back to orders
-          </Link>
-        </Button>
-        {!isStorePickup ? (
-          <Button asChild variant="outline" size="sm">
-            <Link href={`/seller/orders/${encodeURIComponent(orderNumber)}/delivery`}>
-              <Truck className="h-4 w-4" aria-hidden="true" />
-              Logistics view
+      {section !== "delivery" ? (
+        <div>
+          <Button asChild variant="ghost" size="sm">
+            <Link href="/seller/orders">
+              <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+              Back to orders
             </Link>
           </Button>
-        ) : null}
-      </div>
+          {!isStorePickup ? (
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/seller/orders/${encodeURIComponent(orderNumber)}/delivery`}>
+                <Truck className="h-4 w-4" aria-hidden="true" />
+                Logistics view
+              </Link>
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
 
       {notice ? (
         <StatusBadge tone={statusMutation.isError ? "danger" : "success"}>
@@ -496,41 +498,43 @@ export function SellerOrderDetailClient({
 
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_400px]">
         <div className="grid content-start gap-4">
-      <SellerPanel className="p-4" id="delivery-details">
-            <SectionHeading
-              title="Store items"
-              description="Items in this order that belong to this store."
-            />
-            <div className="mt-4 overflow-hidden rounded-lg border border-[#E5E7EB]">
-              {sellerItems.map((item) => (
-                <div
-                  key={item.id}
-                  className="grid gap-3 border-b border-[#E5E7EB] bg-[#F8FAFC] p-4 last:border-b-0 md:grid-cols-[1fr_auto]"
-                >
-                  <div>
-                    <p className="font-black text-[#1F2933]">{item.productNameSnapshot}</p>
-                    <p className="mt-1 text-sm font-semibold text-[#667085]">
-                      {formatVariantLabel(item.variantSnapshot) ?? "Default"}{" "}
-                      x {item.quantity}
-                    </p>
+          {section !== "delivery" ? (
+            <SellerPanel className="p-4" id="delivery-details">
+              <SectionHeading
+                title="Store items"
+                description="Items in this order that belong to this store."
+              />
+              <div className="mt-4 overflow-hidden rounded-lg border border-[#E5E7EB]">
+                {sellerItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className="grid gap-3 border-b border-[#E5E7EB] bg-[#F8FAFC] p-4 last:border-b-0 md:grid-cols-[1fr_auto]"
+                  >
+                    <div>
+                      <p className="font-black text-[#1F2933]">{item.productNameSnapshot}</p>
+                      <p className="mt-1 text-sm font-semibold text-[#667085]">
+                        {formatVariantLabel(item.variantSnapshot) ?? "Default"}{" "}
+                        x {item.quantity}
+                      </p>
+                    </div>
+                    <div className="text-left md:text-right">
+                      <p className="text-sm font-semibold text-[#667085]">
+                        {formatMoney(item.unitPricePaise, item.currency)} each
+                      </p>
+                      <p className="mt-1 text-lg font-black text-[#163B5C]">
+                        {formatMoney(item.lineTotalPaise, item.currency)}
+                      </p>
+                    </div>
                   </div>
-                  <div className="text-left md:text-right">
-                    <p className="text-sm font-semibold text-[#667085]">
-                      {formatMoney(item.unitPricePaise, item.currency)} each
-                    </p>
-                    <p className="mt-1 text-lg font-black text-[#163B5C]">
-                      {formatMoney(item.lineTotalPaise, item.currency)}
-                    </p>
-                  </div>
-                </div>
-              ))}
-              {sellerItems.length === 0 ? (
-                <p className="p-4 text-sm font-semibold text-[#667085]">
-                  No seller items found for this order.
-                </p>
-              ) : null}
-            </div>
-          </SellerPanel>
+                ))}
+                {sellerItems.length === 0 ? (
+                  <p className="p-4 text-sm font-semibold text-[#667085]">
+                    No seller items found for this order.
+                  </p>
+                ) : null}
+              </div>
+            </SellerPanel>
+          ) : null}
 
           {sellerShipment ? (
             <SellerPanel className="p-4">

@@ -71,20 +71,23 @@ export function SellerOrdersClient() {
   const [orderStatus, setOrderStatus] = useState<string[]>([]);
   const [deliveryStatus, setDeliveryStatus] = useState<string[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<string[]>([]);
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(30);
 
   const debouncedOrderStatus = useDebounce(orderStatus, 500);
   const debouncedDeliveryStatus = useDebounce(deliveryStatus, 500);
   const debouncedPaymentMethod = useDebounce(paymentMethod, 500);
 
   const ordersQuery = useQuery({
-    queryKey: ["seller-orders", sellerAuth.authKey, submittedSearch, debouncedOrderStatus, debouncedDeliveryStatus, debouncedPaymentMethod],
+    queryKey: ["seller-orders", sellerAuth.authKey, submittedSearch, debouncedOrderStatus, debouncedDeliveryStatus, debouncedPaymentMethod, page, limit],
     queryFn: () =>
       listSellerOrders(sellerAuth.authHeaders, {
         search: submittedSearch,
         orderStatus: debouncedOrderStatus,
         deliveryStatus: debouncedDeliveryStatus,
         paymentMethod: debouncedPaymentMethod,
-        limit: 30
+        page,
+        limit
       }),
     enabled: sellerAuth.enabled,
     retry: false
@@ -93,6 +96,7 @@ export function SellerOrdersClient() {
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmittedSearch(search.trim());
+    setPage(1);
   }
 
   if (!sellerAuth.enabled) {
@@ -135,11 +139,11 @@ export function SellerOrdersClient() {
             </PopoverButton>
             <PopoverPanel className="absolute right-0 top-full z-10 mt-2 w-72 origin-top-right rounded-md border border-[#E5E7EB] bg-white p-4 shadow-lg ring-1 ring-black/5 focus:outline-none max-h-[80vh] overflow-y-auto">
               <div className="flex flex-col gap-6">
-                <CheckboxGroup label="Order Status" options={orderStatuses} selected={orderStatus} onChange={setOrderStatus} />
-                <CheckboxGroup label="Delivery Status" options={deliveryStatuses} selected={deliveryStatus} onChange={setDeliveryStatus} />
-                <CheckboxGroup label="Payment Method" options={paymentMethods} selected={paymentMethod} onChange={setPaymentMethod} />
+                <CheckboxGroup label="Order Status" options={orderStatuses} selected={orderStatus} onChange={(val) => { setOrderStatus(val); setPage(1); }} />
+                <CheckboxGroup label="Delivery Status" options={deliveryStatuses} selected={deliveryStatus} onChange={(val) => { setDeliveryStatus(val); setPage(1); }} />
+                <CheckboxGroup label="Payment Method" options={paymentMethods} selected={paymentMethod} onChange={(val) => { setPaymentMethod(val); setPage(1); }} />
                 {(activeFiltersCount > 0) && (
-                  <Button variant="ghost" size="sm" onClick={() => { setOrderStatus([]); setDeliveryStatus([]); setPaymentMethod([]); }} className="w-full text-[#ED3500] hover:text-[#C52A00]">
+                  <Button variant="ghost" size="sm" onClick={() => { setOrderStatus([]); setDeliveryStatus([]); setPaymentMethod([]); setPage(1); }} className="w-full text-[#ED3500] hover:text-[#C52A00]">
                     Clear Filters
                   </Button>
                 )}
@@ -217,7 +221,86 @@ export function SellerOrdersClient() {
           );
         })}
       </div>
+
+      {ordersQuery.data && ordersQuery.data.total > 0 ? (
+        <SellerPagination
+          page={page}
+          pageSize={limit}
+          total={ordersQuery.data.total}
+          isLoading={ordersQuery.isLoading || ordersQuery.isFetching}
+          onPageChange={setPage}
+          onPageSizeChange={(newSize) => {
+            setLimit(newSize);
+            setPage(1);
+          }}
+        />
+      ) : null}
     </SellerPanel>
+  );
+}
+
+function SellerPagination({
+  page,
+  pageSize,
+  total,
+  isLoading,
+  onPageChange,
+  onPageSizeChange,
+  itemLabel = "orders",
+}: {
+  page: number;
+  pageSize: number;
+  total: number;
+  isLoading?: boolean;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (pageSize: number) => void;
+  itemLabel?: string;
+}) {
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const firstItem = total === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const lastItem = Math.min(total, currentPage * pageSize);
+
+  return (
+    <div className="mt-6 flex flex-col gap-3 rounded-lg border border-[#D8E2EA] bg-[#F8FAFC] px-4 py-4 md:flex-row md:items-center md:justify-between">
+      <div className="text-sm font-semibold text-[#667085]">
+        {isLoading
+          ? `Loading ${itemLabel}...`
+          : `Showing ${firstItem.toLocaleString("en-IN")}-${lastItem.toLocaleString("en-IN")} of ${total.toLocaleString("en-IN")} ${itemLabel}`}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          value={pageSize}
+          onChange={(e) => onPageSizeChange(Number(e.target.value))}
+          disabled={isLoading}
+          className="h-9 rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-semibold text-[#1F2933] outline-none focus:border-[#ED3500] disabled:opacity-50"
+        >
+          <option value="10">10 per page</option>
+          <option value="20">20 per page</option>
+          <option value="30">30 per page</option>
+          <option value="50">50 per page</option>
+          <option value="100">100 per page</option>
+        </select>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={isLoading || currentPage <= 1}
+          onClick={() => onPageChange(Math.max(1, currentPage - 1))}
+        >
+          Previous
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={isLoading || currentPage >= pageCount}
+          onClick={() => onPageChange(Math.min(pageCount, currentPage + 1))}
+        >
+          Next
+        </Button>
+      </div>
+    </div>
   );
 }
 
