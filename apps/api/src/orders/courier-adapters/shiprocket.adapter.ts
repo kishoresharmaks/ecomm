@@ -2,6 +2,7 @@ import { CourierShipmentStatus } from "@indihub/database";
 import type {
   CourierAdapter,
   CourierBookingRequest,
+  CourierBookingLookupResult,
   CourierBookingResult,
   CourierPickupSyncRequest,
   CourierPickupSyncResult,
@@ -19,6 +20,8 @@ const defaultServiceabilityEndpoint = "/v1/external/courier/serviceability";
 const defaultAwbEndpoint = "/v1/external/courier/assign/awb";
 const defaultLabelEndpoint = "/v1/external/courier/generate/label";
 const defaultPickupEndpoint = "/v1/external/settings/company/addpickup";
+const defaultOrderLookupEndpoint = "/v1/external/orders/show";
+const shiprocketRequestTimeoutMs = 30000;
 
 export class ShiprocketCourierAdapter implements CourierAdapter {
   readonly code = "SHIPROCKET";
@@ -197,6 +200,82 @@ export class ShiprocketCourierAdapter implements CourierAdapter {
     };
   }
 
+  async lookupShipmentByOrderId(request: CourierBookingRequest): Promise<CourierBookingLookupResult> {
+    const baseUrl = normalizeBaseUrl(request.settings.apiBaseUrl ?? defaultBaseUrl);
+    const email = request.settings.username?.trim();
+    const password = request.settings.credentials?.password?.trim();
+    if (!email || !password) {
+      throw new Error("Shiprocket booking lookup needs API username/email and password.");
+    }
+
+    const token = await this.authenticate(baseUrl, email, password);
+    const params = new URLSearchParams({ order_id: request.shipmentNumber });
+    const lookupResponse = await getJsonAllowNotFound(
+      `${urlFor(baseUrl, defaultOrderLookupEndpoint)}?${params.toString()}`,
+      token,
+    );
+
+    if (lookupResponse.notFound) {
+      return {
+        found: false,
+        bookingResponseSnapshot: {
+          lookup: {
+            orderId: request.shipmentNumber,
+            status: 404,
+          },
+        },
+      };
+    }
+
+    const body = lookupResponse.body;
+    const providerOrderId =
+      readText(body, ["order_id"]) ??
+      readText(body, ["data", "order_id"]) ??
+      readText(body, ["payload", "order_id"]) ??
+      readText(body, ["id"]) ??
+      request.shipmentNumber;
+    const shipmentId =
+      readText(body, ["shipment_id"]) ??
+      readText(body, ["data", "shipment_id"]) ??
+      readText(body, ["payload", "shipment_id"]);
+    const awbNumber =
+      readText(body, ["awb_code"]) ??
+      readText(body, ["awb"]) ??
+      readText(body, ["data", "awb_code"]) ??
+      readText(body, ["data", "awb"]) ??
+      readText(body, ["shipments", "awb"]) ??
+      readText(body, ["payload", "awb_code"]);
+    const courierName =
+      readText(body, ["courier_name"]) ??
+      readText(body, ["data", "courier_name"]) ??
+      readText(body, ["courier_company_name"]);
+    const courierCode =
+      readText(body, ["courier_code"]) ??
+      readText(body, ["data", "courier_code"]) ??
+      readText(body, ["courier_company_id"]);
+    const statusLabel =
+      readText(body, ["status"]) ??
+      readText(body, ["data", "status"]) ??
+      (awbNumber ? "Shiprocket booking recovered from order lookup." : "Shiprocket order found without AWB.");
+    const labelUrl =
+      readText(body, ["label_url"]) ??
+      readText(body, ["data", "label_url"]) ??
+      readText(body, ["labelUrl"]);
+
+    return {
+      found: true,
+      providerOrderId: providerOrderId ?? shipmentId,
+      awbNumber,
+      courierName,
+      courierCode,
+      trackingUrl: awbNumber ? `https://shiprocket.co/tracking/${encodeURIComponent(awbNumber)}` : null,
+      labelUrl,
+      trackingStatus: awbNumber ? CourierShipmentStatus.BOOKED : CourierShipmentStatus.NOT_BOOKED,
+      trackingStatusLabel: statusLabel,
+      bookingResponseSnapshot: { lookup: body },
+    };
+  }
+
   async syncPickupLocation(
     request: CourierPickupSyncRequest,
   ): Promise<CourierPickupSyncResult> {
@@ -352,6 +431,7 @@ async function postJson(url: string, payload: unknown, token?: string) {
     method: "POST",
     headers: jsonHeaders(token),
     body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(shiprocketRequestTimeoutMs),
   });
   return parseJsonResponse(response, url);
 }
@@ -360,8 +440,22 @@ async function getJson(url: string, token: string) {
   const response = await fetch(url, {
     method: "GET",
     headers: jsonHeaders(token),
+    signal: AbortSignal.timeout(shiprocketRequestTimeoutMs),
   });
   return parseJsonResponse(response, url);
+}
+
+async function getJsonAllowNotFound(url: string, token: string): Promise<{ notFound: true } | { notFound: false; body: unknown }> {
+  const response = await fetch(url, {
+    method: "GET",
+    headers: jsonHeaders(token),
+    signal: AbortSignal.timeout(shiprocketRequestTimeoutMs),
+  });
+  if (response.status === 404) {
+    return { notFound: true };
+  }
+
+  return { notFound: false, body: await parseJsonResponse(response, url) };
 }
 
 async function parseJsonResponse(response: Response, url: string) {

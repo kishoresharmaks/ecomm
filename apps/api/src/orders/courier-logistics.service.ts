@@ -219,6 +219,11 @@ export class CourierLogisticsService {
       throw new BadRequestException("Courier booking is only available for third-party courier packages.");
     }
     this.assertShipmentOpenForCourierMutation(orderShipment, "book courier");
+    if (this.hasFreshAutomatedBookingLock(orderShipment)) {
+      throw new BadRequestException(
+        "Automatic courier booking is already in progress. Please wait for it to finish or retry after the booking lock expires.",
+      );
+    }
 
     const provider = await this.prisma.client.courierProviderSetting.findUnique({
       where: { providerCode },
@@ -406,6 +411,13 @@ export class CourierLogisticsService {
           courierTrackingStatus: status,
           labelUrl: resolvedLabelUrl,
           trackingReference: resolvedAwbNumber ?? resolvedProviderOrderId ?? orderShipment.trackingReference,
+          bookingInProgress: false,
+          bookingClaimedAt: null,
+          bookingNextAttemptAt: null,
+          routingFailed: false,
+          routingFailureReason: null,
+          routingFailureNote: null,
+          routingPermanentFailureAt: null,
           codCollectionSource: this.hasCodPayment(orderShipment.order.payments)
             ? CodCollectionSource.THIRD_PARTY_COURIER
             : orderShipment.codCollectionSource,
@@ -1602,6 +1614,8 @@ export class CourierLogisticsService {
         data: {
           courierProviderCode: providerCode,
           courierTrackingStatus: CourierShipmentStatus.NOT_BOOKED,
+          bookingInProgress: false,
+          bookingClaimedAt: null,
         },
       });
       await tx.auditLog.create({
@@ -2448,6 +2462,20 @@ export class CourierLogisticsService {
     if (shipmentPackage.status && closedPackageStatuses.has(shipmentPackage.status)) {
       throw new BadRequestException(`Cannot ${action} for a ${shipmentPackage.status.toLowerCase()} package.`);
     }
+  }
+
+  private hasFreshAutomatedBookingLock(shipment: {
+    bookingInProgress?: boolean | null;
+    bookingClaimedAt?: Date | null;
+  }) {
+    if (!shipment.bookingInProgress) {
+      return false;
+    }
+    if (!shipment.bookingClaimedAt) {
+      return true;
+    }
+
+    return shipment.bookingClaimedAt.getTime() > Date.now() - 10 * 60 * 1000;
   }
 
   private parseSafeCourierLabelUrl(value: string) {

@@ -965,6 +965,10 @@ export class OrdersService {
             routingLastAttemptAt: shipmentRouting ? routedAt : null,
             routingRetryCount: 0,
             routingPermanentFailureAt: null,
+            readyForBookingAt:
+              (shipmentRouting?.deliveryMode ?? resolvedDeliveryMode) === DeliveryMode.THIRD_PARTY_COURIER
+                ? routedAt
+                : null,
             routingSnapshot: shipmentRouting?.routingSnapshot ?? Prisma.JsonNull,
             shippingChargeSnapshot: shipmentRouting?.shippingSnapshot ?? Prisma.JsonNull,
             codSurchargeSnapshot: shipmentRouting?.codSurchargeSnapshot ?? Prisma.JsonNull,
@@ -3929,6 +3933,9 @@ export class OrdersService {
           data: {
             deliveryMode: nextMode,
             status: nextStatus,
+            ...(nextStatus === DeliveryStatus.PACKED && nextMode === DeliveryMode.THIRD_PARTY_COURIER
+              ? { readyForBookingAt: new Date() }
+              : {}),
             ...(dto.estimatedDeliveryDate !== undefined
               ? {
                   estimatedDeliveryDate: dto.estimatedDeliveryDate
@@ -6653,9 +6660,10 @@ export class OrdersService {
 
   private orderQueryWhere(query: OrderQueryDto): Prisma.OrderWhereInput {
     return {
-      ...(query.orderStatus ? { orderStatus: query.orderStatus } : {}),
-      ...(query.paymentStatus ? { paymentStatus: query.paymentStatus } : {}),
-      ...(query.deliveryStatus ? { deliveryStatus: query.deliveryStatus } : {}),
+      ...(query.orderStatus?.length ? { orderStatus: { in: query.orderStatus } } : {}),
+      ...(query.paymentStatus?.length ? { paymentStatus: { in: query.paymentStatus } } : {}),
+      ...(query.deliveryStatus?.length ? { deliveryStatus: { in: query.deliveryStatus } } : {}),
+      ...(query.paymentMethod?.length ? { payments: { some: { method: { in: query.paymentMethod } } } } : {}),
       ...(query.search
         ? {
             OR: [
@@ -7166,6 +7174,7 @@ export class OrdersService {
     if (!(input.allowDirectDelivered && input.nextStatus === DeliveryStatus.DELIVERED)) {
       this.assertDeliveryStatusTransition(shipment.status, input.nextStatus);
     }
+    const nextMode = (input.updateData.deliveryMode as DeliveryMode | undefined) ?? shipment.deliveryMode;
     const updated = await tx.orderShipment.updateMany({
       where: {
         id: shipment.id,
@@ -7174,13 +7183,15 @@ export class OrdersService {
       data: {
         ...input.updateData,
         status: input.nextStatus,
+        ...(input.nextStatus === DeliveryStatus.PACKED && nextMode === DeliveryMode.THIRD_PARTY_COURIER
+          ? { readyForBookingAt: new Date() }
+          : {}),
       },
     });
 
     if (updated.count !== 1) {
       throw new BadRequestException("Seller package changed. Refresh the order and try again.");
     }
-    const nextMode = (input.updateData.deliveryMode as DeliveryMode | undefined) ?? shipment.deliveryMode;
 
     await tx.orderShipmentPackage.updateMany({
       where: {

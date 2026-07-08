@@ -403,7 +403,7 @@ export function SellerOrderDetailClient({
     {
       label: "Payment status",
       value: paymentStatusText(order.paymentStatus),
-      detail: "Payment collection state",
+      detail: order.payments?.some((p) => p.method === "COD") ? "Cash on delivery" : "Payment collection state",
       status: order.paymentStatus,
       icon: CreditCard,
     },

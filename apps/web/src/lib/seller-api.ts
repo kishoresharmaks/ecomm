@@ -924,9 +924,10 @@ export function listSellerOrders(
   auth: IndihubAuthHeaders,
   query: {
     search?: string;
-    orderStatus?: string;
-    paymentStatus?: string;
-    deliveryStatus?: string;
+    orderStatus?: string[];
+    paymentStatus?: string[];
+    deliveryStatus?: string[];
+    paymentMethod?: string[];
     page?: number;
     limit?: number;
   } = {},
@@ -1203,12 +1204,20 @@ export function primarySellerImage(images?: ProductImage[]) {
   return images?.find((image) => image.isPrimary)?.url ?? images?.[0]?.url ?? "";
 }
 
-function queryString(query: Record<string, string | number | undefined>) {
+function queryString(query: Record<string, string | number | undefined | string[]>) {
   const params = new URLSearchParams();
 
   for (const [key, value] of Object.entries(query)) {
     if (value !== undefined && value !== "") {
-      params.set(key, String(value));
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          if (item !== undefined && item !== "") {
+            params.append(key, String(item));
+          }
+        }
+      } else {
+        params.set(key, String(value));
+      }
     }
   }
 

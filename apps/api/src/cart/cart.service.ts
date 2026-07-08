@@ -11,8 +11,11 @@ import {
   ProductListingMode,
   ProductStatus,
   SellerStatus,
+  SellerType,
   VariantStatus,
+  Prisma,
 } from "@indihub/database";
+
 import type { RequestUser } from "../auth/types/indihub-request";
 import { assertCheckoutDeliveryServiceable } from "../checkout/checkout-serviceability";
 import {
@@ -55,10 +58,19 @@ type CheckoutSummaryItem = {
   quantity: number;
   unitPricePaise: number;
   productVariant: {
+    packageWeightGrams?: number | null;
+    packageLengthCm?: number | null;
+    packageBreadthCm?: number | null;
+    packageHeightCm?: number | null;
+    attributes?: Prisma.JsonValue | null;
     product: {
       id: string;
       categoryId: string;
       name: string;
+      sellerId: string;
+      seller: {
+        sellerType: SellerType;
+      };
     };
   };
 };
@@ -91,8 +103,10 @@ export class CartService {
     const subtotalPaise = checkoutItems.reduce((total: number, item: CheckoutSummaryItem) => total + item.quantity * item.unitPricePaise, 0);
     const itemCount = checkoutItems.reduce((total: number, item: CheckoutSummaryItem) => total + item.quantity, 0);
     const deliveryOptions = await this.checkoutSummaryDeliveryOptions(customer.id, query);
-    const charges = await this.checkoutPricing.calculateCharges(
+    const sellerPackages = this.checkoutSellerPackages(checkoutItems);
+    const charges = await this.checkoutPricing.calculateSellerPackageCharges(
       subtotalPaise,
+      sellerPackages,
       this.prisma.client,
       deliveryOptions,
     );
@@ -423,7 +437,11 @@ export class CartService {
         },
       },
       include: {
-        product: true,
+        product: {
+          include: {
+            seller: true,
+          },
+        },
       },
     });
 
@@ -507,5 +525,95 @@ export class CartService {
     if (requestedQuantity > stockQuantity) {
       throw new BadRequestException("Requested quantity is greater than available stock.");
     }
+  }
+
+  private checkoutSellerPackages(items: CheckoutSummaryItem[]) {
+    const packages = new Map<
+      string,
+      {
+        sellerId: string;
+        sellerType: SellerType;
+        subtotalPaise: number;
+        package: {
+          weightGrams: number;
+          lengthCm: number;
+          breadthCm: number;
+          heightCm: number;
+          itemCount: number;
+        };
+      }
+    >();
+
+    for (const item of items) {
+      const variant = item.productVariant;
+      const product = variant.product;
+      const current = packages.get(product.sellerId) ?? {
+        sellerId: product.sellerId,
+        sellerType: product.seller.sellerType,
+        subtotalPaise: 0,
+        package: {
+          weightGrams: 0,
+          lengthCm: 20,
+          breadthCm: 15,
+          heightCm: 8,
+          itemCount: 0,
+        },
+      };
+      const itemWeightGrams = this.positiveInt(
+        variant.packageWeightGrams ?? this.jsonNumber(variant.attributes, "packageWeightGrams"),
+        500,
+      );
+      current.subtotalPaise += item.quantity * item.unitPricePaise;
+      current.package.weightGrams += itemWeightGrams * item.quantity;
+      current.package.lengthCm = Math.max(
+        current.package.lengthCm,
+        this.positiveInt(
+          variant.packageLengthCm ?? this.jsonNumber(variant.attributes, "packageLengthCm"),
+          20,
+        ),
+      );
+      current.package.breadthCm = Math.max(
+        current.package.breadthCm,
+        this.positiveInt(
+          variant.packageBreadthCm ?? this.jsonNumber(variant.attributes, "packageBreadthCm"),
+          15,
+        ),
+      );
+      current.package.heightCm = Math.max(
+        current.package.heightCm,
+        this.positiveInt(
+          variant.packageHeightCm ?? this.jsonNumber(variant.attributes, "packageHeightCm"),
+          8,
+        ),
+      );
+      current.package.itemCount += item.quantity;
+      packages.set(product.sellerId, current);
+    }
+
+    return Array.from(packages.values());
+  }
+
+  private positiveInt(value: unknown, fallback: number): number {
+    if (typeof value === "number") {
+      const parsed = Math.floor(value);
+      return parsed > 0 ? parsed : fallback;
+    }
+    if (typeof value === "string") {
+      const parsed = parseInt(value, 10);
+      return !Number.isNaN(parsed) && parsed > 0 ? parsed : fallback;
+    }
+    return fallback;
+  }
+
+  private jsonNumber(json: unknown, key: string): number | null {
+    if (json && typeof json === "object" && !Array.isArray(json)) {
+      const value = (json as Record<string, unknown>)[key];
+      if (typeof value === "number") return value;
+      if (typeof value === "string") {
+        const parsed = Number(value);
+        if (!Number.isNaN(parsed)) return parsed;
+      }
+    }
+    return null;
   }
 }

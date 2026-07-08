@@ -103,6 +103,19 @@ export type CourierBookingResult = {
   bookingResponseSnapshot: unknown;
 };
 
+export type CourierBookingLookupResult = {
+  found: boolean;
+  providerOrderId?: string | null;
+  awbNumber?: string | null;
+  courierName?: string | null;
+  courierCode?: string | null;
+  trackingUrl?: string | null;
+  labelUrl?: string | null;
+  trackingStatus?: CourierShipmentStatus;
+  trackingStatusLabel?: string | null;
+  bookingResponseSnapshot: unknown;
+};
+
 export type CourierRateQuoteResult = {
   serviceable: boolean;
   providerCode: string;
@@ -141,6 +154,7 @@ export type CourierPickupSyncResult = {
 export interface CourierAdapter {
   readonly code: string;
   bookShipment(request: CourierBookingRequest): Promise<CourierBookingResult>;
+  lookupShipmentByOrderId?(request: CourierBookingRequest): Promise<CourierBookingLookupResult>;
   quoteShipment?(request: CourierRateQuoteRequest): Promise<CourierRateQuoteResult>;
   syncPickupLocation?(request: CourierPickupSyncRequest): Promise<CourierPickupSyncResult>;
   verifyCredentials?(settings: CourierProviderAdapterSnapshot): Promise<{ success: boolean; message?: string }>;

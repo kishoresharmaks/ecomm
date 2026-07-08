@@ -13,6 +13,7 @@ import { startPushCampaignPolling } from "./push-campaign-worker";
 import { startReturnPickupTimeoutPolling } from "./return-pickup-timeout-worker";
 import { startSearchIndexPolling } from "./search-index-worker";
 import { startServiceQuoteExpiryPolling } from "./service-quote-expiry-worker";
+import { startShiprocketBookingPolling } from "./shiprocket-booking-worker";
 
 const logger = pino({
   name: "indihub-worker",
@@ -44,6 +45,7 @@ startReturnPickupTimeoutPolling(logger);
 startPrivateUploadCleanupPolling(logger);
 startPushCampaignPolling(logger);
 startServiceQuoteExpiryPolling(logger);
+startShiprocketBookingPolling(logger);
 
 const redisUrl = process.env.REDIS_URL;
 const emailDelivery = new WorkerEmailDelivery(logger);

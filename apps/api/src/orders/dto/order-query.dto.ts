@@ -1,7 +1,8 @@
-import { Type } from "class-transformer";
+import { Type, Transform } from "class-transformer";
 import { ApiPropertyOptional } from "@nestjs/swagger";
-import { IsEnum, IsInt, IsOptional, IsString, Max, MaxLength, Min } from "class-validator";
+import { IsArray, IsEnum, IsInt, IsOptional, IsString, Max, MaxLength, Min } from "class-validator";
 import { DeliveryStatus, OrderStatus, PaymentStatus } from "@indihub/database";
+import { CheckoutPaymentMethod } from "./checkout.dto";
 
 export class OrderQueryDto {
   @ApiPropertyOptional({ example: "1HI202605230001" })
@@ -10,20 +11,33 @@ export class OrderQueryDto {
   @MaxLength(40)
   search?: string;
 
-  @ApiPropertyOptional({ enum: OrderStatus })
+  @ApiPropertyOptional({ enum: OrderStatus, isArray: true })
   @IsOptional()
-  @IsEnum(OrderStatus)
-  orderStatus?: OrderStatus;
+  @Transform(({ value }) => (Array.isArray(value) ? value : [value]))
+  @IsArray()
+  @IsEnum(OrderStatus, { each: true })
+  orderStatus?: OrderStatus[];
 
-  @ApiPropertyOptional({ enum: PaymentStatus })
+  @ApiPropertyOptional({ enum: PaymentStatus, isArray: true })
   @IsOptional()
-  @IsEnum(PaymentStatus)
-  paymentStatus?: PaymentStatus;
+  @Transform(({ value }) => (Array.isArray(value) ? value : [value]))
+  @IsArray()
+  @IsEnum(PaymentStatus, { each: true })
+  paymentStatus?: PaymentStatus[];
 
-  @ApiPropertyOptional({ enum: DeliveryStatus })
+  @ApiPropertyOptional({ enum: DeliveryStatus, isArray: true })
   @IsOptional()
-  @IsEnum(DeliveryStatus)
-  deliveryStatus?: DeliveryStatus;
+  @Transform(({ value }) => (Array.isArray(value) ? value : [value]))
+  @IsArray()
+  @IsEnum(DeliveryStatus, { each: true })
+  deliveryStatus?: DeliveryStatus[];
+
+  @ApiPropertyOptional({ enum: CheckoutPaymentMethod, isArray: true })
+  @IsOptional()
+  @Transform(({ value }) => (Array.isArray(value) ? value : [value]))
+  @IsArray()
+  @IsEnum(CheckoutPaymentMethod, { each: true })
+  paymentMethod?: CheckoutPaymentMethod[];
 
   @ApiPropertyOptional({ example: 1 })
   @IsOptional()
