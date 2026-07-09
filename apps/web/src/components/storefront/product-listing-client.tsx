@@ -237,6 +237,20 @@ export function ProductListingClient({ mode, categorySlug, initialSearch = "" }:
         </StorefrontSection>
       ) : null}
 
+      {mode === "category" && categoryQuery.data?.children?.length ? (
+        <StorefrontSection>
+          <SectionHeading
+            title="Subcategories"
+            description={`Explore subcategories in ${categoryQuery.data.name}`}
+          />
+          <div className="mt-5 grid gap-4 sm:mt-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {categoryQuery.data.children.map((sub) => (
+              <StorefrontCategoryCard key={sub.id} category={sub} variant="directory" />
+            ))}
+          </div>
+        </StorefrontSection>
+      ) : null}
+
       {showProductSection ? (
         <StorefrontSection>
           <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
