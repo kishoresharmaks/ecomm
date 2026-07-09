@@ -1,12 +1,20 @@
 "use client";
 
-import { type FormEvent, useState } from "react";
+import { type ComponentType, type FormEvent, type ReactNode, useState } from "react";
 import { Description, Dialog, DialogBackdrop, DialogPanel, DialogTitle } from "@headlessui/react";
 import { Loader2, X } from "lucide-react";
 import { Button, StatusBadge } from "@indihub/ui";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { updateSellerProfile, type SellerProfilePayload, type SellerBusinessType } from "@/lib/seller-api";
+import {
+  updateSellerProfile,
+  type SellerBusinessType,
+  type SellerProfile,
+  type SellerProfilePayload,
+  type SellerVerificationDocument,
+} from "@/lib/seller-api";
 import type { IndihubAuthHeaders } from "@/lib/api";
+import type { LocationSource } from "@/lib/maps-api";
+import type { SellerDocumentType, SellerDocumentUploadResult } from "@/lib/seller-document-upload";
 import { SellerField, SellerTextArea, SellerImageUpload, formValue, optionalFormValue } from "./seller-ui";
 
 export interface ProfileModalProps {
@@ -14,8 +22,41 @@ export interface ProfileModalProps {
   onClose: () => void;
   title: string;
   description?: string;
-  children: React.ReactNode;
+  children: ReactNode;
   isSaving?: boolean;
+}
+
+type VerificationDocumentConfig = {
+  type: SellerDocumentType;
+  label: string;
+  description: string;
+  required: boolean;
+};
+
+type DocumentUploadFieldComponent = ComponentType<{
+  document: VerificationDocumentConfig;
+  value?: SellerDocumentUploadResult | undefined;
+  storedDocument?: SellerVerificationDocument | undefined;
+  authHeaders: IndihubAuthHeaders;
+  disabled?: boolean;
+  onUploaded: (uploaded: SellerDocumentUploadResult) => void;
+}>;
+
+const locationSources: readonly LocationSource[] = ["GPS", "MAP_PICK", "MANUAL", "REVERSE_GEOCODE"];
+
+function optionalNumberValue(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
+  const numberValue = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(numberValue) ? numberValue : null;
+}
+
+function optionalLocationSource(value: unknown): LocationSource | null {
+  return typeof value === "string" && locationSources.includes(value as LocationSource)
+    ? (value as LocationSource)
+    : null;
 }
 
 export function ProfileModal({ open, onClose, title, description, children, isSaving }: ProfileModalProps) {
@@ -69,7 +110,7 @@ export function EditStoreDetailsModal({
   onClose: () => void;
   authHeaders: IndihubAuthHeaders;
   authKey: string;
-  profile: any;
+  profile: SellerProfile | null | undefined;
   businessTypes: Array<{ value: SellerBusinessType; label: string }>;
 }) {
   const queryClient = useQueryClient();
@@ -200,7 +241,7 @@ export function EditPayoutModal({
   onClose: () => void;
   authHeaders: IndihubAuthHeaders;
   authKey: string;
-  profile: any;
+  profile: SellerProfile | null | undefined;
 }) {
   const queryClient = useQueryClient();
   const payoutProfile = profile?.payoutProfile;
@@ -288,7 +329,7 @@ export function EditAddressModal({
   onClose: () => void;
   authHeaders: IndihubAuthHeaders;
   authKey: string;
-  profile: any;
+  profile: SellerProfile | null | undefined;
 }) {
   const queryClient = useQueryClient();
   const address = profile?.addresses?.[0];
@@ -327,11 +368,11 @@ export function EditAddressModal({
         stateCode: formValue(form, "stateCode"),
         cityCode: formValue(form, "cityCode"),
         localAreaCode: optionalFormValue(form, "localAreaCode"),
-        latitude: address?.latitude,
-        longitude: address?.longitude,
-        locationSource: address?.locationSource,
-        accuracyMeters: address?.accuracyMeters,
-        locationConfidenceScore: address?.locationConfidenceScore,
+        latitude: optionalNumberValue(address?.latitude),
+        longitude: optionalNumberValue(address?.longitude),
+        locationSource: optionalLocationSource(address?.locationSource),
+        accuracyMeters: optionalNumberValue(address?.accuracyMeters),
+        locationConfidenceScore: optionalNumberValue(address?.locationConfidenceScore),
       },
     });
   }
@@ -395,12 +436,12 @@ export function EditDocumentsModal({
   onClose: () => void;
   authHeaders: IndihubAuthHeaders;
   authKey: string;
-  profile: any;
-  verificationDocuments: any[];
-  DocumentUploadField: any;
+  profile: SellerProfile | null | undefined;
+  verificationDocuments: VerificationDocumentConfig[];
+  DocumentUploadField: DocumentUploadFieldComponent;
 }) {
   const queryClient = useQueryClient();
-  const [documents, setDocuments] = useState<any[]>([]);
+  const [documents, setDocuments] = useState<SellerDocumentUploadResult[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeTone, setNoticeTone] = useState<"success" | "danger">("success");
 
@@ -445,17 +486,17 @@ export function EditDocumentsModal({
       <form onSubmit={submit}>
         <div className="max-h-[60vh] overflow-y-auto px-6 py-5">
           <div className="grid gap-3">
-            {verificationDocuments.map((document: any) => (
+            {verificationDocuments.map((document) => (
               <DocumentUploadField
                 key={document.type}
                 document={document}
                 value={documents.find((item) => item.documentType === document.type)}
                 storedDocument={(profile?.documents ?? []).find(
-                  (item: any) => item.documentType === document.type
+                  (item) => item.documentType === document.type
                 )}
                 authHeaders={authHeaders}
                 disabled={mutation.isPending}
-                onUploaded={(uploaded: any) =>
+                onUploaded={(uploaded) =>
                   setDocuments((current) => [
                     ...current.filter((item) => item.documentType !== uploaded.documentType),
                     uploaded,

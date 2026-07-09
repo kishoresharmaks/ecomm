@@ -146,20 +146,27 @@ function ReturnsHeader({
 
 function ReturnsStats({ returns, isLoading }: { returns: ReturnSummary[]; isLoading: boolean }) {
   const stats = sellerReturnMetrics(returns);
-  const cards = [
+  type ReturnStatTone = "orange" | "blue" | "green" | "violet" | "red";
+  const cards: Array<{
+    label: string;
+    value: number;
+    trend: string;
+    icon: typeof RotateCcw;
+    tone: ReturnStatTone;
+  }> = [
     { label: "Total Returns", value: returns.length, trend: "+12%", icon: RotateCcw, tone: "orange" },
     { label: "Pending Review", value: stats.pending, trend: "Needs action", icon: ClipboardCheck, tone: "blue" },
     { label: "Approved", value: stats.approved, trend: "+15.7%", icon: CheckCircle2, tone: "green" },
     { label: "Refunded", value: stats.refunded, trend: "+5.2%", icon: WalletCards, tone: "violet" },
     { label: "Rejected", value: stats.rejected, trend: "-3.1%", icon: XCircle, tone: "red" },
-  ] as const;
+  ];
 
   return (
     <div className="grid gap-4 grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
       {cards.map((card) => (
         <article key={card.label} className="rounded-2xl border border-[#E2E8F0] bg-white p-5 shadow-sm shadow-slate-200/70 transition duration-200 hover:-translate-y-0.5 hover:shadow-md">
           <div className="flex items-center justify-between gap-3">
-            <span className={cn("grid h-11 w-11 place-items-center rounded-full", statToneClass(card.tone as any))}>
+            <span className={cn("grid h-11 w-11 place-items-center rounded-full", statToneClass(card.tone))}>
               <card.icon className="h-5 w-5" aria-hidden="true" />
             </span>
             <span className="text-xs font-black text-[#64748B]">{card.trend}</span>

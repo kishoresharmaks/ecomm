@@ -9,6 +9,8 @@ import { StorefrontImage } from "@/components/storefront/storefront-image";
 import { adminRequest, type SellerRecord } from "./admin-operations";
 import { resolveImageSource } from "@/lib/image-url";
 
+type SellerVerificationDocument = NonNullable<SellerRecord["documents"]>[number];
+
 function humanize(value?: string | null) {
   return value
     ? value
@@ -50,7 +52,7 @@ export function AdminSellerProfileModal({
 
   const updateDocumentStatus = useMutation({
     mutationFn: ({ documentId, status }: { documentId: string; status: "APPROVED" | "REJECTED" }) =>
-      adminRequest(
+      adminRequest<SellerVerificationDocument>(
         `/api/admin/sellers/${seller?.id}/documents/${documentId}/status`,
         auth.authHeaders,
         {
@@ -58,13 +60,13 @@ export function AdminSellerProfileModal({
           body: JSON.stringify({ status }),
         }
       ),
-    onSuccess: (updatedDocument: any) => {
+    onSuccess: (updatedDocument: SellerVerificationDocument) => {
       queryClient.invalidateQueries({ queryKey: ["admin-sellers"] });
       queryClient.invalidateQueries({ queryKey: ["admin-seller-approvals"] });
       if (seller && onSellerUpdated) {
         onSellerUpdated({
           ...seller,
-          documents: (seller.documents ?? []).map((doc: any) =>
+          documents: (seller.documents ?? []).map((doc) =>
             doc.id === updatedDocument.id ? updatedDocument : doc
           ),
         });
