@@ -177,3 +177,10 @@ Recommended next work:
 - Configure real provider accounts only when the client is ready: Razorpay, email provider, public/private storage providers, production database, production Clerk keys, and production domain/CORS.
 
 - When updating delivery statuses in `orders.service.ts` (e.g., in shared delivery update flows), ensure that both `orderShipment` and `orderShipmentPackage` statuses are updated together. Use `this.packageStatusFromDeliveryStatus` to derive the correct package status, as downstream workspaces (like Courier) depend on `orderShipmentPackage.status`.
+
+## Database Indexing Hygiene
+
+When modifying `schema.prisma` or creating new models, strictly adhere to the following index hygiene rules to prevent write-amplification and ensure optimal read performance:
+
+1. **Always Index Foreign Keys**: Every relation field (`@relation(fields: [foreignKeyId])`) must be supported by an index. This is critical for hot paths (e.g., `cart_items.product_variant_id`, `order_items.product_variant_id`) as well as audit/admin queries (e.g., `cancelled_by`, `verified_by`). If a composite index already begins with the foreign key, that is sufficient. Otherwise, add a dedicated `@@index([foreignKeyId])`.
+2. **No Redundant Single-Column Indexes**: Do not add a single-column index (e.g., `@@index([status])`) if there is already a composite index that starts with the same column (e.g., `@@index([status, createdAt])`) or a `@unique` constraint. PostgreSQL can efficiently use the leading column of a composite index for equality lookups. Redundant indexes provide zero read benefit while adding expensive write amplification on high-churn tables (orders, order items, notification logs).
