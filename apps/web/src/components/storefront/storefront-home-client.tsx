@@ -752,6 +752,7 @@ function MobileHeroVisual({
           sizes="(max-width: 640px) 108px, (max-width: 768px) 140px, 180px"
           fallbackLabel={visualLabel}
           showFallbackLabel={false}
+          priority={true}
           allowExternalRemote
           className={cn(
             "transition duration-500",
@@ -809,6 +810,7 @@ function HeroVisual({
             sizes="(max-width: 1024px) 380px, (max-width: 1280px) 440px, (max-width: 1536px) 480px, 520px"
             fallbackLabel={bannerTitle}
             showFallbackLabel={false}
+            priority={true}
             allowExternalRemote
             className="object-cover"
           />
