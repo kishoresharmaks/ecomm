@@ -145,6 +145,9 @@ export type DeliveryProfile = {
     isAvailable?: boolean;
     servicePincodes?: string[];
     serviceLocalAreaCodes?: string[];
+    baseLatitude?: string | null;
+    baseLongitude?: string | null;
+    serviceRadiusKm?: number | null;
     notes?: string | null;
     effectiveCodCashLimitPaise?: number | null;
   };
@@ -271,6 +274,9 @@ export function updateDeliveryProfile(
     isAvailable?: boolean;
     servicePincodes?: string[];
     serviceLocalAreaCodes?: string[];
+    baseLatitude?: number;
+    baseLongitude?: number;
+    serviceRadiusKm?: number;
     notes?: string;
   },
 ) {

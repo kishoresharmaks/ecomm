@@ -32,6 +32,9 @@ type DeliveryProfileForm = {
   serviceCityCode: string;
   servicePincodes: string;
   serviceLocalAreaCodes: string;
+  baseLatitude: string;
+  baseLongitude: string;
+  serviceRadiusKm: string;
   notes: string;
 };
 
@@ -44,6 +47,9 @@ const emptyForm: DeliveryProfileForm = {
   serviceCityCode: "",
   servicePincodes: "",
   serviceLocalAreaCodes: "",
+  baseLatitude: "",
+  baseLongitude: "",
+  serviceRadiusKm: "",
   notes: "",
 };
 
@@ -102,6 +108,9 @@ export function DeliveryProfileClient() {
       serviceCityCode: form.serviceCityCode.trim(),
       servicePincodes: csvValues(form.servicePincodes),
       serviceLocalAreaCodes: csvValues(form.serviceLocalAreaCodes),
+      ...optionalNumberPayload("baseLatitude", form.baseLatitude),
+      ...optionalNumberPayload("baseLongitude", form.baseLongitude),
+      ...optionalPositiveIntegerPayload("serviceRadiusKm", form.serviceRadiusKm),
       notes: form.notes.trim(),
     });
   }
@@ -226,11 +235,51 @@ export function DeliveryProfileClient() {
               </div>
             </DeliveryPanel>
 
-            <DeliveryPanel>
+              <DeliveryPanel>
               <h2 className="text-base font-black text-[#123A5A]">Service area</h2>
               <DeliveryServiceAreaPicker form={form} onChange={setForm} />
             </DeliveryPanel>
           </div>
+
+          <DeliveryPanel>
+            <div className="flex items-start gap-3">
+              <DeliveryIconTile>
+                <MapPinned className="h-5 w-5" aria-hidden="true" />
+              </DeliveryIconTile>
+              <div className="min-w-0 flex-1">
+                <h2 className="text-base font-black text-[#123A5A]">Base location and radius</h2>
+                <div className="mt-4 grid gap-4 md:grid-cols-3">
+                  <ProfileInput
+                    label="Base latitude"
+                    value={form.baseLatitude}
+                    inputMode="decimal"
+                    placeholder="11.0168"
+                    onChange={(baseLatitude) =>
+                      setForm((current) => ({ ...current, baseLatitude }))
+                    }
+                  />
+                  <ProfileInput
+                    label="Base longitude"
+                    value={form.baseLongitude}
+                    inputMode="decimal"
+                    placeholder="76.9558"
+                    onChange={(baseLongitude) =>
+                      setForm((current) => ({ ...current, baseLongitude }))
+                    }
+                  />
+                  <ProfileInput
+                    label="Service radius km"
+                    value={form.serviceRadiusKm}
+                    inputMode="numeric"
+                    placeholder="10"
+                    onChange={(serviceRadiusKm) =>
+                      setForm((current) => ({ ...current, serviceRadiusKm }))
+                    }
+                  />
+                </div>
+              </div>
+            </div>
+          </DeliveryPanel>
 
           <DeliveryPanel>
             <div className="flex items-start gap-3">
@@ -497,7 +546,7 @@ function ProfileInput({
   label: string;
   value: string;
   placeholder?: string;
-  inputMode?: "text" | "tel";
+  inputMode?: "text" | "tel" | "decimal" | "numeric";
   onChange: (value: string) => void;
 }) {
   return (
@@ -596,6 +645,9 @@ function profileToForm(account: DeliveryPartnerProfileAccount): DeliveryProfileF
     serviceCityCode: profile.serviceCityCode ?? "",
     servicePincodes: profile.servicePincodes?.join(", ") ?? "",
     serviceLocalAreaCodes: profile.serviceLocalAreaCodes?.join(", ") ?? "",
+    baseLatitude: profile.baseLatitude ?? "",
+    baseLongitude: profile.baseLongitude ?? "",
+    serviceRadiusKm: profile.serviceRadiusKm ? String(profile.serviceRadiusKm) : "",
     notes: profile.notes ?? "",
   };
 }
@@ -630,4 +682,30 @@ function joinCodeValues(values: string[]) {
 function phonePayload(value: string) {
   const phone = value.replace(/\D/g, "");
   return phone || undefined;
+}
+
+function optionalNumberPayload<Key extends "baseLatitude" | "baseLongitude">(
+  key: Key,
+  value: string,
+): Partial<Record<Key, number>> {
+  const normalized = value.trim();
+  if (!normalized) {
+    return {};
+  }
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? { [key]: parsed } as Partial<Record<Key, number>> : {};
+}
+
+function optionalPositiveIntegerPayload<Key extends "serviceRadiusKm">(
+  key: Key,
+  value: string,
+): Partial<Record<Key, number>> {
+  const normalized = value.trim();
+  if (!normalized) {
+    return {};
+  }
+  const parsed = Number(normalized);
+  return Number.isInteger(parsed) && parsed > 0
+    ? ({ [key]: parsed } as Partial<Record<Key, number>>)
+    : {};
 }

@@ -189,6 +189,9 @@ export type DeliveryPartnerProfile = {
   serviceCityCode?: string | null;
   servicePincodes?: string[];
   serviceLocalAreaCodes?: string[];
+  baseLatitude?: string | null;
+  baseLongitude?: string | null;
+  serviceRadiusKm?: number | null;
   codCashLimitPaise?: number | null;
   effectiveCodCashLimitPaise?: number | null;
   notes?: string | null;
@@ -288,6 +291,9 @@ export type DeliveryPartnerProfileUpdatePayload = {
   serviceCityCode?: string | undefined;
   servicePincodes?: string[] | undefined;
   serviceLocalAreaCodes?: string[] | undefined;
+  baseLatitude?: number | undefined;
+  baseLongitude?: number | undefined;
+  serviceRadiusKm?: number | undefined;
   notes?: string | undefined;
 };
 
