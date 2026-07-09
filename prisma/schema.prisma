@@ -2685,6 +2685,7 @@ model SearchDocument {
   @@index([categoryId, entityType, visibilityStatus])
   @@index([sellerId, entityType, visibilityStatus])
   @@index([visibilityStatus, rankBoost, updatedAt])
+  @@index([searchVector], type: Gin)
   @@map("search_documents")
 }
 
