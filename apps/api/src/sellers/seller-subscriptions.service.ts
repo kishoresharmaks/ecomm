@@ -486,7 +486,7 @@ export class SellerSubscriptionsService {
       plan,
       refreshedSubscription.id,
     );
-    providerSubscriptionId = this.stringFromRecord(providerSubscription, "id");
+    providerSubscriptionId = this.stringFromRecord(providerSubscription, "id") ?? null;
     if (!providerSubscriptionId) {
       throw new ServiceUnavailableException(
         "Razorpay subscription creation did not return a provider subscription id.",
