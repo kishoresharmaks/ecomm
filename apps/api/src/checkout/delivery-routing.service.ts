@@ -253,6 +253,7 @@ type PartnerCandidate = {
   codExposurePaise: number;
   codLimitPaise: number;
   lastAssignmentAt: Date | null;
+  distanceMeters?: number;
 };
 
 type PartnerSelection = {
@@ -1890,6 +1891,7 @@ export class DeliveryRoutingService {
   private bestPartnerServiceAreaMatch(
     user: PartnerCandidateUser,
     address: DeliveryRoutingAddress | null,
+    dbDistanceMeters?: number
   ) {
     const profile = user.deliveryProfile;
     if (!profile) {

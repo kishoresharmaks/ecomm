@@ -2107,6 +2107,7 @@ model Product {
   @@index([sellerId, deletedAt, createdAt])
   @@index([isFeatured, createdAt])
   @@index([name(ops: raw("gin_trgm_ops"))], type: Gin)
+  @@index([attributes(ops: raw("jsonb_path_ops"))], type: Gin)
   @@map("products")
 }
 
@@ -2149,6 +2150,7 @@ model ProductVariant {
 
   @@index([productId, status, createdAt])
   @@index([status, stockQuantity])
+  @@index([attributes(ops: raw("jsonb_path_ops"))], type: Gin)
   @@map("product_variants")
 }
 
@@ -3478,26 +3480,23 @@ model DeliveryPartnerProfile {
   vehicleNumber         String?                      @map("vehicle_number")
   isAvailable           Boolean                      @default(true) @map("is_available")
   priority              Int                          @default(100)
-  serviceCountryCode    String?                      @map("service_country_code")
-  serviceStateCode      String?                      @map("service_state_code")
-  serviceCityCode       String?                      @map("service_city_code")
-  servicePincodes       String[]                     @default([]) @map("service_pincodes")
-  serviceLocalAreaCodes String[]                     @default([]) @map("service_local_area_codes")
   baseLatitude          Decimal?                     @map("base_latitude") @db.Decimal(10, 7)
   baseLongitude         Decimal?                     @map("base_longitude") @db.Decimal(10, 7)
   serviceRadiusKm       Int?                         @map("service_radius_km")
   codCashLimitPaise     Int?                         @map("cod_cash_limit_paise")
   notes                 String?
+  serviceCountryCode    String?                      @map("service_country_code")
+  serviceStateCode      String?                      @map("service_state_code")
+  serviceCityCode       String?                      @map("service_city_code")
+  servicePincodes       String[]                     @default([]) @map("service_pincodes")
+  serviceLocalAreaCodes String[]                     @default([]) @map("service_local_area_codes")
   createdAt             DateTime                     @default(now()) @map("created_at")
   updatedAt             DateTime                     @updatedAt @map("updated_at")
   user                  User                         @relation(fields: [userId], references: [id], onDelete: Cascade)
   serviceAreas          DeliveryPartnerServiceArea[]
 
   @@index([isAvailable, priority])
-  @@index([isAvailable, serviceCountryCode, serviceStateCode, serviceCityCode])
   @@index([priority])
-  @@index([serviceCityCode])
-  @@index([baseLatitude, baseLongitude])
   @@map("delivery_partner_profiles")
 }
 
@@ -3543,7 +3542,6 @@ model DeliveryPartnerApplication {
   @@index([status, createdAt])
   @@index([email])
   @@index([phone])
-  @@index([serviceCountryCode, serviceStateCode, serviceCityCode])
   @@index([reviewedById])
   @@map("delivery_partner_applications")
 }
