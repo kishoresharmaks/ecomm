@@ -119,6 +119,7 @@ export type SellerSubscriptionPlan = {
   pricePaise: number;
   currency: string;
   billingCycle: SellerSubscriptionBillingCycle;
+  trialDays: number;
   productLimit?: number | null;
   featuredProductLimit?: number | null;
   b2bEnquiryLimit?: number | null;

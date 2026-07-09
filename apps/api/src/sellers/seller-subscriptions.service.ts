@@ -45,6 +45,7 @@ type SellerSubscriptionPlanForBilling = {
   pricePaise: number;
   currency: string;
   billingCycle: SellerSubscriptionBillingCycle;
+  trialDays: number;
   audience: SellerSubscriptionPlanAudience;
   productLimit?: number | null;
   providerPlanId?: string | null;
@@ -1238,6 +1239,9 @@ export class SellerSubscriptionsService {
         total_count: plan.billingCycle === SellerSubscriptionBillingCycle.YEARLY ? 10 : 120,
         quantity: 1,
         customer_notify: 1,
+        ...(plan.trialDays > 0
+          ? { start_at: Math.floor(Date.now() / 1000) + plan.trialDays * 86400 }
+          : {}),
         notes: {
           indihubSellerId: seller.id,
           indihubSubscriptionId: subscriptionId,
@@ -1546,6 +1550,7 @@ export class SellerSubscriptionsService {
       pricePaise: dto.pricePaise ?? 0,
       currency: dto.currency?.trim().toUpperCase() ?? "INR",
       billingCycle: dto.billingCycle ?? SellerSubscriptionBillingCycle.MONTHLY,
+      trialDays: dto.trialDays ?? 0,
       audience: this.normalizePlanAudience(dto.audience),
       productLimit: dto.productLimit ?? null,
       featuredProductLimit: dto.featuredProductLimit ?? null,
@@ -1573,6 +1578,7 @@ export class SellerSubscriptionsService {
       ...(dto.pricePaise !== undefined ? { pricePaise: dto.pricePaise } : {}),
       ...(dto.currency !== undefined ? { currency: dto.currency.trim().toUpperCase() } : {}),
       ...(dto.billingCycle !== undefined ? { billingCycle: dto.billingCycle } : {}),
+      ...(dto.trialDays !== undefined ? { trialDays: dto.trialDays } : {}),
       ...(dto.audience !== undefined ? { audience: dto.audience } : {}),
       ...(dto.productLimit !== undefined ? { productLimit: dto.productLimit } : {}),
       ...(dto.featuredProductLimit !== undefined ? { featuredProductLimit: dto.featuredProductLimit } : {}),
@@ -1618,6 +1624,11 @@ export class SellerSubscriptionsService {
     }
 
     const end = new Date(from);
+    
+    if (plan.trialDays > 0) {
+      end.setDate(end.getDate() + plan.trialDays);
+    }
+
     if (plan.billingCycle === SellerSubscriptionBillingCycle.YEARLY) {
       end.setFullYear(end.getFullYear() + 1);
       return end;

@@ -186,6 +186,7 @@ export default function SubscriptionScreen() {
                 ) : null}
                 <Text style={{ color: "#ED3500", fontSize: 20, fontWeight: "900", marginBottom: 4 }}>
                   {formatMoney(plan.pricePaise, plan.currency ?? "INR")}/{plan.billingCycle.toLowerCase()}
+                  {plan.trialDays > 0 ? <Text style={{ fontSize: 14, color: "#16A34A" }}> ({plan.trialDays} day trial)</Text> : null}
                 </Text>
                 <Text style={{ color: "#374151", fontSize: 12, fontWeight: "800", marginBottom: 4 }}>
                   {plan.productLimit === null || plan.productLimit === undefined ? "Unlimited products" : `${plan.productLimit} products`}
@@ -233,7 +234,7 @@ export default function SubscriptionScreen() {
         <ConfirmDialog
           visible={showSubscribeDialog}
           title="Subscribe to Plan"
-          message={selectedPlan ? `Subscribe to ${selectedPlan.name} for ${formatMoney(selectedPlan.pricePaise)}/${selectedPlan.billingCycle.toLowerCase()}?` : "Subscribe to this plan?"}
+          message={selectedPlan ? selectedPlan.trialDays > 0 ? `Your card will be authenticated for ₹5 now, but the first billing of ${formatMoney(selectedPlan.pricePaise)} will occur after your ${selectedPlan.trialDays}-day trial period.` : `Subscribe to ${selectedPlan.name} for ${formatMoney(selectedPlan.pricePaise)}/${selectedPlan.billingCycle.toLowerCase()}?` : "Subscribe to this plan?"}
           onConfirm={async () => {
             if (!razorpayData) {
               return;

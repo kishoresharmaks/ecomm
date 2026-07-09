@@ -33,6 +33,7 @@ type PlanFormState = {
   priceRupees: string;
   currency: string;
   billingCycle: "MONTHLY" | "YEARLY" | "LIFETIME";
+  trialDays: string;
   productLimit: string;
   featuredProductLimit: string;
   b2bEnquiryLimit: string;
@@ -50,6 +51,7 @@ const emptyPlanForm: PlanFormState = {
   priceRupees: "0",
   currency: "INR",
   billingCycle: "MONTHLY",
+  trialDays: "0",
   productLimit: "",
   featuredProductLimit: "",
   b2bEnquiryLimit: "",
@@ -174,6 +176,7 @@ export function AdminSellerSubscriptionsClient() {
       pricePaise: rupeesToPaise(planForm.priceRupees),
       currency: planForm.currency.trim().toUpperCase() || "INR",
       billingCycle: planForm.billingCycle,
+      trialDays: numberOrZero(planForm.trialDays),
       commissionDiscountBps: isServicePlan ? 0 : numberOrZero(planForm.commissionDiscountBps),
       isDefault: planForm.isDefault,
       isActive: planForm.isActive,
@@ -206,6 +209,7 @@ export function AdminSellerSubscriptionsClient() {
       priceRupees: String((plan.pricePaise ?? 0) / 100),
       currency: plan.currency,
       billingCycle: plan.billingCycle,
+      trialDays: String(plan.trialDays ?? 0),
       productLimit: plan.productLimit === null || plan.productLimit === undefined ? "" : String(plan.productLimit),
       featuredProductLimit: plan.featuredProductLimit === null || plan.featuredProductLimit === undefined ? "" : String(plan.featuredProductLimit),
       b2bEnquiryLimit: plan.b2bEnquiryLimit === null || plan.b2bEnquiryLimit === undefined ? "" : String(plan.b2bEnquiryLimit),
@@ -298,6 +302,7 @@ export function AdminSellerSubscriptionsClient() {
 
                 <div className="grid gap-3 md:grid-cols-2">
                   <AdminField label="Commission discount bps" type="number" min={0} value={planForm.commissionDiscountBps} onChange={(commissionDiscountBps) => setPlanForm({ ...planForm, commissionDiscountBps })} />
+                  <AdminField label="Trial days" type="number" min={0} value={planForm.trialDays} onChange={(trialDays) => setPlanForm({ ...planForm, trialDays })} />
                   <AdminField label="Display order" type="number" min={0} value={planForm.sortOrder} onChange={(sortOrder) => setPlanForm({ ...planForm, sortOrder })} />
                 </div>
               </>

@@ -227,6 +227,8 @@ export function SellerSubscriptionClient() {
               <p className="mt-1 text-sm font-semibold leading-6 text-[#8A5A00]">
                 {billing?.gracePeriodEndsAt
                   ? `Renewal payment failed. New product and B2B growth actions remain available until ${formatDateTime(billing.gracePeriodEndsAt)}.`
+                  : plan.trialDays && plan.trialDays > 0
+                  ? `Your card will be authenticated for ₹5 now, but the first billing of ${formatMoney(plan.pricePaise, plan.currency)} will occur after your ${plan.trialDays}-day trial period.`
                   : "Authorize the recurring payment after seller approval to unlock paid plan benefits."}
               </p>
             </div>

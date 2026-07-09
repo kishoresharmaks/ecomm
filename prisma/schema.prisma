@@ -1679,6 +1679,7 @@ model SellerSubscriptionPlan {
   pricePaise            Int                            @default(0) @map("price_paise")
   currency              String                         @default("INR")
   billingCycle          SellerSubscriptionBillingCycle @default(MONTHLY) @map("billing_cycle")
+  trialDays             Int                            @default(0) @map("trial_days")
   productLimit          Int?                           @map("product_limit")
   featuredProductLimit  Int?                           @map("featured_product_limit")
   b2bEnquiryLimit       Int?                           @map("b2b_enquiry_limit")

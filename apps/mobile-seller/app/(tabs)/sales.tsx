@@ -1,9 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
-import { Text, View } from "react-native";
+import { Text, View, ScrollView, Pressable } from "react-native";
 import { useMobileSellerAuth } from "../../src/auth/mobile-seller-auth-context";
 import { Card, EmptyState, Header, LoadingState, Screen } from "../../src/components/screen";
 import { getSellerSalesReport } from "../../src/features/seller/seller-api";
 import { formatMoney } from "../../src/lib/money";
+
+import { CreditCardIcon, Share02Icon, StarIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react-native";
+import { router, type Href } from "expo-router";
 
 export default function SellerSalesScreen() {
   const auth = useMobileSellerAuth();
@@ -23,7 +27,25 @@ export default function SellerSalesScreen() {
     <Screen contentContainerStyle={{ gap: 16 }}>
       <Header title="Sales Report" subtitle="View your sales performance, order metrics, and low-stock alerts." />
 
-        <Card>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingHorizontal: 4, paddingBottom: 8 }}>
+        <Pressable onPress={() => router.push("/reviews" as Href)} style={{ backgroundColor: "#FFFFFF", padding: 16, borderRadius: 16, width: 140, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2, borderWidth: 1, borderColor: "#E5E7EB" }}>
+          <HugeiconsIcon icon={StarIcon} size={28} color="#ED3500" style={{ marginBottom: 12 }} />
+          <Text style={{ color: "#111827", fontSize: 16, fontWeight: "900" }}>Reviews</Text>
+          <Text style={{ color: "#6B7280", fontSize: 12, marginTop: 4 }}>Manage ratings</Text>
+        </Pressable>
+        <Pressable onPress={() => router.push("/coupons" as Href)} style={{ backgroundColor: "#FFFFFF", padding: 16, borderRadius: 16, width: 140, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2, borderWidth: 1, borderColor: "#E5E7EB" }}>
+          <HugeiconsIcon icon={CreditCardIcon} size={28} color="#ED3500" style={{ marginBottom: 12 }} />
+          <Text style={{ color: "#111827", fontSize: 16, fontWeight: "900" }}>Coupons</Text>
+          <Text style={{ color: "#6B7280", fontSize: 12, marginTop: 4 }}>Run campaigns</Text>
+        </Pressable>
+        <Pressable onPress={() => router.push("/deals" as Href)} style={{ backgroundColor: "#FFFFFF", padding: 16, borderRadius: 16, width: 140, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2, borderWidth: 1, borderColor: "#E5E7EB" }}>
+          <HugeiconsIcon icon={Share02Icon} size={28} color="#ED3500" style={{ marginBottom: 12 }} />
+          <Text style={{ color: "#111827", fontSize: 16, fontWeight: "900" }}>Deals</Text>
+          <Text style={{ color: "#6B7280", fontSize: 12, marginTop: 4 }}>Join flash sales</Text>
+        </Pressable>
+      </ScrollView>
+
+      <Card>
           <Text style={{ color: "#111827", fontSize: 18, fontWeight: "900" }}>Sales Summary</Text>
           <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 8 }}>
             <View>

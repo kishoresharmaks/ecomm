@@ -22,6 +22,7 @@ type TestPlan = {
   pricePaise: number;
   currency: string;
   billingCycle: SellerSubscriptionBillingCycle;
+  trialDays: number;
   audience: SellerSubscriptionPlanAudience;
   productLimit: number;
   featuredProductLimit: number;
@@ -498,6 +499,7 @@ function makePlan(overrides: Partial<TestPlan> = {}): TestPlan {
     pricePaise: 99900,
     currency: "INR",
     billingCycle: SellerSubscriptionBillingCycle.MONTHLY,
+    trialDays: 0,
     audience: SellerSubscriptionPlanAudience.RETAIL,
     productLimit: 100,
     featuredProductLimit: 5,

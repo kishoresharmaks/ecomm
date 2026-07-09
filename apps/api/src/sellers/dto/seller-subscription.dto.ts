@@ -85,6 +85,13 @@ export class CreateSellerSubscriptionPlanDto {
   @IsEnum(SellerSubscriptionBillingCycle)
   billingCycle?: SellerSubscriptionBillingCycle;
 
+  @ApiPropertyOptional({ example: 30 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  trialDays?: number;
+
   @ApiPropertyOptional({ enum: SellerSubscriptionPlanAudience })
   @IsOptional()
   @IsEnum(SellerSubscriptionPlanAudience)

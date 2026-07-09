@@ -20,8 +20,9 @@ import {
   type SellerDocumentType,
   type SellerVerificationDocumentPayload,
 } from "../../src/features/seller/seller-api";
+import { Image } from "expo-image";
+import { resolvePublicImageUri } from "../../src/lib/api";
 import { colors, spacing } from "../../src/theme";
-
 type FieldErrors = {
   storeName?: string;
   contactEmail?: string;
@@ -209,11 +210,19 @@ export default function SellerProfileScreen() {
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.hero}>
           <View style={styles.bannerPreview}>
-            <Text style={styles.bannerText}>{fields.bannerUrl ? "Banner ready" : "Store banner"}</Text>
+            {fields.bannerUrl ? (
+              <Image source={{ uri: resolvePublicImageUri(fields.bannerUrl) ?? "" }} style={StyleSheet.absoluteFill} contentFit="cover" />
+            ) : (
+              <Text style={styles.bannerText}>Store banner</Text>
+            )}
           </View>
           <View style={styles.heroBody}>
             <View style={styles.logoMark}>
-              <Text style={styles.logoText}>{storeInitials}</Text>
+              {fields.logoUrl ? (
+                <Image source={{ uri: resolvePublicImageUri(fields.logoUrl) ?? "" }} style={StyleSheet.absoluteFill} contentFit="cover" />
+              ) : (
+                <Text style={styles.logoText}>{storeInitials}</Text>
+              )}
             </View>
             <View style={styles.heroCopy}>
               <Text style={styles.eyebrow}>Seller profile</Text>
@@ -235,6 +244,15 @@ export default function SellerProfileScreen() {
           <ProfileInsight label="Address" value={addressState} tone={addressState === "Added" ? "success" : "warning"} />
           <ProfileInsight label="Documents" value={documents.length ? `${documents.length} staged` : "Optional"} tone={documents.length ? "success" : "info"} />
         </View>
+
+        <CollapsibleSection title="Account & Subscription" defaultOpen>
+          <Text style={styles.helperText}>Manage your active seller plan.</Text>
+          <Button
+            tone="secondary"
+            title="Manage Subscription"
+            onPress={() => router.push("/subscription")}
+          />
+        </CollapsibleSection>
 
         <CollapsibleSection title="Storefront identity" defaultOpen>
           <Field label="Store name *" value={fields.storeName} onChangeText={(value) => updateField("storeName", value)} error={errors.storeName} />
@@ -454,12 +472,17 @@ const styles = StyleSheet.create({
   hero: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
-    borderRadius: 8,
+    borderRadius: 16,
     borderWidth: 1,
     overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
   },
   bannerPreview: {
-    minHeight: 96,
+    minHeight: 120,
     justifyContent: "flex-end",
     padding: spacing.lg,
     backgroundColor: colors.ink,
@@ -480,16 +503,22 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: colors.primary,
     borderColor: colors.surface,
-    borderRadius: 8,
-    borderWidth: 3,
-    height: 64,
+    borderRadius: 12,
+    borderWidth: 4,
+    height: 80,
     justifyContent: "center",
-    marginTop: -40,
-    width: 64,
+    marginTop: -52,
+    width: 80,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+    overflow: "hidden",
   },
   logoText: {
     color: colors.surface,
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: "900",
   },
   heroCopy: {
@@ -501,18 +530,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "900",
     textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
   heroTitle: {
     color: colors.ink,
-    fontSize: 24,
+    fontSize: 26,
     fontWeight: "900",
-    lineHeight: 29,
+    lineHeight: 32,
   },
   heroSubtitle: {
     color: colors.muted,
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: "700",
-    lineHeight: 19,
+    lineHeight: 20,
   },
   statusRow: {
     alignItems: "center",
@@ -521,6 +551,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     padding: spacing.lg,
+    backgroundColor: colors.softSurface,
   },
   unsavedPill: {
     backgroundColor: "#FEF3C7",
@@ -548,19 +579,24 @@ const styles = StyleSheet.create({
   insight: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 1,
     flexBasis: "48%",
     flexGrow: 1,
     gap: spacing.xs,
-    minHeight: 88,
+    minHeight: 96,
     padding: spacing.md,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   insightDot: {
     backgroundColor: colors.primary,
     borderRadius: 999,
-    height: 8,
-    width: 8,
+    height: 10,
+    width: 10,
   },
   dotSuccess: {
     backgroundColor: colors.success,

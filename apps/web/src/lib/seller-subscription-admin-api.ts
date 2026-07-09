@@ -21,6 +21,7 @@ export type SellerSubscriptionPlanPayload = {
   pricePaise?: number;
   currency?: string;
   billingCycle?: "MONTHLY" | "YEARLY" | "LIFETIME";
+  trialDays?: number;
   productLimit?: number;
   featuredProductLimit?: number;
   b2bEnquiryLimit?: number;

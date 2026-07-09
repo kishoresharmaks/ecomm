@@ -1004,6 +1004,7 @@ export type SellerSubscriptionPlan = {
   pricePaise: number;
   currency?: string;
   billingCycle: "MONTHLY" | "YEARLY" | "LIFETIME";
+  trialDays: number;
   features?: string[];
   isDefault?: boolean;
   isActive: boolean;

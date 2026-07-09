@@ -148,6 +148,12 @@ function buildApiUrl(path: string, searchParams?: ApiRequestOptions["searchParam
   return url;
 }
 
+export function resolvePublicImageUri(source: string | null | undefined): string | null {
+  if (!source) return null;
+  if (/^(https?:|file:|content:|data:)/i.test(source)) return source;
+  return `${apiBaseUrl()}/storage/public-image?key=${encodeURIComponent(source)}`;
+}
+
 async function safeErrorMessage(response: Response) {
   const status = response.status;
   if (status === 401) {

@@ -194,3 +194,12 @@ When modifying `schema.prisma` or creating new models, strictly adhere to the fo
 - The project is using **Next.js 16.2.6** (as specified in `apps/web/package.json`).
 - Because it is built on Next.js 15+ features, it uses the Next.js 15+ asynchronous `params` and `searchParams` API (e.g. `const { requestNumber } = await params;`).
 - When mentioning or resolving bugs related to these APIs, note that the project explicitly runs Next.js 16.2.6, which inherits these Next 15 breaking changes.
+
+### Razorpay Integration Guidelines
+1. **Subscription Signature Verification:** When verifying Razorpay Checkout signatures for subscriptions, the HMAC payload string MUST ALWAYS be ordered as `payment_id + "|" + subscription_id`. Do not use the standard order.
+2. **Auto-Healing Test Data:** When retrieving a stored Razorpay ID (e.g., `sub_xxxx`) to pass to the client, first verify it exists via Razorpay's `GET` API. If it returns 404 or a dead status, auto-heal by generating a fresh ID. This prevents "The id provided does not exist" checkout crashes when test environments reset.
+
+## Mobile App Structure & UI Requirements
+- **Domain Boundaries**: Keep tab content strictly relevant to the tab's domain. For example, B2B tabs must only contain B2B Enquiries and B2B Orders. Subscriptions belong in Profile/Account. Returns belong in Orders. Reviews, Coupons, and Deals belong in Sales or Products. Do not group unrelated features.
+- **Image Rendering**: Always use `expo-image` or `react-native` `<Image>` components to render user-uploaded assets (like logos and banners) instead of relying on text initials or "Ready" placeholders. Always construct the full URL using the API's base URL and the asset key.
+- **Professional Aesthetics**: Mobile UI screens must prioritize a modern, professional aesthetic with appropriate spacing, modern shadows, and premium card layouts, avoiding basic or "minimum viable" styles.
