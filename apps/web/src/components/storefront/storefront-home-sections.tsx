@@ -80,17 +80,6 @@ import {
 } from "./storefront-ui";
 import { useStorefrontWishlist } from "./use-storefront-wishlist";
 
-import dynamic from 'next/dynamic';
-
-const CategoryShowcase = dynamic(() => import('./storefront-home-sections').then(m => m.CategoryShowcase), { ssr: true });
-const HomeProductRail = dynamic(() => import('./storefront-home-sections').then(m => m.HomeProductRail), { ssr: true });
-const PersonalizedHomeSections = dynamic(() => import('./storefront-home-sections').then(m => m.PersonalizedHomeSections), { ssr: true });
-const StoresNearYou = dynamic(() => import('./storefront-home-sections').then(m => m.StoresNearYou), { ssr: true });
-const SellerCta = dynamic(() => import('./storefront-home-sections').then(m => m.SellerCta), { ssr: true });
-const CustomHomepageSections = dynamic(() => import('./storefront-home-sections').then(m => m.CustomHomepageSections), { ssr: true });
-const StatsStrip = dynamic(() => import('./storefront-home-sections').then(m => m.StatsStrip), { ssr: true });
-const ServiceBadges = dynamic(() => import('./storefront-home-sections').then(m => m.ServiceBadges), { ssr: true });
-
 const HERO_CAROUSEL_INTERVAL_MS = 5000;
 const QUICK_CATEGORY_LIMIT = 8;
 // empirical minimum to distinguish tap drift from intentional swipe
@@ -882,7 +871,7 @@ function HeroProductCard({ product, className }: { product: ProductSummary; clas
   );
 }
 
-function _StatsStrip({ home, isLoading }: { home: StorefrontHomePayload | undefined; isLoading: boolean }) {
+export function StatsStrip({ home, isLoading }: { home: StorefrontHomePayload | undefined; isLoading: boolean }) {
   const stats = home?.stats;
   const items = [
     { label: "Stores", value: stats?.approvedStores, icon: Store },
@@ -957,7 +946,7 @@ const PERSONALIZED_HOME_SURFACES: Record<PersonalizedHomeSurface, string> = {
   retention: "bg-[linear-gradient(180deg,#FFFCFB_0%,#FFF7F3_100%)]",
 };
 
-function _PersonalizedHomeSections({
+export function PersonalizedHomeSections({
   home,
   isLoading,
   surface = "default",
@@ -1339,7 +1328,7 @@ function uniquePersonalizedProducts(products: PersonalizedProduct[]) {
   return unique;
 }
 
-function _CategoryShowcase({
+export function CategoryShowcase({
   categories,
   isLoading,
   title,
@@ -1708,7 +1697,7 @@ function CategoryTile({ category, accent }: { category: CategorySummary; accent:
   );
 }
 
-function _StoresNearYou({
+export function StoresNearYou({
   stores,
   isLoading,
   locationLabel,
@@ -1994,7 +1983,7 @@ function shortIndianState(value: string) {
   return value;
 }
 
-function _HomeProductRail({
+export function HomeProductRail({
   rail,
   isLoading,
 }: {
@@ -2107,7 +2096,7 @@ function ProductRailSection({
   );
 }
 
-function _SellerCta({
+export function SellerCta({
   section,
   config,
 }: {
@@ -2165,7 +2154,7 @@ function _SellerCta({
   );
 }
 
-function _ServiceBadges({ items }: { items: NormalizedHomepageItem[] }) {
+export function ServiceBadges({ items }: { items: NormalizedHomepageItem[] }) {
   const icons = [Zap, ShieldCheck, Truck, UserRound, BadgeCheck, ShoppingBag];
 
   return (
@@ -2192,7 +2181,7 @@ function _ServiceBadges({ items }: { items: NormalizedHomepageItem[] }) {
   );
 }
 
-function _CustomHomepageSections({ sections }: { sections: HomepageSection[] }) {
+export function CustomHomepageSections({ sections }: { sections: HomepageSection[] }) {
   if (!sections.length) {
     return null;
   }
