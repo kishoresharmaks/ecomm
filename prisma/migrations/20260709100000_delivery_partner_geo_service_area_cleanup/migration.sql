@@ -86,9 +86,9 @@ WHERE btrim(area."value") <> ''
       AND upper(COALESCE(existing."local_area_code", '')) = upper(btrim(area."value"))
   );
 
-DROP INDEX CONCURRENTLY IF EXISTS "delivery_partner_profiles_base_latitude_base_longitude_idx";
+DROP INDEX IF EXISTS "delivery_partner_profiles_base_latitude_base_longitude_idx";
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "delivery_partner_profiles_earth_gist_idx"
+CREATE INDEX IF NOT EXISTS "delivery_partner_profiles_earth_gist_idx"
   ON "delivery_partner_profiles"
   USING gist (ll_to_earth("base_latitude"::float8, "base_longitude"::float8))
   WHERE "base_latitude" IS NOT NULL
