@@ -447,14 +447,35 @@ export class SellerSubscriptionsService {
       where: { id: currentSubscription.id },
     });
 
-    if (refreshedSubscription.providerSubscriptionId) {
-      return this.sellerAuthorizationResponse(
-        keyId,
-        seller,
-        plan,
-        refreshedSubscription.providerSubscriptionId,
-        refreshedSubscription.id,
-      );
+    let providerSubscriptionId = refreshedSubscription.providerSubscriptionId;
+
+    if (providerSubscriptionId) {
+      try {
+        const checkRes = await fetch(
+          `https://api.razorpay.com/v1/subscriptions/${encodeURIComponent(providerSubscriptionId)}`,
+          { headers: this.razorpayHeaders(keyId, keySecret) }
+        );
+        if (!checkRes.ok) {
+          providerSubscriptionId = null;
+        } else {
+          const remoteSub = (await checkRes.json()) as { status?: string };
+          if (remoteSub.status !== "created" && remoteSub.status !== "authenticated" && remoteSub.status !== "active") {
+            providerSubscriptionId = null;
+          }
+        }
+      } catch (e) {
+        providerSubscriptionId = null;
+      }
+
+      if (providerSubscriptionId) {
+        return this.sellerAuthorizationResponse(
+          keyId,
+          seller,
+          plan,
+          providerSubscriptionId,
+          refreshedSubscription.id,
+        );
+      }
     }
 
     const providerSubscription = await this.createRazorpaySubscription(
@@ -465,7 +486,7 @@ export class SellerSubscriptionsService {
       plan,
       refreshedSubscription.id,
     );
-    const providerSubscriptionId = this.stringFromRecord(providerSubscription, "id");
+    providerSubscriptionId = this.stringFromRecord(providerSubscription, "id");
     if (!providerSubscriptionId) {
       throw new ServiceUnavailableException(
         "Razorpay subscription creation did not return a provider subscription id.",
