@@ -47,6 +47,7 @@ import {
 const defaultShippingChargeSettingKey = "shipping.default_charge_paise";
 const defaultCodCashLimitSettingKey = "delivery.defaultCodCashLimitPaise";
 const defaultCodCashLimitPaise = 500000;
+const maxDeliveryPartnerServiceRadiusMeters = 500_000;
 const wholesaleBulkyRoutingEnabledSettingKey = "delivery.wholesale_bulky_routing.enabled";
 const bulkyWeightThresholdSettingKey = "delivery.bulky.weight_grams";
 const bulkyMaxSideThresholdSettingKey = "delivery.bulky.max_side_cm";
@@ -276,6 +277,12 @@ type LocationMatch = {
   specificityScore: number;
   matchLabel: string;
   priority: number;
+  distanceMeters?: number;
+};
+
+type ProximityPartnerRow = {
+  userId: string;
+  distanceMeters: number;
 };
 
 type LiveCourierQuote = {
@@ -1720,8 +1727,17 @@ export class DeliveryRoutingService {
     const rejectedPartnerIds = input.orderId
       ? await this.rejectedPartnerIds(input.orderId, client)
       : new Set<string>();
+    const proximityDistances = await this.proximityPartnerDistances(
+      input.address,
+      rejectedPartnerIds,
+      client,
+    );
     const partners = await client.user.findMany({
-      where: this.partnerCandidateWhere(input.address, rejectedPartnerIds),
+      where: this.partnerCandidateWhere(
+        input.address,
+        rejectedPartnerIds,
+        new Set(proximityDistances.keys()),
+      ),
       include: {
         deliveryProfile: {
           include: {
@@ -1747,7 +1763,11 @@ export class DeliveryRoutingService {
         if (!user.deliveryProfile) {
           return null;
         }
-        const area = this.bestPartnerServiceAreaMatch(user, input.address);
+        const area = this.bestPartnerServiceAreaMatch(
+          user,
+          input.address,
+          proximityDistances.get(user.id),
+        );
         if (!area) {
           return null;
         }
@@ -1762,6 +1782,7 @@ export class DeliveryRoutingService {
           user,
           matchLabel: area.matchLabel,
           specificityScore: area.specificityScore,
+          ...(area.distanceMeters !== undefined ? { distanceMeters: area.distanceMeters } : {}),
           priority: area.priority,
           workload: metrics.workload.get(user.id) ?? 0,
           codExposurePaise,
@@ -1807,34 +1828,26 @@ export class DeliveryRoutingService {
   private partnerCandidateWhere(
     address: DeliveryRoutingAddress | null,
     rejectedPartnerIds: Set<string>,
+    proximityPartnerIds: Set<string>,
   ): Prisma.UserWhereInput {
-    const legacyAreaOr: Prisma.DeliveryPartnerProfileWhereInput[] = [];
-    if (address?.localAreaCode) {
-      legacyAreaOr.push({ serviceLocalAreaCodes: { has: address.localAreaCode } });
-    }
-    if (address?.pincode) {
-      legacyAreaOr.push({ servicePincodes: { has: address.pincode } });
-    }
+    const areaOr: Prisma.DeliveryPartnerProfileWhereInput[] = [
+      { serviceAreas: { some: this.serviceAreaWhere(address) } },
+    ];
     if (address?.cityCode) {
-      legacyAreaOr.push({ serviceCityCode: address.cityCode });
+      areaOr.push({ serviceCityCode: address.cityCode });
     }
     if (address?.stateCode) {
-      legacyAreaOr.push({ serviceStateCode: address.stateCode });
+      areaOr.push({ serviceStateCode: address.stateCode });
     }
     if (address?.countryCode) {
-      legacyAreaOr.push({ serviceCountryCode: address.countryCode });
+      areaOr.push({ serviceCountryCode: address.countryCode });
     }
-    if (this.hasCoordinates(address)) {
-      legacyAreaOr.push({
-        baseLatitude: { not: null },
-        baseLongitude: { not: null },
-        serviceRadiusKm: { not: null },
-      });
+    if (proximityPartnerIds.size > 0) {
+      areaOr.push({ userId: { in: Array.from(proximityPartnerIds) } });
     }
-    legacyAreaOr.push({
+    areaOr.push({
       serviceCityCode: null,
-      servicePincodes: { isEmpty: true },
-      serviceLocalAreaCodes: { isEmpty: true },
+      serviceAreas: { none: { isActive: true } },
     });
 
     return {
@@ -1850,10 +1863,63 @@ export class DeliveryRoutingService {
       deliveryProfile: {
         is: {
           isAvailable: true,
-          OR: [{ serviceAreas: { some: this.serviceAreaWhere(address) } }, { OR: legacyAreaOr }],
+          OR: areaOr,
         },
       },
     };
+  }
+
+  private async proximityPartnerDistances(
+    address: DeliveryRoutingAddress | null,
+    rejectedPartnerIds: Set<string>,
+    client: RoutingClient,
+  ) {
+    const distances = new Map<string, number>();
+    if (!this.hasCoordinates(address)) {
+      return distances;
+    }
+
+    const rejectedIds = Array.from(rejectedPartnerIds);
+    const rows = await client.$queryRaw<ProximityPartnerRow[]>`
+      SELECT
+        users."id"::text AS "userId",
+        earth_distance(
+          ll_to_earth(${address.latitude}::float8, ${address.longitude}::float8),
+          ll_to_earth(profile."base_latitude"::float8, profile."base_longitude"::float8)
+        )::float8 AS "distanceMeters"
+      FROM "users" users
+      INNER JOIN "delivery_partner_profiles" profile ON profile."user_id" = users."id"
+      WHERE users."status" = ${UserStatus.ACTIVE}::"UserStatus"
+        AND profile."is_available" = TRUE
+        AND profile."base_latitude" IS NOT NULL
+        AND profile."base_longitude" IS NOT NULL
+        AND profile."service_radius_km" IS NOT NULL
+        AND profile."service_radius_km" > 0
+        AND (
+          ${rejectedIds.length}::int = 0
+          OR users."id" <> ALL(${rejectedIds}::uuid[])
+        )
+        AND EXISTS (
+          SELECT 1
+          FROM "user_roles" user_roles
+          INNER JOIN "roles" roles ON roles."id" = user_roles."role_id"
+          WHERE user_roles."user_id" = users."id"
+            AND roles."code" = ${RoleCode.DELIVERY_PARTNER}::"RoleCode"
+        )
+        AND earth_box(
+          ll_to_earth(${address.latitude}::float8, ${address.longitude}::float8),
+          ${maxDeliveryPartnerServiceRadiusMeters}::float8
+        ) @> ll_to_earth(profile."base_latitude"::float8, profile."base_longitude"::float8)
+        AND earth_distance(
+          ll_to_earth(${address.latitude}::float8, ${address.longitude}::float8),
+          ll_to_earth(profile."base_latitude"::float8, profile."base_longitude"::float8)
+        ) <= (profile."service_radius_km"::float8 * 1000)
+    `;
+
+    rows.forEach((row) => {
+      distances.set(row.userId, Number(row.distanceMeters));
+    });
+    return distances;
   }
 
   private serviceAreaWhere(
@@ -1913,33 +1979,7 @@ export class DeliveryRoutingService {
         address,
         profile.priority,
       ),
-      ...profile.servicePincodes.map((pincode) =>
-        this.matchLocationScope(
-          {
-            countryCode: profile.serviceCountryCode,
-            stateCode: profile.serviceStateCode,
-            cityCode: profile.serviceCityCode,
-            pincode,
-            localAreaCode: null,
-          },
-          address,
-          profile.priority,
-        ),
-      ),
-      ...profile.serviceLocalAreaCodes.map((localAreaCode) =>
-        this.matchLocationScope(
-          {
-            countryCode: profile.serviceCountryCode,
-            stateCode: profile.serviceStateCode,
-            cityCode: profile.serviceCityCode,
-            pincode: null,
-            localAreaCode,
-          },
-          address,
-          profile.priority,
-        ),
-      ),
-      this.matchPartnerRadius(profile, address),
+      this.matchPartnerRadius(profile, dbDistanceMeters),
     ].filter((match): match is LocationMatch => Boolean(match));
 
     return (
@@ -1954,37 +1994,21 @@ export class DeliveryRoutingService {
 
   private matchPartnerRadius(
     profile: PartnerCandidateUser["deliveryProfile"],
-    address: DeliveryRoutingAddress | null,
+    dbDistanceMeters?: number,
   ) {
-    if (!profile || !this.hasCoordinates(address)) {
+    if (!profile || typeof dbDistanceMeters !== "number" || !Number.isFinite(dbDistanceMeters)) {
       return null;
     }
     if (!profile.baseLatitude || !profile.baseLongitude || !profile.serviceRadiusKm) {
       return null;
     }
 
-    const baseLatitude = Number(profile.baseLatitude);
-    const baseLongitude = Number(profile.baseLongitude);
-    const deliveryLatitude = Number(address?.latitude);
-    const deliveryLongitude = Number(address?.longitude);
     const radiusKm = Number(profile.serviceRadiusKm);
-    if (
-      !Number.isFinite(baseLatitude) ||
-      !Number.isFinite(baseLongitude) ||
-      !Number.isFinite(deliveryLatitude) ||
-      !Number.isFinite(deliveryLongitude) ||
-      !Number.isFinite(radiusKm) ||
-      radiusKm <= 0
-    ) {
+    if (!Number.isFinite(radiusKm) || radiusKm <= 0) {
       return null;
     }
 
-    const distanceKm = this.haversineKm(
-      baseLatitude,
-      baseLongitude,
-      deliveryLatitude,
-      deliveryLongitude,
-    );
+    const distanceKm = dbDistanceMeters / 1000;
     if (distanceKm > radiusKm) {
       return null;
     }
@@ -1993,6 +2017,7 @@ export class DeliveryRoutingService {
       specificityScore: 3,
       matchLabel: `radius ${Math.round(distanceKm * 10) / 10}km`,
       priority: profile.priority,
+      distanceMeters: dbDistanceMeters,
     };
   }
 
@@ -2920,21 +2945,6 @@ export class DeliveryRoutingService {
       typeof address.longitude === "number" &&
       Number.isFinite(address.longitude)
     );
-  }
-
-  private haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
-    const toRadians = (degrees: number) => (degrees * Math.PI) / 180;
-    const earthRadiusKm = 6371;
-    const dLat = toRadians(lat2 - lat1);
-    const dLon = toRadians(lon2 - lon1);
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(toRadians(lat1)) *
-        Math.cos(toRadians(lat2)) *
-        Math.sin(dLon / 2) *
-        Math.sin(dLon / 2);
-
-    return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 
   private positiveInt(value: number | null | undefined, fallback: number) {

@@ -19,8 +19,13 @@ describe("OrdersService", () => {
         serviceCountryCode: "IN",
         serviceStateCode: "IN-TN",
         serviceCityCode: "IN-TN-SALEM",
-        servicePincodes: ["636304"],
-        serviceLocalAreaCodes: [],
+        serviceAreas: [
+          {
+            isActive: true,
+            pincode: "636304",
+            localAreaCode: null,
+          },
+        ],
         baseLatitude: null,
         baseLongitude: null,
         serviceRadiusKm: null,

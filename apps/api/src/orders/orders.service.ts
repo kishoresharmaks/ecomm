@@ -53,6 +53,12 @@ import {
 import { CheckoutDeliveryPreference } from "../checkout/dto/delivery-routing.dto";
 import { CouponsService, type CouponCheckoutItem } from "../coupons/coupons.service";
 import {
+  cleanDeliveryPartnerServiceCodes,
+  deliveryPartnerLocalAreaCodesFromServiceAreas,
+  deliveryPartnerPincodesFromServiceAreas,
+  replaceDeliveryPartnerServiceAreas,
+} from "../common/delivery-partner-service-areas";
+import {
   createdAtCursorOrderBy,
   createdAtCursorWhere,
   cursorPageFromItems,
@@ -156,7 +162,13 @@ const orderInclude = {
         include: {
           deliveryPartner: {
             include: {
-              deliveryProfile: true,
+              deliveryProfile: {
+                include: {
+                  serviceAreas: {
+                    where: { isActive: true },
+                  },
+                },
+              },
             },
           },
           codCollectedBy: true,
@@ -192,7 +204,13 @@ const orderInclude = {
       orderSellerSplit: true,
       deliveryPartner: {
         include: {
-          deliveryProfile: true,
+          deliveryProfile: {
+            include: {
+              serviceAreas: {
+                where: { isActive: true },
+              },
+            },
+          },
         },
       },
       codCollectedBy: true,
@@ -217,7 +235,13 @@ const orderInclude = {
     include: {
       deliveryPartner: {
         include: {
-          deliveryProfile: true,
+          deliveryProfile: {
+            include: {
+              serviceAreas: {
+                where: { isActive: true },
+              },
+            },
+          },
         },
       },
       codCollectedBy: true,
@@ -298,7 +322,13 @@ type DeliveryPartnerPayoutWithRelations = Prisma.DeliveryPartnerPayoutGetPayload
 type OrderShipmentPackageWithRelations =
   OrderWithRelations["shipments"][number]["packages"][number];
 type DeliveryPartnerWithProfile = Prisma.UserGetPayload<{
-  include: { deliveryProfile: true };
+  include: {
+    deliveryProfile: {
+      include: {
+        serviceAreas: true;
+      };
+    };
+  };
 }>;
 
 type DeliveryPartnerProfileReadback = {
@@ -325,6 +355,7 @@ type DeliveryPartnerServiceAreaScore = {
   matchLabel: string;
   matchedFields: string[];
   warnings: string[];
+  distanceMeters?: number;
 };
 
 type DeliveryPartnerAssignmentCandidate = {
@@ -350,6 +381,11 @@ type DeliveryPartnerAssignmentMetrics = {
   workload: Map<string, number>;
   codExposurePaise: Map<string, number>;
   lastAssignmentAt: Map<string, Date>;
+};
+
+type ProximityPartnerRow = {
+  userId: string;
+  distanceMeters: number;
 };
 
 type AssignmentOutcomeStatus =
@@ -379,6 +415,7 @@ const deliveryTrackingReferencePrefix = "1HI-DEL";
 const deliveryTrackingReferenceWidth = 6;
 const defaultCodCashLimitPaise = 500000;
 const deliveryCodCashLimitSettingKey = "delivery.defaultCodCashLimitPaise";
+const maxDeliveryPartnerServiceRadiusMeters = 500_000;
 const deliveryRoutingRetryIntervalMs = 15 * 60 * 1000;
 const deliveryRoutingRetryWindowMs = 2 * 60 * 60 * 1000;
 const deliveryAssignmentAcceptanceWindowMinutes = 110;
@@ -1482,9 +1519,20 @@ export class OrdersService {
               is: {
                 ...(isAvailable !== undefined ? { isAvailable } : {}),
                 ...(query.cityCode ? { serviceCityCode: query.cityCode } : {}),
-                ...(query.pincode ? { servicePincodes: { has: query.pincode } } : {}),
-                ...(query.localAreaCode
-                  ? { serviceLocalAreaCodes: { has: query.localAreaCode } }
+                ...(query.pincode || query.localAreaCode
+                  ? {
+                      serviceAreas: {
+                        some: {
+                          isActive: true,
+                          OR: [
+                            ...(query.pincode ? [{ pincode: query.pincode }] : []),
+                            ...(query.localAreaCode
+                              ? [{ localAreaCode: query.localAreaCode }]
+                              : []),
+                          ],
+                        },
+                      },
+                    }
                   : {}),
               },
             },
@@ -1496,7 +1544,13 @@ export class OrdersService {
       this.prisma.client.user.findMany({
         where,
         include: {
-          deliveryProfile: true,
+          deliveryProfile: {
+            include: {
+              serviceAreas: {
+                where: { isActive: true },
+              },
+            },
+          },
           userRoles: {
             include: {
               role: true,
@@ -1548,6 +1602,21 @@ export class OrdersService {
           ...profileData,
         },
       });
+      if (this.shouldReplaceDeliveryPartnerServiceAreas(dto)) {
+        await replaceDeliveryPartnerServiceAreas(
+          tx,
+          profile.id,
+          this.deliveryPartnerServiceAreaInput(dto, profile, user.deliveryProfile),
+        );
+      }
+      const updatedProfile = await tx.deliveryPartnerProfile.findUnique({
+        where: { id: profile.id },
+        include: {
+          serviceAreas: {
+            where: { isActive: true },
+          },
+        },
+      });
 
       if (dto.phone !== undefined && dto.phone !== user.phone) {
         await tx.user.update({
@@ -1565,7 +1634,7 @@ export class OrdersService {
           ...(user.deliveryProfile
             ? { oldValue: this.deliveryPartnerProfileAuditValue(user.deliveryProfile) }
             : {}),
-          newValue: this.deliveryPartnerProfileAuditValue(profile),
+          newValue: this.deliveryPartnerProfileAuditValue(updatedProfile ?? profile),
         },
       });
     });
@@ -1914,6 +1983,21 @@ export class OrdersService {
           ...profileData,
         },
       });
+      if (this.shouldReplaceDeliveryPartnerServiceAreas(dto)) {
+        await replaceDeliveryPartnerServiceAreas(
+          tx,
+          profile.id,
+          this.deliveryPartnerServiceAreaInput(dto, profile, user.deliveryProfile),
+        );
+      }
+      const updatedProfile = await tx.deliveryPartnerProfile.findUnique({
+        where: { id: profile.id },
+        include: {
+          serviceAreas: {
+            where: { isActive: true },
+          },
+        },
+      });
 
       if (dto.phone !== undefined && dto.phone !== user.phone) {
         await tx.user.update({
@@ -1931,7 +2015,7 @@ export class OrdersService {
           ...(user.deliveryProfile
             ? { oldValue: this.deliveryPartnerProfileAuditValue(user.deliveryProfile) }
             : {}),
-          newValue: this.deliveryPartnerProfileAuditValue(profile),
+          newValue: this.deliveryPartnerProfileAuditValue(updatedProfile ?? profile),
         },
       });
     });
@@ -1994,7 +2078,13 @@ export class OrdersService {
         },
       },
       include: {
-        deliveryProfile: true,
+        deliveryProfile: {
+          include: {
+            serviceAreas: {
+              where: { isActive: true },
+            },
+          },
+        },
       },
       orderBy: [{ fullName: "asc" }, { email: "asc" }],
     });
@@ -5307,10 +5397,24 @@ export class OrdersService {
       codPayment && order.paymentStatus === PaymentStatus.PENDING ? codPayment.amountPaise : 0;
     const defaultLimit = await this.defaultPartnerCodLimitPaise();
     const rejectedPartnerIds = await this.rejectedDeliveryPartnerIds(order.id);
+    const proximityDistances = await this.deliveryPartnerProximityDistances(
+      address,
+      rejectedPartnerIds,
+    );
     const partners = await this.prisma.client.user.findMany({
-      where: this.deliveryPartnerCandidateWhere(address, rejectedPartnerIds),
+      where: this.deliveryPartnerCandidateWhere(
+        address,
+        rejectedPartnerIds,
+        new Set(proximityDistances.keys()),
+      ),
       include: {
-        deliveryProfile: true,
+        deliveryProfile: {
+          include: {
+            serviceAreas: {
+              where: { isActive: true },
+            },
+          },
+        },
       },
       orderBy: [{ createdAt: "asc" }],
     });
@@ -5321,7 +5425,11 @@ export class OrdersService {
     );
 
     const candidates = partners.map((user) => {
-      const area = this.deliveryPartnerServiceAreaScore(user.deliveryProfile, address);
+      const area = this.deliveryPartnerServiceAreaScore(
+        user.deliveryProfile,
+        address,
+        proximityDistances.get(user.id),
+      );
       if (!area.eligible) {
         skippedUnavailable += 1;
         return null;
@@ -5486,6 +5594,7 @@ export class OrdersService {
   private deliveryPartnerCandidateWhere(
     address: TrackableAddressSnapshot | null,
     rejectedPartnerIds: Set<string>,
+    proximityPartnerIds: Set<string>,
   ): Prisma.UserWhereInput {
     const profileAnd: Prisma.DeliveryPartnerProfileWhereInput[] = [{ isAvailable: true }];
 
@@ -5500,13 +5609,9 @@ export class OrdersService {
       });
     }
 
-    const serviceAreaOr: Prisma.DeliveryPartnerProfileWhereInput[] = [];
-    if (address?.localAreaCode) {
-      serviceAreaOr.push({ serviceLocalAreaCodes: { has: address.localAreaCode } });
-    }
-    if (address?.pincode) {
-      serviceAreaOr.push({ servicePincodes: { has: address.pincode } });
-    }
+    const serviceAreaOr: Prisma.DeliveryPartnerProfileWhereInput[] = [
+      { serviceAreas: { some: this.deliveryPartnerServiceAreaWhere(address) } },
+    ];
     if (address?.cityCode) {
       serviceAreaOr.push({ serviceCityCode: address.cityCode });
     }
@@ -5516,10 +5621,12 @@ export class OrdersService {
     if (address?.countryCode) {
       serviceAreaOr.push({ serviceCountryCode: address.countryCode });
     }
+    if (proximityPartnerIds.size > 0) {
+      serviceAreaOr.push({ userId: { in: Array.from(proximityPartnerIds) } });
+    }
     serviceAreaOr.push({
       serviceCityCode: null,
-      servicePincodes: { isEmpty: true },
-      serviceLocalAreaCodes: { isEmpty: true },
+      serviceAreas: { none: { isActive: true } },
     });
     profileAnd.push({ OR: serviceAreaOr });
 
@@ -5539,6 +5646,93 @@ export class OrdersService {
         },
       },
     };
+  }
+
+  private deliveryPartnerServiceAreaWhere(
+    address: TrackableAddressSnapshot | null,
+  ): Prisma.DeliveryPartnerServiceAreaWhereInput {
+    return {
+      isActive: true,
+      AND: [
+        {
+          OR: [
+            { countryCode: null },
+            ...(address?.countryCode ? [{ countryCode: address.countryCode }] : []),
+          ],
+        },
+        {
+          OR: [
+            { stateCode: null },
+            ...(address?.stateCode ? [{ stateCode: address.stateCode }] : []),
+          ],
+        },
+        { OR: [{ cityCode: null }, ...(address?.cityCode ? [{ cityCode: address.cityCode }] : [])] },
+        { OR: [{ pincode: null }, ...(address?.pincode ? [{ pincode: address.pincode }] : [])] },
+        {
+          OR: [
+            { localAreaCode: null },
+            ...(address?.localAreaCode ? [{ localAreaCode: address.localAreaCode }] : []),
+          ],
+        },
+      ],
+    };
+  }
+
+  private async deliveryPartnerProximityDistances(
+    address: TrackableAddressSnapshot | null,
+    rejectedPartnerIds: Set<string>,
+  ) {
+    const distances = new Map<string, number>();
+    if (
+      typeof address?.latitude !== "number" ||
+      !Number.isFinite(address.latitude) ||
+      typeof address.longitude !== "number" ||
+      !Number.isFinite(address.longitude)
+    ) {
+      return distances;
+    }
+
+    const rejectedIds = Array.from(rejectedPartnerIds);
+    const rows = await this.prisma.client.$queryRaw<ProximityPartnerRow[]>`
+      SELECT
+        users."id"::text AS "userId",
+        earth_distance(
+          ll_to_earth(${address.latitude}::float8, ${address.longitude}::float8),
+          ll_to_earth(profile."base_latitude"::float8, profile."base_longitude"::float8)
+        )::float8 AS "distanceMeters"
+      FROM "users" users
+      INNER JOIN "delivery_partner_profiles" profile ON profile."user_id" = users."id"
+      WHERE users."status" = ${UserStatus.ACTIVE}::"UserStatus"
+        AND profile."is_available" = TRUE
+        AND profile."base_latitude" IS NOT NULL
+        AND profile."base_longitude" IS NOT NULL
+        AND profile."service_radius_km" IS NOT NULL
+        AND profile."service_radius_km" > 0
+        AND (
+          ${rejectedIds.length}::int = 0
+          OR users."id" <> ALL(${rejectedIds}::uuid[])
+        )
+        AND EXISTS (
+          SELECT 1
+          FROM "user_roles" user_roles
+          INNER JOIN "roles" roles ON roles."id" = user_roles."role_id"
+          WHERE user_roles."user_id" = users."id"
+            AND roles."code" = ${RoleCode.DELIVERY_PARTNER}::"RoleCode"
+        )
+        AND earth_box(
+          ll_to_earth(${address.latitude}::float8, ${address.longitude}::float8),
+          ${maxDeliveryPartnerServiceRadiusMeters}::float8
+        ) @> ll_to_earth(profile."base_latitude"::float8, profile."base_longitude"::float8)
+        AND earth_distance(
+          ll_to_earth(${address.latitude}::float8, ${address.longitude}::float8),
+          ll_to_earth(profile."base_latitude"::float8, profile."base_longitude"::float8)
+        ) <= (profile."service_radius_km"::float8 * 1000)
+    `;
+
+    rows.forEach((row) => {
+      distances.set(row.userId, Number(row.distanceMeters));
+    });
+    return distances;
   }
 
   private async rejectedDeliveryPartnerIds(orderId: string) {
@@ -5653,6 +5847,7 @@ export class OrdersService {
   private deliveryPartnerServiceAreaScore(
     profile: DeliveryPartnerWithProfile["deliveryProfile"],
     address: TrackableAddressSnapshot | null,
+    dbDistanceMeters?: number,
   ): DeliveryPartnerServiceAreaScore {
     if (!profile?.isAvailable) {
       return {
@@ -5689,15 +5884,21 @@ export class OrdersService {
         score += points;
       },
     });
-    this.scoreConfiguredArray(profile.servicePincodes, address?.pincode, "pincode", 30, {
-      matchedFields,
-      warnings,
-      addScore: (points) => {
-        score += points;
-      },
-    });
     this.scoreConfiguredArray(
-      profile.serviceLocalAreaCodes,
+      deliveryPartnerPincodesFromServiceAreas(profile),
+      address?.pincode,
+      "pincode",
+      30,
+      {
+        matchedFields,
+        warnings,
+        addScore: (points) => {
+          score += points;
+        },
+      },
+    );
+    this.scoreConfiguredArray(
+      deliveryPartnerLocalAreaCodesFromServiceAreas(profile),
       address?.localAreaCode,
       "local area",
       35,
@@ -5709,6 +5910,13 @@ export class OrdersService {
         },
       },
     );
+    if (typeof dbDistanceMeters === "number" && Number.isFinite(dbDistanceMeters)) {
+      const radiusKm = Number(profile.serviceRadiusKm);
+      if (Number.isFinite(radiusKm) && radiusKm > 0 && dbDistanceMeters / 1000 <= radiusKm) {
+        matchedFields.push(`radius ${Math.round((dbDistanceMeters / 1000) * 10) / 10}km`);
+        score += 20;
+      }
+    }
 
     return {
       eligible: true,
@@ -5716,6 +5924,7 @@ export class OrdersService {
       matchLabel: this.serviceAreaMatchLabel(matchedFields),
       matchedFields,
       warnings,
+      ...(dbDistanceMeters !== undefined ? { distanceMeters: dbDistanceMeters } : {}),
     };
   }
 
@@ -5786,6 +5995,10 @@ export class OrdersService {
     }
     if (matchedFields.includes("country")) {
       return "country fallback";
+    }
+    const radiusMatch = matchedFields.find((field) => field.startsWith("radius "));
+    if (radiusMatch) {
+      return radiusMatch;
     }
 
     return "broad fallback";
@@ -6152,7 +6365,13 @@ export class OrdersService {
         },
         deliveryPartner: {
           include: {
-            deliveryProfile: true,
+            deliveryProfile: {
+              include: {
+                serviceAreas: {
+                  where: { isActive: true },
+                },
+              },
+            },
           },
         },
       },
@@ -6361,7 +6580,13 @@ export class OrdersService {
         },
       },
       include: {
-        deliveryProfile: true,
+        deliveryProfile: {
+          include: {
+            serviceAreas: {
+              where: { isActive: true },
+            },
+          },
+        },
       },
     });
 
@@ -6385,7 +6610,13 @@ export class OrdersService {
         },
       },
       include: {
-        deliveryProfile: true,
+        deliveryProfile: {
+          include: {
+            serviceAreas: {
+              where: { isActive: true },
+            },
+          },
+        },
       },
     });
 
@@ -6420,8 +6651,8 @@ export class OrdersService {
       serviceCountryCode: profile?.serviceCountryCode ?? null,
       serviceStateCode: profile?.serviceStateCode ?? null,
       serviceCityCode: profile?.serviceCityCode ?? null,
-      servicePincodes: profile?.servicePincodes ?? [],
-      serviceLocalAreaCodes: profile?.serviceLocalAreaCodes ?? [],
+      servicePincodes: deliveryPartnerPincodesFromServiceAreas(profile),
+      serviceLocalAreaCodes: deliveryPartnerLocalAreaCodesFromServiceAreas(profile),
       baseLatitude: profile?.baseLatitude?.toString() ?? null,
       baseLongitude: profile?.baseLongitude?.toString() ?? null,
       serviceRadiusKm: profile?.serviceRadiusKm ?? null,
@@ -6494,12 +6725,6 @@ export class OrdersService {
       ...(dto.serviceCityCode !== undefined
         ? { serviceCityCode: this.optionalText(dto.serviceCityCode) }
         : {}),
-      ...(dto.servicePincodes !== undefined
-        ? { servicePincodes: this.cleanStringArray(dto.servicePincodes) }
-        : {}),
-      ...(dto.serviceLocalAreaCodes !== undefined
-        ? { serviceLocalAreaCodes: this.cleanStringArray(dto.serviceLocalAreaCodes) }
-        : {}),
       ...(dto.baseLatitude !== undefined ? { baseLatitude: dto.baseLatitude } : {}),
       ...(dto.baseLongitude !== undefined ? { baseLongitude: dto.baseLongitude } : {}),
       ...(dto.serviceRadiusKm !== undefined ? { serviceRadiusKm: dto.serviceRadiusKm } : {}),
@@ -6507,6 +6732,51 @@ export class OrdersService {
         ? { codCashLimitPaise: dto.codCashLimitPaise }
         : {}),
       ...(dto.notes !== undefined ? { notes: this.optionalText(dto.notes) } : {}),
+    };
+  }
+
+  private shouldReplaceDeliveryPartnerServiceAreas(
+    dto: UpdateOwnDeliveryPartnerProfileDto | UpdateDeliveryPartnerProfileDto,
+  ) {
+    return (
+      dto.servicePincodes !== undefined ||
+      dto.serviceLocalAreaCodes !== undefined ||
+      dto.serviceCountryCode !== undefined ||
+      dto.serviceStateCode !== undefined ||
+      dto.serviceCityCode !== undefined ||
+      dto.priority !== undefined
+    );
+  }
+
+  private deliveryPartnerServiceAreaInput(
+    dto: UpdateOwnDeliveryPartnerProfileDto | UpdateDeliveryPartnerProfileDto,
+    profile: {
+      serviceCountryCode?: string | null;
+      serviceStateCode?: string | null;
+      serviceCityCode?: string | null;
+      priority?: number | null;
+    },
+    existingProfile: {
+      serviceAreas?: Array<{
+        isActive?: boolean | null;
+        pincode?: string | null;
+        localAreaCode?: string | null;
+      }> | null;
+    } | null,
+  ) {
+    return {
+      countryCode: profile.serviceCountryCode ?? null,
+      stateCode: profile.serviceStateCode ?? null,
+      cityCode: profile.serviceCityCode ?? null,
+      priority: profile.priority ?? 100,
+      pincodes:
+        dto.servicePincodes !== undefined
+          ? cleanDeliveryPartnerServiceCodes(dto.servicePincodes)
+          : deliveryPartnerPincodesFromServiceAreas(existingProfile),
+      localAreaCodes:
+        dto.serviceLocalAreaCodes !== undefined
+          ? cleanDeliveryPartnerServiceCodes(dto.serviceLocalAreaCodes)
+          : deliveryPartnerLocalAreaCodesFromServiceAreas(existingProfile),
     };
   }
 
@@ -6518,8 +6788,11 @@ export class OrdersService {
     serviceCountryCode?: string | null;
     serviceStateCode?: string | null;
     serviceCityCode?: string | null;
-    servicePincodes?: string[];
-    serviceLocalAreaCodes?: string[];
+    serviceAreas?: Array<{
+      isActive?: boolean | null;
+      pincode?: string | null;
+      localAreaCode?: string | null;
+    }> | null;
     baseLatitude?: Prisma.Decimal | number | string | null;
     baseLongitude?: Prisma.Decimal | number | string | null;
     serviceRadiusKm?: number | null;
@@ -6534,8 +6807,8 @@ export class OrdersService {
       serviceCountryCode: profile.serviceCountryCode ?? null,
       serviceStateCode: profile.serviceStateCode ?? null,
       serviceCityCode: profile.serviceCityCode ?? null,
-      servicePincodes: profile.servicePincodes ?? [],
-      serviceLocalAreaCodes: profile.serviceLocalAreaCodes ?? [],
+      servicePincodes: deliveryPartnerPincodesFromServiceAreas(profile),
+      serviceLocalAreaCodes: deliveryPartnerLocalAreaCodesFromServiceAreas(profile),
       baseLatitude: profile.baseLatitude?.toString() ?? null,
       baseLongitude: profile.baseLongitude?.toString() ?? null,
       serviceRadiusKm: profile.serviceRadiusKm ?? null,
@@ -6569,10 +6842,6 @@ export class OrdersService {
     }
 
     throw new BadRequestException(`${field} must be a boolean.`);
-  }
-
-  private cleanStringArray(value: string[]) {
-    return Array.from(new Set(value.map((item) => item.trim()).filter(Boolean)));
   }
 
   private customerDeliveryTimeline(order: OrderWithRelations) {

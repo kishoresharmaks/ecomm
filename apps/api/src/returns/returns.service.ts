@@ -40,6 +40,10 @@ import {
 } from "@indihub/database";
 import type { RequestUser } from "../auth/types/indihub-request";
 import {
+  deliveryPartnerLocalAreaCodesFromServiceAreas,
+  deliveryPartnerPincodesFromServiceAreas,
+} from "../common/delivery-partner-service-areas";
+import {
   createdAtCursorOrderBy,
   createdAtCursorWhere,
   cursorPageFromItems,
@@ -238,7 +242,15 @@ type TrackableAddressSnapshot = {
 };
 
 type ReversePickupPartnerCandidate = {
-  user: Prisma.UserGetPayload<{ include: { deliveryProfile: true } }>;
+  user: Prisma.UserGetPayload<{
+    include: {
+      deliveryProfile: {
+        include: {
+          serviceAreas: true;
+        };
+      };
+    };
+  }>;
   score: number;
   workload: number;
   lastAssignmentAt: Date | null;
@@ -3520,7 +3532,15 @@ export class ReturnsService {
     const rejectedPartnerIds = await this.rejectedReversePickupPartnerIds(target.id);
     const partners = await this.prisma.client.user.findMany({
       where: this.reversePickupPartnerCandidateWhere(address, rejectedPartnerIds),
-      include: { deliveryProfile: true },
+      include: {
+        deliveryProfile: {
+          include: {
+            serviceAreas: {
+              where: { isActive: true },
+            },
+          },
+        },
+      },
       orderBy: [{ createdAt: "asc" }],
     });
     let skippedUnavailable = 0;
@@ -3649,16 +3669,15 @@ export class ReturnsService {
     if (address?.stateCode) {
       profileAnd.push({ OR: [{ serviceStateCode: null }, { serviceStateCode: address.stateCode }] });
     }
-    const serviceAreaOr: Prisma.DeliveryPartnerProfileWhereInput[] = [];
-    if (address?.localAreaCode) serviceAreaOr.push({ serviceLocalAreaCodes: { has: address.localAreaCode } });
-    if (address?.pincode) serviceAreaOr.push({ servicePincodes: { has: address.pincode } });
+    const serviceAreaOr: Prisma.DeliveryPartnerProfileWhereInput[] = [
+      { serviceAreas: { some: this.reversePickupServiceAreaWhere(address) } },
+    ];
     if (address?.cityCode) serviceAreaOr.push({ serviceCityCode: address.cityCode });
     if (address?.stateCode) serviceAreaOr.push({ serviceStateCode: address.stateCode });
     if (address?.countryCode) serviceAreaOr.push({ serviceCountryCode: address.countryCode });
     serviceAreaOr.push({
       serviceCityCode: null,
-      servicePincodes: { isEmpty: true },
-      serviceLocalAreaCodes: { isEmpty: true },
+      serviceAreas: { none: { isActive: true } },
     });
     profileAnd.push({ OR: serviceAreaOr });
 
@@ -3670,14 +3689,47 @@ export class ReturnsService {
     };
   }
 
+  private reversePickupServiceAreaWhere(
+    address: TrackableAddressSnapshot | null,
+  ): Prisma.DeliveryPartnerServiceAreaWhereInput {
+    return {
+      isActive: true,
+      AND: [
+        {
+          OR: [
+            { countryCode: null },
+            ...(address?.countryCode ? [{ countryCode: address.countryCode }] : []),
+          ],
+        },
+        {
+          OR: [
+            { stateCode: null },
+            ...(address?.stateCode ? [{ stateCode: address.stateCode }] : []),
+          ],
+        },
+        { OR: [{ cityCode: null }, ...(address?.cityCode ? [{ cityCode: address.cityCode }] : [])] },
+        { OR: [{ pincode: null }, ...(address?.pincode ? [{ pincode: address.pincode }] : [])] },
+        {
+          OR: [
+            { localAreaCode: null },
+            ...(address?.localAreaCode ? [{ localAreaCode: address.localAreaCode }] : []),
+          ],
+        },
+      ],
+    };
+  }
+
   private deliveryPartnerServiceAreaScore(
     profile: {
       isAvailable: boolean;
       serviceCountryCode: string | null;
       serviceStateCode: string | null;
       serviceCityCode: string | null;
-      servicePincodes: string[];
-      serviceLocalAreaCodes: string[];
+      serviceAreas?: Array<{
+        isActive?: boolean | null;
+        pincode?: string | null;
+        localAreaCode?: string | null;
+      }> | null;
     } | null,
     address: TrackableAddressSnapshot | null,
   ) {
@@ -3690,8 +3742,8 @@ export class ReturnsService {
     this.scoreConfiguredCode(profile.serviceCountryCode, address?.countryCode, "country", 5, matchedFields, warnings, (points) => { score += points; });
     this.scoreConfiguredCode(profile.serviceStateCode, address?.stateCode, "state", 10, matchedFields, warnings, (points) => { score += points; });
     this.scoreConfiguredCode(profile.serviceCityCode, address?.cityCode, "city", 40, matchedFields, warnings, (points) => { score += points; });
-    this.scoreConfiguredArray(profile.servicePincodes, address?.pincode, "pincode", 30, matchedFields, warnings, (points) => { score += points; });
-    this.scoreConfiguredArray(profile.serviceLocalAreaCodes, address?.localAreaCode, "local area", 35, matchedFields, warnings, (points) => { score += points; });
+    this.scoreConfiguredArray(deliveryPartnerPincodesFromServiceAreas(profile), address?.pincode, "pincode", 30, matchedFields, warnings, (points) => { score += points; });
+    this.scoreConfiguredArray(deliveryPartnerLocalAreaCodesFromServiceAreas(profile), address?.localAreaCode, "local area", 35, matchedFields, warnings, (points) => { score += points; });
     return { eligible: true, score, matchLabel: this.serviceAreaMatchLabel(matchedFields), matchedFields, warnings };
   }
 

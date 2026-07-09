@@ -13,6 +13,12 @@ import {
 } from "@indihub/database";
 import { hashAdminPassword } from "../../auth/admin-password";
 import type { RequestUser } from "../../auth/types/indihub-request";
+import {
+  cleanDeliveryPartnerServiceCodes,
+  deliveryPartnerLocalAreaCodesFromServiceAreas,
+  deliveryPartnerPincodesFromServiceAreas,
+  replaceDeliveryPartnerServiceAreas,
+} from "../../common/delivery-partner-service-areas";
 import { paginationFromQuery } from "../../common/pagination";
 import { PrismaService } from "../../prisma/prisma.service";
 import {
@@ -32,7 +38,13 @@ const userInclude = {
   customer: true,
   seller: true,
   businessBuyer: true,
-  deliveryProfile: true
+  deliveryProfile: {
+    include: {
+      serviceAreas: {
+        where: { isActive: true }
+      }
+    }
+  }
 };
 
 type AdminUserWithProfiles = Prisma.UserGetPayload<{ include: typeof userInclude }>;
@@ -122,11 +134,11 @@ export class AdminUsersService {
       return [items, total] as const;
     });
 
-    return { items, total, page, limit: take };
+    return { items: items.map((item) => this.userReadback(item)), total, page, limit: take };
   }
 
   async getUser(userId: string) {
-    return this.getUserOrThrow(userId);
+    return this.userReadback(await this.getUserOrThrow(userId));
   }
 
   async updateStatus(actor: RequestUser, userId: string, dto: UpdateUserStatusDto) {
@@ -157,7 +169,7 @@ export class AdminUsersService {
       }
     });
 
-    return user;
+    return this.userReadback(user);
   }
 
   async addRole(actor: RequestUser, userId: string, dto: UpdateUserRoleDto) {
@@ -209,7 +221,7 @@ export class AdminUsersService {
       }
     });
 
-    return this.getUserOrThrow(userId);
+    return this.userReadback(await this.getUserOrThrow(userId));
   }
 
   async getRoleRemovalImpact(
@@ -231,7 +243,7 @@ export class AdminUsersService {
   async removeRole(actor: RequestUser, userId: string, dto: UpdateUserRoleDto) {
     this.assertValidRoleCode(dto.roleCode);
 
-    return this.prisma.client.$transaction(async (tx) => {
+    const updated = await this.prisma.client.$transaction(async (tx) => {
       const user = await this.getUserOrThrow(userId, tx);
       const role = await tx.role.findUnique({ where: { code: dto.roleCode } });
 
@@ -279,6 +291,8 @@ export class AdminUsersService {
 
       return this.getUserOrThrow(userId, tx);
     });
+
+    return this.userReadback(updated);
   }
 
   async setBackOfficePassword(actor: RequestUser, userId: string, dto: SetBackOfficePasswordDto) {
@@ -340,39 +354,57 @@ export class AdminUsersService {
       throw new BadRequestException("Assign Delivery Partner role before editing delivery profile.");
     }
 
-    const profileData = this.deliveryProfileData(dto);
-    const profile = await this.prisma.client.deliveryPartnerProfile.upsert({
-      where: { userId },
-      update: profileData,
-      create: {
-        userId,
-        phone: dto.phone ?? user.phone,
-        isAvailable: dto.isAvailable === undefined ? true : this.booleanValue(dto.isAvailable),
-        ...profileData,
-      },
-    });
-
-    if (dto.phone !== undefined && dto.phone !== user.phone) {
-      await this.prisma.client.user.update({
-        where: { id: userId },
-        data: { phone: dto.phone || null },
+    await this.prisma.client.$transaction(async (tx) => {
+      const profileData = this.deliveryProfileData(dto);
+      const profile = await tx.deliveryPartnerProfile.upsert({
+        where: { userId },
+        update: profileData,
+        create: {
+          userId,
+          phone: dto.phone ?? user.phone,
+          isAvailable: dto.isAvailable === undefined ? true : this.booleanValue(dto.isAvailable),
+          ...profileData,
+        },
       });
-    }
 
-    await this.prisma.client.auditLog.create({
-      data: {
-        actor: { connect: { id: actor.id } },
-        action: "admin.delivery_partner.profile_updated",
-        entityType: "user",
-        entityId: userId,
-        ...(user.deliveryProfile
-          ? { oldValue: this.deliveryProfileAuditValue(user.deliveryProfile) }
-          : {}),
-        newValue: this.deliveryProfileAuditValue(profile),
-      },
+      if (this.shouldReplaceDeliveryPartnerServiceAreas(dto)) {
+        await replaceDeliveryPartnerServiceAreas(
+          tx,
+          profile.id,
+          this.deliveryPartnerServiceAreaInput(dto, profile, user.deliveryProfile),
+        );
+      }
+      const updatedProfile = await tx.deliveryPartnerProfile.findUnique({
+        where: { id: profile.id },
+        include: {
+          serviceAreas: {
+            where: { isActive: true },
+          },
+        },
+      });
+
+      if (dto.phone !== undefined && dto.phone !== user.phone) {
+        await tx.user.update({
+          where: { id: userId },
+          data: { phone: dto.phone || null },
+        });
+      }
+
+      await tx.auditLog.create({
+        data: {
+          actor: { connect: { id: actor.id } },
+          action: "admin.delivery_partner.profile_updated",
+          entityType: "user",
+          entityId: userId,
+          ...(user.deliveryProfile
+            ? { oldValue: this.deliveryProfileAuditValue(user.deliveryProfile) }
+            : {}),
+          newValue: this.deliveryProfileAuditValue(updatedProfile ?? profile),
+        },
+      });
     });
 
-    return this.getUserOrThrow(userId);
+    return this.userReadback(await this.getUserOrThrow(userId));
   }
 
   private async getUserOrThrow(userId: string, db: AdminUsersDbClient = this.prisma.client) {
@@ -386,6 +418,21 @@ export class AdminUsersService {
     }
 
     return user;
+  }
+
+  private userReadback(user: AdminUserWithProfiles) {
+    return {
+      ...user,
+      deliveryProfile: user.deliveryProfile
+        ? {
+            ...user.deliveryProfile,
+            servicePincodes: deliveryPartnerPincodesFromServiceAreas(user.deliveryProfile),
+            serviceLocalAreaCodes: deliveryPartnerLocalAreaCodesFromServiceAreas(
+              user.deliveryProfile,
+            ),
+          }
+        : null,
+    };
   }
 
   private async ensureAnotherActiveAdmin(excludedUserId: string) {
@@ -677,12 +724,51 @@ export class AdminUsersService {
       ...(dto.serviceCountryCode !== undefined ? { serviceCountryCode: dto.serviceCountryCode || null } : {}),
       ...(dto.serviceStateCode !== undefined ? { serviceStateCode: dto.serviceStateCode || null } : {}),
       ...(dto.serviceCityCode !== undefined ? { serviceCityCode: dto.serviceCityCode || null } : {}),
-      ...(dto.servicePincodes !== undefined ? { servicePincodes: this.csvValues(dto.servicePincodes) } : {}),
-      ...(dto.serviceLocalAreaCodes !== undefined
-        ? { serviceLocalAreaCodes: this.csvValues(dto.serviceLocalAreaCodes) }
-        : {}),
       ...(dto.codCashLimitPaise !== undefined ? { codCashLimitPaise: dto.codCashLimitPaise } : {}),
       ...(dto.notes !== undefined ? { notes: dto.notes || null } : {}),
+    };
+  }
+
+  private shouldReplaceDeliveryPartnerServiceAreas(dto: UpdateDeliveryPartnerProfileDto) {
+    return (
+      dto.servicePincodes !== undefined ||
+      dto.serviceLocalAreaCodes !== undefined ||
+      dto.serviceCountryCode !== undefined ||
+      dto.serviceStateCode !== undefined ||
+      dto.serviceCityCode !== undefined ||
+      dto.priority !== undefined
+    );
+  }
+
+  private deliveryPartnerServiceAreaInput(
+    dto: UpdateDeliveryPartnerProfileDto,
+    profile: {
+      serviceCountryCode?: string | null;
+      serviceStateCode?: string | null;
+      serviceCityCode?: string | null;
+      priority?: number | null;
+    },
+    existingProfile: {
+      serviceAreas?: Array<{
+        isActive?: boolean | null;
+        pincode?: string | null;
+        localAreaCode?: string | null;
+      }> | null;
+    } | null,
+  ) {
+    return {
+      countryCode: profile.serviceCountryCode ?? null,
+      stateCode: profile.serviceStateCode ?? null,
+      cityCode: profile.serviceCityCode ?? null,
+      priority: profile.priority ?? 100,
+      pincodes:
+        dto.servicePincodes !== undefined
+          ? cleanDeliveryPartnerServiceCodes(this.csvValues(dto.servicePincodes))
+          : deliveryPartnerPincodesFromServiceAreas(existingProfile),
+      localAreaCodes:
+        dto.serviceLocalAreaCodes !== undefined
+          ? cleanDeliveryPartnerServiceCodes(this.csvValues(dto.serviceLocalAreaCodes))
+          : deliveryPartnerLocalAreaCodesFromServiceAreas(existingProfile),
     };
   }
 
@@ -694,8 +780,11 @@ export class AdminUsersService {
     serviceCountryCode?: string | null;
     serviceStateCode?: string | null;
     serviceCityCode?: string | null;
-    servicePincodes?: string[];
-    serviceLocalAreaCodes?: string[];
+    serviceAreas?: Array<{
+      isActive?: boolean | null;
+      pincode?: string | null;
+      localAreaCode?: string | null;
+    }> | null;
     codCashLimitPaise?: number | null;
     notes?: string | null;
   }) {
@@ -707,8 +796,8 @@ export class AdminUsersService {
       serviceCountryCode: profile.serviceCountryCode ?? null,
       serviceStateCode: profile.serviceStateCode ?? null,
       serviceCityCode: profile.serviceCityCode ?? null,
-      servicePincodes: profile.servicePincodes ?? [],
-      serviceLocalAreaCodes: profile.serviceLocalAreaCodes ?? [],
+      servicePincodes: deliveryPartnerPincodesFromServiceAreas(profile),
+      serviceLocalAreaCodes: deliveryPartnerLocalAreaCodesFromServiceAreas(profile),
       codCashLimitPaise: profile.codCashLimitPaise ?? null,
       notes: profile.notes ?? null,
     };

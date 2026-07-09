@@ -2066,10 +2066,15 @@ integrationDescribe("1HandIndia backend integration", () => {
           serviceCountryCode: "IN",
           serviceStateCode: null,
           serviceCityCode: null,
-          servicePincodes: ["641012", "636304"],
-          serviceLocalAreaCodes: [],
           codCashLimitPaise: 500000,
           notes: null,
+          serviceAreas: {
+            deleteMany: {},
+            create: [
+              { countryCode: "IN", pincode: "641012", priority: 100, isActive: true },
+              { countryCode: "IN", pincode: "636304", priority: 100, isActive: true },
+            ],
+          },
         },
         create: {
           userId: data.deliveryPartnerUser.id,
@@ -2077,8 +2082,13 @@ integrationDescribe("1HandIndia backend integration", () => {
           vehicleNumber: "TN 30 IH 1001",
           isAvailable: true,
           serviceCountryCode: "IN",
-          servicePincodes: ["641012", "636304"],
           codCashLimitPaise: 500000,
+          serviceAreas: {
+            create: [
+              { countryCode: "IN", pincode: "641012", priority: 100, isActive: true },
+              { countryCode: "IN", pincode: "636304", priority: 100, isActive: true },
+            ],
+          },
         },
       });
     }
@@ -2132,9 +2142,28 @@ integrationDescribe("1HandIndia backend integration", () => {
           serviceCountryCode: "IN",
           serviceStateCode: "IN-TN",
           serviceCityCode: "IN-TN-CBE",
-          servicePincodes: ["641012"],
-          serviceLocalAreaCodes: ["IN-TN-CBE-RS"],
           codCashLimitPaise: 500000,
+          serviceAreas: {
+            deleteMany: {},
+            create: [
+              {
+                countryCode: "IN",
+                stateCode: "IN-TN",
+                cityCode: "IN-TN-CBE",
+                pincode: "641012",
+                priority: 1,
+                isActive: true,
+              },
+              {
+                countryCode: "IN",
+                stateCode: "IN-TN",
+                cityCode: "IN-TN-CBE",
+                localAreaCode: "IN-TN-CBE-RS",
+                priority: 1,
+                isActive: true,
+              },
+            ],
+          },
         },
       });
 
@@ -3248,8 +3277,12 @@ integrationDescribe("1HandIndia backend integration", () => {
           vehicleNumber: "TN 30 IH 2002",
           isAvailable: true,
           serviceCountryCode: "IN",
-          servicePincodes: ["641012"],
           codCashLimitPaise: 500000,
+          serviceAreas: {
+            create: [
+              { countryCode: "IN", pincode: "641012", priority: 100, isActive: true },
+            ],
+          },
         },
       });
       const rejectedAssignment = await request(app.getHttpServer())
@@ -6660,8 +6693,13 @@ async function seedIntegrationData(prisma: PrismaClient) {
       vehicleNumber: "TN 30 IH 1001",
       isAvailable: true,
       serviceCountryCode: "IN",
-      servicePincodes: ["641012", "636304"],
       codCashLimitPaise: 500000,
+      serviceAreas: {
+        create: [
+          { countryCode: "IN", pincode: "641012", priority: 100, isActive: true },
+          { countryCode: "IN", pincode: "636304", priority: 100, isActive: true },
+        ],
+      },
     },
   });
 
@@ -7187,20 +7225,40 @@ async function seedHighVolumeAutoAssignmentData(
       roleId: deliveryPartnerRole.id,
     })),
   });
-  await prisma.deliveryPartnerProfile.createMany({
-    data: partnerIds.map((userId, index) => ({
-      userId,
-      phone: `98${String(index).padStart(8, "0").slice(0, 8)}`,
-      vehicleNumber: `TN 30 LD ${String(index).padStart(4, "0")}`,
-      isAvailable: true,
-      serviceCountryCode: "IN",
-      serviceStateCode: "IN-TN",
-      serviceCityCode: "IN-TN-CBE",
-      servicePincodes: [loadPincode],
-      serviceLocalAreaCodes: [loadLocalAreaCode],
-      codCashLimitPaise: 1_000_000,
-    })),
-  });
+  for (const [index, userId] of partnerIds.entries()) {
+    await prisma.deliveryPartnerProfile.create({
+      data: {
+        userId,
+        phone: `98${String(index).padStart(8, "0").slice(0, 8)}`,
+        vehicleNumber: `TN 30 LD ${String(index).padStart(4, "0")}`,
+        isAvailable: true,
+        serviceCountryCode: "IN",
+        serviceStateCode: "IN-TN",
+        serviceCityCode: "IN-TN-CBE",
+        codCashLimitPaise: 1_000_000,
+        serviceAreas: {
+          create: [
+            {
+              countryCode: "IN",
+              stateCode: "IN-TN",
+              cityCode: "IN-TN-CBE",
+              pincode: loadPincode,
+              priority: 100,
+              isActive: true,
+            },
+            {
+              countryCode: "IN",
+              stateCode: "IN-TN",
+              cityCode: "IN-TN-CBE",
+              localAreaCode: loadLocalAreaCode,
+              priority: 100,
+              isActive: true,
+            },
+          ],
+        },
+      },
+    });
+  }
 
   const targetOrderNumber = `${loadKey}-TARGET`;
   await prisma.order.create({

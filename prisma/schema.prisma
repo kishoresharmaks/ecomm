@@ -7,7 +7,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  extensions = [pg_trgm]
+  extensions = [pg_trgm, cube, earthdistance]
 }
 
 enum UserStatus {
@@ -3488,8 +3488,6 @@ model DeliveryPartnerProfile {
   serviceCountryCode    String?                      @map("service_country_code")
   serviceStateCode      String?                      @map("service_state_code")
   serviceCityCode       String?                      @map("service_city_code")
-  servicePincodes       String[]                     @default([]) @map("service_pincodes")
-  serviceLocalAreaCodes String[]                     @default([]) @map("service_local_area_codes")
   createdAt             DateTime                     @default(now()) @map("created_at")
   updatedAt             DateTime                     @updatedAt @map("updated_at")
   user                  User                         @relation(fields: [userId], references: [id], onDelete: Cascade)

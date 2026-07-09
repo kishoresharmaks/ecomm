@@ -6,6 +6,7 @@ import {
   UserStatus,
 } from "@indihub/database";
 import type { RequestUser } from "../auth/types/indihub-request";
+import { replaceDeliveryPartnerServiceAreas } from "../common/delivery-partner-service-areas";
 import { paginationFromQuery } from "../common/pagination";
 import { PrismaService } from "../prisma/prisma.service";
 import {
@@ -291,7 +292,7 @@ export class DeliveryPartnerApplicationsService {
       },
     });
 
-    await tx.deliveryPartnerProfile.upsert({
+    const profile = await tx.deliveryPartnerProfile.upsert({
       where: { userId: application.userId },
       update: {
         phone: application.phone,
@@ -301,8 +302,6 @@ export class DeliveryPartnerApplicationsService {
         serviceCountryCode: application.serviceCountryCode,
         serviceStateCode: application.serviceStateCode,
         serviceCityCode: application.serviceCityCode,
-        servicePincodes: application.servicePincodes,
-        serviceLocalAreaCodes: application.serviceLocalAreaCodes,
         baseLatitude: application.baseLatitude,
         baseLongitude: application.baseLongitude,
         serviceRadiusKm: application.serviceRadiusKm,
@@ -318,14 +317,20 @@ export class DeliveryPartnerApplicationsService {
         serviceCountryCode: application.serviceCountryCode,
         serviceStateCode: application.serviceStateCode,
         serviceCityCode: application.serviceCityCode,
-        servicePincodes: application.servicePincodes,
-        serviceLocalAreaCodes: application.serviceLocalAreaCodes,
         baseLatitude: application.baseLatitude,
         baseLongitude: application.baseLongitude,
         serviceRadiusKm: application.serviceRadiusKm,
         codCashLimitPaise: dto.codCashLimitPaise ?? null,
         notes: this.profileNotes(application, dto.note),
       },
+    });
+    await replaceDeliveryPartnerServiceAreas(tx, profile.id, {
+      countryCode: profile.serviceCountryCode,
+      stateCode: profile.serviceStateCode,
+      cityCode: profile.serviceCityCode,
+      priority: profile.priority,
+      pincodes: application.servicePincodes,
+      localAreaCodes: application.serviceLocalAreaCodes,
     });
   }
 
