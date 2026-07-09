@@ -1296,7 +1296,7 @@ export class SellerSubscriptionsService {
     keySecret: string,
   ) {
     const expected = createHmac("sha256", keySecret)
-      .update(`${dto.razorpaySubscriptionId}|${dto.razorpayPaymentId}`)
+      .update(`${dto.razorpayPaymentId}|${dto.razorpaySubscriptionId}`)
       .digest("hex");
 
     if (!this.safeCompare(dto.razorpaySignature, expected)) {

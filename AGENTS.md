@@ -189,3 +189,8 @@ When modifying `schema.prisma` or creating new models, strictly adhere to the fo
    - **Full-Text Search**: Always index `tsvector` columns (like `search_vector`) using a GIN index: `@@index([searchVector], type: Gin)`. Without this, text search performs a full table scan.
    - **Fuzzy Search (pg_trgm)**: For typo-tolerant searches (e.g., `products.name`, `sellers.storeName`), use the `pg_trgm` extension. Ensure `postgresqlExtensions` is in `previewFeatures` and add the index using raw operators: `@@index([name(ops: raw("gin_trgm_ops"))], type: Gin)`.
    - **JSONB Attribute Filtering**: If JSONB columns (like `attributes`) are used for filtering (e.g., via containment `@>` operators), always index them with `jsonb_path_ops` because it is significantly smaller and faster than the default `jsonb_ops`. Add it using: `@@index([attributes(ops: raw("jsonb_path_ops"))], type: Gin)`.
+
+## Next.js Version Convention
+- The project is using **Next.js 16.2.6** (as specified in `apps/web/package.json`).
+- Because it is built on Next.js 15+ features, it uses the Next.js 15+ asynchronous `params` and `searchParams` API (e.g. `const { requestNumber } = await params;`).
+- When mentioning or resolving bugs related to these APIs, note that the project explicitly runs Next.js 16.2.6, which inherits these Next 15 breaking changes.
