@@ -24,13 +24,15 @@ if (!esbuildPackageDir) {
 }
 
 const esbuildBin = resolve(pnpmStore, esbuildPackageDir, "node_modules", "esbuild", "bin", "esbuild");
+const esbuildCommand = process.platform === "win32" ? process.execPath : esbuildBin;
+const esbuildArgs = process.platform === "win32" ? [esbuildBin] : [];
 
 await mkdir(dirname(outfile), { recursive: true });
 
 const result = spawnSync(
-  process.execPath,
+  esbuildCommand,
   [
-    esbuildBin,
+    ...esbuildArgs,
     entryPoint,
     "--bundle",
     "--platform=node",
