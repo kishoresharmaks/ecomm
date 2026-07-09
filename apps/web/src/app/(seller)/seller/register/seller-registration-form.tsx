@@ -669,6 +669,20 @@ export function SellerRegistrationForm({ initialMode }: { initialMode?: string |
               radiusPreviewKm={5}
             />
 
+            <div className="text-center text-xs font-semibold leading-5 text-[#667085] mt-4 mb-2">
+              By submitting this form, you agree to 1HandIndia's{" "}
+              <Link href="https://1handindia.com/terms-and-conditions" target="_blank" rel="noopener noreferrer" className="text-[#123A5A] transition hover:text-[#ED3500] hover:underline">Terms of Service</Link>
+              {", "}
+              <Link href="https://1handindia.com/privacy-policy" target="_blank" rel="noopener noreferrer" className="text-[#123A5A] transition hover:text-[#ED3500] hover:underline">Privacy Policy</Link>
+              {", "}
+              <Link href="https://1handindia.com/refund-return-policy" target="_blank" rel="noopener noreferrer" className="text-[#123A5A] transition hover:text-[#ED3500] hover:underline">Return Policy</Link>
+              {", "}
+              <Link href="https://1handindia.com/shipping-policy" target="_blank" rel="noopener noreferrer" className="text-[#123A5A] transition hover:text-[#ED3500] hover:underline">Shipping Policy</Link>
+              {", and "}
+              <Link href="https://1handindia.com/seller-policy" target="_blank" rel="noopener noreferrer" className="text-[#123A5A] transition hover:text-[#ED3500] hover:underline">Seller Policy</Link>
+              .
+            </div>
+
             <Button type="submit" disabled={onboardingMutation.isPending}>
               {onboardingMutation.isPending ? "Submitting..." : `Submit ${primaryLabel} profile for review`}
             </Button>

@@ -4,6 +4,49 @@ import { describe, expect, it, vi } from "vitest";
 import { OrdersService } from "./orders.service";
 
 describe("OrdersService", () => {
+  it("normalizes single seller order payment method query strings before building Prisma filters", async () => {
+    const prisma = createOrdersPrismaMock([], { sellerId: "seller_1" });
+    const service = new OrdersService(
+      prisma as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+    );
+
+    await service.listSellerOrders(
+      { id: "user_1" } as never,
+      { paymentMethod: "RAZORPAY" as never, limit: 30 },
+    );
+
+    expect(prisma.client.order.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          payments: {
+            some: {
+              method: {
+                in: ["RAZORPAY"],
+              },
+            },
+          },
+          sellerSplits: {
+            some: {
+              sellerId: "seller_1",
+            },
+          },
+        }),
+      }),
+    );
+  });
+
   it("normalizes delivery partner availability query strings before building Prisma filters", async () => {
     const partner = {
       id: "partner_1",
@@ -87,7 +130,7 @@ describe("OrdersService", () => {
   });
 });
 
-function createOrdersPrismaMock(partners: unknown[]) {
+function createOrdersPrismaMock(partners: unknown[], options: { sellerId?: string } = {}) {
   return {
     client: {
       deliveryDetail: {
@@ -101,6 +144,13 @@ function createOrdersPrismaMock(partners: unknown[]) {
       },
       orderShipment: {
         count: vi.fn().mockResolvedValue(0),
+      },
+      order: {
+        count: vi.fn().mockResolvedValue(0),
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+      seller: {
+        findUnique: vi.fn().mockResolvedValue(options.sellerId ? { id: options.sellerId } : null),
       },
       setting: {
         findMany: vi.fn().mockResolvedValue([]),

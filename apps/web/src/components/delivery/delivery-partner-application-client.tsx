@@ -366,7 +366,15 @@ export function DeliveryPartnerApplicationClient() {
           </div>
         ) : null}
 
-        <div className="sticky bottom-3 z-10 flex justify-end">
+        <div className="sticky bottom-3 z-10 mt-6 flex flex-col items-end gap-3 rounded-lg border border-[#D8E2EA] bg-[#F8FAFC] p-4 shadow-sm md:flex-row md:justify-between">
+          <p className="text-xs font-semibold leading-5 text-[#536579] md:max-w-xl">
+            By submitting, you agree to 1HandIndia's{" "}
+            <a href="https://1handindia.com/terms-and-conditions" target="_blank" rel="noreferrer" className="text-[#ED3500] hover:underline">Terms of Service</a>,{" "}
+            <a href="https://1handindia.com/privacy-policy" target="_blank" rel="noreferrer" className="text-[#ED3500] hover:underline">Privacy Policy</a>,{" "}
+            <a href="https://1handindia.com/refund-return-policy" target="_blank" rel="noreferrer" className="text-[#ED3500] hover:underline">Return Policy</a>,{" "}
+            <a href="https://1handindia.com/shipping-policy" target="_blank" rel="noreferrer" className="text-[#ED3500] hover:underline">Shipping Policy</a>, and{" "}
+            <a href="https://1handindia.com/seller-policy" target="_blank" rel="noreferrer" className="text-[#ED3500] hover:underline">Seller Policy</a>.
+          </p>
           <Button type="submit" disabled={submitMutation.isPending}>
             {submitMutation.isPending ? (
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { Edit3, MapPin, Trash2 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -171,7 +172,23 @@ export function B2BProfileClient({ onboarding = false }: { onboarding?: boolean 
               required
               pattern="[6-9][0-9]{9}"
               defaultValue={profileQuery.data?.contactPhone ?? ""}
+              placeholder="111111"
             />
+            {onboarding ? (
+              <div className="md:col-span-2 text-center text-xs font-semibold leading-5 text-[#667085] mt-4 mb-2">
+                By submitting this form, you agree to 1HandIndia's{" "}
+                <Link href="https://1handindia.com/terms-and-conditions" target="_blank" rel="noopener noreferrer" className="text-[#123A5A] transition hover:text-[#ED3500] hover:underline">Terms of Service</Link>
+                {", "}
+                <Link href="https://1handindia.com/privacy-policy" target="_blank" rel="noopener noreferrer" className="text-[#123A5A] transition hover:text-[#ED3500] hover:underline">Privacy Policy</Link>
+                {", "}
+                <Link href="https://1handindia.com/refund-return-policy" target="_blank" rel="noopener noreferrer" className="text-[#123A5A] transition hover:text-[#ED3500] hover:underline">Return Policy</Link>
+                {", "}
+                <Link href="https://1handindia.com/shipping-policy" target="_blank" rel="noopener noreferrer" className="text-[#123A5A] transition hover:text-[#ED3500] hover:underline">Shipping Policy</Link>
+                {", and "}
+                <Link href="https://1handindia.com/seller-policy" target="_blank" rel="noopener noreferrer" className="text-[#123A5A] transition hover:text-[#ED3500] hover:underline">Seller Policy</Link>
+                .
+              </div>
+            ) : null}
             <div className="flex flex-wrap items-center gap-3 md:col-span-2">
               <Button type="submit" disabled={!auth.enabled || profileMutation.isPending}>
                 {profileMutation.isPending ? "Saving..." : "Save business profile"}

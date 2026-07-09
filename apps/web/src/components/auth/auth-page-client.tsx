@@ -120,6 +120,20 @@ export function AuthPageClient({
           )}
         </div>
 
+        <div className="text-center text-xs font-semibold leading-5 text-[#667085] lg:col-start-1">
+          By continuing, you agree to 1HandIndia's{" "}
+          <Link href="https://1handindia.com/terms-and-conditions" target="_blank" rel="noopener noreferrer" className="text-[#123A5A] transition hover:text-[#ED3500] hover:underline">Terms of Service</Link>
+          {", "}
+          <Link href="https://1handindia.com/privacy-policy" target="_blank" rel="noopener noreferrer" className="text-[#123A5A] transition hover:text-[#ED3500] hover:underline">Privacy Policy</Link>
+          {", "}
+          <Link href="https://1handindia.com/refund-return-policy" target="_blank" rel="noopener noreferrer" className="text-[#123A5A] transition hover:text-[#ED3500] hover:underline">Return Policy</Link>
+          {", "}
+          <Link href="https://1handindia.com/shipping-policy" target="_blank" rel="noopener noreferrer" className="text-[#123A5A] transition hover:text-[#ED3500] hover:underline">Shipping Policy</Link>
+          {", and "}
+          <Link href="https://1handindia.com/seller-policy" target="_blank" rel="noopener noreferrer" className="text-[#123A5A] transition hover:text-[#ED3500] hover:underline">Seller Policy</Link>
+          .
+        </div>
+
         <aside className="h-fit rounded-lg border border-[#E5E7EB] bg-white p-5 shadow-sm">
           <h2 className="text-lg font-black text-[#1F2933]">{moduleTitle}</h2>
           <div className="mt-4 grid gap-3 text-sm font-semibold text-[#667085]">

@@ -555,6 +555,7 @@ export default function SignInScreen() {
               <FooterSwitch mode={mode} onSwitch={switchMode} />
             </AuthPanel>
           )}
+          <LegalFooter />
         </ScrollView>
       </KeyboardAvoidingView>
     </Screen>
@@ -796,6 +797,21 @@ function normalizePhoneIdentifier(value: string) {
 
 function resetPasswordStrategy(identifierMode: IdentifierMode) {
   return identifierMode === "phone" ? "reset_password_phone_code" : "reset_password_email_code";
+}
+
+function LegalFooter() {
+  return (
+    <View style={styles.legalFooter}>
+      <Text style={styles.legalFooterText}>
+        By continuing, you agree to 1HandIndia's{" "}
+        <Text style={styles.legalFooterLink} onPress={() => void WebBrowser.openBrowserAsync("https://1handindia.com/terms-and-conditions")}>Terms of Service</Text>,{" "}
+        <Text style={styles.legalFooterLink} onPress={() => void WebBrowser.openBrowserAsync("https://1handindia.com/privacy-policy")}>Privacy Policy</Text>,{" "}
+        <Text style={styles.legalFooterLink} onPress={() => void WebBrowser.openBrowserAsync("https://1handindia.com/refund-return-policy")}>Return Policy</Text>,{" "}
+        <Text style={styles.legalFooterLink} onPress={() => void WebBrowser.openBrowserAsync("https://1handindia.com/shipping-policy")}>Shipping Policy</Text>, and{" "}
+        <Text style={styles.legalFooterLink} onPress={() => void WebBrowser.openBrowserAsync("https://1handindia.com/seller-policy")}>Seller Policy</Text>.
+      </Text>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -1119,5 +1135,21 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     lineHeight: 19,
     marginTop: 12,
+  },
+  legalFooter: {
+    marginTop: 24,
+    paddingHorizontal: 16,
+    alignItems: "center",
+  },
+  legalFooterText: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "600",
+    textAlign: "center",
+    lineHeight: 18,
+  },
+  legalFooterLink: {
+    color: colors.primary,
+    fontWeight: "800",
   },
 });

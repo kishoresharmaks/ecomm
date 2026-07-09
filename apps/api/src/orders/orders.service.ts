@@ -6928,16 +6928,20 @@ export class OrdersService {
   }
 
   private orderQueryWhere(query: OrderQueryDto): Prisma.OrderWhereInput {
-    const orderStatus = typeof query.orderStatus === "string" ? [query.orderStatus] : query.orderStatus;
-    const paymentStatus = typeof query.paymentStatus === "string" ? [query.paymentStatus] : query.paymentStatus;
-    const deliveryStatus = typeof query.deliveryStatus === "string" ? [query.deliveryStatus] : query.deliveryStatus;
-    const paymentMethod = typeof query.paymentMethod === "string" ? [query.paymentMethod] : query.paymentMethod;
+    const orderStatus = this.enumListFromQuery(query.orderStatus, Object.values(OrderStatus), "orderStatus");
+    const paymentStatus = this.enumListFromQuery(query.paymentStatus, Object.values(PaymentStatus), "paymentStatus");
+    const deliveryStatus = this.enumListFromQuery(query.deliveryStatus, Object.values(DeliveryStatus), "deliveryStatus");
+    const paymentMethod = this.enumListFromQuery(
+      query.paymentMethod,
+      Object.values(CheckoutPaymentMethod),
+      "paymentMethod",
+    );
 
     return {
-      ...(orderStatus?.length ? { orderStatus: { in: orderStatus as OrderStatus[] } } : {}),
-      ...(paymentStatus?.length ? { paymentStatus: { in: paymentStatus as PaymentStatus[] } } : {}),
-      ...(deliveryStatus?.length ? { deliveryStatus: { in: deliveryStatus as DeliveryStatus[] } } : {}),
-      ...(paymentMethod?.length ? { payments: { some: { method: { in: paymentMethod as CheckoutPaymentMethod[] } } } } : {}),
+      ...(orderStatus?.length ? { orderStatus: { in: orderStatus } } : {}),
+      ...(paymentStatus?.length ? { paymentStatus: { in: paymentStatus } } : {}),
+      ...(deliveryStatus?.length ? { deliveryStatus: { in: deliveryStatus } } : {}),
+      ...(paymentMethod?.length ? { payments: { some: { method: { in: paymentMethod } } } } : {}),
       ...(query.search
         ? {
             OR: [
@@ -6961,6 +6965,40 @@ export class OrdersService {
           }
         : {}),
     };
+  }
+
+  private enumListFromQuery<T extends string>(
+    value: unknown,
+    allowedValues: readonly T[],
+    field: string,
+  ): T[] | undefined {
+    const values = this.listFromQuery(value);
+    if (!values.length) {
+      return undefined;
+    }
+
+    const invalid = values.find((item) => !allowedValues.includes(item as T));
+    if (invalid) {
+      throw new BadRequestException(`${field} must be one of: ${allowedValues.join(", ")}.`);
+    }
+
+    return values as T[];
+  }
+
+  private listFromQuery(value: unknown): string[] {
+    if (value === null || value === undefined) {
+      return [];
+    }
+
+    const values = Array.isArray(value) ? value : [value];
+
+    return values
+      .flatMap((item) =>
+        String(item)
+          .split(",")
+          .map((part) => part.trim()),
+      )
+      .filter(Boolean);
   }
 
   private async getOrderByNumberOrThrow(orderNumber: string) {

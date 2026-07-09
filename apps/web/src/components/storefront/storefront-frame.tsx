@@ -22,12 +22,14 @@ export function StorefrontFrame({
 }) {
   return (
     <StorefrontMaintenanceGate>
-      <div className="min-h-screen bg-[#FAF7F0] text-[#1F2933]">
+      <div className="flex min-h-screen flex-col bg-[#FAF7F0] text-[#1F2933]">
         <Suspense fallback={<div className="h-[160px] bg-[#FAF7F0]" />}>
           <StorefrontHeader initialMenu={initialMenus?.header} />
         </Suspense>
-        <div className="pb-28 lg:pb-0">
-          {children}
+        <div className="flex flex-1 flex-col pb-28 lg:pb-0">
+          <main className="flex-1">
+            {children}
+          </main>
           <StorefrontFooter initialFooterMenu={initialMenus?.footer} initialLegalMenu={initialMenus?.legal} />
         </div>
         <StorefrontMobileTabs />

@@ -34,7 +34,7 @@ import {
   UserRound,
   X
 } from "lucide-react";
-import { type ComponentPropsWithoutRef, type ReactNode, useRef, useState } from "react";
+import { type ComponentPropsWithoutRef, type ReactNode, useRef, useState, startTransition } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button, StatusBadge, cn } from "@indihub/ui";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
@@ -96,15 +96,22 @@ export function SellerWorkspaceShell({
   const visibleNav = filterSellerNav(profileQuery.data);
   const navGroups = sellerNavGroups(visibleNav);
 
+  const isSignedOut = sellerAuth.status === "signed-out";
+  const requiresOnboarding = Boolean(profileQuery.error && isSellerOnboardingRequiredError(profileQuery.error));
+  const showSidebar = !isSignedOut && !requiresOnboarding;
+
   return (
     <MaintenanceGate scope="seller">
       <main className="min-h-screen bg-[#F6F3EC] text-[#1F2933]">
-        <div className="grid min-h-screen lg:grid-cols-[300px_minmax(0,1fr)]">
-          <aside className="hidden border-r border-[#D9E2EA] bg-[#123A5A] text-white lg:block">
-            <SellerSidebar pathname={pathname} items={visibleNav} profile={profileQuery.data} />
-          </aside>
+        <div className={cn("min-h-screen", showSidebar ? "grid lg:grid-cols-[300px_minmax(0,1fr)]" : "flex flex-col")}>
+          {showSidebar ? (
+            <aside className="hidden border-r border-[#D9E2EA] bg-[#123A5A] text-white lg:block">
+              <SellerSidebar pathname={pathname} items={visibleNav} profile={profileQuery.data} />
+            </aside>
+          ) : null}
 
-          <section className="min-w-0">
+          <section className="min-w-0 flex-1 flex flex-col">
+          {showSidebar ? (
           <div className="sticky top-0 z-30 border-b border-[#D9E2EA] bg-white/95 px-4 py-3 backdrop-blur lg:hidden">
             <div className="flex items-center justify-between gap-3">
               <Link href="/seller" className="flex items-center gap-3">
@@ -137,8 +144,9 @@ export function SellerWorkspaceShell({
               </nav>
             ) : null}
           </div>
+          ) : null}
 
-          <div className="px-4 py-5 sm:px-6 lg:px-10 lg:py-8">
+          <div className={cn("px-4 py-5 sm:px-6 lg:px-10 lg:py-8 flex-1", !showSidebar && "mx-auto w-full max-w-5xl")}>
             <header className="mb-6 border-b border-[#D9E2EA] pb-6">
               <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
                 <div>
@@ -392,7 +400,7 @@ export function SellerAuthNotice() {
       <div className="rounded-lg border border-[#F5B7B7] bg-[#FDECEC] p-4 text-sm font-semibold text-[#8A1F1F]">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <span>{sellerAuth.error ? userFacingApiErrorMessage(sellerAuth.error) : "Unable to prepare your account session."}</span>
-          <Button type="button" variant="outline" size="sm" onClick={sellerAuth.refresh}>
+          <Button type="button" variant="outline" size="sm" onClick={() => startTransition(() => { sellerAuth.refresh(); })}>
             <RefreshCw size={16} /> Retry
           </Button>
         </div>
@@ -623,7 +631,7 @@ export function SellerErrorPanel({ error, onRetry }: { error: Error; onRetry?: (
           {message}
         </span>
         {onRetry ? (
-          <Button type="button" variant="outline" size="sm" onClick={onRetry}>
+          <Button type="button" variant="outline" size="sm" onClick={() => startTransition(() => { onRetry(); })}>
             <RefreshCw className="h-4 w-4" aria-hidden="true" />
             Retry
           </Button>

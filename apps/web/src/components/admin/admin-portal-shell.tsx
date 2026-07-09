@@ -821,10 +821,43 @@ function AdminLoginShell({ redirectTo }: { redirectTo: string }) {
 
 function AdminLoadingShell() {
   return (
-    <main className="grid min-h-screen place-items-center bg-[#FFFCFB] p-6">
-      <div className="flex items-center gap-3 rounded-lg border border-[#D8E2EA] bg-white px-5 py-4 text-sm font-black text-[#163B5C] shadow-sm">
-        <LayoutDashboard className="h-4 w-4 text-[#ED3500]" aria-hidden="true" />
-        Loading admin workspace
+    <main className="min-h-screen bg-[#FFFCFB] text-[#1F2933]">
+      <div className="grid min-h-screen lg:grid-cols-[288px_minmax(0,1fr)]">
+        <aside className="hidden bg-[#163B5C] text-white lg:sticky lg:top-0 lg:flex lg:h-dvh lg:flex-col">
+          <div className="border-b border-white/10 p-5">
+            <div className="flex min-w-0 items-center gap-3 opacity-50">
+              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-md bg-white/10 text-sm font-black text-transparent shadow-sm">
+                1HI
+              </span>
+              <span className="min-w-0">
+                <span className="block h-6 w-32 rounded-md bg-white/10"></span>
+                <span className="mt-2 block h-4 w-24 rounded-md bg-white/10"></span>
+              </span>
+            </div>
+          </div>
+          <div className="flex-1 p-4">
+            <div className="h-8 w-full rounded-md bg-white/10 opacity-50"></div>
+          </div>
+        </aside>
+
+        <section className="min-w-0 bg-[#FFFCFB]">
+          <header className="sticky top-0 z-30 border-b border-[#E5E7EB] bg-[#FFFCFB]/95 backdrop-blur">
+            <div className="flex min-h-16 items-center gap-3 px-4 py-3 lg:px-6">
+              <div className="hidden h-10 w-48 rounded-md border border-[#D8E2EA] bg-[#F8FAFC] xl:block"></div>
+              <div className="min-w-0 flex-1">
+                <div className="h-11 w-full max-w-2xl rounded-md border border-[#D8E2EA] bg-white opacity-50"></div>
+              </div>
+              <div className="h-11 w-40 rounded-md border border-[#D8E2EA] bg-white opacity-50"></div>
+            </div>
+          </header>
+
+          <div className="grid min-h-[50vh] place-items-center p-6">
+            <div className="flex items-center gap-3 rounded-lg border border-[#D8E2EA] bg-white px-5 py-4 text-sm font-black text-[#163B5C] shadow-sm">
+              <LayoutDashboard className="h-4 w-4 animate-spin text-[#ED3500]" aria-hidden="true" />
+              Loading admin workspace
+            </div>
+          </div>
+        </section>
       </div>
     </main>
   );

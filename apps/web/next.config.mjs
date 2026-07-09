@@ -148,6 +148,7 @@ function buildContentSecurityPolicy() {
 
 function buildImageRemotePatterns() {
   const configuredOrigins = [
+    apiOrigin,
     "https://images.unsplash.com",
     "https://ik.imagekit.io",
     "https://example.com",

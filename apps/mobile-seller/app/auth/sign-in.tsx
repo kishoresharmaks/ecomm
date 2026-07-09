@@ -350,8 +350,24 @@ export default function SellerSignInScreen() {
             </Card>
             </>
           ) : null}
+          <LegalFooter />
         </ScrollView>
       </KeyboardAvoidingView>
     </Screen>
+  );
+}
+
+function LegalFooter() {
+  return (
+    <View style={{ marginTop: 24, paddingHorizontal: 16, alignItems: "center" }}>
+      <Text style={{ color: "#6B7280", fontSize: 12, fontWeight: "600", textAlign: "center", lineHeight: 18 }}>
+        By continuing, you agree to 1HandIndia's{" "}
+        <Text style={{ color: "#ED3500", fontWeight: "800" }} onPress={() => void WebBrowser.openBrowserAsync("https://1handindia.com/terms-and-conditions")}>Terms of Service</Text>,{" "}
+        <Text style={{ color: "#ED3500", fontWeight: "800" }} onPress={() => void WebBrowser.openBrowserAsync("https://1handindia.com/privacy-policy")}>Privacy Policy</Text>,{" "}
+        <Text style={{ color: "#ED3500", fontWeight: "800" }} onPress={() => void WebBrowser.openBrowserAsync("https://1handindia.com/refund-return-policy")}>Return Policy</Text>,{" "}
+        <Text style={{ color: "#ED3500", fontWeight: "800" }} onPress={() => void WebBrowser.openBrowserAsync("https://1handindia.com/shipping-policy")}>Shipping Policy</Text>, and{" "}
+        <Text style={{ color: "#ED3500", fontWeight: "800" }} onPress={() => void WebBrowser.openBrowserAsync("https://1handindia.com/seller-policy")}>Seller Policy</Text>.
+      </Text>
+    </View>
   );
 }

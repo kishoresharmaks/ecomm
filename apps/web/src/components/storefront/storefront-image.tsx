@@ -43,22 +43,7 @@ export function StorefrontImage({
     setFailed(false);
   }, [src]);
 
-  if (resolvedSrc && !failed && isPortableImageKey(src)) {
-    return (
-      <img
-        src={resolvedSrc}
-        alt={alt}
-        title={imageTitle}
-        loading={priority ? "eager" : "lazy"}
-        decoding="async"
-        referrerPolicy="no-referrer"
-        className={cn("h-full w-full object-cover", className)}
-        onError={() => setFailed(true)}
-      />
-    );
-  }
-
-  if (resolvedSrc && !failed && isAllowedImageSource(resolvedSrc)) {
+  if (resolvedSrc && !failed && (isPortableImageKey(src) || isAllowedImageSource(resolvedSrc))) {
     return (
       <span className="relative block h-full w-full">
         <Image
@@ -66,8 +51,7 @@ export function StorefrontImage({
           alt={alt}
           title={imageTitle}
           fill
-          preload={priority}
-          loading={priority ? "eager" : undefined}
+          priority={priority}
           sizes={sizes}
           className={cn("object-cover", className)}
           onError={() => setFailed(true)}
@@ -93,15 +77,18 @@ export function StorefrontImage({
 
   return (
     <div className={cn("relative flex h-full w-full flex-col items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_50%_30%,#FFFFFF_0%,#FFF4EF_46%,#FFE5DB_100%)] p-4 text-center", className)}>
-      <img
-        src={fallbackImageSrc}
-        alt={fallbackAlt}
-        title={fallbackTitle}
-        loading={priority ? "eager" : "lazy"}
-        decoding="async"
-        className="h-full max-h-[78%] w-full max-w-[78%] object-contain drop-shadow-[0_12px_24px_rgba(237,53,0,0.16)]"
-        onError={() => setFailed(true)}
-      />
+      <span className="relative block h-full max-h-[78%] w-full max-w-[78%]">
+        <Image
+          src={fallbackImageSrc}
+          alt={fallbackAlt}
+          title={fallbackTitle}
+          fill
+          priority={priority}
+          className="object-contain drop-shadow-[0_12px_24px_rgba(237,53,0,0.16)]"
+          sizes={sizes}
+          onError={() => setFailed(true)}
+        />
+      </span>
       {showFallbackLabel && fallbackLabel ? (
         <span className="mt-2 line-clamp-2 max-w-full text-xs font-black leading-4 text-[#163B5C]">
           {fallbackLabel}
