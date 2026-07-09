@@ -475,25 +475,22 @@ export class StorefrontService {
       return previews;
     }
 
-    const products = await this.prisma.client.product.findMany({
-      where: {
-        ...publicProductWhere,
-        sellerId: { in: sellerIds },
-      },
-      include: publicProductInclude,
-      orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }],
-      take: Math.min(sellerIds.length * 6, 180),
-    });
+    await Promise.all(
+      sellerIds.map(async (sellerId) => {
+        const products = await this.prisma.client.product.findMany({
+          where: {
+            ...publicProductWhere,
+            sellerId,
+          },
+          include: publicProductInclude,
+          orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }],
+          take: 12,
+        });
 
-    for (const product of await this.decoratePublicProducts(this.publicVisibleProducts(products))) {
-      const sellerProducts = previews.get(product.sellerId) ?? [];
-      if (sellerProducts.length >= 3) {
-        continue;
-      }
-
-      sellerProducts.push(product);
-      previews.set(product.sellerId, sellerProducts);
-    }
+        const decorated = await this.decoratePublicProducts(this.publicVisibleProducts(products));
+        previews.set(sellerId, decorated.slice(0, 3));
+      })
+    );
 
     return previews;
   }
