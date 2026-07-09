@@ -540,6 +540,7 @@ function SearchForm({
         <span className="sr-only">Search products, stores, and brands</span>
         <Search className="pointer-events-none absolute left-5 top-1/2 h-5 w-5 -translate-y-1/2 text-[#ff5a1f]" />
         <input
+          name="search"
           value={query}
           onChange={(event) => onQueryChange(event.target.value)}
           onFocus={() => {

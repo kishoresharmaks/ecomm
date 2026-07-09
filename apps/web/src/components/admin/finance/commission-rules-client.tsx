@@ -249,7 +249,7 @@ function FinanceInput({ label, value, onChange, type = "text", step, required }:
   return (
     <label className="space-y-2">
       <span className="block text-xs font-black uppercase tracking-wide text-[#667085]">{label}</span>
-      <input value={value} onChange={(event) => onChange(event.target.value)} type={type} step={step} required={required} className="h-11 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 text-sm font-semibold text-[#1F2933] outline-none transition focus:border-[#ED3500] focus:bg-white" />
+      <input name={label.replace(/\s+/g, '-').toLowerCase()} value={value} onChange={(event) => onChange(event.target.value)} type={type} step={step} required={required} className="h-11 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 text-sm font-semibold text-[#1F2933] outline-none transition focus:border-[#ED3500] focus:bg-white" />
     </label>
   );
 }

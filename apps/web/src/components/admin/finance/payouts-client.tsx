@@ -380,7 +380,7 @@ function FinanceInput({ label, value, onChange }: { label: string; value: string
   return (
     <label className="space-y-2">
       <span className="block text-xs font-black uppercase tracking-wide text-[#667085]">{label}</span>
-      <input value={value} onChange={(event) => onChange(event.target.value)} className="h-10 w-full rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-semibold outline-none focus:border-[#ED3500]" />
+      <input name={label.replace(/\s+/g, '-').toLowerCase()} value={value} onChange={(event) => onChange(event.target.value)} className="h-10 w-full rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-semibold outline-none focus:border-[#ED3500]" />
     </label>
   );
 }

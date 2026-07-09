@@ -2108,6 +2108,7 @@ function NumberInput({ label: labelText, value, onChange }: { label: string; val
     <label className="block">
       <span className="text-xs font-black uppercase tracking-wide text-[#667085]">{labelText}</span>
       <input
+        name={labelText.replace(/\s+/g, '-').toLowerCase()}
         value={Number.isFinite(value) ? value : 0}
         onChange={(event) => onChange(Number(event.target.value) || 0)}
         type="number"

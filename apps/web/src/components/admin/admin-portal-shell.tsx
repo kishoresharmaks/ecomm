@@ -377,6 +377,7 @@ function AdminRouteSearch({ onNavigate }: { onNavigate?: () => void }) {
           aria-hidden="true"
         />
         <ComboboxInput
+          name="admin-search"
           aria-label="Search admin routes"
           displayValue={() => query}
           onChange={(event) => setQuery(event.target.value)}
@@ -649,6 +650,7 @@ function AdminPasswordField({
     <label className="block">
       <span className="text-xs font-black uppercase tracking-wide text-[#667085]">{label}</span>
       <input
+        name={label.replace(/\s+/g, '-').toLowerCase()}
         type="password"
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -776,6 +778,7 @@ function AdminLoginShell({ redirectTo }: { redirectTo: string }) {
                     Admin email
                   </span>
                   <input
+                    name="email"
                     value={email}
                     onChange={(event) => setEmail(event.target.value)}
                     type="email"
@@ -788,6 +791,7 @@ function AdminLoginShell({ redirectTo }: { redirectTo: string }) {
                     Password
                   </span>
                   <input
+                    name="password"
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
                     type="password"
