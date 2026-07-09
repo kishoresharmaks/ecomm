@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc --noEmit",
-    "start": "tsx src/index.ts",
+    "build": "tsc --noEmit && node ../../scripts/build-node-service.mjs src/index.ts dist/index.js",
+    "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run --passWithNoTests"

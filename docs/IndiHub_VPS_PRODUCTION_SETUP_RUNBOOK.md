@@ -559,6 +559,12 @@ pnpm db:generate
 pnpm build
 ```
 
+Production API and worker starts use compiled Node bundles:
+
+- `@indihub/api` builds `apps/api/dist/main.js` and starts with `node dist/main.js`.
+- `@indihub/worker` builds `apps/worker/dist/index.js` and starts with `node dist/index.js`.
+- Do not run `tsx src/main.ts` or `tsx src/index.ts` for production process managers.
+
 Recommended verification gates before starting services:
 
 ```bash
