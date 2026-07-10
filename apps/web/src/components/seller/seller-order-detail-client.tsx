@@ -632,6 +632,12 @@ export function SellerOrderDetailClient({
                               />
                             </div>
                           ) : null}
+                          {shipmentPackage.bookingError ? (
+                            <div className="mt-3 rounded-md border border-[#F5B7B7] bg-[#FDECEC] p-3 text-sm font-semibold text-[#9B1C1C]">
+                              <p className="font-bold">Booking failed</p>
+                              <p className="mt-1">{shipmentPackage.bookingError}</p>
+                            </div>
+                          ) : null}
                           {canEditPackage ? (
                             <div className="mt-4 grid gap-3 rounded-lg border border-[#D8E2EA] bg-white p-3 sm:grid-cols-4">
                               <SellerField

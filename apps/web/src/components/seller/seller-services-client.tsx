@@ -22,6 +22,7 @@ import {
   recordSellerServiceCashCollection,
   replyToSellerServiceReview,
   sellerAcceptServiceBooking,
+  sellerCancelServiceBooking,
   sellerMarkServiceInProgress,
   sellerRejectServiceBooking,
   sellerRescheduleServiceBooking,
@@ -119,6 +120,8 @@ function sellerServiceActionMessage(action: string) {
       return "Service schedule updated.";
     case "reject":
       return "Service booking rejected.";
+    case "cancel":
+      return "Service booking successfully cancelled.";
     case "start":
       return "Service booking marked in progress.";
     case "field":
@@ -635,6 +638,9 @@ function SellerServiceBookings() {
       if (action === "reject") {
         return sellerRejectServiceBooking(sellerAuth.authHeaders, booking.bookingNumber, formValue(form ?? new FormData(), "reason") || "Rejected by provider.");
       }
+      if (action === "cancel") {
+        return sellerCancelServiceBooking(sellerAuth.authHeaders, booking.bookingNumber, formValue(form ?? new FormData(), "reason") || "Cancelled by provider.");
+      }
       if (action === "start") {
         return sellerMarkServiceInProgress(sellerAuth.authHeaders, booking.bookingNumber);
       }
@@ -839,6 +845,9 @@ function SellerServiceBookingDetail({ bookingNumber }: { bookingNumber?: string 
       }
       if (action === "reject") {
         return sellerRejectServiceBooking(sellerAuth.authHeaders, booking.bookingNumber, formValue(form ?? new FormData(), "reason") || "Rejected by provider.");
+      }
+      if (action === "cancel") {
+        return sellerCancelServiceBooking(sellerAuth.authHeaders, booking.bookingNumber, formValue(form ?? new FormData(), "reason") || "Cancelled by provider.");
       }
       if (action === "start") {
         return sellerMarkServiceInProgress(sellerAuth.authHeaders, booking.bookingNumber);
@@ -1171,6 +1180,18 @@ function BookingActionPanel({
             )}
             <input name="note" placeholder="Provider note" className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold" />
             <Button type="submit" size="sm" disabled={pending || !activeTechnicians.length}><CheckCircle2 className="h-4 w-4" /> Accept</Button>
+          </form>
+        ) : null}
+        {booking.status === "REQUESTED" ? (
+          <form onSubmit={(event) => { event.preventDefault(); if (window.confirm("Are you sure you want to reject this booking?")) onSubmit(booking, "reject", new FormData(event.currentTarget)); }} className="grid gap-2 border-t border-[#D9E2EA] pt-3">
+            <input name="reason" placeholder="Rejection reason (min 5 characters)" required minLength={5} className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold" />
+            <Button type="submit" variant="outline" size="sm" disabled={pending} className="text-red-600 hover:bg-red-50 hover:text-red-700 hover:border-red-200">Reject request</Button>
+          </form>
+        ) : null}
+        {["ACCEPTED", "SCHEDULED", "QUOTE_SENT", "QUOTE_ACCEPTED", "QUOTE_REJECTED"].includes(booking.status) ? (
+          <form onSubmit={(event) => { event.preventDefault(); if (window.confirm("Are you sure you want to cancel this booking? This action is permanent and may incur cancellation fees depending on the policy.")) onSubmit(booking, "cancel", new FormData(event.currentTarget)); }} className="grid gap-2 border-t border-[#D9E2EA] pt-3">
+            <input name="reason" placeholder="Cancellation reason (min 5 characters)" required minLength={5} className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold" />
+            <Button type="submit" variant="outline" size="sm" disabled={pending} className="text-red-600 hover:bg-red-50 hover:text-red-700 hover:border-red-200">Cancel booking</Button>
           </form>
         ) : null}
         {["ACCEPTED", "SCHEDULED", "QUOTE_ACCEPTED"].includes(booking.status) ? (

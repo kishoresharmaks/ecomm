@@ -652,6 +652,31 @@ function safeBodyMessage(body: unknown) {
     return String(body ?? "empty response");
   }
 
+  try {
+    const record = body as Record<string, unknown>;
+    if (typeof record.message === "string") {
+      try {
+        const nested = JSON.parse(record.message);
+        if (nested && typeof nested === "object") {
+          const messages = Object.values(nested).flat();
+          if (messages.length > 0) {
+            return messages.join(" ");
+          }
+        }
+      } catch {
+        // Not a JSON string
+        return record.message;
+      }
+    }
+    
+    if (record.errors && typeof record.errors === "object") {
+      const messages = Object.values(record.errors).flat();
+      if (messages.length > 0) {
+        return messages.join(" ");
+      }
+    }
+  } catch { /* ignore parse errors */ }
+
   return JSON.stringify(body).slice(0, 500);
 }
 

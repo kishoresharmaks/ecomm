@@ -1132,6 +1132,186 @@ export function getSellerSalesReport(
   );
 }
 
+// ─── Reports Hub Overview ────────────────────────────────────────────────────
+export type SellerReportsOverview = {
+  totalSalesPaise: number;
+  netSalesPaise: number;
+  commissionPaise: number;
+  gstOnCommissionPaise: number;
+  orderCount: number;
+  products: number;
+  lowStockCount: number;
+  paidPayoutsPaise: number;
+  paidPayoutsCount: number;
+  b2bOrderCount: number;
+  returnCount: number;
+};
+
+export function getSellerReportsOverview(
+  auth: IndihubAuthHeaders,
+  query: { dateFrom?: string; dateTo?: string } = {},
+) {
+  return indihubFetch<SellerReportsOverview>(
+    `/api/seller/reports/overview${queryString(query)}`,
+    undefined,
+    auth,
+  );
+}
+
+// ─── Inventory Report ────────────────────────────────────────────────────────
+export type SellerInventoryVariant = {
+  id: string;
+  sku: string | null;
+  variantName: string | null;
+  stockQuantity: number;
+  product: { id: string; name: string; status: string };
+};
+export type SellerTopSoldItem = {
+  productId: string;
+  productName: string;
+  quantitySold: number;
+  revenuePaise: number;
+};
+export type SellerInventoryReport = {
+  summary: { productCount: number; activeProductCount: number; variantCount: number; lowStockCount: number };
+  lowStockVariants: SellerInventoryVariant[];
+  variants: SellerInventoryVariant[];
+  topSoldItems: SellerTopSoldItem[];
+  splits: { id: string; sellerSubtotalPaise: number; createdAt: string }[];
+};
+
+export function getSellerInventoryReport(
+  auth: IndihubAuthHeaders,
+  query: { dateFrom?: string; dateTo?: string } = {},
+) {
+  return indihubFetch<SellerInventoryReport>(
+    `/api/seller/reports/inventory${queryString(query)}`,
+    undefined,
+    auth,
+  );
+}
+
+// ─── Finance Report ──────────────────────────────────────────────────────────
+export type SellerPayoutRecord = {
+  id: string;
+  payoutNumber: string;
+  periodFrom: string;
+  periodTo: string;
+  status: string;
+  grossSalesPaise: number;
+  commissionPaise: number;
+  gstOnCommissionPaise: number;
+  tdsPaise: number;
+  tcsPaise: number;
+  platformFeePaise: number;
+  refundAdjustmentPaise: number;
+  netPayablePaise: number;
+  currency: string;
+  paymentMode: string | null;
+  transactionReference: string | null;
+  paidAt: string | null;
+  createdAt: string;
+};
+export type SellerLedgerRecord = {
+  id: string;
+  entryType: string;
+  description: string;
+  debitPaise: number;
+  creditPaise: number;
+  balanceAfterPaise: number;
+  currency: string;
+  createdAt: string;
+};
+export type SellerFinanceReport = {
+  summary: {
+    grossSalesPaise: number; commissionPaise: number; netPayablePaise: number; refundAdjustmentPaise: number; platformFeePaise: number; orderCount: number;
+    pendingPayoutsPaise: number; pendingPayoutsCount: number; paidPayoutsPaise: number; paidPayoutsCount: number; eligiblePaise: number; eligibleCount: number;
+  };
+  recentPayouts: SellerPayoutRecord[];
+  ledgerEntries: SellerLedgerRecord[];
+};
+
+export function getSellerFinanceReport(
+  auth: IndihubAuthHeaders,
+  query: { dateFrom?: string; dateTo?: string } = {},
+) {
+  return indihubFetch<SellerFinanceReport>(
+    `/api/seller/reports/finance${queryString(query)}`,
+    undefined,
+    auth,
+  );
+}
+
+// ─── Tax Report ──────────────────────────────────────────────────────────────
+export type SellerTaxSplit = {
+  id: string;
+  sellerSubtotalPaise: number;
+  commissionPaise: number;
+  gstOnCommissionPaise: number;
+  tdsPaise: number;
+  tcsPaise: number;
+  platformFeePaise: number;
+  netPayablePaise: number;
+  createdAt: string;
+  order: { orderNumber: string; createdAt: string; currency: string };
+};
+export type SellerTaxReport = {
+  summary: {
+    orderCount: number; grossSalesPaise: number; commissionPaise: number; gstOnCommissionPaise: number; tdsPaise: number; tcsPaise: number;
+    platformFeePaise: number; couponDiscountPaise: number; netPayablePaise: number; totalDeductionsPaise: number;
+  };
+  splits: SellerTaxSplit[];
+};
+
+export function getSellerTaxReport(
+  auth: IndihubAuthHeaders,
+  query: { dateFrom?: string; dateTo?: string } = {},
+) {
+  return indihubFetch<SellerTaxReport>(
+    `/api/seller/reports/tax${queryString(query)}`,
+    undefined,
+    auth,
+  );
+}
+
+// ─── Returns Report ──────────────────────────────────────────────────────────
+export type SellerReturnRecord = {
+  id: string;
+  requestNumber: string;
+  status: string;
+  resolution: string;
+  reason: string;
+  requestedAmountPaise: number;
+  approvedAmountPaise: number;
+  requestedAt: string;
+  order: { orderNumber: string };
+};
+export type SellerReturnsReport = {
+  summary: { totalCount: number; approvedCount: number; pendingCount: number; requestedAmountPaise: number; approvedAmountPaise: number; itemCount: number };
+  byStatus: { status: string; count: number; requestedAmountPaise: number; approvedAmountPaise: number }[];
+  recentReturns: SellerReturnRecord[];
+};
+
+export function getSellerReturnsReport(
+  auth: IndihubAuthHeaders,
+  query: { dateFrom?: string; dateTo?: string } = {},
+) {
+  return indihubFetch<SellerReturnsReport>(
+    `/api/seller/reports/returns${queryString(query)}`,
+    undefined,
+    auth,
+  );
+}
+
+// ─── CSV Export helper ────────────────────────────────────────────────────────
+export function getSellerReportCsvUrl(type: "sales" | "inventory" | "finance" | "tax" | "returns", query: { dateFrom?: string; dateTo?: string } = {}) {
+  const qs = new URLSearchParams();
+  if (query.dateFrom) qs.set("dateFrom", query.dateFrom);
+  if (query.dateTo) qs.set("dateTo", query.dateTo);
+  return `/api/seller/reports/export/${type}${qs.size ? `?${qs.toString()}` : ""}`;
+}
+
+
 export function getSellerReviewSummary(auth: IndihubAuthHeaders) {
   return indihubFetch<SellerReviewSummary>("/api/seller/reviews/summary", undefined, auth);
 }

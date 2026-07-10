@@ -50,6 +50,32 @@ export class SellerSubscriptionPlanQueryDto {
   limit?: number;
 }
 
+export class AdminSubscribedSellersQueryDto {
+  @ApiPropertyOptional({ example: "store name" })
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @ApiPropertyOptional({ enum: SellerSubscriptionStatus })
+  @IsOptional()
+  @IsEnum(SellerSubscriptionStatus)
+  status?: SellerSubscriptionStatus;
+
+  @ApiPropertyOptional({ example: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @Min(1)
+  page?: number;
+
+  @ApiPropertyOptional({ example: 20 })
+  @IsOptional()
+  @Type(() => Number)
+  @Min(1)
+  @Max(100)
+  limit?: number;
+}
+
+
 export class CreateSellerSubscriptionPlanDto {
   @ApiProperty({ example: "STARTER_FREE" })
   @IsString()

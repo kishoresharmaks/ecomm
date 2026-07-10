@@ -29,6 +29,7 @@ import {
   AssignSellerSubscriptionDto,
   CreateSellerSubscriptionPlanDto,
   SellerSubscriptionPlanQueryDto,
+  AdminSubscribedSellersQueryDto,
   UpdateSellerSubscriptionPlanDto,
   VerifySellerRazorpaySubscriptionDto,
 } from "./dto/seller-subscription.dto";
@@ -105,6 +106,43 @@ export class SellerSubscriptionsService {
         items.find((plan) => plan.isDefault && plan.audience === SellerSubscriptionPlanAudience.ALL)?.id ??
         items[0]?.id ??
         null,
+    };
+  }
+
+  async listAdminSubscribedSellers(query: AdminSubscribedSellersQueryDto) {
+    const { page, skip, take } = paginationFromQuery(query);
+    const where: Prisma.SellerSubscriptionWhereInput = {
+      isCurrent: true,
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.search
+        ? {
+            seller: {
+              storeName: { contains: query.search, mode: "insensitive" },
+            },
+          }
+        : {}),
+    };
+
+    const [total, items] = await Promise.all([
+      this.prisma.client.sellerSubscription.count({ where }),
+      this.prisma.client.sellerSubscription.findMany({
+        where,
+        skip,
+        take,
+        orderBy: { createdAt: "desc" },
+        include: {
+          seller: { select: { id: true, storeName: true, status: true } },
+          plan: { select: { id: true, name: true, pricePaise: true, currency: true } },
+        },
+      }),
+    ]);
+
+    return {
+      items,
+      page,
+      limit: take,
+      total,
+      hasMore: skip + items.length < total,
     };
   }
 
@@ -464,7 +502,7 @@ export class SellerSubscriptionsService {
             providerSubscriptionId = null;
           }
         }
-      } catch (e) {
+      } catch {
         providerSubscriptionId = null;
       }
 
@@ -646,22 +684,32 @@ export class SellerSubscriptionsService {
       return this.getSellerSubscription(actor);
     }
 
+    const cancelAtCycleEnd = subscription.status === SellerSubscriptionStatus.ACTIVE;
     const { keyId, keySecret } = await this.getRazorpayKeys(false);
     const providerResponse = await this.cancelRazorpaySubscription(
       keyId,
       keySecret,
       subscription.providerSubscriptionId,
+      cancelAtCycleEnd,
     );
 
     await this.prisma.client.sellerSubscription.update({
       where: { id: subscription.id },
       data: {
-        cancelAtPeriodEnd: true,
-        providerCancelAtCycleEnd: true,
+        cancelAtPeriodEnd: cancelAtCycleEnd,
+        providerCancelAtCycleEnd: cancelAtCycleEnd,
+        ...(cancelAtCycleEnd ? {} : { status: SellerSubscriptionStatus.CANCELLED, cancelledAt: new Date() }),
         providerStatus: this.stringFromRecord(providerResponse, "status") ?? subscription.providerStatus,
         providerSnapshot: providerResponse as Prisma.InputJsonValue,
       },
     });
+
+    if (!cancelAtCycleEnd) {
+      await this.prisma.client.seller.update({
+        where: { id: seller.id },
+        data: { subscriptionStatus: SellerSubscriptionStatus.CANCELLED },
+      });
+    }
 
     return this.getSellerSubscription(actor);
   }
@@ -1264,18 +1312,19 @@ export class SellerSubscriptionsService {
     keyId: string,
     keySecret: string,
     providerSubscriptionId: string,
+    cancelAtCycleEnd: boolean,
   ) {
     const response = await fetch(
       `https://api.razorpay.com/v1/subscriptions/${encodeURIComponent(providerSubscriptionId)}/cancel`,
       {
         method: "POST",
         headers: this.razorpayHeaders(keyId, keySecret),
-        body: JSON.stringify({ cancel_at_cycle_end: 1 }),
+        body: JSON.stringify({ cancel_at_cycle_end: cancelAtCycleEnd ? 1 : 0 }),
       },
     );
 
     if (!response.ok) {
-      throw new ServiceUnavailableException(
+      throw new BadRequestException(
         `Razorpay subscription cancellation failed with status ${response.status}: ${await response.text()}`,
       );
     }

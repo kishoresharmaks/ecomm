@@ -38,6 +38,7 @@ import { type ComponentPropsWithoutRef, type ReactNode, useRef, useState, startT
 import { useQuery } from "@tanstack/react-query";
 import { Button, StatusBadge, cn } from "@indihub/ui";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
+import { StorefrontFooter } from "@/components/storefront/storefront-footer";
 import { MaintenanceGate } from "@/components/maintenance/maintenance-mode";
 import { StorefrontImage } from "@/components/storefront/storefront-image";
 import { IndihubApiError, userFacingApiErrorMessage } from "@/lib/api";
@@ -66,7 +67,7 @@ const sellerNavIcons: Record<string, ReactNode> = {
   "/seller/reviews": <Star className="h-4 w-4" aria-hidden="true" />,
   "/seller/b2b-enquiries": <MessageSquareText className="h-4 w-4" aria-hidden="true" />,
   "/seller/b2b-orders": <ReceiptText className="h-4 w-4" aria-hidden="true" />,
-  "/seller/reports/sales": <BarChart3 className="h-4 w-4" aria-hidden="true" />,
+  "/seller/reports": <BarChart3 className="h-4 w-4" aria-hidden="true" />,
   "/seller/subscription": <CreditCard className="h-4 w-4" aria-hidden="true" />,
   "/seller/finance/wallet": <WalletCards className="h-4 w-4" aria-hidden="true" />,
   "/seller/finance/payouts": <ReceiptText className="h-4 w-4" aria-hidden="true" />,
@@ -79,8 +80,8 @@ export function SellerWorkspaceShell({
   children,
   actions
 }: {
-  title: string;
-  description: string;
+  title?: string;
+  description?: string;
   children: ReactNode;
   actions?: ReactNode;
 }) {
@@ -97,8 +98,13 @@ export function SellerWorkspaceShell({
   const navGroups = sellerNavGroups(visibleNav);
 
   const isSignedOut = sellerAuth.status === "signed-out";
+  const isLoading = sellerAuth.status === "syncing" || profileQuery.isLoading;
   const requiresOnboarding = Boolean(profileQuery.error && isSellerOnboardingRequiredError(profileQuery.error));
-  const showSidebar = !isSignedOut && !requiresOnboarding;
+  
+  // Only show the sidebar if the user is authenticated AND does not explicitly require onboarding.
+  // During the loading state, we hide the sidebar if we haven't fetched their profile yet to avoid flashing.
+  // We can show it optimistically if we have profileQuery.data, otherwise we wait.
+  const showSidebar = !isSignedOut && !requiresOnboarding && (!isLoading || Boolean(profileQuery.data));
 
   return (
     <MaintenanceGate scope="seller">
@@ -147,18 +153,21 @@ export function SellerWorkspaceShell({
           ) : null}
 
           <div className={cn("px-4 py-5 sm:px-6 lg:px-10 lg:py-8 flex-1", !showSidebar && "mx-auto w-full max-w-5xl")}>
-            <header className="mb-6 border-b border-[#D9E2EA] pb-6">
-              <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-                <div>
-                  <p className="text-xs font-black uppercase tracking-[0.2em] text-[#ED3500]">Seller Center</p>
-                  <h1 className="mt-2 max-w-5xl text-3xl font-black tracking-normal text-[#123A5A] md:text-4xl">{title}</h1>
-                  <p className="mt-2 max-w-4xl text-sm leading-6 text-[#5F6F82] md:text-base">{description}</p>
+            {title ? (
+              <header className="mb-6 border-b border-[#D9E2EA] pb-6">
+                <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.2em] text-[#ED3500]">Seller Center</p>
+                    <h1 className="mt-2 max-w-5xl text-3xl font-black tracking-normal text-[#123A5A] md:text-4xl">{title}</h1>
+                    {description ? <p className="mt-2 max-w-4xl text-sm leading-6 text-[#5F6F82] md:text-base">{description}</p> : null}
+                  </div>
+                  {actions ? <div className="flex flex-wrap gap-2 xl:justify-end">{actions}</div> : null}
                 </div>
-                {actions ? <div className="flex flex-wrap gap-2 xl:justify-end">{actions}</div> : null}
-              </div>
-            </header>
+              </header>
+            ) : null}
             {children}
           </div>
+          {!showSidebar ? <StorefrontFooter /> : null}
           </section>
         </div>
       </main>
@@ -367,7 +376,7 @@ export function useSellerAuth() {
     authHeaders: {},
     authKey: "seller:signed-out",
     enabled: false,
-    status: "signed-out",
+    status: "signed-out" as const,
     error: undefined,
     refresh: () => undefined,
     platformUserId: ""
@@ -477,125 +486,153 @@ export function SellerStartWelcome({
 }) {
   const options = [
     {
-      href: "/seller/register?mode=retail",
-      title: "Retail seller",
-      label: "Products only",
+      href: "/seller/choose-plan?mode=retail",
+      title: "Retail Seller",
+      label: "Products Only",
       description: "Sell catalogue products with orders, returns, B2B enquiries, stock alerts, and seller payouts.",
       action: "Start retail",
-      icon: <Store className="h-5 w-5" aria-hidden="true" />,
+      icon: <Store className="h-7 w-7" aria-hidden="true" />,
       points: ["Product catalogue", "Customer orders", "B2B enquiries"]
     },
     {
-      href: "/seller/register?mode=service",
-      title: "Service provider",
-      label: "Services only",
+      href: "/seller/choose-plan?mode=service",
+      title: "Service Provider",
+      label: "Services Only",
       description: "List repair, installation, maintenance, inspection, consultation, and local or remote services.",
       action: "Start services",
-      icon: <Wrench className="h-5 w-5" aria-hidden="true" />,
+      icon: <Wrench className="h-7 w-7" aria-hidden="true" />,
       points: ["Service listings", "Bookings and quotes", "Service calendar"]
     },
     {
-      href: "/seller/register?mode=both",
-      title: "Retail + services",
-      label: "Combined profile",
+      href: "/seller/choose-plan?mode=both",
+      title: "Retail + Services",
+      label: "Combined Profile",
       description: "Use one verified business profile for product selling and service bookings together.",
       action: "Start both",
-      icon: <Sparkles className="h-5 w-5" aria-hidden="true" />,
-      points: ["Products and services", "One approval flow", "Shared finance"]
+      icon: <Sparkles className="h-7 w-7" aria-hidden="true" />,
+      points: ["Products and services", "Single verification process", "Unified payouts"]
     }
   ];
 
   return (
-    <div className="grid gap-5">
-      <section className="overflow-hidden rounded-lg border border-[#D9E2EA] bg-white shadow-sm">
-        <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_340px]">
-          <div className="bg-[#123A5A] px-5 py-8 text-white sm:px-7 lg:px-8 lg:py-10">
-            <div className="max-w-3xl">
-              <span className="inline-flex items-center gap-2 rounded-md bg-white/10 px-3 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-[#FFDED4]">
-                <ShieldCheck className="h-4 w-4" aria-hidden="true" />
-                Seller Center
-              </span>
-              <h2 className="mt-5 max-w-2xl text-3xl font-black tracking-normal sm:text-4xl">
-                Welcome to 1HandIndia Seller Center
-              </h2>
-              <p className="mt-4 max-w-2xl text-sm font-semibold leading-7 text-[#DCE8F2] sm:text-base">
-                {message}
-              </p>
-              <div className="mt-6 grid gap-3 text-sm font-semibold text-[#DCE8F2] sm:grid-cols-3">
-                {["Verified onboarding", "Capability-based menus", "Admin review workflow"].map((item) => (
-                  <span key={item} className="flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4 shrink-0 text-[#FF9A7A]" aria-hidden="true" />
-                    {item}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </div>
+    <div className="relative w-screen max-w-[100vw] left-1/2 right-1/2 -ml-[50vw] -mr-[50vw] overflow-hidden bg-[#FFFCFB] pt-16 pb-24 sm:pt-20 sm:pb-32 -mt-5 lg:-mt-8 mb-0 border-b border-[#F1D7CF]">
+      {/* Subtle Background Patterns or Glows */}
+      <div className="absolute -top-40 -right-40 h-[500px] w-[500px] rounded-full bg-[#ED3500]/5 blur-[120px] pointer-events-none" />
+      <div className="absolute -bottom-40 -left-40 h-[500px] w-[500px] rounded-full bg-[#ED3500]/5 blur-[130px] pointer-events-none" />
 
-          <div className="bg-[#FFF7F3] px-5 py-6 sm:px-7 lg:px-6 lg:py-8">
-            <p className="text-sm font-black uppercase tracking-[0.16em] text-[#ED3500]">What happens next</p>
-            <div className="mt-5 grid gap-4">
-              {[
-                ["1", "Choose operation type"],
-                ["2", "Upload business proofs"],
-                ["3", "Submit profile for approval"]
-              ].map(([step, label]) => (
-                <div key={step} className="flex items-center gap-3">
-                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-[#ED3500] text-sm font-black text-white">{step}</span>
-                  <span className="text-sm font-black text-[#1F2933]">{label}</span>
-                </div>
-              ))}
-            </div>
-          </div>
+      {/* Hero Content */}
+      <div className="relative z-10 mx-auto max-w-4xl px-5 text-center sm:px-7 lg:px-8">
+        <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center overflow-hidden rounded-3xl bg-white shadow-[0_16px_32px_rgba(237,53,0,0.15)] ring-1 ring-black/5">
+          <img src="/brand/1handindia_logo.png" alt="1HandIndia" className="h-full w-full object-cover" fetchPriority="high" />
         </div>
-      </section>
+        <span className="mx-auto inline-flex items-center gap-2 rounded-full border border-[#ED3500]/20 bg-[#ED3500]/10 px-4 py-1.5 text-xs font-black uppercase tracking-[0.2em] text-[#ED3500] shadow-sm">
+          <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+          Seller Center
+        </span>
+        <h2 className="mt-8 text-4xl font-black tracking-tight text-[#111827] sm:text-6xl lg:text-7xl">
+          Welcome to <span className="text-[#ED3500]">1HandIndia</span> Seller Hub
+        </h2>
+        <p className="mx-auto mt-6 max-w-2xl text-lg font-semibold leading-8 text-[#667085] sm:text-xl">
+          {message}
+        </p>
 
-      <section aria-labelledby="seller-start-options">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h3 id="seller-start-options" className="text-xl font-black text-[#123A5A]">
-              Choose how you want to register
-            </h3>
-            <p className="mt-1 text-sm font-semibold leading-6 text-[#667085]">
-              You can start with one capability or combine both under the same verified seller profile.
-            </p>
-          </div>
-          <StatusBadge tone="info">No seller profile found</StatusBadge>
+        <div className="mt-10 flex flex-wrap justify-center gap-x-6 gap-y-4 text-sm font-bold text-[#1F2933]">
+          {["Secure verification", "Tailored dashboard", "Quality assured marketplace"].map((item) => (
+            <span key={item} className="flex items-center gap-2 rounded-full bg-white border border-[#E5E7EB] px-5 py-2.5 shadow-sm">
+              <CheckCircle2 className="h-4 w-4 shrink-0 text-[#ED3500]" aria-hidden="true" />
+              {item}
+            </span>
+          ))}
         </div>
+      </div>
 
-        <div className="mt-4 grid gap-4 xl:grid-cols-3">
+      {/* Modern High-Contrast Cards */}
+      <div className="relative z-20 mx-auto mt-20 max-w-7xl px-5 sm:px-7 lg:px-8">
+        <div className="grid gap-6 md:grid-cols-3">
           {options.map((option) => (
             <Link
               key={option.href}
               href={option.href}
-              className="group flex h-full flex-col rounded-lg border border-[#D9E2EA] bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-[#ED3500] hover:shadow-md"
+              className="group relative flex h-full flex-col overflow-hidden rounded-3xl border border-[#E5E7EB] bg-white p-8 shadow-sm transition-all duration-500 hover:-translate-y-3 hover:border-[#ED3500]/30 hover:shadow-[0_30px_60px_-15px_rgba(237,53,0,0.15)]"
             >
-              <div className="flex items-start justify-between gap-3">
-                <span className="grid h-11 w-11 place-items-center rounded-md bg-[#FFF0EC] text-[#ED3500] transition group-hover:bg-[#ED3500] group-hover:text-white">
+              <div className="relative z-10 flex items-start justify-between gap-3">
+                <span className="grid h-16 w-16 place-items-center rounded-2xl bg-[#FFF5F2] text-[#ED3500] transition-transform duration-500 group-hover:scale-110 group-hover:rotate-3 group-hover:bg-[#ED3500] group-hover:text-white">
                   {option.icon}
                 </span>
-                <span className="rounded-md bg-[#F8FAFC] px-2.5 py-1 text-xs font-black uppercase tracking-wide text-[#667085]">
+                <span className="rounded-full border border-[#E5E7EB] bg-[#F8FAFC] px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-[#667085] group-hover:border-[#ED3500]/20 group-hover:bg-[#FFF5F2] group-hover:text-[#ED3500]">
                   {option.label}
                 </span>
               </div>
-              <h4 className="mt-4 text-lg font-black text-[#1F2933]">{option.title}</h4>
-              <p className="mt-2 flex-1 text-sm font-semibold leading-6 text-[#667085]">{option.description}</p>
-              <div className="mt-4 grid gap-2">
+              <h4 className="relative z-10 mt-8 text-3xl font-black text-[#111827]">{option.title}</h4>
+              <p className="relative z-10 mt-4 flex-1 text-base font-medium leading-relaxed text-[#667085]">
+                {option.description}
+              </p>
+              <div className="relative z-10 mt-8 grid gap-3">
                 {option.points.map((point) => (
-                  <span key={point} className="flex items-center gap-2 text-sm font-bold text-[#1F2933]">
-                    <CheckCircle2 className="h-4 w-4 shrink-0 text-[#0F8A5F]" aria-hidden="true" />
+                  <span key={point} className="flex items-center gap-3 text-sm font-bold text-[#1F2933]">
+                    <CheckCircle2 className="h-5 w-5 shrink-0 text-[#0F8A5F]" aria-hidden="true" />
                     {point}
                   </span>
                 ))}
               </div>
-              <span className="mt-5 inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-[#123A5A] px-4 py-2 text-sm font-black text-white transition group-hover:bg-[#ED3500]">
+              <span className="relative z-10 mt-10 flex w-full items-center justify-center gap-2 rounded-xl bg-[#F8FAFC] border border-[#E5E7EB] px-5 py-4 text-sm font-black text-[#111827] transition-all duration-300 group-hover:bg-[#ED3500] group-hover:border-[#ED3500] group-hover:text-white group-hover:shadow-lg group-hover:gap-4">
                 {option.action}
-                <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                <ArrowRight className="h-4 w-4 transition-transform" aria-hidden="true" />
               </span>
             </Link>
           ))}
         </div>
-      </section>
+      </div>
+
+      {/* App Download Promo */}
+      <div className="relative z-20 mx-auto mt-24 max-w-5xl px-5 sm:px-7 lg:px-8">
+        <div className="flex flex-col md:flex-row items-center justify-between gap-12 rounded-[2.5rem] bg-[#FFF5F2] px-8 pt-12 md:px-16 md:pt-0 border border-[#ED3500]/10 overflow-hidden shadow-sm">
+          
+          {/* Text & QR */}
+          <div className="flex-1 max-w-lg md:py-20 pb-12 md:pb-20 text-center md:text-left">
+            <h3 className="text-3xl md:text-4xl font-black text-[#111827] tracking-tight">
+              Manage your business <br className="hidden md:block"/>on the go
+            </h3>
+            <p className="mt-5 text-base font-medium leading-relaxed text-[#667085]">
+              The 1HandIndia Seller app is packed with features to help you manage and grow your retail or service business wherever you are. Take care of operations right from your phone.
+            </p>
+            
+            <div className="mt-10 flex flex-col md:flex-row items-center gap-6">
+              <div className="shrink-0 rounded-2xl bg-white p-3 shadow-md border border-[#E5E7EB]">
+                {/* Dynamically generated QR pointing to Playstore */}
+                <img 
+                  src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=https://play.google.com/store/apps/details?id=com.onehandindia.seller" 
+                  alt="Scan to download" 
+                  className="h-20 w-20"
+                  loading="lazy"
+                  decoding="async"
+                />
+              </div>
+              <div className="text-center md:text-left">
+                <p className="text-sm font-black text-[#111827]">Scan to download</p>
+                <p className="text-xs font-semibold text-[#667085] mt-1 flex items-center gap-2 justify-center md:justify-start">
+                  Available on Android
+                  <span className="rounded-full bg-[#FFFCFB] border border-[#ED3500]/20 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-[#ED3500] shadow-sm">
+                    Coming Soon
+                  </span>
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* AI Mockup Image */}
+          <div className="relative w-full md:w-[320px] shrink-0 self-end px-6 md:px-0 mt-8 md:mt-16">
+            <img 
+              src="/brand/mobile_seller_app_mockup.jpg" 
+              alt="1HandIndia Seller App" 
+              className="w-full h-auto drop-shadow-2xl rounded-t-[2.5rem] border-x-8 border-t-8 border-[#111827] bg-[#111827]"
+              loading="lazy"
+              decoding="async"
+            />
+          </div>
+
+        </div>
+      </div>
     </div>
   );
 }

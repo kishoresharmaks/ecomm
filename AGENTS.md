@@ -75,6 +75,11 @@ Use these skill types during future work:
 - Before a major implementation step, confirm the chosen stack and generated app structure.
 - Do not use generic Phase 1, basic-only, future-scope, or later-upgrade language to reduce an actively selected feature.
 - Use `docs/IndiHub_FINAL_TECH_STACK_LOCK.md` as the current locked product technology source.
+- **Production-Ready Terminology**: Strictly avoid internal system terminology (e.g., "Admin review workflow", "Capability-based menus") in all UI copy. Always use polished, customer/seller-facing language (e.g., "Quality assured marketplace", "Tailored dashboard") to maintain a premium product feel.
+- **Distinct Portal Identity**: When writing UI copy or headers for the seller/vendor module, never use the generic marketplace name alone (e.g., "Welcome to 1HandIndia"). Always use the distinct, approved seller portal name (e.g., "1HandIndia Seller Hub") to maintain a clear boundary between the B2C customer storefront and the B2B partner experience.
+- **Prevent Literal Widening**: When returning default or fallback objects from hooks, always explicitly type or use `as const` on string literals (e.g., `status: "signed-out" as const`) to prevent TypeScript from widening the union to `string`, which silently disables strict equality checks for consumers.
+- **Strict Brand Adherence**: NEVER introduce unapproved primary theme colors (e.g., deep navy, black themes, or generic dark modes) into large UI surfaces. Strictly use the locked brand palette (`#ED3500` primary, `#FFFCFB` secondary) for all marketing, landing, and structural page elements.
+- **Competitor Independence**: Never directly copy proprietary layouts, exact text, or specific UI components from competitor marketplaces (e.g., Amazon, Flipkart) provided as reference. Instead, extract the core functional requirement (e.g., "Mobile App Download Promo") and implement it using strictly 1HandIndia's brand guidelines, typography, and original production-ready terminology.
 
 ## Current Status
 
@@ -163,6 +168,14 @@ Latest verified gates:
 Important caveats:
 
 - This workspace is not currently a git checkout, so use direct file inspection instead of relying on `git status` or `git diff`.
+
+## Admin UI UX for Technical Fields
+
+When building or updating Admin Control Panel forms, if a field uses a technical financial unit (like BPS - Basis Points), you must include an inline Info tooltip (e.g., an `Info` icon with a tooltip) or clear helper text below the field.
+
+- For BPS fields, always explain the conversion: `100 BPS = 1%`.
+- Provide a brief sentence on what the field actually does (e.g., "Reduces the marketplace commission for sellers on this plan").
+- Do not assume non-technical admins know financial jargon.
 - Do not print Clerk or provider secrets from `.env` files. Only report key names, lengths, or configuration presence when needed.
 - Standalone admin login needs backend env `INDIHUB_FIRST_ADMIN_EMAIL` and `INDIHUB_FIRST_ADMIN_PASSWORD` for first setup, with optional `ADMIN_SESSION_TTL_HOURS`.
 - `pnpm db:seed` is production-safe schema-only and creates no data by default. Use `pnpm db:seed:system` only for approved RBAC reference setup and `pnpm db:seed:bootstrap` only for local/dev or approved one-time bootstrap. Production-like write modes require `INDIHUB_ALLOW_PRODUCTION_SEED=true`.
@@ -203,3 +216,8 @@ When modifying `schema.prisma` or creating new models, strictly adhere to the fo
 - **Domain Boundaries**: Keep tab content strictly relevant to the tab's domain. For example, B2B tabs must only contain B2B Enquiries and B2B Orders. Subscriptions belong in Profile/Account. Returns belong in Orders. Reviews, Coupons, and Deals belong in Sales or Products. Do not group unrelated features.
 - **Image Rendering**: Always use `expo-image` or `react-native` `<Image>` components to render user-uploaded assets (like logos and banners) instead of relying on text initials or "Ready" placeholders. Always construct the full URL using the API's base URL and the asset key.
 - **Professional Aesthetics**: Mobile UI screens must prioritize a modern, professional aesthetic with appropriate spacing, modern shadows, and premium card layouts, avoiding basic or "minimum viable" styles.
+
+
+## Delivery Partner Payout Strategy
+- 1HandIndia uses a static, predictable delivery payout model (Base Pay + Per KM with a minimum floor).
+- Do not build dynamic surge pricing, milestone gamification, or weather-based incentives unless explicitly requested, to keep early operations simple and predictable for early riders.

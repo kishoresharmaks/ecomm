@@ -108,9 +108,15 @@ type SubmitState =
   | { status: "success"; message: string }
   | { status: "error"; message: string };
 
-type SellerRegistrationMode = SellerCapability | "BOTH";
+export type SellerRegistrationMode = SellerCapability | "BOTH";
 
-export function SellerRegistrationForm({ initialMode }: { initialMode?: string | null } = {}) {
+export function SellerRegistrationForm({ 
+  initialMode, 
+  initialPlanId 
+}: { 
+  initialMode?: string | null;
+  initialPlanId?: string | null;
+} = {}) {
   const auth = useCustomerAuth();
   const queryClient = useQueryClient();
   const [state, setState] = useState<SubmitState>({ status: "idle" });
@@ -206,7 +212,10 @@ export function SellerRegistrationForm({ initialMode }: { initialMode?: string |
   const expectedMissingSeller =
     sellerQuery.error instanceof IndihubApiError && [403, 404].includes(sellerQuery.error.status);
   const plans = plansQuery.data?.items ?? [];
+  const validInitialPlanId = useMemo(() => plans.find(p => p.id === initialPlanId)?.id, [plans, initialPlanId]);
+  
   const defaultPlanId =
+    validInitialPlanId ??
     plansQuery.data?.defaultPlanId ??
     plans.find((plan) => plan.isDefault)?.id ??
     plans[0]?.id ??
@@ -638,16 +647,44 @@ export function SellerRegistrationForm({ initialMode }: { initialMode?: string |
               />
             </label>
             <div className="md:col-span-2">
-              <PlanPicker
-                plans={plans}
-                selectedPlanId={selectedPlanId}
-                defaultPlanId={defaultPlanId}
-                loading={plansQuery.isLoading}
-                error={plansQuery.error}
-                audience={primaryCapability}
-                mode={commerceMode}
-                onChange={setSelectedPlanId}
-              />
+              {validInitialPlanId ? (
+                <div className="flex flex-col gap-3 rounded-lg border border-[#ED3500]/20 bg-[#FFF0EC] p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-black text-[#1F2933]">Selected Plan</p>
+                    <div className="mt-2 flex items-center gap-3">
+                      <span className="text-lg font-black text-[#123A5A]">
+                        {plans.find((p) => p.id === selectedPlanId)?.name ?? "Loading plan..."}
+                      </span>
+                      <span className="rounded-full bg-[#123A5A] px-2.5 py-0.5 text-xs font-bold text-white">
+                        {plans.find((p) => p.id === selectedPlanId)?.pricePaise === 0
+                          ? "Free"
+                          : formatMoney(
+                              plans.find((p) => p.id === selectedPlanId)?.pricePaise ?? 0,
+                              plans.find((p) => p.id === selectedPlanId)?.currency ?? "INR"
+                            )}
+                      </span>
+                    </div>
+                  </div>
+                  <Link
+                    href={`/seller/choose-plan?mode=${commerceMode.toLowerCase()}`}
+                    className="inline-flex h-9 items-center justify-center rounded-md border border-[#ED3500] bg-white px-4 text-sm font-bold text-[#ED3500] transition hover:bg-[#ED3500] hover:text-white"
+                  >
+                    Change plan
+                  </Link>
+                  <input type="hidden" name="subscriptionPlanId" value={selectedPlanId} />
+                </div>
+              ) : (
+                <PlanPicker
+                  plans={plans}
+                  selectedPlanId={selectedPlanId}
+                  defaultPlanId={defaultPlanId}
+                  loading={plansQuery.isLoading}
+                  error={plansQuery.error}
+                  audience={primaryCapability}
+                  mode={commerceMode}
+                  onChange={setSelectedPlanId}
+                />
+              )}
             </div>
           </div>
 
@@ -1221,7 +1258,7 @@ function primarySellerCapability(seller?: { primaryCapability?: SellerCapability
   return seller?.sellerType === "SERVICE_PROVIDER" ? "SERVICE" : "RETAIL";
 }
 
-function registrationModeFromQuery(value?: string | null): SellerRegistrationMode {
+export function registrationModeFromQuery(value?: string | null): SellerRegistrationMode {
   const normalized = value?.trim().toLowerCase();
 
   if (normalized === "service" || normalized === "services") {
@@ -1235,7 +1272,7 @@ function registrationModeFromQuery(value?: string | null): SellerRegistrationMod
   return "RETAIL";
 }
 
-function primaryCapabilityForMode(mode: SellerRegistrationMode): SellerCapability {
+export function primaryCapabilityForMode(mode: SellerRegistrationMode): SellerCapability {
   return mode === "SERVICE" ? "SERVICE" : "RETAIL";
 }
 

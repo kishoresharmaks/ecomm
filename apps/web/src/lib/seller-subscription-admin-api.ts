@@ -38,6 +38,34 @@ export type AssignSellerSubscriptionPayload = {
   note?: string;
 };
 
+export type AdminSellerSubscription = {
+  id: string;
+  sellerId: string;
+  planId: string;
+  status: SellerSubscriptionStatus;
+  startedAt: string;
+  currentPeriodEnd?: string | null;
+  nextBillingAt?: string | null;
+  cancelAtPeriodEnd: boolean;
+  paymentFailureCount: number;
+  providerStatus?: string | null;
+  seller: {
+    id: string;
+    storeName: string;
+    status: string;
+  };
+  plan: {
+    id: string;
+    name: string;
+    pricePaise: number;
+    currency: string;
+  };
+};
+
+export function listAdminSubscribedSellers(auth: IndihubAuthHeaders, query: { search?: string; status?: SellerSubscriptionStatus; page?: number; limit?: number } = {}) {
+  return indihubFetch<PageResult<AdminSellerSubscription>>(`/api/admin/subscribed-sellers${queryString(query)}`, undefined, auth);
+}
+
 export function listAdminSellerSubscriptionPlans(auth: IndihubAuthHeaders, query: { search?: string; isActive?: boolean; audience?: SellerSubscriptionPlanAudience; page?: number; limit?: number } = {}) {
   return indihubFetch<PageResult<SellerSubscriptionPlan>>(`/api/admin/seller-subscriptions/plans${queryString(query)}`, undefined, auth);
 }

@@ -1,26 +1,23 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
-import { CheckCircle2, CreditCard, Pencil, Plus, ReceiptText, ShieldCheck, Store, UserRound } from "lucide-react";
+import { CheckCircle2, CreditCard, Info, Pencil, Plus, ShieldCheck } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
 import { useAdminAuth } from "@/components/admin/admin-auth-context";
 import { AdminListbox, AdminSwitch, type AdminSelectOption } from "@/components/admin/admin-ux";
 import { indihubFetch } from "@/lib/api";
 import {
-  assignSellerSubscription,
   createSellerSubscriptionPlan,
   listAdminSellerSubscriptionPlans,
   setDefaultSellerSubscriptionPlan,
   updateSellerSubscriptionPlan,
-  type PageResult,
   type SellerSubscriptionPlanPayload
 } from "@/lib/seller-subscription-admin-api";
 import type {
   SellerProfile,
   SellerSubscriptionPlan,
   SellerSubscriptionPlanAudience,
-  SellerSubscriptionStatus,
 } from "@/lib/seller-api";
 import { formatMoney } from "@/lib/storefront-api";
 
@@ -86,54 +83,13 @@ export function AdminSellerSubscriptionsClient() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [planForm, setPlanForm] = useState<PlanFormState>(emptyPlanForm);
-  const [assignment, setAssignment] = useState({
-    sellerId: "",
-    planId: "",
-    status: "ACTIVE" as SellerSubscriptionStatus,
-    currentPeriodEnd: "",
-    note: ""
-  });
-
   const plansQuery = useQuery({
     queryKey: ["admin-seller-subscription-plans", auth.authHeaders, search],
     queryFn: () => listAdminSellerSubscriptionPlans(auth.authHeaders, { search, limit: 100 }),
     enabled: auth.isAuthenticated
   });
 
-  const sellersQuery = useQuery({
-    queryKey: ["admin-seller-subscription-sellers", auth.authHeaders],
-    queryFn: () => indihubFetch<PageResult<SellerProfile>>("/api/admin/sellers?limit=100", undefined, auth.authHeaders),
-    enabled: auth.isAuthenticated
-  });
-
   const plans = plansQuery.data?.items ?? [];
-  const sellers = sellersQuery.data?.items ?? [];
-  const selectedSeller = sellers.find((seller) => seller.id === assignment.sellerId);
-  const activePlans = useMemo(() => plans.filter((plan) => plan.isActive), [plans]);
-  const sellerOptions = useMemo<AdminSelectOption[]>(
-    () => [
-      { value: "", label: "Select seller" },
-      ...sellers.map((seller) => ({
-        value: seller.id,
-        label: seller.storeName,
-        description: `${seller.subscriptionPlan?.name ?? "No plan"} / ${humanize(seller.subscriptionStatus)}`
-      }))
-    ],
-    [sellers]
-  );
-  const planOptions = useMemo<AdminSelectOption[]>(
-    () => [
-      { value: "", label: "Select plan" },
-      ...activePlans
-        .filter((plan) => planMatchesSellerCapabilities(plan, selectedSeller))
-        .map((plan) => ({
-          value: plan.id,
-          label: plan.name,
-          description: `${plan.code} / ${audienceLabel(plan.audience)}`,
-        }))
-    ],
-    [activePlans, selectedSeller]
-  );
 
   const savePlan = useMutation({
     mutationFn: (payload: SellerSubscriptionPlanPayload) =>
@@ -141,7 +97,6 @@ export function AdminSellerSubscriptionsClient() {
     onSuccess: async () => {
       setPlanForm(emptyPlanForm);
       await queryClient.invalidateQueries({ queryKey: ["admin-seller-subscription-plans"] });
-      await queryClient.invalidateQueries({ queryKey: ["admin-seller-subscription-sellers"] });
     }
   });
 
@@ -150,24 +105,15 @@ export function AdminSellerSubscriptionsClient() {
     onSuccess: async () => queryClient.invalidateQueries({ queryKey: ["admin-seller-subscription-plans"] })
   });
 
-  const assignPlan = useMutation({
-    mutationFn: () =>
-      assignSellerSubscription(auth.authHeaders, assignment.sellerId, {
-        planId: assignment.planId,
-        status: assignment.status,
-        ...(assignment.currentPeriodEnd ? { currentPeriodEnd: new Date(assignment.currentPeriodEnd).toISOString() } : {}),
-        ...(assignment.note.trim() ? { note: assignment.note.trim() } : {})
-      }),
-    onSuccess: async () => {
-      setAssignment({ sellerId: "", planId: "", status: "ACTIVE", currentPeriodEnd: "", note: "" });
-      await queryClient.invalidateQueries({ queryKey: ["admin-seller-subscription-sellers"] });
-      await queryClient.invalidateQueries({ queryKey: ["admin-seller-subscription-plans"] });
-    }
-  });
+  const activePlans = useMemo(() => plans.filter((plan) => plan.isActive), [plans]);
 
   function submitPlan(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const isServicePlan = planForm.audience === "SERVICE";
+    const productLimit = isServicePlan ? undefined : optionalNumber(planForm.productLimit);
+    const featuredProductLimit = optionalNumber(planForm.featuredProductLimit);
+    const b2bEnquiryLimit = isServicePlan ? undefined : optionalNumber(planForm.b2bEnquiryLimit);
+
     const payload: SellerSubscriptionPlanPayload = {
       code: planForm.code.trim().toUpperCase(),
       name: planForm.name.trim(),
@@ -178,24 +124,13 @@ export function AdminSellerSubscriptionsClient() {
       billingCycle: planForm.billingCycle,
       trialDays: numberOrZero(planForm.trialDays),
       commissionDiscountBps: isServicePlan ? 0 : numberOrZero(planForm.commissionDiscountBps),
+      ...(productLimit !== undefined ? { productLimit } : {}),
+      ...(featuredProductLimit !== undefined ? { featuredProductLimit } : {}),
+      ...(b2bEnquiryLimit !== undefined ? { b2bEnquiryLimit } : {}),
       isDefault: planForm.isDefault,
       isActive: planForm.isActive,
       sortOrder: numberOrZero(planForm.sortOrder)
     };
-
-    const productLimit = isServicePlan ? 0 : optionalNumber(planForm.productLimit);
-    const featuredProductLimit = optionalNumber(planForm.featuredProductLimit);
-    const b2bEnquiryLimit = isServicePlan ? 0 : optionalNumber(planForm.b2bEnquiryLimit);
-    if (productLimit !== undefined) {
-      payload.productLimit = productLimit;
-    }
-    if (featuredProductLimit !== undefined) {
-      payload.featuredProductLimit = featuredProductLimit;
-    }
-    if (b2bEnquiryLimit !== undefined) {
-      payload.b2bEnquiryLimit = b2bEnquiryLimit;
-    }
-
     savePlan.mutate(payload);
   }
 
@@ -206,17 +141,17 @@ export function AdminSellerSubscriptionsClient() {
       name: plan.name,
       description: plan.description ?? "",
       audience: plan.audience,
-      priceRupees: String((plan.pricePaise ?? 0) / 100),
+      priceRupees: (plan.pricePaise / 100).toString(),
       currency: plan.currency,
       billingCycle: plan.billingCycle,
-      trialDays: String(plan.trialDays ?? 0),
-      productLimit: plan.productLimit === null || plan.productLimit === undefined ? "" : String(plan.productLimit),
-      featuredProductLimit: plan.featuredProductLimit === null || plan.featuredProductLimit === undefined ? "" : String(plan.featuredProductLimit),
-      b2bEnquiryLimit: plan.b2bEnquiryLimit === null || plan.b2bEnquiryLimit === undefined ? "" : String(plan.b2bEnquiryLimit),
-      commissionDiscountBps: String(plan.commissionDiscountBps ?? 0),
+      trialDays: (plan.trialDays ?? 0).toString(),
+      productLimit: plan.productLimit?.toString() ?? "",
+      featuredProductLimit: plan.featuredProductLimit?.toString() ?? "",
+      b2bEnquiryLimit: plan.b2bEnquiryLimit?.toString() ?? "",
+      commissionDiscountBps: (plan.commissionDiscountBps ?? 0).toString(),
       isDefault: plan.isDefault,
       isActive: plan.isActive,
-      sortOrder: String(plan.sortOrder ?? 100)
+      sortOrder: (plan.sortOrder ?? 100).toString()
     });
   }
 
@@ -241,7 +176,6 @@ export function AdminSellerSubscriptionsClient() {
         <SummaryTile label="Retail default" value={defaultPlanByAudience(plans, "RETAIL")?.name ?? "Not set"} note="Product seller onboarding" />
         <SummaryTile label="Service default" value={defaultPlanByAudience(plans, "SERVICE")?.name ?? "Not set"} note="Service provider onboarding" />
         <SummaryTile label="Assigned sellers" value={plans.reduce((total, plan) => total + (plan._count?.currentSellers ?? 0), 0)} note="Current plan links" />
-        <SummaryTile label="Billing attention" value={sellers.filter((seller) => ["PENDING_PAYMENT", "EXPIRED"].includes(seller.subscriptionStatus ?? "")).length} note="Payment pending or expired" />
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
@@ -301,7 +235,14 @@ export function AdminSellerSubscriptionsClient() {
                 </div>
 
                 <div className="grid gap-3 md:grid-cols-2">
-                  <AdminField label="Commission discount bps" type="number" min={0} value={planForm.commissionDiscountBps} onChange={(commissionDiscountBps) => setPlanForm({ ...planForm, commissionDiscountBps })} />
+                  <AdminField 
+                    label="Commission discount bps" 
+                    type="number" 
+                    min={0} 
+                    value={planForm.commissionDiscountBps} 
+                    onChange={(commissionDiscountBps) => setPlanForm({ ...planForm, commissionDiscountBps })} 
+                    helpText={<span className="flex items-start gap-1"><Info className="h-3 w-3 mt-0.5 shrink-0" /> Reduces marketplace commission. 100 BPS = 1%.</span>}
+                  />
                   <AdminField label="Trial days" type="number" min={0} value={planForm.trialDays} onChange={(trialDays) => setPlanForm({ ...planForm, trialDays })} />
                   <AdminField label="Display order" type="number" min={0} value={planForm.sortOrder} onChange={(sortOrder) => setPlanForm({ ...planForm, sortOrder })} />
                 </div>
@@ -393,92 +334,6 @@ export function AdminSellerSubscriptionsClient() {
             </div>
           </section>
 
-          <section className="rounded-lg border border-[#D9E2EA] bg-white p-5 shadow-sm">
-            <div className="flex items-center gap-3">
-              <span className="grid h-10 w-10 place-items-center rounded-md bg-[#EAF1F7] text-[#163B5C]">
-                <UserRound className="h-5 w-5" aria-hidden="true" />
-              </span>
-              <SectionHeading title="Assign seller plan" description="Paid recurring plans move to seller Razorpay authorisation unless admin sets a manual status." />
-            </div>
-            <form
-              className="mt-5 grid gap-3 md:grid-cols-2"
-              onSubmit={(event) => {
-                event.preventDefault();
-                assignPlan.mutate();
-              }}
-            >
-              <AdminSelect label="Seller" value={assignment.sellerId} options={sellerOptions} onChange={(sellerId) => setAssignment({ ...assignment, sellerId, planId: "" })} required />
-              <AdminSelect label="Plan" value={assignment.planId} options={planOptions} onChange={(planId) => setAssignment({ ...assignment, planId })} required />
-              <AdminSelect
-                label="Status"
-                value={assignment.status}
-                options={assignmentStatusOptions}
-                onChange={(status) => setAssignment({ ...assignment, status: status as SellerSubscriptionStatus })}
-              />
-              <AdminField label="Period end" type="date" value={assignment.currentPeriodEnd} onChange={(currentPeriodEnd) => setAssignment({ ...assignment, currentPeriodEnd })} />
-              <label className="space-y-2 md:col-span-2">
-                <span className="block text-xs font-bold uppercase tracking-wide text-[#667085]">Admin note</span>
-                <textarea
-                  value={assignment.note}
-                  onChange={(event) => setAssignment({ ...assignment, note: event.target.value })}
-                  rows={3}
-                  className="w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 py-3 text-sm font-semibold text-[#1F2933] outline-none transition focus:border-[#ED3500] focus:bg-white"
-                />
-              </label>
-              {assignPlan.error ? <p className="rounded-md bg-[#FDECEC] px-3 py-2 text-sm font-bold text-[#8A1F1F] md:col-span-2">{assignPlan.error.message}</p> : null}
-              <div className="md:col-span-2">
-                <Button type="submit" disabled={assignPlan.isPending || !assignment.sellerId || !assignment.planId}>
-                  <Store className="h-4 w-4" aria-hidden="true" />
-                  {assignPlan.isPending ? "Assigning..." : "Assign seller plan"}
-                </Button>
-              </div>
-            </form>
-          </section>
-
-          <section className="rounded-lg border border-[#D9E2EA] bg-white p-5 shadow-sm">
-            <div className="flex items-center gap-3">
-              <span className="grid h-10 w-10 place-items-center rounded-md bg-[#FFF0EC] text-[#ED3500]">
-                <ReceiptText className="h-5 w-5" aria-hidden="true" />
-              </span>
-              <SectionHeading title="Seller billing state" description="Recurring authorisation, grace-period, cancellation, and provider status by seller." />
-            </div>
-            <div className="mt-5 overflow-x-auto">
-              <table className="min-w-full text-left text-sm">
-                <thead className="border-b border-[#D9E2EA] text-xs uppercase tracking-wide text-[#667085]">
-                  <tr>
-                    <th className="px-3 py-2">Seller</th>
-                    <th className="px-3 py-2">Plan</th>
-                    <th className="px-3 py-2">Billing</th>
-                    <th className="px-3 py-2">Provider</th>
-                    <th className="px-3 py-2">Failure</th>
-                    <th className="px-3 py-2">Cancel</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#EDF2F7]">
-                  {sellers.map((seller) => {
-                    const current = seller.subscriptions?.[0];
-                    return (
-                      <tr key={seller.id}>
-                        <td className="px-3 py-3 font-black text-[#1F2933]">{seller.storeName}</td>
-                        <td className="px-3 py-3 font-semibold text-[#667085]">{seller.subscriptionPlan?.name ?? "No plan"}</td>
-                        <td className="px-3 py-3">
-                          <StatusBadge tone={statusTone(seller.subscriptionStatus)}>{humanize(seller.subscriptionStatus)}</StatusBadge>
-                        </td>
-                        <td className="px-3 py-3 font-semibold text-[#667085]">{current?.providerStatus ?? "Not authorised"}</td>
-                        <td className="px-3 py-3 font-semibold text-[#667085]">{current?.paymentFailureCount ?? 0}</td>
-                        <td className="px-3 py-3 font-semibold text-[#667085]">{current?.cancelAtPeriodEnd ? "Period end" : "No"}</td>
-                      </tr>
-                    );
-                  })}
-                  {!sellersQuery.isLoading && sellers.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="px-3 py-6 text-sm font-semibold text-[#667085]">No sellers found.</td>
-                    </tr>
-                  ) : null}
-                </tbody>
-              </table>
-            </div>
-          </section>
         </div>
       </div>
     </div>
@@ -503,7 +358,8 @@ function AdminField({
   required = false,
   placeholder,
   min,
-  step
+  step,
+  helpText
 }: {
   label: string;
   value: string;
@@ -513,6 +369,7 @@ function AdminField({
   placeholder?: string;
   min?: number;
   step?: string;
+  helpText?: React.ReactNode;
 }) {
   return (
     <label className="space-y-2">
@@ -527,6 +384,7 @@ function AdminField({
         step={step}
         className="h-11 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 text-sm font-semibold text-[#1F2933] outline-none transition focus:border-[#ED3500] focus:bg-white"
       />
+      {helpText ? <p className="text-[11px] font-semibold text-[#667085] leading-tight">{helpText}</p> : null}
     </label>
   );
 }

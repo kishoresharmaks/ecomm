@@ -9,6 +9,7 @@ import {
   AssignSellerSubscriptionDto,
   CreateSellerSubscriptionPlanDto,
   SellerSubscriptionPlanQueryDto,
+  AdminSubscribedSellersQueryDto,
   UpdateSellerSubscriptionPlanDto,
   VerifySellerRazorpaySubscriptionDto
 } from "./dto/seller-subscription.dto";
@@ -60,6 +61,14 @@ export class SellerSubscriptionsController {
   @ApiOkResponse({ description: "Cancel seller recurring subscription at period end." })
   cancelSellerSubscription(@CurrentUser() actor: RequestUser) {
     return this.subscriptions.cancelSellerSubscription(actor);
+  }
+
+  @Roles(RoleCode.ADMIN)
+  @Get("admin/subscribed-sellers")
+  @ApiOperation({ summary: "List subscribed sellers for admin." })
+  @ApiOkResponse({ description: "Admin subscribed sellers list." })
+  listAdminSubscribedSellers(@Query() query: AdminSubscribedSellersQueryDto) {
+    return this.subscriptions.listAdminSubscribedSellers(query);
   }
 
   @Roles(RoleCode.ADMIN)

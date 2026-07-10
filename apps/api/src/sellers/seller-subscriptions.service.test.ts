@@ -122,7 +122,8 @@ describe("SellerSubscriptionsService recurring billing", () => {
     vi.spyOn(service, "getSellerSubscription").mockResolvedValue({
       subscriptionStatus: SellerSubscriptionStatus.ACTIVE,
     } as never);
-    const signature = createHmac("sha256", "test_secret").update("sub_razorpay_1|pay_1").digest("hex");
+    const signature = createHmac("sha256", "test_secret").update("pay_1|sub_razorpay_1").digest("hex");
+
 
     await service.verifySellerRazorpaySubscription(makeActor(), {
       razorpaySubscriptionId: "sub_razorpay_1",

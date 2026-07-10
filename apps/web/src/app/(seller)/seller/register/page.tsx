@@ -16,7 +16,7 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function SellerRegisterPage({
   searchParams
 }: {
-  searchParams: Promise<{ mode?: string }>;
+  searchParams: Promise<{ mode?: string; plan?: string }>;
 }) {
   const params = await searchParams;
 
@@ -24,7 +24,7 @@ export default async function SellerRegisterPage({
     <>
       <JsonLd data={buildWebPageJsonLd({ title: "Sell on 1HandIndia", description: "Register as a seller on the 1HandIndia marketplace.", path: "/seller/register" })} />
       <SellerWorkspaceShell title="Seller onboarding" description="Submit store and pickup details for review. After approval, product and order operations unlock.">
-        <SellerRegistrationForm initialMode={params.mode ?? null} />
+        <SellerRegistrationForm initialMode={params.mode ?? null} initialPlanId={params.plan ?? null} />
       </SellerWorkspaceShell>
     </>
   );

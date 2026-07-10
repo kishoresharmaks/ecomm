@@ -44,7 +44,7 @@ export function SellerDashboardClient() {
 
   if (!sellerAuth.enabled) {
     return (
-      <SellerStartWelcome message="Welcome. Choose how you want to join 1HandIndia, then sign in or create an account to submit the onboarding form." />
+      <SellerStartWelcome message="Welcome. Choose how you want to join the 1HandIndia Seller Hub, then sign in or create an account to submit the onboarding form." />
     );
   }
 
@@ -76,6 +76,16 @@ export function SellerDashboardClient() {
 
   return (
     <div className="grid gap-5">
+      <header className="mb-6 border-b border-[#D9E2EA] pb-6">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.2em] text-[#ED3500]">Seller Center</p>
+            <h1 className="mt-2 max-w-5xl text-3xl font-black tracking-normal text-[#123A5A] md:text-4xl">Operations dashboard</h1>
+            <p className="mt-2 max-w-4xl text-sm leading-6 text-[#5F6F82] md:text-base">Track store readiness, orders, catalogue health, B2B demand, and low-stock tasks.</p>
+          </div>
+        </div>
+      </header>
+
       {reportQuery.error ? <SellerErrorPanel error={reportQuery.error} onRetry={() => void reportQuery.refetch()} /> : null}
       {!sellerReady ? (
         <SellerPanel className="border-[#FFC7B8] bg-[#FFF0EC]">
@@ -217,7 +227,7 @@ export function SellerDashboardClient() {
             <div className="grid grid-cols-3 gap-3 text-center">
               <QuickLink href="/seller/products" label="Products" icon={<Boxes className="h-5 w-5" aria-hidden="true" />} />
               <QuickLink href="/seller/orders" label="Orders" icon={<ShoppingBag className="h-5 w-5" aria-hidden="true" />} />
-              <QuickLink href="/seller/reports/sales" label="Reports" icon={<BarChart3 className="h-5 w-5" aria-hidden="true" />} />
+              <QuickLink href="/seller/reports" label="Reports" icon={<BarChart3 className="h-5 w-5" aria-hidden="true" />} />
             </div>
           </SellerPanel>
         </div>

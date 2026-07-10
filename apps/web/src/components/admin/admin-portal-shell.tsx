@@ -86,6 +86,7 @@ const iconByHref: Array<[string, typeof LayoutDashboard]> = [
   ["/admin/finance/settlements", ClipboardList],
   ["/admin/finance/commission-rules", Settings],
   ["/admin/seller-subscriptions", CreditCard],
+  ["/admin/subscribed-sellers", Store],
   ["/admin/reports", Activity],
   ["/admin/delivery-partner-applications", Truck],
   ["/admin/delivery-partners", Truck],

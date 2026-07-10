@@ -70,6 +70,10 @@ export function LocationFields({
     area?: string | undefined;
   }>({});
 
+  const autoMatchedState = useRef(false);
+  const autoMatchedCity = useRef(false);
+  const autoMatchedArea = useRef(false);
+
   const inputClass = inputClassName ?? defaultInputClass;
   const labelClass = labelClassName ?? defaultLabelClass;
   const postalCodeLookup = postalCodeLookupValue(countryCode, pincode);
@@ -94,6 +98,10 @@ export function LocationFields({
     setSelectedArea(null);
     setPendingAutofill(null);
     setManualNames({});
+    
+    autoMatchedState.current = false;
+    autoMatchedCity.current = false;
+    autoMatchedArea.current = false;
   }, [
     defaultCountryCode,
     defaultValue?.area,
@@ -208,16 +216,17 @@ export function LocationFields({
   }
 
   useEffect(() => {
-    if (!stateCode && defaultValue?.state && states.length) {
+    if (!stateCode && defaultValue?.state && states.length && !autoMatchedState.current) {
       const match = states.find((item) => sameName(item.name, defaultValue.state));
       if (match) {
         setStateCode(match.code);
       }
+      autoMatchedState.current = true;
     }
   }, [defaultValue?.state, stateCode, states]);
 
   useEffect(() => {
-    if (!cityCode && defaultValue?.city && cities.length) {
+    if (!cityCode && defaultValue?.city && cities.length && !autoMatchedCity.current) {
       const match = cities.find((item) => sameName(item.name, defaultValue.city));
       if (match) {
         setCityCode(match.code);
@@ -228,15 +237,17 @@ export function LocationFields({
           setStateCode(match.subdivision.code);
         }
       }
+      autoMatchedCity.current = true;
     }
   }, [cityCode, cities, defaultValue?.city]);
 
   useEffect(() => {
-    if (!localAreaCode && defaultValue?.area && areas.length) {
+    if (!localAreaCode && defaultValue?.area && areas.length && !autoMatchedArea.current) {
       const match = areas.find((item) => sameName(item.name, defaultValue.area));
       if (match) {
         selectArea(match);
       }
+      autoMatchedArea.current = true;
     }
   }, [areas, defaultValue?.area, localAreaCode]);
 

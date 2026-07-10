@@ -807,6 +807,7 @@ export type OrderSummary = {
       courierTrackingStatusLabel?: string | null;
       trackingUrl?: string | null;
       shipmentBookedAt?: string | null;
+      bookingError?: string | null;
       canDownloadLabel?: boolean;
       labelDownloadUrl?: string | null;
     }>;

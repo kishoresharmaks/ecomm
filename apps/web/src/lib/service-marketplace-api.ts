@@ -589,6 +589,15 @@ export function sellerRejectServiceBooking(auth: IndihubAuthHeaders, bookingNumb
   );
 }
 
+export function sellerCancelServiceBooking(auth: IndihubAuthHeaders, bookingNumber: string, reason: string) {
+  return indihubFetch<ServiceBooking>(
+    `/api/seller/service-bookings/${encodeURIComponent(bookingNumber)}/cancel`,
+    { method: "PATCH", body: JSON.stringify({ reason }) },
+    auth,
+  );
+}
+
+
 export function sellerSendServiceQuote(
   auth: IndihubAuthHeaders,
   bookingNumber: string,

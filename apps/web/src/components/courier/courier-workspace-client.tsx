@@ -424,8 +424,15 @@ export function CourierPackageDetailClient({ packageId }: { packageId: string })
             <InfoCell label="Courier" value={pkg.courierName ?? pkg.courierCode ?? "Not assigned"} />
             <InfoCell label="Tracking status" value={label(pkg.courierTrackingStatus)} />
             <InfoCell label="Pickup location" value={latest?.courierConsignment?.pickupLocationName ?? "Not synced"} />
-            <InfoCell label="Booked at" value={latest?.bookedAt ? new Date(latest.bookedAt).toLocaleString("en-IN") : "Not booked"} />
           </div>
+          {latest?.courierConsignment?.bookingError ? (
+            <div className="border-t border-[#E5E7EB] px-4 py-3">
+              <div className="rounded-md border border-[#F5B7B7] bg-[#FDECEC] p-3 text-sm font-semibold text-[#9B1C1C]">
+                <p className="font-bold">Booking failed</p>
+                <p className="mt-1">{latest.courierConsignment.bookingError}</p>
+              </div>
+            </div>
+          ) : null}
           <div className="flex flex-wrap gap-2 border-t border-[#E5E7EB] px-4 py-3">
             <Button type="button" disabled={!pkg.canDownloadLabel} onClick={() => downloadLabel(pkg, "download")}>
               <Download className="h-4 w-4" aria-hidden="true" />

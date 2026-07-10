@@ -4642,6 +4642,7 @@ export class OrdersService {
       trackingUrl: courierPackage?.trackingUrl ?? null,
       shipmentBookedAt:
         courierPackage?.bookedAt ?? courierPackage?.courierConsignment.bookedAt ?? null,
+      bookingError: courierPackage?.courierConsignment.bookingError ?? null,
       canDownloadLabel: false,
       labelDownloadUrl: null,
     };

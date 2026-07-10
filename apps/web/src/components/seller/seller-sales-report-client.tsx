@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { FormEvent, useState } from "react";
-import { AlertTriangle, BarChart3, BriefcaseBusiness, CalendarDays, ClipboardList, IndianRupee } from "lucide-react";
+import { AlertTriangle, BarChart3, BriefcaseBusiness, CalendarDays, ClipboardList, Download, IndianRupee } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
 import { formatMoney } from "@/lib/storefront-api";
-import { getSellerSalesReport, type SellerCapability, type SellerSalesReport } from "@/lib/seller-api";
+import { getSellerSalesReport, getSellerReportCsvUrl, type SellerCapability, type SellerSalesReport } from "@/lib/seller-api";
+import { ResponsiveContainer, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip } from "recharts";
 import {
   SellerAuthNotice,
   SellerEmptyState,
@@ -53,6 +54,8 @@ export function SellerSalesReportClient() {
   const showRetail = capabilities.includes("RETAIL");
   const showServices = capabilities.includes("SERVICE");
 
+  const csvUrl = getSellerReportCsvUrl("sales", submittedRange);
+
   return (
     <div className="grid gap-5">
       <SellerPanel>
@@ -63,14 +66,19 @@ export function SellerSalesReportClient() {
             </span>
             <SectionHeading title="Sales report" description="Sales, commission, net revenue, recent order splits, B2B volume, and low-stock products." />
           </div>
-          <form onSubmit={submit} className="grid w-full gap-3 md:grid-cols-[1fr_1fr_auto] lg:max-w-2xl">
-            <SellerField label="Date from" name="dateFrom" type="date" value={dateFrom} onChange={setDateFrom} />
-            <SellerField label="Date to" name="dateTo" type="date" value={dateTo} onChange={setDateTo} />
-            <Button type="submit" className="self-end">
-              <CalendarDays className="h-4 w-4" aria-hidden="true" />
-              Apply
-            </Button>
-          </form>
+          <div className="flex flex-wrap items-end gap-3">
+            <form onSubmit={submit} className="grid w-full gap-3 md:grid-cols-[1fr_1fr_auto] lg:max-w-2xl">
+              <SellerField label="Date from" name="dateFrom" type="date" value={dateFrom} onChange={setDateFrom} />
+              <SellerField label="Date to" name="dateTo" type="date" value={dateTo} onChange={setDateTo} />
+              <Button type="submit" className="self-end">
+                <CalendarDays className="h-4 w-4" aria-hidden="true" />
+                Apply
+              </Button>
+            </form>
+            <a href={csvUrl} download className="inline-flex items-center gap-2 rounded-md border border-[#E5E7EB] bg-white px-3 py-2 text-sm font-semibold text-[#1F2933] shadow-sm hover:border-[#ED3500] hover:text-[#ED3500]">
+              <Download className="h-4 w-4" /> Export CSV
+            </a>
+          </div>
         </div>
       </SellerPanel>
 
@@ -92,6 +100,11 @@ export function SellerSalesReportClient() {
 }
 
 function SellerRetailReportSections({ report }: { report: SellerSalesReport }) {
+  const chartData = report.recentOrders.slice(0, 10).reverse().map((o) => ({
+    name: formatDateTime(o.order.createdAt).split(",")[0],
+    sales: o.sellerSubtotalPaise / 100,
+  }));
+
   return (
     <>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -107,6 +120,21 @@ function SellerRetailReportSections({ report }: { report: SellerSalesReport }) {
         <SellerMetric label="Low stock" value={report.summary.lowStockCount} note="Variants at five units or below" />
         <SellerMetric label="Products" value={report.summary.products} note="Active seller catalogue records" />
       </div>
+
+      <SellerPanel>
+        <SectionHeading title="Sales Trend" description="Recent gross sales amounts over time." />
+        <div className="mt-5 h-[300px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+              <Line type="monotone" dataKey="sales" stroke="#ED3500" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+              <CartesianGrid stroke="#ccc" strokeDasharray="5 5" />
+              <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+              <YAxis tick={{ fontSize: 12 }} tickFormatter={(val) => `₹${val}`} />
+              <Tooltip formatter={(value) => [`₹${value}`, 'Sales']} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </SellerPanel>
 
       <div className="grid gap-5 xl:grid-cols-[1fr_420px]">
         <SellerPanel>
