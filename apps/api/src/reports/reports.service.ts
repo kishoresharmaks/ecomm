@@ -9,6 +9,7 @@ import {
   ProductStatus,
   ReturnRequestStatus,
   SellerPayoutStatus,
+  SellerSettlementStatus,
   ServiceBookingStatus,
   ServiceListingStatus,
 } from "@indihub/database";
@@ -646,7 +647,7 @@ export class ReportsService {
       const ledgerEntries = await tx.sellerLedgerEntry.findMany({ where: { sellerId: seller.id, ...(createdAt ? { createdAt } : {}) }, orderBy: { createdAt: "desc" }, take: 20 });
       return [splitAgg, pendingPayouts, paidPayouts, recentPayouts, ledgerEntries] as const;
     });
-    const eligibleSplits = await this.prisma.client.orderSellerSplit.aggregate({ where: { sellerId: seller.id, isSettlementEligible: true, payoutId: null }, _sum: { netPayablePaise: true }, _count: true });
+    const eligibleSplits = await this.prisma.client.orderSellerSplit.aggregate({ where: { sellerId: seller.id, settlementStatus: SellerSettlementStatus.ELIGIBLE, payoutId: null }, _sum: { netPayablePaise: true }, _count: true });
     return {
       summary: { grossSalesPaise: splitAgg._sum.sellerSubtotalPaise ?? 0, commissionPaise: splitAgg._sum.commissionPaise ?? 0, netPayablePaise: splitAgg._sum.netPayablePaise ?? 0, refundAdjustmentPaise: splitAgg._sum.refundAdjustmentPaise ?? 0, platformFeePaise: splitAgg._sum.platformFeePaise ?? 0, orderCount: splitAgg._count, pendingPayoutsPaise: pendingPayouts._sum.netPayablePaise ?? 0, pendingPayoutsCount: pendingPayouts._count, paidPayoutsPaise: paidPayouts._sum.netPayablePaise ?? 0, paidPayoutsCount: paidPayouts._count, eligiblePaise: eligibleSplits._sum.netPayablePaise ?? 0, eligibleCount: eligibleSplits._count },
       recentPayouts,
