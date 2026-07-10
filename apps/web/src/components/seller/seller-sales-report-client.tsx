@@ -6,7 +6,7 @@ import { AlertTriangle, BarChart3, BriefcaseBusiness, CalendarDays, ClipboardLis
 import { useQuery } from "@tanstack/react-query";
 import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
 import { formatMoney } from "@/lib/storefront-api";
-import { getSellerSalesReport, getSellerReportCsvUrl, type SellerCapability, type SellerSalesReport } from "@/lib/seller-api";
+import { downloadSellerReportCsv, getSellerSalesReport, type SellerCapability, type SellerSalesReport } from "@/lib/seller-api";
 import { ResponsiveContainer, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip } from "recharts";
 import {
   SellerAuthNotice,
@@ -54,8 +54,6 @@ export function SellerSalesReportClient() {
   const showRetail = capabilities.includes("RETAIL");
   const showServices = capabilities.includes("SERVICE");
 
-  const csvUrl = getSellerReportCsvUrl("sales", submittedRange);
-
   return (
     <div className="grid gap-5">
       <SellerPanel>
@@ -75,9 +73,9 @@ export function SellerSalesReportClient() {
                 Apply
               </Button>
             </form>
-            <a href={csvUrl} download className="inline-flex items-center gap-2 rounded-md border border-[#E5E7EB] bg-white px-3 py-2 text-sm font-semibold text-[#1F2933] shadow-sm hover:border-[#ED3500] hover:text-[#ED3500]">
+            <button type="button" onClick={() => void downloadSellerReportCsv(sellerAuth.authHeaders, "sales", submittedRange)} className="inline-flex items-center gap-2 rounded-md border border-[#E5E7EB] bg-white px-3 py-2 text-sm font-semibold text-[#1F2933] shadow-sm hover:border-[#ED3500] hover:text-[#ED3500]">
               <Download className="h-4 w-4" /> Export CSV
-            </a>
+            </button>
           </div>
         </div>
       </SellerPanel>

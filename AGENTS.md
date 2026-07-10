@@ -80,6 +80,7 @@ Use these skill types during future work:
 - **Prevent Literal Widening**: When returning default or fallback objects from hooks, always explicitly type or use `as const` on string literals (e.g., `status: "signed-out" as const`) to prevent TypeScript from widening the union to `string`, which silently disables strict equality checks for consumers.
 - **Strict Brand Adherence**: NEVER introduce unapproved primary theme colors (e.g., deep navy, black themes, or generic dark modes) into large UI surfaces. Strictly use the locked brand palette (`#ED3500` primary, `#FFFCFB` secondary) for all marketing, landing, and structural page elements.
 - **Competitor Independence**: Never directly copy proprietary layouts, exact text, or specific UI components from competitor marketplaces (e.g., Amazon, Flipkart) provided as reference. Instead, extract the core functional requirement (e.g., "Mobile App Download Promo") and implement it using strictly 1HandIndia's brand guidelines, typography, and original production-ready terminology.
+- **Authenticated File Downloads**: When implementing file downloads (e.g., Export CSV, PDF receipts) that require an authenticated backend API, NEVER use a standard `<a href={url} download>` tag. Standard anchor tags drop the `Authorization` header. Always use a `fetch` request with the required auth headers to get a `Blob`, create a temporary object URL via `URL.createObjectURL`, and programmatically click a hidden anchor tag to trigger the browser download.
 
 ## Current Status
 

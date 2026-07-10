@@ -7,7 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend } from "recharts";
 import { Button, SectionHeading } from "@indihub/ui";
 import { formatMoney } from "@/lib/storefront-api";
-import { getSellerTaxReport, getSellerReportCsvUrl } from "@/lib/seller-api";
+import { downloadSellerReportCsv, getSellerTaxReport } from "@/lib/seller-api";
 import {
   SellerAuthNotice,
   SellerEmptyState,
@@ -58,8 +58,6 @@ export function SellerTaxReportClient({ initialDateFrom = "", initialDateTo = ""
 
   const PIE_COLORS = ["#163B5C", "#ED3500", "#3B82F6", "#F59E0B", "#10B981"];
 
-  const csvUrl = getSellerReportCsvUrl("tax", submittedRange);
-
   return (
     <div className="grid gap-5">
       <SellerPanel>
@@ -79,9 +77,9 @@ export function SellerTaxReportClient({ initialDateFrom = "", initialDateTo = ""
                 Apply
               </Button>
             </form>
-            <a href={csvUrl} download className="inline-flex items-center gap-2 rounded-md border border-[#E5E7EB] bg-white px-3 py-2 text-sm font-semibold text-[#1F2933] shadow-sm hover:border-[#ED3500] hover:text-[#ED3500]">
+            <button type="button" onClick={() => void downloadSellerReportCsv(sellerAuth.authHeaders, "tax", submittedRange)} className="inline-flex items-center gap-2 rounded-md border border-[#E5E7EB] bg-white px-3 py-2 text-sm font-semibold text-[#1F2933] shadow-sm hover:border-[#ED3500] hover:text-[#ED3500]">
               <Download className="h-4 w-4" /> Export CSV
-            </a>
+            </button>
           </div>
         </div>
       </SellerPanel>

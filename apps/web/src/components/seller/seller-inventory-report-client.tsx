@@ -5,7 +5,7 @@ import { AlertTriangle, BarChart2, CalendarDays, Download, Package } from "lucid
 import { useQuery } from "@tanstack/react-query";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell } from "recharts";
 import { Button, SectionHeading } from "@indihub/ui";
-import { getSellerInventoryReport, getSellerReportCsvUrl } from "@/lib/seller-api";
+import { downloadSellerReportCsv, getSellerInventoryReport } from "@/lib/seller-api";
 import {
   SellerAuthNotice,
   SellerEmptyState,
@@ -49,8 +49,6 @@ export function SellerInventoryReportClient({ initialDateFrom = "", initialDateT
     revenue: item.revenuePaise / 100,
   }));
 
-  const csvUrl = getSellerReportCsvUrl("inventory", submittedRange);
-
   return (
     <div className="grid gap-5">
       <SellerPanel>
@@ -70,9 +68,9 @@ export function SellerInventoryReportClient({ initialDateFrom = "", initialDateT
                 Apply
               </Button>
             </form>
-            <a href={csvUrl} download className="inline-flex items-center gap-2 rounded-md border border-[#E5E7EB] bg-white px-3 py-2 text-sm font-semibold text-[#1F2933] shadow-sm hover:border-[#ED3500] hover:text-[#ED3500]">
+            <button type="button" onClick={() => void downloadSellerReportCsv(sellerAuth.authHeaders, "inventory", submittedRange)} className="inline-flex items-center gap-2 rounded-md border border-[#E5E7EB] bg-white px-3 py-2 text-sm font-semibold text-[#1F2933] shadow-sm hover:border-[#ED3500] hover:text-[#ED3500]">
               <Download className="h-4 w-4" /> Export CSV
-            </a>
+            </button>
           </div>
         </div>
       </SellerPanel>
