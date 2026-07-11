@@ -22,6 +22,7 @@ import {
   CourierProviderMode,
   DeliveryMode,
   ShippingCodSurchargeType,
+  ShippingPricingType,
 } from "@indihub/database";
 
 const locationSources = ["GPS", "MAP_PICK", "MANUAL", "REVERSE_GEOCODE"] as const;
@@ -143,9 +144,15 @@ export class CheckoutRoutingAddressDto {
 }
 
 export class ResolveCheckoutDeliveryDto {
-  @ApiProperty({ enum: CheckoutDeliveryPreference })
+  @ApiPropertyOptional({ enum: CheckoutDeliveryPreference })
+  @IsOptional()
   @IsEnum(CheckoutDeliveryPreference)
-  deliveryPreference!: CheckoutDeliveryPreference;
+  deliveryPreference?: CheckoutDeliveryPreference;
+
+  @ApiPropertyOptional({ enum: DeliveryMode })
+  @IsOptional()
+  @IsEnum(DeliveryMode)
+  requestedDeliveryMode?: DeliveryMode;
 
   @ApiPropertyOptional({ example: "f2c7311c-6666-4444-8888-1b9c960acabc" })
   @IsOptional()
@@ -219,12 +226,30 @@ export class UpsertShippingRateCardDto {
   @Min(0)
   maxSubtotalPaise?: number;
 
-  @ApiPropertyOptional({ example: 4900 })
+  @ApiPropertyOptional({ example: 10.5 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 3 })
+  @Min(0)
+  maxWeightKg?: number;
+
+  @ApiPropertyOptional({ enum: ShippingPricingType, default: ShippingPricingType.FLAT })
+  @IsOptional()
+  @IsEnum(ShippingPricingType)
+  pricingType?: ShippingPricingType;
+
+  @ApiPropertyOptional({ example: 4900, description: "Base charge in paise (covers the base/flat fee for all pricing types)." })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(0)
-  shippingChargePaise?: number;
+  baseChargePaise?: number;
+
+  @ApiPropertyOptional({
+    description: "Strategy-specific config. For DISTANCE: { includedDistanceKm: number, perKmPaise: number }",
+  })
+  @IsOptional()
+  pricingConfig?: Record<string, unknown>;
 
   @ApiPropertyOptional({ example: 99900 })
   @IsOptional()

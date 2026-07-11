@@ -285,6 +285,7 @@ export class SettingsService {
   ) {
     const normalized = {
       minimumPerOrderPaise: this.nonNegativeInt(dto.minimumPerOrderPaise),
+      includedDistanceKm: this.nonNegativeInt(dto.includedDistanceKm),
       basePayPaise: this.nonNegativeInt(dto.basePayPaise),
       perKmPaise: this.nonNegativeInt(dto.perKmPaise),
       codBonusPaise: this.nonNegativeInt(dto.codBonusPaise),
@@ -298,6 +299,12 @@ export class SettingsService {
         deliveryPartnerPayoutSettingGroup,
         SettingValueType.NUMBER,
         normalized.minimumPerOrderPaise,
+      ),
+      this.settingWrite(
+        deliveryPartnerPayoutSettingKeys.includedDistanceKm,
+        deliveryPartnerPayoutSettingGroup,
+        SettingValueType.NUMBER,
+        normalized.includedDistanceKm,
       ),
       this.settingWrite(
         deliveryPartnerPayoutSettingKeys.basePayPaise,

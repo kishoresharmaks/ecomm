@@ -53,6 +53,7 @@ export type CheckoutCharges = {
   snapshot: Prisma.InputJsonObject;
   deliveryRouting: DeliveryRoutingQuote | null;
   deliveryRoutings?: CheckoutSellerPackageDeliveryRouting[];
+  availableDeliveryOptions?: { mode: DeliveryMode; chargePaise: number; isCheapest: boolean; available: boolean; reason: string | null }[] | undefined;
 };
 
 export type CheckoutCouponAdjustments = {
@@ -90,12 +91,16 @@ export class CheckoutPricingService {
       }
     });
     const settingMap = new Map(settings.map((setting) => [setting.key, setting.value]));
+    
+    // Auto-resolve or requested delivery mode
     const deliveryRouting = this.shouldResolveDelivery(deliveryOptions)
       ? await this.requireDeliveryRouting().resolveDelivery(
           this.deliveryRoutingInput(deliveryOptions, normalizedSubtotal),
           client,
         )
       : null;
+
+
     const shippingPaise = deliveryRouting
       ? this.nonNegativeInt(deliveryRouting.totalDeliveryChargePaise)
       : this.nonNegativeInt(this.numberSetting(settingMap.get(settingKeys.shippingDefaultChargePaise), 0));
@@ -128,7 +133,8 @@ export class CheckoutPricingService {
         },
         deliveryRouting: deliveryRouting?.routingSnapshot ?? null
       },
-      deliveryRouting
+      deliveryRouting,
+      availableDeliveryOptions: undefined
     };
   }
 
@@ -141,6 +147,56 @@ export class CheckoutPricingService {
     const normalizedSubtotal = this.nonNegativeInt(subtotalPaise);
     const settings = await this.pricingSettings(client);
     const settingMap = new Map(settings.map((setting) => [setting.key, setting.value]));
+    // Calculate explicit options for UI to choose from
+    let availableDeliveryOptions: { mode: DeliveryMode; chargePaise: number; isCheapest: boolean; available: boolean; reason: string | null }[] | undefined = undefined;
+    if (this.shouldResolveDelivery(deliveryOptions) && deliveryOptions.address) {
+      const explicitModes = [DeliveryMode.LOCAL_DELIVERY_PARTNER, DeliveryMode.THIRD_PARTY_COURIER, DeliveryMode.MANUAL_TRANSPORT, DeliveryMode.STORE_PICKUP];
+      const packageOptionsList = await Promise.all(
+        sellerPackages.map(async (sellerPackage) => {
+          return this.requireDeliveryRouting().resolveAllDeliveryOptions(
+            {
+              ...this.deliveryRoutingInput(deliveryOptions, this.nonNegativeInt(sellerPackage.subtotalPaise)),
+              sellerId: sellerPackage.sellerId,
+              sellerType: sellerPackage.sellerType,
+              package: sellerPackage.package ?? null,
+              deliveryPreference: undefined
+            },
+            explicitModes,
+            client
+          );
+        })
+      );
+      
+      const mappedOptions = explicitModes.map(mode => {
+        let totalCharge = 0;
+        let available = true;
+        let reason = null;
+        for (const pkgOptions of packageOptionsList) {
+          const opt = pkgOptions.find(o => o.mode === mode);
+          if (!opt || opt.quote.routingFailed) {
+            available = false;
+            reason = opt?.quote?.routingFailureNote || "Delivery unavailable for some items";
+            break;
+          }
+          totalCharge += opt.quote.totalDeliveryChargePaise;
+        }
+        return {
+          mode,
+          chargePaise: totalCharge,
+          available,
+          reason: available ? null : reason
+        };
+      });
+      
+      const validOptions = mappedOptions.filter(o => o.available);
+      if (validOptions.length > 0) {
+        const minCharge = Math.min(...validOptions.map(o => o.chargePaise));
+        availableDeliveryOptions = mappedOptions.map(o => ({ ...o, isCheapest: o.available && o.chargePaise === minCharge }));
+      } else {
+        availableDeliveryOptions = mappedOptions.map(o => ({ ...o, isCheapest: false }));
+      }
+    }
+
     const deliveryRoutings = this.shouldResolveDelivery(deliveryOptions)
       ? await Promise.all(
           sellerPackages.map(async (sellerPackage) => {
@@ -220,6 +276,7 @@ export class CheckoutPricingService {
       },
       deliveryRouting: deliveryRoutings[0]?.quote ?? null,
       deliveryRoutings,
+      availableDeliveryOptions,
     };
   }
 

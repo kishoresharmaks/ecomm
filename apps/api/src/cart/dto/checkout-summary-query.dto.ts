@@ -1,3 +1,4 @@
+import { DeliveryMode } from "@indihub/database";
 import { ApiPropertyOptional } from "@nestjs/swagger";
 import { Type } from "class-transformer";
 import {
@@ -47,6 +48,11 @@ export class CheckoutSummaryQueryDto {
   @IsOptional()
   @IsEnum(CheckoutDeliveryPreference)
   deliveryPreference?: CheckoutDeliveryPreference;
+
+  @ApiPropertyOptional({ enum: DeliveryMode })
+  @IsOptional()
+  @IsEnum(DeliveryMode)
+  requestedDeliveryMode?: DeliveryMode;
 
   @ApiPropertyOptional({ enum: CheckoutRoutingPaymentMethod })
   @IsOptional()

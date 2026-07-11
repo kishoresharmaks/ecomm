@@ -1,135 +1,297 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { router, type Href } from "expo-router";
 import { useState } from "react";
-import { Text, TextInput, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { useMobileSellerAuth } from "../../src/auth/mobile-seller-auth-context";
-import { Button, Card, EmptyState, Header, LoadingState, QueryErrorState, Screen, StatusChip } from "../../src/components/screen";
+import { Button, Card, ConfirmDialog, EmptyState, Field, Header, LoadingState, QueryErrorState, Screen, StatusChip, Toast } from "../../src/components/screen";
 import {
+  archiveSellerService,
   listSellerServiceBookings,
   listSellerServiceReviews,
+  listSellerServices,
   replyToSellerServiceReview,
-  updateSellerServiceFieldStatus,
   type SellerServiceBooking,
+  type SellerServiceListing,
   type SellerServiceReview,
 } from "../../src/features/seller/seller-api";
+import { dueServiceAmountPaise, servicePriceLabel } from "../../src/features/seller/service-operations";
 import { formatMoney } from "../../src/lib/money";
+import { colors, spacing } from "../../src/theme";
+
+type ViewMode = "listings" | "jobs" | "reviews";
+type ToastState = { visible: boolean; message: string; type: "success" | "error" };
 
 const statusTones: Record<string, "info" | "success" | "warning" | "danger"> = {
+  ACTIVE: "success",
+  APPROVED: "success",
   REQUESTED: "warning",
   ACCEPTED: "info",
   SCHEDULED: "info",
   IN_PROGRESS: "warning",
+  COMPLETION_SUBMITTED: "warning",
   COMPLETED: "success",
   COMPLETION_DISPUTED: "danger",
   CANCELLED: "danger",
+  REJECTED: "danger",
 };
 
 export default function SellerServicesScreen() {
   const auth = useMobileSellerAuth();
   const queryClient = useQueryClient();
-  const [view, setView] = useState<"jobs" | "reviews">("jobs");
-  const [fieldNotes, setFieldNotes] = useState<Record<string, string>>({});
+  const [view, setView] = useState<ViewMode>("listings");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [archiveServiceId, setArchiveServiceId] = useState<string | null>(null);
+  const [toast, setToast] = useState<ToastState>({ visible: false, message: "", type: "success" });
+
+  const servicesQuery = useQuery({
+    queryKey: ["seller-services", auth.authKey, searchQuery],
+    queryFn: () => listSellerServices(auth.authHeaders, { limit: 30, ...(searchQuery ? { search: searchQuery } : {}) }),
+    enabled: auth.enabled,
+  });
   const jobsQuery = useQuery({
-    queryKey: ["seller-service-bookings", auth.authKey],
+    queryKey: ["seller-service-bookings", auth.authKey, "summary"],
     queryFn: () => listSellerServiceBookings(auth.authHeaders, { limit: 40 }),
     enabled: auth.enabled,
   });
   const reviewsQuery = useQuery({
-    queryKey: ["seller-service-reviews", auth.authKey],
+    queryKey: ["seller-service-reviews", auth.authKey, "summary"],
     queryFn: () => listSellerServiceReviews(auth.authHeaders, { limit: 20 }),
     enabled: auth.enabled,
   });
-  const fieldMutation = useMutation({
-    mutationFn: ({ booking, status }: { booking: SellerServiceBooking; status: "EN_ROUTE" | "ARRIVED" | "CHECKED_IN" | "CHECKED_OUT" }) => {
-      const note = fieldNotes[booking.bookingNumber]?.trim();
-      return updateSellerServiceFieldStatus(auth.authHeaders, booking.bookingNumber, note ? { status, note } : { status });
+
+  const archiveMutation = useMutation({
+    mutationFn: (serviceId: string) => archiveSellerService(auth.authHeaders, serviceId),
+    onSuccess: async () => {
+      setArchiveServiceId(null);
+      setToast({ visible: true, message: "Service archived.", type: "success" });
+      await queryClient.invalidateQueries({ queryKey: ["seller-services", auth.authKey] });
     },
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["seller-service-bookings"] }),
+    onError: (error) => setToast({ visible: true, message: error instanceof Error ? error.message : "Service archive failed.", type: "error" }),
   });
   const replyMutation = useMutation({
-    mutationFn: ({ review }: { review: SellerServiceReview }) =>
-      replyToSellerServiceReview(auth.authHeaders, review.id, { body: "Thank you for your feedback. We will keep improving our service." }),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["seller-service-reviews"] }),
+    mutationFn: (reviewId: string) =>
+      replyToSellerServiceReview(auth.authHeaders, reviewId, {
+        body: "Thank you for your feedback. We will keep improving our service.",
+      }),
+    onSuccess: async () => {
+      setToast({ visible: true, message: "Review reply posted.", type: "success" });
+      await queryClient.invalidateQueries({ queryKey: ["seller-service-reviews", auth.authKey] });
+    },
+    onError: (error) => setToast({ visible: true, message: error instanceof Error ? error.message : "Reply failed.", type: "error" }),
   });
 
-  if (!auth.enabled || jobsQuery.isLoading || reviewsQuery.isLoading) {
-    return <LoadingState message="Loading services..." />;
+  if (!auth.enabled || servicesQuery.isLoading || jobsQuery.isLoading || reviewsQuery.isLoading) {
+    return <LoadingState message="Loading service workspace..." />;
   }
 
-  const loadError = jobsQuery.error ?? reviewsQuery.error;
-
-  if (jobsQuery.isError || reviewsQuery.isError) {
+  const loadError = servicesQuery.error ?? jobsQuery.error ?? reviewsQuery.error;
+  if (servicesQuery.isError || jobsQuery.isError || reviewsQuery.isError) {
     return (
-      <Screen scroll={false}>
-        <Header title="Services" subtitle="Manage service jobs and customer feedback." />
+      <Screen>
+        <Header title="Services" subtitle="Manage service listings, bookings, and customer feedback." />
         <QueryErrorState
           title="Services could not be loaded"
           message={loadError instanceof Error ? loadError.message : undefined}
           onRetry={() => {
+            void servicesQuery.refetch();
             void jobsQuery.refetch();
             void reviewsQuery.refetch();
           }}
-          retrying={jobsQuery.isFetching || reviewsQuery.isFetching}
+          retrying={servicesQuery.isFetching || jobsQuery.isFetching || reviewsQuery.isFetching}
         />
       </Screen>
     );
   }
 
+  const services = servicesQuery.data?.items ?? [];
   const jobs = jobsQuery.data?.items ?? [];
   const reviews = reviewsQuery.data?.items ?? [];
 
   return (
-    <Screen>
-      <Header title="Services" subtitle="Track jobs, technician progress, quotes, and service reviews." />
-      <View style={{ flexDirection: "row", gap: 8 }}>
-        <Button title="Jobs" tone={view === "jobs" ? "primary" : "secondary"} onPress={() => setView("jobs")} style={{ flex: 1 }} />
-        <Button title="Reviews" tone={view === "reviews" ? "primary" : "secondary"} onPress={() => setView("reviews")} style={{ flex: 1 }} />
+    <Screen contentContainerStyle={styles.content}>
+      <Header title="Services" subtitle="Add services, accept bookings, update field work, and handle service reviews." />
+      <View style={styles.quickActions}>
+        <Button title="Add service" onPress={() => router.push("/services/new" as Href)} style={styles.quickButton} />
+        <Button title="Calendar" tone="secondary" onPress={() => router.push("/service-calendar" as Href)} style={styles.quickButton} />
       </View>
-      {view === "jobs" ? (
-        jobs.length ? (
-          jobs.map((booking) => (
-            <Card key={booking.id}>
-              <Text style={{ color: "#111827", fontSize: 18, fontWeight: "900" }}>{booking.bookingNumber}</Text>
-              <Text style={{ color: "#374151", fontSize: 14, fontWeight: "800", marginTop: 4 }}>{booking.listing?.title ?? "Service job"}</Text>
-              <StatusChip label={booking.status} tone={statusTones[booking.status] ?? "info"} />
-              <Text style={{ color: "#6B7280", marginTop: 6 }}>{booking.customer?.displayName ?? booking.customer?.user?.fullName ?? "Customer"}</Text>
-              <Text style={{ color: "#6B7280" }}>Due: {formatMoney(Math.max(0, booking.totalPayablePaise - booking.paidAmountPaise), booking.currency)}</Text>
-              <Text style={{ color: "#6B7280" }}>Technician: {booking.assignedTechnician?.name ?? "Not assigned"}</Text>
-              <Text style={{ color: "#6B7280" }}>Field proof: {booking.technicianFieldProofKeys?.length ?? 0} files</Text>
-              <TextInput
-                onChangeText={(value) => setFieldNotes((current) => ({ ...current, [booking.bookingNumber]: value }))}
-                placeholder="Technician note"
-                placeholderTextColor="#9CA3AF"
-                style={{ borderColor: "#E5E7EB", borderRadius: 12, borderWidth: 1, color: "#111827", marginTop: 10, paddingHorizontal: 12, paddingVertical: 10 }}
-                value={fieldNotes[booking.bookingNumber] ?? ""}
-              />
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
-                <Button title="En route" tone="secondary" loading={fieldMutation.isPending} onPress={() => fieldMutation.mutate({ booking, status: "EN_ROUTE" })} />
-                <Button title="Arrived" tone="secondary" loading={fieldMutation.isPending} onPress={() => fieldMutation.mutate({ booking, status: "ARRIVED" })} />
-                <Button title="Check in" tone="secondary" loading={fieldMutation.isPending} onPress={() => fieldMutation.mutate({ booking, status: "CHECKED_IN" })} />
-                <Button title="Check out" tone="secondary" loading={fieldMutation.isPending} onPress={() => fieldMutation.mutate({ booking, status: "CHECKED_OUT" })} />
-              </View>
-            </Card>
-          ))
-        ) : (
-          <EmptyState title="No service jobs" message="Service bookings assigned to your seller account will appear here." />
-        )
-      ) : reviews.length ? (
-        reviews.map((review) => (
-          <Card key={review.id}>
-            <Text style={{ color: "#ED3500", fontSize: 16, fontWeight: "900" }}>{review.rating}/5 rating</Text>
-            <Text style={{ color: "#111827", fontSize: 15, fontWeight: "900", marginTop: 4 }}>{review.listing?.title ?? "Service"}</Text>
-            <Text style={{ color: "#6B7280", marginTop: 6 }}>{review.body ?? "No written review."}</Text>
-            <StatusChip label={review.isVisible === false ? "HIDDEN" : "VISIBLE"} tone={review.isVisible === false ? "warning" : "success"} />
-            {review.reply ? (
-              <Text style={{ color: "#374151", marginTop: 8 }}>Reply: {review.reply.body}</Text>
-            ) : (
-              <Button title="Quick reply" loading={replyMutation.isPending} onPress={() => replyMutation.mutate({ review })} />
-            )}
-          </Card>
-        ))
+      <View style={styles.segment}>
+        <Button title="Listings" tone={view === "listings" ? "primary" : "secondary"} onPress={() => setView("listings")} style={styles.segmentButton} />
+        <Button title="Jobs" tone={view === "jobs" ? "primary" : "secondary"} onPress={() => setView("jobs")} style={styles.segmentButton} />
+        <Button title="Reviews" tone={view === "reviews" ? "primary" : "secondary"} onPress={() => setView("reviews")} style={styles.segmentButton} />
+      </View>
+
+      {view === "listings" ? (
+        <ServiceListings
+          services={services}
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+          onArchive={setArchiveServiceId}
+        />
+      ) : view === "jobs" ? (
+        <ServiceJobs jobs={jobs} />
       ) : (
-        <EmptyState title="No service reviews" message="Customer reviews for completed service jobs will appear here." />
+        <ServiceReviews reviews={reviews} replying={replyMutation.isPending} onReply={(reviewId) => replyMutation.mutate(reviewId)} />
       )}
+
+      <ConfirmDialog
+        visible={Boolean(archiveServiceId)}
+        title="Archive service"
+        message="Archive this service listing? Customers will no longer see it as active."
+        onCancel={() => setArchiveServiceId(null)}
+        onConfirm={() => {
+          if (archiveServiceId) {
+            archiveMutation.mutate(archiveServiceId);
+          }
+        }}
+      />
+      <Toast visible={toast.visible} message={toast.message} type={toast.type} onDismiss={() => setToast((current) => ({ ...current, visible: false }))} />
     </Screen>
   );
 }
+
+function ServiceListings({
+  services,
+  searchQuery,
+  setSearchQuery,
+  onArchive,
+}: {
+  services: SellerServiceListing[];
+  searchQuery: string;
+  setSearchQuery: (value: string) => void;
+  onArchive: (serviceId: string) => void;
+}) {
+  return (
+    <>
+      <Card>
+        <Field placeholder="Search services..." value={searchQuery} onChangeText={setSearchQuery} autoCapitalize="none" />
+      </Card>
+      {services.length ? (
+        services.map((service) => (
+          <Card key={service.id}>
+            <View style={styles.cardHeader}>
+              <Text style={styles.cardTitle}>{service.title}</Text>
+              <StatusChip label={service.status} tone={statusTones[service.status] ?? "info"} />
+            </View>
+            <StatusChip label={service.approvalStatus} tone={statusTones[service.approvalStatus] ?? "warning"} />
+            <Text style={styles.muted}>{service.description}</Text>
+            <Text style={styles.money}>{servicePriceLabel(service)}</Text>
+            <View style={styles.buttonRow}>
+              <Button title="Edit" onPress={() => router.push(`/services/${encodeURIComponent(service.id)}` as Href)} style={styles.rowButton} />
+              <Button title="Archive" tone="danger" onPress={() => onArchive(service.id)} style={styles.rowButton} />
+            </View>
+          </Card>
+        ))
+      ) : (
+        <EmptyState title="No services found" message="Create your first service with pricing, visit modes, image, package, and coverage." />
+      )}
+    </>
+  );
+}
+
+function ServiceJobs({ jobs }: { jobs: SellerServiceBooking[] }) {
+  return jobs.length ? (
+    <>
+      {jobs.map((booking) => (
+        <Card key={booking.id}>
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardTitle}>{booking.bookingNumber}</Text>
+            <StatusChip label={booking.status} tone={statusTones[booking.status] ?? "info"} />
+          </View>
+          <Text style={styles.money}>{titleForBooking(booking)}</Text>
+          <Text style={styles.muted}>{booking.customerIssue}</Text>
+          <Text style={styles.muted}>Customer: {booking.customer?.displayName ?? booking.customer?.user?.fullName ?? "Customer"}</Text>
+          <Text style={styles.muted}>Due: {formatMoney(dueServiceAmountPaise(booking), booking.currency)}</Text>
+          <Text style={styles.muted}>Technician: {booking.assignedTechnician?.name ?? "Not assigned"}</Text>
+          <Button title="Open job" onPress={() => router.push(`/service-bookings/${encodeURIComponent(booking.bookingNumber)}` as Href)} />
+        </Card>
+      ))}
+    </>
+  ) : (
+    <EmptyState title="No service jobs" message="Customer service bookings assigned to your seller account will appear here." />
+  );
+}
+
+function ServiceReviews({
+  reviews,
+  replying,
+  onReply,
+}: {
+  reviews: SellerServiceReview[];
+  replying: boolean;
+  onReply: (reviewId: string) => void;
+}) {
+  return reviews.length ? (
+    <>
+      {reviews.map((review) => (
+        <Card key={review.id}>
+          <Text style={styles.money}>{review.rating}/5 rating</Text>
+          <Text style={styles.cardTitle}>{review.listing?.title ?? "Service"}</Text>
+          <Text style={styles.muted}>{review.body ?? "No written review."}</Text>
+          <StatusChip label={review.isVisible === false ? "HIDDEN" : "VISIBLE"} tone={review.isVisible === false ? "warning" : "success"} />
+          {review.reply ? (
+            <Text style={styles.muted}>Reply: {review.reply.body}</Text>
+          ) : (
+            <Button title="Quick reply" loading={replying} onPress={() => onReply(review.id)} />
+          )}
+        </Card>
+      ))}
+    </>
+  ) : (
+    <EmptyState title="No service reviews" message="Customer reviews for completed service jobs will appear here." />
+  );
+}
+
+function titleForBooking(booking: SellerServiceBooking) {
+  return booking.listing && "title" in booking.listing ? booking.listing.title ?? "Service job" : "Service job";
+}
+
+const styles = StyleSheet.create({
+  content: {
+    gap: spacing.lg,
+  },
+  quickActions: {
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  quickButton: {
+    flex: 1,
+  },
+  segment: {
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  segmentButton: {
+    flex: 1,
+    paddingHorizontal: spacing.sm,
+  },
+  cardHeader: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: spacing.sm,
+    justifyContent: "space-between",
+  },
+  cardTitle: {
+    color: colors.ink,
+    flex: 1,
+    fontSize: 17,
+    fontWeight: "900",
+  },
+  muted: {
+    color: colors.muted,
+    fontSize: 13,
+    fontWeight: "700",
+    lineHeight: 19,
+  },
+  money: {
+    color: colors.ink,
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  buttonRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  rowButton: {
+    flex: 1,
+  },
+});

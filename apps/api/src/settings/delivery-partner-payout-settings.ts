@@ -5,6 +5,7 @@ export const deliveryPartnerPayoutSettingGroup = "delivery_partner_payouts";
 
 export const deliveryPartnerPayoutSettingKeys = {
   minimumPerOrderPaise: "delivery_partner.payout.minimum_per_order_paise",
+  includedDistanceKm: "delivery_partner.payout.included_distance_km",
   basePayPaise: "delivery_partner.payout.base_pay_paise",
   perKmPaise: "delivery_partner.payout.per_km_paise",
   codBonusPaise: "delivery_partner.payout.cod_bonus_paise",
@@ -16,6 +17,7 @@ export const deliveryPartnerPayoutSettingKeys = {
 
 export type DeliveryPartnerPayoutSettings = {
   minimumPerOrderPaise: number;
+  includedDistanceKm: number;
   basePayPaise: number;
   perKmPaise: number;
   codBonusPaise: number;
@@ -26,6 +28,7 @@ export type DeliveryPartnerPayoutSettings = {
 
 export const defaultDeliveryPartnerPayoutSettings: DeliveryPartnerPayoutSettings = {
   minimumPerOrderPaise: 4_000,
+  includedDistanceKm: 3,
   basePayPaise: 2_500,
   perKmPaise: 800,
   codBonusPaise: 500,
@@ -68,6 +71,12 @@ export function normalizeDeliveryPartnerPayoutSettings(
       readNumberSetting(
         settingMap.get(deliveryPartnerPayoutSettingKeys.minimumPerOrderPaise),
         defaultDeliveryPartnerPayoutSettings.minimumPerOrderPaise,
+      ),
+    ),
+    includedDistanceKm: nonNegativeInt(
+      readNumberSetting(
+        settingMap.get(deliveryPartnerPayoutSettingKeys.includedDistanceKm),
+        defaultDeliveryPartnerPayoutSettings.includedDistanceKm,
       ),
     ),
     basePayPaise: nonNegativeInt(

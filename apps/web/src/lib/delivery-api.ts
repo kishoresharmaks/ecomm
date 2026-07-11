@@ -227,6 +227,7 @@ export type DeliveryPartnerWalletSummary = {
 
 export type DeliveryPartnerPayoutSettings = {
   minimumPerOrderPaise: number;
+  includedDistanceKm: number;
   basePayPaise: number;
   perKmPaise: number;
   codBonusPaise: number;

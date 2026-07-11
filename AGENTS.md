@@ -222,3 +222,26 @@ When modifying `schema.prisma` or creating new models, strictly adhere to the fo
 ## Delivery Partner Payout Strategy
 - 1HandIndia uses a static, predictable delivery payout model (Base Pay + Per KM with a minimum floor).
 - Do not build dynamic surge pricing, milestone gamification, or weather-based incentives unless explicitly requested, to keep early operations simple and predictable for early riders.
+
+## Worker/API Boundary
+- The `apps/worker` application is a standard Node.js polling application, not a NestJS app, and does not have access to `@nestjs/schedule` or `apps/api` DI providers. 
+- For simple database updates, the worker should use the shared `@indihub/database` Prisma client directly.
+- For complex, domain-heavy operations (e.g., geospatial queries, assignments, extensive state-machines), DO NOT duplicate API service logic into the worker. Instead, create an `@Controller("internal/...")` endpoint in `apps/api`, secure it with an internal secret header, and have the worker trigger it via `fetch`.
+
+- **Enforce Physical Origins**: Never assume a seller has a valid origin address. Any code allowing sellers to add products, accept orders, or initiate shipments MUST first enforce that the seller has at least one address with saved GPS coordinates (`latitude` and `longitude`). The root cause of delivery routing failures is missing origin data, so we must hard-block operations rather than falling back to arbitrary "base" distances.
+- **Strict Financial Assertions**: When validating incoming financial data from external parties (like Delivery Partners submitting collected COD cash), never allow "greater than zero" checks. The incoming amount MUST be mathematically asserted against the expected `amountPaise` using strict equality (`===`), rejecting any partial submissions entirely.
+
+- **Weight-Based Delivery Boundaries**: When handling large or heavy orders, the system must restrict delivery assignment upfront during checkout, rather than relying on partner rejections. 
+  - `Product` models must include a `weightKg` field.
+  - `ShippingRateCard` must include a `maxWeightKg` config.
+  - The Checkout Pricing Service must sum the cart's total weight. If the total exceeds a rate card's `maxWeightKg`, that specific delivery mode (e.g., Local Delivery) must be strictly filtered out of the checkout options, forcing the customer to select Manual Transport or a heavy Courier.
+  - **Migration**: Existing products without a saved weight should safely default to `0kg` to avoid breaking checkout until sellers update their inventory.
+
+## E-Commerce Checkout Performance & UX
+- **Single-Pass Routing:** When evaluating multiple shipping or delivery permutations (e.g., pricing all 4 delivery modes at once), NEVER fan-out concurrent routing calls via `Promise.all` if they share underlying location, proximity, or courier database queries. Always implement single-pass batch evaluators (e.g., `resolveAllDeliveryOptions`) to prevent database spikes during frequent cart updates.
+- **Transparent Disabled States:** When an explicit user choice (like a delivery mode or payment method) is restricted by business rules (pincode coverage, weight limit, basket size), prefer rendering the option as disabled/greyed-out with a clear reason (e.g., "Exceeds 5kg limit") rather than silently filtering it out. Silent omission leads to customer confusion and support tickets.
+
+## Delivery Routing & Checkout Architecture
+- **Single-Pass Routing**: When calculating `availableDeliveryOptions` for checkout pricing, always evaluate the delivery routing quotes in a single pass across the cart. Avoid calculating 4 independent `resolveDelivery` calls for every UI state update to prevent backend rate limiting and DB transaction spikes.
+- **Explicit Unavailable States**: When a delivery mode (e.g., Local Delivery) fails routing criteria (like `maxWeightKg` limits or missing local partners), do not silently remove the option from the frontend. Expose the disabled option with `available: false` and a `reason` (e.g., "Wholesale bulky package") so the customer understands why it is unavailable.
+- **Type-Safe DTO Propagations**: When adding new fields like `maxWeightKg` to the DB schema, ensure they are explicitly queried in the `Prisma.select` objects (e.g., inside `checkoutSummaryItems`) before attempting to pass them to pricing services, to avoid silent TypeScript `any` widening or `undefined` runtime bugs.

@@ -167,7 +167,6 @@ export class PlaceOrderDto {
 
   @ApiPropertyOptional({
     enum: CheckoutDeliveryPreference,
-    default: CheckoutDeliveryPreference.DELIVER_TO_ADDRESS,
   })
   @IsOptional()
   @IsEnum(CheckoutDeliveryPreference)
@@ -175,7 +174,7 @@ export class PlaceOrderDto {
 
   @ApiPropertyOptional({
     enum: DeliveryMode,
-    description: "Legacy compatibility field. New customer checkout should send deliveryPreference only.",
+    description: "Explicit delivery mode chosen by the customer. Overrides deliveryPreference.",
   })
   @IsOptional()
   @IsEnum(DeliveryMode)

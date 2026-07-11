@@ -16,6 +16,7 @@ type SettingRecord = {
 
 type DeliveryPartnerPayoutSettingsResponse = {
   minimumPerOrderPaise: number;
+  includedDistanceKm: number;
   basePayPaise: number;
   perKmPaise: number;
   codBonusPaise: number;
@@ -26,6 +27,7 @@ type DeliveryPartnerPayoutSettingsResponse = {
 
 type DeliveryPartnerPayoutSettingsForm = {
   minimumPerOrderRupees: string;
+  includedDistanceKm: string;
   basePayRupees: string;
   perKmRupees: string;
   codBonusRupees: string;
@@ -36,6 +38,7 @@ type DeliveryPartnerPayoutSettingsForm = {
 
 const keys = {
   minimumPerOrderPaise: "delivery_partner.payout.minimum_per_order_paise",
+  includedDistanceKm: "delivery_partner.payout.included_distance_km",
   basePayPaise: "delivery_partner.payout.base_pay_paise",
   perKmPaise: "delivery_partner.payout.per_km_paise",
   codBonusPaise: "delivery_partner.payout.cod_bonus_paise",
@@ -47,6 +50,7 @@ const keys = {
 
 const defaults: DeliveryPartnerPayoutSettingsResponse = {
   minimumPerOrderPaise: 4_000,
+  includedDistanceKm: 3,
   basePayPaise: 2_500,
   perKmPaise: 800,
   codBonusPaise: 500,
@@ -268,6 +272,7 @@ function MoneyInput({
 function settingsFromRecords(settings: SettingRecord[]): DeliveryPartnerPayoutSettingsResponse {
   return {
     minimumPerOrderPaise: numberSetting(settings, keys.minimumPerOrderPaise, defaults.minimumPerOrderPaise),
+    includedDistanceKm: numberSetting(settings, keys.includedDistanceKm, defaults.includedDistanceKm),
     basePayPaise: numberSetting(settings, keys.basePayPaise, defaults.basePayPaise),
     perKmPaise: numberSetting(settings, keys.perKmPaise, defaults.perKmPaise),
     codBonusPaise: numberSetting(settings, keys.codBonusPaise, defaults.codBonusPaise),
@@ -290,6 +295,7 @@ function formFromSettings(
 ): DeliveryPartnerPayoutSettingsForm {
   return {
     minimumPerOrderRupees: paiseToRupeesInput(settings.minimumPerOrderPaise),
+    includedDistanceKm: settings.includedDistanceKm.toString(),
     basePayRupees: paiseToRupeesInput(settings.basePayPaise),
     perKmRupees: paiseToRupeesInput(settings.perKmPaise),
     codBonusRupees: paiseToRupeesInput(settings.codBonusPaise),
@@ -302,6 +308,7 @@ function formFromSettings(
 function payloadFromForm(form: DeliveryPartnerPayoutSettingsForm): DeliveryPartnerPayoutSettingsResponse {
   return {
     minimumPerOrderPaise: rupeesToPaise(form.minimumPerOrderRupees),
+    includedDistanceKm: Math.max(0, parseInt(form.includedDistanceKm) || 0),
     basePayPaise: rupeesToPaise(form.basePayRupees),
     perKmPaise: rupeesToPaise(form.perKmRupees),
     codBonusPaise: rupeesToPaise(form.codBonusRupees),

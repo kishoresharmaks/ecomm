@@ -848,23 +848,247 @@ export function listSellerReviews(auth: MobileAuthHeaders, query: Record<string,
   return getJson<PageResult<SellerReview>>({ path: "/seller/reviews", auth, searchParams: query });
 }
 
+export type ApprovalStatus = "DRAFT" | "PENDING_APPROVAL" | "APPROVED" | "REJECTED";
+export type ServiceListingStatus = "DRAFT" | "INACTIVE" | "ACTIVE" | "ARCHIVED";
+export type ServiceVisitMode = "CUSTOMER_LOCATION" | "PROVIDER_LOCATION" | "REMOTE";
+export type ServicePricingModel = "FIXED_PRICE" | "QUOTE_FIRST" | "INSPECTION_FEE";
+export type ServicePaymentMode = "FULL_PAYMENT" | "ADVANCE_PAYMENT" | "INSPECTION_FEE" | "PAY_AT_VISIT";
+export type ServiceCancellationPolicy = "FLEXIBLE" | "MODERATE" | "STRICT";
+export type ServiceBookingStatus =
+  | "REQUESTED"
+  | "ACCEPTED"
+  | "QUOTE_SENT"
+  | "QUOTE_ACCEPTED"
+  | "QUOTE_REJECTED"
+  | "QUOTE_EXPIRED"
+  | "REJECTED"
+  | "SCHEDULED"
+  | "IN_PROGRESS"
+  | "COMPLETION_SUBMITTED"
+  | "COMPLETION_DISPUTED"
+  | "COMPLETED"
+  | "CLOSED_AFTER_INSPECTION"
+  | "CANCELLED"
+  | "CANCELLED_AFTER_DISPUTE";
+export type ServiceQuoteStatus = "SENT" | "ACCEPTED" | "REJECTED" | "EXPIRED" | "WITHDRAWN";
+export type ServicePaymentPurpose = "INSPECTION_FEE" | "FULL_PAYMENT" | "ADVANCE_PAYMENT" | "FINAL_QUOTE" | "PAY_AT_VISIT";
+export type ServicePaymentProvider = "RAZORPAY" | "COD" | "BANK_TRANSFER" | "MANUAL";
+export type ServicePaymentStatus = "PENDING" | "PAID" | "FAILED" | "REFUNDED" | "NOT_REQUIRED";
+export type ServiceCashCollectionStatus =
+  | "NOT_APPLICABLE"
+  | "RECORDED"
+  | "CUSTOMER_CONFIRMED"
+  | "CUSTOMER_DISPUTED"
+  | "ADMIN_VERIFIED"
+  | "ADMIN_PARTIALLY_VERIFIED"
+  | "REJECTED"
+  | "REOPENED";
+
+export type SellerServiceImage = {
+  id?: string;
+  url: string;
+  altText?: string | null;
+  sortOrder?: number;
+  isPrimary?: boolean;
+};
+
+export type SellerServicePackage = {
+  id?: string;
+  name: string;
+  description?: string | null;
+  pricePaise: number;
+  mrpPaise?: number | null;
+  currency?: string;
+  durationMinutes?: number | null;
+  sortOrder?: number;
+  isActive?: boolean;
+};
+
+export type SellerServiceListing = {
+  id: string;
+  sellerId: string;
+  categoryId: string;
+  title: string;
+  slug: string;
+  description: string;
+  status: ServiceListingStatus;
+  approvalStatus: ApprovalStatus;
+  pricingModel: ServicePricingModel;
+  paymentMode: ServicePaymentMode;
+  cancellationPolicy: ServiceCancellationPolicy;
+  basePricePaise?: number | null;
+  inspectionFeePaise?: number | null;
+  advanceAmountPaise?: number | null;
+  currency: string;
+  quoteTtlHours?: number;
+  serviceDurationMinutes?: number | null;
+  allowedVisitModes: ServiceVisitMode[];
+  highlights?: string[];
+  inclusions?: string[];
+  exclusions?: string[];
+  requirements?: string[];
+  serviceRating?: number | string | null;
+  serviceReviewCount?: number;
+  category?: CategorySummary | null;
+  packages?: SellerServicePackage[];
+  images?: SellerServiceImage[];
+  areas?: SellerServiceArea[];
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type SellerServicePayload = {
+  categoryId: string;
+  title: string;
+  description: string;
+  pricingModel: ServicePricingModel;
+  paymentMode: ServicePaymentMode;
+  cancellationPolicy?: ServiceCancellationPolicy;
+  basePricePaise?: number;
+  inspectionFeePaise?: number;
+  advanceAmountPaise?: number;
+  currency?: string;
+  quoteTtlHours?: number;
+  serviceDurationMinutes?: number;
+  allowedVisitModes: ServiceVisitMode[];
+  highlights?: string[];
+  inclusions?: string[];
+  exclusions?: string[];
+  requirements?: string[];
+  images?: SellerServiceImage[];
+  packages?: SellerServicePackage[];
+  areas?: SellerServiceArea[];
+};
+
+export type SellerServiceTechnician = {
+  id?: string;
+  sellerId?: string;
+  name: string;
+  phone?: string | null;
+  email?: string | null;
+  skills?: string[];
+  isActive?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type SellerServiceAvailabilityRule = {
+  id?: string;
+  sellerId?: string;
+  dayOfWeek: number;
+  startMinute: number;
+  endMinute: number;
+  capacity: number;
+  note?: string | null;
+  isActive?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type SellerServiceBlockedWindow = {
+  id?: string;
+  sellerId?: string;
+  startsAt: string;
+  endsAt: string;
+  reason?: string | null;
+  isFullDay?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type SellerServiceQuote = {
+  id: string;
+  quoteNumber: string;
+  status: ServiceQuoteStatus;
+  subtotalPaise: number;
+  totalPaise: number;
+  currency: string;
+  note?: string | null;
+  expiresAt: string;
+  sentAt?: string;
+  lineItems?: Array<{
+    id?: string;
+    description: string;
+    quantity: number;
+    unitPaise: number;
+    totalPaise: number;
+  }>;
+};
+
+export type SellerServicePayment = {
+  id: string;
+  provider: ServicePaymentProvider;
+  purpose: ServicePaymentPurpose;
+  cashCollectionStatus?: ServiceCashCollectionStatus;
+  amountPaise: number;
+  currency: string;
+  status: ServicePaymentStatus;
+  referenceNumber?: string | null;
+  cashCollectionEventId?: string | null;
+  cashCollectedAt?: string | null;
+  paidAt?: string | null;
+  createdAt?: string;
+};
+
 export type SellerServiceBooking = {
   id: string;
   bookingNumber: string;
-  status: string;
+  status: ServiceBookingStatus;
+  visitMode?: ServiceVisitMode;
+  paymentMode?: ServicePaymentMode;
+  cancellationPolicy?: ServiceCancellationPolicy;
   scheduledStartAt?: string | null;
+  scheduledEndAt?: string | null;
+  assignedTechnicianId?: string | null;
+  addressSnapshot?: Record<string, unknown> | null;
   totalPayablePaise: number;
   paidAmountPaise: number;
+  subtotalPaise?: number;
+  inspectionFeePaise?: number;
+  advanceAmountPaise?: number;
   currency: string;
   customerIssue: string;
-  listing?: { title?: string | null };
-  customer?: { displayName?: string | null; user?: { fullName?: string | null; phone?: string | null } | null } | null;
-  assignedTechnician?: { name?: string | null; phone?: string | null } | null;
+  customerNote?: string | null;
+  providerNote?: string | null;
+  cancellationReason?: string | null;
+  completionNote?: string | null;
+  completionImages?: string[];
+  completionProofKeys?: string[];
+  completionSubmittedAt?: string | null;
+  completionConfirmedAt?: string | null;
+  listing?: SellerServiceListing | { title?: string | null };
+  package?: SellerServicePackage | null;
+  quotes?: SellerServiceQuote[];
+  payments?: SellerServicePayment[];
+  customer?: { displayName?: string | null; user?: { fullName?: string | null; phone?: string | null; email?: string | null } | null } | null;
+  assignedTechnician?: SellerServiceTechnician | null;
   technicianEnRouteAt?: string | null;
   technicianArrivedAt?: string | null;
   technicianCheckInAt?: string | null;
   technicianCheckOutAt?: string | null;
+  technicianFieldStatusNote?: string | null;
   technicianFieldProofKeys?: string[];
+  reviews?: SellerServiceReview[];
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type SellerServiceCalendar = {
+  availabilityRules: SellerServiceAvailabilityRule[];
+  blockedWindows: SellerServiceBlockedWindow[];
+  technicians: SellerServiceTechnician[];
+  bookings: SellerServiceBooking[];
+  diagnostics?: {
+    hasCustomAvailability?: boolean;
+    scheduledBookingCount?: number;
+    unscheduledBookingCount?: number;
+  };
+};
+
+export type SellerServiceCalendarPayload = {
+  availabilityRules?: SellerServiceAvailabilityRule[];
+  blockedWindows?: SellerServiceBlockedWindow[];
+  technicians?: SellerServiceTechnician[];
 };
 
 export type SellerServiceReview = {
@@ -883,13 +1107,162 @@ export function listSellerServiceBookings(auth: MobileAuthHeaders, query: Record
   return getJson<PageResult<SellerServiceBooking>>({ path: "/seller/service-bookings", auth, searchParams: query });
 }
 
+export function listSellerServices(auth: MobileAuthHeaders, query: Record<string, string | number | undefined> = {}) {
+  return getJson<PageResult<SellerServiceListing>>({ path: "/seller/services", auth, searchParams: query });
+}
+
+export function getSellerService(auth: MobileAuthHeaders, serviceId: string) {
+  return getJson<SellerServiceListing>({ path: `/seller/services/${encodeURIComponent(serviceId)}`, auth });
+}
+
+export function createSellerService(auth: MobileAuthHeaders, payload: SellerServicePayload) {
+  return postJson<SellerServiceListing>({ path: "/seller/services", auth, body: payload });
+}
+
+export function updateSellerService(auth: MobileAuthHeaders, serviceId: string, payload: SellerServicePayload) {
+  return patchJson<SellerServiceListing>({ path: `/seller/services/${encodeURIComponent(serviceId)}`, auth, body: payload });
+}
+
+export function archiveSellerService(auth: MobileAuthHeaders, serviceId: string) {
+  return deleteJson<{ deleted: boolean }>({ path: `/seller/services/${encodeURIComponent(serviceId)}`, auth });
+}
+
+export function getSellerServiceBooking(auth: MobileAuthHeaders, bookingNumber: string) {
+  return getJson<SellerServiceBooking>({ path: `/seller/service-bookings/${encodeURIComponent(bookingNumber)}`, auth });
+}
+
+export function getSellerServiceCalendar(auth: MobileAuthHeaders) {
+  return getJson<SellerServiceCalendar>({ path: "/seller/service-calendar", auth });
+}
+
+export function updateSellerServiceCalendar(auth: MobileAuthHeaders, payload: SellerServiceCalendarPayload) {
+  return patchJson<SellerServiceCalendar>({ path: "/seller/service-calendar", auth, body: payload });
+}
+
+export function acceptSellerServiceBooking(
+  auth: MobileAuthHeaders,
+  bookingNumber: string,
+  payload: { note?: string; scheduledStartAt?: string; assignedTechnicianId?: string },
+) {
+  return patchJson<SellerServiceBooking>({
+    path: `/seller/service-bookings/${encodeURIComponent(bookingNumber)}/accept`,
+    auth,
+    body: payload,
+  });
+}
+
+export function rescheduleSellerServiceBooking(
+  auth: MobileAuthHeaders,
+  bookingNumber: string,
+  payload: { scheduledStartAt: string; assignedTechnicianId?: string; note?: string },
+) {
+  return patchJson<SellerServiceBooking>({
+    path: `/seller/service-bookings/${encodeURIComponent(bookingNumber)}/reschedule`,
+    auth,
+    body: payload,
+  });
+}
+
+export function rejectSellerServiceBooking(auth: MobileAuthHeaders, bookingNumber: string, payload: { reason: string }) {
+  return patchJson<SellerServiceBooking>({
+    path: `/seller/service-bookings/${encodeURIComponent(bookingNumber)}/reject`,
+    auth,
+    body: payload,
+  });
+}
+
+export function cancelSellerServiceBooking(auth: MobileAuthHeaders, bookingNumber: string, payload: { reason: string }) {
+  return patchJson<SellerServiceBooking>({
+    path: `/seller/service-bookings/${encodeURIComponent(bookingNumber)}/cancel`,
+    auth,
+    body: payload,
+  });
+}
+
+export function sendSellerServiceQuote(
+  auth: MobileAuthHeaders,
+  bookingNumber: string,
+  payload: { lineItems: Array<{ description: string; quantity?: number; unitPaise: number }>; note?: string; ttlHours?: number },
+) {
+  return postJson<SellerServiceBooking>({
+    path: `/seller/service-bookings/${encodeURIComponent(bookingNumber)}/quotes`,
+    auth,
+    body: payload,
+  });
+}
+
+export function withdrawSellerServiceQuote(auth: MobileAuthHeaders, bookingNumber: string, payload: { note?: string } = {}) {
+  return patchJson<SellerServiceBooking>({
+    path: `/seller/service-bookings/${encodeURIComponent(bookingNumber)}/quotes/withdraw`,
+    auth,
+    body: payload,
+  });
+}
+
 export function updateSellerServiceFieldStatus(
   auth: MobileAuthHeaders,
   bookingNumber: string,
-  payload: { status: "EN_ROUTE" | "ARRIVED" | "CHECKED_IN" | "CHECKED_OUT"; note?: string; fieldProofKeys?: string[] },
+  payload: { status: "EN_ROUTE" | "ARRIVED" | "CHECKED_IN" | "CHECKED_OUT"; latitude?: number; longitude?: number; note?: string; fieldProofKeys?: string[] },
 ) {
   return patchJson<SellerServiceBooking>({
     path: `/seller/service-bookings/${encodeURIComponent(bookingNumber)}/field-status`,
+    auth,
+    body: payload,
+  });
+}
+
+export function markSellerServiceInProgress(auth: MobileAuthHeaders, bookingNumber: string) {
+  return patchJson<SellerServiceBooking>({
+    path: `/seller/service-bookings/${encodeURIComponent(bookingNumber)}/in-progress`,
+    auth,
+    body: {},
+  });
+}
+
+export function submitSellerServiceCompletion(
+  auth: MobileAuthHeaders,
+  bookingNumber: string,
+  payload: { completionNote: string; completionImages?: string[]; completionProofKeys?: string[] },
+) {
+  return patchJson<SellerServiceBooking>({
+    path: `/seller/service-bookings/${encodeURIComponent(bookingNumber)}/submit-completion`,
+    auth,
+    body: payload,
+  });
+}
+
+export function recordSellerServicePayment(
+  auth: MobileAuthHeaders,
+  bookingNumber: string,
+  payload: {
+    provider: ServicePaymentProvider;
+    purpose: ServicePaymentPurpose;
+    amountPaise: number;
+    referenceNumber?: string;
+    markPaid?: boolean;
+  },
+) {
+  return postJson<SellerServicePayment>({
+    path: `/seller/service-bookings/${encodeURIComponent(bookingNumber)}/payments`,
+    auth,
+    body: payload,
+  });
+}
+
+export function recordSellerServiceCashCollection(
+  auth: MobileAuthHeaders,
+  bookingNumber: string,
+  payload: {
+    amountPaise: number;
+    purpose?: ServicePaymentPurpose;
+    idempotencyKey?: string;
+    cashCollectionEventId?: string;
+    attemptNumber?: number;
+    note?: string;
+  },
+) {
+  return postJson<SellerServicePayment>({
+    path: `/seller/service-bookings/${encodeURIComponent(bookingNumber)}/cash-collections`,
     auth,
     body: payload,
   });

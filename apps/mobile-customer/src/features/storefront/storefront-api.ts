@@ -195,6 +195,13 @@ export type MobileCheckoutSummary = {
   buyerPlatformFeeMinor?: number;
   buyerCouponDiscountMinor?: number;
   buyerTotalMinor: number;
+  availableDeliveryOptions?: {
+    mode: string;
+    chargePaise: number;
+    isCheapest: boolean;
+    available: boolean;
+    reason: string | null;
+  }[];
 };
 
 export type MobileCheckoutPaymentMethodsResponse = {
@@ -729,6 +736,7 @@ export type MobilePlaceOrderPayload = {
   addressId?: string;
   couponCode?: string;
   deliveryPreference: MobileDeliveryPreference;
+  deliveryMode?: string;
   idempotencyKey?: string;
   paymentMethod: MobilePaymentMethod;
   paymentReference?: string;
@@ -949,10 +957,11 @@ export function deleteCustomerAddress(auth: MobileAuthHeaders, addressId: string
 
 export function getCheckoutSummary(
   auth: MobileAuthHeaders,
-  options: {
+    options: {
     buyerCountryCode?: string;
     couponCode?: string | null;
     deliveryPreference?: MobileDeliveryPreference;
+    requestedDeliveryMode?: string | null;
     paymentMethod?: MobilePaymentMethod;
     addressId?: string | null;
   } = {},
@@ -964,6 +973,7 @@ export function getCheckoutSummary(
       buyerCountryCode: options.buyerCountryCode ?? "IN",
       couponCode: options.couponCode,
       deliveryPreference: options.deliveryPreference,
+      requestedDeliveryMode: options.requestedDeliveryMode,
       paymentMethod: options.paymentMethod,
       addressId: options.addressId,
     },

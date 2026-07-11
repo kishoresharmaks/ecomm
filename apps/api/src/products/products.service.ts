@@ -1145,6 +1145,18 @@ export class ProductsService {
       throw new ForbiddenException("Retail capability is required for product operations.");
     }
 
+    const hasLocation = await this.prisma.client.sellerAddress.findFirst({
+      where: {
+        sellerId: seller.id,
+        latitude: { not: null },
+        longitude: { not: null },
+      },
+    });
+
+    if (!hasLocation) {
+      throw new ForbiddenException("Shop location coordinates and address must be set before adding products.");
+    }
+
     return seller;
   }
 

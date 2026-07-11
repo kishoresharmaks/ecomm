@@ -494,7 +494,10 @@ type ShippingRateCardRecord = {
   localAreaCode?: string | null;
   minSubtotalPaise?: number | null;
   maxSubtotalPaise?: number | null;
-  shippingChargePaise: number;
+  maxWeightKg?: number | null;
+  pricingType?: string | null;
+  baseChargePaise: number;
+  pricingConfig?: Record<string, unknown> | null;
   freeAbovePaise?: number | null;
   codSurchargeType: string;
   codSurchargeFlatPaise: number;
@@ -553,7 +556,11 @@ type RateFormState = {
   localAreaCode: string;
   minSubtotalRupees: string;
   maxSubtotalRupees: string;
+  maxWeightKg: string;
+  pricingType: string;
   shippingRupees: string;
+  includedDistanceKm: string;
+  perKmRupees: string;
   freeAboveRupees: string;
   codFlatRupees: string;
   priority: string;
@@ -3426,7 +3433,11 @@ export function AdminDeliveryOperationsPageClient() {
       localAreaCode: card.localAreaCode ?? "",
       minSubtotalRupees: paiseToRupeesInput(card.minSubtotalPaise),
       maxSubtotalRupees: paiseToRupeesInput(card.maxSubtotalPaise),
-      shippingRupees: paiseToRupeesInput(card.shippingChargePaise),
+      maxWeightKg: card.maxWeightKg ? String(card.maxWeightKg) : "",
+      pricingType: card.pricingType ?? "FLAT",
+      shippingRupees: paiseToRupeesInput(card.baseChargePaise),
+      includedDistanceKm: String((card.pricingConfig as Record<string, unknown> | null)?.includedDistanceKm ?? 3),
+      perKmRupees: paiseToRupeesInput(((card.pricingConfig as Record<string, unknown> | null)?.perKmPaise as number | undefined) ?? 0) || "8",
       freeAboveRupees: paiseToRupeesInput(card.freeAbovePaise),
       codFlatRupees:
         card.codSurchargeType === "FLAT" ? paiseToRupeesInput(card.codSurchargeFlatPaise) : "",
@@ -3700,6 +3711,7 @@ export function AdminDeliveryOperationsPageClient() {
                   [
                     ["minSubtotalRupees", "Min subtotal Rs", "Optional"],
                     ["maxSubtotalRupees", "Max subtotal Rs", "Optional"],
+                    ["maxWeightKg", "Max weight Kg", "Optional"],
                     ["shippingRupees", "Shipping charge Rs", "49"],
                     ["freeAboveRupees", "Free above Rs", "Optional"],
                     ["codFlatRupees", "COD fee Rs", "Optional"],
@@ -3708,6 +3720,7 @@ export function AdminDeliveryOperationsPageClient() {
                       (
                         | "minSubtotalRupees"
                         | "maxSubtotalRupees"
+                        | "maxWeightKg"
                         | "shippingRupees"
                         | "freeAboveRupees"
                         | "codFlatRupees"
@@ -17913,7 +17926,11 @@ function defaultRateForm(): RateFormState {
     localAreaCode: "",
     minSubtotalRupees: "",
     maxSubtotalRupees: "",
+    maxWeightKg: "",
+    pricingType: "FLAT",
     shippingRupees: "49",
+    includedDistanceKm: "3",
+    perKmRupees: "8",
     freeAboveRupees: "",
     codFlatRupees: "",
     priority: "100",
@@ -18111,7 +18128,15 @@ function rateCardPayloadFromForm(form: RateFormState) {
     localAreaCode: emptyToUndefined(form.localAreaCode.toUpperCase()),
     minSubtotalPaise: optionalRupeesInputToPaise(form.minSubtotalRupees),
     maxSubtotalPaise: optionalRupeesInputToPaise(form.maxSubtotalRupees),
-    shippingChargePaise: rupeesInputToPaise(form.shippingRupees),
+    maxWeightKg: form.maxWeightKg ? Number(form.maxWeightKg) : undefined,
+    pricingType: form.pricingType || "FLAT",
+    baseChargePaise: rupeesInputToPaise(form.shippingRupees),
+    pricingConfig: form.pricingType === "DISTANCE"
+      ? {
+          includedDistanceKm: Number(form.includedDistanceKm) || 3,
+          perKmPaise: rupeesInputToPaise(form.perKmRupees),
+        }
+      : undefined,
     freeAbovePaise: optionalRupeesInputToPaise(form.freeAboveRupees),
     codSurchargeType: form.codFlatRupees.trim() ? "FLAT" : "NONE",
     codSurchargeFlatPaise: optionalRupeesInputToPaise(form.codFlatRupees) ?? 0,
@@ -18280,7 +18305,7 @@ function rateCardSubtotalLabel(card: ShippingRateCardRecord) {
 }
 
 function rateCardChargeLabel(card: ShippingRateCardRecord) {
-  const parts = [formatPaise(card.shippingChargePaise)];
+  const parts = [formatPaise(card.baseChargePaise)];
   if (card.freeAbovePaise !== null && card.freeAbovePaise !== undefined) {
     parts.push(`free above ${formatPaise(card.freeAbovePaise)}`);
   }

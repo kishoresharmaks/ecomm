@@ -107,6 +107,11 @@ export class UpsertDeliveryPartnerPayoutSettingsDto {
   @Min(0)
   minimumPerOrderPaise!: number;
 
+  @ApiProperty({ example: 3, description: "Base distance included in the base pay, in kilometers." })
+  @IsInt()
+  @Min(0)
+  includedDistanceKm!: number;
+
   @ApiProperty({ example: 2500, description: "Base earning per completed local order, in paise." })
   @IsInt()
   @Min(0)

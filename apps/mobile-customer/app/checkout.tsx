@@ -122,6 +122,7 @@ function CheckoutScreen() {
   const cartQueryKey = useMemo(() => ["mobile-cart", customerAuth.authKey] as const, [customerAuth.authKey]);
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
   const [deliveryPreference, setDeliveryPreference] = useState<MobileDeliveryPreference>("DELIVER_TO_ADDRESS");
+  const [requestedDeliveryMode, setRequestedDeliveryMode] = useState<string | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<MobilePaymentMethod>("COD");
   const [paymentReference, setPaymentReference] = useState("");
   const [customerNote, setCustomerNote] = useState("");
@@ -186,6 +187,7 @@ function CheckoutScreen() {
       customerAuth.authKey,
       selectedAddressId,
       deliveryPreference,
+      requestedDeliveryMode,
       paymentMethod,
       buyerCountryCode,
       appliedCouponCode,
@@ -195,6 +197,7 @@ function CheckoutScreen() {
         buyerCountryCode,
         ...(appliedCouponCode ? { couponCode: appliedCouponCode } : {}),
         deliveryPreference,
+        ...(requestedDeliveryMode ? { requestedDeliveryMode } : {}),
         paymentMethod,
         addressId: deliveryPreference === "DELIVER_TO_ADDRESS" ? selectedAddressId : null,
       }),
@@ -441,6 +444,7 @@ function CheckoutScreen() {
         buyerCountryCode,
         ...(appliedCouponCode ? { couponCode: appliedCouponCode } : {}),
         deliveryPreference,
+        ...(requestedDeliveryMode ? { deliveryMode: requestedDeliveryMode } : {}),
         idempotencyKey: getOrderIdempotencyKey(latestCart),
         paymentMethod,
         ...(deliveryPreference === "DELIVER_TO_ADDRESS" && selectedAddress ? { addressId: selectedAddress.id } : {}),
@@ -744,6 +748,8 @@ function CheckoutScreen() {
             setAddressFormOpen={setAddressFormOpen}
             setCouponInput={updateCouponInput}
             setCustomerNote={setCustomerNote}
+            requestedDeliveryMode={requestedDeliveryMode}
+            setRequestedDeliveryMode={setRequestedDeliveryMode}
             setDeliveryPreference={setDeliveryPreference}
             setPaymentMethod={setPaymentMethod}
             setPaymentReference={setPaymentReference}
@@ -845,6 +851,8 @@ function CheckoutSection({
   setCouponInput,
   setCustomerNote,
   setDeliveryPreference,
+  requestedDeliveryMode,
+  setRequestedDeliveryMode,
   setPaymentMethod,
   setPaymentReference,
   setSelectedAddressId,
@@ -883,6 +891,8 @@ function CheckoutSection({
   setCouponInput: (value: string) => void;
   setCustomerNote: (value: string) => void;
   setDeliveryPreference: (value: MobileDeliveryPreference) => void;
+  requestedDeliveryMode: string | null;
+  setRequestedDeliveryMode: (value: string | null) => void;
   setPaymentMethod: (value: MobilePaymentMethod) => void;
   setPaymentReference: (value: string) => void;
   setSelectedAddressId: (value: string) => void;
@@ -946,9 +956,51 @@ function CheckoutSection({
       <View style={styles.section}>
         <SectionTitle icon={DeliveryBox01Icon} status={stepStatus} stepNumber={stepNumber} title="Delivery preference" />
         <View style={styles.segmentRow}>
-          <SegmentButton active={deliveryPreference === "DELIVER_TO_ADDRESS"} label="Deliver" onPress={() => setDeliveryPreference("DELIVER_TO_ADDRESS")} />
-          <SegmentButton active={deliveryPreference === "STORE_PICKUP"} label="Pickup" onPress={() => setDeliveryPreference("STORE_PICKUP")} />
+          <SegmentButton active={deliveryPreference === "DELIVER_TO_ADDRESS"} label="Deliver" onPress={() => { setDeliveryPreference("DELIVER_TO_ADDRESS"); }} />
+          <SegmentButton active={deliveryPreference === "STORE_PICKUP"} label="Pickup" onPress={() => { setDeliveryPreference("STORE_PICKUP"); setRequestedDeliveryMode(null); }} />
         </View>
+        {deliveryPreference === "DELIVER_TO_ADDRESS" && summary?.availableDeliveryOptions?.length ? (
+          <View style={{ marginTop: 24, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 24 }}>
+            <Text style={{ fontSize: 14, fontWeight: "700", color: colors.ink, marginBottom: 16 }}>Select transport method</Text>
+            {summary.availableDeliveryOptions
+              .filter((opt) => opt.mode !== "STORE_PICKUP")
+              .map((opt) => {
+                const label = opt.mode === "LOCAL_DELIVERY_PARTNER" ? "Local delivery" : opt.mode === "THIRD_PARTY_COURIER" ? "Courier shipping" : opt.mode === "MANUAL_TRANSPORT" ? "Manual transport" : opt.mode;
+                return (
+                  <Pressable
+                    key={opt.mode}
+                    onPress={() => {
+                      if (opt.available) setRequestedDeliveryMode(opt.mode);
+                    }}
+                    style={[
+                      styles.optionCard,
+                      (opt.available && (requestedDeliveryMode === opt.mode || (!requestedDeliveryMode && opt.isCheapest))) ? styles.optionCardActive : null,
+                      !opt.available && { opacity: 0.5 }
+                    ]}
+                  >
+                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                        <Text style={styles.optionTitle}>{label}</Text>
+                        {!opt.available && (
+                          <View style={{ backgroundColor: "#f3f4f6", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 12 }}>
+                            <Text style={{ fontSize: 10, fontWeight: "700", color: "#4b5563" }}>Unavailable</Text>
+                          </View>
+                        )}
+                      </View>
+                      {opt.isCheapest && opt.available && (
+                        <View style={{ backgroundColor: "#dcfce7", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12 }}>
+                          <Text style={{ fontSize: 10, fontWeight: "700", color: "#166534" }}>Cheapest</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={[styles.optionText, { marginTop: 8, fontWeight: "700" }]}>
+                      {opt.available ? formatCatalogPrice(opt.chargePaise) : (opt.reason || "Delivery unavailable")}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+          </View>
+        ) : null}
       </View>
     );
   }

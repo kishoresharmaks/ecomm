@@ -32,10 +32,12 @@ import { FinanceOrderPaymentsController } from "./finance-order-payments.control
 import { OrdersService } from "./orders.service";
 import { PublicOrdersController } from "./public-orders.controller";
 import { SellerOrdersController } from "./seller-orders.controller";
+import { InternalOrdersController } from "./internal-orders.controller";
 
 @Module({
   imports: [CheckoutPricingModule, CourierAdaptersModule, CouponsModule, CustomersModule, DealsModule, FinanceModule, LocationsModule, MapsModule, MarketModule, NotificationsModule, PaymentsModule, ReturnsModule],
   controllers: [
+    InternalOrdersController,
     CustomerOrdersController,
     AdminOrdersController,
     AdminCourierShipmentsController,

@@ -3330,6 +3330,20 @@ export class OrdersService {
   ) {
     const seller = await this.resolveSeller(actor);
     const note = dto.note?.trim() || null;
+
+    if (dto.sellerStatus === SellerOrderStatus.ACCEPTED) {
+      const hasLocation = await this.prisma.client.sellerAddress.findFirst({
+        where: {
+          sellerId: seller.id,
+          latitude: { not: null },
+          longitude: { not: null },
+        },
+      });
+      if (!hasLocation) {
+        throw new ForbiddenException("Shop location coordinates and address must be set before accepting orders.");
+      }
+    }
+
     const result = await this.prisma.client.$transaction(async (tx) => {
       const orderRecord = await tx.order.findFirst({
         where: {
@@ -5391,15 +5405,28 @@ export class OrdersService {
     };
   }
 
-  private async chooseBestDeliveryPartner(order: OrderWithRelations) {
+  private async chooseBestDeliveryPartner(
+    order: OrderWithRelations,
+    options: {
+      codAmountPaise?: number;
+      rejectedPartnerIds?: Set<string>;
+    } = {}
+  ) {
     const address = this.readShippingAddressSnapshot(order.shippingAddressSnapshot);
+    const sellerAddress = order.shipments?.[0]?.seller?.addresses?.[0];
+    const pickupAddress = sellerAddress ? {
+      latitude: sellerAddress.latitude ? Number(sellerAddress.latitude) : undefined,
+      longitude: sellerAddress.longitude ? Number(sellerAddress.longitude) : undefined,
+    } : null;
+
     const codPayment = this.findCodPayment(order);
-    const codAmountPaise =
-      codPayment && order.paymentStatus === PaymentStatus.PENDING ? codPayment.amountPaise : 0;
+    const codAmountPaise = options.codAmountPaise ?? (
+      codPayment && order.paymentStatus === PaymentStatus.PENDING ? codPayment.amountPaise : 0
+    );
     const defaultLimit = await this.defaultPartnerCodLimitPaise();
-    const rejectedPartnerIds = await this.rejectedDeliveryPartnerIds(order.id);
+    const rejectedPartnerIds = options.rejectedPartnerIds ?? await this.rejectedDeliveryPartnerIds(order.id);
     const proximityDistances = await this.deliveryPartnerProximityDistances(
-      address,
+      pickupAddress as any ?? address,
       rejectedPartnerIds,
     );
     const partners = await this.prisma.client.user.findMany({
@@ -6348,6 +6375,10 @@ export class OrdersService {
           select: {
             storeName: true,
             addresses: {
+              where: {
+                latitude: { not: null },
+                longitude: { not: null },
+              },
               orderBy: { createdAt: "asc" },
               take: 1,
               select: {
@@ -6406,7 +6437,7 @@ export class OrdersService {
         shippingAddress,
       );
       const distanceKm = distanceResult.distanceKm;
-      const billableDistanceKm = Math.max(0, Math.ceil(distanceKm ?? 0));
+      const billableDistanceKm = Math.max(0, Math.ceil(distanceKm ?? 0) - (settings.includedDistanceKm ?? 0));
       const isCod = shipment.order.payments.some(
         (payment) =>
           payment.provider === PaymentProvider.COD ||
@@ -7015,7 +7046,7 @@ export class OrdersService {
     return order;
   }
 
-  private async getOrderByIdOrThrow(orderId: string) {
+  async getOrderByIdOrThrow(orderId: string) {
     const order = await this.prisma.client.order.findUnique({
       where: { id: orderId },
       include: orderInclude,
@@ -8208,6 +8239,9 @@ export class OrdersService {
     if (!Number.isInteger(amountPaise) || amountPaise <= 0) {
       throw new BadRequestException("Collected COD amount must be greater than zero.");
     }
+    if (amountPaise !== codPayment.amountPaise) {
+      throw new BadRequestException(`Collected COD amount (${amountPaise / 100}) must exactly match the expected order amount (${codPayment.amountPaise / 100}).`);
+    }
 
     return {
       codCollectionStatus: CodCollectionStatus.COLLECTED,
@@ -8589,5 +8623,106 @@ export class OrdersService {
       codVerifiedById: delivery.codVerifiedById ?? null,
       codVerificationNote: delivery.codVerificationNote ?? null,
     };
+  }
+
+  private pendingCodAmountForBatch(batch: OrderWithRelations[]): number {
+    return batch.reduce((sum, order) => sum + (this.findCodPayment(order)?.amountPaise ?? 0), 0);
+  }
+
+  private async rejectedDeliveryPartnerIdsForBatch(batch: OrderWithRelations[]): Promise<Set<string>> {
+    const ids = new Set<string>();
+    for (const order of batch) {
+      const rejected = await this.rejectedDeliveryPartnerIds(order.id);
+      for (const id of rejected) {
+        ids.add(id);
+      }
+    }
+    return ids;
+  }
+
+  async autoAssignDeliveryBatch(
+    batch: OrderWithRelations[],
+    actor: RequestUser | null,
+    note: string,
+    options: { shipmentIds?: string[] } = {},
+  ): Promise<void> {
+    if (batch.length === 0) return;
+
+    const representativeOrder = batch[0]!;
+    const selection = await this.chooseBestDeliveryPartner(representativeOrder, {
+      codAmountPaise: this.pendingCodAmountForBatch(batch),
+      rejectedPartnerIds: await this.rejectedDeliveryPartnerIdsForBatch(batch),
+    });
+    const candidate = selection.candidate;
+
+    if (!candidate) return;
+
+    const targetShipmentIds = options.shipmentIds ?? batch.flatMap(o => o.shipments.map(s => s.id));
+    if (targetShipmentIds.length === 0) return;
+
+    await this.prisma.client.$transaction(async (tx) => {
+        const deliveryDetailIds = batch.map(o => o.deliveryDetail!.id).sort();
+        if (deliveryDetailIds.length > 0) {
+            await tx.$queryRaw`SELECT id FROM delivery_details WHERE id IN (${Prisma.join(deliveryDetailIds)}) FOR UPDATE`;
+        }
+        await tx.$queryRaw`SELECT id FROM order_shipments WHERE id IN (${Prisma.join(targetShipmentIds)}) FOR UPDATE`;
+
+        const assignedAt = new Date();
+        const expiresAt = this.deliveryAssignmentExpiresAt(assignedAt);
+        const assignmentNote = this.autoAssignmentNote(note, candidate, selection.diagnostics);
+
+        await tx.deliveryDetail.updateMany({
+            where: {
+                id: { in: deliveryDetailIds },
+                assignmentStatus: { not: DeliveryAssignmentStatus.ACCEPTED },
+            },
+            data: {
+                deliveryPartnerUserId: candidate.user.id,
+                assignmentStatus: DeliveryAssignmentStatus.ASSIGNED,
+                assignedAt,
+                assignmentExpiresAt: expiresAt,
+                assignmentNote,
+            }
+        });
+
+        await tx.orderShipment.updateMany({
+            where: {
+                id: { in: targetShipmentIds },
+                assignmentStatus: { not: DeliveryAssignmentStatus.ACCEPTED },
+                status: { notIn: [DeliveryStatus.DELIVERED, DeliveryStatus.CANCELLED] },
+            },
+            data: {
+                deliveryPartnerUserId: candidate.user.id,
+                assignmentStatus: DeliveryAssignmentStatus.ASSIGNED,
+                assignedAt,
+                acceptedAt: null,
+                rejectedAt: null,
+                assignmentExpiresAt: expiresAt,
+                assignmentNote,
+            }
+        });
+
+        for (const order of batch) {
+            if (!order.deliveryDetail?.id) continue;
+            await tx.deliveryAssignmentAttempt.create({
+                data: {
+                    orderId: order.id,
+                    deliveryDetailId: order.deliveryDetail.id,
+                    partnerUserId: candidate.user.id,
+                    source: DeliveryAssignmentAttemptSource.AUTO,
+                    status: DeliveryAssignmentStatus.ASSIGNED,
+                }
+            });
+            await tx.deliveryEvent.create({
+                data: {
+                    deliveryDetailId: order.deliveryDetail.id,
+                    oldStatus: order.deliveryDetail.status,
+                    newStatus: order.deliveryDetail.status,
+                    note: `Batched Auto-assigned to ${candidate.user.id}`,
+                    updatedById: actor?.id ?? candidate.user.id,
+                }
+            });
+        }
+    });
   }
 }

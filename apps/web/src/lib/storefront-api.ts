@@ -433,6 +433,13 @@ export type CheckoutSummary = {
   buyerPlatformFeeMinor: number;
   buyerCouponDiscountMinor?: number;
   buyerTotalMinor: number;
+  availableDeliveryOptions?: {
+    mode: string;
+    chargePaise: number;
+    isCheapest: boolean;
+    available: boolean;
+    reason: string | null;
+  }[];
 };
 
 export type CheckoutSummaryOptions = {
@@ -441,6 +448,7 @@ export type CheckoutSummaryOptions = {
   directQuantity?: number;
   couponCode?: string;
   deliveryPreference?: "STORE_PICKUP" | "DELIVER_TO_ADDRESS";
+  requestedDeliveryMode?: string;
   addressId?: string;
   paymentMethod?: "RAZORPAY" | "COD" | "BANK_TRANSFER" | "MANUAL";
   shippingAddress?: {
@@ -1164,6 +1172,9 @@ export function getCheckoutSummary(
   }
   if (summaryOptions.deliveryPreference) {
     query.set("deliveryPreference", summaryOptions.deliveryPreference);
+  }
+  if (summaryOptions.requestedDeliveryMode) {
+    query.set("requestedDeliveryMode", summaryOptions.requestedDeliveryMode);
   }
   if (summaryOptions.paymentMethod) {
     query.set("paymentMethod", summaryOptions.paymentMethod);

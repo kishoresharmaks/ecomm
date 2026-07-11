@@ -67,6 +67,10 @@ function SellerRouteGate() {
       <Stack.Screen name="products/new" />
       <Stack.Screen name="products/[id]" />
       <Stack.Screen name="products/detail/[id]" />
+      <Stack.Screen name="services/new" />
+      <Stack.Screen name="services/[id]" />
+      <Stack.Screen name="service-bookings/[bookingNumber]" />
+      <Stack.Screen name="service-calendar" />
       <Stack.Screen name="orders/[orderNumber]" />
     </Stack>
   );

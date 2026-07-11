@@ -291,3 +291,72 @@ function readyQuote(): DeliveryRoutingQuote {
 function setting(key: string, value: boolean | number | string) {
   return { key, value };
 }
+
+// ─── ShippingRateCard Pricing Strategy Tests ─────────────────────────────────
+
+describe("DeliveryRoutingService shipping pricing strategies", () => {
+  function makeService() {
+    const prisma = { client: {} };
+    return new DeliveryRoutingService(prisma as never, undefined as never, undefined as never, undefined as never);
+  }
+
+  function makeCard(overrides: Partial<{
+    pricingType: import("@indihub/database").ShippingPricingType;
+    baseChargePaise: number;
+    pricingConfig: Record<string, unknown> | null;
+  }>) {
+    return {
+      id: "card-1",
+      name: "Test card",
+      deliveryMode: DeliveryMode.LOCAL_DELIVERY_PARTNER,
+      countryCode: null,
+      stateCode: null,
+      cityCode: null,
+      pincode: null,
+      localAreaCode: null,
+      minSubtotalPaise: null,
+      maxSubtotalPaise: null,
+      pricingType: "FLAT" as import("@indihub/database").ShippingPricingType,
+      baseChargePaise: 5000,
+      pricingConfig: null,
+      freeAbovePaise: null,
+      codSurchargeType: "NONE" as import("@indihub/database").ShippingCodSurchargeType,
+      codSurchargeFlatPaise: 0,
+      codSurchargeBps: 0,
+      priority: 100,
+      isActive: true,
+      notes: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      ...overrides,
+    } as unknown as import("@indihub/database").Prisma.ShippingRateCardGetPayload<Record<string, never>>;
+  }
+
+  it("FLAT strategy returns baseChargePaise directly", () => {
+    const service = makeService() as any;
+    const card = makeCard({ pricingType: "FLAT" as never, baseChargePaise: 4900 });
+    expect(service.resolveRateCardCharge(card, null)).toBe(4900);
+  });
+
+  it("DISTANCE strategy returns baseChargePaise when delivery is within includedDistanceKm", () => {
+    const service = makeService() as any;
+    const card = makeCard({
+      pricingType: "DISTANCE" as never,
+      baseChargePaise: 4000,
+      pricingConfig: { includedDistanceKm: 3, perKmPaise: 800 },
+    });
+    // Route distance defaults to 0 in unit test (no GPS). 0 < 3, so no extra charge.
+    expect(service.resolveRateCardCharge(card, null)).toBe(4000);
+  });
+
+  it("returns null for a null card", () => {
+    const service = makeService() as any;
+    expect(service.resolveRateCardCharge(null, null)).toBe(null);
+  });
+
+  it("DISTANCE strategy fallback: unknown strategy returns baseChargePaise", () => {
+    const service = makeService() as any;
+    const card = makeCard({ pricingType: "DISTANCE" as never, baseChargePaise: 6000, pricingConfig: null });
+    expect(service.resolveRateCardCharge(card, null)).toBe(6000);
+  });
+});

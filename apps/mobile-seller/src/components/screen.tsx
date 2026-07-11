@@ -5,11 +5,8 @@ import { colors, spacing } from "../theme";
 
 export function Screen({ children, scroll = true, contentContainerStyle }: PropsWithChildren<{ scroll?: boolean; contentContainerStyle?: ScrollViewProps['contentContainerStyle'] }>) {
   const insets = useSafeAreaInsets();
-  // Calculate tab bar height to prevent content from being hidden behind it
-  // Tab bar base height is 74px, plus safe area bottom inset
-  const tabBarHeight = 74 + Math.max(0, insets.bottom - 8);
-  // Bottom spacing should account for tab bar plus additional padding
-  const bottomPadding = tabBarHeight + spacing.lg;
+  const compactTabBarHeight = 56 + insets.bottom;
+  const bottomPadding = compactTabBarHeight + spacing.md;
 
   if (!scroll) {
     return (

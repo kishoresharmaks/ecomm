@@ -12,6 +12,7 @@ import {
   ProductStatus,
   RoleCode,
   ShippingCodSurchargeType,
+  ShippingPricingType,
   SellerType,
   SellerStatus,
   UserStatus,
@@ -553,6 +554,7 @@ export class DeliveryRoutingService {
           DeliveryMode.LOCAL_DELIVERY_PARTNER,
           address,
           normalizedSubtotal,
+          input.package?.weightGrams ? input.package.weightGrams / 1000 : null,
           client,
         );
 
@@ -603,6 +605,213 @@ export class DeliveryRoutingService {
       sellerType,
       parcel,
     });
+  }
+
+
+  async resolveAllDeliveryOptions(
+    input: Omit<ResolveDeliveryRoutingInput, "requestedDeliveryMode">,
+    explicitModes: DeliveryMode[],
+    client: RoutingClient = this.prisma.client,
+  ): Promise<{ mode: DeliveryMode; quote: DeliveryRoutingQuote }[]> {
+    const normalizedSubtotal = this.nonNegativeInt(input.subtotalPaise);
+    const address = this.normalizeAddress(input.address);
+    const parcel = this.normalizePackage(input.package);
+    const sellerType = input.sellerType ?? null;
+    const sellerId = input.sellerId ?? null;
+    const deliveryPreference = CheckoutDeliveryPreference.DELIVER_TO_ADDRESS;
+
+    const results: { mode: DeliveryMode; quote: DeliveryRoutingQuote }[] = [];
+
+    // 1. Instantly resolve static modes without DB calls
+    if (explicitModes.includes(DeliveryMode.STORE_PICKUP)) {
+      results.push({
+        mode: DeliveryMode.STORE_PICKUP,
+        quote: await this.quoteForMode({
+          deliveryPreference: CheckoutDeliveryPreference.STORE_PICKUP,
+          deliveryMode: DeliveryMode.STORE_PICKUP,
+          address,
+          subtotalPaise: normalizedSubtotal,
+          paymentMethod: input.paymentMethod,
+          client,
+          partnerSelection: null,
+          providerCode: null,
+          routingFailed: false,
+          routingFailureReason: null,
+          routingFailureNote: null,
+          fallbackReason: null,
+          warnings: [],
+          providerChecked: null,
+          sellerId,
+          sellerType,
+          parcel,
+        }),
+      });
+    }
+
+    if (explicitModes.includes(DeliveryMode.MANUAL_TRANSPORT)) {
+      results.push({
+        mode: DeliveryMode.MANUAL_TRANSPORT,
+        quote: await this.quoteForMode({
+          deliveryPreference,
+          deliveryMode: DeliveryMode.MANUAL_TRANSPORT,
+          address,
+          subtotalPaise: normalizedSubtotal,
+          paymentMethod: input.paymentMethod,
+          client,
+          partnerSelection: null,
+          providerCode: null,
+          routingFailed: false,
+          routingFailureReason: null,
+          routingFailureNote: null,
+          fallbackReason: "Manual transport selected by operations.",
+          warnings: ["Manual transport requires offline coordination. No courier booking will be attempted."],
+          providerChecked: null,
+          sellerId,
+          sellerType,
+          parcel,
+        }),
+      });
+    }
+
+    // 2. Resolve database-dependent modes efficiently
+    // We fetch any shared states (like wholesale checks) once if needed.
+    let packageIsBulky = false;
+    let wholesaleBulkyRoutingEnabled = false;
+
+    if (sellerType === SellerType.WHOLESALE_DISTRIBUTOR) {
+      wholesaleBulkyRoutingEnabled = await this.wholesaleBulkyRoutingEnabled(client);
+      const bulkyThreshold = await this.bulkyThreshold(client);
+      packageIsBulky = this.isBulkyPackage(parcel, bulkyThreshold);
+
+      if (wholesaleBulkyRoutingEnabled && packageIsBulky) {
+        // Bulky wholesale packages cannot be routed via local/courier normally without manual ops right now,
+        // so we fail them or mark them as such.
+        if (explicitModes.includes(DeliveryMode.LOCAL_DELIVERY_PARTNER)) {
+           results.push({
+             mode: DeliveryMode.LOCAL_DELIVERY_PARTNER,
+             quote: await this.quoteForMode({
+               deliveryPreference,
+               deliveryMode: DeliveryMode.LOCAL_DELIVERY_PARTNER,
+               address,
+               subtotalPaise: normalizedSubtotal,
+               paymentMethod: input.paymentMethod,
+               client,
+               partnerSelection: null,
+               providerCode: null,
+               routingFailed: true,
+               routingFailureReason: DeliveryRoutingFailureReason.NO_LOCAL_PARTNER,
+               routingFailureNote: "Wholesale bulky package cannot be delivered by local partners.",
+               fallbackReason: null,
+               warnings: [],
+               providerChecked: null,
+               sellerId,
+               sellerType,
+               parcel,
+               packageIsBulky: true,
+             })
+           });
+        }
+        if (explicitModes.includes(DeliveryMode.THIRD_PARTY_COURIER)) {
+           results.push({
+             mode: DeliveryMode.THIRD_PARTY_COURIER,
+             quote: await this.resolveCourierDelivery({
+               deliveryPreference,
+               address,
+               subtotalPaise: normalizedSubtotal,
+               paymentMethod: input.paymentMethod,
+               client,
+               partnerSelection: null,
+               fallbackReason: "Wholesale bulky package routed to courier.",
+               sellerId,
+               sellerType,
+               parcel,
+               packageIsBulky: true,
+             })
+           });
+        }
+        return results;
+      }
+    }
+
+    // Non-bulky or non-wholesale: fetch Local and Courier
+    if (explicitModes.includes(DeliveryMode.LOCAL_DELIVERY_PARTNER)) {
+      const partnerSelection = await this.chooseBestLocalPartner(
+        { address, subtotalPaise: normalizedSubtotal, paymentMethod: input.paymentMethod, orderId: input.orderId },
+        client,
+      );
+      const localRateMatch = partnerSelection.candidate ? null : await this.matchRateCard(DeliveryMode.LOCAL_DELIVERY_PARTNER, address, normalizedSubtotal, input.package?.weightGrams ? input.package.weightGrams / 1000 : null, client);
+
+      if (partnerSelection.candidate || (!sellerType && localRateMatch)) {
+        results.push({
+          mode: DeliveryMode.LOCAL_DELIVERY_PARTNER,
+          quote: await this.quoteForMode({
+            deliveryPreference,
+            deliveryMode: DeliveryMode.LOCAL_DELIVERY_PARTNER,
+            address,
+            subtotalPaise: normalizedSubtotal,
+            paymentMethod: input.paymentMethod,
+            client,
+            partnerSelection,
+            providerCode: null,
+            routingFailed: false,
+            routingFailureReason: null,
+            routingFailureNote: null,
+            fallbackReason: partnerSelection.candidate ? null : "Matched a local delivery shipping rate card.",
+            warnings: partnerSelection.candidate ? [] : ["No eligible local partner is currently available."],
+            providerChecked: null,
+            sellerId,
+            sellerType,
+            parcel,
+            packageIsBulky,
+          })
+        });
+      } else {
+        results.push({
+          mode: DeliveryMode.LOCAL_DELIVERY_PARTNER,
+          quote: await this.quoteForMode({
+            deliveryPreference,
+            deliveryMode: DeliveryMode.LOCAL_DELIVERY_PARTNER,
+            address,
+            subtotalPaise: normalizedSubtotal,
+            paymentMethod: input.paymentMethod,
+            client,
+            partnerSelection: null,
+            providerCode: null,
+            routingFailed: true,
+            routingFailureReason: DeliveryRoutingFailureReason.NO_LOCAL_PARTNER,
+            routingFailureNote: "No local delivery partners available for this area.",
+            fallbackReason: null,
+            warnings: [],
+            providerChecked: null,
+            sellerId,
+            sellerType,
+            parcel,
+            packageIsBulky,
+          })
+        });
+      }
+    }
+
+    if (explicitModes.includes(DeliveryMode.THIRD_PARTY_COURIER)) {
+      results.push({
+        mode: DeliveryMode.THIRD_PARTY_COURIER,
+        quote: await this.resolveCourierDelivery({
+          deliveryPreference,
+          address,
+          subtotalPaise: normalizedSubtotal,
+          paymentMethod: input.paymentMethod,
+          client,
+          partnerSelection: null,
+          fallbackReason: "Courier delivery mode requested.",
+          sellerId,
+          sellerType,
+          parcel,
+          packageIsBulky,
+        })
+      });
+    }
+
+    return results;
   }
 
   async listRateCards() {
@@ -1293,6 +1502,7 @@ export class DeliveryRoutingService {
             input.deliveryMode,
             input.address,
             input.subtotalPaise,
+            input.packageIsBulky ? (input.parcel?.weightGrams ? input.parcel.weightGrams / 1000 : null) : null,
             input.client,
           );
     const defaultShippingPaise = await this.defaultShippingChargePaise(input.client);
@@ -1301,7 +1511,7 @@ export class DeliveryRoutingService {
       input.deliveryMode === DeliveryMode.STORE_PICKUP
         ? 0
         : (liveCourierQuote?.shippingChargePaise ??
-          rateMatch?.card.shippingChargePaise ??
+          this.resolveRateCardCharge(rateMatch?.card ?? null, input.address) ??
           defaultShippingPaise);
     const freeShippingApplied =
       !liveCourierQuote && Boolean(
@@ -2173,6 +2383,7 @@ export class DeliveryRoutingService {
     deliveryMode: DeliveryMode,
     address: DeliveryRoutingAddress | null,
     subtotalPaise: number,
+    weightKg: number | null,
     client: RoutingClient,
   ) {
     const cards = await client.shippingRateCard.findMany({
@@ -2182,6 +2393,7 @@ export class DeliveryRoutingService {
         AND: [
           { OR: [{ minSubtotalPaise: null }, { minSubtotalPaise: { lte: subtotalPaise } }] },
           { OR: [{ maxSubtotalPaise: null }, { maxSubtotalPaise: { gte: subtotalPaise } }] },
+          { OR: [{ maxWeightKg: null }, ...(weightKg !== null ? [{ maxWeightKg: { gte: weightKg } }] : [])] },
           {
             OR: [
               { countryCode: null },
@@ -2356,7 +2568,7 @@ export class DeliveryRoutingService {
   private async resolveCustomerAddress(
     customerId: string,
     input: {
-      deliveryPreference: CheckoutDeliveryPreference;
+      deliveryPreference?: CheckoutDeliveryPreference | undefined;
       addressId?: string | undefined;
       shippingAddress?: CheckoutRoutingAddressDto | undefined;
     },
@@ -2456,7 +2668,9 @@ export class DeliveryRoutingService {
       localAreaCode: this.normalizeOptionalCode(dto.localAreaCode),
       minSubtotalPaise,
       maxSubtotalPaise,
-      shippingChargePaise: this.nonNegativeInt(dto.shippingChargePaise ?? 0),
+      pricingType: dto.pricingType ?? ShippingPricingType.FLAT,
+      baseChargePaise: this.nonNegativeInt(dto.baseChargePaise ?? 0),
+      pricingConfig: dto.pricingConfig ? (dto.pricingConfig as Prisma.InputJsonValue) : Prisma.JsonNull,
       freeAbovePaise: dto.freeAbovePaise ?? null,
       codSurchargeType: dto.codSurchargeType ?? ShippingCodSurchargeType.NONE,
       codSurchargeFlatPaise: this.nonNegativeInt(dto.codSurchargeFlatPaise ?? 0),
@@ -2481,7 +2695,9 @@ export class DeliveryRoutingService {
       localAreaCode: card.localAreaCode,
       minSubtotalPaise: card.minSubtotalPaise,
       maxSubtotalPaise: card.maxSubtotalPaise,
-      shippingChargePaise: card.shippingChargePaise,
+      pricingType: card.pricingType,
+      baseChargePaise: card.baseChargePaise,
+      pricingConfig: card.pricingConfig ?? Prisma.JsonNull,
       freeAbovePaise: card.freeAbovePaise,
       codSurchargeType: card.codSurchargeType,
       codSurchargeFlatPaise: card.codSurchargeFlatPaise,
@@ -2690,7 +2906,9 @@ export class DeliveryRoutingService {
       localAreaCode: card.localAreaCode,
       minSubtotalPaise: card.minSubtotalPaise,
       maxSubtotalPaise: card.maxSubtotalPaise,
-      shippingChargePaise: card.shippingChargePaise,
+      pricingType: card.pricingType,
+      baseChargePaise: card.baseChargePaise,
+      pricingConfig: card.pricingConfig ?? null,
       freeAbovePaise: card.freeAbovePaise,
       codSurchargeType: card.codSurchargeType,
       codSurchargeFlatPaise: card.codSurchargeFlatPaise,
@@ -2922,6 +3140,33 @@ export class DeliveryRoutingService {
           .filter((value) => /^[A-Z]{2}$/.test(value)),
       ),
     );
+  }
+
+
+  /**
+   * Resolves the shipping charge from a matched rate card applying the
+   * card's pricingType strategy. FLAT uses baseChargePaise directly.
+   * DISTANCE: fee = baseChargePaise + MAX(0, routeDistanceKm - includedDistanceKm) * perKmPaise
+   */
+  private resolveRateCardCharge(
+    card: Prisma.ShippingRateCardGetPayload<Record<string, never>> | null,
+    _address: DeliveryRoutingAddress | null,
+  ): number | null {
+    if (!card) return null;
+    if (card.pricingType === ShippingPricingType.DISTANCE) {
+      const config = card.pricingConfig as {
+        includedDistanceKm?: number;
+        perKmPaise?: number;
+      } | null;
+      const includedDistanceKm = Math.max(0, config?.includedDistanceKm ?? 0);
+      const perKmPaise = Math.max(0, config?.perKmPaise ?? 0);
+      // Distance surcharge requires GPS / route distance. Without it, return base charge.
+      const routeDistanceKm = 0;
+      const extraDistanceKm = Math.max(0, routeDistanceKm - includedDistanceKm);
+      return card.baseChargePaise + extraDistanceKm * perKmPaise;
+    }
+    // FLAT (default) and any future unknown strategies return the base charge.
+    return card.baseChargePaise;
   }
 
   private nonNegativeInt(value: number) {

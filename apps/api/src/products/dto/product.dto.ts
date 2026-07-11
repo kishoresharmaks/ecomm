@@ -8,7 +8,7 @@ import {
   IsEnum,
   IsInt,
   IsObject,
-  IsOptional,
+  IsOptional, IsNumber,
   IsString,
   IsUUID,
   MaxLength,
@@ -137,6 +137,13 @@ export class CreateSellerProductDto {
   @MinLength(10)
   @MaxLength(5000)
   description!: string;
+
+  @ApiPropertyOptional({ example: 1.5 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 3 })
+  @Min(0)
+  weightKg?: number;
 
   @ApiPropertyOptional({
     example: {

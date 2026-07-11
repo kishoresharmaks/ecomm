@@ -12,7 +12,7 @@ import { MapLocationPicker } from "@/components/maps/map-location-picker";
 import { useMarket } from "@/components/market/market-context";
 import { listCustomerAddresses } from "@/lib/account-api";
 import { IndihubApiError } from "@/lib/api";
-import { customerDeliveryOptions } from "@/lib/delivery-labels";
+import { customerDeliveryOptions, customerDeliveryModeLabel } from "@/lib/delivery-labels";
 import {
   cartTotals,
   createRazorpayProviderOrder,
@@ -103,6 +103,7 @@ export function CheckoutPageClient() {
   const [paymentMethod, setPaymentMethod] = useState<PlaceOrderPayload["paymentMethod"]>("COD");
   const [deliveryPreference, setDeliveryPreference] =
     useState<NonNullable<PlaceOrderPayload["deliveryPreference"]>>("DELIVER_TO_ADDRESS");
+  const [requestedDeliveryMode, setRequestedDeliveryMode] = useState<string | null>(null);
   const [customerNote, setCustomerNote] = useState("");
   const [paymentReference, setPaymentReference] = useState("");
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
@@ -147,13 +148,14 @@ export function CheckoutPageClient() {
         ? { directProductVariantId, directQuantity }
         : {}),
       deliveryPreference,
+      ...(requestedDeliveryMode ? { requestedDeliveryMode } : {}),
       paymentMethod,
       ...(appliedCouponCode ? { couponCode: appliedCouponCode } : {}),
       ...(deliveryPreference !== "STORE_PICKUP" && selectedSavedAddress
         ? { addressId: selectedSavedAddress.id }
         : {}),
     }),
-    [appliedCouponCode, deliveryPreference, directProductVariantId, directQuantity, market.countryCode, paymentMethod, selectedSavedAddress],
+    [appliedCouponCode, deliveryPreference, requestedDeliveryMode, directProductVariantId, directQuantity, market.countryCode, paymentMethod, selectedSavedAddress],
   );
   const checkoutSummaryQuery = useQuery({
     queryKey: ["checkout-summary", customerAuth.authKey, checkoutSummaryOptions],
@@ -340,6 +342,7 @@ export function CheckoutPageClient() {
 
       const payload: PlaceOrderPayload = {
         deliveryPreference,
+        ...(requestedDeliveryMode ? { deliveryMode: requestedDeliveryMode as any } : {}),
         paymentMethod,
         buyerCountryCode: market.countryCode,
         ...(directProductVariantId
@@ -580,7 +583,10 @@ export function CheckoutPageClient() {
               {customerDeliveryOptions.map((option) => (
                 <StorefrontOptionCard
                   key={option.preference}
-                  onClick={() => setDeliveryPreference(option.preference)}
+                  onClick={() => {
+                    setDeliveryPreference(option.preference);
+                    if (option.preference === "STORE_PICKUP") setRequestedDeliveryMode(null);
+                  }}
                   selected={deliveryPreference === option.preference}
                 >
                   <span className="block text-sm font-black">{option.label}</span>
@@ -590,6 +596,43 @@ export function CheckoutPageClient() {
                 </StorefrontOptionCard>
               ))}
             </div>
+
+            {deliveryPreference === "DELIVER_TO_ADDRESS" && checkoutSummaryQuery.data?.availableDeliveryOptions?.length ? (
+              <div className="mt-6 border-t border-[#E5E7EB] pt-6">
+                <h4 className="text-sm font-bold text-[#1F2933] mb-4">Select transport method</h4>
+                <div className="grid gap-3 md:grid-cols-2">
+                  {checkoutSummaryQuery.data.availableDeliveryOptions
+                    .filter((opt) => opt.mode !== "STORE_PICKUP")
+                    .map((opt) => (
+                    <StorefrontOptionCard
+                      key={opt.mode}
+                      onClick={() => {
+                        if (opt.available) setRequestedDeliveryMode(opt.mode);
+                      }}
+                      selected={opt.available && (requestedDeliveryMode === opt.mode || (!requestedDeliveryMode && opt.isCheapest))}
+                      className={opt.available ? "" : "opacity-50 cursor-not-allowed"}
+                    >
+                      <span className="flex items-center justify-between gap-2 text-sm font-black">
+                        {customerDeliveryModeLabel(opt.mode)}
+                        {!opt.available && (
+                          <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-bold text-gray-600">
+                            Unavailable
+                          </span>
+                        )}
+                        {opt.isCheapest && opt.available && (
+                          <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-bold text-green-800">
+                            Cheapest
+                          </span>
+                        )}
+                      </span>
+                      <span className="mt-2 block text-xs font-bold text-[#667085]">
+                        {opt.available ? formatMoney(opt.chargePaise, checkoutSummaryQuery.data.buyerCurrency, checkoutTotals.buyerLocale) : (opt.reason || "Delivery unavailable")}
+                      </span>
+                    </StorefrontOptionCard>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </StorefrontPanel>
 
           <StorefrontPanel as="section">

@@ -68,6 +68,7 @@ type CheckoutSummaryItem = {
       categoryId: string;
       name: string;
       sellerId: string;
+      weightKg?: any;
       seller: {
         sellerType: SellerType;
       };
@@ -174,6 +175,7 @@ export class CartService {
       buyerCouponDiscountMinor,
       buyerTotalMinor: this.marketService.convertMinorUnits(finalCharges.totalPaise, market),
       feeSnapshot: finalCharges.snapshot,
+      availableDeliveryOptions: finalCharges.availableDeliveryOptions,
     };
   }
 
@@ -188,6 +190,7 @@ export class CartService {
 
     return {
       ...(query.deliveryPreference ? { deliveryPreference: query.deliveryPreference } : {}),
+      ...(query.requestedDeliveryMode ? { deliveryMode: query.requestedDeliveryMode } : {}),
       ...(query.paymentMethod ? { paymentMethod: query.paymentMethod } : {}),
       ...(address !== undefined ? { address } : {}),
     };
@@ -559,8 +562,9 @@ export class CartService {
           itemCount: 0,
         },
       };
+      const productWeightGrams = product.weightKg ? Math.round(Number(product.weightKg) * 1000) : null;
       const itemWeightGrams = this.positiveInt(
-        variant.packageWeightGrams ?? this.jsonNumber(variant.attributes, "packageWeightGrams"),
+        variant.packageWeightGrams ?? this.jsonNumber(variant.attributes, "packageWeightGrams") ?? productWeightGrams,
         500,
       );
       current.subtotalPaise += item.quantity * item.unitPricePaise;

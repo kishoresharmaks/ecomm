@@ -1,5 +1,13 @@
 import { BadRequestException } from "@nestjs/common";
-import { RoleCode, UserStatus } from "@indihub/database";
+import {
+  DeliveryAssignmentStatus,
+  DeliveryMode,
+  DeliveryStatus,
+  PaymentProvider,
+  PaymentStatus,
+  RoleCode,
+  UserStatus,
+} from "@indihub/database";
 import { describe, expect, it, vi } from "vitest";
 import { OrdersService } from "./orders.service";
 
@@ -128,13 +136,103 @@ describe("OrdersService", () => {
 
     await expect(service.listDeliveryPartners({ isAvailable: "yes" as never })).rejects.toThrow(BadRequestException);
   });
+
+  it("keeps shipment assignment state in sync for batched local delivery assignment", async () => {
+    const prisma = createOrdersPrismaMock([deliveryPartner()]);
+    const service = new OrdersService(
+      prisma as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+    );
+    const batch = [
+      batchOrder("order-1", "delivery-1", "shipment-1"),
+      batchOrder("order-2", "delivery-2", "shipment-2"),
+    ];
+
+    await service.autoAssignDeliveryBatch(batch as never, null, "Auto assigned by test.", {
+      shipmentIds: ["shipment-1", "shipment-2"],
+    });
+
+    expect(prisma.client.$transaction).toHaveBeenCalled();
+    expect(prisma.tx.orderShipment.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        id: { in: ["shipment-1", "shipment-2"] },
+        assignmentStatus: { not: DeliveryAssignmentStatus.ACCEPTED },
+      }),
+      data: expect.objectContaining({
+        deliveryPartnerUserId: "partner_1",
+        assignmentStatus: DeliveryAssignmentStatus.ASSIGNED,
+      }),
+    }));
+  });
+
+  it("uses total pending COD across the batch before choosing a delivery partner", async () => {
+    const prisma = createOrdersPrismaMock([deliveryPartner({ codCashLimitPaise: 500_000 })]);
+    const service = new OrdersService(
+      prisma as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+    );
+    const batch = [
+      batchOrder("order-1", "delivery-1", "shipment-1", { codAmountPaise: 400_000 }),
+      batchOrder("order-2", "delivery-2", "shipment-2", { codAmountPaise: 400_000 }),
+    ];
+
+    await service.autoAssignDeliveryBatch(batch as never, null, "Auto assigned by test.", {
+      shipmentIds: ["shipment-1", "shipment-2"],
+    });
+
+    expect(prisma.client.$transaction).not.toHaveBeenCalled();
+  });
 });
 
 function createOrdersPrismaMock(partners: unknown[], options: { sellerId?: string } = {}) {
+  const tx = {
+    $queryRaw: vi.fn().mockResolvedValue([]),
+    deliveryDetail: {
+      updateMany: vi.fn().mockResolvedValue({ count: 2 }),
+    },
+    orderShipment: {
+      updateMany: vi.fn().mockResolvedValue({ count: 2 }),
+    },
+    deliveryAssignmentAttempt: {
+      create: vi.fn().mockResolvedValue({}),
+    },
+    deliveryEvent: {
+      create: vi.fn().mockResolvedValue({}),
+    },
+  };
   return {
+    tx,
     client: {
+      $transaction: vi.fn(async (callback) => callback(tx)),
       deliveryDetail: {
         aggregate: vi.fn().mockResolvedValue({ _sum: { codCollectedAmountPaise: 0 } }),
+        groupBy: vi.fn().mockResolvedValue([]),
+      },
+      deliveryAssignmentAttempt: {
+        findMany: vi.fn().mockResolvedValue([]),
+        groupBy: vi.fn().mockResolvedValue([]),
       },
       deliveryPartnerPayout: {
         aggregate: vi.fn().mockResolvedValue({ _sum: { amountPaise: 0 }, _count: { _all: 0 } }),
@@ -144,6 +242,7 @@ function createOrdersPrismaMock(partners: unknown[], options: { sellerId?: strin
       },
       orderShipment: {
         count: vi.fn().mockResolvedValue(0),
+        groupBy: vi.fn().mockResolvedValue([]),
       },
       order: {
         count: vi.fn().mockResolvedValue(0),
@@ -161,5 +260,65 @@ function createOrdersPrismaMock(partners: unknown[], options: { sellerId?: strin
         findMany: vi.fn().mockResolvedValue(partners),
       },
     },
+  };
+}
+
+function deliveryPartner(options: { codCashLimitPaise?: number | null } = {}) {
+  return {
+    id: "partner_1",
+    email: "ravi@example.com",
+    phone: "9876543210",
+    fullName: "Ravi",
+    status: UserStatus.ACTIVE,
+    createdAt: new Date("2026-07-11T09:00:00.000Z"),
+    deliveryProfile: {
+      isAvailable: true,
+      phone: "9876543210",
+      vehicleNumber: "TN 30 AB 1234",
+      priority: 100,
+      serviceCountryCode: null,
+      serviceStateCode: null,
+      serviceCityCode: null,
+      serviceAreas: [],
+      baseLatitude: null,
+      baseLongitude: null,
+      serviceRadiusKm: null,
+      codCashLimitPaise: options.codCashLimitPaise ?? null,
+      notes: null,
+    },
+    userRoles: [{ role: { code: RoleCode.DELIVERY_PARTNER } }],
+  };
+}
+
+function batchOrder(
+  id: string,
+  deliveryDetailId: string,
+  shipmentId: string,
+  options: { codAmountPaise?: number } = {},
+) {
+  return {
+    id,
+    paymentStatus: options.codAmountPaise ? PaymentStatus.PENDING : PaymentStatus.PAID,
+    shippingAddressSnapshot: {
+      countryCode: "IN",
+      stateCode: "IN-TN",
+      cityCode: "IN-TN-SLM",
+      pincode: "636001",
+      localAreaCode: "PIN-636001",
+    },
+    payments: options.codAmountPaise
+      ? [{ provider: PaymentProvider.COD, method: "COD", amountPaise: options.codAmountPaise }]
+      : [],
+    deliveryDetail: {
+      id: deliveryDetailId,
+      status: DeliveryStatus.PACKED,
+    },
+    shipments: [
+      {
+        id: shipmentId,
+        deliveryMode: DeliveryMode.LOCAL_DELIVERY_PARTNER,
+        status: DeliveryStatus.PACKED,
+      },
+    ],
   };
 }
