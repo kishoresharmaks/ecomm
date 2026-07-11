@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Text, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Card, Field, Header, Metric, QueryState, Screen, StatusChip, formatDateTime, formatPaise, humanize } from "../../src/components/screen";
-import { getDeliveryWallet, requestDeliveryWalletPayout } from "../../src/features/delivery/delivery-api";
+import { getDeliveryProfile, getDeliveryWallet, requestDeliveryWalletPayout } from "../../src/features/delivery/delivery-api";
 import { useMobileDeliveryAuth } from "../../src/auth/mobile-delivery-auth-context";
 
 export default function DeliveryWalletScreen() {
@@ -12,6 +12,11 @@ export default function DeliveryWalletScreen() {
   const walletQuery = useQuery({
     queryKey: ["delivery-wallet", auth.authKey],
     queryFn: () => getDeliveryWallet(auth.authHeaders, { limit: 50 }),
+    enabled: auth.enabled,
+  });
+  const profileQuery = useQuery({
+    queryKey: ["delivery-profile", auth.authKey, "wallet"],
+    queryFn: () => getDeliveryProfile(auth.authHeaders),
     enabled: auth.enabled,
   });
   const payoutMutation = useMutation({
@@ -27,12 +32,28 @@ export default function DeliveryWalletScreen() {
     <Screen>
       <Header title="Wallet" subtitle="Local delivery earnings and manual payout requests." />
       <QueryState loading={walletQuery.isLoading} error={walletQuery.error} onRetry={() => void walletQuery.refetch()} />
+      <QueryState loading={false} error={profileQuery.error} onRetry={() => void profileQuery.refetch()} />
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
         <Metric label="Available" value={formatPaise(summary?.availableBalancePaise ?? 0, summary?.currency ?? "INR")} />
         <Metric label="Earned" value={formatPaise(summary?.totalEarnedPaise ?? 0, summary?.currency ?? "INR")} />
         <Metric label="Pending payout" value={formatPaise(summary?.pendingPayoutPaise ?? 0, summary?.currency ?? "INR")} />
         <Metric label="Threshold" value={formatPaise(summary?.minimumPayoutPaise ?? 0, summary?.currency ?? "INR")} />
       </View>
+      <Card>
+        <Text style={{ color: "#123A5A", fontSize: 18, fontWeight: "900" }}>COD handover</Text>
+        {profileQuery.data?.deliveryProfile.razorpayVirtualUpiId ? (
+          <>
+            <Text selectable style={{ color: "#ED3500", fontSize: 18, fontWeight: "900", marginTop: 8 }}>
+              {profileQuery.data.deliveryProfile.razorpayVirtualUpiId}
+            </Text>
+            <Text style={{ color: "#6B7280", marginTop: 8 }}>
+              Deposit collected COD here to reduce COD exposure automatically after Razorpay confirms the transfer.
+            </Text>
+          </>
+        ) : (
+          <Text style={{ color: "#6B7280", marginTop: 8 }}>COD handover UPI is not available yet.</Text>
+        )}
+      </Card>
       <Card>
         <Text style={{ color: "#123A5A", fontSize: 18, fontWeight: "900" }}>Request payout</Text>
         <Text style={{ color: "#6B7280" }}>
@@ -57,4 +78,3 @@ export default function DeliveryWalletScreen() {
     </Screen>
   );
 }
-

@@ -1,5 +1,6 @@
 import { BadRequestException } from "@nestjs/common";
 import {
+  CodCollectionStatus,
   DeliveryAssignmentStatus,
   DeliveryMode,
   DeliveryStatus,
@@ -204,6 +205,168 @@ describe("OrdersService", () => {
 
     expect(prisma.client.$transaction).not.toHaveBeenCalled();
   });
+
+  it("excludes already-collected COD from assigned pending exposure metrics", async () => {
+    const prisma = createOrdersPrismaMock([deliveryPartner({ codCashLimitPaise: 500_000 })]);
+    const service = new OrdersService(
+      prisma as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+    );
+
+    await service.autoAssignDeliveryBatch(
+      [batchOrder("order-1", "delivery-1", "shipment-1", { codAmountPaise: 100_000 })] as never,
+      null,
+      "Auto assigned by test.",
+      { shipmentIds: ["shipment-1"] },
+    );
+
+    expect(prisma.client.deliveryDetail.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          codCollectionStatus: { not: CodCollectionStatus.COLLECTED },
+        }),
+      }),
+    );
+  });
+
+  it("excludes already-collected COD from projected assigned exposure", async () => {
+    const prisma = createOrdersPrismaMock([]);
+    const service = new OrdersService(
+      prisma as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+    );
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([
+        { id: "profile_1", depositWalletBalancePaise: 0 },
+      ]),
+      deliveryDetail: {
+        aggregate: vi.fn().mockResolvedValue({ _sum: { codCollectedAmountPaise: 100_000 } }),
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+    };
+
+    const exposure = await service.calculateProjectedCodExposure(tx as never, "partner_1");
+
+    expect(exposure.netExposure).toBe(100_000);
+    expect(tx.deliveryDetail.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          codCollectionStatus: { not: CodCollectionStatus.COLLECTED },
+        }),
+      }),
+    );
+  });
+
+  it("includes newly assigned COD liability in projected limit checks", async () => {
+    const prisma = createOrdersPrismaMock([]);
+    const service = new OrdersService(
+      prisma as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+    );
+    const helper = service as unknown as {
+      pendingCodAmountForPartnerAssignment: (
+        order: unknown,
+        currentPartnerUserId: string | null,
+        currentAssignmentStatus: DeliveryAssignmentStatus | null,
+        nextPartnerUserId: string,
+      ) => number;
+    };
+    const order = {
+      paymentStatus: PaymentStatus.PENDING,
+      payments: [
+        {
+          provider: PaymentProvider.COD,
+          method: "COD",
+          status: PaymentStatus.PENDING,
+          amountPaise: 125_000,
+        },
+      ],
+    };
+
+    expect(
+      helper.pendingCodAmountForPartnerAssignment(order, null, null, "partner_1"),
+    ).toBe(125_000);
+  });
+
+  it("does not re-add COD liability when the same partner is already assigned", async () => {
+    const prisma = createOrdersPrismaMock([]);
+    const service = new OrdersService(
+      prisma as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+    );
+    const helper = service as unknown as {
+      pendingCodAmountForPartnerAssignment: (
+        order: unknown,
+        currentPartnerUserId: string,
+        currentAssignmentStatus: DeliveryAssignmentStatus,
+        nextPartnerUserId: string,
+      ) => number;
+    };
+    const order = {
+      paymentStatus: PaymentStatus.PENDING,
+      payments: [
+        {
+          provider: PaymentProvider.COD,
+          method: "COD",
+          status: PaymentStatus.PENDING,
+          amountPaise: 125_000,
+        },
+      ],
+    };
+
+    expect(
+      helper.pendingCodAmountForPartnerAssignment(
+        order,
+        "partner_1",
+        DeliveryAssignmentStatus.ASSIGNED,
+        "partner_1",
+      ),
+    ).toBe(0);
+  });
 });
 
 function createOrdersPrismaMock(partners: unknown[], options: { sellerId?: string } = {}) {
@@ -229,6 +392,7 @@ function createOrdersPrismaMock(partners: unknown[], options: { sellerId?: strin
       deliveryDetail: {
         aggregate: vi.fn().mockResolvedValue({ _sum: { codCollectedAmountPaise: 0 } }),
         groupBy: vi.fn().mockResolvedValue([]),
+        findMany: vi.fn().mockResolvedValue([]),
       },
       deliveryAssignmentAttempt: {
         findMany: vi.fn().mockResolvedValue([]),
@@ -271,7 +435,7 @@ function deliveryPartner(options: { codCashLimitPaise?: number | null } = {}) {
     fullName: "Ravi",
     status: UserStatus.ACTIVE,
     createdAt: new Date("2026-07-11T09:00:00.000Z"),
-    deliveryProfile: {
+      deliveryProfile: {
       isAvailable: true,
       phone: "9876543210",
       vehicleNumber: "TN 30 AB 1234",
@@ -284,6 +448,7 @@ function deliveryPartner(options: { codCashLimitPaise?: number | null } = {}) {
       baseLongitude: null,
       serviceRadiusKm: null,
       codCashLimitPaise: options.codCashLimitPaise ?? null,
+      depositWalletBalancePaise: 0,
       notes: null,
     },
     userRoles: [{ role: { code: RoleCode.DELIVERY_PARTNER } }],

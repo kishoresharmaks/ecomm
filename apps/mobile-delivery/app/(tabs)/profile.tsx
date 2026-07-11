@@ -63,6 +63,23 @@ export default function DeliveryProfileScreen() {
         <Metric label="Radius" value={serviceRadiusKm ? `${serviceRadiusKm} km` : "Not set"} />
       </View>
       <Card>
+        <Text style={{ color: "#123A5A", fontSize: 18, fontWeight: "900" }}>COD handover UPI</Text>
+        {profile?.deliveryProfile.razorpayVirtualUpiId ? (
+          <>
+            <Text selectable style={{ color: "#ED3500", fontSize: 18, fontWeight: "900", marginTop: 8 }}>
+              {profile.deliveryProfile.razorpayVirtualUpiId}
+            </Text>
+            <Text style={{ color: "#6B7280", marginTop: 8 }}>
+              Deposit collected COD cash to this UPI ID. Razorpay Smart Collect will automatically clear verified COD exposure after the payment webhook is received.
+            </Text>
+          </>
+        ) : (
+          <Text style={{ color: "#6B7280", marginTop: 8 }}>
+            Your COD handover UPI is being prepared. Refresh this screen after admin payment settings are ready.
+          </Text>
+        )}
+      </Card>
+      <Card>
         <Text style={{ color: "#123A5A", fontSize: 18, fontWeight: "900" }}>{profile?.fullName || profile?.email || "Delivery partner"}</Text>
         <Field label="Phone" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
         <Field label="Vehicle number" value={vehicleNumber} onChangeText={setVehicleNumber} />

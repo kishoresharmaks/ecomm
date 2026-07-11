@@ -150,6 +150,7 @@ export type DeliveryProfile = {
     serviceRadiusKm?: number | null;
     notes?: string | null;
     effectiveCodCashLimitPaise?: number | null;
+    razorpayVirtualUpiId?: string | null;
   };
   wallet?: DeliveryWalletSummary;
 };

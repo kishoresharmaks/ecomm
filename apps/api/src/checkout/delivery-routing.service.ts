@@ -58,6 +58,11 @@ const defaultBulkyMaxSideCm = 100;
 const routingRuleVersion = "seller_type_delivery_routing_v1";
 
 type RoutingClient = Prisma.TransactionClient | PrismaService["client"];
+type RouteDistanceSettingReader = {
+  setting: {
+    findMany(args: Prisma.SettingFindManyArgs): Promise<Array<{ key: string; value: Prisma.JsonValue }>>;
+  };
+};
 
 type CourierProviderCredentialsSnapshot = {
   apiKey?: string | null;
@@ -678,10 +683,9 @@ export class DeliveryRoutingService {
     // 2. Resolve database-dependent modes efficiently
     // We fetch any shared states (like wholesale checks) once if needed.
     let packageIsBulky = false;
-    let wholesaleBulkyRoutingEnabled = false;
 
     if (sellerType === SellerType.WHOLESALE_DISTRIBUTOR) {
-      wholesaleBulkyRoutingEnabled = await this.wholesaleBulkyRoutingEnabled(client);
+      const wholesaleBulkyRoutingEnabled = await this.wholesaleBulkyRoutingEnabled(client);
       const bulkyThreshold = await this.bulkyThreshold(client);
       packageIsBulky = this.isBulkyPackage(parcel, bulkyThreshold);
 
@@ -3172,7 +3176,6 @@ export class DeliveryRoutingService {
       const includedDistanceKm = Math.max(0, config?.includedDistanceKm ?? 0);
       const perKmPaise = Math.max(0, config?.perKmPaise ?? 0);
 
-      let distanceKm = 0;
       const customerLat = address?.latitude ? Number(address.latitude) : null;
       const customerLng = address?.longitude ? Number(address.longitude) : null;
 
@@ -3195,26 +3198,18 @@ export class DeliveryRoutingService {
         }
       }
 
-      if (sellerLat !== null && sellerLng !== null && customerLat !== null && customerLng !== null) {
-        try {
-          const result = await this.routeDistanceService.calculate({
-            origin: { latitude: sellerLat, longitude: sellerLng },
-            destination: { latitude: customerLat, longitude: customerLng },
-            client: client as any,
-          });
-          if (result && typeof result.distanceKm === "number" && result.distanceKm !== null) {
-            distanceKm = result.distanceKm;
-          } else {
-            console.warn("RouteDistanceService returned null or no route found, falling back to 0 km.");
-            distanceKm = 0;
-          }
-        } catch (err) {
-          console.warn("RouteDistanceService calculation failed, falling back to 0 km:", err);
-          distanceKm = 0;
-        }
-      } else {
+      const distanceKm =
+        sellerLat !== null && sellerLng !== null && customerLat !== null && customerLng !== null
+          ? await this.resolveRouteDistanceKm(
+              sellerLat,
+              sellerLng,
+              customerLat,
+              customerLng,
+              client,
+            )
+          : 0;
+      if (sellerLat === null || sellerLng === null || customerLat === null || customerLng === null) {
         console.warn("Origin or destination coordinates missing, falling back to 0 km.");
-        distanceKm = 0;
       }
 
       const extraDistanceKm = Math.max(0, distanceKm - includedDistanceKm);
@@ -3226,6 +3221,30 @@ export class DeliveryRoutingService {
 
   private nonNegativeInt(value: number) {
     return Math.max(0, Math.round(value));
+  }
+
+  private async resolveRouteDistanceKm(
+    sellerLat: number,
+    sellerLng: number,
+    customerLat: number,
+    customerLng: number,
+    client?: RoutingClient,
+  ) {
+    try {
+      const result = await this.routeDistanceService.calculate({
+        origin: { latitude: sellerLat, longitude: sellerLng },
+        destination: { latitude: customerLat, longitude: customerLng },
+        ...(client ? { client: client as RouteDistanceSettingReader } : {}),
+      });
+      if (result && typeof result.distanceKm === "number" && result.distanceKm !== null) {
+        return result.distanceKm;
+      }
+      console.warn("RouteDistanceService returned null or no route found, falling back to 0 km.");
+      return 0;
+    } catch (err) {
+      console.warn("RouteDistanceService calculation failed, falling back to 0 km:", err);
+      return 0;
+    }
   }
 
   private nullablePositiveInt(value?: number | null) {

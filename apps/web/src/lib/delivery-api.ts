@@ -195,6 +195,7 @@ export type DeliveryPartnerProfile = {
   codCashLimitPaise?: number | null;
   effectiveCodCashLimitPaise?: number | null;
   notes?: string | null;
+  razorpayVirtualUpiId?: string | null;
 };
 
 export type DeliveryPartnerProfileAccount = {

@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, UnauthorizedException } from "@nestjs/common";
 import { createHmac } from "node:crypto";
 import {
+  CodCollectionStatus,
   DeliveryAssignmentStatus,
   DeliveryStatus,
   EmailRecipientType,
@@ -84,6 +85,16 @@ describe("PaymentsService", () => {
         updateMany: vi.fn(),
       },
       deliveryDetail: {
+        findMany: vi.fn(),
+        update: vi.fn(),
+        updateMany: vi.fn(),
+      },
+      deliveryPartnerProfile: {
+        findUnique: vi.fn(),
+        update: vi.fn(),
+      },
+      razorpayWebhookEvent: {
+        create: vi.fn(),
         update: vi.fn(),
       },
       orderStatusEvent: {
@@ -100,6 +111,7 @@ describe("PaymentsService", () => {
         async (callback: (transactionClient: typeof prisma.client) => Promise<unknown>) =>
           callback(prisma.client),
       ),
+      $queryRaw: vi.fn(),
     },
   };
 
@@ -130,6 +142,13 @@ describe("PaymentsService", () => {
     prisma.client.orderShipment.updateMany.mockResolvedValue({ count: 1 });
     prisma.client.orderShipmentPackage.updateMany.mockResolvedValue({ count: 1 });
     prisma.client.deliveryDetail.update.mockResolvedValue({});
+    prisma.client.deliveryDetail.findMany.mockResolvedValue([]);
+    prisma.client.deliveryDetail.updateMany.mockResolvedValue({ count: 1 });
+    prisma.client.deliveryPartnerProfile.findUnique.mockResolvedValue(null);
+    prisma.client.deliveryPartnerProfile.update.mockResolvedValue({});
+    prisma.client.razorpayWebhookEvent.create.mockResolvedValue({});
+    prisma.client.razorpayWebhookEvent.update.mockResolvedValue({});
+    prisma.client.$queryRaw.mockResolvedValue([]);
     prisma.client.orderStatusEvent.create.mockResolvedValue({});
     prisma.client.paymentEvent.create.mockResolvedValue({});
     prisma.client.auditLog.create.mockResolvedValue({});
@@ -243,6 +262,85 @@ describe("PaymentsService", () => {
       userId: "user_customer",
       variables: {
         orderNumber: "1HI202605230001",
+        paymentStatus: PaymentStatus.PAID,
+      },
+    });
+  });
+
+  it("auto-verifies COD collections from a Razorpay Smart Collect webhook", async () => {
+    const payload = createRazorpayVirtualAccountPayload();
+    const rawBody = Buffer.from(JSON.stringify(payload));
+    const signature = createHmac("sha256", "webhook_secret").update(rawBody).digest("hex");
+    prisma.client.deliveryPartnerProfile.findUnique.mockResolvedValue({
+      id: "profile_1",
+      userId: "delivery_user_1",
+    });
+    prisma.client.$queryRaw.mockResolvedValue([
+      { id: "profile_1", depositWalletBalancePaise: 5000 },
+    ]);
+    prisma.client.deliveryDetail.findMany.mockResolvedValue([
+      {
+        id: "delivery_1",
+        orderId: "order_internal_1",
+        codCollectedAmountPaise: 10500,
+        order: {
+          orderNumber: "1HI202607110001",
+          orderStatus: OrderStatus.DELIVERED,
+          paymentStatus: PaymentStatus.PENDING,
+          customer: {
+            userId: "customer_user_1",
+            user: { email: "customer@example.com" },
+          },
+          payments: [
+            {
+              id: "payment_1",
+              status: PaymentStatus.PENDING,
+              amountPaise: 10500,
+            },
+          ],
+        },
+      },
+    ]);
+    const service = new PaymentsService(prisma as never, notifications as never);
+
+    const result = await service.handleRazorpayWebhook(signature, payload, rawBody, "evt_va_1");
+
+    expect(result).toEqual({ received: true, handled: true });
+    expect(prisma.client.deliveryDetail.updateMany).toHaveBeenCalledWith({
+      where: { id: "delivery_1", codCollectionStatus: CodCollectionStatus.COLLECTED },
+      data: expect.objectContaining({
+        codCollectionStatus: CodCollectionStatus.VERIFIED,
+      }),
+    });
+    expect(prisma.client.order.updateMany).toHaveBeenCalledWith({
+      where: { id: "order_internal_1", paymentStatus: PaymentStatus.PENDING },
+      data: { paymentStatus: PaymentStatus.PAID },
+    });
+    expect(prisma.client.payment.updateMany).toHaveBeenCalledWith({
+      where: { id: "payment_1", status: PaymentStatus.PENDING },
+      data: { status: PaymentStatus.PAID },
+    });
+    expect(prisma.client.orderSellerSplit.updateMany).toHaveBeenCalledWith({
+      where: {
+        orderId: "order_internal_1",
+        sellerStatus: { not: SellerOrderStatus.CANCELLED },
+        payoutId: null,
+      },
+      data: expect.objectContaining({
+        settlementStatus: SellerSettlementStatus.ELIGIBLE,
+      }),
+    });
+    expect(prisma.client.deliveryPartnerProfile.update).toHaveBeenCalledWith({
+      where: { id: "profile_1" },
+      data: { depositWalletBalancePaise: 4500 },
+    });
+    expect(notifications.notifyEvent).toHaveBeenCalledWith({
+      eventCode: "PAYMENT_SUCCESS",
+      recipientType: EmailRecipientType.CUSTOMER,
+      recipient: "customer@example.com",
+      userId: "customer_user_1",
+      variables: {
+        orderNumber: "1HI202607110001",
         paymentStatus: PaymentStatus.PAID,
       },
     });
@@ -1137,6 +1235,25 @@ function createRazorpayPayload(event: string, paymentId: string, orderId: string
         entity: {
           id: paymentId,
           order_id: orderId,
+        },
+      },
+    },
+  };
+}
+
+function createRazorpayVirtualAccountPayload() {
+  return {
+    event: "virtual_account.credited",
+    payload: {
+      virtual_account: {
+        entity: {
+          id: "va_delivery_1",
+        },
+      },
+      payment: {
+        entity: {
+          id: "pay_smart_collect_1",
+          amount: 10000,
         },
       },
     },

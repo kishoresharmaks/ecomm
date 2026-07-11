@@ -3491,6 +3491,11 @@ model DeliveryPartnerProfile {
   baseLongitude         Decimal?                     @map("base_longitude") @db.Decimal(10, 7)
   serviceRadiusKm       Int?                         @map("service_radius_km")
   codCashLimitPaise     Int?                         @map("cod_cash_limit_paise")
+  depositWalletBalancePaise Int                      @default(0) @map("deposit_wallet_balance_paise")
+  razorpayCustomerId    String?                      @map("razorpay_customer_id")
+  razorpayVirtualAccountId String?                   @unique @map("razorpay_virtual_account_id")
+  razorpayVirtualUpiId  String?                      @map("razorpay_virtual_upi_id")
+  razorpayVirtualAccountProvisioningAt DateTime?     @map("razorpay_virtual_account_provisioning_at")
   notes                 String?
   serviceCountryCode    String?                      @map("service_country_code")
   serviceStateCode      String?                      @map("service_state_code")

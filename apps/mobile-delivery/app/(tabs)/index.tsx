@@ -3,7 +3,7 @@ import { Pressable, Text, View } from "react-native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { colors } from "../../src/theme";
 import { Header, Metric, QueryState, Screen, StatusChip, formatPaise, humanize } from "../../src/components/screen";
-import { listDeliveryOrders, getDeliveryWallet, findCodPayment, type DeliveryOrder } from "../../src/features/delivery/delivery-api";
+import { listDeliveryOrders, getDeliveryProfile, getDeliveryWallet, findCodPayment, type DeliveryOrder } from "../../src/features/delivery/delivery-api";
 import { useMobileDeliveryAuth } from "../../src/auth/mobile-delivery-auth-context";
 
 export default function DeliveryDashboardScreen() {
@@ -19,18 +19,24 @@ export default function DeliveryDashboardScreen() {
     queryFn: () => getDeliveryWallet(auth.authHeaders, { limit: 5 }),
     enabled: auth.enabled,
   });
+  const profileQuery = useQuery({
+    queryKey: ["delivery-profile", auth.authKey, "dashboard"],
+    queryFn: () => getDeliveryProfile(auth.authHeaders),
+    enabled: auth.enabled,
+  });
 
   const orders = ordersQuery.data?.items ?? [];
   const active = orders.filter((order) => !["DELIVERED", "CANCELLED"].includes(order.deliveryStatus));
   const delivered = orders.filter((order) => order.deliveryStatus === "DELIVERED");
   const codPending = orders.filter((order) => order.paymentStatus === "PENDING" && findCodPayment(order));
 
-  const isRefreshing = ordersQuery.isFetching || walletQuery.isFetching;
+  const isRefreshing = ordersQuery.isFetching || walletQuery.isFetching || profileQuery.isFetching;
 
   const handleRefresh = async () => {
     await queryClient.invalidateQueries({ queryKey: ["delivery-orders"] });
     await queryClient.invalidateQueries({ queryKey: ["delivery-wallet"] });
-    await Promise.all([ordersQuery.refetch(), walletQuery.refetch()]);
+    await queryClient.invalidateQueries({ queryKey: ["delivery-profile"] });
+    await Promise.all([ordersQuery.refetch(), walletQuery.refetch(), profileQuery.refetch()]);
   };
 
   return (
@@ -40,7 +46,7 @@ export default function DeliveryDashboardScreen() {
         subtitle="Assigned order focus, COD visibility, and wallet summary."
         right={
           <Pressable onPress={handleRefresh} disabled={isRefreshing} style={{ padding: 8, opacity: isRefreshing ? 0.5 : 1 }}>
-            <Text style={{ color: colors.primary, fontSize: 22, fontWeight: "900" }}>↻</Text>
+            <Text style={{ color: colors.primary, fontSize: 14, fontWeight: "900" }}>Refresh</Text>
           </Pressable>
         }
       />
@@ -51,6 +57,7 @@ export default function DeliveryDashboardScreen() {
         <Metric label="Delivered" value={delivered.length} note="Completed" />
         <Metric label="COD pending" value={codPending.length} note="Needs verification" />
         <Metric label="Wallet" value={formatPaise(walletQuery.data?.summary.availableBalancePaise ?? 0)} note="Available balance" />
+        <Metric label="COD handover" value={profileQuery.data?.deliveryProfile.razorpayVirtualUpiId ? "Ready" : "Pending"} note="Smart Collect UPI" />
       </View>
       <Text style={{ color: "#123A5A", fontSize: 18, fontWeight: "900" }}>Today focus</Text>
       {orders.slice(0, 8).map((order) => (
@@ -78,4 +85,3 @@ function OrderRow({ order }: { order: DeliveryOrder }) {
     </Link>
   );
 }
-

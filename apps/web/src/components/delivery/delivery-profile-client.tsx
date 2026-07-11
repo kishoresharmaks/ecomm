@@ -159,6 +159,46 @@ export function DeliveryProfileClient() {
         </DeliveryPanel>
       ) : null}
 
+      {profile?.deliveryProfile.razorpayVirtualUpiId ? (
+        <DeliveryPanel>
+          <SectionHeading
+            title="COD Handover Virtual UPI"
+            description="Deposit collected cash directly to this UPI ID to automatically clear your COD exposure and restore your limit."
+          />
+          <div className="mt-4 rounded-md border border-[#E5E7EB] bg-[#F8FAFC] p-4 flex items-center justify-between">
+            <div>
+              <p className="text-sm font-bold text-[#1F2933]">Virtual UPI ID</p>
+              <p className="mt-1 text-lg font-black text-[#ED3500]">{profile.deliveryProfile.razorpayVirtualUpiId}</p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                void navigator.clipboard
+                  .writeText(profile.deliveryProfile.razorpayVirtualUpiId || "")
+                  .then(() => setNotice({ tone: "success", message: "Virtual UPI ID copied." }))
+                  .catch(() =>
+                    setNotice({
+                      tone: "danger",
+                      message: "Could not copy the Virtual UPI ID. Please copy it manually.",
+                    }),
+                  );
+              }}
+            >
+              Copy
+            </Button>
+          </div>
+          <div className="mt-3 rounded-md bg-[#FFF5F5] p-3 border border-[#FDBA74]">
+            <p className="text-sm text-[#C2410C] font-semibold">
+              Important: Only deposit your exact unsettled COD amount.
+            </p>
+            <p className="mt-1 text-xs text-[#C2410C]">
+              Do not deposit extra or lower amounts. Lower deposits will leave orders pending, and excess cash cannot be withdrawn manually.
+            </p>
+          </div>
+        </DeliveryPanel>
+      ) : null}
+
       {profile ? (
         <form onSubmit={submit} className="grid gap-5">
           <div className="grid gap-3 lg:grid-cols-3">

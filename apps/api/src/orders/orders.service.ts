@@ -6,6 +6,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import {
@@ -347,6 +348,7 @@ type DeliveryPartnerProfileReadback = {
   codCashLimitPaise: number | null;
   effectiveCodCashLimitPaise: number;
   notes: string | null;
+  razorpayVirtualUpiId: string | null;
 };
 
 type DeliveryPartnerServiceAreaScore = {
@@ -363,6 +365,7 @@ type DeliveryPartnerAssignmentCandidate = {
   score: number;
   workload: number;
   codExposurePaise: number;
+  netExposure: number;
   codLimitPaise: number;
   lastAssignmentAt: Date | null;
   area: DeliveryPartnerServiceAreaScore;
@@ -1681,7 +1684,21 @@ export class OrdersService {
   }
 
   async getDeliveryPartnerProfile(actor: RequestUser) {
-    const user = await this.getDeliveryPartnerUserOrThrow(actor.id);
+    let user = await this.getDeliveryPartnerUserOrThrow(actor.id);
+    if (
+      user.deliveryProfile &&
+      !user.deliveryProfile.razorpayVirtualAccountId &&
+      !this.isVirtualAccountProvisioningActive(
+        user.deliveryProfile.razorpayVirtualAccountProvisioningAt,
+      )
+    ) {
+      try {
+        await this.createDeliveryPartnerVirtualAccount(user.deliveryProfile.id);
+        user = await this.getDeliveryPartnerUserOrThrow(actor.id);
+      } catch (err: any) {
+        this.logger.warn(`Failed to auto-create virtual account for partner ${actor.id}: ${err.message}`);
+      }
+    }
     return this.toDeliveryPartnerSelfProfile(user);
   }
 
@@ -2180,7 +2197,13 @@ export class OrdersService {
       }
 
       if (partnerUserId) {
-        await this.assertDeliveryPartnerUser(tx, partnerUserId);
+        const newOrderCodAmountPaise = this.pendingCodAmountForPartnerAssignment(
+          order,
+          delivery?.deliveryPartnerUserId,
+          delivery?.assignmentStatus,
+          partnerUserId,
+        );
+        await this.assertDeliveryPartnerUser(tx, partnerUserId, newOrderCodAmountPaise);
       }
 
       const shouldRecordNewAttempt =
@@ -2346,11 +2369,17 @@ export class OrdersService {
         "Local delivery partners can only be assigned when shipment mode is Local Delivery Partner.",
       );
     }
-    if (dto.deliveryPartnerUserId) {
-      await this.assertDeliveryPartnerUser(this.prisma.client, dto.deliveryPartnerUserId);
-    }
-
     const updatedOrderId = await this.prisma.client.$transaction(async (tx) => {
+      if (dto.deliveryPartnerUserId) {
+        const newShipmentCodAmountPaise = this.pendingCodAmountForPartnerAssignment(
+          order,
+          shipment.deliveryPartnerUserId,
+          shipment.assignmentStatus,
+          dto.deliveryPartnerUserId,
+        );
+        await this.assertDeliveryPartnerUser(tx, dto.deliveryPartnerUserId, newShipmentCodAmountPaise);
+      }
+
       const assignmentNow = new Date();
       const shipmentAssignmentExpiresAt =
         nextModeUsesLocalPartner && dto.deliveryPartnerUserId
@@ -3806,7 +3835,13 @@ export class OrdersService {
 
     const result = await this.prisma.client.$transaction(async (tx) => {
       if (nextDeliveryPartnerUserId) {
-        await this.assertDeliveryPartnerUser(tx, nextDeliveryPartnerUserId);
+        const newOrderCodAmountPaise = this.pendingCodAmountForPartnerAssignment(
+          order,
+          previousDelivery?.deliveryPartnerUserId,
+          previousDelivery?.assignmentStatus,
+          nextDeliveryPartnerUserId,
+        );
+        await this.assertDeliveryPartnerUser(tx, nextDeliveryPartnerUserId, newOrderCodAmountPaise);
       }
 
       const assignmentNow = new Date();
@@ -5466,9 +5501,11 @@ export class OrdersService {
 
       const workload = metrics.workload.get(user.id) ?? 0;
       const codExposurePaise = metrics.codExposurePaise.get(user.id) ?? 0;
+      const depositBalance = user.deliveryProfile?.depositWalletBalancePaise ?? 0;
+      const netExposure = codExposurePaise - depositBalance;
       const codLimitPaise = user.deliveryProfile?.codCashLimitPaise ?? defaultLimit;
 
-      if (codAmountPaise > 0 && codExposurePaise + codAmountPaise > codLimitPaise) {
+      if (codLimitPaise >= 0 && netExposure + codAmountPaise > codLimitPaise) {
         skippedCodLimit += 1;
         return null;
       }
@@ -5478,6 +5515,7 @@ export class OrdersService {
         score: area.score,
         workload,
         codExposurePaise,
+        netExposure,
         codLimitPaise,
         lastAssignmentAt: metrics.lastAssignmentAt.get(user.id) ?? null,
         area,
@@ -5495,8 +5533,8 @@ export class OrdersService {
         if (left.workload !== right.workload) {
           return left.workload - right.workload;
         }
-        if (left.codExposurePaise !== right.codExposurePaise) {
-          return left.codExposurePaise - right.codExposurePaise;
+        if (left.netExposure !== right.netExposure) {
+          return left.netExposure - right.netExposure;
         }
         const leftLastAssignmentAt = left.lastAssignmentAt?.getTime() ?? 0;
         const rightLastAssignmentAt = right.lastAssignmentAt?.getTime() ?? 0;
@@ -5789,7 +5827,7 @@ export class OrdersService {
       return { workload, codExposurePaise, lastAssignmentAt };
     }
 
-    const [workloadRows, codCollectedByRows, codAssignedRows, lastAssignmentRows] =
+    const [workloadRows, codCollectedByRows, codAssignedRows, lastAssignmentRows, assignedPendingCodRows] =
       await Promise.all([
         this.prisma.client.orderShipment.groupBy({
           by: ["deliveryPartnerUserId"],
@@ -5839,6 +5877,31 @@ export class OrdersService {
             createdAt: true,
           },
         }),
+        this.prisma.client.deliveryDetail.findMany({
+          where: {
+            deliveryPartnerUserId: { in: partnerIds },
+            codCollectionStatus: { not: CodCollectionStatus.COLLECTED },
+            assignmentStatus: {
+              in: [DeliveryAssignmentStatus.ASSIGNED, DeliveryAssignmentStatus.ACCEPTED],
+            },
+            order: {
+              payments: {
+                some: { method: "COD", status: PaymentStatus.PENDING },
+              },
+            },
+          },
+          select: {
+            deliveryPartnerUserId: true,
+            order: {
+              select: {
+                payments: {
+                  where: { method: "COD", status: PaymentStatus.PENDING },
+                  select: { amountPaise: true },
+                },
+              },
+            },
+          },
+        }),
       ]);
 
     workloadRows.forEach((row) => {
@@ -5864,6 +5927,20 @@ export class OrdersService {
         );
       }
     });
+
+    assignedPendingCodRows.forEach((row) => {
+      if (row.deliveryPartnerUserId) {
+        let amount = 0;
+        for (const p of row.order.payments) {
+          amount += p.amountPaise;
+        }
+        codExposurePaise.set(
+          row.deliveryPartnerUserId,
+          (codExposurePaise.get(row.deliveryPartnerUserId) ?? 0) + amount,
+        );
+      }
+    });
+
     lastAssignmentRows.forEach((row) => {
       if (row._max.createdAt) {
         lastAssignmentAt.set(row.partnerUserId, row._max.createdAt);
@@ -6115,6 +6192,80 @@ export class OrdersService {
 
     return result._sum.codCollectedAmountPaise ?? 0;
   }
+
+  async calculateProjectedCodExposure(
+    tx: Prisma.TransactionClient,
+    partnerUserId: string,
+  ) {
+    const profiles = await tx.$queryRaw<{ id: string; depositWalletBalancePaise: number }[]>`
+      SELECT id, deposit_wallet_balance_paise AS "depositWalletBalancePaise"
+      FROM delivery_partner_profiles
+      WHERE user_id = ${partnerUserId}
+      FOR UPDATE
+    `;
+
+    const profile = profiles[0];
+    if (!profile) {
+      throw new BadRequestException("Delivery partner profile not found.");
+    }
+
+    const profileId = profile.id;
+    const depositBalance = profile.depositWalletBalancePaise || 0;
+
+    const collectedResult = await tx.deliveryDetail.aggregate({
+      where: {
+        codCollectionStatus: CodCollectionStatus.COLLECTED,
+        OR: [{ codCollectedById: partnerUserId }, { deliveryPartnerUserId: partnerUserId }],
+      },
+      _sum: {
+        codCollectedAmountPaise: true,
+      },
+    });
+
+    const unsettledCollected = collectedResult._sum.codCollectedAmountPaise ?? 0;
+
+    const assignedResult = await tx.deliveryDetail.findMany({
+      where: {
+        deliveryPartnerUserId: partnerUserId,
+        codCollectionStatus: { not: CodCollectionStatus.COLLECTED },
+        assignmentStatus: {
+          in: [
+            DeliveryAssignmentStatus.ASSIGNED,
+            DeliveryAssignmentStatus.ACCEPTED,
+          ]
+        },
+        order: {
+          payments: {
+            some: {
+              method: "COD",
+              status: PaymentStatus.PENDING,
+            },
+          },
+        },
+      },
+      select: {
+        order: {
+          select: {
+            payments: {
+              where: { method: "COD", status: PaymentStatus.PENDING },
+              select: { amountPaise: true }
+            }
+          }
+        }
+      }
+    });
+
+    let assignedUncollected = 0;
+    for (const detail of assignedResult) {
+      for (const p of detail.order.payments) {
+        assignedUncollected += p.amountPaise;
+      }
+    }
+
+    const netExposure = unsettledCollected + assignedUncollected - depositBalance;
+    return { netExposure, unsettledCollected, assignedUncollected, depositBalance, profileId };
+  }
+
 
   private async toDeliveryPartnerSummary(user: DeliveryPartnerWithProfile) {
     const [activeWorkload, pendingCodCashPaise, defaultCodLimitPaise, wallet] = await Promise.all([
@@ -6692,6 +6843,7 @@ export class OrdersService {
       codCashLimitPaise: profile?.codCashLimitPaise ?? null,
       effectiveCodCashLimitPaise: profile?.codCashLimitPaise ?? defaultCodLimitPaise,
       notes: profile?.notes ?? null,
+      razorpayVirtualUpiId: profile?.razorpayVirtualUpiId ?? null,
     };
   }
 
@@ -6705,14 +6857,17 @@ export class OrdersService {
     const hasServiceCoverage = Boolean(
       profile.serviceCountryCode ||
       profile.serviceStateCode ||
-      profile.serviceCityCode ||
-      profile.servicePincodes.length > 0 ||
-      profile.serviceLocalAreaCodes.length > 0 ||
-      profile.serviceRadiusKm,
+        profile.serviceStateCode ||
+        profile.serviceCityCode ||
+        profile.servicePincodes.length > 0 ||
+        profile.serviceLocalAreaCodes.length > 0 ||
+        profile.serviceRadiusKm,
     );
+    const depositBalance = user.deliveryProfile?.depositWalletBalancePaise ?? 0;
+    const netExposure = pendingCodCashPaise - depositBalance;
     const codLimitExceeded =
       profile.effectiveCodCashLimitPaise >= 0 &&
-      pendingCodCashPaise > profile.effectiveCodCashLimitPaise;
+      netExposure > profile.effectiveCodCashLimitPaise;
 
     if (!hasProfile) {
       readinessReasons.push("Missing profile");
@@ -8181,8 +8336,9 @@ export class OrdersService {
   }
 
   private async assertDeliveryPartnerUser(
-    tx: Prisma.TransactionClient | PrismaService["client"],
+    tx: Prisma.TransactionClient,
     userId: string,
+    newOrderCodAmountPaise: number = 0,
   ) {
     const user = await tx.user.findFirst({
       where: {
@@ -8196,13 +8352,23 @@ export class OrdersService {
           },
         },
       },
-      select: { id: true },
+      select: { id: true, deliveryProfile: { select: { codCashLimitPaise: true } } },
     });
 
     if (!user) {
       throw new BadRequestException(
         "Assigned delivery partner must be an active user with the delivery partner role.",
       );
+    }
+
+    const defaultLimit = await this.defaultPartnerCodLimitPaise();
+    const effectiveLimit = user.deliveryProfile?.codCashLimitPaise ?? defaultLimit;
+
+    if (effectiveLimit >= 0) {
+      const exposure = await this.calculateProjectedCodExposure(tx, userId);
+      if (exposure.netExposure + newOrderCodAmountPaise > effectiveLimit) {
+        throw new BadRequestException("Partner has exceeded their COD cash limit. Deposit required.");
+      }
     }
   }
 
@@ -8263,6 +8429,28 @@ export class OrdersService {
         (payment) => payment.provider === PaymentProvider.COD || payment.method === "COD",
       ) ?? null
     );
+  }
+
+  private pendingCodAmountForPartnerAssignment(
+    order: Pick<OrderWithRelations, "paymentStatus" | "payments">,
+    currentPartnerUserId: string | null | undefined,
+    currentAssignmentStatus: DeliveryAssignmentStatus | null | undefined,
+    nextPartnerUserId: string | null | undefined,
+  ) {
+    if (!nextPartnerUserId) {
+      return 0;
+    }
+    if (
+      currentPartnerUserId === nextPartnerUserId &&
+      (currentAssignmentStatus === DeliveryAssignmentStatus.ASSIGNED ||
+        currentAssignmentStatus === DeliveryAssignmentStatus.ACCEPTED)
+    ) {
+      return 0;
+    }
+    const codPayment = this.findCodPayment(order);
+    return order.paymentStatus === PaymentStatus.PENDING && codPayment?.status === PaymentStatus.PENDING
+      ? codPayment.amountPaise
+      : 0;
   }
 
   private deliveryAssignmentExpiresAt(assignedAt: Date) {
@@ -8726,4 +8914,80 @@ export class OrdersService {
         }
     });
   }
+
+  async createDeliveryPartnerVirtualAccount(partnerId: string) {
+    const profile = await this.prisma.client.deliveryPartnerProfile.findUnique({
+      where: { id: partnerId },
+      include: { user: true },
+    });
+
+    if (!profile) throw new NotFoundException("Delivery partner not found");
+    if (profile.razorpayVirtualAccountId) return profile;
+
+    const lockResult = await this.prisma.client.deliveryPartnerProfile.updateMany({
+      where: {
+        id: partnerId,
+        razorpayVirtualAccountId: null,
+        OR: [
+          { razorpayVirtualAccountProvisioningAt: null },
+          { razorpayVirtualAccountProvisioningAt: { lt: this.virtualAccountProvisioningStaleBefore() } },
+        ],
+      },
+      data: { razorpayVirtualAccountProvisioningAt: new Date() }
+    });
+
+    if (lockResult.count === 0) {
+      // Another request is currently creating it, or it was already created.
+      return profile;
+    }
+
+    if (!this.paymentsService) {
+      await this.prisma.client.deliveryPartnerProfile.update({
+        where: { id: partnerId },
+        data: { razorpayVirtualAccountProvisioningAt: null }
+      });
+      throw new ServiceUnavailableException("Payments service not configured");
+    }
+
+    const name = profile.user.fullName || "Delivery Partner";
+    const email = profile.user.email;
+    const phone = profile.phone || profile.user.phone || "";
+
+    try {
+      const vaData = await this.paymentsService.createRazorpayVirtualAccount(
+        name,
+        email,
+        phone,
+        `DP_${profile.userId}`
+      );
+
+      return await this.prisma.client.deliveryPartnerProfile.update({
+        where: { id: partnerId },
+        data: {
+          razorpayCustomerId: vaData.customerId,
+          razorpayVirtualAccountId: vaData.virtualAccountId,
+          razorpayVirtualUpiId: vaData.upiId,
+          razorpayVirtualAccountProvisioningAt: null,
+        },
+      });
+    } catch (error) {
+      await this.prisma.client.deliveryPartnerProfile.update({
+        where: { id: partnerId },
+        data: { razorpayVirtualAccountProvisioningAt: null }
+      });
+      throw error;
+    }
+  }
+
+  private isVirtualAccountProvisioningActive(value?: Date | string | null) {
+    if (!value) {
+      return false;
+    }
+    return new Date(value).getTime() >= this.virtualAccountProvisioningStaleBefore().getTime();
+  }
+
+  private virtualAccountProvisioningStaleBefore() {
+    return new Date(Date.now() - 5 * 60 * 1000);
+  }
+
 }

@@ -6,6 +6,7 @@ import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from "re
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Clock, Eye, Mail, MapPin, Navigation, Phone, Plus, Search, Send, Trash2, Wrench } from "lucide-react";
 import { Button, StatusBadge } from "@indihub/ui";
+import { useConfirmationDialog, type ConfirmationRequest } from "@/components/shared/confirmation-dialog";
 import { StorefrontImage } from "@/components/storefront/storefront-image";
 import { IndihubApiError, userFacingApiErrorMessage } from "@/lib/api";
 import { coordinatesFromSnapshot, formatCoordinates, googleMapsDirectionsUrl } from "@/lib/map-navigation";
@@ -596,6 +597,7 @@ function SellerServiceForm({ serviceId }: { serviceId?: string }) {
 function SellerServiceBookings() {
   const sellerAuth = useSellerAuth();
   const queryClient = useQueryClient();
+  const confirmation = useConfirmationDialog();
   const [actionNotice, setActionNotice] = useState<SellerActionNotice | null>(null);
   const bookingsQuery = useQuery({
     queryKey: ["seller-service-bookings", sellerAuth.authKey],
@@ -750,6 +752,7 @@ function SellerServiceBookings() {
 
   return (
     <div className="grid gap-5">
+      {confirmation.confirmationDialog}
       <SellerActionToast notice={actionNotice} onDismiss={() => setActionNotice(null)} />
       <div className="grid gap-4 md:grid-cols-3">
         <SellerMetric label="New requests" value={requested} note="Awaiting provider action" />
@@ -789,6 +792,7 @@ function SellerServiceBookings() {
                 booking={booking}
                 technicians={technicians}
                 pending={actionMutation.isPending}
+                requestConfirmation={confirmation.requestConfirmation}
                 onSubmit={(booking, action, form) => {
                   const variables: { booking: ServiceBooking; action: string; form?: FormData } = { booking, action };
                   if (form) variables.form = form;
@@ -807,6 +811,7 @@ function SellerServiceBookings() {
 function SellerServiceBookingDetail({ bookingNumber }: { bookingNumber?: string }) {
   const sellerAuth = useSellerAuth();
   const queryClient = useQueryClient();
+  const confirmation = useConfirmationDialog();
   const [actionNotice, setActionNotice] = useState<SellerActionNotice | null>(null);
   const bookingQuery = useQuery({
     queryKey: ["seller-service-booking", sellerAuth.authKey, bookingNumber],
@@ -927,6 +932,7 @@ function SellerServiceBookingDetail({ bookingNumber }: { bookingNumber?: string 
 
   return (
     <div className="grid gap-5">
+      {confirmation.confirmationDialog}
       <SellerActionToast notice={actionNotice} onDismiss={() => setActionNotice(null)} />
       <SellerPanel>
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -991,6 +997,7 @@ function SellerServiceBookingDetail({ bookingNumber }: { bookingNumber?: string 
           booking={booking}
           technicians={technicians}
           pending={actionMutation.isPending}
+          requestConfirmation={confirmation.requestConfirmation}
           onSubmit={(booking, action, form) => {
             const variables: { booking: ServiceBooking; action: string; form?: FormData } = { booking, action };
             if (form) variables.form = form;
@@ -1151,11 +1158,13 @@ function BookingActionPanel({
   technicians,
   pending,
   onSubmit,
+  requestConfirmation,
 }: {
   booking: ServiceBooking;
   technicians?: ServiceTechnician[];
   pending: boolean;
   onSubmit: (booking: ServiceBooking, action: string, form?: FormData) => void;
+  requestConfirmation: (request: ConfirmationRequest) => void;
 }) {
   const activeTechnicians = technicians ?? [];
   const remainingDuePaise = Math.max(0, booking.totalPayablePaise - booking.paidAmountPaise);
@@ -1183,13 +1192,39 @@ function BookingActionPanel({
           </form>
         ) : null}
         {booking.status === "REQUESTED" ? (
-          <form onSubmit={(event) => { event.preventDefault(); if (window.confirm("Are you sure you want to reject this booking?")) onSubmit(booking, "reject", new FormData(event.currentTarget)); }} className="grid gap-2 border-t border-[#D9E2EA] pt-3">
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              const form = new FormData(event.currentTarget);
+              requestConfirmation({
+                title: "Reject service booking?",
+                description: "This request will be closed for the customer. Confirm only after reviewing the rejection reason.",
+                confirmLabel: "Reject request",
+                tone: "danger",
+                onConfirm: () => onSubmit(booking, "reject", form),
+              });
+            }}
+            className="grid gap-2 border-t border-[#D9E2EA] pt-3"
+          >
             <input name="reason" placeholder="Rejection reason (min 5 characters)" required minLength={5} className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold" />
             <Button type="submit" variant="outline" size="sm" disabled={pending} className="text-red-600 hover:bg-red-50 hover:text-red-700 hover:border-red-200">Reject request</Button>
           </form>
         ) : null}
         {["ACCEPTED", "SCHEDULED", "QUOTE_SENT", "QUOTE_ACCEPTED", "QUOTE_REJECTED"].includes(booking.status) ? (
-          <form onSubmit={(event) => { event.preventDefault(); if (window.confirm("Are you sure you want to cancel this booking? This action is permanent and may incur cancellation fees depending on the policy.")) onSubmit(booking, "cancel", new FormData(event.currentTarget)); }} className="grid gap-2 border-t border-[#D9E2EA] pt-3">
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              const form = new FormData(event.currentTarget);
+              requestConfirmation({
+                title: "Cancel service booking?",
+                description: "This booking will move to cancelled and may apply the configured cancellation policy.",
+                confirmLabel: "Cancel booking",
+                tone: "danger",
+                onConfirm: () => onSubmit(booking, "cancel", form),
+              });
+            }}
+            className="grid gap-2 border-t border-[#D9E2EA] pt-3"
+          >
             <input name="reason" placeholder="Cancellation reason (min 5 characters)" required minLength={5} className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold" />
             <Button type="submit" variant="outline" size="sm" disabled={pending} className="text-red-600 hover:bg-red-50 hover:text-red-700 hover:border-red-200">Cancel booking</Button>
           </form>

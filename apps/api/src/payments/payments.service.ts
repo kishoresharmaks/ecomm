@@ -12,6 +12,7 @@ import {
 } from "@nestjs/common";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import {
+  CodCollectionStatus,
   EmailRecipientType,
   DeliveryAssignmentStatus,
   DeliveryStatus,
@@ -1234,12 +1235,17 @@ export class PaymentsService {
       return { received: true, ...serviceRefundResult };
     }
 
-    const event = String(payload.event ?? "");
+    if (payload.event === "virtual_account.credited") {
+      await this.handleRazorpayVirtualAccountWebhook(payload, eventId);
+      return { received: true, handled: true };
+    }
+
     const paymentEntity = this.extractRazorpayPaymentEntity(payload);
     if (!paymentEntity) {
       return { received: true, ignored: true };
     }
 
+    const event = String(payload.event ?? "");
     const nextStatus =
       event === "payment.captured" || event === "order.paid"
         ? PaymentStatus.PAID
@@ -2777,6 +2783,282 @@ export class PaymentsService {
     }
 
     return { keyId, keySecret };
+  }
+
+  async createRazorpayVirtualAccount(name: string, email: string, contact: string, referenceId: string) {
+    const { keyId, keySecret } = await this.getRazorpayKeys();
+    const authHeader = `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString("base64")}`;
+
+    // 1. Create Customer
+    const customerRes = await fetch("https://api.razorpay.com/v1/customers", {
+      method: "POST",
+      headers: { Authorization: authHeader, "Content-Type": "application/json" },
+      body: JSON.stringify({ name, email, contact, fail_existing: 0 })
+    });
+    const customer = await customerRes.json() as any;
+    if (!customerRes.ok) {
+      throw new BadRequestException(`Failed to create Razorpay customer: ${JSON.stringify(customer)}`);
+    }
+    const customerId = customer.id;
+
+    // 2. Create Virtual Account
+    const vaRes = await fetch("https://api.razorpay.com/v1/virtual_accounts", {
+      method: "POST",
+      headers: { Authorization: authHeader, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        receivers: { types: ["vpa"] },
+        description: "Delivery Partner COD Handover",
+        customer_id: customerId,
+        notes: { referenceId }
+      })
+    });
+    const virtualAccount = await vaRes.json() as any;
+    if (!vaRes.ok) {
+      throw new BadRequestException(`Failed to create Razorpay virtual account: ${JSON.stringify(virtualAccount)}`);
+    }
+
+    const upiId = virtualAccount.receivers?.[0]?.address || null;
+    return {
+      customerId,
+      virtualAccountId: virtualAccount.id,
+      upiId
+    };
+  }
+
+  private async handleRazorpayVirtualAccountWebhook(
+    payload: Record<string, unknown>,
+    eventId?: string,
+  ) {
+    const eventPayload = payload.payload as
+      | {
+          virtual_account?: { entity?: { id?: string } };
+          payment?: { entity?: { id?: string; amount?: number } };
+        }
+      | undefined;
+    const virtualAccountId = eventPayload?.virtual_account?.entity?.id;
+    const amountPaise = eventPayload?.payment?.entity?.amount;
+    const paymentId = eventPayload?.payment?.entity?.id;
+    if (!virtualAccountId || !amountPaise || !paymentId) {
+      return;
+    }
+
+    const providerEventId = eventId || paymentId;
+    try {
+      await this.prisma.client.razorpayWebhookEvent.create({
+        data: {
+          provider: "razorpay_virtual_account",
+          providerEventId,
+          eventType: String(payload.event ?? "virtual_account.credited"),
+          status: "PROCESSING",
+        },
+      });
+    } catch (err: unknown) {
+      if (this.isPrismaUniqueError(err)) {
+        this.logger.warn(`Duplicate virtual account webhook event skipped: ${providerEventId}`);
+        return;
+      }
+      throw err;
+    }
+
+    const profile = await this.prisma.client.deliveryPartnerProfile.findUnique({
+      where: { razorpayVirtualAccountId: virtualAccountId },
+    });
+
+    if (!profile) {
+      this.logger.warn(`Received webhook for unknown virtual account: ${virtualAccountId}`);
+      await this.markVirtualAccountWebhook(providerEventId, "FAILED");
+      return;
+    }
+
+    try {
+      const notifications = await this.reconcilePartnerCodFIFO(profile.userId, amountPaise);
+      await this.markVirtualAccountWebhook(providerEventId, "DONE");
+      await Promise.all(
+        notifications.map((notification) =>
+          this.notifications.notifyEvent({
+            eventCode: EMAIL_TRIGGER_EVENTS.PAYMENT_SUCCESS,
+            recipientType: EmailRecipientType.CUSTOMER,
+            recipient: notification.email,
+            userId: notification.userId,
+            variables: {
+              orderNumber: notification.orderNumber,
+              paymentStatus: PaymentStatus.PAID,
+            },
+          }),
+        ),
+      );
+    } catch (error) {
+      this.logger.error(`Error processing virtual account webhook for ${providerEventId}: ${error}`);
+      await this.markVirtualAccountWebhook(providerEventId, "FAILED");
+      throw error;
+    }
+  }
+
+  private async markVirtualAccountWebhook(providerEventId: string, status: "DONE" | "FAILED") {
+    await this.prisma.client.razorpayWebhookEvent.update({
+      where: {
+        provider_providerEventId: {
+          provider: "razorpay_virtual_account",
+          providerEventId,
+        },
+      },
+      data: { status, processedAt: new Date() },
+    });
+  }
+
+  private async reconcilePartnerCodFIFO(partnerUserId: string, depositAmountPaise: number) {
+    return this.prisma.client.$transaction(async (tx) => {
+      const profiles = await tx.$queryRaw<
+        { id: string; depositWalletBalancePaise: number }[]
+      >`
+        SELECT id, deposit_wallet_balance_paise AS "depositWalletBalancePaise"
+        FROM delivery_partner_profiles
+        WHERE user_id = ${partnerUserId}
+        FOR UPDATE
+      `;
+      const profile = profiles[0];
+      if (!profile) {
+        throw new NotFoundException("Delivery partner profile not found.");
+      }
+
+      let availableDeposit = (profile.depositWalletBalancePaise ?? 0) + depositAmountPaise;
+      const notifications: { email: string; userId: string; orderNumber: string }[] = [];
+
+      const pendingCollections = await tx.deliveryDetail.findMany({
+        where: {
+          codCollectionStatus: CodCollectionStatus.COLLECTED,
+          OR: [{ deliveryPartnerUserId: partnerUserId }, { codCollectedById: partnerUserId }],
+        },
+        orderBy: { updatedAt: "asc" },
+        include: {
+          order: {
+            include: {
+              customer: { include: { user: true } },
+              payments: { where: { method: "COD", status: PaymentStatus.PENDING } },
+            },
+          },
+        },
+      });
+
+      for (const delivery of pendingCollections) {
+        const codPayment = delivery.order.payments[0];
+        const codAmount = delivery.codCollectedAmountPaise ?? 0;
+        if (!codPayment || codAmount <= 0 || codAmount !== codPayment.amountPaise) {
+          continue;
+        }
+        if (availableDeposit < codAmount) {
+          break;
+        }
+
+        const updatedDelivery = await tx.deliveryDetail.updateMany({
+          where: { id: delivery.id, codCollectionStatus: CodCollectionStatus.COLLECTED },
+          data: {
+            codCollectionStatus: CodCollectionStatus.VERIFIED,
+            codVerifiedAt: new Date(),
+            codVerificationNote: "Auto-reconciled via Razorpay Smart Collect.",
+          },
+        });
+        if (updatedDelivery.count !== 1) {
+          continue;
+        }
+
+        availableDeposit -= codAmount;
+
+        const paidOrder = await tx.order.updateMany({
+          where: { id: delivery.orderId, paymentStatus: PaymentStatus.PENDING },
+          data: { paymentStatus: PaymentStatus.PAID },
+        });
+        const paidPayment = await tx.payment.updateMany({
+          where: { id: codPayment.id, status: PaymentStatus.PENDING },
+          data: { status: PaymentStatus.PAID },
+        });
+
+        await tx.paymentEvent.create({
+          data: {
+            paymentId: codPayment.id,
+            eventType: "razorpay.smart_collect.cod_verified",
+            oldStatus: codPayment.status,
+            newStatus: PaymentStatus.PAID,
+            payload: {
+              orderNumber: delivery.order.orderNumber,
+              collectedAmountPaise: codAmount,
+              depositAmountPaise,
+            },
+          },
+        });
+
+        if (paidOrder.count === 1) {
+          await tx.orderStatusEvent.create({
+            data: {
+              orderId: delivery.orderId,
+              statusType: StatusEventType.PAYMENT,
+              oldStatus: delivery.order.paymentStatus,
+              newStatus: PaymentStatus.PAID,
+              note: "COD cash auto-verified through Razorpay Smart Collect.",
+            },
+          });
+        }
+
+        if (delivery.order.orderStatus === OrderStatus.DELIVERED && paidPayment.count === 1) {
+          await this.markSellerSplitsSettlementEligible(tx, delivery.orderId);
+        }
+
+        await tx.auditLog.create({
+          data: {
+            action: "order.cod_collection.smart_collect_verified",
+            entityType: "order",
+            entityId: delivery.orderId,
+            oldValue: {
+              paymentStatus: delivery.order.paymentStatus,
+              codCollectionStatus: CodCollectionStatus.COLLECTED,
+            },
+            newValue: {
+              paymentStatus: PaymentStatus.PAID,
+              codCollectionStatus: CodCollectionStatus.VERIFIED,
+              collectedAmountPaise: codAmount,
+            },
+          },
+        });
+
+        if (paidOrder.count === 1 && delivery.order.customer.user.email) {
+          notifications.push({
+            email: delivery.order.customer.user.email,
+            userId: delivery.order.customer.userId,
+            orderNumber: delivery.order.orderNumber,
+          });
+        }
+      }
+
+      await tx.deliveryPartnerProfile.update({
+        where: { id: profile.id },
+        data: { depositWalletBalancePaise: availableDeposit },
+      });
+
+      return notifications;
+    });
+  }
+
+  private async markSellerSplitsSettlementEligible(tx: Prisma.TransactionClient, orderId: string) {
+    await tx.orderSellerSplit.updateMany({
+      where: {
+        orderId,
+        sellerStatus: { not: SellerOrderStatus.CANCELLED },
+        payoutId: null,
+      },
+      data: {
+        settlementStatus: SellerSettlementStatus.ELIGIBLE,
+        settlementEligibleAt: new Date(),
+      },
+    });
+  }
+
+  private isPrismaUniqueError(err: unknown) {
+    return (
+      typeof err === "object" &&
+      err !== null &&
+      "code" in err &&
+      (err as { code?: string }).code === "P2002"
+    );
   }
 
   private serviceRazorpayOrderResponse(keyId: string, payment: RazorpayServicePaymentWithBooking) {
