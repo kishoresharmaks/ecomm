@@ -51,7 +51,14 @@ export default function DeliveryWalletScreen() {
             </Text>
           </>
         ) : (
-          <Text style={{ color: "#6B7280", marginTop: 8 }}>COD handover UPI is not available yet.</Text>
+          <>
+            <Text style={{ color: "#9F2600", fontSize: 14, fontWeight: "900", marginTop: 8 }}>
+              QR code not available yet.
+            </Text>
+            <Text style={{ color: "#6B7280", marginTop: 8 }}>
+              Smart Collect is still being configured for your delivery account. Continue recording COD collections; admin or finance can verify them until the QR appears.
+            </Text>
+          </>
         )}
       </Card>
       <Card>

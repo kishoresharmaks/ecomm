@@ -165,28 +165,43 @@ export function DeliveryProfileClient() {
             title="COD Handover Virtual UPI"
             description="Deposit collected cash directly to this UPI ID to automatically clear your COD exposure and restore your limit."
           />
-          <div className="mt-4 rounded-md border border-[#E5E7EB] bg-[#F8FAFC] p-4 flex items-center justify-between">
-            <div>
+          <div className="mt-4 grid gap-4 rounded-md border border-[#E5E7EB] bg-[#F8FAFC] p-4 md:grid-cols-[minmax(0,1fr)_180px]">
+            <div className="min-w-0">
               <p className="text-sm font-bold text-[#1F2933]">Virtual UPI ID</p>
-              <p className="mt-1 text-lg font-black text-[#ED3500]">{profile.deliveryProfile.razorpayVirtualUpiId}</p>
+              <p className="mt-1 break-all text-lg font-black text-[#ED3500]">{profile.deliveryProfile.razorpayVirtualUpiId}</p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    void navigator.clipboard
+                      .writeText(profile.deliveryProfile.razorpayVirtualUpiId || "")
+                      .then(() => setNotice({ tone: "success", message: "Virtual UPI ID copied." }))
+                      .catch(() =>
+                        setNotice({
+                          tone: "danger",
+                          message: "Could not copy the Virtual UPI ID. Please copy it manually.",
+                        }),
+                      );
+                  }}
+                >
+                  Copy UPI ID
+                </Button>
+                <Button asChild variant="outline">
+                  <a href={upiPaymentUri(profile.deliveryProfile.razorpayVirtualUpiId)} rel="noreferrer">
+                    Open UPI app
+                  </a>
+                </Button>
+              </div>
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                void navigator.clipboard
-                  .writeText(profile.deliveryProfile.razorpayVirtualUpiId || "")
-                  .then(() => setNotice({ tone: "success", message: "Virtual UPI ID copied." }))
-                  .catch(() =>
-                    setNotice({
-                      tone: "danger",
-                      message: "Could not copy the Virtual UPI ID. Please copy it manually.",
-                    }),
-                  );
-              }}
-            >
-              Copy
-            </Button>
+            <div className="grid justify-items-center gap-2 rounded-md border border-[#E5E7EB] bg-white p-3">
+              <img
+                src={upiQrCodeUrl(profile.deliveryProfile.razorpayVirtualUpiId)}
+                alt="COD handover UPI QR code"
+                className="h-36 w-36 rounded-md border border-[#F3E7E2]"
+              />
+              <p className="text-center text-xs font-bold text-[#667085]">Scan to pay COD handover</p>
+            </div>
           </div>
           <div className="mt-3 rounded-md bg-[#FFF5F5] p-3 border border-[#FDBA74]">
             <p className="text-sm text-[#C2410C] font-semibold">
@@ -194,6 +209,22 @@ export function DeliveryProfileClient() {
             </p>
             <p className="mt-1 text-xs text-[#C2410C]">
               Do not deposit extra or lower amounts. Lower deposits will leave orders pending, and excess cash cannot be withdrawn manually.
+            </p>
+          </div>
+        </DeliveryPanel>
+      ) : profile && !profileQuery.isLoading ? (
+        <DeliveryPanel>
+          <SectionHeading
+            title="COD handover setup in progress"
+            description="Your COD deposit QR is being prepared. You can continue deliveries and record COD collections while setup is completed."
+          />
+          <div className="mt-4 rounded-md border border-[#FFE0D6] bg-[#FFF8F5] p-4">
+            <p className="text-sm font-black text-[#9F2600]">QR code not available yet</p>
+            <p className="mt-2 text-sm font-semibold leading-6 text-[#667085]">
+              This usually means Razorpay Smart Collect is still being configured for your delivery account. Please check again after some time, or contact operations if you have already collected COD cash.
+            </p>
+            <p className="mt-3 text-xs font-bold leading-5 text-[#8A4B1F]">
+              Until the QR appears, COD collections stay available for admin or finance verification.
             </p>
           </div>
         </DeliveryPanel>
@@ -722,6 +753,20 @@ function joinCodeValues(values: string[]) {
 function phonePayload(value: string) {
   const phone = value.replace(/\D/g, "");
   return phone || undefined;
+}
+
+function upiPaymentUri(upiId: string) {
+  const params = new URLSearchParams({
+    pa: upiId,
+    pn: "1HandIndia COD Handover",
+    tn: "Delivery partner COD handover",
+    cu: "INR",
+  });
+  return `upi://pay?${params.toString()}`;
+}
+
+function upiQrCodeUrl(upiId: string) {
+  return `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=10&data=${encodeURIComponent(upiPaymentUri(upiId))}`;
 }
 
 function optionalNumberPayload<Key extends "baseLatitude" | "baseLongitude">(

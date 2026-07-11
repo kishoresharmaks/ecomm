@@ -74,9 +74,17 @@ export default function DeliveryProfileScreen() {
             </Text>
           </>
         ) : (
-          <Text style={{ color: "#6B7280", marginTop: 8 }}>
-            Your COD handover UPI is being prepared. Refresh this screen after admin payment settings are ready.
-          </Text>
+          <>
+            <Text style={{ color: "#9F2600", fontSize: 14, fontWeight: "900", marginTop: 8 }}>
+              COD handover setup is in progress.
+            </Text>
+            <Text style={{ color: "#6B7280", marginTop: 8 }}>
+              Your COD deposit QR is being prepared. You can continue deliveries and record COD collections while operations completes the setup.
+            </Text>
+            <Text style={{ color: "#8A4B1F", fontSize: 12, fontWeight: "800", marginTop: 8 }}>
+              Until the QR appears, COD collections stay available for admin or finance verification.
+            </Text>
+          </>
         )}
       </Card>
       <Card>
