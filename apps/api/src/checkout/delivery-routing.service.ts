@@ -44,6 +44,7 @@ import {
   UpsertCourierProviderSettingDto,
   UpsertShippingRateCardDto,
 } from "./dto/delivery-routing.dto";
+import { RouteDistanceService } from "../maps/route-distance.service";
 
 const defaultShippingChargeSettingKey = "shipping.default_charge_paise";
 const defaultCodCashLimitSettingKey = "delivery.defaultCodCashLimitPaise";
@@ -313,6 +314,7 @@ export class DeliveryRoutingService {
     @Inject(CustomersService) private readonly customersService: CustomersService,
     @Inject(LocationsService) private readonly locationsService: LocationsService,
     @Inject(PaymentsService) private readonly paymentsService: PaymentsService,
+    @Inject(RouteDistanceService) private readonly routeDistanceService: RouteDistanceService,
     @Optional()
     @Inject(DealPricingService)
     private readonly dealPricing?: DealPricingService,
@@ -1511,7 +1513,12 @@ export class DeliveryRoutingService {
       input.deliveryMode === DeliveryMode.STORE_PICKUP
         ? 0
         : (liveCourierQuote?.shippingChargePaise ??
-          this.resolveRateCardCharge(rateMatch?.card ?? null, input.address) ??
+          (await this.resolveRateCardCharge(
+            rateMatch?.card ?? null,
+            input.address,
+            input.sellerId,
+            input.client,
+          )) ??
           defaultShippingPaise);
     const freeShippingApplied =
       !liveCourierQuote && Boolean(
@@ -3150,10 +3157,12 @@ export class DeliveryRoutingService {
    * card's pricingType strategy. FLAT uses baseChargePaise directly.
    * DISTANCE: fee = baseChargePaise + MAX(0, routeDistanceKm - includedDistanceKm) * perKmPaise
    */
-  private resolveRateCardCharge(
+  private async resolveRateCardCharge(
     card: Prisma.ShippingRateCardGetPayload<Record<string, never>> | null,
-    _address: DeliveryRoutingAddress | null,
-  ): number | null {
+    address: DeliveryRoutingAddress | null,
+    sellerId?: string | null,
+    client?: RoutingClient,
+  ): Promise<number | null> {
     if (!card) return null;
     if (card.pricingType === ShippingPricingType.DISTANCE) {
       const config = card.pricingConfig as {
@@ -3162,9 +3171,53 @@ export class DeliveryRoutingService {
       } | null;
       const includedDistanceKm = Math.max(0, config?.includedDistanceKm ?? 0);
       const perKmPaise = Math.max(0, config?.perKmPaise ?? 0);
-      // Distance surcharge requires GPS / route distance. Without it, return base charge.
-      const routeDistanceKm = 0;
-      const extraDistanceKm = Math.max(0, routeDistanceKm - includedDistanceKm);
+
+      let distanceKm = 0;
+      const customerLat = address?.latitude ? Number(address.latitude) : null;
+      const customerLng = address?.longitude ? Number(address.longitude) : null;
+
+      let sellerLat: number | null = null;
+      let sellerLng: number | null = null;
+
+      if (sellerId) {
+        try {
+          const dbClient = client || this.prisma.client;
+          const sellerAddress = await dbClient.sellerAddress.findFirst({
+            where: { sellerId },
+            select: { latitude: true, longitude: true },
+          });
+          if (sellerAddress) {
+            sellerLat = sellerAddress.latitude ? Number(sellerAddress.latitude) : null;
+            sellerLng = sellerAddress.longitude ? Number(sellerAddress.longitude) : null;
+          }
+        } catch (err) {
+          console.warn("Failed to fetch seller address coordinates:", err);
+        }
+      }
+
+      if (sellerLat !== null && sellerLng !== null && customerLat !== null && customerLng !== null) {
+        try {
+          const result = await this.routeDistanceService.calculate({
+            origin: { latitude: sellerLat, longitude: sellerLng },
+            destination: { latitude: customerLat, longitude: customerLng },
+            client: client as any,
+          });
+          if (result && typeof result.distanceKm === "number" && result.distanceKm !== null) {
+            distanceKm = result.distanceKm;
+          } else {
+            console.warn("RouteDistanceService returned null or no route found, falling back to 0 km.");
+            distanceKm = 0;
+          }
+        } catch (err) {
+          console.warn("RouteDistanceService calculation failed, falling back to 0 km:", err);
+          distanceKm = 0;
+        }
+      } else {
+        console.warn("Origin or destination coordinates missing, falling back to 0 km.");
+        distanceKm = 0;
+      }
+
+      const extraDistanceKm = Math.max(0, distanceKm - includedDistanceKm);
       return card.baseChargePaise + extraDistanceKm * perKmPaise;
     }
     // FLAT (default) and any future unknown strategies return the base charge.

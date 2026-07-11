@@ -3656,7 +3656,7 @@ export function AdminDeliveryOperationsPageClient() {
                   ) : null}
                 </div>
               ) : null}
-              <div className="grid gap-3 lg:grid-cols-3">
+              <div className="grid gap-3 lg:grid-cols-4">
                 <label className="grid gap-1.5">
                   <span className="text-xs font-black uppercase text-[#667085]">Rule name</span>
                   <input
@@ -3674,6 +3674,19 @@ export function AdminDeliveryOperationsPageClient() {
                   options={shippingRateModeOptions}
                   onChange={(value) =>
                     setRateForm((current) => ({ ...current, deliveryMode: value }))
+                  }
+                  compact
+                  buttonClassName="h-11 bg-white"
+                />
+                <AdminListbox
+                  label="Pricing Strategy"
+                  value={rateForm.pricingType}
+                  options={[
+                    { value: "FLAT", label: "Flat Rate" },
+                    { value: "DISTANCE", label: "Distance-Based" },
+                  ]}
+                  onChange={(value) =>
+                    setRateForm((current) => ({ ...current, pricingType: value }))
                   }
                   compact
                   buttonClassName="h-11 bg-white"
@@ -3743,6 +3756,32 @@ export function AdminDeliveryOperationsPageClient() {
                   </label>
                 ))}
               </div>
+              {rateForm.pricingType === "DISTANCE" ? (
+                <div className="grid gap-3 md:grid-cols-2 max-w-md">
+                  <label className="grid gap-1.5">
+                    <span className="text-xs font-black uppercase text-[#667085]">Included Distance (km)</span>
+                    <input
+                      value={rateForm.includedDistanceKm}
+                      onChange={(event) =>
+                        setRateForm((current) => ({ ...current, includedDistanceKm: event.target.value }))
+                      }
+                      placeholder="e.g. 3"
+                      className="h-11 rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-semibold outline-none focus:border-[#ED3500]"
+                    />
+                  </label>
+                  <label className="grid gap-1.5">
+                    <span className="text-xs font-black uppercase text-[#667085]">Per extra km fee (₹)</span>
+                    <input
+                      value={rateForm.perKmRupees}
+                      onChange={(event) =>
+                        setRateForm((current) => ({ ...current, perKmRupees: event.target.value }))
+                      }
+                      placeholder="e.g. 8"
+                      className="h-11 rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-semibold outline-none focus:border-[#ED3500]"
+                    />
+                  </label>
+                </div>
+              ) : null}
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-xs font-bold leading-5 text-[#667085]">
                   Store pickup is always free. These cards are for local delivery and courier
