@@ -1,4 +1,4 @@
-﻿-- CreateEnum
+-- CreateEnum
 CREATE TYPE "ShippingPricingType" AS ENUM ('FLAT', 'DISTANCE');
 
 -- AlterTable
