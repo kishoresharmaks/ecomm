@@ -454,11 +454,6 @@ enum ShippingCodSurchargeType {
   PERCENTAGE
 }
 
-enum ShippingPricingType {
-  FLAT
-  DISTANCE
-}
-
 enum CourierProviderMode {
   MANUAL
   SANDBOX
@@ -2078,7 +2073,6 @@ model Product {
   status                 ProductStatus              @default(DRAFT)
   approvalStatus         ApprovalStatus             @default(DRAFT) @map("approval_status")
   listingMode            ProductListingMode         @default(CART) @map("listing_mode")
-  weightKg               Decimal?                   @default(0) @map("weight_kg") @db.Decimal(10, 3)
   attributes             Json?
   hsnCode                String?                    @map("hsn_code")
   gstRatePercent         Decimal?                   @map("gst_rate_percent") @db.Decimal(5, 2)
@@ -5356,10 +5350,7 @@ model ShippingRateCard {
   localAreaCode         String?                  @map("local_area_code")
   minSubtotalPaise      Int?                     @map("min_subtotal_paise")
   maxSubtotalPaise      Int?                     @map("max_subtotal_paise")
-  maxWeightKg           Decimal?                 @map("max_weight_kg") @db.Decimal(10, 3)
-  pricingType           ShippingPricingType      @default(FLAT) @map("pricing_type")
-  baseChargePaise       Int                      @default(0) @map("shipping_charge_paise")
-  pricingConfig         Json?                    @map("pricing_config")
+  shippingChargePaise   Int                      @default(0) @map("shipping_charge_paise")
   freeAbovePaise        Int?                     @map("free_above_paise")
   codSurchargeType      ShippingCodSurchargeType @default(NONE) @map("cod_surcharge_type")
   codSurchargeFlatPaise Int                      @default(0) @map("cod_surcharge_flat_paise")
