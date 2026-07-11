@@ -2038,6 +2038,7 @@ export class OrdersService {
           assignmentStatus: {
             in: assignmentStatuses,
           },
+          deliveryMode: DeliveryMode.LOCAL_DELIVERY_PARTNER,
         },
       },
       ...(query.search
