@@ -174,7 +174,6 @@ export class CartService {
       buyerPlatformFeeMinor,
       buyerCouponDiscountMinor,
       buyerTotalMinor: this.marketService.convertMinorUnits(finalCharges.totalPaise, market),
-      feeSnapshot: finalCharges.snapshot,
       availableDeliveryOptions: finalCharges.availableDeliveryOptions,
     };
   }

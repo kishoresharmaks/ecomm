@@ -3728,6 +3728,10 @@ export function AdminDeliveryOperationsPageClient() {
                     ["shippingRupees", "Shipping charge Rs", "49"],
                     ["freeAboveRupees", "Free above Rs", "Optional"],
                     ["codFlatRupees", "COD fee Rs", "Optional"],
+                    ...(rateForm.pricingType === "DISTANCE" ? [
+                      ["includedDistanceKm", "Included Distance (km)", "e.g. 3"],
+                      ["perKmRupees", "Per extra km fee (₹)", "e.g. 8"],
+                    ] : []),
                   ] as Array<
                     [
                       (
@@ -3737,6 +3741,8 @@ export function AdminDeliveryOperationsPageClient() {
                         | "shippingRupees"
                         | "freeAboveRupees"
                         | "codFlatRupees"
+                        | "includedDistanceKm"
+                        | "perKmRupees"
                       ),
                       string,
                       string,
@@ -3756,32 +3762,6 @@ export function AdminDeliveryOperationsPageClient() {
                   </label>
                 ))}
               </div>
-              {rateForm.pricingType === "DISTANCE" ? (
-                <div className="grid gap-3 md:grid-cols-2 max-w-md">
-                  <label className="grid gap-1.5">
-                    <span className="text-xs font-black uppercase text-[#667085]">Included Distance (km)</span>
-                    <input
-                      value={rateForm.includedDistanceKm}
-                      onChange={(event) =>
-                        setRateForm((current) => ({ ...current, includedDistanceKm: event.target.value }))
-                      }
-                      placeholder="e.g. 3"
-                      className="h-11 rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-semibold outline-none focus:border-[#ED3500]"
-                    />
-                  </label>
-                  <label className="grid gap-1.5">
-                    <span className="text-xs font-black uppercase text-[#667085]">Per extra km fee (₹)</span>
-                    <input
-                      value={rateForm.perKmRupees}
-                      onChange={(event) =>
-                        setRateForm((current) => ({ ...current, perKmRupees: event.target.value }))
-                      }
-                      placeholder="e.g. 8"
-                      className="h-11 rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-semibold outline-none focus:border-[#ED3500]"
-                    />
-                  </label>
-                </div>
-              ) : null}
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-xs font-bold leading-5 text-[#667085]">
                   Store pickup is always free. These cards are for local delivery and courier
