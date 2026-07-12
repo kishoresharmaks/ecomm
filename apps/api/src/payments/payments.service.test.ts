@@ -95,6 +95,7 @@ describe("PaymentsService", () => {
       },
       razorpayWebhookEvent: {
         create: vi.fn(),
+        findUnique: vi.fn(),
         update: vi.fn(),
       },
       orderStatusEvent: {
@@ -147,6 +148,7 @@ describe("PaymentsService", () => {
     prisma.client.deliveryPartnerProfile.findUnique.mockResolvedValue(null);
     prisma.client.deliveryPartnerProfile.update.mockResolvedValue({});
     prisma.client.razorpayWebhookEvent.create.mockResolvedValue({});
+    prisma.client.razorpayWebhookEvent.findUnique.mockResolvedValue(null);
     prisma.client.razorpayWebhookEvent.update.mockResolvedValue({});
     prisma.client.$queryRaw.mockResolvedValue([]);
     prisma.client.orderStatusEvent.create.mockResolvedValue({});
@@ -344,6 +346,125 @@ describe("PaymentsService", () => {
         paymentStatus: PaymentStatus.PAID,
       },
     });
+  });
+
+  it("does not retry a committed Smart Collect webhook when customer notification fails", async () => {
+    const payload = createRazorpayVirtualAccountPayload();
+    const rawBody = Buffer.from(JSON.stringify(payload));
+    const signature = createHmac("sha256", "webhook_secret").update(rawBody).digest("hex");
+    prisma.client.deliveryPartnerProfile.findUnique.mockResolvedValue({
+      id: "profile_1",
+      userId: "delivery_user_1",
+    });
+    prisma.client.$queryRaw.mockResolvedValue([
+      { id: "profile_1", depositWalletBalancePaise: 5000 },
+    ]);
+    prisma.client.deliveryDetail.findMany.mockResolvedValue([
+      {
+        id: "delivery_1",
+        orderId: "order_internal_1",
+        codCollectedAmountPaise: 10500,
+        order: {
+          orderNumber: "1HI202607110001",
+          orderStatus: OrderStatus.DELIVERED,
+          paymentStatus: PaymentStatus.PENDING,
+          customer: {
+            userId: "customer_user_1",
+            user: { email: "customer@example.com" },
+          },
+          payments: [
+            {
+              id: "payment_1",
+              status: PaymentStatus.PENDING,
+              amountPaise: 10500,
+            },
+          ],
+        },
+      },
+    ]);
+    notifications.notifyEvent.mockRejectedValueOnce(new Error("Email provider unavailable"));
+    const service = new PaymentsService(prisma as never, notifications as never);
+
+    const result = await service.handleRazorpayWebhook(signature, payload, rawBody, "evt_va_notify");
+
+    expect(result).toEqual({ received: true, handled: true });
+    expect(prisma.client.razorpayWebhookEvent.update).toHaveBeenCalledWith({
+      where: {
+        provider_providerEventId: {
+          provider: "razorpay_virtual_account",
+          providerEventId: "evt_va_notify",
+        },
+      },
+      data: { status: "DONE", processedAt: expect.any(Date) },
+    });
+    expect(prisma.client.razorpayWebhookEvent.update).not.toHaveBeenCalledWith({
+      where: expect.anything(),
+      data: expect.objectContaining({ status: "FAILED" }),
+    });
+  });
+
+  it("keeps Smart Collect wallet balance untouched when the payment row changes during reconciliation", async () => {
+    const payload = createRazorpayVirtualAccountPayload();
+    const rawBody = Buffer.from(JSON.stringify(payload));
+    const signature = createHmac("sha256", "webhook_secret").update(rawBody).digest("hex");
+    prisma.client.deliveryPartnerProfile.findUnique.mockResolvedValue({
+      id: "profile_1",
+      userId: "delivery_user_1",
+    });
+    prisma.client.$queryRaw.mockResolvedValue([
+      { id: "profile_1", depositWalletBalancePaise: 5000 },
+    ]);
+    prisma.client.deliveryDetail.findMany.mockResolvedValue([
+      {
+        id: "delivery_1",
+        orderId: "order_internal_1",
+        codCollectedAmountPaise: 10500,
+        order: {
+          orderNumber: "1HI202607110001",
+          orderStatus: OrderStatus.DELIVERED,
+          paymentStatus: PaymentStatus.PENDING,
+          customer: {
+            userId: "customer_user_1",
+            user: { email: "customer@example.com" },
+          },
+          payments: [
+            {
+              id: "payment_1",
+              status: PaymentStatus.PENDING,
+              amountPaise: 10500,
+            },
+          ],
+        },
+      },
+    ]);
+    prisma.client.payment.updateMany.mockResolvedValueOnce({ count: 0 });
+    const service = new PaymentsService(prisma as never, notifications as never);
+
+    await expect(
+      service.handleRazorpayWebhook(signature, payload, rawBody, "evt_va_race"),
+    ).rejects.toThrow("COD Smart Collect reconciliation state changed");
+
+    expect(prisma.client.deliveryPartnerProfile.update).not.toHaveBeenCalled();
+    expect(prisma.client.deliveryDetail.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: "delivery_1",
+        codCollectionStatus: CodCollectionStatus.COLLECTED,
+      },
+      data: expect.objectContaining({
+        codCollectionStatus: CodCollectionStatus.VERIFIED,
+      }),
+    });
+    expect(prisma.client.razorpayWebhookEvent.update).toHaveBeenCalledWith({
+      where: {
+        provider_providerEventId: {
+          provider: "razorpay_virtual_account",
+          providerEventId: "evt_va_race",
+        },
+      },
+      data: { status: "FAILED", processedAt: expect.any(Date) },
+    });
+    expect(prisma.client.paymentEvent.create).not.toHaveBeenCalled();
+    expect(notifications.notifyEvent).not.toHaveBeenCalled();
   });
 
   it("does not downgrade a paid order when a late failed webhook arrives", async () => {

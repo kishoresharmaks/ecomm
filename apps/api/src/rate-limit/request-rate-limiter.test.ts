@@ -115,6 +115,14 @@ describe("RequestRateLimiter", () => {
     expect(decision.policy.max).toBe(240);
   });
 
+  it("normalizes malformed double-slash request URLs instead of throwing", () => {
+    const limiter = new RequestRateLimiter({ now: () => 1_000 });
+    const decision = limiter.check(request({ url: "//" }));
+
+    expect(decision.allowed).toBe(true);
+    expect(decision.policy.name).toBe("public");
+  });
+
   it("can trust proxy headers when the VPS API port is protected behind Nginx", () => {
     const limiter = new RequestRateLimiter({
       now: () => 1_000,

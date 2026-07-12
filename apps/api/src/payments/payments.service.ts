@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   HttpException,
   Inject,
@@ -2854,10 +2855,33 @@ export class PaymentsService {
       });
     } catch (err: unknown) {
       if (this.isPrismaUniqueError(err)) {
-        this.logger.warn(`Duplicate virtual account webhook event skipped: ${providerEventId}`);
-        return;
+        const existingEvent = await this.prisma.client.razorpayWebhookEvent.findUnique({
+          where: {
+            provider_providerEventId: {
+              provider: "razorpay_virtual_account",
+              providerEventId,
+            },
+          },
+          select: { status: true },
+        });
+        if (existingEvent?.status !== "FAILED") {
+          this.logger.warn(`Duplicate virtual account webhook event skipped: ${providerEventId}`);
+          return;
+        }
+
+        await this.prisma.client.razorpayWebhookEvent.update({
+          where: {
+            provider_providerEventId: {
+              provider: "razorpay_virtual_account",
+              providerEventId,
+            },
+          },
+          data: { status: "PROCESSING", processedAt: null },
+        });
       }
-      throw err;
+      if (!this.isPrismaUniqueError(err)) {
+        throw err;
+      }
     }
 
     const profile = await this.prisma.client.deliveryPartnerProfile.findUnique({
@@ -2870,28 +2894,34 @@ export class PaymentsService {
       return;
     }
 
+    let notifications: { email: string; userId: string; orderNumber: string }[];
     try {
-      const notifications = await this.reconcilePartnerCodFIFO(profile.userId, amountPaise);
-      await this.markVirtualAccountWebhook(providerEventId, "DONE");
-      await Promise.all(
-        notifications.map((notification) =>
-          this.notifications.notifyEvent({
-            eventCode: EMAIL_TRIGGER_EVENTS.PAYMENT_SUCCESS,
-            recipientType: EmailRecipientType.CUSTOMER,
-            recipient: notification.email,
-            userId: notification.userId,
-            variables: {
-              orderNumber: notification.orderNumber,
-              paymentStatus: PaymentStatus.PAID,
-            },
-          }),
-        ),
-      );
+      notifications = await this.reconcilePartnerCodFIFO(profile.userId, amountPaise, providerEventId);
     } catch (error) {
       this.logger.error(`Error processing virtual account webhook for ${providerEventId}: ${error}`);
       await this.markVirtualAccountWebhook(providerEventId, "FAILED");
       throw error;
     }
+
+    const notificationResults = await Promise.allSettled(
+      notifications.map((notification) =>
+        this.notifications.notifyEvent({
+          eventCode: EMAIL_TRIGGER_EVENTS.PAYMENT_SUCCESS,
+          recipientType: EmailRecipientType.CUSTOMER,
+          recipient: notification.email,
+          userId: notification.userId,
+          variables: {
+            orderNumber: notification.orderNumber,
+            paymentStatus: PaymentStatus.PAID,
+          },
+        }),
+      ),
+    );
+    notificationResults.forEach((result) => {
+      if (result.status === "rejected") {
+        this.logger.warn(`Smart Collect payment notification failed: ${String(result.reason)}`);
+      }
+    });
   }
 
   private async markVirtualAccountWebhook(providerEventId: string, status: "DONE" | "FAILED") {
@@ -2906,7 +2936,11 @@ export class PaymentsService {
     });
   }
 
-  private async reconcilePartnerCodFIFO(partnerUserId: string, depositAmountPaise: number) {
+  private async reconcilePartnerCodFIFO(
+    partnerUserId: string,
+    depositAmountPaise: number,
+    providerEventId: string,
+  ) {
     return this.prisma.client.$transaction(async (tx) => {
       const profiles = await tx.$queryRaw<
         { id: string; depositWalletBalancePaise: number }[]
@@ -2929,17 +2963,23 @@ export class PaymentsService {
           codCollectionStatus: CodCollectionStatus.COLLECTED,
           OR: [{ deliveryPartnerUserId: partnerUserId }, { codCollectedById: partnerUserId }],
         },
-        orderBy: { updatedAt: "asc" },
+        orderBy: [{ codCollectedAt: "asc" }, { updatedAt: "asc" }],
         include: {
           order: {
             include: {
               customer: { include: { user: true } },
-              payments: { where: { method: "COD", status: PaymentStatus.PENDING } },
+              payments: {
+                where: {
+                  status: PaymentStatus.PENDING,
+                  OR: [{ method: "COD" }, { provider: PaymentProvider.COD }],
+                },
+              },
             },
           },
         },
       });
 
+      const smartCollectVerificationNote = "Auto-reconciled via Razorpay Smart Collect.";
       for (const delivery of pendingCollections) {
         const codPayment = delivery.order.payments[0];
         const codAmount = delivery.codCollectedAmountPaise ?? 0;
@@ -2950,20 +2990,6 @@ export class PaymentsService {
           break;
         }
 
-        const updatedDelivery = await tx.deliveryDetail.updateMany({
-          where: { id: delivery.id, codCollectionStatus: CodCollectionStatus.COLLECTED },
-          data: {
-            codCollectionStatus: CodCollectionStatus.VERIFIED,
-            codVerifiedAt: new Date(),
-            codVerificationNote: "Auto-reconciled via Razorpay Smart Collect.",
-          },
-        });
-        if (updatedDelivery.count !== 1) {
-          continue;
-        }
-
-        availableDeposit -= codAmount;
-
         const paidOrder = await tx.order.updateMany({
           where: { id: delivery.orderId, paymentStatus: PaymentStatus.PENDING },
           data: { paymentStatus: PaymentStatus.PAID },
@@ -2972,6 +2998,22 @@ export class PaymentsService {
           where: { id: codPayment.id, status: PaymentStatus.PENDING },
           data: { status: PaymentStatus.PAID },
         });
+        const updatedDelivery = await tx.deliveryDetail.updateMany({
+          where: { id: delivery.id, codCollectionStatus: CodCollectionStatus.COLLECTED },
+          data: {
+            codCollectionStatus: CodCollectionStatus.VERIFIED,
+            codVerifiedAt: new Date(),
+            codVerificationNote: smartCollectVerificationNote,
+          },
+        });
+
+        if (paidOrder.count !== 1 || paidPayment.count !== 1 || updatedDelivery.count !== 1) {
+          throw new ConflictException(
+            "COD Smart Collect reconciliation state changed; Razorpay webhook will retry.",
+          );
+        }
+
+        availableDeposit -= codAmount;
 
         await tx.paymentEvent.create({
           data: {
@@ -2987,19 +3029,17 @@ export class PaymentsService {
           },
         });
 
-        if (paidOrder.count === 1) {
-          await tx.orderStatusEvent.create({
-            data: {
-              orderId: delivery.orderId,
-              statusType: StatusEventType.PAYMENT,
-              oldStatus: delivery.order.paymentStatus,
-              newStatus: PaymentStatus.PAID,
-              note: "COD cash auto-verified through Razorpay Smart Collect.",
-            },
-          });
-        }
+        await tx.orderStatusEvent.create({
+          data: {
+            orderId: delivery.orderId,
+            statusType: StatusEventType.PAYMENT,
+            oldStatus: delivery.order.paymentStatus,
+            newStatus: PaymentStatus.PAID,
+            note: "COD cash auto-verified through Razorpay Smart Collect.",
+          },
+        });
 
-        if (delivery.order.orderStatus === OrderStatus.DELIVERED && paidPayment.count === 1) {
+        if (delivery.order.orderStatus === OrderStatus.DELIVERED) {
           await this.markSellerSplitsSettlementEligible(tx, delivery.orderId);
         }
 
@@ -3020,7 +3060,7 @@ export class PaymentsService {
           },
         });
 
-        if (paidOrder.count === 1 && delivery.order.customer.user.email) {
+        if (delivery.order.customer.user.email) {
           notifications.push({
             email: delivery.order.customer.user.email,
             userId: delivery.order.customer.userId,
@@ -3032,6 +3072,16 @@ export class PaymentsService {
       await tx.deliveryPartnerProfile.update({
         where: { id: profile.id },
         data: { depositWalletBalancePaise: availableDeposit },
+      });
+
+      await tx.razorpayWebhookEvent.update({
+        where: {
+          provider_providerEventId: {
+            provider: "razorpay_virtual_account",
+            providerEventId,
+          },
+        },
+        data: { status: "DONE", processedAt: new Date() },
       });
 
       return notifications;

@@ -8,6 +8,8 @@ import {
   DeliveryMode,
   DeliveryRoutingFailureReason,
   DeliveryStatus,
+  PaymentProvider,
+  PaymentStatus,
   Prisma,
   ProductStatus,
   RoleCode,
@@ -259,6 +261,7 @@ type PartnerCandidate = {
   priority: number;
   workload: number;
   codExposurePaise: number;
+  netCodExposurePaise: number;
   codLimitPaise: number;
   lastAssignmentAt: Date | null;
   distanceMeters?: number;
@@ -1993,8 +1996,10 @@ export class DeliveryRoutingService {
           return null;
         }
         const codExposurePaise = metrics.codExposurePaise.get(user.id) ?? 0;
+        const depositBalance = user.deliveryProfile.depositWalletBalancePaise ?? 0;
+        const netCodExposurePaise = codExposurePaise - depositBalance;
         const codLimitPaise = user.deliveryProfile.codCashLimitPaise ?? defaultCodLimit;
-        if (codAmountPaise > 0 && codExposurePaise + codAmountPaise > codLimitPaise) {
+        if (codAmountPaise > 0 && netCodExposurePaise + codAmountPaise > codLimitPaise) {
           codLimitSkipped += 1;
           return null;
         }
@@ -2007,6 +2012,7 @@ export class DeliveryRoutingService {
           priority: area.priority,
           workload: metrics.workload.get(user.id) ?? 0,
           codExposurePaise,
+          netCodExposurePaise,
           codLimitPaise,
           lastAssignmentAt: metrics.lastAssignmentAt.get(user.id) ?? null,
         } satisfies PartnerCandidate;
@@ -2024,8 +2030,8 @@ export class DeliveryRoutingService {
         if (left.workload !== right.workload) {
           return left.workload - right.workload;
         }
-        if (left.codExposurePaise !== right.codExposurePaise) {
-          return left.codExposurePaise - right.codExposurePaise;
+        if (left.netCodExposurePaise !== right.netCodExposurePaise) {
+          return left.netCodExposurePaise - right.netCodExposurePaise;
         }
         const leftLast = left.lastAssignmentAt?.getTime() ?? 0;
         const rightLast = right.lastAssignmentAt?.getTime() ?? 0;
@@ -2304,46 +2310,80 @@ export class DeliveryRoutingService {
       return { workload, codExposurePaise, lastAssignmentAt };
     }
 
-    const workloadRows = await client.orderShipment.groupBy({
-      by: ["deliveryPartnerUserId"],
-      where: {
-        deliveryPartnerUserId: { in: partnerIds },
-        assignmentStatus: {
-          in: [DeliveryAssignmentStatus.ASSIGNED, DeliveryAssignmentStatus.ACCEPTED],
-        },
-        status: {
-          notIn: [DeliveryStatus.DELIVERED, DeliveryStatus.CANCELLED],
-        },
-      },
-      _count: { id: true },
-    });
-    const codCollectedByRows = await client.deliveryDetail.groupBy({
-      by: ["codCollectedById"],
-      where: {
-        codCollectedById: { in: partnerIds },
-        codCollectionStatus: CodCollectionStatus.COLLECTED,
-      },
-      _sum: { codCollectedAmountPaise: true },
-    });
-    const codAssignedRows = await client.deliveryDetail.groupBy({
-      by: ["deliveryPartnerUserId"],
-      where: {
-        deliveryPartnerUserId: { in: partnerIds },
-        codCollectedById: null,
-        codCollectionStatus: CodCollectionStatus.COLLECTED,
-      },
-      _sum: { codCollectedAmountPaise: true },
-    });
-    const lastAssignmentRows = await client.deliveryAssignmentAttempt.groupBy({
-      by: ["partnerUserId"],
-      where: {
-        partnerUserId: { in: partnerIds },
-        status: {
-          in: [DeliveryAssignmentStatus.ASSIGNED, DeliveryAssignmentStatus.ACCEPTED],
-        },
-      },
-      _max: { createdAt: true },
-    });
+    const [workloadRows, codCollectedByRows, codAssignedRows, lastAssignmentRows, assignedPendingCodRows] =
+      await Promise.all([
+        client.orderShipment.groupBy({
+          by: ["deliveryPartnerUserId"],
+          where: {
+            deliveryPartnerUserId: { in: partnerIds },
+            assignmentStatus: {
+              in: [DeliveryAssignmentStatus.ASSIGNED, DeliveryAssignmentStatus.ACCEPTED],
+            },
+            status: {
+              notIn: [DeliveryStatus.DELIVERED, DeliveryStatus.CANCELLED],
+            },
+          },
+          _count: { id: true },
+        }),
+        client.deliveryDetail.groupBy({
+          by: ["codCollectedById"],
+          where: {
+            codCollectedById: { in: partnerIds },
+            codCollectionStatus: CodCollectionStatus.COLLECTED,
+          },
+          _sum: { codCollectedAmountPaise: true },
+        }),
+        client.deliveryDetail.groupBy({
+          by: ["deliveryPartnerUserId"],
+          where: {
+            deliveryPartnerUserId: { in: partnerIds },
+            codCollectedById: null,
+            codCollectionStatus: CodCollectionStatus.COLLECTED,
+          },
+          _sum: { codCollectedAmountPaise: true },
+        }),
+        client.deliveryAssignmentAttempt.groupBy({
+          by: ["partnerUserId"],
+          where: {
+            partnerUserId: { in: partnerIds },
+            status: {
+              in: [DeliveryAssignmentStatus.ASSIGNED, DeliveryAssignmentStatus.ACCEPTED],
+            },
+          },
+          _max: { createdAt: true },
+        }),
+        client.deliveryDetail.findMany({
+          where: {
+            deliveryPartnerUserId: { in: partnerIds },
+            codCollectionStatus: { not: CodCollectionStatus.COLLECTED },
+            assignmentStatus: {
+              in: [DeliveryAssignmentStatus.ASSIGNED, DeliveryAssignmentStatus.ACCEPTED],
+            },
+            order: {
+              payments: {
+                some: {
+                  status: PaymentStatus.PENDING,
+                  OR: [{ method: "COD" }, { provider: PaymentProvider.COD }],
+                },
+              },
+            },
+          },
+          select: {
+            deliveryPartnerUserId: true,
+            order: {
+              select: {
+                payments: {
+                  where: {
+                    status: PaymentStatus.PENDING,
+                    OR: [{ method: "COD" }, { provider: PaymentProvider.COD }],
+                  },
+                  select: { amountPaise: true },
+                },
+              },
+            },
+          },
+        }),
+      ]);
 
     workloadRows.forEach((row) => {
       if (row.deliveryPartnerUserId) {
@@ -2365,6 +2405,15 @@ export class DeliveryRoutingService {
           row.deliveryPartnerUserId,
           (codExposurePaise.get(row.deliveryPartnerUserId) ?? 0) +
             (row._sum.codCollectedAmountPaise ?? 0),
+        );
+      }
+    });
+    assignedPendingCodRows.forEach((row) => {
+      if (row.deliveryPartnerUserId) {
+        const amount = row.order.payments.reduce((sum, payment) => sum + payment.amountPaise, 0);
+        codExposurePaise.set(
+          row.deliveryPartnerUserId,
+          (codExposurePaise.get(row.deliveryPartnerUserId) ?? 0) + amount,
         );
       }
     });

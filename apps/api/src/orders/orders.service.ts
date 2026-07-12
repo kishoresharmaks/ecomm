@@ -5886,7 +5886,10 @@ export class OrdersService {
             },
             order: {
               payments: {
-                some: { method: "COD", status: PaymentStatus.PENDING },
+                some: {
+                  status: PaymentStatus.PENDING,
+                  OR: [{ method: "COD" }, { provider: PaymentProvider.COD }],
+                },
               },
             },
           },
@@ -5895,7 +5898,10 @@ export class OrdersService {
             order: {
               select: {
                 payments: {
-                  where: { method: "COD", status: PaymentStatus.PENDING },
+                  where: {
+                    status: PaymentStatus.PENDING,
+                    OR: [{ method: "COD" }, { provider: PaymentProvider.COD }],
+                  },
                   select: { amountPaise: true },
                 },
               },
@@ -6237,8 +6243,8 @@ export class OrdersService {
         order: {
           payments: {
             some: {
-              method: "COD",
               status: PaymentStatus.PENDING,
+              OR: [{ method: "COD" }, { provider: PaymentProvider.COD }],
             },
           },
         },
@@ -6247,12 +6253,15 @@ export class OrdersService {
         order: {
           select: {
             payments: {
-              where: { method: "COD", status: PaymentStatus.PENDING },
-              select: { amountPaise: true }
-            }
-          }
-        }
-      }
+              where: {
+                status: PaymentStatus.PENDING,
+                OR: [{ method: "COD" }, { provider: PaymentProvider.COD }],
+              },
+              select: { amountPaise: true },
+            },
+          },
+        },
+      },
     });
 
     let assignedUncollected = 0;

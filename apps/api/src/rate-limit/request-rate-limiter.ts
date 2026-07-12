@@ -261,7 +261,7 @@ export class RequestRateLimiter {
   }
 
   private requestUrl(request: RateLimitRequest) {
-    return new URL(request.originalUrl ?? request.url ?? "/", "http://indihub.local");
+    return new URL(normalizeRequestUrl(request.originalUrl ?? request.url ?? "/"), "http://indihub.local");
   }
 
   private pruneIfNeeded(now: number) {
@@ -276,6 +276,23 @@ export class RequestRateLimiter {
       }
     }
   }
+}
+
+function normalizeRequestUrl(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === "//") {
+    return "/";
+  }
+
+  if (/^[a-z][a-z\d+.-]*:/i.test(trimmed)) {
+    return trimmed;
+  }
+
+  if (trimmed.startsWith("//")) {
+    return `/${trimmed.replace(/^\/+/, "")}`;
+  }
+
+  return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
 }
 
 export function createRateLimitMiddleware(options: RequestRateLimiterOptions = {}) {
