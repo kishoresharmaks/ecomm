@@ -1307,6 +1307,11 @@ export class SellersService {
         stateCode: address.stateCode,
         cityCode: address.cityCode,
         localAreaCode: address.localAreaCode,
+        latitude: address.latitude?.toString() ?? null,
+        longitude: address.longitude?.toString() ?? null,
+        locationSource: address.locationSource,
+        accuracyMeters: address.accuracyMeters?.toString() ?? null,
+        locationConfidenceScore: address.locationConfidenceScore?.toString() ?? null,
       })),
       serviceAreas: seller.serviceAreas.map((area) => ({
         id: area.id,

@@ -1,8 +1,8 @@
 "use client";
 
-import { type ComponentType, type FormEvent, type ReactNode, useState } from "react";
+import { type ComponentType, type FormEvent, type ReactNode, useEffect, useState } from "react";
 import { Description, Dialog, DialogBackdrop, DialogPanel, DialogTitle } from "@headlessui/react";
-import { Loader2, X } from "lucide-react";
+import { LocateFixed, Loader2, X } from "lucide-react";
 import { Button, StatusBadge } from "@indihub/ui";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -43,6 +43,28 @@ type DocumentUploadFieldComponent = ComponentType<{
 }>;
 
 const locationSources: readonly LocationSource[] = ["GPS", "MAP_PICK", "MANUAL", "REVERSE_GEOCODE"];
+
+function coordinateInputValue(value: unknown) {
+  if (value === null || value === undefined || value === "") {
+    return "";
+  }
+
+  return String(value);
+}
+
+function gpsErrorMessage(error: GeolocationPositionError) {
+  if (error.code === error.PERMISSION_DENIED) {
+    return "GPS permission was denied. Allow location access in the browser and try again.";
+  }
+  if (error.code === error.POSITION_UNAVAILABLE) {
+    return "GPS position is unavailable. Try from the shop location or enter Google Maps coordinates.";
+  }
+  if (error.code === error.TIMEOUT) {
+    return "GPS request timed out. Move to an open area and try again.";
+  }
+
+  return error.message || "Unable to fetch GPS location.";
+}
 
 function optionalNumberValue(value: unknown): number | null {
   if (value === null || value === undefined || value === "") {
@@ -335,6 +357,21 @@ export function EditAddressModal({
   const address = profile?.addresses?.[0];
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeTone, setNoticeTone] = useState<"success" | "danger">("success");
+  const [latitude, setLatitude] = useState(coordinateInputValue(address?.latitude));
+  const [longitude, setLongitude] = useState(coordinateInputValue(address?.longitude));
+  const [accuracyMeters, setAccuracyMeters] = useState(coordinateInputValue(address?.accuracyMeters));
+  const [locationSource, setLocationSource] = useState<LocationSource>(
+    optionalLocationSource(address?.locationSource) ?? "MANUAL",
+  );
+  const [gpsStatus, setGpsStatus] = useState<{ tone: "success" | "danger" | "info"; message: string } | null>(null);
+
+  useEffect(() => {
+    setLatitude(coordinateInputValue(address?.latitude));
+    setLongitude(coordinateInputValue(address?.longitude));
+    setAccuracyMeters(coordinateInputValue(address?.accuracyMeters));
+    setLocationSource(optionalLocationSource(address?.locationSource) ?? "MANUAL");
+    setGpsStatus(null);
+  }, [address?.accuracyMeters, address?.latitude, address?.locationSource, address?.longitude, open]);
 
   const mutation = useMutation({
     mutationFn: (payload: SellerProfilePayload) => updateSellerProfile(authHeaders, payload),
@@ -354,6 +391,22 @@ export function EditAddressModal({
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     setNotice(null);
+    const latitudeValue = optionalNumberValue(latitude);
+    const longitudeValue = optionalNumberValue(longitude);
+    const latitudeEntered = latitude.trim().length > 0;
+    const longitudeEntered = longitude.trim().length > 0;
+
+    if (latitudeEntered !== longitudeEntered) {
+      setNoticeTone("danger");
+      setNotice("Enter both pickup latitude and pickup longitude.");
+      return;
+    }
+
+    if ((latitudeEntered && latitudeValue === null) || (longitudeEntered && longitudeValue === null)) {
+      setNoticeTone("danger");
+      setNotice("Enter valid pickup GPS coordinates.");
+      return;
+    }
     
     mutation.mutate({
       address: {
@@ -368,13 +421,45 @@ export function EditAddressModal({
         stateCode: formValue(form, "stateCode"),
         cityCode: formValue(form, "cityCode"),
         localAreaCode: optionalFormValue(form, "localAreaCode"),
-        latitude: optionalNumberValue(form.get("latitude")),
-        longitude: optionalNumberValue(form.get("longitude")),
-        locationSource: optionalLocationSource(form.get("locationSource")),
-        accuracyMeters: optionalNumberValue(address?.accuracyMeters),
+        latitude: latitudeValue,
+        longitude: longitudeValue,
+        locationSource,
+        accuracyMeters: optionalNumberValue(accuracyMeters),
         locationConfidenceScore: optionalNumberValue(address?.locationConfidenceScore),
       },
     });
+  }
+
+  function useCurrentGps() {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setGpsStatus({
+        tone: "danger",
+        message: "GPS is not available in this browser. Enter coordinates from Google Maps.",
+      });
+      return;
+    }
+
+    setGpsStatus({ tone: "info", message: "Fetching shop GPS location..." });
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setLatitude(position.coords.latitude.toFixed(7));
+        setLongitude(position.coords.longitude.toFixed(7));
+        setAccuracyMeters(Math.round(position.coords.accuracy).toString());
+        setLocationSource("GPS");
+        setGpsStatus({
+          tone: "success",
+          message: `GPS added with ${Math.round(position.coords.accuracy)}m accuracy. Save changes to apply.`,
+        });
+      },
+      (error) => {
+        setGpsStatus({ tone: "danger", message: gpsErrorMessage(error) });
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 0,
+      },
+    );
   }
 
   return (
@@ -409,17 +494,38 @@ export function EditAddressModal({
                 name="latitude"
                 type="number"
                 step="0.0000001"
-                defaultValue={address?.latitude ?? ""}
+                value={latitude}
+                onChange={(value) => {
+                  setLatitude(value);
+                  setLocationSource("MANUAL");
+                }}
               />
               <SellerField
                 label="Pickup longitude"
                 name="longitude"
                 type="number"
                 step="0.0000001"
-                defaultValue={address?.longitude ?? ""}
+                value={longitude}
+                onChange={(value) => {
+                  setLongitude(value);
+                  setLocationSource("MANUAL");
+                }}
               />
-              <input type="hidden" name="locationSource" value="MANUAL" />
             </div>
+
+            <div className="flex flex-col gap-3 rounded-md border border-[#D8E2EA] bg-[#F8FAFC] p-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-black text-[#1F2933]">Shop GPS location</p>
+                <p className="mt-1 text-xs font-semibold text-[#667085]">
+                  Stand at the shop pickup point and allow browser location access.
+                </p>
+              </div>
+              <Button type="button" variant="outline" onClick={useCurrentGps} disabled={mutation.isPending}>
+                <LocateFixed className="h-4 w-4" aria-hidden="true" />
+                Use GPS
+              </Button>
+            </div>
+            {gpsStatus ? <StatusBadge tone={gpsStatus.tone === "danger" ? "danger" : "success"}>{gpsStatus.message}</StatusBadge> : null}
 
             <div className="mt-2 rounded-md bg-[#EAF1F7] p-3 text-sm font-semibold text-[#163B5C]">
                Product listing and order acceptance require the shop pickup latitude and longitude. Use the exact shop location from Google Maps if GPS capture is unavailable.
