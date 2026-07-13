@@ -368,9 +368,9 @@ export function EditAddressModal({
         stateCode: formValue(form, "stateCode"),
         cityCode: formValue(form, "cityCode"),
         localAreaCode: optionalFormValue(form, "localAreaCode"),
-        latitude: optionalNumberValue(address?.latitude),
-        longitude: optionalNumberValue(address?.longitude),
-        locationSource: optionalLocationSource(address?.locationSource),
+        latitude: optionalNumberValue(form.get("latitude")),
+        longitude: optionalNumberValue(form.get("longitude")),
+        locationSource: optionalLocationSource(form.get("locationSource")),
         accuracyMeters: optionalNumberValue(address?.accuracyMeters),
         locationConfidenceScore: optionalNumberValue(address?.locationConfidenceScore),
       },
@@ -403,8 +403,26 @@ export function EditAddressModal({
                <input type="hidden" name="localAreaCode" value={address?.localAreaCode ?? ""} />
             </div>
 
-            <div className="mt-2 text-sm font-semibold text-[#667085] p-3 bg-[#EAF1F7] text-[#163B5C] rounded-md">
-               Note: Full map-based location selection is available on the original layout. For now, use this modal to quickly update text address fields.
+            <div className="grid grid-cols-2 gap-4">
+              <SellerField
+                label="Pickup latitude"
+                name="latitude"
+                type="number"
+                step="0.0000001"
+                defaultValue={address?.latitude ?? ""}
+              />
+              <SellerField
+                label="Pickup longitude"
+                name="longitude"
+                type="number"
+                step="0.0000001"
+                defaultValue={address?.longitude ?? ""}
+              />
+              <input type="hidden" name="locationSource" value="MANUAL" />
+            </div>
+
+            <div className="mt-2 rounded-md bg-[#EAF1F7] p-3 text-sm font-semibold text-[#163B5C]">
+               Product listing and order acceptance require the shop pickup latitude and longitude. Use the exact shop location from Google Maps if GPS capture is unavailable.
             </div>
           </div>
         </div>

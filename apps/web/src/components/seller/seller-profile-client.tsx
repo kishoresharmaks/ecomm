@@ -244,6 +244,15 @@ export function SellerProfileClient() {
                 {address.line2 && <p>{address.line2}</p>}
                 <p>{[address.city, address.state, address.pincode].filter(Boolean).join(", ")}</p>
                 <p>{address.country || "India"}</p>
+                {address.latitude && address.longitude ? (
+                  <p className="mt-3 text-xs font-bold text-green-700">
+                    Pickup GPS: {address.latitude}, {address.longitude}
+                  </p>
+                ) : (
+                  <p className="mt-3 text-xs font-bold text-[#B42318]">
+                    Pickup GPS is required before adding products or accepting orders.
+                  </p>
+                )}
               </div>
             ) : (
               <div className="py-6 text-center text-[#667085]">
