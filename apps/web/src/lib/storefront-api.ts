@@ -284,6 +284,11 @@ export type ProductSummary = {
   images: ProductImage[];
   variants: ProductVariant[];
   deliveryModes?: DeliveryMode[];
+  manualTransport?: {
+    freeDistanceKm: number;
+    chargePerKmPaise: number;
+    note: string;
+  } | null;
   activeDeal?: ActiveDealSummary | null;
   campaignBadge?: string | null;
   campaignLabel?: string | null;
@@ -436,11 +441,12 @@ export type CheckoutSummary = {
   buyerCouponDiscountMinor?: number;
   buyerTotalMinor: number;
   availableDeliveryOptions?: {
-    mode: string;
+    mode: DeliveryMode;
     chargePaise: number;
     isCheapest: boolean;
     available: boolean;
     reason: string | null;
+    manualTransport?: CheckoutManualTransportOption | null;
   }[];
   sellerDeliveryGroups?: Array<{
     sellerId: string;
@@ -458,10 +464,19 @@ export type CheckoutSummary = {
       isCheapest: boolean;
       available: boolean;
       reason: string | null;
+      manualTransport?: CheckoutManualTransportOption | null;
     }>;
     selectedDeliveryMode?: DeliveryMode;
     blockedReason?: string | null;
   }>;
+};
+
+export type CheckoutManualTransportOption = {
+  distanceKm?: number | null;
+  freeDistanceKm?: number | null;
+  billableKm?: number | null;
+  chargePerKmPaise?: number | null;
+  note?: string | null;
 };
 
 export type CheckoutSummaryOptions = {

@@ -19,6 +19,8 @@ export type FinanceDashboard = {
     serviceReceivableOpen: FinanceMetric;
     serviceReceivableDisputed: FinanceMetric;
     serviceReceivableSettled: FinanceMetric;
+    sellerCashReceivableOpen: FinanceMetric;
+    sellerCashReceivableSettled: FinanceMetric;
   };
   recentPayments: FinancePaymentCollection[];
 };

@@ -1,12 +1,14 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import {
   CodCollectionStatus,
+  CourierCodRemittanceStatus,
   EmailRecipientType,
   OrderStatus,
   PaymentProvider,
   PaymentStatus,
   Prisma,
   ServiceSellerReceivableStatus,
+  SellerCashReceivableStatus,
   SellerOrderStatus,
   SellerPayoutStatus,
   SellerSettlementStatus,
@@ -53,15 +55,17 @@ export class FinancePaymentsService {
       serviceReceivableOpen,
       serviceReceivableDisputed,
       serviceReceivableSettled,
+      sellerCashReceivableOpen,
+      sellerCashReceivableSettled,
       recentPayments,
     ] = await Promise.all([
-      this.paymentMetric({ provider: PaymentProvider.COD, status: PaymentStatus.PENDING }),
-      this.paymentMetric({
-        provider: PaymentProvider.COD,
+      this.codPendingMetric(),
+      this.codCollectionMetric({
+        codCollectionStatus: CodCollectionStatus.COLLECTED,
         order: {
-          deliveryDetail: {
-            is: {
-              codCollectionStatus: CodCollectionStatus.COLLECTED,
+          payments: {
+            some: {
+              OR: [{ provider: PaymentProvider.COD }, { method: "COD" }],
             },
           },
         },
@@ -108,6 +112,29 @@ export class FinancePaymentsService {
           ],
         },
       }),
+      this.sellerCashReceivableMetric(
+        {
+          status: {
+            in: [
+              SellerCashReceivableStatus.OPEN,
+              SellerCashReceivableStatus.PARTIALLY_OFFSET,
+              SellerCashReceivableStatus.OFFSET_SCHEDULED,
+            ],
+          },
+        },
+        "outstanding",
+      ),
+      this.sellerCashReceivableMetric(
+        {
+          status: {
+            in: [
+              SellerCashReceivableStatus.SETTLED,
+              SellerCashReceivableStatus.WAIVED,
+            ],
+          },
+        },
+        "platformDue",
+      ),
       this.recentPayments(),
     ]);
 
@@ -127,6 +154,8 @@ export class FinancePaymentsService {
         serviceReceivableOpen,
         serviceReceivableDisputed,
         serviceReceivableSettled,
+        sellerCashReceivableOpen,
+        sellerCashReceivableSettled,
       },
       recentPayments,
     };
@@ -454,6 +483,80 @@ export class FinancePaymentsService {
       .then((result) => this.aggregateMetric(result._count._all, result._sum.amountPaise));
   }
 
+  private async codPendingMetric() {
+    const payments = await this.prisma.client.payment.findMany({
+      where: {
+        provider: PaymentProvider.COD,
+        status: PaymentStatus.PENDING,
+      },
+      select: {
+        amountPaise: true,
+        order: {
+          select: {
+            deliveryDetail: {
+              select: {
+                codCollectionStatus: true,
+                codCollectedAmountPaise: true,
+              },
+            },
+            courierCodRemittances: {
+              select: {
+                status: true,
+                remittedAmountPaise: true,
+              },
+            },
+            sellerCashReceivables: {
+              where: {
+                status: { not: SellerCashReceivableStatus.CANCELLED },
+              },
+              select: {
+                grossCashCollectedPaise: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    let count = 0;
+    let amountPaise = 0;
+    for (const payment of payments) {
+      const sellerAccountedPaise = payment.order.sellerCashReceivables.reduce(
+        (sum, receivable) => sum + receivable.grossCashCollectedPaise,
+        0,
+      );
+      const localVerifiedPaise =
+        payment.order.deliveryDetail?.codCollectionStatus === CodCollectionStatus.VERIFIED
+          ? payment.order.deliveryDetail.codCollectedAmountPaise ?? 0
+          : 0;
+      const courierVerifiedPaise = payment.order.courierCodRemittances
+        .filter((remittance) => remittance.status === CourierCodRemittanceStatus.VERIFIED)
+        .reduce((sum, remittance) => sum + (remittance.remittedAmountPaise ?? 0), 0);
+      const pendingPaise = Math.max(
+        0,
+        payment.amountPaise - sellerAccountedPaise - localVerifiedPaise - courierVerifiedPaise,
+      );
+      if (pendingPaise > 0) {
+        count += 1;
+        amountPaise += pendingPaise;
+      }
+    }
+
+    return this.aggregateMetric(count, amountPaise);
+  }
+
+  private codCollectionMetric(where: Prisma.DeliveryDetailWhereInput) {
+    return this.prisma.client.deliveryDetail
+      .aggregate({
+        where,
+        _count: { _all: true },
+        _sum: { codCollectedAmountPaise: true },
+      })
+      .then((result) =>
+        this.aggregateMetric(result._count._all, result._sum.codCollectedAmountPaise),
+      );
+  }
+
   private serviceReceivableMetric(where: Prisma.ServiceSellerReceivableWhereInput) {
     return this.prisma.client.serviceSellerReceivable
       .aggregate({
@@ -463,6 +566,25 @@ export class FinancePaymentsService {
       })
       .then((result) =>
         this.aggregateMetric(result._count._all, result._sum.amountDueToPlatformPaise),
+      );
+  }
+
+  private sellerCashReceivableMetric(
+    where: Prisma.SellerCashReceivableWhereInput,
+    amount: "outstanding" | "platformDue",
+  ) {
+    return this.prisma.client.sellerCashReceivable
+      .aggregate({
+        where,
+        _count: { _all: true },
+        _sum: amount === "outstanding" ? { outstandingPaise: true } : { platformDuePaise: true },
+      })
+      .then((result) =>
+        this.aggregateMetric(
+          result._count._all,
+          (amount === "outstanding" ? result._sum.outstandingPaise : result._sum.platformDuePaise) ??
+            null,
+        ),
       );
   }
 
@@ -476,6 +598,11 @@ export class FinancePaymentsService {
         order: {
           orderStatus: OrderStatus.DELIVERED,
           paymentStatus: { in: [PaymentStatus.PAID, PaymentStatus.NOT_REQUIRED] },
+        },
+        sellerCashReceivables: {
+          none: {
+            status: { not: SellerCashReceivableStatus.CANCELLED },
+          },
         },
       },
       include: {

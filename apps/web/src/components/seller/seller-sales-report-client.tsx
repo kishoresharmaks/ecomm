@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useState } from "react";
-import { AlertTriangle, BarChart3, BriefcaseBusiness, CalendarDays, ClipboardList, Download, IndianRupee } from "lucide-react";
+import { AlertTriangle, BarChart3, BriefcaseBusiness, CalendarDays, ChevronLeft, ChevronRight, ClipboardList, Download, IndianRupee } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
 import { formatMoney } from "@/lib/storefront-api";
@@ -22,6 +22,8 @@ import {
   isSellerOnboardingRequiredError,
   useSellerAuth
 } from "./seller-ui";
+
+const reportCardPageSize = 5;
 
 export function SellerSalesReportClient() {
   const sellerAuth = useSellerAuth();
@@ -98,6 +100,11 @@ export function SellerSalesReportClient() {
 }
 
 function SellerRetailReportSections({ report }: { report: SellerSalesReport }) {
+  const [recentSalesPage, setRecentSalesPage] = useState(1);
+  const recentSalesPageCount = Math.max(1, Math.ceil(report.recentOrders.length / reportCardPageSize));
+  const safeRecentSalesPage = Math.min(recentSalesPage, recentSalesPageCount);
+  const recentSalesStart = (safeRecentSalesPage - 1) * reportCardPageSize;
+  const visibleRecentOrders = report.recentOrders.slice(recentSalesStart, recentSalesStart + reportCardPageSize);
   const chartData = report.recentOrders.slice(0, 10).reverse().map((o) => ({
     name: formatDateTime(o.order.createdAt).split(",")[0],
     sales: o.sellerSubtotalPaise / 100,
@@ -141,7 +148,7 @@ function SellerRetailReportSections({ report }: { report: SellerSalesReport }) {
             <StatusBadge tone="info">{report.summary.b2bEnquiries} B2B enquiries</StatusBadge>
           </div>
           <div className="mt-5 grid gap-3">
-            {report.recentOrders.map((split) => (
+            {visibleRecentOrders.map((split) => (
               <Link
                 key={split.id}
                 href={`/seller/orders/${split.order.orderNumber}`}
@@ -161,6 +168,13 @@ function SellerRetailReportSections({ report }: { report: SellerSalesReport }) {
               <SellerEmptyState title="No sales in this range" message="Change the report dates or wait for customer orders containing this seller's products." />
             ) : null}
           </div>
+          <CardPagination
+            label="Recent sales"
+            page={safeRecentSalesPage}
+            pageCount={recentSalesPageCount}
+            total={report.recentOrders.length}
+            onPageChange={setRecentSalesPage}
+          />
         </SellerPanel>
 
         <SellerPanel>
@@ -248,6 +262,11 @@ function SellerB2BReportPanel({ report }: { report: SellerSalesReport }) {
 function SellerServiceReportPanel({ report }: { report: SellerSalesReport }) {
   const services = report.services;
   const recentBookings = services?.recentBookings ?? [];
+  const [recentBookingsPage, setRecentBookingsPage] = useState(1);
+  const recentBookingsPageCount = Math.max(1, Math.ceil(recentBookings.length / reportCardPageSize));
+  const safeRecentBookingsPage = Math.min(recentBookingsPage, recentBookingsPageCount);
+  const recentBookingsStart = (safeRecentBookingsPage - 1) * reportCardPageSize;
+  const visibleRecentBookings = recentBookings.slice(recentBookingsStart, recentBookingsStart + reportCardPageSize);
 
   return (
     <SellerPanel>
@@ -273,7 +292,7 @@ function SellerServiceReportPanel({ report }: { report: SellerSalesReport }) {
           </Button>
         </div>
         <div className="mt-3 grid gap-3">
-          {recentBookings.map((booking) => (
+          {visibleRecentBookings.map((booking) => (
             <div key={booking.id} className="rounded-md border border-[#E5E7EB] bg-[#F8FAFC] p-3">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">
@@ -291,8 +310,61 @@ function SellerServiceReportPanel({ report }: { report: SellerSalesReport }) {
           ))}
           {!recentBookings.length ? <p className="rounded-md border border-[#E5E7EB] bg-[#F8FAFC] p-3 text-sm font-semibold text-[#667085]">No service bookings in this report range.</p> : null}
         </div>
+        <CardPagination
+          label="Recent service bookings"
+          page={safeRecentBookingsPage}
+          pageCount={recentBookingsPageCount}
+          total={recentBookings.length}
+          onPageChange={setRecentBookingsPage}
+        />
       </div>
     </SellerPanel>
+  );
+}
+
+function CardPagination({
+  label,
+  page,
+  pageCount,
+  total,
+  onPageChange,
+}: {
+  label: string;
+  page: number;
+  pageCount: number;
+  total: number;
+  onPageChange: (page: number) => void;
+}) {
+  if (total <= reportCardPageSize) {
+    return null;
+  }
+
+  return (
+    <div className="mt-4 flex flex-col gap-2 border-t border-[#E5E7EB] pt-3 text-xs font-bold text-[#667085] sm:flex-row sm:items-center sm:justify-between">
+      <span>
+        {label}: page {page} of {pageCount} ({total} records)
+      </span>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => onPageChange(Math.max(1, page - 1))}
+          disabled={page <= 1}
+          className="inline-flex h-9 items-center gap-1 rounded-md border border-[#E5E7EB] bg-white px-3 text-sm font-black text-[#1F2933] transition hover:border-[#ED3500] hover:text-[#ED3500] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-[#E5E7EB] disabled:hover:text-[#1F2933]"
+        >
+          <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+          Previous
+        </button>
+        <button
+          type="button"
+          onClick={() => onPageChange(Math.min(pageCount, page + 1))}
+          disabled={page >= pageCount}
+          className="inline-flex h-9 items-center gap-1 rounded-md border border-[#E5E7EB] bg-white px-3 text-sm font-black text-[#1F2933] transition hover:border-[#ED3500] hover:text-[#ED3500] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-[#E5E7EB] disabled:hover:text-[#1F2933]"
+        >
+          Next
+          <ChevronRight className="h-4 w-4" aria-hidden="true" />
+        </button>
+      </div>
+    </div>
   );
 }
 

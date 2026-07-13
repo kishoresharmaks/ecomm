@@ -717,7 +717,13 @@ export class OrdersService {
             },
             deliveryModeOptions: {
               where: { isEnabled: true },
-              select: { deliveryMode: true, isEnabled: true },
+              select: {
+                deliveryMode: true,
+                isEnabled: true,
+                manualTransportFreeDistanceKm: true,
+                manualTransportChargePerKmPaise: true,
+                manualTransportNote: true,
+              },
             },
           },
         });
@@ -7808,7 +7814,13 @@ export class OrdersService {
         id: string;
         name: string;
         sellerId: string;
-        deliveryModeOptions?: Array<{ deliveryMode: DeliveryMode; isEnabled?: boolean | null }> | null;
+        deliveryModeOptions?: Array<{
+          deliveryMode: DeliveryMode;
+          isEnabled?: boolean | null;
+          manualTransportFreeDistanceKm?: Prisma.Decimal | number | string | null;
+          manualTransportChargePerKmPaise?: number | null;
+          manualTransportNote?: string | null;
+        }> | null;
         seller: {
           storeName?: string | null;
           sellerType: SellerType;
@@ -7829,6 +7841,11 @@ export class OrdersService {
           productName: string;
           quantity: number;
           enabledDeliveryModes: DeliveryMode[];
+          manualTransport?: {
+            freeDistanceKm: number;
+            chargePerKmPaise: number;
+            note: string;
+          } | null;
         }>;
         package: {
           weightGrams: number;
@@ -7870,6 +7887,7 @@ export class OrdersService {
         productName: product.name,
         quantity: item.quantity,
         enabledDeliveryModes,
+        manualTransport: this.manualTransportConfig(product),
       });
       current.package.weightGrams += itemWeightGrams * item.quantity;
       current.package.lengthCm = Math.max(
@@ -7919,8 +7937,37 @@ export class OrdersService {
           DeliveryMode.STORE_PICKUP,
           DeliveryMode.LOCAL_DELIVERY_PARTNER,
           DeliveryMode.THIRD_PARTY_COURIER,
-          DeliveryMode.MANUAL_TRANSPORT,
         ];
+  }
+
+  private manualTransportConfig(product: {
+    deliveryModeOptions?: Array<{
+      deliveryMode: DeliveryMode;
+      isEnabled?: boolean | null;
+      manualTransportFreeDistanceKm?: Prisma.Decimal | number | string | null;
+      manualTransportChargePerKmPaise?: number | null;
+      manualTransportNote?: string | null;
+    }> | null;
+  }) {
+    const option = (product.deliveryModeOptions ?? []).find(
+      (item) => item.deliveryMode === DeliveryMode.MANUAL_TRANSPORT && item.isEnabled !== false,
+    );
+    if (
+      !option ||
+      option.manualTransportFreeDistanceKm === null ||
+      option.manualTransportFreeDistanceKm === undefined ||
+      option.manualTransportChargePerKmPaise === null ||
+      option.manualTransportChargePerKmPaise === undefined ||
+      !option.manualTransportNote
+    ) {
+      return null;
+    }
+
+    return {
+      freeDistanceKm: Number(option.manualTransportFreeDistanceKm),
+      chargePerKmPaise: option.manualTransportChargePerKmPaise,
+      note: option.manualTransportNote,
+    };
   }
 
   private summaryDeliveryRouting(

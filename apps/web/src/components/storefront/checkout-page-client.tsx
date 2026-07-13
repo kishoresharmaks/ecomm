@@ -24,6 +24,7 @@ import {
   cancelRazorpayOrder,
   verifyRazorpayPayment,
   type CheckoutAddress,
+  type CheckoutManualTransportOption,
   type CheckoutPaymentMethodRecord,
   type DeliveryMode,
   type PlaceOrderPayload,
@@ -221,6 +222,15 @@ export function CheckoutPageClient() {
     : checkoutSummaryQuery.isError
       ? "We could not confirm the latest checkout total. Please retry before placing the order."
       : null;
+  const manualTransportSelectedForCheckout =
+    deliveryPreference === "DELIVER_TO_ADDRESS" &&
+    (Object.values(deliverySelectionsBySeller).includes("MANUAL_TRANSPORT") ||
+      requestedDeliveryMode === "MANUAL_TRANSPORT" ||
+      (!checkoutSummaryQuery.data?.sellerDeliveryGroups?.length &&
+        !requestedDeliveryMode &&
+        checkoutSummaryQuery.data?.availableDeliveryOptions?.some(
+          (option) => option.mode === "MANUAL_TRANSPORT" && option.available && option.isCheapest,
+        )));
 
   useEffect(() => {
     const groups = checkoutSummaryQuery.data?.sellerDeliveryGroups ?? [];
@@ -401,7 +411,7 @@ export function CheckoutPageClient() {
 
       const payload: PlaceOrderPayload = {
         deliveryPreference,
-        ...(requestedDeliveryMode ? { deliveryMode: requestedDeliveryMode as any } : {}),
+        ...(isDeliveryMode(requestedDeliveryMode) ? { deliveryMode: requestedDeliveryMode } : {}),
         ...(Object.keys(deliverySelectionsBySeller).length
           ? {
               deliverySelections: Object.entries(deliverySelectionsBySeller).map(([sellerId, deliveryMode]) => ({
@@ -425,11 +435,17 @@ export function CheckoutPageClient() {
 
       if (deliveryPreference !== "STORE_PICKUP") {
         if (useSavedAddress && selectedSavedAddress) {
+          if (manualTransportSelectedForCheckout && !hasAddressCoordinates(selectedSavedAddress)) {
+            throw new Error("Add a map pin to this address before using seller-arranged delivery.");
+          }
           payload.addressId = selectedSavedAddress.id;
         } else {
           const validation = validateAddress(manualAddress ?? initialAddress);
           if (validation) {
             throw new Error(validation);
+          }
+          if (manualTransportSelectedForCheckout && !hasAddressCoordinates(manualAddress ?? initialAddress)) {
+            throw new Error("Pick the address location on the map before using seller-arranged delivery.");
           }
           payload.shippingAddress = cleanAddress(manualAddress ?? initialAddress);
         }
@@ -571,6 +587,11 @@ export function CheckoutPageClient() {
                     <span className="mt-1 block text-xs font-bold text-[#667085]">
                       {item.phone}
                     </span>
+                    {!hasAddressCoordinates(item) ? (
+                      <span className="mt-2 block text-xs font-bold text-[#B45309]">
+                        Map pin needed for seller-arranged delivery
+                      </span>
+                    ) : null}
                   </StorefrontOptionCard>
                 ))}
                 <StorefrontOptionCard
@@ -709,6 +730,9 @@ export function CheckoutPageClient() {
                                 <span className="mt-2 block text-xs font-bold text-[#667085]">
                                   {formatMoney(opt.chargePaise, checkoutSummaryQuery.data.buyerCurrency, checkoutTotals.buyerLocale)}
                                 </span>
+                                {opt.mode === "MANUAL_TRANSPORT" && opt.manualTransport ? (
+                                  <ManualTransportOptionMeta option={opt.manualTransport} />
+                                ) : null}
                               </StorefrontOptionCard>
                             ))}
                           </div>
@@ -753,6 +777,9 @@ export function CheckoutPageClient() {
                       <span className="mt-2 block text-xs font-bold text-[#667085]">
                         {opt.available ? formatMoney(opt.chargePaise, checkoutSummaryQuery.data.buyerCurrency, checkoutTotals.buyerLocale) : (opt.reason || "Delivery unavailable")}
                       </span>
+                      {opt.available && opt.mode === "MANUAL_TRANSPORT" && opt.manualTransport ? (
+                        <ManualTransportOptionMeta option={opt.manualTransport} />
+                      ) : null}
                     </StorefrontOptionCard>
                   ))}
                 </div>
@@ -1063,6 +1090,21 @@ export function CheckoutPageClient() {
   );
 }
 
+function ManualTransportOptionMeta({ option }: { option: CheckoutManualTransportOption }) {
+  const details = [
+    typeof option.distanceKm === "number" ? `${option.distanceKm.toFixed(2)} km from seller` : null,
+    typeof option.freeDistanceKm === "number" ? `${option.freeDistanceKm} km free` : null,
+    typeof option.billableKm === "number" ? `${option.billableKm} km billed` : null,
+  ].filter(Boolean);
+
+  return (
+    <span className="mt-2 block text-xs font-semibold leading-5 text-[#9A3412]">
+      {details.join(" | ")}
+      {option.note ? <span className="block text-[#667085]">{option.note}</span> : null}
+    </span>
+  );
+}
+
 function BankTransferLine({ label, value }: { label: string; value?: string | undefined }) {
   if (!value?.trim()) {
     return null;
@@ -1114,6 +1156,25 @@ function validateAddress(address: CheckoutAddress) {
   }
 
   return null;
+}
+
+function hasAddressCoordinates(address: {
+  latitude?: number | string | null | undefined;
+  longitude?: number | string | null | undefined;
+}) {
+  const latitude = nullableFiniteNumber(address.latitude);
+  const longitude = nullableFiniteNumber(address.longitude);
+
+  return typeof latitude === "number" && typeof longitude === "number";
+}
+
+function isDeliveryMode(value: string | null): value is DeliveryMode {
+  return (
+    value === "STORE_PICKUP" ||
+    value === "LOCAL_DELIVERY_PARTNER" ||
+    value === "THIRD_PARTY_COURIER" ||
+    value === "MANUAL_TRANSPORT"
+  );
 }
 
 function addressFromForm(form: FormData): CheckoutAddress {

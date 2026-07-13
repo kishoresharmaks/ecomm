@@ -16,7 +16,7 @@ describe("ReportsService", () => {
     });
     tx.payment.groupBy.mockResolvedValue([{ status: "PAID", provider: "RAZORPAY", _sum: { amountPaise: 25000 }, _count: 2 }]);
     tx.order.findMany.mockResolvedValue([]);
-    const service = new ReportsService(createPrisma(tx) as never);
+    const service = new ReportsService(createPrisma(tx) as never, createFinanceCalculator() as never);
 
     const result = await service.sales({});
 
@@ -61,7 +61,9 @@ describe("ReportsService", () => {
         refundAdjustmentPaise: -5000
       }
     });
-    tx.orderSellerSplit.findMany.mockResolvedValue(Array.from({ length: 50 }, (_, index) => ({ id: `split_${index}` })));
+    tx.orderSellerSplit.findMany
+      .mockResolvedValueOnce(Array.from({ length: 50 }, (_, index) => ({ id: `split_${index}` })))
+      .mockResolvedValueOnce([]);
     tx.product.count.mockResolvedValueOnce(8);
     tx.productVariant.count.mockResolvedValueOnce(32);
     tx.productVariant.findMany.mockResolvedValue([]);
@@ -93,7 +95,7 @@ describe("ReportsService", () => {
     });
     tx.servicePayment.groupBy.mockResolvedValue([{ status: "PAID", _count: 4, _sum: { amountPaise: 260000 } }]);
     tx.serviceBooking.findMany.mockResolvedValue([{ id: "service_booking_1", bookingNumber: "SB-1" }]);
-    const service = new ReportsService(prisma as never);
+    const service = new ReportsService(prisma as never, createFinanceCalculator() as never);
 
     const result = await service.sellerSales({ id: "user_seller", clerkUserId: null, email: "seller@example.com", roles: [] }, {});
 
@@ -156,11 +158,103 @@ describe("ReportsService", () => {
     });
   });
 
+  it("calculates seller report commission for fresh order splits before payout stamping", async () => {
+    const tx = createReportsTx();
+    const prisma = createPrisma(tx);
+    prisma.client.seller.findUnique.mockResolvedValue({
+      id: "seller_1",
+      primaryCapability: "RETAIL",
+      enabledCapabilities: ["RETAIL"]
+    });
+    tx.orderSellerSplit.aggregate.mockResolvedValue({
+      _count: 1,
+      _sum: {
+        sellerSubtotalPaise: 100000,
+        commissionPaise: 0,
+        gstOnCommissionPaise: 0,
+        tdsPaise: 0,
+        tcsPaise: 0,
+        platformFeePaise: 0,
+        couponSellerFundedDiscountPaise: 0,
+        couponAdjustmentPaise: 0,
+        refundAdjustmentPaise: 0
+      }
+    });
+    const recentSplit = {
+      id: "split_1",
+      sellerSubtotalPaise: 100000,
+      commissionPaise: 0,
+      gstOnCommissionPaise: 0,
+      tdsPaise: 0,
+      tcsPaise: 0,
+      platformFeePaise: 0,
+      netPayablePaise: 0
+    };
+    tx.orderSellerSplit.findMany
+      .mockResolvedValueOnce([recentSplit])
+      .mockResolvedValueOnce([recentSplit]);
+    tx.product.count.mockResolvedValueOnce(1);
+    tx.productVariant.count.mockResolvedValueOnce(0);
+    tx.productVariant.findMany.mockResolvedValue([]);
+    tx.b2BEnquiry.count.mockResolvedValueOnce(0);
+    tx.b2BEnquiry.groupBy.mockResolvedValue([]);
+    tx.b2BOrder.aggregate.mockResolvedValue({
+      _count: 0,
+      _sum: {
+        subtotalPaise: 0,
+        buyerPayableAmountPaise: 0,
+        paidAmountPaise: 0,
+        commissionAmountPaise: 0,
+        sellerPayoutAmountPaise: 0
+      }
+    });
+    tx.b2BOrder.groupBy.mockResolvedValue([]);
+    tx.b2BOrder.findMany.mockResolvedValue([]);
+    tx.serviceListing.count.mockResolvedValueOnce(0).mockResolvedValueOnce(0);
+    tx.serviceBooking.aggregate.mockResolvedValue({
+      _count: 0,
+      _sum: { totalPayablePaise: 0, paidAmountPaise: 0 }
+    });
+    tx.serviceBooking.groupBy.mockResolvedValue([]);
+    tx.servicePayment.aggregate.mockResolvedValue({
+      _count: 0,
+      _sum: { amountPaise: 0 }
+    });
+    tx.servicePayment.groupBy.mockResolvedValue([]);
+    tx.serviceBooking.findMany.mockResolvedValue([]);
+    const calculator = createFinanceCalculator({
+      commissionPaise: 5000,
+      gstOnCommissionPaise: 900,
+      tdsPaise: 1000,
+      tcsPaise: 500,
+      platformFeePaise: 2000,
+      netPayablePaise: 90600
+    });
+    const service = new ReportsService(prisma as never, calculator as never);
+
+    const result = await service.sellerSales({ id: "user_seller", clerkUserId: null, email: "seller@example.com", roles: [] }, {});
+
+    expect(result.summary.commissionPaise).toBe(5000);
+    expect(result.summary.gstOnCommissionPaise).toBe(900);
+    expect(result.summary.platformFeePaise).toBe(2000);
+    expect(result.summary.netSalesPaise).toBe(90600);
+    expect(result.recentOrders[0]).toMatchObject({
+      id: "split_1",
+      commissionPaise: 5000,
+      gstOnCommissionPaise: 900,
+      tdsPaise: 1000,
+      tcsPaise: 500,
+      platformFeePaise: 2000,
+      netPayablePaise: 90600
+    });
+    expect(calculator.calculateSplit).toHaveBeenCalledWith(recentSplit, tx);
+  });
+
   it("blocks seller reports for users without a seller account", async () => {
     const tx = createReportsTx();
     const prisma = createPrisma(tx);
     prisma.client.seller.findUnique.mockResolvedValue(null);
-    const service = new ReportsService(prisma as never);
+    const service = new ReportsService(prisma as never, createFinanceCalculator() as never);
 
     await expect(
       service.sellerSales({ id: "user_customer", clerkUserId: null, email: "customer@example.com", roles: [] }, {})
@@ -229,6 +323,20 @@ function createReportsTx() {
       groupBy: vi.fn(),
       findMany: vi.fn()
     }
+  };
+}
+
+function createFinanceCalculator(overrides: Record<string, number> = {}) {
+  return {
+    calculateSplit: vi.fn(async () => ({
+      commissionPaise: 0,
+      gstOnCommissionPaise: 0,
+      tdsPaise: 0,
+      tcsPaise: 0,
+      platformFeePaise: 0,
+      netPayablePaise: 0,
+      ...overrides
+    }))
   };
 }
 

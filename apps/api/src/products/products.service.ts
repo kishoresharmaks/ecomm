@@ -148,6 +148,9 @@ const publicProductInclude = {
     select: {
       deliveryMode: true,
       isEnabled: true,
+      manualTransportFreeDistanceKm: true,
+      manualTransportChargePerKmPaise: true,
+      manualTransportNote: true,
     },
     orderBy: { deliveryMode: "asc" as const },
   },
@@ -158,8 +161,14 @@ const defaultProductDeliveryModes = [
   DeliveryMode.STORE_PICKUP,
   DeliveryMode.LOCAL_DELIVERY_PARTNER,
   DeliveryMode.THIRD_PARTY_COURIER,
-  DeliveryMode.MANUAL_TRANSPORT,
 ] as const;
+const manualTransportNoteMaxLength = 500;
+
+type ManualTransportProductConfig = {
+  freeDistanceKm: number;
+  chargePerKmPaise: number;
+  note: string;
+};
 
 type ProductSearchCursor = {
   rank: number | string;
@@ -348,6 +357,11 @@ export class ProductsService {
     const slug = await this.createUniqueProductSlug(dto.name);
     const variantInputs = await this.prepareVariantInputs(dto.name, variants);
     const deliveryModes = this.normalizeProductDeliveryModes(dto.deliveryModes);
+    const manualTransport = this.normalizeManualTransportConfig(
+      deliveryModes,
+      dto.manualTransport,
+      null,
+    );
     const autoApproveProduct = await this.isProductAutoApprovalEnabled();
     const nextProductStatus = autoApproveProduct ? ProductStatus.ACTIVE : ProductStatus.INACTIVE;
     const nextApprovalStatus = autoApproveProduct
@@ -394,11 +408,9 @@ export class ProductsService {
       }
 
       await tx.productDeliveryMode.createMany({
-        data: deliveryModes.map((deliveryMode) => ({
-          productId: product.id,
-          deliveryMode,
-          isEnabled: true,
-        })),
+        data: deliveryModes.map((deliveryMode) =>
+          this.productDeliveryModeData(product.id, deliveryMode, manualTransport),
+        ),
         skipDuplicates: true,
       });
 
@@ -447,6 +459,7 @@ export class ProductsService {
             status: product.status,
             approvalStatus: product.approvalStatus,
             deliveryModes,
+            manualTransport,
             autoApproved: autoApproveProduct,
           },
         },
@@ -510,6 +523,12 @@ export class ProductsService {
     const listingMode = category.productTemplate?.listingMode ?? ProductListingMode.CART;
     const nextDeliveryModes =
       dto.deliveryModes !== undefined ? this.normalizeProductDeliveryModes(dto.deliveryModes) : null;
+    const effectiveDeliveryModes = nextDeliveryModes ?? this.productDeliveryModeValues(existing);
+    const manualTransport = this.normalizeManualTransportConfig(
+      effectiveDeliveryModes,
+      dto.manualTransport,
+      this.productManualTransportConfig(existing),
+    );
     const autoApproveProduct = await this.isProductAutoApprovalEnabled();
     const nextProductStatus = autoApproveProduct ? ProductStatus.ACTIVE : ProductStatus.INACTIVE;
     const nextApprovalStatus = autoApproveProduct
@@ -580,12 +599,20 @@ export class ProductsService {
       if (nextDeliveryModes) {
         await tx.productDeliveryMode.deleteMany({ where: { productId } });
         await tx.productDeliveryMode.createMany({
-          data: nextDeliveryModes.map((deliveryMode) => ({
-            productId,
-            deliveryMode,
-            isEnabled: true,
-          })),
+          data: nextDeliveryModes.map((deliveryMode) =>
+            this.productDeliveryModeData(productId, deliveryMode, manualTransport),
+          ),
           skipDuplicates: true,
+        });
+      } else if (dto.manualTransport !== undefined && effectiveDeliveryModes.includes(DeliveryMode.MANUAL_TRANSPORT)) {
+        await tx.productDeliveryMode.update({
+          where: {
+            productId_deliveryMode: {
+              productId,
+              deliveryMode: DeliveryMode.MANUAL_TRANSPORT,
+            },
+          },
+          data: this.manualTransportDeliveryModeUpdateData(manualTransport),
         });
       }
 
@@ -600,12 +627,14 @@ export class ProductsService {
             status: existing.status,
             approvalStatus: existing.approvalStatus,
             deliveryModes: this.productDeliveryModeValues(existing),
+            manualTransport: this.productManualTransportConfig(existing),
           },
           newValue: {
             name: product.name,
             status: product.status,
             approvalStatus: product.approvalStatus,
-            deliveryModes: nextDeliveryModes ?? this.productDeliveryModeValues(existing),
+            deliveryModes: effectiveDeliveryModes,
+            manualTransport,
             autoApproved: autoApproveProduct,
           },
         },
@@ -1285,6 +1314,79 @@ export class ProductsService {
     return uniqueModes;
   }
 
+  private normalizeManualTransportConfig(
+    deliveryModes: DeliveryMode[],
+    input: CreateSellerProductDto["manualTransport"] | undefined,
+    existing: ManualTransportProductConfig | null,
+  ): ManualTransportProductConfig | null {
+    if (!deliveryModes.includes(DeliveryMode.MANUAL_TRANSPORT)) {
+      return null;
+    }
+
+    const source = input ?? existing;
+    const freeDistanceKm = Number(source?.freeDistanceKm);
+    const chargePerKmPaise = Number(source?.chargePerKmPaise);
+    const note = typeof source?.note === "string" ? source.note.trim() : "";
+
+    if (!source || !Number.isFinite(freeDistanceKm) || freeDistanceKm < 0 || freeDistanceKm > 5000) {
+      throw new BadRequestException("Manual transport free delivery distance is required.");
+    }
+    if (!Number.isInteger(chargePerKmPaise) || chargePerKmPaise < 0) {
+      throw new BadRequestException("Manual transport per kilometre charge is required.");
+    }
+    if (note.length < 5) {
+      throw new BadRequestException("Manual transport delivery notes are required.");
+    }
+    if (note.length > manualTransportNoteMaxLength) {
+      throw new BadRequestException("Manual transport delivery notes must be 500 characters or less.");
+    }
+
+    return {
+      freeDistanceKm: Math.round(freeDistanceKm * 100) / 100,
+      chargePerKmPaise,
+      note,
+    };
+  }
+
+  private productDeliveryModeData(
+    productId: string,
+    deliveryMode: DeliveryMode,
+    manualTransport: ManualTransportProductConfig | null,
+  ): Prisma.ProductDeliveryModeCreateManyInput {
+    if (deliveryMode !== DeliveryMode.MANUAL_TRANSPORT) {
+      return {
+        productId,
+        deliveryMode,
+        isEnabled: true,
+      };
+    }
+
+    return {
+      productId,
+      deliveryMode,
+      isEnabled: true,
+      ...this.manualTransportDeliveryModeUpdateData(manualTransport),
+    };
+  }
+
+  private manualTransportDeliveryModeUpdateData(
+    manualTransport: ManualTransportProductConfig | null,
+  ) {
+    if (!manualTransport) {
+      return {
+        manualTransportFreeDistanceKm: null,
+        manualTransportChargePerKmPaise: null,
+        manualTransportNote: null,
+      };
+    }
+
+    return {
+      manualTransportFreeDistanceKm: manualTransport.freeDistanceKm,
+      manualTransportChargePerKmPaise: manualTransport.chargePerKmPaise,
+      manualTransportNote: manualTransport.note,
+    };
+  }
+
   private productDeliveryModeValues(product: { deliveryModeOptions?: Array<{ deliveryMode: DeliveryMode; isEnabled?: boolean | null }> | null }) {
     if (!Object.prototype.hasOwnProperty.call(product, "deliveryModeOptions")) {
       return [...defaultProductDeliveryModes];
@@ -1295,12 +1397,43 @@ export class ProductsService {
       .map((option) => option.deliveryMode);
   }
 
+  private productManualTransportConfig(product: {
+    deliveryModeOptions?: Array<{
+      deliveryMode: DeliveryMode;
+      isEnabled?: boolean | null;
+      manualTransportFreeDistanceKm?: Prisma.Decimal | number | string | null;
+      manualTransportChargePerKmPaise?: number | null;
+      manualTransportNote?: string | null;
+    }> | null;
+  }): ManualTransportProductConfig | null {
+    const option = (product.deliveryModeOptions ?? []).find(
+      (item) => item.deliveryMode === DeliveryMode.MANUAL_TRANSPORT && item.isEnabled !== false,
+    );
+    if (
+      !option ||
+      option.manualTransportFreeDistanceKm === null ||
+      option.manualTransportFreeDistanceKm === undefined ||
+      option.manualTransportChargePerKmPaise === null ||
+      option.manualTransportChargePerKmPaise === undefined ||
+      !option.manualTransportNote
+    ) {
+      return null;
+    }
+
+    return {
+      freeDistanceKm: Number(option.manualTransportFreeDistanceKm),
+      chargePerKmPaise: option.manualTransportChargePerKmPaise,
+      note: option.manualTransportNote,
+    };
+  }
+
   private productReadback<T extends { deliveryModeOptions?: Array<{ deliveryMode: DeliveryMode; isEnabled?: boolean | null }> | null }>(
     product: T,
   ) {
     return {
       ...product,
       deliveryModes: this.productDeliveryModeValues(product),
+      manualTransport: this.productManualTransportConfig(product),
     };
   }
 

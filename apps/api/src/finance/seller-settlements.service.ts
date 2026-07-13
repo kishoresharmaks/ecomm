@@ -7,6 +7,7 @@ import {
   Prisma,
   ServiceReceivableOffsetPolicy,
   ServiceSellerReceivableStatus,
+  SellerCashReceivableStatus,
   SellerOrderStatus,
   SellerPayoutStatus,
   SellerSettlementStatus,
@@ -175,6 +176,11 @@ export class SellerSettlementsService {
                 gte: dateFrom,
                 lte: dateTo
               }
+            },
+            sellerCashReceivables: {
+              none: {
+                status: { not: SellerCashReceivableStatus.CANCELLED },
+              },
             }
           },
           include: {
@@ -325,6 +331,11 @@ export class SellerSettlementsService {
                   gte: dateFrom,
                   lte: dateTo
                 }
+              },
+              sellerCashReceivables: {
+                none: {
+                  status: { not: SellerCashReceivableStatus.CANCELLED },
+                },
               }
             },
             data: {

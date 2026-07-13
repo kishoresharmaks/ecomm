@@ -18,7 +18,9 @@ export function FinanceDashboardClient() {
   const dashboardQuery = useQuery({
     queryKey: ["finance-dashboard", auth.authHeaders],
     queryFn: () => getFinanceDashboard(auth.authHeaders),
-    enabled: auth.isAuthenticated
+    enabled: auth.isAuthenticated,
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
   });
 
   if (dashboardQuery.isLoading) {
@@ -43,10 +45,13 @@ function FinanceDashboardView({ dashboard }: { dashboard: FinanceDashboard }) {
     { label: "COD pending", metric: metrics.codPending, icon: BadgeIndianRupee, tone: "orange" },
     { label: "COD collected", metric: metrics.codCollected, icon: CheckCircle2, tone: "green" },
     { label: "Bank transfer pending", metric: metrics.bankTransferPending, icon: Landmark, tone: "blue" },
+    { label: "Manual payment pending", metric: metrics.manualPending, icon: ReceiptText, tone: "orange" },
     { label: "Online paid", metric: metrics.onlinePaid, icon: CreditCard, tone: "green" },
     { label: "Settlement due", metric: metrics.settlementDue, icon: ReceiptText, tone: "blue" },
     { label: "Payout pending", metric: metrics.payoutPending, icon: WalletCards, tone: "orange" },
     { label: "Payout paid", metric: metrics.payoutPaid, icon: CheckCircle2, tone: "green" },
+    { label: "Seller COD due", metric: metrics.sellerCashReceivableOpen, icon: WalletCards, tone: "orange" },
+    { label: "Seller COD cleared", metric: metrics.sellerCashReceivableSettled, icon: CheckCircle2, tone: "green" },
     { label: "Service cash due", metric: metrics.serviceReceivableOpen, icon: ReceiptText, tone: "orange" },
     { label: "Service cash disputed", metric: metrics.serviceReceivableDisputed, icon: AlertCircle, tone: "orange" },
     { label: "Service cash cleared", metric: metrics.serviceReceivableSettled, icon: CheckCircle2, tone: "green" }

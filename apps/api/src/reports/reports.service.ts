@@ -14,12 +14,16 @@ import {
   ServiceListingStatus,
 } from "@indihub/database";
 import type { RequestUser } from "../auth/types/indihub-request";
+import { FinanceCalculatorService } from "../finance/finance-calculator.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { ReportQueryDto } from "./dto/report-query.dto";
 
 @Injectable()
 export class ReportsService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(FinanceCalculatorService) private readonly financeCalculator: FinanceCalculatorService,
+  ) {}
 
   async overview(query: ReportQueryDto) {
     const createdAt = this.dateRange(query);
@@ -289,6 +293,7 @@ export class ReportsService {
       servicePayments,
       servicePaymentsByStatus,
       recentServiceBookings,
+      calculatedSplitFinance,
     ] = await this.prisma.client.$transaction(async (tx) => {
       const summary = await tx.orderSellerSplit.aggregate({
         where: splitWhere,
@@ -310,7 +315,12 @@ export class ReportsService {
         include: {
           order: {
             include: {
-              customer: { include: { user: true } }
+              customer: { include: { user: true } },
+              items: {
+                include: {
+                  product: true
+                }
+              }
             }
           }
         },
@@ -456,6 +466,46 @@ export class ReportsService {
         orderBy: { createdAt: "desc" },
         take: 10
       });
+      const unstampedFinanceSplits = await tx.orderSellerSplit.findMany({
+        where: {
+          ...splitWhere,
+          sellerSubtotalPaise: { gt: 0 },
+          commissionPaise: 0,
+          gstOnCommissionPaise: 0,
+          tdsPaise: 0,
+          tcsPaise: 0,
+          platformFeePaise: 0
+        },
+        include: {
+          order: {
+            include: {
+              items: {
+                include: {
+                  product: true
+                }
+              }
+            }
+          }
+        }
+      });
+      const calculatedSplitFinance = [];
+      for (const split of unstampedFinanceSplits) {
+        const calculation = await this.financeCalculator.calculateSplit(split, tx);
+        calculatedSplitFinance.push({
+          splitId: split.id,
+          commissionPaise: calculation.commissionPaise,
+          gstOnCommissionPaise: calculation.gstOnCommissionPaise,
+          tdsPaise: calculation.tdsPaise,
+          tcsPaise: calculation.tcsPaise,
+          platformFeePaise: calculation.platformFeePaise,
+          netPayablePaise: calculation.netPayablePaise,
+          storedCommissionPaise: split.commissionPaise,
+          storedGstOnCommissionPaise: split.gstOnCommissionPaise,
+          storedTdsPaise: split.tdsPaise,
+          storedTcsPaise: split.tcsPaise,
+          storedPlatformFeePaise: split.platformFeePaise
+        });
+      }
 
       return [
         summary,
@@ -476,15 +526,44 @@ export class ReportsService {
         servicePayments,
         servicePaymentsByStatus,
         recentServiceBookings,
+        calculatedSplitFinance,
       ] as const;
     });
 
+    const calculatedFinanceBySplitId = new Map(
+      calculatedSplitFinance.map((item) => [item.splitId, item])
+    );
+    const commissionPaise =
+      (summary._sum.commissionPaise ?? 0) +
+      calculatedSplitFinance.reduce(
+        (total, item) => total + item.commissionPaise - item.storedCommissionPaise,
+        0,
+      );
+    const gstOnCommissionPaise =
+      (summary._sum.gstOnCommissionPaise ?? 0) +
+      calculatedSplitFinance.reduce(
+        (total, item) => total + item.gstOnCommissionPaise - item.storedGstOnCommissionPaise,
+        0,
+      );
+    const tdsPaise =
+      (summary._sum.tdsPaise ?? 0) +
+      calculatedSplitFinance.reduce(
+        (total, item) => total + item.tdsPaise - item.storedTdsPaise,
+        0,
+      );
+    const tcsPaise =
+      (summary._sum.tcsPaise ?? 0) +
+      calculatedSplitFinance.reduce(
+        (total, item) => total + item.tcsPaise - item.storedTcsPaise,
+        0,
+      );
+    const platformFeePaise =
+      (summary._sum.platformFeePaise ?? 0) +
+      calculatedSplitFinance.reduce(
+        (total, item) => total + item.platformFeePaise - item.storedPlatformFeePaise,
+        0,
+      );
     const totalSalesPaise = summary._sum.sellerSubtotalPaise ?? 0;
-    const commissionPaise = summary._sum.commissionPaise ?? 0;
-    const gstOnCommissionPaise = summary._sum.gstOnCommissionPaise ?? 0;
-    const tdsPaise = summary._sum.tdsPaise ?? 0;
-    const tcsPaise = summary._sum.tcsPaise ?? 0;
-    const platformFeePaise = summary._sum.platformFeePaise ?? 0;
     const couponSellerFundedDiscountPaise =
       summary._sum.couponSellerFundedDiscountPaise ?? 0;
     const couponAdjustmentPaise = summary._sum.couponAdjustmentPaise ?? 0;
@@ -574,7 +653,20 @@ export class ReportsService {
         })),
         recentBookings: recentServiceBookings
       },
-      recentOrders: splits,
+      recentOrders: splits.map((split) => {
+        const calculated = calculatedFinanceBySplitId.get(split.id);
+        return calculated
+          ? {
+              ...split,
+              commissionPaise: calculated.commissionPaise,
+              gstOnCommissionPaise: calculated.gstOnCommissionPaise,
+              tdsPaise: calculated.tdsPaise,
+              tcsPaise: calculated.tcsPaise,
+              platformFeePaise: calculated.platformFeePaise,
+              netPayablePaise: calculated.netPayablePaise,
+            }
+          : split;
+      }),
       lowStockProducts
     };
   }

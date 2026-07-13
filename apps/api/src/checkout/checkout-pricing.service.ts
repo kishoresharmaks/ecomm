@@ -44,6 +44,13 @@ export type CheckoutDeliveryOption = {
   isCheapest: boolean;
   available: boolean;
   reason: string | null;
+  manualTransport?: {
+    distanceKm?: number | null;
+    freeDistanceKm?: number | null;
+    billableKm?: number | null;
+    chargePerKmPaise?: number | null;
+    note?: string | null;
+  } | null | undefined;
 };
 
 export type CheckoutSellerPackageDeliveryInput = {
@@ -57,6 +64,11 @@ export type CheckoutSellerPackageDeliveryInput = {
     productName: string;
     quantity: number;
     enabledDeliveryModes: DeliveryMode[];
+    manualTransport?: {
+      freeDistanceKm: number;
+      chargePerKmPaise: number;
+      note: string;
+    } | null;
   }> | undefined;
   package?: DeliveryRoutingPackage | null;
 };
@@ -199,6 +211,7 @@ export class CheckoutPricingService {
                     sellerId: sellerPackage.sellerId,
                     sellerType: sellerPackage.sellerType,
                     package: sellerPackage.package ?? null,
+                    items: sellerPackage.items ?? [],
                     deliveryPreference: undefined,
                   },
                   modes,
@@ -426,6 +439,7 @@ export class CheckoutPricingService {
       reason: option.quote.routingFailed
         ? option.quote.routingFailureNote ?? "Delivery unavailable"
         : null,
+      manualTransport: this.manualTransportReadback(option.quote),
       isCheapest: false,
     }));
     const availableOptions = mappedOptions.filter((option) => option.available);
@@ -520,6 +534,22 @@ export class CheckoutPricingService {
       subtotalPaise,
       ...(options.paymentMethod !== undefined ? { paymentMethod: options.paymentMethod } : {}),
       ...(options.orderId !== undefined ? { orderId: options.orderId } : {}),
+    };
+  }
+
+  private manualTransportReadback(quote: DeliveryRoutingQuote): CheckoutDeliveryOption["manualTransport"] {
+    if (quote.deliveryMode !== DeliveryMode.MANUAL_TRANSPORT) {
+      return null;
+    }
+    const snapshot = this.jsonObject(quote.routingSnapshot);
+    const manual = this.jsonObject(snapshot.manualTransport as Prisma.InputJsonValue);
+
+    return {
+      distanceKm: typeof manual.distanceKm === "number" ? manual.distanceKm : null,
+      freeDistanceKm: typeof manual.freeDistanceKm === "number" ? manual.freeDistanceKm : null,
+      billableKm: typeof manual.billableKm === "number" ? manual.billableKm : null,
+      chargePerKmPaise: typeof manual.chargePerKmPaise === "number" ? manual.chargePerKmPaise : null,
+      note: typeof manual.note === "string" ? manual.note : null,
     };
   }
 

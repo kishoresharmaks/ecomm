@@ -12,6 +12,7 @@ import {
   IsOptional, IsNumber,
   IsString,
   IsUUID,
+  Max,
   MaxLength,
   MinLength,
   Min,
@@ -122,6 +123,27 @@ export class ProductVariantDto {
   attributes?: Record<string, unknown>;
 }
 
+export class ManualTransportProductConfigDto {
+  @ApiProperty({ example: 5, description: "Distance in kilometres included at no delivery charge." })
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(5000)
+  freeDistanceKm!: number;
+
+  @ApiProperty({ example: 2500, description: "Delivery charge per kilometre after the free distance, stored in paise." })
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  chargePerKmPaise!: number;
+
+  @ApiProperty({ example: "Free within 5 km, then Rs 25/km. Delivery handled by seller vehicle." })
+  @IsString()
+  @MinLength(5)
+  @MaxLength(500)
+  note!: string;
+}
+
 export class CreateSellerProductDto {
   @ApiProperty({ example: "f2c7311c-3333-4444-8888-1b9c960acabc" })
   @IsUUID()
@@ -163,6 +185,12 @@ export class CreateSellerProductDto {
   @ArrayUnique()
   @IsEnum(DeliveryMode, { each: true })
   deliveryModes?: DeliveryMode[];
+
+  @ApiPropertyOptional({ type: ManualTransportProductConfigDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ManualTransportProductConfigDto)
+  manualTransport?: ManualTransportProductConfigDto;
 
   @ApiPropertyOptional({
     example: {

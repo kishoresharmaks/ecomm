@@ -433,6 +433,222 @@ describe("DeliveryRoutingService shipping pricing strategies", () => {
     expect(charge).toBe(4000);
   });
 
+  it("MANUAL_TRANSPORT calculates seller product policy by distance and uses the highest package charge", async () => {
+    const routeDistance = {
+      calculate: vi.fn().mockResolvedValue({
+        distanceKm: 7.2,
+        distanceMeters: 7200,
+        accuracy: "STRAIGHT_LINE",
+        provider: "HAVERSINE",
+        fallbackUsed: true,
+      }),
+    };
+    const client = {
+      sellerAddress: {
+        findFirst: vi.fn().mockResolvedValue({
+          latitude: 12.971598,
+          longitude: 77.594562,
+        }),
+      },
+    };
+    const service = new DeliveryRoutingService(
+      { client } as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      routeDistance as never,
+    );
+
+    const [result] = await service.resolveAllDeliveryOptions(
+      {
+        subtotalPaise: 100000,
+        sellerId: "seller-1",
+        address: { latitude: 12.981598, longitude: 77.604562 },
+        items: [
+          {
+            productId: "product-1",
+            productName: "Small item",
+            quantity: 1,
+            enabledDeliveryModes: [DeliveryMode.MANUAL_TRANSPORT],
+            manualTransport: {
+              freeDistanceKm: 5,
+              chargePerKmPaise: 2500,
+              note: "Free within 5 km.",
+            },
+          },
+          {
+            productId: "product-2",
+            productName: "Large item",
+            quantity: 1,
+            enabledDeliveryModes: [DeliveryMode.MANUAL_TRANSPORT],
+            manualTransport: {
+              freeDistanceKm: 1,
+              chargePerKmPaise: 1000,
+              note: "Large item transport.",
+            },
+          },
+        ],
+      },
+      [DeliveryMode.MANUAL_TRANSPORT],
+      client as never,
+    );
+
+    expect(result?.quote.routingFailed).toBe(false);
+    expect(result?.quote.shippingChargePaise).toBe(7500);
+    expect(result?.quote.routingSnapshot).toMatchObject({
+      manualTransport: {
+        distanceKm: 7.2,
+        freeDistanceKm: 5,
+        billableKm: 3,
+        chargePerKmPaise: 2500,
+        selectedProductId: "product-1",
+      },
+    });
+    expect(routeDistance.calculate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        origin: { latitude: 12.971598, longitude: 77.594562 },
+        destination: { latitude: 12.981598, longitude: 77.604562 },
+      }),
+    );
+  });
+
+  it("MANUAL_TRANSPORT is unavailable when customer address has no map coordinates", async () => {
+    const client = {
+      sellerAddress: {
+        findFirst: vi.fn(),
+      },
+    };
+    const service = new DeliveryRoutingService(
+      { client } as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      { calculate: vi.fn() } as never,
+    );
+
+    const [result] = await service.resolveAllDeliveryOptions(
+      {
+        subtotalPaise: 100000,
+        sellerId: "seller-1",
+        address: { pincode: "636114" },
+        items: [
+          {
+            productId: "product-1",
+            productName: "Small item",
+            quantity: 1,
+            enabledDeliveryModes: [DeliveryMode.MANUAL_TRANSPORT],
+            manualTransport: {
+              freeDistanceKm: 5,
+              chargePerKmPaise: 2500,
+              note: "Free within 5 km.",
+            },
+          },
+        ],
+      },
+      [DeliveryMode.MANUAL_TRANSPORT],
+      client as never,
+    );
+
+    expect(result?.quote.routingFailed).toBe(true);
+    expect(result?.quote.routingFailureNote).toBe("Add a map pin to the delivery address for seller-arranged delivery.");
+    expect(client.sellerAddress.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("MANUAL_TRANSPORT is unavailable when a package item has no seller policy", async () => {
+    const client = {
+      sellerAddress: {
+        findFirst: vi.fn().mockResolvedValue({
+          latitude: 12.971598,
+          longitude: 77.594562,
+        }),
+      },
+    };
+    const service = new DeliveryRoutingService(
+      { client } as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      { calculate: vi.fn() } as never,
+    );
+
+    const [result] = await service.resolveAllDeliveryOptions(
+      {
+        subtotalPaise: 100000,
+        sellerId: "seller-1",
+        address: { latitude: 12.981598, longitude: 77.604562 },
+        items: [
+          {
+            productId: "product-1",
+            productName: "Unconfigured item",
+            quantity: 1,
+            enabledDeliveryModes: [DeliveryMode.MANUAL_TRANSPORT],
+            manualTransport: null,
+          },
+        ],
+      },
+      [DeliveryMode.MANUAL_TRANSPORT],
+      client as never,
+    );
+
+    expect(result?.quote.routingFailed).toBe(true);
+    expect(result?.quote.routingFailureNote).toBe("Unconfigured item needs seller-arranged delivery charges before checkout.");
+  });
+
+  it("MANUAL_TRANSPORT requested with DELIVER_TO_ADDRESS uses seller distance pricing", async () => {
+    const routeDistance = {
+      calculate: vi.fn().mockResolvedValue({
+        distanceKm: 4.1,
+        distanceMeters: 4100,
+        accuracy: "STRAIGHT_LINE",
+        provider: "HAVERSINE",
+        fallbackUsed: true,
+      }),
+    };
+    const client = {
+      sellerAddress: {
+        findFirst: vi.fn().mockResolvedValue({
+          latitude: 12.971598,
+          longitude: 77.594562,
+        }),
+      },
+    };
+    const service = new DeliveryRoutingService(
+      { client } as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      routeDistance as never,
+    );
+
+    const result = await service.resolveDelivery(
+      {
+        deliveryPreference: CheckoutDeliveryPreference.DELIVER_TO_ADDRESS,
+        requestedDeliveryMode: DeliveryMode.MANUAL_TRANSPORT,
+        subtotalPaise: 50000,
+        sellerId: "seller-1",
+        address: { latitude: 12.981598, longitude: 77.604562 },
+        items: [
+          {
+            productId: "product-1",
+            productName: "Configured item",
+            quantity: 1,
+            enabledDeliveryModes: [DeliveryMode.MANUAL_TRANSPORT],
+            manualTransport: {
+              freeDistanceKm: 2,
+              chargePerKmPaise: 2000,
+              note: "Free within 2 km.",
+            },
+          },
+        ],
+      },
+      client as never,
+    );
+
+    expect(result.deliveryMode).toBe(DeliveryMode.MANUAL_TRANSPORT);
+    expect(result.shippingChargePaise).toBe(6000);
+    expect(result.shippingSnapshot.source).toBe("MANUAL_TRANSPORT_DISTANCE");
+  });
+
   it("DISTANCE strategy edge case: seller coordinates missing", async () => {
     const mockRouteDistance = {
       calculate: vi.fn(),

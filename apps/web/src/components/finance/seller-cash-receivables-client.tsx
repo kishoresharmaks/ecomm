@@ -45,7 +45,13 @@ export function SellerCashReceivablesClient() {
         ? settleSellerCashReceivable(auth.authHeaders, receivable.receivableNumber, payload)
         : waiveSellerCashReceivable(auth.authHeaders, receivable.receivableNumber, payload);
     },
-    onSuccess: async () => queryClient.invalidateQueries({ queryKey: ["finance-seller-cash-receivables"] }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["finance-seller-cash-receivables"] }),
+        queryClient.invalidateQueries({ queryKey: ["finance-dashboard"] }),
+        queryClient.invalidateQueries({ queryKey: ["finance-payment-reports"] }),
+      ]);
+    },
   });
 
   const receivables = receivablesQuery.data?.items ?? [];

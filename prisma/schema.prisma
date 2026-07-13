@@ -2148,13 +2148,16 @@ model Product {
 }
 
 model ProductDeliveryMode {
-  id           String       @id @default(uuid()) @db.Uuid
-  productId    String       @map("product_id") @db.Uuid
-  deliveryMode DeliveryMode @map("delivery_mode")
-  isEnabled    Boolean      @default(true) @map("is_enabled")
-  createdAt    DateTime     @default(now()) @map("created_at")
-  updatedAt    DateTime     @updatedAt @map("updated_at")
-  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  id                                  String       @id @default(uuid()) @db.Uuid
+  productId                           String       @map("product_id") @db.Uuid
+  deliveryMode                        DeliveryMode @map("delivery_mode")
+  isEnabled                           Boolean      @default(true) @map("is_enabled")
+  manualTransportFreeDistanceKm       Decimal?     @map("manual_transport_free_distance_km") @db.Decimal(8, 2)
+  manualTransportChargePerKmPaise     Int?         @map("manual_transport_charge_per_km_paise")
+  manualTransportNote                 String?      @map("manual_transport_note") @db.VarChar(500)
+  createdAt                           DateTime     @default(now()) @map("created_at")
+  updatedAt                           DateTime     @updatedAt @map("updated_at")
+  product                             Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@unique([productId, deliveryMode])
   @@index([productId, isEnabled])

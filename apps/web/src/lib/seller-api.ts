@@ -334,6 +334,11 @@ export type SellerProductPayload = {
   name: string;
   description: string;
   deliveryModes?: Array<"STORE_PICKUP" | "LOCAL_DELIVERY_PARTNER" | "THIRD_PARTY_COURIER" | "MANUAL_TRANSPORT">;
+  manualTransport?: {
+    freeDistanceKm: number;
+    chargePerKmPaise: number;
+    note: string;
+  };
   attributes?: Record<string, unknown>;
   images?: Array<{
     url: string;

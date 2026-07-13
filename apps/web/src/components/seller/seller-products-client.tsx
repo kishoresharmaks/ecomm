@@ -62,7 +62,9 @@ const productDeliveryModeOptions: Array<{ mode: DeliveryMode; label: string; des
   { mode: "MANUAL_TRANSPORT", label: "Seller-arranged delivery", description: "Deliver through your own transport and record proof." },
   { mode: "STORE_PICKUP", label: "Store pickup", description: "Let customers collect from your store after confirmation." },
 ];
-const defaultProductDeliveryModes = productDeliveryModeOptions.map((option) => option.mode);
+const defaultProductDeliveryModes = productDeliveryModeOptions
+  .filter((option) => option.mode !== "MANUAL_TRANSPORT")
+  .map((option) => option.mode);
 
 type DraftProductImage = {
   id: string;
@@ -229,6 +231,25 @@ export function SellerProductsClient({
       setNotice("Select at least one delivery option for this product.");
       return;
     }
+    const manualTransportSelected = selectedDeliveryModes.includes("MANUAL_TRANSPORT");
+    const manualTransportFreeDistanceKm = Number(formValue(form, "manualTransportFreeDistanceKm"));
+    const manualTransportChargePerKmPaise = rupeesToPaise(formValue(form, "manualTransportChargePerKmRupees"));
+    const manualTransportNote = formValue(form, "manualTransportNote").trim();
+
+    if (manualTransportSelected) {
+      if (!Number.isFinite(manualTransportFreeDistanceKm) || manualTransportFreeDistanceKm < 0) {
+        setNotice("Enter the free delivery distance for seller-arranged delivery.");
+        return;
+      }
+      if (manualTransportChargePerKmPaise < 0) {
+        setNotice("Enter a valid seller-arranged delivery charge per km.");
+        return;
+      }
+      if (manualTransportNote.length < 5) {
+        setNotice("Add seller-arranged delivery notes for customers.");
+        return;
+      }
+    }
     const images = draftImages.map((image, index) => ({
       url: image.url,
       altText: image.altText || productName,
@@ -273,6 +294,15 @@ export function SellerProductsClient({
         ...dynamicAttributesFromForm(form, templateFields(template, "PRODUCT"), "productAttribute"),
       },
       deliveryModes: selectedDeliveryModes,
+      ...(manualTransportSelected
+        ? {
+            manualTransport: {
+              freeDistanceKm: Math.round(manualTransportFreeDistanceKm * 100) / 100,
+              chargePerKmPaise: manualTransportChargePerKmPaise,
+              note: manualTransportNote,
+            },
+          }
+        : {}),
       images,
       variants
     };
@@ -466,6 +496,7 @@ export function SellerProductsClient({
                   <ProductDeliveryModeSelector
                     selectedModes={selectedDeliveryModes}
                     onChange={setSelectedDeliveryModes}
+                    manualTransport={editingProduct?.manualTransport ?? null}
                   />
                 </ProductFormSection>
 
@@ -1013,9 +1044,11 @@ function MarketplaceProductEssentialsFields({
 function ProductDeliveryModeSelector({
   selectedModes,
   onChange,
+  manualTransport,
 }: {
   selectedModes: DeliveryMode[];
   onChange: (modes: DeliveryMode[]) => void;
+  manualTransport?: ProductSummary["manualTransport"];
 }) {
   function toggleMode(mode: DeliveryMode) {
     if (selectedModes.includes(mode)) {
@@ -1071,6 +1104,44 @@ function ProductDeliveryModeSelector({
       </div>
       {!selectedModes.length ? (
         <p className="text-xs font-bold text-[#B42318]">Select at least one delivery option.</p>
+      ) : null}
+      {selectedModes.includes("MANUAL_TRANSPORT") ? (
+        <div className="rounded-md border border-[#FED7AA] bg-[#FFF7ED] p-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <SellerField
+              label="Free delivery distance (km)"
+              name="manualTransportFreeDistanceKm"
+              type="number"
+              min={0}
+              step="0.01"
+              required
+              defaultValue={manualTransport?.freeDistanceKm ?? 0}
+              placeholder="Example: 5"
+            />
+            <SellerField
+              label="Charge after free distance (₹ per km)"
+              name="manualTransportChargePerKmRupees"
+              type="number"
+              min={0}
+              step="0.01"
+              required
+              defaultValue={paiseToRupees(manualTransport?.chargePerKmPaise)}
+              placeholder="Example: 25"
+            />
+            <div className="md:col-span-2">
+              <SellerTextArea
+                label="Seller-arranged delivery notes"
+                name="manualTransportNote"
+                required
+                defaultValue={manualTransport?.note ?? ""}
+                placeholder="Example: Free within 5 km, then Rs 25/km. Delivery handled by seller vehicle."
+              />
+              <p className="mt-2 text-xs font-semibold leading-5 text-[#9A3412]">
+                Customers see this delivery option only when their address has a map pin. The charge is calculated from your shop location to the customer address.
+              </p>
+            </div>
+          </div>
+        </div>
       ) : null}
     </div>
   );

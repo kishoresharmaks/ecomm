@@ -125,6 +125,18 @@ export type DeliveryRoutingPackage = {
   itemCount?: number | null;
 };
 
+export type DeliveryRoutingItem = {
+  productId: string;
+  productName: string;
+  quantity: number;
+  enabledDeliveryModes: DeliveryMode[];
+  manualTransport?: {
+    freeDistanceKm: number;
+    chargePerKmPaise: number;
+    note: string;
+  } | null | undefined;
+};
+
 export type ResolveDeliveryRoutingInput = {
   deliveryPreference?: CheckoutDeliveryPreference | undefined;
   requestedDeliveryMode?: DeliveryMode | undefined;
@@ -135,6 +147,7 @@ export type ResolveDeliveryRoutingInput = {
   sellerId?: string | null | undefined;
   sellerType?: SellerType | null | undefined;
   package?: DeliveryRoutingPackage | null | undefined;
+  items?: DeliveryRoutingItem[] | undefined;
 };
 
 export type DeliveryRoutingQuote = {
@@ -370,6 +383,7 @@ export class DeliveryRoutingService {
             sellerId: sellerPackage.sellerId,
             sellerType: sellerPackage.sellerType,
             package: sellerPackage.package,
+            items: sellerPackage.items,
           },
           this.prisma.client,
         );
@@ -429,8 +443,7 @@ export class DeliveryRoutingService {
     const parcel = this.normalizePackage(input.package);
     const sellerType = input.sellerType ?? null;
     const sellerId = input.sellerId ?? null;
-    const forcedMode =
-      input.requestedDeliveryMode && !input.deliveryPreference ? input.requestedDeliveryMode : null;
+    const forcedMode = input.requestedDeliveryMode ?? null;
     const deliveryPreference =
       input.deliveryPreference ??
       (forcedMode === DeliveryMode.STORE_PICKUP
@@ -463,26 +476,17 @@ export class DeliveryRoutingService {
     }
 
     if (forcedMode === DeliveryMode.MANUAL_TRANSPORT) {
-      return this.quoteForMode({
+      return this.quoteManualTransport({
         deliveryPreference,
-        deliveryMode: DeliveryMode.MANUAL_TRANSPORT,
         address,
         subtotalPaise: normalizedSubtotal,
         paymentMethod: input.paymentMethod,
         client,
-        partnerSelection: null,
-        providerCode: null,
-        routingFailed: false,
-        routingFailureReason: null,
-        routingFailureNote: null,
-        fallbackReason: "Manual transport selected by operations.",
-        warnings: [
-          "Manual transport requires offline coordination. No courier booking will be attempted.",
-        ],
-        providerChecked: null,
         sellerId,
         sellerType,
         parcel,
+        items: input.items ?? [],
+        fallbackReason: "Manual transport selected by seller/customer.",
       });
     }
 
@@ -661,24 +665,17 @@ export class DeliveryRoutingService {
     if (explicitModes.includes(DeliveryMode.MANUAL_TRANSPORT)) {
       results.push({
         mode: DeliveryMode.MANUAL_TRANSPORT,
-        quote: await this.quoteForMode({
+        quote: await this.quoteManualTransport({
           deliveryPreference,
-          deliveryMode: DeliveryMode.MANUAL_TRANSPORT,
           address,
           subtotalPaise: normalizedSubtotal,
           paymentMethod: input.paymentMethod,
           client,
-          partnerSelection: null,
-          providerCode: null,
-          routingFailed: false,
-          routingFailureReason: null,
-          routingFailureNote: null,
-          fallbackReason: "Manual transport selected by operations.",
-          warnings: ["Manual transport requires offline coordination. No courier booking will be attempted."],
-          providerChecked: null,
           sellerId,
           sellerType,
           parcel,
+          items: input.items ?? [],
+          fallbackReason: "Manual transport selected by seller/customer.",
         }),
       });
     }
@@ -868,6 +865,7 @@ export class DeliveryRoutingService {
           heightCm: number;
           itemCount: number;
         };
+        items: DeliveryRoutingItem[];
       }
     >();
 
@@ -890,6 +888,16 @@ export class DeliveryRoutingService {
           product: {
             include: {
               seller: true,
+              deliveryModeOptions: {
+                where: { isEnabled: true },
+                select: {
+                  deliveryMode: true,
+                  isEnabled: true,
+                  manualTransportFreeDistanceKm: true,
+                  manualTransportChargePerKmPaise: true,
+                  manualTransportNote: true,
+                },
+              },
             },
           },
         },
@@ -913,6 +921,7 @@ export class DeliveryRoutingService {
             heightCm: 8,
             itemCount: 0,
           },
+          items: [],
         };
       const itemWeightGrams = this.positiveInt(
         variant.packageWeightGrams ?? this.jsonNumber(variant.attributes, "packageWeightGrams"),
@@ -922,6 +931,15 @@ export class DeliveryRoutingService {
         ? await this.dealPricing.resolveVariantPrice(variant, variant.productId, client)
         : null;
       current.subtotalPaise += item.quantity * (price?.effectiveUnitPricePaise ?? variant.pricePaise);
+      current.items.push({
+        productId: variant.product.id,
+        productName: variant.product.name,
+        quantity: item.quantity,
+        enabledDeliveryModes: (variant.product.deliveryModeOptions ?? [])
+          .filter((option) => option.isEnabled !== false)
+          .map((option) => option.deliveryMode),
+        manualTransport: this.manualTransportConfig(variant.product),
+      });
       current.package.weightGrams += itemWeightGrams * item.quantity;
       current.package.lengthCm = Math.max(
         current.package.lengthCm,
@@ -1630,6 +1648,277 @@ export class DeliveryRoutingService {
       packageSnapshot,
       sellerId: input.sellerId ?? null,
       sellerType: input.sellerType ?? null,
+      routingRuleVersion,
+    };
+  }
+
+  private async quoteManualTransport(input: {
+    deliveryPreference: CheckoutDeliveryPreference;
+    address: DeliveryRoutingAddress | null;
+    subtotalPaise: number;
+    paymentMethod?: string | null | undefined;
+    client: RoutingClient;
+    sellerId?: string | null | undefined;
+    sellerType?: SellerType | null | undefined;
+    parcel?: DeliveryRoutingPackage | null | undefined;
+    items: DeliveryRoutingItem[];
+    fallbackReason: string | null;
+  }): Promise<DeliveryRoutingQuote> {
+    const packageSnapshot = this.packageSnapshot(input.parcel, false);
+    const baseSnapshot = {
+      ruleVersion: routingRuleVersion,
+      sellerId: input.sellerId ?? null,
+      sellerType: input.sellerType ?? null,
+      deliveryPreference: input.deliveryPreference,
+      deliveryMode: DeliveryMode.MANUAL_TRANSPORT,
+      package: packageSnapshot,
+      recommendedPartnerUserId: null,
+      recommendedPartnerName: null,
+      partnerMatchLabel: null,
+      partnerSpecificityScore: 0,
+      courierProviderCode: null,
+      courierCompanyId: null,
+      courierName: null,
+      courierCode: null,
+      estimatedDeliveryDays: null,
+      liveCourierQuote: null,
+      fallbackReason: input.fallbackReason,
+      resolvedAt: new Date().toISOString(),
+    } satisfies Prisma.InputJsonObject;
+    const fail = (
+      note: string,
+      manualTransport: Prisma.InputJsonObject = {},
+    ): DeliveryRoutingQuote =>
+      this.manualTransportQuoteResult({
+        input,
+        shippingChargePaise: 0,
+        routingFailed: true,
+        routingFailureReason: DeliveryRoutingFailureReason.OTHER,
+        routingFailureNote: note,
+        warnings: [note],
+        shippingSnapshot: {
+          source: "MANUAL_TRANSPORT_DISTANCE",
+          chargePaise: 0,
+          failed: true,
+          note,
+        },
+        routingSnapshot: {
+          ...baseSnapshot,
+          routingFailed: true,
+          routingFailureReason: DeliveryRoutingFailureReason.OTHER,
+          routingFailureNote: note,
+          warnings: [note],
+          manualTransport,
+        },
+        packageSnapshot,
+      });
+
+    if (!input.sellerId) {
+      return fail("Seller-arranged delivery needs a seller pickup location.");
+    }
+    if (!this.hasCoordinates(input.address)) {
+      return fail("Add a map pin to the delivery address for seller-arranged delivery.");
+    }
+    const customerAddress = input.address;
+
+    const sellerAddress = await input.client.sellerAddress.findFirst({
+      where: {
+        sellerId: input.sellerId,
+        latitude: { not: null },
+        longitude: { not: null },
+      },
+      orderBy: { createdAt: "asc" },
+      select: { latitude: true, longitude: true },
+    });
+    const sellerLatitude = sellerAddress?.latitude === null || sellerAddress?.latitude === undefined
+      ? null
+      : Number(sellerAddress.latitude);
+    const sellerLongitude = sellerAddress?.longitude === null || sellerAddress?.longitude === undefined
+      ? null
+      : Number(sellerAddress.longitude);
+
+    if (
+      sellerLatitude === null ||
+      sellerLongitude === null ||
+      !Number.isFinite(sellerLatitude) ||
+      !Number.isFinite(sellerLongitude)
+    ) {
+      return fail("Seller shop map location is required for seller-arranged delivery.");
+    }
+
+    const policies = input.items.map((item) => ({
+      productId: item.productId,
+      productName: item.productName,
+      quantity: item.quantity,
+      config: item.manualTransport ?? null,
+    }));
+    const missingPolicy = policies.find(
+      (policy) =>
+        !policy.config ||
+        !Number.isFinite(policy.config.freeDistanceKm) ||
+        policy.config.freeDistanceKm < 0 ||
+        !Number.isInteger(policy.config.chargePerKmPaise) ||
+        policy.config.chargePerKmPaise < 0 ||
+        !policy.config.note?.trim(),
+    );
+
+    if (!policies.length || missingPolicy) {
+      return fail(
+        missingPolicy
+          ? `${missingPolicy.productName} needs seller-arranged delivery charges before checkout.`
+          : "Seller-arranged delivery charges are not configured.",
+      );
+    }
+
+    let distanceResult;
+    try {
+      distanceResult = await this.routeDistanceService.calculate({
+        origin: { latitude: sellerLatitude, longitude: sellerLongitude },
+        destination: {
+          latitude: customerAddress.latitude,
+          longitude: customerAddress.longitude,
+        },
+        client: input.client as RouteDistanceSettingReader,
+      });
+    } catch (error) {
+      return fail("Could not calculate seller-arranged delivery distance.", {
+        error: this.errorMessage(error),
+      });
+    }
+
+    if (!distanceResult) {
+      return fail("Could not calculate seller-arranged delivery distance.");
+    }
+    const resolvedDistanceKm = Number(distanceResult.distanceKm);
+    if (!Number.isFinite(resolvedDistanceKm)) {
+      return fail("Could not calculate seller-arranged delivery distance.");
+    }
+
+    const distanceKm = Math.max(0, resolvedDistanceKm);
+    const pricedPolicies = policies.map((policy) => {
+      const freeDistanceKm = Math.max(0, policy.config?.freeDistanceKm ?? 0);
+      const chargePerKmPaise = this.nonNegativeInt(policy.config?.chargePerKmPaise ?? 0);
+      const billableKm = Math.ceil(Math.max(0, distanceKm - freeDistanceKm));
+      const chargePaise = billableKm * chargePerKmPaise;
+
+      return {
+        productId: policy.productId,
+        productName: policy.productName,
+        freeDistanceKm,
+        chargePerKmPaise,
+        billableKm,
+        chargePaise,
+        note: policy.config?.note?.trim() ?? null,
+      };
+    });
+    const selectedPolicy = pricedPolicies.reduce((highest, policy) =>
+      policy.chargePaise > highest.chargePaise ? policy : highest,
+    );
+    const shippingChargePaise = this.nonNegativeInt(selectedPolicy.chargePaise);
+    const manualTransport: Prisma.InputJsonObject = {
+      source: "SELLER_PRODUCT_POLICY",
+      distanceKm: Math.round(distanceKm * 100) / 100,
+      distanceMeters: this.nonNegativeInt(distanceResult.distanceMeters ?? distanceKm * 1000),
+      accuracy: distanceResult.accuracy ?? null,
+      provider: distanceResult.provider ?? null,
+      fallbackUsed: distanceResult.fallbackUsed ?? false,
+      freeDistanceKm: selectedPolicy.freeDistanceKm,
+      billableKm: selectedPolicy.billableKm,
+      chargePerKmPaise: selectedPolicy.chargePerKmPaise,
+      chargePaise: shippingChargePaise,
+      note: selectedPolicy.note,
+      selectedProductId: selectedPolicy.productId,
+      selectedProductName: selectedPolicy.productName,
+      policies: pricedPolicies,
+    };
+
+    return this.manualTransportQuoteResult({
+      input,
+      shippingChargePaise,
+      routingFailed: false,
+      routingFailureReason: null,
+      routingFailureNote: null,
+      warnings: ["Seller-arranged delivery charge is calculated from shop-to-address distance."],
+      shippingSnapshot: {
+        source: "MANUAL_TRANSPORT_DISTANCE",
+        chargePaise: shippingChargePaise,
+        manualTransport,
+      },
+      routingSnapshot: {
+        ...baseSnapshot,
+        routingFailed: false,
+        routingFailureReason: null,
+        routingFailureNote: null,
+        warnings: ["Seller-arranged delivery charge is calculated from shop-to-address distance."],
+        manualTransport,
+      },
+      packageSnapshot,
+    });
+  }
+
+  private manualTransportQuoteResult(input: {
+    input: {
+      deliveryPreference: CheckoutDeliveryPreference;
+      subtotalPaise: number;
+      paymentMethod?: string | null | undefined;
+      sellerId?: string | null | undefined;
+      sellerType?: SellerType | null | undefined;
+    };
+    shippingChargePaise: number;
+    routingFailed: boolean;
+    routingFailureReason: DeliveryRoutingFailureReason | null;
+    routingFailureNote: string | null;
+    warnings: string[];
+    shippingSnapshot: Prisma.InputJsonObject;
+    routingSnapshot: Prisma.InputJsonObject;
+    packageSnapshot: Prisma.InputJsonObject;
+  }): DeliveryRoutingQuote {
+    const codSurchargeSnapshot: Prisma.InputJsonObject = {
+      source: "NONE",
+      rateCardId: null,
+      type: ShippingCodSurchargeType.NONE,
+      flatPaise: 0,
+      valueBps: 0,
+      amountPaise: 0,
+      paymentMethod: input.input.paymentMethod ?? null,
+      liveCourierQuote: null,
+    };
+
+    return {
+      deliveryPreference: input.input.deliveryPreference,
+      deliveryMode: DeliveryMode.MANUAL_TRANSPORT,
+      recommendedPartnerUserId: null,
+      recommendedPartnerName: null,
+      partnerMatchLabel: null,
+      partnerSpecificityScore: 0,
+      courierProviderCode: null,
+      matchedRateCardId: null,
+      matchedRateCardName: null,
+      rateCardSpecificityScore: 0,
+      shippingChargePaise: this.nonNegativeInt(input.shippingChargePaise),
+      codSurchargePaise: 0,
+      totalDeliveryChargePaise: this.nonNegativeInt(input.shippingChargePaise),
+      freeShippingApplied: input.shippingChargePaise === 0 && !input.routingFailed,
+      routingFailed: input.routingFailed,
+      routingFailureReason: input.routingFailureReason,
+      routingFailureNote: input.routingFailureNote,
+      fallbackReason: null,
+      warnings: input.warnings,
+      diagnostics: {
+        localPartnersChecked: 0,
+        localEligiblePartners: 0,
+        rejectedPartnersSkipped: 0,
+        codLimitSkipped: 0,
+        rateCardsChecked: 0,
+        providerChecked: null,
+      },
+      shippingSnapshot: input.shippingSnapshot,
+      codSurchargeSnapshot,
+      routingSnapshot: input.routingSnapshot,
+      courierRateQuoteSnapshot: null,
+      packageSnapshot: input.packageSnapshot,
+      sellerId: input.input.sellerId ?? null,
+      sellerType: input.input.sellerType ?? null,
       routingRuleVersion,
     };
   }
@@ -3313,6 +3602,36 @@ export class DeliveryRoutingService {
       typeof address.longitude === "number" &&
       Number.isFinite(address.longitude)
     );
+  }
+
+  private manualTransportConfig(product: {
+    deliveryModeOptions?: Array<{
+      deliveryMode: DeliveryMode;
+      isEnabled?: boolean | null;
+      manualTransportFreeDistanceKm?: Prisma.Decimal | number | string | null;
+      manualTransportChargePerKmPaise?: number | null;
+      manualTransportNote?: string | null;
+    }> | null;
+  }): DeliveryRoutingItem["manualTransport"] {
+    const option = (product.deliveryModeOptions ?? []).find(
+      (item) => item.deliveryMode === DeliveryMode.MANUAL_TRANSPORT && item.isEnabled !== false,
+    );
+    if (
+      !option ||
+      option.manualTransportFreeDistanceKm === null ||
+      option.manualTransportFreeDistanceKm === undefined ||
+      option.manualTransportChargePerKmPaise === null ||
+      option.manualTransportChargePerKmPaise === undefined ||
+      !option.manualTransportNote
+    ) {
+      return null;
+    }
+
+    return {
+      freeDistanceKm: Number(option.manualTransportFreeDistanceKm),
+      chargePerKmPaise: option.manualTransportChargePerKmPaise,
+      note: option.manualTransportNote,
+    };
   }
 
   private positiveInt(value: number | null | undefined, fallback: number) {
