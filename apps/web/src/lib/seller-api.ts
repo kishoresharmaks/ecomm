@@ -407,6 +407,9 @@ export type SellerDeliveryPayload = {
     | "DELIVERED"
     | "CANCELLED"
     | undefined;
+  codCollected?: boolean | undefined;
+  codCollectedAmountPaise?: number | undefined;
+  codCollectionNote?: string | undefined;
 };
 
 export type B2BEnquiry = {

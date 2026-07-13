@@ -37,6 +37,7 @@ import {
   fetchSellerPackageLabel,
   getSellerOrder,
   getSellerProfile,
+  updateSellerDelivery,
   updateSellerOrderStatus,
   updateSellerPackage,
 } from "@/lib/seller-api";
@@ -138,6 +139,9 @@ export function SellerOrderDetailClient({
   const sellerAuth = useSellerAuth();
   const [notice, setNotice] = useState<string | null>(null);
   const [statusNote, setStatusNote] = useState("");
+  const [manualCodCollected, setManualCodCollected] = useState(false);
+  const [manualCodAmount, setManualCodAmount] = useState("");
+  const [manualCodNote, setManualCodNote] = useState("");
   const [labelActionPackageId, setLabelActionPackageId] = useState<string | null>(null);
   const [packageDrafts, setPackageDrafts] = useState<
     Record<string, { weightGrams: string; lengthCm: string; breadthCm: string; heightCm: string }>
@@ -190,6 +194,21 @@ export function SellerOrderDetailClient({
       setNotice(error instanceof Error ? error.message : "Package update failed."),
   });
 
+  const deliveryMutation = useMutation({
+    mutationFn: (payload: Parameters<typeof updateSellerDelivery>[2]) =>
+      updateSellerDelivery(sellerAuth.authHeaders, orderNumber, payload),
+    onSuccess: () => {
+      setNotice("Manual transport COD delivery recorded.");
+      setStatusNote("");
+      setManualCodCollected(false);
+      setManualCodAmount("");
+      setManualCodNote("");
+      invalidateOrder();
+    },
+    onError: (error) =>
+      setNotice(error instanceof Error ? error.message : "Delivery update failed."),
+  });
+
   function invalidateOrder() {
     void queryClient.invalidateQueries({
       queryKey: ["seller-order", sellerAuth.authKey, orderNumber],
@@ -200,9 +219,41 @@ export function SellerOrderDetailClient({
 
   function updateStatus(sellerStatus: SellerStatus) {
     setNotice(null);
+    if (
+      sellerStatus === "DELIVERED" &&
+      order &&
+      isManualTransportCodOrder(order, deliveryMode)
+    ) {
+      setNotice("Manual transport COD delivery must be completed from Logistics view with the collected COD amount.");
+      return;
+    }
     statusMutation.mutate({
       sellerStatus,
       note: statusNote.trim() || undefined,
+    });
+  }
+
+  function markManualTransportCodDelivered(expectedAmountPaise: number) {
+    setNotice(null);
+    const amountPaise = rupeesToPaise(manualCodAmount);
+    if (!manualCodCollected) {
+      setNotice("Confirm that the COD amount was collected from the customer.");
+      return;
+    }
+    if (amountPaise <= 0) {
+      setNotice("Enter the collected COD amount.");
+      return;
+    }
+    if (amountPaise !== expectedAmountPaise) {
+      setNotice(`Collected COD must exactly match ${formatMoney(expectedAmountPaise, order?.currency ?? "INR")}.`);
+      return;
+    }
+    deliveryMutation.mutate({
+      status: "DELIVERED",
+      deliveryMode: "MANUAL_TRANSPORT",
+      codCollected: true,
+      codCollectedAmountPaise: amountPaise,
+      ...(manualCodNote.trim() ? { codCollectionNote: manualCodNote.trim() } : {}),
     });
   }
 
@@ -379,6 +430,8 @@ export function SellerOrderDetailClient({
   const deliveryMode = delivery?.deliveryMode ?? order.deliveryDetail?.deliveryMode ?? "LOCAL_DELIVERY_PARTNER";
   const isStorePickup = deliveryMode === "STORE_PICKUP";
   const isAutomatedDelivery = automatedDeliveryModes.has(deliveryMode);
+  const isManualTransportCod = isManualTransportCodOrder(order, deliveryMode);
+  const manualTransportCodExpectedPaise = sellerCollectedCodExpectedPaise(order, sellerSplit, sellerShipment);
   const currentSellerStatus = sellerStatusValue(sellerSplit?.sellerStatus);
   const currentDeliveryStatus = deliveryStatusValue(
     sellerShipment?.status ?? order.deliveryDetail?.status ?? order.deliveryStatus,
@@ -952,6 +1005,71 @@ export function SellerOrderDetailClient({
                 </div>
               </SellerPanel>
 
+              {section === "delivery" && isManualTransportCod && currentDeliveryStatus !== "DELIVERED" ? (
+                <SellerPanel className="p-4">
+                  <div className="flex items-center gap-3">
+                    <span className="grid h-10 w-10 place-items-center rounded-md bg-[#FFF0EC] text-[#ED3500]">
+                      <CreditCard className="h-5 w-5" aria-hidden="true" />
+                    </span>
+                    <SectionHeading
+                      title="Manual transport COD"
+                      description="Record the cash collected before marking this package delivered."
+                    />
+                  </div>
+                  <div className="mt-4 rounded-lg border border-[#D8E2EA] bg-[#F8FAFC] p-4 text-sm font-semibold text-[#667085]">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Info
+                        label="Expected collection"
+                        value={formatMoney(manualTransportCodExpectedPaise, order.currency)}
+                      />
+                      <Info label="Mode" value="Seller-arranged delivery" />
+                    </div>
+                  </div>
+                  <div className="mt-4 grid gap-4">
+                    <label className="flex items-start gap-3 rounded-lg border border-[#D8E2EA] bg-white p-4 text-sm font-bold text-[#1F2933]">
+                      <input
+                        type="checkbox"
+                        checked={manualCodCollected}
+                        onChange={(event) => setManualCodCollected(event.currentTarget.checked)}
+                        className="mt-1 h-4 w-4 rounded border-[#D8E2EA] accent-[#ED3500]"
+                      />
+                      <span>
+                        COD cash collected from customer
+                        <span className="mt-1 block text-xs font-semibold leading-5 text-[#667085]">
+                          The collected amount must exactly match the expected seller package collection.
+                        </span>
+                      </span>
+                    </label>
+                    <SellerField
+                      label="Collected amount in rupees"
+                      name="manualCodAmount"
+                      type="number"
+                      min={1}
+                      step="0.01"
+                      value={manualCodAmount}
+                      onChange={setManualCodAmount}
+                      placeholder={(manualTransportCodExpectedPaise / 100).toFixed(2)}
+                    />
+                    <SellerTextArea
+                      label="Collection note"
+                      name="manualCodNote"
+                      rows={2}
+                      value={manualCodNote}
+                      onChange={setManualCodNote}
+                      placeholder="Optional note, receipt reference, or handover detail"
+                    />
+                    <Button
+                      type="button"
+                      disabled={deliveryMutation.isPending}
+                      onClick={() => markManualTransportCodDelivered(manualTransportCodExpectedPaise)}
+                      className="h-12"
+                    >
+                      {deliveryMutation.isPending ? "Recording..." : "Record COD and mark delivered"}
+                    </Button>
+                  </div>
+                </SellerPanel>
+              ) : null}
+
               <SellerPanel className="p-4">
                 <SectionHeading
                   title="Customer delivery address"
@@ -1011,6 +1129,96 @@ export function SellerOrderDetailClient({
 function positiveDraftNumber(value?: string) {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function isManualTransportCodOrder(
+  order: { payments?: Array<{ method?: string | null }> },
+  deliveryMode: string | null | undefined,
+) {
+  return deliveryMode === "MANUAL_TRANSPORT" && (order.payments ?? []).some((payment) => payment.method === "COD");
+}
+
+function sellerCollectedCodExpectedPaise(
+  order: {
+    totalPaise?: number;
+    subtotalPaise?: number;
+    platformFeePaise?: number;
+    sellerSplits?: Array<{ sellerSubtotalPaise?: number | null }>;
+  },
+  sellerSplit: { sellerSubtotalPaise?: number | null } | null | undefined,
+  sellerShipment: { shippingPaise?: number | null; codSurchargePaise?: number | null } | null | undefined,
+) {
+  const sellerSubtotalPaise = sellerSplit?.sellerSubtotalPaise ?? order.totalPaise ?? 0;
+  return (
+    sellerSubtotalPaise +
+    (sellerShipment?.shippingPaise ?? 0) +
+    (sellerShipment?.codSurchargePaise ?? 0) +
+    allocatedBuyerPlatformFeePaise(order, sellerSubtotalPaise)
+  );
+}
+
+function allocatedBuyerPlatformFeePaise(
+  order: {
+    subtotalPaise?: number;
+    platformFeePaise?: number;
+    sellerSplits?: Array<{ sellerSubtotalPaise?: number | null }>;
+  },
+  sellerSubtotalPaise: number,
+) {
+  const platformFeePaise = order.platformFeePaise ?? 0;
+  const subtotalPaise = order.subtotalPaise ?? 0;
+  if (platformFeePaise <= 0 || subtotalPaise <= 0 || sellerSubtotalPaise <= 0) {
+    return 0;
+  }
+
+  const sellerSplits = (order.sellerSplits ?? []).filter((split) => (split.sellerSubtotalPaise ?? 0) > 0);
+  if (sellerSplits.length <= 1) {
+    return Math.round((platformFeePaise * sellerSubtotalPaise) / subtotalPaise);
+  }
+
+  const targetIndex = sellerSplits.findIndex((split) => split.sellerSubtotalPaise === sellerSubtotalPaise);
+  if (targetIndex < 0) {
+    return Math.round((platformFeePaise * sellerSubtotalPaise) / subtotalPaise);
+  }
+
+  const allocations = sellerSplits.map((split, index) => {
+    const numerator = platformFeePaise * (split.sellerSubtotalPaise ?? 0);
+    return {
+      index,
+      base: Math.floor(numerator / subtotalPaise),
+      remainder: numerator % subtotalPaise,
+    };
+  });
+  let remainderPaise = platformFeePaise - allocations.reduce((sum, allocation) => sum + allocation.base, 0);
+  const ranked = [...allocations].sort((left, right) => {
+    if (right.remainder !== left.remainder) {
+      return right.remainder - left.remainder;
+    }
+    return left.index - right.index;
+  });
+  const extraIndexes = new Set<number>();
+  for (const allocation of ranked) {
+    if (remainderPaise <= 0) {
+      break;
+    }
+    extraIndexes.add(allocation.index);
+    remainderPaise -= 1;
+  }
+
+  const targetAllocation = allocations[targetIndex];
+  if (!targetAllocation) {
+    return Math.round((platformFeePaise * sellerSubtotalPaise) / subtotalPaise);
+  }
+
+  return targetAllocation.base + (extraIndexes.has(targetIndex) ? 1 : 0);
+}
+
+function rupeesToPaise(value: string) {
+  const parsed = Number(value.replace(/,/g, "").trim());
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return 0;
+  }
+  return Math.round(parsed * 100);
 }
 
 function packageStatusTitle(shipmentPackage: {
