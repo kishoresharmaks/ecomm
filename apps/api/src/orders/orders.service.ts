@@ -3769,10 +3769,15 @@ export class OrdersService {
     const nextStatus = dto.status ?? previousDelivery?.status ?? DeliveryStatus.PENDING;
     const nextMode = options.deliveryPartnerOnly
       ? (previousDelivery?.deliveryMode ?? DeliveryMode.LOCAL_DELIVERY_PARTNER)
-      : (dto.deliveryMode ??
-        previousDelivery?.deliveryMode ??
-        sellerShipment?.deliveryMode ??
-        DeliveryMode.LOCAL_DELIVERY_PARTNER);
+      : options.sellerOnly
+        ? (sellerShipment?.deliveryMode ??
+          dto.deliveryMode ??
+          previousDelivery?.deliveryMode ??
+          DeliveryMode.LOCAL_DELIVERY_PARTNER)
+        : (dto.deliveryMode ??
+          previousDelivery?.deliveryMode ??
+          sellerShipment?.deliveryMode ??
+          DeliveryMode.LOCAL_DELIVERY_PARTNER);
     const isSellerStorePickupUpdate =
       options.sellerOnly && nextMode === DeliveryMode.STORE_PICKUP;
     if (!options.sellerOnly && nextMode === DeliveryMode.STORE_PICKUP) {
