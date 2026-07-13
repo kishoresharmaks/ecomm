@@ -24,6 +24,7 @@ import { uploadPublicSellerImage, type MobileUploadFile } from "../../src/featur
 import { launchSellerImageLibraryAsync } from "../../src/features/seller/image-picker";
 import {
   CONDITION_OPTIONS,
+  PRODUCT_DELIVERY_MODE_OPTIONS,
   GST_OPTIONS,
   MAX_PRODUCT_IMAGES,
   MAX_PRODUCT_VARIANTS,
@@ -128,6 +129,18 @@ export default function EditSellerProductScreen() {
 
   function updateField<K extends keyof ProductEditFormValues>(key: K, value: ProductEditFormValues[K]) {
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function toggleDeliveryMode(mode: ProductEditFormValues["deliveryModes"][number]) {
+    setForm((current) => {
+      const selected = current.deliveryModes.includes(mode);
+      return {
+        ...current,
+        deliveryModes: selected
+          ? current.deliveryModes.filter((item) => item !== mode)
+          : [...current.deliveryModes, mode],
+      };
+    });
   }
 
   function updateVariant(clientId: string, patch: Partial<ProductVariantFormValue>) {
@@ -366,6 +379,23 @@ export default function EditSellerProductScreen() {
             onSelect={(value) => updateField("unitOfMeasure", value)}
             placeholder="Select unit"
           />
+          <Text style={styles.sectionLabel}>Delivery options *</Text>
+          <View style={styles.modeGrid}>
+            {PRODUCT_DELIVERY_MODE_OPTIONS.map((option) => {
+              const selected = form.deliveryModes.includes(option.value);
+              return (
+                <Pressable
+                  key={option.value}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: selected }}
+                  onPress={() => toggleDeliveryMode(option.value)}
+                  style={[styles.modeCard, selected ? styles.modeCardSelected : null]}
+                >
+                  <Text style={styles.modeTitle}>{option.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
         </CollapsibleSection>
 
         <CollapsibleSection title="Tax & Compliance">
@@ -571,6 +601,32 @@ const styles = {
     fontSize: 12,
     fontWeight: "800" as const,
     lineHeight: 18,
+  },
+  sectionLabel: {
+    color: colors.ink,
+    fontSize: 13,
+    fontWeight: "900" as const,
+  },
+  modeGrid: {
+    flexDirection: "row" as const,
+    flexWrap: "wrap" as const,
+    gap: spacing.sm,
+  },
+  modeCard: {
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  modeCardSelected: {
+    backgroundColor: "#FFF0EC",
+    borderColor: colors.primary,
+  },
+  modeTitle: {
+    color: colors.ink,
+    fontSize: 12,
+    fontWeight: "900" as const,
   },
   suggestion: {
     backgroundColor: colors.softSurface,

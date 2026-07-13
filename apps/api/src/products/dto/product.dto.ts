@@ -3,6 +3,7 @@ import { ApiProperty, ApiPropertyOptional, OmitType, PartialType } from "@nestjs
 import {
   ArrayMaxSize,
   ArrayMinSize,
+  ArrayUnique,
   IsBoolean,
   IsArray,
   IsEnum,
@@ -16,7 +17,7 @@ import {
   Min,
   ValidateNested
 } from "class-validator";
-import { VariantStatus } from "@indihub/database";
+import { DeliveryMode, VariantStatus } from "@indihub/database";
 
 export class ProductImageDto {
   @ApiProperty({ example: "indihub/sellers/seller-id/products/product.jpg" })
@@ -144,6 +145,24 @@ export class CreateSellerProductDto {
   @IsNumber({ maxDecimalPlaces: 3 })
   @Min(0)
   weightKg?: number;
+
+  @ApiPropertyOptional({
+    enum: DeliveryMode,
+    isArray: true,
+    example: [
+      DeliveryMode.THIRD_PARTY_COURIER,
+      DeliveryMode.LOCAL_DELIVERY_PARTNER,
+      DeliveryMode.MANUAL_TRANSPORT,
+      DeliveryMode.STORE_PICKUP,
+    ],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(4)
+  @ArrayUnique()
+  @IsEnum(DeliveryMode, { each: true })
+  deliveryModes?: DeliveryMode[];
 
   @ApiPropertyOptional({
     example: {

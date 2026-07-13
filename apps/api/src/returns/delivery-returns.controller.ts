@@ -5,10 +5,10 @@ import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { Roles } from "../auth/decorators/roles.decorator";
 import type { RequestUser } from "../auth/types/indihub-request";
 import {
-  ReturnListQueryDto,
   ReversePickupDecision,
   ReversePickupDecisionDto,
   ReversePickupDecisionNoteDto,
+  ReversePickupListQueryDto,
   ReversePickupUpdateDto,
 } from "./dto/returns.dto";
 import { ReturnsService } from "./returns.service";
@@ -21,7 +21,7 @@ export class DeliveryReturnsController {
 
   @Get()
   @ApiOperation({ summary: "List return pickups assigned to the delivery partner." })
-  listReturns(@CurrentUser() actor: RequestUser, @Query() query: ReturnListQueryDto) {
+  listReturns(@CurrentUser() actor: RequestUser, @Query() query: ReversePickupListQueryDto) {
     return this.returnsService.listDeliveryReturns(actor, query);
   }
 

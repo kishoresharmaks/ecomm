@@ -14,8 +14,11 @@ import {
   DeliveryAssignmentAttemptSource,
   DeliveryAssignmentStatus,
   DeliveryStatus,
+  EmailRecipientType,
   InventoryMovementType,
+  OrderKind,
   OrderItemLifecycleStatus,
+  OrderShipmentPackageStatus,
   OrderStatus,
   PaymentProvider,
   PaymentStatus,
@@ -51,6 +54,8 @@ import {
 } from "../common/pagination";
 import { CustomersService } from "../customers/customers.service";
 import { SellerLedgerService } from "../finance/seller-ledger.service";
+import { EMAIL_TRIGGER_EVENTS } from "../notifications/email-trigger-catalog";
+import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import {
   ApproveRefundDto,
@@ -100,6 +105,12 @@ const returnApprovalStatuses = [
   ReturnRequestStatus.RESOLVED,
 ] as const;
 
+const replacementQcReadyStatuses = [
+  ReturnRequestStatus.RECEIVED,
+  ReturnRequestStatus.QC_PASSED,
+  ReturnRequestStatus.RESOLVED,
+] as const;
+
 const razorpayKeyIdSetting = "payments.razorpay.key_id";
 const razorpayKeySecretSetting = "payments.razorpay.key_secret";
 
@@ -139,6 +150,18 @@ type ReturnOrder = Prisma.OrderGetPayload<{
     items: {
       include: {
         product: { select: { id: true; name: true; categoryId: true; slug: true } };
+        productVariant: {
+          select: {
+            id: true;
+            sku: true;
+            variantName: true;
+            currency: true;
+            packageWeightGrams: true;
+            packageLengthCm: true;
+            packageBreadthCm: true;
+            packageHeightCm: true;
+          };
+        };
         seller: { select: { id: true; storeName: true; slug: true } };
       };
     };
@@ -153,6 +176,39 @@ type ReturnOrder = Prisma.OrderGetPayload<{
 
 type ReturnRequestDetail = Prisma.ReturnRequestGetPayload<{
   include: typeof returnDetailInclude;
+}>;
+
+type ReplacementQcReturnRequest = Prisma.ReturnRequestGetPayload<{
+  include: {
+    items: true;
+    refundRequests: true;
+    order: {
+      include: {
+        items: {
+          include: {
+            product: { select: { id: true; name: true; categoryId: true; slug: true } };
+            productVariant: {
+              select: {
+                id: true;
+                sku: true;
+                variantName: true;
+                currency: true;
+                packageWeightGrams: true;
+                packageLengthCm: true;
+                packageBreadthCm: true;
+                packageHeightCm: true;
+              };
+            };
+            seller: { select: { id: true; storeName: true; slug: true } };
+          };
+        };
+        payments: true;
+        shipments: true;
+        deliveryDetail: true;
+        sellerSplits: { include: { payout: true } };
+      };
+    };
+  };
 }>;
 
 type ReversePickupAssignmentTarget = Prisma.ReturnRequestGetPayload<{
@@ -178,6 +234,7 @@ type RefundDestinationSnapshot =
     };
 
 type ReturnNumberClient = Pick<Prisma.TransactionClient, "returnRequest" | "refundRequest">;
+type ReplacementOrderNumberClient = Pick<Prisma.TransactionClient, "order">;
 
 type ReturnSummaryReadbackInput = {
   id: string;
@@ -341,6 +398,54 @@ const returnDetailInclude = {
       },
     },
     orderBy: { createdAt: "desc" as const },
+  },
+  replacementOrder: {
+    select: {
+      id: true,
+      orderNumber: true,
+      orderKind: true,
+      orderStatus: true,
+      paymentStatus: true,
+      deliveryStatus: true,
+      totalPaise: true,
+      currency: true,
+      createdAt: true,
+      deliveryDetail: {
+        select: {
+          deliveryMode: true,
+          status: true,
+          awbNumber: true,
+          trackingReference: true,
+          estimatedDeliveryDate: true,
+          partnerName: true,
+          partnerPhone: true,
+        },
+      },
+      shipments: {
+        select: {
+          id: true,
+          shipmentNumber: true,
+          sellerId: true,
+          deliveryMode: true,
+          status: true,
+          awbNumber: true,
+          trackingReference: true,
+          estimatedDeliveryDate: true,
+          packages: {
+            select: {
+              id: true,
+              packageNumber: true,
+              status: true,
+              deliveryMode: true,
+              declaredValuePaise: true,
+              deliveredAt: true,
+            },
+            orderBy: { sequence: "asc" as const },
+          },
+        },
+        orderBy: { createdAt: "asc" as const },
+      },
+    },
   },
   reverseShipments: {
     select: {
@@ -552,6 +657,7 @@ export class ReturnsService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(CustomersService) private readonly customers: CustomersService,
     @Inject(SellerLedgerService) private readonly sellerLedger: SellerLedgerService,
+    @Inject(NotificationsService) private readonly notifications: NotificationsService,
   ) {}
 
   async createCancellation(actor: RequestUser, orderNumber: string, dto: CreateCancellationDto) {
@@ -775,6 +881,10 @@ export class ReturnsService {
           this.splitIdForSeller(splitBySeller, requested.item.sellerId),
         ),
       );
+      const blockedLine = returnLines.find((line) => !line.returnable);
+      if (blockedLine) {
+        throw new BadRequestException("One or more selected items are not eligible for return or replacement.");
+      }
       const totalQuantity = returnLines.reduce((sum, item) => sum + item.quantity, 0);
       const requestedAmountPaise = returnLines.reduce(
         (sum, item) => sum + item.buyerRefundPaise,
@@ -919,7 +1029,27 @@ export class ReturnsService {
           refundRequests: true,
           order: {
             include: {
+              items: {
+                include: {
+                  product: { select: { id: true, name: true, categoryId: true, slug: true } },
+                  productVariant: {
+                    select: {
+                      id: true,
+                      sku: true,
+                      variantName: true,
+                      currency: true,
+                      packageWeightGrams: true,
+                      packageLengthCm: true,
+                      packageBreadthCm: true,
+                      packageHeightCm: true,
+                    },
+                  },
+                  seller: { select: { id: true, storeName: true, slug: true } },
+                },
+              },
               payments: true,
+              shipments: true,
+              deliveryDetail: true,
               sellerSplits: { include: { payout: true } },
             },
           },
@@ -974,7 +1104,7 @@ export class ReturnsService {
 
   async recordReturnQc(actor: RequestUser, requestNumber: string, dto: ReturnQcDto) {
     const refundNumber = await this.createRefundNumber();
-    const returnRequestId = await this.prisma.client.$transaction(async (tx) => {
+    const result = await this.prisma.client.$transaction(async (tx) => {
       const existing = await tx.returnRequest.findUnique({
         where: { requestNumber },
         include: {
@@ -982,7 +1112,27 @@ export class ReturnsService {
           refundRequests: true,
           order: {
             include: {
+              items: {
+                include: {
+                  product: { select: { id: true, name: true, categoryId: true, slug: true } },
+                  productVariant: {
+                    select: {
+                      id: true,
+                      sku: true,
+                      variantName: true,
+                      currency: true,
+                      packageWeightGrams: true,
+                      packageLengthCm: true,
+                      packageBreadthCm: true,
+                      packageHeightCm: true,
+                    },
+                  },
+                  seller: { select: { id: true, storeName: true, slug: true } },
+                },
+              },
               payments: true,
+              shipments: true,
+              deliveryDetail: true,
               sellerSplits: { include: { payout: true } },
             },
           },
@@ -996,6 +1146,20 @@ export class ReturnsService {
       if (!returnApprovalStatuses.includes(existing.status as (typeof returnApprovalStatuses)[number])) {
         throw new BadRequestException("Only approved or in-progress returns can receive QC updates.");
       }
+      if (existing.status === ReturnRequestStatus.RESOLVED && dto.status === ReturnRequestStatus.QC_FAILED) {
+        throw new BadRequestException("Resolved return requests cannot be marked as QC failed.");
+      }
+      if (
+        existing.resolution === ReturnRequestResolution.REPLACEMENT &&
+        dto.status === ReturnRequestStatus.QC_PASSED &&
+        !replacementQcReadyStatuses.includes(existing.status as (typeof replacementQcReadyStatuses)[number])
+      ) {
+        throw new BadRequestException(
+          "Replacement QC can be passed only after the returned package is received by the seller.",
+        );
+      }
+
+      let replacementCreatedOrderId: string | null = null;
 
       if (dto.status === ReturnRequestStatus.QC_FAILED) {
         await tx.returnRequest.update({
@@ -1025,25 +1189,38 @@ export class ReturnsService {
             note: dto.note ?? "Return QC failed.",
           },
         });
+      } else if (existing.resolution === ReturnRequestResolution.REPLACEMENT) {
+        const replacement = await this.createReplacementOrderOrRefund(tx, {
+          existing,
+          actor,
+          refundNumber,
+          note: dto.note ?? null,
+        });
+        replacementCreatedOrderId = replacement?.created ? replacement.orderId : null;
       } else {
         await tx.returnRequest.update({
           where: { id: existing.id },
           data: {
-            status:
-              existing.resolution === ReturnRequestResolution.REPLACEMENT
-                ? ReturnRequestStatus.RESOLVED
-                : ReturnRequestStatus.QC_PASSED,
+            status: ReturnRequestStatus.QC_PASSED,
             reviewedAt: new Date(),
             reviewedById: actor.id,
           },
         });
         await tx.returnRequestItem.updateMany({
-          where: { returnRequestId: existing.id },
+          where: {
+            returnRequestId: existing.id,
+            status: {
+              notIn: [
+                ReturnRequestItemStatus.REFUND_REQUESTED,
+                ReturnRequestItemStatus.REPLACEMENT_CREATED,
+                ReturnRequestItemStatus.CLOSED,
+                ReturnRequestItemStatus.REJECTED,
+                ReturnRequestItemStatus.QC_FAILED,
+              ],
+            },
+          },
           data: {
-            status:
-              existing.resolution === ReturnRequestResolution.REPLACEMENT
-                ? ReturnRequestItemStatus.REPLACEMENT_CREATED
-                : ReturnRequestItemStatus.QC_PASSED,
+            status: ReturnRequestItemStatus.QC_PASSED,
             qcNote: dto.note ?? null,
           },
         });
@@ -1101,11 +1278,17 @@ export class ReturnsService {
         },
       });
 
-      return existing.id;
+      return { returnRequestId: existing.id, replacementCreatedOrderId };
     });
 
+    if (result.replacementCreatedOrderId) {
+      void this.notifyReplacementOrderCreated(result.replacementCreatedOrderId).catch((error) => {
+        this.logger.warn(`Replacement order notification failed: ${String(error)}`);
+      });
+    }
+
     const detail = await this.prisma.client.returnRequest.findUnique({
-      where: { id: returnRequestId },
+      where: { id: result.returnRequestId },
       include: returnDetailInclude,
     });
     return this.returnDetailReadback(detail!);
@@ -1301,11 +1484,12 @@ export class ReturnsService {
     return this.getSellerReturn(actor, requestNumber);
   }
 
-  async listDeliveryReturns(actor: RequestUser, query: ReturnListQueryDto) {
+  async listDeliveryReturns(actor: RequestUser, query: ReversePickupListQueryDto) {
     const where = this.returnListWhere(query, {
       reverseShipments: {
         some: {
           assignedPartnerUserId: actor.id,
+          ...(query.assignmentStatus ? { assignmentStatus: query.assignmentStatus } : {}),
         },
       },
     });
@@ -1569,20 +1753,60 @@ export class ReturnsService {
       }
 
       if (dto.status === ReverseShipmentStatus.PICKED_UP) {
-        await tx.returnRequest.update({
-          where: { id: returnRequest.id },
-          data: { status: ReturnRequestStatus.PICKED_UP },
+        const targetSellerIds = Array.from(new Set(targetShipments.map((shipment) => shipment.sellerId)));
+        const remainingBeforePickup = await tx.reverseShipment.count({
+          where: {
+            returnRequestId: returnRequest.id,
+            status: {
+              notIn: [
+                ReverseShipmentStatus.PICKED_UP,
+                ReverseShipmentStatus.IN_TRANSIT,
+                ReverseShipmentStatus.RECEIVED,
+                ReverseShipmentStatus.CANCELLED,
+              ],
+            },
+          },
         });
+        if (remainingBeforePickup === 0) {
+          await tx.returnRequest.update({
+            where: { id: returnRequest.id },
+            data: { status: ReturnRequestStatus.PICKED_UP },
+          });
+        }
         await tx.returnRequestItem.updateMany({
-          where: { returnRequestId: returnRequest.id },
+          where: {
+            returnRequestId: returnRequest.id,
+            sellerId: { in: targetSellerIds },
+            status: {
+              in: [
+                ReturnRequestItemStatus.APPROVED,
+                ReturnRequestItemStatus.PICKUP_PENDING,
+                ReturnRequestItemStatus.PICKED_UP,
+              ],
+            },
+          },
           data: { status: ReturnRequestItemStatus.PICKED_UP },
         });
       }
       if (dto.status === ReverseShipmentStatus.IN_TRANSIT) {
-        await tx.returnRequest.update({
-          where: { id: returnRequest.id },
-          data: { status: ReturnRequestStatus.IN_TRANSIT },
+        const remainingBeforeTransit = await tx.reverseShipment.count({
+          where: {
+            returnRequestId: returnRequest.id,
+            status: {
+              notIn: [
+                ReverseShipmentStatus.IN_TRANSIT,
+                ReverseShipmentStatus.RECEIVED,
+                ReverseShipmentStatus.CANCELLED,
+              ],
+            },
+          },
         });
+        if (remainingBeforeTransit === 0) {
+          await tx.returnRequest.update({
+            where: { id: returnRequest.id },
+            data: { status: ReturnRequestStatus.IN_TRANSIT },
+          });
+        }
       }
       if (dto.status === ReverseShipmentStatus.RECEIVED) {
         await this.applyReverseShipmentReceiptStatus(tx, returnRequest.id, targetShipments[0]!.sellerId);
@@ -1697,7 +1921,7 @@ export class ReturnsService {
       where: { id: returnRequestId },
       include: returnDetailInclude,
     });
-    return this.returnDetailReadback(detail!);
+    return this.returnDetailReadback(detail!, { deliveryPartnerId: actor.id });
   }
 
   async listAdminRefunds(query: RefundListQueryDto) {
@@ -2218,6 +2442,18 @@ export class ReturnsService {
         items: {
           include: {
             product: { select: { id: true, name: true, categoryId: true, slug: true } },
+            productVariant: {
+              select: {
+                id: true,
+                sku: true,
+                variantName: true,
+                currency: true,
+                packageWeightGrams: true,
+                packageLengthCm: true,
+                packageBreadthCm: true,
+                packageHeightCm: true,
+              },
+            },
             seller: { select: { id: true, storeName: true, slug: true } },
           },
           orderBy: { createdAt: "asc" },
@@ -2370,7 +2606,7 @@ export class ReturnsService {
     orderSellerSplitId: string,
   ) {
     const pendingQuantity = pendingByOrderItem.get(item.id) ?? 0;
-    const availableQuantity = this.activeQuantity(item) - item.returnedQuantity - pendingQuantity;
+    const availableQuantity = this.activeQuantity(item) - pendingQuantity;
     if (quantity > availableQuantity) {
       throw new BadRequestException("Selected quantity is already returned or under return review.");
     }
@@ -2739,6 +2975,491 @@ export class ReturnsService {
     });
 
     return refund;
+  }
+
+  private async createReplacementOrderOrRefund(
+    tx: Prisma.TransactionClient,
+    input: {
+      existing: ReplacementQcReturnRequest;
+      actor: RequestUser;
+      refundNumber: string;
+      note: string | null;
+    },
+  ) {
+    const existingReplacement = await tx.order.findUnique({
+      where: { replacementReturnRequestId: input.existing.id },
+      select: { id: true, orderNumber: true },
+    });
+
+    if (existingReplacement) {
+      await tx.returnRequest.update({
+        where: { id: input.existing.id },
+        data: {
+          status: ReturnRequestStatus.RESOLVED,
+          reviewedAt: new Date(),
+          reviewedById: input.actor.id,
+        },
+      });
+      await tx.returnRequestItem.updateMany({
+        where: {
+          returnRequestId: input.existing.id,
+          resolution: ReturnRequestResolution.REPLACEMENT,
+          status: {
+            notIn: [
+              ReturnRequestItemStatus.REJECTED,
+              ReturnRequestItemStatus.QC_FAILED,
+              ReturnRequestItemStatus.CLOSED,
+              ReturnRequestItemStatus.REFUND_REQUESTED,
+            ],
+          },
+        },
+        data: {
+          status: ReturnRequestItemStatus.REPLACEMENT_CREATED,
+          qcNote: input.note ?? "Replacement order already created.",
+        },
+      });
+      return {
+        created: false,
+        orderId: existingReplacement.id,
+        orderNumber: existingReplacement.orderNumber,
+      };
+    }
+
+    const sourceOrder = input.existing.order;
+    await tx.$queryRaw`SELECT id FROM orders WHERE id = ${sourceOrder.id}::uuid FOR UPDATE`;
+    await tx.$queryRaw`SELECT id FROM order_items WHERE order_id = ${sourceOrder.id}::uuid FOR UPDATE`;
+    await tx.$queryRaw`SELECT id FROM order_seller_splits WHERE order_id = ${sourceOrder.id}::uuid FOR UPDATE`;
+
+    const replacementItems = input.existing.items.filter(
+      (item) =>
+        item.quantity > 0 &&
+        item.resolution === ReturnRequestResolution.REPLACEMENT &&
+        (item.status === ReturnRequestItemStatus.RECEIVED ||
+          item.status === ReturnRequestItemStatus.QC_PASSED),
+    );
+
+    if (!replacementItems.length) {
+      throw new BadRequestException("No approved return items are available for replacement.");
+    }
+
+    const sourceItemById = new Map(sourceOrder.items.map((item) => [item.id, item]));
+    for (const returnItem of replacementItems) {
+      const sourceItem = sourceItemById.get(returnItem.orderItemId);
+      if (!sourceItem) {
+        throw new BadRequestException("Replacement source order item is missing.");
+      }
+      if (sourceItem.productVariantId !== returnItem.productVariantId) {
+        throw new BadRequestException("Replacement must use the same product variant as the returned item.");
+      }
+      if (!this.itemPolicyAllowsReturn(sourceItem.returnPolicySnapshot)) {
+        throw new BadRequestException("One or more selected items are not eligible for return or replacement.");
+      }
+    }
+
+    const variantIds = Array.from(new Set(replacementItems.map((item) => item.productVariantId)));
+    for (const variantId of variantIds) {
+      await tx.$queryRaw`SELECT id FROM product_variants WHERE id = ${variantId}::uuid FOR UPDATE`;
+    }
+
+    const variants = await tx.productVariant.findMany({
+      where: { id: { in: variantIds } },
+      select: { id: true, stockQuantity: true },
+    });
+    const stockByVariant = new Map(variants.map((variant) => [variant.id, variant.stockQuantity]));
+    const requiredByVariant = new Map<string, number>();
+    for (const item of replacementItems) {
+      requiredByVariant.set(
+        item.productVariantId,
+        (requiredByVariant.get(item.productVariantId) ?? 0) + item.quantity,
+      );
+    }
+
+    const hasUnavailableStock = Array.from(requiredByVariant.entries()).some(
+      ([variantId, requiredQuantity]) => (stockByVariant.get(variantId) ?? 0) < requiredQuantity,
+    );
+
+    if (hasUnavailableStock) {
+      const fallbackItems = replacementItems.map((item) => ({
+        ...item,
+        approvedRefundPaise: item.approvedRefundPaise || item.requestedRefundPaise,
+      }));
+      await tx.returnRequest.update({
+        where: { id: input.existing.id },
+        data: {
+          status: ReturnRequestStatus.QC_PASSED,
+          resolution: ReturnRequestResolution.REFUND,
+          reviewedAt: new Date(),
+          reviewedById: input.actor.id,
+          approvedAmountPaise: fallbackItems.reduce(
+            (sum, item) => sum + item.approvedRefundPaise,
+            0,
+          ),
+        },
+      });
+      await tx.returnRequestItem.updateMany({
+        where: { id: { in: fallbackItems.map((item) => item.id) } },
+        data: {
+          resolution: ReturnRequestResolution.REFUND,
+          qcNote: input.note ?? "Replacement stock unavailable; refund approved instead.",
+        },
+      });
+      await this.createRefundRequestFromReturnItems(tx, {
+        refundNumber: input.refundNumber,
+        order: sourceOrder,
+        returnRequestId: input.existing.id,
+        returnItems: fallbackItems,
+        actor: input.actor,
+        status: RefundRequestStatus.APPROVED,
+        note: input.note ?? "Replacement stock unavailable; refund approved instead.",
+      });
+      await tx.returnRequestNote.create({
+        data: {
+          returnRequestId: input.existing.id,
+          note: input.note ?? "Replacement stock unavailable; refund approved instead.",
+          createdById: input.actor.id,
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorUserId: input.actor.id,
+          action: "return.replacement_stock_unavailable_refund_created",
+          entityType: "return_request",
+          entityId: input.existing.id,
+          newValue: {
+            requestNumber: input.existing.requestNumber,
+            orderNumber: sourceOrder.orderNumber,
+            refundNumber: input.refundNumber,
+            variantIds,
+          },
+        },
+      });
+      return null;
+    }
+
+    const orderNumber = await this.createReplacementOrderNumber(tx);
+    const replacementOrder = await tx.order.create({
+      data: {
+        orderNumber,
+        customerId: sourceOrder.customerId,
+        orderKind: OrderKind.REPLACEMENT,
+        parentOrderId: sourceOrder.id,
+        replacementReturnRequestId: input.existing.id,
+        orderStatus: OrderStatus.PLACED,
+        paymentStatus: PaymentStatus.NOT_REQUIRED,
+        deliveryStatus: DeliveryStatus.PENDING,
+        subtotalPaise: 0,
+        shippingPaise: 0,
+        platformFeePaise: 0,
+        totalPaise: 0,
+        currency: sourceOrder.currency,
+        baseCurrency: sourceOrder.baseCurrency,
+        buyerCountryCode: sourceOrder.buyerCountryCode,
+        buyerCurrency: sourceOrder.buyerCurrency,
+        buyerSubtotalMinor: 0,
+        buyerShippingMinor: 0,
+        buyerPlatformFeeMinor: 0,
+        buyerTotalMinor: 0,
+        fxRate: sourceOrder.fxRate,
+        fxProvider: sourceOrder.fxProvider,
+        fxRateFetchedAt: sourceOrder.fxRateFetchedAt,
+        fxSnapshot: sourceOrder.fxSnapshot ?? Prisma.JsonNull,
+        checkoutFeeSnapshot: {
+          source: "REPLACEMENT_ORDER",
+          originalOrderNumber: sourceOrder.orderNumber,
+          returnRequestNumber: input.existing.requestNumber,
+        },
+        shippingAddressSnapshot: sourceOrder.shippingAddressSnapshot ?? Prisma.JsonNull,
+      },
+    });
+
+    const replacementItemsBySeller = new Map<
+      string,
+      Array<{
+        returnItemId: string;
+        replacementOrderItemId: string;
+        productId: string;
+        productVariantId: string;
+        productName: string;
+        sku?: string | null;
+        variantName?: string | null;
+        quantity: number;
+        lineTotalPaise: number;
+        declaredValuePaise: number;
+        weightGrams?: number | null;
+        lengthCm?: number | null;
+        breadthCm?: number | null;
+        heightCm?: number | null;
+      }>
+    >();
+
+    for (const returnItem of replacementItems) {
+      const sourceItem = sourceItemById.get(returnItem.orderItemId)!;
+      const declaredValuePaise = returnItem.approvedRefundPaise || returnItem.requestedRefundPaise;
+      const replacementOrderItem = await tx.orderItem.create({
+        data: {
+          orderId: replacementOrder.id,
+          sellerId: sourceItem.sellerId,
+          productId: sourceItem.productId,
+          productVariantId: sourceItem.productVariantId,
+          replacementSourceOrderItemId: sourceItem.id,
+          replacementSourceReturnItemId: returnItem.id,
+          productNameSnapshot: sourceItem.productNameSnapshot,
+          variantSnapshot: sourceItem.variantSnapshot ?? Prisma.JsonNull,
+          quantity: returnItem.quantity,
+          activeQuantity: returnItem.quantity,
+          retainedQuantity: returnItem.quantity,
+          lifecycleStatus: OrderItemLifecycleStatus.ACTIVE,
+          unitPricePaise: 0,
+          lineTotalPaise: 0,
+          currency: sourceItem.currency,
+          originalUnitPricePaise: sourceItem.unitPricePaise,
+          returnPolicySnapshot: sourceItem.returnPolicySnapshot ?? Prisma.JsonNull,
+        },
+      });
+
+      const sourceVariant = sourceItem.productVariant;
+      const sellerAllocations = replacementItemsBySeller.get(sourceItem.sellerId) ?? [];
+      sellerAllocations.push({
+        returnItemId: returnItem.id,
+        replacementOrderItemId: replacementOrderItem.id,
+        productId: sourceItem.productId,
+        productVariantId: sourceItem.productVariantId,
+        productName: sourceItem.productNameSnapshot,
+        sku: sourceVariant.sku,
+        variantName: sourceVariant.variantName,
+        quantity: returnItem.quantity,
+        lineTotalPaise: 0,
+        declaredValuePaise,
+        weightGrams: sourceVariant.packageWeightGrams,
+        lengthCm: sourceVariant.packageLengthCm,
+        breadthCm: sourceVariant.packageBreadthCm,
+        heightCm: sourceVariant.packageHeightCm,
+      });
+      replacementItemsBySeller.set(sourceItem.sellerId, sellerAllocations);
+
+      await tx.productVariant.update({
+        where: { id: sourceItem.productVariantId },
+        data: { stockQuantity: { decrement: returnItem.quantity } },
+      });
+      await tx.inventoryMovement.create({
+        data: {
+          productVariantId: sourceItem.productVariantId,
+          movementType: InventoryMovementType.SALE,
+          quantity: returnItem.quantity,
+          reason: "Replacement order issued",
+          referenceType: "replacement_order",
+          referenceId: replacementOrder.id,
+          createdById: input.actor.id,
+        },
+      });
+
+      const activeQuantity = this.activeQuantity(sourceItem);
+      const retainedQuantity = sourceItem.retainedQuantity > 0 ? sourceItem.retainedQuantity : activeQuantity;
+      await tx.orderItem.update({
+        where: { id: sourceItem.id },
+        data: {
+          activeQuantity: Math.max(activeQuantity - returnItem.quantity, 0),
+          retainedQuantity: Math.max(retainedQuantity - returnItem.quantity, 0),
+          returnedQuantity: { increment: returnItem.quantity },
+          returnedAmountPaise: { increment: declaredValuePaise },
+          replacementQuantity: { increment: returnItem.quantity },
+          replacementAmountPaise: { increment: declaredValuePaise },
+          lifecycleStatus: OrderItemLifecycleStatus.REPLACED,
+        },
+      });
+    }
+
+    let shipmentSequence = 1;
+    for (const [sellerId, itemAllocations] of replacementItemsBySeller.entries()) {
+      const originalShipment = sourceOrder.shipments.find((shipment) => shipment.sellerId === sellerId);
+      const deliveryMode =
+        originalShipment?.deliveryMode ??
+        sourceOrder.deliveryDetail?.deliveryMode ??
+        DeliveryMode.LOCAL_DELIVERY_PARTNER;
+      const sellerSplit = await tx.orderSellerSplit.create({
+        data: {
+          orderId: replacementOrder.id,
+          sellerId,
+          sellerSubtotalPaise: 0,
+          commissionPaise: 0,
+          netPayablePaise: 0,
+          settlementStatus: SellerSettlementStatus.NOT_ELIGIBLE,
+          sellerStatus: SellerOrderStatus.PENDING,
+        },
+      });
+      const shipmentNumber = this.createShipmentNumber(replacementOrder.orderNumber, shipmentSequence);
+      const shipment = await tx.orderShipment.create({
+        data: {
+          shipmentNumber,
+          orderId: replacementOrder.id,
+          orderSellerSplitId: sellerSplit.id,
+          sellerId,
+          subtotalPaise: 0,
+          shippingPaise: 0,
+          codSurchargePaise: 0,
+          deliveryMode,
+          status: DeliveryStatus.PENDING,
+          readyForBookingAt: deliveryMode === DeliveryMode.THIRD_PARTY_COURIER ? new Date() : null,
+          deliveryNote: "Replacement order",
+        },
+      });
+      await tx.orderShipmentPackage.create({
+        data: {
+          packageNumber: this.createPackageNumber(shipmentNumber, 1),
+          orderShipmentId: shipment.id,
+          orderId: replacementOrder.id,
+          sellerId,
+          sequence: 1,
+          deliveryMode,
+          status: this.initialPackageStatus(deliveryMode),
+          shippingPaise: 0,
+          codSurchargePaise: 0,
+          declaredValuePaise: itemAllocations.reduce(
+            (sum, item) => sum + item.declaredValuePaise,
+            0,
+          ),
+          currency: sourceOrder.currency,
+          itemAllocations,
+          packageSnapshot: {
+            source: "REPLACEMENT_ORDER",
+            originalOrderNumber: sourceOrder.orderNumber,
+            replacementOrderNumber: replacementOrder.orderNumber,
+            returnRequestNumber: input.existing.requestNumber,
+          },
+          readyForBookingAt: deliveryMode === DeliveryMode.THIRD_PARTY_COURIER ? new Date() : null,
+        },
+      });
+      shipmentSequence += 1;
+    }
+
+    if (
+      (sourceOrder.deliveryDetail?.deliveryMode ?? DeliveryMode.LOCAL_DELIVERY_PARTNER) !==
+      DeliveryMode.STORE_PICKUP
+    ) {
+      await tx.deliveryDetail.create({
+        data: {
+          orderId: replacementOrder.id,
+          deliveryMode: sourceOrder.deliveryDetail?.deliveryMode ?? DeliveryMode.LOCAL_DELIVERY_PARTNER,
+          status: DeliveryStatus.PENDING,
+          deliveryNote: "Replacement order",
+          assignmentNote: "Replacement order created after return quality check.",
+        },
+      });
+    }
+
+    await tx.returnRequest.update({
+      where: { id: input.existing.id },
+      data: {
+        status: ReturnRequestStatus.RESOLVED,
+        reviewedAt: new Date(),
+        reviewedById: input.actor.id,
+        approvedAmountPaise: replacementItems.reduce(
+          (sum, item) => sum + (item.approvedRefundPaise || item.requestedRefundPaise),
+          0,
+        ),
+      },
+    });
+    await tx.returnRequestItem.updateMany({
+      where: { id: { in: replacementItems.map((item) => item.id) } },
+      data: {
+        status: ReturnRequestItemStatus.REPLACEMENT_CREATED,
+        qcNote: input.note ?? "Replacement order created.",
+      },
+    });
+
+    await tx.orderStatusEvent.createMany({
+      data: [
+        {
+          orderId: replacementOrder.id,
+          statusType: StatusEventType.ORDER,
+          newStatus: OrderStatus.PLACED,
+          note: `Replacement created for return ${input.existing.requestNumber}.`,
+          createdById: input.actor.id,
+        },
+        {
+          orderId: replacementOrder.id,
+          statusType: StatusEventType.PAYMENT,
+          newStatus: PaymentStatus.NOT_REQUIRED,
+          note: "Payment not required for replacement order.",
+          createdById: input.actor.id,
+        },
+        {
+          orderId: replacementOrder.id,
+          statusType: StatusEventType.DELIVERY,
+          newStatus: DeliveryStatus.PENDING,
+          note: "Replacement order awaiting fulfilment.",
+          createdById: input.actor.id,
+        },
+      ],
+    });
+
+    await tx.auditLog.create({
+      data: {
+        actorUserId: input.actor.id,
+        action: "return.replacement_order_created",
+        entityType: "return_request",
+        entityId: input.existing.id,
+        newValue: {
+          requestNumber: input.existing.requestNumber,
+          originalOrderNumber: sourceOrder.orderNumber,
+          replacementOrderNumber: replacementOrder.orderNumber,
+          replacementOrderId: replacementOrder.id,
+          itemCount: replacementItems.length,
+        },
+      },
+    });
+
+    return {
+      created: true,
+      orderId: replacementOrder.id,
+      orderNumber: replacementOrder.orderNumber,
+    };
+  }
+
+  private async notifyReplacementOrderCreated(orderId: string) {
+    const order = await this.prisma.client.order.findUnique({
+      where: { id: orderId },
+      include: {
+        customer: { include: { user: true } },
+        sellerSplits: { include: { seller: { include: { user: true } } } },
+      },
+    });
+    if (!order) {
+      return;
+    }
+
+    const sellerRecipients = [
+      ...new Map(
+        order.sellerSplits
+          .filter((split) => split.seller.user.email)
+          .map((split) => [split.sellerId, split]),
+      ).values(),
+    ];
+
+    await Promise.all([
+      this.notifications.notifyEvent({
+        eventCode: EMAIL_TRIGGER_EVENTS.ORDER_PLACED_CUSTOMER,
+        recipientType: EmailRecipientType.CUSTOMER,
+        recipient: order.customer.user.email,
+        userId: order.customer.userId,
+        variables: {
+          orderNumber: order.orderNumber,
+          totalPaise: order.totalPaise,
+        },
+      }),
+      ...sellerRecipients.map((split) =>
+        this.notifications.notifyEvent({
+          eventCode: EMAIL_TRIGGER_EVENTS.ORDER_RECEIVED_SELLER,
+          recipientType: EmailRecipientType.SELLER,
+          recipient: split.seller.user.email,
+          userId: split.seller.userId,
+          variables: {
+            orderNumber: order.orderNumber,
+            totalPaise: split.sellerSubtotalPaise,
+          },
+        }),
+      ),
+    ]);
   }
 
   private async closeReturnInTransaction(
@@ -3495,7 +4216,18 @@ export class ReturnsService {
     sellerId: string,
   ) {
     await tx.returnRequestItem.updateMany({
-      where: { returnRequestId, sellerId },
+      where: {
+        returnRequestId,
+        sellerId,
+        status: {
+          in: [
+            ReturnRequestItemStatus.APPROVED,
+            ReturnRequestItemStatus.PICKUP_PENDING,
+            ReturnRequestItemStatus.PICKED_UP,
+            ReturnRequestItemStatus.RECEIVED,
+          ],
+        },
+      },
       data: { status: ReturnRequestItemStatus.RECEIVED },
     });
     const remaining = await tx.reverseShipment.count({
@@ -3960,6 +4692,34 @@ export class ReturnsService {
       reviewedAt: detail.reviewedAt,
       createdAt: detail.createdAt,
       order: detail.order,
+      replacementOrder: detail.replacementOrder
+        ? {
+            id: detail.replacementOrder.id,
+            orderNumber: detail.replacementOrder.orderNumber,
+            orderStatus: detail.replacementOrder.orderStatus,
+            paymentStatus: detail.replacementOrder.paymentStatus,
+            deliveryStatus: detail.replacementOrder.deliveryStatus,
+            totalPaise: detail.replacementOrder.totalPaise,
+            currency: detail.replacementOrder.currency,
+            createdAt: detail.replacementOrder.createdAt,
+            deliveryDetail: detail.replacementOrder.deliveryDetail,
+            shipmentPackages: detail.replacementOrder.shipments.flatMap((shipment) =>
+              shipment.packages.map((shipmentPackage) => ({
+                id: shipmentPackage.id,
+                packageNumber: shipmentPackage.packageNumber,
+                status: shipmentPackage.status,
+                deliveryMode: shipmentPackage.deliveryMode,
+                declaredValuePaise: shipmentPackage.declaredValuePaise,
+                deliveredAt: shipmentPackage.deliveredAt,
+                shipmentNumber: shipment.shipmentNumber,
+                shipmentStatus: shipment.status,
+                awbNumber: shipment.awbNumber,
+                trackingReference: shipment.trackingReference,
+                estimatedDeliveryDate: shipment.estimatedDeliveryDate,
+              })),
+            ),
+          }
+        : null,
       pickupAddress: this.readShippingAddressSnapshot(detail.order.shippingAddressSnapshot),
       customer: options.includeCustomerContact || options.deliveryPartnerId
         ? {
@@ -4494,6 +5254,35 @@ export class ReturnsService {
       }
     }
     throw new BadRequestException("Could not generate a refund number.");
+  }
+
+  private async createReplacementOrderNumber(client: ReplacementOrderNumberClient = this.prisma.client) {
+    const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    for (let attempt = 0; attempt < 1000; attempt += 1) {
+      const candidate = `1HI${stamp}${Math.floor(100000 + Math.random() * 900000)}`;
+      const existing = await client.order.findUnique({
+        where: { orderNumber: candidate },
+        select: { id: true },
+      });
+      if (!existing) {
+        return candidate;
+      }
+    }
+    throw new BadRequestException("Could not generate a replacement order number.");
+  }
+
+  private createShipmentNumber(orderNumber: string, sequence: number) {
+    return `${orderNumber}-S${String(sequence).padStart(2, "0")}`;
+  }
+
+  private createPackageNumber(shipmentNumber: string, sequence: number) {
+    return `${shipmentNumber}-P${String(sequence).padStart(2, "0")}`;
+  }
+
+  private initialPackageStatus(deliveryMode: DeliveryMode) {
+    return deliveryMode === DeliveryMode.THIRD_PARTY_COURIER
+      ? OrderShipmentPackageStatus.READY_FOR_BOOKING
+      : OrderShipmentPackageStatus.PACKING_PENDING;
   }
 
   private dateKey(date = new Date()) {

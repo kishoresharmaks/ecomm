@@ -2,6 +2,11 @@ import { deleteJson, getJson, patchJson, postJson, type MobileAuthHeaders } from
 
 export type SellerStatus = "PENDING_APPROVAL" | "APPROVED" | "SUSPENDED" | "REJECTED";
 export type SellerApprovalStatus = "PENDING_APPROVAL" | "APPROVED" | "REJECTED";
+export type SellerProductDeliveryMode =
+  | "STORE_PICKUP"
+  | "LOCAL_DELIVERY_PARTNER"
+  | "THIRD_PARTY_COURIER"
+  | "MANUAL_TRANSPORT";
 
 export type SellerProfile = {
   id: string;
@@ -145,6 +150,7 @@ export type ProductSummary = {
   attributes?: Record<string, unknown> | null;
   hsnCode?: string | null;
   gstRatePercent?: number | null;
+  deliveryModes?: SellerProductDeliveryMode[];
   category?: { id: string; name: string } | null;
   variants?: Array<{
     id: string;
@@ -165,6 +171,7 @@ export type SellerProductPayload = {
   categoryId: string;
   name: string;
   description: string;
+  deliveryModes?: SellerProductDeliveryMode[];
   attributes?: Record<string, unknown>;
   images?: Array<{ url: string; altText?: string; sortOrder?: number; isPrimary?: boolean }>;
   variants: Array<{
@@ -259,18 +266,27 @@ export type PageResult<T> = {
 export type SellerOrder = {
   id: string;
   orderNumber: string;
+  orderKind?: "STANDARD" | "REPLACEMENT";
+  parentOrder?: { id: string; orderNumber: string; orderStatus?: string; deliveryStatus?: string } | null;
+  replacementReturnRequest?: { id: string; requestNumber: string; status?: string; resolution?: string } | null;
+  orderStatus?: string;
   status?: string;
   paymentStatus?: string;
   deliveryStatus?: string;
   currency?: string;
+  subtotalPaise?: number;
+  shippingPaise?: number;
+  platformFeePaise?: number;
   totalPaise?: number;
   createdAt?: string;
   items?: Array<{ id: string; productNameSnapshot?: string; quantity?: number; lineTotalPaise?: number }>;
+  sellerCashReceivables?: SellerCashReceivableSummary[];
   sellerSplits?: Array<{
     id: string;
     sellerStatus?: string;
     settlementStatus?: string;
     sellerSubtotalPaise?: number;
+    sellerCashReceivables?: SellerCashReceivableSummary[];
     shipment?: SellerOrderShipment | null;
   }>;
   payments?: Array<{
@@ -382,11 +398,30 @@ export type SellerOrderShipment = {
   trackingReference?: string | null;
   estimatedDeliveryDate?: string | null;
   deliveryNote?: string | null;
+  codCollectionSource?: string | null;
   codCollectionStatus?: string | null;
   codCollectedAmountPaise?: number | null;
   codCollectedAt?: string | null;
   codVerifiedAt?: string | null;
+  sellerCashReceivable?: SellerCashReceivableSummary | null;
   packages?: SellerOrderPackage[];
+};
+
+export type SellerCashReceivableSummary = {
+  id: string;
+  receivableNumber: string;
+  source: "STORE_PICKUP_COD" | "MANUAL_TRANSPORT_COD";
+  status: "OPEN" | "PARTIALLY_OFFSET" | "OFFSET_SCHEDULED" | "SETTLED" | "WAIVED" | "CANCELLED";
+  grossCashCollectedPaise: number;
+  platformDuePaise: number;
+  offsetPaise: number;
+  settledPaise: number;
+  waivedPaise: number;
+  outstandingPaise: number;
+  currency: string;
+  openedAt?: string;
+  settledAt?: string | null;
+  waivedAt?: string | null;
 };
 
 export type SellerOrderDeliveryDetail = {
@@ -445,6 +480,8 @@ export type SellerPayoutAvailability = {
   hasPayoutMethod: boolean;
   eligibleSplitCount: number;
   netPayablePaise: number;
+  sellerCashReceivableOffsetPaise?: number;
+  sellerCashReceivableOutstandingPaise?: number;
   currency: string;
   canRequest: boolean;
   blockers: string[];

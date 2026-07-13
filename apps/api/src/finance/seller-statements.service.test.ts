@@ -209,6 +209,71 @@ describe("SellerStatementsService", () => {
               updatedAt: new Date("2026-06-03T00:00:00.000Z")
             }
           }
+        ],
+        ledgerEntries: [
+          {
+            id: "ledger-scr-offset-1",
+            sellerId: "seller-1",
+            orderId: "order-1",
+            orderSellerSplitId: "split-1",
+            serviceBookingId: null,
+            serviceSettlementId: null,
+            sellerCashReceivableId: "scr-1",
+            payoutId: "payout-1",
+            entryType: "SELLER_CASH_RECEIVABLE_OFFSET",
+            description: "Seller-collected COD offset against payout PO-SERVICE",
+            debitPaise: 700,
+            creditPaise: 0,
+            balanceAfterPaise: -700,
+            currency: "INR",
+            referenceType: "seller_cash_receivable",
+            referenceId: "scr-1",
+            metadata: null,
+            createdById: "admin-1",
+            createdAt: new Date("2026-06-09T00:00:00.000Z"),
+            sellerCashReceivable: {
+              id: "scr-1",
+              receivableNumber: "SCR-1001",
+              sellerId: "seller-1",
+              orderId: "order-1",
+              orderSellerSplitId: "split-1",
+              orderShipmentId: "shipment-1",
+              paymentId: "payment-1",
+              payoutOffsetId: null,
+              source: "MANUAL_TRANSPORT_COD",
+              status: "PARTIALLY_OFFSET",
+              grossCashCollectedPaise: 20_000,
+              platformDuePaise: 1_200,
+              offsetPaise: 0,
+              settledPaise: 0,
+              waivedPaise: 0,
+              outstandingPaise: 500,
+              commissionPaise: 800,
+              gstOnCommissionPaise: 144,
+              tdsPaise: 80,
+              tcsPaise: 0,
+              sellerPlatformFeePaise: 50,
+              buyerPlatformFeePaise: 126,
+              currency: "INR",
+              idempotencyKey: "MANUAL_TRANSPORT_COD:split-1",
+              note: null,
+              financeSnapshot: null,
+              openedAt: new Date("2026-06-08T00:00:00.000Z"),
+              offsetScheduledAt: null,
+              offsetAppliedAt: new Date("2026-06-09T00:00:00.000Z"),
+              settledAt: null,
+              settledById: null,
+              waivedAt: null,
+              waivedById: null,
+              createdAt: new Date("2026-06-08T00:00:00.000Z"),
+              updatedAt: new Date("2026-06-09T00:00:00.000Z"),
+              order: { orderNumber: "ORD-COD-1" },
+              orderShipment: {
+                shipmentNumber: "SHIP-COD-1",
+                deliveryMode: "MANUAL_TRANSPORT"
+              }
+            }
+          }
         ]
       }
     };
@@ -230,7 +295,8 @@ describe("SellerStatementsService", () => {
           payout: expect.objectContaining({
             include: expect.objectContaining({
               serviceSettlements: expect.any(Object),
-              serviceReceivableOffsets: expect.any(Object)
+              serviceReceivableOffsets: expect.any(Object),
+              ledgerEntries: expect.any(Object)
             })
           })
         })
@@ -242,5 +308,9 @@ describe("SellerStatementsService", () => {
     expect(csv).toContain('"SRC-1001"');
     expect(csv).toContain('"SRV-CASH-1002"');
     expect(csv).toContain('"1030"');
+    expect(csv).toContain('"Seller-collected COD offsets"');
+    expect(csv).toContain('"SCR-1001"');
+    expect(csv).toContain('"ORD-COD-1"');
+    expect(csv).toContain('"700"');
   });
 });

@@ -16,12 +16,15 @@ import {
   MarkPayoutPaidDto,
   PayoutActionDto,
   PayoutQueryDto,
+  SellerCashReceivableActionDto,
+  SellerCashReceivableQueryDto,
   SellerPayoutProfileVerificationDto,
   SettlementDraftDto,
   SettlementQueryDto,
   UpsertCommissionRuleDto
 } from "./dto/finance.dto";
 import { FinancePaymentsService } from "./finance-payments.service";
+import { SellerCashReceivablesService } from "./seller-cash-receivables.service";
 import { SellerLedgerService } from "./seller-ledger.service";
 import { SellerPayoutsService } from "./seller-payouts.service";
 import { SellerSettlementsService } from "./seller-settlements.service";
@@ -36,6 +39,7 @@ export class AdminFinanceController {
     @Inject(FinancePaymentsService) private readonly financePayments: FinancePaymentsService,
     @Inject(SellerSettlementsService) private readonly settlements: SellerSettlementsService,
     @Inject(SellerPayoutsService) private readonly payouts: SellerPayoutsService,
+    @Inject(SellerCashReceivablesService) private readonly sellerCashReceivables: SellerCashReceivablesService,
     @Inject(SellerLedgerService) private readonly ledger: SellerLedgerService,
     @Inject(SellerStatementsService) private readonly statements: SellerStatementsService
   ) {}
@@ -69,6 +73,38 @@ export class AdminFinanceController {
   @ApiOkResponse({ description: "Finance payment, settlement, and payout report summaries." })
   paymentReports(@Query() query: FinancePaymentCollectionQueryDto) {
     return this.financePayments.paymentReports(query);
+  }
+
+  @Get("seller-cash-receivables")
+  @ApiOperation({ summary: "List seller-collected COD platform dues." })
+  listSellerCashReceivables(@Query() query: SellerCashReceivableQueryDto) {
+    return this.sellerCashReceivables.listReceivables(query);
+  }
+
+  @Get("seller-cash-receivables/:receivableNumber")
+  @ApiOperation({ summary: "Read seller-collected COD platform due detail." })
+  getSellerCashReceivable(@Param("receivableNumber") receivableNumber: string) {
+    return this.sellerCashReceivables.getReceivable(receivableNumber);
+  }
+
+  @Post("seller-cash-receivables/:receivableNumber/settle")
+  @ApiOperation({ summary: "Manually settle a seller-collected COD platform due." })
+  settleSellerCashReceivable(
+    @Param("receivableNumber") receivableNumber: string,
+    @Body() dto: SellerCashReceivableActionDto,
+    @CurrentUser() actor: RequestUser,
+  ) {
+    return this.sellerCashReceivables.settleReceivable(receivableNumber, dto, actor);
+  }
+
+  @Post("seller-cash-receivables/:receivableNumber/waive")
+  @ApiOperation({ summary: "Waive a seller-collected COD platform due with audit note." })
+  waiveSellerCashReceivable(
+    @Param("receivableNumber") receivableNumber: string,
+    @Body() dto: SellerCashReceivableActionDto,
+    @CurrentUser() actor: RequestUser,
+  ) {
+    return this.sellerCashReceivables.waiveReceivable(receivableNumber, dto, actor);
   }
 
   @Get("commission-rules")

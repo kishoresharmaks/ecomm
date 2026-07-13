@@ -54,6 +54,15 @@ export class CheckoutSummaryQueryDto {
   @IsEnum(DeliveryMode)
   requestedDeliveryMode?: DeliveryMode;
 
+  @ApiPropertyOptional({
+    description: "JSON encoded seller delivery selections.",
+    example: "[{\"sellerId\":\"f2c7311c-6666-4444-8888-1b9c960acabc\",\"deliveryMode\":\"THIRD_PARTY_COURIER\"}]",
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(5000)
+  deliverySelections?: string;
+
   @ApiPropertyOptional({ enum: CheckoutRoutingPaymentMethod })
   @IsOptional()
   @IsEnum(CheckoutRoutingPaymentMethod)

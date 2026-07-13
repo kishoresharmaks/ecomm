@@ -40,6 +40,20 @@ export default function DeliveryReturnDetailScreen() {
   useEffect(() => {
     if (!detail) return;
     setPickupProofReference(detail.reverseShipments[0]?.pickupProofReference ?? detail.reverseShipments[0]?.proofReference ?? "");
+    setReceiptProofByShipment(
+      Object.fromEntries(
+        detail.reverseShipments
+          .filter((shipment) => shipment.receiptProofReference)
+          .map((shipment) => [shipment.id, shipment.receiptProofReference ?? ""]),
+      ),
+    );
+    setReceiverByShipment(
+      Object.fromEntries(
+        detail.reverseShipments
+          .filter((shipment) => shipment.receivedByName)
+          .map((shipment) => [shipment.id, shipment.receivedByName ?? ""]),
+      ),
+    );
   }, [detail]);
 
   const acceptMutation = useMutation({
@@ -175,6 +189,9 @@ export default function DeliveryReturnDetailScreen() {
             const receiver = receiverByShipment[shipment.id]?.trim() ?? "";
             const receiptProof = receiptProofByShipment[shipment.id]?.trim() ?? "";
             const canReceive = shipment.assignmentStatus === "ACCEPTED" && ["PICKED_UP", "IN_TRANSIT"].includes(shipment.status);
+            const sellerAddress = addressLine(shipment.seller?.destinationAddress);
+            const sellerPhone = shipment.seller?.contactPhone;
+            const sellerPhoneUrl = sellerPhone ? `tel:${sellerPhone.replace(/[^\d+]/g, "")}` : null;
             return (
               <Card key={shipment.id}>
                 <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
@@ -183,6 +200,22 @@ export default function DeliveryReturnDetailScreen() {
                 </View>
                 <Text style={{ color: "#123A5A", fontSize: 17, fontWeight: "900" }}>{shipment.seller?.storeName ?? "Seller store"}</Text>
                 <Text style={mutedText}>{addressBlock(shipment.seller?.destinationAddress)}</Text>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+                  <Button
+                    title="Seller map"
+                    tone="secondary"
+                    disabled={!sellerAddress}
+                    style={{ flex: 1, minWidth: 130 }}
+                    onPress={() => sellerAddress && void Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(sellerAddress)}`)}
+                  />
+                  <Button
+                    title="Call seller"
+                    tone="secondary"
+                    disabled={!sellerPhoneUrl}
+                    style={{ flex: 1, minWidth: 130 }}
+                    onPress={() => sellerPhoneUrl && void Linking.openURL(sellerPhoneUrl)}
+                  />
+                </View>
                 <Text style={mutedText}>Tracking: {shipment.trackingReference ?? "Generated after pickup"}</Text>
                 <Field
                   label="Receiver name"

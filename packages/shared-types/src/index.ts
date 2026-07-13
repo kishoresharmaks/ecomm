@@ -61,7 +61,8 @@ export type DeliveryStatus = (typeof deliveryStatuses)[number];
 export const deliveryModes = [
   "STORE_PICKUP",
   "LOCAL_DELIVERY_PARTNER",
-  "THIRD_PARTY_COURIER"
+  "THIRD_PARTY_COURIER",
+  "MANUAL_TRANSPORT"
 ] as const;
 export type DeliveryMode = (typeof deliveryModes)[number];
 

@@ -38,6 +38,7 @@ const iconByHref: Array<[string, typeof LayoutDashboard]> = [
   ["/finance/refunds", RotateCcw],
   ["/finance/payouts", CreditCard],
   ["/finance/settlements", ClipboardList],
+  ["/finance/seller-cash-receivables", WalletCards],
   ["/finance/service-receivables", ReceiptText],
   ["/finance/payment-status", BadgeIndianRupee],
   ["/finance/bank-transfers", Landmark],

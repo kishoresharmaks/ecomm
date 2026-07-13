@@ -71,7 +71,10 @@ export function availableSellerOrderActions(order: SellerOrder): SellerOrderActi
     return actions;
   }
   if (sellerStatus === "DISPATCHED") {
-    if (!(deliveryMode === "LOCAL_DELIVERY_PARTNER" && assignmentStatus === "ACCEPTED")) {
+    if (
+      deliveryMode !== "THIRD_PARTY_COURIER" &&
+      !(deliveryMode === "LOCAL_DELIVERY_PARTNER" && assignmentStatus === "ACCEPTED")
+    ) {
       actions.push("DELIVERED");
     }
     return actions;
@@ -152,12 +155,17 @@ export function validateDeliveryForm(
       payload.proofReference = proofReference;
     }
 
-    if (isCodOrder(order) && values.codCollected) {
+    if (isManualTransportCodCollection(order, values.deliveryMode)) {
+      if (!values.codCollected) {
+        errors.codCollected = "Manual transport COD must be recorded before delivery.";
+        return { valid: false, errors, payload };
+      }
       const amountPaise = rupeesToPaise(values.codCollectedAmountRupees);
+      const expectedAmountPaise = sellerCollectedCodExpectedPaise(order);
       if (amountPaise <= 0) {
         errors.codCollectedAmountRupees = "Collected COD amount must be greater than zero.";
-      } else if (amountPaise > sellerPayablePaise(order)) {
-        errors.codCollectedAmountRupees = "Collected COD amount cannot be above this seller order total.";
+      } else if (amountPaise !== expectedAmountPaise) {
+        errors.codCollectedAmountRupees = "Collected COD amount must exactly match this seller package amount.";
       } else {
         payload.codCollected = true;
         payload.codCollectedAmountPaise = amountPaise;
@@ -266,6 +274,69 @@ export function sellerPayablePaise(order: SellerOrder) {
 
 export function isCodOrder(order: SellerOrder) {
   return (order.payments ?? []).some((payment) => payment.method === "COD");
+}
+
+export function isManualTransportCodCollection(
+  order: SellerOrder,
+  deliveryMode: DeliveryFormValues["deliveryMode"],
+) {
+  return isCodOrder(order) && deliveryMode === "MANUAL_TRANSPORT";
+}
+
+export function sellerCollectedCodExpectedPaise(order: SellerOrder) {
+  const split = order.sellerSplits?.[0] ?? null;
+  const shipment = split?.shipment ?? order.shipments?.[0] ?? null;
+  const sellerSubtotalPaise = split?.sellerSubtotalPaise ?? order.totalPaise ?? 0;
+  return (
+    sellerSubtotalPaise +
+    (shipment?.shippingPaise ?? 0) +
+    (shipment?.codSurchargePaise ?? 0) +
+    allocatedBuyerPlatformFeePaise(order, sellerSubtotalPaise)
+  );
+}
+
+function allocatedBuyerPlatformFeePaise(order: SellerOrder, sellerSubtotalPaise: number) {
+  const platformFeePaise = order.platformFeePaise ?? 0;
+  const subtotalPaise = order.subtotalPaise ?? 0;
+  if (platformFeePaise <= 0 || subtotalPaise <= 0 || sellerSubtotalPaise <= 0) {
+    return 0;
+  }
+  const sellerSplits = (order.sellerSplits ?? []).filter((split) => (split.sellerSubtotalPaise ?? 0) > 0);
+  if (sellerSplits.length <= 1) {
+    return Math.round((platformFeePaise * sellerSubtotalPaise) / subtotalPaise);
+  }
+  const targetIndex = sellerSplits.findIndex((split) => split.sellerSubtotalPaise === sellerSubtotalPaise);
+  if (targetIndex < 0) {
+    return Math.round((platformFeePaise * sellerSubtotalPaise) / subtotalPaise);
+  }
+  const allocations = sellerSplits.map((split, index) => {
+    const numerator = platformFeePaise * (split.sellerSubtotalPaise ?? 0);
+    return {
+      index,
+      base: Math.floor(numerator / subtotalPaise),
+      remainder: numerator % subtotalPaise,
+    };
+  });
+  let remainderPaise = platformFeePaise - allocations.reduce((sum, allocation) => sum + allocation.base, 0);
+  const ranked = [...allocations].sort((left, right) => {
+    if (right.remainder !== left.remainder) {
+      return right.remainder - left.remainder;
+    }
+    return left.index - right.index;
+  });
+  const extraIndexes = new Set<number>();
+  for (const allocation of ranked) {
+    if (remainderPaise <= 0) {
+      break;
+    }
+    extraIndexes.add(allocation.index);
+    remainderPaise -= 1;
+  }
+  const targetAllocation = allocations[targetIndex];
+  if (!targetAllocation) {
+    return Math.round((platformFeePaise * sellerSubtotalPaise) / subtotalPaise);
+  }
+  return targetAllocation.base + (extraIndexes.has(targetIndex) ? 1 : 0);
 }
 
 function textOrUndefined(value: string) {

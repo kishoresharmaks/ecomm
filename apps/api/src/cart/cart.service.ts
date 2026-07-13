@@ -8,6 +8,7 @@ import {
 import {
   ApprovalStatus,
   CartStatus,
+  DeliveryMode,
   ProductListingMode,
   ProductStatus,
   SellerStatus,
@@ -43,6 +44,10 @@ const cartInclude = {
               images: { orderBy: [{ sortOrder: "asc" as const }, { createdAt: "asc" as const }] },
               seller: true,
               category: true,
+              deliveryModeOptions: {
+                where: { isEnabled: true },
+                select: { deliveryMode: true, isEnabled: true },
+              },
             },
           },
         },
@@ -68,8 +73,11 @@ type CheckoutSummaryItem = {
       categoryId: string;
       name: string;
       sellerId: string;
-      weightKg?: any;
+      weightKg?: Prisma.Decimal | number | string | null;
+      deliveryModeOptions?: Array<{ deliveryMode: DeliveryMode; isEnabled?: boolean | null }>;
       seller: {
+        id?: string;
+        storeName?: string;
         sellerType: SellerType;
       };
     };
@@ -175,6 +183,7 @@ export class CartService {
       buyerCouponDiscountMinor,
       buyerTotalMinor: this.marketService.convertMinorUnits(finalCharges.totalPaise, market),
       availableDeliveryOptions: finalCharges.availableDeliveryOptions,
+      sellerDeliveryGroups: finalCharges.sellerDeliveryGroups,
     };
   }
 
@@ -190,9 +199,51 @@ export class CartService {
     return {
       ...(query.deliveryPreference ? { deliveryPreference: query.deliveryPreference } : {}),
       ...(query.requestedDeliveryMode ? { deliveryMode: query.requestedDeliveryMode } : {}),
+      ...(query.deliverySelections
+        ? { deliverySelections: this.checkoutSummaryDeliverySelections(query.deliverySelections) }
+        : {}),
       ...(query.paymentMethod ? { paymentMethod: query.paymentMethod } : {}),
       ...(address !== undefined ? { address } : {}),
     };
+  }
+
+  private checkoutSummaryDeliverySelections(value: string) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      throw new BadRequestException("Delivery selections are invalid.");
+    }
+
+    if (!Array.isArray(parsed)) {
+      throw new BadRequestException("Delivery selections are invalid.");
+    }
+
+    if (parsed.length > 50) {
+      throw new BadRequestException("Delivery selections are invalid.");
+    }
+
+    const seenSellerIds = new Set<string>();
+    return parsed.map((entry) => {
+      const selection = entry as { sellerId?: unknown; deliveryMode?: unknown };
+      if (
+        typeof selection.sellerId !== "string" ||
+        !selection.sellerId ||
+        typeof selection.deliveryMode !== "string" ||
+        !Object.values(DeliveryMode).includes(selection.deliveryMode as DeliveryMode)
+      ) {
+        throw new BadRequestException("Delivery selections are invalid.");
+      }
+      if (seenSellerIds.has(selection.sellerId)) {
+        throw new BadRequestException("Delivery selections are invalid.");
+      }
+      seenSellerIds.add(selection.sellerId);
+
+      return {
+        sellerId: selection.sellerId,
+        deliveryMode: selection.deliveryMode as DeliveryMode,
+      };
+    });
   }
 
   private async checkoutSummaryAddress(
@@ -442,6 +493,10 @@ export class CartService {
         product: {
           include: {
             seller: true,
+            deliveryModeOptions: {
+              where: { isEnabled: true },
+              select: { deliveryMode: true, isEnabled: true },
+            },
           },
         },
       },
@@ -534,8 +589,16 @@ export class CartService {
       string,
       {
         sellerId: string;
+        sellerName: string;
         sellerType: SellerType;
         subtotalPaise: number;
+        allowedDeliveryModes: DeliveryMode[];
+        items: Array<{
+          productId: string;
+          productName: string;
+          quantity: number;
+          enabledDeliveryModes: DeliveryMode[];
+        }>;
         package: {
           weightGrams: number;
           lengthCm: number;
@@ -551,8 +614,11 @@ export class CartService {
       const product = variant.product;
       const current = packages.get(product.sellerId) ?? {
         sellerId: product.sellerId,
+        sellerName: product.seller.storeName ?? "Seller",
         sellerType: product.seller.sellerType,
         subtotalPaise: 0,
+        allowedDeliveryModes: this.enabledProductDeliveryModes(product),
+        items: [],
         package: {
           weightGrams: 0,
           lengthCm: 20,
@@ -562,11 +628,21 @@ export class CartService {
         },
       };
       const productWeightGrams = product.weightKg ? Math.round(Number(product.weightKg) * 1000) : null;
+      const enabledDeliveryModes = this.enabledProductDeliveryModes(product);
       const itemWeightGrams = this.positiveInt(
         variant.packageWeightGrams ?? this.jsonNumber(variant.attributes, "packageWeightGrams") ?? productWeightGrams,
         500,
       );
       current.subtotalPaise += item.quantity * item.unitPricePaise;
+      current.allowedDeliveryModes = current.allowedDeliveryModes.filter((mode) =>
+        enabledDeliveryModes.includes(mode),
+      );
+      current.items.push({
+        productId: product.id,
+        productName: product.name,
+        quantity: item.quantity,
+        enabledDeliveryModes,
+      });
       current.package.weightGrams += itemWeightGrams * item.quantity;
       current.package.lengthCm = Math.max(
         current.package.lengthCm,
@@ -594,6 +670,23 @@ export class CartService {
     }
 
     return Array.from(packages.values());
+  }
+
+  private enabledProductDeliveryModes(product: {
+    deliveryModeOptions?: Array<{ deliveryMode: DeliveryMode; isEnabled?: boolean | null }> | null;
+  }) {
+    const modes = (product.deliveryModeOptions ?? [])
+      .filter((option) => option.isEnabled !== false)
+      .map((option) => option.deliveryMode);
+
+    return modes.length
+      ? modes
+      : [
+          DeliveryMode.STORE_PICKUP,
+          DeliveryMode.LOCAL_DELIVERY_PARTNER,
+          DeliveryMode.THIRD_PARTY_COURIER,
+          DeliveryMode.MANUAL_TRANSPORT,
+        ];
   }
 
   private positiveInt(value: unknown, fallback: number): number {

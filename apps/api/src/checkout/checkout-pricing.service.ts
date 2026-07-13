@@ -19,6 +19,12 @@ const settingKeys = {
   platformFeeValueBps: "checkout.platform_fee.value_bps",
   platformFeeFixedPaise: "checkout.platform_fee.fixed_paise"
 } as const;
+const checkoutDeliveryModes = [
+  DeliveryMode.LOCAL_DELIVERY_PARTNER,
+  DeliveryMode.THIRD_PARTY_COURIER,
+  DeliveryMode.MANUAL_TRANSPORT,
+  DeliveryMode.STORE_PICKUP,
+] as const;
 
 type PlatformFeeType = "PERCENTAGE" | "FIXED" | "MANUAL";
 type PricingClient = Prisma.TransactionClient | PrismaService["client"];
@@ -26,15 +32,32 @@ type PricingClient = Prisma.TransactionClient | PrismaService["client"];
 export type CheckoutChargeDeliveryOptions = {
   deliveryPreference?: CheckoutDeliveryPreference | undefined;
   deliveryMode?: DeliveryMode | undefined;
+  deliverySelections?: Array<{ sellerId: string; deliveryMode: DeliveryMode }> | undefined;
   address?: DeliveryRoutingAddress | null | undefined;
   paymentMethod?: string | null | undefined;
   orderId?: string | undefined;
 };
 
+export type CheckoutDeliveryOption = {
+  mode: DeliveryMode;
+  chargePaise: number;
+  isCheapest: boolean;
+  available: boolean;
+  reason: string | null;
+};
+
 export type CheckoutSellerPackageDeliveryInput = {
   sellerId: string;
+  sellerName?: string | undefined;
   sellerType: SellerType;
   subtotalPaise: number;
+  allowedDeliveryModes?: DeliveryMode[] | undefined;
+  items?: Array<{
+    productId: string;
+    productName: string;
+    quantity: number;
+    enabledDeliveryModes: DeliveryMode[];
+  }> | undefined;
   package?: DeliveryRoutingPackage | null;
 };
 
@@ -53,7 +76,16 @@ export type CheckoutCharges = {
   snapshot: Prisma.InputJsonObject;
   deliveryRouting: DeliveryRoutingQuote | null;
   deliveryRoutings?: CheckoutSellerPackageDeliveryRouting[];
-  availableDeliveryOptions?: { mode: DeliveryMode; chargePaise: number; isCheapest: boolean; available: boolean; reason: string | null }[] | undefined;
+  availableDeliveryOptions?: CheckoutDeliveryOption[] | undefined;
+  sellerDeliveryGroups?: Array<{
+    sellerId: string;
+    sellerName: string;
+    subtotalPaise: number;
+    items: NonNullable<CheckoutSellerPackageDeliveryInput["items"]>;
+    availableDeliveryOptions: CheckoutDeliveryOption[];
+    selectedDeliveryMode?: DeliveryMode | undefined;
+    blockedReason?: string | null;
+  }> | undefined;
 };
 
 export type CheckoutCouponAdjustments = {
@@ -147,80 +179,70 @@ export class CheckoutPricingService {
     const normalizedSubtotal = this.nonNegativeInt(subtotalPaise);
     const settings = await this.pricingSettings(client);
     const settingMap = new Map(settings.map((setting) => [setting.key, setting.value]));
-    // Calculate explicit options for UI to choose from
-    let availableDeliveryOptions: { mode: DeliveryMode; chargePaise: number; isCheapest: boolean; available: boolean; reason: string | null }[] | undefined = undefined;
-    if (this.shouldResolveDelivery(deliveryOptions) && deliveryOptions.address) {
-      const explicitModes = [DeliveryMode.LOCAL_DELIVERY_PARTNER, DeliveryMode.THIRD_PARTY_COURIER, DeliveryMode.MANUAL_TRANSPORT, DeliveryMode.STORE_PICKUP];
-      const packageOptionsList = await Promise.all(
-        sellerPackages.map(async (sellerPackage) => {
-          return this.requireDeliveryRouting().resolveAllDeliveryOptions(
-            {
-              ...this.deliveryRoutingInput(deliveryOptions, this.nonNegativeInt(sellerPackage.subtotalPaise)),
-              sellerId: sellerPackage.sellerId,
-              sellerType: sellerPackage.sellerType,
-              package: sellerPackage.package ?? null,
-              deliveryPreference: undefined
-            },
-            explicitModes,
-            client
-          );
-        })
-      );
-      
-      const mappedOptions = explicitModes.map(mode => {
-        let totalCharge = 0;
-        let available = true;
-        let reason = null;
-        for (const pkgOptions of packageOptionsList) {
-          const opt = pkgOptions.find(o => o.mode === mode);
-          if (!opt || opt.quote.routingFailed) {
-            available = false;
-            reason = opt?.quote?.routingFailureNote || "Delivery unavailable for some items";
-            break;
-          }
-          totalCharge += opt.quote.totalDeliveryChargePaise;
-        }
-        return {
-          mode,
-          chargePaise: totalCharge,
-          available,
-          reason: available ? null : reason
-        };
-      });
-      
-      const validOptions = mappedOptions.filter(o => o.available);
-      if (validOptions.length > 0) {
-        const minCharge = Math.min(...validOptions.map(o => o.chargePaise));
-        availableDeliveryOptions = mappedOptions.map(o => ({ ...o, isCheapest: o.available && o.chargePaise === minCharge }));
-      } else {
-        availableDeliveryOptions = mappedOptions.map(o => ({ ...o, isCheapest: false }));
-      }
-    }
-
-    const deliveryRoutings = this.shouldResolveDelivery(deliveryOptions)
+    const shouldResolveDelivery = this.shouldResolveDelivery(deliveryOptions);
+    const packageOptionsList = shouldResolveDelivery
       ? await Promise.all(
           sellerPackages.map(async (sellerPackage) => {
-            const quote = await this.requireDeliveryRouting().resolveDelivery(
-              {
-                ...this.deliveryRoutingInput(
-                  deliveryOptions,
-                  this.nonNegativeInt(sellerPackage.subtotalPaise),
-                ),
-                sellerId: sellerPackage.sellerId,
-                sellerType: sellerPackage.sellerType,
-                package: sellerPackage.package ?? null,
-              },
-              client,
-            );
+            const modes = this.selectableModesForPackage(sellerPackage, deliveryOptions);
+            const selectedMode = this.selectedDeliveryModeForPackage(sellerPackage, deliveryOptions);
+            if (selectedMode && !modes.includes(selectedMode)) {
+              throw new BadRequestException("Selected delivery option is not enabled for one or more items.");
+            }
 
-            return {
-              sellerId: sellerPackage.sellerId,
-              sellerType: sellerPackage.sellerType,
-              subtotalPaise: this.nonNegativeInt(sellerPackage.subtotalPaise),
-              quote,
-            } satisfies CheckoutSellerPackageDeliveryRouting;
+            const options = modes.length
+              ? await this.requireDeliveryRouting().resolveAllDeliveryOptions(
+                  {
+                    ...this.deliveryRoutingInput(
+                      deliveryOptions,
+                      this.nonNegativeInt(sellerPackage.subtotalPaise),
+                    ),
+                    sellerId: sellerPackage.sellerId,
+                    sellerType: sellerPackage.sellerType,
+                    package: sellerPackage.package ?? null,
+                    deliveryPreference: undefined,
+                  },
+                  modes,
+                  client,
+                )
+              : [];
+
+            return { sellerPackage, options, selectedMode };
           }),
         )
+      : [];
+    const sellerDeliveryGroups = shouldResolveDelivery
+      ? packageOptionsList.map(({ sellerPackage, options, selectedMode }) => {
+          const availableDeliveryOptions = this.deliveryOptionsReadback(options);
+          return {
+            sellerId: sellerPackage.sellerId,
+            sellerName: sellerPackage.sellerName ?? "Seller",
+            subtotalPaise: this.nonNegativeInt(sellerPackage.subtotalPaise),
+            items: sellerPackage.items ?? [],
+            availableDeliveryOptions,
+            ...(selectedMode ? { selectedDeliveryMode: selectedMode } : {}),
+            blockedReason: availableDeliveryOptions.some((option) => option.available)
+              ? null
+              : "Delivery is not available for this seller package.",
+          };
+        })
+      : undefined;
+    const availableDeliveryOptions = shouldResolveDelivery
+      ? this.aggregateDeliveryOptions(packageOptionsList)
+      : undefined;
+    const deliveryRoutings = shouldResolveDelivery
+      ? packageOptionsList.map(({ sellerPackage, options, selectedMode }) => {
+          const selectedOption = this.selectedDeliveryOption(options, selectedMode);
+          if (!selectedOption) {
+            throw new BadRequestException("Delivery is not available for one or more seller packages.");
+          }
+
+          return {
+            sellerId: sellerPackage.sellerId,
+            sellerType: sellerPackage.sellerType,
+            subtotalPaise: this.nonNegativeInt(sellerPackage.subtotalPaise),
+            quote: selectedOption.quote,
+          } satisfies CheckoutSellerPackageDeliveryRouting;
+        })
       : [];
     const shippingPaise = deliveryRoutings.length
       ? deliveryRoutings.reduce(
@@ -277,6 +299,7 @@ export class CheckoutPricingService {
       deliveryRouting: deliveryRoutings[0]?.quote ?? null,
       deliveryRoutings,
       availableDeliveryOptions,
+      sellerDeliveryGroups,
     };
   }
 
@@ -353,10 +376,120 @@ export class CheckoutPricingService {
     return Boolean(
       options.deliveryPreference ||
         options.deliveryMode ||
+        options.deliverySelections?.length ||
         options.address ||
         options.paymentMethod ||
         options.orderId,
     );
+  }
+
+  private selectableModesForPackage(
+    sellerPackage: CheckoutSellerPackageDeliveryInput,
+    options: CheckoutChargeDeliveryOptions,
+  ) {
+    const allowedModes = sellerPackage.allowedDeliveryModes?.length
+      ? sellerPackage.allowedDeliveryModes
+      : [...checkoutDeliveryModes];
+
+    if (options.deliveryPreference === CheckoutDeliveryPreference.STORE_PICKUP) {
+      return allowedModes.filter((mode) => mode === DeliveryMode.STORE_PICKUP);
+    }
+
+    if (options.deliveryPreference === CheckoutDeliveryPreference.DELIVER_TO_ADDRESS) {
+      return allowedModes.filter((mode) => mode !== DeliveryMode.STORE_PICKUP);
+    }
+
+    if (sellerPackage.allowedDeliveryModes !== undefined || options.deliverySelections?.length) {
+      return allowedModes;
+    }
+
+    return allowedModes;
+  }
+
+  private selectedDeliveryModeForPackage(
+    sellerPackage: CheckoutSellerPackageDeliveryInput,
+    options: CheckoutChargeDeliveryOptions,
+  ) {
+    return (
+      options.deliverySelections?.find((selection) => selection.sellerId === sellerPackage.sellerId)
+        ?.deliveryMode ?? options.deliveryMode
+    );
+  }
+
+  private deliveryOptionsReadback(
+    options: Array<{ mode: DeliveryMode; quote: DeliveryRoutingQuote }>,
+  ): CheckoutDeliveryOption[] {
+    const mappedOptions = options.map((option) => ({
+      mode: option.mode,
+      chargePaise: this.nonNegativeInt(option.quote.totalDeliveryChargePaise),
+      available: !option.quote.routingFailed,
+      reason: option.quote.routingFailed
+        ? option.quote.routingFailureNote ?? "Delivery unavailable"
+        : null,
+      isCheapest: false,
+    }));
+    const availableOptions = mappedOptions.filter((option) => option.available);
+    const minCharge = availableOptions.length
+      ? Math.min(...availableOptions.map((option) => option.chargePaise))
+      : null;
+
+    return mappedOptions.map((option) => ({
+      ...option,
+      isCheapest: option.available && option.chargePaise === minCharge,
+    }));
+  }
+
+  private aggregateDeliveryOptions(
+    packageOptionsList: Array<{
+      options: Array<{ mode: DeliveryMode; quote: DeliveryRoutingQuote }>;
+    }>,
+  ): CheckoutDeliveryOption[] {
+    const mappedOptions = checkoutDeliveryModes.map((mode) => {
+      let chargePaise = 0;
+      let available = true;
+      let reason: string | null = null;
+
+      for (const packageOptions of packageOptionsList) {
+        const option = packageOptions.options.find((item) => item.mode === mode);
+        if (!option || option.quote.routingFailed) {
+          available = false;
+          reason =
+            option?.quote.routingFailureNote ??
+            "Delivery option is not enabled for every seller package.";
+          break;
+        }
+
+        chargePaise += this.nonNegativeInt(option.quote.totalDeliveryChargePaise);
+      }
+
+      return { mode, chargePaise, available, reason, isCheapest: false };
+    });
+    const availableOptions = mappedOptions.filter((option) => option.available);
+    const minCharge = availableOptions.length
+      ? Math.min(...availableOptions.map((option) => option.chargePaise))
+      : null;
+
+    return mappedOptions.map((option) => ({
+      ...option,
+      isCheapest: option.available && option.chargePaise === minCharge,
+    }));
+  }
+
+  private selectedDeliveryOption(
+    options: Array<{ mode: DeliveryMode; quote: DeliveryRoutingQuote }>,
+    selectedMode?: DeliveryMode,
+  ) {
+    if (selectedMode) {
+      const selected = options.find((option) => option.mode === selectedMode);
+      return selected && !selected.quote.routingFailed ? selected : undefined;
+    }
+
+    const availableOptions = options.filter((option) => !option.quote.routingFailed);
+    return [...availableOptions].sort(
+      (left, right) =>
+        this.nonNegativeInt(left.quote.totalDeliveryChargePaise) -
+        this.nonNegativeInt(right.quote.totalDeliveryChargePaise),
+    )[0];
   }
 
   private requireDeliveryRouting() {

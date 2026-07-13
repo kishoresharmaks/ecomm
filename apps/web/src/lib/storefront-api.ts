@@ -29,6 +29,7 @@ export type CategorySummary = {
 };
 
 export type ProductListingMode = "CART" | "ENQUIRY_ONLY" | "CART_AND_ENQUIRY";
+export type DeliveryMode = "STORE_PICKUP" | "LOCAL_DELIVERY_PARTNER" | "THIRD_PARTY_COURIER" | "MANUAL_TRANSPORT";
 export type ProductTemplateFieldType =
   | "TEXT"
   | "TEXTAREA"
@@ -282,6 +283,7 @@ export type ProductSummary = {
   seller: SellerSummary;
   images: ProductImage[];
   variants: ProductVariant[];
+  deliveryModes?: DeliveryMode[];
   activeDeal?: ActiveDealSummary | null;
   campaignBadge?: string | null;
   campaignLabel?: string | null;
@@ -440,6 +442,26 @@ export type CheckoutSummary = {
     available: boolean;
     reason: string | null;
   }[];
+  sellerDeliveryGroups?: Array<{
+    sellerId: string;
+    sellerName: string;
+    subtotalPaise: number;
+    items: Array<{
+      productId: string;
+      productName: string;
+      quantity: number;
+      enabledDeliveryModes: DeliveryMode[];
+    }>;
+    availableDeliveryOptions: Array<{
+      mode: DeliveryMode;
+      chargePaise: number;
+      isCheapest: boolean;
+      available: boolean;
+      reason: string | null;
+    }>;
+    selectedDeliveryMode?: DeliveryMode;
+    blockedReason?: string | null;
+  }>;
 };
 
 export type CheckoutSummaryOptions = {
@@ -449,6 +471,7 @@ export type CheckoutSummaryOptions = {
   couponCode?: string;
   deliveryPreference?: "STORE_PICKUP" | "DELIVER_TO_ADDRESS";
   requestedDeliveryMode?: string;
+  deliverySelections?: Array<{ sellerId: string; deliveryMode: DeliveryMode }>;
   addressId?: string;
   paymentMethod?: "RAZORPAY" | "COD" | "BANK_TRANSFER" | "MANUAL";
   shippingAddress?: {
@@ -492,7 +515,8 @@ export type PlaceOrderPayload = {
   directQuantity?: number;
   shippingAddress?: CheckoutAddress;
   deliveryPreference?: "STORE_PICKUP" | "DELIVER_TO_ADDRESS";
-  deliveryMode?: "STORE_PICKUP" | "LOCAL_DELIVERY_PARTNER" | "THIRD_PARTY_COURIER" | "MANUAL_TRANSPORT";
+  deliveryMode?: DeliveryMode;
+  deliverySelections?: Array<{ sellerId: string; deliveryMode: DeliveryMode }>;
   paymentMethod: "RAZORPAY" | "COD" | "BANK_TRANSFER" | "MANUAL";
   paymentReference?: string;
   couponCode?: string;
@@ -688,6 +712,19 @@ export type StorefrontHomePayload = {
 export type OrderSummary = {
   id: string;
   orderNumber: string;
+  orderKind?: "STANDARD" | "REPLACEMENT";
+  parentOrder?: {
+    id: string;
+    orderNumber: string;
+    orderStatus?: string;
+    deliveryStatus?: string;
+  } | null;
+  replacementReturnRequest?: {
+    id: string;
+    requestNumber: string;
+    status?: string;
+    resolution?: string;
+  } | null;
   orderStatus: string;
   paymentStatus: string;
   deliveryStatus: string;
@@ -1175,6 +1212,9 @@ export function getCheckoutSummary(
   }
   if (summaryOptions.requestedDeliveryMode) {
     query.set("requestedDeliveryMode", summaryOptions.requestedDeliveryMode);
+  }
+  if (summaryOptions.deliverySelections?.length) {
+    query.set("deliverySelections", JSON.stringify(summaryOptions.deliverySelections));
   }
   if (summaryOptions.paymentMethod) {
     query.set("paymentMethod", summaryOptions.paymentMethod);

@@ -8,6 +8,7 @@ import {
   Prisma,
   ServiceReceivableOffsetPolicy,
   ServiceSellerReceivableStatus,
+  SellerCashReceivableStatus,
   SellerLedgerEntryType,
   SellerOrderStatus,
   SellerPayoutStatus,
@@ -55,6 +56,7 @@ type PayoutRequestCalculation = {
 
 type B2BPayoutOrder = Prisma.B2BOrderGetPayload<Record<string, never>>;
 type ServicePayoutReceivable = Prisma.ServiceSellerReceivableGetPayload<Record<string, never>>;
+type SellerCashPayoutReceivable = Prisma.SellerCashReceivableGetPayload<Record<string, never>>;
 
 @Injectable()
 export class SellerPayoutsService {
@@ -134,7 +136,7 @@ export class SellerPayoutsService {
         }
       },
       settlementRun: { select: { id: true, runNumber: true, status: true } },
-      _count: { select: { orderSplits: true, b2bOrders: true, serviceSettlements: true, serviceReceivableOffsets: true, ledgerEntries: true, statements: true } }
+      _count: { select: { orderSplits: true, b2bOrders: true, serviceSettlements: true, serviceReceivableOffsets: true, sellerCashReceivableOffsets: true, ledgerEntries: true, statements: true } }
     } satisfies Prisma.SellerPayoutInclude;
   }
 
@@ -168,7 +170,7 @@ export class SellerPayoutsService {
           tcsPaise: availability.tcsPaise,
           platformFeePaise: availability.platformFeePaise,
           refundAdjustmentPaise: availability.refundAdjustmentPaise,
-          adjustmentPaise: availability.manualAdjustmentPaise - availability.serviceReceivableOffsetPaise,
+          adjustmentPaise: availability.manualAdjustmentPaise - availability.serviceReceivableOffsetPaise - availability.sellerCashReceivableOffsetPaise,
           netPayablePaise: availability.netPayablePaise,
           currency: availability.currency,
           note: dto.note?.trim() || "Requested by seller for manual payout."
@@ -186,6 +188,11 @@ export class SellerPayoutsService {
             order: {
               orderStatus: OrderStatus.DELIVERED,
               paymentStatus: { in: [PaymentStatus.PAID, PaymentStatus.NOT_REQUIRED] }
+            },
+            sellerCashReceivables: {
+              none: {
+                status: { not: SellerCashReceivableStatus.CANCELLED },
+              },
             }
           },
           data: {
@@ -276,6 +283,27 @@ export class SellerPayoutsService {
         }
       }
 
+      for (const offset of availability.sellerCashReceivableOffsets) {
+        const updated = await tx.sellerCashReceivable.updateMany({
+          where: {
+            id: offset.id,
+            sellerId,
+            payoutOffsetId: null,
+            status: { in: [SellerCashReceivableStatus.OPEN, SellerCashReceivableStatus.PARTIALLY_OFFSET] },
+          },
+          data: {
+            payoutOffsetId: payout.id,
+            offsetPaise: offset.offsetAmountPaise,
+            offsetScheduledAt: new Date(),
+            offsetAppliedAt: null,
+            status: SellerCashReceivableStatus.OFFSET_SCHEDULED,
+          },
+        });
+        if (updated.count !== 1) {
+          throw new ConflictException("Seller cash receivable offset changed while creating this request. Refresh and try again.");
+        }
+      }
+
       for (const entry of availability.manualAdjustments) {
         const updated = await tx.sellerLedgerEntry.updateMany({
           where: {
@@ -307,6 +335,7 @@ export class SellerPayoutsService {
           eligibleB2BOrderCount: availability.eligibleB2BOrderCount,
           eligibleServiceSettlementCount: availability.eligibleServiceSettlementCount,
           serviceReceivableOffsetPaise: availability.serviceReceivableOffsetPaise,
+          sellerCashReceivableOffsetPaise: availability.sellerCashReceivableOffsetPaise,
           manualAdjustmentPaise: availability.manualAdjustmentPaise,
           netPayablePaise: availability.netPayablePaise,
           note: dto.note
@@ -344,6 +373,25 @@ export class SellerPayoutsService {
         serviceReceivableOffsets: {
           include: { booking: true },
           orderBy: { createdAt: "asc" }
+        },
+        sellerCashReceivableOffsets: {
+          include: {
+            order: { select: { orderNumber: true } },
+            orderShipment: { select: { shipmentNumber: true, deliveryMode: true } },
+          },
+          orderBy: { createdAt: "asc" }
+        },
+        ledgerEntries: {
+          where: { entryType: SellerLedgerEntryType.SELLER_CASH_RECEIVABLE_OFFSET },
+          include: {
+            sellerCashReceivable: {
+              include: {
+                order: { select: { orderNumber: true } },
+                orderShipment: { select: { shipmentNumber: true, deliveryMode: true } },
+              },
+            },
+          },
+          orderBy: { createdAt: "asc" },
         },
         events: { orderBy: { createdAt: "asc" } },
         statements: { orderBy: { generatedAt: "desc" } }
@@ -492,6 +540,7 @@ export class SellerPayoutsService {
       }
 
       await this.applyServiceReceivableOffsets(tx, payoutId, actor);
+      await this.applySellerCashReceivableOffsets(tx, payoutId, actor);
 
       await this.ledger.postPayoutApprovalEntries(tx, payoutId, actor);
       await this.createEvent(tx, payoutId, "payout.approved", payout.status, SellerPayoutStatus.APPROVED, actor, dto.note);
@@ -573,6 +622,40 @@ export class SellerPayoutsService {
           offsetScheduledAt: null,
           offsetAppliedAt: null,
           status: ServiceSellerReceivableStatus.OPEN,
+        },
+      });
+
+      await tx.sellerCashReceivable.updateMany({
+        where: {
+          payoutOffsetId: payoutId,
+          status: SellerCashReceivableStatus.OFFSET_SCHEDULED,
+          OR: [
+            { settledPaise: { gt: 0 } },
+            { waivedPaise: { gt: 0 } },
+            { offsetAppliedAt: { not: null } },
+            { ledgerEntries: { some: { entryType: SellerLedgerEntryType.SELLER_CASH_RECEIVABLE_OFFSET } } },
+          ],
+        },
+        data: {
+          payoutOffsetId: null,
+          offsetPaise: 0,
+          offsetScheduledAt: null,
+          offsetAppliedAt: null,
+          status: SellerCashReceivableStatus.PARTIALLY_OFFSET,
+        },
+      });
+
+      await tx.sellerCashReceivable.updateMany({
+        where: {
+          payoutOffsetId: payoutId,
+          status: SellerCashReceivableStatus.OFFSET_SCHEDULED,
+        },
+        data: {
+          payoutOffsetId: null,
+          offsetPaise: 0,
+          offsetScheduledAt: null,
+          offsetAppliedAt: null,
+          status: SellerCashReceivableStatus.OPEN,
         },
       });
 
@@ -663,6 +746,7 @@ export class SellerPayoutsService {
       }
 
       await this.ledger.postPayoutPaidEntry(tx, payoutId, actor);
+      await this.releasePartiallyOffsetSellerCashReceivables(tx, payoutId);
       await this.createEvent(tx, payoutId, "payout.marked_paid", payout.status, SellerPayoutStatus.PAID, actor, dto.note);
       await this.audit(tx, actor, "finance.payout.paid", payoutId, { status: payout.status }, { status: SellerPayoutStatus.PAID, transactionReference: dto.transactionReference });
 
@@ -702,7 +786,15 @@ export class SellerPayoutsService {
   }
 
   private async payoutSplitSummary(tx: Prisma.TransactionClient, payoutId: string) {
-    const [summary, b2bSummary, serviceSummary, receivableOffsetSummary, manualAdjustmentSummary] = await Promise.all([
+    const [
+      summary,
+      b2bSummary,
+      serviceSummary,
+      receivableOffsetSummary,
+      sellerCashReceivableOffsetSummary,
+      sellerCashLedgerOffsetSummary,
+      manualAdjustmentSummary,
+    ] = await Promise.all([
       tx.orderSellerSplit.aggregate({
         where: { payoutId },
         _count: { _all: true },
@@ -723,12 +815,29 @@ export class SellerPayoutsService {
         _count: { _all: true },
         _sum: { offsetPaise: true }
       }),
+      tx.sellerCashReceivable.aggregate({
+        where: { payoutOffsetId: payoutId },
+        _count: { _all: true },
+        _sum: { offsetPaise: true }
+      }),
+      tx.sellerLedgerEntry.aggregate({
+        where: {
+          payoutId,
+          entryType: SellerLedgerEntryType.SELLER_CASH_RECEIVABLE_OFFSET,
+        },
+        _sum: { debitPaise: true }
+      }),
       tx.sellerLedgerEntry.aggregate({
         where: { payoutId, entryType: SellerLedgerEntryType.MANUAL_ADJUSTMENT },
         _sum: { creditPaise: true, debitPaise: true }
       })
     ]);
     const receivableOffsetPaise = receivableOffsetSummary._sum.offsetPaise ?? 0;
+    const sellerCashLedgerOffsetPaise = sellerCashLedgerOffsetSummary._sum.debitPaise ?? 0;
+    const sellerCashReceivableOffsetPaise =
+      sellerCashLedgerOffsetPaise > 0
+        ? sellerCashLedgerOffsetPaise
+        : (sellerCashReceivableOffsetSummary._sum.offsetPaise ?? 0);
     const manualAdjustmentPaise = (manualAdjustmentSummary._sum.creditPaise ?? 0) - (manualAdjustmentSummary._sum.debitPaise ?? 0);
 
     return {
@@ -740,7 +849,8 @@ export class SellerPayoutsService {
         (summary._sum.netPayablePaise ?? 0) +
         (b2bSummary._sum.sellerPayoutAmountPaise ?? 0) +
         (serviceSummary._sum.netPayablePaise ?? 0) -
-        receivableOffsetPaise +
+        receivableOffsetPaise -
+        sellerCashReceivableOffsetPaise +
         manualAdjustmentPaise
     };
   }
@@ -833,6 +943,111 @@ export class SellerPayoutsService {
     }
   }
 
+  private async applySellerCashReceivableOffsets(tx: Prisma.TransactionClient, payoutId: string, actor: RequestUser) {
+    const payout = await tx.sellerPayout.findUnique({
+      where: { id: payoutId },
+      select: { id: true, sellerId: true, payoutNumber: true },
+    });
+    if (!payout) {
+      throw new NotFoundException("Seller payout not found.");
+    }
+
+    const offsets = await tx.sellerCashReceivable.findMany({
+      where: {
+        payoutOffsetId: payoutId,
+        status: SellerCashReceivableStatus.OFFSET_SCHEDULED,
+        offsetPaise: { gt: 0 },
+      },
+      orderBy: { createdAt: "asc" },
+    });
+
+    for (const offset of offsets) {
+      const outstandingBeforeOffset = Math.max(0, offset.outstandingPaise);
+      const nextOutstanding = Math.max(0, outstandingBeforeOffset - offset.offsetPaise);
+      const nextStatus =
+        nextOutstanding === 0
+          ? SellerCashReceivableStatus.SETTLED
+          : SellerCashReceivableStatus.PARTIALLY_OFFSET;
+      const updated = await tx.sellerCashReceivable.updateMany({
+        where: {
+          id: offset.id,
+          payoutOffsetId: payoutId,
+          status: SellerCashReceivableStatus.OFFSET_SCHEDULED,
+        },
+        data: {
+          status: nextStatus,
+          outstandingPaise: nextOutstanding,
+          offsetAppliedAt: new Date(),
+          ...(nextStatus === SellerCashReceivableStatus.SETTLED ? { settledAt: new Date() } : {}),
+        },
+      });
+      if (updated.count !== 1) {
+        throw new ConflictException("Seller cash receivable offset changed while approving payout. Refresh and try again.");
+      }
+
+      await tx.sellerCashReceivableEvent.create({
+        data: {
+          receivableId: offset.id,
+          eventType: "seller_cash_receivable.offset_applied",
+          oldStatus: SellerCashReceivableStatus.OFFSET_SCHEDULED,
+          newStatus: nextStatus,
+          amountDeltaPaise: -offset.offsetPaise,
+          oldOutstandingPaise: outstandingBeforeOffset,
+          newOutstandingPaise: nextOutstanding,
+          note: `Offset applied against payout ${payout.payoutNumber}`,
+          actorUserId: actor.id,
+          metadata: {
+            payoutId,
+            payoutNumber: payout.payoutNumber,
+            receivableNumber: offset.receivableNumber,
+          },
+        },
+      });
+
+      const existingLedger = await tx.sellerLedgerEntry.findFirst({
+        where: {
+          payoutId,
+          referenceType: "seller_cash_receivable",
+          referenceId: offset.id,
+          entryType: SellerLedgerEntryType.SELLER_CASH_RECEIVABLE_OFFSET,
+        },
+        select: { id: true },
+      });
+      if (!existingLedger) {
+        await this.ledger.createEntry(tx, {
+          sellerId: offset.sellerId,
+          orderId: offset.orderId,
+          orderSellerSplitId: offset.orderSellerSplitId,
+          sellerCashReceivableId: offset.id,
+          payoutId,
+          entryType: SellerLedgerEntryType.SELLER_CASH_RECEIVABLE_OFFSET,
+          description: `Seller-collected COD offset against payout ${payout.payoutNumber}`,
+          debitPaise: offset.offsetPaise,
+          currency: offset.currency,
+          referenceType: "seller_cash_receivable",
+          referenceId: offset.id,
+          metadata: { receivableNumber: offset.receivableNumber, payoutNumber: payout.payoutNumber },
+          createdById: actor.id,
+        });
+      }
+    }
+  }
+
+  private async releasePartiallyOffsetSellerCashReceivables(tx: Prisma.TransactionClient, payoutId: string) {
+    await tx.sellerCashReceivable.updateMany({
+      where: {
+        payoutOffsetId: payoutId,
+        status: SellerCashReceivableStatus.PARTIALLY_OFFSET,
+        outstandingPaise: { gt: 0 },
+      },
+      data: {
+        payoutOffsetId: null,
+        offsetPaise: 0,
+        offsetScheduledAt: null,
+      },
+    });
+  }
+
   private createEvent(
     tx: Prisma.TransactionClient,
     payoutId: string,
@@ -868,7 +1083,7 @@ export class SellerPayoutsService {
   }
 
   private async calculateSellerPayoutAvailability(tx: Prisma.TransactionClient, sellerId: string) {
-    const [seller, settings, splits, b2bOrders, serviceSettlements, receivables, manualAdjustments] = await Promise.all([
+    const [seller, settings, splits, b2bOrders, serviceSettlements, receivables, sellerCashReceivables, manualAdjustments] = await Promise.all([
       tx.seller.findUnique({
         where: { id: sellerId },
         include: {
@@ -886,7 +1101,12 @@ export class SellerPayoutsService {
           order: {
             orderStatus: OrderStatus.DELIVERED,
             paymentStatus: { in: [PaymentStatus.PAID, PaymentStatus.NOT_REQUIRED] }
-          }
+          },
+          sellerCashReceivables: {
+            none: {
+              status: { not: SellerCashReceivableStatus.CANCELLED },
+            },
+          },
         },
         include: {
           order: {
@@ -930,6 +1150,15 @@ export class SellerPayoutsService {
           payoutOffsetId: null,
           status: { in: [ServiceSellerReceivableStatus.OPEN, ServiceSellerReceivableStatus.PARTIALLY_SETTLED] },
           offsetPolicy: { in: [ServiceReceivableOffsetPolicy.AUTO_OFFSET_NEXT_PAYOUT, ServiceReceivableOffsetPolicy.HOLD_PAYOUT_UNTIL_SETTLED] },
+        },
+        orderBy: { createdAt: "asc" },
+      }),
+      tx.sellerCashReceivable.findMany({
+        where: {
+          sellerId,
+          payoutOffsetId: null,
+          status: { in: [SellerCashReceivableStatus.OPEN, SellerCashReceivableStatus.PARTIALLY_OFFSET] },
+          outstandingPaise: { gt: 0 },
         },
         orderBy: { createdAt: "asc" },
       }),
@@ -1014,6 +1243,21 @@ export class SellerPayoutsService {
     const serviceReceivableOffsetPaise = receivableOffsets.reduce((sum, receivable) => sum + receivable.offsetAmountPaise, 0);
     totals.netPayablePaise = Math.max(0, totals.netPayablePaise - serviceReceivableOffsetPaise);
 
+    const sellerCashReceivableOffsets: Array<SellerCashPayoutReceivable & { offsetAmountPaise: number }> = [];
+    remainingOffsetCapacity = totals.netPayablePaise;
+    for (const receivable of sellerCashReceivables) {
+      const outstanding = this.sellerCashReceivableOutstanding(receivable);
+      if (outstanding <= 0 || remainingOffsetCapacity <= 0) {
+        continue;
+      }
+      const offsetAmountPaise = Math.min(outstanding, remainingOffsetCapacity);
+      sellerCashReceivableOffsets.push({ ...receivable, offsetAmountPaise });
+      remainingOffsetCapacity -= offsetAmountPaise;
+    }
+    const sellerCashReceivableOffsetPaise = sellerCashReceivableOffsets.reduce((sum, receivable) => sum + receivable.offsetAmountPaise, 0);
+    const sellerCashReceivableOutstandingPaise = sellerCashReceivables.reduce((sum, receivable) => sum + this.sellerCashReceivableOutstanding(receivable), 0);
+    totals.netPayablePaise = Math.max(0, totals.netPayablePaise - sellerCashReceivableOffsetPaise);
+
     const orderDates = [
       ...calculations.map(({ split }) => split.order.createdAt),
       ...eligibleB2BOrders.map((order) => order.createdAt),
@@ -1031,6 +1275,8 @@ export class SellerPayoutsService {
       eligibleServiceSettlementCount: eligibleServiceSettlements.length,
       holdReceivableCount,
       serviceReceivableOffsetPaise,
+      sellerCashReceivableOffsetPaise,
+      sellerCashReceivableOutstandingPaise,
       manualAdjustmentPaise,
       periodFrom: orderDates.length ? new Date(Math.min(...orderDates.map((date) => date.getTime()))) : null,
       periodTo: orderDates.length ? new Date(Math.max(...orderDates.map((date) => date.getTime()))) : null,
@@ -1039,6 +1285,7 @@ export class SellerPayoutsService {
       b2bOrders: eligibleB2BOrders,
       serviceSettlements: eligibleServiceSettlements,
       receivableOffsets,
+      sellerCashReceivableOffsets,
       manualAdjustments,
       ...totals
     };
@@ -1056,6 +1303,8 @@ export class SellerPayoutsService {
       eligibleB2BOrderCount: availability.eligibleB2BOrderCount,
       eligibleServiceSettlementCount: availability.eligibleServiceSettlementCount,
       serviceReceivableOffsetPaise: availability.serviceReceivableOffsetPaise,
+      sellerCashReceivableOffsetPaise: availability.sellerCashReceivableOffsetPaise,
+      sellerCashReceivableOutstandingPaise: availability.sellerCashReceivableOutstandingPaise,
       holdReceivableCount: availability.holdReceivableCount,
       periodFrom: availability.periodFrom?.toISOString() ?? null,
       periodTo: availability.periodTo?.toISOString() ?? null,
@@ -1081,6 +1330,7 @@ export class SellerPayoutsService {
     eligibleB2BOrderCount?: number;
     eligibleServiceSettlementCount?: number;
     holdReceivableCount?: number;
+    sellerCashReceivableOffsetPaise?: number;
     netPayablePaise: number;
     minimumPayoutPaise: number;
   }) {
@@ -1098,13 +1348,14 @@ export class SellerPayoutsService {
     if ((availability.holdReceivableCount ?? 0) > 0) {
       blockers.push("Open service cash receivables are configured to hold payouts until settled.");
     }
-    if (
+    const eligibleSourceCount =
       availability.eligibleSplitCount +
-        (availability.eligibleB2BOrderCount ?? 0) +
-        (availability.eligibleServiceSettlementCount ?? 0) ===
-        0 ||
-      availability.netPayablePaise <= 0
-    ) {
+      (availability.eligibleB2BOrderCount ?? 0) +
+      (availability.eligibleServiceSettlementCount ?? 0);
+    if (eligibleSourceCount === 0) {
+      blockers.push("No delivered and paid orders are currently eligible for payout.");
+    }
+    if (eligibleSourceCount > 0 && availability.netPayablePaise <= 0 && (availability.sellerCashReceivableOffsetPaise ?? 0) <= 0) {
       blockers.push("No delivered and paid orders are currently eligible for payout.");
     }
     if (availability.netPayablePaise > 0 && availability.netPayablePaise < availability.minimumPayoutPaise) {
@@ -1182,6 +1433,16 @@ export class SellerPayoutsService {
         receivable.waivedPaise -
         receivable.reversalPaise -
         receivable.offsetPaise,
+    );
+  }
+
+  private sellerCashReceivableOutstanding(
+    receivable: Pick<SellerCashPayoutReceivable, "outstandingPaise" | "platformDuePaise" | "settledPaise" | "waivedPaise" | "offsetPaise">,
+  ) {
+    return Math.max(
+      0,
+      receivable.outstandingPaise ??
+        receivable.platformDuePaise - receivable.settledPaise - receivable.waivedPaise - receivable.offsetPaise,
     );
   }
 }

@@ -3,7 +3,14 @@ import { Pressable, Text, View } from "react-native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { colors } from "../../src/theme";
 import { Header, Metric, QueryState, Screen, StatusChip, formatPaise, humanize } from "../../src/components/screen";
-import { listDeliveryOrders, getDeliveryProfile, getDeliveryWallet, findCodPayment, type DeliveryOrder } from "../../src/features/delivery/delivery-api";
+import {
+  listDeliveryOrders,
+  getDeliveryProfile,
+  getDeliveryWallet,
+  findCodPayment,
+  sellerToCustomerDistanceLabel,
+  type DeliveryOrder,
+} from "../../src/features/delivery/delivery-api";
 import { useMobileDeliveryAuth } from "../../src/auth/mobile-delivery-auth-context";
 
 export default function DeliveryDashboardScreen() {
@@ -68,6 +75,7 @@ export default function DeliveryDashboardScreen() {
 }
 
 function OrderRow({ order }: { order: DeliveryOrder }) {
+  const distanceLabel = sellerToCustomerDistanceLabel(order);
   return (
     <Link href={`/orders/${encodeURIComponent(order.orderNumber)}` as never} asChild>
       <Pressable style={{ backgroundColor: "#FFFFFF", borderColor: "#F3E7E2", borderRadius: 16, borderWidth: 1, gap: 8, padding: 16 }}>
@@ -75,8 +83,12 @@ function OrderRow({ order }: { order: DeliveryOrder }) {
           <Text style={{ color: "#123A5A", flex: 1, fontSize: 17, fontWeight: "900" }}>{order.orderNumber}</Text>
           <StatusChip label={humanize(order.deliveryStatus)} tone={order.deliveryStatus === "DELIVERED" ? "success" : "warning"} />
         </View>
+        {order.orderKind === "REPLACEMENT" ? <StatusChip label="Replacement delivery" tone="info" /> : null}
         <Text style={{ color: "#6B7280", fontWeight: "700" }}>
           {(order.items ?? []).map((item) => `${item.productNameSnapshot} x${item.quantity}`).join(", ") || "Assigned delivery"}
+        </Text>
+        <Text style={{ color: distanceLabel ? "#ED3500" : "#9CA3AF", fontSize: 12, fontWeight: "900" }}>
+          {distanceLabel ?? "Seller to customer distance unavailable"}
         </Text>
         <Text style={{ color: "#123A5A", fontWeight: "900" }}>
           {formatPaise(order.buyerTotalMinor ?? order.totalPaise, order.buyerCurrency ?? order.currency)}

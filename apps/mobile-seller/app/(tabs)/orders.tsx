@@ -77,7 +77,12 @@ export default function SellerOrdersScreen() {
         filteredOrders.map((order) => (
           <Card key={order.id}>
             <Text style={{ color: "#111827", fontSize: 18, fontWeight: "900" }}>{order.orderNumber}</Text>
-            <StatusChip label={`${order.status ?? "ORDER"} / ${order.deliveryStatus ?? "DELIVERY"}`} />
+            {order.orderKind === "REPLACEMENT" ? (
+              <Text style={{ color: "#ED3500", fontSize: 12, fontWeight: "900", marginTop: 4 }}>
+                Replacement order{order.parentOrder?.orderNumber ? ` for ${order.parentOrder.orderNumber}` : ""}
+              </Text>
+            ) : null}
+            <StatusChip label={`${order.orderStatus ?? order.status ?? "ORDER"} / ${order.deliveryStatus ?? "DELIVERY"}`} />
             <Text style={{ color: "#6B7280" }}>{formatMoney(order.totalPaise, order.currency ?? "INR")}</Text>
             <Button title="Open order" onPress={() => router.push(`/orders/${encodeURIComponent(order.orderNumber)}`)} />
           </Card>

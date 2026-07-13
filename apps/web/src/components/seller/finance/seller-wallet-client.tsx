@@ -52,12 +52,15 @@ export function SellerWalletClient() {
   }
 
   const entries = ledgerQuery.data?.items ?? [];
+  const sellerCashDuePaise = availabilityQuery.data?.sellerCashReceivableOutstandingPaise ?? 0;
+  const sellerCashOffsetPaise = availabilityQuery.data?.sellerCashReceivableOffsetPaise ?? 0;
 
   return (
     <div className="grid gap-5">
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-4">
         <SellerMetric label="Wallet balance" value={formatMoney(ledgerQuery.data?.balancePaise ?? 0)} note="Credits minus payouts and deductions" />
         <SellerMetric label="Available payout" value={formatMoney(availabilityQuery.data?.netPayablePaise ?? 0)} note={`${availabilityQuery.data?.eligibleSplitCount ?? 0} eligible order splits`} />
+        <SellerMetric label="Platform due" value={formatMoney(sellerCashDuePaise)} note={sellerCashOffsetPaise > 0 ? `${formatMoney(sellerCashOffsetPaise)} will be deducted next` : "Seller-collected COD balance"} />
         <SellerMetric label="Latest movement" value={entries[0]?.entryType ?? "None"} note="Most recent transaction" />
       </div>
 

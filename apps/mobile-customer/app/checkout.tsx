@@ -55,6 +55,7 @@ import {
   type MobileCustomerAddress,
   type MobileCustomerAddressPayload,
   type MobileDeliveryPreference,
+  type MobileDeliveryMode,
   type MobileOrderSummary,
   type MobilePaymentMethod,
 } from "../src/features/storefront/storefront-api";
@@ -123,6 +124,7 @@ function CheckoutScreen() {
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
   const [deliveryPreference, setDeliveryPreference] = useState<MobileDeliveryPreference>("DELIVER_TO_ADDRESS");
   const [requestedDeliveryMode, setRequestedDeliveryMode] = useState<string | null>(null);
+  const [deliverySelectionsBySeller, setDeliverySelectionsBySeller] = useState<Record<string, MobileDeliveryMode>>({});
   const [paymentMethod, setPaymentMethod] = useState<MobilePaymentMethod>("COD");
   const [paymentReference, setPaymentReference] = useState("");
   const [customerNote, setCustomerNote] = useState("");
@@ -188,6 +190,7 @@ function CheckoutScreen() {
       selectedAddressId,
       deliveryPreference,
       requestedDeliveryMode,
+      deliverySelectionsBySeller,
       paymentMethod,
       buyerCountryCode,
       appliedCouponCode,
@@ -198,6 +201,14 @@ function CheckoutScreen() {
         ...(appliedCouponCode ? { couponCode: appliedCouponCode } : {}),
         deliveryPreference,
         ...(requestedDeliveryMode ? { requestedDeliveryMode } : {}),
+        ...(Object.keys(deliverySelectionsBySeller).length
+          ? {
+              deliverySelections: Object.entries(deliverySelectionsBySeller).map(([sellerId, deliveryMode]) => ({
+                sellerId,
+                deliveryMode,
+              })),
+            }
+          : {}),
         paymentMethod,
         addressId: deliveryPreference === "DELIVER_TO_ADDRESS" ? selectedAddressId : null,
       }),
@@ -229,12 +240,21 @@ function CheckoutScreen() {
   const summaryError =
     deliveryServiceabilityError ||
     (checkoutSummaryQuery.error instanceof Error ? checkoutSummaryQuery.error.message : checkoutSummaryQuery.isError ? "Checkout totals could not load." : "");
+  const sellerDeliveryBlockedReason = summary.sellerDeliveryGroups?.some(
+    (group) => !group.availableDeliveryOptions.some((option) => option.available),
+  )
+    ? "Delivery is not available for one seller package."
+    : summary.sellerDeliveryGroups?.some((group) => !deliverySelectionsBySeller[group.sellerId])
+      ? "Select delivery for every seller package."
+      : "";
   const checkoutDataBlockedReason =
     paymentMethodsError ||
     (deliveryPreference === "DELIVER_TO_ADDRESS" && !selectedAddress
       ? "Select or add a delivery address."
       : !selectedPayment
         ? "Select an available payment method."
+        : sellerDeliveryBlockedReason
+          ? sellerDeliveryBlockedReason
         : paymentReferenceValidationError
           ? paymentReferenceValidationError
           : customerNoteValidationError
@@ -316,6 +336,36 @@ function CheckoutScreen() {
 
     setPaymentMethod(enabledMethods[0]?.method ?? "COD");
   }, [enabledMethods, paymentMethod]);
+
+  useEffect(() => {
+    const groups = summary.sellerDeliveryGroups ?? [];
+    if (!groups.length) {
+      return;
+    }
+
+    setDeliverySelectionsBySeller((current) => {
+      const next: Record<string, MobileDeliveryMode> = {};
+      let changed = false;
+      for (const group of groups) {
+        const availableOptions = group.availableDeliveryOptions.filter((option) => option.available);
+        const existing = current[group.sellerId];
+        const selected =
+          existing && availableOptions.some((option) => option.mode === existing)
+            ? existing
+            : availableOptions.find((option) => option.isCheapest)?.mode ?? availableOptions[0]?.mode;
+        if (selected) {
+          next[group.sellerId] = selected;
+        }
+        if (current[group.sellerId] !== selected) {
+          changed = true;
+        }
+      }
+      if (Object.keys(current).some((sellerId) => !next[sellerId])) {
+        changed = true;
+      }
+      return changed ? next : current;
+    });
+  }, [summary.sellerDeliveryGroups]);
 
   function applyCoupon() {
     try {
@@ -445,6 +495,14 @@ function CheckoutScreen() {
         ...(appliedCouponCode ? { couponCode: appliedCouponCode } : {}),
         deliveryPreference,
         ...(requestedDeliveryMode ? { deliveryMode: requestedDeliveryMode } : {}),
+        ...(Object.keys(deliverySelectionsBySeller).length
+          ? {
+              deliverySelections: Object.entries(deliverySelectionsBySeller).map(([sellerId, deliveryMode]) => ({
+                sellerId,
+                deliveryMode,
+              })),
+            }
+          : {}),
         idempotencyKey: getOrderIdempotencyKey(latestCart),
         paymentMethod,
         ...(deliveryPreference === "DELIVER_TO_ADDRESS" && selectedAddress ? { addressId: selectedAddress.id } : {}),
@@ -733,6 +791,7 @@ function CheckoutScreen() {
             couponInput={couponInput}
             couponIsApplying={couponIsApplying}
             customerNote={customerNote}
+            deliverySelectionsBySeller={deliverySelectionsBySeller}
             deliveryPreference={deliveryPreference}
             paymentOptions={paymentOptions}
             isSummaryLoading={checkoutSummaryQuery.isFetching}
@@ -750,6 +809,7 @@ function CheckoutScreen() {
             setCustomerNote={setCustomerNote}
             requestedDeliveryMode={requestedDeliveryMode}
             setRequestedDeliveryMode={setRequestedDeliveryMode}
+            setDeliverySelectionsBySeller={setDeliverySelectionsBySeller}
             setDeliveryPreference={setDeliveryPreference}
             setPaymentMethod={setPaymentMethod}
             setPaymentReference={setPaymentReference}
@@ -832,6 +892,7 @@ function CheckoutSection({
   couponInput,
   couponIsApplying,
   customerNote,
+  deliverySelectionsBySeller,
   deliveryPreference,
   formatCatalogPrice,
   paymentOptions,
@@ -853,6 +914,7 @@ function CheckoutSection({
   setDeliveryPreference,
   requestedDeliveryMode,
   setRequestedDeliveryMode,
+  setDeliverySelectionsBySeller,
   setPaymentMethod,
   setPaymentReference,
   setSelectedAddressId,
@@ -872,6 +934,7 @@ function CheckoutSection({
   couponInput: string;
   couponIsApplying: boolean;
   customerNote: string;
+  deliverySelectionsBySeller: Record<string, MobileDeliveryMode>;
   deliveryPreference: MobileDeliveryPreference;
   formatCatalogPrice: (pricePaise?: number | null) => string;
   paymentOptions: CheckoutPaymentOption[];
@@ -893,6 +956,7 @@ function CheckoutSection({
   setDeliveryPreference: (value: MobileDeliveryPreference) => void;
   requestedDeliveryMode: string | null;
   setRequestedDeliveryMode: (value: string | null) => void;
+  setDeliverySelectionsBySeller: (value: Record<string, MobileDeliveryMode> | ((current: Record<string, MobileDeliveryMode>) => Record<string, MobileDeliveryMode>)) => void;
   setPaymentMethod: (value: MobilePaymentMethod) => void;
   setPaymentReference: (value: string) => void;
   setSelectedAddressId: (value: string) => void;
@@ -956,10 +1020,39 @@ function CheckoutSection({
       <View style={styles.section}>
         <SectionTitle icon={DeliveryBox01Icon} status={stepStatus} stepNumber={stepNumber} title="Delivery preference" />
         <View style={styles.segmentRow}>
-          <SegmentButton active={deliveryPreference === "DELIVER_TO_ADDRESS"} label="Deliver" onPress={() => { setDeliveryPreference("DELIVER_TO_ADDRESS"); }} />
-          <SegmentButton active={deliveryPreference === "STORE_PICKUP"} label="Pickup" onPress={() => { setDeliveryPreference("STORE_PICKUP"); setRequestedDeliveryMode(null); }} />
+          <SegmentButton active={deliveryPreference === "DELIVER_TO_ADDRESS"} label="Deliver" onPress={() => { setDeliveryPreference("DELIVER_TO_ADDRESS"); setDeliverySelectionsBySeller({}); }} />
+          <SegmentButton active={deliveryPreference === "STORE_PICKUP"} label="Pickup" onPress={() => { setDeliveryPreference("STORE_PICKUP"); setRequestedDeliveryMode(null); setDeliverySelectionsBySeller({}); }} />
         </View>
-        {deliveryPreference === "DELIVER_TO_ADDRESS" && summary?.availableDeliveryOptions?.length ? (
+        {summary.sellerDeliveryGroups?.length ? (
+          <View style={{ marginTop: 24, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 24 }}>
+            <Text style={{ fontSize: 14, fontWeight: "700", color: colors.ink, marginBottom: 16 }}>Select delivery for each seller</Text>
+            {summary.sellerDeliveryGroups.map((group) => {
+              const availableOptions = group.availableDeliveryOptions.filter((option) => option.available);
+              const selectedMode = deliverySelectionsBySeller[group.sellerId];
+              return (
+                <View key={group.sellerId} style={[styles.optionCard, { backgroundColor: colors.softSurface }]}>
+                  <Text style={styles.optionTitle}>{group.sellerName}</Text>
+                  <Text style={styles.optionText}>{group.items.map((product) => product.productName).join(", ")}</Text>
+                  {availableOptions.length ? availableOptions.map((opt) => (
+                    <Pressable
+                      key={opt.mode}
+                      onPress={() =>
+                        setDeliverySelectionsBySeller((current) => ({
+                          ...current,
+                          [group.sellerId]: opt.mode,
+                        }))
+                      }
+                      style={[styles.optionCard, selectedMode === opt.mode ? styles.optionCardActive : null]}
+                    >
+                      <Text style={styles.optionTitle}>{deliveryModeLabel(opt.mode)}</Text>
+                      <Text style={styles.optionText}>{formatCatalogPrice(opt.chargePaise)}{opt.isCheapest ? " / Cheapest" : ""}</Text>
+                    </Pressable>
+                  )) : <Text style={styles.errorText}>{group.blockedReason ?? "Delivery is not available for this seller package."}</Text>}
+                </View>
+              );
+            })}
+          </View>
+        ) : deliveryPreference === "DELIVER_TO_ADDRESS" && summary?.availableDeliveryOptions?.length ? (
           <View style={{ marginTop: 24, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 24 }}>
             <Text style={{ fontSize: 14, fontWeight: "700", color: colors.ink, marginBottom: 16 }}>Select transport method</Text>
             {summary.availableDeliveryOptions
@@ -1247,6 +1340,14 @@ function DetailLine({ label, value }: { label: string; value: string }) {
       <Text selectable style={styles.detailValue}>{value}</Text>
     </View>
   );
+}
+
+function deliveryModeLabel(mode: string) {
+  if (mode === "LOCAL_DELIVERY_PARTNER") return "Local delivery";
+  if (mode === "THIRD_PARTY_COURIER") return "Courier delivery";
+  if (mode === "MANUAL_TRANSPORT") return "Seller-arranged delivery";
+  if (mode === "STORE_PICKUP") return "Store pickup";
+  return mode.replace(/_/g, " ");
 }
 
 function CheckoutItemRow({

@@ -114,6 +114,7 @@ function DeliveryOrderCard({ order }: { order: DeliveryOrder }) {
       <div className="flex flex-col gap-3 lg:items-end">
         <div className="flex flex-wrap gap-2 lg:justify-end">
           <DeliveryStatusPill status={order.deliveryStatus} />
+          {order.orderKind === "REPLACEMENT" ? <StatusBadge tone="info">Replacement delivery</StatusBadge> : null}
           <StatusBadge tone={order.deliveryDetail?.assignmentStatus === "ACCEPTED" ? "success" : "warning"}>
             {humanize(order.deliveryDetail?.assignmentStatus ?? "ASSIGNED")}
           </StatusBadge>

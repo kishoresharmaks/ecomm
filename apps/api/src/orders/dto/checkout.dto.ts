@@ -10,6 +10,9 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  ArrayMaxSize,
+  ArrayMinSize,
+  ArrayUnique,
   Matches,
   Max,
   MaxLength,
@@ -133,6 +136,16 @@ export class CheckoutShippingAddressDto {
   locationConfidenceScore?: number;
 }
 
+export class CheckoutDeliverySelectionDto {
+  @ApiProperty({ example: "f2c7311c-1111-4444-8888-1b9c960acabc" })
+  @IsUUID()
+  sellerId!: string;
+
+  @ApiProperty({ enum: DeliveryMode })
+  @IsEnum(DeliveryMode)
+  deliveryMode!: DeliveryMode;
+}
+
 export class PlaceOrderDto {
   @ApiPropertyOptional({ example: "mobile_cart_01HX6D9T0QZP7N6P8K3R2B5C4D" })
   @IsOptional()
@@ -179,6 +192,15 @@ export class PlaceOrderDto {
   @IsOptional()
   @IsEnum(DeliveryMode)
   deliveryMode?: DeliveryMode;
+
+  @ApiPropertyOptional({ type: [CheckoutDeliverySelectionDto] })
+  @IsOptional()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(50)
+  @ArrayUnique((selection: CheckoutDeliverySelectionDto) => selection.sellerId)
+  @ValidateNested({ each: true })
+  @Type(() => CheckoutDeliverySelectionDto)
+  deliverySelections?: CheckoutDeliverySelectionDto[];
 
   @ApiProperty({ enum: CheckoutPaymentMethod, default: CheckoutPaymentMethod.COD })
   @IsEnum(CheckoutPaymentMethod)

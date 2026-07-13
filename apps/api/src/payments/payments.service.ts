@@ -29,6 +29,7 @@ import {
   RefundTransactionStatus,
   SellerLedgerEntryType,
   SellerOrderStatus,
+  SellerCashReceivableStatus,
   SellerSettlementStatus,
   SettingValueType,
   ServiceBookingStatus,
@@ -3094,6 +3095,11 @@ export class PaymentsService {
         orderId,
         sellerStatus: { not: SellerOrderStatus.CANCELLED },
         payoutId: null,
+        sellerCashReceivables: {
+          none: {
+            status: { not: SellerCashReceivableStatus.CANCELLED },
+          },
+        },
       },
       data: {
         settlementStatus: SellerSettlementStatus.ELIGIBLE,

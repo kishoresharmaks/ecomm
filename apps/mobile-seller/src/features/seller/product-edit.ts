@@ -1,6 +1,6 @@
 import { apiBaseUrl } from "../../lib/api";
 import { paiseToRupees, rupeesToPaise } from "../../lib/money";
-import type { ProductSummary, SellerProductUpdatePayload } from "./seller-api";
+import type { ProductSummary, SellerProductDeliveryMode, SellerProductUpdatePayload } from "./seller-api";
 
 export const MAX_PRODUCT_IMAGES = 10;
 export const MAX_PRODUCT_VARIANTS = 20;
@@ -38,6 +38,14 @@ export const GST_OPTIONS = [
   { label: "18%", value: "18" },
   { label: "28%", value: "28" },
 ];
+
+export const PRODUCT_DELIVERY_MODE_OPTIONS: Array<{ label: string; value: SellerProductDeliveryMode }> = [
+  { label: "Courier delivery", value: "THIRD_PARTY_COURIER" },
+  { label: "Local delivery partner", value: "LOCAL_DELIVERY_PARTNER" },
+  { label: "Seller-arranged delivery", value: "MANUAL_TRANSPORT" },
+  { label: "Store pickup", value: "STORE_PICKUP" },
+];
+export const DEFAULT_PRODUCT_DELIVERY_MODES = PRODUCT_DELIVERY_MODE_OPTIONS.map((option) => option.value);
 
 export type ProductImageFormValue = {
   id: string;
@@ -88,6 +96,7 @@ export type ProductEditFormValues = {
   gtin: string;
   seoTitle: string;
   seoDescription: string;
+  deliveryModes: SellerProductDeliveryMode[];
   images: ProductImageFormValue[];
   variants: ProductVariantFormValue[];
   removedVariantIds: string[];
@@ -124,6 +133,7 @@ export function createBlankProductEditForm(): ProductEditFormValues {
     gtin: "",
     seoTitle: "",
     seoDescription: "",
+    deliveryModes: [...DEFAULT_PRODUCT_DELIVERY_MODES],
     images: [],
     variants: [createBlankVariant()],
     removedVariantIds: [],
@@ -189,6 +199,7 @@ export function productToEditForm(product: ProductSummary | undefined): ProductE
     gtin: stringFromAttribute(attributes.gtin),
     seoTitle: stringFromAttribute(attributes.seoTitle),
     seoDescription: stringFromAttribute(attributes.seoDescription),
+    deliveryModes: product?.deliveryModes?.length ? product.deliveryModes : [...DEFAULT_PRODUCT_DELIVERY_MODES],
     images: normalizeProductImages(product),
     variants: variants.length ? variants : [createBlankVariant()],
     removedVariantIds: [],
@@ -204,6 +215,7 @@ export function buildSellerProductUpdatePayload(
     categoryId: values.categoryId.trim(),
     name: values.name.trim(),
     description: values.description.trim(),
+    deliveryModes: values.deliveryModes,
     attributes,
     variants: [
       ...values.variants.map((variant) => buildVariantPayload(variant)),
@@ -268,6 +280,9 @@ export function validateProductEditForm(values: ProductEditFormValues): ProductE
   requireText(values.name, "Product name is required.", errors);
   if (values.description.trim().length < 10) {
     errors.push("Description must be at least 10 characters.");
+  }
+  if (!values.deliveryModes.length) {
+    errors.push("Select at least one delivery option.");
   }
   requireText(values.brand, "Brand / local label is required.", errors);
   requireText(values.condition, "Condition is required.", errors);

@@ -286,6 +286,11 @@ enum OrderStatus {
   CANCELLED
 }
 
+enum OrderKind {
+  STANDARD
+  REPLACEMENT
+}
+
 enum PaymentStatus {
   PENDING
   PAID
@@ -517,6 +522,7 @@ enum DeliveryRoutingFailureReason {
 enum CodCollectionSource {
   LOCAL_PARTNER
   THIRD_PARTY_COURIER
+  SELLER
   ADMIN_MANUAL
 }
 
@@ -843,8 +849,26 @@ enum SellerLedgerEntryType {
   SERVICE_REFUND_HOLD
   SERVICE_REFUND_REVERSAL
   SERVICE_CANCELLATION_FEE
+  SELLER_CASH_RECEIVABLE_OPENED
+  SELLER_CASH_RECEIVABLE_OFFSET
+  SELLER_CASH_RECEIVABLE_SETTLED
+  SELLER_CASH_RECEIVABLE_WAIVED
   MANUAL_ADJUSTMENT
   PAYOUT_PAID
+}
+
+enum SellerCashReceivableSource {
+  STORE_PICKUP_COD
+  MANUAL_TRANSPORT_COD
+}
+
+enum SellerCashReceivableStatus {
+  OPEN
+  PARTIALLY_OFFSET
+  OFFSET_SCHEDULED
+  SETTLED
+  WAIVED
+  CANCELLED
 }
 
 enum ServiceListingStatus {
@@ -1106,6 +1130,9 @@ model User {
   serviceReceivableWaiverRequests          ServiceSellerReceivable[]          @relation("ServiceReceivableWaiverRequestedBy")
   serviceReceivableWaiverApprovals         ServiceSellerReceivable[]          @relation("ServiceReceivableWaiverApprovedBy")
   serviceReceivableEvents                  ServiceSellerReceivableEvent[]     @relation("ServiceReceivableEventActor")
+  sellerCashReceivablesSettled             SellerCashReceivable[]             @relation("SellerCashReceivableSettledBy")
+  sellerCashReceivablesWaived              SellerCashReceivable[]             @relation("SellerCashReceivableWaivedBy")
+  sellerCashReceivableEvents               SellerCashReceivableEvent[]        @relation("SellerCashReceivableEventActor")
   serviceReviewReplies                     ServiceReviewReply[]               @relation("ServiceReviewReplyProvider")
   userRoles                                UserRole[]
   inventoryMovements                       InventoryMovement[]
@@ -1422,6 +1449,7 @@ model Seller {
   servicePayments              ServicePayment[]
   serviceSettlements           ServiceBookingSettlement[]
   serviceReceivables           ServiceSellerReceivable[]
+  sellerCashReceivables        SellerCashReceivable[]
   serviceRefundRequests        ServiceRefundRequest[]
   serviceReviews               ServiceReview[]
   cartItems                    CartItem[]
@@ -2102,6 +2130,7 @@ model Product {
   reviews                ProductReview[]
   returnItems            ReturnRequestItem[]
   chatConversations      ChatConversation[]
+  deliveryModeOptions    ProductDeliveryMode[]
 
   @@index([status])
   @@index([approvalStatus])
@@ -2116,6 +2145,21 @@ model Product {
   @@index([name(ops: raw("gin_trgm_ops"))], type: Gin)
   @@index([attributes(ops: raw("jsonb_path_ops"))], type: Gin)
   @@map("products")
+}
+
+model ProductDeliveryMode {
+  id           String       @id @default(uuid()) @db.Uuid
+  productId    String       @map("product_id") @db.Uuid
+  deliveryMode DeliveryMode @map("delivery_mode")
+  isEnabled    Boolean      @default(true) @map("is_enabled")
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, deliveryMode])
+  @@index([productId, isEnabled])
+  @@index([deliveryMode, isEnabled])
+  @@map("product_delivery_modes")
 }
 
 model ProductImage {
@@ -2505,6 +2549,9 @@ model Order {
   orderNumber                       String                       @unique @map("order_number")
   idempotencyKey                    String?                      @map("idempotency_key")
   customerId                        String                       @map("customer_id") @db.Uuid
+  orderKind                         OrderKind                    @default(STANDARD) @map("order_kind")
+  parentOrderId                     String?                      @map("parent_order_id") @db.Uuid
+  replacementReturnRequestId        String?                      @unique @map("replacement_return_request_id") @db.Uuid
   orderStatus                       OrderStatus                  @default(PLACED) @map("order_status")
   paymentStatus                     PaymentStatus                @default(PENDING) @map("payment_status")
   deliveryStatus                    DeliveryStatus               @default(NOT_ASSIGNED) @map("delivery_status")
@@ -2540,6 +2587,9 @@ model Order {
   updatedAt                         DateTime                     @updatedAt @map("updated_at")
   coupon                            Coupon?                      @relation(fields: [couponId], references: [id], onDelete: SetNull)
   customer                          Customer                     @relation(fields: [customerId], references: [id])
+  parentOrder                       Order?                       @relation("ReplacementOrderParent", fields: [parentOrderId], references: [id], onDelete: SetNull)
+  childReplacementOrders            Order[]                      @relation("ReplacementOrderParent")
+  replacementReturnRequest          ReturnRequest?               @relation("ReplacementReturnRequestOrder", fields: [replacementReturnRequestId], references: [id], onDelete: SetNull)
   items                             OrderItem[]
   sellerSplits                      OrderSellerSplit[]
   shipments                         OrderShipment[]
@@ -2553,6 +2603,7 @@ model Order {
   deliveryAssignmentAttempts        DeliveryAssignmentAttempt[]
   payments                          Payment[]
   deliveryPartnerWalletEntries      DeliveryPartnerWalletEntry[]
+  sellerCashReceivables             SellerCashReceivable[]
   productReviews                    ProductReview[]
   couponRedemption                  CouponRedemption?
   couponAdjustments                 CouponRedemptionAdjustment[]
@@ -2570,6 +2621,8 @@ model Order {
   @@index([orderStatus, createdAt])
   @@index([paymentStatus, createdAt])
   @@index([deliveryStatus, createdAt])
+  @@index([orderKind, createdAt])
+  @@index([parentOrderId])
   @@map("orders")
 }
 
@@ -2600,6 +2653,8 @@ model OrderItem {
   dealDiscountBps                   Int?                         @map("deal_discount_bps")
   dealDiscountPaise                 Int                          @default(0) @map("deal_discount_paise")
   dealId                            String?                      @map("deal_id") @db.Uuid
+  replacementSourceOrderItemId       String?                      @map("replacement_source_order_item_id") @db.Uuid
+  replacementSourceReturnItemId      String?                      @map("replacement_source_return_item_id") @db.Uuid
   dealSnapshot                      Json?                        @map("deal_snapshot")
   couponDiscountPaise               Int                          @default(0) @map("coupon_discount_paise")
   couponPlatformFundedDiscountPaise Int                          @default(0) @map("coupon_platform_funded_discount_paise")
@@ -2614,6 +2669,9 @@ model OrderItem {
   productVariant                    ProductVariant               @relation(fields: [productVariantId], references: [id])
   seller                            Seller                       @relation(fields: [sellerId], references: [id])
   deal                              Deal?                        @relation(fields: [dealId], references: [id])
+  replacementSourceOrderItem         OrderItem?                   @relation("ReplacementSourceOrderItem", fields: [replacementSourceOrderItemId], references: [id], onDelete: SetNull)
+  replacementOrderItems              OrderItem[]                  @relation("ReplacementSourceOrderItem")
+  replacementSourceReturnItem        ReturnRequestItem?           @relation("ReplacementSourceReturnItem", fields: [replacementSourceReturnItemId], references: [id], onDelete: SetNull)
   productReviews                    ProductReview[]
   couponAdjustments                 CouponRedemptionAdjustment[]
   returnItems                       ReturnRequestItem[]
@@ -2621,6 +2679,8 @@ model OrderItem {
 
   @@index([productId])
   @@index([dealId])
+  @@index([replacementSourceOrderItemId])
+  @@index([replacementSourceReturnItemId])
   @@index([couponDiscountPaise])
   @@index([lifecycleStatus])
   @@index([orderId, lifecycleStatus])
@@ -2759,6 +2819,7 @@ model OrderSellerSplit {
   couponAdjustments                 CouponRedemptionAdjustment[]
   returnItems                       ReturnRequestItem[]
   refundItems                       RefundRequestItem[]
+  sellerCashReceivables             SellerCashReceivable[]
 
   @@unique([orderId, sellerId])
   @@index([commissionRuleId])
@@ -2837,6 +2898,7 @@ model OrderShipment {
   courierShipment              CourierShipment?
   courierCodRemittance         CourierCodRemittance?
   deliveryPartnerWalletEntries DeliveryPartnerWalletEntry[]
+  sellerCashReceivable         SellerCashReceivable?
 
   @@unique([orderId, sellerId])
   @@index([orderId, status, createdAt])
@@ -2945,6 +3007,7 @@ model ReturnRequest {
   createdBy                         User?                              @relation("ReturnRequestCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   items                             ReturnRequestItem[]
   refundRequests                    RefundRequest[]
+  replacementOrder                  Order?                              @relation("ReplacementReturnRequestOrder")
   reverseShipments                  ReverseShipment[]
   reverseShipmentAssignmentAttempts ReverseShipmentAssignmentAttempt[]
   notes                             ReturnRequestNote[]
@@ -2987,6 +3050,7 @@ model ReturnRequestItem {
   seller                              Seller                  @relation(fields: [sellerId], references: [id])
   product                             Product                 @relation(fields: [productId], references: [id])
   productVariant                      ProductVariant          @relation(fields: [productVariantId], references: [id])
+  replacementOrderItems               OrderItem[]             @relation("ReplacementSourceReturnItem")
   refundItems                         RefundRequestItem[]
 
   @@index([returnRequestId])
@@ -3707,6 +3771,7 @@ model Payment {
   events             PaymentEvent[]
   refundRequests     RefundRequest[]
   refundTransactions RefundTransaction[]
+  sellerCashReceivables SellerCashReceivable[]
 
   @@unique([provider, providerOrderId])
   @@unique([provider, providerPaymentId])
@@ -3843,6 +3908,7 @@ model SellerPayout {
   b2bOrders             B2BOrder[]
   serviceSettlements    ServiceBookingSettlement[]
   serviceReceivableOffsets ServiceSellerReceivable[] @relation("ServiceReceivablePayoutOffset")
+  sellerCashReceivableOffsets SellerCashReceivable[] @relation("SellerCashReceivablePayoutOffset")
   ledgerEntries         SellerLedgerEntry[]
   events                SellerPayoutEvent[]
   statements            SellerStatement[]
@@ -3878,6 +3944,7 @@ model SellerLedgerEntry {
   orderSellerSplitId String?               @map("order_seller_split_id") @db.Uuid
   serviceBookingId   String?               @map("service_booking_id") @db.Uuid
   serviceSettlementId String?              @map("service_settlement_id") @db.Uuid
+  sellerCashReceivableId String?           @map("seller_cash_receivable_id") @db.Uuid
   payoutId           String?               @map("payout_id") @db.Uuid
   entryType          SellerLedgerEntryType @map("entry_type")
   description        String
@@ -3894,15 +3961,99 @@ model SellerLedgerEntry {
   orderSellerSplit   OrderSellerSplit?     @relation(fields: [orderSellerSplitId], references: [id])
   serviceBooking     ServiceBooking?       @relation(fields: [serviceBookingId], references: [id])
   serviceSettlement  ServiceBookingSettlement? @relation(fields: [serviceSettlementId], references: [id])
+  sellerCashReceivable SellerCashReceivable? @relation(fields: [sellerCashReceivableId], references: [id])
   payout             SellerPayout?         @relation(fields: [payoutId], references: [id])
 
   @@index([sellerId, createdAt])
   @@index([orderSellerSplitId])
   @@index([serviceBookingId])
   @@index([serviceSettlementId])
+  @@index([sellerCashReceivableId])
   @@index([payoutId])
   @@index([entryType])
   @@map("seller_ledger_entries")
+}
+
+model SellerCashReceivable {
+  id                       String                      @id @default(uuid()) @db.Uuid
+  receivableNumber         String                      @unique @map("receivable_number")
+  sellerId                 String                      @map("seller_id") @db.Uuid
+  orderId                  String                      @map("order_id") @db.Uuid
+  orderSellerSplitId       String                      @map("order_seller_split_id") @db.Uuid
+  orderShipmentId          String?                     @unique @map("order_shipment_id") @db.Uuid
+  paymentId                String?                     @map("payment_id") @db.Uuid
+  payoutOffsetId           String?                     @map("payout_offset_id") @db.Uuid
+  source                   SellerCashReceivableSource
+  status                   SellerCashReceivableStatus  @default(OPEN)
+  grossCashCollectedPaise  Int                         @default(0) @map("gross_cash_collected_paise")
+  platformDuePaise         Int                         @default(0) @map("platform_due_paise")
+  offsetPaise              Int                         @default(0) @map("offset_paise")
+  settledPaise             Int                         @default(0) @map("settled_paise")
+  waivedPaise              Int                         @default(0) @map("waived_paise")
+  outstandingPaise         Int                         @default(0) @map("outstanding_paise")
+  commissionPaise          Int                         @default(0) @map("commission_paise")
+  gstOnCommissionPaise     Int                         @default(0) @map("gst_on_commission_paise")
+  tdsPaise                 Int                         @default(0) @map("tds_paise")
+  tcsPaise                 Int                         @default(0) @map("tcs_paise")
+  sellerPlatformFeePaise   Int                         @default(0) @map("seller_platform_fee_paise")
+  buyerPlatformFeePaise    Int                         @default(0) @map("buyer_platform_fee_paise")
+  currency                 String                      @default("INR")
+  idempotencyKey           String                      @map("idempotency_key")
+  note                     String?
+  financeSnapshot          Json?                       @map("finance_snapshot")
+  openedAt                 DateTime                    @default(now()) @map("opened_at")
+  offsetScheduledAt        DateTime?                   @map("offset_scheduled_at")
+  offsetAppliedAt          DateTime?                   @map("offset_applied_at")
+  settledAt                DateTime?                   @map("settled_at")
+  settledById              String?                     @map("settled_by") @db.Uuid
+  waivedAt                 DateTime?                   @map("waived_at")
+  waivedById               String?                     @map("waived_by") @db.Uuid
+  createdAt                DateTime                    @default(now()) @map("created_at")
+  updatedAt                DateTime                    @updatedAt @map("updated_at")
+  seller                   Seller                      @relation(fields: [sellerId], references: [id])
+  order                    Order                       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderSellerSplit         OrderSellerSplit            @relation(fields: [orderSellerSplitId], references: [id], onDelete: Cascade)
+  orderShipment            OrderShipment?              @relation(fields: [orderShipmentId], references: [id], onDelete: SetNull)
+  payment                  Payment?                    @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  payoutOffset             SellerPayout?               @relation("SellerCashReceivablePayoutOffset", fields: [payoutOffsetId], references: [id])
+  settledBy                User?                       @relation("SellerCashReceivableSettledBy", fields: [settledById], references: [id])
+  waivedBy                 User?                       @relation("SellerCashReceivableWaivedBy", fields: [waivedById], references: [id])
+  ledgerEntries            SellerLedgerEntry[]
+  events                   SellerCashReceivableEvent[]
+
+  @@unique([orderSellerSplitId, source])
+  @@unique([sellerId, orderSellerSplitId, idempotencyKey], map: "seller_cash_receivables_seller_split_idempotency_key_key")
+  @@index([sellerId, status, createdAt])
+  @@index([orderId, status])
+  @@index([orderSellerSplitId])
+  @@index([paymentId])
+  @@index([payoutOffsetId, status])
+  @@index([source, createdAt])
+  @@index([settledById])
+  @@index([waivedById])
+  @@map("seller_cash_receivables")
+}
+
+model SellerCashReceivableEvent {
+  id                    String                      @id @default(uuid()) @db.Uuid
+  receivableId          String                      @map("receivable_id") @db.Uuid
+  eventType             String                      @map("event_type")
+  oldStatus             SellerCashReceivableStatus? @map("old_status")
+  newStatus             SellerCashReceivableStatus? @map("new_status")
+  amountDeltaPaise      Int?                        @map("amount_delta_paise")
+  oldOutstandingPaise   Int?                        @map("old_outstanding_paise")
+  newOutstandingPaise   Int?                        @map("new_outstanding_paise")
+  note                  String?
+  actorUserId           String?                     @map("actor_user_id") @db.Uuid
+  metadata              Json?
+  createdAt             DateTime                    @default(now()) @map("created_at")
+  receivable            SellerCashReceivable        @relation(fields: [receivableId], references: [id], onDelete: Cascade)
+  actor                 User?                       @relation("SellerCashReceivableEventActor", fields: [actorUserId], references: [id])
+
+  @@index([receivableId])
+  @@index([actorUserId])
+  @@index([createdAt])
+  @@map("seller_cash_receivable_events")
 }
 
 model SellerStatement {

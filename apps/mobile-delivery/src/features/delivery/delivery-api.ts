@@ -27,6 +27,19 @@ export type DeliveryAttemptReason =
 export type DeliveryOrder = {
   id: string;
   orderNumber: string;
+  orderKind?: "STANDARD" | "REPLACEMENT";
+  parentOrder?: {
+    id: string;
+    orderNumber: string;
+    orderStatus?: string;
+    deliveryStatus?: string;
+  } | null;
+  replacementReturnRequest?: {
+    id: string;
+    requestNumber: string;
+    status?: string;
+    resolution?: string;
+  } | null;
   orderStatus: string;
   paymentStatus: string;
   deliveryStatus: DeliveryStatus;
@@ -300,6 +313,65 @@ export function findCodPayment(order?: DeliveryOrder | null) {
   return order?.payments?.find((payment) => payment.provider === "COD" || payment.method === "COD") ?? null;
 }
 
+export function sellerToCustomerDistanceLabel(order?: DeliveryOrder | null) {
+  const distances = sellerToCustomerDistancesKm(order);
+  if (distances.length === 0) return null;
+  const min = Math.min(...distances);
+  const max = Math.max(...distances);
+  if (distances.length === 1 || Math.abs(max - min) < 0.05) {
+    return `Approx seller to customer: ${formatDistanceKm(min)}`;
+  }
+  return `Approx seller to customer: ${formatDistanceKm(min)}-${formatDistanceKm(max)}`;
+}
+
+export function sellerToCustomerDistancesKm(order?: DeliveryOrder | null) {
+  const destination = coordinatesFromSnapshot(order?.shippingAddressSnapshot);
+  if (!destination) return [];
+  const seenSellerIds = new Set<string>();
+  return (order?.shipments ?? [])
+    .flatMap((shipment) => {
+      const sellerKey = shipment.seller?.id ?? shipment.sellerId ?? shipment.id;
+      if (seenSellerIds.has(sellerKey)) return [];
+      seenSellerIds.add(sellerKey);
+      const origin = coordinatesFromSnapshot(shipment.seller?.pickupAddress);
+      return origin ? [roundDistanceKm(haversineKm(origin.latitude, origin.longitude, destination.latitude, destination.longitude))] : [];
+    })
+    .sort((left, right) => left - right);
+}
+
 export function addressLine(address?: AddressSnapshot | null) {
   return [address?.line1, address?.area, address?.city, address?.state, address?.pincode].filter(Boolean).join(", ");
+}
+
+function coordinatesFromSnapshot(address?: AddressSnapshot | DeliveryPickupAddress | null) {
+  const latitude = Number(address?.latitude);
+  const longitude = Number(address?.longitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  return { latitude, longitude };
+}
+
+function haversineKm(originLatitude: number, originLongitude: number, destinationLatitude: number, destinationLongitude: number) {
+  const earthRadiusKm = 6371;
+  const latitudeDelta = toRadians(destinationLatitude - originLatitude);
+  const longitudeDelta = toRadians(destinationLongitude - originLongitude);
+  const originLatitudeRadians = toRadians(originLatitude);
+  const destinationLatitudeRadians = toRadians(destinationLatitude);
+  const value =
+    Math.sin(latitudeDelta / 2) ** 2 +
+    Math.cos(originLatitudeRadians) *
+      Math.cos(destinationLatitudeRadians) *
+      Math.sin(longitudeDelta / 2) ** 2;
+  return earthRadiusKm * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value));
+}
+
+function toRadians(value: number) {
+  return (value * Math.PI) / 180;
+}
+
+function roundDistanceKm(value: number) {
+  return Math.round(value * 10) / 10;
+}
+
+function formatDistanceKm(value: number) {
+  return `${value.toFixed(1)} km`;
 }

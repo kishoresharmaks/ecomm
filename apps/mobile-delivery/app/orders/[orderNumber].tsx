@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { Linking, Pressable, ScrollView, Text, View } from "react-native";
+import { Linking, Pressable, Text, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
@@ -169,6 +169,7 @@ export default function DeliveryOrderDetailScreen() {
       {order ? (
         <>
           <OrderSummary order={order} />
+          <QuickActionsPanel order={order} />
           <DeliveryWorkflowGuide order={order} />
           <SellerPickupStops order={order} />
           <CustomerDropAddressPanel order={order} />
@@ -274,18 +275,39 @@ export default function DeliveryOrderDetailScreen() {
 
 function OrderSummary({ order }: { order: DeliveryOrder }) {
   const cod = findCodPayment(order);
+  const assignmentStatus = order.deliveryDetail?.assignmentStatus ?? "ASSIGNED";
+  const collectionStatus = order.deliveryDetail?.codCollectionStatus ?? "NOT_COLLECTED";
+  const nextAction = nextActionCopy(order);
   return (
-    <Card>
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-        <StatusChip label={humanize(order.deliveryStatus)} tone={order.deliveryStatus === "DELIVERED" ? "success" : "warning"} />
-        <StatusChip label={humanize(order.deliveryDetail?.assignmentStatus ?? "ASSIGNED")} tone={order.deliveryDetail?.assignmentStatus === "ACCEPTED" ? "success" : "warning"} />
-        <StatusChip label={humanize(order.paymentStatus)} tone={order.paymentStatus === "PAID" ? "success" : "warning"} />
-        {cod ? <StatusChip label={`COD ${humanize(order.deliveryDetail?.codCollectionStatus ?? "NOT_COLLECTED")}`} tone="info" /> : null}
+    <Card style={missionCard}>
+      <View style={{ gap: 6 }}>
+        <Text style={smallLabel}>Delivery task</Text>
+        <Text style={missionTitle}>{order.orderNumber}</Text>
+        <Text style={missionAmount}>{formatPaise(order.buyerTotalMinor ?? order.totalPaise, order.buyerCurrency ?? order.currency)}</Text>
       </View>
-      <Text style={{ color: "#123A5A", fontSize: 22, fontWeight: "900" }}>{formatPaise(order.buyerTotalMinor ?? order.totalPaise, order.buyerCurrency ?? order.currency)}</Text>
-      <Text style={mutedText}>{order.customer?.fullName ?? order.customer?.email ?? "Customer"} / {order.customer?.phone ?? order.shippingAddressSnapshot?.phone ?? "Phone not available"}</Text>
-      <Text style={mutedText}>{(order.items ?? []).map((item) => `${item.productNameSnapshot} x${item.quantity}`).join(", ")}</Text>
-      <Text style={mutedText}>{addressBlock(order.shippingAddressSnapshot)}</Text>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+        <StatusChip label={humanize(order.deliveryStatus)} tone={order.deliveryStatus === "DELIVERED" ? "success" : order.deliveryStatus === "CANCELLED" ? "danger" : "warning"} />
+        {order.orderKind === "REPLACEMENT" ? <StatusChip label="Replacement delivery" tone="info" /> : null}
+        <StatusChip label={humanize(assignmentStatus)} tone={assignmentStatus === "ACCEPTED" ? "success" : assignmentStatus === "REJECTED" ? "danger" : "warning"} />
+        <StatusChip label={humanize(order.paymentStatus)} tone={order.paymentStatus === "PAID" ? "success" : order.paymentStatus === "FAILED" ? "danger" : "warning"} />
+        {cod ? <StatusChip label={`COD ${humanize(collectionStatus)}`} tone={collectionStatus === "VERIFIED" ? "success" : collectionStatus === "COLLECTED" ? "warning" : "info"} /> : null}
+      </View>
+      <View style={nextActionPanel}>
+        <Text style={nextActionTitle}>{nextAction.title}</Text>
+        <Text style={nextActionBody}>{nextAction.body}</Text>
+      </View>
+      <View style={summaryGrid}>
+        <SummaryTile
+          label="Customer"
+          value={order.customer?.fullName ?? order.customer?.email ?? "Customer"}
+          note={order.customer?.phone ?? order.shippingAddressSnapshot?.phone ?? "Phone not available"}
+        />
+        <SummaryTile
+          label="Items"
+          value={`${order.items?.length ?? 0}`}
+          note={(order.items ?? []).map((item) => `${item.productNameSnapshot} x${item.quantity}`).join(", ") || "Items not available"}
+        />
+      </View>
     </Card>
   );
 }
@@ -295,21 +317,70 @@ function DeliveryWorkflowGuide({ order }: { order: DeliveryOrder }) {
   return (
     <Card>
       <Text style={sectionTitle}>Delivery workflow</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingRight: 6 }}>
+      <View style={{ gap: 10 }}>
         {steps.map((step) => (
-          <View key={step.number} style={workflowCard}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <View key={step.number} style={[workflowRow, step.state === "current" ? workflowRowCurrent : null]}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
               <View style={[stepBadge, step.state === "done" ? stepBadgeDone : step.state === "current" ? stepBadgeCurrent : step.state === "blocked" ? stepBadgeBlocked : null]}>
-                <Text style={stepBadgeText}>{step.state === "done" ? "✓" : step.number}</Text>
+                <Text style={[stepBadgeText, step.state === "current" ? stepBadgeTextCurrent : null]}>{step.state === "done" ? "OK" : step.number}</Text>
+              </View>
+              <View style={{ flex: 1, gap: 3 }}>
+                <Text style={compactTitle}>{step.title}</Text>
+                <Text style={mutedSmallText}>{step.description}</Text>
               </View>
               <StatusChip label={workflowLabel(step.state)} tone={workflowTone(step.state)} />
             </View>
-            <Text style={smallLabel}>{step.icon}</Text>
-            <Text style={compactTitle}>{step.title}</Text>
-            <Text style={mutedSmallText}>{step.description}</Text>
           </View>
         ))}
-      </ScrollView>
+      </View>
+    </Card>
+  );
+}
+
+function SummaryTile({ label, value, note }: { label: string; value: string; note?: string }) {
+  return (
+    <View style={summaryTile}>
+      <Text style={smallLabel}>{label}</Text>
+      <Text style={summaryTileValue} numberOfLines={1}>{value}</Text>
+      {note ? <Text style={mutedSmallText} numberOfLines={2}>{note}</Text> : null}
+    </View>
+  );
+}
+
+function QuickActionsPanel({ order }: { order: DeliveryOrder }) {
+  const firstPickup = order.shipments?.[0] ?? null;
+  const pickupAddress = firstPickup?.seller?.pickupAddress ?? null;
+  const pickupAddressText = pickupAddressLines(pickupAddress).join(", ");
+  const pickupCoordinates = coordinatesFromSnapshot(pickupAddress);
+  const pickupRouteUrl = pickupCoordinates
+    ? googleMapsDirectionsUrl(pickupCoordinates)
+    : pickupAddressText
+      ? googleMapsAddressSearchUrl(pickupAddressText)
+      : null;
+  const dropAddress = order.shippingAddressSnapshot;
+  const dropAddressText = customerAddressLines(order).join(", ");
+  const dropCoordinates = coordinatesFromSnapshot(dropAddress);
+  const dropRouteUrl = dropCoordinates
+    ? googleMapsDirectionsUrl(dropCoordinates)
+    : dropAddressText
+      ? googleMapsAddressSearchUrl(dropAddressText)
+      : null;
+  const customerPhoneUrl = phoneLink(order.customer?.phone ?? dropAddress?.phone);
+  const codPayment = findCodPayment(order);
+
+  return (
+    <Card style={quickActionsCard}>
+      <View style={{ gap: 4 }}>
+        <Text style={sectionTitle}>Quick actions</Text>
+        <Text style={mutedSmallText}>
+          {codPayment ? `Collect exact COD: ${formatPaise(codPayment.amountPaise, codPayment.currency)}` : "No COD collection is attached to this order."}
+        </Text>
+      </View>
+      <View style={quickActionsGrid}>
+        <Button title="Route pickup" tone="secondary" disabled={!pickupRouteUrl} style={quickActionButton} onPress={() => pickupRouteUrl && void Linking.openURL(pickupRouteUrl)} />
+        <Button title="Route drop" tone="secondary" disabled={!dropRouteUrl} style={quickActionButton} onPress={() => dropRouteUrl && void Linking.openURL(dropRouteUrl)} />
+        <Button title="Call customer" tone="secondary" disabled={!customerPhoneUrl} style={quickActionButton} onPress={() => customerPhoneUrl && void Linking.openURL(customerPhoneUrl)} />
+      </View>
     </Card>
   );
 }
@@ -437,7 +508,7 @@ function StatusTimelineSection({ order }: { order: DeliveryOrder }) {
           {events.map((event) => (
             <View key={event.id} style={timelineItem}>
               <StatusChip label={event.kind} tone={event.kind === "Delivery" ? "info" : "neutral"} />
-              <Text style={compactTitle}>{event.oldStatus ? `${humanize(event.oldStatus)} → ${humanize(event.newStatus)}` : humanize(event.newStatus)}</Text>
+              <Text style={compactTitle}>{event.oldStatus ? `${humanize(event.oldStatus)} to ${humanize(event.newStatus)}` : humanize(event.newStatus)}</Text>
               {event.note ? <Text style={mutedText}>{event.note}</Text> : null}
               <Text style={mutedSmallText}>{formatDateTime(event.createdAt)}</Text>
             </View>
@@ -562,6 +633,50 @@ function isCodPending(order: DeliveryOrder) {
   return order.paymentStatus === "PENDING" && Boolean(findCodPayment(order));
 }
 
+function nextActionCopy(order: DeliveryOrder) {
+  const assignmentStatus = order.deliveryDetail?.assignmentStatus ?? "UNASSIGNED";
+  const deliveryStatus = order.deliveryDetail?.status ?? order.deliveryStatus ?? "PENDING";
+  const codPayment = findCodPayment(order);
+  const codStatus = order.deliveryDetail?.codCollectionStatus ?? "NOT_COLLECTED";
+
+  if (assignmentStatus === "ASSIGNED") {
+    return {
+      title: "Accept the assignment",
+      body: "Confirm the task before pickup, route updates, or attempt recording.",
+    };
+  }
+  if (assignmentStatus === "REJECTED" || deliveryStatus === "CANCELLED") {
+    return {
+      title: "Task is closed",
+      body: "No delivery progress action is available for this assignment.",
+    };
+  }
+  if (deliveryStatus === "DELIVERED") {
+    if (codPayment && codStatus !== "VERIFIED") {
+      return {
+        title: codStatus === "COLLECTED" ? "COD waiting for verification" : "Record COD if collected",
+        body: codStatus === "COLLECTED"
+          ? "Admin or finance will verify the collection."
+          : "Submit the exact COD amount collected from the customer.",
+      };
+    }
+    return {
+      title: "Delivery completed",
+      body: "Proof and delivery status are recorded for this order.",
+    };
+  }
+  if (deliveryStatus === "PENDING" || deliveryStatus === "PACKED") {
+    return {
+      title: "Go to seller pickup",
+      body: "Use the pickup stop details, collect the package, then update progress.",
+    };
+  }
+  return {
+    title: "Deliver to customer",
+    body: "Use the drop address, collect COD if needed, and upload proof before closing.",
+  };
+}
+
 function deliveryWorkflowSteps(order: DeliveryOrder) {
   const assignmentStatus = order.deliveryDetail?.assignmentStatus ?? "UNASSIGNED";
   const deliveryStatus = order.deliveryDetail?.status ?? order.deliveryStatus ?? "PENDING";
@@ -576,40 +691,35 @@ function deliveryWorkflowSteps(order: DeliveryOrder) {
   return [
     {
       number: 1,
-      icon: "OK",
       title: "Accept assignment",
       description: assigned ? "Confirm before visiting the seller." : accepted ? "Assignment accepted. Continue pickup." : rejected ? "Assignment was rejected." : "Waiting for confirmation.",
       state: rejected || cancelled ? "blocked" : assigned ? "current" : accepted || dispatched || delivered ? "done" : "pending",
     },
     {
       number: 2,
-      icon: "PK",
       title: "Collect from seller",
       description: "Verify and collect packages from seller pickup stops.",
       state: rejected || cancelled ? "blocked" : !accepted ? "pending" : dispatched || delivered ? "done" : "current",
     },
     {
       number: 3,
-      icon: "UP",
       title: "Update pickup",
       description: "After handover, mark dispatched or in transit.",
       state: rejected || cancelled ? "blocked" : !accepted ? "pending" : inTransit || delivered ? "done" : dispatched ? "current" : "pending",
     },
     {
       number: 4,
-      icon: "GO",
       title: "Deliver to customer",
       description: "Use the drop address and keep the order moving.",
       state: rejected || cancelled ? "blocked" : delivered ? "done" : inTransit || dispatched ? "current" : "pending",
     },
     {
       number: 5,
-      icon: codPayment ? "COD" : "POD",
       title: codPayment ? "Record COD and proof" : "Record proof",
       description: codPayment ? "Record receiver, proof, and COD collection." : "Record receiver and delivery proof.",
       state: rejected || cancelled ? "blocked" : delivered ? "done" : "pending",
     },
-  ] satisfies Array<{ number: number; icon: string; title: string; description: string; state: WorkflowState }>;
+  ] satisfies Array<{ number: number; title: string; description: string; state: WorkflowState }>;
 }
 
 const deliveryStatusRank: Record<string, number> = {
@@ -668,14 +778,9 @@ function paymentStatusTone(status?: string | null) {
   return "neutral";
 }
 
-function addressBlock(address: DeliveryOrder["shippingAddressSnapshot"]) {
-  if (!address) return "Address not available.";
-  return [address.fullName, address.phone, address.line1, address.line2, address.area, address.city, address.state, address.pincode, address.country]
-    .filter(Boolean)
-    .join("\n");
-}
-
 const sectionTitle = { color: "#123A5A", fontSize: 18, fontWeight: "900" } as const;
+const missionTitle = { color: "#123A5A", fontSize: 28, fontWeight: "900", lineHeight: 34 } as const;
+const missionAmount = { color: "#ED3500", fontSize: 24, fontWeight: "900", lineHeight: 30 } as const;
 const compactTitle = { color: "#123A5A", fontSize: 15, fontWeight: "900", lineHeight: 20 } as const;
 const smallLabel = { color: "#ED3500", fontSize: 11, fontWeight: "900", textTransform: "uppercase" } as const;
 const mutedText = { color: "#6B7280", fontWeight: "700", lineHeight: 20 } as const;
@@ -683,11 +788,23 @@ const mutedSmallText = { color: "#6B7280", fontSize: 12, fontWeight: "700", line
 const dangerText = { color: "#B42318", fontWeight: "800" } as const;
 const successText = { color: "#0F8A5F", fontWeight: "800" } as const;
 const warningBox = { backgroundColor: "#FFFCFB", borderColor: "#FFE0D6", borderRadius: 12, borderWidth: 1, color: "#8A4B32", fontSize: 12, fontWeight: "800", lineHeight: 18, padding: 10 } as const;
+const missionCard = { borderColor: "#FFD7CA", gap: 14 } as const;
+const nextActionPanel = { backgroundColor: "#FFF4EF", borderColor: "#FFD7CA", borderRadius: 14, borderWidth: 1, gap: 4, padding: 12 } as const;
+const nextActionTitle = { color: "#9F2600", fontSize: 16, fontWeight: "900" } as const;
+const nextActionBody = { color: "#8A4B32", fontSize: 13, fontWeight: "800", lineHeight: 19 } as const;
+const summaryGrid = { flexDirection: "row", flexWrap: "wrap", gap: 10 } as const;
+const summaryTile = { backgroundColor: "#F8FAFC", borderColor: "#E5E7EB", borderRadius: 12, borderWidth: 1, flexBasis: "45%", flexGrow: 1, gap: 4, minWidth: 136, padding: 12 } as const;
+const summaryTileValue = { color: "#123A5A", fontSize: 16, fontWeight: "900" } as const;
+const quickActionsCard = { gap: 12 } as const;
+const quickActionsGrid = { flexDirection: "row", flexWrap: "wrap", gap: 10 } as const;
+const quickActionButton = { flexBasis: "30%", flexGrow: 1, minWidth: 132 } as const;
 const innerCard = { backgroundColor: "#F8FAFC", borderColor: "#E5E7EB", borderRadius: 12, borderWidth: 1, gap: 8, padding: 12 } as const;
 const timelineItem = { borderLeftColor: "#ED3500", borderLeftWidth: 3, gap: 6, paddingLeft: 12 } as const;
-const workflowCard = { backgroundColor: "#F8FAFC", borderColor: "#E5E7EB", borderRadius: 12, borderWidth: 1, gap: 8, minHeight: 178, padding: 12, width: 190 } as const;
+const workflowRow = { backgroundColor: "#F8FAFC", borderColor: "#E5E7EB", borderRadius: 14, borderWidth: 1, gap: 8, padding: 12 } as const;
+const workflowRowCurrent = { backgroundColor: "#FFF4EF", borderColor: "#FFD7CA" } as const;
 const stepBadge = { alignItems: "center", backgroundColor: "#FFFFFF", borderColor: "#D8E2EA", borderRadius: 999, borderWidth: 1, height: 32, justifyContent: "center", width: 32 } as const;
 const stepBadgeDone = { backgroundColor: "#E9F7F1", borderColor: "#BFEAD9" } as const;
 const stepBadgeCurrent = { backgroundColor: "#ED3500", borderColor: "#FFC7B8" } as const;
 const stepBadgeBlocked = { backgroundColor: "#FDECEC", borderColor: "#F5B7B7" } as const;
 const stepBadgeText = { color: "#123A5A", fontSize: 13, fontWeight: "900" } as const;
+const stepBadgeTextCurrent = { color: "#FFFFFF" } as const;

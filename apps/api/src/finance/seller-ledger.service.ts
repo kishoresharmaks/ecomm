@@ -21,6 +21,7 @@ type LedgerEntryInput = {
   orderSellerSplitId?: string | null;
   serviceBookingId?: string | null;
   serviceSettlementId?: string | null;
+  sellerCashReceivableId?: string | null;
   payoutId?: string | null;
   currency?: string;
   referenceType?: string;
@@ -171,6 +172,7 @@ export class SellerLedgerService {
         orderSellerSplitId: input.orderSellerSplitId ?? null,
         serviceBookingId: input.serviceBookingId ?? null,
         serviceSettlementId: input.serviceSettlementId ?? null,
+        sellerCashReceivableId: input.sellerCashReceivableId ?? null,
         payoutId: input.payoutId ?? null,
         entryType: input.entryType,
         description: input.description,
@@ -324,6 +326,10 @@ export class SellerLedgerService {
 
     if (!payout) {
       throw new NotFoundException("Seller payout not found.");
+    }
+
+    if (payout.netPayablePaise <= 0) {
+      return null;
     }
 
     return this.createEntry(tx, {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { DeliveryMode } from "@indihub/database";
+import { DeliveryMode, SellerType } from "@indihub/database";
 import { CheckoutPricingService } from "./checkout-pricing.service";
 import { CheckoutDeliveryPreference } from "./dto/delivery-routing.dto";
 
@@ -181,8 +181,100 @@ describe("CheckoutPricingService", () => {
       tx
     );
   });
+
+  it("filters product-enabled package delivery modes by checkout preference", async () => {
+    const tx = {
+      setting: {
+        findMany: vi.fn().mockResolvedValue([
+          setting("shipping.default_charge_paise", 0),
+          setting("checkout.platform_fee.enabled", false),
+          setting("checkout.platform_fee.type", "PERCENTAGE"),
+          setting("checkout.platform_fee.value_bps", 0),
+          setting("checkout.platform_fee.fixed_paise", 0)
+        ])
+      }
+    };
+    const routing = {
+      resolveAllDeliveryOptions: vi.fn().mockImplementation((_input, modes: DeliveryMode[]) =>
+        Promise.resolve(
+          modes.map((mode) => ({
+            mode,
+            quote: deliveryQuote(mode),
+          })),
+        ),
+      ),
+    };
+    const service = new CheckoutPricingService({ client: tx } as never, routing as never);
+    const sellerPackage = {
+      sellerId: "seller_1",
+      sellerName: "Seller One",
+      sellerType: SellerType.MARKETPLACE_SELLER,
+      subtotalPaise: 10000,
+      allowedDeliveryModes: [
+        DeliveryMode.STORE_PICKUP,
+        DeliveryMode.LOCAL_DELIVERY_PARTNER,
+        DeliveryMode.MANUAL_TRANSPORT,
+      ],
+      items: [],
+      package: { weightGrams: 500, lengthCm: 20, breadthCm: 15, heightCm: 8, itemCount: 1 },
+    };
+
+    const pickupResult = await service.calculateSellerPackageCharges(
+      10000,
+      [sellerPackage],
+      tx as never,
+      {
+        deliveryPreference: CheckoutDeliveryPreference.STORE_PICKUP,
+        paymentMethod: "COD",
+      },
+    );
+    const deliverResult = await service.calculateSellerPackageCharges(
+      10000,
+      [sellerPackage],
+      tx as never,
+      {
+        deliveryPreference: CheckoutDeliveryPreference.DELIVER_TO_ADDRESS,
+        paymentMethod: "COD",
+        address: { countryCode: "IN", stateCode: "IN-TN", pincode: "636114" },
+      },
+    );
+
+    expect(pickupResult.sellerDeliveryGroups?.[0]?.availableDeliveryOptions.map((option) => option.mode)).toEqual([
+      DeliveryMode.STORE_PICKUP,
+    ]);
+    expect(deliverResult.sellerDeliveryGroups?.[0]?.availableDeliveryOptions.map((option) => option.mode)).toEqual([
+      DeliveryMode.LOCAL_DELIVERY_PARTNER,
+      DeliveryMode.MANUAL_TRANSPORT,
+    ]);
+    expect(routing.resolveAllDeliveryOptions).toHaveBeenNthCalledWith(
+      1,
+      expect.any(Object),
+      [DeliveryMode.STORE_PICKUP],
+      tx,
+    );
+    expect(routing.resolveAllDeliveryOptions).toHaveBeenNthCalledWith(
+      2,
+      expect.any(Object),
+      [DeliveryMode.LOCAL_DELIVERY_PARTNER, DeliveryMode.MANUAL_TRANSPORT],
+      tx,
+    );
+  });
 });
 
 function setting(key: string, value: boolean | number | string) {
   return { key, value };
+}
+
+function deliveryQuote(mode: DeliveryMode) {
+  return {
+    deliveryMode: mode,
+    totalDeliveryChargePaise: mode === DeliveryMode.STORE_PICKUP ? 0 : 500,
+    shippingChargePaise: mode === DeliveryMode.STORE_PICKUP ? 0 : 500,
+    codSurchargePaise: 0,
+    shippingSnapshot: {},
+    codSurchargeSnapshot: null,
+    routingSnapshot: { deliveryMode: mode },
+    routingFailed: false,
+    routingFailureNote: null,
+  };
 }

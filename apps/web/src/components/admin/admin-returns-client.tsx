@@ -559,9 +559,42 @@ function AdminReturnDetailPanel({
           </section>
 
           <section className="rounded-lg border border-[#D8E2EA] bg-white p-4 shadow-sm">
-            <PanelTitle icon={<Store className="h-5 w-5" />} title="Refund links" description="Finance moves money from the refund queue." />
+            <PanelTitle
+              icon={<Store className="h-5 w-5" />}
+              title={detail.replacementOrder ? "Replacement order" : "Refund links"}
+              description={
+                detail.replacementOrder
+                  ? "Replacement fulfilment continues through the normal order queue."
+                  : "Finance moves money from the refund queue."
+              }
+            />
             <div className="mt-3 grid gap-2">
-              {detail.refunds.length ? (
+              {detail.replacementOrder ? (
+                <Link
+                  href={`/admin/orders/${encodeURIComponent(detail.replacementOrder.orderNumber)}`}
+                  className="rounded-md border border-[#E5E7EB] bg-[#F8FAFC] p-3 transition hover:border-[#ED3500]"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-black text-[#1F2933]">{detail.replacementOrder.orderNumber}</p>
+                    <StatusBadge tone={detail.replacementOrder.deliveryStatus === "DELIVERED" ? "success" : "warning"}>
+                      {humanize(detail.replacementOrder.deliveryStatus)}
+                    </StatusBadge>
+                  </div>
+                  <p className="mt-1 text-sm font-semibold text-[#667085]">
+                    {humanize(detail.replacementOrder.orderStatus)} / Payment {humanize(detail.replacementOrder.paymentStatus)}
+                  </p>
+                  {detail.replacementOrder.shipmentPackages.length ? (
+                    <div className="mt-2 grid gap-1 text-xs font-semibold text-[#667085]">
+                      {detail.replacementOrder.shipmentPackages.map((shipmentPackage) => (
+                        <p key={shipmentPackage.id}>
+                          {shipmentPackage.packageNumber}: {humanize(shipmentPackage.status)}
+                          {shipmentPackage.trackingReference ? ` / ${shipmentPackage.trackingReference}` : ""}
+                        </p>
+                      ))}
+                    </div>
+                  ) : null}
+                </Link>
+              ) : detail.refunds.length ? (
                 detail.refunds.map((refund) => (
                   <Link
                     key={refund.id}
@@ -579,7 +612,9 @@ function AdminReturnDetailPanel({
                 ))
               ) : (
                 <p className="rounded-md border border-dashed border-[#D8E2EA] bg-[#F8FAFC] p-3 text-sm font-semibold text-[#667085]">
-                  No refund request is attached yet.
+                  {detail.resolution === "REPLACEMENT"
+                    ? "Replacement order appears here after quality check passes."
+                    : "No refund request is attached yet."}
                 </p>
               )}
             </div>

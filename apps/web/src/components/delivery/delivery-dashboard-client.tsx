@@ -93,6 +93,7 @@ function DeliveryOrderRow({ order }: { order: DeliveryOrder }) {
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-lg font-black text-[#1F2933]">{order.orderNumber}</p>
             <DeliveryStatusPill status={order.deliveryStatus} />
+            {order.orderKind === "REPLACEMENT" ? <StatusBadge tone="info">Replacement delivery</StatusBadge> : null}
             <StatusBadge tone={order.deliveryDetail?.assignmentStatus === "ACCEPTED" ? "success" : "warning"}>
               {humanize(order.deliveryDetail?.assignmentStatus ?? "ASSIGNED")}
             </StatusBadge>

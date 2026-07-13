@@ -333,6 +333,7 @@ export type SellerProductPayload = {
   categoryId: string;
   name: string;
   description: string;
+  deliveryModes?: Array<"STORE_PICKUP" | "LOCAL_DELIVERY_PARTNER" | "THIRD_PARTY_COURIER" | "MANUAL_TRANSPORT">;
   attributes?: Record<string, unknown>;
   images?: Array<{
     url: string;

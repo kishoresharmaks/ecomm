@@ -20,8 +20,10 @@ import {
   availableSellerOrderActions,
   buildSellerTimeline,
   createDeliveryForm,
+  isManualTransportCodCollection,
   openSellerPackageLabel,
   packageUpdatePayload,
+  sellerCollectedCodExpectedPaise,
   type DeliveryFormErrors,
   type DeliveryFormValues,
   type PackageFormValues,
@@ -75,6 +77,7 @@ export default function SellerOrderDetailScreen() {
   const actions = useMemo(() => (order ? availableSellerOrderActions(order) : []), [order]);
   const timeline = useMemo(() => (order ? buildSellerTimeline(order) : []), [order]);
   const sellerTotalPaise = order ? sellerPayablePaise(order) : 0;
+  const sellerCodExpectedPaise = order ? sellerCollectedCodExpectedPaise(order) : 0;
   const packages = useMemo(() => collectPackages(order), [order]);
 
   useEffect(() => {
@@ -155,12 +158,32 @@ export default function SellerOrderDetailScreen() {
       <Header title={decodedOrderNumber} subtitle="Manage status, delivery, labels, and package readiness from one place." />
 
       <Card>
+        {order.orderKind === "REPLACEMENT" ? (
+          <View style={{ marginBottom: 10 }}>
+            <Text style={{ color: "#ED3500", fontSize: 12, fontWeight: "900", textTransform: "uppercase" }}>
+              Replacement order
+            </Text>
+            <Text style={{ color: "#6B7280", fontSize: 13, fontWeight: "700", marginTop: 2 }}>
+              {order.parentOrder?.orderNumber ? `Original order ${order.parentOrder.orderNumber}` : "Created after return quality check"}
+              {order.replacementReturnRequest?.requestNumber ? ` / ${order.replacementReturnRequest.requestNumber}` : ""}
+            </Text>
+          </View>
+        ) : null}
         <View style={styles.summaryRow}>
-          <StatusChip label={labelValue(order.status ?? "ORDER")} />
+          <StatusChip label={labelValue(order.orderStatus ?? order.status ?? "ORDER")} />
           <StatusChip label={labelValue(order.deliveryStatus ?? "DELIVERY")} tone="warning" />
           <StatusChip label={labelValue(order.paymentStatus ?? "PAYMENT")} tone="success" />
         </View>
         <Text style={styles.summaryValue}>Seller total: {formatMoney(sellerTotalPaise, order.currency ?? "INR")}</Text>
+        {sellerReceivableSummaries(order).map((receivable) => (
+          <View key={receivable.id} style={styles.receivableBox}>
+            <Text style={styles.receivableTitle}>Seller-collected COD platform due</Text>
+            <Text style={styles.receivableMeta}>
+              {receivable.receivableNumber} / {labelValue(receivable.status)} / Outstanding{" "}
+              {formatMoney(receivable.outstandingPaise, receivable.currency ?? order.currency ?? "INR")}
+            </Text>
+          </View>
+        ))}
         {(order.items ?? []).map((item) => (
           <Text key={item.id} style={styles.itemText}>
             {item.productNameSnapshot ?? item.id} x {item.quantity ?? 1}
@@ -284,22 +307,23 @@ export default function SellerOrderDetailScreen() {
         {isCodVisible(order, currentDeliveryForm.deliveryMode) ? (
           <>
             <SelectField
-              label="COD collected"
+              label="Manual transport COD collected"
               options={[
                 { label: "Yes", value: "true" },
                 { label: "No", value: "false" },
               ]}
               selectedValue={String(currentDeliveryForm.codCollected)}
               onSelect={(value) => updateDeliveryField("codCollected", value === "true")}
+              error={deliveryErrors.codCollected}
             />
             {currentDeliveryForm.codCollected ? (
               <>
                 <Field
-                  label={`Collected amount (max ${formatMoney(sellerTotalPaise, order.currency ?? "INR")})`}
+                  label={`Collected amount (${formatMoney(sellerCodExpectedPaise, order.currency ?? "INR")})`}
                   value={currentDeliveryForm.codCollectedAmountRupees}
                   onChangeText={(value) => updateDeliveryField("codCollectedAmountRupees", value)}
                   keyboardType="decimal-pad"
-                  placeholder={paiseToRupees(sellerTotalPaise)}
+                  placeholder={paiseToRupees(sellerCodExpectedPaise)}
                   error={deliveryErrors.codCollectedAmountRupees}
                 />
                 <Field
@@ -511,6 +535,13 @@ function collectPackages(order?: SellerOrder) {
   return (order?.shipments ?? []).flatMap((shipment) => shipment.packages ?? []);
 }
 
+function sellerReceivableSummaries(order: SellerOrder) {
+  const fromOrder = order.sellerCashReceivables ?? [];
+  const fromSplits = (order.sellerSplits ?? []).flatMap((split) => split.sellerCashReceivables ?? []);
+  const fromShipments = (order.shipments ?? []).flatMap((shipment) => shipment.sellerCashReceivable ? [shipment.sellerCashReceivable] : []);
+  return [...new Map([...fromOrder, ...fromSplits, ...fromShipments].map((receivable) => [receivable.id, receivable])).values()];
+}
+
 function createPackageForm(shipmentPackage?: SellerOrderPackage): PackageFormValues {
   return {
     weightGrams: shipmentPackage?.weightGrams ? String(shipmentPackage.weightGrams) : "",
@@ -521,8 +552,7 @@ function createPackageForm(shipmentPackage?: SellerOrderPackage): PackageFormVal
 }
 
 function isCodVisible(order: SellerOrder, deliveryMode: DeliveryFormValues["deliveryMode"]) {
-  const codOrder = (order.payments ?? []).some((payment) => payment.method === "COD");
-  return codOrder && ["MANUAL_TRANSPORT", "THIRD_PARTY_COURIER"].includes(deliveryMode);
+  return isManualTransportCodCollection(order, deliveryMode);
 }
 
 function labelValue(value: string) {
@@ -550,6 +580,24 @@ const styles = StyleSheet.create({
   itemText: {
     color: colors.muted,
     fontWeight: "700",
+  },
+  receivableBox: {
+    borderWidth: 1,
+    borderColor: "#FECACA",
+    borderRadius: 8,
+    padding: spacing.sm,
+    backgroundColor: "#FFF7F5",
+  },
+  receivableTitle: {
+    color: "#B42318",
+    fontSize: 12,
+    fontWeight: "900",
+    textTransform: "uppercase",
+  },
+  receivableMeta: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "800",
   },
   buttonGrid: {
     gap: spacing.sm,

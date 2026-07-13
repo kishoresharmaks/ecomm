@@ -26,6 +26,10 @@ describe("ProductsService", () => {
       productImage: {
         createMany: vi.fn(),
       },
+      productDeliveryMode: {
+        createMany: vi.fn(),
+        deleteMany: vi.fn(),
+      },
       productVariant: {
         create: vi.fn(),
         findUnique: vi.fn(),
@@ -54,10 +58,13 @@ describe("ProductsService", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    prisma.client.product.findUnique.mockReset();
     prisma.client.setting.findUnique.mockResolvedValue(null);
     prisma.client.hsnMaster.findFirst.mockResolvedValue(null);
     prisma.client.sellerAddress.findFirst.mockResolvedValue({ id: "mock_address_1", latitude: 12.34, longitude: 56.78 });
     prisma.client.productImage.createMany.mockResolvedValue({ count: 0 });
+    prisma.client.productDeliveryMode.createMany.mockResolvedValue({ count: 0 });
+    prisma.client.productDeliveryMode.deleteMany.mockResolvedValue({ count: 0 });
     prisma.client.inventoryMovement.create.mockResolvedValue({});
     prisma.client.$transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) =>
       callback(prisma.client),

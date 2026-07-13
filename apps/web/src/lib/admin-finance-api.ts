@@ -220,6 +220,50 @@ export type ServiceReceivableOffsetFinance = {
   };
 };
 
+export type SellerCashReceivableStatus =
+  | "OPEN"
+  | "PARTIALLY_OFFSET"
+  | "OFFSET_SCHEDULED"
+  | "SETTLED"
+  | "WAIVED"
+  | "CANCELLED";
+
+export type SellerCashReceivable = {
+  id: string;
+  receivableNumber: string;
+  sellerId: string;
+  orderId: string;
+  orderSellerSplitId: string;
+  orderShipmentId?: string | null;
+  paymentId?: string | null;
+  payoutOffsetId?: string | null;
+  source: "STORE_PICKUP_COD" | "MANUAL_TRANSPORT_COD";
+  status: SellerCashReceivableStatus;
+  grossCashCollectedPaise: number;
+  platformDuePaise: number;
+  offsetPaise: number;
+  settledPaise: number;
+  waivedPaise: number;
+  outstandingPaise: number;
+  commissionPaise: number;
+  gstOnCommissionPaise: number;
+  tdsPaise: number;
+  tcsPaise: number;
+  sellerPlatformFeePaise: number;
+  buyerPlatformFeePaise: number;
+  currency: string;
+  note?: string | null;
+  openedAt?: string;
+  settledAt?: string | null;
+  waivedAt?: string | null;
+  createdAt?: string;
+  seller?: FinanceSeller | null;
+  order?: { id: string; orderNumber: string; orderStatus: string; paymentStatus: string; deliveryStatus: string } | null;
+  orderShipment?: { id: string; shipmentNumber: string; deliveryMode: string; status: string; codCollectionStatus: string } | null;
+  payoutOffset?: { id: string; payoutNumber: string; status: string } | null;
+  events?: Array<{ id: string; eventType: string; oldStatus?: SellerCashReceivableStatus | null; newStatus?: SellerCashReceivableStatus | null; amountDeltaPaise?: number | null; note?: string | null; createdAt?: string }>;
+};
+
 export type SellerLedgerEntry = {
   id: string;
   sellerId: string;
@@ -303,6 +347,30 @@ export function submitSettlement(auth: IndihubAuthHeaders, runId: string) {
 
 export function listPayouts(auth: IndihubAuthHeaders, query: Record<string, string | number | undefined> = {}) {
   return indihubFetch<PageResult<SellerPayout>>(`/api/admin/finance/payouts${queryString(query)}`, undefined, auth);
+}
+
+export function listSellerCashReceivables(auth: IndihubAuthHeaders, query: Record<string, string | number | undefined> = {}) {
+  return indihubFetch<PageResult<SellerCashReceivable>>(`/api/admin/finance/seller-cash-receivables${queryString(query)}`, undefined, auth);
+}
+
+export function getSellerCashReceivable(auth: IndihubAuthHeaders, receivableNumber: string) {
+  return indihubFetch<SellerCashReceivable>(`/api/admin/finance/seller-cash-receivables/${encodeURIComponent(receivableNumber)}`, undefined, auth);
+}
+
+export function settleSellerCashReceivable(auth: IndihubAuthHeaders, receivableNumber: string, payload: { amountPaise?: number; note?: string }) {
+  return indihubFetch<SellerCashReceivable>(
+    `/api/admin/finance/seller-cash-receivables/${encodeURIComponent(receivableNumber)}/settle`,
+    { method: "POST", body: JSON.stringify(payload) },
+    auth
+  );
+}
+
+export function waiveSellerCashReceivable(auth: IndihubAuthHeaders, receivableNumber: string, payload: { amountPaise?: number; note?: string }) {
+  return indihubFetch<SellerCashReceivable>(
+    `/api/admin/finance/seller-cash-receivables/${encodeURIComponent(receivableNumber)}/waive`,
+    { method: "POST", body: JSON.stringify(payload) },
+    auth
+  );
 }
 
 export function approvePayout(auth: IndihubAuthHeaders, payoutId: string, note?: string) {

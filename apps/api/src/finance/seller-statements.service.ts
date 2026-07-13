@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { Prisma, SellerPayoutStatus, SellerStatementStatus } from "@indihub/database";
+import { Prisma, SellerLedgerEntryType, SellerPayoutStatus, SellerStatementStatus } from "@indihub/database";
 import {
   cursorPageFromTimestampItems,
   cursorPaginationFromQuery,
@@ -20,6 +20,16 @@ type StatementExport = Prisma.SellerStatementGetPayload<{
         b2bOrders: true;
         serviceSettlements: { include: { booking: true } };
         serviceReceivableOffsets: { include: { booking: true } };
+        ledgerEntries: {
+          include: {
+            sellerCashReceivable: {
+              include: {
+                order: { select: { orderNumber: true } };
+                orderShipment: { select: { shipmentNumber: true; deliveryMode: true } };
+              };
+            };
+          };
+        };
       };
     };
   };
@@ -187,6 +197,18 @@ export class SellerStatementsService {
                 booking: true
               },
               orderBy: { createdAt: "asc" }
+            },
+            ledgerEntries: {
+              where: { entryType: SellerLedgerEntryType.SELLER_CASH_RECEIVABLE_OFFSET },
+              include: {
+                sellerCashReceivable: {
+                  include: {
+                    order: { select: { orderNumber: true } },
+                    orderShipment: { select: { shipmentNumber: true, deliveryMode: true } }
+                  }
+                }
+              },
+              orderBy: { createdAt: "asc" }
             }
           }
         }
@@ -330,6 +352,34 @@ export class SellerStatementsService {
       ]);
     }
 
+    rows.push([]);
+    rows.push(["Seller-collected COD offsets"]);
+    rows.push([
+      "Receivable number",
+      "Order number",
+      "Shipment number",
+      "Delivery mode",
+      "Gross cash collected",
+      "Platform due",
+      "Offset in payout",
+      "Outstanding after offset",
+      "Status"
+    ]);
+    for (const entry of this.sellerCashOffsetEntries(statement)) {
+      const receivable = entry.sellerCashReceivable;
+      rows.push([
+        receivable?.receivableNumber ?? entry.referenceId ?? "",
+        receivable?.order.orderNumber ?? "",
+        receivable?.orderShipment?.shipmentNumber ?? "",
+        receivable?.orderShipment?.deliveryMode ?? "",
+        receivable?.grossCashCollectedPaise ?? "",
+        receivable?.platformDuePaise ?? "",
+        entry.debitPaise,
+        receivable?.outstandingPaise ?? "",
+        receivable?.status ?? ""
+      ]);
+    }
+
     return rows.map((row) => row.map((cell) => this.csvCell(String(cell ?? ""))).join(",")).join("\n");
   }
 
@@ -355,6 +405,7 @@ export class SellerStatementsService {
       `B2B order payouts: ${statement.payout?.b2bOrders.length ?? 0}`,
       `Service booking payouts: ${statement.payout?.serviceSettlements.length ?? 0}`,
       `Service cash offsets: ${this.rupees(this.serviceReceivableOffsetTotal(statement))}`,
+      `Seller-collected COD offsets: ${this.rupees(this.sellerCashReceivableOffsetTotal(statement))}`,
       "",
       "This statement is generated from 1HandIndia seller finance ledger records."
     ];
@@ -405,6 +456,16 @@ export class SellerStatementsService {
 
   private serviceReceivableOffsetTotal(statement: StatementExport) {
     return (statement.payout?.serviceReceivableOffsets ?? []).reduce((sum, receivable) => sum + receivable.offsetPaise, 0);
+  }
+
+  private sellerCashReceivableOffsetTotal(statement: StatementExport) {
+    return this.sellerCashOffsetEntries(statement).reduce((sum, entry) => sum + entry.debitPaise, 0);
+  }
+
+  private sellerCashOffsetEntries(statement: StatementExport) {
+    return (statement.payout?.ledgerEntries ?? []).filter(
+      (entry) => entry.entryType === SellerLedgerEntryType.SELLER_CASH_RECEIVABLE_OFFSET,
+    );
   }
 
   private serviceReceivableOutstanding(

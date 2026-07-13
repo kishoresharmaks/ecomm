@@ -309,6 +309,7 @@ export function DeliveryOrderDetailClient({ orderNumber }: { orderNumber: string
             <h2 className="mt-2 text-2xl font-black text-[#1F2933]">{order.orderNumber}</h2>
             <div className="mt-4 flex flex-wrap gap-2">
               <StatusBadge tone="info">{humanize(order.orderStatus)}</StatusBadge>
+              {order.orderKind === "REPLACEMENT" ? <StatusBadge tone="info">Replacement delivery</StatusBadge> : null}
               <StatusBadge tone={order.paymentStatus === "PAID" ? "success" : "warning"}>
                 {humanize(order.paymentStatus)}
               </StatusBadge>

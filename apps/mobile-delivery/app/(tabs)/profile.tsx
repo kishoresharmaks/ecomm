@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Text, View } from "react-native";
+import { Linking, Text, View } from "react-native";
+import * as Location from "expo-location";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Card, Field, Header, Metric, QueryState, Screen, StatusChip, formatPaise } from "../../src/components/screen";
 import { getDeliveryProfile, updateDeliveryProfile } from "../../src/features/delivery/delivery-api";
@@ -15,6 +16,15 @@ export default function DeliveryProfileScreen() {
   const [baseLongitude, setBaseLongitude] = useState("");
   const [serviceRadiusKm, setServiceRadiusKm] = useState("");
   const [notes, setNotes] = useState("");
+  const [locationState, setLocationState] = useState<{
+    loading: boolean;
+    tone: "info" | "success" | "danger";
+    message: string;
+  }>({
+    loading: false,
+    tone: "info",
+    message: "Use GPS to set your delivery base location. This helps operations assign nearby orders accurately.",
+  });
   const profileQuery = useQuery({
     queryKey: ["delivery-profile", auth.authKey],
     queryFn: () => getDeliveryProfile(auth.authHeaders),
@@ -50,16 +60,81 @@ export default function DeliveryProfileScreen() {
   }, [profileQuery.data]);
 
   const profile = profileQuery.data;
+  const hasBaseLocation = Boolean(baseLatitude && baseLongitude);
+  const locationStatusStyle =
+    locationState.tone === "success"
+      ? { backgroundColor: "#E9F7F1", borderColor: "#B7E4CF", color: "#0F5132" }
+      : locationState.tone === "danger"
+        ? { backgroundColor: "#FDECEC", borderColor: "#F5B5B5", color: "#9F2600" }
+        : { backgroundColor: "#EEF6FF", borderColor: "#BFDBFE", color: "#123A5A" };
+
+  const useCurrentLocation = async () => {
+    setLocationState({
+      loading: true,
+      tone: "info",
+      message: "Checking location permission...",
+    });
+
+    try {
+      const servicesEnabled = await Location.hasServicesEnabledAsync();
+      if (!servicesEnabled) {
+        setLocationState({
+          loading: false,
+          tone: "danger",
+          message: "Turn on device location services, then try again.",
+        });
+        return;
+      }
+
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (permission.status !== Location.PermissionStatus.GRANTED) {
+        setLocationState({
+          loading: false,
+          tone: "danger",
+          message: "Location permission is needed to save your delivery base. Allow location access in Android settings and try again.",
+        });
+        return;
+      }
+
+      let position = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High,
+      });
+
+      if (!position.coords.latitude || !position.coords.longitude) {
+        const lastKnown = await Location.getLastKnownPositionAsync({});
+        if (lastKnown) {
+          position = lastKnown;
+        }
+      }
+
+      const latitude = position.coords.latitude.toFixed(6);
+      const longitude = position.coords.longitude.toFixed(6);
+      setBaseLatitude(latitude);
+      setBaseLongitude(longitude);
+      setLocationState({
+        loading: false,
+        tone: "success",
+        message: `GPS location captured with about ${Math.round(position.coords.accuracy ?? 0)}m accuracy. Save profile to apply it.`,
+      });
+    } catch (error) {
+      setLocationState({
+        loading: false,
+        tone: "danger",
+        message: error instanceof Error ? error.message : "Could not read GPS location. Please try again outdoors or near a window.",
+      });
+    }
+  };
 
   return (
     <Screen>
-      <Header title="Profile" subtitle="Contact, vehicle, availability, workload, and COD exposure." />
+      <Header title="Profile" subtitle="Contact, vehicle, GPS base location, workload, and COD exposure." />
       <QueryState loading={profileQuery.isLoading} error={profileQuery.error} onRetry={() => void profileQuery.refetch()} />
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
         <Metric label="Availability" value={isAvailable ? "Active" : "Inactive"} />
         <Metric label="Workload" value={profile?.activeWorkload ?? 0} />
         <Metric label="COD exposure" value={formatPaise(profile?.pendingCodCashPaise ?? 0)} note={`Limit ${formatPaise(profile?.deliveryProfile.effectiveCodCashLimitPaise ?? 0)}`} />
         <Metric label="Wallet" value={formatPaise(profile?.wallet?.availableBalancePaise ?? 0, profile?.wallet?.currency ?? "INR")} />
+        <Metric label="Base location" value={hasBaseLocation ? "Set" : "Not set"} note={hasBaseLocation ? `${baseLatitude}, ${baseLongitude}` : "Use GPS"} />
         <Metric label="Radius" value={serviceRadiusKm ? `${serviceRadiusKm} km` : "Not set"} />
       </View>
       <Card>
@@ -92,8 +167,36 @@ export default function DeliveryProfileScreen() {
         <Field label="Phone" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
         <Field label="Vehicle number" value={vehicleNumber} onChangeText={setVehicleNumber} />
         <Button title={isAvailable ? "Available for assignment" : "Unavailable"} tone={isAvailable ? "primary" : "secondary"} onPress={() => setIsAvailable((current) => !current)} />
-        <Field label="Base latitude" value={baseLatitude} onChangeText={setBaseLatitude} keyboardType="decimal-pad" />
-        <Field label="Base longitude" value={baseLongitude} onChangeText={setBaseLongitude} keyboardType="decimal-pad" />
+        <View style={{ borderColor: "#F3E7E2", borderRadius: 16, borderWidth: 1, gap: 10, padding: 14 }}>
+          <Text style={{ color: "#123A5A", fontSize: 16, fontWeight: "900" }}>Delivery base GPS location</Text>
+          <Text style={{ color: "#6B7280", fontWeight: "700", lineHeight: 20 }}>
+            Stand at your normal pickup or service starting point, then capture the location. Manual coordinate entry is not needed.
+          </Text>
+          {hasBaseLocation ? (
+            <Text selectable style={{ color: "#123A5A", fontWeight: "900" }}>
+              {baseLatitude}, {baseLongitude}
+            </Text>
+          ) : null}
+          <View
+            style={{
+              backgroundColor: locationStatusStyle.backgroundColor,
+              borderColor: locationStatusStyle.borderColor,
+              borderRadius: 12,
+              borderWidth: 1,
+              padding: 10,
+            }}
+          >
+            <Text style={{ color: locationStatusStyle.color, fontSize: 13, fontWeight: "800", lineHeight: 19 }}>
+              {locationState.message}
+            </Text>
+          </View>
+          <View style={{ gap: 8 }}>
+            <Button title={hasBaseLocation ? "Update GPS location" : "Use current GPS location"} loading={locationState.loading} onPress={useCurrentLocation} />
+            {locationState.tone === "danger" ? (
+              <Button title="Open Android settings" tone="secondary" onPress={() => void Linking.openSettings()} />
+            ) : null}
+          </View>
+        </View>
         <Field label="Service radius km" value={serviceRadiusKm} onChangeText={setServiceRadiusKm} keyboardType="number-pad" />
         <Field label="Notes" value={notes} onChangeText={setNotes} multiline />
         {updateMutation.isSuccess ? <StatusChip label="Profile saved" tone="success" /> : null}

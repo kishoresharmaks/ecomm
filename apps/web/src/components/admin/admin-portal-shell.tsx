@@ -80,6 +80,7 @@ const iconByHref: Array<[string, typeof LayoutDashboard]> = [
   ["/admin/push-campaigns", Megaphone],
   ["/admin/notifications", Bell],
   ["/finance", WalletCards],
+  ["/admin/finance/seller-cash-receivables", WalletCards],
   ["/admin/finance/ledger", WalletCards],
   ["/admin/finance/payouts", CreditCard],
   ["/admin/finance/statements", ReceiptText],

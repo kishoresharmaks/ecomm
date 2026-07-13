@@ -166,6 +166,11 @@ export type MobileMarketCurrency = {
 
 export type MobilePaymentMethod = "RAZORPAY" | "COD" | "BANK_TRANSFER" | "MANUAL";
 export type MobileDeliveryPreference = "STORE_PICKUP" | "DELIVER_TO_ADDRESS";
+export type MobileDeliveryMode =
+  | "STORE_PICKUP"
+  | "LOCAL_DELIVERY_PARTNER"
+  | "THIRD_PARTY_COURIER"
+  | "MANUAL_TRANSPORT";
 
 export type MobileCheckoutSummary = {
   itemCount: number;
@@ -202,6 +207,26 @@ export type MobileCheckoutSummary = {
     available: boolean;
     reason: string | null;
   }[];
+  sellerDeliveryGroups?: Array<{
+    sellerId: string;
+    sellerName: string;
+    subtotalPaise: number;
+    items: Array<{
+      productId: string;
+      productName: string;
+      quantity: number;
+      enabledDeliveryModes: MobileDeliveryMode[];
+    }>;
+    availableDeliveryOptions: Array<{
+      mode: MobileDeliveryMode;
+      chargePaise: number;
+      isCheapest: boolean;
+      available: boolean;
+      reason: string | null;
+    }>;
+    selectedDeliveryMode?: MobileDeliveryMode;
+    blockedReason?: string | null;
+  }>;
 };
 
 export type MobileCheckoutPaymentMethodsResponse = {
@@ -521,6 +546,38 @@ export type MobileReturnRequest = {
   customerName?: string | null;
   items: MobileReturnRequestItem[];
   reverseShipments?: MobileReverseShipment[];
+  replacementOrder?: {
+    id: string;
+    orderNumber: string;
+    orderStatus: string;
+    paymentStatus: string;
+    deliveryStatus: string;
+    totalPaise: number;
+    currency: string;
+    createdAt?: string;
+    deliveryDetail?: {
+      deliveryMode: string;
+      status: string;
+      awbNumber?: string | null;
+      trackingReference?: string | null;
+      estimatedDeliveryDate?: string | null;
+      partnerName?: string | null;
+      partnerPhone?: string | null;
+    } | null;
+    shipmentPackages: Array<{
+      id: string;
+      packageNumber: string;
+      status: string;
+      deliveryMode: string;
+      declaredValuePaise: number;
+      deliveredAt?: string | null;
+      shipmentNumber: string;
+      shipmentStatus: string;
+      awbNumber?: string | null;
+      trackingReference?: string | null;
+      estimatedDeliveryDate?: string | null;
+    }>;
+  } | null;
   refunds?: Array<{
     id: string;
     refundNumber: string;
@@ -737,6 +794,7 @@ export type MobilePlaceOrderPayload = {
   couponCode?: string;
   deliveryPreference: MobileDeliveryPreference;
   deliveryMode?: string;
+  deliverySelections?: Array<{ sellerId: string; deliveryMode: MobileDeliveryMode }>;
   idempotencyKey?: string;
   paymentMethod: MobilePaymentMethod;
   paymentReference?: string;
@@ -962,6 +1020,7 @@ export function getCheckoutSummary(
     couponCode?: string | null;
     deliveryPreference?: MobileDeliveryPreference;
     requestedDeliveryMode?: string | null;
+    deliverySelections?: Array<{ sellerId: string; deliveryMode: MobileDeliveryMode }>;
     paymentMethod?: MobilePaymentMethod;
     addressId?: string | null;
   } = {},
@@ -974,6 +1033,7 @@ export function getCheckoutSummary(
       couponCode: options.couponCode,
       deliveryPreference: options.deliveryPreference,
       requestedDeliveryMode: options.requestedDeliveryMode,
+      deliverySelections: options.deliverySelections?.length ? JSON.stringify(options.deliverySelections) : undefined,
       paymentMethod: options.paymentMethod,
       addressId: options.addressId,
     },

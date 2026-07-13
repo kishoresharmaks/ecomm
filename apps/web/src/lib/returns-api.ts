@@ -114,6 +114,7 @@ export type ReturnSummary = {
   createdAt?: string;
   order: {
     orderNumber: string;
+    orderKind?: "STANDARD" | "REPLACEMENT";
     orderStatus: string;
     paymentStatus: string;
     deliveryStatus: string;
@@ -240,6 +241,38 @@ export type ReturnDetail = Omit<ReturnSummary, "items"> & {
       createdAt?: string;
     }>;
   }>;
+  replacementOrder?: {
+    id: string;
+    orderNumber: string;
+    orderStatus: string;
+    paymentStatus: string;
+    deliveryStatus: string;
+    totalPaise: number;
+    currency: string;
+    createdAt?: string;
+    deliveryDetail?: {
+      deliveryMode: string;
+      status: string;
+      awbNumber?: string | null;
+      trackingReference?: string | null;
+      estimatedDeliveryDate?: string | null;
+      partnerName?: string | null;
+      partnerPhone?: string | null;
+    } | null;
+    shipmentPackages: Array<{
+      id: string;
+      packageNumber: string;
+      status: string;
+      deliveryMode: string;
+      declaredValuePaise: number;
+      deliveredAt?: string | null;
+      shipmentNumber: string;
+      shipmentStatus: string;
+      awbNumber?: string | null;
+      trackingReference?: string | null;
+      estimatedDeliveryDate?: string | null;
+    }>;
+  } | null;
   notes: Array<{
     id: string;
     note: string;

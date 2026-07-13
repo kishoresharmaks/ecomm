@@ -183,6 +183,48 @@ function ReturnDetailContent({ copy, detail }: { copy: ReturnType<typeof returns
           </View>
         </Section>
 
+        {detail.replacementOrder ? (
+          <Section icon={PackageIcon} title="Replacement order">
+            <View style={styles.noteBox}>
+              <View style={styles.refundHeader}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.noteLabel}>{detail.replacementOrder.orderNumber}</Text>
+                  <Text style={styles.noteText}>
+                    {formatReturnStatus(detail.replacementOrder.orderStatus)} / {formatReturnStatus(detail.replacementOrder.deliveryStatus)}
+                  </Text>
+                </View>
+                <StatusPill
+                  label={formatReturnStatus(detail.replacementOrder.deliveryStatus)}
+                  tone={detail.replacementOrder.deliveryStatus === "DELIVERED" ? "success" : "warning"}
+                />
+              </View>
+              <View style={styles.detailGrid}>
+                <Detail label="Payment" value={formatReturnStatus(detail.replacementOrder.paymentStatus)} />
+                <Detail
+                  label="Tracking"
+                  value={
+                    detail.replacementOrder.shipmentPackages[0]?.trackingReference ??
+                    detail.replacementOrder.deliveryDetail?.trackingReference ??
+                    "Not assigned"
+                  }
+                />
+                <Detail
+                  label="AWB"
+                  value={detail.replacementOrder.shipmentPackages[0]?.awbNumber ?? detail.replacementOrder.deliveryDetail?.awbNumber ?? "Not assigned"}
+                />
+                <Detail
+                  label="Package"
+                  value={
+                    detail.replacementOrder.shipmentPackages[0]
+                      ? `${detail.replacementOrder.shipmentPackages[0].packageNumber} / ${formatReturnStatus(detail.replacementOrder.shipmentPackages[0].status)}`
+                      : "Packing pending"
+                  }
+                />
+              </View>
+            </View>
+          </Section>
+        ) : null}
+
         <Section icon={DeliveryReturn01Icon} title="Refund tracking">
           {detail.refunds?.length ? (
             detail.refunds.map((refund) => {

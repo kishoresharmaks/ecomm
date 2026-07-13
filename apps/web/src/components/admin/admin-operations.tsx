@@ -263,6 +263,7 @@ type ProductRecord = {
   hsnCode?: string | null;
   gstRatePercent?: number | string | null;
   hsnMaster?: HsnMasterRecord | null;
+  deliveryModes?: string[];
   createdAt?: string;
   category?: { name?: string | null; productTemplate?: ProductTemplateRecord | null } | null;
   seller?: SellerRecord | null;
@@ -2366,6 +2367,19 @@ export function AdminProductsPageClient({
             header: "Essentials",
             className: "min-w-[260px]",
             cell: (item) => <ProductEssentialsReview product={item} />,
+          },
+          {
+            header: "Delivery",
+            className: "min-w-[220px]",
+            cell: (item) => (
+              <div className="flex flex-wrap gap-1.5">
+                {(item.deliveryModes?.length ? item.deliveryModes : ["Not configured"]).map((mode) => (
+                  <StatusBadge key={mode} tone={mode === "Not configured" ? "warning" : "info"}>
+                    {humanize(mode)}
+                  </StatusBadge>
+                ))}
+              </div>
+            ),
           },
           {
             header: "Seller",

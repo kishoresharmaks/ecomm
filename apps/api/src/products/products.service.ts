@@ -9,6 +9,7 @@ import {
 import {
   ApprovalStatus,
   CategoryStatus,
+  DeliveryMode,
   EmailRecipientType,
   InventoryMovementType,
   Prisma,
@@ -85,6 +86,9 @@ const productInclude = {
   variants: {
     orderBy: [{ createdAt: "asc" as const }],
   },
+  deliveryModeOptions: {
+    orderBy: { deliveryMode: "asc" as const },
+  },
 };
 
 const publicSellerProfileSelect = {
@@ -139,9 +143,23 @@ const publicProductInclude = {
     select: publicProductVariantSelect,
     orderBy: [{ createdAt: "asc" as const }],
   },
+  deliveryModeOptions: {
+    where: { isEnabled: true },
+    select: {
+      deliveryMode: true,
+      isEnabled: true,
+    },
+    orderBy: { deliveryMode: "asc" as const },
+  },
 };
 
 const productAutoApproveSettingKey = "products.auto_approve.enabled";
+const defaultProductDeliveryModes = [
+  DeliveryMode.STORE_PICKUP,
+  DeliveryMode.LOCAL_DELIVERY_PARTNER,
+  DeliveryMode.THIRD_PARTY_COURIER,
+  DeliveryMode.MANUAL_TRANSPORT,
+] as const;
 
 type ProductSearchCursor = {
   rank: number | string;
@@ -261,7 +279,7 @@ export class ProductsService {
       });
       const pageResult = cursorPageFromItems(items, take);
 
-      return { ...pageResult, limit: take };
+      return { ...pageResult, items: pageResult.items.map((item) => this.productReadback(item)), limit: take };
     }
 
     const { page, skip, take } = this.pagination(query);
@@ -274,7 +292,7 @@ export class ProductsService {
     });
     const total = await this.prisma.client.product.count({ where });
 
-    return { items, total, page, limit: take };
+    return { items: items.map((item) => this.productReadback(item)), total, page, limit: take };
   }
 
   async getSellerProduct(actor: RequestUser, productId: string) {
@@ -292,7 +310,7 @@ export class ProductsService {
       throw new NotFoundException("Seller product not found.");
     }
 
-    return product;
+    return this.productReadback(product);
   }
 
   async createSellerProduct(actor: RequestUser, dto: CreateSellerProductDto) {
@@ -329,6 +347,7 @@ export class ProductsService {
     const listingMode = category.productTemplate?.listingMode ?? ProductListingMode.CART;
     const slug = await this.createUniqueProductSlug(dto.name);
     const variantInputs = await this.prepareVariantInputs(dto.name, variants);
+    const deliveryModes = this.normalizeProductDeliveryModes(dto.deliveryModes);
     const autoApproveProduct = await this.isProductAutoApprovalEnabled();
     const nextProductStatus = autoApproveProduct ? ProductStatus.ACTIVE : ProductStatus.INACTIVE;
     const nextApprovalStatus = autoApproveProduct
@@ -374,6 +393,15 @@ export class ProductsService {
         });
       }
 
+      await tx.productDeliveryMode.createMany({
+        data: deliveryModes.map((deliveryMode) => ({
+          productId: product.id,
+          deliveryMode,
+          isEnabled: true,
+        })),
+        skipDuplicates: true,
+      });
+
       for (const variantInput of variantInputs) {
         const variant = await tx.productVariant.create({
           data: {
@@ -418,6 +446,7 @@ export class ProductsService {
             sellerId: seller.id,
             status: product.status,
             approvalStatus: product.approvalStatus,
+            deliveryModes,
             autoApproved: autoApproveProduct,
           },
         },
@@ -479,6 +508,8 @@ export class ProductsService {
       };
     });
     const listingMode = category.productTemplate?.listingMode ?? ProductListingMode.CART;
+    const nextDeliveryModes =
+      dto.deliveryModes !== undefined ? this.normalizeProductDeliveryModes(dto.deliveryModes) : null;
     const autoApproveProduct = await this.isProductAutoApprovalEnabled();
     const nextProductStatus = autoApproveProduct ? ProductStatus.ACTIVE : ProductStatus.INACTIVE;
     const nextApprovalStatus = autoApproveProduct
@@ -546,6 +577,18 @@ export class ProductsService {
         }
       }
 
+      if (nextDeliveryModes) {
+        await tx.productDeliveryMode.deleteMany({ where: { productId } });
+        await tx.productDeliveryMode.createMany({
+          data: nextDeliveryModes.map((deliveryMode) => ({
+            productId,
+            deliveryMode,
+            isEnabled: true,
+          })),
+          skipDuplicates: true,
+        });
+      }
+
       await tx.auditLog.create({
         data: {
           actor: { connect: { id: actor.id } },
@@ -556,11 +599,13 @@ export class ProductsService {
             name: existing.name,
             status: existing.status,
             approvalStatus: existing.approvalStatus,
+            deliveryModes: this.productDeliveryModeValues(existing),
           },
           newValue: {
             name: product.name,
             status: product.status,
             approvalStatus: product.approvalStatus,
+            deliveryModes: nextDeliveryModes ?? this.productDeliveryModeValues(existing),
             autoApproved: autoApproveProduct,
           },
         },
@@ -678,7 +723,7 @@ export class ProductsService {
       });
       const pageResult = cursorPageFromItems(items, take);
 
-      return { ...pageResult, limit: take };
+      return { ...pageResult, items: pageResult.items.map((item) => this.productReadback(item)), limit: take };
     }
 
     const { page, skip, take } = this.pagination(query);
@@ -691,7 +736,7 @@ export class ProductsService {
     });
     const total = await this.prisma.client.product.count({ where });
 
-    return { items, total, page, limit: take };
+    return { items: items.map((item) => this.productReadback(item)), total, page, limit: take };
   }
 
   listPendingAdminProducts() {
@@ -703,7 +748,7 @@ export class ProductsService {
       include: productInclude,
       orderBy: { createdAt: "asc" },
       take: 100,
-    });
+    }).then((items) => items.map((item) => this.productReadback(item)));
   }
 
   async updateProductApproval(productId: string, dto: ProductApprovalDto, actor: RequestUser) {
@@ -1017,14 +1062,18 @@ export class ProductsService {
     return this.decoratePublicProducts(orderedProducts);
   }
 
-  private async decoratePublicProducts<T extends { id: string; variants: Array<{ pricePaise: number } & Record<string, unknown>> }>(
+  private async decoratePublicProducts<T extends {
+    id: string;
+    variants: Array<{ pricePaise: number } & Record<string, unknown>>;
+    deliveryModeOptions?: Array<{ deliveryMode: DeliveryMode; isEnabled?: boolean | null }> | null;
+  }>(
     products: T[],
   ) {
     const decoratedProducts = this.dealPricing ? await this.dealPricing.applyActiveDealsToProducts(products) : products;
     const reviewSummaries = await this.reviewSummariesForProducts(decoratedProducts.map((product) => product.id));
 
     return decoratedProducts.map((product) => ({
-      ...product,
+      ...this.productReadback(product),
       reviewSummary: reviewSummaries.get(product.id) ?? this.emptyReviewSummary(),
     }));
   }
@@ -1200,6 +1249,9 @@ export class ProductsService {
         sellerId,
         deletedAt: null,
       },
+      include: {
+        deliveryModeOptions: true,
+      },
     });
 
     if (!product) {
@@ -1219,7 +1271,37 @@ export class ProductsService {
       throw new NotFoundException("Product not found.");
     }
 
-    return product;
+    return this.productReadback(product);
+  }
+
+  private normalizeProductDeliveryModes(deliveryModes: DeliveryMode[] | undefined) {
+    const modes = deliveryModes?.length ? deliveryModes : [...defaultProductDeliveryModes];
+    const uniqueModes = [...new Set(modes)];
+
+    if (!uniqueModes.length) {
+      throw new BadRequestException("Select at least one delivery option for this product.");
+    }
+
+    return uniqueModes;
+  }
+
+  private productDeliveryModeValues(product: { deliveryModeOptions?: Array<{ deliveryMode: DeliveryMode; isEnabled?: boolean | null }> | null }) {
+    if (!Object.prototype.hasOwnProperty.call(product, "deliveryModeOptions")) {
+      return [...defaultProductDeliveryModes];
+    }
+
+    return (product.deliveryModeOptions ?? [])
+      .filter((option) => option.isEnabled !== false)
+      .map((option) => option.deliveryMode);
+  }
+
+  private productReadback<T extends { deliveryModeOptions?: Array<{ deliveryMode: DeliveryMode; isEnabled?: boolean | null }> | null }>(
+    product: T,
+  ) {
+    return {
+      ...product,
+      deliveryModes: this.productDeliveryModeValues(product),
+    };
   }
 
   private async isProductAutoApprovalEnabled() {

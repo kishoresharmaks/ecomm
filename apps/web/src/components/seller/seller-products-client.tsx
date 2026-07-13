@@ -32,7 +32,7 @@ import {
 import type { IndihubAuthHeaders } from "@/lib/api";
 import { sellerProductStockBadge } from "@/lib/product-stock-labels";
 import { uploadPublicImage } from "@/lib/public-image-upload";
-import type { CategorySummary, HsnMasterEntry, ProductImage, ProductSummary, ProductTemplateField, ProductTemplateSummary, ProductVariant } from "@/lib/storefront-api";
+import type { CategorySummary, DeliveryMode, HsnMasterEntry, ProductImage, ProductSummary, ProductTemplateField, ProductTemplateSummary, ProductVariant } from "@/lib/storefront-api";
 import {
   SellerAuthNotice,
   SellerEmptyState,
@@ -56,6 +56,13 @@ const productStatusOptions = ["", "DRAFT", "ACTIVE", "INACTIVE", "ARCHIVED"];
 const approvalStatusOptions = ["", "PENDING_APPROVAL", "APPROVED", "REJECTED"];
 const maxProductImages = 10;
 const marketplaceEssentialFieldKeys = new Set<string>(marketplaceProductEssentialFields.map((field) => field.key));
+const productDeliveryModeOptions: Array<{ mode: DeliveryMode; label: string; description: string }> = [
+  { mode: "THIRD_PARTY_COURIER", label: "Courier delivery", description: "Use configured courier partners and package labels." },
+  { mode: "LOCAL_DELIVERY_PARTNER", label: "Local delivery partner", description: "Route nearby orders to approved local delivery partners." },
+  { mode: "MANUAL_TRANSPORT", label: "Seller-arranged delivery", description: "Deliver through your own transport and record proof." },
+  { mode: "STORE_PICKUP", label: "Store pickup", description: "Let customers collect from your store after confirmation." },
+];
+const defaultProductDeliveryModes = productDeliveryModeOptions.map((option) => option.mode);
 
 type DraftProductImage = {
   id: string;
@@ -95,6 +102,7 @@ export function SellerProductsClient({
   const [selectedCategoryId, setSelectedCategoryId] = useState("");
   const [draftVariants, setDraftVariants] = useState<DraftVariantRow[]>([emptyDraftVariant()]);
   const [taxDraft, setTaxDraft] = useState<TaxDraft>({ hsnCode: "", gstRatePercent: "" });
+  const [selectedDeliveryModes, setSelectedDeliveryModes] = useState<DeliveryMode[]>(defaultProductDeliveryModes);
   const [productNameDraft, setProductNameDraft] = useState("");
   const [productDescriptionDraft, setProductDescriptionDraft] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
@@ -153,6 +161,7 @@ export function SellerProductsClient({
       );
       setDraftImages([]);
       setDraftVariants([emptyDraftVariant()]);
+      setSelectedDeliveryModes(defaultProductDeliveryModes);
       setSelectedCategoryId(categories[0]?.id ?? "");
       setProductNameDraft("");
       setProductDescriptionDraft("");
@@ -180,6 +189,7 @@ export function SellerProductsClient({
     setDraftImages(imagesToDraft(editingProduct?.images ?? []));
     setSelectedCategoryId(editingProduct?.categoryId ?? "");
     setDraftVariants(variantsToDraft(editingProduct?.variants ?? []));
+    setSelectedDeliveryModes(editingProduct?.deliveryModes?.length ? editingProduct.deliveryModes : defaultProductDeliveryModes);
     setProductNameDraft(editingProduct?.name ?? "");
     setProductDescriptionDraft(editingProduct?.description ?? "");
   }, [productQuery.data]);
@@ -215,6 +225,10 @@ export function SellerProductsClient({
     const category = categories.find((item) => item.id === categoryId);
     const template = category?.productTemplate ?? null;
     const productName = formValue(form, "name");
+    if (!selectedDeliveryModes.length) {
+      setNotice("Select at least one delivery option for this product.");
+      return;
+    }
     const images = draftImages.map((image, index) => ({
       url: image.url,
       altText: image.altText || productName,
@@ -258,6 +272,7 @@ export function SellerProductsClient({
         ...marketplaceEssentialsFromForm(form),
         ...dynamicAttributesFromForm(form, templateFields(template, "PRODUCT"), "productAttribute"),
       },
+      deliveryModes: selectedDeliveryModes,
       images,
       variants
     };
@@ -448,6 +463,10 @@ export function SellerProductsClient({
                     taxDraft={taxDraft}
                     onTaxDraftChange={setTaxDraft}
                   />
+                  <ProductDeliveryModeSelector
+                    selectedModes={selectedDeliveryModes}
+                    onChange={setSelectedDeliveryModes}
+                  />
                 </ProductFormSection>
 
                 {productFields.length ? (
@@ -510,6 +529,7 @@ export function SellerProductsClient({
                     <ProductSummaryRow label="Images" value={`${draftImages.length}/${maxProductImages}`} />
                     <ProductSummaryRow label="Variants" value={variantRowsLabel} />
                     <ProductSummaryRow label="Stock" value={stockSummary} />
+                    <ProductSummaryRow label="Delivery" value={`${selectedDeliveryModes.length} option${selectedDeliveryModes.length === 1 ? "" : "s"}`} />
                   </div>
                 </ProductSidebarCard>
 
@@ -986,6 +1006,72 @@ function MarketplaceProductEssentialsFields({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function ProductDeliveryModeSelector({
+  selectedModes,
+  onChange,
+}: {
+  selectedModes: DeliveryMode[];
+  onChange: (modes: DeliveryMode[]) => void;
+}) {
+  function toggleMode(mode: DeliveryMode) {
+    if (selectedModes.includes(mode)) {
+      onChange(selectedModes.filter((item) => item !== mode));
+      return;
+    }
+
+    onChange([...selectedModes, mode]);
+  }
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <p className="text-sm font-black text-[#1F2933]">Delivery options</p>
+        <p className="mt-1 text-xs font-semibold leading-5 text-[#667085]">
+          Customers will only see the selected options when every item in their seller package supports them.
+        </p>
+      </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        {productDeliveryModeOptions.map((option) => {
+          const selected = selectedModes.includes(option.mode);
+          return (
+            <button
+              key={option.mode}
+              type="button"
+              onClick={() => toggleMode(option.mode)}
+              className={cn(
+                "rounded-md border p-4 text-left transition",
+                selected
+                  ? "border-[#ED3500] bg-[#FFF0EC]"
+                  : "border-[#D9E2EA] bg-white hover:border-[#ED3500]",
+              )}
+            >
+              <span className="flex items-center justify-between gap-3 text-sm font-black text-[#1F2933]">
+                {option.label}
+                <span
+                  className={cn(
+                    "grid h-5 w-5 place-items-center rounded-full border",
+                    selected
+                      ? "border-[#ED3500] bg-[#ED3500] text-white"
+                      : "border-[#A8B6C4] text-transparent",
+                  )}
+                >
+                  {selected ? <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> : null}
+                </span>
+              </span>
+              <span className="mt-2 block text-xs font-semibold leading-5 text-[#667085]">
+                {option.description}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      {!selectedModes.length ? (
+        <p className="text-xs font-bold text-[#B42318]">Select at least one delivery option.</p>
+      ) : null}
     </div>
   );
 }

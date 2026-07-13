@@ -19,6 +19,8 @@ import {
   PaymentProvider,
   PaymentStatus,
   FinanceRuleScope,
+  SellerCashReceivableSource,
+  SellerCashReceivableStatus,
   SellerPayoutStatus,
 } from "@indihub/database";
 
@@ -190,6 +192,38 @@ export class PayoutQueryDto extends SettlementQueryDto {
   @IsOptional()
   @IsUUID()
   sellerId?: string;
+}
+
+export class SellerCashReceivableQueryDto extends FinanceListQueryDto {
+  @ApiPropertyOptional({ example: "70cf4fb8-44b7-4ff0-b65c-5987c72f91ab" })
+  @IsOptional()
+  @IsUUID()
+  sellerId?: string;
+
+  @ApiPropertyOptional({ enum: SellerCashReceivableStatus })
+  @IsOptional()
+  @IsEnum(SellerCashReceivableStatus)
+  status?: SellerCashReceivableStatus;
+
+  @ApiPropertyOptional({ enum: SellerCashReceivableSource })
+  @IsOptional()
+  @IsEnum(SellerCashReceivableSource)
+  source?: SellerCashReceivableSource;
+}
+
+export class SellerCashReceivableActionDto {
+  @ApiPropertyOptional({ example: 12500 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  amountPaise?: number;
+
+  @ApiPropertyOptional({ example: "Adjusted after finance review." })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  note?: string;
 }
 
 export class DeliveryPartnerPayoutQueryDto extends FinanceListQueryDto {

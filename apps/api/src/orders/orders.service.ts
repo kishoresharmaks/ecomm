@@ -35,6 +35,8 @@ import {
   PushNotificationType,
   RoleCode,
   ReturnRequestStatus,
+  SellerCashReceivableStatus,
+  SellerCashReceivableSource,
   SellerStatus,
   SellerType,
   SellerOrderStatus,
@@ -74,6 +76,7 @@ import {
   PayoutActionDto,
 } from "../finance/dto/finance.dto";
 import { SellerLedgerService } from "../finance/seller-ledger.service";
+import { SellerCashReceivablesService } from "../finance/seller-cash-receivables.service";
 import { LocationsService } from "../locations/locations.service";
 import { RouteDistanceService, type RouteDistanceResult } from "../maps/route-distance.service";
 import { MarketService } from "../market/market.service";
@@ -159,6 +162,9 @@ const orderInclude = {
           user: true,
         },
       },
+      sellerCashReceivables: {
+        orderBy: { createdAt: "desc" as const },
+      },
       shipment: {
         include: {
           deliveryPartner: {
@@ -187,6 +193,7 @@ const orderInclude = {
           },
           courierShipment: true,
           courierCodRemittance: true,
+          sellerCashReceivable: true,
         },
       },
     },
@@ -229,6 +236,7 @@ const orderInclude = {
       },
       courierShipment: true,
       courierCodRemittance: true,
+      sellerCashReceivable: true,
     },
     orderBy: { createdAt: "asc" as const },
   },
@@ -262,6 +270,25 @@ const orderInclude = {
     orderBy: { createdAt: "desc" as const },
     include: {
       events: true,
+    },
+  },
+  sellerCashReceivables: {
+    orderBy: { createdAt: "desc" as const },
+  },
+  parentOrder: {
+    select: {
+      id: true,
+      orderNumber: true,
+      orderStatus: true,
+      deliveryStatus: true,
+    },
+  },
+  replacementReturnRequest: {
+    select: {
+      id: true,
+      requestNumber: true,
+      status: true,
+      resolution: true,
     },
   },
   statusEvents: {
@@ -317,6 +344,10 @@ const deliveryPartnerPayoutInclude = {
 };
 
 type OrderWithRelations = Prisma.OrderGetPayload<{ include: typeof orderInclude }>;
+type OrderPaymentForCod = Pick<
+  Prisma.PaymentGetPayload<Record<string, never>>,
+  "id" | "provider" | "method" | "status" | "amountPaise"
+>;
 type DeliveryPartnerPayoutWithRelations = Prisma.DeliveryPartnerPayoutGetPayload<{
   include: typeof deliveryPartnerPayoutInclude;
 }>;
@@ -564,6 +595,8 @@ export class OrdersService {
     @Inject(NotificationsService) private readonly notifications: NotificationsService,
     @Inject(ExpoPushService) private readonly expoPush: ExpoPushService,
     @Inject(PaymentsService) private readonly paymentsService: PaymentsService,
+    @Inject(SellerCashReceivablesService)
+    private readonly sellerCashReceivables: SellerCashReceivablesService = undefined as never,
   ) {}
 
   async placeOrder(actor: RequestUser, dto: PlaceOrderDto) {
@@ -682,6 +715,10 @@ export class OrdersService {
                 user: true,
               },
             },
+            deliveryModeOptions: {
+              where: { isEnabled: true },
+              select: { deliveryMode: true, isEnabled: true },
+            },
           },
         });
 
@@ -713,6 +750,9 @@ export class OrdersService {
             ? { deliveryPreference }
             : {}),
           ...(dto.deliveryMode !== undefined ? { deliveryMode: dto.deliveryMode } : {}),
+          ...(dto.deliverySelections !== undefined
+            ? { deliverySelections: dto.deliverySelections }
+            : {}),
           address: shippingAddressSnapshot,
           paymentMethod: dto.paymentMethod,
         },
@@ -3228,55 +3268,7 @@ export class OrdersService {
         throw new BadRequestException("COD collection changed. Refresh the order and try again.");
       }
 
-      const paidOrder = await tx.order.updateMany({
-        where: { id: existing.id, paymentStatus: PaymentStatus.PENDING },
-        data: { paymentStatus: PaymentStatus.PAID },
-      });
-      if (paidOrder.count !== 1) {
-        throw new BadRequestException(
-          "Order payment status changed. Refresh the order and try again.",
-        );
-      }
-
-      await tx.orderStatusEvent.create({
-        data: {
-          orderId: existing.id,
-          statusType: StatusEventType.PAYMENT,
-          oldStatus: existing.paymentStatus,
-          newStatus: PaymentStatus.PAID,
-          note: dto.note ?? "COD cash verified by admin.",
-          createdById: actor.id,
-        },
-      });
-
-      const paidPayment = await tx.payment.updateMany({
-        where: { id: codPayment.id, status: PaymentStatus.PENDING },
-        data: { status: PaymentStatus.PAID },
-      });
-      if (paidPayment.count !== 1) {
-        throw new BadRequestException(
-          "COD payment status changed. Refresh the order and try again.",
-        );
-      }
-
-      await tx.paymentEvent.create({
-        data: {
-          paymentId: codPayment.id,
-          eventType: "admin.cod_collection.verified",
-          oldStatus: codPayment.status,
-          newStatus: PaymentStatus.PAID,
-          payload: {
-            orderNumber: existing.orderNumber,
-            collectedAmountPaise,
-            expectedAmountPaise,
-            note: dto.note ?? null,
-          },
-        },
-      });
-
-      if (existing.orderStatus === OrderStatus.DELIVERED) {
-        await this.markSellerSplitsSettlementEligible(tx, existing.id);
-      }
+      const settled = await this.settleCodPaymentIfAccounted(tx, existing, actor, dto.note ?? "COD cash verified by admin.");
 
       await tx.auditLog.create({
         data: {
@@ -3289,10 +3281,11 @@ export class OrdersService {
             delivery: this.deliveryAuditValue(delivery),
           },
           newValue: {
-            paymentStatus: PaymentStatus.PAID,
+            paymentStatus: settled ? PaymentStatus.PAID : existing.paymentStatus,
             collectedAmountPaise,
             expectedAmountPaise,
             note: dto.note ?? null,
+            awaitingOtherCodCollections: !settled,
           },
         },
       });
@@ -3301,7 +3294,7 @@ export class OrdersService {
     });
 
     const order = await this.getOrderByIdOrThrow(orderId);
-    if (dto.decision === CodVerificationDecision.VERIFY) {
+    if (dto.decision === CodVerificationDecision.VERIFY && order.paymentStatus === PaymentStatus.PAID) {
       await this.notifyCustomerPaymentStatus(
         order,
         PaymentStatus.PAID,
@@ -3396,6 +3389,9 @@ export class OrdersService {
       const shipments = await tx.orderShipment.findMany({
         where: { orderId: orderRecord.id },
       });
+      const payments = await tx.payment.findMany({
+        where: { orderId: orderRecord.id },
+      });
       const deliveryDetail = await tx.deliveryDetail.findUnique({
         where: { orderId: orderRecord.id },
       });
@@ -3403,6 +3399,7 @@ export class OrdersService {
         ...orderRecord,
         sellerSplits,
         shipments,
+        payments,
         deliveryDetail,
       };
 
@@ -3420,6 +3417,15 @@ export class OrdersService {
         order.deliveryDetail?.deliveryMode ??
         DeliveryMode.LOCAL_DELIVERY_PARTNER;
       const isStorePickupSellerOrder = sellerDeliveryMode === DeliveryMode.STORE_PICKUP;
+      if (
+        sellerDeliveryMode === DeliveryMode.MANUAL_TRANSPORT &&
+        dto.sellerStatus === SellerOrderStatus.DELIVERED &&
+        this.findCodPayment(order)
+      ) {
+        throw new BadRequestException(
+          "Manual transport COD delivery must be completed from the delivery screen with the collected COD amount.",
+        );
+      }
       this.assertSellerStatusAllowedForDeliveryMode(
         dto.sellerStatus,
         sellerDeliveryMode,
@@ -3489,6 +3495,7 @@ export class OrdersService {
       let deliveryDetailIdForWallet = isStorePickupSellerOrder
         ? null
         : (order.deliveryDetail?.id ?? null);
+      let codPaymentSettledBySellerCash = false;
 
       if (orderStatusChanged || deliveryStatusChanged) {
         await tx.order.update({
@@ -3568,6 +3575,19 @@ export class OrdersService {
             deliveryNote: note,
           },
         });
+
+        if (
+          requestedDeliveryStatus === DeliveryStatus.DELIVERED &&
+          isStorePickupSellerOrder
+        ) {
+          codPaymentSettledBySellerCash = await this.recordSellerCollectedCodForSplit(tx, {
+            order,
+            split,
+            deliveryMode: sellerDeliveryMode,
+            actor,
+            note,
+          });
+        }
       }
 
       if (orderStatusChanged) {
@@ -3585,7 +3605,8 @@ export class OrdersService {
 
       if (
         nextOrderStatus === OrderStatus.DELIVERED &&
-        (order.paymentStatus === PaymentStatus.PAID ||
+        (codPaymentSettledBySellerCash ||
+          order.paymentStatus === PaymentStatus.PAID ||
           order.paymentStatus === PaymentStatus.NOT_REQUIRED)
       ) {
         await this.markSellerSplitsSettlementEligible(tx, order.id);
@@ -3616,6 +3637,7 @@ export class OrdersService {
             orderStatus: nextOrderStatus,
             deliveryStatus: nextDeliveryStatus,
             note,
+            ...(codPaymentSettledBySellerCash ? { sellerCashReceivableAccounted: true } : {}),
           },
         },
       });
@@ -3626,6 +3648,7 @@ export class OrdersService {
         nextOrderStatus,
         deliveryStatusChanged,
         nextDeliveryStatus,
+        codPaymentSettledBySellerCash,
       };
     });
 
@@ -3653,6 +3676,13 @@ export class OrdersService {
     }
     if (result.deliveryStatusChanged && deliveryTemplate !== orderTemplate) {
       await this.notifyCustomerDeliveryStatus(order, result.nextDeliveryStatus, note ?? undefined);
+    }
+    if (result.codPaymentSettledBySellerCash && order.paymentStatus === PaymentStatus.PAID) {
+      await this.notifyCustomerPaymentStatus(
+        order,
+        PaymentStatus.PAID,
+        note ?? "Seller-collected COD accounted.",
+      );
     }
 
     return this.filterOrderForSeller(order, seller.id);
@@ -3793,7 +3823,24 @@ export class OrdersService {
     if (isSellerStorePickupUpdate && shouldRecordCodCollection) {
       throw new BadRequestException("Store pickup orders do not record delivery-partner COD collection.");
     }
-    const codCollectionData = shouldRecordCodCollection
+    const shouldRecordSellerCashCodCollection =
+      options.sellerOnly && nextMode === DeliveryMode.MANUAL_TRANSPORT && shouldRecordCodCollection;
+    if (shouldRecordSellerCashCodCollection && nextStatus !== DeliveryStatus.DELIVERED) {
+      throw new BadRequestException("Manual transport COD can only be recorded when marking the seller delivery as delivered.");
+    }
+    if (shouldRecordSellerCashCodCollection && dto.codCollected !== true) {
+      throw new BadRequestException("Manual transport COD collection must be recorded as collected.");
+    }
+    if (
+      options.sellerOnly &&
+      nextMode === DeliveryMode.MANUAL_TRANSPORT &&
+      nextStatus === DeliveryStatus.DELIVERED &&
+      this.findCodPayment(order) &&
+      !shouldRecordSellerCashCodCollection
+    ) {
+      throw new BadRequestException("Manual transport COD delivery requires the collected COD amount.");
+    }
+    const codCollectionData = shouldRecordCodCollection && !shouldRecordSellerCashCodCollection
       ? this.codCollectionDeliveryData(order, previousDelivery, actor, dto)
       : null;
     const sellerSplitForDeliveryAggregate = seller
@@ -4253,9 +4300,33 @@ export class OrdersService {
         });
       }
 
+      let codPaymentSettledBySellerCash = false;
+      if (
+        seller &&
+        nextStatus === DeliveryStatus.DELIVERED &&
+        (nextMode === DeliveryMode.STORE_PICKUP || nextMode === DeliveryMode.MANUAL_TRANSPORT)
+      ) {
+        const split = order.sellerSplits.find((sellerSplit) => sellerSplit.sellerId === seller.id);
+        if (!split) {
+          throw new ForbiddenException("Order does not belong to this seller.");
+        }
+        codPaymentSettledBySellerCash = await this.recordSellerCollectedCodForSplit(tx, {
+          order,
+          split,
+          deliveryMode: nextMode,
+          actor,
+          ...(nextMode === DeliveryMode.MANUAL_TRANSPORT &&
+          dto.codCollectedAmountPaise !== undefined
+            ? { amountPaise: dto.codCollectedAmountPaise }
+            : {}),
+          note: dto.codCollectionNote ?? dto.deliveryNote ?? null,
+        });
+      }
+
       if (
         nextOrderStatus === OrderStatus.DELIVERED &&
-        (order.paymentStatus === PaymentStatus.PAID ||
+        (codPaymentSettledBySellerCash ||
+          order.paymentStatus === PaymentStatus.PAID ||
           order.paymentStatus === PaymentStatus.NOT_REQUIRED)
       ) {
         await this.markSellerSplitsSettlementEligible(tx, order.id);
@@ -4293,6 +4364,7 @@ export class OrdersService {
             ...(sellerStatusChanged ? { oldSellerStatus, nextSellerStatus } : {}),
             ...(orderStatusChanged ? { oldOrderStatus: order.orderStatus, nextOrderStatus } : {}),
             ...(codCollectionData ? { codCollectionRecorded: true } : {}),
+            ...(codPaymentSettledBySellerCash ? { sellerCashReceivableAccounted: true } : {}),
             ...(options.deliveryPartnerOnly ? { deliveryPartnerUserId: actor.id } : {}),
           },
         },
@@ -4305,6 +4377,7 @@ export class OrdersService {
         orderStatusChanged,
         nextOrderStatus,
         codCollectionRecorded: Boolean(codCollectionData),
+        codPaymentSettledBySellerCash,
         deliveryPartnerAssigned: canAssignDeliveryPartner && Boolean(dto.deliveryPartnerUserId),
       };
     });
@@ -4341,6 +4414,13 @@ export class OrdersService {
         orderWithDelivery,
         result.nextOrderStatus,
         dto.deliveryNote,
+      );
+    }
+    if (result.codPaymentSettledBySellerCash && orderWithDelivery.paymentStatus === PaymentStatus.PAID) {
+      await this.notifyCustomerPaymentStatus(
+        orderWithDelivery,
+        PaymentStatus.PAID,
+        dto.codCollectionNote ?? dto.deliveryNote ?? "Seller-collected COD accounted.",
       );
     }
     if (result.deliveryPartnerAssigned) {
@@ -4381,6 +4461,23 @@ export class OrdersService {
       id: order.id,
       orderNumber: order.orderNumber,
       idempotencyKey: order.idempotencyKey,
+      orderKind: order.orderKind,
+      parentOrder: order.parentOrder
+        ? {
+            id: order.parentOrder.id,
+            orderNumber: order.parentOrder.orderNumber,
+            orderStatus: order.parentOrder.orderStatus,
+            deliveryStatus: order.parentOrder.deliveryStatus,
+          }
+        : null,
+      replacementReturnRequest: order.replacementReturnRequest
+        ? {
+            id: order.replacementReturnRequest.id,
+            requestNumber: order.replacementReturnRequest.requestNumber,
+            status: order.replacementReturnRequest.status,
+            resolution: order.replacementReturnRequest.resolution,
+          }
+        : null,
       orderStatus: order.orderStatus,
       paymentStatus: order.paymentStatus,
       deliveryStatus: order.deliveryStatus,
@@ -4426,6 +4523,9 @@ export class OrdersService {
       deliveryDetail: this.customerSafeDeliveryDetail(order.deliveryDetail, {
         publicLookup: false,
       }),
+      sellerCashReceivables: order.sellerCashReceivables.map((receivable) =>
+        this.sellerCashReceivableSummary(receivable),
+      ),
       sellerSplits: order.sellerSplits.map((split) => ({
         id: split.id,
         orderId: split.orderId,
@@ -4439,6 +4539,9 @@ export class OrdersService {
         createdAt: split.createdAt,
         updatedAt: split.updatedAt,
         seller: this.customerSafeSellerSummary(split.seller),
+        sellerCashReceivables: split.sellerCashReceivables.map((receivable) =>
+          this.sellerCashReceivableSummary(receivable),
+        ),
         shipment: split.shipment
           ? this.customerSafeShipmentReadback(split.shipment, { publicLookup: false })
           : null,
@@ -4462,6 +4565,8 @@ export class OrdersService {
     return {
       id: item.id,
       sellerId: item.sellerId,
+      replacementSourceOrderItemId: item.replacementSourceOrderItemId,
+      replacementSourceReturnItemId: item.replacementSourceReturnItemId,
       productNameSnapshot: item.productNameSnapshot,
       variantSnapshot: this.customerSafeVariantSnapshot(item.variantSnapshot),
       quantity: item.quantity,
@@ -4656,6 +4761,9 @@ export class OrdersService {
       trackingReference: options.publicLookup ? null : shipment.trackingReference,
       estimatedDeliveryDate: shipment.estimatedDeliveryDate,
       deliveryNote: shipment.deliveryNote,
+      sellerCashReceivable: shipment.sellerCashReceivable
+        ? this.sellerCashReceivableSummary(shipment.sellerCashReceivable)
+        : null,
       packages: shipment.packages.map((shipmentPackage) =>
         this.customerSafeShipmentPackageReadback(shipmentPackage),
       ),
@@ -4713,9 +4821,49 @@ export class OrdersService {
             labelUrl: null,
           }
         : null,
+      sellerCashReceivable: shipment.sellerCashReceivable
+        ? this.sellerCashReceivableSummary(shipment.sellerCashReceivable)
+        : null,
       packages: shipment.packages.map((shipmentPackage) =>
         this.shipmentPackageReadback(shipmentPackage, options),
       ),
+    };
+  }
+
+  private sellerCashReceivableSummary(
+    receivable: Pick<
+      Prisma.SellerCashReceivableGetPayload<Record<string, never>>,
+      | "id"
+      | "receivableNumber"
+      | "source"
+      | "status"
+      | "grossCashCollectedPaise"
+      | "platformDuePaise"
+      | "offsetPaise"
+      | "settledPaise"
+      | "waivedPaise"
+      | "outstandingPaise"
+      | "currency"
+      | "openedAt"
+      | "settledAt"
+      | "waivedAt"
+    >,
+  ) {
+    return {
+      id: receivable.id,
+      receivableNumber: receivable.receivableNumber,
+      source: receivable.source,
+      status: receivable.status,
+      grossCashCollectedPaise: receivable.grossCashCollectedPaise,
+      platformDuePaise: receivable.platformDuePaise,
+      offsetPaise: receivable.offsetPaise,
+      settledPaise: receivable.settledPaise,
+      waivedPaise: receivable.waivedPaise,
+      outstandingPaise: receivable.outstandingPaise,
+      currency: receivable.currency,
+      openedAt: receivable.openedAt,
+      settledAt: receivable.settledAt,
+      waivedAt: receivable.waivedAt,
     };
   }
 
@@ -5209,12 +5357,157 @@ export class OrdersService {
         orderId,
         sellerStatus: { not: SellerOrderStatus.CANCELLED },
         payoutId: null,
+        sellerCashReceivables: {
+          none: {
+            status: { not: SellerCashReceivableStatus.CANCELLED },
+          },
+        },
       },
       data: {
         settlementStatus: SellerSettlementStatus.ELIGIBLE,
         settlementEligibleAt: new Date(),
       },
     });
+  }
+
+  private async settleCodPaymentIfAccounted(
+    tx: Prisma.TransactionClient,
+    order: Pick<OrderWithRelations, "id" | "orderNumber" | "orderStatus" | "paymentStatus">,
+    actor: RequestUser,
+    note: string,
+  ) {
+    if (order.paymentStatus === PaymentStatus.PAID) {
+      return true;
+    }
+    if (order.paymentStatus !== PaymentStatus.PENDING) {
+      return false;
+    }
+
+    const { accounted, codPayment } = await this.sellerCashReceivables.sellerCollectedCodAccounted(tx, order.id);
+    if (!accounted || !codPayment || codPayment.status !== PaymentStatus.PENDING) {
+      return false;
+    }
+
+    const paidOrder = await tx.order.updateMany({
+      where: { id: order.id, paymentStatus: PaymentStatus.PENDING },
+      data: { paymentStatus: PaymentStatus.PAID },
+    });
+    if (paidOrder.count !== 1) {
+      throw new BadRequestException("Order payment status changed. Refresh the order and try again.");
+    }
+
+    await tx.orderStatusEvent.create({
+      data: {
+        orderId: order.id,
+        statusType: StatusEventType.PAYMENT,
+        oldStatus: order.paymentStatus,
+        newStatus: PaymentStatus.PAID,
+        note,
+        createdById: actor.id,
+      },
+    });
+
+    const paidPayment = await tx.payment.updateMany({
+      where: { id: codPayment.id, status: PaymentStatus.PENDING },
+      data: { status: PaymentStatus.PAID },
+    });
+    if (paidPayment.count !== 1) {
+      throw new BadRequestException("COD payment status changed. Refresh the order and try again.");
+    }
+
+    await tx.paymentEvent.create({
+      data: {
+        paymentId: codPayment.id,
+        eventType: "cod_collection.accounted",
+        oldStatus: codPayment.status,
+        newStatus: PaymentStatus.PAID,
+        payload: {
+          orderNumber: order.orderNumber,
+          note,
+        },
+      },
+    });
+
+    if (order.orderStatus === OrderStatus.DELIVERED) {
+      await this.markSellerSplitsSettlementEligible(tx, order.id);
+    }
+
+    return true;
+  }
+
+  private async recordSellerCollectedCodForSplit(
+    tx: Prisma.TransactionClient,
+    input: {
+      order: Pick<
+        OrderWithRelations,
+        | "id"
+        | "orderNumber"
+        | "orderStatus"
+        | "paymentStatus"
+        | "subtotalPaise"
+        | "platformFeePaise"
+        | "currency"
+      > & {
+        payments: OrderPaymentForCod[];
+        sellerSplits?: Array<Pick<OrderWithRelations["sellerSplits"][number], "id" | "sellerSubtotalPaise">>;
+      };
+      split: Pick<OrderWithRelations["sellerSplits"][number], "id" | "sellerId" | "sellerSubtotalPaise">;
+      deliveryMode: DeliveryMode;
+      actor: RequestUser;
+      amountPaise?: number | undefined;
+      note?: string | null;
+    },
+  ) {
+    const codPayment = this.findCodPayment(input.order);
+    if (!codPayment) {
+      return false;
+    }
+    if (
+      input.deliveryMode !== DeliveryMode.STORE_PICKUP &&
+      input.deliveryMode !== DeliveryMode.MANUAL_TRANSPORT
+    ) {
+      throw new BadRequestException("Seller COD collection is only allowed for store pickup or manual transport orders.");
+    }
+
+    const shipment = await tx.orderShipment.findUnique({
+      where: { orderSellerSplitId: input.split.id },
+    });
+    if (!shipment) {
+      throw new BadRequestException("Seller shipment is required before recording seller COD collection.");
+    }
+
+    const source =
+      input.deliveryMode === DeliveryMode.STORE_PICKUP
+        ? SellerCashReceivableSource.STORE_PICKUP_COD
+        : SellerCashReceivableSource.MANUAL_TRANSPORT_COD;
+    const expectedAmountPaise = this.sellerCashReceivables.expectedSellerCashPaise(
+      input.order,
+      input.split,
+      shipment,
+    );
+    const amountPaise = input.amountPaise ?? expectedAmountPaise;
+
+    await this.sellerCashReceivables.openForSellerCollectedCod(tx, {
+      orderId: input.order.id,
+      orderSellerSplitId: input.split.id,
+      orderShipmentId: shipment.id,
+      paymentId: codPayment.id,
+      source,
+      grossCashCollectedPaise: amountPaise,
+      note:
+        input.note ??
+        (source === SellerCashReceivableSource.STORE_PICKUP_COD
+          ? "Store pickup COD collected by seller."
+          : "Manual transport COD collected by seller."),
+      actor: input.actor,
+    });
+
+    return this.settleCodPaymentIfAccounted(
+      tx,
+      input.order,
+      input.actor,
+      "Seller-collected COD accounted through seller wallet receivable.",
+    );
   }
 
   private async autoAssignPackedDelivery(
@@ -7498,8 +7791,12 @@ export class OrdersService {
         effectiveUnitPricePaise: number;
       };
       product: {
+        id: string;
+        name: string;
         sellerId: string;
+        deliveryModeOptions?: Array<{ deliveryMode: DeliveryMode; isEnabled?: boolean | null }> | null;
         seller: {
+          storeName?: string | null;
           sellerType: SellerType;
         };
       };
@@ -7509,8 +7806,16 @@ export class OrdersService {
       string,
       {
         sellerId: string;
+        sellerName: string;
         sellerType: SellerType;
         subtotalPaise: number;
+        allowedDeliveryModes: DeliveryMode[];
+        items: Array<{
+          productId: string;
+          productName: string;
+          quantity: number;
+          enabledDeliveryModes: DeliveryMode[];
+        }>;
         package: {
           weightGrams: number;
           lengthCm: number;
@@ -7524,8 +7829,11 @@ export class OrdersService {
     for (const { item, variant, product, price } of items) {
       const current = packages.get(product.sellerId) ?? {
         sellerId: product.sellerId,
+        sellerName: product.seller.storeName ?? "Seller",
         sellerType: product.seller.sellerType,
         subtotalPaise: 0,
+        allowedDeliveryModes: this.enabledProductDeliveryModes(product),
+        items: [],
         package: {
           weightGrams: 0,
           lengthCm: 20,
@@ -7538,7 +7846,17 @@ export class OrdersService {
         variant.packageWeightGrams ?? this.jsonNumber(variant.attributes, "packageWeightGrams"),
         500,
       );
+      const enabledDeliveryModes = this.enabledProductDeliveryModes(product);
       current.subtotalPaise += item.quantity * price.effectiveUnitPricePaise;
+      current.allowedDeliveryModes = current.allowedDeliveryModes.filter((mode) =>
+        enabledDeliveryModes.includes(mode),
+      );
+      current.items.push({
+        productId: product.id,
+        productName: product.name,
+        quantity: item.quantity,
+        enabledDeliveryModes,
+      });
       current.package.weightGrams += itemWeightGrams * item.quantity;
       current.package.lengthCm = Math.max(
         current.package.lengthCm,
@@ -7572,6 +7890,23 @@ export class OrdersService {
         weightGrams: Math.max(sellerPackage.package.weightGrams, 500),
       },
     }));
+  }
+
+  private enabledProductDeliveryModes(product: {
+    deliveryModeOptions?: Array<{ deliveryMode: DeliveryMode; isEnabled?: boolean | null }> | null;
+  }) {
+    const modes = (product.deliveryModeOptions ?? [])
+      .filter((option) => option.isEnabled !== false)
+      .map((option) => option.deliveryMode);
+
+    return modes.length
+      ? modes
+      : [
+          DeliveryMode.STORE_PICKUP,
+          DeliveryMode.LOCAL_DELIVERY_PARTNER,
+          DeliveryMode.THIRD_PARTY_COURIER,
+          DeliveryMode.MANUAL_TRANSPORT,
+        ];
   }
 
   private summaryDeliveryRouting(
@@ -8432,7 +8767,7 @@ export class OrdersService {
     };
   }
 
-  private findCodPayment(order: Pick<OrderWithRelations, "payments">) {
+  private findCodPayment(order: { payments: OrderPaymentForCod[] }) {
     return (
       order.payments.find(
         (payment) => payment.provider === PaymentProvider.COD || payment.method === "COD",
@@ -8566,6 +8901,23 @@ export class OrdersService {
     return {
       id: order.id,
       orderNumber: order.orderNumber,
+      orderKind: order.orderKind,
+      parentOrder: order.parentOrder
+        ? {
+            id: order.parentOrder.id,
+            orderNumber: order.parentOrder.orderNumber,
+            orderStatus: order.parentOrder.orderStatus,
+            deliveryStatus: order.parentOrder.deliveryStatus,
+          }
+        : null,
+      replacementReturnRequest: order.replacementReturnRequest
+        ? {
+            id: order.replacementReturnRequest.id,
+            requestNumber: order.replacementReturnRequest.requestNumber,
+            status: order.replacementReturnRequest.status,
+            resolution: order.replacementReturnRequest.resolution,
+          }
+        : null,
       orderStatus: order.orderStatus,
       paymentStatus: order.paymentStatus,
       deliveryStatus: order.deliveryStatus,

@@ -59,6 +59,8 @@ export default function SellerFinanceScreen() {
 
   const availability = availabilityQuery.data;
   const payoutProfile = profileQuery.data?.payoutProfile;
+  const sellerCashOutstandingPaise = availability?.sellerCashReceivableOutstandingPaise ?? 0;
+  const sellerCashOffsetPaise = availability?.sellerCashReceivableOffsetPaise ?? 0;
   return (
     <Screen>
       <Header title="Finance" subtitle="Track wallet ledger, payout availability, payout requests, and statements." />
@@ -107,6 +109,17 @@ export default function SellerFinanceScreen() {
       <Card>
         <Text style={{ color: "#111827", fontSize: 18, fontWeight: "900" }}>Available payout</Text>
         <Text style={{ color: "#111827", fontSize: 26, fontWeight: "900" }}>{formatMoney(availability?.netPayablePaise, availability?.currency ?? "INR")}</Text>
+        {sellerCashOutstandingPaise > 0 || sellerCashOffsetPaise > 0 ? (
+          <View style={{ borderTopWidth: 1, borderTopColor: "#E5E7EB", paddingTop: 10, gap: 6 }}>
+            <Text style={{ color: "#6B7280", fontSize: 12, fontWeight: "800" }}>Seller-collected COD platform due</Text>
+            <Text style={{ color: "#B42318", fontSize: 16, fontWeight: "900" }}>
+              Outstanding {formatMoney(sellerCashOutstandingPaise, availability?.currency ?? "INR")}
+            </Text>
+            <Text style={{ color: "#6B7280", fontSize: 12, fontWeight: "700" }}>
+              Next payout deduction {formatMoney(sellerCashOffsetPaise, availability?.currency ?? "INR")}
+            </Text>
+          </View>
+        ) : null}
         {availability?.blockers?.map((blocker) => (
           <Text key={blocker} style={{ color: "#D64545", fontWeight: "800" }}>
             {blocker}

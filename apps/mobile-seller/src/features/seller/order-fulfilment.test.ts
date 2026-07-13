@@ -5,6 +5,7 @@ import {
   createDeliveryForm,
   openSellerPackageLabel,
   packageUpdatePayload,
+  sellerCollectedCodExpectedPaise,
   validateDeliveryForm,
 } from "./order-fulfilment";
 import type { SellerOrder } from "./seller-api";
@@ -32,13 +33,28 @@ describe("availableSellerOrderActions", () => {
     ).toEqual([]);
   });
 
-  it("shows delivered action for seller-controlled delivery modes", () => {
+  it("hides delivered action for courier managed delivery", () => {
     expect(
       availableSellerOrderActions(
         orderWith({
           sellerSplits: [{ id: "split_1", sellerStatus: "DISPATCHED" }],
           deliveryDetail: {
             deliveryMode: "THIRD_PARTY_COURIER",
+            assignmentStatus: "UNASSIGNED",
+            status: "DISPATCHED",
+          },
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it("shows delivered action for manual transport", () => {
+    expect(
+      availableSellerOrderActions(
+        orderWith({
+          sellerSplits: [{ id: "split_1", sellerStatus: "DISPATCHED" }],
+          deliveryDetail: {
+            deliveryMode: "MANUAL_TRANSPORT",
             assignmentStatus: "UNASSIGNED",
             status: "DISPATCHED",
           },
@@ -90,23 +106,79 @@ describe("validateDeliveryForm", () => {
     expect(result.payload.status).toBeUndefined();
   });
 
-  it("rejects invalid COD collected values above seller payable amount", () => {
+  it("requires manual transport COD collection on delivered", () => {
+    const order = orderWith({
+      payments: [{ id: "payment_1", method: "COD", amountPaise: 11100 }],
+      subtotalPaise: 10000,
+      platformFeePaise: 500,
+      sellerSplits: [{ id: "split_1", sellerStatus: "DISPATCHED", sellerSubtotalPaise: 10000 }],
+      shipments: [{ id: "shipment_1", shippingPaise: 1000, codSurchargePaise: 100, deliveryMode: "MANUAL_TRANSPORT" }],
+    });
+    const result = validateDeliveryForm(order, "DELIVERED", {
+      ...createDeliveryForm(order),
+      deliveryMode: "MANUAL_TRANSPORT",
+      codCollected: false,
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.codCollected).toBe("Manual transport COD must be recorded before delivery.");
+  });
+
+  it("requires exact manual transport COD amount including shipping, surcharge, and buyer platform fee", () => {
+    const order = orderWith({
+      payments: [{ id: "payment_1", method: "COD", amountPaise: 11600 }],
+      subtotalPaise: 10000,
+      platformFeePaise: 500,
+      sellerSplits: [{ id: "split_1", sellerStatus: "DISPATCHED", sellerSubtotalPaise: 10000 }],
+      shipments: [{ id: "shipment_1", shippingPaise: 1000, codSurchargePaise: 100, deliveryMode: "MANUAL_TRANSPORT" }],
+    });
     const result = validateDeliveryForm(
-      orderWith({
-        payments: [{ id: "payment_1", method: "COD", amountPaise: 10000 }],
-        sellerSplits: [{ id: "split_1", sellerStatus: "DISPATCHED", sellerSubtotalPaise: 10000 }],
-      }),
+      order,
       "DELIVERED",
       {
-        ...createDeliveryForm(orderWith({})),
-        deliveryMode: "THIRD_PARTY_COURIER",
+        ...createDeliveryForm(order),
+        deliveryMode: "MANUAL_TRANSPORT",
         codCollected: true,
-        codCollectedAmountRupees: "120.00",
+        codCollectedAmountRupees: "111.00",
       },
     );
 
     expect(result.valid).toBe(false);
-    expect(result.errors.codCollectedAmountRupees).toBe("Collected COD amount cannot be above this seller order total.");
+    expect(result.errors.codCollectedAmountRupees).toBe("Collected COD amount must exactly match this seller package amount.");
+  });
+
+  it("accepts exact manual transport COD amount", () => {
+    const order = orderWith({
+      payments: [{ id: "payment_1", method: "COD", amountPaise: 11600 }],
+      subtotalPaise: 10000,
+      platformFeePaise: 500,
+      sellerSplits: [{ id: "split_1", sellerStatus: "DISPATCHED", sellerSubtotalPaise: 10000 }],
+      shipments: [{ id: "shipment_1", shippingPaise: 1000, codSurchargePaise: 100, deliveryMode: "MANUAL_TRANSPORT" }],
+    });
+    const result = validateDeliveryForm(order, "DELIVERED", {
+      ...createDeliveryForm(order),
+      deliveryMode: "MANUAL_TRANSPORT",
+      codCollected: true,
+      codCollectedAmountRupees: "116.00",
+    });
+
+    expect(result.valid).toBe(true);
+    expect(result.payload.codCollectedAmountPaise).toBe(11600);
+  });
+
+  it("allocates buyer platform fee without paise drift for multi-seller COD validation", () => {
+    const order = orderWith({
+      subtotalPaise: 3,
+      platformFeePaise: 1,
+      sellerSplits: [
+        { id: "split_1", sellerStatus: "DISPATCHED", sellerSubtotalPaise: 1 },
+        { id: "split_2", sellerStatus: "DISPATCHED", sellerSubtotalPaise: 1 },
+        { id: "split_3", sellerStatus: "DISPATCHED", sellerSubtotalPaise: 1 },
+      ],
+      shipments: [{ id: "shipment_1", shippingPaise: 0, codSurchargePaise: 0, deliveryMode: "MANUAL_TRANSPORT" }],
+    });
+
+    expect(sellerCollectedCodExpectedPaise(order)).toBe(2);
   });
 });
 

@@ -4,9 +4,11 @@ import type {
   ProductSummary,
   ProductTemplateField,
   SellerProductPayload,
+  SellerProductDeliveryMode,
   SellerProductUpdatePayload,
 } from "./seller-api";
 import {
+  DEFAULT_PRODUCT_DELIVERY_MODES,
   MAX_PRODUCT_IMAGES,
   MAX_PRODUCT_VARIANTS,
   buildSellerProductUpdatePayload,
@@ -50,6 +52,7 @@ export type ProductFormVariant = ProductVariantFormValue & {
 
 export type ProductFormState = {
   base: ProductBaseFields;
+  deliveryModes: SellerProductDeliveryMode[];
   attributes: Record<string, string>;
   variants: ProductFormVariant[];
   images: ProductImageFormValue[];
@@ -61,6 +64,7 @@ export type ProductFormState = {
 export type ProductFormAction =
   | { type: "setBase"; key: keyof ProductBaseFields; value: string }
   | { type: "setProductAttribute"; key: string; value: string }
+  | { type: "toggleDeliveryMode"; mode: SellerProductDeliveryMode }
   | { type: "setVariant"; clientId: string; key: keyof ProductFormVariant; value: string }
   | { type: "setVariantAttribute"; clientId: string; key: string; value: string }
   | { type: "addVariant" }
@@ -111,6 +115,7 @@ export function createBlankProductFormState(): ProductFormState {
       seoTitle: baseEdit.seoTitle,
       seoDescription: baseEdit.seoDescription,
     },
+    deliveryModes: [...DEFAULT_PRODUCT_DELIVERY_MODES],
     attributes: {},
     variants: [createBlankProductFormVariant()],
     images: [],
@@ -144,6 +149,15 @@ export function productFormReducer(state: ProductFormState, action: ProductFormA
       return { ...state, base: { ...state.base, [action.key]: action.value } };
     case "setProductAttribute":
       return { ...state, attributes: { ...state.attributes, [action.key]: action.value } };
+    case "toggleDeliveryMode": {
+      const selected = state.deliveryModes.includes(action.mode);
+      return {
+        ...state,
+        deliveryModes: selected
+          ? state.deliveryModes.filter((mode) => mode !== action.mode)
+          : [...state.deliveryModes, action.mode],
+      };
+    }
     case "setVariant":
       return {
         ...state,
@@ -230,6 +244,7 @@ export function buildCreateProductPayload(
     categoryId: state.base.categoryId.trim(),
     name: state.base.name.trim(),
     description: state.base.description.trim(),
+    deliveryModes: state.deliveryModes,
     attributes: {
       ...buildMarketplaceAttributes(state.base),
       ...coerceDynamicAttributes(productFields, state.attributes),
@@ -252,6 +267,7 @@ export function buildUpdateProductPayload(
 ): SellerProductUpdatePayload {
   const editForm = createBlankProductEditForm();
   Object.assign(editForm, state.base, {
+    deliveryModes: state.deliveryModes,
     images: state.images,
     variants: state.variants.map(({ attributes: _attributes, ...variant }) => variant),
     removedVariantIds: state.removedVariantIds,
@@ -304,6 +320,7 @@ export function productEditFormToProductFormState(
       seoTitle: values.seoTitle,
       seoDescription: values.seoDescription,
     },
+    deliveryModes: values.deliveryModes,
     attributes,
     variants: values.variants.map((variant) => ({ ...variant, attributes: {} })),
     images: values.images,
@@ -329,6 +346,9 @@ export function validateProductForm(
   requireText(state.base.name, "base.name", "Product name is required.", add);
   if (state.base.description.trim().length < 10) {
     add("base.description", "Description must be at least 10 characters.");
+  }
+  if (!state.deliveryModes.length) {
+    add("deliveryModes", "Select at least one delivery option.");
   }
   requireText(state.base.brand, "base.brand", "Brand / local label is required.", add);
   requireText(state.base.condition, "base.condition", "Condition is required.", add);

@@ -1,5 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
-import { ApprovalStatus, OrderStatus, PaymentStatus, RoleCode, SellerOrderStatus, SellerPayoutStatus, SellerSettlementStatus, SellerStatus } from "@indihub/database";
+import {
+  ApprovalStatus,
+  OrderStatus,
+  PaymentStatus,
+  RoleCode,
+  SellerCashReceivableStatus,
+  SellerLedgerEntryType,
+  SellerOrderStatus,
+  SellerPayoutStatus,
+  SellerSettlementStatus,
+  SellerStatus,
+} from "@indihub/database";
 import type { PrismaService } from "../prisma/prisma.service";
 import type { FinanceCalculatorService } from "./finance-calculator.service";
 import type { SellerLedgerService } from "./seller-ledger.service";
@@ -61,6 +72,14 @@ describe("SellerPayoutsService seller requests", () => {
         })
       },
       serviceSellerReceivable: {
+        findMany: vi.fn().mockResolvedValue([]),
+        updateMany: vi.fn(),
+        aggregate: vi.fn().mockResolvedValue({
+          _count: { _all: 0 },
+          _sum: { offsetPaise: 0 }
+        })
+      },
+      sellerCashReceivable: {
         findMany: vi.fn().mockResolvedValue([]),
         updateMany: vi.fn(),
         aggregate: vi.fn().mockResolvedValue({
@@ -132,6 +151,11 @@ describe("SellerPayoutsService seller requests", () => {
         order: {
           orderStatus: OrderStatus.DELIVERED,
           paymentStatus: { in: [PaymentStatus.PAID, PaymentStatus.NOT_REQUIRED] }
+        },
+        sellerCashReceivables: {
+          none: {
+            status: { not: "CANCELLED" }
+          }
         }
       },
       data: expect.objectContaining({
@@ -187,6 +211,13 @@ describe("SellerPayoutsService seller requests", () => {
         }),
         findMany: vi.fn().mockResolvedValue([])
       },
+      sellerCashReceivable: {
+        aggregate: vi.fn().mockResolvedValue({
+          _count: { _all: 0 },
+          _sum: { offsetPaise: 0 }
+        }),
+        findMany: vi.fn().mockResolvedValue([])
+      },
       sellerLedgerEntry: {
         aggregate: vi.fn().mockResolvedValue({
           _sum: { creditPaise: 0, debitPaise: 0 }
@@ -197,7 +228,7 @@ describe("SellerPayoutsService seller requests", () => {
       client: {
         $transaction: vi.fn((callback) => callback(tx)),
         sellerPayout: {
-          findFirst: vi.fn()
+          findFirst: vi.fn().mockResolvedValue({ id: "payout-1", sellerId: "seller-1" })
         }
       }
     } as unknown as PrismaService;
@@ -246,7 +277,7 @@ describe("SellerPayoutsService seller requests", () => {
       client: {
         $transaction: vi.fn((callback) => callback(tx)),
         sellerPayout: {
-          findFirst: vi.fn()
+          findFirst: vi.fn().mockResolvedValue({ id: "payout-1", sellerId: "seller-1" })
         }
       }
     } as unknown as PrismaService;
@@ -266,6 +297,310 @@ describe("SellerPayoutsService seller requests", () => {
     expect(tx.orderSellerSplit.aggregate).not.toHaveBeenCalled();
     expect(tx.sellerPayout.updateMany).not.toHaveBeenCalled();
     expect(ledger.postPayoutApprovalEntries).not.toHaveBeenCalled();
+  });
+
+  it("restores a previously partial seller-cash receivable when a scheduled payout is rejected", async () => {
+    const tx = {
+      sellerPayout: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "payout-1",
+          status: SellerPayoutStatus.PENDING_APPROVAL,
+          note: null,
+          settlementRunId: null,
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      orderSellerSplit: {
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+      b2BOrder: {
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+      serviceBookingSettlement: {
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+      serviceSellerReceivable: {
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+      sellerCashReceivable: {
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      sellerLedgerEntry: {
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+      sellerPayoutEvent: {
+        create: vi.fn().mockResolvedValue({}),
+      },
+      auditLog: {
+        create: vi.fn().mockResolvedValue({}),
+      },
+    };
+    const prisma = {
+      client: {
+        $transaction: vi.fn((callback) => callback(tx)),
+        sellerPayout: {
+          findFirst: vi.fn().mockResolvedValue({ id: "payout-1", sellerId: "seller-1" }),
+        },
+      },
+    } as unknown as PrismaService;
+    const service = new SellerPayoutsService(prisma, {} as FinanceCalculatorService, {} as SellerLedgerService);
+
+    await service.rejectPayout(
+      "payout-1",
+      { note: "Reject scheduled offset." },
+      { id: "admin-1", clerkUserId: null, email: "admin@example.com", roles: [RoleCode.ADMIN] },
+    );
+
+    expect(tx.sellerCashReceivable.updateMany).toHaveBeenCalledWith({
+      where: {
+        payoutOffsetId: "payout-1",
+        status: SellerCashReceivableStatus.OFFSET_SCHEDULED,
+        OR: [
+          { settledPaise: { gt: 0 } },
+          { waivedPaise: { gt: 0 } },
+          { offsetAppliedAt: { not: null } },
+          { ledgerEntries: { some: { entryType: SellerLedgerEntryType.SELLER_CASH_RECEIVABLE_OFFSET } } },
+        ],
+      },
+      data: {
+        payoutOffsetId: null,
+        offsetPaise: 0,
+        offsetScheduledAt: null,
+        offsetAppliedAt: null,
+        status: SellerCashReceivableStatus.PARTIALLY_OFFSET,
+      },
+    });
+    expect(tx.sellerCashReceivable.updateMany).toHaveBeenCalledWith({
+      where: {
+        payoutOffsetId: "payout-1",
+        status: SellerCashReceivableStatus.OFFSET_SCHEDULED,
+      },
+      data: {
+        payoutOffsetId: null,
+        offsetPaise: 0,
+        offsetScheduledAt: null,
+        offsetAppliedAt: null,
+        status: SellerCashReceivableStatus.OPEN,
+      },
+    });
+  });
+
+  it("keeps payout link after a partial seller-cash receivable offset until the payout is paid", async () => {
+    const tx = {
+      sellerPayout: {
+        findUnique: vi.fn()
+          .mockResolvedValueOnce({
+            id: "payout-1",
+            payoutNumber: "PO-1",
+            status: SellerPayoutStatus.PENDING_APPROVAL,
+            netPayablePaise: 0,
+            note: null,
+            settlementRunId: null,
+            seller: { payoutProfile: { isVerified: true } }
+          })
+          .mockResolvedValueOnce({
+            id: "payout-1",
+            sellerId: "seller-1",
+            payoutNumber: "PO-1"
+          })
+          .mockResolvedValueOnce({
+            id: "payout-1",
+            sellerId: "seller-1",
+            payoutNumber: "PO-1"
+          }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 })
+      },
+      orderSellerSplit: {
+        aggregate: vi.fn().mockResolvedValue({
+          _count: { _all: 1 },
+          _sum: { netPayablePaise: 500 }
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 })
+      },
+      b2BOrder: {
+        aggregate: vi.fn().mockResolvedValue({
+          _count: { _all: 0 },
+          _sum: { sellerPayoutAmountPaise: 0 }
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 })
+      },
+      serviceBookingSettlement: {
+        aggregate: vi.fn().mockResolvedValue({
+          _count: { _all: 0 },
+          _sum: { netPayablePaise: 0 }
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 })
+      },
+      serviceSellerReceivable: {
+        aggregate: vi.fn().mockResolvedValue({
+          _count: { _all: 0 },
+          _sum: { offsetPaise: 0 }
+        }),
+        findMany: vi.fn().mockResolvedValue([])
+      },
+      sellerCashReceivable: {
+        aggregate: vi.fn().mockResolvedValue({
+          _count: { _all: 1 },
+          _sum: { offsetPaise: 500 }
+        }),
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: "scr-1",
+            sellerId: "seller-1",
+            orderId: "order-1",
+            orderSellerSplitId: "split-1",
+            receivableNumber: "SCR-1",
+            status: SellerCashReceivableStatus.OFFSET_SCHEDULED,
+            outstandingPaise: 1_000,
+            offsetPaise: 500,
+            currency: "INR"
+          }
+        ]),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 })
+      },
+      sellerLedgerEntry: {
+        aggregate: vi.fn().mockResolvedValue({
+          _sum: { creditPaise: 0, debitPaise: 0 }
+        }),
+        findFirst: vi.fn().mockResolvedValue(null)
+      },
+      sellerCashReceivableEvent: {
+        create: vi.fn().mockResolvedValue({})
+      },
+      sellerPayoutEvent: {
+        create: vi.fn().mockResolvedValue({})
+      },
+      auditLog: {
+        create: vi.fn().mockResolvedValue({})
+      }
+    };
+    const prisma = {
+      client: {
+        $transaction: vi.fn((callback) => callback(tx)),
+        sellerPayout: {
+          findFirst: vi.fn().mockResolvedValue({ id: "payout-1", sellerId: "seller-1" })
+        }
+      }
+    } as unknown as PrismaService;
+    const ledger = {
+      postPayoutApprovalEntries: vi.fn(),
+      createEntry: vi.fn().mockResolvedValue({})
+    } as unknown as SellerLedgerService;
+    const service = new SellerPayoutsService(prisma, {} as FinanceCalculatorService, ledger);
+
+    await service.approvePayout(
+      "payout-1",
+      { note: "Approve offset." },
+      { id: "admin-1", clerkUserId: null, email: "admin@example.com", roles: [RoleCode.ADMIN] }
+    );
+
+    expect(tx.sellerCashReceivable.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: "scr-1",
+        payoutOffsetId: "payout-1",
+        status: SellerCashReceivableStatus.OFFSET_SCHEDULED,
+      },
+      data: expect.objectContaining({
+        status: SellerCashReceivableStatus.PARTIALLY_OFFSET,
+        outstandingPaise: 500,
+      }),
+    });
+    expect(tx.sellerCashReceivable.updateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ payoutOffsetId: null }),
+      }),
+    );
+  });
+
+  it("releases partially offset seller-cash receivables after payout is marked paid", async () => {
+    const tx = {
+      sellerPayout: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "payout-1",
+          status: SellerPayoutStatus.APPROVED,
+          netPayablePaise: 0,
+          note: null,
+          settlementRunId: null,
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 })
+      },
+      orderSellerSplit: {
+        aggregate: vi.fn().mockResolvedValue({
+          _count: { _all: 1 },
+          _sum: { netPayablePaise: 500 }
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 })
+      },
+      b2BOrder: {
+        aggregate: vi.fn().mockResolvedValue({
+          _count: { _all: 0 },
+          _sum: { sellerPayoutAmountPaise: 0 }
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 })
+      },
+      serviceBookingSettlement: {
+        aggregate: vi.fn().mockResolvedValue({
+          _count: { _all: 0 },
+          _sum: { netPayablePaise: 0 }
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 })
+      },
+      serviceSellerReceivable: {
+        aggregate: vi.fn().mockResolvedValue({
+          _count: { _all: 0 },
+          _sum: { offsetPaise: 0 }
+        })
+      },
+      sellerCashReceivable: {
+        aggregate: vi.fn().mockResolvedValue({
+          _count: { _all: 1 },
+          _sum: { offsetPaise: 500 }
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 })
+      },
+      sellerLedgerEntry: {
+        aggregate: vi.fn().mockResolvedValue({
+          _sum: { creditPaise: 0, debitPaise: 0 }
+        })
+      },
+      sellerPayoutEvent: {
+        create: vi.fn().mockResolvedValue({})
+      },
+      auditLog: {
+        create: vi.fn().mockResolvedValue({})
+      }
+    };
+    const prisma = {
+      client: {
+        $transaction: vi.fn((callback) => callback(tx)),
+        sellerPayout: {
+          findFirst: vi.fn().mockResolvedValue({ id: "payout-1", sellerId: "seller-1" })
+        }
+      }
+    } as unknown as PrismaService;
+    const ledger = {
+      postPayoutPaidEntry: vi.fn().mockResolvedValue({})
+    } as unknown as SellerLedgerService;
+    const service = new SellerPayoutsService(prisma, {} as FinanceCalculatorService, ledger);
+
+    await service.markPaid(
+      "payout-1",
+      { paymentMode: "BANK_TRANSFER", transactionReference: "UTR-1" },
+      { id: "admin-1", clerkUserId: null, email: "admin@example.com", roles: [RoleCode.ADMIN] }
+    );
+
+    expect(tx.sellerCashReceivable.updateMany).toHaveBeenCalledWith({
+      where: {
+        payoutOffsetId: "payout-1",
+        status: SellerCashReceivableStatus.PARTIALLY_OFFSET,
+        outstandingPaise: { gt: 0 },
+      },
+      data: {
+        payoutOffsetId: null,
+        offsetPaise: 0,
+        offsetScheduledAt: null,
+      },
+    });
   });
 
   it("blocks marking a payout paid when linked split state changed concurrently", async () => {
@@ -301,6 +636,12 @@ describe("SellerPayoutsService seller requests", () => {
         updateMany: vi.fn().mockResolvedValue({ count: 0 })
       },
       serviceSellerReceivable: {
+        aggregate: vi.fn().mockResolvedValue({
+          _count: { _all: 0 },
+          _sum: { offsetPaise: 0 }
+        })
+      },
+      sellerCashReceivable: {
         aggregate: vi.fn().mockResolvedValue({
           _count: { _all: 0 },
           _sum: { offsetPaise: 0 }

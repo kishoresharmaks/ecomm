@@ -327,6 +327,11 @@ describe("PaymentsService", () => {
         orderId: "order_internal_1",
         sellerStatus: { not: SellerOrderStatus.CANCELLED },
         payoutId: null,
+        sellerCashReceivables: {
+          none: {
+            status: { not: "CANCELLED" },
+          },
+        },
       },
       data: expect.objectContaining({
         settlementStatus: SellerSettlementStatus.ELIGIBLE,

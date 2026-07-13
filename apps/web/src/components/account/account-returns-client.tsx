@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import Link from "next/link";
 import { ArrowLeft, RefreshCw, RotateCcw, Search, Truck, WalletCards } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Button, SectionHeading } from "@indihub/ui";
@@ -333,6 +334,41 @@ function ReturnDetailView({
             />
           </div>
         )}
+
+        {returnDetail.replacementOrder ? (
+          <div className="mt-5">
+            <h3 className="text-sm font-bold uppercase tracking-wide text-[#667085]">Replacement Order</h3>
+            <div className="mt-2 rounded-md border border-[#E5E7EB] bg-[#F8FAFC] p-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-black text-[#1F2933]">{returnDetail.replacementOrder.orderNumber}</p>
+                  <p className="mt-1 text-xs font-semibold text-[#667085]">
+                    {humanize(returnDetail.replacementOrder.orderStatus)} / {humanize(returnDetail.replacementOrder.deliveryStatus)}
+                  </p>
+                </div>
+                <Link
+                  href={`/account/orders/${encodeURIComponent(returnDetail.replacementOrder.orderNumber)}`}
+                  className="inline-flex items-center justify-center rounded-md border border-[#ED3500] px-3 py-2 text-xs font-black text-[#ED3500] transition hover:bg-[#FFF3EE]"
+                >
+                  Track order
+                </Link>
+              </div>
+              {returnDetail.replacementOrder.shipmentPackages.length ? (
+                <div className="mt-3 grid gap-2 border-t border-[#E5E7EB] pt-3">
+                  {returnDetail.replacementOrder.shipmentPackages.map((shipmentPackage) => (
+                    <div key={shipmentPackage.id} className="rounded bg-white px-3 py-2 text-xs font-semibold text-[#667085]">
+                      <span className="font-black text-[#1F2933]">{shipmentPackage.packageNumber}</span>
+                      {" / "}
+                      {humanize(shipmentPackage.status)}
+                      {shipmentPackage.trackingReference ? ` / Tracking: ${shipmentPackage.trackingReference}` : ""}
+                      {shipmentPackage.awbNumber ? ` / AWB: ${shipmentPackage.awbNumber}` : ""}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
 
         {returnDetail.refunds.length > 0 ? (
           <div className="mt-5">

@@ -54,6 +54,19 @@ export type DeliveryOrderShipment = {
 export type DeliveryOrder = {
   id: string;
   orderNumber: string;
+  orderKind?: "STANDARD" | "REPLACEMENT";
+  parentOrder?: {
+    id: string;
+    orderNumber: string;
+    orderStatus?: string;
+    deliveryStatus?: string;
+  } | null;
+  replacementReturnRequest?: {
+    id: string;
+    requestNumber: string;
+    status?: string;
+    resolution?: string;
+  } | null;
   orderStatus: string;
   paymentStatus: string;
   deliveryStatus: string;
