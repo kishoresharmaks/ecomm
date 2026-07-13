@@ -3864,11 +3864,19 @@ export class OrdersService {
         )
       : nextStatus;
 
-    if (dto.status !== undefined) {
+    const currentDeliveryStatusForTransition =
+      options.sellerOnly && sellerShipment?.status
+        ? sellerShipment.status
+        : (previousDelivery?.status ?? order.deliveryStatus);
+    const allowSellerManualTransportDirectDelivered =
+      options.sellerOnly &&
+      nextMode === DeliveryMode.MANUAL_TRANSPORT &&
+      nextStatus === DeliveryStatus.DELIVERED &&
+      currentDeliveryStatusForTransition === DeliveryStatus.DISPATCHED;
+
+    if (dto.status !== undefined && !allowSellerManualTransportDirectDelivered) {
       this.assertDeliveryStatusTransition(
-        options.sellerOnly && sellerShipment?.status
-          ? sellerShipment.status
-          : (previousDelivery?.status ?? order.deliveryStatus),
+        currentDeliveryStatusForTransition,
         nextStatus,
       );
     }
@@ -4064,7 +4072,8 @@ export class OrdersService {
         await this.updateSellerShipmentStatusGuarded(tx, {
           orderSellerSplitId: split.id,
           nextStatus,
-          allowDirectDelivered: isSellerStorePickupUpdate,
+          allowDirectDelivered:
+            isSellerStorePickupUpdate || allowSellerManualTransportDirectDelivered,
           updateData: {
             deliveryMode: nextMode,
             ...(dto.partnerName !== undefined ? { partnerName: dto.partnerName ?? null } : {}),
