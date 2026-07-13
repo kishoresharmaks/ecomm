@@ -29,7 +29,7 @@ CROSS JOIN (
   VALUES
     ('STORE_PICKUP'),
     ('LOCAL_DELIVERY_PARTNER'),
-    ('THIRD_PARTY_COURIER'),
+    ('MANUAL_COURIER'),
     ('MANUAL_TRANSPORT')
 ) AS modes(delivery_mode)
 ON CONFLICT ("product_id", "delivery_mode") DO NOTHING;
