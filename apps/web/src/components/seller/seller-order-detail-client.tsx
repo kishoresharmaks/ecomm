@@ -140,7 +140,6 @@ export function SellerOrderDetailClient({
   const [notice, setNotice] = useState<string | null>(null);
   const [statusNote, setStatusNote] = useState("");
   const [manualCodCollected, setManualCodCollected] = useState(false);
-  const [manualCodAmount, setManualCodAmount] = useState("");
   const [manualCodNote, setManualCodNote] = useState("");
   const [labelActionPackageId, setLabelActionPackageId] = useState<string | null>(null);
   const [packageDrafts, setPackageDrafts] = useState<
@@ -201,7 +200,6 @@ export function SellerOrderDetailClient({
       setNotice("Manual transport COD delivery recorded.");
       setStatusNote("");
       setManualCodCollected(false);
-      setManualCodAmount("");
       setManualCodNote("");
       invalidateOrder();
     },
@@ -235,24 +233,19 @@ export function SellerOrderDetailClient({
 
   function markManualTransportCodDelivered(expectedAmountPaise: number) {
     setNotice(null);
-    const amountPaise = rupeesToPaise(manualCodAmount);
     if (!manualCodCollected) {
       setNotice("Confirm that the COD amount was collected from the customer.");
       return;
     }
-    if (amountPaise <= 0) {
-      setNotice("Enter the collected COD amount.");
-      return;
-    }
-    if (amountPaise !== expectedAmountPaise) {
-      setNotice(`Collected COD must exactly match ${formatMoney(expectedAmountPaise, order?.currency ?? "INR")}.`);
+    if (expectedAmountPaise <= 0) {
+      setNotice("Expected COD amount is not available. Refresh the order and try again.");
       return;
     }
     deliveryMutation.mutate({
       status: "DELIVERED",
       deliveryMode: "MANUAL_TRANSPORT",
       codCollected: true,
-      codCollectedAmountPaise: amountPaise,
+      codCollectedAmountPaise: expectedAmountPaise,
       ...(manualCodNote.trim() ? { codCollectionNote: manualCodNote.trim() } : {}),
     });
   }
@@ -1026,6 +1019,16 @@ export function SellerOrderDetailClient({
                     </div>
                   </div>
                   <div className="mt-4 grid gap-4">
+                    <div className="rounded-lg border border-[#FDE2B8] bg-[#FFF7ED] p-4 text-sm font-semibold leading-6 text-[#9A3412]">
+                      Collect exactly {formatMoney(manualTransportCodExpectedPaise, order.currency)} from the customer. This amount is locked by the order total and cannot be edited here.
+                    </div>
+                    <SellerField
+                      label="Collected amount"
+                      name="manualCodAmount"
+                      type="text"
+                      value={formatMoney(manualTransportCodExpectedPaise, order.currency)}
+                      readOnly
+                    />
                     <label className="flex items-start gap-3 rounded-lg border border-[#D8E2EA] bg-white p-4 text-sm font-bold text-[#1F2933]">
                       <input
                         type="checkbox"
@@ -1036,20 +1039,10 @@ export function SellerOrderDetailClient({
                       <span>
                         COD cash collected from customer
                         <span className="mt-1 block text-xs font-semibold leading-5 text-[#667085]">
-                          The collected amount must exactly match the expected seller package collection.
+                          Tick this only after receiving the full locked amount shown above.
                         </span>
                       </span>
                     </label>
-                    <SellerField
-                      label="Collected amount in rupees"
-                      name="manualCodAmount"
-                      type="number"
-                      min={1}
-                      step="0.01"
-                      value={manualCodAmount}
-                      onChange={setManualCodAmount}
-                      placeholder={(manualTransportCodExpectedPaise / 100).toFixed(2)}
-                    />
                     <SellerTextArea
                       label="Collection note"
                       name="manualCodNote"
@@ -1211,14 +1204,6 @@ function allocatedBuyerPlatformFeePaise(
   }
 
   return targetAllocation.base + (extraIndexes.has(targetIndex) ? 1 : 0);
-}
-
-function rupeesToPaise(value: string) {
-  const parsed = Number(value.replace(/,/g, "").trim());
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return 0;
-  }
-  return Math.round(parsed * 100);
 }
 
 function packageStatusTitle(shipmentPackage: {
