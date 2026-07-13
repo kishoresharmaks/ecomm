@@ -582,6 +582,12 @@ export class FinancePaymentsService {
               seller: true,
             },
           },
+          sellerCashReceivables: {
+            include: {
+              seller: true,
+              orderShipment: true,
+            },
+          },
         },
       },
     };
@@ -624,6 +630,24 @@ export class FinancePaymentsService {
           storeName: split.seller.storeName,
           sellerSubtotalPaise: split.sellerSubtotalPaise,
           settlementStatus: split.settlementStatus,
+        })),
+        sellerCashReceivables: payment.order.sellerCashReceivables.map((receivable) => ({
+          receivableNumber: receivable.receivableNumber,
+          sellerId: receivable.sellerId,
+          sellerName: receivable.seller.storeName,
+          source: receivable.source,
+          status: receivable.status,
+          grossCashCollectedPaise: receivable.grossCashCollectedPaise,
+          platformDuePaise: receivable.platformDuePaise,
+          outstandingPaise: receivable.outstandingPaise,
+          orderShipment: receivable.orderShipment
+            ? {
+                id: receivable.orderShipment.id,
+                shipmentNumber: receivable.orderShipment.shipmentNumber,
+                deliveryMode: receivable.orderShipment.deliveryMode,
+                codCollectionStatus: receivable.orderShipment.codCollectionStatus,
+              }
+            : null,
         })),
         deliveryDetail: payment.order.deliveryDetail
           ? {

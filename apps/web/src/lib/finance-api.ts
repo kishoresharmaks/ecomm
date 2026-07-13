@@ -56,6 +56,22 @@ export type FinancePaymentCollection = {
       sellerSubtotalPaise: number;
       settlementStatus: string;
     }>;
+    sellerCashReceivables?: Array<{
+      receivableNumber: string;
+      sellerId: string;
+      sellerName: string;
+      source: "STORE_PICKUP_COD" | "MANUAL_TRANSPORT_COD";
+      status: string;
+      grossCashCollectedPaise: number;
+      platformDuePaise: number;
+      outstandingPaise: number;
+      orderShipment?: {
+        id: string;
+        shipmentNumber: string;
+        deliveryMode: string;
+        codCollectionStatus: string;
+      } | null;
+    }>;
     deliveryDetail?: {
       status: string;
       codCollectionStatus: "NOT_COLLECTED" | "COLLECTED" | "VERIFIED" | "REJECTED";

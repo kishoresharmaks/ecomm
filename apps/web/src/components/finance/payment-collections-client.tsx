@@ -274,6 +274,16 @@ function PaymentCollectionRow({
 }) {
   const isCod = payment.provider === "COD";
   const isOffline = payment.provider === "BANK_TRANSFER" || payment.provider === "MANUAL";
+  const sellerCashReceivables = payment.order.sellerCashReceivables ?? [];
+  const hasSellerCollectedCod = isCod && sellerCashReceivables.length > 0;
+  const sellerCollectedGrossPaise = sellerCashReceivables.reduce(
+    (total, receivable) => total + receivable.grossCashCollectedPaise,
+    0,
+  );
+  const sellerCollectedPlatformDuePaise = sellerCashReceivables.reduce(
+    (total, receivable) => total + receivable.platformDuePaise,
+    0,
+  );
   const canVerifyCod = isCod && payment.status === "PENDING" && payment.order.deliveryDetail?.codCollectionStatus === "COLLECTED";
   const canVerifyOffline = isOffline && payment.status === "PENDING";
   const canAct = canVerifyCod || canVerifyOffline;
@@ -299,7 +309,19 @@ function PaymentCollectionRow({
         <p>
           Delivery: <span className="font-black text-[#1F2933]">{payment.order.deliveryStatus}</span>
         </p>
-        {isCod ? (
+        {hasSellerCollectedCod ? (
+          <>
+            <p>
+              COD: <span className="font-black text-[#1F2933]">SELLER_COLLECTED</span>
+            </p>
+            <p>
+              Cash: <span className="font-black text-[#1F2933]">{money(sellerCollectedGrossPaise)}</span>
+            </p>
+            <p>
+              Platform due: <span className="font-black text-[#1F2933]">{money(sellerCollectedPlatformDuePaise)}</span>
+            </p>
+          </>
+        ) : isCod ? (
           <p>
             COD: <span className="font-black text-[#1F2933]">{payment.order.deliveryDetail?.codCollectionStatus ?? "NOT_COLLECTED"}</span>
           </p>
@@ -319,12 +341,21 @@ function PaymentCollectionRow({
             className="h-10 rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 text-sm font-semibold text-[#1F2933] outline-none focus:border-[#ED3500] focus:bg-white"
           />
         ) : null}
-        <input
-          value={note}
-          onChange={(event) => onNoteChange(event.target.value)}
-          placeholder={isCod ? "COD verification note" : "Finance verification note"}
-          className="h-10 rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 text-sm font-semibold text-[#1F2933] outline-none focus:border-[#ED3500] focus:bg-white"
-        />
+        {hasSellerCollectedCod ? (
+          <div className="rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 py-2 text-xs font-semibold leading-5 text-[#667085]">
+            Seller-collected COD is recovered from seller wallet or future payouts.
+            <a className="ml-1 font-black text-[#ED3500] underline" href="/finance/seller-cash-receivables">
+              Open Seller COD dues
+            </a>
+          </div>
+        ) : (
+          <input
+            value={note}
+            onChange={(event) => onNoteChange(event.target.value)}
+            placeholder={isCod ? "COD verification note" : "Finance verification note"}
+            className="h-10 rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 text-sm font-semibold text-[#1F2933] outline-none focus:border-[#ED3500] focus:bg-white"
+          />
+        )}
       </div>
 
       <div className="flex flex-wrap gap-2 xl:justify-end">
@@ -342,6 +373,14 @@ function PaymentCollectionRow({
         <p className="xl:col-span-4 rounded-md border border-[#E5E7EB] bg-[#F8FAFC] px-3 py-2 text-xs font-semibold text-[#667085]">
           {actionHint(payment)}
         </p>
+      ) : null}
+
+      {hasSellerCollectedCod ? (
+        <div className="xl:col-span-4 rounded-md border border-[#B7E4CC] bg-[#F0FDF4] px-3 py-2 text-xs font-semibold leading-5 text-[#166534]">
+          Seller-collected COD receivable opened:{" "}
+          {sellerCashReceivables.map((receivable) => receivable.receivableNumber).join(", ")}.
+          This payment should not be manually marked paid from delivery-partner COD verification.
+        </div>
       ) : null}
     </article>
   );
@@ -434,6 +473,9 @@ function FinanceListState({ message, error }: { message: string; error?: boolean
 }
 
 function actionHint(payment: FinancePaymentCollection) {
+  if (payment.provider === "COD" && payment.order.sellerCashReceivables?.length) {
+    return "Seller-collected COD is accounted through Seller COD dues, not delivery-partner COD verification.";
+  }
   if (payment.status !== "PENDING") {
     return "This payment is already finalised.";
   }
