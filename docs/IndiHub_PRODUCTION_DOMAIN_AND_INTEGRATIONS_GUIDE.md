@@ -52,6 +52,10 @@ NEXT_PUBLIC_WEB_URL="https://1handindia.com"
 NEXT_PUBLIC_API_URL="https://api.1handindia.com"
 NEXT_PUBLIC_API_TIMEOUT_MS="30000"
 
+NEXT_PUBLIC_GA_MEASUREMENT_ID=""
+NEXT_PUBLIC_GTM_ID=""
+NEXT_PUBLIC_CLOUDFLARE_BEACON_TOKEN=""
+
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_live_replace_me"
 CLERK_SECRET_KEY="sk_live_replace_me"
 CLERK_JWT_KEY="replace_me"
@@ -87,6 +91,61 @@ SENTRY_AUTH_TOKEN="replace_me"
 
 Use only one email provider in production unless failover is intentionally configured.
 
+## 2A. Security Headers, Consent, And WAF
+
+The web app emits production security headers from `apps/web/src/proxy.ts`:
+
+- `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`
+- nonce-based `Content-Security-Policy`
+- `Content-Security-Policy-Report-Only`
+- `Report-To` and `Reporting-Endpoints` for `/security/csp-report`
+- `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, and `Permissions-Policy`
+
+Production checks after deployment:
+
+```powershell
+curl -I https://1handindia.com
+curl -i https://1handindia.com/security/csp-report
+```
+
+Expected result:
+
+- `strict-transport-security` is present on HTTPS responses.
+- `content-security-policy` does not contain `unsafe-eval`.
+- `script-src` uses a `nonce-...` value and `strict-dynamic`.
+- `report-to` or `reporting-endpoints` is present.
+- `/security/csp-report` returns JSON for `GET` and accepts browser CSP reports through `POST`.
+
+Cookie and analytics rule:
+
+- Keep `NEXT_PUBLIC_GA_MEASUREMENT_ID`, `NEXT_PUBLIC_GTM_ID`, and `NEXT_PUBLIC_CLOUDFLARE_BEACON_TOKEN` empty unless analytics is approved.
+- The storefront shows a privacy-choice banner.
+- Analytics scripts load only after the visitor selects `Allow analytics`.
+- Essential marketplace storage for sign-in, cart, checkout, and preferences remains available without analytics consent.
+
+PCI Requirement 6.4 cannot be satisfied by application code alone. Put the production domain behind a real WAF before launch. Approved options:
+
+- Cloudflare WAF in front of `1handindia.com`, `www.1handindia.com`, and `api.1handindia.com`.
+- AWS WAF or an equivalent managed CDN WAF if the deployment is moved to that stack.
+- Nginx ModSecurity with OWASP Core Rule Set if the VPS is responsible for edge protection.
+
+Minimum WAF launch checklist:
+
+- Managed OWASP/common web attack rules enabled.
+- Bot and rate-limit rules enabled for auth, checkout, payment callback, support, and admin login paths.
+- API webhook paths allow only required provider traffic where practical.
+- WAF logs are retained and reviewed during launch week.
+- Scanner re-test shows WAF detection or documented compensating evidence from the provider dashboard.
+
+DNSSEC is also outside the app deployment. Enable DNSSEC at the authoritative DNS provider or registrar for `1handindia.com`, publish the DS record at the registrar, then verify:
+
+```powershell
+dig +dnssec 1handindia.com A
+dig DS 1handindia.com
+```
+
+Expected result: the DNS response includes DNSSEC records and the parent zone returns a DS record.
+
 ## 3. Web App Environment
 
 File for local web app runtime:
@@ -102,6 +161,10 @@ NEXT_PUBLIC_APP_ENV="production"
 NEXT_PUBLIC_WEB_URL="https://1handindia.com"
 NEXT_PUBLIC_API_URL="https://api.1handindia.com"
 NEXT_PUBLIC_API_TIMEOUT_MS="30000"
+
+NEXT_PUBLIC_GA_MEASUREMENT_ID=""
+NEXT_PUBLIC_GTM_ID=""
+NEXT_PUBLIC_CLOUDFLARE_BEACON_TOKEN=""
 
 API_CORS_ORIGINS="https://1handindia.com,https://www.1handindia.com"
 

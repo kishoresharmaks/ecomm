@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { brandConfig } from "@indihub/config";
+import { headers } from "next/headers";
 import { ConfiguredOriginRedirect } from "@/components/auth/configured-origin-redirect";
 import { Providers } from "@/components/providers";
 import { siteUrl } from "@/lib/seo";
@@ -20,12 +21,14 @@ export const metadata: Metadata = {
   }
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
+
   return (
     <html lang="en" data-scroll-behavior="smooth">
       <body>
         <ConfiguredOriginRedirect />
-        <Providers>{children}</Providers>
+        <Providers nonce={nonce}>{children}</Providers>
       </body>
     </html>
   );

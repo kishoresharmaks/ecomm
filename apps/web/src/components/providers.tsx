@@ -4,6 +4,7 @@ import { ClerkProvider } from "@clerk/nextjs";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { usePathname } from "next/navigation";
 import { ReactNode, useState } from "react";
+import { ConsentManagedScripts, CookieConsentBanner } from "./compliance/cookie-consent";
 import { DevAuthProvider } from "./dev-auth/dev-auth-context";
 import { AdminAuthProvider } from "./admin/admin-auth-context";
 import { ClerkCustomerAuthProvider, LocalCustomerAuthProvider } from "./auth/indihub-auth-context";
@@ -15,7 +16,7 @@ import { I18nProvider } from "./i18n/i18n-provider";
 
 const clerkPublishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
-export function Providers({ children }: { children: ReactNode }) {
+export function Providers({ children, nonce }: { children: ReactNode; nonce: string | undefined }) {
   const pathname = usePathname();
   const shouldUseClerk = Boolean(
     clerkPublishableKey &&
@@ -48,6 +49,8 @@ export function Providers({ children }: { children: ReactNode }) {
                     <I18nProvider>
                       {children}
                       <ChatWidget />
+                      <CookieConsentBanner />
+                      <ConsentManagedScripts nonce={nonce} />
                     </I18nProvider>
                   </StorefrontLocationProvider>
                 </ChatSocketProvider>
@@ -59,6 +62,8 @@ export function Providers({ children }: { children: ReactNode }) {
                     <I18nProvider>
                       {children}
                       <ChatWidget />
+                      <CookieConsentBanner />
+                      <ConsentManagedScripts nonce={nonce} />
                     </I18nProvider>
                   </StorefrontLocationProvider>
                 </ChatSocketProvider>

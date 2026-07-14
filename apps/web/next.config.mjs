@@ -15,14 +15,7 @@ const appEnvironment = process.env.NEXT_PUBLIC_APP_ENV ?? process.env.NODE_ENV;
 const sentryEnabled = appEnvironment !== "development" || process.env.NEXT_PUBLIC_ENABLE_SENTRY === "true";
 const sentryAuthToken = process.env.SENTRY_AUTH_TOKEN;
 
-const webOrigin = originFromUrl(process.env.NEXT_PUBLIC_WEB_URL);
 const apiOrigin = originFromUrl(process.env.NEXT_PUBLIC_API_URL);
-const apiWebSocketOrigin = apiOrigin ? apiOrigin.replace(/^https:/, "wss:").replace(/^http:/, "ws:") : null;
-const clerkFrontendOrigin = originFromUrl(process.env.NEXT_PUBLIC_CLERK_FRONTEND_API);
-const extraConnectOrigins = parseCsvOrigins(process.env.NEXT_PUBLIC_CSP_CONNECT_SRC);
-const extraImageOrigins = parseCsvOrigins(process.env.NEXT_PUBLIC_CSP_IMG_SRC);
-const extraFrameOrigins = parseCsvOrigins(process.env.NEXT_PUBLIC_CSP_FRAME_SRC);
-const imageKitUploadOrigin = "https://upload.imagekit.io";
 const imageRemotePatterns = buildImageRemotePatterns();
 
 /** @type {import('next').NextConfig} */
@@ -40,18 +33,6 @@ const nextConfig = {
     "@indihub/ui",
     "@indihub/validators",
   ],
-  async headers() {
-    if (isDevelopment) {
-      return [];
-    }
-
-    return [
-      {
-        source: "/(.*)",
-        headers: productionSecurityHeaders(),
-      },
-    ];
-  },
 };
 
 const sentryNextConfig = sentryEnabled
@@ -66,67 +47,6 @@ const sentryNextConfig = sentryEnabled
   : nextConfig;
 
 export default sentryNextConfig;
-
-function productionSecurityHeaders() {
-  return [
-    {
-      key: "Content-Security-Policy",
-      value: buildContentSecurityPolicy(),
-    },
-  ];
-}
-
-function buildContentSecurityPolicy() {
-  const clerkOrigins = [
-    "https://*.clerk.accounts.dev",
-    "https://*.clerk.com",
-    "https://api.clerk.com",
-    "https://cdn.clerk.com",
-    "https://clerk-telemetry.com",
-    clerkFrontendOrigin,
-  ];
-  const razorpayOrigins = ["https://checkout.razorpay.com", "https://*.razorpay.com"];
-  const analyticsOrigins = [
-    "https://www.googletagmanager.com",
-    "https://www.google-analytics.com",
-    "https://static.cloudflareinsights.com",
-  ];
-  const turnstileOrigins = ["https://challenges.cloudflare.com"];
-  const sentryOrigins = [webOrigin ? `${webOrigin}/_1hi/relay` : null];
-
-  const directives = [
-    ["default-src", "'self'"],
-    ["base-uri", "'self'"],
-    ["object-src", "'none'"],
-    ["script-src", "'self'", "'unsafe-inline'", ...analyticsOrigins, ...razorpayOrigins, ...clerkOrigins, ...turnstileOrigins],
-    ["style-src", "'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-    ["img-src", "'self'", "https:", "data:", "blob:", ...extraImageOrigins],
-    ["font-src", "'self'", "data:", "https://fonts.gstatic.com"],
-    [
-      "connect-src",
-      "'self'",
-      apiOrigin,
-      apiWebSocketOrigin,
-      imageKitUploadOrigin,
-      "https://*.amazonaws.com",
-      ...analyticsOrigins,
-      ...razorpayOrigins,
-      ...clerkOrigins,
-      ...turnstileOrigins,
-      ...sentryOrigins,
-      ...extraConnectOrigins,
-    ],
-    ["frame-src", ...razorpayOrigins, ...clerkOrigins, ...turnstileOrigins, ...extraFrameOrigins],
-    ["worker-src", "'self'", "blob:"],
-    ["manifest-src", "'self'"],
-    ["form-action", "'self'", ...razorpayOrigins],
-    ["frame-ancestors", "'self'"],
-  ];
-
-  return directives
-    .map(([directive, ...sources]) => [directive, ...uniqueNonEmpty(sources)].join(" "))
-    .join("; ");
-}
 
 function buildImageRemotePatterns() {
   const configuredOrigins = [

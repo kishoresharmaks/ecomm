@@ -410,11 +410,9 @@ function LocationSelectorModal({ open, onClose }: { open: boolean; onClose: () =
     <Modal
       animationType="slide"
       hardwareAccelerated
-      navigationBarTranslucent
       onRequestClose={onClose}
-      presentationStyle="overFullScreen"
-      statusBarTranslucent
-      transparent
+      presentationStyle="fullScreen"
+      transparent={false}
       visible={open}
     >
       <KeyboardAvoidingView
@@ -2676,7 +2674,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   modalOverlay: {
-    backgroundColor: "rgba(15, 23, 42, 0.32)",
+    backgroundColor: "#2B313D",
     flex: 1,
     justifyContent: "flex-end",
   },
@@ -2684,12 +2682,18 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFill,
   },
   locationSheet: {
-    backgroundColor: colors.secondary,
+    backgroundColor: colors.surface,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
+    elevation: 24,
     maxHeight: "92%",
+    overflow: "hidden",
     padding: 18,
     paddingBottom: 10,
+    shadowColor: "#111827",
+    shadowOffset: { height: -8, width: 0 },
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
   },
   sheetHandle: {
     alignSelf: "center",
