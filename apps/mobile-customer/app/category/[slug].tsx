@@ -432,21 +432,34 @@ function SubcategoryRail({ category }: { category: MobileCategory | undefined })
   return (
     <View style={styles.subcategorySection}>
       <View style={styles.subcategoryHeader}>
-        <Text style={styles.subcategoryTitle}>Sub categories</Text>
+        <Text style={styles.subcategoryTitle}>Subcategories</Text>
         <Text style={styles.subcategoryCount}>{children.length} available</Text>
       </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.subcategoryRail}>
+      <View style={styles.subcategoryGrid}>
         {children.map((child) => {
           const imageUrl = resolveImageUrl(child.imageUrl);
           return (
-            <Pressable key={child.id} style={styles.subcategoryCard} onPress={() => router.push(`/category/${child.slug}`)}>
+            <Pressable
+              key={child.id}
+              accessibilityLabel={`Open ${child.name}`}
+              accessibilityRole="button"
+              style={styles.subcategoryCard}
+              onPress={() => router.push(`/category/${child.slug}`)}
+            >
               <RemoteImage fallbackLabel={child.name} resizeMode="cover" style={styles.subcategoryImage} uri={imageUrl} />
-              <Text numberOfLines={2} style={styles.subcategoryName}>{child.name}</Text>
-              <Text numberOfLines={1} style={styles.subcategoryMeta}>{child._count?.products ?? 0} products</Text>
+              <Text numberOfLines={2} style={styles.subcategoryName}>
+                {child.name}
+              </Text>
+              <View style={styles.subcategoryFooter}>
+                <Text numberOfLines={1} style={styles.subcategoryMeta}>
+                  {child._count?.products ?? 0} products
+                </Text>
+                <HugeiconsIcon color={colors.primary} icon={ArrowLeft01Icon} size={16} strokeWidth={2.2} style={{ transform: [{ rotate: "180deg" }] }} />
+              </View>
             </Pressable>
           );
         })}
-      </ScrollView>
+      </View>
     </View>
   );
 }
@@ -835,42 +848,51 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "800",
   },
-  subcategoryRail: {
+  subcategoryGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: 12,
-    paddingRight: 16,
   },
   subcategoryCard: {
     backgroundColor: "#FFFFFF",
     borderColor: "#E5E7EB",
-    borderRadius: 18,
+    borderRadius: 14,
     borderWidth: 1,
     elevation: 2,
-    padding: 10,
+    minHeight: 142,
+    padding: 11,
     shadowColor: "#000",
     shadowOffset: { height: 3, width: 0 },
     shadowOpacity: 0.06,
     shadowRadius: 8,
-    width: 124,
+    width: "31.4%",
   },
   subcategoryImage: {
     backgroundColor: "#FFF2ED",
-    borderRadius: 14,
-    height: 76,
-    width: "100%",
+    borderRadius: 999,
+    height: 58,
+    width: 58,
   },
   subcategoryName: {
     color: "#1F2937",
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "800",
-    lineHeight: 17,
-    marginTop: 9,
-    minHeight: 34,
+    lineHeight: 16,
+    marginTop: 11,
+    minHeight: 32,
+  },
+  subcategoryFooter: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 4,
+    justifyContent: "space-between",
+    marginTop: 8,
   },
   subcategoryMeta: {
     color: "#6B7280",
-    fontSize: 11,
+    flex: 1,
+    fontSize: 10,
     fontWeight: "700",
-    marginTop: 4,
   },
   
   // Product grid styles
