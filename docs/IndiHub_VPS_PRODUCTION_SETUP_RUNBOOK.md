@@ -28,6 +28,7 @@ Follow these rules for production and staging:
 - Do not configure Redis for the current VPS launch. Keep `REDIS_URL` empty.
 - Search, rate limiting, indexing, and current notification operations must run without Redis.
 - PostgreSQL is the source of truth for business data and search documents.
+- Follow `docs/IndiHub_PRODUCTION_DATABASE_OPERATIONS_RUNBOOK.md` for PostgreSQL backup, slow query logging, growth monitoring, maintenance, scaling, and live database migration.
 - Clerk handles customer/seller/B2B identity. 1HandIndia database roles handle business authorization.
 - Standalone admin login is separate from Clerk and must stay protected.
 - Every provider setup must be verified from the UI and from logs.

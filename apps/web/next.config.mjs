@@ -13,6 +13,7 @@ const localHostnames = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1"]);
 const allowedDevOrigins = resolveAllowedDevOrigins();
 const appEnvironment = process.env.NEXT_PUBLIC_APP_ENV ?? process.env.NODE_ENV;
 const sentryEnabled = appEnvironment !== "development" || process.env.NEXT_PUBLIC_ENABLE_SENTRY === "true";
+const sentryAuthToken = process.env.SENTRY_AUTH_TOKEN;
 
 const webOrigin = originFromUrl(process.env.NEXT_PUBLIC_WEB_URL);
 const apiOrigin = originFromUrl(process.env.NEXT_PUBLIC_API_URL);
@@ -29,9 +30,7 @@ const nextConfig = {
   allowedDevOrigins,
   poweredByHeader: false,
   compress: true,
-  experimental: {
-    ...(isWindows ? { workerThreads: true } : {}),
-  },
+  ...(isWindows ? { experimental: { workerThreads: true } } : {}),
   images: {
     remotePatterns: imageRemotePatterns,
   },
@@ -59,11 +58,10 @@ const sentryNextConfig = sentryEnabled
   ? withSentryConfig(nextConfig, {
       org: process.env.SENTRY_ORG ?? "demo-n0b",
       project: process.env.SENTRY_PROJECT ?? "javascript-nextjs",
-      authToken: process.env.SENTRY_AUTH_TOKEN,
-      widenClientFileUpload: true,
+      ...(sentryAuthToken ? { authToken: sentryAuthToken, widenClientFileUpload: true } : {}),
       tunnelRoute: "/_1hi/relay",
       hideSourceMaps: true,
-      silent: !process.env.CI,
+      silent: !process.env.CI || !sentryAuthToken,
     })
   : nextConfig;
 
@@ -74,22 +72,6 @@ function productionSecurityHeaders() {
     {
       key: "Content-Security-Policy",
       value: buildContentSecurityPolicy(),
-    },
-    {
-      key: "Referrer-Policy",
-      value: "strict-origin-when-cross-origin",
-    },
-    {
-      key: "X-Content-Type-Options",
-      value: "nosniff",
-    },
-    {
-      key: "X-Frame-Options",
-      value: "SAMEORIGIN",
-    },
-    {
-      key: "Permissions-Policy",
-      value: "camera=(), microphone=(), geolocation=(self), payment=(self \"https://api.razorpay.com\")",
     },
   ];
 }
@@ -116,7 +98,7 @@ function buildContentSecurityPolicy() {
     ["default-src", "'self'"],
     ["base-uri", "'self'"],
     ["object-src", "'none'"],
-    ["script-src", "'self'", "'unsafe-inline'", "'unsafe-eval'", ...analyticsOrigins, ...razorpayOrigins, ...clerkOrigins, ...turnstileOrigins],
+    ["script-src", "'self'", "'unsafe-inline'", ...analyticsOrigins, ...razorpayOrigins, ...clerkOrigins, ...turnstileOrigins],
     ["style-src", "'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
     ["img-src", "'self'", "https:", "data:", "blob:", ...extraImageOrigins],
     ["font-src", "'self'", "data:", "https://fonts.gstatic.com"],
@@ -151,7 +133,7 @@ function buildImageRemotePatterns() {
     apiOrigin,
     "https://images.unsplash.com",
     "https://ik.imagekit.io",
-    "https://example.com",
+    ...(isDevelopment ? ["https://example.com"] : []),
     ...parseCsvOrigins(process.env.NEXT_PUBLIC_IMAGE_REMOTE_ORIGINS),
   ];
 

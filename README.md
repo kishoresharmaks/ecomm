@@ -27,6 +27,7 @@ The target quality is a professional marketplace portal similar in seriousness a
 | `docs/IndiHub_BUILD_BLUEPRINT_MNC_PORTAL.md` | Recommended architecture and build blueprint. |
 | `docs/IndiHub_FINAL_TECH_STACK_LOCK.md` | Official locked product technology stack for development. |
 | `docs/IndiHub_VPS_PRODUCTION_SETUP_RUNBOOK.md` | Complete VPS hosting, production setup, feature configuration, QA, monitoring, backup, and troubleshooting runbook. |
+| `docs/IndiHub_PRODUCTION_DATABASE_OPERATIONS_RUNBOOK.md` | Production PostgreSQL backup, monitoring, maintenance, scaling, and live database migration guide. |
 | `docs/IndiHub_TECH_STACK_DECISION.md` | Expanded technology decision notes and future-ready architecture guidance. |
 | `docs/IndiHub_REQUIREMENT_COLLECTION_CHECKLIST.md` | Details to collect from the client before development. |
 | `docs/IndiHub_BRAND_DIRECTION.md` | Working brand name, logo status, and elegant color palette. |
