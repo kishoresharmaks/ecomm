@@ -102,7 +102,7 @@ describe("buildCreateProductPayload", () => {
   it("builds fashion product and variant attributes like web", () => {
     const state = createValidFashionState();
 
-    const payload = buildCreateProductPayload(state, fashionProductFields, fashionVariantFields);
+    const payload = buildCreateProductPayload(state, fashionProductFields, fashionVariantFields, "SGD");
 
     expect(payload.attributes).toMatchObject({
       brand: "Local label",
@@ -113,6 +113,7 @@ describe("buildCreateProductPayload", () => {
     expect(payload.variants[0]).toMatchObject({
       variantName: "M / Black",
       pricePaise: 9950,
+      currency: "SGD",
       attributes: {
         size: "M",
         color: "Black",
@@ -195,10 +196,10 @@ describe("buildUpdateProductPayload", () => {
       variants: [{ ...editForm.variants[0]!, id: "variant_1", variantName: "M / Black", price: "99.50", stock: "10" }],
     });
 
-    const payload = buildUpdateProductPayload(productEditFormToProductFormState(editForm), [], [], product);
+    const payload = buildUpdateProductPayload(productEditFormToProductFormState(editForm), [], [], product, "SGD");
 
     expect(payload).not.toHaveProperty("images");
-    expect(payload.variants?.[0]).toMatchObject({ id: "variant_1", pricePaise: 9950 });
+    expect(payload.variants?.[0]).toMatchObject({ id: "variant_1", pricePaise: 9950, currency: "SGD" });
   });
 });
 

@@ -611,8 +611,8 @@ function PremiumProductCard({
 }) {
   const imageUrl = resolveImageUrl(product.images?.[0]?.url);
   const variant = selectVariant(product);
-  const price = variant?.dealPricePaise ?? variant?.pricePaise;
-  const mrp = variant?.originalPricePaise ?? variant?.mrpPaise ?? null;
+  const price = variantDisplayPrice(variant);
+  const mrp = variantOriginalDisplayPrice(variant);
   const discount = discountPercent(price, mrp);
   const rating = product.reviewSummary?.averageRating ?? store?.reviewSummary?.averageRating ?? null;
   const reviewCount = product.reviewSummary?.reviewCount ?? store?.reviewSummary?.reviewCount ?? 0;
@@ -811,19 +811,27 @@ function sortLabel(sortMode: SortMode) {
 
 function priceValue(product: ProductSummary) {
   const variant = selectVariant(product);
-  return variant?.dealPricePaise ?? variant?.pricePaise ?? Number.MAX_SAFE_INTEGER;
+  return variantDisplayPrice(variant) ?? Number.MAX_SAFE_INTEGER;
 }
 
 function productPriceValue(product: ProductSummary) {
   const variant = selectVariant(product);
-  return variant?.dealPricePaise ?? variant?.pricePaise ?? Number.MAX_SAFE_INTEGER;
+  return variantDisplayPrice(variant) ?? Number.MAX_SAFE_INTEGER;
 }
 
 function productHasDeal(product: ProductSummary) {
   const variant = selectVariant(product);
-  const price = variant?.dealPricePaise ?? variant?.pricePaise;
-  const mrp = variant?.originalPricePaise ?? variant?.mrpPaise ?? null;
+  const price = variantDisplayPrice(variant);
+  const mrp = variantOriginalDisplayPrice(variant);
   return Boolean(product.activeDeal || discountPercent(price, mrp));
+}
+
+function variantDisplayPrice(variant: ProductVariant | undefined) {
+  return variant?.baseDealPricePaise ?? variant?.basePricePaise ?? variant?.dealPricePaise ?? variant?.pricePaise;
+}
+
+function variantOriginalDisplayPrice(variant: ProductVariant | undefined) {
+  return variant?.baseOriginalPricePaise ?? variant?.baseMrpPaise ?? variant?.originalPricePaise ?? variant?.mrpPaise ?? null;
 }
 
 function activeFilterCount(filters: StoreProductFilters) {

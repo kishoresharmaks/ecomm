@@ -51,6 +51,8 @@ const cartInclude = {
                   isEnabled: true,
                   manualTransportFreeDistanceKm: true,
                   manualTransportChargePerKmPaise: true,
+                  manualTransportChargePerKmMinor: true,
+                  manualTransportCurrency: true,
                   manualTransportNote: true,
                 },
               },
@@ -69,6 +71,7 @@ type CheckoutSummaryItem = {
   quantity: number;
   unitPricePaise: number;
   productVariant: {
+    currency: string;
     packageWeightGrams?: number | null;
     packageLengthCm?: number | null;
     packageBreadthCm?: number | null;
@@ -85,6 +88,8 @@ type CheckoutSummaryItem = {
         isEnabled?: boolean | null;
         manualTransportFreeDistanceKm?: Prisma.Decimal | number | string | null;
         manualTransportChargePerKmPaise?: number | null;
+        manualTransportChargePerKmMinor?: number | null;
+        manualTransportCurrency?: string | null;
         manualTransportNote?: string | null;
       }>;
       seller: {
@@ -120,7 +125,9 @@ export class CartService {
 
   async getCheckoutSummary(actor: RequestUser, query: CheckoutSummaryQueryDto) {
     const customer = await this.customersService.ensureCustomerForUser(actor);
-    const checkoutItems = await this.checkoutSummaryItems(actor, query);
+    const checkoutItems = await this.checkoutSummaryBaseItems(
+      await this.checkoutSummaryItems(actor, query),
+    );
     const subtotalPaise = checkoutItems.reduce((total: number, item: CheckoutSummaryItem) => total + item.quantity * item.unitPricePaise, 0);
     const itemCount = checkoutItems.reduce((total: number, item: CheckoutSummaryItem) => total + item.quantity, 0);
     const deliveryOptions = await this.checkoutSummaryDeliveryOptions(customer.id, query);
@@ -135,7 +142,10 @@ export class CartService {
       addressProvided: deliveryOptions.address !== undefined,
       deliveryPreference: deliveryOptions.deliveryPreference ?? null,
     });
-    const market = await this.marketService.getMarketCurrency(query.buyerCountryCode ?? "IN");
+    const market = await this.marketService.getMarketCurrency(query.buyerCountryCode ?? "IN", {
+      requireFresh: true,
+      forceRefresh: true,
+    });
     const coupon = await this.couponsService.previewCoupon(actor, {
       ...(query.couponCode !== undefined ? { couponCode: query.couponCode } : {}),
       customerId: customer.id,
@@ -382,6 +392,18 @@ export class CartService {
     ];
   }
 
+  private async checkoutSummaryBaseItems(items: CheckoutSummaryItem[]) {
+    return Promise.all(
+      items.map(async (item) => ({
+        ...item,
+        unitPricePaise: await this.marketService.convertMinorUnitsToBase(
+          item.unitPricePaise,
+          item.productVariant.currency,
+        ),
+      })),
+    );
+  }
+
   async addItem(actor: RequestUser, dto: AddCartItemDto) {
     const customer = await this.customersService.ensureCustomerForUser(actor);
     const cart = await this.ensureActiveCart(customer.id);
@@ -512,6 +534,8 @@ export class CartService {
                 isEnabled: true,
                 manualTransportFreeDistanceKm: true,
                 manualTransportChargePerKmPaise: true,
+                manualTransportChargePerKmMinor: true,
+                manualTransportCurrency: true,
                 manualTransportNote: true,
               },
             },
@@ -618,7 +642,8 @@ export class CartService {
           enabledDeliveryModes: DeliveryMode[];
           manualTransport?: {
             freeDistanceKm: number;
-            chargePerKmPaise: number;
+            chargePerKmMinor: number;
+            currency: string;
             note: string;
           } | null;
         }>;
@@ -718,6 +743,8 @@ export class CartService {
       isEnabled?: boolean | null;
       manualTransportFreeDistanceKm?: Prisma.Decimal | number | string | null;
       manualTransportChargePerKmPaise?: number | null;
+      manualTransportChargePerKmMinor?: number | null;
+      manualTransportCurrency?: string | null;
       manualTransportNote?: string | null;
     }> | null;
   }) {
@@ -728,8 +755,10 @@ export class CartService {
       !option ||
       option.manualTransportFreeDistanceKm === null ||
       option.manualTransportFreeDistanceKm === undefined ||
-      option.manualTransportChargePerKmPaise === null ||
-      option.manualTransportChargePerKmPaise === undefined ||
+      ((option.manualTransportChargePerKmMinor === null ||
+        option.manualTransportChargePerKmMinor === undefined) &&
+        (option.manualTransportChargePerKmPaise === null ||
+          option.manualTransportChargePerKmPaise === undefined)) ||
       !option.manualTransportNote
     ) {
       return null;
@@ -737,7 +766,8 @@ export class CartService {
 
     return {
       freeDistanceKm: Number(option.manualTransportFreeDistanceKm),
-      chargePerKmPaise: option.manualTransportChargePerKmPaise,
+      chargePerKmMinor: option.manualTransportChargePerKmMinor ?? option.manualTransportChargePerKmPaise ?? 0,
+      currency: option.manualTransportCurrency?.trim().toUpperCase() || "INR",
       note: option.manualTransportNote,
     };
   }

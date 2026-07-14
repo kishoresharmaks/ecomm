@@ -21,9 +21,11 @@ import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
 import { useMarket } from "@/components/market/market-context";
 import {
   addCartItem,
-  formatMoney,
   primaryImage,
   primaryVariant,
+  variantBaseMrp,
+  variantBaseOriginalPrice,
+  variantBasePrice,
   type ProductSummary,
 } from "@/lib/storefront-api";
 import { StorefrontImage } from "./storefront-image";
@@ -61,13 +63,16 @@ export function ProductQuickViewModal({ product, open, onClose }: ProductQuickVi
   const stockStatus = getStorefrontStockStatus(variant?.stockQuantity);
   const imageUrl = product?.images[imageIndex]?.url ?? (product ? primaryImage(product) : null);
   const deal = variant?.activeDeal ?? product?.activeDeal ?? null;
+  const basePrice = variantBasePrice(variant);
+  const baseMrp = variantBaseMrp(variant);
+  const baseOriginalPrice = variantBaseOriginalPrice(variant);
   const originalDealPrice =
-    variant?.originalPricePaise && variant.originalPricePaise > variant.pricePaise
-      ? variant.originalPricePaise
+    baseOriginalPrice && basePrice && baseOriginalPrice > basePrice
+      ? baseOriginalPrice
       : null;
   const mrp =
     originalDealPrice ??
-    (variant?.mrpPaise && variant.mrpPaise > variant.pricePaise ? variant.mrpPaise : null);
+    (baseMrp && basePrice && baseMrp > basePrice ? baseMrp : null);
   const isWishlisted = product ? wishlist.hasWishlistProduct(product.id) : false;
   const isWishlistPending = product ? wishlist.isPendingProductId === product.id : false;
   const detailHref = product ? (`/products/${product.slug}` as Route) : ("/search" as Route);
@@ -202,17 +207,12 @@ export function ProductQuickViewModal({ product, open, onClose }: ProductQuickVi
 
                 <div className="mt-6">
                   <p className="text-3xl font-black text-[#0B1824]">
-                    {variant ? market.format(variant.pricePaise) : "Price pending"}
+                    {variant ? market.format(basePrice) : "Price pending"}
                   </p>
                   {mrp ? (
                     <p className="mt-1 text-sm font-semibold text-[#98A2B3] line-through">{market.format(mrp)}</p>
                   ) : null}
                   {deal ? <p className="mt-1 text-xs font-black text-[#ED3500]">{deal.discountBps / 100}% deal applied</p> : null}
-                  {variant && market.market.currency !== variant.currency ? (
-                    <p className="mt-2 text-xs font-bold text-[#667085]">
-                      {formatMoney(variant.pricePaise, variant.currency)} base seller price
-                    </p>
-                  ) : null}
                 </div>
 
                 {notice ? <StorefrontNotice className="mt-5">{notice}</StorefrontNotice> : null}

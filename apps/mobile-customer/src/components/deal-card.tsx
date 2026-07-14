@@ -1,7 +1,7 @@
 import { HeartIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react-native";
 import { Link, type Href } from "expo-router";
-import { StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View, type GestureResponderEvent } from "react-native";
 import { resolveImageUrl } from "../lib/image-url";
 import { colors } from "../theme";
 import type { MobileProduct } from "../types/mobile-home";
@@ -11,6 +11,9 @@ type DealCardProps = {
   badgeText?: string;
   ctaText?: string;
   formatPrice?: (pricePaise?: number | null) => string;
+  isWishlistPending?: boolean;
+  isWished?: boolean;
+  onToggleWishlist?: () => void;
   product: MobileProduct;
   showBadge?: boolean;
 };
@@ -23,6 +26,9 @@ export function DealCard({
   badgeText = "Deal", 
   ctaText = "View deal", 
   formatPrice = defaultFormatPrice, 
+  isWishlistPending = false,
+  isWished = false,
+  onToggleWishlist,
   product,
   showBadge = true 
 }: DealCardProps) {
@@ -31,9 +37,13 @@ export function DealCard({
   const cardHeight = imageHeight + 126;
   const imageUrl = resolveImageUrl(product.images?.[0]?.url);
   const variant = product.variants?.[0];
-  const price = variant?.pricePaise;
-  const mrp = variant?.mrpPaise ?? null;
+  const price = variant?.basePricePaise ?? variant?.pricePaise;
+  const mrp = variant?.baseMrpPaise ?? variant?.mrpPaise ?? null;
   const discount = discountPercent(price, mrp);
+  function handleWishlistPress(event: GestureResponderEvent) {
+    event.stopPropagation();
+    onToggleWishlist?.();
+  }
 
   return (
     <Link href={`/product/${product.slug}` as Href} style={[styles.dealCard, { minHeight: cardHeight, width: cardWidth }]}>
@@ -41,9 +51,21 @@ export function DealCard({
         <View style={[styles.dealImageWrap, { height: imageHeight }]}>
           {imageUrl ? <RemoteImage resizeMode="cover" style={styles.dealImage} uri={imageUrl} /> : <ProductImageFallback />}
           {showBadge && discount ? <Text style={styles.dealDiscountBadge}>{badgeText}</Text> : null}
-          <View style={styles.productHeartButton}>
-            <HugeiconsIcon color="#667085" icon={HeartIcon} size={18} strokeWidth={1.8} />
-          </View>
+          <Pressable
+            accessibilityLabel={isWished ? "Remove from wishlist" : "Add to wishlist"}
+            accessibilityRole="button"
+            accessibilityState={{ busy: isWishlistPending, selected: isWished }}
+            disabled={isWishlistPending}
+            hitSlop={8}
+            style={[styles.productHeartButton, isWished ? styles.productHeartButtonActive : null, isWishlistPending ? styles.productHeartButtonDisabled : null]}
+            onPress={handleWishlistPress}
+          >
+            {isWishlistPending ? (
+              <ActivityIndicator color={colors.primary} size="small" />
+            ) : (
+              <HugeiconsIcon color={isWished ? colors.primary : "#667085"} icon={HeartIcon} size={18} strokeWidth={isWished ? 2.6 : 1.8} />
+            )}
+          </Pressable>
           {product.images && product.images.length > 1 ? <ImageDots count={product.images.length} /> : null}
         </View>
         <View style={styles.textContainer}>
@@ -171,6 +193,13 @@ const styles = StyleSheet.create({
     top: 8,
     width: 36,
     zIndex: 2,
+  },
+  productHeartButtonActive: {
+    backgroundColor: "#FFF2ED",
+    borderColor: "#FFD6C8",
+  },
+  productHeartButtonDisabled: {
+    opacity: 0.72,
   },
   imageDots: {
     alignItems: "center",

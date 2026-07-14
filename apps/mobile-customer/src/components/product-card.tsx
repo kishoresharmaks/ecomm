@@ -34,8 +34,8 @@ export function ProductCard({
 }: ProductCardProps) {
   const imageUrl = resolveImageUrl(product.images?.[0]?.url);
   const variant = product.variants?.[0];
-  const price = variant?.pricePaise;
-  const mrp = variant?.mrpPaise ?? null;
+  const price = variant?.basePricePaise ?? variant?.pricePaise;
+  const mrp = variant?.baseMrpPaise ?? variant?.mrpPaise ?? null;
   const discount = discountPercent(price, mrp);
   const storeName = product.seller?.storeName ?? "1HandIndia seller";
   const stockAwareVariant = variant as Partial<{ status: string; stockQuantity: number }> | undefined;

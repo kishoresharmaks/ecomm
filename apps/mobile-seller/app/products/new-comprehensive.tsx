@@ -14,7 +14,7 @@ import {
   SelectField,
   Toast,
 } from "../../src/components/screen";
-import { createSellerProduct, listCategories, searchHsnMaster } from "../../src/features/seller/seller-api";
+import { createSellerProduct, getSellerProfile, listCategories, searchHsnMaster } from "../../src/features/seller/seller-api";
 import { uploadPublicSellerImage, type MobileUploadFile } from "../../src/features/seller/mobile-upload";
 import { launchSellerImageLibraryAsync } from "../../src/features/seller/image-picker";
 import {
@@ -58,6 +58,11 @@ export default function NewSellerProductScreen() {
     queryFn: () => listCategories(auth.authHeaders),
     enabled: auth.enabled,
   });
+  const profileQuery = useQuery({
+    queryKey: ["seller-profile", auth.authKey, "product-form"],
+    queryFn: () => getSellerProfile(auth.authHeaders),
+    enabled: auth.enabled,
+  });
 
   const categories = useMemo(() => flattenCategories(categoriesQuery.data ?? []), [categoriesQuery.data]);
   const selectedCategory = useMemo(
@@ -70,6 +75,7 @@ export default function NewSellerProductScreen() {
     () => categories.map((category) => ({ label: category.name, value: category.id })),
     [categories],
   );
+  const sellerCurrency = profileQuery.data?.operatingCurrency ?? "INR";
 
   const hsnQuery = useQuery({
     queryKey: ["hsn-search", auth.authKey, state.base.categoryId, state.base.hsnCode],
@@ -117,7 +123,7 @@ export default function NewSellerProductScreen() {
       if (!nextValidation.valid) {
         throw new Error(nextValidation.messages[0] ?? "Please complete the required product details.");
       }
-      return createSellerProduct(auth.authHeaders, buildCreateProductPayload(state, productFields, variantFields));
+      return createSellerProduct(auth.authHeaders, buildCreateProductPayload(state, productFields, variantFields, sellerCurrency));
     },
     onSuccess: async () => {
       setToast({ visible: true, message: "Product submitted for approval.", type: "success" });
@@ -170,7 +176,7 @@ export default function NewSellerProductScreen() {
     }
   }
 
-  if (!auth.enabled || categoriesQuery.isLoading) {
+  if (!auth.enabled || categoriesQuery.isLoading || profileQuery.isLoading) {
     return <LoadingState message="Loading product form..." />;
   }
 
@@ -367,6 +373,7 @@ export default function NewSellerProductScreen() {
               variant={variant}
               index={index}
               fields={variantFields}
+              currency={sellerCurrency}
               canRemove={state.variants.length > 1}
               errors={state.errors}
               dispatch={dispatch}
@@ -467,6 +474,7 @@ function VariantPanel({
   variant,
   index,
   fields,
+  currency,
   canRemove,
   errors,
   dispatch,
@@ -474,6 +482,7 @@ function VariantPanel({
   variant: ProductFormVariant;
   index: number;
   fields: ProductTemplateField[];
+  currency: string;
   canRemove: boolean;
   errors: Record<string, string>;
   dispatch: Dispatch<ProductFormAction>;
@@ -487,8 +496,8 @@ function VariantPanel({
         <Text style={styles.itemTitle}>{variant.variantName || `Variant ${index + 1}`}</Text>
         <Button title="Remove" tone="danger" disabled={!canRemove} onPress={() => dispatch({ type: "removeVariant", clientId: variant.clientId })} style={styles.compactButton} />
       </View>
-      <Field keyboardType="decimal-pad" label="Selling price (INR) *" value={variant.price} onChangeText={(value) => update("price", value)} error={errors[`variant.${variant.clientId}.price`]} />
-      <Field keyboardType="decimal-pad" label="MRP (INR)" value={variant.mrp} onChangeText={(value) => update("mrp", value)} error={errors[`variant.${variant.clientId}.mrp`]} />
+      <Field keyboardType="decimal-pad" label={`Selling price (${currency}) *`} value={variant.price} onChangeText={(value) => update("price", value)} error={errors[`variant.${variant.clientId}.price`]} />
+      <Field keyboardType="decimal-pad" label={`MRP (${currency})`} value={variant.mrp} onChangeText={(value) => update("mrp", value)} error={errors[`variant.${variant.clientId}.mrp`]} />
       <Field keyboardType="number-pad" label="Stock quantity" value={variant.stock} onChangeText={(value) => update("stock", value)} error={errors[`variant.${variant.clientId}.stock`]} />
       <Field label="SKU" value={variant.sku} onChangeText={(value) => update("sku", value)} />
       <Field label="Variant name" value={variant.variantName} onChangeText={(value) => update("variantName", value)} placeholder="Auto uses size/color if blank" />

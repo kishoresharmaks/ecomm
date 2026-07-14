@@ -15,6 +15,8 @@ export type MobileCartSummary = {
         sku?: string | null;
         pricePaise?: number;
       mrpPaise?: number | null;
+      basePricePaise?: number | null;
+      baseMrpPaise?: number | null;
       status?: string | null;
         stockQuantity?: number | null;
         product?: {
@@ -1023,6 +1025,15 @@ export function getCheckoutSummary(
     deliverySelections?: Array<{ sellerId: string; deliveryMode: MobileDeliveryMode }>;
     paymentMethod?: MobilePaymentMethod;
     addressId?: string | null;
+    shippingAddress?: {
+      countryCode?: string | null;
+      stateCode?: string | null;
+      cityCode?: string | null;
+      pincode?: string | null;
+      localAreaCode?: string | null;
+      latitude?: number | null;
+      longitude?: number | null;
+    };
   } = {},
 ) {
   return getJson<MobileCheckoutSummary>({
@@ -1036,6 +1047,13 @@ export function getCheckoutSummary(
       deliverySelections: options.deliverySelections?.length ? JSON.stringify(options.deliverySelections) : undefined,
       paymentMethod: options.paymentMethod,
       addressId: options.addressId,
+      countryCode: options.shippingAddress?.countryCode,
+      stateCode: options.shippingAddress?.stateCode,
+      cityCode: options.shippingAddress?.cityCode,
+      pincode: options.shippingAddress?.pincode,
+      localAreaCode: options.shippingAddress?.localAreaCode,
+      latitude: options.shippingAddress?.latitude === undefined || options.shippingAddress.latitude === null ? undefined : String(options.shippingAddress.latitude),
+      longitude: options.shippingAddress?.longitude === undefined || options.shippingAddress.longitude === null ? undefined : String(options.shippingAddress.longitude),
     },
   });
 }

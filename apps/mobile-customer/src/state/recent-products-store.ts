@@ -69,8 +69,16 @@ function productToSnapshot(product: ProductSummary): RecentProductSnapshot {
     sellerId: product.sellerId ?? product.seller?.id ?? null,
     sellerName: product.seller?.storeName ?? "1HandIndia seller",
     sellerSlug: product.seller?.slug ?? null,
-    pricePaise: variant?.pricePaise ?? null,
-    mrpPaise: variant?.mrpPaise ?? null,
+    pricePaise: variantDisplayPrice(variant) ?? null,
+    mrpPaise: variantOriginalDisplayPrice(variant),
     viewedAt: new Date().toISOString(),
   };
+}
+
+function variantDisplayPrice(variant: ProductSummary["variants"][number] | undefined) {
+  return variant?.baseDealPricePaise ?? variant?.basePricePaise ?? variant?.dealPricePaise ?? variant?.pricePaise;
+}
+
+function variantOriginalDisplayPrice(variant: ProductSummary["variants"][number] | undefined) {
+  return variant?.baseOriginalPricePaise ?? variant?.baseMrpPaise ?? variant?.originalPricePaise ?? variant?.mrpPaise ?? null;
 }

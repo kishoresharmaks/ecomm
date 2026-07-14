@@ -358,6 +358,7 @@ function SellerServiceForm({ serviceId }: { serviceId?: string }) {
     enabled: sellerAuth.enabled,
     retry: false,
   });
+  const sellerOperatingCurrency = profileQuery.data?.operatingCurrency || "INR";
 
   const categoriesQuery = useQuery({
     queryKey: ["seller-service-categories"],
@@ -420,7 +421,7 @@ function SellerServiceForm({ serviceId }: { serviceId?: string }) {
       pricingModel,
       paymentMode: formValue(form, "paymentMode") as ServiceListingPayload["paymentMode"],
       cancellationPolicy: (formValue(form, "cancellationPolicy") || "FLEXIBLE") as ServiceCancellationPolicy,
-      currency: "INR",
+      currency: sellerOperatingCurrency,
       quoteTtlHours: Number(formValue(form, "quoteTtlHours") || 48),
       serviceDurationMinutes: Number(formValue(form, "serviceDurationMinutes") || 60),
       allowedVisitModes: visitModeValues.length ? visitModeValues : ["CUSTOMER_LOCATION"],
@@ -499,9 +500,9 @@ function SellerServiceForm({ serviceId }: { serviceId?: string }) {
               <option value="INSPECTION_FEE">Inspection fee</option>
               <option value="PAY_AT_VISIT">Pay at visit</option>
             </SellerSelect>
-            <SellerField label="Base price (INR)" name="basePrice" type="number" min={0} step="0.01" placeholder="999" defaultValue={paiseToRupeesInput(service?.basePricePaise)} />
-            <SellerField label="Inspection fee (INR)" name="inspectionFee" type="number" min={0} step="0.01" placeholder="299" defaultValue={paiseToRupeesInput(service?.inspectionFeePaise)} />
-            <SellerField label="Advance amount (INR)" name="advanceAmount" type="number" min={0} step="0.01" placeholder="500" defaultValue={paiseToRupeesInput(service?.advanceAmountPaise)} />
+            <SellerField label={`Base price (${sellerOperatingCurrency})`} name="basePrice" type="number" min={0} step="0.01" placeholder="999" defaultValue={paiseToRupeesInput(service?.basePricePaise)} />
+            <SellerField label={`Inspection fee (${sellerOperatingCurrency})`} name="inspectionFee" type="number" min={0} step="0.01" placeholder="299" defaultValue={paiseToRupeesInput(service?.inspectionFeePaise)} />
+            <SellerField label={`Advance amount (${sellerOperatingCurrency})`} name="advanceAmount" type="number" min={0} step="0.01" placeholder="500" defaultValue={paiseToRupeesInput(service?.advanceAmountPaise)} />
             <SellerField label="Duration minutes" name="serviceDurationMinutes" type="number" min={1} defaultValue={service?.serviceDurationMinutes ?? 60} />
             <SellerField label="Quote TTL hours" name="quoteTtlHours" type="number" min={1} defaultValue={service?.quoteTtlHours ?? 48} />
             <SellerSelect label="Cancellation policy" name="cancellationPolicy" defaultValue={service?.cancellationPolicy ?? "FLEXIBLE"} required>

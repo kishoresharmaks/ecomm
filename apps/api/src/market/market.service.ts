@@ -33,7 +33,10 @@ export class MarketService {
 
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  async getMarketCurrency(countryCode = "IN", options: { requireFresh?: boolean } = {}): Promise<MarketCurrencySnapshot> {
+  async getMarketCurrency(
+    countryCode = "IN",
+    options: { requireFresh?: boolean; forceRefresh?: boolean } = {},
+  ): Promise<MarketCurrencySnapshot> {
     const normalizedCountryCode = countryCode.trim().toUpperCase();
     const country = await this.prisma.client.locationCountry.findUnique({
       where: { code: normalizedCountryCode }
@@ -77,7 +80,7 @@ export class MarketService {
       }
     });
 
-    if (cached && cached.expiresAt > now) {
+    if (!options.forceRefresh && cached && cached.expiresAt > now) {
       this.logger.debug(`FX cache hit ${baseCurrency}->${country.currency} via ${provider}`);
       return this.snapshotFromRate(country, cached, false);
     }
@@ -96,7 +99,7 @@ export class MarketService {
   }
 
   async buildCheckoutSnapshot(countryCode?: string | null) {
-    return this.getMarketCurrency(countryCode ?? "IN", { requireFresh: true });
+    return this.getMarketCurrency(countryCode ?? "IN", { requireFresh: true, forceRefresh: true });
   }
 
   convertMinorUnits(baseMinor: number, market: MarketCurrencySnapshot) {
@@ -105,6 +108,56 @@ export class MarketService {
     }
 
     return Math.round((baseMinor / 100) * market.rate * 100);
+  }
+
+  async convertMinorUnitsToBase(
+    sourceMinor: number,
+    sourceCurrency: string | null | undefined,
+    options: { requireFresh?: boolean } = {},
+  ) {
+    const baseCurrency = (process.env.FX_BASE_CURRENCY ?? "INR").toUpperCase();
+    const normalizedSourceCurrency = sourceCurrency?.trim().toUpperCase() || baseCurrency;
+
+    if (!/^[A-Z]{3}$/.test(normalizedSourceCurrency)) {
+      throw new BadRequestException("Product currency is not valid.");
+    }
+
+    if (normalizedSourceCurrency === baseCurrency) {
+      return sourceMinor;
+    }
+
+    const provider = process.env.FX_PROVIDER ?? "frankfurter";
+    const now = new Date();
+    const cached = await this.prisma.client.currencyRate.findUnique({
+      where: {
+        baseCurrency_quoteCurrency_provider: {
+          baseCurrency,
+          quoteCurrency: normalizedSourceCurrency,
+          provider,
+        },
+      },
+    });
+
+    const usableRate =
+      cached && cached.expiresAt > now
+        ? cached
+        : await this.fetchAndStoreRateCoalesced(baseCurrency, normalizedSourceCurrency, provider).catch(() => {
+            if (cached && !options.requireFresh) {
+              this.logger.warn(
+                `FX provider unavailable; serving stale ${baseCurrency}->${normalizedSourceCurrency} via ${provider}`,
+              );
+              return cached;
+            }
+
+            throw new ServiceUnavailableException("Currency rate is not available. Please try again later.");
+          });
+
+    const rate = usableRate.rate.toNumber();
+    if (!Number.isFinite(rate) || rate <= 0) {
+      throw new ServiceUnavailableException("Currency rate is not available. Please try again later.");
+    }
+
+    return Math.round((sourceMinor / 100 / rate) * 100);
   }
 
   private async fetchAndStoreRateCoalesced(baseCurrency: string, quoteCurrency: string, provider: string) {

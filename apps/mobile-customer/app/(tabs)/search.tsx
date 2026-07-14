@@ -18,6 +18,7 @@ import { RemoteImage } from "../../src/components/remote-image";
 import { useMobileMarket } from "../../src/features/market/mobile-market";
 import { withStorefrontMaintenance } from "../../src/features/maintenance/mobile-maintenance-gate";
 import { getSearchSuggestions, listCategories, searchStorefront } from "../../src/features/storefront/storefront-api";
+import { useMobileWishlistActions } from "../../src/features/storefront/use-mobile-wishlist-actions";
 import { resolveImageUrl } from "../../src/lib/image-url";
 import { useSearchHistoryStore } from "../../src/state/search-history-store";
 import { colors } from "../../src/theme";
@@ -63,6 +64,7 @@ function SearchScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ q?: string; type?: string }>();
   const market = useMobileMarket();
+  const wishlist = useMobileWishlistActions();
   const paramQuery = paramValue(params.q);
   const paramType = parseSearchType(paramValue(params.type));
   const [queryText, setQueryText] = useState(paramQuery);
@@ -314,7 +316,15 @@ function SearchScreen() {
             return <LoadingState compact label="Loading more results..." />;
           }
 
-          return <SearchResultCard formatPrice={market.format} result={item.result} />;
+            return (
+              <SearchResultCard
+                formatPrice={market.format}
+                isWishlistPending={wishlist.isPending}
+                isWished={wishlist.isWished}
+                result={item.result}
+                onToggleWishlist={wishlist.toggleWishlist}
+              />
+            );
         }}
       />
 
@@ -450,13 +460,27 @@ function ResultsHeader({
 
 function SearchResultCard({
   formatPrice,
+  isWishlistPending,
+  isWished,
+  onToggleWishlist,
   result,
 }: {
   formatPrice: (pricePaise?: number | null) => string;
+  isWishlistPending: (productId: string) => boolean;
+  isWished: (productId: string) => boolean;
+  onToggleWishlist: (productId: string) => void;
   result: StorefrontSearchItem;
 }) {
   if (result.type === "product") {
-    return <ProductResultCard formatPrice={formatPrice} result={result} />;
+    return (
+      <ProductResultCard
+        formatPrice={formatPrice}
+        isWishlistPending={isWishlistPending}
+        isWished={isWished}
+        result={result}
+        onToggleWishlist={onToggleWishlist}
+      />
+    );
   }
   if (result.type === "store") {
     return <StoreResultCard result={result} />;
@@ -467,19 +491,27 @@ function SearchResultCard({
 
 function ProductResultCard({
   formatPrice,
+  isWishlistPending,
+  isWished,
+  onToggleWishlist,
   result,
 }: {
   formatPrice: (pricePaise?: number | null) => string;
+  isWishlistPending: (productId: string) => boolean;
+  isWished: (productId: string) => boolean;
+  onToggleWishlist: (productId: string) => void;
   result: Extract<StorefrontSearchItem, { type: "product" }>;
 }) {
   const product = result.product;
   const imageUrl = resolveImageUrl(product.images?.[0]?.url);
   const variant = product.variants?.[0] as SearchProductVariant | undefined;
-  const mrpPaise = variant?.mrpPaise ?? null;
-  const pricePaise = variant?.pricePaise ?? null;
+  const mrpPaise = variantOriginalDisplayPrice(variant);
+  const pricePaise = variantDisplayPrice(variant);
   const stockQuantity = variantStockQuantity(variant);
   const stockLabel = stockQuantity !== null && stockQuantity <= 0 ? "Out of stock" : "In stock";
   const storeName = product.seller?.storeName ?? "1HandIndia seller";
+  const wished = isWished(product.id);
+  const pending = isWishlistPending(product.id);
 
   return (
     <Link asChild href={`/product/${product.slug}` as Href}>
@@ -503,9 +535,24 @@ function ProductResultCard({
             {mrpPaise && pricePaise && mrpPaise > pricePaise ? <Text style={styles.mrpText}>{formatPrice(mrpPaise)}</Text> : null}
           </View>
         </View>
-        <View style={styles.heartVisual}>
-          <HugeiconsIcon color="#738097" icon={HeartIcon} size={24} strokeWidth={2} />
-        </View>
+        <Pressable
+          accessibilityLabel={wished ? "Remove from wishlist" : "Add to wishlist"}
+          accessibilityRole="button"
+          accessibilityState={{ busy: pending, selected: wished }}
+          disabled={pending}
+          hitSlop={8}
+          style={[styles.heartVisual, wished ? styles.heartVisualActive : null, pending ? styles.heartVisualDisabled : null]}
+          onPress={(event) => {
+            event.stopPropagation();
+            onToggleWishlist(product.id);
+          }}
+        >
+          {pending ? (
+            <ActivityIndicator color={colors.primary} size="small" />
+          ) : (
+            <HugeiconsIcon color={wished ? colors.primary : "#738097"} icon={HeartIcon} size={24} strokeWidth={wished ? 2.6 : 2} />
+          )}
+        </Pressable>
         <Text style={styles.resultTypeLabel}>Product</Text>
       </Pressable>
     </Link>
@@ -759,6 +806,14 @@ function variantStockQuantity(variant?: SearchProductVariant) {
   return null;
 }
 
+function variantDisplayPrice(variant?: SearchProductVariant) {
+  return variant?.basePricePaise ?? variant?.pricePaise ?? null;
+}
+
+function variantOriginalDisplayPrice(variant?: SearchProductVariant) {
+  return variant?.baseMrpPaise ?? variant?.baseOriginalPricePaise ?? variant?.mrpPaise ?? null;
+}
+
 const styles = StyleSheet.create({
   backButton: {
     alignItems: "center",
@@ -949,6 +1004,13 @@ const styles = StyleSheet.create({
     top: 16,
     width: 48,
     ...cardShadow,
+  },
+  heartVisualActive: {
+    backgroundColor: "#FFF2ED",
+    borderColor: "#FFD6C8",
+  },
+  heartVisualDisabled: {
+    opacity: 0.72,
   },
   listContent: {
     paddingBottom: 128,

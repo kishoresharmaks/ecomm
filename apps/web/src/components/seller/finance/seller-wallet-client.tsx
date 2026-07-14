@@ -39,29 +39,40 @@ export function SellerWalletClient() {
     return <SellerAuthNotice />;
   }
 
-  if (ledgerQuery.isLoading) {
+  if (ledgerQuery.isLoading || availabilityQuery.isLoading) {
     return <SellerSkeleton />;
   }
 
-  if (ledgerQuery.error) {
-    if (isSellerOnboardingRequiredError(ledgerQuery.error)) {
+  const pageError = ledgerQuery.error ?? availabilityQuery.error;
+  if (pageError) {
+    if (isSellerOnboardingRequiredError(pageError)) {
       return <SellerOnboardingRequired message="Complete seller onboarding before viewing wallet and ledger entries." />;
     }
 
-    return <SellerErrorPanel error={ledgerQuery.error} onRetry={() => void ledgerQuery.refetch()} />;
+    return (
+      <SellerErrorPanel
+        error={pageError}
+        onRetry={() => {
+          void ledgerQuery.refetch();
+          void availabilityQuery.refetch();
+        }}
+      />
+    );
   }
 
   const entries = ledgerQuery.data?.items ?? [];
+  const currency = availabilityQuery.data?.currency || "INR";
   const sellerCashDuePaise = availabilityQuery.data?.sellerCashReceivableOutstandingPaise ?? 0;
   const sellerCashOffsetPaise = availabilityQuery.data?.sellerCashReceivableOffsetPaise ?? 0;
+  const latestEntry = entries[0] ?? null;
 
   return (
     <div className="grid gap-5">
       <div className="grid gap-4 md:grid-cols-4">
-        <SellerMetric label="Wallet balance" value={formatMoney(ledgerQuery.data?.balancePaise ?? 0)} note="Credits minus payouts and deductions" />
-        <SellerMetric label="Available payout" value={formatMoney(availabilityQuery.data?.netPayablePaise ?? 0)} note={`${availabilityQuery.data?.eligibleSplitCount ?? 0} eligible order splits`} />
-        <SellerMetric label="Platform due" value={formatMoney(sellerCashDuePaise)} note={sellerCashOffsetPaise > 0 ? `${formatMoney(sellerCashOffsetPaise)} will be deducted next` : "Seller-collected COD balance"} />
-        <SellerMetric label="Latest movement" value={entries[0]?.entryType ?? "None"} note="Most recent transaction" />
+        <SellerMetric label="Earned available balance" value={formatMoney(availabilityQuery.data?.netPayablePaise ?? 0, currency)} note={`${availabilityQuery.data?.eligibleSplitCount ?? 0} delivered paid order splits ready for request`} />
+        <SellerMetric label="Settled ledger balance" value={formatMoney(ledgerQuery.data?.balancePaise ?? 0, currency)} note="Updates after payout approval, payout payment, or adjustments" />
+        <SellerMetric label="Platform due" value={formatMoney(sellerCashDuePaise, currency)} note={sellerCashOffsetPaise > 0 ? `${formatMoney(sellerCashOffsetPaise, currency)} will be deducted next` : sellerCashDuePaise > 0 ? "Seller-collected COD balance" : "No seller-collected COD due"} />
+        <SellerMetric label="Latest movement" value={latestEntry ? sellerLedgerTitle(latestEntry) : "None"} note={latestEntry ? formatDateTime(latestEntry.createdAt) : "No wallet transactions yet"} />
       </div>
 
       <SellerPanel>
@@ -95,9 +106,9 @@ export function SellerWalletClient() {
               </div>
               <div className="text-left md:text-right">
                 <p className="font-black text-[#163B5C]">
-                  +{formatMoney(entry.creditPaise)} / -{formatMoney(entry.debitPaise)}
+                  +{formatMoney(entry.creditPaise, entry.currency || currency)} / -{formatMoney(entry.debitPaise, entry.currency || currency)}
                 </p>
-                <p className="mt-1 text-sm font-semibold text-[#667085]">Balance {formatMoney(entry.balanceAfterPaise)}</p>
+                <p className="mt-1 text-sm font-semibold text-[#667085]">Balance {formatMoney(entry.balanceAfterPaise, entry.currency || currency)}</p>
               </div>
             </div>
           </SellerPanel>

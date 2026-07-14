@@ -264,6 +264,13 @@ type ProductRecord = {
   gstRatePercent?: number | string | null;
   hsnMaster?: HsnMasterRecord | null;
   deliveryModes?: string[];
+  manualTransport?: {
+    freeDistanceKm?: number | null;
+    chargePerKmMinor?: number | null;
+    chargePerKmPaise?: number | null;
+    currency?: string | null;
+    note?: string | null;
+  } | null;
   createdAt?: string;
   category?: { name?: string | null; productTemplate?: ProductTemplateRecord | null } | null;
   seller?: SellerRecord | null;
@@ -356,6 +363,7 @@ type OrderRecord = {
     routingRetryCount?: number | null;
     routingPermanentFailureAt?: string | null;
     routingSnapshot?: unknown;
+    shippingChargeSnapshot?: unknown;
     awbNumber?: string | null;
     courierTrackingStatus?: string | null;
     labelUrl?: string | null;
@@ -2371,15 +2379,7 @@ export function AdminProductsPageClient({
           {
             header: "Delivery",
             className: "min-w-[220px]",
-            cell: (item) => (
-              <div className="flex flex-wrap gap-1.5">
-                {(item.deliveryModes?.length ? item.deliveryModes : ["Not configured"]).map((mode) => (
-                  <StatusBadge key={mode} tone={mode === "Not configured" ? "warning" : "info"}>
-                    {humanize(mode)}
-                  </StatusBadge>
-                ))}
-              </div>
-            ),
+            cell: (item) => <ProductDeliveryReview product={item} />,
           },
           {
             header: "Seller",
@@ -4416,6 +4416,14 @@ export function AdminOrderDetailPageClient({ orderNumber }: { orderNumber: strin
                           />
                         </div>
 
+                        {isManualTransportPackage ? (
+                          <ManualTransportShipmentSnapshot
+                            routingSnapshot={shipment.routingSnapshot}
+                            shippingChargeSnapshot={shipment.shippingChargeSnapshot}
+                            orderCurrency={order.currency}
+                          />
+                        ) : null}
+
                         {isCourierPackage ? (
                           <div className="mt-4 grid gap-3 rounded-md border border-[#D8E2EA] bg-white p-3">
                             <div className="grid gap-3 sm:grid-cols-4">
@@ -4770,6 +4778,126 @@ export function AdminOrderDetailPageClient({ orderNumber }: { orderNumber: strin
       {confirmation.dialog}
     </AdminResourceChrome>
   );
+}
+
+type ManualTransportSnapshot = {
+  distanceKm?: number | null;
+  freeDistanceKm?: number | null;
+  billableKm?: number | null;
+  chargePerKmMinor?: number | null;
+  sellerChargeMinor?: number | null;
+  sellerCurrency?: string | null;
+  baseChargeMinor?: number | null;
+  baseCurrency?: string | null;
+  fxRate?: number | null;
+  note?: string | null;
+  selectedProductName?: string | null;
+};
+
+function ManualTransportShipmentSnapshot({
+  routingSnapshot,
+  shippingChargeSnapshot,
+  orderCurrency,
+}: {
+  routingSnapshot?: unknown;
+  shippingChargeSnapshot?: unknown;
+  orderCurrency: string;
+}) {
+  const snapshot =
+    readManualTransportSnapshot(routingSnapshot) ?? readManualTransportSnapshot(shippingChargeSnapshot);
+
+  if (!snapshot) {
+    return (
+      <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs font-semibold leading-5 text-amber-800">
+        Manual transport pricing snapshot is missing. Check the seller product delivery setup and checkout routing logs.
+      </div>
+    );
+  }
+
+  const sellerCurrency = snapshot.sellerCurrency ?? orderCurrency;
+  const baseCurrency = snapshot.baseCurrency ?? orderCurrency;
+
+  return (
+    <div className="mt-4 grid gap-3 rounded-md border border-[#D8E2EA] bg-white p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-black text-[#1F2933]">Manual transport pricing</p>
+        {snapshot.selectedProductName ? (
+          <StatusBadge tone="info">{truncate(snapshot.selectedProductName, 42)}</StatusBadge>
+        ) : null}
+      </div>
+      <div className="grid gap-3 sm:grid-cols-4">
+        <MetricCard
+          label="Distance"
+          value={typeof snapshot.distanceKm === "number" ? `${snapshot.distanceKm.toFixed(2)} km` : "Not saved"}
+        />
+        <MetricCard
+          label="Free / billable"
+          value={`${snapshot.freeDistanceKm ?? 0} km / ${snapshot.billableKm ?? 0} km`}
+        />
+        <MetricCard
+          label="Seller charge"
+          value={formatMinor(snapshot.sellerChargeMinor ?? 0, sellerCurrency)}
+        />
+        <MetricCard
+          label="Checkout charge"
+          value={formatMinor(snapshot.baseChargeMinor ?? 0, baseCurrency)}
+        />
+      </div>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <MetricCard
+          label="Per km"
+          value={formatMinor(snapshot.chargePerKmMinor ?? 0, sellerCurrency)}
+        />
+        <MetricCard
+          label="FX rate"
+          value={snapshot.fxRate ? `1 ${baseCurrency} = ${snapshot.fxRate} ${sellerCurrency}` : "Not applied"}
+        />
+        <MetricCard label="Currency" value={`${sellerCurrency} to ${baseCurrency}`} />
+      </div>
+      {snapshot.note ? (
+        <p className="rounded-md border border-[#E5E7EB] bg-[#F8FAFC] p-3 text-xs font-semibold leading-5 text-[#667085]">
+          {snapshot.note}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function readManualTransportSnapshot(value: unknown): ManualTransportSnapshot | null {
+  const root = recordValue(value);
+  const manualTransport = recordValue(root?.manualTransport);
+  if (!manualTransport) {
+    return null;
+  }
+
+  return {
+    distanceKm: finiteNumber(manualTransport.distanceKm),
+    freeDistanceKm: finiteNumber(manualTransport.freeDistanceKm),
+    billableKm: finiteNumber(manualTransport.billableKm),
+    chargePerKmMinor: finiteNumber(manualTransport.chargePerKmMinor),
+    sellerChargeMinor: finiteNumber(manualTransport.sellerChargeMinor),
+    sellerCurrency: stringValue(manualTransport.sellerCurrency),
+    baseChargeMinor: finiteNumber(manualTransport.baseChargeMinor),
+    baseCurrency: stringValue(manualTransport.baseCurrency),
+    fxRate: finiteNumber(manualTransport.fxRate),
+    note: stringValue(manualTransport.note),
+    selectedProductName: stringValue(manualTransport.selectedProductName),
+  };
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function finiteNumber(value: unknown) {
+  const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 export function AdminB2BEnquiriesPageClient() {
@@ -10215,6 +10343,48 @@ function ProductEssentialsReview({ product }: { product: ProductRecord }) {
           Missing: {missing.slice(0, 3).join(", ")}
           {missing.length > 3 ? "..." : ""}
         </p>
+      ) : null}
+    </div>
+  );
+}
+
+function ProductDeliveryReview({ product }: { product: ProductRecord }) {
+  const modes = product.deliveryModes?.length ? product.deliveryModes : ["Not configured"];
+  const manualEnabled = modes.includes("MANUAL_TRANSPORT");
+  const manualTransport = product.manualTransport;
+  const manualChargeMinor =
+    manualTransport?.chargePerKmMinor ?? manualTransport?.chargePerKmPaise ?? null;
+  const manualConfigReady =
+    manualEnabled &&
+    typeof manualTransport?.freeDistanceKm === "number" &&
+    typeof manualChargeMinor === "number" &&
+    manualChargeMinor >= 0 &&
+    Boolean(manualTransport?.currency) &&
+    Boolean(manualTransport?.note?.trim());
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-1.5">
+        {modes.map((mode) => (
+          <StatusBadge key={mode} tone={mode === "Not configured" ? "warning" : "info"}>
+            {humanize(mode)}
+          </StatusBadge>
+        ))}
+      </div>
+      {manualEnabled ? (
+        manualConfigReady ? (
+          <SmallStack
+            lines={[
+              `${manualTransport.freeDistanceKm} km free`,
+              `${formatMinor(manualChargeMinor, manualTransport.currency ?? "INR")} per km after free distance`,
+              manualTransport.note ? `Note: ${truncate(manualTransport.note, 70)}` : null,
+            ]}
+          />
+        ) : (
+          <p className="max-w-[260px] text-xs font-semibold leading-5 text-[#B54708]">
+            Manual transport needs free km, charge per km, currency, and seller note before checkout can quote it.
+          </p>
+        )
       ) : null}
     </div>
   );

@@ -1249,6 +1249,7 @@ export class SellersService {
   }
 
   private toSellerProfileResponse(seller: SellerProfileRecord) {
+    const operatingCurrency = this.sellerOperatingCurrencyFromProfile(seller);
     return {
       id: seller.id,
       storeName: seller.storeName,
@@ -1258,6 +1259,7 @@ export class SellersService {
       enabledCapabilities: seller.enabledCapabilities,
       status: seller.status,
       approvalStatus: seller.approvalStatus,
+      operatingCurrency,
       subscriptionStatus: seller.subscriptionStatus,
       subscriptionStartedAt: seller.subscriptionStartedAt,
       subscriptionCurrentPeriodEnd: seller.subscriptionCurrentPeriodEnd,
@@ -1353,6 +1355,16 @@ export class SellersService {
         plan: this.toSellerSubscriptionPlanResponse(subscription.plan),
       })),
     };
+  }
+
+  private sellerOperatingCurrencyFromProfile(seller: SellerProfileRecord) {
+    const countryCode = seller.addresses[0]?.countryCode?.trim().toUpperCase() || "IN";
+    const country = seller.addresses[0]?.country?.trim().toLowerCase();
+    if (countryCode === "AE" || country === "united arab emirates") return "AED";
+    if (countryCode === "US" || country === "united states") return "USD";
+    if (countryCode === "GB" || countryCode === "UK" || country === "united kingdom") return "GBP";
+    if (countryCode === "SG" || country === "singapore") return "SGD";
+    return "INR";
   }
 
   private toSellerSubscriptionPlanResponse(

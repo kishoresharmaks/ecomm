@@ -150,6 +150,8 @@ const publicProductInclude = {
       isEnabled: true,
       manualTransportFreeDistanceKm: true,
       manualTransportChargePerKmPaise: true,
+      manualTransportChargePerKmMinor: true,
+      manualTransportCurrency: true,
       manualTransportNote: true,
     },
     orderBy: { deliveryMode: "asc" as const },
@@ -166,7 +168,8 @@ const manualTransportNoteMaxLength = 500;
 
 type ManualTransportProductConfig = {
   freeDistanceKm: number;
-  chargePerKmPaise: number;
+  chargePerKmMinor: number;
+  currency: string;
   note: string;
 };
 
@@ -355,12 +358,14 @@ export class ProductsService {
     }));
     const listingMode = category.productTemplate?.listingMode ?? ProductListingMode.CART;
     const slug = await this.createUniqueProductSlug(dto.name);
-    const variantInputs = await this.prepareVariantInputs(dto.name, variants);
     const deliveryModes = this.normalizeProductDeliveryModes(dto.deliveryModes);
+    const sellerCurrency = await this.resolveSellerOperatingCurrency(seller.id);
+    const variantInputs = await this.prepareVariantInputs(dto.name, variants, sellerCurrency);
     const manualTransport = this.normalizeManualTransportConfig(
       deliveryModes,
       dto.manualTransport,
       null,
+      sellerCurrency,
     );
     const autoApproveProduct = await this.isProductAutoApprovalEnabled();
     const nextProductStatus = autoApproveProduct ? ProductStatus.ACTIVE : ProductStatus.INACTIVE;
@@ -422,6 +427,7 @@ export class ProductsService {
             variantName: variantInput.variantName ?? null,
             pricePaise: variantInput.pricePaise,
             mrpPaise: variantInput.mrpPaise ?? null,
+            currency: variantInput.currency,
             stockQuantity: variantInput.stockQuantity ?? 0,
             packageWeightGrams: variantInput.packageWeightGrams ?? null,
             packageLengthCm: variantInput.packageLengthCm ?? null,
@@ -524,10 +530,12 @@ export class ProductsService {
     const nextDeliveryModes =
       dto.deliveryModes !== undefined ? this.normalizeProductDeliveryModes(dto.deliveryModes) : null;
     const effectiveDeliveryModes = nextDeliveryModes ?? this.productDeliveryModeValues(existing);
+    const sellerCurrency = await this.resolveSellerOperatingCurrency(seller.id);
     const manualTransport = this.normalizeManualTransportConfig(
       effectiveDeliveryModes,
       dto.manualTransport,
       this.productManualTransportConfig(existing),
+      sellerCurrency,
     );
     const autoApproveProduct = await this.isProductAutoApprovalEnabled();
     const nextProductStatus = autoApproveProduct ? ProductStatus.ACTIVE : ProductStatus.INACTIVE;
@@ -592,7 +600,7 @@ export class ProductsService {
 
       if (variantDtos?.length) {
         for (const variantDto of variantDtos) {
-          await this.upsertVariant(tx, actor, productId, product.name, variantDto);
+          await this.upsertVariant(tx, actor, productId, product.name, variantDto, sellerCurrency);
         }
       }
 
@@ -1238,6 +1246,31 @@ export class ProductsService {
     return seller;
   }
 
+  private async resolveSellerOperatingCurrency(sellerId: string) {
+    const address = await this.prisma.client.sellerAddress.findFirst({
+      where: { sellerId },
+      orderBy: { createdAt: "asc" },
+      select: { countryCode: true },
+    });
+    const countryCode = address?.countryCode?.trim().toUpperCase() || "IN";
+    if (!this.prisma.client.locationCountry && countryCode === "IN") {
+      return "INR";
+    }
+    const country = await this.prisma.client.locationCountry.findUnique({
+      where: { code: countryCode },
+      select: { currency: true, enabled: true },
+    });
+
+    if (!country && countryCode === "IN") {
+      return "INR";
+    }
+    if (!country?.enabled || !country.currency?.trim()) {
+      throw new BadRequestException("Seller country currency is not configured.");
+    }
+
+    return this.normalizeCurrency(country.currency);
+  }
+
   private async ensureActiveCategory(categoryId: string) {
     const category = await this.prisma.client.category.findFirst({
       where: {
@@ -1314,25 +1347,55 @@ export class ProductsService {
     return uniqueModes;
   }
 
+  private normalizeCurrency(value: string | null | undefined) {
+    const currency = value?.trim().toUpperCase();
+    if (!currency || !/^[A-Z]{3}$/.test(currency)) {
+      throw new BadRequestException("Currency must be a valid ISO currency code.");
+    }
+
+    return currency;
+  }
+
+  private normalizeVariantCurrency(value: string | null | undefined, sellerCurrency: string) {
+    const currency = value ? this.normalizeCurrency(value) : sellerCurrency;
+    if (currency !== sellerCurrency) {
+      throw new BadRequestException(
+        `Product prices must be entered in the seller operating currency (${sellerCurrency}).`,
+      );
+    }
+
+    return currency;
+  }
+
   private normalizeManualTransportConfig(
     deliveryModes: DeliveryMode[],
     input: CreateSellerProductDto["manualTransport"] | undefined,
     existing: ManualTransportProductConfig | null,
+    sellerCurrency: string,
   ): ManualTransportProductConfig | null {
     if (!deliveryModes.includes(DeliveryMode.MANUAL_TRANSPORT)) {
       return null;
     }
 
     const source = input ?? existing;
+    const sourceRecord = source as
+      | (ManualTransportProductConfig & { chargePerKmPaise?: number })
+      | (CreateSellerProductDto["manualTransport"] & { chargePerKmPaise?: number })
+      | null
+      | undefined;
     const freeDistanceKm = Number(source?.freeDistanceKm);
-    const chargePerKmPaise = Number(source?.chargePerKmPaise);
+    const chargePerKmMinor = Number(sourceRecord?.chargePerKmMinor ?? sourceRecord?.chargePerKmPaise);
+    const currency = this.normalizeCurrency(source?.currency ?? existing?.currency ?? sellerCurrency);
     const note = typeof source?.note === "string" ? source.note.trim() : "";
 
     if (!source || !Number.isFinite(freeDistanceKm) || freeDistanceKm < 0 || freeDistanceKm > 5000) {
       throw new BadRequestException("Manual transport free delivery distance is required.");
     }
-    if (!Number.isInteger(chargePerKmPaise) || chargePerKmPaise < 0) {
+    if (!Number.isInteger(chargePerKmMinor) || chargePerKmMinor < 0) {
       throw new BadRequestException("Manual transport per kilometre charge is required.");
+    }
+    if (currency !== sellerCurrency) {
+      throw new BadRequestException("Manual transport currency must match the seller operating currency.");
     }
     if (note.length < 5) {
       throw new BadRequestException("Manual transport delivery notes are required.");
@@ -1343,7 +1406,8 @@ export class ProductsService {
 
     return {
       freeDistanceKm: Math.round(freeDistanceKm * 100) / 100,
-      chargePerKmPaise,
+      chargePerKmMinor,
+      currency,
       note,
     };
   }
@@ -1376,13 +1440,18 @@ export class ProductsService {
       return {
         manualTransportFreeDistanceKm: null,
         manualTransportChargePerKmPaise: null,
+        manualTransportChargePerKmMinor: null,
+        manualTransportCurrency: null,
         manualTransportNote: null,
       };
     }
 
     return {
       manualTransportFreeDistanceKm: manualTransport.freeDistanceKm,
-      manualTransportChargePerKmPaise: manualTransport.chargePerKmPaise,
+      manualTransportChargePerKmPaise:
+        manualTransport.currency === "INR" ? manualTransport.chargePerKmMinor : null,
+      manualTransportChargePerKmMinor: manualTransport.chargePerKmMinor,
+      manualTransportCurrency: manualTransport.currency,
       manualTransportNote: manualTransport.note,
     };
   }
@@ -1403,6 +1472,8 @@ export class ProductsService {
       isEnabled?: boolean | null;
       manualTransportFreeDistanceKm?: Prisma.Decimal | number | string | null;
       manualTransportChargePerKmPaise?: number | null;
+      manualTransportChargePerKmMinor?: number | null;
+      manualTransportCurrency?: string | null;
       manualTransportNote?: string | null;
     }> | null;
   }): ManualTransportProductConfig | null {
@@ -1413,8 +1484,10 @@ export class ProductsService {
       !option ||
       option.manualTransportFreeDistanceKm === null ||
       option.manualTransportFreeDistanceKm === undefined ||
-      option.manualTransportChargePerKmPaise === null ||
-      option.manualTransportChargePerKmPaise === undefined ||
+      ((option.manualTransportChargePerKmMinor === null ||
+        option.manualTransportChargePerKmMinor === undefined) &&
+        (option.manualTransportChargePerKmPaise === null ||
+          option.manualTransportChargePerKmPaise === undefined)) ||
       !option.manualTransportNote
     ) {
       return null;
@@ -1422,7 +1495,8 @@ export class ProductsService {
 
     return {
       freeDistanceKm: Number(option.manualTransportFreeDistanceKm),
-      chargePerKmPaise: option.manualTransportChargePerKmPaise,
+      chargePerKmMinor: option.manualTransportChargePerKmMinor ?? option.manualTransportChargePerKmPaise ?? 0,
+      currency: this.normalizeCurrency(option.manualTransportCurrency ?? "INR"),
       note: option.manualTransportNote,
     };
   }
@@ -1485,13 +1559,18 @@ export class ProductsService {
     ]);
   }
 
-  private async prepareVariantInputs(productName: string, variants: ProductVariantDto[]) {
-    const prepared: Array<ProductVariantDto & { sku: string }> = [];
+  private async prepareVariantInputs(
+    productName: string,
+    variants: ProductVariantDto[],
+    sellerCurrency: string,
+  ) {
+    const prepared: Array<Omit<ProductVariantDto, "currency"> & { sku: string; currency: string }> = [];
 
     for (const [index, variant] of variants.entries()) {
       const skuBase = variant.sku ?? `${productName}-${variant.variantName ?? index + 1}`;
       prepared.push({
         ...variant,
+        currency: this.normalizeVariantCurrency(variant.currency, sellerCurrency),
         sku: await this.createUniqueSku(skuBase),
       });
     }
@@ -1518,6 +1597,7 @@ export class ProductsService {
     productId: string,
     productName: string,
     variantDto: ProductVariantDto | UpdateProductVariantDto,
+    sellerCurrency: string,
   ) {
     const existingVariant = variantDto.id
       ? await tx.productVariant.findFirst({
@@ -1532,6 +1612,10 @@ export class ProductsService {
     if (existingVariant) {
       const nextStock = variantDto.stockQuantity ?? existingVariant.stockQuantity;
       const stockDifference = nextStock - existingVariant.stockQuantity;
+      const nextCurrency =
+        variantDto.currency !== undefined || variantDto.pricePaise !== undefined || variantDto.mrpPaise !== undefined
+          ? this.normalizeVariantCurrency(variantDto.currency, sellerCurrency)
+          : existingVariant.currency;
       const variant = await tx.productVariant.update({
         where: { id: existingVariant.id },
         data: {
@@ -1543,6 +1627,7 @@ export class ProductsService {
             : {}),
           ...(variantDto.pricePaise !== undefined ? { pricePaise: variantDto.pricePaise } : {}),
           ...(variantDto.mrpPaise !== undefined ? { mrpPaise: variantDto.mrpPaise ?? null } : {}),
+          ...(nextCurrency !== existingVariant.currency ? { currency: nextCurrency } : {}),
           ...(variantDto.stockQuantity !== undefined
             ? { stockQuantity: variantDto.stockQuantity }
             : {}),
@@ -1599,6 +1684,7 @@ export class ProductsService {
         variantName: variantDto.variantName ?? null,
         pricePaise: variantDto.pricePaise,
         mrpPaise: variantDto.mrpPaise ?? null,
+        currency: this.normalizeVariantCurrency(variantDto.currency, sellerCurrency),
         stockQuantity: variantDto.stockQuantity ?? 0,
         packageWeightGrams: variantDto.packageWeightGrams ?? null,
         packageLengthCm: variantDto.packageLengthCm ?? null,

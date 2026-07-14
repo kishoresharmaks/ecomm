@@ -23,6 +23,7 @@ import {
   paginationFromQuery,
 } from "../common/pagination";
 import { RequestUser } from "../auth/types/indihub-request";
+import { MarketService, type MarketCurrencySnapshot } from "../market/market.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { readBooleanSetting, readNumberSetting } from "../settings/setting-value-utils";
 import { MarkPayoutPaidDto, PayoutActionDto, PayoutQueryDto, SellerPayoutProfileVerificationDto, SellerPayoutRequestDto } from "./dto/finance.dto";
@@ -34,6 +35,62 @@ const payoutSettingKeys = {
   minimumPaise: "seller.payout.minimum_paise"
 } as const;
 const defaultMinimumPayoutPaise = 10_000;
+const payoutMoneyFields = [
+  "grossSalesPaise",
+  "commissionPaise",
+  "gstOnCommissionPaise",
+  "tdsPaise",
+  "tcsPaise",
+  "platformFeePaise",
+  "refundAdjustmentPaise",
+  "adjustmentPaise",
+  "netPayablePaise",
+] as const;
+const payoutOrderSplitMoneyFields = [
+  "sellerSubtotalPaise",
+  "commissionPaise",
+  "gstOnCommissionPaise",
+  "tdsPaise",
+  "tcsPaise",
+  "platformFeePaise",
+  "couponSellerFundedDiscountPaise",
+  "couponAdjustmentPaise",
+  "refundAdjustmentPaise",
+  "netPayablePaise",
+] as const;
+const payoutB2BOrderMoneyFields = [
+  "subtotalPaise",
+  "buyerPayableAmountPaise",
+  "paidAmountPaise",
+  "commissionAmountPaise",
+  "sellerPayoutAmountPaise",
+  "transportChargePaise",
+] as const;
+const serviceSettlementMoneyFields = [
+  "grossAmountPaise",
+  "commissionPaise",
+  "gstOnCommissionPaise",
+  "tdsPaise",
+  "tcsPaise",
+  "platformFeePaise",
+  "refundAdjustmentPaise",
+  "netPayablePaise",
+] as const;
+const receivableOffsetMoneyFields = [
+  "grossCashCollectedPaise",
+  "commissionPaise",
+  "gstOnCommissionPaise",
+  "tdsPaise",
+  "tcsPaise",
+  "platformFeePaise",
+  "amountDueToPlatformPaise",
+  "settledPaise",
+  "waivedPaise",
+  "reversalPaise",
+  "offsetPaise",
+  "outstandingPaise",
+] as const;
+const ledgerEntryMoneyFields = ["debitPaise", "creditPaise", "balanceAfterPaise"] as const;
 
 type PayoutRequestSplit = Prisma.OrderSellerSplitGetPayload<{
   include: {
@@ -63,7 +120,8 @@ export class SellerPayoutsService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(FinanceCalculatorService) private readonly calculator: FinanceCalculatorService,
-    @Inject(SellerLedgerService) private readonly ledger: SellerLedgerService
+    @Inject(SellerLedgerService) private readonly ledger: SellerLedgerService,
+    @Inject(MarketService) private readonly marketService: MarketService
   ) {}
 
   async listPayouts(query: PayoutQueryDto, sellerIdFromAuth?: string) {
@@ -97,6 +155,11 @@ export class SellerPayoutsService {
       });
       const pageResult = cursorPageFromItems(items, take);
 
+      if (sellerIdFromAuth) {
+        const market = await this.marketForSellerId(sellerIdFromAuth);
+        return { ...pageResult, items: pageResult.items.map((item) => this.convertPayoutForSeller(item, market)), limit: take };
+      }
+
       return { ...pageResult, limit: take };
     }
 
@@ -112,6 +175,11 @@ export class SellerPayoutsService {
       const total = await tx.sellerPayout.count({ where });
       return [items, total] as const;
     });
+
+    if (sellerIdFromAuth) {
+      const market = await this.marketForSellerId(sellerIdFromAuth);
+      return { items: items.map((item) => this.convertPayoutForSeller(item, market)), total, page, limit: take };
+    }
 
     return { items, total, page, limit: take };
   }
@@ -170,7 +238,7 @@ export class SellerPayoutsService {
           tcsPaise: availability.tcsPaise,
           platformFeePaise: availability.platformFeePaise,
           refundAdjustmentPaise: availability.refundAdjustmentPaise,
-          adjustmentPaise: availability.manualAdjustmentPaise - availability.serviceReceivableOffsetPaise - availability.sellerCashReceivableOffsetPaise,
+          adjustmentPaise: availability.manualAdjustmentPaise - availability.serviceReceivableOffsetPaise - availability.sellerCashReceivableOffsetPaise - availability.ledgerDebtOffsetPaise,
           netPayablePaise: availability.netPayablePaise,
           currency: availability.currency,
           note: dto.note?.trim() || "Requested by seller for manual payout."
@@ -336,6 +404,7 @@ export class SellerPayoutsService {
           eligibleServiceSettlementCount: availability.eligibleServiceSettlementCount,
           serviceReceivableOffsetPaise: availability.serviceReceivableOffsetPaise,
           sellerCashReceivableOffsetPaise: availability.sellerCashReceivableOffsetPaise,
+          ledgerDebtOffsetPaise: availability.ledgerDebtOffsetPaise,
           manualAdjustmentPaise: availability.manualAdjustmentPaise,
           netPayablePaise: availability.netPayablePaise,
           note: dto.note
@@ -400,6 +469,11 @@ export class SellerPayoutsService {
 
     if (!payout) {
       throw new NotFoundException("Seller payout not found.");
+    }
+
+    if (sellerIdFromAuth) {
+      const market = await this.marketForSellerId(sellerIdFromAuth);
+      return this.convertPayoutForSeller(payout, market);
     }
 
     return payout;
@@ -1083,12 +1157,17 @@ export class SellerPayoutsService {
   }
 
   private async calculateSellerPayoutAvailability(tx: Prisma.TransactionClient, sellerId: string) {
-    const [seller, settings, splits, b2bOrders, serviceSettlements, receivables, sellerCashReceivables, manualAdjustments] = await Promise.all([
+    const [seller, settings, splits, b2bOrders, serviceSettlements, receivables, sellerCashReceivables, manualAdjustments, latestLedgerEntry, pendingPayoutsAgg, paidPayoutsAgg] = await Promise.all([
       tx.seller.findUnique({
         where: { id: sellerId },
         include: {
           payoutProfile: true,
-          profile: true
+          profile: true,
+          addresses: {
+            select: { countryCode: true },
+            orderBy: { createdAt: "asc" },
+            take: 1,
+          },
         }
       }),
       this.payoutRequestSettings(tx),
@@ -1169,6 +1248,19 @@ export class SellerPayoutsService {
           entryType: SellerLedgerEntryType.MANUAL_ADJUSTMENT,
         },
         orderBy: { createdAt: "asc" },
+      }),
+      tx.sellerLedgerEntry.findFirst({
+        where: { sellerId },
+        orderBy: { createdAt: "desc" },
+        select: { balanceAfterPaise: true }
+      }),
+      tx.sellerPayout.aggregate({
+        where: { sellerId, status: { in: [SellerPayoutStatus.PENDING_APPROVAL, SellerPayoutStatus.APPROVED] } },
+        _sum: { netPayablePaise: true }
+      }),
+      tx.sellerPayout.aggregate({
+        where: { sellerId, status: SellerPayoutStatus.PAID },
+        _sum: { netPayablePaise: true }
       })
     ]);
 
@@ -1258,6 +1350,10 @@ export class SellerPayoutsService {
     const sellerCashReceivableOutstandingPaise = sellerCashReceivables.reduce((sum, receivable) => sum + this.sellerCashReceivableOutstanding(receivable), 0);
     totals.netPayablePaise = Math.max(0, totals.netPayablePaise - sellerCashReceivableOffsetPaise);
 
+    const currentWalletBalancePaise = latestLedgerEntry?.balanceAfterPaise ?? 0;
+    const ledgerDebtOffsetPaise = currentWalletBalancePaise < 0 ? Math.min(Math.abs(currentWalletBalancePaise), totals.netPayablePaise) : 0;
+    totals.netPayablePaise = Math.max(0, totals.netPayablePaise - ledgerDebtOffsetPaise);
+
     const orderDates = [
       ...calculations.map(({ split }) => split.order.createdAt),
       ...eligibleB2BOrders.map((order) => order.createdAt),
@@ -1269,6 +1365,7 @@ export class SellerPayoutsService {
     return {
       ...settings,
       sellerReady,
+      sellerCountryCode: seller.addresses?.[0]?.countryCode?.trim().toUpperCase() || "IN",
       hasPayoutMethod,
       eligibleSplitCount: calculations.length,
       eligibleB2BOrderCount: eligibleB2BOrders.length,
@@ -1278,6 +1375,9 @@ export class SellerPayoutsService {
       sellerCashReceivableOffsetPaise,
       sellerCashReceivableOutstandingPaise,
       manualAdjustmentPaise,
+      ledgerDebtOffsetPaise,
+      pendingPayoutsPaise: pendingPayoutsAgg._sum.netPayablePaise ?? 0,
+      paidPayoutsPaise: paidPayoutsAgg._sum.netPayablePaise ?? 0,
       periodFrom: orderDates.length ? new Date(Math.min(...orderDates.map((date) => date.getTime()))) : null,
       periodTo: orderDates.length ? new Date(Math.max(...orderDates.map((date) => date.getTime()))) : null,
       calculations,
@@ -1291,35 +1391,116 @@ export class SellerPayoutsService {
     };
   }
 
-  private publicAvailability(availability: Awaited<ReturnType<typeof this.calculateSellerPayoutAvailability>>) {
-    const blockers = this.requestBlockers(availability);
+  private async publicAvailability(availability: Awaited<ReturnType<typeof this.calculateSellerPayoutAvailability>>) {
+    const market = await this.marketService.getMarketCurrency(availability.sellerCountryCode, {
+      requireFresh: true,
+      forceRefresh: true,
+    });
+    const blockers = this.requestBlockers(availability, market);
 
     return {
       requestEnabled: availability.requestEnabled,
-      minimumPayoutPaise: availability.minimumPayoutPaise,
+      minimumPayoutPaise: this.marketService.convertMinorUnits(availability.minimumPayoutPaise, market),
       sellerReady: availability.sellerReady,
       hasPayoutMethod: availability.hasPayoutMethod,
       eligibleSplitCount: availability.eligibleSplitCount,
       eligibleB2BOrderCount: availability.eligibleB2BOrderCount,
       eligibleServiceSettlementCount: availability.eligibleServiceSettlementCount,
-      serviceReceivableOffsetPaise: availability.serviceReceivableOffsetPaise,
-      sellerCashReceivableOffsetPaise: availability.sellerCashReceivableOffsetPaise,
-      sellerCashReceivableOutstandingPaise: availability.sellerCashReceivableOutstandingPaise,
+      serviceReceivableOffsetPaise: this.marketService.convertMinorUnits(availability.serviceReceivableOffsetPaise, market),
+      sellerCashReceivableOffsetPaise: this.marketService.convertMinorUnits(availability.sellerCashReceivableOffsetPaise, market),
+      sellerCashReceivableOutstandingPaise: this.marketService.convertMinorUnits(availability.sellerCashReceivableOutstandingPaise, market),
+      ledgerDebtOffsetPaise: this.marketService.convertMinorUnits(availability.ledgerDebtOffsetPaise, market),
       holdReceivableCount: availability.holdReceivableCount,
+      pendingPayoutsPaise: this.marketService.convertMinorUnits(availability.pendingPayoutsPaise, market),
+      paidPayoutsPaise: this.marketService.convertMinorUnits(availability.paidPayoutsPaise, market),
       periodFrom: availability.periodFrom?.toISOString() ?? null,
       periodTo: availability.periodTo?.toISOString() ?? null,
-      grossSalesPaise: availability.grossSalesPaise,
-      commissionPaise: availability.commissionPaise,
-      gstOnCommissionPaise: availability.gstOnCommissionPaise,
-      tdsPaise: availability.tdsPaise,
-      tcsPaise: availability.tcsPaise,
-      platformFeePaise: availability.platformFeePaise,
-      refundAdjustmentPaise: availability.refundAdjustmentPaise,
-      netPayablePaise: availability.netPayablePaise,
-      currency: availability.currency,
+      grossSalesPaise: this.marketService.convertMinorUnits(availability.grossSalesPaise, market),
+      commissionPaise: this.marketService.convertMinorUnits(availability.commissionPaise, market),
+      gstOnCommissionPaise: this.marketService.convertMinorUnits(availability.gstOnCommissionPaise, market),
+      tdsPaise: this.marketService.convertMinorUnits(availability.tdsPaise, market),
+      tcsPaise: this.marketService.convertMinorUnits(availability.tcsPaise, market),
+      platformFeePaise: this.marketService.convertMinorUnits(availability.platformFeePaise, market),
+      refundAdjustmentPaise: this.marketService.convertMinorUnits(availability.refundAdjustmentPaise, market),
+      netPayablePaise: this.marketService.convertMinorUnits(availability.netPayablePaise, market),
+      currency: market.currency,
+      baseCurrency: market.baseCurrency,
+      fxRate: market.rate,
       canRequest: blockers.length === 0,
       blockers
     };
+  }
+
+  private async marketForSellerId(sellerId: string) {
+    const seller = await this.prisma.client.seller.findUnique({
+      where: { id: sellerId },
+      select: {
+        addresses: {
+          select: { countryCode: true },
+          orderBy: { createdAt: "asc" },
+          take: 1,
+        },
+      },
+    });
+
+    return this.marketService.getMarketCurrency(seller?.addresses[0]?.countryCode?.trim().toUpperCase() || "IN", {
+      requireFresh: true,
+      forceRefresh: true,
+    });
+  }
+
+  private convertPayoutForSeller<T extends Record<string, unknown>>(payout: T, market: MarketCurrencySnapshot) {
+    const converted = this.convertCurrencyRecord(payout, payoutMoneyFields, market) as Record<string, unknown>;
+
+    if (Array.isArray(converted.orderSplits)) {
+      converted.orderSplits = converted.orderSplits.map((split) =>
+        this.convertCurrencyRecord(split as Record<string, unknown>, payoutOrderSplitMoneyFields, market),
+      );
+    }
+    if (Array.isArray(converted.b2bOrders)) {
+      converted.b2bOrders = converted.b2bOrders.map((order) =>
+        this.convertCurrencyRecord(order as Record<string, unknown>, payoutB2BOrderMoneyFields, market),
+      );
+    }
+    if (Array.isArray(converted.serviceSettlements)) {
+      converted.serviceSettlements = converted.serviceSettlements.map((settlement) =>
+        this.convertCurrencyRecord(settlement as Record<string, unknown>, serviceSettlementMoneyFields, market),
+      );
+    }
+    if (Array.isArray(converted.serviceReceivableOffsets)) {
+      converted.serviceReceivableOffsets = converted.serviceReceivableOffsets.map((offset) =>
+        this.convertCurrencyRecord(offset as Record<string, unknown>, receivableOffsetMoneyFields, market),
+      );
+    }
+    if (Array.isArray(converted.sellerCashReceivableOffsets)) {
+      converted.sellerCashReceivableOffsets = converted.sellerCashReceivableOffsets.map((offset) =>
+        this.convertCurrencyRecord(offset as Record<string, unknown>, receivableOffsetMoneyFields, market),
+      );
+    }
+    if (Array.isArray(converted.ledgerEntries)) {
+      converted.ledgerEntries = converted.ledgerEntries.map((entry) =>
+        this.convertCurrencyRecord(entry as Record<string, unknown>, ledgerEntryMoneyFields, market),
+      );
+    }
+
+    return converted as T;
+  }
+
+  private convertCurrencyRecord<T extends Record<string, unknown>, K extends readonly string[]>(
+    record: T,
+    fields: K,
+    market: MarketCurrencySnapshot,
+  ) {
+    const converted: Record<string, unknown> = { ...record };
+    for (const field of fields) {
+      const value = converted[field];
+      if (typeof value === "number") {
+        converted[field] = this.marketService.convertMinorUnits(value, market);
+      }
+    }
+    converted.currency = market.currency;
+
+    return converted as T;
   }
 
   private requestBlockers(availability: {
@@ -1333,7 +1514,7 @@ export class SellerPayoutsService {
     sellerCashReceivableOffsetPaise?: number;
     netPayablePaise: number;
     minimumPayoutPaise: number;
-  }) {
+  }, market?: MarketCurrencySnapshot) {
     const blockers: string[] = [];
 
     if (!availability.requestEnabled) {
@@ -1359,10 +1540,20 @@ export class SellerPayoutsService {
       blockers.push("No delivered and paid orders are currently eligible for payout.");
     }
     if (availability.netPayablePaise > 0 && availability.netPayablePaise < availability.minimumPayoutPaise) {
-      blockers.push(`Available payout is below the minimum amount of INR ${(availability.minimumPayoutPaise / 100).toLocaleString("en-IN")}.`);
+      const minimumMinor = market ? this.marketService.convertMinorUnits(availability.minimumPayoutPaise, market) : availability.minimumPayoutPaise;
+      const minimumCurrency = market?.currency ?? "INR";
+      blockers.push(`Available payout is below the minimum amount of ${this.formatMinorAmount(minimumMinor, minimumCurrency)}.`);
     }
 
     return blockers;
+  }
+
+  private formatMinorAmount(minor: number, currency: string) {
+    return new Intl.NumberFormat(currency === "INR" ? "en-IN" : "en-US", {
+      style: "currency",
+      currency,
+      maximumFractionDigits: (minor / 100) % 1 === 0 ? 0 : 2,
+    }).format(minor / 100);
   }
 
   private async payoutRequestSettings(tx: Prisma.TransactionClient) {

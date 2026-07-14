@@ -524,18 +524,48 @@ export function SellerOrderDetailClient({
               {formatMoney(sellerSplit?.sellerSubtotalPaise ?? order.totalPaise, order.currency)}
             </p>
             {sellerSplit ? (
-              <div className="mt-2 space-y-1 text-xs font-semibold text-[#667085]">
-                <p>Commission {formatMoney(sellerSplit.commissionPaise, order.currency)}</p>
+              <div className="mt-4 space-y-2 text-sm font-semibold text-[#667085]">
+                <div className="flex justify-between gap-4 lg:justify-end">
+                  <span>Gross Amount</span>
+                  <span className="text-[#1F2933]">{formatMoney(sellerSplit.sellerSubtotalPaise, order.currency)}</span>
+                </div>
+                <div className="flex justify-between gap-4 lg:justify-end">
+                  <span>Commission</span>
+                  <span className="text-[#9F2600]">-{formatMoney(sellerSplit.commissionPaise ?? 0, order.currency)}</span>
+                </div>
+                <div className="flex justify-between gap-4 lg:justify-end">
+                  <span>Platform Fee</span>
+                  <span className="text-[#9F2600]">-{formatMoney(sellerSplit.platformFeePaise ?? 0, order.currency)}</span>
+                </div>
+                <div className="flex justify-between gap-4 lg:justify-end">
+                  <span>GST on Comm/Fee</span>
+                  <span className="text-[#9F2600]">-{formatMoney(sellerSplit.gstOnCommissionPaise ?? 0, order.currency)}</span>
+                </div>
+                <div className="flex justify-between gap-4 lg:justify-end">
+                  <span>TDS</span>
+                  <span className="text-[#9F2600]">-{formatMoney(sellerSplit.tdsPaise ?? 0, order.currency)}</span>
+                </div>
+                <div className="flex justify-between gap-4 lg:justify-end">
+                  <span>TCS</span>
+                  <span className="text-[#9F2600]">-{formatMoney(sellerSplit.tcsPaise ?? 0, order.currency)}</span>
+                </div>
                 {(sellerSplit.couponSellerFundedDiscountPaise ?? 0) > 0 ? (
-                  <p className="font-black text-[#9F2600]">
-                    Seller-funded coupon -{formatMoney(sellerSplit.couponSellerFundedDiscountPaise ?? 0, order.currency)}
-                  </p>
+                  <div className="flex justify-between gap-4 lg:justify-end">
+                    <span>Seller-funded coupon</span>
+                    <span className="text-[#9F2600]">-{formatMoney(sellerSplit.couponSellerFundedDiscountPaise ?? 0, order.currency)}</span>
+                  </div>
                 ) : null}
                 {(sellerSplit.couponPlatformFundedDiscountPaise ?? 0) > 0 ? (
-                  <p className="font-bold text-[#0F8A5F]">
+                  <p className="mt-2 text-xs font-bold text-[#0F8A5F]">
                     Platform-funded coupon shown to buyer, seller payout unaffected
                   </p>
                 ) : null}
+                <div className="mt-3 flex justify-between gap-4 border-t border-[#F2D5CC] pt-3 text-base lg:justify-end">
+                  <span className="font-bold text-[#163B5C]">Net added to Wallet</span>
+                  <span className="font-black text-[#0F8A5F]">
+                    {formatMoney(sellerSplit.netPayablePaise ?? 0, order.currency)}
+                  </span>
+                </div>
               </div>
             ) : null}
           </div>

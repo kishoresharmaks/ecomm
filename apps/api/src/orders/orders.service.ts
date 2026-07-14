@@ -722,6 +722,8 @@ export class OrdersService {
                 isEnabled: true,
                 manualTransportFreeDistanceKm: true,
                 manualTransportChargePerKmPaise: true,
+                manualTransportChargePerKmMinor: true,
+                manualTransportCurrency: true,
                 manualTransportNote: true,
               },
             },
@@ -739,11 +741,28 @@ export class OrdersService {
         }
 
         const price = await this.dealPricing.resolveVariantPrice(variant, product.id, tx);
-        validatedItems.push({ item, variant, product, price });
+        const baseEffectiveUnitPricePaise = await this.marketService.convertMinorUnitsToBase(
+          price.effectiveUnitPricePaise,
+          variant.currency,
+          { requireFresh: true },
+        );
+        const baseOriginalUnitPricePaise = await this.marketService.convertMinorUnitsToBase(
+          price.originalUnitPricePaise,
+          variant.currency,
+          { requireFresh: true },
+        );
+        const basePrice = {
+          effectiveUnitPricePaise: baseEffectiveUnitPricePaise,
+          originalUnitPricePaise: baseOriginalUnitPricePaise,
+          dealDiscountBps: price.dealDiscountBps,
+          dealDiscountPaise: Math.max(0, baseOriginalUnitPricePaise - baseEffectiveUnitPricePaise),
+          dealSnapshot: price.dealSnapshot,
+        };
+        validatedItems.push({ item, variant, product, price, basePrice });
       }
 
       const subtotalPaise = validatedItems.reduce(
-        (total, { item, price }) => total + item.quantity * price.effectiveUnitPricePaise,
+        (total, { item, basePrice }) => total + item.quantity * basePrice.effectiveUnitPricePaise,
         0,
       );
       const sellerPackages = this.checkoutSellerPackages(validatedItems);
@@ -897,9 +916,9 @@ export class OrdersService {
         }>
       >();
 
-      for (const { item, variant, product, price } of validatedItems) {
-        const lineTotalPaise = item.quantity * price.effectiveUnitPricePaise;
-        const lineDealDiscountPaise = item.quantity * price.dealDiscountPaise;
+      for (const { item, variant, product, price, basePrice } of validatedItems) {
+        const lineTotalPaise = item.quantity * basePrice.effectiveUnitPricePaise;
+        const lineDealDiscountPaise = item.quantity * basePrice.dealDiscountPaise;
         const couponAllocation = this.couponsService.itemAllocation(coupon, item.id);
         sellerTotals.set(
           product.sellerId,
@@ -916,24 +935,34 @@ export class OrdersService {
             variantSnapshot: {
               sku: variant.sku,
               variantName: variant.variantName,
+              sellerUnitPriceMinor: price.effectiveUnitPricePaise,
+              sellerOriginalUnitPriceMinor: price.originalUnitPricePaise,
+              sellerCurrency: variant.currency,
+              baseUnitPricePaise: basePrice.effectiveUnitPricePaise,
+              baseOriginalUnitPricePaise: basePrice.originalUnitPricePaise,
+              baseCurrency: market.baseCurrency,
             },
             quantity: item.quantity,
             activeQuantity: item.quantity,
             retainedQuantity: item.quantity,
-            unitPricePaise: price.effectiveUnitPricePaise,
+            unitPricePaise: basePrice.effectiveUnitPricePaise,
             lineTotalPaise,
-            currency: variant.currency,
-            originalUnitPricePaise: price.dealSnapshot ? price.originalUnitPricePaise : null,
-            dealDiscountBps: price.dealDiscountBps,
+            currency: market.baseCurrency,
+            originalUnitPricePaise: price.dealSnapshot ? basePrice.originalUnitPricePaise : null,
+            dealDiscountBps: basePrice.dealDiscountBps,
             dealDiscountPaise: lineDealDiscountPaise,
             dealId: price.dealSnapshot?.dealId ?? null,
             dealSnapshot: price.dealSnapshot
               ? {
                   ...price.dealSnapshot,
-                  originalUnitPricePaise: price.originalUnitPricePaise,
-                  effectiveUnitPricePaise: price.effectiveUnitPricePaise,
-                  unitDiscountPaise: price.dealDiscountPaise,
+                  originalUnitPricePaise: basePrice.originalUnitPricePaise,
+                  effectiveUnitPricePaise: basePrice.effectiveUnitPricePaise,
+                  unitDiscountPaise: basePrice.dealDiscountPaise,
                   lineDiscountPaise: lineDealDiscountPaise,
+                  sellerOriginalUnitPriceMinor: price.originalUnitPricePaise,
+                  sellerEffectiveUnitPriceMinor: price.effectiveUnitPricePaise,
+                  sellerCurrency: variant.currency,
+                  baseCurrency: market.baseCurrency,
                 }
               : Prisma.JsonNull,
             couponDiscountPaise: couponAllocation?.discountPaise ?? 0,
@@ -7776,7 +7805,7 @@ export class OrdersService {
   private orderCouponItems(
     items: Array<{
       item: { id: string; quantity: number };
-      price: { effectiveUnitPricePaise: number };
+      basePrice: { effectiveUnitPricePaise: number };
       product: {
         id: string;
         sellerId: string;
@@ -7785,13 +7814,13 @@ export class OrdersService {
       };
     }>,
   ): CouponCheckoutItem[] {
-    return items.map(({ item, price, product }) => ({
+    return items.map(({ item, basePrice, product }) => ({
       key: item.id,
       sellerId: product.sellerId,
       productId: product.id,
       categoryId: product.categoryId,
       quantity: item.quantity,
-      lineTotalPaise: item.quantity * price.effectiveUnitPricePaise,
+      lineTotalPaise: item.quantity * basePrice.effectiveUnitPricePaise,
       productName: product.name,
     }));
   }
@@ -7819,12 +7848,17 @@ export class OrdersService {
           isEnabled?: boolean | null;
           manualTransportFreeDistanceKm?: Prisma.Decimal | number | string | null;
           manualTransportChargePerKmPaise?: number | null;
+          manualTransportChargePerKmMinor?: number | null;
+          manualTransportCurrency?: string | null;
           manualTransportNote?: string | null;
         }> | null;
         seller: {
           storeName?: string | null;
           sellerType: SellerType;
         };
+      };
+      basePrice: {
+        effectiveUnitPricePaise: number;
       };
     }>,
   ) {
@@ -7843,7 +7877,8 @@ export class OrdersService {
           enabledDeliveryModes: DeliveryMode[];
           manualTransport?: {
             freeDistanceKm: number;
-            chargePerKmPaise: number;
+            chargePerKmMinor: number;
+            currency: string;
             note: string;
           } | null;
         }>;
@@ -7857,7 +7892,7 @@ export class OrdersService {
       }
     >();
 
-    for (const { item, variant, product, price } of items) {
+    for (const { item, variant, product, basePrice } of items) {
       const current = packages.get(product.sellerId) ?? {
         sellerId: product.sellerId,
         sellerName: product.seller.storeName ?? "Seller",
@@ -7878,7 +7913,7 @@ export class OrdersService {
         500,
       );
       const enabledDeliveryModes = this.enabledProductDeliveryModes(product);
-      current.subtotalPaise += item.quantity * price.effectiveUnitPricePaise;
+      current.subtotalPaise += item.quantity * basePrice.effectiveUnitPricePaise;
       current.allowedDeliveryModes = current.allowedDeliveryModes.filter((mode) =>
         enabledDeliveryModes.includes(mode),
       );
@@ -7946,6 +7981,8 @@ export class OrdersService {
       isEnabled?: boolean | null;
       manualTransportFreeDistanceKm?: Prisma.Decimal | number | string | null;
       manualTransportChargePerKmPaise?: number | null;
+      manualTransportChargePerKmMinor?: number | null;
+      manualTransportCurrency?: string | null;
       manualTransportNote?: string | null;
     }> | null;
   }) {
@@ -7956,8 +7993,10 @@ export class OrdersService {
       !option ||
       option.manualTransportFreeDistanceKm === null ||
       option.manualTransportFreeDistanceKm === undefined ||
-      option.manualTransportChargePerKmPaise === null ||
-      option.manualTransportChargePerKmPaise === undefined ||
+      ((option.manualTransportChargePerKmMinor === null ||
+        option.manualTransportChargePerKmMinor === undefined) &&
+        (option.manualTransportChargePerKmPaise === null ||
+          option.manualTransportChargePerKmPaise === undefined)) ||
       !option.manualTransportNote
     ) {
       return null;
@@ -7965,7 +8004,8 @@ export class OrdersService {
 
     return {
       freeDistanceKm: Number(option.manualTransportFreeDistanceKm),
-      chargePerKmPaise: option.manualTransportChargePerKmPaise,
+      chargePerKmMinor: option.manualTransportChargePerKmMinor ?? option.manualTransportChargePerKmPaise ?? 0,
+      currency: option.manualTransportCurrency?.trim().toUpperCase() || "INR",
       note: option.manualTransportNote,
     };
   }

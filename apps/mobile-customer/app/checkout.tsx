@@ -173,8 +173,13 @@ function CheckoutScreen() {
 
   const addresses = useMemo(() => addressesQuery.data ?? [], [addressesQuery.data]);
   const selectedAddress = selectedAddressId ? addresses.find((address) => address.id === selectedAddressId) : undefined;
+  const unsavedAddressReadyForSummary =
+    deliveryPreference === "DELIVER_TO_ADDRESS" &&
+    !selectedAddress &&
+    addressFormOpen &&
+    hasAddressLocationForCheckoutSummary(addressForm);
   const buyerCountryCode = checkoutBuyerCountryCode({
-    deliveryAddressCountryCode: selectedAddress?.countryCode,
+    deliveryAddressCountryCode: selectedAddress?.countryCode ?? (unsavedAddressReadyForSummary ? addressForm.countryCode : undefined),
     selectedMarketCountryCode: selectedBrowsingLocation.countryCode,
   });
   const market = useMobileMarket(buyerCountryCode);
@@ -193,6 +198,8 @@ function CheckoutScreen() {
       deliverySelectionsBySeller,
       paymentMethod,
       buyerCountryCode,
+      unsavedAddressReadyForSummary,
+      addressForm,
       appliedCouponCode,
     ],
     queryFn: () =>
@@ -210,9 +217,16 @@ function CheckoutScreen() {
             }
           : {}),
         paymentMethod,
-        addressId: deliveryPreference === "DELIVER_TO_ADDRESS" ? selectedAddressId : null,
+        ...(deliveryPreference === "DELIVER_TO_ADDRESS" && selectedAddress
+          ? { addressId: selectedAddress.id }
+          : {}),
+        ...(unsavedAddressReadyForSummary
+          ? { shippingAddress: checkoutSummaryAddressFromMobileForm(addressForm) }
+          : {}),
       }),
-    enabled: customerAuth.enabled && (deliveryPreference === "STORE_PICKUP" || Boolean(selectedAddressId)),
+    enabled:
+      customerAuth.enabled &&
+      (deliveryPreference === "STORE_PICKUP" || Boolean(selectedAddressId) || unsavedAddressReadyForSummary),
     retry: false,
   });
   const cartItems = cartQuery.data?.items ?? [];
@@ -250,7 +264,11 @@ function CheckoutScreen() {
   const checkoutDataBlockedReason =
     paymentMethodsError ||
     (deliveryPreference === "DELIVER_TO_ADDRESS" && !selectedAddress
-      ? "Select or add a delivery address."
+      ? addressFormOpen
+        ? unsavedAddressReadyForSummary
+          ? "Save this delivery address before placing the order."
+          : "Enter the delivery pincode or use GPS to check shipping options."
+        : "Select or add a delivery address."
       : !selectedPayment
         ? "Select an available payment method."
         : sellerDeliveryBlockedReason
@@ -1500,11 +1518,64 @@ function serviceabilityCheckoutError(error: unknown) {
   }
 
   const message = error.message.trim();
-  if (!message.toLowerCase().includes("not serviceable")) {
+  const normalized = message.toLowerCase();
+  if (
+    !normalized.includes("not serviceable") &&
+    !normalized.includes("delivery is not available") &&
+    !normalized.includes("could not calculate seller-arranged delivery distance") &&
+    !normalized.includes("map location is required") &&
+    !normalized.includes("seller-collected delivery and courier/partner delivery")
+  ) {
     return "";
   }
 
-  return "Delivery is not available for this address yet. Please choose another saved address, add a different delivery location, or select pickup if it is available.";
+  if (normalized.includes("seller-collected delivery and courier/partner delivery")) {
+    return "This COD cart has products with different cash-collection delivery types. Please place separate orders for these products.";
+  }
+
+  if (normalized.includes("map location") || normalized.includes("seller-arranged")) {
+    return "Seller-arranged delivery needs an exact location. Use GPS for this address, or choose another delivery method.";
+  }
+
+  return "Delivery is not available for this address yet. Check the pincode/GPS location, choose another address, or select pickup if available.";
+}
+
+function hasAddressLocationForCheckoutSummary(address: MobileCustomerAddressPayload) {
+  const summaryAddress = checkoutSummaryAddressFromMobileForm(address);
+  return Boolean(
+    summaryAddress.countryCode &&
+      (summaryAddress.localAreaCode ||
+        summaryAddress.pincode ||
+        (typeof summaryAddress.latitude === "number" && typeof summaryAddress.longitude === "number")),
+  );
+}
+
+function checkoutSummaryAddressFromMobileForm(address: MobileCustomerAddressPayload) {
+  const countryCode = address.countryCode?.trim().toUpperCase();
+  const stateCode = address.stateCode?.trim();
+  const cityCode = address.cityCode?.trim();
+  const pincode = address.pincode?.trim();
+  const localAreaCode = address.localAreaCode?.trim();
+  const latitude = finiteNumber(address.latitude);
+  const longitude = finiteNumber(address.longitude);
+
+  return {
+    ...(countryCode ? { countryCode } : {}),
+    ...(stateCode ? { stateCode } : {}),
+    ...(cityCode ? { cityCode } : {}),
+    ...(pincode ? { pincode } : {}),
+    ...(localAreaCode ? { localAreaCode } : {}),
+    ...(latitude !== undefined ? { latitude } : {}),
+    ...(longitude !== undefined ? { longitude } : {}),
+  };
+}
+
+function finiteNumber(value: number | string | null | undefined) {
+  if (value === null || value === undefined || value === "") {
+    return undefined;
+  }
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function isRecoverableOrderPlacementError(error: unknown) {

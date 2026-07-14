@@ -772,7 +772,11 @@ export class FinancePaymentsService {
                 id: receivable.orderShipment.id,
                 shipmentNumber: receivable.orderShipment.shipmentNumber,
                 deliveryMode: receivable.orderShipment.deliveryMode,
+                shippingPaise: receivable.orderShipment.shippingPaise,
+                codSurchargePaise: receivable.orderShipment.codSurchargePaise,
                 codCollectionStatus: receivable.orderShipment.codCollectionStatus,
+                routingSnapshot: receivable.orderShipment.routingSnapshot,
+                shippingChargeSnapshot: receivable.orderShipment.shippingChargeSnapshot,
               }
             : null,
         })),

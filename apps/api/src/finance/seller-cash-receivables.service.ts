@@ -495,7 +495,19 @@ export class SellerCashReceivablesService {
       seller: { select: { id: true, storeName: true, slug: true } },
       order: { select: { id: true, orderNumber: true, orderStatus: true, paymentStatus: true, deliveryStatus: true } },
       orderSellerSplit: { select: { id: true, sellerStatus: true, settlementStatus: true } },
-      orderShipment: { select: { id: true, shipmentNumber: true, deliveryMode: true, status: true, codCollectionStatus: true } },
+      orderShipment: {
+        select: {
+          id: true,
+          shipmentNumber: true,
+          deliveryMode: true,
+          status: true,
+          shippingPaise: true,
+          codSurchargePaise: true,
+          codCollectionStatus: true,
+          routingSnapshot: true,
+          shippingChargeSnapshot: true,
+        },
+      },
       payment: { select: { id: true, provider: true, method: true, amountPaise: true, status: true } },
       payoutOffset: { select: { id: true, payoutNumber: true, status: true } },
     } satisfies Prisma.SellerCashReceivableInclude;

@@ -31,6 +31,9 @@ import {
   listProducts,
   primaryImage,
   primaryVariant,
+  variantBaseMrp,
+  variantBaseOriginalPrice,
+  variantBasePrice,
   type ProductSummary,
 } from "@/lib/storefront-api";
 import { listPublicServices, type ServiceListing } from "@/lib/service-marketplace-api";
@@ -482,11 +485,14 @@ function StoreProductTile({
   const hasStock = Boolean(variant && variant.stockQuantity > 0);
   const stockStatus = getStorefrontStockStatus(variant?.stockQuantity);
   const activeDeal = variant?.activeDeal ?? product.activeDeal ?? null;
+  const basePrice = variantBasePrice(variant);
+  const baseMrp = variantBaseMrp(variant);
+  const baseOriginalPrice = variantBaseOriginalPrice(variant);
   const dealOriginalPrice =
-    activeDeal && variant?.originalPricePaise && variant.originalPricePaise > variant.pricePaise
-      ? variant.originalPricePaise
+    activeDeal && baseOriginalPrice && basePrice && baseOriginalPrice > basePrice
+      ? baseOriginalPrice
       : null;
-  const mrp = dealOriginalPrice ?? (variant?.mrpPaise && variant.mrpPaise > variant.pricePaise ? variant.mrpPaise : null);
+  const mrp = dealOriginalPrice ?? (baseMrp && basePrice && baseMrp > basePrice ? baseMrp : null);
   const href = `/products/${product.slug}` as Route;
   const reviewCount = product.reviewSummary?.reviewCount ?? 0;
   const averageRating = product.reviewSummary?.averageRating ?? null;
@@ -559,16 +565,13 @@ function StoreProductTile({
         <div className="mt-auto flex flex-col items-start gap-3 pt-5 sm:flex-row sm:items-end sm:justify-between sm:gap-4 sm:pt-6">
           <div>
             <p className="text-xl font-black text-[#071B35] sm:text-2xl">
-              {variant ? market.format(variant.pricePaise) : "Price pending"}
+              {variant ? market.format(basePrice) : "Price pending"}
             </p>
             {mrp ? <p className="text-sm font-semibold text-[#98A2B3] line-through">{market.format(mrp)}</p> : null}
             {activeDeal ? (
               <p className="mt-1 w-fit rounded bg-[#FFF0EC] px-2 py-0.5 text-[10px] font-black text-[#ED3500]">
                 {activeDeal.discountBps / 100}% deal applied
               </p>
-            ) : null}
-            {variant && market.market.currency !== variant.currency ? (
-              <p className="mt-1 text-xs font-bold text-[#667085]">{formatMoney(variant.pricePaise, variant.currency)} base</p>
             ) : null}
           </div>
 

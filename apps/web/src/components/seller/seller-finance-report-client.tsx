@@ -6,7 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
 import { Button, SectionHeading } from "@indihub/ui";
 import { formatMoney } from "@/lib/storefront-api";
-import { downloadSellerReportCsv, getSellerFinanceReport } from "@/lib/seller-api";
+import { downloadSellerReportCsv, getSellerFinanceReport, getSellerProfile } from "@/lib/seller-api";
 import {
   SellerAuthNotice,
   SellerEmptyState,
@@ -28,10 +28,17 @@ export function SellerFinanceReportClient({ initialDateFrom = "", initialDateTo 
   const [dateTo, setDateTo] = useState(initialDateTo);
   const [submittedRange, setSubmittedRange] = useState({ dateFrom: initialDateFrom, dateTo: initialDateTo });
 
+  const profileQuery = useQuery({
+    queryKey: ["seller-profile", sellerAuth.authKey],
+    queryFn: () => getSellerProfile(sellerAuth.authHeaders),
+    enabled: sellerAuth.enabled,
+    retry: false
+  });
+
   const reportQuery = useQuery({
     queryKey: ["seller-finance-report", sellerAuth.authKey, submittedRange.dateFrom, submittedRange.dateTo],
     queryFn: () => getSellerFinanceReport(sellerAuth.authHeaders, submittedRange),
-    enabled: sellerAuth.enabled,
+    enabled: sellerAuth.enabled && Boolean(profileQuery.data),
     retry: false
   });
 
@@ -41,11 +48,25 @@ export function SellerFinanceReportClient({ initialDateFrom = "", initialDateTo 
   }
 
   if (!sellerAuth.enabled) return <SellerAuthNotice />;
+
+  if (profileQuery.isLoading) {
+    return <SellerSkeleton />;
+  }
+
+  if (profileQuery.error) {
+    if (isSellerOnboardingRequiredError(profileQuery.error)) {
+      return <SellerOnboardingRequired message="Complete seller onboarding before viewing finance reports." />;
+    }
+    return <SellerErrorPanel error={profileQuery.error} onRetry={() => void profileQuery.refetch()} />;
+  }
+
   if (reportQuery.error && isSellerOnboardingRequiredError(reportQuery.error)) {
     return <SellerOnboardingRequired message="Complete seller onboarding before viewing finance reports." />;
   }
 
   const report = reportQuery.data;
+  const currency = report?.currency || profileQuery.data?.operatingCurrency || "INR";
+  const currencySymbol = currency === "INR" ? "₹" : currency === "USD" ? "$" : currency === "GBP" ? "£" : currency === "AED" ? "AED " : currency === "SGD" ? "S$" : currency;
 
   const payoutChartData = (report?.recentPayouts ?? []).slice(0, 8).reverse().map((p) => ({
     name: new Date(p.createdAt).toLocaleDateString("en-IN", { month: "short", day: "numeric" }),
@@ -85,17 +106,17 @@ export function SellerFinanceReportClient({ initialDateFrom = "", initialDateTo 
       {report ? (
         <>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <SellerMetric label="Gross Sales" value={formatMoney(report.summary.grossSalesPaise)} note="Total seller subtotal in period" />
-            <SellerMetric label="Net Payable" value={formatMoney(report.summary.netPayablePaise)} note="After all deductions" />
-            <SellerMetric label="Pending Payouts" value={formatMoney(report.summary.pendingPayoutsPaise)} note={`${report.summary.pendingPayoutsCount} payouts awaiting approval`} />
-            <SellerMetric label="Paid Out" value={formatMoney(report.summary.paidPayoutsPaise)} note={`${report.summary.paidPayoutsCount} completed payouts`} />
+            <SellerMetric label="Gross Sales" value={formatMoney(report.summary.grossSalesPaise, currency)} note="Total seller subtotal in period" />
+            <SellerMetric label="Net Payable" value={formatMoney(report.summary.netPayablePaise, currency)} note="After all deductions" />
+            <SellerMetric label="Pending Payouts" value={formatMoney(report.summary.pendingPayoutsPaise, currency)} note={`${report.summary.pendingPayoutsCount} payouts awaiting approval`} />
+            <SellerMetric label="Paid Out" value={formatMoney(report.summary.paidPayoutsPaise, currency)} note={`${report.summary.paidPayoutsCount} completed payouts`} />
           </div>
 
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <SellerMetric label="Commission" value={formatMoney(report.summary.commissionPaise)} note="Platform commission deducted" />
-            <SellerMetric label="Platform Fee" value={formatMoney(report.summary.platformFeePaise)} note="Buyer platform fee impact" />
-            <SellerMetric label="Refund Adjustments" value={formatMoney(report.summary.refundAdjustmentPaise)} note="Refund-related deductions" />
-            <SellerMetric label="Eligible Balance" value={formatMoney(report.summary.eligiblePaise)} note={`${report.summary.eligibleCount} splits awaiting payout`} />
+            <SellerMetric label="Commission" value={formatMoney(report.summary.commissionPaise, currency)} note="Platform commission deducted" />
+            <SellerMetric label="Platform Fee" value={formatMoney(report.summary.platformFeePaise, currency)} note="Buyer platform fee impact" />
+            <SellerMetric label="Refund Adjustments" value={formatMoney(report.summary.refundAdjustmentPaise, currency)} note="Refund-related deductions" />
+            <SellerMetric label="Eligible Balance" value={formatMoney(report.summary.eligiblePaise, currency)} note={`${report.summary.eligibleCount} splits awaiting payout`} />
           </div>
 
           {payoutChartData.length > 0 ? (
@@ -106,8 +127,8 @@ export function SellerFinanceReportClient({ initialDateFrom = "", initialDateTo 
                   <BarChart data={payoutChartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
                     <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                    <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `₹${v}`} />
-                    <Tooltip formatter={(value) => [`₹${value}`, undefined]} />
+                    <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `${currencySymbol}${v}`} />
+                    <Tooltip formatter={(value) => [`${currencySymbol}${value}`, undefined]} />
                     <Bar dataKey="gross" name="Gross" fill="#163B5C" radius={[4, 4, 0, 0]} />
                     <Bar dataKey="net" name="Net Payable" fill="#ED3500" radius={[4, 4, 0, 0]} />
                   </BarChart>
@@ -130,8 +151,8 @@ export function SellerFinanceReportClient({ initialDateFrom = "", initialDateTo 
                       <SellerStatusPill status={p.status} />
                     </div>
                     <div className="mt-2 flex flex-wrap items-center gap-4 text-xs text-[#667085]">
-                      <span>Gross: <span className="font-bold text-[#1F2933]">{formatMoney(p.grossSalesPaise)}</span></span>
-                      <span>Net: <span className="font-bold text-[#ED3500]">{formatMoney(p.netPayablePaise)}</span></span>
+                      <span>Gross: <span className="font-bold text-[#1F2933]">{formatMoney(p.grossSalesPaise, p.currency || currency)}</span></span>
+                      <span>Net: <span className="font-bold text-[#ED3500]">{formatMoney(p.netPayablePaise, p.currency || currency)}</span></span>
                       {p.paidAt ? <span>Paid: {new Date(p.paidAt).toLocaleDateString("en-IN")}</span> : null}
                     </div>
                   </div>
@@ -156,8 +177,8 @@ export function SellerFinanceReportClient({ initialDateFrom = "", initialDateTo 
                         <p className="mt-0.5 text-xs text-[#667085]">{entry.entryType.replace(/_/g, " ")} · {formatDateTime(entry.createdAt)}</p>
                       </div>
                       <div className="text-right shrink-0">
-                        {entry.creditPaise > 0 ? <p className="text-sm font-black text-green-600">+{formatMoney(entry.creditPaise)}</p> : null}
-                        {entry.debitPaise > 0 ? <p className="text-sm font-black text-[#ED3500]">−{formatMoney(entry.debitPaise)}</p> : null}
+                        {entry.creditPaise > 0 ? <p className="text-sm font-black text-green-600">+{formatMoney(entry.creditPaise, entry.currency || currency)}</p> : null}
+                        {entry.debitPaise > 0 ? <p className="text-sm font-black text-[#ED3500]">−{formatMoney(entry.debitPaise, entry.currency || currency)}</p> : null}
                       </div>
                     </div>
                   </div>

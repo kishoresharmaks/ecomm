@@ -8,7 +8,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Button, cn } from "@indihub/ui";
 import { useMarket } from "@/components/market/market-context";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
-import { formatMoney, getCart, primaryImage, primaryVariant, type ProductSummary } from "@/lib/storefront-api";
+import { getCart, primaryImage, primaryVariant, variantBaseMrp, variantBaseOriginalPrice, variantBasePrice, type ProductSummary } from "@/lib/storefront-api";
 import { ProductQuickViewModal } from "./product-quick-view-modal";
 import { StorefrontImage } from "./storefront-image";
 import { getStorefrontStockStatus, storefrontStockBadgeClass } from "./storefront-stock-status";
@@ -31,13 +31,14 @@ export function ProductCard({ product, onAddToCart, isAdding = false }: ProductC
   const hasStock = Boolean(variant && variant.stockQuantity > 0);
   const stockStatus = getStorefrontStockStatus(variant?.stockQuantity);
   const deal = variant?.activeDeal ?? product.activeDeal ?? null;
+  const basePrice = variantBasePrice(variant);
   const originalDealPrice =
-    variant?.originalPricePaise && variant.originalPricePaise > variant.pricePaise
-      ? variant.originalPricePaise
+    variantBaseOriginalPrice(variant) && basePrice && variantBaseOriginalPrice(variant)! > basePrice
+      ? variantBaseOriginalPrice(variant)
       : null;
   const mrp =
     originalDealPrice ??
-    (variant?.mrpPaise && variant.mrpPaise > variant.pricePaise ? variant.mrpPaise : null);
+    (variantBaseMrp(variant) && basePrice && variantBaseMrp(variant)! > basePrice ? variantBaseMrp(variant) : null);
   const isWishlisted = wishlist.hasWishlistProduct(product.id);
   const isWishlistPending = wishlist.isPendingProductId === product.id;
   const listingMode = product.listingMode ?? "CART";
@@ -162,16 +163,13 @@ export function ProductCard({ product, onAddToCart, isAdding = false }: ProductC
         <div className="mt-auto flex flex-col gap-2 pt-3 sm:flex-row sm:items-end sm:justify-between sm:gap-3 sm:pt-5">
           <div className="min-w-0">
             <p className="truncate text-base font-black text-[#163B5C] sm:text-xl">
-            {variant ? market.format(variant.pricePaise) : "Price pending"}
+            {variant ? market.format(basePrice) : "Price pending"}
           </p>
             {mrp ? <p className="text-xs font-semibold text-[#98A2B3] line-through">{market.format(mrp)}</p> : null}
             {deal ? (
               <p className="mt-1 text-[11px] font-black text-[#ED3500]">
                 {deal.discountBps / 100}% deal price
               </p>
-            ) : null}
-            {variant && market.market.currency !== variant.currency ? (
-              <p className="mt-1 text-[11px] font-bold text-[#667085]">{formatMoney(variant.pricePaise, variant.currency)} base</p>
             ) : null}
           </div>
           {isEnquiryOnly ? (

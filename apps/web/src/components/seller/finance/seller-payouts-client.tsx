@@ -68,16 +68,17 @@ export function SellerPayoutsClient() {
 
   const payouts = payoutsQuery.data?.items ?? [];
   const availability = availabilityQuery.data;
-  const pending = payouts.reduce((total, payout) => total + (["DRAFT", "PENDING_APPROVAL", "APPROVED"].includes(payout.status) ? payout.netPayablePaise : 0), 0);
-  const paid = payouts.reduce((total, payout) => total + (payout.status === "PAID" ? payout.netPayablePaise : 0), 0);
+  const currency = availability?.currency || "INR";
+  const pending = availability?.pendingPayoutsPaise ?? payouts.reduce((total, payout) => total + (["DRAFT", "PENDING_APPROVAL", "APPROVED"].includes(payout.status) ? payout.netPayablePaise : 0), 0);
+  const paid = availability?.paidPayoutsPaise ?? payouts.reduce((total, payout) => total + (payout.status === "PAID" ? payout.netPayablePaise : 0), 0);
 
   return (
     <div className="grid gap-5">
       {confirmation.confirmationDialog}
       <div className="grid gap-4 md:grid-cols-3">
-        <SellerMetric label="Available to request" value={formatMoney(availability?.netPayablePaise ?? 0)} note={`${availability?.eligibleSplitCount ?? 0} eligible order splits`} />
-        <SellerMetric label="Pending payout" value={formatMoney(pending)} note="Draft, pending, and approved" />
-        <SellerMetric label="Paid payouts" value={formatMoney(paid)} note="Marked paid by admin" />
+        <SellerMetric label="Available to request" value={formatMoney(availability?.netPayablePaise ?? 0, currency)} note={`${availability?.eligibleSplitCount ?? 0} delivered paid order splits`} />
+        <SellerMetric label="Pending payout" value={formatMoney(pending, currency)} note="Draft, pending, and approved" />
+        <SellerMetric label="Paid payouts" value={formatMoney(paid, currency)} note="Marked paid by admin" />
       </div>
 
       <SellerPanel>
@@ -111,8 +112,8 @@ export function SellerPayoutsClient() {
           </div>
           <div className="rounded-lg border border-[#D8E2EA] bg-[#F8FAFC] p-4">
             <p className="text-xs font-black uppercase tracking-wide text-[#667085]">Request amount</p>
-            <p className="mt-2 text-3xl font-black text-[#163B5C]">{formatMoney(availability?.netPayablePaise ?? 0)}</p>
-            <p className="mt-1 text-xs font-semibold text-[#667085]">Minimum {formatMoney(availability?.minimumPayoutPaise ?? 0)}</p>
+            <p className="mt-2 text-3xl font-black text-[#163B5C]">{formatMoney(availability?.netPayablePaise ?? 0, currency)}</p>
+            <p className="mt-1 text-xs font-semibold text-[#667085]">Minimum {formatMoney(availability?.minimumPayoutPaise ?? 0, currency)}</p>
             <Button
               type="button"
               className="mt-4 w-full"
@@ -120,7 +121,7 @@ export function SellerPayoutsClient() {
               onClick={() =>
                 confirmation.requestConfirmation({
                   title: "Request manual payout?",
-                  description: `${formatMoney(availability?.netPayablePaise ?? 0)} will be sent to admin for manual approval. Eligible orders are locked to prevent duplicate payout requests.`,
+                  description: `${formatMoney(availability?.netPayablePaise ?? 0, currency)} will be sent to admin for manual approval. Eligible orders are locked to prevent duplicate payout requests.`,
                   confirmLabel: "Request payout",
                   tone: "warning",
                   onConfirm: () => requestMutation.mutate()
@@ -155,7 +156,7 @@ export function SellerPayoutsClient() {
                 </div>
               </div>
               <div className="text-left md:text-right">
-                <p className="text-xl font-black text-[#163B5C]">{formatMoney(payout.netPayablePaise)}</p>
+                <p className="text-xl font-black text-[#163B5C]">{formatMoney(payout.netPayablePaise, payout.currency || currency)}</p>
                 <p className="mt-1 text-sm font-semibold text-[#667085]">{payout.transactionReference ?? "Payment reference pending"}</p>
               </div>
             </div>

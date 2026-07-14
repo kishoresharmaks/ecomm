@@ -55,13 +55,13 @@ export function SellerCashReceivablesClient() {
   });
 
   const receivables = receivablesQuery.data?.items ?? [];
-  const outstandingPaise = receivables.reduce((sum, item) => sum + item.outstandingPaise, 0);
+  const outstandingByCurrency = formatCurrencyTotals(receivables, (item) => item.outstandingPaise);
   const openCount = receivables.filter((item) => ["OPEN", "PARTIALLY_OFFSET", "OFFSET_SCHEDULED"].includes(item.status)).length;
 
   return (
     <div className="space-y-4">
       <section className="grid gap-4 md:grid-cols-3">
-        <MetricCard label="Outstanding platform due" value={formatMoney(outstandingPaise)} />
+        <MetricCard label="Outstanding platform due" value={outstandingByCurrency} />
         <MetricCard label="Open seller COD records" value={openCount.toString()} />
         <MetricCard label="Records loaded" value={receivables.length.toString()} />
       </section>
@@ -147,11 +147,12 @@ function ReceivableCard({
             {receivable.seller?.storeName ?? "Seller"} / {receivable.order?.orderNumber ?? "Order"} / {receivable.source.replaceAll("_", " ")}
           </p>
           <div className="grid gap-2 text-sm font-bold text-[#1F2933] sm:grid-cols-4">
-            <span>Cash kept {formatMoney(receivable.grossCashCollectedPaise)}</span>
-            <span>Platform due {formatMoney(receivable.platformDuePaise)}</span>
-            <span>Offset {formatMoney(receivable.offsetPaise)}</span>
-            <span>Outstanding {formatMoney(receivable.outstandingPaise)}</span>
+            <span>Cash kept {formatMoney(receivable.grossCashCollectedPaise, receivable.currency)}</span>
+            <span>Platform due {formatMoney(receivable.platformDuePaise, receivable.currency)}</span>
+            <span>Offset {formatMoney(receivable.offsetPaise, receivable.currency)}</span>
+            <span>Outstanding {formatMoney(receivable.outstandingPaise, receivable.currency)}</span>
           </div>
+          <ManualTransportReceivableMeta receivable={receivable} />
         </div>
         {payoutLocked ? (
           <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-800">
@@ -165,6 +166,43 @@ function ReceivableCard({
         ) : null}
       </div>
     </article>
+  );
+}
+
+function ManualTransportReceivableMeta({ receivable }: { receivable: SellerCashReceivable }) {
+  if (receivable.orderShipment?.deliveryMode !== "MANUAL_TRANSPORT") {
+    return null;
+  }
+
+  const snapshot =
+    readManualTransportSnapshot(receivable.orderShipment.routingSnapshot) ??
+    readManualTransportSnapshot(receivable.orderShipment.shippingChargeSnapshot);
+
+  if (!snapshot) {
+    return (
+      <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
+        Manual transport pricing snapshot is missing for this shipment.
+      </p>
+    );
+  }
+
+  const sellerCurrency = snapshot.sellerCurrency ?? receivable.currency;
+  const baseCurrency = snapshot.baseCurrency ?? receivable.currency;
+
+  return (
+    <div className="grid gap-2 rounded-md border border-[#E5E7EB] bg-[#F8FAFC] p-3 text-xs font-bold text-[#667085] sm:grid-cols-3">
+      <span>
+        Distance {typeof snapshot.distanceKm === "number" ? `${snapshot.distanceKm.toFixed(2)} km` : "not saved"}
+      </span>
+      <span>
+        Seller charge {formatMoney(snapshot.sellerChargeMinor ?? 0, sellerCurrency)}
+      </span>
+      <span>
+        Checkout shipping {formatMoney(snapshot.baseChargeMinor ?? receivable.orderShipment?.shippingPaise ?? 0, baseCurrency)}
+      </span>
+      {snapshot.fxRate ? <span>FX 1 {baseCurrency} = {snapshot.fxRate} {sellerCurrency}</span> : null}
+      {snapshot.note ? <span className="sm:col-span-3">Note: {snapshot.note}</span> : null}
+    </div>
   );
 }
 
@@ -186,6 +224,60 @@ function ReceivableActionForm({
       <Button type="submit" variant={label === "Waive" ? "outline" : "primary"} disabled={pending}>{label}</Button>
     </form>
   );
+}
+
+type ManualTransportSnapshot = {
+  distanceKm?: number | null;
+  sellerChargeMinor?: number | null;
+  sellerCurrency?: string | null;
+  baseChargeMinor?: number | null;
+  baseCurrency?: string | null;
+  fxRate?: number | null;
+  note?: string | null;
+};
+
+function readManualTransportSnapshot(value: unknown): ManualTransportSnapshot | null {
+  const root = recordValue(value);
+  const manualTransport = recordValue(root?.manualTransport);
+  if (!manualTransport) {
+    return null;
+  }
+
+  return {
+    distanceKm: finiteNumber(manualTransport.distanceKm),
+    sellerChargeMinor: finiteNumber(manualTransport.sellerChargeMinor),
+    sellerCurrency: stringValue(manualTransport.sellerCurrency),
+    baseChargeMinor: finiteNumber(manualTransport.baseChargeMinor),
+    baseCurrency: stringValue(manualTransport.baseCurrency),
+    fxRate: finiteNumber(manualTransport.fxRate),
+    note: stringValue(manualTransport.note),
+  };
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function finiteNumber(value: unknown) {
+  const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function formatCurrencyTotals(
+  receivables: SellerCashReceivable[],
+  amount: (receivable: SellerCashReceivable) => number,
+) {
+  const totals = receivables.reduce<Record<string, number>>((current, receivable) => {
+    const currency = receivable.currency || "INR";
+    current[currency] = (current[currency] ?? 0) + amount(receivable);
+    return current;
+  }, {});
+  const lines = Object.entries(totals).map(([currency, total]) => formatMoney(total, currency));
+  return lines.length ? lines.join(" / ") : formatMoney(0);
 }
 
 function MetricCard({ label, value }: { label: string; value: string }) {

@@ -205,6 +205,7 @@ describe("DeliveryRoutingService location serviceability", () => {
       undefined as never,
       undefined as never,
       undefined as never,
+      undefined as never,
       adapters as never,
     );
 
@@ -472,7 +473,8 @@ describe("DeliveryRoutingService shipping pricing strategies", () => {
             enabledDeliveryModes: [DeliveryMode.MANUAL_TRANSPORT],
             manualTransport: {
               freeDistanceKm: 5,
-              chargePerKmPaise: 2500,
+              chargePerKmMinor: 2500,
+              currency: "INR",
               note: "Free within 5 km.",
             },
           },
@@ -483,7 +485,8 @@ describe("DeliveryRoutingService shipping pricing strategies", () => {
             enabledDeliveryModes: [DeliveryMode.MANUAL_TRANSPORT],
             manualTransport: {
               freeDistanceKm: 1,
-              chargePerKmPaise: 1000,
+              chargePerKmMinor: 1000,
+              currency: "INR",
               note: "Large item transport.",
             },
           },
@@ -500,7 +503,8 @@ describe("DeliveryRoutingService shipping pricing strategies", () => {
         distanceKm: 7.2,
         freeDistanceKm: 5,
         billableKm: 3,
-        chargePerKmPaise: 2500,
+        chargePerKmMinor: 2500,
+        sellerCurrency: "INR",
         selectedProductId: "product-1",
       },
     });
@@ -539,7 +543,8 @@ describe("DeliveryRoutingService shipping pricing strategies", () => {
             enabledDeliveryModes: [DeliveryMode.MANUAL_TRANSPORT],
             manualTransport: {
               freeDistanceKm: 5,
-              chargePerKmPaise: 2500,
+              chargePerKmMinor: 2500,
+              currency: "INR",
               note: "Free within 5 km.",
             },
           },
@@ -635,7 +640,8 @@ describe("DeliveryRoutingService shipping pricing strategies", () => {
             enabledDeliveryModes: [DeliveryMode.MANUAL_TRANSPORT],
             manualTransport: {
               freeDistanceKm: 2,
-              chargePerKmPaise: 2000,
+              chargePerKmMinor: 2000,
+              currency: "INR",
               note: "Free within 2 km.",
             },
           },
@@ -647,6 +653,77 @@ describe("DeliveryRoutingService shipping pricing strategies", () => {
     expect(result.deliveryMode).toBe(DeliveryMode.MANUAL_TRANSPORT);
     expect(result.shippingChargePaise).toBe(6000);
     expect(result.shippingSnapshot.source).toBe("MANUAL_TRANSPORT_DISTANCE");
+  });
+
+  it("MANUAL_TRANSPORT converts seller-local currency into platform base charge", async () => {
+    const routeDistance = {
+      calculate: vi.fn().mockResolvedValue({
+        distanceKm: 1,
+        distanceMeters: 1000,
+        accuracy: "STRAIGHT_LINE",
+        provider: "HAVERSINE",
+        fallbackUsed: true,
+      }),
+    };
+    const client = {
+      sellerAddress: {
+        findFirst: vi.fn().mockResolvedValue({
+          latitude: 25.2048,
+          longitude: 55.2708,
+          countryCode: "AE",
+        }),
+      },
+    };
+    const marketService = {
+      getMarketCurrency: vi.fn().mockResolvedValue({
+        currency: "AED",
+        baseCurrency: "INR",
+        rate: 2,
+      }),
+    };
+    const service = new DeliveryRoutingService(
+      { client } as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      routeDistance as never,
+      marketService as never,
+    );
+
+    const [result] = await service.resolveAllDeliveryOptions(
+      {
+        subtotalPaise: 50000,
+        sellerId: "seller-ae",
+        address: { latitude: 25.2148, longitude: 55.2808 },
+        items: [
+          {
+            productId: "product-ae",
+            productName: "Configured UAE item",
+            quantity: 1,
+            enabledDeliveryModes: [DeliveryMode.MANUAL_TRANSPORT],
+            manualTransport: {
+              freeDistanceKm: 0,
+              chargePerKmMinor: 200,
+              currency: "AED",
+              note: "AED manual transport.",
+            },
+          },
+        ],
+      },
+      [DeliveryMode.MANUAL_TRANSPORT],
+      client as never,
+    );
+
+    expect(result?.quote.shippingChargePaise).toBe(100);
+    expect(result?.quote.routingSnapshot).toMatchObject({
+      manualTransport: {
+        sellerCurrency: "AED",
+        sellerChargeMinor: 200,
+        baseCurrency: "INR",
+        baseChargeMinor: 100,
+        fxRate: 2,
+      },
+    });
   });
 
   it("DISTANCE strategy edge case: seller coordinates missing", async () => {

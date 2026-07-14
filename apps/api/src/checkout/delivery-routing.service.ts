@@ -24,6 +24,7 @@ import type { RequestUser } from "../auth/types/indihub-request";
 import { CustomersService } from "../customers/customers.service";
 import { DealPricingService } from "../deals/deal-pricing.service";
 import { LocationsService } from "../locations/locations.service";
+import { MarketService } from "../market/market.service";
 import { CourierAdapterRegistry } from "../orders/courier-adapters/courier-adapter.registry";
 import type {
   CourierBookingAddress,
@@ -132,7 +133,8 @@ export type DeliveryRoutingItem = {
   enabledDeliveryModes: DeliveryMode[];
   manualTransport?: {
     freeDistanceKm: number;
-    chargePerKmPaise: number;
+    chargePerKmMinor: number;
+    currency: string;
     note: string;
   } | null | undefined;
 };
@@ -336,6 +338,9 @@ export class DeliveryRoutingService {
     @Inject(LocationsService) private readonly locationsService: LocationsService,
     @Inject(PaymentsService) private readonly paymentsService: PaymentsService,
     @Inject(RouteDistanceService) private readonly routeDistanceService: RouteDistanceService,
+    @Optional()
+    @Inject(MarketService)
+    private readonly marketService?: MarketService,
     @Optional()
     @Inject(DealPricingService)
     private readonly dealPricing?: DealPricingService,
@@ -895,6 +900,8 @@ export class DeliveryRoutingService {
                   isEnabled: true,
                   manualTransportFreeDistanceKm: true,
                   manualTransportChargePerKmPaise: true,
+                  manualTransportChargePerKmMinor: true,
+                  manualTransportCurrency: true,
                   manualTransportNote: true,
                 },
               },
@@ -1728,7 +1735,7 @@ export class DeliveryRoutingService {
         longitude: { not: null },
       },
       orderBy: { createdAt: "asc" },
-      select: { latitude: true, longitude: true },
+      select: { latitude: true, longitude: true, countryCode: true },
     });
     const sellerLatitude = sellerAddress?.latitude === null || sellerAddress?.latitude === undefined
       ? null
@@ -1757,8 +1764,9 @@ export class DeliveryRoutingService {
         !policy.config ||
         !Number.isFinite(policy.config.freeDistanceKm) ||
         policy.config.freeDistanceKm < 0 ||
-        !Number.isInteger(policy.config.chargePerKmPaise) ||
-        policy.config.chargePerKmPaise < 0 ||
+        !Number.isInteger(policy.config.chargePerKmMinor) ||
+        policy.config.chargePerKmMinor < 0 ||
+        !this.isIsoCurrency(policy.config.currency) ||
         !policy.config.note?.trim(),
     );
 
@@ -1768,6 +1776,17 @@ export class DeliveryRoutingService {
           ? `${missingPolicy.productName} needs seller-arranged delivery charges before checkout.`
           : "Seller-arranged delivery charges are not configured.",
       );
+    }
+    const sellerCurrency = policies[0]?.config?.currency?.trim().toUpperCase() ?? "INR";
+    if (policies.some((policy) => policy.config?.currency?.trim().toUpperCase() !== sellerCurrency)) {
+      return fail("Seller-arranged delivery items must use one seller currency.");
+    }
+    const currencyConversion = await this.manualTransportCurrencyConversion(
+      sellerCurrency,
+      sellerAddress?.countryCode,
+    );
+    if (!currencyConversion) {
+      return fail("Seller-arranged delivery currency conversion is not available.");
     }
 
     let distanceResult;
@@ -1797,24 +1816,29 @@ export class DeliveryRoutingService {
     const distanceKm = Math.max(0, resolvedDistanceKm);
     const pricedPolicies = policies.map((policy) => {
       const freeDistanceKm = Math.max(0, policy.config?.freeDistanceKm ?? 0);
-      const chargePerKmPaise = this.nonNegativeInt(policy.config?.chargePerKmPaise ?? 0);
+      const chargePerKmMinor = this.nonNegativeInt(policy.config?.chargePerKmMinor ?? 0);
       const billableKm = Math.ceil(Math.max(0, distanceKm - freeDistanceKm));
-      const chargePaise = billableKm * chargePerKmPaise;
+      const sellerChargeMinor = billableKm * chargePerKmMinor;
+      const baseChargeMinor = this.convertSellerMinorToBaseMinor(
+        sellerChargeMinor,
+        currencyConversion.rate,
+      );
 
       return {
         productId: policy.productId,
         productName: policy.productName,
         freeDistanceKm,
-        chargePerKmPaise,
+        chargePerKmMinor,
         billableKm,
-        chargePaise,
+        sellerChargeMinor,
+        baseChargeMinor,
         note: policy.config?.note?.trim() ?? null,
       };
     });
     const selectedPolicy = pricedPolicies.reduce((highest, policy) =>
-      policy.chargePaise > highest.chargePaise ? policy : highest,
+      policy.baseChargeMinor > highest.baseChargeMinor ? policy : highest,
     );
-    const shippingChargePaise = this.nonNegativeInt(selectedPolicy.chargePaise);
+    const shippingChargePaise = this.nonNegativeInt(selectedPolicy.baseChargeMinor);
     const manualTransport: Prisma.InputJsonObject = {
       source: "SELLER_PRODUCT_POLICY",
       distanceKm: Math.round(distanceKm * 100) / 100,
@@ -1824,8 +1848,12 @@ export class DeliveryRoutingService {
       fallbackUsed: distanceResult.fallbackUsed ?? false,
       freeDistanceKm: selectedPolicy.freeDistanceKm,
       billableKm: selectedPolicy.billableKm,
-      chargePerKmPaise: selectedPolicy.chargePerKmPaise,
-      chargePaise: shippingChargePaise,
+      chargePerKmMinor: selectedPolicy.chargePerKmMinor,
+      sellerCurrency,
+      sellerChargeMinor: selectedPolicy.sellerChargeMinor,
+      baseCurrency: currencyConversion.baseCurrency,
+      baseChargeMinor: shippingChargePaise,
+      fxRate: currencyConversion.rate,
       note: selectedPolicy.note,
       selectedProductId: selectedPolicy.productId,
       selectedProductName: selectedPolicy.productName,
@@ -3604,12 +3632,48 @@ export class DeliveryRoutingService {
     );
   }
 
+  private isIsoCurrency(value: string | null | undefined) {
+    return /^[A-Z]{3}$/.test(value?.trim().toUpperCase() ?? "");
+  }
+
+  private async manualTransportCurrencyConversion(
+    sellerCurrency: string,
+    sellerCountryCode?: string | null,
+  ): Promise<{ baseCurrency: string; rate: number } | null> {
+    const baseCurrency = (process.env.FX_BASE_CURRENCY ?? "INR").toUpperCase();
+    if (sellerCurrency === baseCurrency) {
+      return { baseCurrency, rate: 1 };
+    }
+    if (!this.marketService || !sellerCountryCode) {
+      return null;
+    }
+
+    const market = await this.marketService.getMarketCurrency(sellerCountryCode, {
+      requireFresh: true,
+    });
+    if (market.currency !== sellerCurrency || market.baseCurrency !== baseCurrency || market.rate <= 0) {
+      return null;
+    }
+
+    return { baseCurrency, rate: market.rate };
+  }
+
+  private convertSellerMinorToBaseMinor(sellerMinor: number, baseToSellerRate: number) {
+    if (baseToSellerRate <= 0) {
+      return 0;
+    }
+
+    return this.nonNegativeInt((sellerMinor / 100 / baseToSellerRate) * 100);
+  }
+
   private manualTransportConfig(product: {
     deliveryModeOptions?: Array<{
       deliveryMode: DeliveryMode;
       isEnabled?: boolean | null;
       manualTransportFreeDistanceKm?: Prisma.Decimal | number | string | null;
       manualTransportChargePerKmPaise?: number | null;
+      manualTransportChargePerKmMinor?: number | null;
+      manualTransportCurrency?: string | null;
       manualTransportNote?: string | null;
     }> | null;
   }): DeliveryRoutingItem["manualTransport"] {
@@ -3620,8 +3684,10 @@ export class DeliveryRoutingService {
       !option ||
       option.manualTransportFreeDistanceKm === null ||
       option.manualTransportFreeDistanceKm === undefined ||
-      option.manualTransportChargePerKmPaise === null ||
-      option.manualTransportChargePerKmPaise === undefined ||
+      ((option.manualTransportChargePerKmMinor === null ||
+        option.manualTransportChargePerKmMinor === undefined) &&
+        (option.manualTransportChargePerKmPaise === null ||
+          option.manualTransportChargePerKmPaise === undefined)) ||
       !option.manualTransportNote
     ) {
       return null;
@@ -3629,7 +3695,8 @@ export class DeliveryRoutingService {
 
     return {
       freeDistanceKm: Number(option.manualTransportFreeDistanceKm),
-      chargePerKmPaise: option.manualTransportChargePerKmPaise,
+      chargePerKmMinor: option.manualTransportChargePerKmMinor ?? option.manualTransportChargePerKmPaise ?? 0,
+      currency: option.manualTransportCurrency?.trim().toUpperCase() || "INR",
       note: option.manualTransportNote,
     };
   }

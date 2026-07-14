@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { MarketModule } from "../market/market.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { CommissionRulesService } from "./commission-rules.service";
 import { AdminFinanceController } from "./admin-finance.controller";
@@ -13,7 +14,7 @@ import { SellerSettlementsService } from "./seller-settlements.service";
 import { SellerStatementsService } from "./seller-statements.service";
 
 @Module({
-  imports: [NotificationsModule],
+  imports: [NotificationsModule, MarketModule],
   controllers: [AdminFinanceController, SellerFinanceController],
   providers: [
     CommissionRulesService,

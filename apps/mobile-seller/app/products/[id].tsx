@@ -16,6 +16,7 @@ import {
 } from "../../src/components/screen";
 import {
   getSellerProduct,
+  getSellerProfile,
   listCategories,
   searchHsnMaster,
   updateSellerProduct,
@@ -69,6 +70,11 @@ export default function EditSellerProductScreen() {
     queryFn: () => listCategories(auth.authHeaders),
     enabled: auth.enabled,
   });
+  const profileQuery = useQuery({
+    queryKey: ["seller-profile", auth.authKey, "product-form"],
+    queryFn: () => getSellerProfile(auth.authHeaders),
+    enabled: auth.enabled,
+  });
 
   const hsnQuery = useQuery({
     queryKey: ["hsn-search", auth.authKey, form.hsnCode],
@@ -106,6 +112,7 @@ export default function EditSellerProductScreen() {
 
   const validation = validateProductEditForm(form);
   const activeVariantCount = form.variants.filter((variant) => variant.status !== "INACTIVE").length;
+  const sellerCurrency = profileQuery.data?.operatingCurrency ?? productQuery.data?.variants?.[0]?.currency ?? "INR";
 
   const mutation = useMutation({
     mutationFn: () => {
@@ -113,7 +120,7 @@ export default function EditSellerProductScreen() {
       if (!nextValidation.valid) {
         throw new Error(nextValidation.errors[0] ?? "Please complete the required product details.");
       }
-      const payload = buildUpdateProductPayload(productEditFormToProductFormState(form), [], [], productQuery.data);
+      const payload = buildUpdateProductPayload(productEditFormToProductFormState(form), [], [], productQuery.data, sellerCurrency);
       return updateSellerProduct(auth.authHeaders, decodedId, payload);
     },
     onSuccess: async () => {
@@ -262,7 +269,7 @@ export default function EditSellerProductScreen() {
     }));
   }
 
-  if (!auth.enabled || productQuery.isLoading) {
+  if (!auth.enabled || productQuery.isLoading || profileQuery.isLoading) {
     return <LoadingState message="Loading product..." />;
   }
 
@@ -513,13 +520,13 @@ export default function EditSellerProductScreen() {
               </View>
               <Field
                 keyboardType="decimal-pad"
-                label="Selling price (INR) *"
+                label={`Selling price (${sellerCurrency}) *`}
                 value={variant.price}
                 onChangeText={(value) => updateVariant(variant.clientId, { price: value })}
               />
               <Field
                 keyboardType="decimal-pad"
-                label="MRP (INR)"
+                label={`MRP (${sellerCurrency})`}
                 value={variant.mrp}
                 onChangeText={(value) => updateVariant(variant.clientId, { mrp: value })}
               />

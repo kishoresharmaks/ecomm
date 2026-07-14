@@ -13,6 +13,7 @@ type MarketContextValue = {
   error: Error | null;
   convert: (baseMinor?: number | null) => number;
   format: (baseMinor?: number | null) => string;
+  formatSellerMinor: (minor?: number | null, currency?: string | null) => string;
   language: string;
   setLanguage: (lang: string) => void;
 };
@@ -119,6 +120,10 @@ export function MarketProvider({ children }: { children: ReactNode }) {
       error: marketQuery.error instanceof Error ? marketQuery.error : null,
       convert: (baseMinor?: number | null) => convertBaseMinorToMarket(baseMinor, market),
       format: (baseMinor?: number | null) => formatMoney(convertBaseMinorToMarket(baseMinor, market), market.currency, market.locale),
+      formatSellerMinor: (minor?: number | null, currency?: string | null) =>
+        !currency || currency === market.baseCurrency
+          ? formatMoney(convertBaseMinorToMarket(minor, market), market.currency, market.locale)
+          : formatMoney(minor, currency),
       language,
       setLanguage
     }),

@@ -53,6 +53,9 @@ import {
   getStorefrontHome,
   primaryImage,
   primaryVariant,
+  variantBaseMrp,
+  variantBaseOriginalPrice,
+  variantBasePrice,
   type CartSummary,
   type CategorySummary,
   type HomepageBanner,
@@ -875,7 +878,7 @@ function HeroProductCard({ product, className }: { product: ProductSummary; clas
       <p className="mt-2.5 line-clamp-1 text-[11px] font-black text-[#1F2933] lg:mt-3 lg:text-xs xl:mt-3.5 xl:text-[13px] 2xl:mt-4 2xl:text-sm">{product.name}</p>
       {variant ? (
         <p className="mt-1 text-[10px] font-black text-[#ED3500] lg:mt-1.5 lg:text-[11px] xl:text-[12px] 2xl:text-[13px]">
-          {t("from_price", { price: market.format(variant.pricePaise) })}
+          {t("from_price", { price: market.format(variantBasePrice(variant)) })}
         </p>
       ) : null}
     </Link>
@@ -2496,8 +2499,11 @@ function PromoPanel({
   const market = useMarket();
   const variant = product ? primaryVariant(product) : null;
   const activeDeal = product && variant ? getActiveDeal(product, variant) : null;
-  const originalPrice = variant ? getDealOriginalPrice(variant) ?? (variant.mrpPaise && variant.mrpPaise > variant.pricePaise ? variant.mrpPaise : null) : null;
-  const discount = originalPrice && variant ? Math.round(((originalPrice - variant.pricePaise) / originalPrice) * 100) : null;
+  const basePrice = variantBasePrice(variant);
+  const baseMrp = variantBaseMrp(variant);
+  const baseOriginalPrice = variantBaseOriginalPrice(variant);
+  const originalPrice = variant ? baseOriginalPrice ?? (baseMrp && basePrice && baseMrp > basePrice ? baseMrp : null) : null;
+  const discount = originalPrice && basePrice ? Math.round(((originalPrice - basePrice) / originalPrice) * 100) : null;
 
   return (
     <div
@@ -2566,7 +2572,7 @@ function PromoPanel({
               {variant ? (
                 <span className="mt-2 flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
                   <span className={cn("text-base font-black", tone === "orange" ? "text-white" : "text-[#1F2933]")}>
-                    {market.format(variant.pricePaise)}
+                    {market.format(basePrice)}
                   </span>
                   {originalPrice ? (
                     <span className={cn("truncate text-xs font-bold line-through", tone === "orange" ? "text-white/64" : "text-[#98A2B3]")}>
@@ -2591,7 +2597,7 @@ function PromoPanel({
         
       </div>
       {variant ? (
-        <span className="sr-only">From {market.format(variant.pricePaise)}</span>
+        <span className="sr-only">From {market.format(basePrice)}</span>
       ) : null}
     </div>
   );
@@ -2607,9 +2613,11 @@ function CompactProductCard({
   const t = useTranslations("home");
   const variant = primaryVariant(product);
   const activeDeal = getActiveDeal(product, variant);
-  const dealOriginalPrice = getDealOriginalPrice(variant);
-  const mrp = dealOriginalPrice ?? (variant?.mrpPaise && variant.mrpPaise > variant.pricePaise ? variant.mrpPaise : null);
-  const discount = mrp && variant ? Math.round(((mrp - variant.pricePaise) / mrp) * 100) : null;
+  const basePrice = variantBasePrice(variant);
+  const baseMrp = variantBaseMrp(variant);
+  const dealOriginalPrice = variantBaseOriginalPrice(variant);
+  const mrp = dealOriginalPrice ?? (baseMrp && basePrice && baseMrp > basePrice ? baseMrp : null);
+  const discount = mrp && basePrice ? Math.round(((mrp - basePrice) / mrp) * 100) : null;
   const stockStatus = getStorefrontStockStatus(variant?.stockQuantity);
   const campaignBadge = activeDeal ? `${activeDeal.discountBps / 100}% DEAL` : product.campaignBadge?.trim();
   const isWishlisted = wishlist.hasWishlistProduct(product.id);
@@ -2672,7 +2680,7 @@ function CompactProductCard({
         <p className="mt-1 line-clamp-1 text-[11px] font-bold text-[#98A2B3]">{product.seller.storeName}</p>
         <div className="mt-2 flex min-w-0 items-baseline gap-2">
           <span className="text-sm font-black text-[#1F2933] lg:text-base">
-            {variant ? market.format(variant.pricePaise) : t("price_pending")}
+            {variant ? market.format(basePrice) : t("price_pending")}
           </span>
           {mrp ? <span className="hidden truncate text-xs font-semibold text-[#98A2B3] line-through lg:inline">{market.format(mrp)}</span> : null}
         </div>
@@ -2822,14 +2830,6 @@ function stringValue(value: unknown) {
 
 function getActiveDeal(product: ProductSummary, variant: ReturnType<typeof primaryVariant>) {
   return variant?.activeDeal ?? product.activeDeal ?? null;
-}
-
-function getDealOriginalPrice(variant: ReturnType<typeof primaryVariant>) {
-  if (!variant?.activeDeal || !variant.originalPricePaise || variant.originalPricePaise <= variant.pricePaise) {
-    return null;
-  }
-
-  return variant.originalPricePaise;
 }
 
 function humanize(value: string) {

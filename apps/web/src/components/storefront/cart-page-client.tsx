@@ -206,10 +206,10 @@ export function CartPageClient() {
                       <p className="mt-1 text-sm font-semibold text-[#667085]">{product.seller.storeName}</p>
                       <StorefrontProductAttributeChips product={product} />
                       <p className="mt-3 text-base font-black text-[#163B5C]">
-                        {market.format(item.unitPricePaise)}
+                        {formatMoney(item.unitPricePaise, item.currency)}
                       </p>
                       {originalUnitPrice ? (
-                        <p className="mt-1 text-xs font-bold text-[#98A2B3] line-through">{market.format(originalUnitPrice)}</p>
+                        <p className="mt-1 text-xs font-bold text-[#98A2B3] line-through">{formatMoney(originalUnitPrice, item.currency)}</p>
                       ) : null}
                       {activeDeal ? (
                         <p className="mt-1 text-xs font-black text-[#ED3500]">{activeDeal.discountBps / 100}% deal applied</p>

@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import { FormEvent, useState } from "react";
-import { AlertTriangle, BarChart3, BriefcaseBusiness, CalendarDays, ChevronLeft, ChevronRight, ClipboardList, Download, IndianRupee } from "lucide-react";
+import { AlertTriangle, BarChart3, BriefcaseBusiness, CalendarDays, ChevronLeft, ChevronRight, ClipboardList, Download } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
 import { formatMoney } from "@/lib/storefront-api";
-import { downloadSellerReportCsv, getSellerSalesReport, type SellerCapability, type SellerSalesReport } from "@/lib/seller-api";
+import { downloadSellerReportCsv, getSellerProfile, getSellerSalesReport, type SellerCapability, type SellerSalesReport } from "@/lib/seller-api";
 import { ResponsiveContainer, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip } from "recharts";
 import {
   SellerAuthNotice,
@@ -31,10 +31,17 @@ export function SellerSalesReportClient() {
   const [dateTo, setDateTo] = useState("");
   const [submittedRange, setSubmittedRange] = useState({ dateFrom: "", dateTo: "" });
 
+  const profileQuery = useQuery({
+    queryKey: ["seller-profile", sellerAuth.authKey],
+    queryFn: () => getSellerProfile(sellerAuth.authHeaders),
+    enabled: sellerAuth.enabled,
+    retry: false
+  });
+
   const reportQuery = useQuery({
     queryKey: ["seller-sales-report", sellerAuth.authKey, submittedRange.dateFrom, submittedRange.dateTo],
     queryFn: () => getSellerSalesReport(sellerAuth.authHeaders, submittedRange),
-    enabled: sellerAuth.enabled,
+    enabled: sellerAuth.enabled && Boolean(profileQuery.data),
     retry: false
   });
 
@@ -47,11 +54,23 @@ export function SellerSalesReportClient() {
     return <SellerAuthNotice />;
   }
 
+  if (profileQuery.isLoading) {
+    return <SellerSkeleton />;
+  }
+
+  if (profileQuery.error) {
+    if (isSellerOnboardingRequiredError(profileQuery.error)) {
+      return <SellerOnboardingRequired message="Complete seller onboarding before viewing seller sales reports." />;
+    }
+    return <SellerErrorPanel error={profileQuery.error} onRetry={() => void profileQuery.refetch()} />;
+  }
+
   if (reportQuery.error && isSellerOnboardingRequiredError(reportQuery.error)) {
     return <SellerOnboardingRequired message="Complete seller onboarding before viewing seller sales reports." />;
   }
 
   const report = reportQuery.data;
+  const currency = report?.currency || profileQuery.data?.operatingCurrency || "INR";
   const capabilities = reportCapabilities(report);
   const showRetail = capabilities.includes("RETAIL");
   const showServices = capabilities.includes("SERVICE");
@@ -87,11 +106,11 @@ export function SellerSalesReportClient() {
 
       {report ? (
         <>
-          {showRetail ? <SellerRetailReportSections report={report} /> : null}
-          {showServices ? <SellerServiceSummaryMetrics report={report} /> : null}
+          {showRetail ? <SellerRetailReportSections report={report} currency={currency} /> : null}
+          {showServices ? <SellerServiceSummaryMetrics report={report} currency={currency} /> : null}
           <div className={showRetail && showServices ? "grid gap-5 xl:grid-cols-2" : "grid gap-5"}>
-            {showRetail ? <SellerB2BReportPanel report={report} /> : null}
-            {showServices ? <SellerServiceReportPanel report={report} /> : null}
+            {showRetail ? <SellerB2BReportPanel report={report} currency={currency} /> : null}
+            {showServices ? <SellerServiceReportPanel report={report} currency={currency} /> : null}
           </div>
         </>
       ) : null}
@@ -99,7 +118,7 @@ export function SellerSalesReportClient() {
   );
 }
 
-function SellerRetailReportSections({ report }: { report: SellerSalesReport }) {
+function SellerRetailReportSections({ report, currency }: { report: SellerSalesReport; currency: string }) {
   const [recentSalesPage, setRecentSalesPage] = useState(1);
   const recentSalesPageCount = Math.max(1, Math.ceil(report.recentOrders.length / reportCardPageSize));
   const safeRecentSalesPage = Math.min(recentSalesPage, recentSalesPageCount);
@@ -110,18 +129,20 @@ function SellerRetailReportSections({ report }: { report: SellerSalesReport }) {
     sales: o.sellerSubtotalPaise / 100,
   }));
 
+  const currencySymbol = currency === "INR" ? "₹" : currency === "USD" ? "$" : currency === "GBP" ? "£" : currency === "AED" ? "AED " : currency === "SGD" ? "S$" : currency;
+
   return (
     <>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <SellerMetric label="Gross sales" value={formatMoney(report.summary.totalSalesPaise)} note="Seller order subtotal" />
-        <SellerMetric label="Commission" value={formatMoney(report.summary.commissionPaise)} note="Marketplace commission" />
-        <SellerMetric label="Net sales" value={formatMoney(report.summary.netSalesPaise)} note="After commission, tax, fees, coupons, and adjustments" />
+        <SellerMetric label="Gross sales" value={formatMoney(report.summary.totalSalesPaise, currency)} note="Seller order subtotal" />
+        <SellerMetric label="Commission" value={formatMoney(report.summary.commissionPaise, currency)} note="Marketplace commission" />
+        <SellerMetric label="Net sales" value={formatMoney(report.summary.netSalesPaise, currency)} note="After commission, tax, fees, coupons, and adjustments" />
         <SellerMetric label="Orders" value={report.summary.orderCount} note={`${report.summary.products} products tracked`} />
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <SellerMetric label="B2B enquiries" value={report.b2b?.enquiryCount ?? report.summary.b2bEnquiries} note={`${report.b2b?.orderCount ?? report.summary.b2bOrders ?? 0} B2B orders`} />
-        <SellerMetric label="B2B payable" value={formatMoney(report.b2b?.buyerPayablePaise ?? report.summary.b2bOrderValuePaise ?? 0)} note={`${formatMoney(report.b2b?.paidAmountPaise ?? 0)} collected`} />
+        <SellerMetric label="B2B payable" value={formatMoney(report.b2b?.buyerPayablePaise ?? report.summary.b2bOrderValuePaise ?? 0, currency)} note={`${formatMoney(report.b2b?.paidAmountPaise ?? 0, currency)} collected`} />
         <SellerMetric label="Low stock" value={report.summary.lowStockCount} note="Variants at five units or below" />
         <SellerMetric label="Products" value={report.summary.products} note="Active seller catalogue records" />
       </div>
@@ -134,8 +155,8 @@ function SellerRetailReportSections({ report }: { report: SellerSalesReport }) {
               <Line type="monotone" dataKey="sales" stroke="#ED3500" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
               <CartesianGrid stroke="#ccc" strokeDasharray="5 5" />
               <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-              <YAxis tick={{ fontSize: 12 }} tickFormatter={(val) => `₹${val}`} />
-              <Tooltip formatter={(value) => [`₹${value}`, 'Sales']} />
+              <YAxis tick={{ fontSize: 12 }} tickFormatter={(val) => `${currencySymbol}${val}`} />
+              <Tooltip formatter={(value) => [`${currencySymbol}${value}`, 'Sales']} />
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -160,7 +181,7 @@ function SellerRetailReportSections({ report }: { report: SellerSalesReport }) {
                 </div>
                 <div className="flex flex-wrap items-center gap-2 md:justify-end">
                   <SellerStatusPill status={split.sellerStatus} />
-                  <span className="font-black text-[#163B5C]">{formatMoney(split.sellerSubtotalPaise, split.order.currency)}</span>
+                  <span className="font-black text-[#163B5C]">{formatMoney(split.sellerSubtotalPaise, report.currency || currency)}</span>
                 </div>
               </Link>
             ))}
@@ -201,18 +222,18 @@ function SellerRetailReportSections({ report }: { report: SellerSalesReport }) {
   );
 }
 
-function SellerServiceSummaryMetrics({ report }: { report: SellerSalesReport }) {
+function SellerServiceSummaryMetrics({ report, currency }: { report: SellerSalesReport; currency: string }) {
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
       <SellerMetric label="Service bookings" value={report.services?.bookingCount ?? report.summary.serviceBookings ?? 0} note={`${report.services?.activeListingCount ?? 0} active service listings`} />
-      <SellerMetric label="Service revenue" value={formatMoney(report.services?.paidPaymentPaise ?? report.summary.serviceRevenuePaise ?? 0)} note={`${formatMoney(report.services?.totalPayablePaise ?? 0)} payable`} />
-      <SellerMetric label="Service collected" value={formatMoney(report.services?.paidAmountPaise ?? 0)} note={`${report.services?.paidPaymentCount ?? 0} paid payment records`} />
+      <SellerMetric label="Service revenue" value={formatMoney(report.services?.paidPaymentPaise ?? report.summary.serviceRevenuePaise ?? 0, currency)} note={`${formatMoney(report.services?.totalPayablePaise ?? 0, currency)} payable`} />
+      <SellerMetric label="Service collected" value={formatMoney(report.services?.paidAmountPaise ?? 0, currency)} note={`${report.services?.paidPaymentCount ?? 0} paid payment records`} />
       <SellerMetric label="Service listings" value={`${report.services?.activeListingCount ?? 0}/${report.services?.listingCount ?? report.summary.serviceListings ?? 0}`} note="Active / total service listings" />
     </div>
   );
 }
 
-function SellerB2BReportPanel({ report }: { report: SellerSalesReport }) {
+function SellerB2BReportPanel({ report, currency }: { report: SellerSalesReport; currency: string }) {
   const b2b = report.b2b;
   const recentOrders = b2b?.recentOrders ?? [];
 
@@ -227,11 +248,11 @@ function SellerB2BReportPanel({ report }: { report: SellerSalesReport }) {
       <div className="mt-5 grid gap-3 sm:grid-cols-2">
         <CompactMetric label="Enquiries" value={b2b?.enquiryCount ?? report.summary.b2bEnquiries} />
         <CompactMetric label="Orders" value={b2b?.orderCount ?? report.summary.b2bOrders ?? 0} />
-        <CompactMetric label="Paid" value={formatMoney(b2b?.paidAmountPaise ?? 0)} />
-        <CompactMetric label="Seller payout" value={formatMoney(b2b?.sellerPayoutPaise ?? 0)} />
+        <CompactMetric label="Paid" value={formatMoney(b2b?.paidAmountPaise ?? 0, currency)} />
+        <CompactMetric label="Seller payout" value={formatMoney(b2b?.sellerPayoutPaise ?? 0, currency)} />
       </div>
-      <StatusBreakdown title="B2B enquiry status" items={b2b?.byEnquiryStatus ?? []} valueKey="count" />
-      <StatusBreakdown title="B2B payment status" items={b2b?.byPaymentStatus ?? []} valueKey="count" amountKey="paidAmountPaise" />
+      <StatusBreakdown title="B2B enquiry status" items={b2b?.byEnquiryStatus ?? []} valueKey="count" currency={currency} />
+      <StatusBreakdown title="B2B payment status" items={b2b?.byPaymentStatus ?? []} valueKey="count" amountKey="paidAmountPaise" currency={currency} />
       <div className="mt-5">
         <div className="flex items-center justify-between gap-3">
           <p className="text-sm font-black text-[#123A5A]">Recent B2B orders</p>
@@ -259,7 +280,7 @@ function SellerB2BReportPanel({ report }: { report: SellerSalesReport }) {
   );
 }
 
-function SellerServiceReportPanel({ report }: { report: SellerSalesReport }) {
+function SellerServiceReportPanel({ report, currency }: { report: SellerSalesReport; currency: string }) {
   const services = report.services;
   const recentBookings = services?.recentBookings ?? [];
   const [recentBookingsPage, setRecentBookingsPage] = useState(1);
@@ -280,10 +301,10 @@ function SellerServiceReportPanel({ report }: { report: SellerSalesReport }) {
         <CompactMetric label="Listings" value={`${services?.activeListingCount ?? 0}/${services?.listingCount ?? report.summary.serviceListings ?? 0}`} />
         <CompactMetric label="Bookings" value={services?.bookingCount ?? report.summary.serviceBookings ?? 0} />
         <CompactMetric label="Paid payments" value={services?.paidPaymentCount ?? 0} />
-        <CompactMetric label="Collected" value={formatMoney(services?.paidPaymentPaise ?? report.summary.serviceRevenuePaise ?? 0)} />
+        <CompactMetric label="Collected" value={formatMoney(services?.paidPaymentPaise ?? report.summary.serviceRevenuePaise ?? 0, currency)} />
       </div>
-      <StatusBreakdown title="Service booking status" items={services?.byBookingStatus ?? []} valueKey="count" amountKey="totalPayablePaise" />
-      <StatusBreakdown title="Service payment status" items={services?.byPaymentStatus ?? []} valueKey="count" amountKey="amountPaise" />
+      <StatusBreakdown title="Service booking status" items={services?.byBookingStatus ?? []} valueKey="count" amountKey="totalPayablePaise" currency={currency} />
+      <StatusBreakdown title="Service payment status" items={services?.byPaymentStatus ?? []} valueKey="count" amountKey="amountPaise" currency={currency} />
       <div className="mt-5">
         <div className="flex items-center justify-between gap-3">
           <p className="text-sm font-black text-[#123A5A]">Recent service bookings</p>
@@ -382,11 +403,13 @@ function StatusBreakdown({
   items,
   valueKey,
   amountKey,
+  currency,
 }: {
   title: string;
   items: Array<Record<string, string | number | null | undefined>>;
   valueKey: string;
   amountKey?: string;
+  currency?: string;
 }) {
   return (
     <div className="mt-5">
@@ -402,8 +425,7 @@ function StatusBreakdown({
                 <span>{Number(item[valueKey] ?? 0)}</span>
                 {amountKey ? (
                   <span className="inline-flex items-center gap-1 text-xs font-bold text-[#667085]">
-                    <IndianRupee className="h-3.5 w-3.5" aria-hidden="true" />
-                    {formatMoney(amount)}
+                    {formatMoney(amount, currency)}
                   </span>
                 ) : null}
               </div>

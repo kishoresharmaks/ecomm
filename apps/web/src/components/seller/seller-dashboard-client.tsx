@@ -160,7 +160,7 @@ export function SellerDashboardClient() {
       </SellerPanel>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <SellerMetric label="Net sales" value={formatMoney(report?.summary.netSalesPaise ?? 0)} note="After marketplace commission" />
+        <SellerMetric label="Net sales" value={formatMoney(report?.summary.netSalesPaise ?? 0, profile?.operatingCurrency || "INR")} note="After marketplace commission" />
         <SellerMetric label="Orders" value={report?.summary.orderCount ?? 0} note="Seller split count" />
         <SellerMetric label="Products" value={report?.summary.products ?? 0} note="All seller products" />
         <SellerMetric label="B2B enquiries" value={report?.summary.b2bEnquiries ?? 0} note="Buyer quotation requests" />

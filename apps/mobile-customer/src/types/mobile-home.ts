@@ -33,6 +33,11 @@ export type MobileProduct = {
     pricePaise: number;
     mrpPaise?: number | null;
     currency?: string | null;
+    basePricePaise?: number | null;
+    baseMrpPaise?: number | null;
+    baseOriginalPricePaise?: number | null;
+    baseDealPricePaise?: number | null;
+    baseCurrency?: string | null;
     status?: string | null;
     stockQuantity?: number | null;
   }>;

@@ -38,6 +38,7 @@ type LocationFieldsProps = {
   className?: string;
   inputClassName?: string;
   labelClassName?: string;
+  onChange?: (value: AddressLocationValue) => void;
 };
 
 const defaultInputClass =
@@ -52,7 +53,8 @@ export function LocationFields({
   disabled = false,
   className,
   inputClassName,
-  labelClassName
+  labelClassName,
+  onChange
 }: LocationFieldsProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [countryCode, setCountryCode] = useState(defaultValue?.countryCode ?? defaultCountryCode);
@@ -288,6 +290,31 @@ export function LocationFields({
       state?.name
     ]
   );
+
+  useEffect(() => {
+    onChange?.({
+      country: hiddenValues.country,
+      countryCode,
+      state: hiddenValues.state,
+      stateCode,
+      city: hiddenValues.city,
+      cityCode,
+      area: hiddenValues.area,
+      localAreaCode,
+      pincode,
+    });
+  }, [
+    cityCode,
+    countryCode,
+    hiddenValues.area,
+    hiddenValues.city,
+    hiddenValues.country,
+    hiddenValues.state,
+    localAreaCode,
+    onChange,
+    pincode,
+    stateCode,
+  ]);
 
   useEffect(() => {
     const form = rootRef.current?.closest("form");

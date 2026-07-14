@@ -12,6 +12,7 @@ import {
   IsOptional, IsNumber,
   IsString,
   IsUUID,
+  Matches,
   Max,
   MaxLength,
   MinLength,
@@ -77,6 +78,12 @@ export class ProductVariantDto {
   @Min(1)
   mrpPaise?: number;
 
+  @ApiPropertyOptional({ example: "SGD", description: "Seller operating currency for this variant price." })
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Z]{3}$/)
+  currency?: string;
+
   @ApiPropertyOptional({ example: 25 })
   @IsOptional()
   @Type(() => Number)
@@ -131,11 +138,26 @@ export class ManualTransportProductConfigDto {
   @Max(5000)
   freeDistanceKm!: number;
 
-  @ApiProperty({ example: 2500, description: "Delivery charge per kilometre after the free distance, stored in paise." })
+  @ApiPropertyOptional({ example: 2500, description: "Delivery charge per kilometre after the free distance, stored in seller-currency minor units." })
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(0)
-  chargePerKmPaise!: number;
+  chargePerKmMinor?: number;
+
+  @ApiPropertyOptional({ example: "INR", description: "Seller operating currency. Server validates this against the seller country." })
+  @IsOptional()
+  @IsString()
+  @MinLength(3)
+  @MaxLength(3)
+  currency?: string;
+
+  @ApiPropertyOptional({ example: 2500, description: "Legacy INR paise field. Use chargePerKmMinor for new clients." })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  chargePerKmPaise?: number;
 
   @ApiProperty({ example: "Free within 5 km, then Rs 25/km. Delivery handled by seller vehicle." })
   @IsString()

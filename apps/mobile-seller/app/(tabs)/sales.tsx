@@ -47,19 +47,10 @@ export default function SellerSalesScreen() {
 
       <Card>
           <Text style={{ color: "#111827", fontSize: 18, fontWeight: "900" }}>Sales Summary</Text>
-          <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 8 }}>
-            <View>
-              <Text style={{ color: "#6B7280", fontSize: 12, fontWeight: "800" }}>Total Sales</Text>
-              <Text style={{ color: "#111827", fontSize: 20, fontWeight: "900" }}>{formatMoney(report?.summary.totalSalesPaise)}</Text>
-            </View>
-            <View>
-              <Text style={{ color: "#6B7280", fontSize: 12, fontWeight: "800" }}>Net Sales</Text>
-              <Text style={{ color: "#111827", fontSize: 20, fontWeight: "900" }}>{formatMoney(report?.summary.netSalesPaise)}</Text>
-            </View>
-            <View>
-              <Text style={{ color: "#6B7280", fontSize: 12, fontWeight: "800" }}>Commission</Text>
-              <Text style={{ color: "#111827", fontSize: 20, fontWeight: "900" }}>{formatMoney(report?.summary.commissionPaise)}</Text>
-            </View>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 12 }}>
+            <SalesMetric label="Gross sales" value={formatMoney(report?.summary.totalSalesPaise)} note="Seller order subtotal" />
+            <SalesMetric label="Commission" value={formatMoney(report?.summary.commissionPaise)} note="Marketplace deduction" />
+            <SalesMetric label="Net payable" value={formatMoney(report?.summary.netSalesPaise)} note="After fees and taxes" />
           </View>
         </Card>
 
@@ -115,5 +106,17 @@ export default function SellerSalesScreen() {
           <EmptyState title="No recent orders" message="Completed orders will appear in your sales report." />
         )}
     </Screen>
+  );
+}
+
+function SalesMetric({ label, value, note }: { label: string; value: string; note: string }) {
+  return (
+    <View style={{ flexBasis: "31%", flexGrow: 1, minWidth: 96, borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", backgroundColor: "#F9FAFB", padding: 12 }}>
+      <Text style={{ color: "#6B7280", fontSize: 11, fontWeight: "900", textTransform: "uppercase" }}>{label}</Text>
+      <Text style={{ color: "#111827", fontSize: 18, fontWeight: "900", marginTop: 6 }} numberOfLines={1} adjustsFontSizeToFit>
+        {value}
+      </Text>
+      <Text style={{ color: "#6B7280", fontSize: 11, fontWeight: "700", marginTop: 4 }}>{note}</Text>
+    </View>
   );
 }

@@ -22,6 +22,7 @@ import {
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react-native";
 import { useAuth } from "@clerk/clerk-expo";
 import { useQuery } from "@tanstack/react-query";
+import * as WebBrowser from "expo-web-browser";
 import { Link, useRouter, type Href } from "expo-router";
 import { useEffect, useRef } from "react";
 import { ActivityIndicator, Animated, Image, Pressable, StyleSheet, Text, View } from "react-native";
@@ -61,9 +62,9 @@ const profileRows = [
 const supportRows = [
   { href: "/account/support", icon: QuestionIcon, text: "FAQs and support articles", title: "Help center" },
   { href: "/account/support", icon: HeadsetIcon, text: "Get help from our team", title: "Contact support" },
-  { icon: Shield01Icon, text: "Read our privacy policy", title: "Privacy policy" },
-  { icon: LegalDocument01Icon, text: "Read our terms and conditions", title: "Terms & conditions" },
-] satisfies Array<{ href?: Href; icon: IconSvgElement; text: string; title: string }>;
+  { externalUrl: "https://1handindia.com/privacy-policy", icon: Shield01Icon, text: "Read our privacy policy", title: "Privacy policy" },
+  { externalUrl: "https://1handindia.com/terms-and-conditions", icon: LegalDocument01Icon, text: "Read our terms and conditions", title: "Terms & conditions" },
+] satisfies Array<{ externalUrl?: string; href?: Href; icon: IconSvgElement; text: string; title: string }>;
 
 export default function AccountScreen() {
   const customerAuth = useMobileCustomerAuth();
@@ -319,7 +320,13 @@ export default function AccountScreen() {
               icon={item.icon}
               isLast={false}
               key={item.title}
-              onPress={item.href ? () => router.push(item.href as never) : undefined}
+              onPress={
+                item.href
+                  ? () => router.push(item.href as never)
+                  : item.externalUrl
+                    ? () => void WebBrowser.openBrowserAsync(item.externalUrl)
+                    : undefined
+              }
               text={item.text}
               title={item.title}
             />

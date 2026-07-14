@@ -45,6 +45,8 @@ export function SellerTaxReportClient({ initialDateFrom = "", initialDateTo = ""
   }
 
   const report = reportQuery.data;
+  const currency = report?.currency || "INR";
+  const currencySymbol = currency === "INR" ? "₹" : currency === "USD" ? "$" : currency === "GBP" ? "£" : currency === "AED" ? "AED " : currency === "SGD" ? "S$" : currency;
 
   const pieData = report
     ? [
@@ -90,17 +92,17 @@ export function SellerTaxReportClient({ initialDateFrom = "", initialDateTo = ""
       {report ? (
         <>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <SellerMetric label="Gross Sales" value={formatMoney(report.summary.grossSalesPaise)} note={`${report.summary.orderCount} orders in period`} />
-            <SellerMetric label="Total Deductions" value={formatMoney(report.summary.totalDeductionsPaise)} note="Commission + GST + TDS + TCS + Fee" />
-            <SellerMetric label="Net Payable" value={formatMoney(report.summary.netPayablePaise)} note="After all deductions" />
-            <SellerMetric label="Coupon Discount" value={formatMoney(report.summary.couponDiscountPaise)} note="Seller-funded coupon cost" />
+            <SellerMetric label="Gross Sales" value={formatMoney(report.summary.grossSalesPaise, currency)} note={`${report.summary.orderCount} orders in period`} />
+            <SellerMetric label="Total Deductions" value={formatMoney(report.summary.totalDeductionsPaise, currency)} note="Commission + GST + TDS + TCS + Fee" />
+            <SellerMetric label="Net Payable" value={formatMoney(report.summary.netPayablePaise, currency)} note="After all deductions" />
+            <SellerMetric label="Coupon Discount" value={formatMoney(report.summary.couponDiscountPaise, currency)} note="Seller-funded coupon cost" />
           </div>
 
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <SellerMetric label="Commission" value={formatMoney(report.summary.commissionPaise)} note="Marketplace service fee" />
-            <SellerMetric label="GST on Commission" value={formatMoney(report.summary.gstOnCommissionPaise)} note="GST charged on commission" />
-            <SellerMetric label="TDS" value={formatMoney(report.summary.tdsPaise)} note="Tax Deducted at Source" />
-            <SellerMetric label="TCS" value={formatMoney(report.summary.tcsPaise)} note="Tax Collected at Source" />
+            <SellerMetric label="Commission" value={formatMoney(report.summary.commissionPaise, currency)} note="Marketplace service fee" />
+            <SellerMetric label="GST on Commission" value={formatMoney(report.summary.gstOnCommissionPaise, currency)} note="GST charged on commission" />
+            <SellerMetric label="TDS" value={formatMoney(report.summary.tdsPaise, currency)} note="Tax Deducted at Source" />
+            <SellerMetric label="TCS" value={formatMoney(report.summary.tcsPaise, currency)} note="Tax Collected at Source" />
           </div>
 
           {pieData.length > 0 ? (
@@ -115,7 +117,7 @@ export function SellerTaxReportClient({ initialDateFrom = "", initialDateTo = ""
                           <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length] as string} />
                         ))}
                       </Pie>
-                      <Tooltip formatter={(value) => [`₹${value}`, undefined]} />
+                      <Tooltip formatter={(value) => [`${currencySymbol}${value}`, undefined]} />
                       <Legend />
                     </PieChart>
                   </ResponsiveContainer>
@@ -132,17 +134,16 @@ export function SellerTaxReportClient({ initialDateFrom = "", initialDateTo = ""
                   <tr className="border-b border-[#E5E7EB] text-left text-xs font-bold uppercase tracking-wide text-[#667085]">
                     <th className="pb-3 pr-4">Order</th>
                     <th className="pb-3 pr-4">Date</th>
-                    <th className="pb-3 pr-4 text-right">Gross (₹)</th>
-                    <th className="pb-3 pr-4 text-right">Commission (₹)</th>
-                    <th className="pb-3 pr-4 text-right">GST (₹)</th>
-                    <th className="pb-3 pr-4 text-right">TDS (₹)</th>
-                    <th className="pb-3 pr-4 text-right">TCS (₹)</th>
-                    <th className="pb-3 text-right">Net (₹)</th>
+                    <th className="pb-3 pr-4 text-right">Gross ({currency})</th>
+                    <th className="pb-3 pr-4 text-right">Commission ({currency})</th>
+                    <th className="pb-3 pr-4 text-right">GST ({currency})</th>
+                    <th className="pb-3 pr-4 text-right">TDS ({currency})</th>
+                    <th className="pb-3 pr-4 text-right">TCS ({currency})</th>
+                    <th className="pb-3 text-right">Net ({currency})</th>
                   </tr>
                 </thead>
                 <tbody>
                   {report.splits.map((split) => {
-                    const net = split.sellerSubtotalPaise - split.commissionPaise - split.gstOnCommissionPaise - split.tdsPaise - split.tcsPaise;
                     return (
                       <tr key={split.id} className="border-b border-[#E5E7EB] hover:bg-[#F8FAFC]">
                         <td className="py-3 pr-4">
@@ -151,12 +152,12 @@ export function SellerTaxReportClient({ initialDateFrom = "", initialDateTo = ""
                           </Link>
                         </td>
                         <td className="py-3 pr-4 text-[#667085]">{new Date(split.createdAt).toLocaleDateString("en-IN")}</td>
-                        <td className="py-3 pr-4 text-right font-semibold">{(split.sellerSubtotalPaise / 100).toFixed(2)}</td>
-                        <td className="py-3 pr-4 text-right text-[#ED3500]">{(split.commissionPaise / 100).toFixed(2)}</td>
-                        <td className="py-3 pr-4 text-right text-[#ED3500]">{(split.gstOnCommissionPaise / 100).toFixed(2)}</td>
-                        <td className="py-3 pr-4 text-right text-[#ED3500]">{(split.tdsPaise / 100).toFixed(2)}</td>
-                        <td className="py-3 pr-4 text-right text-[#ED3500]">{(split.tcsPaise / 100).toFixed(2)}</td>
-                        <td className="py-3 text-right font-black text-[#163B5C]">{(net / 100).toFixed(2)}</td>
+                        <td className="py-3 pr-4 text-right font-semibold">{formatMoney(split.sellerSubtotalPaise, currency)}</td>
+                        <td className="py-3 pr-4 text-right text-[#ED3500]">{formatMoney(split.commissionPaise, currency)}</td>
+                        <td className="py-3 pr-4 text-right text-[#ED3500]">{formatMoney(split.gstOnCommissionPaise, currency)}</td>
+                        <td className="py-3 pr-4 text-right text-[#ED3500]">{formatMoney(split.tdsPaise, currency)}</td>
+                        <td className="py-3 pr-4 text-right text-[#ED3500]">{formatMoney(split.tcsPaise, currency)}</td>
+                        <td className="py-3 text-right font-black text-[#163B5C]">{formatMoney(split.netPayablePaise, currency)}</td>
                       </tr>
                     );
                   })}

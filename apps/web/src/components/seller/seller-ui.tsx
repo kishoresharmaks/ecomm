@@ -691,6 +691,7 @@ export function SellerField({
   onChange,
   required = false,
   placeholder,
+  hint,
   min,
   step,
   readOnly = false
@@ -703,6 +704,7 @@ export function SellerField({
   onChange?: (value: string) => void;
   required?: boolean;
   placeholder?: string;
+  hint?: string;
   min?: number;
   step?: string;
   readOnly?: boolean;
@@ -723,6 +725,7 @@ export function SellerField({
         readOnly={readOnly}
         className="h-11 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 text-sm font-semibold text-[#1F2933] outline-none transition focus:border-[#ED3500] focus:bg-white read-only:bg-[#EEF3F7] read-only:text-[#667085]"
       />
+      {hint ? <span className="block text-xs font-semibold leading-5 text-[#667085]">{hint}</span> : null}
     </label>
   );
 }

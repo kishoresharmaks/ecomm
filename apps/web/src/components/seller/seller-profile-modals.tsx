@@ -5,6 +5,7 @@ import { Description, Dialog, DialogBackdrop, DialogPanel, DialogTitle } from "@
 import { LocateFixed, Loader2, X } from "lucide-react";
 import { Button, StatusBadge } from "@indihub/ui";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { LocationFields } from "@/components/locations/location-fields";
 import {
   updateSellerProfile,
   type SellerBusinessType,
@@ -476,17 +477,25 @@ export function EditAddressModal({
             <SellerField label="Address line 1" name="line1" required defaultValue={address?.line1} />
             <SellerField label="Address line 2" name="line2" defaultValue={address?.line2} />
             
-            <div className="grid grid-cols-2 gap-4">
-               <SellerField label="City" name="city" required defaultValue={address?.city} />
-               <SellerField label="State" name="state" required defaultValue={address?.state} />
-               <SellerField label="Pincode" name="pincode" required defaultValue={address?.pincode} />
-               <SellerField label="Country" name="country" required defaultValue={address?.country ?? "India"} />
-               <input type="hidden" name="countryCode" value={address?.countryCode ?? "IN"} />
-               <input type="hidden" name="stateCode" value={address?.stateCode ?? ""} />
-               <input type="hidden" name="cityCode" value={address?.cityCode ?? ""} />
-               <input type="hidden" name="area" value={address?.area ?? ""} />
-               <input type="hidden" name="localAreaCode" value={address?.localAreaCode ?? ""} />
-            </div>
+            <LocationFields
+              defaultValue={{
+                country: address?.country ?? "India",
+                countryCode: address?.countryCode ?? "IN",
+                state: address?.state ?? "",
+                stateCode: address?.stateCode ?? "",
+                city: address?.city ?? "",
+                cityCode: address?.cityCode ?? "",
+                area: address?.area ?? "",
+                localAreaCode: address?.localAreaCode ?? "",
+                pincode: address?.pincode ?? "",
+              }}
+              defaultCountryCode={address?.countryCode ?? "IN"}
+              loadCitiesAcrossCountry
+              className="grid-cols-1 md:grid-cols-2"
+              labelClassName="space-y-2"
+              inputClassName="h-11 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 text-sm font-semibold text-[#1F2933] outline-none transition focus:border-[#ED3500] focus:bg-white disabled:bg-[#EEF3F7] disabled:text-[#667085]"
+              disabled={mutation.isPending}
+            />
 
             <div className="grid grid-cols-2 gap-4">
               <SellerField

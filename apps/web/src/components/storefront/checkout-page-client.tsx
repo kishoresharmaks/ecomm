@@ -26,6 +26,7 @@ import {
   type CheckoutAddress,
   type CheckoutManualTransportOption,
   type CheckoutPaymentMethodRecord,
+  type CheckoutSummaryOptions,
   type DeliveryMode,
   type PlaceOrderPayload,
 } from "@/lib/storefront-api";
@@ -110,6 +111,7 @@ export function CheckoutPageClient() {
   const [customerNote, setCustomerNote] = useState("");
   const [paymentReference, setPaymentReference] = useState("");
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
+  const [manualAddress, setManualAddress] = useState<CheckoutAddress>(initialAddress);
   const [formError, setFormError] = useState<string | null>(null);
   const [couponInput, setCouponInput] = useState("");
   const [appliedCouponCode, setAppliedCouponCode] = useState<string | null>(null);
@@ -144,6 +146,10 @@ export function CheckoutPageClient() {
     : undefined;
   const useSavedAddress = Boolean(selectedSavedAddress);
   const showManualAddress = !useSavedAddress;
+  const manualAddressReadyForSummary =
+    deliveryPreference !== "STORE_PICKUP" &&
+    showManualAddress &&
+    hasManualAddressLocationForSummary(manualAddress);
   const checkoutSummaryOptions = useMemo(
     () => ({
       buyerCountryCode: market.countryCode,
@@ -165,13 +171,18 @@ export function CheckoutPageClient() {
       ...(deliveryPreference !== "STORE_PICKUP" && selectedSavedAddress
         ? { addressId: selectedSavedAddress.id }
         : {}),
+      ...(manualAddressReadyForSummary
+        ? { shippingAddress: checkoutSummaryAddress(manualAddress) }
+        : {}),
     }),
-    [appliedCouponCode, deliveryPreference, deliverySelectionsBySeller, requestedDeliveryMode, directProductVariantId, directQuantity, market.countryCode, paymentMethod, selectedSavedAddress],
+    [appliedCouponCode, deliveryPreference, deliverySelectionsBySeller, requestedDeliveryMode, directProductVariantId, directQuantity, manualAddress, manualAddressReadyForSummary, market.countryCode, paymentMethod, selectedSavedAddress],
   );
   const checkoutSummaryQuery = useQuery({
     queryKey: ["checkout-summary", customerAuth.authKey, checkoutSummaryOptions],
     queryFn: () => getCheckoutSummary(customerAuth.authHeaders, checkoutSummaryOptions),
-    enabled: customerAuth.enabled,
+    enabled:
+      customerAuth.enabled &&
+      (deliveryPreference === "STORE_PICKUP" || useSavedAddress || manualAddressReadyForSummary),
     retry: false,
   });
   const configuredPaymentOptions = paymentMethodsQuery.data?.methods ?? fallbackPaymentOptions;
@@ -217,6 +228,8 @@ export function CheckoutPageClient() {
     : null;
   const checkoutBlockedMessage = deliveryServiceabilityError
     ? deliveryServiceabilityError
+    : deliveryPreference === "DELIVER_TO_ADDRESS" && showManualAddress && !manualAddressReadyForSummary
+      ? "Enter the delivery pincode or pick the map location to check shipping options."
     : sellerDeliveryBlockedMessage
       ? sellerDeliveryBlockedMessage
     : checkoutSummaryQuery.isError
@@ -507,11 +520,21 @@ export function CheckoutPageClient() {
       ),
   });
 
+  function syncManualAddressFromForm(form: HTMLFormElement) {
+    if (showManualAddress) {
+      setManualAddress(addressFromForm(new FormData(form)));
+    }
+  }
+
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setFormError(null);
     const form = new FormData(event.currentTarget);
-    orderMutation.mutate(showManualAddress ? addressFromForm(form) : undefined);
+    const nextManualAddress = addressFromForm(form);
+    if (showManualAddress) {
+      setManualAddress(nextManualAddress);
+    }
+    orderMutation.mutate(showManualAddress ? nextManualAddress : undefined);
   }
 
   function applyCoupon() {
@@ -549,7 +572,12 @@ export function CheckoutPageClient() {
       />
 
       <section className="mx-auto grid max-w-7xl gap-6 px-5 py-10 lg:grid-cols-[1fr_380px] lg:px-6">
-        <form onSubmit={submit} className="space-y-6">
+        <form
+          onSubmit={submit}
+          onChange={(event) => syncManualAddressFromForm(event.currentTarget)}
+          onInput={(event) => syncManualAddressFromForm(event.currentTarget)}
+          className="space-y-6"
+        >
           <CustomerAuthNotice />
 
           <StorefrontPanel as="section">
@@ -640,6 +668,20 @@ export function CheckoutPageClient() {
                     className="md:grid-cols-2"
                     labelClassName="space-y-2"
                     inputClassName={storefrontInputClassName}
+                    onChange={(location) =>
+                      setManualAddress((current) => ({
+                        ...current,
+                        country: location.country ?? current.country,
+                        countryCode: location.countryCode ?? current.countryCode,
+                        state: location.state ?? current.state,
+                        stateCode: location.stateCode ?? current.stateCode,
+                        city: location.city ?? current.city,
+                        cityCode: location.cityCode ?? current.cityCode,
+                        area: location.area ?? current.area,
+                        localAreaCode: location.localAreaCode ?? current.localAreaCode,
+                        pincode: location.pincode ?? current.pincode,
+                      }))
+                    }
                   />
                 </div>
                 <div className="md:col-span-2">
@@ -654,6 +696,16 @@ export function CheckoutPageClient() {
                     authHeaders={customerAuth.authHeaders}
                     disabled={orderMutation.isPending}
                     inputClassName={storefrontInputClassName}
+                    onChange={(location) =>
+                      setManualAddress((current) => ({
+                        ...current,
+                        latitude: nullableFiniteNumber(location.latitude) ?? null,
+                        longitude: nullableFiniteNumber(location.longitude) ?? null,
+                        locationSource: normalizeLocationSource(location.locationSource),
+                        accuracyMeters: nullableFiniteNumber(location.accuracyMeters) ?? null,
+                        locationConfidenceScore: nullableFiniteNumber(location.locationConfidenceScore) ?? null,
+                      }))
+                    }
                   />
                 </div>
               </div>
@@ -931,7 +983,7 @@ export function CheckoutPageClient() {
                   </p>
                   <p className="mt-2 text-sm font-black text-[#163B5C]">
                     Qty {directQuantity}
-                    {directSnapshot ? ` · ${formatMoney(directSnapshot.pricePaise * directQuantity, directSnapshot.currency)}` : ""}
+                    {directSnapshot ? ` · ${market.format(directSnapshot.pricePaise * directQuantity)}` : ""}
                   </p>
                 </div>
               </div>
@@ -969,10 +1021,10 @@ export function CheckoutPageClient() {
                     </div>
                     <div className="text-right">
                       <span className="font-black text-[#1F2933]">
-                        {market.format(item.quantity * item.unitPricePaise)}
+                        {formatMoney(item.quantity * item.unitPricePaise, item.currency)}
                       </span>
                       {originalUnitPrice ? (
-                        <p className="text-xs font-bold text-[#98A2B3] line-through">{market.format(item.quantity * originalUnitPrice)}</p>
+                        <p className="text-xs font-bold text-[#98A2B3] line-through">{formatMoney(item.quantity * originalUnitPrice, item.currency)}</p>
                       ) : null}
                     </div>
                   </div>
@@ -1139,6 +1191,37 @@ function cleanAddress(address: CheckoutAddress): CheckoutAddress {
   };
 }
 
+function checkoutSummaryAddress(address: CheckoutAddress): NonNullable<CheckoutSummaryOptions["shippingAddress"]> {
+  const coordinates = coordinatePairFromValues(address.latitude, address.longitude);
+
+  return {
+    countryCode: address.countryCode?.trim().toUpperCase() || undefined,
+    stateCode: address.stateCode?.trim() || undefined,
+    cityCode: address.cityCode?.trim() || undefined,
+    pincode: address.pincode?.trim() || undefined,
+    localAreaCode: address.localAreaCode?.trim() || undefined,
+    ...(typeof coordinates.latitude === "number" && typeof coordinates.longitude === "number"
+      ? {
+          latitude: coordinates.latitude,
+          longitude: coordinates.longitude,
+        }
+      : {}),
+    locationSource: address.locationSource ?? undefined,
+    accuracyMeters: nullableFiniteNumber(address.accuracyMeters) ?? undefined,
+    locationConfidenceScore: nullableFiniteNumber(address.locationConfidenceScore) ?? undefined,
+  };
+}
+
+function hasManualAddressLocationForSummary(address: CheckoutAddress) {
+  const summaryAddress = checkoutSummaryAddress(address);
+  return Boolean(
+    summaryAddress.countryCode &&
+      (summaryAddress.localAreaCode ||
+        summaryAddress.pincode ||
+        (typeof summaryAddress.latitude === "number" && typeof summaryAddress.longitude === "number")),
+  );
+}
+
 function validateAddress(address: CheckoutAddress) {
   const next = cleanAddress(address);
 
@@ -1166,6 +1249,12 @@ function hasAddressCoordinates(address: {
   const longitude = nullableFiniteNumber(address.longitude);
 
   return typeof latitude === "number" && typeof longitude === "number";
+}
+
+function normalizeLocationSource(value: string | null | undefined): CheckoutAddress["locationSource"] {
+  return value === "GPS" || value === "MAP_PICK" || value === "MANUAL" || value === "REVERSE_GEOCODE"
+    ? value
+    : null;
 }
 
 function isDeliveryMode(value: string | null): value is DeliveryMode {
@@ -1290,9 +1379,24 @@ function serviceabilityCheckoutError(error: unknown) {
   }
 
   const message = error.message.trim();
-  if (!message.toLowerCase().includes("not serviceable")) {
+  const normalized = message.toLowerCase();
+  if (
+    !normalized.includes("not serviceable") &&
+    !normalized.includes("delivery is not available") &&
+    !normalized.includes("could not calculate seller-arranged delivery distance") &&
+    !normalized.includes("map location is required") &&
+    !normalized.includes("seller-collected delivery and courier/partner delivery")
+  ) {
     return null;
   }
 
-  return "Delivery is not available for this address yet. Please choose another saved address, enter a different delivery location, or select store pickup if it is available.";
+  if (normalized.includes("seller-collected delivery and courier/partner delivery")) {
+    return "This COD cart has products with different cash-collection delivery types. Please place separate orders for these products.";
+  }
+
+  if (normalized.includes("map location") || normalized.includes("seller-arranged")) {
+    return "Seller-arranged delivery needs an exact map location. Pick the address location on the map, or choose another delivery method.";
+  }
+
+  return "Delivery is not available for this address yet. Check the pincode/map location, choose another address, or select store pickup if available.";
 }

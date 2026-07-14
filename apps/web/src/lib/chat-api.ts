@@ -191,11 +191,29 @@ export function linkChatSupportRequest(auth: IndihubAuthHeaders, conversationId:
 
 function queryString(query: StaffChatQuery) {
   const params = new URLSearchParams();
+
   for (const [key, value] of Object.entries(query)) {
-    if (value && value !== "ALL") {
-      params.set(key, value);
+    if (value !== undefined && value !== null && value !== "") {
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          if (item !== undefined && item !== "") {
+            params.append(key, String(item));
+          }
+        }
+      } else if (key === "dateFrom" && typeof value === "string" && value.length === 10) {
+        const [y, m, d] = value.split("-");
+        const date = new Date(Number(y), Number(m) - 1, Number(d), 0, 0, 0, 0);
+        params.append(key, date.toISOString());
+      } else if (key === "dateTo" && typeof value === "string" && value.length === 10) {
+        const [y, m, d] = value.split("-");
+        const date = new Date(Number(y), Number(m) - 1, Number(d), 23, 59, 59, 999);
+        params.append(key, date.toISOString());
+      } else {
+        params.append(key, String(value));
+      }
     }
   }
-  const serialized = params.toString();
-  return serialized ? `?${serialized}` : "";
+
+  const str = params.toString();
+  return str ? `?${str}` : "";
 }

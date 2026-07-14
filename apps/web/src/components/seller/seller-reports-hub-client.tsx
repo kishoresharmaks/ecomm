@@ -44,6 +44,7 @@ export function SellerReportsHubClient() {
   }
 
   const overview = reportQuery.data;
+  const currency = overview?.currency || "INR";
 
   return (
     <div className="grid gap-5">
@@ -68,7 +69,7 @@ export function SellerReportsHubClient() {
           icon={<BarChart3 className="h-6 w-6 text-[#163B5C]" />}
           href="/seller/reports/sales"
           metricLabel="Total Sales"
-          metricValue={overview ? formatMoney(overview.totalSalesPaise) : "—"}
+          metricValue={overview ? formatMoney(overview.totalSalesPaise, currency) : "—"}
           bg="bg-[#EAF1F7]"
           query={submittedRange}
         />
@@ -89,7 +90,7 @@ export function SellerReportsHubClient() {
           icon={<IndianRupee className="h-6 w-6 text-[#163B5C]" />}
           href="/seller/reports/finance"
           metricLabel="Net Earnings"
-          metricValue={overview ? formatMoney(overview.netSalesPaise) : "—"}
+          metricValue={overview ? formatMoney(overview.netSalesPaise, currency) : "—"}
           bg="bg-[#EAF1F7]"
           query={submittedRange}
         />
@@ -99,7 +100,7 @@ export function SellerReportsHubClient() {
           icon={<FileText className="h-6 w-6 text-[#163B5C]" />}
           href="/seller/reports/tax"
           metricLabel="Total Tax Deductions"
-          metricValue={overview ? formatMoney(overview.gstOnCommissionPaise) : "—"}
+          metricValue={overview ? formatMoney(overview.commissionPaise + overview.gstOnCommissionPaise, currency) : "—"}
           bg="bg-[#EAF1F7]"
           query={submittedRange}
         />

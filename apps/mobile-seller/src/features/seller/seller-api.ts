@@ -16,6 +16,7 @@ export type SellerProfile = {
   status: SellerStatus;
   approvalStatus: SellerApprovalStatus;
   subscriptionStatus?: string;
+  operatingCurrency?: string;
   /**
    * Legacy/mobile-normalized aliases. The API source of truth is `profile.*`.
    */
@@ -158,6 +159,7 @@ export type ProductSummary = {
     variantName?: string | null;
     pricePaise: number;
     mrpPaise?: number | null;
+    currency?: string | null;
     stockQuantity?: number | null;
     status?: string;
     packageWeightGrams?: number | null;
@@ -178,7 +180,8 @@ export type SellerProductPayload = {
     sku?: string;
     variantName?: string;
     pricePaise: number;
-      mrpPaise?: number | null;
+    mrpPaise?: number | null;
+    currency?: string;
     stockQuantity?: number;
     packageWeightGrams?: number;
     packageLengthCm?: number;
@@ -465,6 +468,10 @@ export type SellerSalesReport = {
     orderCount: number;
     totalSalesPaise: number;
     commissionPaise: number;
+    gstOnCommissionPaise?: number;
+    tdsPaise?: number;
+    tcsPaise?: number;
+    platformFeePaise?: number;
     netSalesPaise: number;
     products: number;
     lowStockCount: number;

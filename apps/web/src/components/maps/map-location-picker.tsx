@@ -37,6 +37,7 @@ type MapLocationPickerProps = {
   radiusPreviewKm?: number | undefined;
   centerFallback?: Coordinates | undefined;
   inputClassName?: string | undefined;
+  onChange?: (value: MapLocationValue) => void;
 };
 
 type LocationAutofillEventDetail = {
@@ -57,7 +58,8 @@ export function MapLocationPicker({
   disabled = false,
   radiusPreviewKm,
   centerFallback,
-  inputClassName
+  inputClassName,
+  onChange
 }: MapLocationPickerProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -109,6 +111,16 @@ export function MapLocationPicker({
   useEffect(() => {
     currentPointRef.current = currentPoint;
   }, [currentPoint]);
+
+  useEffect(() => {
+    onChange?.({
+      latitude,
+      longitude,
+      locationSource,
+      accuracyMeters,
+      locationConfidenceScore,
+    });
+  }, [accuracyMeters, latitude, locationConfidenceScore, locationSource, longitude, onChange]);
 
   useEffect(() => {
     centerFallbackRef.current = centerFallback ?? defaultCenter;

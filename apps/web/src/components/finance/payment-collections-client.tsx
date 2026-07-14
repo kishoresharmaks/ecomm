@@ -17,12 +17,6 @@ import {
   type FinancePaymentCollection
 } from "@/lib/finance-api";
 
-const moneyFormatter = new Intl.NumberFormat("en-IN", {
-  style: "currency",
-  currency: "INR",
-  maximumFractionDigits: 0
-});
-
 type PaymentCollectionMode = "COD" | "BANK_TRANSFER" | "ALL";
 
 export function PaymentCollectionsClient({ mode = "ALL" }: { mode?: PaymentCollectionMode }) {
@@ -299,7 +293,7 @@ function PaymentCollectionRow({
         <p className="mt-1 text-sm font-semibold text-[#667085]">
           {payment.order.customer.fullName ?? payment.order.customer.email ?? "Customer"} / {new Date(payment.order.createdAt).toLocaleString("en-IN")}
         </p>
-        <p className="mt-2 text-xl font-black text-[#1F2933]">{money(payment.amountPaise)}</p>
+        <p className="mt-2 text-xl font-black text-[#1F2933]">{money(payment.amountPaise, payment.currency)}</p>
       </div>
 
       <div className="grid gap-1 text-sm font-semibold text-[#667085]">
@@ -315,10 +309,10 @@ function PaymentCollectionRow({
               COD: <span className="font-black text-[#1F2933]">SELLER_COLLECTED</span>
             </p>
             <p>
-              Cash: <span className="font-black text-[#1F2933]">{money(sellerCollectedGrossPaise)}</span>
+              Cash: <span className="font-black text-[#1F2933]">{money(sellerCollectedGrossPaise, payment.currency)}</span>
             </p>
             <p>
-              Platform due: <span className="font-black text-[#1F2933]">{money(sellerCollectedPlatformDuePaise)}</span>
+              Platform due: <span className="font-black text-[#1F2933]">{money(sellerCollectedPlatformDuePaise, payment.currency)}</span>
             </p>
           </>
         ) : isCod ? (
@@ -501,6 +495,10 @@ function statusTone(status: string): "success" | "danger" | "warning" | "info" {
   return "info";
 }
 
-function money(amountPaise: number) {
-  return moneyFormatter.format((amountPaise ?? 0) / 100);
+function money(amountPaise: number, currency = "INR") {
+  return new Intl.NumberFormat(currency === "INR" ? "en-IN" : "en", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 0,
+  }).format((amountPaise ?? 0) / 100);
 }

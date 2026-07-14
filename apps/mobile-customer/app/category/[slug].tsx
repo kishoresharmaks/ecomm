@@ -1,4 +1,4 @@
-import { ArrowLeft01Icon, CheckCircle, File02Icon, Grid2X2Icon, Search01Icon, ShoppingCart01Icon, StarIcon, Store01Icon } from "@hugeicons/core-free-icons";
+import { ArrowLeft01Icon, CheckCircle, File02Icon, Grid2X2Icon, HeartIcon, Search01Icon, ShoppingCart01Icon, StarIcon, Store01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react-native";
 import { FlashList } from "@shopify/flash-list";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -10,6 +10,7 @@ import { RemoteImage } from "../../src/components/remote-image";
 import { useMobileMarket } from "../../src/features/market/mobile-market";
 import { withStorefrontMaintenance } from "../../src/features/maintenance/mobile-maintenance-gate";
 import { getCategory, listProducts, addCartItem } from "../../src/features/storefront/storefront-api";
+import { useMobileWishlistActions } from "../../src/features/storefront/use-mobile-wishlist-actions";
 import { resolveImageUrl } from "../../src/lib/image-url";
 import { useMobileCustomerAuth } from "../../src/auth/mobile-auth-context";
 import { colors } from "../../src/theme";
@@ -32,18 +33,24 @@ const STANDARD_IMAGE_HEIGHT = 140;
 function PremiumProductCard({ 
   product, 
   formatPrice,
+  isWishlistPending,
+  isWished,
   onAddToCart,
+  onToggleWishlist,
   isAddedToCart
 }: { 
   product: ProductSummary;
   formatPrice: (pricePaise?: number | null) => string;
+  isWishlistPending: boolean;
+  isWished: boolean;
   onAddToCart: (product: ProductSummary) => void;
+  onToggleWishlist: () => void;
   isAddedToCart: boolean;
 }) {
   const imageUrl = resolveImageUrl(product.images?.[0]?.url);
   const variant = product.variants?.[0];
-  const price = variant?.pricePaise;
-  const mrp = variant?.mrpPaise ?? null;
+  const price = variantDisplayPrice(variant);
+  const mrp = variantOriginalDisplayPrice(variant);
   const discount = mrp && price && mrp > price ? Math.round(((mrp - price) / mrp) * 100) : 0;
   const rating = product.reviewSummary?.averageRating ?? null;
   const reviewCount = product.reviewSummary?.reviewCount ?? 0;
@@ -78,6 +85,24 @@ function PremiumProductCard({
         <View style={styles.newBadge}>
           <Text style={styles.newBadgeText}>New</Text>
         </View>
+        <Pressable
+          accessibilityLabel={isWished ? "Remove from wishlist" : "Add to wishlist"}
+          accessibilityRole="button"
+          accessibilityState={{ busy: isWishlistPending, selected: isWished }}
+          disabled={isWishlistPending}
+          hitSlop={8}
+          style={[styles.wishlistButton, isWished ? styles.wishlistButtonActive : null, isWishlistPending ? styles.wishlistButtonDisabled : null]}
+          onPress={(event) => {
+            event.stopPropagation();
+            onToggleWishlist();
+          }}
+        >
+          {isWishlistPending ? (
+            <ActivityIndicator color={colors.primary} size="small" />
+          ) : (
+            <HugeiconsIcon color={isWished ? colors.primary : "#667085"} icon={HeartIcon} size={18} strokeWidth={isWished ? 2.6 : 1.8} />
+          )}
+        </Pressable>
       </View>
       
       <View style={styles.premiumCardContent}>
@@ -147,6 +172,7 @@ function CategoryDetailScreen() {
   const market = useMobileMarket();
   const auth = useMobileCustomerAuth();
   const queryClient = useQueryClient();
+  const wishlist = useMobileWishlistActions();
   const [searchText, setSearchText] = useState("");
   const [sortOption, setSortOption] = useState("featured");
   const [showSortModal, setShowSortModal] = useState(false);
@@ -180,8 +206,8 @@ function CategoryDetailScreen() {
       
       // Apply client-side sorting based on sortOption
       const sorted = [...allProducts].sort((a, b) => {
-        const priceA = a.variants?.[0]?.pricePaise ?? 0;
-        const priceB = b.variants?.[0]?.pricePaise ?? 0;
+        const priceA = variantDisplayPrice(a.variants?.[0]) ?? 0;
+        const priceB = variantDisplayPrice(b.variants?.[0]) ?? 0;
         const ratingA = a.reviewSummary?.averageRating ?? 0;
         const ratingB = b.reviewSummary?.averageRating ?? 0;
         const reviewCountA = a.reviewSummary?.reviewCount ?? 0;
@@ -260,12 +286,7 @@ function CategoryDetailScreen() {
   if (!slug) {
     return (
       <View style={styles.screen}>
-        <Stack.Screen options={{ headerShown: false }} />
-        <PremiumHeader 
-          title="Category" 
-          showBack 
-          onBack={() => router.back()} 
-        />
+        <Stack.Screen options={{ headerShown: true, title: "Category" }} />
         <EmptyState title="Category not found" message="Open a category again from the marketplace." />
       </View>
     );
@@ -273,13 +294,7 @@ function CategoryDetailScreen() {
 
   return (
     <View style={styles.screen}>
-      <Stack.Screen options={{ headerShown: false }} />
-      
-      <PremiumHeader 
-        title={category?.name ?? "Category"} 
-        showBack 
-        onBack={() => router.back()} 
-      />
+      <Stack.Screen options={{ headerShown: true, title: category?.name ?? "Category" }} />
       
       <ScrollView 
         style={styles.scrollContainer}
@@ -331,7 +346,10 @@ function CategoryDetailScreen() {
                     <PremiumProductCard 
                       product={item} 
                       formatPrice={market.format}
+                      isWishlistPending={wishlist.isPending(item.id)}
+                      isWished={wishlist.isWished(item.id)}
                       onAddToCart={handleAddToCart}
+                      onToggleWishlist={() => wishlist.toggleWishlist(item.id)}
                       isAddedToCart={addedToCartStates[item.id] ?? false}
                     />
                   </View>
@@ -395,6 +413,14 @@ function CategoryDetailScreen() {
 
 export default withStorefrontMaintenance(CategoryDetailScreen);
 
+function variantDisplayPrice(variant: ProductSummary["variants"][number] | undefined) {
+  return variant?.basePricePaise ?? variant?.pricePaise;
+}
+
+function variantOriginalDisplayPrice(variant: ProductSummary["variants"][number] | undefined) {
+  return variant?.baseMrpPaise ?? variant?.baseOriginalPricePaise ?? variant?.mrpPaise ?? variant?.originalPricePaise ?? null;
+}
+
 function SubcategoryRail({ category }: { category: MobileCategory | undefined }) {
   const router = useRouter();
   const children = category?.children ?? [];
@@ -421,35 +447,6 @@ function SubcategoryRail({ category }: { category: MobileCategory | undefined })
           );
         })}
       </ScrollView>
-    </View>
-  );
-}
-
-// Premium header component
-function PremiumHeader({ 
-  title, 
-  showBack = false, 
-  onBack
-}: { 
-  title: string; 
-  showBack?: boolean; 
-  onBack?: () => void; 
-}) {
-  return (
-    <View style={styles.premiumHeader}>
-      <View style={styles.headerLeft}>
-        {showBack && (
-          <Pressable style={styles.headerButton} onPress={onBack}>
-            <HugeiconsIcon color="#1F2937" icon={ArrowLeft01Icon} size={24} strokeWidth={2} />
-          </Pressable>
-        )}
-      </View>
-      <Text numberOfLines={1} style={styles.headerTitle}>
-        {title}
-      </Text>
-      <View style={styles.headerRight}>
-        {/* Heart icon removed */}
-      </View>
     </View>
   );
 }
@@ -940,6 +937,32 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "700",
     color: "#D97706",
+  },
+  wishlistButton: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.96)",
+    borderColor: "#F3E7E2",
+    borderRadius: 999,
+    borderWidth: 1,
+    elevation: 3,
+    height: 36,
+    justifyContent: "center",
+    position: "absolute",
+    right: 10,
+    shadowColor: colors.primary,
+    shadowOffset: { height: 6, width: 0 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    top: 10,
+    width: 36,
+    zIndex: 3,
+  },
+  wishlistButtonActive: {
+    backgroundColor: "#FFF2ED",
+    borderColor: "#FFD6C8",
+  },
+  wishlistButtonDisabled: {
+    opacity: 0.72,
   },
   premiumCardContent: {
     padding: 12,

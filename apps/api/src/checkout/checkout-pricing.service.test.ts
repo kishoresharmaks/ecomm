@@ -259,10 +259,99 @@ describe("CheckoutPricingService", () => {
       tx,
     );
   });
+
+  it("blocks COD checkout when seller-collected and courier/partner delivery modes are mixed", async () => {
+    const tx = checkoutSettingsTx();
+    const routing = {
+      resolveAllDeliveryOptions: vi.fn().mockImplementation((_input, modes: DeliveryMode[]) =>
+        Promise.resolve(modes.map((mode) => ({ mode, quote: deliveryQuote(mode) }))),
+      ),
+    };
+    const service = new CheckoutPricingService({ client: tx } as never, routing as never);
+
+    await expect(
+      service.calculateSellerPackageCharges(
+        20000,
+        [
+          sellerPackage("seller_manual", [DeliveryMode.MANUAL_TRANSPORT]),
+          sellerPackage("seller_courier", [DeliveryMode.THIRD_PARTY_COURIER]),
+        ],
+        tx as never,
+        {
+          deliveryPreference: CheckoutDeliveryPreference.DELIVER_TO_ADDRESS,
+          deliverySelections: [
+            { sellerId: "seller_manual", deliveryMode: DeliveryMode.MANUAL_TRANSPORT },
+            { sellerId: "seller_courier", deliveryMode: DeliveryMode.THIRD_PARTY_COURIER },
+          ],
+          paymentMethod: "COD",
+          address: { countryCode: "IN", stateCode: "IN-TN", pincode: "636114" },
+        },
+      ),
+    ).rejects.toThrow("Please place separate orders for these products.");
+  });
+
+  it("allows the same mixed delivery modes for non-COD checkout", async () => {
+    const tx = checkoutSettingsTx();
+    const routing = {
+      resolveAllDeliveryOptions: vi.fn().mockImplementation((_input, modes: DeliveryMode[]) =>
+        Promise.resolve(modes.map((mode) => ({ mode, quote: deliveryQuote(mode) }))),
+      ),
+    };
+    const service = new CheckoutPricingService({ client: tx } as never, routing as never);
+
+    const result = await service.calculateSellerPackageCharges(
+      20000,
+      [
+        sellerPackage("seller_manual", [DeliveryMode.MANUAL_TRANSPORT]),
+        sellerPackage("seller_courier", [DeliveryMode.THIRD_PARTY_COURIER]),
+      ],
+      tx as never,
+      {
+        deliveryPreference: CheckoutDeliveryPreference.DELIVER_TO_ADDRESS,
+        deliverySelections: [
+          { sellerId: "seller_manual", deliveryMode: DeliveryMode.MANUAL_TRANSPORT },
+          { sellerId: "seller_courier", deliveryMode: DeliveryMode.THIRD_PARTY_COURIER },
+        ],
+        paymentMethod: "RAZORPAY",
+        address: { countryCode: "IN", stateCode: "IN-TN", pincode: "636114" },
+      },
+    );
+
+    expect(result.deliveryRoutings?.map((routing) => routing.quote.deliveryMode)).toEqual([
+      DeliveryMode.MANUAL_TRANSPORT,
+      DeliveryMode.THIRD_PARTY_COURIER,
+    ]);
+  });
 });
 
 function setting(key: string, value: boolean | number | string) {
   return { key, value };
+}
+
+function checkoutSettingsTx() {
+  return {
+    setting: {
+      findMany: vi.fn().mockResolvedValue([
+        setting("shipping.default_charge_paise", 0),
+        setting("checkout.platform_fee.enabled", false),
+        setting("checkout.platform_fee.type", "PERCENTAGE"),
+        setting("checkout.platform_fee.value_bps", 0),
+        setting("checkout.platform_fee.fixed_paise", 0),
+      ]),
+    },
+  };
+}
+
+function sellerPackage(sellerId: string, allowedDeliveryModes: DeliveryMode[]) {
+  return {
+    sellerId,
+    sellerName: sellerId,
+    sellerType: SellerType.MARKETPLACE_SELLER,
+    subtotalPaise: 10000,
+    allowedDeliveryModes,
+    items: [],
+    package: { weightGrams: 500, lengthCm: 20, breadthCm: 15, heightCm: 8, itemCount: 1 },
+  };
 }
 
 function deliveryQuote(mode: DeliveryMode) {

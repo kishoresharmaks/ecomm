@@ -57,6 +57,7 @@ export type SellerProfile = Omit<SellerSummary, "profile"> & {
   serviceReviewCount?: number;
   profile?: SellerProfileDetails | null;
   payoutProfile?: SellerPayoutProfileSummary | null;
+  operatingCurrency?: string;
   subscriptionStatus?: SellerSubscriptionStatus;
   subscriptionStartedAt?: string | null;
   subscriptionCurrentPeriodEnd?: string | null;
@@ -369,12 +370,23 @@ export type PaginatedSellerProducts = {
   limit: number;
 };
 
-export type SellerOrder = AccountOrder & {
+export type SellerOrder = Omit<AccountOrder, "sellerSplits" | "items"> & {
   items: Array<
     AccountOrder["items"][number] & {
       sellerId?: string;
       productVariant?: ProductVariant;
       product?: ProductSummary;
+    }
+  >;
+  sellerSplits?: Array<
+    Exclude<AccountOrder["sellerSplits"], undefined>[number] & {
+      commissionPaise?: number | null;
+      gstOnCommissionPaise?: number | null;
+      tdsPaise?: number | null;
+      tcsPaise?: number | null;
+      platformFeePaise?: number | null;
+      refundAdjustmentPaise?: number | null;
+      netPayablePaise?: number | null;
     }
   >;
 };
@@ -620,6 +632,9 @@ export type PaginatedSellerB2BOrders = {
 };
 
 export type SellerSalesReport = {
+  currency?: string;
+  baseCurrency?: string;
+  fxRate?: number;
   seller?: {
     id: string;
     primaryCapability?: SellerCapability;
@@ -1143,6 +1158,9 @@ export function getSellerSalesReport(
 
 // ─── Reports Hub Overview ────────────────────────────────────────────────────
 export type SellerReportsOverview = {
+  currency?: string;
+  baseCurrency?: string;
+  fxRate?: number;
   totalSalesPaise: number;
   netSalesPaise: number;
   commissionPaise: number;
@@ -1232,6 +1250,9 @@ export type SellerLedgerRecord = {
   createdAt: string;
 };
 export type SellerFinanceReport = {
+  currency?: string;
+  baseCurrency?: string;
+  fxRate?: number;
   summary: {
     grossSalesPaise: number; commissionPaise: number; netPayablePaise: number; refundAdjustmentPaise: number; platformFeePaise: number; orderCount: number;
     pendingPayoutsPaise: number; pendingPayoutsCount: number; paidPayoutsPaise: number; paidPayoutsCount: number; eligiblePaise: number; eligibleCount: number;
@@ -1265,6 +1286,9 @@ export type SellerTaxSplit = {
   order: { orderNumber: string; createdAt: string; currency: string };
 };
 export type SellerTaxReport = {
+  currency?: string;
+  baseCurrency?: string;
+  fxRate?: number;
   summary: {
     orderCount: number; grossSalesPaise: number; commissionPaise: number; gstOnCommissionPaise: number; tdsPaise: number; tcsPaise: number;
     platformFeePaise: number; couponDiscountPaise: number; netPayablePaise: number; totalDeductionsPaise: number;
@@ -1423,18 +1447,27 @@ function queryString(query: Record<string, string | number | undefined | string[
   const params = new URLSearchParams();
 
   for (const [key, value] of Object.entries(query)) {
-    if (value !== undefined && value !== "") {
+    if (value !== undefined && value !== null && value !== "") {
       if (Array.isArray(value)) {
         for (const item of value) {
           if (item !== undefined && item !== "") {
             params.append(key, String(item));
           }
         }
+      } else if (key === "dateFrom" && typeof value === "string" && value.length === 10) {
+        const [y, m, d] = value.split("-");
+        const date = new Date(Number(y), Number(m) - 1, Number(d), 0, 0, 0, 0);
+        params.append(key, date.toISOString());
+      } else if (key === "dateTo" && typeof value === "string" && value.length === 10) {
+        const [y, m, d] = value.split("-");
+        const date = new Date(Number(y), Number(m) - 1, Number(d), 23, 59, 59, 999);
+        params.append(key, date.toISOString());
       } else {
-        params.set(key, String(value));
+        params.append(key, String(value));
       }
     }
   }
 
-  return params.size ? `?${params.toString()}` : "";
+  const str = params.toString();
+  return str ? `?${str}` : "";
 }

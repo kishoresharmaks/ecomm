@@ -82,6 +82,11 @@ export type ProductVariant = {
   pricePaise: number;
   mrpPaise?: number | null;
   currency: string;
+  basePricePaise?: number | null;
+  baseMrpPaise?: number | null;
+  baseOriginalPricePaise?: number | null;
+  baseDealPricePaise?: number | null;
+  baseCurrency?: string | null;
   stockQuantity: number;
   status: string;
   originalPricePaise?: number | null;

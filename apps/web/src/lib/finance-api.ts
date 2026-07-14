@@ -71,7 +71,11 @@ export type FinancePaymentCollection = {
         id: string;
         shipmentNumber: string;
         deliveryMode: string;
+        shippingPaise?: number | null;
+        codSurchargePaise?: number | null;
         codCollectionStatus: string;
+        routingSnapshot?: unknown;
+        shippingChargeSnapshot?: unknown;
       } | null;
     }>;
     deliveryDetail?: {
@@ -218,10 +222,27 @@ function queryString(query: Record<string, string | number | boolean | undefined
   const params = new URLSearchParams();
 
   for (const [key, value] of Object.entries(query)) {
-    if (value !== undefined && value !== "") {
-      params.set(key, String(value));
+    if (value !== undefined && value !== null && value !== "") {
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          if (item !== undefined && item !== "") {
+            params.append(key, String(item));
+          }
+        }
+      } else if (key === "dateFrom" && typeof value === "string" && value.length === 10) {
+        const [y, m, d] = value.split("-");
+        const date = new Date(Number(y), Number(m) - 1, Number(d), 0, 0, 0, 0);
+        params.append(key, date.toISOString());
+      } else if (key === "dateTo" && typeof value === "string" && value.length === 10) {
+        const [y, m, d] = value.split("-");
+        const date = new Date(Number(y), Number(m) - 1, Number(d), 23, 59, 59, 999);
+        params.append(key, date.toISOString());
+      } else {
+        params.append(key, String(value));
+      }
     }
   }
 
-  return params.size ? `?${params.toString()}` : "";
+  const str = params.toString();
+  return str ? `?${str}` : "";
 }

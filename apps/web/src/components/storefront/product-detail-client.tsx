@@ -35,6 +35,9 @@ import {
   listProductReviews,
   primaryImage,
   primaryVariant,
+  variantBaseMrp,
+  variantBaseOriginalPrice,
+  variantBasePrice,
   type PaginatedProductReviews,
   type ProductSummary,
   type ProductVariant,
@@ -101,15 +104,18 @@ export function ProductDetailClient({ slug }: { slug: string }) {
   const reviewSummary = reviewsQuery.data?.summary ?? product?.reviewSummary ?? null;
   const reviewCount = reviewSummary?.reviewCount ?? 0;
   const averageRating = reviewSummary?.averageRating ?? null;
+  const selectedBasePrice = variantBasePrice(selectedVariant);
+  const selectedBaseMrp = variantBaseMrp(selectedVariant);
+  const selectedBaseOriginalPrice = variantBaseOriginalPrice(selectedVariant);
   const originalDealPrice =
-    selectedVariant?.originalPricePaise && selectedVariant.originalPricePaise > selectedVariant.pricePaise
-      ? selectedVariant.originalPricePaise
+    selectedBaseOriginalPrice && selectedBasePrice && selectedBaseOriginalPrice > selectedBasePrice
+      ? selectedBaseOriginalPrice
       : null;
   const discountPercent =
     activeDeal
       ? activeDeal.discountBps / 100
-      : selectedVariant?.mrpPaise && selectedVariant.mrpPaise > selectedVariant.pricePaise
-      ? Math.round(((selectedVariant.mrpPaise - selectedVariant.pricePaise) / selectedVariant.mrpPaise) * 100)
+      : selectedBaseMrp && selectedBasePrice && selectedBaseMrp > selectedBasePrice
+      ? Math.round(((selectedBaseMrp - selectedBasePrice) / selectedBaseMrp) * 100)
       : null;
 
   useEffect(() => {
@@ -237,8 +243,8 @@ export function ProductDetailClient({ slug }: { slug: string }) {
           imageUrl,
           sellerName: product.seller.storeName,
           variantName: selectedVariant.variantName ?? null,
-          pricePaise: selectedVariant.pricePaise,
-          currency: selectedVariant.currency,
+          pricePaise: selectedBasePrice,
+          currency: selectedVariant.baseCurrency ?? "INR",
         }),
       );
     } catch {
@@ -395,15 +401,15 @@ export function ProductDetailClient({ slug }: { slug: string }) {
                 <p className="text-sm font-bold text-[#667085]">Selected price</p>
                 <div className="mt-1 flex flex-wrap items-end gap-3">
                   <span className="text-4xl font-black leading-none tracking-normal text-[#ED3500]">
-                    {selectedVariant ? market.format(selectedVariant.pricePaise) : "Price pending"}
+                    {selectedVariant ? market.format(selectedBasePrice) : "Price pending"}
                   </span>
                   {originalDealPrice ? (
                     <span className="text-xl font-black text-[#98A2B3] line-through">
                       {market.format(originalDealPrice)}
                     </span>
-                  ) : selectedVariant?.mrpPaise && selectedVariant.mrpPaise > selectedVariant.pricePaise ? (
+                  ) : selectedBaseMrp && selectedBasePrice && selectedBaseMrp > selectedBasePrice ? (
                     <span className="text-xl font-black text-[#98A2B3] line-through">
-                      {market.format(selectedVariant.mrpPaise)}
+                      {market.format(selectedBaseMrp)}
                     </span>
                   ) : null}
                   {discountPercent ? (
@@ -413,9 +419,6 @@ export function ProductDetailClient({ slug }: { slug: string }) {
                   ) : null}
                 </div>
                 <p className="mt-2 text-sm font-semibold text-[#667085]">Inclusive of all taxes</p>
-                {selectedVariant && market.market.currency !== selectedVariant.currency ? (
-                  <p className="mt-2 text-xs font-bold text-[#667085]">{formatMoney(selectedVariant.pricePaise, selectedVariant.currency)} base seller price</p>
-                ) : null}
               </div>
 
               {product.variants.length ? (

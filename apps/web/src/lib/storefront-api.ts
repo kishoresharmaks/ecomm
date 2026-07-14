@@ -122,6 +122,11 @@ export type ProductVariant = {
   pricePaise: number;
   mrpPaise?: number | null;
   currency: string;
+  basePricePaise?: number | null;
+  baseMrpPaise?: number | null;
+  baseOriginalPricePaise?: number | null;
+  baseDealPricePaise?: number | null;
+  baseCurrency?: string | null;
   stockQuantity: number;
   originalPricePaise?: number | null;
   dealPricePaise?: number | null;
@@ -286,7 +291,9 @@ export type ProductSummary = {
   deliveryModes?: DeliveryMode[];
   manualTransport?: {
     freeDistanceKm: number;
-    chargePerKmPaise: number;
+    chargePerKmMinor?: number;
+    currency?: string;
+    chargePerKmPaise?: number;
     note: string;
   } | null;
   activeDeal?: ActiveDealSummary | null;
@@ -475,7 +482,12 @@ export type CheckoutManualTransportOption = {
   distanceKm?: number | null;
   freeDistanceKm?: number | null;
   billableKm?: number | null;
-  chargePerKmPaise?: number | null;
+  chargePerKmMinor?: number | null;
+  sellerChargeMinor?: number | null;
+  sellerCurrency?: string | null;
+  baseChargeMinor?: number | null;
+  baseCurrency?: string | null;
+  fxRate?: number | null;
   note?: string | null;
 };
 
@@ -871,6 +883,20 @@ export type OrderSummary = {
       canDownloadLabel?: boolean;
       labelDownloadUrl?: string | null;
     }>;
+  }>;
+  sellerSplits?: Array<{
+    id: string;
+    orderId: string;
+    sellerId: string;
+    sellerSubtotalPaise: number;
+    couponDiscountPaise?: number;
+    couponPlatformFundedDiscountPaise?: number;
+    couponSellerFundedDiscountPaise?: number;
+    couponAdjustmentPaise?: number;
+    sellerStatus: string;
+    createdAt?: string;
+    updatedAt?: string;
+    seller?: SellerSummary;
   }>;
   deliveryDetail?: {
     deliveryMode: string;
@@ -1454,6 +1480,18 @@ export function primaryVariant(product: ProductSummary) {
     variants[0] ??
     null
   );
+}
+
+export function variantBasePrice(variant: ProductVariant | null | undefined) {
+  return variant?.basePricePaise ?? variant?.pricePaise ?? null;
+}
+
+export function variantBaseMrp(variant: ProductVariant | null | undefined) {
+  return variant?.baseMrpPaise ?? variant?.mrpPaise ?? null;
+}
+
+export function variantBaseOriginalPrice(variant: ProductVariant | null | undefined) {
+  return variant?.baseOriginalPricePaise ?? variant?.originalPricePaise ?? null;
 }
 
 export function cartTotals(cart?: CartSummary) {

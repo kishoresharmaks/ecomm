@@ -3,6 +3,7 @@ import { CustomersModule } from "../customers/customers.module";
 import { DealsModule } from "../deals/deals.module";
 import { LocationsModule } from "../locations/locations.module";
 import { MapsModule } from "../maps/maps.module";
+import { MarketModule } from "../market/market.module";
 import { CourierAdaptersModule } from "../orders/courier-adapters/courier-adapters.module";
 import { PaymentsModule } from "../payments/payments.module";
 import {
@@ -23,6 +24,7 @@ import { CheckoutPricingService } from "./checkout-pricing.service";
     DealsModule,
     LocationsModule,
     MapsModule,
+    MarketModule,
     PaymentsModule,
   ],
   controllers: [
@@ -37,4 +39,3 @@ import { CheckoutPricingService } from "./checkout-pricing.service";
   exports: [CheckoutPricingService, DeliveryRoutingService]
 })
 export class CheckoutPricingModule {}
-

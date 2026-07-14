@@ -55,12 +55,13 @@ describe("buildSellerProductUpdatePayload", () => {
     values.variants[0]!.price = "299.50";
     values.variants[0]!.stock = "7";
 
-    const payload = buildSellerProductUpdatePayload(baseProduct, values);
+    const payload = buildSellerProductUpdatePayload(baseProduct, values, "SGD");
 
     expect(payload).not.toHaveProperty("images");
     expect(payload.variants?.[0]).toMatchObject({
       id: "variant_1",
       pricePaise: 29950,
+      currency: "SGD",
       stockQuantity: 7,
     });
     expect(payload.attributes).toMatchObject({

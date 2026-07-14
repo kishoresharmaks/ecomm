@@ -233,7 +233,7 @@ export function SellerProductsClient({
     }
     const manualTransportSelected = selectedDeliveryModes.includes("MANUAL_TRANSPORT");
     const manualTransportFreeDistanceKm = Number(formValue(form, "manualTransportFreeDistanceKm"));
-    const manualTransportChargePerKmPaise = rupeesToPaise(formValue(form, "manualTransportChargePerKmRupees"));
+    const manualTransportChargePerKmMinor = rupeesToPaise(formValue(form, "manualTransportChargePerKmMajor"));
     const manualTransportNote = formValue(form, "manualTransportNote").trim();
 
     if (manualTransportSelected) {
@@ -241,7 +241,7 @@ export function SellerProductsClient({
         setNotice("Enter the free delivery distance for seller-arranged delivery.");
         return;
       }
-      if (manualTransportChargePerKmPaise < 0) {
+      if (manualTransportChargePerKmMinor < 0) {
         setNotice("Enter a valid seller-arranged delivery charge per km.");
         return;
       }
@@ -276,6 +276,7 @@ export function SellerProductsClient({
         ...(variantName ? { variantName } : {}),
         pricePaise: rupeesToPaise(formValue(form, `${prefix}:price`)),
         ...(mrpPaise > 0 ? { mrpPaise } : {}),
+        currency: sellerOperatingCurrency,
         stockQuantity: Number(formValue(form, `${prefix}:stock`) || 0),
         ...(packageWeightGrams ? { packageWeightGrams } : {}),
         ...(packageLengthCm ? { packageLengthCm } : {}),
@@ -298,7 +299,7 @@ export function SellerProductsClient({
         ? {
             manualTransport: {
               freeDistanceKm: Math.round(manualTransportFreeDistanceKm * 100) / 100,
-              chargePerKmPaise: manualTransportChargePerKmPaise,
+              chargePerKmPaise: manualTransportChargePerKmMinor,
               note: manualTransportNote,
             },
           }
@@ -340,6 +341,7 @@ export function SellerProductsClient({
   const priceSummary = firstExistingVariant ? formatMoney(firstExistingVariant.pricePaise, firstExistingVariant.currency) : "Set in variants";
   const stockSummary = hasExistingVariantStock ? `${knownStockTotal} total stock` : "Set in variants";
   const previewName = productNameDraft.trim() || "Product preview";
+  const sellerOperatingCurrency = profileQuery.data?.operatingCurrency || "INR";
 
   if (isFormMode) {
     return (
@@ -475,6 +477,7 @@ export function SellerProductsClient({
                         row={row}
                         index={index}
                         fields={variantFields}
+                        currency={sellerOperatingCurrency}
                         canRemove={draftVariants.length > 1}
                         onRemove={() => setDraftVariants((current) => current.filter((item) => item.rowId !== row.rowId))}
                       />
@@ -497,6 +500,7 @@ export function SellerProductsClient({
                     selectedModes={selectedDeliveryModes}
                     onChange={setSelectedDeliveryModes}
                     manualTransport={editingProduct?.manualTransport ?? null}
+                    currency={sellerOperatingCurrency}
                   />
                 </ProductFormSection>
 
@@ -860,12 +864,14 @@ function VariantEditor({
   row,
   index,
   fields,
+  currency,
   canRemove,
   onRemove
 }: {
   row: DraftVariantRow;
   index: number;
   fields: ProductTemplateField[];
+  currency: string;
   canRemove: boolean;
   onRemove: () => void;
 }) {
@@ -883,8 +889,25 @@ function VariantEditor({
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <SellerField label="SKU" name={`${prefix}:sku`} defaultValue={row.variant?.sku} placeholder="1HI-RICE-5KG" />
         <SellerField label="Variant name" name={`${prefix}:variantName`} defaultValue={row.variant?.variantName} placeholder="5 KG Pack" />
-        <SellerField label="Price" name={`${prefix}:price`} type="number" required min={0} step="0.01" defaultValue={paiseToRupees(row.variant?.pricePaise)} />
-        <SellerField label="MRP" name={`${prefix}:mrp`} type="number" min={0} step="0.01" defaultValue={paiseToRupees(row.variant?.mrpPaise)} />
+        <SellerField
+          label={`Price (${currency})`}
+          name={`${prefix}:price`}
+          type="number"
+          required
+          min={0}
+          step="0.01"
+          defaultValue={paiseToRupees(row.variant?.pricePaise)}
+          hint={`Enter the selling price in ${currency}.`}
+        />
+        <SellerField
+          label={`MRP (${currency})`}
+          name={`${prefix}:mrp`}
+          type="number"
+          min={0}
+          step="0.01"
+          defaultValue={paiseToRupees(row.variant?.mrpPaise)}
+          hint={`Optional maximum retail price in ${currency}.`}
+        />
         <SellerField label="Stock" name={`${prefix}:stock`} type="number" min={0} defaultValue={row.variant?.stockQuantity ?? 0} />
         <SellerSelect label="Variant status" name={`${prefix}:status`} defaultValue={row.variant?.status ?? "ACTIVE"}>
           <option value="ACTIVE">Active</option>
@@ -1045,10 +1068,12 @@ function ProductDeliveryModeSelector({
   selectedModes,
   onChange,
   manualTransport,
+  currency,
 }: {
   selectedModes: DeliveryMode[];
   onChange: (modes: DeliveryMode[]) => void;
   manualTransport?: ProductSummary["manualTransport"];
+  currency: string;
 }) {
   function toggleMode(mode: DeliveryMode) {
     if (selectedModes.includes(mode)) {
@@ -1119,13 +1144,13 @@ function ProductDeliveryModeSelector({
               placeholder="Example: 5"
             />
             <SellerField
-              label="Charge after free distance (₹ per km)"
-              name="manualTransportChargePerKmRupees"
+              label={`Charge after free distance (${currency} per km)`}
+              name="manualTransportChargePerKmMajor"
               type="number"
               min={0}
               step="0.01"
               required
-              defaultValue={paiseToRupees(manualTransport?.chargePerKmPaise)}
+              defaultValue={paiseToRupees(manualTransport?.chargePerKmMinor ?? manualTransport?.chargePerKmPaise)}
               placeholder="Example: 25"
             />
             <div className="md:col-span-2">

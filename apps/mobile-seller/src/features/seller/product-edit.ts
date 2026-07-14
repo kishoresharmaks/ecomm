@@ -69,6 +69,7 @@ export type ProductVariantFormValue = {
   packageBreadthCm: string;
   packageHeightCm: string;
   status: "ACTIVE" | "INACTIVE";
+  currency?: string;
 };
 
 export type ProductEditFormValues = {
@@ -171,6 +172,7 @@ export function productToEditForm(product: ProductSummary | undefined): ProductE
     packageBreadthCm: stringFromNumber(variant.packageBreadthCm),
     packageHeightCm: stringFromNumber(variant.packageHeightCm),
     status: variant.status === "INACTIVE" ? "INACTIVE" as const : "ACTIVE" as const,
+    ...(variant.currency ? { currency: variant.currency } : {}),
   }));
 
   return {
@@ -209,6 +211,7 @@ export function productToEditForm(product: ProductSummary | undefined): ProductE
 export function buildSellerProductUpdatePayload(
   product: ProductSummary | undefined,
   values: ProductEditFormValues,
+  sellerCurrency = "INR",
 ): SellerProductUpdatePayload {
   const attributes = buildProductAttributes(values);
   const payload: SellerProductUpdatePayload = {
@@ -218,7 +221,7 @@ export function buildSellerProductUpdatePayload(
     deliveryModes: values.deliveryModes,
     attributes,
     variants: [
-      ...values.variants.map((variant) => buildVariantPayload(variant)),
+      ...values.variants.map((variant) => buildVariantPayload(variant, sellerCurrency)),
       ...values.removedVariantIds.map((id) => ({ id, status: "INACTIVE" as const })),
     ],
   };
@@ -358,10 +361,11 @@ function normalizeProductImages(product: ProductSummary | undefined): ProductIma
     }));
 }
 
-function buildVariantPayload(variant: ProductVariantFormValue) {
+function buildVariantPayload(variant: ProductVariantFormValue, sellerCurrency: string) {
   const payload: NonNullable<SellerProductUpdatePayload["variants"]>[number] = {
     variantName: variant.variantName.trim() || "Default",
     pricePaise: rupeesToPaise(variant.price),
+    currency: sellerCurrency,
     stockQuantity: integerOrZero(variant.stock),
     status: variant.status,
   };

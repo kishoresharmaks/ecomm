@@ -25,6 +25,16 @@ const checkoutDeliveryModes = [
   DeliveryMode.MANUAL_TRANSPORT,
   DeliveryMode.STORE_PICKUP,
 ] as const;
+const sellerCollectedCodDeliveryModes = new Set<DeliveryMode>([
+  DeliveryMode.STORE_PICKUP,
+  DeliveryMode.MANUAL_TRANSPORT,
+]);
+const platformVerifiedCodDeliveryModes = new Set<DeliveryMode>([
+  DeliveryMode.LOCAL_DELIVERY_PARTNER,
+  DeliveryMode.THIRD_PARTY_COURIER,
+]);
+const mixedCodCollectionModesMessage =
+  "This COD cart combines seller-collected delivery and courier/partner delivery. Please place separate orders for these products.";
 
 type PlatformFeeType = "PERCENTAGE" | "FIXED" | "MANUAL";
 type PricingClient = Prisma.TransactionClient | PrismaService["client"];
@@ -48,7 +58,12 @@ export type CheckoutDeliveryOption = {
     distanceKm?: number | null;
     freeDistanceKm?: number | null;
     billableKm?: number | null;
-    chargePerKmPaise?: number | null;
+    chargePerKmMinor?: number | null;
+    sellerChargeMinor?: number | null;
+    sellerCurrency?: string | null;
+    baseChargeMinor?: number | null;
+    baseCurrency?: string | null;
+    fxRate?: number | null;
     note?: string | null;
   } | null | undefined;
 };
@@ -66,7 +81,8 @@ export type CheckoutSellerPackageDeliveryInput = {
     enabledDeliveryModes: DeliveryMode[];
     manualTransport?: {
       freeDistanceKm: number;
-      chargePerKmPaise: number;
+      chargePerKmMinor: number;
+      currency: string;
       note: string;
     } | null;
   }> | undefined;
@@ -257,6 +273,7 @@ export class CheckoutPricingService {
           } satisfies CheckoutSellerPackageDeliveryRouting;
         })
       : [];
+    this.assertSupportedCodCollectionMix(deliveryRoutings, deliveryOptions.paymentMethod);
     const shippingPaise = deliveryRoutings.length
       ? deliveryRoutings.reduce(
           (total, routing) => total + this.nonNegativeInt(routing.quote.totalDeliveryChargePaise),
@@ -314,6 +331,22 @@ export class CheckoutPricingService {
       availableDeliveryOptions,
       sellerDeliveryGroups,
     };
+  }
+
+  private assertSupportedCodCollectionMix(
+    deliveryRoutings: CheckoutSellerPackageDeliveryRouting[],
+    paymentMethod?: string | null,
+  ) {
+    if (paymentMethod?.trim().toUpperCase() !== "COD" || deliveryRoutings.length < 2) {
+      return;
+    }
+
+    const deliveryModes = deliveryRoutings.map((routing) => routing.quote.deliveryMode);
+    const hasSellerCollectedMode = deliveryModes.some((mode) => sellerCollectedCodDeliveryModes.has(mode));
+    const hasPlatformVerifiedMode = deliveryModes.some((mode) => platformVerifiedCodDeliveryModes.has(mode));
+    if (hasSellerCollectedMode && hasPlatformVerifiedMode) {
+      throw new BadRequestException(mixedCodCollectionModesMessage);
+    }
   }
 
   async applyCouponAdjustments(
@@ -548,7 +581,12 @@ export class CheckoutPricingService {
       distanceKm: typeof manual.distanceKm === "number" ? manual.distanceKm : null,
       freeDistanceKm: typeof manual.freeDistanceKm === "number" ? manual.freeDistanceKm : null,
       billableKm: typeof manual.billableKm === "number" ? manual.billableKm : null,
-      chargePerKmPaise: typeof manual.chargePerKmPaise === "number" ? manual.chargePerKmPaise : null,
+      chargePerKmMinor: typeof manual.chargePerKmMinor === "number" ? manual.chargePerKmMinor : null,
+      sellerChargeMinor: typeof manual.sellerChargeMinor === "number" ? manual.sellerChargeMinor : null,
+      sellerCurrency: typeof manual.sellerCurrency === "string" ? manual.sellerCurrency : null,
+      baseChargeMinor: typeof manual.baseChargeMinor === "number" ? manual.baseChargeMinor : null,
+      baseCurrency: typeof manual.baseCurrency === "string" ? manual.baseCurrency : null,
+      fxRate: typeof manual.fxRate === "number" ? manual.fxRate : null,
       note: typeof manual.note === "string" ? manual.note : null,
     };
   }

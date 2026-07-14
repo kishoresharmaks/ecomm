@@ -3545,6 +3545,12 @@ integrationDescribe("1HandIndia backend integration", () => {
           }),
         ]),
       );
+      const sellerPayoutAvailability = await request(app.getHttpServer())
+        .get("/api/seller/finance/payouts/availability")
+        .set(authHeader(data.sellerUser.id))
+        .expect(200);
+      expect(sellerPayoutAvailability.body.eligibleSplitCount).toBeGreaterThanOrEqual(1);
+      expect(sellerPayoutAvailability.body.netPayablePaise).toBeGreaterThan(0);
       expect(verifiedStoredOrder.statusEvents).toEqual(
         expect.arrayContaining([
           expect.objectContaining({

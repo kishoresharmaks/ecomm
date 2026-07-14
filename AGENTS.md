@@ -250,8 +250,17 @@ When modifying `schema.prisma` or creating new models, strictly adhere to the fo
 - **Automated Financial Reconciliation (Zero-Touch Admin)**: For high-volume financial handovers (like COD collections), NEVER design manual admin verification flows (e.g., uploading screenshots for approval). Always design zero-touch automated pipelines using Virtual Accounts (e.g., Razorpay Smart Collect) and webhooks with FIFO auto-reconciliation to eliminate operational bottlenecks.
 
 
+
 - **Financial Limit & Exposure Evaluation**: When evaluating user financial limits (e.g., COD Exposure limits, Credit limits), NEVER compare a static or lifetime "Gross Amount" against the limit. You MUST calculate the **Net Projected Exposure** inside a transactional row-lock (`SELECT ... FOR UPDATE`).
   - **Net Projected Exposure** = `(Unsettled Gross Value) + (Assigned/Pending Future Liabilities) - (Prepaid/Deposit Wallet Balances)`
   - Always project the exposure by adding the value of the *new assignment* currently being evaluated.
   - Negative net exposures (deposits > liabilities) are mathematically valid and act as safe headroom. Do not artificially floor them to `0` during calculations.
   - Never allow separate withdrawal flows for prepaid/offset wallets without enforcing the exact same Net Projected Exposure limit check to prevent exploit withdrawals.
+
+- **Financial Formula Transparency**: When explaining financial reports, wallet balances, or payout calculations to the user, always provide the exact mathematical formula used in the code. Map backend variable names (e.g., `netPayablePaise`) to their UI labels (e.g., "Net payable") so the user can verify calculations against what they see on screen. Do not summarise without the formula.
+
+- **Finance Report Derivation**: When building seller finance report summaries (tax report, finance report, sales overview), NEVER read `netPayablePaise` directly from `_sum.netPayablePaise` DB aggregates, as these are stale stamped values. Always re-derive it from effective components: `netPayablePaise = grossSales - commission - gstOnCommission - tds - tcs - platformFee - couponSellerFundedDiscount + couponAdjustment + refundAdjustment`. This matches `FinanceCalculatorService.calculateSplit()` exactly.
+
+- **Date Filter UTC Conversion**: When any seller or finance API `queryString()` helper receives `dateFrom` or `dateTo` as exactly 10-character `YYYY-MM-DD` strings, always convert to local-timezone ISO: `dateFrom` → midnight local (`T00:00:00.000`), `dateTo` → end-of-day local (`T23:59:59.999`), then call `.toISOString()` to produce correct UTC bounds. This is already applied to all 14 seller/finance API client files — do not revert to raw date string passing.
+
+- **Efficient Command Execution**: On Windows PowerShell, chain dependent commands with `; if ($LASTEXITCODE -eq 0) { next_command } else { exit 1 }` — never use `&&` (not valid in PowerShell). Batch typecheck, tests, and lint into a single pipeline. Only run verification once per logical unit of completed work. Do not run commands speculatively.

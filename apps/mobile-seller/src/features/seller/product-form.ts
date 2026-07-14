@@ -239,6 +239,7 @@ export function buildCreateProductPayload(
   state: ProductFormState,
   productFields: ProductTemplateField[],
   variantFields: ProductTemplateField[],
+  sellerCurrency = "INR",
 ): SellerProductPayload {
   return {
     categoryId: state.base.categoryId.trim(),
@@ -255,7 +256,7 @@ export function buildCreateProductPayload(
       sortOrder: index,
       altText: image.altText.trim() || state.base.name.trim(),
     })),
-    variants: state.variants.map((variant, index) => buildCreateVariantPayload(variant, variantFields, index)),
+    variants: state.variants.map((variant, index) => buildCreateVariantPayload(variant, variantFields, index, sellerCurrency)),
   };
 }
 
@@ -264,6 +265,7 @@ export function buildUpdateProductPayload(
   productFields: ProductTemplateField[],
   variantFields: ProductTemplateField[],
   product?: ProductSummary,
+  sellerCurrency = "INR",
 ): SellerProductUpdatePayload {
   const editForm = createBlankProductEditForm();
   Object.assign(editForm, state.base, {
@@ -272,17 +274,17 @@ export function buildUpdateProductPayload(
     variants: state.variants.map(({ attributes: _attributes, ...variant }) => variant),
     removedVariantIds: state.removedVariantIds,
   });
-  const payload = buildSellerProductUpdatePayload(product, editForm);
+  const payload = buildSellerProductUpdatePayload(product, editForm, sellerCurrency);
   payload.attributes = {
     ...buildMarketplaceAttributes(state.base),
     ...coerceDynamicAttributes(productFields, state.attributes),
   };
   payload.variants = [
-    ...state.variants.map((variant, index) => buildUpdateVariantPayload(variant, variantFields, index)),
+    ...state.variants.map((variant, index) => buildUpdateVariantPayload(variant, variantFields, index, sellerCurrency)),
     ...state.removedVariantIds.map((id) => ({ id, status: "INACTIVE" as const })),
   ];
   if (hasImageListChanged(product, state.images)) {
-    payload.images = buildCreateProductPayload(state, productFields, variantFields).images ?? [];
+    payload.images = buildCreateProductPayload(state, productFields, variantFields, sellerCurrency).images ?? [];
   } else {
     delete payload.images;
   }
@@ -491,10 +493,12 @@ function buildCreateVariantPayload(
   variant: ProductFormVariant,
   variantFields: ProductTemplateField[],
   index: number,
+  sellerCurrency: string,
 ): SellerProductPayload["variants"][number] {
   const payload: SellerProductPayload["variants"][number] = {
     variantName: generateVariantName(variant, variantFields, index),
     pricePaise: rupeesToPaise(variant.price),
+    currency: sellerCurrency,
     stockQuantity: integerOrZero(variant.stock),
     status: variant.status,
   };
@@ -519,11 +523,13 @@ function buildUpdateVariantPayload(
   variant: ProductFormVariant,
   variantFields: ProductTemplateField[],
   index: number,
+  sellerCurrency: string,
 ): NonNullable<SellerProductUpdatePayload["variants"]>[number] {
   const payload: NonNullable<SellerProductUpdatePayload["variants"]>[number] = buildCreateVariantPayload(
     variant,
     variantFields,
     index,
+    sellerCurrency,
   );
   if (variant.id) {
     payload.id = variant.id;

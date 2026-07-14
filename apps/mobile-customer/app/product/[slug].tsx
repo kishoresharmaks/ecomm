@@ -1,6 +1,8 @@
 import {
+  HeartIcon,
   MinusSignIcon,
   PlusSignIcon,
+  Share02Icon,
   Shield01Icon,
   ShoppingCart01Icon,
   Store01Icon,
@@ -10,7 +12,7 @@ import { FlashList } from "@shopify/flash-list";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, Stack, type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Image, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import { EmptyState } from "../../src/components/empty-state";
 import { ProductCard } from "../../src/components/product-card";
 import { Screen } from "../../src/components/screen";
@@ -32,7 +34,16 @@ type ProductDetailFeedItem =
       selectedImageUrl: string | null;
       onSelectImage: (imageUrl: string | null) => void;
     }
-  | { id: "summary"; type: "summary"; product: ProductSummary; selectedVariant: ProductVariant | null }
+  | {
+      id: "summary";
+      isWishlistPending: boolean;
+      isWished: boolean;
+      onShare: () => void;
+      onToggleWishlist: () => void;
+      product: ProductSummary;
+      selectedVariant: ProductVariant | null;
+      type: "summary";
+    }
   | {
       id: "variants";
       type: "variants";
@@ -136,7 +147,18 @@ function ProductDetailScreen() {
           selectedImageUrl,
           onSelectImage: setSelectedImageUrl,
         },
-        { id: "summary", type: "summary", product, selectedVariant },
+        {
+          id: "summary",
+          isWishlistPending: pendingWishlistProductId === product.id,
+          isWished: wishlistProductIds.has(product.id),
+          onShare: () => {
+            void shareProduct(product, selectedVariant, market.format);
+          },
+          onToggleWishlist: () => toggleWishlist(product.id, wishlistProductIds.has(product.id)),
+          product,
+          selectedVariant,
+          type: "summary",
+        },
         {
           id: "variants",
           type: "variants",
@@ -175,7 +197,7 @@ function ProductDetailScreen() {
 
       return items;
     },
-    [pendingWishlistProductId, product, quantity, recommendations, selectedImageUrl, selectedVariant, wishlistProductIds],
+    [market.format, pendingWishlistProductId, product, quantity, recommendations, selectedImageUrl, selectedVariant, wishlistProductIds],
   );
 
   useEffect(() => {
@@ -321,7 +343,17 @@ function ProductDetailFeed({
   }
 
   if (item.type === "summary") {
-    return <ProductSummaryBlock formatPrice={formatPrice} product={item.product} selectedVariant={item.selectedVariant} />;
+    return (
+      <ProductSummaryBlock
+        formatPrice={formatPrice}
+        isWishlistPending={item.isWishlistPending}
+        isWished={item.isWished}
+        product={item.product}
+        selectedVariant={item.selectedVariant}
+        onShare={item.onShare}
+        onToggleWishlist={item.onToggleWishlist}
+      />
+    );
   }
 
   if (item.type === "variants") {
@@ -398,15 +430,23 @@ function ProductGallery({
 
 function ProductSummaryBlock({
   formatPrice,
+  isWishlistPending,
+  isWished,
+  onShare,
+  onToggleWishlist,
   product,
   selectedVariant,
 }: {
   formatPrice: (pricePaise?: number | null) => string;
+  isWishlistPending: boolean;
+  isWished: boolean;
+  onShare: () => void;
+  onToggleWishlist: () => void;
   product: ProductSummary;
   selectedVariant: ProductVariant | null;
 }) {
-  const mrp = selectedVariant?.mrpPaise ?? selectedVariant?.originalPricePaise ?? null;
-  const price = selectedVariant?.pricePaise;
+  const mrp = variantOriginalDisplayPrice(selectedVariant);
+  const price = variantDisplayPrice(selectedVariant);
   const rating = product.reviewSummary?.averageRating;
   const reviewCount = product.reviewSummary?.reviewCount ?? 0;
   const inStock = Boolean(selectedVariant && selectedVariant.status === "ACTIVE" && selectedVariant.stockQuantity > 0);
@@ -421,6 +461,29 @@ function ProductSummaryBlock({
         <Text style={styles.priceText}>{formatPrice(price)}</Text>
         {mrp && price && mrp > price ? <Text style={styles.mrpText}>{formatPrice(mrp)}</Text> : null}
         {discountLabel(selectedVariant) ? <Text style={styles.discountPill}>{discountLabel(selectedVariant)}</Text> : null}
+      </View>
+      <View style={styles.productActionRow}>
+        <Pressable
+          accessibilityLabel={isWished ? "Remove from wishlist" : "Add to wishlist"}
+          accessibilityRole="button"
+          accessibilityState={{ busy: isWishlistPending, selected: isWished }}
+          disabled={isWishlistPending}
+          style={[styles.productActionButton, isWished ? styles.productActionButtonActive : null, isWishlistPending ? styles.productActionButtonDisabled : null]}
+          onPress={onToggleWishlist}
+        >
+          {isWishlistPending ? (
+            <ActivityIndicator color={colors.primary} size="small" />
+          ) : (
+            <HugeiconsIcon color={isWished ? colors.primary : "#667085"} icon={HeartIcon} size={18} strokeWidth={isWished ? 2.6 : 2} />
+          )}
+          <Text numberOfLines={1} style={[styles.productActionText, isWished ? styles.productActionTextActive : null]}>
+            {isWished ? "Saved" : "Wishlist"}
+          </Text>
+        </Pressable>
+        <Pressable accessibilityLabel="Share product" accessibilityRole="button" style={styles.productActionButton} onPress={onShare}>
+          <HugeiconsIcon color="#667085" icon={Share02Icon} size={18} strokeWidth={2} />
+          <Text numberOfLines={1} style={styles.productActionText}>Share</Text>
+        </Pressable>
       </View>
       <View style={styles.metaRow}>
         <Text style={[styles.stockPill, inStock ? styles.stockPillIn : styles.stockPillOut]}>
@@ -475,7 +538,7 @@ function VariantSelector({
                 {item.variantName || item.sku || "Default"}
               </Text>
               <Text style={[styles.variantPrice, selected ? styles.variantNameActive : null]}>
-                {formatPrice(item.pricePaise)}
+                {formatPrice(variantDisplayPrice(item))}
               </Text>
               {disabled ? <Text style={styles.variantUnavailable}>Out of stock</Text> : null}
             </Pressable>
@@ -737,6 +800,34 @@ function primaryProductImage(product: ProductSummary) {
   return resolveImageUrl(primaryImage);
 }
 
+async function shareProduct(
+  product: ProductSummary,
+  selectedVariant: ProductVariant | null,
+  formatPrice: (pricePaise?: number | null) => string,
+) {
+  const url = productShareUrl(product.slug);
+  const imageUrl = primaryProductImage(product);
+  const price = variantDisplayPrice(selectedVariant);
+  const lines = [
+    product.name,
+    typeof price === "number" ? `Price: ${formatPrice(price)}` : "",
+    product.seller?.storeName ? `Seller: ${product.seller.storeName}` : "",
+    url,
+    imageUrl ? `Photo: ${imageUrl}` : "",
+  ].filter(Boolean);
+
+  await Share.share({
+    message: lines.join("\n"),
+    title: product.name,
+    url,
+  });
+}
+
+function productShareUrl(slug: string) {
+  const configuredWebUrl = process.env.EXPO_PUBLIC_WEB_URL?.trim() || "https://www.1handindia.com";
+  return `${configuredWebUrl.replace(/\/$/, "")}/products/${encodeURIComponent(slug)}`;
+}
+
 function selectVariant(product: ProductSummary | undefined, selectedVariantId: string | null) {
   if (!product) {
     return null;
@@ -760,12 +851,21 @@ function discountLabel(variant: ProductVariant | null) {
     return `${Math.round(variant.dealDiscountBps / 100)}% off`;
   }
 
-  const mrp = variant.mrpPaise ?? variant.originalPricePaise ?? null;
-  if (mrp && mrp > variant.pricePaise) {
-    return `${Math.round(((mrp - variant.pricePaise) / mrp) * 100)}% off`;
+  const price = variantDisplayPrice(variant);
+  const mrp = variantOriginalDisplayPrice(variant);
+  if (price && mrp && mrp > price) {
+    return `${Math.round(((mrp - price) / mrp) * 100)}% off`;
   }
 
   return "";
+}
+
+function variantDisplayPrice(variant: ProductVariant | null | undefined) {
+  return variant?.baseDealPricePaise ?? variant?.basePricePaise ?? variant?.dealPricePaise ?? variant?.pricePaise;
+}
+
+function variantOriginalDisplayPrice(variant: ProductVariant | null | undefined) {
+  return variant?.baseOriginalPricePaise ?? variant?.baseMrpPaise ?? variant?.originalPricePaise ?? variant?.mrpPaise ?? null;
 }
 
 const styles = StyleSheet.create({
@@ -903,6 +1003,39 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     paddingHorizontal: 9,
     paddingVertical: 5,
+  },
+  productActionRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    marginTop: 14,
+  },
+  productActionButton: {
+    alignItems: "center",
+    backgroundColor: "#FFFCFB",
+    borderColor: "#F3E7E2",
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 7,
+    minHeight: 40,
+    paddingHorizontal: 13,
+    paddingVertical: 8,
+  },
+  productActionButtonActive: {
+    backgroundColor: "#FFF2ED",
+    borderColor: "#FFD6C8",
+  },
+  productActionButtonDisabled: {
+    opacity: 0.72,
+  },
+  productActionText: {
+    color: "#667085",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  productActionTextActive: {
+    color: colors.primary,
   },
   metaRow: {
     flexDirection: "row",

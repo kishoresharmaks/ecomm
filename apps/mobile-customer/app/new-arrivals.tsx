@@ -11,6 +11,7 @@ import { ProductCard } from "../src/components/product-card";
 import { useMobileHome } from "../src/features/home/use-mobile-home";
 import { useMobileMarket } from "../src/features/market/mobile-market";
 import { listCustomerOrders } from "../src/features/storefront/storefront-api";
+import { useMobileWishlistActions } from "../src/features/storefront/use-mobile-wishlist-actions";
 import { useLocationStore } from "../src/state/location-store";
 import { useRecentProductsStore, type RecentProductSnapshot } from "../src/state/recent-products-store";
 import { colors } from "../src/theme";
@@ -22,6 +23,7 @@ function NewArrivalsScreen() {
   const selectedLocation = useLocationStore((state) => state.selectedLocation);
   const customerAuth = useMobileCustomerAuth();
   const market = useMobileMarket(selectedLocation.countryCode);
+  const wishlist = useMobileWishlistActions();
   const recentProducts = useRecentProductsStore((state) => state.recentProducts);
   const hasLocation = isSpecificLocation(selectedLocation.label);
   const homeQuery = useMobileHome(hasLocation ? selectedLocation : undefined);
@@ -79,7 +81,15 @@ function NewArrivalsScreen() {
 
           return (
             <View style={styles.gridCell}>
-              <ProductCard compact noMargin formatPrice={market.format} product={item.product} />
+              <ProductCard
+                compact
+                noMargin
+                formatPrice={market.format}
+                isWishlistPending={wishlist.isPending(item.product.id)}
+                isWished={wishlist.isWished(item.product.id)}
+                product={item.product}
+                onToggleWishlist={() => wishlist.toggleWishlist(item.product.id)}
+              />
             </View>
           );
         }}

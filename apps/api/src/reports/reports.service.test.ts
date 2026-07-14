@@ -16,7 +16,7 @@ describe("ReportsService", () => {
     });
     tx.payment.groupBy.mockResolvedValue([{ status: "PAID", provider: "RAZORPAY", _sum: { amountPaise: 25000 }, _count: 2 }]);
     tx.order.findMany.mockResolvedValue([]);
-    const service = new ReportsService(createPrisma(tx) as never, createFinanceCalculator() as never);
+    const service = new ReportsService(createPrisma(tx) as never, createFinanceCalculator() as never, createMarketService() as never);
 
     const result = await service.sales({});
 
@@ -95,7 +95,7 @@ describe("ReportsService", () => {
     });
     tx.servicePayment.groupBy.mockResolvedValue([{ status: "PAID", _count: 4, _sum: { amountPaise: 260000 } }]);
     tx.serviceBooking.findMany.mockResolvedValue([{ id: "service_booking_1", bookingNumber: "SB-1" }]);
-    const service = new ReportsService(prisma as never, createFinanceCalculator() as never);
+    const service = new ReportsService(prisma as never, createFinanceCalculator() as never, createMarketService() as never);
 
     const result = await service.sellerSales({ id: "user_seller", clerkUserId: null, email: "seller@example.com", roles: [] }, {});
 
@@ -230,7 +230,7 @@ describe("ReportsService", () => {
       platformFeePaise: 2000,
       netPayablePaise: 90600
     });
-    const service = new ReportsService(prisma as never, calculator as never);
+    const service = new ReportsService(prisma as never, calculator as never, createMarketService() as never);
 
     const result = await service.sellerSales({ id: "user_seller", clerkUserId: null, email: "seller@example.com", roles: [] }, {});
 
@@ -250,11 +250,210 @@ describe("ReportsService", () => {
     expect(calculator.calculateSplit).toHaveBeenCalledWith(recentSplit, tx);
   });
 
+  it("calculates seller reports overview commission and net payable before payout stamping", async () => {
+    const tx = createReportsTx();
+    const prisma = createPrisma(tx);
+    prisma.client.seller.findUnique.mockResolvedValue({
+      id: "seller_1",
+      primaryCapability: "RETAIL",
+      enabledCapabilities: ["RETAIL"]
+    });
+    const freshSplit = freshUnstampedSplit();
+    tx.orderSellerSplit.aggregate.mockResolvedValue({
+      _count: 1,
+      _sum: {
+        sellerSubtotalPaise: 100000,
+        commissionPaise: 0,
+        gstOnCommissionPaise: 0,
+        tdsPaise: 0,
+        tcsPaise: 0,
+        platformFeePaise: 0,
+        couponSellerFundedDiscountPaise: 0,
+        couponAdjustmentPaise: 0,
+        refundAdjustmentPaise: 0,
+        netPayablePaise: 0
+      }
+    });
+    tx.orderSellerSplit.findMany.mockResolvedValue([freshSplit]);
+    tx.sellerPayout.aggregate.mockResolvedValue({ _sum: { netPayablePaise: 0 }, _count: 0 });
+    tx.productVariant.count.mockResolvedValue(0);
+    tx.product.count.mockResolvedValue(1);
+    tx.b2BOrder.count.mockResolvedValue(0);
+    tx.returnRequest.count.mockResolvedValue(0);
+    const calculator = createFinanceCalculator({
+      commissionPaise: 5000,
+      gstOnCommissionPaise: 900,
+      tdsPaise: 1000,
+      tcsPaise: 500,
+      platformFeePaise: 2000,
+      netPayablePaise: 90600
+    });
+    const service = new ReportsService(prisma as never, calculator as never, createMarketService() as never);
+
+    const result = await service.sellerReportsOverview({ id: "user_seller", clerkUserId: null, email: "seller@example.com", roles: [] }, {});
+
+    expect(result.totalSalesPaise).toBe(100000);
+    expect(result.commissionPaise).toBe(5000);
+    expect(result.gstOnCommissionPaise).toBe(900);
+    expect(result.totalDeductionsPaise).toBe(9400);
+    expect(result.netSalesPaise).toBe(90600);
+    expect(calculator.calculateSplit).toHaveBeenCalledWith(freshSplit, tx);
+  });
+
+  it("converts seller report overview amounts into the seller operating currency", async () => {
+    const tx = createReportsTx();
+    const prisma = createPrisma(tx);
+    prisma.client.seller.findUnique.mockResolvedValue({
+      id: "seller_sg",
+      primaryCapability: "RETAIL",
+      enabledCapabilities: ["RETAIL"],
+      addresses: [{ countryCode: "SG" }],
+    });
+    tx.orderSellerSplit.aggregate.mockResolvedValue({
+      _count: 1,
+      _sum: {
+        sellerSubtotalPaise: 100000,
+        commissionPaise: 5000,
+        gstOnCommissionPaise: 900,
+        tdsPaise: 1000,
+        tcsPaise: 500,
+        platformFeePaise: 2000,
+        couponSellerFundedDiscountPaise: 0,
+        couponAdjustmentPaise: 0,
+        refundAdjustmentPaise: 0,
+        netPayablePaise: 90600,
+      },
+    });
+    tx.orderSellerSplit.findMany.mockResolvedValue([]);
+    tx.sellerPayout.aggregate.mockResolvedValue({ _sum: { netPayablePaise: 0 }, _count: 0 });
+    tx.productVariant.count.mockResolvedValue(0);
+    tx.product.count.mockResolvedValue(1);
+    tx.b2BOrder.count.mockResolvedValue(0);
+    tx.returnRequest.count.mockResolvedValue(0);
+    const marketService = createMarketService({ countryCode: "SG", currency: "SGD", rate: 0.02 });
+    const service = new ReportsService(prisma as never, createFinanceCalculator() as never, marketService as never);
+
+    const result = await service.sellerReportsOverview(
+      { id: "user_seller", clerkUserId: null, email: "seller@example.com", roles: [] },
+      {},
+    );
+
+    expect(result.currency).toBe("SGD");
+    expect(result.totalSalesPaise).toBe(2000);
+    expect(result.commissionPaise).toBe(100);
+    expect(result.netSalesPaise).toBe(1812);
+    expect(marketService.getMarketCurrency).toHaveBeenCalledWith("SG", { requireFresh: true, forceRefresh: true });
+  });
+
+  it("calculates seller finance report summary before payout stamping", async () => {
+    const tx = createReportsTx();
+    const prisma = createPrisma(tx);
+    prisma.client.seller.findUnique.mockResolvedValue({
+      id: "seller_1",
+      primaryCapability: "RETAIL",
+      enabledCapabilities: ["RETAIL"]
+    });
+    const freshSplit = freshUnstampedSplit();
+    tx.orderSellerSplit.aggregate
+      .mockResolvedValueOnce({
+        _count: 1,
+        _sum: {
+          sellerSubtotalPaise: 100000,
+          commissionPaise: 0,
+          gstOnCommissionPaise: 0,
+          tdsPaise: 0,
+          tcsPaise: 0,
+          platformFeePaise: 0,
+          couponSellerFundedDiscountPaise: 0,
+          couponAdjustmentPaise: 0,
+          refundAdjustmentPaise: 0,
+          netPayablePaise: 0
+        }
+      })
+      .mockResolvedValueOnce({ _sum: { netPayablePaise: 0 }, _count: 0 });
+    tx.orderSellerSplit.findMany.mockResolvedValue([freshSplit]);
+    tx.sellerPayout.aggregate.mockResolvedValue({ _sum: { netPayablePaise: 0, grossSalesPaise: 0 }, _count: 0 });
+    tx.sellerPayout.findMany.mockResolvedValue([]);
+    tx.sellerLedgerEntry.findMany.mockResolvedValue([]);
+    const service = new ReportsService(
+      prisma as never,
+      createFinanceCalculator({
+        commissionPaise: 5000,
+        gstOnCommissionPaise: 900,
+        tdsPaise: 1000,
+        tcsPaise: 500,
+        platformFeePaise: 2000,
+        netPayablePaise: 90600
+      }) as never,
+      createMarketService() as never,
+    );
+
+    const result = await service.sellerFinanceReport({ id: "user_seller", clerkUserId: null, email: "seller@example.com", roles: [] }, {});
+
+    expect(result.summary.grossSalesPaise).toBe(100000);
+    expect(result.summary.commissionPaise).toBe(5000);
+    expect(result.summary.platformFeePaise).toBe(2000);
+    expect(result.summary.netPayablePaise).toBe(90600);
+  });
+
+  it("calculates seller tax report rows before payout stamping", async () => {
+    const tx = createReportsTx();
+    const prisma = createPrisma(tx);
+    prisma.client.seller.findUnique.mockResolvedValue({
+      id: "seller_1",
+      primaryCapability: "RETAIL",
+      enabledCapabilities: ["RETAIL"]
+    });
+    const freshSplit = freshUnstampedSplit();
+    tx.orderSellerSplit.aggregate.mockResolvedValue({
+      _count: 1,
+      _sum: {
+        sellerSubtotalPaise: 100000,
+        commissionPaise: 0,
+        gstOnCommissionPaise: 0,
+        tdsPaise: 0,
+        tcsPaise: 0,
+        platformFeePaise: 0,
+        couponSellerFundedDiscountPaise: 0,
+        couponAdjustmentPaise: 0,
+        refundAdjustmentPaise: 0,
+        netPayablePaise: 0
+      }
+    });
+    tx.orderSellerSplit.findMany
+      .mockResolvedValueOnce([freshSplit])
+      .mockResolvedValueOnce([{ ...freshSplit, order: { orderNumber: "1HI-1", createdAt: new Date(), currency: "INR" } }])
+      .mockResolvedValueOnce([freshSplit]);
+    const service = new ReportsService(
+      prisma as never,
+      createFinanceCalculator({
+        commissionPaise: 5000,
+        gstOnCommissionPaise: 900,
+        tdsPaise: 1000,
+        tcsPaise: 500,
+        platformFeePaise: 2000,
+        netPayablePaise: 90600
+      }) as never,
+      createMarketService() as never,
+    );
+
+    const result = await service.sellerTaxReport({ id: "user_seller", clerkUserId: null, email: "seller@example.com", roles: [] }, {});
+
+    expect(result.summary.commissionPaise).toBe(5000);
+    expect(result.summary.totalDeductionsPaise).toBe(9400);
+    expect(result.summary.netPayablePaise).toBe(90600);
+    expect(result.splits[0]).toMatchObject({
+      commissionPaise: 5000,
+      platformFeePaise: 2000,
+      netPayablePaise: 90600
+    });
+  });
+
   it("blocks seller reports for users without a seller account", async () => {
     const tx = createReportsTx();
     const prisma = createPrisma(tx);
     prisma.client.seller.findUnique.mockResolvedValue(null);
-    const service = new ReportsService(prisma as never, createFinanceCalculator() as never);
+    const service = new ReportsService(prisma as never, createFinanceCalculator() as never, createMarketService() as never);
 
     await expect(
       service.sellerSales({ id: "user_customer", clerkUserId: null, email: "customer@example.com", roles: [] }, {})
@@ -316,7 +515,18 @@ function createReportsTx() {
     b2BOrder: {
       aggregate: vi.fn(),
       groupBy: vi.fn(),
+      findMany: vi.fn(),
+      count: vi.fn()
+    },
+    sellerPayout: {
+      aggregate: vi.fn(),
       findMany: vi.fn()
+    },
+    sellerLedgerEntry: {
+      findMany: vi.fn()
+    },
+    returnRequest: {
+      count: vi.fn()
     },
     supportRequest: {
       count: vi.fn(),
@@ -340,6 +550,28 @@ function createFinanceCalculator(overrides: Record<string, number> = {}) {
   };
 }
 
+function createMarketService(overrides: { currency?: string; countryCode?: string; rate?: number } = {}) {
+  const market = {
+    countryCode: overrides.countryCode ?? "IN",
+    countryName: overrides.countryCode === "SG" ? "Singapore" : "India",
+    currency: overrides.currency ?? "INR",
+    locale: overrides.currency === "SGD" ? "en-SG" : "en-IN",
+    baseCurrency: "INR",
+    rate: overrides.rate ?? 1,
+    provider: "test",
+    fetchedAt: new Date(),
+    expiresAt: new Date(),
+    isStale: false,
+  };
+
+  return {
+    getMarketCurrency: vi.fn(async () => market),
+    convertMinorUnits: vi.fn((baseMinor: number) =>
+      market.currency === market.baseCurrency ? baseMinor : Math.round((baseMinor / 100) * market.rate * 100),
+    ),
+  };
+}
+
 function createPrisma(tx: ReturnType<typeof createReportsTx>) {
   return {
     client: {
@@ -350,7 +582,30 @@ function createPrisma(tx: ReturnType<typeof createReportsTx>) {
       product: {
         findMany: tx.product.findMany
       },
+      orderSellerSplit: tx.orderSellerSplit,
       $transaction: vi.fn(async (callback: (transactionClient: typeof tx) => Promise<unknown>) => callback(tx))
+    }
+  };
+}
+
+function freshUnstampedSplit() {
+  return {
+    id: "split_1",
+    sellerId: "seller_1",
+    sellerSubtotalPaise: 100000,
+    commissionPaise: 0,
+    gstOnCommissionPaise: 0,
+    tdsPaise: 0,
+    tcsPaise: 0,
+    platformFeePaise: 0,
+    couponSellerFundedDiscountPaise: 0,
+    couponAdjustmentPaise: 0,
+    refundAdjustmentPaise: 0,
+    netPayablePaise: 0,
+    createdAt: new Date(),
+    order: {
+      createdAt: new Date(),
+      items: [{ id: "item_1", sellerId: "seller_1", productId: "product_1", lineTotalPaise: 100000, couponSellerFundedDiscountPaise: 0, product: { categoryId: "category_1" } }]
     }
   };
 }

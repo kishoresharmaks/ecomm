@@ -503,11 +503,29 @@ type CourierQuery = Record<string, string | number | boolean | null | undefined>
 
 function queryString(query: CourierQuery) {
   const params = new URLSearchParams();
-  Object.entries(query).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && String(value).trim()) {
-      params.set(key, String(value));
+
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== null && value !== "") {
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          if (item !== undefined && item !== "") {
+            params.append(key, String(item));
+          }
+        }
+      } else if (key === "dateFrom" && typeof value === "string" && value.length === 10) {
+        const [y, m, d] = value.split("-");
+        const date = new Date(Number(y), Number(m) - 1, Number(d), 0, 0, 0, 0);
+        params.append(key, date.toISOString());
+      } else if (key === "dateTo" && typeof value === "string" && value.length === 10) {
+        const [y, m, d] = value.split("-");
+        const date = new Date(Number(y), Number(m) - 1, Number(d), 23, 59, 59, 999);
+        params.append(key, date.toISOString());
+      } else {
+        params.append(key, String(value));
+      }
     }
-  });
-  const text = params.toString();
-  return text ? `?${text}` : "";
+  }
+
+  const str = params.toString();
+  return str ? `?${str}` : "";
 }

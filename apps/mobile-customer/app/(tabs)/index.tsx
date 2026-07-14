@@ -62,6 +62,7 @@ import { composePersonalizedHomeRails } from "../../src/features/home/personaliz
 import { announceCurrencyChange, useMobileMarket } from "../../src/features/market/mobile-market";
 import { withStorefrontMaintenance } from "../../src/features/maintenance/mobile-maintenance-gate";
 import { getCart, listCustomerOrders, listLocationCountries, searchLocationAreas, type MobileLocationCountry } from "../../src/features/storefront/storefront-api";
+import { useMobileWishlistActions } from "../../src/features/storefront/use-mobile-wishlist-actions";
 import { resolveImageUrl } from "../../src/lib/image-url";
 import { serviceKeys } from "../../src/features/services/service-query-keys";
 import { ServiceCard } from "../../src/features/services/service-ui";
@@ -130,6 +131,7 @@ type CustomerQuickAction = {
 };
 
 type PersonalizedRailCardVariant = "standard" | ProductRailVariant;
+type WishlistActions = Pick<ReturnType<typeof useMobileWishlistActions>, "isPending" | "isWished" | "toggleWishlist">;
 
 type FeaturedCategory = {
   accent: string;
@@ -222,6 +224,8 @@ const featuredCategories = [
 function HomeScreen() {
   const selectedLocation = useLocationStore((state) => state.selectedLocation);
   const homeQuery = useMobileHome(selectedLocation);
+  const wishlist = useMobileWishlistActions();
+  const [locationOpen, setLocationOpen] = useState(false);
   const feedItems = useMemo(() => buildFeed(homeQuery.data), [homeQuery.data]);
 
   return (
@@ -234,21 +238,21 @@ function HomeScreen() {
         refreshControl={
           <RefreshControl refreshing={homeQuery.isRefetching} tintColor={colors.primary} onRefresh={() => void homeQuery.refetch()} />
         }
-        ListHeaderComponent={<HomeHeader selectedLocation={selectedLocation} />}
+        ListHeaderComponent={<HomeHeader selectedLocation={selectedLocation} onOpenLocation={() => setLocationOpen(true)} />}
         ListEmptyComponent={<HomeEmptyState isError={homeQuery.isError} isLoading={homeQuery.isLoading} />}
-        renderItem={({ item }) => <HomeFeedCard item={item} />}
+        renderItem={({ item }) => <HomeFeedCard item={item} wishlist={wishlist} />}
       />
+      <LocationSelectorModal open={locationOpen} onClose={() => setLocationOpen(false)} />
     </Screen>
   );
 }
 
 export default withStorefrontMaintenance(HomeScreen);
 
-function HomeHeader({ selectedLocation }: { selectedLocation: SelectedLocation }) {
+function HomeHeader({ onOpenLocation, selectedLocation }: { onOpenLocation: () => void; selectedLocation: SelectedLocation }) {
   const router = useRouter();
   const customerAuth = useMobileCustomerAuth();
   const [searchText, setSearchText] = useState("");
-  const [locationOpen, setLocationOpen] = useState(false);
   const cartQuery = useQuery({
     queryKey: ["mobile-cart-count", customerAuth.authKey],
     queryFn: () => getCart(customerAuth.authHeaders),
@@ -297,7 +301,7 @@ function HomeHeader({ selectedLocation }: { selectedLocation: SelectedLocation }
           </Link>
         </View>
       </View>
-      <Pressable style={styles.locationWrap} onPress={() => setLocationOpen(true)}>
+      <Pressable style={styles.locationWrap} onPress={onOpenLocation}>
         <HugeiconsIcon color={colors.primary} icon={Location01Icon} size={22} strokeWidth={2.1} />
         <Text numberOfLines={1} style={styles.locationText}>
           {selectedLocation.label}
@@ -320,7 +324,6 @@ function HomeHeader({ selectedLocation }: { selectedLocation: SelectedLocation }
         </Pressable>
       </View>
       <CustomerQuickActionsRail />
-      <LocationSelectorModal open={locationOpen} onClose={() => setLocationOpen(false)} />
     </View>
   );
 }
@@ -404,12 +407,22 @@ function LocationSelectorModal({ open, onClose }: { open: boolean; onClose: () =
   }
 
   return (
-    <Modal animationType="slide" onRequestClose={onClose} transparent visible={open}>
+    <Modal
+      animationType="slide"
+      hardwareAccelerated
+      navigationBarTranslucent
+      onRequestClose={onClose}
+      presentationStyle="overFullScreen"
+      statusBarTranslucent
+      transparent
+      visible={open}
+    >
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         keyboardVerticalOffset={0}
         style={styles.modalOverlay}
       >
+        <Pressable accessibilityLabel="Close location selector" style={styles.modalBackdrop} onPress={onClose} />
         <View style={styles.locationSheet}>
           <View style={styles.sheetHandle} />
           <View style={styles.sheetHeader}>
@@ -424,7 +437,6 @@ function LocationSelectorModal({ open, onClose }: { open: boolean; onClose: () =
           <View style={styles.locationSearchBox}>
             <HugeiconsIcon color={colors.primary} icon={Search01Icon} size={22} strokeWidth={2} />
             <TextInput
-              autoFocus
               onChangeText={setLocationSearch}
               placeholder="Search area, city, or pincode"
               placeholderTextColor={colors.muted}
@@ -522,13 +534,13 @@ function CountrySelector({
   );
 }
 
-function HomeFeedCard({ item }: { item: HomeFeedItem }) {
+function HomeFeedCard({ item, wishlist }: { item: HomeFeedItem; wishlist: WishlistActions }) {
   if (item.type === "hero") {
     return <HeroCarousel banners={item.banners} />;
   }
 
   if (item.type === "personalized") {
-    return <PersonalizedHomeSections home={item.home} />;
+    return <PersonalizedHomeSections home={item.home} wishlist={wishlist} />;
   }
 
   if (item.type === "trust") {
@@ -544,7 +556,7 @@ function HomeFeedCard({ item }: { item: HomeFeedItem }) {
   }
 
   if (item.type === "admin-section") {
-    return <AdminSection products={item.products} section={item.section} />;
+    return <AdminSection products={item.products} section={item.section} wishlist={wishlist} />;
   }
 
   if (item.type === "stores") {
@@ -558,6 +570,7 @@ function HomeFeedCard({ item }: { item: HomeFeedItem }) {
       products={item.products}
       title={item.title}
       variant={item.variant}
+      wishlist={wishlist}
       {...(item.badge ? { badge: item.badge } : {})}
     />
   );
@@ -772,7 +785,7 @@ function TrustStrip() {
   );
 }
 
-function PersonalizedHomeSections({ home }: { home: MobileHome }) {
+function PersonalizedHomeSections({ home, wishlist }: { home: MobileHome; wishlist: WishlistActions }) {
   const customerAuth = useMobileCustomerAuth();
   const recentProducts = useRecentProductsStore((state) => state.recentProducts);
   const cartQuery = useQuery({
@@ -840,6 +853,7 @@ function PersonalizedHomeSections({ home }: { home: MobileHome }) {
         icon={Award01Icon}
         products={personalizedRails.recommendedProducts}
         title="Recommended for you"
+        wishlist={wishlist}
       />
       <MobileBuyAgainSection
         authStatus={customerAuth.status}
@@ -859,12 +873,14 @@ function PersonalizedHomeSections({ home }: { home: MobileHome }) {
         isLoading={cartQuery.isLoading && customerAuth.enabled}
         products={personalizedRails.continueProducts.slice(0, 8)}
         title="Continue shopping"
+        wishlist={wishlist}
       />
       <MobilePersonalizedRail
         actionHref="/search"
         icon={Clock01Icon}
         products={personalizedRails.recentlyViewedProducts}
         title="Recently viewed"
+        wishlist={wishlist}
       />
     </View>
   );
@@ -906,6 +922,7 @@ function MobilePersonalizedRail({
   isLoading = false,
   products,
   title,
+  wishlist,
 }: {
   actionHref: Href;
   cardVariant?: PersonalizedRailCardVariant;
@@ -913,6 +930,7 @@ function MobilePersonalizedRail({
   isLoading?: boolean;
   products: MobilePersonalizedProduct[];
   title: string;
+  wishlist: WishlistActions;
 }) {
   // Limit to 3 products per view for consistency
   const displayedProducts = products.slice(0, CARDS_PER_VIEW);
@@ -966,9 +984,9 @@ function MobilePersonalizedRail({
               style={index === displayedProducts.length - 1 ? null : styles.personalizedRailItem}
             >
               {cardVariant !== "standard" ? (
-                <MobileRecommendedProductCard cardWidth={cardWidth} product={product} variant={cardVariant} />
+                <MobileRecommendedProductCard cardWidth={cardWidth} product={product} variant={cardVariant} wishlist={wishlist} />
               ) : (
-                <MobilePersonalizedProductCard cardWidth={cardWidth} product={product} />
+                <MobilePersonalizedProductCard cardWidth={cardWidth} product={product} wishlist={wishlist} />
               )}
             </View>
           ))}
@@ -1166,10 +1184,12 @@ function MobileRecommendedProductCard({
   cardWidth,
   product,
   variant,
+  wishlist,
 }: {
   cardWidth: number;
   product: MobilePersonalizedProduct;
   variant: ProductRailVariant;
+  wishlist: WishlistActions;
 }) {
   const market = useMobileMarket();
   const imageUrl = resolveImageUrl(product.imageUrl);
@@ -1179,6 +1199,8 @@ function MobileRecommendedProductCard({
   const badge = premiumBadgeLabel(product);
   const _stock = stockPillState(product);
   const hasRating = typeof product.rating === "number" && product.rating > 0;
+  const wished = wishlist.isWished(product.id);
+  const pending = wishlist.isPending(product.id);
 
   return (
     <Link asChild href={`/product/${product.slug}` as Href}>
@@ -1202,9 +1224,24 @@ function MobileRecommendedProductCard({
               {truncateText(badge, 8)}
             </Text>
           </View>
-          <View style={styles.recommendedHeartButton}>
-            <HugeiconsIcon color="#6B7280" icon={HeartIcon} size={19} strokeWidth={1.9} />
-          </View>
+          <Pressable
+            accessibilityLabel={wished ? "Remove from wishlist" : "Add to wishlist"}
+            accessibilityRole="button"
+            accessibilityState={{ busy: pending, selected: wished }}
+            disabled={pending}
+            hitSlop={8}
+            style={[styles.recommendedHeartButton, wished ? styles.productHeartButtonActive : null, pending ? styles.productHeartButtonDisabled : null]}
+            onPress={(event) => {
+              event.stopPropagation();
+              wishlist.toggleWishlist(product.id);
+            }}
+          >
+            {pending ? (
+              <ActivityIndicator color={colors.primary} size="small" />
+            ) : (
+              <HugeiconsIcon color={wished ? colors.primary : "#6B7280"} icon={HeartIcon} size={19} strokeWidth={wished ? 2.6 : 1.9} />
+            )}
+          </Pressable>
         </View>
         <View style={[styles.recommendedBody, isLead ? styles.recommendedBodyLead : styles.recommendedBodyCompact]}>
           <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.recommendedProductName, isLead ? styles.recommendedProductNameLead : null]}>
@@ -1252,14 +1289,18 @@ function MobileRecommendedProductCard({
 function MobilePersonalizedProductCard({
   cardWidth,
   product,
+  wishlist,
 }: {
   cardWidth: number;
   product: MobilePersonalizedProduct;
+  wishlist: WishlistActions;
 }) {
   const market = useMobileMarket();
   const imageUrl = resolveImageUrl(product.imageUrl);
   // Use standard image height for consistency
   const imageHeight = STANDARD_IMAGE_HEIGHT;
+  const wished = wishlist.isWished(product.id);
+  const pending = wishlist.isPending(product.id);
 
   return (
     <Link asChild href={`/product/${product.slug}` as Href}>
@@ -1277,9 +1318,24 @@ function MobilePersonalizedProductCard({
             <ProductImageFallback />
           )}
           {product.badge ? <Text numberOfLines={1} ellipsizeMode="tail" style={styles.personalizedProductBadge}>{product.badge}</Text> : null}
-          <View style={styles.productHeartButton}>
-            <HugeiconsIcon color="#8A94A6" icon={HeartIcon} size={20} strokeWidth={1.9} />
-          </View>
+          <Pressable
+            accessibilityLabel={wished ? "Remove from wishlist" : "Add to wishlist"}
+            accessibilityRole="button"
+            accessibilityState={{ busy: pending, selected: wished }}
+            disabled={pending}
+            hitSlop={8}
+            style={[styles.productHeartButton, wished ? styles.productHeartButtonActive : null, pending ? styles.productHeartButtonDisabled : null]}
+            onPress={(event) => {
+              event.stopPropagation();
+              wishlist.toggleWishlist(product.id);
+            }}
+          >
+            {pending ? (
+              <ActivityIndicator color={colors.primary} size="small" />
+            ) : (
+              <HugeiconsIcon color={wished ? colors.primary : "#8A94A6"} icon={HeartIcon} size={20} strokeWidth={wished ? 2.6 : 1.9} />
+            )}
+          </Pressable>
         </View>
         <View style={styles.personalizedProductDetails}>
           <Text numberOfLines={1} ellipsizeMode="tail" style={styles.personalizedProductName}>
@@ -1397,7 +1453,7 @@ function CategoryStrip({ categories }: { categories: MobileCategory[] }) {
   );
 }
 
-function AdminSection({ section, products }: { section: MobileHomepageSection; products: MobileProduct[] }) {
+function AdminSection({ section, products, wishlist }: { section: MobileHomepageSection; products: MobileProduct[]; wishlist: WishlistActions }) {
   const market = useMobileMarket();
   const items = normalizeSectionItems(section.config?.items);
   const description = stringValue(section.config?.subtitle) || stringValue(section.config?.description);
@@ -1434,7 +1490,7 @@ function AdminSection({ section, products }: { section: MobileHomepageSection; p
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.flashProducts}>
           {(products.length ? products : []).slice(0, CARDS_PER_VIEW).map((product) => (
-            <DealProductCard key={product.id} formatPrice={market.format} product={product} timerEndsAt={timerEndsAt} />
+            <DealProductCard key={product.id} formatPrice={market.format} product={product} timerEndsAt={timerEndsAt} wishlist={wishlist} />
           ))}
           {!products.length
             ? items.slice(0, CARDS_PER_VIEW).map((item, index) => <AdminMiniCard key={`${section.id}-${index}`} item={item} timerEndsAt={timerEndsAt} />)
@@ -1460,7 +1516,7 @@ function AdminSection({ section, products }: { section: MobileHomepageSection; p
       {products.length ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.productScrollContent} style={styles.productScroll}>
           {products.slice(0, CARDS_PER_VIEW).map((product) => (
-            <MarketplaceProductCard key={product.id} formatPrice={market.format} product={product} />
+            <MarketplaceProductCard key={product.id} formatPrice={market.format} product={product} wishlist={wishlist} />
           ))}
         </ScrollView>
       ) : null}
@@ -1511,12 +1567,22 @@ function AdminMiniCard({ item, timerEndsAt }: { item: NormalizedSectionItem; tim
 function DealProductCard({
   formatPrice,
   product,
+  wishlist,
 }: {
   formatPrice: (pricePaise?: number | null) => string;
   product: MobileProduct;
   timerEndsAt: string;
+  wishlist: WishlistActions;
 }) {
-  return <DealCard formatPrice={formatPrice} product={product} />;
+  return (
+    <DealCard
+      formatPrice={formatPrice}
+      isWishlistPending={wishlist.isPending(product.id)}
+      isWished={wishlist.isWished(product.id)}
+      product={product}
+      onToggleWishlist={() => wishlist.toggleWishlist(product.id)}
+    />
+  );
 }
 
 function ProductSection({
@@ -1526,6 +1592,7 @@ function ProductSection({
   products,
   title,
   variant,
+  wishlist,
 }: {
   actionHref: Href;
   badge?: string;
@@ -1533,6 +1600,7 @@ function ProductSection({
   products: MobileProduct[];
   title: string;
   variant: ProductRailVariant;
+  wishlist: WishlistActions;
 }) {
   const { width } = useWindowDimensions();
   const cardWidth = personalizedRailCardWidth(width, variant);
@@ -1565,7 +1633,7 @@ function ProductSection({
             key={`${title}-${product.id}-${product.slug}`}
             style={index === premiumProducts.length - 1 ? null : styles.personalizedRailItem}
           >
-            <MobileRecommendedProductCard cardWidth={cardWidth} product={product} variant={variant} />
+            <MobileRecommendedProductCard cardWidth={cardWidth} product={product} variant={variant} wishlist={wishlist} />
           </View>
         ))}
       </ScrollView>
@@ -1576,20 +1644,24 @@ function ProductSection({
 function MarketplaceProductCard({
   formatPrice,
   product,
+  wishlist,
 }: {
   formatPrice: (pricePaise?: number | null) => string;
   product: MobileProduct;
+  wishlist: WishlistActions;
 }) {
   const cardWidth = STANDARD_CARD_WIDTH;
   const imageHeight = STANDARD_IMAGE_HEIGHT;
   const cardHeight = imageHeight + 132;
   const imageUrl = resolveImageUrl(product.images?.[0]?.url);
   const variant = product.variants?.[0];
-  const price = variant?.pricePaise;
-  const mrp = variant?.mrpPaise ?? null;
+  const price = mobileVariantDisplayPrice(variant);
+  const mrp = mobileVariantOriginalDisplayPrice(variant);
   const discount = discountPercent(price, mrp);
   const rating = product.reviewSummary?.averageRating ?? null;
   const reviewCount = product.reviewSummary?.reviewCount ?? 0;
+  const wished = wishlist.isWished(product.id);
+  const pending = wishlist.isPending(product.id);
 
   return (
     <Link href={`/product/${product.slug}`} style={[styles.productCard, { minHeight: cardHeight, width: cardWidth }]}>
@@ -1597,9 +1669,24 @@ function MarketplaceProductCard({
         <View style={[styles.productImageWrap, { height: imageHeight }]}>
           {imageUrl ? <RemoteImage resizeMode="cover" style={styles.productImage} uri={imageUrl} /> : <ProductImageFallback />}
           {discount ? <Text style={styles.productDiscountBadge}>Deal</Text> : null}
-          <View style={styles.productHeartButton}>
-            <HugeiconsIcon color="#667085" icon={HeartIcon} size={20} strokeWidth={1.8} />
-          </View>
+          <Pressable
+            accessibilityLabel={wished ? "Remove from wishlist" : "Add to wishlist"}
+            accessibilityRole="button"
+            accessibilityState={{ busy: pending, selected: wished }}
+            disabled={pending}
+            hitSlop={8}
+            style={[styles.productHeartButton, wished ? styles.productHeartButtonActive : null, pending ? styles.productHeartButtonDisabled : null]}
+            onPress={(event) => {
+              event.stopPropagation();
+              wishlist.toggleWishlist(product.id);
+            }}
+          >
+            {pending ? (
+              <ActivityIndicator color={colors.primary} size="small" />
+            ) : (
+              <HugeiconsIcon color={wished ? colors.primary : "#667085"} icon={HeartIcon} size={20} strokeWidth={wished ? 2.6 : 1.8} />
+            )}
+          </Pressable>
           {product.images && product.images.length > 1 ? <ImageDots count={product.images.length} /> : null}
         </View>
         <View style={styles.productTextContainer}>
@@ -2109,8 +2196,8 @@ function personalizedProductsFromCart(cart: Awaited<ReturnType<typeof getCart>> 
           sellerId: product.sellerId ?? product.seller?.id ?? null,
           sellerName: product.seller?.storeName ?? "1HandIndia seller",
           sellerSlug: product.seller?.slug ?? null,
-          pricePaise: item.productVariant?.pricePaise ?? item.unitPricePaise ?? null,
-          mrpPaise: item.productVariant?.mrpPaise ?? null,
+          pricePaise: cartVariantDisplayPrice(item.productVariant) ?? item.unitPricePaise ?? null,
+          mrpPaise: cartVariantOriginalDisplayPrice(item.productVariant),
           badge: "In cart",
           stockQuantity: item.productVariant?.stockQuantity ?? null,
           variantStatus: item.productVariant?.status ?? null,
@@ -2172,8 +2259,8 @@ function personalizedProductFromMobileProduct(product: MobileProduct, badge?: st
     sellerId: product.sellerId ?? product.seller?.id ?? null,
     sellerName: product.seller?.storeName ?? "1HandIndia seller",
     sellerSlug: product.seller?.slug ?? null,
-    pricePaise: variant?.pricePaise ?? null,
-    mrpPaise: variant?.mrpPaise ?? null,
+    pricePaise: mobileVariantDisplayPrice(variant) ?? null,
+    mrpPaise: mobileVariantOriginalDisplayPrice(variant),
     rating: product.reviewSummary?.averageRating ?? null,
     reviewCount: product.reviewSummary?.reviewCount ?? null,
     stockQuantity: variant?.stockQuantity ?? null,
@@ -2238,7 +2325,29 @@ function useDebouncedValue<T>(value: T, delayMs: number) {
 
 function productHasDeal(product: MobileProduct) {
   const variant = product.variants?.[0];
-  return Boolean(variant?.mrpPaise && variant.pricePaise && variant.mrpPaise > variant.pricePaise);
+  const price = mobileVariantDisplayPrice(variant);
+  const mrp = mobileVariantOriginalDisplayPrice(variant);
+  return Boolean(mrp && price && mrp > price);
+}
+
+function mobileVariantDisplayPrice(variant: NonNullable<MobileProduct["variants"]>[number] | undefined) {
+  return variant?.baseDealPricePaise ?? variant?.basePricePaise ?? variant?.pricePaise;
+}
+
+function mobileVariantOriginalDisplayPrice(variant: NonNullable<MobileProduct["variants"]>[number] | undefined) {
+  return variant?.baseOriginalPricePaise ?? variant?.baseMrpPaise ?? variant?.mrpPaise ?? null;
+}
+
+function cartVariantDisplayPrice(
+  variant: Awaited<ReturnType<typeof getCart>>["items"][number]["productVariant"] | undefined,
+) {
+  return variant?.basePricePaise ?? variant?.pricePaise ?? null;
+}
+
+function cartVariantOriginalDisplayPrice(
+  variant: Awaited<ReturnType<typeof getCart>>["items"][number]["productVariant"] | undefined,
+) {
+  return variant?.baseMrpPaise ?? variant?.mrpPaise ?? null;
 }
 
 function discountPercent(pricePaise?: number | null, mrpPaise?: number | null) {
@@ -2570,6 +2679,9 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(15, 23, 42, 0.32)",
     flex: 1,
     justifyContent: "flex-end",
+  },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFill,
   },
   locationSheet: {
     backgroundColor: colors.secondary,
@@ -4186,6 +4298,13 @@ recommendedCategoryPillText: {
     top: 8,
     width: 36,
     zIndex: 2,
+  },
+  productHeartButtonActive: {
+    backgroundColor: "#FFF2ED",
+    borderColor: "#FFD6C8",
+  },
+  productHeartButtonDisabled: {
+    opacity: 0.72,
   },
   productName: {
     color: colors.ink,

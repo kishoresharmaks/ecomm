@@ -73,8 +73,9 @@ export class SellerReportsController {
   @ApiOperation({ summary: "Export finance report as CSV." })
   async exportFinance(@CurrentUser() actor: RequestUser, @Query() query: ReportQueryDto, @Res() res: Response) {
     const data = await this.reportsService.sellerFinanceReport(actor, query);
+    const currency = data.currency ?? "INR";
     const rows = [
-      ["Payout Number", "Period From", "Period To", "Status", "Gross Sales (₹)", "Net Payable (₹)"],
+      ["Payout Number", "Period From", "Period To", "Status", `Gross Sales (${currency})`, `Net Payable (${currency})`],
       ...data.recentPayouts.map((p) => [
         p.payoutNumber,
         new Date(p.periodFrom).toLocaleDateString("en-IN"),
@@ -94,8 +95,9 @@ export class SellerReportsController {
   @ApiOperation({ summary: "Export tax report as CSV." })
   async exportTax(@CurrentUser() actor: RequestUser, @Query() query: ReportQueryDto, @Res() res: Response) {
     const data = await this.reportsService.sellerTaxReport(actor, query);
+    const currency = data.currency ?? "INR";
     const rows = [
-      ["Order Number", "Date", "Gross Sale (₹)", "GST on Commission (₹)", "TDS (₹)", "TCS (₹)", "Commission (₹)", "Net (₹)"],
+      ["Order Number", "Date", `Gross Sale (${currency})`, `GST on Commission (${currency})`, `TDS (${currency})`, `TCS (${currency})`, `Commission (${currency})`, `Net (${currency})`],
       ...data.splits.map((s) => [
         s.order.orderNumber,
         new Date(s.createdAt).toLocaleDateString("en-IN"),
@@ -104,7 +106,7 @@ export class SellerReportsController {
         String((s.tdsPaise ?? 0) / 100),
         String((s.tcsPaise ?? 0) / 100),
         String((s.commissionPaise ?? 0) / 100),
-        String(((s.sellerSubtotalPaise ?? 0) - (s.commissionPaise ?? 0) - (s.gstOnCommissionPaise ?? 0) - (s.tdsPaise ?? 0) - (s.tcsPaise ?? 0)) / 100),
+        String((s.netPayablePaise ?? 0) / 100),
       ]),
     ];
     const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
@@ -139,15 +141,16 @@ export class SellerReportsController {
   @ApiOperation({ summary: "Export sales report as CSV." })
   async exportSales(@CurrentUser() actor: RequestUser, @Query() query: ReportQueryDto, @Res() res: Response) {
     const data = await this.reportsService.sellerSales(actor, query);
+    const currency = data.currency ?? "INR";
     const rows = [
-      ["Order Number", "Date", "Status", "Seller Subtotal (₹)", "Commission (₹)", "Net (₹)"],
+      ["Order Number", "Date", "Status", `Seller Subtotal (${currency})`, `Commission (${currency})`, `Net (${currency})`],
       ...data.recentOrders.map((s) => [
         s.order.orderNumber,
         new Date(s.createdAt).toLocaleDateString("en-IN"),
         s.sellerStatus,
         String((s.sellerSubtotalPaise ?? 0) / 100),
         String((s.commissionPaise ?? 0) / 100),
-        String(((s.sellerSubtotalPaise ?? 0) - (s.commissionPaise ?? 0)) / 100),
+        String((s.netPayablePaise ?? 0) / 100),
       ]),
     ];
     const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
@@ -156,4 +159,3 @@ export class SellerReportsController {
     res.send(csv);
   }
 }
-

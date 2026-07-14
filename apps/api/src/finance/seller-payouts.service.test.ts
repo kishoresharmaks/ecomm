@@ -88,10 +88,12 @@ describe("SellerPayoutsService seller requests", () => {
         })
       },
       sellerLedgerEntry: {
-        findMany: vi.fn().mockResolvedValue([])
+        findMany: vi.fn().mockResolvedValue([]),
+        findFirst: vi.fn().mockResolvedValue(null)
       },
       sellerPayout: {
-        create: vi.fn().mockResolvedValue({ id: "payout-1", payoutNumber: "PO-TEST" })
+        create: vi.fn().mockResolvedValue({ id: "payout-1", payoutNumber: "PO-TEST" }),
+        aggregate: vi.fn().mockResolvedValue({ _sum: { netPayablePaise: 0 } })
       },
       sellerPayoutEvent: {
         create: vi.fn().mockResolvedValue({})
@@ -103,6 +105,9 @@ describe("SellerPayoutsService seller requests", () => {
     const prisma = {
       client: {
         $transaction: vi.fn((callback) => callback(tx)),
+        seller: {
+          findUnique: vi.fn().mockResolvedValue({ addresses: [] })
+        },
         sellerPayout: {
           findFirst: vi.fn().mockResolvedValue({ id: "payout-1", sellerId: "seller-1" })
         }
@@ -121,7 +126,7 @@ describe("SellerPayoutsService seller requests", () => {
         snapshot: { calculationVersion: 1 }
       })
     } as unknown as FinanceCalculatorService;
-    const service = new SellerPayoutsService(prisma, calculator, {} as SellerLedgerService);
+    const service = new SellerPayoutsService(prisma, calculator, {} as SellerLedgerService, createMarketService() as never);
 
     await service.requestSellerPayout(
       "seller-1",
@@ -171,6 +176,94 @@ describe("SellerPayoutsService seller requests", () => {
         newStatus: SellerPayoutStatus.PENDING_APPROVAL
       })
     });
+  });
+
+  it("converts public seller payout availability into the seller operating currency", async () => {
+    const split = {
+      id: "split-1",
+      sellerId: "seller-sg",
+      orderId: "order-1",
+      settlementEligibleAt: null,
+      sellerStatus: SellerOrderStatus.PENDING,
+      order: {
+        id: "order-1",
+        createdAt: new Date("2026-05-20T10:00:00.000Z"),
+        items: []
+      }
+    };
+    const tx = {
+      seller: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "seller-sg",
+          status: SellerStatus.APPROVED,
+          approvalStatus: ApprovalStatus.APPROVED,
+          deletedAt: null,
+          addresses: [{ countryCode: "SG" }],
+          profile: { contactName: "Seller One", businessLegalName: null },
+          payoutProfile: {
+            accountHolderName: "Seller One",
+            bankName: null,
+            accountNumber: null,
+            ifscCode: null,
+            upiId: "seller@upi"
+          }
+        })
+      },
+      setting: {
+        findMany: vi.fn().mockResolvedValue([])
+      },
+      orderSellerSplit: {
+        findMany: vi.fn().mockResolvedValue([split])
+      },
+      b2BOrder: {
+        findMany: vi.fn().mockResolvedValue([])
+      },
+      serviceBookingSettlement: {
+        findMany: vi.fn().mockResolvedValue([])
+      },
+      serviceSellerReceivable: {
+        findMany: vi.fn().mockResolvedValue([])
+      },
+      sellerCashReceivable: {
+        findMany: vi.fn().mockResolvedValue([])
+      },
+      sellerLedgerEntry: {
+        findMany: vi.fn().mockResolvedValue([]),
+        findFirst: vi.fn().mockResolvedValue(null)
+      },
+      sellerPayout: {
+        aggregate: vi.fn().mockResolvedValue({ _sum: { netPayablePaise: 0 } })
+      }
+    };
+    const prisma = {
+      client: {
+        $transaction: vi.fn((callback) => callback(tx))
+      }
+    } as unknown as PrismaService;
+    const calculator = {
+      calculateSplit: vi.fn().mockResolvedValue({
+        grossSalesPaise: 50_000,
+        commissionPaise: 5_000,
+        gstOnCommissionPaise: 900,
+        tdsPaise: 500,
+        tcsPaise: 0,
+        platformFeePaise: 0,
+        refundAdjustmentPaise: 0,
+        netPayablePaise: 43_600,
+        snapshot: { calculationVersion: 1 }
+      })
+    } as unknown as FinanceCalculatorService;
+    const marketService = createMarketService({ countryCode: "SG", currency: "SGD", rate: 0.02 });
+    const service = new SellerPayoutsService(prisma, calculator, {} as SellerLedgerService, marketService as never);
+
+    const result = await service.sellerPayoutAvailability("seller-sg");
+
+    expect(result.currency).toBe("SGD");
+    expect(result.grossSalesPaise).toBe(1000);
+    expect(result.commissionPaise).toBe(100);
+    expect(result.netPayablePaise).toBe(872);
+    expect(result.minimumPayoutPaise).toBe(200);
+    expect(marketService.getMarketCurrency).toHaveBeenCalledWith("SG", { requireFresh: true, forceRefresh: true });
   });
 
   it("blocks duplicate payout approval when the status changed concurrently", async () => {
@@ -235,7 +328,7 @@ describe("SellerPayoutsService seller requests", () => {
     const ledger = {
       postPayoutApprovalEntries: vi.fn()
     } as unknown as SellerLedgerService;
-    const service = new SellerPayoutsService(prisma, {} as FinanceCalculatorService, ledger);
+    const service = new SellerPayoutsService(prisma, {} as FinanceCalculatorService, ledger, createMarketService() as never);
 
     await expect(
       service.approvePayout(
@@ -284,7 +377,7 @@ describe("SellerPayoutsService seller requests", () => {
     const ledger = {
       postPayoutApprovalEntries: vi.fn()
     } as unknown as SellerLedgerService;
-    const service = new SellerPayoutsService(prisma, {} as FinanceCalculatorService, ledger);
+    const service = new SellerPayoutsService(prisma, {} as FinanceCalculatorService, ledger, createMarketService() as never);
 
     await expect(
       service.approvePayout(
@@ -343,7 +436,7 @@ describe("SellerPayoutsService seller requests", () => {
         },
       },
     } as unknown as PrismaService;
-    const service = new SellerPayoutsService(prisma, {} as FinanceCalculatorService, {} as SellerLedgerService);
+    const service = new SellerPayoutsService(prisma, {} as FinanceCalculatorService, {} as SellerLedgerService, createMarketService() as never);
 
     await service.rejectPayout(
       "payout-1",
@@ -486,7 +579,7 @@ describe("SellerPayoutsService seller requests", () => {
       postPayoutApprovalEntries: vi.fn(),
       createEntry: vi.fn().mockResolvedValue({})
     } as unknown as SellerLedgerService;
-    const service = new SellerPayoutsService(prisma, {} as FinanceCalculatorService, ledger);
+    const service = new SellerPayoutsService(prisma, {} as FinanceCalculatorService, ledger, createMarketService() as never);
 
     await service.approvePayout(
       "payout-1",
@@ -581,7 +674,7 @@ describe("SellerPayoutsService seller requests", () => {
     const ledger = {
       postPayoutPaidEntry: vi.fn().mockResolvedValue({})
     } as unknown as SellerLedgerService;
-    const service = new SellerPayoutsService(prisma, {} as FinanceCalculatorService, ledger);
+    const service = new SellerPayoutsService(prisma, {} as FinanceCalculatorService, ledger, createMarketService() as never);
 
     await service.markPaid(
       "payout-1",
@@ -664,7 +757,7 @@ describe("SellerPayoutsService seller requests", () => {
     const ledger = {
       postPayoutPaidEntry: vi.fn()
     } as unknown as SellerLedgerService;
-    const service = new SellerPayoutsService(prisma, {} as FinanceCalculatorService, ledger);
+    const service = new SellerPayoutsService(prisma, {} as FinanceCalculatorService, ledger, createMarketService() as never);
 
     await expect(
       service.markPaid(
@@ -714,7 +807,7 @@ describe("SellerPayoutsService seller requests", () => {
         $transaction: vi.fn((callback) => callback(tx))
       }
     } as unknown as PrismaService;
-    const service = new SellerPayoutsService(prisma, {} as FinanceCalculatorService, {} as SellerLedgerService);
+    const service = new SellerPayoutsService(prisma, {} as FinanceCalculatorService, {} as SellerLedgerService, createMarketService() as never);
 
     const result = await service.updateSellerPayoutProfileVerification(
       "seller-1",
@@ -767,7 +860,7 @@ describe("SellerPayoutsService seller requests", () => {
         $transaction: vi.fn((callback) => callback(tx))
       }
     } as unknown as PrismaService;
-    const service = new SellerPayoutsService(prisma, {} as FinanceCalculatorService, {} as SellerLedgerService);
+    const service = new SellerPayoutsService(prisma, {} as FinanceCalculatorService, {} as SellerLedgerService, createMarketService() as never);
 
     await expect(
       service.updateSellerPayoutProfileVerification(
@@ -780,3 +873,25 @@ describe("SellerPayoutsService seller requests", () => {
     expect(tx.sellerPayoutProfile.update).not.toHaveBeenCalled();
   });
 });
+
+function createMarketService(overrides: { currency?: string; countryCode?: string; rate?: number } = {}) {
+  const market = {
+    countryCode: overrides.countryCode ?? "IN",
+    countryName: overrides.countryCode === "SG" ? "Singapore" : "India",
+    currency: overrides.currency ?? "INR",
+    locale: overrides.currency === "SGD" ? "en-SG" : "en-IN",
+    baseCurrency: "INR",
+    rate: overrides.rate ?? 1,
+    provider: "test",
+    fetchedAt: new Date(),
+    expiresAt: new Date(),
+    isStale: false,
+  };
+
+  return {
+    getMarketCurrency: vi.fn(async () => market),
+    convertMinorUnits: vi.fn((baseMinor: number) =>
+      market.currency === market.baseCurrency ? baseMinor : Math.round((baseMinor / 100) * market.rate * 100),
+    ),
+  };
+}

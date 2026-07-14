@@ -15,14 +15,57 @@ import {
 } from "@indihub/database";
 import type { RequestUser } from "../auth/types/indihub-request";
 import { FinanceCalculatorService } from "../finance/finance-calculator.service";
+import { MarketService, type MarketCurrencySnapshot } from "../market/market.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { ReportQueryDto } from "./dto/report-query.dto";
+
+const sellerSalesSummaryMoneyFields = [
+  "totalSalesPaise",
+  "commissionPaise",
+  "gstOnCommissionPaise",
+  "tdsPaise",
+  "tcsPaise",
+  "platformFeePaise",
+  "couponSellerFundedDiscountPaise",
+  "couponAdjustmentPaise",
+  "refundAdjustmentPaise",
+  "netSalesPaise",
+  "b2bOrderValuePaise",
+  "serviceRevenuePaise",
+] as const;
+
+const sellerSplitMoneyFields = [
+  "sellerSubtotalPaise",
+  "commissionPaise",
+  "gstOnCommissionPaise",
+  "tdsPaise",
+  "tcsPaise",
+  "platformFeePaise",
+  "couponSellerFundedDiscountPaise",
+  "couponAdjustmentPaise",
+  "refundAdjustmentPaise",
+  "netPayablePaise",
+] as const;
+
+const b2bOrderMoneyFields = [
+  "subtotalPaise",
+  "buyerPayableAmountPaise",
+  "paidAmountPaise",
+  "commissionAmountPaise",
+  "sellerPayoutAmountPaise",
+  "transportChargePaise",
+] as const;
+
+const serviceBookingMoneyFields = ["totalPayablePaise", "paidAmountPaise"] as const;
+const sellerPayoutMoneyFields = ["grossSalesPaise", "commissionPaise", "adjustmentPaise", "netPayablePaise"] as const;
+const sellerLedgerMoneyFields = ["debitPaise", "creditPaise", "balanceAfterPaise"] as const;
 
 @Injectable()
 export class ReportsService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(FinanceCalculatorService) private readonly financeCalculator: FinanceCalculatorService,
+    @Inject(MarketService) private readonly marketService: MarketService,
   ) {}
 
   async overview(query: ReportQueryDto) {
@@ -237,12 +280,20 @@ export class ReportsService {
 
   async sellerSales(actor: RequestUser, query: ReportQueryDto) {
     const seller = await this.prisma.client.seller.findUnique({
-      where: { userId: actor.id }
+      where: { userId: actor.id },
+      include: {
+        addresses: {
+          select: { countryCode: true },
+          orderBy: { createdAt: "asc" },
+          take: 1
+        }
+      }
     });
 
     if (!seller) {
       throw new ForbiddenException("Seller account is required.");
     }
+    const market = await this.marketForSeller(seller);
 
     const createdAt = this.dateRange(query);
     const splitWhere: Prisma.OrderSellerSplitWhereInput = {
@@ -580,12 +631,15 @@ export class ReportsService {
       refundAdjustmentPaise;
 
     return {
+      currency: market.currency,
+      baseCurrency: market.baseCurrency,
+      fxRate: market.rate,
       seller: {
         id: seller.id,
         primaryCapability: seller.primaryCapability,
         enabledCapabilities: seller.enabledCapabilities
       },
-      summary: {
+      summary: this.convertMoneyFields({
         orderCount: summary._count,
         totalSalesPaise,
         commissionPaise,
@@ -605,57 +659,61 @@ export class ReportsService {
         serviceBookings: serviceBookings._count,
         serviceRevenuePaise: servicePayments._sum.amountPaise ?? 0,
         serviceListings
-      },
+      }, sellerSalesSummaryMoneyFields, market),
       b2b: {
         enquiryCount: b2bEnquiries,
         orderCount: b2bOrders._count,
-        subtotalPaise: b2bOrders._sum.subtotalPaise ?? 0,
-        buyerPayablePaise: b2bOrders._sum.buyerPayableAmountPaise ?? 0,
-        paidAmountPaise: b2bOrders._sum.paidAmountPaise ?? 0,
-        commissionPaise: b2bOrders._sum.commissionAmountPaise ?? 0,
-        sellerPayoutPaise: b2bOrders._sum.sellerPayoutAmountPaise ?? 0,
+        ...this.convertMoneyFields({
+          subtotalPaise: b2bOrders._sum.subtotalPaise ?? 0,
+          buyerPayablePaise: b2bOrders._sum.buyerPayableAmountPaise ?? 0,
+          paidAmountPaise: b2bOrders._sum.paidAmountPaise ?? 0,
+          commissionPaise: b2bOrders._sum.commissionAmountPaise ?? 0,
+          sellerPayoutPaise: b2bOrders._sum.sellerPayoutAmountPaise ?? 0,
+        }, ["subtotalPaise", "buyerPayablePaise", "paidAmountPaise", "commissionPaise", "sellerPayoutPaise"] as const, market),
         byEnquiryStatus: b2bEnquiriesByStatus.map((item) => ({
           status: item.status,
           count: item._count
         })),
-        byOrderStatus: b2bOrdersByStatus.map((item) => ({
+        byOrderStatus: b2bOrdersByStatus.map((item) => this.convertMoneyFields({
           status: item.status,
           count: item._count,
           buyerPayablePaise: item._sum.buyerPayableAmountPaise ?? 0,
           sellerPayoutPaise: item._sum.sellerPayoutAmountPaise ?? 0
-        })),
-        byPaymentStatus: b2bOrdersByPaymentStatus.map((item) => ({
+        }, ["buyerPayablePaise", "sellerPayoutPaise"] as const, market)),
+        byPaymentStatus: b2bOrdersByPaymentStatus.map((item) => this.convertMoneyFields({
           status: item.paymentStatus,
           count: item._count,
           paidAmountPaise: item._sum.paidAmountPaise ?? 0,
           buyerPayablePaise: item._sum.buyerPayableAmountPaise ?? 0
-        })),
-        recentOrders: recentB2BOrders
+        }, ["paidAmountPaise", "buyerPayablePaise"] as const, market)),
+        recentOrders: recentB2BOrders.map((order) => this.convertCurrencyRecord(order, b2bOrderMoneyFields, market))
       },
       services: {
         listingCount: serviceListings,
         activeListingCount: activeServiceListings,
         bookingCount: serviceBookings._count,
-        totalPayablePaise: serviceBookings._sum.totalPayablePaise ?? 0,
-        paidAmountPaise: serviceBookings._sum.paidAmountPaise ?? 0,
+        ...this.convertMoneyFields({
+          totalPayablePaise: serviceBookings._sum.totalPayablePaise ?? 0,
+          paidAmountPaise: serviceBookings._sum.paidAmountPaise ?? 0,
+          paidPaymentPaise: servicePayments._sum.amountPaise ?? 0,
+        }, ["totalPayablePaise", "paidAmountPaise", "paidPaymentPaise"] as const, market),
         paidPaymentCount: servicePayments._count,
-        paidPaymentPaise: servicePayments._sum.amountPaise ?? 0,
-        byBookingStatus: serviceBookingsByStatus.map((item) => ({
+        byBookingStatus: serviceBookingsByStatus.map((item) => this.convertMoneyFields({
           status: item.status,
           count: item._count,
           totalPayablePaise: item._sum.totalPayablePaise ?? 0,
           paidAmountPaise: item._sum.paidAmountPaise ?? 0
-        })),
-        byPaymentStatus: servicePaymentsByStatus.map((item) => ({
+        }, ["totalPayablePaise", "paidAmountPaise"] as const, market)),
+        byPaymentStatus: servicePaymentsByStatus.map((item) => this.convertMoneyFields({
           status: item.status,
           count: item._count,
           amountPaise: item._sum.amountPaise ?? 0
-        })),
-        recentBookings: recentServiceBookings
+        }, ["amountPaise"] as const, market)),
+        recentBookings: recentServiceBookings.map((booking) => this.convertCurrencyRecord(booking, serviceBookingMoneyFields, market))
       },
       recentOrders: splits.map((split) => {
         const calculated = calculatedFinanceBySplitId.get(split.id);
-        return calculated
+        const effectiveSplit = calculated
           ? {
               ...split,
               commissionPaise: calculated.commissionPaise,
@@ -666,6 +724,8 @@ export class ReportsService {
               netPayablePaise: calculated.netPayablePaise,
             }
           : split;
+
+        return this.convertSellerSplitRecord(effectiveSplit, market);
       }),
       lowStockProducts
     };
@@ -673,12 +733,13 @@ export class ReportsService {
 
   async sellerReportsOverview(actor: RequestUser, query: ReportQueryDto) {
     const seller = await this.requireSeller(actor);
+    const market = await this.marketForSeller(seller);
     const createdAt = this.dateRange(query);
     const splitWhere: Prisma.OrderSellerSplitWhereInput = { sellerId: seller.id, order: this.reportableOrderWhere(createdAt) };
     const b2bWhere: Prisma.B2BOrderWhereInput = { sellerId: seller.id, status: { not: B2BOrderStatus.CANCELLED }, ...(createdAt ? { createdAt } : {}) };
     const returnWhere: Prisma.ReturnRequestWhereInput = { items: { some: { sellerId: seller.id } }, ...(createdAt ? { createdAt } : {}) };
     const [splitAgg, payoutAgg, lowStockCount, productCount, b2bCount, returnCount] = await this.prisma.client.$transaction(async (tx) => {
-      const splitAgg = await tx.orderSellerSplit.aggregate({ where: splitWhere, _count: true, _sum: { sellerSubtotalPaise: true, netPayablePaise: true, gstOnCommissionPaise: true, tdsPaise: true, tcsPaise: true, commissionPaise: true, refundAdjustmentPaise: true } });
+      const splitAgg = await this.effectiveSellerSplitFinance(tx, splitWhere);
       const payoutAgg = await tx.sellerPayout.aggregate({ where: { sellerId: seller.id, status: SellerPayoutStatus.PAID }, _sum: { netPayablePaise: true }, _count: true });
       const lowStockCount = await tx.productVariant.count({ where: { stockQuantity: { lte: 5 }, product: { sellerId: seller.id, deletedAt: null } } });
       const productCount = await tx.product.count({ where: { sellerId: seller.id, deletedAt: null } });
@@ -686,15 +747,40 @@ export class ReportsService {
       const returnCount = await tx.returnRequest.count({ where: returnWhere });
       return [splitAgg, payoutAgg, lowStockCount, productCount, b2bCount, returnCount] as const;
     });
+    // Re-derive net sales from effective components (matches finance-calculator formula exactly)
+    const netSalesPaise =
+      splitAgg.sellerSubtotalPaise -
+      splitAgg.commissionPaise -
+      splitAgg.gstOnCommissionPaise -
+      splitAgg.tdsPaise -
+      splitAgg.tcsPaise -
+      splitAgg.platformFeePaise -
+      splitAgg.couponSellerFundedDiscountPaise +
+      splitAgg.couponAdjustmentPaise +
+      splitAgg.refundAdjustmentPaise;
+    // Total deductions includes coupon seller-funded discounts
+    const totalDeductionsPaise =
+      splitAgg.commissionPaise +
+      splitAgg.gstOnCommissionPaise +
+      splitAgg.tdsPaise +
+      splitAgg.tcsPaise +
+      splitAgg.platformFeePaise +
+      splitAgg.couponSellerFundedDiscountPaise;
     return {
-      totalSalesPaise: splitAgg._sum.sellerSubtotalPaise ?? 0,
-      netSalesPaise: splitAgg._sum.netPayablePaise ?? 0,
-      commissionPaise: splitAgg._sum.commissionPaise ?? 0,
-      gstOnCommissionPaise: splitAgg._sum.gstOnCommissionPaise ?? 0,
-      orderCount: splitAgg._count,
+      currency: market.currency,
+      baseCurrency: market.baseCurrency,
+      fxRate: market.rate,
+      ...this.convertMoneyFields({
+        totalSalesPaise: splitAgg.sellerSubtotalPaise,
+        netSalesPaise,
+        commissionPaise: splitAgg.commissionPaise,
+        gstOnCommissionPaise: splitAgg.gstOnCommissionPaise,
+        totalDeductionsPaise,
+        paidPayoutsPaise: payoutAgg._sum.netPayablePaise ?? 0,
+      }, ["totalSalesPaise", "netSalesPaise", "commissionPaise", "gstOnCommissionPaise", "totalDeductionsPaise", "paidPayoutsPaise"] as const, market),
+      orderCount: splitAgg.count,
       products: productCount,
       lowStockCount,
-      paidPayoutsPaise: payoutAgg._sum.netPayablePaise ?? 0,
       paidPayoutsCount: payoutAgg._count,
       b2bOrderCount: b2bCount,
       returnCount
@@ -728,11 +814,12 @@ export class ReportsService {
 
   async sellerFinanceReport(actor: RequestUser, query: ReportQueryDto) {
     const seller = await this.requireSeller(actor);
+    const market = await this.marketForSeller(seller);
     const createdAt = this.dateRange(query);
     const splitWhere: Prisma.OrderSellerSplitWhereInput = { sellerId: seller.id, order: this.reportableOrderWhere(createdAt) };
     const payoutDateWhere = createdAt ? { createdAt } : {};
     const [splitAgg, pendingPayouts, paidPayouts, recentPayouts, ledgerEntries] = await this.prisma.client.$transaction(async (tx) => {
-      const splitAgg = await tx.orderSellerSplit.aggregate({ where: splitWhere, _sum: { sellerSubtotalPaise: true, commissionPaise: true, netPayablePaise: true, refundAdjustmentPaise: true, platformFeePaise: true }, _count: true });
+      const splitAgg = await this.effectiveSellerSplitFinance(tx, splitWhere);
       const pendingPayouts = await tx.sellerPayout.aggregate({ where: { sellerId: seller.id, status: { in: [SellerPayoutStatus.PENDING_APPROVAL, SellerPayoutStatus.APPROVED] } }, _sum: { netPayablePaise: true }, _count: true });
       const paidPayouts = await tx.sellerPayout.aggregate({ where: { sellerId: seller.id, status: SellerPayoutStatus.PAID, ...payoutDateWhere }, _sum: { netPayablePaise: true, grossSalesPaise: true }, _count: true });
       const recentPayouts = await tx.sellerPayout.findMany({ where: { sellerId: seller.id, ...payoutDateWhere }, orderBy: { createdAt: "desc" }, take: 20 });
@@ -740,26 +827,63 @@ export class ReportsService {
       return [splitAgg, pendingPayouts, paidPayouts, recentPayouts, ledgerEntries] as const;
     });
     const eligibleSplits = await this.prisma.client.orderSellerSplit.aggregate({ where: { sellerId: seller.id, settlementStatus: SellerSettlementStatus.ELIGIBLE, payoutId: null }, _sum: { netPayablePaise: true }, _count: true });
+    // Re-derive net payable from effective components (matches finance-calculator formula exactly)
+    const financeNetPayablePaise =
+      splitAgg.sellerSubtotalPaise -
+      splitAgg.commissionPaise -
+      splitAgg.gstOnCommissionPaise -
+      splitAgg.tdsPaise -
+      splitAgg.tcsPaise -
+      splitAgg.platformFeePaise -
+      splitAgg.couponSellerFundedDiscountPaise +
+      splitAgg.couponAdjustmentPaise +
+      splitAgg.refundAdjustmentPaise;
     return {
-      summary: { grossSalesPaise: splitAgg._sum.sellerSubtotalPaise ?? 0, commissionPaise: splitAgg._sum.commissionPaise ?? 0, netPayablePaise: splitAgg._sum.netPayablePaise ?? 0, refundAdjustmentPaise: splitAgg._sum.refundAdjustmentPaise ?? 0, platformFeePaise: splitAgg._sum.platformFeePaise ?? 0, orderCount: splitAgg._count, pendingPayoutsPaise: pendingPayouts._sum.netPayablePaise ?? 0, pendingPayoutsCount: pendingPayouts._count, paidPayoutsPaise: paidPayouts._sum.netPayablePaise ?? 0, paidPayoutsCount: paidPayouts._count, eligiblePaise: eligibleSplits._sum.netPayablePaise ?? 0, eligibleCount: eligibleSplits._count },
-      recentPayouts,
-      ledgerEntries
+      currency: market.currency,
+      baseCurrency: market.baseCurrency,
+      fxRate: market.rate,
+      summary: this.convertMoneyFields({ grossSalesPaise: splitAgg.sellerSubtotalPaise, commissionPaise: splitAgg.commissionPaise, netPayablePaise: financeNetPayablePaise, refundAdjustmentPaise: splitAgg.refundAdjustmentPaise, platformFeePaise: splitAgg.platformFeePaise, orderCount: splitAgg.count, pendingPayoutsPaise: pendingPayouts._sum.netPayablePaise ?? 0, pendingPayoutsCount: pendingPayouts._count, paidPayoutsPaise: paidPayouts._sum.netPayablePaise ?? 0, paidPayoutsCount: paidPayouts._count, eligiblePaise: eligibleSplits._sum.netPayablePaise ?? 0, eligibleCount: eligibleSplits._count }, ["grossSalesPaise", "commissionPaise", "netPayablePaise", "refundAdjustmentPaise", "platformFeePaise", "pendingPayoutsPaise", "paidPayoutsPaise", "eligiblePaise"] as const, market),
+      recentPayouts: recentPayouts.map((payout) => this.convertCurrencyRecord(payout, sellerPayoutMoneyFields, market)),
+      ledgerEntries: ledgerEntries.map((entry) => this.convertCurrencyRecord(entry, sellerLedgerMoneyFields, market))
     };
   }
 
   async sellerTaxReport(actor: RequestUser, query: ReportQueryDto) {
     const seller = await this.requireSeller(actor);
+    const market = await this.marketForSeller(seller);
     const createdAt = this.dateRange(query);
     const splitWhere: Prisma.OrderSellerSplitWhereInput = { sellerId: seller.id, order: this.reportableOrderWhere(createdAt) };
     const [taxAgg, splits] = await this.prisma.client.$transaction(async (tx) => {
-      const taxAgg = await tx.orderSellerSplit.aggregate({ where: splitWhere, _sum: { sellerSubtotalPaise: true, commissionPaise: true, gstOnCommissionPaise: true, tdsPaise: true, tcsPaise: true, platformFeePaise: true, couponSellerFundedDiscountPaise: true, netPayablePaise: true }, _count: true });
+      const taxAgg = await this.effectiveSellerSplitFinance(tx, splitWhere);
       const splits = await tx.orderSellerSplit.findMany({ where: splitWhere, include: { order: { select: { orderNumber: true, createdAt: true, currency: true } } }, orderBy: { createdAt: "desc" }, take: 100 });
-      return [taxAgg, splits] as const;
+      const calculatedSplits = await this.applyEffectiveFinanceToSplits(tx, splits);
+      return [taxAgg, calculatedSplits] as const;
     });
-    const totalDeductionsPaise = (taxAgg._sum.commissionPaise ?? 0) + (taxAgg._sum.gstOnCommissionPaise ?? 0) + (taxAgg._sum.tdsPaise ?? 0) + (taxAgg._sum.tcsPaise ?? 0) + (taxAgg._sum.platformFeePaise ?? 0);
+    // Re-derive net payable from effective components (matches finance-calculator formula exactly)
+    const netPayablePaise =
+      taxAgg.sellerSubtotalPaise -
+      taxAgg.commissionPaise -
+      taxAgg.gstOnCommissionPaise -
+      taxAgg.tdsPaise -
+      taxAgg.tcsPaise -
+      taxAgg.platformFeePaise -
+      taxAgg.couponSellerFundedDiscountPaise +
+      taxAgg.couponAdjustmentPaise +
+      taxAgg.refundAdjustmentPaise;
+    // Total deductions includes coupon seller-funded discounts
+    const totalDeductionsPaise =
+      taxAgg.commissionPaise +
+      taxAgg.gstOnCommissionPaise +
+      taxAgg.tdsPaise +
+      taxAgg.tcsPaise +
+      taxAgg.platformFeePaise +
+      taxAgg.couponSellerFundedDiscountPaise;
     return {
-      summary: { orderCount: taxAgg._count, grossSalesPaise: taxAgg._sum.sellerSubtotalPaise ?? 0, commissionPaise: taxAgg._sum.commissionPaise ?? 0, gstOnCommissionPaise: taxAgg._sum.gstOnCommissionPaise ?? 0, tdsPaise: taxAgg._sum.tdsPaise ?? 0, tcsPaise: taxAgg._sum.tcsPaise ?? 0, platformFeePaise: taxAgg._sum.platformFeePaise ?? 0, couponDiscountPaise: taxAgg._sum.couponSellerFundedDiscountPaise ?? 0, netPayablePaise: taxAgg._sum.netPayablePaise ?? 0, totalDeductionsPaise },
-      splits
+      currency: market.currency,
+      baseCurrency: market.baseCurrency,
+      fxRate: market.rate,
+      summary: this.convertMoneyFields({ orderCount: taxAgg.count, grossSalesPaise: taxAgg.sellerSubtotalPaise, commissionPaise: taxAgg.commissionPaise, gstOnCommissionPaise: taxAgg.gstOnCommissionPaise, tdsPaise: taxAgg.tdsPaise, tcsPaise: taxAgg.tcsPaise, platformFeePaise: taxAgg.platformFeePaise, couponDiscountPaise: taxAgg.couponSellerFundedDiscountPaise, netPayablePaise, totalDeductionsPaise }, ["grossSalesPaise", "commissionPaise", "gstOnCommissionPaise", "tdsPaise", "tcsPaise", "platformFeePaise", "couponDiscountPaise", "netPayablePaise", "totalDeductionsPaise"] as const, market),
+      splits: splits.map((split) => this.convertSellerSplitRecord(split, market))
     };
   }
 
@@ -785,7 +909,16 @@ export class ReportsService {
   }
 
   private async requireSeller(actor: RequestUser) {
-    const seller = await this.prisma.client.seller.findUnique({ where: { userId: actor.id } });
+    const seller = await this.prisma.client.seller.findUnique({
+      where: { userId: actor.id },
+      include: {
+        addresses: {
+          select: { countryCode: true },
+          orderBy: { createdAt: "asc" },
+          take: 1
+        }
+      }
+    });
     if (!seller) throw new ForbiddenException("Seller account is required.");
     return seller;
   }
@@ -805,6 +938,179 @@ export class ReportsService {
     return {
       ...(createdAt ? { createdAt } : {}),
       orderStatus: { not: OrderStatus.CANCELLED }
+    };
+  }
+
+  private async effectiveSellerSplitFinance(
+    tx: Prisma.TransactionClient,
+    splitWhere: Prisma.OrderSellerSplitWhereInput,
+  ) {
+    const aggregate = await tx.orderSellerSplit.aggregate({
+      where: splitWhere,
+      _count: true,
+      _sum: {
+        sellerSubtotalPaise: true,
+        commissionPaise: true,
+        gstOnCommissionPaise: true,
+        tdsPaise: true,
+        tcsPaise: true,
+        platformFeePaise: true,
+        couponSellerFundedDiscountPaise: true,
+        couponAdjustmentPaise: true,
+        refundAdjustmentPaise: true,
+        netPayablePaise: true
+      }
+    });
+    const unstampedSplits = await this.findUnstampedFinanceSplits(tx, splitWhere);
+    const totals = {
+      count: aggregate._count,
+      sellerSubtotalPaise: aggregate._sum.sellerSubtotalPaise ?? 0,
+      commissionPaise: aggregate._sum.commissionPaise ?? 0,
+      gstOnCommissionPaise: aggregate._sum.gstOnCommissionPaise ?? 0,
+      tdsPaise: aggregate._sum.tdsPaise ?? 0,
+      tcsPaise: aggregate._sum.tcsPaise ?? 0,
+      platformFeePaise: aggregate._sum.platformFeePaise ?? 0,
+      couponSellerFundedDiscountPaise: aggregate._sum.couponSellerFundedDiscountPaise ?? 0,
+      couponAdjustmentPaise: aggregate._sum.couponAdjustmentPaise ?? 0,
+      refundAdjustmentPaise: aggregate._sum.refundAdjustmentPaise ?? 0,
+      netPayablePaise: aggregate._sum.netPayablePaise ?? 0
+    };
+
+    for (const split of unstampedSplits) {
+      const calculation = await this.financeCalculator.calculateSplit(split, tx);
+      totals.commissionPaise += calculation.commissionPaise - split.commissionPaise;
+      totals.gstOnCommissionPaise += calculation.gstOnCommissionPaise - split.gstOnCommissionPaise;
+      totals.tdsPaise += calculation.tdsPaise - split.tdsPaise;
+      totals.tcsPaise += calculation.tcsPaise - split.tcsPaise;
+      totals.platformFeePaise += calculation.platformFeePaise - split.platformFeePaise;
+      totals.netPayablePaise += calculation.netPayablePaise - split.netPayablePaise;
+    }
+
+    return totals;
+  }
+
+  private async findUnstampedFinanceSplits(
+    tx: Prisma.TransactionClient,
+    splitWhere: Prisma.OrderSellerSplitWhereInput,
+  ) {
+    return tx.orderSellerSplit.findMany({
+      where: {
+        ...splitWhere,
+        sellerSubtotalPaise: { gt: 0 },
+        commissionPaise: 0,
+        gstOnCommissionPaise: 0,
+        tdsPaise: 0,
+        tcsPaise: 0,
+        platformFeePaise: 0
+      },
+      include: {
+        order: {
+          include: {
+            items: {
+              include: {
+                product: true
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+
+  private async applyEffectiveFinanceToSplits<T extends { id: string }>(
+    tx: Prisma.TransactionClient,
+    splits: T[],
+  ) {
+    const unstampedIds = splits
+      .filter((split) => {
+        const finance = split as T & {
+          sellerSubtotalPaise?: number;
+          commissionPaise?: number;
+          gstOnCommissionPaise?: number;
+          tdsPaise?: number;
+          tcsPaise?: number;
+          platformFeePaise?: number;
+        };
+        return (
+          (finance.sellerSubtotalPaise ?? 0) > 0 &&
+          (finance.commissionPaise ?? 0) === 0 &&
+          (finance.gstOnCommissionPaise ?? 0) === 0 &&
+          (finance.tdsPaise ?? 0) === 0 &&
+          (finance.tcsPaise ?? 0) === 0 &&
+          (finance.platformFeePaise ?? 0) === 0
+        );
+      })
+      .map((split) => split.id);
+    if (unstampedIds.length === 0) {
+      return splits;
+    }
+
+    const financeSplits = await this.findUnstampedFinanceSplits(tx, { id: { in: unstampedIds } });
+    const calculatedById = new Map<string, Awaited<ReturnType<FinanceCalculatorService["calculateSplit"]>>>();
+    for (const split of financeSplits) {
+      calculatedById.set(split.id, await this.financeCalculator.calculateSplit(split, tx));
+    }
+
+    return splits.map((split) => {
+      const calculated = calculatedById.get(split.id);
+      return calculated
+        ? {
+            ...split,
+            commissionPaise: calculated.commissionPaise,
+            gstOnCommissionPaise: calculated.gstOnCommissionPaise,
+            tdsPaise: calculated.tdsPaise,
+            tcsPaise: calculated.tcsPaise,
+            platformFeePaise: calculated.platformFeePaise,
+            netPayablePaise: calculated.netPayablePaise,
+          }
+        : split;
+    });
+  }
+
+  private async marketForSeller(seller: { addresses?: Array<{ countryCode?: string | null }> }) {
+    const countryCode = seller.addresses?.[0]?.countryCode?.trim().toUpperCase() || "IN";
+    return this.marketService.getMarketCurrency(countryCode, { requireFresh: true, forceRefresh: true });
+  }
+
+  private convertMoneyFields<T extends Record<string, unknown>, K extends readonly string[]>(
+    record: T,
+    fields: K,
+    market: MarketCurrencySnapshot,
+  ) {
+    const converted: Record<string, unknown> = { ...record };
+    for (const field of fields) {
+      const value = converted[field];
+      if (typeof value === "number") {
+        converted[field] = this.marketService.convertMinorUnits(value, market);
+      }
+    }
+
+    return converted as T;
+  }
+
+  private convertCurrencyRecord<T extends Record<string, unknown>, K extends readonly string[]>(
+    record: T,
+    fields: K,
+    market: MarketCurrencySnapshot,
+  ) {
+    return {
+      ...this.convertMoneyFields(record, fields, market),
+      currency: market.currency,
+    };
+  }
+
+  private convertSellerSplitRecord<T extends Record<string, unknown> & { order?: Record<string, unknown> | null }>(
+    split: T,
+    market: MarketCurrencySnapshot,
+  ) {
+    return {
+      ...this.convertMoneyFields(split, sellerSplitMoneyFields, market),
+      order: split.order
+        ? {
+            ...split.order,
+            currency: market.currency,
+          }
+        : split.order,
     };
   }
 }

@@ -18,6 +18,7 @@ import { ClerkAuthService } from "../auth/clerk-auth.service";
 import { CmsService } from "../cms/cms.service";
 import { paginationFromQuery } from "../common/pagination";
 import { DealPricingService } from "../deals/deal-pricing.service";
+import { MarketService } from "../market/market.service";
 import { ProductQueryDto } from "../products/dto/product-query.dto";
 import { PrismaService } from "../prisma/prisma.service";
 import { PublicSellerQueryDto } from "../sellers/dto/public-seller-query.dto";
@@ -191,6 +192,7 @@ export class StorefrontService {
     @Optional()
     @Inject(DealPricingService)
     private readonly dealPricing?: DealPricingService,
+    @Inject(MarketService) private readonly marketService?: MarketService,
   ) {}
 
   async getHome(query: PublicSellerQueryDto = {}, options: HomeRequestOptions = {}) {
@@ -636,10 +638,44 @@ export class StorefrontService {
     const decoratedProducts = this.dealPricing ? await this.dealPricing.applyActiveDealsToProducts(products) : products;
     const reviewSummaries = await this.reviewSummariesForProducts(decoratedProducts.map((product) => product.id));
 
-    return decoratedProducts.map((product) => ({
-      ...product,
-      reviewSummary: reviewSummaries.get(product.id) ?? this.emptyReviewSummary(),
-    }));
+    return Promise.all(
+      decoratedProducts.map(async (product) => ({
+        ...product,
+        variants: await Promise.all(product.variants.map((variant) => this.publicVariantPriceReadback(variant))),
+        reviewSummary: reviewSummaries.get(product.id) ?? this.emptyReviewSummary(),
+      })),
+    );
+  }
+
+  private async publicVariantPriceReadback<T extends {
+    pricePaise: number;
+    mrpPaise?: number | null;
+    currency?: string | null;
+    originalPricePaise?: number | null;
+    dealPricePaise?: number | null;
+  }>(variant: T) {
+    const baseCurrency = (process.env.FX_BASE_CURRENCY ?? "INR").toUpperCase();
+    const sourceCurrency = variant.currency?.trim().toUpperCase() || baseCurrency;
+    const convert = (value?: number | null) =>
+      value === undefined || value === null
+        ? Promise.resolve(value ?? null)
+        : this.marketService!.convertMinorUnitsToBase(value, sourceCurrency);
+
+    const [basePricePaise, baseMrpPaise, baseOriginalPricePaise, baseDealPricePaise] = await Promise.all([
+      convert(variant.pricePaise),
+      convert(variant.mrpPaise),
+      convert(variant.originalPricePaise),
+      convert(variant.dealPricePaise),
+    ]);
+
+    return {
+      ...variant,
+      basePricePaise,
+      baseMrpPaise,
+      baseOriginalPricePaise,
+      baseDealPricePaise,
+      baseCurrency,
+    };
   }
 
   private async reviewSummariesForProducts(productIds: string[]) {

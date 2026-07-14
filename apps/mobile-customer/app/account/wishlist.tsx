@@ -345,7 +345,7 @@ function WishlistCard({
       <View style={styles.detailGrid}>
         <View style={styles.detailBlock}>
           <Text style={styles.detailLabel}>Price</Text>
-          <Text style={styles.productPrice}>{formatPrice(variant?.pricePaise)}</Text>
+          <Text style={styles.productPrice}>{formatPrice(variantDisplayPrice(variant))}</Text>
           {originalPrice ? <Text style={styles.mrpText}>{formatPrice(originalPrice)}</Text> : null}
           {discountPercent > 0 ? <Text style={styles.discountPill}>{discountPercent}% OFF</Text> : null}
         </View>
@@ -448,16 +448,18 @@ function originalVariantPrice(variant: ProductVariant | null) {
   if (!variant) {
     return null;
   }
-  const original = variant.originalPricePaise ?? variant.mrpPaise ?? null;
-  return original && original > variant.pricePaise ? original : null;
+  const price = variantDisplayPrice(variant);
+  const original = variantOriginalDisplayPrice(variant);
+  return price && original && original > price ? original : null;
 }
 
 function discountPercentForVariant(variant: ProductVariant | null) {
   const original = originalVariantPrice(variant);
-  if (!variant || !original) {
+  const price = variantDisplayPrice(variant);
+  if (!price || !original) {
     return 0;
   }
-  return Math.round(((original - variant.pricePaise) / original) * 100);
+  return Math.round(((original - price) / original) * 100);
 }
 
 function wishlistSummary(items: WishlistItem[], selectedItems: WishlistItem[]) {
@@ -467,10 +469,11 @@ function wishlistSummary(items: WishlistItem[], selectedItems: WishlistItem[]) {
       if (!variant) {
         return result;
       }
-      const original = originalVariantPrice(variant) ?? variant.pricePaise;
-      result.totalValue += variant.pricePaise;
+      const price = variantDisplayPrice(variant) ?? 0;
+      const original = originalVariantPrice(variant) ?? price;
+      result.totalValue += price;
       result.mrpTotal += original;
-      result.savings += Math.max(0, original - variant.pricePaise);
+      result.savings += Math.max(0, original - price);
       if (variant.stockQuantity > 3) {
         result.inStock += 1;
       } else if (variant.stockQuantity > 0) {
@@ -481,9 +484,17 @@ function wishlistSummary(items: WishlistItem[], selectedItems: WishlistItem[]) {
     { totalValue: 0, mrpTotal: 0, savings: 0, inStock: 0, lowStock: 0 },
   );
 
-  const selectedValue = selectedItems.reduce((total, item) => total + (primaryWishlistVariant(item.product)?.pricePaise ?? 0), 0);
+  const selectedValue = selectedItems.reduce((total, item) => total + (variantDisplayPrice(primaryWishlistVariant(item.product)) ?? 0), 0);
   const discountPercent = totals.mrpTotal > 0 ? Math.round((totals.savings / totals.mrpTotal) * 10000) / 100 : 0;
   return { ...totals, discountPercent, selectedValue, totalItems: items.length };
+}
+
+function variantDisplayPrice(variant: ProductVariant | null | undefined) {
+  return variant?.baseDealPricePaise ?? variant?.basePricePaise ?? variant?.dealPricePaise ?? variant?.pricePaise;
+}
+
+function variantOriginalDisplayPrice(variant: ProductVariant | null | undefined) {
+  return variant?.baseOriginalPricePaise ?? variant?.baseMrpPaise ?? variant?.originalPricePaise ?? variant?.mrpPaise ?? null;
 }
 
 function formatWishlistDate(value?: string) {
