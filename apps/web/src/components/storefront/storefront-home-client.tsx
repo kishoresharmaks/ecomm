@@ -367,7 +367,7 @@ function MobileCustomerAppTop({
 function CustomerQuickActions({ variant }: { variant: "desktop" | "mobile" }) {
   if (variant === "mobile") {
     return (
-      <nav className="mt-3" aria-label="Customer quick actions">
+      <nav className="mt-3 sm:hidden" aria-label="Customer quick actions">
         <div className="indihub-scroll-rail flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {customerQuickActions.map((action) => (
             <HomepageItemLink
@@ -387,19 +387,19 @@ function CustomerQuickActions({ variant }: { variant: "desktop" | "mobile" }) {
   }
 
   return (
-    <section className="hidden bg-[#FFFCFB] px-4 pt-5 sm:px-6 lg:block lg:px-10" aria-label="Customer quick actions">
-      <div className="mx-auto grid max-w-[1360px] grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
+    <section className="hidden sm:block bg-[#FFFCFB] px-4 pt-5 sm:px-6 lg:px-10" aria-label="Customer quick actions">
+      <div className="mx-auto grid max-w-[1360px] grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
         {customerQuickActions.map((action) => (
           <HomepageItemLink
             key={action.href}
             href={action.href}
-            className="group flex min-h-[86px] items-center gap-3 rounded-[18px] border border-[#F1D7CF] bg-white px-4 py-3 shadow-[0_14px_38px_rgba(22,59,92,0.06)] transition hover:-translate-y-0.5 hover:border-[#ED3500]/40 hover:shadow-[0_20px_46px_rgba(22,59,92,0.09)]"
+            className="group flex min-h-[86px] items-center gap-3 rounded-[18px] border border-[#F1D7CF] bg-white px-4 py-3 shadow-[0_8px_30px_rgb(0,0,0,0.02)] transition-all duration-300 hover:-translate-y-1 hover:border-[#ED3500]/30 hover:shadow-[0_20px_40px_rgba(237,53,0,0.06)] hover:bg-gradient-to-br hover:from-white hover:to-[#FFFDFC]"
           >
-            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#FFF0EC] text-[#ED3500] transition group-hover:bg-[#ED3500] group-hover:text-white">
-              <action.icon className="h-5 w-5" aria-hidden="true" strokeWidth={2.3} />
+            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#FFF0EC] text-[#ED3500] transition-all duration-300 group-hover:bg-[#ED3500] group-hover:text-white group-hover:scale-105 group-hover:rotate-[6deg]">
+              <action.icon className="h-5 w-5" aria-hidden="true" strokeWidth={2.2} />
             </span>
             <span className="min-w-0">
-              <span className="block truncate text-sm font-black text-[#1F2933]">{action.label}</span>
+              <span className="block truncate text-sm font-black text-[#1F2933] group-hover:text-[#ED3500] transition-colors duration-300">{action.label}</span>
               <span className="mt-1 block truncate text-xs font-bold text-[#667085]">{action.desktopDescription}</span>
             </span>
           </HomepageItemLink>

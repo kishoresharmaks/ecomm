@@ -166,6 +166,30 @@ export class SettingsService {
     return this.maintenanceReadback(settings);
   }
 
+  async getSeoSettings() {
+    const settings = await this.prisma.client.setting.findMany({
+      where: {
+        key: {
+          in: ["seo.google_analytics_id", "seo.google_search_console_id", "seo.google_tag_manager_id"],
+        },
+      },
+    });
+
+    const gaRecord = settings.find((s) => s.key === "seo.google_analytics_id");
+    const gscRecord = settings.find((s) => s.key === "seo.google_search_console_id");
+    const gtmRecord = settings.find((s) => s.key === "seo.google_tag_manager_id");
+
+    const gaValue = gaRecord?.value;
+    const gscValue = gscRecord?.value;
+    const gtmValue = gtmRecord?.value;
+
+    return {
+      googleAnalyticsId: typeof gaValue === "string" ? gaValue : "",
+      googleSearchConsoleId: typeof gscValue === "string" ? gscValue : "",
+      googleTagManagerId: typeof gtmValue === "string" ? gtmValue : "",
+    };
+  }
+
   async upsertSetting(actor: RequestUser, key: string, dto: UpsertSettingDto) {
     const existing = await this.prisma.client.setting.findUnique({ where: { key } });
     const value = dto.value as Prisma.InputJsonValue;

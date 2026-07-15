@@ -75,12 +75,41 @@ export function Providers({ children, nonce }: { children: ReactNode; nonce: str
     </QueryClientProvider>
   );
 
+  const getClerkDomain = () => {
+    if (process.env.NODE_ENV !== "production") {
+      return undefined;
+    }
+    const webUrl = process.env.NEXT_PUBLIC_WEB_URL;
+    if (!webUrl) {
+      return "1handindia.com";
+    }
+    try {
+      const hostname = new URL(webUrl).hostname;
+      return hostname.replace(/^www\./, "");
+    } catch {
+      return "1handindia.com";
+    }
+  };
+
+  const clerkDomain = getClerkDomain();
+
   if (!shouldUseClerk || !clerkPublishableKey) {
     return app;
   }
 
+  const clerkProps: any = {
+    publishableKey: clerkPublishableKey,
+  };
+  if (nonce) {
+    clerkProps.nonce = nonce;
+  }
+  if (clerkDomain) {
+    clerkProps.domain = clerkDomain;
+    clerkProps.isSatellite = false;
+  }
+
   return (
-    <ClerkProvider publishableKey={clerkPublishableKey} {...(nonce ? { nonce } : {})}>
+    <ClerkProvider {...clerkProps}>
       {app}
     </ClerkProvider>
   );

@@ -454,3 +454,7 @@ async function fallbackSitemapEntries(): Promise<SitemapEntry[]> {
     ...(pages ?? []).map((page: CmsPage) => ({ path: `/${page.slug}`, changeFrequency: "monthly" as const, priority: 0.45, source: "cms_page" }))
   ];
 }
+
+export async function getSeoSettings() {
+  return safePublicFetch<{ googleAnalyticsId?: string; googleSearchConsoleId?: string; googleTagManagerId?: string }>("/api/settings/seo");
+}

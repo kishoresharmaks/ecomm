@@ -34,6 +34,7 @@ export const adminNav = [
   { group: "Operations", label: "Push campaigns", href: "/admin/push-campaigns" },
   { group: "Operations", label: "Audit logs", href: "/admin/audit-logs" },
   { group: "Operations", label: "Settings", href: "/admin/settings/general" },
+  { group: "Operations", label: "SEO & Analytics", href: "/admin/settings/seo" },
   { group: "Operations", label: "Reports", href: "/admin/reports" },
   { group: "Finance", label: "Payments", href: "/admin/payments" },
   { group: "Finance", label: "B2B payment verification", href: "/admin/b2b-payments" },

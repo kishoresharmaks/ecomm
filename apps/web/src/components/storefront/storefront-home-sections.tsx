@@ -884,23 +884,22 @@ export function StatsStrip({ home, isLoading }: { home: StorefrontHomePayload | 
 
   return (
     <section className="mx-auto max-w-[1360px] px-4 py-4 sm:px-6 lg:px-10 lg:py-6">
-      <div className="indihub-scroll-rail grid auto-cols-[minmax(78px,1fr)] grid-flow-col gap-0 overflow-x-auto rounded-[18px] border border-[#F1D7CF] bg-white p-3 shadow-[0_14px_42px_rgba(22,59,92,0.06)] [scrollbar-width:none] sm:grid-cols-2 lg:flex lg:min-h-[112px] lg:flex-wrap lg:items-center lg:justify-center lg:gap-y-3 lg:overflow-visible lg:px-5 lg:py-4 lg:shadow-[0_20px_60px_rgba(22,59,92,0.07)] [&::-webkit-scrollbar]:hidden">
-        {items.map((item, index) => (
+      <div className="grid grid-cols-3 gap-0 rounded-[18px] border border-[#F1D7CF] bg-white p-3 shadow-[0_14px_42px_rgba(22,59,92,0.06)] lg:flex lg:min-h-[112px] lg:flex-wrap lg:items-center lg:justify-center lg:gap-y-3 lg:px-5 lg:py-4 lg:shadow-[0_20px_60px_rgba(22,59,92,0.07)]">
+        {items.map((item) => (
           <div
             key={item.label}
-            className={cn(
-              "flex min-h-[72px] min-w-[78px] items-center gap-2 border-r border-[#E8EDF2] px-2 py-2 last:border-r-0 lg:min-h-[78px] lg:w-[250px] lg:min-w-[250px] lg:justify-center lg:gap-3 lg:px-5 lg:py-3",
-              index < items.length - 1 ? "lg:border-r" : "lg:border-r-0",
-            )}
+            className="group flex min-h-[72px] items-center justify-center gap-2 border-r border-[#FFF0EC] px-1 py-1 last:border-r-0 sm:gap-3 sm:px-4 lg:min-h-[78px] lg:w-[260px] lg:min-w-[260px] lg:px-5 lg:py-3 transition-colors duration-300 hover:bg-[#FFFDFC]"
           >
-            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#FFF0EC] text-[#ED3500] lg:h-11 lg:w-11">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#FFF0EC] text-[#ED3500] transition-all duration-300 group-hover:scale-110 group-hover:bg-[#ED3500] group-hover:text-white lg:h-11 lg:w-11">
               <item.icon className="h-4 w-4 lg:h-5 lg:w-5" aria-hidden="true" />
             </span>
             <span className="min-w-0">
-              <span className="block text-base font-black leading-none text-[#ED3500] lg:text-xl">
+              <span className="block text-base font-black leading-none text-[#ED3500] transition-transform duration-300 group-hover:translate-x-0.5 lg:text-2xl">
                 {isLoading ? "..." : `${formatCompactCount(item.value ?? 0)}${item.suffix ?? ""}`}
               </span>
-              <span className="mt-1 block text-[11px] font-semibold leading-4 text-[#596276] lg:text-xs">{item.label}</span>
+              <span className="mt-1 block text-[10px] font-semibold leading-4 text-[#596276] sm:text-xs lg:text-xs">
+                {item.label}
+              </span>
             </span>
           </div>
         ))}
@@ -2117,23 +2116,33 @@ export function SellerCta({
 
   return (
     <section className="mx-auto max-w-[1360px] px-4 py-6 sm:px-6 lg:px-10">
-      <div className="relative overflow-hidden rounded-[18px] border border-[#FFE0D6] bg-[linear-gradient(102deg,#fff_0%,#fff4ef_100%)] p-6 shadow-sm lg:p-8">
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)_260px] lg:items-center">
+      <div className="relative overflow-hidden rounded-[18px] border border-[#FFE0D6] bg-[linear-gradient(102deg,#fff_0%,#fff4ef_100%)] p-6 shadow-sm lg:p-8 group/cta">
+        {/* Background decorative elements */}
+        <div className="absolute right-0 top-0 -mr-16 -mt-16 w-64 h-64 rounded-full bg-[#ED3500]/5 blur-3xl pointer-events-none" />
+        <div className="absolute left-1/3 bottom-0 -mb-12 w-48 h-48 rounded-full bg-[#FFBE9E]/15 blur-2xl pointer-events-none" />
+        
+        <div className="relative z-10 grid gap-6 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)_260px] lg:items-center">
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-2xl font-black text-[#1F2933] sm:text-3xl">{title}</h2>
-              <span className="rounded-full bg-[#ED3500] px-2.5 py-1 text-[11px] font-black text-white">
-                It's Free
+              <span className="rounded-full bg-[#ED3500] px-2.5 py-1 text-[11px] font-black text-white shadow-sm flex items-center gap-1">
+                <Sparkles className="h-3 w-3 animate-pulse" /> It's Free
               </span>
             </div>
             <p className="mt-3 max-w-md text-sm font-semibold leading-6 text-[#596276]">{description}</p>
           </div>
+          
           <div className="grid gap-3 sm:grid-cols-3">
             {(items.length ? items : defaultSellerCtaItems()).map((item, index) => {
               const Icon = [PackageCheck, UsersRound, ShieldCheck][index] ?? Sparkles;
               return (
-                <div key={`${item.label}-${index}`} className="rounded-[14px] bg-white/88 p-4 shadow-sm">
-                  <Icon className="h-5 w-5 text-[#ED3500]" aria-hidden="true" />
+                <div 
+                  key={`${item.label}-${index}`} 
+                  className="group rounded-[14px] bg-white/90 border border-white/60 p-4 shadow-[0_4px_18px_rgba(237,53,0,0.01)] backdrop-blur-sm transition-all duration-300 hover:shadow-[0_12px_24px_rgba(237,53,0,0.05)] hover:-translate-y-0.5 hover:border-[#FFE0D6]"
+                >
+                  <span className="inline-flex p-2.5 rounded-xl bg-[#FFF0EC] text-[#ED3500] group-hover:bg-[#ED3500] group-hover:text-white transition-all duration-300 group-hover:scale-105">
+                    <Icon className="h-5 w-5" aria-hidden="true" />
+                  </span>
                   <p className="mt-3 text-sm font-black text-[#1F2933]">{item.label}</p>
                   {item.description ? (
                     <p className="mt-1 text-xs font-semibold leading-5 text-[#7A8496]">{item.description}</p>
@@ -2142,13 +2151,48 @@ export function SellerCta({
               );
             })}
           </div>
-          <div className="flex flex-col items-start gap-3 lg:items-center">
-            <div className="hidden h-28 w-32 rounded-t-[48px] border-[10px] border-[#FFBE9E] border-b-[#ED3500] bg-white shadow-[0_18px_44px_rgba(237,53,0,0.12)] lg:block" />
+          
+          <div className="flex flex-col items-center gap-3 w-full lg:w-auto lg:justify-center">
+            {/* Storefront CSS Graphic */}
+            <div className="hidden sm:flex flex-col items-center justify-end h-28 w-32 rounded-t-[48px] border-[8px] border-[#FFBE9E] border-b-[#ED3500] bg-white shadow-[0_18px_44px_rgba(237,53,0,0.12)] relative overflow-hidden group/store transition-all duration-500 hover:shadow-[0_24px_48px_rgba(237,53,0,0.18)]">
+              {/* Striped Awning */}
+              <div className="absolute top-0 left-0 right-0 h-6 bg-[#ED3500] flex z-20">
+                <span className="flex-1 bg-[#ED3500] h-full" />
+                <span className="flex-1 bg-white h-full" />
+                <span className="flex-1 bg-[#ED3500] h-full" />
+                <span className="flex-1 bg-white h-full" />
+                <span className="flex-1 bg-[#ED3500] h-full" />
+              </div>
+              <div className="absolute top-6 left-0 right-0 h-1.5 bg-[#d52f00]/10 z-20 flex">
+                {/* Awning valance/scallops using small semi-circles */}
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <span key={i} className="flex-1 h-1.5 bg-[#ED3500] rounded-b-full border-t border-[#d52f00]/20" />
+                ))}
+              </div>
+
+              {/* Shop glass window and items */}
+              <div className="flex justify-around items-end w-full px-2.5 pb-2.5 h-16 z-10">
+                {/* Store Display Window */}
+                <div className="w-11 h-10 border border-[#F1D7CF] rounded-[6px] bg-[#FFFDFC] flex items-center justify-center shadow-inner relative group-hover/store:border-[#ED3500]/30 transition-colors duration-300">
+                  <ShoppingBag className="h-4.5 w-4.5 text-[#ED3500]/60 group-hover/store:scale-110 group-hover/store:text-[#ED3500] transition-all duration-300" />
+                  <div className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-[#ED3500] animate-pulse" />
+                </div>
+                {/* Store Door */}
+                <div className="w-9 h-13 border-t border-x border-[#ED3500]/30 rounded-t-[4px] bg-[#FFF5F2] flex items-end justify-center pb-1 shadow-sm relative overflow-hidden">
+                  <span className="absolute right-1 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-[#ED3500] shadow" />
+                  <span className="text-[7px] font-black text-[#ED3500]/40 uppercase tracking-widest scale-75 select-none mb-1">Open</span>
+                </div>
+              </div>
+
+              {/* Decorative interior glow */}
+              <div className="absolute inset-0 bg-gradient-to-t from-[#FFF0EC]/40 to-transparent pointer-events-none z-0" />
+            </div>
+            
             <HomepageItemLink
               href={ctaUrl}
-              className="inline-flex h-11 items-center gap-2 rounded-full bg-[#ED3500] px-5 text-sm font-black text-white shadow-[0_18px_36px_rgba(237,53,0,0.22)] transition hover:-translate-y-0.5 hover:bg-[#d52f00]"
+              className="inline-flex h-11 items-center gap-2 rounded-full bg-[#ED3500] px-6 text-sm font-black text-white shadow-[0_18px_36px_rgba(237,53,0,0.22)] transition-all duration-300 hover:-translate-y-0.5 hover:bg-[#d52f00] hover:shadow-[0_18px_44px_rgba(237,53,0,0.32)] group/btn"
             >
-              {ctaLabel} <ArrowRight className="h-4 w-4" aria-hidden="true" />
+              {ctaLabel} <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover/btn:translate-x-1" aria-hidden="true" />
             </HomepageItemLink>
           </div>
         </div>
