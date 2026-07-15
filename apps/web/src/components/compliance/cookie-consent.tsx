@@ -3,12 +3,6 @@
 import Link from "next/link";
 import Script from "next/script";
 import { useEffect, useState } from "react";
-import {
-  googleAnalyticsLoadPlan,
-  primaryGoogleAdsId,
-  primaryGoogleAnalyticsId,
-} from "@/lib/google-analytics";
-import type { SeoAnalyticsSettings } from "@/lib/seo";
 
 type ConsentChoice = "essential" | "analytics";
 
@@ -78,17 +72,11 @@ export function CookieConsentBanner() {
 
 export function ConsentManagedScripts({
   nonce,
-  settings,
 }: {
   nonce: string | undefined;
-  settings: SeoAnalyticsSettings;
 }) {
   const [choice, setChoice] = useState<ConsentChoice | null>(null);
   const analyticsAllowed = choice === "analytics";
-  const { googleTagManagerId, directGoogleIds } = googleAnalyticsLoadPlan(settings, {
-    googleAnalyticsInstalledInHead: true,
-    googleAdsInstalledInHead: true,
-  });
 
   useEffect(() => {
     setChoice(readConsentChoice());
@@ -112,26 +100,13 @@ export function ConsentManagedScripts({
         {`
           gtag('consent', 'update', {
             analytics_storage: 'granted',
-            ad_storage: ${settings.googleAdsId || googleTagManagerId ? "'granted'" : "'denied'"},
-            ad_user_data: ${settings.googleAdsId || googleTagManagerId ? "'granted'" : "'denied'"},
-            ad_personalization: ${settings.googleAdsId || googleTagManagerId ? "'granted'" : "'denied'"}
+            ad_storage: 'granted',
+            ad_user_data: 'granted',
+            ad_personalization: 'granted'
           });
-          gtag('config', '${primaryGoogleAdsId}');
-          gtag('config', '${primaryGoogleAnalyticsId}', { anonymize_ip: true });
-          ${directGoogleIds.map((id) => `gtag('config', '${id}', { anonymize_ip: true });`).join("\n")}
+          window.dataLayer.push({ event: 'indihub_consent_granted' });
         `}
       </Script>
-      {googleTagManagerId ? (
-        <Script id="indihub-google-tag-manager" nonce={nonce} strategy="afterInteractive">
-          {`
-            (function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
-            new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
-            j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
-            'https://www.googletagmanager.com/gtm.js?id='+i+dl;j.nonce='${nonce ?? ""}';
-            f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','${googleTagManagerId}');
-          `}
-        </Script>
-      ) : null}
       {cloudflareBeaconToken ? (
         <Script
           id="indihub-cloudflare-beacon"

@@ -4,8 +4,9 @@ import { headers } from "next/headers";
 import { ConfiguredOriginRedirect } from "@/components/auth/configured-origin-redirect";
 import { Providers } from "@/components/providers";
 import {
-  googleAnalyticsHeadBootstrapScript,
-  primaryGoogleTagId,
+  googleConsentDefaultScript,
+  googleTagManagerHeadBootstrapScript,
+  primaryGoogleTagManagerId,
 } from "@/lib/google-analytics";
 import { getSeoSettings, siteUrl } from "@/lib/seo";
 import "../styles/globals.css";
@@ -34,20 +35,30 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
     <html lang="en" data-scroll-behavior="smooth">
       <head>
         <script
-          async
+          id="indihub-google-consent-default"
           nonce={nonce}
-          src={`https://www.googletagmanager.com/gtag/js?id=${primaryGoogleTagId}`}
+          dangerouslySetInnerHTML={{ __html: googleConsentDefaultScript() }}
         />
         <script
-          id="indihub-google-analytics-bootstrap"
+          id="indihub-google-tag-manager"
           nonce={nonce}
-          dangerouslySetInnerHTML={{ __html: googleAnalyticsHeadBootstrapScript() }}
+          dangerouslySetInnerHTML={{ __html: googleTagManagerHeadBootstrapScript() }}
         />
         {gscId ? <meta name="google-site-verification" content={gscId} /> : null}
       </head>
       <body>
+        <noscript>
+          <iframe
+            src={`https://www.googletagmanager.com/ns.html?id=${primaryGoogleTagManagerId}`}
+            height="0"
+            width="0"
+            title="Google Tag Manager"
+            aria-hidden="true"
+            style={{ display: "none", visibility: "hidden" }}
+          />
+        </noscript>
         <ConfiguredOriginRedirect />
-        <Providers nonce={nonce} seoAnalyticsSettings={seoSettings}>{children}</Providers>
+        <Providers nonce={nonce}>{children}</Providers>
       </body>
     </html>
   );

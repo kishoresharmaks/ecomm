@@ -9,6 +9,7 @@ import { indihubFetch } from "@/lib/api";
 import {
   primaryGoogleAdsId,
   primaryGoogleAnalyticsId,
+  primaryGoogleTagManagerId,
 } from "@/lib/google-analytics";
 
 type SettingRecord = {
@@ -34,7 +35,7 @@ const emptyForm: FormState = {
   googleAnalyticsId: primaryGoogleAnalyticsId,
   googleAdsId: primaryGoogleAdsId,
   googleSearchConsoleId: "",
-  googleTagManagerId: "",
+  googleTagManagerId: primaryGoogleTagManagerId,
 };
 
 export function SeoAnalyticsSettings({ settings }: { settings: SettingRecord[] }) {
@@ -96,7 +97,7 @@ export function SeoAnalyticsSettings({ settings }: { settings: SettingRecord[] }
               )}
             </div>
             <p className="mt-1 text-sm font-semibold leading-6 text-[#667085]">
-              The Google tag is installed directly across the website with Google Ads and Google Analytics 4 destinations. Configure optional Google Tag Manager and Search Console integrations here.
+              Google Tag Manager is installed across the website. The published container manages the Google Ads and Google Analytics 4 destinations, while Search Console verification remains configurable here.
             </p>
           </div>
         </div>
@@ -105,21 +106,19 @@ export function SeoAnalyticsSettings({ settings }: { settings: SettingRecord[] }
       <div className="mt-6 space-y-6">
         <div className="space-y-2">
           <label htmlFor="google-tag-manager-id" className="block text-sm font-black text-[#1F2933]">
-            Google Tag Manager Container ID
+            Google Tag Manager Container ID (installed)
           </label>
           <input
             id="google-tag-manager-id"
             type="text"
-            className="w-full max-w-md rounded-[10px] border border-[#D1D5DB] bg-white px-3.5 py-2 text-sm font-semibold text-[#111827] outline-none placeholder:text-[#98A2B3] focus:border-[#ED3500] focus:ring-4 focus:ring-[#ED3500]/10"
-            placeholder="GTM-XXXXXXXX"
-            value={form.googleTagManagerId}
-            onChange={(e) => updateField("googleTagManagerId", e.target.value)}
-            disabled={saveMutation.isPending}
-            aria-invalid={Boolean(validationErrors.googleTagManagerId)}
+            className="w-full max-w-md rounded-[10px] border border-[#D1D5DB] bg-[#F8FAFC] px-3.5 py-2 text-sm font-semibold text-[#475467] outline-none"
+            value={primaryGoogleTagManagerId}
+            readOnly
+            aria-readonly="true"
           />
           <FieldHelp
-            error={validationErrors.googleTagManagerId}
-            text="Use the Container ID from Google Tag Manager. It must start with GTM-. When configured, manage GA4 and Ads tags inside that container to avoid duplicate tracking."
+            error={undefined}
+            text="This published web container is loaded once in the head of every page, with its noscript fallback immediately after the opening body tag."
           />
         </div>
 
@@ -137,7 +136,7 @@ export function SeoAnalyticsSettings({ settings }: { settings: SettingRecord[] }
           />
           <FieldHelp
             error={undefined}
-            text="This GA4 tag is emitted directly inside the head of every page. Do not add the same measurement ID inside Google Tag Manager, because that would duplicate page views."
+            text="This GA4 destination is managed by the published GTM container. The website no longer emits a separate direct GA4 configuration."
           />
         </div>
 
@@ -155,7 +154,7 @@ export function SeoAnalyticsSettings({ settings }: { settings: SettingRecord[] }
           />
           <FieldHelp
             error={undefined}
-            text="This is the primary Google tag ID requested by the connected Google account. It is emitted once in the head and shares the tag with the GA4 destination above."
+            text="This Google Ads destination is managed by the published GTM container. The website no longer emits a separate direct Ads configuration."
           />
         </div>
 
@@ -187,10 +186,10 @@ export function SeoAnalyticsSettings({ settings }: { settings: SettingRecord[] }
           )}
           <div>
             <p className={`text-sm font-black ${hasGoogleTag ? "text-[#064C35]" : "text-[#7A4700]"}`}>
-              {hasGoogleTag ? "Google tag configuration saved" : "No analytics tag configured"}
+              {hasGoogleTag ? "Google Tag Manager installed" : "No analytics tag configured"}
             </p>
             <p className={`mt-1 text-xs font-semibold leading-5 ${hasGoogleTag ? "text-[#176B50]" : "text-[#8A5A12]"}`}>
-              The Google tag is present in the page head for installation checks. Consent Mode controls storage and switches to full measurement after a visitor selects Allow analytics.
+              The published GTM container owns GA4 and Ads deployment. Consent Mode defaults are queued before GTM loads and switch to granted after a visitor selects Allow analytics.
             </p>
           </div>
         </div>
@@ -237,13 +236,11 @@ function stringSetting(settings: SettingRecord[], key: string, fallback: string)
 }
 
 function settingsForm(settings: SettingRecord[]): FormState {
-  const rawTagManagerId = stringSetting(settings, keys.googleTagManagerId, "").trim();
-
   return {
     googleAnalyticsId: primaryGoogleAnalyticsId,
     googleAdsId: primaryGoogleAdsId,
     googleSearchConsoleId: stringSetting(settings, keys.googleSearchConsoleId, "").trim(),
-    googleTagManagerId: /^GTM-[A-Z0-9]+$/i.test(rawTagManagerId) ? rawTagManagerId.toUpperCase() : "",
+    googleTagManagerId: primaryGoogleTagManagerId,
   };
 }
 
@@ -252,7 +249,7 @@ function normalizedForm(form: FormState): FormState {
     googleAnalyticsId: primaryGoogleAnalyticsId,
     googleAdsId: primaryGoogleAdsId,
     googleSearchConsoleId: form.googleSearchConsoleId.trim(),
-    googleTagManagerId: form.googleTagManagerId.trim().toUpperCase(),
+    googleTagManagerId: primaryGoogleTagManagerId,
   };
 }
 

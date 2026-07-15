@@ -4,7 +4,6 @@ import { ClerkProvider } from "@clerk/nextjs";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { usePathname } from "next/navigation";
 import { ReactNode, useState } from "react";
-import type { SeoAnalyticsSettings } from "@/lib/seo";
 import { ConsentManagedScripts, CookieConsentBanner } from "./compliance/cookie-consent";
 import { DevAuthProvider } from "./dev-auth/dev-auth-context";
 import { AdminAuthProvider } from "./admin/admin-auth-context";
@@ -20,11 +19,9 @@ const clerkPublishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 export function Providers({
   children,
   nonce,
-  seoAnalyticsSettings,
 }: {
   children: ReactNode;
   nonce: string | undefined;
-  seoAnalyticsSettings: SeoAnalyticsSettings;
 }) {
   const pathname = usePathname();
   const shouldUseClerk = Boolean(
@@ -59,7 +56,7 @@ export function Providers({
                       {children}
                       <ChatWidget />
                       <CookieConsentBanner />
-                      <ConsentManagedScripts nonce={nonce} settings={seoAnalyticsSettings} />
+                      <ConsentManagedScripts nonce={nonce} />
                     </I18nProvider>
                   </StorefrontLocationProvider>
                 </ChatSocketProvider>
@@ -72,7 +69,7 @@ export function Providers({
                       {children}
                       <ChatWidget />
                       <CookieConsentBanner />
-                      <ConsentManagedScripts nonce={nonce} settings={seoAnalyticsSettings} />
+                      <ConsentManagedScripts nonce={nonce} />
                     </I18nProvider>
                   </StorefrontLocationProvider>
                 </ChatSocketProvider>

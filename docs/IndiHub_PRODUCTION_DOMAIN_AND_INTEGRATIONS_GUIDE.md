@@ -119,18 +119,19 @@ Expected result:
 
 Cookie and analytics rule:
 
-- Google tag ID `AW-18165667075` is installed directly in the root document head and sends to both the Google Ads destination `AW-18165667075` and GA4 destination `G-MR1H66G0DZ`. Do not add either destination again inside Google Tag Manager because that would duplicate measurement.
-- Use the database-backed controls under `/admin/settings/seo` for optional Google Tag Manager and Search Console configuration. Keep `NEXT_PUBLIC_GA_MEASUREMENT_ID`, `NEXT_PUBLIC_GTM_ID`, `NEXT_PUBLIC_GOOGLE_ADS_ID`, and `NEXT_PUBLIC_CLOUDFLARE_BEACON_TOKEN` empty unless an environment fallback is intentionally required.
+- Published Google Tag Manager container `GTM-WFXLFC8X` is installed once in the root document head, with the required noscript iframe immediately after the opening body tag.
+- The GTM container owns the Google Ads destination `AW-18165667075` and GA4 destination `G-MR1H66G0DZ`. Application code must not also emit direct `gtag('config', ...)` calls for these destinations because that would duplicate measurement.
+- Use `/admin/settings/seo` for Search Console verification and installed-integration visibility. Keep `NEXT_PUBLIC_GA_MEASUREMENT_ID`, `NEXT_PUBLIC_GTM_ID`, `NEXT_PUBLIC_GOOGLE_ADS_ID`, and `NEXT_PUBLIC_CLOUDFLARE_BEACON_TOKEN` empty unless an environment fallback is intentionally required.
 - The storefront shows a privacy-choice banner.
-- The Google tag bootstrap loads with Consent Mode set to denied. This allows cookieless consent and measurement pings for installation/measurement modeling; cookie-backed measurement is enabled only after the visitor selects `Allow analytics`.
+- Consent Mode defaults are queued before GTM loads. Cookie-backed measurement is enabled only after the visitor selects `Allow analytics`.
 - Essential marketplace storage for sign-in, cart, checkout, and preferences remains available without analytics consent.
 
 Verify the rendered tag after deployment:
 
 ```bash
-curl -s https://www.1handindia.com | grep -o "https://www.googletagmanager.com/gtag/js?id=AW-18165667075"
-curl -s https://www.1handindia.com | grep -o "gtag('config', 'AW-18165667075'"
-curl -s https://www.1handindia.com | grep -o "gtag('config', 'G-MR1H66G0DZ'"
+curl -sL --compressed https://www.1handindia.com | grep -o "https://www.googletagmanager.com/gtm.js?id="
+curl -sL --compressed https://www.1handindia.com | grep -o "GTM-WFXLFC8X"
+curl -sL --compressed https://www.1handindia.com | grep -o "https://www.googletagmanager.com/ns.html?id=GTM-WFXLFC8X"
 ```
 
 PCI Requirement 6.4 cannot be satisfied by application code alone. Put the production domain behind a real WAF before launch. Approved options:
