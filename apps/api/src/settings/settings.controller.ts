@@ -130,7 +130,7 @@ export class PublicSettingsController {
   }
 
   @Get("seo")
-  @Header("Cache-Control", "public, max-age=60, stale-while-revalidate=120")
+  @Header("Cache-Control", "no-store, no-cache, must-revalidate")
   @ApiOperation({ summary: "Read public Google Analytics and Search Console settings." })
   getSeoSettings() {
     return this.settingsService.getSeoSettings();

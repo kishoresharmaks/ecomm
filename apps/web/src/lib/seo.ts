@@ -456,5 +456,15 @@ async function fallbackSitemapEntries(): Promise<SitemapEntry[]> {
 }
 
 export async function getSeoSettings() {
-  return safePublicFetch<{ googleAnalyticsId?: string; googleSearchConsoleId?: string; googleTagManagerId?: string }>("/api/settings/seo");
+  try {
+    const response = await fetch(`${apiBaseUrl}/api/settings/seo`, {
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      return null;
+    }
+    return (await response.json()) as { googleAnalyticsId?: string; googleSearchConsoleId?: string; googleTagManagerId?: string };
+  } catch {
+    return null;
+  }
 }
