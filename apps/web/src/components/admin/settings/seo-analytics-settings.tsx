@@ -95,7 +95,7 @@ export function SeoAnalyticsSettings({ settings }: { settings: SettingRecord[] }
       <div className="mt-6 space-y-6">
         <div className="space-y-2">
           <label htmlFor="google-tag-manager-id" className="block text-sm font-black text-[#1F2933]">
-            Google Tag Manager Container ID
+            Google Tag Manager Container ID (or Google Tag ID)
           </label>
           <input
             id="google-tag-manager-id"
@@ -111,7 +111,7 @@ export function SeoAnalyticsSettings({ settings }: { settings: SettingRecord[] }
             disabled={saveMutation.isPending}
           />
           <p className="text-xs font-semibold leading-5 text-[#667085]">
-            Paste your Google Tag Manager (GTM) container ID (starts with "GTM-").
+            Paste your Google Tag Manager (GTM) container ID (starts with "GTM-"). If you paste a generic Google Tag ID starting with "AW-" or "G-", the platform will automatically resolve and load it.
           </p>
         </div>
 

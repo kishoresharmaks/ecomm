@@ -25,9 +25,24 @@ export const metadata: Metadata = {
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const nonce = (await headers()).get("x-nonce") ?? undefined;
   const seoSettings = await getSeoSettings();
-  const gaId = seoSettings?.googleAnalyticsId;
-  const gscId = seoSettings?.googleSearchConsoleId;
-  const gtmId = seoSettings?.googleTagManagerId;
+  
+  const gscId = seoSettings?.googleSearchConsoleId?.trim() || null;
+  const gaRaw = seoSettings?.googleAnalyticsId?.trim() || null;
+  const gtmRaw = seoSettings?.googleTagManagerId?.trim() || null;
+
+  // Identify true GTM Container ID (must start with GTM-)
+  const gtmId = gtmRaw?.startsWith("GTM-") ? gtmRaw : null;
+
+  // Gather all gtag.js targets (G-, AW-, GT-)
+  const gtagIds: string[] = [];
+  if (gaRaw && /^(G-|AW-|GT-)/i.test(gaRaw)) {
+    gtagIds.push(gaRaw);
+  }
+  if (gtmRaw && /^(G-|AW-|GT-)/i.test(gtmRaw)) {
+    gtagIds.push(gtmRaw);
+  }
+  const uniqueGtagIds = Array.from(new Set(gtagIds));
+  const primaryGtagId = uniqueGtagIds[0] || null;
 
   return (
     <html lang="en" data-scroll-behavior="smooth">
@@ -58,10 +73,10 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
         ) : null}
         <ConfiguredOriginRedirect />
         <Providers nonce={nonce}>{children}</Providers>
-        {gaId ? (
+        {primaryGtagId ? (
           <>
             <Script
-              src={`https://www.googletagmanager.com/gtag/js?id=${gaId}`}
+              src={`https://www.googletagmanager.com/gtag/js?id=${primaryGtagId}`}
               strategy="afterInteractive"
             />
             <Script id="google-analytics" strategy="afterInteractive">
@@ -69,9 +84,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
                 window.dataLayer = window.dataLayer || [];
                 function gtag(){dataLayer.push(arguments);}
                 gtag('js', new Date());
-                gtag('config', '${gaId}', {
-                  page_path: window.location.pathname,
-                });
+                ${uniqueGtagIds.map(id => `gtag('config', '${id}', { page_path: window.location.pathname });`).join("\n")}
               `}
             </Script>
           </>
