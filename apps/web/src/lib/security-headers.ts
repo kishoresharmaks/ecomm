@@ -1,14 +1,13 @@
 export type SecurityHeaderOptions = {
   nonce: string;
   origin: string;
-  reportOnly?: boolean;
 };
 
 const defaultWebOrigin = "https://1handindia.com";
 const defaultApiOrigin = "https://api.1handindia.com";
 const imageKitUploadOrigin = "https://upload.imagekit.io";
 
-export function buildContentSecurityPolicy({ nonce, origin, reportOnly = false }: SecurityHeaderOptions) {
+export function buildContentSecurityPolicy({ nonce, origin }: SecurityHeaderOptions) {
   const webOrigin = originFromUrl(process.env.NEXT_PUBLIC_WEB_URL) ?? originFromUrl(origin) ?? defaultWebOrigin;
   const apiOrigin = originFromUrl(process.env.NEXT_PUBLIC_API_URL) ?? defaultApiOrigin;
   const apiWebSocketOrigin = apiOrigin.replace(/^https:/, "wss:").replace(/^http:/, "ws:");
@@ -60,13 +59,6 @@ export function buildContentSecurityPolicy({ nonce, origin, reportOnly = false }
     reportDirective,
     reportUriDirective,
   ];
-
-  if (reportOnly) {
-    return directives
-      .filter(([directive]) => directive !== "upgrade-insecure-requests")
-      .map(([directive, ...sources]) => [directive, ...uniqueNonEmpty(sources)].join(" "))
-      .join("; ");
-  }
 
   return directives
     .map(([directive, ...sources]) => [directive, ...uniqueNonEmpty(sources)].join(" "))

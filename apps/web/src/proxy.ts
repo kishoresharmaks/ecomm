@@ -19,10 +19,6 @@ export function proxy(request: NextRequest) {
   if (process.env.NODE_ENV !== "development") {
     const origin = request.nextUrl.origin;
     response.headers.set("Content-Security-Policy", buildContentSecurityPolicy({ nonce, origin }));
-    response.headers.set(
-      "Content-Security-Policy-Report-Only",
-      buildContentSecurityPolicy({ nonce, origin, reportOnly: true }),
-    );
     response.headers.set("Report-To", buildReportToHeader(origin));
     response.headers.set("Reporting-Endpoints", buildReportingEndpointsHeader(origin));
     response.headers.set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");

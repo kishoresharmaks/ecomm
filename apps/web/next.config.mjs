@@ -1,10 +1,15 @@
 import process from "node:process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { URL } from "node:url";
 import { config as loadEnv } from "dotenv";
 import { withSentryConfig } from "@sentry/nextjs";
 
-loadEnv({ path: "../../.env", quiet: true });
-loadEnv({ path: "../../.env.sentry-build-plugin", quiet: true });
+const webDirectory = path.dirname(fileURLToPath(import.meta.url));
+const workspaceDirectory = path.resolve(webDirectory, "../..");
+
+loadEnv({ path: path.join(workspaceDirectory, ".env"), quiet: true });
+loadEnv({ path: path.join(workspaceDirectory, ".env.sentry-build-plugin"), quiet: true });
 
 const isWindows = process.platform === "win32";
 const isDevelopment = process.env.NODE_ENV === "development";
@@ -36,17 +41,34 @@ const nextConfig = {
 };
 
 const sentryNextConfig = sentryEnabled
-  ? withSentryConfig(nextConfig, {
-      org: process.env.SENTRY_ORG ?? "demo-n0b",
-      project: process.env.SENTRY_PROJECT ?? "javascript-nextjs",
-      ...(sentryAuthToken ? { authToken: sentryAuthToken, widenClientFileUpload: true } : {}),
-      tunnelRoute: "/_1hi/relay",
-      hideSourceMaps: true,
-      silent: !process.env.CI || !sentryAuthToken,
-    })
+  ? withWebWorkingDirectory(() =>
+      withSentryConfig(nextConfig, {
+        org: process.env.SENTRY_ORG ?? "demo-n0b",
+        project: process.env.SENTRY_PROJECT ?? "javascript-nextjs",
+        ...(sentryAuthToken ? { authToken: sentryAuthToken, widenClientFileUpload: true } : {}),
+        tunnelRoute: "/_1hi/relay",
+        hideSourceMaps: true,
+        silent: !process.env.CI || !sentryAuthToken,
+      }),
+    )
   : nextConfig;
 
 export default sentryNextConfig;
+
+function withWebWorkingDirectory(callback) {
+  const originalWorkingDirectory = process.cwd();
+
+  if (path.resolve(originalWorkingDirectory) === path.resolve(webDirectory)) {
+    return callback();
+  }
+
+  try {
+    process.chdir(webDirectory);
+    return callback();
+  } finally {
+    process.chdir(originalWorkingDirectory);
+  }
+}
 
 function buildImageRemotePatterns() {
   const configuredOrigins = [

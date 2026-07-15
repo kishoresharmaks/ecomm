@@ -6,6 +6,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, StatusBadge } from "@indihub/ui";
 import { useAdminAuth } from "@/components/admin/admin-auth-context";
 import { indihubFetch } from "@/lib/api";
+import { primaryGoogleAnalyticsId } from "@/lib/google-analytics";
 
 type SettingRecord = {
   key: string;
@@ -27,7 +28,7 @@ type FormState = {
 };
 
 const emptyForm: FormState = {
-  googleAnalyticsId: "",
+  googleAnalyticsId: primaryGoogleAnalyticsId,
   googleAdsId: "",
   googleSearchConsoleId: "",
   googleTagManagerId: "",
@@ -92,7 +93,7 @@ export function SeoAnalyticsSettings({ settings }: { settings: SettingRecord[] }
               )}
             </div>
             <p className="mt-1 text-sm font-semibold leading-6 text-[#667085]">
-              Configure integration identifiers for Google Tag Manager (GTM), Google Analytics 4 (GA4), and Google Search Console (GSC) verification.
+              Google Analytics 4 is installed directly across the website. Configure optional Google Tag Manager, Google Ads, and Search Console integrations here.
             </p>
           </div>
         </div>
@@ -121,21 +122,19 @@ export function SeoAnalyticsSettings({ settings }: { settings: SettingRecord[] }
 
         <div className="space-y-2">
           <label htmlFor="google-analytics-id" className="block text-sm font-black text-[#1F2933]">
-            Google Analytics Measurement ID
+            Google Analytics Measurement ID (installed)
           </label>
           <input
             id="google-analytics-id"
             type="text"
-            className="w-full max-w-md rounded-[10px] border border-[#D1D5DB] bg-white px-3.5 py-2 text-sm font-semibold text-[#111827] outline-none placeholder:text-[#98A2B3] focus:border-[#ED3500] focus:ring-4 focus:ring-[#ED3500]/10"
-            placeholder="G-XXXXXXXXXX"
-            value={form.googleAnalyticsId}
-            onChange={(e) => updateField("googleAnalyticsId", e.target.value)}
-            disabled={saveMutation.isPending}
-            aria-invalid={Boolean(validationErrors.googleAnalyticsId)}
+            className="w-full max-w-md rounded-[10px] border border-[#D1D5DB] bg-[#F8FAFC] px-3.5 py-2 text-sm font-semibold text-[#475467] outline-none"
+            value={primaryGoogleAnalyticsId}
+            readOnly
+            aria-readonly="true"
           />
           <FieldHelp
-            error={validationErrors.googleAnalyticsId}
-            text="Use the Measurement ID from the GA4 web data stream. It must start with G-. Leave this blank when the GA4 tag is deployed through the GTM container above."
+            error={undefined}
+            text="This GA4 tag is emitted directly inside the head of every page. Do not add the same measurement ID inside Google Tag Manager, because that would duplicate page views."
           />
         </div>
 
@@ -243,7 +242,7 @@ function settingsForm(settings: SettingRecord[]): FormState {
   const legacyAdsId = [rawAnalyticsId, rawTagManagerId].find((value) => /^AW-[0-9]+$/i.test(value)) ?? "";
 
   return {
-    googleAnalyticsId: /^G-[A-Z0-9]+$/i.test(rawAnalyticsId) ? rawAnalyticsId.toUpperCase() : "",
+    googleAnalyticsId: primaryGoogleAnalyticsId,
     googleAdsId: (explicitAdsId || legacyAdsId).toUpperCase(),
     googleSearchConsoleId: stringSetting(settings, keys.googleSearchConsoleId, "").trim(),
     googleTagManagerId: /^GTM-[A-Z0-9]+$/i.test(rawTagManagerId) ? rawTagManagerId.toUpperCase() : "",
@@ -252,7 +251,7 @@ function settingsForm(settings: SettingRecord[]): FormState {
 
 function normalizedForm(form: FormState): FormState {
   return {
-    googleAnalyticsId: form.googleAnalyticsId.trim().toUpperCase(),
+    googleAnalyticsId: primaryGoogleAnalyticsId,
     googleAdsId: form.googleAdsId.trim().toUpperCase(),
     googleSearchConsoleId: form.googleSearchConsoleId.trim(),
     googleTagManagerId: form.googleTagManagerId.trim().toUpperCase(),

@@ -3,6 +3,10 @@ import { brandConfig } from "@indihub/config";
 import { headers } from "next/headers";
 import { ConfiguredOriginRedirect } from "@/components/auth/configured-origin-redirect";
 import { Providers } from "@/components/providers";
+import {
+  googleAnalyticsHeadBootstrapScript,
+  primaryGoogleAnalyticsId,
+} from "@/lib/google-analytics";
 import { getSeoSettings, siteUrl } from "@/lib/seo";
 import "../styles/globals.css";
 
@@ -29,6 +33,16 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   return (
     <html lang="en" data-scroll-behavior="smooth">
       <head>
+        <script
+          async
+          nonce={nonce}
+          src={`https://www.googletagmanager.com/gtag/js?id=${primaryGoogleAnalyticsId}`}
+        />
+        <script
+          id="indihub-google-analytics-bootstrap"
+          nonce={nonce}
+          dangerouslySetInnerHTML={{ __html: googleAnalyticsHeadBootstrapScript() }}
+        />
         {gscId ? <meta name="google-site-verification" content={gscId} /> : null}
       </head>
       <body>

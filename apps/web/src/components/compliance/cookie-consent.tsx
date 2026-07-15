@@ -3,7 +3,10 @@
 import Link from "next/link";
 import Script from "next/script";
 import { useEffect, useState } from "react";
-import { googleAnalyticsLoadPlan } from "@/lib/google-analytics";
+import {
+  googleAnalyticsLoadPlan,
+  primaryGoogleAnalyticsId,
+} from "@/lib/google-analytics";
 import type { SeoAnalyticsSettings } from "@/lib/seo";
 
 type ConsentChoice = "essential" | "analytics";
@@ -45,7 +48,7 @@ export function CookieConsentBanner() {
         <div className="space-y-1">
           <p className="text-sm font-black text-[#1F2933]">Your privacy choices</p>
           <p className="max-w-3xl text-sm font-semibold leading-6 text-[#667085]">
-            We use essential storage for secure sign-in, cart, checkout, and marketplace preferences. Analytics only runs after you allow it.
+            We use essential storage for secure sign-in, cart, checkout, and marketplace preferences. Analytics storage and page-view collection remain disabled until you allow them.
           </p>
           <Link href="/privacy-policy" className="text-sm font-black text-[#ED3500] underline underline-offset-4">
             Privacy policy
@@ -81,8 +84,9 @@ export function ConsentManagedScripts({
 }) {
   const [choice, setChoice] = useState<ConsentChoice | null>(null);
   const analyticsAllowed = choice === "analytics";
-  const { googleTagManagerId, directGoogleIds } = googleAnalyticsLoadPlan(settings);
-  const primaryDirectGoogleId = directGoogleIds[0] ?? null;
+  const { googleTagManagerId, directGoogleIds } = googleAnalyticsLoadPlan(settings, {
+    googleAnalyticsInstalledInHead: true,
+  });
 
   useEffect(() => {
     setChoice(readConsentChoice());
@@ -102,6 +106,18 @@ export function ConsentManagedScripts({
 
   return (
     <>
+      <Script id="indihub-google-consent-granted" nonce={nonce} strategy="afterInteractive">
+        {`
+          gtag('consent', 'update', {
+            analytics_storage: 'granted',
+            ad_storage: ${settings.googleAdsId || googleTagManagerId ? "'granted'" : "'denied'"},
+            ad_user_data: ${settings.googleAdsId || googleTagManagerId ? "'granted'" : "'denied'"},
+            ad_personalization: ${settings.googleAdsId || googleTagManagerId ? "'granted'" : "'denied'"}
+          });
+          gtag('config', '${primaryGoogleAnalyticsId}', { anonymize_ip: true });
+          ${directGoogleIds.map((id) => `gtag('config', '${id}', { anonymize_ip: true });`).join("\n")}
+        `}
+      </Script>
       {googleTagManagerId ? (
         <Script id="indihub-google-tag-manager" nonce={nonce} strategy="afterInteractive">
           {`
@@ -110,25 +126,6 @@ export function ConsentManagedScripts({
             j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
             'https://www.googletagmanager.com/gtm.js?id='+i+dl;j.nonce='${nonce ?? ""}';
             f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','${googleTagManagerId}');
-          `}
-        </Script>
-      ) : null}
-      {primaryDirectGoogleId ? (
-        <Script
-          id="indihub-google-tag-src"
-          nonce={nonce}
-          src={`https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(primaryDirectGoogleId)}`}
-          strategy="afterInteractive"
-        />
-      ) : null}
-      {directGoogleIds.length ? (
-        <Script id="indihub-google-analytics-init" nonce={nonce} strategy="afterInteractive">
-          {`
-            window.dataLayer = window.dataLayer || [];
-            function gtag(){dataLayer.push(arguments);}
-            gtag('consent', 'update', { analytics_storage: 'granted' });
-            gtag('js', new Date());
-            ${directGoogleIds.map((id) => `gtag('config', '${id}', { anonymize_ip: true });`).join("\n")}
           `}
         </Script>
       ) : null}

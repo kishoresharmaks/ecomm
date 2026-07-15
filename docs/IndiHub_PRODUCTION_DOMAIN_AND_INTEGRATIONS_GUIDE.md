@@ -98,7 +98,6 @@ The web app emits production security headers from `apps/web/src/proxy.ts`:
 
 - `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`
 - nonce-based `Content-Security-Policy`
-- `Content-Security-Policy-Report-Only`
 - `Report-To` and `Reporting-Endpoints` for `/security/csp-report`
 - `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, and `Permissions-Policy`
 
@@ -119,10 +118,18 @@ Expected result:
 
 Cookie and analytics rule:
 
-- Prefer the database-backed controls under `/admin/settings/seo`. Keep `NEXT_PUBLIC_GA_MEASUREMENT_ID`, `NEXT_PUBLIC_GTM_ID`, `NEXT_PUBLIC_GOOGLE_ADS_ID`, and `NEXT_PUBLIC_CLOUDFLARE_BEACON_TOKEN` empty unless an environment fallback is intentionally required and analytics is approved.
+- GA4 measurement ID `G-MR1H66G0DZ` is installed directly in the root document head so Google installation tools can discover it on every page. Do not add this same GA4 tag inside Google Tag Manager because that would duplicate page views.
+- Use the database-backed controls under `/admin/settings/seo` for optional Google Tag Manager, Google Ads, and Search Console configuration. Keep `NEXT_PUBLIC_GA_MEASUREMENT_ID`, `NEXT_PUBLIC_GTM_ID`, `NEXT_PUBLIC_GOOGLE_ADS_ID`, and `NEXT_PUBLIC_CLOUDFLARE_BEACON_TOKEN` empty unless an environment fallback is intentionally required.
 - The storefront shows a privacy-choice banner.
-- Analytics scripts load only after the visitor selects `Allow analytics`.
+- The Google tag bootstrap loads with Consent Mode set to denied and `send_page_view: false`. Analytics storage and page-view collection are enabled only after the visitor selects `Allow analytics`.
 - Essential marketplace storage for sign-in, cart, checkout, and preferences remains available without analytics consent.
+
+Verify the rendered tag after deployment:
+
+```bash
+curl -s https://www.1handindia.com | grep -o "https://www.googletagmanager.com/gtag/js?id=G-MR1H66G0DZ"
+curl -s https://www.1handindia.com | grep -o "gtag('config', 'G-MR1H66G0DZ'"
+```
 
 PCI Requirement 6.4 cannot be satisfied by application code alone. Put the production domain behind a real WAF before launch. Approved options:
 

@@ -861,6 +861,9 @@ server {
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_buffer_size 16k;
+    proxy_buffers 8 16k;
+    proxy_busy_buffers_size 32k;
     proxy_pass http://127.0.0.1:3000;
   }
 }
@@ -873,6 +876,8 @@ sudo ln -s /etc/nginx/sites-available/indihub /etc/nginx/sites-enabled/indihub
 sudo nginx -t
 sudo systemctl reload nginx
 ```
+
+If Nginx logs `upstream sent too big header while reading response header from upstream`, the Next.js process responded but Nginx could not buffer its response headers. Keep the web proxy buffer settings above, validate with `sudo nginx -t`, reload Nginx, and repeat the HTTPS header check.
 
 ### 13.3 Add SSL
 

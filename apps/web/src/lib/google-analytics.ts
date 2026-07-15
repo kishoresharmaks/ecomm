@@ -1,5 +1,7 @@
 import type { SeoAnalyticsSettings } from "./seo";
 
+export const primaryGoogleAnalyticsId = "G-MR1H66G0DZ";
+
 export type GoogleAnalyticsLoadPlan =
   | { mode: "gtm"; googleTagManagerId: string; directGoogleIds: [] }
   | { mode: "gtag"; googleTagManagerId: ""; directGoogleIds: string[] }
@@ -7,6 +9,7 @@ export type GoogleAnalyticsLoadPlan =
 
 export function googleAnalyticsLoadPlan(
   settings: SeoAnalyticsSettings,
+  options: { googleAnalyticsInstalledInHead?: boolean } = {},
 ): GoogleAnalyticsLoadPlan {
   if (settings.googleTagManagerId) {
     return {
@@ -17,7 +20,7 @@ export function googleAnalyticsLoadPlan(
   }
 
   const directGoogleIds = [
-    settings.googleAnalyticsId,
+    ...(options.googleAnalyticsInstalledInHead ? [] : [settings.googleAnalyticsId]),
     settings.googleAdsId,
   ].filter(Boolean);
 
@@ -34,4 +37,24 @@ export function googleAnalyticsLoadPlan(
     googleTagManagerId: "",
     directGoogleIds: [],
   };
+}
+
+export function googleAnalyticsHeadBootstrapScript() {
+  return `
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    window.gtag = gtag;
+    gtag('consent', 'default', {
+      analytics_storage: 'denied',
+      ad_storage: 'denied',
+      ad_user_data: 'denied',
+      ad_personalization: 'denied',
+      wait_for_update: 500
+    });
+    gtag('js', new Date());
+    gtag('config', '${primaryGoogleAnalyticsId}', {
+      anonymize_ip: true,
+      send_page_view: false
+    });
+  `;
 }
