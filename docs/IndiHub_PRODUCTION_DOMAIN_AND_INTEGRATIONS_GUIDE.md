@@ -118,16 +118,17 @@ Expected result:
 
 Cookie and analytics rule:
 
-- GA4 measurement ID `G-MR1H66G0DZ` is installed directly in the root document head so Google installation tools can discover it on every page. Do not add this same GA4 tag inside Google Tag Manager because that would duplicate page views.
-- Use the database-backed controls under `/admin/settings/seo` for optional Google Tag Manager, Google Ads, and Search Console configuration. Keep `NEXT_PUBLIC_GA_MEASUREMENT_ID`, `NEXT_PUBLIC_GTM_ID`, `NEXT_PUBLIC_GOOGLE_ADS_ID`, and `NEXT_PUBLIC_CLOUDFLARE_BEACON_TOKEN` empty unless an environment fallback is intentionally required.
+- Google tag ID `AW-18165667075` is installed directly in the root document head and sends to both the Google Ads destination `AW-18165667075` and GA4 destination `G-MR1H66G0DZ`. Do not add either destination again inside Google Tag Manager because that would duplicate measurement.
+- Use the database-backed controls under `/admin/settings/seo` for optional Google Tag Manager and Search Console configuration. Keep `NEXT_PUBLIC_GA_MEASUREMENT_ID`, `NEXT_PUBLIC_GTM_ID`, `NEXT_PUBLIC_GOOGLE_ADS_ID`, and `NEXT_PUBLIC_CLOUDFLARE_BEACON_TOKEN` empty unless an environment fallback is intentionally required.
 - The storefront shows a privacy-choice banner.
-- The Google tag bootstrap loads with Consent Mode set to denied and `send_page_view: false`. Analytics storage and page-view collection are enabled only after the visitor selects `Allow analytics`.
+- The Google tag bootstrap loads with Consent Mode set to denied. This allows cookieless consent and measurement pings for installation/measurement modeling; cookie-backed measurement is enabled only after the visitor selects `Allow analytics`.
 - Essential marketplace storage for sign-in, cart, checkout, and preferences remains available without analytics consent.
 
 Verify the rendered tag after deployment:
 
 ```bash
-curl -s https://www.1handindia.com | grep -o "https://www.googletagmanager.com/gtag/js?id=G-MR1H66G0DZ"
+curl -s https://www.1handindia.com | grep -o "https://www.googletagmanager.com/gtag/js?id=AW-18165667075"
+curl -s https://www.1handindia.com | grep -o "gtag('config', 'AW-18165667075'"
 curl -s https://www.1handindia.com | grep -o "gtag('config', 'G-MR1H66G0DZ'"
 ```
 

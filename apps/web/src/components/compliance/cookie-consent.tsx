@@ -5,6 +5,7 @@ import Script from "next/script";
 import { useEffect, useState } from "react";
 import {
   googleAnalyticsLoadPlan,
+  primaryGoogleAdsId,
   primaryGoogleAnalyticsId,
 } from "@/lib/google-analytics";
 import type { SeoAnalyticsSettings } from "@/lib/seo";
@@ -86,6 +87,7 @@ export function ConsentManagedScripts({
   const analyticsAllowed = choice === "analytics";
   const { googleTagManagerId, directGoogleIds } = googleAnalyticsLoadPlan(settings, {
     googleAnalyticsInstalledInHead: true,
+    googleAdsInstalledInHead: true,
   });
 
   useEffect(() => {
@@ -114,6 +116,7 @@ export function ConsentManagedScripts({
             ad_user_data: ${settings.googleAdsId || googleTagManagerId ? "'granted'" : "'denied'"},
             ad_personalization: ${settings.googleAdsId || googleTagManagerId ? "'granted'" : "'denied'"}
           });
+          gtag('config', '${primaryGoogleAdsId}');
           gtag('config', '${primaryGoogleAnalyticsId}', { anonymize_ip: true });
           ${directGoogleIds.map((id) => `gtag('config', '${id}', { anonymize_ip: true });`).join("\n")}
         `}

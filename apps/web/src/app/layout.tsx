@@ -5,7 +5,7 @@ import { ConfiguredOriginRedirect } from "@/components/auth/configured-origin-re
 import { Providers } from "@/components/providers";
 import {
   googleAnalyticsHeadBootstrapScript,
-  primaryGoogleAnalyticsId,
+  primaryGoogleTagId,
 } from "@/lib/google-analytics";
 import { getSeoSettings, siteUrl } from "@/lib/seo";
 import "../styles/globals.css";
@@ -36,7 +36,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
         <script
           async
           nonce={nonce}
-          src={`https://www.googletagmanager.com/gtag/js?id=${primaryGoogleAnalyticsId}`}
+          src={`https://www.googletagmanager.com/gtag/js?id=${primaryGoogleTagId}`}
         />
         <script
           id="indihub-google-analytics-bootstrap"

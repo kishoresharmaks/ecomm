@@ -6,7 +6,10 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, StatusBadge } from "@indihub/ui";
 import { useAdminAuth } from "@/components/admin/admin-auth-context";
 import { indihubFetch } from "@/lib/api";
-import { primaryGoogleAnalyticsId } from "@/lib/google-analytics";
+import {
+  primaryGoogleAdsId,
+  primaryGoogleAnalyticsId,
+} from "@/lib/google-analytics";
 
 type SettingRecord = {
   key: string;
@@ -29,7 +32,7 @@ type FormState = {
 
 const emptyForm: FormState = {
   googleAnalyticsId: primaryGoogleAnalyticsId,
-  googleAdsId: "",
+  googleAdsId: primaryGoogleAdsId,
   googleSearchConsoleId: "",
   googleTagManagerId: "",
 };
@@ -93,7 +96,7 @@ export function SeoAnalyticsSettings({ settings }: { settings: SettingRecord[] }
               )}
             </div>
             <p className="mt-1 text-sm font-semibold leading-6 text-[#667085]">
-              Google Analytics 4 is installed directly across the website. Configure optional Google Tag Manager, Google Ads, and Search Console integrations here.
+              The Google tag is installed directly across the website with Google Ads and Google Analytics 4 destinations. Configure optional Google Tag Manager and Search Console integrations here.
             </p>
           </div>
         </div>
@@ -140,21 +143,19 @@ export function SeoAnalyticsSettings({ settings }: { settings: SettingRecord[] }
 
         <div className="space-y-2">
           <label htmlFor="google-ads-id" className="block text-sm font-black text-[#1F2933]">
-            Google Ads tag ID
+            Google Ads tag ID (installed)
           </label>
           <input
             id="google-ads-id"
             type="text"
-            className="w-full max-w-md rounded-[10px] border border-[#D1D5DB] bg-white px-3.5 py-2 text-sm font-semibold text-[#111827] outline-none placeholder:text-[#98A2B3] focus:border-[#ED3500] focus:ring-4 focus:ring-[#ED3500]/10"
-            placeholder="AW-123456789"
-            value={form.googleAdsId}
-            onChange={(e) => updateField("googleAdsId", e.target.value)}
-            disabled={saveMutation.isPending}
-            aria-invalid={Boolean(validationErrors.googleAdsId)}
+            className="w-full max-w-md rounded-[10px] border border-[#D1D5DB] bg-[#F8FAFC] px-3.5 py-2 text-sm font-semibold text-[#475467] outline-none"
+            value={primaryGoogleAdsId}
+            readOnly
+            aria-readonly="true"
           />
           <FieldHelp
-            error={validationErrors.googleAdsId}
-            text="Use the Google Ads tag ID that starts with AW-. This is not a GA4 Measurement ID or a GTM Container ID. Leave it blank when Ads tracking is deployed through GTM."
+            error={undefined}
+            text="This is the primary Google tag ID requested by the connected Google account. It is emitted once in the head and shares the tag with the GA4 destination above."
           />
         </div>
 
@@ -189,7 +190,7 @@ export function SeoAnalyticsSettings({ settings }: { settings: SettingRecord[] }
               {hasGoogleTag ? "Google tag configuration saved" : "No analytics tag configured"}
             </p>
             <p className={`mt-1 text-xs font-semibold leading-5 ${hasGoogleTag ? "text-[#176B50]" : "text-[#8A5A12]"}`}>
-              Analytics tags run only after a visitor selects Allow analytics. Google installation tools must be tested after granting that privacy choice.
+              The Google tag is present in the page head for installation checks. Consent Mode controls storage and switches to full measurement after a visitor selects Allow analytics.
             </p>
           </div>
         </div>
@@ -236,14 +237,11 @@ function stringSetting(settings: SettingRecord[], key: string, fallback: string)
 }
 
 function settingsForm(settings: SettingRecord[]): FormState {
-  const rawAnalyticsId = stringSetting(settings, keys.googleAnalyticsId, "").trim();
   const rawTagManagerId = stringSetting(settings, keys.googleTagManagerId, "").trim();
-  const explicitAdsId = stringSetting(settings, keys.googleAdsId, "").trim();
-  const legacyAdsId = [rawAnalyticsId, rawTagManagerId].find((value) => /^AW-[0-9]+$/i.test(value)) ?? "";
 
   return {
     googleAnalyticsId: primaryGoogleAnalyticsId,
-    googleAdsId: (explicitAdsId || legacyAdsId).toUpperCase(),
+    googleAdsId: primaryGoogleAdsId,
     googleSearchConsoleId: stringSetting(settings, keys.googleSearchConsoleId, "").trim(),
     googleTagManagerId: /^GTM-[A-Z0-9]+$/i.test(rawTagManagerId) ? rawTagManagerId.toUpperCase() : "",
   };
@@ -252,7 +250,7 @@ function settingsForm(settings: SettingRecord[]): FormState {
 function normalizedForm(form: FormState): FormState {
   return {
     googleAnalyticsId: primaryGoogleAnalyticsId,
-    googleAdsId: form.googleAdsId.trim().toUpperCase(),
+    googleAdsId: primaryGoogleAdsId,
     googleSearchConsoleId: form.googleSearchConsoleId.trim(),
     googleTagManagerId: form.googleTagManagerId.trim().toUpperCase(),
   };

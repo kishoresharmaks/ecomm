@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   googleAnalyticsHeadBootstrapScript,
   googleAnalyticsLoadPlan,
+  primaryGoogleAdsId,
   primaryGoogleAnalyticsId,
+  primaryGoogleTagId,
 } from "./google-analytics";
 
 describe("googleAnalyticsLoadPlan", () => {
@@ -36,7 +38,7 @@ describe("googleAnalyticsLoadPlan", () => {
     });
   });
 
-  it("does not initialize GA4 twice when the primary tag is installed in the document head", () => {
+  it("does not initialize fixed Google destinations twice when the primary tag is installed in the document head", () => {
     expect(
       googleAnalyticsLoadPlan(
         {
@@ -45,21 +47,26 @@ describe("googleAnalyticsLoadPlan", () => {
           googleAdsId: "AW-123456789",
           googleSearchConsoleId: "",
         },
-        { googleAnalyticsInstalledInHead: true },
+        {
+          googleAnalyticsInstalledInHead: true,
+          googleAdsInstalledInHead: true,
+        },
       ),
     ).toEqual({
-      mode: "gtag",
+      mode: "none",
       googleTagManagerId: "",
-      directGoogleIds: ["AW-123456789"],
+      directGoogleIds: [],
     });
   });
 
-  it("builds the fixed head bootstrap with consent denied before configuration", () => {
+  it("builds one fixed Google tag with Ads and GA4 destinations after consent defaults", () => {
     const script = googleAnalyticsHeadBootstrapScript();
 
+    expect(primaryGoogleTagId).toBe(primaryGoogleAdsId);
+    expect(script).toContain(`gtag('config', '${primaryGoogleAdsId}'`);
     expect(script).toContain(`gtag('config', '${primaryGoogleAnalyticsId}'`);
     expect(script.indexOf("gtag('consent', 'default'")).toBeLessThan(script.indexOf("gtag('config'"));
     expect(script).toContain("analytics_storage: 'denied'");
-    expect(script).toContain("send_page_view: false");
+    expect(script).not.toContain("send_page_view: false");
   });
 });

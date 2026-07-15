@@ -1,6 +1,8 @@
 import type { SeoAnalyticsSettings } from "./seo";
 
 export const primaryGoogleAnalyticsId = "G-MR1H66G0DZ";
+export const primaryGoogleAdsId = "AW-18165667075";
+export const primaryGoogleTagId = primaryGoogleAdsId;
 
 export type GoogleAnalyticsLoadPlan =
   | { mode: "gtm"; googleTagManagerId: string; directGoogleIds: [] }
@@ -9,7 +11,10 @@ export type GoogleAnalyticsLoadPlan =
 
 export function googleAnalyticsLoadPlan(
   settings: SeoAnalyticsSettings,
-  options: { googleAnalyticsInstalledInHead?: boolean } = {},
+  options: {
+    googleAnalyticsInstalledInHead?: boolean;
+    googleAdsInstalledInHead?: boolean;
+  } = {},
 ): GoogleAnalyticsLoadPlan {
   if (settings.googleTagManagerId) {
     return {
@@ -21,7 +26,7 @@ export function googleAnalyticsLoadPlan(
 
   const directGoogleIds = [
     ...(options.googleAnalyticsInstalledInHead ? [] : [settings.googleAnalyticsId]),
-    settings.googleAdsId,
+    ...(options.googleAdsInstalledInHead ? [] : [settings.googleAdsId]),
   ].filter(Boolean);
 
   if (directGoogleIds.length) {
@@ -52,9 +57,7 @@ export function googleAnalyticsHeadBootstrapScript() {
       wait_for_update: 500
     });
     gtag('js', new Date());
-    gtag('config', '${primaryGoogleAnalyticsId}', {
-      anonymize_ip: true,
-      send_page_view: false
-    });
+    gtag('config', '${primaryGoogleAdsId}');
+    gtag('config', '${primaryGoogleAnalyticsId}', { anonymize_ip: true });
   `;
 }
