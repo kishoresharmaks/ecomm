@@ -10,6 +10,7 @@ import {
   UpsertDeliveryPartnerPayoutSettingsDto,
   UpsertEmailSettingDto,
   UpsertMaintenanceSettingsDto,
+  UpsertSeoAnalyticsSettingsDto,
   UpsertMapRoutingSettingsDto,
   UpsertSettingDto,
 } from "./dto/settings.dto";
@@ -46,6 +47,13 @@ const checkoutPlatformFeeKeys = {
   type: "checkout.platform_fee.type",
   valueBps: "checkout.platform_fee.value_bps",
   fixedPaise: "checkout.platform_fee.fixed_paise",
+} as const;
+const seoAnalyticsSettingGroup = "seo";
+const seoAnalyticsSettingKeys = {
+  googleAnalyticsId: "seo.google_analytics_id",
+  googleSearchConsoleId: "seo.google_search_console_id",
+  googleTagManagerId: "seo.google_tag_manager_id",
+  googleAdsId: "seo.google_ads_id",
 } as const;
 export const chatSupportSettingKeys = {
   enabled: "support.chat.enabled",
@@ -170,24 +178,65 @@ export class SettingsService {
     const settings = await this.prisma.client.setting.findMany({
       where: {
         key: {
-          in: ["seo.google_analytics_id", "seo.google_search_console_id", "seo.google_tag_manager_id"],
+          in: Object.values(seoAnalyticsSettingKeys),
         },
       },
     });
 
-    const gaRecord = settings.find((s) => s.key === "seo.google_analytics_id");
-    const gscRecord = settings.find((s) => s.key === "seo.google_search_console_id");
-    const gtmRecord = settings.find((s) => s.key === "seo.google_tag_manager_id");
+    return this.seoAnalyticsReadback(settings);
+  }
 
-    const gaValue = gaRecord?.value;
-    const gscValue = gscRecord?.value;
-    const gtmValue = gtmRecord?.value;
-
-    return {
-      googleAnalyticsId: typeof gaValue === "string" ? gaValue : "",
-      googleSearchConsoleId: typeof gscValue === "string" ? gscValue : "",
-      googleTagManagerId: typeof gtmValue === "string" ? gtmValue : "",
+  async upsertSeoAnalyticsSettings(actor: RequestUser, dto: UpsertSeoAnalyticsSettingsDto) {
+    const normalized = {
+      googleAnalyticsId: this.normalizedGoogleId(dto.googleAnalyticsId, /^G-[A-Z0-9]+$/i),
+      googleSearchConsoleId: dto.googleSearchConsoleId?.trim() ?? "",
+      googleTagManagerId: this.normalizedGoogleId(dto.googleTagManagerId, /^GTM-[A-Z0-9]+$/i),
+      googleAdsId: this.normalizedGoogleId(dto.googleAdsId, /^AW-[0-9]+$/i),
     };
+
+    const writes = Object.entries(seoAnalyticsSettingKeys).map(([field, key]) =>
+      this.settingWrite(
+        key,
+        seoAnalyticsSettingGroup,
+        SettingValueType.STRING,
+        normalized[field as keyof typeof normalized],
+      ),
+    );
+
+    const settings = await this.prisma.client.$transaction(async (tx) => {
+      const before = await tx.setting.findMany({
+        where: { key: { in: Object.values(seoAnalyticsSettingKeys) } },
+      });
+      const updatedSettings = [];
+
+      for (const write of writes) {
+        updatedSettings.push(
+          await tx.setting.upsert({
+            where: { key: write.key },
+            update: {
+              value: write.value,
+              valueType: write.valueType,
+              group: write.group,
+            },
+            create: write,
+          }),
+        );
+      }
+
+      await tx.auditLog.create({
+        data: {
+          actorUserId: actor.id,
+          action: "settings.seo_analytics.updated",
+          entityType: "seo_analytics_settings",
+          oldValue: this.seoAnalyticsReadback(before),
+          newValue: normalized,
+        },
+      });
+
+      return updatedSettings;
+    });
+
+    return this.seoAnalyticsReadback(settings);
   }
 
   async upsertSetting(actor: RequestUser, key: string, dto: UpsertSettingDto) {
@@ -696,6 +745,33 @@ export class SettingsService {
         ? "[secret configured]"
         : (setting.value as Prisma.InputJsonValue),
     };
+  }
+
+  private seoAnalyticsReadback(settings: SettingLike[]) {
+    const values = new Map(
+      settings.map((setting) => [
+        setting.key,
+        typeof setting.value === "string" ? setting.value.trim() : "",
+      ]),
+    );
+    const rawAnalyticsId = values.get(seoAnalyticsSettingKeys.googleAnalyticsId) ?? "";
+    const rawTagManagerId = values.get(seoAnalyticsSettingKeys.googleTagManagerId) ?? "";
+    const explicitAdsId = values.get(seoAnalyticsSettingKeys.googleAdsId) ?? "";
+    const legacyAdsId = [rawAnalyticsId, rawTagManagerId].find((value) => /^AW-[0-9]+$/i.test(value));
+
+    return {
+      googleAnalyticsId: /^G-[A-Z0-9]+$/i.test(rawAnalyticsId) ? rawAnalyticsId.toUpperCase() : "",
+      googleSearchConsoleId: values.get(seoAnalyticsSettingKeys.googleSearchConsoleId) ?? "",
+      googleTagManagerId: /^GTM-[A-Z0-9]+$/i.test(rawTagManagerId) ? rawTagManagerId.toUpperCase() : "",
+      googleAdsId: /^AW-[0-9]+$/i.test(explicitAdsId)
+        ? explicitAdsId.toUpperCase()
+        : legacyAdsId?.toUpperCase() ?? "",
+    };
+  }
+
+  private normalizedGoogleId(value: string | undefined, pattern: RegExp) {
+    const normalized = value?.trim().toUpperCase() ?? "";
+    return pattern.test(normalized) ? normalized : "";
   }
 
   private checkoutPlatformFeeAuditValue(settings: SettingLike[]): Prisma.InputJsonObject {

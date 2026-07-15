@@ -81,6 +81,44 @@ export class UpsertMaintenanceSettingsDto {
   scopes!: MaintenanceScopeDto[];
 }
 
+export class UpsertSeoAnalyticsSettingsDto {
+  @ApiPropertyOptional({ example: "GTM-WFXLFC8X" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  @Matches(/^$|^GTM-[A-Z0-9]+$/i, {
+    message: "googleTagManagerId must be empty or a valid GTM container ID starting with GTM-.",
+  })
+  googleTagManagerId?: string;
+
+  @ApiPropertyOptional({ example: "G-XXXXXXXXXX" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  @Matches(/^$|^G-[A-Z0-9]+$/i, {
+    message: "googleAnalyticsId must be empty or a valid GA4 Measurement ID starting with G-.",
+  })
+  googleAnalyticsId?: string;
+
+  @ApiPropertyOptional({ example: "AW-123456789" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  @Matches(/^$|^AW-[0-9]+$/i, {
+    message: "googleAdsId must be empty or a valid Google Ads tag ID starting with AW-.",
+  })
+  googleAdsId?: string;
+
+  @ApiPropertyOptional({ example: "google-site-verification-token" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  @Matches(/^$|^[A-Z0-9_-]+$/i, {
+    message: "googleSearchConsoleId must contain only the verification token, not the full meta tag.",
+  })
+  googleSearchConsoleId?: string;
+}
+
 export class UpsertCheckoutPlatformFeeDto {
   @ApiProperty({ example: true })
   @IsBoolean()

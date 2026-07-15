@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Globe, Save } from "lucide-react";
+import { CircleCheck, Globe, Save, TriangleAlert } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, StatusBadge } from "@indihub/ui";
 import { useAdminAuth } from "@/components/admin/admin-auth-context";
@@ -14,16 +14,29 @@ type SettingRecord = {
 
 const keys = {
   googleAnalyticsId: "seo.google_analytics_id",
+  googleAdsId: "seo.google_ads_id",
   googleSearchConsoleId: "seo.google_search_console_id",
   googleTagManagerId: "seo.google_tag_manager_id",
 } as const;
 
+type FormState = {
+  googleAnalyticsId: string;
+  googleAdsId: string;
+  googleSearchConsoleId: string;
+  googleTagManagerId: string;
+};
+
+const emptyForm: FormState = {
+  googleAnalyticsId: "",
+  googleAdsId: "",
+  googleSearchConsoleId: "",
+  googleTagManagerId: "",
+};
+
 export function SeoAnalyticsSettings({ settings }: { settings: SettingRecord[] }) {
   const auth = useAdminAuth();
   const queryClient = useQueryClient();
-  const [googleAnalyticsId, setGoogleAnalyticsId] = useState("");
-  const [googleSearchConsoleId, setGoogleSearchConsoleId] = useState("");
-  const [googleTagManagerId, setGoogleTagManagerId] = useState("");
+  const [form, setForm] = useState<FormState>(emptyForm);
   const [isDirty, setIsDirty] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -32,33 +45,26 @@ export function SeoAnalyticsSettings({ settings }: { settings: SettingRecord[] }
       return;
     }
 
-    setGoogleAnalyticsId(stringSetting(settings, keys.googleAnalyticsId, ""));
-    setGoogleSearchConsoleId(stringSetting(settings, keys.googleSearchConsoleId, ""));
-    setGoogleTagManagerId(stringSetting(settings, keys.googleTagManagerId, ""));
+    setForm(settingsForm(settings));
   }, [isDirty, settings]);
+
+  const validationErrors = validateForm(form);
+  const hasGoogleTag = Boolean(
+    form.googleTagManagerId.trim() ||
+      form.googleAnalyticsId.trim() ||
+      form.googleAdsId.trim(),
+  );
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      await Promise.all([
-        upsertSetting(
-          auth.authHeaders,
-          keys.googleAnalyticsId,
-          "STRING",
-          googleAnalyticsId.trim(),
-        ),
-        upsertSetting(
-          auth.authHeaders,
-          keys.googleSearchConsoleId,
-          "STRING",
-          googleSearchConsoleId.trim(),
-        ),
-        upsertSetting(
-          auth.authHeaders,
-          keys.googleTagManagerId,
-          "STRING",
-          googleTagManagerId.trim(),
-        ),
-      ]);
+      await indihubFetch(
+        "/api/admin/settings/seo/analytics",
+        {
+          method: "PUT",
+          body: JSON.stringify(normalizedForm(form)),
+        },
+        auth.authHeaders,
+      );
     },
     onSuccess: async () => {
       setIsDirty(false);
@@ -95,24 +101,22 @@ export function SeoAnalyticsSettings({ settings }: { settings: SettingRecord[] }
       <div className="mt-6 space-y-6">
         <div className="space-y-2">
           <label htmlFor="google-tag-manager-id" className="block text-sm font-black text-[#1F2933]">
-            Google Tag Manager Container ID (or Google Tag ID)
+            Google Tag Manager Container ID
           </label>
           <input
             id="google-tag-manager-id"
             type="text"
             className="w-full max-w-md rounded-[10px] border border-[#D1D5DB] bg-white px-3.5 py-2 text-sm font-semibold text-[#111827] outline-none placeholder:text-[#98A2B3] focus:border-[#ED3500] focus:ring-4 focus:ring-[#ED3500]/10"
-            placeholder="e.g. GTM-WFXLFC8X"
-            value={googleTagManagerId}
-            onChange={(e) => {
-              setGoogleTagManagerId(e.target.value);
-              setIsDirty(true);
-              setNotice(null);
-            }}
+            placeholder="GTM-XXXXXXXX"
+            value={form.googleTagManagerId}
+            onChange={(e) => updateField("googleTagManagerId", e.target.value)}
             disabled={saveMutation.isPending}
+            aria-invalid={Boolean(validationErrors.googleTagManagerId)}
           />
-          <p className="text-xs font-semibold leading-5 text-[#667085]">
-            Paste your Google Tag Manager (GTM) container ID (starts with "GTM-"). If you paste a generic Google Tag ID starting with "AW-" or "G-", the platform will automatically resolve and load it.
-          </p>
+          <FieldHelp
+            error={validationErrors.googleTagManagerId}
+            text="Use the Container ID from Google Tag Manager. It must start with GTM-. When configured, manage GA4 and Ads tags inside that container to avoid duplicate tracking."
+          />
         </div>
 
         <div className="space-y-2">
@@ -123,18 +127,36 @@ export function SeoAnalyticsSettings({ settings }: { settings: SettingRecord[] }
             id="google-analytics-id"
             type="text"
             className="w-full max-w-md rounded-[10px] border border-[#D1D5DB] bg-white px-3.5 py-2 text-sm font-semibold text-[#111827] outline-none placeholder:text-[#98A2B3] focus:border-[#ED3500] focus:ring-4 focus:ring-[#ED3500]/10"
-            placeholder="e.g. G-XXXXXXXXXX"
-            value={googleAnalyticsId}
-            onChange={(e) => {
-              setGoogleAnalyticsId(e.target.value);
-              setIsDirty(true);
-              setNotice(null);
-            }}
+            placeholder="G-XXXXXXXXXX"
+            value={form.googleAnalyticsId}
+            onChange={(e) => updateField("googleAnalyticsId", e.target.value)}
             disabled={saveMutation.isPending}
+            aria-invalid={Boolean(validationErrors.googleAnalyticsId)}
           />
-          <p className="text-xs font-semibold leading-5 text-[#667085]">
-            Paste your Google Analytics 4 (GA4) web stream Measurement ID (starts with "G-").
-          </p>
+          <FieldHelp
+            error={validationErrors.googleAnalyticsId}
+            text="Use the Measurement ID from the GA4 web data stream. It must start with G-. Leave this blank when the GA4 tag is deployed through the GTM container above."
+          />
+        </div>
+
+        <div className="space-y-2">
+          <label htmlFor="google-ads-id" className="block text-sm font-black text-[#1F2933]">
+            Google Ads tag ID
+          </label>
+          <input
+            id="google-ads-id"
+            type="text"
+            className="w-full max-w-md rounded-[10px] border border-[#D1D5DB] bg-white px-3.5 py-2 text-sm font-semibold text-[#111827] outline-none placeholder:text-[#98A2B3] focus:border-[#ED3500] focus:ring-4 focus:ring-[#ED3500]/10"
+            placeholder="AW-123456789"
+            value={form.googleAdsId}
+            onChange={(e) => updateField("googleAdsId", e.target.value)}
+            disabled={saveMutation.isPending}
+            aria-invalid={Boolean(validationErrors.googleAdsId)}
+          />
+          <FieldHelp
+            error={validationErrors.googleAdsId}
+            text="Use the Google Ads tag ID that starts with AW-. This is not a GA4 Measurement ID or a GTM Container ID. Leave it blank when Ads tracking is deployed through GTM."
+          />
         </div>
 
         <div className="space-y-2">
@@ -146,17 +168,31 @@ export function SeoAnalyticsSettings({ settings }: { settings: SettingRecord[] }
             type="text"
             className="w-full max-w-md rounded-[10px] border border-[#D1D5DB] bg-white px-3.5 py-2 text-sm font-semibold text-[#111827] outline-none placeholder:text-[#98A2B3] focus:border-[#ED3500] focus:ring-4 focus:ring-[#ED3500]/10"
             placeholder="e.g. dF87c8d76a..."
-            value={googleSearchConsoleId}
-            onChange={(e) => {
-              setGoogleSearchConsoleId(e.target.value);
-              setIsDirty(true);
-              setNotice(null);
-            }}
+            value={form.googleSearchConsoleId}
+            onChange={(e) => updateField("googleSearchConsoleId", e.target.value)}
             disabled={saveMutation.isPending}
+            aria-invalid={Boolean(validationErrors.googleSearchConsoleId)}
           />
-          <p className="text-xs font-semibold leading-5 text-[#667085]">
-            Only paste the token key from the meta tag content attribute. (e.g. from <code>&lt;meta name="google-site-verification" content="TOKEN" /&gt;</code>)
-          </p>
+          <FieldHelp
+            error={validationErrors.googleSearchConsoleId}
+            text={<>Paste only the token from the content attribute, not the full <code>&lt;meta&gt;</code> tag.</>}
+          />
+        </div>
+
+        <div className={`flex items-start gap-3 rounded-md border p-4 ${hasGoogleTag ? "border-[#BFEAD9] bg-[#E9F7F1]" : "border-[#F3D39B] bg-[#FFF8E8]"}`}>
+          {hasGoogleTag ? (
+            <CircleCheck className="mt-0.5 h-5 w-5 shrink-0 text-[#087A55]" aria-hidden="true" />
+          ) : (
+            <TriangleAlert className="mt-0.5 h-5 w-5 shrink-0 text-[#9A5B00]" aria-hidden="true" />
+          )}
+          <div>
+            <p className={`text-sm font-black ${hasGoogleTag ? "text-[#064C35]" : "text-[#7A4700]"}`}>
+              {hasGoogleTag ? "Google tag configuration saved" : "No analytics tag configured"}
+            </p>
+            <p className={`mt-1 text-xs font-semibold leading-5 ${hasGoogleTag ? "text-[#176B50]" : "text-[#8A5A12]"}`}>
+              Analytics tags run only after a visitor selects Allow analytics. Google installation tools must be tested after granting that privacy choice.
+            </p>
+          </div>
         </div>
       </div>
 
@@ -167,7 +203,7 @@ export function SeoAnalyticsSettings({ settings }: { settings: SettingRecord[] }
         <Button
           type="button"
           onClick={() => saveMutation.mutate()}
-          disabled={!auth.isAuthenticated || saveMutation.isPending || !isDirty}
+          disabled={!auth.isAuthenticated || saveMutation.isPending || !isDirty || Object.keys(validationErrors).length > 0}
         >
           <Save className="h-4 w-4" aria-hidden="true" />
           {saveMutation.isPending ? "Saving" : "Save SEO settings"}
@@ -187,25 +223,72 @@ export function SeoAnalyticsSettings({ settings }: { settings: SettingRecord[] }
       ) : null}
     </section>
   );
-}
 
-function upsertSetting(
-  authHeaders: { bearerToken?: string },
-  key: string,
-  valueType: "STRING",
-  value: string,
-) {
-  return indihubFetch(
-    `/api/admin/settings/${encodeURIComponent(key)}`,
-    {
-      method: "PUT",
-      body: JSON.stringify({ group: "seo", valueType, value }),
-    },
-    authHeaders,
-  );
+  function updateField(field: keyof FormState, value: string) {
+    setForm((current) => ({ ...current, [field]: value }));
+    setIsDirty(true);
+    setNotice(null);
+  }
 }
 
 function stringSetting(settings: SettingRecord[], key: string, fallback: string) {
   const value = settings.find((setting) => setting.key === key)?.value;
   return typeof value === "string" ? value : fallback;
+}
+
+function settingsForm(settings: SettingRecord[]): FormState {
+  const rawAnalyticsId = stringSetting(settings, keys.googleAnalyticsId, "").trim();
+  const rawTagManagerId = stringSetting(settings, keys.googleTagManagerId, "").trim();
+  const explicitAdsId = stringSetting(settings, keys.googleAdsId, "").trim();
+  const legacyAdsId = [rawAnalyticsId, rawTagManagerId].find((value) => /^AW-[0-9]+$/i.test(value)) ?? "";
+
+  return {
+    googleAnalyticsId: /^G-[A-Z0-9]+$/i.test(rawAnalyticsId) ? rawAnalyticsId.toUpperCase() : "",
+    googleAdsId: (explicitAdsId || legacyAdsId).toUpperCase(),
+    googleSearchConsoleId: stringSetting(settings, keys.googleSearchConsoleId, "").trim(),
+    googleTagManagerId: /^GTM-[A-Z0-9]+$/i.test(rawTagManagerId) ? rawTagManagerId.toUpperCase() : "",
+  };
+}
+
+function normalizedForm(form: FormState): FormState {
+  return {
+    googleAnalyticsId: form.googleAnalyticsId.trim().toUpperCase(),
+    googleAdsId: form.googleAdsId.trim().toUpperCase(),
+    googleSearchConsoleId: form.googleSearchConsoleId.trim(),
+    googleTagManagerId: form.googleTagManagerId.trim().toUpperCase(),
+  };
+}
+
+function validateForm(form: FormState) {
+  const errors: Partial<Record<keyof FormState, string>> = {};
+  const normalized = normalizedForm(form);
+
+  if (normalized.googleTagManagerId && !/^GTM-[A-Z0-9]+$/.test(normalized.googleTagManagerId)) {
+    errors.googleTagManagerId = "Enter a valid Container ID beginning with GTM-.";
+  }
+  if (normalized.googleAnalyticsId && !/^G-[A-Z0-9]+$/.test(normalized.googleAnalyticsId)) {
+    errors.googleAnalyticsId = "Enter a valid GA4 Measurement ID beginning with G-.";
+  }
+  if (normalized.googleAdsId && !/^AW-[0-9]+$/.test(normalized.googleAdsId)) {
+    errors.googleAdsId = "Enter a valid Google Ads tag ID beginning with AW-.";
+  }
+  if (normalized.googleSearchConsoleId && !/^[A-Z0-9_-]+$/i.test(normalized.googleSearchConsoleId)) {
+    errors.googleSearchConsoleId = "Paste only the verification token, not the full meta tag.";
+  }
+
+  return errors;
+}
+
+function FieldHelp({
+  error,
+  text,
+}: {
+  error: string | undefined;
+  text: React.ReactNode;
+}) {
+  return (
+    <p className={`text-xs font-semibold leading-5 ${error ? "text-[#B42318]" : "text-[#667085]"}`}>
+      {error ?? text}
+    </p>
+  );
 }

@@ -54,6 +54,7 @@ NEXT_PUBLIC_API_TIMEOUT_MS="30000"
 
 NEXT_PUBLIC_GA_MEASUREMENT_ID=""
 NEXT_PUBLIC_GTM_ID=""
+NEXT_PUBLIC_GOOGLE_ADS_ID=""
 NEXT_PUBLIC_CLOUDFLARE_BEACON_TOKEN=""
 
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_live_replace_me"
@@ -118,7 +119,7 @@ Expected result:
 
 Cookie and analytics rule:
 
-- Keep `NEXT_PUBLIC_GA_MEASUREMENT_ID`, `NEXT_PUBLIC_GTM_ID`, and `NEXT_PUBLIC_CLOUDFLARE_BEACON_TOKEN` empty unless analytics is approved.
+- Prefer the database-backed controls under `/admin/settings/seo`. Keep `NEXT_PUBLIC_GA_MEASUREMENT_ID`, `NEXT_PUBLIC_GTM_ID`, `NEXT_PUBLIC_GOOGLE_ADS_ID`, and `NEXT_PUBLIC_CLOUDFLARE_BEACON_TOKEN` empty unless an environment fallback is intentionally required and analytics is approved.
 - The storefront shows a privacy-choice banner.
 - Analytics scripts load only after the visitor selects `Allow analytics`.
 - Essential marketplace storage for sign-in, cart, checkout, and preferences remains available without analytics consent.
@@ -164,6 +165,7 @@ NEXT_PUBLIC_API_TIMEOUT_MS="30000"
 
 NEXT_PUBLIC_GA_MEASUREMENT_ID=""
 NEXT_PUBLIC_GTM_ID=""
+NEXT_PUBLIC_GOOGLE_ADS_ID=""
 NEXT_PUBLIC_CLOUDFLARE_BEACON_TOKEN=""
 
 API_CORS_ORIGINS="https://1handindia.com,https://www.1handindia.com"

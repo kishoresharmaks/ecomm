@@ -5,7 +5,7 @@ export default function AdminSettingsSeoPage() {
   return (
     <AdminPortalShell
       title="SEO & Analytics Configuration"
-      description="Manage Google Search Console and Google Analytics integration settings."
+      description="Manage Google Tag Manager, Analytics 4, Ads, and Search Console integration settings."
     >
       <AdminSeoSettingsClient />
     </AdminPortalShell>

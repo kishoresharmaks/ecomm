@@ -3,6 +3,7 @@ import {
   buildBreadcrumbJsonLd,
   buildProductJsonLd,
   metadataFromSeo,
+  normalizeSeoAnalyticsSettings,
   normalizeSitemapEntries,
   privateRobotsDisallow,
   publicRobotsAllow,
@@ -171,5 +172,35 @@ describe("seo helpers", () => {
       { path: "/", source: "home" },
       { path: "/products/public-product", source: "product" },
     ]);
+  });
+
+  it("keeps GA4, GTM, and Google Ads identifiers in their correct integration fields", () => {
+    expect(
+      normalizeSeoAnalyticsSettings({
+        googleAnalyticsId: "g-test123",
+        googleTagManagerId: "gtm-container9",
+        googleAdsId: "aw-123456789",
+        googleSearchConsoleId: "verification_token-1",
+      }),
+    ).toEqual({
+      googleAnalyticsId: "G-TEST123",
+      googleTagManagerId: "GTM-CONTAINER9",
+      googleAdsId: "AW-123456789",
+      googleSearchConsoleId: "verification_token-1",
+    });
+  });
+
+  it("classifies legacy Ads IDs without presenting them as GA4 or GTM", () => {
+    expect(
+      normalizeSeoAnalyticsSettings({
+        googleAnalyticsId: "AW-123456789",
+        googleTagManagerId: "AW-123456789",
+      }),
+    ).toEqual({
+      googleAnalyticsId: "",
+      googleTagManagerId: "",
+      googleAdsId: "AW-123456789",
+      googleSearchConsoleId: "",
+    });
   });
 });

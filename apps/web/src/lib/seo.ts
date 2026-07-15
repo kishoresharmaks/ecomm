@@ -53,6 +53,13 @@ type SeoFallback = {
   type?: "website" | "article";
 };
 
+export type SeoAnalyticsSettings = {
+  googleAnalyticsId: string;
+  googleSearchConsoleId: string;
+  googleTagManagerId: string;
+  googleAdsId: string;
+};
+
 export const siteUrl = (process.env.NEXT_PUBLIC_WEB_URL ?? "https://1handindia.com").replace(/\/$/, "");
 
 export const publicRobotsAllow = ["/", "/seller/register", "/b2b/register"] as const;
@@ -456,15 +463,66 @@ async function fallbackSitemapEntries(): Promise<SitemapEntry[]> {
 }
 
 export async function getSeoSettings() {
+  const fallback = environmentSeoSettings();
+
   try {
     const response = await fetch(`${apiBaseUrl}/api/settings/seo`, {
       cache: "no-store",
     });
     if (!response.ok) {
-      return null;
+      return fallback;
     }
-    return (await response.json()) as { googleAnalyticsId?: string; googleSearchConsoleId?: string; googleTagManagerId?: string };
+    return normalizeSeoAnalyticsSettings(await response.json(), fallback);
   } catch {
-    return null;
+    return fallback;
   }
+}
+
+export function normalizeSeoAnalyticsSettings(
+  input: unknown,
+  fallback: SeoAnalyticsSettings = emptySeoAnalyticsSettings(),
+): SeoAnalyticsSettings {
+  const settings = input && typeof input === "object" ? input as Record<string, unknown> : {};
+  const rawAnalyticsId = stringValue(settings.googleAnalyticsId);
+  const rawTagManagerId = stringValue(settings.googleTagManagerId);
+  const explicitAdsId = stringValue(settings.googleAdsId);
+  const legacyAdsId = [rawAnalyticsId, rawTagManagerId].find((value) => /^AW-[0-9]+$/i.test(value));
+
+  return {
+    googleAnalyticsId: googleId(rawAnalyticsId, /^G-[A-Z0-9]+$/i) || fallback.googleAnalyticsId,
+    googleSearchConsoleId: searchConsoleToken(settings.googleSearchConsoleId) || fallback.googleSearchConsoleId,
+    googleTagManagerId: googleId(rawTagManagerId, /^GTM-[A-Z0-9]+$/i) || fallback.googleTagManagerId,
+    googleAdsId: googleId(explicitAdsId, /^AW-[0-9]+$/i) || googleId(legacyAdsId, /^AW-[0-9]+$/i) || fallback.googleAdsId,
+  };
+}
+
+function environmentSeoSettings(): SeoAnalyticsSettings {
+  return normalizeSeoAnalyticsSettings({
+    googleAnalyticsId: process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID,
+    googleTagManagerId: process.env.NEXT_PUBLIC_GTM_ID,
+    googleAdsId: process.env.NEXT_PUBLIC_GOOGLE_ADS_ID,
+  });
+}
+
+function emptySeoAnalyticsSettings(): SeoAnalyticsSettings {
+  return {
+    googleAnalyticsId: "",
+    googleSearchConsoleId: "",
+    googleTagManagerId: "",
+    googleAdsId: "",
+  };
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function googleId(value: unknown, pattern: RegExp) {
+  const normalized = stringValue(value).toUpperCase();
+  return pattern.test(normalized) ? normalized : "";
+}
+
+function searchConsoleToken(value: unknown) {
+  const normalized = stringValue(value);
+  return /^[A-Z0-9_-]+$/i.test(normalized) ? normalized : "";
 }

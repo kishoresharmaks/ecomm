@@ -3,13 +3,13 @@
 import Link from "next/link";
 import Script from "next/script";
 import { useEffect, useState } from "react";
+import { googleAnalyticsLoadPlan } from "@/lib/google-analytics";
+import type { SeoAnalyticsSettings } from "@/lib/seo";
 
 type ConsentChoice = "essential" | "analytics";
 
 const consentStorageKey = "indihub:privacy:cookie-consent";
 const consentEventName = "indihub-cookie-consent";
-const gtmId = process.env.NEXT_PUBLIC_GTM_ID?.trim();
-const gaMeasurementId = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID?.trim();
 const cloudflareBeaconToken = process.env.NEXT_PUBLIC_CLOUDFLARE_BEACON_TOKEN?.trim();
 
 export function CookieConsentBanner() {
@@ -72,14 +72,17 @@ export function CookieConsentBanner() {
   );
 }
 
-export function ConsentManagedScripts({ nonce }: { nonce: string | undefined }) {
+export function ConsentManagedScripts({
+  nonce,
+  settings,
+}: {
+  nonce: string | undefined;
+  settings: SeoAnalyticsSettings;
+}) {
   const [choice, setChoice] = useState<ConsentChoice | null>(null);
   const analyticsAllowed = choice === "analytics";
-  const googleScriptSource = gtmId
-    ? `https://www.googletagmanager.com/gtm.js?id=${encodeURIComponent(gtmId)}`
-    : gaMeasurementId
-      ? `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(gaMeasurementId)}`
-      : null;
+  const { googleTagManagerId, directGoogleIds } = googleAnalyticsLoadPlan(settings);
+  const primaryDirectGoogleId = directGoogleIds[0] ?? null;
 
   useEffect(() => {
     setChoice(readConsentChoice());
@@ -99,15 +102,33 @@ export function ConsentManagedScripts({ nonce }: { nonce: string | undefined }) 
 
   return (
     <>
-      {googleScriptSource ? <Script id="indihub-google-analytics-src" nonce={nonce} src={googleScriptSource} strategy="afterInteractive" /> : null}
-      {gaMeasurementId ? (
+      {googleTagManagerId ? (
+        <Script id="indihub-google-tag-manager" nonce={nonce} strategy="afterInteractive">
+          {`
+            (function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+            new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+            j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+            'https://www.googletagmanager.com/gtm.js?id='+i+dl;j.nonce='${nonce ?? ""}';
+            f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','${googleTagManagerId}');
+          `}
+        </Script>
+      ) : null}
+      {primaryDirectGoogleId ? (
+        <Script
+          id="indihub-google-tag-src"
+          nonce={nonce}
+          src={`https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(primaryDirectGoogleId)}`}
+          strategy="afterInteractive"
+        />
+      ) : null}
+      {directGoogleIds.length ? (
         <Script id="indihub-google-analytics-init" nonce={nonce} strategy="afterInteractive">
           {`
             window.dataLayer = window.dataLayer || [];
             function gtag(){dataLayer.push(arguments);}
             gtag('consent', 'update', { analytics_storage: 'granted' });
             gtag('js', new Date());
-            gtag('config', '${gaMeasurementId}', { anonymize_ip: true });
+            ${directGoogleIds.map((id) => `gtag('config', '${id}', { anonymize_ip: true });`).join("\n")}
           `}
         </Script>
       ) : null}

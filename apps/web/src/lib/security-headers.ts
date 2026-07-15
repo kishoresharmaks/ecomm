@@ -93,16 +93,14 @@ export function analyticsIsConfigured() {
   return Boolean(
     process.env.NEXT_PUBLIC_GTM_ID?.trim() ||
       process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID?.trim() ||
+      process.env.NEXT_PUBLIC_GOOGLE_ADS_ID?.trim() ||
       process.env.NEXT_PUBLIC_CLOUDFLARE_BEACON_TOKEN?.trim(),
   );
 }
 
 function analyticsScriptOrigins() {
-  const origins = [];
-
-  if (process.env.NEXT_PUBLIC_GTM_ID?.trim() || process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID?.trim()) {
-    origins.push("https://www.googletagmanager.com");
-  }
+  // GA/GTM IDs can be managed in PostgreSQL, which is unavailable to request-time proxy code.
+  const origins = ["https://www.googletagmanager.com"];
 
   if (process.env.NEXT_PUBLIC_CLOUDFLARE_BEACON_TOKEN?.trim()) {
     origins.push("https://static.cloudflareinsights.com");
@@ -113,10 +111,16 @@ function analyticsScriptOrigins() {
 
 function analyticsConnectionOrigins() {
   const origins = [...analyticsScriptOrigins()];
-
-  if (process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID?.trim() || process.env.NEXT_PUBLIC_GTM_ID?.trim()) {
-    origins.push("https://www.google-analytics.com", "https://analytics.google.com");
-  }
+  origins.push(
+    "https://www.google-analytics.com",
+    "https://analytics.google.com",
+    "https://*.google-analytics.com",
+    "https://*.analytics.google.com",
+    "https://www.google.com",
+    "https://google.com",
+    "https://*.google.com",
+    "https://www.googleadservices.com",
+  );
 
   return origins;
 }

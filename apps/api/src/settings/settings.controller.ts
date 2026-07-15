@@ -7,6 +7,7 @@ import { Roles } from "../auth/decorators/roles.decorator";
 import type { RequestUser } from "../auth/types/indihub-request";
 import {
   UpsertMaintenanceSettingsDto,
+  UpsertSeoAnalyticsSettingsDto,
   SettingsQueryDto,
   UpsertCheckoutPlatformFeeDto,
   UpsertContactSettingsDto,
@@ -109,6 +110,15 @@ export class SettingsController {
     return this.settingsService.upsertMaintenanceSettings(actor, dto);
   }
 
+  @Put("seo/analytics")
+  @ApiOperation({ summary: "Atomically update Google analytics, tag, ads, and site verification settings." })
+  upsertSeoAnalyticsSettings(
+    @CurrentUser() actor: RequestUser,
+    @Body() dto: UpsertSeoAnalyticsSettingsDto,
+  ) {
+    return this.settingsService.upsertSeoAnalyticsSettings(actor, dto);
+  }
+
   @Put(":key")
   @ApiOperation({ summary: "Create or update one platform setting." })
   upsertSetting(@CurrentUser() actor: RequestUser, @Param("key") key: string, @Body() dto: UpsertSettingDto) {
@@ -131,7 +141,7 @@ export class PublicSettingsController {
 
   @Get("seo")
   @Header("Cache-Control", "no-store, no-cache, must-revalidate")
-  @ApiOperation({ summary: "Read public Google Analytics and Search Console settings." })
+  @ApiOperation({ summary: "Read public Google analytics, tag, ads, and site verification settings." })
   getSeoSettings() {
     return this.settingsService.getSeoSettings();
   }

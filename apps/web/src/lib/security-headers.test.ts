@@ -16,15 +16,12 @@ describe("security header helpers", () => {
     expect(csp).toContain("report-to indihub-csp");
   });
 
-  it("only allows analytics origins when analytics is configured", () => {
-    expect(buildContentSecurityPolicy({ nonce: "nonce-value", origin: "https://1handindia.com" })).not.toContain(
-      "www.googletagmanager.com",
-    );
-
-    vi.stubEnv("NEXT_PUBLIC_GA_MEASUREMENT_ID", "G-TEST123");
-
+  it("allows database-configured Google analytics origins", () => {
     expect(buildContentSecurityPolicy({ nonce: "nonce-value", origin: "https://1handindia.com" })).toContain(
       "https://www.googletagmanager.com",
+    );
+    expect(buildContentSecurityPolicy({ nonce: "nonce-value", origin: "https://1handindia.com" })).toContain(
+      "https://www.google-analytics.com",
     );
   });
 
