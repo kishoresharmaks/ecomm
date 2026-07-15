@@ -1,5 +1,6 @@
 import {
   ArrowDown01Icon,
+  ArrowRight01Icon,
   Award01Icon,
   BellDotIcon,
   Clock01Icon,
@@ -32,14 +33,14 @@ import { SvgUri } from "react-native-svg";
 import {
   AccessibilityInfo,
   ActivityIndicator,
+  Animated,
   Image,
   ImageBackground,
-  KeyboardAvoidingView,
   type ImageStyle,
+  Keyboard,
   Modal,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
-  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -51,6 +52,7 @@ import {
   View,
   type ViewStyle,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
 import { EmptyState } from "../../src/components/empty-state";
 import { DealCard } from "../../src/components/deal-card";
@@ -160,7 +162,6 @@ const trustItems = [
   { title: "24/7 Support", subtitle: "We're here", icon: HeadsetIcon, color: "#2F80ED", background: "#EAF3FF" },
 ] satisfies Array<{ title: string; subtitle: string; icon: IconSvgElement; color: string; background: string }>;
 
-// hardcoded for now; promote to CMS only if customer quick actions need admin control
 const customerQuickActions = [
   { background: "#FFF2EE", href: "/track-order" as Href, icon: DeliveryBox01Icon, label: "Track Order", tone: colors.primary },
   { background: "#EAF9EF", href: "/orders" as Href, icon: RefreshIcon, label: "Reorder", tone: "#15935D" },
@@ -169,6 +170,13 @@ const customerQuickActions = [
   { background: "#FFF4DF", href: "/deals" as Href, icon: CouponPercentIcon, label: "Offers", tone: "#F47B20" },
   { background: "#F1E7FF", href: "/local-shops" as Href, icon: Store01Icon, label: "Nearby Stores", tone: "#7C3AED" },
 ] satisfies CustomerQuickAction[];
+
+const homeSearchSuggestions = [
+  { label: "Categories", href: "/categories?view=all" as Href },
+  { label: "Offers", href: "/deals" as Href },
+  { label: "Nearby stores", href: "/local-shops" as Href },
+  { label: "New arrivals", href: "/new-arrivals" as Href },
+] satisfies Array<{ label: string; href: Href }>;
 
 const featuredCategories = [
   {
@@ -253,6 +261,9 @@ function HomeHeader({ onOpenLocation, selectedLocation }: { onOpenLocation: () =
   const router = useRouter();
   const customerAuth = useMobileCustomerAuth();
   const [searchText, setSearchText] = useState("");
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const searchEntrance = useRef(new Animated.Value(0)).current;
+  const searchScale = useRef(new Animated.Value(1)).current;
   const cartQuery = useQuery({
     queryKey: ["mobile-cart-count", customerAuth.authKey],
     queryFn: () => getCart(customerAuth.authHeaders),
@@ -262,10 +273,33 @@ function HomeHeader({ onOpenLocation, selectedLocation }: { onOpenLocation: () =
   const cartItemCount =
     cartQuery.data?.items.reduce((total, item) => total + Math.max(0, item.quantity), 0) ?? 0;
 
-  function submitSearch() {
-    const q = searchText.trim();
+  useEffect(() => {
+    Animated.timing(searchEntrance, {
+      duration: 420,
+      toValue: 1,
+      useNativeDriver: true,
+    }).start();
+  }, [searchEntrance]);
+
+  useEffect(() => {
+    Animated.spring(searchScale, {
+      damping: 17,
+      mass: 0.8,
+      stiffness: 180,
+      toValue: isSearchFocused ? 1.015 : 1,
+      useNativeDriver: true,
+    }).start();
+  }, [isSearchFocused, searchScale]);
+
+  function submitSearch(value = searchText) {
+    const q = value.trim();
     router.push(q ? `/search?q=${encodeURIComponent(q)}` : "/search");
   }
+
+  const searchTranslateY = searchEntrance.interpolate({
+    inputRange: [0, 1],
+    outputRange: [14, 0],
+  });
 
   return (
     <View style={styles.header}>
@@ -308,21 +342,63 @@ function HomeHeader({ onOpenLocation, selectedLocation }: { onOpenLocation: () =
         </Text>
         <HugeiconsIcon color={colors.ink} icon={ArrowDown01Icon} size={15} strokeWidth={2} />
       </Pressable>
-      <View style={styles.searchBox}>
-        <HugeiconsIcon color="#B33A1B" icon={Search01Icon} size={26} strokeWidth={1.9} />
-        <TextInput
-          onChangeText={setSearchText}
-          onSubmitEditing={submitSearch}
-          placeholder="Search products, stores, brands..."
-          placeholderTextColor="#667085"
-          returnKeyType="search"
-          style={styles.searchInput}
-          value={searchText}
-        />
-        <Pressable style={styles.searchButton} onPress={submitSearch}>
-          <Text style={styles.searchButtonText}>Search</Text>
-        </Pressable>
-      </View>
+      <Animated.View
+        style={[
+          styles.searchDock,
+          isSearchFocused ? styles.searchDockFocused : null,
+          {
+            opacity: searchEntrance,
+            transform: [{ translateY: searchTranslateY }, { scale: searchScale }],
+          },
+        ]}
+      >
+        <View style={styles.searchTitleRow}>
+          <View>
+            <Text style={styles.searchEyebrow}>Find your next buy</Text>
+            <Text style={styles.searchHint}>Products, stores, categories and offers</Text>
+          </View>
+          <View style={styles.searchSpark}>
+            <HugeiconsIcon color={colors.primary} icon={FlashIcon} size={18} strokeWidth={2.2} />
+          </View>
+        </View>
+        <View style={styles.searchField}>
+          <HugeiconsIcon color={colors.primary} icon={Search01Icon} size={23} strokeWidth={2.1} />
+          <TextInput
+            accessibilityLabel="Search 1HandIndia"
+            autoCapitalize="none"
+            onBlur={() => setIsSearchFocused(false)}
+            onChangeText={setSearchText}
+            onFocus={() => setIsSearchFocused(true)}
+            onSubmitEditing={() => submitSearch()}
+            placeholder="Search for sarees, mobiles, stores..."
+            placeholderTextColor="#8A6F64"
+            returnKeyType="search"
+            style={styles.searchInput}
+            value={searchText}
+          />
+          <Pressable
+            accessibilityLabel="Submit search"
+            accessibilityRole="button"
+            style={({ pressed }) => [styles.searchButton, pressed ? styles.searchButtonPressed : null]}
+            onPress={() => submitSearch()}
+          >
+            <HugeiconsIcon color={colors.surface} icon={ArrowRight01Icon} size={22} strokeWidth={2.4} />
+          </Pressable>
+        </View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.searchSuggestionRow}>
+          {homeSearchSuggestions.map((item) => (
+            <Pressable
+              key={item.label}
+              accessibilityLabel={`Open ${item.label}`}
+              accessibilityRole="button"
+              style={({ pressed }) => [styles.searchSuggestionChip, pressed ? styles.searchSuggestionChipPressed : null]}
+              onPress={() => router.push(item.href)}
+            >
+              <Text style={styles.searchSuggestionText}>{item.label}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      </Animated.View>
       <CustomerQuickActionsRail />
     </View>
   );
@@ -386,12 +462,19 @@ function LocationSelectorModal({ open, onClose }: { open: boolean; onClose: () =
     }
   }, [market.countryCode, open, selectedLocation.countryCode, selectedLocation.label]);
 
+  function closePicker() {
+    Keyboard.dismiss();
+    onClose();
+  }
+
   function selectArea(area: LocationArea) {
+    Keyboard.dismiss();
     setSelectedLocation(locationFromArea(area));
     onClose();
   }
 
   function useCountrywide() {
+    Keyboard.dismiss();
     setSelectedLocation({
       label: selectedCountry.name,
       countryCode: selectedCountry.code,
@@ -410,34 +493,40 @@ function LocationSelectorModal({ open, onClose }: { open: boolean; onClose: () =
     <Modal
       animationType="slide"
       hardwareAccelerated
-      onRequestClose={onClose}
+      onRequestClose={closePicker}
       presentationStyle="fullScreen"
       transparent={false}
       visible={open}
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={0}
-        style={styles.modalOverlay}
-      >
-        <Pressable accessibilityLabel="Close location selector" style={styles.modalBackdrop} onPress={onClose} />
-        <View style={styles.locationSheet}>
-          <View style={styles.sheetHandle} />
-          <View style={styles.sheetHeader}>
-            <View>
-              <Text style={styles.sheetTitle}>Choose delivery location</Text>
-              <Text style={styles.sheetSubtitle}>Products and nearby stores update from backend location matching.</Text>
-            </View>
-            <Pressable style={styles.closeButton} onPress={onClose}>
-              <Text style={styles.closeButtonText}>Close</Text>
-            </Pressable>
+      <SafeAreaView style={styles.locationPickerScreen}>
+        <View style={styles.locationPickerHeader}>
+          <View style={styles.locationPickerBrandMark}>
+            <HugeiconsIcon color={colors.surface} icon={Location01Icon} size={22} strokeWidth={2.15} />
           </View>
+          <Pressable accessibilityLabel="Close location selector" style={styles.locationPickerCloseButton} onPress={closePicker}>
+            <Text style={styles.locationPickerCloseText}>Close</Text>
+          </Pressable>
+        </View>
+        <View style={styles.locationPickerHero}>
+          <Text style={styles.sheetTitle}>Choose delivery location</Text>
+          <Text style={styles.sheetSubtitle}>Products and nearby stores update for your selected area.</Text>
+          <View style={styles.currentLocationCard}>
+            <Text style={styles.currentLocationLabel}>Current selection</Text>
+            <Text numberOfLines={1} style={styles.currentLocationValue}>
+              {selectedLocation.label}
+            </Text>
+          </View>
+        </View>
+        <View style={styles.locationPickerBody}>
           <View style={styles.locationSearchBox}>
             <HugeiconsIcon color={colors.primary} icon={Search01Icon} size={22} strokeWidth={2} />
             <TextInput
+              autoCapitalize="words"
+              autoCorrect={false}
               onChangeText={setLocationSearch}
               placeholder="Search area, city, or pincode"
               placeholderTextColor={colors.muted}
+              returnKeyType="search"
               style={styles.locationSearchInput}
               value={locationSearch}
             />
@@ -449,6 +538,9 @@ function LocationSelectorModal({ open, onClose }: { open: boolean; onClose: () =
             onSelect={setCountryCode}
             onUseCountrywide={useCountrywide}
           />
+          {debouncedLocationSearch.length < 2 ? (
+            <Text style={styles.locationPrompt}>Type at least 2 characters to find local areas and pincodes.</Text>
+          ) : null}
           {locationQuery.isLoading ? (
             <View style={styles.locationLoading}>
               <ActivityIndicator color={colors.primary} />
@@ -462,6 +554,7 @@ function LocationSelectorModal({ open, onClose }: { open: boolean; onClose: () =
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
             style={styles.locationResults}
+            contentContainerStyle={styles.locationResultsContent}
           >
             {(locationQuery.data ?? []).map((area) => (
               <Pressable key={area.id} style={styles.locationResult} onPress={() => selectArea(area)}>
@@ -476,7 +569,7 @@ function LocationSelectorModal({ open, onClose }: { open: boolean; onClose: () =
             ) : null}
           </ScrollView>
         </View>
-      </KeyboardAvoidingView>
+      </SafeAreaView>
     </Modal>
   );
 }
@@ -2588,47 +2681,113 @@ const styles = StyleSheet.create({
     textAlign: "center",
     top: 2,
   },
-  searchBox: {
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 28,
+  searchDock: {
+    backgroundColor: "#FFFFFF",
+    borderColor: "#F3E7E2",
+    borderRadius: 26,
     borderWidth: 1,
     elevation: 5,
-    flexDirection: "row",
-    gap: 14,
-    marginTop: 22,
-    paddingLeft: 18,
+    marginTop: 16,
+    padding: 10,
     shadowColor: "#ED3500",
     shadowOffset: { height: 12, width: 0 },
-    shadowOpacity: 0.09,
-    shadowRadius: 30,
+    shadowOpacity: 0.08,
+    shadowRadius: 28,
+  },
+  searchDockFocused: {
+    borderColor: "#FFD6C8",
+    shadowOpacity: 0.14,
+  },
+  searchTitleRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 8,
+    paddingTop: 2,
+    paddingBottom: 9,
+  },
+  searchEyebrow: {
+    color: colors.ink,
+    fontFamily: "Plus Jakarta Sans",
+    fontSize: 14,
+    fontWeight: "900",
+    letterSpacing: 0,
+  },
+  searchHint: {
+    color: "#7A6259",
+    fontFamily: "Plus Jakarta Sans",
+    fontSize: 11,
+    fontWeight: "700",
+    lineHeight: 15,
+    marginTop: 2,
+  },
+  searchSpark: {
+    alignItems: "center",
+    backgroundColor: "#FFF2EE",
+    borderRadius: 999,
+    height: 32,
+    justifyContent: "center",
+    width: 32,
+  },
+  searchField: {
+    alignItems: "center",
+    backgroundColor: "#FFFCFB",
+    borderColor: "#F3E7E2",
+    borderRadius: 20,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    minHeight: 56,
+    paddingLeft: 14,
+    paddingRight: 5,
   },
   searchInput: {
     color: colors.ink,
     flex: 1,
     fontFamily: "Plus Jakarta Sans",
-    fontSize: 16,
-    fontWeight: "700",
-    minHeight: 72,
+    fontSize: 14.5,
+    fontWeight: "800",
+    minHeight: 52,
   },
   searchButton: {
+    alignItems: "center",
     backgroundColor: colors.primary,
-    borderRadius: 24,
+    borderRadius: 17,
     elevation: 3,
-    margin: 6,
-    minHeight: 58,
-    paddingHorizontal: 24,
-    paddingVertical: 17,
+    height: 46,
+    justifyContent: "center",
     shadowColor: colors.primary,
     shadowOffset: { height: 8, width: 0 },
     shadowOpacity: 0.16,
     shadowRadius: 18,
+    width: 48,
   },
-  searchButtonText: {
-    color: colors.surface,
+  searchButtonPressed: {
+    opacity: 0.82,
+    transform: [{ scale: 0.96 }],
+  },
+  searchSuggestionRow: {
+    gap: 8,
+    paddingHorizontal: 3,
+    paddingTop: 10,
+  },
+  searchSuggestionChip: {
+    backgroundColor: "#FFF4EF",
+    borderColor: "#FFE0D6",
+    borderRadius: 999,
+    borderWidth: 1,
+    minHeight: 34,
+    paddingHorizontal: 12,
+    justifyContent: "center",
+  },
+  searchSuggestionChipPressed: {
+    opacity: 0.78,
+    transform: [{ scale: 0.97 }],
+  },
+  searchSuggestionText: {
+    color: "#8A2E18",
     fontFamily: "Plus Jakarta Sans",
-    fontSize: 16,
+    fontSize: 11.5,
     fontWeight: "900",
   },
   quickActionsWrap: {
@@ -2673,67 +2832,84 @@ const styles = StyleSheet.create({
     marginTop: 9,
     textAlign: "center",
   },
-  modalOverlay: {
-    backgroundColor: "#2B313D",
+  locationPickerScreen: {
+    backgroundColor: colors.secondary,
     flex: 1,
-    justifyContent: "flex-end",
   },
-  modalBackdrop: {
-    ...StyleSheet.absoluteFill,
-  },
-  locationSheet: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    elevation: 24,
-    maxHeight: "92%",
-    overflow: "hidden",
-    padding: 18,
-    paddingBottom: 10,
-    shadowColor: "#111827",
-    shadowOffset: { height: -8, width: 0 },
-    shadowOpacity: 0.18,
-    shadowRadius: 24,
-  },
-  sheetHandle: {
-    alignSelf: "center",
-    backgroundColor: "#CBD5E1",
-    borderRadius: 999,
-    height: 4,
-    marginBottom: 14,
-    width: 44,
-  },
-  sheetHeader: {
-    alignItems: "flex-start",
+  locationPickerHeader: {
+    alignItems: "center",
+    backgroundColor: colors.primary,
     flexDirection: "row",
-    gap: 14,
     justifyContent: "space-between",
+    paddingHorizontal: 18,
+    paddingTop: 8,
+    paddingBottom: 10,
+  },
+  locationPickerBrandMark: {
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.18)",
+    borderColor: "rgba(255, 255, 255, 0.34)",
+    borderRadius: 16,
+    borderWidth: 1,
+    height: 42,
+    justifyContent: "center",
+    width: 42,
+  },
+  locationPickerCloseButton: {
+    backgroundColor: colors.surface,
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  locationPickerCloseText: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  locationPickerHero: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 18,
+    paddingBottom: 22,
+  },
+  currentLocationCard: {
+    backgroundColor: colors.surface,
+    borderColor: "#FFD1C3",
+    borderRadius: 16,
+    borderWidth: 1,
+    marginTop: 16,
+    padding: 14,
+  },
+  currentLocationLabel: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0.3,
+    textTransform: "uppercase",
+  },
+  currentLocationValue: {
+    color: colors.ink,
+    fontSize: 16,
+    fontWeight: "900",
+    marginTop: 4,
+  },
+  locationPickerBody: {
+    backgroundColor: colors.secondary,
+    flex: 1,
+    paddingHorizontal: 18,
+    paddingTop: 18,
   },
   sheetTitle: {
-    color: colors.ink,
-    fontSize: 21,
+    color: colors.surface,
+    fontSize: 24,
     fontWeight: "900",
+    lineHeight: 30,
   },
   sheetSubtitle: {
-    color: colors.muted,
+    color: "#FFE7DF",
     fontSize: 13,
-    fontWeight: "700",
-    lineHeight: 18,
-    marginTop: 4,
-    maxWidth: 270,
-  },
-  closeButton: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  closeButtonText: {
-    color: colors.ink,
-    fontSize: 12,
-    fontWeight: "900",
+    fontWeight: "800",
+    lineHeight: 19,
+    marginTop: 6,
   },
   locationSearchBox: {
     alignItems: "center",
@@ -2743,7 +2919,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: "row",
     gap: 9,
-    marginTop: 18,
     paddingHorizontal: 13,
   },
   locationSearchInput: {
@@ -2849,10 +3024,19 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     marginTop: 14,
   },
+  locationPrompt: {
+    color: colors.muted,
+    fontSize: 13,
+    fontWeight: "800",
+    lineHeight: 19,
+    marginTop: 14,
+  },
   locationResults: {
-    flexShrink: 1,
-    marginTop: 10,
-    maxHeight: 310,
+    flex: 1,
+    marginTop: 12,
+  },
+  locationResultsContent: {
+    paddingBottom: 34,
   },
   locationResult: {
     backgroundColor: colors.surface,

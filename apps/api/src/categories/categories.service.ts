@@ -4,6 +4,7 @@ import { createSlug } from "../common/slug";
 import { PrismaService } from "../prisma/prisma.service";
 import { SearchIndexService } from "../search/search-index.service";
 import { normalizePublicImageReference } from "../storage/storage-image";
+import { StorefrontCacheService } from "../storefront/storefront-cache.service";
 import type { RequestUser } from "../auth/types/indihub-request";
 import { CreateCategoryDto, UpdateCategoryDto } from "./dto/create-category.dto";
 
@@ -11,10 +12,17 @@ import { CreateCategoryDto, UpdateCategoryDto } from "./dto/create-category.dto"
 export class CategoriesService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(StorefrontCacheService) private readonly cache: StorefrontCacheService,
     @Optional()
     @Inject(SearchIndexService)
     private readonly searchIndex?: SearchIndexService,
   ) {}
+
+  private async invalidateHomepageCache() {
+    if (this.cache.isAvailable()) {
+      await this.cache.deletePattern("home:*");
+    }
+  }
 
   private readonly productTemplateInclude = {
     fields: {
@@ -144,6 +152,7 @@ export class CategoriesService {
     });
 
     await this.enqueueCategorySearchIndex(category.id, "category-created");
+    await this.invalidateHomepageCache();
     return category;
   }
 
@@ -201,6 +210,7 @@ export class CategoriesService {
     });
 
     await this.enqueueCategorySearchIndex(category.id, "category-updated");
+    await this.invalidateHomepageCache();
     return category;
   }
 
@@ -237,6 +247,7 @@ export class CategoriesService {
     });
 
     await this.enqueueCategorySearchIndex(category.id, "category-archived");
+    await this.invalidateHomepageCache();
     return category;
   }
 

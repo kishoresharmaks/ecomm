@@ -8,8 +8,10 @@ import { ProductsController } from "./products.controller";
 import { ProductsService } from "./products.service";
 import { SellerProductsController } from "./seller-products.controller";
 
+import { StorefrontCacheModule } from "../storefront/storefront-cache.module";
+
 @Module({
-  imports: [DealsModule, NotificationsModule, SearchModule, SellersModule],
+  imports: [DealsModule, NotificationsModule, SearchModule, SellersModule, StorefrontCacheModule],
   controllers: [ProductsController, SellerProductsController, AdminProductsController],
   providers: [ProductsService]
 })

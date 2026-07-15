@@ -79,5 +79,9 @@ export function Providers({ children, nonce }: { children: ReactNode; nonce: str
     return app;
   }
 
-  return <ClerkProvider publishableKey={clerkPublishableKey}>{app}</ClerkProvider>;
+  return (
+    <ClerkProvider publishableKey={clerkPublishableKey} {...(nonce ? { nonce } : {})}>
+      {app}
+    </ClerkProvider>
+  );
 }

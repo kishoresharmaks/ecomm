@@ -909,7 +909,7 @@ export class NotificationsService {
       data: rendered,
     });
 
-    await this.deliverAndUpdateLog(payload);
+    await this.dispatchEmailNotification(payload);
 
     return this.prisma.client.notificationLog.findUnique({
       where: { id: log.id },
@@ -1017,7 +1017,7 @@ export class NotificationsService {
       templateCode: template.code,
     };
 
-    await this.deliverAndUpdateLog(payload);
+    await this.dispatchEmailNotification(payload);
 
     return this.prisma.client.notificationLog.findUnique({
       where: { id: log.id },
@@ -1083,11 +1083,26 @@ export class NotificationsService {
       templateCode: template.code,
     };
 
-    await this.deliverAndUpdateLog(payload);
+    await this.dispatchEmailNotification(payload);
 
     return this.prisma.client.notificationLog.findUnique({
       where: { id: log.id },
     });
+  }
+
+  private async dispatchEmailNotification(payload: EmailJobPayload) {
+    if (this._queue.isAvailable()) {
+      const enqueued = await this._queue.enqueueEmail(payload);
+      if (enqueued) {
+        this.logger.log(`Enqueued email notification ${payload.notificationLogId} to Redis Queue.`);
+        return;
+      }
+    }
+
+    this.logger.log(
+      `Queue unavailable. Delivering email notification ${payload.notificationLogId} synchronously.`,
+    );
+    await this.deliverAndUpdateLog(payload);
   }
 
   private async deliverAndUpdateLog(payload: EmailJobPayload) {

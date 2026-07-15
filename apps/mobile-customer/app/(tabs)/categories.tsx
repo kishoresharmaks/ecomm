@@ -73,6 +73,10 @@ function CategoriesScreen() {
     [categories, searchText, sortMode],
   );
   const popularCategories = useMemo(() => categoriesForOverview(categories), [categories]);
+  const visibleSubcategoryGroups = useMemo(
+    () => subcategoryGroups(filteredCategories),
+    [filteredCategories],
+  );
   const allColumnCount = width >= 360 ? 3 : 2;
 
   function showAllCategories() {
@@ -143,9 +147,9 @@ function CategoriesScreen() {
                     index={index}
                   />
                 ))}
-                <RequestCategoryTile columnCount={allColumnCount} index={filteredCategories.length} />
               </View>
             )}
+            <SubcategoryDirectory groups={visibleSubcategoryGroups} />
           </>
         ) : (
           <>
@@ -409,6 +413,105 @@ function PopularCategoryCard({
   );
 }
 
+function SubcategoryDirectory({
+  groups,
+}: {
+  groups: Array<{ parent: MobileCategory; children: MobileCategory[] }>;
+}) {
+  if (!groups.length) {
+    return null;
+  }
+
+  return (
+    <View style={styles.subcategoryDirectory}>
+      <View style={styles.directoryTitleRow}>
+        <View>
+          <Text style={styles.directoryTitle}>Browse Subcategories</Text>
+          <Text style={styles.directorySubtitle}>Quickly jump into focused product collections</Text>
+        </View>
+      </View>
+      {groups.map((group) => (
+        <SubcategoryFamily key={group.parent.id} group={group} />
+      ))}
+    </View>
+  );
+}
+
+function SubcategoryFamily({
+  group,
+}: {
+  group: { parent: MobileCategory; children: MobileCategory[] };
+}) {
+  const router = useRouter();
+  const visual = categoryVisual(group.parent);
+  const parentImageUrl = resolveImageUrl(group.parent.imageUrl);
+
+  return (
+    <View style={styles.familyPanel}>
+      <Pressable
+        accessibilityLabel={`Open ${group.parent.name}`}
+        accessibilityRole="button"
+        style={styles.familyHeader}
+        onPress={() => router.push(`/category/${group.parent.slug}` as never)}
+      >
+        <View style={[styles.familyParentIcon, { backgroundColor: visual.background }]}>
+          {parentImageUrl ? (
+            <RemoteImage fallbackLabel={group.parent.name} resizeMode="cover" style={styles.familyParentImage} uri={parentImageUrl} />
+          ) : (
+            <HugeiconsIcon color={visual.accent} icon={visual.icon} size={24} strokeWidth={2.1} />
+          )}
+        </View>
+        <View style={styles.familyHeaderCopy}>
+          <Text numberOfLines={1} style={styles.familyTitle}>
+            {group.parent.name}
+          </Text>
+          <Text numberOfLines={1} style={styles.familyMeta}>
+            {group.children.length} subcategories
+          </Text>
+        </View>
+        <HugeiconsIcon color={colors.primary} icon={ArrowRight01Icon} size={20} strokeWidth={2.3} />
+      </Pressable>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.familyRail}>
+        {group.children.map((child) => (
+          <SubcategoryRailCard key={child.id} category={child} />
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
+
+function SubcategoryRailCard({ category }: { category: MobileCategory }) {
+  const router = useRouter();
+  const visual = categoryVisual(category);
+  const imageUrl = resolveImageUrl(category.imageUrl);
+
+  return (
+    <Pressable
+      accessibilityLabel={`Open ${category.name}`}
+      accessibilityRole="button"
+      style={styles.familyRailCard}
+      onPress={() => router.push(`/category/${category.slug}` as never)}
+    >
+      <View style={[styles.familyRailImageWrap, { backgroundColor: visual.background }]}>
+        {imageUrl ? (
+          <RemoteImage fallbackLabel={category.name} resizeMode="cover" style={styles.familyRailImage} uri={imageUrl} />
+        ) : (
+          <HugeiconsIcon color={visual.accent} icon={visual.icon} size={28} strokeWidth={2.1} />
+        )}
+      </View>
+      <Text numberOfLines={2} style={styles.familyRailTitle}>
+        {category.name}
+      </Text>
+      <View style={styles.familyRailFooter}>
+        <Text numberOfLines={1} style={styles.familyRailMeta}>
+          {category._count?.products ?? 0} products
+        </Text>
+        <HugeiconsIcon color="#6B7280" icon={ArrowRight01Icon} size={15} strokeWidth={2.2} />
+      </View>
+    </Pressable>
+  );
+}
+
 function DiscoverMoreCard({ onPress }: { onPress: () => void }) {
   return (
     <Pressable accessibilityRole="button" style={styles.discoverCard} onPress={onPress}>
@@ -522,28 +625,6 @@ function AllCategoryTile({
   );
 }
 
-function RequestCategoryTile({ columnCount, index }: { columnCount: number; index: number }) {
-  const router = useRouter();
-
-  return (
-    <Pressable
-      accessibilityLabel="Request a category"
-      accessibilityRole="button"
-      style={[styles.requestTile, tileSpacing(columnCount, index)]}
-      onPress={() => router.push("/support" as never)}
-    >
-      <View style={styles.requestTileIcon}>
-        <HugeiconsIcon color="#FFFFFF" icon={ShoppingBagIcon} size={25} strokeWidth={2.2} />
-      </View>
-      <Text style={styles.requestTitle}>Can't find what you're looking for?</Text>
-      <Text style={styles.requestText}>Request a new category and we'll add it.</Text>
-      <View style={styles.requestButton}>
-        <Text style={styles.requestButtonText}>Request Category</Text>
-      </View>
-    </Pressable>
-  );
-}
-
 function LoadingState() {
   return (
     <View style={styles.loading}>
@@ -587,6 +668,15 @@ function filterCategories(categories: MobileCategory[], searchText: string, sort
 
 function categoriesForOverview(categories: MobileCategory[]) {
   return [...categories].sort((a, b) => categoryStrength(b) - categoryStrength(a)).slice(0, 3);
+}
+
+function subcategoryGroups(categories: MobileCategory[]) {
+  return categories
+    .map((parent) => ({
+      parent,
+      children: [...(parent.children ?? [])].sort((a, b) => categoryStrength(b) - categoryStrength(a)),
+    }))
+    .filter((group) => group.children.length > 0);
 }
 
 function categoryStrength(category: MobileCategory) {
@@ -920,19 +1010,19 @@ const styles = StyleSheet.create({
   },
   popularCardWide: {
     flexDirection: "row",
-    minHeight: 164,
+    height: 178,
   },
   popularWideContent: {
     flex: 1,
     justifyContent: "space-between",
+    minWidth: 0,
   },
   popularImageWrap: {
     height: 156,
     position: "relative",
   },
   wideImageWrap: {
-    height: "100%",
-    minHeight: 164,
+    height: 178,
     width: "42%",
   },
   popularImage: {
@@ -1018,6 +1108,124 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontSize: 13,
     fontWeight: "900",
+  },
+  subcategoryDirectory: {
+    marginTop: 26,
+    gap: 14,
+  },
+  directoryTitleRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  directoryTitle: {
+    color: colors.ink,
+    fontSize: 18,
+    fontWeight: "900",
+    letterSpacing: 0,
+  },
+  directorySubtitle: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 17,
+    marginTop: 3,
+  },
+  familyPanel: {
+    backgroundColor: "#FFFFFF",
+    borderColor: colors.border,
+    borderRadius: 16,
+    borderWidth: 1,
+    overflow: "hidden",
+    paddingBottom: 13,
+    shadowColor: "#111827",
+    shadowOffset: { height: 7, width: 0 },
+    shadowOpacity: 0.04,
+    shadowRadius: 16,
+  },
+  familyHeader: {
+    alignItems: "center",
+    borderBottomColor: "#F3E7E2",
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    gap: 11,
+    minHeight: 62,
+    paddingHorizontal: 13,
+    paddingVertical: 10,
+  },
+  familyParentIcon: {
+    alignItems: "center",
+    borderRadius: 12,
+    height: 42,
+    justifyContent: "center",
+    overflow: "hidden",
+    width: 42,
+  },
+  familyParentImage: {
+    height: "100%",
+    width: "100%",
+  },
+  familyHeaderCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  familyTitle: {
+    color: colors.ink,
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  familyMeta: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: "700",
+    marginTop: 2,
+  },
+  familyRail: {
+    gap: 11,
+    paddingHorizontal: 13,
+    paddingTop: 13,
+  },
+  familyRailCard: {
+    backgroundColor: "#FFFCFB",
+    borderColor: "#F3E7E2",
+    borderRadius: 13,
+    borderWidth: 1,
+    minHeight: 136,
+    padding: 10,
+    width: 112,
+  },
+  familyRailImageWrap: {
+    alignItems: "center",
+    alignSelf: "center",
+    borderRadius: 999,
+    height: 54,
+    justifyContent: "center",
+    overflow: "hidden",
+    width: 54,
+  },
+  familyRailImage: {
+    height: "100%",
+    width: "100%",
+  },
+  familyRailTitle: {
+    color: colors.ink,
+    fontSize: 11,
+    fontWeight: "900",
+    lineHeight: 15,
+    marginTop: 10,
+    minHeight: 30,
+  },
+  familyRailFooter: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 7,
+  },
+  familyRailMeta: {
+    color: "#6B7280",
+    flex: 1,
+    fontSize: 9,
+    fontWeight: "800",
   },
   discoverCard: {
     alignItems: "center",
@@ -1204,49 +1412,6 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 10,
     fontWeight: "800",
-  },
-  requestTile: {
-    backgroundColor: "#FFF4EF",
-    borderColor: "#FFE1D6",
-    borderRadius: 13,
-    borderWidth: 1,
-    minHeight: 138,
-    padding: 10,
-  },
-  requestTileIcon: {
-    alignItems: "center",
-    backgroundColor: colors.primary,
-    borderRadius: 11,
-    height: 36,
-    justifyContent: "center",
-    width: 36,
-  },
-  requestTitle: {
-    color: colors.ink,
-    fontSize: 11,
-    fontWeight: "900",
-    lineHeight: 15,
-    marginTop: 8,
-  },
-  requestText: {
-    color: "#6B7280",
-    fontSize: 9,
-    fontWeight: "700",
-    lineHeight: 13,
-    marginTop: 4,
-  },
-  requestButton: {
-    alignItems: "center",
-    backgroundColor: colors.primary,
-    borderRadius: 8,
-    justifyContent: "center",
-    marginTop: 9,
-    minHeight: 30,
-  },
-  requestButtonText: {
-    color: "#FFFFFF",
-    fontSize: 10,
-    fontWeight: "900",
   },
   loading: {
     alignItems: "center",

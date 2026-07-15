@@ -11,6 +11,7 @@ describe("StorefrontService homepage personalization cache", () => {
         listPublishedMenuItems: vi.fn().mockResolvedValue([]),
       } as never,
       {} as never,
+      { isAvailable: vi.fn().mockReturnValue(false) } as never,
       undefined,
       undefined,
     );

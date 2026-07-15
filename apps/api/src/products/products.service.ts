@@ -48,6 +48,7 @@ import { SearchIndexService } from "../search/search-index.service";
 import { readBooleanSetting } from "../settings/setting-value-utils";
 import { SellerSubscriptionsService } from "../sellers/seller-subscriptions.service";
 import { DealPricingService } from "../deals/deal-pricing.service";
+import { StorefrontCacheService } from "../storefront/storefront-cache.service";
 import {
   normalizeStorageImageReference,
   safeStorageFolderSegment,
@@ -201,6 +202,7 @@ export class ProductsService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(NotificationsService) private readonly notifications: NotificationsService,
+    @Inject(StorefrontCacheService) private readonly cache: StorefrontCacheService,
     @Optional()
     @Inject(SellerSubscriptionsService)
     private readonly sellerSubscriptions?: SellerSubscriptionsService,
@@ -211,6 +213,12 @@ export class ProductsService {
     @Inject(SearchIndexService)
     private readonly searchIndex?: SearchIndexService,
   ) {}
+
+  private async invalidateHomepageCache() {
+    if (this.cache.isAvailable()) {
+      await this.cache.deletePattern("home:*");
+    }
+  }
 
   async listPublicProducts(query: ProductQueryDto) {
     const search = query.search?.trim();
@@ -482,6 +490,7 @@ export class ProductsService {
       product.categoryId,
     );
     await this.notifyProductSubmission(product, autoApproveProduct);
+    await this.invalidateHomepageCache();
 
     return product;
   }
@@ -659,6 +668,7 @@ export class ProductsService {
       product.categoryId,
     );
     await this.notifyProductSubmission(product, autoApproveProduct);
+    await this.invalidateHomepageCache();
 
     return product;
   }
@@ -686,6 +696,7 @@ export class ProductsService {
     });
 
     await this.enqueueProductSearchIndex(product.id, "product-archived", product.sellerId, product.categoryId);
+    await this.invalidateHomepageCache();
     return product;
   }
 
@@ -727,6 +738,7 @@ export class ProductsService {
     });
 
     await this.enqueueProductSearchIndex(updatedProduct.id, "admin-product-archived", updatedProduct.sellerId, updatedProduct.categoryId);
+    await this.invalidateHomepageCache();
     return this.getProductByIdOrThrow(productId);
   }
 
@@ -845,6 +857,7 @@ export class ProductsService {
     });
 
     await this.enqueueProductSearchIndex(product.id, approved ? "product-approved" : "product-rejected", product.sellerId, product.categoryId);
+    await this.invalidateHomepageCache();
     return product;
   }
 

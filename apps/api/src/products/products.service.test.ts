@@ -104,7 +104,7 @@ describe("ProductsService", () => {
 
   it("keeps new public product details visible when stock is zero", async () => {
     prisma.client.product.findFirst.mockResolvedValue(publicProductWithStock("New", 0));
-    const service = new ProductsService(prisma as never, notifications as never);
+    const service = new ProductsService(prisma as never, notifications as never, { isAvailable: () => false } as never);
 
     await expect(service.getPublicProduct("product-1")).resolves.toMatchObject({
       slug: "product-1",
@@ -116,7 +116,7 @@ describe("ProductsService", () => {
     "hides sold %s product details from public storefront",
     async (condition) => {
       prisma.client.product.findFirst.mockResolvedValue(publicProductWithStock(condition, 0));
-      const service = new ProductsService(prisma as never, notifications as never);
+      const service = new ProductsService(prisma as never, notifications as never, { isAvailable: () => false } as never);
 
       await expect(service.getPublicProduct("product-1")).rejects.toBeInstanceOf(NotFoundException);
     },
@@ -124,7 +124,7 @@ describe("ProductsService", () => {
 
   it("keeps used public product details visible when active stock remains", async () => {
     prisma.client.product.findFirst.mockResolvedValue(publicProductWithStock("Used", 1));
-    const service = new ProductsService(prisma as never, notifications as never);
+    const service = new ProductsService(prisma as never, notifications as never, { isAvailable: () => false } as never);
 
     await expect(service.getPublicProduct("product-1")).resolves.toMatchObject({
       slug: "product-1",
@@ -138,7 +138,7 @@ describe("ProductsService", () => {
       status: SellerStatus.PENDING_APPROVAL,
       approvalStatus: ApprovalStatus.PENDING_APPROVAL,
     });
-    const service = new ProductsService(prisma as never, notifications as never);
+    const service = new ProductsService(prisma as never, notifications as never, { isAvailable: () => false } as never);
 
     await expect(
       service.createSellerProduct(
@@ -164,6 +164,7 @@ describe("ProductsService", () => {
     const service = new ProductsService(
       prisma as never,
       notifications as never,
+      { isAvailable: () => false } as never,
       sellerSubscriptionAllowsProductCreation() as never,
     );
 
@@ -194,7 +195,7 @@ describe("ProductsService", () => {
       status: SellerStatus.APPROVED,
       approvalStatus: ApprovalStatus.APPROVED,
     });
-    const service = new ProductsService(prisma as never, notifications as never, sellerSubscriptions as never);
+    const service = new ProductsService(prisma as never, notifications as never, { isAvailable: () => false } as never, sellerSubscriptions as never);
 
     await expect(
       service.createSellerProduct(
@@ -250,6 +251,7 @@ describe("ProductsService", () => {
     const service = new ProductsService(
       prisma as never,
       notifications as never,
+      { isAvailable: () => false } as never,
       sellerSubscriptionAllowsProductCreation() as never,
     );
 
@@ -334,7 +336,7 @@ describe("ProductsService", () => {
         user: { email: "seller@example.com" },
       },
     });
-    const service = new ProductsService(prisma as never, notifications as never);
+    const service = new ProductsService(prisma as never, notifications as never, { isAvailable: () => false } as never);
 
     const result = await service.updateProductApproval(
       "product_1",
@@ -389,7 +391,7 @@ describe("ProductsService", () => {
         user: { email: "seller@example.com" },
       },
     });
-    const service = new ProductsService(prisma as never, notifications as never);
+    const service = new ProductsService(prisma as never, notifications as never, { isAvailable: () => false } as never);
 
     await expect(
       service.updateProductApproval(
@@ -405,7 +407,7 @@ describe("ProductsService", () => {
 
   it("throws when product approval targets a deleted or missing product", async () => {
     prisma.client.product.findFirst.mockResolvedValue(null);
-    const service = new ProductsService(prisma as never, notifications as never);
+    const service = new ProductsService(prisma as never, notifications as never, { isAvailable: () => false } as never);
 
     await expect(
       service.updateProductApproval(
@@ -439,7 +441,7 @@ describe("ProductsService", () => {
       approvalStatus: ApprovalStatus.APPROVED,
       deletedAt: new Date("2026-05-24T00:00:00.000Z"),
     });
-    const service = new ProductsService(prisma as never, notifications as never);
+    const service = new ProductsService(prisma as never, notifications as never, { isAvailable: () => false } as never);
 
     const result = await service.archiveAdminProduct(
       { id: "admin_1", clerkUserId: null, email: "admin@example.com", roles: [] },

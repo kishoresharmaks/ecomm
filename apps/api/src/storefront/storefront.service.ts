@@ -17,6 +17,7 @@ import { isSoldResaleProduct } from "@indihub/shared-types";
 import { ClerkAuthService } from "../auth/clerk-auth.service";
 import { CmsService } from "../cms/cms.service";
 import { paginationFromQuery } from "../common/pagination";
+import { StorefrontCacheService } from "./storefront-cache.service";
 import { DealPricingService } from "../deals/deal-pricing.service";
 import { MarketService } from "../market/market.service";
 import { ProductQueryDto } from "../products/dto/product-query.dto";
@@ -186,6 +187,7 @@ export class StorefrontService {
     @Inject(CmsService) private readonly cms: CmsService,
     @Inject(StorefrontStoreRankingService)
     private readonly storeRanking: StorefrontStoreRankingService,
+    @Inject(StorefrontCacheService) private readonly cache: StorefrontCacheService,
     @Optional()
     @Inject(ClerkAuthService)
     private readonly clerkAuthService?: ClerkAuthService,
@@ -199,21 +201,21 @@ export class StorefrontService {
     const customerId =
       options.customerId ?? (await this.resolveOptionalHomepageCustomerId(options)) ?? null;
     const cacheKey = `home:${this.homeLocationCacheKey(query)}:${this.homeViewerCacheKey(customerId)}`;
-    const cached = this.readHomePayloadCache(cacheKey);
+    const cached = await this.readHomePayloadCache(cacheKey);
     if (cached) {
       return cached;
     }
 
     try {
       const payload = await retryTransientPrismaRead(() => this.getHomePayload(query, { customerId }));
-      this.writeHomePayloadCache(cacheKey, payload);
+      await this.writeHomePayloadCache(cacheKey, payload);
       return payload;
     } catch (error) {
       if (!isTransientPrismaConnectionError(error)) {
         throw error;
       }
 
-      const stale = this.readHomePayloadCache(cacheKey, { allowStale: true });
+      const stale = await this.readHomePayloadCache(cacheKey, { allowStale: true });
       if (stale) {
         this.logger.warn("Transient database connection issue while reading homepage; returning stale homepage cache.");
         return stale;
@@ -873,14 +875,14 @@ export class StorefrontService {
     operation: () => Promise<T>,
     fallback: T,
   ) {
-    const cached = this.readHomeCache<T>(cacheKey);
+    const cached = await this.readHomeCache<T>(cacheKey);
 
     try {
       const value = await retryTransientPrismaRead(
         () => withTimeout(operation(), HOME_OPTIONAL_READ_TIMEOUT_MS, label),
         { attempts: 2, delayMs: 250 },
       );
-      this.writeHomeCache(cacheKey, value);
+      await this.writeHomeCache(cacheKey, value);
       return value;
     } catch (error) {
       if (!isHomeOptionalReadFallbackError(error)) {
@@ -893,7 +895,12 @@ export class StorefrontService {
     }
   }
 
-  private readHomeCache<T>(cacheKey: string) {
+  private async readHomeCache<T>(cacheKey: string): Promise<T | undefined> {
+    if (this.cache.isAvailable()) {
+      const cached = await this.cache.get<T>(cacheKey);
+      return cached ?? undefined;
+    }
+
     const cached = homeOptionalReadCache.get(cacheKey);
     if (!cached || cached.expiresAt <= Date.now()) {
       homeOptionalReadCache.delete(cacheKey);
@@ -903,14 +910,24 @@ export class StorefrontService {
     return cached.value as T;
   }
 
-  private writeHomeCache<T>(cacheKey: string, value: T) {
+  private async writeHomeCache<T>(cacheKey: string, value: T): Promise<void> {
+    if (this.cache.isAvailable()) {
+      await this.cache.set(cacheKey, value, HOME_OPTIONAL_CACHE_TTL_MS);
+      return;
+    }
+
     homeOptionalReadCache.set(cacheKey, {
       expiresAt: Date.now() + HOME_OPTIONAL_CACHE_TTL_MS,
       value,
     });
   }
 
-  private readHomePayloadCache<T>(cacheKey: string, options: { allowStale?: boolean } = {}) {
+  private async readHomePayloadCache<T>(cacheKey: string, options: { allowStale?: boolean } = {}): Promise<T | undefined> {
+    if (this.cache.isAvailable()) {
+      const cached = await this.cache.get<T>(cacheKey);
+      return cached ?? undefined;
+    }
+
     const cached = homePayloadCache.get(cacheKey);
     if (!cached) {
       return undefined;
@@ -924,11 +941,26 @@ export class StorefrontService {
     return cached.value as T;
   }
 
-  private writeHomePayloadCache<T>(cacheKey: string, value: T) {
+  private async writeHomePayloadCache<T>(cacheKey: string, value: T): Promise<void> {
+    if (this.cache.isAvailable()) {
+      await this.cache.set(cacheKey, value, HOME_PAYLOAD_CACHE_TTL_MS);
+      return;
+    }
+
     homePayloadCache.set(cacheKey, {
       expiresAt: Date.now() + HOME_PAYLOAD_CACHE_TTL_MS,
       value,
     });
+  }
+
+  async invalidateHomepageCache(): Promise<void> {
+    if (this.cache.isAvailable()) {
+      await this.cache.deletePattern("home:*");
+    } else {
+      homePayloadCache.clear();
+      homeOptionalReadCache.clear();
+    }
+    this.logger.log("Homepage cache invalidated.");
   }
 
   private homeLocationCacheKey(query: PublicSellerQueryDto) {

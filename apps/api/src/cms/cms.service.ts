@@ -5,6 +5,7 @@ import { paginationFromQuery } from "../common/pagination";
 import { createSlug } from "../common/slug";
 import { PrismaService } from "../prisma/prisma.service";
 import { isTransientPrismaConnectionError, retryTransientPrismaRead } from "../prisma/transient-read-retry";
+import { StorefrontCacheService } from "../storefront/storefront-cache.service";
 import { normalizeStorageImageReference } from "../storage/storage-image";
 import { CreateBannerDto, UpdateBannerDto } from "./dto/banner.dto";
 import { CreateCmsMediaDto, CmsMediaQueryDto, UpdateCmsMediaDto } from "./dto/cms-media.dto";
@@ -102,7 +103,16 @@ function jsonRecord(value: Prisma.JsonValue): Record<string, unknown> {
 export class CmsService {
   private readonly logger = new Logger(CmsService.name);
 
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(StorefrontCacheService) private readonly cache: StorefrontCacheService,
+  ) {}
+
+  private async invalidateHomepageCache() {
+    if (this.cache.isAvailable()) {
+      await this.cache.deletePattern("home:*");
+    }
+  }
 
   listPublishedBanners() {
     const now = new Date();
@@ -517,6 +527,7 @@ export class CmsService {
     });
     await this.audit(actor, "cms.menu.created", "cms_menu_item", menuItem.id, undefined, menuItem);
     await this.recordRevision(actor, "cms_menu_item", menuItem.id, "created", menuItem);
+    await this.invalidateHomepageCache();
     return menuItem;
   }
 
@@ -539,6 +550,7 @@ export class CmsService {
     });
     await this.audit(actor, "cms.menu.updated", "cms_menu_item", menuItem.id, existing, menuItem);
     await this.recordRevision(actor, "cms_menu_item", menuItem.id, "updated", menuItem);
+    await this.invalidateHomepageCache();
     return menuItem;
   }
 
@@ -550,6 +562,7 @@ export class CmsService {
     });
     await this.audit(actor, "cms.menu.archived", "cms_menu_item", menuItem.id, existing, menuItem);
     await this.recordRevision(actor, "cms_menu_item", menuItem.id, "archived", menuItem);
+    await this.invalidateHomepageCache();
     return menuItem;
   }
 
@@ -716,6 +729,7 @@ export class CmsService {
     });
     await this.audit(actor, "cms.banner.created", "banner", banner.id, undefined, banner);
     await this.recordRevision(actor, "banner", banner.id, "created", banner);
+    await this.invalidateHomepageCache();
     return banner;
   }
 
@@ -753,6 +767,7 @@ export class CmsService {
     });
     await this.audit(actor, "cms.banner.updated", "banner", banner.id, existing, banner);
     await this.recordRevision(actor, "banner", banner.id, "updated", banner);
+    await this.invalidateHomepageCache();
     return banner;
   }
 
@@ -761,6 +776,7 @@ export class CmsService {
     await this.prisma.client.banner.delete({ where: { id: bannerId } });
     await this.audit(actor, "cms.banner.deleted", "banner", bannerId, existing);
     await this.recordRevision(actor, "banner", bannerId, "deleted", existing);
+    await this.invalidateHomepageCache();
     return { deleted: true };
   }
 
@@ -796,6 +812,7 @@ export class CmsService {
     });
     await this.audit(actor, "cms.homepage_section.created", "homepage_section", section.id, undefined, section);
     await this.recordRevision(actor, "homepage_section", section.id, "created", section);
+    await this.invalidateHomepageCache();
     return section;
   }
 
@@ -813,6 +830,7 @@ export class CmsService {
     });
     await this.audit(actor, "cms.homepage_section.updated", "homepage_section", section.id, existing, section);
     await this.recordRevision(actor, "homepage_section", section.id, "updated", section);
+    await this.invalidateHomepageCache();
     return section;
   }
 
@@ -821,6 +839,7 @@ export class CmsService {
     await this.prisma.client.homepageSection.delete({ where: { id: sectionId } });
     await this.audit(actor, "cms.homepage_section.deleted", "homepage_section", sectionId, existing);
     await this.recordRevision(actor, "homepage_section", sectionId, "deleted", existing);
+    await this.invalidateHomepageCache();
     return { deleted: true };
   }
 

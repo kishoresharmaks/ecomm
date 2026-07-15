@@ -569,14 +569,14 @@ describe("NotificationsService", () => {
       data: { delayMinutes: 0 },
       include: { template: { include: { theme: true } } },
     });
-    expect(queue.enqueueEmail).not.toHaveBeenCalled();
-    expect(emailDelivery.deliver).toHaveBeenCalledWith(
+    expect(queue.enqueueEmail).toHaveBeenCalledWith(
       expect.objectContaining({
         notificationLogId: "log_delayed",
         templateCode: "CUSTOMER_ACCOUNT_CREATED",
-        subject: "Welcome Priya",
+        recipient: "customer@example.com",
       }),
     );
+    expect(emailDelivery.deliver).not.toHaveBeenCalled();
   });
 
   it("still sends legacy delayed trigger email immediately when queue is unavailable", async () => {
