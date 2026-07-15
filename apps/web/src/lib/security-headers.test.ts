@@ -17,12 +17,20 @@ describe("security header helpers", () => {
   });
 
   it("allows database-configured Google analytics origins", () => {
-    expect(buildContentSecurityPolicy({ nonce: "nonce-value", origin: "https://1handindia.com" })).toContain(
-      "https://www.googletagmanager.com",
-    );
-    expect(buildContentSecurityPolicy({ nonce: "nonce-value", origin: "https://1handindia.com" })).toContain(
-      "https://www.google-analytics.com",
-    );
+    const csp = buildContentSecurityPolicy({ nonce: "nonce-value", origin: "https://1handindia.com" });
+    const scriptDirective = directive(csp, "script-src");
+    const connectDirective = directive(csp, "connect-src");
+    const frameDirective = directive(csp, "frame-src");
+
+    expect(scriptDirective).toContain("https://www.googletagmanager.com");
+    expect(scriptDirective).toContain("https://pagead2.googlesyndication.com");
+    expect(scriptDirective).toContain("https://googleads.g.doubleclick.net");
+    expect(connectDirective).toContain("https://www.google-analytics.com");
+    expect(connectDirective).toContain("https://pagead2.googlesyndication.com");
+    expect(connectDirective).toContain("https://googleads.g.doubleclick.net");
+    expect(connectDirective).toContain("https://*.g.doubleclick.net");
+    expect(connectDirective).toContain("https://ad.doubleclick.net");
+    expect(frameDirective).toContain("https://www.googletagmanager.com");
   });
 
   it("emits a report-to endpoint for the production web origin", () => {
@@ -35,3 +43,7 @@ describe("security header helpers", () => {
     });
   });
 });
+
+function directive(csp: string, name: string) {
+  return csp.split("; ").find((item) => item.startsWith(`${name} `)) ?? "";
+}

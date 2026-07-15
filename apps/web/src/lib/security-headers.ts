@@ -50,7 +50,14 @@ export function buildContentSecurityPolicy({ nonce, origin }: SecurityHeaderOpti
       ...sentryOrigins,
       ...parseCsvOrigins(process.env.NEXT_PUBLIC_CSP_CONNECT_SRC),
     ],
-    ["frame-src", ...razorpayOrigins, ...clerkOrigins, ...turnstileOrigins, ...parseCsvOrigins(process.env.NEXT_PUBLIC_CSP_FRAME_SRC)],
+    [
+      "frame-src",
+      "https://www.googletagmanager.com",
+      ...razorpayOrigins,
+      ...clerkOrigins,
+      ...turnstileOrigins,
+      ...parseCsvOrigins(process.env.NEXT_PUBLIC_CSP_FRAME_SRC),
+    ],
     ["worker-src", "'self'", "blob:"],
     ["manifest-src", "'self'"],
     ["form-action", "'self'", ...razorpayOrigins],
@@ -92,7 +99,13 @@ export function analyticsIsConfigured() {
 
 function analyticsScriptOrigins() {
   // GA/GTM IDs can be managed in PostgreSQL, which is unavailable to request-time proxy code.
-  const origins = ["https://www.googletagmanager.com"];
+  const origins = [
+    "https://www.googletagmanager.com",
+    "https://www.googleadservices.com",
+    "https://www.google.com",
+    "https://pagead2.googlesyndication.com",
+    "https://googleads.g.doubleclick.net",
+  ];
 
   if (process.env.NEXT_PUBLIC_CLOUDFLARE_BEACON_TOKEN?.trim()) {
     origins.push("https://static.cloudflareinsights.com");
@@ -112,6 +125,10 @@ function analyticsConnectionOrigins() {
     "https://google.com",
     "https://*.google.com",
     "https://www.googleadservices.com",
+    "https://pagead2.googlesyndication.com",
+    "https://googleads.g.doubleclick.net",
+    "https://*.g.doubleclick.net",
+    "https://ad.doubleclick.net",
   );
 
   return origins;

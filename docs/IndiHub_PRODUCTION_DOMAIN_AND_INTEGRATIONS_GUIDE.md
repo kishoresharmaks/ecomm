@@ -113,6 +113,7 @@ Expected result:
 - `strict-transport-security` is present on HTTPS responses.
 - `content-security-policy` does not contain `unsafe-eval`.
 - `script-src` uses a `nonce-...` value and `strict-dynamic`.
+- Google Ads measurement endpoints under `pagead2.googlesyndication.com`, `googleads.g.doubleclick.net`, and `ad.doubleclick.net` are allowed by `connect-src`.
 - `report-to` or `reporting-endpoints` is present.
 - `/security/csp-report` returns JSON for `GET` and accepts browser CSP reports through `POST`.
 
