@@ -232,12 +232,14 @@ export function StorefrontHeader({ initialMenu }: { initialMenu?: CmsMenuItem[] 
   return (
     <header
       className={cn(
-        "sticky top-0 z-[100] transform-gpu border-b border-[#f2e4dd] bg-white/96 shadow-[0_16px_44px_rgba(17,24,39,0.08)] backdrop-blur-xl transition-transform duration-300 ease-out motion-reduce:transition-none lg:border-b-0 lg:bg-transparent lg:px-3 lg:pt-2 lg:shadow-none lg:backdrop-blur-none",
+        "pointer-events-none sticky top-0 z-[100] transform-gpu border-b border-[#f2e4dd] bg-white/96 shadow-[0_16px_44px_rgba(17,24,39,0.08)] backdrop-blur-xl transition-transform duration-300 ease-out motion-reduce:transition-none lg:border-b-0 lg:bg-transparent lg:px-3 lg:pt-2 lg:shadow-none lg:backdrop-blur-none",
         headerHidden ? "-translate-y-full" : "translate-y-0",
       )}
     >
-      <StorefrontAnnouncementBar announcements={announcements} />
-      <div className="lg:mx-auto lg:max-w-[1840px] lg:overflow-visible lg:rounded-[18px] lg:border lg:border-[#f2e4dd] lg:bg-white/96 lg:shadow-[0_16px_48px_rgba(17,24,39,0.08)] lg:backdrop-blur-xl">
+      <div className="pointer-events-auto">
+        <StorefrontAnnouncementBar announcements={announcements} />
+      </div>
+      <div className="pointer-events-auto lg:mx-auto lg:max-w-[1840px] lg:overflow-visible lg:rounded-[18px] lg:border lg:border-[#f2e4dd] lg:bg-white/96 lg:shadow-[0_16px_48px_rgba(17,24,39,0.08)] lg:backdrop-blur-xl">
         <div className="hidden border-b border-[#f2e4dd] bg-[#fffaf7]/88 lg:block lg:rounded-t-[18px]">
           <div className="mx-auto flex h-11 items-center justify-between gap-5 px-5 xl:px-7 2xl:px-8">
             <div className="flex min-w-0 items-center gap-3">
