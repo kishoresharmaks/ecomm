@@ -43,6 +43,7 @@ import { useStorefrontWishlist } from "./use-storefront-wishlist";
 
 const heroIntervalMs = 5000;
 const swipeThresholdPx = 16;
+const railDragThresholdPx = 5;
 
 export type HomePersonalizedProduct = {
   id: string;
@@ -148,7 +149,13 @@ export function HomeHeroCarousel({
   const slides = Children.toArray(children);
   const [activeIndex, setActiveIndex] = useState(0);
   const [paused, setPaused] = useState(false);
-  const pointerStart = useRef<{ x: number; y: number; pointerId: number } | null>(null);
+  const pointerStart = useRef<{
+    x: number;
+    y: number;
+    pointerId: number;
+    captured: boolean;
+  } | null>(null);
+  const suppressClickRef = useRef(false);
   const hasMultipleSlides = slides.length > 1;
   const normalizedIndex = slides.length ? activeIndex % slides.length : 0;
 
@@ -179,8 +186,29 @@ export function HomeHeroCarousel({
     if (!hasMultipleSlides) {
       return;
     }
-    pointerStart.current = { x: event.clientX, y: event.clientY, pointerId: event.pointerId };
+    pointerStart.current = {
+      x: event.clientX,
+      y: event.clientY,
+      pointerId: event.pointerId,
+      captured: false,
+    };
+  }
+
+  function handlePointerMove(event: ReactPointerEvent<HTMLElement>) {
+    const start = pointerStart.current;
+    if (!start || start.pointerId !== event.pointerId || start.captured) {
+      return;
+    }
+
+    const x = event.clientX - start.x;
+    const y = event.clientY - start.y;
+    if (Math.abs(x) < swipeThresholdPx || Math.abs(x) <= Math.abs(y)) {
+      return;
+    }
+
+    start.captured = true;
     event.currentTarget.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
   }
 
   function handlePointerUp(event: ReactPointerEvent<HTMLElement>) {
@@ -193,9 +221,15 @@ export function HomeHeroCarousel({
     const x = event.clientX - start.x;
     const y = event.clientY - start.y;
     if (Math.abs(x) >= swipeThresholdPx && Math.abs(x) > Math.abs(y)) {
+      suppressClickRef.current = true;
       move(x < 0 ? 1 : -1);
     }
-    event.currentTarget.releasePointerCapture?.(start.pointerId);
+    if (start.captured && event.currentTarget.hasPointerCapture?.(start.pointerId)) {
+      event.currentTarget.releasePointerCapture(start.pointerId);
+    }
+    window.setTimeout(() => {
+      suppressClickRef.current = false;
+    }, 0);
   }
 
   if (!slides.length) {
@@ -212,9 +246,16 @@ export function HomeHeroCarousel({
       onFocusCapture={() => setPaused(true)}
       onBlurCapture={() => setPaused(false)}
       onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={() => {
         pointerStart.current = null;
+      }}
+      onClickCapture={(event) => {
+        if (suppressClickRef.current) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
       }}
     >
       {slides.map((slide, index) => (
@@ -330,9 +371,6 @@ export function HomeScrollableRail({
       startScrollLeft: rail.scrollLeft,
       moved: false,
     };
-    event.preventDefault();
-    rail.setPointerCapture(event.pointerId);
-    setIsDragging(true);
   }
 
   function handlePointerMove(event: ReactPointerEvent<HTMLDivElement>) {
@@ -343,8 +381,13 @@ export function HomeScrollableRail({
     }
 
     const distance = event.clientX - drag.startX;
-    if (Math.abs(distance) > 4) {
+    if (!drag.moved && Math.abs(distance) < railDragThresholdPx) {
+      return;
+    }
+    if (!drag.moved) {
       drag.moved = true;
+      rail.setPointerCapture(event.pointerId);
+      setIsDragging(true);
     }
     event.preventDefault();
     rail.scrollLeft = drag.startScrollLeft - distance;
@@ -360,7 +403,9 @@ export function HomeScrollableRail({
     suppressClickRef.current = drag.moved;
     dragRef.current = null;
     setIsDragging(false);
-    rail.releasePointerCapture?.(event.pointerId);
+    if (rail.hasPointerCapture?.(event.pointerId)) {
+      rail.releasePointerCapture(event.pointerId);
+    }
     update();
     if (drag.moved) {
       window.requestAnimationFrame(() => {

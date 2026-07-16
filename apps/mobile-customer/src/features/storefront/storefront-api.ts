@@ -1,19 +1,13 @@
 import { deleteNoContent, getJson, patchJson, postJson, type MobileAuthHeaders } from "../../lib/api";
 import type { LocationArea, ProductSummary, SelectedLocation, StorefrontSearchResponse, StorefrontSuggestionsResponse } from "../../types/storefront";
 import type { MobileCategory, MobileProduct, MobileStore } from "../../types/mobile-home";
-
-export type MobileAnnouncement = {
-  id: string;
-  title: string;
-  linkUrl: string | null;
-  backgroundColor: string | null;
-  textColor: string | null;
-  status: string;
-};
+import { normalizeMobileAnnouncementsResponse } from "./mobile-announcement";
+import type { MobileAnnouncement } from "./mobile-announcement";
+export type { MobileAnnouncement } from "./mobile-announcement";
 
 export async function listStorefrontAnnouncements(): Promise<MobileAnnouncement[]> {
-  const data = await getJson<{ items: MobileAnnouncement[] }>({ path: "/cms/announcements" });
-  return data.items;
+  const data = await getJson<unknown>({ path: "/cms/announcements" });
+  return normalizeMobileAnnouncementsResponse(data);
 }
 
 export type MobileCartSummary = {

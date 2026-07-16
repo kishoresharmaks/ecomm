@@ -34,6 +34,16 @@ describe("storefront home RSC boundary", () => {
     expect(clientSource).toContain('cn("relative min-w-0 max-w-full", className)');
   });
 
+  it("preserves desktop link clicks until a carousel drag actually starts", () => {
+    expect(clientSource).toContain("const railDragThresholdPx = 5;");
+    expect(clientSource).toContain(
+      "if (!drag.moved && Math.abs(distance) < railDragThresholdPx)",
+    );
+    expect(clientSource).not.toContain(
+      "event.preventDefault();\n    rail.setPointerCapture(event.pointerId);\n    setIsDragging(true);",
+    );
+  });
+
   it("normalizes lightweight order products without assuming catalogue arrays", () => {
     expect(clientSource).toContain("function productFromOrderItem(");
     expect(clientSource).toContain("Array.isArray(product.images)");
