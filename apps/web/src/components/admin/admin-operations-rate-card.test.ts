@@ -224,8 +224,8 @@ describe("Admin Operations Rate Card logic verification", () => {
       
       const pricingConfigNull = null as Record<string, unknown> | null;
       
-      const loadedDistance = String((pricingConfigNull as any)?.includedDistanceKm ?? 3);
-      const loadedPerKmRupeesRaw = paiseToRupeesInput((pricingConfigNull as any)?.perKmPaise ?? 0);
+      const loadedDistance = String((pricingConfigNull as Record<string, unknown> | null)?.includedDistanceKm ?? 3);
+      const loadedPerKmRupeesRaw = paiseToRupeesInput(((pricingConfigNull as Record<string, unknown> | null)?.perKmPaise as number | undefined) ?? 0);
       const loadedPerKmRupees = loadedPerKmRupeesRaw || "8";
 
       expect(loadedDistance).toBe("3");

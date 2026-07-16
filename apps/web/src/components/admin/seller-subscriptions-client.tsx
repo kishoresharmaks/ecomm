@@ -6,7 +6,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
 import { useAdminAuth } from "@/components/admin/admin-auth-context";
 import { AdminListbox, AdminSwitch, type AdminSelectOption } from "@/components/admin/admin-ux";
-import { indihubFetch } from "@/lib/api";
 import {
   createSellerSubscriptionPlan,
   listAdminSellerSubscriptionPlans,
@@ -68,14 +67,6 @@ const audienceOptions: AdminSelectOption[] = [
   { value: "RETAIL", label: "Retail sellers", description: "Product catalogue and order fulfilment plans." },
   { value: "SERVICE", label: "Service providers", description: "Service listing, booking, quote, and visit plans." },
   { value: "ALL", label: "Retail and service", description: "Shared plan available to both onboarding paths." },
-];
-
-const assignmentStatusOptions: AdminSelectOption[] = [
-  { value: "ACTIVE", label: "Active" },
-  { value: "TRIALING", label: "Trialing" },
-  { value: "PENDING_PAYMENT", label: "Pending payment" },
-  { value: "EXPIRED", label: "Expired" },
-  { value: "CANCELLED", label: "Cancelled" }
 ];
 
 export function AdminSellerSubscriptionsClient() {
@@ -389,21 +380,6 @@ function AdminField({
   );
 }
 
-function AdminSelect({
-  label,
-  value,
-  onChange,
-  required = false,
-  options
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  required?: boolean;
-  options: AdminSelectOption[];
-}) {
-  return <AdminListbox label={label} value={value} options={options} onChange={onChange} required={required} />;
-}
 
 function rupeesToPaise(value: string) {
   const amount = Number(value || 0);
@@ -443,37 +419,6 @@ function audienceLabel(audience: SellerSubscriptionPlanAudience) {
   return "Retail";
 }
 
-function planMatchesSellerCapabilities(plan: SellerSubscriptionPlan, seller?: SellerProfile) {
-  if (!seller || plan.audience === "ALL") {
-    return true;
-  }
-
-  const capabilities =
-    seller.enabledCapabilities?.length
-      ? seller.enabledCapabilities
-      : seller.primaryCapability
-        ? [seller.primaryCapability]
-        : ["RETAIL"];
-  if (plan.audience === "SERVICE") {
-    return capabilities.includes("SERVICE");
-  }
-
-  return capabilities.includes("RETAIL");
-}
-
 function humanize(value?: string | null) {
   return value ? value.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (char) => char.toUpperCase()) : "Not set";
-}
-
-function statusTone(status?: string | null): "success" | "warning" | "danger" | "info" {
-  if (["ACTIVE", "TRIALING"].includes(status ?? "")) {
-    return "success";
-  }
-  if (status === "PENDING_PAYMENT") {
-    return "warning";
-  }
-  if (["EXPIRED", "CANCELLED"].includes(status ?? "")) {
-    return "danger";
-  }
-  return "info";
 }

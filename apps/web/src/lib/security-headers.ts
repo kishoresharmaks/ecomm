@@ -26,6 +26,8 @@ export function buildContentSecurityPolicy({ nonce, origin }: SecurityHeaderOpti
   const sentryOrigins = [`${webOrigin}/_1hi/relay`];
   const reportDirective = ["report-to", "indihub-csp"];
   const reportUriDirective = ["report-uri", `${webOrigin}/security/csp-report`];
+  const shouldUpgradeInsecureRequests =
+    webOrigin.startsWith("https://") && apiOrigin.startsWith("https://");
 
   const directives = [
     ["default-src", "'self'"],
@@ -34,7 +36,7 @@ export function buildContentSecurityPolicy({ nonce, origin }: SecurityHeaderOpti
     ["script-src", "'self'", `'nonce-${nonce}'`, "'strict-dynamic'", ...analyticsOrigins, ...razorpayOrigins, ...clerkOrigins, ...turnstileOrigins],
     ["style-src", "'self'", `'nonce-${nonce}'`, "https://fonts.googleapis.com"],
     ["style-src-attr", "'unsafe-inline'"],
-    ["img-src", "'self'", "https:", "data:", "blob:", ...parseCsvOrigins(process.env.NEXT_PUBLIC_CSP_IMG_SRC)],
+    ["img-src", "'self'", "https:", "data:", "blob:", apiOrigin, ...parseCsvOrigins(process.env.NEXT_PUBLIC_CSP_IMG_SRC)],
     ["font-src", "'self'", "data:", "https://fonts.gstatic.com"],
     [
       "connect-src",
@@ -62,7 +64,7 @@ export function buildContentSecurityPolicy({ nonce, origin }: SecurityHeaderOpti
     ["manifest-src", "'self'"],
     ["form-action", "'self'", ...razorpayOrigins],
     ["frame-ancestors", "'self'"],
-    ["upgrade-insecure-requests"],
+    ...(shouldUpgradeInsecureRequests ? [["upgrade-insecure-requests"]] : []),
     reportDirective,
     reportUriDirective,
   ];

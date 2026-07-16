@@ -316,7 +316,6 @@ function ReturnDetailView({
                             <span className="font-black text-[#1F2933]">{humanize(event.newStatus)}</span>
                             {" / "}
                             {formatReturnDateTime(event.createdAt)}
-                            {event.note ? ` / ${event.note}` : ""}
                           </div>
                         ))}
                       </div>

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, Query } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Inject, Param, ParseUUIDPipe, Patch, Post, Query } from "@nestjs/common";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import { RoleCode } from "@indihub/database";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
@@ -14,6 +14,7 @@ import { CreateCmsRedirectDto, CmsRedirectQueryDto, UpdateCmsRedirectDto } from 
 import { CmsRevisionQueryDto } from "./dto/cms-revision.dto";
 import { CreateHomepageSectionDto, UpdateHomepageSectionDto } from "./dto/homepage-section.dto";
 import { CreateSeoEntryDto, SeoEntryQueryDto, UpdateSeoEntryDto } from "./dto/seo-entry.dto";
+import { CreateCmsAnnouncementDto, UpdateCmsAnnouncementDto } from "./dto/cms-announcement.dto";
 
 @ApiTags("Admin CMS")
 @Roles(RoleCode.ADMIN)
@@ -67,6 +68,30 @@ export class AdminCmsController {
   @ApiOperation({ summary: "Delete a homepage banner." })
   deleteBanner(@CurrentUser() actor: RequestUser, @Param("bannerId") bannerId: string) {
     return this.cmsService.deleteBanner(actor, bannerId);
+  }
+
+  @Get("announcements")
+  @ApiOperation({ summary: "List announcements for admin." })
+  listAnnouncements(@Query() query: CmsQueryDto) {
+    return this.cmsService.listAdminAnnouncements(query);
+  }
+
+  @Post("announcements")
+  @ApiOperation({ summary: "Create a CMS announcement." })
+  createAnnouncement(@CurrentUser() actor: RequestUser, @Body() dto: CreateCmsAnnouncementDto) {
+    return this.cmsService.createAnnouncement(actor, dto);
+  }
+
+  @Patch("announcements/:id")
+  @ApiOperation({ summary: "Update a CMS announcement." })
+  updateAnnouncement(@CurrentUser() actor: RequestUser, @Param("id", ParseUUIDPipe) id: string, @Body() dto: UpdateCmsAnnouncementDto) {
+    return this.cmsService.updateAnnouncement(actor, id, dto);
+  }
+
+  @Delete("announcements/:id")
+  @ApiOperation({ summary: "Delete a CMS announcement." })
+  deleteAnnouncement(@CurrentUser() actor: RequestUser, @Param("id", ParseUUIDPipe) id: string) {
+    return this.cmsService.deleteAnnouncement(actor, id);
   }
 
   @Get("homepage-sections")

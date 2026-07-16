@@ -231,24 +231,50 @@ export function buildOrganizationJsonLd() {
   return {
     "@context": "https://schema.org",
     "@type": "Organization",
-    name: brandConfig.name,
-    url: siteUrl,
-    logo: absoluteUrl("/icon.svg")
+    "@id": `${siteUrl}/#organization`,
+    name: "1HandIndia",
+    url: `${siteUrl}/`,
+    logo: absoluteUrl("/brand/1handindia_logo.png")
   };
 }
 
-export function buildWebsiteJsonLd() {
+export function buildWebsiteJsonLd(seo?: Partial<SeoEntry> | null) {
+  const url = seo?.canonicalUrl || siteUrl;
   return {
     "@context": "https://schema.org",
     "@type": "WebSite",
+    "@id": `${siteUrl}/#website`,
     name: brandConfig.name,
-    url: siteUrl,
+    url: url,
+    description: seo?.metaDescription || brandConfig.tagline,
+    publisher: {
+      "@id": `${siteUrl}/#organization`
+    },
     potentialAction: {
       "@type": "SearchAction",
       target: `${siteUrl}/search?q={search_term_string}`,
       "query-input": "required name=search_term_string"
     }
   };
+}
+
+export function buildGenericJsonLd(seo: Partial<SeoEntry> | null | undefined, fallback: SeoFallback) {
+  const type = seo?.structuredDataType || "WebPage";
+
+  if (type === "WebSite") {
+    return [buildOrganizationJsonLd(), buildWebsiteJsonLd(seo)];
+  }
+
+  if (type === "Organization") {
+    return buildOrganizationJsonLd();
+  }
+
+  return buildWebPageJsonLd({
+    title: seo?.metaTitle?.trim() || fallback.title,
+    description: seo?.metaDescription?.trim() || fallback.description,
+    path: seo?.canonicalUrl?.trim() || fallback.path,
+    pageType: type === "Article" ? "Article" : type === "FAQPage" ? "FAQPage" : "WebPage"
+  });
 }
 
 export function buildBreadcrumbJsonLd(items: Array<{ name: string; path: string }>) {
@@ -366,7 +392,7 @@ export function buildStoreJsonLd(store: StoreProfile) {
   };
 }
 
-export function buildWebPageJsonLd(input: { title: string; description: string; path: string; pageType?: "WebPage" | "Article" }) {
+export function buildWebPageJsonLd(input: { title: string; description: string; path: string; pageType?: "WebPage" | "Article" | "FAQPage" }) {
   return {
     "@context": "https://schema.org",
     "@type": input.pageType ?? "WebPage",

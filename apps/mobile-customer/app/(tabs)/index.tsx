@@ -57,6 +57,7 @@ import { useQuery } from "@tanstack/react-query";
 import { EmptyState } from "../../src/components/empty-state";
 import { DealCard } from "../../src/components/deal-card";
 import { Screen } from "../../src/components/screen";
+import { AnnouncementCarousel } from "../../src/components/announcement-carousel";
 import logoIcon from "../../assets/icon.png";
 import { useMobileCustomerAuth, type MobileCustomerAuthStatus } from "../../src/auth/mobile-auth-context";
 import { useMobileHome } from "../../src/features/home/use-mobile-home";
@@ -335,6 +336,7 @@ function HomeHeader({ onOpenLocation, selectedLocation }: { onOpenLocation: () =
           </Link>
         </View>
       </View>
+      <AnnouncementCarousel />
       <Pressable style={styles.locationWrap} onPress={onOpenLocation}>
         <HugeiconsIcon color={colors.primary} icon={Location01Icon} size={22} strokeWidth={2.1} />
         <Text numberOfLines={1} style={styles.locationText}>

@@ -265,3 +265,8 @@ When modifying `schema.prisma` or creating new models, strictly adhere to the fo
 - **Date Filter UTC Conversion**: When any seller or finance API `queryString()` helper receives `dateFrom` or `dateTo` as exactly 10-character `YYYY-MM-DD` strings, always convert to local-timezone ISO: `dateFrom` → midnight local (`T00:00:00.000`), `dateTo` → end-of-day local (`T23:59:59.999`), then call `.toISOString()` to produce correct UTC bounds. This is already applied to all 14 seller/finance API client files — do not revert to raw date string passing.
 
 - **Efficient Command Execution**: On Windows PowerShell, chain dependent commands with `; if ($LASTEXITCODE -eq 0) { next_command } else { exit 1 }` — never use `&&` (not valid in PowerShell). Batch typecheck, tests, and lint into a single pipeline. Only run verification once per logical unit of completed work. Do not run commands speculatively.
+
+- **Mobile Banner UI/UX (Glassmorphism & Carousels)**: When implementing or updating Announcement Banners or CMS Carousels in the mobile applications:
+  - Do not use right-side or left-side arrow icons for navigation.
+  - Implement an auto-slide/carousel effect that transitions every 3 seconds if multiple items exist.
+  - Always implement a premium glassmorphism effect. If rendering backend-provided background colors (especially dark colors), use a semi-transparent opacity (e.g., `rgba(..., 0.8)`) overlay or native blur view to ensure the banner perfectly matches the glassy effect of the app, rather than rendering flat opaque colors.

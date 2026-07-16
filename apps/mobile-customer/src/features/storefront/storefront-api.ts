@@ -2,6 +2,20 @@ import { deleteNoContent, getJson, patchJson, postJson, type MobileAuthHeaders }
 import type { LocationArea, ProductSummary, SelectedLocation, StorefrontSearchResponse, StorefrontSuggestionsResponse } from "../../types/storefront";
 import type { MobileCategory, MobileProduct, MobileStore } from "../../types/mobile-home";
 
+export type MobileAnnouncement = {
+  id: string;
+  title: string;
+  linkUrl: string | null;
+  backgroundColor: string | null;
+  textColor: string | null;
+  status: string;
+};
+
+export async function listStorefrontAnnouncements(): Promise<MobileAnnouncement[]> {
+  const data = await getJson<{ items: MobileAnnouncement[] }>({ path: "/cms/announcements" });
+  return data.items;
+}
+
 export type MobileCartSummary = {
   id: string;
   status: string;

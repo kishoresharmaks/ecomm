@@ -7,7 +7,6 @@ import { Button, StatusBadge, cn } from "@indihub/ui";
 import { useAdminAuth } from "./admin-auth-context";
 import { StorefrontImage } from "@/components/storefront/storefront-image";
 import { adminRequest, type SellerRecord } from "./admin-operations";
-import { resolveImageSource } from "@/lib/image-url";
 
 type SellerVerificationDocument = NonNullable<SellerRecord["documents"]>[number];
 
@@ -187,7 +186,7 @@ export function AdminSellerProfileModal({
                               </div>
                               <div className="mt-2 flex flex-wrap items-center gap-2">
                                 <a
-                                  href={resolveImageSource(doc.fileUrl) ?? ""}
+                                  href={`/admin/storage/private-document?sellerId=${seller.id}&documentId=${doc.id}&label=${encodeURIComponent(doc.documentType)}`}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="inline-flex items-center gap-1.5 rounded bg-white px-2.5 py-1 text-xs font-bold text-[#163B5C] border border-[#D9E2EA] hover:border-[#163B5C] transition"

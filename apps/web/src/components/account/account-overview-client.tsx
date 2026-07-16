@@ -50,15 +50,21 @@ export function AccountOverviewClient() {
       {profileQuery.error ? <ErrorPanel error={profileQuery.error} onRetry={() => void profileQuery.refetch()} /> : null}
 
       {profile ? (
-        <div className="grid gap-5">
-          <div className="grid gap-4 md:grid-cols-3">
-            <AccountMetric label="Orders" value={profile._count?.orders ?? 0} note="Customer order history" />
-            <AccountMetric label="Addresses" value={profile.addresses.length} note="Saved delivery locations" />
-            <AccountMetric label="Service bookings" value={serviceBookingsQuery.data?.total ?? serviceBookings.length} note={`${activeServiceBookings.length} active in recent bookings`} />
+        <div className="grid gap-4 lg:gap-5">
+          <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto px-5 pb-2 lg:grid lg:grid-cols-3 lg:overflow-visible lg:px-0 lg:pb-0">
+            <div className="w-[180px] shrink-0 snap-center lg:w-auto">
+              <AccountMetric label="Orders" value={profile._count?.orders ?? 0} note="Customer order history" />
+            </div>
+            <div className="w-[180px] shrink-0 snap-center lg:w-auto">
+              <AccountMetric label="Addresses" value={profile.addresses.length} note="Saved delivery locations" />
+            </div>
+            <div className="w-[180px] shrink-0 snap-center lg:w-auto">
+              <AccountMetric label="Service bookings" value={serviceBookingsQuery.data?.total ?? serviceBookings.length} note={`${activeServiceBookings.length} active`} />
+            </div>
           </div>
 
-          <div className="grid gap-5 xl:grid-cols-[1fr_360px]">
-            <div className="grid gap-5">
+          <div className="grid gap-0 lg:gap-5 xl:grid-cols-[1fr_360px]">
+            <div className="grid gap-0 lg:gap-5">
               <PagePanel>
                 <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
                   <SectionHeading title="Recent orders" description="Latest customer orders with payment and delivery status." />
@@ -84,7 +90,7 @@ export function AccountOverviewClient() {
                     <Link
                       key={order.id}
                       href={`/account/orders/${order.orderNumber}`}
-                      className="grid gap-3 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-4 transition hover:border-[#ED3500] md:grid-cols-[1fr_auto] md:items-center"
+                      className="grid gap-3 rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] p-4 transition hover:border-[#ED3500] md:grid-cols-[1fr_auto] md:items-center"
                     >
                       <div>
                         <p className="text-base font-black text-[#1F2933]">{order.orderNumber}</p>
@@ -125,7 +131,7 @@ export function AccountOverviewClient() {
                     <Link
                       key={booking.id}
                       href={`/account/service-bookings/${encodeURIComponent(booking.bookingNumber)}`}
-                      className="grid gap-3 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-4 transition hover:border-[#ED3500] md:grid-cols-[1fr_auto] md:items-center"
+                      className="grid gap-3 rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] p-4 transition hover:border-[#ED3500] md:grid-cols-[1fr_auto] md:items-center"
                     >
                       <div>
                         <p className="text-base font-black text-[#1F2933]">{booking.bookingNumber}</p>
@@ -142,7 +148,7 @@ export function AccountOverviewClient() {
               </PagePanel>
             </div>
 
-            <div className="grid gap-5">
+            <div className="grid gap-0 lg:gap-5">
               <PagePanel>
                 <SectionHeading title="Profile" description="Customer identity attached to the active account." />
                 <div className="mt-5 grid gap-3 text-sm">

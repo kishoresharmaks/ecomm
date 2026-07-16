@@ -657,6 +657,18 @@ export type HomepageBanner = {
   updatedAt?: string;
 };
 
+export type CmsAnnouncement = {
+  id: string;
+  title: string;
+  linkUrl: string | null;
+  backgroundColor: string | null;
+  textColor: string | null;
+  startsAt: string | null;
+  endsAt: string | null;
+  status: string;
+  sortOrder: number;
+};
+
 export type HomepageSectionItem = {
   sourceType?: string;
   sourceId?: string;
@@ -1208,7 +1220,11 @@ export function getStorefrontHome(query: StoreLocationQuery = {}, auth?: Indihub
   }
 
   const suffix = params.size ? `?${params.toString()}` : "";
-  return indihubFetch<StorefrontHomePayload>(`/api/storefront/home${suffix}`, undefined, auth);
+  return indihubFetch<StorefrontHomePayload>(
+    `/api/storefront/home${suffix}`,
+    { cache: "no-store" },
+    auth,
+  );
 }
 
 export function getStorefrontContact() {
@@ -1395,6 +1411,10 @@ export function getCheckoutPaymentMethods(auth: IndihubAuthHeaders) {
 
 export function listHomepageBanners() {
   return indihubFetch<HomepageBanner[]>("/api/cms/banners");
+}
+
+export function listCmsAnnouncements() {
+  return indihubFetch<CmsAnnouncement[]>("/api/cms/announcements");
 }
 
 export function listHomepageSections() {

@@ -7,7 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
 import { Button, SectionHeading } from "@indihub/ui";
 import { formatMoney } from "@/lib/storefront-api";
-import { downloadSellerReportCsv, getSellerReturnsReport, type SellerReturnsReport } from "@/lib/seller-api";
+import { downloadSellerReportCsv, getSellerReturnsReport } from "@/lib/seller-api";
 import {
   SellerAuthNotice,
   SellerEmptyState,

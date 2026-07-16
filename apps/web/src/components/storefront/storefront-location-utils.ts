@@ -22,6 +22,51 @@ export type StorefrontBrowsingLocation = {
   accuracyMeters?: number;
 };
 
+export const storefrontLocationCookieName = "indihub_storefront_location";
+
+export function parseStorefrontLocationCookie(
+  value: string | null | undefined,
+): StorefrontBrowsingLocation | null {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    return normalizeBrowsingLocation(
+      JSON.parse(decodeURIComponent(value)) as Partial<StorefrontBrowsingLocation>,
+    );
+  } catch {
+    return null;
+  }
+}
+
+export function storefrontLocationCookieValue(
+  location: StorefrontBrowsingLocation | null | undefined,
+) {
+  const normalized = normalizeBrowsingLocation(location);
+  return normalized ? encodeURIComponent(JSON.stringify(normalized)) : "";
+}
+
+export function storefrontLocationFingerprint(
+  location: StorefrontBrowsingLocation | null | undefined,
+) {
+  const normalized = normalizeBrowsingLocation(location);
+  if (!normalized) {
+    return "global";
+  }
+
+  return [
+    normalized.countryCode,
+    normalized.stateCode ?? "",
+    normalized.cityCode ?? "",
+    normalized.localAreaCode ?? "",
+    normalized.pincode ?? "",
+    normalized.latitude ?? "",
+    normalized.longitude ?? "",
+    normalized.accuracyMeters ?? "",
+  ].join("|");
+}
+
 export function defaultBrowsingLocationFromAddresses(
   addresses: CustomerAddress[] | undefined,
 ): StorefrontBrowsingLocation | null {

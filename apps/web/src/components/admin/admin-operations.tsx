@@ -51,6 +51,9 @@ import {
   Store,
   Trash2,
   Truck,
+  User,
+  CreditCard,
+  FileText,
   UserCog,
   UsersRound,
   X,
@@ -78,6 +81,7 @@ import {
   type AdminActionItem,
   type AdminSelectOption,
 } from "@/components/admin/admin-ux";
+import { ChatSupportSettings } from "@/components/admin/settings/chat-support-settings";
 import { ContactSettingsPanel } from "@/components/admin/settings/contact-settings";
 import { CheckoutFeeSettings } from "@/components/admin/settings/checkout-fee-settings";
 import { DeliveryPartnerPayoutSettings } from "@/components/admin/settings/delivery-partner-payout-settings";
@@ -2144,21 +2148,7 @@ export function AdminSellersPageClient() {
           },
           {
             header: "Verification",
-            cell: (item) => (
-              <SmallStack
-                lines={[
-                  item.profile?.businessLegalName ?? "Legal name not set",
-                  item.profile?.businessType
-                    ? humanize(item.profile.businessType)
-                    : "Business type not set",
-                  [
-                    item.profile?.gstNumber ? `GST ${item.profile.gstNumber}` : "GST not set",
-                    item.profile?.panNumber ? `PAN ${item.profile.panNumber}` : "PAN not set",
-                  ].join(" / "),
-                  sellerDocumentSummary(item.documents),
-                ]}
-              />
-            ),
+            cell: (item) => <SellerVerificationColumn item={item} />,
           },
           {
             header: "Status",
@@ -2356,126 +2346,29 @@ export function AdminProductsPageClient({
       total={totalItems(query.data, items.length)}
     >
       {confirmation.dialog}
-      <AdminTable
-        items={items}
-        isLoading={query.isLoading}
-        emptyTitle={emptyTitle}
-        columns={[
-          {
-            header: "Product",
-            className: "min-w-[280px]",
-            cell: (item) => (
-              <div className="flex items-center gap-3">
-                <ProductImage product={item} />
-                <EntityTitle title={item.name} subtitle={item.category?.name ?? item.slug} />
-              </div>
-            ),
-          },
-          {
-            header: "Essentials",
-            className: "min-w-[260px]",
-            cell: (item) => <ProductEssentialsReview product={item} />,
-          },
-          {
-            header: "Delivery",
-            className: "min-w-[220px]",
-            cell: (item) => <ProductDeliveryReview product={item} />,
-          },
-          {
-            header: "Seller",
-            cell: (item) => (
-              <EntityTitle
-                title={item.seller?.storeName ?? "No seller"}
-                subtitle={item.seller?.user?.email ?? ""}
-              />
-            ),
-          },
-          {
-            header: "Status",
-            cell: (item) => (
-              <div className="flex flex-wrap gap-1.5">
-                <StatusBadge tone={statusTone(item.status)}>{humanize(item.status)}</StatusBadge>
-                <StatusBadge tone={statusTone(item.approvalStatus)}>
-                  {humanize(item.approvalStatus)}
-                </StatusBadge>
-              </div>
-            ),
-          },
-          {
-            header: "Price and stock",
-            cell: (item) => (
-              <SmallStack
-                lines={[
-                  item.variants?.[0] ? formatPaise(item.variants[0].pricePaise) : "No variant",
-                  `${item.variants?.reduce((total, variant) => total + variant.stockQuantity, 0) ?? 0} units`,
-                  `${item.images?.length ?? 0} images`,
-                ]}
-              />
-            ),
-          },
-          {
-            header: "Actions",
-            className: "min-w-[220px]",
-            cell: (item) => {
-              const missingEssentials = productMissingEssentialLabels(item);
-
-              return (
-                <AdminActionMenu
-                  label="Product actions"
-                  items={[
-                    {
-                      label: "Approve product",
-                      description: missingEssentials.length
-                        ? `Seller must add ${missingEssentials.slice(0, 3).join(", ")} before approval.`
-                        : "Make this item eligible for storefront display",
-                      icon: <CheckCircle2 className="h-4 w-4 text-[#0F8A5F]" />,
-                      onSelect: () =>
-                        confirmation.requestConfirmation({
-                          title: "Approve product?",
-                          description: `"${item.name}" will become eligible for storefront display if the seller and product status are active.`,
-                          confirmLabel: "Approve product",
-                          tone: "warning",
-                          onConfirm: () =>
-                            approve.mutate({ productId: item.id, decision: "APPROVE" }),
-                        }),
-                      disabled: approve.isPending || missingEssentials.length > 0,
-                    },
-                    {
-                      label: "Reject product",
-                      description: "Return product to seller review",
-                      icon: <XCircle className="h-4 w-4 text-[#B42318]" />,
-                      onSelect: () =>
-                        confirmation.requestConfirmation({
-                          title: "Reject product?",
-                          description: `"${item.name}" will not be eligible for storefront display until the seller edits and resubmits it.`,
-                          confirmLabel: "Reject product",
-                          onConfirm: () =>
-                            approve.mutate({ productId: item.id, decision: "REJECT" }),
-                        }),
-                      disabled: approve.isPending,
-                      destructive: true,
-                    },
-                    {
-                      label: "Archive product",
-                      description: "Remove from listings while preserving audit history",
-                      icon: <Archive className="h-4 w-4 text-[#B42318]" />,
-                      onSelect: () =>
-                        confirmation.requestConfirmation({
-                          title: "Archive product",
-                          description: `"${item.name}" will be removed from storefront listings. This keeps the audit trail and avoids permanent deletion.`,
-                          confirmLabel: "Archive product",
-                          onConfirm: () => archiveProduct.mutate(item.id),
-                        }),
-                      disabled: archiveProduct.isPending,
-                      destructive: true,
-                    },
-                  ]}
-                />
-              );
-            },
-          },
-        ]}
-      />
+      {query.isLoading ? (
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+          {Array.from({ length: 8 }).map((_, index) => (
+            <div key={index} className="animate-pulse rounded-lg border border-[#D8E2EA] bg-white p-5 shadow-sm h-72" />
+          ))}
+        </div>
+      ) : items.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-[#D8E2EA] bg-[#F8FAFC] p-8 text-center">
+          <p className="text-sm font-semibold text-[#667085]">{emptyTitle}</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+          {items.map((item) => (
+            <ProductCard
+              key={item.id}
+              item={item}
+              approve={approve}
+              archiveProduct={archiveProduct}
+              confirmation={confirmation}
+            />
+          ))}
+        </div>
+      )}
     </AdminResourceChrome>
   );
 }
@@ -6438,6 +6331,11 @@ export function AdminSettingsPageClient() {
             panel: <ContactSettingsPanel />,
           },
           {
+            key: "support-chat",
+            label: "Support chat",
+            panel: <ChatSupportSettings settings={settings} />,
+          },
+          {
             key: "catalogue-rules",
             label: "Catalogue rules",
             panel: <ProductApprovalSettings settings={settings} />,
@@ -10305,88 +10203,6 @@ function ProductImage({ product }: { product: ProductRecord }) {
     <span className="grid h-14 w-14 place-items-center rounded-md bg-[#EAF1F7] text-[#163B5C]">
       <Package className="h-5 w-5" />
     </span>
-  );
-}
-
-function ProductEssentialsReview({ product }: { product: ProductRecord }) {
-  const attributes = product.attributes ?? {};
-  const chips = marketplaceProductAdminSummaryFields
-    .map((field) => {
-      const value = displayAdminProductAttributeValue(
-        field.key,
-        productEssentialValue(product, field.key, attributes),
-      );
-      return value ? `${field.label}: ${value}` : null;
-    })
-    .filter((value): value is string => Boolean(value));
-  const missing = productMissingEssentialLabels(product);
-
-  return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap gap-1.5">
-        {missing.length ? (
-          <StatusBadge tone="warning">{missing.length} missing</StatusBadge>
-        ) : (
-          <StatusBadge tone="success">Essentials ready</StatusBadge>
-        )}
-        {chips.slice(0, 4).map((chip) => (
-          <span
-            key={chip}
-            className="rounded-full border border-[#E5E7EB] bg-[#F8FAFC] px-2 py-1 text-[11px] font-bold text-[#667085]"
-          >
-            {chip}
-          </span>
-        ))}
-      </div>
-      {missing.length ? (
-        <p className="max-w-[260px] text-xs font-semibold leading-5 text-[#B54708]">
-          Missing: {missing.slice(0, 3).join(", ")}
-          {missing.length > 3 ? "..." : ""}
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-function ProductDeliveryReview({ product }: { product: ProductRecord }) {
-  const modes = product.deliveryModes?.length ? product.deliveryModes : ["Not configured"];
-  const manualEnabled = modes.includes("MANUAL_TRANSPORT");
-  const manualTransport = product.manualTransport;
-  const manualChargeMinor =
-    manualTransport?.chargePerKmMinor ?? manualTransport?.chargePerKmPaise ?? null;
-  const manualConfigReady =
-    manualEnabled &&
-    typeof manualTransport?.freeDistanceKm === "number" &&
-    typeof manualChargeMinor === "number" &&
-    manualChargeMinor >= 0 &&
-    Boolean(manualTransport?.currency) &&
-    Boolean(manualTransport?.note?.trim());
-
-  return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap gap-1.5">
-        {modes.map((mode) => (
-          <StatusBadge key={mode} tone={mode === "Not configured" ? "warning" : "info"}>
-            {humanize(mode)}
-          </StatusBadge>
-        ))}
-      </div>
-      {manualEnabled ? (
-        manualConfigReady ? (
-          <SmallStack
-            lines={[
-              `${manualTransport.freeDistanceKm} km free`,
-              `${formatMinor(manualChargeMinor, manualTransport.currency ?? "INR")} per km after free distance`,
-              manualTransport.note ? `Note: ${truncate(manualTransport.note, 70)}` : null,
-            ]}
-          />
-        ) : (
-          <p className="max-w-[260px] text-xs font-semibold leading-5 text-[#B54708]">
-            Manual transport needs free km, charge per km, currency, and seller note before checkout can quote it.
-          </p>
-        )
-      ) : null}
-    </div>
   );
 }
 
@@ -17914,15 +17730,306 @@ function humanize(value?: string | null) {
     .replace(/\b\w/g, (match) => match.toUpperCase());
 }
 
-function sellerDocumentSummary(documents?: SellerRecord["documents"]) {
-  if (!documents?.length) {
-    return "No verification documents";
-  }
-
-  return documents
-    .map((document) => `${humanize(document.documentType)}: ${humanize(document.status)}`)
-    .join(", ");
+function getProductChips(product: ProductRecord) {
+  const attributes = product.attributes ?? {};
+  return marketplaceProductAdminSummaryFields
+    .map((field) => {
+      const value = displayAdminProductAttributeValue(
+        field.key,
+        productEssentialValue(product, field.key, attributes),
+      );
+      return value ? `${field.label}: ${value}` : null;
+    })
+    .filter((value): value is string => Boolean(value));
 }
+
+function ProductCard({
+  item,
+  approve,
+  archiveProduct,
+  confirmation,
+}: {
+  item: ProductRecord;
+  approve: {
+    mutate: (vars: { productId: string; decision: "APPROVE" | "REJECT" }) => void;
+    isPending: boolean;
+  };
+  archiveProduct: {
+    mutate: (productId: string) => void;
+    isPending: boolean;
+  };
+  confirmation: {
+    requestConfirmation: (request: AdminConfirmationRequest | null) => void;
+  };
+}) {
+  const missing = productMissingEssentialLabels(item);
+  const chips = getProductChips(item);
+  const modes = item.deliveryModes?.length ? item.deliveryModes : [];
+  
+  const deliveryModesConfig = [
+    { key: "STORE_PICKUP", label: "Store Pickup", icon: Store },
+    { key: "LOCAL_DELIVERY", label: "Local Delivery", icon: MapPin },
+    { key: "THIRD_PARTY_COURIER", label: "Third Party Courier", icon: Truck },
+    { key: "MANUAL_TRANSPORT", label: "Manual Transport", icon: User },
+  ];
+
+  const manualEnabled = modes.includes("MANUAL_TRANSPORT");
+  const manualTransport = item.manualTransport;
+  const manualChargeMinor =
+    manualTransport?.chargePerKmMinor ?? manualTransport?.chargePerKmPaise ?? null;
+  const manualConfigReady =
+    manualEnabled &&
+    typeof manualTransport?.freeDistanceKm === "number" &&
+    typeof manualChargeMinor === "number" &&
+    manualChargeMinor >= 0 &&
+    Boolean(manualTransport?.currency) &&
+    Boolean(manualTransport?.note?.trim());
+
+  return (
+    <div className="flex flex-col rounded-lg border border-[#D8E2EA] bg-white p-5 shadow-sm transition hover:shadow-md">
+      {/* Top Section: Image & Title */}
+      <div className="flex gap-4">
+        {/* Product Image */}
+        <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-md border border-[#E5E7EB] bg-white flex items-center justify-center">
+          <ProductImage product={item} />
+        </div>
+
+        {/* Title & Category */}
+        <div className="flex-grow min-w-0">
+          <h4 className="text-sm font-black text-[#1F2933] line-clamp-3 leading-5" title={item.name}>
+            {item.name}
+          </h4>
+          <p className="text-xs font-semibold text-[#667085] mt-1 truncate">
+            {item.category?.name ?? item.slug}
+          </p>
+        </div>
+      </div>
+
+      {/* Essentials Badge & Chips */}
+      <div className="mt-4 flex flex-wrap gap-1.5">
+        {missing.length ? (
+          <StatusBadge tone="warning">{missing.length} missing</StatusBadge>
+        ) : (
+          <StatusBadge tone="success">Essentials ready</StatusBadge>
+        )}
+      </div>
+
+      {/* Attributes Chips */}
+      {chips.length > 0 ? (
+        <div className="mt-2.5 flex flex-wrap gap-1.5">
+          {chips.map((chip) => (
+            <span
+              key={chip}
+              className="rounded border border-[#E5E7EB] bg-[#F8FAFC] px-2 py-0.5 text-[10px] font-bold text-[#667085]"
+            >
+              {chip}
+            </span>
+          ))}
+        </div>
+      ) : null}
+
+      {/* Delivery Section */}
+      <div className="mt-4 border-t border-[#F3F4F6] pt-3">
+        {modes.length > 0 ? (
+          <div className="grid grid-cols-2 gap-2 text-xs font-bold">
+            {deliveryModesConfig.map((config) => {
+              if (!modes.includes(config.key)) return null;
+              const Icon = config.icon;
+              return (
+                <span key={config.key} className="inline-flex items-center gap-1.5 text-[#ED3500]">
+                  <Icon className="h-3.5 w-3.5" />
+                  {config.label}
+                </span>
+              );
+            })}
+          </div>
+        ) : (
+          <span className="text-xs font-semibold text-[#667085]">Delivery not configured</span>
+        )}
+
+        {/* Manual Transport Warning or Details */}
+        {manualEnabled && (
+          <div className="mt-2.5 text-[10px] font-semibold leading-4">
+            {manualConfigReady ? (
+              <div className="text-[#667085] space-y-0.5">
+                <div>{manualTransport.freeDistanceKm} km free</div>
+                <div>{formatMinor(manualChargeMinor, manualTransport.currency ?? "INR")} per km after free distance</div>
+                {manualTransport.note && <div className="italic truncate" title={manualTransport.note}>Note: ${manualTransport.note}</div>}
+              </div>
+            ) : (
+              <p className="text-[#ED3500] leading-normal">
+                Manual transport needs free km, charge per km, currency, and seller note before checkout can quote it.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Seller and Price/Stock */}
+      <div className="mt-4 border-t border-[#F3F4F6] pt-3 flex items-end justify-between">
+        <div>
+          <span className="text-[10px] font-black uppercase tracking-wide text-[#9AA5B1]">Seller</span>
+          <div className="text-xs font-black text-[#1F2933] mt-0.5 truncate max-w-[140px]" title={item.seller?.storeName ?? "No seller"}>
+            {item.seller?.storeName ?? "No seller"}
+          </div>
+          <div className="text-[10px] font-semibold text-[#667085] truncate max-w-[140px]" title={item.seller?.user?.email ?? ""}>
+            {item.seller?.user?.email ?? ""}
+          </div>
+        </div>
+        
+        <div className="text-right">
+          <div className="text-sm font-black text-[#1F2933]">
+            {item.variants?.[0] ? formatPaise(item.variants[0].pricePaise) : "No price"}
+          </div>
+          <div className="text-[10px] font-semibold text-[#667085] mt-0.5">
+            {item.variants?.reduce((total, variant) => total + variant.stockQuantity, 0) ?? 0} units
+          </div>
+          <div className="text-[10px] font-semibold text-[#667085]">
+            {item.images?.length ?? 0} images
+          </div>
+        </div>
+      </div>
+
+      {/* Footer: Status Badges and Actions */}
+      <div className="mt-auto pt-4 flex items-center justify-between border-t border-[#F3F4F6]">
+        <div className="flex gap-1.5">
+          <StatusBadge tone={statusTone(item.status)}>{humanize(item.status)}</StatusBadge>
+          <StatusBadge tone={statusTone(item.approvalStatus)}>{humanize(item.approvalStatus)}</StatusBadge>
+        </div>
+
+        <div className="relative">
+          {(() => {
+            const missingEssentials = productMissingEssentialLabels(item);
+            return (
+              <AdminActionMenu
+                label="Product actions"
+                items={[
+                  {
+                    label: "Approve product",
+                    description: missingEssentials.length
+                      ? `Seller must add ${missingEssentials.slice(0, 3).join(", ")} before approval.`
+                      : "Make this item eligible for storefront display",
+                    icon: <CheckCircle2 className="h-4 w-4 text-[#0F8A5F]" />,
+                    onSelect: () =>
+                      confirmation.requestConfirmation({
+                        title: "Approve product?",
+                        description: `"${item.name}" will become eligible for storefront display if the seller and product status are active.`,
+                        confirmLabel: "Approve product",
+                        tone: "warning",
+                        onConfirm: () =>
+                          approve.mutate({ productId: item.id, decision: "APPROVE" }),
+                      }),
+                    disabled: approve.isPending || missingEssentials.length > 0,
+                  },
+                  {
+                    label: "Reject product",
+                    description: "Return product to seller review",
+                    icon: <XCircle className="h-4 w-4 text-[#B42318]" />,
+                    onSelect: () =>
+                      confirmation.requestConfirmation({
+                        title: "Reject product?",
+                        description: `"${item.name}" will not be eligible for storefront display until the seller edits and resubmits it.`,
+                        confirmLabel: "Reject product",
+                        onConfirm: () =>
+                          approve.mutate({ productId: item.id, decision: "REJECT" }),
+                      }),
+                    disabled: approve.isPending,
+                    destructive: true,
+                  },
+                  {
+                    label: "Archive product",
+                    description: "Remove from listings while preserving audit history",
+                    icon: <Archive className="h-4 w-4 text-[#B42318]" />,
+                    onSelect: () =>
+                      confirmation.requestConfirmation({
+                        title: "Archive product?",
+                        description: `"${item.name}" will be removed from storefront listings. This keeps the audit trail and avoids permanent deletion.`,
+                        confirmLabel: "Archive product",
+                        onConfirm: () => archiveProduct.mutate(item.id),
+                      }),
+                    disabled: archiveProduct.isPending,
+                    destructive: true,
+                  },
+                ]}
+              />
+            );
+          })()}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SellerVerificationColumn({ item }: { item: SellerRecord }) {
+  const docs = item.documents ?? [];
+  const docTypes = [
+    { key: "ID_PROOF", label: "ID Proof", icon: User },
+    { key: "SIGNATURE_PROOF", label: "Signature Proof", icon: FileText },
+    { key: "ADDRESS_PROOF", label: "Address Proof", icon: MapPin },
+    { key: "BANK_PROOF", label: "Bank Proof", icon: Landmark },
+    { key: "GST_CERTIFICATE", label: "GST Certificate", icon: Building2 },
+    { key: "PAN_CARD", label: "PAN Card", icon: CreditCard },
+    { key: "BUSINESS_REGISTRATION", label: "Business Registration", icon: ShieldCheck },
+    { key: "FSSAI_CERTIFICATE", label: "FSSAI Certificate", icon: Activity },
+  ];
+
+  return (
+    <div className="flex flex-col gap-1 text-xs font-semibold text-[#1F2933]">
+      <div className="font-black text-[#0B1F3A] truncate max-w-[200px]" title={item.profile?.businessLegalName || "Legal name not set"}>
+        {item.profile?.businessLegalName || "Legal name not set"}
+      </div>
+      <div className="text-[#667085] truncate max-w-[200px]" title={item.profile?.businessType ? humanize(item.profile.businessType) : "Business type not set"}>
+        {item.profile?.businessType ? humanize(item.profile.businessType) : "Business type not set"}
+      </div>
+      <div className="text-[#667085] whitespace-nowrap text-[11px] tracking-wide">
+        {[
+          item.profile?.gstNumber ? `GST: ${item.profile.gstNumber}` : null,
+          item.profile?.panNumber ? `PAN: ${item.profile.panNumber}` : null,
+        ].filter(Boolean).join(" / ") || "GST/PAN not set"}
+      </div>
+      <div className="flex flex-wrap items-center gap-1 mt-1">
+        {docTypes.map((docType) => {
+          const doc = docs.find((d) => d.documentType === docType.key);
+          const Icon = docType.icon;
+          
+          if (!doc) {
+            return (
+              <span
+                key={docType.key}
+                title={`${docType.label}: Not Uploaded`}
+                className="grid h-6 w-6 place-items-center rounded border border-dashed border-[#D8E2EA] bg-[#F8FAFC] text-[#9AA5B1]"
+              >
+                <Icon className="h-3.5 w-3.5 opacity-50" />
+              </span>
+            );
+          }
+
+          const statusClasses =
+            doc.status === "APPROVED"
+              ? "bg-[#ECFDF3] border-[#32B877] text-[#15803D]"
+              : doc.status === "REJECTED"
+                ? "bg-[#FEF2F2] border-[#F5B7B7] text-[#991B1B]"
+                : "bg-[#FFFBEB] border-[#FDE68A] text-[#B45309]";
+
+          return (
+            <span
+              key={docType.key}
+              title={`${docType.label}: ${humanize(doc.status)}`}
+              className={cn(
+                "grid h-6 w-6 place-items-center rounded border transition-all shadow-sm",
+                statusClasses
+              )}
+            >
+              <Icon className="h-3.5 w-3.5" />
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+
 
 function formatPaise(value: number, currency = "INR") {
   return new Intl.NumberFormat("en-IN", {

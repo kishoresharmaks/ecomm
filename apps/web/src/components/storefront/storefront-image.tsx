@@ -4,7 +4,11 @@ import Image from "next/image";
 import { useEffect, useState } from "react";
 import { ImageIcon } from "lucide-react";
 import { cn } from "@indihub/ui";
-import { isPortableImageKey, resolveImageSource } from "@/lib/image-url";
+import {
+  isPortableImageKey,
+  isPrivateNetworkImageSource,
+  resolveImageSource,
+} from "@/lib/image-url";
 
 type StorefrontImageProps = {
   src: string | null;
@@ -53,6 +57,7 @@ export function StorefrontImage({
           fill
           priority={priority}
           sizes={sizes}
+          unoptimized={isPrivateNetworkImageSource(resolvedSrc)}
           className={cn("object-cover", className)}
           onError={() => setFailed(true)}
         />

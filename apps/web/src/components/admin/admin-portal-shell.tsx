@@ -94,6 +94,7 @@ const iconByHref: Array<[string, typeof LayoutDashboard]> = [
   ["/admin/delivery", Truck],
   ["/admin/locations", Home],
   ["/admin/categories", Tags],
+  ["/admin/cms/announcements", Megaphone],
   ["/admin/cms", BookOpen],
   ["/admin/chat", MessageCircle],
   ["/admin/support", ShieldCheck],

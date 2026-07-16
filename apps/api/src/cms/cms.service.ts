@@ -16,6 +16,7 @@ import { CreateCmsRedirectDto, CmsRedirectQueryDto, UpdateCmsRedirectDto } from 
 import { CmsRevisionQueryDto } from "./dto/cms-revision.dto";
 import { CreateHomepageSectionDto, UpdateHomepageSectionDto } from "./dto/homepage-section.dto";
 import { CreateSeoEntryDto, SeoEntryQueryDto, UpdateSeoEntryDto } from "./dto/seo-entry.dto";
+import { CreateCmsAnnouncementDto, UpdateCmsAnnouncementDto } from "./dto/cms-announcement.dto";
 
 type PublishedHomepageSectionOptions = {
   includeInactiveSchedule?: boolean;
@@ -800,6 +801,84 @@ export class CmsService {
     return { items, total, page, limit: take };
   }
 
+  async listAdminAnnouncements(query: CmsQueryDto) {
+    const { skip, take, page } = this.pagination(query);
+    const where: Prisma.CmsAnnouncementWhereInput = {
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.search ? { title: { contains: query.search, mode: "insensitive" } } : {})
+    };
+    const [items, total] = await this.prisma.client.$transaction(async (tx) => {
+      const items = await tx.cmsAnnouncement.findMany({ where, orderBy: [{ sortOrder: "asc" }, { updatedAt: "desc" }], skip, take });
+      const total = await tx.cmsAnnouncement.count({ where });
+
+      return [items, total] as const;
+    });
+    return { items, total, page, limit: take };
+  }
+
+  listPublishedAnnouncements() {
+    const now = new Date();
+    return this.publicCmsRead("published announcements", () => this.prisma.client.cmsAnnouncement.findMany({
+      where: {
+        status: ContentStatus.PUBLISHED,
+        AND: [
+          { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
+          { OR: [{ endsAt: null }, { endsAt: { gte: now } }] }
+        ]
+      },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }]
+    }), []);
+  }
+
+  async createAnnouncement(actor: RequestUser, dto: CreateCmsAnnouncementDto) {
+    const announcement = await this.prisma.client.cmsAnnouncement.create({
+      data: {
+        title: dto.title,
+        linkUrl: dto.linkUrl ?? null,
+        backgroundColor: dto.backgroundColor ?? null,
+        textColor: dto.textColor ?? null,
+        startsAt: this.parseOptionalDate(dto.startsAt, "Announcement start date"),
+        endsAt: this.parseOptionalDate(dto.endsAt, "Announcement end date"),
+        status: dto.status ?? ContentStatus.DRAFT,
+        sortOrder: dto.sortOrder ?? 0
+      }
+    });
+    await this.audit(actor, "cms.announcement.created", "cms_announcement", announcement.id, undefined, announcement);
+    await this.recordRevision(actor, "cms_announcement", announcement.id, "created", announcement);
+    await this.invalidateHomepageCache();
+    return announcement;
+  }
+
+  async updateAnnouncement(actor: RequestUser, id: string, dto: UpdateCmsAnnouncementDto) {
+    const existing = await this.getAnnouncementOrThrow(id);
+    const announcement = await this.prisma.client.cmsAnnouncement.update({
+      where: { id },
+      data: {
+        ...(dto.title !== undefined ? { title: dto.title } : {}),
+        ...(dto.linkUrl !== undefined ? { linkUrl: dto.linkUrl ?? null } : {}),
+        ...(dto.backgroundColor !== undefined ? { backgroundColor: dto.backgroundColor ?? null } : {}),
+        ...(dto.textColor !== undefined ? { textColor: dto.textColor ?? null } : {}),
+        ...(dto.startsAt !== undefined ? { startsAt: this.parseOptionalDate(dto.startsAt, "Announcement start date") } : {}),
+        ...(dto.endsAt !== undefined ? { endsAt: this.parseOptionalDate(dto.endsAt, "Announcement end date") } : {}),
+        ...(dto.status !== undefined ? { status: dto.status } : {}),
+        ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {})
+      }
+    });
+    await this.audit(actor, "cms.announcement.updated", "cms_announcement", announcement.id, existing, announcement);
+    await this.recordRevision(actor, "cms_announcement", announcement.id, "updated", announcement);
+    await this.invalidateHomepageCache();
+    return announcement;
+  }
+
+  async deleteAnnouncement(actor: RequestUser, id: string) {
+    const existing = await this.getAnnouncementOrThrow(id);
+    await this.prisma.client.cmsAnnouncement.delete({ where: { id } });
+    await this.audit(actor, "cms.announcement.deleted", "cms_announcement", id, existing);
+    await this.recordRevision(actor, "cms_announcement", id, "deleted", existing);
+    await this.invalidateHomepageCache();
+    return { deleted: true };
+  }
+
   async createHomepageSection(actor: RequestUser, dto: CreateHomepageSectionDto) {
     const section = await this.prisma.client.homepageSection.create({
       data: {
@@ -1190,6 +1269,14 @@ export class CmsService {
       throw new NotFoundException("Banner not found.");
     }
     return banner;
+  }
+
+  async getAnnouncementOrThrow(id: string) {
+    const announcement = await this.prisma.client.cmsAnnouncement.findUnique({ where: { id } });
+    if (!announcement) {
+      throw new NotFoundException("Announcement not found.");
+    }
+    return announcement;
   }
 
   private parseOptionalDate(value: string | undefined | null, label: string) {

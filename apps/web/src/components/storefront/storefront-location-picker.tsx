@@ -376,7 +376,7 @@ const LocationDropdownPanel = forwardRef<
         mobile ? "max-h-[min(64svh,430px)]" : "max-h-[78svh]",
         floating
           ? "fixed z-[140]"
-          : "absolute right-0 z-50 mt-3 w-full",
+          : cn("absolute right-0 mt-3 w-full", mobile ? "z-[140]" : "z-50"),
         !floating && mobile
           ? "left-0 min-w-0"
           : !floating && utility

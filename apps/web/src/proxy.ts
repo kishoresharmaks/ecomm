@@ -6,6 +6,14 @@ import {
 } from "@/lib/security-headers";
 
 export function proxy(request: NextRequest) {
+  const hostname = request.headers.get("host") || "";
+  if (hostname.startsWith("www.")) {
+    const url = request.nextUrl.clone();
+    url.hostname = hostname.replace(/^www\./, "");
+    url.port = request.nextUrl.port;
+    return NextResponse.redirect(url, 301);
+  }
+
   const nonce = createNonce();
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-nonce", nonce);
@@ -24,6 +32,7 @@ export function proxy(request: NextRequest) {
     response.headers.set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");
     response.headers.set("X-Content-Type-Options", "nosniff");
     response.headers.set("X-Frame-Options", "SAMEORIGIN");
+    response.headers.set("X-XSS-Protection", "0");
     response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
     response.headers.set(
       "Permissions-Policy",

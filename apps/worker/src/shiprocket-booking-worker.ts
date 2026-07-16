@@ -550,9 +550,23 @@ async function createShiprocketBooking(request: BookingRequest): Promise<Booking
     readText(labelResponse, ["data", "label_url"]) ??
     readText(labelResponse, ["response", "label_url"]);
 
+  const courierName =
+    readText(awbResponse, ["response", "data", "courier_name"]) ??
+    readText(awbResponse, ["data", "courier_name"]) ??
+    readText(awbResponse, ["courier_name"]) ??
+    readText(createResponse, ["courier_name"]);
+
+  const courierCode =
+    readText(awbResponse, ["response", "data", "courier_company_id"]) ??
+    readText(awbResponse, ["data", "courier_company_id"]) ??
+    readText(awbResponse, ["courier_company_id"]) ??
+    readText(createResponse, ["courier_company_id"]);
+
   return {
     providerOrderId,
     awbNumber,
+    courierName,
+    courierCode,
     trackingUrl: awbNumber ? `https://shiprocket.co/tracking/${encodeURIComponent(awbNumber)}` : null,
     labelUrl,
     trackingStatus: awbNumber ? CourierShipmentStatus.BOOKED : CourierShipmentStatus.NOT_BOOKED,

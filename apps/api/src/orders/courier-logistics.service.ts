@@ -1102,8 +1102,8 @@ export class CourierLogisticsService {
     const eventId = this.payloadText(payload, ["eventId", "event_id", "webhookId", "id"]) ??
       this.fallbackWebhookEventId(providerCode, payload);
     const awbNumber = this.payloadText(payload, ["awbNumber", "awb_number", "awb", "trackingNumber"]);
-    const providerOrderId = this.payloadText(payload, ["providerOrderId", "orderId", "shipmentId"]);
-    const statusText = this.payloadText(payload, ["status", "trackingStatus", "shipmentStatus"]);
+    const providerOrderId = this.payloadText(payload, ["providerOrderId", "orderId", "order_id", "shipmentId"]);
+    const statusText = this.payloadText(payload, ["status", "trackingStatus", "shipmentStatus", "current_status"]);
     const trackingStatus = this.mapCourierStatus(statusText);
     const existingEvent = await this.prisma.client.courierWebhookEvent.findUnique({
       where: { providerCode_providerEventId: { providerCode, providerEventId: eventId } },
@@ -2203,10 +2203,17 @@ export class CourierLogisticsService {
     if (!secret) {
       throw new UnauthorizedException("Courier webhook secret is not configured.");
     }
+    const received = signature?.trim() ?? "";
+    if (snapshot.adapterCode === "SHIPROCKET") {
+      if (!received || !this.safeEqual(secret, received)) {
+        throw new UnauthorizedException("Invalid Shiprocket webhook signature.");
+      }
+      return;
+    }
+
     const expected = createHmac("sha256", secret)
       .update(rawBody?.length ? rawBody : this.stableStringify(payload))
       .digest("hex");
-    const received = signature?.trim() ?? "";
     if (!received || !this.safeEqual(expected, received)) {
       throw new UnauthorizedException("Invalid courier webhook signature.");
     }

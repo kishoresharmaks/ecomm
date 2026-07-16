@@ -44,7 +44,6 @@ import { useQuery } from "@tanstack/react-query";
 import { cn } from "@indihub/ui";
 import { AuthActions } from "@/components/auth/auth-actions";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
-import { useMarket } from "@/components/market/market-context";
 import { StorefrontLocationPicker } from "@/components/storefront/storefront-location-picker";
 import { StorefrontLocalePicker } from "@/components/storefront/storefront-locale-picker";
 import { useFloatingHeaderDropdown } from "@/components/storefront/use-floating-header-dropdown";
@@ -55,8 +54,10 @@ import {
   getSearchSuggestions,
   listCategories,
   listCmsMenus,
+  listCmsAnnouncements,
   type CategorySummary,
   type CmsMenuItem,
+  type CmsAnnouncement,
   type SearchSuggestion,
 } from "@/lib/storefront-api";
 import { useTranslations } from "next-intl";
@@ -128,8 +129,15 @@ export function StorefrontHeader({ initialMenu }: { initialMenu?: CmsMenuItem[] 
     staleTime: staticStorefrontDataStaleMs,
     retry: false,
   });
+  const announcementsQuery = useQuery({
+    queryKey: ["cms-announcements", "header"],
+    queryFn: listCmsAnnouncements,
+    staleTime: staticStorefrontDataStaleMs,
+    retry: false,
+  });
 
   const categories = categoriesQuery.data ?? [];
+  const announcements = announcementsQuery.data ?? [];
   const cartProductCount = cartTotals(cartQuery.data).productCount;
   const wishlistCount = wishlistQuery.data?.items.length ?? 0;
   const cmsItems = useMemo(
@@ -228,6 +236,7 @@ export function StorefrontHeader({ initialMenu }: { initialMenu?: CmsMenuItem[] 
         headerHidden ? "-translate-y-full" : "translate-y-0",
       )}
     >
+      <StorefrontAnnouncementBar announcements={announcements} />
       <div className="lg:mx-auto lg:max-w-[1840px] lg:overflow-visible lg:rounded-[18px] lg:border lg:border-[#f2e4dd] lg:bg-white/96 lg:shadow-[0_16px_48px_rgba(17,24,39,0.08)] lg:backdrop-blur-xl">
         <div className="hidden border-b border-[#f2e4dd] bg-[#fffaf7]/88 lg:block lg:rounded-t-[18px]">
           <div className="mx-auto flex h-11 items-center justify-between gap-5 px-5 xl:px-7 2xl:px-8">
@@ -235,8 +244,6 @@ export function StorefrontHeader({ initialMenu }: { initialMenu?: CmsMenuItem[] 
               <StorefrontLocationPicker utility compact className="w-auto min-w-0 max-w-[360px]" />
               <StorefrontLocalePicker className="hidden xl:block" />
             </div>
-
-            <DeliveryPromoCopy />
 
             <nav
               className="flex shrink-0 items-center gap-4 text-[13px] font-bold text-[#344054] 2xl:gap-5"
@@ -371,20 +378,47 @@ export function StorefrontHeader({ initialMenu }: { initialMenu?: CmsMenuItem[] 
   );
 }
 
-function DeliveryPromoCopy() {
-  const market = useMarket();
-  const t = useTranslations("header");
+function StorefrontAnnouncementBar({ announcements }: { announcements: CmsAnnouncement[] }) {
+  const [currentIndex, setCurrentIndex] = useState(0);
 
-  return (
-    <div className="hidden min-w-0 flex-1 items-center justify-center gap-2 text-[13px] font-bold text-[#26364b] xl:flex">
-      <Truck className="h-4 w-4 text-[#0f8a5f]" aria-hidden="true" />
-      <span className="truncate">
-        {t("free_delivery")}{" "}
-        <span className="text-[#0f8a5f]">{market.format(49_900)}</span>
-      </span>
+  useEffect(() => {
+    if (!announcements || announcements.length <= 1) return;
+    const timer = setInterval(() => {
+      setCurrentIndex((current) => (current + 1) % announcements.length);
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [announcements]);
+
+  if (!announcements || announcements.length === 0) return null;
+
+  const currentAnnouncement = announcements[currentIndex];
+  if (!currentAnnouncement) return null;
+
+  const bg = currentAnnouncement.backgroundColor || "#163B5C";
+  const fg = currentAnnouncement.textColor || "#FFFFFF";
+
+  const content = (
+    <div
+      className="w-full text-center text-xs sm:text-sm font-semibold transition-all duration-500 ease-in-out lg:rounded-t-[18px]"
+      style={{ backgroundColor: bg, color: fg }}
+    >
+      <div className="px-4 py-2 flex items-center justify-center min-h-[36px]">
+        {currentAnnouncement.title}
+      </div>
     </div>
   );
+
+  if (currentAnnouncement.linkUrl) {
+    return (
+      <Link href={currentAnnouncement.linkUrl} className="block hover:opacity-95 transition-opacity">
+        {content}
+      </Link>
+    );
+  }
+
+  return content;
 }
+
 
 function BrandBlock() {
   const t = useTranslations("header");
@@ -1401,7 +1435,11 @@ function DrawerLink({
         {icon}
       </span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
-      <BadgeBubble count={badge} />
+      {badge && badge > 0 ? (
+        <span className="grid h-5 min-w-5 place-items-center rounded-full bg-[#ff5a1f] px-1 text-[10px] font-black leading-none text-white">
+          {badge > 99 ? "99+" : badge}
+        </span>
+      ) : null}
       <ChevronRight className="h-4 w-4 shrink-0 text-[#98a2b3]" aria-hidden="true" />
     </DrawerAnchor>
   );

@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
-import { LifeBuoy, Lock, MessageCircle, Send, X } from "lucide-react";
+import { LifeBuoy, Lock, Send, X } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, StatusBadge, cn } from "@indihub/ui";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
@@ -237,7 +237,7 @@ export function ChatWidget() {
   const error = conversationsQuery.error || startMutation.error || sendMutation.error || handoverMutation.error || guidedActionMutation.error;
 
   return (
-    <div className="fixed bottom-5 right-5 z-40">
+    <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+5.5rem)] right-4 z-[110] lg:bottom-5 lg:right-5">
       {open ? (
         <section className="mb-3 flex h-[min(640px,calc(100vh-7rem))] w-[min(420px,calc(100vw-2rem))] flex-col overflow-hidden rounded-lg border border-[#D8E2EA] bg-white shadow-2xl">
           <header className="flex items-center justify-between bg-[#163B5C] px-4 py-3 text-white">
@@ -361,10 +361,10 @@ export function ChatWidget() {
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className="flex h-14 w-14 items-center justify-center rounded-full bg-[#ED3500] text-white shadow-xl"
+        className="flex h-14 w-14 overflow-hidden items-center justify-center rounded-full bg-white shadow-[0_12px_30px_rgba(255,90,31,0.25)] ring-2 ring-[#ff5a1f]/20 hover:ring-[#ff5a1f]/50 transition"
         aria-label="Open support chat"
       >
-        <MessageCircle className="h-6 w-6" aria-hidden="true" />
+        <img src="/brand/1handindia_logo.png" alt="Support Chat" className="h-full w-full object-cover" />
       </button>
     </div>
   );

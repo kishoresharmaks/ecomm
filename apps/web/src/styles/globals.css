@@ -79,6 +79,78 @@ a {
   overscroll-behavior-x: contain;
   scroll-behavior: smooth;
   scroll-padding-inline: 0.75rem;
+  touch-action: pan-x pan-y pinch-zoom;
+}
+
+.indihub-scroll-rail.is-dragging {
+  scroll-behavior: auto;
+  scroll-snap-type: none;
+}
+
+.storefront-mobile-category-card {
+  width: 78px;
+  min-width: 78px;
+  height: 94px;
+  min-height: 94px;
+  flex-basis: 78px;
+}
+
+.storefront-mobile-category-image {
+  width: 54px;
+  min-width: 54px;
+  height: 54px;
+  min-height: 54px;
+  flex-basis: 54px;
+}
+
+.storefront-category-card {
+  width: clamp(144px, calc((100vw - 44px) / 2), 160px);
+  min-width: clamp(144px, calc((100vw - 44px) / 2), 160px);
+  height: 134px;
+  min-height: 134px;
+  flex-basis: clamp(144px, calc((100vw - 44px) / 2), 160px);
+}
+
+.storefront-category-image {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  flex-basis: 44px;
+}
+
+@media (min-width: 640px) {
+  .storefront-category-card {
+    width: 260px;
+    min-width: 260px;
+    height: 270px;
+    min-height: 270px;
+    flex-basis: 260px;
+  }
+
+  .storefront-category-image {
+    width: 96px;
+    min-width: 96px;
+    height: 96px;
+    min-height: 96px;
+    flex-basis: 96px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .storefront-category-card {
+    width: min(260px, calc((100% - 2.25rem) / 4));
+    min-width: min(260px, calc((100% - 2.25rem) / 4));
+    flex-basis: min(260px, calc((100% - 2.25rem) / 4));
+  }
+}
+
+@media (min-width: 1280px) {
+  .storefront-category-card {
+    width: calc((100% - 3rem) / 5);
+    min-width: calc((100% - 3rem) / 5);
+    flex-basis: calc((100% - 3rem) / 5);
+  }
 }
 
 @keyframes indihub-mobile-drawer-in {

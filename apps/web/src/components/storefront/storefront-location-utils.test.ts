@@ -5,7 +5,10 @@ import {
   browsingLocationQuery,
   defaultBrowsingLocationFromAddresses,
   locationMatchLabel,
+  parseStorefrontLocationCookie,
   splitStoresByLocationMatch,
+  storefrontLocationCookieValue,
+  storefrontLocationFingerprint,
 } from "./storefront-location-utils";
 
 describe("storefront location helpers", () => {
@@ -132,5 +135,33 @@ describe("storefront location helpers", () => {
     expect(groups.broaderStores.map((store) => store.slug)).toEqual(["london-store"]);
     expect(locationMatchLabel("LOCAL_AREA")).toBe("In your area");
     expect(locationMatchLabel("COUNTRY")).toBe("Same country");
+  });
+
+  it("round-trips the server-readable browsing location cookie", () => {
+    const location = {
+      countryCode: "in",
+      countryName: "India",
+      stateCode: "in-tn",
+      stateName: "Tamil Nadu",
+      cityCode: "in-tn-slm",
+      cityName: "Salem",
+      pincode: "636016",
+    };
+    const cookieValue = storefrontLocationCookieValue(location);
+
+    expect(parseStorefrontLocationCookie(cookieValue)).toEqual({
+      countryCode: "IN",
+      countryName: "India",
+      stateCode: "IN-TN",
+      stateName: "Tamil Nadu",
+      cityCode: "IN-TN-SLM",
+      cityName: "Salem",
+      pincode: "636016",
+    });
+    expect(storefrontLocationFingerprint(location)).toBe(
+      "IN|IN-TN|IN-TN-SLM||636016|||",
+    );
+    expect(storefrontLocationFingerprint(null)).toBe("global");
+    expect(parseStorefrontLocationCookie("%7Bbroken")).toBeNull();
   });
 });

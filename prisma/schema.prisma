@@ -4913,6 +4913,25 @@ model B2BAdminAuditLog {
   @@map("b2b_admin_audit_logs")
 }
 
+model CmsAnnouncement {
+  id              String        @id @default(uuid()) @db.Uuid
+  title           String
+  linkUrl         String?       @map("link_url")
+  backgroundColor String?       @map("background_color")
+  textColor       String?       @map("text_color")
+  startsAt        DateTime?     @map("starts_at")
+  endsAt          DateTime?     @map("ends_at")
+  status          ContentStatus @default(DRAFT)
+  sortOrder       Int           @default(0) @map("sort_order")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  @@index([startsAt])
+  @@index([endsAt])
+  @@index([status, sortOrder])
+  @@map("cms_announcements")
+}
+
 model Banner {
   id                String        @id @default(uuid()) @db.Uuid
   title             String

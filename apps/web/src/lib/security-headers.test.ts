@@ -33,6 +33,20 @@ describe("security header helpers", () => {
     expect(frameDirective).toContain("https://www.googletagmanager.com");
   });
 
+  it("keeps an explicitly configured local HTTP API usable in production preview", () => {
+    vi.stubEnv("NEXT_PUBLIC_WEB_URL", "http://192.168.1.2:3000");
+    vi.stubEnv("NEXT_PUBLIC_API_URL", "http://192.168.1.2:4000");
+
+    const csp = buildContentSecurityPolicy({
+      nonce: "nonce-value",
+      origin: "http://192.168.1.2:3000",
+    });
+
+    expect(csp).not.toContain("upgrade-insecure-requests");
+    expect(directive(csp, "img-src")).toContain("http://192.168.1.2:4000");
+    expect(directive(csp, "connect-src")).toContain("http://192.168.1.2:4000");
+  });
+
   it("emits a report-to endpoint for the production web origin", () => {
     vi.stubEnv("NEXT_PUBLIC_WEB_URL", "https://www.1handindia.com");
 

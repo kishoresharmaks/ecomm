@@ -103,7 +103,7 @@ export function Providers({
     return app;
   }
 
-  const clerkProps: any = {
+  const clerkProps: Record<string, unknown> = {
     publishableKey: clerkPublishableKey,
   };
   if (nonce) {

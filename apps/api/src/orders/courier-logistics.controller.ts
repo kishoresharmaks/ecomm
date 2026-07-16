@@ -302,13 +302,18 @@ export class CourierWebhooksController {
     @Param("providerCode") providerCode: string,
     @Headers("x-courier-signature") courierSignature: string | undefined,
     @Headers("x-xpressbees-signature") xpressBeesSignature: string | undefined,
+    @Headers("x-api-key") shiprocketApiKey: string | undefined,
     @RawBody() rawBody: Buffer | undefined,
     @Body() payload: Record<string, unknown>,
   ) {
+    // Shiprocket explicitly bans the word "shiprocket", "sr", etc. from webhook URLs.
+    // We map a generic alias back to the locked database provider code.
+    const actualProviderCode = providerCode.toLowerCase() === "logistics-sync" ? "SHIPROCKET" : providerCode;
+
     return this.courierLogistics.handleTrackingWebhook(
-      providerCode,
+      actualProviderCode,
       payload,
-      courierSignature ?? xpressBeesSignature,
+      courierSignature ?? xpressBeesSignature ?? shiprocketApiKey,
       rawBody,
     );
   }

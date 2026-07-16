@@ -13,10 +13,10 @@ export function AccountMetric({
   note?: string;
 }) {
   return (
-    <div className="rounded-lg border border-[#E5E7EB] bg-white p-5 shadow-sm">
-      <p className="text-sm font-bold text-[#667085]">{label}</p>
-      <p className="mt-3 text-3xl font-black text-[#163B5C]">{value}</p>
-      {note ? <p className="mt-1 text-xs font-semibold text-[#667085]">{note}</p> : null}
+    <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm lg:p-5">
+      <p className="text-xs font-bold text-[#667085] lg:text-sm">{label}</p>
+      <p className="mt-1 text-2xl font-black text-[#163B5C] lg:mt-3 lg:text-3xl">{value}</p>
+      {note ? <p className="mt-1 text-[10px] font-semibold text-[#667085] lg:text-xs">{note}</p> : null}
     </div>
   );
 }
@@ -35,7 +35,7 @@ export function EmptyState({
       <span className="mx-auto grid h-12 w-12 place-items-center rounded-md bg-[#EAF1F7] text-[#163B5C]">
         <Inbox className="h-5 w-5" aria-hidden="true" />
       </span>
-      <h2 className="mt-4 text-xl font-black text-[#1F2933]">{title}</h2>
+      <h3 className="mt-4 text-xl font-black text-[#1F2933]">{title}</h3>
       <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-[#667085]">{message}</p>
       {action ? <div className="mt-5 flex justify-center">{action}</div> : null}
     </div>
@@ -70,7 +70,7 @@ export function PagePanel({
 }: ComponentPropsWithoutRef<"section"> & { children: ReactNode }) {
   return (
     <section
-      className={cn("rounded-lg border border-[#E5E7EB] bg-white p-5 shadow-sm", className)}
+      className={cn("border-y border-[#E5E7EB] bg-white px-5 py-6 lg:rounded-xl lg:border lg:p-6 lg:shadow-sm", className)}
       {...props}
     >
       {children}

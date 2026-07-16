@@ -16,6 +16,12 @@ export class PublicCmsController {
     return this.cmsService.listPublishedBanners();
   }
 
+  @Get("announcements")
+  @ApiOperation({ summary: "List published storefront announcements." })
+  listAnnouncements() {
+    return this.cmsService.listPublishedAnnouncements();
+  }
+
   @Get("homepage-sections")
   @ApiOperation({ summary: "List published homepage sections." })
   listHomepageSections() {
