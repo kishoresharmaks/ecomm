@@ -572,6 +572,8 @@ const refundDetailInclude = {
       deliveryStatus: true,
       totalPaise: true,
       currency: true,
+      buyerCurrency: true,
+      fxRate: true,
       createdAt: true,
     },
   },
@@ -2037,6 +2039,12 @@ export class ReturnsService {
       throw new BadRequestException("Razorpay refund requires a captured Razorpay payment id.");
     }
 
+    // refund.amountPaise is in the order's base currency (INR), but Razorpay
+    // refunds are interpreted in the captured payment's currency. For
+    // international orders these differ — send the converted amount or the
+    // provider will refund the wrong money.
+    const providerAmountMinor = this.refundAmountInPaymentCurrency(refund);
+
     const transaction = await this.prisma.client.$transaction(async (tx) => {
       await this.lockRefundRequest(tx, refund.id);
       const attemptCount = await tx.refundTransaction.count({
@@ -2051,8 +2059,8 @@ export class ReturnsService {
           provider: PaymentProvider.RAZORPAY,
           method: RefundMethod.RAZORPAY,
           status: RefundTransactionStatus.PROCESSING,
-          amountPaise: refund.amountPaise,
-          currency: refund.currency,
+          amountPaise: providerAmountMinor,
+          currency: refund.payment!.currency,
           idempotencyKey,
           createdById: actor.id,
         },
@@ -2072,7 +2080,7 @@ export class ReturnsService {
 
     const providerResult = await this.createRazorpayRefund({
       paymentId: refund.payment.providerPaymentId,
-      amountPaise: refund.amountPaise,
+      amountPaise: providerAmountMinor,
       idempotencyKey: transaction.idempotencyKey,
       refundNumber: refund.refundNumber,
     });
@@ -5111,6 +5119,37 @@ export class ReturnsService {
       throw new NotFoundException("Refund request not found.");
     }
     return detail;
+  }
+
+  /**
+   * Convert a refund's base-currency (INR) amount into the currency Razorpay
+   * captured the payment in, using the FX rate frozen on the order at
+   * placement. The same rate that priced the charge prices the refund, so a
+   * full refund always equals the full capture.
+   */
+  private refundAmountInPaymentCurrency(refund: {
+    amountPaise: number;
+    order: { currency: string; buyerCurrency: string | null; fxRate: Prisma.Decimal | null };
+    payment: { currency: string; amountPaise: number } | null;
+  }) {
+    const paymentCurrency = refund.payment?.currency ?? refund.order.currency;
+    if (paymentCurrency === refund.order.currency) {
+      return refund.amountPaise;
+    }
+
+    const rate = refund.order.fxRate?.toNumber();
+    if (!rate || !Number.isFinite(rate) || rate <= 0) {
+      throw new BadRequestException(
+        "This order was paid in a different currency but has no stored FX rate. Record the refund manually.",
+      );
+    }
+
+    const converted = Math.round((Math.max(0, refund.amountPaise) / 100) * rate * 100);
+    // Independent rounding of partial refunds can overshoot the captured
+    // amount by a minor unit; Razorpay rejects refunds above the remaining
+    // capture, so clamp to it.
+    const capturedMinor = refund.payment?.amountPaise;
+    return capturedMinor ? Math.min(converted, capturedMinor) : converted;
   }
 
   private async resolveSeller(actor: RequestUser) {

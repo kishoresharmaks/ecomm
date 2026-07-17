@@ -493,6 +493,10 @@ export class FinancePaymentsService {
         amountPaise: true,
         order: {
           select: {
+            // payment.amountPaise is in the buyer's currency; COD cash and the
+            // receivable/remittance figures below are INR paise. Use the
+            // order's base total so the subtraction stays in one unit.
+            totalPaise: true,
             deliveryDetail: {
               select: {
                 codCollectionStatus: true,
@@ -534,7 +538,7 @@ export class FinancePaymentsService {
         .reduce((sum, remittance) => sum + (remittance.remittedAmountPaise ?? 0), 0);
       const pendingPaise = Math.max(
         0,
-        payment.amountPaise - sellerAccountedPaise - localVerifiedPaise - courierVerifiedPaise,
+        payment.order.totalPaise - sellerAccountedPaise - localVerifiedPaise - courierVerifiedPaise,
       );
       if (pendingPaise > 0) {
         count += 1;

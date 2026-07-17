@@ -1,8 +1,10 @@
 import { HeartIcon, ShoppingCart01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react-native";
+import { useQueryClient } from "@tanstack/react-query";
 import { Link, type Href } from "expo-router";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View, type GestureResponderEvent } from "react-native";
 import { formatMoney } from "../features/market/mobile-market";
+import { primeProductDetail } from "../features/storefront/product-prefetch";
 import { resolveImageUrl } from "../lib/image-url";
 import { colors } from "../theme";
 import type { MobileProduct } from "../types/mobile-home";
@@ -33,6 +35,7 @@ export function ProductCard({
   product,
   noMargin = false,
 }: ProductCardProps) {
+  const queryClient = useQueryClient();
   const imageUrl = resolveImageUrl(product.images?.[0]?.url);
   const variant = product.variants?.[0];
   const price = variant?.basePricePaise ?? variant?.pricePaise;
@@ -54,7 +57,10 @@ export function ProductCard({
 
   return (
     <Link asChild href={`/product/${product.slug}` as Href}>
-      <Pressable style={({ pressed }) => [styles.card, compact ? styles.cardCompact : null, noMargin ? styles.cardNoMargin : null, pressed ? styles.cardPressed : null]}>
+      <Pressable
+        style={({ pressed }) => [styles.card, compact ? styles.cardCompact : null, noMargin ? styles.cardNoMargin : null, pressed ? styles.cardPressed : null]}
+        onPressIn={() => primeProductDetail(queryClient, product)}
+      >
         <View style={[styles.imageWrap, compact ? styles.imageWrapCompact : null, { height: imageHeight }]}>
           <RemoteImage fallbackLabel={product.name} resizeMode="cover" style={styles.image} uri={imageUrl} />
           {discount ? <Text style={styles.discountBadge}>-{discount}%</Text> : null}

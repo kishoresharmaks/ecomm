@@ -4,10 +4,11 @@ import Link from "next/link";
 import type { Route } from "next";
 import { useState, type MouseEvent } from "react";
 import { Eye, FilePlus2, Heart, PackageCheck, ShoppingCart, Star, Store } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, cn } from "@indihub/ui";
 import { useMarket } from "@/components/market/market-context";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
+import { primeProductDetail } from "@/lib/product-prefetch";
 import { getCart, primaryImage, primaryVariant, variantBaseMrp, variantBaseOriginalPrice, variantBasePrice, type ProductSummary } from "@/lib/storefront-api";
 import { ProductQuickViewModal } from "./product-quick-view-modal";
 import { StorefrontImage } from "./storefront-image";
@@ -24,6 +25,7 @@ export function ProductCard({ product, onAddToCart, isAdding = false }: ProductC
   const market = useMarket();
   const customerAuth = useCustomerAuth();
   const wishlist = useStorefrontWishlist();
+  const queryClient = useQueryClient();
   const [quickViewOpen, setQuickViewOpen] = useState(false);
   const imageUrl = primaryImage(product);
   const variant = primaryVariant(product);
@@ -76,7 +78,11 @@ export function ProductCard({ product, onAddToCart, isAdding = false }: ProductC
   }
 
   return (
-    <article className="group flex h-full min-w-0 flex-col overflow-hidden rounded-lg border border-[#E8EDF2] bg-white shadow-sm transition hover:-translate-y-0.5 hover:border-[#ED3500] hover:shadow-[0_24px_48px_rgba(22,59,92,0.08)] sm:rounded-[28px]">
+    <article
+      className="group flex h-full min-w-0 flex-col overflow-hidden rounded-lg border border-[#E8EDF2] bg-white shadow-sm transition hover:-translate-y-0.5 hover:border-[#ED3500] hover:shadow-[0_24px_48px_rgba(22,59,92,0.08)] sm:rounded-[28px]"
+      onMouseEnter={() => primeProductDetail(queryClient, product)}
+      onTouchStart={() => primeProductDetail(queryClient, product)}
+    >
       <div className="relative">
         <Link href={href} className="block">
           <div className="relative aspect-square overflow-hidden bg-[#FFF8F5] sm:aspect-[4/3]">

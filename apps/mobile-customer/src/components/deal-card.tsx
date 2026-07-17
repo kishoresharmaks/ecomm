@@ -1,8 +1,10 @@
 import { HeartIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react-native";
+import { useQueryClient } from "@tanstack/react-query";
 import { Link, type Href } from "expo-router";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View, type GestureResponderEvent } from "react-native";
 import { formatMoney } from "../features/market/mobile-market";
+import { primeProductDetail } from "../features/storefront/product-prefetch";
 import { resolveImageUrl } from "../lib/image-url";
 import { colors } from "../theme";
 import type { MobileProduct } from "../types/mobile-home";
@@ -23,16 +25,17 @@ type DealCardProps = {
 const STANDARD_CARD_WIDTH = 160;
 const STANDARD_IMAGE_HEIGHT = 120;
 
-export function DealCard({ 
-  badgeText = "Deal", 
-  ctaText = "View deal", 
-  formatPrice = defaultFormatPrice, 
+export function DealCard({
+  badgeText = "Deal",
+  ctaText = "View deal",
+  formatPrice = defaultFormatPrice,
   isWishlistPending = false,
   isWished = false,
   onToggleWishlist,
   product,
-  showBadge = true 
+  showBadge = true
 }: DealCardProps) {
+  const queryClient = useQueryClient();
   const cardWidth = STANDARD_CARD_WIDTH;
   const imageHeight = STANDARD_IMAGE_HEIGHT;
   const cardHeight = imageHeight + 126;
@@ -47,7 +50,11 @@ export function DealCard({
   }
 
   return (
-    <Link href={`/product/${product.slug}` as Href} style={[styles.dealCard, { minHeight: cardHeight, width: cardWidth }]}>
+    <Link
+      href={`/product/${product.slug}` as Href}
+      style={[styles.dealCard, { minHeight: cardHeight, width: cardWidth }]}
+      onPressIn={() => primeProductDetail(queryClient, product)}
+    >
       <View style={styles.cardContent}>
         <View style={[styles.dealImageWrap, { height: imageHeight }]}>
           {imageUrl ? <RemoteImage resizeMode="cover" style={styles.dealImage} uri={imageUrl} /> : <ProductImageFallback />}
