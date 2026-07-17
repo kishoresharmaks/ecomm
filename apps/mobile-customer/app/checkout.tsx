@@ -173,13 +173,32 @@ function CheckoutScreen() {
 
   const addresses = useMemo(() => addressesQuery.data ?? [], [addressesQuery.data]);
   const selectedAddress = selectedAddressId ? addresses.find((address) => address.id === selectedAddressId) : undefined;
+  // Only the location fields feed the summary endpoint, and they are debounced:
+  // keying the query on the raw addressForm refired /cart/checkout-summary on
+  // every keystroke in the address form.
+  const unsavedSummaryAddressKey = useDebouncedValue(
+    addressFormOpen ? JSON.stringify(checkoutSummaryAddressFromMobileForm(addressForm)) : "",
+    450,
+  );
+  const unsavedSummaryAddress = useMemo(
+    () =>
+      unsavedSummaryAddressKey
+        ? (JSON.parse(unsavedSummaryAddressKey) as ReturnType<typeof checkoutSummaryAddressFromMobileForm>)
+        : null,
+    [unsavedSummaryAddressKey],
+  );
   const unsavedAddressReadyForSummary =
     deliveryPreference === "DELIVER_TO_ADDRESS" &&
     !selectedAddress &&
     addressFormOpen &&
-    hasAddressLocationForCheckoutSummary(addressForm);
+    Boolean(
+      unsavedSummaryAddress?.countryCode &&
+        (unsavedSummaryAddress.localAreaCode ||
+          unsavedSummaryAddress.pincode ||
+          (typeof unsavedSummaryAddress.latitude === "number" && typeof unsavedSummaryAddress.longitude === "number")),
+    );
   const buyerCountryCode = checkoutBuyerCountryCode({
-    deliveryAddressCountryCode: selectedAddress?.countryCode ?? (unsavedAddressReadyForSummary ? addressForm.countryCode : undefined),
+    deliveryAddressCountryCode: selectedAddress?.countryCode ?? (unsavedAddressReadyForSummary ? unsavedSummaryAddress?.countryCode : undefined),
     selectedMarketCountryCode: selectedBrowsingLocation.countryCode,
   });
   const market = useMobileMarket(buyerCountryCode);
@@ -199,7 +218,7 @@ function CheckoutScreen() {
       paymentMethod,
       buyerCountryCode,
       unsavedAddressReadyForSummary,
-      addressForm,
+      unsavedSummaryAddressKey,
       appliedCouponCode,
     ],
     queryFn: () =>
@@ -220,8 +239,8 @@ function CheckoutScreen() {
         ...(deliveryPreference === "DELIVER_TO_ADDRESS" && selectedAddress
           ? { addressId: selectedAddress.id }
           : {}),
-        ...(unsavedAddressReadyForSummary
-          ? { shippingAddress: checkoutSummaryAddressFromMobileForm(addressForm) }
+        ...(unsavedAddressReadyForSummary && unsavedSummaryAddress
+          ? { shippingAddress: unsavedSummaryAddress }
           : {}),
       }),
     enabled:
@@ -503,6 +522,15 @@ function CheckoutScreen() {
       }
       if (checkoutSummaryQuery.isFetching) {
         throw new Error("Refreshing checkout totals. Try again in a moment.");
+      }
+      if (appliedCouponCode && checkoutSummaryQuery.isSuccess && !checkoutSummaryQuery.data?.coupon) {
+        setAppliedCouponCode(null);
+        setPendingCouponCode(null);
+        setCouponFeedback({
+          message: "The coupon no longer applies to this cart. Review the total and place the order again.",
+          tone: "warning",
+        });
+        throw new Error("The coupon no longer applies to this cart. Review the total and place the order again.");
       }
 
       const cleanedPaymentReference = cleanCheckoutPaymentReference(paymentReference, { required: Boolean(bankReferenceRequired) });
@@ -1540,14 +1568,15 @@ function serviceabilityCheckoutError(error: unknown) {
   return "Delivery is not available for this address yet. Check the pincode/GPS location, choose another address, or select pickup if available.";
 }
 
-function hasAddressLocationForCheckoutSummary(address: MobileCustomerAddressPayload) {
-  const summaryAddress = checkoutSummaryAddressFromMobileForm(address);
-  return Boolean(
-    summaryAddress.countryCode &&
-      (summaryAddress.localAreaCode ||
-        summaryAddress.pincode ||
-        (typeof summaryAddress.latitude === "number" && typeof summaryAddress.longitude === "number")),
-  );
+function useDebouncedValue<T>(value: T, delayMs: number) {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const timeout = setTimeout(() => setDebouncedValue(value), delayMs);
+    return () => clearTimeout(timeout);
+  }, [delayMs, value]);
+
+  return debouncedValue;
 }
 
 function checkoutSummaryAddressFromMobileForm(address: MobileCustomerAddressPayload) {

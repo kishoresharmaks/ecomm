@@ -146,7 +146,7 @@ async function send(
 }
 
 async function bearerTokenForRequest(options: ApiRequestOptions, tokenOptions: BearerTokenOptions) {
-  return resolveMobileBearerToken(options.auth, tokenOptions) ?? options.token ?? null;
+  return (await resolveMobileBearerToken(options.auth, tokenOptions)) ?? options.token ?? null;
 }
 
 export async function resolveMobileBearerToken(auth?: MobileAuthHeaders, tokenOptions: BearerTokenOptions = {}) {

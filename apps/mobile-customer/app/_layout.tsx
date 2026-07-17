@@ -176,6 +176,7 @@ function CustomerPushRegistration() {
   const customerAuth = useMobileCustomerAuth();
   useCustomerPushNotifications({
     authHeaders: customerAuth.authHeaders,
+    authKey: customerAuth.authKey,
     enabled: customerAuth.enabled,
   });
   return null;

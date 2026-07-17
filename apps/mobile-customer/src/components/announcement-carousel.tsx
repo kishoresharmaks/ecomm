@@ -1,4 +1,4 @@
-import { ArrowRight01Icon, MarketingIcon } from "@hugeicons/core-free-icons";
+import { ArrowRight01Icon, Megaphone02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react-native";
 import { useRouter, type Href } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
@@ -125,25 +125,29 @@ export function AnnouncementCarousel() {
               accessibilityLabel={announcement.title}
               accessibilityRole={destination ? "link" : "text"}
               disabled={!destination}
-              style={[
+              style={({ pressed }) => [
                 styles.slide,
                 {
                   width: slideWidth,
                   backgroundColor: palette.backgroundColor,
                   borderColor: palette.borderColor,
                 },
+                pressed && destination ? styles.slidePressed : null,
               ]}
               onPress={() => handlePress(announcement)}
             >
               <View style={[styles.iconWrap, { backgroundColor: palette.iconBackgroundColor }]}>
-                <HugeiconsIcon color={palette.accentColor} icon={MarketingIcon} size={25} strokeWidth={2.1} />
+                <HugeiconsIcon color={palette.toneColor} icon={Megaphone02Icon} size={22} strokeWidth={2} />
               </View>
-              <Text numberOfLines={2} style={[styles.text, { color: palette.accentColor }]}>
-                {announcement.title}
-              </Text>
+              <View style={styles.copy}>
+                <Text style={[styles.eyebrow, { color: palette.toneColor }]}>Announcement</Text>
+                <Text numberOfLines={2} style={[styles.text, { color: palette.accentColor }]}>
+                  {announcement.title}
+                </Text>
+              </View>
               {destination ? (
-                <View style={styles.actionIcon}>
-                  <HugeiconsIcon color={palette.accentColor} icon={ArrowRight01Icon} size={22} strokeWidth={2.5} />
+                <View style={[styles.actionIcon, { backgroundColor: palette.iconBackgroundColor }]}>
+                  <HugeiconsIcon color={palette.toneColor} icon={ArrowRight01Icon} size={18} strokeWidth={2.4} />
                 </View>
               ) : null}
             </Pressable>
@@ -171,54 +175,64 @@ const styles = StyleSheet.create({
   },
   slide: {
     alignItems: "center",
-    borderRadius: 30,
+    borderRadius: 20,
     borderWidth: 1,
-    elevation: 3,
     flexDirection: "row",
-    gap: 13,
-    minHeight: 64,
+    gap: 12,
+    minHeight: 68,
     paddingHorizontal: 14,
-    paddingVertical: 10,
-    shadowColor: "#ED3500",
-    shadowOffset: { height: 8, width: 0 },
-    shadowOpacity: 0.09,
-    shadowRadius: 18,
+    paddingVertical: 12,
+  },
+  slidePressed: {
+    opacity: 0.85,
+  },
+  copy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  eyebrow: {
+    fontFamily: "Plus Jakarta Sans",
+    fontSize: 10.5,
+    fontWeight: "800",
+    letterSpacing: 0.8,
+    marginBottom: 2,
+    textTransform: "uppercase",
   },
   text: {
-    flex: 1,
     fontFamily: "Plus Jakarta Sans",
-    fontSize: 14.5,
-    fontWeight: "900",
-    lineHeight: 20,
+    fontSize: 14,
+    fontWeight: "700",
+    lineHeight: 19,
   },
   iconWrap: {
     alignItems: "center",
-    borderRadius: 22,
-    height: 44,
+    borderRadius: 14,
+    height: 42,
     justifyContent: "center",
-    width: 44,
+    width: 42,
   },
   actionIcon: {
     alignItems: "center",
-    height: 38,
+    borderRadius: 999,
+    height: 32,
     justifyContent: "center",
-    width: 30,
+    width: 32,
   },
   pagination: {
     alignItems: "center",
     flexDirection: "row",
     gap: 5,
     justifyContent: "center",
-    marginTop: 7,
+    marginTop: 8,
   },
   paginationDot: {
-    backgroundColor: "#F3B7A5",
+    backgroundColor: "#E5D5CE",
     borderRadius: 999,
-    height: 4,
-    width: 4,
+    height: 5,
+    width: 5,
   },
   paginationDotActive: {
     backgroundColor: "#ED3500",
-    width: 16,
+    width: 18,
   },
 });

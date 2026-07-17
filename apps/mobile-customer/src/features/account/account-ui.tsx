@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { EmptyState } from "../../components/empty-state";
 import { Screen } from "../../components/screen";
+import { formatMoney } from "../market/mobile-market";
 import type { MobileOrderDetail } from "../storefront/storefront-api";
 import type { LocationArea, SelectedLocation } from "../../types/storefront";
 import { colors } from "../../theme";
@@ -87,7 +88,7 @@ export function SectionHeader({ title, action }: { action?: ReactNode; title: st
 }
 
 export function formatPrice(pricePaise?: number | null) {
-  return `Rs ${Math.round((pricePaise ?? 0) / 100).toLocaleString("en-IN")}`;
+  return formatMoney(pricePaise ?? 0, "INR", "en-IN");
 }
 
 export function formatDate(value?: string | null) {

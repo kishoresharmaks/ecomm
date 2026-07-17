@@ -1,8 +1,12 @@
 import { useAuth, useUser } from "@clerk/clerk-expo";
 import { PropsWithChildren, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { MobileApiError, postNoContent, type MobileAuthHeaders } from "../lib/api";
+import { revokeCurrentCustomerPushToken } from "../features/notifications/use-customer-push-notifications";
 
 const CLERK_TOKEN_RETRY_ATTEMPTS = 10;
+// Per-request reads sit in front of every API call; a missing token there
+// should fail fast (~1 s) instead of stalling the request for 5 s.
+const CLERK_TOKEN_REQUEST_RETRY_ATTEMPTS = 3;
 const CLERK_TOKEN_RETRY_DELAY_MS = 500;
 
 export type MobileCustomerAuthStatus = "loading" | "signed-out" | "syncing" | "ready" | "error";
@@ -72,8 +76,9 @@ export function MobileCustomerAuthProvider({ children }: PropsWithChildren) {
         return null;
       }
 
-      const token = await readClerkTokenWithRetry(() =>
-        getTokenRef.current({ skipCache: Boolean(options?.skipCache) }),
+      const token = await readClerkTokenWithRetry(
+        () => getTokenRef.current({ skipCache: Boolean(options?.skipCache) }),
+        CLERK_TOKEN_REQUEST_RETRY_ATTEMPTS,
       );
       if (token && mountedRef.current) {
         setBearerToken((current) => (current === token ? current : token));
@@ -91,7 +96,9 @@ export function MobileCustomerAuthProvider({ children }: PropsWithChildren) {
 
       setBearerToken(null);
       updateSyncState({ status: "error", error: "Your session has expired. Please sign in again." });
-      void signOutRef.current();
+      // Revoke the push token before the session dies so a shared device
+      // stops receiving the previous account's notifications.
+      void revokeCurrentCustomerPushToken().finally(() => signOutRef.current());
     },
     [updateSyncState],
   );
@@ -327,14 +334,17 @@ function currentUserPayload(user: ReturnType<typeof useUser>["user"]) {
   };
 }
 
-async function readClerkTokenWithRetry(readToken: () => Promise<string | null>) {
-  for (let attempt = 0; attempt < CLERK_TOKEN_RETRY_ATTEMPTS; attempt += 1) {
+async function readClerkTokenWithRetry(
+  readToken: () => Promise<string | null>,
+  attempts = CLERK_TOKEN_RETRY_ATTEMPTS,
+) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     const token = await readToken();
     if (token) {
       return token;
     }
 
-    if (attempt < CLERK_TOKEN_RETRY_ATTEMPTS - 1) {
+    if (attempt < attempts - 1) {
       await delay(CLERK_TOKEN_RETRY_DELAY_MS);
     }
   }

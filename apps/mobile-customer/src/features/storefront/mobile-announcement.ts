@@ -16,6 +16,8 @@ export type MobileAnnouncementPalette = {
   backgroundColor: string;
   borderColor: string;
   iconBackgroundColor: string;
+  /** Solid hex of the announcement tone, for icons and small accents. */
+  toneColor: string;
 };
 
 const brandSurface = "#FFFCFB";
@@ -100,6 +102,7 @@ export function mobileAnnouncementPalette(
     backgroundColor: rgba(tone, 0.1),
     borderColor: rgba(tone, 0.18),
     iconBackgroundColor: rgba(tone, 0.12),
+    toneColor: rgbToHex(blend(tone, { red: 0, green: 0, blue: 0 }, 0.9)),
   };
 }
 

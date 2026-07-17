@@ -2,6 +2,7 @@ import { HeartIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react-native";
 import { Link, type Href } from "expo-router";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View, type GestureResponderEvent } from "react-native";
+import { formatMoney } from "../features/market/mobile-market";
 import { resolveImageUrl } from "../lib/image-url";
 import { colors } from "../theme";
 import type { MobileProduct } from "../types/mobile-home";
@@ -90,7 +91,7 @@ export function defaultFormatPrice(pricePaise?: number | null) {
     return "View price";
   }
 
-  return `Rs ${Math.round(pricePaise / 100).toLocaleString("en-IN")}`;
+  return formatMoney(pricePaise, "INR", "en-IN");
 }
 
 function discountPercent(pricePaise?: number | null, mrpPaise?: number | null) {

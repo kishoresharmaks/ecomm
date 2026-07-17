@@ -100,7 +100,13 @@ function CartScreen() {
 
   const subtotalPaise = items.reduce((total, item) => total + item.quantity * cartItemUnitPrice(item), 0);
   const itemCount = items.reduce((total, item) => total + item.quantity, 0);
-  const busyItemId = updateMutation.variables?.cartItemId ?? removeMutation.variables ?? null;
+  // mutation.variables persists after the mutation settles, so gate on isPending
+  // or every row that was ever updated stays disabled with a stuck spinner.
+  const busyItemId = updateMutation.isPending
+    ? updateMutation.variables?.cartItemId ?? null
+    : removeMutation.isPending
+      ? removeMutation.variables ?? null
+      : null;
 
   return (
     <Screen padded={false}>

@@ -204,6 +204,7 @@ export async function runMobileRazorpayPayment(input: {
   }
 
   let checkoutResponse: MobileRazorpaySuccessResponse;
+  let checkoutPromise: Promise<MobileRazorpaySuccessResponse> | null = null;
   try {
     input.onStageChange?.("checkout");
     trackMobileEvent("razorpay_checkout_open_start", {
@@ -211,12 +212,16 @@ export async function runMobileRazorpayPayment(input: {
       razorpayOrderId: providerOrder.razorpayOrderId,
       stage: "checkout",
     });
+    checkoutPromise = openMobileRazorpayCheckout(providerOrder, input.prefill);
     checkoutResponse = await runWithRazorpayTimeout(
-      openMobileRazorpayCheckout(providerOrder, input.prefill),
+      checkoutPromise,
       input.timeoutMs ?? RAZORPAY_PAYMENT_TIMEOUT_MS,
     );
   } catch (error) {
     if (error instanceof MobileRazorpayPaymentError) {
+      if (error.isTimeout() && checkoutPromise) {
+        void watchTimedOutRazorpayCheckout(checkoutPromise, input.auth, providerOrder);
+      }
       await markRazorpayPaymentSessionStatus(error.isTimeout() ? "timed_out" : error.isUserCancelled() ? "cancelled" : "pending");
       if (!error.isUserCancelled()) {
         captureMobileException(error, "razorpay_checkout_failed", {
@@ -402,6 +407,62 @@ export function runWithRazorpayTimeout<T>(
   });
 }
 
+// A timeout cannot dismiss the native Razorpay sheet, so the customer may
+// still complete payment after we stop waiting. Keep listening and verify
+// server-side so a captured payment is matched to the order instead of lost.
+async function watchTimedOutRazorpayCheckout(
+  checkoutPromise: Promise<MobileRazorpaySuccessResponse>,
+  auth: MobileAuthHeaders,
+  providerOrder: MobileRazorpayOrderResponse,
+) {
+  let response: MobileRazorpaySuccessResponse;
+  try {
+    response = await checkoutPromise;
+  } catch (error) {
+    if (!isRazorpayUserCancelled(error)) {
+      captureMobileException(error, "razorpay_late_checkout_failed", {
+        orderNumber: providerOrder.orderNumber,
+        razorpayOrderId: providerOrder.razorpayOrderId,
+        stage: "checkout",
+      });
+    }
+    return;
+  }
+
+  const razorpayOrderId = response.razorpay_order_id ?? providerOrder.razorpayOrderId;
+  if (!razorpayOrderId || !response.razorpay_payment_id || !response.razorpay_signature) {
+    return;
+  }
+
+  try {
+    trackMobileEvent("razorpay_late_verification_start", {
+      orderNumber: providerOrder.orderNumber,
+      razorpayOrderId,
+      stage: "verification",
+    });
+    const verification = await verifyRazorpayPayment(auth, {
+      razorpayOrderId,
+      razorpayPaymentId: response.razorpay_payment_id,
+      razorpaySignature: response.razorpay_signature,
+    });
+    if (isPaidRazorpayStatus(verification.status)) {
+      await clearRazorpayPaymentSession();
+    }
+    trackMobileEvent("razorpay_late_verification_complete", {
+      orderNumber: providerOrder.orderNumber,
+      razorpayOrderId,
+      status: verification.status,
+      stage: "verification",
+    });
+  } catch (error) {
+    captureMobileException(error, "razorpay_late_verification_failed", {
+      orderNumber: providerOrder.orderNumber,
+      razorpayOrderId,
+      stage: "verification",
+    });
+  }
+}
+
 export function isPaidRazorpayStatus(status: string | undefined) {
   const normalized = status?.trim().toUpperCase();
   return normalized === "PAID" || normalized === "CAPTURED";
@@ -424,9 +485,11 @@ export function shouldCancelUnpaidRazorpayOrder(error: unknown) {
     return false;
   }
 
+  // PAYMENT_TIMEOUT must never cancel: the native Razorpay sheet cannot be
+  // dismissed from JS, so the customer may still be mid-payment inside it.
+  // Cancelling here would let money get captured against a cancelled order.
   return (
     error.code === "PAYMENT_CANCELLED" ||
-    error.code === "PAYMENT_TIMEOUT" ||
     error.code === "CHECKOUT_FAILED" ||
     error.code === "PROVIDER_ORDER_FAILED" ||
     error.code === "NETWORK_ERROR"

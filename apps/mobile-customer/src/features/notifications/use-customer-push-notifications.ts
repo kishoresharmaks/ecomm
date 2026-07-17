@@ -39,17 +39,34 @@ if (canUseNativePush) {
   });
 }
 
-export function useCustomerPushNotifications(auth: { authHeaders: MobileAuthHeaders; enabled: boolean }) {
+export function useCustomerPushNotifications(auth: {
+  authHeaders: MobileAuthHeaders;
+  authKey: string;
+  enabled: boolean;
+}) {
   const [state, setState] = useState<CustomerPushPermissionState>("checking");
   const registeredTokenRef = useRef<RegisteredCustomerPushToken | null>(null);
+  // Clerk rotates the bearer token roughly every minute, which gives
+  // auth.authHeaders a new identity on each rotation. Registration must key
+  // off authKey (the signed-in user), not the headers object, or every
+  // rotation re-runs the whole permission + register round trip.
+  const authHeadersRef = useRef(auth.authHeaders);
+
+  useEffect(() => {
+    authHeadersRef.current = auth.authHeaders;
+  }, [auth.authHeaders]);
 
   const revokeRegisteredToken = useCallback(async (record?: RegisteredCustomerPushToken | null) => {
     const target = record ?? registeredTokenRef.current;
     if (!target) return;
-    if (registeredTokenRef.current?.token === target.token) {
+    const revoked = await revokeCustomerPushToken(target.authHeaders, target.token)
+      .then(() => true)
+      .catch(() => false);
+    // Keep the record when the revoke request fails so a later attempt can
+    // retry it instead of leaving the token registered forever.
+    if (revoked && registeredTokenRef.current?.token === target.token) {
       registeredTokenRef.current = null;
     }
-    await revokeCustomerPushToken(target.authHeaders, target.token).catch(() => null);
   }, []);
 
   const register = useCallback(async () => {
@@ -104,20 +121,30 @@ export function useCustomerPushNotifications(auth: { authHeaders: MobileAuthHead
       if (deviceId) {
         payload.deviceId = deviceId;
       }
-      
+
       const previousToken = registeredTokenRef.current;
       if (previousToken && previousToken.token !== pushToken) {
         await revokeRegisteredToken(previousToken);
       }
-      
-      await registerCustomerPushToken(auth.authHeaders, payload);
-      registeredTokenRef.current = { authHeaders: auth.authHeaders, token: pushToken };
+
+      const authHeaders = authHeadersRef.current;
+      await registerCustomerPushToken(authHeaders, payload);
+      // Store headers without onUnauthorized: a 401 during a best-effort
+      // revoke must not re-trigger the forced sign-out flow (which itself
+      // revokes) and recurse.
+      registeredTokenRef.current = {
+        authHeaders: {
+          ...(authHeaders.bearerToken !== undefined ? { bearerToken: authHeaders.bearerToken } : {}),
+          ...(authHeaders.getBearerToken ? { getBearerToken: authHeaders.getBearerToken } : {}),
+        },
+        token: pushToken,
+      };
       updateState("registered", setState);
     } catch (error) {
       captureMobileException(error, "customer-push-registration", { pushState: latestState });
       updateState("unavailable", setState);
     }
-  }, [auth.authHeaders, auth.enabled, revokeRegisteredToken]);
+  }, [auth.authKey, auth.enabled, revokeRegisteredToken]);
 
   useEffect(() => {
     const refresh = () => void register();
@@ -177,6 +204,15 @@ export function useCustomerPushNotificationStatus() {
     revoke: () => latestRevoke?.(),
     state,
   };
+}
+
+/**
+ * Best-effort revoke of the currently registered push token, callable from
+ * outside React (e.g. the forced sign-out path in the auth context). Resolves
+ * even when no registration exists or the revoke request fails.
+ */
+export function revokeCurrentCustomerPushToken(): Promise<void> {
+  return latestRevoke?.().catch(() => undefined) ?? Promise.resolve();
 }
 
 function updateState(state: CustomerPushPermissionState, setState: (state: CustomerPushPermissionState) => void) {

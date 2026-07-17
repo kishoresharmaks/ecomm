@@ -10,7 +10,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react-native";
 import { FlashList } from "@shopify/flash-list";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -57,19 +57,28 @@ const filterOptions: Array<{ icon: IconSvgElement; label: string; value: OrderFi
   { icon: CheckmarkCircle02Icon, label: "Delivered", value: "delivered" },
 ];
 
+const ordersPageSize = 20;
+
 export default function OrdersScreen() {
   const router = useRouter();
   const customerAuth = useMobileCustomerAuth();
   const [activeFilter, setActiveFilter] = useState<OrderFilter>("all");
   const [filterOpen, setFilterOpen] = useState(false);
-  const ordersQuery = useQuery({
+  const ordersQuery = useInfiniteQuery({
     queryKey: ["mobile-orders", customerAuth.authKey],
-    queryFn: () => listCustomerOrders(customerAuth.authHeaders),
+    queryFn: ({ pageParam }) => listCustomerOrders(customerAuth.authHeaders, ordersPageSize, pageParam),
     enabled: customerAuth.enabled,
     refetchOnMount: "always",
     staleTime: 0,
+    initialPageParam: 1,
+    getNextPageParam: (lastPage, _pages, lastPageParam) =>
+      lastPage.items.length >= ordersPageSize ? lastPageParam + 1 : undefined,
   });
-  const orders = ordersQuery.data?.items ?? [];
+  const orders = useMemo(
+    () => dedupeOrdersById(ordersQuery.data?.pages.flatMap((page) => page.items) ?? []),
+    [ordersQuery.data?.pages],
+  );
+  const totalOrderCount = ordersQuery.data?.pages[0]?.total ?? orders.length;
   const visibleOrders = useMemo(() => orders.filter((order) => matchesOrderFilter(order, activeFilter)), [activeFilter, orders]);
 
   if (customerAuth.status === "loading" || customerAuth.status === "syncing" || ordersQuery.isLoading) {
@@ -122,6 +131,12 @@ export default function OrdersScreen() {
         contentContainerStyle={styles.listContent}
         data={visibleOrders}
         keyExtractor={(order) => order.id}
+        onEndReached={() => {
+          if (ordersQuery.hasNextPage && !ordersQuery.isFetchingNextPage) {
+            void ordersQuery.fetchNextPage();
+          }
+        }}
+        onEndReachedThreshold={0.4}
         ListEmptyComponent={
           <PremiumEmptyState
             activeFilter={activeFilter}
@@ -129,13 +144,23 @@ export default function OrdersScreen() {
             onReset={() => setActiveFilter("all")}
           />
         }
-        ListFooterComponent={<SupportCard />}
+        ListFooterComponent={
+          <>
+            {ordersQuery.isFetchingNextPage ? (
+              <View style={styles.loadingMoreRow}>
+                <ActivityIndicator color={colors.primary} size="small" />
+                <Text style={styles.loadingMoreText}>Loading more orders...</Text>
+              </View>
+            ) : null}
+            <SupportCard />
+          </>
+        }
         ListHeaderComponent={
           <OrdersHeader
             activeFilter={activeFilter}
-            isFetching={ordersQuery.isFetching}
+            isFetching={ordersQuery.isFetching && !ordersQuery.isFetchingNextPage}
             orderCount={visibleOrders.length}
-            totalCount={orders.length}
+            totalCount={totalOrderCount}
             onFilterChange={setActiveFilter}
             onOpenFilter={() => setFilterOpen(true)}
             onRefresh={() => void ordersQuery.refetch()}
@@ -470,6 +495,17 @@ function OrderFilterModal({
   );
 }
 
+function dedupeOrdersById(orders: MobileOrderSummary[]) {
+  const seen = new Set<string>();
+  return orders.filter((order) => {
+    if (seen.has(order.id)) {
+      return false;
+    }
+    seen.add(order.id);
+    return true;
+  });
+}
+
 function matchesOrderFilter(order: MobileOrderSummary, filter: OrderFilter) {
   if (filter === "all") {
     return true;
@@ -779,6 +815,18 @@ const styles = StyleSheet.create({
   listContent: {
     padding: 18,
     paddingBottom: 128,
+  },
+  loadingMoreRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+    justifyContent: "center",
+    paddingVertical: 14,
+  },
+  loadingMoreText: {
+    color: mutedColor,
+    fontSize: 12,
+    fontWeight: "800",
   },
   loadingIcon: {
     alignItems: "center",

@@ -15,6 +15,7 @@ import { useMobileCustomerAuth } from "../../../src/auth/mobile-auth-context";
 import { formatMoney, formatOrderBaseAmount, formatOrderDisplayTotal } from "../../../src/features/market/mobile-market";
 import { withStorefrontMaintenance } from "../../../src/features/maintenance/mobile-maintenance-gate";
 import { getCustomerOrder } from "../../../src/features/storefront/storefront-api";
+import { MobileApiError } from "../../../src/lib/api";
 import { colors } from "../../../src/theme";
 
 function CheckoutSuccessScreen() {
@@ -44,15 +45,24 @@ function CheckoutSuccessScreen() {
       fallbackPaymentStatus,
   );
 
+  // The snapshot params give an instant render right after checkout, but this
+  // route is also a public app-link — always confirm against the server so a
+  // crafted URL cannot show a fake paid/confirmed order.
   const orderQuery = useQuery({
     queryKey: ["mobile-order-detail", customerAuth.authKey, orderNumber],
     queryFn: () => getCustomerOrder(customerAuth.authHeaders, orderNumber ?? ""),
-    enabled: customerAuth.enabled && Boolean(orderNumber) && !hasCheckoutSnapshot,
+    enabled: customerAuth.enabled && Boolean(orderNumber),
     refetchOnMount: "always",
     retry: false,
   });
 
   const order = orderQuery.data;
+  // The server rejected the order number outright (not a transient failure) —
+  // don't render the confirmation UI from unverified URL params.
+  const orderRejected =
+    orderQuery.isError &&
+    orderQuery.error instanceof MobileApiError &&
+    (orderQuery.error.status === 404 || orderQuery.error.status === 403);
   const totalPaise = order?.totalPaise ?? (Number.isFinite(fallbackTotalPaise) ? fallbackTotalPaise : 0);
   const currency = order?.currency ?? fallbackCurrency ?? "INR";
   const buyerCurrency = order?.buyerCurrency ?? fallbackBuyerCurrency ?? currency;
@@ -67,7 +77,7 @@ function CheckoutSuccessScreen() {
     ...(buyerTotalMinor !== undefined ? { buyerTotalMinor } : {}),
   };
 
-  if (!orderNumber) {
+  if (!orderNumber || orderRejected) {
     return (
       <Screen>
         <Stack.Screen options={{ headerShown: true, title: "Order placed" }} />

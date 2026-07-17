@@ -4,9 +4,11 @@
  * Mirrors web/src/lib/business-buyer-api.ts using mobile conventions from
  * src/lib/api.ts (getJson / postJson / patchJson / deleteNoContent).
  *
- * 5xx retry policy: each function that mutates state retries once after 2 s on
- * a 5xx response before re-throwing. Read-only GET calls do not auto-retry —
- * callers use react-query's retry mechanism for reads.
+ * 5xx retry policy: idempotent mutations (PUT/PATCH/DELETE) and idempotency-
+ * keyed creates retry once after 2 s on a 5xx response. Unkeyed POST creates
+ * are never blind-retried — a 5xx can arrive after the server already
+ * persisted the row, and retrying would create a duplicate. Read-only GET
+ * calls do not auto-retry — callers use react-query's retry mechanism.
  */
 
 import {
@@ -51,7 +53,12 @@ function queryString(query: Record<string, string | number | undefined>): string
   return params.size ? `?${params.toString()}` : "";
 }
 
-/** Retry a mutation once after 2 s on 5xx, and only retry network failures for keyed/idempotent creates. */
+/**
+ * Retry an idempotent mutation once after 2 s on 5xx (and network failures for
+ * keyed/idempotent creates). Never wrap an unkeyed POST create in this: a 5xx
+ * response can arrive after the server persisted the row, and the retry would
+ * write a duplicate.
+ */
 async function withServerRetry<T>(
   fn: () => Promise<T>,
   options: { retryNetworkErrors?: boolean } = {},
@@ -93,7 +100,8 @@ export function createB2BAddress(
   auth: MobileAuthHeaders,
   payload: BusinessBuyerAddressPayload,
 ): Promise<BusinessBuyerAddress> {
-  return withServerRetry(() => postJson({ path: "/b2b/addresses", auth, body: payload }));
+  // Unkeyed create: no auto-retry, or a 5xx after persist duplicates the address.
+  return postJson({ path: "/b2b/addresses", auth, body: payload });
 }
 
 export function updateB2BAddress(
@@ -125,9 +133,13 @@ export function createB2BEnquiry(
   auth: MobileAuthHeaders,
   payload: BusinessBuyerEnquiryPayload,
 ): Promise<BusinessBuyerEnquiry> {
-  return withServerRetry(() => postJson({ path: "/b2b/enquiries", auth, body: payload }), {
-    retryNetworkErrors: Boolean(payload.idempotencyKey),
-  });
+  const request = () => postJson<BusinessBuyerEnquiry>({ path: "/b2b/enquiries", auth, body: payload });
+  if (!payload.idempotencyKey) {
+    // Unkeyed create: no auto-retry, or a 5xx after persist duplicates the enquiry.
+    return request();
+  }
+
+  return withServerRetry(request, { retryNetworkErrors: true });
 }
 
 export function getB2BEnquiry(
@@ -143,13 +155,12 @@ export function sendB2BEnquiryMessage(
   enquiryId: string,
   message: string,
 ): Promise<B2BEnquiryMessage> {
-  return withServerRetry(() =>
-    postJson({
-      path: `/b2b/enquiries/${encodeURIComponent(enquiryId)}/messages`,
-      auth,
-      body: { message },
-    }),
-  );
+  // Unkeyed create: no auto-retry, or a 5xx after persist duplicates the message.
+  return postJson({
+    path: `/b2b/enquiries/${encodeURIComponent(enquiryId)}/messages`,
+    auth,
+    body: { message },
+  });
 }
 
 export function cancelB2BEnquiry(

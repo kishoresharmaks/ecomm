@@ -438,7 +438,13 @@ export type MobileOrderDetail = Omit<MobileOrderSummary, "items"> & {
 export type MobileOrderListResponse = {
   items: MobileOrderSummary[];
   total?: number;
+  page?: number;
+  limit?: number;
   nextCursor?: string | null;
+  pageInfo?: {
+    hasNextPage: boolean;
+    nextCursor: string | null;
+  };
 };
 
 export type MobileReturnRequestStatus =
@@ -1104,11 +1110,11 @@ export function cancelRazorpayOrder(auth: MobileAuthHeaders, orderNumber: string
   });
 }
 
-export function listCustomerOrders(auth: MobileAuthHeaders, limit = 20) {
+export function listCustomerOrders(auth: MobileAuthHeaders, limit = 20, page?: number) {
   return getJson<MobileOrderListResponse>({
     path: "/account/orders",
     auth,
-    searchParams: { limit },
+    searchParams: { limit, page },
   });
 }
 

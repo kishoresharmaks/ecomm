@@ -277,6 +277,18 @@ describe("mobile Razorpay payment helpers", () => {
       ),
     ).toBe(false);
 
+    // A timeout cannot close the native sheet, so the customer may still be
+    // paying inside it — the order must stay open for verification or retry.
+    expect(
+      shouldCancelUnpaidRazorpayOrder(
+        new MobileRazorpayPaymentError("checkout", RAZORPAY_CHECKOUT_TIMEOUT_ERROR, {
+          code: "PAYMENT_TIMEOUT",
+          orderNumber: "1HI20260613001",
+          razorpayOrderId: "order_123",
+        }),
+      ),
+    ).toBe(false);
+
     expect(shouldCancelUnpaidRazorpayOrder(new Error("Other failure"))).toBe(false);
   });
 });
