@@ -1,22 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
+import { clerkMiddleware } from "@clerk/nextjs/server";
 import {
   buildContentSecurityPolicy,
   buildReportingEndpointsHeader,
   buildReportToHeader,
 } from "@/lib/security-headers";
 
-export function proxy(request: NextRequest) {
-  const hostname = request.headers.get("host") || "";
-  if (hostname.startsWith("www.")) {
+const clerkConfigured = Boolean(
+  process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && process.env.CLERK_SECRET_KEY,
+);
+
+function securityProxy(request: NextRequest) {
+  const hostHeader = request.headers.get("host") || "";
+  const [hostname, port] = hostHeader.split(":");
+  const isLocal = hostname === "localhost" || hostname === "127.0.0.1";
+  
+  if (!isLocal && (hostname.startsWith("www.") || (port && port !== "80" && port !== "443"))) {
     const url = request.nextUrl.clone();
     url.hostname = hostname.replace(/^www\./, "");
-    url.port = request.nextUrl.port;
+    url.port = "";
+    url.protocol = "https:";
     return NextResponse.redirect(url, 301);
   }
 
   const nonce = createNonce();
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-nonce", nonce);
+  requestHeaders.set("x-indihub-pathname", request.nextUrl.pathname);
 
   const response = NextResponse.next({
     request: {
@@ -42,6 +52,10 @@ export function proxy(request: NextRequest) {
 
   return response;
 }
+
+export const proxy = clerkConfigured
+  ? clerkMiddleware((_auth, request) => securityProxy(request))
+  : securityProxy;
 
 export const config = {
   matcher: [

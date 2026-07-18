@@ -60,7 +60,21 @@ export type SeoAnalyticsSettings = {
   googleAdsId: string;
 };
 
-export const siteUrl = (process.env.NEXT_PUBLIC_WEB_URL ?? "https://1handindia.com").replace(/\/$/, "");
+function getSiteUrl() {
+  const urlStr = (process.env.NEXT_PUBLIC_WEB_URL ?? "https://1handindia.com").replace(/\/$/, "");
+  try {
+    const parsed = new URL(urlStr);
+    if (parsed.hostname !== "localhost" && parsed.hostname !== "127.0.0.1" && parsed.port) {
+      parsed.port = "";
+      return parsed.toString().replace(/\/$/, "");
+    }
+  } catch {
+    // Ignore invalid URL
+  }
+  return urlStr;
+}
+
+export const siteUrl = getSiteUrl();
 
 export const publicRobotsAllow = ["/", "/seller/register", "/b2b/register"] as const;
 
@@ -137,7 +151,7 @@ export async function resolveSeoEntry(query: { entityType?: SeoEntityType; entit
   if (query.routePath) {
     params.set("routePath", query.routePath);
   }
-  if (!params.size) {
+  if (!params.toString()) {
     return null;
   }
 
