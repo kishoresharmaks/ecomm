@@ -35,7 +35,6 @@ import {
   ActivityIndicator,
   Animated,
   Image,
-  ImageBackground,
   type ImageStyle,
   Keyboard,
   Modal,
@@ -304,21 +303,24 @@ function HomeHeader({ onOpenLocation, selectedLocation }: { onOpenLocation: () =
 
   return (
     <View style={styles.header}>
-      <View style={styles.headerRow}>
-        <View style={styles.logoWrap}>
-          <ImageBackground
-            imageStyle={styles.logoImage}
-            resizeMode="cover"
-            source={logoIcon}
-            style={styles.logoBadge}
-          />
-          <View>
-            <Text style={styles.logoText}>
-              1<Text style={styles.logoAccent}>Hand</Text>India
-            </Text>
-            <Text style={styles.logoSubtext}>Smart shopping, verified sellers.</Text>
+      <View style={styles.headerTopRow}>
+        <Pressable
+          accessibilityLabel="Choose delivery location"
+          accessibilityRole="button"
+          style={({ pressed }) => [styles.locationTopButton, pressed ? styles.headerIconButtonPressed : null]}
+          onPress={onOpenLocation}
+        >
+          <View style={styles.locationTopIcon}>
+            <HugeiconsIcon color={colors.primary} icon={Location01Icon} size={17} strokeWidth={2.2} />
           </View>
-        </View>
+          <View style={styles.locationTopCopy}>
+            <Text style={styles.locationTopEyebrow}>Deliver to</Text>
+            <Text numberOfLines={1} style={styles.locationTopText}>
+              {selectedLocation.label}
+            </Text>
+          </View>
+          <HugeiconsIcon color={colors.ink} icon={ArrowDown01Icon} size={14} strokeWidth={2.2} />
+        </Pressable>
         <View style={styles.headerActions}>
           <Link asChild href="/account/notifications">
             <Pressable style={({ pressed }) => [styles.headerIconButton, pressed ? styles.headerIconButtonPressed : null]}>
@@ -336,71 +338,66 @@ function HomeHeader({ onOpenLocation, selectedLocation }: { onOpenLocation: () =
           </Link>
         </View>
       </View>
-      <AnnouncementCarousel />
-      <Pressable style={styles.locationWrap} onPress={onOpenLocation}>
-        <HugeiconsIcon color={colors.primary} icon={Location01Icon} size={22} strokeWidth={2.1} />
-        <Text numberOfLines={1} style={styles.locationText}>
-          {selectedLocation.label}
-        </Text>
-        <HugeiconsIcon color={colors.ink} icon={ArrowDown01Icon} size={15} strokeWidth={2} />
-      </Pressable>
-      <Animated.View
-        style={[
-          styles.searchDock,
-          isSearchFocused ? styles.searchDockFocused : null,
-          {
-            opacity: searchEntrance,
-            transform: [{ translateY: searchTranslateY }, { scale: searchScale }],
-          },
-        ]}
-      >
-        <View style={styles.searchTitleRow}>
-          <View>
-            <Text style={styles.searchEyebrow}>Find your next buy</Text>
-            <Text style={styles.searchHint}>Products, stores, categories and offers</Text>
-          </View>
-          <View style={styles.searchSpark}>
-            <HugeiconsIcon color={colors.primary} icon={FlashIcon} size={18} strokeWidth={2.2} />
-          </View>
-        </View>
-        <View style={styles.searchField}>
-          <HugeiconsIcon color={colors.primary} icon={Search01Icon} size={23} strokeWidth={2.1} />
-          <TextInput
-            accessibilityLabel="Search 1HandIndia"
-            autoCapitalize="none"
-            onBlur={() => setIsSearchFocused(false)}
-            onChangeText={setSearchText}
-            onFocus={() => setIsSearchFocused(true)}
-            onSubmitEditing={() => submitSearch()}
-            placeholder="Search for sarees, mobiles, stores..."
-            placeholderTextColor="#8A6F64"
-            returnKeyType="search"
-            style={styles.searchInput}
-            value={searchText}
-          />
+      <View style={styles.searchRow}>
+        <Link asChild href="/">
           <Pressable
-            accessibilityLabel="Submit search"
-            accessibilityRole="button"
-            style={({ pressed }) => [styles.searchButton, pressed ? styles.searchButtonPressed : null]}
-            onPress={() => submitSearch()}
+            accessibilityLabel="1HandIndia home"
+            accessibilityRole="link"
+            style={({ pressed }) => [styles.logoMarkButton, pressed ? styles.headerIconButtonPressed : null]}
           >
-            <HugeiconsIcon color={colors.surface} icon={ArrowRight01Icon} size={22} strokeWidth={2.4} />
+            <Image accessibilityLabel="1HandIndia" source={logoIcon} style={styles.logoMarkImage} />
           </Pressable>
-        </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.searchSuggestionRow}>
-          {homeSearchSuggestions.map((item) => (
+        </Link>
+        <Animated.View
+          style={[
+            styles.searchDock,
+            isSearchFocused ? styles.searchDockFocused : null,
+            {
+              opacity: searchEntrance,
+              transform: [{ translateY: searchTranslateY }, { scale: searchScale }],
+            },
+          ]}
+        >
+          <View style={styles.searchField}>
+            <HugeiconsIcon color={colors.primary} icon={Search01Icon} size={21} strokeWidth={2.1} />
+            <TextInput
+              accessibilityLabel="Search 1HandIndia"
+              autoCapitalize="none"
+              onBlur={() => setIsSearchFocused(false)}
+              onChangeText={setSearchText}
+              onFocus={() => setIsSearchFocused(true)}
+              onSubmitEditing={() => submitSearch()}
+              placeholder="Search products, stores..."
+              placeholderTextColor="#8A6F64"
+              returnKeyType="search"
+              style={styles.searchInput}
+              value={searchText}
+            />
             <Pressable
-              key={item.label}
-              accessibilityLabel={`Open ${item.label}`}
+              accessibilityLabel="Submit search"
               accessibilityRole="button"
-              style={({ pressed }) => [styles.searchSuggestionChip, pressed ? styles.searchSuggestionChipPressed : null]}
-              onPress={() => router.push(item.href)}
+              style={({ pressed }) => [styles.searchButton, pressed ? styles.searchButtonPressed : null]}
+              onPress={() => submitSearch()}
             >
-              <Text style={styles.searchSuggestionText}>{item.label}</Text>
+              <HugeiconsIcon color={colors.surface} icon={ArrowRight01Icon} size={20} strokeWidth={2.4} />
             </Pressable>
-          ))}
-        </ScrollView>
-      </Animated.View>
+          </View>
+        </Animated.View>
+      </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.searchSuggestionRow}>
+        {homeSearchSuggestions.map((item) => (
+          <Pressable
+            key={item.label}
+            accessibilityLabel={`Open ${item.label}`}
+            accessibilityRole="button"
+            style={({ pressed }) => [styles.searchSuggestionChip, pressed ? styles.searchSuggestionChipPressed : null]}
+            onPress={() => router.push(item.href)}
+          >
+            <Text style={styles.searchSuggestionText}>{item.label}</Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+      <AnnouncementCarousel />
       <CustomerQuickActionsRail />
     </View>
   );
@@ -2495,10 +2492,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 12,
   },
-  headerRow: {
+  headerTopRow: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 12,
+    gap: 8,
     justifyContent: "space-between",
   },
   compactIntro: {
@@ -2552,80 +2549,79 @@ const styles = StyleSheet.create({
   iconButton: {
     paddingVertical: 8,
   },
-  logoWrap: {
+  locationTopButton: {
     alignItems: "center",
-    flexDirection: "row",
+    backgroundColor: "#FFF7F3",
+    borderColor: "#F6DED5",
+    borderRadius: 18,
+    borderWidth: 1,
     flex: 1,
-    gap: 10,
+    flexDirection: "row",
+    gap: 7,
+    minHeight: 44,
+    minWidth: 0,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  locationTopIcon: {
+    alignItems: "center",
+    backgroundColor: "#FFE9E1",
+    borderRadius: 12,
+    height: 30,
+    justifyContent: "center",
+    width: 30,
+  },
+  locationTopCopy: {
+    flex: 1,
     minWidth: 0,
   },
-  logoBadge: {
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderColor: "#FFE1D6",
-    borderRadius: 16,
-    borderWidth: 1,
-    elevation: 4,
-    height: 58,
-    justifyContent: "center",
-    overflow: "hidden",
-    shadowColor: colors.primary,
-    shadowOffset: { height: 6, width: 0 },
-    shadowOpacity: 0.12,
-    shadowRadius: 12,
-    width: 58,
-  },
-  logoImage: {
-    borderRadius: 15,
-  },
-  logoText: {
-    color: colors.ink,
-    fontFamily: "Plus Jakarta Sans",
-    fontSize: 24,
-    fontWeight: "900",
-    letterSpacing: 0,
-  },
-  logoAccent: {
-    color: colors.primary,
-  },
-  logoSubtext: {
+  locationTopEyebrow: {
     color: colors.muted,
     fontFamily: "Plus Jakarta Sans",
-    fontSize: 11.5,
+    fontSize: 9.5,
     fontWeight: "800",
-    marginTop: -2,
+    letterSpacing: 0,
+    lineHeight: 11,
+    textTransform: "uppercase",
+  },
+  locationTopText: {
+    color: colors.ink,
+    fontFamily: "Plus Jakarta Sans",
+    fontSize: 12.5,
+    fontWeight: "900",
+    letterSpacing: 0,
+    lineHeight: 16,
   },
   headerActions: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 14,
+    gap: 2,
   },
-  locationWrap: {
+  searchRow: {
     alignItems: "center",
-    alignSelf: "flex-start",
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 28,
-    borderWidth: 1,
-    elevation: 2,
     flexDirection: "row",
-    gap: 8,
-    marginTop: 22,
-    maxWidth: "100%",
-    minHeight: 50,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    gap: 10,
+    marginTop: 14,
+  },
+  logoMarkButton: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: "#FFD9CC",
+    borderRadius: 18,
+    borderWidth: 1,
+    elevation: 4,
+    height: 56,
+    justifyContent: "center",
+    overflow: "hidden",
     shadowColor: colors.primary,
     shadowOffset: { height: 8, width: 0 },
-    shadowOpacity: 0.04,
-    shadowRadius: 18,
+    shadowOpacity: 0.1,
+    shadowRadius: 16,
+    width: 56,
   },
-  locationText: {
-    color: colors.ink,
-    fontFamily: "Plus Jakarta Sans",
-    fontSize: 15,
-    fontWeight: "900",
-    maxWidth: 286,
+  logoMarkImage: {
+    height: "100%",
+    width: "100%",
   },
   currencyPill: {
     alignSelf: "flex-start",
@@ -2647,10 +2643,14 @@ const styles = StyleSheet.create({
   },
   headerIconButton: {
     alignItems: "center",
-    height: 42,
+    backgroundColor: colors.surface,
+    borderColor: "#F3E7E2",
+    borderRadius: 15,
+    borderWidth: 1,
+    height: 40,
     justifyContent: "center",
     position: "relative",
-    width: 42,
+    width: 40,
   },
   headerIconButtonPressed: {
     opacity: 0.72,
@@ -2663,8 +2663,8 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     height: 11,
     position: "absolute",
-    right: 8,
-    top: 7,
+    right: 6,
+    top: 5,
     width: 11,
   },
   cartBadge: {
@@ -2686,83 +2686,52 @@ const styles = StyleSheet.create({
   searchDock: {
     backgroundColor: "#FFFFFF",
     borderColor: "#F3E7E2",
-    borderRadius: 26,
+    borderRadius: 20,
     borderWidth: 1,
-    elevation: 5,
-    marginTop: 16,
-    padding: 10,
+    elevation: 4,
+    flex: 1,
+    minWidth: 0,
+    padding: 5,
     shadowColor: "#ED3500",
-    shadowOffset: { height: 12, width: 0 },
-    shadowOpacity: 0.08,
-    shadowRadius: 28,
+    shadowOffset: { height: 8, width: 0 },
+    shadowOpacity: 0.07,
+    shadowRadius: 18,
   },
   searchDockFocused: {
     borderColor: "#FFD6C8",
-    shadowOpacity: 0.14,
-  },
-  searchTitleRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingHorizontal: 8,
-    paddingTop: 2,
-    paddingBottom: 9,
-  },
-  searchEyebrow: {
-    color: colors.ink,
-    fontFamily: "Plus Jakarta Sans",
-    fontSize: 14,
-    fontWeight: "900",
-    letterSpacing: 0,
-  },
-  searchHint: {
-    color: "#7A6259",
-    fontFamily: "Plus Jakarta Sans",
-    fontSize: 11,
-    fontWeight: "700",
-    lineHeight: 15,
-    marginTop: 2,
-  },
-  searchSpark: {
-    alignItems: "center",
-    backgroundColor: "#FFF2EE",
-    borderRadius: 999,
-    height: 32,
-    justifyContent: "center",
-    width: 32,
+    shadowOpacity: 0.13,
   },
   searchField: {
     alignItems: "center",
-    backgroundColor: "#FFFCFB",
-    borderColor: "#F3E7E2",
-    borderRadius: 20,
-    borderWidth: 1,
+    backgroundColor: colors.surface,
+    borderRadius: 16,
     flexDirection: "row",
-    gap: 10,
-    minHeight: 56,
-    paddingLeft: 14,
-    paddingRight: 5,
+    gap: 8,
+    minHeight: 46,
+    paddingLeft: 11,
+    paddingRight: 2,
   },
   searchInput: {
     color: colors.ink,
     flex: 1,
     fontFamily: "Plus Jakarta Sans",
-    fontSize: 14.5,
+    fontSize: 13.5,
     fontWeight: "800",
-    minHeight: 52,
+    minHeight: 44,
+    minWidth: 0,
   },
   searchButton: {
     alignItems: "center",
     backgroundColor: colors.primary,
-    borderRadius: 17,
+    borderRadius: 14,
     elevation: 3,
-    height: 46,
+    height: 42,
     justifyContent: "center",
     shadowColor: colors.primary,
     shadowOffset: { height: 8, width: 0 },
     shadowOpacity: 0.16,
     shadowRadius: 18,
-    width: 48,
+    width: 42,
   },
   searchButtonPressed: {
     opacity: 0.82,
@@ -2770,7 +2739,7 @@ const styles = StyleSheet.create({
   },
   searchSuggestionRow: {
     gap: 8,
-    paddingHorizontal: 3,
+    paddingRight: 20,
     paddingTop: 10,
   },
   searchSuggestionChip: {
