@@ -6,7 +6,7 @@ import {
   Location01Icon,
   StarIcon,
 } from "@hugeicons/core-free-icons";
-import { DateTimePicker } from "@expo/ui/community/datetime-picker";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { HugeiconsIcon } from "@hugeicons/react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
