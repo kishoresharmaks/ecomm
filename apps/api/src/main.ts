@@ -16,6 +16,12 @@ async function bootstrap() {
 
   app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 
+  // Prevent search engines from crawling the API domain
+  app.use("/robots.txt", (req: any, res: any) => {
+    res.type("text/plain");
+    res.send("User-agent: *\nDisallow: /\n");
+  });
+
   app.useBodyParser("json", { limit: "1mb" });
   app.useBodyParser("urlencoded", { limit: "1mb", extended: true });
 
