@@ -37,7 +37,7 @@ export class UpdateDeliveryDto {
   @MaxLength(120)
   trackingReference?: string;
 
-  @ApiPropertyOptional({ example: "2026-05-27" })
+  @ApiPropertyOptional({ example: "2026-07-21T14:30:00.000Z" })
   @IsOptional()
   @IsDateString()
   estimatedDeliveryDate?: string;

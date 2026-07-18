@@ -29,6 +29,12 @@ import { SellerLedgerService } from "./seller-ledger.service";
 import { SellerPayoutsService } from "./seller-payouts.service";
 import { SellerSettlementsService } from "./seller-settlements.service";
 import { SellerStatementsService } from "./seller-statements.service";
+import { FxProviderService } from "../market/fx-provider.service";
+import {
+  CompareFxQuotesDto,
+  TestFxProviderDto,
+  UpsertFxProviderDto,
+} from "../market/dto/fx-provider.dto";
 
 @ApiTags("admin finance")
 @Roles(RoleCode.ADMIN, RoleCode.FINANCE)
@@ -41,8 +47,55 @@ export class AdminFinanceController {
     @Inject(SellerPayoutsService) private readonly payouts: SellerPayoutsService,
     @Inject(SellerCashReceivablesService) private readonly sellerCashReceivables: SellerCashReceivablesService,
     @Inject(SellerLedgerService) private readonly ledger: SellerLedgerService,
-    @Inject(SellerStatementsService) private readonly statements: SellerStatementsService
+    @Inject(SellerStatementsService) private readonly statements: SellerStatementsService,
+    @Inject(FxProviderService) private readonly fxProviders: FxProviderService,
   ) {}
+
+  @Get("fx-providers")
+  @ApiOperation({ summary: "List configured FX providers and supported adapters." })
+  listFxProviders() {
+    return this.fxProviders.listProviders();
+  }
+
+  @Post("fx-providers")
+  @ApiOperation({ summary: "Create an FX provider configuration." })
+  createFxProvider(@CurrentUser() actor: RequestUser, @Body() dto: UpsertFxProviderDto) {
+    return this.fxProviders.createProvider(actor, dto);
+  }
+
+  @Patch("fx-providers/:providerId")
+  @ApiOperation({ summary: "Update an FX provider configuration." })
+  updateFxProvider(
+    @CurrentUser() actor: RequestUser,
+    @Param("providerId") providerId: string,
+    @Body() dto: UpsertFxProviderDto,
+  ) {
+    return this.fxProviders.updateProvider(actor, providerId, dto);
+  }
+
+  @Patch("fx-providers/:providerId/primary")
+  @ApiOperation({ summary: "Set an enabled FX provider as the primary checkout provider." })
+  makeFxProviderPrimary(
+    @CurrentUser() actor: RequestUser,
+    @Param("providerId") providerId: string,
+  ) {
+    return this.fxProviders.makePrimary(actor, providerId);
+  }
+
+  @Post("fx-providers/quotes/compare")
+  @ApiOperation({ summary: "Fetch and compare live quotes from configured FX providers." })
+  compareFxQuotes(@Body() dto: CompareFxQuotesDto) {
+    return this.fxProviders.compareQuotes(dto);
+  }
+
+  @Post("fx-providers/:providerId/test")
+  @ApiOperation({ summary: "Test a specific FX provider using a live quote." })
+  testFxProvider(
+    @Param("providerId") providerId: string,
+    @Body() dto: TestFxProviderDto,
+  ) {
+    return this.fxProviders.testProvider(providerId, dto);
+  }
 
   @Get("dashboard")
   @ApiOperation({ summary: "Read finance workspace dashboard metrics." })

@@ -12,6 +12,57 @@ const actor = {
 };
 
 describe("SellerStatementsService", () => {
+  it("returns statement totals for the full filtered dataset, not only the current page", async () => {
+    const findMany = vi.fn().mockResolvedValue([
+      {
+        id: "statement-1",
+        currency: "INR",
+        netPayablePaise: 10_000
+      }
+    ]);
+    const count = vi.fn().mockResolvedValue(3);
+    const groupBy = vi.fn().mockResolvedValue([
+      { currency: "INR", _sum: { netPayablePaise: 35_000 } },
+      { currency: "USD", _sum: { netPayablePaise: 2_500 } }
+    ]);
+    const prisma = {
+      client: {
+        sellerStatement: { findMany, count, groupBy }
+      }
+    } as unknown as PrismaService;
+    const service = new SellerStatementsService(prisma);
+
+    await expect(service.listStatements({ page: 1, limit: 1 }, "seller-1")).resolves.toEqual({
+      items: [
+        {
+          id: "statement-1",
+          currency: "INR",
+          netPayablePaise: 10_000
+        }
+      ],
+      total: 3,
+      page: 1,
+      limit: 1,
+      summary: {
+        statementCount: 3,
+        totalsByCurrency: [
+          { currency: "INR", netPayablePaise: 35_000 },
+          { currency: "USD", netPayablePaise: 2_500 }
+        ]
+      }
+    });
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { sellerId: "seller-1" },
+      skip: 0,
+      take: 1
+    }));
+    expect(groupBy).toHaveBeenCalledWith(expect.objectContaining({
+      by: ["currency"],
+      where: { sellerId: "seller-1" },
+      _sum: { netPayablePaise: true }
+    }));
+  });
+
   it("blocks statement generation before payout approval", async () => {
     const prisma = {
       client: {

@@ -28,6 +28,16 @@ export type SellerPayoutAvailability = {
   blockers: string[];
 };
 
+export type SellerStatementResult = PageResult<SellerStatement> & {
+  summary: {
+    statementCount: number;
+    totalsByCurrency: Array<{
+      currency: string;
+      netPayablePaise: number;
+    }>;
+  };
+};
+
 export function listSellerLedger(auth: IndihubAuthHeaders, query: Record<string, string | number | undefined> = {}) {
   return indihubFetch<LedgerResult>(`/api/seller/finance/ledger${queryString(query)}`, undefined, auth);
 }
@@ -49,7 +59,7 @@ export function getSellerPayout(auth: IndihubAuthHeaders, payoutId: string) {
 }
 
 export function listSellerStatements(auth: IndihubAuthHeaders, query: Record<string, string | number | undefined> = {}) {
-  return indihubFetch<PageResult<SellerStatement>>(`/api/seller/finance/statements${queryString(query)}`, undefined, auth);
+  return indihubFetch<SellerStatementResult>(`/api/seller/finance/statements${queryString(query)}`, undefined, auth);
 }
 
 export function downloadSellerStatement(auth: IndihubAuthHeaders, statementId: string, format: "csv" | "pdf") {

@@ -48,6 +48,7 @@ export const adminNav = [
   { group: "Finance", label: "Seller COD dues", href: "/admin/finance/seller-cash-receivables" },
   { group: "Finance", label: "Seller ledger", href: "/admin/finance/ledger" },
   { group: "Finance", label: "Statements", href: "/admin/finance/statements" },
+  { group: "Finance", label: "FX providers", href: "/finance/fx-providers" },
   { group: "Finance", label: "Finance workspace", href: "/finance" },
 ];
 
@@ -67,6 +68,7 @@ export const financeNav = [
   { group: "Rules", label: "Commission rules", href: "/finance/commission-rules" },
   { group: "Reports", label: "Payment reports", href: "/finance/reports" },
   { group: "Settings", label: "Payment settings", href: "/finance/settings" },
+  { group: "Settings", label: "FX providers", href: "/finance/fx-providers" },
 ];
 
 export const courierNav = [

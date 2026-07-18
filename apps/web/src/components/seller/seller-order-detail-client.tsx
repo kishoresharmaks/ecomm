@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -42,18 +42,24 @@ import {
   updateSellerPackage,
 } from "@/lib/seller-api";
 import { formatVariantLabel } from "@/lib/order-variant";
+import { userFacingApiErrorMessage } from "@/lib/api";
 import {
   SellerAuthNotice,
   SellerErrorPanel,
   SellerField,
+  SellerNoticeBadge,
   SellerPanel,
   SellerSkeleton,
   SellerStatusPill,
   SellerTextArea,
   formatDateTime,
+  isSellerOnboardingRequiredError,
   statusLabel,
+  type SellerNotice,
   useSellerAuth,
 } from "./seller-ui";
+import { mergePackageDrafts, type PackageDraft } from "./seller-package-drafts";
+import { sellerCollectedCodExpectedPaise } from "./seller-cod-calculations";
 
 const sellerStatuses = [
   "PENDING",
@@ -86,7 +92,6 @@ const deliveryStatuses = [
   "CANCELLED",
 ] as const;
 type DeliveryStatus = (typeof deliveryStatuses)[number];
-
 const sellerStatusFlow: Array<{
   status: Exclude<SellerStatus, "PENDING" | "CANCELLED">;
   title: string;
@@ -137,14 +142,13 @@ export function SellerOrderDetailClient({
 }) {
   const queryClient = useQueryClient();
   const sellerAuth = useSellerAuth();
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<SellerNotice | null>(null);
   const [statusNote, setStatusNote] = useState("");
   const [manualCodCollected, setManualCodCollected] = useState(false);
   const [manualCodNote, setManualCodNote] = useState("");
   const [labelActionPackageId, setLabelActionPackageId] = useState<string | null>(null);
-  const [packageDrafts, setPackageDrafts] = useState<
-    Record<string, { weightGrams: string; lengthCm: string; breadthCm: string; heightCm: string }>
-  >({});
+  const [packageDrafts, setPackageDrafts] = useState<Record<string, PackageDraft>>({});
+  const dirtyPackageIdsRef = useRef(new Set<string>());
 
   const profileQuery = useQuery({
     queryKey: ["seller-profile", sellerAuth.authKey],
@@ -169,12 +173,12 @@ export function SellerOrderDetailClient({
       note?: string | undefined;
     }) => updateSellerOrderStatus(sellerAuth.authHeaders, orderNumber, { sellerStatus, note }),
     onSuccess: () => {
-      setNotice("Seller order status updated.");
+      setNotice({ tone: "success", message: "Seller order status updated." });
       setStatusNote("");
       invalidateOrder();
     },
     onError: (error) =>
-      setNotice(error instanceof Error ? error.message : "Seller status update failed."),
+      setNotice({ tone: "danger", message: userFacingApiErrorMessage(error) }),
   });
 
   const packageMutation = useMutation({
@@ -185,26 +189,27 @@ export function SellerOrderDetailClient({
       packageId: string;
       payload: Parameters<typeof updateSellerPackage>[2];
     }) => updateSellerPackage(sellerAuth.authHeaders, packageId, payload),
-    onSuccess: () => {
-      setNotice("Package details updated.");
+    onSuccess: (_package, variables) => {
+      dirtyPackageIdsRef.current.delete(variables.packageId);
+      setNotice({ tone: "success", message: "Package details updated." });
       invalidateOrder();
     },
     onError: (error) =>
-      setNotice(error instanceof Error ? error.message : "Package update failed."),
+      setNotice({ tone: "danger", message: userFacingApiErrorMessage(error) }),
   });
 
   const deliveryMutation = useMutation({
     mutationFn: (payload: Parameters<typeof updateSellerDelivery>[2]) =>
       updateSellerDelivery(sellerAuth.authHeaders, orderNumber, payload),
     onSuccess: () => {
-      setNotice("Manual transport COD delivery recorded.");
+      setNotice({ tone: "success", message: "Manual transport COD delivery recorded." });
       setStatusNote("");
       setManualCodCollected(false);
       setManualCodNote("");
       invalidateOrder();
     },
     onError: (error) =>
-      setNotice(error instanceof Error ? error.message : "Delivery update failed."),
+      setNotice({ tone: "danger", message: userFacingApiErrorMessage(error) }),
   });
 
   function invalidateOrder() {
@@ -222,7 +227,7 @@ export function SellerOrderDetailClient({
       order &&
       isManualTransportCodOrder(order, deliveryMode)
     ) {
-      setNotice("Manual transport COD delivery must be completed from Logistics view with the collected COD amount.");
+      setNotice({ tone: "warning", message: "Manual transport COD delivery must be completed from Logistics view with the collected COD amount." });
       return;
     }
     statusMutation.mutate({
@@ -234,11 +239,11 @@ export function SellerOrderDetailClient({
   function markManualTransportCodDelivered(expectedAmountPaise: number) {
     setNotice(null);
     if (!manualCodCollected) {
-      setNotice("Confirm that the COD amount was collected from the customer.");
+      setNotice({ tone: "warning", message: "Confirm that the COD amount was collected from the customer." });
       return;
     }
     if (expectedAmountPaise <= 0) {
-      setNotice("Expected COD amount is not available. Refresh the order and try again.");
+      setNotice({ tone: "danger", message: "Expected COD amount is not available. Refresh the order and try again." });
       return;
     }
     deliveryMutation.mutate({
@@ -251,6 +256,7 @@ export function SellerOrderDetailClient({
   }
 
   function updatePackageDraft(packageId: string, key: keyof (typeof packageDrafts)[string], value: string) {
+    dirtyPackageIdsRef.current.add(packageId);
     setPackageDrafts((current) => ({
       ...current,
       [packageId]: {
@@ -280,7 +286,7 @@ export function SellerOrderDetailClient({
     action: "download" | "print",
   ) {
     if (!shipmentPackage.labelDownloadUrl) {
-      setNotice("Courier label is not available yet.");
+      setNotice({ tone: "warning", message: "Courier label is not available yet." });
       return;
     }
     setNotice(null);
@@ -304,7 +310,7 @@ export function SellerOrderDetailClient({
         window.setTimeout(() => URL.revokeObjectURL(url), 30000);
       }
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Courier label could not be opened.");
+      setNotice({ tone: "danger", message: userFacingApiErrorMessage(error) });
     } finally {
       setLabelActionPackageId(null);
     }
@@ -312,13 +318,13 @@ export function SellerOrderDetailClient({
 
   function printPackageSlip(shipmentPackage: { packageNumber?: string | null; status?: string | null }) {
     if (!order) {
-      setNotice("Order details are still loading. Try again in a moment.");
+      setNotice({ tone: "warning", message: "Order details are still loading. Try again in a moment." });
       return;
     }
 
     const printWindow = window.open("", "_blank", "width=760,height=720");
     if (!printWindow) {
-      setNotice("Popup blocked. Allow popups to print the package slip.");
+      setNotice({ tone: "warning", message: "Popup blocked. Allow popups to print the package slip." });
       return;
     }
 
@@ -369,36 +375,34 @@ export function SellerOrderDetailClient({
 
   const order = orderQuery.data;
   const sellerId = profileQuery.data?.id;
+  // Never fall back to another seller's split/shipment on multi-seller orders;
+  // the [0] fallback is only safe when the order has a single seller.
   const sellerSplit = useMemo(
     () =>
-      order?.sellerSplits?.find((split) => split.sellerId === sellerId) ?? order?.sellerSplits?.[0],
+      order?.sellerSplits?.find((split) => split.sellerId === sellerId) ??
+      (order?.sellerSplits?.length === 1 ? order.sellerSplits[0] : undefined),
     [order?.sellerSplits, sellerId],
   );
   const sellerShipment = useMemo(
     () =>
-      order?.shipments?.find((shipment) => shipment.sellerId === sellerId) ?? order?.shipments?.[0],
+      order?.shipments?.find((shipment) => shipment.sellerId === sellerId) ??
+      (order?.shipments?.length === 1 ? order.shipments[0] : undefined),
     [order?.shipments, sellerId],
   );
   useEffect(() => {
-    const nextDrafts: typeof packageDrafts = {};
-    for (const shipmentPackage of sellerShipment?.packages ?? []) {
-      nextDrafts[shipmentPackage.id] = {
-        weightGrams: shipmentPackage.weightGrams ? String(shipmentPackage.weightGrams) : "",
-        lengthCm: shipmentPackage.lengthCm ? String(shipmentPackage.lengthCm) : "",
-        breadthCm: shipmentPackage.breadthCm ? String(shipmentPackage.breadthCm) : "",
-        heightCm: shipmentPackage.heightCm ? String(shipmentPackage.heightCm) : "",
-      };
-    }
-    setPackageDrafts(nextDrafts);
+    setPackageDrafts((current) => mergePackageDrafts(current, sellerShipment?.packages ?? [], dirtyPackageIdsRef.current));
   }, [sellerShipment?.packages]);
   const sellerItems = useMemo(() => {
     if (!order) {
       return [];
     }
 
-    return sellerId
-      ? order.items.filter((item) => item.sellerId === sellerId || item.seller?.id === sellerId)
-      : order.items;
+    if (sellerId) {
+      return order.items.filter((item) => item.sellerId === sellerId || item.seller?.id === sellerId);
+    }
+
+    // Without a resolved seller profile, only trust items on single-seller orders.
+    return (order.sellerSplits?.length ?? 0) <= 1 ? order.items : [];
   }, [order, sellerId]);
 
   if (!sellerAuth.enabled) {
@@ -413,6 +417,10 @@ export function SellerOrderDetailClient({
     return <SellerErrorPanel error={orderQuery.error} onRetry={() => void orderQuery.refetch()} />;
   }
 
+  if (profileQuery.error && !isSellerOnboardingRequiredError(profileQuery.error)) {
+    return <SellerErrorPanel error={profileQuery.error} onRetry={() => void profileQuery.refetch()} />;
+  }
+
   if (!order) {
     return null;
   }
@@ -425,6 +433,13 @@ export function SellerOrderDetailClient({
   const isAutomatedDelivery = automatedDeliveryModes.has(deliveryMode);
   const isManualTransportCod = isManualTransportCodOrder(order, deliveryMode);
   const manualTransportCodExpectedPaise = sellerCollectedCodExpectedPaise(order, sellerSplit, sellerShipment);
+  const sellerCurrencySnapshot = order.sellerCurrencySnapshot;
+  const sellerCurrency = sellerCurrencySnapshot?.currency ?? order.currency;
+  const sellerSubtotalMinor =
+    sellerCurrencySnapshot?.sellerSubtotalMinor ??
+    sellerSplit?.sellerSubtotalPaise ??
+    order.totalPaise;
+  const usesSeparateSellerCurrency = sellerCurrency !== order.currency;
   const currentSellerStatus = sellerStatusValue(sellerSplit?.sellerStatus);
   const currentDeliveryStatus = deliveryStatusValue(
     sellerShipment?.status ?? order.deliveryDetail?.status ?? order.deliveryStatus,
@@ -490,11 +505,7 @@ export function SellerOrderDetailClient({
         </div>
       ) : null}
 
-      {notice ? (
-        <StatusBadge tone={statusMutation.isError ? "danger" : "success"}>
-          {notice}
-        </StatusBadge>
-      ) : null}
+      <SellerNoticeBadge notice={notice} />
 
       <SellerPanel className="overflow-hidden p-0">
         <div className="grid lg:grid-cols-[minmax(0,1fr)_280px]">
@@ -519,40 +530,87 @@ export function SellerOrderDetailClient({
             </div>
           </div>
           <div className="border-t border-[#F2D5CC] bg-[#FFFCFB] p-4 text-left lg:border-l lg:border-t-0 lg:text-right">
-            <p className="text-sm font-bold text-[#667085]">Seller subtotal</p>
-            <p className="mt-1 text-3xl font-black leading-tight text-[#163B5C]">
-              {formatMoney(sellerSplit?.sellerSubtotalPaise ?? order.totalPaise, order.currency)}
+            <p className="text-sm font-bold text-[#667085]">
+              Seller subtotal ({sellerCurrency})
             </p>
+            <p className="mt-1 text-3xl font-black leading-tight text-[#163B5C]">
+              {formatMoney(sellerSubtotalMinor, sellerCurrency)}
+            </p>
+            {usesSeparateSellerCurrency ? (
+              <div className="mt-2 space-y-1 text-xs font-bold leading-5 text-[#667085]">
+                <p>
+                  Base ledger:{" "}
+                  {formatMoney(sellerSplit?.sellerSubtotalPaise ?? order.totalPaise, order.currency)}
+                </p>
+                <p>Customer payment and COD currency: {order.buyerCurrency ?? order.currency}</p>
+              </div>
+            ) : null}
             {sellerSplit ? (
               <div className="mt-4 space-y-2 text-sm font-semibold text-[#667085]">
                 <div className="flex justify-between gap-4 lg:justify-end">
                   <span>Gross Amount</span>
-                  <span className="text-[#1F2933]">{formatMoney(sellerSplit.sellerSubtotalPaise, order.currency)}</span>
+                  <span className="text-[#1F2933]">
+                    {formatMoney(sellerSubtotalMinor, sellerCurrency)}
+                  </span>
                 </div>
                 <div className="flex justify-between gap-4 lg:justify-end">
                   <span>Commission</span>
-                  <span className="text-[#9F2600]">-{formatMoney(sellerSplit.commissionPaise ?? 0, order.currency)}</span>
+                  <span className="text-[#9F2600]">
+                    -{formatMoney(
+                      sellerCurrencySnapshot?.commissionMinor ?? sellerSplit.commissionPaise ?? 0,
+                      sellerCurrency,
+                    )}
+                  </span>
                 </div>
                 <div className="flex justify-between gap-4 lg:justify-end">
                   <span>Platform Fee</span>
-                  <span className="text-[#9F2600]">-{formatMoney(sellerSplit.platformFeePaise ?? 0, order.currency)}</span>
+                  <span className="text-[#9F2600]">
+                    -{formatMoney(
+                      sellerCurrencySnapshot?.platformFeeMinor ?? sellerSplit.platformFeePaise ?? 0,
+                      sellerCurrency,
+                    )}
+                  </span>
                 </div>
                 <div className="flex justify-between gap-4 lg:justify-end">
                   <span>GST on Comm/Fee</span>
-                  <span className="text-[#9F2600]">-{formatMoney(sellerSplit.gstOnCommissionPaise ?? 0, order.currency)}</span>
+                  <span className="text-[#9F2600]">
+                    -{formatMoney(
+                      sellerCurrencySnapshot?.gstOnCommissionMinor ??
+                        sellerSplit.gstOnCommissionPaise ??
+                        0,
+                      sellerCurrency,
+                    )}
+                  </span>
                 </div>
                 <div className="flex justify-between gap-4 lg:justify-end">
                   <span>TDS</span>
-                  <span className="text-[#9F2600]">-{formatMoney(sellerSplit.tdsPaise ?? 0, order.currency)}</span>
+                  <span className="text-[#9F2600]">
+                    -{formatMoney(
+                      sellerCurrencySnapshot?.tdsMinor ?? sellerSplit.tdsPaise ?? 0,
+                      sellerCurrency,
+                    )}
+                  </span>
                 </div>
                 <div className="flex justify-between gap-4 lg:justify-end">
                   <span>TCS</span>
-                  <span className="text-[#9F2600]">-{formatMoney(sellerSplit.tcsPaise ?? 0, order.currency)}</span>
+                  <span className="text-[#9F2600]">
+                    -{formatMoney(
+                      sellerCurrencySnapshot?.tcsMinor ?? sellerSplit.tcsPaise ?? 0,
+                      sellerCurrency,
+                    )}
+                  </span>
                 </div>
                 {(sellerSplit.couponSellerFundedDiscountPaise ?? 0) > 0 ? (
                   <div className="flex justify-between gap-4 lg:justify-end">
                     <span>Seller-funded coupon</span>
-                    <span className="text-[#9F2600]">-{formatMoney(sellerSplit.couponSellerFundedDiscountPaise ?? 0, order.currency)}</span>
+                    <span className="text-[#9F2600]">
+                      -{formatMoney(
+                        sellerCurrencySnapshot?.couponSellerFundedDiscountMinor ??
+                          sellerSplit.couponSellerFundedDiscountPaise ??
+                          0,
+                        sellerCurrency,
+                      )}
+                    </span>
                   </div>
                 ) : null}
                 {(sellerSplit.couponPlatformFundedDiscountPaise ?? 0) > 0 ? (
@@ -563,9 +621,18 @@ export function SellerOrderDetailClient({
                 <div className="mt-3 flex justify-between gap-4 border-t border-[#F2D5CC] pt-3 text-base lg:justify-end">
                   <span className="font-bold text-[#163B5C]">Net added to Wallet</span>
                   <span className="font-black text-[#0F8A5F]">
-                    {formatMoney(sellerSplit.netPayablePaise ?? 0, order.currency)}
+                    {formatMoney(
+                      sellerCurrencySnapshot?.netPayableMinor ?? sellerSplit.netPayablePaise ?? 0,
+                      sellerCurrency,
+                    )}
                   </span>
                 </div>
+                {usesSeparateSellerCurrency ? (
+                  <p className="text-xs font-bold leading-5 text-[#667085]">
+                    Order-time seller pricing snapshot. Platform ledger remains{" "}
+                    {formatMoney(sellerSplit.netPayablePaise ?? 0, order.currency)}.
+                  </p>
+                ) : null}
               </div>
             ) : null}
           </div>
@@ -595,10 +662,17 @@ export function SellerOrderDetailClient({
                     </div>
                     <div className="text-left md:text-right">
                       <p className="text-sm font-semibold text-[#667085]">
-                        {formatMoney(item.unitPricePaise, item.currency)} each
+                        {formatMoney(
+                          item.sellerUnitPriceMinor ?? item.unitPricePaise,
+                          item.sellerCurrency ?? item.currency,
+                        )}{" "}
+                        each
                       </p>
                       <p className="mt-1 text-lg font-black text-[#163B5C]">
-                        {formatMoney(item.lineTotalPaise, item.currency)}
+                        {formatMoney(
+                          item.sellerLineTotalMinor ?? item.lineTotalPaise,
+                          item.sellerCurrency ?? item.currency,
+                        )}
                       </p>
                     </div>
                   </div>
@@ -639,11 +713,11 @@ export function SellerOrderDetailClient({
                 ) : null}
                 <Info
                   label="Subtotal"
-                  value={formatMoney(sellerShipment.subtotalPaise, order.currency)}
+                  value={formatMoney(sellerSubtotalMinor, sellerCurrency)}
                 />
                 {!isStorePickup ? (
                   <Info
-                    label="Shipping share"
+                    label={`Shipping share (${order.currency})`}
                     value={formatMoney(sellerShipment.shippingPaise, order.currency)}
                   />
                 ) : null}
@@ -1159,81 +1233,6 @@ function isManualTransportCodOrder(
   deliveryMode: string | null | undefined,
 ) {
   return deliveryMode === "MANUAL_TRANSPORT" && (order.payments ?? []).some((payment) => payment.method === "COD");
-}
-
-function sellerCollectedCodExpectedPaise(
-  order: {
-    totalPaise?: number;
-    subtotalPaise?: number;
-    platformFeePaise?: number;
-    sellerSplits?: Array<{ sellerSubtotalPaise?: number | null }>;
-  },
-  sellerSplit: { sellerSubtotalPaise?: number | null } | null | undefined,
-  sellerShipment: { shippingPaise?: number | null; codSurchargePaise?: number | null } | null | undefined,
-) {
-  const sellerSubtotalPaise = sellerSplit?.sellerSubtotalPaise ?? order.totalPaise ?? 0;
-  return (
-    sellerSubtotalPaise +
-    (sellerShipment?.shippingPaise ?? 0) +
-    (sellerShipment?.codSurchargePaise ?? 0) +
-    allocatedBuyerPlatformFeePaise(order, sellerSubtotalPaise)
-  );
-}
-
-function allocatedBuyerPlatformFeePaise(
-  order: {
-    subtotalPaise?: number;
-    platformFeePaise?: number;
-    sellerSplits?: Array<{ sellerSubtotalPaise?: number | null }>;
-  },
-  sellerSubtotalPaise: number,
-) {
-  const platformFeePaise = order.platformFeePaise ?? 0;
-  const subtotalPaise = order.subtotalPaise ?? 0;
-  if (platformFeePaise <= 0 || subtotalPaise <= 0 || sellerSubtotalPaise <= 0) {
-    return 0;
-  }
-
-  const sellerSplits = (order.sellerSplits ?? []).filter((split) => (split.sellerSubtotalPaise ?? 0) > 0);
-  if (sellerSplits.length <= 1) {
-    return Math.round((platformFeePaise * sellerSubtotalPaise) / subtotalPaise);
-  }
-
-  const targetIndex = sellerSplits.findIndex((split) => split.sellerSubtotalPaise === sellerSubtotalPaise);
-  if (targetIndex < 0) {
-    return Math.round((platformFeePaise * sellerSubtotalPaise) / subtotalPaise);
-  }
-
-  const allocations = sellerSplits.map((split, index) => {
-    const numerator = platformFeePaise * (split.sellerSubtotalPaise ?? 0);
-    return {
-      index,
-      base: Math.floor(numerator / subtotalPaise),
-      remainder: numerator % subtotalPaise,
-    };
-  });
-  let remainderPaise = platformFeePaise - allocations.reduce((sum, allocation) => sum + allocation.base, 0);
-  const ranked = [...allocations].sort((left, right) => {
-    if (right.remainder !== left.remainder) {
-      return right.remainder - left.remainder;
-    }
-    return left.index - right.index;
-  });
-  const extraIndexes = new Set<number>();
-  for (const allocation of ranked) {
-    if (remainderPaise <= 0) {
-      break;
-    }
-    extraIndexes.add(allocation.index);
-    remainderPaise -= 1;
-  }
-
-  const targetAllocation = allocations[targetIndex];
-  if (!targetAllocation) {
-    return Math.round((platformFeePaise * sellerSubtotalPaise) / subtotalPaise);
-  }
-
-  return targetAllocation.base + (extraIndexes.has(targetIndex) ? 1 : 0);
 }
 
 function packageStatusTitle(shipmentPackage: {

@@ -13,6 +13,7 @@ import {
   SellerErrorPanel,
   SellerMetric,
   SellerOnboardingRequired,
+  SellerPagination,
   SellerPanel,
   SellerSkeleton,
   SellerStatusPill,
@@ -26,9 +27,11 @@ export function SellerPayoutsClient() {
   const queryClient = useQueryClient();
   const confirmation = useConfirmationDialog();
   const [note, setNote] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const payoutsQuery = useQuery({
-    queryKey: ["seller-finance-payouts", sellerAuth.authKey],
-    queryFn: () => listSellerPayouts(sellerAuth.authHeaders),
+    queryKey: ["seller-finance-payouts", sellerAuth.authKey, page, pageSize],
+    queryFn: () => listSellerPayouts(sellerAuth.authHeaders, { page, limit: pageSize }),
     enabled: sellerAuth.enabled,
     retry: false
   });
@@ -69,8 +72,8 @@ export function SellerPayoutsClient() {
   const payouts = payoutsQuery.data?.items ?? [];
   const availability = availabilityQuery.data;
   const currency = availability?.currency || "INR";
-  const pending = availability?.pendingPayoutsPaise ?? payouts.reduce((total, payout) => total + (["DRAFT", "PENDING_APPROVAL", "APPROVED"].includes(payout.status) ? payout.netPayablePaise : 0), 0);
-  const paid = availability?.paidPayoutsPaise ?? payouts.reduce((total, payout) => total + (payout.status === "PAID" ? payout.netPayablePaise : 0), 0);
+  const pending = availability?.pendingPayoutsPaise ?? 0;
+  const paid = availability?.paidPayoutsPaise ?? 0;
 
   return (
     <div className="grid gap-5">
@@ -164,6 +167,20 @@ export function SellerPayoutsClient() {
         ))}
       </div>
       {payouts.length === 0 ? <SellerEmptyState title="No payouts yet" message="Payout records appear after admin generates a seller settlement cycle." /> : null}
+      {(payoutsQuery.data?.total ?? 0) > 0 ? (
+        <SellerPagination
+          page={page}
+          pageSize={pageSize}
+          total={payoutsQuery.data?.total ?? 0}
+          isLoading={payoutsQuery.isFetching}
+          onPageChange={setPage}
+          onPageSizeChange={(value) => {
+            setPage(1);
+            setPageSize(value);
+          }}
+          itemLabel="payouts"
+        />
+      ) : null}
     </div>
   );
 }

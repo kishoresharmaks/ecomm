@@ -8,7 +8,7 @@ import { listSellerSubscriptionPlans } from "@/lib/seller-api";
 import {
   registrationModeFromQuery,
   primaryCapabilityForMode
-} from "@/app/(seller)/seller/register/seller-registration-form";
+} from "@/components/seller/seller-registration-navigation";
 
 export function ChoosePlanClient({ initialMode }: { initialMode?: string | null }) {
   const mode = registrationModeFromQuery(initialMode);

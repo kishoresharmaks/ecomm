@@ -295,6 +295,8 @@ describe("ReportsService", () => {
     expect(result.totalSalesPaise).toBe(100000);
     expect(result.commissionPaise).toBe(5000);
     expect(result.gstOnCommissionPaise).toBe(900);
+    expect(result.tdsPaise).toBe(1000);
+    expect(result.tcsPaise).toBe(500);
     expect(result.totalDeductionsPaise).toBe(9400);
     expect(result.netSalesPaise).toBe(90600);
     expect(calculator.calculateSplit).toHaveBeenCalledWith(freshSplit, tx);
@@ -341,6 +343,9 @@ describe("ReportsService", () => {
     expect(result.currency).toBe("SGD");
     expect(result.totalSalesPaise).toBe(2000);
     expect(result.commissionPaise).toBe(100);
+    expect(result.gstOnCommissionPaise).toBe(18);
+    expect(result.tdsPaise).toBe(20);
+    expect(result.tcsPaise).toBe(10);
     expect(result.netSalesPaise).toBe(1812);
     expect(marketService.getMarketCurrency).toHaveBeenCalledWith("SG", { requireFresh: true, forceRefresh: true });
   });

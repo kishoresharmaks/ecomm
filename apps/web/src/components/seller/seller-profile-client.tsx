@@ -38,6 +38,7 @@ import {
 } from "./seller-ui";
 import { EditStoreDetailsModal, EditPayoutModal, EditAddressModal, EditDocumentsModal, ProfileModal } from "./seller-profile-modals";
 import { useConfirmationDialog } from "@/components/shared/confirmation-dialog";
+import { useDelayedClose } from "@/hooks/use-delayed-close";
 
 const businessTypes: Array<{ value: SellerBusinessType; label: string }> = [
   { value: "INDIVIDUAL", label: "Individual" },
@@ -414,6 +415,7 @@ function EditServiceAreasModal({
   profile: SellerProfile | null;
 }) {
   const queryClient = useQueryClient();
+  const scheduleClose = useDelayedClose(onClose, open);
   const [areas, setAreas] = useState<SellerServiceAreaDraft[]>(
     profileServiceAreasToDraft(profile?.serviceAreas, profile?.addresses?.[0]),
   );
@@ -426,7 +428,7 @@ function EditServiceAreasModal({
       setNoticeTone("success");
       setNotice("Service coverage updated successfully.");
       void queryClient.invalidateQueries({ queryKey: ["seller-profile", authKey] });
-      setTimeout(() => onClose(), 1500);
+      scheduleClose();
     },
     onError: (error) => {
       setNoticeTone("danger");

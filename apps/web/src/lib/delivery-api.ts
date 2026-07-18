@@ -357,7 +357,7 @@ export function listDeliveryOrders(
   });
 
   return indihubFetch<DeliveryOrderPage>(
-    `/api/delivery/orders${params.size ? `?${params.toString()}` : ""}`,
+    `/api/delivery/orders${params.toString() ? `?${params.toString()}` : ""}`,
     undefined,
     auth,
   );
@@ -432,7 +432,7 @@ export function getDeliveryWallet(
   });
 
   return indihubFetch<DeliveryPartnerWallet>(
-    `/api/delivery/wallet${params.size ? `?${params.toString()}` : ""}`,
+    `/api/delivery/wallet${params.toString() ? `?${params.toString()}` : ""}`,
     undefined,
     auth,
   );

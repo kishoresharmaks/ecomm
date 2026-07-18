@@ -22,6 +22,8 @@ import {
   SellerErrorPanel,
   SellerField,
   SellerOnboardingRequired,
+  SellerNoticeBadge,
+  SellerPagination,
   SellerPanel,
   SellerSelect,
   SellerSkeleton,
@@ -32,6 +34,7 @@ import {
   isSellerOnboardingRequiredError,
   optionalFormValue,
   rupeesToPaise,
+  type SellerNotice,
   useSellerAuth
 } from "./seller-ui";
 
@@ -67,15 +70,18 @@ export function SellerB2BEnquiriesClient() {
   const [search, setSearch] = useState("");
   const [submittedSearch, setSubmittedSearch] = useState("");
   const [status, setStatus] = useState("");
-  const [notice, setNotice] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(30);
+  const [notice, setNotice] = useState<SellerNotice | null>(null);
 
   const enquiriesQuery = useQuery({
-    queryKey: ["seller-b2b-enquiries", sellerAuth.authKey, submittedSearch, status],
+    queryKey: ["seller-b2b-enquiries", sellerAuth.authKey, submittedSearch, status, page, pageSize],
     queryFn: () =>
       listSellerB2BEnquiries(sellerAuth.authHeaders, {
         search: submittedSearch,
         status,
-        limit: 30
+        page,
+        limit: pageSize
       }),
     enabled: sellerAuth.enabled,
     retry: false
@@ -105,15 +111,16 @@ export function SellerB2BEnquiriesClient() {
         ...(transportNote ? { transportNote } : {})
       }),
     onSuccess: () => {
-      setNotice("B2B response added.");
+      setNotice({ tone: "success", message: "B2B response added." });
       void queryClient.invalidateQueries({ queryKey: ["seller-b2b-enquiries", sellerAuth.authKey] });
       void queryClient.invalidateQueries({ queryKey: ["seller-sales-report", sellerAuth.authKey] });
     },
-    onError: (error) => setNotice(error instanceof Error ? error.message : "B2B response failed.")
+    onError: (error) => setNotice({ tone: "danger", message: error instanceof Error ? error.message : "B2B response failed." })
   });
 
   function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setPage(1);
     setSubmittedSearch(search.trim());
   }
 
@@ -169,20 +176,28 @@ export function SellerB2BEnquiriesClient() {
       </div>
 
       <div className="mt-5 grid gap-3 lg:grid-cols-[320px_1fr] lg:items-end">
-        <SellerSelect label="Enquiry status" name="status" value={status} onChange={setStatus}>
+        <SellerSelect
+          label="Enquiry status"
+          name="status"
+          value={status}
+          onChange={(value) => {
+            setPage(1);
+            setStatus(value);
+          }}
+        >
           {liveEnquiryStatuses.map((option) => (
             <option key={option || "all"} value={option}>
               {option ? option.replace(/_/g, " ") : "All enquiry statuses"}
             </option>
           ))}
         </SellerSelect>
-        {notice ? <StatusBadge tone={responseMutation.isError ? "danger" : "success"}>{notice}</StatusBadge> : null}
+        <SellerNoticeBadge notice={notice} />
       </div>
 
       <div className="mt-5 grid gap-4">
         {enquiriesQuery.isLoading ? <SellerSkeleton /> : null}
         {enquiriesQuery.error ? <SellerErrorPanel error={enquiriesQuery.error} onRetry={() => void enquiriesQuery.refetch()} /> : null}
-        {!enquiriesQuery.isLoading && enquiries.length === 0 ? (
+        {!enquiriesQuery.isLoading && !enquiriesQuery.error && enquiries.length === 0 ? (
           <SellerEmptyState title="No B2B enquiries found" message="Buyer enquiries appear here after companies request product or store quotations." />
         ) : null}
 
@@ -255,6 +270,20 @@ export function SellerB2BEnquiriesClient() {
             </div>
           );
         })}
+        {!enquiriesQuery.error && (enquiriesQuery.data?.total ?? 0) > 0 ? (
+          <SellerPagination
+            page={page}
+            pageSize={pageSize}
+            total={enquiriesQuery.data?.total ?? 0}
+            isLoading={enquiriesQuery.isFetching}
+            onPageChange={setPage}
+            onPageSizeChange={(value) => {
+              setPage(1);
+              setPageSize(value);
+            }}
+            itemLabel="enquiries"
+          />
+        ) : null}
       </div>
     </SellerPanel>
   );
@@ -264,7 +293,7 @@ export function SellerB2BEnquiryDetailClient({ enquiryId }: { enquiryId: string 
   const queryClient = useQueryClient();
   const sellerAuth = useSellerAuth();
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<SellerNotice | null>(null);
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState<B2BEnquiryMessage[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -272,6 +301,8 @@ export function SellerB2BEnquiryDetailClient({ enquiryId }: { enquiryId: string 
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
   const [newMessageCount, setNewMessageCount] = useState(0);
   const [responseBlockedByPlan, setResponseBlockedByPlan] = useState(false);
+  const [selfUserId, setSelfUserId] = useState<string | null>(null);
+  const loadedEnquiryRef = useRef<string | null>(null);
 
   const enquiryQuery = useQuery({
     queryKey: ["seller-b2b-enquiry", sellerAuth.authKey, enquiryId],
@@ -302,7 +333,7 @@ export function SellerB2BEnquiryDetailClient({ enquiryId }: { enquiryId: string 
         ...(transportNote ? { transportNote } : {})
       }),
     onSuccess: () => {
-      setNotice("B2B response added.");
+      setNotice({ tone: "success", message: "B2B response added." });
       setResponseBlockedByPlan(false);
       void queryClient.invalidateQueries({ queryKey: ["seller-b2b-enquiry", sellerAuth.authKey, enquiryId] });
       void queryClient.invalidateQueries({ queryKey: ["seller-b2b-enquiries", sellerAuth.authKey] });
@@ -311,7 +342,7 @@ export function SellerB2BEnquiryDetailClient({ enquiryId }: { enquiryId: string 
     onError: (error) => {
       const message = error instanceof Error ? error.message : "B2B response failed.";
       setResponseBlockedByPlan(message.includes("Upgrade your subscription plan"));
-      setNotice(message);
+      setNotice({ tone: "danger", message });
     }
   });
 
@@ -332,6 +363,9 @@ export function SellerB2BEnquiryDetailClient({ enquiryId }: { enquiryId: string 
     },
     onSuccess: (created, _message, context) => {
       const ownSenderUserId = created.senderUserId;
+      if (ownSenderUserId) {
+        setSelfUserId(ownSenderUserId);
+      }
       setMessages((current) =>
         orderMessages(
           current.map((message) =>
@@ -350,12 +384,15 @@ export function SellerB2BEnquiryDetailClient({ enquiryId }: { enquiryId: string 
       const message = error instanceof Error ? error.message : "Message could not be sent.";
       setMessages((current) => current.filter((item) => item.id !== context?.optimisticId));
       setResponseBlockedByPlan(message.includes("Upgrade your subscription plan"));
-      setNotice(message);
+      setNotice({ tone: "danger", message });
     }
   });
 
   const enquiry = enquiryQuery.data;
   const status = liveStatus ?? enquiry?.status ?? null;
+  // The seller row in the payload carries its owning userId (untyped on the web
+  // side); prefer it, falling back to the id observed on our own sent messages.
+  const ownUserId = (enquiry?.seller as { userId?: string } | null | undefined)?.userId ?? selfUserId;
   const sortedResponses = useMemo(
     () => [...(enquiry?.responses ?? [])].sort((left, right) => dateValue(left.createdAt) - dateValue(right.createdAt)),
     [enquiry?.responses]
@@ -369,9 +406,17 @@ export function SellerB2BEnquiryDetailClient({ enquiryId }: { enquiryId: string 
       return;
     }
     setLiveStatus(enquiry.status);
-    setMessages(orderMessages(enquiry.messages?.items ?? []));
-    setNextCursor(enquiry.messages?.nextCursor ?? null);
-    requestAnimationFrame(() => scrollToBottom("auto"));
+    const isFirstLoad = loadedEnquiryRef.current !== enquiry.id;
+    loadedEnquiryRef.current = enquiry.id;
+    if (isFirstLoad) {
+      setMessages(orderMessages(enquiry.messages?.items ?? []));
+      setNextCursor(enquiry.messages?.nextCursor ?? null);
+      requestAnimationFrame(() => scrollToBottom("auto"));
+      return;
+    }
+    // Background refetch: merge the latest page into what's already loaded so
+    // older pages fetched via "Load older" survive, and don't yank the scroll.
+    setMessages((current) => orderMessages([...current, ...(enquiry.messages?.items ?? [])]));
   }, [enquiry]);
 
   useEffect(() => {
@@ -381,6 +426,7 @@ export function SellerB2BEnquiryDetailClient({ enquiryId }: { enquiryId: string 
 
     let socket: Socket | null = null;
     let mounted = true;
+    let onReconnect: (() => void) | null = null;
     const authHeaders = sellerAuth.authHeaders as IndihubAuthHeaders;
 
     async function connect() {
@@ -399,10 +445,13 @@ export function SellerB2BEnquiryDetailClient({ enquiryId }: { enquiryId: string 
         transports: ["websocket"]
       });
       socket.on("connect", () => socket?.emit("b2b.enquiry.join", { enquiryId }));
-      socket.io.on("reconnect", () => {
+      // socket.io reuses one Manager per origin, so this listener must be
+      // detached on cleanup or it leaks a stale-enquiry closure per visit.
+      onReconnect = () => {
         socket?.emit("b2b.enquiry.join", { enquiryId });
         void queryClient.invalidateQueries({ queryKey: ["seller-b2b-enquiry", sellerAuth.authKey, enquiryId] });
-      });
+      };
+      socket.io.on("reconnect", onReconnect);
       socket.on("b2b.enquiry.message", (payload: RealtimeMessageEvent) => {
         if (payload.enquiryId !== enquiryId) {
           return;
@@ -440,6 +489,9 @@ export function SellerB2BEnquiryDetailClient({ enquiryId }: { enquiryId: string 
     void connect();
     return () => {
       mounted = false;
+      if (onReconnect) {
+        socket?.io.off("reconnect", onReconnect);
+      }
       socket?.emit("b2b.enquiry.leave", { enquiryId });
       socket?.disconnect();
     };
@@ -494,7 +546,7 @@ export function SellerB2BEnquiryDetailClient({ enquiryId }: { enquiryId: string 
         }
       });
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Older messages could not be loaded.");
+      setNotice({ tone: "danger", message: error instanceof Error ? error.message : "Older messages could not be loaded." });
     } finally {
       setIsLoadingOlder(false);
     }
@@ -538,7 +590,7 @@ export function SellerB2BEnquiryDetailClient({ enquiryId }: { enquiryId: string 
       {enquiryQuery.isLoading ? <SellerSkeleton /> : null}
       {enquiryQuery.error ? <SellerErrorPanel error={enquiryQuery.error} onRetry={() => void enquiryQuery.refetch()} /> : null}
 
-      {notice ? <StatusBadge tone={responseMutation.isError ? "danger" : "success"}>{notice}</StatusBadge> : null}
+      <SellerNoticeBadge notice={notice} />
 
       {enquiry ? (
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -632,7 +684,10 @@ export function SellerB2BEnquiryDetailClient({ enquiryId }: { enquiryId: string 
                       <MessageBubble
                         key={message.id}
                         message={message}
-                        isSelf={message.id.startsWith("temp-") || message.sender?.fullName === "You"}
+                        isSelf={
+                          message.id.startsWith("temp-") ||
+                          (ownUserId ? message.senderUserId === ownUserId : message.sender?.fullName === "You")
+                        }
                       />
                     ))}
                   </div>

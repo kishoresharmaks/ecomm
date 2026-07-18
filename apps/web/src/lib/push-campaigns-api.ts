@@ -255,7 +255,7 @@ export function buildPushCampaignListPath(query: { status?: PushCampaignStatus |
   if (query.limit) {
     params.set("limit", String(query.limit));
   }
-  return `/api/admin/push-campaigns${params.size ? `?${params.toString()}` : ""}`;
+  return `/api/admin/push-campaigns${params.toString() ? `?${params.toString()}` : ""}`;
 }
 
 export function listPushCampaigns(

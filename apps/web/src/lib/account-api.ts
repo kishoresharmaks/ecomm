@@ -408,7 +408,7 @@ export function listCustomerOrders(auth: IndihubAuthHeaders, query: { search?: s
     }
   }
 
-  const suffix = params.size ? `?${params.toString()}` : "";
+  const suffix = params.toString() ? `?${params.toString()}` : "";
   return indihubFetch<PaginatedAccountOrders>(`/api/account/orders${suffix}`, undefined, auth);
 }
 
@@ -466,7 +466,7 @@ export function listCustomerReturns(auth: IndihubAuthHeaders, query: ReturnListQ
     }
   }
 
-  const suffix = params.size ? `?${params.toString()}` : "";
+  const suffix = params.toString() ? `?${params.toString()}` : "";
   return indihubFetch<CursorPage<ReturnSummary>>(`/api/account/returns${suffix}`, undefined, auth);
 }
 

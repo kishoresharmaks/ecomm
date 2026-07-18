@@ -371,11 +371,32 @@ export type PaginatedSellerProducts = {
 };
 
 export type SellerOrder = Omit<AccountOrder, "sellerSplits" | "items"> & {
+  sellerCurrencySnapshot?: {
+    currency: string;
+    baseCurrency: string;
+    rate: number;
+    source: "ORDER_ITEM_PRICE_SNAPSHOT" | "BASE_CURRENCY_FALLBACK";
+    sellerSubtotalMinor: number;
+    commissionMinor: number;
+    gstOnCommissionMinor: number;
+    tdsMinor: number;
+    tcsMinor: number;
+    platformFeeMinor: number;
+    couponSellerFundedDiscountMinor: number;
+    couponPlatformFundedDiscountMinor: number;
+    couponAdjustmentMinor: number;
+    refundAdjustmentMinor: number;
+    netPayableMinor: number;
+    itemAmounts: Record<string, { unitPriceMinor: number; lineTotalMinor: number }>;
+  };
   items: Array<
     AccountOrder["items"][number] & {
       sellerId?: string;
       productVariant?: ProductVariant;
       product?: ProductSummary;
+      sellerUnitPriceMinor?: number;
+      sellerLineTotalMinor?: number;
+      sellerCurrency?: string;
     }
   >;
   sellerSplits?: Array<
@@ -1165,6 +1186,8 @@ export type SellerReportsOverview = {
   netSalesPaise: number;
   commissionPaise: number;
   gstOnCommissionPaise: number;
+  tdsPaise: number;
+  tcsPaise: number;
   orderCount: number;
   products: number;
   lowStockCount: number;
@@ -1341,7 +1364,7 @@ export function getSellerReportCsvUrl(type: "sales" | "inventory" | "finance" | 
   const qs = new URLSearchParams();
   if (query.dateFrom) qs.set("dateFrom", query.dateFrom);
   if (query.dateTo) qs.set("dateTo", query.dateTo);
-  return `/api/seller/reports/export/${type}${qs.size ? `?${qs.toString()}` : ""}`;
+  return `/api/seller/reports/export/${type}${qs.toString() ? `?${qs.toString()}` : ""}`;
 }
 
 export async function downloadSellerReportCsv(auth: IndihubAuthHeaders, type: "sales" | "inventory" | "finance" | "tax" | "returns", query: { dateFrom?: string; dateTo?: string } = {}) {

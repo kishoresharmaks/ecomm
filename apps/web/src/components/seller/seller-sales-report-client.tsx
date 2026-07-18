@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { FormEvent, useState } from "react";
 import { AlertTriangle, BarChart3, BriefcaseBusiness, CalendarDays, ChevronLeft, ChevronRight, ClipboardList, Download } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
 import { formatMoney } from "@/lib/storefront-api";
 import { downloadSellerReportCsv, getSellerProfile, getSellerSalesReport, type SellerCapability, type SellerSalesReport } from "@/lib/seller-api";
-import { ResponsiveContainer, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip } from "recharts";
 import {
   SellerAuthNotice,
   SellerEmptyState,
@@ -24,6 +24,13 @@ import {
 } from "./seller-ui";
 
 const reportCardPageSize = 5;
+const SellerSalesTrendChart = dynamic(
+  () => import("./report-charts/seller-sales-trend-chart"),
+  {
+    ssr: false,
+    loading: () => <SellerChartLoading />,
+  },
+);
 
 export function SellerSalesReportClient() {
   const sellerAuth = useSellerAuth();
@@ -125,7 +132,7 @@ function SellerRetailReportSections({ report, currency }: { report: SellerSalesR
   const recentSalesStart = (safeRecentSalesPage - 1) * reportCardPageSize;
   const visibleRecentOrders = report.recentOrders.slice(recentSalesStart, recentSalesStart + reportCardPageSize);
   const chartData = report.recentOrders.slice(0, 10).reverse().map((o) => ({
-    name: formatDateTime(o.order.createdAt).split(",")[0],
+    name: formatDateTime(o.order.createdAt).split(",")[0] ?? "",
     sales: o.sellerSubtotalPaise / 100,
   }));
 
@@ -150,15 +157,7 @@ function SellerRetailReportSections({ report, currency }: { report: SellerSalesR
       <SellerPanel>
         <SectionHeading title="Sales Trend" description="Recent gross sales amounts over time." />
         <div className="mt-5 h-[300px] w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-              <Line type="monotone" dataKey="sales" stroke="#ED3500" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
-              <CartesianGrid stroke="#ccc" strokeDasharray="5 5" />
-              <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-              <YAxis tick={{ fontSize: 12 }} tickFormatter={(val) => `${currencySymbol}${val}`} />
-              <Tooltip formatter={(value) => [`${currencySymbol}${value}`, 'Sales']} />
-            </LineChart>
-          </ResponsiveContainer>
+          <SellerSalesTrendChart data={chartData} currencySymbol={currencySymbol} />
         </div>
       </SellerPanel>
 
@@ -454,4 +453,12 @@ function reportCapabilities(report?: SellerSalesReport): SellerCapability[] {
   }
 
   return ["RETAIL"];
+}
+
+function SellerChartLoading() {
+  return (
+    <div className="grid h-full place-items-center rounded-md bg-[#F8FAFC] text-sm font-bold text-[#667085]">
+      Loading chart
+    </div>
+  );
 }

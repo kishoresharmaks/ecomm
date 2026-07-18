@@ -4,6 +4,7 @@ import type {
   MobileServiceAddressSnapshot,
   MobileServiceBookingFormValues,
 } from "../types";
+import { parseServiceDate } from "./serviceDate";
 
 export function cleanBookingPayload(raw: MobileServiceBookingFormValues): BackendCreateServiceBookingPayload {
   const serviceSlug = requiredText(raw.serviceSlug, "Service is missing.");
@@ -129,10 +130,14 @@ function combineDateAndTime(dateValue: string | null, timeSlot: string | null) {
   if (!time) {
     throw new Error("Select a preferred time slot.");
   }
-  const parsed = new Date(`${date}T${time}:00`);
-  if (Number.isNaN(parsed.getTime())) {
+  const parsed = parseServiceDate(date);
+  const [hourValue, minuteValue] = time.split(":");
+  const hour = Number(hourValue);
+  const minute = Number(minuteValue);
+  if (!parsed || !Number.isInteger(hour) || !Number.isInteger(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
     throw new Error("Select a valid preferred date and time.");
   }
+  parsed.setHours(hour, minute, 0, 0);
   return parsed.toISOString();
 }
 

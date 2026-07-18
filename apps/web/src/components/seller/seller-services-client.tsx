@@ -2,15 +2,19 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Clock, Eye, Mail, MapPin, Navigation, Phone, Plus, Search, Send, Trash2, Wrench } from "lucide-react";
 import { Button, StatusBadge } from "@indihub/ui";
 import { useConfirmationDialog, type ConfirmationRequest } from "@/components/shared/confirmation-dialog";
 import { StorefrontImage } from "@/components/storefront/storefront-image";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { IndihubApiError, userFacingApiErrorMessage } from "@/lib/api";
 import { coordinatesFromSnapshot, formatCoordinates, googleMapsDirectionsUrl } from "@/lib/map-navigation";
-import { uploadSellerDocument } from "@/lib/seller-document-upload";
+import {
+  uploadSellerDocument,
+  validateSellerDocument,
+} from "@/lib/seller-document-upload";
 import {
   archiveSellerService,
   createSellerService,
@@ -55,6 +59,7 @@ import {
   createSellerServiceAreaDraftId,
   type SellerServiceAreaDraft,
 } from "./seller-service-area-editor";
+import { serviceImagesForSave } from "./seller-service-images";
 import {
   SellerAuthNotice,
   SellerEmptyState,
@@ -62,7 +67,9 @@ import {
   SellerField,
   SellerImageUpload,
   SellerMetric,
+  SellerNoticeBadge,
   SellerOnboardingRequired,
+  SellerPagination,
   SellerPanel,
   SellerSelect,
   SellerSkeleton,
@@ -73,6 +80,7 @@ import {
   isSellerOnboardingRequiredError,
   optionalFormValue,
   rupeesToPaise,
+  type SellerNotice,
   useSellerAuth,
 } from "./seller-ui";
 
@@ -220,12 +228,15 @@ export function SellerServicesClient({ mode = "list", serviceId, bookingNumber }
 function SellerServiceList() {
   const sellerAuth = useSellerAuth();
   const queryClient = useQueryClient();
+  const confirmation = useConfirmationDialog();
   const [search, setSearch] = useState("");
   const [submittedSearch, setSubmittedSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(30);
 
   const servicesQuery = useQuery({
-    queryKey: ["seller-services", sellerAuth.authKey, submittedSearch],
-    queryFn: () => listSellerServices(sellerAuth.authHeaders, { search: submittedSearch, limit: 30 }),
+    queryKey: ["seller-services", sellerAuth.authKey, submittedSearch, page, pageSize],
+    queryFn: () => listSellerServices(sellerAuth.authHeaders, { search: submittedSearch, page, limit: pageSize }),
     enabled: sellerAuth.enabled,
     retry: false,
   });
@@ -247,15 +258,15 @@ function SellerServiceList() {
   }
 
   const services = servicesQuery.data?.items ?? [];
-  const active = services.filter((service) => service.status === "ACTIVE").length;
-  const pending = services.filter((service) => service.approvalStatus === "PENDING_APPROVAL").length;
+  const summary = servicesQuery.data?.summary;
 
   return (
     <div className="grid gap-5">
+      {confirmation.confirmationDialog}
       <div className="grid gap-4 md:grid-cols-3">
-        <SellerMetric label="Service listings" value={servicesQuery.data?.total ?? 0} note="All submitted service listings" />
-        <SellerMetric label="Live services" value={active} note="Approved and visible" />
-        <SellerMetric label="Pending approval" value={pending} note="Waiting for admin review" />
+        <SellerMetric label="Service listings" value={summary?.listingCount ?? servicesQuery.data?.total ?? 0} note="All submitted service listings" />
+        <SellerMetric label="Live services" value={summary?.liveCount ?? 0} note="Approved and visible" />
+        <SellerMetric label="Pending approval" value={summary?.pendingApprovalCount ?? 0} note="Waiting for admin review" />
       </div>
 
       <SellerPanel>
@@ -264,6 +275,7 @@ function SellerServiceList() {
             onSubmit={(event) => {
               event.preventDefault();
               setSubmittedSearch(search.trim());
+              setPage(1);
             }}
             className="flex min-w-0 flex-1 gap-2"
           >
@@ -318,7 +330,20 @@ function SellerServiceList() {
                       Edit
                     </Link>
                   </Button>
-                  <Button type="button" variant="outline" size="sm" onClick={() => archiveMutation.mutate(service.id)} disabled={archiveMutation.isPending}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      confirmation.requestConfirmation({
+                        title: "Archive this service?",
+                        description: `"${service.title}" will be removed from active service listings while its booking and approval history stays available.`,
+                        confirmLabel: "Archive service",
+                        onConfirm: () => archiveMutation.mutate(service.id),
+                      })
+                    }
+                    disabled={archiveMutation.isPending}
+                  >
                     <Trash2 className="h-4 w-4" aria-hidden="true" />
                     Archive
                   </Button>
@@ -338,6 +363,20 @@ function SellerServiceList() {
           }
         />
       )}
+      {servicesQuery.data && servicesQuery.data.total > 0 ? (
+        <SellerPagination
+          page={page}
+          pageSize={pageSize}
+          total={servicesQuery.data.total}
+          isLoading={servicesQuery.isFetching}
+          itemLabel="services"
+          onPageChange={setPage}
+          onPageSizeChange={(nextPageSize) => {
+            setPageSize(nextPageSize);
+            setPage(1);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -346,14 +385,16 @@ function SellerServiceForm({ serviceId }: { serviceId?: string }) {
   const router = useRouter();
   const sellerAuth = useSellerAuth();
   const queryClient = useQueryClient();
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<SellerNotice | null>(null);
   const [pricingModel, setPricingModel] = useState<ServicePricingModel>("FIXED_PRICE");
   const [coverImageUrl, setCoverImageUrl] = useState<string | null>(null);
   const [serviceAreas, setServiceAreas] = useState<SellerServiceAreaDraft[]>([emptyDraftServiceArea()]);
+  const profileAreasHydratedRef = useRef(false);
+  const serviceHydratedRef = useRef<string | null>(null);
   const editing = Boolean(serviceId);
 
   const profileQuery = useQuery({
-    queryKey: ["seller-profile", sellerAuth.authKey, "service-defaults"],
+    queryKey: ["seller-profile", sellerAuth.authKey],
     queryFn: () => getSellerProfile(sellerAuth.authHeaders),
     enabled: sellerAuth.enabled,
     retry: false,
@@ -378,23 +419,25 @@ function SellerServiceForm({ serviceId }: { serviceId?: string }) {
     mutationFn: (payload: ServiceListingPayload) =>
       serviceId ? updateSellerService(sellerAuth.authHeaders, serviceId, payload) : createSellerService(sellerAuth.authHeaders, payload),
     onSuccess: (service) => {
-      setNotice(serviceId ? "Service changes submitted for admin approval." : "Service submitted for admin approval.");
+      setNotice({ tone: "success", message: serviceId ? "Service changes submitted for admin approval." : "Service submitted for admin approval." });
       void queryClient.invalidateQueries({ queryKey: ["seller-services", sellerAuth.authKey] });
       void queryClient.invalidateQueries({ queryKey: ["seller-service", sellerAuth.authKey, service.id] });
       router.push("/seller/services");
     },
-    onError: (error) => setNotice(error instanceof Error ? error.message : "Service save failed."),
+    onError: (error) => setNotice({ tone: "danger", message: userFacingApiErrorMessage(error) }),
   });
   useEffect(() => {
-    if (!editing && profileQuery.data) {
+    if (!editing && profileQuery.data && !profileAreasHydratedRef.current) {
+      profileAreasHydratedRef.current = true;
       setServiceAreas(serviceAreasFromProfile(profileQuery.data));
     }
   }, [editing, profileQuery.data]);
 
   useEffect(() => {
-    if (!serviceQuery.data) {
+    if (!serviceQuery.data || serviceHydratedRef.current === serviceQuery.data.id) {
       return;
     }
+    serviceHydratedRef.current = serviceQuery.data.id;
     const service = serviceQuery.data;
     setPricingModel(service.pricingModel);
     setCoverImageUrl(primaryServiceImage(service) || null);
@@ -403,11 +446,27 @@ function SellerServiceForm({ serviceId }: { serviceId?: string }) {
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (saveMutation.isPending) {
+      return;
+    }
     const form = new FormData(event.currentTarget);
     const title = formValue(form, "title");
     const basePricePaise = rupeesToPaise(formValue(form, "basePrice"));
     const inspectionFeePaise = rupeesToPaise(formValue(form, "inspectionFee"));
     const advanceAmountPaise = rupeesToPaise(formValue(form, "advanceAmount"));
+    const paymentMode = formValue(form, "paymentMode") as ServiceListingPayload["paymentMode"];
+    if (pricingModel === "FIXED_PRICE" && basePricePaise <= 0) {
+      setNotice({ tone: "danger", message: "Base price must be greater than zero for fixed-price services." });
+      return;
+    }
+    if (paymentMode === "INSPECTION_FEE" && inspectionFeePaise <= 0) {
+      setNotice({ tone: "danger", message: "Inspection fee must be greater than zero for this payment mode." });
+      return;
+    }
+    if (paymentMode === "ADVANCE_PAYMENT" && advanceAmountPaise <= 0) {
+      setNotice({ tone: "danger", message: "Advance amount must be greater than zero for this payment mode." });
+      return;
+    }
     const visitModeValues = visitModes
       .map((mode) => (form.get(`visitMode:${mode.value}`) ? mode.value : null))
       .filter((mode): mode is ServiceVisitMode => Boolean(mode));
@@ -419,7 +478,7 @@ function SellerServiceForm({ serviceId }: { serviceId?: string }) {
       title,
       description: formValue(form, "description"),
       pricingModel,
-      paymentMode: formValue(form, "paymentMode") as ServiceListingPayload["paymentMode"],
+      paymentMode,
       cancellationPolicy: (formValue(form, "cancellationPolicy") || "FLEXIBLE") as ServiceCancellationPolicy,
       currency: sellerOperatingCurrency,
       quoteTtlHours: Number(formValue(form, "quoteTtlHours") || 48),
@@ -431,16 +490,7 @@ function SellerServiceForm({ serviceId }: { serviceId?: string }) {
       highlights: lines(formValue(form, "highlights")),
       inclusions: lines(formValue(form, "inclusions")),
       requirements: lines(formValue(form, "requirements")),
-      images: coverImageUrl
-        ? [
-            {
-              url: coverImageUrl,
-              altText: title,
-              sortOrder: 0,
-              isPrimary: true,
-            },
-          ]
-        : [],
+      images: serviceImagesForSave(serviceQuery.data?.images, coverImageUrl, title),
       packages: packageFromForm(form, serviceQuery.data),
       areas,
     };
@@ -500,9 +550,9 @@ function SellerServiceForm({ serviceId }: { serviceId?: string }) {
               <option value="INSPECTION_FEE">Inspection fee</option>
               <option value="PAY_AT_VISIT">Pay at visit</option>
             </SellerSelect>
-            <SellerField label={`Base price (${sellerOperatingCurrency})`} name="basePrice" type="number" min={0} step="0.01" placeholder="999" defaultValue={paiseToRupeesInput(service?.basePricePaise)} />
-            <SellerField label={`Inspection fee (${sellerOperatingCurrency})`} name="inspectionFee" type="number" min={0} step="0.01" placeholder="299" defaultValue={paiseToRupeesInput(service?.inspectionFeePaise)} />
-            <SellerField label={`Advance amount (${sellerOperatingCurrency})`} name="advanceAmount" type="number" min={0} step="0.01" placeholder="500" defaultValue={paiseToRupeesInput(service?.advanceAmountPaise)} />
+            <SellerField label={`Base price (${sellerOperatingCurrency})`} name="basePrice" type="number" min={0.01} step="0.01" placeholder="999" defaultValue={paiseToRupeesInput(service?.basePricePaise)} />
+            <SellerField label={`Inspection fee (${sellerOperatingCurrency})`} name="inspectionFee" type="number" min={0.01} step="0.01" placeholder="299" defaultValue={paiseToRupeesInput(service?.inspectionFeePaise)} />
+            <SellerField label={`Advance amount (${sellerOperatingCurrency})`} name="advanceAmount" type="number" min={0.01} step="0.01" placeholder="500" defaultValue={paiseToRupeesInput(service?.advanceAmountPaise)} />
             <SellerField label="Duration minutes" name="serviceDurationMinutes" type="number" min={1} defaultValue={service?.serviceDurationMinutes ?? 60} />
             <SellerField label="Quote TTL hours" name="quoteTtlHours" type="number" min={1} defaultValue={service?.quoteTtlHours ?? 48} />
             <SellerSelect label="Cancellation policy" name="cancellationPolicy" defaultValue={service?.cancellationPolicy ?? "FLEXIBLE"} required>
@@ -588,7 +638,7 @@ function SellerServiceForm({ serviceId }: { serviceId?: string }) {
           <Button type="submit" className="mt-4 w-full" disabled={saveMutation.isPending}>
             {saveMutation.isPending ? "Submitting..." : editing ? "Submit changes" : "Submit service"}
           </Button>
-          {notice ? <p className="mt-3 rounded-md bg-[#FFF0EC] p-3 text-sm font-bold text-[#9F2600]">{notice}</p> : null}
+          <SellerNoticeBadge notice={notice} className="mt-3" />
         </SellerPanel>
       </aside>
     </form>
@@ -600,9 +650,11 @@ function SellerServiceBookings() {
   const queryClient = useQueryClient();
   const confirmation = useConfirmationDialog();
   const [actionNotice, setActionNotice] = useState<SellerActionNotice | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const bookingsQuery = useQuery({
-    queryKey: ["seller-service-bookings", sellerAuth.authKey],
-    queryFn: () => listSellerServiceBookings(sellerAuth.authHeaders, { limit: 50 }),
+    queryKey: ["seller-service-bookings", sellerAuth.authKey, page, pageSize],
+    queryFn: () => listSellerServiceBookings(sellerAuth.authHeaders, { page, limit: pageSize }),
     enabled: sellerAuth.enabled,
     retry: false,
   });
@@ -653,6 +705,7 @@ function SellerServiceBookings() {
         const longitude = optionalFormValue(workingForm, "longitude");
         const note = optionalFormValue(workingForm, "note");
         const fieldProofFiles = workingForm.getAll("fieldProofFiles").filter((item): item is File => item instanceof File && item.size > 0);
+        fieldProofFiles.forEach(validateSellerDocument);
         const fieldProofKeys = fieldProofFiles.length
           ? (
               await Promise.all(
@@ -679,6 +732,7 @@ function SellerServiceBookings() {
       if (action === "complete") {
         const workingForm = form ?? new FormData();
         const proofFiles = workingForm.getAll("completionProofFiles").filter((item): item is File => item instanceof File && item.size > 0);
+        proofFiles.forEach(validateSellerDocument);
         const completionProofKeys = proofFiles.length
           ? (
               await Promise.all(
@@ -747,18 +801,16 @@ function SellerServiceBookings() {
 
   const bookings = bookingsQuery.data?.items ?? [];
   const technicians = calendarQuery.data?.technicians?.filter((technician) => technician.isActive !== false) ?? [];
-  const requested = bookings.filter((booking) => booking.status === "REQUESTED").length;
-  const upcoming = bookings.filter((booking) => ["ACCEPTED", "SCHEDULED", "QUOTE_ACCEPTED"].includes(booking.status)).length;
-  const completion = bookings.filter((booking) => booking.status === "COMPLETION_SUBMITTED").length;
+  const summary = bookingsQuery.data?.summary;
 
   return (
     <div className="grid gap-5">
       {confirmation.confirmationDialog}
       <SellerActionToast notice={actionNotice} onDismiss={() => setActionNotice(null)} />
       <div className="grid gap-4 md:grid-cols-3">
-        <SellerMetric label="New requests" value={requested} note="Awaiting provider action" />
-        <SellerMetric label="Upcoming jobs" value={upcoming} note="Accepted or scheduled" />
-        <SellerMetric label="Completion review" value={completion} note="Awaiting customer/admin confirmation" />
+        <SellerMetric label="New requests" value={summary?.requestedCount ?? 0} note="Awaiting provider action" />
+        <SellerMetric label="Upcoming jobs" value={summary?.upcomingCount ?? 0} note="Accepted or scheduled" />
+        <SellerMetric label="Completion review" value={summary?.completionReviewCount ?? 0} note="Awaiting customer/admin confirmation" />
       </div>
       <div className="grid gap-4">
         {bookings.map((booking) => (
@@ -805,6 +857,20 @@ function SellerServiceBookings() {
         ))}
       </div>
       {!bookings.length ? <SellerEmptyState title="No service bookings" message="Customer requests, quotes, scheduled jobs, and completions will appear here." /> : null}
+      {(bookingsQuery.data?.total ?? 0) > 0 ? (
+        <SellerPagination
+          page={page}
+          pageSize={pageSize}
+          total={bookingsQuery.data?.total ?? 0}
+          isLoading={bookingsQuery.isFetching}
+          onPageChange={setPage}
+          onPageSizeChange={(value) => {
+            setPage(1);
+            setPageSize(value);
+          }}
+          itemLabel="service bookings"
+        />
+      ) : null}
     </div>
   );
 }
@@ -864,6 +930,7 @@ function SellerServiceBookingDetail({ bookingNumber }: { bookingNumber?: string 
         const longitude = optionalFormValue(workingForm, "longitude");
         const note = optionalFormValue(workingForm, "note");
         const fieldProofFiles = workingForm.getAll("fieldProofFiles").filter((item): item is File => item instanceof File && item.size > 0);
+        fieldProofFiles.forEach(validateSellerDocument);
         const fieldProofKeys = fieldProofFiles.length
           ? (
               await Promise.all(
@@ -888,8 +955,23 @@ function SellerServiceBookingDetail({ bookingNumber }: { bookingNumber?: string 
         return sellerWithdrawServiceQuote(sellerAuth.authHeaders, booking.bookingNumber, note ? { note } : {});
       }
       if (action === "complete") {
+        const workingForm = form ?? new FormData();
+        const proofFiles = workingForm.getAll("completionProofFiles").filter((item): item is File => item instanceof File && item.size > 0);
+        proofFiles.forEach(validateSellerDocument);
+        const completionProofKeys = proofFiles.length
+          ? (
+              await Promise.all(
+                proofFiles.slice(0, 8).map((file) =>
+                  uploadSellerDocument(sellerAuth.authHeaders, file, "SERVICE_COMPLETION_PROOF", {
+                    serviceBookingNumber: booking.bookingNumber,
+                  }),
+                ),
+              )
+            ).map((item) => item.fileUrl)
+          : undefined;
         return sellerSubmitServiceCompletion(sellerAuth.authHeaders, booking.bookingNumber, {
-          completionNote: formValue(form ?? new FormData(), "completionNote"),
+          completionNote: formValue(workingForm, "completionNote"),
+          ...(completionProofKeys?.length ? { completionProofKeys } : {}),
         });
       }
       if (action === "payment") {
@@ -1016,14 +1098,18 @@ function SellerServiceReviews() {
   const [status, setStatus] = useState("ALL");
   const [rating, setRating] = useState("ALL");
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(30);
+  const debouncedSearch = useDebouncedValue(search.trim(), 350);
   const reviewsQuery = useQuery({
-    queryKey: ["seller-service-reviews", sellerAuth.authKey, status, rating, search],
+    queryKey: ["seller-service-reviews", sellerAuth.authKey, status, rating, debouncedSearch, page, pageSize],
     queryFn: () =>
       listSellerServiceReviews(sellerAuth.authHeaders, {
-        limit: 50,
+        page,
+        limit: pageSize,
         ...(status !== "ALL" ? { status } : {}),
         ...(rating !== "ALL" ? { rating: Number(rating) } : {}),
-        ...(search ? { search } : {}),
+        ...(debouncedSearch ? { search: debouncedSearch } : {}),
       }),
     enabled: sellerAuth.enabled,
     retry: false,
@@ -1045,15 +1131,15 @@ function SellerServiceReviews() {
           <StatusBadge tone="info">{reviewsQuery.data?.total ?? 0} reviews</StatusBadge>
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-[1fr_160px_160px]">
-          <SellerField label="Search" name="search" value={search} onChange={setSearch} placeholder="Booking, service, review text" />
-          <SellerSelect label="Status" name="status" value={status} onChange={setStatus}>
+          <SellerField label="Search" name="search" value={search} onChange={(value) => { setSearch(value); setPage(1); }} placeholder="Booking, service, review text" />
+          <SellerSelect label="Status" name="status" value={status} onChange={(value) => { setStatus(value); setPage(1); }}>
             <option value="ALL">All</option>
             <option value="VISIBLE">Visible</option>
             <option value="HIDDEN">Hidden</option>
             <option value="REPLIED">Replied</option>
             <option value="UNREPLIED">Unreplied</option>
           </SellerSelect>
-          <SellerSelect label="Rating" name="rating" value={rating} onChange={setRating}>
+          <SellerSelect label="Rating" name="rating" value={rating} onChange={(value) => { setRating(value); setPage(1); }}>
             <option value="ALL">All</option>
             {[5, 4, 3, 2, 1].map((item) => <option key={item} value={item}>{item} star</option>)}
           </SellerSelect>
@@ -1079,14 +1165,28 @@ function SellerServiceReviews() {
                 {review.reply ? <p className="mt-2 text-sm font-semibold leading-6 text-[#1F2933]">{review.reply.body}</p> : <p className="mt-2 text-sm font-semibold text-[#667085]">No reply yet.</p>}
               </div>
             </div>
-            <form onSubmit={(event) => { event.preventDefault(); replyMutation.mutate({ review, form: new FormData(event.currentTarget) }); }} className="mt-4 grid gap-2 md:grid-cols-[1fr_auto]">
+            <form onSubmit={(event) => { event.preventDefault(); if (replyMutation.isPending) return; replyMutation.mutate({ review, form: new FormData(event.currentTarget) }); }} className="mt-4 grid gap-2 md:grid-cols-[1fr_auto]">
               <input name="body" defaultValue={review.reply?.body ?? ""} placeholder="Write a professional reply" className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold" />
               <Button type="submit" size="sm" disabled={replyMutation.isPending}>Save reply</Button>
             </form>
           </SellerPanel>
         ))}
-        {!reviews.length && !reviewsQuery.isLoading ? <SellerEmptyState title="No service reviews" message="Customer service reviews will appear here after completed bookings." /> : null}
+        {!reviews.length && !reviewsQuery.isLoading && !reviewsQuery.error ? <SellerEmptyState title="No service reviews" message="Customer service reviews will appear here after completed bookings." /> : null}
       </div>
+      {reviewsQuery.data && reviewsQuery.data.total > 0 ? (
+        <SellerPagination
+          page={page}
+          pageSize={pageSize}
+          total={reviewsQuery.data.total}
+          isLoading={reviewsQuery.isFetching}
+          itemLabel="reviews"
+          onPageChange={setPage}
+          onPageSizeChange={(nextPageSize) => {
+            setPageSize(nextPageSize);
+            setPage(1);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -1169,12 +1269,20 @@ function BookingActionPanel({
 }) {
   const activeTechnicians = technicians ?? [];
   const remainingDuePaise = Math.max(0, booking.totalPayablePaise - booking.paidAmountPaise);
+  // Guard here rather than per-form: disabled buttons don't stop implicit
+  // (Enter-key) form submission, which would double-fire the mutation.
+  const submitAction = (target: ServiceBooking, action: string, form?: FormData) => {
+    if (pending) {
+      return;
+    }
+    onSubmit(target, action, form);
+  };
   return (
     <div className="rounded-lg border border-[#D9E2EA] bg-[#F8FAFC] p-4">
       <p className="text-sm font-black text-[#123A5A]">Provider actions</p>
       <div className="mt-3 grid gap-3">
         {booking.status === "REQUESTED" ? (
-          <form onSubmit={(event) => { event.preventDefault(); onSubmit(booking, "accept", new FormData(event.currentTarget)); }} className="grid gap-2">
+          <form onSubmit={(event) => { event.preventDefault(); submitAction(booking, "accept", new FormData(event.currentTarget)); }} className="grid gap-2">
             <input name="scheduledStartAt" type="datetime-local" required className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold" />
             {activeTechnicians.length ? (
               <select name="assignedTechnicianId" required defaultValue={booking.assignedTechnicianId ?? ""} className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold">
@@ -1202,7 +1310,7 @@ function BookingActionPanel({
                 description: "This request will be closed for the customer. Confirm only after reviewing the rejection reason.",
                 confirmLabel: "Reject request",
                 tone: "danger",
-                onConfirm: () => onSubmit(booking, "reject", form),
+                onConfirm: () => submitAction(booking, "reject", form),
               });
             }}
             className="grid gap-2 border-t border-[#D9E2EA] pt-3"
@@ -1221,7 +1329,7 @@ function BookingActionPanel({
                 description: "This booking will move to cancelled and may apply the configured cancellation policy.",
                 confirmLabel: "Cancel booking",
                 tone: "danger",
-                onConfirm: () => onSubmit(booking, "cancel", form),
+                onConfirm: () => submitAction(booking, "cancel", form),
               });
             }}
             className="grid gap-2 border-t border-[#D9E2EA] pt-3"
@@ -1231,7 +1339,7 @@ function BookingActionPanel({
           </form>
         ) : null}
         {["ACCEPTED", "SCHEDULED", "QUOTE_ACCEPTED"].includes(booking.status) ? (
-          <form onSubmit={(event) => { event.preventDefault(); onSubmit(booking, "reschedule", new FormData(event.currentTarget)); }} className="grid gap-2 border-t border-[#D9E2EA] pt-3">
+          <form onSubmit={(event) => { event.preventDefault(); submitAction(booking, "reschedule", new FormData(event.currentTarget)); }} className="grid gap-2 border-t border-[#D9E2EA] pt-3">
             <input name="scheduledStartAt" type="datetime-local" required defaultValue={toLocalDateTimeInput(booking.scheduledStartAt)} className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold" />
             {activeTechnicians.length ? (
               <select name="assignedTechnicianId" required defaultValue={booking.assignedTechnicianId ?? ""} className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold">
@@ -1250,25 +1358,25 @@ function BookingActionPanel({
           </form>
         ) : null}
         {["ACCEPTED", "IN_PROGRESS"].includes(booking.status) ? (
-          <form onSubmit={(event) => { event.preventDefault(); onSubmit(booking, "quote", new FormData(event.currentTarget)); }} className="grid gap-2">
+          <form onSubmit={(event) => { event.preventDefault(); submitAction(booking, "quote", new FormData(event.currentTarget)); }} className="grid gap-2">
             <input name="quoteDescription" placeholder="Quote line item" className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold" />
-            <input name="quoteAmount" type="number" min="0" step="0.01" placeholder="Quote amount INR" className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold" />
+            <input name="quoteAmount" type="number" min="0.01" step="0.01" required placeholder="Quote amount INR" className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold" />
             <Button type="submit" variant="outline" size="sm" disabled={pending}><Send className="h-4 w-4" /> Send quote</Button>
           </form>
         ) : null}
         {booking.quotes?.some((quote) => quote.status === "SENT") ? (
-          <form onSubmit={(event) => { event.preventDefault(); onSubmit(booking, "withdrawQuote", new FormData(event.currentTarget)); }} className="grid gap-2">
+          <form onSubmit={(event) => { event.preventDefault(); submitAction(booking, "withdrawQuote", new FormData(event.currentTarget)); }} className="grid gap-2">
             <input name="note" placeholder="Withdraw quote note" className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold" />
             <Button type="submit" variant="outline" size="sm" disabled={pending}>Withdraw active quote</Button>
           </form>
         ) : null}
         {["ACCEPTED", "SCHEDULED", "QUOTE_ACCEPTED"].includes(booking.status) ? (
-          <Button type="button" variant="outline" size="sm" onClick={() => onSubmit(booking, "start")} disabled={pending}>
+          <Button type="button" variant="outline" size="sm" onClick={() => submitAction(booking, "start")} disabled={pending}>
             <Clock className="h-4 w-4" /> Mark in progress
           </Button>
         ) : null}
         {["ACCEPTED", "SCHEDULED", "QUOTE_ACCEPTED", "IN_PROGRESS"].includes(booking.status) ? (
-          <form onSubmit={(event) => { event.preventDefault(); onSubmit(booking, "field", new FormData(event.currentTarget)); }} className="grid gap-2 rounded-md border border-[#D9E2EA] bg-white p-3">
+          <form onSubmit={(event) => { event.preventDefault(); submitAction(booking, "field", new FormData(event.currentTarget)); }} className="grid gap-2 rounded-md border border-[#D9E2EA] bg-white p-3">
             <p className="text-xs font-black uppercase tracking-wide text-[#667085]">Technician field status</p>
             <select name="status" className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold">
               <option value="EN_ROUTE">En route</option>
@@ -1286,14 +1394,14 @@ function BookingActionPanel({
           </form>
         ) : null}
         {booking.status === "IN_PROGRESS" ? (
-          <form onSubmit={(event) => { event.preventDefault(); onSubmit(booking, "complete", new FormData(event.currentTarget)); }} className="grid gap-2">
+          <form onSubmit={(event) => { event.preventDefault(); submitAction(booking, "complete", new FormData(event.currentTarget)); }} className="grid gap-2">
             <textarea name="completionNote" required rows={3} placeholder="Completion note" className="rounded-md border border-[#D8E2EA] px-3 py-2 text-sm font-semibold" />
             <input name="completionProofFiles" type="file" multiple accept="application/pdf,image/jpeg,image/png,image/webp" className="rounded-md border border-[#D8E2EA] bg-white px-3 py-2 text-sm font-semibold" />
             <Button type="submit" size="sm" disabled={pending}>Submit completion</Button>
           </form>
         ) : null}
         {remainingDuePaise > 0 ? (
-          <form onSubmit={(event) => { event.preventDefault(); onSubmit(booking, "payment", new FormData(event.currentTarget)); }} className="grid gap-2">
+          <form onSubmit={(event) => { event.preventDefault(); submitAction(booking, "payment", new FormData(event.currentTarget)); }} className="grid gap-2">
             <select name="purpose" className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold">
               <option value="PAY_AT_VISIT">Pay at visit</option>
               <option value="FINAL_QUOTE">Final quote</option>
@@ -1317,9 +1425,10 @@ function BookingActionPanel({
 function SellerServiceCalendar() {
   const sellerAuth = useSellerAuth();
   const queryClient = useQueryClient();
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<SellerNotice | null>(null);
   const [technicianDrafts, setTechnicianDrafts] = useState<ServiceTechnicianDraft[]>([]);
   const [blockedWindowDrafts, setBlockedWindowDrafts] = useState<ServiceBlockedWindowDraft[]>([]);
+  const calendarHydratedForAuthRef = useRef<string | null>(null);
   const calendarQuery = useQuery({
     queryKey: ["seller-service-calendar", sellerAuth.authKey],
     queryFn: () => getSellerServiceCalendar(sellerAuth.authHeaders),
@@ -1333,17 +1442,18 @@ function SellerServiceCalendar() {
         calendarPayloadFromForm(form, technicianDrafts, blockedWindowDrafts),
       ),
     onSuccess: () => {
-      setNotice("Service calendar saved.");
+      setNotice({ tone: "success", message: "Service calendar saved." });
       void queryClient.invalidateQueries({ queryKey: ["seller-service-calendar", sellerAuth.authKey] });
       void queryClient.invalidateQueries({ queryKey: ["seller-service-bookings", sellerAuth.authKey] });
     },
-    onError: (error) => setNotice(error instanceof Error ? error.message : "Calendar save failed."),
+    onError: (error) => setNotice({ tone: "danger", message: error instanceof Error ? error.message : "Calendar save failed." }),
   });
 
   useEffect(() => {
-    if (!calendarQuery.data) {
+    if (!calendarQuery.data || calendarHydratedForAuthRef.current === sellerAuth.authKey) {
       return;
     }
+    calendarHydratedForAuthRef.current = sellerAuth.authKey;
     setTechnicianDrafts(
       calendarQuery.data.technicians.length
         ? calendarQuery.data.technicians.map(technicianDraftFromRecord)
@@ -1354,7 +1464,7 @@ function SellerServiceCalendar() {
         ? calendarQuery.data.blockedWindows.map(blockedWindowDraftFromRecord)
         : [emptyBlockedWindowDraft()],
     );
-  }, [calendarQuery.data]);
+  }, [calendarQuery.data, sellerAuth.authKey]);
 
   const scheduled = useMemo(
     () => (calendarQuery.data?.bookings ?? []).filter((booking) => booking.scheduledStartAt).sort((a, b) => String(a.scheduledStartAt).localeCompare(String(b.scheduledStartAt))),
@@ -1381,7 +1491,7 @@ function SellerServiceCalendar() {
         <SellerMetric label="Blocked windows" value={blockedWindowDrafts.filter((window) => window.startsAt && window.endsAt).length || blockedWindows.length} note="Leave or non-working time" />
       </div>
 
-      <form onSubmit={(event) => { event.preventDefault(); saveMutation.mutate(new FormData(event.currentTarget)); }} className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
+      <form onSubmit={(event) => { event.preventDefault(); if (saveMutation.isPending) return; saveMutation.mutate(new FormData(event.currentTarget)); }} className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
         <div className="grid gap-5">
           <SellerPanel>
             <h2 className="text-lg font-black text-[#123A5A]">Weekly availability</h2>
@@ -1595,7 +1705,7 @@ function SellerServiceCalendar() {
             <Button type="submit" className="mt-4 w-full" disabled={saveMutation.isPending}>
               {saveMutation.isPending ? "Saving..." : "Save calendar"}
             </Button>
-            {notice ? <p className="mt-3 rounded-md bg-[#FFF0EC] p-3 text-sm font-bold text-[#9F2600]">{notice}</p> : null}
+            <SellerNoticeBadge notice={notice} className="mt-3" />
           </SellerPanel>
         </aside>
       </form>

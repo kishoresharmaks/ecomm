@@ -14,6 +14,7 @@ import {
   SellerEmptyState,
   SellerErrorPanel,
   SellerOnboardingRequired,
+  SellerPagination,
   SellerPanel,
   SellerSkeleton,
   SellerStatusPill,
@@ -156,7 +157,7 @@ export function SellerOrdersClient() {
       <div className="mt-5 grid gap-3">
         {ordersQuery.isLoading ? <SellerSkeleton /> : null}
         {ordersQuery.error ? <SellerErrorPanel error={ordersQuery.error} onRetry={() => void ordersQuery.refetch()} /> : null}
-        {!ordersQuery.isLoading && orders.length === 0 ? (
+        {!ordersQuery.isLoading && !ordersQuery.error && orders.length === 0 ? (
           <SellerEmptyState title="No orders found" message="Orders appear here after checkout includes this store's approved products." />
         ) : null}
 
@@ -208,7 +209,7 @@ export function SellerOrdersClient() {
                   )}
                 </div>
                 <div className="flex flex-wrap items-center gap-3 lg:justify-end">
-                  <span className="font-black text-[#163B5C]">{formatMoney(sellerSubtotal || order.totalPaise, order.currency)}</span>
+                  <span className="font-black text-[#163B5C]">{formatMoney(sellerSubtotal ?? order.totalPaise, order.currency)}</span>
                   <Button asChild variant="outline" size="sm">
                     <Link href={`/seller/orders/${order.orderNumber}`}>
                       Review / update
@@ -236,71 +237,6 @@ export function SellerOrdersClient() {
         />
       ) : null}
     </SellerPanel>
-  );
-}
-
-function SellerPagination({
-  page,
-  pageSize,
-  total,
-  isLoading,
-  onPageChange,
-  onPageSizeChange,
-  itemLabel = "orders",
-}: {
-  page: number;
-  pageSize: number;
-  total: number;
-  isLoading?: boolean;
-  onPageChange: (page: number) => void;
-  onPageSizeChange: (pageSize: number) => void;
-  itemLabel?: string;
-}) {
-  const pageCount = Math.max(1, Math.ceil(total / pageSize));
-  const currentPage = Math.min(page, pageCount);
-  const firstItem = total === 0 ? 0 : (currentPage - 1) * pageSize + 1;
-  const lastItem = Math.min(total, currentPage * pageSize);
-
-  return (
-    <div className="mt-6 flex flex-col gap-3 rounded-lg border border-[#D8E2EA] bg-[#F8FAFC] px-4 py-4 md:flex-row md:items-center md:justify-between">
-      <div className="text-sm font-semibold text-[#667085]">
-        {isLoading
-          ? `Loading ${itemLabel}...`
-          : `Showing ${firstItem.toLocaleString("en-IN")}-${lastItem.toLocaleString("en-IN")} of ${total.toLocaleString("en-IN")} ${itemLabel}`}
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <select
-          value={pageSize}
-          onChange={(e) => onPageSizeChange(Number(e.target.value))}
-          disabled={isLoading}
-          className="h-9 rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-semibold text-[#1F2933] outline-none focus:border-[#ED3500] disabled:opacity-50"
-        >
-          <option value="10">10 per page</option>
-          <option value="20">20 per page</option>
-          <option value="30">30 per page</option>
-          <option value="50">50 per page</option>
-          <option value="100">100 per page</option>
-        </select>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={isLoading || currentPage <= 1}
-          onClick={() => onPageChange(Math.max(1, currentPage - 1))}
-        >
-          Previous
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={isLoading || currentPage >= pageCount}
-          onClick={() => onPageChange(Math.min(pageCount, currentPage + 1))}
-        >
-          Next
-        </Button>
-      </div>
-    </div>
   );
 }
 

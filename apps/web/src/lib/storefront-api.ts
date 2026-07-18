@@ -1113,7 +1113,7 @@ export function listProducts(
     }
   }
 
-  const suffix = params.size ? `?${params.toString()}` : "";
+  const suffix = params.toString() ? `?${params.toString()}` : "";
   return indihubFetch<PaginatedProducts>(`/api/products${suffix}`, undefined, auth);
 }
 
@@ -1158,7 +1158,7 @@ export function listStorefrontDeals(
     }
   }
 
-  const suffix = params.size ? `?${params.toString()}` : "";
+  const suffix = params.toString() ? `?${params.toString()}` : "";
   return indihubFetch<PaginatedProducts>(`/api/storefront/deals${suffix}`);
 }
 
@@ -1181,7 +1181,7 @@ export function listProductReviews(
     }
   }
 
-  const suffix = params.size ? `?${params.toString()}` : "";
+  const suffix = params.toString() ? `?${params.toString()}` : "";
   return indihubFetch<PaginatedProductReviews>(
     `/api/reviews/products/${encodeURIComponent(productId)}${suffix}`,
   );
@@ -1206,7 +1206,7 @@ export function listStores(query: StoreLocationQuery = {}) {
     }
   }
 
-  const suffix = params.size ? `?${params.toString()}` : "";
+  const suffix = params.toString() ? `?${params.toString()}` : "";
   return indihubFetch<StoreProfile[]>(`/api/sellers${suffix}`);
 }
 
@@ -1219,7 +1219,7 @@ export function getStorefrontHome(query: StoreLocationQuery = {}, auth?: Indihub
     }
   }
 
-  const suffix = params.size ? `?${params.toString()}` : "";
+  const suffix = params.toString() ? `?${params.toString()}` : "";
   return indihubFetch<StorefrontHomePayload>(
     `/api/storefront/home${suffix}`,
     { cache: "no-store" },

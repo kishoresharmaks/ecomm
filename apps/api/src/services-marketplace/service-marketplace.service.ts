@@ -360,7 +360,11 @@ export class ServiceMarketplaceService {
           }
         : {}),
     };
-    const [items, total] = await Promise.all([
+    const summaryWhere: Prisma.ServiceListingWhereInput = {
+      sellerId: seller.id,
+      deletedAt: null,
+    };
+    const [items, total, listingCount, liveCount, pendingApprovalCount] = await Promise.all([
       this.prisma.client.serviceListing.findMany({
         where,
         include: serviceListingInclude,
@@ -369,9 +373,22 @@ export class ServiceMarketplaceService {
         take,
       }),
       this.prisma.client.serviceListing.count({ where }),
+      this.prisma.client.serviceListing.count({ where: summaryWhere }),
+      this.prisma.client.serviceListing.count({
+        where: { ...summaryWhere, status: "ACTIVE" },
+      }),
+      this.prisma.client.serviceListing.count({
+        where: { ...summaryWhere, approvalStatus: "PENDING_APPROVAL" },
+      }),
     ]);
 
-    return { items, total, page, limit: take };
+    return {
+      items,
+      total,
+      page,
+      limit: take,
+      summary: { listingCount, liveCount, pendingApprovalCount },
+    };
   }
 
   async getSellerService(actor: RequestUser, serviceId: string) {
@@ -780,7 +797,7 @@ export class ServiceMarketplaceService {
     const customer = await this.customersService.ensureCustomerForUser(actor);
     const { page, skip, take } = paginationFromQuery(query, { defaultLimit: 20 });
     const where: Prisma.ServiceBookingWhereInput = { customerId: customer.id };
-    const [items, total] = await Promise.all([
+    const [items, total, statusGroups] = await Promise.all([
       this.prisma.client.serviceBooking.findMany({
         where,
         include: serviceBookingInclude,
@@ -789,8 +806,32 @@ export class ServiceMarketplaceService {
         take,
       }),
       this.prisma.client.serviceBooking.count({ where }),
+      this.prisma.client.serviceBooking.groupBy({
+        by: ["status"],
+        where,
+        _count: { _all: true },
+      }),
     ]);
-    return { items, total, page, limit: take };
+    const count = (statuses: ServiceBookingStatus[]) =>
+      statusGroups
+        .filter((group) => statuses.includes(group.status))
+        .reduce((sum, group) => sum + group._count._all, 0);
+
+    return {
+      items,
+      total,
+      page,
+      limit: take,
+      summary: {
+        requestedCount: count([ServiceBookingStatus.REQUESTED]),
+        upcomingCount: count([
+          ServiceBookingStatus.ACCEPTED,
+          ServiceBookingStatus.SCHEDULED,
+          ServiceBookingStatus.QUOTE_ACCEPTED,
+        ]),
+        completionReviewCount: count([ServiceBookingStatus.COMPLETION_SUBMITTED]),
+      },
+    };
   }
 
   async getCustomerBooking(actor: RequestUser, bookingNumber: string) {

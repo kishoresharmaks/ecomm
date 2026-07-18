@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import {
   BadgeIndianRupee,
+  BadgeDollarSign,
   BarChart3,
   ChevronRight,
   ClipboardList,
@@ -30,6 +31,7 @@ import { financeNav } from "@/lib/portal-nav";
 type FinanceNavItem = (typeof financeNav)[number];
 
 const iconByHref: Array<[string, typeof LayoutDashboard]> = [
+  ["/finance/fx-providers", BadgeDollarSign],
   ["/finance/settings", Settings],
   ["/finance/reports", BarChart3],
   ["/finance/commission-rules", Settings],

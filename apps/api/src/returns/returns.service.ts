@@ -1298,12 +1298,13 @@ export class ReturnsService {
 
   async listSellerReturns(actor: RequestUser, query: ReturnListQueryDto) {
     const seller = await this.resolveSeller(actor);
+    const sellerWhere: Prisma.ReturnRequestWhereInput = {
+      items: { some: { sellerId: seller.id } },
+    };
     return this.listReturnRequests(
-      this.returnListWhere(query, {
-        items: { some: { sellerId: seller.id } },
-      }),
+      this.returnListWhere(query, sellerWhere),
       query,
-      { sellerId: seller.id },
+      { sellerId: seller.id, summaryWhere: sellerWhere },
     );
   }
 
@@ -4576,66 +4577,106 @@ export class ReturnsService {
   private async listReturnRequests(
     where: Prisma.ReturnRequestWhereInput,
     query: ReturnListQueryDto,
-    options: { sellerId?: string; includeCustomerContact?: boolean } = {},
+    options: {
+      sellerId?: string;
+      includeCustomerContact?: boolean;
+      summaryWhere?: Prisma.ReturnRequestWhereInput;
+    } = {},
   ) {
     const { take, cursor } = cursorPaginationFromQuery(query, {
       defaultLimit: 25,
       maxLimit: 50,
     });
     const cursorWhere = createdAtCursorWhere(cursor) as Prisma.ReturnRequestWhereInput | undefined;
-    const items = await this.prisma.client.returnRequest.findMany({
-      where: cursorWhere ? { AND: [where, cursorWhere] } : where,
-      select: {
-        id: true,
-        requestNumber: true,
-        status: true,
-        resolution: true,
-        reason: true,
-        qualityProofKeys: true,
-        totalQuantity: true,
-        requestedAmountPaise: true,
-        approvedAmountPaise: true,
-        currency: true,
-        createdAt: true,
-        order: {
-          select: {
-            orderNumber: true,
-            orderStatus: true,
-            paymentStatus: true,
-            deliveryStatus: true,
+    const [items, statusGroups] = await Promise.all([
+      this.prisma.client.returnRequest.findMany({
+        where: cursorWhere ? { AND: [where, cursorWhere] } : where,
+        select: {
+          id: true,
+          requestNumber: true,
+          status: true,
+          resolution: true,
+          reason: true,
+          qualityProofKeys: true,
+          totalQuantity: true,
+          requestedAmountPaise: true,
+          approvedAmountPaise: true,
+          currency: true,
+          createdAt: true,
+          order: {
+            select: {
+              orderNumber: true,
+              orderStatus: true,
+              paymentStatus: true,
+              deliveryStatus: true,
+            },
+          },
+          customer: {
+            select: {
+              displayName: true,
+              user: { select: { email: true, fullName: true } },
+            },
+          },
+          items: {
+            ...(options.sellerId ? { where: { sellerId: options.sellerId } } : {}),
+            select: {
+              id: true,
+              quantity: true,
+              status: true,
+              sellerNote: true,
+              sellerId: true,
+              seller: { select: { storeName: true, slug: true } },
+              orderItem: { select: { productNameSnapshot: true } },
+            },
           },
         },
-        customer: {
-          select: {
-            displayName: true,
-            user: { select: { email: true, fullName: true } },
-          },
-        },
-        items: {
-          ...(options.sellerId ? { where: { sellerId: options.sellerId } } : {}),
-          select: {
-            id: true,
-            quantity: true,
-            status: true,
-            sellerNote: true,
-            sellerId: true,
-            seller: { select: { storeName: true, slug: true } },
-            orderItem: { select: { productNameSnapshot: true } },
-          },
-        },
-      },
-      orderBy: createdAtCursorOrderBy(),
-      take: take + 1,
-    });
+        orderBy: createdAtCursorOrderBy(),
+        take: take + 1,
+      }),
+      options.summaryWhere
+        ? this.prisma.client.returnRequest.groupBy({
+            by: ["status"],
+            where: options.summaryWhere,
+            _count: { _all: true },
+          })
+        : Promise.resolve(null),
+    ]);
     const page = cursorPageFromItems(items, take);
     return {
       ...page,
       limit: take,
+      ...(statusGroups ? { summary: this.sellerReturnSummary(statusGroups) } : {}),
       items: page.items.map((item) =>
         this.returnSummaryReadback(item, {
           includeCustomerContact: options.includeCustomerContact ?? false,
         }),
       ),
+    };
+  }
+
+  private sellerReturnSummary(
+    groups: Array<{ status: ReturnRequestStatus; _count: { _all: number } }>,
+  ) {
+    const count = (statuses: ReturnRequestStatus[]) =>
+      groups
+        .filter((group) => statuses.includes(group.status))
+        .reduce((total, group) => total + group._count._all, 0);
+
+    return {
+      total: count(Object.values(ReturnRequestStatus)),
+      pending: count([ReturnRequestStatus.PENDING_REVIEW]),
+      approved: count([
+        ReturnRequestStatus.AUTO_APPROVED,
+        ReturnRequestStatus.APPROVED,
+        ReturnRequestStatus.PICKUP_PENDING,
+        ReturnRequestStatus.PICKED_UP,
+        ReturnRequestStatus.IN_TRANSIT,
+        ReturnRequestStatus.RECEIVED,
+        ReturnRequestStatus.QC_PASSED,
+      ]),
+      refunded: count([ReturnRequestStatus.RESOLVED]),
+      rejected: count([ReturnRequestStatus.REJECTED, ReturnRequestStatus.QC_FAILED]),
+      cancelled: count([ReturnRequestStatus.CANCELLED]),
     };
   }
 

@@ -1,6 +1,7 @@
 import { Prisma } from "@indihub/database";
 import { describe, expect, it, vi } from "vitest";
 import type { PrismaService } from "../prisma/prisma.service";
+import type { FxProviderService, RuntimeFxProvider } from "./fx-provider.service";
 import { MarketService, type MarketCurrencySnapshot } from "./market.service";
 
 describe("MarketService currency conversion", () => {
@@ -81,4 +82,69 @@ describe("MarketService currency conversion", () => {
 
     expect(getMarketCurrency).toHaveBeenCalledWith("US", { requireFresh: true, forceRefresh: true });
   });
+
+  it("falls back to the next enabled provider when the primary live quote fails", async () => {
+    const primary = provider("PRIMARY", true, 1);
+    const fallback = provider("FALLBACK", false, 2);
+    const storedRate = {
+      baseCurrency: "INR",
+      quoteCurrency: "USD",
+      rate: new Prisma.Decimal(0.0105),
+      provider: "FALLBACK",
+      fetchedAt: new Date("2026-07-18T06:00:00.000Z"),
+      expiresAt: new Date("2026-07-18T07:00:00.000Z"),
+    };
+    const prisma = {
+      client: {
+        locationCountry: {
+          findUnique: vi.fn().mockResolvedValue({
+            code: "US",
+            name: "United States",
+            currency: "USD",
+            locale: "en-US",
+            enabled: true,
+          }),
+        },
+        currencyRate: {
+          findUnique: vi.fn().mockResolvedValue(null),
+          upsert: vi.fn().mockResolvedValue(storedRate),
+        },
+      },
+    } as unknown as PrismaService;
+    const fxProviders = {
+      configuredProviders: vi.fn().mockResolvedValue([primary, fallback]),
+      fetchRate: vi.fn()
+        .mockRejectedValueOnce(new Error("primary unavailable"))
+        .mockResolvedValueOnce({
+          rate: 0.0105,
+          providerTimestamp: new Date("2026-07-18T05:59:00.000Z"),
+          receivedAt: new Date("2026-07-18T06:00:00.000Z"),
+          rawResponse: { rate: 0.0105 },
+        }),
+    } as unknown as FxProviderService;
+    const service = new MarketService(prisma, fxProviders);
+
+    const result = await service.getMarketCurrency("US", { requireFresh: true, forceRefresh: true });
+
+    expect(fxProviders.fetchRate).toHaveBeenNthCalledWith(1, primary, "INR", "USD");
+    expect(fxProviders.fetchRate).toHaveBeenNthCalledWith(2, fallback, "INR", "USD");
+    expect(result.provider).toBe("FALLBACK");
+    expect(result.rate).toBe(0.0105);
+  });
 });
+
+function provider(providerCode: string, isPrimary: boolean, priority: number): RuntimeFxProvider {
+  return {
+    id: providerCode,
+    providerCode,
+    displayName: providerCode,
+    adapterCode: "FRANKFURTER",
+    apiBaseUrl: "https://example.test",
+    apiKey: null,
+    timeoutMs: 5000,
+    cacheTtlMinutes: 60,
+    isPrimary,
+    priority,
+    source: "DATABASE",
+  };
+}

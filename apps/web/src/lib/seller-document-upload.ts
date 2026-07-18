@@ -78,7 +78,7 @@ export function validateSellerDocument(file: File) {
     throw new Error("Upload a PDF, JPG, PNG, or WebP document.");
   }
 
-  if (file.size > maxDocumentBytes) {
+  if (file.size <= 0 || file.size > maxDocumentBytes) {
     throw new Error("Document must be 10 MB or smaller.");
   }
 }

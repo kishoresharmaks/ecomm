@@ -23,7 +23,7 @@ export function SellerPendingApprovalClient() {
   const router = useRouter();
 
   const profileQuery = useQuery({
-    queryKey: ["seller-profile", sellerAuth.authKey, "pending-approval"],
+    queryKey: ["seller-profile", sellerAuth.authKey],
     queryFn: () => getSellerProfile(sellerAuth.authHeaders),
     enabled: sellerAuth.enabled,
     retry: false,

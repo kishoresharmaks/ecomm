@@ -4,6 +4,7 @@ import Link from "next/link";
 import { AlertTriangle, Ban, CreditCard, ReceiptText, RefreshCw, ShieldCheck } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
+import { useConfirmationDialog } from "@/components/shared/confirmation-dialog";
 import {
   authorizeSellerSubscription,
   cancelSellerSubscription,
@@ -73,6 +74,7 @@ let razorpayScriptPromise: Promise<void> | null = null;
 export function SellerSubscriptionClient() {
   const sellerAuth = useSellerAuth();
   const queryClient = useQueryClient();
+  const confirmation = useConfirmationDialog();
   const query = useQuery({
     queryKey: ["seller-subscription", sellerAuth.authKey],
     queryFn: () => getSellerSubscription(sellerAuth.authHeaders),
@@ -161,6 +163,7 @@ export function SellerSubscriptionClient() {
 
   return (
     <div className="grid gap-5">
+      {confirmation.confirmationDialog}
       <SellerPanel>
         <div className="grid gap-5 lg:grid-cols-[1fr_auto] lg:items-start">
           <div className="flex items-start gap-4">
@@ -203,7 +206,15 @@ export function SellerSubscriptionClient() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => cancelMutation.mutate()}
+                onClick={() =>
+                  confirmation.requestConfirmation({
+                    title: "Stop subscription renewal?",
+                    description: "Your current plan remains active until the end of its billing period, then recurring renewal will stop.",
+                    confirmLabel: "Stop renewal",
+                    tone: "warning",
+                    onConfirm: () => cancelMutation.mutate(),
+                  })
+                }
                 disabled={cancelMutation.isPending}
               >
                 <Ban className="h-4 w-4" aria-hidden="true" />
@@ -375,6 +386,11 @@ async function openSellerRazorpayCheckout(authorization: SellerSubscriptionAutho
   }
 
   return new Promise<SellerRazorpaySuccessResponse | null>((resolve, reject) => {
+    // Razorpay keeps the modal open after a failed attempt so the seller can
+    // retry with another method. Settling on the first `payment.failed` would
+    // let a later successful charge skip verification, so only settle when the
+    // modal closes (failure) or the handler fires (success).
+    let lastFailure: Error | null = null;
     const options: SellerRazorpayCheckoutOptions = {
       key: checkoutConfig.key,
       subscription_id: checkoutConfig.subscription_id,
@@ -382,7 +398,13 @@ async function openSellerRazorpayCheckout(authorization: SellerSubscriptionAutho
       description: checkoutConfig.description,
       handler: (response) => resolve(response),
       modal: {
-        ondismiss: () => resolve(null),
+        ondismiss: () => {
+          if (lastFailure) {
+            reject(lastFailure);
+          } else {
+            resolve(null);
+          }
+        },
       },
       theme: {
         color: checkoutConfig.theme?.color ?? "#ED3500",
@@ -392,7 +414,7 @@ async function openSellerRazorpayCheckout(authorization: SellerSubscriptionAutho
     const checkout = new RazorpayConstructor(options);
 
     checkout.on("payment.failed", (response) => {
-      reject(new Error(response.error?.description ?? "Razorpay subscription payment failed."));
+      lastFailure = new Error(response.error?.description ?? "Razorpay subscription payment failed.");
     });
     checkout.open();
   });
@@ -408,7 +430,7 @@ function loadRazorpayScript() {
   }
 
   if (!razorpayScriptPromise) {
-    razorpayScriptPromise = new Promise((resolve, reject) => {
+    razorpayScriptPromise = new Promise<void>((resolve, reject) => {
       const existingScript = document.querySelector<HTMLScriptElement>(
         'script[src="https://checkout.razorpay.com/v1/checkout.js"]',
       );
@@ -428,10 +450,17 @@ function loadRazorpayScript() {
       script.addEventListener("load", () => resolve(), { once: true });
       script.addEventListener(
         "error",
-        () => reject(new Error("Unable to load Razorpay Checkout.")),
+        () => {
+          script.remove();
+          reject(new Error("Unable to load Razorpay Checkout."));
+        },
         { once: true },
       );
       document.body.appendChild(script);
+    });
+    // Drop the cached promise on failure so the next attempt retries the load.
+    razorpayScriptPromise.catch(() => {
+      razorpayScriptPromise = null;
     });
   }
 

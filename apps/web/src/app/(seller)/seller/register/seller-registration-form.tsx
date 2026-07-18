@@ -40,7 +40,14 @@ import {
   type SellerOnboardingPayload,
   type SellerSubscriptionPlan,
 } from "@/lib/seller-api";
+import { listSellerServices } from "@/lib/service-marketplace-api";
 import { formatMoney } from "@/lib/storefront-api";
+import {
+  primaryCapabilityForMode,
+  registrationModeFromQuery,
+  sellerRegistrationPath,
+  type SellerRegistrationMode,
+} from "@/components/seller/seller-registration-navigation";
 
 const sellerTypes = [
   { value: "MARKETPLACE_SELLER", label: "Marketplace seller" },
@@ -108,8 +115,6 @@ type SubmitState =
   | { status: "success"; message: string }
   | { status: "error"; message: string };
 
-export type SellerRegistrationMode = SellerCapability | "BOTH";
-
 export function SellerRegistrationForm({ 
   initialMode, 
   initialPlanId 
@@ -139,7 +144,13 @@ export function SellerRegistrationForm({
   const productsQuery = useQuery({
     queryKey: ["seller-onboarding-products", auth.authKey],
     queryFn: () => listSellerProducts(auth.authHeaders, { limit: 20 }),
-    enabled: auth.enabled && Boolean(sellerQuery.data),
+    enabled: auth.enabled && Boolean(sellerQuery.data) && commerceMode !== "SERVICE",
+    retry: false,
+  });
+  const servicesQuery = useQuery({
+    queryKey: ["seller-onboarding-services", auth.authKey],
+    queryFn: () => listSellerServices(auth.authHeaders, { limit: 20 }),
+    enabled: auth.enabled && Boolean(sellerQuery.data) && commerceMode !== "RETAIL",
     retry: false,
   });
 
@@ -194,7 +205,8 @@ export function SellerRegistrationForm({
   const allDocuments = [...existingDocuments, ...selectedDocuments];
   const idVerified = hasChecklistDocumentType(allDocuments, ["ID_PROOF"]);
   const signatureVerified = hasChecklistDocumentType(allDocuments, ["SIGNATURE_PROOF"]);
-  const listingCreated = Boolean(productsQuery.data?.total);
+  const productListingCreated = Boolean(productsQuery.data?.total);
+  const serviceListingCreated = Boolean(servicesQuery.data?.total);
   const stockAdded = Boolean(
     productsQuery.data?.items.some((product) =>
       product.variants?.some((variant) => (variant.stockQuantity ?? 0) > 0),
@@ -206,7 +218,8 @@ export function SellerRegistrationForm({
     signatureVerified,
     displayNameReady: Boolean(existingSeller?.storeName?.trim()),
     pickupAddressReady: isPickupAddressReady(existingSeller?.addresses?.[0]),
-    listingCreated,
+    productListingCreated,
+    serviceListingCreated,
     stockAdded,
   };
   const expectedMissingSeller =
@@ -240,6 +253,23 @@ export function SellerRegistrationForm({
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setState({ status: "idle" });
+
+    if (onboardingMutation.isPending) {
+      return;
+    }
+
+    const missingRequiredDocuments = verificationDocuments
+      .filter((definition) => definition.required)
+      .filter((definition) => !documents.some((document) => document.documentType === definition.type));
+    if (missingRequiredDocuments.length) {
+      setState({
+        status: "error",
+        message: `Upload the required verification documents before submitting: ${missingRequiredDocuments
+          .map((definition) => definition.label)
+          .join(", ")}.`,
+      });
+      return;
+    }
 
     const form = new FormData(event.currentTarget);
     const line2 = optionalFormValue(form, "line2");
@@ -301,7 +331,14 @@ export function SellerRegistrationForm({
   }
 
   if (!auth.enabled) {
-    return <SellerSignInGate status={auth.status} error={auth.error} onRetry={auth.refresh} />;
+    return (
+      <SellerSignInGate
+        status={auth.status}
+        error={auth.error}
+        onRetry={auth.refresh}
+        returnPath={sellerRegistrationPath(initialMode, initialPlanId)}
+      />
+    );
   }
 
   if (sellerQuery.isLoading) {
@@ -747,7 +784,8 @@ type OnboardingStatusValue = {
   signatureVerified: boolean;
   displayNameReady: boolean;
   pickupAddressReady: boolean;
-  listingCreated: boolean;
+  productListingCreated: boolean;
+  serviceListingCreated: boolean;
   stockAdded: boolean;
 };
 
@@ -791,9 +829,15 @@ function OnboardingCompletionStatus({
       title: serviceOnly ? "Service Listing Readiness" : combined ? "Retail & Service Readiness" : "Listing & Stock Availability",
       items:
         serviceOnly
-          ? [{ key: "listing", label: "First Service Listing", complete: status.listingCreated }]
+          ? [{ key: "service-listing", label: "First Service Listing", complete: status.serviceListingCreated }]
+          : combined
+            ? [
+                { key: "product-listing", label: "First Product Listing", complete: status.productListingCreated },
+                { key: "service-listing", label: "First Service Listing", complete: status.serviceListingCreated },
+                { key: "stock", label: "Product Stock Added", complete: status.stockAdded },
+              ]
           : [
-              { key: "listing", label: "Listing Created", complete: status.listingCreated },
+              { key: "product-listing", label: "Listing Created", complete: status.productListingCreated },
               { key: "stock", label: "Stock Added", complete: status.stockAdded },
             ],
     },
@@ -996,10 +1040,12 @@ function SellerSignInGate({
   status,
   error,
   onRetry,
+  returnPath,
 }: {
   status: string;
   error?: string | undefined;
   onRetry: () => void;
+  returnPath: string;
 }) {
   if (status === "error") {
     return (
@@ -1031,12 +1077,12 @@ function SellerSignInGate({
         </div>
         <div className="flex flex-wrap gap-3">
           <Button asChild>
-            <Link href="/seller/sign-in?redirect_url=/seller/register">
+            <Link href={`/seller/sign-in?redirect_url=${encodeURIComponent(returnPath)}`}>
               <LogIn size={16} /> Sign in
             </Link>
           </Button>
           <Button asChild variant="outline">
-            <Link href="/sign-up?redirect_url=/seller/register">Create account</Link>
+            <Link href={`/sign-up?redirect_url=${encodeURIComponent(returnPath)}`}>Create account</Link>
           </Button>
         </div>
       </div>
@@ -1256,24 +1302,6 @@ function primarySellerCapability(seller?: { primaryCapability?: SellerCapability
   }
 
   return seller?.sellerType === "SERVICE_PROVIDER" ? "SERVICE" : "RETAIL";
-}
-
-export function registrationModeFromQuery(value?: string | null): SellerRegistrationMode {
-  const normalized = value?.trim().toLowerCase();
-
-  if (normalized === "service" || normalized === "services") {
-    return "SERVICE";
-  }
-
-  if (normalized === "both" || normalized === "combined" || normalized === "retail-service") {
-    return "BOTH";
-  }
-
-  return "RETAIL";
-}
-
-export function primaryCapabilityForMode(mode: SellerRegistrationMode): SellerCapability {
-  return mode === "SERVICE" ? "SERVICE" : "RETAIL";
 }
 
 function enabledCapabilitiesForMode(mode: SellerRegistrationMode): SellerCapability[] {

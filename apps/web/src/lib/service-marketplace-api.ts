@@ -436,8 +436,28 @@ export type ServiceBooking = {
   updatedAt?: string;
 };
 
-export type PaginatedServices = { items: ServiceListing[]; total: number; page: number; limit: number };
-export type PaginatedServiceBookings = { items: ServiceBooking[]; total: number; page: number; limit: number };
+export type PaginatedServices = {
+  items: ServiceListing[];
+  total: number;
+  page: number;
+  limit: number;
+  summary?: {
+    listingCount: number;
+    liveCount: number;
+    pendingApprovalCount: number;
+  };
+};
+export type PaginatedServiceBookings = {
+  items: ServiceBooking[];
+  total: number;
+  page: number;
+  limit: number;
+  summary?: {
+    requestedCount: number;
+    upcomingCount: number;
+    completionReviewCount: number;
+  };
+};
 export type PaginatedServiceReceivables = { items: ServiceSellerReceivable[]; total: number; page: number; limit: number };
 export type PaginatedServiceRefunds = { items: ServiceRefundRequest[]; total: number; page: number; limit: number };
 export type PaginatedServiceReviews = { items: ServiceReview[]; total: number; page: number; limit: number };

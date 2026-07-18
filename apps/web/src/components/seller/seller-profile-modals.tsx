@@ -16,6 +16,7 @@ import {
 import type { IndihubAuthHeaders } from "@/lib/api";
 import type { LocationSource } from "@/lib/maps-api";
 import type { SellerDocumentType, SellerDocumentUploadResult } from "@/lib/seller-document-upload";
+import { useDelayedClose } from "@/hooks/use-delayed-close";
 import { SellerField, SellerTextArea, SellerImageUpload, formValue, optionalFormValue } from "./seller-ui";
 
 export interface ProfileModalProps {
@@ -137,6 +138,7 @@ export function EditStoreDetailsModal({
   businessTypes: Array<{ value: SellerBusinessType; label: string }>;
 }) {
   const queryClient = useQueryClient();
+  const scheduleClose = useDelayedClose(onClose, open);
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeTone, setNoticeTone] = useState<"success" | "danger">("success");
   const [logoUrl, setLogoUrl] = useState<string | null>(profile?.profile?.logoUrl ?? null);
@@ -148,7 +150,7 @@ export function EditStoreDetailsModal({
       setNoticeTone("success");
       setNotice("Store details updated successfully.");
       void queryClient.invalidateQueries({ queryKey: ["seller-profile", authKey] });
-      setTimeout(() => onClose(), 1500);
+      scheduleClose();
     },
     onError: (error) => {
       setNoticeTone("danger");
@@ -267,6 +269,7 @@ export function EditPayoutModal({
   profile: SellerProfile | null | undefined;
 }) {
   const queryClient = useQueryClient();
+  const scheduleClose = useDelayedClose(onClose, open);
   const payoutProfile = profile?.payoutProfile;
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeTone, setNoticeTone] = useState<"success" | "danger">("success");
@@ -277,7 +280,7 @@ export function EditPayoutModal({
       setNoticeTone("success");
       setNotice("Payout details updated successfully.");
       void queryClient.invalidateQueries({ queryKey: ["seller-profile", authKey] });
-      setTimeout(() => onClose(), 1500);
+      scheduleClose();
     },
     onError: (error) => {
       setNoticeTone("danger");
@@ -355,6 +358,7 @@ export function EditAddressModal({
   profile: SellerProfile | null | undefined;
 }) {
   const queryClient = useQueryClient();
+  const scheduleClose = useDelayedClose(onClose, open);
   const address = profile?.addresses?.[0];
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeTone, setNoticeTone] = useState<"success" | "danger">("success");
@@ -380,7 +384,7 @@ export function EditAddressModal({
       setNoticeTone("success");
       setNotice("Address updated successfully.");
       void queryClient.invalidateQueries({ queryKey: ["seller-profile", authKey] });
-      setTimeout(() => onClose(), 1500);
+      scheduleClose();
     },
     onError: (error) => {
       setNoticeTone("danger");
@@ -574,6 +578,7 @@ export function EditDocumentsModal({
   DocumentUploadField: DocumentUploadFieldComponent;
 }) {
   const queryClient = useQueryClient();
+  const scheduleClose = useDelayedClose(onClose, open);
   const [documents, setDocuments] = useState<SellerDocumentUploadResult[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeTone, setNoticeTone] = useState<"success" | "danger">("success");
@@ -584,7 +589,7 @@ export function EditDocumentsModal({
       setNoticeTone("success");
       setNotice("Documents saved successfully.");
       void queryClient.invalidateQueries({ queryKey: ["seller-profile", authKey] });
-      setTimeout(() => onClose(), 1500);
+      scheduleClose();
     },
     onError: (error) => {
       setNoticeTone("danger");

@@ -100,6 +100,19 @@ export type CursorPage<T> = {
   };
 };
 
+export type SellerReturnQueueSummary = {
+  total: number;
+  pending: number;
+  approved: number;
+  refunded: number;
+  rejected: number;
+  cancelled: number;
+};
+
+export type SellerReturnPage = CursorPage<ReturnSummary> & {
+  summary?: SellerReturnQueueSummary;
+};
+
 export type ReturnSummary = {
   id: string;
   requestNumber: string;
@@ -467,7 +480,7 @@ export function releaseAdminReversePickupAssignment(
 }
 
 export function listSellerReturns(auth: IndihubAuthHeaders, query: ReturnListQuery = {}) {
-  return indihubFetch<CursorPage<ReturnSummary>>(`/api/seller/returns${queryString(query)}`, undefined, auth);
+  return indihubFetch<SellerReturnPage>(`/api/seller/returns${queryString(query)}`, undefined, auth);
 }
 
 export function getSellerReturn(auth: IndihubAuthHeaders, requestNumber: string) {

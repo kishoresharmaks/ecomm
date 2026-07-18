@@ -62,31 +62,33 @@ export class SellerStatementsService {
       const cursorWhere = timestampCursorWhere("generatedAt", cursor) as
         | Prisma.SellerStatementWhereInput
         | undefined;
-      const items = await this.prisma.client.sellerStatement.findMany({
-        where: cursorWhere ? { AND: [where, cursorWhere] } : where,
-        include: this.statementListInclude(),
-        orderBy: timestampCursorOrderBy("generatedAt"),
-        take: take + 1
-      });
+      const [items, summary] = await Promise.all([
+        this.prisma.client.sellerStatement.findMany({
+          where: cursorWhere ? { AND: [where, cursorWhere] } : where,
+          include: this.statementListInclude(),
+          orderBy: timestampCursorOrderBy("generatedAt"),
+          take: take + 1
+        }),
+        this.statementSummary(where)
+      ]);
       const pageResult = cursorPageFromTimestampItems(items, take, "generatedAt");
 
-      return { ...pageResult, limit: take };
+      return { ...pageResult, limit: take, summary };
     }
 
     const { page, skip, take } = paginationFromQuery(query, { defaultLimit: 20, maxLimit: 100 });
-    const [items, total] = await this.prisma.client.$transaction(async (tx) => {
-      const items = await tx.sellerStatement.findMany({
+    const [items, summary] = await Promise.all([
+      this.prisma.client.sellerStatement.findMany({
         where,
         include: this.statementListInclude(),
         orderBy: timestampCursorOrderBy("generatedAt"),
         skip,
         take
-      });
-      const total = await tx.sellerStatement.count({ where });
-      return [items, total] as const;
-    });
+      }),
+      this.statementSummary(where)
+    ]);
 
-    return { items, total, page, limit: take };
+    return { items, total: summary.statementCount, page, limit: take, summary };
   }
 
   private statementListInclude() {
@@ -94,6 +96,26 @@ export class SellerStatementsService {
       seller: { select: { id: true, storeName: true, slug: true } },
       payout: { select: { id: true, payoutNumber: true, status: true } }
     } satisfies Prisma.SellerStatementInclude;
+  }
+
+  private async statementSummary(where: Prisma.SellerStatementWhereInput) {
+    const [statementCount, totals] = await Promise.all([
+      this.prisma.client.sellerStatement.count({ where }),
+      this.prisma.client.sellerStatement.groupBy({
+        by: ["currency"],
+        where,
+        _sum: { netPayablePaise: true },
+        orderBy: { currency: "asc" }
+      })
+    ]);
+
+    return {
+      statementCount,
+      totalsByCurrency: totals.map((total) => ({
+        currency: total.currency,
+        netPayablePaise: total._sum.netPayablePaise ?? 0
+      }))
+    };
   }
 
   async generateStatement(dto: GenerateStatementDto, actor: RequestUser) {

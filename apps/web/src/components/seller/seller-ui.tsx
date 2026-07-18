@@ -34,7 +34,15 @@ import {
   UserRound,
   X
 } from "lucide-react";
-import { type ComponentPropsWithoutRef, type ReactNode, useRef, useState, startTransition } from "react";
+import {
+  createContext,
+  type ComponentPropsWithoutRef,
+  type ReactNode,
+  startTransition,
+  useContext,
+  useRef,
+  useState,
+} from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button, StatusBadge, cn } from "@indihub/ui";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
@@ -43,11 +51,16 @@ import { MaintenanceGate } from "@/components/maintenance/maintenance-mode";
 import { StorefrontImage } from "@/components/storefront/storefront-image";
 import { IndihubApiError, userFacingApiErrorMessage } from "@/lib/api";
 import type { IndihubAuthHeaders } from "@/lib/api";
-import { uploadPublicImage, type PublicImageUploadPurpose } from "@/lib/public-image-upload";
+import {
+  uploadPublicImage,
+  validatePublicImageFile,
+  type PublicImageUploadPurpose,
+} from "@/lib/public-image-upload";
 import { getSellerProfile, type SellerCapability, type SellerProfile } from "@/lib/seller-api";
 import { sellerNav } from "@/lib/portal-nav";
 
 const clerkEnabled = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
+const SellerWorkspaceRootContext = createContext(false);
 
 const sellerNavIcons: Record<string, ReactNode> = {
   "/seller": <LayoutDashboard className="h-4 w-4" aria-hidden="true" />,
@@ -85,11 +98,56 @@ export function SellerWorkspaceShell({
   children: ReactNode;
   actions?: ReactNode;
 }) {
+  const hasPersistentRoot = useContext(SellerWorkspaceRootContext);
+  const page = (
+    <SellerWorkspacePage
+      {...(title !== undefined ? { title } : {})}
+      {...(description !== undefined ? { description } : {})}
+      {...(actions !== undefined ? { actions } : {})}
+    >
+      {children}
+    </SellerWorkspacePage>
+  );
+
+  return hasPersistentRoot ? page : <SellerWorkspaceRoot>{page}</SellerWorkspaceRoot>;
+}
+
+function SellerWorkspacePage({
+  title,
+  description,
+  children,
+  actions,
+}: {
+  title?: string;
+  description?: string;
+  children: ReactNode;
+  actions?: ReactNode;
+}) {
+  return (
+    <>
+      {title ? (
+        <header className="mb-6 border-b border-[#D9E2EA] pb-6">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.2em] text-[#ED3500]">Seller Center</p>
+              <h1 className="mt-2 max-w-5xl text-3xl font-black tracking-normal text-[#123A5A] md:text-4xl">{title}</h1>
+              {description ? <p className="mt-2 max-w-4xl text-sm leading-6 text-[#5F6F82] md:text-base">{description}</p> : null}
+            </div>
+            {actions ? <div className="flex flex-wrap gap-2 xl:justify-end">{actions}</div> : null}
+          </div>
+        </header>
+      ) : null}
+      {children}
+    </>
+  );
+}
+
+export function SellerWorkspaceRoot({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const sellerAuth = useSellerAuth();
   const profileQuery = useQuery({
-    queryKey: ["seller-profile", sellerAuth.authKey, "shell"],
+    queryKey: ["seller-profile", sellerAuth.authKey],
     queryFn: () => getSellerProfile(sellerAuth.authHeaders),
     enabled: sellerAuth.enabled,
     retry: false
@@ -107,71 +165,61 @@ export function SellerWorkspaceShell({
   const showSidebar = !isSignedOut && !requiresOnboarding && (!isLoading || Boolean(profileQuery.data));
 
   return (
-    <MaintenanceGate scope="seller">
-      <main className="min-h-screen bg-[#F6F3EC] text-[#1F2933]">
-        <div className={cn("min-h-screen", showSidebar ? "grid lg:grid-cols-[300px_minmax(0,1fr)]" : "flex flex-col")}>
-          {showSidebar ? (
-            <aside className="hidden border-r border-[#D9E2EA] bg-[#123A5A] text-white lg:block">
-              <SellerSidebar pathname={pathname} items={visibleNav} profile={profileQuery.data} />
-            </aside>
-          ) : null}
+    <SellerWorkspaceRootContext.Provider value>
+      <MaintenanceGate scope="seller">
+        <main className="min-h-screen bg-[#F6F3EC] text-[#1F2933]">
+          <div className={cn("min-h-screen", showSidebar ? "grid lg:grid-cols-[300px_minmax(0,1fr)]" : "flex flex-col")}>
+            {showSidebar ? (
+              <aside className="hidden border-r border-[#D9E2EA] bg-[#123A5A] text-white lg:block">
+                <SellerSidebar pathname={pathname} items={visibleNav} profile={profileQuery.data} />
+              </aside>
+            ) : null}
 
-          <section className="min-w-0 flex-1 flex flex-col">
-          {showSidebar ? (
-          <div className="sticky top-0 z-30 border-b border-[#D9E2EA] bg-white/95 px-4 py-3 backdrop-blur lg:hidden">
-            <div className="flex items-center justify-between gap-3">
-              <Link href="/seller" className="flex items-center gap-3">
-                <span className="grid h-10 w-10 place-items-center rounded-md bg-[#123A5A] text-sm font-black text-white">1HI</span>
-                <span>
-                  <span className="block text-base font-black text-[#123A5A]">1HandIndia</span>
-                  <span className="block text-xs font-bold text-[#ED3500]">Seller Center</span>
-                </span>
-              </Link>
-              <Button type="button" variant="outline" size="sm" onClick={() => setMobileOpen((current) => !current)} aria-expanded={mobileOpen}>
-                {mobileOpen ? <X className="h-4 w-4" aria-hidden="true" /> : <Menu className="h-4 w-4" aria-hidden="true" />}
-                Menu
-              </Button>
-            </div>
-            {mobileOpen ? (
-              <nav className="mt-3 max-h-[70vh] overflow-y-auto rounded-lg border border-[#D9E2EA] bg-white p-2 shadow-sm">
-                <div className="grid gap-3">
-                  {navGroups.map((group) => (
-                    <div key={group.label}>
-                      <p className="px-2 pb-1 text-[11px] font-black uppercase tracking-[0.14em] text-[#667085]">{group.label}</p>
-                      <div className="grid gap-1">
-                        {group.items.map((item) => (
-                          <SellerNavLink key={item.href} item={item} pathname={pathname} onClick={() => setMobileOpen(false)} />
-                        ))}
+            <section className="min-w-0 flex flex-1 flex-col">
+            {showSidebar ? (
+            <div className="sticky top-0 z-30 border-b border-[#D9E2EA] bg-white/95 px-4 py-3 backdrop-blur lg:hidden">
+              <div className="flex items-center justify-between gap-3">
+                <Link href="/seller" className="flex items-center gap-3">
+                  <span className="grid h-10 w-10 place-items-center rounded-md bg-[#123A5A] text-sm font-black text-white">1HI</span>
+                  <span>
+                    <span className="block text-base font-black text-[#123A5A]">1HandIndia</span>
+                    <span className="block text-xs font-bold text-[#ED3500]">Seller Center</span>
+                  </span>
+                </Link>
+                <Button type="button" variant="outline" size="sm" onClick={() => setMobileOpen((current) => !current)} aria-expanded={mobileOpen}>
+                  {mobileOpen ? <X className="h-4 w-4" aria-hidden="true" /> : <Menu className="h-4 w-4" aria-hidden="true" />}
+                  Menu
+                </Button>
+              </div>
+              {mobileOpen ? (
+                <nav className="mt-3 max-h-[70vh] overflow-y-auto rounded-lg border border-[#D9E2EA] bg-white p-2 shadow-sm">
+                  <div className="grid gap-3">
+                    {navGroups.map((group) => (
+                      <div key={group.label}>
+                        <p className="px-2 pb-1 text-[11px] font-black uppercase tracking-[0.14em] text-[#667085]">{group.label}</p>
+                        <div className="grid gap-1">
+                          {group.items.map((item) => (
+                            <SellerNavLink key={item.href} item={item} pathname={pathname} onClick={() => setMobileOpen(false)} />
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-                <SellerLogoutButton className="mt-1 w-full justify-start" onClick={() => setMobileOpen(false)} />
-              </nav>
-            ) : null}
-          </div>
-          ) : null}
-
-          <div className={cn("px-4 py-5 sm:px-6 lg:px-10 lg:py-8 flex-1", !showSidebar && "mx-auto w-full max-w-5xl")}>
-            {title ? (
-              <header className="mb-6 border-b border-[#D9E2EA] pb-6">
-                <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-                  <div>
-                    <p className="text-xs font-black uppercase tracking-[0.2em] text-[#ED3500]">Seller Center</p>
-                    <h1 className="mt-2 max-w-5xl text-3xl font-black tracking-normal text-[#123A5A] md:text-4xl">{title}</h1>
-                    {description ? <p className="mt-2 max-w-4xl text-sm leading-6 text-[#5F6F82] md:text-base">{description}</p> : null}
+                    ))}
                   </div>
-                  {actions ? <div className="flex flex-wrap gap-2 xl:justify-end">{actions}</div> : null}
-                </div>
-              </header>
+                  <SellerLogoutButton className="mt-1 w-full justify-start" onClick={() => setMobileOpen(false)} />
+                </nav>
+              ) : null}
+            </div>
             ) : null}
-            {children}
+
+            <div className={cn("flex-1 px-4 py-5 sm:px-6 lg:px-10 lg:py-8", !showSidebar && "mx-auto w-full max-w-5xl")}>
+              {children}
+            </div>
+            {!showSidebar ? <StorefrontFooter /> : null}
+            </section>
           </div>
-          {!showSidebar ? <StorefrontFooter /> : null}
-          </section>
-        </div>
-      </main>
-    </MaintenanceGate>
+        </main>
+      </MaintenanceGate>
+    </SellerWorkspaceRootContext.Provider>
   );
 }
 
@@ -730,6 +778,104 @@ export function SellerField({
   );
 }
 
+export type SellerNotice = {
+  tone: "success" | "danger" | "warning" | "info";
+  message: string;
+};
+
+export function SellerNoticeBadge({ notice, className }: { notice: SellerNotice | null; className?: string }) {
+  if (!notice) {
+    return null;
+  }
+
+  return (
+    <StatusBadge tone={notice.tone} {...(className !== undefined ? { className } : {})}>
+      {notice.message}
+    </StatusBadge>
+  );
+}
+
+export function SellerPagination({
+  page,
+  pageSize,
+  total,
+  isLoading,
+  onPageChange,
+  onPageSizeChange,
+  itemLabel = "items",
+}: {
+  page: number;
+  pageSize: number;
+  total: number;
+  isLoading?: boolean;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (pageSize: number) => void;
+  itemLabel?: string;
+}) {
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const firstItem = total === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const lastItem = Math.min(total, currentPage * pageSize);
+
+  return (
+    <div className="mt-6 flex flex-col gap-3 rounded-lg border border-[#D8E2EA] bg-[#F8FAFC] px-4 py-4 md:flex-row md:items-center md:justify-between">
+      <div className="text-sm font-semibold text-[#667085]">
+        {isLoading
+          ? `Loading ${itemLabel}...`
+          : `Showing ${firstItem.toLocaleString("en-IN")}-${lastItem.toLocaleString("en-IN")} of ${total.toLocaleString("en-IN")} ${itemLabel}`}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          value={pageSize}
+          onChange={(event) => onPageSizeChange(Number(event.target.value))}
+          disabled={isLoading}
+          className="h-9 rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-semibold text-[#1F2933] outline-none focus:border-[#ED3500] disabled:opacity-50"
+        >
+          {[10, 20, 30, 50, 100].map((size) => (
+            <option key={size} value={size}>{size} per page</option>
+          ))}
+        </select>
+        <Button type="button" variant="outline" size="sm" disabled={currentPage <= 1 || isLoading} onClick={() => onPageChange(currentPage - 1)}>
+          Previous
+        </Button>
+        <span className="min-w-24 text-center text-sm font-bold text-[#1F2933]">Page {currentPage} of {pageCount}</span>
+        <Button type="button" variant="outline" size="sm" disabled={currentPage >= pageCount || isLoading} onClick={() => onPageChange(currentPage + 1)}>
+          Next
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+export function SellerCursorPagination({
+  hasPreviousPage,
+  hasNextPage,
+  isLoading,
+  onPreviousPage,
+  onNextPage,
+}: {
+  hasPreviousPage: boolean;
+  hasNextPage: boolean;
+  isLoading?: boolean;
+  onPreviousPage: () => void;
+  onNextPage: () => void;
+}) {
+  if (!hasPreviousPage && !hasNextPage) {
+    return null;
+  }
+
+  return (
+    <div className="flex justify-end gap-2 border-t border-[#E2E8F0] px-4 py-4">
+      <Button type="button" variant="outline" size="sm" disabled={!hasPreviousPage || isLoading} onClick={onPreviousPage}>
+        Previous
+      </Button>
+      <Button type="button" variant="outline" size="sm" disabled={!hasNextPage || isLoading} onClick={onNextPage}>
+        Next
+      </Button>
+    </div>
+  );
+}
+
 export function SellerTextArea({
   label,
   name,
@@ -832,6 +978,16 @@ export function SellerImageUpload({
 
   async function selectFile(file?: File) {
     if (!file) {
+      return;
+    }
+
+    try {
+      validatePublicImageFile(file);
+    } catch (validationError) {
+      setError(validationError instanceof Error ? validationError.message : "Image is not valid.");
+      if (inputRef.current) {
+        inputRef.current.value = "";
+      }
       return;
     }
 
@@ -961,10 +1117,7 @@ export function optionalFormValue(form: FormData, name: string) {
   return value ? value : undefined;
 }
 
-export function rupeesToPaise(value: string) {
-  const amount = Number(value || 0);
-  return Number.isFinite(amount) ? Math.round(amount * 100) : 0;
-}
+export { rupeesToPaise } from "./seller-money";
 
 export function paiseToRupees(value?: number | null) {
   return value ? String(value / 100) : "";

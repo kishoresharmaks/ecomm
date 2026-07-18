@@ -41,13 +41,18 @@ import {
 import { openPrivateProofReference } from "@/lib/delivery-proof-upload";
 import { formatVariantLabel } from "@/lib/order-variant";
 import { formatMoney } from "@/lib/storefront-api";
-import { SellerAuthNotice, useSellerAuth } from "./seller-ui";
+import {
+  SellerAuthNotice,
+  SellerErrorPanel,
+  type SellerNotice,
+  useSellerAuth,
+} from "./seller-ui";
 
 export function SellerReturnDetailClient({ requestNumber }: { requestNumber: string }) {
   const sellerAuth = useSellerAuth();
   const queryClient = useQueryClient();
   const [note, setNote] = useState("");
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<SellerNotice | null>(null);
 
   const detailQuery = useQuery({
     queryKey: ["seller-return-detail", sellerAuth.authKey, requestNumber],
@@ -60,12 +65,12 @@ export function SellerReturnDetailClient({ requestNumber }: { requestNumber: str
     mutationFn: () =>
       addSellerReturnNote(sellerAuth.authHeaders, requestNumber, { note: note.trim() }),
     onSuccess: () => {
-      setNotice("Seller note added.");
+      setNotice({ tone: "success", message: "Seller note added." });
       setNote("");
       void queryClient.invalidateQueries({ queryKey: ["seller-returns"] });
       void queryClient.invalidateQueries({ queryKey: ["seller-return-detail"] });
     },
-    onError: (error) => setNotice(error instanceof Error ? error.message : "Unable to add seller note."),
+    onError: (error) => setNotice({ tone: "danger", message: error instanceof Error ? error.message : "Unable to add seller note." }),
   });
 
   const decisionMutation = useMutation({
@@ -77,12 +82,12 @@ export function SellerReturnDetailClient({ requestNumber }: { requestNumber: str
         : rejectSellerReturn(sellerAuth.authHeaders, requestNumber, payload);
     },
     onSuccess: (detail, variables) => {
-      setNotice(variables.decision === "ACCEPT" ? "Return request accepted by seller." : "Return request rejected by seller.");
+      setNotice({ tone: "success", message: variables.decision === "ACCEPT" ? "Return request accepted by seller." : "Return request rejected by seller." });
       setNote("");
       void queryClient.invalidateQueries({ queryKey: ["seller-returns"] });
       void queryClient.invalidateQueries({ queryKey: ["seller-return-detail"] });
     },
-    onError: (error) => setNotice(error instanceof Error ? error.message : "Unable to update seller return decision."),
+    onError: (error) => setNotice({ tone: "danger", message: error instanceof Error ? error.message : "Unable to update seller return decision." }),
   });
 
   if (!sellerAuth.enabled) {
@@ -95,7 +100,7 @@ export function SellerReturnDetailClient({ requestNumber }: { requestNumber: str
   return (
     <div className="space-y-6">
       {notice ? (
-        <WorkspaceNotice tone={notice.includes("Unable") ? "danger" : "success"} title={notice.includes("Unable") ? "Action failed" : "Saved"} message={notice} />
+        <WorkspaceNotice tone={notice.tone} title={notice.tone === "danger" ? "Action failed" : "Saved"} message={notice.message} />
       ) : null}
 
       <section className="min-w-0">
@@ -114,6 +119,8 @@ export function SellerReturnDetailClient({ requestNumber }: { requestNumber: str
             <div className="h-36 animate-pulse rounded-2xl bg-white shadow-sm" />
             <div className="h-96 animate-pulse rounded-2xl bg-white shadow-sm" />
           </div>
+        ) : detailQuery.error ? (
+          <SellerErrorPanel error={detailQuery.error} onRetry={() => void detailQuery.refetch()} />
         ) : (
           <EmptyReturnPanel
             title="Return case not found"
@@ -138,7 +145,7 @@ function ReturnDetails({
   note: string;
   setNote: (value: string) => void;
   isBusy: boolean;
-  notice: (value: string | null) => void;
+  notice: (value: SellerNotice | null) => void;
   onAddNote: () => void;
   onDecision: (decision: "ACCEPT" | "REJECT") => void;
 }) {
@@ -193,7 +200,7 @@ function ReturnDetails({
           <ActivityTimeline detail={detail} />
         </div>
 
-        <QuickActions detail={detail} onCopied={() => notice("Return ID copied.")} />
+        <QuickActions detail={detail} onCopied={() => notice({ tone: "success", message: "Return ID copied." })} />
       </div>
 
       <BottomActionBar canDecide={canDecide} isBusy={isBusy} onDecision={onDecision} />
@@ -253,7 +260,7 @@ function ReturnStepper({ detail }: { detail: ReturnDetail }) {
 
 function OrderSummary({ detail }: { detail: ReturnDetail }) {
   const firstShipment = detail.reverseShipments[0];
-  const refundAmount = detail.approvedAmountPaise || detail.requestedAmountPaise;
+  const refundAmount = detail.approvedAmountPaise ?? detail.requestedAmountPaise;
   const rows: Array<[string, ReactNode]> = [
     ["Order ID", detail.order.orderNumber],
     ["Order Date", formatDateTime(detail.requestedAt ?? detail.createdAt)],
@@ -544,13 +551,9 @@ function BottomActionBar({
           <XCircle className="h-4 w-4" aria-hidden="true" />
           Reject Return
         </Button>
-        <Button type="button" variant="outline" onClick={() => onDecision("ACCEPT")} disabled={!canDecide || isBusy} className="rounded-2xl border-[#FDBA74] text-[#ED5A2F] hover:bg-[#FFF7ED]">
+        <Button type="button" onClick={() => onDecision("ACCEPT")} disabled={!canDecide || isBusy} className="rounded-2xl bg-[#ED5A2F] hover:bg-[#C84520]">
           <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
           Approve Return
-        </Button>
-        <Button type="button" onClick={() => onDecision("ACCEPT")} disabled={!canDecide || isBusy} className="rounded-2xl bg-[#ED5A2F] hover:bg-[#C84520]">
-          <WalletCards className="h-4 w-4" aria-hidden="true" />
-          Approve & Send to Refund
         </Button>
       </div>
     </div>

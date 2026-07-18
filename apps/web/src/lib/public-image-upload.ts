@@ -60,7 +60,7 @@ export function validatePublicImageFile(file: File) {
     throw new Error("Upload a JPG, PNG, WebP, or GIF image.");
   }
 
-  if (file.size > maxImageBytes) {
+  if (file.size <= 0 || file.size > maxImageBytes) {
     throw new Error("Image must be 5 MB or smaller.");
   }
 }

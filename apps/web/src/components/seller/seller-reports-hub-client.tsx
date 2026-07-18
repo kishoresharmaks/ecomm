@@ -99,8 +99,8 @@ export function SellerReportsHubClient() {
           description="Summary of GST, TDS, and TCS figures to help with your tax filing and compliance."
           icon={<FileText className="h-6 w-6 text-[#163B5C]" />}
           href="/seller/reports/tax"
-          metricLabel="Total Tax Deductions"
-          metricValue={overview ? formatMoney(overview.commissionPaise + overview.gstOnCommissionPaise, currency) : "—"}
+          metricLabel="GST, TDS & TCS Total"
+          metricValue={overview ? formatMoney(overview.gstOnCommissionPaise + overview.tdsPaise + overview.tcsPaise, currency) : "—"}
           bg="bg-[#EAF1F7]"
           query={submittedRange}
         />
@@ -143,7 +143,8 @@ function ReportCard({
   const qs = new URLSearchParams();
   if (query.dateFrom) qs.set("dateFrom", query.dateFrom);
   if (query.dateTo) qs.set("dateTo", query.dateTo);
-  const fullHref = qs.size ? `${href}?${qs.toString()}` : href;
+  const queryString = qs.toString();
+  const fullHref = queryString ? `${href}?${queryString}` : href;
 
   return (
     <Link

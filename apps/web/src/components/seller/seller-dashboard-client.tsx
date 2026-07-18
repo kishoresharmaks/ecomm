@@ -57,17 +57,7 @@ export function SellerDashboardClient() {
       return <SellerOnboardingRequired message="Submit seller onboarding to unlock dashboard, catalogue, order, B2B, and sales tools." />;
     }
 
-    return (
-      <SellerEmptyState
-        title="Seller profile not found"
-        message={profileQuery.error instanceof Error ? profileQuery.error.message : "Create or approve a seller registration before using seller center."}
-        action={
-          <Button asChild>
-            <Link href="/seller/register">Open registration</Link>
-          </Button>
-        }
-      />
-    );
+    return <SellerErrorPanel error={profileQuery.error} onRetry={() => void profileQuery.refetch()} />;
   }
 
   const profile = profileQuery.data;
@@ -159,15 +149,17 @@ export function SellerDashboardClient() {
         </div>
       </SellerPanel>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <SellerMetric label="Net sales" value={formatMoney(report?.summary.netSalesPaise ?? 0, profile?.operatingCurrency || "INR")} note="After marketplace commission" />
-        <SellerMetric label="Orders" value={report?.summary.orderCount ?? 0} note="Seller split count" />
-        <SellerMetric label="Products" value={report?.summary.products ?? 0} note="All seller products" />
-        <SellerMetric label="B2B enquiries" value={report?.summary.b2bEnquiries ?? 0} note="Buyer quotation requests" />
-      </div>
+      {!reportQuery.error ? (
+        <>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <SellerMetric label="Net sales" value={formatMoney(report?.summary.netSalesPaise ?? 0, profile?.operatingCurrency || "INR")} note="After marketplace commission" />
+            <SellerMetric label="Orders" value={report?.summary.orderCount ?? 0} note="Seller split count" />
+            <SellerMetric label="Products" value={report?.summary.products ?? 0} note="All seller products" />
+            <SellerMetric label="B2B enquiries" value={report?.summary.b2bEnquiries ?? 0} note="Buyer quotation requests" />
+          </div>
 
-      <div className="grid gap-5 xl:grid-cols-[1fr_420px]">
-        <SellerPanel>
+          <div className="grid gap-5 xl:grid-cols-[1fr_420px]">
+            <SellerPanel>
           <div className="flex items-center justify-between gap-3">
             <SectionHeading title="Recent orders" description="Latest orders containing this store's products." />
             <Button asChild variant="ghost" size="sm">
@@ -200,10 +192,10 @@ export function SellerDashboardClient() {
               <SellerEmptyState title="No orders yet" message="Orders appear here after customers check out with this store's products." />
             ) : null}
           </div>
-        </SellerPanel>
+            </SellerPanel>
 
-        <div className="grid gap-5">
-          <SellerPanel>
+            <div className="grid gap-5">
+              <SellerPanel>
             <div className="flex items-center gap-3">
               <span className="grid h-10 w-10 place-items-center rounded-md bg-[#FDECEC] text-[#D64545]">
                 <AlertTriangle className="h-5 w-5" aria-hidden="true" />
@@ -221,17 +213,19 @@ export function SellerDashboardClient() {
               ))}
               {(report?.lowStockProducts ?? []).length === 0 ? <p className="text-sm font-semibold text-[#667085]">No low-stock variants.</p> : null}
             </div>
-          </SellerPanel>
+              </SellerPanel>
 
-          <SellerPanel>
-            <div className="grid grid-cols-3 gap-3 text-center">
-              <QuickLink href="/seller/products" label="Products" icon={<Boxes className="h-5 w-5" aria-hidden="true" />} />
-              <QuickLink href="/seller/orders" label="Orders" icon={<ShoppingBag className="h-5 w-5" aria-hidden="true" />} />
-              <QuickLink href="/seller/reports" label="Reports" icon={<BarChart3 className="h-5 w-5" aria-hidden="true" />} />
+              <SellerPanel>
+                <div className="grid grid-cols-3 gap-3 text-center">
+                  <QuickLink href="/seller/products" label="Products" icon={<Boxes className="h-5 w-5" aria-hidden="true" />} />
+                  <QuickLink href="/seller/orders" label="Orders" icon={<ShoppingBag className="h-5 w-5" aria-hidden="true" />} />
+                  <QuickLink href="/seller/reports" label="Reports" icon={<BarChart3 className="h-5 w-5" aria-hidden="true" />} />
+                </div>
+              </SellerPanel>
             </div>
-          </SellerPanel>
-        </div>
-      </div>
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }

@@ -18,11 +18,13 @@ import {
   listSellerReturns,
   type ReturnRequestStatus,
   type ReturnSummary,
+  type SellerReturnQueueSummary,
 } from "@/lib/returns-api";
 import { formatMoney } from "@/lib/storefront-api";
 import {
   SellerAuthNotice,
   SellerEmptyState,
+  SellerCursorPagination,
   SellerErrorPanel,
   SellerOnboardingRequired,
   isSellerOnboardingRequiredError,
@@ -46,34 +48,31 @@ export function SellerReturnsClient() {
   const [filter, setFilter] = useState<ReturnFilterKey>("ALL");
   const [search, setSearch] = useState("");
   const [submittedSearch, setSubmittedSearch] = useState("");
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [cursorHistory, setCursorHistory] = useState<Array<string | null>>([]);
 
   const activeFilter = returnFilters.find((item) => item.key === filter);
 
-  const statsQuery = useQuery({
-    queryKey: ["seller-returns", "stats", sellerAuth.authKey],
-    queryFn: () => listSellerReturns(sellerAuth.authHeaders, { limit: 100 }),
-    enabled: sellerAuth.enabled,
-    retry: false,
-  });
-
   const returnsQuery = useQuery({
-    queryKey: ["seller-returns", sellerAuth.authKey, activeFilter?.status ?? "ALL", submittedSearch],
+    queryKey: ["seller-returns", sellerAuth.authKey, activeFilter?.status ?? "ALL", submittedSearch, cursor],
     queryFn: () =>
       listSellerReturns(sellerAuth.authHeaders, {
         ...(activeFilter?.status ? { status: activeFilter.status } : {}),
         search: submittedSearch,
         limit: 30,
+        ...(cursor ? { cursor } : {}),
       }),
     enabled: sellerAuth.enabled,
     retry: false,
   });
 
   const returns = returnsQuery.data?.items ?? [];
-  const statsItems = statsQuery.data?.items ?? returns;
 
   function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmittedSearch(search.trim());
+    setCursor(null);
+    setCursorHistory([]);
   }
 
   if (!sellerAuth.enabled) {
@@ -94,15 +93,38 @@ export function SellerReturnsClient() {
         isRefreshing={returnsQuery.isFetching}
       />
 
-      <ReturnsStats returns={statsItems} isLoading={statsQuery.isLoading && returnsQuery.isLoading} />
+      <ReturnsStats summary={returnsQuery.data?.summary} isLoading={returnsQuery.isLoading} />
 
       <section className="min-w-0 rounded-2xl border border-[#E2E8F0] bg-white shadow-sm shadow-slate-200/70">
-        <ReturnFilters activeFilter={filter} onChange={setFilter} />
+        <ReturnFilters
+          activeFilter={filter}
+          onChange={(nextFilter) => {
+            setFilter(nextFilter);
+            setCursor(null);
+            setCursorHistory([]);
+          }}
+        />
         <ReturnList
           loading={returnsQuery.isLoading}
           error={returnsQuery.error as Error | null}
           onRetry={() => void returnsQuery.refetch()}
           returns={returns}
+        />
+        <SellerCursorPagination
+          hasPreviousPage={cursorHistory.length > 0}
+          hasNextPage={Boolean(returnsQuery.data?.pageInfo?.hasNextPage && returnsQuery.data.pageInfo.nextCursor)}
+          isLoading={returnsQuery.isFetching}
+          onPreviousPage={() => {
+            const previousCursor = cursorHistory[cursorHistory.length - 1] ?? null;
+            setCursorHistory((current) => current.slice(0, -1));
+            setCursor(previousCursor);
+          }}
+          onNextPage={() => {
+            const nextCursor = returnsQuery.data?.pageInfo?.nextCursor ?? null;
+            if (!nextCursor) return;
+            setCursorHistory((current) => [...current, cursor]);
+            setCursor(nextCursor);
+          }}
         />
       </section>
     </div>
@@ -144,8 +166,7 @@ function ReturnsHeader({
   );
 }
 
-function ReturnsStats({ returns, isLoading }: { returns: ReturnSummary[]; isLoading: boolean }) {
-  const stats = sellerReturnMetrics(returns);
+function ReturnsStats({ summary, isLoading }: { summary: SellerReturnQueueSummary | undefined; isLoading: boolean }) {
   type ReturnStatTone = "orange" | "blue" | "green" | "violet" | "red";
   const cards: Array<{
     label: string;
@@ -154,11 +175,11 @@ function ReturnsStats({ returns, isLoading }: { returns: ReturnSummary[]; isLoad
     icon: typeof RotateCcw;
     tone: ReturnStatTone;
   }> = [
-    { label: "Total Returns", value: returns.length, trend: "+12%", icon: RotateCcw, tone: "orange" },
-    { label: "Pending Review", value: stats.pending, trend: "Needs action", icon: ClipboardCheck, tone: "blue" },
-    { label: "Approved", value: stats.approved, trend: "+15.7%", icon: CheckCircle2, tone: "green" },
-    { label: "Refunded", value: stats.refunded, trend: "+5.2%", icon: WalletCards, tone: "violet" },
-    { label: "Rejected", value: stats.rejected, trend: "-3.1%", icon: XCircle, tone: "red" },
+    { label: "Total Returns", value: summary?.total ?? 0, trend: "All cases", icon: RotateCcw, tone: "orange" },
+    { label: "Pending Review", value: summary?.pending ?? 0, trend: "Needs action", icon: ClipboardCheck, tone: "blue" },
+    { label: "Approved", value: summary?.approved ?? 0, trend: "In progress", icon: CheckCircle2, tone: "green" },
+    { label: "Refunded", value: summary?.refunded ?? 0, trend: "Resolved", icon: WalletCards, tone: "violet" },
+    { label: "Rejected", value: summary?.rejected ?? 0, trend: "Closed", icon: XCircle, tone: "red" },
   ];
 
   return (
@@ -173,7 +194,7 @@ function ReturnsStats({ returns, isLoading }: { returns: ReturnSummary[]; isLoad
           </div>
           <p className="mt-5 text-sm font-bold text-[#475569]">{card.label}</p>
           <p className="mt-1 text-3xl font-black text-[#0F172A]">{isLoading ? "-" : card.value.toLocaleString("en-IN")}</p>
-          <p className="mt-1 text-[13px] font-semibold text-[#64748B]">from loaded return queue</p>
+          <p className="mt-1 text-[13px] font-semibold text-[#64748B]">from complete return history</p>
         </article>
       ))}
     </div>
@@ -292,22 +313,6 @@ function QueueSkeleton() {
       <div className="h-36 animate-pulse rounded-2xl bg-[#F8FAFC]" />
       <div className="h-36 animate-pulse rounded-2xl bg-[#F8FAFC]" />
     </div>
-  );
-}
-
-function sellerReturnMetrics(items: ReturnSummary[]) {
-  return items.reduce(
-    (summary, item) => {
-      if (item.status === "PENDING_REVIEW") summary.pending += 1;
-      if (["AUTO_APPROVED", "APPROVED", "PICKUP_PENDING", "PICKED_UP", "IN_TRANSIT", "RECEIVED", "QC_PASSED"].includes(item.status)) {
-        summary.approved += 1;
-      }
-      if (item.status === "RESOLVED") summary.refunded += 1;
-      if (["REJECTED", "QC_FAILED"].includes(item.status)) summary.rejected += 1;
-      if (item.status === "CANCELLED") summary.cancelled += 1;
-      return summary;
-    },
-    { pending: 0, approved: 0, refunded: 0, rejected: 0, cancelled: 0 },
   );
 }
 

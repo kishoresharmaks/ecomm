@@ -1,9 +1,9 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { FormEvent, useState } from "react";
 import { AlertTriangle, BarChart2, CalendarDays, Download, Package } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell } from "recharts";
 import { Button, SectionHeading } from "@indihub/ui";
 import { downloadSellerReportCsv, getSellerInventoryReport } from "@/lib/seller-api";
 import {
@@ -18,6 +18,14 @@ import {
   isSellerOnboardingRequiredError,
   useSellerAuth
 } from "./seller-ui";
+
+const SellerInventoryChart = dynamic(
+  () => import("./report-charts/seller-inventory-chart"),
+  {
+    ssr: false,
+    loading: () => <SellerChartLoading />,
+  },
+);
 
 export function SellerInventoryReportClient({ initialDateFrom = "", initialDateTo = "" }: { initialDateFrom?: string; initialDateTo?: string }) {
   const sellerAuth = useSellerAuth();
@@ -91,19 +99,7 @@ export function SellerInventoryReportClient({ initialDateFrom = "", initialDateT
             <SellerPanel>
               <SectionHeading title="Top Selling Products" description="Units sold per product in this date range." />
               <div className="mt-5 h-[300px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={topChartData} margin={{ top: 5, right: 20, bottom: 40, left: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-                    <XAxis dataKey="name" tick={{ fontSize: 11 }} angle={-30} textAnchor="end" />
-                    <YAxis tick={{ fontSize: 12 }} />
-                    <Tooltip formatter={(value, name) => [name === "revenue" ? `₹${value}` : value, name === "revenue" ? "Revenue" : "Units Sold"]} />
-                    <Bar dataKey="units" radius={[4, 4, 0, 0]}>
-                      {topChartData.map((_, i) => (
-                        <Cell key={i} fill={i % 2 === 0 ? "#163B5C" : "#ED3500"} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
+                <SellerInventoryChart data={topChartData} />
               </div>
             </SellerPanel>
           ) : null}
@@ -157,6 +153,14 @@ export function SellerInventoryReportClient({ initialDateFrom = "", initialDateT
           </div>
         </>
       ) : null}
+    </div>
+  );
+}
+
+function SellerChartLoading() {
+  return (
+    <div className="grid h-full place-items-center rounded-md bg-[#F8FAFC] text-sm font-bold text-[#667085]">
+      Loading chart
     </div>
   );
 }

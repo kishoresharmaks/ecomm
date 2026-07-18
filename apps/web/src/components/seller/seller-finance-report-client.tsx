@@ -1,9 +1,9 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { FormEvent, useState } from "react";
 import { CalendarDays, Download, IndianRupee, TrendingDown } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
 import { Button, SectionHeading } from "@indihub/ui";
 import { formatMoney } from "@/lib/storefront-api";
 import { downloadSellerReportCsv, getSellerFinanceReport, getSellerProfile } from "@/lib/seller-api";
@@ -21,6 +21,14 @@ import {
   isSellerOnboardingRequiredError,
   useSellerAuth
 } from "./seller-ui";
+
+const SellerFinanceChart = dynamic(
+  () => import("./report-charts/seller-finance-chart"),
+  {
+    ssr: false,
+    loading: () => <SellerChartLoading />,
+  },
+);
 
 export function SellerFinanceReportClient({ initialDateFrom = "", initialDateTo = "" }: { initialDateFrom?: string; initialDateTo?: string }) {
   const sellerAuth = useSellerAuth();
@@ -123,16 +131,7 @@ export function SellerFinanceReportClient({ initialDateFrom = "", initialDateTo 
             <SellerPanel>
               <SectionHeading title="Payout History" description="Gross vs. net payable across recent payouts." />
               <div className="mt-5 h-[280px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={payoutChartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-                    <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                    <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `${currencySymbol}${v}`} />
-                    <Tooltip formatter={(value) => [`${currencySymbol}${value}`, undefined]} />
-                    <Bar dataKey="gross" name="Gross" fill="#163B5C" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="net" name="Net Payable" fill="#ED3500" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
+                <SellerFinanceChart data={payoutChartData} currencySymbol={currencySymbol} />
               </div>
             </SellerPanel>
           ) : null}
@@ -189,6 +188,14 @@ export function SellerFinanceReportClient({ initialDateFrom = "", initialDateTo 
           </div>
         </>
       ) : null}
+    </div>
+  );
+}
+
+function SellerChartLoading() {
+  return (
+    <div className="grid h-full place-items-center rounded-md bg-[#F8FAFC] text-sm font-bold text-[#667085]">
+      Loading chart
     </div>
   );
 }

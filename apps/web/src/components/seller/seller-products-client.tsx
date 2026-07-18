@@ -14,6 +14,7 @@ import {
 } from "@indihub/shared-types";
 import { useConfirmationDialog } from "@/components/shared/confirmation-dialog";
 import { StorefrontImage } from "@/components/storefront/storefront-image";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { listCategories, searchHsnMaster } from "@/lib/storefront-api";
 import { formatMoney } from "@/lib/storefront-api";
 import {
@@ -29,7 +30,7 @@ import {
   updateSellerProduct,
   type SellerProductPayload
 } from "@/lib/seller-api";
-import type { IndihubAuthHeaders } from "@/lib/api";
+import { userFacingApiErrorMessage, type IndihubAuthHeaders } from "@/lib/api";
 import { sellerProductStockBadge } from "@/lib/product-stock-labels";
 import { uploadPublicImage } from "@/lib/public-image-upload";
 import type { CategorySummary, DeliveryMode, HsnMasterEntry, ProductImage, ProductSummary, ProductTemplateField, ProductTemplateSummary, ProductVariant } from "@/lib/storefront-api";
@@ -39,6 +40,8 @@ import {
   SellerErrorPanel,
   SellerField,
   SellerOnboardingRequired,
+  SellerNoticeBadge,
+  SellerPagination,
   SellerPanel,
   SellerSelect,
   SellerSkeleton,
@@ -49,6 +52,7 @@ import {
   optionalFormValue,
   paiseToRupees,
   rupeesToPaise,
+  type SellerNotice,
   useSellerAuth
 } from "./seller-ui";
 
@@ -107,7 +111,11 @@ export function SellerProductsClient({
   const [selectedDeliveryModes, setSelectedDeliveryModes] = useState<DeliveryMode[]>(defaultProductDeliveryModes);
   const [productNameDraft, setProductNameDraft] = useState("");
   const [productDescriptionDraft, setProductDescriptionDraft] = useState("");
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<SellerNotice | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(30);
+  const hydratedProductKeyRef = useRef<string | null>(null);
+  const hydratedTaxKeyRef = useRef<string | null>(null);
   const confirmation = useConfirmationDialog();
 
   const categoriesQuery = useQuery({
@@ -121,13 +129,14 @@ export function SellerProductsClient({
   const categories = useMemo(() => flattenCategories(categoriesQuery.data ?? []), [categoriesQuery.data]);
 
   const productsQuery = useQuery({
-    queryKey: ["seller-products", sellerAuth.authKey, submittedSearch, status, approvalStatus],
+    queryKey: ["seller-products", sellerAuth.authKey, submittedSearch, status, approvalStatus, page, pageSize],
     queryFn: () =>
       listSellerProducts(sellerAuth.authHeaders, {
         search: submittedSearch,
         status,
         approvalStatus,
-        limit: 30
+        page,
+        limit: pageSize
       }),
     enabled: sellerAuth.enabled && !isFormMode,
     retry: false
@@ -152,15 +161,16 @@ export function SellerProductsClient({
       productId ? updateSellerProduct(sellerAuth.authHeaders, productId, payload) : createSellerProduct(sellerAuth.authHeaders, payload),
     onSuccess: (product, variables) => {
       const isLive = product.approvalStatus === "APPROVED" && product.status === "ACTIVE";
-      setNotice(
-        isLive
+      setNotice({
+        tone: "success",
+        message: isLive
           ? variables.productId
             ? "Product updated and published."
             : "Product created and published."
           : variables.productId
             ? "Product updated and sent for approval."
             : "Product submitted for admin approval.",
-      );
+      });
       setDraftImages([]);
       setDraftVariants([emptyDraftVariant()]);
       setSelectedDeliveryModes(defaultProductDeliveryModes);
@@ -173,28 +183,38 @@ export function SellerProductsClient({
         router.push("/seller/products");
       }
     },
-    onError: (error) => setNotice(error instanceof Error ? error.message : "Product save failed.")
+    onError: (error) => setNotice({ tone: "danger", message: userFacingApiErrorMessage(error) })
   });
 
   const archiveMutation = useMutation({
     mutationFn: (productId: string) => archiveSellerProduct(sellerAuth.authHeaders, productId),
     onSuccess: () => {
-      setNotice("Product archived.");
+      setNotice({ tone: "success", message: "Product archived." });
       void queryClient.invalidateQueries({ queryKey: ["seller-products", sellerAuth.authKey] });
       void queryClient.invalidateQueries({ queryKey: ["seller-sales-report", sellerAuth.authKey] });
     },
-    onError: (error) => setNotice(error instanceof Error ? error.message : "Product archive failed.")
+    onError: (error) => setNotice({ tone: "danger", message: userFacingApiErrorMessage(error) })
   });
 
   useEffect(() => {
+    if (!isFormMode) {
+      return;
+    }
+
     const editingProduct = productQuery.data ?? null;
+    const hydrationKey = productId ? editingProduct?.id : "new";
+    if (!hydrationKey || hydratedProductKeyRef.current === hydrationKey) {
+      return;
+    }
+
+    hydratedProductKeyRef.current = hydrationKey;
     setDraftImages(imagesToDraft(editingProduct?.images ?? []));
     setSelectedCategoryId(editingProduct?.categoryId ?? "");
     setDraftVariants(variantsToDraft(editingProduct?.variants ?? []));
     setSelectedDeliveryModes(editingProduct?.deliveryModes?.length ? editingProduct.deliveryModes : defaultProductDeliveryModes);
     setProductNameDraft(editingProduct?.name ?? "");
     setProductDescriptionDraft(editingProduct?.description ?? "");
-  }, [productQuery.data]);
+  }, [isFormMode, productId, productQuery.data]);
 
   useEffect(() => {
     if (!selectedCategoryId && categories[0]?.id) {
@@ -205,6 +225,12 @@ export function SellerProductsClient({
   useEffect(() => {
     const category = categories.find((item) => item.id === selectedCategoryId) ?? null;
     const editingProduct = productQuery.data ?? null;
+    const hydrationKey = `${editingProduct?.id ?? "new"}:${selectedCategoryId}`;
+    if (hydratedTaxKeyRef.current === hydrationKey) {
+      return;
+    }
+
+    hydratedTaxKeyRef.current = hydrationKey;
     const attributes = editingProduct?.attributes ?? {};
     setTaxDraft({
       hsnCode: attributeValueToInput(attributes.hsnCode ?? editingProduct?.hsnCode ?? category?.defaultHsnCode),
@@ -217,18 +243,26 @@ export function SellerProductsClient({
   function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmittedSearch(search.trim());
+    setPage(1);
   }
 
   function submitProduct(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (saveMutation.isPending) return;
+    if (productId && !productQuery.data) {
+      setNotice({
+        tone: "danger",
+        message: "Product details are unavailable. Retry loading before saving changes.",
+      });
+      return;
+    }
     const form = new FormData(event.currentTarget);
     const categoryId = formValue(form, "categoryId");
     const category = categories.find((item) => item.id === categoryId);
     const template = category?.productTemplate ?? null;
     const productName = formValue(form, "name");
     if (!selectedDeliveryModes.length) {
-      setNotice("Select at least one delivery option for this product.");
+      setNotice({ tone: "warning", message: "Select at least one delivery option for this product." });
       return;
     }
     const manualTransportSelected = selectedDeliveryModes.includes("MANUAL_TRANSPORT");
@@ -238,15 +272,15 @@ export function SellerProductsClient({
 
     if (manualTransportSelected) {
       if (!Number.isFinite(manualTransportFreeDistanceKm) || manualTransportFreeDistanceKm < 0) {
-        setNotice("Enter the free delivery distance for seller-arranged delivery.");
+        setNotice({ tone: "warning", message: "Enter the free delivery distance for seller-arranged delivery." });
         return;
       }
       if (manualTransportChargePerKmMinor < 0) {
-        setNotice("Enter a valid seller-arranged delivery charge per km.");
+        setNotice({ tone: "warning", message: "Enter a valid seller-arranged delivery charge per km." });
         return;
       }
       if (manualTransportNote.length < 5) {
-        setNotice("Add seller-arranged delivery notes for customers.");
+        setNotice({ tone: "warning", message: "Add seller-arranged delivery notes for customers." });
         return;
       }
     }
@@ -257,6 +291,33 @@ export function SellerProductsClient({
       isPrimary: image.isPrimary || (!draftImages.some((item) => item.isPrimary) && index === 0)
     }));
     const variantFields = templateFields(template, "VARIANT");
+    for (const [index, row] of draftVariants.entries()) {
+      const prefix = variantFieldPrefix(row.rowId);
+      const pricePaise = rupeesToPaise(formValue(form, `${prefix}:price`));
+      const mrpInput = formValue(form, `${prefix}:mrp`);
+      const mrpPaise = rupeesToPaise(mrpInput);
+      if (pricePaise <= 0) {
+        setNotice({
+          tone: "warning",
+          message: `Variant ${index + 1} selling price must be greater than zero.`,
+        });
+        return;
+      }
+      if (mrpInput && mrpPaise <= 0) {
+        setNotice({
+          tone: "warning",
+          message: `Variant ${index + 1} MRP must be greater than zero when provided.`,
+        });
+        return;
+      }
+      if (mrpPaise > 0 && mrpPaise < pricePaise) {
+        setNotice({
+          tone: "warning",
+          message: `Variant ${index + 1} MRP cannot be lower than its selling price.`,
+        });
+        return;
+      }
+    }
     const variants = draftVariants.map((row) => {
       const prefix = variantFieldPrefix(row.rowId);
       const sku = optionalFormValue(form, `${prefix}:sku`);
@@ -309,7 +370,7 @@ export function SellerProductsClient({
     };
 
     setNotice(null);
-    saveMutation.mutate({ productId: productQuery.data?.id, payload });
+    saveMutation.mutate({ productId, payload });
   }
 
   if (!sellerAuth.enabled) {
@@ -349,7 +410,7 @@ export function SellerProductsClient({
         {confirmation.confirmationDialog}
         {productId && productQuery.isLoading ? <SellerSkeleton className="h-96" /> : null}
         {productQuery.error ? <SellerErrorPanel error={productQuery.error} onRetry={() => void productQuery.refetch()} /> : null}
-        {!productId || editingProduct || !productQuery.isLoading ? (
+        {!productId || editingProduct ? (
           <div className="grid gap-5">
             <div className="rounded-lg border border-[#D9E2EA] bg-white p-5 shadow-sm">
               <Button asChild variant="ghost" size="sm" className="-ml-3 mb-3 text-[#5F6F82]">
@@ -375,9 +436,7 @@ export function SellerProductsClient({
             </div>
 
             {notice ? (
-              <StatusBadge tone={saveMutation.isError ? "danger" : "success"} className="justify-self-start">
-                {notice}
-              </StatusBadge>
+              <SellerNoticeBadge notice={notice} className="justify-self-start" />
             ) : null}
             {!profileQuery.isLoading && !sellerReady ? (
               <div className="rounded-lg border border-[#FFC7B8] bg-[#FFF0EC] p-4 text-sm font-semibold text-[#9F2600]">
@@ -600,19 +659,19 @@ export function SellerProductsClient({
 
         {notice ? (
           <div className="mt-4">
-            <StatusBadge tone={archiveMutation.isError ? "danger" : "success"}>{notice}</StatusBadge>
+            <SellerNoticeBadge notice={notice} />
           </div>
         ) : null}
 
         <div className="mt-5 grid gap-3 xl:grid-cols-[1fr_1fr_minmax(260px,420px)] xl:items-end">
-          <SellerSelect label="Product status" name="statusFilter" value={status} onChange={setStatus}>
+          <SellerSelect label="Product status" name="statusFilter" value={status} onChange={(value) => { setStatus(value); setPage(1); }}>
             {productStatusOptions.map((option) => (
               <option key={option || "all"} value={option}>
                 {option ? option.replace(/_/g, " ") : "All product statuses"}
               </option>
             ))}
           </SellerSelect>
-          <SellerSelect label="Approval status" name="approvalFilter" value={approvalStatus} onChange={setApprovalStatus}>
+          <SellerSelect label="Approval status" name="approvalFilter" value={approvalStatus} onChange={(value) => { setApprovalStatus(value); setPage(1); }}>
             {approvalStatusOptions.map((option) => (
               <option key={option || "all"} value={option}>
                 {option ? option.replace(/_/g, " ") : "All approval statuses"}
@@ -640,7 +699,7 @@ export function SellerProductsClient({
         <div className="mt-5 grid gap-3">
           {productsQuery.isLoading ? <SellerSkeleton /> : null}
           {productsQuery.error ? <SellerErrorPanel error={productsQuery.error} onRetry={() => void productsQuery.refetch()} /> : null}
-          {!productsQuery.isLoading && products.length === 0 ? (
+          {!productsQuery.isLoading && !productsQuery.error && products.length === 0 ? (
             <SellerEmptyState title="No products found" message="Use Add product to create a catalogue item. New and edited products are reviewed before storefront publishing." />
           ) : null}
 
@@ -661,6 +720,20 @@ export function SellerProductsClient({
             />
           ))}
         </div>
+        {productsQuery.data && productsQuery.data.total > 0 ? (
+          <SellerPagination
+            page={page}
+            pageSize={pageSize}
+            total={productsQuery.data.total}
+            isLoading={productsQuery.isFetching}
+            itemLabel="products"
+            onPageChange={setPage}
+            onPageSizeChange={(nextPageSize) => {
+              setPageSize(nextPageSize);
+              setPage(1);
+            }}
+          />
+        ) : null}
       </SellerPanel>
     </div>
   );
@@ -792,7 +865,7 @@ function ProductRow({
 }) {
   const variant = product.variants[0];
   const stockBadge = sellerProductStockBadge(product);
-  const chips = attributeChips(product.attributes, product.category.productTemplate?.fields ?? []);
+  const chips = attributeChips(product.attributes, product.category?.productTemplate?.fields ?? []);
 
   return (
     <div className="grid gap-4 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-4 lg:grid-cols-[80px_1fr_auto] lg:items-center">
@@ -894,7 +967,7 @@ function VariantEditor({
           name={`${prefix}:price`}
           type="number"
           required
-          min={0}
+          min={0.01}
           step="0.01"
           defaultValue={paiseToRupees(row.variant?.pricePaise)}
           hint={`Enter the selling price in ${currency}.`}
@@ -903,7 +976,7 @@ function VariantEditor({
           label={`MRP (${currency})`}
           name={`${prefix}:mrp`}
           type="number"
-          min={0}
+          min={0.01}
           step="0.01"
           defaultValue={paiseToRupees(row.variant?.mrpPaise)}
           hint={`Optional maximum retail price in ${currency}.`}
@@ -1268,10 +1341,11 @@ function HsnSuggestions({
   onSelect: (entry: HsnMasterEntry) => void;
 }) {
   const trimmedSearch = search.trim();
+  const debouncedSearch = useDebouncedValue(trimmedSearch, 350);
   const query = useQuery({
-    queryKey: ["hsn-master", category?.id ?? "", trimmedSearch],
-    queryFn: () => searchHsnMaster({ search: trimmedSearch, ...(category?.id ? { categoryId: category.id } : {}), limit: 6 }),
-    enabled: trimmedSearch.length >= 2,
+    queryKey: ["hsn-master", category?.id ?? "", debouncedSearch],
+    queryFn: () => searchHsnMaster({ search: debouncedSearch, ...(category?.id ? { categoryId: category.id } : {}), limit: 6 }),
+    enabled: debouncedSearch.length >= 2,
     staleTime: 5 * 60 * 1000,
   });
   const suggestions = query.data ?? [];

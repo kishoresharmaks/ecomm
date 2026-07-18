@@ -5,13 +5,20 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { RefreshCw, Search, Star } from "lucide-react";
 import { Button, StatusBadge } from "@indihub/ui";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import {
   getSellerReviewSummary,
   listSellerReviews,
   type SellerReviewRecord,
 } from "@/lib/seller-api";
 import type { ProductReviewStatus } from "@/lib/storefront-api";
-import { SellerAuthNotice, useSellerAuth } from "./seller-ui";
+import {
+  SellerAuthNotice,
+  SellerEmptyState,
+  SellerErrorPanel,
+  SellerPagination,
+  useSellerAuth,
+} from "./seller-ui";
 
 const statuses: Array<ProductReviewStatus | "ALL"> = ["ALL", "PENDING", "APPROVED", "REJECTED", "HIDDEN"];
 
@@ -20,6 +27,9 @@ export function SellerReviewsClient() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<ProductReviewStatus | "ALL">("ALL");
   const [rating, setRating] = useState<number | "ALL">("ALL");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(30);
+  const debouncedSearch = useDebouncedValue(search.trim(), 350);
 
   const summaryQuery = useQuery({
     queryKey: ["seller-review-summary", auth.authKey],
@@ -28,12 +38,11 @@ export function SellerReviewsClient() {
   });
 
   const reviewsQuery = useQuery({
-    queryKey: ["seller-reviews", auth.authKey, search, status, rating],
+    queryKey: ["seller-reviews", auth.authKey, debouncedSearch, status, rating, page, pageSize],
     queryFn: () => {
-      const query: Parameters<typeof listSellerReviews>[1] = { limit: 50 };
-      const cleanSearch = search.trim();
-      if (cleanSearch) {
-        query.search = cleanSearch;
+      const query: Parameters<typeof listSellerReviews>[1] = { page, limit: pageSize };
+      if (debouncedSearch) {
+        query.search = debouncedSearch;
       }
       if (status !== "ALL") {
         query.status = status;
@@ -71,14 +80,20 @@ export function SellerReviewsClient() {
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#98A2B3]" aria-hidden="true" />
             <input
               value={search}
-              onChange={(event) => setSearch(event.target.value)}
+              onChange={(event) => {
+                setSearch(event.target.value);
+                setPage(1);
+              }}
               placeholder="Search products, order number, title, or comment"
               className="h-11 w-full rounded-lg border border-[#D8E2EA] bg-white pl-10 pr-3 text-sm font-semibold text-[#1F2933] outline-none transition placeholder:text-[#98A2B3] focus:border-[#ED3500] focus:ring-2 focus:ring-[#ED3500]/10"
             />
           </label>
           <select
             value={status}
-            onChange={(event) => setStatus(event.target.value as ProductReviewStatus | "ALL")}
+            onChange={(event) => {
+              setStatus(event.target.value as ProductReviewStatus | "ALL");
+              setPage(1);
+            }}
             className="h-11 rounded-lg border border-[#D8E2EA] bg-white px-3 text-sm font-black text-[#1F2933] outline-none focus:border-[#ED3500] focus:ring-2 focus:ring-[#ED3500]/10"
           >
             {statuses.map((value) => (
@@ -89,7 +104,10 @@ export function SellerReviewsClient() {
           </select>
           <select
             value={rating}
-            onChange={(event) => setRating(event.target.value === "ALL" ? "ALL" : Number(event.target.value))}
+            onChange={(event) => {
+              setRating(event.target.value === "ALL" ? "ALL" : Number(event.target.value));
+              setPage(1);
+            }}
             className="h-11 rounded-lg border border-[#D8E2EA] bg-white px-3 text-sm font-black text-[#1F2933] outline-none focus:border-[#ED3500] focus:ring-2 focus:ring-[#ED3500]/10"
           >
             <option value="ALL">All ratings</option>
@@ -113,14 +131,30 @@ export function SellerReviewsClient() {
           <span>Customer/order</span>
           <span>Status</span>
         </div>
+        {summaryQuery.error ? <div className="p-4"><SellerErrorPanel error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /></div> : null}
+        {reviewsQuery.error ? <div className="p-4"><SellerErrorPanel error={reviewsQuery.error} onRetry={() => void reviewsQuery.refetch()} /></div> : null}
         {reviewsQuery.isLoading ? (
           <div className="p-6 text-sm font-semibold text-[#667085]">Loading reviews...</div>
         ) : reviewsQuery.data?.items.length ? (
           reviewsQuery.data.items.map((review) => <SellerReviewRow key={review.id} review={review} />)
-        ) : (
-          <div className="p-6 text-sm font-semibold text-[#667085]">No reviews match this filter.</div>
-        )}
+        ) : !reviewsQuery.error ? (
+          <div className="p-4"><SellerEmptyState title="No reviews found" message="No customer reviews match the selected search and filters." /></div>
+        ) : null}
       </div>
+      {reviewsQuery.data && reviewsQuery.data.total > 0 ? (
+        <SellerPagination
+          page={page}
+          pageSize={pageSize}
+          total={reviewsQuery.data.total}
+          isLoading={reviewsQuery.isFetching}
+          itemLabel="reviews"
+          onPageChange={setPage}
+          onPageSizeChange={(nextPageSize) => {
+            setPageSize(nextPageSize);
+            setPage(1);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

@@ -3819,6 +3819,32 @@ model CurrencyRate {
   @@map("currency_rates")
 }
 
+model FxProviderSetting {
+  id                    String   @id @default(uuid()) @db.Uuid
+  providerCode          String   @unique @map("provider_code")
+  displayName           String   @map("display_name")
+  adapterCode           String   @unique @map("adapter_code")
+  isEnabled             Boolean  @default(false) @map("is_enabled")
+  isPrimary             Boolean  @default(false) @map("is_primary")
+  priority              Int      @default(100)
+  apiBaseUrl            String?  @map("api_base_url")
+  apiKeyEncrypted       String?  @map("api_key_encrypted")
+  credentialsConfigured Boolean  @default(false) @map("credentials_configured")
+  timeoutMs             Int      @default(5000) @map("timeout_ms")
+  cacheTtlMinutes       Int      @default(60) @map("cache_ttl_minutes")
+  notes                 String?
+  lastHealthStatus      String   @default("NEVER_TESTED") @map("last_health_status")
+  lastCheckedAt         DateTime? @map("last_checked_at")
+  lastSuccessAt         DateTime? @map("last_success_at")
+  lastError             String?  @map("last_error")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  @@index([isEnabled, priority])
+  @@index([isPrimary, isEnabled])
+  @@map("fx_provider_settings")
+}
+
 model CommissionRule {
   id                    String             @id @default(uuid()) @db.Uuid
   name                  String

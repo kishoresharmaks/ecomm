@@ -1,15 +1,17 @@
 import {
+  Calendar03Icon,
   CheckmarkCircle02Icon,
   Home01Icon,
   InformationCircleIcon,
   Location01Icon,
   StarIcon,
 } from "@hugeicons/core-free-icons";
+import { DateTimePicker } from "@expo/ui/community/datetime-picker";
 import { HugeiconsIcon } from "@hugeicons/react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { RemoteImage } from "../../src/components/remote-image";
 import { Screen } from "../../src/components/screen";
 import { MobileAddressForm, emptyMobileAddressForm } from "../../src/components/mobile-address-form";
@@ -32,6 +34,12 @@ import type {
 } from "../../src/features/services/types";
 import { getPricingLabel } from "../../src/features/services/utils/pricingLabel";
 import { cleanBookingPayload } from "../../src/features/services/utils/payloadCleaners";
+import {
+  earliestServiceDate,
+  formatServiceDate,
+  serviceDateKey,
+  serviceDatePickerValue,
+} from "../../src/features/services/utils/serviceDate";
 import { useLocationStore } from "../../src/state/location-store";
 import { colors } from "../../src/theme";
 import { resolveImageUrl } from "../../src/lib/image-url";
@@ -262,8 +270,10 @@ export default function ServiceDetailScreen() {
               </View>
             ) : null}
 
-            <Text style={styles.fieldLabel}>Preferred date</Text>
-            <TextInput placeholder="YYYY-MM-DD" placeholderTextColor={colors.muted} style={styles.input} value={form.preferredDate ?? ""} onChangeText={(value) => updateForm({ preferredDate: value || null })} />
+            <ServiceDateField
+              value={form.preferredDate}
+              onChange={(preferredDate) => updateForm({ preferredDate })}
+            />
 
             <Text style={styles.fieldLabel}>Preferred time</Text>
             <View style={styles.segmentWrap}>
@@ -364,6 +374,76 @@ function Notice({ text }: { text: string }) {
     <View style={styles.notice}>
       <HugeiconsIcon color={colors.primary} icon={Location01Icon} size={18} strokeWidth={2} />
       <Text style={styles.noticeText}>{text}</Text>
+    </View>
+  );
+}
+
+function ServiceDateField({
+  value,
+  onChange,
+}: {
+  value: string | null;
+  onChange: (value: string) => void;
+}) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const pickerValue = serviceDatePickerValue(value);
+
+  function selectDate(date: Date) {
+    onChange(serviceDateKey(date));
+    setPickerOpen(false);
+  }
+
+  return (
+    <View>
+      <Text style={styles.fieldLabel}>Preferred date</Text>
+      {Platform.OS === "ios" ? (
+        <View style={styles.nativePickerWrap}>
+          <DateTimePicker
+            accentColor={colors.primary}
+            display="compact"
+            minimumDate={earliestServiceDate()}
+            mode="date"
+            onValueChange={(_event, date) => selectDate(date)}
+            value={pickerValue}
+          />
+        </View>
+      ) : Platform.OS === "android" ? (
+        <>
+          <Pressable
+            accessibilityHint="Opens the calendar"
+            accessibilityLabel={`Preferred service date. ${formatServiceDate(value)}`}
+            accessibilityRole="button"
+            onPress={() => setPickerOpen(true)}
+            style={styles.dateButton}
+          >
+            <HugeiconsIcon color={colors.primary} icon={Calendar03Icon} size={20} strokeWidth={2.1} />
+            <Text style={[styles.dateButtonText, !value ? styles.datePlaceholder : null]}>
+              {formatServiceDate(value)}
+            </Text>
+          </Pressable>
+          {pickerOpen ? (
+            <DateTimePicker
+              accentColor={colors.primary}
+              minimumDate={earliestServiceDate()}
+              mode="date"
+              negativeButton={{ label: "Cancel" }}
+              onDismiss={() => setPickerOpen(false)}
+              onValueChange={(_event, date) => selectDate(date)}
+              positiveButton={{ label: "Select date" }}
+              presentation="dialog"
+              value={pickerValue}
+            />
+          ) : null}
+        </>
+      ) : (
+        <TextInput
+          onChangeText={(nextValue) => onChange(nextValue)}
+          placeholder="YYYY-MM-DD"
+          placeholderTextColor={colors.muted}
+          style={styles.input}
+          value={value ?? ""}
+        />
+      )}
     </View>
   );
 }
@@ -590,6 +670,32 @@ const styles = StyleSheet.create({
     minHeight: 46,
     paddingHorizontal: 12,
     paddingVertical: 10,
+  },
+  dateButton: {
+    alignItems: "center",
+    backgroundColor: "#FFFCFB",
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    minHeight: 48,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  dateButtonText: {
+    color: colors.ink,
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  datePlaceholder: {
+    color: colors.muted,
+  },
+  nativePickerWrap: {
+    alignItems: "flex-start",
+    minHeight: 48,
+    justifyContent: "center",
   },
   textArea: {
     minHeight: 110,

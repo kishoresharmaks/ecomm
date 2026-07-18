@@ -127,7 +127,7 @@ export class ServicePackageDto {
   @ApiProperty({ example: 49900 })
   @Type(() => Number)
   @IsInt()
-  @Min(0)
+  @Min(1)
   pricePaise!: number;
 
   @ApiPropertyOptional({ example: 79900 })
@@ -218,21 +218,21 @@ export class CreateServiceListingDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  @Min(0)
+  @Min(1)
   basePricePaise?: number;
 
   @ApiPropertyOptional({ example: 29900 })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  @Min(0)
+  @Min(1)
   inspectionFeePaise?: number;
 
   @ApiPropertyOptional({ example: 50000 })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  @Min(0)
+  @Min(1)
   advanceAmountPaise?: number;
 
   @ApiPropertyOptional({ example: "INR" })
@@ -714,7 +714,7 @@ export class QuoteLineItemDto {
   @ApiProperty({ example: 150000 })
   @Type(() => Number)
   @IsInt()
-  @Min(0)
+  @Min(1)
   unitPaise!: number;
 }
 

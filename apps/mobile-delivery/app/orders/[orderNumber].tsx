@@ -1,6 +1,7 @@
+import { DateTimePicker } from "@expo/ui/community/datetime-picker";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { Linking, Pressable, Text, View } from "react-native";
+import { Linking, Platform, Pressable, Text, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
@@ -28,6 +29,16 @@ import {
   type DeliveryStatus,
 } from "../../src/features/delivery/delivery-api";
 import { pickDeliveryProofImage, uploadDeliveryProofImage } from "../../src/features/delivery/proof-upload";
+import {
+  defaultDeliveryEstimate,
+  earliestDeliveryDate,
+  formatDeliveryEstimateDate,
+  formatDeliveryEstimateTime,
+  parseDeliveryEstimate,
+  serializeDeliveryEstimate,
+  withDeliveryDate,
+  withDeliveryTime,
+} from "../../src/features/delivery/delivery-date-time";
 import { useMobileDeliveryAuth } from "../../src/auth/mobile-delivery-auth-context";
 
 const deliveryProgressionStatuses: DeliveryStatus[] = ["PENDING", "PACKED", "DISPATCHED", "IN_TRANSIT", "DELIVERED"];
@@ -52,7 +63,7 @@ export default function DeliveryOrderDetailScreen() {
   const [deliveryNote, setDeliveryNote] = useState("");
   const [selectedDeliveryStatus, setSelectedDeliveryStatus] = useState<DeliveryStatus>("PENDING");
   const [trackingReference, setTrackingReference] = useState("");
-  const [estimatedDeliveryDate, setEstimatedDeliveryDate] = useState("");
+  const [estimatedDeliveryDate, setEstimatedDeliveryDate] = useState<Date | null>(null);
   const [receiverName, setReceiverName] = useState("");
   const [proofReference, setProofReference] = useState("");
   const [proofUploadStatus, setProofUploadStatus] = useState("");
@@ -77,12 +88,15 @@ export default function DeliveryOrderDetailScreen() {
   const currentDeliveryStatus = deliveryStatusValue(order?.deliveryDetail?.status ?? order?.deliveryStatus);
   const progressStatuses = nextDeliveryStatusOptions(currentDeliveryStatus);
   const progressLocked = currentDeliveryStatus === "DELIVERED" || currentDeliveryStatus === "CANCELLED";
+  const storedDeliveryEstimate = parseDeliveryEstimate(order?.deliveryDetail?.estimatedDeliveryDate);
+  const deliveryEstimateChanged =
+    (storedDeliveryEstimate?.getTime() ?? null) !== (estimatedDeliveryDate?.getTime() ?? null);
 
   useEffect(() => {
     if (!order) return;
     const nextCodPayment = findCodPayment(order);
     setTrackingReference(order.deliveryDetail?.trackingReference ?? "");
-    setEstimatedDeliveryDate(toDateInput(order.deliveryDetail?.estimatedDeliveryDate));
+    setEstimatedDeliveryDate(parseDeliveryEstimate(order.deliveryDetail?.estimatedDeliveryDate));
     setDeliveryNote(order.deliveryDetail?.deliveryNote ?? "");
     setSelectedDeliveryStatus(deliveryStatusValue(order.deliveryDetail?.status ?? order.deliveryStatus));
     setReceiverName(order.deliveryDetail?.receiverName ?? order.shippingAddressSnapshot?.fullName ?? "");
@@ -103,15 +117,21 @@ export default function DeliveryOrderDetailScreen() {
   const progressMutation = useMutation({
     mutationFn: (status: DeliveryStatus) =>
       updateDeliveryOrder(auth.authHeaders, orderNumber, {
-        status,
-        estimatedDeliveryDate: estimatedDeliveryDate.trim() || undefined,
+        ...(status !== currentDeliveryStatus ? { status } : {}),
+        estimatedDeliveryDate: serializeDeliveryEstimate(estimatedDeliveryDate),
         deliveryNote: deliveryNote.trim() || undefined,
         receiverName: status === "DELIVERED" ? receiverName.trim() : undefined,
         proofReference: status === "DELIVERED" ? proofReference.trim() : undefined,
         proofNote: status === "DELIVERED" ? proofNote.trim() || undefined : undefined,
       }),
     onSuccess: async (_, status) => {
-      setNotice({ message: `${humanize(status)} update saved.`, tone: "success" });
+      setNotice({
+        message:
+          status === currentDeliveryStatus
+            ? "Estimated delivery date and time saved."
+            : `${humanize(status)} update saved.`,
+        tone: "success",
+      });
       await refresh(queryClient, auth.authKey, orderNumber);
     },
     onError: (error) => setNotice({ message: error instanceof Error ? error.message : "Delivery update failed.", tone: "danger" }),
@@ -197,7 +217,7 @@ export default function DeliveryOrderDetailScreen() {
           <Card>
             <Text style={sectionTitle}>Delivery progress</Text>
             <Text style={mutedText}>Tracking: {trackingReference || "Generated after assignment"}</Text>
-            <Field label="Estimated delivery date" value={estimatedDeliveryDate} onChangeText={setEstimatedDeliveryDate} placeholder="YYYY-MM-DD" />
+            <DeliveryEstimateField value={estimatedDeliveryDate} onChange={setEstimatedDeliveryDate} />
             <Field label="Delivery note" value={deliveryNote} onChangeText={setDeliveryNote} placeholder="Pickup, route, or handover note" multiline />
             <Field label="Receiver name" value={receiverName} onChangeText={setReceiverName} placeholder="Required before delivered" />
             <Button title={proofReference ? "Replace proof file" : "Upload proof file"} tone="secondary" onPress={() => void uploadProof()} />
@@ -220,7 +240,7 @@ export default function DeliveryOrderDetailScreen() {
                 !assignmentAccepted ||
                 progressLocked ||
                 progressMutation.isPending ||
-                selectedDeliveryStatus === currentDeliveryStatus ||
+                (selectedDeliveryStatus === currentDeliveryStatus && !deliveryEstimateChanged) ||
                 (selectedDeliveryStatus === "DELIVERED" && (!receiverName.trim() || !proofReference.trim()))
               }
               loading={progressMutation.isPending}
@@ -527,6 +547,119 @@ function NoticeCard({ notice }: { notice: { message: string; tone: "success" | "
   );
 }
 
+function DeliveryEstimateField({
+  value,
+  onChange,
+}: {
+  value: Date | null;
+  onChange: (value: Date | null) => void;
+}) {
+  const [activePicker, setActivePicker] = useState<"date" | "time" | null>(null);
+  const pickerValue = value ?? defaultDeliveryEstimate();
+
+  function selectValue(mode: "date" | "time", selected: Date) {
+    onChange(
+      mode === "date"
+        ? withDeliveryDate(value, selected)
+        : withDeliveryTime(value, selected),
+    );
+    setActivePicker(null);
+  }
+
+  return (
+    <View style={dateTimeField}>
+      <Text style={dateTimeLabel}>Estimated delivery</Text>
+      {Platform.OS === "ios" ? (
+        <View style={dateTimeRow}>
+          <View style={nativeEstimatePicker}>
+            <Text style={pickerPartLabel}>Date</Text>
+            <DateTimePicker
+              accentColor="#ED3500"
+              display="compact"
+              minimumDate={earliestDeliveryDate()}
+              mode="date"
+              onValueChange={(_event, selected) => selectValue("date", selected)}
+              value={pickerValue}
+            />
+          </View>
+          <View style={nativeEstimatePicker}>
+            <Text style={pickerPartLabel}>Time</Text>
+            <DateTimePicker
+              accentColor="#ED3500"
+              display="compact"
+              mode="time"
+              onValueChange={(_event, selected) => selectValue("time", selected)}
+              value={pickerValue}
+            />
+          </View>
+        </View>
+      ) : (
+        <>
+          <View style={dateTimeRow}>
+            <EstimatePickerButton
+              label="Date"
+              placeholder={!value}
+              value={formatDeliveryEstimateDate(value)}
+              onPress={() => setActivePicker("date")}
+            />
+            <EstimatePickerButton
+              label="Time"
+              placeholder={!value}
+              value={formatDeliveryEstimateTime(value)}
+              onPress={() => setActivePicker("time")}
+            />
+          </View>
+          {Platform.OS === "android" && activePicker ? (
+            <DateTimePicker
+              accentColor="#ED3500"
+              display={activePicker === "date" ? "default" : "clock"}
+              is24Hour={false}
+              mode={activePicker}
+              negativeButton={{ label: "Cancel" }}
+              onDismiss={() => setActivePicker(null)}
+              onValueChange={(_event, selected) => selectValue(activePicker, selected)}
+              positiveButton={{ label: activePicker === "date" ? "Select date" : "Select time" }}
+              presentation="dialog"
+              value={pickerValue}
+              {...(activePicker === "date" ? { minimumDate: earliestDeliveryDate() } : {})}
+            />
+          ) : null}
+        </>
+      )}
+      <Text style={dateTimeHint}>
+        The selected local date and time are securely sent as one delivery timestamp.
+      </Text>
+    </View>
+  );
+}
+
+function EstimatePickerButton({
+  label,
+  value,
+  placeholder,
+  onPress,
+}: {
+  label: string;
+  value: string;
+  placeholder: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <View style={pickerField}>
+      <Text style={pickerPartLabel}>{label}</Text>
+      <Pressable
+        accessibilityHint={`Opens the ${label.toLowerCase()} picker`}
+        accessibilityLabel={`Estimated delivery ${label.toLowerCase()}. ${value}`}
+        accessibilityRole="button"
+        onPress={onPress}
+        style={pickerButton}
+      >
+        <Text style={[pickerButtonText, placeholder ? pickerPlaceholder : null]}>{value}</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 async function refresh(queryClient: ReturnType<typeof useQueryClient>, authKey: string, orderNumber: string) {
   await queryClient.invalidateQueries({ queryKey: ["delivery-order", authKey, orderNumber] });
   await queryClient.invalidateQueries({ queryKey: ["delivery-orders"] });
@@ -544,11 +677,6 @@ function amountTextToPaise(value: string) {
 
 function formatAmountText(value: number) {
   return (value / 100).toFixed(2).replace(/\.00$/, "");
-}
-
-function toDateInput(value?: string | null) {
-  if (!value) return "";
-  return value.slice(0, 10);
 }
 
 type Coordinates = { latitude: number; longitude: number };
@@ -800,6 +928,16 @@ const quickActionsGrid = { flexDirection: "row", flexWrap: "wrap", gap: 10 } as 
 const quickActionButton = { flexBasis: "30%", flexGrow: 1, minWidth: 132 } as const;
 const innerCard = { backgroundColor: "#F8FAFC", borderColor: "#E5E7EB", borderRadius: 12, borderWidth: 1, gap: 8, padding: 12 } as const;
 const timelineItem = { borderLeftColor: "#ED3500", borderLeftWidth: 3, gap: 6, paddingLeft: 12 } as const;
+const dateTimeField = { gap: 8 } as const;
+const dateTimeLabel = { color: "#111827", fontSize: 12, fontWeight: "900", textTransform: "uppercase" } as const;
+const dateTimeRow = { flexDirection: "row", flexWrap: "wrap", gap: 10 } as const;
+const pickerField = { flex: 1, gap: 5, minWidth: 140 } as const;
+const pickerPartLabel = { color: "#6B7280", fontSize: 11, fontWeight: "800", textTransform: "uppercase" } as const;
+const pickerButton = { backgroundColor: "#F8FAFC", borderColor: "#D8E2EA", borderRadius: 12, borderWidth: 1, justifyContent: "center", minHeight: 48, paddingHorizontal: 12, paddingVertical: 10 } as const;
+const pickerButtonText = { color: "#111827", fontSize: 14, fontWeight: "800" } as const;
+const pickerPlaceholder = { color: "#9CA3AF" } as const;
+const nativeEstimatePicker = { flex: 1, gap: 5, minWidth: 140 } as const;
+const dateTimeHint = { color: "#6B7280", fontSize: 12, fontWeight: "700", lineHeight: 18 } as const;
 const workflowRow = { backgroundColor: "#F8FAFC", borderColor: "#E5E7EB", borderRadius: 14, borderWidth: 1, gap: 8, padding: 12 } as const;
 const workflowRowCurrent = { backgroundColor: "#FFF4EF", borderColor: "#FFD7CA" } as const;
 const stepBadge = { alignItems: "center", backgroundColor: "#FFFFFF", borderColor: "#D8E2EA", borderRadius: 999, borderWidth: 1, height: 32, justifyContent: "center", width: 32 } as const;

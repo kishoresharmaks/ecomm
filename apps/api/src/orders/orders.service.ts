@@ -110,6 +110,10 @@ import { UpdateDeliveryDto } from "./dto/delivery-update.dto";
 import { OrderQueryDto } from "./dto/order-query.dto";
 import { UpdateOrderStatusDto, UpdateSellerOrderStatusDto } from "./dto/order-status.dto";
 import { TrackOrderDto } from "./dto/track-order.dto";
+import {
+  convertBaseMinorToSellerMinor,
+  resolveSellerOrderCurrency,
+} from "./seller-order-currency";
 
 const orderInclude = {
   customer: {
@@ -4488,9 +4492,59 @@ export class OrdersService {
 
   private filterOrderForSeller(order: OrderWithRelations, sellerId: string) {
     const safeOrder = this.customerSafeOrder(order);
+    const sellerCurrency = resolveSellerOrderCurrency(order.currency, sellerId, order.items);
+    const sellerSplit = order.sellerSplits.find((split) => split.sellerId === sellerId);
     return {
       ...safeOrder,
-      items: safeOrder.items.filter((item) => item.sellerId === sellerId),
+      sellerCurrencySnapshot: {
+        currency: sellerCurrency.currency,
+        baseCurrency: sellerCurrency.baseCurrency,
+        rate: sellerCurrency.rate,
+        source: sellerCurrency.source,
+        sellerSubtotalMinor: sellerCurrency.sellerSubtotalMinor,
+        commissionMinor: convertBaseMinorToSellerMinor(sellerSplit?.commissionPaise, sellerCurrency),
+        gstOnCommissionMinor: convertBaseMinorToSellerMinor(
+          sellerSplit?.gstOnCommissionPaise,
+          sellerCurrency,
+        ),
+        tdsMinor: convertBaseMinorToSellerMinor(sellerSplit?.tdsPaise, sellerCurrency),
+        tcsMinor: convertBaseMinorToSellerMinor(sellerSplit?.tcsPaise, sellerCurrency),
+        platformFeeMinor: convertBaseMinorToSellerMinor(
+          sellerSplit?.platformFeePaise,
+          sellerCurrency,
+        ),
+        couponSellerFundedDiscountMinor: convertBaseMinorToSellerMinor(
+          sellerSplit?.couponSellerFundedDiscountPaise,
+          sellerCurrency,
+        ),
+        couponPlatformFundedDiscountMinor: convertBaseMinorToSellerMinor(
+          sellerSplit?.couponPlatformFundedDiscountPaise,
+          sellerCurrency,
+        ),
+        couponAdjustmentMinor: convertBaseMinorToSellerMinor(
+          sellerSplit?.couponAdjustmentPaise,
+          sellerCurrency,
+        ),
+        refundAdjustmentMinor: convertBaseMinorToSellerMinor(
+          sellerSplit?.refundAdjustmentPaise,
+          sellerCurrency,
+        ),
+        netPayableMinor: convertBaseMinorToSellerMinor(
+          sellerSplit?.netPayablePaise,
+          sellerCurrency,
+        ),
+        itemAmounts: sellerCurrency.itemAmounts,
+      },
+      items: safeOrder.items
+        .filter((item) => item.sellerId === sellerId)
+        .map((item) => ({
+          ...item,
+          sellerUnitPriceMinor:
+            sellerCurrency.itemAmounts[item.id]?.unitPriceMinor ?? item.unitPricePaise,
+          sellerLineTotalMinor:
+            sellerCurrency.itemAmounts[item.id]?.lineTotalMinor ?? item.lineTotalPaise,
+          sellerCurrency: sellerCurrency.currency,
+        })),
       sellerSplits: order.sellerSplits
         .filter((split) => split.sellerId === sellerId)
         .map((split) => ({

@@ -14,6 +14,8 @@ import {
   SellerErrorPanel,
   SellerField,
   SellerOnboardingRequired,
+  SellerNoticeBadge,
+  SellerPagination,
   SellerPanel,
   SellerSelect,
   SellerSkeleton,
@@ -24,6 +26,7 @@ import {
   isSellerOnboardingRequiredError,
   optionalFormValue,
   rupeesToPaise,
+  type SellerNotice,
   useSellerAuth,
 } from "./seller-ui";
 import { formatMoney } from "@/lib/storefront-api";
@@ -35,14 +38,17 @@ export function SellerB2BOrdersClient() {
   const [search, setSearch] = useState("");
   const [submittedSearch, setSubmittedSearch] = useState("");
   const [status, setStatus] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(30);
 
   const ordersQuery = useQuery({
-    queryKey: ["seller-b2b-orders", sellerAuth.authKey, submittedSearch, status],
+    queryKey: ["seller-b2b-orders", sellerAuth.authKey, submittedSearch, status, page, pageSize],
     queryFn: () =>
       listSellerB2BOrders(sellerAuth.authHeaders, {
         search: submittedSearch,
         status,
-        limit: 30,
+        page,
+        limit: pageSize,
       }),
     enabled: sellerAuth.enabled,
     retry: false,
@@ -50,6 +56,7 @@ export function SellerB2BOrdersClient() {
 
   function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setPage(1);
     setSubmittedSearch(search.trim());
   }
 
@@ -86,7 +93,15 @@ export function SellerB2BOrdersClient() {
       </div>
 
       <div className="mt-5 max-w-xs">
-        <SellerSelect label="B2B order status" name="status" value={status} onChange={setStatus}>
+        <SellerSelect
+          label="B2B order status"
+          name="status"
+          value={status}
+          onChange={(value) => {
+            setPage(1);
+            setStatus(value);
+          }}
+        >
           {orderStatuses.map((option) => (
             <option key={option || "all"} value={option}>
               {option ? option.replace(/_/g, " ") : "All B2B order statuses"}
@@ -98,7 +113,7 @@ export function SellerB2BOrdersClient() {
       <div className="mt-5 grid gap-4">
         {ordersQuery.isLoading ? <SellerSkeleton /> : null}
         {ordersQuery.error ? <SellerErrorPanel error={ordersQuery.error} onRetry={() => void ordersQuery.refetch()} /> : null}
-        {!ordersQuery.isLoading && orders.length === 0 ? (
+        {!ordersQuery.isLoading && !ordersQuery.error && orders.length === 0 ? (
           <SellerEmptyState title="No B2B orders found" message="B2B orders appear after admin finalises a buyer-confirmed quotation." />
         ) : null}
         {orders.map((order) => (
@@ -106,6 +121,20 @@ export function SellerB2BOrdersClient() {
             <B2BOrderHeader order={order} />
           </Link>
         ))}
+        {!ordersQuery.error && (ordersQuery.data?.total ?? 0) > 0 ? (
+          <SellerPagination
+            page={page}
+            pageSize={pageSize}
+            total={ordersQuery.data?.total ?? 0}
+            isLoading={ordersQuery.isFetching}
+            onPageChange={setPage}
+            onPageSizeChange={(value) => {
+              setPage(1);
+              setPageSize(value);
+            }}
+            itemLabel="B2B orders"
+          />
+        ) : null}
       </div>
     </SellerPanel>
   );
@@ -114,7 +143,7 @@ export function SellerB2BOrdersClient() {
 export function SellerB2BOrderDetailClient({ orderNumber }: { orderNumber: string }) {
   const sellerAuth = useSellerAuth();
   const queryClient = useQueryClient();
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<SellerNotice | null>(null);
   const orderQuery = useQuery({
     queryKey: ["seller-b2b-order", sellerAuth.authKey, orderNumber],
     queryFn: () => getSellerB2BOrder(sellerAuth.authHeaders, orderNumber),
@@ -122,15 +151,6 @@ export function SellerB2BOrderDetailClient({ orderNumber }: { orderNumber: strin
     retry: false,
   });
 
-  if (!sellerAuth.enabled) {
-    return <SellerAuthNotice />;
-  }
-
-  if (orderQuery.error && isSellerOnboardingRequiredError(orderQuery.error)) {
-    return <SellerOnboardingRequired message="Complete seller onboarding before viewing B2B order detail." />;
-  }
-
-  const order = orderQuery.data;
   const transportMutation = useMutation({
     mutationFn: (payload: {
       transportMode?: SellerB2BTransportMode;
@@ -144,12 +164,22 @@ export function SellerB2BOrderDetailClient({ orderNumber }: { orderNumber: strin
       transportNote?: string;
     }) => updateSellerB2BTransport(sellerAuth.authHeaders, orderNumber, payload),
     onSuccess: async () => {
-      setNotice("B2B transport details updated.");
+      setNotice({ tone: "success", message: "B2B transport details updated." });
       await queryClient.invalidateQueries({ queryKey: ["seller-b2b-order", sellerAuth.authKey, orderNumber] });
       await queryClient.invalidateQueries({ queryKey: ["seller-b2b-orders", sellerAuth.authKey] });
     },
-    onError: (error) => setNotice(userFacingApiErrorMessage(error)),
+    onError: (error) => setNotice({ tone: "danger", message: userFacingApiErrorMessage(error) }),
   });
+
+  if (!sellerAuth.enabled) {
+    return <SellerAuthNotice />;
+  }
+
+  if (orderQuery.error && isSellerOnboardingRequiredError(orderQuery.error)) {
+    return <SellerOnboardingRequired message="Complete seller onboarding before viewing B2B order detail." />;
+  }
+
+  const order = orderQuery.data;
 
   async function openPurchaseOrder() {
     setNotice(null);
@@ -161,7 +191,7 @@ export function SellerB2BOrderDetailClient({ orderNumber }: { orderNumber: strin
         `/api/seller/b2b-orders/${encodeURIComponent(orderNumber)}/purchase-order/document`,
       );
     } catch (error) {
-      setNotice(userFacingApiErrorMessage(error));
+      setNotice({ tone: "danger", message: userFacingApiErrorMessage(error) });
     }
   }
 
@@ -175,7 +205,7 @@ export function SellerB2BOrderDetailClient({ orderNumber }: { orderNumber: strin
         `/api/seller/b2b-orders/${encodeURIComponent(orderNumber)}/proforma-invoice`,
       );
     } catch (error) {
-      setNotice(userFacingApiErrorMessage(error));
+      setNotice({ tone: "danger", message: userFacingApiErrorMessage(error) });
     }
   }
 
@@ -189,7 +219,7 @@ export function SellerB2BOrderDetailClient({ orderNumber }: { orderNumber: strin
         `/api/seller/b2b-orders/${encodeURIComponent(orderNumber)}/tax-invoice`,
       );
     } catch (error) {
-      setNotice(userFacingApiErrorMessage(error));
+      setNotice({ tone: "danger", message: userFacingApiErrorMessage(error) });
     }
   }
 
@@ -205,7 +235,7 @@ export function SellerB2BOrderDetailClient({ orderNumber }: { orderNumber: strin
       </div>
       {orderQuery.isLoading ? <SellerSkeleton /> : null}
       {orderQuery.error ? <SellerErrorPanel error={orderQuery.error} onRetry={() => void orderQuery.refetch()} /> : null}
-      {notice ? <StatusBadge tone="danger">{notice}</StatusBadge> : null}
+      <SellerNoticeBadge notice={notice} />
       {order ? (
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
           <SellerPanel>

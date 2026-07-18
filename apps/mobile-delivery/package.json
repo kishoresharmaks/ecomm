@@ -17,6 +17,7 @@
     "@clerk/clerk-expo": "2.19.36",
     "@expo/log-box": "56.0.13",
     "@expo/metro-runtime": "56.0.15",
+    "@expo/ui": "56.0.18",
     "@hugeicons/core-free-icons": "4.2.0",
     "@hugeicons/react-native": "1.0.13",
     "@sentry/react-native": "7.11.0",

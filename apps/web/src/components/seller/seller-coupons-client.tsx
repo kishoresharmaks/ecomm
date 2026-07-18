@@ -4,7 +4,15 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, RefreshCw, TicketPercent, XCircle } from "lucide-react";
 import { Button, StatusBadge } from "@indihub/ui";
-import { SellerAuthNotice, useSellerAuth } from "@/components/seller/seller-ui";
+import {
+  SellerAuthNotice,
+  SellerEmptyState,
+  SellerErrorPanel,
+  SellerNoticeBadge,
+  type SellerNotice,
+  useSellerAuth,
+} from "@/components/seller/seller-ui";
+import { userFacingApiErrorMessage } from "@/lib/api";
 import {
   acceptSellerCoupon,
   declineSellerCoupon,
@@ -20,7 +28,7 @@ export function SellerCouponsClient() {
   const sellerAuth = useSellerAuth();
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<CouponSellerParticipationStatus | "ALL">("ALL");
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<SellerNotice | null>(null);
 
   const couponsQuery = useQuery({
     queryKey: ["seller-coupons", sellerAuth.authKey, status],
@@ -30,16 +38,16 @@ export function SellerCouponsClient() {
   const acceptMutation = useMutation({
     mutationFn: (couponId: string) => acceptSellerCoupon(sellerAuth.authHeaders, couponId),
     onSuccess: () => refresh("Coupon participation accepted."),
-    onError: (error) => setNotice(error instanceof Error ? error.message : "Unable to accept coupon."),
+    onError: (error) => setNotice({ tone: "danger", message: userFacingApiErrorMessage(error) }),
   });
   const declineMutation = useMutation({
     mutationFn: (couponId: string) => declineSellerCoupon(sellerAuth.authHeaders, couponId),
     onSuccess: () => refresh("Coupon participation declined."),
-    onError: (error) => setNotice(error instanceof Error ? error.message : "Unable to decline coupon."),
+    onError: (error) => setNotice({ tone: "danger", message: userFacingApiErrorMessage(error) }),
   });
 
   function refresh(message?: string) {
-    if (message) setNotice(message);
+    if (message) setNotice({ tone: "success", message });
     void queryClient.invalidateQueries({ queryKey: ["seller-coupons"] });
   }
 
@@ -66,10 +74,11 @@ export function SellerCouponsClient() {
             </Button>
           </div>
         </div>
-        {notice ? <p className="mt-4 rounded-md border border-[#FFE0D6] bg-[#FFF8F5] px-3 py-2 text-sm font-bold text-[#9F2600]">{notice}</p> : null}
+        <SellerNoticeBadge notice={notice} className="mt-4" />
       </section>
 
       <section className="grid gap-4 xl:grid-cols-2">
+        {couponsQuery.error ? <SellerErrorPanel error={couponsQuery.error} onRetry={() => void couponsQuery.refetch()} /> : null}
         {couponsQuery.data?.items.map((item) => (
           <SellerCouponCard
             key={item.id}
@@ -79,8 +88,8 @@ export function SellerCouponsClient() {
             onDecline={() => declineMutation.mutate(item.couponId)}
           />
         ))}
-        {!couponsQuery.isLoading && !couponsQuery.data?.items.length ? (
-          <p className="rounded-lg border border-dashed border-[#D8E2EA] bg-white p-8 text-center text-sm font-semibold text-[#667085]">No seller-funded coupon campaigns are connected to your store right now.</p>
+        {!couponsQuery.isLoading && !couponsQuery.error && !couponsQuery.data?.items.length ? (
+          <SellerEmptyState title="No coupon campaigns" message="No seller-funded coupon campaigns are connected to your store right now." />
         ) : null}
       </section>
     </div>

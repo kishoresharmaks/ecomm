@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { FormEvent, useState } from "react";
 import { CalendarDays, Download, Undo2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
 import { Button, SectionHeading } from "@indihub/ui";
 import { formatMoney } from "@/lib/storefront-api";
-import { downloadSellerReportCsv, getSellerReturnsReport } from "@/lib/seller-api";
+import { downloadSellerReportCsv, getSellerProfile, getSellerReturnsReport } from "@/lib/seller-api";
 import {
   SellerAuthNotice,
   SellerEmptyState,
@@ -22,6 +22,14 @@ import {
   useSellerAuth
 } from "./seller-ui";
 
+const SellerReturnsChart = dynamic(
+  () => import("./report-charts/seller-returns-chart"),
+  {
+    ssr: false,
+    loading: () => <SellerChartLoading />,
+  },
+);
+
 export function SellerReturnsReportClient({ initialDateFrom = "", initialDateTo = "" }: { initialDateFrom?: string; initialDateTo?: string }) {
   const sellerAuth = useSellerAuth();
   const [dateFrom, setDateFrom] = useState(initialDateFrom);
@@ -31,6 +39,12 @@ export function SellerReturnsReportClient({ initialDateFrom = "", initialDateTo 
   const reportQuery = useQuery({
     queryKey: ["seller-returns-report", sellerAuth.authKey, submittedRange.dateFrom, submittedRange.dateTo],
     queryFn: () => getSellerReturnsReport(sellerAuth.authHeaders, submittedRange),
+    enabled: sellerAuth.enabled,
+    retry: false
+  });
+  const profileQuery = useQuery({
+    queryKey: ["seller-profile", sellerAuth.authKey],
+    queryFn: () => getSellerProfile(sellerAuth.authHeaders),
     enabled: sellerAuth.enabled,
     retry: false
   });
@@ -46,6 +60,7 @@ export function SellerReturnsReportClient({ initialDateFrom = "", initialDateTo 
   }
 
   const report = reportQuery.data;
+  const currency = profileQuery.data?.operatingCurrency || "INR";
 
   const statusChartData = (report?.byStatus ?? []).map((s) => ({
     name: s.status.replace(/_/g, " "),
@@ -93,23 +108,15 @@ export function SellerReturnsReportClient({ initialDateFrom = "", initialDateTo 
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
-            <SellerMetric label="Requested Refund Value" value={formatMoney(report.summary.requestedAmountPaise)} note="Total amount customers requested" />
-            <SellerMetric label="Approved Refund Value" value={formatMoney(report.summary.approvedAmountPaise)} note="Total amount approved for refund" />
+            <SellerMetric label="Requested Refund Value" value={formatMoney(report.summary.requestedAmountPaise, currency)} note="Total amount customers requested" />
+            <SellerMetric label="Approved Refund Value" value={formatMoney(report.summary.approvedAmountPaise, currency)} note="Total amount approved for refund" />
           </div>
 
           {statusChartData.length > 0 ? (
             <SellerPanel>
               <SectionHeading title="Returns by Status" description="Count of return requests grouped by their current status." />
               <div className="mt-5 h-[260px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={statusChartData} margin={{ top: 5, right: 20, bottom: 30, left: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-                    <XAxis dataKey="name" tick={{ fontSize: 11 }} angle={-20} textAnchor="end" />
-                    <YAxis tick={{ fontSize: 12 }} />
-                    <Tooltip />
-                    <Bar dataKey="count" name="Count" fill="#163B5C" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
+                <SellerReturnsChart data={statusChartData} />
               </div>
             </SellerPanel>
           ) : null}
@@ -136,9 +143,9 @@ export function SellerReturnsReportClient({ initialDateFrom = "", initialDateTo 
                   <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-[#667085]">
                     <span className="rounded bg-[#EAF1F7] px-2 py-0.5 font-semibold text-[#163B5C]">{r.resolution.replace(/_/g, " ")}</span>
                     <span>Reason: {r.reason}</span>
-                    <span>Requested: <span className="font-bold text-[#ED3500]">{formatMoney(r.requestedAmountPaise)}</span></span>
+                    <span>Requested: <span className="font-bold text-[#ED3500]">{formatMoney(r.requestedAmountPaise, currency)}</span></span>
                     {r.approvedAmountPaise > 0 ? (
-                      <span>Approved: <span className="font-bold text-green-600">{formatMoney(r.approvedAmountPaise)}</span></span>
+                      <span>Approved: <span className="font-bold text-green-600">{formatMoney(r.approvedAmountPaise, currency)}</span></span>
                     ) : null}
                   </div>
                 </div>
@@ -150,6 +157,14 @@ export function SellerReturnsReportClient({ initialDateFrom = "", initialDateTo 
           </SellerPanel>
         </>
       ) : null}
+    </div>
+  );
+}
+
+function SellerChartLoading() {
+  return (
+    <div className="grid h-full place-items-center rounded-md bg-[#F8FAFC] text-sm font-bold text-[#667085]">
+      Loading chart
     </div>
   );
 }

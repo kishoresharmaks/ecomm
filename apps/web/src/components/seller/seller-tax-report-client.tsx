@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { FormEvent, useState } from "react";
 import { CalendarDays, Download, FileText } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend } from "recharts";
 import { Button, SectionHeading } from "@indihub/ui";
 import { formatMoney } from "@/lib/storefront-api";
 import { downloadSellerReportCsv, getSellerTaxReport } from "@/lib/seller-api";
@@ -20,6 +20,14 @@ import {
   isSellerOnboardingRequiredError,
   useSellerAuth
 } from "./seller-ui";
+
+const SellerTaxChart = dynamic(
+  () => import("./report-charts/seller-tax-chart"),
+  {
+    ssr: false,
+    loading: () => <SellerChartLoading />,
+  },
+);
 
 export function SellerTaxReportClient({ initialDateFrom = "", initialDateTo = "" }: { initialDateFrom?: string; initialDateTo?: string }) {
   const sellerAuth = useSellerAuth();
@@ -57,8 +65,6 @@ export function SellerTaxReportClient({ initialDateFrom = "", initialDateTo = ""
         { name: "Platform Fee", value: report.summary.platformFeePaise / 100 },
       ].filter((d) => d.value > 0)
     : [];
-
-  const PIE_COLORS = ["#163B5C", "#ED3500", "#3B82F6", "#F59E0B", "#10B981"];
 
   return (
     <div className="grid gap-5">
@@ -110,17 +116,7 @@ export function SellerTaxReportClient({ initialDateFrom = "", initialDateTo = ""
               <SectionHeading title="Deduction Breakdown" description="Visual split of all tax and fee deductions from your gross sales." />
               <div className="mt-5 flex flex-col items-center">
                 <div className="h-[280px] w-full max-w-md">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label={(entry: { name?: string; percent?: number }) => `${(entry.name ?? "").split(" ")[0]} ${((entry.percent ?? 0) * 100).toFixed(0)}%`}>
-                        {pieData.map((_, i) => (
-                          <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length] as string} />
-                        ))}
-                      </Pie>
-                      <Tooltip formatter={(value) => [`${currencySymbol}${value}`, undefined]} />
-                      <Legend />
-                    </PieChart>
-                  </ResponsiveContainer>
+                  <SellerTaxChart data={pieData} currencySymbol={currencySymbol} />
                 </div>
               </div>
             </SellerPanel>
@@ -168,6 +164,14 @@ export function SellerTaxReportClient({ initialDateFrom = "", initialDateTo = ""
           </SellerPanel>
         </>
       ) : null}
+    </div>
+  );
+}
+
+function SellerChartLoading() {
+  return (
+    <div className="grid h-full place-items-center rounded-md bg-[#F8FAFC] text-sm font-bold text-[#667085]">
+      Loading chart
     </div>
   );
 }
