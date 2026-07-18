@@ -25,7 +25,6 @@ import {
   Store01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react-native";
-import { FlashList } from "@shopify/flash-list";
 import { Link, useRouter } from "expo-router";
 import type { Href } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -34,6 +33,7 @@ import {
   AccessibilityInfo,
   ActivityIndicator,
   Animated,
+  FlatList,
   Image,
   type ImageStyle,
   Keyboard,
@@ -238,17 +238,19 @@ function HomeScreen() {
 
   return (
     <Screen padded={false}>
-      <FlashList
+      <FlatList
         contentContainerStyle={styles.feedContent}
         data={feedItems}
-        getItemType={(item) => item.type}
+        initialNumToRender={4}
         keyExtractor={(item) => item.id}
+        removeClippedSubviews={false}
         refreshControl={
           <RefreshControl refreshing={homeQuery.isRefetching} tintColor={colors.primary} onRefresh={() => void homeQuery.refetch()} />
         }
         ListHeaderComponent={<HomeHeader selectedLocation={selectedLocation} onOpenLocation={() => setLocationOpen(true)} />}
         ListEmptyComponent={<HomeEmptyState isError={homeQuery.isError} isLoading={homeQuery.isLoading} />}
         renderItem={({ item }) => <HomeFeedCard item={item} wishlist={wishlist} />}
+        windowSize={7}
       />
       <LocationSelectorModal open={locationOpen} onClose={() => setLocationOpen(false)} />
     </Screen>
