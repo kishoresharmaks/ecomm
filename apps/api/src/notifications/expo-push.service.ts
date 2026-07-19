@@ -16,6 +16,15 @@ export type SellerPushPayload = {
   data: Record<string, string>;
 };
 
+export type DeliveryPushPayload = {
+  userId: string;
+  templateCode: string;
+  eventCode: string;
+  title: string;
+  body: string;
+  data: Record<string, string>;
+};
+
 export type CustomerPushPayload = {
   customerId: string;
   type: PushNotificationType;
@@ -45,6 +54,14 @@ export class ExpoPushService {
     });
 
     await Promise.allSettled(tokens.map((token) => this.deliver(input, token)));
+  }
+
+  async notifyDeliveryPartner(input: DeliveryPushPayload) {
+    const tokens = await this.prisma.client.deliveryPushToken.findMany({
+      where: { userId: input.userId, enabled: true, revokedAt: null },
+    });
+
+    await Promise.allSettled(tokens.map((token) => this.deliverDeliveryPartner(input, token)));
   }
 
   async notifyCustomer(input: CustomerPushPayload) {
@@ -196,6 +213,70 @@ export class ExpoPushService {
         data: { status: NotificationStatus.FAILED, errorMessage: error instanceof Error ? error.message : String(error) },
       });
       this.logger.warn(`Seller push failed for ${token.id}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  private async deliverDeliveryPartner(
+    input: DeliveryPushPayload,
+    token: { id: string; token: string; userId: string },
+  ) {
+    const log = await this.prisma.client.notificationLog.create({
+      data: {
+        userId: token.userId,
+        channel: NotificationChannel.PUSH,
+        templateCode: input.templateCode,
+        eventCode: input.eventCode,
+        recipient: token.token,
+        subject: input.title,
+        body: input.body,
+        variables: input.data,
+        status: NotificationStatus.PENDING,
+      },
+    });
+
+    try {
+      const response = await fetch(this.endpoint, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          to: token.token,
+          title: input.title,
+          body: input.body,
+          data: input.data,
+          sound: "default",
+          channelId: "delivery-alerts",
+        }),
+      });
+      const result = (await response.json().catch(() => null)) as { data?: { id?: string; status?: string; message?: string } } | null;
+      const receipt = result?.data;
+      const failed = !response.ok || receipt?.status === "error";
+
+      await this.prisma.client.notificationLog.update({
+        where: { id: log.id },
+        data: {
+          status: failed ? NotificationStatus.FAILED : NotificationStatus.SENT,
+          providerMessageId: receipt?.id ?? null,
+          errorMessage: failed ? receipt?.message ?? `Expo Push API returned HTTP ${response.status}` : null,
+          sentAt: failed ? null : new Date(),
+        },
+      });
+
+      const normalizedMessage = receipt?.message?.toLowerCase().replace(/[^a-z]/g, "") ?? "";
+      if (failed && normalizedMessage.includes("devicenotregistered")) {
+        await this.prisma.client.deliveryPushToken.update({
+          where: { id: token.id },
+          data: { enabled: false, revokedAt: new Date() },
+        });
+      }
+    } catch (error) {
+      await this.prisma.client.notificationLog.update({
+        where: { id: log.id },
+        data: { status: NotificationStatus.FAILED, errorMessage: error instanceof Error ? error.message : String(error) },
+      });
+      this.logger.warn(`Delivery partner push failed for ${token.id}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 

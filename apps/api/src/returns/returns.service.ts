@@ -56,6 +56,7 @@ import { CustomersService } from "../customers/customers.service";
 import { SellerLedgerService } from "../finance/seller-ledger.service";
 import { EMAIL_TRIGGER_EVENTS } from "../notifications/email-trigger-catalog";
 import { NotificationsService } from "../notifications/notifications.service";
+import { ExpoPushService } from "../notifications/expo-push.service";
 import { PrismaService } from "../prisma/prisma.service";
 import {
   ApproveRefundDto,
@@ -660,6 +661,7 @@ export class ReturnsService {
     @Inject(CustomersService) private readonly customers: CustomersService,
     @Inject(SellerLedgerService) private readonly sellerLedger: SellerLedgerService,
     @Inject(NotificationsService) private readonly notifications: NotificationsService,
+    @Inject(ExpoPushService) private readonly expoPush: ExpoPushService,
   ) {}
 
   async createCancellation(actor: RequestUser, orderNumber: string, dto: CreateCancellationDto) {
@@ -4005,6 +4007,24 @@ export class ReturnsService {
       where: { id: returnRequestId },
       include: returnDetailInclude,
     });
+
+    if (partnerUserId) {
+      // Fire-and-forget: assignment must not fail because a push could not be sent.
+      void this.expoPush
+        .notifyDeliveryPartner({
+          userId: partnerUserId,
+          templateCode: "DELIVERY_RETURN_PICKUP_ASSIGNED_PUSH",
+          eventCode: "delivery.return.pickup_assigned",
+          title: "Return pickup assigned",
+          body: `Return ${requestNumber} is assigned to you. Accept it to start the customer pickup.`,
+          data: {
+            kind: "return",
+            requestNumber,
+          },
+        })
+        .catch(() => undefined);
+    }
+
     return this.returnDetailReadback(detail!, { includeCustomerContact: true });
   }
 

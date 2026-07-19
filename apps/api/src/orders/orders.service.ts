@@ -106,6 +106,7 @@ import {
   UpdateDeliveryPartnerProfileDto,
   UpdateOwnDeliveryPartnerProfileDto,
 } from "./dto/delivery-operations.dto";
+import { RegisterDeliveryPushTokenDto, RevokeDeliveryPushTokenDto } from "./dto/delivery-push-token.dto";
 import { UpdateDeliveryDto } from "./dto/delivery-update.dto";
 import { OrderQueryDto } from "./dto/order-query.dto";
 import { UpdateOrderStatusDto, UpdateSellerOrderStatusDto } from "./dto/order-status.dto";
@@ -2059,6 +2060,46 @@ export class OrdersService {
     });
 
     return this.getDeliveryPartnerPayout(payoutId);
+  }
+
+  async registerDeliveryPushToken(actor: RequestUser, dto: RegisterDeliveryPushTokenDto) {
+    await this.getDeliveryPartnerUserOrThrow(actor.id);
+    const token = dto.token.trim();
+
+    const pushToken = await this.prisma.client.deliveryPushToken.upsert({
+      where: { token },
+      update: {
+        userId: actor.id,
+        platform: dto.platform,
+        deviceId: dto.deviceId?.trim() || null,
+        appVersion: dto.appVersion?.trim() || null,
+        enabled: true,
+        revokedAt: null,
+        lastSeenAt: new Date(),
+      },
+      create: {
+        userId: actor.id,
+        token,
+        platform: dto.platform,
+        deviceId: dto.deviceId?.trim() || null,
+        appVersion: dto.appVersion?.trim() || null,
+      },
+    });
+
+    return { registered: true, tokenId: pushToken.id };
+  }
+
+  async revokeDeliveryPushToken(actor: RequestUser, dto: RevokeDeliveryPushTokenDto) {
+    await this.prisma.client.deliveryPushToken.updateMany({
+      where: { token: dto.token.trim(), userId: actor.id },
+      data: {
+        enabled: false,
+        revokedAt: new Date(),
+        lastSeenAt: new Date(),
+      },
+    });
+
+    return { revoked: true };
   }
 
   async updateOwnDeliveryPartnerProfile(
@@ -8632,17 +8673,30 @@ export class OrdersService {
       return;
     }
 
-    await this.notifications.notifyEvent({
-      eventCode: EMAIL_TRIGGER_EVENTS.DELIVERY_ASSIGNED_PARTNER,
-      recipientType: EmailRecipientType.DELIVERY_PARTNER,
-      recipient: partner.email,
-      userId: partner.id,
-      variables: {
-        orderNumber: order.orderNumber,
-        partnerName: partner.fullName ?? partner.email,
-        note: note ?? "",
-      },
-    });
+    await Promise.allSettled([
+      this.notifications.notifyEvent({
+        eventCode: EMAIL_TRIGGER_EVENTS.DELIVERY_ASSIGNED_PARTNER,
+        recipientType: EmailRecipientType.DELIVERY_PARTNER,
+        recipient: partner.email,
+        userId: partner.id,
+        variables: {
+          orderNumber: order.orderNumber,
+          partnerName: partner.fullName ?? partner.email,
+          note: note ?? "",
+        },
+      }),
+      this.expoPush.notifyDeliveryPartner({
+        userId: partner.id,
+        templateCode: "DELIVERY_ORDER_ASSIGNED_PUSH",
+        eventCode: "delivery.order.assigned",
+        title: "New delivery assigned",
+        body: `Order ${order.orderNumber} is assigned to you. Accept it to start the pickup.`,
+        data: {
+          kind: "order",
+          orderNumber: order.orderNumber,
+        },
+      }),
+    ]);
   }
 
   private async notifyDeliveryAssignmentDecision(

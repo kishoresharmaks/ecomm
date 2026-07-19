@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CustomersService } from "../customers/customers.service";
 import { SellerLedgerService } from "../finance/seller-ledger.service";
+import { ExpoPushService } from "../notifications/expo-push.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { ReturnsService } from "./returns.service";
@@ -11,6 +12,7 @@ function returnsServiceForHelperTests() {
     {} as unknown as CustomersService,
     {} as unknown as SellerLedgerService,
     {} as unknown as NotificationsService,
+    {} as unknown as ExpoPushService,
   );
   return service as unknown as {
     firstTrimmedString: (...values: Array<string | undefined>) => string | undefined;

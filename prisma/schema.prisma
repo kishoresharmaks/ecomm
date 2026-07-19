@@ -1170,6 +1170,7 @@ model User {
   notificationLogs                         NotificationLog[]
   customerPushTokens                       CustomerPushToken[]
   sellerPushTokens                         SellerPushToken[]
+  deliveryPushTokens                       DeliveryPushToken[]
   createdPushNotificationCampaigns         PushNotificationCampaign[]         @relation("PushCampaignCreatedBy")
   updatedPushNotificationCampaigns         PushNotificationCampaign[]         @relation("PushCampaignUpdatedBy")
   auditLogs                                AuditLog[]
@@ -1512,6 +1513,25 @@ model SellerPushToken {
   @@index([userId, enabled])
   @@index([lastSeenAt])
   @@map("seller_push_tokens")
+}
+
+model DeliveryPushToken {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  token      String    @unique
+  platform   String
+  deviceId   String?   @map("device_id")
+  appVersion String?   @map("app_version")
+  enabled    Boolean   @default(true)
+  lastSeenAt DateTime  @default(now()) @map("last_seen_at")
+  revokedAt  DateTime? @map("revoked_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, enabled])
+  @@index([lastSeenAt])
+  @@map("delivery_push_tokens")
 }
 
 model SellerProfile {

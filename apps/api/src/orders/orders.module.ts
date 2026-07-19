@@ -23,6 +23,7 @@ import { CourierAdaptersModule } from "./courier-adapters/courier-adapters.modul
 import { CourierLogisticsService } from "./courier-logistics.service";
 import { CustomerOrdersController } from "./customer-orders.controller";
 import { DeliveryPartnerProfileController } from "./delivery-partner-profile.controller";
+import { DeliveryPushController } from "./delivery-push.controller";
 import {
   DeliveryPartnerOrdersController,
   FinanceDeliveryPartnerPayoutsController,
@@ -48,6 +49,7 @@ import { InternalOrdersController } from "./internal-orders.controller";
     FinanceOrderPaymentsController,
     SellerOrdersController,
     DeliveryPartnerProfileController,
+    DeliveryPushController,
     DeliveryPartnerOrdersController,
     DeliveryPartnerWalletController,
     FinanceDeliveryPartnerPayoutsController,

@@ -86,6 +86,89 @@ describe("ExpoPushService", () => {
     });
   });
 
+  it("sends delivery partner push notifications on the delivery-alerts channel", async () => {
+    const prisma = createPrisma();
+    prisma.client.deliveryPushToken.findMany.mockResolvedValue([
+      { id: "token_1", token: "ExponentPushToken[token-1]", userId: "user_1" },
+    ]);
+    prisma.client.notificationLog.create.mockResolvedValue({ id: "log_1" });
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ data: { id: "ticket_1", status: "ok" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const service = new ExpoPushService(prisma as never);
+    await service.notifyDeliveryPartner({
+      userId: "user_1",
+      templateCode: "DELIVERY_ORDER_ASSIGNED_PUSH",
+      eventCode: "delivery.order.assigned",
+      title: "New delivery assigned",
+      body: "Order ORD-1 is assigned to you. Accept it to start the pickup.",
+      data: { kind: "order", orderNumber: "ORD-1" },
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://exp.host/--/api/v2/push/send",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          to: "ExponentPushToken[token-1]",
+          title: "New delivery assigned",
+          body: "Order ORD-1 is assigned to you. Accept it to start the pickup.",
+          data: { kind: "order", orderNumber: "ORD-1" },
+          sound: "default",
+          channelId: "delivery-alerts",
+        }),
+      }),
+    );
+    expect(prisma.client.notificationLog.update).toHaveBeenCalledWith({
+      where: { id: "log_1" },
+      data: expect.objectContaining({
+        status: NotificationStatus.SENT,
+        providerMessageId: "ticket_1",
+      }),
+    });
+  });
+
+  it("revokes stale delivery push tokens when the device is not registered", async () => {
+    const prisma = createPrisma();
+    prisma.client.deliveryPushToken.findMany.mockResolvedValue([
+      { id: "token_1", token: "ExponentPushToken[token-1]", userId: "user_1" },
+    ]);
+    prisma.client.notificationLog.create.mockResolvedValue({ id: "log_1" });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ data: { status: "error", message: "DeviceNotRegistered" } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+
+    const service = new ExpoPushService(prisma as never);
+    await service.notifyDeliveryPartner({
+      userId: "user_1",
+      templateCode: "DELIVERY_ORDER_ASSIGNED_PUSH",
+      eventCode: "delivery.order.assigned",
+      title: "New delivery assigned",
+      body: "Order ORD-1 is assigned to you.",
+      data: { kind: "order", orderNumber: "ORD-1" },
+    });
+
+    expect(prisma.client.notificationLog.update).toHaveBeenCalledWith({
+      where: { id: "log_1" },
+      data: expect.objectContaining({ status: NotificationStatus.FAILED }),
+    });
+    expect(prisma.client.deliveryPushToken.update).toHaveBeenCalledWith({
+      where: { id: "token_1" },
+      data: expect.objectContaining({ enabled: false }),
+    });
+  });
+
   it("creates one customer inbox notification and fans out per token", async () => {
     const prisma = createPrisma();
     prisma.client.customer.findUnique.mockResolvedValue({
@@ -240,6 +323,10 @@ function createPrisma() {
   return {
     client: {
       sellerPushToken: {
+        findMany: vi.fn(),
+        update: vi.fn(),
+      },
+      deliveryPushToken: {
         findMany: vi.fn(),
         update: vi.fn(),
       },
