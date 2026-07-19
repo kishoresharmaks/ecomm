@@ -5,7 +5,7 @@ const fs = require("node:fs");
 
 const sentryOrganization = process.env.SENTRY_ORG ?? process.env.EXPO_PUBLIC_SENTRY_ORG;
 const sentryProject = process.env.SENTRY_PROJECT ?? process.env.EXPO_PUBLIC_SENTRY_PROJECT;
-const easProjectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID ?? "e017cb61-41d7-4e0f-9268-573106ddd729";
+const easProjectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID ?? "6cf13828-ce64-4e04-aadf-cfd59256a3db";
 const apsEnvironment = process.env.EXPO_PUBLIC_APP_ENV === "production" ? "production" : "development";
 const androidGoogleServicesFile =
   process.env.GOOGLE_SERVICES_JSON ??
@@ -32,6 +32,7 @@ module.exports = {
   expo: {
     name: "1HandIndia Seller",
     slug: "onehandindia-seller",
+    owner: "onehandindiasteam",
     scheme: "onehandindia-seller",
     version: "0.1.0",
     orientation: "portrait",

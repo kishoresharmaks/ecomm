@@ -15,7 +15,7 @@
         "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_live_Y2xlcmsuMWhhbmRpbmRpYS5jb20k",
         "EXPO_PUBLIC_DELIVERY_MIN_ANDROID_VERSION_CODE": "1",
         "EXPO_PUBLIC_DELIVERY_UPDATE_URL": "https://1handindia.com/delivery",
-        "EXPO_PUBLIC_EAS_PROJECT_ID": "9e885388-f7f2-4ca6-bfec-0cbbc58eebb8",
+        "EXPO_PUBLIC_EAS_PROJECT_ID": "e77779de-aa9a-447c-a0eb-91802cf2deb0",
         "EXPO_PUBLIC_ENABLE_SENTRY": "false"
       },
       "android": {
@@ -32,7 +32,7 @@
         "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_live_Y2xlcmsuMWhhbmRpbmRpYS5jb20k",
         "EXPO_PUBLIC_DELIVERY_MIN_ANDROID_VERSION_CODE": "1",
         "EXPO_PUBLIC_DELIVERY_UPDATE_URL": "https://1handindia.com/delivery",
-        "EXPO_PUBLIC_EAS_PROJECT_ID": "9e885388-f7f2-4ca6-bfec-0cbbc58eebb8",
+        "EXPO_PUBLIC_EAS_PROJECT_ID": "e77779de-aa9a-447c-a0eb-91802cf2deb0",
         "EXPO_PUBLIC_ENABLE_SENTRY": "true"
       },
       "android": {
@@ -49,7 +49,7 @@
         "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_live_Y2xlcmsuMWhhbmRpbmRpYS5jb20k",
         "EXPO_PUBLIC_DELIVERY_MIN_ANDROID_VERSION_CODE": "1",
         "EXPO_PUBLIC_DELIVERY_UPDATE_URL": "https://1handindia.com/delivery",
-        "EXPO_PUBLIC_EAS_PROJECT_ID": "9e885388-f7f2-4ca6-bfec-0cbbc58eebb8",
+        "EXPO_PUBLIC_EAS_PROJECT_ID": "e77779de-aa9a-447c-a0eb-91802cf2deb0",
         "EXPO_PUBLIC_ENABLE_SENTRY": "true"
       }
     }

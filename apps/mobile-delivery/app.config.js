@@ -5,7 +5,7 @@ const fs = require("node:fs");
 
 const sentryOrganization = process.env.SENTRY_ORG ?? process.env.EXPO_PUBLIC_SENTRY_ORG;
 const sentryProject = process.env.SENTRY_PROJECT ?? process.env.EXPO_PUBLIC_SENTRY_PROJECT;
-const easProjectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID ?? "9e885388-f7f2-4ca6-bfec-0cbbc58eebb8";
+const easProjectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID ?? "e77779de-aa9a-447c-a0eb-91802cf2deb0";
 const androidGoogleServicesFile =
   process.env.GOOGLE_SERVICES_JSON ??
   (fs.existsSync("./google-services.json")
@@ -29,8 +29,7 @@ const sentryPlugin =
 
 module.exports = {
   expo: {
-    owner: "kishorekrishks",
-
+    owner: "onehandindiasteam",
     name: "1HandIndia Delivery",
     slug: "onehandindia-delivery",
     scheme: "onehandindia-delivery",
