@@ -40,10 +40,13 @@ export default function DeliveryDashboardScreen() {
   const isRefreshing = ordersQuery.isFetching || walletQuery.isFetching || profileQuery.isFetching;
 
   const handleRefresh = async () => {
-    await queryClient.invalidateQueries({ queryKey: ["delivery-orders"] });
-    await queryClient.invalidateQueries({ queryKey: ["delivery-wallet"] });
-    await queryClient.invalidateQueries({ queryKey: ["delivery-profile"] });
-    await Promise.all([ordersQuery.refetch(), walletQuery.refetch(), profileQuery.refetch()]);
+    // invalidateQueries already refetches active queries; calling refetch()
+    // after it would fetch every endpoint twice.
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["delivery-orders"] }),
+      queryClient.invalidateQueries({ queryKey: ["delivery-wallet"] }),
+      queryClient.invalidateQueries({ queryKey: ["delivery-profile"] }),
+    ]);
   };
 
   return (

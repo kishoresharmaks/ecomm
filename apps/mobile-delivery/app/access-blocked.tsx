@@ -2,11 +2,16 @@ import { useAuth } from "@clerk/clerk-expo";
 import { Stack } from "expo-router";
 import { Text } from "react-native";
 import { Button, Card, Screen } from "../src/components/screen";
+import { revokeCurrentDeliveryPushToken } from "../src/features/delivery/use-delivery-push-notifications";
 import { webBaseUrl } from "../src/lib/api";
 import * as Linking from "expo-linking";
 
 export default function AccessBlockedScreen() {
   const { signOut } = useAuth();
+  const handleSignOut = async () => {
+    await revokeCurrentDeliveryPushToken();
+    await signOut();
+  };
   return (
     <Screen>
       <Stack.Screen options={{ headerShown: true, title: "Access pending" }} />
@@ -16,7 +21,7 @@ export default function AccessBlockedScreen() {
           This app is only for approved 1HandIndia delivery partners. Register or wait for admin approval, then sign in again.
         </Text>
         <Button title="Register on website" onPress={() => void Linking.openURL(`${webBaseUrl()}/delivery/register`)} />
-        <Button title="Sign out" tone="secondary" onPress={() => void signOut()} />
+        <Button title="Sign out" tone="secondary" onPress={() => void handleSignOut()} />
       </Card>
     </Screen>
   );

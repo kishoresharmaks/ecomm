@@ -1,6 +1,6 @@
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Linking, Platform, Pressable, Text, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -40,6 +40,7 @@ import {
   withDeliveryTime,
 } from "../../src/features/delivery/delivery-date-time";
 import { useMobileDeliveryAuth } from "../../src/auth/mobile-delivery-auth-context";
+import { useServerSync } from "../../src/lib/use-server-sync";
 
 const deliveryProgressionStatuses: DeliveryStatus[] = ["PENDING", "PACKED", "DISPATCHED", "IN_TRANSIT", "DELIVERED"];
 const deliveryStatuses: DeliveryStatus[] = [...deliveryProgressionStatuses, "CANCELLED"];
@@ -92,18 +93,33 @@ export default function DeliveryOrderDetailScreen() {
   const deliveryEstimateChanged =
     (storedDeliveryEstimate?.getTime() ?? null) !== (estimatedDeliveryDate?.getTime() ?? null);
 
-  useEffect(() => {
-    if (!order) return;
-    const nextCodPayment = findCodPayment(order);
-    setTrackingReference(order.deliveryDetail?.trackingReference ?? "");
-    setEstimatedDeliveryDate(parseDeliveryEstimate(order.deliveryDetail?.estimatedDeliveryDate));
-    setDeliveryNote(order.deliveryDetail?.deliveryNote ?? "");
-    setSelectedDeliveryStatus(deliveryStatusValue(order.deliveryDetail?.status ?? order.deliveryStatus));
-    setReceiverName(order.deliveryDetail?.receiverName ?? order.shippingAddressSnapshot?.fullName ?? "");
-    setProofReference(order.deliveryDetail?.proofReference ?? "");
-    setProofNote(order.deliveryDetail?.proofNote ?? "");
-    setCodAmount(nextCodPayment ? formatAmountText(nextCodPayment.amountPaise) : "");
-  }, [order]);
+  const serverFormValues = order
+    ? {
+        trackingReference: order.deliveryDetail?.trackingReference ?? "",
+        estimatedDeliveryDate: order.deliveryDetail?.estimatedDeliveryDate ?? null,
+        deliveryNote: order.deliveryDetail?.deliveryNote ?? "",
+        deliveryStatus: deliveryStatusValue(order.deliveryDetail?.status ?? order.deliveryStatus),
+        receiverName: order.deliveryDetail?.receiverName ?? order.shippingAddressSnapshot?.fullName ?? "",
+        proofReference: order.deliveryDetail?.proofReference ?? "",
+        proofNote: order.deliveryDetail?.proofNote ?? "",
+        codAmountPaise: codPayment?.amountPaise ?? null,
+      }
+    : null;
+  useServerSync(
+    serverFormValues,
+    (values) => {
+      if (!values) return;
+      setTrackingReference(values.trackingReference);
+      setEstimatedDeliveryDate(parseDeliveryEstimate(values.estimatedDeliveryDate));
+      setDeliveryNote(values.deliveryNote);
+      setSelectedDeliveryStatus(values.deliveryStatus);
+      setReceiverName(values.receiverName);
+      setProofReference(values.proofReference);
+      setProofNote(values.proofNote);
+      setCodAmount(values.codAmountPaise !== null ? formatAmountText(values.codAmountPaise) : "");
+    },
+    Boolean(order),
+  );
 
   const assignmentMutation = useMutation({
     mutationFn: (decision: "ACCEPT" | "REJECT") => respondDeliveryAssignment(auth.authHeaders, orderNumber, decision, assignmentNote.trim() || undefined),
@@ -619,7 +635,6 @@ function DeliveryEstimateField({
               onDismiss={() => setActivePicker(null)}
               onValueChange={(_event, selected) => selectValue(activePicker, selected)}
               positiveButton={{ label: activePicker === "date" ? "Select date" : "Select time" }}
-              presentation="dialog"
               value={pickerValue}
               {...(activePicker === "date" ? { minimumDate: earliestDeliveryDate() } : {})}
             />

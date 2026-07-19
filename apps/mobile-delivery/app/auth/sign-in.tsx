@@ -5,6 +5,7 @@ import * as WebBrowser from "expo-web-browser";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { mobileDeliveryAuthErrorMessage, useMobileDeliveryAuth } from "../../src/auth/mobile-delivery-auth-context";
+import { revokeCurrentDeliveryPushToken } from "../../src/features/delivery/use-delivery-push-notifications";
 import { webBaseUrl } from "../../src/lib/api";
 
 WebBrowser.maybeCompleteAuthSession();
@@ -38,7 +39,9 @@ export default function DeliverySignInScreen() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"email" | "google" | "sign-out" | null>(null);
-  const clerkPublishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim() || "pk_live_Y2xlcmsuMWhhbmRpbmRpYS5jb20k";
+  // No fallback here on purpose: a missing env var should surface the setup
+  // warning below instead of being masked by a hardcoded key.
+  const clerkPublishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim();
   const hasClerkKey = Boolean(clerkPublishableKey);
 
   useEffect(() => {
@@ -91,6 +94,7 @@ export default function DeliverySignInScreen() {
   async function handleSignOut() {
     setBusy("sign-out");
     try {
+      await revokeCurrentDeliveryPushToken();
       await signOut();
     } finally {
       setBusy(null);

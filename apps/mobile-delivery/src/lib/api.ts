@@ -61,7 +61,14 @@ async function requestJson<T>(
 ): Promise<T> {
   const result = await requestRaw(method, options, { retryUnauthorized: true });
   if (result.response.status === 204) return undefined as T;
-  return (await result.response.json()) as T;
+  try {
+    return (await result.response.json()) as T;
+  } catch {
+    throw new MobileApiError(
+      "1HandIndia sent an unexpected response. Please try again.",
+      result.response.status,
+    );
+  }
 }
 
 async function requestRaw(
@@ -72,7 +79,17 @@ async function requestRaw(
   let result = await send(method, options, { skipCache: false });
 
   if (result.response.status === 401 && settings.retryUnauthorized && options.auth?.getBearerToken) {
-    result = await send(method, options, { skipCache: true });
+    // Retrying with the token that just failed is a guaranteed second 401 —
+    // only resend when a genuinely fresh token could be minted.
+    let freshToken: string | null | undefined;
+    try {
+      freshToken = await options.auth.getBearerToken({ skipCache: true });
+    } catch {
+      freshToken = null;
+    }
+    if (freshToken && freshToken !== result.bearerToken) {
+      result = await send(method, options, { skipCache: true, overrideToken: freshToken });
+    }
   }
 
   if (!result.response.ok) {
@@ -87,16 +104,24 @@ async function requestRaw(
 async function send(
   method: "GET" | "POST" | "PATCH",
   options: ApiRequestOptions & { body?: unknown },
-  tokenOptions: BearerTokenOptions,
+  tokenOptions: BearerTokenOptions & { overrideToken?: string },
 ) {
+  if (options.signal?.aborted) {
+    throw new DOMException("The request was cancelled.", "AbortError");
+  }
+
   const url = buildApiUrl(options.path, options.searchParams);
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, REQUEST_TIMEOUT_MS);
   const abortListener = () => controller.abort();
   options.signal?.addEventListener("abort", abortListener, { once: true });
 
   try {
-    const bearerToken = await bearerTokenForRequest(options, tokenOptions);
+    const bearerToken = tokenOptions.overrideToken ?? (await bearerTokenForRequest(options, tokenOptions));
     const response = await fetch(url, {
       method,
       headers: {
@@ -110,6 +135,12 @@ async function send(
     return { response, bearerToken };
   } catch (error) {
     if (error instanceof MobileApiError) throw error;
+    // A caller-initiated abort is a cancellation, not a connectivity failure;
+    // rethrow it untouched so React Query can ignore it.
+    if (options.signal?.aborted && !timedOut) throw error;
+    if (timedOut) {
+      throw new MobileApiError("The request timed out. Check your connection and try again.", 0);
+    }
     throw new MobileApiError("We could not reach 1HandIndia. Check your connection and try again.", 0);
   } finally {
     clearTimeout(timeout);
@@ -174,8 +205,10 @@ export function sanitizeAuthMessage(message: string, status: number) {
 }
 
 export function compactPayload<T extends Record<string, unknown>>(value: T) {
+  // Drops undefined and "" (field untouched) but keeps null, which callers
+  // send deliberately to clear a stored value server-side.
   return Object.fromEntries(
-    Object.entries(value).filter(([, entry]) => entry !== undefined && entry !== "" && entry !== null),
+    Object.entries(value).filter(([, entry]) => entry !== undefined && entry !== ""),
   );
 }
 

@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Linking, Text, View } from "react-native";
 import * as Location from "expo-location";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Card, Field, Header, Metric, QueryState, Screen, StatusChip, formatPaise } from "../../src/components/screen";
 import { getDeliveryProfile, updateDeliveryProfile } from "../../src/features/delivery/delivery-api";
 import { useMobileDeliveryAuth } from "../../src/auth/mobile-delivery-auth-context";
+import { useServerSync } from "../../src/lib/use-server-sync";
 
 export default function DeliveryProfileScreen() {
   const auth = useMobileDeliveryAuth();
@@ -33,31 +34,35 @@ export default function DeliveryProfileScreen() {
   const updateMutation = useMutation({
     mutationFn: () =>
       updateDeliveryProfile(auth.authHeaders, {
-        phone,
-        vehicleNumber,
+        // null (not "") clears a stored value server-side; compactPayload keeps null.
+        phone: phone.trim() || null,
+        vehicleNumber: vehicleNumber.trim() || null,
         isAvailable,
         ...optionalNumberPayload("baseLatitude", baseLatitude),
         ...optionalNumberPayload("baseLongitude", baseLongitude),
         ...optionalPositiveIntegerPayload("serviceRadiusKm", serviceRadiusKm),
-        notes,
+        notes: notes.trim() || null,
       }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["delivery-profile"] });
     },
   });
 
-  useEffect(() => {
-    const profile = profileQuery.data?.deliveryProfile;
-    if (profile) {
-      setPhone(profile.phone ?? profileQuery.data?.phone ?? "");
+  useServerSync(
+    profileQuery.data ?? null,
+    (data) => {
+      const profile = data?.deliveryProfile;
+      if (!profile) return;
+      setPhone(profile.phone ?? data?.phone ?? "");
       setVehicleNumber(profile.vehicleNumber ?? "");
       setIsAvailable(profile.isAvailable ?? true);
-      setBaseLatitude(profile.baseLatitude ?? "");
-      setBaseLongitude(profile.baseLongitude ?? "");
+      setBaseLatitude(profile.baseLatitude != null ? String(profile.baseLatitude) : "");
+      setBaseLongitude(profile.baseLongitude != null ? String(profile.baseLongitude) : "");
       setServiceRadiusKm(profile.serviceRadiusKm ? String(profile.serviceRadiusKm) : "");
       setNotes(profile.notes ?? "");
-    }
-  }, [profileQuery.data]);
+    },
+    Boolean(profileQuery.data),
+  );
 
   const profile = profileQuery.data;
   const hasBaseLocation = Boolean(baseLatitude && baseLongitude);
@@ -100,10 +105,21 @@ export default function DeliveryProfileScreen() {
         accuracy: Location.Accuracy.High,
       });
 
-      if (!position.coords.latitude || !position.coords.longitude) {
-        const lastKnown = await Location.getLastKnownPositionAsync({});
-        if (lastKnown) {
+      if (!Number.isFinite(position.coords.latitude) || !Number.isFinite(position.coords.longitude)) {
+        const lastKnown = await Location.getLastKnownPositionAsync({ maxAge: 5 * 60 * 1000 });
+        if (
+          lastKnown &&
+          Number.isFinite(lastKnown.coords.latitude) &&
+          Number.isFinite(lastKnown.coords.longitude)
+        ) {
           position = lastKnown;
+        } else {
+          setLocationState({
+            loading: false,
+            tone: "danger",
+            message: "Could not read GPS location. Please try again outdoors or near a window.",
+          });
+          return;
         }
       }
 

@@ -283,15 +283,15 @@ export function getDeliveryProfile(auth: MobileAuthHeaders) {
 export function updateDeliveryProfile(
   auth: MobileAuthHeaders,
   payload: {
-    phone?: string;
-    vehicleNumber?: string;
+    phone?: string | null;
+    vehicleNumber?: string | null;
     isAvailable?: boolean;
     servicePincodes?: string[];
     serviceLocalAreaCodes?: string[];
     baseLatitude?: number;
     baseLongitude?: number;
     serviceRadiusKm?: number;
-    notes?: string;
+    notes?: string | null;
   },
 ) {
   return patchJson<DeliveryProfile>({ path: "/delivery/profile", auth, body: compactPayload(payload) });

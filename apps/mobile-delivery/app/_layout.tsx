@@ -8,6 +8,7 @@ import { Linking, Text } from "react-native";
 import { MobileDeliveryAuthProvider, useMobileDeliveryAuth } from "../src/auth/mobile-delivery-auth-context";
 import { Button, Card, Screen } from "../src/components/screen";
 import { getDeliveryAccess } from "../src/features/delivery/delivery-api";
+import { useDeliveryPushNotifications } from "../src/features/delivery/use-delivery-push-notifications";
 import { deliveryVersionGate } from "../src/features/delivery/version-gate";
 import { createQueryClient } from "../src/lib/query-client";
 import { initMobileTelemetry, withMobileTelemetry } from "../src/lib/mobile-telemetry";
@@ -23,10 +24,25 @@ const tokenCache = {
   },
 };
 
-const clerkPublishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim() || "pk_live_Y2xlcmsuMWhhbmRpbmRpYS5jb20k";
+const clerkPublishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim();
 
 function RootLayout() {
   const queryClient = useMemo(() => createQueryClient(), []);
+
+  // No hardcoded fallback key: a missing env var must fail loudly at build
+  // time instead of silently masking a misconfigured environment.
+  if (!clerkPublishableKey) {
+    return (
+      <Screen>
+        <Card>
+          <Text style={{ color: "#123A5A", fontSize: 20, fontWeight: "900" }}>Configuration required</Text>
+          <Text style={{ color: "#6B7280" }}>
+            EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY is not set for this build. Add it to the build environment and rebuild.
+          </Text>
+        </Card>
+      </Screen>
+    );
+  }
 
   return (
     <ClerkProvider publishableKey={clerkPublishableKey} tokenCache={tokenCache}>
@@ -46,7 +62,7 @@ function DeliveryRouteGate() {
   const clerkAuth = useAuth();
   const segments = useSegments();
   const router = useRouter();
-  const isNavigatingRef = useRef(false);
+  const lastRedirectTargetRef = useRef<string | null>(null);
 
   const rootSegment = String(segments[0] ?? "");
   const isAuthRoute = rootSegment === "auth";
@@ -61,14 +77,17 @@ function DeliveryRouteGate() {
     retry: false,
   });
 
+  // Registers this device for pushes once the partner is signed in and synced.
+  // Approval gating happens server-side: assignment pushes only target the
+  // partner the order/return is assigned to.
+  useDeliveryPushNotifications(auth);
+
   // ─── Navigation guard ────────────────────────────────────────────────────
   // IMPORTANT: Never render <Redirect> conditionally inside a component that
   // also calls useSegments(). Doing so creates a loop:
   //   Redirect → nav state change → useSegments() new ref → re-render → Redirect …
   // Instead, perform all redirects imperatively inside a useEffect.
   useEffect(() => {
-    if (isNavigatingRef.current) return;
-
     let target: string | null = null;
 
     if (auth.status === "signed-out" && !isPublicAuthRoute) {
@@ -85,12 +104,16 @@ function DeliveryRouteGate() {
       target = "/access-blocked";
     }
 
-    if (target) {
-      isNavigatingRef.current = true;
-      router.replace(target as Parameters<typeof router.replace>[0]);
-      // Reset after a tick so future auth changes can trigger again
-      setTimeout(() => { isNavigatingRef.current = false; }, 300);
+    // Dedupe by destination instead of a time window: repeated effect runs for
+    // the same target are no-ops, but a different required redirect fires
+    // immediately, and there is no timer to leak on unmount.
+    if (!target) {
+      lastRedirectTargetRef.current = null;
+      return;
     }
+    if (lastRedirectTargetRef.current === target) return;
+    lastRedirectTargetRef.current = target;
+    router.replace(target as Parameters<typeof router.replace>[0]);
   }, [
     auth.status,
     auth.enabled,
@@ -126,6 +149,22 @@ function DeliveryRouteGate() {
 
   if (auth.enabled && accessQuery.isLoading && !isPublicAuthRoute && !isAccessBlockedRoute) {
     return <LoadingMessage message="Checking delivery partner approval..." />;
+  }
+
+  if (auth.enabled && accessQuery.isError && !isPublicAuthRoute && !isAccessBlockedRoute) {
+    return (
+      <Screen>
+        <Card>
+          <Text style={{ color: "#123A5A", fontSize: 20, fontWeight: "900" }}>Could not verify access</Text>
+          <Text style={{ color: "#6B7280" }}>
+            {accessQuery.error instanceof Error
+              ? accessQuery.error.message
+              : "We could not check your delivery partner approval. Check your connection and retry."}
+          </Text>
+          <Button title="Retry" onPress={() => void accessQuery.refetch()} />
+        </Card>
+      </Screen>
+    );
   }
 
   // Render the navigator; the useEffect above handles redirects

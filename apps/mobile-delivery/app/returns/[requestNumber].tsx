@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Linking, Text, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Card, Field, Header, QueryState, Screen, StatusChip, formatPaise, humanize } from "../../src/components/screen";
@@ -15,6 +15,7 @@ import {
 } from "../../src/features/delivery/returns-api";
 import { pickDeliveryProofImage, uploadDeliveryProofImage } from "../../src/features/delivery/proof-upload";
 import { useMobileDeliveryAuth } from "../../src/auth/mobile-delivery-auth-context";
+import { useServerSync } from "../../src/lib/use-server-sync";
 
 export default function DeliveryReturnDetailScreen() {
   const auth = useMobileDeliveryAuth();
@@ -37,24 +38,36 @@ export default function DeliveryReturnDetailScreen() {
   });
   const detail = returnQuery.data;
 
-  useEffect(() => {
-    if (!detail) return;
-    setPickupProofReference(detail.reverseShipments[0]?.pickupProofReference ?? detail.reverseShipments[0]?.proofReference ?? "");
-    setReceiptProofByShipment(
-      Object.fromEntries(
-        detail.reverseShipments
-          .filter((shipment) => shipment.receiptProofReference)
-          .map((shipment) => [shipment.id, shipment.receiptProofReference ?? ""]),
-      ),
-    );
-    setReceiverByShipment(
-      Object.fromEntries(
-        detail.reverseShipments
-          .filter((shipment) => shipment.receivedByName)
-          .map((shipment) => [shipment.id, shipment.receivedByName ?? ""]),
-      ),
-    );
-  }, [detail]);
+  const serverFormValues = detail
+    ? detail.reverseShipments.map((shipment) => ({
+        id: shipment.id,
+        pickupProofReference: shipment.pickupProofReference ?? shipment.proofReference ?? null,
+        receiptProofReference: shipment.receiptProofReference ?? null,
+        receivedByName: shipment.receivedByName ?? null,
+      }))
+    : null;
+  useServerSync(
+    serverFormValues,
+    (shipments) => {
+      if (!shipments) return;
+      setPickupProofReference(shipments[0]?.pickupProofReference ?? "");
+      setReceiptProofByShipment(
+        Object.fromEntries(
+          shipments
+            .filter((shipment) => shipment.receiptProofReference)
+            .map((shipment) => [shipment.id, shipment.receiptProofReference ?? ""]),
+        ),
+      );
+      setReceiverByShipment(
+        Object.fromEntries(
+          shipments
+            .filter((shipment) => shipment.receivedByName)
+            .map((shipment) => [shipment.id, shipment.receivedByName ?? ""]),
+        ),
+      );
+    },
+    Boolean(detail),
+  );
 
   const acceptMutation = useMutation({
     mutationFn: () => acceptDeliveryReturnPickup(auth.authHeaders, requestNumber, note.trim() || undefined),

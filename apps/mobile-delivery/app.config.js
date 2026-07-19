@@ -56,11 +56,12 @@ module.exports = {
       permissions: [
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.ACCESS_BACKGROUND_LOCATION",
-        "android.permission.FOREGROUND_SERVICE",
-        "android.permission.FOREGROUND_SERVICE_LOCATION",
         "android.permission.POST_NOTIFICATIONS",
         "android.permission.CAMERA"
+      ],
+      blockedPermissions: [
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.FOREGROUND_SERVICE_LOCATION"
       ],
     },
     ios: {
@@ -71,12 +72,13 @@ module.exports = {
         ITSAppUsesNonExemptEncryption: false,
         NSUserNotificationsUsageDescription:
           "Allow 1HandIndia Delivery to send assigned-order, return pickup, COD, and route alerts.",
-        UIBackgroundModes: ["location", "remote-notification"],
+        UIBackgroundModes: ["remote-notification"],
       },
     },
     plugins: [
       "expo-router",
       "expo-secure-store",
+      "expo-web-browser",
       [
         "expo-notifications",
         {
@@ -88,12 +90,10 @@ module.exports = {
       [
         "expo-location",
         {
-          locationAlwaysAndWhenInUsePermission:
-            "Allow 1HandIndia Delivery to track active assigned deliveries for operational safety and support.",
           locationWhenInUsePermission:
             "Allow 1HandIndia Delivery to use your location while managing assigned deliveries.",
-          isAndroidBackgroundLocationEnabled: true,
-          isIosBackgroundLocationEnabled: true,
+          isAndroidBackgroundLocationEnabled: false,
+          isIosBackgroundLocationEnabled: false,
         },
       ],
       [

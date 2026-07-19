@@ -430,7 +430,6 @@ function ServiceDateField({
               onDismiss={() => setPickerOpen(false)}
               onValueChange={(_event, date) => selectDate(date)}
               positiveButton={{ label: "Select date" }}
-              presentation="dialog"
               value={pickerValue}
             />
           ) : null}

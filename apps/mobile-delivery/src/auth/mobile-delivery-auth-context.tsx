@@ -1,9 +1,13 @@
 import { useAuth, useUser } from "@clerk/clerk-expo";
 import { PropsWithChildren, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { MobileApiError, postNoContent, type MobileAuthHeaders } from "../lib/api";
+import { revokeCurrentDeliveryPushToken } from "../features/delivery/use-delivery-push-notifications";
 
 const CLERK_TOKEN_RETRY_ATTEMPTS = 10;
 const CLERK_TOKEN_RETRY_DELAY_MS = 500;
+// Per-request token reads must stay fast: a Clerk hiccup should not stall
+// every API call for the full sign-in retry window.
+const CLERK_TOKEN_REQUEST_ATTEMPTS = 2;
 
 export type MobileDeliveryAuthStatus = "loading" | "signed-out" | "syncing" | "ready" | "error";
 
@@ -30,6 +34,7 @@ export function MobileDeliveryAuthProvider({ children }: PropsWithChildren) {
   const [syncState, setSyncState] = useState<{ status: MobileDeliveryAuthStatus; error?: string }>({ status: "loading" });
   const [refreshIndex, setRefreshIndex] = useState(0);
   const lastSyncedSignatureRef = useRef<string | null>(null);
+  const inFlightSyncSignatureRef = useRef<string | null>(null);
   const mountedRef = useRef(false);
   const getTokenRef = useRef(getToken);
   const signOutRef = useRef(signOut);
@@ -54,8 +59,9 @@ export function MobileDeliveryAuthProvider({ children }: PropsWithChildren) {
   const readBearerToken = useCallback(
     async (options?: { skipCache?: boolean }) => {
       if (!isLoaded || !isSignedIn || !userId) return null;
-      const token = await readClerkTokenWithRetry(() =>
-        getTokenRef.current({ skipCache: Boolean(options?.skipCache) }),
+      const token = await readClerkTokenWithRetry(
+        () => getTokenRef.current({ skipCache: Boolean(options?.skipCache) }),
+        CLERK_TOKEN_REQUEST_ATTEMPTS,
       );
       if (token && mountedRef.current) setBearerToken((current) => (current === token ? current : token));
       return token;
@@ -66,9 +72,24 @@ export function MobileDeliveryAuthProvider({ children }: PropsWithChildren) {
   const handleUnauthorized = useCallback(
     (_error: MobileApiError) => {
       if (!mountedRef.current) return;
-      setBearerToken(null);
-      updateSyncState({ status: "error", error: "Your session has expired. Please sign in again." });
-      void signOutRef.current();
+      // A 401 can be transient (clock skew, refresh race). Only sign out when
+      // Clerk itself cannot mint a fresh session token.
+      void (async () => {
+        try {
+          const freshToken = await getTokenRef.current({ skipCache: true });
+          if (freshToken) {
+            if (mountedRef.current) setBearerToken(freshToken);
+            return;
+          }
+        } catch {
+          // fall through to sign-out
+        }
+        if (!mountedRef.current) return;
+        setBearerToken(null);
+        updateSyncState({ status: "error", error: "Your session has expired. Please sign in again." });
+        await revokeCurrentDeliveryPushToken();
+        await signOutRef.current().catch(() => {});
+      })();
     },
     [updateSyncState],
   );
@@ -157,18 +178,24 @@ export function MobileDeliveryAuthProvider({ children }: PropsWithChildren) {
         updateSyncState({ status: "ready" });
         return;
       }
+      if (inFlightSyncSignatureRef.current === syncSignature) return;
+      inFlightSyncSignatureRef.current = syncSignature;
 
       updateSyncState({ status: "syncing" });
-      await postNoContent({
-        path: "/auth/sync-current-user",
-        auth: { bearerToken, getBearerToken: readBearerToken, onUnauthorized: handleUnauthorized },
-        body: {
-          email: userProfile.email,
-          ...(userProfile.phone ? { phone: userProfile.phone } : {}),
-          ...(userProfile.fullName ? { fullName: userProfile.fullName } : {}),
-          defaultRole: "CUSTOMER",
-        },
-      });
+      try {
+        await postNoContent({
+          path: "/auth/sync-current-user",
+          auth: { bearerToken, getBearerToken: readBearerToken, onUnauthorized: handleUnauthorized },
+          body: {
+            email: userProfile.email,
+            ...(userProfile.phone ? { phone: userProfile.phone } : {}),
+            ...(userProfile.fullName ? { fullName: userProfile.fullName } : {}),
+            defaultRole: "CUSTOMER",
+          },
+        });
+      } finally {
+        if (inFlightSyncSignatureRef.current === syncSignature) inFlightSyncSignatureRef.current = null;
+      }
 
       if (!cancelled) {
         lastSyncedSignatureRef.current = syncSignature;
@@ -221,14 +248,17 @@ export function mobileDeliveryAuthErrorMessage(error: unknown) {
   return error instanceof Error && error.message ? error.message : "Authentication failed. Please try again.";
 }
 
-async function readClerkTokenWithRetry(readToken: () => Promise<string | null>) {
-  for (let attempt = 0; attempt < CLERK_TOKEN_RETRY_ATTEMPTS; attempt += 1) {
+async function readClerkTokenWithRetry(
+  readToken: () => Promise<string | null>,
+  attempts: number = CLERK_TOKEN_RETRY_ATTEMPTS,
+) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     const token = await readToken();
     if (token) {
       return token;
     }
 
-    if (attempt < CLERK_TOKEN_RETRY_ATTEMPTS - 1) {
+    if (attempt < attempts - 1) {
       await delay(CLERK_TOKEN_RETRY_DELAY_MS);
     }
   }
