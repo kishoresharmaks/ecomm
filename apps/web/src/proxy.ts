@@ -53,7 +53,7 @@ function securityProxy(request: NextRequest) {
   return response;
 }
 
-export const middleware = clerkConfigured
+export const proxy = clerkConfigured
   ? clerkMiddleware((_auth, request) => securityProxy(request))
   : securityProxy;
 
