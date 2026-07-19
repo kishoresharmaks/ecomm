@@ -168,6 +168,44 @@ describe("AuthUsersService", () => {
       },
     });
   });
+
+  it("creates phone-only customers without sending email to the internal alias", async () => {
+    const tx = createAuthTx();
+    const internalEmail = "phone-919876543210-clerkphoneuser@phone.1handindia.local";
+    tx.user.findFirst.mockResolvedValue(null);
+    tx.user.create.mockResolvedValue({
+      id: "user_phone",
+      clerkUserId: "clerk_phone_user",
+      email: internalEmail,
+      fullName: null,
+      phone: "+919876543210",
+      status: UserStatus.ACTIVE,
+    });
+    tx.role.upsert.mockResolvedValue({ id: "role_customer", code: RoleCode.CUSTOMER });
+    tx.customer.upsert.mockResolvedValue({ id: "customer_phone", userId: "user_phone" });
+
+    const service = new AuthUsersService(createPrisma(tx), notifications as never);
+
+    await service.syncAuthUser({
+      clerkUserId: "clerk_phone_user",
+      email: internalEmail,
+      phone: "+919876543210",
+    });
+
+    expect(tx.customer.upsert).toHaveBeenCalledWith({
+      where: { userId: "user_phone" },
+      update: {
+        displayName: internalEmail,
+        status: UserStatus.ACTIVE,
+      },
+      create: {
+        userId: "user_phone",
+        displayName: "+919876543210",
+        status: UserStatus.ACTIVE,
+      },
+    });
+    expect(notifications.notifyEvent).not.toHaveBeenCalled();
+  });
 });
 
 function createAuthTx() {

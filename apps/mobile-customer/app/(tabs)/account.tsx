@@ -59,12 +59,12 @@ const profileRows = [
   { href: "/account/notifications" as Href, icon: Notification02Icon, text: "Inbox and push preferences", title: "Notifications" },
 ] satisfies Array<{ href?: Href; icon: IconSvgElement; text: string; title: string }>;
 
-const supportRows = [
+const supportRows: Array<{ externalUrl?: string; href?: Href; icon: IconSvgElement; text: string; title: string }> = [
   { href: "/account/support", icon: QuestionIcon, text: "FAQs and support articles", title: "Help center" },
   { href: "/account/support", icon: HeadsetIcon, text: "Get help from our team", title: "Contact support" },
   { externalUrl: "https://1handindia.com/privacy-policy", icon: Shield01Icon, text: "Read our privacy policy", title: "Privacy policy" },
   { externalUrl: "https://1handindia.com/terms-and-conditions", icon: LegalDocument01Icon, text: "Read our terms and conditions", title: "Terms & conditions" },
-] satisfies Array<{ externalUrl?: string; href?: Href; icon: IconSvgElement; text: string; title: string }>;
+];
 
 export default function AccountScreen() {
   const customerAuth = useMobileCustomerAuth();
@@ -324,7 +324,7 @@ export default function AccountScreen() {
                 item.href
                   ? () => router.push(item.href as never)
                   : item.externalUrl
-                    ? () => void WebBrowser.openBrowserAsync(item.externalUrl)
+                    ? () => void WebBrowser.openBrowserAsync(item.externalUrl!)
                     : undefined
               }
               text={item.text}

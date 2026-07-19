@@ -134,17 +134,7 @@ export function AuthPageClient({
           .
         </div>
 
-        <aside className="h-fit rounded-lg border border-[#E5E7EB] bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-black text-[#1F2933]">{moduleTitle}</h2>
-          <div className="mt-4 grid gap-3 text-sm font-semibold text-[#667085]">
-            {moduleItems.map((item) => (
-              <div key={item} className="flex items-center gap-3 rounded-md bg-[#F8FAFC] px-3 py-3">
-                <ShieldCheck size={16} className="text-[#0F8A5F]" />
-                <span>{item}</span>
-              </div>
-            ))}
-          </div>
-        </aside>
+         
       </section>
     </StorefrontFrame>
   );

@@ -96,29 +96,29 @@ export class ClerkAuthService {
 
     if (clerkUser) {
       const email = this.primaryEmail(clerkUser);
-      if (!email) {
-        throw new BadRequestException("Clerk user does not have a primary email address.");
-      }
-
       const phone = this.primaryPhone(clerkUser);
+      if (!email && !phone) {
+        throw new BadRequestException("Clerk user does not have a verified email address or phone number.");
+      }
       const fullName = this.fullName(clerkUser);
+      const resolvedEmail = email ?? this.internalPhoneEmail(clerkUserId, phone!);
 
       return {
         clerkUserId,
-        email,
+        email: resolvedEmail,
         ...(phone ? { phone } : {}),
         ...(fullName ? { fullName } : {}),
         ...(fallback.defaultRole ? { defaultRole: fallback.defaultRole } : {})
       };
     }
 
-    if (!fallback.email) {
-      throw new BadRequestException("Customer email is required when Clerk backend user lookup is unavailable.");
+    if (!fallback.email && !fallback.phone) {
+      throw new BadRequestException("A verified customer email address or phone number is required when Clerk backend user lookup is unavailable.");
     }
 
     return {
       clerkUserId,
-      email: fallback.email,
+      email: fallback.email ?? this.internalPhoneEmail(clerkUserId, fallback.phone!),
       ...(fallback.phone ? { phone: fallback.phone } : {}),
       ...(fallback.fullName ? { fullName: fallback.fullName } : {}),
       ...(fallback.defaultRole ? { defaultRole: fallback.defaultRole } : {})
@@ -377,6 +377,12 @@ export class ClerkAuthService {
   private primaryPhone(user: ClerkBackendUser) {
     const primary = user.phoneNumbers?.find((phone) => phone.id === user.primaryPhoneNumberId) ?? user.phoneNumbers?.[0];
     return primary?.phoneNumber;
+  }
+
+  private internalPhoneEmail(clerkUserId: string, phone: string) {
+    const phoneKey = phone.replace(/\D/g, "").slice(-15) || "unknown";
+    const userKey = clerkUserId.replace(/[^a-zA-Z0-9]/g, "").slice(-40) || "user";
+    return `phone-${phoneKey}-${userKey}@phone.1handindia.local`;
   }
 
   private fullName(user: ClerkBackendUser) {

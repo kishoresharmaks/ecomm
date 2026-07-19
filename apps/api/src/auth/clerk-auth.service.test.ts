@@ -147,6 +147,42 @@ describe("ClerkAuthService", () => {
       fullName: "Customer One"
     });
   });
+
+  it("syncs a verified phone-only Clerk user with a stable internal email alias", async () => {
+    clerkMocks.verifyToken.mockResolvedValue({ sub: "clerk_phone_user" });
+    clerkMocks.getUser.mockResolvedValue({
+      primaryPhoneNumberId: "phone_1",
+      phoneNumbers: [{ id: "phone_1", phoneNumber: "+919876543210" }],
+      emailAddresses: []
+    });
+
+    const service = new ClerkAuthService();
+
+    await expect(
+      service.resolveSessionProfile(`Bearer ${tokenWithSessionId()}`)
+    ).resolves.toEqual({
+      clerkUserId: "clerk_phone_user",
+      email: "phone-919876543210-clerkphoneuser@phone.1handindia.local",
+      phone: "+919876543210"
+    });
+  });
+
+  it("uses the verified phone fallback when Clerk user lookup is unavailable", async () => {
+    clerkMocks.verifyToken.mockResolvedValue({ sub: "clerk_phone_fallback" });
+    clerkMocks.getUser.mockRejectedValueOnce(new Error("fetch failed"));
+
+    const service = new ClerkAuthService();
+
+    await expect(
+      service.resolveSessionProfile(`Bearer ${tokenWithSessionId()}`, {
+        phone: "+919876543210"
+      })
+    ).resolves.toEqual({
+      clerkUserId: "clerk_phone_fallback",
+      email: "phone-919876543210-clerkphonefallback@phone.1handindia.local",
+      phone: "+919876543210"
+    });
+  });
 });
 
 function tokenWithSessionId(sessionId = "sess_test") {

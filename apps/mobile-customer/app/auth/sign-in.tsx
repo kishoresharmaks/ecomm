@@ -10,6 +10,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react-native";
 import { useAuth, useSignIn, useSignUp, useSSO } from "@clerk/clerk-expo";
+import { useQuery } from "@tanstack/react-query";
 import * as Linking from "expo-linking";
 import { Stack, useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
@@ -27,21 +28,48 @@ import {
   View,
   type KeyboardTypeOptions,
 } from "react-native";
+import logoSource from "../../assets/splash-logo.png";
+import { getClerkAuthCapabilities } from "../../src/auth/clerk-auth-capabilities";
+import {
+  normalizePhoneIdentifier,
+  resetPasswordStrategy,
+  secondFactorAttemptParams,
+  secondFactorOptions,
+  secondFactorPrepareParams,
+  validateIdentifier,
+  validatePasswordAuth,
+  validateSignUp,
+  type IdentifierMode,
+  type SecondFactorOption,
+  type SupportedSecondFactor,
+} from "../../src/auth/clerk-auth-flow";
 import { mobileAuthErrorMessage, useMobileCustomerAuth } from "../../src/auth/mobile-auth-context";
 import { Screen } from "../../src/components/screen";
 import { useCustomerPushNotificationStatus } from "../../src/features/notifications/use-customer-push-notifications";
 import { colors } from "../../src/theme";
-import logoSource from "../../assets/splash-logo.png";
 
 WebBrowser.maybeCompleteAuthSession();
 
-type AuthMode = "sign-in" | "sign-up" | "verify-email" | "verify-phone" | "forgot-password" | "reset-password";
-type IdentifierMode = "email" | "phone";
-type SubmitAction = "password" | "google" | "sign-out" | "sync" | "reset" | null;
+type AuthMode =
+  | "sign-in"
+  | "sign-up"
+  | "verify-email"
+  | "verify-phone"
+  | "forgot-password"
+  | "verify-reset-code"
+  | "reset-password"
+  | "verify-sign-in";
+type SubmitAction = "password" | "google" | "sign-out" | "sync" | "reset" | "verification" | null;
 
 type ClerkSignInResource = {
-  create: (params: Record<string, unknown>) => Promise<{ createdSessionId?: string | null }>;
-  attemptFirstFactor?: (params: Record<string, unknown>) => Promise<{ createdSessionId?: string | null; status?: string | null }>;
+  status?: string | null;
+  createdSessionId?: string | null;
+  supportedSecondFactors?: SupportedSecondFactor[] | null;
+  create: (params: Record<string, unknown>) => Promise<ClerkSignInResource>;
+  attemptFirstFactor: (params: Record<string, unknown>) => Promise<ClerkSignInResource>;
+  prepareSecondFactor: (params: Record<string, unknown>) => Promise<ClerkSignInResource>;
+  attemptSecondFactor: (params: Record<string, unknown>) => Promise<ClerkSignInResource>;
+  resetPassword: (params: { password: string; signOutOfOtherSessions?: boolean }) => Promise<ClerkSignInResource>;
 };
 
 const MAX_ACCOUNT_SYNC_RETRIES = 3;
@@ -69,16 +97,23 @@ export default function SignInScreen() {
   const [submitAction, setSubmitAction] = useState<SubmitAction>(null);
   const [syncRetryCount, setSyncRetryCount] = useState(0);
   const [shouldAutoContinue, setShouldAutoContinue] = useState(false);
+  const [availableSecondFactors, setAvailableSecondFactors] = useState<SecondFactorOption[]>([]);
+  const [selectedSecondFactor, setSelectedSecondFactor] = useState<SecondFactorOption | null>(null);
+  const clerkCapabilitiesQuery = useQuery({
+    queryKey: ["clerk-auth-capabilities"],
+    queryFn: getClerkAuthCapabilities,
+    gcTime: 30 * 60 * 1000,
+    retry: 1,
+    staleTime: 5 * 60 * 1000,
+  });
   const clerkPublishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim() || "pk_live_Y2xlcmsuMWhhbmRpbmRpYS5jb20k";
   const hasClerkKey = Boolean(clerkPublishableKey);
+  const phoneAuthEnabled = clerkCapabilitiesQuery.data?.phoneEnabled === true;
   const isSubmitting = submitAction !== null;
   const screenTitle = titleForMode(mode);
   const primaryLabel = primaryLabelForMode(mode);
-  const subtitle =
-    mode === "forgot-password" || mode === "reset-password"
-      ? "Reset your password securely with Clerk verification."
-      : "Secure Clerk authentication for cart, orders, wishlist, addresses, and support.";
   const showIdentifierTabs = mode === "sign-in" || mode === "sign-up" || mode === "forgot-password";
+  const showMainModeTabs = mode === "sign-in" || mode === "sign-up";
 
   const identifier = useMemo(
     () => (identifierMode === "phone" ? normalizePhoneIdentifier(phone) : email.trim()),
@@ -97,6 +132,69 @@ export default function SignInScreen() {
     }
   }, [customerAuth.enabled, isSignedIn, router, shouldAutoContinue]);
 
+  useEffect(() => {
+    if (clerkCapabilitiesQuery.isFetched && !phoneAuthEnabled && identifierMode === "phone") {
+      setIdentifierMode("email");
+      setPhone("");
+    }
+  }, [clerkCapabilitiesQuery.isFetched, identifierMode, phoneAuthEnabled]);
+
+  async function activateSession(resource: ClerkSignInResource) {
+    if (!resource.createdSessionId || !signIn.setActive) {
+      return false;
+    }
+
+    await signIn.setActive({ session: resource.createdSessionId });
+    setShouldAutoContinue(true);
+    setSyncRetryCount(0);
+    return true;
+  }
+
+  async function prepareSecondFactor(resource: ClerkSignInResource, option: SecondFactorOption) {
+    const params = secondFactorPrepareParams(option);
+    if (params) {
+      await resource.prepareSecondFactor(params);
+    }
+  }
+
+  async function beginSecondFactor(resource: ClerkSignInResource) {
+    const options = secondFactorOptions(resource.supportedSecondFactors);
+    if (!options.length) {
+      setError("This account requires another verification method that is not available in the app. Contact support for help.");
+      return;
+    }
+
+    const preferredStrategy = identifierMode === "phone" ? "phone_code" : "email_code";
+    const preferred = options.find((option) => option.strategy === preferredStrategy) ?? options[0]!;
+    await prepareSecondFactor(resource, preferred);
+    setAvailableSecondFactors(options);
+    setSelectedSecondFactor(preferred);
+    setCode("");
+    setMode("verify-sign-in");
+    setNotice(secondFactorNotice(preferred));
+  }
+
+  async function continueSignIn(resource: ClerkSignInResource) {
+    if (await activateSession(resource)) {
+      return;
+    }
+
+    if (resource.status === "needs_second_factor") {
+      await beginSecondFactor(resource);
+      return;
+    }
+
+    if (resource.status === "needs_new_password") {
+      setCode("");
+      setResetPassword("");
+      setMode("reset-password");
+      setNotice("For your security, create a new password to finish signing in.");
+      return;
+    }
+
+    setError("Sign in could not be completed. Please try again.");
+  }
+
   async function handleSignIn() {
     if (!signIn.isLoaded) {
       return;
@@ -112,18 +210,12 @@ export default function SignInScreen() {
     setNotice(null);
     setSubmitAction("password");
     try {
-      const result = await signIn.signIn.create({
+      const resource = await (signIn.signIn as unknown as ClerkSignInResource).create({
         identifier,
         password,
+        strategy: "password",
       });
-
-      if (result.createdSessionId) {
-        await signIn.setActive({ session: result.createdSessionId });
-        setShouldAutoContinue(true);
-        return;
-      }
-
-      setError("Additional verification is required for this account. Please complete it in Clerk.");
+      await continueSignIn(resource);
     } catch (caught) {
       setError(mobileAuthErrorMessage(caught));
     } finally {
@@ -189,19 +281,29 @@ export default function SignInScreen() {
         ...(names.length > 1 ? { lastName: names.slice(1).join(" ") } : {}),
       });
 
-      if (identifierMode === "phone") {
-        await signUp.signUp.preparePhoneNumberVerification({ strategy: "phone_code" });
-        setMode("verify-phone");
-      } else {
-        await signUp.signUp.prepareEmailAddressVerification({ strategy: "email_code" });
-        setMode("verify-email");
-      }
-      setCode("");
+      await sendSignUpVerification();
     } catch (caught) {
       setError(mobileAuthErrorMessage(caught));
     } finally {
       setSubmitAction(null);
     }
+  }
+
+  async function sendSignUpVerification() {
+    if (!signUp.isLoaded) {
+      return;
+    }
+
+    if (identifierMode === "phone") {
+      await signUp.signUp.preparePhoneNumberVerification({ strategy: "phone_code" });
+      setMode("verify-phone");
+      setNotice("We sent a verification code to your phone.");
+    } else {
+      await signUp.signUp.prepareEmailAddressVerification({ strategy: "email_code" });
+      setMode("verify-email");
+      setNotice("We sent a verification code to your email.");
+    }
+    setCode("");
   }
 
   async function handleVerifySignUp() {
@@ -216,7 +318,7 @@ export default function SignInScreen() {
 
     setError(null);
     setNotice(null);
-    setSubmitAction("password");
+    setSubmitAction("verification");
     try {
       const result =
         mode === "verify-phone"
@@ -257,8 +359,42 @@ export default function SignInScreen() {
       });
       setCode("");
       setResetPassword("");
-      setMode("reset-password");
+      setMode("verify-reset-code");
       setNotice(identifierMode === "phone" ? "We sent a reset code to your phone." : "We sent a reset code to your email.");
+    } catch (caught) {
+      setError(mobileAuthErrorMessage(caught));
+    } finally {
+      setSubmitAction(null);
+    }
+  }
+
+  async function handleVerifyResetCode() {
+    if (!signIn.isLoaded) {
+      return;
+    }
+
+    if (!code.trim()) {
+      setError("Enter the reset code.");
+      return;
+    }
+
+    setError(null);
+    setNotice(null);
+    setSubmitAction("verification");
+    try {
+      const resource = await (signIn.signIn as unknown as ClerkSignInResource).attemptFirstFactor({
+        code: code.trim(),
+        strategy: resetPasswordStrategy(identifierMode),
+      });
+
+      if (resource.status === "needs_new_password") {
+        setResetPassword("");
+        setMode("reset-password");
+        setNotice("Code confirmed. Create a new password for your account.");
+        return;
+      }
+
+      await continueSignIn(resource);
     } catch (caught) {
       setError(mobileAuthErrorMessage(caught));
     } finally {
@@ -271,10 +407,6 @@ export default function SignInScreen() {
       return;
     }
 
-    if (!code.trim()) {
-      setError("Enter the reset code.");
-      return;
-    }
     if (resetPassword.length < 8) {
       setError("New password must be at least 8 characters.");
       return;
@@ -284,24 +416,76 @@ export default function SignInScreen() {
     setNotice(null);
     setSubmitAction("reset");
     try {
-      const signInResource = signIn.signIn as unknown as ClerkSignInResource;
-      if (!signInResource.attemptFirstFactor) {
-        throw new Error("Password reset is not available in this Clerk session.");
-      }
-
-      const result = await signInResource.attemptFirstFactor({
-        code: code.trim(),
+      const resource = await (signIn.signIn as unknown as ClerkSignInResource).resetPassword({
         password: resetPassword,
-        strategy: resetPasswordStrategy(identifierMode),
+        signOutOfOtherSessions: true,
       });
+      await continueSignIn(resource);
+    } catch (caught) {
+      setError(mobileAuthErrorMessage(caught));
+    } finally {
+      setSubmitAction(null);
+    }
+  }
 
-      if (result.createdSessionId) {
-        await signIn.setActive({ session: result.createdSessionId });
-        setShouldAutoContinue(true);
-        return;
+  async function handleSecondFactor(option = selectedSecondFactor) {
+    if (!signIn.isLoaded || !option) {
+      return;
+    }
+
+    if (!code.trim()) {
+      setError(option.strategy === "backup_code" ? "Enter a backup code." : "Enter the verification code.");
+      return;
+    }
+
+    setError(null);
+    setNotice(null);
+    setSubmitAction("verification");
+    try {
+      const resource = await (signIn.signIn as unknown as ClerkSignInResource).attemptSecondFactor(
+        secondFactorAttemptParams(option, code),
+      );
+      await continueSignIn(resource);
+    } catch (caught) {
+      setError(mobileAuthErrorMessage(caught));
+    } finally {
+      setSubmitAction(null);
+    }
+  }
+
+  async function selectSecondFactor(option: SecondFactorOption) {
+    if (!signIn.isLoaded || secondFactorKey(option) === (selectedSecondFactor ? secondFactorKey(selectedSecondFactor) : null)) {
+      return;
+    }
+
+    setError(null);
+    setNotice(null);
+    setSubmitAction("verification");
+    try {
+      await prepareSecondFactor(signIn.signIn as unknown as ClerkSignInResource, option);
+      setSelectedSecondFactor(option);
+      setCode("");
+      setNotice(secondFactorNotice(option));
+    } catch (caught) {
+      setError(mobileAuthErrorMessage(caught));
+    } finally {
+      setSubmitAction(null);
+    }
+  }
+
+  async function resendCurrentCode() {
+    setError(null);
+    setNotice(null);
+    setSubmitAction("verification");
+    try {
+      if (mode === "verify-email" || mode === "verify-phone") {
+        await sendSignUpVerification();
+      } else if (mode === "verify-reset-code") {
+        await handleForgotPassword();
+      } else if (mode === "verify-sign-in" && selectedSecondFactor) {
+        await prepareSecondFactor(signIn.signIn as unknown as ClerkSignInResource, selectedSecondFactor);
+        setNotice(secondFactorNotice(selectedSecondFactor, true));
       }
-
-      setError("Password reset needs another verification step. Please try signing in again.");
     } catch (caught) {
       setError(mobileAuthErrorMessage(caught));
     } finally {
@@ -336,6 +520,8 @@ export default function SignInScreen() {
     setError(null);
     setNotice(null);
     setCode("");
+    setAvailableSecondFactors([]);
+    setSelectedSecondFactor(null);
     setMode(nextMode);
   }
 
@@ -346,219 +532,297 @@ export default function SignInScreen() {
     <Screen padded={false}>
       <Stack.Screen options={{ headerShown: false }} />
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.flex}>
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          <View style={styles.topBar}>
-            <Pressable accessibilityLabel="Go back" hitSlop={12} style={styles.backButton} onPress={() => router.back()}>
-              <HugeiconsIcon color={colors.ink} icon={ArrowLeft02Icon} size={24} strokeWidth={2.4} />
-            </Pressable>
-            <Text numberOfLines={1} style={styles.headerTitle}>{screenTitle}</Text>
-            <View style={styles.headerSpacer} />
-          </View>
+        <ScrollView
+          automaticallyAdjustKeyboardInsets
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <BrandStage onBack={() => router.back()} title={screenTitle} />
 
-          <View style={styles.logoStage}>
-            <View style={[styles.logoPlate, mode === "sign-up" ? styles.logoPlateActive : null]}>
-              <Image resizeMode="contain" source={logoSource} style={styles.logoImage} />
-            </View>
-          </View>
+          <View style={styles.authWorkspace}>
+            {!hasClerkKey ? (
+              <Notice
+                title="Sign in setup required"
+                message="Customer sign in is temporarily unavailable. Please try again after the app configuration is updated."
+              />
+            ) : null}
 
-          {!hasClerkKey ? (
-            <Notice
-              tone="danger"
-              title="Clerk setup required"
-              message="EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY is missing. Add it to the mobile environment before sign in can work."
-            />
-          ) : null}
+            {signedInButNotSynced ? (
+              <AuthPanel>
+                <Text style={styles.eyebrow}>Customer account</Text>
+                <Text style={styles.title}>
+                  {customerAuth.status === "syncing" || customerAuth.status === "loading"
+                    ? "Preparing your account"
+                    : "Account connection needs attention"}
+                </Text>
+                <Text style={styles.subtitle}>
+                  {customerAuth.status === "syncing" || customerAuth.status === "loading"
+                    ? "Your secure sign in is complete. We are loading your 1HandIndia account."
+                    : "Your sign in succeeded, but the customer account could not be loaded."}
+                </Text>
+                {customerAuth.error ? <InlineMessage tone="danger" message={customerAuth.error} /> : null}
+                {customerAuth.status === "syncing" || customerAuth.status === "loading" ? (
+                  <View style={styles.syncRow}>
+                    <ActivityIndicator color={colors.primary} />
+                    <Text style={styles.syncText}>Connecting securely...</Text>
+                  </View>
+                ) : (
+                  <>
+                    {syncRetryLimitReached ? (
+                      <InlineMessage tone="danger" message="Account sync was retried 3 times. Sign out and try again when the service is reachable." />
+                    ) : null}
+                    <PrimaryButton
+                      disabled={submitAction === "sync" || submitAction === "sign-out"}
+                      label={syncRetryLimitReached ? "Sign out" : "Retry account connection"}
+                      loading={submitAction === "sync" || submitAction === "sign-out"}
+                      onPress={syncRetryLimitReached ? () => void handleSignOut() : retryAccountSync}
+                    />
+                    <SecondaryButton
+                      disabled={submitAction === "sync" || submitAction === "sign-out"}
+                      label={syncRetryLimitReached ? "Try once more" : "Sign out"}
+                      onPress={syncRetryLimitReached ? retryAccountSync : () => void handleSignOut()}
+                    />
+                  </>
+                )}
+              </AuthPanel>
+            ) : isSignedIn ? (
+              <AuthPanel>
+                <Text style={styles.eyebrow}>Customer account</Text>
+                <Text style={styles.title}>You are signed in</Text>
+                <Text style={styles.subtitle}>Your 1HandIndia account is ready for shopping, orders, and support.</Text>
+                <PrimaryButton label="Continue to account" onPress={() => router.replace("/account")} />
+                <SecondaryButton disabled={isSubmitting} label="Sign out" onPress={() => void handleSignOut()} />
+              </AuthPanel>
+            ) : (
+              <AuthPanel>
+                {showMainModeTabs ? <MainModeTabs mode={mode} onSwitch={switchMode} /> : null}
+                <Text style={styles.eyebrow}>{eyebrowForMode(mode)}</Text>
+                <Text style={styles.title}>{headlineForMode(mode)}</Text>
+                <Text style={styles.subtitle}>{subtitleForMode(mode, identifierMode, selectedSecondFactor, phoneAuthEnabled)}</Text>
 
-          {signedInButNotSynced ? (
-            <AuthPanel>
-              <Text style={styles.kicker}>1HandIndia account</Text>
-              <Text style={styles.title}>
-                {customerAuth.status === "syncing" || customerAuth.status === "loading"
-                  ? "Syncing your account"
-                  : "Account sync needs attention"}
-              </Text>
-              <Text style={styles.subtitle}>
-                {customerAuth.status === "syncing" || customerAuth.status === "loading"
-                  ? "Clerk sign in worked. We are preparing your 1HandIndia customer account."
-                  : "Signed in with Clerk, but your 1HandIndia account could not sync. Retry account sync."}
-              </Text>
-              {customerAuth.error ? <Text style={styles.error}>{customerAuth.error}</Text> : null}
-              {customerAuth.status === "syncing" || customerAuth.status === "loading" ? (
-                <View style={styles.syncRow}>
-                  <ActivityIndicator color={colors.primary} />
-                  <Text style={styles.syncText}>Connecting securely...</Text>
-                </View>
-              ) : (
-                <>
-                  {syncRetryLimitReached ? (
-                    <Text style={styles.limitText}>Sync was retried 3 times. Sign out and try again when the API is reachable.</Text>
-                  ) : null}
-                  <PrimaryButton
-                    disabled={submitAction === "sync" || submitAction === "sign-out"}
-                    label={syncRetryLimitReached ? "Sign out and retry later" : "Retry account sync"}
-                    loading={submitAction === "sync" || submitAction === "sign-out"}
-                    onPress={syncRetryLimitReached ? () => void handleSignOut() : retryAccountSync}
-                  />
-                  <SecondaryButton
-                    disabled={submitAction === "sync" || submitAction === "sign-out"}
-                    label={syncRetryLimitReached ? "Try sync once more" : "Sign out"}
-                    onPress={syncRetryLimitReached ? retryAccountSync : () => void handleSignOut()}
-                  />
-                </>
-              )}
-            </AuthPanel>
-          ) : isSignedIn ? (
-            <AuthPanel>
-              <Text style={styles.kicker}>1HandIndia account</Text>
-              <Text style={styles.title}>You are signed in</Text>
-              <Text style={styles.subtitle}>Your Clerk session and 1HandIndia customer account are ready.</Text>
-              <PrimaryButton label="Go to account" onPress={() => router.replace("/account")} />
-              <SecondaryButton disabled={isSubmitting} label="Sign out" onPress={() => void handleSignOut()} />
-            </AuthPanel>
-          ) : (
-            <AuthPanel>
-              <Text style={styles.kicker}>1HandIndia account</Text>
-              <Text style={styles.title}>{headlineForMode(mode)}</Text>
-              <Text style={styles.subtitle}>{subtitle}</Text>
+                {showMainModeTabs ? (
+                  <>
+                    <Pressable
+                      accessibilityRole="button"
+                      disabled={isSubmitting || !hasClerkKey}
+                      style={({ pressed }) => [
+                        styles.googleButton,
+                        pressed ? styles.buttonPressed : null,
+                        isSubmitting || !hasClerkKey ? styles.disabledButton : null,
+                      ]}
+                      onPress={() => void handleGoogleSignIn()}
+                    >
+                      {submitAction === "google" ? (
+                        <ActivityIndicator color={colors.ink} />
+                      ) : (
+                        <>
+                          <HugeiconsIcon color="#4285F4" icon={GoogleIcon} size={22} strokeWidth={2.1} />
+                          <Text style={styles.googleButtonText}>Continue with Google</Text>
+                        </>
+                      )}
+                    </Pressable>
+                    <Divider />
+                  </>
+                ) : null}
 
-              {mode !== "verify-email" && mode !== "verify-phone" && mode !== "reset-password" ? (
-                <Pressable
-                  disabled={isSubmitting || !hasClerkKey}
-                  style={[styles.googleButton, isSubmitting || !hasClerkKey ? styles.disabledButton : null]}
-                  onPress={() => void handleGoogleSignIn()}
-                >
-                  {submitAction === "google" ? (
-                    <ActivityIndicator color={colors.ink} />
-                  ) : (
-                    <>
-                      <HugeiconsIcon color="#4285F4" icon={GoogleIcon} size={24} strokeWidth={2.1} />
-                      <Text style={styles.googleButtonText}>Continue with Google</Text>
-                    </>
-                  )}
-                </Pressable>
-              ) : null}
+                {showIdentifierTabs && phoneAuthEnabled ? (
+                  <View style={styles.segmentRow}>
+                    <SegmentButton
+                      active={identifierMode === "email"}
+                      icon={Mail01Icon}
+                      label="Email"
+                      onPress={() => setIdentifierMode("email")}
+                    />
+                    <SegmentButton
+                      active={identifierMode === "phone"}
+                      icon={SmartPhone01Icon}
+                      label="Phone"
+                      onPress={() => setIdentifierMode("phone")}
+                    />
+                  </View>
+                ) : null}
 
-              {mode !== "verify-email" && mode !== "verify-phone" && mode !== "reset-password" ? <Divider /> : null}
-
-              {showIdentifierTabs ? (
-                <View style={styles.segmentRow}>
-                  <SegmentButton active={identifierMode === "email"} label="Email" onPress={() => setIdentifierMode("email")} />
-                  <SegmentButton active={identifierMode === "phone"} label="Phone" onPress={() => setIdentifierMode("phone")} />
-                </View>
-              ) : null}
-
-              {mode === "sign-up" ? (
-                <Field
-                  autoCapitalize="words"
-                  icon={UserIcon}
-                  label="Full name"
-                  onChangeText={setFullName}
-                  placeholder="Your name"
-                  value={fullName}
-                />
-              ) : null}
-
-              {mode === "verify-email" || mode === "verify-phone" ? (
-                <Field
-                  inputMode="numeric"
-                  icon={LockPasswordIcon}
-                  label={mode === "verify-phone" ? "Phone code" : "Email code"}
-                  onChangeText={setCode}
-                  placeholder="Enter code"
-                  value={code}
-                />
-              ) : mode === "reset-password" ? (
-                <>
+                {mode === "sign-up" ? (
                   <Field
-                    inputMode="numeric"
-                    icon={LockPasswordIcon}
-                    label="Reset code"
-                    onChangeText={setCode}
-                    placeholder="Enter code"
-                    value={code}
+                    autoCapitalize="words"
+                    autoComplete="name"
+                    icon={UserIcon}
+                    label="Full name"
+                    onChangeText={setFullName}
+                    placeholder="Your full name"
+                    textContentType="name"
+                    value={fullName}
                   />
+                ) : null}
+
+                {mode === "verify-email" || mode === "verify-phone" || mode === "verify-reset-code" || mode === "verify-sign-in" ? (
+                  <>
+                    {mode === "verify-sign-in" && availableSecondFactors.length > 1 ? (
+                      <FactorPicker
+                        factors={availableSecondFactors}
+                        selected={selectedSecondFactor}
+                        onSelect={(factor) => void selectSecondFactor(factor)}
+                      />
+                    ) : null}
+                    <Field
+                      autoComplete="one-time-code"
+                      icon={LockPasswordIcon}
+                      inputMode={selectedSecondFactor?.strategy === "backup_code" ? "text" : "numeric"}
+                      keyboardType={selectedSecondFactor?.strategy === "backup_code" ? "default" : "number-pad"}
+                      label={selectedSecondFactor?.strategy === "backup_code" ? "Backup code" : "Verification code"}
+                      maxLength={selectedSecondFactor?.strategy === "backup_code" ? 32 : 6}
+                      onChangeText={(value) => setCode(selectedSecondFactor?.strategy === "backup_code" ? value : value.replace(/\D/g, ""))}
+                      placeholder={selectedSecondFactor?.strategy === "backup_code" ? "Enter backup code" : "6-digit code"}
+                      textContentType="oneTimeCode"
+                      value={code}
+                    />
+                    {canResendCode(mode, selectedSecondFactor) ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        disabled={isSubmitting}
+                        hitSlop={8}
+                        style={styles.inlineAction}
+                        onPress={() => void resendCurrentCode()}
+                      >
+                        <Text style={styles.inlineActionText}>Resend code</Text>
+                      </Pressable>
+                    ) : null}
+                  </>
+                ) : mode === "reset-password" ? (
                   <Field
+                    autoComplete="new-password"
                     icon={LockPasswordIcon}
                     label="New password"
                     onChangeText={setResetPassword}
                     onToggleSecure={() => setResetPasswordVisible((current) => !current)}
-                    placeholder="New password"
+                    placeholder="At least 8 characters"
                     secureTextEntry={!resetPasswordVisible}
                     showSecureToggle
+                    textContentType="newPassword"
                     value={resetPassword}
                   />
-                </>
-              ) : (
-                <>
-                  <Field
-                    autoCapitalize="none"
-                    icon={identifierMode === "phone" ? SmartPhone01Icon : Mail01Icon}
-                    keyboardType={identifierMode === "phone" ? "phone-pad" : "email-address"}
-                    label={identifierMode === "phone" ? "Phone number" : "Email"}
-                    onChangeText={identifierMode === "phone" ? setPhone : setEmail}
-                    placeholder={identifierMode === "phone" ? "+91 98765 43210" : "you@example.com"}
-                    value={identifierMode === "phone" ? phone : email}
-                  />
-                  {mode !== "forgot-password" ? (
+                ) : (
+                  <>
                     <Field
-                      icon={LockPasswordIcon}
-                      label="Password"
-                      onChangeText={setPassword}
-                      onToggleSecure={() => setPasswordVisible((current) => !current)}
-                      placeholder="Password"
-                      secureTextEntry={!passwordVisible}
-                      showSecureToggle
-                      value={password}
+                      autoCapitalize="none"
+                      autoComplete={identifierMode === "phone" ? "tel" : "email"}
+                      icon={identifierMode === "phone" ? SmartPhone01Icon : Mail01Icon}
+                      keyboardType={identifierMode === "phone" ? "phone-pad" : "email-address"}
+                      label={identifierMode === "phone" ? "Phone number" : "Email address"}
+                      onChangeText={identifierMode === "phone" ? setPhone : setEmail}
+                      placeholder={identifierMode === "phone" ? "+91 98765 43210" : "you@example.com"}
+                      textContentType={identifierMode === "phone" ? "telephoneNumber" : "emailAddress"}
+                      value={identifierMode === "phone" ? phone : email}
                     />
-                  ) : null}
-                </>
-              )}
+                    {identifierMode === "phone" ? <Text style={styles.fieldHint}>Indian mobile numbers can be entered without +91.</Text> : null}
+                    {mode !== "forgot-password" ? (
+                      <Field
+                        autoComplete={mode === "sign-up" ? "new-password" : "current-password"}
+                        icon={LockPasswordIcon}
+                        label="Password"
+                        onChangeText={setPassword}
+                        onToggleSecure={() => setPasswordVisible((current) => !current)}
+                        placeholder={mode === "sign-up" ? "Create a strong password" : "Enter your password"}
+                        secureTextEntry={!passwordVisible}
+                        showSecureToggle
+                        textContentType={mode === "sign-up" ? "newPassword" : "password"}
+                        value={password}
+                      />
+                    ) : null}
+                  </>
+                )}
 
-              {mode === "sign-up" ? (
-                <Text style={styles.passwordHint}>Use at least 8 characters with a mix of letters, numbers and symbols.</Text>
-              ) : null}
+                {mode === "sign-up" || mode === "reset-password" ? (
+                  <Text style={styles.passwordHint}>Use at least 8 characters. A longer, unique password is safer.</Text>
+                ) : null}
 
-              {mode === "sign-in" ? (
-                <Pressable style={styles.forgotButton} onPress={() => switchMode("forgot-password")}>
-                  <Text style={styles.forgotText}>Forgot password?</Text>
-                </Pressable>
-              ) : null}
+                {mode === "sign-in" ? (
+                  <Pressable accessibilityRole="button" hitSlop={8} style={styles.forgotButton} onPress={() => switchMode("forgot-password")}>
+                    <Text style={styles.forgotText}>Forgot password?</Text>
+                  </Pressable>
+                ) : null}
 
-              {notice ? <Text style={styles.noticeInline}>{notice}</Text> : null}
-              {error ? <Text style={styles.error}>{error}</Text> : null}
+                {notice ? <InlineMessage tone="success" message={notice} /> : null}
+                {error ? <InlineMessage tone="danger" message={error} /> : null}
 
-              <PrimaryButton
-                disabled={isSubmitting || !hasClerkKey}
-                label={primaryLabel}
-                loading={submitAction === "password" || submitAction === "reset"}
-                onPress={() => {
-                  if (mode === "sign-up") {
-                    void handleSignUp();
-                    return;
-                  }
-                  if (mode === "verify-email" || mode === "verify-phone") {
-                    void handleVerifySignUp();
-                    return;
-                  }
-                  if (mode === "forgot-password") {
-                    void handleForgotPassword();
-                    return;
-                  }
-                  if (mode === "reset-password") {
-                    void handleResetPassword();
-                    return;
-                  }
-                  void handleSignIn();
-                }}
-              />
+                <PrimaryButton
+                  disabled={isSubmitting || !hasClerkKey}
+                  label={primaryLabel}
+                  loading={submitAction === "password" || submitAction === "reset" || submitAction === "verification"}
+                  onPress={() => {
+                    if (mode === "sign-up") {
+                      void handleSignUp();
+                      return;
+                    }
+                    if (mode === "verify-email" || mode === "verify-phone") {
+                      void handleVerifySignUp();
+                      return;
+                    }
+                    if (mode === "forgot-password") {
+                      void handleForgotPassword();
+                      return;
+                    }
+                    if (mode === "verify-reset-code") {
+                      void handleVerifyResetCode();
+                      return;
+                    }
+                    if (mode === "reset-password") {
+                      void handleResetPassword();
+                      return;
+                    }
+                    if (mode === "verify-sign-in") {
+                      void handleSecondFactor();
+                      return;
+                    }
+                    void handleSignIn();
+                  }}
+                />
 
-              <FooterSwitch mode={mode} onSwitch={switchMode} />
-            </AuthPanel>
-          )}
-          <LegalFooter />
+                <FooterSwitch mode={mode} onSwitch={switchMode} />
+              </AuthPanel>
+            )}
+
+            <LegalFooter />
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </Screen>
+  );
+}
+
+function BrandStage({ onBack, title }: { onBack: () => void; title: string }) {
+  return (
+    <View style={styles.brandStage}>
+      <View style={styles.topBar}>
+        <Pressable
+          accessibilityLabel="Go back"
+          accessibilityRole="button"
+          hitSlop={8}
+          style={({ pressed }) => [styles.backButton, pressed ? styles.brandButtonPressed : null]}
+          onPress={onBack}
+        >
+          <HugeiconsIcon color={colors.surface} icon={ArrowLeft02Icon} size={23} strokeWidth={2.4} />
+        </Pressable>
+        <Text numberOfLines={1} style={styles.headerTitle}>{title}</Text>
+        <View style={styles.headerSpacer} />
+      </View>
+
+      <View style={styles.brandIdentity}>
+        <View style={styles.logoPlate}>
+          <Image resizeMode="contain" source={logoSource} style={styles.logoImage} />
+        </View>
+        <View style={styles.brandCopy}>
+          <Text style={styles.brandName}>1HandIndia</Text>
+          <Text style={styles.brandTagline}>One account for trusted shopping across India.</Text>
+        </View>
+      </View>
+
+      <View style={styles.securityLine}>
+        <HugeiconsIcon color="#FFF3EE" icon={LockPasswordIcon} size={17} strokeWidth={2.3} />
+        <Text style={styles.securityText}>Secure sign in powered by Clerk</Text>
+      </View>
+    </View>
   );
 }
 
@@ -566,11 +830,34 @@ function AuthPanel({ children }: { children: React.ReactNode }) {
   return <View style={styles.panel}>{children}</View>;
 }
 
+function MainModeTabs({ mode, onSwitch }: { mode: AuthMode; onSwitch: (mode: AuthMode) => void }) {
+  return (
+    <View style={styles.mainModeTabs}>
+      <Pressable
+        accessibilityRole="tab"
+        accessibilityState={{ selected: mode === "sign-in" }}
+        style={[styles.mainModeTab, mode === "sign-in" ? styles.mainModeTabActive : null]}
+        onPress={() => onSwitch("sign-in")}
+      >
+        <Text style={[styles.mainModeText, mode === "sign-in" ? styles.mainModeTextActive : null]}>Sign in</Text>
+      </Pressable>
+      <Pressable
+        accessibilityRole="tab"
+        accessibilityState={{ selected: mode === "sign-up" }}
+        style={[styles.mainModeTab, mode === "sign-up" ? styles.mainModeTabActive : null]}
+        onPress={() => onSwitch("sign-up")}
+      >
+        <Text style={[styles.mainModeText, mode === "sign-up" ? styles.mainModeTextActive : null]}>Create account</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 function Divider() {
   return (
     <View style={styles.dividerRow}>
       <View style={styles.dividerLine} />
-      <Text style={styles.dividerText}>or use email or phone</Text>
+      <Text style={styles.dividerText}>or continue with</Text>
       <View style={styles.dividerLine} />
     </View>
   );
@@ -579,24 +866,24 @@ function Divider() {
 function FooterSwitch({ mode, onSwitch }: { mode: AuthMode; onSwitch: (mode: AuthMode) => void }) {
   if (mode === "verify-email" || mode === "verify-phone") {
     return (
-      <Pressable style={styles.switchButton} onPress={() => onSwitch("sign-up")}>
+      <Pressable accessibilityRole="button" style={styles.switchButton} onPress={() => onSwitch("sign-up")}>
         <Text style={styles.switchText}>Change account details</Text>
       </Pressable>
     );
   }
 
-  if (mode === "forgot-password" || mode === "reset-password") {
+  if (mode === "forgot-password" || mode === "verify-reset-code" || mode === "reset-password" || mode === "verify-sign-in") {
     return (
-      <Pressable style={styles.switchButton} onPress={() => onSwitch("sign-in")}>
-        <Text style={styles.switchMuted}>Remembered password? <Text style={styles.switchAccent}>Sign in</Text></Text>
+      <Pressable accessibilityRole="button" style={styles.switchButton} onPress={() => onSwitch("sign-in")}>
+        <Text style={styles.switchMuted}>Back to <Text style={styles.switchAccent}>sign in</Text></Text>
       </Pressable>
     );
   }
 
   return (
-    <Pressable style={styles.switchButton} onPress={() => onSwitch(mode === "sign-in" ? "sign-up" : "sign-in")}>
+    <Pressable accessibilityRole="button" style={styles.switchButton} onPress={() => onSwitch(mode === "sign-in" ? "sign-up" : "sign-in")}>
       <Text style={styles.switchMuted}>
-        {mode === "sign-in" ? "New customer? " : "Already have an account? "}
+        {mode === "sign-in" ? "New to 1HandIndia? " : "Already have an account? "}
         <Text style={styles.switchAccent}>{mode === "sign-in" ? "Create account" : "Sign in"}</Text>
       </Text>
     </Pressable>
@@ -605,15 +892,55 @@ function FooterSwitch({ mode, onSwitch }: { mode: AuthMode; onSwitch: (mode: Aut
 
 type SegmentButtonProps = {
   active: boolean;
+  icon: Parameters<typeof HugeiconsIcon>[0]["icon"];
   label: string;
   onPress: () => void;
 };
 
-function SegmentButton({ active, label, onPress }: SegmentButtonProps) {
+function SegmentButton({ active, icon, label, onPress }: SegmentButtonProps) {
   return (
-    <Pressable style={[styles.segmentButton, active ? styles.segmentButtonActive : null]} onPress={onPress}>
+    <Pressable
+      accessibilityRole="tab"
+      accessibilityState={{ selected: active }}
+      style={({ pressed }) => [styles.segmentButton, active ? styles.segmentButtonActive : null, pressed ? styles.buttonPressed : null]}
+      onPress={onPress}
+    >
+      <HugeiconsIcon color={active ? colors.surface : colors.muted} icon={icon} size={18} strokeWidth={2.3} />
       <Text style={[styles.segmentText, active ? styles.segmentTextActive : null]}>{label}</Text>
     </Pressable>
+  );
+}
+
+function FactorPicker({
+  factors,
+  selected,
+  onSelect,
+}: {
+  factors: SecondFactorOption[];
+  selected: SecondFactorOption | null;
+  onSelect: (factor: SecondFactorOption) => void;
+}) {
+  return (
+    <View style={styles.factorSection}>
+      <Text style={styles.factorLabel}>Verify with</Text>
+      <View style={styles.factorList}>
+        {factors.map((factor) => {
+          const active = selected ? secondFactorKey(factor) === secondFactorKey(selected) : false;
+          return (
+            <Pressable
+              accessibilityRole="radio"
+              accessibilityState={{ checked: active }}
+              key={`${factor.strategy}-${factor.destination ?? "account"}`}
+              style={[styles.factorButton, active ? styles.factorButtonActive : null]}
+              onPress={() => onSelect(factor)}
+            >
+              <Text style={[styles.factorButtonText, active ? styles.factorButtonTextActive : null]}>{factor.label}</Text>
+              {factor.destination ? <Text style={styles.factorDestination}>{factor.destination}</Text> : null}
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
   );
 }
 
@@ -624,44 +951,60 @@ type FieldProps = {
   placeholder: string;
   onChangeText: (value: string) => void;
   autoCapitalize?: "none" | "sentences" | "words" | "characters";
+  autoComplete?: React.ComponentProps<typeof TextInput>["autoComplete"];
   inputMode?: "text" | "numeric";
   keyboardType?: KeyboardTypeOptions;
+  maxLength?: number;
   secureTextEntry?: boolean;
   showSecureToggle?: boolean;
+  textContentType?: React.ComponentProps<typeof TextInput>["textContentType"];
   onToggleSecure?: () => void;
 };
 
 function Field({
   autoCapitalize,
+  autoComplete,
   icon,
   inputMode,
   keyboardType,
   label,
+  maxLength,
   onChangeText,
   onToggleSecure,
   placeholder,
   secureTextEntry,
   showSecureToggle,
+  textContentType,
   value,
 }: FieldProps) {
   return (
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
       <View style={styles.inputShell}>
-        <HugeiconsIcon color={colors.muted} icon={icon} size={21} strokeWidth={2.2} />
+        <HugeiconsIcon color={colors.muted} icon={icon} size={20} strokeWidth={2.2} />
         <TextInput
+          accessibilityLabel={label}
           autoCapitalize={autoCapitalize}
+          autoComplete={autoComplete}
           inputMode={inputMode}
           keyboardType={keyboardType}
+          maxLength={maxLength}
           onChangeText={onChangeText}
           placeholder={placeholder}
-          placeholderTextColor={colors.muted}
+          placeholderTextColor="#9CA3AF"
           secureTextEntry={secureTextEntry}
+          selectionColor={colors.primary}
           style={styles.input}
+          textContentType={textContentType}
           value={value}
         />
         {showSecureToggle ? (
-          <Pressable accessibilityLabel={secureTextEntry ? "Show password" : "Hide password"} hitSlop={10} onPress={onToggleSecure}>
+          <Pressable
+            accessibilityLabel={secureTextEntry ? "Show password" : "Hide password"}
+            accessibilityRole="button"
+            hitSlop={10}
+            onPress={onToggleSecure}
+          >
             <HugeiconsIcon color={colors.muted} icon={secureTextEntry ? ViewIcon : ViewOffSlashIcon} size={21} strokeWidth={2.2} />
           </Pressable>
         ) : null}
@@ -682,7 +1025,16 @@ function PrimaryButton({
   onPress: () => void;
 }) {
   return (
-    <Pressable disabled={disabled} style={[styles.primaryButton, disabled ? styles.disabledButton : null]} onPress={onPress}>
+    <Pressable
+      accessibilityRole="button"
+      disabled={disabled}
+      style={({ pressed }) => [
+        styles.primaryButton,
+        pressed ? styles.primaryButtonPressed : null,
+        disabled ? styles.disabledButton : null,
+      ]}
+      onPress={onPress}
+    >
       {loading ? <ActivityIndicator color={colors.surface} /> : <Text style={styles.primaryButtonText}>{label}</Text>}
     </Pressable>
   );
@@ -698,15 +1050,37 @@ function SecondaryButton({
   onPress: () => void;
 }) {
   return (
-    <Pressable disabled={disabled} style={[styles.secondaryButton, disabled ? styles.disabledButton : null]} onPress={onPress}>
+    <Pressable
+      accessibilityRole="button"
+      disabled={disabled}
+      style={({ pressed }) => [
+        styles.secondaryButton,
+        pressed ? styles.buttonPressed : null,
+        disabled ? styles.disabledButton : null,
+      ]}
+      onPress={onPress}
+    >
       <Text style={styles.secondaryButtonText}>{label}</Text>
     </Pressable>
   );
 }
 
-function Notice({ message, title, tone }: { message: string; title: string; tone: "danger" }) {
+function InlineMessage({ message, tone }: { message: string; tone: "danger" | "success" }) {
   return (
-    <View style={[styles.notice, tone === "danger" ? styles.noticeDanger : null]}>
+    <View
+      accessibilityLiveRegion="polite"
+      style={[styles.inlineMessage, tone === "danger" ? styles.inlineMessageDanger : styles.inlineMessageSuccess]}
+    >
+      <Text style={[styles.inlineMessageText, tone === "danger" ? styles.inlineMessageDangerText : styles.inlineMessageSuccessText]}>
+        {message}
+      </Text>
+    </View>
+  );
+}
+
+function Notice({ message, title }: { message: string; title: string }) {
+  return (
+    <View style={styles.notice}>
       <Text style={styles.noticeTitle}>{title}</Text>
       <Text style={styles.noticeText}>{message}</Text>
     </View>
@@ -715,33 +1089,91 @@ function Notice({ message, title, tone }: { message: string; title: string; tone
 
 function titleForMode(mode: AuthMode) {
   if (mode === "sign-up" || mode === "verify-email" || mode === "verify-phone") {
-    return "Create your account";
+    return "Create account";
   }
-  if (mode === "forgot-password" || mode === "reset-password") {
+  if (mode === "forgot-password" || mode === "verify-reset-code" || mode === "reset-password") {
     return "Reset password";
   }
+  if (mode === "verify-sign-in") {
+    return "Verify sign in";
+  }
 
-  return "Sign in";
+  return "Customer sign in";
+}
+
+function eyebrowForMode(mode: AuthMode) {
+  if (mode === "sign-up" || mode === "verify-email" || mode === "verify-phone") {
+    return "New customer";
+  }
+  if (mode === "forgot-password" || mode === "verify-reset-code" || mode === "reset-password") {
+    return "Account recovery";
+  }
+  if (mode === "verify-sign-in") {
+    return "Secure verification";
+  }
+  return "Welcome back";
 }
 
 function headlineForMode(mode: AuthMode) {
   if (mode === "sign-up") {
-    return "Create your account";
+    return "Create your shopping account";
   }
   if (mode === "verify-email") {
-    return "Verify your email";
+    return "Check your email";
   }
   if (mode === "verify-phone") {
-    return "Verify your phone";
+    return "Check your messages";
   }
   if (mode === "forgot-password") {
-    return "Forgot password";
+    return "Find your account";
+  }
+  if (mode === "verify-reset-code") {
+    return "Confirm your reset code";
   }
   if (mode === "reset-password") {
-    return "Create new password";
+    return "Create a new password";
+  }
+  if (mode === "verify-sign-in") {
+    return "One more security check";
   }
 
-  return "Welcome back";
+  return "Sign in to continue";
+}
+
+function subtitleForMode(
+  mode: AuthMode,
+  identifierMode: IdentifierMode,
+  factor: SecondFactorOption | null,
+  phoneAuthEnabled: boolean,
+) {
+  if (mode === "sign-up") {
+    return "Save addresses, track orders, manage returns, and keep your wishlist in one place.";
+  }
+  if (mode === "verify-email" || mode === "verify-phone") {
+    return "Enter the verification code to finish creating your customer account.";
+  }
+  if (mode === "forgot-password") {
+    return `Enter the ${identifierMode === "phone" ? "phone number" : "email address"} connected to your account.`;
+  }
+  if (mode === "verify-reset-code") {
+    return "Confirm the code first, then choose a new password.";
+  }
+  if (mode === "reset-password") {
+    return "Your new password will be used for future email or phone sign ins.";
+  }
+  if (mode === "verify-sign-in") {
+    return factor?.destination
+      ? `Enter the code sent to ${factor.destination}.`
+      : factor?.strategy === "totp"
+        ? "Enter the current code from your authenticator app."
+        : factor?.strategy === "backup_code"
+          ? "Enter one of your unused backup codes."
+          : "Complete the verification required for this account.";
+  }
+
+  return phoneAuthEnabled
+    ? "Use your email, mobile number, or Google account."
+    : "Use your email or Google account.";
 }
 
 function primaryLabelForMode(mode: AuthMode) {
@@ -754,49 +1186,41 @@ function primaryLabelForMode(mode: AuthMode) {
   if (mode === "forgot-password") {
     return "Send reset code";
   }
+  if (mode === "verify-reset-code") {
+    return "Confirm code";
+  }
   if (mode === "reset-password") {
-    return "Reset password";
+    return "Save new password";
+  }
+  if (mode === "verify-sign-in") {
+    return "Verify sign in";
   }
 
   return "Sign in";
 }
 
-function validatePasswordAuth(identifierMode: IdentifierMode, identifier: string, password: string) {
-  return validateIdentifier(identifierMode, identifier) || (!password ? "Enter your password." : null);
+function secondFactorNotice(option: SecondFactorOption, resent = false) {
+  if (option.strategy === "phone_code") {
+    return resent ? "A new code was sent by text message." : "We sent a sign-in code by text message.";
+  }
+  if (option.strategy === "email_code") {
+    return resent ? "A new code was sent to your email." : "We sent a sign-in code to your email.";
+  }
+  if (option.strategy === "totp") {
+    return "Open your authenticator app to get the current code.";
+  }
+  return "Use one of the backup codes saved when verification was enabled.";
 }
 
-function validateSignUp(identifierMode: IdentifierMode, identifier: string, password: string, fullName: string) {
-  if (!fullName.trim()) {
-    return "Enter your full name.";
+function canResendCode(mode: AuthMode, factor: SecondFactorOption | null) {
+  if (mode === "verify-email" || mode === "verify-phone" || mode === "verify-reset-code") {
+    return true;
   }
-
-  return validateIdentifier(identifierMode, identifier) || (password.length < 8 ? "Password must be at least 8 characters." : null);
+  return mode === "verify-sign-in" && (factor?.strategy === "phone_code" || factor?.strategy === "email_code");
 }
 
-function validateIdentifier(identifierMode: IdentifierMode, identifier: string) {
-  if (identifierMode === "phone") {
-    return /^\+\d{8,15}$/.test(identifier) ? null : "Enter a valid phone number with country code.";
-  }
-
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier) ? null : "Enter a valid email address.";
-}
-
-function normalizePhoneIdentifier(value: string) {
-  const trimmed = value.trim();
-  if (trimmed.startsWith("+")) {
-    return `+${trimmed.slice(1).replace(/\D/g, "")}`;
-  }
-
-  const digits = trimmed.replace(/\D/g, "");
-  if (digits.length === 10) {
-    return `+91${digits}`;
-  }
-
-  return digits ? `+${digits}` : "";
-}
-
-function resetPasswordStrategy(identifierMode: IdentifierMode) {
-  return identifierMode === "phone" ? "reset_password_phone_code" : "reset_password_email_code";
+function secondFactorKey(factor: SecondFactorOption) {
+  return `${factor.strategy}:${factor.phoneNumberId ?? factor.emailAddressId ?? factor.destination ?? "account"}`;
 }
 
 function LegalFooter() {
@@ -804,11 +1228,9 @@ function LegalFooter() {
     <View style={styles.legalFooter}>
       <Text style={styles.legalFooterText}>
         By continuing, you agree to 1HandIndia's{" "}
-        <Text style={styles.legalFooterLink} onPress={() => void WebBrowser.openBrowserAsync("https://1handindia.com/terms-and-conditions")}>Terms of Service</Text>,{" "}
-        <Text style={styles.legalFooterLink} onPress={() => void WebBrowser.openBrowserAsync("https://1handindia.com/privacy-policy")}>Privacy Policy</Text>,{" "}
-        <Text style={styles.legalFooterLink} onPress={() => void WebBrowser.openBrowserAsync("https://1handindia.com/refund-return-policy")}>Return Policy</Text>,{" "}
-        <Text style={styles.legalFooterLink} onPress={() => void WebBrowser.openBrowserAsync("https://1handindia.com/shipping-policy")}>Shipping Policy</Text>, and{" "}
-        <Text style={styles.legalFooterLink} onPress={() => void WebBrowser.openBrowserAsync("https://1handindia.com/seller-policy")}>Seller Policy</Text>.
+        <Text style={styles.legalFooterLink} onPress={() => void WebBrowser.openBrowserAsync("https://1handindia.com/terms-and-conditions")}>Terms</Text>,{" "}
+        <Text style={styles.legalFooterLink} onPress={() => void WebBrowser.openBrowserAsync("https://1handindia.com/privacy-policy")}>Privacy Policy</Text>, and{" "}
+        <Text style={styles.legalFooterLink} onPress={() => void WebBrowser.openBrowserAsync("https://1handindia.com/refund-return-policy")}>Return Policy</Text>.
       </Text>
     </View>
   );
@@ -819,145 +1241,199 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
+    backgroundColor: colors.secondary,
     flexGrow: 1,
-    paddingBottom: 44,
-    paddingHorizontal: 16,
-    paddingTop: 12,
+  },
+  brandStage: {
+    backgroundColor: colors.primary,
+    minHeight: 244,
+    paddingBottom: 26,
+    paddingHorizontal: 20,
+    paddingTop: 8,
   },
   topBar: {
     alignItems: "center",
     flexDirection: "row",
-    minHeight: 46,
+    minHeight: 48,
   },
   backButton: {
     alignItems: "center",
-    height: 44,
+    backgroundColor: "rgba(255,255,255,0.14)",
+    borderRadius: 8,
+    height: 42,
     justifyContent: "center",
-    width: 44,
+    width: 42,
+  },
+  brandButtonPressed: {
+    backgroundColor: "rgba(255,255,255,0.24)",
   },
   headerTitle: {
-    color: colors.ink,
+    color: colors.surface,
     flex: 1,
-    fontSize: 22,
-    fontWeight: "900",
-    marginLeft: 8,
+    fontSize: 16,
+    fontWeight: "800",
+    textAlign: "center",
   },
   headerSpacer: {
-    width: 44,
+    width: 42,
   },
-  logoStage: {
+  brandIdentity: {
     alignItems: "center",
-    height: 156,
-    justifyContent: "flex-end",
-    marginTop: 8,
+    flexDirection: "row",
+    gap: 16,
+    marginTop: 28,
   },
   logoPlate: {
     alignItems: "center",
-    backgroundColor: "#FFFFFF",
-    borderColor: "#FFE1D7",
-    borderRadius: 30,
-    borderWidth: 1,
-    elevation: 10,
-    height: 126,
+    backgroundColor: colors.surface,
+    borderRadius: 8,
+    height: 76,
     justifyContent: "center",
-    shadowColor: colors.primary,
-    shadowOffset: { height: 12, width: 0 },
-    shadowOpacity: 0.18,
-    shadowRadius: 24,
-    transform: [{ rotate: "-6deg" }],
-    width: 126,
-  },
-  logoPlateActive: {
-    backgroundColor: "#FF6A00",
-    transform: [{ rotate: "7deg" }],
+    width: 76,
   },
   logoImage: {
-    height: 106,
-    width: 106,
+    height: 68,
+    width: 68,
+  },
+  brandCopy: {
+    flex: 1,
+  },
+  brandName: {
+    color: colors.surface,
+    fontSize: 30,
+    fontWeight: "900",
+    lineHeight: 36,
+  },
+  brandTagline: {
+    color: "#FFF0EB",
+    fontSize: 13,
+    fontWeight: "700",
+    lineHeight: 19,
+    marginTop: 4,
+  },
+  securityLine: {
+    alignItems: "center",
+    borderTopColor: "rgba(255,255,255,0.22)",
+    borderTopWidth: 1,
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 24,
+    paddingTop: 14,
+  },
+  securityText: {
+    color: "#FFF3EE",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  authWorkspace: {
+    backgroundColor: colors.secondary,
+    flex: 1,
+    paddingBottom: 32,
+    paddingHorizontal: 20,
+    paddingTop: 26,
   },
   panel: {
-    backgroundColor: colors.surface,
-    borderColor: "#F5E4DC",
-    borderRadius: 28,
-    borderWidth: 1,
-    elevation: 6,
-    marginTop: -8,
-    padding: 20,
-    shadowColor: "#ED3500",
-    shadowOffset: { height: 14, width: 0 },
-    shadowOpacity: 0.08,
-    shadowRadius: 28,
+    width: "100%",
   },
-  kicker: {
+  mainModeTabs: {
+    borderBottomColor: colors.border,
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    marginBottom: 26,
+  },
+  mainModeTab: {
+    alignItems: "center",
+    borderBottomColor: "transparent",
+    borderBottomWidth: 3,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 46,
+  },
+  mainModeTabActive: {
+    borderBottomColor: colors.primary,
+  },
+  mainModeText: {
+    color: colors.muted,
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  mainModeTextActive: {
+    color: colors.ink,
+  },
+  eyebrow: {
     color: colors.primary,
     fontSize: 12,
     fontWeight: "900",
-    letterSpacing: 0,
     textTransform: "uppercase",
   },
   title: {
     color: colors.ink,
-    fontSize: 28,
+    fontSize: 27,
     fontWeight: "900",
-    lineHeight: 34,
-    marginTop: 10,
+    lineHeight: 33,
+    marginTop: 8,
   },
   subtitle: {
     color: colors.muted,
     fontSize: 14,
-    fontWeight: "700",
-    lineHeight: 22,
-    marginTop: 12,
+    fontWeight: "600",
+    lineHeight: 21,
+    marginTop: 9,
   },
   googleButton: {
     alignItems: "center",
     backgroundColor: colors.surface,
-    borderColor: "#E8E1DD",
-    borderRadius: 18,
+    borderColor: "#DDD6D2",
+    borderRadius: 8,
     borderWidth: 1,
     flexDirection: "row",
-    gap: 12,
+    gap: 11,
     justifyContent: "center",
-    marginTop: 28,
-    minHeight: 58,
+    marginTop: 24,
+    minHeight: 54,
   },
   googleButtonText: {
     color: colors.ink,
     fontSize: 15,
-    fontWeight: "900",
+    fontWeight: "800",
+  },
+  buttonPressed: {
+    opacity: 0.78,
   },
   dividerRow: {
     alignItems: "center",
     flexDirection: "row",
     gap: 12,
-    marginVertical: 22,
+    marginVertical: 20,
   },
   dividerLine: {
-    backgroundColor: "#E8E1DD",
+    backgroundColor: colors.border,
     flex: 1,
     height: 1,
   },
   dividerText: {
     color: colors.muted,
     fontSize: 12,
-    fontWeight: "800",
+    fontWeight: "700",
   },
   segmentRow: {
-    backgroundColor: "#FFF8F5",
-    borderColor: "#F3E7E2",
-    borderRadius: 18,
+    backgroundColor: colors.softSurface,
+    borderColor: colors.border,
+    borderRadius: 8,
     borderWidth: 1,
     flexDirection: "row",
     gap: 6,
-    marginBottom: 16,
+    marginBottom: 20,
     padding: 5,
   },
   segmentButton: {
     alignItems: "center",
-    borderRadius: 14,
+    borderRadius: 6,
     flex: 1,
-    minHeight: 40,
+    flexDirection: "row",
+    gap: 7,
     justifyContent: "center",
+    minHeight: 42,
   },
   segmentButtonActive: {
     backgroundColor: colors.primary,
@@ -965,7 +1441,7 @@ const styles = StyleSheet.create({
   segmentText: {
     color: colors.muted,
     fontSize: 13,
-    fontWeight: "900",
+    fontWeight: "800",
   },
   segmentTextActive: {
     color: colors.surface,
@@ -975,94 +1451,152 @@ const styles = StyleSheet.create({
   },
   label: {
     color: colors.ink,
-    fontSize: 14,
-    fontWeight: "900",
+    fontSize: 13,
+    fontWeight: "800",
     marginBottom: 8,
   },
   inputShell: {
     alignItems: "center",
-    backgroundColor: "#FFFCFB",
-    borderColor: "#E8E1DD",
-    borderRadius: 18,
+    backgroundColor: colors.surface,
+    borderColor: "#DDD6D2",
+    borderRadius: 8,
     borderWidth: 1,
     flexDirection: "row",
-    gap: 12,
-    minHeight: 58,
+    gap: 11,
+    minHeight: 56,
     paddingHorizontal: 14,
   },
   input: {
     color: colors.ink,
     flex: 1,
     fontSize: 15,
-    fontWeight: "700",
-    minHeight: 56,
+    fontWeight: "600",
+    minHeight: 54,
     paddingVertical: 0,
+  },
+  fieldHint: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "600",
+    lineHeight: 17,
+    marginBottom: 14,
+    marginTop: -8,
   },
   passwordHint: {
     color: colors.muted,
     fontSize: 12,
-    fontWeight: "700",
+    fontWeight: "600",
     lineHeight: 18,
     marginBottom: 14,
-    marginTop: -4,
+    marginTop: -5,
   },
   forgotButton: {
     alignItems: "flex-end",
-    marginBottom: 24,
-    marginTop: -4,
+    alignSelf: "flex-end",
+    marginBottom: 20,
+    marginTop: -3,
+    paddingVertical: 5,
   },
   forgotText: {
     color: colors.primary,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "900",
   },
-  noticeInline: {
-    backgroundColor: "#F0FDF4",
-    borderColor: "#BBF7D0",
-    borderRadius: 16,
-    borderWidth: 1,
-    color: "#0F8A5F",
+  inlineAction: {
+    alignSelf: "flex-end",
+    marginBottom: 18,
+    marginTop: -7,
+    paddingVertical: 5,
+  },
+  inlineActionText: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  factorSection: {
+    marginBottom: 18,
+  },
+  factorLabel: {
+    color: colors.ink,
     fontSize: 13,
     fontWeight: "800",
-    lineHeight: 19,
-    marginBottom: 12,
+    marginBottom: 9,
+  },
+  factorList: {
+    gap: 8,
+  },
+  factorButton: {
+    backgroundColor: colors.surface,
+    borderColor: "#DDD6D2",
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+  },
+  factorButtonActive: {
+    backgroundColor: colors.softSurface,
+    borderColor: colors.primary,
+  },
+  factorButtonText: {
+    color: colors.ink,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  factorButtonTextActive: {
+    color: colors.primary,
+  },
+  factorDestination: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "600",
+    marginTop: 3,
+  },
+  inlineMessage: {
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 14,
     padding: 12,
   },
-  error: {
+  inlineMessageDanger: {
     backgroundColor: "#FFF1F1",
     borderColor: "#F7C6C6",
-    borderRadius: 16,
-    borderWidth: 1,
-    color: colors.danger,
+  },
+  inlineMessageSuccess: {
+    backgroundColor: "#F0FDF4",
+    borderColor: "#BBF7D0",
+  },
+  inlineMessageText: {
     fontSize: 13,
-    fontWeight: "800",
+    fontWeight: "700",
     lineHeight: 19,
-    marginBottom: 12,
-    padding: 12,
+  },
+  inlineMessageDangerText: {
+    color: colors.danger,
+  },
+  inlineMessageSuccessText: {
+    color: "#0F7A4F",
   },
   primaryButton: {
     alignItems: "center",
     backgroundColor: colors.primary,
-    borderRadius: 20,
-    elevation: 5,
+    borderRadius: 8,
     justifyContent: "center",
-    minHeight: 60,
+    minHeight: 56,
     paddingHorizontal: 18,
-    shadowColor: colors.primary,
-    shadowOffset: { height: 8, width: 0 },
-    shadowOpacity: 0.2,
-    shadowRadius: 16,
+  },
+  primaryButtonPressed: {
+    backgroundColor: "#CF2E00",
   },
   primaryButtonText: {
     color: colors.surface,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "900",
   },
   secondaryButton: {
     alignItems: "center",
-    backgroundColor: "#FFFCFB",
+    backgroundColor: colors.surface,
     borderColor: colors.border,
-    borderRadius: 18,
+    borderRadius: 8,
     borderWidth: 1,
     justifyContent: "center",
     marginTop: 10,
@@ -1071,15 +1605,16 @@ const styles = StyleSheet.create({
   },
   secondaryButtonText: {
     color: colors.ink,
-    fontSize: 15,
-    fontWeight: "900",
+    fontSize: 14,
+    fontWeight: "800",
   },
   disabledButton: {
-    opacity: 0.55,
+    opacity: 0.52,
   },
   switchButton: {
     alignItems: "center",
-    marginTop: 22,
+    marginTop: 16,
+    minHeight: 44,
     padding: 10,
   },
   switchText: {
@@ -1090,31 +1625,29 @@ const styles = StyleSheet.create({
   switchMuted: {
     color: colors.muted,
     fontSize: 14,
-    fontWeight: "800",
+    fontWeight: "700",
   },
   switchAccent: {
     color: colors.primary,
     fontWeight: "900",
   },
   notice: {
-    borderRadius: 24,
-    borderWidth: 1,
-    marginBottom: 14,
-    padding: 14,
-  },
-  noticeDanger: {
     backgroundColor: "#FFF1F1",
     borderColor: "#F7C6C6",
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 18,
+    padding: 14,
   },
   noticeTitle: {
     color: colors.ink,
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "900",
   },
   noticeText: {
     color: colors.muted,
     fontSize: 13,
-    fontWeight: "700",
+    fontWeight: "600",
     lineHeight: 19,
     marginTop: 5,
   },
@@ -1122,31 +1655,24 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexDirection: "row",
     gap: 10,
-    marginTop: 16,
+    marginTop: 18,
   },
   syncText: {
     color: colors.muted,
     fontSize: 13,
-    fontWeight: "800",
-  },
-  limitText: {
-    color: colors.danger,
-    fontSize: 13,
-    fontWeight: "800",
-    lineHeight: 19,
-    marginTop: 12,
+    fontWeight: "700",
   },
   legalFooter: {
-    marginTop: 24,
-    paddingHorizontal: 16,
     alignItems: "center",
+    marginTop: 24,
+    paddingHorizontal: 8,
   },
   legalFooterText: {
     color: colors.muted,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "600",
+    lineHeight: 17,
     textAlign: "center",
-    lineHeight: 18,
   },
   legalFooterLink: {
     color: colors.primary,

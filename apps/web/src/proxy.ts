@@ -13,7 +13,7 @@ const clerkConfigured = Boolean(
 function securityProxy(request: NextRequest) {
   const hostHeader = request.headers.get("host") || "";
   const [hostname = "", port] = hostHeader.split(":");
-  const isLocal = hostname === "localhost" || hostname === "127.0.0.1";
+  const isLocal = hostname === "localhost" || hostname === "192.168.1.2";
   
   if (!isLocal && (hostname.startsWith("www.") || (port && port !== "80" && port !== "443"))) {
     const url = request.nextUrl.clone();

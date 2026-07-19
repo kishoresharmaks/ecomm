@@ -163,15 +163,15 @@ export function MobileCustomerAuthProvider({ children }: PropsWithChildren) {
         return;
       }
 
-      if (!userProfile.email) {
-        updateSyncState({ status: "error", error: "Your account needs an email address before it can be used here." });
+      if (!userProfile.email && !userProfile.phone) {
+        updateSyncState({ status: "error", error: "Your account needs a verified email address or phone number before it can be used here." });
         return;
       }
 
       const syncSignature = JSON.stringify({
         userId,
         refreshIndex,
-        email: userProfile.email,
+        email: userProfile.email ?? "",
         phone: userProfile.phone ?? "",
         fullName: userProfile.fullName ?? "",
       });
@@ -185,7 +185,7 @@ export function MobileCustomerAuthProvider({ children }: PropsWithChildren) {
         path: "/auth/sync-current-user",
         auth: { bearerToken, getBearerToken: readBearerToken, onUnauthorized: handleUnauthorized },
         body: {
-          email: userProfile.email,
+          ...(userProfile.email ? { email: userProfile.email } : {}),
           ...(userProfile.phone ? { phone: userProfile.phone } : {}),
           ...(userProfile.fullName ? { fullName: userProfile.fullName } : {}),
           defaultRole: "CUSTOMER",
@@ -244,10 +244,11 @@ export function mobileAuthErrorMessage(error: unknown) {
   }
 
   if (error && typeof error === "object" && "errors" in error) {
-    const clerkErrors = (error as { errors?: Array<{ longMessage?: string; message?: string }> }).errors;
-    const firstMessage = clerkErrors?.[0]?.longMessage ?? clerkErrors?.[0]?.message;
+    const clerkErrors = (error as { errors?: Array<{ code?: string; longMessage?: string; message?: string }> }).errors;
+    const firstError = clerkErrors?.[0];
+    const firstMessage = firstError?.longMessage ?? firstError?.message;
     if (firstMessage) {
-      return sanitizedMobileAuthErrorMessage(firstMessage);
+      return sanitizedMobileAuthErrorMessage(firstMessage, undefined, firstError?.code);
     }
   }
 
@@ -258,9 +259,34 @@ export function mobileAuthErrorMessage(error: unknown) {
   return "Something went wrong. Please try again.";
 }
 
-function sanitizedMobileAuthErrorMessage(message: string, status?: number) {
+function sanitizedMobileAuthErrorMessage(message: string, status?: number, clerkCode?: string) {
   const trimmed = message.trim();
   const lower = trimmed.toLowerCase();
+  const normalizedCode = clerkCode?.trim().toLowerCase();
+
+  if (normalizedCode === "form_code_incorrect") {
+    return "That verification code is incorrect. Check the latest code and try again.";
+  }
+
+  if (normalizedCode === "verification_expired" || normalizedCode === "form_code_expired") {
+    return "The verification code has expired. Request a new code and try again.";
+  }
+
+  if (normalizedCode === "form_identifier_not_found") {
+    return "We could not find an account with those details.";
+  }
+
+  if (normalizedCode === "form_password_incorrect") {
+    return "The email, phone number, or password is incorrect.";
+  }
+
+  if (normalizedCode === "form_password_pwned") {
+    return "Choose a different password. This password has appeared in a known data breach.";
+  }
+
+  if (normalizedCode === "form_password_length_too_short" || normalizedCode === "form_password_not_strong_enough") {
+    return "Choose a stronger password with at least 8 characters.";
+  }
 
   if (status === 401 || lower.includes("jwt") || lower.includes("bearer") || lower.includes("session token")) {
     return "Your session has expired. Please sign in again.";
@@ -279,13 +305,13 @@ function sanitizedMobileAuthErrorMessage(message: string, status?: number) {
   }
 
   if (/invalid.*password|incorrect.*password|invalid.*credential|identifier.*password/i.test(trimmed)) {
-    return "Email or password is incorrect.";
+    return "The email, phone number, or password is incorrect.";
   }
 
   if (/verification|otp|code/i.test(trimmed)) {
     return lower.includes("expired")
       ? "The verification code has expired. Please request a new one."
-      : "The verification code could not be confirmed. Please try again.";
+      : "The verification code could not be confirmed. Check the latest code and try again.";
   }
 
   if (/clerk|publishable|secret|token|auth.*provider|unauthorized/i.test(trimmed)) {

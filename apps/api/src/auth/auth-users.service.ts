@@ -87,7 +87,7 @@ export class AuthUsersService {
           },
           create: {
             userId: user.id,
-            displayName: dto.fullName ?? user.email,
+            displayName: dto.fullName ?? dto.phone ?? user.email,
             status: UserStatus.ACTIVE,
           },
         });
@@ -125,7 +125,7 @@ export class AuthUsersService {
       };
     });
 
-    if (result.isNew && roleCode === RoleCode.CUSTOMER) {
+    if (result.isNew && roleCode === RoleCode.CUSTOMER && !isInternalPhoneEmail(result.email)) {
       await this.notifications.notifyEvent({
         eventCode: EMAIL_TRIGGER_EVENTS.CUSTOMER_REGISTERED,
         recipientType: EmailRecipientType.CUSTOMER,
@@ -162,4 +162,8 @@ export class AuthUsersService {
         return "Operational platform role.";
     }
   }
+}
+
+function isInternalPhoneEmail(email: string) {
+  return email.endsWith("@phone.1handindia.local");
 }
