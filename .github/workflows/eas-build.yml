@@ -1,0 +1,93 @@
+name: EAS Build (Android)
+
+# Builds signed Android binaries on EAS servers using the onehandindiasteam
+# Expo account. Credentials (keystore, FCM key, GOOGLE_SERVICES_JSON) live on
+# EAS, so this workflow needs only one secret: EXPO_TOKEN.
+
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: "Mobile app to build"
+        required: true
+        default: "mobile-delivery"
+        type: choice
+        options:
+          - mobile-delivery
+          - mobile-customer
+          - mobile-seller
+          - all
+      profile:
+        description: "EAS build profile"
+        required: true
+        default: "preview"
+        type: choice
+        options:
+          - development
+          - preview
+          - production
+
+permissions:
+  contents: read
+
+jobs:
+  prep-matrix:
+    name: Prepare App Matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Prepare build matrix
+        id: set-matrix
+        env:
+          SELECTED_APP: ${{ github.event.inputs.app }}
+        run: |
+          if [ "$SELECTED_APP" = "all" ]; then
+            echo 'matrix={"app":["mobile-delivery","mobile-customer","mobile-seller"]}' >> "$GITHUB_OUTPUT"
+          else
+            echo "matrix={\"app\":[\"$SELECTED_APP\"]}" >> "$GITHUB_OUTPUT"
+          fi
+
+  eas-build:
+    needs: prep-matrix
+    name: EAS Build (${{ matrix.app }}, ${{ github.event.inputs.profile }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.prep-matrix.outputs.matrix) }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Setup Expo and EAS CLI
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Trigger EAS build
+        working-directory: apps/${{ matrix.app }}
+        run: |
+          eas build \
+            --platform android \
+            --profile "${{ github.event.inputs.profile }}" \
+            --non-interactive \
+            --no-wait
+
+      # --no-wait: the build runs on EAS servers; download the artifact from
+      # https://expo.dev/accounts/onehandindiasteam/projects when it finishes.
+      # Remove --no-wait if you prefer the workflow to block until completion
+      # (uses CI minutes but lets you chain artifact download steps).
