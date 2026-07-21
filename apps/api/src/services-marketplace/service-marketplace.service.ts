@@ -11,6 +11,7 @@ import {
   EmailRecipientType,
   PaymentProvider,
   PaymentStatus,
+  ProductTaxClassification,
   Prisma,
   RefundMethod,
   RefundReason,
@@ -30,6 +31,7 @@ import {
   ServiceSellerReceivableStatus,
   SellerSettlementStatus,
   SellerStatus,
+  SellerTaxRegistrationStatus,
   SellerType,
   ServiceBookingStatus,
   ServiceCancellationInitiator,
@@ -41,6 +43,7 @@ import {
   ServicePricingModel,
   ServiceQuoteStatus,
   ServiceVisitMode,
+  TaxSupplyType,
 } from "@indihub/database";
 import type { RequestUser } from "../auth/types/indihub-request";
 import { paginationFromQuery } from "../common/pagination";
@@ -49,6 +52,7 @@ import { CustomersService } from "../customers/customers.service";
 import { FinanceCalculatorService } from "../finance/finance-calculator.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { TaxDocumentsService } from "../tax/tax-documents.service";
 import {
   AdminServiceApprovalDto,
   CancelServiceBookingDto,
@@ -241,6 +245,7 @@ export class ServiceMarketplaceService {
     @Inject(CustomersService) private readonly customersService: CustomersService,
     @Inject(NotificationsService) private readonly notifications: NotificationsService,
     @Inject(FinanceCalculatorService) private readonly financeCalculator: FinanceCalculatorService,
+    @Inject(TaxDocumentsService) private readonly taxDocuments: TaxDocumentsService,
   ) {}
 
   async updateSellerCapabilities(sellerId: string, dto: UpdateSellerCapabilitiesDto, actor: RequestUser) {
@@ -401,6 +406,12 @@ export class ServiceMarketplaceService {
     const category = await this.ensureActiveCategory(dto.categoryId);
     const slug = await this.createUniqueServiceSlug(dto.title);
     this.validateServicePricing(dto);
+    const taxFields = this.resolveServiceTaxFields(
+      dto.taxClassification,
+      dto.sacCode,
+      dto.gstRatePercent,
+      seller.profile?.taxRegistrationStatus,
+    );
     const images = this.cleanImages(dto.images);
     const packages = this.cleanPackages(dto.packages);
     const areas = this.cleanAreas(dto.areas);
@@ -417,6 +428,9 @@ export class ServiceMarketplaceService {
         pricingModel: dto.pricingModel,
         paymentMode: dto.paymentMode,
         cancellationPolicy: dto.cancellationPolicy ?? ServiceCancellationPolicy.FLEXIBLE,
+        taxClassification: taxFields.taxClassification,
+        sacCode: taxFields.sacCode,
+        gstRatePercent: taxFields.gstRatePercent,
         basePricePaise: dto.basePricePaise ?? null,
         inspectionFeePaise: dto.inspectionFeePaise ?? 0,
         advanceAmountPaise: dto.advanceAmountPaise ?? 0,
@@ -477,6 +491,12 @@ export class ServiceMarketplaceService {
       allowedVisitModes: dto.allowedVisitModes ?? existing.allowedVisitModes,
     };
     this.validateServicePricing(merged);
+    const taxFields = this.resolveServiceTaxFields(
+      dto.taxClassification ?? existing.taxClassification,
+      dto.sacCode !== undefined ? dto.sacCode : existing.sacCode,
+      dto.gstRatePercent !== undefined ? dto.gstRatePercent : existing.gstRatePercent,
+      seller.profile?.taxRegistrationStatus,
+    );
 
     await this.prisma.client.$transaction(async (tx) => {
       await tx.serviceListing.update({
@@ -488,6 +508,9 @@ export class ServiceMarketplaceService {
           ...(dto.pricingModel !== undefined ? { pricingModel: dto.pricingModel } : {}),
           ...(dto.paymentMode !== undefined ? { paymentMode: dto.paymentMode } : {}),
           ...(dto.cancellationPolicy !== undefined ? { cancellationPolicy: dto.cancellationPolicy } : {}),
+          taxClassification: taxFields.taxClassification,
+          sacCode: taxFields.sacCode,
+          gstRatePercent: taxFields.gstRatePercent,
           ...(dto.basePricePaise !== undefined ? { basePricePaise: dto.basePricePaise } : {}),
           ...(dto.inspectionFeePaise !== undefined ? { inspectionFeePaise: dto.inspectionFeePaise } : {}),
           ...(dto.advanceAmountPaise !== undefined ? { advanceAmountPaise: dto.advanceAmountPaise } : {}),
@@ -694,6 +717,12 @@ export class ServiceMarketplaceService {
       ? listing.packages.find((item) => item.id === dto.servicePackageId && item.isActive)
       : listing.packages.find((item) => item.isActive)) ?? null;
     const pricing = this.bookingPricing(listing, selectedPackage);
+    const taxSnapshot = await this.serviceBookingTaxSnapshot(
+      customer,
+      listing,
+      addressSnapshot,
+      pricing.totalPayablePaise,
+    );
     const bookingNumber = await this.createUniqueBookingNumber();
     const scheduledStartAt = dto.scheduledStartAt ? new Date(dto.scheduledStartAt) : null;
     const scheduledEndAt = this.scheduledEndAt(scheduledStartAt, listing.serviceDurationMinutes);
@@ -722,6 +751,24 @@ export class ServiceMarketplaceService {
         visitMode: dto.visitMode,
         paymentMode: listing.paymentMode,
         cancellationPolicy: listing.cancellationPolicy,
+        sellerTaxRegistrationStatusSnapshot: taxSnapshot.sellerTaxRegistrationStatus,
+        sellerLegalNameSnapshot: taxSnapshot.sellerLegalName,
+        sellerGstinSnapshot: taxSnapshot.sellerGstin,
+        sellerAddressSnapshot: taxSnapshot.sellerAddress,
+        buyerLegalNameSnapshot: taxSnapshot.buyerLegalName,
+        buyerGstinSnapshot: null,
+        buyerAddressSnapshot: taxSnapshot.buyerAddress,
+        serviceTaxClassificationSnapshot: taxSnapshot.taxClassification,
+        sacCodeSnapshot: taxSnapshot.sacCode,
+        gstRatePercentSnapshot: taxSnapshot.gstRatePercent,
+        taxSupplyTypeSnapshot: taxSnapshot.supplyType,
+        placeOfSupplyStateCodeSnapshot: taxSnapshot.placeOfSupplyStateCode,
+        taxableValuePaise: taxSnapshot.taxableValuePaise,
+        cgstPaise: taxSnapshot.cgstPaise,
+        sgstPaise: taxSnapshot.sgstPaise,
+        igstPaise: taxSnapshot.igstPaise,
+        cessPaise: 0,
+        taxTotalPaise: taxSnapshot.taxTotalPaise,
         scheduledStartAt,
         scheduledEndAt,
         addressSnapshot: addressSnapshot ? toJsonValue(addressSnapshot) : Prisma.JsonNull,
@@ -1116,6 +1163,13 @@ export class ServiceMarketplaceService {
       throw new BadRequestException("This quote has expired. Please request a new quote.");
     }
     const duePaise = Math.max(0, quote.totalPaise - booking.paidAmountPaise);
+    const taxAmounts = this.calculateServiceTaxAmounts(
+      quote.totalPaise,
+      booking.sellerTaxRegistrationStatusSnapshot,
+      booking.serviceTaxClassificationSnapshot,
+      Number(booking.gstRatePercentSnapshot),
+      booking.taxSupplyTypeSnapshot,
+    );
 
     await this.prisma.client.$transaction(async (tx) => {
       await tx.serviceQuote.update({ where: { id: quote.id }, data: { status: ServiceQuoteStatus.ACCEPTED, acceptedAt: new Date() } });
@@ -1125,6 +1179,11 @@ export class ServiceMarketplaceService {
           status: ServiceBookingStatus.QUOTE_ACCEPTED,
           subtotalPaise: quote.totalPaise,
           totalPayablePaise: quote.totalPaise,
+          taxableValuePaise: taxAmounts.taxableValuePaise,
+          cgstPaise: taxAmounts.cgstPaise,
+          sgstPaise: taxAmounts.sgstPaise,
+          igstPaise: taxAmounts.igstPaise,
+          taxTotalPaise: taxAmounts.taxTotalPaise,
           ...(duePaise > 0
             ? {
                 payments: {
@@ -1188,6 +1247,7 @@ export class ServiceMarketplaceService {
 
     const updated = await this.getCustomerBooking(actor, bookingNumber);
     if (nextStatus === ServiceBookingStatus.CLOSED_AFTER_INSPECTION) {
+      await this.taxDocuments.issueServiceBookingDocument(updated.id, actor.id);
       await this.createSettlementIfEligible(updated);
     }
     await this.notifyBooking(updated, "service_quote_rejected");
@@ -1338,9 +1398,11 @@ export class ServiceMarketplaceService {
     const updated = await this.transitionBooking(booking, ServiceBookingStatus.COMPLETED, actor, "service_booking.completed", {
       completionConfirmedById: actor.id,
     });
-    await this.createSettlementIfEligible(updated);
-    await this.notifyBooking(updated, "service_completion_confirmed");
-    return updated;
+    await this.taxDocuments.issueServiceBookingDocument(updated.id, actor.id);
+    const invoiced = await this.getCustomerBooking(actor, bookingNumber);
+    await this.createSettlementIfEligible(invoiced);
+    await this.notifyBooking(invoiced, "service_completion_confirmed");
+    return invoiced;
   }
 
   async customerRaiseDispute(actor: RequestUser, bookingNumber: string, dto: RaiseServiceDisputeDto) {
@@ -1443,6 +1505,7 @@ export class ServiceMarketplaceService {
 
     const updated = await this.getAdminBookingOrThrow(bookingNumber);
     if (nextStatus === ServiceBookingStatus.COMPLETED) {
+      await this.taxDocuments.issueServiceBookingDocument(updated.id, actor.id);
       await this.createSettlementIfEligible(updated);
     }
     await this.notifyBooking(updated, "service_dispute_resolved");
@@ -4091,6 +4154,197 @@ export class ServiceMarketplaceService {
     };
   }
 
+  private resolveServiceTaxFields(
+    requestedClassification: ProductTaxClassification | undefined,
+    requestedSacCode: string | null | undefined,
+    requestedRate: Prisma.Decimal | number | string | null | undefined,
+    registrationStatus = SellerTaxRegistrationStatus.NOT_REGISTERED,
+  ) {
+    const taxClassification =
+      requestedClassification ?? ProductTaxClassification.TAXABLE;
+    const sacCode = requestedSacCode?.trim() || null;
+    const parsedRate =
+      requestedRate === null || requestedRate === undefined || requestedRate === ""
+        ? null
+        : Number(requestedRate);
+
+    if (sacCode && !/^\d{6}$/.test(sacCode)) {
+      throw new BadRequestException("SAC code must contain exactly 6 digits.");
+    }
+    if (parsedRate !== null && (!Number.isFinite(parsedRate) || parsedRate < 0 || parsedRate > 100)) {
+      throw new BadRequestException("GST rate must be between 0 and 100.");
+    }
+    if (
+      (taxClassification === ProductTaxClassification.TAXABLE ||
+        taxClassification === ProductTaxClassification.NIL_RATED) &&
+      !sacCode
+    ) {
+      throw new BadRequestException("Taxable and nil-rated services require a valid SAC code.");
+    }
+
+    const gstRatePercent =
+      taxClassification === ProductTaxClassification.TAXABLE &&
+      registrationStatus === SellerTaxRegistrationStatus.GST_REGISTERED
+        ? parsedRate
+        : 0;
+    if (
+      taxClassification === ProductTaxClassification.TAXABLE &&
+      registrationStatus === SellerTaxRegistrationStatus.GST_REGISTERED &&
+      (!gstRatePercent || gstRatePercent <= 0)
+    ) {
+      throw new BadRequestException(
+        "Taxable services require a GST rate greater than zero for regular GST sellers.",
+      );
+    }
+
+    return { taxClassification, sacCode, gstRatePercent };
+  }
+
+  private async serviceBookingTaxSnapshot(
+    customer: { id: string },
+    listing: ServiceListingRecord,
+    visitAddress: ServiceBookingAddressSnapshot | null,
+    considerationPaise: number,
+  ) {
+    const registrationStatus =
+      listing.seller.profile?.taxRegistrationStatus ??
+      SellerTaxRegistrationStatus.NOT_REGISTERED;
+    const taxFields = this.resolveServiceTaxFields(
+      listing.taxClassification,
+      listing.sacCode,
+      listing.gstRatePercent,
+      registrationStatus,
+    );
+    const sellerAddress = listing.seller.addresses[0];
+    if (!sellerAddress) {
+      throw new BadRequestException(
+        "Provider business address is required before accepting service bookings.",
+      );
+    }
+
+    const buyer = await this.prisma.client.customer.findUnique({
+      where: { id: customer.id },
+      include: {
+        user: true,
+        addresses: {
+          orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }, { id: "asc" }],
+          take: 1,
+        },
+      },
+    });
+    if (!buyer) {
+      throw new NotFoundException("Customer account not found.");
+    }
+    const defaultAddress = buyer.addresses[0];
+    const visitIsBuyerAddress =
+      visitAddress &&
+      stringLocation(visitAddress, "addressType") !== "PROVIDER_BUSINESS_ADDRESS";
+    const buyerAddress = visitIsBuyerAddress
+      ? visitAddress
+      : defaultAddress
+        ? {
+            fullName: defaultAddress.fullName,
+            line1: defaultAddress.line1,
+            line2: defaultAddress.line2,
+            area: defaultAddress.area,
+            city: defaultAddress.city,
+            state: defaultAddress.state,
+            pincode: defaultAddress.pincode,
+            country: defaultAddress.country,
+            countryCode: defaultAddress.countryCode,
+            stateCode: defaultAddress.stateCode,
+          }
+        : {};
+    const buyerCountryCode = stringLocation(buyerAddress, "countryCode")?.toUpperCase() ?? "IN";
+    const buyerStateCode = stringLocation(buyerAddress, "stateCode")?.toUpperCase() ?? null;
+    const sellerStateCode = sellerAddress.stateCode?.trim().toUpperCase() || null;
+    const supplyType =
+      buyerCountryCode !== "IN"
+        ? TaxSupplyType.OUTSIDE_INDIA
+        : buyerStateCode && sellerStateCode && buyerStateCode === sellerStateCode
+          ? TaxSupplyType.INTRA_STATE
+          : TaxSupplyType.INTER_STATE;
+    const amounts = this.calculateServiceTaxAmounts(
+      considerationPaise,
+      registrationStatus,
+      taxFields.taxClassification,
+      taxFields.gstRatePercent ?? 0,
+      supplyType,
+    );
+
+    return {
+      sellerTaxRegistrationStatus: registrationStatus,
+      sellerLegalName:
+        listing.seller.profile?.businessLegalName?.trim() || listing.seller.storeName,
+      sellerGstin: listing.seller.profile?.gstNumber?.trim().toUpperCase() || null,
+      sellerAddress: toJsonValue({
+        line1: sellerAddress.line1,
+        line2: sellerAddress.line2,
+        area: sellerAddress.area,
+        city: sellerAddress.city,
+        state: sellerAddress.state,
+        pincode: sellerAddress.pincode,
+        country: sellerAddress.country,
+        countryCode: sellerAddress.countryCode,
+        stateCode: sellerAddress.stateCode,
+      }),
+      buyerLegalName:
+        buyer.displayName?.trim() || buyer.user.fullName?.trim() || buyer.user.email,
+      buyerAddress: toJsonValue(buyerAddress),
+      taxClassification: taxFields.taxClassification,
+      sacCode: taxFields.sacCode,
+      gstRatePercent: taxFields.gstRatePercent ?? 0,
+      supplyType,
+      placeOfSupplyStateCode: buyerStateCode,
+      ...amounts,
+    };
+  }
+
+  private calculateServiceTaxAmounts(
+    considerationPaise: number,
+    registrationStatus: SellerTaxRegistrationStatus,
+    taxClassification: ProductTaxClassification,
+    gstRatePercent: number,
+    supplyType: TaxSupplyType,
+  ) {
+    const appliedRate =
+      registrationStatus === SellerTaxRegistrationStatus.GST_REGISTERED &&
+      taxClassification === ProductTaxClassification.TAXABLE
+        ? Math.max(0, gstRatePercent)
+        : 0;
+    if (considerationPaise <= 0 || appliedRate <= 0) {
+      return {
+        taxableValuePaise: Math.max(0, considerationPaise),
+        cgstPaise: 0,
+        sgstPaise: 0,
+        igstPaise: 0,
+        taxTotalPaise: 0,
+      };
+    }
+    const rateBps = Math.round(appliedRate * 100);
+    const taxableValuePaise = Math.round(
+      (considerationPaise * 10_000) / (10_000 + rateBps),
+    );
+    const taxTotalPaise = considerationPaise - taxableValuePaise;
+    if (supplyType === TaxSupplyType.INTRA_STATE) {
+      const cgstPaise = Math.floor(taxTotalPaise / 2);
+      return {
+        taxableValuePaise,
+        cgstPaise,
+        sgstPaise: taxTotalPaise - cgstPaise,
+        igstPaise: 0,
+        taxTotalPaise,
+      };
+    }
+    return {
+      taxableValuePaise,
+      cgstPaise: 0,
+      sgstPaise: 0,
+      igstPaise: taxTotalPaise,
+      taxTotalPaise,
+    };
+  }
+
   private initialPaymentPurpose(paymentMode: ServicePaymentMode) {
     if (paymentMode === ServicePaymentMode.ADVANCE_PAYMENT) return ServicePaymentPurpose.ADVANCE_PAYMENT;
     if (paymentMode === ServicePaymentMode.INSPECTION_FEE) return ServicePaymentPurpose.INSPECTION_FEE;
@@ -4121,7 +4375,10 @@ export class ServiceMarketplaceService {
   }
 
   private async resolveSeller(actor: RequestUser) {
-    const seller = await this.prisma.client.seller.findUnique({ where: { userId: actor.id } });
+    const seller = await this.prisma.client.seller.findUnique({
+      where: { userId: actor.id },
+      include: { profile: true },
+    });
     if (!seller) {
       throw new ForbiddenException("Seller account is required.");
     }

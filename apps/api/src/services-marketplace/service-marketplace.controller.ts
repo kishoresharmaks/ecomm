@@ -1,4 +1,16 @@
-import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, Query } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Inject,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Res,
+  StreamableFile,
+} from "@nestjs/common";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import { RoleCode } from "@indihub/database";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
@@ -7,6 +19,7 @@ import { Roles } from "../auth/decorators/roles.decorator";
 import type { RequestUser } from "../auth/types/indihub-request";
 import { VerifyRazorpayPaymentDto } from "../payments/dto/razorpay-payment.dto";
 import { PaymentsService } from "../payments/payments.service";
+import { TaxDocumentsService } from "../tax/tax-documents.service";
 import {
   AdminServiceApprovalDto,
   ApproveServiceRefundDto,
@@ -44,12 +57,17 @@ import {
 } from "./dto/service-marketplace.dto";
 import { ServiceMarketplaceService } from "./service-marketplace.service";
 
+type HeaderResponse = {
+  set(headers: Record<string, string>): void;
+};
+
 @ApiTags("Services")
 @Controller()
 export class ServiceMarketplaceController {
   constructor(
     @Inject(ServiceMarketplaceService) private readonly serviceMarketplace: ServiceMarketplaceService,
     @Inject(PaymentsService) private readonly paymentsService: PaymentsService,
+    @Inject(TaxDocumentsService) private readonly taxDocuments: TaxDocumentsService,
   ) {}
 
   @Public()
@@ -124,6 +142,26 @@ export class ServiceMarketplaceController {
   @ApiOperation({ summary: "Read customer service booking detail." })
   getCustomerBooking(@CurrentUser() actor: RequestUser, @Param("bookingNumber") bookingNumber: string) {
     return this.serviceMarketplace.getCustomerBooking(actor, bookingNumber);
+  }
+
+  @Roles(RoleCode.CUSTOMER)
+  @Get("account/service-bookings/:bookingNumber/tax-document/download")
+  @ApiOperation({ summary: "Download the issued service purchase document as a PDF." })
+  async downloadCustomerServiceTaxDocument(
+    @CurrentUser() actor: RequestUser,
+    @Param("bookingNumber") bookingNumber: string,
+    @Res({ passthrough: true }) response: HeaderResponse,
+  ) {
+    const document = await this.taxDocuments.customerServiceDocumentPdf(
+      actor.id,
+      bookingNumber,
+    );
+    response.set({
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `attachment; filename="${document.fileName.replace(/"/g, "")}"`,
+      "Cache-Control": "private, max-age=0, no-store",
+    });
+    return new StreamableFile(document.buffer);
   }
 
   @Roles(RoleCode.CUSTOMER)
@@ -238,6 +276,26 @@ export class ServiceMarketplaceController {
   @ApiOperation({ summary: "Read seller service booking detail." })
   getSellerBooking(@CurrentUser() actor: RequestUser, @Param("bookingNumber") bookingNumber: string) {
     return this.serviceMarketplace.getSellerBooking(actor, bookingNumber);
+  }
+
+  @Roles(RoleCode.SELLER)
+  @Get("seller/service-bookings/:bookingNumber/tax-document/download")
+  @ApiOperation({ summary: "Download the issued seller service tax document as a PDF." })
+  async downloadSellerServiceTaxDocument(
+    @CurrentUser() actor: RequestUser,
+    @Param("bookingNumber") bookingNumber: string,
+    @Res({ passthrough: true }) response: HeaderResponse,
+  ) {
+    const document = await this.taxDocuments.sellerServiceDocumentPdf(
+      actor.id,
+      bookingNumber,
+    );
+    response.set({
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `attachment; filename="${document.fileName.replace(/"/g, "")}"`,
+      "Cache-Control": "private, max-age=0, no-store",
+    });
+    return new StreamableFile(document.buffer);
   }
 
   @Roles(RoleCode.SELLER)

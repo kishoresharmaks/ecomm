@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   ChevronRight,
   CreditCard,
+  Download,
   Gauge,
   Loader2,
   MapPin,
@@ -40,6 +41,7 @@ import {
   createCustomerServiceReview,
   createCustomerServiceRazorpayOrder,
   disputeCustomerServiceCashCollection,
+  downloadCustomerServiceTaxDocument,
   getCustomerServiceBooking,
   listCustomerServiceBookings,
   raiseCustomerServiceDispute,
@@ -278,6 +280,14 @@ export function ServiceBookingDetailClient({ bookingNumber }: { bookingNumber: s
       void queryClient.invalidateQueries({ queryKey: ["customer-service-booking", customerAuth.authKey, bookingNumber] });
     },
   });
+  const invoiceMutation = useMutation({
+    mutationFn: () =>
+      downloadCustomerServiceTaxDocument(customerAuth.authHeaders, bookingNumber),
+    onError: (error) => {
+      setNoticeTone("danger");
+      setNotice(error instanceof Error ? error.message : "The service invoice could not be downloaded.");
+    },
+  });
 
   const booking = bookingQuery.data;
   const visitAddress = booking ? bookingVisitAddress(booking) : null;
@@ -329,12 +339,25 @@ export function ServiceBookingDetailClient({ bookingNumber }: { bookingNumber: s
                   {booking.listing.title} by {booking.seller.storeName}. Created {formatDateTime(booking.createdAt)}.
                 </p>
               </div>
-              <Button asChild variant="outline" className="shrink-0">
-                <Link href={`/services/${booking.listing.slug}`}>
-                  View service
-                  <ChevronRight className="h-4 w-4" aria-hidden="true" />
-                </Link>
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                {["COMPLETED", "CLOSED_AFTER_INSPECTION"].includes(booking.status) ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={invoiceMutation.isPending}
+                    onClick={() => invoiceMutation.mutate()}
+                  >
+                    <Download className="h-4 w-4" aria-hidden="true" />
+                    {invoiceMutation.isPending ? "Downloading..." : "Download invoice"}
+                  </Button>
+                ) : null}
+                <Button asChild variant="outline" className="shrink-0">
+                  <Link href={`/services/${booking.listing.slug}`}>
+                    View service
+                    <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                  </Link>
+                </Button>
+              </div>
             </div>
 
             <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -361,6 +384,12 @@ export function ServiceBookingDetailClient({ bookingNumber }: { bookingNumber: s
                   <Info label="Package" value={booking.package?.name ?? "Provider recommended"} />
                   <Info label="Technician" value={booking.assignedTechnician?.name ?? "Not assigned yet"} />
                   <Info label="Location" value={booking.visitMode.replace(/_/g, " ")} />
+                </div>
+                <div className="mt-3 grid gap-3 md:grid-cols-4">
+                  <Info label="SAC" value={booking.sacCodeSnapshot ?? "Not applicable"} />
+                  <Info label="GST rate" value={`${Number(booking.gstRatePercentSnapshot)}%`} />
+                  <Info label="Taxable value" value={formatMoney(booking.taxableValuePaise, booking.currency)} />
+                  <Info label="GST included" value={formatMoney(booking.taxTotalPaise, booking.currency)} />
                 </div>
                 <VisitAddressPanel booking={booking} address={visitAddress} />
                 <div className="mt-5 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-4 text-sm leading-6 text-[#667085]">

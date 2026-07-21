@@ -129,6 +129,7 @@ type TaxDocumentWithReportRelations = Prisma.TaxDocumentGetPayload<{
     originalDocument: { select: { documentNumber: true } };
     order: { select: { orderNumber: true } };
     b2bOrder: { select: { orderNumber: true } };
+    serviceBooking: { select: { bookingNumber: true } };
     lines: true;
     compliance: true;
   };
@@ -184,6 +185,7 @@ export class GstComplianceService {
             originalDocument: { select: { documentNumber: true } },
             order: { select: { orderNumber: true } },
             b2bOrder: { select: { orderNumber: true } },
+            serviceBooking: { select: { bookingNumber: true } },
             lines: true,
             compliance: true,
           },
@@ -338,6 +340,7 @@ export class GstComplianceService {
               { buyerGstin: { contains: search, mode: "insensitive" } },
               { order: { orderNumber: { contains: search, mode: "insensitive" } } },
               { b2bOrder: { orderNumber: { contains: search, mode: "insensitive" } } },
+              { serviceBooking: { bookingNumber: { contains: search, mode: "insensitive" } } },
               { seller: { storeName: { contains: search, mode: "insensitive" } } },
             ],
           }
@@ -351,6 +354,7 @@ export class GstComplianceService {
           originalDocument: { select: { documentNumber: true } },
           order: { select: { orderNumber: true } },
           b2bOrder: { select: { orderNumber: true } },
+          serviceBooking: { select: { bookingNumber: true } },
           lines: true,
           compliance: true,
         },
@@ -1669,7 +1673,11 @@ export class GstComplianceService {
       documentType: document.documentType,
       issueDate: document.issueDate,
       financialYear: document.financialYear,
-      orderNumber: document.order?.orderNumber ?? document.b2bOrder?.orderNumber ?? null,
+      orderNumber:
+        document.order?.orderNumber ??
+        document.b2bOrder?.orderNumber ??
+        document.serviceBooking?.bookingNumber ??
+        null,
       sellerId: document.sellerId,
       sellerName: document.seller.storeName,
       sellerTaxRegistrationStatus: document.sellerTaxRegistrationStatus,

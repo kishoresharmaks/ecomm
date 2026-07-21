@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Clock, Eye, Mail, MapPin, Navigation, Phone, Plus, Search, Send, Trash2, Wrench } from "lucide-react";
+import { CheckCircle2, Clock, Download, Eye, Mail, MapPin, Navigation, Phone, Plus, Search, Send, Trash2, Wrench } from "lucide-react";
 import { Button, StatusBadge } from "@indihub/ui";
 import { useConfirmationDialog, type ConfirmationRequest } from "@/components/shared/confirmation-dialog";
 import { StorefrontImage } from "@/components/storefront/storefront-image";
@@ -18,6 +18,7 @@ import {
 import {
   archiveSellerService,
   createSellerService,
+  downloadSellerServiceTaxDocument,
   getSellerService,
   getSellerServiceBooking,
   getSellerServiceCalendar,
@@ -47,6 +48,7 @@ import {
   type ServiceReview,
   type ServiceCancellationPolicy,
   type ServicePaymentPurpose,
+  type ProductTaxClassification,
   type ServicePricingModel,
   type ServiceTechnician,
   type ServiceVisitMode,
@@ -66,6 +68,7 @@ import {
   SellerErrorPanel,
   SellerField,
   SellerImageUpload,
+  SellerInfoHint,
   SellerMetric,
   SellerNoticeBadge,
   SellerOnboardingRequired,
@@ -387,6 +390,9 @@ function SellerServiceForm({ serviceId }: { serviceId?: string }) {
   const queryClient = useQueryClient();
   const [notice, setNotice] = useState<SellerNotice | null>(null);
   const [pricingModel, setPricingModel] = useState<ServicePricingModel>("FIXED_PRICE");
+  const [taxClassification, setTaxClassification] =
+    useState<ProductTaxClassification>("TAXABLE");
+  const [gstRatePercent, setGstRatePercent] = useState("");
   const [coverImageUrl, setCoverImageUrl] = useState<string | null>(null);
   const [serviceAreas, setServiceAreas] = useState<SellerServiceAreaDraft[]>([emptyDraftServiceArea()]);
   const profileAreasHydratedRef = useRef(false);
@@ -440,6 +446,8 @@ function SellerServiceForm({ serviceId }: { serviceId?: string }) {
     serviceHydratedRef.current = serviceQuery.data.id;
     const service = serviceQuery.data;
     setPricingModel(service.pricingModel);
+    setTaxClassification(service.taxClassification);
+    setGstRatePercent(String(service.gstRatePercent ?? ""));
     setCoverImageUrl(primaryServiceImage(service) || null);
     setServiceAreas(service.areas?.length ? service.areas.map(draftServiceAreaFromListing) : [emptyDraftServiceArea()]);
   }, [serviceQuery.data]);
@@ -455,6 +463,11 @@ function SellerServiceForm({ serviceId }: { serviceId?: string }) {
     const inspectionFeePaise = rupeesToPaise(formValue(form, "inspectionFee"));
     const advanceAmountPaise = rupeesToPaise(formValue(form, "advanceAmount"));
     const paymentMode = formValue(form, "paymentMode") as ServiceListingPayload["paymentMode"];
+    const sacCode = formValue(form, "sacCode");
+    const gstRate = Number(gstRatePercent);
+    const taxRegistrationStatus =
+      profileQuery.data?.profile?.taxRegistrationStatus ??
+      (profileQuery.data?.profile?.gstNumber ? "GST_REGISTERED" : "NOT_REGISTERED");
     if (pricingModel === "FIXED_PRICE" && basePricePaise <= 0) {
       setNotice({ tone: "danger", message: "Base price must be greater than zero for fixed-price services." });
       return;
@@ -465,6 +478,24 @@ function SellerServiceForm({ serviceId }: { serviceId?: string }) {
     }
     if (paymentMode === "ADVANCE_PAYMENT" && advanceAmountPaise <= 0) {
       setNotice({ tone: "danger", message: "Advance amount must be greater than zero for this payment mode." });
+      return;
+    }
+    if (
+      ["TAXABLE", "NIL_RATED"].includes(taxClassification) &&
+      !/^\d{6}$/.test(sacCode)
+    ) {
+      setNotice({ tone: "danger", message: "Enter a valid six-digit SAC code." });
+      return;
+    }
+    if (
+      taxClassification === "TAXABLE" &&
+      taxRegistrationStatus === "GST_REGISTERED" &&
+      (!Number.isFinite(gstRate) || gstRate <= 0 || gstRate > 100)
+    ) {
+      setNotice({
+        tone: "danger",
+        message: "Regular GST sellers must enter a GST rate between 0 and 100.",
+      });
       return;
     }
     const visitModeValues = visitModes
@@ -480,6 +511,12 @@ function SellerServiceForm({ serviceId }: { serviceId?: string }) {
       pricingModel,
       paymentMode,
       cancellationPolicy: (formValue(form, "cancellationPolicy") || "FLEXIBLE") as ServiceCancellationPolicy,
+      taxClassification,
+      ...(sacCode ? { sacCode } : {}),
+      gstRatePercent:
+        taxClassification === "TAXABLE" && taxRegistrationStatus === "GST_REGISTERED"
+          ? gstRate
+          : 0,
       currency: sellerOperatingCurrency,
       quoteTtlHours: Number(formValue(form, "quoteTtlHours") || 48),
       serviceDurationMinutes: Number(formValue(form, "serviceDurationMinutes") || 60),
@@ -501,6 +538,9 @@ function SellerServiceForm({ serviceId }: { serviceId?: string }) {
   const categories = flattenCategories(categoriesQuery.data ?? []);
   const service = serviceQuery.data;
   const serviceAreaCount = Math.max(serviceAreas.filter((area) => area.isActive).length, 1);
+  const sellerTaxRegistrationStatus =
+    profileQuery.data?.profile?.taxRegistrationStatus ??
+    (profileQuery.data?.profile?.gstNumber ? "GST_REGISTERED" : "NOT_REGISTERED");
 
   if (categoriesQuery.isLoading || serviceQuery.isLoading) {
     return <SellerSkeleton />;
@@ -560,6 +600,64 @@ function SellerServiceForm({ serviceId }: { serviceId?: string }) {
               <option value="MODERATE">Moderate</option>
               <option value="STRICT">Strict</option>
             </SellerSelect>
+            <SellerSelect
+              label="Service tax classification"
+              name="taxClassification"
+              value={taxClassification}
+              onChange={(value) => {
+                const next = value as ProductTaxClassification;
+                setTaxClassification(next);
+                if (next !== "TAXABLE") setGstRatePercent("");
+              }}
+              required
+            >
+              <option value="TAXABLE">Taxable service</option>
+              <option value="NIL_RATED">Nil-rated service</option>
+              <option value="EXEMPT">Exempt service</option>
+              <option value="NON_GST">Non-GST service</option>
+            </SellerSelect>
+            <SellerField
+              label="SAC code"
+              name="sacCode"
+              placeholder="998719"
+              defaultValue={service?.sacCode ?? ""}
+              required={taxClassification === "TAXABLE" || taxClassification === "NIL_RATED"}
+              hint="Use the six-digit Service Accounting Code applicable to this service."
+              info={
+                <SellerInfoHint label="SAC code">
+                  SAC identifies services in GST invoices and returns. Confirm the correct code with your tax adviser; do not use a product HSN code here.
+                </SellerInfoHint>
+              }
+            />
+            <SellerField
+              label="GST rate (%)"
+              name="gstRatePercent"
+              type="number"
+              min={0}
+              step="0.01"
+              value={gstRatePercent}
+              onChange={setGstRatePercent}
+              readOnly={
+                taxClassification !== "TAXABLE" ||
+                sellerTaxRegistrationStatus !== "GST_REGISTERED"
+              }
+              required={
+                taxClassification === "TAXABLE" &&
+                sellerTaxRegistrationStatus === "GST_REGISTERED"
+              }
+              hint={
+                sellerTaxRegistrationStatus === "GST_REGISTERED"
+                  ? "The displayed service price is GST-inclusive."
+                  : sellerTaxRegistrationStatus === "COMPOSITION"
+                    ? "Composition sellers cannot collect GST; the platform records a zero rate."
+                    : "Non-GST sellers cannot collect GST; the platform records a zero rate."
+              }
+              info={
+                <SellerInfoHint label="GST rate">
+                  GST is calculated only for regular GST-registered sellers offering a taxable service. Composition and non-registered sellers cannot charge GST.
+                </SellerInfoHint>
+              }
+            />
             <div className="md:col-span-2">
               <SellerTextArea label="Description" name="description" required rows={5} placeholder="Explain what is covered, response time, inspection policy, parts, and customer prerequisites." defaultValue={service?.description ?? ""} />
             </div>
@@ -787,7 +885,6 @@ function SellerServiceBookings() {
       setActionNotice({ tone: "danger", message: userFacingApiErrorMessage(error) });
     },
   });
-
   if (bookingsQuery.isLoading) {
     return <SellerSkeleton />;
   }
@@ -1003,6 +1100,16 @@ function SellerServiceBookingDetail({ bookingNumber }: { bookingNumber?: string 
       setActionNotice({ tone: "danger", message: userFacingApiErrorMessage(error) });
     },
   });
+  const invoiceMutation = useMutation({
+    mutationFn: () =>
+      downloadSellerServiceTaxDocument(
+        sellerAuth.authHeaders,
+        bookingNumber ?? "",
+      ),
+    onError: (error) => {
+      setActionNotice({ tone: "danger", message: userFacingApiErrorMessage(error) });
+    },
+  });
 
   if (bookingQuery.isLoading) return <SellerSkeleton />;
   if (bookingQuery.error) return <SellerErrorPanel error={bookingQuery.error as Error} onRetry={() => void bookingQuery.refetch()} />;
@@ -1028,9 +1135,23 @@ function SellerServiceBookingDetail({ bookingNumber }: { bookingNumber?: string 
             <h2 className="mt-3 text-2xl font-black text-[#123A5A]">{booking.bookingNumber}</h2>
             <p className="mt-1 text-sm font-bold text-[#667085]">{booking.listing.title}</p>
           </div>
-          <Button asChild variant="outline" size="sm">
-            <Link href="/seller/service-bookings">Back to bookings</Link>
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            {["COMPLETED", "CLOSED_AFTER_INSPECTION"].includes(booking.status) ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={invoiceMutation.isPending}
+                onClick={() => invoiceMutation.mutate()}
+              >
+                <Download className="h-4 w-4" aria-hidden="true" />
+                {invoiceMutation.isPending ? "Downloading..." : "Download invoice"}
+              </Button>
+            ) : null}
+            <Button asChild variant="outline" size="sm">
+              <Link href="/seller/service-bookings">Back to bookings</Link>
+            </Button>
+          </div>
         </div>
       </SellerPanel>
 
@@ -1049,6 +1170,12 @@ function SellerServiceBookingDetail({ bookingNumber }: { bookingNumber?: string 
               <Info label="Technician" value={booking.assignedTechnician?.name ?? "Not assigned"} />
               <Info label="Payable" value={formatMoney(booking.totalPayablePaise, booking.currency)} />
               <Info label="Paid" value={formatMoney(booking.paidAmountPaise, booking.currency)} />
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-4">
+              <Info label="SAC" value={booking.sacCodeSnapshot ?? "Not applicable"} />
+              <Info label="GST rate" value={`${Number(booking.gstRatePercentSnapshot)}%`} />
+              <Info label="Taxable value" value={formatMoney(booking.taxableValuePaise, booking.currency)} />
+              <Info label="GST total" value={formatMoney(booking.taxTotalPaise, booking.currency)} />
             </div>
             <div className="mt-4 grid gap-3 md:grid-cols-4">
               <Info label="En route" value={formatDateTime(booking.technicianEnRouteAt)} />

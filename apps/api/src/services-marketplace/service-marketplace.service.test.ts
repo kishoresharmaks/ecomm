@@ -2,8 +2,10 @@ import {
   ApprovalStatus,
   PaymentProvider,
   PaymentStatus,
+  ProductTaxClassification,
   SellerCapability,
   SellerStatus,
+  SellerTaxRegistrationStatus,
   ServiceBookingStatus,
   ServiceCashCollectionStatus,
   ServiceCashDisputeResolution,
@@ -15,6 +17,7 @@ import {
   ServicePaymentSettlementTreatment,
   ServicePricingModel,
   ServiceVisitMode,
+  TaxSupplyType,
 } from "@indihub/database";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ServiceMarketplaceService } from "./service-marketplace.service";
@@ -26,8 +29,12 @@ describe("ServiceMarketplaceService serviceability", () => {
   const notifications = { notifyEvent: vi.fn() };
   const financeCalculator = { calculateServiceBooking: vi.fn() };
   const customersService = { ensureCustomerForUser: vi.fn() };
+  const taxDocuments = { issueServiceBookingDocument: vi.fn() };
   const prisma = {
     client: {
+      customer: {
+        findUnique: vi.fn(),
+      },
       serviceListing: {
         findFirst: vi.fn(),
         findMany: vi.fn(),
@@ -92,6 +99,11 @@ describe("ServiceMarketplaceService serviceability", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     customersService.ensureCustomerForUser.mockResolvedValue(customerFixture);
+    prisma.client.customer.findUnique.mockResolvedValue({
+      ...customerFixture,
+      user: { email: "customer@example.com", fullName: "Customer" },
+      addresses: [],
+    });
     prisma.client.serviceBooking.findFirst.mockResolvedValue(null);
     prisma.client.serviceBooking.findUnique.mockResolvedValue(null);
     prisma.client.serviceBooking.findMany.mockResolvedValue([]);
@@ -143,6 +155,72 @@ describe("ServiceMarketplaceService serviceability", () => {
     expect(prisma.client.locationArea.findFirst).not.toHaveBeenCalled();
     expect(prisma.client.serviceBooking.create.mock.calls[0]?.[0]?.data).toMatchObject({
       visitMode: ServiceVisitMode.REMOTE,
+      sellerTaxRegistrationStatusSnapshot: SellerTaxRegistrationStatus.NOT_REGISTERED,
+      sacCodeSnapshot: "998719",
+      gstRatePercentSnapshot: 0,
+      taxTotalPaise: 0,
+    });
+  });
+
+  it("snapshots SAC and inclusive GST for a regular GST service seller", async () => {
+    const listing = serviceListing({
+      seller: {
+        ...(serviceListing().seller as Record<string, unknown>),
+        profile: {
+          businessLegalName: "A2D Services",
+          taxRegistrationStatus: SellerTaxRegistrationStatus.GST_REGISTERED,
+          gstNumber: "33ABCDE1234F1Z5",
+        },
+      },
+      gstRatePercent: 18,
+    });
+    prisma.client.customer.findUnique.mockResolvedValueOnce({
+      ...customerFixture,
+      user: { email: "customer@example.com", fullName: "Customer" },
+      addresses: [{
+        fullName: "Customer",
+        line1: "2 Buyer Road",
+        line2: null,
+        area: "Salem",
+        city: "Salem",
+        state: "Tamil Nadu",
+        pincode: "636001",
+        country: "India",
+        countryCode: "IN",
+        stateCode: "IN-TN",
+      }],
+    });
+    prisma.client.serviceListing.findFirst.mockResolvedValueOnce(listing);
+    prisma.client.serviceBooking.findFirst.mockResolvedValueOnce(serviceBookingRecord(listing));
+
+    await createService().createCustomerBooking(actor as never, {
+      serviceSlug: "doorstep-repair",
+      visitMode: ServiceVisitMode.CUSTOMER_LOCATION,
+      customerIssue: "Issue with water supply in the machine.",
+      addressSnapshot: {
+        fullName: "Customer",
+        line1: "2 Buyer Road",
+        city: "Salem",
+        state: "Tamil Nadu",
+        pincode: "636001",
+        countryCode: "IN",
+        stateCode: "IN-TN",
+      },
+    });
+
+    expect(prisma.client.serviceBooking.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        sellerTaxRegistrationStatusSnapshot: SellerTaxRegistrationStatus.GST_REGISTERED,
+        serviceTaxClassificationSnapshot: ProductTaxClassification.TAXABLE,
+        sacCodeSnapshot: "998719",
+        gstRatePercentSnapshot: 18,
+        taxSupplyTypeSnapshot: TaxSupplyType.INTRA_STATE,
+        taxableValuePaise: 42288,
+        cgstPaise: 3806,
+        sgstPaise: 3806,
+        igstPaise: 0,
+        taxTotalPaise: 7612,
+      }),
     });
   });
 
@@ -408,6 +486,7 @@ describe("ServiceMarketplaceService serviceability", () => {
       customersService as never,
       notifications as never,
       financeCalculator as never,
+      taxDocuments as never,
     );
   }
 });
@@ -425,6 +504,9 @@ function serviceListing(overrides: Partial<Record<string, unknown>> = {}) {
     pricingModel: ServicePricingModel.FIXED_PRICE,
     paymentMode: ServicePaymentMode.PAY_AT_VISIT,
     cancellationPolicy: ServiceCancellationPolicy.FLEXIBLE,
+    taxClassification: ProductTaxClassification.TAXABLE,
+    sacCode: "998719",
+    gstRatePercent: 0,
     basePricePaise: 49900,
     inspectionFeePaise: 0,
     advanceAmountPaise: 0,
@@ -444,8 +526,22 @@ function serviceListing(overrides: Partial<Record<string, unknown>> = {}) {
       approvalStatus: ApprovalStatus.APPROVED,
       enabledCapabilities: [SellerCapability.SERVICE],
       user: { email: "seller@example.com" },
-      profile: null,
-      addresses: [],
+      profile: {
+        businessLegalName: "A2D Services",
+        taxRegistrationStatus: SellerTaxRegistrationStatus.NOT_REGISTERED,
+        gstNumber: null,
+      },
+      addresses: [{
+        line1: "1 Service Road",
+        line2: null,
+        area: "Salem",
+        city: "Salem",
+        state: "Tamil Nadu",
+        pincode: "636001",
+        country: "India",
+        countryCode: "IN",
+        stateCode: "IN-TN",
+      }],
     },
     ...overrides,
   };
@@ -463,6 +559,24 @@ function serviceBookingRecord(listing: Record<string, unknown>, overrides: Parti
     visitMode: (listing.allowedVisitModes as ServiceVisitMode[])[0] ?? ServiceVisitMode.CUSTOMER_LOCATION,
     paymentMode: listing.paymentMode,
     cancellationPolicy: listing.cancellationPolicy,
+    sellerTaxRegistrationStatusSnapshot: SellerTaxRegistrationStatus.NOT_REGISTERED,
+    sellerLegalNameSnapshot: "A2D Services",
+    sellerGstinSnapshot: null,
+    sellerAddressSnapshot: {},
+    buyerLegalNameSnapshot: "Customer",
+    buyerGstinSnapshot: null,
+    buyerAddressSnapshot: {},
+    serviceTaxClassificationSnapshot: ProductTaxClassification.TAXABLE,
+    sacCodeSnapshot: "998719",
+    gstRatePercentSnapshot: 0,
+    taxSupplyTypeSnapshot: TaxSupplyType.INTER_STATE,
+    placeOfSupplyStateCodeSnapshot: null,
+    taxableValuePaise: 49900,
+    cgstPaise: 0,
+    sgstPaise: 0,
+    igstPaise: 0,
+    cessPaise: 0,
+    taxTotalPaise: 0,
     scheduledStartAt: null,
     scheduledEndAt: null,
     assignedTechnicianId: null,
@@ -490,6 +604,7 @@ function serviceBookingRecord(listing: Record<string, unknown>, overrides: Parti
     settlement: null,
     sellerReceivables: [],
     reviews: [],
+    taxDocuments: [],
     ...overrides,
   };
 }

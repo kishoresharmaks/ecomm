@@ -3,11 +3,12 @@ import { CustomersModule } from "../customers/customers.module";
 import { FinanceModule } from "../finance/finance.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { PaymentsModule } from "../payments/payments.module";
+import { TaxModule } from "../tax/tax.module";
 import { ServiceMarketplaceController } from "./service-marketplace.controller";
 import { ServiceMarketplaceService } from "./service-marketplace.service";
 
 @Module({
-  imports: [CustomersModule, FinanceModule, NotificationsModule, PaymentsModule],
+  imports: [CustomersModule, FinanceModule, NotificationsModule, PaymentsModule, TaxModule],
   controllers: [ServiceMarketplaceController],
   providers: [ServiceMarketplaceService],
   exports: [ServiceMarketplaceService],

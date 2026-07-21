@@ -458,7 +458,7 @@ set +a
 pnpm install --frozen-lockfile
 pnpm db:generate
 pnpm db:validate
-npx prisma migrate status --schema prisma/schema.prisma
+npx prisma migrate status
 ```
 
 ### 5.4 Expected migration order
@@ -474,6 +474,7 @@ Verify these migrations are present:
 20260721120000_complete_b2b_order_to_cash
 20260721160000_schema_audit_hardening
 20260721190000_b2b_exception_path_hardening
+20260721203000_service_sac_tax_integration
 ```
 
 Important migration effects:
@@ -500,9 +501,30 @@ It must return the approved staging database.
 Apply:
 
 ```bash
-npx prisma migrate deploy --schema prisma/schema.prisma
-npx prisma migrate status --schema prisma/schema.prisma
+npx prisma migrate deploy
+npx prisma migrate status
 ```
+
+### 5.6 Recover `20260721160000_schema_audit_hardening` P3018
+
+Use this only when the failed migration reports that
+`manual_transport_charge_per_km_paise` does not exist.
+
+First deploy the corrected migration file. It conditionally copies the legacy value only when the
+legacy column exists, then uses `DROP COLUMN IF EXISTS`.
+
+The corrected migration is convergent and safely handles schema changes that may already have been
+applied before the failure. Mark the failed attempt as rolled back, then let Prisma rerun it:
+
+```bash
+cd /var/www/indihub/ecomm
+npx prisma migrate resolve --rolled-back 20260721160000_schema_audit_hardening
+npx prisma migrate deploy
+npx prisma migrate status
+```
+
+Do not use `--applied` for this failure. Doing so would skip the remaining schema-hardening
+constraints, triggers, indexes, and backfills.
 
 Do not use:
 
@@ -512,7 +534,7 @@ prisma db push --force-reset
 prisma migrate dev
 ```
 
-### 5.6 Build and restart with V2 disabled
+### 5.7 Build and restart with V2 disabled
 
 ```bash
 pnpm build
@@ -543,7 +565,7 @@ Expected:
 - B2B V2 actions return disabled/unavailable while the flag is false.
 - Existing storefront, admin login, seller center, checkout, and finance pages still load.
 
-### 5.7 Enable B2B V2
+### 5.8 Enable B2B V2
 
 Edit:
 

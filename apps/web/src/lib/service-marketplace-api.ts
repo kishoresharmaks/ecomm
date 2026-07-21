@@ -1,4 +1,5 @@
 import { indihubFetch, type IndihubAuthHeaders } from "./api";
+import { downloadAuthenticatedFile } from "./gst-report-api";
 import type { CategorySummary, SellerAddress, SellerSummary } from "./storefront-api";
 
 export type SellerCapability = "RETAIL" | "SERVICE";
@@ -24,6 +25,8 @@ export type ServiceBookingStatus =
   | "CANCELLED"
   | "CANCELLED_AFTER_DISPUTE";
 export type ServiceCancellationPolicy = "FLEXIBLE" | "MODERATE" | "STRICT";
+export type ProductTaxClassification = "TAXABLE" | "NIL_RATED" | "EXEMPT" | "NON_GST";
+export type SellerTaxRegistrationStatus = "GST_REGISTERED" | "NOT_REGISTERED" | "COMPOSITION";
 export type ServiceQuoteStatus = "SENT" | "ACCEPTED" | "REJECTED" | "EXPIRED" | "WITHDRAWN";
 export type ServicePaymentPurpose = "INSPECTION_FEE" | "FULL_PAYMENT" | "ADVANCE_PAYMENT" | "FINAL_QUOTE" | "PAY_AT_VISIT";
 export type PaymentProvider = "RAZORPAY" | "COD" | "BANK_TRANSFER" | "MANUAL";
@@ -135,6 +138,9 @@ export type ServiceListing = {
   pricingModel: ServicePricingModel;
   paymentMode: ServicePaymentMode;
   cancellationPolicy: ServiceCancellationPolicy;
+  taxClassification: ProductTaxClassification;
+  sacCode?: string | null;
+  gstRatePercent?: number | string | null;
   basePricePaise?: number | null;
   inspectionFeePaise?: number | null;
   advanceAmountPaise?: number | null;
@@ -383,6 +389,20 @@ export type ServiceBooking = {
   visitMode: ServiceVisitMode;
   paymentMode: ServicePaymentMode;
   cancellationPolicy: ServiceCancellationPolicy;
+  sellerTaxRegistrationStatusSnapshot: SellerTaxRegistrationStatus;
+  sellerLegalNameSnapshot: string;
+  sellerGstinSnapshot?: string | null;
+  serviceTaxClassificationSnapshot: ProductTaxClassification;
+  sacCodeSnapshot?: string | null;
+  gstRatePercentSnapshot: number | string;
+  taxSupplyTypeSnapshot: "INTRA_STATE" | "INTER_STATE" | "OUTSIDE_INDIA";
+  placeOfSupplyStateCodeSnapshot?: string | null;
+  taxableValuePaise: number;
+  cgstPaise: number;
+  sgstPaise: number;
+  igstPaise: number;
+  cessPaise: number;
+  taxTotalPaise: number;
   scheduledStartAt?: string | null;
   scheduledEndAt?: string | null;
   assignedTechnicianId?: string | null;
@@ -432,6 +452,14 @@ export type ServiceBooking = {
     status: string;
   } | null;
   reviews?: ServiceReview[];
+  taxDocuments?: Array<{
+    id: string;
+    documentNumber?: string | null;
+    documentType: string;
+    issueDate?: string | null;
+    invoiceValuePaise: number;
+    totalTaxPaise: number;
+  }>;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -480,6 +508,9 @@ export type ServiceListingPayload = {
   pricingModel: ServicePricingModel;
   paymentMode: ServicePaymentMode;
   cancellationPolicy?: ServiceCancellationPolicy;
+  taxClassification?: ProductTaxClassification;
+  sacCode?: string;
+  gstRatePercent?: number;
   basePricePaise?: number;
   inspectionFeePaise?: number;
   advanceAmountPaise?: number;
@@ -571,6 +602,18 @@ export function listSellerServiceBookings(auth: IndihubAuthHeaders, query: { sta
 
 export function getSellerServiceBooking(auth: IndihubAuthHeaders, bookingNumber: string) {
   return indihubFetch<ServiceBooking>(`/api/seller/service-bookings/${encodeURIComponent(bookingNumber)}`, undefined, auth);
+}
+
+export function downloadSellerServiceTaxDocument(
+  auth: IndihubAuthHeaders,
+  bookingNumber: string,
+) {
+  return downloadAuthenticatedFile(
+    auth,
+    `/api/seller/service-bookings/${encodeURIComponent(bookingNumber)}/tax-document/download`,
+    `${bookingNumber}-service-invoice.pdf`,
+    "The service invoice could not be downloaded.",
+  );
 }
 
 export function getSellerServiceCalendar(auth: IndihubAuthHeaders) {
@@ -722,6 +765,18 @@ export function listCustomerServiceBookings(auth: IndihubAuthHeaders, query: { s
 
 export function getCustomerServiceBooking(auth: IndihubAuthHeaders, bookingNumber: string) {
   return indihubFetch<ServiceBooking>(`/api/account/service-bookings/${encodeURIComponent(bookingNumber)}`, undefined, auth);
+}
+
+export function downloadCustomerServiceTaxDocument(
+  auth: IndihubAuthHeaders,
+  bookingNumber: string,
+) {
+  return downloadAuthenticatedFile(
+    auth,
+    `/api/account/service-bookings/${encodeURIComponent(bookingNumber)}/tax-document/download`,
+    `${bookingNumber}-service-invoice.pdf`,
+    "The service invoice could not be downloaded.",
+  );
 }
 
 export function createCustomerServiceRazorpayOrder(

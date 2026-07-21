@@ -164,6 +164,75 @@ describe("TaxDocumentsService", () => {
     );
   });
 
+  it("issues a numbered SAC tax invoice for a completed service booking", async () => {
+    const tx = {
+      serviceBooking: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "service_booking_1",
+          sellerId: "seller_1",
+          status: "COMPLETED",
+          completionConfirmedAt: new Date("2026-07-21T10:00:00.000Z"),
+          sellerTaxRegistrationStatusSnapshot: SellerTaxRegistrationStatus.GST_REGISTERED,
+          sellerLegalNameSnapshot: "Tax Ready Services Private Limited",
+          sellerGstinSnapshot: "29ABCDE1234F1Z5",
+          sellerAddressSnapshot: { line1: "1 Service Road", stateCode: "29" },
+          buyerLegalNameSnapshot: "Customer",
+          buyerGstinSnapshot: null,
+          buyerAddressSnapshot: { line1: "2 Buyer Road", stateCode: "29" },
+          serviceTaxClassificationSnapshot: ProductTaxClassification.TAXABLE,
+          sacCodeSnapshot: "998719",
+          gstRatePercentSnapshot: new Prisma.Decimal(18),
+          taxSupplyTypeSnapshot: TaxSupplyType.INTRA_STATE,
+          placeOfSupplyStateCodeSnapshot: "29",
+          taxableValuePaise: 10000,
+          cgstPaise: 900,
+          sgstPaise: 900,
+          igstPaise: 0,
+          cessPaise: 0,
+          taxTotalPaise: 1800,
+          totalPayablePaise: 11800,
+          currency: "INR",
+          listing: { title: "Equipment repair" },
+          taxDocuments: [],
+        }),
+      },
+      taxDocumentSequence: {
+        upsert: vi.fn().mockResolvedValue({ nextNumber: 2 }),
+      },
+      taxDocument: {
+        create: vi.fn().mockResolvedValue({ id: "service_tax_doc_1" }),
+      },
+    };
+    const client = {
+      $transaction: vi.fn(
+        async (callback: (transaction: typeof tx) => Promise<unknown>) =>
+          callback(tx),
+      ),
+    };
+
+    await new TaxDocumentsService({ client } as never).issueServiceBookingDocument(
+      "service_booking_1",
+      "issuer_1",
+    );
+
+    expect(tx.taxDocument.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        documentNumber: "TI/26-27/000001",
+        documentType: TaxDocumentType.TAX_INVOICE,
+        source: TaxDocumentSource.SERVICE_BOOKING,
+        serviceBooking: { connect: { id: "service_booking_1" } },
+        totalTaxPaise: 1800,
+        lines: {
+          create: expect.objectContaining({
+            lineType: "SERVICE",
+            hsnSacCode: "998719",
+            gstRatePercent: new Prisma.Decimal(18),
+          }),
+        },
+      }),
+    });
+  });
+
   it("extracts 18 percent inclusive GST into equal CGST and SGST", () => {
     const service = createService();
 

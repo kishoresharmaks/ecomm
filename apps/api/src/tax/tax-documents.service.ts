@@ -4,6 +4,7 @@ import {
   GstrSupplySection,
   ProductTaxClassification,
   Prisma,
+  ServiceBookingStatus,
   SellerTaxRegistrationStatus,
   TaxDocumentLineType,
   TaxDocumentSource,
@@ -167,13 +168,17 @@ export class TaxDocumentsService {
         originalDocument: { select: { documentNumber: true } },
         order: { select: { orderNumber: true } },
         b2bOrder: { select: { orderNumber: true } },
+        serviceBooking: { select: { bookingNumber: true } },
         lines: true,
         compliance: true,
       },
     });
 
     const orderNumber =
-      document?.order?.orderNumber ?? document?.b2bOrder?.orderNumber ?? null;
+      document?.order?.orderNumber ??
+      document?.b2bOrder?.orderNumber ??
+      document?.serviceBooking?.bookingNumber ??
+      null;
     if (!document || !orderNumber) {
       throw new NotFoundException(notFoundMessage);
     }
@@ -227,6 +232,36 @@ export class TaxDocumentsService {
       buffer,
       fileName: taxDocumentDownloadFileName(document),
     };
+  }
+
+  customerServiceDocumentPdf(actorUserId: string, bookingNumber: string) {
+    return this.taxDocumentPdf(
+      {
+        status: TaxDocumentStatus.ISSUED,
+        source: TaxDocumentSource.SERVICE_BOOKING,
+        serviceBooking: {
+          bookingNumber,
+          customer: { userId: actorUserId },
+        },
+      },
+      "Service tax document not found.",
+    );
+  }
+
+  sellerServiceDocumentPdf(actorUserId: string, bookingNumber: string) {
+    return this.taxDocumentPdf(
+      {
+        status: TaxDocumentStatus.ISSUED,
+        source: TaxDocumentSource.SERVICE_BOOKING,
+        serviceBooking: {
+          bookingNumber,
+          seller: { userId: actorUserId },
+        },
+      },
+      "Service tax document not found.",
+      actorUserId,
+      "SELLER",
+    );
   }
 
   async sellerTaxContexts(db: TaxDb, sellerIds: string[]) {
@@ -704,6 +739,129 @@ export class TaxDocumentsService {
         issueDate: new Date(),
         issuedById: actorUserId ?? null,
       },
+    });
+  }
+
+  async issueServiceBookingDocument(
+    serviceBookingId: string,
+    actorUserId?: string | null,
+  ) {
+    return this.prisma.client.$transaction(async (tx) => {
+      const booking = await tx.serviceBooking.findUnique({
+        where: { id: serviceBookingId },
+        include: {
+          listing: true,
+          taxDocuments: {
+            where: { source: TaxDocumentSource.SERVICE_BOOKING },
+            orderBy: { createdAt: "desc" },
+            take: 1,
+          },
+        },
+      });
+      if (!booking) {
+        throw new NotFoundException("Service booking not found while issuing tax document.");
+      }
+      if (
+        booking.status !== ServiceBookingStatus.COMPLETED &&
+        booking.status !== ServiceBookingStatus.CLOSED_AFTER_INSPECTION
+      ) {
+        throw new BadRequestException(
+          "Service tax documents can be issued only after completion or a paid inspection closes.",
+        );
+      }
+      const existing = booking.taxDocuments[0];
+      if (existing?.status === TaxDocumentStatus.ISSUED) {
+        return existing;
+      }
+
+      const issueDate = booking.completionConfirmedAt ?? new Date();
+      const documentType = this.outwardDocumentType(
+        booking.sellerTaxRegistrationStatusSnapshot,
+        [booking.serviceTaxClassificationSnapshot],
+      );
+      const financialYear = this.financialYear(issueDate);
+      const documentNumber = await this.nextDocumentNumber(
+        tx,
+        booking.sellerId,
+        financialYear,
+        documentType,
+      );
+      const data: Prisma.TaxDocumentCreateInput = {
+        documentNumber,
+        documentType,
+        status: TaxDocumentStatus.ISSUED,
+        source: TaxDocumentSource.SERVICE_BOOKING,
+        idempotencyKey: `service-booking:${booking.id}:outward-supply`,
+        financialYear,
+        serviceBooking: { connect: { id: booking.id } },
+        seller: { connect: { id: booking.sellerId } },
+        issueDate,
+        supplyDate: issueDate,
+        sellerLegalName: booking.sellerLegalNameSnapshot,
+        sellerTaxRegistrationStatus: booking.sellerTaxRegistrationStatusSnapshot,
+        sellerGstin: booking.sellerGstinSnapshot,
+        sellerAddressSnapshot: this.requiredJsonObject(
+          booking.sellerAddressSnapshot,
+          "seller address",
+        ),
+        buyerLegalName: booking.buyerLegalNameSnapshot,
+        buyerGstin: booking.buyerGstinSnapshot,
+        buyerAddressSnapshot: this.requiredJsonObject(
+          booking.buyerAddressSnapshot,
+          "buyer address",
+        ),
+        placeOfSupplyStateCode: booking.placeOfSupplyStateCodeSnapshot,
+        supplyType: booking.taxSupplyTypeSnapshot,
+        gstrSupplySection: this.gstrSection({
+          registrationStatus: booking.sellerTaxRegistrationStatusSnapshot,
+          buyerGstin: booking.buyerGstinSnapshot,
+          supplyType: booking.taxSupplyTypeSnapshot,
+          invoiceValuePaise: booking.totalPayablePaise,
+          classifications: [booking.serviceTaxClassificationSnapshot],
+        }),
+        currency: booking.currency,
+        taxableValuePaise: booking.taxableValuePaise,
+        cgstPaise: booking.cgstPaise,
+        sgstPaise: booking.sgstPaise,
+        igstPaise: booking.igstPaise,
+        cessPaise: booking.cessPaise,
+        totalTaxPaise: booking.taxTotalPaise,
+        invoiceValuePaise: booking.totalPayablePaise,
+        ...(actorUserId ? { issuedBy: { connect: { id: actorUserId } } } : {}),
+        lines: {
+          create: {
+            lineType: TaxDocumentLineType.SERVICE,
+            description: booking.listing.title,
+            hsnSacCode: booking.sacCodeSnapshot,
+            taxClassification: booking.serviceTaxClassificationSnapshot,
+            quantity: 1,
+            unitPricePaise: booking.totalPayablePaise,
+            grossValuePaise: booking.totalPayablePaise,
+            taxableValuePaise: booking.taxableValuePaise,
+            gstRatePercent: booking.gstRatePercentSnapshot,
+            cgstPaise: booking.cgstPaise,
+            sgstPaise: booking.sgstPaise,
+            igstPaise: booking.igstPaise,
+            cessPaise: booking.cessPaise,
+            totalTaxPaise: booking.taxTotalPaise,
+            lineValuePaise: booking.totalPayablePaise,
+          },
+        },
+        compliance: { create: {} },
+      };
+
+      return existing
+        ? tx.taxDocument.update({
+            where: { id: existing.id },
+            data: {
+              documentNumber,
+              documentType,
+              status: TaxDocumentStatus.ISSUED,
+              issueDate,
+              issuedById: actorUserId ?? null,
+            },
+          })
+        : tx.taxDocument.create({ data });
     });
   }
 

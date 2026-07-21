@@ -333,6 +333,7 @@ enum TaxDocumentSource {
   CHECKOUT
   LEGACY_BACKFILL
   B2B_FULFILMENT
+  SERVICE_BOOKING
   RETURN_REFUND
   ORDER_CANCELLATION
   MANUAL_ADJUSTMENT
@@ -340,6 +341,7 @@ enum TaxDocumentSource {
 
 enum TaxDocumentLineType {
   PRODUCT
+  SERVICE
   SHIPPING
   ADJUSTMENT
 }
@@ -3729,6 +3731,7 @@ model TaxDocument {
   financialYear         String             @map("financial_year")
   orderId               String?            @map("order_id") @db.Uuid
   b2bOrderId            String?            @map("b2b_order_id") @db.Uuid
+  serviceBookingId      String?            @map("service_booking_id") @db.Uuid
   orderSellerSplitId    String?            @map("order_seller_split_id") @db.Uuid
   sellerId              String             @map("seller_id") @db.Uuid
   returnRequestId       String?            @map("return_request_id") @db.Uuid
@@ -3763,6 +3766,7 @@ model TaxDocument {
   updatedAt             DateTime           @updatedAt @map("updated_at")
   order                 Order?             @relation(fields: [orderId], references: [id], onDelete: SetNull)
   b2bOrder              B2BOrder?          @relation(fields: [b2bOrderId], references: [id], onDelete: SetNull)
+  serviceBooking        ServiceBooking?    @relation(fields: [serviceBookingId], references: [id], onDelete: SetNull)
   orderSellerSplit      OrderSellerSplit? @relation(fields: [orderSellerSplitId], references: [id], onDelete: SetNull)
   seller                Seller             @relation(fields: [sellerId], references: [id])
   returnRequest         ReturnRequest?     @relation(fields: [returnRequestId], references: [id], onDelete: SetNull)
@@ -3782,6 +3786,7 @@ model TaxDocument {
   @@index([sellerTaxRegistrationStatus, status, issueDate], map: "tax_documents_registration_status_status_issue_date_idx")
   @@index([orderId, sellerId])
   @@index([b2bOrderId, sellerId])
+  @@index([serviceBookingId, sellerId])
   @@index([orderSellerSplitId])
   @@index([returnRequestId, sellerId])
   @@index([refundRequestId, sellerId])
@@ -4949,6 +4954,9 @@ model ServiceListing {
   pricingModel               ServicePricingModel       @default(FIXED_PRICE) @map("pricing_model")
   paymentMode                ServicePaymentMode        @default(FULL_PAYMENT) @map("payment_mode")
   cancellationPolicy         ServiceCancellationPolicy @default(FLEXIBLE) @map("cancellation_policy")
+  taxClassification          ProductTaxClassification  @default(TAXABLE) @map("tax_classification")
+  sacCode                    String?                   @map("sac_code")
+  gstRatePercent             Decimal?                  @map("gst_rate_percent") @db.Decimal(5, 2)
   basePricePaise             Int?                      @map("base_price_paise")
   inspectionFeePaise         Int                       @default(0) @map("inspection_fee_paise")
   advanceAmountPaise         Int                       @default(0) @map("advance_amount_paise")
@@ -4978,6 +4986,8 @@ model ServiceListing {
   @@index([approvalStatus])
   @@index([pricingModel])
   @@index([paymentMode])
+  @@index([sacCode])
+  @@index([taxClassification, gstRatePercent])
   @@index([deletedAt, status, approvalStatus, createdAt])
   @@index([categoryId, status, approvalStatus, createdAt])
   @@index([sellerId, deletedAt, createdAt])
@@ -5056,6 +5066,24 @@ model ServiceBooking {
   visitMode                  ServiceVisitMode             @map("visit_mode")
   paymentMode                ServicePaymentMode           @map("payment_mode")
   cancellationPolicy         ServiceCancellationPolicy    @map("cancellation_policy")
+  sellerTaxRegistrationStatusSnapshot SellerTaxRegistrationStatus @default(NOT_REGISTERED) @map("seller_tax_registration_status_snapshot")
+  sellerLegalNameSnapshot    String                       @map("seller_legal_name_snapshot")
+  sellerGstinSnapshot        String?                      @map("seller_gstin_snapshot")
+  sellerAddressSnapshot      Json                         @map("seller_address_snapshot")
+  buyerLegalNameSnapshot     String                       @map("buyer_legal_name_snapshot")
+  buyerGstinSnapshot         String?                      @map("buyer_gstin_snapshot")
+  buyerAddressSnapshot       Json                         @map("buyer_address_snapshot")
+  serviceTaxClassificationSnapshot ProductTaxClassification @default(TAXABLE) @map("service_tax_classification_snapshot")
+  sacCodeSnapshot            String?                      @map("sac_code_snapshot")
+  gstRatePercentSnapshot     Decimal                      @default(0) @map("gst_rate_percent_snapshot") @db.Decimal(5, 2)
+  taxSupplyTypeSnapshot      TaxSupplyType                @default(INTER_STATE) @map("tax_supply_type_snapshot")
+  placeOfSupplyStateCodeSnapshot String?                  @map("place_of_supply_state_code_snapshot")
+  taxableValuePaise          Int                          @default(0) @map("taxable_value_paise")
+  cgstPaise                  Int                          @default(0) @map("cgst_paise")
+  sgstPaise                  Int                          @default(0) @map("sgst_paise")
+  igstPaise                  Int                          @default(0) @map("igst_paise")
+  cessPaise                  Int                          @default(0) @map("cess_paise")
+  taxTotalPaise              Int                          @default(0) @map("tax_total_paise")
   scheduledStartAt           DateTime?                    @map("scheduled_start_at")
   scheduledEndAt             DateTime?                    @map("scheduled_end_at")
   assignedTechnicianId       String?                      @map("assigned_technician_id") @db.Uuid
@@ -5107,6 +5135,7 @@ model ServiceBooking {
   refundRequests             ServiceRefundRequest[]
   reviews                    ServiceReview[]
   ledgerEntries              SellerLedgerEntry[]
+  taxDocuments               TaxDocument[]
 
   @@index([customerId, createdAt])
   @@index([sellerId, createdAt])
@@ -5116,6 +5145,8 @@ model ServiceBooking {
   @@index([scheduledStartAt])
   @@index([assignedTechnicianId, scheduledStartAt])
   @@index([paymentMode, status])
+  @@index([sellerTaxRegistrationStatusSnapshot, createdAt])
+  @@index([sacCodeSnapshot, createdAt])
   @@unique([customerId, idempotencyKey], map: "service_bookings_customer_id_idempotency_key_key")
   @@map("service_bookings")
   @@index([cancelledById])

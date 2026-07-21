@@ -24,6 +24,7 @@ import { ApiProperty, ApiPropertyOptional, PartialType } from "@nestjs/swagger";
 import {
   ApprovalStatus,
   PaymentProvider,
+  ProductTaxClassification,
   RefundMethod,
   RefundRequestStatus,
   ServiceCashDisputeResolution,
@@ -213,6 +214,30 @@ export class CreateServiceListingDto {
   @IsOptional()
   @IsEnum(ServiceCancellationPolicy)
   cancellationPolicy?: ServiceCancellationPolicy;
+
+  @ApiPropertyOptional({
+    enum: ProductTaxClassification,
+    default: ProductTaxClassification.TAXABLE,
+  })
+  @IsOptional()
+  @IsEnum(ProductTaxClassification)
+  taxClassification?: ProductTaxClassification;
+
+  @ApiPropertyOptional({
+    example: "998719",
+    description: "Six-digit Service Accounting Code used for GST reporting.",
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{6}$/, { message: "SAC code must contain exactly 6 digits." })
+  sacCode?: string;
+
+  @ApiPropertyOptional({ example: 18 })
+  @IsOptional()
+  @Type(() => Number)
+  @Min(0)
+  @Max(100)
+  gstRatePercent?: number;
 
   @ApiPropertyOptional({ example: 99900 })
   @IsOptional()
