@@ -4158,7 +4158,7 @@ export class ServiceMarketplaceService {
     requestedClassification: ProductTaxClassification | undefined,
     requestedSacCode: string | null | undefined,
     requestedRate: Prisma.Decimal | number | string | null | undefined,
-    registrationStatus = SellerTaxRegistrationStatus.NOT_REGISTERED,
+    registrationStatus: SellerTaxRegistrationStatus = SellerTaxRegistrationStatus.NOT_REGISTERED,
   ) {
     const taxClassification =
       requestedClassification ?? ProductTaxClassification.TAXABLE;
