@@ -8,6 +8,7 @@ import {
   Ban,
   CheckCircle2,
   CreditCard,
+  Download,
   Headphones,
   MapPin,
   Package,
@@ -45,8 +46,10 @@ import {
   cancelCustomerOrder,
   createCustomerItemCancellation,
   createCustomerReturnRequest,
+  downloadCustomerTaxDocument,
   getAccountOrder,
   getOrderReviewOptions,
+  listCustomerTaxDocuments,
   submitProductReview,
   type CreateCustomerCancellationPayload,
   type CreateCustomerReturnPayload,
@@ -55,8 +58,10 @@ import {
 } from "@/lib/account-api";
 import { hasOrderLeftSeller } from "@/lib/order-cancellation";
 import {
+  acceptedReasonsForSelection,
   cancellableQuantityOf,
   deliveredItemReturnState,
+  itemReturnWindowState,
   isOrderDelivered,
   isOrderCancellable,
   isOrderReturnable,
@@ -68,7 +73,14 @@ import {
   type CustomerResolution,
   type OrderDetailItem,
 } from "@/lib/order-returns";
-import { formatMoney, formatOrderBaseAmount, formatOrderBuyerAmount, formatOrderTotal, primaryImage } from "@/lib/storefront-api";
+import {
+  formatMoney,
+  formatOrderBaseAmount,
+  formatOrderBuyerAmount,
+  formatOrderTotal,
+  getReturnPolicySettings,
+  primaryImage,
+} from "@/lib/storefront-api";
 import { uploadDeliveryProof } from "@/lib/delivery-proof-upload";
 
 type AccountOrderDetail = Awaited<ReturnType<typeof getAccountOrder>>;
@@ -83,6 +95,9 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
   const [showReturnDrawer, setShowReturnDrawer] = useState(false);
   const [selectedItems, setSelectedItems] = useState<Map<string, number>>(new Map());
   const [returnResolution, setReturnResolution] = useState<CustomerResolution>("REFUND");
+  const [reverseShipmentMode, setReverseShipmentMode] = useState<
+    "PLATFORM_PICKUP" | "CUSTOMER_SELF_SHIP"
+  >("PLATFORM_PICKUP");
   const [returnReason, setReturnReason] = useState("");
   const [returnNote, setReturnNote] = useState("");
   const [returnQualityProofKeys, setReturnQualityProofKeys] = useState<string[]>([]);
@@ -95,12 +110,18 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
   const [refundIfsc, setRefundIfsc] = useState("");
   const [cancellationReason, setCancellationReason] = useState("");
   const [cancellationNote, setCancellationNote] = useState("");
+  const [downloadingDocumentId, setDownloadingDocumentId] = useState<string | null>(null);
 
   const orderQuery = useQuery({
     queryKey: ["account-order", customerAuth.authKey, orderNumber],
     queryFn: () => getAccountOrder(customerAuth.authHeaders, orderNumber),
     enabled: customerAuth.enabled,
     retry: false,
+  });
+  const returnPolicyQuery = useQuery({
+    queryKey: ["return-policy-settings"],
+    queryFn: getReturnPolicySettings,
+    staleTime: 5 * 60 * 1000,
   });
 
   const cancelMutation = useMutation({
@@ -125,6 +146,35 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
     enabled: customerAuth.enabled && Boolean(orderQuery.data),
     retry: false,
   });
+
+  const taxDocumentsQuery = useQuery({
+    queryKey: ["account-order-tax-documents", customerAuth.authKey, orderNumber],
+    queryFn: () => listCustomerTaxDocuments(customerAuth.authHeaders, orderNumber),
+    enabled: customerAuth.enabled && Boolean(orderQuery.data),
+    retry: false,
+  });
+
+  async function handleTaxDocumentDownload(documentId: string, fileName: string) {
+    setDownloadingDocumentId(documentId);
+    setNotice(null);
+    try {
+      await downloadCustomerTaxDocument(
+        customerAuth.authHeaders,
+        orderNumber,
+        documentId,
+        fileName,
+      );
+    } catch (error) {
+      setNoticeTone("danger");
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "The purchase document could not be downloaded.",
+      );
+    } finally {
+      setDownloadingDocumentId(null);
+    }
+  }
 
   const reviewMutation = useMutation({
     mutationFn: (payload: SubmitProductReviewPayload) =>
@@ -243,6 +293,7 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
       resolution: returnResolution,
       reason: returnReason.trim(),
       items,
+      reverseShipmentMode,
     };
 
     if (requiresManualRefundDestination) {
@@ -306,6 +357,7 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
     }
 
     setSelectedItems(newSelection);
+    setReturnReason("");
   }
 
   function updateItemQuantity(itemId: string, quantity: number, maxQuantity: number) {
@@ -316,6 +368,7 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
       newSelection.set(itemId, Math.min(quantity, maxQuantity));
     }
     setSelectedItems(newSelection);
+    setReturnReason("");
   }
 
   function openCancellationDrawer() {
@@ -328,11 +381,22 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
   function openReturnDrawer(resolution: CustomerResolution = "REFUND") {
     setSelectedItems(new Map());
     setReturnResolution(resolution);
+    setReverseShipmentMode("PLATFORM_PICKUP");
     setReturnReason("");
     setReturnNote("");
     setReturnQualityProofKeys([]);
     resetRefundDestination();
     setShowReturnDrawer(true);
+  }
+
+  function changeReturnResolution(resolution: CustomerResolution) {
+    if (resolution === returnResolution) {
+      return;
+    }
+    setReturnResolution(resolution);
+    setSelectedItems(new Map());
+    setReturnReason("");
+    resetRefundDestination();
   }
 
   function resetRefundDestination() {
@@ -393,9 +457,23 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
   const hasCancellableItems = order
     ? order.items.some((item) => cancellableQuantityOf(item) > 0)
     : false;
-  const hasReturnableItems = order
-    ? canReturn && order.items.some((item) => deliveredItemReturnState(item).kind === "returnable")
-    : false;
+  const returnPolicySettings = returnPolicyQuery.data ?? {
+    returnWindowDays: 7,
+    replacementWindowDays: 7,
+  };
+  const itemEligibleForResolution = (item: OrderDetailItem, resolution: CustomerResolution) =>
+    deliveredItemReturnState(item, resolution).kind === "returnable" &&
+    Boolean(order && itemReturnWindowState(order, item, returnPolicySettings, resolution).eligible);
+  const hasRefundableItems =
+    Boolean(order && canReturn) &&
+    Boolean(order?.items.some((item) => itemEligibleForResolution(item, "REFUND")));
+  const hasReplacementItems =
+    Boolean(order && canReturn) &&
+    Boolean(order?.items.some((item) => itemEligibleForResolution(item, "REPLACEMENT")));
+  const hasReturnableItems = hasRefundableItems || hasReplacementItems;
+  const acceptedReturnReasons = order
+    ? acceptedReasonsForSelection(order.items, selectedItems)
+    : [];
 
   return (
     <AccountShell
@@ -474,7 +552,26 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
                     const reviewOption = reviewOptionsQuery.data?.items.find(
                       (option) => option.orderItemId === item.id,
                     );
-                    const returnState = isDelivered ? deliveredItemReturnState(item) : null;
+                    const refundState = isDelivered ? deliveredItemReturnState(item, "REFUND") : null;
+                    const replacementState = isDelivered
+                      ? deliveredItemReturnState(item, "REPLACEMENT")
+                      : null;
+                    const refundWindow = isDelivered
+                      ? itemReturnWindowState(
+                          order,
+                          item,
+                          returnPolicySettings,
+                          "REFUND",
+                        )
+                      : null;
+                    const replacementWindow = isDelivered
+                      ? itemReturnWindowState(
+                          order,
+                          item,
+                          returnPolicySettings,
+                          "REPLACEMENT",
+                        )
+                      : null;
                     const cancellableQty = canCancel ? cancellableQuantityOf(item) : 0;
                     const policyDescription = returnPolicyDescription(item);
 
@@ -502,6 +599,25 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
                               Seller: {item.seller.storeName}
                             </p>
                           ) : null}
+                          {isDelivered ? (
+                            <div className="mt-2 grid gap-1 text-xs font-semibold leading-5 text-[#667085]">
+                              {refundWindow?.windowDays ? (
+                                <p>
+                                  Refund return: {refundWindow.windowDays} days, until{" "}
+                                  {formatDateTime(refundWindow.deadlineAt?.toISOString())}
+                                </p>
+                              ) : null}
+                              {replacementWindow?.windowDays ? (
+                                <p>
+                                  Replacement: {replacementWindow.windowDays} days, until{" "}
+                                  {formatDateTime(replacementWindow.deadlineAt?.toISOString())}
+                                </p>
+                              ) : null}
+                              {!refundWindow?.windowDays && !replacementWindow?.windowDays ? (
+                                <p>Refund returns and replacements are unavailable for this product.</p>
+                              ) : null}
+                            </div>
+                          ) : null}
                           <div className="mt-3 flex flex-wrap gap-2">
                             <span className="inline-flex items-center rounded-full bg-[#F8FAFC] px-2 py-1 text-xs font-bold text-[#667085]">
                               Policy: {policyDescription}
@@ -512,25 +628,34 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
                                 {cancellableQty} cancellable
                               </span>
                             ) : null}
-                            {returnState ? (
-                              returnState.kind === "returnable" ? (
+                            {refundState || replacementState ? (
+                              (refundState?.kind === "returnable" ||
+                                replacementState?.kind === "returnable") ? (
                                 canReturn ? (
                                   <span className="inline-flex items-center gap-1 rounded-full bg-[#EAF1F7] px-2 py-1 text-xs font-bold text-[#163B5C]">
                                     <RotateCcw className="h-3 w-3" aria-hidden="true" />
-                                    Returnable ({returnState.availableQuantity} available)
+                                    {refundState?.kind === "returnable" ? "Refund return" : ""}
+                                    {refundState?.kind === "returnable" &&
+                                    replacementState?.kind === "returnable"
+                                      ? " / "
+                                      : ""}
+                                    {replacementState?.kind === "returnable" ? "Replacement" : ""}
                                   </span>
                                 ) : (
                                   <span className="inline-flex items-center gap-1 rounded-full bg-[#F8FAFC] px-2 py-1 text-xs font-bold text-[#667085]">
                                     {returnUnavailableReason}
                                   </span>
                                 )
-                              ) : returnState.kind === "non-returnable" ? (
+                              ) : refundState?.kind === "non-returnable" &&
+                                replacementState?.kind === "non-returnable" ? (
                                 <span className="inline-flex items-center gap-1 rounded-full bg-[#FDECEC] px-2 py-1 text-xs font-bold text-[#8A1F1F]">
-                                  Non-returnable: {returnState.reason}
+                                  Non-returnable: {refundState.reason}
                                 </span>
                               ) : (
                                 <span className="inline-flex items-center gap-1 rounded-full bg-[#F8FAFC] px-2 py-1 text-xs font-bold text-[#667085]">
-                                  {canReturn ? returnState.reason : returnUnavailableReason}
+                                  {canReturn
+                                    ? refundState?.reason ?? replacementState?.reason
+                                    : returnUnavailableReason}
                                 </span>
                               )
                             ) : null}
@@ -598,6 +723,87 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
             </div>
 
             <div className="grid gap-4 xl:sticky xl:top-24">
+              <PagePanel>
+                <div className="flex items-center gap-3">
+                  <span className="grid h-10 w-10 place-items-center rounded-md bg-[#FFF0EC] text-[#ED3500]">
+                    <Download className="h-5 w-5" aria-hidden="true" />
+                  </span>
+                  <SectionHeading
+                    title="Purchase documents"
+                    description="Seller-issued PDFs for this order."
+                  />
+                </div>
+                <p className="mt-4 text-sm font-semibold leading-6 text-[#667085]">
+                  Documents appear here after the seller fulfils the order and issues the
+                  document. Multi-seller orders can have more than one document.
+                </p>
+                {taxDocumentsQuery.isLoading ? (
+                  <div className="mt-4 grid gap-2">
+                    <div className="h-14 animate-pulse rounded-md bg-[#F8FAFC]" />
+                    <div className="h-14 animate-pulse rounded-md bg-[#F8FAFC]" />
+                  </div>
+                ) : null}
+                {taxDocumentsQuery.error ? (
+                  <div className="mt-4">
+                    <ErrorPanel
+                      error={taxDocumentsQuery.error}
+                      onRetry={() => void taxDocumentsQuery.refetch()}
+                    />
+                  </div>
+                ) : null}
+                {!taxDocumentsQuery.isLoading &&
+                !taxDocumentsQuery.error &&
+                taxDocumentsQuery.data?.length === 0 ? (
+                  <div className="mt-4 rounded-md border border-dashed border-[#D8E2EA] bg-[#F8FAFC] p-4 text-sm font-semibold leading-6 text-[#667085]">
+                    No issued purchase document is available yet.
+                  </div>
+                ) : null}
+                {taxDocumentsQuery.data?.length ? (
+                  <div className="mt-4 grid gap-2">
+                    {taxDocumentsQuery.data.map((document) => {
+                      const isDownloading = downloadingDocumentId === document.id;
+                      return (
+                        <div
+                          key={document.id}
+                          className="flex flex-col gap-3 rounded-md border border-[#E5E7EB] bg-[#FCFDFE] p-3"
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-black text-[#1F2933]">
+                              {document.label}
+                            </p>
+                            <p className="mt-1 text-xs font-semibold leading-5 text-[#667085]">
+                              {document.sellerLegalName}
+                              {document.documentNumber
+                                ? ` / ${document.documentNumber}`
+                                : " / Number pending"}
+                            </p>
+                            <p className="mt-1 text-xs font-semibold text-[#667085]">
+                              Issued {formatDateTime(document.issueDate)}
+                            </p>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() =>
+                              void handleTaxDocumentDownload(
+                                document.id,
+                                document.downloadFileName,
+                              )
+                            }
+                            disabled={Boolean(downloadingDocumentId)}
+                            title={`Download ${document.label}`}
+                          >
+                            <Download className="h-4 w-4" aria-hidden="true" />
+                            {isDownloading ? "Preparing..." : "Download PDF"}
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </PagePanel>
+
               <PagePanel>
                 <div className="flex items-center gap-3">
                   <span className="grid h-10 w-10 place-items-center rounded-md bg-[#EAF1F7] text-[#163B5C]">
@@ -756,24 +962,28 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
 
                   {hasReturnableItems ? (
                     <div className="grid gap-3">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => openReturnDrawer("REFUND")}
-                        disabled={returnMutation.isPending}
-                      >
-                        <RotateCcw className="h-4 w-4" aria-hidden="true" />
-                        Request refund
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => openReturnDrawer("REPLACEMENT")}
-                        disabled={returnMutation.isPending}
-                      >
-                        <PackageCheck className="h-4 w-4" aria-hidden="true" />
-                        Request replacement
-                      </Button>
+                      {hasRefundableItems ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => openReturnDrawer("REFUND")}
+                          disabled={returnMutation.isPending}
+                        >
+                          <RotateCcw className="h-4 w-4" aria-hidden="true" />
+                          Request refund
+                        </Button>
+                      ) : null}
+                      {hasReplacementItems ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => openReturnDrawer("REPLACEMENT")}
+                          disabled={returnMutation.isPending}
+                        >
+                          <PackageCheck className="h-4 w-4" aria-hidden="true" />
+                          Request replacement
+                        </Button>
+                      ) : null}
                     </div>
                   ) : null}
 
@@ -966,18 +1176,23 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
               </div>
 
               <div className="space-y-4">
-                {order.items.filter((item) => deliveredItemReturnState(item).kind === "returnable").length === 0 ? (
+                {order.items.filter((item) => itemEligibleForResolution(item, returnResolution)).length === 0 ? (
                   <div className="rounded-md border border-dashed border-[#D8E2EA] bg-[#F8FAFC] p-4 text-sm font-semibold text-[#667085]">
                     No delivered items are currently eligible for a new refund or replacement request.
                   </div>
                 ) : null}
                 {order.items
                   .filter((item) => {
-                    const state = deliveredItemReturnState(item);
-                    return state.kind === "returnable";
+                    return itemEligibleForResolution(item, returnResolution);
                   })
                   .map((item) => {
-                    const state = deliveredItemReturnState(item);
+                    const state = deliveredItemReturnState(item, returnResolution);
+                    const window = itemReturnWindowState(
+                      order,
+                      item,
+                      returnPolicySettings,
+                      returnResolution,
+                    );
                     const maxQuantity = state.kind === "returnable" ? state.availableQuantity : 0;
                     const selectedQuantity = selectedItems.get(item.id) || 0;
 
@@ -995,6 +1210,10 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
                           <p className="text-sm font-bold text-[#1F2933]">{item.productNameSnapshot}</p>
                           <p className="text-xs font-semibold text-[#667085]">
                             {formatMoney(item.unitPricePaise, item.currency)} each / {maxQuantity} returnable
+                          </p>
+                          <p className="mt-1 text-xs font-semibold text-[#667085]">
+                            {window.windowDays} days after delivery / submit by{" "}
+                            {formatDateTime(window.deadlineAt?.toISOString())}
                           </p>
                         </div>
                         {selectedQuantity > 0 && (
@@ -1044,7 +1263,8 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
                   <div className="flex gap-3">
                     <button
                       type="button"
-                      onClick={() => setReturnResolution("REFUND")}
+                      onClick={() => changeReturnResolution("REFUND")}
+                      disabled={!hasRefundableItems}
                       className={`flex-1 rounded-md border px-4 py-2 text-sm font-bold transition ${
                         returnResolution === "REFUND"
                           ? "border-[#ED3500] bg-[#FFF0EC] text-[#ED3500]"
@@ -1055,7 +1275,8 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setReturnResolution("REPLACEMENT")}
+                      onClick={() => changeReturnResolution("REPLACEMENT")}
+                      disabled={!hasReplacementItems}
                       className={`flex-1 rounded-md border px-4 py-2 text-sm font-bold transition ${
                         returnResolution === "REPLACEMENT"
                           ? "border-[#ED3500] bg-[#FFF0EC] text-[#ED3500]"
@@ -1069,16 +1290,66 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
 
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wide text-[#667085] mb-2">
+                    Return shipping
+                  </label>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={() => setReverseShipmentMode("PLATFORM_PICKUP")}
+                      className={`rounded-md border px-4 py-3 text-left transition ${
+                        reverseShipmentMode === "PLATFORM_PICKUP"
+                          ? "border-[#ED3500] bg-[#FFF0EC]"
+                          : "border-[#D8E2EA] bg-[#F8FAFC]"
+                      }`}
+                    >
+                      <span className="block text-sm font-black text-[#1F2933]">
+                        Platform pickup
+                      </span>
+                      <span className="mt-1 block text-xs font-semibold leading-5 text-[#667085]">
+                        Free for eligible returns. A pickup partner is paid by the marketplace or seller according to platform settings.
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setReverseShipmentMode("CUSTOMER_SELF_SHIP")}
+                      className={`rounded-md border px-4 py-3 text-left transition ${
+                        reverseShipmentMode === "CUSTOMER_SELF_SHIP"
+                          ? "border-[#ED3500] bg-[#FFF0EC]"
+                          : "border-[#D8E2EA] bg-[#F8FAFC]"
+                      }`}
+                    >
+                      <span className="block text-sm font-black text-[#1F2933]">
+                        Self ship
+                      </span>
+                      <span className="mt-1 block text-xs font-semibold leading-5 text-[#667085]">
+                        You arrange and pay for shipping. Reimbursement is not automatic unless support confirms it for the case.
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wide text-[#667085] mb-2">
                     Reason
                   </label>
-                  <input
-                    type="text"
+                  <select
                     value={returnReason}
                     onChange={(e) => setReturnReason(e.target.value)}
-                    placeholder="Why are you returning this item?"
                     required
                     className="h-11 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 text-sm font-semibold text-[#1F2933] outline-none transition focus:border-[#ED3500] focus:bg-white"
-                  />
+                  >
+                    <option value="">Select a reason</option>
+                    {acceptedReturnReasons.map((reason) => (
+                      <option key={reason} value={reason}>
+                        {reason}
+                      </option>
+                    ))}
+                  </select>
+                  {selectedItems.size > 0 && acceptedReturnReasons.length === 0 ? (
+                    <p className="mt-2 text-xs font-semibold text-[#8A1F1F]">
+                      The selected products do not share an accepted reason. Submit them separately.
+                    </p>
+                  ) : null}
                 </div>
 
                 <div>
@@ -1224,7 +1495,13 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
                 <Button
                   type="button"
                   onClick={handleReturnRequest}
-                  disabled={selectedItems.size === 0 || returnMutation.isPending || returnQualityUploadBusy}
+                  disabled={
+                    selectedItems.size === 0 ||
+                    acceptedReturnReasons.length === 0 ||
+                    !returnReason ||
+                    returnMutation.isPending ||
+                    returnQualityUploadBusy
+                  }
                 >
                   {returnMutation.isPending ? "Processing..." : "Submit return request"}
                 </Button>

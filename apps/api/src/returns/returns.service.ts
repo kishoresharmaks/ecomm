@@ -13,6 +13,8 @@ import {
   CouponRedemptionStatus,
   DeliveryAssignmentAttemptSource,
   DeliveryAssignmentStatus,
+  DeliveryPartnerWalletEntryDirection,
+  DeliveryPartnerWalletEntryType,
   DeliveryStatus,
   EmailRecipientType,
   InventoryMovementType,
@@ -41,6 +43,10 @@ import {
   DeliveryMode,
   UserStatus,
 } from "@indihub/database";
+import {
+  normalizeProductReturnPolicy,
+  productPolicyAllowsResolution,
+} from "@indihub/shared-types";
 import type { RequestUser } from "../auth/types/indihub-request";
 import {
   deliveryPartnerLocalAreaCodesFromServiceAreas,
@@ -58,6 +64,16 @@ import { EMAIL_TRIGGER_EVENTS } from "../notifications/email-trigger-catalog";
 import { NotificationsService } from "../notifications/notifications.service";
 import { ExpoPushService } from "../notifications/expo-push.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { TaxDocumentsService } from "../tax/tax-documents.service";
+import {
+  readDeliveryPartnerPayoutSettings,
+} from "../settings/delivery-partner-payout-settings";
+import {
+  readReturnPolicySettings,
+  returnDeadline,
+  returnWindowDaysForResolution,
+  type ReturnPolicySettings,
+} from "../settings/return-policy-settings";
 import {
   ApproveRefundDto,
   AdjustRefundAmountDto,
@@ -106,7 +122,7 @@ const returnApprovalStatuses = [
   ReturnRequestStatus.RESOLVED,
 ] as const;
 
-const replacementQcReadyStatuses = [
+const returnQcReadyStatuses = [
   ReturnRequestStatus.RECEIVED,
   ReturnRequestStatus.QC_PASSED,
   ReturnRequestStatus.RESOLVED,
@@ -167,8 +183,9 @@ type ReturnOrder = Prisma.OrderGetPayload<{
       };
     };
     sellerSplits: { include: { payout: true } };
-    shipments: true;
+    shipments: { include: { packages: true } };
     deliveryDetail: true;
+    statusEvents: true;
     payments: true;
     couponRedemption: true;
     customer: { include: { user: true } };
@@ -662,6 +679,7 @@ export class ReturnsService {
     @Inject(SellerLedgerService) private readonly sellerLedger: SellerLedgerService,
     @Inject(NotificationsService) private readonly notifications: NotificationsService,
     @Inject(ExpoPushService) private readonly expoPush: ExpoPushService,
+    @Inject(TaxDocumentsService) private readonly taxDocuments: TaxDocumentsService,
   ) {}
 
   async createCancellation(actor: RequestUser, orderNumber: string, dto: CreateCancellationDto) {
@@ -821,6 +839,12 @@ export class ReturnsService {
         await this.cancelFullyEmptySellerSplits(tx, order, cancellationLines);
       }
 
+      if (allItemsCancelled) {
+        await this.taxDocuments.cancelDraftOrderDocuments(tx, order.id, note);
+      } else {
+        await this.taxDocuments.refreshDraftOrderDocuments(tx, order.id);
+      }
+
       await tx.auditLog.create({
         data: {
           actorUserId: actor.id,
@@ -868,6 +892,7 @@ export class ReturnsService {
     const result = await this.prisma.client.$transaction(async (tx) => {
       const order = await this.getReturnOrderForCustomer(tx, orderNumber, customer.id);
       this.assertOrderCanBeReturned(order);
+      const returnPolicy = await readReturnPolicySettings(tx);
       await this.lockOrderGraph(tx, order);
       const refundDestinationSnapshot = this.normalizeRefundDestination(
         dto.refundDestination,
@@ -875,6 +900,13 @@ export class ReturnsService {
       );
 
       const requestedItems = this.resolveRequestedItems(order, dto.items);
+      this.assertSelectedItemsMatchReturnPolicy(
+        order,
+        requestedItems,
+        dto.resolution,
+        dto.reason,
+        returnPolicy,
+      );
       const pendingByOrderItem = await this.pendingReturnQuantityByOrderItem(tx, order.id);
       const splitBySeller = new Map(order.sellerSplits.map((split) => [split.sellerId, split.id]));
       const returnLines = requestedItems.map((requested) =>
@@ -883,6 +915,7 @@ export class ReturnsService {
           requested.quantity,
           pendingByOrderItem,
           this.splitIdForSeller(splitBySeller, requested.item.sellerId),
+          dto.resolution,
         ),
       );
       const blockedLine = returnLines.find((line) => !line.returnable);
@@ -909,6 +942,7 @@ export class ReturnsService {
           customerId: customer.id,
           status,
           resolution: dto.resolution,
+          reverseShipmentMode: dto.reverseShipmentMode ?? ReverseShipmentMode.PLATFORM_PICKUP,
           reason: dto.reason,
           note: dto.note ?? null,
           qualityProofKeys,
@@ -1075,6 +1109,54 @@ export class ReturnsService {
             reviewedById: actor.id,
           },
         });
+        if (
+          dto.status === ReturnRequestStatus.RECEIVED &&
+          existing.reverseShipmentMode === ReverseShipmentMode.CUSTOMER_SELF_SHIP
+        ) {
+          const receivedAt = new Date();
+          const selfShipments = await tx.reverseShipment.findMany({
+            where: {
+              returnRequestId: existing.id,
+              mode: ReverseShipmentMode.CUSTOMER_SELF_SHIP,
+              status: {
+                notIn: [ReverseShipmentStatus.RECEIVED, ReverseShipmentStatus.CANCELLED],
+              },
+            },
+            select: { id: true, status: true },
+          });
+          await tx.reverseShipment.updateMany({
+            where: { id: { in: selfShipments.map((shipment) => shipment.id) } },
+            data: {
+              status: ReverseShipmentStatus.RECEIVED,
+              receivedAt,
+              assignmentStatus: DeliveryAssignmentStatus.UNASSIGNED,
+            },
+          });
+          await tx.returnRequestItem.updateMany({
+            where: {
+              returnRequestId: existing.id,
+              status: {
+                in: [
+                  ReturnRequestItemStatus.APPROVED,
+                  ReturnRequestItemStatus.PICKUP_PENDING,
+                  ReturnRequestItemStatus.PICKED_UP,
+                ],
+              },
+            },
+            data: { status: ReturnRequestItemStatus.RECEIVED },
+          });
+          for (const shipment of selfShipments) {
+            await tx.reverseShipmentEvent.create({
+              data: {
+                reverseShipmentId: shipment.id,
+                oldStatus: shipment.status,
+                newStatus: ReverseShipmentStatus.RECEIVED,
+                note: dto.note ?? "Customer self-shipped return received.",
+                createdById: actor.id,
+              },
+            });
+          }
+        }
       }
 
       await tx.returnRequestNote.create({
@@ -1154,16 +1236,36 @@ export class ReturnsService {
         throw new BadRequestException("Resolved return requests cannot be marked as QC failed.");
       }
       if (
-        existing.resolution === ReturnRequestResolution.REPLACEMENT &&
         dto.status === ReturnRequestStatus.QC_PASSED &&
-        !replacementQcReadyStatuses.includes(existing.status as (typeof replacementQcReadyStatuses)[number])
+        !returnQcReadyStatuses.includes(existing.status as (typeof returnQcReadyStatuses)[number])
       ) {
         throw new BadRequestException(
-          "Replacement QC can be passed only after the returned package is received by the seller.",
+          "QC can be passed only after the returned package is received.",
+        );
+      }
+      if (
+        dto.status === ReturnRequestStatus.QC_FAILED &&
+        existing.status !== ReturnRequestStatus.RECEIVED
+      ) {
+        throw new BadRequestException(
+          "QC can be failed only after the returned package is received.",
+        );
+      }
+      if (
+        dto.status === ReturnRequestStatus.QC_PASSED &&
+        !dto.stockDisposition &&
+        !dto.itemDispositions?.length
+      ) {
+        throw new BadRequestException(
+          "Choose whether received items are being returned to sellable stock.",
         );
       }
 
       let replacementCreatedOrderId: string | null = null;
+      const stockDispositions =
+        dto.status === ReturnRequestStatus.QC_PASSED
+          ? this.returnStockDispositions(existing.items, dto)
+          : null;
 
       if (dto.status === ReturnRequestStatus.QC_FAILED) {
         await tx.returnRequest.update({
@@ -1200,8 +1302,20 @@ export class ReturnsService {
           refundNumber,
           note: dto.note ?? null,
         });
+        await this.applyReturnStockDisposition(
+          tx,
+          existing,
+          stockDispositions!,
+          actor,
+        );
         replacementCreatedOrderId = replacement?.created ? replacement.orderId : null;
       } else {
+        await this.applyReturnStockDisposition(
+          tx,
+          existing,
+          stockDispositions!,
+          actor,
+        );
         await tx.returnRequest.update({
           where: { id: existing.id },
           data: {
@@ -1278,7 +1392,13 @@ export class ReturnsService {
           entityType: "return_request",
           entityId: existing.id,
           oldValue: { status: existing.status },
-          newValue: { status: dto.status, note: dto.note ?? null },
+          newValue: {
+            status: dto.status,
+            stockDispositions: stockDispositions
+              ? Object.fromEntries(stockDispositions)
+              : null,
+            note: dto.note ?? null,
+          },
         },
       });
 
@@ -1421,7 +1541,7 @@ export class ReturnsService {
           tx,
           existing.id,
           existing.orderId,
-          ReverseShipmentMode.PLATFORM_PICKUP,
+          existing.reverseShipmentMode,
           sellerItems.map((item) => ({ sellerId: item.sellerId })),
         );
       }
@@ -1447,7 +1567,8 @@ export class ReturnsService {
             approvedAmountPaise: approvedAmount._sum.approvedRefundPaise ?? 0,
           },
         });
-        shouldAutoAssign = true;
+        shouldAutoAssign =
+          existing.reverseShipmentMode === ReverseShipmentMode.PLATFORM_PICKUP;
       }
       if (dto.decision === SellerReturnDecision.REJECT && remainingPending === 0 && approvedItems === 0) {
         await this.closeReturnInTransaction(tx, existing, actor, ReturnRequestStatus.REJECTED, note ?? "Seller rejected the return request.");
@@ -1503,8 +1624,11 @@ export class ReturnsService {
 
   async listAdminReversePickups(query: ReversePickupListQueryDto) {
     const shipmentWhere: Prisma.ReverseShipmentWhereInput = query.assignmentStatus
-      ? { assignmentStatus: query.assignmentStatus }
-      : {};
+      ? {
+          mode: ReverseShipmentMode.PLATFORM_PICKUP,
+          assignmentStatus: query.assignmentStatus,
+        }
+      : { mode: ReverseShipmentMode.PLATFORM_PICKUP };
     return this.listReturnRequests(
       this.returnListWhere(query, {
         reverseShipments: {
@@ -1814,7 +1938,12 @@ export class ReturnsService {
         }
       }
       if (dto.status === ReverseShipmentStatus.RECEIVED) {
-        await this.applyReverseShipmentReceiptStatus(tx, returnRequest.id, targetShipments[0]!.sellerId);
+        await this.applyReverseShipmentReceiptStatus(
+          tx,
+          returnRequest.id,
+          targetShipments[0]!.sellerId,
+          actor,
+        );
       }
       if (dto.status === ReverseShipmentStatus.FAILED) {
         const failureProofReference = proofReference;
@@ -1901,7 +2030,12 @@ export class ReturnsService {
           createdById: actor.id,
         },
       });
-      await this.applyReverseShipmentReceiptStatus(tx, returnRequest.id, shipment.sellerId);
+      await this.applyReverseShipmentReceiptStatus(
+        tx,
+        returnRequest.id,
+        shipment.sellerId,
+        actor,
+      );
 
       await tx.auditLog.create({
         data: {
@@ -2470,8 +2604,12 @@ export class ReturnsService {
           orderBy: { createdAt: "asc" },
         },
         sellerSplits: { include: { payout: true } },
-        shipments: true,
+        shipments: { include: { packages: true } },
         deliveryDetail: true,
+        statusEvents: {
+          where: { newStatus: DeliveryStatus.DELIVERED },
+          orderBy: { createdAt: "asc" },
+        },
         payments: true,
         couponRedemption: true,
         customer: { include: { user: true } },
@@ -2508,6 +2646,64 @@ export class ReturnsService {
     if (order.paymentStatus !== PaymentStatus.PAID && order.paymentStatus !== PaymentStatus.NOT_REQUIRED) {
       throw new BadRequestException("Returns are available only after payment is completed or not required.");
     }
+  }
+
+  private assertReturnWithinWindow(
+    order: ReturnOrder,
+    resolution: ReturnRequestResolution,
+    settings: ReturnPolicySettings,
+    productWindowDays?: number,
+    now = new Date(),
+  ) {
+    const normalizedResolution =
+      resolution === ReturnRequestResolution.REPLACEMENT ? "REPLACEMENT" : "REFUND";
+    const globalWindowDays = returnWindowDaysForResolution(settings, normalizedResolution);
+    const windowDays =
+      productWindowDays === undefined
+        ? globalWindowDays
+        : Math.min(globalWindowDays, productWindowDays);
+    const resolutionLabel = normalizedResolution === "REPLACEMENT" ? "Replacement" : "Return";
+
+    if (windowDays <= 0) {
+      throw new BadRequestException(`${resolutionLabel} requests are currently unavailable.`);
+    }
+
+    const deliveredAt = this.orderDeliveredAt(order);
+    if (now.getTime() > returnDeadline(deliveredAt, windowDays).getTime()) {
+      throw new BadRequestException(
+        `${resolutionLabel} window expired. Requests must be submitted within ${windowDays} days of delivery.`,
+      );
+    }
+  }
+
+  private orderDeliveredAt(order: ReturnOrder) {
+    const packageDates = order.shipments
+      .flatMap((shipment) => shipment.packages)
+      .map((shipmentPackage) => shipmentPackage.deliveredAt)
+      .filter((value): value is Date => value instanceof Date);
+    if (packageDates.length) {
+      return new Date(Math.max(...packageDates.map((value) => value.getTime())));
+    }
+
+    const deliveredEventDates = order.statusEvents
+      .filter((event) => event.newStatus === DeliveryStatus.DELIVERED)
+      .map((event) => event.createdAt);
+    if (deliveredEventDates.length) {
+      return new Date(Math.max(...deliveredEventDates.map((value) => value.getTime())));
+    }
+
+    const deliveredShipmentDates = order.shipments
+      .filter((shipment) => shipment.status === DeliveryStatus.DELIVERED)
+      .map((shipment) => shipment.updatedAt);
+    if (deliveredShipmentDates.length) {
+      return new Date(Math.max(...deliveredShipmentDates.map((value) => value.getTime())));
+    }
+
+    if (order.deliveryDetail?.status === DeliveryStatus.DELIVERED) {
+      return order.deliveryDetail.updatedAt;
+    }
+
+    return order.updatedAt;
   }
 
   private isDeliveredStorePickupOrder(order: Pick<ReturnOrder, "orderStatus" | "deliveryStatus" | "deliveryDetail" | "shipments">) {
@@ -2615,6 +2811,7 @@ export class ReturnsService {
     quantity: number,
     pendingByOrderItem: Map<string, number>,
     orderSellerSplitId: string,
+    resolution: ReturnRequestResolution,
   ) {
     const pendingQuantity = pendingByOrderItem.get(item.id) ?? 0;
     const availableQuantity = this.activeQuantity(item) - pendingQuantity;
@@ -2624,8 +2821,42 @@ export class ReturnsService {
     const line = this.cancellationLine(item, quantity, orderSellerSplitId);
     return {
       ...line,
-      returnable: this.itemPolicyAllowsReturn(item.returnPolicySnapshot),
+      returnable: this.itemPolicyAllowsReturn(item.returnPolicySnapshot, resolution),
     };
+  }
+
+  private assertSelectedItemsMatchReturnPolicy(
+    order: ReturnOrder,
+    requestedItems: Array<{ item: ReturnOrder["items"][number]; quantity: number }>,
+    resolution: ReturnRequestResolution,
+    reason: string,
+    settings: ReturnPolicySettings,
+  ) {
+    const normalizedResolution =
+      resolution === ReturnRequestResolution.REPLACEMENT ? "REPLACEMENT" : "REFUND";
+    const normalizedReason = reason.trim();
+
+    for (const requested of requestedItems) {
+      const policy = normalizeProductReturnPolicy(requested.item.returnPolicySnapshot);
+      if (!productPolicyAllowsResolution(policy, normalizedResolution)) {
+        throw new BadRequestException(
+          `${requested.item.productNameSnapshot} is not eligible for ${
+            normalizedResolution === "REPLACEMENT" ? "replacement" : "refund return"
+          }.`,
+        );
+      }
+      const productWindowDays =
+        normalizedResolution === "REPLACEMENT"
+          ? policy.replacementWindowDays
+          : policy.returnWindowDays;
+      this.assertReturnWithinWindow(order, resolution, settings, productWindowDays);
+
+      if (!policy.returnReasons.some((acceptedReason) => acceptedReason === normalizedReason)) {
+        throw new BadRequestException(
+          `${requested.item.productNameSnapshot} does not accept the selected return reason.`,
+        );
+      }
+    }
   }
 
   private splitIdForSeller(splitBySeller: Map<string, string>, sellerId: string) {
@@ -3062,7 +3293,12 @@ export class ReturnsService {
       if (sourceItem.productVariantId !== returnItem.productVariantId) {
         throw new BadRequestException("Replacement must use the same product variant as the returned item.");
       }
-      if (!this.itemPolicyAllowsReturn(sourceItem.returnPolicySnapshot)) {
+      if (
+        !this.itemPolicyAllowsReturn(
+          sourceItem.returnPolicySnapshot,
+          ReturnRequestResolution.REPLACEMENT,
+        )
+      ) {
         throw new BadRequestException("One or more selected items are not eligible for return or replacement.");
       }
     }
@@ -3536,6 +3772,85 @@ export class ReturnsService {
     }
   }
 
+  private async applyReturnStockDisposition(
+    tx: Prisma.TransactionClient,
+    request: {
+      id: string;
+      requestNumber: string;
+      items: Array<{
+        id: string;
+        productVariantId: string;
+        quantity: number;
+      }>;
+    },
+    dispositions: Map<string, "RESTOCK" | "DO_NOT_RESTOCK">,
+    actor: RequestUser,
+  ) {
+    for (const item of request.items) {
+      if (dispositions.get(item.id) !== "RESTOCK") {
+        continue;
+      }
+      const existingMovement = await tx.inventoryMovement.findFirst({
+        where: {
+          movementType: InventoryMovementType.RETURN,
+          referenceType: "return_request_item",
+          referenceId: item.id,
+        },
+        select: { id: true },
+      });
+      if (existingMovement) {
+        continue;
+      }
+
+      await tx.productVariant.update({
+        where: { id: item.productVariantId },
+        data: { stockQuantity: { increment: item.quantity } },
+      });
+      await tx.inventoryMovement.create({
+        data: {
+          productVariantId: item.productVariantId,
+          movementType: InventoryMovementType.RETURN,
+          quantity: item.quantity,
+          reason: `Sellable return received for ${request.requestNumber}`,
+          referenceType: "return_request_item",
+          referenceId: item.id,
+          createdById: actor.id,
+        },
+      });
+    }
+  }
+
+  private returnStockDispositions(
+    items: Array<{ id: string }>,
+    dto: ReturnQcDto,
+  ) {
+    const itemIds = new Set(items.map((item) => item.id));
+    if (!dto.itemDispositions?.length) {
+      return new Map(
+        items.map((item) => [item.id, dto.stockDisposition!] as const),
+      );
+    }
+
+    const dispositions = new Map<string, "RESTOCK" | "DO_NOT_RESTOCK">();
+    for (const item of dto.itemDispositions) {
+      if (!itemIds.has(item.returnRequestItemId)) {
+        throw new BadRequestException(
+          "Stock disposition contains an item outside this return request.",
+        );
+      }
+      if (dispositions.has(item.returnRequestItemId)) {
+        throw new BadRequestException("Duplicate stock disposition for a return item.");
+      }
+      dispositions.set(item.returnRequestItemId, item.stockDisposition);
+    }
+    if (dispositions.size !== items.length) {
+      throw new BadRequestException(
+        "Choose a stock disposition for every returned item.",
+      );
+    }
+    return dispositions;
+  }
+
   private async pendingReturnQuantityByOrderItem(tx: Prisma.TransactionClient, orderId: string) {
     const rows = await tx.returnRequestItem.groupBy({
       by: ["orderItemId"],
@@ -3691,6 +4006,8 @@ export class ReturnsService {
       },
     });
 
+    await this.taxDocuments.createCreditNotesForRefund(tx, refund.id, actor?.id ?? null);
+
     return updated;
   }
 
@@ -3705,6 +4022,8 @@ export class ReturnsService {
       actor: RequestUser | null;
       referenceId: string;
       description: string;
+      entryType?: SellerLedgerEntryType;
+      referenceType?: string;
     },
   ) {
     if (input.amountPaise <= 0) {
@@ -3713,7 +4032,7 @@ export class ReturnsService {
     const existing = await tx.sellerLedgerEntry.findFirst({
       where: {
         orderSellerSplitId: input.splitId,
-        entryType: SellerLedgerEntryType.REFUND_ADJUSTMENT,
+        entryType: input.entryType ?? SellerLedgerEntryType.REFUND_ADJUSTMENT,
         referenceId: input.referenceId,
       },
       select: { id: true },
@@ -3726,10 +4045,10 @@ export class ReturnsService {
       orderId: input.orderId,
       orderSellerSplitId: input.splitId,
       payoutId: input.payoutId,
-      entryType: SellerLedgerEntryType.REFUND_ADJUSTMENT,
+      entryType: input.entryType ?? SellerLedgerEntryType.REFUND_ADJUSTMENT,
       description: input.description,
       debitPaise: input.amountPaise,
-      referenceType: "refund",
+      referenceType: input.referenceType ?? "refund",
       referenceId: input.referenceId,
       ...(input.actor?.id ? { createdById: input.actor.id } : {}),
     });
@@ -3812,6 +4131,15 @@ export class ReturnsService {
       throw new BadRequestException("Reverse pickup is created after the return is approved.");
     }
     if (
+      !detail.reverseShipments.some(
+        (shipment) => shipment.mode === ReverseShipmentMode.PLATFORM_PICKUP,
+      )
+    ) {
+      throw new BadRequestException(
+        "Customer self-shipped returns do not use delivery-partner assignment.",
+      );
+    }
+    if (
       detail.status === ReturnRequestStatus.REJECTED ||
       detail.status === ReturnRequestStatus.CANCELLED ||
       detail.status === ReturnRequestStatus.RESOLVED
@@ -3881,6 +4209,9 @@ export class ReturnsService {
     source: DeliveryAssignmentAttemptSource,
   ) {
     const target = await this.getReversePickupAssignmentTarget(requestNumber);
+    const platformShipments = target.reverseShipments.filter(
+      (shipment) => shipment.mode === ReverseShipmentMode.PLATFORM_PICKUP,
+    );
     const partnerUserId = dto.deliveryPartnerUserId ?? null;
     const isUnassign = !partnerUserId;
     const now = new Date();
@@ -3896,7 +4227,7 @@ export class ReturnsService {
         await this.assertDeliveryPartnerUser(tx, partnerUserId);
       }
 
-      const activeShipmentIds = target.reverseShipments.map((shipment) => shipment.id);
+      const activeShipmentIds = platformShipments.map((shipment) => shipment.id);
       await tx.reverseShipmentAssignmentAttempt.updateMany({
         where: {
           returnRequestId: target.id,
@@ -3930,7 +4261,7 @@ export class ReturnsService {
       });
 
       if (partnerUserId) {
-        for (const shipment of target.reverseShipments) {
+        for (const shipment of platformShipments) {
           await tx.reverseShipmentAssignmentAttempt.create({
             data: {
               returnRequestId: target.id,
@@ -3949,7 +4280,7 @@ export class ReturnsService {
         }
       }
 
-      for (const shipment of target.reverseShipments) {
+      for (const shipment of platformShipments) {
         await tx.reverseShipmentEvent.create({
           data: {
             reverseShipmentId: shipment.id,
@@ -4243,6 +4574,7 @@ export class ReturnsService {
     tx: Prisma.TransactionClient,
     returnRequestId: string,
     sellerId: string,
+    actor: RequestUser,
   ) {
     await tx.returnRequestItem.updateMany({
       where: {
@@ -4259,6 +4591,7 @@ export class ReturnsService {
       },
       data: { status: ReturnRequestItemStatus.RECEIVED },
     });
+    await this.postReversePickupFinance(tx, returnRequestId, sellerId, actor);
     const remaining = await tx.reverseShipment.count({
       where: {
         returnRequestId,
@@ -4269,6 +4602,122 @@ export class ReturnsService {
       await tx.returnRequest.update({
         where: { id: returnRequestId },
         data: { status: ReturnRequestStatus.RECEIVED },
+      });
+    }
+  }
+
+  private async postReversePickupFinance(
+    tx: Prisma.TransactionClient,
+    returnRequestId: string,
+    sellerId: string,
+    actor: RequestUser,
+  ) {
+    const settings = await readDeliveryPartnerPayoutSettings(tx);
+    if (settings.reversePickupBasePayPaise <= 0) {
+      return;
+    }
+    const shipments = await tx.reverseShipment.findMany({
+      where: {
+        returnRequestId,
+        sellerId,
+        status: ReverseShipmentStatus.RECEIVED,
+        assignedPartnerUserId: { not: null },
+        mode: ReverseShipmentMode.PLATFORM_PICKUP,
+      },
+      include: {
+        order: { select: { orderNumber: true, currency: true } },
+        seller: { select: { storeName: true } },
+        returnRequest: { select: { requestNumber: true } },
+      },
+    });
+
+    for (const shipment of shipments) {
+      const existing = await tx.deliveryPartnerWalletEntry.findUnique({
+        where: {
+          reverseShipmentId_entryType: {
+            reverseShipmentId: shipment.id,
+            entryType: DeliveryPartnerWalletEntryType.REVERSE_PICKUP_EARNING,
+          },
+        },
+        select: { id: true },
+      });
+      if (existing || !shipment.assignedPartnerUserId) {
+        continue;
+      }
+
+      await tx.deliveryPartnerWalletEntry.create({
+        data: {
+          partnerUserId: shipment.assignedPartnerUserId,
+          orderId: shipment.orderId,
+          reverseShipmentId: shipment.id,
+          entryType: DeliveryPartnerWalletEntryType.REVERSE_PICKUP_EARNING,
+          direction: DeliveryPartnerWalletEntryDirection.CREDIT,
+          amountPaise: settings.reversePickupBasePayPaise,
+          currency: shipment.order.currency,
+          description: `Reverse pickup earning for ${shipment.returnRequest.requestNumber}`,
+          metadata: {
+            orderNumber: shipment.order.orderNumber,
+            requestNumber: shipment.returnRequest.requestNumber,
+            sellerStoreName: shipment.seller.storeName,
+            costBearer: settings.reversePickupCostBearer,
+            settingsSnapshot: settings,
+          },
+          createdById: actor.id,
+        },
+      });
+
+      if (settings.reversePickupCostBearer === "SELLER") {
+        const split = await tx.orderSellerSplit.findUnique({
+          where: {
+            orderId_sellerId: {
+              orderId: shipment.orderId,
+              sellerId: shipment.sellerId,
+            },
+          },
+          include: { payout: true },
+        });
+        if (split) {
+          await tx.orderSellerSplit.update({
+            where: { id: split.id },
+            data: {
+              refundAdjustmentPaise: {
+                decrement: settings.reversePickupBasePayPaise,
+              },
+              ...(split.payout?.status === SellerPayoutStatus.PAID
+                ? { settlementStatus: SellerSettlementStatus.ADJUSTED }
+                : {}),
+            },
+          });
+          if (split.payout?.status === SellerPayoutStatus.PAID) {
+            await this.createSellerRefundLedgerAdjustment(tx, {
+              splitId: split.id,
+              sellerId: shipment.sellerId,
+              orderId: shipment.orderId,
+              payoutId: split.payoutId,
+              amountPaise: settings.reversePickupBasePayPaise,
+              actor,
+              referenceId: `reverse-shipment:${shipment.id}`,
+              referenceType: "reverse_logistics",
+              entryType: SellerLedgerEntryType.REVERSE_LOGISTICS_FEE,
+              description: `Reverse pickup charge for ${shipment.returnRequest.requestNumber}`,
+            });
+          }
+        }
+      }
+
+      await tx.auditLog.create({
+        data: {
+          actorUserId: actor.id,
+          action: "return.reverse_pickup.finance_posted",
+          entityType: "reverse_shipment",
+          entityId: shipment.id,
+          newValue: {
+            partnerUserId: shipment.assignedPartnerUserId,
+            amountPaise: settings.reversePickupBasePayPaise,
+            currency: shipment.order.currency,
+            costBearer: settings.reversePickupCostBearer,
+          },
+        },
       });
     }
   }
@@ -4748,6 +5197,7 @@ export class ReturnsService {
       requestNumber: detail.requestNumber,
       status: detail.status,
       resolution: detail.resolution,
+      reverseShipmentMode: detail.reverseShipmentMode,
       reason: detail.reason,
       note: detail.note,
       qualityProofKeys: detail.qualityProofKeys,
@@ -5291,13 +5741,14 @@ export class ReturnsService {
     return grouped;
   }
 
-  private itemPolicyAllowsReturn(snapshot: Prisma.JsonValue | null) {
-    if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) {
-      return true;
-    }
-    const snapshotRecord = snapshot as Record<string, unknown>;
-    const value = snapshotRecord.returnEligibility ?? snapshotRecord.returnPolicy;
-    return typeof value === "string" ? !value.toLowerCase().includes("non-return") : true;
+  private itemPolicyAllowsReturn(
+    snapshot: Prisma.JsonValue | null,
+    resolution: ReturnRequestResolution,
+  ) {
+    return productPolicyAllowsResolution(
+      normalizeProductReturnPolicy(snapshot),
+      resolution === ReturnRequestResolution.REPLACEMENT ? "REPLACEMENT" : "REFUND",
+    );
   }
 
   private refundablePayment(order: ReturnOrder) {

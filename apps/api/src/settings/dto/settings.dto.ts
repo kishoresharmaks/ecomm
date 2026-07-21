@@ -139,6 +139,20 @@ export class UpsertCheckoutPlatformFeeDto {
   fixedPaise!: number;
 }
 
+export class UpsertReturnPolicySettingsDto {
+  @ApiProperty({ example: 7, description: "Days after delivery when refund return requests can be submitted." })
+  @IsInt()
+  @Min(0)
+  @Max(365)
+  returnWindowDays!: number;
+
+  @ApiProperty({ example: 7, description: "Days after delivery when replacement requests can be submitted." })
+  @IsInt()
+  @Min(0)
+  @Max(365)
+  replacementWindowDays!: number;
+}
+
 export class UpsertDeliveryPartnerPayoutSettingsDto {
   @ApiProperty({ example: 4000, description: "Minimum delivery partner earning per completed local order, in paise." })
   @IsInt()
@@ -164,6 +178,18 @@ export class UpsertDeliveryPartnerPayoutSettingsDto {
   @IsInt()
   @Min(0)
   codBonusPaise!: number;
+
+  @ApiProperty({ example: 4000, description: "Earning for each completed reverse pickup, in paise." })
+  @IsInt()
+  @Min(0)
+  reversePickupBasePayPaise!: number;
+
+  @ApiProperty({
+    enum: ["MARKETPLACE", "SELLER"],
+    description: "Account that absorbs eligible reverse-pickup delivery partner earnings.",
+  })
+  @IsIn(["MARKETPLACE", "SELLER"])
+  reversePickupCostBearer!: "MARKETPLACE" | "SELLER";
 
   @ApiProperty({ example: 100000, description: "Minimum wallet balance required before payout request, in paise." })
   @IsInt()

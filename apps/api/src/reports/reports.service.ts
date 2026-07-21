@@ -17,7 +17,9 @@ import type { RequestUser } from "../auth/types/indihub-request";
 import { FinanceCalculatorService } from "../finance/finance-calculator.service";
 import { MarketService, type MarketCurrencySnapshot } from "../market/market.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { AdminGstReportQueryDto } from "./dto/gst-report-query.dto";
 import { ReportQueryDto } from "./dto/report-query.dto";
+import { GstComplianceService } from "./gst-compliance.service";
 
 const sellerSalesSummaryMoneyFields = [
   "totalSalesPaise",
@@ -62,11 +64,17 @@ const sellerLedgerMoneyFields = ["debitPaise", "creditPaise", "balanceAfterPaise
 
 @Injectable()
 export class ReportsService {
+  private readonly gstCompliance: GstComplianceService;
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(FinanceCalculatorService) private readonly financeCalculator: FinanceCalculatorService,
     @Inject(MarketService) private readonly marketService: MarketService,
-  ) {}
+    @Inject(GstComplianceService) gstCompliance?: GstComplianceService,
+  ) {
+    this.gstCompliance =
+      gstCompliance ?? new GstComplianceService(prisma, financeCalculator);
+  }
 
   async overview(query: ReportQueryDto) {
     const createdAt = this.dateRange(query);
@@ -887,6 +895,15 @@ export class ReportsService {
       summary: this.convertMoneyFields({ orderCount: taxAgg.count, grossSalesPaise: taxAgg.sellerSubtotalPaise, commissionPaise: taxAgg.commissionPaise, gstOnCommissionPaise: taxAgg.gstOnCommissionPaise, tdsPaise: taxAgg.tdsPaise, tcsPaise: taxAgg.tcsPaise, platformFeePaise: taxAgg.platformFeePaise, couponDiscountPaise: taxAgg.couponSellerFundedDiscountPaise, netPayablePaise, totalDeductionsPaise }, ["grossSalesPaise", "commissionPaise", "gstOnCommissionPaise", "tdsPaise", "tcsPaise", "platformFeePaise", "couponDiscountPaise", "netPayablePaise", "totalDeductionsPaise"] as const, market),
       splits: splits.map((split) => this.convertSellerSplitRecord(split, market))
     };
+  }
+
+  async sellerGstReport(actor: RequestUser, query: ReportQueryDto, includeAll = false) {
+    const seller = await this.requireSeller(actor);
+    return this.gstCompliance.report(query, seller.id, includeAll);
+  }
+
+  async adminGstReport(query: AdminGstReportQueryDto, includeAll = false) {
+    return this.gstCompliance.report(query, query.sellerId, includeAll);
   }
 
   async sellerReturnsReport(actor: RequestUser, query: ReportQueryDto) {

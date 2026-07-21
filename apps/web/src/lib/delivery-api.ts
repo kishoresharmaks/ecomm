@@ -245,6 +245,8 @@ export type DeliveryPartnerPayoutSettings = {
   basePayPaise: number;
   perKmPaise: number;
   codBonusPaise: number;
+  reversePickupBasePayPaise: number;
+  reversePickupCostBearer: "MARKETPLACE" | "SELLER";
   minimumWalletPayoutPaise: number;
   requestsEnabled: boolean;
   freeDeliveryPlatformSubsidyEnabled: boolean;

@@ -25,11 +25,23 @@ export const UNIT_OPTIONS = [
 ];
 
 export const RETURN_OPTIONS = [
-  { label: "Returnable", value: "Returnable" },
+  { label: "Return and replacement", value: "Return and replacement" },
+  { label: "Return only", value: "Return only" },
   { label: "Replacement only", value: "Replacement only" },
   { label: "Non-returnable", value: "Non-returnable" },
   { label: "Service/warranty only", value: "Service/warranty only" },
 ];
+
+export const RETURN_REASON_OPTIONS = [
+  "Damaged on arrival",
+  "Wrong item received",
+  "Missing parts or accessories",
+  "Product differs from description",
+  "Size or fit issue",
+  "Defective or not working",
+  "Quality not as expected",
+  "Changed mind",
+] as const;
 
 export const GST_OPTIONS = [
   { label: "0%", value: "0" },
@@ -87,6 +99,9 @@ export type ProductEditFormValues = {
   packerName: string;
   importerName: string;
   returnEligibility: string;
+  returnWindowDays: string;
+  replacementWindowDays: string;
+  returnReasons: string;
   packageWeightGrams: string;
   packageLengthCm: string;
   packageBreadthCm: string;
@@ -124,6 +139,9 @@ export function createBlankProductEditForm(): ProductEditFormValues {
     packerName: "",
     importerName: "",
     returnEligibility: "",
+    returnWindowDays: "7",
+    replacementWindowDays: "7",
+    returnReasons: "",
     packageWeightGrams: "",
     packageLengthCm: "",
     packageBreadthCm: "",
@@ -190,7 +208,17 @@ export function productToEditForm(product: ProductSummary | undefined): ProductE
     manufacturerAddress: stringFromAttribute(attributes.manufacturerAddress),
     packerName: stringFromAttribute(attributes.packerName),
     importerName: stringFromAttribute(attributes.importerName),
-    returnEligibility: stringFromAttribute(attributes.returnEligibility),
+    returnEligibility:
+      stringFromAttribute(attributes.returnEligibility) === "Returnable"
+        ? "Return and replacement"
+        : stringFromAttribute(attributes.returnEligibility),
+    returnWindowDays: stringFromAttribute(attributes.returnWindowDays) || "7",
+    replacementWindowDays: stringFromAttribute(attributes.replacementWindowDays) || "7",
+    returnReasons:
+      arrayAttributeToCsv(attributes.returnReasons) ||
+      (stringFromAttribute(attributes.returnEligibility) === "Returnable"
+        ? RETURN_REASON_OPTIONS.join(", ")
+        : ""),
     packageWeightGrams: stringFromAttribute(attributes.packageWeightGrams),
     packageLengthCm: stringFromAttribute(attributes.packageLengthCm),
     packageBreadthCm: stringFromAttribute(attributes.packageBreadthCm ?? attributes.packageWidthCm),
@@ -246,6 +274,9 @@ export function buildProductAttributes(values: ProductEditFormValues) {
     gstRatePercent: numberOrZero(values.gstRatePercent),
     hsnCode: values.hsnCode.trim(),
     returnEligibility: values.returnEligibility,
+    returnWindowDays: numberOrZero(values.returnWindowDays),
+    replacementWindowDays: numberOrZero(values.replacementWindowDays),
+    returnReasons: csvToArray(values.returnReasons),
     packageWeightGrams: numberOrZero(values.packageWeightGrams),
   };
 
@@ -295,6 +326,21 @@ export function validateProductEditForm(values: ProductEditFormValues): ProductE
     errors.push("GST rate is required.");
   }
   requireText(values.returnEligibility, "Return policy is required.", errors);
+  const returnAllowed =
+    values.returnEligibility === "Return and replacement" ||
+    values.returnEligibility === "Return only";
+  const replacementAllowed =
+    values.returnEligibility === "Return and replacement" ||
+    values.returnEligibility === "Replacement only";
+  if (returnAllowed && !isPositiveNumber(values.returnWindowDays)) {
+    errors.push("Refund return days must be greater than 0.");
+  }
+  if (replacementAllowed && !isPositiveNumber(values.replacementWindowDays)) {
+    errors.push("Replacement days must be greater than 0.");
+  }
+  if ((returnAllowed || replacementAllowed) && csvToArray(values.returnReasons).length === 0) {
+    errors.push("Select at least one accepted return reason.");
+  }
   if (!isPositiveNumber(values.packageWeightGrams)) {
     errors.push("Package weight must be greater than 0.");
   }

@@ -1,5 +1,10 @@
 import type { AccountOrder } from "./account-api";
 import {
+  normalizeProductReturnPolicy,
+  productPolicyAllowsResolution,
+  type ProductReturnReason,
+} from "@indihub/shared-types";
+import {
   canCustomerSelfCancelOrder,
   customerCancellationUnavailableReason,
 } from "./order-cancellation";
@@ -19,6 +24,10 @@ const PENDING_RETURN_ITEM_STATUSES = new Set([
 ]);
 
 export type CustomerResolution = "REFUND" | "REPLACEMENT";
+export type ReturnPolicySettings = {
+  returnWindowDays: number;
+  replacementWindowDays: number;
+};
 
 export type ItemReturnState =
   | { kind: "returnable"; availableQuantity: number }
@@ -62,13 +71,14 @@ export function returnableQuantityOf(item: OrderDetailItem): number {
  * Reads the item return policy snapshot. Mirrors `itemPolicyAllowsReturn` so a
  * "Non-returnable" policy hides the return CTA on the client too.
  */
-export function itemPolicyAllowsReturn(item: OrderDetailItem): boolean {
-  const snapshot = item.returnPolicySnapshot;
-  const value = snapshot?.returnEligibility ?? (snapshot as { returnPolicy?: string | null } | null)?.returnPolicy;
-  if (typeof value !== "string") {
-    return true;
-  }
-  return !value.toLowerCase().includes("non-return");
+export function itemPolicyAllowsReturn(
+  item: OrderDetailItem,
+  resolution: CustomerResolution = "REFUND",
+): boolean {
+  return productPolicyAllowsResolution(
+    normalizeProductReturnPolicy(item.returnPolicySnapshot),
+    resolution,
+  );
 }
 
 export function returnPolicyLabel(item: OrderDetailItem): string {
@@ -79,7 +89,14 @@ export function returnPolicyLabel(item: OrderDetailItem): string {
 }
 
 export function returnPolicyDescription(item: OrderDetailItem): string {
-  const policy = returnPolicyLabel(item);
+  const normalized = normalizeProductReturnPolicy(item.returnPolicySnapshot);
+  const available = [
+    normalized.returnAllowed ? `${normalized.returnWindowDays}-day refund return` : null,
+    normalized.replacementAllowed
+      ? `${normalized.replacementWindowDays}-day replacement`
+      : null,
+  ].filter(Boolean);
+  const policy = available.length ? available.join(" / ") : returnPolicyLabel(item);
   const warranty = item.returnPolicySnapshot?.warranty;
   return typeof warranty === "string" && warranty.trim()
     ? `${policy}. Warranty: ${warranty.trim()}.`
@@ -193,8 +210,11 @@ export function summarizeSelection(
  * Classifies how an item should render in the post-delivery returns surface.
  * Only meaningful once `isOrderReturnable(order)` is true.
  */
-export function deliveredItemReturnState(item: OrderDetailItem): ItemReturnState {
-  if (!itemPolicyAllowsReturn(item)) {
+export function deliveredItemReturnState(
+  item: OrderDetailItem,
+  resolution: CustomerResolution = "REFUND",
+): ItemReturnState {
+  if (!itemPolicyAllowsReturn(item, resolution)) {
     return { kind: "non-returnable", reason: returnPolicyLabel(item) };
   }
 
@@ -217,4 +237,82 @@ export function deliveredItemReturnState(item: OrderDetailItem): ItemReturnState
   }
 
   return { kind: "ineligible", reason: "This item is no longer eligible for return." };
+}
+
+export function itemReturnWindowState(
+  order: AccountOrder,
+  item: OrderDetailItem,
+  settings: ReturnPolicySettings,
+  resolution: CustomerResolution,
+  now = new Date(),
+) {
+  const policy = normalizeProductReturnPolicy(item.returnPolicySnapshot);
+  const productDays =
+    resolution === "REPLACEMENT"
+      ? policy.replacementWindowDays
+      : policy.returnWindowDays;
+  const globalDays =
+    resolution === "REPLACEMENT"
+      ? settings.replacementWindowDays
+      : settings.returnWindowDays;
+  const windowDays = Math.min(productDays, globalDays);
+  const deliveredAt = orderDeliveredAt(order);
+  const deadlineAt =
+    deliveredAt && windowDays > 0
+      ? new Date(deliveredAt.getTime() + windowDays * 24 * 60 * 60 * 1000)
+      : null;
+
+  return {
+    windowDays,
+    deadlineAt,
+    eligible:
+      itemPolicyAllowsReturn(item, resolution) &&
+      Boolean(deadlineAt && now.getTime() <= deadlineAt.getTime()),
+  };
+}
+
+export function acceptedReasonsForSelection(
+  items: OrderDetailItem[],
+  selection: Map<string, number>,
+): ProductReturnReason[] {
+  const selected = items.filter((item) => (selection.get(item.id) ?? 0) > 0);
+  if (!selected.length) {
+    return [];
+  }
+  const [first, ...rest] = selected;
+  const firstReasons = normalizeProductReturnPolicy(first?.returnPolicySnapshot).returnReasons;
+  return firstReasons.filter((reason) =>
+    rest.every((item) =>
+      normalizeProductReturnPolicy(item.returnPolicySnapshot).returnReasons.includes(reason),
+    ),
+  );
+}
+
+function orderDeliveredAt(order: AccountOrder) {
+  const packageDates = (order.shipments ?? [])
+    .flatMap((shipment) => shipment.packages ?? [])
+    .map((shipmentPackage) => parsedDate(shipmentPackage.deliveredAt))
+    .filter((value): value is Date => Boolean(value));
+  if (packageDates.length) {
+    return new Date(Math.max(...packageDates.map((value) => value.getTime())));
+  }
+  const timelineDates = (order.customerDeliveryTimeline ?? [])
+    .filter(
+      (event) =>
+        event.completed &&
+        (event.code.toUpperCase().includes("DELIVER") ||
+          event.label.toUpperCase().includes("DELIVER")),
+    )
+    .map((event) => parsedDate(event.at))
+    .filter((value): value is Date => Boolean(value));
+  if (timelineDates.length) {
+    return new Date(Math.max(...timelineDates.map((value) => value.getTime())));
+  }
+  return parsedDate(order.updatedAt) ?? parsedDate(order.createdAt);
+}
+
+function parsedDate(value: string | null | undefined) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
 }

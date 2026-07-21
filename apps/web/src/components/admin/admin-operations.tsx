@@ -88,6 +88,7 @@ import { DeliveryPartnerPayoutSettings } from "@/components/admin/settings/deliv
 import { MaintenanceSettingsPanel } from "@/components/admin/settings/maintenance-settings";
 import { MapRoutingSettings } from "@/components/admin/settings/map-routing-settings";
 import { ProductApprovalSettings } from "@/components/admin/settings/product-approval-settings";
+import { ReturnPolicySettings } from "@/components/admin/settings/return-policy-settings";
 import { SellerPayoutSettings } from "@/components/admin/settings/seller-payout-settings";
 import { readBooleanSettingValue } from "@/components/admin/settings/setting-value-utils";
 import {
@@ -106,6 +107,16 @@ import {
   userFacingApiErrorMessage,
   type IndihubAuthHeaders,
 } from "@/lib/api";
+import {
+  downloadAdminGstReportCsv,
+  getAdminGstReport,
+  getAdminGstFilingPeriods,
+  type GstCsvExport,
+  type GstFilingPeriod,
+  type GstReport,
+  type GstReportDocument,
+  type ProductTaxClassification,
+} from "@/lib/gst-report-api";
 import { AdminSellerProfileModal } from "@/components/admin/admin-seller-profile-modal";
 import { openB2BPurchaseOrderDocument } from "@/lib/b2b-po-documents";
 import {
@@ -216,6 +227,7 @@ export type SellerRecord = {
     logoUrl?: string | null;
     businessLegalName?: string | null;
     businessType?: string | null;
+    taxRegistrationStatus?: string | null;
     gstNumber?: string | null;
     panNumber?: string | null;
   } | null;
@@ -955,6 +967,7 @@ type CategoryRecord = {
   slug: string;
   description?: string | null;
   imageUrl?: string | null;
+  defaultTaxClassification?: ProductTaxClassification;
   defaultHsnCode?: string | null;
   defaultGstRatePercent?: number | string | null;
   defaultTaxDescription?: string | null;
@@ -2206,7 +2219,9 @@ export function AdminSellersPageClient() {
                   },
                   {
                     label: "Approve seller",
-                    description: "Unlock catalogue and order operations",
+                    description: sellerApprovalBlockingLabels(item).length
+                      ? `Complete ${sellerApprovalBlockingLabels(item).slice(0, 2).join(", ")} before approval`
+                      : "Unlock catalogue and order operations",
                     icon: <CheckCircle2 className="h-4 w-4 text-[#0F8A5F]" />,
                     onSelect: () =>
                       confirmation.requestConfirmation({
@@ -2216,7 +2231,8 @@ export function AdminSellersPageClient() {
                         tone: "warning",
                         onConfirm: () => approve.mutate({ sellerId: item.id, decision: "APPROVE" }),
                       }),
-                    disabled: approve.isPending,
+                    disabled:
+                      approve.isPending || sellerApprovalBlockingLabels(item).length > 0,
                   },
                   {
                     label: "Reject seller",
@@ -6046,11 +6062,31 @@ export function AdminReportsPageClient() {
         auth.authHeaders,
       ),
   });
+  const gst = useQuery({
+    queryKey: ["admin-reports-gst", auth.authHeaders, reportQueryString],
+    enabled: Boolean(auth.isAuthenticated),
+    queryFn: () => getAdminGstReport(auth.authHeaders, reportQueryString),
+  });
+  const gstExport = useMutation({
+    mutationFn: (type: GstCsvExport) =>
+      downloadAdminGstReportCsv(auth.authHeaders, type, reportQueryString),
+  });
+  const [gstSellerId, setGstSellerId] = useState("");
+  useEffect(() => {
+    if (!gstSellerId && sellers.data?.sellers[0]?.sellerId) {
+      setGstSellerId(sellers.data.sellers[0].sellerId);
+    }
+  }, [gstSellerId, sellers.data?.sellers]);
+  const gstFilingPeriods = useQuery({
+    queryKey: ["admin-gst-filing-periods", auth.authHeaders, gstSellerId],
+    enabled: Boolean(auth.isAuthenticated && gstSellerId),
+    queryFn: () => getAdminGstFilingPeriods(auth.authHeaders, gstSellerId),
+  });
 
   return (
     <AdminResourceChrome
       title="Reports"
-      description="Sales, seller, product, enquiry, and support reporting."
+      description="Sales, seller, product, GST, enquiry, and support reporting."
       icon={<Activity className="h-5 w-5" />}
       query={overview}
     >
@@ -6079,6 +6115,40 @@ export function AdminReportsPageClient() {
             disabled: !enquiries.data,
             onSelect: () => enquiries.data && exportEnquiryReport(enquiries.data, range),
           },
+          {
+            label: "GST document register",
+            disabled: !gst.data || gstExport.isPending,
+            onSelect: () => gstExport.mutate("gst-register"),
+          },
+          {
+            label: "GST HSN summary",
+            disabled: !gst.data || gstExport.isPending,
+            onSelect: () => gstExport.mutate("hsn-summary"),
+          },
+          {
+            label: "GSTR-1-oriented CSV",
+            disabled: !gst.data || gstExport.isPending,
+            onSelect: () => gstExport.mutate("gstr-1"),
+          },
+          ...(
+            [
+              ["GSTR-1 JSON", "gstr-1-json"],
+              ["GSTR-3B summary", "gstr-3b"],
+              ["Marketplace GSTR-8 / TCS", "gstr-8"],
+              ["GST document series", "document-series"],
+              ["GST rate liability", "rate-liability"],
+              ["GST state liability", "state-liability"],
+              ["B2B GSTIN summary", "gstin-summary"],
+              ["GST reconciliation", "reconciliation"],
+              ["Platform commission GST", "platform-commission"],
+              ["E-invoice status", "e-invoice"],
+              ["E-way bill status", "e-way-bill"],
+            ] as Array<[string, GstCsvExport]>
+          ).map(([label, type]) => ({
+            label,
+            disabled: !gst.data || gstExport.isPending,
+            onSelect: () => gstExport.mutate(type),
+          })),
         ]}
       />
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
@@ -6117,6 +6187,27 @@ export function AdminReportsPageClient() {
                 data={products.data}
                 isLoading={products.isLoading}
                 error={products.error}
+              />
+            ),
+          },
+          {
+            key: "gst",
+            label: "GST",
+            ...(gst.data ? { badge: gst.data.summary.documentCount } : {}),
+            panel: (
+              <GstReportPanel
+                data={gst.data}
+                isLoading={gst.isLoading}
+                error={gst.error}
+                exportError={gstExport.error}
+                filingOversight={{
+                  sellerOptions: sellers.data?.sellers ?? [],
+                  sellerId: gstSellerId,
+                  periods: gstFilingPeriods.data ?? [],
+                  isLoading: gstFilingPeriods.isLoading,
+                  error: gstFilingPeriods.error,
+                  onSellerChange: setGstSellerId,
+                }}
               />
             ),
           },
@@ -6339,6 +6430,11 @@ export function AdminSettingsPageClient() {
             key: "catalogue-rules",
             label: "Catalogue rules",
             panel: <ProductApprovalSettings settings={settings} />,
+          },
+          {
+            key: "returns",
+            label: "Returns",
+            panel: <ReturnPolicySettings />,
           },
           {
             key: "maintenance",
@@ -9432,6 +9528,7 @@ export function AdminCategoriesPageClient() {
       imageUrl?: string | undefined;
       defaultHsnCode?: string | undefined;
       defaultGstRatePercent?: number | undefined;
+      defaultTaxClassification?: ProductTaxClassification | undefined;
       defaultTaxDescription?: string | undefined;
       status: string;
       sortOrder: number;
@@ -9457,6 +9554,7 @@ export function AdminCategoriesPageClient() {
         imageUrl?: string | null | undefined;
         defaultHsnCode?: string | null | undefined;
         defaultGstRatePercent?: number | null | undefined;
+        defaultTaxClassification?: ProductTaxClassification | undefined;
         defaultTaxDescription?: string | null | undefined;
         status: string;
         sortOrder: number;
@@ -16068,6 +16166,9 @@ function categoryTaxLines(category: CategoryRecord) {
   }
 
   return [
+    category.defaultTaxClassification
+      ? humanize(category.defaultTaxClassification)
+      : "Taxable",
     category.defaultHsnCode ? `HSN ${category.defaultHsnCode}` : "No HSN code",
     category.defaultGstRatePercent !== null && category.defaultGstRatePercent !== undefined
       ? `GST ${category.defaultGstRatePercent}%`
@@ -16185,6 +16286,7 @@ function CategoryCreateForm({
     productTemplateId?: string | undefined;
     description?: string | undefined;
     imageUrl?: string | undefined;
+    defaultTaxClassification?: ProductTaxClassification | undefined;
     defaultHsnCode?: string | undefined;
     defaultGstRatePercent?: number | undefined;
     defaultTaxDescription?: string | undefined;
@@ -16203,6 +16305,7 @@ function CategoryCreateForm({
     productTemplateId: "",
     defaultHsnCode: "",
     defaultGstRatePercent: "",
+    defaultTaxClassification: "TAXABLE" as ProductTaxClassification,
     defaultTaxDescription: "",
   });
   const parentCategoryOptions = useMemo<AdminSelectOption[]>(
@@ -16259,20 +16362,45 @@ function CategoryCreateForm({
           <p className="text-xs font-black uppercase tracking-wide text-[#667085]">
             Category tax default
           </p>
+          <LabeledSelect
+            label="Supply classification"
+            value={form.defaultTaxClassification}
+            values={["TAXABLE", "NIL_RATED", "EXEMPT", "NON_GST"]}
+            onChange={(defaultTaxClassification) =>
+              setForm((current) => ({
+                ...current,
+                defaultTaxClassification:
+                  defaultTaxClassification as ProductTaxClassification,
+                defaultGstRatePercent:
+                  defaultTaxClassification === "TAXABLE"
+                    ? current.defaultGstRatePercent
+                    : "0",
+              }))
+            }
+          />
           <div className="grid gap-3 md:grid-cols-2">
             <TextInput
               label="Default HSN"
               value={form.defaultHsnCode}
               onChange={(defaultHsnCode) => setForm((current) => ({ ...current, defaultHsnCode }))}
             />
-            <TextInput
-              label="Default GST %"
-              type="number"
-              value={form.defaultGstRatePercent}
-              onChange={(defaultGstRatePercent) =>
-                setForm((current) => ({ ...current, defaultGstRatePercent }))
-              }
-            />
+            {form.defaultTaxClassification === "TAXABLE" ? (
+              <TextInput
+                label="Default GST %"
+                type="number"
+                value={form.defaultGstRatePercent}
+                onChange={(defaultGstRatePercent) =>
+                  setForm((current) => ({ ...current, defaultGstRatePercent }))
+                }
+              />
+            ) : (
+              <div className="rounded-md border border-[#D8E2EA] bg-white px-3 py-2">
+                <span className="block text-xs font-black uppercase tracking-wide text-[#667085]">
+                  Default GST %
+                </span>
+                <span className="mt-1 block text-sm font-semibold text-[#1F2933]">0%</span>
+              </div>
+            )}
           </div>
           <TextInput
             label="Tax description"
@@ -16305,6 +16433,7 @@ function CategoryCreateForm({
               productTemplateId: form.productTemplateId || undefined,
               description: form.description || undefined,
               imageUrl: form.imageUrl || undefined,
+              defaultTaxClassification: form.defaultTaxClassification,
               defaultHsnCode: form.defaultHsnCode || undefined,
               defaultGstRatePercent: form.defaultGstRatePercent
                 ? Number(form.defaultGstRatePercent)
@@ -16439,6 +16568,7 @@ function CategoryEditForm({
       imageUrl?: string | null | undefined;
       defaultHsnCode?: string | null | undefined;
       defaultGstRatePercent?: number | null | undefined;
+      defaultTaxClassification?: ProductTaxClassification | undefined;
       defaultTaxDescription?: string | null | undefined;
       status: string;
       sortOrder: number;
@@ -16454,6 +16584,8 @@ function CategoryEditForm({
     productTemplateId: category.productTemplateId ?? "",
     description: category.description ?? "",
     imageUrl: category.imageUrl ?? "",
+    defaultTaxClassification:
+      category.defaultTaxClassification ?? ("TAXABLE" as ProductTaxClassification),
     defaultHsnCode: category.defaultHsnCode ?? "",
     defaultGstRatePercent:
       category.defaultGstRatePercent === null || category.defaultGstRatePercent === undefined
@@ -16525,20 +16657,45 @@ function CategoryEditForm({
           <p className="text-xs font-black uppercase tracking-wide text-[#667085]">
             Category tax default
           </p>
+          <LabeledSelect
+            label="Supply classification"
+            value={form.defaultTaxClassification}
+            values={["TAXABLE", "NIL_RATED", "EXEMPT", "NON_GST"]}
+            onChange={(defaultTaxClassification) =>
+              setForm((current) => ({
+                ...current,
+                defaultTaxClassification:
+                  defaultTaxClassification as ProductTaxClassification,
+                defaultGstRatePercent:
+                  defaultTaxClassification === "TAXABLE"
+                    ? current.defaultGstRatePercent
+                    : "0",
+              }))
+            }
+          />
           <div className="grid gap-3 md:grid-cols-2">
             <TextInput
               label="Default HSN"
               value={form.defaultHsnCode}
               onChange={(defaultHsnCode) => setForm((current) => ({ ...current, defaultHsnCode }))}
             />
-            <TextInput
-              label="Default GST %"
-              type="number"
-              value={form.defaultGstRatePercent}
-              onChange={(defaultGstRatePercent) =>
-                setForm((current) => ({ ...current, defaultGstRatePercent }))
-              }
-            />
+            {form.defaultTaxClassification === "TAXABLE" ? (
+              <TextInput
+                label="Default GST %"
+                type="number"
+                value={form.defaultGstRatePercent}
+                onChange={(defaultGstRatePercent) =>
+                  setForm((current) => ({ ...current, defaultGstRatePercent }))
+                }
+              />
+            ) : (
+              <div className="rounded-md border border-[#D8E2EA] bg-white px-3 py-2">
+                <span className="block text-xs font-black uppercase tracking-wide text-[#667085]">
+                  Default GST %
+                </span>
+                <span className="mt-1 block text-sm font-semibold text-[#1F2933]">0%</span>
+              </div>
+            )}
           </div>
           <TextInput
             label="Tax description"
@@ -16577,6 +16734,7 @@ function CategoryEditForm({
               productTemplateId: form.productTemplateId || null,
               description: form.description || undefined,
               imageUrl: form.imageUrl || null,
+              defaultTaxClassification: form.defaultTaxClassification,
               defaultHsnCode: form.defaultHsnCode || null,
               defaultGstRatePercent: form.defaultGstRatePercent
                 ? Number(form.defaultGstRatePercent)
@@ -16904,6 +17062,390 @@ function ProductReportPanel({ data, isLoading, error }: ReportPanelProps<AdminPr
       </Panel>
     </div>
   );
+}
+
+function GstReportPanel({
+  data,
+  isLoading,
+  error,
+  exportError,
+  filingOversight,
+}: ReportPanelProps<GstReport> & {
+  exportError?: unknown;
+  filingOversight: {
+    sellerOptions: AdminSellerReport["sellers"];
+    sellerId: string;
+    periods: GstFilingPeriod[];
+    isLoading: boolean;
+    error?: unknown;
+    onSellerChange: (sellerId: string) => void;
+  };
+}) {
+  if (isLoading || error || !data) {
+    return <ReportPanelState title="GST report" isLoading={isLoading} error={error} />;
+  }
+
+  const creditNotes = data.documents.filter((document) => document.documentType === "CREDIT_NOTE");
+
+  return (
+    <div className="grid gap-5">
+      {exportError ? (
+        <PanelStatus
+          tone="danger"
+          title="GST export failed"
+          message={exportError instanceof Error ? exportError.message : "Unable to download the GST export."}
+        />
+      ) : null}
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard label="Issued documents" value={`${data.summary.documentCount}`} />
+        <MetricCard label="Invoices and bills" value={`${data.summary.invoiceCount}`} />
+        <MetricCard
+          label="Credit / debit notes"
+          value={`${data.summary.creditNoteCount} / ${data.summary.debitNoteCount}`}
+        />
+        <MetricCard label="Net GST" value={formatPaise(data.summary.totalTaxPaise, data.currency)} />
+        <MetricCard label="Marketplace TCS" value={formatPaise(data.tcs.summary.totalTcsPaise, data.currency)} />
+        <MetricCard label="Reconciliation errors" value={`${data.reconciliation.errorCount}`} />
+        <MetricCard label="Reconciliation warnings" value={`${data.reconciliation.warningCount}`} />
+        <MetricCard
+          label="Platform commission GST"
+          value={formatPaise(data.platformCommission.summary.totalTaxPaise, data.currency)}
+        />
+      </div>
+
+      <Panel title="Seller filing oversight">
+        <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <label className="grid max-w-md flex-1 gap-1 text-sm font-black text-[#344054]">
+            Seller
+            <select
+              value={filingOversight.sellerId}
+              onChange={(event) => filingOversight.onSellerChange(event.target.value)}
+              className="h-10 rounded-md border border-[#D8E2EA] bg-white px-3 font-semibold"
+            >
+              <option value="">Select seller</option>
+              {filingOversight.sellerOptions.map((seller) => (
+                <option key={seller.sellerId} value={seller.sellerId}>
+                  {seller.storeName}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="max-w-xl text-sm font-semibold leading-6 text-[#667085]">
+            Filing actions belong to the seller and occur outside the admin portal. Admin can
+            monitor status, ARN/reference, filing date, reconciliation history, and export
+            activity without changing the seller's filing record.
+          </p>
+        </div>
+        {filingOversight.isLoading ? (
+          <p className="py-4 text-sm font-semibold text-[#667085]">Loading filing periods...</p>
+        ) : filingOversight.error ? (
+          <PanelStatus
+            tone="danger"
+            title="Filing status unavailable"
+            message={
+              filingOversight.error instanceof Error
+                ? filingOversight.error.message
+                : "Unable to load seller filing periods."
+            }
+          />
+        ) : (
+          <ReportTable
+            rows={filingOversight.periods ?? []}
+            emptyTitle={
+              filingOversight.sellerId
+                ? "This seller has not locked a GST filing period."
+                : "Select a seller to review filing status."
+            }
+            getKey={(item) => item.id}
+            columns={[
+              {
+                header: "Period",
+                cell: (item) => <span className="font-black">{item.returnPeriod}</span>,
+              },
+              {
+                header: "Status",
+                cell: (item) => (
+                  <StatusBadge tone={item.status === "FILED" ? "success" : "info"}>
+                    {item.status}
+                  </StatusBadge>
+                ),
+              },
+              {
+                header: "Filed",
+                cell: (item) =>
+                  item.filedAt ? formatDate(item.filedAt) : "Not filed",
+              },
+              {
+                header: "ARN / reference",
+                cell: (item) => item.filingReference ?? "Not recorded",
+              },
+              {
+                header: "Activity",
+                className: "text-right",
+                cell: (item) =>
+                  `${item._count?.reconciliationRuns ?? 0} checks / ${item._count?.exports ?? 0} exports`,
+              },
+            ]}
+          />
+        )}
+      </Panel>
+
+      <div className="grid gap-5 xl:grid-cols-2">
+        <Panel title="GSTR section summary">
+          <ReportTable
+            rows={data.sections}
+            emptyTitle="No GSTR sections in this range."
+            getKey={(item) => item.section}
+            columns={[
+              {
+                header: "Section",
+                cell: (item) => <StatusBadge tone="info">{item.section}</StatusBadge>,
+              },
+              {
+                header: "Documents",
+                className: "text-right",
+                cell: (item) => <span className="font-black">{item.documentCount}</span>,
+              },
+              {
+                header: "Taxable",
+                className: "text-right",
+                cell: (item) => formatPaise(item.taxableValuePaise, data.currency),
+              },
+              {
+                header: "GST",
+                className: "text-right",
+                cell: (item) => (
+                  <span className="font-black">{formatPaise(item.totalTaxPaise, data.currency)}</span>
+                ),
+              },
+            ]}
+          />
+        </Panel>
+
+        <Panel title="GST reconciliation">
+          <ReportTable
+            rows={data.reconciliation.issues}
+            emptyTitle="No reconciliation findings in this range."
+            getKey={(item, index) => `${item.code}-${item.documentId ?? index}`}
+            columns={[
+              {
+                header: "Severity",
+                cell: (item) => (
+                  <StatusBadge tone={item.severity === "ERROR" ? "danger" : "warning"}>
+                    {item.severity}
+                  </StatusBadge>
+                ),
+              },
+              {
+                header: "Code",
+                cell: (item) => <span className="font-black">{item.code}</span>,
+              },
+              {
+                header: "Document",
+                cell: (item) => item.documentNumber ?? "Period-level",
+              },
+              {
+                header: "Finding",
+                cell: (item) => <span className="font-semibold text-[#667085]">{item.message}</span>,
+              },
+            ]}
+          />
+        </Panel>
+      </div>
+
+      <Panel title="Marketplace TCS statements">
+        <ReportTable
+          rows={data.tcs.statements}
+          emptyTitle="No TCS transactions in this range."
+          getKey={(item) => item.sellerId}
+          columns={[
+            {
+              header: "Seller",
+              cell: (item) => (
+                <EntityTitle title={item.sellerName} subtitle={item.sellerGstin ?? "Unregistered"} />
+              ),
+            },
+            {
+              header: "Transactions",
+              className: "text-right",
+              cell: (item) => item.transactionCount,
+            },
+            {
+              header: "Net supplies",
+              className: "text-right",
+              cell: (item) => formatPaise(item.netSuppliesPaise, data.currency),
+            },
+            {
+              header: "IGST TCS",
+              className: "text-right",
+              cell: (item) => formatPaise(item.igstPaise, data.currency),
+            },
+            {
+              header: "CGST + SGST",
+              className: "text-right",
+              cell: (item) => formatPaise(item.cgstPaise + item.sgstPaise, data.currency),
+            },
+            {
+              header: "Total TCS",
+              className: "text-right",
+              cell: (item) => (
+                <span className="font-black">{formatPaise(item.totalTcsPaise, data.currency)}</span>
+              ),
+            },
+          ]}
+        />
+      </Panel>
+
+      <Panel
+        title="Marketplace GST register"
+      >
+        <p className="mb-4 text-sm font-semibold text-[#667085]">
+          {data.truncated
+            ? "Showing the latest 250 issued documents. Use the authenticated CSV export for the complete selected period."
+            : "Issued seller and B2B outward-supply documents for the selected period."}
+        </p>
+        <ReportTable
+          rows={data.documents}
+          emptyTitle="No issued GST documents in this range."
+          getKey={(item) => item.id}
+          columns={[
+            {
+              header: "Document",
+              cell: (item) => (
+                <EntityTitle
+                  title={item.documentNumber ?? "Pending number"}
+                  subtitle={`${gstDocumentTypeLabel(item.documentType)} - ${formatDate(item.issueDate)}`}
+                />
+              ),
+            },
+            {
+              header: "Seller",
+              cell: (item) => (
+                <SmallStack lines={[item.sellerName, item.sellerGstin ?? "Unregistered seller"]} />
+              ),
+            },
+            {
+              header: "Buyer",
+              cell: (item) => (
+                <SmallStack lines={[item.buyerLegalName, item.buyerGstin ?? "Consumer sale"]} />
+              ),
+            },
+            {
+              header: "Section",
+              cell: (item) => (
+                <StatusBadge tone={item.documentType === "CREDIT_NOTE" ? "warning" : "info"}>
+                  {item.gstrSupplySection ?? "Unclassified"}
+                </StatusBadge>
+              ),
+            },
+            {
+              header: "Taxable",
+              className: "text-right",
+              cell: (item) => (
+                <span className="font-semibold">{formatPaise(item.taxableValuePaise, data.currency)}</span>
+              ),
+            },
+            {
+              header: "GST",
+              className: "text-right",
+              cell: (item) => (
+                <span className="font-black text-[#163B5C]">
+                  {formatPaise(item.totalTaxPaise, data.currency)}
+                </span>
+              ),
+            },
+          ]}
+        />
+      </Panel>
+
+      <Panel title="HSN summary">
+        <ReportTable
+          rows={data.hsnSummary}
+          emptyTitle="No HSN totals in this range."
+          getKey={(item) => `${item.hsnSacCode}-${item.gstRatePercent}-${item.uqc}`}
+          columns={[
+            {
+              header: "HSN/SAC",
+              cell: (item) => <span className="font-black text-[#1F2933]">{item.hsnSacCode}</span>,
+            },
+            {
+              header: "Description",
+              cell: (item) => <span className="font-semibold text-[#667085]">{item.description}</span>,
+            },
+            {
+              header: "Quantity",
+              className: "text-right",
+              cell: (item) => (
+                <span className="font-semibold">
+                  {item.quantity.toLocaleString("en-IN")} {item.uqc}
+                </span>
+              ),
+            },
+            {
+              header: "Rate",
+              className: "text-right",
+              cell: (item) => <span className="font-semibold">{item.gstRatePercent}%</span>,
+            },
+            {
+              header: "Taxable",
+              className: "text-right",
+              cell: (item) => <span className="font-semibold">{formatPaise(item.taxableValuePaise, data.currency)}</span>,
+            },
+            {
+              header: "GST",
+              className: "text-right",
+              cell: (item) => <span className="font-black">{formatPaise(item.totalTaxPaise, data.currency)}</span>,
+            },
+          ]}
+        />
+      </Panel>
+
+      <Panel title="Credit notes">
+        <ReportTable
+          rows={creditNotes}
+          emptyTitle="No credit notes in this range."
+          getKey={(item) => item.id}
+          columns={[
+            {
+              header: "Credit note",
+              cell: (item) => (
+                <EntityTitle
+                  title={item.documentNumber ?? "Pending number"}
+                  subtitle={formatDate(item.issueDate)}
+                />
+              ),
+            },
+            {
+              header: "Original invoice",
+              cell: (item) => <span className="font-semibold">{item.originalDocumentNumber ?? "Not linked"}</span>,
+            },
+            {
+              header: "Seller",
+              cell: (item) => <span className="font-semibold">{item.sellerName}</span>,
+            },
+            {
+              header: "Section",
+              cell: (item) => <StatusBadge tone="warning">{item.gstrSupplySection ?? "Unclassified"}</StatusBadge>,
+            },
+            {
+              header: "Adjustment",
+              className: "text-right",
+              cell: (item) => <span className="font-black text-[#B42318]">{formatPaise(item.invoiceValuePaise, data.currency)}</span>,
+            },
+          ]}
+        />
+      </Panel>
+    </div>
+  );
+}
+
+function gstDocumentTypeLabel(value: GstReportDocument["documentType"]) {
+  return value
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function EnquiryReportPanel({ data, isLoading, error }: ReportPanelProps<AdminEnquiryReport>) {
@@ -17256,10 +17798,18 @@ function rangeForPreset(preset: ReportRangePreset): ReportRangeState {
 function reportRangeQueryString(range: ReportRangeState) {
   const params = new URLSearchParams();
   if (range.dateFrom) {
-    params.set("dateFrom", `${range.dateFrom}T00:00:00.000Z`);
+    const [year, month, day] = range.dateFrom.split("-");
+    params.set(
+      "dateFrom",
+      new Date(Number(year), Number(month) - 1, Number(day), 0, 0, 0, 0).toISOString(),
+    );
   }
   if (range.dateTo) {
-    params.set("dateTo", `${range.dateTo}T23:59:59.999Z`);
+    const [year, month, day] = range.dateTo.split("-");
+    params.set(
+      "dateTo",
+      new Date(Number(year), Number(month) - 1, Number(day), 23, 59, 59, 999).toISOString(),
+    );
   }
 
   return params.toString();
@@ -18027,6 +18577,37 @@ function SellerVerificationColumn({ item }: { item: SellerRecord }) {
       </div>
     </div>
   );
+}
+
+function sellerApprovalBlockingLabels(item: SellerRecord) {
+  const registrationStatus =
+    item.profile?.taxRegistrationStatus ??
+    (item.profile?.gstNumber ? "GST_REGISTERED" : "NOT_REGISTERED");
+  const requiredTypes = [
+    "ID_PROOF",
+    "SIGNATURE_PROOF",
+    "ADDRESS_PROOF",
+    "BANK_PROOF",
+    ...(registrationStatus === "NOT_REGISTERED" ? [] : ["GST_CERTIFICATE"]),
+  ];
+  const documents = new Map(
+    (item.documents ?? []).map((document) => [document.documentType, document]),
+  );
+  const blockers = requiredTypes.flatMap((documentType) => {
+    const document = documents.get(documentType);
+    const label = humanize(documentType);
+    if (!document) {
+      return [`missing ${label.toLowerCase()}`];
+    }
+    if (document.status !== "APPROVED") {
+      return [`verify ${label.toLowerCase()}`];
+    }
+    return [];
+  });
+  if (registrationStatus !== "NOT_REGISTERED" && !item.profile?.gstNumber) {
+    blockers.unshift("valid GSTIN");
+  }
+  return blockers;
 }
 
 

@@ -49,10 +49,6 @@ export function AuthPageClient({
         ? "Continue to saved addresses, wishlist, cart, checkout, orders, and support."
         : "Start a customer account for shopping, delivery tracking, wishlists, and account support.";
   const badge = isSellerOnboarding ? "Seller onboarding" : isB2B ? "B2B buyer access" : isSignIn ? "Customer sign in" : "Customer registration";
-  const moduleTitle = isB2B ? "B2B buyer module" : "Customer module";
-  const moduleItems = isB2B
-    ? ["Company profile", "Procurement addresses", "Bulk product enquiries", "Seller/admin quotation responses"]
-    : ["Profile and addresses", "Wishlist and cart", "Checkout and order history", "Order tracking and support"];
 
   return (
     <StorefrontFrame>

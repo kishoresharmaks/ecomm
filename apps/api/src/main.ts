@@ -3,6 +3,7 @@ import { ValidationPipe } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
+import type { Request, Response } from "express";
 import helmet from "helmet";
 import { AppModule } from "./app/app.module";
 import { createCorsOptions } from "./app/cors";
@@ -17,7 +18,7 @@ async function bootstrap() {
   app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 
   // Prevent search engines from crawling the API domain
-  app.use("/robots.txt", (req: any, res: any) => {
+  app.use("/robots.txt", (_req: Request, res: Response) => {
     res.type("text/plain");
     res.send("User-agent: *\nDisallow: /\n");
   });

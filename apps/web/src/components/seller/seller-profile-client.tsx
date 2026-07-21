@@ -19,6 +19,7 @@ import {
   type SellerProfile,
   type SellerProfilePayload,
   type SellerServiceArea,
+  type SellerTaxRegistrationStatus,
   type SellerVerificationDocument,
 } from "@/lib/seller-api";
 import {
@@ -94,6 +95,17 @@ const verificationDocuments: Array<{
     required: true,
   },
 ];
+
+function sellerDocumentIsRequired(
+  document: (typeof verificationDocuments)[number],
+  taxRegistrationStatus: SellerTaxRegistrationStatus,
+) {
+  return (
+    document.required ||
+    (document.type === "GST_CERTIFICATE" &&
+      taxRegistrationStatus !== "NOT_REGISTERED")
+  );
+}
 
 export function SellerProfileClient() {
   const sellerAuth = useSellerAuth();
@@ -187,7 +199,14 @@ export function SellerProfileClient() {
               </div>
               <div>
                 <span className="block text-xs text-[#667085]">GST/PAN</span>
-                <span>{profileData?.profile?.gstNumber || profileData?.profile?.panNumber || "Not set"}</span>
+                <span>
+                  {profileData?.profile?.taxRegistrationStatus === "COMPOSITION"
+                    ? "Composition scheme"
+                    : profileData?.profile?.taxRegistrationStatus === "GST_REGISTERED"
+                      ? profileData?.profile?.gstNumber || "GST registered"
+                      : "Not GST registered"}
+                  {profileData?.profile?.panNumber ? ` / ${profileData.profile.panNumber}` : ""}
+                </span>
               </div>
             </div>
           </div>
@@ -393,7 +412,13 @@ export function SellerProfileClient() {
           authHeaders={sellerAuth.authHeaders!}
           authKey={sellerAuth.authKey!}
           profile={profileData}
-          verificationDocuments={verificationDocuments}
+          verificationDocuments={verificationDocuments.map((document) => ({
+            ...document,
+            required: sellerDocumentIsRequired(
+              document,
+              profileData?.profile?.taxRegistrationStatus ?? "NOT_REGISTERED",
+            ),
+          }))}
           DocumentUploadField={DocumentUploadField}
         />
       )}

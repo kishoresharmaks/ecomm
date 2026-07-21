@@ -17,6 +17,7 @@ export type CategorySummary = {
   imageUrl?: string | null;
   defaultHsnCode?: string | null;
   defaultGstRatePercent?: number | string | null;
+  defaultTaxClassification?: ProductTaxClassification;
   defaultTaxDescription?: string | null;
   sortOrder?: number;
   productTemplate?: ProductTemplateSummary | null;
@@ -28,8 +29,18 @@ export type CategorySummary = {
   };
 };
 
+export type ProductTaxClassification =
+  | "TAXABLE"
+  | "NIL_RATED"
+  | "EXEMPT"
+  | "NON_GST";
+
 export type ProductListingMode = "CART" | "ENQUIRY_ONLY" | "CART_AND_ENQUIRY";
 export type DeliveryMode = "STORE_PICKUP" | "LOCAL_DELIVERY_PARTNER" | "THIRD_PARTY_COURIER" | "MANUAL_TRANSPORT";
+export type ReturnPolicySettings = {
+  returnWindowDays: number;
+  replacementWindowDays: number;
+};
 export type ProductTemplateFieldType =
   | "TEXT"
   | "TEXTAREA"
@@ -280,6 +291,7 @@ export type ProductSummary = {
   approvalStatus: string;
   listingMode?: ProductListingMode;
   attributes?: Record<string, unknown> | null;
+  taxClassification?: ProductTaxClassification;
   hsnCode?: string | null;
   gstRatePercent?: number | string | null;
   hsnMaster?: HsnMasterEntry | null;
@@ -548,6 +560,8 @@ export type PlaceOrderPayload = {
   paymentReference?: string;
   couponCode?: string;
   buyerCountryCode?: string;
+  buyerGstin?: string;
+  buyerLegalName?: string;
   shippingPaise?: number;
   customerNote?: string;
 };
@@ -816,6 +830,11 @@ export type OrderSummary = {
     couponSellerFundedDiscountPaise?: number;
     returnPolicySnapshot?: {
       returnEligibility?: string | null;
+      returnAllowed?: boolean;
+      replacementAllowed?: boolean;
+      returnWindowDays?: number;
+      replacementWindowDays?: number;
+      returnReasons?: string[];
       warranty?: string | null;
       capturedAt?: string | null;
     } | null;
@@ -1066,6 +1085,10 @@ export type PublicTrackedOrder = Pick<
 
 export function listCategories() {
   return indihubFetch<CategorySummary[]>("/api/categories");
+}
+
+export function getReturnPolicySettings() {
+  return indihubFetch<ReturnPolicySettings>("/api/settings/returns");
 }
 
 export function searchHsnMaster({

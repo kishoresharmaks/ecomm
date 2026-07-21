@@ -95,11 +95,11 @@ export function SellerReportsHubClient() {
           query={submittedRange}
         />
         <ReportCard
-          title="Tax & Compliance"
-          description="Summary of GST, TDS, and TCS figures to help with your tax filing and compliance."
+          title="Tax & Financial Reports"
+          description="Country-aware tax records, marketplace fees, withholding, settlements, and filing exports."
           icon={<FileText className="h-6 w-6 text-[#163B5C]" />}
           href="/seller/reports/tax"
-          metricLabel="GST, TDS & TCS Total"
+          metricLabel="Tax & Deductions"
           metricValue={overview ? formatMoney(overview.gstOnCommissionPaise + overview.tdsPaise + overview.tcsPaise, currency) : "—"}
           bg="bg-[#EAF1F7]"
           query={submittedRange}

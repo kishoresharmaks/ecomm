@@ -11,6 +11,7 @@ import {
 import { randomUUID } from "node:crypto";
 import {
   ApprovalStatus,
+  B2BInventoryReservationStatus,
   CartStatus,
   CheckoutStatus,
   DeliveryAssignmentAttemptSource,
@@ -45,6 +46,7 @@ import {
   UserStatus,
   VariantStatus,
 } from "@indihub/database";
+import { normalizeProductReturnPolicy } from "@indihub/shared-types";
 import type { RequestUser } from "../auth/types/indihub-request";
 import { assertCheckoutDeliveryServiceable } from "../checkout/checkout-serviceability";
 import { CheckoutPricingService } from "../checkout/checkout-pricing.service";
@@ -86,6 +88,7 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { PaymentsService } from "../payments/payments.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { readDeliveryPartnerPayoutSettings } from "../settings/delivery-partner-payout-settings";
+import { TaxDocumentsService } from "../tax/tax-documents.service";
 import { CancelOrderDto } from "./dto/cancel-order.dto";
 import {
   CheckoutPaymentMethod,
@@ -146,6 +149,7 @@ const orderInclude = {
               requestNumber: true,
               status: true,
               resolution: true,
+              createdAt: true,
             },
           },
         },
@@ -600,12 +604,21 @@ export class OrdersService {
     @Inject(NotificationsService) private readonly notifications: NotificationsService,
     @Inject(ExpoPushService) private readonly expoPush: ExpoPushService,
     @Inject(PaymentsService) private readonly paymentsService: PaymentsService,
+    @Inject(TaxDocumentsService)
+    private readonly taxDocuments: TaxDocumentsService = undefined as never,
     @Inject(SellerCashReceivablesService)
     private readonly sellerCashReceivables: SellerCashReceivablesService = undefined as never,
   ) {}
 
   async placeOrder(actor: RequestUser, dto: PlaceOrderDto) {
     const customer = await this.customersService.ensureCustomerForUser(actor);
+    const buyerGstin = dto.buyerGstin?.trim().toUpperCase() || null;
+    const buyerLegalName = dto.buyerLegalName?.trim() || null;
+    if (Boolean(buyerGstin) !== Boolean(buyerLegalName)) {
+      throw new BadRequestException(
+        "Buyer GSTIN and registered legal name must be provided together.",
+      );
+    }
     const idempotencyKey = this.normalizeOrderIdempotencyKey(dto.idempotencyKey);
     const existingIdempotentOrder = idempotencyKey
       ? await this.findCustomerOrderByIdempotencyKey(customer.id, idempotencyKey)
@@ -641,6 +654,9 @@ export class OrdersService {
 
     const shippingAddressSnapshot = await this.resolveShippingAddressSnapshot(customer.id, dto);
     const buyerCountryCode = dto.buyerCountryCode ?? shippingAddressSnapshot?.countryCode ?? "IN";
+    if (buyerGstin && buyerCountryCode.toUpperCase() !== "IN") {
+      throw new BadRequestException("GST invoices are available only for India billing details.");
+    }
     const market = await this.marketService.buildCheckoutSnapshot(buyerCountryCode);
     const orderNumber = await this.createOrderNumber();
     const payment = this.resolvePayment(dto.paymentMethod);
@@ -726,7 +742,6 @@ export class OrdersService {
                 deliveryMode: true,
                 isEnabled: true,
                 manualTransportFreeDistanceKm: true,
-                manualTransportChargePerKmPaise: true,
                 manualTransportChargePerKmMinor: true,
                 manualTransportCurrency: true,
                 manualTransportNote: true,
@@ -741,7 +756,14 @@ export class OrdersService {
           );
         }
 
-        if (item.quantity > variant.stockQuantity) {
+        const reservedStock = await tx.b2BInventoryReservation.aggregate({
+          where: {
+            productVariantId: variant.id,
+            status: B2BInventoryReservationStatus.ACTIVE,
+          },
+          _sum: { quantity: true },
+        });
+        if (item.quantity > variant.stockQuantity - (reservedStock._sum.quantity ?? 0)) {
           throw new BadRequestException(`Insufficient stock for ${product.name}.`);
         }
 
@@ -843,6 +865,10 @@ export class OrdersService {
         checkoutPaymentMethod,
         dto.paymentReference,
       );
+      const taxSellerContexts = await this.taxDocuments.sellerTaxContexts(
+        tx,
+        validatedItems.map(({ product }) => product.sellerId),
+      );
 
       const checkout = await tx.checkoutSession.create({
         data: {
@@ -860,6 +886,7 @@ export class OrdersService {
           orderNumber,
           idempotencyKey,
           customerId: customer.id,
+          checkoutSessionId: checkout.id,
           orderStatus: OrderStatus.PLACED,
           paymentStatus: payment.status,
           deliveryStatus: DeliveryStatus.PENDING,
@@ -899,6 +926,8 @@ export class OrdersService {
           },
           checkoutFeeSnapshot: charges.snapshot,
           shippingAddressSnapshot: shippingAddressSnapshot ?? Prisma.JsonNull,
+          buyerGstinSnapshot: buyerGstin,
+          buyerLegalNameSnapshot: buyerLegalName,
         },
       });
 
@@ -925,6 +954,20 @@ export class OrdersService {
         const lineTotalPaise = item.quantity * basePrice.effectiveUnitPricePaise;
         const lineDealDiscountPaise = item.quantity * basePrice.dealDiscountPaise;
         const couponAllocation = this.couponsService.itemAllocation(coupon, item.id);
+        const sellerTaxContext = taxSellerContexts.get(product.sellerId);
+        if (!sellerTaxContext) {
+          throw new BadRequestException(`Tax profile is unavailable for ${product.name}.`);
+        }
+        const taxSnapshot = this.taxDocuments.orderItemSnapshot({
+          lineTotalPaise,
+          discountPaise: couponAllocation?.discountPaise ?? 0,
+          hsnCode: product.hsnCode,
+          gstRatePercent: product.gstRatePercent,
+          taxClassification: product.taxClassification,
+          seller: sellerTaxContext,
+          buyerAddress: shippingAddressSnapshot,
+          buyerGstin,
+        });
         sellerTotals.set(
           product.sellerId,
           (sellerTotals.get(product.sellerId) ?? 0) + lineTotalPaise,
@@ -982,6 +1025,7 @@ export class OrdersService {
                 }
               : Prisma.JsonNull,
             returnPolicySnapshot: this.orderItemReturnPolicySnapshot(product.attributes),
+            ...taxSnapshot,
           },
         });
         const allocations = sellerItemAllocations.get(product.sellerId) ?? [];
@@ -1000,6 +1044,26 @@ export class OrdersService {
           heightCm: variant.packageHeightCm,
         });
         sellerItemAllocations.set(product.sellerId, allocations);
+
+        const [lockedVariant] = await tx.$queryRaw<Array<{ stockQuantity: number }>>`
+          SELECT "stock_quantity" AS "stockQuantity"
+          FROM "product_variants"
+          WHERE "id" = ${variant.id}::uuid
+          FOR UPDATE
+        `;
+        const activeReservations = await tx.b2BInventoryReservation.aggregate({
+          where: {
+            productVariantId: variant.id,
+            status: B2BInventoryReservationStatus.ACTIVE,
+          },
+          _sum: { quantity: true },
+        });
+        if (
+          !lockedVariant ||
+          lockedVariant.stockQuantity - (activeReservations._sum.quantity ?? 0) < item.quantity
+        ) {
+          throw new BadRequestException(`Insufficient stock for ${product.name}.`);
+        }
 
         const stockUpdate = await tx.productVariant.updateMany({
           where: {
@@ -1123,6 +1187,8 @@ export class OrdersService {
         });
         shipmentSequence += 1;
       }
+
+      await this.taxDocuments.createDraftOrderDocuments(tx, order.id);
 
       const summaryRoutingFailedAt = summaryRouting?.routingFailed ? routedAt : null;
 
@@ -1441,6 +1507,11 @@ export class OrdersService {
           payoutId: null,
         },
       });
+      await this.taxDocuments.cancelDraftOrderDocuments(
+        tx,
+        existing.id,
+        dto.note ?? "Order cancelled before tax invoice issue.",
+      );
 
       await tx.orderShipment.updateMany({
         where: { orderId: existing.id },
@@ -1775,8 +1846,10 @@ export class OrdersService {
       try {
         await this.createDeliveryPartnerVirtualAccount(user.deliveryProfile.id);
         user = await this.getDeliveryPartnerUserOrThrow(actor.id);
-      } catch (err: any) {
-        this.logger.warn(`Failed to auto-create virtual account for partner ${actor.id}: ${err.message}`);
+      } catch (error) {
+        this.logger.warn(
+          `Failed to auto-create virtual account for partner ${actor.id}: ${this.errorMessage(error)}`,
+        );
       }
     }
     return this.toDeliveryPartnerSelfProfile(user);
@@ -3151,6 +3224,17 @@ export class OrdersService {
         });
       }
 
+      if (nextOrderStatus === OrderStatus.SHIPPED || nextOrderStatus === OrderStatus.DELIVERED) {
+        for (const split of existing.sellerSplits) {
+          await this.taxDocuments.issueOrderSellerDocument(
+            tx,
+            existing.id,
+            split.sellerId,
+            actor.id,
+          );
+        }
+      }
+
       if (isCancellingOrder) {
         if (
           existing.orderStatus !== OrderStatus.DELIVERED &&
@@ -3186,6 +3270,11 @@ export class OrdersService {
             sellerStatus: SellerOrderStatus.CANCELLED,
           },
         });
+        await this.taxDocuments.cancelDraftOrderDocuments(
+          tx,
+          existing.id,
+          dto.note ?? "Order cancelled before tax invoice issue.",
+        );
 
         await tx.orderShipment.updateMany({
           where: { orderId: existing.id },
@@ -3690,6 +3779,13 @@ export class OrdersService {
           order.paymentStatus === PaymentStatus.NOT_REQUIRED)
       ) {
         await this.markSellerSplitsSettlementEligible(tx, order.id);
+      }
+
+      if (
+        requestedDeliveryStatus === DeliveryStatus.DISPATCHED ||
+        requestedDeliveryStatus === DeliveryStatus.DELIVERED
+      ) {
+        await this.taxDocuments.issueOrderSellerDocument(tx, order.id, seller.id, actor.id);
       }
 
       if (requestedDeliveryStatus === DeliveryStatus.DELIVERED && deliveryDetailIdForWallet) {
@@ -4437,6 +4533,24 @@ export class OrdersService {
           createdById: actor.id,
           note: dto.deliveryNote ?? null,
         });
+      }
+
+      if (
+        nextStatus === DeliveryStatus.DISPATCHED ||
+        nextStatus === DeliveryStatus.IN_TRANSIT ||
+        nextStatus === DeliveryStatus.DELIVERED
+      ) {
+        const invoiceSplits = seller
+          ? order.sellerSplits.filter((split) => split.sellerId === seller.id)
+          : order.sellerSplits;
+        for (const split of invoiceSplits) {
+          await this.taxDocuments.issueOrderSellerDocument(
+            tx,
+            order.id,
+            split.sellerId,
+            actor.id,
+          );
+        }
       }
 
       await tx.auditLog.create({
@@ -5887,10 +6001,12 @@ export class OrdersService {
   ) {
     const address = this.readShippingAddressSnapshot(order.shippingAddressSnapshot);
     const sellerAddress = order.shipments?.[0]?.seller?.addresses?.[0];
-    const pickupAddress = sellerAddress ? {
-      latitude: sellerAddress.latitude ? Number(sellerAddress.latitude) : undefined,
-      longitude: sellerAddress.longitude ? Number(sellerAddress.longitude) : undefined,
-    } : null;
+    const pickupAddress = sellerAddress
+      ? {
+          latitude: sellerAddress.latitude ? Number(sellerAddress.latitude) : null,
+          longitude: sellerAddress.longitude ? Number(sellerAddress.longitude) : null,
+        }
+      : null;
 
     const codPayment = this.findCodPayment(order);
     const codAmountPaise = options.codAmountPaise ?? (
@@ -5899,7 +6015,7 @@ export class OrdersService {
     const defaultLimit = await this.defaultPartnerCodLimitPaise();
     const rejectedPartnerIds = options.rejectedPartnerIds ?? await this.rejectedDeliveryPartnerIds(order.id);
     const proximityDistances = await this.deliveryPartnerProximityDistances(
-      pickupAddress as any ?? address,
+      pickupAddress ?? address,
       rejectedPartnerIds,
     );
     const partners = await this.prisma.client.user.findMany({
@@ -6183,7 +6299,7 @@ export class OrdersService {
   }
 
   private async deliveryPartnerProximityDistances(
-    address: TrackableAddressSnapshot | null,
+    address: Pick<TrackableAddressSnapshot, "latitude" | "longitude"> | null,
     rejectedPartnerIds: Set<string>,
   ) {
     const distances = new Map<string, number>();
@@ -6850,7 +6966,12 @@ export class OrdersService {
       client.deliveryPartnerWalletEntry.aggregate({
         where: {
           partnerUserId,
-          entryType: DeliveryPartnerWalletEntryType.LOCAL_DELIVERY_EARNING,
+          entryType: {
+            in: [
+              DeliveryPartnerWalletEntryType.LOCAL_DELIVERY_EARNING,
+              DeliveryPartnerWalletEntryType.REVERSE_PICKUP_EARNING,
+            ],
+          },
           direction: DeliveryPartnerWalletEntryDirection.CREDIT,
         },
         _sum: { amountPaise: true },
@@ -7883,11 +8004,17 @@ export class OrdersService {
         ? (attributes as Record<string, unknown>)
         : {};
 
+    const policy = normalizeProductReturnPolicy(attributeRecord);
     return {
       returnEligibility:
         this.stringAttribute(attributeRecord.returnEligibility) ??
         this.stringAttribute(attributeRecord.returnPolicy) ??
         "Returnable",
+      returnAllowed: policy.returnAllowed,
+      replacementAllowed: policy.replacementAllowed,
+      returnWindowDays: policy.returnWindowDays,
+      replacementWindowDays: policy.replacementWindowDays,
+      returnReasons: policy.returnReasons,
       warranty: this.stringAttribute(attributeRecord.warranty) ?? null,
       capturedAt: new Date().toISOString(),
     };
@@ -7942,7 +8069,6 @@ export class OrdersService {
           deliveryMode: DeliveryMode;
           isEnabled?: boolean | null;
           manualTransportFreeDistanceKm?: Prisma.Decimal | number | string | null;
-          manualTransportChargePerKmPaise?: number | null;
           manualTransportChargePerKmMinor?: number | null;
           manualTransportCurrency?: string | null;
           manualTransportNote?: string | null;
@@ -8075,7 +8201,6 @@ export class OrdersService {
       deliveryMode: DeliveryMode;
       isEnabled?: boolean | null;
       manualTransportFreeDistanceKm?: Prisma.Decimal | number | string | null;
-      manualTransportChargePerKmPaise?: number | null;
       manualTransportChargePerKmMinor?: number | null;
       manualTransportCurrency?: string | null;
       manualTransportNote?: string | null;
@@ -8088,10 +8213,8 @@ export class OrdersService {
       !option ||
       option.manualTransportFreeDistanceKm === null ||
       option.manualTransportFreeDistanceKm === undefined ||
-      ((option.manualTransportChargePerKmMinor === null ||
-        option.manualTransportChargePerKmMinor === undefined) &&
-        (option.manualTransportChargePerKmPaise === null ||
-          option.manualTransportChargePerKmPaise === undefined)) ||
+      option.manualTransportChargePerKmMinor === null ||
+      option.manualTransportChargePerKmMinor === undefined ||
       !option.manualTransportNote
     ) {
       return null;
@@ -8099,7 +8222,7 @@ export class OrdersService {
 
     return {
       freeDistanceKm: Number(option.manualTransportFreeDistanceKm),
-      chargePerKmMinor: option.manualTransportChargePerKmMinor ?? option.manualTransportChargePerKmPaise ?? 0,
+      chargePerKmMinor: option.manualTransportChargePerKmMinor,
       currency: option.manualTransportCurrency?.trim().toUpperCase() || "INR",
       note: option.manualTransportNote,
     };

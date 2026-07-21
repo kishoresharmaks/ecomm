@@ -291,6 +291,111 @@ enum OrderKind {
   REPLACEMENT
 }
 
+enum TaxPriceMode {
+  INCLUSIVE
+  EXCLUSIVE
+}
+
+enum TaxSupplyType {
+  INTRA_STATE
+  INTER_STATE
+  OUTSIDE_INDIA
+}
+
+enum SellerTaxRegistrationStatus {
+  GST_REGISTERED
+  NOT_REGISTERED
+  COMPOSITION
+}
+
+enum ProductTaxClassification {
+  TAXABLE
+  NIL_RATED
+  EXEMPT
+  NON_GST
+}
+
+enum TaxDocumentType {
+  TAX_INVOICE
+  BILL_OF_SUPPLY
+  COMMERCIAL_INVOICE
+  CREDIT_NOTE
+  DEBIT_NOTE
+}
+
+enum TaxDocumentStatus {
+  DRAFT
+  ISSUED
+  CANCELLED
+}
+
+enum TaxDocumentSource {
+  CHECKOUT
+  LEGACY_BACKFILL
+  B2B_FULFILMENT
+  RETURN_REFUND
+  ORDER_CANCELLATION
+  MANUAL_ADJUSTMENT
+}
+
+enum TaxDocumentLineType {
+  PRODUCT
+  SHIPPING
+  ADJUSTMENT
+}
+
+enum GstrSupplySection {
+  B2B
+  B2CL
+  B2CS
+  CDNR
+  CDNUR
+  EXPORT
+  SEZ
+  NIL_EXEMPT_NON_GST
+}
+
+enum GstFilingPeriodStatus {
+  OPEN
+  LOCKED
+  FILED
+  REOPENED
+}
+
+enum GstReconciliationSeverity {
+  INFO
+  WARNING
+  ERROR
+}
+
+enum GstComplianceStatus {
+  NOT_REQUIRED
+  READY
+  PENDING
+  SUBMITTED
+  GENERATED
+  CANCELLED
+  FAILED
+}
+
+enum GstReportExportType {
+  GST_REGISTER
+  HSN_SUMMARY
+  GSTR1_CSV
+  GSTR1_JSON
+  GSTR3B
+  GSTR8
+  TCS_STATEMENT
+  DOCUMENT_SERIES
+  RATE_LIABILITY
+  STATE_LIABILITY
+  GSTIN_SUMMARY
+  RECONCILIATION
+  PLATFORM_COMMISSION
+  E_INVOICE
+  E_WAY_BILL
+}
+
 enum PaymentStatus {
   PENDING
   PAID
@@ -449,8 +554,14 @@ enum DeliveryAttemptReason {
 enum DeliveryMode {
   STORE_PICKUP
   LOCAL_DELIVERY_PARTNER
-  THIRD_PARTY_COURIER    @map("MANUAL_COURIER")
+  THIRD_PARTY_COURIER
   MANUAL_TRANSPORT
+}
+
+enum RazorpayWebhookEventStatus {
+  PROCESSING
+  DONE
+  FAILED
 }
 
 enum ShippingCodSurchargeType {
@@ -544,6 +655,7 @@ enum CourierCodRemittanceStatus {
 
 enum DeliveryPartnerWalletEntryType {
   LOCAL_DELIVERY_EARNING
+  REVERSE_PICKUP_EARNING
   MANUAL_ADJUSTMENT
   MANUAL_PAYOUT
 }
@@ -604,8 +716,29 @@ enum B2BEnquiryStatus {
 enum B2BOrderStatus {
   PROFORMA_ISSUED
   PO_SUBMITTED
+  PO_UNDER_REVIEW
   PO_ACCEPTED
+  CREDIT_CLEARANCE_PENDING
   IN_FULFILMENT
+  PROCUREMENT_IN_PROGRESS
+  PRODUCTION_IN_PROGRESS
+  STOCK_READY
+  PICKING
+  PACKING
+  QC_PENDING
+  PACKED_AND_QC_PASSED
+  TAX_INVOICE_ISSUED
+  E_WAY_READY
+  E_WAY_NOT_REQUIRED
+  DISPATCHED
+  IN_TRANSIT
+  DELIVERED
+  DELIVERY_ACCEPTED
+  DELIVERY_DISPUTED
+  PAYMENT_OVERDUE
+  ON_HOLD
+  FULFILMENT_REVIEW_REQUIRED
+  CLOSED
   FULFILLED
   CANCELLED
 }
@@ -631,6 +764,8 @@ enum B2BPaymentMethod {
   BANK_TRANSFER
   MANUAL
   RAZORPAY
+  UPI
+  CHEQUE
 }
 
 enum B2BTransportMode {
@@ -667,6 +802,233 @@ enum B2BAdminAction {
   ISSUE_REFUND
   PAYMENT_OVERDUE
   UPDATE_TRANSPORT
+}
+
+enum B2BPoReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CHANGES_REQUIRED
+}
+
+enum B2BPaymentTermType {
+  PREPAID_FULL
+  ADVANCE_PERCENT
+  MILESTONE
+  NET_7
+  NET_15
+  NET_30
+  NET_45
+}
+
+enum B2BCreditDecisionStatus {
+  NOT_REQUIRED
+  PENDING
+  APPROVED
+  HELD
+  REJECTED
+  OVERRIDDEN
+  EXPIRED
+}
+
+enum B2BPaymentScheduleStatus {
+  PENDING
+  DUE
+  PARTIALLY_PAID
+  PAID
+  WAIVED
+  CANCELLED
+}
+
+enum B2BFulfilmentSource {
+  AVAILABLE_STOCK
+  PROCURE
+  PRODUCE
+}
+
+enum B2BFulfilmentStatus {
+  PENDING
+  IN_PROGRESS
+  READY
+  COMPLETED
+  CANCELLED
+}
+
+enum B2BInventoryReservationStatus {
+  ACTIVE
+  CONSUMED
+  RELEASED
+  CANCELLED
+}
+
+enum B2BProcurementStatus {
+  DRAFT
+  ORDERED
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CANCELLED
+}
+
+enum B2BProductionStatus {
+  PLANNED
+  IN_PROGRESS
+  PARTIALLY_COMPLETED
+  COMPLETED
+  HELD
+  CANCELLED
+}
+
+enum B2BWarehouseTaskType {
+  PICK
+  PACK
+}
+
+enum B2BWarehouseTaskStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  HELD
+  CANCELLED
+}
+
+enum B2BQcStatus {
+  PENDING
+  PASSED
+  FAILED
+  HELD
+}
+
+enum B2BShipmentStatus {
+  DRAFT
+  READY
+  DISPATCHED
+  IN_TRANSIT
+  DELIVERED
+  FAILED
+  CANCELLED
+}
+
+enum B2BDeliveryAcceptanceStatus {
+  PENDING
+  ACCEPTED
+  DISPUTED
+  AUTO_ACCEPTED
+}
+
+enum B2BReceivableStatus {
+  OPEN
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  DISPUTED
+  WRITTEN_OFF
+  CANCELLED
+}
+
+enum B2BAgeingBucket {
+  CURRENT
+  DAYS_1_30
+  DAYS_31_60
+  DAYS_61_90
+  DAYS_90_PLUS
+}
+
+enum B2BPaymentRecordStatus {
+  SUBMITTED
+  VERIFIED
+  REJECTED
+  CLEARED
+  BOUNCED
+  REFUNDED
+  VOIDED
+}
+
+enum B2BCollectionTaskStatus {
+  OPEN
+  PROMISED
+  PAID
+  ESCALATED
+  CLOSED
+  CANCELLED
+}
+
+enum B2BSupportCaseType {
+  WARRANTY
+  SHORTAGE
+  DAMAGE
+  REPLACEMENT
+  RETURN
+  BILLING
+  DELIVERY
+  OTHER
+}
+
+enum B2BSupportCaseStatus {
+  OPEN
+  IN_REVIEW
+  WAITING_FOR_BUYER
+  WAITING_FOR_SELLER
+  RESOLVED
+  CLOSED
+  CANCELLED
+}
+
+enum B2BOrderAmendmentStatus {
+  REQUESTED
+  APPLIED
+  REJECTED
+  CANCELLED
+}
+
+enum B2BDisputeResolutionType {
+  ACCEPTED_AS_DELIVERED
+  PARTIAL_ACCEPTANCE
+  REPLACEMENT
+  RETURN_AND_REFUND
+  CREDIT_NOTE
+  CLAIM_REJECTED
+}
+
+enum B2BFinancialReconciliationStatus {
+  MATCHED
+  CORRECTED
+  EXCEPTION
+}
+
+enum B2BErpConnectionStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  ERROR
+}
+
+enum B2BIntegrationOutboxStatus {
+  PENDING
+  PROCESSING
+  DELIVERED
+  FAILED
+  DEAD_LETTER
+  CANCELLED
+}
+
+enum B2BErpExportStatus {
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum B2BErpExportFormat {
+  CSV
+  JSON
+}
+
+enum SellerStaffPermission {
+  B2B_SALES
+  B2B_PROCUREMENT
+  B2B_PRODUCTION
+  B2B_WAREHOUSE
+  B2B_DISPATCH
+  B2B_FINANCE_VIEW
 }
 
 enum ContentStatus {
@@ -841,6 +1203,7 @@ enum SellerLedgerEntryType {
   PLATFORM_FEE
   COUPON_DISCOUNT
   REFUND_ADJUSTMENT
+  REVERSE_LOGISTICS_FEE
   SERVICE_RECEIVABLE_OPENED
   SERVICE_RECEIVABLE_SETTLED
   SERVICE_RECEIVABLE_WAIVED
@@ -1148,6 +1511,8 @@ model User {
   deliveryProfile                          DeliveryPartnerProfile?
   deliveryAssignmentAttempts               DeliveryAssignmentAttempt[]        @relation("DeliveryAssignmentAttemptPartner")
   createdDeliveryAssignmentAttempts        DeliveryAssignmentAttempt[]        @relation("DeliveryAssignmentAttemptAssignedBy")
+  shipmentAssignmentEventsFrom             OrderShipmentAssignmentEvent[]     @relation("ShipmentAssignmentPreviousPartner")
+  shipmentAssignmentEventsTo               OrderShipmentAssignmentEvent[]     @relation("ShipmentAssignmentPartner")
   deliveryAttempts                         DeliveryAttempt[]
   deliveryWalletEntries                    DeliveryPartnerWalletEntry[]       @relation("DeliveryPartnerWalletEntries")
   createdDeliveryWalletEntries             DeliveryPartnerWalletEntry[]       @relation("DeliveryPartnerWalletEntryCreatedBy")
@@ -1174,6 +1539,11 @@ model User {
   createdPushNotificationCampaigns         PushNotificationCampaign[]         @relation("PushCampaignCreatedBy")
   updatedPushNotificationCampaigns         PushNotificationCampaign[]         @relation("PushCampaignUpdatedBy")
   auditLogs                                AuditLog[]
+  lockedGstFilingPeriods                   GstFilingPeriod[]                  @relation("GstFilingPeriodLockedBy")
+  filedGstFilingPeriods                    GstFilingPeriod[]                  @relation("GstFilingPeriodFiledBy")
+  gstReconciliationRuns                    GstReconciliationRun[]             @relation("GstReconciliationRunCreatedBy")
+  gstReportExports                         GstReportExport[]                  @relation("GstReportExportGeneratedBy")
+  issuedMarketplaceTaxDocuments            MarketplaceTaxDocument[]           @relation("MarketplaceTaxDocumentIssuedBy")
   adminCredential                          AdminCredential?
   adminSessions                            AdminSession[]
   createdDeals                             Deal[]                             @relation("DealCreatedBy")
@@ -1201,6 +1571,31 @@ model User {
   createdChatAssignments                   ChatAssignment[]                   @relation("ChatAssignmentCreatedBy")
   chatConversationEvents                   ChatConversationEvent[]            @relation("ChatConversationEventActor")
   chatBotRuns                              ChatBotRun[]                       @relation("ChatBotRunUser")
+  chatAiUsageSummaries                     ChatAiUsageSummary[]
+  createdCmsMediaAssets                    CmsMediaAsset[]                    @relation("CmsMediaAssetCreatedBy")
+  cmsRevisionActions                       CmsRevision[]                      @relation("CmsRevisionActor")
+  issuedTaxDocuments                       TaxDocument[]                      @relation("TaxDocumentIssuedBy")
+  sellerStaffMemberships                   SellerStaffMembership[]
+  reviewedB2BPoReviews                     B2BPoReview[]                      @relation("B2BPoReviewReviewedBy")
+  reviewedB2BCreditProfiles                BusinessBuyerCreditProfile[]       @relation("B2BCreditProfileReviewedBy")
+  decidedB2BCreditDecisions                B2BCreditDecision[]                @relation("B2BCreditDecisionDecidedBy")
+  assignedB2BWarehouseTasks                B2BWarehouseTask[]                 @relation("B2BWarehouseTaskAssignedTo")
+  inspectedB2BQcInspections                B2BQcInspection[]                  @relation("B2BQcInspectionInspectedBy")
+  createdB2BShipmentEvents                 B2BShipmentEvent[]                 @relation("B2BShipmentEventCreatedBy")
+  createdB2BProofsOfDelivery               B2BProofOfDelivery[]               @relation("B2BProofOfDeliveryCreatedBy")
+  assignedB2BShipments                     B2BShipment[]                      @relation("B2BShipmentAssignedDeliveryUser")
+  verifiedB2BPaymentRecords                B2BPaymentRecord[]                 @relation("B2BPaymentRecordVerifiedBy")
+  issuedB2BReceiptVouchers                 B2BReceiptVoucher[]                @relation("B2BReceiptVoucherIssuedBy")
+  assignedB2BCollectionTasks               B2BCollectionTask[]               @relation("B2BCollectionTaskAssignedTo")
+  createdB2BSupportCases                   B2BSupportCase[]                   @relation("B2BSupportCaseCreatedBy")
+  assignedB2BSupportCases                  B2BSupportCase[]                   @relation("B2BSupportCaseAssignedTo")
+  requestedB2BOrderAmendments              B2BOrderAmendment[]               @relation("B2BOrderAmendmentRequestedBy")
+  decidedB2BOrderAmendments                B2BOrderAmendment[]               @relation("B2BOrderAmendmentDecidedBy")
+  resolvedB2BDisputes                      B2BDisputeResolution[]             @relation("B2BDisputeResolutionResolvedBy")
+  createdB2BFinancialReconciliations       B2BFinancialReconciliation[]       @relation("B2BFinancialReconciliationCreatedBy")
+  createdB2BErpConnections                 B2BErpConnection[]                 @relation("B2BErpConnectionCreatedBy")
+  createdB2BErpExportJobs                  B2BErpExportJob[]                  @relation("B2BErpExportJobCreatedBy")
+  b2bMutationRecords                       B2BMutationRecord[]
 
   @@index([status, createdAt])
   @@map("users")
@@ -1313,6 +1708,7 @@ model Customer {
   addresses                 CustomerAddress[]
   wishlist                  Wishlist?
   carts                     Cart[]
+  checkoutSessions          CheckoutSession[]
   orders                    Order[]
   serviceBookings           ServiceBooking[]
   serviceReviews            ServiceReview[]
@@ -1425,7 +1821,8 @@ model Seller {
   status                       SellerStatus                   @default(DRAFT)
   approvalStatus               ApprovalStatus                 @default(DRAFT) @map("approval_status")
   commissionType               CommissionType                 @default(MANUAL) @map("commission_type")
-  commissionValue              Int?                           @map("commission_value")
+  commissionValueBps           Int?                           @map("commission_value_bps")
+  commissionFixedPaise         Int?                           @map("commission_fixed_paise")
   subscriptionPlanId           String?                        @map("subscription_plan_id") @db.Uuid
   subscriptionStatus           SellerSubscriptionStatus       @default(ACTIVE) @map("subscription_status")
   subscriptionStartedAt        DateTime?                      @map("subscription_started_at")
@@ -1480,6 +1877,18 @@ model Seller {
   refundItems                  RefundRequestItem[]
   reverseShipments             ReverseShipment[]
   pushTokens                   SellerPushToken[]
+  taxDocuments                 TaxDocument[]
+  taxDocumentSequences         TaxDocumentSequence[]
+  gstFilingPeriods             GstFilingPeriod[]
+  gstReconciliationRuns        GstReconciliationRun[]
+  gstReportExports             GstReportExport[]
+  marketplaceTaxDocuments      MarketplaceTaxDocument[]
+  staffMemberships             SellerStaffMembership[]
+  b2bProcurementOrders         B2BProcurementOrder[]
+  b2bProductionJobs            B2BProductionJob[]
+  b2bWarehouseTasks            B2BWarehouseTask[]
+  b2bPackages                  B2BPackage[]
+  b2bShipments                 B2BShipment[]
 
   @@index([approvalStatus])
   @@index([sellerType])
@@ -1535,21 +1944,22 @@ model DeliveryPushToken {
 }
 
 model SellerProfile {
-  id                String              @id @default(uuid()) @db.Uuid
-  sellerId          String              @unique @map("seller_id") @db.Uuid
-  logoUrl           String?             @map("logo_url")
-  bannerUrl         String?             @map("banner_url")
-  description       String?
-  businessLegalName String?             @map("business_legal_name")
-  businessType      SellerBusinessType? @map("business_type")
-  gstNumber         String?             @map("gst_number")
-  panNumber         String?             @map("pan_number")
-  contactName       String              @map("contact_name")
-  contactPhone      String              @map("contact_phone")
-  contactEmail      String              @map("contact_email")
-  createdAt         DateTime            @default(now()) @map("created_at")
-  updatedAt         DateTime            @updatedAt @map("updated_at")
-  seller            Seller              @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  id                    String                      @id @default(uuid()) @db.Uuid
+  sellerId              String                      @unique @map("seller_id") @db.Uuid
+  logoUrl               String?                     @map("logo_url")
+  bannerUrl             String?                     @map("banner_url")
+  description           String?
+  businessLegalName     String?                     @map("business_legal_name")
+  businessType          SellerBusinessType?         @map("business_type")
+  taxRegistrationStatus SellerTaxRegistrationStatus @default(NOT_REGISTERED) @map("tax_registration_status")
+  gstNumber             String?                     @map("gst_number")
+  panNumber             String?                     @map("pan_number")
+  contactName           String
+  contactPhone          String
+  contactEmail          String
+  createdAt             DateTime                    @default(now()) @map("created_at")
+  updatedAt             DateTime                    @updatedAt @map("updated_at")
+  seller                Seller                      @relation(fields: [sellerId], references: [id], onDelete: Cascade)
 
   @@map("seller_profiles")
 }
@@ -1694,6 +2104,7 @@ model PrivateUpload {
   assetKey    String    @unique @map("asset_key")
   provider    String
   uploadKind  String    @map("upload_kind")
+  /// Polymorphic audit subject: stores either User.id or BusinessBuyer.id depending on upload context.
   actorUserId String?   @map("actor_user_id")
   contentType String?   @map("content_type")
   sizeBytes   Int?      @map("size_bytes")
@@ -1708,17 +2119,25 @@ model PrivateUpload {
 }
 
 model SellerPayoutProfile {
-  id                String   @id @default(uuid()) @db.Uuid
-  sellerId          String   @unique @map("seller_id") @db.Uuid
-  accountHolderName String?  @map("account_holder_name")
-  bankName          String?  @map("bank_name")
-  accountNumber     String?  @map("account_number")
-  ifscCode          String?  @map("ifsc_code")
-  upiId             String?  @map("upi_id")
-  isVerified        Boolean  @default(false) @map("is_verified")
-  createdAt         DateTime @default(now()) @map("created_at")
-  updatedAt         DateTime @updatedAt @map("updated_at")
-  seller            Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  id                     String   @id @default(uuid()) @db.Uuid
+  sellerId               String   @unique @map("seller_id") @db.Uuid
+  accountHolderName      String?  @map("account_holder_name")
+  bankName               String?  @map("bank_name")
+  accountNumberEncrypted String?  @map("account_number_encrypted")
+  accountNumberLast4     String?  @map("account_number_last4") @db.VarChar(4)
+  ifscCodeEncrypted      String?  @map("ifsc_code_encrypted")
+  upiIdEncrypted         String?  @map("upi_id_encrypted")
+  upiIdHint              String?  @map("upi_id_hint")
+  /// Temporary migration-only fallback. New application writes must leave this null.
+  legacyAccountNumber    String?  @map("account_number")
+  /// Temporary migration-only fallback. New application writes must leave this null.
+  legacyIfscCode         String?  @map("ifsc_code")
+  /// Temporary migration-only fallback. New application writes must leave this null.
+  legacyUpiId            String?  @map("upi_id")
+  isVerified             Boolean  @default(false) @map("is_verified")
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+  seller                 Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
 
   @@map("seller_payout_profiles")
 }
@@ -1860,6 +2279,7 @@ model BusinessBuyer {
   addresses    BusinessBuyerAddress[]
   enquiries    B2BEnquiry[]
   b2bOrders    B2BOrder[]
+  creditProfile BusinessBuyerCreditProfile?
 
   @@index([status])
   @@map("business_buyers")
@@ -2032,6 +2452,7 @@ model Category {
   imageUrl              String?                     @map("image_url")
   defaultHsnCode        String?                     @map("default_hsn_code")
   defaultGstRatePercent Decimal?                    @map("default_gst_rate_percent") @db.Decimal(5, 2)
+  defaultTaxClassification ProductTaxClassification @default(TAXABLE) @map("default_tax_classification")
   defaultTaxDescription String?                     @map("default_tax_description")
   status                CategoryStatus              @default(ACTIVE)
   sortOrder             Int                         @default(0) @map("sort_order")
@@ -2126,8 +2547,10 @@ model Product {
   status                 ProductStatus              @default(DRAFT)
   approvalStatus         ApprovalStatus             @default(DRAFT) @map("approval_status")
   listingMode            ProductListingMode         @default(CART) @map("listing_mode")
+  /// Legacy product-level fallback. Shipping uses ProductVariant.packageWeightGrams when configured.
   weightKg               Decimal?                   @default(0) @map("weight_kg") @db.Decimal(10, 3)
   attributes             Json?
+  taxClassification      ProductTaxClassification   @default(TAXABLE) @map("tax_classification")
   hsnCode                String?                    @map("hsn_code")
   gstRatePercent         Decimal?                   @map("gst_rate_percent") @db.Decimal(5, 2)
   hsnMasterId            String?                    @map("hsn_master_id") @db.Uuid
@@ -2145,6 +2568,8 @@ model Product {
   wishlistItems          WishlistItem[]
   b2bEnquiries           B2BEnquiry[]
   b2bOrders              B2BOrder[]
+  b2bOrderLines          B2BOrderLine[]
+  b2bEnquiryLines        B2BEnquiryLine[]
   dealProductEnrollments DealProductEnrollment[]
   couponEligibilities    CouponProductEligibility[]
   reviews                ProductReview[]
@@ -2173,7 +2598,6 @@ model ProductDeliveryMode {
   deliveryMode                        DeliveryMode @map("delivery_mode")
   isEnabled                           Boolean      @default(true) @map("is_enabled")
   manualTransportFreeDistanceKm       Decimal?     @map("manual_transport_free_distance_km") @db.Decimal(8, 2)
-  manualTransportChargePerKmPaise     Int?         @map("manual_transport_charge_per_km_paise")
   manualTransportChargePerKmMinor     Int?         @map("manual_transport_charge_per_km_minor")
   manualTransportCurrency             String?      @map("manual_transport_currency") @db.VarChar(3)
   manualTransportNote                 String?      @map("manual_transport_note") @db.VarChar(500)
@@ -2223,6 +2647,9 @@ model ProductVariant {
   cartItems          CartItem[]
   orderItems         OrderItem[]
   returnItems        ReturnRequestItem[]
+  b2bOrderLines      B2BOrderLine[]
+  b2bReservations    B2BInventoryReservation[]
+  b2bEnquiryLines    B2BEnquiryLine[]
 
   @@index([productId, status, createdAt])
   @@index([status, stockQuantity])
@@ -2562,7 +2989,9 @@ model CheckoutSession {
   deliveryMode            DeliveryMode?  @map("delivery_mode")
   createdAt               DateTime       @default(now()) @map("created_at")
   updatedAt               DateTime       @updatedAt @map("updated_at")
+  customer                Customer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
   cart                    Cart?          @relation(fields: [cartId], references: [id])
+  order                   Order?
 
   @@index([customerId])
   @@index([cartId])
@@ -2574,8 +3003,10 @@ model Order {
   orderNumber                       String                       @unique @map("order_number")
   idempotencyKey                    String?                      @map("idempotency_key")
   customerId                        String                       @map("customer_id") @db.Uuid
+  checkoutSessionId                 String?                      @unique @map("checkout_session_id") @db.Uuid
   orderKind                         OrderKind                    @default(STANDARD) @map("order_kind")
   parentOrderId                     String?                      @map("parent_order_id") @db.Uuid
+  /// Return request that caused this replacement order; ReturnRequest.orderId still points to the original order.
   replacementReturnRequestId        String?                      @unique @map("replacement_return_request_id") @db.Uuid
   orderStatus                       OrderStatus                  @default(PLACED) @map("order_status")
   paymentStatus                     PaymentStatus                @default(PENDING) @map("payment_status")
@@ -2608,10 +3039,13 @@ model Order {
   fxSnapshot                        Json?                        @map("fx_snapshot")
   checkoutFeeSnapshot               Json?                        @map("checkout_fee_snapshot")
   shippingAddressSnapshot           Json?                        @map("shipping_address_snapshot")
+  buyerGstinSnapshot                String?                      @map("buyer_gstin_snapshot")
+  buyerLegalNameSnapshot            String?                      @map("buyer_legal_name_snapshot")
   createdAt                         DateTime                     @default(now()) @map("created_at")
   updatedAt                         DateTime                     @updatedAt @map("updated_at")
   coupon                            Coupon?                      @relation(fields: [couponId], references: [id], onDelete: SetNull)
   customer                          Customer                     @relation(fields: [customerId], references: [id])
+  checkoutSession                   CheckoutSession?             @relation(fields: [checkoutSessionId], references: [id], onDelete: SetNull)
   parentOrder                       Order?                       @relation("ReplacementOrderParent", fields: [parentOrderId], references: [id], onDelete: SetNull)
   childReplacementOrders            Order[]                      @relation("ReplacementOrderParent")
   replacementReturnRequest          ReturnRequest?               @relation("ReplacementReturnRequestOrder", fields: [replacementReturnRequestId], references: [id], onDelete: SetNull)
@@ -2626,6 +3060,7 @@ model Order {
   statusEvents                      OrderStatusEvent[]
   deliveryDetail                    DeliveryDetail?
   deliveryAssignmentAttempts        DeliveryAssignmentAttempt[]
+  shipmentAssignmentEvents          OrderShipmentAssignmentEvent[]
   payments                          Payment[]
   deliveryPartnerWalletEntries      DeliveryPartnerWalletEntry[]
   sellerCashReceivables             SellerCashReceivable[]
@@ -2637,6 +3072,7 @@ model Order {
   refundRequests                    RefundRequest[]
   reverseShipments                  ReverseShipment[]
   chatConversations                 ChatConversation[]
+  taxDocuments                      TaxDocument[]
 
   @@unique([customerId, idempotencyKey], map: "orders_customer_id_idempotency_key_key")
   @@index([couponId])
@@ -2687,6 +3123,24 @@ model OrderItem {
   couponAdjustmentPaise             Int                          @default(0) @map("coupon_adjustment_paise")
   couponSnapshot                    Json?                        @map("coupon_snapshot")
   returnPolicySnapshot              Json?                        @map("return_policy_snapshot")
+  hsnCodeSnapshot                   String?                      @map("hsn_code_snapshot")
+  gstRatePercentSnapshot            Decimal?                     @map("gst_rate_percent_snapshot") @db.Decimal(5, 2)
+  supplierTaxRegistrationStatusSnapshot SellerTaxRegistrationStatus @default(NOT_REGISTERED) @map("supplier_tax_registration_status_snapshot")
+  productTaxClassificationSnapshot  ProductTaxClassification     @default(TAXABLE) @map("product_tax_classification_snapshot")
+  taxPriceModeSnapshot              TaxPriceMode                 @default(INCLUSIVE) @map("tax_price_mode_snapshot")
+  taxSupplyTypeSnapshot             TaxSupplyType?               @map("tax_supply_type_snapshot")
+  placeOfSupplyStateCodeSnapshot    String?                      @map("place_of_supply_state_code_snapshot")
+  supplierGstinSnapshot             String?                      @map("supplier_gstin_snapshot")
+  buyerGstinSnapshot                String?                      @map("buyer_gstin_snapshot")
+  grossTaxableConsiderationPaise    Int                          @default(0) @map("gross_taxable_consideration_paise")
+  taxableValuePaise                 Int                          @default(0) @map("taxable_value_paise")
+  cgstPaise                         Int                          @default(0) @map("cgst_paise")
+  sgstPaise                         Int                          @default(0) @map("sgst_paise")
+  igstPaise                         Int                          @default(0) @map("igst_paise")
+  cessPaise                         Int                          @default(0) @map("cess_paise")
+  taxTotalPaise                     Int                          @default(0) @map("tax_total_paise")
+  taxSnapshotSource                 TaxDocumentSource?           @map("tax_snapshot_source")
+  taxSnapshot                       Json?                        @map("tax_snapshot")
   createdAt                         DateTime                     @default(now()) @map("created_at")
   updatedAt                         DateTime                     @updatedAt @map("updated_at")
   order                             Order                        @relation(fields: [orderId], references: [id], onDelete: Cascade)
@@ -2701,6 +3155,7 @@ model OrderItem {
   couponAdjustments                 CouponRedemptionAdjustment[]
   returnItems                       ReturnRequestItem[]
   refundItems                       RefundRequestItem[]
+  taxDocumentLines                  TaxDocumentLine[]
 
   @@index([productId])
   @@index([dealId])
@@ -2710,6 +3165,8 @@ model OrderItem {
   @@index([lifecycleStatus])
   @@index([orderId, lifecycleStatus])
   @@index([sellerId, lifecycleStatus])
+  @@index([hsnCodeSnapshot, createdAt])
+  @@index([gstRatePercentSnapshot, createdAt])
   @@map("order_items")
   @@index([productVariantId])
 }
@@ -2845,6 +3302,7 @@ model OrderSellerSplit {
   returnItems                       ReturnRequestItem[]
   refundItems                       RefundRequestItem[]
   sellerCashReceivables             SellerCashReceivable[]
+  taxDocuments                      TaxDocument[]
 
   @@unique([orderId, sellerId])
   @@index([commissionRuleId])
@@ -2924,6 +3382,7 @@ model OrderShipment {
   courierCodRemittance         CourierCodRemittance?
   deliveryPartnerWalletEntries DeliveryPartnerWalletEntry[]
   sellerCashReceivable         SellerCashReceivable?
+  assignmentEvents             OrderShipmentAssignmentEvent[]
 
   @@unique([orderId, sellerId])
   @@index([orderId, status, createdAt])
@@ -2943,6 +3402,34 @@ model OrderShipment {
   @@map("order_shipments")
   @@index([codCollectedById])
   @@index([codVerifiedById])
+}
+
+/// Immutable seller-split assignment history. DeliveryAssignmentAttempt remains the order-level
+/// offer/acceptance record used by delivery operations.
+model OrderShipmentAssignmentEvent {
+  id                    String                    @id @default(uuid()) @db.Uuid
+  orderShipmentId       String                    @map("order_shipment_id") @db.Uuid
+  orderId               String                    @map("order_id") @db.Uuid
+  previousPartnerUserId String?                   @map("previous_partner_user_id") @db.Uuid
+  partnerUserId         String?                   @map("partner_user_id") @db.Uuid
+  previousStatus        DeliveryAssignmentStatus? @map("previous_status")
+  status                DeliveryAssignmentStatus
+  assignmentNote        String?                   @map("assignment_note")
+  assignedAt            DateTime?                 @map("assigned_at")
+  acceptedAt            DateTime?                 @map("accepted_at")
+  rejectedAt            DateTime?                 @map("rejected_at")
+  assignmentExpiresAt   DateTime?                 @map("assignment_expires_at")
+  createdAt             DateTime                  @default(now()) @map("created_at")
+  orderShipment         OrderShipment             @relation(fields: [orderShipmentId], references: [id], onDelete: Cascade)
+  order                 Order                     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  previousPartner       User?                     @relation("ShipmentAssignmentPreviousPartner", fields: [previousPartnerUserId], references: [id], onDelete: SetNull)
+  partner               User?                     @relation("ShipmentAssignmentPartner", fields: [partnerUserId], references: [id], onDelete: SetNull)
+
+  @@index([orderShipmentId, createdAt])
+  @@index([orderId, createdAt])
+  @@index([previousPartnerUserId])
+  @@index([partnerUserId, status, createdAt])
+  @@map("order_shipment_assignment_events")
 }
 
 model OrderShipmentPackage {
@@ -3010,6 +3497,7 @@ model ReturnRequest {
   customerId                        String                             @map("customer_id") @db.Uuid
   status                            ReturnRequestStatus                @default(PENDING_REVIEW)
   resolution                        ReturnRequestResolution            @default(REFUND)
+  reverseShipmentMode               ReverseShipmentMode                @default(PLATFORM_PICKUP) @map("reverse_shipment_mode")
   reason                            String
   note                              String?
   qualityProofKeys                  String[]                           @default([]) @map("quality_proof_keys")
@@ -3036,6 +3524,7 @@ model ReturnRequest {
   reverseShipments                  ReverseShipment[]
   reverseShipmentAssignmentAttempts ReverseShipmentAssignmentAttempt[]
   notes                             ReturnRequestNote[]
+  taxDocuments                      TaxDocument[]
 
   @@index([customerId, status, createdAt])
   @@index([orderId])
@@ -3077,6 +3566,7 @@ model ReturnRequestItem {
   productVariant                      ProductVariant          @relation(fields: [productVariantId], references: [id])
   replacementOrderItems               OrderItem[]             @relation("ReplacementSourceReturnItem")
   refundItems                         RefundRequestItem[]
+  taxDocumentLines                    TaxDocumentLine[]
 
   @@index([returnRequestId])
   @@index([orderId])
@@ -3142,6 +3632,7 @@ model RefundRequest {
   amountAdjustedBy                    User?               @relation("RefundRequestAmountAdjustedBy", fields: [amountAdjustedById], references: [id], onDelete: SetNull)
   items                               RefundRequestItem[]
   transactions                        RefundTransaction[]
+  taxDocuments                        TaxDocument[]
 
   @@index([orderId])
   @@index([customerId, status, createdAt])
@@ -3172,6 +3663,7 @@ model RefundRequestItem {
   orderItem                           OrderItem          @relation(fields: [orderItemId], references: [id])
   orderSellerSplit                    OrderSellerSplit   @relation(fields: [orderSellerSplitId], references: [id])
   seller                              Seller             @relation(fields: [sellerId], references: [id])
+  taxDocumentLines                    TaxDocumentLine[]
 
   @@index([refundRequestId])
   @@index([returnRequestItemId])
@@ -3212,6 +3704,291 @@ model RefundTransaction {
   @@map("refund_transactions")
 }
 
+model TaxDocumentSequence {
+  id           String           @id @default(uuid()) @db.Uuid
+  sellerId     String           @map("seller_id") @db.Uuid
+  financialYear String          @map("financial_year")
+  documentType TaxDocumentType  @map("document_type")
+  nextNumber   Int              @default(1) @map("next_number")
+  createdAt    DateTime         @default(now()) @map("created_at")
+  updatedAt    DateTime         @updatedAt @map("updated_at")
+  seller       Seller           @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@unique([sellerId, financialYear, documentType])
+  @@index([sellerId, financialYear])
+  @@map("tax_document_sequences")
+}
+
+model TaxDocument {
+  id                    String             @id @default(uuid()) @db.Uuid
+  documentNumber        String?            @map("document_number")
+  documentType          TaxDocumentType    @map("document_type")
+  status                TaxDocumentStatus  @default(DRAFT)
+  source                TaxDocumentSource
+  idempotencyKey        String             @unique @map("idempotency_key")
+  financialYear         String             @map("financial_year")
+  orderId               String?            @map("order_id") @db.Uuid
+  b2bOrderId            String?            @map("b2b_order_id") @db.Uuid
+  orderSellerSplitId    String?            @map("order_seller_split_id") @db.Uuid
+  sellerId              String             @map("seller_id") @db.Uuid
+  returnRequestId       String?            @map("return_request_id") @db.Uuid
+  refundRequestId       String?            @map("refund_request_id") @db.Uuid
+  originalDocumentId    String?            @map("original_document_id") @db.Uuid
+  issueDate             DateTime?          @map("issue_date")
+  supplyDate            DateTime?          @map("supply_date")
+  sellerLegalName       String             @map("seller_legal_name")
+  sellerTaxRegistrationStatus SellerTaxRegistrationStatus @default(NOT_REGISTERED) @map("seller_tax_registration_status")
+  sellerGstin           String?            @map("seller_gstin")
+  sellerAddressSnapshot Json               @map("seller_address_snapshot")
+  buyerLegalName        String             @map("buyer_legal_name")
+  buyerGstin            String?            @map("buyer_gstin")
+  buyerAddressSnapshot  Json               @map("buyer_address_snapshot")
+  placeOfSupplyStateCode String?          @map("place_of_supply_state_code")
+  supplyType            TaxSupplyType?
+  gstrSupplySection     GstrSupplySection? @map("gstr_supply_section")
+  reverseCharge         Boolean            @default(false) @map("reverse_charge")
+  currency              String             @default("INR")
+  taxableValuePaise     Int                @default(0) @map("taxable_value_paise")
+  cgstPaise             Int                @default(0) @map("cgst_paise")
+  sgstPaise             Int                @default(0) @map("sgst_paise")
+  igstPaise             Int                @default(0) @map("igst_paise")
+  cessPaise             Int                @default(0) @map("cess_paise")
+  totalTaxPaise         Int                @default(0) @map("total_tax_paise")
+  invoiceValuePaise     Int                @default(0) @map("invoice_value_paise")
+  reason                String?
+  voidedAt              DateTime?          @map("voided_at")
+  voidReason            String?             @map("void_reason")
+  issuedById            String?            @map("issued_by_id") @db.Uuid
+  createdAt             DateTime           @default(now()) @map("created_at")
+  updatedAt             DateTime           @updatedAt @map("updated_at")
+  order                 Order?             @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  b2bOrder              B2BOrder?          @relation(fields: [b2bOrderId], references: [id], onDelete: SetNull)
+  orderSellerSplit      OrderSellerSplit? @relation(fields: [orderSellerSplitId], references: [id], onDelete: SetNull)
+  seller                Seller             @relation(fields: [sellerId], references: [id])
+  returnRequest         ReturnRequest?     @relation(fields: [returnRequestId], references: [id], onDelete: SetNull)
+  refundRequest         RefundRequest?    @relation(fields: [refundRequestId], references: [id], onDelete: SetNull)
+  originalDocument      TaxDocument?      @relation("TaxDocumentAdjustments", fields: [originalDocumentId], references: [id], onDelete: SetNull)
+  adjustmentDocuments   TaxDocument[]     @relation("TaxDocumentAdjustments")
+  issuedBy              User?              @relation("TaxDocumentIssuedBy", fields: [issuedById], references: [id], onDelete: SetNull)
+  lines                 TaxDocumentLine[]
+  compliance            TaxDocumentCompliance?
+  b2bReceivable         B2BReceivable?
+  b2bSupportCases       B2BSupportCase[]
+  b2bDisputeCreditNoteResolutions B2BDisputeResolution[] @relation("B2BDisputeResolutionCreditNote")
+
+  @@unique([sellerId, documentNumber])
+  @@index([sellerId, issueDate, documentType])
+  @@index([sellerId, status, createdAt])
+  @@index([sellerTaxRegistrationStatus, status, issueDate], map: "tax_documents_registration_status_status_issue_date_idx")
+  @@index([orderId, sellerId])
+  @@index([b2bOrderId, sellerId])
+  @@index([orderSellerSplitId])
+  @@index([returnRequestId, sellerId])
+  @@index([refundRequestId, sellerId])
+  @@index([originalDocumentId])
+  @@index([issuedById])
+  @@map("tax_documents")
+}
+
+model TaxDocumentCompliance {
+  id                    String              @id @default(uuid()) @db.Uuid
+  taxDocumentId         String              @unique @map("tax_document_id") @db.Uuid
+  eInvoiceStatus        GstComplianceStatus @default(NOT_REQUIRED) @map("e_invoice_status")
+  irn                   String?             @unique
+  acknowledgementNumber String?             @map("acknowledgement_number")
+  acknowledgementDate  DateTime?           @map("acknowledgement_date")
+  signedQrCode          String?             @map("signed_qr_code")
+  eInvoiceProvider      String?             @map("e_invoice_provider")
+  eInvoiceProviderRef   String?             @map("e_invoice_provider_ref")
+  eInvoiceError         String?             @map("e_invoice_error")
+  eWayBillStatus        GstComplianceStatus @default(NOT_REQUIRED) @map("e_way_bill_status")
+  eWayBillNumber        String?             @unique @map("e_way_bill_number")
+  eWayBillGeneratedAt   DateTime?           @map("e_way_bill_generated_at")
+  eWayBillValidUntil    DateTime?           @map("e_way_bill_valid_until")
+  eWayBillProvider      String?             @map("e_way_bill_provider")
+  eWayBillProviderRef   String?             @map("e_way_bill_provider_ref")
+  eWayBillError         String?             @map("e_way_bill_error")
+  lastSyncedAt          DateTime?           @map("last_synced_at")
+  createdAt             DateTime            @default(now()) @map("created_at")
+  updatedAt             DateTime            @updatedAt @map("updated_at")
+  taxDocument           TaxDocument         @relation(fields: [taxDocumentId], references: [id], onDelete: Cascade)
+
+  @@index([eInvoiceStatus, createdAt])
+  @@index([eWayBillStatus, createdAt])
+  @@map("tax_document_compliance")
+}
+
+model TaxDocumentLine {
+  id                     String              @id @default(uuid()) @db.Uuid
+  taxDocumentId          String              @map("tax_document_id") @db.Uuid
+  orderItemId            String?             @map("order_item_id") @db.Uuid
+  returnRequestItemId    String?             @map("return_request_item_id") @db.Uuid
+  refundRequestItemId    String?             @map("refund_request_item_id") @db.Uuid
+  lineType               TaxDocumentLineType  @default(PRODUCT) @map("line_type")
+  description            String
+  sku                    String?
+  hsnSacCode             String?             @map("hsn_sac_code")
+  taxClassification      ProductTaxClassification @default(TAXABLE) @map("tax_classification")
+  quantity               Int                 @default(1)
+  uqc                    String              @default("NOS")
+  unitPricePaise         Int                 @default(0) @map("unit_price_paise")
+  grossValuePaise        Int                 @default(0) @map("gross_value_paise")
+  discountPaise          Int                 @default(0) @map("discount_paise")
+  taxableValuePaise      Int                 @default(0) @map("taxable_value_paise")
+  gstRatePercent         Decimal?            @map("gst_rate_percent") @db.Decimal(5, 2)
+  cgstPaise              Int                 @default(0) @map("cgst_paise")
+  sgstPaise              Int                 @default(0) @map("sgst_paise")
+  igstPaise              Int                 @default(0) @map("igst_paise")
+  cessPaise              Int                 @default(0) @map("cess_paise")
+  totalTaxPaise          Int                 @default(0) @map("total_tax_paise")
+  lineValuePaise         Int                 @default(0) @map("line_value_paise")
+  createdAt              DateTime            @default(now()) @map("created_at")
+  taxDocument            TaxDocument         @relation(fields: [taxDocumentId], references: [id], onDelete: Cascade)
+  orderItem              OrderItem?          @relation(fields: [orderItemId], references: [id], onDelete: SetNull)
+  returnRequestItem      ReturnRequestItem?  @relation(fields: [returnRequestItemId], references: [id], onDelete: SetNull)
+  refundRequestItem      RefundRequestItem?  @relation(fields: [refundRequestItemId], references: [id], onDelete: SetNull)
+
+  @@index([taxDocumentId])
+  @@index([orderItemId])
+  @@index([returnRequestItemId])
+  @@index([refundRequestItemId])
+  @@index([hsnSacCode, createdAt])
+  @@index([taxClassification, taxDocumentId])
+  @@map("tax_document_lines")
+}
+
+model GstFilingPeriod {
+  id                    String                   @id @default(uuid()) @db.Uuid
+  sellerId              String                   @map("seller_id") @db.Uuid
+  returnPeriod          String                   @map("return_period")
+  financialYear         String                   @map("financial_year")
+  dateFrom              DateTime                 @map("date_from") @db.Date
+  dateTo                DateTime                 @map("date_to") @db.Date
+  status                GstFilingPeriodStatus    @default(OPEN)
+  snapshot              Json?
+  snapshotHash          String?                  @map("snapshot_hash")
+  lockedAt              DateTime?                @map("locked_at")
+  lockedById            String?                  @map("locked_by_id") @db.Uuid
+  filedAt               DateTime?                @map("filed_at")
+  filedById             String?                  @map("filed_by_id") @db.Uuid
+  filingReference       String?                  @map("filing_reference")
+  notes                 String?
+  createdAt             DateTime                 @default(now()) @map("created_at")
+  updatedAt             DateTime                 @updatedAt @map("updated_at")
+  seller                Seller                   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  lockedBy              User?                    @relation("GstFilingPeriodLockedBy", fields: [lockedById], references: [id], onDelete: SetNull)
+  filedBy               User?                    @relation("GstFilingPeriodFiledBy", fields: [filedById], references: [id], onDelete: SetNull)
+  reconciliationRuns    GstReconciliationRun[]
+  exports               GstReportExport[]
+
+  @@unique([sellerId, returnPeriod])
+  @@index([sellerId, status, dateFrom])
+  @@index([lockedById])
+  @@index([filedById])
+  @@map("gst_filing_periods")
+}
+
+model GstReconciliationRun {
+  id                    String                    @id @default(uuid()) @db.Uuid
+  filingPeriodId        String?                   @map("filing_period_id") @db.Uuid
+  sellerId              String                    @map("seller_id") @db.Uuid
+  dateFrom              DateTime                  @map("date_from") @db.Date
+  dateTo                DateTime                  @map("date_to") @db.Date
+  issueCount            Int                       @default(0) @map("issue_count")
+  errorCount            Int                       @default(0) @map("error_count")
+  warningCount          Int                       @default(0) @map("warning_count")
+  bookSnapshot          Json                      @map("book_snapshot")
+  filingSnapshot        Json                      @map("filing_snapshot")
+  issues                Json
+  runHash               String                    @map("run_hash")
+  createdById           String?                   @map("created_by_id") @db.Uuid
+  createdAt             DateTime                  @default(now()) @map("created_at")
+  filingPeriod          GstFilingPeriod?          @relation(fields: [filingPeriodId], references: [id], onDelete: SetNull)
+  seller                Seller                    @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  createdBy             User?                     @relation("GstReconciliationRunCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([filingPeriodId])
+  @@index([sellerId, createdAt])
+  @@index([createdById])
+  @@map("gst_reconciliation_runs")
+}
+
+model GstReportExport {
+  id                    String                 @id @default(uuid()) @db.Uuid
+  filingPeriodId        String?                @map("filing_period_id") @db.Uuid
+  sellerId              String?                @map("seller_id") @db.Uuid
+  exportType            GstReportExportType    @map("export_type")
+  fileName              String                 @map("file_name")
+  contentType           String                 @map("content_type")
+  sha256                String
+  rowCount              Int                    @default(0) @map("row_count")
+  generatedById         String?                @map("generated_by_id") @db.Uuid
+  createdAt             DateTime               @default(now()) @map("created_at")
+  filingPeriod          GstFilingPeriod?       @relation(fields: [filingPeriodId], references: [id], onDelete: SetNull)
+  seller                Seller?                @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  generatedBy           User?                  @relation("GstReportExportGeneratedBy", fields: [generatedById], references: [id], onDelete: SetNull)
+
+  @@index([filingPeriodId, createdAt])
+  @@index([sellerId, exportType, createdAt])
+  @@index([generatedById])
+  @@map("gst_report_exports")
+}
+
+model MarketplaceTaxDocumentSequence {
+  id                    String                 @id @default(uuid()) @db.Uuid
+  financialYear         String                 @map("financial_year")
+  documentType          TaxDocumentType        @map("document_type")
+  nextNumber            Int                    @default(1) @map("next_number")
+  createdAt             DateTime               @default(now()) @map("created_at")
+  updatedAt             DateTime               @updatedAt @map("updated_at")
+
+  @@unique([financialYear, documentType])
+  @@map("marketplace_tax_document_sequences")
+}
+
+/// sourceType/sourceId intentionally form a polymorphic audit reference because Prisma does not
+/// support typed relations across the marketplace commission and fee source models.
+model MarketplaceTaxDocument {
+  id                    String                 @id @default(uuid()) @db.Uuid
+  documentNumber        String                 @unique @map("document_number")
+  documentType          TaxDocumentType        @default(TAX_INVOICE) @map("document_type")
+  status                TaxDocumentStatus      @default(ISSUED)
+  idempotencyKey        String                 @unique @map("idempotency_key")
+  financialYear         String                 @map("financial_year")
+  sourceType            String                 @map("source_type")
+  sourceId              String                 @map("source_id") @db.Uuid
+  sellerId              String                 @map("seller_id") @db.Uuid
+  issueDate             DateTime               @map("issue_date")
+  supplierLegalName     String                 @map("supplier_legal_name")
+  supplierGstin         String                 @map("supplier_gstin")
+  supplierAddressSnapshot Json                 @map("supplier_address_snapshot")
+  recipientLegalName    String                 @map("recipient_legal_name")
+  recipientGstin        String?                @map("recipient_gstin")
+  recipientAddressSnapshot Json                @map("recipient_address_snapshot")
+  placeOfSupplyStateCode String?               @map("place_of_supply_state_code")
+  supplyType            TaxSupplyType?
+  currency              String                 @default("INR")
+  taxableValuePaise     Int                    @default(0) @map("taxable_value_paise")
+  cgstPaise             Int                    @default(0) @map("cgst_paise")
+  sgstPaise             Int                    @default(0) @map("sgst_paise")
+  igstPaise             Int                    @default(0) @map("igst_paise")
+  cessPaise             Int                    @default(0) @map("cess_paise")
+  totalTaxPaise         Int                    @default(0) @map("total_tax_paise")
+  invoiceValuePaise     Int                    @default(0) @map("invoice_value_paise")
+  description           String
+  reason                String?
+  issuedById            String?                @map("issued_by_id") @db.Uuid
+  createdAt             DateTime               @default(now()) @map("created_at")
+  updatedAt             DateTime               @updatedAt @map("updated_at")
+  seller                Seller                 @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  issuedBy              User?                  @relation("MarketplaceTaxDocumentIssuedBy", fields: [issuedById], references: [id], onDelete: SetNull)
+
+  @@index([sellerId, issueDate, documentType])
+  @@index([sourceType, sourceId])
+  @@index([issuedById])
+  @@map("marketplace_tax_documents")
+}
+
 model ReverseShipment {
   id                    String                             @id @default(uuid()) @db.Uuid
   returnRequestId       String                             @map("return_request_id") @db.Uuid
@@ -3244,6 +4021,7 @@ model ReverseShipment {
   assignedPartner       User?                              @relation("ReverseShipmentAssignedPartner", fields: [assignedPartnerUserId], references: [id], onDelete: SetNull)
   events                ReverseShipmentEvent[]
   assignmentAttempts    ReverseShipmentAssignmentAttempt[]
+  walletEntries         DeliveryPartnerWalletEntry[]
 
   @@index([returnRequestId])
   @@index([sellerId, status])
@@ -3297,6 +4075,8 @@ model ReverseShipmentEvent {
   @@map("reverse_shipment_events")
 }
 
+/// Order-level delivery aggregate retained for customer/admin compatibility. Seller-split
+/// fulfilment is authoritative in OrderShipment and is synchronized by delivery services.
 model DeliveryDetail {
   id                      String                        @id @default(uuid()) @db.Uuid
   orderId                 String                        @unique @map("order_id") @db.Uuid
@@ -3388,6 +4168,8 @@ model DeliveryAssignmentAttempt {
   @@index([assignedById])
 }
 
+/// Provider-booking compatibility record for a single OrderShipment. Multi-package routing and
+/// package tracking are authoritative in CourierConsignment and CourierConsignmentPackage.
 model CourierShipment {
   id                      String                 @id @default(uuid()) @db.Uuid
   orderShipmentId         String                 @unique @map("order_shipment_id") @db.Uuid
@@ -3425,6 +4207,8 @@ model CourierShipment {
   @@map("courier_shipments")
 }
 
+/// Canonical provider consignment for an OrderShipment. A shipment may have multiple consignments
+/// across retries or package groups; current OrderShipment status is the customer-facing rollup.
 model CourierConsignment {
   id                      String                      @id @default(uuid()) @db.Uuid
   consignmentNumber       String                      @unique @map("consignment_number")
@@ -3468,6 +4252,7 @@ model CourierConsignment {
   @@map("courier_consignments")
 }
 
+/// Canonical provider tracking record for one physical OrderShipmentPackage.
 model CourierConsignmentPackage {
   id                     String                @id @default(uuid()) @db.Uuid
   courierConsignmentId   String                @map("courier_consignment_id") @db.Uuid
@@ -3719,6 +4504,7 @@ model DeliveryPartnerWalletEntry {
   orderId          String?                             @map("order_id") @db.Uuid
   orderShipmentId  String?                             @map("order_shipment_id") @db.Uuid
   deliveryDetailId String?                             @map("delivery_detail_id") @db.Uuid
+  reverseShipmentId String?                            @map("reverse_shipment_id") @db.Uuid
   payoutId         String?                             @map("payout_id") @db.Uuid
   entryType        DeliveryPartnerWalletEntryType      @map("entry_type")
   direction        DeliveryPartnerWalletEntryDirection @default(CREDIT)
@@ -3732,10 +4518,12 @@ model DeliveryPartnerWalletEntry {
   order            Order?                              @relation(fields: [orderId], references: [id], onDelete: SetNull)
   orderShipment    OrderShipment?                      @relation(fields: [orderShipmentId], references: [id], onDelete: SetNull)
   deliveryDetail   DeliveryDetail?                     @relation(fields: [deliveryDetailId], references: [id], onDelete: SetNull)
+  reverseShipment  ReverseShipment?                    @relation(fields: [reverseShipmentId], references: [id], onDelete: SetNull)
   payout           DeliveryPartnerPayout?              @relation(fields: [payoutId], references: [id], onDelete: SetNull)
   createdBy        User?                               @relation("DeliveryPartnerWalletEntryCreatedBy", fields: [createdById], references: [id])
 
   @@unique([orderShipmentId, entryType])
+  @@unique([reverseShipmentId, entryType])
   @@unique([payoutId, entryType])
   @@index([partnerUserId, createdAt])
   @@index([partnerUserId, entryType, createdAt])
@@ -3809,17 +4597,17 @@ model Payment {
 }
 
 model RazorpayWebhookEvent {
-  id              String    @id @default(cuid())
+  id              String                       @id @default(uuid()) @db.Uuid
   provider        String
-  providerEventId String
-  eventType       String
-  status          String    @default("PROCESSING") // PROCESSING | DONE | FAILED
-  payloadHash     String?
-  processedAt     DateTime?
-  createdAt       DateTime  @default(now())
+  providerEventId String                       @map("provider_event_id")
+  eventType       String                       @map("event_type")
+  status          RazorpayWebhookEventStatus   @default(PROCESSING)
+  payloadHash     String?                      @map("payload_hash")
+  processedAt     DateTime?                    @map("processed_at")
+  createdAt       DateTime                     @default(now()) @map("created_at")
 
   @@unique([provider, providerEventId])
-  @@index([provider, providerEventId])
+  @@map("razorpay_webhook_events")
 }
 
 model CurrencyRate {
@@ -4732,9 +5520,11 @@ model B2BEnquiry {
   product           Product?             @relation(fields: [productId], references: [id])
   seller            Seller?              @relation(fields: [sellerId], references: [id])
   responses         B2BEnquiryResponse[]
+  lines             B2BEnquiryLine[]
   messages          B2BEnquiryMessage[]
   b2bOrder          B2BOrder?
   chatConversations ChatConversation[]
+  replacementDisputeResolutions B2BDisputeResolution[] @relation("B2BDisputeResolutionReplacementEnquiry")
 
   @@index([status])
   @@index([businessBuyerId, status, createdAt])
@@ -4757,6 +5547,7 @@ model B2BEnquiryResponse {
   enquiry           B2BEnquiry @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
   responder         User       @relation(fields: [responderUserId], references: [id])
   selectedB2BOrders B2BOrder[] @relation("B2BOrderSelectedResponse")
+  lines             B2BQuotationLine[]
 
   @@index([enquiryId])
   @@index([responderUserId])
@@ -4787,11 +5578,14 @@ model B2BOrder {
   productId                String?             @map("product_id") @db.Uuid
   selectedResponseId       String?             @map("selected_response_id") @db.Uuid
   status                   B2BOrderStatus      @default(PROFORMA_ISSUED)
+  version                  Int                 @default(1)
+  paymentTermType          B2BPaymentTermType  @default(PREPAID_FULL) @map("payment_term_type")
+  legacyMigrationReviewRequired Boolean        @default(false) @map("legacy_migration_review_required")
   proformaInvoiceNumber    String              @unique @map("proforma_invoice_number")
   proformaIssuedAt         DateTime            @default(now()) @map("proforma_issued_at")
   proformaExpiresAt        DateTime?           @map("proforma_expires_at")
   proformaInvoiceFileKey   String?             @map("proforma_invoice_file_key")
-  taxInvoiceNumber         String?             @unique @map("tax_invoice_number")
+  taxInvoiceNumber         String?             @map("tax_invoice_number")
   taxInvoiceIssuedAt       DateTime?           @map("tax_invoice_issued_at")
   taxInvoiceFileKey        String?             @map("tax_invoice_file_key")
   purchaseOrderNumber      String?             @map("purchase_order_number")
@@ -4827,6 +5621,7 @@ model B2BOrder {
   transportDeliveredAt     DateTime?           @map("transport_delivered_at")
   transportPickupAddress   String?             @map("transport_pickup_address")
   transportNote            String?             @map("transport_note")
+  deliveryAddressSnapshot  Json?               @map("delivery_address_snapshot")
   paidAmountPaise          Int                 @default(0) @map("paid_amount_paise")
   paidAt                   DateTime?           @map("paid_at")
   paymentDueAt             DateTime            @map("payment_due_at")
@@ -4853,6 +5648,26 @@ model B2BOrder {
   paymentProofs            B2BPaymentProof[]
   proformaRevisions        B2BProformaInvoiceRevision[]
   adminAuditLogs           B2BAdminAuditLog[]
+  taxDocuments             TaxDocument[]
+  lines                    B2BOrderLine[]
+  poReview                 B2BPoReview?
+  creditDecisions          B2BCreditDecision[]
+  paymentSchedules         B2BPaymentSchedule[]
+  fulfilmentPlans          B2BFulfilmentPlan[]
+  procurementOrders        B2BProcurementOrder[]
+  productionJobs           B2BProductionJob[]
+  warehouseTasks           B2BWarehouseTask[]
+  packages                 B2BPackage[]
+  qcInspections            B2BQcInspection[]
+  shipments                B2BShipment[]
+  receivable               B2BReceivable?
+  paymentRecords           B2BPaymentRecord[]
+  supportCases             B2BSupportCase[]
+  amendments               B2BOrderAmendment[]
+  disputeResolutions       B2BDisputeResolution[]
+  financialReconciliations B2BFinancialReconciliation[]
+  integrationEvents        B2BIntegrationOutbox[]
+  mutationRecords          B2BMutationRecord[]
 
   @@index([productId])
   @@index([selectedResponseId])
@@ -4865,10 +5680,12 @@ model B2BOrder {
   @@index([businessBuyerId, status, createdAt])
   @@index([sellerId, status, createdAt])
   @@index([sellerId, settlementStatus, createdAt])
+  @@index([taxInvoiceNumber])
   @@map("b2b_orders")
   @@index([createdByUserId])
   @@index([paymentVerifiedById])
   @@index([fulfilmentUnlockedById])
+  @@index([legacyMigrationReviewRequired, status, createdAt])
 }
 
 model B2BOrderEvent {
@@ -4911,6 +5728,7 @@ model B2BPaymentProof {
   order                  B2BOrder         @relation(fields: [b2bOrderId], references: [id], onDelete: Cascade)
   submittedBy            User             @relation("B2BPaymentProofSubmittedBy", fields: [submittedByUserId], references: [id], onDelete: Restrict)
   reviewedBy             User?            @relation("B2BPaymentProofReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  paymentRecord          B2BPaymentRecord?
 
   @@index([b2bOrderId])
   @@index([submittedByUserId])
@@ -4957,6 +5775,832 @@ model B2BAdminAuditLog {
   @@index([action])
   @@index([createdAt])
   @@map("b2b_admin_audit_logs")
+}
+
+model SellerStaffMembership {
+  id          String                  @id @default(uuid()) @db.Uuid
+  sellerId    String                  @map("seller_id") @db.Uuid
+  userId      String                  @map("user_id") @db.Uuid
+  permissions SellerStaffPermission[] @default([]) @map("permissions")
+  isActive    Boolean                 @default(true) @map("is_active")
+  createdAt   DateTime                @default(now()) @map("created_at")
+  updatedAt   DateTime                @updatedAt @map("updated_at")
+  seller      Seller                  @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  user        User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([sellerId, userId])
+  @@index([sellerId, isActive])
+  @@index([userId, isActive])
+  @@index([permissions], type: Gin)
+  @@map("seller_staff_memberships")
+}
+
+model B2BEnquiryLine {
+  id               String             @id @default(uuid()) @db.Uuid
+  enquiryId        String             @map("enquiry_id") @db.Uuid
+  productId        String?            @map("product_id") @db.Uuid
+  productVariantId String?            @map("product_variant_id") @db.Uuid
+  lineNumber       Int                @map("line_number")
+  description      String
+  quantity         Int
+  targetPricePaise Int?               @map("target_price_paise")
+  note             String?
+  createdAt        DateTime           @default(now()) @map("created_at")
+  updatedAt        DateTime           @updatedAt @map("updated_at")
+  enquiry          B2BEnquiry         @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
+  product          Product?           @relation(fields: [productId], references: [id], onDelete: SetNull)
+  productVariant   ProductVariant?    @relation(fields: [productVariantId], references: [id], onDelete: SetNull)
+  quotationLines   B2BQuotationLine[]
+
+  @@unique([enquiryId, lineNumber])
+  @@index([enquiryId, createdAt])
+  @@index([productId])
+  @@index([productVariantId])
+  @@map("b2b_enquiry_lines")
+}
+
+model B2BQuotationLine {
+  id               String             @id @default(uuid()) @db.Uuid
+  responseId       String             @map("response_id") @db.Uuid
+  enquiryLineId    String             @map("enquiry_line_id") @db.Uuid
+  quantity         Int
+  unitPricePaise   Int                @map("unit_price_paise")
+  subtotalPaise    Int                @map("subtotal_paise")
+  note             String?
+  createdAt        DateTime           @default(now()) @map("created_at")
+  response         B2BEnquiryResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
+  enquiryLine      B2BEnquiryLine     @relation(fields: [enquiryLineId], references: [id], onDelete: Cascade)
+
+  @@unique([responseId, enquiryLineId])
+  @@index([responseId])
+  @@index([enquiryLineId])
+  @@map("b2b_quotation_lines")
+}
+
+model B2BOrderLine {
+  id                 String                    @id @default(uuid()) @db.Uuid
+  b2bOrderId         String                    @map("b2b_order_id") @db.Uuid
+  productId          String?                   @map("product_id") @db.Uuid
+  productVariantId   String?                   @map("product_variant_id") @db.Uuid
+  lineNumber         Int                       @map("line_number")
+  description        String
+  sku                String?
+  hsnSacCode         String?                   @map("hsn_sac_code")
+  taxClassification  ProductTaxClassification  @default(TAXABLE) @map("tax_classification")
+  quantity           Int
+  uqc                String                    @default("NOS")
+  unitPricePaise     Int                       @map("unit_price_paise")
+  grossValuePaise    Int                       @map("gross_value_paise")
+  discountPaise      Int                       @default(0) @map("discount_paise")
+  taxableValuePaise  Int                       @default(0) @map("taxable_value_paise")
+  gstRatePercent     Decimal?                  @map("gst_rate_percent") @db.Decimal(5, 2)
+  cgstPaise          Int                       @default(0) @map("cgst_paise")
+  sgstPaise          Int                       @default(0) @map("sgst_paise")
+  igstPaise          Int                       @default(0) @map("igst_paise")
+  cessPaise          Int                       @default(0) @map("cess_paise")
+  totalTaxPaise      Int                       @default(0) @map("total_tax_paise")
+  lineValuePaise     Int                       @map("line_value_paise")
+  createdAt          DateTime                  @default(now()) @map("created_at")
+  updatedAt          DateTime                  @updatedAt @map("updated_at")
+  order              B2BOrder                  @relation(fields: [b2bOrderId], references: [id], onDelete: Cascade)
+  product            Product?                  @relation(fields: [productId], references: [id], onDelete: SetNull)
+  productVariant     ProductVariant?           @relation(fields: [productVariantId], references: [id], onDelete: SetNull)
+  reservations       B2BInventoryReservation[]
+  fulfilmentPlan     B2BFulfilmentPlan?
+  warehouseTaskItems B2BWarehouseTaskItem[]
+  supportCases       B2BSupportCase[]
+  disputeResolutions B2BDisputeResolution[]
+
+  @@unique([b2bOrderId, lineNumber])
+  @@index([b2bOrderId, createdAt])
+  @@index([productId])
+  @@index([productVariantId])
+  @@index([taxClassification, createdAt])
+  @@map("b2b_order_lines")
+}
+
+model B2BPoReview {
+  id                   String            @id @default(uuid()) @db.Uuid
+  b2bOrderId           String            @unique @map("b2b_order_id") @db.Uuid
+  status               B2BPoReviewStatus @default(PENDING)
+  documentMatched      Boolean           @default(false) @map("document_matched")
+  priceMatched         Boolean           @default(false) @map("price_matched")
+  quantityMatched      Boolean           @default(false) @map("quantity_matched")
+  deliveryTermsMatched Boolean           @default(false) @map("delivery_terms_matched")
+  stockChecked         Boolean           @default(false) @map("stock_checked")
+  taxDataChecked       Boolean           @default(false) @map("tax_data_checked")
+  creditChecked        Boolean           @default(false) @map("credit_checked")
+  exceptionCodes       String[]          @default([]) @map("exception_codes")
+  note                 String?
+  reviewedById         String?           @map("reviewed_by_id") @db.Uuid
+  reviewedAt           DateTime?         @map("reviewed_at")
+  createdAt            DateTime           @default(now()) @map("created_at")
+  updatedAt            DateTime           @updatedAt @map("updated_at")
+  order                B2BOrder          @relation(fields: [b2bOrderId], references: [id], onDelete: Cascade)
+  reviewedBy           User?             @relation("B2BPoReviewReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([reviewedById])
+  @@map("b2b_po_reviews")
+}
+
+model BusinessBuyerCreditProfile {
+  id                    String               @id @default(uuid()) @db.Uuid
+  businessBuyerId       String               @unique @map("business_buyer_id") @db.Uuid
+  creditLimitPaise      Int                  @default(0) @map("credit_limit_paise")
+  currentExposurePaise  Int                  @default(0) @map("current_exposure_paise")
+  allowedTerms          B2BPaymentTermType[] @default([PREPAID_FULL]) @map("allowed_terms")
+  isActive              Boolean              @default(false) @map("is_active")
+  holdReason            String?              @map("hold_reason")
+  reviewedById          String?              @map("reviewed_by_id") @db.Uuid
+  reviewedAt            DateTime?            @map("reviewed_at")
+  createdAt             DateTime             @default(now()) @map("created_at")
+  updatedAt             DateTime             @updatedAt @map("updated_at")
+  businessBuyer         BusinessBuyer        @relation(fields: [businessBuyerId], references: [id], onDelete: Cascade)
+  reviewedBy            User?                @relation("B2BCreditProfileReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([isActive, updatedAt])
+  @@index([reviewedById])
+  @@map("business_buyer_credit_profiles")
+}
+
+model B2BCreditDecision {
+  id                   String                  @id @default(uuid()) @db.Uuid
+  b2bOrderId           String                  @map("b2b_order_id") @db.Uuid
+  status               B2BCreditDecisionStatus @default(PENDING)
+  paymentTermType      B2BPaymentTermType      @map("payment_term_type")
+  requestedAmountPaise Int                     @map("requested_amount_paise")
+  approvedAmountPaise  Int                     @default(0) @map("approved_amount_paise")
+  exposureBeforePaise  Int                     @default(0) @map("exposure_before_paise")
+  availableCreditPaise Int                     @default(0) @map("available_credit_paise")
+  dueDays             Int                     @default(0) @map("due_days")
+  isCurrent            Boolean                 @default(true) @map("is_current")
+  reason               String?
+  overrideExpiresAt    DateTime?               @map("override_expires_at")
+  decidedById          String?                 @map("decided_by_id") @db.Uuid
+  decidedAt            DateTime?               @map("decided_at")
+  createdAt            DateTime                @default(now()) @map("created_at")
+  updatedAt            DateTime                @updatedAt @map("updated_at")
+  order                B2BOrder                @relation(fields: [b2bOrderId], references: [id], onDelete: Cascade)
+  decidedBy            User?                   @relation("B2BCreditDecisionDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+
+  @@index([b2bOrderId, isCurrent, createdAt])
+  @@index([status, createdAt])
+  @@index([decidedById])
+  @@map("b2b_credit_decisions")
+}
+
+model B2BPaymentSchedule {
+  id                 String                   @id @default(uuid()) @db.Uuid
+  b2bOrderId         String                   @map("b2b_order_id") @db.Uuid
+  installmentNumber  Int                      @map("installment_number")
+  label              String
+  paymentTermType    B2BPaymentTermType       @map("payment_term_type")
+  amountPaise        Int                      @map("amount_paise")
+  paidAmountPaise    Int                      @default(0) @map("paid_amount_paise")
+  dueAt              DateTime                 @map("due_at")
+  fulfilmentGate     Boolean                  @default(false) @map("fulfilment_gate")
+  dispatchGate       Boolean                  @default(false) @map("dispatch_gate")
+  status             B2BPaymentScheduleStatus @default(PENDING)
+  createdAt          DateTime                 @default(now()) @map("created_at")
+  updatedAt          DateTime                 @updatedAt @map("updated_at")
+  order              B2BOrder                 @relation(fields: [b2bOrderId], references: [id], onDelete: Cascade)
+  allocations        B2BPaymentAllocation[]
+  requestedPayments  B2BPaymentRecord[]       @relation("B2BPaymentRequestedSchedule")
+
+  @@unique([b2bOrderId, installmentNumber])
+  @@index([b2bOrderId, status, dueAt])
+  @@index([status, dueAt])
+  @@map("b2b_payment_schedules")
+}
+
+model B2BInventoryReservation {
+  id                String                        @id @default(uuid()) @db.Uuid
+  b2bOrderLineId    String                        @map("b2b_order_line_id") @db.Uuid
+  productVariantId  String                        @map("product_variant_id") @db.Uuid
+  quantity          Int
+  status            B2BInventoryReservationStatus @default(ACTIVE)
+  reservedAt        DateTime                      @default(now()) @map("reserved_at")
+  consumedAt        DateTime?                     @map("consumed_at")
+  releasedAt        DateTime?                     @map("released_at")
+  releaseReason     String?                       @map("release_reason")
+  orderLine         B2BOrderLine                  @relation(fields: [b2bOrderLineId], references: [id], onDelete: Cascade)
+  productVariant    ProductVariant                @relation(fields: [productVariantId], references: [id], onDelete: Restrict)
+
+  @@index([b2bOrderLineId, status])
+  @@index([productVariantId, status])
+  @@index([status, reservedAt])
+  @@map("b2b_inventory_reservations")
+}
+
+model B2BFulfilmentPlan {
+  id               String               @id @default(uuid()) @db.Uuid
+  b2bOrderId       String               @map("b2b_order_id") @db.Uuid
+  b2bOrderLineId   String               @unique @map("b2b_order_line_id") @db.Uuid
+  source           B2BFulfilmentSource
+  status           B2BFulfilmentStatus  @default(PENDING)
+  plannedQuantity  Int                  @map("planned_quantity")
+  readyQuantity    Int                  @default(0) @map("ready_quantity")
+  expectedReadyAt  DateTime?             @map("expected_ready_at")
+  note             String?
+  createdAt        DateTime               @default(now()) @map("created_at")
+  updatedAt        DateTime               @updatedAt @map("updated_at")
+  order            B2BOrder               @relation(fields: [b2bOrderId], references: [id], onDelete: Cascade)
+  orderLine        B2BOrderLine           @relation(fields: [b2bOrderLineId], references: [id], onDelete: Cascade)
+  procurementOrder B2BProcurementOrder?
+  productionJob    B2BProductionJob?
+
+  @@index([b2bOrderId, status])
+  @@index([source, status, expectedReadyAt])
+  @@map("b2b_fulfilment_plans")
+}
+
+model B2BProcurementOrder {
+  id                 String               @id @default(uuid()) @db.Uuid
+  procurementNumber  String               @unique @map("procurement_number")
+  b2bOrderId         String               @map("b2b_order_id") @db.Uuid
+  fulfilmentPlanId   String               @unique @map("fulfilment_plan_id") @db.Uuid
+  sellerId           String               @map("seller_id") @db.Uuid
+  supplierName       String?              @map("supplier_name")
+  supplierReference  String?              @map("supplier_reference")
+  orderedQuantity    Int                  @map("ordered_quantity")
+  receivedQuantity   Int                  @default(0) @map("received_quantity")
+  rejectedQuantity   Int                  @default(0) @map("rejected_quantity")
+  status             B2BProcurementStatus @default(DRAFT)
+  expectedAt         DateTime?            @map("expected_at")
+  orderedAt          DateTime?            @map("ordered_at")
+  receivedAt         DateTime?            @map("received_at")
+  note               String?
+  createdAt          DateTime             @default(now()) @map("created_at")
+  updatedAt          DateTime             @updatedAt @map("updated_at")
+  order              B2BOrder             @relation(fields: [b2bOrderId], references: [id], onDelete: Cascade)
+  fulfilmentPlan     B2BFulfilmentPlan    @relation(fields: [fulfilmentPlanId], references: [id], onDelete: Cascade)
+  seller             Seller               @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([b2bOrderId, status])
+  @@index([sellerId, status, expectedAt])
+  @@map("b2b_procurement_orders")
+}
+
+model B2BProductionJob {
+  id                 String              @id @default(uuid()) @db.Uuid
+  productionNumber   String              @unique @map("production_number")
+  b2bOrderId         String              @map("b2b_order_id") @db.Uuid
+  fulfilmentPlanId   String              @unique @map("fulfilment_plan_id") @db.Uuid
+  sellerId            String              @map("seller_id") @db.Uuid
+  plannedQuantity     Int                 @map("planned_quantity")
+  completedQuantity  Int                 @default(0) @map("completed_quantity")
+  rejectedQuantity   Int                 @default(0) @map("rejected_quantity")
+  status              B2BProductionStatus @default(PLANNED)
+  expectedAt          DateTime?            @map("expected_at")
+  startedAt           DateTime?            @map("started_at")
+  completedAt         DateTime?            @map("completed_at")
+  materialNotes       String?              @map("material_notes")
+  note                String?
+  createdAt           DateTime              @default(now()) @map("created_at")
+  updatedAt           DateTime              @updatedAt @map("updated_at")
+  order               B2BOrder              @relation(fields: [b2bOrderId], references: [id], onDelete: Cascade)
+  fulfilmentPlan      B2BFulfilmentPlan     @relation(fields: [fulfilmentPlanId], references: [id], onDelete: Cascade)
+  seller              Seller                @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([b2bOrderId, status])
+  @@index([sellerId, status, expectedAt])
+  @@map("b2b_production_jobs")
+}
+
+model B2BWarehouseTask {
+  id               String                 @id @default(uuid()) @db.Uuid
+  taskNumber       String                 @unique @map("task_number")
+  b2bOrderId       String                 @map("b2b_order_id") @db.Uuid
+  sellerId         String                 @map("seller_id") @db.Uuid
+  taskType         B2BWarehouseTaskType   @map("task_type")
+  status           B2BWarehouseTaskStatus @default(PENDING)
+  assignedToUserId String?                @map("assigned_to_user_id") @db.Uuid
+  startedAt        DateTime?              @map("started_at")
+  completedAt      DateTime?              @map("completed_at")
+  note             String?
+  createdAt        DateTime               @default(now()) @map("created_at")
+  updatedAt        DateTime               @updatedAt @map("updated_at")
+  order            B2BOrder               @relation(fields: [b2bOrderId], references: [id], onDelete: Cascade)
+  seller           Seller                 @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  assignedTo       User?                  @relation("B2BWarehouseTaskAssignedTo", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  items            B2BWarehouseTaskItem[]
+
+  @@index([b2bOrderId, taskType, status])
+  @@index([sellerId, status, createdAt])
+  @@index([assignedToUserId, status])
+  @@map("b2b_warehouse_tasks")
+}
+
+model B2BWarehouseTaskItem {
+  id                String           @id @default(uuid()) @db.Uuid
+  warehouseTaskId   String           @map("warehouse_task_id") @db.Uuid
+  b2bOrderLineId    String           @map("b2b_order_line_id") @db.Uuid
+  requestedQuantity  Int              @map("requested_quantity")
+  completedQuantity  Int              @default(0) @map("completed_quantity")
+  exceptionNote      String?          @map("exception_note")
+  createdAt          DateTime         @default(now()) @map("created_at")
+  updatedAt          DateTime         @updatedAt @map("updated_at")
+  warehouseTask      B2BWarehouseTask @relation(fields: [warehouseTaskId], references: [id], onDelete: Cascade)
+  orderLine          B2BOrderLine     @relation(fields: [b2bOrderLineId], references: [id], onDelete: Cascade)
+
+  @@unique([warehouseTaskId, b2bOrderLineId])
+  @@index([warehouseTaskId])
+  @@index([b2bOrderLineId])
+  @@map("b2b_warehouse_task_items")
+}
+
+model B2BPackage {
+  id                 String       @id @default(uuid()) @db.Uuid
+  packageNumber      String       @unique @map("package_number")
+  b2bOrderId         String       @map("b2b_order_id") @db.Uuid
+  sellerId           String       @map("seller_id") @db.Uuid
+  shipmentId         String?      @map("shipment_id") @db.Uuid
+  sequence           Int
+  weightGrams        Int?         @map("weight_grams")
+  lengthCm           Int?         @map("length_cm")
+  breadthCm          Int?         @map("breadth_cm")
+  heightCm           Int?         @map("height_cm")
+  declaredValuePaise Int          @default(0) @map("declared_value_paise")
+  itemAllocations    Json         @map("item_allocations")
+  sealedAt           DateTime?    @map("sealed_at")
+  createdAt          DateTime     @default(now()) @map("created_at")
+  updatedAt          DateTime     @updatedAt @map("updated_at")
+  order              B2BOrder     @relation(fields: [b2bOrderId], references: [id], onDelete: Cascade)
+  seller             Seller       @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  shipment           B2BShipment? @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+  qcInspections      B2BQcInspection[]
+
+  @@unique([b2bOrderId, sequence])
+  @@index([b2bOrderId, createdAt])
+  @@index([sellerId, createdAt])
+  @@index([shipmentId])
+  @@map("b2b_packages")
+}
+
+model B2BQcInspection {
+  id                 String      @id @default(uuid()) @db.Uuid
+  b2bOrderId         String      @map("b2b_order_id") @db.Uuid
+  packageId          String?     @map("package_id") @db.Uuid
+  status             B2BQcStatus @default(PENDING)
+  checklistSnapshot  Json        @map("checklist_snapshot")
+  evidenceFileKeys   Json?       @map("evidence_file_keys")
+  failureReason      String?     @map("failure_reason")
+  inspectedById      String?     @map("inspected_by_id") @db.Uuid
+  inspectedAt        DateTime?   @map("inspected_at")
+  closedAt           DateTime?   @map("closed_at")
+  createdAt          DateTime    @default(now()) @map("created_at")
+  updatedAt          DateTime    @updatedAt @map("updated_at")
+  order              B2BOrder    @relation(fields: [b2bOrderId], references: [id], onDelete: Cascade)
+  package            B2BPackage? @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  inspectedBy        User?       @relation("B2BQcInspectionInspectedBy", fields: [inspectedById], references: [id], onDelete: SetNull)
+
+  @@index([b2bOrderId, status, createdAt])
+  @@index([packageId])
+  @@index([inspectedById])
+  @@map("b2b_qc_inspections")
+}
+
+model B2BShipment {
+  id                       String                      @id @default(uuid()) @db.Uuid
+  shipmentNumber           String                      @unique @map("shipment_number")
+  b2bOrderId               String                      @map("b2b_order_id") @db.Uuid
+  sellerId                 String                      @map("seller_id") @db.Uuid
+  assignedDeliveryUserId   String?                     @map("assigned_delivery_user_id") @db.Uuid
+  status                   B2BShipmentStatus           @default(DRAFT)
+  acceptanceStatus         B2BDeliveryAcceptanceStatus @default(PENDING) @map("acceptance_status")
+  transporterName          String?                     @map("transporter_name")
+  transporterGstin         String?                     @map("transporter_gstin")
+  lrNumber                 String?                     @map("lr_number")
+  awbNumber                String?                     @map("awb_number")
+  vehicleNumber            String?                     @map("vehicle_number")
+  deliveryAddressSnapshot  Json                        @map("delivery_address_snapshot")
+  dispatchedAt             DateTime?                   @map("dispatched_at")
+  deliveredAt              DateTime?                   @map("delivered_at")
+  acceptanceDueAt          DateTime?                   @map("acceptance_due_at")
+  acceptedAt               DateTime?                   @map("accepted_at")
+  disputeReason            String?                     @map("dispute_reason")
+  createdAt                DateTime                    @default(now()) @map("created_at")
+  updatedAt                DateTime                    @updatedAt @map("updated_at")
+  order                    B2BOrder                    @relation(fields: [b2bOrderId], references: [id], onDelete: Cascade)
+  seller                   Seller                      @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  assignedDeliveryUser     User?                       @relation("B2BShipmentAssignedDeliveryUser", fields: [assignedDeliveryUserId], references: [id], onDelete: SetNull)
+  packages                 B2BPackage[]
+  events                   B2BShipmentEvent[]
+  proofOfDelivery          B2BProofOfDelivery?
+  supportCases             B2BSupportCase[]
+  disputeResolutions       B2BDisputeResolution[]
+
+  @@index([b2bOrderId, status, createdAt])
+  @@index([sellerId, status, createdAt])
+  @@index([assignedDeliveryUserId, status, createdAt])
+  @@index([acceptanceStatus, acceptanceDueAt])
+  @@index([lrNumber])
+  @@index([awbNumber])
+  @@map("b2b_shipments")
+}
+
+model B2BShipmentEvent {
+  id              String            @id @default(uuid()) @db.Uuid
+  shipmentId      String            @map("shipment_id") @db.Uuid
+  status          B2BShipmentStatus
+  note            String?
+  location        String?
+  payload         Json?
+  createdByUserId String?           @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime          @default(now()) @map("created_at")
+  shipment        B2BShipment       @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  createdBy       User?             @relation("B2BShipmentEventCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([shipmentId, createdAt])
+  @@index([status, createdAt])
+  @@index([createdByUserId])
+  @@map("b2b_shipment_events")
+}
+
+model B2BProofOfDelivery {
+  id               String      @id @default(uuid()) @db.Uuid
+  shipmentId       String      @unique @map("shipment_id") @db.Uuid
+  receiverName     String      @map("receiver_name")
+  receiverPhone    String?     @map("receiver_phone")
+  deliveredAt      DateTime    @map("delivered_at")
+  proofFileKeys    Json        @map("proof_file_keys")
+  signatureFileKey String?     @map("signature_file_key")
+  note             String?
+  createdByUserId  String?     @map("created_by_user_id") @db.Uuid
+  createdAt        DateTime    @default(now()) @map("created_at")
+  shipment         B2BShipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  createdBy        User?       @relation("B2BProofOfDeliveryCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([createdByUserId])
+  @@map("b2b_proofs_of_delivery")
+}
+
+model B2BReceivable {
+  id                     String              @id @default(uuid()) @db.Uuid
+  b2bOrderId             String              @unique @map("b2b_order_id") @db.Uuid
+  taxDocumentId          String?             @unique @map("tax_document_id") @db.Uuid
+  originalAmountPaise    Int                 @map("original_amount_paise")
+  outstandingAmountPaise Int                 @map("outstanding_amount_paise")
+  dueAt                  DateTime            @map("due_at")
+  status                 B2BReceivableStatus @default(OPEN)
+  ageingBucket           B2BAgeingBucket     @default(CURRENT) @map("ageing_bucket")
+  disputedAt             DateTime?           @map("disputed_at")
+  closedAt               DateTime?            @map("closed_at")
+  createdAt              DateTime            @default(now()) @map("created_at")
+  updatedAt              DateTime            @updatedAt @map("updated_at")
+  order                  B2BOrder            @relation(fields: [b2bOrderId], references: [id], onDelete: Cascade)
+  taxDocument            TaxDocument?        @relation(fields: [taxDocumentId], references: [id], onDelete: SetNull)
+  entries                B2BReceivableEntry[]
+  allocations            B2BPaymentAllocation[]
+  collectionTasks        B2BCollectionTask[]
+  supportCases           B2BSupportCase[]
+
+  @@index([status, dueAt])
+  @@index([ageingBucket, status, dueAt])
+  @@map("b2b_receivables")
+}
+
+model B2BReceivableEntry {
+  id                String        @id @default(uuid()) @db.Uuid
+  receivableId      String        @map("receivable_id") @db.Uuid
+  entryType         String        @map("entry_type")
+  description       String
+  debitPaise        Int           @default(0) @map("debit_paise")
+  creditPaise       Int           @default(0) @map("credit_paise")
+  balanceAfterPaise Int           @map("balance_after_paise")
+  referenceType     String?       @map("reference_type")
+  referenceId       String?       @map("reference_id")
+  createdAt         DateTime      @default(now()) @map("created_at")
+  receivable        B2BReceivable @relation(fields: [receivableId], references: [id], onDelete: Cascade)
+
+  @@index([receivableId, createdAt])
+  @@index([referenceType, referenceId])
+  @@map("b2b_receivable_entries")
+}
+
+model B2BPaymentRecord {
+  id                              String                 @id @default(uuid()) @db.Uuid
+  b2bOrderId                      String                 @map("b2b_order_id") @db.Uuid
+  legacyProofId                   String?                @unique @map("legacy_proof_id") @db.Uuid
+  idempotencyKey                  String                 @unique @map("idempotency_key")
+  requestedScheduleId             String?                @map("requested_schedule_id") @db.Uuid
+  method                          B2BPaymentMethod
+  status                          B2BPaymentRecordStatus @default(SUBMITTED)
+  amountPaise                     Int                    @map("amount_paise")
+  unallocatedAmountPaise          Int                    @default(0) @map("unallocated_amount_paise")
+  currency                        String                 @default("INR")
+  referenceNumber                 String?                @map("reference_number")
+  proofFileKey                    String?                @map("proof_file_key")
+  providerOrderId                 String?                @unique @map("provider_order_id")
+  providerPaymentId               String?                @unique @map("provider_payment_id")
+  providerOrderCreationInProgress Boolean                @default(false) @map("provider_order_creation_in_progress")
+  providerOrderCreatedAt          DateTime?              @map("provider_order_created_at")
+  providerMethod                  String?                @map("provider_method")
+  providerPayload                 Json?                  @map("provider_payload")
+  chequeNumber                    String?                @map("cheque_number")
+  chequeBankName                  String?                @map("cheque_bank_name")
+  chequeDate                      DateTime?              @map("cheque_date")
+  rejectionReason                 String?                @map("rejection_reason")
+  verifiedById                    String?                @map("verified_by_id") @db.Uuid
+  verifiedAt                      DateTime?              @map("verified_at")
+  clearedAt                       DateTime?              @map("cleared_at")
+  createdAt                       DateTime               @default(now()) @map("created_at")
+  updatedAt                       DateTime               @updatedAt @map("updated_at")
+  order                           B2BOrder               @relation(fields: [b2bOrderId], references: [id], onDelete: Cascade)
+  requestedSchedule               B2BPaymentSchedule?    @relation("B2BPaymentRequestedSchedule", fields: [requestedScheduleId], references: [id], onDelete: SetNull)
+  legacyProof                     B2BPaymentProof?        @relation(fields: [legacyProofId], references: [id], onDelete: SetNull)
+  verifiedBy                      User?                   @relation("B2BPaymentRecordVerifiedBy", fields: [verifiedById], references: [id], onDelete: SetNull)
+  allocations                     B2BPaymentAllocation[]
+  receiptVoucher                  B2BReceiptVoucher?
+  supportCases                    B2BSupportCase[]
+
+  @@index([b2bOrderId, status, createdAt])
+  @@index([requestedScheduleId])
+  @@index([status, createdAt])
+  @@index([referenceNumber, status])
+  @@index([providerOrderCreationInProgress, updatedAt])
+  @@index([verifiedById])
+  @@map("b2b_payment_records")
+}
+
+model B2BPaymentAllocation {
+  id                String              @id @default(uuid()) @db.Uuid
+  paymentRecordId   String              @map("payment_record_id") @db.Uuid
+  paymentScheduleId String?             @map("payment_schedule_id") @db.Uuid
+  receivableId      String?             @map("receivable_id") @db.Uuid
+  amountPaise       Int                 @map("amount_paise")
+  createdAt         DateTime            @default(now()) @map("created_at")
+  paymentRecord     B2BPaymentRecord    @relation(fields: [paymentRecordId], references: [id], onDelete: Cascade)
+  paymentSchedule   B2BPaymentSchedule? @relation(fields: [paymentScheduleId], references: [id], onDelete: SetNull)
+  receivable        B2BReceivable?      @relation(fields: [receivableId], references: [id], onDelete: SetNull)
+
+  @@index([paymentRecordId])
+  @@index([paymentScheduleId])
+  @@index([receivableId])
+  @@map("b2b_payment_allocations")
+}
+
+model B2BReceiptVoucher {
+  id              String           @id @default(uuid()) @db.Uuid
+  voucherNumber   String           @unique @map("voucher_number")
+  paymentRecordId String           @unique @map("payment_record_id") @db.Uuid
+  fileKey         String?          @map("file_key")
+  issuedById      String?          @map("issued_by_id") @db.Uuid
+  issuedAt        DateTime         @default(now()) @map("issued_at")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  paymentRecord   B2BPaymentRecord @relation(fields: [paymentRecordId], references: [id], onDelete: Cascade)
+  issuedBy        User?            @relation("B2BReceiptVoucherIssuedBy", fields: [issuedById], references: [id], onDelete: SetNull)
+
+  @@index([issuedById])
+  @@map("b2b_receipt_vouchers")
+}
+
+model B2BCollectionTask {
+  id               String                  @id @default(uuid()) @db.Uuid
+  receivableId     String                  @map("receivable_id") @db.Uuid
+  status           B2BCollectionTaskStatus @default(OPEN)
+  assignedToUserId String?                 @map("assigned_to_user_id") @db.Uuid
+  dueAt            DateTime                @map("due_at")
+  promiseToPayAt   DateTime?               @map("promise_to_pay_at")
+  lastReminderAt   DateTime?               @map("last_reminder_at")
+  nextReminderAt   DateTime?               @map("next_reminder_at")
+  reminderCount    Int                     @default(0) @map("reminder_count")
+  note             String?
+  createdAt        DateTime                @default(now()) @map("created_at")
+  updatedAt        DateTime                @updatedAt @map("updated_at")
+  receivable       B2BReceivable           @relation(fields: [receivableId], references: [id], onDelete: Cascade)
+  assignedTo       User?                   @relation("B2BCollectionTaskAssignedTo", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+
+  @@index([receivableId, status])
+  @@index([assignedToUserId, status, dueAt])
+  @@index([status, nextReminderAt])
+  @@map("b2b_collection_tasks")
+}
+
+model B2BSupportCase {
+  id               String               @id @default(uuid()) @db.Uuid
+  caseNumber       String               @unique @map("case_number")
+  b2bOrderId       String               @map("b2b_order_id") @db.Uuid
+  b2bOrderLineId   String?              @map("b2b_order_line_id") @db.Uuid
+  shipmentId       String?              @map("shipment_id") @db.Uuid
+  taxDocumentId    String?              @map("tax_document_id") @db.Uuid
+  receivableId     String?              @map("receivable_id") @db.Uuid
+  paymentRecordId  String?              @map("payment_record_id") @db.Uuid
+  caseType         B2BSupportCaseType   @map("case_type")
+  status           B2BSupportCaseStatus @default(OPEN)
+  subject          String
+  description      String
+  evidenceFileKeys Json?                @map("evidence_file_keys")
+  createdByUserId  String               @map("created_by_user_id") @db.Uuid
+  assignedToUserId String?              @map("assigned_to_user_id") @db.Uuid
+  resolution       String?
+  resolvedAt       DateTime?            @map("resolved_at")
+  createdAt        DateTime             @default(now()) @map("created_at")
+  updatedAt        DateTime             @updatedAt @map("updated_at")
+  order            B2BOrder             @relation(fields: [b2bOrderId], references: [id], onDelete: Cascade)
+  orderLine        B2BOrderLine?         @relation(fields: [b2bOrderLineId], references: [id], onDelete: SetNull)
+  shipment         B2BShipment?         @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+  taxDocument      TaxDocument?          @relation(fields: [taxDocumentId], references: [id], onDelete: SetNull)
+  receivable       B2BReceivable?       @relation(fields: [receivableId], references: [id], onDelete: SetNull)
+  paymentRecord    B2BPaymentRecord?    @relation(fields: [paymentRecordId], references: [id], onDelete: SetNull)
+  createdBy        User                 @relation("B2BSupportCaseCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  assignedTo       User?                @relation("B2BSupportCaseAssignedTo", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  disputeResolution B2BDisputeResolution?
+
+  @@index([b2bOrderId, status, createdAt])
+  @@index([b2bOrderLineId])
+  @@index([shipmentId])
+  @@index([taxDocumentId])
+  @@index([receivableId])
+  @@index([paymentRecordId])
+  @@index([createdByUserId])
+  @@index([assignedToUserId, status])
+  @@map("b2b_support_cases")
+}
+
+model B2BOrderAmendment {
+  id                      String                  @id @default(uuid()) @db.Uuid
+  amendmentNumber         String                  @unique @map("amendment_number")
+  b2bOrderId              String                  @map("b2b_order_id") @db.Uuid
+  status                  B2BOrderAmendmentStatus @default(REQUESTED)
+  baseOrderVersion        Int                     @map("base_order_version")
+  reason                  String
+  lineChanges             Json?                   @map("line_changes")
+  deliveryAddressSnapshot Json?                   @map("delivery_address_snapshot")
+  paymentDueAt            DateTime?               @map("payment_due_at")
+  beforeSnapshot          Json                    @map("before_snapshot")
+  afterSnapshot           Json?                   @map("after_snapshot")
+  decisionReason          String?                 @map("decision_reason")
+  requestedByUserId       String                  @map("requested_by_user_id") @db.Uuid
+  decidedByUserId         String?                 @map("decided_by_user_id") @db.Uuid
+  requestedAt             DateTime                @default(now()) @map("requested_at")
+  decidedAt               DateTime?               @map("decided_at")
+  appliedAt               DateTime?               @map("applied_at")
+  createdAt               DateTime                @default(now()) @map("created_at")
+  updatedAt               DateTime                @updatedAt @map("updated_at")
+  order                    B2BOrder                @relation(fields: [b2bOrderId], references: [id], onDelete: Cascade)
+  requestedBy             User                    @relation("B2BOrderAmendmentRequestedBy", fields: [requestedByUserId], references: [id], onDelete: Restrict)
+  decidedBy               User?                   @relation("B2BOrderAmendmentDecidedBy", fields: [decidedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([b2bOrderId, status, createdAt])
+  @@index([requestedByUserId, createdAt])
+  @@index([decidedByUserId])
+  @@map("b2b_order_amendments")
+}
+
+model B2BDisputeResolution {
+  id                        String                   @id @default(uuid()) @db.Uuid
+  resolutionNumber          String                   @unique @map("resolution_number")
+  supportCaseId             String                   @unique @map("support_case_id") @db.Uuid
+  b2bOrderId                String                   @map("b2b_order_id") @db.Uuid
+  b2bOrderLineId            String?                  @map("b2b_order_line_id") @db.Uuid
+  shipmentId                String?                  @map("shipment_id") @db.Uuid
+  resolutionType            B2BDisputeResolutionType @map("resolution_type")
+  acceptedQuantity          Int                      @default(0) @map("accepted_quantity")
+  rejectedQuantity          Int                      @default(0) @map("rejected_quantity")
+  returnQuantity            Int                      @default(0) @map("return_quantity")
+  replacementQuantity       Int                      @default(0) @map("replacement_quantity")
+  refundAmountPaise         Int                      @default(0) @map("refund_amount_paise")
+  receivableAdjustmentPaise Int                      @default(0) @map("receivable_adjustment_paise")
+  creditNoteTaxDocumentId   String?                  @unique @map("credit_note_tax_document_id") @db.Uuid
+  replacementEnquiryId      String?                  @unique @map("replacement_enquiry_id") @db.Uuid
+  reason                    String
+  resolvedByUserId          String                   @map("resolved_by_user_id") @db.Uuid
+  resolvedAt                DateTime                 @default(now()) @map("resolved_at")
+  createdAt                 DateTime                 @default(now()) @map("created_at")
+  order                     B2BOrder                 @relation(fields: [b2bOrderId], references: [id], onDelete: Cascade)
+  supportCase               B2BSupportCase           @relation(fields: [supportCaseId], references: [id], onDelete: Restrict)
+  orderLine                 B2BOrderLine?            @relation(fields: [b2bOrderLineId], references: [id], onDelete: SetNull)
+  shipment                  B2BShipment?             @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+  creditNote                TaxDocument?             @relation("B2BDisputeResolutionCreditNote", fields: [creditNoteTaxDocumentId], references: [id], onDelete: SetNull)
+  replacementEnquiry        B2BEnquiry?              @relation("B2BDisputeResolutionReplacementEnquiry", fields: [replacementEnquiryId], references: [id], onDelete: SetNull)
+  resolvedBy                User                     @relation("B2BDisputeResolutionResolvedBy", fields: [resolvedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([b2bOrderId, createdAt])
+  @@index([b2bOrderLineId])
+  @@index([shipmentId])
+  @@index([resolvedByUserId, createdAt])
+  @@map("b2b_dispute_resolutions")
+}
+
+model B2BFinancialReconciliation {
+  id                       String                           @id @default(uuid()) @db.Uuid
+  reconciliationNumber     String                           @unique @map("reconciliation_number")
+  b2bOrderId               String                           @map("b2b_order_id") @db.Uuid
+  status                   B2BFinancialReconciliationStatus
+  expectedPaidAmountPaise  Int                              @map("expected_paid_amount_paise")
+  actualPaidAmountPaise    Int                              @map("actual_paid_amount_paise")
+  expectedOutstandingPaise Int                              @map("expected_outstanding_paise")
+  actualOutstandingPaise   Int?                             @map("actual_outstanding_paise")
+  corrected                Boolean                          @default(false)
+  discrepancy              Json?
+  note                     String?
+  createdByUserId          String                           @map("created_by_user_id") @db.Uuid
+  createdAt                DateTime                         @default(now()) @map("created_at")
+  order                    B2BOrder                         @relation(fields: [b2bOrderId], references: [id], onDelete: Cascade)
+  createdBy                User                             @relation("B2BFinancialReconciliationCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@index([b2bOrderId, createdAt])
+  @@index([status, createdAt])
+  @@index([createdByUserId, createdAt])
+  @@map("b2b_financial_reconciliations")
+}
+
+model B2BErpConnection {
+  id                     String                 @id @default(uuid()) @db.Uuid
+  name                   String
+  status                 B2BErpConnectionStatus @default(DRAFT)
+  baseUrl                String                 @map("base_url")
+  encryptedAuthConfig    String                 @map("encrypted_auth_config")
+  encryptedSigningSecret String                 @map("encrypted_signing_secret")
+  subscribedEvents       String[]               @default([]) @map("subscribed_events")
+  lastVerifiedAt         DateTime?              @map("last_verified_at")
+  lastError              String?                @map("last_error")
+  createdById            String?                @map("created_by_id") @db.Uuid
+  createdAt              DateTime               @default(now()) @map("created_at")
+  updatedAt              DateTime               @updatedAt @map("updated_at")
+  createdBy              User?                  @relation("B2BErpConnectionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  outboxEvents           B2BIntegrationOutbox[]
+
+  @@index([status, updatedAt])
+  @@index([createdById])
+  @@map("b2b_erp_connections")
+}
+
+model B2BIntegrationOutbox {
+  id            String                     @id @default(uuid()) @db.Uuid
+  eventId       String                     @unique @map("event_id")
+  connectionId  String?                    @map("connection_id") @db.Uuid
+  b2bOrderId    String?                    @map("b2b_order_id") @db.Uuid
+  eventType     String                     @map("event_type")
+  aggregateType String                     @map("aggregate_type")
+  aggregateId   String                     @map("aggregate_id")
+  payload       Json
+  status        B2BIntegrationOutboxStatus @default(PENDING)
+  attemptCount  Int                        @default(0) @map("attempt_count")
+  nextAttemptAt DateTime?                  @map("next_attempt_at")
+  claimedAt     DateTime?                  @map("claimed_at")
+  claimedBy     String?                    @map("claimed_by")
+  responseCode  Int?                       @map("response_code")
+  responseBody  String?                    @map("response_body")
+  deliveredAt   DateTime?                  @map("delivered_at")
+  lastError     String?                    @map("last_error")
+  createdAt     DateTime                   @default(now()) @map("created_at")
+  updatedAt     DateTime                   @updatedAt @map("updated_at")
+  connection    B2BErpConnection?          @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+  order         B2BOrder?                  @relation(fields: [b2bOrderId], references: [id], onDelete: SetNull)
+
+  @@index([connectionId, status, nextAttemptAt])
+  @@index([b2bOrderId, createdAt])
+  @@index([status, nextAttemptAt, createdAt])
+  @@index([aggregateType, aggregateId])
+  @@map("b2b_integration_outbox")
+}
+
+model B2BErpExportJob {
+  id            String             @id @default(uuid()) @db.Uuid
+  exportNumber  String             @unique @map("export_number")
+  exportType    String             @default("ORDERS") @map("export_type")
+  format        B2BErpExportFormat
+  status        B2BErpExportStatus @default(PROCESSING)
+  filters       Json?
+  fileName      String?            @map("file_name")
+  contentType   String?            @map("content_type")
+  fileKey       String?            @map("file_key")
+  /// Temporary migration-only fallback for exports created before object-storage persistence.
+  legacyContent Bytes?             @map("content")
+  contentHash   String?            @map("content_hash")
+  rowCount      Int                @default(0) @map("row_count")
+  error         String?
+  createdById   String?            @map("created_by_id") @db.Uuid
+  completedAt   DateTime?          @map("completed_at")
+  createdAt     DateTime           @default(now()) @map("created_at")
+  updatedAt     DateTime           @updatedAt @map("updated_at")
+  createdBy     User?              @relation("B2BErpExportJobCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([createdById, createdAt])
+  @@index([format, createdAt])
+  @@map("b2b_erp_export_jobs")
+}
+
+model B2BMutationRecord {
+  id               String    @id @default(uuid()) @db.Uuid
+  actorUserId      String    @map("actor_user_id") @db.Uuid
+  b2bOrderId       String?   @map("b2b_order_id") @db.Uuid
+  scope            String
+  idempotencyKey   String    @map("idempotency_key")
+  requestHash      String    @map("request_hash")
+  responseSnapshot Json?     @map("response_snapshot")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  actor            User      @relation(fields: [actorUserId], references: [id], onDelete: Cascade)
+  order            B2BOrder? @relation(fields: [b2bOrderId], references: [id], onDelete: Cascade)
+
+  @@unique([actorUserId, scope, idempotencyKey])
+  @@index([b2bOrderId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@map("b2b_mutation_records")
 }
 
 model CmsAnnouncement {
@@ -5097,10 +6741,12 @@ model CmsMediaAsset {
   createdById  String?  @map("created_by_id") @db.Uuid
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
+  createdBy    User?    @relation("CmsMediaAssetCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
 
   @@index([publicId])
   @@index([mediaType])
   @@index([usageContext])
+  @@index([createdById])
   @@map("cms_media_assets")
 }
 
@@ -5114,9 +6760,11 @@ model CmsRevision {
   note        String?
   actorUserId String?  @map("actor_user_id") @db.Uuid
   createdAt   DateTime @default(now()) @map("created_at")
+  actor       User?    @relation("CmsRevisionActor", fields: [actorUserId], references: [id], onDelete: SetNull)
 
   @@unique([entityType, entityId, version])
   @@index([entityType, entityId])
+  @@index([actorUserId])
   @@index([createdAt])
   @@map("cms_revisions")
 }
@@ -5320,7 +6968,8 @@ model ChatRateLimitBucket {
 
 model ChatAiUsageSummary {
   id           String   @id @default(uuid()) @db.Uuid
-  userId       String   @map("user_id")
+  subjectKey   String   @map("subject_key")
+  userId       String?  @map("user_id") @db.Uuid
   usageDate    DateTime @map("usage_date") @db.Date
   provider     String   @default("disabled")
   model        String   @default("none")
@@ -5329,8 +6978,9 @@ model ChatAiUsageSummary {
   failureCount Int      @default(0) @map("failure_count")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
+  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 
-  @@unique([userId, usageDate, provider, model])
+  @@unique([subjectKey, usageDate, provider, model])
   @@index([usageDate])
   @@index([userId, usageDate])
   @@map("chat_ai_usage_summaries")
@@ -5555,6 +7205,7 @@ model EmailSetting {
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
+  /// Application singleton. Database migration also enforces at most one enabled row.
   @@map("email_settings")
 }
 

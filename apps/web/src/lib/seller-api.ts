@@ -1,5 +1,16 @@
 import { IndihubApiError, apiBaseUrl, buildAuthHeaders, indihubFetch, type IndihubAuthHeaders } from "./api";
 import type { AccountOrder } from "./account-api";
+import type { B2BFinalDocumentType } from "./business-buyer-api";
+import {
+  downloadAuthenticatedCsv,
+  downloadAuthenticatedFile,
+  type GstCsvExport,
+  type GstDocumentFilters,
+  type GstDocumentPage,
+  type GstFilingPeriod,
+  type GstReport,
+  type GstReportOverview,
+} from "./gst-report-api";
 import type { LocationSource } from "./maps-api";
 import type { SellerDocumentType } from "./seller-document-upload";
 import type {
@@ -16,6 +27,7 @@ import type {
 type SellerProfileDetails = NonNullable<SellerSummary["profile"]> & {
   businessLegalName?: string | null;
   businessType?: SellerBusinessType | null;
+  taxRegistrationStatus?: SellerTaxRegistrationStatus;
   gstNumber?: string | null;
   panNumber?: string | null;
 };
@@ -90,6 +102,17 @@ export type SellerBusinessType =
   | "PRIVATE_LIMITED"
   | "PUBLIC_LIMITED"
   | "OTHER";
+
+export type SellerTaxRegistrationStatus =
+  | "GST_REGISTERED"
+  | "NOT_REGISTERED"
+  | "COMPOSITION";
+
+export type ProductTaxClassification =
+  | "TAXABLE"
+  | "NIL_RATED"
+  | "EXEMPT"
+  | "NON_GST";
 
 export type SellerCapability = "RETAIL" | "SERVICE";
 
@@ -243,6 +266,7 @@ export type SellerProfilePayload = {
   description?: string | undefined;
   businessLegalName?: string | undefined;
   businessType?: SellerBusinessType | undefined;
+  taxRegistrationStatus?: SellerTaxRegistrationStatus | undefined;
   gstNumber?: string | undefined;
   panNumber?: string | undefined;
   contactName?: string | undefined;
@@ -300,6 +324,7 @@ export type SellerOnboardingPayload = {
   storeName: string;
   businessLegalName?: string;
   businessType?: SellerBusinessType;
+  taxRegistrationStatus?: SellerTaxRegistrationStatus;
   gstNumber?: string;
   panNumber?: string;
   contactName: string;
@@ -334,6 +359,7 @@ export type SellerProductPayload = {
   categoryId: string;
   name: string;
   description: string;
+  taxClassification?: ProductTaxClassification;
   deliveryModes?: Array<"STORE_PICKUP" | "LOCAL_DELIVERY_PARTNER" | "THIRD_PARTY_COURIER" | "MANUAL_TRANSPORT">;
   manualTransport?: {
     freeDistanceKm: number;
@@ -584,6 +610,7 @@ export type SellerB2BOrder = {
   taxInvoiceNumber?: string | null;
   taxInvoiceIssuedAt?: string | null;
   taxInvoiceFileKey?: string | null;
+  finalDocumentType?: B2BFinalDocumentType;
   purchaseOrderNumber?: string | null;
   purchaseOrderFileKey?: string | null;
   purchaseOrderNote?: string | null;
@@ -1319,6 +1346,9 @@ export type SellerTaxReport = {
   splits: SellerTaxSplit[];
 };
 
+export type SellerGstReport = GstReport;
+export type SellerGstOverview = GstReportOverview;
+
 export function getSellerTaxReport(
   auth: IndihubAuthHeaders,
   query: { dateFrom?: string; dateTo?: string } = {},
@@ -1326,6 +1356,151 @@ export function getSellerTaxReport(
   return indihubFetch<SellerTaxReport>(
     `/api/seller/reports/tax${queryString(query)}`,
     undefined,
+    auth,
+  );
+}
+
+export function getSellerGstReport(
+  auth: IndihubAuthHeaders,
+  query: { dateFrom?: string; dateTo?: string } = {},
+) {
+  return indihubFetch<SellerGstReport>(
+    `/api/seller/reports/gst${queryString(query)}`,
+    undefined,
+    auth,
+  );
+}
+
+export function getSellerGstOverview(
+  auth: IndihubAuthHeaders,
+  query: { dateFrom?: string; dateTo?: string } = {},
+) {
+  return indihubFetch<SellerGstOverview>(
+    `/api/seller/reports/gst/overview${queryString(query)}`,
+    undefined,
+    auth,
+  );
+}
+
+export function getSellerGstDocuments(
+  auth: IndihubAuthHeaders,
+  filters: Omit<GstDocumentFilters, "sellerId">,
+) {
+  return indihubFetch<GstDocumentPage>(
+    `/api/seller/reports/gst-documents${queryString(filters)}`,
+    undefined,
+    auth,
+  );
+}
+
+export function downloadSellerGstDocumentPdf(
+  auth: IndihubAuthHeaders,
+  documentId: string,
+) {
+  return downloadAuthenticatedFile(
+    auth,
+    `/api/seller/reports/gst-documents/${encodeURIComponent(documentId)}/download`,
+    "gst-document.pdf",
+    "The tax document could not be downloaded.",
+  );
+}
+
+export function getSellerGstReportCsvUrl(
+  type: GstCsvExport,
+  query: { dateFrom?: string; dateTo?: string } = {},
+) {
+  return `/api/seller/reports/export/${type}${queryString(query)}`;
+}
+
+export function downloadSellerGstReportCsv(
+  auth: IndihubAuthHeaders,
+  type: GstCsvExport,
+  query: { dateFrom?: string; dateTo?: string } = {},
+) {
+  return downloadAuthenticatedCsv(
+    auth,
+    getSellerGstReportCsvUrl(type, query),
+    `${type}.csv`,
+  );
+}
+
+export function lockSellerGstFilingPeriod(
+  auth: IndihubAuthHeaders,
+  input: { returnPeriod: string; notes?: string },
+) {
+  return indihubFetch<GstFilingPeriod>(
+    "/api/seller/reports/filing-periods/lock",
+    { method: "POST", body: JSON.stringify(input) },
+    auth,
+  );
+}
+
+export function markSellerGstFilingPeriodFiled(
+  auth: IndihubAuthHeaders,
+  input: { returnPeriod: string; filingReference: string },
+) {
+  return indihubFetch<GstFilingPeriod>(
+    "/api/seller/reports/filing-periods/file",
+    { method: "POST", body: JSON.stringify(input) },
+    auth,
+  );
+}
+
+export function reopenSellerGstFilingPeriod(
+  auth: IndihubAuthHeaders,
+  input: { returnPeriod: string },
+) {
+  return indihubFetch<GstFilingPeriod>(
+    "/api/seller/reports/filing-periods/reopen",
+    { method: "POST", body: JSON.stringify(input) },
+    auth,
+  );
+}
+
+export function createSellerGstDebitNote(
+  auth: IndihubAuthHeaders,
+  input: {
+    originalDocumentId: string;
+    reason: string;
+    lines: Array<{
+      description: string;
+      hsnSacCode?: string;
+      quantity: number;
+      lineValuePaise: number;
+      gstRatePercent: number;
+    }>;
+  },
+) {
+  return indihubFetch<GstReport["documents"][number]>(
+    "/api/seller/reports/debit-notes",
+    { method: "POST", body: JSON.stringify(input) },
+    auth,
+  );
+}
+
+export function recordSellerTaxDocumentCompliance(
+  auth: IndihubAuthHeaders,
+  documentId: string,
+  input: {
+    eInvoiceStatus?: string;
+    irn?: string;
+    acknowledgementNumber?: string;
+    acknowledgementDate?: string;
+    eInvoiceProvider?: string;
+    eInvoiceProviderRef?: string;
+    eInvoiceError?: string;
+    eWayBillStatus?: string;
+    eWayBillNumber?: string;
+    eWayBillGeneratedAt?: string;
+    eWayBillValidUntil?: string;
+    eWayBillProvider?: string;
+    eWayBillProviderRef?: string;
+    eWayBillError?: string;
+  },
+) {
+  return indihubFetch(
+    `/api/seller/reports/gst-documents/${documentId}/compliance`,
+    { method: "PATCH", body: JSON.stringify(input) },
     auth,
   );
 }

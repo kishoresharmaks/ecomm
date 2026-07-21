@@ -9,6 +9,8 @@ export const deliveryPartnerPayoutSettingKeys = {
   basePayPaise: "delivery_partner.payout.base_pay_paise",
   perKmPaise: "delivery_partner.payout.per_km_paise",
   codBonusPaise: "delivery_partner.payout.cod_bonus_paise",
+  reversePickupBasePayPaise: "delivery_partner.payout.reverse_pickup_base_pay_paise",
+  reversePickupCostBearer: "delivery_partner.payout.reverse_pickup_cost_bearer",
   minimumWalletPayoutPaise: "delivery_partner.payout.minimum_wallet_payout_paise",
   requestsEnabled: "delivery_partner.payout.requests_enabled",
   freeDeliveryPlatformSubsidyEnabled:
@@ -21,6 +23,8 @@ export type DeliveryPartnerPayoutSettings = {
   basePayPaise: number;
   perKmPaise: number;
   codBonusPaise: number;
+  reversePickupBasePayPaise: number;
+  reversePickupCostBearer: "MARKETPLACE" | "SELLER";
   minimumWalletPayoutPaise: number;
   requestsEnabled: boolean;
   freeDeliveryPlatformSubsidyEnabled: boolean;
@@ -32,6 +36,8 @@ export const defaultDeliveryPartnerPayoutSettings: DeliveryPartnerPayoutSettings
   basePayPaise: 2_500,
   perKmPaise: 800,
   codBonusPaise: 500,
+  reversePickupBasePayPaise: 4_000,
+  reversePickupCostBearer: "MARKETPLACE",
   minimumWalletPayoutPaise: 100_000,
   requestsEnabled: true,
   freeDeliveryPlatformSubsidyEnabled: true,
@@ -97,6 +103,16 @@ export function normalizeDeliveryPartnerPayoutSettings(
         defaultDeliveryPartnerPayoutSettings.codBonusPaise,
       ),
     ),
+    reversePickupBasePayPaise: nonNegativeInt(
+      readNumberSetting(
+        settingMap.get(deliveryPartnerPayoutSettingKeys.reversePickupBasePayPaise),
+        defaultDeliveryPartnerPayoutSettings.reversePickupBasePayPaise,
+      ),
+    ),
+    reversePickupCostBearer:
+      settingMap.get(deliveryPartnerPayoutSettingKeys.reversePickupCostBearer) === "SELLER"
+        ? "SELLER"
+        : "MARKETPLACE",
     minimumWalletPayoutPaise: nonNegativeInt(
       readNumberSetting(
         settingMap.get(deliveryPartnerPayoutSettingKeys.minimumWalletPayoutPaise),

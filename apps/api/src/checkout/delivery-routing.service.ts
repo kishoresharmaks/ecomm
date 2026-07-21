@@ -899,7 +899,6 @@ export class DeliveryRoutingService {
                   deliveryMode: true,
                   isEnabled: true,
                   manualTransportFreeDistanceKm: true,
-                  manualTransportChargePerKmPaise: true,
                   manualTransportChargePerKmMinor: true,
                   manualTransportCurrency: true,
                   manualTransportNote: true,
@@ -3671,7 +3670,6 @@ export class DeliveryRoutingService {
       deliveryMode: DeliveryMode;
       isEnabled?: boolean | null;
       manualTransportFreeDistanceKm?: Prisma.Decimal | number | string | null;
-      manualTransportChargePerKmPaise?: number | null;
       manualTransportChargePerKmMinor?: number | null;
       manualTransportCurrency?: string | null;
       manualTransportNote?: string | null;
@@ -3684,10 +3682,8 @@ export class DeliveryRoutingService {
       !option ||
       option.manualTransportFreeDistanceKm === null ||
       option.manualTransportFreeDistanceKm === undefined ||
-      ((option.manualTransportChargePerKmMinor === null ||
-        option.manualTransportChargePerKmMinor === undefined) &&
-        (option.manualTransportChargePerKmPaise === null ||
-          option.manualTransportChargePerKmPaise === undefined)) ||
+      option.manualTransportChargePerKmMinor === null ||
+      option.manualTransportChargePerKmMinor === undefined ||
       !option.manualTransportNote
     ) {
       return null;
@@ -3695,7 +3691,7 @@ export class DeliveryRoutingService {
 
     return {
       freeDistanceKm: Number(option.manualTransportFreeDistanceKm),
-      chargePerKmMinor: option.manualTransportChargePerKmMinor ?? option.manualTransportChargePerKmPaise ?? 0,
+      chargePerKmMinor: option.manualTransportChargePerKmMinor,
       currency: option.manualTransportCurrency?.trim().toUpperCase() || "INR",
       note: option.manualTransportNote,
     };

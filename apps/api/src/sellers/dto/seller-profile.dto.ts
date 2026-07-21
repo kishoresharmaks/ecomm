@@ -20,7 +20,11 @@ import {
   ValidateNested,
 } from "class-validator";
 import { Transform, Type } from "class-transformer";
-import { SellerBusinessType, SellerCapability } from "@indihub/database";
+import {
+  SellerBusinessType,
+  SellerCapability,
+  SellerTaxRegistrationStatus,
+} from "@indihub/database";
 import { SellerVerificationDocumentDto } from "./create-seller-registration.dto";
 
 const locationSources = ["GPS", "MAP_PICK", "MANUAL", "REVERSE_GEOCODE"] as const;
@@ -284,6 +288,11 @@ export class UpdateSellerProfileDto {
   })
   @IsEnum(SellerBusinessType)
   businessType?: SellerBusinessType | null;
+
+  @ApiPropertyOptional({ enum: SellerTaxRegistrationStatus })
+  @IsOptional()
+  @IsEnum(SellerTaxRegistrationStatus)
+  taxRegistrationStatus?: SellerTaxRegistrationStatus;
 
   @ApiPropertyOptional({ example: "33ABCDE1234F1Z5" })
   @IsOptional()

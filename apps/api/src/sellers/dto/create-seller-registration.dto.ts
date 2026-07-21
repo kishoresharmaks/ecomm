@@ -20,7 +20,12 @@ import {
   ValidateNested,
 } from "class-validator";
 import { ApiProperty, ApiPropertyOptional, OmitType } from "@nestjs/swagger";
-import { SellerBusinessType, SellerCapability, SellerType } from "@indihub/database";
+import {
+  SellerBusinessType,
+  SellerCapability,
+  SellerTaxRegistrationStatus,
+  SellerType,
+} from "@indihub/database";
 
 const locationSources = ["GPS", "MAP_PICK", "MANUAL", "REVERSE_GEOCODE"] as const;
 
@@ -165,6 +170,14 @@ export class CreateSellerRegistrationDto {
   @IsOptional()
   @IsEnum(SellerBusinessType)
   businessType?: SellerBusinessType;
+
+  @ApiPropertyOptional({
+    enum: SellerTaxRegistrationStatus,
+    default: SellerTaxRegistrationStatus.NOT_REGISTERED,
+  })
+  @IsOptional()
+  @IsEnum(SellerTaxRegistrationStatus)
+  taxRegistrationStatus?: SellerTaxRegistrationStatus;
 
   @ApiPropertyOptional({ example: "33ABCDE1234F1Z5" })
   @IsOptional()

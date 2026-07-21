@@ -18,6 +18,7 @@ export function sendB2BDocument(
   access: PrivateDocumentAccess,
   response: B2BDocumentResponse,
   fallbackFileName = "document",
+  disposition: "inline" | "attachment" = "inline",
 ) {
   if (access.provider === "s3") {
     response.redirect(302, access.url);
@@ -26,7 +27,7 @@ export function sendB2BDocument(
 
   response.set({
     "Content-Type": access.contentType,
-    "Content-Disposition": `inline; filename="${safeDownloadFileName(access.fileName, fallbackFileName)}"`,
+    "Content-Disposition": `${disposition}; filename="${safeDownloadFileName(access.fileName, fallbackFileName)}"`,
     "Cache-Control": "private, max-age=0, no-store",
   });
 

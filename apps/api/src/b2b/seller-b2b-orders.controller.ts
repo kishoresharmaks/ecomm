@@ -61,7 +61,7 @@ export class SellerB2BOrdersController {
   }
 
   @Get(":orderNumber/tax-invoice/document-access")
-  @ApiOperation({ summary: "Read seller-authorized final tax invoice access metadata." })
+  @ApiOperation({ summary: "Read seller-authorized final invoice access metadata." })
   getTaxInvoiceDocumentAccess(
     @CurrentUser() actor: RequestUser,
     @Param("orderNumber") orderNumber: string,
@@ -70,7 +70,7 @@ export class SellerB2BOrdersController {
   }
 
   @Get(":orderNumber/tax-invoice")
-  @ApiOperation({ summary: "Open or stream the seller-authorized final tax invoice." })
+  @ApiOperation({ summary: "Open or stream the seller-authorized final invoice." })
   async openTaxInvoiceDocument(
     @CurrentUser() actor: RequestUser,
     @Param("orderNumber") orderNumber: string,
@@ -81,7 +81,7 @@ export class SellerB2BOrdersController {
     },
   ) {
     const access = await this.b2bService.getSellerTaxInvoiceDocumentAccess(actor, orderNumber);
-    return sendB2BDocument(access, response, "tax-invoice.pdf");
+    return sendB2BDocument(access, response, "final-invoice.pdf");
   }
 
   @Get(":orderNumber/purchase-order/document-access")

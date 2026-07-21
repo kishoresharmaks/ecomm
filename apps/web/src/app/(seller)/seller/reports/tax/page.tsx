@@ -10,9 +10,12 @@ export default async function SellerTaxReportPage({
 }) {
   const params = await searchParams;
   return (
-    <SellerWorkspaceShell title="Tax & Compliance Report" description="Per-order GST, TDS, TCS breakdown and deduction totals for filing.">
+    <SellerWorkspaceShell
+      title="Tax & Financial Reports"
+      description="Country-aware tax records, marketplace deductions, settlement data, and filing exports."
+    >
       <div className="mb-4">
-        <Link href="/seller/reports" className="inline-flex items-center gap-2 text-sm font-semibold text-[#667085] hover:text-[#123A5A]">
+        <Link href="/seller/reports" className="inline-flex items-center gap-2 text-sm font-semibold text-[#667085] hover:text-[#ED3500]">
           <ArrowLeft className="h-4 w-4" />
           Back to Reports Hub
         </Link>

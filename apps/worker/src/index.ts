@@ -6,10 +6,14 @@ import { NotificationStatus, prisma } from "@indihub/database";
 import { WorkerEmailDelivery } from "./email-delivery";
 import { EMAIL_QUEUE_NAME, type EmailJobPayload, type EmailProviderConfig } from "./email-job";
 import { startB2BOverduePolling } from "./b2b-overdue-worker";
+import { startB2BCollectionPolling } from "./b2b-collection-worker";
+import { startB2BErpOutboxPolling } from "./b2b-erp-outbox-worker";
+import { startB2BPodAutoAcceptPolling } from "./b2b-pod-auto-accept-worker";
 import { startChatAutoClosePolling } from "./chat-auto-close-worker";
 import { startDeliveryAssignmentTimeoutPolling } from "./delivery-assignment-timeout-worker";
 import { startPrivateUploadCleanupPolling } from "./private-upload-cleanup-worker";
 import { startPushCampaignPolling } from "./push-campaign-worker";
+import { startRazorpayReservationExpiryPolling } from "./razorpay-reservation-expiry-worker";
 import { startReturnPickupTimeoutPolling } from "./return-pickup-timeout-worker";
 import { startSearchIndexPolling } from "./search-index-worker";
 import { startServiceQuoteExpiryPolling } from "./service-quote-expiry-worker";
@@ -40,11 +44,15 @@ logger.info(
 
 startSearchIndexPolling(logger);
 startB2BOverduePolling(logger);
+startB2BCollectionPolling(logger);
+startB2BPodAutoAcceptPolling(logger);
+startB2BErpOutboxPolling(logger);
 startChatAutoClosePolling(logger);
 startDeliveryAssignmentTimeoutPolling(logger);
 startReturnPickupTimeoutPolling(logger);
 startPrivateUploadCleanupPolling(logger);
 startPushCampaignPolling(logger);
+startRazorpayReservationExpiryPolling(logger);
 startServiceQuoteExpiryPolling(logger);
 startShiprocketBookingPolling(logger);
 startDeliveryBatchRoutingPolling(logger);
@@ -204,7 +212,9 @@ async function processEmailJob(payload: EmailJobPayload) {
     return;
   }
 
-  const setting = await prisma.emailSetting.findFirst({ orderBy: { createdAt: "asc" } });
+  const setting = await prisma.emailSetting.findUnique({
+    where: { id: "00000000-0000-0000-0000-000000000001" },
+  });
   if (!setting?.isEnabled) {
     await markEmailSkipped(log.id, "Email sending is disabled in email settings.");
     return;

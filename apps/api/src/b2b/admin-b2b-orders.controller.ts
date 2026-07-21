@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Inject, Param, Patch, Post, Query, Res } from "@nestjs/common";
+import { Body, Controller, Get, Headers, Inject, Param, Patch, Post, Query, Res } from "@nestjs/common";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import { RoleCode } from "@indihub/database";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
@@ -6,6 +6,7 @@ import { Roles } from "../auth/decorators/roles.decorator";
 import type { RequestUser } from "../auth/types/indihub-request";
 import { sendB2BDocument, sendB2BPurchaseOrderDocument } from "./b2b-document-response";
 import { B2BService } from "./b2b.service";
+import { B2BOperationsService } from "./b2b-operations.service";
 import {
   B2BAdminReasonDto,
   B2BOrderQueryDto,
@@ -19,7 +20,11 @@ import {
 @Roles(RoleCode.ADMIN)
 @Controller("admin/b2b-orders")
 export class AdminB2BOrdersController {
-  constructor(@Inject(B2BService) private readonly b2bService: B2BService) {}
+  constructor(
+    @Inject(B2BService) private readonly b2bService: B2BService,
+    @Inject(B2BOperationsService)
+    private readonly b2bOperations: B2BOperationsService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: "List B2B proforma invoices, purchase orders, and fulfilment state." })
@@ -84,7 +89,7 @@ export class AdminB2BOrdersController {
   }
 
   @Get(":orderNumber/tax-invoice/document-access")
-  @ApiOperation({ summary: "Read admin-authorized final tax invoice access metadata." })
+  @ApiOperation({ summary: "Read admin-authorized final invoice access metadata." })
   getTaxInvoiceDocumentAccess(
     @CurrentUser() actor: RequestUser,
     @Param("orderNumber") orderNumber: string,
@@ -93,7 +98,7 @@ export class AdminB2BOrdersController {
   }
 
   @Get(":orderNumber/tax-invoice")
-  @ApiOperation({ summary: "Open or stream the current admin final tax invoice." })
+  @ApiOperation({ summary: "Open or stream the current admin final invoice." })
   async openTaxInvoiceDocument(
     @CurrentUser() actor: RequestUser,
     @Param("orderNumber") orderNumber: string,
@@ -104,7 +109,7 @@ export class AdminB2BOrdersController {
     },
   ) {
     const access = await this.b2bService.getAdminTaxInvoiceDocumentAccess(actor, orderNumber);
-    return sendB2BDocument(access, response, "tax-invoice.pdf");
+    return sendB2BDocument(access, response, "final-invoice.pdf");
   }
 
   @Get(":orderNumber/proforma-revisions")
@@ -169,9 +174,15 @@ export class AdminB2BOrdersController {
   cancelOrder(
     @CurrentUser() actor: RequestUser,
     @Param("orderNumber") orderNumber: string,
+    @Headers("idempotency-key") key: string | undefined,
     @Body() dto: B2BAdminReasonDto,
   ) {
-    return this.b2bService.cancelB2BOrderAsAdmin(actor, orderNumber, dto);
+    return this.b2bOperations.cancelLegacyOrder(
+      actor,
+      orderNumber,
+      key,
+      dto.reason,
+    );
   }
 
   @Post(":orderNumber/refund")

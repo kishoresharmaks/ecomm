@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import {
   ApprovalStatus,
   DocumentStatus,
@@ -8,6 +8,7 @@ import {
   SellerStatus,
   SellerSubscriptionBillingCycle,
   SellerSubscriptionStatus,
+  SellerTaxRegistrationStatus,
 } from "@indihub/database";
 import { paginationFromQuery } from "../../common/pagination";
 import { EMAIL_TRIGGER_EVENTS } from "../../notifications/email-trigger-catalog";
@@ -170,7 +171,7 @@ export class AdminSellersService {
     const updatedSeller = await this.prisma.client.$transaction(async (tx) => {
       const seller = await tx.seller.findFirst({
         where: { id: sellerId },
-        include: { user: true, profile: true, subscriptionPlan: true },
+        include: { user: true, profile: true, documents: true, subscriptionPlan: true },
       });
 
       if (!seller) {
@@ -178,6 +179,9 @@ export class AdminSellersService {
       }
 
       const approved = dto.decision === SellerApprovalDecision.APPROVE;
+      if (approved) {
+        this.assertSellerApprovalReadiness(seller);
+      }
       const nextSubscriptionStatus =
         approved && seller.subscriptionPlan
           ? this.defaultSubscriptionStatusForPlan(seller.subscriptionPlan)
@@ -256,6 +260,73 @@ export class AdminSellersService {
       updatedSeller.approvalStatus === ApprovalStatus.APPROVED ? "seller-approved" : "seller-rejected",
     );
     return updatedSeller;
+  }
+
+  private assertSellerApprovalReadiness(seller: {
+    profile?: {
+      taxRegistrationStatus?: SellerTaxRegistrationStatus | null;
+      gstNumber?: string | null;
+    } | null;
+    documents: Array<{
+      documentType: string;
+      status: DocumentStatus;
+    }>;
+  }) {
+    const registrationStatus =
+      seller.profile?.taxRegistrationStatus ??
+      (seller.profile?.gstNumber
+        ? SellerTaxRegistrationStatus.GST_REGISTERED
+        : SellerTaxRegistrationStatus.NOT_REGISTERED);
+    if (
+      registrationStatus !== SellerTaxRegistrationStatus.NOT_REGISTERED &&
+      !seller.profile?.gstNumber
+    ) {
+      throw new BadRequestException(
+        "A valid GSTIN is required before approving this seller.",
+      );
+    }
+
+    const requiredTypes = [
+      "ID_PROOF",
+      "SIGNATURE_PROOF",
+      "ADDRESS_PROOF",
+      "BANK_PROOF",
+      ...(registrationStatus === SellerTaxRegistrationStatus.NOT_REGISTERED
+        ? []
+        : ["GST_CERTIFICATE"]),
+    ];
+    const documentsByType = new Map(
+      seller.documents.map((document) => [document.documentType, document]),
+    );
+    const missing = requiredTypes.filter(
+      (documentType) => !documentsByType.has(documentType),
+    );
+    const awaitingVerification = requiredTypes.filter((documentType) => {
+      const document = documentsByType.get(documentType);
+      return document && document.status !== DocumentStatus.APPROVED;
+    });
+
+    if (missing.length || awaitingVerification.length) {
+      const details = [
+        ...(missing.length
+          ? [
+              `missing: ${missing
+                .map((documentType) => documentType.replaceAll("_", " ").toLowerCase())
+                .join(", ")}`,
+            ]
+          : []),
+        ...(awaitingVerification.length
+          ? [
+              `not approved: ${awaitingVerification
+                .map((documentType) => documentType.replaceAll("_", " ").toLowerCase())
+                .join(", ")}`,
+            ]
+          : []),
+      ];
+      throw new BadRequestException(
+        `Complete seller document verification before approval (${details.join("; ")}).`,
+      );
+    }
   }
 
   async updateSellerSuspension(sellerId: string, dto: SellerSuspensionDto, actor: RequestUser) {

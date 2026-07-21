@@ -27,7 +27,13 @@ type PendingSeller = {
     contactName?: string | null;
     contactPhone?: string | null;
     contactEmail?: string | null;
+    taxRegistrationStatus?: "GST_REGISTERED" | "COMPOSITION" | "NOT_REGISTERED" | null;
+    gstNumber?: string | null;
   } | null;
+  documents?: Array<{
+    documentType: string;
+    status: "PENDING" | "APPROVED" | "REJECTED";
+  }>;
   addresses?: Array<{
     city: string;
     area?: string | null;
@@ -141,6 +147,7 @@ function SellerRow({
 }) {
   const address = seller.addresses?.[0];
   const location = [address?.area, address?.city, address?.state].filter(Boolean).join(", ") || "Not provided";
+  const approvalBlockers = sellerApprovalBlockers(seller);
 
   return (
     <div className="grid gap-3 border-b border-[#E5E7EB] px-5 py-4 text-sm last:border-b-0 lg:grid-cols-[1.4fr_0.9fr_1fr_0.8fr_1fr] lg:items-center">
@@ -158,10 +165,12 @@ function SellerRow({
         items={[
           {
             label: "Approve seller",
-            description: "Allow seller to continue marketplace operations",
+            description: approvalBlockers.length
+              ? `Complete ${approvalBlockers.slice(0, 2).join(", ")} before approval`
+              : "Allow seller to continue marketplace operations",
             icon: <Check className="h-4 w-4 text-[#0F8A5F]" aria-hidden="true" />,
             onSelect: onApprove,
-            disabled: busy
+            disabled: busy || approvalBlockers.length > 0
           },
           {
             label: "Reject seller",
@@ -175,6 +184,33 @@ function SellerRow({
       />
     </div>
   );
+}
+
+function sellerApprovalBlockers(seller: PendingSeller) {
+  const registrationStatus =
+    seller.profile?.taxRegistrationStatus ??
+    (seller.profile?.gstNumber ? "GST_REGISTERED" : "NOT_REGISTERED");
+  const requiredTypes = [
+    "ID_PROOF",
+    "SIGNATURE_PROOF",
+    "ADDRESS_PROOF",
+    "BANK_PROOF",
+    ...(registrationStatus === "NOT_REGISTERED" ? [] : ["GST_CERTIFICATE"]),
+  ];
+  const documents = new Map(
+    (seller.documents ?? []).map((document) => [document.documentType, document]),
+  );
+  const blockers = requiredTypes.flatMap((documentType) => {
+    const document = documents.get(documentType);
+    const label = documentType.replaceAll("_", " ").toLowerCase();
+    if (!document) return [`missing ${label}`];
+    if (document.status !== "APPROVED") return [`verify ${label}`];
+    return [];
+  });
+  if (registrationStatus !== "NOT_REGISTERED" && !seller.profile?.gstNumber) {
+    blockers.unshift("valid GSTIN");
+  }
+  return blockers;
 }
 
 function StatusPanel({

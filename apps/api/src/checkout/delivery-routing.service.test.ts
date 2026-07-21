@@ -5,11 +5,27 @@ import {
   DeliveryRoutingFailureReason,
   Prisma,
 } from "@indihub/database";
-import { DeliveryRoutingService, type DeliveryRoutingQuote } from "./delivery-routing.service";
+import {
+  DeliveryRoutingService,
+  type DeliveryRoutingAddress,
+  type DeliveryRoutingQuote,
+} from "./delivery-routing.service";
+import { RouteDistanceService } from "../maps/route-distance.service";
 import {
   CheckoutDeliveryPreference,
   CheckoutRoutingPaymentMethod,
 } from "./dto/delivery-routing.dto";
+
+type ShippingRateCard = Prisma.ShippingRateCardGetPayload<Record<string, never>>;
+
+type DeliveryRoutingServiceTestAccess = {
+  resolveRateCardCharge(
+    card: ShippingRateCard | null,
+    address: DeliveryRoutingAddress | null,
+    sellerId?: string | null,
+  ): Promise<number | null>;
+  nonNegativeInt(value: number): number;
+};
 
 describe("DeliveryRoutingService location serviceability", () => {
   it("summarizes ready location coverage from location, seller, delivery, rate-card, and payment data", async () => {
@@ -298,7 +314,7 @@ function setting(key: string, value: boolean | number | string) {
 // ─── ShippingRateCard Pricing Strategy Tests ─────────────────────────────────
 
 describe("DeliveryRoutingService shipping pricing strategies", () => {
-  function makeService(customRouteDistanceService?: any) {
+  function makeService(customRouteDistanceService?: object): DeliveryRoutingServiceTestAccess {
     const prisma = {
       client: {
         sellerAddress: {
@@ -315,7 +331,7 @@ describe("DeliveryRoutingService shipping pricing strategies", () => {
       undefined as never,
       undefined as never,
       customRouteDistanceService as never,
-    );
+    ) as unknown as DeliveryRoutingServiceTestAccess;
   }
 
   function makeCard(overrides: Partial<{
@@ -351,13 +367,13 @@ describe("DeliveryRoutingService shipping pricing strategies", () => {
   }
 
   it("FLAT strategy returns baseChargePaise directly", async () => {
-    const service = makeService() as any;
+    const service = makeService();
     const card = makeCard({ pricingType: "FLAT" as never, baseChargePaise: 4900 });
     expect(await service.resolveRateCardCharge(card, null)).toBe(4900);
   });
 
   it("DISTANCE strategy returns baseChargePaise when delivery is within includedDistanceKm", async () => {
-    const service = makeService() as any;
+    const service = makeService();
     const card = makeCard({
       pricingType: "DISTANCE" as never,
       baseChargePaise: 4000,
@@ -368,12 +384,12 @@ describe("DeliveryRoutingService shipping pricing strategies", () => {
   });
 
   it("returns null for a null card", async () => {
-    const service = makeService() as any;
+    const service = makeService();
     expect(await service.resolveRateCardCharge(null, null)).toBe(null);
   });
 
   it("DISTANCE strategy fallback: unknown strategy returns baseChargePaise", async () => {
-    const service = makeService() as any;
+    const service = makeService();
     const card = makeCard({ pricingType: "DISTANCE" as never, baseChargePaise: 6000, pricingConfig: null });
     expect(await service.resolveRateCardCharge(card, null)).toBe(6000);
   });
@@ -384,7 +400,7 @@ describe("DeliveryRoutingService shipping pricing strategies", () => {
         distanceKm: 5.5,
       }),
     };
-    const service = makeService(mockRouteDistance) as any;
+    const service = makeService(mockRouteDistance);
     const card = makeCard({
       pricingType: "DISTANCE" as never,
       baseChargePaise: 4000,
@@ -406,7 +422,7 @@ describe("DeliveryRoutingService shipping pricing strategies", () => {
     const mockRouteDistance = {
       calculate: vi.fn().mockRejectedValue(new Error("Google Routes API Quota Exceeded")),
     };
-    const service = makeService(mockRouteDistance) as any;
+    const service = makeService(mockRouteDistance);
     const card = makeCard({
       pricingType: "DISTANCE" as never,
       baseChargePaise: 4000,
@@ -422,7 +438,7 @@ describe("DeliveryRoutingService shipping pricing strategies", () => {
     const mockRouteDistance = {
       calculate: vi.fn().mockResolvedValue(null),
     };
-    const service = makeService(mockRouteDistance) as any;
+    const service = makeService(mockRouteDistance);
     const card = makeCard({
       pricingType: "DISTANCE" as never,
       baseChargePaise: 4000,
@@ -746,7 +762,7 @@ describe("DeliveryRoutingService shipping pricing strategies", () => {
       undefined as never,
       undefined as never,
       mockRouteDistance as never,
-    ) as any;
+    ) as unknown as DeliveryRoutingServiceTestAccess;
     const card = makeCard({
       pricingType: "DISTANCE" as never,
       baseChargePaise: 4000,
@@ -763,7 +779,7 @@ describe("DeliveryRoutingService shipping pricing strategies", () => {
     const mockRouteDistance = {
       calculate: vi.fn(),
     };
-    const service = makeService(mockRouteDistance) as any;
+    const service = makeService(mockRouteDistance);
     const card = makeCard({
       pricingType: "DISTANCE" as never,
       baseChargePaise: 4000,
@@ -780,7 +796,7 @@ describe("DeliveryRoutingService shipping pricing strategies", () => {
     const mockRouteDistance = {
       calculate: vi.fn().mockResolvedValue({ distanceKm: 3.0 }),
     };
-    const service = makeService(mockRouteDistance) as any;
+    const service = makeService(mockRouteDistance);
     const card = makeCard({
       pricingType: "DISTANCE" as never,
       baseChargePaise: 4000,
@@ -796,7 +812,7 @@ describe("DeliveryRoutingService shipping pricing strategies", () => {
     const mockRouteDistance = {
       calculate: vi.fn().mockResolvedValue({ distanceKm: 2.5 }),
     };
-    const service = makeService(mockRouteDistance) as any;
+    const service = makeService(mockRouteDistance);
     const card = makeCard({
       pricingType: "DISTANCE" as never,
       baseChargePaise: 4000,
@@ -812,7 +828,7 @@ describe("DeliveryRoutingService shipping pricing strategies", () => {
     const mockRouteDistance = {
       calculate: vi.fn().mockResolvedValue({ distanceKm: 5.0 }),
     };
-    const service = makeService(mockRouteDistance) as any;
+    const service = makeService(mockRouteDistance);
     const card = makeCard({
       pricingType: "DISTANCE" as never,
       baseChargePaise: 4000,
@@ -825,15 +841,16 @@ describe("DeliveryRoutingService shipping pricing strategies", () => {
   });
 
   it("DISTANCE strategy edge case: negative baseChargePaise in rate card", async () => {
-    const service = makeService() as any;
+    const service = makeService();
     const card = makeCard({
       pricingType: "FLAT" as never,
       baseChargePaise: -1500,
     });
     const charge = await service.resolveRateCardCharge(card, null);
     expect(charge).toBe(-1500);
+    expect(charge).not.toBeNull();
 
-    const capped = service.nonNegativeInt(charge);
+    const capped = service.nonNegativeInt(charge!);
     expect(capped).toBe(0);
   });
 
@@ -852,8 +869,7 @@ describe("DeliveryRoutingService shipping pricing strategies", () => {
         },
       },
     };
-    const { RouteDistanceService } = await import("../maps/route-distance.service");
-    const routeDistanceService = new RouteDistanceService(prisma as any);
+    const routeDistanceService = new RouteDistanceService(prisma as never);
 
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

@@ -70,6 +70,8 @@ export const serverEnvSchema = z.object({
   FX_BASE_CURRENCY: z.string().length(3).default("INR"),
   FX_CACHE_TTL_MINUTES: z.coerce.number().int().positive().default(360),
   FX_CREDENTIAL_ENCRYPTION_KEY: z.string().min(32).optional(),
+  SELLER_PAYOUT_DATA_ENCRYPTION_KEY: z.string().min(32).optional(),
+  INDIHUB_ALLOW_SELLER_PAYOUT_BACKFILL: z.enum(["true", "false"]).optional(),
   CURRENCYAPI_API_KEY: z.string().optional(),
   S3_ENDPOINT: z.string().optional(),
   S3_BUCKET: z.string().optional(),

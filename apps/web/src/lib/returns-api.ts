@@ -147,6 +147,7 @@ export type ReturnSummary = {
 
 export type ReturnDetail = Omit<ReturnSummary, "items"> & {
   note?: string | null;
+  reverseShipmentMode: "PLATFORM_PICKUP" | "CUSTOMER_SELF_SHIP";
   qualityProofKeys?: string[];
   autoApproved?: boolean;
   couponAdjustmentPaise?: number;
@@ -438,7 +439,15 @@ export function updateAdminReturnStatus(
 export function recordAdminReturnQc(
   auth: IndihubAuthHeaders,
   requestNumber: string,
-  payload: { status: "QC_PASSED" | "QC_FAILED"; note?: string },
+  payload: {
+    status: "QC_PASSED" | "QC_FAILED";
+    stockDisposition?: "RESTOCK" | "DO_NOT_RESTOCK";
+    itemDispositions?: Array<{
+      returnRequestItemId: string;
+      stockDisposition: "RESTOCK" | "DO_NOT_RESTOCK";
+    }>;
+    note?: string;
+  },
 ) {
   return indihubFetch<ReturnDetail>(
     `/api/admin/returns/${encodeURIComponent(requestNumber)}/qc`,

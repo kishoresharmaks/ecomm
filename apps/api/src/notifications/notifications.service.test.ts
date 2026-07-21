@@ -34,7 +34,7 @@ describe("NotificationsService", () => {
         update: vi.fn(),
       },
       emailSetting: {
-        findFirst: vi.fn(),
+        findUnique: vi.fn(),
       },
       notificationLog: {
         create: vi.fn(),
@@ -63,7 +63,7 @@ describe("NotificationsService", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    prisma.client.emailSetting.findFirst.mockResolvedValue({
+    prisma.client.emailSetting.findUnique.mockResolvedValue({
       provider: "smtp",
       senderName: "1HandIndia",
       senderEmail: "no-reply@1handindia.test",

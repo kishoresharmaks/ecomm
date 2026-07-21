@@ -1,9 +1,11 @@
-import { NotFoundException } from "@nestjs/common";
+import { BadRequestException, NotFoundException } from "@nestjs/common";
 import {
   ApprovalStatus,
+  DocumentStatus,
   EmailRecipientType,
   PaymentStatus,
   SellerStatus,
+  SellerTaxRegistrationStatus,
   SellerSubscriptionBillingCycle,
   SellerSubscriptionStatus,
 } from "@indihub/database";
@@ -38,6 +40,7 @@ describe("AdminSellersService", () => {
       },
       user: { email: "seller@example.com" },
       profile: null,
+      documents: approvedSellerDocuments(),
     });
     tx.seller.update.mockResolvedValue({
       id: "seller_1",
@@ -116,6 +119,7 @@ describe("AdminSellersService", () => {
       },
       user: { email: "paid-seller@example.com" },
       profile: null,
+      documents: approvedSellerDocuments(),
     });
     tx.seller.update.mockResolvedValue({
       id: "seller_paid",
@@ -149,6 +153,69 @@ describe("AdminSellersService", () => {
         lastPaymentStatus: PaymentStatus.PENDING,
       },
     });
+  });
+
+  it("requires a GST certificate before approving a regular GST seller", async () => {
+    const tx = createSellerTx();
+    tx.seller.findFirst.mockResolvedValue({
+      id: "seller_gst",
+      userId: "user_seller_gst",
+      storeName: "GST Store",
+      status: SellerStatus.PENDING_APPROVAL,
+      approvalStatus: ApprovalStatus.PENDING_APPROVAL,
+      subscriptionStatus: SellerSubscriptionStatus.ACTIVE,
+      subscriptionPlan: null,
+      user: { email: "gst@example.com" },
+      profile: {
+        taxRegistrationStatus: SellerTaxRegistrationStatus.GST_REGISTERED,
+        gstNumber: "29ABCDE1234F1Z5",
+      },
+      documents: approvedSellerDocuments(false),
+    });
+    const service = new AdminSellersService(
+      createPrisma(tx),
+      notifications as never,
+      storage as never,
+    );
+
+    await expect(
+      service.updateSellerApproval("seller_gst", {
+        decision: SellerApprovalDecision.APPROVE,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(tx.seller.update).not.toHaveBeenCalled();
+  });
+
+  it("blocks approval when a mandatory seller document is still pending", async () => {
+    const tx = createSellerTx();
+    tx.seller.findFirst.mockResolvedValue({
+      id: "seller_pending_doc",
+      userId: "user_seller_pending_doc",
+      storeName: "Pending Document Store",
+      status: SellerStatus.PENDING_APPROVAL,
+      approvalStatus: ApprovalStatus.PENDING_APPROVAL,
+      subscriptionStatus: SellerSubscriptionStatus.ACTIVE,
+      subscriptionPlan: null,
+      user: { email: "pending@example.com" },
+      profile: null,
+      documents: approvedSellerDocuments().map((document) =>
+        document.documentType === "BANK_PROOF"
+          ? { ...document, status: DocumentStatus.PENDING }
+          : document,
+      ),
+    });
+    const service = new AdminSellersService(
+      createPrisma(tx),
+      notifications as never,
+      storage as never,
+    );
+
+    await expect(
+      service.updateSellerApproval("seller_pending_doc", {
+        decision: SellerApprovalDecision.APPROVE,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(tx.seller.update).not.toHaveBeenCalled();
   });
 
   it("throws when an approval decision targets a missing seller", async () => {
@@ -187,4 +254,17 @@ function createPrisma(tx: ReturnType<typeof createSellerTx>) {
       ),
     },
   } as never;
+}
+
+function approvedSellerDocuments(includeGstCertificate = true) {
+  return [
+    "ID_PROOF",
+    "SIGNATURE_PROOF",
+    "ADDRESS_PROOF",
+    "BANK_PROOF",
+    ...(includeGstCertificate ? ["GST_CERTIFICATE"] : []),
+  ].map((documentType) => ({
+    documentType,
+    status: DocumentStatus.APPROVED,
+  }));
 }

@@ -1,6 +1,41 @@
 import { Type } from "class-transformer";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from "class-validator";
+import {
+  IsArray,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+  ValidateNested,
+} from "class-validator";
+
+export class CreateB2BQuotationLineDto {
+  @ApiProperty()
+  @IsUUID()
+  enquiryLineId!: string;
+
+  @ApiProperty({ minimum: 1 })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  quantity!: number;
+
+  @ApiProperty({ minimum: 1 })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  unitPricePaise!: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  note?: string;
+}
 
 export class CreateB2BResponseDto {
   @ApiProperty({ example: "We can supply 100 units at the quoted wholesale rate." })
@@ -15,6 +50,13 @@ export class CreateB2BResponseDto {
   @IsInt()
   @Min(1, { message: "quotedPricePaise must represent a positive price (minimum 1 paise)" })
   quotedPricePaise?: number;
+
+  @ApiPropertyOptional({ type: [CreateB2BQuotationLineDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateB2BQuotationLineDto)
+  lines?: CreateB2BQuotationLineDto[];
 
   @ApiPropertyOptional({ example: 250000, description: "Seller-arranged B2B transport charge in paise." })
   @IsOptional()

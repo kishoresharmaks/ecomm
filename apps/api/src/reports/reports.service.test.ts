@@ -454,6 +454,77 @@ describe("ReportsService", () => {
     });
   });
 
+  it("signs credit notes negatively and scopes GST reports to the seller", async () => {
+    const tx = createReportsTx();
+    const prisma = createPrisma(tx);
+    prisma.client.seller.findUnique.mockResolvedValue({
+      id: "seller_1",
+      primaryCapability: "RETAIL",
+      enabledCapabilities: ["RETAIL"],
+      addresses: [{ countryCode: "IN" }],
+    });
+    tx.taxDocument.findMany.mockResolvedValue([
+      gstDocument({
+        id: "invoice_1",
+        documentType: "TAX_INVOICE",
+        documentNumber: "TI/26-27/000001",
+      }),
+      gstDocument({
+        id: "credit_1",
+        documentType: "CREDIT_NOTE",
+        documentNumber: "CN/26-27/000001",
+        originalDocument: { documentNumber: "TI/26-27/000001" },
+      }),
+    ]);
+    const service = new ReportsService(
+      prisma as never,
+      createFinanceCalculator() as never,
+      createMarketService() as never,
+    );
+
+    const result = await service.sellerGstReport(
+      {
+        id: "user_seller",
+        clerkUserId: null,
+        email: "seller@example.com",
+        roles: [],
+      },
+      {},
+    );
+
+    expect(tx.taxDocument.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          status: "ISSUED",
+          sellerId: "seller_1",
+        },
+      }),
+    );
+    expect(result.summary).toMatchObject({
+      documentCount: 2,
+      invoiceCount: 1,
+      creditNoteCount: 1,
+      taxableValuePaise: 0,
+      totalTaxPaise: 0,
+      invoiceValuePaise: 0,
+    });
+    expect(result.documents[1]).toMatchObject({
+      documentNumber: "CN/26-27/000001",
+      taxableValuePaise: -10000,
+      totalTaxPaise: -1800,
+      invoiceValuePaise: -11800,
+      originalDocumentNumber: "TI/26-27/000001",
+    });
+    expect(result.hsnSummary).toEqual([
+      expect.objectContaining({
+        hsnSacCode: "610910",
+        quantity: 0,
+        taxableValuePaise: 0,
+        totalTaxPaise: 0,
+      }),
+    ]);
+  });
+
   it("blocks seller reports for users without a seller account", async () => {
     const tx = createReportsTx();
     const prisma = createPrisma(tx);
@@ -533,6 +604,9 @@ function createReportsTx() {
     returnRequest: {
       count: vi.fn()
     },
+    taxDocument: {
+      findMany: vi.fn()
+    },
     supportRequest: {
       count: vi.fn(),
       groupBy: vi.fn(),
@@ -588,6 +662,7 @@ function createPrisma(tx: ReturnType<typeof createReportsTx>) {
         findMany: tx.product.findMany
       },
       orderSellerSplit: tx.orderSellerSplit,
+      taxDocument: tx.taxDocument,
       $transaction: vi.fn(async (callback: (transactionClient: typeof tx) => Promise<unknown>) => callback(tx))
     }
   };
@@ -612,5 +687,58 @@ function freshUnstampedSplit() {
       createdAt: new Date(),
       items: [{ id: "item_1", sellerId: "seller_1", productId: "product_1", lineTotalPaise: 100000, couponSellerFundedDiscountPaise: 0, product: { categoryId: "category_1" } }]
     }
+  };
+}
+
+function gstDocument(
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    id: "invoice_1",
+    documentNumber: "TI/26-27/000001",
+    documentType: "TAX_INVOICE",
+    issueDate: new Date("2026-07-20T00:00:00.000Z"),
+    financialYear: "26-27",
+    sellerId: "seller_1",
+    seller: { id: "seller_1", storeName: "Tax Ready Store" },
+    sellerTaxRegistrationStatus: "GST_REGISTERED",
+    sellerGstin: "29ABCDE1234F1Z5",
+    buyerLegalName: "Business Buyer",
+    buyerGstin: "27ABCDE1234F1Z5",
+    placeOfSupplyStateCode: "27",
+    supplyType: "INTER_STATE",
+    gstrSupplySection: "B2B",
+    reason: null,
+    currency: "INR",
+    taxableValuePaise: 10000,
+    cgstPaise: 0,
+    sgstPaise: 0,
+    igstPaise: 1800,
+    cessPaise: 0,
+    totalTaxPaise: 1800,
+    invoiceValuePaise: 11800,
+    order: { orderNumber: "1HI-1" },
+    b2bOrder: null,
+    originalDocument: null,
+    lines: [
+      {
+        id: "line_1",
+        lineType: "PRODUCT",
+        description: "Cotton shirt",
+        hsnSacCode: "610910",
+        taxClassification: "TAXABLE",
+        quantity: 1,
+        uqc: "NOS",
+        gstRatePercent: 18,
+        taxableValuePaise: 10000,
+        cgstPaise: 0,
+        sgstPaise: 0,
+        igstPaise: 1800,
+        cessPaise: 0,
+        totalTaxPaise: 1800,
+        lineValuePaise: 11800,
+      },
+    ],
+    ...overrides,
   };
 }

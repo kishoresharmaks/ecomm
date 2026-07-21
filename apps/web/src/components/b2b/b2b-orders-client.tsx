@@ -13,6 +13,7 @@ import {
   validateB2BPurchaseOrderFile,
 } from "@/lib/b2b-po-documents";
 import {
+  b2bFinalDocumentLabel,
   getBusinessBuyerB2BOrder,
   getBusinessBuyerProfile,
   listBusinessBuyerB2BOrders,
@@ -336,7 +337,7 @@ export function B2BOrderDetailClient({ orderNumber }: { orderNumber: string }) {
             <B2BOrderCommercialPanel order={order} />
             <B2BTransportPanel order={order} />
             <B2BProformaPanel order={order} onOpen={openProformaInvoice} />
-            <B2BFinalTaxInvoicePanel order={order} onOpen={openTaxInvoice} />
+            <B2BFinalInvoicePanel order={order} onOpen={openTaxInvoice} />
             <B2BOrderPaymentPanel
               order={order}
               proofFile={proofFile}
@@ -520,15 +521,16 @@ function B2BProformaPanel({ order, onOpen }: { order: B2BOrder; onOpen: () => vo
   );
 }
 
-function B2BFinalTaxInvoicePanel({ order, onOpen }: { order: B2BOrder; onOpen: () => Promise<void> }) {
+function B2BFinalInvoicePanel({ order, onOpen }: { order: B2BOrder; onOpen: () => Promise<void> }) {
   const available = order.status === "FULFILLED";
+  const documentLabel = b2bFinalDocumentLabel(order.finalDocumentType);
 
   return (
     <B2BPanel>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <SectionHeading
-          title="Final tax invoice"
-          description={available ? "Download the server-generated final tax invoice PDF." : "Available after seller fulfilment is complete."}
+          title={`Final ${documentLabel.toLowerCase()}`}
+          description={available ? `Download the server-generated ${documentLabel.toLowerCase()} PDF.` : "Available after seller fulfilment is complete."}
         />
         <Button
           type="button"

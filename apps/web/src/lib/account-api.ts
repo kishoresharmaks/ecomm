@@ -1,4 +1,10 @@
-import { indihubFetch, type IndihubAuthHeaders } from "./api";
+import {
+  apiBaseUrl,
+  buildAuthHeaders,
+  IndihubApiError,
+  indihubFetch,
+  type IndihubAuthHeaders,
+} from "./api";
 import type { LocationSource } from "./maps-api";
 import type {
   OrderSummary,
@@ -191,6 +197,23 @@ export type PaginatedAccountOrders = {
   total: number;
   page: number;
   limit: number;
+};
+
+export type CustomerTaxDocument = {
+  id: string;
+  documentNumber?: string | null;
+  documentType: string;
+  label: string;
+  status: string;
+  issueDate?: string | null;
+  supplyDate?: string | null;
+  sellerLegalName: string;
+  sellerGstin?: string | null;
+  currency: string;
+  invoiceValuePaise: number;
+  totalTaxPaise: number;
+  originalDocumentNumber?: string | null;
+  downloadFileName: string;
 };
 
 export type SupportRequestPayload = {
@@ -414,6 +437,50 @@ export function listCustomerOrders(auth: IndihubAuthHeaders, query: { search?: s
 
 export function getAccountOrder(auth: IndihubAuthHeaders, orderNumber: string) {
   return indihubFetch<AccountOrder>(`/api/account/orders/${encodeURIComponent(orderNumber)}`, undefined, auth);
+}
+
+export function listCustomerTaxDocuments(auth: IndihubAuthHeaders, orderNumber: string) {
+  return indihubFetch<CustomerTaxDocument[]>(
+    `/api/account/orders/${encodeURIComponent(orderNumber)}/tax-documents`,
+    undefined,
+    auth,
+  );
+}
+
+export async function downloadCustomerTaxDocument(
+  auth: IndihubAuthHeaders,
+  orderNumber: string,
+  documentId: string,
+  fallbackFileName = "purchase-document.pdf",
+) {
+  const path = `/api/account/orders/${encodeURIComponent(orderNumber)}/tax-documents/${encodeURIComponent(documentId)}/download`;
+  let response = await fetch(`${apiBaseUrl}${path}`, {
+    headers: await buildAuthHeaders(auth),
+  });
+
+  if (response.status === 401 && auth.getBearerToken) {
+    response = await fetch(`${apiBaseUrl}${path}`, {
+      headers: await buildAuthHeaders(auth, { skipCache: true }),
+    });
+  }
+
+  if (!response.ok) {
+    throw new IndihubApiError(
+      "The purchase document could not be downloaded.",
+      response.status,
+    );
+  }
+
+  const contentDisposition = response.headers.get("content-disposition") ?? "";
+  const fileNameMatch = /filename="?([^";]+)"?/i.exec(contentDisposition);
+  const objectUrl = URL.createObjectURL(await response.blob());
+  const anchor = document.createElement("a");
+  anchor.href = objectUrl;
+  anchor.download = fileNameMatch?.[1] ?? fallbackFileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(objectUrl);
 }
 
 export function cancelCustomerOrder(auth: IndihubAuthHeaders, orderNumber: string, note?: string) {

@@ -10,6 +10,8 @@ import { Button, SectionHeading, StatusBadge, cn } from "@indihub/ui";
 import {
   marketplaceProductAdminSummaryFields,
   marketplaceProductEssentialFields,
+  normalizeProductReturnPolicy,
+  productReturnReasons,
   type MarketplaceProductEssentialField,
 } from "@indihub/shared-types";
 import { useConfirmationDialog } from "@/components/shared/confirmation-dialog";
@@ -28,6 +30,7 @@ import {
   sellerCategoryLabel,
   sellerCategoryOptions,
   updateSellerProduct,
+  type ProductTaxClassification,
   type SellerProductPayload
 } from "@/lib/seller-api";
 import { userFacingApiErrorMessage, type IndihubAuthHeaders } from "@/lib/api";
@@ -83,6 +86,7 @@ type DraftVariantRow = {
 };
 
 type TaxDraft = {
+  taxClassification: ProductTaxClassification;
   hsnCode: string;
   gstRatePercent: string;
 };
@@ -107,7 +111,11 @@ export function SellerProductsClient({
   const [draftImages, setDraftImages] = useState<DraftProductImage[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState("");
   const [draftVariants, setDraftVariants] = useState<DraftVariantRow[]>([emptyDraftVariant()]);
-  const [taxDraft, setTaxDraft] = useState<TaxDraft>({ hsnCode: "", gstRatePercent: "" });
+  const [taxDraft, setTaxDraft] = useState<TaxDraft>({
+    taxClassification: "TAXABLE",
+    hsnCode: "",
+    gstRatePercent: "",
+  });
   const [selectedDeliveryModes, setSelectedDeliveryModes] = useState<DeliveryMode[]>(defaultProductDeliveryModes);
   const [productNameDraft, setProductNameDraft] = useState("");
   const [productDescriptionDraft, setProductDescriptionDraft] = useState("");
@@ -232,13 +240,26 @@ export function SellerProductsClient({
 
     hydratedTaxKeyRef.current = hydrationKey;
     const attributes = editingProduct?.attributes ?? {};
+    const taxClassification =
+      editingProduct?.taxClassification ??
+      category?.defaultTaxClassification ??
+      "TAXABLE";
+    const taxRegistrationStatus =
+      profileQuery.data?.profile?.taxRegistrationStatus ??
+      (profileQuery.data?.profile?.gstNumber ? "GST_REGISTERED" : "NOT_REGISTERED");
     setTaxDraft({
+      taxClassification,
       hsnCode: attributeValueToInput(attributes.hsnCode ?? editingProduct?.hsnCode ?? category?.defaultHsnCode),
-      gstRatePercent: attributeValueToInput(
-        attributes.gstRatePercent ?? editingProduct?.gstRatePercent ?? category?.defaultGstRatePercent,
-      ),
+      gstRatePercent:
+        taxClassification === "TAXABLE" && taxRegistrationStatus === "GST_REGISTERED"
+          ? attributeValueToInput(
+              attributes.gstRatePercent ??
+                editingProduct?.gstRatePercent ??
+                category?.defaultGstRatePercent,
+            )
+          : "0",
     });
-  }, [categories, productQuery.data, selectedCategoryId]);
+  }, [categories, productQuery.data, profileQuery.data, selectedCategoryId]);
 
   function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -347,12 +368,32 @@ export function SellerProductsClient({
         attributes: variantAttributes
       };
     });
+    const marketplaceEssentials = marketplaceEssentialsFromForm(form);
+    const productReturnPolicy = normalizeProductReturnPolicy(marketplaceEssentials);
+    if (productReturnPolicy.returnAllowed && productReturnPolicy.returnWindowDays <= 0) {
+      setNotice({ tone: "warning", message: "Enter refund return days for this product." });
+      return;
+    }
+    if (productReturnPolicy.replacementAllowed && productReturnPolicy.replacementWindowDays <= 0) {
+      setNotice({ tone: "warning", message: "Enter replacement days for this product." });
+      return;
+    }
+    if (
+      (productReturnPolicy.returnAllowed || productReturnPolicy.replacementAllowed) &&
+      (!Array.isArray(marketplaceEssentials.returnReasons) ||
+        marketplaceEssentials.returnReasons.length === 0)
+    ) {
+      setNotice({ tone: "warning", message: "Select at least one accepted return reason." });
+      return;
+    }
+
     const payload: SellerProductPayload = {
       categoryId,
       name: productName,
       description: formValue(form, "description"),
+      taxClassification: taxDraft.taxClassification,
       attributes: {
-        ...marketplaceEssentialsFromForm(form),
+        ...marketplaceEssentials,
         ...dynamicAttributesFromForm(form, templateFields(template, "PRODUCT"), "productAttribute"),
       },
       deliveryModes: selectedDeliveryModes,
@@ -383,6 +424,9 @@ export function SellerProductsClient({
 
   const products = productsQuery.data?.items ?? [];
   const sellerReady = profileQuery.data?.status === "APPROVED" && profileQuery.data?.approvalStatus === "APPROVED";
+  const sellerTaxRegistrationStatus =
+    profileQuery.data?.profile?.taxRegistrationStatus ??
+    (profileQuery.data?.profile?.gstNumber ? "GST_REGISTERED" : "NOT_REGISTERED");
   const editingProduct = productQuery.data ?? null;
   const selectedCategory = categories.find((category) => category.id === selectedCategoryId) ?? categories[0] ?? null;
   const selectedCategoryLabel = sellerCategoryLabel(categoriesQuery.data ?? [], selectedCategoryId);
@@ -554,6 +598,7 @@ export function SellerProductsClient({
                     category={selectedCategory}
                     taxDraft={taxDraft}
                     onTaxDraftChange={setTaxDraft}
+                    sellerTaxRegistrationStatus={sellerTaxRegistrationStatus}
                   />
                   <ProductDeliveryModeSelector
                     selectedModes={selectedDeliveryModes}
@@ -623,6 +668,10 @@ export function SellerProductsClient({
                     <ProductSummaryRow label="Images" value={`${draftImages.length}/${maxProductImages}`} />
                     <ProductSummaryRow label="Variants" value={variantRowsLabel} />
                     <ProductSummaryRow label="Stock" value={stockSummary} />
+                    <ProductSummaryRow
+                      label="Tax treatment"
+                      value={humanizeTaxClassification(taxDraft.taxClassification)}
+                    />
                     <ProductSummaryRow label="Delivery" value={`${selectedDeliveryModes.length} option${selectedDeliveryModes.length === 1 ? "" : "s"}`} />
                   </div>
                 </ProductSidebarCard>
@@ -1032,12 +1081,15 @@ function MarketplaceProductEssentialsFields({
   category,
   taxDraft,
   onTaxDraftChange,
+  sellerTaxRegistrationStatus,
 }: {
   values?: Record<string, unknown> | null;
   category?: CategorySummary | null;
   taxDraft: TaxDraft;
   onTaxDraftChange: (value: TaxDraft) => void;
+  sellerTaxRegistrationStatus: "GST_REGISTERED" | "COMPOSITION" | "NOT_REGISTERED";
 }) {
+  const isRegularGstSeller = sellerTaxRegistrationStatus === "GST_REGISTERED";
   const groups: Array<{
     group: MarketplaceProductEssentialField["group"];
     title: string;
@@ -1064,15 +1116,72 @@ function MarketplaceProductEssentialsFields({
       description: "Optional highlights and search metadata that help customers understand the item faster.",
     },
   ];
+  const visibleTaxField = (field: MarketplaceProductEssentialField) => {
+    if (field.key === "gstRatePercent") {
+      return taxDraft.taxClassification === "TAXABLE" && isRegularGstSeller;
+    }
+    if (field.key === "hsnCode") {
+      return taxDraft.taxClassification !== "NON_GST";
+    }
+    return true;
+  };
 
   return (
     <div className="grid gap-5">
+      <div className="grid gap-2 rounded-md border border-[#D8E2EA] bg-[#F8FAFC] p-4">
+        <label className="block max-w-md">
+          <span className="block text-xs font-bold uppercase tracking-wide text-[#667085]">
+            Product tax classification
+          </span>
+          <select
+            value={taxDraft.taxClassification}
+            onChange={(event) => {
+              const taxClassification = event.target.value as ProductTaxClassification;
+              onTaxDraftChange({
+                ...taxDraft,
+                taxClassification,
+                gstRatePercent:
+                  taxClassification === "TAXABLE" && isRegularGstSeller
+                    ? taxDraft.gstRatePercent
+                    : "0",
+              });
+            }}
+            className="mt-1 h-11 w-full rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-semibold text-[#1F2933] outline-none focus:border-[#ED3500]"
+          >
+            <option value="TAXABLE">Taxable supply</option>
+            <option value="NIL_RATED">Nil-rated supply</option>
+            <option value="EXEMPT">Exempt supply</option>
+            <option value="NON_GST">Non-GST supply</option>
+          </select>
+        </label>
+        <p className="text-xs font-semibold leading-5 text-[#667085]">
+          This describes the product supply. The seller GST registration separately controls whether GST can be collected.
+        </p>
+        {!isRegularGstSeller ? (
+          <div className="rounded-md border border-[#FEC84B] bg-[#FFFAEB] px-3 py-2 text-xs font-semibold leading-5 text-[#7A2E0E]">
+            {sellerTaxRegistrationStatus === "COMPOSITION"
+              ? "Composition sellers cannot charge GST separately. The platform stores a 0% collected rate and issues a bill of supply."
+              : "Your store is not GST registered. GST rate entry is disabled, customer GST remains zero, and issued orders use a commercial invoice."}
+          </div>
+        ) : null}
+      </div>
       {groups.map((group) => {
-        const fields = marketplaceProductEssentialFields.filter((field) => field.group === group.group);
+        const fields = marketplaceProductEssentialFields.filter(
+          (field) => field.group === group.group && visibleTaxField(field),
+        );
         const requiredFields = fields.filter((field) => field.required);
         const optionalFields = fields.filter((field) => !field.required);
-        const visibleFields = requiredFields.length ? requiredFields : optionalFields.slice(0, 1);
-        const collapsedFields = requiredFields.length ? optionalFields : optionalFields.slice(1);
+        const showAllFields = group.group === "FULFILMENT";
+        const visibleFields = showAllFields
+          ? fields
+          : requiredFields.length
+            ? requiredFields
+            : optionalFields.slice(0, 1);
+        const collapsedFields = showAllFields
+          ? []
+          : requiredFields.length
+            ? optionalFields
+            : optionalFields.slice(1);
 
         return (
           <div key={group.group} className="grid gap-3 border-b border-[#E5E7EB] pb-5 last:border-b-0 last:pb-0">
@@ -1100,8 +1209,12 @@ function MarketplaceProductEssentialsFields({
                         category: category ?? null,
                         onHsnSuggestionSelect: (entry: HsnMasterEntry) =>
                           onTaxDraftChange({
+                            taxClassification: taxDraft.taxClassification,
                             hsnCode: entry.hsnCode,
-                            gstRatePercent: String(entry.gstRatePercent),
+                            gstRatePercent:
+                              taxDraft.taxClassification === "TAXABLE" && isRegularGstSeller
+                                ? String(entry.gstRatePercent)
+                                : "0",
                           }),
                       }
                     : {})}
@@ -1135,6 +1248,14 @@ function MarketplaceProductEssentialsFields({
       })}
     </div>
   );
+}
+
+function humanizeTaxClassification(value: ProductTaxClassification) {
+  return value
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function ProductDeliveryModeSelector({
@@ -1273,6 +1394,40 @@ function MarketplaceProductEssentialInput({
         : {
             value,
           };
+
+  if (field.key === "returnReasons") {
+    const selectedReasons = new Set(
+      defaultValue
+        .split("\n")
+        .map((reason) => reason.trim())
+        .filter(Boolean),
+    );
+    return (
+      <fieldset className="space-y-2 md:col-span-2">
+        <legend className="text-xs font-black uppercase tracking-wide text-[#667085]">
+          {field.label}
+        </legend>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {productReturnReasons.map((reason) => (
+            <label
+              key={reason}
+              className="flex min-h-11 items-center gap-3 rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 py-2 text-sm font-bold text-[#1F2933]"
+            >
+              <input
+                type="checkbox"
+                name={name}
+                value={reason}
+                defaultChecked={selectedReasons.has(reason)}
+                className="h-4 w-4 accent-[#ED3500]"
+              />
+              <span>{reason}</span>
+            </label>
+          ))}
+        </div>
+        {help ? <p className="text-xs font-semibold text-[#667085]">{help}</p> : null}
+      </fieldset>
+    );
+  }
 
   if (field.inputType === "SELECT") {
     return (
@@ -1733,6 +1888,16 @@ function marketplaceEssentialsFromForm(form: FormData): Record<string, unknown> 
   const attributes: Record<string, unknown> = {};
 
   for (const field of marketplaceProductEssentialFields) {
+    if (field.key === "returnReasons") {
+      const reasons = form
+        .getAll(marketplaceEssentialInputName(field.key))
+        .map((value) => String(value).trim())
+        .filter(Boolean);
+      if (reasons.length) {
+        attributes[field.key] = reasons;
+      }
+      continue;
+    }
     const rawValue = optionalFormValue(form, marketplaceEssentialInputName(field.key));
     const value = coerceMarketplaceEssentialValue(field, rawValue);
     if (value !== undefined) {

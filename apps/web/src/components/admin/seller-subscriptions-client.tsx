@@ -14,7 +14,6 @@ import {
   type SellerSubscriptionPlanPayload
 } from "@/lib/seller-subscription-admin-api";
 import type {
-  SellerProfile,
   SellerSubscriptionPlan,
   SellerSubscriptionPlanAudience,
 } from "@/lib/seller-api";

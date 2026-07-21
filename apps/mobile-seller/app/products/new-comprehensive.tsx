@@ -14,6 +14,7 @@ import {
   SelectField,
   Toast,
 } from "../../src/components/screen";
+import { ReturnReasonSelector } from "../../src/components/return-reason-selector";
 import { createSellerProduct, getSellerProfile, listCategories, searchHsnMaster } from "../../src/features/seller/seller-api";
 import { uploadPublicSellerImage, type MobileUploadFile } from "../../src/features/seller/mobile-upload";
 import { launchSellerImageLibraryAsync } from "../../src/features/seller/image-picker";
@@ -336,6 +337,27 @@ export default function NewSellerProductScreen() {
             onSelect={(value) => dispatch({ type: "setBase", key: "returnEligibility", value })}
             placeholder="Select return policy"
             error={fieldError(state, "base.returnEligibility")}
+          />
+          <Field
+            keyboardType="number-pad"
+            label="Refund return days *"
+            value={state.base.returnWindowDays}
+            onChangeText={(value) => dispatch({ type: "setBase", key: "returnWindowDays", value })}
+            error={fieldError(state, "base.returnWindowDays")}
+          />
+          <Field
+            keyboardType="number-pad"
+            label="Replacement days *"
+            value={state.base.replacementWindowDays}
+            onChangeText={(value) => dispatch({ type: "setBase", key: "replacementWindowDays", value })}
+            error={fieldError(state, "base.replacementWindowDays")}
+          />
+          <ReturnReasonSelector
+            value={state.base.returnReasons}
+            onChange={(value) => dispatch({ type: "setBase", key: "returnReasons", value })}
+            {...(fieldError(state, "base.returnReasons")
+              ? { error: fieldError(state, "base.returnReasons") }
+              : {})}
           />
           <Field keyboardType="number-pad" label="Package weight (grams) *" value={state.base.packageWeightGrams} onChangeText={(value) => dispatch({ type: "setBase", key: "packageWeightGrams", value })} error={fieldError(state, "base.packageWeightGrams")} />
           <Field keyboardType="number-pad" label="Package length (cm)" value={state.base.packageLengthCm} onChangeText={(value) => dispatch({ type: "setBase", key: "packageLengthCm", value })} />

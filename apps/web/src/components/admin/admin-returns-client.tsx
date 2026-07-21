@@ -7,6 +7,7 @@ import {
   AlertCircle,
   CheckCircle2,
   ClipboardCheck,
+  PackageCheck,
   RefreshCw,
   Search,
   ShieldCheck,
@@ -126,12 +127,21 @@ export function AdminReturnsClient() {
     mutationFn: ({
       requestNumber,
       qcStatus,
+      stockDisposition,
+      itemDispositions,
     }: {
       requestNumber: string;
       qcStatus: "QC_PASSED" | "QC_FAILED";
+      stockDisposition?: "RESTOCK" | "DO_NOT_RESTOCK";
+      itemDispositions?: Array<{
+        returnRequestItemId: string;
+        stockDisposition: "RESTOCK" | "DO_NOT_RESTOCK";
+      }>;
     }) =>
       recordAdminReturnQc(auth.authHeaders, requestNumber, {
         status: qcStatus,
+        ...(stockDisposition ? { stockDisposition } : {}),
+        ...(itemDispositions ? { itemDispositions } : {}),
         ...(note.trim() ? { note: note.trim() } : {}),
       }),
     onSuccess: (detail) => handleReturnUpdated(detail, "Quality check recorded."),
@@ -286,10 +296,12 @@ export function AdminReturnsClient() {
                     nextStatus,
                   })
                 }
-                onQc={(qcStatus) =>
+                onQc={(qcStatus, stockDisposition, itemDispositions) =>
                   qcMutation.mutate({
                     requestNumber: selectedDetail.requestNumber,
                     qcStatus,
+                    ...(stockDisposition ? { stockDisposition } : {}),
+                    ...(itemDispositions ? { itemDispositions } : {}),
                   })
                 }
                 onPickupAction={(action, deliveryPartnerUserId) =>
@@ -329,18 +341,36 @@ function AdminReturnDetailPanel({
   setNote: (value: string) => void;
   isBusy: boolean;
   onStatus: (status: ReturnRequestStatus) => void;
-  onQc: (status: "QC_PASSED" | "QC_FAILED") => void;
+  onQc: (
+    status: "QC_PASSED" | "QC_FAILED",
+    stockDisposition?: "RESTOCK" | "DO_NOT_RESTOCK",
+    itemDispositions?: Array<{
+      returnRequestItemId: string;
+      stockDisposition: "RESTOCK" | "DO_NOT_RESTOCK";
+    }>,
+  ) => void;
   onPickupAction: (action: "AUTO" | "ASSIGN" | "RELEASE", deliveryPartnerUserId?: string) => void;
 }) {
   const auth = useAdminAuth();
   const [selectedPartnerId, setSelectedPartnerId] = useState("");
+  const [stockDispositions, setStockDispositions] = useState<
+    Record<string, "RESTOCK" | "DO_NOT_RESTOCK">
+  >({});
   const [proofOpenError, setProofOpenError] = useState<string | null>(null);
   const waitingForSeller = detail.status === "PENDING_REVIEW";
   const canCancel = !["RESOLVED", "REJECTED", "CANCELLED"].includes(detail.status);
-  const canQc = ["RECEIVED", "PICKED_UP", "IN_TRANSIT", "APPROVED", "AUTO_APPROVED", "PICKUP_PENDING"].includes(detail.status);
-  const canManagePickup = detail.reverseShipments.length > 0 && !detail.reverseShipments.some((shipment) =>
-    ["PICKED_UP", "IN_TRANSIT", "RECEIVED"].includes(shipment.status),
-  );
+  const canQc = detail.status === "RECEIVED";
+  const canManagePickup =
+    detail.reverseShipmentMode === "PLATFORM_PICKUP" &&
+    detail.reverseShipments.length > 0 &&
+    !detail.reverseShipments.some((shipment) =>
+      ["PICKED_UP", "IN_TRANSIT", "RECEIVED"].includes(shipment.status),
+    );
+  const canReceiveSelfShip =
+    detail.reverseShipmentMode === "CUSTOMER_SELF_SHIP" &&
+    ["APPROVED", "AUTO_APPROVED", "PICKUP_PENDING", "PICKED_UP", "IN_TRANSIT"].includes(
+      detail.status,
+    );
   const partnersQuery = useQuery({
     queryKey: ["admin-delivery-partners-for-return", auth.token],
     queryFn: () =>
@@ -355,7 +385,12 @@ function AdminReturnDetailPanel({
   useEffect(() => {
     const assignedPartnerId = detail.reverseShipments.find((shipment) => shipment.assignedPartner?.id)?.assignedPartner?.id ?? "";
     setSelectedPartnerId((current) => current || assignedPartnerId);
-  }, [detail.requestNumber, detail.reverseShipments]);
+    setStockDispositions(
+      Object.fromEntries(
+        detail.items.map((item) => [item.id, "RESTOCK" as const]),
+      ),
+    );
+  }, [detail.items, detail.requestNumber, detail.reverseShipments]);
 
   async function openProof(assetKey: string) {
     setProofOpenError(null);
@@ -440,6 +475,26 @@ function AdminReturnDetailPanel({
                 <SmallMetric label="Approved" value={formatMoney(item.approvedRefundPaise, detail.currency)} />
                 <SmallMetric label="Coupon share" value={formatMoney(item.couponAdjustmentPaise, detail.currency)} />
               </div>
+              {canQc ? (
+                <label className="mt-3 grid gap-2">
+                  <span className="text-xs font-black uppercase tracking-[0.12em] text-[#667085]">
+                    Received item condition
+                  </span>
+                  <select
+                    value={stockDispositions[item.id] ?? "RESTOCK"}
+                    onChange={(event) =>
+                      setStockDispositions((current) => ({
+                        ...current,
+                        [item.id]: event.target.value as "RESTOCK" | "DO_NOT_RESTOCK",
+                      }))
+                    }
+                    className="h-10 rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 text-sm font-bold text-[#1F2933] outline-none focus:border-[#ED3500]"
+                  >
+                    <option value="RESTOCK">Sellable - return to stock</option>
+                    <option value="DO_NOT_RESTOCK">Damaged / not sellable</option>
+                  </select>
+                </label>
+              ) : null}
               {item.qcNote || item.sellerNote ? (
                 <p className="mt-3 rounded-md bg-[#F8FAFC] px-3 py-2 text-sm font-semibold leading-6 text-[#667085]">
                   {item.qcNote ? `QC: ${item.qcNote}` : null}
@@ -468,9 +523,28 @@ function AdminReturnDetailPanel({
               {waitingForSeller ? (
                 <WorkspaceNotice tone="info" title="Waiting for seller" message="The seller must approve or reject this return/replacement request. Admin approval is not required." />
               ) : null}
+              {canReceiveSelfShip ? (
+                <Button type="button" variant="outline" onClick={() => onStatus("RECEIVED")} disabled={isBusy}>
+                  <PackageCheck className="h-4 w-4" aria-hidden="true" />
+                  Mark self-shipped return received
+                </Button>
+              ) : null}
               {canQc ? (
                 <>
-                  <Button type="button" onClick={() => onQc("QC_PASSED")} disabled={isBusy}>
+                  <Button
+                    type="button"
+                    onClick={() =>
+                      onQc(
+                        "QC_PASSED",
+                        undefined,
+                        detail.items.map((item) => ({
+                          returnRequestItemId: item.id,
+                          stockDisposition: stockDispositions[item.id] ?? "RESTOCK",
+                        })),
+                      )
+                    }
+                    disabled={isBusy}
+                  >
                     <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
                     QC passed
                   </Button>
@@ -493,7 +567,15 @@ function AdminReturnDetailPanel({
           </section>
 
           <section className="rounded-lg border border-[#D8E2EA] bg-white p-4 shadow-sm">
-            <PanelTitle icon={<Truck className="h-5 w-5" />} title="Reverse pickup" description="Pickup and receiving updates from delivery/courier operations." />
+            <PanelTitle
+              icon={<Truck className="h-5 w-5" />}
+              title={detail.reverseShipmentMode === "CUSTOMER_SELF_SHIP" ? "Customer self shipment" : "Reverse pickup"}
+              description={
+                detail.reverseShipmentMode === "CUSTOMER_SELF_SHIP"
+                  ? "The customer arranges shipping. No delivery-partner earning is posted for this return."
+                  : "Eligible customer pickup is free. Partner earning is funded by the marketplace or seller according to payout settings."
+              }
+            />
             <div className="mt-4 rounded-md border border-[#E5E7EB] bg-[#F8FAFC] p-3">
               <p className="text-xs font-black uppercase tracking-[0.12em] text-[#667085]">Assignment control</p>
               <div className="mt-3 grid gap-2">
@@ -526,7 +608,11 @@ function AdminReturnDetailPanel({
                   </Button>
                 </div>
                 {!canManagePickup && detail.reverseShipments.length ? (
-                  <p className="text-xs font-bold text-[#667085]">Assignment is locked after customer pickup starts.</p>
+                  <p className="text-xs font-bold text-[#667085]">
+                    {detail.reverseShipmentMode === "CUSTOMER_SELF_SHIP"
+                      ? "Delivery-partner assignment is not used for customer self shipment."
+                      : "Assignment is locked after customer pickup starts."}
+                  </p>
                 ) : null}
               </div>
             </div>

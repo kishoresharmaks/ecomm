@@ -19,7 +19,11 @@ import {
   Min,
   ValidateNested
 } from "class-validator";
-import { DeliveryMode, VariantStatus } from "@indihub/database";
+import {
+  DeliveryMode,
+  ProductTaxClassification,
+  VariantStatus,
+} from "@indihub/database";
 
 export class ProductImageDto {
   @ApiProperty({ example: "indihub/sellers/seller-id/products/product.jpg" })
@@ -182,6 +186,15 @@ export class CreateSellerProductDto {
   @MinLength(10)
   @MaxLength(5000)
   description!: string;
+
+  @ApiPropertyOptional({
+    enum: ProductTaxClassification,
+    default: ProductTaxClassification.TAXABLE,
+    description: "Tax treatment of this supply, independent of the seller's GST registration.",
+  })
+  @IsOptional()
+  @IsEnum(ProductTaxClassification)
+  taxClassification?: ProductTaxClassification;
 
   @ApiPropertyOptional({ example: 1.5 })
   @IsOptional()

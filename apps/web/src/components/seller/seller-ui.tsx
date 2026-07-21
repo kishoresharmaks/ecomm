@@ -14,6 +14,7 @@ import {
   CreditCard,
   Home,
   Inbox,
+  Info,
   LayoutDashboard,
   Loader2,
   LogIn,
@@ -40,6 +41,7 @@ import {
   type ReactNode,
   startTransition,
   useContext,
+  useId,
   useRef,
   useState,
 } from "react";
@@ -731,15 +733,16 @@ export function SellerSkeleton({ className = "h-72" }: { className?: string }) {
 }
 
 export function SellerField({
-  label,
-  name,
+    label,
+    name,
   type = "text",
   defaultValue,
   value,
   onChange,
   required = false,
   placeholder,
-  hint,
+    hint,
+    info,
   min,
   step,
   readOnly = false
@@ -752,16 +755,25 @@ export function SellerField({
   onChange?: (value: string) => void;
   required?: boolean;
   placeholder?: string;
-  hint?: string;
+    hint?: string;
+    info?: ReactNode;
   min?: number;
   step?: string;
   readOnly?: boolean;
 }) {
-  return (
-    <label className="space-y-2">
-      <span className="block text-xs font-bold uppercase tracking-wide text-[#667085]">{label}</span>
-      <input
-        name={name}
+    const inputId = `seller-field-${name}`;
+
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center gap-1.5">
+          <label htmlFor={inputId} className="block text-xs font-bold uppercase tracking-wide text-[#667085]">
+            {label}
+          </label>
+          {info}
+        </div>
+        <input
+          id={inputId}
+          name={name}
         type={type}
         required={required}
         defaultValue={value === undefined ? (defaultValue ?? "") : undefined}
@@ -772,9 +784,39 @@ export function SellerField({
         step={step}
         readOnly={readOnly}
         className="h-11 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 text-sm font-semibold text-[#1F2933] outline-none transition focus:border-[#ED3500] focus:bg-white read-only:bg-[#EEF3F7] read-only:text-[#667085]"
-      />
-      {hint ? <span className="block text-xs font-semibold leading-5 text-[#667085]">{hint}</span> : null}
-    </label>
+        />
+        {hint ? <span className="block text-xs font-semibold leading-5 text-[#667085]">{hint}</span> : null}
+      </div>
+    );
+  }
+
+export function SellerInfoHint({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  const tooltipId = useId();
+
+  return (
+    <span className="group relative inline-flex">
+      <button
+        type="button"
+        aria-label={`Information about ${label}`}
+        aria-describedby={tooltipId}
+        className="grid h-5 w-5 place-items-center rounded-full text-[#667085] outline-none transition hover:bg-[#FFF0EC] hover:text-[#ED3500] focus-visible:ring-2 focus-visible:ring-[#ED3500] focus-visible:ring-offset-2"
+      >
+        <Info className="h-3.5 w-3.5" aria-hidden="true" />
+      </button>
+      <span
+        id={tooltipId}
+        role="tooltip"
+        className="pointer-events-none invisible absolute left-1/2 top-full z-[180] mt-2 w-72 max-w-[calc(100vw-3rem)] -translate-x-1/2 rounded-md border border-[#D8E2EA] bg-white px-3 py-2 text-left text-xs font-semibold normal-case leading-5 tracking-normal text-[#475467] opacity-0 shadow-lg transition group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
+      >
+        {children}
+      </span>
+    </span>
   );
 }
 

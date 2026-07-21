@@ -123,6 +123,7 @@ const safeFontFallbacks: Record<EmailThemeTokens["fontFamily"], string> = {
 };
 const EMAIL_OVERVIEW_RECENT_LIMIT = 5;
 const EMAIL_OVERVIEW_WINDOW_DAYS = 7;
+const DEFAULT_EMAIL_SETTING_ID = "00000000-0000-0000-0000-000000000001";
 const emailLogListSelect: Prisma.NotificationLogSelect = {
   id: true,
   channel: true,
@@ -286,8 +287,8 @@ export class NotificationsService {
     const emailWhere = {
       channel: NotificationChannel.EMAIL,
     } satisfies Prisma.NotificationLogWhereInput;
-    const settingPromise = this.prisma.client.emailSetting.findFirst({
-      orderBy: { createdAt: "asc" },
+    const settingPromise = this.prisma.client.emailSetting.findUnique({
+      where: { id: DEFAULT_EMAIL_SETTING_ID },
     });
 
     const [
@@ -845,7 +846,7 @@ export class NotificationsService {
         where: { code: log.templateCode },
         include: { theme: true },
       }),
-      this.prisma.client.emailSetting.findFirst({ orderBy: { createdAt: "asc" } }),
+      this.prisma.client.emailSetting.findUnique({ where: { id: DEFAULT_EMAIL_SETTING_ID } }),
     ]);
 
     if (
@@ -979,8 +980,8 @@ export class NotificationsService {
     }
 
     const rendered = await this.renderEmail(template, input.variables);
-    const emailSetting = await this.prisma.client.emailSetting.findFirst({
-      orderBy: { createdAt: "asc" },
+    const emailSetting = await this.prisma.client.emailSetting.findUnique({
+      where: { id: DEFAULT_EMAIL_SETTING_ID },
     });
     const setting = emailSetting ?? {
       provider: process.env.EMAIL_PROVIDER ?? "smtp",
@@ -1034,8 +1035,8 @@ export class NotificationsService {
         where: { code: input.templateCode },
         include: { theme: true },
       }),
-      this.prisma.client.emailSetting.findFirst({
-        orderBy: { createdAt: "asc" },
+      this.prisma.client.emailSetting.findUnique({
+        where: { id: DEFAULT_EMAIL_SETTING_ID },
       }),
     ]);
 
@@ -1871,8 +1872,8 @@ export class NotificationsService {
   }
 
   private async resolveAdminRecipients() {
-    const emailSetting = await this.prisma.client.emailSetting.findFirst({
-      orderBy: { createdAt: "asc" },
+    const emailSetting = await this.prisma.client.emailSetting.findUnique({
+      where: { id: DEFAULT_EMAIL_SETTING_ID },
       select: { adminRecipients: true },
     });
     const configured =

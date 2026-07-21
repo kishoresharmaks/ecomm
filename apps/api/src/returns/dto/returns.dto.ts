@@ -232,10 +232,39 @@ export class UpdateReturnStatusDto {
   note?: string;
 }
 
+export class ReturnQcItemDispositionDto {
+  @ApiProperty({ example: "70cf4fb8-44b7-4ff0-b65c-5987c72f91ab" })
+  @IsUUID()
+  returnRequestItemId!: string;
+
+  @ApiProperty({ enum: ["RESTOCK", "DO_NOT_RESTOCK"] })
+  @IsIn(["RESTOCK", "DO_NOT_RESTOCK"])
+  stockDisposition!: "RESTOCK" | "DO_NOT_RESTOCK";
+}
+
 export class ReturnQcDto {
   @ApiProperty({ enum: [ReturnRequestStatus.QC_PASSED, ReturnRequestStatus.QC_FAILED] })
   @IsEnum(ReturnRequestStatus)
   status!: ReturnRequestStatus;
+
+  @ApiPropertyOptional({
+    enum: ["RESTOCK", "DO_NOT_RESTOCK"],
+    description: "Required when QC passes. RESTOCK returns sellable units to inventory.",
+  })
+  @IsOptional()
+  @IsIn(["RESTOCK", "DO_NOT_RESTOCK"])
+  stockDisposition?: "RESTOCK" | "DO_NOT_RESTOCK";
+
+  @ApiPropertyOptional({
+    type: [ReturnQcItemDispositionDto],
+    description: "Per-item sellable-stock decision. Required for mixed-condition returns.",
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => ReturnQcItemDispositionDto)
+  itemDispositions?: ReturnQcItemDispositionDto[];
 
   @ApiPropertyOptional({ example: "Item condition matched customer report." })
   @IsOptional()

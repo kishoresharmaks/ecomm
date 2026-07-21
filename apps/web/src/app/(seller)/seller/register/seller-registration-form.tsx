@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { type ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
+import { type ChangeEvent, FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowRight,
@@ -38,6 +38,7 @@ import {
   type SellerBusinessType,
   type SellerCapability,
   type SellerOnboardingPayload,
+  type SellerTaxRegistrationStatus,
   type SellerSubscriptionPlan,
 } from "@/lib/seller-api";
 import { listSellerServices } from "@/lib/service-marketplace-api";
@@ -48,6 +49,7 @@ import {
   sellerRegistrationPath,
   type SellerRegistrationMode,
 } from "@/components/seller/seller-registration-navigation";
+import { SellerInfoHint } from "@/components/seller/seller-ui";
 
 const sellerTypes = [
   { value: "MARKETPLACE_SELLER", label: "Marketplace seller" },
@@ -110,6 +112,17 @@ const verificationDocuments: Array<{
   },
 ];
 
+function sellerDocumentIsRequired(
+  document: (typeof verificationDocuments)[number],
+  taxRegistrationStatus: SellerTaxRegistrationStatus,
+) {
+  return (
+    document.required ||
+    (document.type === "GST_CERTIFICATE" &&
+      taxRegistrationStatus !== "NOT_REGISTERED")
+  );
+}
+
 type SubmitState =
   | { status: "idle" }
   | { status: "success"; message: string }
@@ -129,6 +142,8 @@ export function SellerRegistrationForm({
   const [commerceMode, setCommerceMode] = useState<SellerRegistrationMode>(requestedMode);
   const [selectedPlanId, setSelectedPlanId] = useState("");
   const [documents, setDocuments] = useState<SellerDocumentUploadResult[]>([]);
+  const [selectedTaxRegistrationStatus, setSelectedTaxRegistrationStatus] =
+    useState<SellerTaxRegistrationStatus>("NOT_REGISTERED");
 
   const sellerQuery = useQuery({
     queryKey: ["seller-onboarding-profile", auth.authKey],
@@ -259,7 +274,9 @@ export function SellerRegistrationForm({
     }
 
     const missingRequiredDocuments = verificationDocuments
-      .filter((definition) => definition.required)
+      .filter((definition) =>
+        sellerDocumentIsRequired(definition, selectedTaxRegistrationStatus),
+      )
       .filter((definition) => !documents.some((document) => document.documentType === definition.type));
     if (missingRequiredDocuments.length) {
       setState({
@@ -277,6 +294,7 @@ export function SellerRegistrationForm({
     const businessDescription = optionalFormValue(form, "businessDescription");
     const businessLegalName = optionalFormValue(form, "businessLegalName");
     const businessType = optionalFormValue(form, "businessType") as SellerBusinessType | undefined;
+    const taxRegistrationStatus = selectedTaxRegistrationStatus;
     const gstNumber = optionalFormValue(form, "gstNumber")?.toUpperCase();
     const panNumber = optionalFormValue(form, "panNumber")?.toUpperCase();
     const subscriptionPlanId = optionalFormValue(form, "subscriptionPlanId");
@@ -296,7 +314,8 @@ export function SellerRegistrationForm({
       storeName: formValue(form, "storeName"),
       ...(businessLegalName ? { businessLegalName } : {}),
       ...(businessType ? { businessType } : {}),
-      ...(gstNumber ? { gstNumber } : {}),
+      taxRegistrationStatus,
+      ...(taxRegistrationStatus !== "NOT_REGISTERED" && gstNumber ? { gstNumber } : {}),
       ...(panNumber ? { panNumber } : {}),
       contactName: formValue(form, "contactName"),
       contactPhone: formValue(form, "contactPhone"),
@@ -564,21 +583,30 @@ export function SellerRegistrationForm({
           <div className="mt-5 grid gap-3">
             {verificationDocuments
               .filter((document) => !isServiceOnlyMode(commerceMode) || !["PAN_CARD", "GST_CERTIFICATE", "FSSAI_CERTIFICATE"].includes(document.type))
-              .map((document) => (
-              <DocumentUploadField
-                key={document.type}
-                document={document}
-                value={documents.find((item) => item.documentType === document.type)}
-                authHeaders={auth.authHeaders}
-                disabled={onboardingMutation.isPending}
-                onUploaded={(uploaded) =>
-                  setDocuments((current) => [
-                    ...current.filter((item) => item.documentType !== uploaded.documentType),
-                    uploaded,
-                  ])
-                }
-              />
-            ))}
+              .map((document) => {
+                const displayDocument = {
+                  ...document,
+                  required: sellerDocumentIsRequired(
+                    document,
+                    selectedTaxRegistrationStatus,
+                  ),
+                };
+                return (
+                  <DocumentUploadField
+                    key={document.type}
+                    document={displayDocument}
+                    value={documents.find((item) => item.documentType === document.type)}
+                    authHeaders={auth.authHeaders}
+                    disabled={onboardingMutation.isPending}
+                    onUploaded={(uploaded) =>
+                      setDocuments((current) => [
+                        ...current.filter((item) => item.documentType !== uploaded.documentType),
+                        uploaded,
+                      ])
+                    }
+                  />
+                );
+              })}
           </div>
         </section>
 
@@ -634,9 +662,19 @@ export function SellerRegistrationForm({
                   name="businessLegalName"
                   placeholder="Registered business or proprietor name"
                 />
-                <label className="space-y-2">
-                  <span className="block text-sm font-bold text-[#1F2933]">Business type</span>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-1.5">
+                    <label htmlFor="seller-business-type" className="block text-sm font-bold text-[#1F2933]">
+                      Business type
+                    </label>
+                    <SellerInfoHint label="business type">
+                      Choose the legal constitution shown on the seller&apos;s PAN, registration,
+                      contracts, and bank records. This choice does not decide whether GST is
+                      charged.
+                    </SellerInfoHint>
+                  </div>
                   <select
+                    id="seller-business-type"
                     name="businessType"
                     className="h-11 w-full rounded-md border border-[#E5E7EB] bg-white px-3 text-sm outline-none focus:border-[#ED3500]"
                   >
@@ -647,9 +685,59 @@ export function SellerRegistrationForm({
                       </option>
                     ))}
                   </select>
-                </label>
-                <Field label="GST number" name="gstNumber" placeholder="33ABCDE1234F1Z5" />
-                <Field label="PAN number" name="panNumber" placeholder="ABCDE1234F" />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-1.5">
+                    <label htmlFor="seller-gst-registration" className="block text-sm font-bold text-[#1F2933]">
+                      GST registration
+                    </label>
+                    <SellerInfoHint label="GST registration">
+                      Regular GST sellers may collect GST on taxable products. Composition sellers
+                      need a GSTIN but cannot charge GST separately. Sellers who are not registered
+                      must not collect GST.
+                    </SellerInfoHint>
+                  </div>
+                  <select
+                    id="seller-gst-registration"
+                    name="taxRegistrationStatus"
+                    value={selectedTaxRegistrationStatus}
+                    onChange={(event) =>
+                      setSelectedTaxRegistrationStatus(
+                        event.target.value as SellerTaxRegistrationStatus,
+                      )
+                    }
+                    className="h-11 w-full rounded-md border border-[#E5E7EB] bg-white px-3 text-sm outline-none focus:border-[#ED3500]"
+                  >
+                    <option value="GST_REGISTERED">Regular GST registered</option>
+                    <option value="COMPOSITION">Composition scheme</option>
+                    <option value="NOT_REGISTERED">Not GST registered</option>
+                  </select>
+                </div>
+                {selectedTaxRegistrationStatus !== "NOT_REGISTERED" ? (
+                  <Field
+                    label="GST number"
+                    name="gstNumber"
+                    placeholder="33ABCDE1234F1Z5"
+                    required
+                    info={
+                      <SellerInfoHint label="GST number">
+                        Enter the 15-character GSTIN belonging to the selected legal entity or
+                        proprietor. It is required for regular and composition registrations.
+                      </SellerInfoHint>
+                    }
+                  />
+                ) : null}
+                <Field
+                  label="PAN number"
+                  name="panNumber"
+                  placeholder="ABCDE1234F"
+                  info={
+                    <SellerInfoHint label="PAN number">
+                      Enter the PAN belonging to the selected business or proprietor. It is used for
+                      identity checks, payouts, and applicable income-tax deductions.
+                    </SellerInfoHint>
+                  }
+                />
               </>
             ) : null}
             <Field
@@ -1207,6 +1295,7 @@ function Field({
   defaultValue,
   readOnly = false,
   step,
+  info,
 }: {
   label: string;
   name: string;
@@ -1216,11 +1305,20 @@ function Field({
   defaultValue?: string | null | undefined;
   readOnly?: boolean;
   step?: string | undefined;
+  info?: ReactNode;
 }) {
+  const inputId = `seller-registration-${name}`;
+
   return (
-    <label className="space-y-2">
-      <span className="block text-sm font-bold text-[#1F2933]">{label}</span>
+    <div className="space-y-2">
+      <div className="flex items-center gap-1.5">
+        <label htmlFor={inputId} className="block text-sm font-bold text-[#1F2933]">
+          {label}
+        </label>
+        {info}
+      </div>
       <input
+        id={inputId}
         name={name}
         type={type}
         required={required}
@@ -1230,7 +1328,7 @@ function Field({
         step={step}
         className="h-11 w-full rounded-md border border-[#E5E7EB] bg-white px-3 text-sm outline-none focus:border-[#ED3500] read-only:bg-[#F8FAFC] read-only:text-[#667085]"
       />
-    </label>
+    </div>
   );
 }
 

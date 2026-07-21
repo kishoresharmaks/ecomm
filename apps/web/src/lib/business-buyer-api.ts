@@ -117,8 +117,29 @@ export type BusinessBuyerEnquiryStatus =
 export type B2BOrderStatus =
   | "PROFORMA_ISSUED"
   | "PO_SUBMITTED"
+  | "PO_UNDER_REVIEW"
   | "PO_ACCEPTED"
+  | "CREDIT_CLEARANCE_PENDING"
   | "IN_FULFILMENT"
+  | "PROCUREMENT_IN_PROGRESS"
+  | "PRODUCTION_IN_PROGRESS"
+  | "STOCK_READY"
+  | "PICKING"
+  | "PACKING"
+  | "QC_PENDING"
+  | "PACKED_AND_QC_PASSED"
+  | "TAX_INVOICE_ISSUED"
+  | "E_WAY_READY"
+  | "E_WAY_NOT_REQUIRED"
+  | "DISPATCHED"
+  | "IN_TRANSIT"
+  | "DELIVERED"
+  | "DELIVERY_ACCEPTED"
+  | "DELIVERY_DISPUTED"
+  | "PAYMENT_OVERDUE"
+  | "ON_HOLD"
+  | "FULFILMENT_REVIEW_REQUIRED"
+  | "CLOSED"
   | "FULFILLED"
   | "CANCELLED";
 
@@ -131,7 +152,7 @@ export type B2BPaymentStatus =
   | "REFUNDED"
   | "NOT_REQUIRED";
 
-export type B2BPaymentMethod = "BANK_TRANSFER" | "MANUAL" | "RAZORPAY";
+export type B2BPaymentMethod = "BANK_TRANSFER" | "MANUAL" | "RAZORPAY" | "UPI" | "CHEQUE";
 export type B2BProofStatus = "SUBMITTED" | "VERIFIED" | "REJECTED" | "RAZORPAY_FAILED";
 export type B2BTransportMode = "STORE_PICKUP" | "SELLER_ARRANGED_TRANSPORT";
 export type B2BTransportStatus =
@@ -143,6 +164,22 @@ export type B2BTransportStatus =
   | "IN_TRANSIT"
   | "DELIVERED"
   | "CANCELLED";
+
+export type B2BFinalDocumentType =
+  | "TAX_INVOICE"
+  | "BILL_OF_SUPPLY"
+  | "COMMERCIAL_INVOICE";
+
+export function b2bFinalDocumentLabel(type?: B2BFinalDocumentType | null) {
+  switch (type) {
+    case "BILL_OF_SUPPLY":
+      return "Bill of supply";
+    case "COMMERCIAL_INVOICE":
+      return "Commercial invoice";
+    default:
+      return "Tax invoice";
+  }
+}
 
 export type B2BBankTransferDetails = {
   configured: boolean;
@@ -234,6 +271,7 @@ export type B2BOrder = {
   taxInvoiceNumber?: string | null;
   taxInvoiceIssuedAt?: string | null;
   taxInvoiceFileKey?: string | null;
+  finalDocumentType?: B2BFinalDocumentType;
   purchaseOrderNumber?: string | null;
   purchaseOrderFileKey?: string | null;
   purchaseOrderNote?: string | null;

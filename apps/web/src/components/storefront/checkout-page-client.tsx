@@ -2,7 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { CreditCard, Loader2, MapPin, TicketPercent, Truck, X } from "lucide-react";
+import { Building2, CreditCard, Loader2, MapPin, TicketPercent, Truck, X } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, StatusBadge } from "@indihub/ui";
 import { CustomerAuthNotice } from "@/components/auth/customer-auth-notice";
@@ -13,6 +13,7 @@ import { useMarket } from "@/components/market/market-context";
 import { listCustomerAddresses } from "@/lib/account-api";
 import { IndihubApiError } from "@/lib/api";
 import { customerDeliveryOptions, customerDeliveryModeLabel } from "@/lib/delivery-labels";
+import { normalizeGstin, validateGstInvoiceDetails } from "@/lib/gst-invoice";
 import {
   cartTotals,
   createRazorpayProviderOrder,
@@ -110,6 +111,9 @@ export function CheckoutPageClient() {
   const [deliverySelectionsBySeller, setDeliverySelectionsBySeller] = useState<Record<string, DeliveryMode>>({});
   const [customerNote, setCustomerNote] = useState("");
   const [paymentReference, setPaymentReference] = useState("");
+  const [businessInvoiceRequested, setBusinessInvoiceRequested] = useState(false);
+  const [buyerGstin, setBuyerGstin] = useState("");
+  const [buyerLegalName, setBuyerLegalName] = useState("");
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
   const [manualAddress, setManualAddress] = useState<CheckoutAddress>(initialAddress);
   const [formError, setFormError] = useState<string | null>(null);
@@ -399,6 +403,12 @@ export function CheckoutPageClient() {
     }
   }, [paymentMethod]);
 
+  useEffect(() => {
+    if (market.countryCode !== "IN") {
+      setBusinessInvoiceRequested(false);
+    }
+  }, [market.countryCode]);
+
   const orderMutation = useMutation({
     mutationFn: async (manualAddress?: CheckoutAddress) => {
       if (!hasCheckoutItem) {
@@ -420,6 +430,16 @@ export function CheckoutPageClient() {
         !paymentReference.trim()
       ) {
         throw new Error("Enter the bank transfer UTR/reference before placing this order.");
+      }
+
+      const gstInvoice = businessInvoiceRequested
+        ? validateGstInvoiceDetails(buyerGstin, buyerLegalName)
+        : null;
+      if (businessInvoiceRequested && market.countryCode !== "IN") {
+        throw new Error("GST invoices are available only for India billing details.");
+      }
+      if (gstInvoice?.error) {
+        throw new Error(gstInvoice.error);
       }
 
       const payload: PlaceOrderPayload = {
@@ -444,6 +464,7 @@ export function CheckoutPageClient() {
           : {}),
         ...(customerNote.trim() ? { customerNote: customerNote.trim() } : {}),
         ...(appliedCouponCode ? { couponCode: appliedCouponCode } : {}),
+        ...(gstInvoice?.details ?? {}),
       };
 
       if (deliveryPreference !== "STORE_PICKUP") {
@@ -708,6 +729,67 @@ export function CheckoutPageClient() {
                     }
                   />
                 </div>
+              </div>
+            ) : null}
+          </StorefrontPanel>
+
+          <StorefrontPanel as="section">
+            <StorefrontPanelHeader
+              icon={Building2}
+              iconTone="orange"
+              title="Business GST invoice"
+              description="Add registered business details to print them on eligible seller tax invoices."
+            />
+            <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-md border border-[#E5E7EB] bg-[#FFFCFB] p-4">
+              <input
+                type="checkbox"
+                checked={businessInvoiceRequested}
+                onChange={(event) => setBusinessInvoiceRequested(event.target.checked)}
+                disabled={market.countryCode !== "IN" || orderMutation.isPending}
+                className="mt-0.5 h-4 w-4 rounded border-[#D8E2EA] accent-[#ED3500]"
+              />
+              <span>
+                <span className="block text-sm font-black text-[#1F2933]">
+                  Request an invoice with GSTIN
+                </span>
+                <span className="mt-1 block text-xs font-semibold leading-5 text-[#667085]">
+                  {market.countryCode === "IN"
+                    ? "Use the legal name exactly as registered for this GSTIN."
+                    : "Available when the checkout market is India."}
+                </span>
+              </span>
+            </label>
+            {businessInvoiceRequested ? (
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                <label className="space-y-2">
+                  <span className={storefrontFieldLabelClassName}>Buyer GSTIN</span>
+                  <input
+                    value={buyerGstin}
+                    onChange={(event) => setBuyerGstin(normalizeGstin(event.target.value))}
+                    maxLength={15}
+                    autoCapitalize="characters"
+                    autoComplete="off"
+                    placeholder="33ABCDE1234F1Z5"
+                    className={storefrontInputClassName}
+                  />
+                  <span className="block text-xs font-semibold text-[#667085]">
+                    15-character GST identification number.
+                  </span>
+                </label>
+                <label className="space-y-2">
+                  <span className={storefrontFieldLabelClassName}>Registered legal name</span>
+                  <input
+                    value={buyerLegalName}
+                    onChange={(event) => setBuyerLegalName(event.target.value)}
+                    maxLength={160}
+                    autoComplete="organization"
+                    placeholder="Registered business name"
+                    className={storefrontInputClassName}
+                  />
+                  <span className="block text-xs font-semibold text-[#667085]">
+                    Printed on each seller invoice for this order.
+                  </span>
+                </label>
               </div>
             ) : null}
           </StorefrontPanel>

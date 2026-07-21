@@ -1,5 +1,12 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
-import { ApprovalStatus, EmailRecipientType, ProductStatus, SellerStatus, VariantStatus } from "@indihub/database";
+import {
+  ApprovalStatus,
+  EmailRecipientType,
+  ProductStatus,
+  SellerStatus,
+  SellerTaxRegistrationStatus,
+  VariantStatus,
+} from "@indihub/database";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ProductApprovalDecision } from "./dto/product-approval.dto";
 import { ProductsService } from "./products.service";
@@ -77,7 +84,10 @@ describe("ProductsService", () => {
     unitOfMeasure: "Pack",
     gstRatePercent: 5,
     hsnCode: "100630",
-    returnEligibility: "Returnable",
+    returnEligibility: "Return and replacement",
+    returnWindowDays: 7,
+    replacementWindowDays: 7,
+    returnReasons: ["Damaged on arrival", "Wrong item received"],
     packageWeightGrams: 500,
   };
 
@@ -160,6 +170,9 @@ describe("ProductsService", () => {
       id: "seller_1",
       status: SellerStatus.APPROVED,
       approvalStatus: ApprovalStatus.APPROVED,
+      profile: {
+        taxRegistrationStatus: SellerTaxRegistrationStatus.GST_REGISTERED,
+      },
     });
     const service = new ProductsService(
       prisma as never,
@@ -194,6 +207,9 @@ describe("ProductsService", () => {
       id: "seller_1",
       status: SellerStatus.APPROVED,
       approvalStatus: ApprovalStatus.APPROVED,
+      profile: {
+        taxRegistrationStatus: SellerTaxRegistrationStatus.GST_REGISTERED,
+      },
     });
     const service = new ProductsService(prisma as never, notifications as never, { isAvailable: () => false } as never, sellerSubscriptions as never);
 
@@ -232,6 +248,9 @@ describe("ProductsService", () => {
       id: "seller_1",
       status: SellerStatus.APPROVED,
       approvalStatus: ApprovalStatus.APPROVED,
+      profile: {
+        taxRegistrationStatus: SellerTaxRegistrationStatus.GST_REGISTERED,
+      },
     });
     prisma.client.category.findFirst.mockResolvedValue({
       id: "category_1",
@@ -274,6 +293,8 @@ describe("ProductsService", () => {
       data: expect.objectContaining({
         status: ProductStatus.ACTIVE,
         approvalStatus: ApprovalStatus.APPROVED,
+        hsnCode: "100630",
+        gstRatePercent: 5,
       }),
     });
     expect(prisma.client.auditLog.create).toHaveBeenCalledWith({
@@ -299,6 +320,69 @@ describe("ProductsService", () => {
       },
     });
     expect(notifications.notifyAdminEvent).not.toHaveBeenCalled();
+  });
+
+  it("stores zero GST for a non-registered seller even when a positive category rate is submitted", async () => {
+    const createdProduct = {
+      id: "product_non_gst",
+      name: "Handmade Basket",
+      status: ProductStatus.INACTIVE,
+      approvalStatus: ApprovalStatus.PENDING_APPROVAL,
+      sellerId: "seller_1",
+      categoryId: "category_1",
+      seller: {
+        userId: "user_seller",
+        storeName: "Local Maker",
+        user: { email: "seller@example.com" },
+      },
+    };
+    prisma.client.seller.findUnique.mockResolvedValue({
+      id: "seller_1",
+      status: SellerStatus.APPROVED,
+      approvalStatus: ApprovalStatus.APPROVED,
+      profile: {
+        taxRegistrationStatus: SellerTaxRegistrationStatus.NOT_REGISTERED,
+      },
+    });
+    prisma.client.category.findFirst.mockResolvedValue({
+      id: "category_1",
+      status: "ACTIVE",
+      defaultHsnCode: null,
+      defaultGstRatePercent: null,
+      productTemplate: null,
+    });
+    prisma.client.setting.findUnique.mockResolvedValue({ value: false });
+    prisma.client.product.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce(createdProduct);
+    prisma.client.product.create.mockResolvedValue(createdProduct);
+    prisma.client.productVariant.findUnique.mockResolvedValue(null);
+    prisma.client.productVariant.create.mockResolvedValue({
+      id: "variant_1",
+      stockQuantity: 20,
+    });
+    const service = new ProductsService(
+      prisma as never,
+      notifications as never,
+      { isAvailable: () => false } as never,
+      sellerSubscriptionAllowsProductCreation() as never,
+    );
+
+    await service.createSellerProduct(
+      { id: "user_seller", clerkUserId: null, email: "seller@example.com", roles: [] },
+      {
+        categoryId: "category_1",
+        name: "Handmade Basket",
+        description: "Locally made basket",
+        attributes: marketplaceEssentials,
+        variants: [{ pricePaise: 55000, stockQuantity: 20 }],
+      },
+    );
+
+    expect(prisma.client.product.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        hsnCode: "100630",
+        gstRatePercent: 0,
+      }),
+    });
   });
 
   it("approves a submitted product, activates it, audits the decision, and notifies the seller", async () => {

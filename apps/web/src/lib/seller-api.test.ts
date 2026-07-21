@@ -1,5 +1,11 @@
-import { describe, expect, it } from "vitest";
-import { flattenCategories, sellerCategoryLabel, sellerCategoryOptions } from "./seller-api";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  flattenCategories,
+  getSellerGstDocuments,
+  getSellerGstReportCsvUrl,
+  sellerCategoryLabel,
+  sellerCategoryOptions,
+} from "./seller-api";
 import type { CategorySummary } from "./storefront-api";
 
 describe("seller category helpers", () => {
@@ -34,6 +40,86 @@ describe("seller category helpers", () => {
       "Electronics",
     ]);
     expect(sellerCategoryLabel(categories, "child-1")).toBe("Fashion / Men");
+  });
+});
+
+describe("seller GST report URLs", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("converts date-only filters to local day boundaries", () => {
+    const url = new URL(
+      getSellerGstReportCsvUrl("gstr-1", {
+        dateFrom: "2026-07-01",
+        dateTo: "2026-07-20",
+      }),
+      "https://seller.test",
+    );
+
+    expect(url.pathname).toBe("/api/seller/reports/export/gstr-1");
+    expect(url.searchParams.get("dateFrom")).toBe(
+      new Date(2026, 6, 1, 0, 0, 0, 0).toISOString(),
+    );
+    expect(url.searchParams.get("dateTo")).toBe(
+      new Date(2026, 6, 20, 23, 59, 59, 999).toISOString(),
+    );
+  });
+
+  it("supports advanced authenticated GST compliance export routes", () => {
+    expect(getSellerGstReportCsvUrl("gstr-3b")).toBe(
+      "/api/seller/reports/export/gstr-3b",
+    );
+    expect(getSellerGstReportCsvUrl("gstr-8")).toBe(
+      "/api/seller/reports/export/gstr-8",
+    );
+    expect(getSellerGstReportCsvUrl("reconciliation")).toBe(
+      "/api/seller/reports/export/reconciliation",
+    );
+    expect(getSellerGstReportCsvUrl("e-invoice")).toBe(
+      "/api/seller/reports/export/e-invoice",
+    );
+  });
+
+  it("serializes seller GST document pagination and filters without a seller override", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          items: [],
+          total: 0,
+          page: 2,
+          limit: 25,
+          totalPages: 1,
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+    );
+
+    await getSellerGstDocuments(
+      { bearerToken: "seller-token" },
+      {
+        page: 2,
+        limit: 25,
+        dateFrom: "2026-07-01",
+        dateTo: "2026-07-20",
+        documentType: "TAX_INVOICE",
+        search: "TI/26-27",
+      },
+    );
+
+    const requestUrl = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(requestUrl.pathname).toBe("/api/seller/reports/gst-documents");
+    expect(requestUrl.searchParams.get("page")).toBe("2");
+    expect(requestUrl.searchParams.get("limit")).toBe("25");
+    expect(requestUrl.searchParams.get("documentType")).toBe("TAX_INVOICE");
+    expect(requestUrl.searchParams.get("search")).toBe("TI/26-27");
+    expect(requestUrl.searchParams.has("sellerId")).toBe(false);
+    expect(requestUrl.searchParams.get("dateFrom")).toBe(
+      new Date(2026, 6, 1, 0, 0, 0, 0).toISOString(),
+    );
   });
 });
 

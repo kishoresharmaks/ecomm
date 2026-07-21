@@ -49,6 +49,7 @@ pnpm-debug.log*
 # Local caches and temp files
 .cache/
 .tmp/
+.tmp-*.sql
 .qa-screenshots/
 storage/private/
 tmp-*.png

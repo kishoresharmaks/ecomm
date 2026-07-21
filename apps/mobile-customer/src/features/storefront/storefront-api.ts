@@ -305,6 +305,7 @@ export type MobileOrderSummary = {
   buyerTotalMinor?: number | null;
   fxRateFetchedAt?: string | null;
   createdAt?: string;
+  updatedAt?: string;
   items?: Array<{
     id: string;
     productNameSnapshot: string;
@@ -346,6 +347,12 @@ export type MobileOrderShipment = {
     storeName?: string | null;
     slug?: string | null;
   } | null;
+  packages?: Array<{
+    id: string;
+    packageNumber?: string | null;
+    status?: string | null;
+    deliveredAt?: string | null;
+  }>;
 };
 
 export type MobileOrderDetail = Omit<MobileOrderSummary, "items"> & {
@@ -369,8 +376,31 @@ export type MobileOrderDetail = Omit<MobileOrderSummary, "items"> & {
     variantSnapshot?: unknown;
     quantity: number;
     returnedQuantity?: number | null;
-    returnPolicySnapshot?: unknown;
+    returnPolicySnapshot?: {
+      returnEligibility?: string | null;
+      returnAllowed?: boolean;
+      replacementAllowed?: boolean;
+      returnWindowDays?: number | null;
+      replacementWindowDays?: number | null;
+      returnReasons?: string[] | null;
+      warranty?: string | null;
+      capturedAt?: string | null;
+    } | null;
     lifecycleStatus?: string | null;
+    returnItems?: Array<{
+      id: string;
+      returnRequestId: string;
+      quantity: number;
+      status: MobileReturnItemStatus;
+      resolution: MobileReturnResolution;
+      createdAt?: string | null;
+      returnRequest: {
+        requestNumber: string;
+        status: MobileReturnRequestStatus;
+        resolution: MobileReturnResolution;
+        createdAt?: string | null;
+      };
+    }>;
     unitPricePaise: number;
     lineTotalPaise: number;
     currency?: string;
@@ -462,6 +492,11 @@ export type MobileReturnRequestStatus =
   | "CANCELLED"
   | string;
 
+export type MobileReturnPolicySettings = {
+  returnWindowDays: number;
+  replacementWindowDays: number;
+};
+
 export type MobileReturnItemStatus =
   | "PENDING_REVIEW"
   | "APPROVED"
@@ -540,6 +575,7 @@ export type MobileReturnRequest = {
   requestNumber: string;
   status: MobileReturnRequestStatus;
   resolution: MobileReturnResolution;
+  reverseShipmentMode?: MobileReverseShipmentMode;
   reason: string;
   note?: string | null;
   qualityProofKeys?: string[];
@@ -1122,6 +1158,12 @@ export function getCustomerOrder(auth: MobileAuthHeaders, orderNumber: string) {
   return getJson<MobileOrderDetail>({
     path: `/account/orders/${encodeURIComponent(orderNumber)}`,
     auth,
+  });
+}
+
+export function getReturnPolicySettings() {
+  return getJson<MobileReturnPolicySettings>({
+    path: "/settings/returns",
   });
 }
 

@@ -110,11 +110,19 @@ const b2bProformaInvoicePrefix = `${storageKeyRoot}/b2b/proforma-invoices`;
 const legacyB2BProformaInvoicePrefix = `${legacyStorageKeyRoot}/b2b/proforma-invoices`;
 const b2bTaxInvoicePrefix = `${storageKeyRoot}/b2b/tax-invoices`;
 const legacyB2BTaxInvoicePrefix = `${legacyStorageKeyRoot}/b2b/tax-invoices`;
+const b2bReceiptVoucherPrefix = `${storageKeyRoot}/b2b/receipt-vouchers`;
+const legacyB2BReceiptVoucherPrefix = `${legacyStorageKeyRoot}/b2b/receipt-vouchers`;
+const b2bErpExportPrefix = `${storageKeyRoot}/b2b/erp-exports`;
+const legacyB2BErpExportPrefix = `${legacyStorageKeyRoot}/b2b/erp-exports`;
+const b2bPodPrefix = `${storageKeyRoot}/delivery-proofs/delivery_proof`;
+const legacyB2BPodPrefix = `${legacyStorageKeyRoot}/delivery-proofs/delivery_proof`;
 const privateDocumentDownloadTtlSeconds = 300;
 const b2bPurchaseOrderDownloadTtlSeconds = 300;
 const b2bPaymentProofDownloadTtlSeconds = 300;
 const b2bProformaInvoiceDownloadTtlSeconds = 300;
 const b2bTaxInvoiceDownloadTtlSeconds = 300;
+const b2bReceiptVoucherDownloadTtlSeconds = 300;
+const b2bPodDownloadTtlSeconds = 300;
 const privateUploadOrphanCleanupHours = 24;
 
 type StorageSettingMap = Map<string, Prisma.JsonValue>;
@@ -197,6 +205,9 @@ export type B2BPurchaseOrderDocumentAccess = PrivateDocumentAccess;
 export type B2BPaymentProofDocumentAccess = PrivateDocumentAccess;
 export type B2BProformaInvoiceDocumentAccess = PrivateDocumentAccess;
 export type B2BTaxInvoiceDocumentAccess = PrivateDocumentAccess;
+export type B2BReceiptVoucherDocumentAccess = PrivateDocumentAccess;
+export type B2BPodDocumentAccess = PrivateDocumentAccess;
+export type B2BErpExportDocumentAccess = PrivateDocumentAccess;
 
 @Injectable()
 export class StorageService {
@@ -1325,10 +1336,10 @@ export class StorageService {
     buffer: Buffer,
   ) {
     if (!buffer.length) {
-      throw new BadRequestException("Tax invoice PDF is empty.");
+      throw new BadRequestException("Final invoice PDF is empty.");
     }
     if (buffer.length > privateDocumentMaxBytes) {
-      throw new BadRequestException("Tax invoice PDF must be 10 MB or less.");
+      throw new BadRequestException("Final invoice PDF must be 10 MB or less.");
     }
 
     const settingMap = await this.storageSettingMap();
@@ -1385,11 +1396,158 @@ export class StorageService {
   async b2bTaxInvoiceDocumentAccess(
     assetKey: string | undefined,
   ): Promise<B2BTaxInvoiceDocumentAccess> {
-    const normalizedKey = this.normalizeB2BTaxInvoiceKey(assetKey);
+      const normalizedKey = this.normalizeB2BTaxInvoiceKey(assetKey);
+      return this.privateB2BDocumentAccess(
+        normalizedKey,
+        "Final invoice file was not found in local storage.",
+        b2bTaxInvoiceDownloadTtlSeconds,
+      );
+  }
+
+  async saveB2BReceiptVoucherPdf(
+    context: B2BPurchaseOrderContext,
+    metadata: { fileName: string },
+    buffer: Buffer,
+  ) {
+    if (!buffer.length) {
+      throw new BadRequestException("Receipt voucher PDF is empty.");
+    }
+    if (buffer.length > privateDocumentMaxBytes) {
+      throw new BadRequestException("Receipt voucher PDF must be 10 MB or less.");
+    }
+
+    const settingMap = await this.storageSettingMap();
+    const privateStorage = this.privateStorageConfigFromSettings(settingMap);
+    if (!privateStorage.configured) {
+      throw new ServiceUnavailableException("Private document storage is not configured.");
+    }
+
+    const assetKey = this.createB2BReceiptVoucherAssetKey(context, metadata);
+    const contentType = "application/pdf";
+    if (privateStorage.activeProvider === "S3") {
+      const presigned = this.presignS3Object(privateStorage, "PUT", assetKey);
+      const body = buffer.buffer.slice(
+        buffer.byteOffset,
+        buffer.byteOffset + buffer.byteLength,
+      ) as ArrayBuffer;
+      const response = await fetch(presigned.url, {
+        method: "PUT",
+        headers: { "Content-Type": contentType },
+        body,
+      });
+      if (!response.ok) {
+        throw new ServiceUnavailableException("Could not upload receipt voucher PDF.");
+      }
+      await this.recordPrivateUpload({
+        assetKey,
+        provider: "S3",
+        uploadKind: "B2B_RECEIPT_VOUCHER",
+        actorUserId: context.actorUserId ?? null,
+        contentType,
+        sizeBytes: buffer.length,
+      });
+      return { provider: "s3" as const, assetKey };
+    }
+
+    const filePath = this.privateLocalFilePath(privateStorage, assetKey);
+    await mkdir(dirname(filePath), { recursive: true });
+    await writeFile(filePath, buffer);
+    await this.recordPrivateUpload({
+      assetKey,
+      provider: "LOCAL",
+      uploadKind: "B2B_RECEIPT_VOUCHER",
+      actorUserId: context.actorUserId ?? null,
+      contentType,
+      sizeBytes: buffer.length,
+    });
+    return { provider: "local" as const, assetKey };
+  }
+
+  async b2bReceiptVoucherDocumentAccess(
+    assetKey: string | undefined,
+  ): Promise<B2BReceiptVoucherDocumentAccess> {
     return this.privateB2BDocumentAccess(
-      normalizedKey,
-      "Tax invoice file was not found in local storage.",
-      b2bTaxInvoiceDownloadTtlSeconds,
+      this.normalizeB2BReceiptVoucherKey(assetKey),
+      "Receipt voucher file was not found in local storage.",
+      b2bReceiptVoucherDownloadTtlSeconds,
+    );
+  }
+
+  async saveB2BErpExport(
+    context: { exportNumber: string; actorUserId?: string | null },
+    metadata: { fileName: string; contentType: string },
+    buffer: Buffer,
+  ) {
+    if (!buffer.length) {
+      throw new BadRequestException("ERP export is empty.");
+    }
+    if (buffer.length > privateDocumentMaxBytes) {
+      throw new BadRequestException("ERP export must be 10 MB or less.");
+    }
+
+    const settingMap = await this.storageSettingMap();
+    const privateStorage = this.privateStorageConfigFromSettings(settingMap);
+    if (!privateStorage.configured) {
+      throw new ServiceUnavailableException("Private document storage is not configured.");
+    }
+
+    const assetKey = this.createB2BErpExportAssetKey(context, metadata.fileName);
+    if (privateStorage.activeProvider === "S3") {
+      const presigned = this.presignS3Object(privateStorage, "PUT", assetKey);
+      const body = buffer.buffer.slice(
+        buffer.byteOffset,
+        buffer.byteOffset + buffer.byteLength,
+      ) as ArrayBuffer;
+      const response = await fetch(presigned.url, {
+        method: "PUT",
+        headers: { "Content-Type": metadata.contentType },
+        body,
+      });
+      if (!response.ok) {
+        throw new ServiceUnavailableException("Could not upload ERP export.");
+      }
+      await this.recordPrivateUpload({
+        assetKey,
+        provider: "S3",
+        uploadKind: "B2B_ERP_EXPORT",
+        actorUserId: context.actorUserId ?? null,
+        contentType: metadata.contentType,
+        sizeBytes: buffer.length,
+      });
+      return { provider: "s3" as const, assetKey };
+    }
+
+    const filePath = this.privateLocalFilePath(privateStorage, assetKey);
+    await mkdir(dirname(filePath), { recursive: true });
+    await writeFile(filePath, buffer);
+    await this.recordPrivateUpload({
+      assetKey,
+      provider: "LOCAL",
+      uploadKind: "B2B_ERP_EXPORT",
+      actorUserId: context.actorUserId ?? null,
+      contentType: metadata.contentType,
+      sizeBytes: buffer.length,
+    });
+    return { provider: "local" as const, assetKey };
+  }
+
+  async b2bErpExportDocumentAccess(
+    assetKey: string | undefined,
+  ): Promise<B2BErpExportDocumentAccess> {
+    return this.privateB2BDocumentAccess(
+      this.normalizeB2BErpExportKey(assetKey),
+      "ERP export file was not found in local storage.",
+      privateDocumentDownloadTtlSeconds,
+    );
+  }
+
+  async b2bPodDocumentAccess(
+    assetKey: string | undefined,
+  ): Promise<B2BPodDocumentAccess> {
+    return this.privateB2BDocumentAccess(
+      this.normalizeB2BPodKey(assetKey),
+      "Proof-of-delivery file was not found in local storage.",
+      b2bPodDownloadTtlSeconds,
     );
   }
 
@@ -1447,6 +1605,32 @@ export class StorageService {
       `${b2bTaxInvoicePrefix}/${this.safeSegment(context.businessBuyerId)}/${this.safeSegment(
         context.orderNumber,
       )}/${fileName}`,
+    );
+  }
+
+  private createB2BReceiptVoucherAssetKey(
+    context: B2BPurchaseOrderContext,
+    metadata: { fileName: string },
+  ) {
+    const baseName = this.safeDocumentBaseName(metadata.fileName) || "receipt-voucher";
+    const timestamp = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
+    const fileName = `${timestamp}-${baseName}.pdf`;
+    return this.normalizeB2BReceiptVoucherKey(
+      `${b2bReceiptVoucherPrefix}/${this.safeSegment(context.businessBuyerId)}/${this.safeSegment(
+        context.orderNumber,
+      )}/${fileName}`,
+    );
+  }
+
+  private createB2BErpExportAssetKey(
+    context: { exportNumber: string },
+    fileName: string,
+  ) {
+    const safeName = this.safeDocumentBaseName(fileName) || "orders";
+    const extension = fileName.toLowerCase().endsWith(".json") ? ".json" : ".csv";
+    const timestamp = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
+    return this.normalizeB2BErpExportKey(
+      `${b2bErpExportPrefix}/${this.safeSegment(context.exportNumber)}/${timestamp}-${safeName}${extension}`,
     );
   }
 
@@ -1965,9 +2149,42 @@ export class StorageService {
     const legacyPrefix = `${legacyB2BTaxInvoicePrefix}/`;
 
     if (!normalized.startsWith(prefix) && !normalized.startsWith(legacyPrefix)) {
-      throw new BadRequestException("Tax invoice file key is invalid.");
+      throw new BadRequestException("Final invoice file key is invalid.");
     }
 
+    return normalized;
+  }
+
+  private normalizeB2BReceiptVoucherKey(key: string | undefined) {
+    const normalized = this.normalizePublicImageKey(key);
+    if (
+      !normalized.startsWith(`${b2bReceiptVoucherPrefix}/`) &&
+      !normalized.startsWith(`${legacyB2BReceiptVoucherPrefix}/`)
+    ) {
+      throw new BadRequestException("Receipt voucher file key is invalid.");
+    }
+    return normalized;
+  }
+
+  private normalizeB2BErpExportKey(key: string | undefined) {
+    const normalized = this.normalizePublicImageKey(key);
+    if (
+      !normalized.startsWith(`${b2bErpExportPrefix}/`) &&
+      !normalized.startsWith(`${legacyB2BErpExportPrefix}/`)
+    ) {
+      throw new BadRequestException("ERP export file key is invalid.");
+    }
+    return normalized;
+  }
+
+  private normalizeB2BPodKey(key: string | undefined) {
+    const normalized = this.normalizePublicImageKey(key);
+    if (
+      !normalized.startsWith(`${b2bPodPrefix}/`) &&
+      !normalized.startsWith(`${legacyB2BPodPrefix}/`)
+    ) {
+      throw new BadRequestException("Proof-of-delivery file key is invalid.");
+    }
     return normalized;
   }
 
@@ -1995,6 +2212,10 @@ export class StorageService {
         return "image/png";
       case "webp":
         return "image/webp";
+      case "csv":
+        return "text/csv; charset=utf-8";
+      case "json":
+        return "application/json; charset=utf-8";
       default:
         return "application/octet-stream";
     }
@@ -2153,6 +2374,8 @@ export class StorageService {
       | "B2B_PAYMENT_PROOF"
       | "B2B_PROFORMA_INVOICE"
       | "B2B_TAX_INVOICE"
+      | "B2B_RECEIPT_VOUCHER"
+      | "B2B_ERP_EXPORT"
       | "DELIVERY_PROOF"
       | "RETURN_PICKUP_PROOF"
       | "RETURN_RECEIPT_PROOF"

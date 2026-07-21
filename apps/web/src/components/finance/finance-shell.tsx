@@ -7,6 +7,7 @@ import {
   BadgeIndianRupee,
   BadgeDollarSign,
   BarChart3,
+  CalendarClock,
   ChevronRight,
   ClipboardList,
   CreditCard,
@@ -22,7 +23,7 @@ import {
   Settings,
   ShieldCheck,
   WalletCards,
-  X
+  X,
 } from "lucide-react";
 import { Button, StatusBadge, cn } from "@indihub/ui";
 import { useAdminAuth } from "@/components/admin/admin-auth-context";
@@ -42,6 +43,7 @@ const iconByHref: Array<[string, typeof LayoutDashboard]> = [
   ["/finance/settlements", ClipboardList],
   ["/finance/seller-cash-receivables", WalletCards],
   ["/finance/service-receivables", ReceiptText],
+  ["/finance/b2b-receivables", CalendarClock],
   ["/finance/payment-status", BadgeIndianRupee],
   ["/finance/bank-transfers", Landmark],
   ["/finance/cod-collections", IndianRupee],

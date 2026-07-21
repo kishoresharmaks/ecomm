@@ -14,6 +14,11 @@ Use it as the production launch runbook. It covers server setup, deployment, env
 
 The goal is not only to make the website open. The goal is to make every selected marketplace feature operational, controlled from the right portal, protected by the right permissions, and verified before launch.
 
+For the coordinated B2B, GST, schema-hardening, returns, payment-worker, and payout-encryption
+staging release, follow `docs/IndiHub_STAGING_DEPLOYMENT_AND_COMPLETE_E2E_HANDOFF.md` first.
+That release-specific handoff contains the exact commit, environment, migration, activation,
+manual E2E, evidence, and rollback sequence.
+
 ## 2. Hard Rules
 
 Follow these rules for production and staging:
@@ -204,6 +209,8 @@ NEXT_PUBLIC_API_URL="https://YOUR_DOMAIN"
 
 API_PORT="4000"
 API_CORS_ORIGINS="https://YOUR_DOMAIN,https://www.YOUR_DOMAIN"
+INTERNAL_API_URL="https://YOUR_DOMAIN"
+INTERNAL_API_SECRET="GENERATE_A_LONG_RANDOM_SECRET"
 ```
 
 Important:
@@ -351,7 +358,17 @@ Normal operation should use `/admin/payments`. Environment values are fallback o
 RAZORPAY_KEY_ID=""
 RAZORPAY_KEY_SECRET=""
 RAZORPAY_WEBHOOK_SECRET=""
+
+RAZORPAY_RESERVATION_EXPIRY_WORKER_ENABLED="true"
+RAZORPAY_RESERVATION_TIMEOUT_MINUTES="15"
+RAZORPAY_RESERVATION_EXPIRY_POLL_INTERVAL_MS="60000"
+RAZORPAY_RESERVATION_EXPIRY_BATCH_SIZE="50"
 ```
+
+The worker checks pending Razorpay orders every minute. Before cancelling a stale order, the API
+checks Razorpay for captured or authorized payments. Captured payments are recovered as paid,
+authorized payments keep their reservation, and genuinely unpaid orders are cancelled with stock
+restored transactionally. The API and worker must use the same `INTERNAL_API_SECRET`.
 
 ### 7.10 Storage values
 
@@ -1203,6 +1220,9 @@ Test:
 4. Order payment must move to `PAID`.
 5. `/admin/orders/:orderNumber` must show payment event.
 6. `/admin/email` logs should show payment/order emails if email is enabled.
+7. Dismiss an unpaid checkout and confirm the order is cancelled and stock is restored.
+8. For timeout QA, temporarily use a short non-production reservation window and confirm a stale
+   unpaid order is cancelled by the worker while captured/authorized provider payments are preserved.
 
 Live switch:
 

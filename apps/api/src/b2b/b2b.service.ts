@@ -13,21 +13,28 @@ import {
   B2BAdminAction,
   B2BAuditActorType,
   B2BEnquiryStatus,
+  B2BInventoryReservationStatus,
   B2BOrderStatus,
   B2BPaymentMethod,
   B2BPaymentStatus,
   B2BProofStatus,
   B2BTransportMode,
   B2BTransportStatus,
+  CommissionType,
   EmailRecipientType,
   NotificationChannel,
   NotificationStatus,
   Prisma,
+  ProductTaxClassification,
   PushNotificationType,
   ProductStatus,
   RoleCode,
   SellerStatus,
   SellerSettlementStatus,
+  SellerTaxRegistrationStatus,
+  TaxDocumentSource,
+  TaxDocumentType,
+  TaxSupplyType,
   UserStatus,
 } from "@indihub/database";
 import { Buffer } from "node:buffer";
@@ -54,6 +61,7 @@ import {
   type B2BTaxInvoiceDocumentAccess,
 } from "../storage/storage.service";
 import { safeStorageFolderSegment } from "../storage/storage-image";
+import { TaxDocumentsService } from "../tax/tax-documents.service";
 import { CreateB2BEnquiryDto } from "./dto/b2b-enquiry.dto";
 import {
   B2BEnquiryDetailQueryDto,
@@ -113,14 +121,29 @@ const enquiryInclude = {
   responses: {
     include: {
       responder: true,
+      lines: {
+        include: { enquiryLine: true },
+        orderBy: { createdAt: "asc" as const },
+      },
     },
     orderBy: { createdAt: "desc" as const },
+  },
+  lines: {
+    include: {
+      product: true,
+      productVariant: true,
+    },
+    orderBy: { lineNumber: "asc" as const },
   },
   b2bOrder: {
     include: {
       selectedResponse: {
         include: {
           responder: true,
+          lines: {
+            include: { enquiryLine: true },
+            orderBy: { createdAt: "asc" as const },
+          },
         },
       },
       events: {
@@ -156,6 +179,10 @@ const b2bOrderInclude = {
   selectedResponse: {
     include: {
       responder: true,
+      lines: {
+        include: { enquiryLine: true },
+        orderBy: { createdAt: "asc" as const },
+      },
     },
   },
   enquiry: {
@@ -163,8 +190,19 @@ const b2bOrderInclude = {
       responses: {
         include: {
           responder: true,
+          lines: {
+            include: { enquiryLine: true },
+            orderBy: { createdAt: "asc" as const },
+          },
         },
         orderBy: { createdAt: "desc" as const },
+      },
+      lines: {
+        include: {
+          product: true,
+          productVariant: true,
+        },
+        orderBy: { lineNumber: "asc" as const },
       },
     },
   },
@@ -192,6 +230,21 @@ const b2bOrderInclude = {
       actor: true,
     },
     orderBy: { createdAt: "desc" as const },
+  },
+  taxDocuments: {
+    where: { source: TaxDocumentSource.B2B_FULFILMENT },
+    select: { documentType: true },
+    orderBy: { createdAt: "desc" as const },
+    take: 1,
+  },
+  lines: {
+    include: {
+      product: true,
+      productVariant: true,
+      fulfilmentPlan: true,
+      reservations: true,
+    },
+    orderBy: { lineNumber: "asc" as const },
   },
 };
 
@@ -268,7 +321,27 @@ const buyerEditableB2BOrderStatuses = new Set<B2BOrderStatus>([
 
 const terminalB2BOrderStatuses = new Set<B2BOrderStatus>([
   B2BOrderStatus.FULFILLED,
+  B2BOrderStatus.TAX_INVOICE_ISSUED,
+  B2BOrderStatus.E_WAY_READY,
+  B2BOrderStatus.E_WAY_NOT_REQUIRED,
+  B2BOrderStatus.DISPATCHED,
+  B2BOrderStatus.IN_TRANSIT,
+  B2BOrderStatus.DELIVERED,
+  B2BOrderStatus.DELIVERY_ACCEPTED,
+  B2BOrderStatus.CLOSED,
   B2BOrderStatus.CANCELLED,
+]);
+const finalDocumentAvailableB2BOrderStatuses = new Set<B2BOrderStatus>([
+  B2BOrderStatus.PACKED_AND_QC_PASSED,
+  B2BOrderStatus.TAX_INVOICE_ISSUED,
+  B2BOrderStatus.E_WAY_READY,
+  B2BOrderStatus.E_WAY_NOT_REQUIRED,
+  B2BOrderStatus.DISPATCHED,
+  B2BOrderStatus.IN_TRANSIT,
+  B2BOrderStatus.DELIVERED,
+  B2BOrderStatus.DELIVERY_ACCEPTED,
+  B2BOrderStatus.CLOSED,
+  B2BOrderStatus.FULFILLED,
 ]);
 const b2bPurchaseOrderScanStatus = "NOT_SCANNED" as const;
 const b2bMessageNotificationThrottleMinutes = 10;
@@ -343,6 +416,7 @@ export class B2BService {
     @Inject(ExpoPushService) private readonly expoPush: ExpoPushService,
     @Inject(StorageService) private readonly storageService: StorageService,
     @Inject(PaymentsService) private readonly paymentsService: PaymentsService,
+    @Inject(TaxDocumentsService) private readonly taxDocuments: TaxDocumentsService,
     @Optional()
     @Inject(SellerSubscriptionsService)
     private readonly sellerSubscriptions?: SellerSubscriptionsService,
@@ -618,7 +692,70 @@ export class B2BService {
       return existingIdempotentEnquiry;
     }
 
-    const resolved = await this.resolveProductAndSeller(dto);
+    const requestedLines =
+      dto.lines?.length
+        ? dto.lines
+        : dto.productId
+          ? [
+              {
+                productId: dto.productId,
+                description: dto.message.slice(0, 300),
+                quantity: dto.quantity ?? 1,
+              },
+            ]
+          : [];
+    const productIds = [
+      ...new Set(
+        requestedLines
+          .map((line) => line.productId)
+          .filter((productId): productId is string => Boolean(productId)),
+      ),
+    ];
+    const products = productIds.length
+      ? await this.prisma.client.product.findMany({
+          where: {
+            id: { in: productIds },
+            status: ProductStatus.ACTIVE,
+            approvalStatus: ApprovalStatus.APPROVED,
+            deletedAt: null,
+            seller: {
+              status: SellerStatus.APPROVED,
+              approvalStatus: ApprovalStatus.APPROVED,
+            },
+          },
+          include: { variants: true },
+        })
+      : [];
+    if (products.length !== productIds.length) {
+      throw new NotFoundException("One or more approved B2B enquiry products were not found.");
+    }
+    const productsById = new Map(products.map((product) => [product.id, product]));
+    for (const line of requestedLines) {
+      if (
+        line.productVariantId &&
+        !productsById
+          .get(line.productId ?? "")
+          ?.variants.some((variant) => variant.id === line.productVariantId)
+      ) {
+        throw new BadRequestException("A selected variant does not belong to its enquiry product.");
+      }
+    }
+    const productSellerIds = new Set(products.map((product) => product.sellerId));
+    if (productSellerIds.size > 1) {
+      throw new BadRequestException("A B2B enquiry can contain products from only one seller.");
+    }
+    const resolvedProductId = dto.productId ?? requestedLines[0]?.productId;
+    const resolvedSellerId = dto.sellerId ?? [...productSellerIds][0];
+    const resolved = await this.resolveProductAndSeller({
+      ...dto,
+      ...(resolvedProductId ? { productId: resolvedProductId } : {}),
+      ...(resolvedSellerId ? { sellerId: resolvedSellerId } : {}),
+    });
+    if (products.some((product) => product.sellerId !== resolved.sellerId)) {
+      throw new BadRequestException("All B2B enquiry lines must belong to the selected seller.");
+    }
+    const totalQuantity =
+      requestedLines.reduce((sum, line) => sum + line.quantity, 0) || dto.quantity || 1;
 
     let createdNew = true;
     const createdEnquiry = await this.prisma.client.b2BEnquiry.create({
@@ -627,11 +764,29 @@ export class B2BService {
         idempotencyKey,
         productId: resolved.productId,
         sellerId: resolved.sellerId,
-        quantity: dto.quantity,
+        quantity: totalQuantity,
         message: dto.message,
         transportMode: dto.transportMode ?? B2BTransportMode.SELLER_ARRANGED_TRANSPORT,
         transportNote: dto.transportNote?.trim() || null,
         status: B2BEnquiryStatus.SUBMITTED,
+        ...(requestedLines.length
+          ? {
+              lines: {
+                create: requestedLines.map((line, index) => ({
+                  lineNumber: index + 1,
+                  productId: line.productId ?? null,
+                  productVariantId: line.productVariantId ?? null,
+                  description:
+                    line.description.trim() ||
+                    (line.productId ? productsById.get(line.productId)?.name : null) ||
+                    `B2B enquiry line ${index + 1}`,
+                  quantity: line.quantity,
+                  targetPricePaise: line.targetPricePaise ?? null,
+                  note: line.note?.trim() || null,
+                })),
+              },
+            }
+          : {}),
       },
     }).catch(async (error: unknown) => {
       if (idempotencyKey && this.isUniqueConstraintError(error)) {
@@ -1949,14 +2104,32 @@ export class B2BService {
     if (existing.status === B2BOrderStatus.CANCELLED) {
       throw new BadRequestException("B2B order is already cancelled.");
     }
-    if (existing.status === B2BOrderStatus.FULFILLED) {
-      throw new BadRequestException("Fulfilled B2B orders cannot be cancelled from this endpoint.");
+    if (finalDocumentAvailableB2BOrderStatuses.has(existing.status)) {
+      throw new BadRequestException(
+        "B2B orders at invoice, dispatch, or delivery stages require an adjustment or return workflow instead of cancellation.",
+      );
     }
 
     const updated = await this.prisma.client.$transaction(async (tx) => {
       const updated = await tx.b2BOrder.update({
         where: { id: existing.id },
-        data: { status: B2BOrderStatus.CANCELLED },
+        data: {
+          status: B2BOrderStatus.CANCELLED,
+          version: { increment: 1 },
+          settlementStatus: SellerSettlementStatus.NOT_ELIGIBLE,
+          settlementEligibleAt: null,
+        },
+      });
+
+      await tx.b2BInventoryReservation.updateMany({
+        where: {
+          b2bOrderLine: { b2bOrderId: existing.id },
+          status: B2BInventoryReservationStatus.ACTIVE,
+        },
+        data: {
+          status: B2BInventoryReservationStatus.RELEASED,
+          releasedAt: new Date(),
+        },
       });
 
       await tx.b2BOrderEvent.create({
@@ -2360,7 +2533,7 @@ export class B2BService {
 
   private async listB2BOrders(where: Prisma.B2BOrderWhereInput, query: B2BOrderQueryDto) {
     const { page, skip, take } = paginationFromQuery(query);
-    const items = await this.prisma.client.b2BOrder.findMany({
+    const rawItems = await this.prisma.client.b2BOrder.findMany({
       where,
       include: b2bOrderInclude,
       orderBy: { createdAt: "desc" },
@@ -2369,7 +2542,7 @@ export class B2BService {
     });
     const total = await this.prisma.client.b2BOrder.count({ where });
 
-    return { items, total, page, limit: take };
+    return { items: rawItems.map((item) => this.decorateB2BOrder(item)), total, page, limit: take };
   }
 
   private maskB2BEnquiryPageForBuyer<T extends { items: unknown[] }>(page: T) {
@@ -2545,7 +2718,8 @@ export class B2BService {
       user: null,
       gstNumber: null,
       commissionType: seller.commissionType,
-      commissionValue: seller.commissionValue,
+      commissionValueBps: seller.commissionValueBps,
+      commissionFixedPaise: seller.commissionFixedPaise,
     };
   }
 
@@ -2735,7 +2909,7 @@ export class B2BService {
       return B2BOrderStatus.IN_FULFILMENT;
     }
     if (status === "DELIVERED") {
-      return B2BOrderStatus.FULFILLED;
+      return B2BOrderStatus.DELIVERED;
     }
     return status;
   }
@@ -2778,6 +2952,18 @@ export class B2BService {
         "Responses can only be added before buyer confirmation or enquiry closure.",
       );
     }
+    if (dto.lines?.length) {
+      const enquiryLineIds = new Set(existing.lines.map((line) => line.id));
+      const submittedLineIds = new Set(dto.lines.map((line) => line.enquiryLineId));
+      if (
+        submittedLineIds.size !== dto.lines.length ||
+        dto.lines.some((line) => !enquiryLineIds.has(line.enquiryLineId))
+      ) {
+        throw new BadRequestException(
+          "Quotation lines must uniquely match lines from this B2B enquiry.",
+        );
+      }
+    }
 
     const response = await this.prisma.client.$transaction(async (tx) => {
       const response = await tx.b2BEnquiryResponse.create({
@@ -2789,7 +2975,21 @@ export class B2BService {
           transportChargePaise: dto.transportChargePaise ?? null,
           transportEta: dto.transportEta?.trim() || null,
           transportNote: dto.transportNote?.trim() || null,
+          ...(dto.lines?.length
+            ? {
+                lines: {
+                  create: dto.lines.map((line) => ({
+                    enquiryLineId: line.enquiryLineId,
+                    quantity: line.quantity,
+                    unitPricePaise: line.unitPricePaise,
+                    subtotalPaise: line.quantity * line.unitPricePaise,
+                    note: line.note?.trim() || null,
+                  })),
+                },
+              }
+            : {}),
         },
+        include: { lines: true },
       });
 
       const enquiry = await tx.b2BEnquiry.update({
@@ -2827,9 +3027,13 @@ export class B2BService {
     this.emitQuotationAdded(enquiry.id, {
       responseId: response.id,
       totalAmountPaise:
-        response.quotedPricePaise === null || response.quotedPricePaise === undefined
-          ? null
-          : response.quotedPricePaise * enquiry.quantity + (response.transportChargePaise ?? 0),
+        response.lines.length > 0
+          ? response.lines.reduce((sum, line) => sum + line.subtotalPaise, 0) +
+            (response.transportChargePaise ?? 0)
+          : response.quotedPricePaise === null || response.quotedPricePaise === undefined
+            ? null
+            : response.quotedPricePaise * enquiry.quantity +
+              (response.transportChargePaise ?? 0),
       currency: "INR",
       createdAt: response.createdAt.toISOString(),
     });
@@ -3027,7 +3231,40 @@ export class B2BService {
       throw new NotFoundException("B2B order not found.");
     }
 
-    return b2bOrder;
+    return this.decorateB2BOrder(b2bOrder);
+  }
+
+  private decorateB2BOrder<T>(order: T): Omit<T, "taxDocuments"> & { finalDocumentType: TaxDocumentType } {
+    const value = order as T & {
+      seller?: {
+        profile?: {
+          gstNumber?: string | null;
+          taxRegistrationStatus?: SellerTaxRegistrationStatus | null;
+        } | null;
+      } | null;
+      product?: { taxClassification?: ProductTaxClassification | null } | null;
+      taxDocuments?: Array<{ documentType: TaxDocumentType }>;
+    };
+    const { taxDocuments: _taxDocuments, ...withoutTaxDocuments } = value;
+    const registrationStatus =
+      value.seller?.profile?.taxRegistrationStatus ??
+      (value.seller?.profile?.gstNumber?.trim()
+        ? SellerTaxRegistrationStatus.GST_REGISTERED
+        : SellerTaxRegistrationStatus.NOT_REGISTERED);
+    const classification =
+      value.product?.taxClassification ?? ProductTaxClassification.TAXABLE;
+    const finalDocumentType =
+      value.taxDocuments?.[0]?.documentType ??
+      (registrationStatus === SellerTaxRegistrationStatus.NOT_REGISTERED
+        ? TaxDocumentType.COMMERCIAL_INVOICE
+        : registrationStatus === SellerTaxRegistrationStatus.COMPOSITION ||
+            classification !== ProductTaxClassification.TAXABLE
+          ? TaxDocumentType.BILL_OF_SUPPLY
+          : TaxDocumentType.TAX_INVOICE);
+
+    return { ...withoutTaxDocuments, finalDocumentType } as Omit<T, "taxDocuments"> & {
+      finalDocumentType: TaxDocumentType;
+    };
   }
 
   private normalizeIdempotencyKey(value: string | undefined) {
@@ -3064,8 +3301,50 @@ export class B2BService {
     }
 
     const selectedResponse = this.selectResponseForB2BOrder(enquiry.responses);
-    const unitPricePaise = selectedResponse?.quotedPricePaise ?? null;
-    const subtotalPaise = unitPricePaise === null ? null : unitPricePaise * enquiry.quantity;
+    const selectedQuoteLines = new Map(
+      (selectedResponse?.lines ?? []).map((line) => [line.enquiryLineId, line]),
+    );
+    const orderLineInputs =
+      enquiry.lines.length > 0
+        ? enquiry.lines.map((line, index) => {
+            const quoteLine = selectedQuoteLines.get(line.id);
+            const unitPricePaise =
+              quoteLine?.unitPricePaise ??
+              selectedResponse?.quotedPricePaise ??
+              line.targetPricePaise ??
+              line.productVariant?.pricePaise ??
+              0;
+            const quantity = quoteLine?.quantity ?? line.quantity;
+            const grossValuePaise = quantity * unitPricePaise;
+            return {
+              lineNumber: index + 1,
+              productId: line.productId,
+              productVariantId: line.productVariantId,
+              description: line.description,
+              sku: line.productVariant?.sku ?? null,
+              hsnSacCode: line.product?.hsnCode ?? null,
+              taxClassification:
+                line.product?.taxClassification ?? ProductTaxClassification.TAXABLE,
+              quantity,
+              uqc: "NOS",
+              unitPricePaise,
+              grossValuePaise,
+              taxableValuePaise: 0,
+              gstRatePercent: line.product?.gstRatePercent ?? null,
+              lineValuePaise: grossValuePaise,
+            };
+          })
+        : [];
+    const unitPricePaise =
+      orderLineInputs[0]?.unitPricePaise ?? selectedResponse?.quotedPricePaise ?? null;
+    const subtotalPaise =
+      orderLineInputs.length > 0
+        ? orderLineInputs.reduce((sum, line) => sum + line.lineValuePaise, 0)
+        : unitPricePaise === null
+          ? null
+          : unitPricePaise * enquiry.quantity;
+    const totalQuantity =
+      orderLineInputs.reduce((sum, line) => sum + line.quantity, 0) || enquiry.quantity;
     const transportMode = enquiry.transportMode ?? B2BTransportMode.SELLER_ARRANGED_TRANSPORT;
     const quotedTransportChargePaise = selectedResponse?.transportChargePaise ?? 0;
     const transportChargePaise =
@@ -3099,7 +3378,7 @@ export class B2BService {
           status: B2BOrderStatus.PROFORMA_ISSUED,
           proformaInvoiceNumber,
           proformaExpiresAt,
-          quantity: enquiry.quantity,
+          quantity: totalQuantity,
           unitPricePaise,
           subtotalPaise,
           commissionRateBps,
@@ -3114,6 +3393,21 @@ export class B2BService {
           transportQuotedAt: selectedResponse?.transportChargePaise === null || selectedResponse?.transportChargePaise === undefined ? null : new Date(),
           transportEta: selectedResponse?.transportEta ?? null,
           transportNote: selectedResponse?.transportNote ?? enquiry.transportNote ?? null,
+          ...(enquiry.businessBuyer.addresses[0]
+            ? {
+                deliveryAddressSnapshot: {
+                  line1: enquiry.businessBuyer.addresses[0].line1,
+                  line2: enquiry.businessBuyer.addresses[0].line2,
+                  area: enquiry.businessBuyer.addresses[0].area,
+                  city: enquiry.businessBuyer.addresses[0].city,
+                  state: enquiry.businessBuyer.addresses[0].state,
+                  pincode: enquiry.businessBuyer.addresses[0].pincode,
+                  country: enquiry.businessBuyer.addresses[0].country,
+                  countryCode: enquiry.businessBuyer.addresses[0].countryCode,
+                  stateCode: enquiry.businessBuyer.addresses[0].stateCode,
+                },
+              }
+            : {}),
           paymentDueAt,
           createdByUserId: actor.id,
           termsSnapshot: {
@@ -3125,7 +3419,8 @@ export class B2BService {
             selectedResponseId: selectedResponse?.id ?? null,
             selectedResponseMessage: selectedResponse?.responseMessage ?? null,
             quotedPricePaise: selectedResponse?.quotedPricePaise ?? null,
-            quantity: enquiry.quantity,
+            quantity: totalQuantity,
+            lineCount: orderLineInputs.length || 1,
             subtotalPaise,
             transportMode,
             transportStatus,
@@ -3140,6 +3435,13 @@ export class B2BService {
             paymentDueAt: paymentDueAt.toISOString(),
             validityDays: 15,
           },
+          ...(orderLineInputs.length
+            ? {
+                lines: {
+                  create: orderLineInputs,
+                },
+              }
+            : {}),
         },
       });
 
@@ -3215,7 +3517,14 @@ export class B2BService {
       sellerPayoutAmountPaise: number;
       currency: string;
       product?: { name?: string | null } | null;
-      seller?: { storeName?: string | null; gstNumber?: string | null } | null;
+      seller?: {
+        storeName?: string | null;
+        profile?: {
+          businessLegalName?: string | null;
+          gstNumber?: string | null;
+          taxRegistrationStatus?: SellerTaxRegistrationStatus | null;
+        } | null;
+      } | null;
       businessBuyer?: { companyName?: string | null; gstNumber?: string | null } | null;
     },
     actor: RequestUser | null,
@@ -3232,8 +3541,9 @@ export class B2BService {
       "",
       `Buyer: ${order.businessBuyer?.companyName ?? "Business buyer"}`,
       `Buyer GSTIN: ${order.businessBuyer?.gstNumber ?? "Not provided"}`,
-      `Seller: ${order.seller?.storeName ?? "Seller"}`,
-      `Seller GSTIN: ${order.seller?.gstNumber ?? "Not provided"}`,
+      `Seller: ${order.seller?.profile?.businessLegalName ?? order.seller?.storeName ?? "Seller"}`,
+      `Seller registration: ${this.humanizeTaxValue(order.seller?.profile?.taxRegistrationStatus)}`,
+      `Seller GSTIN: ${order.seller?.profile?.gstNumber ?? "Not provided"}`,
       "",
       `Line item: ${order.product?.name ?? order.seller?.storeName ?? "B2B procurement"}`,
       `Quantity: ${order.quantity}`,
@@ -3295,28 +3605,71 @@ export class B2BService {
       product?: { name?: string | null } | null;
       businessBuyer?: { companyName?: string | null; gstNumber?: string | null } | null;
       seller?: { storeName?: string | null; gstNumber?: string | null } | null;
+      taxDocument?: {
+        documentType: TaxDocumentType;
+        sellerLegalName: string;
+        sellerTaxRegistrationStatus: SellerTaxRegistrationStatus;
+        sellerGstin?: string | null;
+        buyerLegalName?: string | null;
+        buyerGstin?: string | null;
+        placeOfSupplyStateCode?: string | null;
+        supplyType?: TaxSupplyType | null;
+        reverseCharge: boolean;
+        taxableValuePaise: number;
+        cgstPaise: number;
+        sgstPaise: number;
+        igstPaise: number;
+        cessPaise: number;
+        totalTaxPaise: number;
+        invoiceValuePaise: number;
+        lines: Array<{
+          description: string;
+          hsnSacCode?: string | null;
+          taxClassification: ProductTaxClassification;
+          quantity: number;
+          taxableValuePaise: number;
+          gstRatePercent?: Prisma.Decimal | null;
+          cgstPaise: number;
+          sgstPaise: number;
+          igstPaise: number;
+          cessPaise: number;
+          lineValuePaise: number;
+        }>;
+      };
     },
     actor: RequestUser | null,
   ) {
+    const documentLabel = this.finalDocumentLabel(order.taxDocument?.documentType);
     const lines = [
-      "1HandIndia Final Tax Invoice",
-      "Server generated B2B tax invoice.",
-      `Invoice No: ${order.taxInvoiceNumber}`,
+      `1HandIndia Final ${documentLabel}`,
+      `Server generated B2B ${documentLabel.toLowerCase()}.`,
+      `Document No: ${order.taxInvoiceNumber}`,
       `Order No: ${order.orderNumber}`,
       `Issued: ${this.proformaDate(order.taxInvoiceIssuedAt)}`,
       `Fulfilled: ${this.proformaDate(order.fulfilledAt)}`,
       `Paid: ${this.proformaDate(order.paidAt)}`,
       `Purchase Order: ${order.purchaseOrderNumber ?? "Not provided"}`,
       "",
-      `Buyer: ${order.businessBuyer?.companyName ?? "Business buyer"}`,
-      `Buyer GSTIN: ${order.businessBuyer?.gstNumber ?? "Not provided"}`,
-      `Seller: ${order.seller?.storeName ?? "Seller"}`,
-      `Seller GSTIN: ${order.seller?.gstNumber ?? "Not provided"}`,
+      `Buyer: ${order.taxDocument?.buyerLegalName ?? order.businessBuyer?.companyName ?? "Business buyer"}`,
+      `Buyer GSTIN: ${order.taxDocument?.buyerGstin ?? "Not provided"}`,
+      `Seller: ${order.taxDocument?.sellerLegalName ?? order.seller?.storeName ?? "Seller"}`,
+      `Seller registration: ${this.humanizeTaxValue(order.taxDocument?.sellerTaxRegistrationStatus)}`,
+      `Seller GSTIN: ${order.taxDocument?.sellerGstin ?? "Not provided"}`,
+      `Supply type: ${this.humanizeTaxValue(order.taxDocument?.supplyType)}`,
+      `Place of supply: ${order.taxDocument?.placeOfSupplyStateCode ?? "Not available"}`,
+      `Reverse charge: ${order.taxDocument?.reverseCharge ? "Yes" : "No"}`,
       "",
-      `Line item: ${order.product?.name ?? order.seller?.storeName ?? "B2B procurement"}`,
-      `Quantity: ${order.quantity}`,
-      `Unit price: ${this.moneyForPdf(order.unitPricePaise ?? 0, order.currency)}`,
-      `Subtotal: ${this.moneyForPdf(order.subtotalPaise ?? order.buyerPayableAmountPaise, order.currency)}`,
+      ...(order.taxDocument?.lines.flatMap((line, index) => [
+        `Line ${index + 1}: ${line.description}`,
+        `Classification: ${this.humanizeTaxValue(line.taxClassification)} / HSN/SAC: ${line.hsnSacCode ?? "Not applicable"} / Qty: ${line.quantity}`,
+        `Taxable: ${this.moneyForPdf(line.taxableValuePaise, order.currency)} / GST: ${String(line.gstRatePercent ?? 0)}%`,
+        `CGST: ${this.moneyForPdf(line.cgstPaise, order.currency)} / SGST: ${this.moneyForPdf(line.sgstPaise, order.currency)} / IGST: ${this.moneyForPdf(line.igstPaise, order.currency)} / Cess: ${this.moneyForPdf(line.cessPaise, order.currency)}`,
+      ]) ?? [
+        `Line item: ${order.product?.name ?? order.seller?.storeName ?? "B2B procurement"}`,
+        `Quantity: ${order.quantity}`,
+        `Unit price: ${this.moneyForPdf(order.unitPricePaise ?? 0, order.currency)}`,
+        `Subtotal: ${this.moneyForPdf(order.subtotalPaise ?? order.buyerPayableAmountPaise, order.currency)}`,
+      ]),
       `B2B transport mode: ${this.humanizeB2BTransport(order.transportMode)}`,
       `B2B transport status: ${this.humanizeB2BTransport(order.transportStatus)}`,
       `B2B transport charge: ${this.moneyForPdf(order.transportChargePaise ?? 0, order.currency)}`,
@@ -3324,6 +3677,13 @@ export class B2BService {
       `B2B tracking reference: ${order.transportTrackingRef ?? "Not provided"}`,
       `Buyer payable: ${this.moneyForPdf(order.buyerPayableAmountPaise, order.currency)}`,
       `Paid amount: ${this.moneyForPdf(order.paidAmountPaise, order.currency)}`,
+      `Taxable value: ${this.moneyForPdf(order.taxDocument?.taxableValuePaise ?? 0, order.currency)}`,
+      `CGST: ${this.moneyForPdf(order.taxDocument?.cgstPaise ?? 0, order.currency)}`,
+      `SGST: ${this.moneyForPdf(order.taxDocument?.sgstPaise ?? 0, order.currency)}`,
+      `IGST: ${this.moneyForPdf(order.taxDocument?.igstPaise ?? 0, order.currency)}`,
+      `Cess: ${this.moneyForPdf(order.taxDocument?.cessPaise ?? 0, order.currency)}`,
+      `Total GST: ${this.moneyForPdf(order.taxDocument?.totalTaxPaise ?? 0, order.currency)}`,
+      `Invoice value: ${this.moneyForPdf(order.taxDocument?.invoiceValuePaise ?? order.buyerPayableAmountPaise, order.currency)}`,
       "",
       `Platform commission deducted from seller: ${order.commissionRateBps} bps / ${this.moneyForPdf(
         order.commissionAmountPaise,
@@ -3399,6 +3759,12 @@ export class B2BService {
       transportNote?: string | null;
       responseMessage: string;
       createdAt: Date;
+      lines?: Array<{
+        enquiryLineId: string;
+        quantity: number;
+        unitPricePaise: number;
+        subtotalPaise: number;
+      }>;
     }>,
   ) {
     // No explicit quote selection exists yet, so use the newest priced response as the commercial source.
@@ -3425,7 +3791,10 @@ export class B2BService {
         : typeof raw === "string" && raw.trim()
           ? Number(raw.trim())
           : Number.NaN;
-    const fallback = enquiry.seller?.commissionValue ?? defaultB2BCommissionRateBps;
+    const fallback =
+      enquiry.seller?.commissionType === CommissionType.PERCENTAGE
+        ? (enquiry.seller.commissionValueBps ?? defaultB2BCommissionRateBps)
+        : defaultB2BCommissionRateBps;
     const value = Number.isFinite(configured) ? configured : fallback;
 
     return Math.max(0, Math.min(10_000, Math.round(value)));
@@ -4097,13 +4466,9 @@ export class B2BService {
     return this.createUniqueB2BNumber("1HI-PFI", "proformaInvoiceNumber");
   }
 
-  private async createUniqueTaxInvoiceNumber() {
-    return this.createUniqueB2BNumber("1HI-TI", "taxInvoiceNumber");
-  }
-
   private async createUniqueB2BNumber(
     prefix: string,
-    field: "orderNumber" | "proformaInvoiceNumber" | "taxInvoiceNumber",
+    field: "orderNumber" | "proformaInvoiceNumber",
   ) {
     const dateKey = new Date().toISOString().slice(0, 10).replace(/-/g, "");
 
@@ -4216,19 +4581,24 @@ export class B2BService {
     },
     actor: RequestUser | null,
   ) {
-    if (order.status !== B2BOrderStatus.FULFILLED) {
-      throw new BadRequestException("Final tax invoice is available after fulfilment.");
+    if (!finalDocumentAvailableB2BOrderStatuses.has(order.status)) {
+      throw new BadRequestException("Final document is available after packing and QC approval.");
     }
 
     const existingFileKey = order.taxInvoiceFileKey;
     if (!existingFileKey) {
-      const issuedAt = new Date();
-      const taxInvoiceNumber = order.taxInvoiceNumber ?? (await this.createUniqueTaxInvoiceNumber());
+      const taxDocument = await this.taxDocuments.issueB2bDocument(order.id, actor?.id ?? null);
+      const issuedAt = taxDocument.issueDate ?? new Date();
+      const taxInvoiceNumber = taxDocument.documentNumber;
+      if (!taxInvoiceNumber) {
+        throw new BadRequestException("B2B final document number could not be allocated.");
+      }
       const generatedFileKey = await this.generateAndStoreB2BTaxInvoice(
         {
           ...order,
           taxInvoiceNumber,
-          taxInvoiceIssuedAt: order.taxInvoiceIssuedAt ?? issuedAt,
+          taxInvoiceIssuedAt: issuedAt,
+          taxDocument,
         },
         actor,
       );
@@ -4237,7 +4607,7 @@ export class B2BService {
           where: { id: order.id },
           data: {
             taxInvoiceNumber,
-            taxInvoiceIssuedAt: order.taxInvoiceIssuedAt ?? issuedAt,
+            taxInvoiceIssuedAt: issuedAt,
             taxInvoiceFileKey: generatedFileKey,
           },
         });
@@ -4245,11 +4615,12 @@ export class B2BService {
           data: {
             b2bOrderId: order.id,
             actorUserId: actor?.id ?? null,
-            status: B2BOrderStatus.FULFILLED,
-            note: "Final tax invoice generated.",
+            status: order.status,
+            note: `Final ${this.finalDocumentLabel(taxDocument.documentType).toLowerCase()} generated.`,
             payload: {
               taxInvoiceNumber,
               taxInvoiceFileKey: generatedFileKey,
+              finalDocumentType: taxDocument.documentType,
             },
           },
         });
@@ -4259,6 +4630,21 @@ export class B2BService {
     }
 
     return this.storageService.b2bTaxInvoiceDocumentAccess(existingFileKey);
+  }
+
+  private finalDocumentLabel(documentType?: TaxDocumentType | null) {
+    switch (documentType) {
+      case TaxDocumentType.BILL_OF_SUPPLY:
+        return "Bill of Supply";
+      case TaxDocumentType.COMMERCIAL_INVOICE:
+        return "Commercial Invoice";
+      default:
+        return "Tax Invoice";
+    }
+  }
+
+  private humanizeTaxValue(value?: string | null) {
+    return value ? value.replaceAll("_", " ").toLowerCase() : "Not available";
   }
 
   private async assertPrivateUploadOwnership(input: {

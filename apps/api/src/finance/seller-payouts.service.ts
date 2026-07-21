@@ -23,6 +23,7 @@ import {
   paginationFromQuery,
 } from "../common/pagination";
 import { RequestUser } from "../auth/types/indihub-request";
+import { sellerPayoutValue } from "../common/seller-payout-secret";
 import { MarketService, type MarketCurrencySnapshot } from "../market/market.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { readBooleanSetting, readNumberSetting } from "../settings/setting-value-utils";
@@ -154,13 +155,14 @@ export class SellerPayoutsService {
         take: take + 1
       });
       const pageResult = cursorPageFromItems(items, take);
+      const readableItems = pageResult.items.map((item) => this.payoutReadback(item));
 
       if (sellerIdFromAuth) {
         const market = await this.marketForSellerId(sellerIdFromAuth);
-        return { ...pageResult, items: pageResult.items.map((item) => this.convertPayoutForSeller(item, market)), limit: take };
+        return { ...pageResult, items: readableItems.map((item) => this.convertPayoutForSeller(item, market)), limit: take };
       }
 
-      return { ...pageResult, limit: take };
+      return { ...pageResult, items: readableItems, limit: take };
     }
 
     const { page, skip, take } = paginationFromQuery(query, { defaultLimit: 20, maxLimit: 100 });
@@ -176,12 +178,13 @@ export class SellerPayoutsService {
       return [items, total] as const;
     });
 
+    const readableItems = items.map((item) => this.payoutReadback(item));
     if (sellerIdFromAuth) {
       const market = await this.marketForSellerId(sellerIdFromAuth);
-      return { items: items.map((item) => this.convertPayoutForSeller(item, market)), total, page, limit: take };
+      return { items: readableItems.map((item) => this.convertPayoutForSeller(item, market)), total, page, limit: take };
     }
 
-    return { items, total, page, limit: take };
+    return { items: readableItems, total, page, limit: take };
   }
 
   private payoutListInclude() {
@@ -195,9 +198,14 @@ export class SellerPayoutsService {
             select: {
               accountHolderName: true,
               bankName: true,
-              accountNumber: true,
-              ifscCode: true,
-              upiId: true,
+              accountNumberEncrypted: true,
+              accountNumberLast4: true,
+              ifscCodeEncrypted: true,
+              upiIdEncrypted: true,
+              upiIdHint: true,
+              legacyAccountNumber: true,
+              legacyIfscCode: true,
+              legacyUpiId: true,
               isVerified: true
             }
           }
@@ -290,7 +298,7 @@ export class SellerPayoutsService {
             id: order.id,
             sellerId,
             payoutId: null,
-            status: B2BOrderStatus.FULFILLED,
+            status: { in: [B2BOrderStatus.DELIVERY_ACCEPTED, B2BOrderStatus.CLOSED] },
             paymentStatus: B2BPaymentStatus.PAID,
             settlementStatus: { in: [SellerSettlementStatus.NOT_ELIGIBLE, SellerSettlementStatus.ELIGIBLE] },
           },
@@ -471,12 +479,13 @@ export class SellerPayoutsService {
       throw new NotFoundException("Seller payout not found.");
     }
 
+    const readablePayout = this.payoutReadback(payout);
     if (sellerIdFromAuth) {
       const market = await this.marketForSellerId(sellerIdFromAuth);
-      return this.convertPayoutForSeller(payout, market);
+      return this.convertPayoutForSeller(readablePayout, market);
     }
 
-    return payout;
+    return readablePayout;
   }
 
   async updateSellerPayoutProfileVerification(sellerId: string, dto: SellerPayoutProfileVerificationDto, actor: RequestUser) {
@@ -525,9 +534,12 @@ export class SellerPayoutsService {
     return {
       accountHolderName: profile.accountHolderName,
       bankName: profile.bankName,
-      accountNumber: profile.accountNumber,
-      ifscCode: profile.ifscCode,
-      upiId: profile.upiId,
+      accountNumber: sellerPayoutValue(
+        profile.accountNumberEncrypted,
+        profile.legacyAccountNumber,
+      ),
+      ifscCode: sellerPayoutValue(profile.ifscCodeEncrypted, profile.legacyIfscCode),
+      upiId: sellerPayoutValue(profile.upiIdEncrypted, profile.legacyUpiId),
       isVerified: profile.isVerified,
     };
   }
@@ -1204,7 +1216,7 @@ export class SellerPayoutsService {
         where: {
           sellerId,
           payoutId: null,
-          status: B2BOrderStatus.FULFILLED,
+          status: { in: [B2BOrderStatus.DELIVERY_ACCEPTED, B2BOrderStatus.CLOSED] },
           paymentStatus: B2BPaymentStatus.PAID,
           settlementStatus: { in: [SellerSettlementStatus.NOT_ELIGIBLE, SellerSettlementStatus.ELIGIBLE] },
         },
@@ -1449,6 +1461,42 @@ export class SellerPayoutsService {
     });
   }
 
+  private payoutReadback<T extends Record<string, unknown>>(payout: T): T {
+    const seller = payout.seller;
+    if (!seller || typeof seller !== "object" || Array.isArray(seller)) {
+      return payout;
+    }
+    const sellerRecord = seller as Record<string, unknown>;
+    const profile = sellerRecord.payoutProfile;
+    if (!profile || typeof profile !== "object" || Array.isArray(profile)) {
+      return payout;
+    }
+    const profileRecord = profile as Record<string, unknown>;
+    const value = (key: string) =>
+      typeof profileRecord[key] === "string" ? (profileRecord[key] as string) : null;
+
+    return {
+      ...payout,
+      seller: {
+        ...sellerRecord,
+        payoutProfile: {
+          accountHolderName: value("accountHolderName"),
+          bankName: value("bankName"),
+          accountNumber: sellerPayoutValue(
+            value("accountNumberEncrypted"),
+            value("legacyAccountNumber"),
+          ),
+          ifscCode: sellerPayoutValue(
+            value("ifscCodeEncrypted"),
+            value("legacyIfscCode"),
+          ),
+          upiId: sellerPayoutValue(value("upiIdEncrypted"), value("legacyUpiId")),
+          isVerified: profileRecord.isVerified === true,
+        },
+      },
+    } as T;
+  }
+
   private convertPayoutForSeller<T extends Record<string, unknown>>(payout: T, market: MarketCurrencySnapshot) {
     const converted = this.convertCurrencyRecord(payout, payoutMoneyFields, market) as Record<string, unknown>;
 
@@ -1581,7 +1629,16 @@ export class SellerPayoutsService {
   }
 
   private hasPayoutMethod(
-    payoutProfile: { accountHolderName?: string | null; bankName?: string | null; accountNumber?: string | null; ifscCode?: string | null; upiId?: string | null } | null,
+    payoutProfile: {
+      accountHolderName?: string | null;
+      bankName?: string | null;
+      accountNumberEncrypted?: string | null;
+      ifscCodeEncrypted?: string | null;
+      upiIdEncrypted?: string | null;
+      legacyAccountNumber?: string | null;
+      legacyIfscCode?: string | null;
+      legacyUpiId?: string | null;
+    } | null,
     sellerProfile?: { contactName?: string | null; businessLegalName?: string | null } | null
   ) {
     if (!payoutProfile) {
@@ -1589,8 +1646,17 @@ export class SellerPayoutsService {
     }
 
     const name = payoutProfile.accountHolderName?.trim() || sellerProfile?.contactName?.trim() || sellerProfile?.businessLegalName?.trim();
-    const hasUpi = Boolean(name && payoutProfile.upiId?.trim());
-    const hasBank = Boolean(name && payoutProfile.bankName?.trim() && payoutProfile.accountNumber?.trim() && payoutProfile.ifscCode?.trim());
+    const accountNumber = sellerPayoutValue(
+      payoutProfile.accountNumberEncrypted,
+      payoutProfile.legacyAccountNumber,
+    );
+    const ifscCode = sellerPayoutValue(
+      payoutProfile.ifscCodeEncrypted,
+      payoutProfile.legacyIfscCode,
+    );
+    const upiId = sellerPayoutValue(payoutProfile.upiIdEncrypted, payoutProfile.legacyUpiId);
+    const hasUpi = Boolean(name && upiId);
+    const hasBank = Boolean(name && payoutProfile.bankName?.trim() && accountNumber && ifscCode);
 
     return hasUpi || hasBank;
   }

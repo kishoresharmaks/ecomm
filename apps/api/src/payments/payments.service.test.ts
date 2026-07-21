@@ -31,6 +31,7 @@ describe("PaymentsService", () => {
     client: {
       payment: {
         findFirst: vi.fn(),
+        findMany: vi.fn(),
         findUnique: vi.fn(),
         update: vi.fn(),
         updateMany: vi.fn(),
@@ -124,6 +125,7 @@ describe("PaymentsService", () => {
     );
     prisma.client.setting.findMany.mockResolvedValue([]);
     prisma.client.payment.findUnique.mockImplementation(async () => prisma.client.payment.findFirst());
+    prisma.client.payment.findMany.mockResolvedValue([]);
     prisma.client.payment.updateMany.mockResolvedValue({ count: 1 });
     prisma.client.servicePayment.findUnique.mockImplementation(async () => prisma.client.servicePayment.findFirst());
     prisma.client.servicePayment.updateMany.mockResolvedValue({ count: 1 });
@@ -595,6 +597,58 @@ describe("PaymentsService", () => {
     expect(notifications.notifyEvent).not.toHaveBeenCalled();
   });
 
+  it("flags a captured payment for refund review when its order was already cancelled", async () => {
+    const rawBody = Buffer.from(
+      JSON.stringify(createRazorpayPayload("payment.captured", "pay_late", "order_1")),
+    );
+    const signature = createHmac("sha256", "webhook_secret").update(rawBody).digest("hex");
+    const cancelledPayment = createPaymentRecord({
+      status: PaymentStatus.FAILED,
+      order: {
+        orderStatus: OrderStatus.CANCELLED,
+        paymentStatus: PaymentStatus.NOT_REQUIRED,
+        deliveryStatus: DeliveryStatus.CANCELLED,
+      },
+    });
+    prisma.client.payment.findFirst.mockResolvedValue(cancelledPayment);
+    prisma.client.payment.findUnique.mockResolvedValue(cancelledPayment);
+    const service = new PaymentsService(prisma as never, notifications as never);
+
+    const result = await service.handleRazorpayWebhook(
+      signature,
+      JSON.parse(rawBody.toString()),
+      rawBody,
+    );
+
+    expect(result).toEqual({
+      received: true,
+      paymentId: "payment_1",
+      status: PaymentStatus.PAID,
+    });
+    expect(prisma.client.order.updateMany).toHaveBeenCalledWith({
+      where: { id: "order_internal_1" },
+      data: { paymentStatus: PaymentStatus.PAID },
+    });
+    expect(prisma.client.auditLog.create).toHaveBeenCalledWith({
+      data: {
+        action: "payment.captured_after_order_cancelled",
+        entityType: "order",
+        entityId: "order_internal_1",
+        oldValue: {
+          orderStatus: OrderStatus.CANCELLED,
+          paymentStatus: PaymentStatus.NOT_REQUIRED,
+        },
+        newValue: {
+          orderNumber: "1HI202605230001",
+          paymentStatus: PaymentStatus.PAID,
+          providerPaymentId: "pay_late",
+          refundReviewRequired: true,
+        },
+      },
+    });
+    expect(notifications.notifyEvent).not.toHaveBeenCalled();
+  });
+
   it("cancels an unpaid order and restores stock when Razorpay reports payment failure", async () => {
     const rawBody = Buffer.from(
       JSON.stringify(createRazorpayPayload("payment.failed", "pay_failed", "order_1")),
@@ -620,6 +674,7 @@ describe("PaymentsService", () => {
       data: {
         status: PaymentStatus.FAILED,
         providerPaymentId: "pay_failed",
+        providerOrderCreationInProgress: false,
         rawResponse: JSON.parse(rawBody.toString()),
       },
     });
@@ -738,6 +793,178 @@ describe("PaymentsService", () => {
         paymentStatus: PaymentStatus.FAILED,
       },
     });
+  });
+
+  it("expires a stale unpaid Razorpay reservation and releases its stock", async () => {
+    const now = new Date("2026-07-20T12:00:00.000Z");
+    const candidate = createPaymentRecord({
+      providerOrderId: null,
+      createdAt: new Date("2026-07-20T11:30:00.000Z"),
+    });
+    prisma.client.payment.findMany.mockResolvedValue([candidate]);
+    prisma.client.payment.findFirst.mockResolvedValue(candidate);
+    const service = new PaymentsService(prisma as never, notifications as never);
+
+    const result = await service.expireStaleRazorpayReservations({
+      timeoutMinutes: 15,
+      limit: 25,
+      now,
+    });
+
+    expect(prisma.client.payment.findMany).toHaveBeenCalledWith({
+      where: {
+        provider: PaymentProvider.RAZORPAY,
+        status: PaymentStatus.PENDING,
+        createdAt: { lte: new Date("2026-07-20T11:45:00.000Z") },
+        order: {
+          orderStatus: { not: OrderStatus.CANCELLED },
+          paymentStatus: PaymentStatus.PENDING,
+        },
+      },
+      include: {
+        order: {
+          include: {
+            customer: {
+              include: {
+                user: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: "asc" },
+      take: 25,
+    });
+    expect(result).toMatchObject({
+      checked: 1,
+      expired: 1,
+      capturedRecovered: 0,
+      authorizedSkipped: 0,
+      conflictsSkipped: 0,
+      failed: 0,
+    });
+    expect(prisma.client.productVariant.update).toHaveBeenCalledWith({
+      where: { id: "variant_1" },
+      data: { stockQuantity: { increment: 2 } },
+    });
+    expect(notifications.notifyEvent).toHaveBeenCalledWith({
+      eventCode: "ORDER_CANCELLED",
+      recipientType: EmailRecipientType.CUSTOMER,
+      recipient: "customer@example.com",
+      userId: "user_customer",
+      variables: {
+        orderNumber: "1HI202605230001",
+        orderStatus: OrderStatus.CANCELLED,
+        note: "Payment was not completed before the reservation expired. Reserved stock has been released.",
+      },
+    });
+  });
+
+  it("recovers a captured provider payment instead of expiring its reservation", async () => {
+    const candidate = createPaymentRecord({
+      createdAt: new Date("2026-07-20T11:30:00.000Z"),
+    });
+    prisma.client.payment.findMany.mockResolvedValue([candidate]);
+    prisma.client.payment.findFirst.mockResolvedValue(candidate);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            items: [
+              {
+                id: "pay_captured",
+                order_id: "order_1",
+                amount: 100,
+                currency: "INR",
+                status: "captured",
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    );
+    const service = new PaymentsService(prisma as never, notifications as never);
+
+    const result = await service.expireStaleRazorpayReservations({
+      timeoutMinutes: 15,
+      now: new Date("2026-07-20T12:00:00.000Z"),
+    });
+
+    expect(result).toMatchObject({
+      checked: 1,
+      expired: 0,
+      capturedRecovered: 1,
+      authorizedSkipped: 0,
+      conflictsSkipped: 0,
+      failed: 0,
+    });
+    expect(prisma.client.productVariant.update).not.toHaveBeenCalled();
+    expect(prisma.client.payment.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: "payment_1",
+        status: PaymentStatus.PENDING,
+        providerPaymentId: null,
+      },
+      data: {
+        status: PaymentStatus.PAID,
+        providerPaymentId: "pay_captured",
+        rawResponse: {
+          providerPayment: {
+            id: "pay_captured",
+            order_id: "order_1",
+            amount: 100,
+            currency: "INR",
+            status: "captured",
+          },
+          reservationCutoff: "2026-07-20T11:45:00.000Z",
+        },
+      },
+    });
+  });
+
+  it("keeps stock reserved while Razorpay reports an authorized payment", async () => {
+    const candidate = createPaymentRecord({
+      createdAt: new Date("2026-07-20T11:30:00.000Z"),
+    });
+    prisma.client.payment.findMany.mockResolvedValue([candidate]);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            items: [
+              {
+                id: "pay_authorized",
+                order_id: "order_1",
+                amount: 100,
+                currency: "INR",
+                status: "authorized",
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    );
+    const service = new PaymentsService(prisma as never, notifications as never);
+
+    const result = await service.expireStaleRazorpayReservations({
+      timeoutMinutes: 15,
+      now: new Date("2026-07-20T12:00:00.000Z"),
+    });
+
+    expect(result).toMatchObject({
+      checked: 1,
+      expired: 0,
+      capturedRecovered: 0,
+      authorizedSkipped: 1,
+      conflictsSkipped: 0,
+      failed: 0,
+    });
+    expect(prisma.client.payment.updateMany).not.toHaveBeenCalled();
+    expect(prisma.client.productVariant.update).not.toHaveBeenCalled();
   });
 
   it("verifies Razorpay Checkout signatures before refreshing payment state", async () => {

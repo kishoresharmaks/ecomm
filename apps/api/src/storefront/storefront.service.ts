@@ -58,6 +58,7 @@ const publicCategoryCardSelect = {
   slug: true,
   description: true,
   imageUrl: true,
+  defaultTaxClassification: true,
   defaultHsnCode: true,
   defaultGstRatePercent: true,
   defaultTaxDescription: true,

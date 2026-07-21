@@ -12,6 +12,7 @@ import {
   UpsertMaintenanceSettingsDto,
   UpsertSeoAnalyticsSettingsDto,
   UpsertMapRoutingSettingsDto,
+  UpsertReturnPolicySettingsDto,
   UpsertSettingDto,
 } from "./dto/settings.dto";
 import {
@@ -39,6 +40,12 @@ import {
   normalizeMapRoutingSettings,
   readMapRoutingSettings,
 } from "./map-routing-settings";
+import {
+  normalizeReturnPolicySettings,
+  readReturnPolicySettings,
+  returnPolicySettingGroup,
+  returnPolicySettingKeys,
+} from "./return-policy-settings";
 
 const DEFAULT_EMAIL_SETTING_ID = "00000000-0000-0000-0000-000000000001";
 const sensitiveSettingPatterns = [/secret/i, /key_secret/i, /api_key/i, /password/i, /token/i];
@@ -134,6 +141,10 @@ export class SettingsService {
     });
 
     return this.checkoutPlatformFeeAuditValue(settings);
+  }
+
+  async getReturnPolicySettings() {
+    return readReturnPolicySettings(this.prisma.client);
   }
 
   async getDeliveryPartnerPayoutSettings() {
@@ -352,6 +363,50 @@ export class SettingsService {
     };
   }
 
+  async upsertReturnPolicySettings(actor: RequestUser, dto: UpsertReturnPolicySettingsDto) {
+    const normalized = normalizeReturnPolicySettings(dto);
+    const writes = [
+      this.settingWrite(
+        returnPolicySettingKeys.returnWindowDays,
+        returnPolicySettingGroup,
+        SettingValueType.NUMBER,
+        normalized.returnWindowDays,
+      ),
+      this.settingWrite(
+        returnPolicySettingKeys.replacementWindowDays,
+        returnPolicySettingGroup,
+        SettingValueType.NUMBER,
+        normalized.replacementWindowDays,
+      ),
+    ];
+
+    await this.prisma.client.$transaction(async (tx) => {
+      const before = await readReturnPolicySettings(tx);
+      for (const write of writes) {
+        await tx.setting.upsert({
+          where: { key: write.key },
+          update: {
+            group: write.group,
+            value: write.value,
+            valueType: write.valueType,
+          },
+          create: write,
+        });
+      }
+      await tx.auditLog.create({
+        data: {
+          actorUserId: actor.id,
+          action: "settings.return_policy.updated",
+          entityType: "return_policy_settings",
+          oldValue: before,
+          newValue: normalized,
+        },
+      });
+    });
+
+    return normalized;
+  }
+
   async upsertDeliveryPartnerPayoutSettings(
     actor: RequestUser,
     dto: UpsertDeliveryPartnerPayoutSettingsDto,
@@ -362,6 +417,8 @@ export class SettingsService {
       basePayPaise: this.nonNegativeInt(dto.basePayPaise),
       perKmPaise: this.nonNegativeInt(dto.perKmPaise),
       codBonusPaise: this.nonNegativeInt(dto.codBonusPaise),
+      reversePickupBasePayPaise: this.nonNegativeInt(dto.reversePickupBasePayPaise),
+      reversePickupCostBearer: dto.reversePickupCostBearer,
       minimumWalletPayoutPaise: this.nonNegativeInt(dto.minimumWalletPayoutPaise),
       requestsEnabled: dto.requestsEnabled,
       freeDeliveryPlatformSubsidyEnabled: dto.freeDeliveryPlatformSubsidyEnabled,
@@ -396,6 +453,18 @@ export class SettingsService {
         deliveryPartnerPayoutSettingGroup,
         SettingValueType.NUMBER,
         normalized.codBonusPaise,
+      ),
+      this.settingWrite(
+        deliveryPartnerPayoutSettingKeys.reversePickupBasePayPaise,
+        deliveryPartnerPayoutSettingGroup,
+        SettingValueType.NUMBER,
+        normalized.reversePickupBasePayPaise,
+      ),
+      this.settingWrite(
+        deliveryPartnerPayoutSettingKeys.reversePickupCostBearer,
+        deliveryPartnerPayoutSettingGroup,
+        SettingValueType.STRING,
+        normalized.reversePickupCostBearer,
       ),
       this.settingWrite(
         deliveryPartnerPayoutSettingKeys.minimumWalletPayoutPaise,

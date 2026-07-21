@@ -38,6 +38,21 @@ type RazorpayCheckoutOptions = {
   theme: {
     color: string;
   };
+  config?: {
+    display: {
+      blocks: Record<
+        string,
+        {
+          name: string;
+          instruments: Array<{ method: string }>;
+        }
+      >;
+      sequence: string[];
+      preferences: {
+        show_default_blocks: boolean;
+      };
+    };
+  };
 };
 
 type RazorpayCheckoutInstance = {
@@ -56,6 +71,7 @@ let razorpayScriptPromise: Promise<void> | null = null;
 export async function openRazorpayCheckout(
   providerOrder: RazorpayCheckoutOrder,
   description: string,
+  preferredMethod?: "upi",
 ) {
   await loadRazorpayScript();
   const Razorpay = window.Razorpay;
@@ -79,6 +95,24 @@ export async function openRazorpayCheckout(
       theme: {
         color: "#ED3500",
       },
+      ...(preferredMethod === "upi"
+        ? {
+            config: {
+              display: {
+                blocks: {
+                  upi: {
+                    name: "Pay via UPI",
+                    instruments: [{ method: "upi" }],
+                  },
+                },
+                sequence: ["block.upi"],
+                preferences: {
+                  show_default_blocks: false,
+                },
+              },
+            },
+          }
+        : {}),
     });
 
     checkout.on("payment.failed", (response) => {

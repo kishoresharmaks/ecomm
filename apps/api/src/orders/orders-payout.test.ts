@@ -1,13 +1,69 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
-import { OrdersService } from "./orders.service";
 import { PaymentProvider } from "@indihub/database";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { OrdersService } from "./orders.service";
+
+function createTransactionMock() {
+  return {
+    orderShipment: {
+      findMany: vi.fn().mockResolvedValue([
+        {
+          id: "shipment_1",
+          orderId: "order_1",
+          deliveryPartnerUserId: "partner_1",
+          shippingPaise: 0,
+          seller: { addresses: [{}] },
+          order: {
+            orderNumber: "ORD-123",
+            currency: "INR",
+            payments: [{ provider: PaymentProvider.RAZORPAY, method: "RAZORPAY" }],
+            shippingAddressSnapshot: null,
+          },
+        },
+      ]),
+    },
+    deliveryPartnerWalletEntry: {
+      findUnique: vi.fn().mockResolvedValue(null),
+      create: vi.fn().mockResolvedValue({ id: "entry_1" }),
+    },
+    setting: {
+      findMany: vi.fn().mockResolvedValue([
+        { key: "delivery_partner.payout.minimum_per_order_paise", value: 4000 },
+        { key: "delivery_partner.payout.included_distance_km", value: 3 },
+        { key: "delivery_partner.payout.base_pay_paise", value: 4000 },
+        { key: "delivery_partner.payout.per_km_paise", value: 800 },
+        { key: "delivery_partner.payout.cod_bonus_paise", value: 500 },
+        { key: "delivery_partner.payout.free_delivery_platform_subsidy_enabled", value: true },
+      ]),
+    },
+  };
+}
+
+type TransactionMock = ReturnType<typeof createTransactionMock>;
+type DistanceResultStub = {
+  distanceKm: number | null;
+  provider: "GOOGLE_ROUTES" | "MAPBOX_DIRECTIONS" | "HAVERSINE" | "NONE";
+  accuracy: "ROAD_ROUTE" | "STRAIGHT_LINE" | "UNAVAILABLE";
+  failureReason?: string | null;
+};
+
+type OrdersServiceTestAccess = {
+  deliveryPartnerEarningDistance(...args: unknown[]): Promise<DistanceResultStub>;
+  creditLocalDeliveryPartnerEarnings(
+    tx: TransactionMock,
+    input: {
+      orderId: string;
+      deliveryDetailId: string;
+      createdById: string;
+      note?: string | null;
+    },
+  ): Promise<void>;
+};
 
 describe("Delivery Partner Payout Calculation", () => {
-  let service: any;
-  let txMock: any;
+  let service: OrdersServiceTestAccess;
+  let txMock: TransactionMock;
 
   beforeEach(() => {
-    // Create a mock OrdersService with minimal dependencies
     service = new OrdersService(
       {} as never,
       {} as never,
@@ -31,41 +87,10 @@ describe("Delivery Partner Payout Calculation", () => {
       {} as never,
       {} as never,
       {} as never,
-    );
+      {} as never,
+    ) as unknown as OrdersServiceTestAccess;
 
-    txMock = {
-      orderShipment: {
-        findMany: vi.fn().mockResolvedValue([
-          {
-            id: "shipment_1",
-            orderId: "order_1",
-            deliveryPartnerUserId: "partner_1",
-            shippingPaise: 0,
-            seller: { addresses: [{}] },
-            order: {
-              orderNumber: "ORD-123",
-              currency: "INR",
-              payments: [{ provider: PaymentProvider.RAZORPAY, method: "RAZORPAY" }],
-              shippingAddressSnapshot: null,
-            },
-          },
-        ]),
-      },
-      deliveryPartnerWalletEntry: {
-        findUnique: vi.fn().mockResolvedValue(null),
-        create: vi.fn().mockResolvedValue({ id: "entry_1" }),
-      },
-      setting: {
-        findMany: vi.fn().mockResolvedValue([
-          { key: "delivery_partner.payout.minimum_per_order_paise", value: 4000 },
-          { key: "delivery_partner.payout.included_distance_km", value: 3 },
-          { key: "delivery_partner.payout.base_pay_paise", value: 4000 },
-          { key: "delivery_partner.payout.per_km_paise", value: 800 },
-          { key: "delivery_partner.payout.cod_bonus_paise", value: 500 },
-          { key: "delivery_partner.payout.free_delivery_platform_subsidy_enabled", value: true },
-        ]),
-      },
-    };
+    txMock = createTransactionMock();
   });
 
   it("pays base pay for distance under included distance (1km)", async () => {
@@ -77,8 +102,6 @@ describe("Delivery Partner Payout Calculation", () => {
 
     await service.creditLocalDeliveryPartnerEarnings(txMock, {
       orderId: "order_1",
-      shipmentId: "shipment_1",
-      deliveryPartnerUserId: "partner_1",
       createdById: "system",
       deliveryDetailId: "detail_1",
     });
@@ -108,8 +131,6 @@ describe("Delivery Partner Payout Calculation", () => {
 
     await service.creditLocalDeliveryPartnerEarnings(txMock, {
       orderId: "order_1",
-      shipmentId: "shipment_1",
-      deliveryPartnerUserId: "partner_1",
       createdById: "system",
       deliveryDetailId: "detail_1",
     });
@@ -139,8 +160,6 @@ describe("Delivery Partner Payout Calculation", () => {
 
     await service.creditLocalDeliveryPartnerEarnings(txMock, {
       orderId: "order_1",
-      shipmentId: "shipment_1",
-      deliveryPartnerUserId: "partner_1",
       createdById: "system",
       deliveryDetailId: "detail_1",
     });
@@ -186,8 +205,6 @@ describe("Delivery Partner Payout Calculation", () => {
 
     await service.creditLocalDeliveryPartnerEarnings(txMock, {
       orderId: "order_1",
-      shipmentId: "shipment_1",
-      deliveryPartnerUserId: "partner_1",
       createdById: "system",
       deliveryDetailId: "detail_1",
     });

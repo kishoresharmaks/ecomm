@@ -3,9 +3,11 @@ import {
   SellerCapability,
   SellerStatus,
   SellerSubscriptionStatus,
+  SellerTaxRegistrationStatus,
   SellerType,
   UserStatus,
 } from "@indihub/database";
+import { BadRequestException } from "@nestjs/common";
 import { plainToInstance } from "class-transformer";
 import { validateSync } from "class-validator";
 import { describe, expect, it, vi } from "vitest";
@@ -116,5 +118,76 @@ describe("seller DTO normalization", () => {
     });
 
     expect(validateSync(dto)).toEqual([]);
+  });
+});
+
+describe("SellersService onboarding tax verification", () => {
+  it("requires a GST certificate before a GST-registered seller can submit onboarding", async () => {
+    const prisma = {
+      client: {
+        seller: {
+          findFirst: vi.fn().mockResolvedValue(null),
+        },
+        $transaction: vi.fn(),
+      },
+    };
+    const locations = {
+      resolveAddressLocation: vi.fn().mockResolvedValue({
+        area: "Gandhipuram",
+        city: "Coimbatore",
+        state: "Tamil Nadu",
+        pincode: "641012",
+        country: "India",
+        countryCode: "IN",
+        stateCode: "33",
+        cityCode: "IN-TN-CBE",
+        localAreaCode: "IN-TN-CBE-GANDHIPURAM",
+      }),
+    };
+    const service = new SellersService(
+      prisma as never,
+      locations as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    const documents = [
+      "ID_PROOF",
+      "SIGNATURE_PROOF",
+      "ADDRESS_PROOF",
+      "BANK_PROOF",
+    ].map((documentType) => ({
+      documentType,
+      fileUrl: `1handindia/sellers/user_1/documents/${documentType.toLowerCase()}.pdf`,
+    }));
+
+    await expect(
+      service.registerSeller(
+        {
+          id: "user_1",
+          clerkUserId: null,
+          email: "seller@example.com",
+          roles: [],
+        },
+        {
+          sellerType: SellerType.MARKETPLACE_SELLER,
+          storeName: "GST Store",
+          businessLegalName: "GST Store Private Limited",
+          taxRegistrationStatus: SellerTaxRegistrationStatus.GST_REGISTERED,
+          gstNumber: "33ABCDE1234F1Z5",
+          contactName: "Seller User",
+          contactPhone: "+919876543210",
+          address: {
+            line1: "12 Market Road",
+            countryCode: "IN",
+            stateCode: "33",
+            cityCode: "IN-TN-CBE",
+            localAreaCode: "IN-TN-CBE-GANDHIPURAM",
+          },
+          documents,
+        },
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.client.$transaction).not.toHaveBeenCalled();
   });
 });

@@ -26,6 +26,7 @@ import {
 import {
   cancelCustomerOrder,
   getCustomerOrder,
+  getReturnPolicySettings,
   type MobileOrderDetail,
 } from "../../src/features/storefront/storefront-api";
 import {
@@ -45,7 +46,16 @@ import {
   SignInRequiredState,
   StatusPill,
 } from "../../src/features/account/account-ui";
-import { isDeliveredStorePickupOrder, orderCanStartReturn } from "../../src/features/returns/return-eligibility";
+import {
+  activeOrderReturnRequest,
+  availableReturnQuantityForResolution,
+  defaultMobileReturnPolicySettings,
+  isDeliveredStorePickupOrder,
+  latestOrderReturnRequest,
+  orderCanStartReturn,
+  orderReturnPolicyState,
+  itemReturnPolicyState,
+} from "../../src/features/returns/return-eligibility";
 import { isMobileReturnsEnabled } from "../../src/features/returns/return-feature";
 import { returnsCopy } from "../../src/features/returns/return-copy";
 import { resolveImageUrl } from "../../src/lib/image-url";
@@ -78,6 +88,12 @@ export default function OrderDetailScreen() {
     queryFn: () => getCustomerOrder(customerAuth.authHeaders, orderNumber ?? ""),
     enabled: customerAuth.enabled && Boolean(orderNumber),
     refetchOnMount: "always",
+  });
+  const returnPolicyQuery = useQuery({
+    queryKey: ["mobile-return-policy"],
+    queryFn: getReturnPolicySettings,
+    enabled: isMobileReturnsEnabled(customerAuth.authKey),
+    staleTime: 5 * 60 * 1000,
   });
 
   const cancelMutation = useMutation({
@@ -215,8 +231,37 @@ export default function OrderDetailScreen() {
   }
 
   const storePickupFinal = isDeliveredStorePickupOrder(order);
+  const delivered = order.orderStatus === "DELIVERED" || order.deliveryStatus === "DELIVERED";
   const canCancel = !storePickupFinal && orderCanBeCancelled(order);
-  const canStartReturn = !storePickupFinal && isMobileReturnsEnabled(customerAuth.authKey) && orderCanStartReturn(order);
+  const returnFeatureEnabled = isMobileReturnsEnabled(customerAuth.authKey);
+  const returnPolicy = orderReturnPolicyState(
+    order,
+    returnPolicyQuery.data ?? defaultMobileReturnPolicySettings,
+  );
+  const activeReturn = activeOrderReturnRequest(order);
+  const latestReturn = latestOrderReturnRequest(order);
+  const hasAvailableReturnQuantity = order.items.some(
+    (item) =>
+      availableReturnQuantityForResolution(
+        order,
+        item,
+        returnPolicyQuery.data ?? defaultMobileReturnPolicySettings,
+        "REFUND",
+      ) > 0 ||
+      availableReturnQuantityForResolution(
+        order,
+        item,
+        returnPolicyQuery.data ?? defaultMobileReturnPolicySettings,
+        "REPLACEMENT",
+      ) > 0,
+  );
+  const canStartReturn =
+    !storePickupFinal &&
+    returnFeatureEnabled &&
+    !activeReturn &&
+    hasAvailableReturnQuantity &&
+    orderCanStartReturn(order) &&
+    (returnPolicy.refund.eligible || returnPolicy.replacement.eligible);
   const canRetryPayment = canRetryRazorpayPayment(order);
   const address = readShippingAddress(order);
   const timeline = buildTimeline(order);
@@ -255,6 +300,13 @@ export default function OrderDetailScreen() {
                   {item.seller?.storeName ? ` - ${item.seller.storeName}` : ""}
                 </Text>
                 <Text style={styles.itemMeta}>{formatMoney(item.unitPricePaise, item.currency ?? order.currency, "en-IN")} each</Text>
+                {delivered ? (
+                  <ItemReturnTerms
+                    item={item}
+                    order={order}
+                    settings={returnPolicyQuery.data ?? defaultMobileReturnPolicySettings}
+                  />
+                ) : null}
               </View>
               <Text style={styles.itemTotal}>{formatMoney(item.lineTotalPaise, item.currency ?? order.currency, "en-IN")}</Text>
             </View>
@@ -353,18 +405,59 @@ export default function OrderDetailScreen() {
           </Pressable>
         </Section>
 
-        {canStartReturn ? (
+        {delivered && returnFeatureEnabled ? (
           <Section icon={DeliveryReturn01Icon} title={returnCopy.accountEntryTitle}>
-            <Text style={styles.helpText}>{returnCopy.returnOrderHelp}</Text>
-            <Pressable
-              accessibilityHint="Open the return request form for this order"
-              accessibilityRole="button"
-              style={styles.primaryActionButton}
-              onPress={() => router.push(`/orders/${encodeURIComponent(order.orderNumber)}/return` as never)}
-            >
-              <HugeiconsIcon color={colors.surface} icon={DeliveryReturn01Icon} size={19} strokeWidth={2.2} />
-              <Text style={styles.primaryActionButtonText}>{returnCopy.returnCta}</Text>
-            </Pressable>
+            <Text style={styles.helpText}>Eligibility starts from the delivery date and is checked again when you submit.</Text>
+            <View style={styles.returnPolicyGrid}>
+              <ReturnWindowDetail label="Refund return" state={returnPolicy.refund} />
+              <ReturnWindowDetail label="Replacement" state={returnPolicy.replacement} />
+            </View>
+            {activeReturn ? (
+              <View style={styles.returnRequestBox}>
+                <Text style={styles.returnRequestTitle}>Request {activeReturn.requestNumber}</Text>
+                <Text style={styles.helpText}>
+                  {formatStatus(activeReturn.resolution)} request is {formatStatus(activeReturn.status)}. You can track its pickup and review updates here.
+                </Text>
+                <Pressable
+                  accessibilityHint="Open the submitted return request"
+                  accessibilityRole="button"
+                  style={styles.primaryActionButton}
+                  onPress={() => router.push(`/account/returns/${encodeURIComponent(activeReturn.requestNumber)}` as never)}
+                >
+                  <HugeiconsIcon color={colors.surface} icon={DeliveryReturn01Icon} size={19} strokeWidth={2.2} />
+                  <Text style={styles.primaryActionButtonText}>View return</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <>
+                <Text style={styles.helpText}>
+                  {canStartReturn
+                    ? returnCopy.returnOrderHelp
+                    : returnUnavailableMessage(order, returnPolicy, hasAvailableReturnQuantity)}
+                </Text>
+                {canStartReturn ? (
+                  <Pressable
+                    accessibilityHint="Open the return request form for this order"
+                    accessibilityRole="button"
+                    style={styles.primaryActionButton}
+                    onPress={() => router.push(`/orders/${encodeURIComponent(order.orderNumber)}/return` as never)}
+                  >
+                    <HugeiconsIcon color={colors.surface} icon={DeliveryReturn01Icon} size={19} strokeWidth={2.2} />
+                    <Text style={styles.primaryActionButtonText}>{returnCopy.returnCta}</Text>
+                  </Pressable>
+                ) : null}
+                {latestReturn ? (
+                  <Pressable
+                    accessibilityHint="Open the latest return request for this order"
+                    accessibilityRole="button"
+                    style={styles.secondaryButton}
+                    onPress={() => router.push(`/account/returns/${encodeURIComponent(latestReturn.requestNumber)}` as never)}
+                  >
+                    <Text style={styles.secondaryButtonText}>View previous return</Text>
+                  </Pressable>
+                ) : null}
+              </>
+            )}
           </Section>
         ) : null}
 
@@ -433,6 +526,79 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
       <Text style={styles.summaryValue}>{value}</Text>
     </View>
   );
+}
+
+function ReturnWindowDetail({
+  label,
+  state,
+}: {
+  label: string;
+  state: ReturnType<typeof orderReturnPolicyState>["refund"];
+}) {
+  const deadline = state.deadlineAt ? formatDate(state.deadlineAt) : "Not available";
+  const value =
+    state.windowDays <= 0
+      ? "Unavailable"
+      : state.eligible
+        ? `${state.daysRemaining} day${state.daysRemaining === 1 ? "" : "s"} left`
+        : "Window ended";
+
+  return (
+    <View style={styles.returnPolicyItem}>
+      <Text style={styles.detailLabel}>{label}</Text>
+      <Text style={styles.returnPolicyValue}>{value}</Text>
+      <Text style={styles.returnPolicyDeadline}>
+        {state.windowDays > 0 ? `${state.windowDays} days after delivery - ${deadline}` : "Disabled by marketplace policy"}
+      </Text>
+    </View>
+  );
+}
+
+function ItemReturnTerms({
+  item,
+  order,
+  settings,
+}: {
+  item: MobileOrderDetail["items"][number];
+  order: MobileOrderDetail;
+  settings: typeof defaultMobileReturnPolicySettings;
+}) {
+  const refund = itemReturnPolicyState(order, item, settings, "REFUND");
+  const replacement = itemReturnPolicyState(order, item, settings, "REPLACEMENT");
+  const terms = [
+    refund.windowDays > 0
+      ? `Refund: ${refund.windowDays} days, until ${formatDate(refund.deadlineAt)}`
+      : null,
+    replacement.windowDays > 0
+      ? `Replacement: ${replacement.windowDays} days, until ${formatDate(replacement.deadlineAt)}`
+      : null,
+  ].filter(Boolean);
+
+  return (
+    <Text style={styles.itemReturnTerms}>
+      {terms.length ? terms.join("\n") : "Return and replacement unavailable"}
+    </Text>
+  );
+}
+
+function returnUnavailableMessage(
+  order: MobileOrderDetail,
+  policy: ReturnType<typeof orderReturnPolicyState>,
+  hasAvailableQuantity: boolean,
+) {
+  if (isDeliveredStorePickupOrder(order)) {
+    return "Store pickup orders are final after pickup is marked delivered.";
+  }
+  if (order.paymentStatus !== "PAID" && order.paymentStatus !== "NOT_REQUIRED") {
+    return "Returns become available after payment is completed or marked not required.";
+  }
+  if (!hasAvailableQuantity) {
+    return "No quantity in this order is available for another return or replacement request.";
+  }
+  if (!policy.refund.eligible && !policy.replacement.eligible) {
+    return "The return and replacement windows for this order have ended.";
+  }
+  return "This order is not currently eligible for a new request.";
 }
 
 function OrderProgress({ order }: { order: MobileOrderDetail }) {
@@ -682,6 +848,47 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: "900",
   },
+  returnPolicyGrid: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 12,
+  },
+  returnPolicyItem: {
+    backgroundColor: colors.secondary,
+    borderColor: colors.border,
+    borderRadius: 20,
+    borderWidth: 1,
+    flex: 1,
+    minHeight: 108,
+    padding: 12,
+  },
+  returnPolicyValue: {
+    color: colors.ink,
+    fontSize: 14,
+    fontWeight: "900",
+    marginTop: 6,
+  },
+  returnPolicyDeadline: {
+    color: colors.muted,
+    fontSize: 10,
+    fontWeight: "700",
+    lineHeight: 15,
+    marginTop: 5,
+  },
+  returnRequestBox: {
+    backgroundColor: "#FFF7F2",
+    borderColor: "#FFD3C5",
+    borderRadius: 20,
+    borderWidth: 1,
+    marginTop: 12,
+    padding: 14,
+  },
+  returnRequestTitle: {
+    color: colors.ink,
+    fontSize: 14,
+    fontWeight: "900",
+    marginBottom: 4,
+  },
   itemRow: {
     backgroundColor: colors.secondary,
     borderColor: colors.border,
@@ -713,6 +920,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
     marginTop: 4,
+  },
+  itemReturnTerms: {
+    color: colors.primary,
+    fontSize: 11,
+    fontWeight: "800" as const,
+    lineHeight: 16,
+    marginTop: 5,
   },
   itemTotal: {
     color: colors.primary,

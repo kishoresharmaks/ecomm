@@ -10,6 +10,10 @@ import {
 type Logger = pino.Logger;
 
 export function startB2BOverduePolling(logger: Logger) {
+  if (process.env.B2B_ORDER_TO_CASH_V2_ENABLED === "true") {
+    logger.info("Legacy B2B overdue worker replaced by the V2 collection worker.");
+    return;
+  }
   if (process.env.B2B_OVERDUE_WORKER_ENABLED === "false") {
     logger.info("B2B overdue worker disabled by B2B_OVERDUE_WORKER_ENABLED=false.");
     return;

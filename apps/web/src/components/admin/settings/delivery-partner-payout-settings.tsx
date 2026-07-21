@@ -20,6 +20,8 @@ type DeliveryPartnerPayoutSettingsResponse = {
   basePayPaise: number;
   perKmPaise: number;
   codBonusPaise: number;
+  reversePickupBasePayPaise: number;
+  reversePickupCostBearer: "MARKETPLACE" | "SELLER";
   minimumWalletPayoutPaise: number;
   requestsEnabled: boolean;
   freeDeliveryPlatformSubsidyEnabled: boolean;
@@ -31,6 +33,8 @@ type DeliveryPartnerPayoutSettingsForm = {
   basePayRupees: string;
   perKmRupees: string;
   codBonusRupees: string;
+  reversePickupBasePayRupees: string;
+  reversePickupCostBearer: "MARKETPLACE" | "SELLER";
   minimumWalletPayoutRupees: string;
   requestsEnabled: boolean;
   freeDeliveryPlatformSubsidyEnabled: boolean;
@@ -42,6 +46,8 @@ const keys = {
   basePayPaise: "delivery_partner.payout.base_pay_paise",
   perKmPaise: "delivery_partner.payout.per_km_paise",
   codBonusPaise: "delivery_partner.payout.cod_bonus_paise",
+  reversePickupBasePayPaise: "delivery_partner.payout.reverse_pickup_base_pay_paise",
+  reversePickupCostBearer: "delivery_partner.payout.reverse_pickup_cost_bearer",
   minimumWalletPayoutPaise: "delivery_partner.payout.minimum_wallet_payout_paise",
   requestsEnabled: "delivery_partner.payout.requests_enabled",
   freeDeliveryPlatformSubsidyEnabled:
@@ -54,6 +60,8 @@ const defaults: DeliveryPartnerPayoutSettingsResponse = {
   basePayPaise: 2_500,
   perKmPaise: 800,
   codBonusPaise: 500,
+  reversePickupBasePayPaise: 4_000,
+  reversePickupCostBearer: "MARKETPLACE",
   minimumWalletPayoutPaise: 100_000,
   requestsEnabled: true,
   freeDeliveryPlatformSubsidyEnabled: true,
@@ -171,6 +179,13 @@ export function DeliveryPartnerPayoutSettings({ settings }: { settings: SettingR
           onChange={(value) => updateForm((current) => ({ ...current, codBonusRupees: value }))}
         />
         <MoneyInput
+          label="Reverse pickup"
+          value={form.reversePickupBasePayRupees}
+          onChange={(value) =>
+            updateForm((current) => ({ ...current, reversePickupBasePayRupees: value }))
+          }
+        />
+        <MoneyInput
           label="Payout threshold"
           value={form.minimumWalletPayoutRupees}
           onChange={(value) =>
@@ -197,6 +212,27 @@ export function DeliveryPartnerPayoutSettings({ settings }: { settings: SettingR
             }))
           }
         />
+        <label className="space-y-2">
+          <span className="block text-xs font-black uppercase tracking-wide text-[#667085]">
+            Reverse pickup cost bearer
+          </span>
+          <select
+            value={form.reversePickupCostBearer}
+            onChange={(event) =>
+              updateForm((current) => ({
+                ...current,
+                reversePickupCostBearer: event.target.value as "MARKETPLACE" | "SELLER",
+              }))
+            }
+            className="h-11 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 text-sm font-bold text-[#1F2933] outline-none focus:border-[#ED3500] focus:bg-white"
+          >
+            <option value="MARKETPLACE">Marketplace funded</option>
+            <option value="SELLER">Seller funded</option>
+          </select>
+          <span className="block text-xs font-semibold leading-5 text-[#667085]">
+            Eligible customer pickups remain free. This chooses which account absorbs the partner earning.
+          </span>
+        </label>
       </div>
 
       <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
@@ -276,6 +312,15 @@ function settingsFromRecords(settings: SettingRecord[]): DeliveryPartnerPayoutSe
     basePayPaise: numberSetting(settings, keys.basePayPaise, defaults.basePayPaise),
     perKmPaise: numberSetting(settings, keys.perKmPaise, defaults.perKmPaise),
     codBonusPaise: numberSetting(settings, keys.codBonusPaise, defaults.codBonusPaise),
+    reversePickupBasePayPaise: numberSetting(
+      settings,
+      keys.reversePickupBasePayPaise,
+      defaults.reversePickupBasePayPaise,
+    ),
+    reversePickupCostBearer:
+      settingValue(settings, keys.reversePickupCostBearer) === "SELLER"
+        ? "SELLER"
+        : "MARKETPLACE",
     minimumWalletPayoutPaise: numberSetting(
       settings,
       keys.minimumWalletPayoutPaise,
@@ -299,6 +344,8 @@ function formFromSettings(
     basePayRupees: paiseToRupeesInput(settings.basePayPaise),
     perKmRupees: paiseToRupeesInput(settings.perKmPaise),
     codBonusRupees: paiseToRupeesInput(settings.codBonusPaise),
+    reversePickupBasePayRupees: paiseToRupeesInput(settings.reversePickupBasePayPaise),
+    reversePickupCostBearer: settings.reversePickupCostBearer,
     minimumWalletPayoutRupees: paiseToRupeesInput(settings.minimumWalletPayoutPaise),
     requestsEnabled: settings.requestsEnabled,
     freeDeliveryPlatformSubsidyEnabled: settings.freeDeliveryPlatformSubsidyEnabled,
@@ -312,6 +359,8 @@ function payloadFromForm(form: DeliveryPartnerPayoutSettingsForm): DeliveryPartn
     basePayPaise: rupeesToPaise(form.basePayRupees),
     perKmPaise: rupeesToPaise(form.perKmRupees),
     codBonusPaise: rupeesToPaise(form.codBonusRupees),
+    reversePickupBasePayPaise: rupeesToPaise(form.reversePickupBasePayRupees),
+    reversePickupCostBearer: form.reversePickupCostBearer,
     minimumWalletPayoutPaise: rupeesToPaise(form.minimumWalletPayoutRupees),
     requestsEnabled: form.requestsEnabled,
     freeDeliveryPlatformSubsidyEnabled: form.freeDeliveryPlatformSubsidyEnabled,
@@ -324,6 +373,7 @@ function validateForm(form: DeliveryPartnerPayoutSettingsForm) {
     ["base pay", form.basePayRupees],
     ["per km", form.perKmRupees],
     ["COD bonus", form.codBonusRupees],
+    ["reverse pickup", form.reversePickupBasePayRupees],
     ["payout threshold", form.minimumWalletPayoutRupees],
   ] as const;
   const invalid = numericFields.find(([, value]) => !isValidMoneyInput(value));

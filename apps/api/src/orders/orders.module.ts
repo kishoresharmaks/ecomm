@@ -10,6 +10,7 @@ import { MarketModule } from "../market/market.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { PaymentsModule } from "../payments/payments.module";
 import { ReturnsModule } from "../returns/returns.module";
+import { TaxModule } from "../tax/tax.module";
 import { AdminDeliveryController } from "./admin-delivery.controller";
 import { AdminOrdersController } from "./admin-orders.controller";
 import {
@@ -36,7 +37,7 @@ import { SellerOrdersController } from "./seller-orders.controller";
 import { InternalOrdersController } from "./internal-orders.controller";
 
 @Module({
-  imports: [CheckoutPricingModule, CourierAdaptersModule, CouponsModule, CustomersModule, DealsModule, FinanceModule, LocationsModule, MapsModule, MarketModule, NotificationsModule, PaymentsModule, ReturnsModule],
+  imports: [CheckoutPricingModule, CourierAdaptersModule, CouponsModule, CustomersModule, DealsModule, FinanceModule, LocationsModule, MapsModule, MarketModule, NotificationsModule, PaymentsModule, ReturnsModule, TaxModule],
   controllers: [
     InternalOrdersController,
     CustomerOrdersController,

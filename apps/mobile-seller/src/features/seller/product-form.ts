@@ -34,6 +34,9 @@ export type ProductBaseFields = {
   packerName: string;
   importerName: string;
   returnEligibility: string;
+  returnWindowDays: string;
+  replacementWindowDays: string;
+  returnReasons: string;
   packageWeightGrams: string;
   packageLengthCm: string;
   packageBreadthCm: string;
@@ -104,6 +107,9 @@ export function createBlankProductFormState(): ProductFormState {
       packerName: baseEdit.packerName,
       importerName: baseEdit.importerName,
       returnEligibility: baseEdit.returnEligibility,
+      returnWindowDays: baseEdit.returnWindowDays,
+      replacementWindowDays: baseEdit.replacementWindowDays,
+      returnReasons: baseEdit.returnReasons,
       packageWeightGrams: baseEdit.packageWeightGrams,
       packageLengthCm: baseEdit.packageLengthCm,
       packageBreadthCm: baseEdit.packageBreadthCm,
@@ -311,6 +317,9 @@ export function productEditFormToProductFormState(
       packerName: values.packerName,
       importerName: values.importerName,
       returnEligibility: values.returnEligibility,
+      returnWindowDays: values.returnWindowDays,
+      replacementWindowDays: values.replacementWindowDays,
+      returnReasons: values.returnReasons,
       packageWeightGrams: values.packageWeightGrams,
       packageLengthCm: values.packageLengthCm,
       packageBreadthCm: values.packageBreadthCm,
@@ -360,6 +369,21 @@ export function validateProductForm(
     add("base.gstRatePercent", "GST rate is required.");
   }
   requireText(state.base.returnEligibility, "base.returnEligibility", "Return policy is required.", add);
+  const returnAllowed =
+    state.base.returnEligibility === "Return and replacement" ||
+    state.base.returnEligibility === "Return only";
+  const replacementAllowed =
+    state.base.returnEligibility === "Return and replacement" ||
+    state.base.returnEligibility === "Replacement only";
+  if (returnAllowed && !isPositiveNumber(state.base.returnWindowDays)) {
+    add("base.returnWindowDays", "Refund return days must be greater than 0.");
+  }
+  if (replacementAllowed && !isPositiveNumber(state.base.replacementWindowDays)) {
+    add("base.replacementWindowDays", "Replacement days must be greater than 0.");
+  }
+  if ((returnAllowed || replacementAllowed) && !splitList(state.base.returnReasons, ",").length) {
+    add("base.returnReasons", "Select at least one accepted return reason.");
+  }
   if (!isPositiveNumber(state.base.packageWeightGrams)) {
     add("base.packageWeightGrams", "Package weight must be greater than 0.");
   }
@@ -461,6 +485,9 @@ function buildMarketplaceAttributes(base: ProductBaseFields) {
     gstRatePercent: numberOrZero(base.gstRatePercent),
     hsnCode: base.hsnCode.trim(),
     returnEligibility: base.returnEligibility,
+    returnWindowDays: numberOrZero(base.returnWindowDays),
+    replacementWindowDays: numberOrZero(base.replacementWindowDays),
+    returnReasons: splitList(base.returnReasons, ","),
     packageWeightGrams: numberOrZero(base.packageWeightGrams),
   };
 

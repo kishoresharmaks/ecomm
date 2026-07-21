@@ -18,8 +18,10 @@ import {
   ProductListingMode,
   ProductReviewStatus,
   ProductStatus,
+  ProductTaxClassification,
   ProductTemplateStatus,
   SellerCapability,
+  SellerTaxRegistrationStatus,
   SellerStatus,
   VariantStatus,
 } from "@indihub/database";
@@ -27,6 +29,8 @@ import {
   isSoldResaleProduct,
   marketplaceProductEssentialFields,
   marketplaceProductRequiredEssentialFields,
+  normalizeProductReturnPolicy,
+  productReturnReasons,
   resaleProductConditions,
   type MarketplaceProductEssentialField,
 } from "@indihub/shared-types";
@@ -150,7 +154,6 @@ const publicProductInclude = {
       deliveryMode: true,
       isEnabled: true,
       manualTransportFreeDistanceKm: true,
-      manualTransportChargePerKmPaise: true,
       manualTransportChargePerKmMinor: true,
       manualTransportCurrency: true,
       manualTransportNote: true,
@@ -354,7 +357,13 @@ export class ProductsService {
         "Product attributes",
       ),
     );
-    const productTaxFields = await this.resolveProductTaxFields(category, attributes);
+    const productTaxFields = await this.resolveProductTaxFields(
+      category,
+      attributes,
+      dto.taxClassification,
+      seller.profile?.taxRegistrationStatus ?? SellerTaxRegistrationStatus.NOT_REGISTERED,
+    );
+    this.applyResolvedTaxAttributes(attributes, productTaxFields);
     const variants = dto.variants.map((variant) => ({
       ...variant,
       attributes: this.validateAttributes(
@@ -384,6 +393,7 @@ export class ProductsService {
     if (autoApproveProduct) {
       this.ensureProductApprovalReadiness({
         attributes,
+        taxClassification: productTaxFields.taxClassification,
         hsnCode: productTaxFields.hsnCode,
         gstRatePercent: productTaxFields.gstRatePercent,
       });
@@ -401,6 +411,7 @@ export class ProductsService {
           approvalStatus: nextApprovalStatus,
           listingMode,
           attributes: this.jsonObjectOrNull(attributes),
+          taxClassification: productTaxFields.taxClassification,
           hsnCode: productTaxFields.hsnCode,
           gstRatePercent: productTaxFields.gstRatePercent,
           hsnMasterId: productTaxFields.hsnMasterId,
@@ -514,12 +525,28 @@ export class ProductsService {
               dto.attributes ?? (existing.attributes as Record<string, unknown> | undefined),
               "Product attributes",
             ),
-          )
+        )
         : (existing.attributes as Record<string, unknown> | null);
+    const sellerTaxRegistrationStatus =
+      seller.profile?.taxRegistrationStatus ?? SellerTaxRegistrationStatus.NOT_REGISTERED;
+    const shouldNormalizeStoredTax =
+      sellerTaxRegistrationStatus !== SellerTaxRegistrationStatus.GST_REGISTERED &&
+      Number(existing.gstRatePercent ?? 0) > 0;
     const productTaxFields =
-      dto.attributes !== undefined || dto.categoryId !== undefined
-        ? await this.resolveProductTaxFields(category, attributes ?? {})
+      dto.attributes !== undefined ||
+      dto.categoryId !== undefined ||
+      dto.taxClassification !== undefined ||
+      shouldNormalizeStoredTax
+        ? await this.resolveProductTaxFields(
+            category,
+            attributes ?? {},
+            dto.taxClassification ?? existing.taxClassification,
+            sellerTaxRegistrationStatus,
+          )
         : null;
+    if (productTaxFields && attributes) {
+      this.applyResolvedTaxAttributes(attributes, productTaxFields);
+    }
     const variantDtos = dto.variants?.map((variant) => {
       if (variant.attributes === undefined) {
         return variant;
@@ -555,6 +582,8 @@ export class ProductsService {
     if (autoApproveProduct) {
       this.ensureProductApprovalReadiness({
         attributes: attributes ?? existing.attributes,
+        taxClassification:
+          productTaxFields?.taxClassification ?? existing.taxClassification,
         hsnCode: productTaxFields?.hsnCode ?? existing.hsnCode,
         gstRatePercent: productTaxFields?.gstRatePercent ?? existing.gstRatePercent,
       });
@@ -576,6 +605,7 @@ export class ProductsService {
                 hsnCode: productTaxFields.hsnCode,
                 gstRatePercent: productTaxFields.gstRatePercent,
                 hsnMasterId: productTaxFields.hsnMasterId,
+                taxClassification: productTaxFields.taxClassification,
               }
             : {}),
           ...(dto.name !== undefined || dto.description !== undefined || dto.attributes !== undefined || dto.categoryId !== undefined
@@ -1221,6 +1251,7 @@ export class ProductsService {
   private async resolveSeller(actor: RequestUser) {
     const seller = await this.prisma.client.seller.findUnique({
       where: { userId: actor.id },
+      include: { profile: true },
     });
 
     if (!seller) {
@@ -1452,7 +1483,6 @@ export class ProductsService {
     if (!manualTransport) {
       return {
         manualTransportFreeDistanceKm: null,
-        manualTransportChargePerKmPaise: null,
         manualTransportChargePerKmMinor: null,
         manualTransportCurrency: null,
         manualTransportNote: null,
@@ -1461,8 +1491,6 @@ export class ProductsService {
 
     return {
       manualTransportFreeDistanceKm: manualTransport.freeDistanceKm,
-      manualTransportChargePerKmPaise:
-        manualTransport.currency === "INR" ? manualTransport.chargePerKmMinor : null,
       manualTransportChargePerKmMinor: manualTransport.chargePerKmMinor,
       manualTransportCurrency: manualTransport.currency,
       manualTransportNote: manualTransport.note,
@@ -1484,7 +1512,6 @@ export class ProductsService {
       deliveryMode: DeliveryMode;
       isEnabled?: boolean | null;
       manualTransportFreeDistanceKm?: Prisma.Decimal | number | string | null;
-      manualTransportChargePerKmPaise?: number | null;
       manualTransportChargePerKmMinor?: number | null;
       manualTransportCurrency?: string | null;
       manualTransportNote?: string | null;
@@ -1497,10 +1524,8 @@ export class ProductsService {
       !option ||
       option.manualTransportFreeDistanceKm === null ||
       option.manualTransportFreeDistanceKm === undefined ||
-      ((option.manualTransportChargePerKmMinor === null ||
-        option.manualTransportChargePerKmMinor === undefined) &&
-        (option.manualTransportChargePerKmPaise === null ||
-          option.manualTransportChargePerKmPaise === undefined)) ||
+      option.manualTransportChargePerKmMinor === null ||
+      option.manualTransportChargePerKmMinor === undefined ||
       !option.manualTransportNote
     ) {
       return null;
@@ -1508,7 +1533,7 @@ export class ProductsService {
 
     return {
       freeDistanceKm: Number(option.manualTransportFreeDistanceKm),
-      chargePerKmMinor: option.manualTransportChargePerKmMinor ?? option.manualTransportChargePerKmPaise ?? 0,
+      chargePerKmMinor: option.manualTransportChargePerKmMinor,
       currency: this.normalizeCurrency(option.manualTransportCurrency ?? "INR"),
       note: option.manualTransportNote,
     };
@@ -1782,7 +1807,50 @@ export class ProductsService {
       normalized[field.key] = this.normalizeMarketplaceEssentialValue(field, value, context);
     }
 
+    this.assertValidProductReturnPolicy(source, normalized, context);
     return normalized;
+  }
+
+  private assertValidProductReturnPolicy(
+    source: Record<string, unknown>,
+    normalized: Record<string, unknown>,
+    context: string,
+  ) {
+    if (this.isMissingAttributeValue(source.returnEligibility)) {
+      throw new BadRequestException(`${context}: return policy is required.`);
+    }
+
+    const policy = normalizeProductReturnPolicy(normalized);
+    if (policy.returnAllowed && policy.returnWindowDays <= 0) {
+      throw new BadRequestException(
+        `${context}: refund return days must be greater than 0 when refund returns are available.`,
+      );
+    }
+    if (policy.replacementAllowed && policy.replacementWindowDays <= 0) {
+      throw new BadRequestException(
+        `${context}: replacement days must be greater than 0 when replacements are available.`,
+      );
+    }
+
+    const rawReasons = Array.isArray(normalized.returnReasons) ? normalized.returnReasons : [];
+    const acceptedReasons = new Set<string>(productReturnReasons);
+    if (
+      rawReasons.some(
+        (reason) => typeof reason !== "string" || !acceptedReasons.has(reason.trim()),
+      )
+    ) {
+      throw new BadRequestException(`${context}: accepted return reasons contain an unsupported value.`);
+    }
+    const legacyReturnable = source.returnEligibility === "Returnable";
+    if (
+      (policy.returnAllowed || policy.replacementAllowed) &&
+      rawReasons.length === 0 &&
+      !legacyReturnable
+    ) {
+      throw new BadRequestException(
+        `${context}: select at least one accepted return reason when returns or replacements are available.`,
+      );
+    }
   }
 
   private applyCategoryTaxDefaults(
@@ -1810,11 +1878,47 @@ export class ProductsService {
   }
 
   private async resolveProductTaxFields(
-    category: { id: string; defaultHsnCode?: string | null; defaultGstRatePercent?: unknown },
+    category: {
+      id: string;
+      defaultHsnCode?: string | null;
+      defaultGstRatePercent?: unknown;
+      defaultTaxClassification?: ProductTaxClassification;
+    },
     attributes: Record<string, unknown>,
+    requestedClassification?: ProductTaxClassification,
+    sellerTaxRegistrationStatus?: SellerTaxRegistrationStatus,
   ) {
+    const taxClassification =
+      requestedClassification ??
+      category.defaultTaxClassification ??
+      ProductTaxClassification.TAXABLE;
     const hsnCode = this.normalizedHsnCodeFromValue(attributes.hsnCode ?? category.defaultHsnCode);
-    const gstRatePercent = this.normalizedGstRateFromValue(attributes.gstRatePercent ?? category.defaultGstRatePercent);
+    const requestedRate = this.normalizedGstRateFromValue(
+      attributes.gstRatePercent ?? category.defaultGstRatePercent,
+    );
+    const gstRatePercent =
+      taxClassification === ProductTaxClassification.TAXABLE &&
+      sellerTaxRegistrationStatus === SellerTaxRegistrationStatus.GST_REGISTERED
+        ? requestedRate
+        : 0;
+
+    if (
+      taxClassification === ProductTaxClassification.TAXABLE &&
+      !hsnCode
+    ) {
+      throw new BadRequestException("Taxable products require a valid HSN code.");
+    }
+    if (
+      taxClassification === ProductTaxClassification.TAXABLE &&
+      sellerTaxRegistrationStatus === SellerTaxRegistrationStatus.GST_REGISTERED &&
+      (gstRatePercent === null || gstRatePercent <= 0)
+    ) {
+      throw new BadRequestException("Taxable products require a GST rate greater than zero for regular GST sellers.");
+    }
+    if (taxClassification === ProductTaxClassification.NIL_RATED && !hsnCode) {
+      throw new BadRequestException("Nil-rated products require a valid HSN code.");
+    }
+
     const hsnMaster = hsnCode
       ? await this.prisma.client.hsnMaster.findFirst({
           where: {
@@ -1827,6 +1931,7 @@ export class ProductsService {
       : null;
 
     return {
+      taxClassification,
       hsnCode,
       gstRatePercent,
       hsnMasterId: hsnMaster?.id ?? null,
@@ -1835,6 +1940,7 @@ export class ProductsService {
 
   private ensureProductApprovalReadiness(product: {
     attributes: unknown;
+    taxClassification?: ProductTaxClassification;
     hsnCode?: string | null;
     gstRatePercent?: unknown;
   }) {
@@ -1850,13 +1956,41 @@ export class ProductsService {
       source.gstRatePercent = Number(String(product.gstRatePercent));
     }
 
-    const missing = marketplaceProductRequiredEssentialFields
+    const taxClassification =
+      product.taxClassification ?? ProductTaxClassification.TAXABLE;
+    const requiredFields = marketplaceProductRequiredEssentialFields.filter((field) => {
+      if (
+        taxClassification === ProductTaxClassification.EXEMPT ||
+        taxClassification === ProductTaxClassification.NON_GST
+      ) {
+        return field.key !== "hsnCode" && field.key !== "gstRatePercent";
+      }
+      return true;
+    });
+    const missing = requiredFields
       .filter((field) => this.isMissingAttributeValue(source[field.key]))
       .map((field) => field.label);
 
     if (missing.length) {
       throw new BadRequestException(`Product approval requires marketplace essentials: ${missing.join(", ")}.`);
     }
+  }
+
+  private applyResolvedTaxAttributes(
+    attributes: Record<string, unknown>,
+    taxFields: {
+      taxClassification: ProductTaxClassification;
+      hsnCode: string | null;
+      gstRatePercent: number | null;
+    },
+  ) {
+    attributes.taxClassification = taxFields.taxClassification;
+    if (taxFields.hsnCode) {
+      attributes.hsnCode = taxFields.hsnCode;
+    } else {
+      delete attributes.hsnCode;
+    }
+    attributes.gstRatePercent = taxFields.gstRatePercent ?? 0;
   }
 
   private attributeRecord(value: unknown): Record<string, unknown> {
@@ -1924,7 +2058,9 @@ export class ProductsService {
         }
         const selected = value.trim();
         const options = field.options ?? [];
-        if (options.length && !options.includes(selected)) {
+        const legacyReturnable =
+          field.key === "returnEligibility" && selected === "Returnable";
+        if (options.length && !options.includes(selected) && !legacyReturnable) {
           throw new BadRequestException(`${context}: ${field.label} must be one of ${options.join(", ")}.`);
         }
         return selected;

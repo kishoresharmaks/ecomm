@@ -13,7 +13,10 @@ import {
   Min,
   MinLength
 } from "class-validator";
-import { CategoryStatus } from "@indihub/database";
+import {
+  CategoryStatus,
+  ProductTaxClassification,
+} from "@indihub/database";
 
 export class CreateCategoryDto {
   @ApiPropertyOptional({ example: "f2c7311c-1111-4444-8888-1b9c960acabc" })
@@ -43,6 +46,14 @@ export class CreateCategoryDto {
   @IsString()
   @MaxLength(500)
   imageUrl?: string;
+
+  @ApiPropertyOptional({
+    enum: ProductTaxClassification,
+    default: ProductTaxClassification.TAXABLE,
+  })
+  @IsOptional()
+  @IsEnum(ProductTaxClassification)
+  defaultTaxClassification?: ProductTaxClassification;
 
   @ApiPropertyOptional({ example: "8517", description: "Default HSN code applied when sellers choose this category." })
   @IsOptional()

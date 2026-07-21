@@ -16,11 +16,15 @@ import { useMobileCustomerAuth } from "../../../src/auth/mobile-auth-context";
 import { accountErrorMessage, formatDate, SignInRequiredState } from "../../../src/features/account/account-ui";
 import { formatMoney, useMobileMarket } from "../../../src/features/market/mobile-market";
 import {
-  availableReturnQuantity,
+  acceptedReturnReasonsForSelection,
+  availableReturnQuantityForResolution,
+  activeOrderReturnRequest,
+  defaultMobileReturnPolicySettings,
   isDeliveredStorePickupOrder,
   mobileReturnResolutions,
   mobileReverseShipmentModes,
   orderCanStartReturn,
+  orderReturnPolicyState,
   selectedReturnItems,
   validateReturnForm,
   type MobileReturnResolution,
@@ -36,7 +40,9 @@ import {
 import {
   createCustomerReturn,
   getCustomerOrder,
+  getReturnPolicySettings,
   type MobileOrderDetail,
+  type MobileReturnPolicySettings,
 } from "../../../src/features/storefront/storefront-api";
 import { MobileApiError } from "../../../src/lib/api";
 import { resolveImageUrl } from "../../../src/lib/image-url";
@@ -80,9 +86,76 @@ export default function OrderReturnScreen() {
     refetchOnMount: "always",
     retry: false,
   });
+  const returnPolicyQuery = useQuery({
+    queryKey: ["mobile-return-policy"],
+    queryFn: getReturnPolicySettings,
+    enabled: featureEnabled,
+    staleTime: 5 * 60 * 1000,
+  });
 
   const order = orderQuery.data;
   const selectedItems = useMemo(() => selectedReturnItems(selection), [selection]);
+  const policySettings = returnPolicyQuery.data ?? defaultMobileReturnPolicySettings;
+  const acceptedReasons = useMemo(
+    () => (order ? acceptedReturnReasonsForSelection(order.items, selection) : []),
+    [order, selection],
+  );
+  const returnPolicy = useMemo(
+    () =>
+      order
+        ? orderReturnPolicyState(
+            order,
+            policySettings,
+          )
+        : null,
+    [order, policySettings],
+  );
+  const activeReturn = order ? activeOrderReturnRequest(order) : null;
+  const selectedWindow = resolution === "REPLACEMENT" ? returnPolicy?.replacement : returnPolicy?.refund;
+  const resolutionAvailable = useMemo(
+    () => ({
+      REFUND:
+        order?.items.some(
+          (item) =>
+            availableReturnQuantityForResolution(
+              order,
+              item,
+              policySettings,
+              "REFUND",
+            ) > 0,
+        ) ?? false,
+      REPLACEMENT:
+        order?.items.some(
+          (item) =>
+            availableReturnQuantityForResolution(
+              order,
+              item,
+              policySettings,
+              "REPLACEMENT",
+            ) > 0,
+        ) ?? false,
+    }),
+    [order, policySettings],
+  );
+
+  useEffect(() => {
+    if (!returnPolicy) {
+      return;
+    }
+    if (resolution === "REFUND" && !returnPolicy.refund.eligible && returnPolicy.replacement.eligible) {
+      setResolution("REPLACEMENT");
+      setSelection({});
+      setReason("");
+    } else if (
+      resolution === "REPLACEMENT" &&
+      !returnPolicy.replacement.eligible &&
+      returnPolicy.refund.eligible
+    ) {
+      setResolution("REFUND");
+      setSelection({});
+      setReason("");
+    }
+  }, [resolution, returnPolicy]);
 
   useEffect(() => {
     if (customerAuth.enabled && featureEnabled && orderNumber) {
@@ -112,6 +185,13 @@ export default function OrderReturnScreen() {
     mutationFn: () => {
       if (!orderNumber) {
         throw new Error("Order number is missing.");
+      }
+      if (!selectedWindow?.eligible) {
+        throw new Error(
+          resolution === "REPLACEMENT"
+            ? "The replacement window for this order has ended."
+            : "The return window for this order has ended.",
+        );
       }
 
       const validation = validateReturnForm({ note, reason, selection });
@@ -304,13 +384,51 @@ export default function OrderReturnScreen() {
     );
   }
 
+  if (activeReturn) {
+    return (
+      <Screen>
+        <Stack.Screen options={{ headerShown: true, title: copy.createTitle }} />
+        <EmptyState
+          title="Return already submitted"
+          message={`Request ${activeReturn.requestNumber} is ${activeReturn.status.toLowerCase().replaceAll("_", " ")}.`}
+        />
+        <Pressable
+          accessibilityRole="button"
+          style={styles.primaryButton}
+          onPress={() => router.replace(`/account/returns/${encodeURIComponent(activeReturn.requestNumber)}` as never)}
+        >
+          <Text style={styles.primaryButtonText}>View return</Text>
+        </Pressable>
+      </Screen>
+    );
+  }
+
+  if (!returnPolicy?.refund.eligible && !returnPolicy?.replacement.eligible) {
+    return (
+      <Screen>
+        <Stack.Screen options={{ headerShown: true, title: copy.createTitle }} />
+        <EmptyState
+          title="Return window ended"
+          message={`Refund returns are available for ${returnPolicy?.refund.windowDays ?? 0} days and replacements for ${returnPolicy?.replacement.windowDays ?? 0} days after delivery.`}
+        />
+      </Screen>
+    );
+  }
+
   const validationMessage = formError ? copy[formError] : "";
   const requiresManualRefundDestination =
     resolution === "REFUND" &&
     order.payments?.some((payment) =>
       ["COD", "BANK_TRANSFER", "MANUAL"].includes(payment.provider ?? payment.method),
     );
-  const submitDisabled = createReturnMutation.isPending || qualityUploadBusy || (requiresServerRefresh && orderQuery.isFetching);
+  const submitDisabled =
+    createReturnMutation.isPending ||
+    qualityUploadBusy ||
+    !selectedWindow?.eligible ||
+    selectedItems.length === 0 ||
+    acceptedReasons.length === 0 ||
+    !reason ||
+    (requiresServerRefresh && orderQuery.isFetching);
 
   return (
     <Screen padded={false}>
@@ -323,10 +441,17 @@ export default function OrderReturnScreen() {
             </View>
             <View style={styles.heroCopy}>
               <Text style={styles.heroTitle}>{copy.returnEligibleTitle}</Text>
-              <Text style={styles.heroMeta}>Order {order.orderNumber} - {copy.deliveredLabel} {formatDate(order.createdAt)}</Text>
+              <Text style={styles.heroMeta}>
+                Order {order.orderNumber} - {copy.deliveredLabel} {formatDate(returnPolicy.refund.deliveredAt)}
+              </Text>
             </View>
           </View>
           <Text style={styles.heroDescription}>{copy.createDescription}</Text>
+        </View>
+
+        <View style={styles.policyCard}>
+          <PolicyWindowRow label="Refund return" state={returnPolicy.refund} />
+          <PolicyWindowRow label="Replacement" state={returnPolicy.replacement} />
         </View>
 
         <Text style={styles.sectionTitle}>{copy.selectedItemsLabel}</Text>
@@ -337,9 +462,12 @@ export default function OrderReturnScreen() {
               item={item}
               key={item.id}
               order={order}
+              policySettings={policySettings}
+              resolution={resolution}
               quantity={selection[item.id] ?? 0}
               onChange={(quantity) => {
                 setFormError(null);
+                setReason("");
                 setSelection((current) => ({ ...current, [item.id]: quantity }));
                 trackMobileEvent("return_item_selected", {
                   selected: quantity > 0,
@@ -354,9 +482,18 @@ export default function OrderReturnScreen() {
           {mobileReturnResolutions.map((item) => (
             <SegmentButton
               active={resolution === item}
+              disabled={!resolutionAvailable[item]}
               key={item}
               label={item === "REFUND" ? copy.refund : copy.replacement}
-              onPress={() => setResolution(item)}
+              onPress={() => {
+                if (item === resolution) {
+                  return;
+                }
+                setResolution(item);
+                setSelection({});
+                setReason("");
+                setFormError(null);
+              }}
             />
           ))}
         </View>
@@ -372,23 +509,37 @@ export default function OrderReturnScreen() {
             />
           ))}
         </View>
+        <Text style={styles.modeHelp}>
+          {reverseShipmentMode === "PLATFORM_PICKUP"
+            ? copy.returnModePickupHelp
+            : copy.returnModeSelfShipHelp}
+        </Text>
 
         <View style={styles.inputGroup}>
           <Text style={styles.inputLabel}>{copy.formReasonLabel}</Text>
-          <TextInput
-            accessibilityLabel={copy.formReasonLabel}
-            maxLength={160}
-            multiline
-            onChangeText={(value) => {
-              setFormError(null);
-              setReason(value);
-            }}
-            placeholder={copy.formReasonPlaceholder}
-            placeholderTextColor={colors.muted}
-            style={styles.textArea}
-            value={reason}
-          />
-          <Text style={styles.counterText}>{reason.length}/160</Text>
+          <View style={styles.reasonGrid}>
+            {acceptedReasons.map((option) => (
+              <Pressable
+                accessibilityRole="radio"
+                accessibilityState={{ selected: reason === option }}
+                key={option}
+                onPress={() => {
+                  setFormError(null);
+                  setReason(option);
+                }}
+                style={[styles.reasonOption, reason === option ? styles.reasonOptionActive : null]}
+              >
+                <Text style={[styles.reasonText, reason === option ? styles.reasonTextActive : null]}>
+                  {option}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          {selectedItems.length > 0 && acceptedReasons.length === 0 ? (
+            <Text style={styles.validationText}>
+              These products do not share an accepted reason. Submit them separately.
+            </Text>
+          ) : null}
         </View>
 
         <View style={styles.inputGroup}>
@@ -526,15 +677,24 @@ function ReturnSelectableItem({
   item,
   onChange,
   order,
+  policySettings,
   quantity,
+  resolution,
 }: {
   copy: ReturnType<typeof returnsCopy>;
   item: MobileOrderDetail["items"][number];
   onChange: (quantity: number) => void;
   order: MobileOrderDetail;
+  policySettings: MobileReturnPolicySettings;
   quantity: number;
+  resolution: MobileReturnResolution;
 }) {
-  const maxQuantity = availableReturnQuantity(item);
+  const maxQuantity = availableReturnQuantityForResolution(
+    order,
+    item,
+    policySettings,
+    resolution,
+  );
   const selected = quantity > 0;
   const disabled = maxQuantity <= 0;
   const imageUrl = resolveImageUrl(item.product?.imageUrl);
@@ -597,22 +757,53 @@ function ReturnSelectableItem({
 
 function SegmentButton({
   active,
+  disabled = false,
   label,
   onPress,
 }: {
   active: boolean;
+  disabled?: boolean;
   label: string;
   onPress: () => void;
 }) {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityState={{ selected: active }}
-      style={[styles.segmentButton, active ? styles.segmentButtonActive : null]}
+      accessibilityState={{ disabled, selected: active }}
+      disabled={disabled}
+      style={[
+        styles.segmentButton,
+        active ? styles.segmentButtonActive : null,
+        disabled ? styles.disabledButton : null,
+      ]}
       onPress={onPress}
     >
       <Text style={[styles.segmentText, active ? styles.segmentTextActive : null]}>{label}</Text>
     </Pressable>
+  );
+}
+
+function PolicyWindowRow({
+  label,
+  state,
+}: {
+  label: string;
+  state: ReturnType<typeof orderReturnPolicyState>["refund"];
+}) {
+  return (
+    <View style={styles.policyRow}>
+      <View style={styles.policyCopy}>
+        <Text style={styles.policyLabel}>{label}</Text>
+        <Text style={styles.policyDeadline}>
+          {state.windowDays > 0
+            ? `${state.windowDays} days after delivery - until ${formatDate(state.deadlineAt)}`
+            : "Unavailable"}
+        </Text>
+      </View>
+      <Text style={[styles.policyStatus, !state.eligible ? styles.policyStatusEnded : null]}>
+        {state.eligible ? `${state.daysRemaining} days left` : "Ended"}
+      </Text>
+    </View>
   );
 }
 
@@ -732,6 +923,48 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginTop: 14,
   },
+  policyCard: {
+    backgroundColor: "#FFF7F2",
+    borderColor: "#FFD3C5",
+    borderRadius: 22,
+    borderWidth: 1,
+    marginBottom: 18,
+    paddingHorizontal: 14,
+  },
+  policyRow: {
+    alignItems: "center",
+    borderBottomColor: "#FFDCCF",
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    gap: 12,
+    justifyContent: "space-between",
+    minHeight: 72,
+    paddingVertical: 12,
+  },
+  policyCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  policyLabel: {
+    color: colors.ink,
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  policyDeadline: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: "700",
+    lineHeight: 16,
+    marginTop: 4,
+  },
+  policyStatus: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  policyStatusEnded: {
+    color: colors.muted,
+  },
   heroIcon: {
     alignItems: "center",
     backgroundColor: "#FFF1EB",
@@ -758,6 +991,47 @@ const styles = StyleSheet.create({
   },
   inputGroup: {
     marginBottom: 14,
+  },
+  modeHelp: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 18,
+    marginBottom: 16,
+    marginTop: -4,
+  },
+  reasonGrid: {
+    gap: 8,
+  },
+  reasonOption: {
+    backgroundColor: colors.softSurface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    minHeight: 44,
+    justifyContent: "center" as const,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  reasonOptionActive: {
+    backgroundColor: "#FFF0EC",
+    borderColor: colors.primary,
+  },
+  reasonText: {
+    color: colors.ink,
+    fontSize: 13,
+    fontWeight: "700" as const,
+  },
+  reasonTextActive: {
+    color: colors.primary,
+    fontWeight: "900" as const,
+  },
+  validationText: {
+    color: colors.danger,
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 18,
+    marginTop: 8,
   },
   inputLabel: {
     color: colors.ink,

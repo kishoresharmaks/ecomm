@@ -3,6 +3,7 @@ export type PlatformRole = (typeof platformRoles)[number];
 
 export * from "./product-essentials";
 export * from "./product-lifecycle";
+export * from "./product-return-policy";
 
 export const sellerTypes = [
   "MARKETPLACE_SELLER",

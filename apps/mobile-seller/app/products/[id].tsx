@@ -14,6 +14,7 @@ import {
   SelectField,
   Toast,
 } from "../../src/components/screen";
+import { ReturnReasonSelector } from "../../src/components/return-reason-selector";
 import {
   getSellerProduct,
   getSellerProfile,
@@ -458,6 +459,22 @@ export default function EditSellerProductScreen() {
             selectedValue={form.returnEligibility}
             onSelect={(value) => updateField("returnEligibility", value)}
             placeholder="Select return policy"
+          />
+          <Field
+            keyboardType="number-pad"
+            label="Refund return days *"
+            value={form.returnWindowDays}
+            onChangeText={(value) => updateField("returnWindowDays", value)}
+          />
+          <Field
+            keyboardType="number-pad"
+            label="Replacement days *"
+            value={form.replacementWindowDays}
+            onChangeText={(value) => updateField("replacementWindowDays", value)}
+          />
+          <ReturnReasonSelector
+            value={form.returnReasons}
+            onChange={(value) => updateField("returnReasons", value)}
           />
           <Field
             keyboardType="number-pad"

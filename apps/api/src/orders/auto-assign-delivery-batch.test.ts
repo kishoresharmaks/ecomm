@@ -1,6 +1,34 @@
 import { DeliveryAssignmentStatus } from "@indihub/database";
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { RequestUser } from "../auth/types/indihub-request";
 import { OrdersService } from "./orders.service";
+
+type BatchOrder = Parameters<OrdersService["autoAssignDeliveryBatch"]>[0][number];
+type CodPaymentOrder = {
+  payments: Array<{ amountPaise: number }>;
+};
+
+type OrdersServiceTestAccess = {
+  rejectedDeliveryPartnerIds(orderId: string): Promise<Set<string>>;
+  deliveryPartnerAssignmentMetrics(partnerIds: string[]): Promise<{
+    workload: Map<string, number>;
+    codExposurePaise: Map<string, number>;
+    lastAssignmentAt: Map<string, Date>;
+  }>;
+  deliveryPartnerProximityDistances(
+    address: unknown,
+    rejectedPartnerIds: Set<string>,
+  ): Promise<Map<string, number>>;
+  findCodPayment(order: CodPaymentOrder): CodPaymentOrder["payments"][number] | null;
+  defaultPartnerCodLimitPaise(): Promise<number>;
+  deliveryPartnerServiceAreaScore(...args: unknown[]): {
+    eligible: boolean;
+    score: number;
+    matchLabel: string;
+    matchedFields: string[];
+    warnings: string[];
+  };
+};
 
 describe("OrdersService - autoAssignDeliveryBatch", () => {
   it("calculates COD sum, exclusions, workload and syncs shipment", async () => {
@@ -31,7 +59,8 @@ describe("OrdersService - autoAssignDeliveryBatch", () => {
       undefined as never,
       undefined as never,
       undefined as never,
-      undefined as never
+      undefined as never,
+      undefined as never,
     );
 
     const mockOrder1 = {
@@ -40,33 +69,51 @@ describe("OrdersService - autoAssignDeliveryBatch", () => {
       shippingAddressSnapshot: { latitude: 12.0, longitude: 77.0 },
       deliveryDetail: { id: "d1", status: "PACKED" },
       shipments: [{ id: "s1", seller: { addresses: [{ latitude: "12.0", longitude: "77.0" }] } }]
-    } as any;
+    } as unknown as BatchOrder;
     const mockOrder2 = {
       id: "o2", orderNumber: "O-2", subtotalPaise: 5000, paymentStatus: "PENDING",
       payments: [{ method: "COD", amountPaise: 5000 }],
       shippingAddressSnapshot: { latitude: 12.0, longitude: 77.0 },
       deliveryDetail: { id: "d2", status: "PACKED" },
       shipments: [{ id: "s2", seller: { addresses: [{ latitude: "12.0", longitude: "77.0" }] } }]
-    } as any;
+    } as unknown as BatchOrder;
 
-    const rejectedSpy = vi.spyOn(service as any, "rejectedDeliveryPartnerIds").mockResolvedValue(["rejected-1"]);
-    const metricsSpy = vi.spyOn(service as any, "deliveryPartnerAssignmentMetrics").mockResolvedValue({
+    const testAccess = service as unknown as OrdersServiceTestAccess;
+    const rejectedSpy = vi
+      .spyOn(testAccess, "rejectedDeliveryPartnerIds")
+      .mockResolvedValue(new Set(["rejected-1"]));
+    vi.spyOn(testAccess, "deliveryPartnerAssignmentMetrics").mockResolvedValue({
       workload: new Map([["candidate-1", 1]]),
-      rejected: new Map(),
       codExposurePaise: new Map([["candidate-1", 0]]),
-      lastAssignmentAt: new Map()
+      lastAssignmentAt: new Map(),
     });
-    const proximitySpy = vi.spyOn(service as any, "deliveryPartnerProximityDistances").mockResolvedValue(new Map([["candidate-1", 500]]));
-    const findCodPaymentSpy = vi.spyOn(service as any, "findCodPayment").mockImplementation((o: any) => o.payments[0]);
-    vi.spyOn(service as any, "defaultPartnerCodLimitPaise").mockResolvedValue(20000);
-    vi.spyOn(service as any, "deliveryPartnerServiceAreaScore").mockReturnValue({ eligible: true, warnings: [] });
+    vi.spyOn(testAccess, "deliveryPartnerProximityDistances").mockResolvedValue(
+      new Map([["candidate-1", 500]]),
+    );
+    const findCodPaymentSpy = vi
+      .spyOn(testAccess, "findCodPayment")
+      .mockImplementation((order) => order.payments[0] ?? null);
+    vi.spyOn(testAccess, "defaultPartnerCodLimitPaise").mockResolvedValue(20000);
+    vi.spyOn(testAccess, "deliveryPartnerServiceAreaScore").mockReturnValue({
+      eligible: true,
+      score: 100,
+      matchLabel: "test service area",
+      matchedFields: [],
+      warnings: [],
+    });
 
     mockPrisma.client.user.findMany.mockResolvedValue([{
       id: "candidate-1",
       deliveryProfile: { codCollectionLimitPaise: 20000, isAvailable: true }
     }]);
 
-    await service.autoAssignDeliveryBatch([mockOrder1, mockOrder2], { id: "admin-1" } as any, "batch note");
+    const actor: RequestUser = {
+      id: "admin-1",
+      clerkUserId: null,
+      email: "admin@example.com",
+      roles: [],
+    };
+    await service.autoAssignDeliveryBatch([mockOrder1, mockOrder2], actor, "batch note");
 
     expect(findCodPaymentSpy).toHaveBeenCalledTimes(3);
     expect(rejectedSpy).toHaveBeenCalledTimes(2);

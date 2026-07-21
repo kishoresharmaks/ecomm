@@ -7,6 +7,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
 import { userFacingApiErrorMessage } from "@/lib/api";
 import { openB2BPurchaseOrderDocument } from "@/lib/b2b-po-documents";
+import { b2bFinalDocumentLabel } from "@/lib/business-buyer-api";
 import { getSellerB2BOrder, listSellerB2BOrders, updateSellerB2BTransport, type SellerB2BOrder, type SellerB2BTransportMode, type SellerB2BTransportStatus } from "@/lib/seller-api";
 import {
   SellerAuthNotice,
@@ -252,7 +253,9 @@ export function SellerB2BOrderDetailClient({ orderNumber }: { orderNumber: strin
               <Info label="Payout status" value={payoutStatusText(order)} />
               <Info label="Fulfilment controls" value={fulfilmentLockText(order)} />
               <div>
-                <p className="text-xs font-black uppercase tracking-wide text-[#667085]">Final tax invoice</p>
+                <p className="text-xs font-black uppercase tracking-wide text-[#667085]">
+                  Final {b2bFinalDocumentLabel(order.finalDocumentType).toLowerCase()}
+                </p>
                 <Button
                   type="button"
                   variant="ghost"

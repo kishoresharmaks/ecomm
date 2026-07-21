@@ -1,5 +1,9 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
-import { CategoryStatus, ProductTemplateStatus } from "@indihub/database";
+import {
+  CategoryStatus,
+  ProductTaxClassification,
+  ProductTemplateStatus,
+} from "@indihub/database";
 import { createSlug } from "../common/slug";
 import { PrismaService } from "../prisma/prisma.service";
 import { SearchIndexService } from "../search/search-index.service";
@@ -119,9 +123,11 @@ export class CategoriesService {
     const slug = await this.createUniqueSlug(dto.name);
 
     const imageUrl = normalizePublicImageReference(dto.imageUrl, "Category image");
-    const defaultHsnCode = this.normalizeHsnCode(dto.defaultHsnCode);
-    const defaultGstRatePercent = this.normalizeGstRate(dto.defaultGstRatePercent);
-    this.ensureCompleteCategoryTaxDefaults(defaultHsnCode, defaultGstRatePercent);
+    const taxDefaults = this.normalizeCategoryTaxDefaults(
+      dto.defaultTaxClassification ?? ProductTaxClassification.TAXABLE,
+      dto.defaultHsnCode,
+      dto.defaultGstRatePercent,
+    );
 
     const category = await this.prisma.client.category.create({
       data: {
@@ -131,8 +137,9 @@ export class CategoriesService {
         slug,
         description: dto.description ?? null,
         imageUrl: imageUrl || null,
-        defaultHsnCode,
-        defaultGstRatePercent,
+        defaultTaxClassification: taxDefaults.classification,
+        defaultHsnCode: taxDefaults.hsnCode,
+        defaultGstRatePercent: taxDefaults.gstRatePercent,
         defaultTaxDescription: this.normalizeOptionalText(dto.defaultTaxDescription),
         status: dto.status ?? CategoryStatus.ACTIVE,
         sortOrder: dto.sortOrder ?? 0
@@ -171,11 +178,13 @@ export class CategoriesService {
     }
 
     const imageUrl = normalizePublicImageReference(dto.imageUrl, "Category image");
-    const nextDefaultHsnCode =
-      dto.defaultHsnCode !== undefined ? this.normalizeHsnCode(dto.defaultHsnCode) : existing.defaultHsnCode;
-    const nextDefaultGstRatePercent =
-      dto.defaultGstRatePercent !== undefined ? this.normalizeGstRate(dto.defaultGstRatePercent) : existing.defaultGstRatePercent;
-    this.ensureCompleteCategoryTaxDefaults(nextDefaultHsnCode, nextDefaultGstRatePercent);
+    const taxDefaults = this.normalizeCategoryTaxDefaults(
+      dto.defaultTaxClassification ?? existing.defaultTaxClassification,
+      dto.defaultHsnCode !== undefined ? dto.defaultHsnCode : existing.defaultHsnCode,
+      dto.defaultGstRatePercent !== undefined
+        ? dto.defaultGstRatePercent
+        : existing.defaultGstRatePercent,
+    );
 
     const category = await this.prisma.client.category.update({
       where: { id: categoryId },
@@ -186,8 +195,15 @@ export class CategoriesService {
         ...(slug ? { slug } : {}),
         ...(dto.description !== undefined ? { description: dto.description ?? null } : {}),
         ...(dto.imageUrl !== undefined ? { imageUrl: imageUrl || null } : {}),
-        ...(dto.defaultHsnCode !== undefined ? { defaultHsnCode: nextDefaultHsnCode } : {}),
-        ...(dto.defaultGstRatePercent !== undefined ? { defaultGstRatePercent: nextDefaultGstRatePercent } : {}),
+        ...(dto.defaultTaxClassification !== undefined ||
+        dto.defaultHsnCode !== undefined ||
+        dto.defaultGstRatePercent !== undefined
+          ? {
+              defaultTaxClassification: taxDefaults.classification,
+              defaultHsnCode: taxDefaults.hsnCode,
+              defaultGstRatePercent: taxDefaults.gstRatePercent,
+            }
+          : {}),
         ...(dto.defaultTaxDescription !== undefined
           ? { defaultTaxDescription: this.normalizeOptionalText(dto.defaultTaxDescription) }
           : {}),
@@ -369,12 +385,12 @@ export class CategoriesService {
     return trimmed || null;
   }
 
-  private normalizeGstRate(value: number | string | null | undefined) {
+  private normalizeGstRate(value: unknown) {
     if (value === undefined || value === null || value === "") {
       return null;
     }
 
-    const numberValue = typeof value === "number" ? value : Number(value);
+    const numberValue = typeof value === "number" ? value : Number(String(value));
     if (!Number.isFinite(numberValue) || numberValue < 0 || numberValue > 100) {
       throw new BadRequestException("Default GST rate must be between 0 and 100.");
     }
@@ -391,16 +407,34 @@ export class CategoriesService {
     return trimmed || null;
   }
 
-  private ensureCompleteCategoryTaxDefaults(
+  private normalizeCategoryTaxDefaults(
+    classification: ProductTaxClassification,
     defaultHsnCode: string | null | undefined,
     defaultGstRatePercent: unknown,
   ) {
-    const hasHsn = Boolean(defaultHsnCode);
-    const hasGst = defaultGstRatePercent !== undefined && defaultGstRatePercent !== null && defaultGstRatePercent !== "";
+    const hsnCode = this.normalizeHsnCode(defaultHsnCode);
+    const requestedRate = this.normalizeGstRate(defaultGstRatePercent);
+    const gstRatePercent =
+      classification === ProductTaxClassification.TAXABLE ? requestedRate : 0;
 
-    if (hasHsn !== hasGst) {
+    if (
+      classification === ProductTaxClassification.TAXABLE &&
+      Boolean(hsnCode) !== (gstRatePercent !== null)
+    ) {
       throw new BadRequestException("Default HSN code and GST rate must be set together.");
     }
+    if (
+      classification === ProductTaxClassification.TAXABLE &&
+      gstRatePercent !== null &&
+      gstRatePercent <= 0
+    ) {
+      throw new BadRequestException("A taxable category default must use a GST rate greater than zero.");
+    }
+    if (classification === ProductTaxClassification.NIL_RATED && !hsnCode) {
+      throw new BadRequestException("A nil-rated category default requires an HSN code.");
+    }
+
+    return { classification, hsnCode, gstRatePercent };
   }
 
   private async syncCategoryHsnMaster(category: {

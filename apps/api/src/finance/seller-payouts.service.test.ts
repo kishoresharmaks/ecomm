@@ -42,9 +42,12 @@ describe("SellerPayoutsService seller requests", () => {
           payoutProfile: {
             accountHolderName: "Seller One",
             bankName: null,
-            accountNumber: null,
-            ifscCode: null,
-            upiId: "seller@upi"
+            accountNumberEncrypted: null,
+            ifscCodeEncrypted: null,
+            upiIdEncrypted: null,
+            legacyAccountNumber: null,
+            legacyIfscCode: null,
+            legacyUpiId: "seller@upi"
           }
         })
       },
@@ -203,9 +206,12 @@ describe("SellerPayoutsService seller requests", () => {
           payoutProfile: {
             accountHolderName: "Seller One",
             bankName: null,
-            accountNumber: null,
-            ifscCode: null,
-            upiId: "seller@upi"
+            accountNumberEncrypted: null,
+            ifscCodeEncrypted: null,
+            upiIdEncrypted: null,
+            legacyAccountNumber: null,
+            legacyIfscCode: null,
+            legacyUpiId: "seller@upi"
           }
         })
       },
@@ -780,9 +786,12 @@ describe("SellerPayoutsService seller requests", () => {
             sellerId: "seller-1",
             accountHolderName: "Seller One",
             bankName: null,
-            accountNumber: null,
-            ifscCode: null,
-            upiId: "seller@upi",
+            accountNumberEncrypted: null,
+            ifscCodeEncrypted: null,
+            upiIdEncrypted: null,
+            legacyAccountNumber: null,
+            legacyIfscCode: null,
+            legacyUpiId: "seller@upi",
             isVerified: false
           }
         })
@@ -792,9 +801,12 @@ describe("SellerPayoutsService seller requests", () => {
           sellerId: "seller-1",
           accountHolderName: "Seller One",
           bankName: null,
-          accountNumber: null,
-          ifscCode: null,
-          upiId: "seller@upi",
+          accountNumberEncrypted: null,
+          ifscCodeEncrypted: null,
+          upiIdEncrypted: null,
+          legacyAccountNumber: null,
+          legacyIfscCode: null,
+          legacyUpiId: "seller@upi",
           isVerified: true
         })
       },
@@ -841,9 +853,12 @@ describe("SellerPayoutsService seller requests", () => {
           payoutProfile: {
             accountHolderName: "Seller One",
             bankName: null,
-            accountNumber: null,
-            ifscCode: null,
-            upiId: null,
+            accountNumberEncrypted: null,
+            ifscCodeEncrypted: null,
+            upiIdEncrypted: null,
+            legacyAccountNumber: null,
+            legacyIfscCode: null,
+            legacyUpiId: null,
             isVerified: false
           }
         })

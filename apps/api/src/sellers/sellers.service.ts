@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
   Optional,
 } from "@nestjs/common";
@@ -18,10 +19,17 @@ import {
   RoleCode,
   SellerCapability,
   SellerStatus,
+  SellerTaxRegistrationStatus,
   SellerType,
   UserStatus,
 } from "@indihub/database";
 import type { RequestUser } from "../auth/types/indihub-request";
+import {
+  encryptSellerPayoutValue,
+  sellerPayoutLast4,
+  sellerPayoutUpiHint,
+  sellerPayoutValue,
+} from "../common/seller-payout-secret";
 import { LocationsService } from "../locations/locations.service";
 import { EMAIL_TRIGGER_EVENTS } from "../notifications/email-trigger-catalog";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -131,6 +139,13 @@ const sellerProfileInclude = {
 
 type SellerProfileRecord = Prisma.SellerGetPayload<{ include: typeof sellerProfileInclude }>;
 
+const baseRequiredSellerDocumentTypes = [
+  "ID_PROOF",
+  "SIGNATURE_PROOF",
+  "ADDRESS_PROOF",
+  "BANK_PROOF",
+] as const;
+
 @Injectable()
 export class SellersService {
   constructor(
@@ -153,6 +168,14 @@ export class SellersService {
     const documents = this.normalizeSellerDocuments(actor.id, dto.documents);
     const slug = await this.createUniqueSlug(dto.storeName);
     const capabilities = this.resolveRegistrationCapabilities(dto);
+    const taxRegistration = this.resolveSellerTaxRegistration(
+      dto.taxRegistrationStatus,
+      dto.gstNumber,
+    );
+    this.assertRequiredSellerDocuments(
+      taxRegistration.status,
+      documents.map((document) => document.documentType),
+    );
     const seller = await this.prisma.client.$transaction(async (tx) => {
       const existingSeller = await tx.seller.findUnique({ where: { userId: actor.id } });
 
@@ -225,7 +248,8 @@ export class SellersService {
           description: dto.businessDescription ?? null,
           businessLegalName: this.emptyToNull(dto.businessLegalName),
           businessType: dto.businessType ?? null,
-          gstNumber: this.normalizeGstNumber(dto.gstNumber),
+          taxRegistrationStatus: taxRegistration.status,
+          gstNumber: taxRegistration.gstNumber,
           panNumber: this.normalizePanNumber(dto.panNumber),
           contactName: dto.contactName,
           contactPhone: dto.contactPhone,
@@ -290,7 +314,8 @@ export class SellersService {
             verification: {
               businessLegalName: dto.businessLegalName,
               businessType: dto.businessType,
-              gstNumber: this.normalizeGstNumber(dto.gstNumber),
+              taxRegistrationStatus: taxRegistration.status,
+              gstNumber: taxRegistration.gstNumber,
               panNumber: this.normalizePanNumber(dto.panNumber),
               documentCount: documents.length,
             },
@@ -755,6 +780,38 @@ export class SellersService {
     const courierSettings = this.normalizeCourierProviderSettings(dto.courierSettings);
     const serviceAreas = this.normalizeSellerServiceAreas(dto.serviceAreas);
     const businessType = this.normalizeSellerBusinessType(dto.businessType);
+    const taxRegistration = this.resolveSellerTaxRegistration(
+      dto.taxRegistrationStatus ??
+        existing.profile?.taxRegistrationStatus ??
+        (existing.profile?.gstNumber
+          ? SellerTaxRegistrationStatus.GST_REGISTERED
+          : SellerTaxRegistrationStatus.NOT_REGISTERED),
+      dto.gstNumber !== undefined ? dto.gstNumber : existing.profile?.gstNumber,
+    );
+    const submittedDocumentTypes = documents.map((document) => document.documentType);
+    const availableDocumentTypes = [
+      ...existing.documents.map((document) => document.documentType),
+      ...submittedDocumentTypes,
+    ];
+    const taxIdentityChanged =
+      (dto.taxRegistrationStatus !== undefined || dto.gstNumber !== undefined) &&
+      (taxRegistration.status !==
+        (existing.profile?.taxRegistrationStatus ??
+          (existing.profile?.gstNumber
+            ? SellerTaxRegistrationStatus.GST_REGISTERED
+            : SellerTaxRegistrationStatus.NOT_REGISTERED)) ||
+        taxRegistration.gstNumber !== (existing.profile?.gstNumber ?? null));
+    const requiredDocuments = this.requiredSellerDocumentTypes(taxRegistration.status);
+    const requiredDocumentReplaced = submittedDocumentTypes.some((documentType) =>
+      requiredDocuments.includes(documentType),
+    );
+    const requiresReapproval =
+      existing.approvalStatus === ApprovalStatus.APPROVED &&
+      (taxIdentityChanged || requiredDocumentReplaced);
+
+    if (taxIdentityChanged || dto.documents !== undefined) {
+      this.assertRequiredSellerDocuments(taxRegistration.status, availableDocumentTypes);
+    }
     if (dto.courierSettings !== undefined && courierSettings.length) {
       const configuredProviders = await this.prisma.client.courierProviderSetting.findMany({
         where: { providerCode: { in: courierSettings.map((setting) => setting.providerCode) } },
@@ -777,6 +834,12 @@ export class SellersService {
         data: {
           ...(dto.storeName !== undefined ? { storeName: dto.storeName } : {}),
           ...(slug ? { slug } : {}),
+          ...(requiresReapproval
+            ? {
+                status: SellerStatus.PENDING_APPROVAL,
+                approvalStatus: ApprovalStatus.PENDING_APPROVAL,
+              }
+            : {}),
         },
       });
 
@@ -786,6 +849,7 @@ export class SellersService {
         dto.description !== undefined ||
         dto.businessLegalName !== undefined ||
         dto.businessType !== undefined ||
+        dto.taxRegistrationStatus !== undefined ||
         dto.gstNumber !== undefined ||
         dto.panNumber !== undefined ||
         dto.contactName !== undefined ||
@@ -802,8 +866,11 @@ export class SellersService {
               ? { businessLegalName: this.emptyToNull(dto.businessLegalName) }
               : {}),
             ...(dto.businessType !== undefined ? { businessType } : {}),
-            ...(dto.gstNumber !== undefined
-              ? { gstNumber: this.normalizeGstNumber(dto.gstNumber) }
+            ...(dto.taxRegistrationStatus !== undefined || dto.gstNumber !== undefined
+              ? {
+                  taxRegistrationStatus: taxRegistration.status,
+                  gstNumber: taxRegistration.gstNumber,
+                }
               : {}),
             ...(dto.panNumber !== undefined
               ? { panNumber: this.normalizePanNumber(dto.panNumber) }
@@ -819,7 +886,8 @@ export class SellersService {
             description: dto.description ?? null,
             businessLegalName: this.emptyToNull(dto.businessLegalName),
             businessType,
-            gstNumber: this.normalizeGstNumber(dto.gstNumber),
+            taxRegistrationStatus: taxRegistration.status,
+            gstNumber: taxRegistration.gstNumber,
             panNumber: this.normalizePanNumber(dto.panNumber),
             contactName:
               dto.contactName ??
@@ -834,6 +902,18 @@ export class SellersService {
       }
 
       if (dto.payoutProfile && this.hasPayoutProfileUpdate(dto.payoutProfile)) {
+        const accountNumber =
+          dto.payoutProfile.accountNumber === undefined
+            ? undefined
+            : this.emptyToNull(dto.payoutProfile.accountNumber);
+        const ifscCode =
+          dto.payoutProfile.ifscCode === undefined
+            ? undefined
+            : this.emptyToNull(dto.payoutProfile.ifscCode?.toUpperCase());
+        const upiId =
+          dto.payoutProfile.upiId === undefined
+            ? undefined
+            : this.emptyToNull(dto.payoutProfile.upiId);
         await tx.sellerPayoutProfile.upsert({
           where: { sellerId: existing.id },
           update: {
@@ -843,14 +923,27 @@ export class SellersService {
             ...(dto.payoutProfile.bankName !== undefined
               ? { bankName: this.emptyToNull(dto.payoutProfile.bankName) }
               : {}),
-            ...(dto.payoutProfile.accountNumber !== undefined
-              ? { accountNumber: this.emptyToNull(dto.payoutProfile.accountNumber) }
+            ...(accountNumber !== undefined
+              ? {
+                  accountNumberEncrypted: accountNumber
+                    ? encryptSellerPayoutValue(accountNumber)
+                    : null,
+                  accountNumberLast4: sellerPayoutLast4(accountNumber),
+                  legacyAccountNumber: null,
+                }
               : {}),
-            ...(dto.payoutProfile.ifscCode !== undefined
-              ? { ifscCode: this.emptyToNull(dto.payoutProfile.ifscCode?.toUpperCase()) }
+            ...(ifscCode !== undefined
+              ? {
+                  ifscCodeEncrypted: ifscCode ? encryptSellerPayoutValue(ifscCode) : null,
+                  legacyIfscCode: null,
+                }
               : {}),
-            ...(dto.payoutProfile.upiId !== undefined
-              ? { upiId: this.emptyToNull(dto.payoutProfile.upiId) }
+            ...(upiId !== undefined
+              ? {
+                  upiIdEncrypted: upiId ? encryptSellerPayoutValue(upiId) : null,
+                  upiIdHint: sellerPayoutUpiHint(upiId),
+                  legacyUpiId: null,
+                }
               : {}),
             isVerified: false,
           },
@@ -858,9 +951,16 @@ export class SellersService {
             sellerId: existing.id,
             accountHolderName: this.emptyToNull(dto.payoutProfile.accountHolderName),
             bankName: this.emptyToNull(dto.payoutProfile.bankName),
-            accountNumber: this.emptyToNull(dto.payoutProfile.accountNumber),
-            ifscCode: this.emptyToNull(dto.payoutProfile.ifscCode?.toUpperCase()),
-            upiId: this.emptyToNull(dto.payoutProfile.upiId),
+            accountNumberEncrypted: accountNumber
+              ? encryptSellerPayoutValue(accountNumber)
+              : null,
+            accountNumberLast4: sellerPayoutLast4(accountNumber ?? null),
+            ifscCodeEncrypted: ifscCode ? encryptSellerPayoutValue(ifscCode) : null,
+            upiIdEncrypted: upiId ? encryptSellerPayoutValue(upiId) : null,
+            upiIdHint: sellerPayoutUpiHint(upiId ?? null),
+            legacyAccountNumber: null,
+            legacyIfscCode: null,
+            legacyUpiId: null,
             isVerified: false,
           },
         });
@@ -1028,10 +1128,15 @@ export class SellersService {
           oldValue: {
             storeName: existing.storeName,
             slug: existing.slug,
+            status: existing.status,
+            approvalStatus: existing.approvalStatus,
           },
           newValue: {
             storeName: updatedSeller.storeName,
             slug: updatedSeller.slug,
+            status: updatedSeller.status,
+            approvalStatus: updatedSeller.approvalStatus,
+            verificationRequired: requiresReapproval,
           },
         },
       });
@@ -1164,9 +1269,9 @@ export class SellersService {
         sellerAddress: this.toCourierPickupAddress(sellerAddress),
         settings: snapshot,
       });
-    } catch (error) {
-      throw new BadRequestException(
-        `Failed to sync pickup location with courier provider: ${error instanceof Error ? error.message : "Unknown error"}`
+    } catch {
+      throw new InternalServerErrorException(
+         "We couldn't connect to our courier partner right now. Please try again later."
       );
     }
 
@@ -1278,6 +1383,7 @@ export class SellersService {
             description: seller.profile.description,
             businessLegalName: seller.profile.businessLegalName,
             businessType: seller.profile.businessType,
+            taxRegistrationStatus: seller.profile.taxRegistrationStatus,
             gstNumber: seller.profile.gstNumber,
             panNumber: seller.profile.panNumber,
             contactName: seller.profile.contactName,
@@ -1291,9 +1397,24 @@ export class SellersService {
         ? {
             accountHolderName: seller.payoutProfile.accountHolderName,
             bankName: seller.payoutProfile.bankName,
-            maskedAccountNumber: this.maskAccountNumber(seller.payoutProfile.accountNumber),
-            ifscCode: seller.payoutProfile.ifscCode,
-            maskedUpiId: this.maskUpiId(seller.payoutProfile.upiId),
+            maskedAccountNumber: this.maskAccountNumber(
+              sellerPayoutValue(
+                seller.payoutProfile.accountNumberEncrypted,
+                seller.payoutProfile.legacyAccountNumber,
+              ),
+            ),
+            ifscCode: sellerPayoutValue(
+              seller.payoutProfile.ifscCodeEncrypted,
+              seller.payoutProfile.legacyIfscCode,
+            ),
+            maskedUpiId:
+              seller.payoutProfile.upiIdHint ??
+              this.maskUpiId(
+                sellerPayoutValue(
+                  seller.payoutProfile.upiIdEncrypted,
+                  seller.payoutProfile.legacyUpiId,
+                ),
+              ),
             isVerified: seller.payoutProfile.isVerified,
           }
         : null,
@@ -1517,6 +1638,58 @@ export class SellersService {
     }
 
     return normalized;
+  }
+
+  private resolveSellerTaxRegistration(
+    status: SellerTaxRegistrationStatus | undefined,
+    gstNumber: string | null | undefined,
+  ) {
+    const normalizedGstin = this.normalizeGstNumber(gstNumber);
+    const resolvedStatus =
+      status ??
+      (normalizedGstin
+        ? SellerTaxRegistrationStatus.GST_REGISTERED
+        : SellerTaxRegistrationStatus.NOT_REGISTERED);
+
+    if (resolvedStatus === SellerTaxRegistrationStatus.NOT_REGISTERED) {
+      return { status: resolvedStatus, gstNumber: null };
+    }
+
+    if (!normalizedGstin) {
+      throw new BadRequestException(
+        resolvedStatus === SellerTaxRegistrationStatus.COMPOSITION
+          ? "Composition sellers must provide a valid GSTIN."
+          : "GST-registered sellers must provide a valid GSTIN.",
+      );
+    }
+
+    return { status: resolvedStatus, gstNumber: normalizedGstin };
+  }
+
+  private requiredSellerDocumentTypes(status: SellerTaxRegistrationStatus): string[] {
+    return [
+      ...baseRequiredSellerDocumentTypes,
+      ...(status === SellerTaxRegistrationStatus.NOT_REGISTERED
+        ? []
+        : ["GST_CERTIFICATE"]),
+    ];
+  }
+
+  private assertRequiredSellerDocuments(
+    status: SellerTaxRegistrationStatus,
+    documentTypes: string[],
+  ) {
+    const available = new Set(documentTypes.map((documentType) => documentType.toUpperCase()));
+    const missing = this.requiredSellerDocumentTypes(status).filter(
+      (documentType) => !available.has(documentType),
+    );
+    if (missing.length) {
+      throw new BadRequestException(
+        `Upload the required seller documents before continuing: ${missing
+          .map((documentType) => documentType.replaceAll("_", " ").toLowerCase())
+          .join(", ")}.`,
+      );
+    }
   }
 
   private normalizePanNumber(value?: string | null) {

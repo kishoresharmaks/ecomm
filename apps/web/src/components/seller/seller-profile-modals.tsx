@@ -11,13 +11,21 @@ import {
   type SellerBusinessType,
   type SellerProfile,
   type SellerProfilePayload,
+  type SellerTaxRegistrationStatus,
   type SellerVerificationDocument,
 } from "@/lib/seller-api";
 import type { IndihubAuthHeaders } from "@/lib/api";
 import type { LocationSource } from "@/lib/maps-api";
 import type { SellerDocumentType, SellerDocumentUploadResult } from "@/lib/seller-document-upload";
 import { useDelayedClose } from "@/hooks/use-delayed-close";
-import { SellerField, SellerTextArea, SellerImageUpload, formValue, optionalFormValue } from "./seller-ui";
+import {
+  SellerField,
+  SellerImageUpload,
+  SellerInfoHint,
+  SellerTextArea,
+  formValue,
+  optionalFormValue,
+} from "./seller-ui";
 
 export interface ProfileModalProps {
   open: boolean;
@@ -143,6 +151,18 @@ export function EditStoreDetailsModal({
   const [noticeTone, setNoticeTone] = useState<"success" | "danger">("success");
   const [logoUrl, setLogoUrl] = useState<string | null>(profile?.profile?.logoUrl ?? null);
   const [bannerUrl, setBannerUrl] = useState<string | null>(profile?.profile?.bannerUrl ?? null);
+  const [taxRegistrationStatus, setTaxRegistrationStatus] =
+    useState<SellerTaxRegistrationStatus>(
+      profile?.profile?.taxRegistrationStatus ??
+        (profile?.profile?.gstNumber ? "GST_REGISTERED" : "NOT_REGISTERED"),
+    );
+
+  useEffect(() => {
+    setTaxRegistrationStatus(
+      profile?.profile?.taxRegistrationStatus ??
+        (profile?.profile?.gstNumber ? "GST_REGISTERED" : "NOT_REGISTERED"),
+    );
+  }, [profile]);
 
   const mutation = useMutation({
     mutationFn: (payload: SellerProfilePayload) => updateSellerProfile(authHeaders, payload),
@@ -169,7 +189,10 @@ export function EditStoreDetailsModal({
       description: optionalFormValue(form, "description"),
       businessLegalName: optionalFormValue(form, "businessLegalName"),
       businessType: optionalFormValue(form, "businessType") as SellerBusinessType | undefined,
-      gstNumber: optionalFormValue(form, "gstNumber")?.toUpperCase(),
+      taxRegistrationStatus,
+      ...(taxRegistrationStatus !== "NOT_REGISTERED"
+        ? { gstNumber: optionalFormValue(form, "gstNumber")?.toUpperCase() }
+        : {}),
       panNumber: optionalFormValue(form, "panNumber")?.toUpperCase(),
       contactName: formValue(form, "contactName"),
       contactPhone: formValue(form, "contactPhone"),
@@ -190,9 +213,21 @@ export function EditStoreDetailsModal({
           <div className="grid gap-4 md:grid-cols-2">
             <SellerField label="Store name" name="storeName" required defaultValue={profile?.storeName} />
             <SellerField label="Business legal name" name="businessLegalName" defaultValue={profile?.profile?.businessLegalName} />
-            <label className="block">
-              <span className="block text-xs font-bold uppercase tracking-wide text-[#667085]">Business type</span>
+            <div className="block">
+              <div className="flex items-center gap-1.5">
+                <label
+                  htmlFor="seller-profile-business-type"
+                  className="block text-xs font-bold uppercase tracking-wide text-[#667085]"
+                >
+                  Business type
+                </label>
+                <SellerInfoHint label="business type">
+                  Choose the legal constitution shown on the seller&apos;s PAN, registration,
+                  contracts, and bank records. This does not determine whether GST is charged.
+                </SellerInfoHint>
+              </div>
               <select
+                id="seller-profile-business-type"
                 name="businessType"
                 defaultValue={profile?.profile?.businessType ?? ""}
                 className="mt-1 h-11 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 text-sm font-semibold text-[#1F2933] outline-none focus:border-[#ED3500] focus:bg-white"
@@ -202,9 +237,60 @@ export function EditStoreDetailsModal({
                   <option key={type.value} value={type.value}>{type.label}</option>
                 ))}
               </select>
-            </label>
-            <SellerField label="GST number" name="gstNumber" defaultValue={profile?.profile?.gstNumber} />
-            <SellerField label="PAN number" name="panNumber" defaultValue={profile?.profile?.panNumber} />
+            </div>
+            <div className="block">
+              <div className="flex items-center gap-1.5">
+                <label
+                  htmlFor="seller-profile-gst-registration"
+                  className="block text-xs font-bold uppercase tracking-wide text-[#667085]"
+                >
+                  GST registration
+                </label>
+                <SellerInfoHint label="GST registration">
+                  Regular GST sellers may collect GST on taxable products. Composition sellers
+                  need a GSTIN but cannot charge GST separately. Sellers who are not registered
+                  must not collect GST.
+                </SellerInfoHint>
+              </div>
+              <select
+                id="seller-profile-gst-registration"
+                name="taxRegistrationStatus"
+                value={taxRegistrationStatus}
+                onChange={(event) =>
+                  setTaxRegistrationStatus(event.target.value as SellerTaxRegistrationStatus)
+                }
+                className="mt-1 h-11 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 text-sm font-semibold text-[#1F2933] outline-none focus:border-[#ED3500] focus:bg-white"
+              >
+                <option value="GST_REGISTERED">Regular GST registered</option>
+                <option value="COMPOSITION">Composition scheme</option>
+                <option value="NOT_REGISTERED">Not GST registered</option>
+              </select>
+            </div>
+            {taxRegistrationStatus !== "NOT_REGISTERED" ? (
+              <SellerField
+                label="GST number"
+                name="gstNumber"
+                required
+                defaultValue={profile?.profile?.gstNumber}
+                info={
+                  <SellerInfoHint label="GST number">
+                    Enter the 15-character GSTIN belonging to the selected legal entity or
+                    proprietor. It is required for regular and composition registrations.
+                  </SellerInfoHint>
+                }
+              />
+            ) : null}
+            <SellerField
+              label="PAN number"
+              name="panNumber"
+              defaultValue={profile?.profile?.panNumber}
+              info={
+                <SellerInfoHint label="PAN number">
+                  Enter the PAN belonging to the selected business or proprietor. It is used for
+                  identity checks, payouts, and applicable income-tax deductions.
+                </SellerInfoHint>
+              }
+            />
             <SellerField label="Contact name" name="contactName" required defaultValue={profile?.profile?.contactName ?? profile?.user?.fullName} />
             <SellerField label="Contact phone" name="contactPhone" required defaultValue={profile?.profile?.contactPhone ?? profile?.user?.phone} />
             <SellerField label="Contact email" name="contactEmail" type="email" required defaultValue={profile?.profile?.contactEmail ?? profile?.user?.email} />

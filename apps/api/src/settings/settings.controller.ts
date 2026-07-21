@@ -14,6 +14,7 @@ import {
   UpsertDeliveryPartnerPayoutSettingsDto,
   UpsertEmailSettingDto,
   UpsertMapRoutingSettingsDto,
+  UpsertReturnPolicySettingsDto,
   UpsertSettingDto,
 } from "./dto/settings.dto";
 import { SettingsService } from "./settings.service";
@@ -54,6 +55,21 @@ export class SettingsController {
   @ApiOperation({ summary: "Atomically update checkout buyer platform fee settings." })
   upsertCheckoutPlatformFee(@CurrentUser() actor: RequestUser, @Body() dto: UpsertCheckoutPlatformFeeDto) {
     return this.settingsService.upsertCheckoutPlatformFee(actor, dto);
+  }
+
+  @Get("returns/policy")
+  @ApiOperation({ summary: "Read customer return and replacement window settings." })
+  getReturnPolicySettings() {
+    return this.settingsService.getReturnPolicySettings();
+  }
+
+  @Put("returns/policy")
+  @ApiOperation({ summary: "Atomically update customer return and replacement windows." })
+  upsertReturnPolicySettings(
+    @CurrentUser() actor: RequestUser,
+    @Body() dto: UpsertReturnPolicySettingsDto,
+  ) {
+    return this.settingsService.upsertReturnPolicySettings(actor, dto);
   }
 
   @Get("delivery-partner-payouts")
@@ -144,5 +160,12 @@ export class PublicSettingsController {
   @ApiOperation({ summary: "Read public Google analytics, tag, ads, and site verification settings." })
   getSeoSettings() {
     return this.settingsService.getSeoSettings();
+  }
+
+  @Get("returns")
+  @Header("Cache-Control", "public, max-age=30, stale-while-revalidate=60")
+  @ApiOperation({ summary: "Read customer return and replacement windows." })
+  getReturnPolicySettings() {
+    return this.settingsService.getReturnPolicySettings();
   }
 }

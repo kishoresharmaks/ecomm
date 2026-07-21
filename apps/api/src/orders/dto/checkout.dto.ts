@@ -236,4 +236,22 @@ export class PlaceOrderDto {
   @IsOptional()
   @Matches(/^[A-Z]{2}$/)
   buyerCountryCode?: string;
+
+  @ApiPropertyOptional({
+    example: "33ABCDE1234F1Z5",
+    description: "Optional GSTIN for a registered buyer requesting a B2B tax invoice.",
+  })
+  @IsOptional()
+  @Matches(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/i)
+  buyerGstin?: string;
+
+  @ApiPropertyOptional({
+    example: "Acme Retail Private Limited",
+    description: "Registered buyer name printed on the tax invoice.",
+  })
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  @MaxLength(160)
+  buyerLegalName?: string;
 }

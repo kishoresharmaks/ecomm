@@ -26,6 +26,7 @@ import {
 import { indihubFetch, userFacingApiErrorMessage } from "@/lib/api";
 import { openB2BPurchaseOrderDocument } from "@/lib/b2b-po-documents";
 import {
+  b2bFinalDocumentLabel,
   type B2BOrder,
   type B2BOrderStatus,
   type B2BPaymentProof,
@@ -353,7 +354,7 @@ function AdminB2BOperationalMap({ order }: { order: B2BOrderWithAdminDetail }) {
       <div className="flex flex-col gap-2">
         <h2 className="text-lg font-black text-[#1F2933]">How to operate this B2B order</h2>
         <p className="text-sm font-semibold leading-6 text-[#667085]">
-          B2B orders are commercial documents first: issue proforma, accept buyer PO, clear payment or approve credit terms, unlock fulfilment, then generate the tax invoice after fulfilment.
+          B2B orders are commercial documents first: issue proforma, accept buyer PO, clear payment or approve credit terms, unlock fulfilment, then generate the final invoice after fulfilment.
         </p>
       </div>
       <div className="mt-5 grid gap-3 lg:grid-cols-5">
@@ -420,7 +421,7 @@ function AdminB2BDocumentsPanel({
         />
         <DocumentTile
           icon={<ReceiptText className="h-5 w-5" aria-hidden="true" />}
-          title="Tax invoice"
+          title={b2bFinalDocumentLabel(order.finalDocumentType)}
           description={order.status === "FULFILLED" ? order.taxInvoiceNumber ?? "Generated on open" : "Available after fulfilment"}
           action="Open invoice"
           disabled={order.status !== "FULFILLED"}
@@ -1001,7 +1002,7 @@ function b2bOperationSteps(order: B2BOrderWithAdminDetail) {
       state: cancelled ? "blocked" : ["IN_FULFILMENT", "FULFILLED"].includes(order.status) ? "done" : poAccepted && paymentCleared ? "active" : "waiting",
     },
     {
-      title: "Tax invoice",
+      title: b2bFinalDocumentLabel(order.finalDocumentType),
       description: "Final invoice is available only after fulfilment.",
       state: cancelled ? "blocked" : fulfilled ? "done" : "waiting",
     },
@@ -1033,7 +1034,7 @@ function b2bStatusOptions(order: B2BOrderWithAdminDetail) {
   }
   if (status === "IN_FULFILMENT") {
     return [
-      { value: "FULFILLED", label: "Mark fulfilled", description: "Completes fulfilment and makes final tax invoice available." },
+      { value: "FULFILLED", label: "Mark fulfilled", description: "Completes fulfilment and makes the final invoice available." },
       { value: "CANCELLED", label: "Cancel order", description: "Use only for an audited operational reversal before completion." },
     ];
   }
