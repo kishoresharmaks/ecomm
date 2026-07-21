@@ -21,81 +21,196 @@ BEGIN
 END $$;
 
 -- Remove the duplicate manual transport rate after preserving the generalized minor-unit value.
-UPDATE "product_delivery_modes"
-SET "manual_transport_charge_per_km_minor" =
-  COALESCE("manual_transport_charge_per_km_minor", "manual_transport_charge_per_km_paise");
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'product_delivery_modes'
+      AND column_name = 'manual_transport_charge_per_km_paise'
+  ) THEN
+    ALTER TABLE "product_delivery_modes"
+      ADD COLUMN IF NOT EXISTS "manual_transport_charge_per_km_minor" INTEGER;
+
+    UPDATE "product_delivery_modes"
+    SET "manual_transport_charge_per_km_minor" =
+      COALESCE("manual_transport_charge_per_km_minor", "manual_transport_charge_per_km_paise");
+  END IF;
+END $$;
 
 ALTER TABLE "product_delivery_modes"
-  DROP COLUMN "manual_transport_charge_per_km_paise";
+  DROP COLUMN IF EXISTS "manual_transport_charge_per_km_paise";
 
 -- Split the overloaded seller commission value by unit.
 ALTER TABLE "sellers"
-  ADD COLUMN "commission_value_bps" INTEGER,
-  ADD COLUMN "commission_fixed_paise" INTEGER;
+  ADD COLUMN IF NOT EXISTS "commission_value_bps" INTEGER,
+  ADD COLUMN IF NOT EXISTS "commission_fixed_paise" INTEGER;
 
-UPDATE "sellers"
-SET
-  "commission_value_bps" = CASE
-    WHEN "commission_type" = 'PERCENTAGE' THEN "commission_value"
-    ELSE NULL
-  END,
-  "commission_fixed_paise" = CASE
-    WHEN "commission_type" = 'FIXED' THEN "commission_value"
-    ELSE NULL
-  END;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'sellers'
+      AND column_name = 'commission_value'
+  ) THEN
+    UPDATE "sellers"
+    SET
+      "commission_value_bps" = CASE
+        WHEN "commission_type" = 'PERCENTAGE' THEN "commission_value"
+        ELSE "commission_value_bps"
+      END,
+      "commission_fixed_paise" = CASE
+        WHEN "commission_type" = 'FIXED' THEN "commission_value"
+        ELSE "commission_fixed_paise"
+      END;
+  END IF;
+END $$;
 
 ALTER TABLE "sellers"
-  DROP COLUMN "commission_value";
+  DROP COLUMN IF EXISTS "commission_value";
 
 -- Link checkout snapshots to both the customer and the order they produced.
-ALTER TABLE "checkout_sessions"
-  ADD CONSTRAINT "checkout_sessions_customer_id_fkey"
-  FOREIGN KEY ("customer_id") REFERENCES "customers"("id")
-  ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'checkout_sessions_customer_id_fkey'
+      AND conrelid = 'checkout_sessions'::regclass
+  ) THEN
+    ALTER TABLE "checkout_sessions"
+      ADD CONSTRAINT "checkout_sessions_customer_id_fkey"
+      FOREIGN KEY ("customer_id") REFERENCES "customers"("id")
+      ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END $$;
 
 ALTER TABLE "orders"
-  ADD COLUMN "checkout_session_id" UUID;
+  ADD COLUMN IF NOT EXISTS "checkout_session_id" UUID;
 
-CREATE UNIQUE INDEX "orders_checkout_session_id_key"
+CREATE UNIQUE INDEX IF NOT EXISTS "orders_checkout_session_id_key"
   ON "orders"("checkout_session_id");
 
-ALTER TABLE "orders"
-  ADD CONSTRAINT "orders_checkout_session_id_fkey"
-  FOREIGN KEY ("checkout_session_id") REFERENCES "checkout_sessions"("id")
-  ON DELETE SET NULL ON UPDATE CASCADE;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'orders_checkout_session_id_fkey'
+      AND conrelid = 'orders'::regclass
+  ) THEN
+    ALTER TABLE "orders"
+      ADD CONSTRAINT "orders_checkout_session_id_fkey"
+      FOREIGN KEY ("checkout_session_id") REFERENCES "checkout_sessions"("id")
+      ON DELETE SET NULL ON UPDATE CASCADE;
+  END IF;
+END $$;
 
 -- Normalize Razorpay webhook deduplication storage.
-CREATE TYPE "RazorpayWebhookEventStatus" AS ENUM ('PROCESSING', 'DONE', 'FAILED');
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'RazorpayWebhookEventStatus') THEN
+    CREATE TYPE "RazorpayWebhookEventStatus" AS ENUM ('PROCESSING', 'DONE', 'FAILED');
+  END IF;
+END $$;
 
-DROP INDEX "RazorpayWebhookEvent_provider_providerEventId_idx";
+DROP INDEX IF EXISTS "RazorpayWebhookEvent_provider_providerEventId_idx";
 
-ALTER TABLE "RazorpayWebhookEvent"
-  RENAME TO "razorpay_webhook_events";
+DO $$
+BEGIN
+  IF to_regclass('public."RazorpayWebhookEvent"') IS NOT NULL
+     AND to_regclass('public.razorpay_webhook_events') IS NULL THEN
+    ALTER TABLE "RazorpayWebhookEvent" RENAME TO "razorpay_webhook_events";
+  END IF;
+END $$;
 
-ALTER TABLE "razorpay_webhook_events"
-  RENAME COLUMN "providerEventId" TO "provider_event_id";
-ALTER TABLE "razorpay_webhook_events"
-  RENAME COLUMN "eventType" TO "event_type";
-ALTER TABLE "razorpay_webhook_events"
-  RENAME COLUMN "payloadHash" TO "payload_hash";
-ALTER TABLE "razorpay_webhook_events"
-  RENAME COLUMN "processedAt" TO "processed_at";
-ALTER TABLE "razorpay_webhook_events"
-  RENAME COLUMN "createdAt" TO "created_at";
+DO $$
+DECLARE
+  rename_pair TEXT[];
+BEGIN
+  FOREACH rename_pair SLICE 1 IN ARRAY ARRAY[
+    ARRAY['providerEventId', 'provider_event_id'],
+    ARRAY['eventType', 'event_type'],
+    ARRAY['payloadHash', 'payload_hash'],
+    ARRAY['processedAt', 'processed_at'],
+    ARRAY['createdAt', 'created_at']
+  ]
+  LOOP
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'razorpay_webhook_events'
+        AND column_name = rename_pair[1]
+    ) AND NOT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'razorpay_webhook_events'
+        AND column_name = rename_pair[2]
+    ) THEN
+      EXECUTE format(
+        'ALTER TABLE "razorpay_webhook_events" RENAME COLUMN %I TO %I',
+        rename_pair[1],
+        rename_pair[2]
+      );
+    END IF;
+  END LOOP;
+END $$;
 
-ALTER TABLE "razorpay_webhook_events"
-  ALTER COLUMN "id" DROP DEFAULT,
-  ALTER COLUMN "id" TYPE UUID USING gen_random_uuid(),
-  ALTER COLUMN "id" SET DEFAULT gen_random_uuid(),
-  ALTER COLUMN "status" DROP DEFAULT,
-  ALTER COLUMN "status" TYPE "RazorpayWebhookEventStatus"
-    USING ("status"::"RazorpayWebhookEventStatus"),
-  ALTER COLUMN "status" SET DEFAULT 'PROCESSING';
+DO $$
+DECLARE
+  id_type TEXT;
+  status_type TEXT;
+BEGIN
+  SELECT data_type INTO id_type
+  FROM information_schema.columns
+  WHERE table_schema = 'public'
+    AND table_name = 'razorpay_webhook_events'
+    AND column_name = 'id';
 
-ALTER TABLE "razorpay_webhook_events"
-  RENAME CONSTRAINT "RazorpayWebhookEvent_pkey" TO "razorpay_webhook_events_pkey";
-ALTER INDEX "RazorpayWebhookEvent_provider_providerEventId_key"
-  RENAME TO "razorpay_webhook_events_provider_provider_event_id_key";
+  IF id_type IS DISTINCT FROM 'uuid' THEN
+    ALTER TABLE "razorpay_webhook_events"
+      ALTER COLUMN "id" DROP DEFAULT,
+      ALTER COLUMN "id" TYPE UUID USING gen_random_uuid();
+  END IF;
+
+  ALTER TABLE "razorpay_webhook_events"
+    ALTER COLUMN "id" SET DEFAULT gen_random_uuid();
+
+  SELECT udt_name INTO status_type
+  FROM information_schema.columns
+  WHERE table_schema = 'public'
+    AND table_name = 'razorpay_webhook_events'
+    AND column_name = 'status';
+
+  IF status_type IS DISTINCT FROM 'RazorpayWebhookEventStatus' THEN
+    ALTER TABLE "razorpay_webhook_events"
+      ALTER COLUMN "status" DROP DEFAULT,
+      ALTER COLUMN "status" TYPE "RazorpayWebhookEventStatus"
+        USING ("status"::"RazorpayWebhookEventStatus");
+  END IF;
+
+  ALTER TABLE "razorpay_webhook_events"
+    ALTER COLUMN "status" SET DEFAULT 'PROCESSING';
+END $$;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'RazorpayWebhookEvent_pkey'
+      AND conrelid = 'razorpay_webhook_events'::regclass
+  ) THEN
+    ALTER TABLE "razorpay_webhook_events"
+      RENAME CONSTRAINT "RazorpayWebhookEvent_pkey" TO "razorpay_webhook_events_pkey";
+  END IF;
+
+  IF to_regclass('public."RazorpayWebhookEvent_provider_providerEventId_key"') IS NOT NULL
+     AND to_regclass('public.razorpay_webhook_events_provider_provider_event_id_key') IS NULL THEN
+    ALTER INDEX "RazorpayWebhookEvent_provider_providerEventId_key"
+      RENAME TO "razorpay_webhook_events_provider_provider_event_id_key";
+  END IF;
+END $$;
 
 -- Add typed CMS actor relations while preserving records whose historical actor no longer exists.
 UPDATE "cms_media_assets" asset
@@ -108,31 +223,69 @@ SET "actor_user_id" = NULL
 WHERE "actor_user_id" IS NOT NULL
   AND NOT EXISTS (SELECT 1 FROM "users" actor WHERE actor."id" = revision."actor_user_id");
 
-CREATE INDEX "cms_media_assets_created_by_id_idx"
+CREATE INDEX IF NOT EXISTS "cms_media_assets_created_by_id_idx"
   ON "cms_media_assets"("created_by_id");
-CREATE INDEX "cms_revisions_actor_user_id_idx"
+CREATE INDEX IF NOT EXISTS "cms_revisions_actor_user_id_idx"
   ON "cms_revisions"("actor_user_id");
 
-ALTER TABLE "cms_media_assets"
-  ADD CONSTRAINT "cms_media_assets_created_by_id_fkey"
-  FOREIGN KEY ("created_by_id") REFERENCES "users"("id")
-  ON DELETE SET NULL ON UPDATE CASCADE;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'cms_media_assets_created_by_id_fkey'
+      AND conrelid = 'cms_media_assets'::regclass
+  ) THEN
+    ALTER TABLE "cms_media_assets"
+      ADD CONSTRAINT "cms_media_assets_created_by_id_fkey"
+      FOREIGN KEY ("created_by_id") REFERENCES "users"("id")
+      ON DELETE SET NULL ON UPDATE CASCADE;
+  END IF;
 
-ALTER TABLE "cms_revisions"
-  ADD CONSTRAINT "cms_revisions_actor_user_id_fkey"
-  FOREIGN KEY ("actor_user_id") REFERENCES "users"("id")
-  ON DELETE SET NULL ON UPDATE CASCADE;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'cms_revisions_actor_user_id_fkey'
+      AND conrelid = 'cms_revisions'::regclass
+  ) THEN
+    ALTER TABLE "cms_revisions"
+      ADD CONSTRAINT "cms_revisions_actor_user_id_fkey"
+      FOREIGN KEY ("actor_user_id") REFERENCES "users"("id")
+      ON DELETE SET NULL ON UPDATE CASCADE;
+  END IF;
+END $$;
 
 -- Preserve the original AI usage subject key and add an optional typed User relation.
-ALTER TABLE "chat_ai_usage_summaries"
-  RENAME COLUMN "user_id" TO "subject_key";
-ALTER INDEX "chat_ai_usage_summaries_user_id_usage_date_provider_model_key"
-  RENAME TO "chat_ai_usage_summaries_subject_key_usage_date_provider_model_key";
-ALTER INDEX "chat_ai_usage_summaries_user_id_usage_date_idx"
-  RENAME TO "chat_ai_usage_summaries_subject_key_usage_date_idx";
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'chat_ai_usage_summaries'
+      AND column_name = 'user_id'
+  ) AND NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'chat_ai_usage_summaries'
+      AND column_name = 'subject_key'
+  ) THEN
+    ALTER TABLE "chat_ai_usage_summaries"
+      RENAME COLUMN "user_id" TO "subject_key";
+  END IF;
+
+  IF to_regclass('public.chat_ai_usage_summaries_user_id_usage_date_provider_model_key') IS NOT NULL
+     AND to_regclass('public.chat_ai_usage_summaries_subject_key_usage_date_provider_model_key') IS NULL THEN
+    ALTER INDEX "chat_ai_usage_summaries_user_id_usage_date_provider_model_key"
+      RENAME TO "chat_ai_usage_summaries_subject_key_usage_date_provider_model_key";
+  END IF;
+
+  IF to_regclass('public.chat_ai_usage_summaries_user_id_usage_date_idx') IS NOT NULL
+     AND to_regclass('public.chat_ai_usage_summaries_subject_key_usage_date_idx') IS NULL THEN
+    ALTER INDEX "chat_ai_usage_summaries_user_id_usage_date_idx"
+      RENAME TO "chat_ai_usage_summaries_subject_key_usage_date_idx";
+  END IF;
+END $$;
 
 ALTER TABLE "chat_ai_usage_summaries"
-  ADD COLUMN "user_id" UUID;
+  ADD COLUMN IF NOT EXISTS "user_id" UUID;
 
 UPDATE "chat_ai_usage_summaries" summary
 SET "user_id" = summary."subject_key"::UUID
@@ -141,25 +294,34 @@ WHERE summary."subject_key" ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab]
     SELECT 1 FROM "users" actor WHERE actor."id" = summary."subject_key"::UUID
   );
 
-CREATE INDEX "chat_ai_usage_summaries_user_id_usage_date_idx"
+CREATE INDEX IF NOT EXISTS "chat_ai_usage_summaries_user_id_usage_date_idx"
   ON "chat_ai_usage_summaries"("user_id", "usage_date");
 
-ALTER TABLE "chat_ai_usage_summaries"
-  ADD CONSTRAINT "chat_ai_usage_summaries_user_id_fkey"
-  FOREIGN KEY ("user_id") REFERENCES "users"("id")
-  ON DELETE SET NULL ON UPDATE CASCADE;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'chat_ai_usage_summaries_user_id_fkey'
+      AND conrelid = 'chat_ai_usage_summaries'::regclass
+  ) THEN
+    ALTER TABLE "chat_ai_usage_summaries"
+      ADD CONSTRAINT "chat_ai_usage_summaries_user_id_fkey"
+      FOREIGN KEY ("user_id") REFERENCES "users"("id")
+      ON DELETE SET NULL ON UPDATE CASCADE;
+  END IF;
+END $$;
 
 -- Stage seller payout encryption. Existing plaintext columns remain read-only migration fallbacks;
 -- application writes use the encrypted columns added here.
 ALTER TABLE "seller_payout_profiles"
-  ADD COLUMN "account_number_encrypted" TEXT,
-  ADD COLUMN "account_number_last4" VARCHAR(4),
-  ADD COLUMN "ifsc_code_encrypted" TEXT,
-  ADD COLUMN "upi_id_encrypted" TEXT,
-  ADD COLUMN "upi_id_hint" TEXT;
+  ADD COLUMN IF NOT EXISTS "account_number_encrypted" TEXT,
+  ADD COLUMN IF NOT EXISTS "account_number_last4" VARCHAR(4),
+  ADD COLUMN IF NOT EXISTS "ifsc_code_encrypted" TEXT,
+  ADD COLUMN IF NOT EXISTS "upi_id_encrypted" TEXT,
+  ADD COLUMN IF NOT EXISTS "upi_id_hint" TEXT;
 
 -- Immutable seller-split assignment history, captured for every assignment state mutation.
-CREATE TABLE "order_shipment_assignment_events" (
+CREATE TABLE IF NOT EXISTS "order_shipment_assignment_events" (
   "id" UUID NOT NULL DEFAULT gen_random_uuid(),
   "order_shipment_id" UUID NOT NULL,
   "order_id" UUID NOT NULL,
@@ -176,31 +338,61 @@ CREATE TABLE "order_shipment_assignment_events" (
   CONSTRAINT "order_shipment_assignment_events_pkey" PRIMARY KEY ("id")
 );
 
-CREATE INDEX "order_shipment_assignment_events_order_shipment_id_created_at_idx"
+CREATE INDEX IF NOT EXISTS "order_shipment_assignment_events_order_shipment_id_created_at_idx"
   ON "order_shipment_assignment_events"("order_shipment_id", "created_at");
-CREATE INDEX "order_shipment_assignment_events_order_id_created_at_idx"
+CREATE INDEX IF NOT EXISTS "order_shipment_assignment_events_order_id_created_at_idx"
   ON "order_shipment_assignment_events"("order_id", "created_at");
-CREATE INDEX "order_shipment_assignment_events_previous_partner_user_id_idx"
+CREATE INDEX IF NOT EXISTS "order_shipment_assignment_events_previous_partner_user_id_idx"
   ON "order_shipment_assignment_events"("previous_partner_user_id");
-CREATE INDEX "order_shipment_assignment_events_partner_user_id_status_created_at_idx"
+CREATE INDEX IF NOT EXISTS "order_shipment_assignment_events_partner_user_id_status_created_at_idx"
   ON "order_shipment_assignment_events"("partner_user_id", "status", "created_at");
 
-ALTER TABLE "order_shipment_assignment_events"
-  ADD CONSTRAINT "order_shipment_assignment_events_order_shipment_id_fkey"
-  FOREIGN KEY ("order_shipment_id") REFERENCES "order_shipments"("id")
-  ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "order_shipment_assignment_events"
-  ADD CONSTRAINT "order_shipment_assignment_events_order_id_fkey"
-  FOREIGN KEY ("order_id") REFERENCES "orders"("id")
-  ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "order_shipment_assignment_events"
-  ADD CONSTRAINT "order_shipment_assignment_events_previous_partner_user_id_fkey"
-  FOREIGN KEY ("previous_partner_user_id") REFERENCES "users"("id")
-  ON DELETE SET NULL ON UPDATE CASCADE;
-ALTER TABLE "order_shipment_assignment_events"
-  ADD CONSTRAINT "order_shipment_assignment_events_partner_user_id_fkey"
-  FOREIGN KEY ("partner_user_id") REFERENCES "users"("id")
-  ON DELETE SET NULL ON UPDATE CASCADE;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'order_shipment_assignment_events_order_shipment_id_fkey'
+      AND conrelid = 'order_shipment_assignment_events'::regclass
+  ) THEN
+    ALTER TABLE "order_shipment_assignment_events"
+      ADD CONSTRAINT "order_shipment_assignment_events_order_shipment_id_fkey"
+      FOREIGN KEY ("order_shipment_id") REFERENCES "order_shipments"("id")
+      ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'order_shipment_assignment_events_order_id_fkey'
+      AND conrelid = 'order_shipment_assignment_events'::regclass
+  ) THEN
+    ALTER TABLE "order_shipment_assignment_events"
+      ADD CONSTRAINT "order_shipment_assignment_events_order_id_fkey"
+      FOREIGN KEY ("order_id") REFERENCES "orders"("id")
+      ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'order_shipment_assignment_events_previous_partner_user_id_fkey'
+      AND conrelid = 'order_shipment_assignment_events'::regclass
+  ) THEN
+    ALTER TABLE "order_shipment_assignment_events"
+      ADD CONSTRAINT "order_shipment_assignment_events_previous_partner_user_id_fkey"
+      FOREIGN KEY ("previous_partner_user_id") REFERENCES "users"("id")
+      ON DELETE SET NULL ON UPDATE CASCADE;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'order_shipment_assignment_events_partner_user_id_fkey'
+      AND conrelid = 'order_shipment_assignment_events'::regclass
+  ) THEN
+    ALTER TABLE "order_shipment_assignment_events"
+      ADD CONSTRAINT "order_shipment_assignment_events_partner_user_id_fkey"
+      FOREIGN KEY ("partner_user_id") REFERENCES "users"("id")
+      ON DELETE SET NULL ON UPDATE CASCADE;
+  END IF;
+END $$;
 
 INSERT INTO "order_shipment_assignment_events" (
   "order_shipment_id",
@@ -226,8 +418,15 @@ SELECT
   "assignment_expires_at",
   COALESCE("updated_at", "created_at")
 FROM "order_shipments"
-WHERE "delivery_partner_user_id" IS NOT NULL
-   OR "assignment_status" <> 'UNASSIGNED';
+WHERE (
+  "delivery_partner_user_id" IS NOT NULL
+  OR "assignment_status" <> 'UNASSIGNED'
+)
+AND NOT EXISTS (
+  SELECT 1
+  FROM "order_shipment_assignment_events" event
+  WHERE event."order_shipment_id" = "order_shipments"."id"
+);
 
 CREATE OR REPLACE FUNCTION "record_order_shipment_assignment_event"()
 RETURNS TRIGGER AS $$
@@ -307,6 +506,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS "order_shipments_assignment_event_trigger" ON "order_shipments";
 CREATE TRIGGER "order_shipments_assignment_event_trigger"
 AFTER INSERT OR UPDATE OF
   "delivery_partner_user_id",
@@ -327,6 +527,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS "order_shipment_assignment_events_immutable"
+  ON "order_shipment_assignment_events";
 CREATE TRIGGER "order_shipment_assignment_events_immutable"
 BEFORE UPDATE OR DELETE ON "order_shipment_assignment_events"
 FOR EACH ROW
@@ -435,18 +637,24 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS "b2b_procurement_orders_fulfilment_guard"
+  ON "b2b_procurement_orders";
 CREATE TRIGGER "b2b_procurement_orders_fulfilment_guard"
 BEFORE INSERT OR UPDATE OF "fulfilment_plan_id"
 ON "b2b_procurement_orders"
 FOR EACH ROW
 EXECUTE FUNCTION "validate_b2b_fulfilment_child"();
 
+DROP TRIGGER IF EXISTS "b2b_production_jobs_fulfilment_guard"
+  ON "b2b_production_jobs";
 CREATE TRIGGER "b2b_production_jobs_fulfilment_guard"
 BEFORE INSERT OR UPDATE OF "fulfilment_plan_id"
 ON "b2b_production_jobs"
 FOR EACH ROW
 EXECUTE FUNCTION "validate_b2b_fulfilment_child"();
 
+DROP TRIGGER IF EXISTS "b2b_fulfilment_plans_source_guard"
+  ON "b2b_fulfilment_plans";
 CREATE TRIGGER "b2b_fulfilment_plans_source_guard"
 BEFORE UPDATE OF "source"
 ON "b2b_fulfilment_plans"
@@ -455,7 +663,7 @@ EXECUTE FUNCTION "validate_b2b_fulfilment_plan_source"();
 
 -- Store new ERP exports in private object storage while retaining legacy DB bytes for readback.
 ALTER TABLE "b2b_erp_export_jobs"
-  ADD COLUMN "file_key" TEXT;
+  ADD COLUMN IF NOT EXISTS "file_key" TEXT;
 
 -- Consolidate legacy rows into the application singleton before enforcing one active config.
 INSERT INTO "email_settings" (
@@ -543,7 +751,7 @@ SET "is_enabled" = FALSE
 WHERE "id" <> '00000000-0000-0000-0000-000000000001'::UUID
   AND "is_enabled" = TRUE;
 
-CREATE UNIQUE INDEX "email_settings_single_enabled_key"
+CREATE UNIQUE INDEX IF NOT EXISTS "email_settings_single_enabled_key"
   ON "email_settings" (("is_enabled"))
   WHERE "is_enabled" = TRUE;
 
