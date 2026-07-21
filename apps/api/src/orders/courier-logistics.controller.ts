@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Inject, Param, Patch, Post, Put, Query, RawBody, Res, StreamableFile } from "@nestjs/common";
+import { Body, Controller, Get, Headers, HttpCode, HttpStatus, Inject, Param, Patch, Post, Put, Query, RawBody, Res, StreamableFile } from "@nestjs/common";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import { RoleCode } from "@indihub/database";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
@@ -297,6 +297,7 @@ export class CourierWebhooksController {
 
   @Public()
   @Post(":providerCode/tracking")
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Receive idempotent courier tracking webhook events." })
   handleTrackingWebhook(
     @Param("providerCode") providerCode: string,

@@ -3842,7 +3842,7 @@ integrationDescribe("1HandIndia backend integration", () => {
         .post(`/api/webhooks/couriers/${providerCode}/tracking`)
         .set({ "content-type": "application/json", "x-courier-signature": signature })
         .send(rawWebhookBody.toString())
-        .expect(201);
+        .expect(200);
       expect(deliveredWebhook.body).toMatchObject({
         status: "PROCESSED",
         courierShipmentId: expect.any(String),
@@ -3852,7 +3852,7 @@ integrationDescribe("1HandIndia backend integration", () => {
         .post(`/api/webhooks/couriers/${providerCode}/tracking`)
         .set({ "content-type": "application/json", "x-courier-signature": signature })
         .send(rawWebhookBody.toString())
-        .expect(201);
+        .expect(200);
       expect(duplicateWebhook.body).toMatchObject({
         status: "SKIPPED",
         reason: "Duplicate webhook event.",
