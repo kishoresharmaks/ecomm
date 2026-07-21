@@ -47,6 +47,7 @@ pnpm-debug.log*
 .vscode/
 
 # Local caches and temp files
+.expo/
 .cache/
 .tmp/
 .tmp-*.sql

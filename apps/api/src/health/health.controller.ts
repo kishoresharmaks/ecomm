@@ -1,6 +1,6 @@
 import { Controller, Get } from "@nestjs/common";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
-import { brandConfig, phaseOneScope } from "@indihub/config";
+import { brandConfig } from "@indihub/config";
 import { Public } from "../auth/decorators/public.decorator";
 
 @ApiTags("health")
@@ -8,14 +8,12 @@ import { Public } from "../auth/decorators/public.decorator";
 @Controller("health")
 export class HealthController {
   @Get()
-  @ApiOperation({ summary: "Read API health and product metadata." })
+  @ApiOperation({ summary: "Check API liveness." })
   getHealth() {
     return {
       ok: true,
       service: "indihub-api",
       brand: brandConfig.name,
-      phase: "phase-1",
-      budgetInr: phaseOneScope.budgetInr,
       timestamp: new Date().toISOString()
     };
   }
