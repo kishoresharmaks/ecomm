@@ -1,4 +1,4 @@
-import { Controller, Post, Body, UnauthorizedException, Headers } from "@nestjs/common";
+import { Body, Controller, Headers, Inject, Post, UnauthorizedException } from "@nestjs/common";
 import { ApiTags, ApiOperation } from "@nestjs/swagger";
 import { OrdersService } from "./orders.service";
 
@@ -10,7 +10,7 @@ type InternalBatchAssignDto = {
 @ApiTags("Internal Operations")
 @Controller("internal/delivery")
 export class InternalOrdersController {
-  constructor(private readonly ordersService: OrdersService) {}
+  constructor(@Inject(OrdersService) private readonly ordersService: OrdersService) {}
 
   @ApiOperation({ summary: "Batch assign delivery partners to grouped orders" })
   @Post("batch-assign")

@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Headers,
+  Inject,
   Post,
   UnauthorizedException,
 } from "@nestjs/common";
@@ -14,7 +15,9 @@ import { PaymentsService } from "./payments.service";
 @ApiTags("Internal Operations")
 @Controller("internal/payments")
 export class InternalPaymentsController {
-  constructor(private readonly paymentsService: PaymentsService) {}
+  constructor(
+    @Inject(PaymentsService) private readonly paymentsService: PaymentsService,
+  ) {}
 
   @Post("expire-razorpay-reservations")
   @ApiOperation({ summary: "Expire stale unpaid Razorpay order reservations." })

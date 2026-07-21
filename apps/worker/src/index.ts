@@ -23,6 +23,9 @@ import { startDeliveryBatchRoutingPolling } from "./delivery-routing-batch-worke
 const logger = pino({
   name: "indihub-worker",
   level: process.env.LOG_LEVEL ?? "info",
+  serializers: {
+    error: pino.stdSerializers.err,
+  },
 });
 
 const phaseOneQueues = [

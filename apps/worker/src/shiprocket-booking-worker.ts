@@ -186,7 +186,7 @@ async function claimShiprocketBookings(limit: number): Promise<ClaimedShipment[]
       FROM "order_shipments" os
       LEFT JOIN "courier_shipments" cs ON cs."order_shipment_id" = os.id
       WHERE os."ready_for_booking_at" IS NOT NULL
-        AND os."delivery_mode" = 'MANUAL_COURIER'
+        AND os."delivery_mode" = 'THIRD_PARTY_COURIER'
         AND os."courier_provider_code" = ${providerCode}
         AND os."status" NOT IN ('DELIVERED', 'CANCELLED')
         AND (
