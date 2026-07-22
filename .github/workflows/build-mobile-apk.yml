@@ -56,8 +56,6 @@ jobs:
     name: Build Android Release (${{ matrix.app }})
 
     runs-on: ubuntu-latest
-    env:
-      GRADLE_USER_HOME: ${{ runner.temp }}/gradle
 
     strategy:
       fail-fast: false
@@ -65,7 +63,16 @@ jobs:
 
     steps:
       # -------------------------------------------------------
-      # Runner disk
+      # Configure Gradle temporary directory
+      # -------------------------------------------------------
+
+      - name: Configure Gradle home
+        run: |
+          echo "GRADLE_USER_HOME=$RUNNER_TEMP/gradle" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/gradle"
+
+      # -------------------------------------------------------
+      # Free runner disk space
       # -------------------------------------------------------
 
       - name: Free runner disk space
@@ -124,20 +131,13 @@ jobs:
       # -------------------------------------------------------
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile --filter "./apps/${{ matrix.app }}..."
+        run: |
+          pnpm install \
+            --frozen-lockfile \
+            --filter "./apps/${{ matrix.app }}..."
 
       # -------------------------------------------------------
       # Firebase google-services.json
-      #
-      # Supported secrets:
-      #
-      # MOBILE_CUSTOMER_GOOGLE_SERVICES_JSON
-      # MOBILE_DELIVERY_GOOGLE_SERVICES_JSON
-      # MOBILE_SELLER_GOOGLE_SERVICES_JSON
-      #
-      # Base64 versions are also supported.
-      #
-      # GOOGLE_SERVICES_JSON is used as a generic fallback.
       # -------------------------------------------------------
 
       - name: Create Firebase google-services.json
@@ -165,7 +165,6 @@ jobs:
           CONFIG_JSON_B64=""
 
           case "$APP_NAME" in
-
             mobile-customer)
               CONFIG_JSON="$CUSTOMER_GOOGLE_SERVICES_JSON"
               CONFIG_JSON_B64="$CUSTOMER_GOOGLE_SERVICES_JSON_B64"
@@ -180,10 +179,8 @@ jobs:
               CONFIG_JSON="$SELLER_GOOGLE_SERVICES_JSON"
               CONFIG_JSON_B64="$SELLER_GOOGLE_SERVICES_JSON_B64"
               ;;
-
           esac
 
-          # Use generic secret as fallback
           CONFIG_JSON="${CONFIG_JSON:-$GENERIC_GOOGLE_SERVICES_JSON}"
           CONFIG_JSON_B64="${CONFIG_JSON_B64:-$GENERIC_GOOGLE_SERVICES_JSON_B64}"
 
@@ -220,27 +217,16 @@ jobs:
 
             echo "ERROR: google-services.json was not provided for $APP_NAME."
             echo ""
-            echo "Create one of these GitHub Secrets:"
-            echo ""
-            echo "MOBILE_CUSTOMER_GOOGLE_SERVICES_JSON"
-            echo "MOBILE_DELIVERY_GOOGLE_SERVICES_JSON"
-            echo "MOBILE_SELLER_GOOGLE_SERVICES_JSON"
-            echo ""
-            echo "Or use the generic:"
-            echo ""
-            echo "GOOGLE_SERVICES_JSON"
-            echo ""
+            echo "Configure an app-specific GitHub Secret or GOOGLE_SERVICES_JSON."
             exit 1
 
           fi
 
-          # Verify that the file is not empty
           if [ ! -s "$OUTPUT_FILE" ]; then
             echo "ERROR: $OUTPUT_FILE is empty."
             exit 1
           fi
 
-          # Validate JSON without printing secret contents
           node -e "
             const fs = require('fs');
             const file = process.argv[1];
@@ -249,7 +235,9 @@ jobs:
               JSON.parse(fs.readFileSync(file, 'utf8'));
               console.log('google-services.json is valid JSON.');
             } catch (error) {
-              console.error('ERROR: google-services.json contains invalid JSON.');
+              console.error(
+                'ERROR: google-services.json contains invalid JSON.'
+              );
               process.exit(1);
             }
           " "$OUTPUT_FILE"
@@ -258,7 +246,7 @@ jobs:
       # Expo Prebuild
       # -------------------------------------------------------
 
-      - name: Expo Prebuild (Ensure Native Android Project)
+      - name: Expo Prebuild
         working-directory: apps/${{ matrix.app }}
 
         env:
@@ -274,11 +262,7 @@ jobs:
             --no-install
 
       # -------------------------------------------------------
-      # Explicitly install google-services.json into Android
-      #
-      # This guarantees Gradle can find:
-      #
-      # android/app/google-services.json
+      # Install Firebase configuration
       # -------------------------------------------------------
 
       - name: Install Firebase config into Android project
@@ -290,8 +274,7 @@ jobs:
 
           if [ ! -s "$SOURCE_FILE" ]; then
             echo "ERROR: Firebase source configuration is missing."
-            echo "Expected:"
-            echo "$SOURCE_FILE"
+            echo "Expected: $SOURCE_FILE"
             exit 1
           fi
 
@@ -302,7 +285,7 @@ jobs:
           echo "Firebase configuration installed successfully."
 
       # -------------------------------------------------------
-      # Final Firebase verification
+      # Verify Firebase configuration
       # -------------------------------------------------------
 
       - name: Verify Android Firebase configuration
@@ -313,9 +296,6 @@ jobs:
 
           if [ ! -f "$FIREBASE_FILE" ]; then
             echo "ERROR: google-services.json does not exist."
-            echo ""
-            echo "Expected location:"
-            echo "$FIREBASE_FILE"
             exit 1
           fi
 
@@ -366,13 +346,15 @@ jobs:
 
       # -------------------------------------------------------
       # Gradle Cache
+      #
+      # runner.temp expression removed to avoid workflow
+      # validation error.
       # -------------------------------------------------------
 
-      - name: Cache Gradle
+      - name: Cache Gradle wrapper
         uses: actions/cache@v4
-
         with:
-          path: ${{ runner.temp }}/gradle/wrapper
+          path: /home/runner/work/_temp/gradle/wrapper
 
           key: >-
             ${{ runner.os }}-gradle-${{ matrix.app }}-${{
@@ -405,14 +387,13 @@ jobs:
       # -------------------------------------------------------
 
       - name: Decode Keystore
-
         env:
           ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
 
         run: |
           if [ -n "$ANDROID_KEYSTORE_B64" ]; then
 
-            echo "$ANDROID_KEYSTORE_B64" \
+            printf '%s' "$ANDROID_KEYSTORE_B64" \
               | base64 --decode \
               > apps/${{ matrix.app }}/android/app/release.keystore
 
@@ -426,7 +407,7 @@ jobs:
           fi
 
       # -------------------------------------------------------
-      # Build Release APK
+      # Disk check before build
       # -------------------------------------------------------
 
       - name: Check disk space before Gradle build
@@ -434,15 +415,20 @@ jobs:
           echo "Disk space before Gradle:"
           df -h /
 
-          echo "Largest build directories:"
+          echo ""
+          echo "Largest relevant directories:"
+
           du -sh \
             node_modules \
             "apps/${{ matrix.app }}/android" \
             "$GRADLE_USER_HOME" \
             2>/dev/null || true
 
-      - name: Build Android APK (.apk)
+      # -------------------------------------------------------
+      # Build Release APK
+      # -------------------------------------------------------
 
+      - name: Build Android APK (.apk)
         working-directory: apps/${{ matrix.app }}/android
 
         env:
@@ -477,7 +463,10 @@ jobs:
 
             KEYSTORE_PATH="$(pwd)/app/release.keystore"
 
-            ./gradlew --no-daemon --max-workers=2 assembleRelease \
+            ./gradlew \
+              --no-daemon \
+              --max-workers=2 \
+              assembleRelease \
               -Pandroid.injected.signing.store.file="$KEYSTORE_PATH" \
               -Pandroid.injected.signing.store.password="$STORE_PASS" \
               -Pandroid.injected.signing.key.alias="$ALIAS" \
@@ -486,14 +475,17 @@ jobs:
           else
 
             echo "Custom signing configuration is incomplete."
-            echo "Building release APK using the project's configured signing."
+            echo "Building using project's configured signing."
 
-            ./gradlew --no-daemon --max-workers=2 assembleRelease
+            ./gradlew \
+              --no-daemon \
+              --max-workers=2 \
+              assembleRelease
 
           fi
 
       # -------------------------------------------------------
-      # Locate APK
+      # Verify APK
       # -------------------------------------------------------
 
       - name: Verify Release APK
@@ -520,6 +512,10 @@ jobs:
 
           ls -lh "$APK_FILE"
 
+      # -------------------------------------------------------
+      # Preserve APK and clean build files
+      # -------------------------------------------------------
+
       - name: Preserve APK and free build space
         run: |
           APK_FILE="apps/${{ matrix.app }}/android/app/build/outputs/apk/release/app-release.apk"
@@ -537,21 +533,22 @@ jobs:
 
           echo "Disk space before artifact upload:"
           df -h /
+
+          echo "APK artifact:"
           ls -lh "$ARTIFACT_FILE"
 
       # -------------------------------------------------------
       # Upload APK
+      #
+      # Use environment variable because runner.temp expression
+      # caused workflow validation failure.
       # -------------------------------------------------------
 
       - name: Upload Release APK (.apk) Artifact
-
         uses: actions/upload-artifact@v4
 
         with:
           name: ${{ matrix.app }}-release-apk
-
-          path: ${{ runner.temp }}/${{ matrix.app }}-release.apk
-
+          path: /home/runner/work/_temp/${{ matrix.app }}-release.apk
           if-no-files-found: error
-
           retention-days: 14
