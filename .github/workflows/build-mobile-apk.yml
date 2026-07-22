@@ -56,12 +56,35 @@ jobs:
     name: Build Android Release (${{ matrix.app }})
 
     runs-on: ubuntu-latest
+    env:
+      GRADLE_USER_HOME: ${{ runner.temp }}/gradle
 
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.prep-matrix.outputs.matrix) }}
 
     steps:
+      # -------------------------------------------------------
+      # Runner disk
+      # -------------------------------------------------------
+
+      - name: Free runner disk space
+        run: |
+          echo "Disk space before cleanup:"
+          df -h /
+
+          sudo rm -rf \
+            /usr/share/dotnet \
+            /opt/ghc \
+            /usr/local/share/boost \
+            /opt/hostedtoolcache/CodeQL
+
+          sudo apt-get clean
+          sudo docker system prune --all --force || true
+
+          echo "Disk space after cleanup:"
+          df -h /
+
       # -------------------------------------------------------
       # Checkout
       # -------------------------------------------------------
@@ -101,7 +124,7 @@ jobs:
       # -------------------------------------------------------
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile --filter "./apps/${{ matrix.app }}..."
 
       # -------------------------------------------------------
       # Firebase google-services.json
@@ -349,9 +372,7 @@ jobs:
         uses: actions/cache@v4
 
         with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
+          path: ${{ runner.temp }}/gradle/wrapper
 
           key: >-
             ${{ runner.os }}-gradle-${{ matrix.app }}-${{
@@ -408,6 +429,18 @@ jobs:
       # Build Release APK
       # -------------------------------------------------------
 
+      - name: Check disk space before Gradle build
+        run: |
+          echo "Disk space before Gradle:"
+          df -h /
+
+          echo "Largest build directories:"
+          du -sh \
+            node_modules \
+            "apps/${{ matrix.app }}/android" \
+            "$GRADLE_USER_HOME" \
+            2>/dev/null || true
+
       - name: Build Android APK (.apk)
 
         working-directory: apps/${{ matrix.app }}/android
@@ -444,7 +477,7 @@ jobs:
 
             KEYSTORE_PATH="$(pwd)/app/release.keystore"
 
-            ./gradlew assembleRelease \
+            ./gradlew --no-daemon --max-workers=2 assembleRelease \
               -Pandroid.injected.signing.store.file="$KEYSTORE_PATH" \
               -Pandroid.injected.signing.store.password="$STORE_PASS" \
               -Pandroid.injected.signing.key.alias="$ALIAS" \
@@ -455,7 +488,7 @@ jobs:
             echo "Custom signing configuration is incomplete."
             echo "Building release APK using the project's configured signing."
 
-            ./gradlew assembleRelease
+            ./gradlew --no-daemon --max-workers=2 assembleRelease
 
           fi
 
@@ -487,6 +520,25 @@ jobs:
 
           ls -lh "$APK_FILE"
 
+      - name: Preserve APK and free build space
+        run: |
+          APK_FILE="apps/${{ matrix.app }}/android/app/build/outputs/apk/release/app-release.apk"
+          ARTIFACT_FILE="$RUNNER_TEMP/${{ matrix.app }}-release.apk"
+
+          cp "$APK_FILE" "$ARTIFACT_FILE"
+
+          rm -rf \
+            node_modules \
+            "apps/${{ matrix.app }}/android/.gradle" \
+            "apps/${{ matrix.app }}/android/app/build" \
+            "$GRADLE_USER_HOME/caches"
+
+          pnpm store prune || true
+
+          echo "Disk space before artifact upload:"
+          df -h /
+          ls -lh "$ARTIFACT_FILE"
+
       # -------------------------------------------------------
       # Upload APK
       # -------------------------------------------------------
@@ -498,8 +550,7 @@ jobs:
         with:
           name: ${{ matrix.app }}-release-apk
 
-          path: >-
-            apps/${{ matrix.app }}/android/app/build/outputs/apk/release/app-release.apk
+          path: ${{ runner.temp }}/${{ matrix.app }}-release.apk
 
           if-no-files-found: error
 

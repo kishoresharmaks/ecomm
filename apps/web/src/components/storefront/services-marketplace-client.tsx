@@ -554,9 +554,9 @@ function primaryServiceImage(service: ServiceListing) {
 }
 
 function servicePriceLabel(service: ServiceListing) {
-  if (service.pricingModel === "QUOTE_FIRST") return "Quote after review";
-  if (service.pricingModel === "INSPECTION_FEE") return `Inspection ${formatMoney(service.inspectionFeePaise ?? 0, service.currency)}`;
-  return `Starts at ${formatMoney(service.basePricePaise ?? service.packages?.[0]?.pricePaise ?? 0, service.currency)}`;
+  if (service.pricingModel === "QUOTE_FIRST") return "Final quote includes GST where applicable";
+  if (service.pricingModel === "INSPECTION_FEE") return `Inspection ${formatMoney(service.inspectionFeePaise ?? 0, service.currency)} · GST included`;
+  return `Starts at ${formatMoney(service.basePricePaise ?? service.packages?.[0]?.pricePaise ?? 0, service.currency)} · GST included`;
 }
 
 function ratingLabel(service: ServiceListing) {

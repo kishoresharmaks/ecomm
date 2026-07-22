@@ -5,6 +5,8 @@ import {
   ProductTaxClassification,
   Prisma,
   ServiceBookingStatus,
+  ServiceQuoteLineType,
+  ServiceQuoteStatus,
   SellerTaxRegistrationStatus,
   TaxDocumentLineType,
   TaxDocumentSource,
@@ -751,6 +753,12 @@ export class TaxDocumentsService {
         where: { id: serviceBookingId },
         include: {
           listing: true,
+          quotes: {
+            where: { status: ServiceQuoteStatus.ACCEPTED },
+            include: { lineItems: { orderBy: [{ sortOrder: "asc" }, { id: "asc" }] } },
+            orderBy: { acceptedAt: "desc" },
+            take: 1,
+          },
           taxDocuments: {
             where: { source: TaxDocumentSource.SERVICE_BOOKING },
             orderBy: { createdAt: "desc" },
@@ -775,9 +783,13 @@ export class TaxDocumentsService {
       }
 
       const issueDate = booking.completionConfirmedAt ?? new Date();
+      const acceptedQuote = booking.quotes?.[0];
+      const classifications =
+        acceptedQuote?.lineItems.map((line) => line.taxClassification) ??
+        [booking.serviceTaxClassificationSnapshot];
       const documentType = this.outwardDocumentType(
         booking.sellerTaxRegistrationStatusSnapshot,
-        [booking.serviceTaxClassificationSnapshot],
+        classifications,
       );
       const financialYear = this.financialYear(issueDate);
       const documentNumber = await this.nextDocumentNumber(
@@ -817,7 +829,7 @@ export class TaxDocumentsService {
           buyerGstin: booking.buyerGstinSnapshot,
           supplyType: booking.taxSupplyTypeSnapshot,
           invoiceValuePaise: booking.totalPayablePaise,
-          classifications: [booking.serviceTaxClassificationSnapshot],
+          classifications,
         }),
         currency: booking.currency,
         taxableValuePaise: booking.taxableValuePaise,
@@ -829,23 +841,52 @@ export class TaxDocumentsService {
         invoiceValuePaise: booking.totalPayablePaise,
         ...(actorUserId ? { issuedBy: { connect: { id: actorUserId } } } : {}),
         lines: {
-          create: {
-            lineType: TaxDocumentLineType.SERVICE,
-            description: booking.listing.title,
-            hsnSacCode: booking.sacCodeSnapshot,
-            taxClassification: booking.serviceTaxClassificationSnapshot,
-            quantity: 1,
-            unitPricePaise: booking.totalPayablePaise,
-            grossValuePaise: booking.totalPayablePaise,
-            taxableValuePaise: booking.taxableValuePaise,
-            gstRatePercent: booking.gstRatePercentSnapshot,
-            cgstPaise: booking.cgstPaise,
-            sgstPaise: booking.sgstPaise,
-            igstPaise: booking.igstPaise,
-            cessPaise: booking.cessPaise,
-            totalTaxPaise: booking.taxTotalPaise,
-            lineValuePaise: booking.totalPayablePaise,
-          },
+          create: acceptedQuote?.lineItems.length
+            ? acceptedQuote.lineItems.map((line) => ({
+                lineType:
+                  line.lineType === ServiceQuoteLineType.PRODUCT
+                    ? TaxDocumentLineType.PRODUCT
+                    : TaxDocumentLineType.SERVICE,
+                description: line.description,
+                hsnSacCode: line.hsnSacCode,
+                classificationDescriptionSnapshot:
+                  line.classificationDescriptionSnapshot,
+                classificationSourceSnapshot: line.classificationSourceSnapshot,
+                taxSnapshotVersion: line.taxSnapshotVersion,
+                taxClassification: line.taxClassification,
+                quantity: line.quantity,
+                uqc: line.uqc,
+                unitPricePaise: line.unitPaise,
+                grossValuePaise: line.totalPaise,
+                taxableValuePaise: line.taxableValuePaise,
+                gstRatePercent: line.gstRatePercent,
+                cgstPaise: line.cgstPaise,
+                sgstPaise: line.sgstPaise,
+                igstPaise: line.igstPaise,
+                cessPaise: line.cessPaise,
+                totalTaxPaise: line.taxTotalPaise,
+                lineValuePaise: line.totalPaise,
+              }))
+            : {
+                lineType: TaxDocumentLineType.SERVICE,
+                description: booking.listing.title,
+                hsnSacCode: booking.sacCodeSnapshot,
+                classificationDescriptionSnapshot: booking.sacDescriptionSnapshot,
+                classificationSourceSnapshot: booking.sacSourceReferenceSnapshot,
+                taxSnapshotVersion: booking.taxSnapshotVersion,
+                taxClassification: booking.serviceTaxClassificationSnapshot,
+                quantity: 1,
+                unitPricePaise: booking.totalPayablePaise,
+                grossValuePaise: booking.totalPayablePaise,
+                taxableValuePaise: booking.taxableValuePaise,
+                gstRatePercent: booking.gstRatePercentSnapshot,
+                cgstPaise: booking.cgstPaise,
+                sgstPaise: booking.sgstPaise,
+                igstPaise: booking.igstPaise,
+                cessPaise: booking.cessPaise,
+                totalTaxPaise: booking.taxTotalPaise,
+                lineValuePaise: booking.totalPayablePaise,
+              },
         },
         compliance: { create: {} },
       };
@@ -1493,8 +1534,9 @@ export class TaxDocumentsService {
         taxTotalPaise: 0,
       };
     }
-    const taxableValuePaise = Math.round(
-      (considerationPaise * 10_000) / (10_000 + rateBps),
+    const divisor = 10_000 + rateBps;
+    const taxableValuePaise = Math.floor(
+      (considerationPaise * 10_000 + Math.floor(divisor / 2)) / divisor,
     );
     const taxTotalPaise = Math.max(0, considerationPaise - taxableValuePaise);
     if (supplyType === TaxSupplyType.INTRA_STATE) {

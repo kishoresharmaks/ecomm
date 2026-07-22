@@ -123,7 +123,9 @@ import {
   downloadSellerAuditWorkbook,
   type AdminSellerExportRecord,
 } from "@/lib/admin-seller-excel-export";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { resolveImageSource } from "@/lib/image-url";
+import { searchSacMaster, type SacMasterEntry } from "@/lib/storefront-api";
 import {
   type LocationArea,
   type LocationCity,
@@ -969,6 +971,7 @@ type CategoryRecord = {
   imageUrl?: string | null;
   defaultTaxClassification?: ProductTaxClassification;
   defaultHsnCode?: string | null;
+  defaultSacCode?: string | null;
   defaultGstRatePercent?: number | string | null;
   defaultTaxDescription?: string | null;
   status: string;
@@ -9527,6 +9530,7 @@ export function AdminCategoriesPageClient() {
       description?: string | undefined;
       imageUrl?: string | undefined;
       defaultHsnCode?: string | undefined;
+      defaultSacCode?: string | undefined;
       defaultGstRatePercent?: number | undefined;
       defaultTaxClassification?: ProductTaxClassification | undefined;
       defaultTaxDescription?: string | undefined;
@@ -9553,6 +9557,7 @@ export function AdminCategoriesPageClient() {
         description?: string | undefined;
         imageUrl?: string | null | undefined;
         defaultHsnCode?: string | null | undefined;
+        defaultSacCode?: string | null | undefined;
         defaultGstRatePercent?: number | null | undefined;
         defaultTaxClassification?: ProductTaxClassification | undefined;
         defaultTaxDescription?: string | null | undefined;
@@ -15419,6 +15424,76 @@ function TextInput({
   );
 }
 
+function SacCodeInput({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const [search, setSearch] = useState(value);
+  const [open, setOpen] = useState(false);
+  const debouncedSearch = useDebouncedValue(search, 250);
+  const suggestions = useQuery({
+    queryKey: ["admin-sac-master", debouncedSearch],
+    queryFn: () => searchSacMaster({ search: debouncedSearch, limit: 8 }),
+    enabled: debouncedSearch.trim().length >= 2,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  useEffect(() => {
+    if (value !== search && value !== debouncedSearch) {
+      setSearch(value);
+    }
+  }, [debouncedSearch, search, value]);
+
+  const select = (entry: SacMasterEntry) => {
+    setSearch(entry.sacCode);
+    setOpen(false);
+    onChange(entry.sacCode);
+  };
+
+  return (
+    <label className="relative block">
+      <span className="text-xs font-black uppercase tracking-wide text-[#667085]">Default SAC</span>
+      <input
+        value={search}
+        inputMode="numeric"
+        maxLength={6}
+        onChange={(event) => {
+          const nextValue = event.target.value.replace(/\D/g, "").slice(0, 6);
+          setSearch(nextValue);
+          setOpen(true);
+          onChange(nextValue);
+        }}
+        onFocus={() => setOpen(true)}
+        placeholder="Search 6-digit SAC"
+        className="mt-1 h-10 w-full rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold text-[#1F2933] outline-none transition focus:border-[#ED3500] focus:ring-2 focus:ring-[#FFE0D6]"
+      />
+      {open && suggestions.data?.length ? (
+        <div className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-md border border-[#D8E2EA] bg-white p-1 shadow-lg">
+          {suggestions.data.map((entry) => (
+            <button
+              key={entry.id}
+              type="button"
+              onClick={() => select(entry)}
+              className="block w-full rounded-md px-3 py-2 text-left hover:bg-[#FFF2EE]"
+            >
+              <span className="block text-sm font-black text-[#123A5A]">{entry.sacCode}</span>
+              <span className="mt-0.5 block text-xs font-semibold leading-5 text-[#667085]">
+                {entry.description}
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+      <span className="mt-1 block text-xs font-semibold leading-5 text-[#667085]">
+        Select the service classification default. Sellers still confirm the SAC and GST rate on each listing.
+      </span>
+    </label>
+  );
+}
+
 function TextAreaInput({
   label,
   value,
@@ -16160,9 +16235,10 @@ function productTemplateOptions(templates: ProductTemplateRecord[]): AdminSelect
 function categoryTaxLines(category: CategoryRecord) {
   if (
     !category.defaultHsnCode &&
+    !category.defaultSacCode &&
     (category.defaultGstRatePercent === null || category.defaultGstRatePercent === undefined)
   ) {
-    return ["No default HSN", "Seller must enter tax data"];
+    return ["No default HSN or SAC", "Seller must enter tax data"];
   }
 
   return [
@@ -16170,6 +16246,7 @@ function categoryTaxLines(category: CategoryRecord) {
       ? humanize(category.defaultTaxClassification)
       : "Taxable",
     category.defaultHsnCode ? `HSN ${category.defaultHsnCode}` : "No HSN code",
+    category.defaultSacCode ? `SAC ${category.defaultSacCode}` : "No SAC code",
     category.defaultGstRatePercent !== null && category.defaultGstRatePercent !== undefined
       ? `GST ${category.defaultGstRatePercent}%`
       : "No GST rate",
@@ -16288,6 +16365,7 @@ function CategoryCreateForm({
     imageUrl?: string | undefined;
     defaultTaxClassification?: ProductTaxClassification | undefined;
     defaultHsnCode?: string | undefined;
+    defaultSacCode?: string | undefined;
     defaultGstRatePercent?: number | undefined;
     defaultTaxDescription?: string | undefined;
     status: string;
@@ -16304,6 +16382,7 @@ function CategoryCreateForm({
     sortOrder: "0",
     productTemplateId: "",
     defaultHsnCode: "",
+    defaultSacCode: "",
     defaultGstRatePercent: "",
     defaultTaxClassification: "TAXABLE" as ProductTaxClassification,
     defaultTaxDescription: "",
@@ -16384,6 +16463,10 @@ function CategoryCreateForm({
               value={form.defaultHsnCode}
               onChange={(defaultHsnCode) => setForm((current) => ({ ...current, defaultHsnCode }))}
             />
+            <SacCodeInput
+              value={form.defaultSacCode}
+              onChange={(defaultSacCode) => setForm((current) => ({ ...current, defaultSacCode }))}
+            />
             {form.defaultTaxClassification === "TAXABLE" ? (
               <TextInput
                 label="Default GST %"
@@ -16435,6 +16518,7 @@ function CategoryCreateForm({
               imageUrl: form.imageUrl || undefined,
               defaultTaxClassification: form.defaultTaxClassification,
               defaultHsnCode: form.defaultHsnCode || undefined,
+              defaultSacCode: form.defaultSacCode || undefined,
               defaultGstRatePercent: form.defaultGstRatePercent
                 ? Number(form.defaultGstRatePercent)
                 : undefined,
@@ -16567,6 +16651,7 @@ function CategoryEditForm({
       description?: string | undefined;
       imageUrl?: string | null | undefined;
       defaultHsnCode?: string | null | undefined;
+      defaultSacCode?: string | null | undefined;
       defaultGstRatePercent?: number | null | undefined;
       defaultTaxClassification?: ProductTaxClassification | undefined;
       defaultTaxDescription?: string | null | undefined;
@@ -16587,6 +16672,7 @@ function CategoryEditForm({
     defaultTaxClassification:
       category.defaultTaxClassification ?? ("TAXABLE" as ProductTaxClassification),
     defaultHsnCode: category.defaultHsnCode ?? "",
+    defaultSacCode: category.defaultSacCode ?? "",
     defaultGstRatePercent:
       category.defaultGstRatePercent === null || category.defaultGstRatePercent === undefined
         ? ""
@@ -16679,6 +16765,10 @@ function CategoryEditForm({
               value={form.defaultHsnCode}
               onChange={(defaultHsnCode) => setForm((current) => ({ ...current, defaultHsnCode }))}
             />
+            <SacCodeInput
+              value={form.defaultSacCode}
+              onChange={(defaultSacCode) => setForm((current) => ({ ...current, defaultSacCode }))}
+            />
             {form.defaultTaxClassification === "TAXABLE" ? (
               <TextInput
                 label="Default GST %"
@@ -16736,6 +16826,7 @@ function CategoryEditForm({
               imageUrl: form.imageUrl || null,
               defaultTaxClassification: form.defaultTaxClassification,
               defaultHsnCode: form.defaultHsnCode || null,
+              defaultSacCode: form.defaultSacCode || null,
               defaultGstRatePercent: form.defaultGstRatePercent
                 ? Number(form.defaultGstRatePercent)
                 : null,

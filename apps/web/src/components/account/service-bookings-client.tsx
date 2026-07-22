@@ -600,15 +600,37 @@ function CustomerServiceActions({
 
 function QuoteRow({ quote }: { quote: ServiceQuote }) {
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-4 sm:flex-row sm:items-center sm:justify-between">
-      <div>
-        <p className="text-sm font-black text-[#1F2933]">{quote.quoteNumber}</p>
-        <p className="mt-1 text-xs font-semibold text-[#667085]">{quote.note ?? formatDateTime(quote.sentAt)}</p>
+    <div className="rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm font-black text-[#1F2933]">
+            {quote.quoteNumber}
+            {quote.revisionNumber ? ` · Revision ${quote.revisionNumber}` : ""}
+          </p>
+          <p className="mt-1 text-xs font-semibold text-[#667085]">{quote.note ?? formatDateTime(quote.sentAt)}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <StatusPill status={quote.status} />
+          <span className="font-black text-[#163B5C]">{formatMoney(quote.totalPaise, quote.currency)}</span>
+        </div>
       </div>
-      <div className="flex items-center gap-2">
-        <StatusPill status={quote.status} />
-        <span className="font-black text-[#163B5C]">{formatMoney(quote.totalPaise, quote.currency)}</span>
-      </div>
+      {quote.lineItems?.length ? (
+        <div className="mt-3 grid gap-2">
+          {quote.lineItems.map((line, index) => (
+            <div key={line.id ?? `${quote.id}-${index}`} className="rounded-md border border-[#E5E7EB] bg-white p-3">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <p className="text-sm font-black text-[#1F2933]">{line.description}</p>
+                  <p className="mt-1 text-xs font-semibold text-[#667085]">
+                    {line.lineType === "PRODUCT" ? "Product / HSN" : "Service / SAC"} {line.hsnSacCode ?? "Not applicable"} · GST {Number(line.gstRatePercent ?? 0)}% included
+                  </p>
+                </div>
+                <p className="text-sm font-black text-[#163B5C]">{formatMoney(line.totalPaise, quote.currency)}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

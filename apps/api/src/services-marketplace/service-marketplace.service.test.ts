@@ -16,6 +16,7 @@ import {
   ServicePaymentCollectionType,
   ServicePaymentSettlementTreatment,
   ServicePricingModel,
+  ServiceQuoteLineType,
   ServiceVisitMode,
   TaxSupplyType,
 } from "@indihub/database";
@@ -39,6 +40,14 @@ describe("ServiceMarketplaceService serviceability", () => {
         findFirst: vi.fn(),
         findMany: vi.fn(),
         count: vi.fn(),
+        updateMany: vi.fn(),
+        findUniqueOrThrow: vi.fn(),
+      },
+      sacMaster: {
+        findFirst: vi.fn(),
+      },
+      hsnMaster: {
+        findFirst: vi.fn(),
       },
       seller: {
         findUnique: vi.fn(),
@@ -113,6 +122,17 @@ describe("ServiceMarketplaceService serviceability", () => {
       bookingNumber: data.bookingNumber,
     }));
     prisma.client.serviceBooking.update.mockResolvedValue({});
+    prisma.client.serviceListing.updateMany.mockResolvedValue({ count: 1 });
+    prisma.client.serviceListing.findUniqueOrThrow.mockResolvedValue(serviceListing());
+    prisma.client.sacMaster.findFirst.mockResolvedValue({
+      id: "sac-1",
+      sacCode: "998719",
+      description: "Maintenance and repair services",
+      sourceReference: "GST Council classification",
+    });
+    prisma.client.hsnMaster.findFirst.mockResolvedValue({
+      description: "Electrical spare parts",
+    });
     prisma.client.seller.findUnique.mockResolvedValue(serviceSeller());
     prisma.client.serviceBookingSettlement.findUnique.mockResolvedValue(null);
     prisma.client.serviceRefundRequest.aggregate.mockResolvedValue({ _sum: { amountPaise: 0 } });
@@ -221,6 +241,125 @@ describe("ServiceMarketplaceService serviceability", () => {
         igstPaise: 0,
         taxTotalPaise: 7612,
       }),
+    });
+  });
+
+  it("rejects stale tax configuration versions before admin approval", async () => {
+    prisma.client.serviceListing.findFirst.mockResolvedValueOnce(
+      serviceListing({
+        taxConfigurationVersion: 4,
+        taxReviewRequired: true,
+        gstRatePercent: 18,
+        seller: {
+          ...(serviceListing().seller as Record<string, unknown>),
+          profile: {
+            businessLegalName: "A2D Services",
+            taxRegistrationStatus: SellerTaxRegistrationStatus.GST_REGISTERED,
+            gstNumber: "33ABCDE1234F1Z5",
+          },
+        },
+      }),
+    );
+
+    await expect(
+      createService().adminUpdateServiceApproval(
+        "listing-1",
+        {
+          approvalStatus: ApprovalStatus.APPROVED,
+          expectedTaxConfigurationVersion: 3,
+        },
+        { id: "admin-1", email: "admin@example.com", roles: [] } as never,
+      ),
+    ).rejects.toThrow("Service tax configuration changed");
+    expect(prisma.client.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("rejects approval when the tax version changes during the transaction", async () => {
+    const listing = serviceListing({
+      taxConfigurationVersion: 4,
+      taxReviewRequired: true,
+      gstRatePercent: 18,
+      seller: {
+        ...(serviceListing().seller as Record<string, unknown>),
+        profile: {
+          businessLegalName: "A2D Services",
+          taxRegistrationStatus: SellerTaxRegistrationStatus.GST_REGISTERED,
+          gstNumber: "33ABCDE1234F1Z5",
+        },
+      },
+    });
+    prisma.client.serviceListing.findFirst.mockResolvedValueOnce(listing);
+    prisma.client.serviceListing.updateMany.mockResolvedValueOnce({ count: 0 });
+
+    await expect(
+      createService().adminUpdateServiceApproval(
+        "listing-1",
+        {
+          approvalStatus: ApprovalStatus.APPROVED,
+          expectedTaxConfigurationVersion: 4,
+        },
+        { id: "admin-1", email: "admin@example.com", roles: [] } as never,
+      ),
+    ).rejects.toThrow("Service changed during approval");
+  });
+
+  it("calculates independent inclusive tax snapshots for mixed SAC and HSN quote lines", async () => {
+    const booking = serviceBookingRecord(serviceListing(), {
+      sellerTaxRegistrationStatusSnapshot: SellerTaxRegistrationStatus.GST_REGISTERED,
+      serviceTaxClassificationSnapshot: ProductTaxClassification.TAXABLE,
+      gstRatePercentSnapshot: 18,
+      taxSupplyTypeSnapshot: TaxSupplyType.INTRA_STATE,
+    });
+    const service = createService() as unknown as {
+      serviceQuoteLineSnapshot: (
+        booking: unknown,
+        line: unknown,
+        sortOrder: number,
+      ) => Promise<Record<string, unknown>>;
+    };
+
+    const serviceLine = await service.serviceQuoteLineSnapshot(
+      booking,
+      {
+        lineType: ServiceQuoteLineType.SERVICE,
+        description: "Repair labour",
+        quantity: 1,
+        unitPaise: 11800,
+      },
+      0,
+    );
+    const productLine = await service.serviceQuoteLineSnapshot(
+      booking,
+      {
+        lineType: ServiceQuoteLineType.PRODUCT,
+        description: "Replacement part",
+        quantity: 2,
+        unitPaise: 5900,
+        hsnSacCode: "8504",
+        taxClassification: ProductTaxClassification.TAXABLE,
+        gstRatePercent: 18,
+        uqc: "PCS",
+      },
+      1,
+    );
+
+    expect(serviceLine).toMatchObject({
+      lineType: ServiceQuoteLineType.SERVICE,
+      hsnSacCode: "998719",
+      totalPaise: 11800,
+      taxableValuePaise: 10000,
+      cgstPaise: 900,
+      sgstPaise: 900,
+      taxTotalPaise: 1800,
+    });
+    expect(productLine).toMatchObject({
+      lineType: ServiceQuoteLineType.PRODUCT,
+      hsnSacCode: "8504",
+      totalPaise: 11800,
+      taxableValuePaise: 10000,
+      cgstPaise: 900,
+      sgstPaise: 900,
+      taxTotalPaise: 1800,
     });
   });
 

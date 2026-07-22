@@ -140,7 +140,16 @@ export type ServiceListing = {
   cancellationPolicy: ServiceCancellationPolicy;
   taxClassification: ProductTaxClassification;
   sacCode?: string | null;
+  sacMasterId?: string | null;
+  sacMaster?: {
+    id: string;
+    sacCode: string;
+    description: string;
+    sourceReference?: string | null;
+  } | null;
   gstRatePercent?: number | string | null;
+  taxReviewRequired?: boolean;
+  taxConfigurationVersion: number;
   basePricePaise?: number | null;
   inspectionFeePaise?: number | null;
   advanceAmountPaise?: number | null;
@@ -177,6 +186,7 @@ export type ServiceListing = {
 export type ServiceQuote = {
   id: string;
   quoteNumber: string;
+  revisionNumber?: number;
   status: ServiceQuoteStatus;
   subtotalPaise: number;
   totalPaise: number;
@@ -188,10 +198,20 @@ export type ServiceQuote = {
   withdrawalNote?: string | null;
   lineItems?: Array<{
     id?: string;
+    lineType?: "SERVICE" | "PRODUCT";
     description: string;
     quantity: number;
     unitPaise: number;
     totalPaise: number;
+    hsnSacCode?: string | null;
+    taxClassification?: ProductTaxClassification;
+    gstRatePercent?: number | string;
+    uqc?: string;
+    taxableValuePaise?: number;
+    cgstPaise?: number;
+    sgstPaise?: number;
+    igstPaise?: number;
+    taxTotalPaise?: number;
   }>;
 };
 
@@ -664,7 +684,20 @@ export function sellerCancelServiceBooking(auth: IndihubAuthHeaders, bookingNumb
 export function sellerSendServiceQuote(
   auth: IndihubAuthHeaders,
   bookingNumber: string,
-  payload: { lineItems: Array<{ description: string; quantity?: number; unitPaise: number }>; note?: string; ttlHours?: number },
+  payload: {
+    lineItems: Array<{
+      lineType?: "SERVICE" | "PRODUCT";
+      description: string;
+      quantity?: number;
+      unitPaise: number;
+      hsnSacCode?: string;
+      taxClassification?: ProductTaxClassification;
+      gstRatePercent?: number;
+      uqc?: string;
+    }>;
+    note?: string;
+    ttlHours?: number;
+  },
 ) {
   return indihubFetch<ServiceBooking>(
     `/api/seller/service-bookings/${encodeURIComponent(bookingNumber)}/quotes`,
@@ -876,7 +909,12 @@ export function adminListServices(auth: IndihubAuthHeaders, query: ServiceQuery 
 export function adminUpdateServiceApproval(
   auth: IndihubAuthHeaders,
   serviceId: string,
-  payload: { approvalStatus: ApprovalStatus; status?: ServiceListingStatus; note?: string },
+  payload: {
+    approvalStatus: ApprovalStatus;
+    status?: ServiceListingStatus;
+    note?: string;
+    expectedTaxConfigurationVersion?: number;
+  },
 ) {
   return indihubFetch<ServiceListing>(
     `/api/admin/services/${encodeURIComponent(serviceId)}/approval`,

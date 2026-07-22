@@ -16,6 +16,8 @@ export type CategorySummary = {
   description?: string | null;
   imageUrl?: string | null;
   defaultHsnCode?: string | null;
+  defaultSacCode?: string | null;
+  defaultSacMasterId?: string | null;
   defaultGstRatePercent?: number | string | null;
   defaultTaxClassification?: ProductTaxClassification;
   defaultTaxDescription?: string | null;
@@ -168,6 +170,9 @@ export type SellerSummary = {
     contactName?: string | null;
     contactPhone?: string | null;
     contactEmail?: string | null;
+    businessLegalName?: string | null;
+    taxRegistrationStatus?: "GST_REGISTERED" | "NOT_REGISTERED" | "COMPOSITION";
+    gstNumber?: string | null;
     createdAt?: string;
     updatedAt?: string;
   } | null;
@@ -329,6 +334,14 @@ export type HsnMasterEntry = {
     name: string;
     slug: string;
   } | null;
+};
+
+export type SacMasterEntry = {
+  id: string;
+  sacCode: string;
+  description: string;
+  sourceReference?: string | null;
+  effectiveDate?: string | null;
 };
 
 export type PaginatedProducts = {
@@ -1110,6 +1123,21 @@ export function searchHsnMaster({
   params.set("limit", String(limit));
 
   return indihubFetch<HsnMasterEntry[]>(`/api/hsn-master?${params.toString()}`);
+}
+
+export function searchSacMaster({
+  search,
+  limit = 10,
+}: {
+  search?: string;
+  limit?: number;
+}) {
+  const params = new URLSearchParams();
+  if (search?.trim()) {
+    params.set("search", search.trim());
+  }
+  params.set("limit", String(limit));
+  return indihubFetch<SacMasterEntry[]>(`/api/sac-master?${params.toString()}`);
 }
 
 export function getCategory(slug: string) {

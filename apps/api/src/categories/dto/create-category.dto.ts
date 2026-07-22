@@ -61,6 +61,15 @@ export class CreateCategoryDto {
   @Matches(/^\d{4,8}$/, { message: "defaultHsnCode must be a 4 to 8 digit HSN code." })
   defaultHsnCode?: string | null;
 
+  @ApiPropertyOptional({
+    example: "998719",
+    description: "Default six-digit SAC classification suggested for service listings in this category.",
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{6}$/, { message: "defaultSacCode must contain exactly 6 digits." })
+  defaultSacCode?: string | null;
+
   @ApiPropertyOptional({ example: 18, description: "Default GST rate percentage applied when sellers choose this category." })
   @IsOptional()
   @Type(() => Number)

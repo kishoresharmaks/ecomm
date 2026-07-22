@@ -5,6 +5,7 @@ import type {
   SellerServiceBooking,
   SellerServiceListing,
   SellerServicePayload,
+  ProductTaxClassification,
   ServiceBookingStatus,
   ServiceCancellationPolicy,
   ServicePaymentMode,
@@ -20,6 +21,9 @@ export type ServiceFormValues = {
   pricingModel: ServicePricingModel;
   paymentMode: ServicePaymentMode;
   cancellationPolicy: ServiceCancellationPolicy;
+  taxClassification: ProductTaxClassification;
+  sacCode: string;
+  gstRatePercent: string;
   basePrice: string;
   inspectionFee: string;
   advanceAmount: string;
@@ -91,6 +95,12 @@ export function createServiceForm(service?: SellerServiceListing | null, profile
     pricingModel: service?.pricingModel ?? "FIXED_PRICE",
     paymentMode: service?.paymentMode ?? "FULL_PAYMENT",
     cancellationPolicy: service?.cancellationPolicy ?? "FLEXIBLE",
+    taxClassification: service?.taxClassification ?? "TAXABLE",
+    sacCode: service?.sacCode ?? "",
+    gstRatePercent:
+      service?.taxClassification === "TAXABLE"
+        ? String(service.gstRatePercent ?? "")
+        : "0",
     basePrice: paiseInput(service?.basePricePaise),
     inspectionFee: paiseInput(service?.inspectionFeePaise),
     advanceAmount: paiseInput(service?.advanceAmountPaise),
@@ -130,6 +140,12 @@ export function buildServicePayload(values: ServiceFormValues): SellerServicePay
     pricingModel: values.pricingModel,
     paymentMode: values.paymentMode,
     cancellationPolicy: values.cancellationPolicy,
+    taxClassification: values.taxClassification,
+    ...(values.sacCode.trim() ? { sacCode: values.sacCode.trim() } : {}),
+    gstRatePercent:
+      values.taxClassification === "TAXABLE"
+        ? Number(values.gstRatePercent)
+        : 0,
     currency: "INR",
     ...(basePricePaise > 0 ? { basePricePaise } : {}),
     ...(inspectionFeePaise > 0 ? { inspectionFeePaise } : {}),

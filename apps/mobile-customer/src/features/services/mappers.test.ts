@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   mapBookingStatus,
   mapServicePayment,
+  mapServiceQuote,
   mapPricingModel,
   mapVisitMode,
   ServiceMappingError,
@@ -67,5 +68,52 @@ describe("service mappers", () => {
         description: "Inspection fee",
       }).description,
     ).toBe("Inspection fee");
+  });
+
+  it("hydrates mixed quote tax lines", () => {
+    const quote = mapServiceQuote({
+      id: "quote-1",
+      quoteNumber: "SQ-1001",
+      revisionNumber: 2,
+      status: "SENT",
+      subtotalPaise: 236000,
+      totalPaise: 236000,
+      currency: "INR",
+      lineItems: [
+        {
+          id: "line-service",
+          lineType: "SERVICE",
+          description: "Repair labour",
+          quantity: 1,
+          unitPaise: 118000,
+          totalPaise: 118000,
+          hsnSacCode: "998719",
+          taxClassification: "TAXABLE",
+          gstRatePercent: "18",
+          taxableValuePaise: 100000,
+          taxTotalPaise: 18000,
+        },
+        {
+          id: "line-product",
+          lineType: "PRODUCT",
+          description: "Replacement part",
+          quantity: 1,
+          unitPaise: 118000,
+          totalPaise: 118000,
+          hsnSacCode: "8504",
+          taxClassification: "TAXABLE",
+          gstRatePercent: 18,
+          taxableValuePaise: 100000,
+          taxTotalPaise: 18000,
+        },
+      ],
+    });
+
+    expect(quote.quoteNumber).toBe("SQ-1001");
+    expect(quote.revisionNumber).toBe(2);
+    expect(quote.lines.map((line) => [line.lineType, line.hsnSacCode, line.taxTotalPaise])).toEqual([
+      ["service", "998719", 18000],
+      ["product", "8504", 18000],
+    ]);
   });
 });

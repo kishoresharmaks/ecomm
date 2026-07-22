@@ -34,6 +34,10 @@
     "storage:normalize-image-keys": "tsx scripts/storage/normalize-public-image-keys.ts --apply",
     "finance:payout-encryption:dry": "tsx scripts/finance/backfill-seller-payout-encryption.ts",
     "finance:payout-encryption:apply": "tsx scripts/finance/backfill-seller-payout-encryption.ts --apply",
+    "tax:sac:import:dry": "tsx scripts/tax/import-sac-master.ts",
+    "tax:sac:import": "tsx scripts/tax/import-sac-master.ts --apply",
+    "tax:sac:legacy-review:dry": "tsx scripts/tax/review-legacy-service-sac.ts",
+    "tax:sac:legacy-review:apply": "tsx scripts/tax/review-legacy-service-sac.ts --apply",
     "dev:web": "pnpm --filter @indihub/web dev",
     "dev:api": "pnpm --filter @indihub/api dev",
     "dev:worker": "pnpm --filter @indihub/worker dev"

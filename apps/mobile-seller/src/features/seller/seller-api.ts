@@ -2,6 +2,7 @@ import { deleteJson, getJson, patchJson, postJson, type MobileAuthHeaders } from
 
 export type SellerStatus = "PENDING_APPROVAL" | "APPROVED" | "SUSPENDED" | "REJECTED";
 export type SellerApprovalStatus = "PENDING_APPROVAL" | "APPROVED" | "REJECTED";
+export type ProductTaxClassification = "TAXABLE" | "NIL_RATED" | "EXEMPT" | "NON_GST";
 export type SellerProductDeliveryMode =
   | "STORE_PICKUP"
   | "LOCAL_DELIVERY_PARTNER"
@@ -38,6 +39,7 @@ export type SellerProfile = {
     contactEmail?: string | null;
     businessLegalName?: string | null;
     businessType?: string | null;
+    taxRegistrationStatus?: "GST_REGISTERED" | "NOT_REGISTERED" | "COMPOSITION";
     gstNumber?: string | null;
     panNumber?: string | null;
   } | null;
@@ -243,6 +245,8 @@ export type CategorySummary = {
   description?: string | null;
   imageUrl?: string | null;
   defaultHsnCode?: string | null;
+  defaultSacCode?: string | null;
+  defaultSacMasterId?: string | null;
   defaultGstRatePercent?: number | null;
   defaultTaxDescription?: string | null;
   sortOrder?: number;
@@ -257,6 +261,14 @@ export type HsnMasterEntry = {
   gstRatePercent: number;
   categoryId?: string | null;
   isActive: boolean;
+};
+
+export type SacMasterEntry = {
+  id: string;
+  sacCode: string;
+  description: string;
+  sourceReference?: string | null;
+  effectiveDate?: string | null;
 };
 
 export type PageResult<T> = {
@@ -560,6 +572,10 @@ export function listCategories(auth: MobileAuthHeaders) {
 
 export function searchHsnMaster(auth: MobileAuthHeaders, query: { search?: string; categoryId?: string; limit?: number }) {
   return getJson<HsnMasterEntry[]>({ path: "/hsn-master", auth, searchParams: query });
+}
+
+export function searchSacMaster(auth: MobileAuthHeaders, query: { search?: string; limit?: number }) {
+  return getJson<SacMasterEntry[]>({ path: "/sac-master", auth, searchParams: query });
 }
 
 export function createSellerProduct(auth: MobileAuthHeaders, payload: SellerProductPayload) {
@@ -960,6 +976,11 @@ export type SellerServiceListing = {
   pricingModel: ServicePricingModel;
   paymentMode: ServicePaymentMode;
   cancellationPolicy: ServiceCancellationPolicy;
+  taxClassification: ProductTaxClassification;
+  sacCode?: string | null;
+  gstRatePercent?: number | null;
+  taxReviewRequired?: boolean;
+  taxConfigurationVersion?: number;
   basePricePaise?: number | null;
   inspectionFeePaise?: number | null;
   advanceAmountPaise?: number | null;
@@ -988,6 +1009,9 @@ export type SellerServicePayload = {
   pricingModel: ServicePricingModel;
   paymentMode: ServicePaymentMode;
   cancellationPolicy?: ServiceCancellationPolicy;
+  taxClassification?: ProductTaxClassification;
+  sacCode?: string;
+  gstRatePercent?: number;
   basePricePaise?: number;
   inspectionFeePaise?: number;
   advanceAmountPaise?: number;
@@ -1043,6 +1067,7 @@ export type SellerServiceBlockedWindow = {
 export type SellerServiceQuote = {
   id: string;
   quoteNumber: string;
+  revisionNumber?: number;
   status: ServiceQuoteStatus;
   subtotalPaise: number;
   totalPaise: number;
@@ -1052,10 +1077,18 @@ export type SellerServiceQuote = {
   sentAt?: string;
   lineItems?: Array<{
     id?: string;
+    lineType?: "SERVICE" | "PRODUCT";
     description: string;
     quantity: number;
     unitPaise: number;
     totalPaise: number;
+    hsnSacCode?: string | null;
+    taxClassification?: ProductTaxClassification;
+    gstRatePercent?: number | string;
+    uqc?: string;
+    taxableValuePaise?: number;
+    taxTotalPaise?: number;
+    classificationDescriptionSnapshot?: string | null;
   }>;
 };
 
@@ -1090,6 +1123,12 @@ export type SellerServiceBooking = {
   subtotalPaise?: number;
   inspectionFeePaise?: number;
   advanceAmountPaise?: number;
+  sellerTaxRegistrationStatusSnapshot?: "GST_REGISTERED" | "NOT_REGISTERED" | "COMPOSITION";
+  serviceTaxClassificationSnapshot?: ProductTaxClassification;
+  sacCodeSnapshot?: string | null;
+  gstRatePercentSnapshot?: number | string;
+  taxableValuePaise?: number;
+  taxTotalPaise?: number;
   currency: string;
   customerIssue: string;
   customerNote?: string | null;
@@ -1226,7 +1265,20 @@ export function cancelSellerServiceBooking(auth: MobileAuthHeaders, bookingNumbe
 export function sendSellerServiceQuote(
   auth: MobileAuthHeaders,
   bookingNumber: string,
-  payload: { lineItems: Array<{ description: string; quantity?: number; unitPaise: number }>; note?: string; ttlHours?: number },
+  payload: {
+    lineItems: Array<{
+      lineType?: "SERVICE" | "PRODUCT";
+      description: string;
+      quantity?: number;
+      unitPaise: number;
+      hsnSacCode?: string;
+      taxClassification?: ProductTaxClassification;
+      gstRatePercent?: number;
+      uqc?: string;
+    }>;
+    note?: string;
+    ttlHours?: number;
+  },
 ) {
   return postJson<SellerServiceBooking>({
     path: `/seller/service-bookings/${encodeURIComponent(bookingNumber)}/quotes`,

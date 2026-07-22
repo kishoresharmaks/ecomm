@@ -120,7 +120,22 @@ export function SellerServiceFormScreen({ serviceId }: { serviceId?: string }) {
     );
   }
 
-  const canSubmit = Boolean(values.categoryId && values.title.trim() && values.description.trim().length >= 10);
+  const sellerTaxRegistrationStatus =
+    profileQuery.data?.profile?.taxRegistrationStatus ??
+    (profileQuery.data?.profile?.gstNumber ? "GST_REGISTERED" : "NOT_REGISTERED");
+  const sacRequired =
+    values.taxClassification === "TAXABLE" ||
+    values.taxClassification === "NIL_RATED";
+  const gstRate = Number(values.gstRatePercent);
+  const canSubmit = Boolean(
+    values.categoryId &&
+      values.title.trim() &&
+      values.description.trim().length >= 10 &&
+      (!sacRequired || /^\d{6}$/.test(values.sacCode.trim())) &&
+      (values.taxClassification !== "TAXABLE" ||
+        sellerTaxRegistrationStatus !== "GST_REGISTERED" ||
+        (Number.isFinite(gstRate) && gstRate > 0 && gstRate <= 100)),
+  );
 
   return (
     <Screen contentContainerStyle={styles.content}>
@@ -130,7 +145,18 @@ export function SellerServiceFormScreen({ serviceId }: { serviceId?: string }) {
       />
 
       <Card>
-        <SelectField label="Category" options={categoryOptions} selectedValue={values.categoryId} onSelect={(value) => update("categoryId", value)} />
+        <SelectField
+          label="Category"
+          options={categoryOptions}
+          selectedValue={values.categoryId}
+          onSelect={(value) => {
+            update("categoryId", value);
+            const category = categories.find((item) => item.id === value);
+            if (!values.sacCode && category?.defaultSacCode) {
+              update("sacCode", category.defaultSacCode);
+            }
+          }}
+        />
         <Field label="Service title" value={values.title} onChangeText={(value) => update("title", value)} placeholder="LED TV repair and installation" />
         <Field
           label="Description"
@@ -139,6 +165,49 @@ export function SellerServiceFormScreen({ serviceId }: { serviceId?: string }) {
           placeholder="Explain what is included, visit rules, parts, and customer requirements."
           multiline
         />
+      </Card>
+
+      <Card>
+        <Text style={styles.sectionTitle}>Service tax</Text>
+        <SelectField
+          label="Tax classification"
+          options={[
+            { label: "Taxable service", value: "TAXABLE" },
+            { label: "Nil-rated service", value: "NIL_RATED" },
+            { label: "Exempt service", value: "EXEMPT" },
+            { label: "Non-GST service", value: "NON_GST" },
+          ]}
+          selectedValue={values.taxClassification}
+          onSelect={(value) => {
+            update("taxClassification", value as ServiceFormValues["taxClassification"]);
+            if (value !== "TAXABLE") {
+              update("gstRatePercent", "0");
+            }
+          }}
+        />
+        <Field
+          label="SAC code"
+          value={values.sacCode}
+          onChangeText={(value) => update("sacCode", value.replace(/\D/g, "").slice(0, 6))}
+          keyboardType="number-pad"
+          placeholder="998719"
+        />
+        <Field
+          label="GST rate (%)"
+          value={values.gstRatePercent}
+          onChangeText={(value) => update("gstRatePercent", value)}
+          keyboardType="decimal-pad"
+          editable={
+            values.taxClassification === "TAXABLE" &&
+            sellerTaxRegistrationStatus === "GST_REGISTERED"
+          }
+          placeholder={
+            sellerTaxRegistrationStatus === "GST_REGISTERED"
+              ? "18"
+              : "GST cannot be collected for this seller registration"
+          }
+        />
+        <Text style={styles.muted}>Displayed service prices are GST-inclusive.</Text>
       </Card>
 
       <Card>

@@ -1301,6 +1301,17 @@ enum ServiceQuoteStatus {
   WITHDRAWN
 }
 
+enum ServiceQuoteLineType {
+  SERVICE
+  PRODUCT
+}
+
+enum SacMasterImportStatus {
+  DRY_RUN
+  COMPLETED
+  FAILED
+}
+
 enum ServicePaymentPurpose {
   FULL_PAYMENT
   ADVANCE_PAYMENT
@@ -2453,6 +2464,8 @@ model Category {
   description           String?
   imageUrl              String?                     @map("image_url")
   defaultHsnCode        String?                     @map("default_hsn_code")
+  defaultSacCode        String?                     @map("default_sac_code")
+  defaultSacMasterId    String?                     @map("default_sac_master_id") @db.Uuid
   defaultGstRatePercent Decimal?                    @map("default_gst_rate_percent") @db.Decimal(5, 2)
   defaultTaxClassification ProductTaxClassification @default(TAXABLE) @map("default_tax_classification")
   defaultTaxDescription String?                     @map("default_tax_description")
@@ -2467,6 +2480,7 @@ model Category {
   products              Product[]
   serviceListings       ServiceListing[]
   hsnMasterEntries      HsnMaster[]
+  defaultSacMaster      SacMaster?                  @relation("CategoryDefaultSac", fields: [defaultSacMasterId], references: [id], onDelete: SetNull)
   commissionRules       CommissionRule[]
   deals                 Deal[]
   couponEligibilities   CouponCategoryEligibility[]
@@ -2475,6 +2489,8 @@ model Category {
   @@index([productTemplateId])
   @@index([status])
   @@index([defaultHsnCode])
+  @@index([defaultSacCode])
+  @@index([defaultSacMasterId])
   @@map("categories")
 }
 
@@ -2495,6 +2511,47 @@ model HsnMaster {
   @@index([categoryId])
   @@index([isActive])
   @@map("hsn_master")
+}
+
+model SacMaster {
+  id                   String           @id @default(uuid()) @db.Uuid
+  sacCode              String           @unique @map("sac_code")
+  description          String
+  isActive             Boolean          @default(true) @map("is_active")
+  sourceDocument       String?          @map("source_document")
+  sourceReference      String?          @map("source_reference")
+  effectiveDate        DateTime?        @map("effective_date") @db.Date
+  sourceVersion        String?          @map("source_version")
+  importChecksum       String?          @map("import_checksum")
+  importedAt           DateTime?        @map("imported_at")
+  createdAt            DateTime         @default(now()) @map("created_at")
+  updatedAt            DateTime         @updatedAt @map("updated_at")
+  defaultForCategories Category[]       @relation("CategoryDefaultSac")
+  serviceListings      ServiceListing[]
+
+  @@index([isActive, sacCode])
+  @@index([description])
+  @@map("sac_master")
+}
+
+model SacMasterImportRun {
+  id               String                @id @default(uuid()) @db.Uuid
+  status           SacMasterImportStatus
+  sourceDocument   String                @map("source_document")
+  sourceReference  String?               @map("source_reference")
+  effectiveDate    DateTime?             @map("effective_date") @db.Date
+  sourceVersion    String?               @map("source_version")
+  importChecksum   String                @map("import_checksum")
+  importedAt       DateTime              @default(now()) @map("imported_at")
+  rowCount         Int                   @default(0) @map("row_count")
+  insertedCount    Int                   @default(0) @map("inserted_count")
+  updatedCount     Int                   @default(0) @map("updated_count")
+  deactivatedCount Int                   @default(0) @map("deactivated_count")
+  metadata         Json?
+
+  @@index([status, importedAt])
+  @@index([importChecksum])
+  @@map("sac_master_import_runs")
 }
 
 model ProductTemplate {
@@ -3833,6 +3890,9 @@ model TaxDocumentLine {
   description            String
   sku                    String?
   hsnSacCode             String?             @map("hsn_sac_code")
+  classificationDescriptionSnapshot String?  @map("classification_description_snapshot")
+  classificationSourceSnapshot String?       @map("classification_source_snapshot")
+  taxSnapshotVersion     Int                 @default(1) @map("tax_snapshot_version")
   taxClassification      ProductTaxClassification @default(TAXABLE) @map("tax_classification")
   quantity               Int                 @default(1)
   uqc                    String              @default("NOS")
@@ -4955,8 +5015,11 @@ model ServiceListing {
   paymentMode                ServicePaymentMode        @default(FULL_PAYMENT) @map("payment_mode")
   cancellationPolicy         ServiceCancellationPolicy @default(FLEXIBLE) @map("cancellation_policy")
   taxClassification          ProductTaxClassification  @default(TAXABLE) @map("tax_classification")
+  sacMasterId                String?                   @map("sac_master_id") @db.Uuid
   sacCode                    String?                   @map("sac_code")
   gstRatePercent             Decimal?                  @map("gst_rate_percent") @db.Decimal(5, 2)
+  taxReviewRequired          Boolean                   @default(true) @map("tax_review_required")
+  taxConfigurationVersion    Int                       @default(1) @map("tax_configuration_version")
   basePricePaise             Int?                      @map("base_price_paise")
   inspectionFeePaise         Int                       @default(0) @map("inspection_fee_paise")
   advanceAmountPaise         Int                       @default(0) @map("advance_amount_paise")
@@ -4976,6 +5039,7 @@ model ServiceListing {
   deletedAt                  DateTime?                 @map("deleted_at")
   seller                     Seller                    @relation(fields: [sellerId], references: [id])
   category                   Category                  @relation(fields: [categoryId], references: [id])
+  sacMaster                  SacMaster?                @relation(fields: [sacMasterId], references: [id], onDelete: SetNull)
   packages                   ServicePackage[]
   images                     ServiceListingImage[]
   areas                      ServiceArea[]
@@ -4987,6 +5051,8 @@ model ServiceListing {
   @@index([pricingModel])
   @@index([paymentMode])
   @@index([sacCode])
+  @@index([sacMasterId])
+  @@index([taxReviewRequired, approvalStatus, status])
   @@index([taxClassification, gstRatePercent])
   @@index([deletedAt, status, approvalStatus, createdAt])
   @@index([categoryId, status, approvalStatus, createdAt])
@@ -5075,6 +5141,9 @@ model ServiceBooking {
   buyerAddressSnapshot       Json                         @map("buyer_address_snapshot")
   serviceTaxClassificationSnapshot ProductTaxClassification @default(TAXABLE) @map("service_tax_classification_snapshot")
   sacCodeSnapshot            String?                      @map("sac_code_snapshot")
+  sacDescriptionSnapshot     String?                      @map("sac_description_snapshot")
+  sacSourceReferenceSnapshot String?                      @map("sac_source_reference_snapshot")
+  taxSnapshotVersion         Int                          @default(1) @map("tax_snapshot_version")
   gstRatePercentSnapshot     Decimal                      @default(0) @map("gst_rate_percent_snapshot") @db.Decimal(5, 2)
   taxSupplyTypeSnapshot      TaxSupplyType                @default(INTER_STATE) @map("tax_supply_type_snapshot")
   placeOfSupplyStateCodeSnapshot String?                  @map("place_of_supply_state_code_snapshot")
@@ -5157,6 +5226,7 @@ model ServiceQuote {
   id             String             @id @default(uuid()) @db.Uuid
   bookingId      String             @map("booking_id") @db.Uuid
   quoteNumber    String             @unique @map("quote_number")
+  revisionNumber Int                @default(1) @map("revision_number")
   status         ServiceQuoteStatus @default(SENT)
   subtotalPaise  Int                @default(0) @map("subtotal_paise")
   totalPaise     Int                @default(0) @map("total_paise")
@@ -5179,6 +5249,7 @@ model ServiceQuote {
   lineItems      ServiceQuoteLineItem[]
 
   @@index([bookingId])
+  @@unique([bookingId, revisionNumber])
   @@index([status])
   @@index([expiresAt])
   @@map("service_quotes")
@@ -5187,16 +5258,31 @@ model ServiceQuote {
 }
 
 model ServiceQuoteLineItem {
-  id           String       @id @default(uuid()) @db.Uuid
-  quoteId      String       @map("quote_id") @db.Uuid
-  description  String
-  quantity     Int          @default(1)
-  unitPaise    Int          @map("unit_paise")
-  totalPaise   Int          @map("total_paise")
-  sortOrder    Int          @default(0) @map("sort_order")
-  quote        ServiceQuote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  id                                String                   @id @default(uuid()) @db.Uuid
+  quoteId                           String                   @map("quote_id") @db.Uuid
+  lineType                          ServiceQuoteLineType     @default(SERVICE) @map("line_type")
+  description                       String
+  quantity                          Int                      @default(1)
+  unitPaise                         Int                      @map("unit_paise")
+  totalPaise                        Int                      @map("total_paise")
+  hsnSacCode                        String?                  @map("hsn_sac_code")
+  taxClassification                 ProductTaxClassification @default(TAXABLE) @map("tax_classification")
+  gstRatePercent                    Decimal                  @default(0) @map("gst_rate_percent") @db.Decimal(5, 2)
+  uqc                               String                   @default("NOS")
+  taxableValuePaise                 Int                      @default(0) @map("taxable_value_paise")
+  cgstPaise                         Int                      @default(0) @map("cgst_paise")
+  sgstPaise                         Int                      @default(0) @map("sgst_paise")
+  igstPaise                         Int                      @default(0) @map("igst_paise")
+  cessPaise                         Int                      @default(0) @map("cess_paise")
+  taxTotalPaise                     Int                      @default(0) @map("tax_total_paise")
+  classificationDescriptionSnapshot String?                 @map("classification_description_snapshot")
+  classificationSourceSnapshot      String?                 @map("classification_source_snapshot")
+  taxSnapshotVersion                Int                      @default(1) @map("tax_snapshot_version")
+  sortOrder                         Int                      @default(0) @map("sort_order")
+  quote                             ServiceQuote             @relation(fields: [quoteId], references: [id], onDelete: Cascade)
 
   @@index([quoteId])
+  @@index([lineType, hsnSacCode])
   @@map("service_quote_line_items")
 }
 

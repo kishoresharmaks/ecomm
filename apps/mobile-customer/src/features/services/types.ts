@@ -121,6 +121,7 @@ export type BackendPaginatedServices = {
 export type BackendServiceQuote = {
   id: string;
   quoteNumber?: string;
+  revisionNumber?: number;
   status: BackendServiceQuoteStatus;
   subtotalPaise: number;
   totalPaise: number;
@@ -130,6 +131,26 @@ export type BackendServiceQuote = {
   sentAt?: string;
   acceptedAt?: string | null;
   rejectedAt?: string | null;
+  lineItems?: BackendServiceQuoteLine[];
+};
+
+export type BackendServiceQuoteLine = {
+  id?: string;
+  lineType?: "SERVICE" | "PRODUCT";
+  description: string;
+  quantity: number;
+  unitPaise: number;
+  totalPaise: number;
+  hsnSacCode?: string | null;
+  taxClassification?: "TAXABLE" | "NIL_RATED" | "EXEMPT" | "NON_GST";
+  gstRatePercent?: number | string;
+  uqc?: string;
+  taxableValuePaise?: number;
+  cgstPaise?: number;
+  sgstPaise?: number;
+  igstPaise?: number;
+  taxTotalPaise?: number;
+  classificationDescriptionSnapshot?: string | null;
 };
 
 export type BackendServicePayment = {
@@ -295,6 +316,8 @@ export type MobileServiceDetail = MobileServiceListing & {
 
 export type MobileServiceQuote = {
   id: string;
+  quoteNumber: string | null;
+  revisionNumber: number | null;
   status: BackendServiceQuoteStatus;
   amountPaise: number;
   currency: string;
@@ -303,6 +326,22 @@ export type MobileServiceQuote = {
   expiresAt: string | null;
   acceptedAt: string | null;
   rejectedAt: string | null;
+  lines: MobileServiceQuoteLine[];
+};
+
+export type MobileServiceQuoteLine = {
+  id: string;
+  lineType: "service" | "product";
+  description: string;
+  quantity: number;
+  unitPaise: number;
+  totalPaise: number;
+  hsnSacCode: string | null;
+  taxClassification: "TAXABLE" | "NIL_RATED" | "EXEMPT" | "NON_GST";
+  gstRatePercent: number;
+  taxableValuePaise: number;
+  taxTotalPaise: number;
+  classificationDescription: string | null;
 };
 
 export type MobileServicePayment = {

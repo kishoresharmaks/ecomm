@@ -53,7 +53,13 @@ import {
   type ServiceTechnician,
   type ServiceVisitMode,
 } from "@/lib/service-marketplace-api";
-import { listCategories, formatMoney } from "@/lib/storefront-api";
+import {
+  formatMoney,
+  listCategories,
+  searchSacMaster,
+  type CategorySummary,
+  type SacMasterEntry,
+} from "@/lib/storefront-api";
 import { getSellerProfile, type SellerProfile, type SellerServiceArea } from "@/lib/seller-api";
 import {
   SellerServiceAreaEditor,
@@ -392,6 +398,8 @@ function SellerServiceForm({ serviceId }: { serviceId?: string }) {
   const [pricingModel, setPricingModel] = useState<ServicePricingModel>("FIXED_PRICE");
   const [taxClassification, setTaxClassification] =
     useState<ProductTaxClassification>("TAXABLE");
+  const [categoryId, setCategoryId] = useState("");
+  const [sacCode, setSacCode] = useState("");
   const [gstRatePercent, setGstRatePercent] = useState("");
   const [coverImageUrl, setCoverImageUrl] = useState<string | null>(null);
   const [serviceAreas, setServiceAreas] = useState<SellerServiceAreaDraft[]>([emptyDraftServiceArea()]);
@@ -445,8 +453,10 @@ function SellerServiceForm({ serviceId }: { serviceId?: string }) {
     }
     serviceHydratedRef.current = serviceQuery.data.id;
     const service = serviceQuery.data;
+    setCategoryId(service.categoryId);
     setPricingModel(service.pricingModel);
     setTaxClassification(service.taxClassification);
+    setSacCode(service.sacCode ?? "");
     setGstRatePercent(String(service.gstRatePercent ?? ""));
     setCoverImageUrl(primaryServiceImage(service) || null);
     setServiceAreas(service.areas?.length ? service.areas.map(draftServiceAreaFromListing) : [emptyDraftServiceArea()]);
@@ -463,7 +473,6 @@ function SellerServiceForm({ serviceId }: { serviceId?: string }) {
     const inspectionFeePaise = rupeesToPaise(formValue(form, "inspectionFee"));
     const advanceAmountPaise = rupeesToPaise(formValue(form, "advanceAmount"));
     const paymentMode = formValue(form, "paymentMode") as ServiceListingPayload["paymentMode"];
-    const sacCode = formValue(form, "sacCode");
     const gstRate = Number(gstRatePercent);
     const taxRegistrationStatus =
       profileQuery.data?.profile?.taxRegistrationStatus ??
@@ -505,7 +514,7 @@ function SellerServiceForm({ serviceId }: { serviceId?: string }) {
     const areas = draftServiceAreasToPayload(serviceAreas);
 
     const payload: ServiceListingPayload = {
-      categoryId: formValue(form, "categoryId"),
+      categoryId,
       title,
       description: formValue(form, "description"),
       pricingModel,
@@ -569,7 +578,19 @@ function SellerServiceForm({ serviceId }: { serviceId?: string }) {
           </div>
           <div className="grid gap-4 md:grid-cols-2">
             <SellerField label="Service title" name="title" required placeholder="LED TV repair and installation" defaultValue={service?.title ?? ""} />
-            <SellerSelect label="Category" name="categoryId" required defaultValue={service?.categoryId ?? ""}>
+            <SellerSelect
+              label="Category"
+              name="categoryId"
+              required
+              value={categoryId}
+              onChange={(value) => {
+                setCategoryId(value);
+                const defaultSac = findCategory(categoriesQuery.data ?? [], value)?.defaultSacCode;
+                if (!sacCode && defaultSac) {
+                  setSacCode(defaultSac);
+                }
+              }}
+            >
               <option value="">Select category</option>
               {categories.map((category) => (
                 <option key={category.id} value={category.id}>
@@ -620,7 +641,8 @@ function SellerServiceForm({ serviceId }: { serviceId?: string }) {
               label="SAC code"
               name="sacCode"
               placeholder="998719"
-              defaultValue={service?.sacCode ?? ""}
+              value={sacCode}
+              onChange={setSacCode}
               required={taxClassification === "TAXABLE" || taxClassification === "NIL_RATED"}
               hint="Use the six-digit Service Accounting Code applicable to this service."
               info={
@@ -628,6 +650,11 @@ function SellerServiceForm({ serviceId }: { serviceId?: string }) {
                   SAC identifies services in GST invoices and returns. Confirm the correct code with your tax adviser; do not use a product HSN code here.
                 </SellerInfoHint>
               }
+            />
+            <SacSuggestions
+              search={sacCode}
+              category={findCategory(categoriesQuery.data ?? [], categoryId)}
+              onSelect={(entry) => setSacCode(entry.sacCode)}
             />
             <SellerField
               label="GST rate (%)"
@@ -865,14 +892,19 @@ function SellerServiceBookings() {
         return recordSellerServiceCashCollection(sellerAuth.authHeaders, booking.bookingNumber, paymentPayload);
       }
       const quotePayload: {
-        lineItems: Array<{ description: string; unitPaise: number }>;
+        lineItems: ServiceQuoteLinePayload[];
         note?: string;
+        ttlHours?: number;
       } = {
-        lineItems: [{ description: formValue(form ?? new FormData(), "quoteDescription"), unitPaise: rupeesToPaise(formValue(form ?? new FormData(), "quoteAmount")) }],
+        lineItems: serviceQuoteLinesFromForm(form ?? new FormData()),
       };
       const quoteNote = optionalFormValue(form ?? new FormData(), "note");
+      const quoteTtlHours = optionalFormValue(form ?? new FormData(), "ttlHours");
       if (quoteNote) {
         quotePayload.note = quoteNote;
+      }
+      if (quoteTtlHours) {
+        quotePayload.ttlHours = Number(quoteTtlHours);
       }
       return sellerSendServiceQuote(sellerAuth.authHeaders, booking.bookingNumber, quotePayload);
     },
@@ -1083,11 +1115,13 @@ function SellerServiceBookingDetail({ bookingNumber }: { bookingNumber?: string 
         }
         return recordSellerServiceCashCollection(sellerAuth.authHeaders, booking.bookingNumber, payload);
       }
-      const quotePayload: { lineItems: Array<{ description: string; unitPaise: number }>; note?: string } = {
-        lineItems: [{ description: formValue(form ?? new FormData(), "quoteDescription"), unitPaise: rupeesToPaise(formValue(form ?? new FormData(), "quoteAmount")) }],
+      const quotePayload: { lineItems: ServiceQuoteLinePayload[]; note?: string; ttlHours?: number } = {
+        lineItems: serviceQuoteLinesFromForm(form ?? new FormData()),
       };
       const note = optionalFormValue(form ?? new FormData(), "note");
+      const ttlHours = optionalFormValue(form ?? new FormData(), "ttlHours");
       if (note) quotePayload.note = note;
+      if (ttlHours) quotePayload.ttlHours = Number(ttlHours);
       return sellerSendServiceQuote(sellerAuth.authHeaders, booking.bookingNumber, quotePayload);
     },
     onSuccess: (_result, variables) => {
@@ -1485,11 +1519,7 @@ function BookingActionPanel({
           </form>
         ) : null}
         {["ACCEPTED", "IN_PROGRESS"].includes(booking.status) ? (
-          <form onSubmit={(event) => { event.preventDefault(); submitAction(booking, "quote", new FormData(event.currentTarget)); }} className="grid gap-2">
-            <input name="quoteDescription" placeholder="Quote line item" className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold" />
-            <input name="quoteAmount" type="number" min="0.01" step="0.01" required placeholder="Quote amount INR" className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold" />
-            <Button type="submit" variant="outline" size="sm" disabled={pending}><Send className="h-4 w-4" /> Send quote</Button>
-          </form>
+          <ServiceQuoteBuilder booking={booking} pending={pending} onSubmit={(form) => submitAction(booking, "quote", form)} />
         ) : null}
         {booking.quotes?.some((quote) => quote.status === "SENT") ? (
           <form onSubmit={(event) => { event.preventDefault(); submitAction(booking, "withdrawQuote", new FormData(event.currentTarget)); }} className="grid gap-2">
@@ -1547,6 +1577,249 @@ function BookingActionPanel({
       </div>
     </div>
   );
+}
+
+type ServiceQuoteLinePayload = Parameters<typeof sellerSendServiceQuote>[2]["lineItems"][number];
+
+type ServiceQuoteLineDraft = {
+  id: string;
+  lineType: "SERVICE" | "PRODUCT";
+  description: string;
+  quantity: string;
+  unitRupees: string;
+  hsnSacCode: string;
+  taxClassification: ProductTaxClassification;
+  gstRatePercent: string;
+  uqc: string;
+};
+
+function ServiceQuoteBuilder({
+  booking,
+  pending,
+  onSubmit,
+}: {
+  booking: ServiceBooking;
+  pending: boolean;
+  onSubmit: (form: FormData) => void;
+}) {
+  const [lines, setLines] = useState<ServiceQuoteLineDraft[]>(() => [
+    serviceQuoteLineDraft(booking, "SERVICE"),
+  ]);
+
+  const updateLine = (id: string, patch: Partial<ServiceQuoteLineDraft>) => {
+    setLines((current) => current.map((line) => (line.id === id ? { ...line, ...patch } : line)));
+  };
+
+  return (
+    <form
+      className="grid gap-3 rounded-md border border-[#D9E2EA] bg-white p-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        const form = new FormData(event.currentTarget);
+        form.set("quoteLines", JSON.stringify(lines));
+        onSubmit(form);
+      }}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs font-black uppercase tracking-wide text-[#667085]">Quote lines</p>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={pending || lines.length >= 50}
+          onClick={() => setLines((current) => [...current, serviceQuoteLineDraft(booking, "PRODUCT")])}
+        >
+          <Plus className="h-4 w-4" aria-hidden="true" />
+          Add line
+        </Button>
+      </div>
+      {lines.map((line, index) => {
+        const taxable = line.taxClassification === "TAXABLE";
+        const gstRegistered =
+          booking.sellerTaxRegistrationStatusSnapshot === "GST_REGISTERED";
+        return (
+          <div key={line.id} className="grid gap-2 rounded-md border border-[#E5E7EB] bg-[#F8FAFC] p-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-black text-[#123A5A]">Line {index + 1}</p>
+              {lines.length > 1 ? (
+                <button
+                  type="button"
+                  className="grid h-8 w-8 place-items-center rounded-md border border-[#F5B7B7] bg-white text-[#B42318]"
+                  aria-label={`Remove quote line ${index + 1}`}
+                  onClick={() => setLines((current) => current.filter((item) => item.id !== line.id))}
+                >
+                  <Trash2 className="h-4 w-4" aria-hidden="true" />
+                </button>
+              ) : null}
+            </div>
+            <select
+              value={line.lineType}
+              onChange={(event) => {
+                const lineType = event.target.value as ServiceQuoteLineDraft["lineType"];
+                updateLine(line.id, {
+                  lineType,
+                  hsnSacCode: lineType === "SERVICE" ? booking.sacCodeSnapshot ?? "" : "",
+                  uqc: lineType === "SERVICE" ? "NOS" : "PCS",
+                });
+              }}
+              className="h-10 rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-semibold"
+              aria-label={`Quote line ${index + 1} type`}
+            >
+              <option value="SERVICE">Service / SAC</option>
+              <option value="PRODUCT">Product or spare part / HSN</option>
+            </select>
+            <input
+              required
+              minLength={2}
+              maxLength={240}
+              value={line.description}
+              onChange={(event) => updateLine(line.id, { description: event.target.value })}
+              placeholder={line.lineType === "SERVICE" ? "Service or labour description" : "Part or material description"}
+              className="h-10 rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-semibold"
+            />
+            <div className="grid gap-2 sm:grid-cols-2">
+              <input
+                required
+                type="number"
+                min="1"
+                max="999"
+                step="1"
+                value={line.quantity}
+                onChange={(event) => updateLine(line.id, { quantity: event.target.value })}
+                placeholder="Quantity"
+                className="h-10 rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-semibold"
+              />
+              <input
+                required
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={line.unitRupees}
+                onChange={(event) => updateLine(line.id, { unitRupees: event.target.value })}
+                placeholder="GST-inclusive unit amount INR"
+                className="h-10 rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-semibold"
+              />
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <input
+                value={line.hsnSacCode}
+                onChange={(event) => updateLine(line.id, { hsnSacCode: event.target.value.replace(/\D/g, "").slice(0, 8) })}
+                required={taxable || line.taxClassification === "NIL_RATED"}
+                pattern={line.lineType === "SERVICE" ? "\\d{6}" : "\\d{4,8}"}
+                placeholder={line.lineType === "SERVICE" ? "6-digit SAC" : "4 to 8 digit HSN"}
+                className="h-10 rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-semibold"
+              />
+              <select
+                value={line.taxClassification}
+                onChange={(event) => {
+                  const taxClassification = event.target.value as ProductTaxClassification;
+                  updateLine(line.id, {
+                    taxClassification,
+                    gstRatePercent: taxClassification === "TAXABLE" ? line.gstRatePercent : "0",
+                  });
+                }}
+                className="h-10 rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-semibold"
+                aria-label={`Quote line ${index + 1} tax classification`}
+              >
+                <option value="TAXABLE">Taxable</option>
+                <option value="NIL_RATED">Nil rated</option>
+                <option value="EXEMPT">Exempt</option>
+                <option value="NON_GST">Non-GST</option>
+              </select>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="0.01"
+                required={taxable && gstRegistered}
+                disabled={!taxable || !gstRegistered}
+                value={taxable && gstRegistered ? line.gstRatePercent : "0"}
+                onChange={(event) => updateLine(line.id, { gstRatePercent: event.target.value })}
+                placeholder="GST rate %"
+                className="h-10 rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-semibold disabled:bg-[#EEF2F6]"
+              />
+              <input
+                required
+                maxLength={8}
+                value={line.uqc}
+                onChange={(event) => updateLine(line.id, { uqc: event.target.value.toUpperCase() })}
+                placeholder="Unit (NOS / PCS)"
+                className="h-10 rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-semibold"
+              />
+            </div>
+            <p className="text-xs font-semibold leading-5 text-[#667085]">
+              Enter the catalogue SAC or HSN used for invoicing. Amounts are GST-inclusive.
+            </p>
+          </div>
+        );
+      })}
+      <div className="grid gap-2 sm:grid-cols-2">
+        <input name="ttlHours" type="number" min="1" max="720" defaultValue={booking.listing.quoteTtlHours ?? 48} placeholder="Quote validity hours" className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold" />
+        <input name="note" maxLength={1000} placeholder="Quote note" className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold" />
+      </div>
+      <Button type="submit" variant="outline" size="sm" disabled={pending}>
+        <Send className="h-4 w-4" />
+        Send quote
+      </Button>
+    </form>
+  );
+}
+
+function serviceQuoteLineDraft(
+  booking: ServiceBooking,
+  lineType: ServiceQuoteLineDraft["lineType"],
+): ServiceQuoteLineDraft {
+  return {
+    id: `${lineType.toLowerCase()}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    lineType,
+    description: "",
+    quantity: "1",
+    unitRupees: "",
+    hsnSacCode: lineType === "SERVICE" ? booking.sacCodeSnapshot ?? "" : "",
+    taxClassification:
+      lineType === "SERVICE"
+        ? booking.serviceTaxClassificationSnapshot ?? "TAXABLE"
+        : "TAXABLE",
+    gstRatePercent:
+      booking.sellerTaxRegistrationStatusSnapshot === "GST_REGISTERED"
+        ? String(Number(booking.gstRatePercentSnapshot ?? 0))
+        : "0",
+    uqc: lineType === "SERVICE" ? "NOS" : "PCS",
+  };
+}
+
+function serviceQuoteLinesFromForm(form: FormData): ServiceQuoteLinePayload[] {
+  const raw = formValue(form, "quoteLines");
+  const parsed: unknown = JSON.parse(raw);
+  if (!Array.isArray(parsed) || !parsed.length) {
+    throw new Error("Add at least one quote line.");
+  }
+
+  return parsed.map((value, index) => {
+    if (!value || typeof value !== "object") {
+      throw new Error(`Quote line ${index + 1} is invalid.`);
+    }
+    const line = value as Partial<ServiceQuoteLineDraft>;
+    const description = line.description?.trim();
+    const quantity = Number(line.quantity);
+    const unitPaise = rupeesToPaise(line.unitRupees ?? "");
+    if (!description || !Number.isInteger(quantity) || quantity < 1 || unitPaise < 1) {
+      throw new Error(`Complete description, quantity, and amount for quote line ${index + 1}.`);
+    }
+
+    return {
+      lineType: line.lineType === "PRODUCT" ? "PRODUCT" : "SERVICE",
+      description,
+      quantity,
+      unitPaise,
+      ...(line.hsnSacCode?.trim() ? { hsnSacCode: line.hsnSacCode.trim() } : {}),
+      taxClassification: line.taxClassification ?? "TAXABLE",
+      gstRatePercent: Number(line.gstRatePercent ?? 0),
+      uqc: line.uqc?.trim().toUpperCase() || (line.lineType === "PRODUCT" ? "PCS" : "NOS"),
+    };
+  });
 }
 
 function SellerServiceCalendar() {
@@ -2098,6 +2371,77 @@ function packageFromForm(form: FormData, service?: ServiceListing) {
   if (!name && service?.packages?.length) return service.packages;
   if (!name || pricePaise <= 0) return service?.packages ?? [];
   return [{ name, pricePaise, sortOrder: 0, isActive: true }];
+}
+
+function SacSuggestions({
+  search,
+  category,
+  onSelect,
+}: {
+  search: string;
+  category?: CategorySummary | null;
+  onSelect: (entry: SacMasterEntry) => void;
+}) {
+  const debouncedSearch = useDebouncedValue(search.trim(), 350);
+  const query = useQuery({
+    queryKey: ["sac-master", debouncedSearch],
+    queryFn: () => searchSacMaster({ search: debouncedSearch, limit: 6 }),
+    enabled: debouncedSearch.length >= 2,
+    staleTime: 5 * 60 * 1000,
+  });
+  const suggestions = query.data ?? [];
+
+  if (!suggestions.length) {
+    return category?.defaultSacCode ? (
+      <button
+        type="button"
+        onClick={() =>
+          onSelect({
+            id: `category-${category.id}`,
+            sacCode: category.defaultSacCode ?? "",
+            description: `${category.name} default SAC`,
+          })
+        }
+        className="rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 py-2 text-left text-xs font-bold text-[#163B5C] transition hover:border-[#ED3500] hover:bg-[#FFF0EC]"
+      >
+        Use category default: {category.defaultSacCode}
+      </button>
+    ) : null;
+  }
+
+  return (
+    <div className="grid gap-2">
+      {suggestions.map((entry) => (
+        <button
+          key={entry.id}
+          type="button"
+          onClick={() => onSelect(entry)}
+          className="rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 py-2 text-left text-xs font-bold text-[#163B5C] transition hover:border-[#ED3500] hover:bg-[#FFF0EC]"
+        >
+          <span className="block">{entry.sacCode} - {entry.description}</span>
+          {entry.sourceReference ? (
+            <span className="mt-0.5 block text-[#667085]">{entry.sourceReference}</span>
+          ) : null}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function findCategory(
+  categories: CategorySummary[],
+  categoryId: string,
+): CategorySummary | null {
+  for (const category of categories) {
+    if (category.id === categoryId) {
+      return category;
+    }
+    const child = findCategory(category.children ?? [], categoryId);
+    if (child) {
+      return child;
+    }
+  }
+  return null;
 }
 
 function flattenCategories(categories: Awaited<ReturnType<typeof listCategories>> = [], prefix = ""): Array<{ id: string; label: string }> {

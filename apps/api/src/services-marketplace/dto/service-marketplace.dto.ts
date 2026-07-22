@@ -39,6 +39,7 @@ import {
   ServicePaymentMode,
   ServicePaymentPurpose,
   ServicePricingModel,
+  ServiceQuoteLineType,
   ServiceQuoteStatus,
   ServiceSellerReceivableStatus,
   ServiceVisitMode,
@@ -722,6 +723,11 @@ export class UpdateSellerServiceCalendarDto {
 }
 
 export class QuoteLineItemDto {
+  @ApiPropertyOptional({ enum: ServiceQuoteLineType, default: ServiceQuoteLineType.SERVICE })
+  @IsOptional()
+  @IsEnum(ServiceQuoteLineType)
+  lineType?: ServiceQuoteLineType;
+
   @ApiProperty({ example: "Panel repair" })
   @IsString()
   @MinLength(2)
@@ -741,6 +747,30 @@ export class QuoteLineItemDto {
   @IsInt()
   @Min(1)
   unitPaise!: number;
+
+  @ApiPropertyOptional({ example: "998719" })
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{4,8}$/, { message: "HSN/SAC code must contain 4 to 8 digits." })
+  hsnSacCode?: string;
+
+  @ApiPropertyOptional({ enum: ProductTaxClassification })
+  @IsOptional()
+  @IsEnum(ProductTaxClassification)
+  taxClassification?: ProductTaxClassification;
+
+  @ApiPropertyOptional({ example: 18 })
+  @IsOptional()
+  @Type(() => Number)
+  @Min(0)
+  @Max(100)
+  gstRatePercent?: number;
+
+  @ApiPropertyOptional({ example: "NOS" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(8)
+  uqc?: string;
 }
 
 export class SendServiceQuoteDto {
@@ -1199,6 +1229,16 @@ export class AdminServiceApprovalDto {
   @IsString()
   @MaxLength(1000)
   note?: string;
+
+  @ApiPropertyOptional({
+    example: 3,
+    description: "Tax configuration version displayed to the reviewer. Required when approving.",
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  expectedTaxConfigurationVersion?: number;
 }
 
 export class UpdateSellerCapabilitiesDto {

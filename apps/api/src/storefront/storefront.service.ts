@@ -60,6 +60,8 @@ const publicCategoryCardSelect = {
   imageUrl: true,
   defaultTaxClassification: true,
   defaultHsnCode: true,
+  defaultSacCode: true,
+  defaultSacMasterId: true,
   defaultGstRatePercent: true,
   defaultTaxDescription: true,
   sortOrder: true,

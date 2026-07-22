@@ -19,6 +19,7 @@ import {
   updateSellerServiceFieldStatus,
   withdrawSellerServiceQuote,
   type SellerServiceBooking,
+  type ProductTaxClassification,
   type ServicePaymentPurpose,
 } from "../../src/features/seller/seller-api";
 import { availableServiceBookingActions, dueServiceAmountPaise, servicePaymentPurposeOptions } from "../../src/features/seller/service-operations";
@@ -27,6 +28,17 @@ import { colors, spacing } from "../../src/theme";
 
 type ToastState = { visible: boolean; message: string; type: "success" | "error" };
 type ConfirmState = null | { action: "reject" | "cancel" | "withdrawQuote"; title: string; message: string };
+type QuoteLineDraft = {
+  id: string;
+  lineType: "SERVICE" | "PRODUCT";
+  description: string;
+  quantity: string;
+  unitAmount: string;
+  hsnSacCode: string;
+  taxClassification: ProductTaxClassification;
+  gstRatePercent: string;
+  uqc: string;
+};
 
 const fieldStatusOptions = [
   { label: "En route", value: "EN_ROUTE" },
@@ -48,8 +60,7 @@ export default function SellerServiceBookingDetailScreen() {
   const [fieldProofKeys, setFieldProofKeys] = useState("");
   const [completionNote, setCompletionNote] = useState("");
   const [completionProofKeys, setCompletionProofKeys] = useState("");
-  const [quoteDescription, setQuoteDescription] = useState("");
-  const [quoteAmount, setQuoteAmount] = useState("");
+  const [quoteLines, setQuoteLines] = useState<QuoteLineDraft[]>([newQuoteLine("SERVICE")]);
   const [quoteTtlHours, setQuoteTtlHours] = useState("48");
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentPurpose, setPaymentPurpose] = useState<ServicePaymentPurpose>("PAY_AT_VISIT");
@@ -108,7 +119,7 @@ export default function SellerServiceBookingDetailScreen() {
       }
       if (action === "quote") {
         return sendSellerServiceQuote(auth.authHeaders, decodedBookingNumber, {
-          lineItems: [{ description: quoteDescription.trim() || "Service estimate", unitPaise: rupeesToPaise(quoteAmount) }],
+          lineItems: quoteLines.map((line, index) => quoteLinePayload(line, index)),
           ...(note.trim() ? { note: note.trim() } : {}),
           ...(Number(quoteTtlHours) > 0 ? { ttlHours: Math.round(Number(quoteTtlHours)) } : {}),
         });
@@ -193,15 +204,124 @@ export default function SellerServiceBookingDetailScreen() {
       {actions.includes("QUOTE") || actions.includes("WITHDRAW_QUOTE") ? (
         <Card>
           <Text style={styles.sectionTitle}>Quote</Text>
-          <Field label="Quote item" value={quoteDescription} onChangeText={setQuoteDescription} placeholder="Repair labour and parts" />
-          <View style={styles.twoColumn}>
-            <View style={styles.column}>
-              <Field label="Amount" value={quoteAmount} onChangeText={setQuoteAmount} keyboardType="decimal-pad" />
+          {quoteLines.map((line, index) => (
+            <View key={line.id} style={styles.quoteLine}>
+              <View style={styles.quoteLineHeader}>
+                <Text style={styles.quoteLineTitle}>Line {index + 1}</Text>
+                {quoteLines.length > 1 ? (
+                  <Button
+                    title="Remove"
+                    tone="danger"
+                    onPress={() => setQuoteLines((current) => current.filter((item) => item.id !== line.id))}
+                  />
+                ) : null}
+              </View>
+              <SelectField
+                label="Line type"
+                options={[
+                  { label: "Service / SAC", value: "SERVICE" },
+                  { label: "Product or spare part / HSN", value: "PRODUCT" },
+                ]}
+                selectedValue={line.lineType}
+                onSelect={(value) =>
+                  updateQuoteLine(setQuoteLines, line.id, {
+                    lineType: value as QuoteLineDraft["lineType"],
+                    hsnSacCode: "",
+                    uqc: value === "PRODUCT" ? "PCS" : "NOS",
+                  })
+                }
+              />
+              <Field
+                label="Description"
+                value={line.description}
+                onChangeText={(description) => updateQuoteLine(setQuoteLines, line.id, { description })}
+                placeholder={line.lineType === "SERVICE" ? "Repair labour" : "Replacement part"}
+              />
+              <View style={styles.twoColumn}>
+                <View style={styles.column}>
+                  <Field
+                    label="Quantity"
+                    value={line.quantity}
+                    onChangeText={(quantity) => updateQuoteLine(setQuoteLines, line.id, { quantity })}
+                    keyboardType="number-pad"
+                  />
+                </View>
+                <View style={styles.column}>
+                  <Field
+                    label="GST-inclusive unit amount"
+                    value={line.unitAmount}
+                    onChangeText={(unitAmount) => updateQuoteLine(setQuoteLines, line.id, { unitAmount })}
+                    keyboardType="decimal-pad"
+                  />
+                </View>
+              </View>
+              <Field
+                label={line.lineType === "SERVICE" ? "SAC code" : "HSN code"}
+                value={line.hsnSacCode}
+                onChangeText={(hsnSacCode) =>
+                  updateQuoteLine(setQuoteLines, line.id, {
+                    hsnSacCode: hsnSacCode.replace(/\D/g, "").slice(0, 8),
+                  })
+                }
+                keyboardType="number-pad"
+                placeholder={
+                  line.lineType === "SERVICE"
+                    ? "Leave blank to use booking SAC"
+                    : "4 to 8 digit HSN"
+                }
+              />
+              <SelectField
+                label="Tax classification"
+                options={[
+                  { label: "Taxable", value: "TAXABLE" },
+                  { label: "Nil rated", value: "NIL_RATED" },
+                  { label: "Exempt", value: "EXEMPT" },
+                  { label: "Non-GST", value: "NON_GST" },
+                ]}
+                selectedValue={line.taxClassification}
+                onSelect={(value) =>
+                  updateQuoteLine(setQuoteLines, line.id, {
+                    taxClassification: value as ProductTaxClassification,
+                    ...(value === "TAXABLE" ? {} : { gstRatePercent: "0" }),
+                  })
+                }
+              />
+              <View style={styles.twoColumn}>
+                <View style={styles.column}>
+                  <Field
+                    label="GST rate %"
+                    value={line.gstRatePercent}
+                    onChangeText={(gstRatePercent) =>
+                      updateQuoteLine(setQuoteLines, line.id, { gstRatePercent })
+                    }
+                    keyboardType="decimal-pad"
+                    editable={line.taxClassification === "TAXABLE"}
+                    placeholder={
+                      line.lineType === "SERVICE"
+                        ? "Blank uses booking rate"
+                        : "Required for taxable parts"
+                    }
+                  />
+                </View>
+                <View style={styles.column}>
+                  <Field
+                    label="Unit"
+                    value={line.uqc}
+                    onChangeText={(uqc) => updateQuoteLine(setQuoteLines, line.id, { uqc: uqc.toUpperCase() })}
+                    autoCapitalize="characters"
+                  />
+                </View>
+              </View>
+              <Text style={styles.muted}>Use the SAC or HSN that will appear on the invoice. Amounts include GST.</Text>
             </View>
-            <View style={styles.column}>
-              <Field label="TTL hours" value={quoteTtlHours} onChangeText={setQuoteTtlHours} keyboardType="number-pad" />
-            </View>
-          </View>
+          ))}
+          <Button
+            title="Add quote line"
+            tone="secondary"
+            disabled={quoteLines.length >= 50}
+            onPress={() => setQuoteLines((current) => [...current, newQuoteLine("PRODUCT")])}
+          />
+          <Field label="TTL hours" value={quoteTtlHours} onChangeText={setQuoteTtlHours} keyboardType="number-pad" />
           <View style={styles.buttonRow}>
             {actions.includes("QUOTE") ? <Button title="Send quote" onPress={() => actionMutation.mutate("quote")} loading={actionMutation.isPending} style={styles.rowButton} /> : null}
             {actions.includes("WITHDRAW_QUOTE") ? (
@@ -333,6 +453,48 @@ function proofLines(value: string) {
     .filter(Boolean);
 }
 
+function newQuoteLine(lineType: QuoteLineDraft["lineType"]): QuoteLineDraft {
+  return {
+    id: `${lineType.toLowerCase()}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    lineType,
+    description: "",
+    quantity: "1",
+    unitAmount: "",
+    hsnSacCode: "",
+    taxClassification: "TAXABLE",
+    gstRatePercent: "",
+    uqc: lineType === "PRODUCT" ? "PCS" : "NOS",
+  };
+}
+
+function updateQuoteLine(
+  setLines: React.Dispatch<React.SetStateAction<QuoteLineDraft[]>>,
+  id: string,
+  patch: Partial<QuoteLineDraft>,
+) {
+  setLines((current) => current.map((line) => (line.id === id ? { ...line, ...patch } : line)));
+}
+
+function quoteLinePayload(line: QuoteLineDraft, index: number) {
+  const description = line.description.trim();
+  const quantity = Number(line.quantity);
+  const unitPaise = rupeesToPaise(line.unitAmount);
+  if (!description || !Number.isInteger(quantity) || quantity < 1 || unitPaise < 1) {
+    throw new Error(`Complete description, quantity, and amount for quote line ${index + 1}.`);
+  }
+
+  return {
+    lineType: line.lineType,
+    description,
+    quantity,
+    unitPaise,
+    ...(line.hsnSacCode.trim() ? { hsnSacCode: line.hsnSacCode.trim() } : {}),
+    taxClassification: line.taxClassification,
+    ...(line.gstRatePercent.trim() ? { gstRatePercent: Number(line.gstRatePercent) } : {}),
+    uqc: line.uqc.trim().toUpperCase() || (line.lineType === "PRODUCT" ? "PCS" : "NOS"),
+  };
+}
+
 function toIsoDateTime(value: string) {
   const trimmed = value.trim();
   if (!trimmed) return new Date().toISOString();
@@ -415,5 +577,23 @@ const styles = StyleSheet.create({
   },
   column: {
     flex: 1,
+  },
+  quoteLine: {
+    backgroundColor: colors.softSurface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: spacing.md,
+    padding: spacing.md,
+  },
+  quoteLineHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  quoteLineTitle: {
+    color: colors.ink,
+    fontSize: 14,
+    fontWeight: "900",
   },
 });

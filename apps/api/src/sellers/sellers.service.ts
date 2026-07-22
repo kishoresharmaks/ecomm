@@ -41,6 +41,7 @@ import type {
 import { PrismaService } from "../prisma/prisma.service";
 import { SearchIndexService } from "../search/search-index.service";
 import { StorefrontService } from "../storefront/storefront.service";
+import { invalidateSellerServiceTaxReview } from "../services-marketplace/service-tax-review";
 import { createSlug } from "../common/slug";
 import {
   normalizeStorageImageReference,
@@ -805,6 +806,21 @@ export class SellersService {
     const requiredDocumentReplaced = submittedDocumentTypes.some((documentType) =>
       requiredDocuments.includes(documentType),
     );
+    const businessLegalNameChanged =
+      dto.businessLegalName !== undefined &&
+      this.emptyToNull(dto.businessLegalName) !==
+        (existing.profile?.businessLegalName ?? null);
+    const taxAddressChanged =
+      Boolean(dto.address) &&
+      Boolean(location) &&
+      (location?.countryCode !== existingAddress?.countryCode ||
+        location?.stateCode !== existingAddress?.stateCode);
+    const gstCertificateChanged = submittedDocumentTypes.includes("GST_CERTIFICATE");
+    const serviceTaxReviewRequired =
+      taxIdentityChanged ||
+      businessLegalNameChanged ||
+      taxAddressChanged ||
+      gstCertificateChanged;
     const requiresReapproval =
       existing.approvalStatus === ApprovalStatus.APPROVED &&
       (taxIdentityChanged || requiredDocumentReplaced);
@@ -1117,6 +1133,10 @@ export class SellersService {
             },
           });
         }
+      }
+
+      if (serviceTaxReviewRequired) {
+        await invalidateSellerServiceTaxReview(tx, existing.id);
       }
 
       await tx.auditLog.create({

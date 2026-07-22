@@ -14,6 +14,7 @@ import { paginationFromQuery } from "../../common/pagination";
 import { EMAIL_TRIGGER_EVENTS } from "../../notifications/email-trigger-catalog";
 import { NotificationsService } from "../../notifications/notifications.service";
 import { PrismaService } from "../../prisma/prisma.service";
+import { invalidateSellerServiceTaxReview } from "../../services-marketplace/service-tax-review";
 import { SearchIndexService } from "../../search/search-index.service";
 import { StorageService } from "../../storage/storage.service";
 import { RequestUser } from "../../auth/types/indihub-request";
@@ -424,6 +425,13 @@ export class AdminSellersService {
         where: { id: document.id },
         data: { status: dto.status },
       });
+
+      if (
+        document.documentType === "GST_CERTIFICATE" &&
+        document.status !== nextDocument.status
+      ) {
+        await invalidateSellerServiceTaxReview(tx, sellerId);
+      }
 
       await tx.auditLog.create({
         data: {

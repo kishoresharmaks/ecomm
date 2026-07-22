@@ -27,6 +27,14 @@ function securityProxy(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-nonce", nonce);
   requestHeaders.set("x-indihub-pathname", request.nextUrl.pathname);
+  const contentSecurityPolicy =
+    process.env.NODE_ENV !== "development"
+      ? buildContentSecurityPolicy({ nonce, origin: request.nextUrl.origin })
+      : null;
+
+  if (contentSecurityPolicy) {
+    requestHeaders.set("Content-Security-Policy", contentSecurityPolicy);
+  }
 
   const response = NextResponse.next({
     request: {
@@ -34,9 +42,9 @@ function securityProxy(request: NextRequest) {
     },
   });
 
-  if (process.env.NODE_ENV !== "development") {
+  if (contentSecurityPolicy) {
     const origin = request.nextUrl.origin;
-    response.headers.set("Content-Security-Policy", buildContentSecurityPolicy({ nonce, origin }));
+    response.headers.set("Content-Security-Policy", contentSecurityPolicy);
     response.headers.set("Report-To", buildReportToHeader(origin));
     response.headers.set("Reporting-Endpoints", buildReportingEndpointsHeader(origin));
     response.headers.set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");

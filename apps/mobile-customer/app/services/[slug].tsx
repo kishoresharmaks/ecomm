@@ -179,6 +179,7 @@ export default function ServiceDetailScreen() {
               <Text style={styles.title}>{service.name}</Text>
               <Text style={styles.subtitle}>{service.sellerName ?? "Verified provider"}</Text>
               <Text style={styles.priceText}>{getPricingLabel(service, selectedPackage)}</Text>
+              <Text style={styles.taxPriceText}>GST included where applicable</Text>
               {service.serviceRating ? (
                 <InfoLine icon={StarIcon} text={`${service.serviceRating.toFixed(1)} rating · ${service.serviceReviewCount} reviews`} />
               ) : null}
@@ -555,6 +556,12 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "900",
     marginTop: 12,
+  },
+  taxPriceText: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "800",
+    marginTop: 4,
   },
   card: {
     backgroundColor: colors.surface,

@@ -32,6 +32,7 @@ import { ProductsModule } from "../products/products.module";
 import { ReportsModule } from "../reports/reports.module";
 import { ReturnsModule } from "../returns/returns.module";
 import { ReviewsModule } from "../reviews/reviews.module";
+import { SacMasterModule } from "../sac-master/sac-master.module";
 import { SearchModule } from "../search/search.module";
 import { ServiceMarketplaceModule } from "../services-marketplace/service-marketplace.module";
 import { SellersModule } from "../sellers/sellers.module";
@@ -74,6 +75,7 @@ import { SupportModule } from "../support/support.module";
     PaymentsModule,
     ReturnsModule,
     ReviewsModule,
+    SacMasterModule,
     SearchModule,
     ServiceMarketplaceModule,
     SellersModule,

@@ -128,6 +128,7 @@ export class CategoriesService {
       dto.defaultHsnCode,
       dto.defaultGstRatePercent,
     );
+    const defaultSac = await this.resolveActiveSac(dto.defaultSacCode);
 
     const category = await this.prisma.client.category.create({
       data: {
@@ -139,6 +140,8 @@ export class CategoriesService {
         imageUrl: imageUrl || null,
         defaultTaxClassification: taxDefaults.classification,
         defaultHsnCode: taxDefaults.hsnCode,
+        defaultSacCode: defaultSac?.sacCode ?? null,
+        defaultSacMasterId: defaultSac?.id ?? null,
         defaultGstRatePercent: taxDefaults.gstRatePercent,
         defaultTaxDescription: this.normalizeOptionalText(dto.defaultTaxDescription),
         status: dto.status ?? CategoryStatus.ACTIVE,
@@ -185,6 +188,10 @@ export class CategoriesService {
         ? dto.defaultGstRatePercent
         : existing.defaultGstRatePercent,
     );
+    const defaultSac =
+      dto.defaultSacCode !== undefined
+        ? await this.resolveActiveSac(dto.defaultSacCode)
+        : undefined;
 
     const category = await this.prisma.client.category.update({
       where: { id: categoryId },
@@ -202,6 +209,12 @@ export class CategoriesService {
               defaultTaxClassification: taxDefaults.classification,
               defaultHsnCode: taxDefaults.hsnCode,
               defaultGstRatePercent: taxDefaults.gstRatePercent,
+            }
+          : {}),
+        ...(dto.defaultSacCode !== undefined
+          ? {
+              defaultSacCode: defaultSac?.sacCode ?? null,
+              defaultSacMasterId: defaultSac?.id ?? null,
             }
           : {}),
         ...(dto.defaultTaxDescription !== undefined
@@ -480,5 +493,23 @@ export class CategoriesService {
         isActive: true,
       },
     });
+  }
+
+  private async resolveActiveSac(value: string | null | undefined) {
+    const sacCode = value?.trim() || null;
+    if (!sacCode) {
+      return null;
+    }
+    if (!/^\d{6}$/.test(sacCode)) {
+      throw new BadRequestException("Default SAC code must contain exactly 6 digits.");
+    }
+    const sac = await this.prisma.client.sacMaster.findFirst({
+      where: { sacCode, isActive: true },
+      select: { id: true, sacCode: true },
+    });
+    if (!sac) {
+      throw new BadRequestException("Select an active SAC code from the SAC master.");
+    }
+    return sac;
   }
 }

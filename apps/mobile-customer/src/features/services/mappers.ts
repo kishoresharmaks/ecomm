@@ -23,6 +23,7 @@ import type {
   MobileServicePackage,
   MobileServicePayment,
   MobileServiceQuote,
+  MobileServiceQuoteLine,
   MobileServiceReview,
   MobileVisitMode,
 } from "./types";
@@ -228,6 +229,8 @@ export function mapServiceBooking(raw: BackendServiceBooking): MobileServiceBook
 export function mapServiceQuote(raw: BackendServiceQuote): MobileServiceQuote {
   return {
     id: raw.id,
+    quoteNumber: raw.quoteNumber ?? null,
+    revisionNumber: raw.revisionNumber ?? null,
     status: raw.status,
     amountPaise: raw.totalPaise,
     currency: raw.currency,
@@ -236,6 +239,27 @@ export function mapServiceQuote(raw: BackendServiceQuote): MobileServiceQuote {
     expiresAt: raw.expiresAt ?? null,
     acceptedAt: raw.acceptedAt ?? null,
     rejectedAt: raw.rejectedAt ?? null,
+    lines: (raw.lineItems ?? []).map(mapServiceQuoteLine),
+  };
+}
+
+export function mapServiceQuoteLine(
+  raw: NonNullable<BackendServiceQuote["lineItems"]>[number],
+  index: number,
+): MobileServiceQuoteLine {
+  return {
+    id: raw.id ?? `quote-line-${index}`,
+    lineType: raw.lineType === "PRODUCT" ? "product" : "service",
+    description: raw.description,
+    quantity: raw.quantity,
+    unitPaise: raw.unitPaise,
+    totalPaise: raw.totalPaise,
+    hsnSacCode: raw.hsnSacCode ?? null,
+    taxClassification: raw.taxClassification ?? "TAXABLE",
+    gstRatePercent: nullableNumber(raw.gstRatePercent) ?? 0,
+    taxableValuePaise: raw.taxableValuePaise ?? raw.totalPaise,
+    taxTotalPaise: raw.taxTotalPaise ?? 0,
+    classificationDescription: raw.classificationDescriptionSnapshot ?? null,
   };
 }
 

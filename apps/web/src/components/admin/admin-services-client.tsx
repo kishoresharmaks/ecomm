@@ -63,6 +63,9 @@ function AdminServiceApprovals() {
       adminUpdateServiceApproval(adminAuth.authHeaders, service.id, {
         approvalStatus,
         status: approvalStatus === "APPROVED" ? "ACTIVE" : "INACTIVE",
+        ...(approvalStatus === "APPROVED"
+          ? { expectedTaxConfigurationVersion: service.taxConfigurationVersion }
+          : {}),
         ...(note ? { note } : {}),
       }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["admin-services"] }),
@@ -114,6 +117,21 @@ function AdminServiceApprovals() {
                 <h2 className="mt-3 text-lg font-black text-[#123A5A]">{service.title}</h2>
                 <p className="mt-1 text-sm font-semibold text-[#667085]">{service.seller.storeName} · {service.category?.name ?? "Service category"}</p>
                 <p className="mt-2 line-clamp-2 text-sm leading-6 text-[#667085]">{service.description}</p>
+                <dl className="mt-3 grid gap-2 text-xs font-semibold text-[#475467] sm:grid-cols-2 xl:grid-cols-4">
+                  <div><dt className="font-black text-[#1F2933]">SAC</dt><dd>{service.sacCode ?? "Not applicable"}</dd></div>
+                  <div><dt className="font-black text-[#1F2933]">Classification</dt><dd>{service.taxClassification.replace(/_/g, " ")}</dd></div>
+                  <div><dt className="font-black text-[#1F2933]">GST rate</dt><dd>{Number(service.gstRatePercent ?? 0)}%</dd></div>
+                  <div><dt className="font-black text-[#1F2933]">Seller GST</dt><dd>{service.seller.profile?.taxRegistrationStatus?.replace(/_/g, " ") ?? "NOT REGISTERED"}</dd></div>
+                </dl>
+                {service.sacMaster?.description ? (
+                  <p className="mt-2 text-xs font-semibold text-[#667085]">
+                    {service.sacMaster.description}
+                    {service.sacMaster.sourceReference ? ` · ${service.sacMaster.sourceReference}` : ""}
+                  </p>
+                ) : null}
+                {service.taxReviewRequired ? (
+                  <p className="mt-2 text-xs font-black text-[#B42318]">Tax review required · version {service.taxConfigurationVersion}</p>
+                ) : null}
               </div>
               <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-1">
                 <Button asChild variant="outline" size="sm">

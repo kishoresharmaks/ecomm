@@ -414,6 +414,27 @@ export default function ServiceBookingDetailScreen() {
             {booking.quote ? (
               <DetailSection title="Quote details">
                 <AmountRow strong label="Quote amount" value={booking.quote.amountPaise} currency={booking.quote.currency} />
+                {booking.quote.lines.map((line) => (
+                  <View key={line.id} style={styles.quoteLine}>
+                    <View style={styles.paymentHeader}>
+                      <Text style={styles.rowTitle}>{line.description}</Text>
+                      <Text style={styles.metaText}>
+                        {line.lineType === "service" ? "SERVICE" : "PRODUCT"}
+                      </Text>
+                    </View>
+                    <AmountRow
+                      label={`${line.quantity} x ${formatPaiseLocal(line.unitPaise, booking.quote?.currency ?? booking.currency)}`}
+                      value={line.totalPaise}
+                      currency={booking.quote?.currency ?? booking.currency}
+                    />
+                    <Text style={styles.metaText}>
+                      {line.lineType === "service" ? "SAC" : "HSN"} {line.hsnSacCode ?? "Not applicable"} | GST {line.gstRatePercent}% included
+                    </Text>
+                    {line.classificationDescription ? (
+                      <Text style={styles.metaText}>{line.classificationDescription}</Text>
+                    ) : null}
+                  </View>
+                ))}
                 <Text style={styles.bodyText}>{booking.quote.note ?? "No quote note added."}</Text>
                 <Text style={styles.metaText}>Status: {formatStatus(booking.quote.status)}</Text>
                 {booking.quote.sentAt ? <Text style={styles.metaText}>Sent: {formatDateTime(booking.quote.sentAt)}</Text> : null}
@@ -801,6 +822,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 10,
     marginTop: 8,
+    padding: 10,
+  },
+  quoteLine: {
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginTop: 10,
     padding: 10,
   },
   paymentBody: {

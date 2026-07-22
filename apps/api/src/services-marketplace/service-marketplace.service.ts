@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -41,6 +42,7 @@ import {
   ServicePaymentMode,
   ServicePaymentPurpose,
   ServicePricingModel,
+  ServiceQuoteLineType,
   ServiceQuoteStatus,
   ServiceVisitMode,
   TaxSupplyType,
@@ -97,6 +99,7 @@ const serviceListingInclude = {
     },
   },
   category: true,
+  sacMaster: true,
   packages: { orderBy: [{ sortOrder: "asc" as const }, { createdAt: "asc" as const }] },
   images: { orderBy: [{ sortOrder: "asc" as const }, { createdAt: "asc" as const }] },
   areas: { orderBy: [{ createdAt: "asc" as const }] },
@@ -408,10 +411,11 @@ export class ServiceMarketplaceService {
     this.validateServicePricing(dto);
     const taxFields = this.resolveServiceTaxFields(
       dto.taxClassification,
-      dto.sacCode,
+      dto.sacCode ?? category.defaultSacCode,
       dto.gstRatePercent,
       seller.profile?.taxRegistrationStatus,
     );
+    const sacMaster = await this.resolveActiveSacMaster(taxFields.sacCode);
     const images = this.cleanImages(dto.images);
     const packages = this.cleanPackages(dto.packages);
     const areas = this.cleanAreas(dto.areas);
@@ -429,8 +433,11 @@ export class ServiceMarketplaceService {
         paymentMode: dto.paymentMode,
         cancellationPolicy: dto.cancellationPolicy ?? ServiceCancellationPolicy.FLEXIBLE,
         taxClassification: taxFields.taxClassification,
+        sacMasterId: sacMaster?.id ?? null,
         sacCode: taxFields.sacCode,
         gstRatePercent: taxFields.gstRatePercent,
+        taxReviewRequired: true,
+        taxConfigurationVersion: 1,
         basePricePaise: dto.basePricePaise ?? null,
         inspectionFeePaise: dto.inspectionFeePaise ?? 0,
         advanceAmountPaise: dto.advanceAmountPaise ?? 0,
@@ -493,10 +500,18 @@ export class ServiceMarketplaceService {
     this.validateServicePricing(merged);
     const taxFields = this.resolveServiceTaxFields(
       dto.taxClassification ?? existing.taxClassification,
-      dto.sacCode !== undefined ? dto.sacCode : existing.sacCode,
+      dto.sacCode !== undefined
+        ? dto.sacCode
+        : existing.sacCode ?? category.defaultSacCode,
       dto.gstRatePercent !== undefined ? dto.gstRatePercent : existing.gstRatePercent,
       seller.profile?.taxRegistrationStatus,
     );
+    const sacMaster = await this.resolveActiveSacMaster(taxFields.sacCode);
+    const taxConfigurationChanged =
+      taxFields.taxClassification !== existing.taxClassification ||
+      taxFields.sacCode !== existing.sacCode ||
+      Number(taxFields.gstRatePercent ?? 0) !== Number(existing.gstRatePercent ?? 0) ||
+      (sacMaster?.id ?? null) !== existing.sacMasterId;
 
     await this.prisma.client.$transaction(async (tx) => {
       await tx.serviceListing.update({
@@ -509,8 +524,15 @@ export class ServiceMarketplaceService {
           ...(dto.paymentMode !== undefined ? { paymentMode: dto.paymentMode } : {}),
           ...(dto.cancellationPolicy !== undefined ? { cancellationPolicy: dto.cancellationPolicy } : {}),
           taxClassification: taxFields.taxClassification,
+          sacMasterId: sacMaster?.id ?? null,
           sacCode: taxFields.sacCode,
           gstRatePercent: taxFields.gstRatePercent,
+          ...(taxConfigurationChanged
+            ? {
+                taxReviewRequired: true,
+                taxConfigurationVersion: { increment: 1 },
+              }
+            : {}),
           ...(dto.basePricePaise !== undefined ? { basePricePaise: dto.basePricePaise } : {}),
           ...(dto.inspectionFeePaise !== undefined ? { inspectionFeePaise: dto.inspectionFeePaise } : {}),
           ...(dto.advanceAmountPaise !== undefined ? { advanceAmountPaise: dto.advanceAmountPaise } : {}),
@@ -635,14 +657,43 @@ export class ServiceMarketplaceService {
   async adminUpdateServiceApproval(serviceId: string, dto: AdminServiceApprovalDto, actor: RequestUser) {
     const existing = await this.prisma.client.serviceListing.findFirst({
       where: { id: serviceId, deletedAt: null },
+      include: serviceListingInclude,
     });
     if (!existing) {
       throw new NotFoundException("Service listing not found.");
     }
 
+    if (dto.approvalStatus === ApprovalStatus.APPROVED) {
+      if (dto.expectedTaxConfigurationVersion === undefined) {
+        throw new BadRequestException("Tax configuration version is required for approval.");
+      }
+      if (dto.expectedTaxConfigurationVersion !== existing.taxConfigurationVersion) {
+        throw new ConflictException("Service tax configuration changed. Refresh and review the latest values.");
+      }
+      this.resolveServiceTaxFields(
+        existing.taxClassification,
+        existing.sacCode,
+        existing.gstRatePercent,
+        existing.seller.profile?.taxRegistrationStatus,
+      );
+      const sacMaster = await this.resolveActiveSacMaster(existing.sacCode);
+      if (
+        (existing.taxClassification === ProductTaxClassification.TAXABLE ||
+          existing.taxClassification === ProductTaxClassification.NIL_RATED) &&
+        !sacMaster
+      ) {
+        throw new BadRequestException("Select an active SAC master entry before approving this service.");
+      }
+    }
+
     const updated = await this.prisma.client.$transaction(async (tx) => {
-      const updated = await tx.serviceListing.update({
-        where: { id: serviceId },
+      const result = await tx.serviceListing.updateMany({
+        where: {
+          id: serviceId,
+          ...(dto.approvalStatus === ApprovalStatus.APPROVED
+            ? { taxConfigurationVersion: dto.expectedTaxConfigurationVersion }
+            : {}),
+        },
         data: {
           approvalStatus: dto.approvalStatus,
           status:
@@ -650,7 +701,16 @@ export class ServiceMarketplaceService {
             (dto.approvalStatus === ApprovalStatus.APPROVED
               ? ServiceListingStatus.ACTIVE
               : ServiceListingStatus.INACTIVE),
+          ...(dto.approvalStatus === ApprovalStatus.APPROVED
+            ? { taxReviewRequired: false }
+            : {}),
         },
+      });
+      if (!result.count) {
+        throw new ConflictException("Service changed during approval. Refresh and review it again.");
+      }
+      const updated = await tx.serviceListing.findUniqueOrThrow({
+        where: { id: serviceId },
         include: serviceListingInclude,
       });
       await tx.auditLog.create({
@@ -760,6 +820,9 @@ export class ServiceMarketplaceService {
         buyerAddressSnapshot: taxSnapshot.buyerAddress,
         serviceTaxClassificationSnapshot: taxSnapshot.taxClassification,
         sacCodeSnapshot: taxSnapshot.sacCode,
+        sacDescriptionSnapshot: taxSnapshot.sacDescription,
+        sacSourceReferenceSnapshot: taxSnapshot.sacSourceReference,
+        taxSnapshotVersion: listing.taxConfigurationVersion,
         gstRatePercentSnapshot: taxSnapshot.gstRatePercent,
         taxSupplyTypeSnapshot: taxSnapshot.supplyType,
         placeOfSupplyStateCodeSnapshot: taxSnapshot.placeOfSupplyStateCode,
@@ -1059,17 +1122,15 @@ export class ServiceMarketplaceService {
       [ServiceBookingStatus.ACCEPTED, ServiceBookingStatus.IN_PROGRESS],
       "Quote can be sent only after accepting the booking or after inspection.",
     );
-    const lineItems = dto.lineItems.map((line, index) => {
-      const quantity = line.quantity ?? 1;
-      return {
-        description: line.description.trim(),
-        quantity,
-        unitPaise: line.unitPaise,
-        totalPaise: quantity * line.unitPaise,
-        sortOrder: index,
-      };
-    });
+    const lineItems = await Promise.all(
+      dto.lineItems.map((line, index) => this.serviceQuoteLineSnapshot(booking, line, index)),
+    );
     const totalPaise = lineItems.reduce((sum, item) => sum + item.totalPaise, 0);
+    const revisionNumber =
+      (await this.prisma.client.serviceQuote.aggregate({
+        where: { bookingId: booking.id },
+        _max: { revisionNumber: true },
+      }))._max.revisionNumber ?? 0;
     const quoteNumber = await this.createUniqueQuoteNumber();
     const ttlHours = dto.ttlHours ?? booking.listing.quoteTtlHours;
     const expiresAt = new Date(Date.now() + ttlHours * 60 * 60 * 1000);
@@ -1088,6 +1149,7 @@ export class ServiceMarketplaceService {
         data: {
           bookingId: booking.id,
           quoteNumber,
+          revisionNumber: revisionNumber + 1,
           subtotalPaise: totalPaise,
           totalPaise,
           currency: booking.currency,
@@ -1163,12 +1225,15 @@ export class ServiceMarketplaceService {
       throw new BadRequestException("This quote has expired. Please request a new quote.");
     }
     const duePaise = Math.max(0, quote.totalPaise - booking.paidAmountPaise);
-    const taxAmounts = this.calculateServiceTaxAmounts(
-      quote.totalPaise,
-      booking.sellerTaxRegistrationStatusSnapshot,
-      booking.serviceTaxClassificationSnapshot,
-      Number(booking.gstRatePercentSnapshot),
-      booking.taxSupplyTypeSnapshot,
+    const taxAmounts = quote.lineItems.reduce(
+      (sum, line) => ({
+        taxableValuePaise: sum.taxableValuePaise + line.taxableValuePaise,
+        cgstPaise: sum.cgstPaise + line.cgstPaise,
+        sgstPaise: sum.sgstPaise + line.sgstPaise,
+        igstPaise: sum.igstPaise + line.igstPaise,
+        taxTotalPaise: sum.taxTotalPaise + line.taxTotalPaise,
+      }),
+      { taxableValuePaise: 0, cgstPaise: 0, sgstPaise: 0, igstPaise: 0, taxTotalPaise: 0 },
     );
 
     await this.prisma.client.$transaction(async (tx) => {
@@ -4200,6 +4265,128 @@ export class ServiceMarketplaceService {
     return { taxClassification, sacCode, gstRatePercent };
   }
 
+  private async resolveActiveSacMaster(sacCode: string | null) {
+    if (!sacCode) {
+      return null;
+    }
+    const sacMaster = await this.prisma.client.sacMaster.findFirst({
+      where: { sacCode, isActive: true },
+      select: {
+        id: true,
+        sacCode: true,
+        description: true,
+        sourceReference: true,
+      },
+    });
+    if (!sacMaster) {
+      throw new BadRequestException("Select an active SAC code from the SAC master.");
+    }
+    return sacMaster;
+  }
+
+  private async serviceQuoteLineSnapshot(
+    booking: ServiceBookingRecord,
+    line: SendServiceQuoteDto["lineItems"][number],
+    sortOrder: number,
+  ) {
+    const lineType = line.lineType ?? ServiceQuoteLineType.SERVICE;
+    const quantity = line.quantity ?? 1;
+    const totalPaise = quantity * line.unitPaise;
+    const taxClassification =
+      line.taxClassification ?? booking.serviceTaxClassificationSnapshot;
+    const hsnSacCode =
+      line.hsnSacCode?.trim() ||
+      (lineType === ServiceQuoteLineType.SERVICE ? booking.sacCodeSnapshot : null);
+    const requestedRate =
+      line.gstRatePercent ??
+      (lineType === ServiceQuoteLineType.SERVICE
+        ? Number(booking.gstRatePercentSnapshot)
+        : null);
+
+    if (
+      (taxClassification === ProductTaxClassification.TAXABLE ||
+        taxClassification === ProductTaxClassification.NIL_RATED) &&
+      !hsnSacCode
+    ) {
+      throw new BadRequestException(
+        `${lineType === ServiceQuoteLineType.SERVICE ? "SAC" : "HSN"} code is required for taxable and nil-rated quote lines.`,
+      );
+    }
+    if (
+      hsnSacCode &&
+      (lineType === ServiceQuoteLineType.SERVICE
+        ? !/^\d{6}$/.test(hsnSacCode)
+        : !/^\d{4,8}$/.test(hsnSacCode))
+    ) {
+      throw new BadRequestException(
+        lineType === ServiceQuoteLineType.SERVICE
+          ? "Service quote lines require a six-digit SAC code."
+          : "Product quote lines require a 4 to 8 digit HSN code.",
+      );
+    }
+
+    const sacMaster =
+      lineType === ServiceQuoteLineType.SERVICE && hsnSacCode
+        ? await this.resolveActiveSacMaster(hsnSacCode)
+        : null;
+    const hsnMaster =
+      lineType === ServiceQuoteLineType.PRODUCT && hsnSacCode
+        ? await this.prisma.client.hsnMaster.findFirst({
+            where: { hsnCode: hsnSacCode, isActive: true },
+            select: { description: true },
+          })
+        : null;
+    if (hsnSacCode && !sacMaster && !hsnMaster) {
+      throw new BadRequestException(
+        `Select an active ${lineType === ServiceQuoteLineType.SERVICE ? "SAC" : "HSN"} master entry.`,
+      );
+    }
+
+    const gstRatePercent =
+      booking.sellerTaxRegistrationStatusSnapshot ===
+        SellerTaxRegistrationStatus.GST_REGISTERED &&
+      taxClassification === ProductTaxClassification.TAXABLE
+        ? Number(requestedRate)
+        : 0;
+    if (!Number.isFinite(gstRatePercent) || gstRatePercent < 0 || gstRatePercent > 100) {
+      throw new BadRequestException("Quote line GST rate must be between 0 and 100.");
+    }
+    if (
+      booking.sellerTaxRegistrationStatusSnapshot ===
+        SellerTaxRegistrationStatus.GST_REGISTERED &&
+      taxClassification === ProductTaxClassification.TAXABLE &&
+      gstRatePercent <= 0
+    ) {
+      throw new BadRequestException("Taxable quote lines require a GST rate greater than zero.");
+    }
+
+    const tax = this.calculateServiceTaxAmounts(
+      totalPaise,
+      booking.sellerTaxRegistrationStatusSnapshot,
+      taxClassification,
+      gstRatePercent,
+      booking.taxSupplyTypeSnapshot,
+    );
+    return {
+      lineType,
+      description: line.description.trim(),
+      quantity,
+      unitPaise: line.unitPaise,
+      totalPaise,
+      hsnSacCode,
+      taxClassification,
+      gstRatePercent,
+      uqc: line.uqc?.trim().toUpperCase() || "NOS",
+      classificationDescriptionSnapshot:
+        sacMaster?.description ?? hsnMaster?.description ?? null,
+      classificationSourceSnapshot: sacMaster?.sourceReference ?? null,
+      taxSnapshotVersion: 1,
+      ...tax,
+      cessPaise: 0,
+      sortOrder,
+    };
+  }
+
   private async serviceBookingTaxSnapshot(
     customer: { id: string },
     listing: ServiceListingRecord,
@@ -4215,6 +4402,7 @@ export class ServiceMarketplaceService {
       listing.gstRatePercent,
       registrationStatus,
     );
+    const sacMaster = await this.resolveActiveSacMaster(taxFields.sacCode);
     const sellerAddress = listing.seller.addresses[0];
     if (!sellerAddress) {
       throw new BadRequestException(
@@ -4293,6 +4481,8 @@ export class ServiceMarketplaceService {
       buyerAddress: toJsonValue(buyerAddress),
       taxClassification: taxFields.taxClassification,
       sacCode: taxFields.sacCode,
+      sacDescription: sacMaster?.description ?? null,
+      sacSourceReference: sacMaster?.sourceReference ?? null,
       gstRatePercent: taxFields.gstRatePercent ?? 0,
       supplyType,
       placeOfSupplyStateCode: buyerStateCode,
@@ -4322,8 +4512,9 @@ export class ServiceMarketplaceService {
       };
     }
     const rateBps = Math.round(appliedRate * 100);
-    const taxableValuePaise = Math.round(
-      (considerationPaise * 10_000) / (10_000 + rateBps),
+    const divisor = 10_000 + rateBps;
+    const taxableValuePaise = Math.floor(
+      (considerationPaise * 10_000 + Math.floor(divisor / 2)) / divisor,
     );
     const taxTotalPaise = considerationPaise - taxableValuePaise;
     if (supplyType === TaxSupplyType.INTRA_STATE) {
