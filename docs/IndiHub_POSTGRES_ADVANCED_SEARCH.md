@@ -98,7 +98,7 @@ Admin controls:
 
 ## Rollout Notes
 
-Apply the Prisma migration in a controlled database window. Do not use `db:push` on staging or production. After the migration:
+Apply the Prisma migration in a controlled database window. Do not use `db:push` on staging or production. Fresh disposable databases must also use `prisma migrate reset`, because `db push` cannot reproduce the stored generated `search_vector` column. After the migration:
 
 1. Run `pnpm.cmd run db:generate`.
 2. Run `pnpm.cmd db:validate`.

@@ -35,6 +35,7 @@ const iconByHref: Array<[string, typeof LayoutDashboard]> = [
   ["/finance/fx-providers", BadgeDollarSign],
   ["/finance/settings", Settings],
   ["/finance/reports", BarChart3],
+  ["/finance/exports", ReceiptText],
   ["/finance/commission-rules", Settings],
   ["/finance/statements", ReceiptText],
   ["/finance/ledger", WalletCards],

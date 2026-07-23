@@ -1,15 +1,22 @@
 import {
+  CheckmarkCircle01Icon,
+  DeliveryTruck01Icon,
+  FileCheckIcon,
   HeartIcon,
   MinusSignIcon,
+  NoteIcon,
   PlusSignIcon,
+  QrCodeIcon,
   Share02Icon,
   Shield01Icon,
   ShoppingCart01Icon,
   Store01Icon,
+  TagIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react-native";
 import { FlashList } from "@shopify/flash-list";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { buildProductDetailContent } from "@indihub/shared-types";
 import { Link, Stack, type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Image, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
@@ -58,7 +65,12 @@ type ProductDetailFeedItem =
       selectedVariant: ProductVariant | null;
       onChangeQuantity: (quantity: number) => void;
     }
-  | { id: "description"; type: "description"; product: ProductSummary }
+  | {
+      id: "description";
+      type: "description";
+      product: ProductSummary;
+      selectedVariant: ProductVariant | null;
+    }
   | { id: "seller"; type: "seller"; product: ProductSummary }
   | {
       id: "recommendations";
@@ -180,7 +192,7 @@ function ProductDetailScreen() {
             setAddedMessage("");
           },
         },
-        { id: "description", type: "description", product },
+        { id: "description", type: "description", product, selectedVariant },
         { id: "seller", type: "seller", product },
       ];
 
@@ -380,7 +392,7 @@ function ProductDetailFeed({
     );
   }
 
-  return <DescriptionBlock product={item.product} />;
+  return <DescriptionBlock product={item.product} selectedVariant={item.selectedVariant} />;
 }
 
 function ProductGallery({
@@ -592,17 +604,112 @@ function QuantitySelector({
   );
 }
 
-function DescriptionBlock({ product }: { product: ProductSummary }) {
+function DescriptionBlock({
+  product,
+  selectedVariant,
+}: {
+  product: ProductSummary;
+  selectedVariant: ProductVariant | null;
+}) {
+  const details = buildProductDetailContent(product, selectedVariant);
+  const DESC_LIMIT = 280;
+  const rawDescription = product.description || "";
+  const [descExpanded, setDescExpanded] = useState(false);
+  const isLong = rawDescription.length > DESC_LIMIT;
+  const displayDescription = isLong && !descExpanded
+    ? `${rawDescription.slice(0, DESC_LIMIT).trimEnd()}\u2026`
+    : rawDescription;
+
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>Product details</Text>
-      <Text style={styles.descriptionText}>{product.description || "Product details will be updated by the seller soon."}</Text>
+      {/* Header */}
+      <Text style={styles.sectionTitle}>About this product</Text>
+
+      {/* Description */}
+      <Text style={styles.descriptionText}>
+        {displayDescription || "Product details will be updated by the seller soon."}
+      </Text>
+      {isLong ? (
+        <Pressable onPress={() => setDescExpanded((v) => !v)} style={styles.readMoreButton}>
+          <Text style={styles.readMoreText}>{descExpanded ? "Show less" : "Read more"}</Text>
+        </Pressable>
+      ) : null}
+
+      {/* Highlights */}
+      {details.highlights.length ? (
+        <View style={styles.detailSection}>
+          <View style={styles.detailSectionHeader}>
+            <View style={styles.sectionIconBadge}>
+              <HugeiconsIcon color="#ED3500" icon={CheckmarkCircle01Icon} size={13} strokeWidth={2.4} />
+            </View>
+            <Text style={styles.detailSectionTitle}>Key highlights</Text>
+          </View>
+          {details.highlights.map((highlight, index) => (
+            <View key={highlight} style={styles.highlightRow}>
+              <View style={styles.highlightNumberBadge}>
+                <Text style={styles.highlightNumberText}>{index + 1}</Text>
+              </View>
+              <Text style={styles.highlightText}>{highlight}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+
+      {/* Detail sections */}
+      {details.sections.map((detailSection) => (
+        <View key={detailSection.key} style={styles.detailSection}>
+          <View style={styles.detailSectionHeader}>
+            <View style={styles.sectionIconBadge}>
+              <DescriptionSectionIcon sectionKey={detailSection.key} />
+            </View>
+            <Text style={styles.detailSectionTitle}>{detailSection.title}</Text>
+          </View>
+          <View style={styles.detailTable}>
+            {detailSection.rows.map((row, index) => (
+              <View
+                key={`${row.scope}-${row.key}`}
+                style={[
+                  styles.detailRow,
+                  index % 2 === 0 ? styles.detailRowEven : styles.detailRowOdd,
+                  index === detailSection.rows.length - 1 ? styles.detailRowLast : null,
+                ]}
+              >
+                <Text style={styles.detailLabel}>{row.label}</Text>
+                <Text style={styles.detailValue}>{row.value}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      ))}
+
+      {/* Trust row */}
       <View style={styles.trustRow}>
-        <HugeiconsIcon color={colors.success} icon={Shield01Icon} size={22} strokeWidth={2.1} />
-        <Text style={styles.trustText}>Verified seller listing with secure cart pricing from the marketplace backend.</Text>
+        <View style={styles.trustIconWrap}>
+          <HugeiconsIcon color={colors.success} icon={Shield01Icon} size={18} strokeWidth={2.2} />
+        </View>
+        <Text style={styles.trustText}>Seller listing verified and approved by 1HandIndia marketplace.</Text>
       </View>
     </View>
   );
+}
+
+function DescriptionSectionIcon({ sectionKey }: { sectionKey: string }) {
+  switch (sectionKey) {
+    case "OVERVIEW":
+      return <HugeiconsIcon color="#163B5C" icon={NoteIcon} size={13} strokeWidth={2.3} />;
+    case "COMPLIANCE":
+      return <HugeiconsIcon color="#163B5C" icon={FileCheckIcon} size={13} strokeWidth={2.3} />;
+    case "FULFILMENT":
+      return <HugeiconsIcon color="#163B5C" icon={DeliveryTruck01Icon} size={13} strokeWidth={2.3} />;
+    case "IDENTIFIERS":
+      return <HugeiconsIcon color="#163B5C" icon={QrCodeIcon} size={13} strokeWidth={2.3} />;
+    case "SPECIFICATIONS":
+      return <HugeiconsIcon color="#163B5C" icon={TagIcon} size={13} strokeWidth={2.3} />;
+    case "VARIANT":
+      return <HugeiconsIcon color="#163B5C" icon={TagIcon} size={13} strokeWidth={2.3} />;
+    default:
+      return <HugeiconsIcon color="#163B5C" icon={NoteIcon} size={13} strokeWidth={2.3} />;
+  }
 }
 
 function SellerBlock({ product }: { product: ProductSummary }) {
@@ -1157,25 +1264,136 @@ const styles = StyleSheet.create({
     color: colors.ink,
     fontSize: 14,
     fontWeight: "700",
-    lineHeight: 21,
+    lineHeight: 22,
+  },
+  detailSection: {
+    borderTopColor: colors.border,
+    borderTopWidth: 1,
+    marginTop: 18,
+    paddingTop: 16,
+  },
+  detailSectionHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 12,
+  },
+  sectionIconBadge: {
+    alignItems: "center",
+    backgroundColor: "#F0F4F8",
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    height: 26,
+    justifyContent: "center",
+    width: 26,
+  },
+  detailSectionTitle: {
+    color: colors.ink,
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  detailTable: {
+    borderColor: "#EEF1F4",
+    borderRadius: 14,
+    borderWidth: 1,
+    overflow: "hidden",
+  },
+  highlightRow: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: 10,
+    paddingVertical: 5,
+  },
+  highlightNumberBadge: {
+    alignItems: "center",
+    backgroundColor: "#FFF0E8",
+    borderRadius: 999,
+    height: 20,
+    justifyContent: "center",
+    marginTop: 1,
+    width: 20,
+  },
+  highlightNumberText: {
+    color: colors.primary,
+    fontSize: 10,
+    fontWeight: "900",
+  },
+  highlightText: {
+    color: "#475467",
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "700",
+    lineHeight: 20,
+  },
+  detailRow: {
+    alignItems: "flex-start",
+    borderBottomColor: "#EEF1F4",
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    justifyContent: "space-between",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  detailRowEven: {
+    backgroundColor: "#FFFFFF",
+  },
+  detailRowOdd: {
+    backgroundColor: "#FAFBFC",
+  },
+  detailRowLast: {
+    borderBottomWidth: 0,
+    paddingBottom: 10,
+  },
+  detailLabel: {
+    color: colors.muted,
+    flex: 1,
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 18,
+  },
+  detailValue: {
+    color: colors.ink,
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "900",
+    lineHeight: 19,
+    textAlign: "right",
   },
   trustRow: {
     alignItems: "center",
-    backgroundColor: "#F7FBF9",
-    borderColor: "#CFEFE2",
-    borderRadius: 20,
+    backgroundColor: "#F2FCF7",
+    borderColor: "#AEDEC8",
+    borderRadius: 18,
     borderWidth: 1,
     flexDirection: "row",
     gap: 10,
-    marginTop: 14,
+    marginTop: 16,
     padding: 12,
   },
+  trustIconWrap: {
+    alignItems: "center",
+    backgroundColor: "#DCF5EA",
+    borderRadius: 999,
+    height: 32,
+    justifyContent: "center",
+    width: 32,
+  },
   trustText: {
-    color: colors.ink,
+    color: "#1A5C3A",
     flex: 1,
     fontSize: 12,
     fontWeight: "800",
     lineHeight: 17,
+  },
+  readMoreButton: {
+    marginTop: 6,
+  },
+  readMoreText: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: "900",
   },
   sellerRow: {
     alignItems: "center",

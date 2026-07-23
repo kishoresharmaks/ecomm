@@ -3,6 +3,7 @@ import { deleteJson, getJson, patchJson, postJson, type MobileAuthHeaders } from
 export type SellerStatus = "PENDING_APPROVAL" | "APPROVED" | "SUSPENDED" | "REJECTED";
 export type SellerApprovalStatus = "PENDING_APPROVAL" | "APPROVED" | "REJECTED";
 export type ProductTaxClassification = "TAXABLE" | "NIL_RATED" | "EXEMPT" | "NON_GST";
+export type SellerTaxRegistrationStatus = "GST_REGISTERED" | "COMPOSITION" | "NOT_REGISTERED";
 export type SellerProductDeliveryMode =
   | "STORE_PICKUP"
   | "LOCAL_DELIVERY_PARTNER"
@@ -39,7 +40,7 @@ export type SellerProfile = {
     contactEmail?: string | null;
     businessLegalName?: string | null;
     businessType?: string | null;
-    taxRegistrationStatus?: "GST_REGISTERED" | "NOT_REGISTERED" | "COMPOSITION";
+    taxRegistrationStatus?: SellerTaxRegistrationStatus;
     gstNumber?: string | null;
     panNumber?: string | null;
   } | null;
@@ -110,6 +111,7 @@ export type SellerOnboardingPayload = {
   businessDescription?: string;
   businessLegalName?: string;
   businessType?: string;
+  taxRegistrationStatus: SellerTaxRegistrationStatus;
   gstNumber?: string;
   panNumber?: string;
   address: SellerAddress & { line1: string };
@@ -127,6 +129,7 @@ export type SellerProfilePayload = {
   contactEmail?: string;
   businessLegalName?: string;
   businessType?: string | null;
+  taxRegistrationStatus?: SellerTaxRegistrationStatus;
   gstNumber?: string;
   panNumber?: string;
   payoutProfile?: {
@@ -153,6 +156,7 @@ export type ProductSummary = {
   attributes?: Record<string, unknown> | null;
   hsnCode?: string | null;
   gstRatePercent?: number | null;
+  taxClassification?: ProductTaxClassification;
   deliveryModes?: SellerProductDeliveryMode[];
   category?: { id: string; name: string } | null;
   variants?: Array<{
@@ -175,6 +179,7 @@ export type SellerProductPayload = {
   categoryId: string;
   name: string;
   description: string;
+  taxClassification: ProductTaxClassification;
   deliveryModes?: SellerProductDeliveryMode[];
   attributes?: Record<string, unknown>;
   images?: Array<{ url: string; altText?: string; sortOrder?: number; isPrimary?: boolean }>;
@@ -248,6 +253,7 @@ export type CategorySummary = {
   defaultSacCode?: string | null;
   defaultSacMasterId?: string | null;
   defaultGstRatePercent?: number | null;
+  defaultTaxClassification?: ProductTaxClassification | null;
   defaultTaxDescription?: string | null;
   sortOrder?: number;
   productTemplate?: ProductTemplateSummary | null;
@@ -493,6 +499,99 @@ export type SellerSalesReport = {
   lowStockProducts: Array<{ id: string; stockQuantity?: number | null; product: ProductSummary }>;
 };
 
+export type SellerInventoryVariant = {
+  id: string;
+  sku: string | null;
+  variantName: string | null;
+  stockQuantity: number;
+  product: { id: string; name: string; status: string };
+};
+
+export type SellerInventoryReport = {
+  summary: {
+    productCount: number;
+    activeProductCount: number;
+    variantCount: number;
+    lowStockCount: number;
+  };
+  lowStockVariants: SellerInventoryVariant[];
+  variants: SellerInventoryVariant[];
+  topSoldItems: Array<{
+    productId: string;
+    productName: string;
+    quantitySold: number;
+    revenuePaise: number;
+  }>;
+  splits: Array<{ id: string; sellerSubtotalPaise: number; createdAt: string }>;
+};
+
+export type SellerFinanceReport = {
+  currency?: string;
+  baseCurrency?: string;
+  fxRate?: number;
+  summary: {
+    grossSalesPaise: number;
+    commissionPaise: number;
+    netPayablePaise: number;
+    refundAdjustmentPaise: number;
+    platformFeePaise: number;
+    orderCount: number;
+    pendingPayoutsPaise: number;
+    pendingPayoutsCount: number;
+    paidPayoutsPaise: number;
+    paidPayoutsCount: number;
+    eligiblePaise: number;
+    eligibleCount: number;
+  };
+  recentPayouts: Array<{
+    id: string;
+    payoutNumber: string;
+    status: string;
+    netPayablePaise: number;
+    currency: string;
+    createdAt: string;
+    paidAt: string | null;
+  }>;
+  ledgerEntries: Array<{
+    id: string;
+    entryType: string;
+    description: string;
+    debitPaise: number;
+    creditPaise: number;
+    balanceAfterPaise: number;
+    currency: string;
+    createdAt: string;
+  }>;
+};
+
+export type SellerReturnsReport = {
+  summary: {
+    totalCount: number;
+    approvedCount: number;
+    pendingCount: number;
+    requestedAmountPaise: number;
+    approvedAmountPaise: number;
+    itemCount: number;
+  };
+  byStatus: Array<{
+    status: string;
+    count: number;
+    requestedAmountPaise: number;
+    approvedAmountPaise: number;
+  }>;
+  recentReturns: Array<{
+    id: string;
+    requestNumber: string;
+    status: string;
+    resolution: string;
+    reason: string;
+    requestedAmountPaise: number;
+    approvedAmountPaise: number;
+    requestedAt: string;
+    order: { orderNumber: string };
+  }>;
+};
+
 export type SellerPayoutAvailability = {
   requestEnabled: boolean;
   sellerReady: boolean;
@@ -622,6 +721,18 @@ export function updateSellerPackage(
 
 export function getSellerSalesReport(auth: MobileAuthHeaders, query: Record<string, string | number | undefined> = {}) {
   return getJson<SellerSalesReport>({ path: "/seller/reports/sales", auth, searchParams: query });
+}
+
+export function getSellerInventoryReport(auth: MobileAuthHeaders, query: Record<string, string | number | undefined> = {}) {
+  return getJson<SellerInventoryReport>({ path: "/seller/reports/inventory", auth, searchParams: query });
+}
+
+export function getSellerFinanceReport(auth: MobileAuthHeaders, query: Record<string, string | number | undefined> = {}) {
+  return getJson<SellerFinanceReport>({ path: "/seller/reports/finance", auth, searchParams: query });
+}
+
+export function getSellerReturnsReport(auth: MobileAuthHeaders, query: Record<string, string | number | undefined> = {}) {
+  return getJson<SellerReturnsReport>({ path: "/seller/reports/returns", auth, searchParams: query });
 }
 
 export function getSellerPayoutAvailability(auth: MobileAuthHeaders) {

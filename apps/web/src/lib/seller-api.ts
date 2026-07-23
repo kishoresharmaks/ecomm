@@ -1535,39 +1535,6 @@ export function getSellerReturnsReport(
 }
 
 // ─── CSV Export helper ────────────────────────────────────────────────────────
-export function getSellerReportCsvUrl(type: "sales" | "inventory" | "finance" | "tax" | "returns", query: { dateFrom?: string; dateTo?: string } = {}) {
-  const qs = new URLSearchParams();
-  if (query.dateFrom) qs.set("dateFrom", query.dateFrom);
-  if (query.dateTo) qs.set("dateTo", query.dateTo);
-  return `/api/seller/reports/export/${type}${qs.toString() ? `?${qs.toString()}` : ""}`;
-}
-
-export async function downloadSellerReportCsv(auth: IndihubAuthHeaders, type: "sales" | "inventory" | "finance" | "tax" | "returns", query: { dateFrom?: string; dateTo?: string } = {}) {
-  const path = getSellerReportCsvUrl(type, query);
-  const headers = await buildAuthHeaders(auth);
-  
-  let response = await fetch(`${apiBaseUrl}${path}`, { headers });
-  
-  if (response.status === 401 && auth.getBearerToken) {
-    const retryHeaders = await buildAuthHeaders(auth, { skipCache: true });
-    response = await fetch(`${apiBaseUrl}${path}`, { headers: retryHeaders });
-  }
-
-  if (!response.ok) {
-    throw new Error("Failed to download CSV");
-  }
-  const blob = await response.blob();
-  const downloadUrl = window.URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = downloadUrl;
-  a.download = `${type}-report.csv`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  window.URL.revokeObjectURL(downloadUrl);
-}
-
-
 export function getSellerReviewSummary(auth: IndihubAuthHeaders) {
   return indihubFetch<SellerReviewSummary>("/api/seller/reviews/summary", undefined, auth);
 }

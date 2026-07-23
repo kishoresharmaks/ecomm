@@ -3,8 +3,10 @@ import { optionalSellerProfileText } from "./profile-validation";
 import type {
   SellerProfile,
   SellerProfilePayload,
+  SellerTaxRegistrationStatus,
   SellerVerificationDocumentPayload,
 } from "./seller-api";
+import { normalizeGstin } from "./seller-tax";
 
 export type SellerProfileFormFields = {
   storeName: string;
@@ -14,6 +16,7 @@ export type SellerProfileFormFields = {
   contactEmail: string;
   businessLegalName: string;
   businessType: string;
+  taxRegistrationStatus: SellerTaxRegistrationStatus;
   gstNumber: string;
   panNumber: string;
   line1: string;
@@ -39,6 +42,7 @@ export function emptySellerProfileFormFields(): SellerProfileFormFields {
     contactEmail: "",
     businessLegalName: "",
     businessType: "",
+    taxRegistrationStatus: "NOT_REGISTERED",
     gstNumber: "",
     panNumber: "",
     line1: "",
@@ -68,6 +72,9 @@ export function sellerProfileToFormFields(profile: SellerProfile): SellerProfile
     contactEmail: profile.profile?.contactEmail ?? "",
     businessLegalName: profile.profile?.businessLegalName ?? "",
     businessType: profile.profile?.businessType ?? "",
+    taxRegistrationStatus:
+      profile.profile?.taxRegistrationStatus ??
+      (profile.profile?.gstNumber ? "GST_REGISTERED" : "NOT_REGISTERED"),
     gstNumber: profile.profile?.gstNumber ?? "",
     panNumber: profile.profile?.panNumber ?? "",
     line1: address?.line1 ?? "",
@@ -104,7 +111,8 @@ export function hasSellerProfileUnsavedChanges(
     fields.contactEmail !== original.contactEmail ||
     fields.businessLegalName !== original.businessLegalName ||
     fields.businessType !== original.businessType ||
-    fields.gstNumber !== original.gstNumber ||
+    fields.taxRegistrationStatus !== original.taxRegistrationStatus ||
+    normalizeGstin(fields.gstNumber) !== normalizeGstin(original.gstNumber) ||
     fields.panNumber !== original.panNumber ||
     fields.line1 !== original.line1 ||
     fields.line2 !== original.line2 ||
@@ -160,9 +168,15 @@ export function buildSellerProfilePatchPayload(
     payload.businessType = businessType ?? null;
   }
 
-  const gstNumber = optionalSellerProfileText(fields.gstNumber);
-  if (fields.gstNumber !== original.gstNumber && gstNumber) {
-    payload.gstNumber = gstNumber;
+  if (fields.taxRegistrationStatus !== original.taxRegistrationStatus) {
+    payload.taxRegistrationStatus = fields.taxRegistrationStatus;
+  }
+
+  if (fields.taxRegistrationStatus !== "NOT_REGISTERED") {
+    const gstNumber = normalizeGstin(fields.gstNumber);
+    if (gstNumber !== original.gstNumber) {
+      payload.gstNumber = gstNumber;
+    }
   }
 
   const panNumber = optionalSellerProfileText(fields.panNumber);

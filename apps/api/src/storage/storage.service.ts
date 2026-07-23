@@ -114,6 +114,7 @@ const b2bReceiptVoucherPrefix = `${storageKeyRoot}/b2b/receipt-vouchers`;
 const legacyB2BReceiptVoucherPrefix = `${legacyStorageKeyRoot}/b2b/receipt-vouchers`;
 const b2bErpExportPrefix = `${storageKeyRoot}/b2b/erp-exports`;
 const legacyB2BErpExportPrefix = `${legacyStorageKeyRoot}/b2b/erp-exports`;
+const reportExportPrefix = `${storageKeyRoot}/report-exports`;
 const b2bPodPrefix = `${storageKeyRoot}/delivery-proofs/delivery_proof`;
 const legacyB2BPodPrefix = `${legacyStorageKeyRoot}/delivery-proofs/delivery_proof`;
 const privateDocumentDownloadTtlSeconds = 300;
@@ -123,6 +124,8 @@ const b2bProformaInvoiceDownloadTtlSeconds = 300;
 const b2bTaxInvoiceDownloadTtlSeconds = 300;
 const b2bReceiptVoucherDownloadTtlSeconds = 300;
 const b2bPodDownloadTtlSeconds = 300;
+const reportExportDownloadTtlSeconds = 300;
+const reportExportMaxBytes = 250 * 1024 * 1024;
 const privateUploadOrphanCleanupHours = 24;
 
 type StorageSettingMap = Map<string, Prisma.JsonValue>;
@@ -1541,6 +1544,72 @@ export class StorageService {
     );
   }
 
+  async saveReportExport(
+    context: { jobId: string; actorUserId: string },
+    metadata: { fileName: string; contentType: string },
+    buffer: Buffer,
+  ) {
+    if (!buffer.length) {
+      throw new BadRequestException("Report export is empty.");
+    }
+    if (buffer.length > reportExportMaxBytes) {
+      throw new BadRequestException("Report export must be 250 MB or less.");
+    }
+
+    const settingMap = await this.storageSettingMap();
+    const privateStorage = this.privateStorageConfigFromSettings(settingMap);
+    if (!privateStorage.configured) {
+      throw new ServiceUnavailableException("Private document storage is not configured.");
+    }
+
+    const assetKey = this.createReportExportAssetKey(context.jobId, metadata.fileName);
+    if (privateStorage.activeProvider === "S3") {
+      const presigned = this.presignS3Object(privateStorage, "PUT", assetKey);
+      const body = buffer.buffer.slice(
+        buffer.byteOffset,
+        buffer.byteOffset + buffer.byteLength,
+      ) as ArrayBuffer;
+      const response = await fetch(presigned.url, {
+        method: "PUT",
+        headers: { "Content-Type": metadata.contentType },
+        body,
+      });
+      if (!response.ok) {
+        throw new ServiceUnavailableException("Could not upload report export.");
+      }
+      await this.recordPrivateUpload({
+        assetKey,
+        provider: "S3",
+        uploadKind: "REPORT_EXPORT",
+        actorUserId: context.actorUserId,
+        contentType: metadata.contentType,
+        sizeBytes: buffer.length,
+      });
+      return { provider: "s3" as const, assetKey };
+    }
+
+    const filePath = this.privateLocalFilePath(privateStorage, assetKey);
+    await mkdir(dirname(filePath), { recursive: true });
+    await writeFile(filePath, buffer);
+    await this.recordPrivateUpload({
+      assetKey,
+      provider: "LOCAL",
+      uploadKind: "REPORT_EXPORT",
+      actorUserId: context.actorUserId,
+      contentType: metadata.contentType,
+      sizeBytes: buffer.length,
+    });
+    return { provider: "local" as const, assetKey };
+  }
+
+  async reportExportDocumentAccess(assetKey: string | undefined) {
+    return this.privateB2BDocumentAccess(
+      this.normalizeReportExportKey(assetKey),
+      "Report export file was not found in private storage.",
+      reportExportDownloadTtlSeconds,
+    );
+  }
+
   async b2bPodDocumentAccess(
     assetKey: string | undefined,
   ): Promise<B2BPodDocumentAccess> {
@@ -1631,6 +1700,14 @@ export class StorageService {
     const timestamp = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
     return this.normalizeB2BErpExportKey(
       `${b2bErpExportPrefix}/${this.safeSegment(context.exportNumber)}/${timestamp}-${safeName}${extension}`,
+    );
+  }
+
+  private createReportExportAssetKey(jobId: string, fileName: string) {
+    const safeName = this.safeDocumentBaseName(fileName) || "report";
+    const timestamp = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
+    return this.normalizeReportExportKey(
+      `${reportExportPrefix}/${this.safeSegment(jobId)}/${timestamp}-${safeName}.csv`,
     );
   }
 
@@ -2177,6 +2254,14 @@ export class StorageService {
     return normalized;
   }
 
+  private normalizeReportExportKey(key: string | undefined) {
+    const normalized = this.normalizePublicImageKey(key);
+    if (!normalized.startsWith(`${reportExportPrefix}/`)) {
+      throw new BadRequestException("Report export file key is invalid.");
+    }
+    return normalized;
+  }
+
   private normalizeB2BPodKey(key: string | undefined) {
     const normalized = this.normalizePublicImageKey(key);
     if (
@@ -2376,6 +2461,7 @@ export class StorageService {
       | "B2B_TAX_INVOICE"
       | "B2B_RECEIPT_VOUCHER"
       | "B2B_ERP_EXPORT"
+      | "REPORT_EXPORT"
       | "DELIVERY_PROOF"
       | "RETURN_PICKUP_PROOF"
       | "RETURN_RECEIPT_PROOF"

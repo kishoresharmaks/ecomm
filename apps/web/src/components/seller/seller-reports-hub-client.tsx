@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useState } from "react";
-import { BarChart3, Package, IndianRupee, FileText, Undo2, CalendarDays } from "lucide-react";
+import { BarChart3, Package, IndianRupee, FileText, Undo2, CalendarDays, FileClock } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@indihub/ui";
 import { formatMoney } from "@/lib/storefront-api";
@@ -49,14 +49,22 @@ export function SellerReportsHubClient() {
   return (
     <div className="grid gap-5">
       <div className="rounded-xl border border-[#E5E7EB] bg-white p-5 shadow-sm">
-        <form onSubmit={submit} className="grid w-full gap-3 md:grid-cols-[1fr_1fr_auto]">
-          <SellerField label="Date from" name="dateFrom" type="date" value={dateFrom} onChange={setDateFrom} />
-          <SellerField label="Date to" name="dateTo" type="date" value={dateTo} onChange={setDateTo} />
-          <Button type="submit" className="self-end">
-            <CalendarDays className="h-4 w-4" aria-hidden="true" />
-            Apply
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <form onSubmit={submit} className="grid w-full gap-3 md:grid-cols-[1fr_1fr_auto] lg:max-w-3xl">
+            <SellerField label="Date from" name="dateFrom" type="date" value={dateFrom} onChange={setDateFrom} />
+            <SellerField label="Date to" name="dateTo" type="date" value={dateTo} onChange={setDateTo} />
+            <Button type="submit" className="self-end">
+              <CalendarDays className="h-4 w-4" aria-hidden="true" />
+              Apply
+            </Button>
+          </form>
+          <Button asChild variant="secondary">
+            <Link href="/seller/reports/exports">
+              <FileClock className="h-4 w-4" aria-hidden="true" />
+              Export history
+            </Link>
           </Button>
-        </form>
+        </div>
       </div>
 
       {reportQuery.isLoading ? <SellerSkeleton /> : null}

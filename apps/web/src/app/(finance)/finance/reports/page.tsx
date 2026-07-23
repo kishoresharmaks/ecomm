@@ -3,7 +3,7 @@ import { PaymentReportsClient } from "@/components/finance/payment-reports-clien
 
 export default function FinancePaymentReportsPage() {
   return (
-    <FinanceShell title="Payment reports" description="Summarise payment methods, payment statuses, COD collection states, settlements, and payout movement.">
+    <FinanceShell title="Finance reports" description="Review complete payment, collection, settlement, payout, and service receivable registers with controlled CSV exports.">
       <PaymentReportsClient />
     </FinanceShell>
   );

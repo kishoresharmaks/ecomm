@@ -22,7 +22,7 @@ const moreItems: Array<{
 }> = [
   { title: "Finance", subtitle: "Wallet, payouts, ledger, and statements", href: "/(tabs)/finance", icon: DollarSignIcon },
   { title: "B2B", subtitle: "Enquiries and approved purchase orders", href: "/(tabs)/b2b", icon: Chat01Icon },
-  { title: "Sales", subtitle: "Performance and growth tools", href: "/(tabs)/sales", icon: ChartIcon },
+  { title: "Reports", subtitle: "Sales, inventory, finance, returns, and GST", href: "/(tabs)/sales", icon: ChartIcon },
   { title: "Profile", subtitle: "Store, payout, and business details", href: "/(tabs)/profile", icon: UserCircleIcon },
   { title: "Reviews", subtitle: "Customer ratings and replies", href: "/reviews", icon: StarIcon },
   { title: "Coupons", subtitle: "Seller-funded campaign participation", href: "/coupons", icon: CreditCardIcon },

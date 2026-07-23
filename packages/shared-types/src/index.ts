@@ -2,6 +2,7 @@ export const platformRoles = ["customer", "seller", "business_buyer", "admin"] a
 export type PlatformRole = (typeof platformRoles)[number];
 
 export * from "./product-essentials";
+export * from "./product-details";
 export * from "./product-lifecycle";
 export * from "./product-return-policy";
 

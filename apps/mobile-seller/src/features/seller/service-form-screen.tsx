@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { router, type Href } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useMobileSellerAuth } from "../../auth/mobile-seller-auth-context";
 import { Button, Card, Field, Header, LoadingState, QueryErrorState, Screen, SelectField, Toast } from "../../components/screen";
@@ -12,6 +12,7 @@ import {
   getSellerProfile,
   getSellerService,
   listCategories,
+  searchSacMaster,
   updateSellerService,
   type CategorySummary,
   type ServiceVisitMode,
@@ -19,6 +20,8 @@ import {
 import {
   buildServicePayload,
   createServiceForm,
+  manualSacCode,
+  sacCodeFromMaster,
   servicePaymentModeOptions,
   servicePricingModelOptions,
   serviceVisitModeOptions,
@@ -32,6 +35,7 @@ export function SellerServiceFormScreen({ serviceId }: { serviceId?: string }) {
   const queryClient = useQueryClient();
   const [values, setValues] = useState<ServiceFormValues>(() => createServiceForm());
   const [uploading, setUploading] = useState(false);
+  const [sacSearch, setSacSearch] = useState("");
   const [toast, setToast] = useState<ToastState>({ visible: false, message: "", type: "success" });
   const editing = Boolean(serviceId);
 
@@ -66,9 +70,18 @@ export function SellerServiceFormScreen({ serviceId }: { serviceId?: string }) {
 
   useEffect(() => {
     if (serviceQuery.data) {
-      setValues(createServiceForm(serviceQuery.data, profileQuery.data));
+      const next = createServiceForm(serviceQuery.data, profileQuery.data);
+      setValues(next);
+      setSacSearch(next.sacCode);
     }
   }, [profileQuery.data, serviceQuery.data]);
+
+  const deferredSacSearch = useDeferredValue(sacSearch.trim());
+  const sacQuery = useQuery({
+    queryKey: ["sac-master", auth.authKey, deferredSacSearch],
+    queryFn: () => searchSacMaster(auth.authHeaders, { search: deferredSacSearch, limit: 8 }),
+    enabled: auth.enabled && deferredSacSearch.length >= 2,
+  });
 
   const categories = useMemo(() => flattenCategories(categoriesQuery.data ?? []), [categoriesQuery.data]);
   const categoryOptions = useMemo(
@@ -154,6 +167,7 @@ export function SellerServiceFormScreen({ serviceId }: { serviceId?: string }) {
             const category = categories.find((item) => item.id === value);
             if (!values.sacCode && category?.defaultSacCode) {
               update("sacCode", category.defaultSacCode);
+              setSacSearch(category.defaultSacCode);
             }
           }}
         />
@@ -186,11 +200,41 @@ export function SellerServiceFormScreen({ serviceId }: { serviceId?: string }) {
           }}
         />
         <Field
-          label="SAC code"
+          label="Search SAC catalogue"
+          value={sacSearch}
+          onChangeText={setSacSearch}
+          placeholder="Search by SAC code or service description"
+        />
+        {sacQuery.isFetching ? <Text style={styles.muted}>Searching SAC catalogue...</Text> : null}
+        {sacQuery.isError ? (
+          <Text style={styles.warning}>SAC suggestions are unavailable. You can still enter the six-digit code manually.</Text>
+        ) : null}
+        {(sacQuery.data ?? []).slice(0, 5).map((entry) => (
+          <Pressable
+            key={entry.id}
+            accessibilityRole="button"
+            style={styles.suggestion}
+            onPress={() => {
+              const sacCode = sacCodeFromMaster(entry);
+              update("sacCode", sacCode);
+              setSacSearch(`${sacCode} - ${entry.description}`);
+            }}
+          >
+            <Text style={styles.suggestionCode}>{entry.sacCode}</Text>
+            <Text style={styles.suggestionDescription}>{entry.description}</Text>
+          </Pressable>
+        ))}
+        <Field
+          label="Selected SAC code"
           value={values.sacCode}
-          onChangeText={(value) => update("sacCode", value.replace(/\D/g, "").slice(0, 6))}
+          onChangeText={(value) => {
+            const sacCode = manualSacCode(value);
+            update("sacCode", sacCode);
+            setSacSearch(sacCode);
+          }}
           keyboardType="number-pad"
           placeholder="998719"
+          maxLength={6}
         />
         <Field
           label="GST rate (%)"
@@ -373,6 +417,31 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700",
     lineHeight: 19,
+  },
+  warning: {
+    color: "#92400E",
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 18,
+  },
+  suggestion: {
+    backgroundColor: colors.softSurface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: spacing.xs,
+    padding: spacing.sm,
+  },
+  suggestionCode: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  suggestionDescription: {
+    color: colors.ink,
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 18,
   },
   twoColumn: {
     flexDirection: "row",

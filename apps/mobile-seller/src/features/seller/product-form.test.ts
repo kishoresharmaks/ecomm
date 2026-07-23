@@ -110,6 +110,7 @@ describe("buildCreateProductPayload", () => {
       fabric: "Cotton",
       fit: "Regular",
     });
+    expect(payload.taxClassification).toBe("TAXABLE");
     expect(payload.variants[0]).toMatchObject({
       variantName: "M / Black",
       pricePaise: 9950,
@@ -165,6 +166,35 @@ describe("validateProductForm", () => {
 
     expect(result.errors.images).toBe("Add up to 10 product images.");
     expect(result.errors.variants).toBe("Add up to 20 active variants.");
+  });
+
+  it("applies classification and seller-registration tax rules to payloads", () => {
+    const state = createValidFashionState();
+    state.base.taxClassification = "NON_GST";
+
+    const nonGst = buildCreateProductPayload(state, [], [], "INR", "GST_REGISTERED");
+    expect(nonGst.taxClassification).toBe("NON_GST");
+    expect(nonGst.attributes).toMatchObject({ hsnCode: "", gstRatePercent: 0 });
+
+    state.base.taxClassification = "TAXABLE";
+    state.base.gstRatePercent = "18";
+    const composition = buildCreateProductPayload(state, [], [], "INR", "COMPOSITION");
+    expect(composition.attributes).toMatchObject({ hsnCode: "6109", gstRatePercent: 0 });
+  });
+
+  it("validates HSN and positive GST only where required", () => {
+    const state = createValidFashionState();
+    state.base.taxClassification = "EXEMPT";
+    state.base.hsnCode = "";
+    state.base.gstRatePercent = "0";
+    expect(validateProductForm(state, fashionProductFields, fashionVariantFields, "GST_REGISTERED").valid).toBe(true);
+
+    state.base.taxClassification = "TAXABLE";
+    expect(validateProductForm(state, fashionProductFields, fashionVariantFields, "GST_REGISTERED").errors).toMatchObject({
+      "base.hsnCode": "HSN code is required.",
+      "base.gstRatePercent": "Select a positive GST rate for a taxable product.",
+    });
+    expect(validateProductForm(state, fashionProductFields, fashionVariantFields, "NOT_REGISTERED").errors).not.toHaveProperty("base.gstRatePercent");
   });
 });
 

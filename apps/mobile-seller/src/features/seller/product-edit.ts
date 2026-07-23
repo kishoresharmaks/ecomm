@@ -1,6 +1,12 @@
 import { apiBaseUrl } from "../../lib/api";
 import { paiseToRupees, rupeesToPaise } from "../../lib/money";
-import type { ProductSummary, SellerProductDeliveryMode, SellerProductUpdatePayload } from "./seller-api";
+import type {
+  ProductSummary,
+  ProductTaxClassification,
+  SellerProductDeliveryMode,
+  SellerProductUpdatePayload,
+  SellerTaxRegistrationStatus,
+} from "./seller-api";
 
 export const MAX_PRODUCT_IMAGES = 10;
 export const MAX_PRODUCT_VARIANTS = 20;
@@ -51,6 +57,13 @@ export const GST_OPTIONS = [
   { label: "28%", value: "28" },
 ];
 
+export const PRODUCT_TAX_CLASSIFICATION_OPTIONS: Array<{ label: string; value: ProductTaxClassification }> = [
+  { label: "Taxable", value: "TAXABLE" },
+  { label: "Nil-rated", value: "NIL_RATED" },
+  { label: "Exempt", value: "EXEMPT" },
+  { label: "Non-GST", value: "NON_GST" },
+];
+
 export const PRODUCT_DELIVERY_MODE_OPTIONS: Array<{ label: string; value: SellerProductDeliveryMode }> = [
   { label: "Courier delivery", value: "THIRD_PARTY_COURIER" },
   { label: "Local delivery partner", value: "LOCAL_DELIVERY_PARTNER" },
@@ -91,6 +104,7 @@ export type ProductEditFormValues = {
   brand: string;
   condition: string;
   unitOfMeasure: string;
+  taxClassification: ProductTaxClassification;
   hsnCode: string;
   gstRatePercent: string;
   countryOfOrigin: string;
@@ -131,6 +145,7 @@ export function createBlankProductEditForm(): ProductEditFormValues {
     brand: "",
     condition: "",
     unitOfMeasure: "",
+    taxClassification: "TAXABLE",
     hsnCode: "",
     gstRatePercent: "",
     countryOfOrigin: "",
@@ -201,6 +216,7 @@ export function productToEditForm(product: ProductSummary | undefined): ProductE
     brand: stringFromAttribute(attributes.brand),
     condition: stringFromAttribute(attributes.condition),
     unitOfMeasure: stringFromAttribute(attributes.unitOfMeasure),
+    taxClassification: product?.taxClassification ?? "TAXABLE",
     hsnCode: stringFromAttribute(attributes.hsnCode ?? product?.hsnCode),
     gstRatePercent: stringFromAttribute(attributes.gstRatePercent ?? product?.gstRatePercent),
     countryOfOrigin: stringFromAttribute(attributes.countryOfOrigin),
@@ -240,12 +256,14 @@ export function buildSellerProductUpdatePayload(
   product: ProductSummary | undefined,
   values: ProductEditFormValues,
   sellerCurrency = "INR",
+  sellerTaxRegistrationStatus: SellerTaxRegistrationStatus = "GST_REGISTERED",
 ): SellerProductUpdatePayload {
-  const attributes = buildProductAttributes(values);
+  const attributes = buildProductAttributes(values, sellerTaxRegistrationStatus);
   const payload: SellerProductUpdatePayload = {
     categoryId: values.categoryId.trim(),
     name: values.name.trim(),
     description: values.description.trim(),
+    taxClassification: values.taxClassification,
     deliveryModes: values.deliveryModes,
     attributes,
     variants: [
@@ -266,13 +284,21 @@ export function buildSellerProductUpdatePayload(
   return payload;
 }
 
-export function buildProductAttributes(values: ProductEditFormValues) {
+export function buildProductAttributes(
+  values: ProductEditFormValues,
+  sellerTaxRegistrationStatus: SellerTaxRegistrationStatus = "GST_REGISTERED",
+) {
+  const hsnCode = values.taxClassification === "NON_GST" ? "" : values.hsnCode.trim();
+  const gstRatePercent =
+    values.taxClassification === "TAXABLE" && sellerTaxRegistrationStatus === "GST_REGISTERED"
+      ? numberOrZero(values.gstRatePercent)
+      : 0;
   const attributes: Record<string, unknown> = {
     brand: values.brand.trim(),
     condition: values.condition,
     unitOfMeasure: values.unitOfMeasure,
-    gstRatePercent: numberOrZero(values.gstRatePercent),
-    hsnCode: values.hsnCode.trim(),
+    gstRatePercent,
+    hsnCode,
     returnEligibility: values.returnEligibility,
     returnWindowDays: numberOrZero(values.returnWindowDays),
     replacementWindowDays: numberOrZero(values.replacementWindowDays),
@@ -306,7 +332,10 @@ export function buildProductAttributes(values: ProductEditFormValues) {
   return attributes;
 }
 
-export function validateProductEditForm(values: ProductEditFormValues): ProductEditValidationResult {
+export function validateProductEditForm(
+  values: ProductEditFormValues,
+  sellerTaxRegistrationStatus: SellerTaxRegistrationStatus = "GST_REGISTERED",
+): ProductEditValidationResult {
   const errors: string[] = [];
   const activeVariants = values.variants.filter((variant) => variant.status !== "INACTIVE");
 
@@ -321,9 +350,15 @@ export function validateProductEditForm(values: ProductEditFormValues): ProductE
   requireText(values.brand, "Brand / local label is required.", errors);
   requireText(values.condition, "Condition is required.", errors);
   requireText(values.unitOfMeasure, "Unit of sale is required.", errors);
-  requireText(values.hsnCode, "HSN code is required.", errors);
-  if (!isNonNegativeNumber(values.gstRatePercent)) {
-    errors.push("GST rate is required.");
+  if (values.taxClassification === "TAXABLE" || values.taxClassification === "NIL_RATED") {
+    requireText(values.hsnCode, "HSN code is required.", errors);
+  }
+  if (
+    values.taxClassification === "TAXABLE" &&
+    sellerTaxRegistrationStatus === "GST_REGISTERED" &&
+    !isPositiveNumber(values.gstRatePercent)
+  ) {
+    errors.push("Select a positive GST rate for a taxable product.");
   }
   requireText(values.returnEligibility, "Return policy is required.", errors);
   const returnAllowed =

@@ -8,10 +8,12 @@ import {
   Prisma,
   ProductStatus,
   ReturnRequestStatus,
+  ReportExportType,
   SellerPayoutStatus,
   SellerSettlementStatus,
   ServiceBookingStatus,
   ServiceListingStatus,
+  reportExportTablePage,
 } from "@indihub/database";
 import type { RequestUser } from "../auth/types/indihub-request";
 import { FinanceCalculatorService } from "../finance/finance-calculator.service";
@@ -19,6 +21,7 @@ import { MarketService, type MarketCurrencySnapshot } from "../market/market.ser
 import { PrismaService } from "../prisma/prisma.service";
 import { AdminGstReportQueryDto } from "./dto/gst-report-query.dto";
 import { ReportQueryDto } from "./dto/report-query.dto";
+import { OperationalReportQueryDto } from "./dto/operational-report-query.dto";
 import { GstComplianceService } from "./gst-compliance.service";
 
 const sellerSalesSummaryMoneyFields = [
@@ -284,6 +287,21 @@ export class ReportsService {
       recentB2B,
       recentSupport
     };
+  }
+
+  operationalPage(exportType: ReportExportType, query: OperationalReportQueryDto) {
+    return reportExportTablePage(
+      this.prisma.client,
+      exportType,
+      {
+        ...(query.dateFrom ? { dateFrom: query.dateFrom } : {}),
+        ...(query.dateTo ? { dateTo: query.dateTo } : {}),
+        ...(query.search?.trim() ? { search: query.search.trim() } : {}),
+        ...(query.status?.trim() ? { status: query.status.trim() } : {}),
+      },
+      query.page,
+      query.limit,
+    );
   }
 
   async sellerSales(actor: RequestUser, query: ReportQueryDto) {

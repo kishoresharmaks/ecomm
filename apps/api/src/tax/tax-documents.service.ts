@@ -632,6 +632,8 @@ export class TaxDocumentsService {
             create: [
               ...items.map((item) => ({
                 orderItemId: item.id,
+                sourceRecordType: "ORDER_ITEM",
+                sourceRecordId: item.id,
                 lineType: TaxDocumentLineType.PRODUCT,
                 description: item.productNameSnapshot,
                 sku: this.stringFromJson(item.variantSnapshot, "sku"),
@@ -843,6 +845,8 @@ export class TaxDocumentsService {
         lines: {
           create: acceptedQuote?.lineItems.length
             ? acceptedQuote.lineItems.map((line) => ({
+                sourceRecordType: "SERVICE_QUOTE_LINE",
+                sourceRecordId: line.id,
                 lineType:
                   line.lineType === ServiceQuoteLineType.PRODUCT
                     ? TaxDocumentLineType.PRODUCT
@@ -868,6 +872,8 @@ export class TaxDocumentsService {
                 lineValuePaise: line.totalPaise,
               }))
             : {
+                sourceRecordType: "SERVICE_BOOKING",
+                sourceRecordId: booking.id,
                 lineType: TaxDocumentLineType.SERVICE,
                 description: booking.listing.title,
                 hsnSacCode: booking.sacCodeSnapshot,
@@ -995,6 +1001,8 @@ export class TaxDocumentsService {
           refundRequestItemId: item.id,
           returnRequestItemId: item.returnRequestItemId,
           orderItemId: item.orderItemId,
+          sourceRecordType: "REFUND_REQUEST_ITEM",
+          sourceRecordId: item.id,
           lineType: TaxDocumentLineType.ADJUSTMENT,
           description: `Credit for ${item.orderItem.productNameSnapshot}`,
           sku: this.stringFromJson(item.orderItem.variantSnapshot, "sku"),
@@ -1316,6 +1324,8 @@ export class TaxDocumentsService {
       const sourceLines =
         orderLines.length > 0
           ? orderLines.map((line) => ({
+              sourceRecordType: "B2B_ORDER_LINE",
+              sourceRecordId: line.id,
               description: line.description,
               sku: line.sku ?? line.productVariant?.sku ?? null,
               hsnSacCode: line.hsnSacCode ?? line.product?.hsnCode ?? null,
@@ -1334,6 +1344,8 @@ export class TaxDocumentsService {
             }))
           : [
               {
+                sourceRecordType: "B2B_ORDER",
+                sourceRecordId: order.id,
                 description: order.product?.name || "B2B procurement",
                 sku: null,
                 hsnSacCode: order.product?.hsnCode ?? null,
@@ -1466,6 +1478,8 @@ export class TaxDocumentsService {
           lines: {
             create: [
               ...calculatedLines.map((line) => ({
+                sourceRecordType: line.sourceRecordType,
+                sourceRecordId: line.sourceRecordId,
                 lineType: TaxDocumentLineType.PRODUCT,
                 description: line.description,
                 sku: line.sku,

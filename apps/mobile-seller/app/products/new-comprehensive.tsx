@@ -21,6 +21,7 @@ import { launchSellerImageLibraryAsync } from "../../src/features/seller/image-p
 import {
   CONDITION_OPTIONS,
   PRODUCT_DELIVERY_MODE_OPTIONS,
+  PRODUCT_TAX_CLASSIFICATION_OPTIONS,
   GST_OPTIONS,
   MAX_PRODUCT_IMAGES,
   MAX_PRODUCT_VARIANTS,
@@ -77,6 +78,10 @@ export default function NewSellerProductScreen() {
     [categories],
   );
   const sellerCurrency = profileQuery.data?.operatingCurrency ?? "INR";
+  const sellerTaxRegistrationStatus =
+    profileQuery.data?.profile?.taxRegistrationStatus ??
+    (profileQuery.data?.profile?.gstNumber ? "GST_REGISTERED" : "NOT_REGISTERED");
+  const canCollectGst = sellerTaxRegistrationStatus === "GST_REGISTERED";
 
   const hsnQuery = useQuery({
     queryKey: ["hsn-search", auth.authKey, state.base.categoryId, state.base.hsnCode],
@@ -86,28 +91,19 @@ export default function NewSellerProductScreen() {
         categoryId: state.base.categoryId,
         limit: 10,
       }),
-    enabled: auth.enabled && state.base.hsnCode.trim().length >= 2,
+    enabled:
+      auth.enabled &&
+      state.base.taxClassification !== "NON_GST" &&
+      state.base.hsnCode.trim().length >= 2,
   });
 
   useEffect(() => {
     if (!state.base.categoryId && categories[0]?.id) {
-      dispatch({ type: "setBase", key: "categoryId", value: categories[0].id });
+      selectCategory(categories[0].id);
     }
   }, [categories, state.base.categoryId]);
 
-  useEffect(() => {
-    if (!selectedCategory) {
-      return;
-    }
-    if (selectedCategory.defaultHsnCode && !state.base.hsnCode) {
-      dispatch({ type: "setBase", key: "hsnCode", value: selectedCategory.defaultHsnCode });
-    }
-    if (selectedCategory.defaultGstRatePercent !== null && selectedCategory.defaultGstRatePercent !== undefined && !state.base.gstRatePercent) {
-      dispatch({ type: "setBase", key: "gstRatePercent", value: String(selectedCategory.defaultGstRatePercent) });
-    }
-  }, [selectedCategory, state.base.gstRatePercent, state.base.hsnCode]);
-
-  const validation = validateProductForm(state, productFields, variantFields);
+  const validation = validateProductForm(state, productFields, variantFields, sellerTaxRegistrationStatus);
   const activeVariantCount = state.variants.filter((variant) => variant.status !== "INACTIVE").length;
 
   useEffect(() => {
@@ -118,13 +114,22 @@ export default function NewSellerProductScreen() {
 
   const mutation = useMutation({
     mutationFn: () => {
-      const nextValidation = validateProductForm(state, productFields, variantFields);
+      const nextValidation = validateProductForm(state, productFields, variantFields, sellerTaxRegistrationStatus);
       dispatch({ type: "markSubmitted" });
       dispatch({ type: "setErrors", errors: nextValidation.errors });
       if (!nextValidation.valid) {
         throw new Error(nextValidation.messages[0] ?? "Please complete the required product details.");
       }
-      return createSellerProduct(auth.authHeaders, buildCreateProductPayload(state, productFields, variantFields, sellerCurrency));
+      return createSellerProduct(
+        auth.authHeaders,
+        buildCreateProductPayload(
+          state,
+          productFields,
+          variantFields,
+          sellerCurrency,
+          sellerTaxRegistrationStatus,
+        ),
+      );
     },
     onSuccess: async () => {
       setToast({ visible: true, message: "Product submitted for approval.", type: "success" });
@@ -204,7 +209,7 @@ export default function NewSellerProductScreen() {
             label="Category *"
             options={categoryOptions}
             selectedValue={state.base.categoryId}
-            onSelect={(value) => dispatch({ type: "setBase", key: "categoryId", value })}
+            onSelect={selectCategory}
             placeholder="Select category"
             error={fieldError(state, "base.categoryId")}
           />
@@ -289,14 +294,28 @@ export default function NewSellerProductScreen() {
         </CollapsibleSection>
 
         <CollapsibleSection title="Tax & Compliance">
-          <Field
-            label="HSN code *"
-            value={state.base.hsnCode}
-            onChangeText={(value) => dispatch({ type: "setBase", key: "hsnCode", value })}
-            placeholder="4-8 digit HSN code"
-            autoCapitalize="characters"
-            error={fieldError(state, "base.hsnCode")}
+          <SelectField
+            label="Tax classification *"
+            options={PRODUCT_TAX_CLASSIFICATION_OPTIONS}
+            selectedValue={state.base.taxClassification}
+            onSelect={(value) => {
+              dispatch({ type: "setBase", key: "taxClassification", value });
+              if (value === "NON_GST") dispatch({ type: "setBase", key: "hsnCode", value: "" });
+              if (value !== "TAXABLE" || !canCollectGst) {
+                dispatch({ type: "setBase", key: "gstRatePercent", value: "0" });
+              }
+            }}
           />
+          {state.base.taxClassification !== "NON_GST" ? (
+            <Field
+              label={`HSN code${state.base.taxClassification === "EXEMPT" ? "" : " *"}`}
+              value={state.base.hsnCode}
+              onChangeText={(value) => dispatch({ type: "setBase", key: "hsnCode", value })}
+              placeholder="4-8 digit HSN code"
+              autoCapitalize="characters"
+              error={fieldError(state, "base.hsnCode")}
+            />
+          ) : null}
           {hsnQuery.isFetching ? <Text style={styles.helperText}>Searching HSN suggestions...</Text> : null}
           {hsnQuery.isError ? (
             <Text style={styles.helperError}>HSN suggestions are unavailable. Manual HSN and GST values can still be saved.</Text>
@@ -307,21 +326,27 @@ export default function NewSellerProductScreen() {
               accessibilityRole="button"
               onPress={() => {
                 dispatch({ type: "setBase", key: "hsnCode", value: hsn.hsnCode });
-                dispatch({ type: "setBase", key: "gstRatePercent", value: String(hsn.gstRatePercent) });
+                if (state.base.taxClassification === "TAXABLE" && canCollectGst) {
+                  dispatch({ type: "setBase", key: "gstRatePercent", value: String(hsn.gstRatePercent) });
+                }
               }}
               style={styles.suggestion}
             >
               <Text style={styles.suggestionText}>{hsn.hsnCode} - {hsn.gstRatePercent}% - {hsn.description}</Text>
             </Pressable>
           ))}
-          <SelectField
-            label="GST rate % *"
-            options={GST_OPTIONS}
-            selectedValue={state.base.gstRatePercent}
-            onSelect={(value) => dispatch({ type: "setBase", key: "gstRatePercent", value })}
-            placeholder="Select GST rate"
-            error={fieldError(state, "base.gstRatePercent")}
-          />
+          {state.base.taxClassification === "TAXABLE" && canCollectGst ? (
+            <SelectField
+              label="GST rate % *"
+              options={GST_OPTIONS.filter((option) => option.value !== "0")}
+              selectedValue={state.base.gstRatePercent}
+              onSelect={(value) => dispatch({ type: "setBase", key: "gstRatePercent", value })}
+              placeholder="Select GST rate"
+              error={fieldError(state, "base.gstRatePercent")}
+            />
+          ) : (
+            <Text style={styles.helperText}>GST is fixed at 0% for this classification or seller registration.</Text>
+          )}
           <Field label="Country of origin" value={state.base.countryOfOrigin} onChangeText={(value) => dispatch({ type: "setBase", key: "countryOfOrigin", value })} />
           <Field label="Manufacturer name" value={state.base.manufacturerName} onChangeText={(value) => dispatch({ type: "setBase", key: "manufacturerName", value })} />
           <Field label="Manufacturer address" value={state.base.manufacturerAddress} onChangeText={(value) => dispatch({ type: "setBase", key: "manufacturerAddress", value })} multiline />
@@ -427,6 +452,29 @@ export default function NewSellerProductScreen() {
       </ScrollView>
     </Screen>
   );
+
+  function selectCategory(categoryId: string) {
+    const category = categories.find((item) => item.id === categoryId);
+    const classification = category?.defaultTaxClassification ?? "TAXABLE";
+    dispatch({ type: "setBase", key: "categoryId", value: categoryId });
+    dispatch({ type: "setBase", key: "taxClassification", value: classification });
+    dispatch({
+      type: "setBase",
+      key: "hsnCode",
+      value: classification === "NON_GST" ? "" : category?.defaultHsnCode ?? "",
+    });
+    dispatch({
+      type: "setBase",
+      key: "gstRatePercent",
+      value:
+        classification === "TAXABLE" &&
+        canCollectGst &&
+        category?.defaultGstRatePercent !== null &&
+        category?.defaultGstRatePercent !== undefined
+          ? String(category.defaultGstRatePercent)
+          : "0",
+    });
+  }
 }
 
 function DynamicField({

@@ -9,6 +9,7 @@
       "distribution": "internal",
       "env": {
         "EXPO_PUBLIC_API_URL": "https://api.1handindia.com/api",
+        "EXPO_PUBLIC_SELLER_PORTAL_URL": "https://1handindia.com",
         "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_live_Y2xlcmsuMWhhbmRpbmRpYS5jb20k"
       },
       "android": {
@@ -19,6 +20,7 @@
       "distribution": "internal",
       "env": {
         "EXPO_PUBLIC_API_URL": "https://api.1handindia.com/api",
+        "EXPO_PUBLIC_SELLER_PORTAL_URL": "https://1handindia.com",
         "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_live_Y2xlcmsuMWhhbmRpbmRpYS5jb20k"
       },
       "android": {
@@ -28,6 +30,7 @@
     "production": {
       "env": {
         "EXPO_PUBLIC_API_URL": "https://api.1handindia.com/api",
+        "EXPO_PUBLIC_SELLER_PORTAL_URL": "https://1handindia.com",
         "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_live_Y2xlcmsuMWhhbmRpbmRpYS5jb20k"
       }
     }

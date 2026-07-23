@@ -2,9 +2,11 @@ import { rupeesToPaise } from "../../lib/money";
 import type {
   CategorySummary,
   ProductSummary,
+  ProductTaxClassification,
   ProductTemplateField,
   SellerProductPayload,
   SellerProductDeliveryMode,
+  SellerTaxRegistrationStatus,
   SellerProductUpdatePayload,
 } from "./seller-api";
 import {
@@ -26,6 +28,7 @@ export type ProductBaseFields = {
   brand: string;
   condition: string;
   unitOfMeasure: string;
+  taxClassification: ProductTaxClassification;
   hsnCode: string;
   gstRatePercent: string;
   countryOfOrigin: string;
@@ -99,6 +102,7 @@ export function createBlankProductFormState(): ProductFormState {
       brand: baseEdit.brand,
       condition: baseEdit.condition,
       unitOfMeasure: baseEdit.unitOfMeasure,
+      taxClassification: baseEdit.taxClassification,
       hsnCode: baseEdit.hsnCode,
       gstRatePercent: baseEdit.gstRatePercent,
       countryOfOrigin: baseEdit.countryOfOrigin,
@@ -246,14 +250,16 @@ export function buildCreateProductPayload(
   productFields: ProductTemplateField[],
   variantFields: ProductTemplateField[],
   sellerCurrency = "INR",
+  sellerTaxRegistrationStatus: SellerTaxRegistrationStatus = "GST_REGISTERED",
 ): SellerProductPayload {
   return {
     categoryId: state.base.categoryId.trim(),
     name: state.base.name.trim(),
     description: state.base.description.trim(),
+    taxClassification: state.base.taxClassification,
     deliveryModes: state.deliveryModes,
     attributes: {
-      ...buildMarketplaceAttributes(state.base),
+      ...buildMarketplaceAttributes(state.base, sellerTaxRegistrationStatus),
       ...coerceDynamicAttributes(productFields, state.attributes),
     },
     images: state.images.map((image, index) => ({
@@ -272,6 +278,7 @@ export function buildUpdateProductPayload(
   variantFields: ProductTemplateField[],
   product?: ProductSummary,
   sellerCurrency = "INR",
+  sellerTaxRegistrationStatus: SellerTaxRegistrationStatus = "GST_REGISTERED",
 ): SellerProductUpdatePayload {
   const editForm = createBlankProductEditForm();
   Object.assign(editForm, state.base, {
@@ -280,9 +287,10 @@ export function buildUpdateProductPayload(
     variants: state.variants.map(({ attributes: _attributes, ...variant }) => variant),
     removedVariantIds: state.removedVariantIds,
   });
-  const payload = buildSellerProductUpdatePayload(product, editForm, sellerCurrency);
+  const payload = buildSellerProductUpdatePayload(product, editForm, sellerCurrency, sellerTaxRegistrationStatus);
+  payload.taxClassification = state.base.taxClassification;
   payload.attributes = {
-    ...buildMarketplaceAttributes(state.base),
+    ...buildMarketplaceAttributes(state.base, sellerTaxRegistrationStatus),
     ...coerceDynamicAttributes(productFields, state.attributes),
   };
   payload.variants = [
@@ -309,6 +317,7 @@ export function productEditFormToProductFormState(
       brand: values.brand,
       condition: values.condition,
       unitOfMeasure: values.unitOfMeasure,
+      taxClassification: values.taxClassification,
       hsnCode: values.hsnCode,
       gstRatePercent: values.gstRatePercent,
       countryOfOrigin: values.countryOfOrigin,
@@ -345,6 +354,7 @@ export function validateProductForm(
   state: ProductFormState,
   productFields: ProductTemplateField[],
   variantFields: ProductTemplateField[],
+  sellerTaxRegistrationStatus: SellerTaxRegistrationStatus = "GST_REGISTERED",
 ): ProductFormValidation {
   const errors: Record<string, string> = {};
   const messages: string[] = [];
@@ -364,9 +374,15 @@ export function validateProductForm(
   requireText(state.base.brand, "base.brand", "Brand / local label is required.", add);
   requireText(state.base.condition, "base.condition", "Condition is required.", add);
   requireText(state.base.unitOfMeasure, "base.unitOfMeasure", "Unit of sale is required.", add);
-  requireText(state.base.hsnCode, "base.hsnCode", "HSN code is required.", add);
-  if (!isNonNegativeNumber(state.base.gstRatePercent)) {
-    add("base.gstRatePercent", "GST rate is required.");
+  if (state.base.taxClassification === "TAXABLE" || state.base.taxClassification === "NIL_RATED") {
+    requireText(state.base.hsnCode, "base.hsnCode", "HSN code is required.", add);
+  }
+  if (
+    state.base.taxClassification === "TAXABLE" &&
+    sellerTaxRegistrationStatus === "GST_REGISTERED" &&
+    !isPositiveNumber(state.base.gstRatePercent)
+  ) {
+    add("base.gstRatePercent", "Select a positive GST rate for a taxable product.");
   }
   requireText(state.base.returnEligibility, "base.returnEligibility", "Return policy is required.", add);
   const returnAllowed =
@@ -477,13 +493,21 @@ export function coerceDynamicAttributeValue(field: ProductTemplateField, rawValu
   return trimmed;
 }
 
-function buildMarketplaceAttributes(base: ProductBaseFields) {
+function buildMarketplaceAttributes(
+  base: ProductBaseFields,
+  sellerTaxRegistrationStatus: SellerTaxRegistrationStatus,
+) {
+  const hsnCode = base.taxClassification === "NON_GST" ? "" : base.hsnCode.trim();
+  const gstRatePercent =
+    base.taxClassification === "TAXABLE" && sellerTaxRegistrationStatus === "GST_REGISTERED"
+      ? numberOrZero(base.gstRatePercent)
+      : 0;
   const attributes: Record<string, unknown> = {
     brand: base.brand.trim(),
     condition: base.condition,
     unitOfMeasure: base.unitOfMeasure,
-    gstRatePercent: numberOrZero(base.gstRatePercent),
-    hsnCode: base.hsnCode.trim(),
+    gstRatePercent,
+    hsnCode,
     returnEligibility: base.returnEligibility,
     returnWindowDays: numberOrZero(base.returnWindowDays),
     replacementWindowDays: numberOrZero(base.replacementWindowDays),

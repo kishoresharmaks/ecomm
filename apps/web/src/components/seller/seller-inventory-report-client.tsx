@@ -2,10 +2,11 @@
 
 import dynamic from "next/dynamic";
 import { FormEvent, useState } from "react";
-import { AlertTriangle, BarChart2, CalendarDays, Download, Package } from "lucide-react";
+import { AlertTriangle, BarChart2, CalendarDays, Package } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Button, SectionHeading } from "@indihub/ui";
-import { downloadSellerReportCsv, getSellerInventoryReport } from "@/lib/seller-api";
+import { getSellerInventoryReport } from "@/lib/seller-api";
+import { ReportExportButton } from "@/components/reporting/report-export-button";
 import {
   SellerAuthNotice,
   SellerEmptyState,
@@ -76,9 +77,7 @@ export function SellerInventoryReportClient({ initialDateFrom = "", initialDateT
                 Apply
               </Button>
             </form>
-            <button type="button" onClick={() => void downloadSellerReportCsv(sellerAuth.authHeaders, "inventory", submittedRange)} className="inline-flex items-center gap-2 rounded-md border border-[#E5E7EB] bg-white px-3 py-2 text-sm font-semibold text-[#1F2933] shadow-sm hover:border-[#ED3500] hover:text-[#ED3500]">
-              <Download className="h-4 w-4" /> Export CSV
-            </button>
+            <ReportExportButton auth={sellerAuth.authHeaders} audience="seller" exportType="SELLER_INVENTORY" filters={submittedRange} />
           </div>
         </div>
       </SellerPanel>

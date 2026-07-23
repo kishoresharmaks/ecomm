@@ -106,6 +106,14 @@ export type FinanceReportGroup = {
 };
 
 export type FinancePaymentReports = {
+  activityBasis: {
+    payments: string;
+    codCollections: string;
+    orderSettlements: string;
+    serviceSettlements: string;
+    payouts: string;
+    serviceReceivables: string;
+  };
   byProvider: FinanceReportGroup[];
   byPaymentStatus: FinanceReportGroup[];
   codByCollectionStatus: FinanceReportGroup[];

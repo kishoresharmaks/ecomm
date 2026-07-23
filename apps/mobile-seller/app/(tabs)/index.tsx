@@ -1,10 +1,27 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Redirect, router } from "expo-router";
+import { useState } from "react";
 import { Text, View } from "react-native";
 import { useMobileSellerAuth } from "../../src/auth/mobile-seller-auth-context";
 import { Button, Card, EmptyState, Field, Header, LoadingState, Screen, SelectField, StatusChip } from "../../src/components/screen";
 import { formatMoney } from "../../src/lib/money";
-import { getSellerProfile, getSellerSalesReport, listSellerSubscriptionPlans } from "../../src/features/seller/seller-api";
+import { uploadSellerPrivateDocument, type MobileUploadFile } from "../../src/features/seller/mobile-upload";
+import {
+  getSellerProfile,
+  getSellerSalesReport,
+  listSellerSubscriptionPlans,
+  onboardSeller,
+  type SellerDocumentType,
+  type SellerTaxRegistrationStatus,
+  type SellerVerificationDocumentPayload,
+} from "../../src/features/seller/seller-api";
+import {
+  SELLER_TAX_REGISTRATION_OPTIONS,
+  missingOnboardingDocumentTypes,
+  normalizeGstin,
+  requiredOnboardingDocumentTypes,
+  validateGstin,
+} from "../../src/features/seller/seller-tax";
 import { sellerWorkspaceState } from "../../src/features/seller/seller-state";
 import { useSellerPushNotificationStatus } from "../../src/features/seller/use-seller-push-notifications";
 
@@ -142,6 +159,7 @@ function OnboardingScreen() {
   const [storeName, setStoreName] = useState("");
   const [businessLegalName, setBusinessLegalName] = useState("");
   const [businessType, setBusinessType] = useState("");
+  const [taxRegistrationStatus, setTaxRegistrationStatus] = useState<SellerTaxRegistrationStatus>("NOT_REGISTERED");
   const [gstNumber, setGstNumber] = useState("");
   const [panNumber, setPanNumber] = useState("");
   const [contactName, setContactName] = useState("");
@@ -154,6 +172,9 @@ function OnboardingScreen() {
   const [state, setState] = useState("");
   const [pincode, setPincode] = useState("");
   const [subscriptionPlanId, setSubscriptionPlanId] = useState("");
+  const [documents, setDocuments] = useState<SellerVerificationDocumentPayload[]>([]);
+  const [uploadingDocument, setUploadingDocument] = useState<SellerDocumentType | null>(null);
+  const [documentError, setDocumentError] = useState("");
   const queryClient = useQueryClient();
   const plansQuery = useQuery({
     queryKey: ["seller-subscription-plans", "onboarding"],
@@ -161,24 +182,67 @@ function OnboardingScreen() {
     enabled: auth.enabled,
   });
   const mutation = useMutation({
-    mutationFn: () =>
-      onboardSeller(auth.authHeaders, {
+    mutationFn: () => {
+      const gstError = validateGstin(taxRegistrationStatus, gstNumber);
+      if (gstError) throw new Error(gstError);
+      const missingDocuments = missingOnboardingDocumentTypes(taxRegistrationStatus, documents);
+      if (missingDocuments.length) {
+        throw new Error(`Upload ${missingDocuments.map(documentLabel).join(", ")} before submitting.`);
+      }
+      return onboardSeller(auth.authHeaders, {
         sellerType,
         storeName,
         contactName,
         contactPhone,
+        taxRegistrationStatus,
         ...(businessLegalName ? { businessLegalName } : {}),
         ...(businessType ? { businessType } : {}),
-        ...(gstNumber ? { gstNumber } : {}),
+        ...(taxRegistrationStatus !== "NOT_REGISTERED" ? { gstNumber: normalizeGstin(gstNumber) } : {}),
         ...(panNumber ? { panNumber } : {}),
         ...(businessDescription ? { businessDescription } : {}),
         ...(subscriptionPlanId ? { subscriptionPlanId } : {}),
+        documents,
         address: { line1, line2, area, city, state, pincode, country: "India", countryCode: "IN" },
-      }),
+      });
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["seller-profile", auth.authKey] });
     },
   });
+  const missingDocuments = missingOnboardingDocumentTypes(taxRegistrationStatus, documents);
+  const canSubmit = Boolean(
+    storeName.trim() &&
+      contactName.trim() &&
+      contactPhone.trim() &&
+      line1.trim() &&
+      !validateGstin(taxRegistrationStatus, gstNumber) &&
+      missingDocuments.length === 0,
+  );
+
+  async function uploadDocument(documentType: SellerDocumentType) {
+    setUploadingDocument(documentType);
+    setDocumentError("");
+    try {
+      const result = await pickOnboardingDocument();
+      if (result.canceled || !result.assets[0]) return;
+      const asset = result.assets[0];
+      const file: MobileUploadFile = {
+        uri: asset.uri,
+        name: asset.name ?? `seller-document-${Date.now()}`,
+        mimeType: asset.mimeType ?? "application/pdf",
+        sizeBytes: asset.size,
+      };
+      const uploaded = await uploadSellerPrivateDocument(auth.authHeaders, file, documentType);
+      setDocuments((current) => [
+        ...current.filter((document) => document.documentType !== documentType),
+        { documentType, fileUrl: uploaded.assetKey },
+      ]);
+    } catch (error) {
+      setDocumentError(error instanceof Error ? error.message : "Document upload failed.");
+    } finally {
+      setUploadingDocument(null);
+    }
+  }
 
   return (
     <Screen>
@@ -188,7 +252,25 @@ function OnboardingScreen() {
         <Field label="Store name" value={storeName} onChangeText={setStoreName} />
         <Field label="Business legal name" value={businessLegalName} onChangeText={setBusinessLegalName} />
         <SelectField label="Business type" options={BUSINESS_TYPE_OPTIONS} selectedValue={businessType} onSelect={setBusinessType} />
-        <Field label="GST number" value={gstNumber} onChangeText={setGstNumber} autoCapitalize="characters" />
+        <SelectField
+          label="GST registration"
+          options={SELLER_TAX_REGISTRATION_OPTIONS}
+          selectedValue={taxRegistrationStatus}
+          onSelect={(value) => {
+            setTaxRegistrationStatus(value as SellerTaxRegistrationStatus);
+            if (value === "NOT_REGISTERED") setGstNumber("");
+          }}
+        />
+        {taxRegistrationStatus !== "NOT_REGISTERED" ? (
+          <Field
+            label="GSTIN"
+            value={gstNumber}
+            onChangeText={(value) => setGstNumber(value.toUpperCase())}
+            autoCapitalize="characters"
+            maxLength={15}
+            error={validateGstin(taxRegistrationStatus, gstNumber)}
+          />
+        ) : null}
         <Field label="PAN number" value={panNumber} onChangeText={setPanNumber} autoCapitalize="characters" />
         <Field label="Contact name" value={contactName} onChangeText={setContactName} />
         <Field keyboardType="phone-pad" label="Contact phone" value={contactPhone} onChangeText={setContactPhone} />
@@ -205,13 +287,50 @@ function OnboardingScreen() {
           selectedValue={subscriptionPlanId}
           onSelect={setSubscriptionPlanId}
         />
+        <Text style={{ color: "#111827", fontSize: 16, fontWeight: "900" }}>Verification documents</Text>
+        <Text style={{ color: "#6B7280", fontSize: 12, lineHeight: 18 }}>
+          Upload identity, signature, address and bank proof. GST sellers must also upload the GST certificate.
+        </Text>
+        {requiredOnboardingDocumentTypes(taxRegistrationStatus).map((documentType) => {
+          const uploaded = documents.some((document) => document.documentType === documentType);
+          return (
+            <Button
+              key={documentType}
+              tone="secondary"
+              title={
+                uploadingDocument === documentType
+                  ? "Uploading..."
+                  : `${uploaded ? "Replace" : "Upload"} ${documentLabel(documentType)}`
+              }
+              loading={uploadingDocument === documentType}
+              onPress={() => void uploadDocument(documentType)}
+            />
+          );
+        })}
+        {documentError ? <Text style={{ color: "#D64545", fontWeight: "800" }}>{documentError}</Text> : null}
+        {missingDocuments.length ? (
+          <Text style={{ color: "#92400E", fontSize: 12, fontWeight: "800" }}>
+            Required: {missingDocuments.map(documentLabel).join(", ")}
+          </Text>
+        ) : null}
         {mutation.error ? <Text style={{ color: "#D64545", fontWeight: "800" }}>{mutation.error instanceof Error ? mutation.error.message : "Registration failed."}</Text> : null}
-        <Button disabled={mutation.isPending || !storeName || !contactName || !contactPhone || !line1} title={mutation.isPending ? "Submitting..." : "Submit registration"} onPress={() => mutation.mutate()} />
+        <Button disabled={mutation.isPending || !canSubmit} title={mutation.isPending ? "Submitting..." : "Submit registration"} onPress={() => mutation.mutate()} />
       </Card>
     </Screen>
   );
 }
 
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-import { onboardSeller } from "../../src/features/seller/seller-api";
+function documentLabel(type: SellerDocumentType) {
+  return type
+    .split("_")
+    .map((part) => part.charAt(0) + part.slice(1).toLowerCase())
+    .join(" ");
+}
+
+async function pickOnboardingDocument() {
+  const DocumentPicker = await import("expo-document-picker");
+  return DocumentPicker.getDocumentAsync({
+    type: ["application/pdf", "image/jpeg", "image/png"],
+    copyToCacheDirectory: true,
+  });
+}

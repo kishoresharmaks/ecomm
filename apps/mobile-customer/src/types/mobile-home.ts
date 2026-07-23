@@ -11,10 +11,23 @@ export type MobileBanner = {
 export type MobileCategory = {
   id: string;
   parentId?: string | null;
+  productTemplateId?: string | null;
   name: string;
   slug: string;
   description?: string | null;
   imageUrl?: string | null;
+  productTemplate?: {
+    id: string;
+    name: string;
+    code: string;
+    fields?: Array<{
+      id: string;
+      fieldKey: string;
+      label: string;
+      scope: "PRODUCT" | "VARIANT";
+      sortOrder: number;
+    }>;
+  } | null;
   children?: MobileCategory[];
   parent?: MobileCategory | null;
   _count?: {

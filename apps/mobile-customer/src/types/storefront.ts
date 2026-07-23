@@ -77,7 +77,7 @@ export type ProductImage = {
 
 export type ProductVariant = {
   id: string;
-  sku: string;
+  sku?: string | null;
   variantName?: string | null;
   pricePaise: number;
   mrpPaise?: number | null;
@@ -88,6 +88,10 @@ export type ProductVariant = {
   baseDealPricePaise?: number | null;
   baseCurrency?: string | null;
   stockQuantity: number;
+  packageWeightGrams?: number | null;
+  packageLengthCm?: number | null;
+  packageBreadthCm?: number | null;
+  packageHeightCm?: number | null;
   status: string;
   originalPricePaise?: number | null;
   dealPricePaise?: number | null;
@@ -114,6 +118,15 @@ export type ProductSummary = {
   approvalStatus: string;
   listingMode?: "CART" | "ENQUIRY_ONLY" | "CART_AND_ENQUIRY";
   attributes?: Record<string, unknown> | null;
+  taxClassification?: "TAXABLE" | "NIL_RATED" | "EXEMPT" | "NON_GST";
+  hsnCode?: string | null;
+  gstRatePercent?: number | string | null;
+  hsnMaster?: {
+    id: string;
+    hsnCode: string;
+    description: string;
+    gstRatePercent: number | string;
+  } | null;
   category?: MobileCategory & {
     parent?: MobileCategory | null;
   };

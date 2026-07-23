@@ -20,6 +20,7 @@ const savedProfile: SellerProfile = {
     contactEmail: "seller@example.com",
     businessLegalName: "Saved Store LLP",
     businessType: "LLP",
+    taxRegistrationStatus: "GST_REGISTERED",
     gstNumber: "33ABCDE1234F1Z5",
     panNumber: "ABCDE1234F",
   },
@@ -99,5 +100,27 @@ describe("mobile seller profile save payload", () => {
     expect(fields.logoUrl).toBe("legacy-logo.jpg");
     expect(fields.bannerUrl).toBe("legacy-banner.jpg");
     expect(fields.description).toBe("Legacy description");
+  });
+
+  it("normalizes GSTIN and includes GST registration changes in dirty state and payload", () => {
+    const fields = sellerProfileToFormFields(savedProfile);
+    fields.gstNumber = "33abcde1234f1z5";
+    expect(hasSellerProfileUnsavedChanges(savedProfile, fields, 0)).toBe(false);
+
+    fields.gstNumber = "29abcde1234f1z5";
+    expect(hasSellerProfileUnsavedChanges(savedProfile, fields, 0)).toBe(true);
+    expect(buildSellerProfilePatchPayload(savedProfile, fields, [])).toEqual({
+      gstNumber: "29ABCDE1234F1Z5",
+    });
+  });
+
+  it("sends not-registered status without the saved GSTIN", () => {
+    const fields = sellerProfileToFormFields(savedProfile);
+    fields.taxRegistrationStatus = "NOT_REGISTERED";
+    fields.gstNumber = "";
+
+    expect(buildSellerProfilePatchPayload(savedProfile, fields, [])).toEqual({
+      taxRegistrationStatus: "NOT_REGISTERED",
+    });
   });
 });

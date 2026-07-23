@@ -27,6 +27,7 @@ import { launchSellerImageLibraryAsync } from "../../src/features/seller/image-p
 import {
   CONDITION_OPTIONS,
   PRODUCT_DELIVERY_MODE_OPTIONS,
+  PRODUCT_TAX_CLASSIFICATION_OPTIONS,
   GST_OPTIONS,
   MAX_PRODUCT_IMAGES,
   MAX_PRODUCT_VARIANTS,
@@ -80,7 +81,7 @@ export default function EditSellerProductScreen() {
   const hsnQuery = useQuery({
     queryKey: ["hsn-search", auth.authKey, form.hsnCode],
     queryFn: () => searchHsnMaster(auth.authHeaders, { search: form.hsnCode, limit: 10 }),
-    enabled: auth.enabled && form.hsnCode.trim().length >= 2,
+    enabled: auth.enabled && form.taxClassification !== "NON_GST" && form.hsnCode.trim().length >= 2,
   });
 
   useEffect(() => {
@@ -111,17 +112,28 @@ export default function EditSellerProductScreen() {
     [categoriesQuery.data],
   );
 
-  const validation = validateProductEditForm(form);
-  const activeVariantCount = form.variants.filter((variant) => variant.status !== "INACTIVE").length;
   const sellerCurrency = profileQuery.data?.operatingCurrency ?? productQuery.data?.variants?.[0]?.currency ?? "INR";
+  const sellerTaxRegistrationStatus =
+    profileQuery.data?.profile?.taxRegistrationStatus ??
+    (profileQuery.data?.profile?.gstNumber ? "GST_REGISTERED" : "NOT_REGISTERED");
+  const canCollectGst = sellerTaxRegistrationStatus === "GST_REGISTERED";
+  const validation = validateProductEditForm(form, sellerTaxRegistrationStatus);
+  const activeVariantCount = form.variants.filter((variant) => variant.status !== "INACTIVE").length;
 
   const mutation = useMutation({
     mutationFn: () => {
-      const nextValidation = validateProductEditForm(form);
+      const nextValidation = validateProductEditForm(form, sellerTaxRegistrationStatus);
       if (!nextValidation.valid) {
         throw new Error(nextValidation.errors[0] ?? "Please complete the required product details.");
       }
-      const payload = buildUpdateProductPayload(productEditFormToProductFormState(form), [], [], productQuery.data, sellerCurrency);
+      const payload = buildUpdateProductPayload(
+        productEditFormToProductFormState(form),
+        [],
+        [],
+        productQuery.data,
+        sellerCurrency,
+        sellerTaxRegistrationStatus,
+      );
       return updateSellerProduct(auth.authHeaders, decodedId, payload);
     },
     onSuccess: async () => {
@@ -137,6 +149,24 @@ export default function EditSellerProductScreen() {
 
   function updateField<K extends keyof ProductEditFormValues>(key: K, value: ProductEditFormValues[K]) {
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function selectCategory(categoryId: string) {
+    const category = categoriesQuery.data?.find((item) => item.id === categoryId);
+    const classification = category?.defaultTaxClassification ?? "TAXABLE";
+    setForm((current) => ({
+      ...current,
+      categoryId,
+      taxClassification: classification,
+      hsnCode: classification === "NON_GST" ? "" : category?.defaultHsnCode ?? "",
+      gstRatePercent:
+        classification === "TAXABLE" &&
+        canCollectGst &&
+        category?.defaultGstRatePercent !== null &&
+        category?.defaultGstRatePercent !== undefined
+          ? String(category.defaultGstRatePercent)
+          : "0",
+    }));
   }
 
   function toggleDeliveryMode(mode: ProductEditFormValues["deliveryModes"][number]) {
@@ -297,7 +327,7 @@ export default function EditSellerProductScreen() {
             label="Category *"
             options={categoryOptions}
             selectedValue={form.categoryId}
-            onSelect={(value) => updateField("categoryId", value)}
+            onSelect={selectCategory}
             placeholder={categoriesQuery.isLoading ? "Loading categories..." : "Select category"}
           />
           {categoriesQuery.isError ? (
@@ -407,13 +437,32 @@ export default function EditSellerProductScreen() {
         </CollapsibleSection>
 
         <CollapsibleSection title="Tax & Compliance">
-          <Field
-            label="HSN code *"
-            value={form.hsnCode}
-            onChangeText={(value) => updateField("hsnCode", value)}
-            placeholder="4-8 digit HSN code"
-            autoCapitalize="characters"
+          <SelectField
+            label="Tax classification *"
+            options={PRODUCT_TAX_CLASSIFICATION_OPTIONS}
+            selectedValue={form.taxClassification}
+            onSelect={(value) => {
+              const taxClassification = value as ProductEditFormValues["taxClassification"];
+              setForm((current) => ({
+                ...current,
+                taxClassification,
+                hsnCode: taxClassification === "NON_GST" ? "" : current.hsnCode,
+                gstRatePercent:
+                  taxClassification === "TAXABLE" && canCollectGst
+                    ? current.gstRatePercent
+                    : "0",
+              }));
+            }}
           />
+          {form.taxClassification !== "NON_GST" ? (
+            <Field
+              label={`HSN code${form.taxClassification === "EXEMPT" ? "" : " *"}`}
+              value={form.hsnCode}
+              onChangeText={(value) => updateField("hsnCode", value)}
+              placeholder="4-8 digit HSN code"
+              autoCapitalize="characters"
+            />
+          ) : null}
           {hsnQuery.isFetching ? <Text style={styles.helperText}>Searching HSN suggestions...</Text> : null}
           {hsnQuery.isError ? (
             <Text style={styles.helperError}>HSN suggestions are unavailable. Manual HSN and GST values can still be saved.</Text>
@@ -424,7 +473,9 @@ export default function EditSellerProductScreen() {
               accessibilityRole="button"
               onPress={() => {
                 updateField("hsnCode", hsn.hsnCode);
-                updateField("gstRatePercent", String(hsn.gstRatePercent));
+                if (form.taxClassification === "TAXABLE" && canCollectGst) {
+                  updateField("gstRatePercent", String(hsn.gstRatePercent));
+                }
               }}
               style={styles.suggestion}
             >
@@ -433,13 +484,17 @@ export default function EditSellerProductScreen() {
               </Text>
             </Pressable>
           ))}
-          <SelectField
-            label="GST rate % *"
-            options={GST_OPTIONS}
-            selectedValue={form.gstRatePercent}
-            onSelect={(value) => updateField("gstRatePercent", value)}
-            placeholder="Select GST rate"
-          />
+          {form.taxClassification === "TAXABLE" && canCollectGst ? (
+            <SelectField
+              label="GST rate % *"
+              options={GST_OPTIONS.filter((option) => option.value !== "0")}
+              selectedValue={form.gstRatePercent}
+              onSelect={(value) => updateField("gstRatePercent", value)}
+              placeholder="Select GST rate"
+            />
+          ) : (
+            <Text style={styles.helperText}>GST is fixed at 0% for this classification or seller registration.</Text>
+          )}
           <Field label="Country of origin" value={form.countryOfOrigin} onChangeText={(value) => updateField("countryOfOrigin", value)} />
           <Field label="Manufacturer name" value={form.manufacturerName} onChangeText={(value) => updateField("manufacturerName", value)} />
           <Field

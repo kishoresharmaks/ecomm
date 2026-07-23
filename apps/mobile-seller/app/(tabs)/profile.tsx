@@ -4,7 +4,7 @@ import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useMobileSellerAuth } from "../../src/auth/mobile-seller-auth-context";
-import { Button, CollapsibleSection, Field, LoadingState, Screen, StatusChip, Toast } from "../../src/components/screen";
+import { Button, CollapsibleSection, ConfirmDialog, Field, LoadingState, Screen, SelectField, StatusChip, Toast } from "../../src/components/screen";
 import { launchSellerImageLibraryAsync } from "../../src/features/seller/image-picker";
 import { uploadPublicSellerImage, uploadSellerPrivateDocument, type MobileUploadFile } from "../../src/features/seller/mobile-upload";
 import {
@@ -14,6 +14,11 @@ import {
   sellerProfileToFormFields,
 } from "../../src/features/seller/profile-save-payload";
 import { validateSellerContactPhone } from "../../src/features/seller/profile-validation";
+import {
+  SELLER_TAX_REGISTRATION_OPTIONS,
+  normalizeGstin,
+  validateGstin,
+} from "../../src/features/seller/seller-tax";
 import {
   getSellerProfile,
   updateSellerProfile,
@@ -27,6 +32,7 @@ type FieldErrors = {
   storeName?: string;
   contactEmail?: string;
   contactPhone?: string;
+  gstNumber?: string;
 };
 
 type ToastState = { visible: boolean; message: string; type: "success" | "error" };
@@ -48,6 +54,7 @@ export default function SellerProfileScreen() {
   const [documents, setDocuments] = useState<SellerVerificationDocumentPayload[]>([]);
   const [uploadingSection, setUploadingSection] = useState<string | null>(null);
   const [errors, setErrors] = useState<FieldErrors>({});
+  const [showTaxChangeWarning, setShowTaxChangeWarning] = useState(false);
   const [toast, setToast] = useState<ToastState>({ visible: false, message: "", type: "success" });
 
   const hasUnsavedChanges = useMemo(() => {
@@ -62,6 +69,15 @@ export default function SellerProfileScreen() {
       : "Not added";
   const addressState = fields.city || fields.pincode ? "Added" : "Missing";
   const mediaState = fields.logoUrl && fields.bannerUrl ? "Complete" : fields.logoUrl || fields.bannerUrl ? "Partial" : "Missing";
+  const taxIdentityChanged = useMemo(() => {
+    if (!profileQuery.data) return false;
+    const original = sellerProfileToFormFields(profileQuery.data);
+    return (
+      fields.taxRegistrationStatus !== original.taxRegistrationStatus ||
+      normalizeGstin(fields.gstNumber) !== normalizeGstin(original.gstNumber) ||
+      documents.some((document) => document.documentType === "GST_CERTIFICATE")
+    );
+  }, [documents, fields.gstNumber, fields.taxRegistrationStatus, profileQuery.data]);
 
   const dismissToast = useCallback(() => setToast((current) => ({ ...current, visible: false })), []);
 
@@ -79,6 +95,11 @@ export default function SellerProfileScreen() {
     const phoneError = validateSellerContactPhone(fields.contactPhone);
     if (phoneError) {
       newErrors.contactPhone = phoneError;
+    }
+
+    const gstError = validateGstin(fields.taxRegistrationStatus, fields.gstNumber);
+    if (gstError) {
+      newErrors.gstNumber = gstError;
     }
 
     setErrors(newErrors);
@@ -284,7 +305,30 @@ export default function SellerProfileScreen() {
         <CollapsibleSection title="Business details">
           <Field label="Business legal name" value={fields.businessLegalName} onChangeText={(value) => updateField("businessLegalName", value)} />
           <Field label="Business type" value={fields.businessType} onChangeText={(value) => updateField("businessType", value)} />
-          <Field label="GST number" value={fields.gstNumber} onChangeText={(value) => updateField("gstNumber", value)} autoCapitalize="characters" />
+          <SelectField
+            label="GST registration"
+            options={SELLER_TAX_REGISTRATION_OPTIONS}
+            selectedValue={fields.taxRegistrationStatus}
+            onSelect={(value) => {
+              updateField("taxRegistrationStatus", value as typeof fields.taxRegistrationStatus);
+              if (value === "NOT_REGISTERED") updateField("gstNumber", "");
+            }}
+          />
+          {fields.taxRegistrationStatus !== "NOT_REGISTERED" ? (
+            <Field
+              label="GSTIN"
+              value={fields.gstNumber}
+              onChangeText={(value) => updateField("gstNumber", value.toUpperCase())}
+              autoCapitalize="characters"
+              maxLength={15}
+              error={errors.gstNumber}
+            />
+          ) : null}
+          {profileQuery.data?.status === "APPROVED" ? (
+            <Text style={styles.warningText}>
+              Changes to GST registration, GSTIN, or the GST certificate may return your seller account and affected listings for verification.
+            </Text>
+          ) : null}
           <Field label="PAN number" value={fields.panNumber} onChangeText={(value) => updateField("panNumber", value)} autoCapitalize="characters" />
         </CollapsibleSection>
 
@@ -357,7 +401,13 @@ export default function SellerProfileScreen() {
         <Button
           disabled={mutation.isPending || !fields.storeName.trim() || !auth.enabled || !hasUnsavedChanges}
           title={mutation.isPending ? "Saving..." : hasUnsavedChanges ? "Save profile" : "Saved"}
-          onPress={() => mutation.mutate()}
+          onPress={() => {
+            if (profileQuery.data?.status === "APPROVED" && taxIdentityChanged) {
+              setShowTaxChangeWarning(true);
+              return;
+            }
+            mutation.mutate();
+          }}
           loading={mutation.isPending}
           style={styles.saveButton}
         />
@@ -373,6 +423,18 @@ export default function SellerProfileScreen() {
       </View>
 
       <Toast visible={toast.visible} message={toast.message} type={toast.type} onDismiss={dismissToast} />
+      <ConfirmDialog
+        visible={showTaxChangeWarning}
+        title="Submit GST changes for verification?"
+        message="Your seller account and affected listings may require verification before they are active again."
+        cancelLabel="Review changes"
+        confirmLabel="Submit changes"
+        onCancel={() => setShowTaxChangeWarning(false)}
+        onConfirm={() => {
+          setShowTaxChangeWarning(false);
+          mutation.mutate();
+        }}
+      />
     </Screen>
   );
 }
@@ -665,6 +727,12 @@ const styles = StyleSheet.create({
     color: "#166534",
     fontSize: 12,
     fontWeight: "900",
+  },
+  warningText: {
+    color: "#92400E",
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 18,
   },
   bottomBar: {
     backgroundColor: colors.surface,

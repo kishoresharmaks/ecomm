@@ -19,6 +19,7 @@ import { startSearchIndexPolling } from "./search-index-worker";
 import { startServiceQuoteExpiryPolling } from "./service-quote-expiry-worker";
 import { startShiprocketBookingPolling } from "./shiprocket-booking-worker";
 import { startDeliveryBatchRoutingPolling } from "./delivery-routing-batch-worker";
+import { startReportExportPolling } from "./report-export-worker";
 
 const logger = pino({
   name: "indihub-worker",
@@ -59,6 +60,7 @@ startRazorpayReservationExpiryPolling(logger);
 startServiceQuoteExpiryPolling(logger);
 startShiprocketBookingPolling(logger);
 startDeliveryBatchRoutingPolling(logger);
+startReportExportPolling(logger);
 
 const redisUrl = process.env.REDIS_URL;
 const emailDelivery = new WorkerEmailDelivery(logger);

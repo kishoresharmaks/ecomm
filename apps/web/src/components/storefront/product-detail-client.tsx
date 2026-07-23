@@ -8,21 +8,29 @@ import {
   ArrowLeft,
   ArrowRight,
   BadgeCheck,
+  Barcode,
   CreditCard,
+  FileCheck2,
   FilePlus2,
   Headphones,
   Heart,
   Home,
+  Info,
+  Layers,
   PackageCheck,
   RefreshCcw,
   Share2,
   ShieldCheck,
   ShoppingCart,
+  SlidersHorizontal,
+  Tag,
+  Truck,
   Zap,
   Star,
   Store,
 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { buildProductDetailContent } from "@indihub/shared-types";
 import { Button, SectionHeading, cn } from "@indihub/ui";
 import { CustomerAuthNotice } from "@/components/auth/customer-auth-notice";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
@@ -45,7 +53,6 @@ import {
 import { rememberRecentProduct } from "@/lib/recent-products";
 import { StorefrontFrame } from "./storefront-frame";
 import { StorefrontImage } from "./storefront-image";
-import { displayStorefrontAttributeValue } from "./storefront-product-attributes";
 import { getStorefrontStockStatus } from "./storefront-stock-status";
 import {
   StorefrontErrorPanel,
@@ -88,7 +95,9 @@ export function ProductDetailClient({ slug }: { slug: string }) {
   const isEnquiryOnly = listingMode === "ENQUIRY_ONLY";
   const canAddToCart = listingMode !== "ENQUIRY_ONLY";
   const purchaseModeBadge = publicPurchaseModeLabel(listingMode);
-  const specificationRows = product ? productSpecificationRows(product, selectedVariant) : [];
+  const productDetails = product
+    ? buildProductDetailContent(product, selectedVariant)
+    : { highlights: [], sections: [] };
   const serviceHighlights = productServiceHighlights();
   const activeDeal = selectedVariant?.activeDeal ?? product?.activeDeal ?? null;
   const reviewsQuery = useQuery({
@@ -536,28 +545,70 @@ export function ProductDetailClient({ slug }: { slug: string }) {
             </div>
           </section>
 
-          {(product.description || specificationRows.length) ? (
+          {(product.description || productDetails.highlights.length || productDetails.sections.length) ? (
             <section className="mx-auto max-w-[1440px] px-4 pb-4 md:px-6 lg:px-10">
-              <div className="rounded-[20px] border border-[#E5E7EB] bg-white p-5 shadow-sm">
-                <p className="text-base font-black text-[#1F2933]">Product details</p>
-                {product.description ? (
-                  <p className="mt-3 max-w-4xl text-sm font-semibold leading-7 text-[#667085]">
-                    {product.description}
-                  </p>
-                ) : specificationRows.length ? (
-                  <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-[#667085]">
-                    Helpful details shared by the seller so you can compare this item before buying.
-                  </p>
-                ) : null}
-                {specificationRows.length ? (
-                  <dl className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                    {specificationRows.map((row) => (
-                      <div key={`${row.scope}-${row.label}`} className="rounded-2xl bg-[#F8FAFC] px-4 py-3">
-                        <dt className="text-[11px] font-bold uppercase tracking-wide text-[#667085]">{row.label}</dt>
-                        <dd className="mt-1 text-sm font-black text-[#1F2933]">{row.value}</dd>
-                      </div>
+              <div className="rounded-[20px] border border-[#E5E7EB] bg-white px-5 py-6 shadow-sm md:px-7">
+
+                {/* Description + Highlights grid */}
+                <div className="grid gap-7 lg:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.65fr)]">
+                  <ProductDescription description={product.description} />
+
+                  {productDetails.highlights.length ? (
+                    <div className="border-t border-[#E5E7EB] pt-5 lg:border-l lg:border-t-0 lg:pl-7 lg:pt-0">
+                      <p className="mb-3 flex items-center gap-2 text-sm font-black text-[#1F2933]">
+                        <span className="grid h-6 w-6 place-items-center rounded-full bg-[#FFF0EC] text-[#ED3500]">
+                          <Info className="h-3.5 w-3.5" aria-hidden="true" />
+                        </span>
+                        Key highlights
+                      </p>
+                      <ol className="grid gap-2">
+                        {productDetails.highlights.map((highlight, index) => (
+                          <li key={highlight} className="flex gap-3 text-sm font-semibold leading-6 text-[#475467]">
+                            <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#FFF0EC] text-[10px] font-black text-[#ED3500]" aria-hidden="true">
+                              {index + 1}
+                            </span>
+                            <span className="break-words">{highlight}</span>
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+                  ) : null}
+                </div>
+
+                {/* Detail sections */}
+                {productDetails.sections.length ? (
+                  <div className="mt-7 divide-y divide-[#E5E7EB] border-t border-[#E5E7EB]">
+                    {productDetails.sections.map((detailSection) => (
+                      <section
+                        key={detailSection.key}
+                        className="grid gap-4 py-6 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-8"
+                      >
+                        <h2 className="flex items-center gap-2 text-sm font-black text-[#1F2933]">
+                          <span className="grid h-7 w-7 shrink-0 place-items-center rounded-[8px] border border-[#E8EDF2] bg-[#F8FAFC] text-[#163B5C]">
+                            <ProductSectionIcon sectionKey={detailSection.key} />
+                          </span>
+                          {detailSection.title}
+                        </h2>
+                        <dl className="overflow-hidden rounded-[14px] border border-[#EEF1F4]">
+                          {detailSection.rows.map((row, rowIndex) => (
+                            <div
+                              key={`${row.scope}-${row.key}`}
+                              className={cn(
+                                "grid grid-cols-[minmax(120px,0.9fr)_minmax(0,1.1fr)] gap-2 px-4 py-3",
+                                rowIndex % 2 === 0 ? "bg-white" : "bg-[#FAFBFC]",
+                                rowIndex < detailSection.rows.length - 1 && "border-b border-[#EEF1F4]",
+                              )}
+                            >
+                              <dt className="text-xs font-bold leading-5 text-[#667085] self-center">{row.label}</dt>
+                              <dd className="whitespace-pre-line break-words text-sm font-black leading-5 text-[#1F2933] self-center text-right">
+                                {row.value}
+                              </dd>
+                            </div>
+                          ))}
+                        </dl>
+                      </section>
                     ))}
-                  </dl>
+                  </div>
                 ) : null}
               </div>
             </section>
@@ -768,35 +819,53 @@ function SupportPoint({ icon, text }: { icon: ReactNode; text: string }) {
   );
 }
 
-type SpecificationRow = { scope: "PRODUCT" | "VARIANT"; label: string; value: string };
+function ProductDescription({ description }: { description: string }) {
+  const COLLAPSE_AT = 320;
+  const [expanded, setExpanded] = useState(false);
+  const isLong = description.length > COLLAPSE_AT;
+  const displayText = isLong && !expanded ? `${description.slice(0, COLLAPSE_AT).trimEnd()}…` : description;
 
-const publicProductDetailFields = [
-  { key: "brand", label: "Brand" },
-  { key: "condition", label: "Condition" },
-  { key: "unitOfMeasure", label: "Sold as" },
-  { key: "returnEligibility", label: "Return policy" },
-  { key: "warranty", label: "Warranty" },
-  { key: "countryOfOrigin", label: "Country of origin" },
-] as const;
+  return (
+    <div>
+      <p className="mb-3 flex items-center gap-2 text-lg font-black text-[#1F2933]">
+        About this product
+      </p>
+      <p className="whitespace-pre-wrap break-words text-sm font-semibold leading-7 text-[#667085]">
+        {displayText || "Helpful product information shared by the seller."}
+      </p>
+      {isLong ? (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="mt-2 text-xs font-black text-[#ED3500] hover:underline focus:outline-none"
+        >
+          {expanded ? "Show less" : "Read more"}
+        </button>
+      ) : null}
+    </div>
+  );
+}
 
-const publicProductDetailFieldKeys = new Set<string>(publicProductDetailFields.map((field) => field.key));
+type ProductSectionKey = "OVERVIEW" | "COMPLIANCE" | "FULFILMENT" | "IDENTIFIERS" | "SPECIFICATIONS" | "VARIANT";
 
-const hiddenPublicProductDetailKeys = new Set<string>([
-  "gstRatePercent",
-  "hsnCode",
-  "packageWeightGrams",
-  "packageLengthCm",
-  "packageWidthCm",
-  "packageBreadthCm",
-  "packageHeightCm",
-  "gtin",
-  "searchTags",
-  "seoTitle",
-  "seoDescription",
-  "manufacturerAddress",
-  "packerName",
-  "importerName",
-]);
+function ProductSectionIcon({ sectionKey }: { sectionKey: ProductSectionKey | string }) {
+  switch (sectionKey) {
+    case "OVERVIEW":
+      return <Info className="h-3.5 w-3.5" aria-hidden="true" />;
+    case "COMPLIANCE":
+      return <FileCheck2 className="h-3.5 w-3.5" aria-hidden="true" />;
+    case "FULFILMENT":
+      return <Truck className="h-3.5 w-3.5" aria-hidden="true" />;
+    case "IDENTIFIERS":
+      return <Barcode className="h-3.5 w-3.5" aria-hidden="true" />;
+    case "SPECIFICATIONS":
+      return <Layers className="h-3.5 w-3.5" aria-hidden="true" />;
+    case "VARIANT":
+      return <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />;
+    default:
+      return <Tag className="h-3.5 w-3.5" aria-hidden="true" />;
+  }
+}
 
 function productServiceHighlights() {
   return [
@@ -826,49 +895,6 @@ function productServiceHighlights() {
       icon: <Headphones className="h-5 w-5" aria-hidden="true" />,
     },
   ];
-}
-
-function productSpecificationRows(product: ProductSummary, selectedVariant: ProductVariant | null | undefined): SpecificationRow[] {
-  const fields = product.category.productTemplate?.fields ?? [];
-  const productDetailRows: SpecificationRow[] = publicProductDetailFields.flatMap((field) => {
-    const value = displayAttributeValue(product.attributes?.[field.key]);
-
-    return value
-      ? [
-          {
-            scope: "PRODUCT" as const,
-            label: field.label,
-            value,
-          },
-        ]
-      : [];
-  });
-
-  const templateRows: SpecificationRow[] = fields
-    .filter((field) => field.scope === "PRODUCT" || Boolean(selectedVariant))
-    .filter((field) => !hiddenPublicProductDetailKeys.has(field.fieldKey))
-    .filter((field) => field.scope !== "PRODUCT" || !publicProductDetailFieldKeys.has(field.fieldKey))
-    .sort((first, second) => first.sortOrder - second.sortOrder || first.label.localeCompare(second.label))
-    .flatMap((field) => {
-      const source = field.scope === "VARIANT" ? selectedVariant?.attributes : product.attributes;
-      const value = displayAttributeValue(source?.[field.fieldKey]);
-
-      return value
-        ? [
-            {
-              scope: field.scope,
-              label: field.label,
-              value,
-            },
-          ]
-        : [];
-    });
-
-  return [...productDetailRows, ...templateRows];
-}
-
-function displayAttributeValue(value: unknown) {
-  return displayStorefrontAttributeValue(value);
 }
 
 function publicPurchaseModeLabel(value: string) {

@@ -5,6 +5,7 @@ import type {
   SellerServiceBooking,
   SellerServiceListing,
   SellerServicePayload,
+  SacMasterEntry,
   ProductTaxClassification,
   ServiceBookingStatus,
   ServiceCancellationPolicy,
@@ -13,6 +14,14 @@ import type {
   ServicePricingModel,
   ServiceVisitMode,
 } from "./seller-api";
+
+export function manualSacCode(value: string) {
+  return value.replace(/\D/g, "").slice(0, 6);
+}
+
+export function sacCodeFromMaster(entry: Pick<SacMasterEntry, "sacCode">) {
+  return manualSacCode(entry.sacCode);
+}
 
 export type ServiceFormValues = {
   categoryId: string;

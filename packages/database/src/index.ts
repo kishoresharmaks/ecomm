@@ -70,6 +70,7 @@ if (process.env.NODE_ENV !== "production") {
 }
 
 export * from "./generated/prisma/client";
+export * from "./report-exports";
 
 function loadLocalEnv() {
   const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");

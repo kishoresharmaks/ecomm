@@ -37,12 +37,16 @@ export function ConfirmDialog({
   visible,
   title,
   message,
+  confirmLabel = "Confirm",
+  cancelLabel = "Cancel",
   onConfirm,
   onCancel,
 }: {
   visible: boolean;
   title: string;
   message: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -54,10 +58,10 @@ export function ConfirmDialog({
           <Text style={styles.dialogMessage}>{message}</Text>
           <View style={styles.dialogActions}>
             <Pressable accessibilityRole="button" onPress={onCancel} style={[styles.dialogButton, styles.dialogCancel]}>
-              <Text style={styles.dialogCancelText}>Cancel</Text>
+              <Text style={styles.dialogCancelText}>{cancelLabel}</Text>
             </Pressable>
             <Pressable accessibilityRole="button" onPress={onConfirm} style={[styles.dialogButton, styles.dialogConfirm]}>
-              <Text style={styles.dialogConfirmText}>Confirm</Text>
+              <Text style={styles.dialogConfirmText}>{confirmLabel}</Text>
             </Pressable>
           </View>
         </View>

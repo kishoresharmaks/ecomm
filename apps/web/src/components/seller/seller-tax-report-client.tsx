@@ -27,7 +27,6 @@ import { formatMoney } from "@/lib/storefront-api";
 import {
   downloadSellerGstReportCsv,
   downloadSellerGstDocumentPdf,
-  downloadSellerReportCsv,
   getSellerGstDocuments,
   getSellerGstOverview,
   getSellerProfile,
@@ -43,6 +42,11 @@ import type {
   GstReportDocument,
   GstHsnSummaryRow,
 } from "@/lib/gst-report-api";
+import {
+  createReportExport,
+  downloadReportExport,
+  type ReportExportType,
+} from "@/lib/report-exports-api";
 import { sellerTaxRegime } from "@/lib/tax-report-presentation";
 import { GstDocumentDetailsDrawer } from "@/components/shared/gst-document-details-drawer";
 import {
@@ -180,8 +184,23 @@ export function SellerTaxReportClient({
       downloadSellerGstReportCsv(sellerAuth.authHeaders, type, submittedRange),
   });
   const genericExportMutation = useMutation({
-    mutationFn: (type: "sales" | "finance" | "tax" | "returns") =>
-      downloadSellerReportCsv(sellerAuth.authHeaders, type, submittedRange),
+    mutationFn: async (type: "sales" | "finance" | "tax" | "returns") => {
+      const exportType: Record<typeof type, ReportExportType> = {
+        sales: "SELLER_SALES",
+        finance: "SELLER_FINANCE",
+        tax: "SELLER_TAX",
+        returns: "SELLER_RETURNS",
+      };
+      const job = await createReportExport(
+        sellerAuth.authHeaders,
+        "seller",
+        exportType[type],
+        submittedRange,
+      );
+      if (job.status === "COMPLETED") {
+        await downloadReportExport(sellerAuth.authHeaders, "seller", job);
+      }
+    },
   });
   const documentDownloadMutation = useMutation({
     mutationFn: (document: GstReportDocument) =>

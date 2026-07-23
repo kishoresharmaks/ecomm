@@ -178,4 +178,14 @@ describe("validateProductEditForm", () => {
     expect(result.errors).toContain("Add up to 10 product images.");
     expect(result.errors).toContain("Add up to 20 active variants.");
   });
+
+  it("hydrates and sends the top-level tax classification", () => {
+    const product = { ...baseProduct, taxClassification: "NIL_RATED" as const };
+    const values = productToEditForm(product);
+    expect(values.taxClassification).toBe("NIL_RATED");
+
+    const payload = buildSellerProductUpdatePayload(product, values);
+    expect(payload.taxClassification).toBe("NIL_RATED");
+    expect(payload.attributes).toMatchObject({ gstRatePercent: 0 });
+  });
 });

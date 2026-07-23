@@ -39,6 +39,7 @@ export const adminNav = [
   { group: "Operations", label: "Settings", href: "/admin/settings/general" },
   { group: "Operations", label: "SEO & Analytics", href: "/admin/settings/seo" },
   { group: "Operations", label: "Reports", href: "/admin/reports" },
+  { group: "Operations", label: "Report exports", href: "/admin/reports/exports" },
   { group: "Operations", label: "B2B ERP integrations", href: "/admin/b2b-integrations" },
   { group: "Finance", label: "Payments", href: "/admin/payments" },
   { group: "Finance", label: "B2B payment verification", href: "/admin/b2b-payments" },
@@ -52,6 +53,7 @@ export const adminNav = [
   { group: "Finance", label: "Seller ledger", href: "/admin/finance/ledger" },
   { group: "Finance", label: "Statements", href: "/admin/finance/statements" },
   { group: "Finance", label: "GST reports", href: "/admin/finance/gst-reports" },
+  { group: "Finance", label: "Order tax register", href: "/admin/reports/order-tax-register" },
   { group: "Finance", label: "FX providers", href: "/finance/fx-providers" },
   { group: "Finance", label: "Finance workspace", href: "/finance" },
 ];
@@ -72,6 +74,7 @@ export const financeNav = [
   { group: "Seller finance", label: "Statements", href: "/finance/statements" },
   { group: "Rules", label: "Commission rules", href: "/finance/commission-rules" },
   { group: "Reports", label: "Payment reports", href: "/finance/reports" },
+  { group: "Reports", label: "Report exports", href: "/finance/exports" },
   { group: "Settings", label: "Payment settings", href: "/finance/settings" },
   { group: "Settings", label: "FX providers", href: "/finance/fx-providers" },
 ];
@@ -104,6 +107,7 @@ export const sellerNav = [
   { group: "B2B", label: "B2B enquiries", href: "/seller/b2b-enquiries", capability: "RETAIL" },
   { group: "B2B", label: "B2B orders", href: "/seller/b2b-orders", capability: "RETAIL" },
   { group: "Insights", label: "Reports", href: "/seller/reports", capability: "ALL" },
+  { group: "Insights", label: "Report exports", href: "/seller/reports/exports", capability: "ALL" },
   { group: "Finance", label: "Subscription", href: "/seller/subscription", capability: "ALL" },
   { group: "Finance", label: "Wallet", href: "/seller/finance/wallet", capability: "ALL" },
   { group: "Finance", label: "Payouts", href: "/seller/finance/payouts", capability: "ALL" },

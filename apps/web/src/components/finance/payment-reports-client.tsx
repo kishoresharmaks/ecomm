@@ -1,11 +1,16 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { BarChart3, RefreshCw } from "lucide-react";
+import { BarChart3, FileClock, RefreshCw } from "lucide-react";
 import { Button, StatusBadge } from "@indihub/ui";
 import { useAdminAuth } from "@/components/admin/admin-auth-context";
+import { OperationalReportWorkspace } from "@/components/reporting/reporting-workspace";
 import { getFinancePaymentReports, type FinanceReportGroup } from "@/lib/finance-api";
+import type { ReportExportType } from "@/lib/report-exports-api";
+
+type FinanceExportType = Extract<ReportExportType, `FINANCE_${string}`>;
 
 const moneyFormatter = new Intl.NumberFormat("en-IN", {
   style: "currency",
@@ -17,6 +22,7 @@ export function PaymentReportsClient() {
   const auth = useAdminAuth();
   const [provider, setProvider] = useState("");
   const [paymentStatus, setPaymentStatus] = useState("");
+  const [reportType, setReportType] = useState<FinanceExportType>("FINANCE_PAYMENTS");
   const query = {
     ...(provider ? { provider } : {}),
     ...(paymentStatus ? { paymentStatus } : {})
@@ -26,11 +32,19 @@ export function PaymentReportsClient() {
     queryFn: () => getFinancePaymentReports(auth.authHeaders, query),
     enabled: auth.isAuthenticated
   });
+  const selectedReport = financeReportTypes.find((item) => item.value === reportType) ?? financeReportTypes[0]!;
 
   return (
     <div className="space-y-4">
       <section className="rounded-lg border border-[#D8E2EA] bg-white p-4 shadow-sm">
-        <div className="grid gap-3 md:grid-cols-[240px_240px_auto]">
+        <div className="grid gap-3 md:grid-cols-[minmax(240px,1fr)_220px_220px_auto_auto]">
+          <select
+            value={reportType}
+            onChange={(event) => setReportType(event.target.value as FinanceExportType)}
+            className="h-11 rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-black text-[#1F2933] outline-none transition focus:border-[#ED3500]"
+          >
+            {financeReportTypes.map((report) => <option key={report.value} value={report.value}>{report.label}</option>)}
+          </select>
           <select
             value={provider}
             onChange={(event) => setProvider(event.target.value)}
@@ -57,6 +71,12 @@ export function PaymentReportsClient() {
             <RefreshCw className="h-4 w-4" aria-hidden="true" />
             Refresh
           </Button>
+          <Button asChild variant="secondary">
+            <Link href="/finance/exports">
+              <FileClock className="h-4 w-4" aria-hidden="true" />
+              Exports
+            </Link>
+          </Button>
         </div>
       </section>
 
@@ -77,8 +97,64 @@ export function PaymentReportsClient() {
         <ReportPanel title="Service receivable tax state" items={reportsQuery.data?.serviceReceivablesByTaxStatus ?? []} />
         <ReportPanel title="Service offset policy" items={reportsQuery.data?.serviceReceivablesByOffsetPolicy ?? []} />
       </section>
+
+      <section className="border-l-4 border-[#ED3500] bg-white px-4 py-3 shadow-sm">
+        <p className="text-sm font-black text-[#1F2933]">{selectedReport.label}</p>
+        <p className="mt-1 text-xs font-semibold text-[#667085]">
+          Activity date: {activityBasis(reportsQuery.data?.activityBasis, reportType)}
+        </p>
+      </section>
+
+      <OperationalReportWorkspace
+        auth={auth.authHeaders}
+        endpoint={`/api/admin/finance/report-data/${reportType}`}
+        exportType={reportType}
+        audience="finance"
+        exportsHref="/finance/exports"
+        searchPlaceholder={selectedReport.searchPlaceholder}
+        statusOptions={statusOptions(reportType)}
+      />
     </div>
   );
+}
+
+const financeReportTypes: Array<{ value: FinanceExportType; label: string; searchPlaceholder: string }> = [
+  { value: "FINANCE_PAYMENTS", label: "Payments", searchPlaceholder: "Payment ID, order, customer or provider reference" },
+  { value: "FINANCE_COD_COLLECTIONS", label: "COD collections", searchPlaceholder: "Order, collection note or staff member" },
+  { value: "FINANCE_ORDER_SETTLEMENTS", label: "Order settlements", searchPlaceholder: "Order, seller, split or payout" },
+  { value: "FINANCE_SERVICE_SETTLEMENTS", label: "Service settlements", searchPlaceholder: "Booking, seller, settlement or payout" },
+  { value: "FINANCE_PAYOUTS", label: "Seller payouts", searchPlaceholder: "Payout, seller or transaction reference" },
+  { value: "FINANCE_SERVICE_RECEIVABLES", label: "Service receivables", searchPlaceholder: "Receivable, booking or seller" },
+];
+
+export const financeExportTypes = financeReportTypes.map(({ value, label }) => ({ value, label }));
+
+function statusOptions(type: FinanceExportType) {
+  const values =
+    type === "FINANCE_PAYMENTS"
+      ? ["PENDING", "PAID", "FAILED", "REFUNDED", "NOT_REQUIRED"]
+      : type === "FINANCE_COD_COLLECTIONS"
+        ? ["NOT_COLLECTED", "COLLECTED", "VERIFIED", "REJECTED"]
+        : type === "FINANCE_PAYOUTS"
+          ? ["DRAFT", "PENDING_APPROVAL", "APPROVED", "PAID", "REJECTED", "FAILED"]
+          : ["PENDING", "ELIGIBLE", "PROCESSING", "SETTLED", "PAID", "DISPUTED", "WAIVED"];
+  return values.map((value) => ({ value, label: value.replaceAll("_", " ").toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()) }));
+}
+
+function activityBasis(
+  basis: import("@/lib/finance-api").FinancePaymentReports["activityBasis"] | undefined,
+  type: FinanceExportType,
+) {
+  if (!basis) return "Loading";
+  const key = {
+    FINANCE_PAYMENTS: "payments",
+    FINANCE_COD_COLLECTIONS: "codCollections",
+    FINANCE_ORDER_SETTLEMENTS: "orderSettlements",
+    FINANCE_SERVICE_SETTLEMENTS: "serviceSettlements",
+    FINANCE_PAYOUTS: "payouts",
+    FINANCE_SERVICE_RECEIVABLES: "serviceReceivables",
+  }[type] as keyof typeof basis | undefined;
+  return key ? basis[key] : "Report activity date";
 }
 
 function ReportPanel({ title, items }: { title: string; items: FinanceReportGroup[] }) {

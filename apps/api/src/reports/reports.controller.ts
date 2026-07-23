@@ -1,6 +1,6 @@
-import { Body, Controller, Get, Inject, Param, Patch, Post, Query, Res } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, Inject, Param, Patch, Post, Query, Res } from "@nestjs/common";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
-import { GstReportExportType, RoleCode } from "@indihub/database";
+import { GstReportExportType, ReportExportType, RoleCode } from "@indihub/database";
 import type { Response } from "express";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import type { RequestUser } from "../auth/types/indihub-request";
@@ -13,7 +13,9 @@ import {
   AdminGstReportQueryDto,
   GstDocumentQueryDto,
 } from "./dto/gst-report-query.dto";
+import { OrderTaxRegisterQueryDto } from "./dto/order-tax-register-query.dto";
 import { ReportQueryDto } from "./dto/report-query.dto";
+import { OperationalReportQueryDto } from "./dto/operational-report-query.dto";
 import {
   documentSeriesCsv,
   eInvoiceStatusCsv,
@@ -30,6 +32,8 @@ import {
   stateLiabilityCsv,
 } from "./gst-report-csv";
 import { GstComplianceService } from "./gst-compliance.service";
+import { orderTaxRegisterCsv } from "./order-tax-register-csv";
+import { OrderTaxRegisterService } from "./order-tax-register.service";
 import { ReportsService } from "./reports.service";
 import { TaxDocumentsService } from "../tax/tax-documents.service";
 
@@ -40,6 +44,7 @@ export class ReportsController {
   constructor(
     @Inject(ReportsService) private readonly reportsService: ReportsService,
     @Inject(GstComplianceService) private readonly gstCompliance: GstComplianceService,
+    @Inject(OrderTaxRegisterService) private readonly orderTaxRegister: OrderTaxRegisterService,
     @Inject(TaxDocumentsService) private readonly taxDocuments: TaxDocumentsService,
   ) {}
 
@@ -51,26 +56,42 @@ export class ReportsController {
 
   @Get("sales")
   @ApiOperation({ summary: "Read sales report." })
-  sales(@Query() query: ReportQueryDto): Promise<unknown> {
-    return this.reportsService.sales(query);
+  async sales(@Query() query: OperationalReportQueryDto): Promise<unknown> {
+    const [summary, table] = await Promise.all([
+      this.reportsService.sales(query),
+      this.reportsService.operationalPage(ReportExportType.ADMIN_SALES, query),
+    ]);
+    return { ...summary, table };
   }
 
   @Get("sellers")
   @ApiOperation({ summary: "Read seller report." })
-  sellers(@Query() query: ReportQueryDto): Promise<unknown> {
-    return this.reportsService.sellers(query);
+  async sellers(@Query() query: OperationalReportQueryDto): Promise<unknown> {
+    const [summary, table] = await Promise.all([
+      this.reportsService.sellers(query),
+      this.reportsService.operationalPage(ReportExportType.ADMIN_SELLERS, query),
+    ]);
+    return { ...summary, table };
   }
 
   @Get("products")
   @ApiOperation({ summary: "Read product report." })
-  products(@Query() query: ReportQueryDto): Promise<unknown> {
-    return this.reportsService.products(query);
+  async products(@Query() query: OperationalReportQueryDto): Promise<unknown> {
+    const [summary, table] = await Promise.all([
+      this.reportsService.products(query),
+      this.reportsService.operationalPage(ReportExportType.ADMIN_PRODUCTS, query),
+    ]);
+    return { ...summary, table };
   }
 
   @Get("enquiries")
   @ApiOperation({ summary: "Read enquiry report." })
-  enquiries(@Query() query: ReportQueryDto): Promise<unknown> {
-    return this.reportsService.enquiries(query);
+  async enquiries(@Query() query: OperationalReportQueryDto): Promise<unknown> {
+    const [summary, table] = await Promise.all([
+      this.reportsService.enquiries(query),
+      this.reportsService.operationalPage(ReportExportType.ADMIN_ENQUIRIES, query),
+    ]);
+    return { ...summary, table };
   }
 
   @Get("gst")
@@ -106,6 +127,38 @@ export class ReportsController {
     );
     res.setHeader("Cache-Control", "private, max-age=0, no-store");
     res.send(document.buffer);
+  }
+
+  @Get("order-tax-register")
+  @ApiOperation({ summary: "Read the line-level order tax and reconciliation register." })
+  orderTaxRegisterReport(@Query() query: OrderTaxRegisterQueryDto) {
+    return this.orderTaxRegister.report(query);
+  }
+
+  @Get("export/order-tax-register")
+  @ApiOperation({ summary: "Export the line-level order tax and reconciliation register." })
+  async exportOrderTaxRegister(
+    @CurrentUser() actor: RequestUser,
+    @Query() query: OrderTaxRegisterQueryDto,
+    @Res() res: Response,
+  ) {
+    const data = await this.orderTaxRegister.report(query, true);
+    if (data.truncated) {
+      throw new BadRequestException(
+        "The export is too large for one file. Narrow the date range or seller filter and try again.",
+      );
+    }
+    const content = orderTaxRegisterCsv(data.items);
+    await this.recordExport(
+      actor,
+      query,
+      GstReportExportType.ORDER_TAX_REGISTER,
+      "order-tax-reconciliation-register.csv",
+      "text/csv",
+      content,
+      data.items.length,
+    );
+    this.sendCsv(res, "order-tax-reconciliation-register.csv", content);
   }
 
   @Get("export/gst-register")

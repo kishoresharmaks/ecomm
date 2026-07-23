@@ -4,7 +4,7 @@ import {
   buildContentSecurityPolicy,
   buildReportingEndpointsHeader,
   buildReportToHeader,
-} from "@/lib/security-headers";
+} from "./lib/security-headers";
 
 const clerkConfigured = Boolean(
   process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && process.env.CLERK_SECRET_KEY,
@@ -69,10 +69,6 @@ export const config = {
   matcher: [
     {
       source: "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml).*)",
-      missing: [
-        { type: "header", key: "next-router-prefetch" },
-        { type: "header", key: "purpose", value: "prefetch" },
-      ],
     },
   ],
 };

@@ -1,122 +1,373 @@
 import { useQuery } from "@tanstack/react-query";
-import { Text, View, ScrollView, Pressable } from "react-native";
+import * as WebBrowser from "expo-web-browser";
+import { useMemo, useState } from "react";
+import { StyleSheet, Text, View } from "react-native";
 import { useMobileSellerAuth } from "../../src/auth/mobile-seller-auth-context";
-import { Card, EmptyState, Header, LoadingState, Screen } from "../../src/components/screen";
-import { getSellerSalesReport } from "../../src/features/seller/seller-api";
+import {
+  Button,
+  Card,
+  ConfirmDialog,
+  EmptyState,
+  Header,
+  LoadingState,
+  QueryErrorState,
+  Screen,
+  SelectField,
+  Toast,
+} from "../../src/components/screen";
+import {
+  getSellerFinanceReport,
+  getSellerInventoryReport,
+  getSellerReturnsReport,
+  getSellerSalesReport,
+  type SellerFinanceReport,
+  type SellerInventoryReport,
+  type SellerReturnsReport,
+  type SellerSalesReport,
+} from "../../src/features/seller/seller-api";
+import {
+  sellerPortalReportUrl,
+  sellerReportDateQuery,
+  type SellerReportPeriod,
+  type SellerReportType,
+} from "../../src/features/seller/report-navigation";
 import { formatMoney } from "../../src/lib/money";
+import { colors, spacing } from "../../src/theme";
 
-import { CreditCardIcon, Share02Icon, StarIcon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react-native";
-import { router, type Href } from "expo-router";
+const REPORT_OPTIONS = [
+  { label: "Sales", value: "sales" },
+  { label: "Inventory", value: "inventory" },
+  { label: "Finance", value: "finance" },
+  { label: "Returns", value: "returns" },
+  { label: "GST reports", value: "tax" },
+];
 
-export default function SellerSalesScreen() {
+const PERIOD_OPTIONS = [
+  { label: "This month", value: "month" },
+  { label: "Last 7 days", value: "7d" },
+  { label: "Last 30 days", value: "30d" },
+  { label: "Last 90 days", value: "90d" },
+  { label: "All time", value: "all" },
+];
+
+export default function SellerReportsScreen() {
   const auth = useMobileSellerAuth();
-  const reportQuery = useQuery({
-    queryKey: ["seller-sales-report", auth.authKey],
-    queryFn: () => getSellerSalesReport(auth.authHeaders),
-    enabled: auth.enabled,
+  const [reportType, setReportType] = useState<SellerReportType>("sales");
+  const [period, setPeriod] = useState<SellerReportPeriod>("month");
+  const [portalTarget, setPortalTarget] = useState<SellerReportType | "tax" | null>(null);
+  const [toast, setToast] = useState({ visible: false, message: "" });
+  const dateQuery = useMemo(() => sellerReportDateQuery(period), [period]);
+
+  const salesQuery = useQuery({
+    queryKey: ["seller-report", "sales", auth.authKey, dateQuery],
+    queryFn: () => getSellerSalesReport(auth.authHeaders, dateQuery),
+    enabled: auth.enabled && reportType === "sales",
+  });
+  const inventoryQuery = useQuery({
+    queryKey: ["seller-report", "inventory", auth.authKey, dateQuery],
+    queryFn: () => getSellerInventoryReport(auth.authHeaders, dateQuery),
+    enabled: auth.enabled && reportType === "inventory",
+  });
+  const financeQuery = useQuery({
+    queryKey: ["seller-report", "finance", auth.authKey, dateQuery],
+    queryFn: () => getSellerFinanceReport(auth.authHeaders, dateQuery),
+    enabled: auth.enabled && reportType === "finance",
+  });
+  const returnsQuery = useQuery({
+    queryKey: ["seller-report", "returns", auth.authKey, dateQuery],
+    queryFn: () => getSellerReturnsReport(auth.authHeaders, dateQuery),
+    enabled: auth.enabled && reportType === "returns",
   });
 
-  if (!auth.enabled || reportQuery.isLoading) {
-    return <LoadingState message="Loading sales report..." />;
+  const activeQuery = {
+    sales: salesQuery,
+    inventory: inventoryQuery,
+    finance: financeQuery,
+    returns: returnsQuery,
+  }[reportType];
+
+  if (!auth.enabled) {
+    return <LoadingState message="Preparing reports..." />;
   }
 
-  const report = reportQuery.data;
-
   return (
-    <Screen contentContainerStyle={{ gap: 16 }}>
-      <Header title="Sales Report" subtitle="View your sales performance, order metrics, and low-stock alerts." />
-
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingHorizontal: 4, paddingBottom: 8 }}>
-        <Pressable onPress={() => router.push("/reviews" as Href)} style={{ backgroundColor: "#FFFFFF", padding: 16, borderRadius: 16, width: 140, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2, borderWidth: 1, borderColor: "#E5E7EB" }}>
-          <HugeiconsIcon icon={StarIcon} size={28} color="#ED3500" style={{ marginBottom: 12 }} />
-          <Text style={{ color: "#111827", fontSize: 16, fontWeight: "900" }}>Reviews</Text>
-          <Text style={{ color: "#6B7280", fontSize: 12, marginTop: 4 }}>Manage ratings</Text>
-        </Pressable>
-        <Pressable onPress={() => router.push("/coupons" as Href)} style={{ backgroundColor: "#FFFFFF", padding: 16, borderRadius: 16, width: 140, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2, borderWidth: 1, borderColor: "#E5E7EB" }}>
-          <HugeiconsIcon icon={CreditCardIcon} size={28} color="#ED3500" style={{ marginBottom: 12 }} />
-          <Text style={{ color: "#111827", fontSize: 16, fontWeight: "900" }}>Coupons</Text>
-          <Text style={{ color: "#6B7280", fontSize: 12, marginTop: 4 }}>Run campaigns</Text>
-        </Pressable>
-        <Pressable onPress={() => router.push("/deals" as Href)} style={{ backgroundColor: "#FFFFFF", padding: 16, borderRadius: 16, width: 140, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2, borderWidth: 1, borderColor: "#E5E7EB" }}>
-          <HugeiconsIcon icon={Share02Icon} size={28} color="#ED3500" style={{ marginBottom: 12 }} />
-          <Text style={{ color: "#111827", fontSize: 16, fontWeight: "900" }}>Deals</Text>
-          <Text style={{ color: "#6B7280", fontSize: 12, marginTop: 4 }}>Join flash sales</Text>
-        </Pressable>
-      </ScrollView>
-
+    <Screen contentContainerStyle={styles.content}>
+      <Header title="Reports" subtitle="Review seller performance here. Downloads and GST compliance remain in 1HandIndia Seller Hub." />
       <Card>
-          <Text style={{ color: "#111827", fontSize: 18, fontWeight: "900" }}>Sales Summary</Text>
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 12 }}>
-            <SalesMetric label="Gross sales" value={formatMoney(report?.summary.totalSalesPaise)} note="Seller order subtotal" />
-            <SalesMetric label="Commission" value={formatMoney(report?.summary.commissionPaise)} note="Marketplace deduction" />
-            <SalesMetric label="Net payable" value={formatMoney(report?.summary.netSalesPaise)} note="After fees and taxes" />
-          </View>
-        </Card>
+        <SelectField
+          label="Report"
+          options={REPORT_OPTIONS}
+          selectedValue={reportType}
+          onSelect={(value) => {
+            if (value === "tax") {
+              setPortalTarget("tax");
+            } else {
+              setReportType(value as SellerReportType);
+            }
+          }}
+        />
+        <SelectField
+          label="Period"
+          options={PERIOD_OPTIONS}
+          selectedValue={period}
+          onSelect={(value) => setPeriod(value as SellerReportPeriod)}
+        />
+        <Button title="Open export in Seller Hub" tone="secondary" onPress={() => setPortalTarget(reportType)} />
+      </Card>
 
-        <Card>
-          <Text style={{ color: "#111827", fontSize: 18, fontWeight: "900" }}>Order Metrics</Text>
-          <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 8 }}>
-            <View>
-              <Text style={{ color: "#6B7280", fontSize: 12, fontWeight: "800" }}>Total Orders</Text>
-              <Text style={{ color: "#111827", fontSize: 20, fontWeight: "900" }}>{report?.summary.orderCount ?? 0}</Text>
-            </View>
-            <View>
-              <Text style={{ color: "#6B7280", fontSize: 12, fontWeight: "800" }}>Products</Text>
-              <Text style={{ color: "#111827", fontSize: 20, fontWeight: "900" }}>{report?.summary.products ?? 0}</Text>
-            </View>
-            <View>
-              <Text style={{ color: "#6B7280", fontSize: 12, fontWeight: "800" }}>B2B Enquiries</Text>
-              <Text style={{ color: "#111827", fontSize: 20, fontWeight: "900" }}>{report?.summary.b2bEnquiries ?? 0}</Text>
-            </View>
-          </View>
-        </Card>
+      {activeQuery.isLoading ? <LoadingState message={`Loading ${reportType} report...`} /> : null}
+      {activeQuery.isError ? (
+        <QueryErrorState
+          title={`${reportLabel(reportType)} report could not be loaded`}
+          message={activeQuery.error instanceof Error ? activeQuery.error.message : undefined}
+          onRetry={() => void activeQuery.refetch()}
+          retrying={activeQuery.isFetching}
+        />
+      ) : null}
+      {!activeQuery.isLoading && !activeQuery.isError ? (
+        <>
+          {reportType === "sales" ? <SalesReport report={salesQuery.data} /> : null}
+          {reportType === "inventory" ? <InventoryReport report={inventoryQuery.data} /> : null}
+          {reportType === "finance" ? <FinanceReport report={financeQuery.data} /> : null}
+          {reportType === "returns" ? <ReturnsReport report={returnsQuery.data} /> : null}
+        </>
+      ) : null}
 
-        <Card>
-          <Text style={{ color: "#111827", fontSize: 18, fontWeight: "900" }}>Stock Alerts</Text>
-          <Text style={{ color: report?.summary.lowStockCount ?? 0 > 0 ? "#D64545" : "#22C55E", fontSize: 20, fontWeight: "900" }}>
-            {report?.summary.lowStockCount ?? 0} products low on stock
-          </Text>
-        </Card>
-
-        {report?.lowStockProducts && report.lowStockProducts.length > 0 ? (
-          <Card>
-            <Text style={{ color: "#111827", fontSize: 18, fontWeight: "900" }}>Low Stock Products</Text>
-            {report.lowStockProducts.map((item) => (
-              <Text key={item.id} style={{ color: "#6B7280", fontWeight: "700" }}>
-                {item.product.name}: {item.stockQuantity ?? 0} units
-              </Text>
-            ))}
-          </Card>
-        ) : null}
-
-        {report?.recentOrders && report.recentOrders.length > 0 ? (
-          <Card>
-            <Text style={{ color: "#111827", fontSize: 18, fontWeight: "900" }}>Recent Orders</Text>
-            {report.recentOrders.map((split) => (
-              <View key={split.id} style={{ marginTop: 8 }}>
-                <Text style={{ color: "#111827", fontWeight: "900" }}>{split.order.orderNumber}</Text>
-                <Text style={{ color: "#6B7280" }}>
-                  {formatMoney(split.sellerSubtotalPaise, split.order.currency ?? "INR")} - {split.sellerStatus}
-                </Text>
-              </View>
-            ))}
-          </Card>
-        ) : (
-          <EmptyState title="No recent orders" message="Completed orders will appear in your sales report." />
-        )}
+      <ConfirmDialog
+        visible={portalTarget !== null}
+        title={portalTarget === "tax" ? "Open GST reports in Seller Hub?" : "Open report export in Seller Hub?"}
+        message={
+          portalTarget === "tax"
+            ? "GST documents, GSTR exports and filing controls are available on the web. Sign in with the same seller account and use Reports > Tax & GST."
+            : "Report downloads are available in the web Seller Hub. Sign in with the same seller account to continue."
+        }
+        cancelLabel="Not now"
+        confirmLabel="Open Seller Hub"
+        onCancel={() => setPortalTarget(null)}
+        onConfirm={() => void openSellerHub()}
+      />
+      <Toast
+        visible={toast.visible}
+        message={toast.message}
+        type="error"
+        onDismiss={() => setToast((current) => ({ ...current, visible: false }))}
+      />
     </Screen>
   );
+
+  async function openSellerHub() {
+    const target = portalTarget;
+    setPortalTarget(null);
+    if (!target) return;
+    try {
+      await WebBrowser.openBrowserAsync(sellerPortalReportUrl(target));
+    } catch {
+      setToast({
+        visible: true,
+        message: "Seller Hub could not be opened. Tap the Seller Hub action to retry.",
+      });
+    }
+  }
 }
 
-function SalesMetric({ label, value, note }: { label: string; value: string; note: string }) {
+function SalesReport({ report }: { report: SellerSalesReport | undefined }) {
+  if (!report?.summary.orderCount && !report?.recentOrders.length) {
+    return <EmptyState title="No sales in this period" message="Orders and sales totals will appear here." />;
+  }
   return (
-    <View style={{ flexBasis: "31%", flexGrow: 1, minWidth: 96, borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", backgroundColor: "#F9FAFB", padding: 12 }}>
-      <Text style={{ color: "#6B7280", fontSize: 11, fontWeight: "900", textTransform: "uppercase" }}>{label}</Text>
-      <Text style={{ color: "#111827", fontSize: 18, fontWeight: "900", marginTop: 6 }} numberOfLines={1} adjustsFontSizeToFit>
-        {value}
-      </Text>
-      <Text style={{ color: "#6B7280", fontSize: 11, fontWeight: "700", marginTop: 4 }}>{note}</Text>
-    </View>
+    <>
+      <MetricGrid
+        items={[
+          ["Gross sales", formatMoney(report.summary.totalSalesPaise)],
+          ["Net sales", formatMoney(report.summary.netSalesPaise)],
+          ["Commission", formatMoney(report.summary.commissionPaise)],
+          ["Platform fee", formatMoney(report.summary.platformFeePaise)],
+          ["Orders", String(report.summary.orderCount)],
+          ["Low stock", String(report.summary.lowStockCount)],
+        ]}
+      />
+      <ListCard
+        title="Recent orders"
+        rows={report.recentOrders.map((item) => ({
+          id: item.id,
+          title: item.order.orderNumber,
+          detail: `${formatMoney(item.sellerSubtotalPaise, item.order.currency ?? "INR")} - ${displayStatus(item.sellerStatus)}`,
+        }))}
+      />
+      <ListCard
+        title="Low-stock products"
+        rows={report.lowStockProducts.map((item) => ({
+          id: item.id,
+          title: item.product.name,
+          detail: `${item.stockQuantity ?? 0} units remaining`,
+        }))}
+      />
+    </>
   );
 }
+
+function InventoryReport({ report }: { report: SellerInventoryReport | undefined }) {
+  if (!report?.summary.productCount && !report?.variants.length) {
+    return <EmptyState title="No inventory data" message="Product and stock information will appear here." />;
+  }
+  return (
+    <>
+      <MetricGrid
+        items={[
+          ["Products", String(report.summary.productCount)],
+          ["Active products", String(report.summary.activeProductCount)],
+          ["Variants", String(report.summary.variantCount)],
+          ["Low stock", String(report.summary.lowStockCount)],
+        ]}
+      />
+      <ListCard
+        title="Low-stock variants"
+        rows={report.lowStockVariants.map((item) => ({
+          id: item.id,
+          title: `${item.product.name}${item.variantName ? ` - ${item.variantName}` : ""}`,
+          detail: `${item.stockQuantity} units${item.sku ? ` - SKU ${item.sku}` : ""}`,
+        }))}
+      />
+      <ListCard
+        title="Top-selling products"
+        rows={report.topSoldItems.map((item) => ({
+          id: item.productId,
+          title: item.productName,
+          detail: `${item.quantitySold} sold - ${formatMoney(item.revenuePaise)}`,
+        }))}
+      />
+    </>
+  );
+}
+
+function FinanceReport({ report }: { report: SellerFinanceReport | undefined }) {
+  if (!report?.summary.orderCount && !report?.recentPayouts.length && !report?.ledgerEntries.length) {
+    return <EmptyState title="No finance activity" message="Fees, payout eligibility and ledger activity will appear here." />;
+  }
+  const currency = report.currency ?? "INR";
+  return (
+    <>
+      <MetricGrid
+        items={[
+          ["Gross sales", formatMoney(report.summary.grossSalesPaise, currency)],
+          ["Net payable", formatMoney(report.summary.netPayablePaise, currency)],
+          ["Eligible payout", formatMoney(report.summary.eligiblePaise, currency)],
+          ["Commission", formatMoney(report.summary.commissionPaise, currency)],
+          ["Pending payouts", formatMoney(report.summary.pendingPayoutsPaise, currency)],
+          ["Paid payouts", formatMoney(report.summary.paidPayoutsPaise, currency)],
+        ]}
+      />
+      <ListCard
+        title="Recent payouts"
+        rows={report.recentPayouts.map((item) => ({
+          id: item.id,
+          title: item.payoutNumber,
+          detail: `${formatMoney(item.netPayablePaise, item.currency)} - ${displayStatus(item.status)}`,
+        }))}
+      />
+      <ListCard
+        title="Ledger activity"
+        rows={report.ledgerEntries.map((item) => ({
+          id: item.id,
+          title: item.description || displayStatus(item.entryType),
+          detail: `Credit ${formatMoney(item.creditPaise, item.currency)} - Debit ${formatMoney(item.debitPaise, item.currency)}`,
+        }))}
+      />
+    </>
+  );
+}
+
+function ReturnsReport({ report }: { report: SellerReturnsReport | undefined }) {
+  if (!report?.summary.totalCount && !report?.recentReturns.length) {
+    return <EmptyState title="No returns in this period" message="Return requests and refund values will appear here." />;
+  }
+  return (
+    <>
+      <MetricGrid
+        items={[
+          ["Requests", String(report.summary.totalCount)],
+          ["Items", String(report.summary.itemCount)],
+          ["Pending", String(report.summary.pendingCount)],
+          ["Approved", String(report.summary.approvedCount)],
+          ["Requested value", formatMoney(report.summary.requestedAmountPaise)],
+          ["Approved value", formatMoney(report.summary.approvedAmountPaise)],
+        ]}
+      />
+      <ListCard
+        title="Status breakdown"
+        rows={report.byStatus.map((item) => ({
+          id: item.status,
+          title: displayStatus(item.status),
+          detail: `${item.count} requests - ${formatMoney(item.approvedAmountPaise)} approved`,
+        }))}
+      />
+      <ListCard
+        title="Recent requests"
+        rows={report.recentReturns.map((item) => ({
+          id: item.id,
+          title: `${item.requestNumber} - ${item.order.orderNumber}`,
+          detail: `${displayStatus(item.status)} - ${formatMoney(item.requestedAmountPaise)}`,
+        }))}
+      />
+    </>
+  );
+}
+
+function MetricGrid({ items }: { items: Array<[string, string]> }) {
+  return (
+    <Card>
+      <View style={styles.metricGrid}>
+        {items.map(([label, value]) => (
+          <View key={label} style={styles.metric}>
+            <Text style={styles.metricLabel}>{label}</Text>
+            <Text style={styles.metricValue} numberOfLines={1} adjustsFontSizeToFit>{value}</Text>
+          </View>
+        ))}
+      </View>
+    </Card>
+  );
+}
+
+function ListCard({ title, rows }: { title: string; rows: Array<{ id: string; title: string; detail: string }> }) {
+  if (!rows.length) return null;
+  return (
+    <Card>
+      <Text style={styles.sectionTitle}>{title}</Text>
+      {rows.slice(0, 8).map((row) => (
+        <View key={row.id} style={styles.row}>
+          <Text style={styles.rowTitle}>{row.title}</Text>
+          <Text style={styles.rowDetail}>{row.detail}</Text>
+        </View>
+      ))}
+    </Card>
+  );
+}
+
+function reportLabel(type: SellerReportType) {
+  return type.charAt(0).toUpperCase() + type.slice(1);
+}
+
+function displayStatus(value: string) {
+  return value.replaceAll("_", " ").toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+const styles = StyleSheet.create({
+  content: { gap: spacing.lg },
+  metricGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  metric: {
+    backgroundColor: colors.softSurface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexBasis: "47%",
+    flexGrow: 1,
+    minHeight: 78,
+    padding: spacing.md,
+  },
+  metricLabel: { color: colors.muted, fontSize: 11, fontWeight: "800", textTransform: "uppercase" },
+  metricValue: { color: colors.ink, fontSize: 19, fontWeight: "900", marginTop: spacing.xs },
+  sectionTitle: { color: colors.ink, fontSize: 17, fontWeight: "900" },
+  row: { borderTopColor: colors.border, borderTopWidth: 1, gap: 3, paddingTop: spacing.sm },
+  rowTitle: { color: colors.ink, fontSize: 14, fontWeight: "900" },
+  rowDetail: { color: colors.muted, fontSize: 12, fontWeight: "700", lineHeight: 18 },
+});

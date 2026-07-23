@@ -104,6 +104,7 @@ const publicSellerProfileSelect = {
 
 const publicProductVariantSelect = {
   id: true,
+  sku: true,
   variantName: true,
   pricePaise: true,
   mrpPaise: true,

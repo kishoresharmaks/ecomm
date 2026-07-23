@@ -377,6 +377,46 @@ export class FinancePaymentsService {
 
   async paymentReports(query: FinancePaymentCollectionQueryDto) {
     const where = this.paymentCollectionWhere(query);
+    const dateRange = this.activityDateRange(query);
+    const codWhere: Prisma.DeliveryDetailWhereInput = dateRange
+      ? {
+          OR: [
+            { codCollectedAt: dateRange },
+            { codCollectedAt: null, order: { createdAt: dateRange } },
+          ],
+        }
+      : {};
+    const settlementWhere: Prisma.OrderSellerSplitWhereInput = dateRange
+      ? {
+          OR: [
+            { settledAt: dateRange },
+            { settlementEligibleAt: dateRange },
+            { createdAt: dateRange },
+          ],
+        }
+      : {};
+    const serviceSettlementWhere: Prisma.ServiceBookingSettlementWhereInput = dateRange
+      ? { updatedAt: dateRange }
+      : {};
+    const payoutWhere: Prisma.SellerPayoutWhereInput = dateRange
+      ? {
+          OR: [
+            { paidAt: dateRange },
+            { approvedAt: dateRange },
+            { createdAt: dateRange },
+          ],
+        }
+      : {};
+    const receivableWhere: Prisma.ServiceSellerReceivableWhereInput = dateRange
+      ? {
+          OR: [
+            { resolvedAt: dateRange },
+            { disputedAt: dateRange },
+            { verifiedAt: dateRange },
+            { createdAt: dateRange },
+          ],
+        }
+      : {};
     const [
       byProvider,
       byPaymentStatus,
@@ -403,42 +443,57 @@ export class FinancePaymentsService {
         }),
         this.prisma.client.deliveryDetail.groupBy({
           by: ["codCollectionStatus"],
+          where: codWhere,
           _count: { _all: true },
           _sum: { codCollectedAmountPaise: true },
         }),
         this.prisma.client.orderSellerSplit.groupBy({
           by: ["settlementStatus"],
+          where: settlementWhere,
           _count: { _all: true },
           _sum: { sellerSubtotalPaise: true },
         }),
         this.prisma.client.serviceBookingSettlement.groupBy({
           by: ["status"],
+          where: serviceSettlementWhere,
           _count: { _all: true },
           _sum: { netPayablePaise: true },
         }),
         this.prisma.client.sellerPayout.groupBy({
           by: ["status"],
+          where: payoutWhere,
           _count: { _all: true },
           _sum: { netPayablePaise: true },
         }),
         this.prisma.client.serviceSellerReceivable.groupBy({
           by: ["status"],
+          where: receivableWhere,
           _count: { _all: true },
           _sum: { amountDueToPlatformPaise: true },
         }),
         this.prisma.client.serviceSellerReceivable.groupBy({
           by: ["taxAccrualStatus"],
+          where: receivableWhere,
           _count: { _all: true },
           _sum: { amountDueToPlatformPaise: true },
         }),
         this.prisma.client.serviceSellerReceivable.groupBy({
           by: ["offsetPolicy"],
+          where: receivableWhere,
           _count: { _all: true },
           _sum: { amountDueToPlatformPaise: true },
         }),
       ]);
 
     return {
+      activityBasis: {
+        payments: "Payment created date",
+        codCollections: "Collection date, then order date",
+        orderSettlements: "Settled, eligible, or created date",
+        serviceSettlements: "Last settlement activity",
+        payouts: "Paid, approved, or created date",
+        serviceReceivables: "Resolved, disputed, verified, or created date",
+      },
       byProvider: byProvider.map((item) =>
         this.groupMetric(item.provider, item._count._all, item._sum.amountPaise),
       ),
@@ -686,6 +741,18 @@ export class FinancePaymentsService {
             },
           }
         : {}),
+    };
+  }
+
+  private activityDateRange(
+    query: Pick<FinancePaymentCollectionQueryDto, "dateFrom" | "dateTo">,
+  ): Prisma.DateTimeFilter | undefined {
+    if (!query.dateFrom && !query.dateTo) {
+      return undefined;
+    }
+    return {
+      ...(query.dateFrom ? { gte: new Date(query.dateFrom) } : {}),
+      ...(query.dateTo ? { lte: new Date(query.dateTo) } : {}),
     };
   }
 

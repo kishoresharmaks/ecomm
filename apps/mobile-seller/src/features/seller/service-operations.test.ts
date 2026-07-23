@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { availableServiceBookingActions, buildServicePayload, createServiceForm } from "./service-operations";
+import {
+  availableServiceBookingActions,
+  buildServicePayload,
+  createServiceForm,
+  manualSacCode,
+  sacCodeFromMaster,
+} from "./service-operations";
 
 describe("service operations", () => {
   it("builds an approval-ready service payload from mobile form values", () => {
@@ -39,5 +45,10 @@ describe("service operations", () => {
     expect(availableServiceBookingActions("REQUESTED")).toEqual(["ACCEPT", "REJECT", "CANCEL"]);
     expect(availableServiceBookingActions("QUOTE_SENT")).toEqual(["WITHDRAW_QUOTE", "FIELD_STATUS", "CANCEL", "PAYMENT"]);
     expect(availableServiceBookingActions("COMPLETED")).toEqual([]);
+  });
+
+  it("supports manual SAC entry and catalogue selection", () => {
+    expect(manualSacCode("99A871923")).toBe("998719");
+    expect(sacCodeFromMaster({ sacCode: "9987-19" })).toBe("998719");
   });
 });
