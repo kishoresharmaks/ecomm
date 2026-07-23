@@ -48,21 +48,25 @@ export class AdminReportExportController {
   }
 
   @Get()
+  @ApiOperation({ summary: "List admin report export jobs." })
   list(@CurrentUser() actor: RequestUser, @Query() query: ReportExportListQueryDto) {
     return this.exports.list(actor, ReportExportAudience.ADMIN, query);
   }
 
   @Get(":jobId")
+  @ApiOperation({ summary: "Get admin report export job detail." })
   detail(@CurrentUser() actor: RequestUser, @Param("jobId") jobId: string) {
     return this.exports.detail(actor, ReportExportAudience.ADMIN, jobId);
   }
 
   @Post(":jobId/retry")
+  @ApiOperation({ summary: "Retry admin report export job." })
   retry(@CurrentUser() actor: RequestUser, @Param("jobId") jobId: string) {
     return this.exports.retry(actor, ReportExportAudience.ADMIN, jobId);
   }
 
   @Get(":jobId/download")
+  @ApiOperation({ summary: "Download admin report export CSV." })
   download(
     @CurrentUser() actor: RequestUser,
     @Param("jobId") jobId: string,
@@ -81,6 +85,7 @@ export class FinanceReportExportController {
   ) {}
 
   @Post()
+  @ApiOperation({ summary: "Create a finance report export." })
   async create(
     @CurrentUser() actor: RequestUser,
     @Body() dto: CreateReportExportDto,
@@ -92,21 +97,25 @@ export class FinanceReportExportController {
   }
 
   @Get()
+  @ApiOperation({ summary: "List finance report export jobs." })
   list(@CurrentUser() actor: RequestUser, @Query() query: ReportExportListQueryDto) {
     return this.exports.list(actor, ReportExportAudience.FINANCE, query);
   }
 
   @Get(":jobId")
+  @ApiOperation({ summary: "Get finance report export job detail." })
   detail(@CurrentUser() actor: RequestUser, @Param("jobId") jobId: string) {
     return this.exports.detail(actor, ReportExportAudience.FINANCE, jobId);
   }
 
   @Post(":jobId/retry")
+  @ApiOperation({ summary: "Retry finance report export job." })
   retry(@CurrentUser() actor: RequestUser, @Param("jobId") jobId: string) {
     return this.exports.retry(actor, ReportExportAudience.FINANCE, jobId);
   }
 
   @Get(":jobId/download")
+  @ApiOperation({ summary: "Download finance report export CSV." })
   download(
     @CurrentUser() actor: RequestUser,
     @Param("jobId") jobId: string,
@@ -125,6 +134,7 @@ export class FinanceReportDataController {
   ) {}
 
   @Get(":exportType")
+  @ApiOperation({ summary: "Get paginated report data table rows." })
   async page(
     @CurrentUser() actor: RequestUser,
     @Param("exportType", new ParseEnumPipe(ReportExportType))
@@ -151,6 +161,7 @@ export class SellerReportExportController {
   ) {}
 
   @Post()
+  @ApiOperation({ summary: "Create a seller report export." })
   async create(
     @CurrentUser() actor: RequestUser,
     @Body() dto: CreateReportExportDto,
@@ -162,21 +173,25 @@ export class SellerReportExportController {
   }
 
   @Get()
+  @ApiOperation({ summary: "List seller report export jobs." })
   list(@CurrentUser() actor: RequestUser, @Query() query: ReportExportListQueryDto) {
     return this.exports.list(actor, ReportExportAudience.SELLER, query);
   }
 
   @Get(":jobId")
+  @ApiOperation({ summary: "Get seller report export job detail." })
   detail(@CurrentUser() actor: RequestUser, @Param("jobId") jobId: string) {
     return this.exports.detail(actor, ReportExportAudience.SELLER, jobId);
   }
 
   @Post(":jobId/retry")
+  @ApiOperation({ summary: "Retry seller report export job." })
   retry(@CurrentUser() actor: RequestUser, @Param("jobId") jobId: string) {
     return this.exports.retry(actor, ReportExportAudience.SELLER, jobId);
   }
 
   @Get(":jobId/download")
+  @ApiOperation({ summary: "Download seller report export CSV." })
   download(
     @CurrentUser() actor: RequestUser,
     @Param("jobId") jobId: string,
