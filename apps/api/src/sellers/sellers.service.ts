@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
   Inject,
   Injectable,
   InternalServerErrorException,
@@ -1289,10 +1290,12 @@ export class SellersService {
         sellerAddress: this.toCourierPickupAddress(sellerAddress),
         settings: snapshot,
       });
-    } catch {
-      throw new InternalServerErrorException(
-         "We couldn't connect to our courier partner right now. Please try again later."
-      );
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      const msg = error instanceof Error ? error.message : "We couldn't connect to our courier partner right now. Please try again later.";
+      throw new BadRequestException(msg);
     }
 
     const updatedSeller = await this.prisma.client.$transaction(async (tx) => {

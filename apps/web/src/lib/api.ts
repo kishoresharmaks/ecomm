@@ -191,6 +191,30 @@ function sanitizeApiMessage(message: string, status?: number) {
     return userSessionExpiredMessage;
   }
 
+  // Sanitise developer/technical messages for production users
+  if (process.env.NODE_ENV === "production") {
+    const lower = trimmed.toLowerCase();
+
+    // Internal database/code syntax errors
+    if (lower.includes("prisma") || lower.includes("raw query") || lower.includes("column") || lower.includes("syntax error") || lower.includes("internal server error")) {
+      return "We encountered a temporary server error. Please refresh or contact support if this continues.";
+    }
+
+    // Shiprocket & Courier integration errors
+    if (lower.includes("shiprocket request needs api username") || lower.includes("credentials are not configured") || lower.includes("credentials missing")) {
+      return "Courier partner integration is currently being configured by marketplace administrators. Please try again shortly.";
+    }
+    if (lower.includes("needs seller pickup address") || lower.includes("pickup address is required")) {
+      return "Please save a complete business pickup address (line 1, city, state, pincode) before syncing courier pickup locations.";
+    }
+    if (lower.includes("needs a 10 digit") || lower.includes("phone is required")) {
+      return "Please update your store profile with a valid 10-digit mobile phone number before syncing pickup locations.";
+    }
+    if (lower.includes("shiprocket authentication") || lower.includes("authentication did not return")) {
+      return "Unable to authenticate with courier service. Please verify your store address or try again in a few minutes.";
+    }
+  }
+
   return trimmed;
 }
 

@@ -35,7 +35,7 @@ const reportConfig = {
     endpoint: "/api/admin/reports/sellers",
     exportType: "ADMIN_SELLERS" as const,
     searchPlaceholder: "Seller, legal name, email, GSTIN or PAN",
-    statuses: ["ACTIVE", "PENDING_APPROVAL", "APPROVED", "SUSPENDED", "REJECTED"],
+    statuses: ["APPROVED", "PENDING_APPROVAL", "SUSPENDED", "REJECTED"],
     metrics: (data: Record<string, unknown>) => {
       const summary = data.summary as Record<string, number> | undefined;
       return [

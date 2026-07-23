@@ -56,6 +56,27 @@ describe("indihubFetch", () => {
     expect(userFacingApiErrorMessage("signal is aborted without reason")).toBe(requestTimedOutMessage);
   });
 
+  it("sanitizes developer and technical errors into customer/seller friendly text in production", () => {
+    const originalEnv = process.env.NODE_ENV;
+    try {
+      process.env.NODE_ENV = "production";
+
+      expect(
+        userFacingApiErrorMessage(new Error("Raw query failed. Code: 42703. Message: column sp.contact_name does not exist"))
+      ).toBe("We encountered a temporary server error. Please refresh or contact support if this continues.");
+
+      expect(
+        userFacingApiErrorMessage(new Error("Shiprocket request needs API username/email and password."))
+      ).toBe("Courier partner integration is currently being configured by marketplace administrators. Please try again shortly.");
+
+      expect(
+        userFacingApiErrorMessage(new Error("Shiprocket request needs seller pickup address line 1."))
+      ).toBe("Please save a complete business pickup address (line 1, city, state, pincode) before syncing courier pickup locations.");
+    } finally {
+      process.env.NODE_ENV = originalEnv;
+    }
+  });
+
   it("decrypts encrypted bearer-token responses", async () => {
     const envelope = await encryptedEnvelope("session-token", { synced: true });
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
