@@ -113,7 +113,11 @@ import {
 import { RegisterDeliveryPushTokenDto, RevokeDeliveryPushTokenDto } from "./dto/delivery-push-token.dto";
 import { UpdateDeliveryDto } from "./dto/delivery-update.dto";
 import { OrderQueryDto } from "./dto/order-query.dto";
-import { UpdateOrderStatusDto, UpdateSellerOrderStatusDto } from "./dto/order-status.dto";
+import {
+  CorrectPackageEWayBillDto,
+  UpdateOrderStatusDto,
+  UpdateSellerOrderStatusDto,
+} from "./dto/order-status.dto";
 import { TrackOrderDto } from "./dto/track-order.dto";
 import {
   convertBaseMinorToSellerMinor,
@@ -305,6 +309,14 @@ const orderInclude = {
     orderBy: { createdAt: "desc" as const },
   },
 };
+
+const EWAY_BILL_THRESHOLD_PAISE = 5_000_000;
+const EWAY_BILL_REQUIRED_DELIVERY_STATUSES = new Set<DeliveryStatus>([
+  DeliveryStatus.PACKED,
+  DeliveryStatus.DISPATCHED,
+  DeliveryStatus.IN_TRANSIT,
+  DeliveryStatus.DELIVERED,
+]);
 
 const deliveryPartnerPayoutInclude = {
   partner: {
@@ -1538,16 +1550,28 @@ export class OrdersService {
           assignmentExpiresAt: null,
         },
       });
+      await tx.orderShipmentPackage.updateMany({
+        where: {
+          orderId: existing.id,
+          status: {
+            notIn: [
+              OrderShipmentPackageStatus.DELIVERED,
+              OrderShipmentPackageStatus.CANCELLED,
+              OrderShipmentPackageStatus.RTO_DELIVERED,
+            ],
+          },
+        },
+        data: {
+          status: OrderShipmentPackageStatus.CANCELLED,
+          cancelledAt: new Date(),
+        },
+      });
 
       if (existing.deliveryDetail) {
         await tx.deliveryDetail.update({
           where: { orderId: existing.id },
           data: { status: DeliveryStatus.CANCELLED, assignmentExpiresAt: null },
         });
-      }
-
-      if (this.courierLogistics) {
-        await this.courierLogistics.cancelShipmentForOrder(tx, existing.id);
       }
 
       if (existing.paymentStatus === PaymentStatus.PENDING) {
@@ -1615,6 +1639,9 @@ export class OrdersService {
       return existing.id;
     });
 
+    if (this.courierLogistics) {
+      await this.courierLogistics.cancelShipmentForOrder(orderId, actor.id);
+    }
     const order = await this.getOrderByIdOrThrow(orderId);
     await this.notifyCustomerOrderStatus(order, OrderStatus.CANCELLED, dto.note);
     return order;
@@ -1665,6 +1692,67 @@ export class OrdersService {
 
   async getAdminOrder(orderNumber: string) {
     return this.getOrderByNumberOrThrow(orderNumber);
+  }
+
+  async correctAdminPackageEWayBill(
+    actor: RequestUser,
+    orderNumber: string,
+    packageId: string,
+    dto: CorrectPackageEWayBillDto,
+  ) {
+    const ewayBillNumber = dto.ewayBillNumber.trim();
+    const reason = dto.reason.trim();
+
+    await this.prisma.client.$transaction(async (tx) => {
+      const shipmentPackage = await tx.orderShipmentPackage.findFirst({
+        where: {
+          id: packageId,
+          order: { orderNumber },
+        },
+        select: {
+          id: true,
+          orderId: true,
+          sellerId: true,
+          ewayBillNumber: true,
+        },
+      });
+      if (!shipmentPackage) {
+        throw new NotFoundException("Seller package not found.");
+      }
+      if (shipmentPackage.ewayBillNumber === ewayBillNumber) {
+        throw new BadRequestException("This E-Way Bill Number is already recorded.");
+      }
+
+      await tx.orderShipmentPackage.update({
+        where: { id: shipmentPackage.id },
+        data: { ewayBillNumber },
+      });
+      await this.taxDocuments.recordOrderSellerEWayBill(
+        tx,
+        shipmentPackage.orderId,
+        shipmentPackage.sellerId,
+        ewayBillNumber,
+      );
+      await tx.auditLog.create({
+        data: {
+          actorUserId: actor.id,
+          action: "order_shipment_package.eway_bill.corrected",
+          entityType: "order_shipment_package",
+          entityId: shipmentPackage.id,
+          oldValue: {
+            ewayBillNumber: shipmentPackage.ewayBillNumber,
+          },
+          newValue: {
+            ewayBillNumber,
+            reason,
+            orderId: shipmentPackage.orderId,
+            sellerId: shipmentPackage.sellerId,
+          },
+        },
+      });
+    });
+
+    return this.getAdminOrder(orderNumber);
   }
 
   async listDeliveryPartners(query: DeliveryPartnerQueryDto) {
@@ -3305,6 +3393,22 @@ export class OrdersService {
             assignmentExpiresAt: null,
           },
         });
+        await tx.orderShipmentPackage.updateMany({
+          where: {
+            orderId: existing.id,
+            status: {
+              notIn: [
+                OrderShipmentPackageStatus.DELIVERED,
+                OrderShipmentPackageStatus.CANCELLED,
+                OrderShipmentPackageStatus.RTO_DELIVERED,
+              ],
+            },
+          },
+          data: {
+            status: OrderShipmentPackageStatus.CANCELLED,
+            cancelledAt: new Date(),
+          },
+        });
 
         if (existing.deliveryDetail) {
           await tx.deliveryDetail.update({
@@ -3315,10 +3419,6 @@ export class OrdersService {
               assignmentExpiresAt: null,
             },
           });
-        }
-
-        if (this.courierLogistics) {
-          await this.courierLogistics.cancelShipmentForOrder(tx, existing.id);
         }
 
         await this.sellerLedgerService.recordRefundAdjustmentForOrder(
@@ -3358,6 +3458,9 @@ export class OrdersService {
       return existing.id;
     });
 
+    if (isCancellingOrder && this.courierLogistics) {
+      await this.courierLogistics.cancelShipmentForOrder(orderId, actor.id);
+    }
     const order = await this.getOrderByIdOrThrow(orderId);
     if (dto.orderStatus && dto.orderStatus !== existing.orderStatus) {
       await this.notifyCustomerOrderStatus(order, dto.orderStatus, dto.note);
@@ -3547,6 +3650,7 @@ export class OrdersService {
   ) {
     const seller = await this.resolveSeller(actor);
     const note = dto.note?.trim() || null;
+    const ewayBillNumber = dto.ewayBillNumber?.trim() || undefined;
 
     if (dto.sellerStatus === SellerOrderStatus.ACCEPTED) {
       const hasLocation = await this.prisma.client.sellerAddress.findFirst({
@@ -3750,7 +3854,9 @@ export class OrdersService {
           orderSellerSplitId: split.id,
           nextStatus: requestedDeliveryStatus,
           allowDirectDelivered: isStorePickupSellerOrder,
-          ...(dto.ewayBillNumber !== undefined ? { ewayBillNumber: dto.ewayBillNumber } : {}),
+          actorUserId: actor.id,
+          requiresEWayBill: split.sellerSubtotalPaise >= EWAY_BILL_THRESHOLD_PAISE,
+          ...(ewayBillNumber ? { ewayBillNumber } : {}),
           updateData: {
             status: requestedDeliveryStatus,
             ...(note ? { deliveryNote: note } : {}),
@@ -3839,6 +3945,7 @@ export class OrdersService {
             orderStatus: nextOrderStatus,
             deliveryStatus: nextDeliveryStatus,
             note,
+            ...(ewayBillNumber ? { ewayBillNumber } : {}),
             ...(codPaymentSettledBySellerCash ? { sellerCashReceivableAccounted: true } : {}),
           },
         },
@@ -3851,9 +3958,17 @@ export class OrdersService {
         deliveryStatusChanged,
         nextDeliveryStatus,
         codPaymentSettledBySellerCash,
+        cancelledSellerSplitId:
+          dto.sellerStatus === SellerOrderStatus.CANCELLED ? split.id : null,
       };
     });
 
+    if (result.cancelledSellerSplitId && this.courierLogistics) {
+      await this.courierLogistics.cancelShipmentForSellerSplit(
+        result.cancelledSellerSplitId,
+        actor.id,
+      );
+    }
     let order = await this.getOrderByIdOrThrow(result.orderId);
     if (
       result.nextDeliveryStatus === DeliveryStatus.PACKED &&
@@ -4281,6 +4396,8 @@ export class OrdersService {
           nextStatus,
           allowDirectDelivered:
             isSellerStorePickupUpdate || allowSellerManualTransportDirectDelivered,
+          actorUserId: actor.id,
+          requiresEWayBill: split.sellerSubtotalPaise >= EWAY_BILL_THRESHOLD_PAISE,
           updateData: {
             deliveryMode: nextMode,
             ...(dto.partnerName !== undefined ? { partnerName: dto.partnerName ?? null } : {}),
@@ -5078,6 +5195,7 @@ export class OrdersService {
       codSurchargePaise: shipmentPackage.codSurchargePaise,
       declaredValuePaise: shipmentPackage.declaredValuePaise,
       currency: shipmentPackage.currency,
+      ewayBillNumber: shipmentPackage.ewayBillNumber,
       itemAllocations: shipmentPackage.itemAllocations,
       readyForBookingAt: shipmentPackage.readyForBookingAt,
       bookedAt: shipmentPackage.bookedAt,
@@ -5188,6 +5306,7 @@ export class OrdersService {
       lengthCm: shipmentPackage.lengthCm,
       breadthCm: shipmentPackage.breadthCm,
       heightCm: shipmentPackage.heightCm,
+      ewayBillNumber: shipmentPackage.ewayBillNumber,
       itemAllocations: shipmentPackage.itemAllocations,
       readyForBookingAt: shipmentPackage.readyForBookingAt,
       bookedAt: shipmentPackage.bookedAt,
@@ -8329,22 +8448,47 @@ export class OrdersService {
       nextStatus: DeliveryStatus;
       allowDirectDelivered?: boolean;
       ewayBillNumber?: string;
+      actorUserId: string;
+      requiresEWayBill: boolean;
       updateData: Prisma.OrderShipmentUpdateManyMutationInput;
       createData: Prisma.OrderShipmentUncheckedCreateInput;
     },
   ) {
     const shipment = await tx.orderShipment.findUnique({
       where: { orderSellerSplitId: input.orderSellerSplitId },
-      select: { id: true, status: true, deliveryMode: true },
+      select: {
+        id: true,
+        shipmentNumber: true,
+        orderId: true,
+        sellerId: true,
+        subtotalPaise: true,
+        shippingPaise: true,
+        codSurchargePaise: true,
+        status: true,
+        deliveryMode: true,
+        packages: {
+          select: {
+            id: true,
+            ewayBillNumber: true,
+          },
+        },
+      },
     });
+    const requiresEWayBill =
+      input.requiresEWayBill && EWAY_BILL_REQUIRED_DELIVERY_STATUSES.has(input.nextStatus);
 
     if (!shipment) {
+      if (requiresEWayBill && !input.ewayBillNumber) {
+        throw new BadRequestException(
+          "E-Way Bill Number is mandatory for goods valued at \u20b950,000 or above.",
+        );
+      }
       const created = await tx.orderShipment.create({ data: input.createData });
       const packageStatus = this.packageStatusFromDeliveryStatus(
         created.status,
         created.deliveryMode,
       );
-      await tx.orderShipmentPackage.create({
+      const shipmentPackage = await tx.orderShipmentPackage.create({
         data: {
           packageNumber: this.createPackageNumber(created.shipmentNumber, 1),
           orderShipmentId: created.id,
@@ -8367,7 +8511,58 @@ export class OrdersService {
           ...(input.ewayBillNumber ? { ewayBillNumber: input.ewayBillNumber } : {}),
         },
       });
+      if (input.ewayBillNumber) {
+        await this.taxDocuments.recordOrderSellerEWayBill(
+          tx,
+          created.orderId,
+          created.sellerId,
+          input.ewayBillNumber,
+        );
+        await tx.auditLog.create({
+          data: {
+            actorUserId: input.actorUserId,
+            action: "order_shipment_package.eway_bill.recorded",
+            entityType: "order_shipment_package",
+            entityId: shipmentPackage.id,
+            oldValue: { ewayBillNumber: null },
+            newValue: {
+              ewayBillNumber: input.ewayBillNumber,
+              orderId: created.orderId,
+              sellerId: created.sellerId,
+            },
+          },
+        });
+      }
       return;
+    }
+
+    const storedEWayBillNumbers = [
+      ...new Set(
+        shipment.packages
+          .map((shipmentPackage) => shipmentPackage.ewayBillNumber)
+          .filter((value): value is string => Boolean(value)),
+      ),
+    ];
+    if (storedEWayBillNumbers.length > 1) {
+      throw new BadRequestException(
+        "Seller packages contain conflicting E-Way Bill Numbers. Contact admin for correction.",
+      );
+    }
+    const storedEWayBillNumber = storedEWayBillNumbers[0];
+    if (
+      storedEWayBillNumber &&
+      input.ewayBillNumber &&
+      storedEWayBillNumber !== input.ewayBillNumber
+    ) {
+      throw new BadRequestException(
+        "The E-Way Bill Number is locked after saving. Contact admin for a legal correction.",
+      );
+    }
+    const effectiveEWayBillNumber = storedEWayBillNumber ?? input.ewayBillNumber;
+    if (requiresEWayBill && !effectiveEWayBillNumber) {
+      throw new BadRequestException(
+        "E-Way Bill Number is mandatory for goods valued at \u20b950,000 or above.",
+      );
     }
 
     if (!(input.allowDirectDelivered && input.nextStatus === DeliveryStatus.DELIVERED)) {
@@ -8411,12 +8606,71 @@ export class OrdersService {
         ...(input.nextStatus === DeliveryStatus.DISPATCHED ? { pickedUpAt: new Date() } : {}),
         ...(input.nextStatus === DeliveryStatus.DELIVERED ? { deliveredAt: new Date() } : {}),
         ...(input.nextStatus === DeliveryStatus.CANCELLED ? { cancelledAt: new Date() } : {}),
-        ...(input.ewayBillNumber ? { ewayBillNumber: input.ewayBillNumber } : {}),
       },
     });
 
-    if (input.nextStatus === DeliveryStatus.CANCELLED && this.courierLogistics) {
-      await this.courierLogistics.cancelShipmentForSellerSplit(tx, input.orderSellerSplitId);
+    if (input.ewayBillNumber && !storedEWayBillNumber) {
+      if (shipment.packages.length === 0) {
+        const shipmentPackage = await tx.orderShipmentPackage.create({
+          data: {
+            packageNumber: this.createPackageNumber(shipment.shipmentNumber, 1),
+            orderShipmentId: shipment.id,
+            orderId: shipment.orderId,
+            sellerId: shipment.sellerId,
+            sequence: 1,
+            deliveryMode: nextMode,
+            status: this.packageStatusFromDeliveryStatus(input.nextStatus, nextMode),
+            shippingPaise: shipment.shippingPaise,
+            codSurchargePaise: shipment.codSurchargePaise,
+            declaredValuePaise: shipment.subtotalPaise,
+            ewayBillNumber: input.ewayBillNumber,
+            packageSnapshot: {
+              source: "SELLER_STATUS_COMPATIBILITY_DEFAULT_PACKAGE",
+              shipmentNumber: shipment.shipmentNumber,
+            },
+          },
+        });
+        shipment.packages.push({ id: shipmentPackage.id, ewayBillNumber: null });
+      } else {
+        const ewayBillUpdate = await tx.orderShipmentPackage.updateMany({
+          where: {
+            id: { in: shipment.packages.map((shipmentPackage) => shipmentPackage.id) },
+            ewayBillNumber: null,
+          },
+          data: { ewayBillNumber: input.ewayBillNumber },
+        });
+        if (ewayBillUpdate.count !== shipment.packages.length) {
+          throw new BadRequestException(
+            "The E-Way Bill Number was saved by another action. Refresh the order and try again.",
+          );
+        }
+      }
+
+      for (const shipmentPackage of shipment.packages) {
+        await tx.auditLog.create({
+          data: {
+            actorUserId: input.actorUserId,
+            action: "order_shipment_package.eway_bill.recorded",
+            entityType: "order_shipment_package",
+            entityId: shipmentPackage.id,
+            oldValue: { ewayBillNumber: null },
+            newValue: {
+              ewayBillNumber: input.ewayBillNumber,
+              orderId: shipment.orderId,
+              sellerId: shipment.sellerId,
+            },
+          },
+        });
+      }
+    }
+
+    if (effectiveEWayBillNumber) {
+      await this.taxDocuments.recordOrderSellerEWayBill(
+        tx,
+        shipment.orderId,
+        shipment.sellerId,
+        effectiveEWayBillNumber,
+      );
     }
   }
 

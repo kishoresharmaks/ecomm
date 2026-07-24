@@ -40,10 +40,8 @@ export class ShiprocketCourierAdapter implements CourierAdapter {
       };
     }
 
-    const providerOrderIdStr = request.providerOrderId?.trim();
-    const providerOrderId = providerOrderIdStr ? Number(providerOrderIdStr) : null;
-
-    if (!providerOrderId || !Number.isFinite(providerOrderId)) {
+    const payload = createShiprocketCancellationPayload(request.providerOrderId);
+    if (!payload) {
       return {
         success: false,
         message: "Shiprocket cancellation requires a valid provider order ID.",
@@ -52,7 +50,6 @@ export class ShiprocketCourierAdapter implements CourierAdapter {
 
     try {
       const token = await this.authenticate(baseUrl, email, password);
-      const payload = { ids: [providerOrderId] };
       const response = await postJson(urlFor(baseUrl, defaultCancelOrderEndpoint), payload, token);
 
       return {
@@ -430,6 +427,13 @@ export class ShiprocketCourierAdapter implements CourierAdapter {
       pin_code: requiredText(request.sellerAddress.pincode, "seller pickup pincode"),
     } satisfies ShiprocketJson;
   }
+}
+
+export function createShiprocketCancellationPayload(providerOrderId?: string | null) {
+  const numericProviderOrderId = Number(providerOrderId?.trim());
+  return Number.isSafeInteger(numericProviderOrderId) && numericProviderOrderId > 0
+    ? { ids: [numericProviderOrderId] }
+    : null;
 }
 
 export function createShiprocketBookingPayload(request: CourierBookingRequest) {

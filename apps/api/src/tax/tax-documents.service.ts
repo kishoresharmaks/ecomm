@@ -1,6 +1,7 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import {
   B2BOrderStatus,
+  GstComplianceStatus,
   GstrSupplySection,
   ProductTaxClassification,
   Prisma,
@@ -742,6 +743,49 @@ export class TaxDocumentsService {
         status: TaxDocumentStatus.ISSUED,
         issueDate: new Date(),
         issuedById: actorUserId ?? null,
+      },
+    });
+  }
+
+  async recordOrderSellerEWayBill(
+    tx: Prisma.TransactionClient,
+    orderId: string,
+    sellerId: string,
+    eWayBillNumber: string,
+  ) {
+    await this.createDraftOrderDocuments(tx, orderId);
+    const document = await tx.taxDocument.findFirst({
+      where: {
+        orderId,
+        sellerId,
+        source: TaxDocumentSource.CHECKOUT,
+      },
+      select: { id: true },
+    });
+    if (!document) {
+      throw new BadRequestException("Tax document is not available for this seller package.");
+    }
+
+    const now = new Date();
+    return tx.taxDocumentCompliance.upsert({
+      where: { taxDocumentId: document.id },
+      update: {
+        eWayBillStatus: GstComplianceStatus.GENERATED,
+        eWayBillNumber,
+        eWayBillGeneratedAt: now,
+        eWayBillProvider: "SELLER_RECORDED",
+        eWayBillProviderRef: eWayBillNumber,
+        eWayBillError: null,
+        lastSyncedAt: now,
+      },
+      create: {
+        taxDocumentId: document.id,
+        eWayBillStatus: GstComplianceStatus.GENERATED,
+        eWayBillNumber,
+        eWayBillGeneratedAt: now,
+        eWayBillProvider: "SELLER_RECORDED",
+        eWayBillProviderRef: eWayBillNumber,
+        lastSyncedAt: now,
       },
     });
   }

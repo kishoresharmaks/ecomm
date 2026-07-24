@@ -531,6 +531,115 @@ describe("CourierLogisticsService", () => {
       }),
     ).rejects.toThrow(BadRequestException);
   });
+
+  it("cancels a booked provider order once and persists the cancellation audit", async () => {
+    const cancelShipment = vi.fn().mockResolvedValue({
+      success: true,
+      message: "Cancelled.",
+      cancelPayloadSnapshot: { ids: [844722] },
+      cancelResponseSnapshot: { status: "ok" },
+    });
+    const tx = {
+      courierShipment: { update: vi.fn().mockResolvedValue({}) },
+      courierConsignment: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      courierConsignmentPackage: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      orderShipment: { update: vi.fn().mockResolvedValue({}) },
+      orderShipmentPackage: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      auditLog: { create: vi.fn().mockResolvedValue({}) },
+    };
+    const prisma = {
+      client: {
+        orderShipment: {
+          findFirst: vi.fn().mockResolvedValue({
+            id: "shipment-1",
+            courierShipment: {
+              id: "courier-shipment-1",
+              providerCode: "SHIPROCKET",
+              providerOrderId: "844722",
+              awbNumber: "AWB1001",
+              trackingStatus: CourierShipmentStatus.BOOKED,
+            },
+            seller: {
+              courierProviderSettings: [
+                {
+                  providerCode: "SHIPROCKET",
+                  isActive: true,
+                  settingsSnapshot: { adapterCode: "SHIPROCKET" },
+                },
+              ],
+            },
+          }),
+        },
+        $transaction: vi.fn(async (callback) => callback(tx)),
+      },
+    };
+    const service = new CourierLogisticsService(prisma as never, {
+      getAdapter: vi.fn().mockReturnValue({ cancelShipment }),
+    } as never);
+
+    const result = await service.cancelShipmentForSellerSplit("split-1", "admin-1");
+
+    expect(result?.success).toBe(true);
+    expect(cancelShipment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerCode: "SHIPROCKET",
+        providerOrderId: "844722",
+        awbNumber: "AWB1001",
+      }),
+    );
+    expect(tx.courierShipment.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "courier-shipment-1" },
+        data: expect.objectContaining({
+          trackingStatus: CourierShipmentStatus.CANCELLED,
+        }),
+      }),
+    );
+    expect(tx.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        actorUserId: "admin-1",
+        action: "courier_shipment.cancellation.synced",
+        entityType: "courier_shipment",
+        entityId: "courier-shipment-1",
+        newValue: expect.objectContaining({
+          cancelPayloadSnapshot: { ids: [844722] },
+          cancelResponseSnapshot: { status: "ok" },
+        }),
+      }),
+    });
+  });
+
+  it("treats an already cancelled provider shipment as idempotent", async () => {
+    const cancelShipment = vi.fn();
+    const prisma = {
+      client: {
+        orderShipment: {
+          findFirst: vi.fn().mockResolvedValue({
+            id: "shipment-1",
+            courierShipment: {
+              id: "courier-shipment-1",
+              providerCode: "SHIPROCKET",
+              providerOrderId: "844722",
+              awbNumber: "AWB1001",
+              trackingStatus: CourierShipmentStatus.CANCELLED,
+            },
+            seller: { courierProviderSettings: [] },
+          }),
+        },
+      },
+    };
+    const service = new CourierLogisticsService(prisma as never, {
+      getAdapter: vi.fn().mockReturnValue({ cancelShipment }),
+    } as never);
+
+    const result = await service.cancelShipmentForSellerSplit("split-1", "admin-1");
+
+    expect(result).toEqual({
+      success: true,
+      message: "Courier shipment was already cancelled.",
+    });
+    expect(cancelShipment).not.toHaveBeenCalled();
+  });
 });
 
 function routingFailureShipment() {

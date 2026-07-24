@@ -416,6 +416,17 @@ type OrderRecord = {
       verifiedAt?: string | null;
       verificationNote?: string | null;
     } | null;
+    packages?: Array<{
+      id: string;
+      packageNumber: string;
+      status: string;
+      weightGrams?: number | null;
+      lengthCm?: number | null;
+      breadthCm?: number | null;
+      heightCm?: number | null;
+      declaredValuePaise?: number | null;
+      ewayBillNumber?: string | null;
+    }>;
   }>;
   payments?: Array<{
     id: string;
@@ -3964,6 +3975,9 @@ export function AdminOrderDetailPageClient({ orderNumber }: { orderNumber: strin
       }
     >
   >({});
+  const [ewayBillCorrectionForms, setEwayBillCorrectionForms] = useState<
+    Record<string, { ewayBillNumber: string; reason: string }>
+  >({});
   const query = useQuery({
     queryKey: ["admin-order", orderNumber, auth.authHeaders],
     enabled: Boolean(auth.isAuthenticated),
@@ -4006,6 +4020,33 @@ export function AdminOrderDetailPageClient({ orderNumber }: { orderNumber: strin
         body: JSON.stringify(emptyStringsToUndefined(payload)),
       }),
     onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["admin-order", orderNumber] });
+      await queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
+    },
+  });
+  const correctPackageEWayBill = useMutation({
+    mutationFn: (payload: {
+      packageId: string;
+      ewayBillNumber: string;
+      reason: string;
+    }) =>
+      adminRequest(
+        `/api/admin/orders/${encodeURIComponent(orderNumber)}/packages/${encodeURIComponent(payload.packageId)}/eway-bill`,
+        auth.authHeaders,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            ewayBillNumber: payload.ewayBillNumber,
+            reason: payload.reason,
+          }),
+        },
+      ),
+    onSuccess: async (_result, variables) => {
+      setEwayBillCorrectionForms((current) => {
+        const next = { ...current };
+        delete next[variables.packageId];
+        return next;
+      });
       await queryClient.invalidateQueries({ queryKey: ["admin-order", orderNumber] });
       await queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
     },
@@ -4170,6 +4211,18 @@ export function AdminOrderDetailPageClient({ orderNumber }: { orderNumber: strin
         [field]: value,
       },
     }));
+  const updateEWayBillCorrectionForm = (
+    packageId: string,
+    field: "ewayBillNumber" | "reason",
+    value: string,
+  ) =>
+    setEwayBillCorrectionForms((current) => ({
+      ...current,
+      [packageId]: {
+        ...(current[packageId] ?? { ewayBillNumber: "", reason: "" }),
+        [field]: value,
+      },
+    }));
 
   return (
     <AdminResourceChrome
@@ -4327,6 +4380,128 @@ export function AdminOrderDetailPageClient({ orderNumber }: { orderNumber: strin
                             }
                           />
                         </div>
+
+                        {(shipment.packages ?? []).map((shipmentPackage) => {
+                          const correctionForm = ewayBillCorrectionForms[shipmentPackage.id] ?? {
+                            ewayBillNumber: "",
+                            reason: "",
+                          };
+                          const correctionReady =
+                            /^\d{12}$/.test(correctionForm.ewayBillNumber) &&
+                            correctionForm.reason.trim().length >= 10;
+
+                          return (
+                            <div
+                              key={shipmentPackage.id}
+                              className="mt-4 rounded-md border border-[#F2B56B] bg-[#FFF7ED] p-3"
+                            >
+                              <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div>
+                                  <p className="text-sm font-black text-[#1F2933]">
+                                    {shipmentPackage.packageNumber}
+                                  </p>
+                                  <p className="mt-1 text-xs font-semibold text-[#9A3412]">
+                                    Package audit details. Any E-Way Bill correction is permanently
+                                    recorded with the administrator and reason.
+                                  </p>
+                                </div>
+                                <StatusBadge tone={statusTone(shipmentPackage.status)}>
+                                  {humanize(shipmentPackage.status)}
+                                </StatusBadge>
+                              </div>
+                              <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                                <MetricCard
+                                  label="Weight"
+                                  value={
+                                    shipmentPackage.weightGrams
+                                      ? `${shipmentPackage.weightGrams} g`
+                                      : "Not recorded"
+                                  }
+                                />
+                                <MetricCard
+                                  label="Dimensions"
+                                  value={
+                                    shipmentPackage.lengthCm &&
+                                    shipmentPackage.breadthCm &&
+                                    shipmentPackage.heightCm
+                                      ? `${shipmentPackage.lengthCm} x ${shipmentPackage.breadthCm} x ${shipmentPackage.heightCm} cm`
+                                      : "Not recorded"
+                                  }
+                                />
+                                <MetricCard
+                                  label="Declared value"
+                                  value={formatPaise(
+                                    shipmentPackage.declaredValuePaise ?? 0,
+                                    order.currency,
+                                  )}
+                                />
+                              </div>
+                              <label className="mt-3 grid gap-1">
+                                <span className="text-[11px] font-black uppercase tracking-wide text-[#667085]">
+                                  Saved E-Way Bill Number
+                                </span>
+                                <input
+                                  readOnly
+                                  value={shipmentPackage.ewayBillNumber ?? "Not recorded"}
+                                  className="h-10 rounded-md border border-[#F2B56B] bg-white px-3 font-mono text-sm font-black tracking-wider text-[#1F2933] outline-none"
+                                />
+                              </label>
+                              <div className="mt-3 grid gap-3 lg:grid-cols-[220px_1fr_auto] lg:items-end">
+                                <SmallInput
+                                  label={
+                                    shipmentPackage.ewayBillNumber
+                                      ? "Corrected 12-digit number"
+                                      : "12-digit E-Way Bill Number"
+                                  }
+                                  value={correctionForm.ewayBillNumber}
+                                  onChange={(value) =>
+                                    updateEWayBillCorrectionForm(
+                                      shipmentPackage.id,
+                                      "ewayBillNumber",
+                                      value.replace(/\D/g, "").slice(0, 12),
+                                    )
+                                  }
+                                />
+                                <SmallInput
+                                  label="Mandatory legal correction reason"
+                                  value={correctionForm.reason}
+                                  onChange={(value) =>
+                                    updateEWayBillCorrectionForm(
+                                      shipmentPackage.id,
+                                      "reason",
+                                      value,
+                                    )
+                                  }
+                                />
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  disabled={!correctionReady || correctPackageEWayBill.isPending}
+                                  onClick={() =>
+                                    correctPackageEWayBill.mutate({
+                                      packageId: shipmentPackage.id,
+                                      ewayBillNumber: correctionForm.ewayBillNumber,
+                                      reason: correctionForm.reason.trim(),
+                                    })
+                                  }
+                                >
+                                  {correctPackageEWayBill.isPending
+                                    ? "Saving..."
+                                    : shipmentPackage.ewayBillNumber
+                                      ? "Apply correction"
+                                      : "Record E-Way Bill"}
+                                </Button>
+                              </div>
+                              {correctPackageEWayBill.error ? (
+                                <p className="mt-2 text-xs font-bold text-[#B42318]">
+                                  {correctPackageEWayBill.error instanceof Error
+                                    ? correctPackageEWayBill.error.message
+                                    : "E-Way Bill correction failed."}
+                                </p>
+                              ) : null}
+                            </div>
+                          );
+                        })}
 
                         {isManualTransportPackage ? (
                           <ManualTransportShipmentSnapshot

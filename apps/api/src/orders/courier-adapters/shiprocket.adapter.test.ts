@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { createShiprocketBookingPayload } from "./shiprocket.adapter";
+import {
+  createShiprocketBookingPayload,
+  createShiprocketCancellationPayload,
+} from "./shiprocket.adapter";
 
 describe("Shiprocket adapter payload", () => {
   it("sends the complete COD payable amount and documented order details", () => {
@@ -68,5 +71,12 @@ describe("Shiprocket adapter payload", () => {
       }],
     });
     expect(payload).not.toHaveProperty("collectable_amount");
+  });
+
+  it("sends Shiprocket cancellation as numeric provider order IDs", () => {
+    expect(createShiprocketCancellationPayload(" 844722 ")).toEqual({
+      ids: [844722],
+    });
+    expect(createShiprocketCancellationPayload("not-an-id")).toBeNull();
   });
 });

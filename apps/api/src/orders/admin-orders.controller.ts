@@ -7,7 +7,7 @@ import type { RequestUser } from "../auth/types/indihub-request";
 import { CodVerificationDto } from "./dto/cod-verification.dto";
 import { UpdateDeliveryDto } from "./dto/delivery-update.dto";
 import { OrderQueryDto } from "./dto/order-query.dto";
-import { UpdateOrderStatusDto } from "./dto/order-status.dto";
+import { CorrectPackageEWayBillDto, UpdateOrderStatusDto } from "./dto/order-status.dto";
 import { OrdersService } from "./orders.service";
 
 @ApiTags("Admin Orders")
@@ -63,6 +63,17 @@ export class AdminOrdersController {
     @Body() dto: UpdateDeliveryDto
   ) {
     return this.ordersService.updateAdminShipmentDelivery(actor, orderNumber, shipmentNumber, dto);
+  }
+
+  @Patch(":orderNumber/packages/:packageId/eway-bill")
+  @ApiOperation({ summary: "Correct a package E-Way Bill Number with an immutable audit reason." })
+  correctPackageEWayBill(
+    @CurrentUser() actor: RequestUser,
+    @Param("orderNumber") orderNumber: string,
+    @Param("packageId") packageId: string,
+    @Body() dto: CorrectPackageEWayBillDto,
+  ) {
+    return this.ordersService.correctAdminPackageEWayBill(actor, orderNumber, packageId, dto);
   }
 
   @Patch(":orderNumber/cod-verification")

@@ -1,4 +1,8 @@
 import { describe, expect, it } from "vitest";
+import {
+  EWAY_BILL_LOCK_WARNING,
+  isValidEWayBillNumber,
+} from "./seller-eway-bill";
 import { mergePackageDrafts } from "./seller-package-drafts";
 
 describe("mergePackageDrafts", () => {
@@ -46,5 +50,12 @@ describe("mergePackageDrafts", () => {
       breadthCm: "14",
       heightCm: "7",
     });
+  });
+
+  it("keeps the statutory lock warning and exact 12-digit validation", () => {
+    expect(EWAY_BILL_LOCK_WARNING).toContain("permanently non-editable");
+    expect(isValidEWayBillNumber("123456789012")).toBe(true);
+    expect(isValidEWayBillNumber("12345678901")).toBe(false);
+    expect(isValidEWayBillNumber("12345678901A")).toBe(false);
   });
 });

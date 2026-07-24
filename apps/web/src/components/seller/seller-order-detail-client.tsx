@@ -9,6 +9,7 @@ import {
   CreditCard,
   Download,
   ExternalLink,
+  LockKeyhole,
   MapPin,
   Navigation,
   Package,
@@ -60,6 +61,10 @@ import {
 } from "./seller-ui";
 import { mergePackageDrafts, type PackageDraft } from "./seller-package-drafts";
 import { sellerCollectedCodExpectedPaise } from "./seller-cod-calculations";
+import {
+  EWAY_BILL_LOCK_WARNING,
+  isValidEWayBillNumber,
+} from "./seller-eway-bill";
 
 const sellerStatuses = [
   "PENDING",
@@ -82,6 +87,7 @@ const deliveryModeLabels: Record<DeliveryModeValue, string> = {
   MANUAL_TRANSPORT: "Manual transport",
 };
 const automatedDeliveryModes = new Set(["LOCAL_DELIVERY_PARTNER", "THIRD_PARTY_COURIER"]);
+const EWAY_BILL_THRESHOLD_PAISE = 5_000_000;
 const deliveryStatuses = [
   "NOT_ASSIGNED",
   "PENDING",
@@ -178,7 +184,6 @@ export function SellerOrderDetailClient({
     onSuccess: () => {
       setNotice({ tone: "success", message: "Seller order status updated." });
       setStatusNote("");
-      setEwayBillNumber("");
       invalidateOrder();
     },
     onError: (error) =>
@@ -226,6 +231,7 @@ export function SellerOrderDetailClient({
 
   function updateStatus(sellerStatus: SellerStatus) {
     setNotice(null);
+    const nextEWayBillNumber = ewayBillNumber.trim();
     if (
       sellerStatus === "DELIVERED" &&
       order &&
@@ -236,18 +242,25 @@ export function SellerOrderDetailClient({
     }
     
     if (
-      (sellerStatus === "PROCESSING" || sellerStatus === "DISPATCHED") &&
-      (sellerSplit?.sellerSubtotalPaise ?? 0) >= 5000000 &&
-      !ewayBillNumber.trim()
+      (sellerStatus === "PROCESSING" ||
+        sellerStatus === "DISPATCHED" ||
+        sellerStatus === "DELIVERED") &&
+      (sellerSplit?.sellerSubtotalPaise ?? 0) >= EWAY_BILL_THRESHOLD_PAISE &&
+      !savedEWayBillNumber &&
+      !nextEWayBillNumber
     ) {
       setNotice({ tone: "danger", message: "E-Way Bill Number is mandatory for goods valued at \u20b950,000 or above." });
+      return;
+    }
+    if (nextEWayBillNumber && !isValidEWayBillNumber(nextEWayBillNumber)) {
+      setNotice({ tone: "danger", message: "E-Way Bill Number must contain exactly 12 digits." });
       return;
     }
 
     statusMutation.mutate({
       sellerStatus,
       note: statusNote.trim() || undefined,
-      ewayBillNumber: ewayBillNumber.trim() || undefined,
+      ewayBillNumber: savedEWayBillNumber ? undefined : nextEWayBillNumber || undefined,
     });
   }
 
@@ -331,7 +344,11 @@ export function SellerOrderDetailClient({
     }
   }
 
-  function printPackageSlip(shipmentPackage: { packageNumber?: string | null; status?: string | null }) {
+  function printPackageSlip(shipmentPackage: {
+    packageNumber?: string | null;
+    status?: string | null;
+    ewayBillNumber?: string | null;
+  }) {
     if (!order) {
       setNotice({ tone: "warning", message: "Order details are still loading. Try again in a moment." });
       return;
@@ -373,6 +390,7 @@ export function SellerOrderDetailClient({
             <p><strong>Package:</strong> ${escapeHtml(shipmentPackage.packageNumber ?? sellerShipment?.shipmentNumber ?? "Package")}</p>
             <p><strong>Mode:</strong> ${escapeHtml(deliveryModeLabels[deliveryMode as DeliveryModeValue] ?? statusLabel(deliveryMode))}</p>
             <p><strong>Status:</strong> ${escapeHtml(statusLabel(shipmentPackage.status ?? currentDeliveryStatus))}</p>
+            ${shipmentPackage.ewayBillNumber ? `<p><strong>E-Way Bill No:</strong> ${escapeHtml(shipmentPackage.ewayBillNumber)}</p>` : ""}
             <p><strong>Seller:</strong> ${escapeHtml(profileQuery.data?.storeName ?? "Seller")}</p>
           </div>
           <div class="box">
@@ -404,6 +422,10 @@ export function SellerOrderDetailClient({
       (order?.shipments?.length === 1 ? order.shipments[0] : undefined),
     [order?.shipments, sellerId],
   );
+  const savedEWayBillNumber =
+    sellerShipment?.packages
+      ?.find((shipmentPackage) => shipmentPackage.ewayBillNumber)
+      ?.ewayBillNumber?.trim() || null;
   useEffect(() => {
     setPackageDrafts((current) => mergePackageDrafts(current, sellerShipment?.packages ?? [], dirtyPackageIdsRef.current));
   }, [sellerShipment?.packages]);
@@ -797,6 +819,24 @@ export function SellerOrderDetailClient({
                               />
                             </div>
                           ) : null}
+                          {shipmentPackage.ewayBillNumber ? (
+                            <div className="mt-3 rounded-lg border border-[#F2B56B] bg-[#FFF7ED] p-3">
+                              <div className="flex items-center gap-2 text-sm font-black text-[#9A3412]">
+                                <LockKeyhole className="h-4 w-4" aria-hidden="true" />
+                                E-Way Bill locked
+                              </div>
+                              <input
+                                aria-label={`E-Way Bill Number for ${shipmentPackage.packageNumber}`}
+                                readOnly
+                                value={shipmentPackage.ewayBillNumber}
+                                className="mt-2 h-10 w-full rounded-md border border-[#F2B56B] bg-white px-3 font-mono text-sm font-black tracking-wider text-[#1F2933] outline-none"
+                              />
+                              <p className="mt-2 text-xs font-semibold leading-5 text-[#9A3412]">
+                                This statutory number is permanently non-editable for sellers.
+                                Contact admin only if a legally required correction is needed.
+                              </p>
+                            </div>
+                          ) : null}
                           {shipmentPackage.bookingError ? (
                             <div className="mt-3 rounded-md border border-[#F5B7B7] bg-[#FDECEC] p-3 text-sm font-semibold text-[#9B1C1C]">
                               <p className="font-bold">Booking failed</p>
@@ -1015,20 +1055,58 @@ export function SellerOrderDetailClient({
                         : "Add a short update for the timeline"
                     }
                   />
-                  {(nextSellerStatus === "PROCESSING" || nextSellerStatus === "DISPATCHED") ? (
-                    <div className="mt-4">
-                      <SellerField
-                        label={
-                          (sellerSplit?.sellerSubtotalPaise ?? 0) >= 5000000
-                            ? "E-Way Bill Number (Required for values \u2265 \u20b950,000)"
-                            : "E-Way Bill Number (Optional)"
-                        }
-                        name="ewayBillNumber"
-                        value={ewayBillNumber}
-                        onChange={setEwayBillNumber}
-                        placeholder="Enter 12-digit E-Way Bill Number"
-                        required={(sellerSplit?.sellerSubtotalPaise ?? 0) >= 5000000}
-                      />
+                  {savedEWayBillNumber ||
+                  nextSellerStatus === "PROCESSING" ||
+                  nextSellerStatus === "DISPATCHED" ||
+                  (nextSellerStatus === "DELIVERED" &&
+                    (sellerSplit?.sellerSubtotalPaise ?? 0) >=
+                      EWAY_BILL_THRESHOLD_PAISE) ? (
+                    <div className="mt-4 grid gap-3">
+                      {savedEWayBillNumber ? (
+                        <label className="grid gap-1.5 text-sm font-bold text-[#1F2933]">
+                          <span className="flex items-center gap-2">
+                            E-Way Bill Number
+                            <StatusBadge tone="warning">Locked</StatusBadge>
+                          </span>
+                          <input
+                            name="ewayBillNumber"
+                            value={savedEWayBillNumber}
+                            readOnly
+                            className="h-11 rounded-md border border-[#F2B56B] bg-[#FFF7ED] px-3 font-mono font-black tracking-wider text-[#1F2933] outline-none"
+                          />
+                          <span className="text-xs font-semibold leading-5 text-[#9A3412]">
+                            Saved for GST compliance and courier audit. Seller editing is disabled.
+                          </span>
+                        </label>
+                      ) : (
+                        <>
+                          <div
+                            role="note"
+                            className="rounded-lg border border-[#F2B56B] bg-[#FFF7ED] p-3 text-sm font-semibold leading-6 text-[#9A3412]"
+                          >
+                            <strong>Important:</strong>{" "}
+                            {EWAY_BILL_LOCK_WARNING.replace(/^Important:\s*/, "")}
+                          </div>
+                          <SellerField
+                            label={
+                              (sellerSplit?.sellerSubtotalPaise ?? 0) >=
+                              EWAY_BILL_THRESHOLD_PAISE
+                                ? "E-Way Bill Number (Required for values \u2265 \u20b950,000)"
+                                : "E-Way Bill Number (Optional)"
+                            }
+                            name="ewayBillNumber"
+                            value={ewayBillNumber}
+                            onChange={(value) =>
+                              setEwayBillNumber(value.replace(/\D/g, "").slice(0, 12))
+                            }
+                            placeholder="Enter 12-digit E-Way Bill Number"
+                            required={
+                              (sellerSplit?.sellerSubtotalPaise ?? 0) >=
+                              EWAY_BILL_THRESHOLD_PAISE
+                            }
+                          />
+                        </>
+                      )}
                     </div>
                   ) : null}
                 </>

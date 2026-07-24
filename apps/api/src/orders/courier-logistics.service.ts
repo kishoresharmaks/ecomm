@@ -38,6 +38,7 @@ import type {
   CourierBookingItem,
   CourierBookingPackage,
   CourierBookingResult,
+  CourierCancelResult,
   CourierProviderAdapterSnapshot,
 } from "./courier-adapters/courier-adapter.types";
 import {
@@ -151,84 +152,163 @@ export class CourierLogisticsService {
     @Inject(CourierAdapterRegistry) private readonly courierAdapters: CourierAdapterRegistry,
   ) {}
 
-  async cancelShipmentForSellerSplit(tx: Prisma.TransactionClient | undefined, orderSellerSplitId: string) {
-    try {
-      const db = tx ?? this.prisma.client;
-      const orderShipment = await db.orderShipment.findFirst({
-        where: { orderSellerSplitId },
-        include: {
-          courierShipment: true,
-          seller: {
-            include: {
-              courierProviderSettings: true,
-            },
+  async cancelShipmentForSellerSplit(orderSellerSplitId: string, actorUserId?: string) {
+    const orderShipment = await this.prisma.client.orderShipment.findFirst({
+      where: { orderSellerSplitId },
+      include: {
+        courierShipment: true,
+        seller: {
+          include: {
+            courierProviderSettings: true,
           },
         },
-      });
+      },
+    });
 
-      if (!orderShipment || !orderShipment.courierShipment) {
-        return null;
-      }
+    if (!orderShipment?.courierShipment) {
+      return null;
+    }
 
-      const courierShipment = orderShipment.courierShipment;
-      if (!courierShipment.providerOrderId || courierShipment.trackingStatus === CourierShipmentStatus.CANCELLED) {
-        return null;
-      }
+    const courierShipment = orderShipment.courierShipment;
+    if (courierShipment.trackingStatus === CourierShipmentStatus.CANCELLED) {
+      return { success: true, message: "Courier shipment was already cancelled." };
+    }
+    if (!courierShipment.providerOrderId) {
+      return { success: false, message: "Courier booking has no provider order ID." };
+    }
 
-      const providerCode = courierShipment.providerCode;
-      const providerSetting = orderShipment.seller.courierProviderSettings.find(
-        (setting) => setting.providerCode === providerCode && setting.isActive,
-      );
+    const providerCode = courierShipment.providerCode;
+    const providerSetting = orderShipment.seller.courierProviderSettings.find(
+      (setting) => setting.providerCode === providerCode && setting.isActive,
+    );
+    if (!providerSetting) {
+      return { success: false, message: "No active courier provider setting was found." };
+    }
 
-      if (!providerSetting) {
-        return null;
-      }
+    const snapshot = this.providerSnapshot(
+      providerSetting.settingsSnapshot,
+    ) as CourierProviderAdapterSnapshot;
+    const adapter = this.courierAdapters.getAdapter(snapshot.adapterCode, providerCode);
+    if (!adapter?.cancelShipment) {
+      return { success: false, message: "Courier provider does not support cancellation." };
+    }
 
-      const snapshot = this.providerSnapshot(providerSetting.settingsSnapshot) as CourierProviderAdapterSnapshot;
-      const adapter = this.courierAdapters.getAdapter(snapshot.adapterCode, providerCode);
-
-      if (!adapter || !adapter.cancelShipment) {
-        return null;
-      }
-
-      const result = await adapter.cancelShipment({
+    let result: CourierCancelResult;
+    try {
+      result = await adapter.cancelShipment({
         providerCode,
         providerOrderId: courierShipment.providerOrderId,
         awbNumber: courierShipment.awbNumber,
         settings: snapshot,
       });
+    } catch (error) {
+      result = {
+        success: false,
+        message: error instanceof Error ? error.message : "Unknown courier cancellation error.",
+      };
+    }
 
+    const now = new Date();
+    await this.prisma.client.$transaction(async (tx) => {
       if (result.success) {
-        await db.courierShipment.update({
+        await tx.courierShipment.update({
           where: { id: courierShipment.id },
           data: {
             trackingStatus: CourierShipmentStatus.CANCELLED,
             trackingStatusLabel: "Order cancelled with courier provider.",
-            cancelledAt: new Date(),
+            cancelledAt: now,
+          },
+        });
+        await tx.courierConsignment.updateMany({
+          where: {
+            orderShipmentId: orderShipment.id,
+            providerCode,
+          },
+          data: {
+            trackingStatus: CourierShipmentStatus.CANCELLED,
+            trackingStatusLabel: "Order cancelled with courier provider.",
+            cancelledAt: now,
+          },
+        });
+        await tx.courierConsignmentPackage.updateMany({
+          where: {
+            orderShipmentId: orderShipment.id,
+            courierConsignment: { providerCode },
+          },
+          data: {
+            trackingStatus: CourierShipmentStatus.CANCELLED,
+            trackingStatusLabel: "Order cancelled with courier provider.",
+            lastTrackedAt: now,
+          },
+        });
+        await tx.orderShipment.update({
+          where: { id: orderShipment.id },
+          data: {
+            status: DeliveryStatus.CANCELLED,
+            courierTrackingStatus: CourierShipmentStatus.CANCELLED,
+          },
+        });
+        await tx.orderShipmentPackage.updateMany({
+          where: {
+            orderShipmentId: orderShipment.id,
+            status: {
+              notIn: [
+                OrderShipmentPackageStatus.DELIVERED,
+                OrderShipmentPackageStatus.CANCELLED,
+                OrderShipmentPackageStatus.RTO_DELIVERED,
+              ],
+            },
+          },
+          data: {
+            status: OrderShipmentPackageStatus.CANCELLED,
+            cancelledAt: now,
           },
         });
       }
 
-      return result;
-    } catch (error) {
-      this.logger.warn(`Failed to cancel courier shipment for split ${orderSellerSplitId}: ${error instanceof Error ? error.message : "Unknown error"}`);
-      return null;
+      await tx.auditLog.create({
+        data: {
+          ...(actorUserId ? { actorUserId } : {}),
+          action: result.success
+            ? "courier_shipment.cancellation.synced"
+            : "courier_shipment.cancellation.failed",
+          entityType: "courier_shipment",
+          entityId: courierShipment.id,
+          oldValue: {
+            trackingStatus: courierShipment.trackingStatus,
+            providerOrderId: courierShipment.providerOrderId,
+          },
+          newValue: {
+            success: result.success,
+            message: result.message ?? null,
+            providerCode,
+            cancelPayloadSnapshot: this.inputJson(result.cancelPayloadSnapshot),
+            cancelResponseSnapshot: this.inputJson(result.cancelResponseSnapshot),
+          },
+        },
+      });
+    });
+
+    if (!result.success) {
+      this.logger.warn(
+        `Failed to cancel courier shipment for split ${orderSellerSplitId}: ${result.message ?? "Unknown error"}`,
+      );
     }
+    return result;
   }
 
-  async cancelShipmentForOrder(tx: Prisma.TransactionClient | undefined, orderId: string) {
-    const db = tx ?? this.prisma.client;
-    const splits = await db.orderSellerSplit.findMany({
+  async cancelShipmentForOrder(orderId: string, actorUserId?: string) {
+    const splits = await this.prisma.client.orderSellerSplit.findMany({
       where: { orderId },
       select: { id: true },
     });
 
     for (const split of splits) {
-      await this.cancelShipmentForSellerSplit(tx, split.id);
+      await this.cancelShipmentForSellerSplit(split.id, actorUserId);
     }
   }
 
-  async syncCancelledCourierShipments() {
+  async syncCancelledCourierShipments(actor: RequestUser) {
     const pendingCancellations = await this.prisma.client.courierShipment.findMany({
       where: {
         trackingStatus: { not: CourierShipmentStatus.CANCELLED },
@@ -242,13 +322,15 @@ export class CourierLogisticsService {
       include: {
         orderShipment: true,
       },
+      orderBy: { updatedAt: "asc" },
+      take: 100,
     });
 
     const results = [];
     for (const courierShipment of pendingCancellations) {
       const result = await this.cancelShipmentForSellerSplit(
-        undefined,
         courierShipment.orderShipment.orderSellerSplitId,
+        actor.id,
       );
       results.push({
         shipmentNumber: courierShipment.orderShipment.shipmentNumber,

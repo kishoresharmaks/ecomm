@@ -921,6 +921,7 @@ export type OrderSummary = {
       lengthCm?: number | null;
       breadthCm?: number | null;
       heightCm?: number | null;
+      ewayBillNumber?: string | null;
       itemAllocations?: unknown;
       readyForBookingAt?: string | null;
       bookedAt?: string | null;

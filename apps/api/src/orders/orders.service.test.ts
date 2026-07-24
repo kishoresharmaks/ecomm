@@ -367,6 +367,58 @@ describe("OrdersService", () => {
       ),
     ).toBe(0);
   });
+
+  it("rejects a seller attempt to replace an already recorded E-Way Bill Number", async () => {
+    const service = new OrdersService(
+      createOrdersPrismaMock([]) as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+    );
+    const helper = service as unknown as {
+      updateSellerShipmentStatusGuarded: (
+        tx: unknown,
+        input: Record<string, unknown>,
+      ) => Promise<void>;
+    };
+    const tx = {
+      orderShipment: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "shipment-1",
+          shipmentNumber: "SHP-1001",
+          orderId: "order-1",
+          sellerId: "seller-1",
+          subtotalPaise: 5_500_000,
+          shippingPaise: 0,
+          codSurchargePaise: 0,
+          status: DeliveryStatus.PENDING,
+          deliveryMode: DeliveryMode.THIRD_PARTY_COURIER,
+          packages: [{ id: "package-1", ewayBillNumber: "123456789012" }],
+        }),
+      },
+    };
+
+    await expect(
+      helper.updateSellerShipmentStatusGuarded(tx, {
+        orderSellerSplitId: "split-1",
+        nextStatus: DeliveryStatus.PACKED,
+        actorUserId: "seller-user-1",
+        requiresEWayBill: true,
+        ewayBillNumber: "999999999999",
+        updateData: {},
+        createData: {},
+      }),
+    ).rejects.toThrow("The E-Way Bill Number is locked after saving.");
+  });
 });
 
 function createOrdersPrismaMock(partners: unknown[], options: { sellerId?: string } = {}) {

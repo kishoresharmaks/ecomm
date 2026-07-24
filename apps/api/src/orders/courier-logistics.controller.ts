@@ -68,8 +68,8 @@ export class AdminCourierShipmentsController {
 
   @Post("sync-cancelled")
   @ApiOperation({ summary: "Sync and push cancellation to third-party couriers for previously cancelled orders." })
-  syncCancelledShipments() {
-    return this.courierLogistics.syncCancelledCourierShipments();
+  syncCancelledShipments(@CurrentUser() actor: RequestUser) {
+    return this.courierLogistics.syncCancelledCourierShipments(actor);
   }
 }
 
