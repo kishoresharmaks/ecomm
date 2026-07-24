@@ -3737,7 +3737,7 @@ export class OrdersService {
           orderSellerSplitId: split.id,
           nextStatus: requestedDeliveryStatus,
           allowDirectDelivered: isStorePickupSellerOrder,
-          ewayBillNumber: dto.ewayBillNumber,
+          ...(dto.ewayBillNumber !== undefined ? { ewayBillNumber: dto.ewayBillNumber } : {}),
           updateData: {
             status: requestedDeliveryStatus,
             ...(note ? { deliveryNote: note } : {}),
