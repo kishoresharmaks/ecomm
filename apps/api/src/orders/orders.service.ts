@@ -948,6 +948,7 @@ export class OrdersService {
           productName: string;
           sku?: string | null;
           variantName?: string | null;
+          hsnCode?: string | null;
           quantity: number;
           lineTotalPaise: number;
           weightGrams?: number | null;
@@ -1043,6 +1044,7 @@ export class OrdersService {
           productName: product.name,
           sku: variant.sku,
           variantName: variant.variantName,
+          hsnCode: taxSnapshot.hsnCodeSnapshot,
           quantity: item.quantity,
           lineTotalPaise,
           weightGrams: variant.packageWeightGrams,

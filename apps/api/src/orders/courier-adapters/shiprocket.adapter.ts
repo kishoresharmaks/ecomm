@@ -402,57 +402,12 @@ export class ShiprocketCourierAdapter implements CourierAdapter {
       pickup_postcode: requiredText(request.sellerAddress.pincode, "seller pickup pincode"),
       delivery_postcode: requiredText(request.shippingAddress.pincode, "delivery pincode"),
       cod: request.paymentMethod === "COD" ? "1" : "0",
-      weight: gramsToKg(request.parcel.weightGrams),
+      weight: gramsToKg(request.parcel.weightGrams).toString(),
     });
   }
 
   private createBookingPayload(request: CourierBookingRequest) {
-    const nameParts = splitName(request.shippingAddress.fullName ?? "Customer");
-    const payload: ShiprocketJson = {
-      order_id: request.shipmentNumber,
-      order_date: request.orderDate.toISOString().slice(0, 10),
-      pickup_location: request.pickupLocationName,
-      billing_customer_name: nameParts.firstName,
-      billing_last_name: nameParts.lastName,
-      billing_address: requiredText(request.shippingAddress.line1, "delivery address line 1"),
-      billing_address_2: compactText([request.shippingAddress.line2, request.shippingAddress.area]),
-      billing_city: requiredText(request.shippingAddress.city, "delivery city"),
-      billing_pincode: requiredText(request.shippingAddress.pincode, "delivery pincode"),
-      billing_state: requiredText(request.shippingAddress.state, "delivery state"),
-      billing_country: request.shippingAddress.country ?? "India",
-      billing_email: request.shippingAddress.email ?? "orders@1handindia.com",
-      billing_phone: requiredText(request.shippingAddress.phone, "delivery phone"),
-      shipping_is_billing: true,
-      order_items: request.items.map((item) => ({
-        name: item.name,
-        sku: item.sku,
-        units: item.quantity,
-        selling_price: paiseToRupees(item.unitPricePaise),
-        ...(item.hsnCode ? { hsn: item.hsnCode } : {}),
-      })),
-      payment_method: request.paymentMethod === "COD" ? "COD" : "Prepaid",
-      sub_total: paiseToRupees(request.subtotalPaise),
-      // For COD orders, collectable_amount is the full doorstep-collection amount
-      // (product subtotal + shipping + COD surcharge + platform fee). Without this,
-      // Shiprocket uses sub_total as the collectable, which omits all extra charges.
-      ...(request.paymentMethod === "COD" && request.codAmountPaise > 0
-        ? { collectable_amount: paiseToRupees(request.codAmountPaise) }
-        : {}),
-      length: request.parcel.lengthCm,
-      breadth: request.parcel.breadthCm,
-      height: request.parcel.heightCm,
-      weight: gramsToKg(request.parcel.weightGrams),
-
-    };
-
-    if (request.settings.accountCode) {
-      payload.channel_id = numericOrText(request.settings.accountCode);
-    }
-    if (request.note) {
-      payload.comment = request.note;
-    }
-
-    return payload;
+    return createShiprocketBookingPayload(request);
   }
 
   private createPickupPayload(request: CourierPickupSyncRequest) {
@@ -475,6 +430,68 @@ export class ShiprocketCourierAdapter implements CourierAdapter {
       pin_code: requiredText(request.sellerAddress.pincode, "seller pickup pincode"),
     } satisfies ShiprocketJson;
   }
+}
+
+export function createShiprocketBookingPayload(request: CourierBookingRequest) {
+  const nameParts = splitName(request.shippingAddress.fullName ?? "Customer");
+  const payablePaise =
+    request.paymentMethod === "COD" && request.codAmountPaise > 0
+      ? request.codAmountPaise
+      : request.subtotalPaise;
+  const shippingChargesPaise = Math.max(0, request.shippingChargesPaise);
+  const otherChargesPaise = payablePaise - request.subtotalPaise - shippingChargesPaise;
+  const payload: ShiprocketJson = {
+    order_id: request.shipmentNumber,
+    order_date: request.orderDate.toISOString().slice(0, 10),
+    pickup_location: request.pickupLocationName,
+    billing_customer_name: nameParts.firstName,
+    billing_last_name: nameParts.lastName,
+    ...(request.billingCompanyName?.trim()
+      ? { billing_company_name: request.billingCompanyName.trim() }
+      : {}),
+    billing_address: requiredText(request.shippingAddress.line1, "delivery address line 1"),
+    billing_address_2: compactText([request.shippingAddress.line2, request.shippingAddress.area]),
+    billing_city: requiredText(request.shippingAddress.city, "delivery city"),
+    billing_pincode: requiredText(request.shippingAddress.pincode, "delivery pincode"),
+    billing_state: requiredText(request.shippingAddress.state, "delivery state"),
+    billing_country: request.shippingAddress.country ?? "India",
+    billing_email: request.shippingAddress.email ?? "orders@1handindia.com",
+    billing_phone: requiredText(request.shippingAddress.phone, "delivery phone"),
+    shipping_is_billing: true,
+    order_items: request.items.map((item) => ({
+      name: item.name,
+      sku: item.sku,
+      units: item.quantity,
+      selling_price: paiseToRupees(item.unitPricePaise),
+      ...(item.hsnCode ? { hsn: numericOrText(item.hsnCode) } : {}),
+    })),
+    payment_method: request.paymentMethod === "COD" ? "COD" : "Prepaid",
+    shipping_charges: paiseToRupees(shippingChargesPaise),
+    transaction_charges: paiseToRupees(Math.max(0, otherChargesPaise)),
+    total_discount: paiseToRupees(Math.max(0, -otherChargesPaise)),
+    sub_total: paiseToRupees(payablePaise),
+    length: request.parcel.lengthCm,
+    breadth: request.parcel.breadthCm,
+    height: request.parcel.heightCm,
+    weight: gramsToKg(request.parcel.weightGrams),
+  };
+
+  if (request.settings.accountCode) {
+    payload.channel_id = numericOrText(request.settings.accountCode);
+  }
+  if (request.note) {
+    payload.comment = request.note;
+  }
+  if (request.customerGstin?.trim()) {
+    payload.customer_gstin = request.customerGstin.trim();
+  }
+
+  const ewayBillNo = (request.ewayBillNumber || request.parcel.ewayBillNumber)?.trim();
+  if (ewayBillNo) {
+    payload.ewaybill_no = ewayBillNo;
+  }
+
+  return payload;
 }
 
 async function postJson(url: string, payload: unknown, token?: string) {
@@ -675,8 +692,8 @@ function rupeesToPaise(value: number | null) {
   return value === null ? null : Math.max(0, Math.round(value * 100));
 }
 
-function gramsToKg(value: number) {
-  return Math.max(0.01, Number((value / 1000).toFixed(3))).toString();
+function gramsToKg(value: number): number {
+  return Math.max(0.01, Number((value / 1000).toFixed(3)));
 }
 
 function numericOrText(value: string) {

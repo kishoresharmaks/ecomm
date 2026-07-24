@@ -1821,6 +1821,9 @@ export class CourierLogisticsService {
       paymentMethod: this.hasCodPayment(orderShipment.order.payments) ? "COD" as const : "PREPAID" as const,
       subtotalPaise: orderShipment.subtotalPaise,
       codAmountPaise: this.expectedPackageCodAmountPaise(orderShipment.order, orderShipment),
+      shippingChargesPaise: orderShipment.shippingPaise + orderShipment.codSurchargePaise,
+      billingCompanyName: orderShipment.order.buyerLegalNameSnapshot,
+      customerGstin: orderShipment.order.buyerGstinSnapshot,
       pickupLocationName,
       shippingAddress: bookingAddress,
       sellerAddress: {
@@ -1837,7 +1840,11 @@ export class CourierLogisticsService {
         countryCode: sellerAddress.countryCode,
       },
       items: items.map((item) => this.courierBookingItem(item)),
-      parcel: this.resolveCourierParcel(items, settings.defaultPackage, storedDimensions),
+      parcel: {
+        ...this.resolveCourierParcel(items, settings.defaultPackage, storedDimensions),
+        ...(storedPackage?.ewayBillNumber ? { ewayBillNumber: storedPackage.ewayBillNumber } : {}),
+      },
+      ...(storedPackage?.ewayBillNumber ? { ewayBillNumber: storedPackage.ewayBillNumber } : {}),
       note: dto.note ?? null,
       settings,
     };
@@ -2331,15 +2338,15 @@ export class CourierLogisticsService {
     order: { payments: Array<{ provider: PaymentProvider; method: string | null; amountPaise: number }>; shipments: Array<{ id: string; subtotalPaise: number; shippingPaise: number; codSurchargePaise: number }> },
     orderShipment: { id: string; subtotalPaise: number; shippingPaise: number; codSurchargePaise: number },
   ) {
-    const codPayment = order.payments.find(
-      (payment) => payment.provider === PaymentProvider.COD || payment.method === "COD",
-    );
-    if (!codPayment) {
+    const codTotalPaise = order.payments
+      .filter((payment) => payment.provider === PaymentProvider.COD || payment.method?.toUpperCase() === "COD")
+      .reduce((total, payment) => total + payment.amountPaise, 0);
+    if (codTotalPaise <= 0) {
       return 0;
     }
     const shipments = [...order.shipments].sort((left, right) => left.id.localeCompare(right.id));
     if (shipments.length <= 1) {
-      return codPayment.amountPaise;
+      return codTotalPaise;
     }
     const bases = shipments.map((shipment) => ({
       id: shipment.id,
@@ -2347,17 +2354,17 @@ export class CourierLogisticsService {
     }));
     const totalBasis = bases.reduce((total, item) => total + item.basis, 0);
     if (totalBasis <= 0) {
-      const baseShare = Math.floor(codPayment.amountPaise / shipments.length);
-      const remainder = codPayment.amountPaise - baseShare * shipments.length;
+      const baseShare = Math.floor(codTotalPaise / shipments.length);
+      const remainder = codTotalPaise - baseShare * shipments.length;
       const index = shipments.findIndex((shipment) => shipment.id === orderShipment.id);
       return baseShare + (index >= 0 && index < remainder ? 1 : 0);
     }
     let assignedPaise = 0;
     for (const item of bases) {
       if (item.id === bases[bases.length - 1]?.id) {
-        return item.id === orderShipment.id ? codPayment.amountPaise - assignedPaise : 0;
+        return item.id === orderShipment.id ? codTotalPaise - assignedPaise : 0;
       }
-      const share = Math.floor((codPayment.amountPaise * item.basis) / totalBasis);
+      const share = Math.floor((codTotalPaise * item.basis) / totalBasis);
       if (item.id === orderShipment.id) {
         return share;
       }
@@ -2459,6 +2466,9 @@ export class CourierLogisticsService {
           orderItemId: item.id,
           productVariantId: item.productVariantId,
           productName: item.productNameSnapshot,
+          sku: item.productVariant.sku,
+          variantName: item.productVariant.variantName,
+          hsnCode: item.hsnCodeSnapshot,
           quantity: item.quantity,
           lineTotalPaise: item.lineTotalPaise,
         })),

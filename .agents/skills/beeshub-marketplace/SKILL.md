@@ -203,3 +203,6 @@ Recommended next implementation step:
 - Do not mix customer, seller, B2B, and admin permissions.
 - Do not store provider secrets in source code.
 - Do not treat third-party account charges as development cost.
+- **Shiprocket API Constraints**: When integrating with Shiprocket, strictly adhere to official API endpoints. Do not hallucinate or assume the existence of endpoints not explicitly verified in the Shiprocket Postman or API docs. Specifically:
+  - **E-Way Bills**: Pass `ewaybill_no` directly as a root-level string field in the initial `POST /v1/external/orders/create/adhoc` payload. There is no separate endpoint to update an E-way bill after order generation.
+  - **Data Types**: The `weight` field for shipments must be a numeric JSON value (float/integer), not a string. `hsn` codes inside `order_items` must also be numeric values.

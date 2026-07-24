@@ -53,6 +53,7 @@ export type CourierBookingPackage = {
   lengthCm: number;
   breadthCm: number;
   heightCm: number;
+  ewayBillNumber?: string | null;
 };
 
 export type CourierBookingRequest = {
@@ -64,11 +65,15 @@ export type CourierBookingRequest = {
   paymentMethod: "COD" | "PREPAID";
   subtotalPaise: number;
   codAmountPaise: number;
+  shippingChargesPaise: number;
+  billingCompanyName?: string | null;
+  customerGstin?: string | null;
   pickupLocationName: string;
   shippingAddress: CourierBookingAddress;
   sellerAddress: CourierBookingAddress;
   items: CourierBookingItem[];
   parcel: CourierBookingPackage;
+  ewayBillNumber?: string | null;
   note?: string | null;
   settings: CourierProviderAdapterSnapshot;
 };

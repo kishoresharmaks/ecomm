@@ -44,6 +44,10 @@ type BookingRequest = {
   paymentMethod: "COD" | "PREPAID";
   subtotalPaise: number;
   codAmountPaise: number;
+  shippingChargesPaise: number;
+  billingCompanyName?: string | null;
+  customerGstin?: string | null;
+  ewayBillNumber?: string | null;
   pickupLocationName: string;
   shippingAddress: BookingAddress;
   sellerAddress: BookingAddress;
@@ -70,6 +74,7 @@ type BookingItem = {
   sku: string;
   quantity: number;
   unitPricePaise: number;
+  hsnCode?: string | null;
 };
 
 type BookingParcel = {
@@ -269,6 +274,7 @@ async function loadBookingContext(shipmentNumber: string) {
         include: {
           payments: true,
           shipments: true,
+          items: { include: { productVariant: true } },
           customer: { include: { user: true } },
         },
       },
@@ -424,7 +430,8 @@ function buildBookingRequest(context: NonNullable<Awaited<ReturnType<typeof load
   if (!sellerAddress) {
     throw new TerminalBookingError("Courier booking needs a seller pickup address.");
   }
-  const items = readPackageItems(context.packages[0]?.itemAllocations ?? null);
+  const shipmentPackage = context.packages[0];
+  const items = readPackageItems(shipmentPackage?.itemAllocations ?? null, context.order.items);
   if (!items.length) {
     throw new TerminalBookingError("Courier booking needs package item allocations.");
   }
@@ -436,6 +443,12 @@ function buildBookingRequest(context: NonNullable<Awaited<ReturnType<typeof load
     paymentMethod: hasCodPayment(context.order.payments) ? "COD" : "PREPAID",
     subtotalPaise: context.subtotalPaise,
     codAmountPaise: expectedPackageCodAmountPaise(context.order.payments, context.order.shipments, context),
+    shippingChargesPaise: context.shippingPaise + context.codSurchargePaise,
+    billingCompanyName: context.order.buyerLegalNameSnapshot,
+    customerGstin: context.order.buyerGstinSnapshot,
+    ...(shipmentPackage?.ewayBillNumber
+      ? { ewayBillNumber: shipmentPackage.ewayBillNumber }
+      : {}),
     pickupLocationName,
     shippingAddress: {
       ...shippingAddress,
@@ -497,7 +510,7 @@ async function lookupShiprocketBooking(request: BookingRequest) {
 async function createShiprocketBooking(request: BookingRequest): Promise<BookingResult> {
   const baseUrl = normalizeBaseUrl(request.settings.apiBaseUrl ?? defaultBaseUrl);
   const token = await authenticate(baseUrl, request.settings);
-  const bookingPayload = createBookingPayload(request);
+  const bookingPayload = createShiprocketBookingPayload(request);
   const createResponse = await postJson(urlFor(baseUrl, request.settings.bookingEndpointPath || defaultBookingEndpoint), bookingPayload, token);
   const shipmentId =
     readText(createResponse, ["shipment_id"]) ??
@@ -943,24 +956,43 @@ function readAddressSnapshot(value: Prisma.JsonValue | null): BookingAddress | n
   };
 }
 
-function readPackageItems(value: Prisma.JsonValue | null): BookingItem[] {
+function readPackageItems(
+  value: Prisma.JsonValue | null,
+  orderItems: Array<{
+    id: string;
+    productNameSnapshot: string;
+    unitPricePaise: number;
+    hsnCodeSnapshot: string | null;
+    productVariant: { sku: string };
+  }>,
+): BookingItem[] {
   if (!Array.isArray(value)) {
     return [];
   }
+  const orderItemsById = new Map(orderItems.map((item) => [item.id, item]));
   return value.flatMap((item) => {
     if (!item || typeof item !== "object" || Array.isArray(item)) {
       return [];
     }
     const record = item as JsonRecord;
+    const orderItem = orderItemsById.get(stringValue(record.orderItemId) ?? "");
     const quantity = numberValue(record.quantity) ?? 0;
     if (quantity <= 0) {
       return [];
     }
     return [{
-      name: stringValue(record.productName) ?? "Product",
-      sku: stringValue(record.productVariantId) ?? stringValue(record.orderItemId) ?? "SKU",
+      name: orderItem?.productNameSnapshot ?? stringValue(record.productName) ?? "Product",
+      sku:
+        orderItem?.productVariant.sku ??
+        stringValue(record.sku) ??
+        stringValue(record.productVariantId) ??
+        stringValue(record.orderItemId) ??
+        "SKU",
       quantity,
-      unitPricePaise: Math.max(1, Math.floor((numberValue(record.lineTotalPaise) ?? 100) / quantity)),
+      unitPricePaise:
+        orderItem?.unitPricePaise ??
+        Math.max(1, Math.floor((numberValue(record.lineTotalPaise) ?? 100) / quantity)),
+      hsnCode: orderItem?.hsnCodeSnapshot ?? stringValue(record.hsnCode),
     }];
   });
 }
@@ -989,7 +1021,7 @@ function hasCodPayment(payments: Array<{ provider: PaymentProvider; method: stri
   return payments.some((payment) => payment.provider === PaymentProvider.COD || payment.method?.toUpperCase() === "COD");
 }
 
-function expectedPackageCodAmountPaise(
+export function expectedPackageCodAmountPaise(
   payments: Array<{ provider: PaymentProvider; method: string | null; amountPaise: number }>,
   shipments: Array<{ id: string; subtotalPaise: number; shippingPaise: number; codSurchargePaise: number }>,
   shipment: { id: string; subtotalPaise: number; shippingPaise: number; codSurchargePaise: number },
@@ -1000,9 +1032,33 @@ function expectedPackageCodAmountPaise(
   if (codTotal <= 0) {
     return 0;
   }
-  const shipmentTotal = shipment.subtotalPaise + shipment.shippingPaise + shipment.codSurchargePaise;
-  const allTotal = shipments.reduce((sum, item) => sum + item.subtotalPaise + item.shippingPaise + item.codSurchargePaise, 0);
-  return allTotal > 0 ? Math.round((codTotal * shipmentTotal) / allTotal) : codTotal;
+  const sortedShipments = [...shipments].sort((left, right) => left.id.localeCompare(right.id));
+  if (sortedShipments.length <= 1) {
+    return codTotal;
+  }
+  const bases = sortedShipments.map((item) => ({
+    id: item.id,
+    basis: item.subtotalPaise + item.shippingPaise + item.codSurchargePaise,
+  }));
+  const totalBasis = bases.reduce((total, item) => total + item.basis, 0);
+  if (totalBasis <= 0) {
+    const baseShare = Math.floor(codTotal / sortedShipments.length);
+    const remainder = codTotal - baseShare * sortedShipments.length;
+    const index = sortedShipments.findIndex((item) => item.id === shipment.id);
+    return baseShare + (index >= 0 && index < remainder ? 1 : 0);
+  }
+  let assignedPaise = 0;
+  for (const item of bases) {
+    if (item.id === bases[bases.length - 1]?.id) {
+      return item.id === shipment.id ? codTotal - assignedPaise : 0;
+    }
+    const share = Math.floor((codTotal * item.basis) / totalBasis);
+    if (item.id === shipment.id) {
+      return share;
+    }
+    assignedPaise += share;
+  }
+  return 0;
 }
 
 async function authenticate(baseUrl: string, settings: CourierProviderAdapterSnapshot) {
@@ -1019,14 +1075,23 @@ async function authenticate(baseUrl: string, settings: CourierProviderAdapterSna
   return token;
 }
 
-function createBookingPayload(request: BookingRequest) {
+export function createShiprocketBookingPayload(request: BookingRequest) {
   const nameParts = splitName(request.shippingAddress.fullName ?? "Customer");
+  const payablePaise =
+    request.paymentMethod === "COD" && request.codAmountPaise > 0
+      ? request.codAmountPaise
+      : request.subtotalPaise;
+  const shippingChargesPaise = Math.max(0, request.shippingChargesPaise);
+  const otherChargesPaise = payablePaise - request.subtotalPaise - shippingChargesPaise;
   const payload: JsonRecord = {
     order_id: request.shipmentNumber,
     order_date: request.orderDate.toISOString().slice(0, 10),
     pickup_location: request.pickupLocationName,
     billing_customer_name: nameParts.firstName,
     billing_last_name: nameParts.lastName,
+    ...(request.billingCompanyName?.trim()
+      ? { billing_company_name: request.billingCompanyName.trim() }
+      : {}),
     billing_address: requiredText(request.shippingAddress.line1, "delivery address line 1"),
     billing_address_2: compactText([request.shippingAddress.line2, request.shippingAddress.area]),
     billing_city: requiredText(request.shippingAddress.city, "delivery city"),
@@ -1041,9 +1106,13 @@ function createBookingPayload(request: BookingRequest) {
       sku: item.sku,
       units: item.quantity,
       selling_price: paiseToRupees(item.unitPricePaise),
+      ...(item.hsnCode ? { hsn: numericOrText(item.hsnCode) } : {}),
     })),
     payment_method: request.paymentMethod === "COD" ? "COD" : "Prepaid",
-    sub_total: paiseToRupees(request.subtotalPaise),
+    shipping_charges: paiseToRupees(shippingChargesPaise),
+    transaction_charges: paiseToRupees(Math.max(0, otherChargesPaise)),
+    total_discount: paiseToRupees(Math.max(0, -otherChargesPaise)),
+    sub_total: paiseToRupees(payablePaise),
     length: request.parcel.lengthCm,
     breadth: request.parcel.breadthCm,
     height: request.parcel.heightCm,
@@ -1051,6 +1120,12 @@ function createBookingPayload(request: BookingRequest) {
   };
   if (request.settings.accountCode) {
     payload.channel_id = numericOrText(request.settings.accountCode);
+  }
+  if (request.customerGstin?.trim()) {
+    payload.customer_gstin = request.customerGstin.trim();
+  }
+  if (request.ewayBillNumber?.trim()) {
+    payload.ewaybill_no = request.ewayBillNumber.trim();
   }
   return payload;
 }
@@ -1060,7 +1135,7 @@ async function fetchServiceability(baseUrl: string, token: string, request: Book
     pickup_postcode: requiredText(request.sellerAddress.pincode, "seller pickup pincode"),
     delivery_postcode: requiredText(request.shippingAddress.pincode, "delivery pincode"),
     cod: request.paymentMethod === "COD" ? "1" : "0",
-    weight: gramsToKg(request.parcel.weightGrams),
+    weight: gramsToKg(request.parcel.weightGrams).toString(),
   });
   return getJson(`${urlFor(baseUrl, defaultServiceabilityEndpoint)}?${params.toString()}`, token);
 }
@@ -1221,11 +1296,11 @@ function compactText(values: Array<string | null | undefined>) {
 }
 
 function paiseToRupees(value: number) {
-  return Math.max(0, value / 100);
+  return Number((Math.max(0, value) / 100).toFixed(2));
 }
 
 function gramsToKg(value: number) {
-  return (Math.max(1, value) / 1000).toFixed(2);
+  return Math.max(0.01, Number((Math.max(1, value) / 1000).toFixed(3)));
 }
 
 function numericOrText(value: string) {
