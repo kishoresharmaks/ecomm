@@ -448,6 +448,7 @@ export type PaginatedSellerOrders = {
 export type SellerOrderStatusPayload = {
   sellerStatus: "PENDING" | "ACCEPTED" | "PROCESSING" | "DISPATCHED" | "DELIVERED" | "CANCELLED";
   note?: string | undefined;
+  ewayBillNumber?: string | undefined;
 };
 
 export type SellerDeliveryPayload = {
