@@ -24,16 +24,17 @@ type CursorRecord = {
 export function paginationFromQuery(query: PaginationQuery, options: PaginationOptions = {}) {
   const maxLimit = options.maxLimit ?? 100;
   const page = positiveIntegerFromQuery(query.page, "page", 1);
-  const take = positiveIntegerFromQuery(query.limit, "limit", options.defaultLimit ?? 20);
+  const limit = positiveIntegerFromQuery(query.limit, "limit", options.defaultLimit ?? 20);
 
-  if (take > maxLimit) {
+  if (limit > maxLimit) {
     throw new BadRequestException(`limit must not be greater than ${maxLimit}.`);
   }
 
   return {
     page,
-    take: take + 1,
-    skip: (page - 1) * take
+    limit,
+    take: limit,
+    skip: (page - 1) * limit
   };
 }
 

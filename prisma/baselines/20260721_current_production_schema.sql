@@ -1892,7 +1892,7 @@ CREATE TABLE "order_shipments" (
 
 -- CreateTable
 CREATE TABLE "order_shipment_assignment_events" (
-    "id" UUID NOT NULL,
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "order_shipment_id" UUID NOT NULL,
     "order_id" UUID NOT NULL,
     "previous_partner_user_id" UUID,

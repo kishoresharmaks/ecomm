@@ -338,6 +338,9 @@ CREATE TABLE IF NOT EXISTS "order_shipment_assignment_events" (
   CONSTRAINT "order_shipment_assignment_events_pkey" PRIMARY KEY ("id")
 );
 
+ALTER TABLE "order_shipment_assignment_events"
+  ALTER COLUMN "id" SET DEFAULT gen_random_uuid();
+
 CREATE INDEX IF NOT EXISTS "order_shipment_assignment_events_order_shipment_id_created_at_idx"
   ON "order_shipment_assignment_events"("order_shipment_id", "created_at");
 CREATE INDEX IF NOT EXISTS "order_shipment_assignment_events_order_id_created_at_idx"
@@ -395,6 +398,7 @@ BEGIN
 END $$;
 
 INSERT INTO "order_shipment_assignment_events" (
+  "id",
   "order_shipment_id",
   "order_id",
   "partner_user_id",
@@ -407,6 +411,7 @@ INSERT INTO "order_shipment_assignment_events" (
   "created_at"
 )
 SELECT
+  gen_random_uuid(),
   "id",
   "order_id",
   "delivery_partner_user_id",
@@ -435,6 +440,7 @@ BEGIN
     IF NEW."delivery_partner_user_id" IS NOT NULL
        OR NEW."assignment_status" <> 'UNASSIGNED' THEN
       INSERT INTO "order_shipment_assignment_events" (
+        "id",
         "order_shipment_id",
         "order_id",
         "partner_user_id",
@@ -445,6 +451,7 @@ BEGIN
         "rejected_at",
         "assignment_expires_at"
       ) VALUES (
+        gen_random_uuid(),
         NEW."id",
         NEW."order_id",
         NEW."delivery_partner_user_id",
@@ -477,6 +484,7 @@ BEGIN
     NEW."assignment_expires_at"
   ) THEN
     INSERT INTO "order_shipment_assignment_events" (
+      "id",
       "order_shipment_id",
       "order_id",
       "previous_partner_user_id",
@@ -489,6 +497,7 @@ BEGIN
       "rejected_at",
       "assignment_expires_at"
     ) VALUES (
+      gen_random_uuid(),
       NEW."id",
       NEW."order_id",
       OLD."delivery_partner_user_id",
