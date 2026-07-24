@@ -1665,6 +1665,24 @@ export class CourierLogisticsService {
       throw new Error("Courier booking needs at least one seller package item.");
     }
 
+    // The first package record stores the dimensions computed at checkout from product
+    // variant data. Prefer these stored values; fall back to reading variants live for
+    // older orders that were placed before dimension storage was implemented.
+    const storedPackage = orderShipment.packages[0] ?? null;
+    const storedDimensions: {
+      weightGrams?: number | null;
+      lengthCm?: number | null;
+      breadthCm?: number | null;
+      heightCm?: number | null;
+    } | null = storedPackage
+      ? {
+          weightGrams: storedPackage.weightGrams,
+          lengthCm: storedPackage.lengthCm,
+          breadthCm: storedPackage.breadthCm,
+          heightCm: storedPackage.heightCm,
+        }
+      : null;
+
     const customerUser = orderShipment.order.customer.user;
     const bookingAddress: CourierBookingAddress = {
       ...shippingAddress,
@@ -1698,7 +1716,7 @@ export class CourierLogisticsService {
         countryCode: sellerAddress.countryCode,
       },
       items: items.map((item) => this.courierBookingItem(item)),
-      parcel: this.resolveCourierParcel(items, settings.defaultPackage),
+      parcel: this.resolveCourierParcel(items, settings.defaultPackage, storedDimensions),
       note: dto.note ?? null,
       settings,
     };
@@ -1710,12 +1728,19 @@ export class CourierLogisticsService {
       sku: item.productVariant.sku,
       quantity: item.quantity,
       unitPricePaise: item.unitPricePaise,
+      hsnCode: item.hsnCodeSnapshot,
     };
   }
 
   private resolveCourierParcel(
     items: CourierBookingOrderItem[],
     defaults: CourierProviderAdapterSnapshot["defaultPackage"],
+    storedDimensions?: {
+      weightGrams?: number | null;
+      lengthCm?: number | null;
+      breadthCm?: number | null;
+      heightCm?: number | null;
+    } | null,
   ): CourierBookingPackage {
     const fallback = {
       weightGrams: this.positiveInteger(defaults?.weightGrams, 500),
@@ -1723,39 +1748,70 @@ export class CourierLogisticsService {
       breadthCm: this.positiveInteger(defaults?.breadthCm, 15),
       heightCm: this.positiveInteger(defaults?.heightCm, 8),
     };
-    let weightGrams = 0;
-    let lengthCm = fallback.lengthCm;
-    let breadthCm = fallback.breadthCm;
-    let heightCm = fallback.heightCm;
+
+    // Prefer dimensions stored on the OrderShipmentPackage row (written at checkout
+    // from the actual product variant data). These are authoritative for this order.
+    // Fall back to live variant reads only for older orders without stored dimensions.
+    const storedWeight = this.positiveInteger(storedDimensions?.weightGrams, 0);
+    const storedLength = this.positiveInteger(storedDimensions?.lengthCm, 0);
+    const storedBreadth = this.positiveInteger(storedDimensions?.breadthCm, 0);
+    const storedHeight = this.positiveInteger(storedDimensions?.heightCm, 0);
+
+    if (storedWeight > 0 && storedLength > 0 && storedBreadth > 0 && storedHeight > 0) {
+      // All four stored dimensions are valid — use them directly, no variant scan needed.
+      return {
+        weightGrams: Math.max(storedWeight, fallback.weightGrams),
+        lengthCm: Math.max(storedLength, fallback.lengthCm),
+        breadthCm: Math.max(storedBreadth, fallback.breadthCm),
+        heightCm: Math.max(storedHeight, fallback.heightCm),
+      };
+    }
+
+    // Partial or missing stored dimensions: fall back to computing from live variant data.
+    // This handles orders placed before dimension storage was implemented, and also covers
+    // the case where a stored weight exists but no stored dimensions (or vice versa).
+    let weightGrams = storedWeight > 0 ? storedWeight : 0;
+    let lengthCm = storedLength > 0 ? storedLength : fallback.lengthCm;
+    let breadthCm = storedBreadth > 0 ? storedBreadth : fallback.breadthCm;
+    let heightCm = storedHeight > 0 ? storedHeight : fallback.heightCm;
+    const variantWeightSummed = storedWeight > 0; // already counted if stored
 
     for (const item of items) {
       const variant = item.productVariant;
-      const itemWeight = this.positiveInteger(
-        variant.packageWeightGrams ?? this.jsonNumber(variant.attributes, "packageWeightGrams"),
-        fallback.weightGrams,
-      );
-      weightGrams += itemWeight * item.quantity;
-      lengthCm = Math.max(
-        lengthCm,
-        this.positiveInteger(
-          variant.packageLengthCm ?? this.jsonNumber(variant.attributes, "packageLengthCm"),
-          fallback.lengthCm,
-        ),
-      );
-      breadthCm = Math.max(
-        breadthCm,
-        this.positiveInteger(
-          variant.packageBreadthCm ?? this.jsonNumber(variant.attributes, "packageBreadthCm"),
-          fallback.breadthCm,
-        ),
-      );
-      heightCm = Math.max(
-        heightCm,
-        this.positiveInteger(
-          variant.packageHeightCm ?? this.jsonNumber(variant.attributes, "packageHeightCm"),
-          fallback.heightCm,
-        ),
-      );
+      if (!variantWeightSummed) {
+        const itemWeight = this.positiveInteger(
+          variant.packageWeightGrams ?? this.jsonNumber(variant.attributes, "packageWeightGrams"),
+          fallback.weightGrams,
+        );
+        weightGrams += itemWeight * item.quantity;
+      }
+      if (storedLength <= 0) {
+        lengthCm = Math.max(
+          lengthCm,
+          this.positiveInteger(
+            variant.packageLengthCm ?? this.jsonNumber(variant.attributes, "packageLengthCm"),
+            fallback.lengthCm,
+          ),
+        );
+      }
+      if (storedBreadth <= 0) {
+        breadthCm = Math.max(
+          breadthCm,
+          this.positiveInteger(
+            variant.packageBreadthCm ?? this.jsonNumber(variant.attributes, "packageBreadthCm"),
+            fallback.breadthCm,
+          ),
+        );
+      }
+      if (storedHeight <= 0) {
+        heightCm = Math.max(
+          heightCm,
+          this.positiveInteger(
+            variant.packageHeightCm ?? this.jsonNumber(variant.attributes, "packageHeightCm"),
+            fallback.heightCm,
+          ),
+        );
+      }
     }
 
     return {

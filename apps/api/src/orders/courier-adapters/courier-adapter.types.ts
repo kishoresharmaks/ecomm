@@ -45,6 +45,7 @@ export type CourierBookingItem = {
   sku: string;
   quantity: number;
   unitPricePaise: number;
+  hsnCode?: string | null;
 };
 
 export type CourierBookingPackage = {

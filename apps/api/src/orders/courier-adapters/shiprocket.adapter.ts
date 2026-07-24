@@ -385,13 +385,21 @@ export class ShiprocketCourierAdapter implements CourierAdapter {
         sku: item.sku,
         units: item.quantity,
         selling_price: paiseToRupees(item.unitPricePaise),
+        ...(item.hsnCode ? { hsn: item.hsnCode } : {}),
       })),
       payment_method: request.paymentMethod === "COD" ? "COD" : "Prepaid",
       sub_total: paiseToRupees(request.subtotalPaise),
+      // For COD orders, collectable_amount is the full doorstep-collection amount
+      // (product subtotal + shipping + COD surcharge + platform fee). Without this,
+      // Shiprocket uses sub_total as the collectable, which omits all extra charges.
+      ...(request.paymentMethod === "COD" && request.codAmountPaise > 0
+        ? { collectable_amount: paiseToRupees(request.codAmountPaise) }
+        : {}),
       length: request.parcel.lengthCm,
       breadth: request.parcel.breadthCm,
       height: request.parcel.heightCm,
       weight: gramsToKg(request.parcel.weightGrams),
+
     };
 
     if (request.settings.accountCode) {

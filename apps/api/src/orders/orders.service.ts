@@ -3737,6 +3737,7 @@ export class OrdersService {
           orderSellerSplitId: split.id,
           nextStatus: requestedDeliveryStatus,
           allowDirectDelivered: isStorePickupSellerOrder,
+          ewayBillNumber: dto.ewayBillNumber,
           updateData: {
             status: requestedDeliveryStatus,
             ...(note ? { deliveryNote: note } : {}),
@@ -8314,6 +8315,7 @@ export class OrdersService {
       orderSellerSplitId: string;
       nextStatus: DeliveryStatus;
       allowDirectDelivered?: boolean;
+      ewayBillNumber?: string;
       updateData: Prisma.OrderShipmentUpdateManyMutationInput;
       createData: Prisma.OrderShipmentUncheckedCreateInput;
     },
@@ -8349,6 +8351,7 @@ export class OrdersService {
           ...(created.status === DeliveryStatus.DISPATCHED ? { pickedUpAt: new Date() } : {}),
           ...(created.status === DeliveryStatus.DELIVERED ? { deliveredAt: new Date() } : {}),
           ...(created.status === DeliveryStatus.CANCELLED ? { cancelledAt: new Date() } : {}),
+          ...(input.ewayBillNumber ? { ewayBillNumber: input.ewayBillNumber } : {}),
         },
       });
       return;
@@ -8395,6 +8398,7 @@ export class OrdersService {
         ...(input.nextStatus === DeliveryStatus.DISPATCHED ? { pickedUpAt: new Date() } : {}),
         ...(input.nextStatus === DeliveryStatus.DELIVERED ? { deliveredAt: new Date() } : {}),
         ...(input.nextStatus === DeliveryStatus.CANCELLED ? { cancelledAt: new Date() } : {}),
+        ...(input.ewayBillNumber ? { ewayBillNumber: input.ewayBillNumber } : {}),
       },
     });
   }

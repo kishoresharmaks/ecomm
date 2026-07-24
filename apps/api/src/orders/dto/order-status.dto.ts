@@ -30,5 +30,11 @@ export class UpdateSellerOrderStatusDto {
   @IsString()
   @MaxLength(1000)
   note?: string;
+
+  @ApiPropertyOptional({ example: "123456789012" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  ewayBillNumber?: string;
 }
 

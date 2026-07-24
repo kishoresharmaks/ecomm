@@ -144,6 +144,7 @@ export function SellerOrderDetailClient({
   const sellerAuth = useSellerAuth();
   const [notice, setNotice] = useState<SellerNotice | null>(null);
   const [statusNote, setStatusNote] = useState("");
+  const [ewayBillNumber, setEwayBillNumber] = useState("");
   const [manualCodCollected, setManualCodCollected] = useState(false);
   const [manualCodNote, setManualCodNote] = useState("");
   const [labelActionPackageId, setLabelActionPackageId] = useState<string | null>(null);
@@ -168,13 +169,16 @@ export function SellerOrderDetailClient({
     mutationFn: ({
       sellerStatus,
       note,
+      ewayBillNumber,
     }: {
       sellerStatus: SellerStatus;
       note?: string | undefined;
-    }) => updateSellerOrderStatus(sellerAuth.authHeaders, orderNumber, { sellerStatus, note }),
+      ewayBillNumber?: string | undefined;
+    }) => updateSellerOrderStatus(sellerAuth.authHeaders, orderNumber, { sellerStatus, note, ewayBillNumber }),
     onSuccess: () => {
       setNotice({ tone: "success", message: "Seller order status updated." });
       setStatusNote("");
+      setEwayBillNumber("");
       invalidateOrder();
     },
     onError: (error) =>
@@ -230,9 +234,20 @@ export function SellerOrderDetailClient({
       setNotice({ tone: "warning", message: "Manual transport COD delivery must be completed from Logistics view with the collected COD amount." });
       return;
     }
+    
+    if (
+      (sellerStatus === "PROCESSING" || sellerStatus === "DISPATCHED") &&
+      (sellerSplit?.sellerSubtotalPaise ?? 0) >= 5000000 &&
+      !ewayBillNumber.trim()
+    ) {
+      setNotice({ tone: "danger", message: "E-Way Bill Number is mandatory for goods valued at \u20b950,000 or above." });
+      return;
+    }
+
     statusMutation.mutate({
       sellerStatus,
       note: statusNote.trim() || undefined,
+      ewayBillNumber: ewayBillNumber.trim() || undefined,
     });
   }
 
@@ -987,18 +1002,37 @@ export function SellerOrderDetailClient({
               ) : null}
 
               {!isTerminalSellerStatus ? (
-                <SellerTextArea
-                  label="Optional note"
-                  name="note"
-                  rows={2}
-                  value={statusNote}
-                  onChange={setStatusNote}
-                  placeholder={
-                    nextSellerStatus
-                      ? statusNotePlaceholder(nextSellerStatus)
-                      : "Add a short update for the timeline"
-                  }
-                />
+                <>
+                  <SellerTextArea
+                    label="Optional note"
+                    name="note"
+                    rows={2}
+                    value={statusNote}
+                    onChange={setStatusNote}
+                    placeholder={
+                      nextSellerStatus
+                        ? statusNotePlaceholder(nextSellerStatus)
+                        : "Add a short update for the timeline"
+                    }
+                  />
+                  {(nextSellerStatus === "PROCESSING" || nextSellerStatus === "DISPATCHED") ? (
+                    <div className="mt-4">
+                      <SellerInput
+                        label={
+                          (sellerSplit?.sellerSubtotalPaise ?? 0) >= 5000000
+                            ? "E-Way Bill Number (Required for values \u2265 \u20b950,000)"
+                            : "E-Way Bill Number (Optional)"
+                        }
+                        name="ewayBillNumber"
+                        value={ewayBillNumber}
+                        onChange={setEwayBillNumber}
+                        placeholder="Enter 12-digit E-Way Bill Number"
+                        maxLength={20}
+                        required={(sellerSplit?.sellerSubtotalPaise ?? 0) >= 5000000}
+                      />
+                    </div>
+                  ) : null}
+                </>
               ) : null}
 
               {nextSellerStatus ? (

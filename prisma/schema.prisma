@@ -3544,6 +3544,7 @@ model OrderShipmentPackage {
   lengthCm           Int?                        @map("length_cm")
   breadthCm          Int?                        @map("breadth_cm")
   heightCm           Int?                        @map("height_cm")
+  ewayBillNumber     String?                     @map("eway_bill_number") @db.VarChar(20)
   itemAllocations    Json?                       @map("item_allocations")
   packageSnapshot    Json?                       @map("package_snapshot")
   readyForBookingAt  DateTime?                   @map("ready_for_booking_at")
