@@ -1970,10 +1970,10 @@ export class CourierLogisticsService {
     if (storedWeight > 0 && storedLength > 0 && storedBreadth > 0 && storedHeight > 0) {
       // All four stored dimensions are valid — use them directly, no variant scan needed.
       return {
-        weightGrams: Math.max(storedWeight, fallback.weightGrams),
-        lengthCm: Math.max(storedLength, fallback.lengthCm),
-        breadthCm: Math.max(storedBreadth, fallback.breadthCm),
-        heightCm: Math.max(storedHeight, fallback.heightCm),
+        weightGrams: storedWeight,
+        lengthCm: storedLength,
+        breadthCm: storedBreadth,
+        heightCm: storedHeight,
       };
     }
 
@@ -1981,9 +1981,9 @@ export class CourierLogisticsService {
     // This handles orders placed before dimension storage was implemented, and also covers
     // the case where a stored weight exists but no stored dimensions (or vice versa).
     let weightGrams = storedWeight > 0 ? storedWeight : 0;
-    let lengthCm = storedLength > 0 ? storedLength : fallback.lengthCm;
-    let breadthCm = storedBreadth > 0 ? storedBreadth : fallback.breadthCm;
-    let heightCm = storedHeight > 0 ? storedHeight : fallback.heightCm;
+    let lengthCm = storedLength > 0 ? storedLength : 0;
+    let breadthCm = storedBreadth > 0 ? storedBreadth : 0;
+    let heightCm = storedHeight > 0 ? storedHeight : 0;
     const variantWeightSummed = storedWeight > 0; // already counted if stored
 
     for (const item of items) {
@@ -1991,7 +1991,7 @@ export class CourierLogisticsService {
       if (!variantWeightSummed) {
         const itemWeight = this.positiveInteger(
           variant.packageWeightGrams ?? this.jsonNumber(variant.attributes, "packageWeightGrams"),
-          fallback.weightGrams,
+          0,
         );
         weightGrams += itemWeight * item.quantity;
       }
@@ -2000,7 +2000,7 @@ export class CourierLogisticsService {
           lengthCm,
           this.positiveInteger(
             variant.packageLengthCm ?? this.jsonNumber(variant.attributes, "packageLengthCm"),
-            fallback.lengthCm,
+            0,
           ),
         );
       }
@@ -2009,7 +2009,7 @@ export class CourierLogisticsService {
           breadthCm,
           this.positiveInteger(
             variant.packageBreadthCm ?? this.jsonNumber(variant.attributes, "packageBreadthCm"),
-            fallback.breadthCm,
+            0,
           ),
         );
       }
@@ -2018,17 +2018,17 @@ export class CourierLogisticsService {
           heightCm,
           this.positiveInteger(
             variant.packageHeightCm ?? this.jsonNumber(variant.attributes, "packageHeightCm"),
-            fallback.heightCm,
+            0,
           ),
         );
       }
     }
 
     return {
-      weightGrams: Math.max(weightGrams, fallback.weightGrams),
-      lengthCm,
-      breadthCm,
-      heightCm,
+      weightGrams: weightGrams > 0 ? weightGrams : fallback.weightGrams,
+      lengthCm: lengthCm > 0 ? lengthCm : fallback.lengthCm,
+      breadthCm: breadthCm > 0 ? breadthCm : fallback.breadthCm,
+      heightCm: heightCm > 0 ? heightCm : fallback.heightCm,
     };
   }
 

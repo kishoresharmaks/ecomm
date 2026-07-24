@@ -473,7 +473,7 @@ export function createShiprocketBookingPayload(request: CourierBookingRequest) {
     shipping_charges: paiseToRupees(shippingChargesPaise),
     transaction_charges: paiseToRupees(Math.max(0, otherChargesPaise)),
     total_discount: paiseToRupees(Math.max(0, -otherChargesPaise)),
-    sub_total: paiseToRupees(payablePaise),
+    sub_total: paiseToRupees(request.subtotalPaise),
     length: request.parcel.lengthCm,
     breadth: request.parcel.breadthCm,
     height: request.parcel.heightCm,

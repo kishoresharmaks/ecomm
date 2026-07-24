@@ -402,7 +402,17 @@ describe("OrdersService", () => {
           codSurchargePaise: 0,
           status: DeliveryStatus.PENDING,
           deliveryMode: DeliveryMode.THIRD_PARTY_COURIER,
-          packages: [{ id: "package-1", ewayBillNumber: "123456789012" }],
+          packages: [
+            {
+              id: "package-1",
+              ewayBillNumber: "123456789012",
+              weightGrams: null,
+              lengthCm: null,
+              breadthCm: null,
+              heightCm: null,
+              itemAllocations: [],
+            },
+          ],
         }),
       },
     };
@@ -418,6 +428,44 @@ describe("OrdersService", () => {
         createData: {},
       }),
     ).rejects.toThrow("The E-Way Bill Number is locked after saving.");
+  });
+
+  it("aggregates package dimensions from saved item allocations", () => {
+    const service = new OrdersService(
+      createOrdersPrismaMock([]) as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+    );
+    const helper = service as unknown as {
+      packageDimensionsFromAllocations: (value: unknown) => {
+        weightGrams: number;
+        lengthCm: number;
+        breadthCm: number;
+        heightCm: number;
+      };
+    };
+
+    expect(
+      helper.packageDimensionsFromAllocations([
+        { quantity: 2, weightGrams: 750, lengthCm: 24, breadthCm: 12, heightCm: 7 },
+        { quantity: 1, weightGrams: 300, lengthCm: 18, breadthCm: 19, heightCm: 11 },
+      ]),
+    ).toEqual({
+      weightGrams: 1_800,
+      lengthCm: 24,
+      breadthCm: 19,
+      heightCm: 11,
+    });
   });
 });
 

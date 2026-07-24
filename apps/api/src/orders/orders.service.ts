@@ -808,6 +808,9 @@ export class OrdersService {
         0,
       );
       const sellerPackages = this.checkoutSellerPackages(validatedItems);
+      const sellerPackagesBySeller = new Map(
+        sellerPackages.map((sellerPackage) => [sellerPackage.sellerId, sellerPackage]),
+      );
       const baseCharges = await this.checkoutPricing.calculateSellerPackageCharges(
         subtotalPaise,
         sellerPackages,
@@ -1181,6 +1184,7 @@ export class OrdersService {
           },
         });
         const itemAllocations = sellerItemAllocations.get(sellerId) ?? [];
+        const packageDimensions = sellerPackagesBySeller.get(sellerId)?.package;
         await tx.orderShipmentPackage.create({
           data: {
             packageNumber: this.createPackageNumber(orderShipment.shipmentNumber, 1),
@@ -1194,6 +1198,14 @@ export class OrdersService {
             codSurchargePaise: orderShipment.codSurchargePaise,
             declaredValuePaise: sellerSubtotalPaise,
             currency: market.baseCurrency,
+            ...(packageDimensions
+              ? {
+                  weightGrams: packageDimensions.weightGrams,
+                  lengthCm: packageDimensions.lengthCm,
+                  breadthCm: packageDimensions.breadthCm,
+                  heightCm: packageDimensions.heightCm,
+                }
+              : {}),
             itemAllocations,
             packageSnapshot: {
               source: "CHECKOUT_DEFAULT_PACKAGE",
@@ -5282,6 +5294,9 @@ export class OrdersService {
     options: { sellerLabelAccess: boolean },
   ) {
     const courierPackage = shipmentPackage.courierPackages[0] ?? null;
+    const allocationDimensions = this.packageDimensionsFromAllocations(
+      shipmentPackage.itemAllocations,
+    );
     const canDownloadLabel = Boolean(
       options.sellerLabelAccess &&
       shipmentPackage.deliveryMode === DeliveryMode.THIRD_PARTY_COURIER &&
@@ -5302,10 +5317,10 @@ export class OrdersService {
       codSurchargePaise: shipmentPackage.codSurchargePaise,
       declaredValuePaise: shipmentPackage.declaredValuePaise,
       currency: shipmentPackage.currency,
-      weightGrams: shipmentPackage.weightGrams,
-      lengthCm: shipmentPackage.lengthCm,
-      breadthCm: shipmentPackage.breadthCm,
-      heightCm: shipmentPackage.heightCm,
+      weightGrams: shipmentPackage.weightGrams ?? allocationDimensions?.weightGrams ?? null,
+      lengthCm: shipmentPackage.lengthCm ?? allocationDimensions?.lengthCm ?? null,
+      breadthCm: shipmentPackage.breadthCm ?? allocationDimensions?.breadthCm ?? null,
+      heightCm: shipmentPackage.heightCm ?? allocationDimensions?.heightCm ?? null,
       ewayBillNumber: shipmentPackage.ewayBillNumber,
       itemAllocations: shipmentPackage.itemAllocations,
       readyForBookingAt: shipmentPackage.readyForBookingAt,
@@ -8441,6 +8456,41 @@ export class OrdersService {
     return typeof raw === "number" && Number.isFinite(raw) ? raw : null;
   }
 
+  private packageDimensionsFromAllocations(
+    value: Prisma.JsonValue | null | undefined,
+  ): { weightGrams: number; lengthCm: number; breadthCm: number; heightCm: number } | null {
+    if (!Array.isArray(value) || value.length === 0) {
+      return null;
+    }
+
+    return value.reduce<{
+      weightGrams: number;
+      lengthCm: number;
+      breadthCm: number;
+      heightCm: number;
+    }>(
+      (dimensions, allocation) => {
+        const quantity = this.positiveInt(this.jsonNumber(allocation, "quantity"), 1);
+        dimensions.weightGrams +=
+          this.positiveInt(this.jsonNumber(allocation, "weightGrams"), 500) * quantity;
+        dimensions.lengthCm = Math.max(
+          dimensions.lengthCm,
+          this.positiveInt(this.jsonNumber(allocation, "lengthCm"), 20),
+        );
+        dimensions.breadthCm = Math.max(
+          dimensions.breadthCm,
+          this.positiveInt(this.jsonNumber(allocation, "breadthCm"), 15),
+        );
+        dimensions.heightCm = Math.max(
+          dimensions.heightCm,
+          this.positiveInt(this.jsonNumber(allocation, "heightCm"), 8),
+        );
+        return dimensions;
+      },
+      { weightGrams: 0, lengthCm: 20, breadthCm: 15, heightCm: 8 },
+    );
+  }
+
   private async updateSellerShipmentStatusGuarded(
     tx: Prisma.TransactionClient,
     input: {
@@ -8470,6 +8520,11 @@ export class OrdersService {
           select: {
             id: true,
             ewayBillNumber: true,
+            weightGrams: true,
+            lengthCm: true,
+            breadthCm: true,
+            heightCm: true,
+            itemAllocations: true,
           },
         },
       },
@@ -8609,6 +8664,27 @@ export class OrdersService {
       },
     });
 
+    for (const shipmentPackage of shipment.packages) {
+      const dimensions = this.packageDimensionsFromAllocations(shipmentPackage.itemAllocations);
+      if (
+        dimensions &&
+        (!shipmentPackage.weightGrams ||
+          !shipmentPackage.lengthCm ||
+          !shipmentPackage.breadthCm ||
+          !shipmentPackage.heightCm)
+      ) {
+        await tx.orderShipmentPackage.update({
+          where: { id: shipmentPackage.id },
+          data: {
+            weightGrams: shipmentPackage.weightGrams ?? dimensions.weightGrams,
+            lengthCm: shipmentPackage.lengthCm ?? dimensions.lengthCm,
+            breadthCm: shipmentPackage.breadthCm ?? dimensions.breadthCm,
+            heightCm: shipmentPackage.heightCm ?? dimensions.heightCm,
+          },
+        });
+      }
+    }
+
     if (input.ewayBillNumber && !storedEWayBillNumber) {
       if (shipment.packages.length === 0) {
         const shipmentPackage = await tx.orderShipmentPackage.create({
@@ -8630,7 +8706,15 @@ export class OrdersService {
             },
           },
         });
-        shipment.packages.push({ id: shipmentPackage.id, ewayBillNumber: null });
+        shipment.packages.push({
+          id: shipmentPackage.id,
+          ewayBillNumber: null,
+          weightGrams: null,
+          lengthCm: null,
+          breadthCm: null,
+          heightCm: null,
+          itemAllocations: [],
+        });
       } else {
         const ewayBillUpdate = await tx.orderShipmentPackage.updateMany({
           where: {

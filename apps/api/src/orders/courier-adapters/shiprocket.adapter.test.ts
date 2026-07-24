@@ -54,7 +54,7 @@ describe("Shiprocket adapter payload", () => {
     });
 
     expect(payload).toMatchObject({
-      sub_total: 71_765.43,
+      sub_total: 69_999,
       shipping_charges: 366,
       transaction_charges: 1_400.43,
       total_discount: 0,
