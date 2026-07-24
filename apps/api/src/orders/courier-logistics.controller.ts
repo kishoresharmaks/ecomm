@@ -65,6 +65,12 @@ export class AdminCourierShipmentsController {
   ) {
     return this.courierLogistics.updateTracking(actor, courierShipmentId, dto);
   }
+
+  @Post("sync-cancelled")
+  @ApiOperation({ summary: "Sync and push cancellation to third-party couriers for previously cancelled orders." })
+  syncCancelledShipments() {
+    return this.courierLogistics.syncCancelledCourierShipments();
+  }
 }
 
 @ApiTags("Seller Courier Packages")

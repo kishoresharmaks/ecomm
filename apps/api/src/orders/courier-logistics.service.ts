@@ -228,6 +228,47 @@ export class CourierLogisticsService {
     }
   }
 
+  async syncCancelledCourierShipments() {
+    const pendingCancellations = await this.prisma.client.courierShipment.findMany({
+      where: {
+        trackingStatus: { not: CourierShipmentStatus.CANCELLED },
+        providerOrderId: { not: null },
+        OR: [
+          { order: { orderStatus: OrderStatus.CANCELLED } },
+          { orderShipment: { status: DeliveryStatus.CANCELLED } },
+          { orderShipment: { orderSellerSplit: { sellerStatus: SellerOrderStatus.CANCELLED } } },
+        ],
+      },
+      include: {
+        orderShipment: true,
+      },
+    });
+
+    const results = [];
+    for (const courierShipment of pendingCancellations) {
+      const result = await this.cancelShipmentForSellerSplit(
+        undefined,
+        courierShipment.orderShipment.orderSellerSplitId,
+      );
+      results.push({
+        shipmentNumber: courierShipment.orderShipment.shipmentNumber,
+        providerOrderId: courierShipment.providerOrderId ?? null,
+        success: Boolean(result?.success),
+        message:
+          result?.message ??
+          (result === null
+            ? "No active provider booking or already cancelled."
+            : "Cancellation request attempted."),
+      });
+    }
+
+    return {
+      totalFound: pendingCancellations.length,
+      processed: results.length,
+      results,
+    };
+  }
+
   async listCourierShipments(query: CourierShipmentQueryDto) {
     const { page, skip, take } = paginationFromQuery(query, { defaultLimit: 50, maxLimit: 100 });
     const where: Prisma.CourierShipmentWhereInput = {
