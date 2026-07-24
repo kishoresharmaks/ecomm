@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
@@ -143,10 +144,89 @@ const blockedCourierLabelHostnames = new Set([
 
 @Injectable()
 export class CourierLogisticsService {
+  private readonly logger = new Logger(CourierLogisticsService.name);
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(CourierAdapterRegistry) private readonly courierAdapters: CourierAdapterRegistry,
   ) {}
+
+  async cancelShipmentForSellerSplit(tx: Prisma.TransactionClient | undefined, orderSellerSplitId: string) {
+    try {
+      const db = tx ?? this.prisma.client;
+      const orderShipment = await db.orderShipment.findFirst({
+        where: { orderSellerSplitId },
+        include: {
+          courierShipment: true,
+          seller: {
+            include: {
+              courierProviderSettings: true,
+            },
+          },
+        },
+      });
+
+      if (!orderShipment || !orderShipment.courierShipment) {
+        return null;
+      }
+
+      const courierShipment = orderShipment.courierShipment;
+      if (!courierShipment.providerOrderId || courierShipment.trackingStatus === CourierShipmentStatus.CANCELLED) {
+        return null;
+      }
+
+      const providerCode = courierShipment.providerCode;
+      const providerSetting = orderShipment.seller.courierProviderSettings.find(
+        (setting) => setting.providerCode === providerCode && setting.isActive,
+      );
+
+      if (!providerSetting) {
+        return null;
+      }
+
+      const snapshot = this.providerSnapshot(providerSetting.settingsSnapshot) as CourierProviderAdapterSnapshot;
+      const adapter = this.courierAdapters.getAdapter(snapshot.adapterCode, providerCode);
+
+      if (!adapter || !adapter.cancelShipment) {
+        return null;
+      }
+
+      const result = await adapter.cancelShipment({
+        providerCode,
+        providerOrderId: courierShipment.providerOrderId,
+        awbNumber: courierShipment.awbNumber,
+        settings: snapshot,
+      });
+
+      if (result.success) {
+        await db.courierShipment.update({
+          where: { id: courierShipment.id },
+          data: {
+            trackingStatus: CourierShipmentStatus.CANCELLED,
+            trackingStatusLabel: "Order cancelled with courier provider.",
+            cancelledAt: new Date(),
+          },
+        });
+      }
+
+      return result;
+    } catch (error) {
+      this.logger.warn(`Failed to cancel courier shipment for split ${orderSellerSplitId}: ${error instanceof Error ? error.message : "Unknown error"}`);
+      return null;
+    }
+  }
+
+  async cancelShipmentForOrder(tx: Prisma.TransactionClient | undefined, orderId: string) {
+    const db = tx ?? this.prisma.client;
+    const splits = await db.orderSellerSplit.findMany({
+      where: { orderId },
+      select: { id: true },
+    });
+
+    for (const split of splits) {
+      await this.cancelShipmentForSellerSplit(tx, split.id);
+    }
+  }
 
   async listCourierShipments(query: CourierShipmentQueryDto) {
     const { page, skip, take } = paginationFromQuery(query, { defaultLimit: 50, maxLimit: 100 });

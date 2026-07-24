@@ -71,6 +71,7 @@ import {
   paginationFromQuery,
 } from "../common/pagination";
 import { CustomersService } from "../customers/customers.service";
+import { CourierLogisticsService } from "./courier-logistics.service";
 import { DealPricingService } from "../deals/deal-pricing.service";
 import {
   DeliveryPartnerPayoutQueryDto,
@@ -608,6 +609,8 @@ export class OrdersService {
     private readonly taxDocuments: TaxDocumentsService = undefined as never,
     @Inject(SellerCashReceivablesService)
     private readonly sellerCashReceivables: SellerCashReceivablesService = undefined as never,
+    @Inject(CourierLogisticsService)
+    private readonly courierLogistics: CourierLogisticsService = undefined as never,
   ) {}
 
   async placeOrder(actor: RequestUser, dto: PlaceOrderDto) {
@@ -1539,6 +1542,10 @@ export class OrdersService {
           where: { orderId: existing.id },
           data: { status: DeliveryStatus.CANCELLED, assignmentExpiresAt: null },
         });
+      }
+
+      if (this.courierLogistics) {
+        await this.courierLogistics.cancelShipmentForOrder(tx, existing.id);
       }
 
       if (existing.paymentStatus === PaymentStatus.PENDING) {
@@ -3306,6 +3313,10 @@ export class OrdersService {
               assignmentExpiresAt: null,
             },
           });
+        }
+
+        if (this.courierLogistics) {
+          await this.courierLogistics.cancelShipmentForOrder(tx, existing.id);
         }
 
         await this.sellerLedgerService.recordRefundAdjustmentForOrder(
@@ -8401,6 +8412,10 @@ export class OrdersService {
         ...(input.ewayBillNumber ? { ewayBillNumber: input.ewayBillNumber } : {}),
       },
     });
+
+    if (input.nextStatus === DeliveryStatus.CANCELLED && this.courierLogistics) {
+      await this.courierLogistics.cancelShipmentForSellerSplit(tx, input.orderSellerSplitId);
+    }
   }
 
   private allocateMinorAmountByKey(amountPaise: number, subtotals: Map<string, number>) {

@@ -4,6 +4,8 @@ import type {
   CourierBookingRequest,
   CourierBookingLookupResult,
   CourierBookingResult,
+  CourierCancelRequest,
+  CourierCancelResult,
   CourierPickupSyncRequest,
   CourierPickupSyncResult,
   CourierRateQuoteRequest,
@@ -21,10 +23,51 @@ const defaultAwbEndpoint = "/v1/external/courier/assign/awb";
 const defaultLabelEndpoint = "/v1/external/courier/generate/label";
 const defaultPickupEndpoint = "/v1/external/settings/company/addpickup";
 const defaultOrderLookupEndpoint = "/v1/external/orders/show";
+const defaultCancelOrderEndpoint = "/v1/external/orders/cancel";
 const shiprocketRequestTimeoutMs = 30000;
 
 export class ShiprocketCourierAdapter implements CourierAdapter {
   readonly code = "SHIPROCKET";
+
+  async cancelShipment(request: CourierCancelRequest): Promise<CourierCancelResult> {
+    const baseUrl = normalizeBaseUrl(request.settings.apiBaseUrl ?? defaultBaseUrl);
+    const email = request.settings.username?.trim();
+    const password = request.settings.credentials?.password?.trim();
+    if (!email || !password) {
+      return {
+        success: false,
+        message: "Shiprocket request needs API username/email and password.",
+      };
+    }
+
+    const providerOrderIdStr = request.providerOrderId?.trim();
+    const providerOrderId = providerOrderIdStr ? Number(providerOrderIdStr) : null;
+
+    if (!providerOrderId || !Number.isFinite(providerOrderId)) {
+      return {
+        success: false,
+        message: "Shiprocket cancellation requires a valid provider order ID.",
+      };
+    }
+
+    try {
+      const token = await this.authenticate(baseUrl, email, password);
+      const payload = { ids: [providerOrderId] };
+      const response = await postJson(urlFor(baseUrl, defaultCancelOrderEndpoint), payload, token);
+
+      return {
+        success: true,
+        message: "Shiprocket order cancelled successfully.",
+        cancelPayloadSnapshot: payload,
+        cancelResponseSnapshot: response,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: errorMessage(error),
+      };
+    }
+  }
 
   async quoteShipment(request: CourierRateQuoteRequest): Promise<CourierRateQuoteResult> {
     const baseUrl = normalizeBaseUrl(request.settings.apiBaseUrl ?? defaultBaseUrl);

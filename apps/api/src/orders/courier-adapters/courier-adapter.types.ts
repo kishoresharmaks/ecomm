@@ -152,9 +152,25 @@ export type CourierPickupSyncResult = {
   pickupResponseSnapshot: unknown;
 };
 
+export type CourierCancelRequest = {
+  providerCode: string;
+  providerOrderId?: string | null;
+  awbNumber?: string | null;
+  orderNumber?: string | null;
+  settings: CourierProviderAdapterSnapshot;
+};
+
+export type CourierCancelResult = {
+  success: boolean;
+  message?: string | null;
+  cancelPayloadSnapshot?: unknown;
+  cancelResponseSnapshot?: unknown;
+};
+
 export interface CourierAdapter {
   readonly code: string;
   bookShipment(request: CourierBookingRequest): Promise<CourierBookingResult>;
+  cancelShipment?(request: CourierCancelRequest): Promise<CourierCancelResult>;
   lookupShipmentByOrderId?(request: CourierBookingRequest): Promise<CourierBookingLookupResult>;
   quoteShipment?(request: CourierRateQuoteRequest): Promise<CourierRateQuoteResult>;
   syncPickupLocation?(request: CourierPickupSyncRequest): Promise<CourierPickupSyncResult>;
