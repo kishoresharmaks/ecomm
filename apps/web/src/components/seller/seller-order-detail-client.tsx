@@ -1017,7 +1017,7 @@ export function SellerOrderDetailClient({
                   />
                   {(nextSellerStatus === "PROCESSING" || nextSellerStatus === "DISPATCHED") ? (
                     <div className="mt-4">
-                      <SellerInput
+                      <SellerField
                         label={
                           (sellerSplit?.sellerSubtotalPaise ?? 0) >= 5000000
                             ? "E-Way Bill Number (Required for values \u2265 \u20b950,000)"
@@ -1027,7 +1027,6 @@ export function SellerOrderDetailClient({
                         value={ewayBillNumber}
                         onChange={setEwayBillNumber}
                         placeholder="Enter 12-digit E-Way Bill Number"
-                        maxLength={20}
                         required={(sellerSplit?.sellerSubtotalPaise ?? 0) >= 5000000}
                       />
                     </div>

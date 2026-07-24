@@ -56,11 +56,9 @@ describe("indihubFetch", () => {
     expect(userFacingApiErrorMessage("signal is aborted without reason")).toBe(requestTimedOutMessage);
   });
 
-  it("sanitizes developer and technical errors into customer/seller friendly text in production", () => {
-    const originalEnv = process.env.NODE_ENV;
+  it("sanitizes obscure API errors to standard messages in production mode", () => {
+    vi.stubEnv("NODE_ENV", "production");
     try {
-      process.env.NODE_ENV = "production";
-
       expect(
         userFacingApiErrorMessage(new Error("Raw query failed. Code: 42703. Message: column sp.contact_name does not exist"))
       ).toBe("We encountered a temporary server error. Please refresh or contact support if this continues.");
@@ -73,7 +71,7 @@ describe("indihubFetch", () => {
         userFacingApiErrorMessage(new Error("Shiprocket request needs seller pickup address line 1."))
       ).toBe("Please save a complete business pickup address (line 1, city, state, pincode) before syncing courier pickup locations.");
     } finally {
-      process.env.NODE_ENV = originalEnv;
+      vi.unstubAllEnvs();
     }
   });
 
