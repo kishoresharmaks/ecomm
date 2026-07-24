@@ -350,13 +350,31 @@ export default function OrderDetailScreen() {
         <Section icon={CreditCardIcon} title="Payment and total">
           <SummaryRow
             label="Subtotal"
-            value={formatOrderDisplayAmount(order, order.buyerPayableSubtotalMinor ?? order.buyerSubtotalMinor, order.subtotalPaise)}
+            value={formatOrderDisplayAmount(order, order.buyerSubtotalMinor, order.subtotalPaise)}
           />
-          <SummaryRow label="Shipping" value={formatOrderDisplayAmount(order, order.buyerShippingMinor, order.shippingPaise)} />
-          <SummaryRow label="Platform fee" value={formatOrderDisplayAmount(order, order.buyerPlatformFeeMinor, order.platformFeePaise)} />
-          {order.couponDiscountPaise ? (
-            <SummaryRow label="Coupon" value={`-${formatOrderDisplayAmount(order, order.buyerCouponDiscountMinor, order.couponDiscountPaise)}`} />
+          {order.couponMerchandiseDiscountPaise ? (
+            <SummaryRow
+              label={`Coupon ${order.couponCode ?? ""}`.trim()}
+              value={`-${formatOrderDisplayAmount(
+                order,
+                order.buyerCouponMerchandiseDiscountMinor,
+                order.couponMerchandiseDiscountPaise,
+              )}`}
+            />
           ) : null}
+          <SummaryRow
+            label={
+              order.couponShippingDiscountPaise
+                ? `Delivery (${formatOrderDisplayAmount(
+                    order,
+                    order.buyerCouponShippingDiscountMinor,
+                    order.couponShippingDiscountPaise,
+                  )} saved)`
+                : "Delivery"
+            }
+            value={order.shippingPaise ? formatOrderDisplayAmount(order, order.buyerShippingMinor, order.shippingPaise) : "FREE"}
+          />
+          <SummaryRow label="Platform fee" value={formatOrderDisplayAmount(order, order.buyerPlatformFeeMinor, order.platformFeePaise)} />
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>Total paid</Text>
             <Text style={styles.totalValue}>{formatOrderDisplayTotal(order)}</Text>

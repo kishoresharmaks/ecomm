@@ -108,20 +108,17 @@ Avoid HDD storage for PostgreSQL.
 
 ## 5. Domain Plan
 
-Recommended:
+Subdomain API setup (Active Production Architecture):
 
 ```text
-https://1handindia.com
-https://www.1handindia.com
+Web storefront: https://1handindia.com
+Web www alias:  https://www.1handindia.com
+API endpoint:   https://api.1handindia.com
+API health:     https://api.1handindia.com/api/health
+API docs:       https://api.1handindia.com/api/docs
 ```
 
-Same-domain API:
-
-```text
-https://1handindia.com/api
-```
-
-Use same-domain API first. It is simpler for CORS, cookies, Clerk authorized parties, Razorpay webhooks, and Nginx.
+NestJS applies the `/api` global prefix automatically (`app.setGlobalPrefix("api")`). When pointing `NEXT_PUBLIC_API_URL` to `https://api.1handindia.com`, all backend routes resolve under `https://api.1handindia.com/api/*`.
 
 ## 6. Official References
 
@@ -297,6 +294,7 @@ CREATE ROLE indihub_app WITH LOGIN PASSWORD 'REPLACE_WITH_STRONG_PASSWORD';
 CREATE DATABASE indihub OWNER indihub_app;
 \c indihub
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 GRANT ALL PRIVILEGES ON DATABASE indihub TO indihub_app;
 \q
 ```
@@ -544,15 +542,15 @@ INDIHUB_ENV="production"
 NEXT_PUBLIC_APP_ENV="production"
 
 NEXT_PUBLIC_APP_NAME="1HandIndia"
-NEXT_PUBLIC_WEB_URL="https://YOUR_DOMAIN"
-NEXT_PUBLIC_API_URL="https://YOUR_DOMAIN"
+NEXT_PUBLIC_WEB_URL="https://1handindia.com"
+NEXT_PUBLIC_API_URL="https://api.1handindia.com"
 
 API_HOST="127.0.0.1"
 API_PORT="4000"
-API_CORS_ORIGINS="https://YOUR_DOMAIN,https://www.YOUR_DOMAIN"
-API_PUBLIC_URL="https://YOUR_DOMAIN/api"
+API_CORS_ORIGINS="https://1handindia.com,https://www.1handindia.com"
+API_PUBLIC_URL="https://api.1handindia.com/api"
 
-INTERNAL_API_URL="https://YOUR_DOMAIN/api"
+INTERNAL_API_URL="https://api.1handindia.com/api"
 INTERNAL_API_SECRET="GENERATE_A_LONG_RANDOM_SECRET"
 
 DATABASE_URL="postgresql://indihub_app:STRONG_PASSWORD@127.0.0.1:5432/indihub?schema=public"
@@ -660,6 +658,18 @@ Do not run bootstrap seed on production unless explicitly approved:
 INDIHUB_ALLOW_PRODUCTION_SEED=true docker compose --env-file .env.production -f compose.production.yml run --rm api pnpm db:seed:bootstrap
 ```
 
+### 15.1 Location Data Import
+
+Import location coverage (States, Cities, Local Areas, Pincodes) for checkout address selectors:
+
+```bash
+# 1. Import starter market locations (India, UAE, US, UK, Singapore):
+docker compose --env-file .env.production -f compose.production.yml run --rm api pnpm locations:import
+
+# 2. Import full 154,000+ India pincodes and local areas:
+docker compose --env-file .env.production -f compose.production.yml run --rm api pnpm locations:import:india -- --file data/location-imports/all_india_pin_code.csv
+```
+
 ## 16. Start Services
 
 ```bash
@@ -729,8 +739,8 @@ sudo systemctl reload nginx
 Public health checks:
 
 ```bash
-curl -I https://YOUR_DOMAIN
-curl https://YOUR_DOMAIN/api/health
+curl -I https://1handindia.com
+curl https://api.1handindia.com/api/health
 ```
 
 ## 18. DNS And Cloudflare
@@ -886,7 +896,7 @@ Configure:
 Razorpay webhook URL:
 
 ```text
-https://YOUR_DOMAIN/api/payments/razorpay/webhook
+https://api.1handindia.com/api/payments/razorpay/webhook
 ```
 
 Verify:

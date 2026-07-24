@@ -185,14 +185,29 @@ function TrackedOrderPanel({ order }: { order: PublicTrackedOrder }) {
       <section className="mt-7">
         <SectionHeading title="Order charges" description="Checkout charges locked for this order." />
         <div className="mt-4 grid gap-3 rounded-md border border-[#E5E7EB] bg-[#F8FAFC] p-4 text-sm font-semibold text-[#667085] md:grid-cols-2">
-          <Info label="Subtotal" value={formatOrderBuyerAmount(order, order.buyerPayableSubtotalMinor ?? order.buyerSubtotalMinor, order.subtotalPaise)} />
-          {(order.couponDiscountPaise ?? 0) > 0 ? (
+          <Info label="Subtotal" value={formatOrderBuyerAmount(order, order.buyerSubtotalMinor, order.subtotalPaise)} />
+          {(order.couponMerchandiseDiscountPaise ?? 0) > 0 ? (
             <Info
               label={`Coupon ${order.couponCode ?? ""}`.trim()}
-              value={`-${formatOrderBuyerAmount(order, order.buyerCouponDiscountMinor, order.couponDiscountPaise ?? 0)}`}
+              value={`-${formatOrderBuyerAmount(
+                order,
+                order.buyerCouponMerchandiseDiscountMinor,
+                order.couponMerchandiseDiscountPaise ?? 0,
+              )}`}
             />
           ) : null}
-          <Info label="Shipping" value={formatOrderBuyerAmount(order, order.buyerShippingMinor, order.shippingPaise)} />
+          <Info
+            label={
+              (order.couponShippingDiscountPaise ?? 0) > 0
+                ? `Delivery (${formatOrderBuyerAmount(
+                    order,
+                    order.buyerCouponShippingDiscountMinor,
+                    order.couponShippingDiscountPaise ?? 0,
+                  )} saved)`
+                : "Delivery"
+            }
+            value={order.shippingPaise > 0 ? formatOrderBuyerAmount(order, order.buyerShippingMinor, order.shippingPaise) : "FREE"}
+          />
           <Info label="Platform fee" value={formatOrderBuyerAmount(order, order.buyerPlatformFeeMinor, order.platformFeePaise)} />
           <Info label="Total" value={formatOrderTotal(order)} />
           {formatOrderBaseAmount(order, order.totalPaise) ? <Info label="Base total" value={formatOrderBaseAmount(order, order.totalPaise) ?? ""} /> : null}

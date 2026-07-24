@@ -322,6 +322,92 @@ describe("CheckoutPricingService", () => {
       DeliveryMode.THIRD_PARTY_COURIER,
     ]);
   });
+
+  it.each([
+    DeliveryMode.LOCAL_DELIVERY_PARTNER,
+    DeliveryMode.THIRD_PARTY_COURIER,
+  ])("shows the selected %s option as free after a free-shipping coupon", async (mode) => {
+    const tx = checkoutSettingsTx();
+    const routing = {
+      resolveAllDeliveryOptions: vi.fn().mockResolvedValue([
+        { mode, quote: deliveryQuote(mode) },
+      ]),
+    };
+    const service = new CheckoutPricingService({ client: tx } as never, routing as never);
+    const charges = await service.calculateSellerPackageCharges(
+      10000,
+      [sellerPackage("seller_1", [mode])],
+      tx as never,
+      {
+        deliveryPreference: CheckoutDeliveryPreference.DELIVER_TO_ADDRESS,
+        deliverySelections: [{ sellerId: "seller_1", deliveryMode: mode }],
+        paymentMethod: "RAZORPAY",
+        address: { countryCode: "IN", stateCode: "IN-TN", pincode: "636114" },
+      },
+    );
+
+    const result = await service.applyCouponAdjustments(charges, tx as never, {
+      shippingDiscountPaise: 500,
+      shippingDiscountsBySeller: [{ sellerId: "seller_1", shippingDiscountPaise: 500 }],
+    });
+
+    expect(result).toMatchObject({
+      deliveryChargePaise: 0,
+      codSurchargePaise: 0,
+      shippingPaise: 0,
+      totalPaise: 10000,
+    });
+    expect(result.sellerDeliveryGroups?.[0]?.availableDeliveryOptions[0]).toMatchObject({
+      chargePaise: 500,
+      payableChargePaise: 0,
+    });
+  });
+
+  it("keeps the COD handling fee separate when free shipping removes the delivery charge", async () => {
+    const tx = checkoutSettingsTx();
+    const mode = DeliveryMode.THIRD_PARTY_COURIER;
+    const routing = {
+      resolveAllDeliveryOptions: vi.fn().mockResolvedValue([
+        {
+          mode,
+          quote: {
+            ...deliveryQuote(mode),
+            shippingChargePaise: 500,
+            codSurchargePaise: 100,
+            totalDeliveryChargePaise: 600,
+          },
+        },
+      ]),
+    };
+    const service = new CheckoutPricingService({ client: tx } as never, routing as never);
+    const charges = await service.calculateSellerPackageCharges(
+      10000,
+      [sellerPackage("seller_1", [mode])],
+      tx as never,
+      {
+        deliveryPreference: CheckoutDeliveryPreference.DELIVER_TO_ADDRESS,
+        deliverySelections: [{ sellerId: "seller_1", deliveryMode: mode }],
+        paymentMethod: "COD",
+        address: { countryCode: "IN", stateCode: "IN-TN", pincode: "636114" },
+      },
+    );
+
+    const result = await service.applyCouponAdjustments(charges, tx as never, {
+      shippingDiscountPaise: 500,
+      shippingDiscountsBySeller: [{ sellerId: "seller_1", shippingDiscountPaise: 500 }],
+    });
+
+    expect(result).toMatchObject({
+      deliveryChargePaise: 0,
+      codSurchargePaise: 100,
+      shippingPaise: 100,
+      totalPaise: 10100,
+    });
+    expect(result.sellerDeliveryGroups?.[0]?.availableDeliveryOptions[0]).toMatchObject({
+      chargePaise: 600,
+      payableChargePaise: 100,
+    });
+  });
 });
 
 function setting(key: string, value: boolean | number | string) {

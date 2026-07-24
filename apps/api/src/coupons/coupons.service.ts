@@ -1569,8 +1569,8 @@ export class CouponsService {
 
   private async ensureUsageCounterRow(client: CouponClient, couponId: string) {
     await client.$executeRaw`
-      INSERT INTO "coupon_usage_counters" ("coupon_id")
-      VALUES (${couponId}::uuid)
+      INSERT INTO "coupon_usage_counters" ("coupon_id", "updated_at")
+      VALUES (${couponId}::uuid, CURRENT_TIMESTAMP)
       ON CONFLICT ("coupon_id") DO NOTHING
     `;
   }

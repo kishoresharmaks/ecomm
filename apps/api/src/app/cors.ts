@@ -34,7 +34,9 @@ export function parseCorsOrigins(value: string) {
 }
 
 function isProductionLike(env: NodeJS.ProcessEnv) {
-  return env.NODE_ENV === "production" || env.INDIHUB_PRODUCTION === "true" || env.INDIHUB_ENV === "production";
+  return env.NODE_ENV === 'production' 
+    || env.INDIHUB_PRODUCTION === 'true' 
+    || env.INDIHUB_ENV === 'production';
 }
 
 function isPrivateNetworkOrigin(origin: string) {

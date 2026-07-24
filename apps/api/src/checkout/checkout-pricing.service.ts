@@ -51,6 +51,7 @@ export type CheckoutChargeDeliveryOptions = {
 export type CheckoutDeliveryOption = {
   mode: DeliveryMode;
   chargePaise: number;
+  payableChargePaise?: number;
   isCheapest: boolean;
   available: boolean;
   reason: string | null;
@@ -98,6 +99,8 @@ export type CheckoutSellerPackageDeliveryRouting = {
 
 export type CheckoutCharges = {
   subtotalPaise: number;
+  deliveryChargePaise: number;
+  codSurchargePaise: number;
   shippingPaise: number;
   platformFeePaise: number;
   totalPaise: number;
@@ -119,6 +122,10 @@ export type CheckoutCharges = {
 export type CheckoutCouponAdjustments = {
   merchandiseDiscountPaise?: number;
   shippingDiscountPaise?: number;
+  shippingDiscountsBySeller?: Array<{
+    sellerId: string;
+    shippingDiscountPaise: number;
+  }>;
   snapshot?: Prisma.InputJsonValue;
 };
 
@@ -161,9 +168,16 @@ export class CheckoutPricingService {
       : null;
 
 
-    const shippingPaise = deliveryRouting
-      ? this.nonNegativeInt(deliveryRouting.totalDeliveryChargePaise)
+    const codSurchargePaise = deliveryRouting
+      ? this.nonNegativeInt(deliveryRouting.codSurchargePaise)
+      : 0;
+    const deliveryChargePaise = deliveryRouting
+      ? this.nonNegativeInt(
+          deliveryRouting.shippingChargePaise ??
+            deliveryRouting.totalDeliveryChargePaise - codSurchargePaise,
+        )
       : this.nonNegativeInt(this.numberSetting(settingMap.get(settingKeys.shippingDefaultChargePaise), 0));
+    const shippingPaise = deliveryChargePaise + codSurchargePaise;
     const platformFeeEnabled = this.booleanSetting(settingMap.get(settingKeys.platformFeeEnabled), false);
     const platformFeeType = this.platformFeeType(settingMap.get(settingKeys.platformFeeType));
     const platformFeeValueBps = this.nonNegativeInt(this.numberSetting(settingMap.get(settingKeys.platformFeeValueBps), 0));
@@ -174,6 +188,8 @@ export class CheckoutPricingService {
 
     return {
       subtotalPaise: normalizedSubtotal,
+      deliveryChargePaise,
+      codSurchargePaise,
       shippingPaise,
       platformFeePaise,
       totalPaise: normalizedSubtotal + shippingPaise + platformFeePaise,
@@ -274,14 +290,19 @@ export class CheckoutPricingService {
         })
       : [];
     this.assertSupportedCodCollectionMix(deliveryRoutings, deliveryOptions.paymentMethod);
-    const shippingPaise = deliveryRoutings.length
+    const deliveryChargePaise = deliveryRoutings.length
       ? deliveryRoutings.reduce(
-          (total, routing) => total + this.nonNegativeInt(routing.quote.totalDeliveryChargePaise),
+          (total, routing) => total + this.nonNegativeInt(routing.quote.shippingChargePaise),
           0,
         )
       : this.nonNegativeInt(
           this.numberSetting(settingMap.get(settingKeys.shippingDefaultChargePaise), 0),
         );
+    const codSurchargePaise = deliveryRoutings.reduce(
+      (total, routing) => total + this.nonNegativeInt(routing.quote.codSurchargePaise),
+      0,
+    );
+    const shippingPaise = deliveryChargePaise + codSurchargePaise;
     const platformFeeEnabled = this.booleanSetting(settingMap.get(settingKeys.platformFeeEnabled), false);
     const platformFeeType = this.platformFeeType(settingMap.get(settingKeys.platformFeeType));
     const platformFeeValueBps = this.nonNegativeInt(this.numberSetting(settingMap.get(settingKeys.platformFeeValueBps), 0));
@@ -304,6 +325,8 @@ export class CheckoutPricingService {
 
     return {
       subtotalPaise: normalizedSubtotal,
+      deliveryChargePaise,
+      codSurchargePaise,
       shippingPaise,
       platformFeePaise,
       totalPaise: normalizedSubtotal + shippingPaise + platformFeePaise,
@@ -360,12 +383,58 @@ export class CheckoutPricingService {
     );
     const shippingDiscountPaise = Math.min(
       this.nonNegativeInt(adjustments.shippingDiscountPaise ?? 0),
-      charges.shippingPaise,
+      charges.deliveryChargePaise,
     );
     const payableSubtotalPaise = this.nonNegativeInt(
       charges.subtotalPaise - merchandiseDiscountPaise,
     );
-    const payableShippingPaise = this.nonNegativeInt(charges.shippingPaise - shippingDiscountPaise);
+    const payableDeliveryChargePaise = this.nonNegativeInt(
+      charges.deliveryChargePaise - shippingDiscountPaise,
+    );
+    const payableShippingPaise = payableDeliveryChargePaise + charges.codSurchargePaise;
+    const shippingDiscountsBySeller = new Map(
+      (adjustments.shippingDiscountsBySeller ?? []).map((item) => [
+        item.sellerId,
+        this.nonNegativeInt(item.shippingDiscountPaise),
+      ]),
+    );
+    const selectedModeBySeller = new Map(
+      (charges.deliveryRoutings ?? []).map((routing) => [
+        routing.sellerId,
+        routing.quote.deliveryMode,
+      ]),
+    );
+    const sellerDeliveryGroups = charges.sellerDeliveryGroups?.map((group) => {
+      const selectedMode = selectedModeBySeller.get(group.sellerId) ?? group.selectedDeliveryMode;
+      const sellerDiscountPaise = shippingDiscountsBySeller.get(group.sellerId) ?? 0;
+      return {
+        ...group,
+        availableDeliveryOptions: group.availableDeliveryOptions.map((option) =>
+          option.mode === selectedMode
+            ? {
+                ...option,
+                payableChargePaise: this.nonNegativeInt(
+                  option.chargePaise - sellerDiscountPaise,
+                ),
+              }
+            : option,
+        ),
+      };
+    });
+    const selectedModes = new Set(
+      (charges.deliveryRoutings ?? []).map((routing) => routing.quote.deliveryMode),
+    );
+    const selectedAggregateMode = selectedModes.size === 1 ? [...selectedModes][0] : undefined;
+    const availableDeliveryOptions = charges.availableDeliveryOptions?.map((option) =>
+      option.mode === selectedAggregateMode
+        ? {
+            ...option,
+            payableChargePaise: this.nonNegativeInt(
+              option.chargePaise - shippingDiscountPaise,
+            ),
+          }
+        : option,
+    );
     const settings = await this.pricingSettings(client);
     const settingMap = new Map(settings.map((setting) => [setting.key, setting.value]));
     const platformFeeEnabled = this.booleanSetting(settingMap.get(settingKeys.platformFeeEnabled), false);
@@ -387,12 +456,15 @@ export class CheckoutPricingService {
 
     return {
       ...charges,
+      deliveryChargePaise: payableDeliveryChargePaise,
       shippingPaise: payableShippingPaise,
       platformFeePaise,
       totalPaise: payableSubtotalPaise + payableShippingPaise + platformFeePaise,
       payableSubtotalPaise,
       payableShippingPaise,
       couponDiscountPaise: merchandiseDiscountPaise + shippingDiscountPaise,
+      availableDeliveryOptions,
+      sellerDeliveryGroups,
       snapshot: {
         ...this.jsonObject(charges.snapshot),
         coupon: {
@@ -616,7 +688,7 @@ export class CheckoutPricingService {
   }
 
   private nonNegativeInt(value: number) {
-    return Math.max(0, Math.round(value));
+    return Number.isFinite(value) ? Math.max(0, Math.round(value)) : 0;
   }
 
   private jsonObject(value: Prisma.InputJsonValue): Prisma.InputJsonObject {

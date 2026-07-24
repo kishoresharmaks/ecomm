@@ -186,9 +186,14 @@ export type MobileCheckoutSummary = {
   itemCount: number;
   subtotalPaise: number;
   payableSubtotalPaise?: number;
+  deliveryChargePaise: number;
+  codSurchargePaise: number;
+  shippingBeforeCouponPaise: number;
   shippingPaise: number;
   platformFeePaise: number;
   couponDiscountPaise?: number;
+  couponMerchandiseDiscountPaise?: number;
+  couponShippingDiscountPaise?: number;
   coupon?: {
     couponId: string;
     code: string;
@@ -206,13 +211,19 @@ export type MobileCheckoutSummary = {
   buyerCurrency: string;
   buyerSubtotalMinor?: number;
   buyerPayableSubtotalMinor?: number;
+  buyerDeliveryChargeMinor?: number;
+  buyerCodSurchargeMinor?: number;
+  buyerShippingBeforeCouponMinor?: number;
   buyerShippingMinor?: number;
   buyerPlatformFeeMinor?: number;
   buyerCouponDiscountMinor?: number;
+  buyerCouponMerchandiseDiscountMinor?: number;
+  buyerCouponShippingDiscountMinor?: number;
   buyerTotalMinor: number;
   availableDeliveryOptions?: {
     mode: string;
     chargePaise: number;
+    payableChargePaise?: number;
     isCheapest: boolean;
     available: boolean;
     reason: string | null;
@@ -230,6 +241,7 @@ export type MobileCheckoutSummary = {
     availableDeliveryOptions: Array<{
       mode: MobileDeliveryMode;
       chargePaise: number;
+      payableChargePaise?: number;
       isCheapest: boolean;
       available: boolean;
       reason: string | null;
@@ -302,6 +314,8 @@ export type MobileOrderSummary = {
   buyerShippingMinor?: number | null;
   buyerPlatformFeeMinor?: number | null;
   buyerCouponDiscountMinor?: number | null;
+  buyerCouponMerchandiseDiscountMinor?: number | null;
+  buyerCouponShippingDiscountMinor?: number | null;
   buyerTotalMinor?: number | null;
   fxRateFetchedAt?: string | null;
   createdAt?: string;
@@ -359,7 +373,11 @@ export type MobileOrderDetail = Omit<MobileOrderSummary, "items"> & {
   subtotalPaise?: number;
   shippingPaise?: number;
   platformFeePaise?: number;
+  couponCode?: string | null;
+  couponTitle?: string | null;
   couponDiscountPaise?: number | null;
+  couponMerchandiseDiscountPaise?: number | null;
+  couponShippingDiscountPaise?: number | null;
   shippingAddressSnapshot?: unknown;
   shippingLocation?: {
     city?: string | null;
@@ -714,6 +732,8 @@ export type MobileTrackedOrder = {
   buyerShippingMinor?: number | null;
   buyerPlatformFeeMinor?: number | null;
   buyerCouponDiscountMinor?: number | null;
+  buyerCouponMerchandiseDiscountMinor?: number | null;
+  buyerCouponShippingDiscountMinor?: number | null;
   buyerTotalMinor?: number | null;
   createdAt?: string;
   updatedAt?: string;

@@ -1091,7 +1091,10 @@ function CheckoutSection({
                       style={[styles.optionCard, selectedMode === opt.mode ? styles.optionCardActive : null]}
                     >
                       <Text style={styles.optionTitle}>{deliveryModeLabel(opt.mode)}</Text>
-                      <Text style={styles.optionText}>{formatCatalogPrice(opt.chargePaise)}{opt.isCheapest ? " / Cheapest" : ""}</Text>
+                      <Text style={styles.optionText}>
+                        {deliveryOptionPriceText(opt, formatCatalogPrice)}
+                        {opt.isCheapest ? " / Cheapest" : ""}
+                      </Text>
                     </Pressable>
                   )) : <Text style={styles.errorText}>{group.blockedReason ?? "Delivery is not available for this seller package."}</Text>}
                 </View>
@@ -1133,7 +1136,9 @@ function CheckoutSection({
                       )}
                     </View>
                     <Text style={[styles.optionText, { marginTop: 8, fontWeight: "700" }]}>
-                      {opt.available ? formatCatalogPrice(opt.chargePaise) : (opt.reason || "Delivery unavailable")}
+                      {opt.available
+                        ? deliveryOptionPriceText(opt, formatCatalogPrice)
+                        : (opt.reason || "Delivery unavailable")}
                     </Text>
                   </Pressable>
                 );
@@ -1235,16 +1240,53 @@ function CheckoutSection({
       <SummaryRow label="Items" value={String(summary.itemCount)} />
       <SummaryRow
         label="Subtotal"
-        value={checkoutSummaryAmount(summary, summary.buyerPayableSubtotalMinor ?? summary.buyerSubtotalMinor, summary.payableSubtotalPaise ?? summary.subtotalPaise, summaryLocale)}
+        value={checkoutSummaryAmount(summary, summary.buyerSubtotalMinor, summary.subtotalPaise, summaryLocale)}
       />
-      <SummaryRow label="Shipping" value={checkoutSummaryAmount(summary, summary.buyerShippingMinor, summary.shippingPaise, summaryLocale)} />
-      <SummaryRow label="Platform fee" value={checkoutSummaryAmount(summary, summary.buyerPlatformFeeMinor, summary.platformFeePaise, summaryLocale)} />
-      {summary.couponDiscountPaise ? (
+      {summary.couponMerchandiseDiscountPaise ? (
         <SummaryRow
           label={`Coupon ${summary.coupon?.code ?? ""}`.trim()}
-          value={`-${checkoutSummaryAmount(summary, summary.buyerCouponDiscountMinor, summary.couponDiscountPaise, summaryLocale)}`}
+          value={`-${checkoutSummaryAmount(
+            summary,
+            summary.buyerCouponMerchandiseDiscountMinor,
+            summary.couponMerchandiseDiscountPaise,
+            summaryLocale,
+          )}`}
         />
       ) : null}
+      <SummaryRow
+        label={
+          summary.couponShippingDiscountPaise
+            ? `Delivery (${checkoutSummaryAmount(
+                summary,
+                summary.buyerCouponShippingDiscountMinor,
+                summary.couponShippingDiscountPaise,
+                summaryLocale,
+              )} saved)`
+            : "Delivery"
+        }
+        value={
+          summary.deliveryChargePaise === 0
+            ? "FREE"
+            : checkoutSummaryAmount(
+                summary,
+                summary.buyerDeliveryChargeMinor,
+                summary.deliveryChargePaise,
+                summaryLocale,
+              )
+        }
+      />
+      {summary.codSurchargePaise > 0 ? (
+        <SummaryRow
+          label="Cash on delivery fee"
+          value={checkoutSummaryAmount(
+            summary,
+            summary.buyerCodSurchargeMinor,
+            summary.codSurchargePaise,
+            summaryLocale,
+          )}
+        />
+      ) : null}
+      <SummaryRow label="Platform fee" value={checkoutSummaryAmount(summary, summary.buyerPlatformFeeMinor, summary.platformFeePaise, summaryLocale)} />
       <View style={styles.totalRow}>
         <Text style={styles.totalLabel}>Total</Text>
         <Text style={styles.totalValue}>{checkoutSummaryAmount(summary, summary.buyerTotalMinor, summary.totalPaise, summaryLocale)}</Text>
@@ -1447,6 +1489,9 @@ function fallbackSummary(itemCount: number, subtotalPaise: number): MobileChecko
     itemCount,
     subtotalPaise,
     payableSubtotalPaise: subtotalPaise,
+    deliveryChargePaise: 0,
+    codSurchargePaise: 0,
+    shippingBeforeCouponPaise: 0,
     shippingPaise: 0,
     platformFeePaise: 0,
     couponDiscountPaise: 0,
@@ -1457,6 +1502,9 @@ function fallbackSummary(itemCount: number, subtotalPaise: number): MobileChecko
     buyerCurrency: "INR",
     buyerSubtotalMinor: subtotalPaise,
     buyerPayableSubtotalMinor: subtotalPaise,
+    buyerDeliveryChargeMinor: 0,
+    buyerCodSurchargeMinor: 0,
+    buyerShippingBeforeCouponMinor: 0,
     buyerShippingMinor: 0,
     buyerPlatformFeeMinor: 0,
     buyerCouponDiscountMinor: 0,
@@ -1475,6 +1523,20 @@ function checkoutSummaryAmount(
   }
 
   return formatMoney(baseMinor ?? 0, summary.currency, "en-IN");
+}
+
+function deliveryOptionPriceText(
+  option: { chargePaise: number; payableChargePaise?: number },
+  formatPrice: (pricePaise?: number | null) => string,
+) {
+  const payableChargePaise = option.payableChargePaise ?? option.chargePaise;
+  if (payableChargePaise >= option.chargePaise) {
+    return formatPrice(option.chargePaise);
+  }
+
+  return payableChargePaise === 0
+    ? `Free with coupon (was ${formatPrice(option.chargePaise)})`
+    : `${formatPrice(payableChargePaise)} after coupon (was ${formatPrice(option.chargePaise)})`;
 }
 
 function checkoutCouponErrorMessage(error: unknown) {

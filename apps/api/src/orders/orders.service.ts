@@ -829,6 +829,10 @@ export class OrdersService {
         ? await this.checkoutPricing.applyCouponAdjustments(baseCharges, tx, {
             merchandiseDiscountPaise: coupon.merchandiseDiscountPaise,
             shippingDiscountPaise: coupon.shippingDiscountPaise,
+            shippingDiscountsBySeller: coupon.sellerAllocations.map((allocation) => ({
+              sellerId: allocation.sellerId,
+              shippingDiscountPaise: allocation.shippingDiscountPaise,
+            })),
             snapshot: coupon.snapshot,
           })
         : {
@@ -1351,6 +1355,14 @@ export class OrdersService {
         Math.max(0, order.subtotalPaise - (order.couponMerchandiseDiscountPaise ?? 0)),
       ),
       buyerCouponDiscountMinor: this.orderBuyerMinor(order, order.couponDiscountPaise ?? 0),
+      buyerCouponMerchandiseDiscountMinor: this.orderBuyerMinor(
+        order,
+        order.couponMerchandiseDiscountPaise ?? 0,
+      ),
+      buyerCouponShippingDiscountMinor: this.orderBuyerMinor(
+        order,
+        order.couponShippingDiscountPaise ?? 0,
+      ),
       buyerTotalMinor: order.buyerTotalMinor,
       fxRate: order.fxRate?.toString() ?? null,
       fxProvider: order.fxProvider,
@@ -4768,6 +4780,14 @@ export class OrdersService {
         Math.max(0, order.subtotalPaise - (order.couponMerchandiseDiscountPaise ?? 0)),
       ),
       buyerCouponDiscountMinor: this.orderBuyerMinor(order, order.couponDiscountPaise ?? 0),
+      buyerCouponMerchandiseDiscountMinor: this.orderBuyerMinor(
+        order,
+        order.couponMerchandiseDiscountPaise ?? 0,
+      ),
+      buyerCouponShippingDiscountMinor: this.orderBuyerMinor(
+        order,
+        order.couponShippingDiscountPaise ?? 0,
+      ),
       items: order.items.map((item) => this.customerSafeOrderItem(item)),
       payments: order.payments.map((payment) => ({
         id: payment.id,

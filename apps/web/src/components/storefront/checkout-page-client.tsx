@@ -201,12 +201,24 @@ export function CheckoutPageClient() {
       checkoutSummaryQuery.data?.buyerPayableSubtotalMinor ??
       checkoutSummaryQuery.data?.buyerSubtotalMinor ??
       market.convert(totals.subtotalPaise),
+    deliveryChargePaise: checkoutSummaryQuery.data?.deliveryChargePaise ?? 0,
+    buyerDeliveryChargeMinor: checkoutSummaryQuery.data?.buyerDeliveryChargeMinor ?? 0,
+    codSurchargePaise: checkoutSummaryQuery.data?.codSurchargePaise ?? 0,
+    buyerCodSurchargeMinor: checkoutSummaryQuery.data?.buyerCodSurchargeMinor ?? 0,
     shippingPaise: checkoutSummaryQuery.data?.shippingPaise ?? 0,
     buyerShippingMinor: checkoutSummaryQuery.data?.buyerShippingMinor ?? 0,
     platformFeePaise: checkoutSummaryQuery.data?.platformFeePaise ?? 0,
     buyerPlatformFeeMinor: checkoutSummaryQuery.data?.buyerPlatformFeeMinor ?? 0,
     couponDiscountPaise: checkoutSummaryQuery.data?.couponDiscountPaise ?? 0,
     buyerCouponDiscountMinor: checkoutSummaryQuery.data?.buyerCouponDiscountMinor ?? 0,
+    couponMerchandiseDiscountPaise:
+      checkoutSummaryQuery.data?.couponMerchandiseDiscountPaise ?? 0,
+    buyerCouponMerchandiseDiscountMinor:
+      checkoutSummaryQuery.data?.buyerCouponMerchandiseDiscountMinor ?? 0,
+    couponShippingDiscountPaise:
+      checkoutSummaryQuery.data?.couponShippingDiscountPaise ?? 0,
+    buyerCouponShippingDiscountMinor:
+      checkoutSummaryQuery.data?.buyerCouponShippingDiscountMinor ?? 0,
     coupon: checkoutSummaryQuery.data?.coupon ?? null,
     totalPaise: checkoutSummaryQuery.data?.totalPaise ?? totals.subtotalPaise,
     buyerTotalMinor: checkoutSummaryQuery.data?.buyerTotalMinor ?? market.convert(totals.subtotalPaise),
@@ -842,33 +854,41 @@ export function CheckoutPageClient() {
                         </div>
                         {availableOptions.length ? (
                           <div className="mt-4 grid gap-3 md:grid-cols-2">
-                            {availableOptions.map((opt) => (
-                              <StorefrontOptionCard
-                                key={opt.mode}
-                                onClick={() =>
-                                  setDeliverySelectionsBySeller((current) => ({
-                                    ...current,
-                                    [group.sellerId]: opt.mode,
-                                  }))
-                                }
-                                selected={selectedMode === opt.mode}
-                              >
-                                <span className="flex items-center justify-between gap-2 text-sm font-black">
-                                  {customerDeliveryModeLabel(opt.mode)}
-                                  {opt.isCheapest ? (
-                                    <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-bold text-green-800">
-                                      Cheapest
+                            {availableOptions.map((opt) => {
+                              const payableChargePaise = opt.payableChargePaise ?? opt.chargePaise;
+                              return (
+                                <StorefrontOptionCard
+                                  key={opt.mode}
+                                  onClick={() =>
+                                    setDeliverySelectionsBySeller((current) => ({
+                                      ...current,
+                                      [group.sellerId]: opt.mode,
+                                    }))
+                                  }
+                                  selected={selectedMode === opt.mode}
+                                >
+                                  <span className="flex items-center justify-between gap-2 text-sm font-black">
+                                    {customerDeliveryModeLabel(opt.mode)}
+                                    {opt.isCheapest ? (
+                                      <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-bold text-green-800">
+                                        Cheapest
+                                      </span>
+                                    ) : null}
+                                  </span>
+                                  <span className="mt-2 flex items-center gap-2 text-xs font-bold text-[#667085]">
+                                    {payableChargePaise < opt.chargePaise ? (
+                                      <span className="line-through">{market.format(opt.chargePaise)}</span>
+                                    ) : null}
+                                    <span className={payableChargePaise < opt.chargePaise ? "text-[#0F8A5F]" : ""}>
+                                      {payableChargePaise === 0 ? "Free with coupon" : market.format(payableChargePaise)}
                                     </span>
+                                  </span>
+                                  {opt.mode === "MANUAL_TRANSPORT" && opt.manualTransport ? (
+                                    <ManualTransportOptionMeta option={opt.manualTransport} />
                                   ) : null}
-                                </span>
-                                <span className="mt-2 block text-xs font-bold text-[#667085]">
-                                  {formatMoney(opt.chargePaise, checkoutSummaryQuery.data.buyerCurrency, checkoutTotals.buyerLocale)}
-                                </span>
-                                {opt.mode === "MANUAL_TRANSPORT" && opt.manualTransport ? (
-                                  <ManualTransportOptionMeta option={opt.manualTransport} />
-                                ) : null}
-                              </StorefrontOptionCard>
-                            ))}
+                                </StorefrontOptionCard>
+                              );
+                            })}
                           </div>
                         ) : (
                           <p className="mt-3 text-xs font-bold text-[#B42318]">
@@ -886,36 +906,50 @@ export function CheckoutPageClient() {
                 <div className="grid gap-3 md:grid-cols-2">
                   {checkoutSummaryQuery.data.availableDeliveryOptions
                     .filter((opt) => opt.mode !== "STORE_PICKUP")
-                    .map((opt) => (
-                    <StorefrontOptionCard
-                      key={opt.mode}
-                      onClick={() => {
-                        if (opt.available) setRequestedDeliveryMode(opt.mode);
-                      }}
-                      selected={opt.available && (requestedDeliveryMode === opt.mode || (!requestedDeliveryMode && opt.isCheapest))}
-                      className={opt.available ? "" : "opacity-50 cursor-not-allowed"}
-                    >
-                      <span className="flex items-center justify-between gap-2 text-sm font-black">
-                        {customerDeliveryModeLabel(opt.mode)}
-                        {!opt.available && (
-                          <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-bold text-gray-600">
-                            Unavailable
+                    .map((opt) => {
+                      const payableChargePaise = opt.payableChargePaise ?? opt.chargePaise;
+                      return (
+                        <StorefrontOptionCard
+                          key={opt.mode}
+                          onClick={() => {
+                            if (opt.available) setRequestedDeliveryMode(opt.mode);
+                          }}
+                          selected={opt.available && (requestedDeliveryMode === opt.mode || (!requestedDeliveryMode && opt.isCheapest))}
+                          className={opt.available ? "" : "opacity-50 cursor-not-allowed"}
+                        >
+                          <span className="flex items-center justify-between gap-2 text-sm font-black">
+                            {customerDeliveryModeLabel(opt.mode)}
+                            {!opt.available && (
+                              <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-bold text-gray-600">
+                                Unavailable
+                              </span>
+                            )}
+                            {opt.isCheapest && opt.available && (
+                              <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-bold text-green-800">
+                                Cheapest
+                              </span>
+                            )}
                           </span>
-                        )}
-                        {opt.isCheapest && opt.available && (
-                          <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-bold text-green-800">
-                            Cheapest
+                          <span className="mt-2 flex items-center gap-2 text-xs font-bold text-[#667085]">
+                            {!opt.available ? (
+                              opt.reason || "Delivery unavailable"
+                            ) : (
+                              <>
+                                {payableChargePaise < opt.chargePaise ? (
+                                  <span className="line-through">{market.format(opt.chargePaise)}</span>
+                                ) : null}
+                                <span className={payableChargePaise < opt.chargePaise ? "text-[#0F8A5F]" : ""}>
+                                  {payableChargePaise === 0 ? "Free with coupon" : market.format(payableChargePaise)}
+                                </span>
+                              </>
+                            )}
                           </span>
-                        )}
-                      </span>
-                      <span className="mt-2 block text-xs font-bold text-[#667085]">
-                        {opt.available ? formatMoney(opt.chargePaise, checkoutSummaryQuery.data.buyerCurrency, checkoutTotals.buyerLocale) : (opt.reason || "Delivery unavailable")}
-                      </span>
-                      {opt.available && opt.mode === "MANUAL_TRANSPORT" && opt.manualTransport ? (
-                        <ManualTransportOptionMeta option={opt.manualTransport} />
-                      ) : null}
-                    </StorefrontOptionCard>
-                  ))}
+                          {opt.available && opt.mode === "MANUAL_TRANSPORT" && opt.manualTransport ? (
+                            <ManualTransportOptionMeta option={opt.manualTransport} />
+                          ) : null}
+                        </StorefrontOptionCard>
+                      );
+                    })}
                 </div>
               </div>
             ) : null}
@@ -1172,16 +1206,38 @@ export function CheckoutPageClient() {
               label="Subtotal"
               value={formatMoney(checkoutTotals.buyerSubtotalMinor, checkoutTotals.buyerCurrency, checkoutTotals.buyerLocale)}
             />
-            {checkoutTotals.couponDiscountPaise > 0 ? (
+            {checkoutTotals.couponMerchandiseDiscountPaise > 0 ? (
               <StorefrontSummaryRow
                 label={`Coupon ${checkoutTotals.coupon?.code ?? ""}`.trim()}
-                value={`-${formatMoney(checkoutTotals.buyerCouponDiscountMinor, checkoutTotals.buyerCurrency, checkoutTotals.buyerLocale)}`}
+                value={`-${formatMoney(checkoutTotals.buyerCouponMerchandiseDiscountMinor, checkoutTotals.buyerCurrency, checkoutTotals.buyerLocale)}`}
               />
             ) : null}
             <StorefrontSummaryRow
-              label="Shipping"
-              value={formatMoney(checkoutTotals.buyerShippingMinor, checkoutTotals.buyerCurrency, checkoutTotals.buyerLocale)}
+              label={
+                checkoutTotals.couponShippingDiscountPaise > 0
+                  ? `Delivery (${formatMoney(checkoutTotals.buyerCouponShippingDiscountMinor, checkoutTotals.buyerCurrency, checkoutTotals.buyerLocale)} saved)`
+                  : "Delivery"
+              }
+              value={
+                checkoutTotals.deliveryChargePaise === 0
+                  ? "FREE"
+                  : formatMoney(
+                      checkoutTotals.buyerDeliveryChargeMinor,
+                      checkoutTotals.buyerCurrency,
+                      checkoutTotals.buyerLocale,
+                    )
+              }
             />
+            {checkoutTotals.codSurchargePaise > 0 ? (
+              <StorefrontSummaryRow
+                label="Cash on delivery fee"
+                value={formatMoney(
+                  checkoutTotals.buyerCodSurchargeMinor,
+                  checkoutTotals.buyerCurrency,
+                  checkoutTotals.buyerLocale,
+                )}
+              />
+            ) : null}
             <StorefrontSummaryRow
               label="Platform fee"
               value={formatMoney(checkoutTotals.buyerPlatformFeeMinor, checkoutTotals.buyerCurrency, checkoutTotals.buyerLocale)}

@@ -32,15 +32,16 @@ export function paginationFromQuery(query: PaginationQuery, options: PaginationO
 
   return {
     page,
-    take,
+    take: take + 1,
     skip: (page - 1) * take
   };
 }
 
 export function cursorPaginationFromQuery(query: PaginationQuery, options: PaginationOptions = {}) {
   const maxLimit = options.maxLimit ?? 100;
-  const take = positiveIntegerFromQuery(query.limit, "limit", options.defaultLimit ?? 20);
-
+  // In cursor pagination, if take is 0, you'd return empty with no cursor
+  // Consider minimum take of 1:
+  const take = Math.max(1, positiveIntegerFromQuery(query.limit, "limit", options.defaultLimit ?? 20));
   if (take > maxLimit) {
     throw new BadRequestException(`limit must not be greater than ${maxLimit}.`);
   }
@@ -145,9 +146,9 @@ function decodeCreatedAtCursor(cursor: string | undefined): CursorRecord | null 
 }
 
 function positiveIntegerFromQuery(value: number | string | undefined, field: string, fallback: number) {
-  if (value === undefined || value === "") {
-    return fallback;
-  }
+if (value === undefined || (typeof value === 'string' && value.trim() === '')) {
+  return fallback;
+}
 
   const parsed = typeof value === "number" ? value : Number(value);
 

@@ -877,13 +877,28 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
                 </div>
                 <div className="mt-4 grid gap-3 text-sm font-semibold text-[#667085]">
                   <Info label="Subtotal" value={formatOrderBuyerAmount(order, order.buyerSubtotalMinor, order.subtotalPaise)} />
-                  {(order.couponDiscountPaise ?? 0) > 0 ? (
+                  {(order.couponMerchandiseDiscountPaise ?? 0) > 0 ? (
                     <Info
                       label={`Coupon ${order.couponCode ?? ""}`.trim()}
-                      value={`-${formatOrderBuyerAmount(order, order.buyerCouponDiscountMinor, order.couponDiscountPaise ?? 0)}`}
+                      value={`-${formatOrderBuyerAmount(
+                        order,
+                        order.buyerCouponMerchandiseDiscountMinor,
+                        order.couponMerchandiseDiscountPaise ?? 0,
+                      )}`}
                     />
                   ) : null}
-                  <Info label="Shipping" value={formatOrderBuyerAmount(order, order.buyerShippingMinor, order.shippingPaise)} />
+                  <Info
+                    label={
+                      (order.couponShippingDiscountPaise ?? 0) > 0
+                        ? `Delivery (${formatOrderBuyerAmount(
+                            order,
+                            order.buyerCouponShippingDiscountMinor,
+                            order.couponShippingDiscountPaise ?? 0,
+                          )} saved)`
+                        : "Delivery"
+                    }
+                    value={order.shippingPaise > 0 ? formatOrderBuyerAmount(order, order.buyerShippingMinor, order.shippingPaise) : "FREE"}
+                  />
                   <Info
                     label="Platform fee"
                     value={formatOrderBuyerAmount(order, order.buyerPlatformFeeMinor, order.platformFeePaise)}

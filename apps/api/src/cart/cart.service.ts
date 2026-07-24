@@ -157,6 +157,10 @@ export class CartService {
       ? await this.checkoutPricing.applyCouponAdjustments(charges, this.prisma.client, {
           merchandiseDiscountPaise: coupon.merchandiseDiscountPaise,
           shippingDiscountPaise: coupon.shippingDiscountPaise,
+          shippingDiscountsBySeller: coupon.sellerAllocations.map((allocation) => ({
+            sellerId: allocation.sellerId,
+            shippingDiscountPaise: allocation.shippingDiscountPaise,
+          })),
           snapshot: coupon.snapshot,
         })
       : {
@@ -171,6 +175,18 @@ export class CartService {
       market,
     );
     const buyerShippingMinor = this.marketService.convertMinorUnits(finalCharges.shippingPaise, market);
+    const buyerDeliveryChargeMinor = this.marketService.convertMinorUnits(
+      finalCharges.deliveryChargePaise,
+      market,
+    );
+    const buyerCodSurchargeMinor = this.marketService.convertMinorUnits(
+      finalCharges.codSurchargePaise,
+      market,
+    );
+    const buyerShippingBeforeCouponMinor = this.marketService.convertMinorUnits(
+      charges.shippingPaise,
+      market,
+    );
     const buyerPlatformFeeMinor = this.marketService.convertMinorUnits(
       finalCharges.platformFeePaise,
       market,
@@ -179,11 +195,22 @@ export class CartService {
       coupon?.discountPaise ?? 0,
       market,
     );
+    const buyerCouponMerchandiseDiscountMinor = this.marketService.convertMinorUnits(
+      coupon?.merchandiseDiscountPaise ?? 0,
+      market,
+    );
+    const buyerCouponShippingDiscountMinor = this.marketService.convertMinorUnits(
+      coupon?.shippingDiscountPaise ?? 0,
+      market,
+    );
 
     return {
       itemCount,
       subtotalPaise: charges.subtotalPaise,
       payableSubtotalPaise: finalCharges.payableSubtotalPaise,
+      deliveryChargePaise: finalCharges.deliveryChargePaise,
+      codSurchargePaise: finalCharges.codSurchargePaise,
+      shippingBeforeCouponPaise: charges.shippingPaise,
       shippingPaise: finalCharges.shippingPaise,
       platformFeePaise: finalCharges.platformFeePaise,
       couponDiscountPaise: coupon?.discountPaise ?? 0,
@@ -198,9 +225,14 @@ export class CartService {
       buyerCurrency: market.currency,
       buyerSubtotalMinor,
       buyerPayableSubtotalMinor,
+      buyerDeliveryChargeMinor,
+      buyerCodSurchargeMinor,
+      buyerShippingBeforeCouponMinor,
       buyerShippingMinor,
       buyerPlatformFeeMinor,
       buyerCouponDiscountMinor,
+      buyerCouponMerchandiseDiscountMinor,
+      buyerCouponShippingDiscountMinor,
       buyerTotalMinor: this.marketService.convertMinorUnits(finalCharges.totalPaise, market),
       availableDeliveryOptions: finalCharges.availableDeliveryOptions,
       sellerDeliveryGroups: finalCharges.sellerDeliveryGroups,

@@ -149,14 +149,29 @@ export function OrderSuccessClient({ orderNumber }: { orderNumber: string }) {
                     <div className="mt-5 grid gap-3 text-sm font-semibold text-[#667085]">
                       <ChargeRow label="Subtotal" value={formatOrderBuyerAmount(order, order.buyerSubtotalMinor, order.subtotalPaise)} />
                       {savingsPaise > 0 ? <ChargeRow label="Savings" value={`-${formatMoney(savingsPaise, order.currency)}`} positive /> : null}
-                      {(order.couponDiscountPaise ?? 0) > 0 ? (
+                      {(order.couponMerchandiseDiscountPaise ?? 0) > 0 ? (
                         <ChargeRow
                           label={`Coupon ${order.couponCode ?? ""}`.trim()}
-                          value={`-${formatOrderBuyerAmount(order, order.buyerCouponDiscountMinor, order.couponDiscountPaise ?? 0)}`}
+                          value={`-${formatOrderBuyerAmount(
+                            order,
+                            order.buyerCouponMerchandiseDiscountMinor,
+                            order.couponMerchandiseDiscountPaise ?? 0,
+                          )}`}
                           positive
                         />
                       ) : null}
-                      <ChargeRow label="Shipping" value={order.shippingPaise > 0 ? formatOrderBuyerAmount(order, order.buyerShippingMinor, order.shippingPaise) : "FREE"} />
+                      <ChargeRow
+                        label={
+                          (order.couponShippingDiscountPaise ?? 0) > 0
+                            ? `Delivery (${formatOrderBuyerAmount(
+                                order,
+                                order.buyerCouponShippingDiscountMinor,
+                                order.couponShippingDiscountPaise ?? 0,
+                              )} saved)`
+                            : "Delivery"
+                        }
+                        value={order.shippingPaise > 0 ? formatOrderBuyerAmount(order, order.buyerShippingMinor, order.shippingPaise) : "FREE"}
+                      />
                       <ChargeRow label="Platform fee" value={formatOrderBuyerAmount(order, order.buyerPlatformFeeMinor, order.platformFeePaise)} />
                       <ChargeRow label="GST" value="Included" />
                       <ChargeRow label="Total" value={formatOrderTotal(order)} strong />

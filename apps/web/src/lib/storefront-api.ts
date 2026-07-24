@@ -444,6 +444,9 @@ export type CheckoutSummary = {
   itemCount: number;
   subtotalPaise: number;
   payableSubtotalPaise?: number;
+  deliveryChargePaise: number;
+  codSurchargePaise: number;
+  shippingBeforeCouponPaise: number;
   shippingPaise: number;
   platformFeePaise: number;
   couponDiscountPaise?: number;
@@ -468,13 +471,19 @@ export type CheckoutSummary = {
   buyerCurrency: string;
   buyerSubtotalMinor: number;
   buyerPayableSubtotalMinor?: number;
+  buyerDeliveryChargeMinor: number;
+  buyerCodSurchargeMinor: number;
+  buyerShippingBeforeCouponMinor: number;
   buyerShippingMinor: number;
   buyerPlatformFeeMinor: number;
   buyerCouponDiscountMinor?: number;
+  buyerCouponMerchandiseDiscountMinor?: number;
+  buyerCouponShippingDiscountMinor?: number;
   buyerTotalMinor: number;
   availableDeliveryOptions?: {
     mode: DeliveryMode;
     chargePaise: number;
+    payableChargePaise?: number;
     isCheapest: boolean;
     available: boolean;
     reason: string | null;
@@ -493,6 +502,7 @@ export type CheckoutSummary = {
     availableDeliveryOptions: Array<{
       mode: DeliveryMode;
       chargePaise: number;
+      payableChargePaise?: number;
       isCheapest: boolean;
       available: boolean;
       reason: string | null;
@@ -813,6 +823,8 @@ export type OrderSummary = {
   buyerShippingMinor?: number;
   buyerPlatformFeeMinor?: number;
   buyerCouponDiscountMinor?: number;
+  buyerCouponMerchandiseDiscountMinor?: number;
+  buyerCouponShippingDiscountMinor?: number;
   buyerTotalMinor?: number;
   fxRate?: string | null;
   fxProvider?: string | null;
@@ -1047,6 +1059,8 @@ export type PublicTrackedOrder = Pick<
   | "buyerShippingMinor"
   | "buyerPlatformFeeMinor"
   | "buyerCouponDiscountMinor"
+  | "buyerCouponMerchandiseDiscountMinor"
+  | "buyerCouponShippingDiscountMinor"
   | "buyerTotalMinor"
   | "fxRate"
   | "fxProvider"
