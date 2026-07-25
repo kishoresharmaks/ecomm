@@ -362,6 +362,69 @@ describe("GstComplianceService", () => {
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
+
+  it("requires complete manual IRN details before marking an e-invoice generated", async () => {
+    const prisma = createPrisma();
+    prisma.client.taxDocument.findUnique.mockResolvedValue({
+      id: "invoice_1",
+      status: TaxDocumentStatus.ISSUED,
+      compliance: null,
+    });
+    const service = createService(prisma);
+
+    await expect(
+      service.recordCompliance("invoice_1", actor(), {
+        eInvoiceStatus: GstComplianceStatus.GENERATED,
+        irn: "irn-1",
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.client.taxDocumentCompliance.upsert).not.toHaveBeenCalled();
+  });
+
+  it("records complete manual IRN details and audits the result", async () => {
+    const prisma = createPrisma();
+    prisma.client.taxDocument.findUnique.mockResolvedValue({
+      id: "invoice_1",
+      status: TaxDocumentStatus.ISSUED,
+      compliance: null,
+    });
+    prisma.client.taxDocumentCompliance.upsert.mockResolvedValue({
+      eInvoiceStatus: GstComplianceStatus.GENERATED,
+      eWayBillStatus: GstComplianceStatus.NOT_REQUIRED,
+    });
+    const service = createService(prisma);
+
+    await service.recordCompliance("invoice_1", actor(), {
+      eInvoiceStatus: GstComplianceStatus.GENERATED,
+      irn: "irn-1",
+      acknowledgementNumber: "ack-1",
+      acknowledgementDate: "2026-07-25T04:00:00.000Z",
+      signedQrCode: "signed-qr",
+      eInvoiceProvider: "MANUAL",
+      eInvoiceError: "",
+    });
+
+    expect(prisma.client.taxDocumentCompliance.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          eInvoiceStatus: GstComplianceStatus.GENERATED,
+          irn: "irn-1",
+          acknowledgementNumber: "ack-1",
+          signedQrCode: "signed-qr",
+          eInvoiceProvider: "MANUAL",
+          eInvoiceError: null,
+        }),
+      }),
+    );
+    expect(prisma.client.auditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: "GST_DOCUMENT_COMPLIANCE_RECORDED",
+          entityId: "invoice_1",
+        }),
+      }),
+    );
+  });
 });
 
 function createService(prisma: ReturnType<typeof createPrisma>) {
@@ -392,6 +455,7 @@ function createPrisma() {
       findMany: vi.fn().mockResolvedValue([]),
       count: vi.fn().mockResolvedValue(0),
       findFirst: vi.fn(),
+      findUnique: vi.fn(),
       create: vi.fn(),
     },
     taxDocumentSequence: {
@@ -471,6 +535,7 @@ function documentFixture(overrides: Record<string, unknown> = {}) {
       irn: null,
       acknowledgementNumber: null,
       acknowledgementDate: null,
+      signedQrCode: null,
       eInvoiceProvider: "MANUAL",
       eInvoiceError: null,
       eWayBillStatus: GstComplianceStatus.NOT_REQUIRED,

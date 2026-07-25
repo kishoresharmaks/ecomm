@@ -9,6 +9,7 @@ import {
   UpsertContactSettingsDto,
   UpsertDeliveryPartnerPayoutSettingsDto,
   UpsertEmailSettingDto,
+  UpsertGstSettingsDto,
   UpsertMaintenanceSettingsDto,
   UpsertSeoAnalyticsSettingsDto,
   UpsertMapRoutingSettingsDto,
@@ -28,6 +29,13 @@ import {
   normalizeDeliveryPartnerPayoutSettings,
   readDeliveryPartnerPayoutSettings,
 } from "./delivery-partner-payout-settings";
+import {
+  gstSettingGroup,
+  gstSettingKeys,
+  type GstSettings,
+  normalizeGstSettings,
+  readGstSettings,
+} from "./gst-settings";
 import {
   normalizeTypedSettingValue,
   readBooleanSetting,
@@ -129,6 +137,122 @@ export class SettingsService {
     });
 
     return settings.map((setting) => this.sanitizeSetting(setting));
+  }
+
+  getGstSettings() {
+    return readGstSettings(this.prisma.client);
+  }
+
+  async upsertGstSettings(actor: RequestUser, dto: UpsertGstSettingsDto) {
+    const normalized = normalizeGstSettings({
+      platform: {
+        legalName: dto.platform.legalName,
+        gstin: dto.platform.gstin,
+        stateCode: dto.platform.stateCode,
+        address: {
+          line1: dto.platform.address.line1,
+          line2: dto.platform.address.line2 ?? "",
+          city: dto.platform.address.city,
+          state: dto.platform.address.state,
+          postalCode: dto.platform.address.postalCode,
+          country: "India",
+        },
+      },
+      eInvoice: dto.eInvoice,
+      eWayBill: dto.eWayBill,
+    });
+
+    if (normalized.platform.gstin.slice(0, 2) !== normalized.platform.stateCode) {
+      throw new BadRequestException(
+        "Platform GSTIN state prefix must match the GST state code.",
+      );
+    }
+
+    const writes = [
+      this.settingWrite(
+        gstSettingKeys.legalName,
+        gstSettingGroup,
+        SettingValueType.STRING,
+        normalized.platform.legalName,
+      ),
+      this.settingWrite(
+        gstSettingKeys.gstin,
+        gstSettingGroup,
+        SettingValueType.STRING,
+        normalized.platform.gstin,
+      ),
+      this.settingWrite(
+        gstSettingKeys.stateCode,
+        gstSettingGroup,
+        SettingValueType.STRING,
+        normalized.platform.stateCode,
+      ),
+      this.settingWrite(
+        gstSettingKeys.address,
+        gstSettingGroup,
+        SettingValueType.JSON,
+        normalized.platform.address as Prisma.InputJsonObject,
+      ),
+      this.settingWrite(
+        gstSettingKeys.eInvoiceEnabled,
+        gstSettingGroup,
+        SettingValueType.BOOLEAN,
+        normalized.eInvoice.enabled,
+      ),
+      this.settingWrite(
+        gstSettingKeys.eInvoiceProvider,
+        gstSettingGroup,
+        SettingValueType.STRING,
+        normalized.eInvoice.provider,
+      ),
+      this.settingWrite(
+        gstSettingKeys.eWayBillEnabled,
+        gstSettingGroup,
+        SettingValueType.BOOLEAN,
+        normalized.eWayBill.enabled,
+      ),
+      this.settingWrite(
+        gstSettingKeys.eWayBillProvider,
+        gstSettingGroup,
+        SettingValueType.STRING,
+        normalized.eWayBill.provider,
+      ),
+      this.settingWrite(
+        gstSettingKeys.eWayBillThresholdPaise,
+        gstSettingGroup,
+        SettingValueType.NUMBER,
+        normalized.eWayBill.thresholdPaise,
+      ),
+    ];
+
+    return this.prisma.client.$transaction(async (tx) => {
+      const before = await readGstSettings(tx);
+
+      for (const write of writes) {
+        await tx.setting.upsert({
+          where: { key: write.key },
+          update: {
+            group: write.group,
+            value: write.value,
+            valueType: write.valueType,
+          },
+          create: write,
+        });
+      }
+
+      const after = await readGstSettings(tx);
+      await tx.auditLog.create({
+        data: {
+          actorUserId: actor.id,
+          action: "settings.gst.updated",
+          entityType: "gst_settings",
+          oldValue: this.gstAuditValue(before),
+          newValue: this.gstAuditValue(after),
+        },
+      });
+
+      return after;
+    });
   }
 
   async getCheckoutPlatformFee() {
@@ -1137,6 +1261,19 @@ export class SettingsService {
         smtpSecure: config.smtpSecure ?? false,
         smtpBridgeUrl: config.smtpBridgeUrl ?? "",
       },
+    };
+  }
+
+  private gstAuditValue(settings: GstSettings): Prisma.InputJsonObject {
+    return {
+      platform: {
+        legalName: settings.platform.legalName,
+        gstin: settings.platform.gstin,
+        stateCode: settings.platform.stateCode,
+        address: { ...settings.platform.address },
+      },
+      eInvoice: { ...settings.eInvoice },
+      eWayBill: { ...settings.eWayBill },
     };
   }
 

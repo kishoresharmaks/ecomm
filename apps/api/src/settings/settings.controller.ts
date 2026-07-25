@@ -13,6 +13,7 @@ import {
   UpsertContactSettingsDto,
   UpsertDeliveryPartnerPayoutSettingsDto,
   UpsertEmailSettingDto,
+  UpsertGstSettingsDto,
   UpsertMapRoutingSettingsDto,
   UpsertReturnPolicySettingsDto,
   UpsertSettingDto,
@@ -55,6 +56,21 @@ export class SettingsController {
   @ApiOperation({ summary: "Atomically update checkout buyer platform fee settings." })
   upsertCheckoutPlatformFee(@CurrentUser() actor: RequestUser, @Body() dto: UpsertCheckoutPlatformFeeDto) {
     return this.settingsService.upsertCheckoutPlatformFee(actor, dto);
+  }
+
+  @Get("gst")
+  @ApiOperation({ summary: "Read platform GST identity and manual compliance settings." })
+  getGstSettings() {
+    return this.settingsService.getGstSettings();
+  }
+
+  @Put("gst")
+  @ApiOperation({ summary: "Atomically update platform GST and manual compliance settings." })
+  upsertGstSettings(
+    @CurrentUser() actor: RequestUser,
+    @Body() dto: UpsertGstSettingsDto,
+  ) {
+    return this.settingsService.upsertGstSettings(actor, dto);
   }
 
   @Get("returns/policy")

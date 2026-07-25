@@ -144,6 +144,7 @@ export class RecordTaxDocumentComplianceDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(10_000)
   signedQrCode?: string;
 
   @ApiPropertyOptional()

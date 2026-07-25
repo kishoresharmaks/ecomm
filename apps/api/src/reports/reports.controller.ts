@@ -101,18 +101,21 @@ export class ReportsController {
   }
 
   @Get("gst/overview")
+  @Roles(RoleCode.ADMIN, RoleCode.FINANCE)
   @ApiOperation({ summary: "Read complete marketplace GST summaries for finance oversight." })
   gstOverview(@Query() query: AdminGstReportQueryDto) {
     return this.gstCompliance.adminOverview(query);
   }
 
   @Get("gst/documents")
+  @Roles(RoleCode.ADMIN, RoleCode.FINANCE)
   @ApiOperation({ summary: "List issued GST documents with server-side pagination and filters." })
   gstDocuments(@Query() query: GstDocumentQueryDto) {
     return this.gstCompliance.documentPage(query);
   }
 
   @Get("gst/documents/:documentId/download")
+  @Roles(RoleCode.ADMIN, RoleCode.FINANCE)
   @ApiOperation({ summary: "Download an issued seller tax document as PDF." })
   async downloadGstDocument(
     @CurrentUser() actor: RequestUser,
@@ -162,6 +165,7 @@ export class ReportsController {
   }
 
   @Get("export/gst-register")
+  @Roles(RoleCode.ADMIN, RoleCode.FINANCE)
   @ApiOperation({ summary: "Export marketplace GST document register as CSV." })
   async exportGstRegister(
     @CurrentUser() actor: RequestUser,
@@ -173,6 +177,7 @@ export class ReportsController {
   }
 
   @Get("export/hsn-summary")
+  @Roles(RoleCode.ADMIN, RoleCode.FINANCE)
   @ApiOperation({ summary: "Export marketplace HSN summary as CSV." })
   async exportHsnSummary(
     @CurrentUser() actor: RequestUser,
@@ -184,6 +189,7 @@ export class ReportsController {
   }
 
   @Get("export/gstr-1")
+  @Roles(RoleCode.ADMIN, RoleCode.FINANCE)
   @ApiOperation({ summary: "Export marketplace GSTR-1-oriented rows as CSV." })
   async exportGstr1(
     @CurrentUser() actor: RequestUser,
@@ -195,6 +201,7 @@ export class ReportsController {
   }
 
   @Get("export/gstr-1-json")
+  @Roles(RoleCode.ADMIN, RoleCode.FINANCE)
   @ApiOperation({ summary: "Export the validated GSTR-1 filing package as JSON." })
   async exportGstr1Json(
     @CurrentUser() actor: RequestUser,
@@ -208,6 +215,7 @@ export class ReportsController {
   }
 
   @Get("export/gstr-3b")
+  @Roles(RoleCode.ADMIN, RoleCode.FINANCE)
   @ApiOperation({ summary: "Export the GSTR-3B outward-liability summary." })
   async exportGstr3b(@CurrentUser() actor: RequestUser, @Query() query: AdminGstReportQueryDto, @Res() res: Response) {
     const data = await this.gstCompliance.report(query, query.sellerId, true);
@@ -215,6 +223,7 @@ export class ReportsController {
   }
 
   @Get("export/gstr-8")
+  @Roles(RoleCode.ADMIN, RoleCode.FINANCE)
   @ApiOperation({ summary: "Export marketplace GSTR-8 and TCS statements." })
   async exportGstr8(@CurrentUser() actor: RequestUser, @Query() query: AdminGstReportQueryDto, @Res() res: Response) {
     const data = await this.gstCompliance.report(query, query.sellerId, true);
@@ -222,6 +231,7 @@ export class ReportsController {
   }
 
   @Get("export/document-series")
+  @Roles(RoleCode.ADMIN, RoleCode.FINANCE)
   @ApiOperation({ summary: "Export GST invoice document-series controls." })
   async exportDocumentSeries(@CurrentUser() actor: RequestUser, @Query() query: AdminGstReportQueryDto, @Res() res: Response) {
     const data = await this.gstCompliance.report(query, query.sellerId, true);
@@ -229,6 +239,7 @@ export class ReportsController {
   }
 
   @Get("export/rate-liability")
+  @Roles(RoleCode.ADMIN, RoleCode.FINANCE)
   @ApiOperation({ summary: "Export GST rate-wise liability." })
   async exportRateLiability(@CurrentUser() actor: RequestUser, @Query() query: AdminGstReportQueryDto, @Res() res: Response) {
     const data = await this.gstCompliance.report(query, query.sellerId, true);
@@ -236,6 +247,7 @@ export class ReportsController {
   }
 
   @Get("export/state-liability")
+  @Roles(RoleCode.ADMIN, RoleCode.FINANCE)
   @ApiOperation({ summary: "Export place-of-supply state liability." })
   async exportStateLiability(@CurrentUser() actor: RequestUser, @Query() query: AdminGstReportQueryDto, @Res() res: Response) {
     const data = await this.gstCompliance.report(query, query.sellerId, true);
@@ -243,6 +255,7 @@ export class ReportsController {
   }
 
   @Get("export/gstin-summary")
+  @Roles(RoleCode.ADMIN, RoleCode.FINANCE)
   @ApiOperation({ summary: "Export GSTIN-wise B2B summary." })
   async exportGstinSummary(@CurrentUser() actor: RequestUser, @Query() query: AdminGstReportQueryDto, @Res() res: Response) {
     const data = await this.gstCompliance.report(query, query.sellerId, true);
@@ -250,6 +263,7 @@ export class ReportsController {
   }
 
   @Get("export/reconciliation")
+  @Roles(RoleCode.ADMIN, RoleCode.FINANCE)
   @ApiOperation({ summary: "Export GST reconciliation findings." })
   async exportReconciliation(@CurrentUser() actor: RequestUser, @Query() query: AdminGstReportQueryDto, @Res() res: Response) {
     const data = await this.gstCompliance.report(query, query.sellerId, true);
@@ -257,6 +271,7 @@ export class ReportsController {
   }
 
   @Get("export/platform-commission")
+  @Roles(RoleCode.ADMIN, RoleCode.FINANCE)
   @ApiOperation({ summary: "Export platform commission GST documents." })
   async exportPlatformCommission(@CurrentUser() actor: RequestUser, @Query() query: AdminGstReportQueryDto, @Res() res: Response) {
     const data = await this.gstCompliance.report(query, query.sellerId, true);
@@ -264,6 +279,7 @@ export class ReportsController {
   }
 
   @Get("export/e-invoice")
+  @Roles(RoleCode.ADMIN, RoleCode.FINANCE)
   @ApiOperation({ summary: "Export e-invoice status register." })
   async exportEInvoice(@CurrentUser() actor: RequestUser, @Query() query: AdminGstReportQueryDto, @Res() res: Response) {
     const data = await this.gstCompliance.report(query, query.sellerId, true);
@@ -271,6 +287,7 @@ export class ReportsController {
   }
 
   @Get("export/e-way-bill")
+  @Roles(RoleCode.ADMIN, RoleCode.FINANCE)
   @ApiOperation({ summary: "Export e-way bill status register." })
   async exportEWayBill(@CurrentUser() actor: RequestUser, @Query() query: AdminGstReportQueryDto, @Res() res: Response) {
     const data = await this.gstCompliance.report(query, query.sellerId, true);
@@ -297,6 +314,7 @@ export class ReportsController {
   }
 
   @Patch("gst/documents/:documentId/compliance")
+  @Roles(RoleCode.ADMIN, RoleCode.FINANCE)
   @ApiOperation({ summary: "Record e-invoice and e-way bill status for a GST document." })
   recordCompliance(
     @CurrentUser() actor: RequestUser,

@@ -801,6 +801,24 @@ Never enter a false ARN or mark a period filed before receiving filing confirmat
 
 ## 12. Initial Platform Configuration
 
+Administrators configure these values from:
+
+```text
+Admin Control Center -> Settings -> Tax & GST
+/admin/settings/tax-gst
+```
+
+The page saves the platform identity, manual e-invoice workflow, and manual e-way bill
+workflow atomically through:
+
+```text
+GET /api/admin/settings/gst
+PUT /api/admin/settings/gst
+```
+
+The generic single-setting API remains available for operational recovery, but it is not the
+normal administration path.
+
 ### 12.1 Required platform settings
 
 | Key | Type | Example purpose |
@@ -825,7 +843,18 @@ This threshold alone is not a complete e-way bill legal decision engine. Transac
 goods, movement, exemptions, consignor/consignee responsibility, state rules, and current
 notifications must also be considered.
 
-### 12.2 Setting API format
+### 12.2 Atomic GST settings API
+
+The normal configuration request uses:
+
+```text
+PUT /api/admin/settings/gst
+```
+
+All platform and workflow values are validated and committed together with one audit record.
+The existing values remain active when validation fails.
+
+### 12.3 Generic setting API format
 
 Settings use:
 
@@ -852,7 +881,7 @@ BOOLEAN
 JSON
 ```
 
-### 12.3 PowerShell example
+### 12.4 PowerShell recovery example
 
 Use an authenticated standalone admin session token:
 
@@ -880,7 +909,8 @@ settings are not an encrypted provider credential vault.
 
 ## 13. Manual E-Invoice and E-Way Operation
 
-Manual mode is the supported operating mode until a provider adapter is completed.
+Manual mode is the supported operating mode until a provider adapter is completed. Admins
+enable it from `/admin/settings/tax-gst`; no direct database edit is required.
 
 ### 13.1 Configure manual mode
 
@@ -909,8 +939,11 @@ gst.eway.enabled = true or false
    - Acknowledgement date.
    - Signed QR code.
    - Provider reference.
-5. Record the result in 1HandIndia.
-6. Export the e-invoice status register and confirm no required invoice remains unresolved.
+5. Open `/admin/finance/gst-reports` as an administrator or `/finance/gst-reports` as a Finance Manager, select the e-invoice/e-way status register, and use the record/edit IRN action on the issued document.
+6. Enter the IRN, acknowledgement number and date, and signed QR payload. Saving marks the e-invoice `GENERATED`, records `MANUAL` as the provider, clears any previous provider error, and writes an audit event.
+7. Export the e-invoice status register and confirm no required invoice remains unresolved.
+
+The application rejects a `GENERATED` e-invoice result unless all four required values are present. This protects B2B dispatch controls from treating an incomplete IRN result as ready.
 
 Example compliance update:
 
@@ -990,19 +1023,10 @@ Provider onboarding may issue:
 
 The exact credential contract depends on the selected provider.
 
-### 14.3 Existing environment contract
+### 14.3 Current environment contract
 
-The current readiness check reads:
-
-```env
-GST_EINVOICE_CLIENT_ID=""
-GST_EINVOICE_CLIENT_SECRET=""
-GST_EWAY_CLIENT_ID=""
-GST_EWAY_CLIENT_SECRET=""
-```
-
-These variables must exist only in the backend API environment or deployment secret
-manager. Never use a `NEXT_PUBLIC_` prefix.
+Manual mode does not use provider credentials or provider environment variables. Do not add
+credential placeholders until a provider is selected and its adapter contract is implemented.
 
 Do not paste real credential values into:
 
@@ -1014,23 +1038,11 @@ Do not paste real credential values into:
 - Support tickets.
 - Chat messages.
 
-### 14.4 What the current environment variables do
+### 14.4 What manual readiness does
 
-For a non-`MANUAL` provider:
-
-- Client ID plus client secret makes `credentialsConfigured` return `true`.
-- Provider mode becomes `PROVIDER_READY`.
-
-They do not:
-
-- Call the provider.
-- Generate authentication tokens.
-- Encrypt provider request payloads.
-- Generate an IRN.
-- Cancel an IRN.
-- Generate or cancel an e-way bill.
-- Update vehicle/transporter details.
-- Refresh or synchronize statuses.
+Manual readiness only classifies applicable documents and allows audited provider results to
+be recorded. It does not generate or cancel IRNs or e-way bills, authenticate with a provider,
+or synchronize provider statuses.
 
 ### 14.5 Marketplace seller authorization requirement
 
@@ -1552,23 +1564,11 @@ Check:
 - Platform registered address JSON.
 - Seller has relevant commission/settlement activity in the period.
 
-### Provider readiness says credentials are missing
-
-For a non-manual provider, check presence of:
-
-```text
-GST_EINVOICE_CLIENT_ID
-GST_EINVOICE_CLIENT_SECRET
-GST_EWAY_CLIENT_ID
-GST_EWAY_CLIENT_SECRET
-```
-
-Do not print their values. Restart the API after environment changes.
-
-### Provider readiness says ready but no IRN is generated
+### Manual readiness is enabled but no IRN is generated
 
 This is expected in the current implementation. Readiness does not perform provider calls.
-Use manual mode or implement the selected provider adapter.
+Generate the document through the approved external process and record its result, or implement
+the selected provider adapter as a separate production integration.
 
 ### GST report download returns unauthorized
 

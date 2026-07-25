@@ -27,6 +27,11 @@ import { paginationFromQuery } from "../common/pagination";
 import { FinanceCalculatorService } from "../finance/finance-calculator.service";
 import { PrismaService } from "../prisma/prisma.service";
 import {
+  type GstSettings,
+  isConfiguredPlatformGst,
+  readGstSettings,
+} from "../settings/gst-settings";
+import {
   CreateGstDebitNoteDto,
   GstFilingPeriodDto,
   GstMarkFiledDto,
@@ -103,6 +108,7 @@ type SignedDocument = MoneyTotals & {
     irn: string | null;
     acknowledgementNumber: string | null;
     acknowledgementDate: Date | null;
+    signedQrCode: string | null;
     eInvoiceProvider: string | null;
     eInvoiceError: string | null;
     eWayBillStatus: GstComplianceStatus;
@@ -134,18 +140,6 @@ type TaxDocumentWithReportRelations = Prisma.TaxDocumentGetPayload<{
     compliance: true;
   };
 }>;
-
-const platformSettingKeys = {
-  legalName: "gst.platform.legal_name",
-  gstin: "gst.platform.gstin",
-  stateCode: "gst.platform.state_code",
-  address: "gst.platform.address",
-  eInvoiceEnabled: "gst.einvoice.enabled",
-  eInvoiceProvider: "gst.einvoice.provider",
-  eWayBillEnabled: "gst.eway.enabled",
-  eWayBillProvider: "gst.eway.provider",
-  eWayBillThresholdPaise: "gst.eway.threshold_paise",
-} as const;
 
 @Injectable()
 export class GstComplianceService {
@@ -714,21 +708,62 @@ export class GstComplianceService {
   ) {
     const document = await this.prisma.client.taxDocument.findUnique({
       where: { id: documentId },
-      select: { id: true, status: true },
+      select: {
+        id: true,
+        status: true,
+        compliance: {
+          select: {
+            eInvoiceStatus: true,
+            irn: true,
+            acknowledgementNumber: true,
+            acknowledgementDate: true,
+            signedQrCode: true,
+            eInvoiceProvider: true,
+            eInvoiceProviderRef: true,
+            eInvoiceError: true,
+          },
+        },
+      },
     });
     if (!document || document.status !== TaxDocumentStatus.ISSUED) {
       throw new NotFoundException("Issued tax document not found.");
     }
+    const current = document.compliance;
+    const eInvoiceStatus =
+      dto.eInvoiceStatus ??
+      current?.eInvoiceStatus ??
+      GstComplianceStatus.NOT_REQUIRED;
+    const irn =
+      dto.irn !== undefined ? dto.irn.trim() || null : current?.irn ?? null;
+    const acknowledgementNumber =
+      dto.acknowledgementNumber !== undefined
+        ? dto.acknowledgementNumber.trim() || null
+        : current?.acknowledgementNumber ?? null;
+    const acknowledgementDate =
+      dto.acknowledgementDate !== undefined
+        ? new Date(dto.acknowledgementDate)
+        : current?.acknowledgementDate ?? null;
+    const signedQrCode =
+      dto.signedQrCode !== undefined
+        ? dto.signedQrCode.trim() || null
+        : current?.signedQrCode ?? null;
+    if (
+      eInvoiceStatus === GstComplianceStatus.GENERATED &&
+      (!irn ||
+        !acknowledgementNumber ||
+        !acknowledgementDate ||
+        !signedQrCode)
+    ) {
+      throw new BadRequestException(
+        "Generated e-invoices require the IRN, acknowledgement number and date, and signed QR payload.",
+      );
+    }
     const data = {
-      ...(dto.eInvoiceStatus ? { eInvoiceStatus: dto.eInvoiceStatus } : {}),
-      ...(dto.irn !== undefined ? { irn: dto.irn.trim() || null } : {}),
-      ...(dto.acknowledgementNumber !== undefined
-        ? { acknowledgementNumber: dto.acknowledgementNumber.trim() || null }
-        : {}),
-      ...(dto.acknowledgementDate !== undefined
-        ? { acknowledgementDate: new Date(dto.acknowledgementDate) }
-        : {}),
-      ...(dto.signedQrCode !== undefined ? { signedQrCode: dto.signedQrCode || null } : {}),
+      eInvoiceStatus,
+      irn,
+      acknowledgementNumber,
+      acknowledgementDate,
+      signedQrCode,
       ...(dto.eInvoiceProvider !== undefined
         ? { eInvoiceProvider: dto.eInvoiceProvider.trim() || null }
         : {}),
@@ -1095,86 +1130,58 @@ export class GstComplianceService {
   }
 
   async providerReadiness() {
-    const [settings, platform] = await Promise.all([
-      this.readSettings(Object.values(platformSettingKeys)),
-      this.platformConfiguration(),
-    ]);
-    const values = new Map(settings.map((setting) => [setting.key, setting.value]));
-    const eInvoiceEnabled = this.booleanValue(values.get(platformSettingKeys.eInvoiceEnabled));
-    const eWayBillEnabled = this.booleanValue(values.get(platformSettingKeys.eWayBillEnabled));
-    const eInvoiceProvider =
-      this.stringValue(values.get(platformSettingKeys.eInvoiceProvider)) || "MANUAL";
-    const eWayBillProvider =
-      this.stringValue(values.get(platformSettingKeys.eWayBillProvider)) || "MANUAL";
-    const eWayBillThresholdPaise =
-      this.numberValue(values.get(platformSettingKeys.eWayBillThresholdPaise)) || 5_000_000;
+    const settings = await readGstSettings(this.prisma.client);
     return {
       eInvoice: {
-        enabled: eInvoiceEnabled,
-        provider: eInvoiceProvider,
-        credentialsConfigured:
-          eInvoiceProvider === "MANUAL" ||
-          Boolean(process.env.GST_EINVOICE_CLIENT_ID && process.env.GST_EINVOICE_CLIENT_SECRET),
-        mode: eInvoiceProvider === "MANUAL" ? "MANUAL" : "PROVIDER_READY",
+        enabled: settings.eInvoice.enabled,
+        provider: settings.eInvoice.provider,
+        credentialsConfigured: true,
+        mode: "MANUAL" as const,
       },
       eWayBill: {
-        enabled: eWayBillEnabled,
-        provider: eWayBillProvider,
-        thresholdPaise: eWayBillThresholdPaise,
-        credentialsConfigured:
-          eWayBillProvider === "MANUAL" ||
-          Boolean(process.env.GST_EWAY_CLIENT_ID && process.env.GST_EWAY_CLIENT_SECRET),
-        mode: eWayBillProvider === "MANUAL" ? "MANUAL" : "PROVIDER_READY",
+        enabled: settings.eWayBill.enabled,
+        provider: settings.eWayBill.provider,
+        thresholdPaise: settings.eWayBill.thresholdPaise,
+        credentialsConfigured: true,
+        mode: "MANUAL" as const,
       },
-      platformInvoice: platform,
+      platformInvoice: this.platformConfigurationFromSettings(settings),
     };
   }
 
   private async platformConfiguration() {
-    const settings = await this.readSettings([
-      platformSettingKeys.legalName,
-      platformSettingKeys.gstin,
-      platformSettingKeys.stateCode,
-      platformSettingKeys.address,
-    ]);
-    const values = new Map(settings.map((setting) => [setting.key, setting.value]));
-    const legalName = this.stringValue(values.get(platformSettingKeys.legalName));
-    const gstin = this.validGstin(this.stringValue(values.get(platformSettingKeys.gstin)));
-    const stateCode = this.stringValue(values.get(platformSettingKeys.stateCode));
-    const addressValue = values.get(platformSettingKeys.address);
-    const address =
-      addressValue && typeof addressValue === "object" && !Array.isArray(addressValue)
-        ? (addressValue as Prisma.InputJsonObject)
-        : null;
-    const missingConfiguration = [
-      ...(!legalName ? ["Platform legal name"] : []),
-      ...(!gstin ? ["Valid platform GSTIN"] : []),
-      ...(!stateCode ? ["Platform GST state code"] : []),
-      ...(!address ? ["Platform registered address"] : []),
-    ];
-    return {
-      configured: missingConfiguration.length === 0,
-      missingConfiguration,
-      legalName: legalName ?? "",
-      gstin: gstin ?? "",
-      stateCode: stateCode ?? "",
-      address: address ?? {},
-    };
+    return this.platformConfigurationFromSettings(
+      await readGstSettings(this.prisma.client),
+    );
   }
 
-  private async readSettings(
-    keys: string[],
-  ): Promise<Array<{ key: string; value: Prisma.JsonValue }>> {
-    const settingDelegate = (this.prisma.client as PrismaService["client"] & {
-      setting?: PrismaService["client"]["setting"];
-    }).setting;
-    if (!settingDelegate) {
-      return [] as Array<{ key: string; value: Prisma.JsonValue }>;
-    }
-    return settingDelegate.findMany({
-      where: { key: { in: keys } },
-      select: { key: true, value: true },
-    }) as Promise<Array<{ key: string; value: Prisma.JsonValue }>>;
+  private platformConfigurationFromSettings(settings: GstSettings) {
+    const { platform } = settings;
+    const gstin = this.validGstin(platform.gstin);
+    const missingConfiguration = [
+      ...(!platform.legalName ? ["Platform legal name"] : []),
+      ...(!gstin ? ["Valid platform GSTIN"] : []),
+      ...(!platform.stateCode ? ["Platform GST state code"] : []),
+      ...(gstin &&
+      platform.stateCode &&
+      gstin.slice(0, 2) !== platform.stateCode
+        ? ["Platform GST state code matching the GSTIN"]
+        : []),
+      ...(!platform.address.line1 ||
+      !platform.address.city ||
+      !platform.address.state ||
+      !platform.address.postalCode
+        ? ["Platform registered address"]
+        : []),
+    ];
+    return {
+      configured: isConfiguredPlatformGst(settings),
+      missingConfiguration,
+      legalName: platform.legalName,
+      gstin: gstin ?? "",
+      stateCode: platform.stateCode,
+      address: platform.address as Prisma.InputJsonObject,
+    };
   }
 
   private documentSummary(documents: SignedDocument[]): DocumentSummary {
@@ -1648,6 +1655,7 @@ export class GstComplianceService {
       irn: null,
       acknowledgementNumber: null,
       acknowledgementDate: null,
+      signedQrCode: null,
       eInvoiceProvider: readiness.eInvoice.provider,
       eInvoiceError: null,
       eWayBillStatus: eWayBillRequired
@@ -1705,6 +1713,7 @@ export class GstComplianceService {
             irn: document.compliance.irn,
             acknowledgementNumber: document.compliance.acknowledgementNumber,
             acknowledgementDate: document.compliance.acknowledgementDate,
+            signedQrCode: document.compliance.signedQrCode,
             eInvoiceProvider: document.compliance.eInvoiceProvider,
             eInvoiceError: document.compliance.eInvoiceError,
             eWayBillStatus: document.compliance.eWayBillStatus,
@@ -2064,21 +2073,6 @@ export class GstComplianceService {
       /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(normalized)
       ? normalized
       : null;
-  }
-
-  private booleanValue(value: Prisma.JsonValue | undefined) {
-    if (typeof value === "boolean") return value;
-    if (typeof value === "string") return ["true", "1", "yes", "on"].includes(value.toLowerCase());
-    return false;
-  }
-
-  private stringValue(value: Prisma.JsonValue | undefined) {
-    return typeof value === "string" && value.trim() ? value.trim() : null;
-  }
-
-  private numberValue(value: Prisma.JsonValue | undefined) {
-    const parsed = typeof value === "number" || typeof value === "string" ? Number(value) : 0;
-    return Number.isFinite(parsed) ? parsed : 0;
   }
 
   private requiredJsonObject(value: Prisma.JsonValue) {

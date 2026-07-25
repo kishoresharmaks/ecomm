@@ -34,6 +34,7 @@ type FinanceNavItem = (typeof financeNav)[number];
 const iconByHref: Array<[string, typeof LayoutDashboard]> = [
   ["/finance/fx-providers", BadgeDollarSign],
   ["/finance/settings", Settings],
+  ["/finance/gst-reports", ReceiptText],
   ["/finance/reports", BarChart3],
   ["/finance/exports", ReceiptText],
   ["/finance/commission-rules", Settings],

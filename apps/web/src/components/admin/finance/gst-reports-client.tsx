@@ -1,27 +1,35 @@
 "use client";
 
-import { useDeferredValue, useMemo, useState } from "react";
+import Link from "next/link";
+import { type FormEvent, useDeferredValue, useMemo, useState } from "react";
 import {
   Download,
   Eye,
   FileCheck2,
+  FilePenLine,
   FileSpreadsheet,
   RefreshCw,
+  Save,
   Search,
+  Settings,
 } from "lucide-react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, StatusBadge } from "@indihub/ui";
 import { useAdminAuth } from "@/components/admin/admin-auth-context";
 import { AdminActionMenu, AdminListbox, type AdminSelectOption, AdminTabs } from "@/components/admin/admin-ux";
 import { FinanceMetric, FinancePanel, FinanceState } from "@/components/admin/finance/finance-ui";
 import { GstDocumentDetailsDrawer } from "@/components/shared/gst-document-details-drawer";
-import { indihubFetch } from "@/lib/api";
+import { SideDrawer } from "@/components/shared/side-drawer";
+import { indihubFetch, userFacingApiErrorMessage } from "@/lib/api";
 import {
   downloadAdminGstReportCsv,
   downloadAdminGstDocumentPdf,
   getAdminGstDocuments,
   getAdminGstFilingPeriods,
   getAdminGstOverview,
+  manualEInvoiceValidationError,
+  recordAdminManualEInvoice,
+  type ManualEInvoiceInput,
   type GstComplianceStatus,
   type GstCsvExport,
   type GstDocumentFilters,
@@ -99,8 +107,12 @@ const exports: Array<[string, GstCsvExport, typeof FileSpreadsheet]> = [
   ["E-way bill status", "e-way-bill", FileCheck2],
 ];
 
+const manualEInvoiceFieldClass =
+  "min-h-11 w-full rounded-md border border-[#D8E2EA] bg-white px-3 py-2 text-sm font-semibold text-[#1F2933] outline-none focus:border-[#ED3500] focus:ring-2 focus:ring-[#ED3500]/10 disabled:cursor-not-allowed disabled:bg-[#F8FAFC] disabled:opacity-70";
+
 export function AdminGstReportsClient() {
   const auth = useAdminAuth();
+  const isAdmin = auth.user?.roles.includes("ADMIN") ?? false;
   const [dateFrom, setDateFrom] = useState(defaultMonthStart());
   const [dateTo, setDateTo] = useState(defaultDate());
   const [sellerId, setSellerId] = useState("");
@@ -126,7 +138,7 @@ export function AdminGstReportsClient() {
   });
   const sellers = useQuery({
     queryKey: ["admin-finance-gst-sellers", auth.authHeaders],
-    enabled: auth.isAuthenticated,
+    enabled: auth.isAuthenticated && isAdmin,
     queryFn: async () => {
       const response = await indihubFetch<{ items: SellerOption[] }>(
         "/api/admin/sellers?limit=100",
@@ -206,7 +218,7 @@ export function AdminGstReportsClient() {
   const [filingSellerId, setFilingSellerId] = useState("");
   const filingPeriods = useQuery({
     queryKey: ["admin-finance-gst-filing-periods", auth.authHeaders, filingSellerId],
-    enabled: auth.isAuthenticated && Boolean(filingSellerId),
+    enabled: auth.isAuthenticated && isAdmin && Boolean(filingSellerId),
     queryFn: () => getAdminGstFilingPeriods(auth.authHeaders, filingSellerId),
   });
 
@@ -307,10 +319,18 @@ export function AdminGstReportsClient() {
             />
           </div>
         </div>
-        <div className="mt-5 grid gap-3 border-t border-[#E5E7EB] pt-5 md:grid-cols-2 xl:grid-cols-[1fr_1fr_1.4fr_1.4fr_auto]">
+        <div
+          className={`mt-5 grid gap-3 border-t border-[#E5E7EB] pt-5 md:grid-cols-2 ${
+            isAdmin
+              ? "xl:grid-cols-[1fr_1fr_1.4fr_1.4fr_auto]"
+              : "xl:grid-cols-[1fr_1fr_1.6fr_auto]"
+          }`}
+        >
           <DateField label="From" value={dateFrom} onChange={(value) => { setDateFrom(value); setRegisterPage(1); setCompliancePage(1); }} />
           <DateField label="To" value={dateTo} onChange={(value) => { setDateTo(value); setRegisterPage(1); setCompliancePage(1); }} />
-          <AdminListbox label="Seller" value={sellerId} options={sellerOptions} onChange={(value) => { setSellerId(value); setRegisterPage(1); setCompliancePage(1); }} />
+          {isAdmin ? (
+            <AdminListbox label="Seller" value={sellerId} options={sellerOptions} onChange={(value) => { setSellerId(value); setRegisterPage(1); setCompliancePage(1); }} />
+          ) : null}
           <label className="space-y-2">
             <span className="block text-xs font-black uppercase tracking-wide text-[#667085]">Document search</span>
             <div className="relative">
@@ -340,6 +360,7 @@ export function AdminGstReportsClient() {
       {overview.data ? (
         <GstWorkspace
           overview={overview.data}
+          isAdmin={isAdmin}
           documents={documents.data}
           documentsLoading={documents.isLoading}
           documentsError={documents.error}
@@ -382,6 +403,7 @@ export function AdminGstReportsClient() {
 
 function GstWorkspace({
   overview,
+  isAdmin,
   documents,
   documentsLoading,
   documentsError,
@@ -412,6 +434,7 @@ function GstWorkspace({
   filingError,
 }: {
   overview: GstReportOverview;
+  isAdmin: boolean;
   documents: GstDocumentPage | undefined;
   documentsLoading: boolean;
   documentsError: unknown;
@@ -462,7 +485,7 @@ function GstWorkspace({
           {
             key: "summary",
             label: "Summary",
-            panel: <SummaryTab overview={overview} />,
+            panel: <SummaryTab overview={overview} canConfigure={isAdmin} />,
           },
           {
             key: "register",
@@ -519,27 +542,37 @@ function GstWorkspace({
               />
             ),
           },
-          {
-            key: "filing",
-            label: "Filing oversight",
-            panel: (
-              <FilingTab
-                options={filingSellerOptions}
-                sellerId={filingSellerId}
-                onSellerChange={onFilingSellerChange}
-                periods={filingPeriods}
-                loading={filingLoading}
-                error={filingError}
-              />
-            ),
-          },
+          ...(isAdmin
+            ? [
+                {
+                  key: "filing",
+                  label: "Filing oversight",
+                  panel: (
+                    <FilingTab
+                      options={filingSellerOptions}
+                      sellerId={filingSellerId}
+                      onSellerChange={onFilingSellerChange}
+                      periods={filingPeriods}
+                      loading={filingLoading}
+                      error={filingError}
+                    />
+                  ),
+                },
+              ]
+            : []),
         ]}
       />
     </>
   );
 }
 
-function SummaryTab({ overview }: { overview: GstReportOverview }) {
+function SummaryTab({
+  overview,
+  canConfigure,
+}: {
+  overview: GstReportOverview;
+  canConfigure: boolean;
+}) {
   return (
     <div className="grid gap-5">
       <div className="grid gap-5 xl:grid-cols-2">
@@ -576,7 +609,17 @@ function SummaryTab({ overview }: { overview: GstReportOverview }) {
         </FinancePanel>
       </div>
       <FinancePanel>
-        <PanelHeading title="Provider readiness" description="Configured status only. This does not submit returns or generate government identifiers." />
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <PanelHeading title="Provider readiness" description="Configured status only. This does not submit returns or generate government identifiers." />
+          {canConfigure ? (
+            <Button asChild variant="outline" size="sm">
+              <Link href="/admin/settings/tax-gst">
+                <Settings className="h-4 w-4" aria-hidden="true" />
+                Configure GST
+              </Link>
+            </Button>
+          ) : null}
+        </div>
         <div className="grid gap-3 md:grid-cols-3">
           <ReadinessRow label="E-invoice / IRN" enabled={overview.providerReadiness.eInvoice.enabled} mode={overview.providerReadiness.eInvoice.mode} provider={overview.providerReadiness.eInvoice.provider} credentials={overview.providerReadiness.eInvoice.credentialsConfigured} />
           <ReadinessRow label="E-way bill" enabled={overview.providerReadiness.eWayBill.enabled} mode={overview.providerReadiness.eWayBill.mode} provider={overview.providerReadiness.eWayBill.provider} credentials={overview.providerReadiness.eWayBill.credentialsConfigured} />
@@ -790,11 +833,41 @@ function ComplianceTab({
 
 function DocumentTable({ data, page, onPageChange, compliance = false }: { data: GstDocumentPage | undefined; page: number; onPageChange: (page: number) => void; compliance?: boolean }) {
   const auth = useAdminAuth();
+  const queryClient = useQueryClient();
   const [selectedDocument, setSelectedDocument] =
     useState<GstReportDocument | null>(null);
+  const [manualEInvoiceDocument, setManualEInvoiceDocument] =
+    useState<GstReportDocument | null>(null);
+  const [complianceNotice, setComplianceNotice] = useState("");
   const downloadMutation = useMutation({
     mutationFn: (document: GstReportDocument) =>
       downloadAdminGstDocumentPdf(auth.authHeaders, document.id),
+  });
+  const manualEInvoiceMutation = useMutation({
+    mutationFn: ({
+      documentId,
+      input,
+    }: {
+      documentId: string;
+      documentNumber: string;
+      input: ManualEInvoiceInput;
+    }) => recordAdminManualEInvoice(auth.authHeaders, documentId, input),
+    onSuccess: async (_result, variables) => {
+      setManualEInvoiceDocument(null);
+      setComplianceNotice(`IRN details saved for ${variables.documentNumber}.`);
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["admin-finance-gst-compliance"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["admin-finance-gst-documents"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["admin-finance-gst-overview"],
+        }),
+        queryClient.invalidateQueries({ queryKey: ["admin-reports-gst"] }),
+      ]);
+    },
   });
 
   if (!data || data.items.length === 0) {
@@ -803,6 +876,14 @@ function DocumentTable({ data, page, onPageChange, compliance = false }: { data:
   return (
     <>
       <div className="grid gap-3">
+        {complianceNotice ? (
+          <p
+            role="status"
+            className="rounded-md border border-[#A6E3C8] bg-[#ECFDF3] px-4 py-3 text-sm font-bold text-[#067647]"
+          >
+            {complianceNotice}
+          </p>
+        ) : null}
         <div className="overflow-x-auto rounded-md border border-[#E5E7EB]" data-testid="admin-gst-register">
           <table className="min-w-[1100px] w-full border-collapse text-left text-sm">
           <thead className="bg-[#F8FAFC] text-xs font-black uppercase tracking-wide text-[#667085]">
@@ -847,6 +928,30 @@ function DocumentTable({ data, page, onPageChange, compliance = false }: { data:
                 <td className="px-4 py-3"><div className="grid gap-1 text-xs font-semibold"><span>E-invoice <StatusBadge tone={statusTone(item.compliance.eInvoiceStatus)}>{humanize(item.compliance.eInvoiceStatus)}</StatusBadge></span><span>E-way <StatusBadge tone={statusTone(item.compliance.eWayBillStatus)}>{humanize(item.compliance.eWayBillStatus)}</StatusBadge></span>{item.compliance.irn ? <span className="break-all text-[#667085]">IRN {item.compliance.irn}</span> : null}{item.compliance.eWayBillNumber ? <span className="text-[#667085]">EWB {item.compliance.eWayBillNumber}</span> : null}{item.compliance.eInvoiceError || item.compliance.eWayBillError ? <span className="text-[#B42318]">{item.compliance.eInvoiceError ?? item.compliance.eWayBillError}</span> : null}</div></td>
                 <td className="px-4 py-3 text-right">
                   <div className="inline-flex items-center gap-1">
+                    {compliance &&
+                    item.compliance.eInvoiceStatus !== "NOT_REQUIRED" ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          manualEInvoiceMutation.reset();
+                          setComplianceNotice("");
+                          setManualEInvoiceDocument(item);
+                        }}
+                        title={
+                          item.compliance.eInvoiceStatus === "GENERATED"
+                            ? "Edit manual IRN details"
+                            : "Record manual IRN details"
+                        }
+                        aria-label={`${
+                          item.compliance.eInvoiceStatus === "GENERATED"
+                            ? "Edit"
+                            : "Record"
+                        } IRN details for ${item.documentNumber ?? "tax document"}`}
+                        className="grid h-9 w-9 place-items-center rounded-md border border-[#D8E2EA] bg-white text-[#344054] transition hover:border-[#ED3500] hover:text-[#ED3500]"
+                      >
+                        <FilePenLine className="h-4 w-4" aria-hidden="true" />
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       onClick={() => setSelectedDocument(item)}
@@ -901,7 +1006,209 @@ function DocumentTable({ data, page, onPageChange, compliance = false }: { data:
               : null
         }
       />
+      {manualEInvoiceDocument ? (
+        <ManualEInvoiceDrawer
+          key={manualEInvoiceDocument.id}
+          document={manualEInvoiceDocument}
+          pending={manualEInvoiceMutation.isPending}
+          error={manualEInvoiceMutation.error}
+          onClose={() => {
+            if (manualEInvoiceMutation.isPending) return;
+            setManualEInvoiceDocument(null);
+            manualEInvoiceMutation.reset();
+          }}
+          onSave={(input) =>
+            manualEInvoiceMutation.mutate({
+              documentId: manualEInvoiceDocument.id,
+              documentNumber:
+                manualEInvoiceDocument.documentNumber ?? "tax document",
+              input,
+            })
+          }
+        />
+      ) : null}
     </>
+  );
+}
+
+function ManualEInvoiceDrawer({
+  document,
+  pending,
+  error,
+  onClose,
+  onSave,
+}: {
+  document: GstReportDocument;
+  pending: boolean;
+  error: unknown;
+  onClose: () => void;
+  onSave: (input: ManualEInvoiceInput) => void;
+}) {
+  const [irn, setIrn] = useState(document.compliance.irn ?? "");
+  const [acknowledgementNumber, setAcknowledgementNumber] = useState(
+    document.compliance.acknowledgementNumber ?? "",
+  );
+  const [acknowledgementDate, setAcknowledgementDate] = useState(
+    dateTimeLocalValue(document.compliance.acknowledgementDate),
+  );
+  const [signedQrCode, setSignedQrCode] = useState(
+    document.compliance.signedQrCode ?? "",
+  );
+  const [validationError, setValidationError] = useState("");
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const parsedDate = new Date(acknowledgementDate);
+    const input = {
+      irn,
+      acknowledgementNumber,
+      acknowledgementDate: Number.isNaN(parsedDate.getTime())
+        ? ""
+        : parsedDate.toISOString(),
+      signedQrCode,
+    };
+    const message = manualEInvoiceValidationError(input);
+    if (message) {
+      setValidationError(message);
+      return;
+    }
+    setValidationError("");
+    onSave(input);
+  }
+
+  const errorMessage = validationError || (error ? userFacingApiErrorMessage(error) : "");
+
+  return (
+    <SideDrawer
+      open
+      onClose={onClose}
+      title={
+        document.compliance.eInvoiceStatus === "GENERATED"
+          ? "Edit manual IRN"
+          : "Record manual IRN"
+      }
+      description="Record the result generated outside 1HandIndia. This action does not contact the Invoice Registration Portal."
+      widthClassName="max-w-2xl"
+    >
+      <form onSubmit={submit} className="grid gap-5">
+        <div className="grid gap-3 border-y border-[#E5E7EB] py-4 sm:grid-cols-2">
+          <div>
+            <p className="text-xs font-black uppercase text-[#667085]">Document</p>
+            <p className="mt-1 font-black text-[#1F2933]">
+              {document.documentNumber ?? "Pending number"}
+            </p>
+            <p className="mt-1 text-xs font-semibold text-[#667085]">
+              {document.orderNumber ?? "No order reference"}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs font-black uppercase text-[#667085]">Seller</p>
+            <p className="mt-1 font-black text-[#1F2933]">{document.sellerName}</p>
+            <p className="mt-1 text-xs font-semibold text-[#667085]">
+              {document.sellerGstin ?? "GSTIN not recorded"}
+            </p>
+          </div>
+        </div>
+
+        <label className="grid gap-2 text-sm font-black text-[#344054]">
+          Invoice Reference Number (IRN)
+          <input
+            value={irn}
+            onChange={(event) => {
+              setIrn(event.target.value);
+              setValidationError("");
+            }}
+            maxLength={128}
+            required
+            disabled={pending}
+            autoComplete="off"
+            spellCheck={false}
+            className={manualEInvoiceFieldClass}
+          />
+        </label>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="grid gap-2 text-sm font-black text-[#344054]">
+            Acknowledgement number
+            <input
+              value={acknowledgementNumber}
+              onChange={(event) => {
+                setAcknowledgementNumber(event.target.value);
+                setValidationError("");
+              }}
+              maxLength={100}
+              required
+              disabled={pending}
+              autoComplete="off"
+              spellCheck={false}
+              className={manualEInvoiceFieldClass}
+            />
+          </label>
+          <label className="grid gap-2 text-sm font-black text-[#344054]">
+            Acknowledgement date and time
+            <input
+              type="datetime-local"
+              value={acknowledgementDate}
+              onChange={(event) => {
+                setAcknowledgementDate(event.target.value);
+                setValidationError("");
+              }}
+              required
+              disabled={pending}
+              className={manualEInvoiceFieldClass}
+            />
+          </label>
+        </div>
+
+        <label className="grid gap-2 text-sm font-black text-[#344054]">
+          Signed QR payload
+          <textarea
+            value={signedQrCode}
+            onChange={(event) => {
+              setSignedQrCode(event.target.value);
+              setValidationError("");
+            }}
+            rows={8}
+            maxLength={10_000}
+            required
+            disabled={pending}
+            spellCheck={false}
+            className={manualEInvoiceFieldClass}
+          />
+          <span className="text-xs font-semibold leading-5 text-[#667085]">
+            Paste the signed QR payload returned by the IRP or approved external
+            filing system.
+          </span>
+        </label>
+
+        {errorMessage ? (
+          <p
+            role="alert"
+            className="rounded-md border border-[#F5B7B7] bg-[#FDECEC] px-4 py-3 text-sm font-bold text-[#8A1F1F]"
+          >
+            {errorMessage}
+          </p>
+        ) : null}
+
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#E5E7EB] pt-5">
+          <div>
+            <StatusBadge tone="warning">Manual processing</StatusBadge>
+            <p className="mt-2 text-xs font-semibold text-[#667085]">
+              Saving marks this e-invoice as generated and records an audit event.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" onClick={onClose} disabled={pending}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={pending}>
+              <Save className="h-4 w-4" aria-hidden="true" />
+              {pending ? "Saving" : "Save IRN details"}
+            </Button>
+          </div>
+        </div>
+      </form>
+    </SideDrawer>
   );
 }
 
@@ -983,7 +1290,12 @@ function Pagination({ page, limit, total, onPageChange }: { page: number; limit:
 }
 
 function ReadinessRow({ label, enabled, mode, provider, credentials }: { label: string; enabled: boolean; mode: string; provider: string; credentials: boolean }) {
-  return <div className="border-l-2 border-[#ED3500] bg-[#F8FAFC] px-4 py-3"><div className="flex items-center justify-between gap-2"><strong className="text-sm text-[#1F2933]">{label}</strong><StatusBadge tone={enabled && credentials ? "success" : enabled ? "warning" : "neutral"}>{enabled ? mode : "Disabled"}</StatusBadge></div><p className="mt-2 text-xs font-semibold text-[#667085]">Provider: {provider}</p><p className="mt-1 text-xs font-semibold text-[#667085]">{credentials ? "Credentials configured" : "Credentials not configured"}</p></div>;
+  const detail = mode === "MANUAL"
+    ? "No provider credentials required"
+    : credentials
+      ? "Configuration complete"
+      : "Configuration incomplete";
+  return <div className="border-l-2 border-[#ED3500] bg-[#F8FAFC] px-4 py-3"><div className="flex items-center justify-between gap-2"><strong className="text-sm text-[#1F2933]">{label}</strong><StatusBadge tone={enabled && credentials ? "success" : enabled ? "warning" : "neutral"}>{enabled ? mode : "Disabled"}</StatusBadge></div><p className="mt-2 text-xs font-semibold text-[#667085]">Provider: {provider}</p><p className="mt-1 text-xs font-semibold text-[#667085]">{detail}</p></div>;
 }
 
 function PanelHeading({ title, description }: { title: string; description?: string }) {
@@ -1024,6 +1336,14 @@ function endOfDay(value: string) {
 
 function formatDate(value?: string | null) {
   return value ? new Intl.DateTimeFormat("en-IN", { dateStyle: "medium" }).format(new Date(value)) : "Not issued";
+}
+
+function dateTimeLocalValue(value?: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
 }
 
 function humanize(value: string) {

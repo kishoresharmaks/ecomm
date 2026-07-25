@@ -1,5 +1,54 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { downloadAuthenticatedFile } from "./gst-report-api";
+import {
+  downloadAuthenticatedFile,
+  manualEInvoiceValidationError,
+  recordAdminManualEInvoice,
+} from "./gst-report-api";
+
+describe("manual e-invoice validation", () => {
+  const validInput = {
+    irn: "irn-1",
+    acknowledgementNumber: "ack-1",
+    acknowledgementDate: "2026-07-25T04:00:00.000Z",
+    signedQrCode: "signed-qr",
+  };
+
+  it("requires the complete IRN result package", () => {
+    expect(manualEInvoiceValidationError(validInput)).toBeNull();
+    expect(
+      manualEInvoiceValidationError({ ...validInput, signedQrCode: " " }),
+    ).toBe("Enter the signed QR payload.");
+    expect(
+      manualEInvoiceValidationError({ ...validInput, acknowledgementDate: "" }),
+    ).toBe("Enter the acknowledgement date and time.");
+  });
+
+  it("records a successful result as manual and generated", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify({ eInvoiceStatus: "GENERATED" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    await recordAdminManualEInvoice(
+      { bearerToken: "admin-token" },
+      "document-1",
+      validInput,
+    );
+
+    expect(fetchMock.mock.calls[0]?.[0]).toContain(
+      "/api/admin/reports/gst/documents/document-1/compliance",
+    );
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+      eInvoiceStatus: "GENERATED",
+      eInvoiceProvider: "MANUAL",
+      eInvoiceProviderRef: "ack-1",
+      eInvoiceError: "",
+    });
+    fetchMock.mockRestore();
+  });
+});
 
 describe("authenticated GST file downloads", () => {
   afterEach(() => {

@@ -87,6 +87,7 @@ export type GstReportDocument = {
     irn?: string | null;
     acknowledgementNumber?: string | null;
     acknowledgementDate?: string | null;
+    signedQrCode?: string | null;
     eInvoiceProvider?: string | null;
     eInvoiceError?: string | null;
     eWayBillStatus: GstComplianceStatus;
@@ -120,6 +121,13 @@ export type GstComplianceStatus =
   | "GENERATED"
   | "CANCELLED"
   | "FAILED";
+
+export type ManualEInvoiceInput = {
+  irn: string;
+  acknowledgementNumber: string;
+  acknowledgementDate: string;
+  signedQrCode: string;
+};
 
 export type GstMoneyTotals = {
   taxableValuePaise: number;
@@ -291,14 +299,14 @@ export type GstReport = {
       enabled: boolean;
       provider: string;
       credentialsConfigured: boolean;
-      mode: "MANUAL" | "PROVIDER_READY";
+      mode: "MANUAL";
     };
     eWayBill: {
       enabled: boolean;
       provider: string;
       thresholdPaise: number;
       credentialsConfigured: boolean;
-      mode: "MANUAL" | "PROVIDER_READY";
+      mode: "MANUAL";
     };
     platformInvoice: {
       configured: boolean;
@@ -432,6 +440,47 @@ export function downloadAdminGstDocumentPdf(
     `/api/admin/reports/gst/documents/${encodeURIComponent(documentId)}/download`,
     "gst-document.pdf",
     "The tax document could not be downloaded.",
+  );
+}
+
+export function manualEInvoiceValidationError(input: ManualEInvoiceInput) {
+  if (!input.irn.trim()) return "Enter the Invoice Reference Number (IRN).";
+  if (input.irn.trim().length > 128) return "IRN must be 128 characters or fewer.";
+  if (!input.acknowledgementNumber.trim()) return "Enter the acknowledgement number.";
+  if (input.acknowledgementNumber.trim().length > 100) {
+    return "Acknowledgement number must be 100 characters or fewer.";
+  }
+  if (!input.acknowledgementDate || Number.isNaN(Date.parse(input.acknowledgementDate))) {
+    return "Enter the acknowledgement date and time.";
+  }
+  if (!input.signedQrCode.trim()) return "Enter the signed QR payload.";
+  if (input.signedQrCode.trim().length > 10_000) {
+    return "Signed QR payload must be 10,000 characters or fewer.";
+  }
+  return null;
+}
+
+export function recordAdminManualEInvoice(
+  auth: IndihubAuthHeaders,
+  documentId: string,
+  input: ManualEInvoiceInput,
+) {
+  return indihubFetch<GstReportDocument["compliance"]>(
+    `/api/admin/reports/gst/documents/${encodeURIComponent(documentId)}/compliance`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({
+        eInvoiceStatus: "GENERATED",
+        irn: input.irn.trim(),
+        acknowledgementNumber: input.acknowledgementNumber.trim(),
+        acknowledgementDate: input.acknowledgementDate,
+        signedQrCode: input.signedQrCode.trim(),
+        eInvoiceProvider: "MANUAL",
+        eInvoiceProviderRef: input.acknowledgementNumber.trim(),
+        eInvoiceError: "",
+      }),
+    },
+    auth,
   );
 }
 

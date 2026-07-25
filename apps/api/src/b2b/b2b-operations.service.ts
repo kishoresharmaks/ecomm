@@ -1993,7 +1993,13 @@ export class B2BOperationsService {
     }
     const eInvoiceReady =
       document.compliance.eInvoiceStatus === GstComplianceStatus.NOT_REQUIRED ||
-      document.compliance.eInvoiceStatus === GstComplianceStatus.GENERATED;
+      (document.compliance.eInvoiceStatus === GstComplianceStatus.GENERATED &&
+        Boolean(
+          document.compliance.irn &&
+            document.compliance.acknowledgementNumber &&
+            document.compliance.acknowledgementDate &&
+            document.compliance.signedQrCode,
+        ));
     const eWayReady =
       document.compliance.eWayBillStatus === GstComplianceStatus.NOT_REQUIRED ||
       (document.compliance.eWayBillStatus === GstComplianceStatus.GENERATED &&

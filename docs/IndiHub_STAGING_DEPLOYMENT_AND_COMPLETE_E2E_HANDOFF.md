@@ -291,17 +291,11 @@ When V2 is enabled, the V2 collection worker replaces the legacy overdue worker.
 
 ```env
 GST_B2CL_THRESHOLD_PAISE="10000000"
-GST_PROVIDER_CREDENTIAL_ENCRYPTION_KEY="GENERATED_SECRET_AT_LEAST_32_CHARACTERS"
-
-GST_EINVOICE_CLIENT_ID=""
-GST_EINVOICE_CLIENT_SECRET=""
-GST_EWAY_CLIENT_ID=""
-GST_EWAY_CLIENT_SECRET=""
 ```
 
-Leave provider IDs empty when staging uses audited manual compliance. Filling them only indicates
-readiness; live IRN or e-way submission still requires an approved provider adapter and seller
-authorization.
+Configure the platform identity and manual workflows from `/admin/settings/tax-gst`.
+Manual compliance does not require provider environment variables and does not enable
+government submission.
 
 ### 4.4 Seller payout encryption
 
@@ -401,7 +395,6 @@ add or verify:
 - `NEXT_PUBLIC_API_URL`
 - `INTERNAL_API_SECRET`
 - `INTERNAL_API_URL`
-- `GST_PROVIDER_CREDENTIAL_ENCRYPTION_KEY`
 - `INDIHUB_PRIVATE_STORAGE_PROVIDER`
 - `RAZORPAY_RESERVATION_EXPIRY_WORKER_ENABLED`
 - All B2B V2 worker and encryption values above
