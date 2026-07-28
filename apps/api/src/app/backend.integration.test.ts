@@ -12,6 +12,7 @@ import {
   CodCollectionStatus,
   ContentStatus,
   CourierCodRemittanceStatus,
+  CourierProviderMode,
   CourierShipmentStatus,
   CourierWebhookEventStatus,
   DeliveryAssignmentAttemptSource,
@@ -34,8 +35,12 @@ import {
   ProductTemplateStatus,
   RoleCode,
   SellerOrderStatus,
+  SellerCapability,
   SellerSettlementStatus,
   SellerStatus,
+  SellerSubscriptionBillingCycle,
+  SellerSubscriptionPlanAudience,
+  SellerSubscriptionStatus,
   SellerType,
   SeoEntityType,
   SettingValueType,
@@ -431,7 +436,7 @@ integrationDescribe("1HandIndia backend integration", () => {
       countryCode: "GB",
       currency: "GBP",
       baseCurrency: "INR",
-      provider: "frankfurter",
+      provider: "FRANKFURTER",
       rate: 0.0095,
       isStale: false,
     });
@@ -2016,9 +2021,9 @@ integrationDescribe("1HandIndia backend integration", () => {
           isAvailable: false,
           serviceCountryCode: "IN",
           serviceStateCode: "IN-TN",
-          serviceCityCode: "IN-TN-SALEM",
-          servicePincodes: ["636114", "636304", "636114"],
-          serviceLocalAreaCodes: ["PIN-636114-708A9748"],
+          serviceCityCode: "IN-TN-SLM",
+          servicePincodes: ["636455", "636455"],
+          serviceLocalAreaCodes: ["IN-TN-SLM-OMALUR"],
           notes: "Available for Salem routes.",
         })
         .expect(200);
@@ -2031,9 +2036,9 @@ integrationDescribe("1HandIndia backend integration", () => {
           isAvailable: false,
           serviceCountryCode: "IN",
           serviceStateCode: "IN-TN",
-          serviceCityCode: "IN-TN-SALEM",
-          servicePincodes: ["636114", "636304"],
-          serviceLocalAreaCodes: ["PIN-636114-708A9748"],
+          serviceCityCode: "IN-TN-SLM",
+          servicePincodes: ["636455"],
+          serviceLocalAreaCodes: ["IN-TN-SLM-OMALUR"],
           codCashLimitPaise: 500000,
           effectiveCodCashLimitPaise: 500000,
           notes: "Available for Salem routes.",
@@ -2178,7 +2183,7 @@ integrationDescribe("1HandIndia backend integration", () => {
           cityCode: "IN-TN-CBE",
           pincode: "641012",
           localAreaCode: "IN-TN-CBE-RS",
-          shippingChargePaise: 4900,
+          baseChargePaise: 4900,
           freeAbovePaise: 999999,
           codSurchargeType: "FLAT",
           codSurchargeFlatPaise: 600,
@@ -2559,7 +2564,7 @@ integrationDescribe("1HandIndia backend integration", () => {
           name: `${runId} E2E courier GB`,
           deliveryMode: DeliveryMode.THIRD_PARTY_COURIER,
           countryCode: "GB",
-          shippingChargePaise: 15000,
+          baseChargePaise: 15000,
           priority: 1,
           isActive: true,
         })
@@ -2649,7 +2654,7 @@ integrationDescribe("1HandIndia backend integration", () => {
           stateCode: "ZZ-TEST",
           cityCode: "ZZ-TEST-CITY",
           pincode: "999001",
-          shippingChargePaise: 4800,
+          baseChargePaise: 4800,
           minSubtotalPaise: 0,
           maxSubtotalPaise: 99900,
           priority: 10,
@@ -2668,7 +2673,7 @@ integrationDescribe("1HandIndia backend integration", () => {
           stateCode: "zz-test",
           cityCode: "zz-test-city",
           pincode: "999001",
-          shippingChargePaise: 4900,
+          baseChargePaise: 4900,
           minSubtotalPaise: 50000,
           maxSubtotalPaise: 150000,
           priority: 99,
@@ -2689,7 +2694,7 @@ integrationDescribe("1HandIndia backend integration", () => {
           stateCode: "zz-test",
           cityCode: "zz-test-city",
           pincode: "999001",
-          shippingChargePaise: 4900,
+          baseChargePaise: 4900,
           minSubtotalPaise: 50000,
           maxSubtotalPaise: 150000,
           priority: 99,
@@ -2739,7 +2744,7 @@ integrationDescribe("1HandIndia backend integration", () => {
           stateCode: "ZZ-TEST",
           cityCode: "ZZ-TEST-CITY",
           pincode: "999001",
-          shippingChargePaise: 4700,
+          baseChargePaise: 4700,
           minSubtotalPaise: 0,
           maxSubtotalPaise: 99900,
           priority: 10,
@@ -6287,7 +6292,7 @@ integrationDescribe("1HandIndia backend integration", () => {
       provider: "imagekit",
       urlEndpoint: `https://ik.imagekit.io/${runId}-images`,
       publicKey: `${runId}_imagekit_public_key`,
-      folder: `indihub/sellers/${data.sellerUser.id}/products`,
+      folder: `1handindia/sellers/${data.sellerUser.id}/products`,
     });
     await request(app.getHttpServer())
       .get("/api/storage/readiness")
@@ -6634,6 +6639,27 @@ async function seedIntegrationData(prisma: PrismaClient) {
   await seedIntegrationLocations(prisma);
 
   const roles = await ensureRoles(prisma);
+  const sellerPlan = await prisma.sellerSubscriptionPlan.create({
+    data: {
+      code: `${safeRunCode()}_SELLER_PLAN`,
+      name: `${runId} Seller Plan`,
+      audience: SellerSubscriptionPlanAudience.ALL,
+      pricePaise: 0,
+      billingCycle: SellerSubscriptionBillingCycle.LIFETIME,
+      productLimit: null,
+      b2bEnquiryLimit: 100,
+      isActive: true,
+    },
+  });
+  await prisma.courierProviderSetting.create({
+    data: {
+      providerCode: `${safeRunCode()}_DEFAULT_COURIER`,
+      displayName: `${runId} Default Courier`,
+      mode: CourierProviderMode.MANUAL,
+      isActive: true,
+      serviceableCountryCodes: ["IN", "GB"],
+    },
+  });
   const adminUser = await createUserWithRole(
     prisma,
     roles,
@@ -6725,12 +6751,16 @@ async function seedIntegrationData(prisma: PrismaClient) {
     sellerUser.id,
     `${runId} Seller Store`,
     `${runId}-seller-store`,
+    { latitude: 11.0168, longitude: 76.9558 },
+    sellerPlan.id,
   );
   const otherSeller = await createApprovedSeller(
     prisma,
     otherSellerUser.id,
     `${runId} Other Seller Store`,
     `${runId}-other-seller-store`,
+    { latitude: 11.6643, longitude: 78.146 },
+    sellerPlan.id,
   );
 
   const businessBuyer = await prisma.businessBuyer.create({
@@ -6977,7 +7007,7 @@ async function seedIntegrationLocations(prisma: PrismaClient) {
       baseCurrency_quoteCurrency_provider: {
         baseCurrency: "INR",
         quoteCurrency: "GBP",
-        provider: "frankfurter",
+        provider: "FRANKFURTER",
       },
     },
     update: {
@@ -6989,7 +7019,7 @@ async function seedIntegrationLocations(prisma: PrismaClient) {
     create: {
       baseCurrency: "INR",
       quoteCurrency: "GBP",
-      provider: "frankfurter",
+      provider: "FRANKFURTER",
       rate: "0.0095",
       fetchedAt: new Date(),
       expiresAt: new Date(Date.now() + 60 * 60 * 1000),
@@ -7147,7 +7177,10 @@ async function createApprovedSeller(
     stateCode: string;
     cityCode: string;
     localAreaCode: string | null;
+    latitude: number;
+    longitude: number;
   }>,
+  subscriptionPlanId?: string,
 ) {
   return prisma.seller.create({
     data: {
@@ -7157,6 +7190,9 @@ async function createApprovedSeller(
       slug,
       status: SellerStatus.APPROVED,
       approvalStatus: ApprovalStatus.APPROVED,
+      enabledCapabilities: [SellerCapability.RETAIL],
+      subscriptionStatus: SellerSubscriptionStatus.ACTIVE,
+      ...(subscriptionPlanId ? { subscriptionPlanId } : {}),
       profile: {
         create: {
           contactName: storeName,
@@ -7178,6 +7214,12 @@ async function createApprovedSeller(
           stateCode: addressOverrides?.stateCode ?? "IN-TN",
           cityCode: addressOverrides?.cityCode ?? "IN-TN-CBE",
           localAreaCode: addressOverrides?.localAreaCode ?? "IN-TN-CBE-RS",
+          ...(addressOverrides?.latitude !== undefined
+            ? { latitude: addressOverrides.latitude }
+            : {}),
+          ...(addressOverrides?.longitude !== undefined
+            ? { longitude: addressOverrides.longitude }
+            : {}),
         },
       },
     },
@@ -7198,6 +7240,7 @@ async function seedHighVolumeAutoAssignmentData(
   const loadLocalAreaCode = `${loadKey}_AREA`;
   const targetOrderId = randomUUID();
   const targetDeliveryDetailId = randomUUID();
+  const targetSellerSplitId = randomUUID();
   const winnerPartnerId = randomUUID();
   const rejectedPartnerCount = 200;
   const busyPartnerCount = 500;
@@ -7310,10 +7353,21 @@ async function seedHighVolumeAutoAssignmentData(
       },
       sellerSplits: {
         create: {
+          id: targetSellerSplitId,
           sellerId: data.seller.id,
           sellerSubtotalPaise: 50_000,
           netPayablePaise: 50_000,
           sellerStatus: SellerOrderStatus.PROCESSING,
+        },
+      },
+      shipments: {
+        create: {
+          shipmentNumber: `${loadKey}-SHIPMENT`,
+          orderSellerSplitId: targetSellerSplitId,
+          sellerId: data.seller.id,
+          subtotalPaise: 50_000,
+          deliveryMode: DeliveryMode.LOCAL_DELIVERY_PARTNER,
+          status: DeliveryStatus.PACKED,
         },
       },
     },
@@ -7439,6 +7493,7 @@ async function seedHighVolumeAutoAssignmentData(
 }
 
 async function cleanupIntegrationData(prisma: PrismaClient) {
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE "order_shipment_assignment_events"');
   const users = await prisma.user.findMany({
     where: {
       OR: [{ email: { contains: runId } }, { email: { startsWith: "ih-e2e-" } }],
@@ -7696,6 +7751,9 @@ async function cleanupIntegrationData(prisma: PrismaClient) {
   await prisma.sellerAddress.deleteMany({ where: { sellerId: { in: sellerIds } } });
   await prisma.sellerProfile.deleteMany({ where: { sellerId: { in: sellerIds } } });
   await prisma.seller.deleteMany({ where: { id: { in: sellerIds } } });
+  await prisma.sellerSubscriptionPlan.deleteMany({
+    where: { code: { contains: safeRunCode() } },
+  });
   await prisma.businessBuyerAddress.deleteMany({
     where: { businessBuyerId: { in: businessBuyerIds } },
   });

@@ -163,8 +163,7 @@ export class SellerSettlementsService {
     }
 
     const run = await this.prisma.client.$transaction(async (tx) => {
-      const [splits, b2bOrders, serviceSettlements, openServiceReceivables] = await Promise.all([
-        tx.orderSellerSplit.findMany({
+      const splits = await tx.orderSellerSplit.findMany({
           where: {
             payoutId: null,
             sellerStatus: { not: SellerOrderStatus.CANCELLED },
@@ -195,8 +194,8 @@ export class SellerSettlementsService {
             }
           },
           orderBy: { createdAt: "asc" }
-        }),
-        tx.b2BOrder.findMany({
+        });
+      const b2bOrders = await tx.b2BOrder.findMany({
           where: {
             payoutId: null,
             sellerId: { not: null },
@@ -209,8 +208,8 @@ export class SellerSettlementsService {
             }
           },
           orderBy: { createdAt: "asc" }
-        }),
-        tx.serviceBookingSettlement.findMany({
+        });
+      const serviceSettlements = await tx.serviceBookingSettlement.findMany({
           where: {
             payoutId: null,
             status: { in: [SellerSettlementStatus.NOT_ELIGIBLE, SellerSettlementStatus.ELIGIBLE] },
@@ -225,8 +224,8 @@ export class SellerSettlementsService {
           },
           include: { booking: true },
           orderBy: { createdAt: "asc" }
-        }),
-        tx.serviceSellerReceivable.findMany({
+        });
+      const openServiceReceivables = await tx.serviceSellerReceivable.findMany({
           where: {
             payoutOffsetId: null,
             status: { in: [ServiceSellerReceivableStatus.OPEN, ServiceSellerReceivableStatus.PARTIALLY_SETTLED] },
@@ -238,8 +237,7 @@ export class SellerSettlementsService {
             }
           },
           orderBy: { createdAt: "asc" }
-        })
-      ]);
+        });
 
       if (!splits.length && !b2bOrders.length && !serviceSettlements.length) {
         throw new BadRequestException("No eligible seller order, B2B, or service payout sources found for this settlement period.");

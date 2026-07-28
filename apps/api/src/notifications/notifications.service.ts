@@ -1245,8 +1245,13 @@ export class NotificationsService {
       where: { code: catalog.defaultTemplateCode },
       select: { id: true },
     });
-    const created = await this.prisma.client.emailTriggerRule.create({
-      data: {
+    const created = await this.prisma.client.emailTriggerRule.upsert({
+      where: { eventCode_recipientType: { eventCode, recipientType } },
+      update: {
+        category: catalog.category,
+        delayMinutes: 0,
+      },
+      create: {
         eventCode: catalog.eventCode,
         recipientType: catalog.recipientType,
         category: catalog.category,

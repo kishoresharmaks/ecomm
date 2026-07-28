@@ -88,6 +88,7 @@ describe("NotificationsService", () => {
     });
     prisma.client.emailTriggerRule.findUnique.mockReset();
     prisma.client.emailTriggerRule.create.mockReset();
+    prisma.client.emailTriggerRule.upsert.mockReset();
     queue.enqueueEmail.mockResolvedValue(false);
     queue.isAvailable.mockReturnValue(false);
     emailDelivery.deliver.mockResolvedValue({ providerMessageId: "smtp-dev-log_1" });
@@ -461,6 +462,58 @@ describe("NotificationsService", () => {
         subject: "Welcome Priya",
       }),
     );
+  });
+
+  it("atomically creates a missing trigger rule", async () => {
+    prisma.client.emailTriggerRule.findUnique.mockResolvedValue(null);
+    prisma.client.notificationTemplate.findUnique.mockResolvedValue({ id: "template_customer" });
+    prisma.client.emailTriggerRule.upsert.mockResolvedValue({
+      id: "trigger_customer_registered",
+      eventCode: "CUSTOMER_REGISTERED",
+      recipientType: EmailRecipientType.CUSTOMER,
+      category: EmailTemplateCategory.CUSTOMER,
+      isEnabled: true,
+      delayMinutes: 0,
+      templateId: "template_customer",
+      template: {
+        code: "CUSTOMER_ACCOUNT_CREATED",
+        channel: NotificationChannel.EMAIL,
+        subject: "Welcome {{ customerName }}",
+        body: "Hello {{ customerName }}",
+        status: ContentStatus.PUBLISHED,
+        theme: null,
+      },
+    });
+    prisma.client.notificationLog.create.mockResolvedValue({ id: "log_trigger" });
+    prisma.client.notificationLog.findUnique.mockResolvedValue({
+      id: "log_trigger",
+      status: NotificationStatus.SENT,
+    });
+
+    const service = new NotificationsService(
+      prisma as never,
+      queue as unknown as NotificationQueueService,
+      emailDelivery as unknown as EmailDeliveryService,
+    );
+
+    await service.notifyEvent({
+      eventCode: "CUSTOMER_REGISTERED",
+      recipientType: EmailRecipientType.CUSTOMER,
+      recipient: "customer@example.com",
+      variables: { customerName: "Priya" },
+    });
+
+    expect(prisma.client.emailTriggerRule.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          eventCode_recipientType: {
+            eventCode: "CUSTOMER_REGISTERED",
+            recipientType: EmailRecipientType.CUSTOMER,
+          },
+        },
+      }),
+    );
+    expect(prisma.client.emailTriggerRule.create).not.toHaveBeenCalled();
   });
 
   it("creates a skipped log when a trigger is disabled", async () => {
