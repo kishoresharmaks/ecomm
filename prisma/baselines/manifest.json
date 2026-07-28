@@ -2,5 +2,5 @@
   "schemaVersion": 1,
   "baselineSql": "prisma/baselines/20260721_current_production_schema.sql",
   "hardeningScript": "scripts/database/print-production-baseline-hardening.mjs",
-  "throughMigration": "20260724130000_fix_order_shipment_assignment_events_id"
+  "throughMigration": "20260721203000_service_sac_tax_integration"
 }
