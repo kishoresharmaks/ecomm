@@ -36,6 +36,21 @@ pnpm architecture:baseline:verify
 
 `architecture:check` blocks new context edges and growth in existing baseline edges. `architecture:baseline:verify` additionally fails when the baseline can be tightened, preventing removed debt from being accidentally reintroduced.
 
+## Database migration baseline
+
+The historical Prisma migration directory does not begin with the original marketplace schema. Its first migration, `20260601090000_production_ecommerce_optimizations`, adds indexes to tables that already existed. Therefore, a direct `prisma migrate deploy` against an empty database is invalid.
+
+The authoritative empty-database contract is `../../prisma/baselines/manifest.json`:
+
+- Apply `../../prisma/baselines/20260721_current_production_schema.sql`.
+- Restore PostgreSQL-only hardening emitted by `../../scripts/database/print-production-baseline-hardening.mjs`.
+- Register migrations through `20260724130000_fix_order_shipment_assignment_events_id` as represented by that baseline.
+- Deploy later migrations normally with Prisma Migrate.
+
+CI performs this sequence through `pnpm db:bootstrap:empty` only against an explicitly allowed local disposable test database. Existing staging and production databases continue using normal `prisma migrate deploy`; the bootstrap command rejects protected environments. Do not edit, squash, or delete historical migrations that may already be registered in deployed databases.
+
+`pnpm db:migrations:check` validates the migration directories and the baseline manifest/cutoff contract.
+
 The baseline is not permission to add more coupling. Any approved exception requires a debt-register entry with an owner, rationale, review date, and removal condition.
 
 ## Review cadence

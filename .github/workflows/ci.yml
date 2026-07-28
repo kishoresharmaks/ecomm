@@ -53,7 +53,7 @@ jobs:
         run: pnpm audit --prod --audit-level high
 
   database-integration:
-    name: Migration replay and API integration
+    name: Baseline bootstrap and API integration
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -73,6 +73,7 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/indihub_integration_test?schema=public
       DATABASE_DIRECT_URL: postgresql://postgres:postgres@localhost:5432/indihub_integration_test?schema=public
       INDIHUB_ALLOW_INTEGRATION_TEST_DB: "true"
+      INDIHUB_ALLOW_EMPTY_DB_BOOTSTRAP: "true"
       REDIS_URL: ""
     steps:
       - name: Checkout
@@ -90,8 +91,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Generate Prisma client
         run: pnpm db:generate
-      - name: Replay migrations on empty PostgreSQL
-        run: pnpm exec prisma migrate deploy --schema prisma/schema.prisma
+      - name: Bootstrap baseline and deploy incremental migrations
+        run: pnpm db:bootstrap:empty
       - name: Verify migration status
         run: pnpm exec prisma migrate status --schema prisma/schema.prisma
       - name: Run guarded API integration suite
