@@ -224,7 +224,7 @@ export type DeliveryUpdatePayload = {
   status?: DeliveryStatus;
   trackingReference?: string | undefined;
   estimatedDeliveryDate?: string | undefined;
-  deliveryNote?: string | undefined;
+  deliveryNote?: string | null | undefined;
   receiverName?: string | undefined;
   proofNote?: string | undefined;
   proofReference?: string | undefined;
@@ -239,7 +239,14 @@ export function getDeliveryAccess(auth: MobileAuthHeaders) {
 
 export function listDeliveryOrders(
   auth: MobileAuthHeaders,
-  query: { search?: string; deliveryStatus?: string; paymentStatus?: string; page?: number; limit?: number } = {},
+  query: {
+    search?: string;
+    deliveryStatus?: string | string[];
+    paymentStatus?: string | string[];
+    paymentMethod?: string | string[];
+    page?: number;
+    limit?: number;
+  } = {},
 ) {
   return getJson<PageResult<DeliveryOrder>>({ path: "/delivery/orders", auth, searchParams: query });
 }
@@ -288,9 +295,9 @@ export function updateDeliveryProfile(
     isAvailable?: boolean;
     servicePincodes?: string[];
     serviceLocalAreaCodes?: string[];
-    baseLatitude?: number;
-    baseLongitude?: number;
-    serviceRadiusKm?: number;
+    baseLatitude?: number | null;
+    baseLongitude?: number | null;
+    serviceRadiusKm?: number | null;
     notes?: string | null;
   },
 ) {

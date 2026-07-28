@@ -70,8 +70,8 @@ export function SellerInventoryReportClient({ initialDateFrom = "", initialDateT
           </div>
           <div className="flex flex-wrap items-end gap-3">
             <form onSubmit={submit} className="grid w-full gap-3 md:grid-cols-[1fr_1fr_auto]">
-              <SellerField label="Date from" name="dateFrom" type="date" value={dateFrom} onChange={setDateFrom} />
-              <SellerField label="Date to" name="dateTo" type="date" value={dateTo} onChange={setDateTo} />
+          <SellerField label="Date from" name="dateFrom" type="date" value={dateFrom} max={dateTo || undefined} onChange={setDateFrom} />
+          <SellerField label="Date to" name="dateTo" type="date" value={dateTo} min={dateFrom || undefined} onChange={setDateTo} />
               <Button type="submit" className="self-end">
                 <CalendarDays className="h-4 w-4" aria-hidden="true" />
                 Apply

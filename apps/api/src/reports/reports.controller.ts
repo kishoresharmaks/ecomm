@@ -107,6 +107,13 @@ export class ReportsController {
     return this.gstCompliance.adminOverview(query);
   }
 
+  @Get("gst/sellers")
+  @Roles(RoleCode.ADMIN, RoleCode.FINANCE)
+  @ApiOperation({ summary: "List GST-registered sellers available to finance reports." })
+  gstSellers() {
+    return this.gstCompliance.gstSellerOptions();
+  }
+
   @Get("gst/documents")
   @Roles(RoleCode.ADMIN, RoleCode.FINANCE)
   @ApiOperation({ summary: "List issued GST documents with server-side pagination and filters." })

@@ -33,11 +33,17 @@ const SellerSalesTrendChart = dynamic(
   },
 );
 
-export function SellerSalesReportClient() {
+export function SellerSalesReportClient({
+  initialDateFrom = "",
+  initialDateTo = "",
+}: {
+  initialDateFrom?: string;
+  initialDateTo?: string;
+}) {
   const sellerAuth = useSellerAuth();
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
-  const [submittedRange, setSubmittedRange] = useState({ dateFrom: "", dateTo: "" });
+  const [dateFrom, setDateFrom] = useState(initialDateFrom);
+  const [dateTo, setDateTo] = useState(initialDateTo);
+  const [submittedRange, setSubmittedRange] = useState({ dateFrom: initialDateFrom, dateTo: initialDateTo });
 
   const profileQuery = useQuery({
     queryKey: ["seller-profile", sellerAuth.authKey],
@@ -95,8 +101,8 @@ export function SellerSalesReportClient() {
           </div>
           <div className="flex flex-wrap items-end gap-3">
             <form onSubmit={submit} className="grid w-full gap-3 md:grid-cols-[1fr_1fr_auto] lg:max-w-2xl">
-              <SellerField label="Date from" name="dateFrom" type="date" value={dateFrom} onChange={setDateFrom} />
-              <SellerField label="Date to" name="dateTo" type="date" value={dateTo} onChange={setDateTo} />
+          <SellerField label="Date from" name="dateFrom" type="date" value={dateFrom} max={dateTo || undefined} onChange={setDateFrom} />
+          <SellerField label="Date to" name="dateTo" type="date" value={dateTo} min={dateFrom || undefined} onChange={setDateTo} />
               <Button type="submit" className="self-end">
                 <CalendarDays className="h-4 w-4" aria-hidden="true" />
                 Apply

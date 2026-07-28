@@ -29,6 +29,7 @@ const moreItems: Array<{
   { title: "Deals", subtitle: "Promotions and event participation", href: "/deals", icon: Settings02Icon },
   { title: "Returns", subtitle: "Review return requests and QC notes", href: "/returns", icon: PackageIcon },
   { title: "Subscription", subtitle: "Seller plan and renewal status", href: "/subscription", icon: Settings02Icon },
+  { title: "Account & privacy", subtitle: "Privacy policy and account deletion", href: "/account-privacy", icon: UserCircleIcon },
 ];
 
 export default function SellerMoreScreen() {

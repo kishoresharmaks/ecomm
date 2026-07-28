@@ -42,6 +42,8 @@ describe("GST settings", () => {
           postalCode: "600001",
           country: "India",
         },
+        serviceSacCode: "998599",
+        serviceDescription: " Marketplace commission and platform services ",
       },
       eInvoice: { enabled: true, provider: "MANUAL" },
       eWayBill: { enabled: true, provider: "MANUAL", thresholdPaise: 5_000_000 },
@@ -56,6 +58,8 @@ describe("GST settings", () => {
         city: "Chennai",
         state: "Tamil Nadu",
       },
+      serviceSacCode: "998599",
+      serviceDescription: "Marketplace commission and platform services",
     });
     expect(isConfiguredPlatformGst(settings)).toBe(true);
     expect(

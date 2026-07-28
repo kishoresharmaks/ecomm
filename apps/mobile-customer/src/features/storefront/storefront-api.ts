@@ -3,11 +3,19 @@ import type { LocationArea, ProductSummary, SelectedLocation, StorefrontSearchRe
 import type { MobileCategory, MobileProduct, MobileStore } from "../../types/mobile-home";
 import { normalizeMobileAnnouncementsResponse } from "./mobile-announcement";
 import type { MobileAnnouncement } from "./mobile-announcement";
+import { normalizeMobilePopupAnnouncements } from "./mobile-popup-announcement";
+import type { MobilePopupAnnouncement } from "./mobile-popup-announcement";
 export type { MobileAnnouncement } from "./mobile-announcement";
+export type { MobilePopupAnnouncement } from "./mobile-popup-announcement";
 
 export async function listStorefrontAnnouncements(): Promise<MobileAnnouncement[]> {
   const data = await getJson<unknown>({ path: "/cms/announcements" });
   return normalizeMobileAnnouncementsResponse(data);
+}
+
+export async function listStorefrontPopupAnnouncements(): Promise<MobilePopupAnnouncement[]> {
+  const data = await getJson<unknown>({ path: "/cms/popup-announcements" });
+  return normalizeMobilePopupAnnouncements(data);
 }
 
 export type MobileCartSummary = {

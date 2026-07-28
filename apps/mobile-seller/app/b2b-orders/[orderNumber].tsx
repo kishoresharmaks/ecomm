@@ -3,18 +3,37 @@ import { router, useLocalSearchParams } from "expo-router";
 import { Linking, ScrollView, Text, View } from "react-native";
 import { useState } from "react";
 import { useMobileSellerAuth } from "../../src/auth/mobile-seller-auth-context";
-import { Button, Card, Header, LoadingState, Screen, StatusChip, Toast } from "../../src/components/screen";
-import { getB2BOrder, getB2BOrderDocumentAccess, type B2BOrderStatus } from "../../src/features/seller/seller-api";
+import { Button, Card, Header, LoadingState, QueryErrorState, Screen, StatusChip, Toast } from "../../src/components/screen";
+import { SellerHubHandoffButton } from "../../src/components/seller-hub-handoff-button";
+import { sellerPortalB2BOrderUrl } from "../../src/features/seller/b2b-navigation";
+import {
+  getB2BOrder,
+  getB2BOrderDocumentAccess,
+  getB2BProformaDocumentAccess,
+  getB2BTaxInvoiceDocumentAccess,
+  type B2BOrderStatus,
+} from "../../src/features/seller/seller-api";
 import { formatMoney } from "../../src/lib/money";
 
-const statusTones: Record<B2BOrderStatus, "info" | "success" | "warning" | "danger"> = {
+const statusTones: Partial<Record<B2BOrderStatus, "info" | "success" | "warning" | "danger">> = {
   PROFORMA_ISSUED: "warning",
   PO_SUBMITTED: "info",
   PO_ACCEPTED: "info",
   IN_FULFILMENT: "info",
+  DISPATCHED: "info",
+  IN_TRANSIT: "info",
+  DELIVERED: "success",
+  DELIVERY_ACCEPTED: "success",
+  DELIVERY_DISPUTED: "danger",
+  PAYMENT_OVERDUE: "danger",
+  ON_HOLD: "warning",
+  FULFILMENT_REVIEW_REQUIRED: "warning",
+  CLOSED: "success",
   FULFILLED: "success",
   CANCELLED: "danger",
 };
+
+type B2BDocumentType = "purchase-order" | "proforma" | "tax-invoice";
 
 export default function B2BOrderDetailScreen() {
   const { orderNumber } = useLocalSearchParams<{ orderNumber: string }>();
@@ -32,12 +51,16 @@ export default function B2BOrderDetailScreen() {
   });
 
   const documentAccessMutation = useMutation({
-    mutationFn: () => getB2BOrderDocumentAccess(auth.authHeaders, orderNumber),
+    mutationFn: (type: B2BDocumentType) => {
+      if (type === "proforma") return getB2BProformaDocumentAccess(auth.authHeaders, orderNumber);
+      if (type === "tax-invoice") return getB2BTaxInvoiceDocumentAccess(auth.authHeaders, orderNumber);
+      return getB2BOrderDocumentAccess(auth.authHeaders, orderNumber);
+    },
   });
 
-  const handleViewDocument = async () => {
+  const handleViewDocument = async (type: B2BDocumentType) => {
     try {
-      const documentAccess = await documentAccessMutation.mutateAsync();
+      const documentAccess = await documentAccessMutation.mutateAsync(type);
       if (documentAccess?.documentUrl) {
         const canOpen = await Linking.canOpenURL(documentAccess.documentUrl);
         if (!canOpen) {
@@ -50,7 +73,7 @@ export default function B2BOrderDetailScreen() {
     } catch (error) {
       setToast({
         visible: true,
-        message: error instanceof Error ? error.message : "Could not open the purchase order document.",
+        message: error instanceof Error ? error.message : "Could not open the B2B document.",
         type: "error",
       });
     }
@@ -58,6 +81,19 @@ export default function B2BOrderDetailScreen() {
 
   if (!auth.enabled || orderQuery.isLoading) {
     return <LoadingState message="Loading order details..." />;
+  }
+
+  if (orderQuery.isError) {
+    return (
+      <Screen>
+        <QueryErrorState
+          title="B2B order could not be loaded"
+          message={orderQuery.error instanceof Error ? orderQuery.error.message : undefined}
+          onRetry={() => void orderQuery.refetch()}
+          retrying={orderQuery.isFetching}
+        />
+      </Screen>
+    );
   }
 
   const order = orderQuery.data;
@@ -99,6 +135,15 @@ export default function B2BOrderDetailScreen() {
           <Text style={{ color: "#111827", fontSize: 18, fontWeight: "900", marginTop: 6 }}>
             Subtotal: {formatMoney(order.subtotalPaise ?? 0, order.currency)}
           </Text>
+          <Text style={{ color: "#6B7280", fontSize: 12 }}>
+            Buyer payable: {formatMoney(order.buyerPayableAmountPaise ?? order.subtotalPaise ?? 0, order.currency)}
+          </Text>
+          <Text style={{ color: "#6B7280", fontSize: 12 }}>
+            Paid: {formatMoney(order.paidAmountPaise ?? 0, order.currency)}
+          </Text>
+          <Text style={{ color: "#6B7280", fontSize: 12 }}>Payment: {statusLabel(order.paymentStatus ?? "PENDING")}</Text>
+          {order.paymentDueAt ? <Text style={{ color: "#6B7280", fontSize: 12 }}>Due: {new Date(order.paymentDueAt).toLocaleDateString()}</Text> : null}
+          <Text style={{ color: "#6B7280", fontSize: 12 }}>Settlement: {statusLabel(order.settlementStatus ?? "NOT_ELIGIBLE")}</Text>
         </Card>
         <Card>
           <Text style={{ color: "#111827", fontSize: 16, fontWeight: "900", marginBottom: 8 }}>Proforma and Purchase Order</Text>
@@ -113,6 +158,18 @@ export default function B2BOrderDetailScreen() {
           {order.purchaseOrderNote ? (
             <Text style={{ color: "#6B7280", fontSize: 12 }}>PO note: {order.purchaseOrderNote}</Text>
           ) : null}
+          <Text style={{ color: "#6B7280", fontSize: 12 }}>Tax invoice: {order.taxInvoiceNumber ?? "Not issued"}</Text>
+        </Card>
+        <Card>
+          <Text style={{ color: "#111827", fontSize: 16, fontWeight: "900", marginBottom: 8 }}>Transport</Text>
+          <Text style={{ color: "#6B7280", fontSize: 12 }}>Mode: {statusLabel(order.transportMode ?? "SELLER_ARRANGED_TRANSPORT")}</Text>
+          <Text style={{ color: "#6B7280", fontSize: 12 }}>Status: {statusLabel(order.transportStatus ?? "REQUESTED")}</Text>
+          <Text style={{ color: "#6B7280", fontSize: 12 }}>Charge: {formatMoney(order.transportChargePaise ?? 0, order.currency)}</Text>
+          <Text style={{ color: "#6B7280", fontSize: 12 }}>Partner: {order.transportPartnerName ?? "Not added"}</Text>
+          <Text style={{ color: "#6B7280", fontSize: 12 }}>Tracking / LR / AWB: {order.transportTrackingRef ?? "Not added"}</Text>
+          {order.transportEta ? <Text style={{ color: "#6B7280", fontSize: 12 }}>ETA: {order.transportEta}</Text> : null}
+          {order.transportPickupAddress ? <Text style={{ color: "#6B7280", fontSize: 12 }}>Pickup: {order.transportPickupAddress}</Text> : null}
+          {order.transportNote ? <Text style={{ color: "#6B7280", fontSize: 12 }}>{order.transportNote}</Text> : null}
         </Card>
         {order.selectedResponse ? (
           <Card>
@@ -140,7 +197,24 @@ export default function B2BOrderDetailScreen() {
           </Card>
         ) : null}
         <Card>
-          <Button title="View Purchase Order" onPress={handleViewDocument} disabled={!order.purchaseOrderFileKey || documentAccessMutation.isPending} />
+          <Text style={{ color: "#111827", fontSize: 16, fontWeight: "900", marginBottom: 8 }}>Documents</Text>
+          <View style={{ gap: 8 }}>
+            <Button title="View Proforma Invoice" tone="secondary" onPress={() => void handleViewDocument("proforma")} disabled={!order.proformaInvoiceNumber || documentAccessMutation.isPending} />
+            <Button title="View Purchase Order" tone="secondary" onPress={() => void handleViewDocument("purchase-order")} disabled={!order.purchaseOrderFileKey || documentAccessMutation.isPending} />
+            <Button title="View Tax Invoice" tone="secondary" onPress={() => void handleViewDocument("tax-invoice")} disabled={!order.taxInvoiceNumber || documentAccessMutation.isPending} />
+          </View>
+        </Card>
+        <Card>
+          <Text style={{ color: "#111827", fontSize: 16, fontWeight: "900", marginBottom: 6 }}>Manage this order</Text>
+          <Text style={{ color: "#6B7280", fontSize: 13, marginBottom: 12 }}>
+            Fulfilment planning, procurement, production, pick-pack, QC, invoicing, shipment, and dispatch controls are available in Seller Hub.
+          </Text>
+          <SellerHubHandoffButton
+            buttonTitle="Manage in Seller Hub"
+            title="Open this B2B order in Seller Hub?"
+            message="The exact order will open with its full operational controls. Sign in with the same seller account if requested."
+            url={sellerPortalB2BOrderUrl(order.orderNumber)}
+          />
         </Card>
         <Button title="Back" tone="secondary" onPress={() => router.back()} />
         <Toast visible={toast.visible} message={toast.message} type={toast.type} onDismiss={() => setToast((prev) => ({ ...prev, visible: false }))} />

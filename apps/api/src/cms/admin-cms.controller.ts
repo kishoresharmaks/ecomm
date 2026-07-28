@@ -15,6 +15,7 @@ import { CmsRevisionQueryDto } from "./dto/cms-revision.dto";
 import { CreateHomepageSectionDto, UpdateHomepageSectionDto } from "./dto/homepage-section.dto";
 import { CreateSeoEntryDto, SeoEntryQueryDto, UpdateSeoEntryDto } from "./dto/seo-entry.dto";
 import { CreateCmsAnnouncementDto, UpdateCmsAnnouncementDto } from "./dto/cms-announcement.dto";
+import { CreateCmsPopupAnnouncementDto, UpdateCmsPopupAnnouncementDto } from "./dto/cms-popup-announcement.dto";
 
 @ApiTags("Admin CMS")
 @Roles(RoleCode.ADMIN)
@@ -92,6 +93,40 @@ export class AdminCmsController {
   @ApiOperation({ summary: "Delete a CMS announcement." })
   deleteAnnouncement(@CurrentUser() actor: RequestUser, @Param("id", ParseUUIDPipe) id: string) {
     return this.cmsService.deleteAnnouncement(actor, id);
+  }
+
+  @Get("popup-announcements")
+  @ApiOperation({ summary: "List promotional popups for admin." })
+  listPopupAnnouncements(@Query() query: CmsQueryDto) {
+    return this.cmsService.listAdminPopupAnnouncements(query);
+  }
+
+  @Get("popup-announcements/:id")
+  @ApiOperation({ summary: "Read a promotional popup for admin." })
+  getPopupAnnouncement(@Param("id", ParseUUIDPipe) id: string) {
+    return this.cmsService.getAdminPopupAnnouncement(id);
+  }
+
+  @Post("popup-announcements")
+  @ApiOperation({ summary: "Create a promotional popup." })
+  createPopupAnnouncement(@CurrentUser() actor: RequestUser, @Body() dto: CreateCmsPopupAnnouncementDto) {
+    return this.cmsService.createPopupAnnouncement(actor, dto);
+  }
+
+  @Patch("popup-announcements/:id")
+  @ApiOperation({ summary: "Update a promotional popup." })
+  updatePopupAnnouncement(
+    @CurrentUser() actor: RequestUser,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: UpdateCmsPopupAnnouncementDto,
+  ) {
+    return this.cmsService.updatePopupAnnouncement(actor, id, dto);
+  }
+
+  @Delete("popup-announcements/:id")
+  @ApiOperation({ summary: "Delete a promotional popup." })
+  deletePopupAnnouncement(@CurrentUser() actor: RequestUser, @Param("id", ParseUUIDPipe) id: string) {
+    return this.cmsService.deletePopupAnnouncement(actor, id);
   }
 
   @Get("homepage-sections")

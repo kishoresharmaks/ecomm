@@ -6,7 +6,7 @@ import { BarChart3, Package, IndianRupee, FileText, Undo2, CalendarDays, FileClo
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@indihub/ui";
 import { formatMoney } from "@/lib/storefront-api";
-import { getSellerReportsOverview } from "@/lib/seller-api";
+import { getSellerProfile, getSellerReportsOverview } from "@/lib/seller-api";
 import {
   SellerAuthNotice,
   SellerField,
@@ -14,7 +14,8 @@ import {
   SellerErrorPanel,
   SellerSkeleton,
   useSellerAuth,
-  isSellerOnboardingRequiredError
+  isSellerOnboardingRequiredError,
+  sellerHasCapability,
 } from "./seller-ui";
 
 export function SellerReportsHubClient() {
@@ -22,11 +23,17 @@ export function SellerReportsHubClient() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [submittedRange, setSubmittedRange] = useState({ dateFrom: "", dateTo: "" });
+  const profileQuery = useQuery({
+    queryKey: ["seller-profile", sellerAuth.authKey],
+    queryFn: () => getSellerProfile(sellerAuth.authHeaders),
+    enabled: sellerAuth.enabled,
+    retry: false,
+  });
 
   const reportQuery = useQuery({
     queryKey: ["seller-reports-overview", sellerAuth.authKey, submittedRange.dateFrom, submittedRange.dateTo],
     queryFn: () => getSellerReportsOverview(sellerAuth.authHeaders, submittedRange),
-    enabled: sellerAuth.enabled,
+    enabled: sellerAuth.enabled && Boolean(profileQuery.data),
     retry: false
   });
 
@@ -39,20 +46,30 @@ export function SellerReportsHubClient() {
     return <SellerAuthNotice />;
   }
 
-  if (reportQuery.error && isSellerOnboardingRequiredError(reportQuery.error)) {
+  if (
+    (profileQuery.error && isSellerOnboardingRequiredError(profileQuery.error)) ||
+    (reportQuery.error && isSellerOnboardingRequiredError(reportQuery.error))
+  ) {
     return <SellerOnboardingRequired message="Complete seller onboarding before viewing seller reports." />;
+  }
+  if (profileQuery.isLoading) {
+    return <SellerSkeleton />;
+  }
+  if (profileQuery.error) {
+    return <SellerErrorPanel error={profileQuery.error} onRetry={() => void profileQuery.refetch()} />;
   }
 
   const overview = reportQuery.data;
   const currency = overview?.currency || "INR";
+  const retailEnabled = sellerHasCapability(profileQuery.data, "RETAIL");
 
   return (
     <div className="grid gap-5">
       <div className="rounded-xl border border-[#E5E7EB] bg-white p-5 shadow-sm">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <form onSubmit={submit} className="grid w-full gap-3 md:grid-cols-[1fr_1fr_auto] lg:max-w-3xl">
-            <SellerField label="Date from" name="dateFrom" type="date" value={dateFrom} onChange={setDateFrom} />
-            <SellerField label="Date to" name="dateTo" type="date" value={dateTo} onChange={setDateTo} />
+            <SellerField label="Date from" name="dateFrom" type="date" value={dateFrom} max={dateTo || undefined} onChange={setDateFrom} />
+            <SellerField label="Date to" name="dateTo" type="date" value={dateTo} min={dateFrom || undefined} onChange={setDateTo} />
             <Button type="submit" className="self-end">
               <CalendarDays className="h-4 w-4" aria-hidden="true" />
               Apply
@@ -71,6 +88,8 @@ export function SellerReportsHubClient() {
       {reportQuery.error ? <SellerErrorPanel error={reportQuery.error} onRetry={() => void reportQuery.refetch()} /> : null}
 
       <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+        {retailEnabled ? (
+          <>
         <ReportCard
           title="Sales & Revenue"
           description="Detailed breakdown of your gross sales, net revenue, recent orders, and B2B volume."
@@ -92,6 +111,8 @@ export function SellerReportsHubClient() {
           bg="bg-[#EAF1F7]"
           query={submittedRange}
         />
+          </>
+        ) : null}
         <ReportCard
           title="Finance & Settlements"
           description="View your upcoming payouts, completed settlements, and marketplace deductions."
@@ -112,6 +133,7 @@ export function SellerReportsHubClient() {
           bg="bg-[#EAF1F7]"
           query={submittedRange}
         />
+        {retailEnabled ? (
         <ReportCard
           title="Returns & Refunds"
           description="Track return requests, refund values, and overall return rates for your products."
@@ -122,6 +144,7 @@ export function SellerReportsHubClient() {
           bg="bg-[#FFF0EC]"
           query={submittedRange}
         />
+        ) : null}
       </div>
     </div>
   );

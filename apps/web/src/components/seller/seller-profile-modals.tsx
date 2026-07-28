@@ -14,7 +14,7 @@ import {
   type SellerTaxRegistrationStatus,
   type SellerVerificationDocument,
 } from "@/lib/seller-api";
-import type { IndihubAuthHeaders } from "@/lib/api";
+import { userFacingApiErrorMessage, type IndihubAuthHeaders } from "@/lib/api";
 import type { LocationSource } from "@/lib/maps-api";
 import type { SellerDocumentType, SellerDocumentUploadResult } from "@/lib/seller-document-upload";
 import { useDelayedClose } from "@/hooks/use-delayed-close";
@@ -174,7 +174,7 @@ export function EditStoreDetailsModal({
     },
     onError: (error) => {
       setNoticeTone("danger");
-      setNotice(error instanceof Error ? error.message : "Update failed.");
+      setNotice(userFacingApiErrorMessage(error));
     },
   });
 
@@ -370,7 +370,7 @@ export function EditPayoutModal({
     },
     onError: (error) => {
       setNoticeTone("danger");
-      setNotice(error instanceof Error ? error.message : "Update failed.");
+      setNotice(userFacingApiErrorMessage(error));
     },
   });
 
@@ -474,7 +474,7 @@ export function EditAddressModal({
     },
     onError: (error) => {
       setNoticeTone("danger");
-      setNotice(error instanceof Error ? error.message : "Update failed.");
+      setNotice(userFacingApiErrorMessage(error));
     },
   });
 
@@ -679,7 +679,7 @@ export function EditDocumentsModal({
     },
     onError: (error) => {
       setNoticeTone("danger");
-      setNotice(error instanceof Error ? error.message : "Update failed.");
+      setNotice(userFacingApiErrorMessage(error));
     },
   });
 

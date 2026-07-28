@@ -11,9 +11,20 @@ afterEach(() => {
 describe("seller report navigation", () => {
   const now = new Date(2026, 6, 22, 12);
 
-  it("converts report period presets to inclusive local dates", () => {
-    expect(sellerReportDateQuery("month", now)).toEqual({ dateFrom: "2026-07-01", dateTo: "2026-07-22" });
-    expect(sellerReportDateQuery("7d", now)).toEqual({ dateFrom: "2026-07-16", dateTo: "2026-07-22" });
+  it("converts report period presets to inclusive local-day timestamps", () => {
+    const end = new Date(2026, 6, 22, 23, 59, 59, 999).toISOString();
+    expect(sellerReportDateQuery("today", now)).toEqual({
+      dateFrom: new Date(2026, 6, 22).toISOString(),
+      dateTo: end,
+    });
+    expect(sellerReportDateQuery("month", now)).toEqual({
+      dateFrom: new Date(2026, 6, 1).toISOString(),
+      dateTo: end,
+    });
+    expect(sellerReportDateQuery("7d", now)).toEqual({
+      dateFrom: new Date(2026, 6, 16).toISOString(),
+      dateTo: end,
+    });
     expect(sellerReportDateQuery("all", now)).toEqual({});
   });
 

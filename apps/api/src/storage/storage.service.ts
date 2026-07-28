@@ -11,6 +11,7 @@ import { access, mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve, sep } from "node:path";
 import { Prisma, RoleCode, SettingValueType } from "@indihub/database";
 import type { RequestUser } from "../auth/types/indihub-request";
+import { professionalPdfTemplateVersion } from "../documents/professional-pdf";
 import { PrismaService } from "../prisma/prisma.service";
 import { readBooleanSetting } from "../settings/setting-value-utils";
 import { safeStorageFolderSegment } from "./storage-image";
@@ -1658,7 +1659,7 @@ export class StorageService {
     return this.normalizeB2BProformaInvoiceKey(
       `${b2bProformaInvoicePrefix}/${this.safeSegment(context.businessBuyerId)}/${this.safeSegment(
         context.orderNumber,
-      )}/${fileName}`,
+      )}/${professionalPdfTemplateVersion}/${fileName}`,
     );
   }
 
@@ -1673,7 +1674,7 @@ export class StorageService {
     return this.normalizeB2BTaxInvoiceKey(
       `${b2bTaxInvoicePrefix}/${this.safeSegment(context.businessBuyerId)}/${this.safeSegment(
         context.orderNumber,
-      )}/${fileName}`,
+      )}/${professionalPdfTemplateVersion}/${fileName}`,
     );
   }
 
@@ -1687,7 +1688,7 @@ export class StorageService {
     return this.normalizeB2BReceiptVoucherKey(
       `${b2bReceiptVoucherPrefix}/${this.safeSegment(context.businessBuyerId)}/${this.safeSegment(
         context.orderNumber,
-      )}/${fileName}`,
+      )}/${professionalPdfTemplateVersion}/${fileName}`,
     );
   }
 

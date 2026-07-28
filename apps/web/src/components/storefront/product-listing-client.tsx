@@ -14,6 +14,7 @@ import {
   listCategories,
   listProducts,
   listStorefrontDeals,
+  getCart,
   primaryVariant,
   type ProductSummary
 } from "@/lib/storefront-api";
@@ -32,6 +33,7 @@ import {
   storefrontInputClassName,
 } from "./storefront-ui";
 import { browsingLocationLabel } from "./storefront-location-utils";
+import { useStorefrontWishlist } from "./use-storefront-wishlist";
 
 type ProductListingClientProps = {
   mode: "categories" | "category" | "search" | "deals";
@@ -43,6 +45,7 @@ export function ProductListingClient({ mode, categorySlug, initialSearch = "" }:
   const queryClient = useQueryClient();
   const customerAuth = useCustomerAuth();
   const storefrontLocation = useStorefrontLocation();
+  const wishlist = useStorefrontWishlist();
   const [search, setSearch] = useState(initialSearch);
   const [submittedSearch, setSubmittedSearch] = useState(initialSearch);
   const [notice, setNotice] = useState<string | null>(null);
@@ -52,6 +55,14 @@ export function ProductListingClient({ mode, categorySlug, initialSearch = "" }:
     queryKey: ["categories"],
     queryFn: listCategories
   });
+  const cartQuery = useQuery({
+    queryKey: ["cart", customerAuth.authKey],
+    queryFn: () => getCart(customerAuth.authHeaders),
+    enabled: customerAuth.enabled,
+  });
+  const cartProductIds = new Set(
+    cartQuery.data?.items.map((item) => item.productVariant.product.id) ?? [],
+  );
   const categoryQuery = useQuery({
     queryKey: ["category", categorySlug],
     queryFn: () => getCategory(categorySlug ?? ""),
@@ -126,11 +137,11 @@ export function ProductListingClient({ mode, categorySlug, initialSearch = "" }:
           : "All categories";
   const description =
     mode === "category"
-      ? (categoryQuery.data?.description ?? "Products approved for this category.")
+      ? (categoryQuery.data?.description ?? "Products available in this category.")
       : mode === "deals"
-        ? "Admin-selected flash sale products and active discounted products from approved sellers."
+        ? "Flash sale products and active discounts from marketplace sellers."
         : mode === "search"
-          ? "Search live approved products across active sellers."
+          ? "Search live products across marketplace sellers."
           : "Browse the active launch categories managed from the catalogue.";
   const productItems = isSearchMode
     ? (searchProductsQuery.data?.pages.flatMap((page) => page.items) ?? [])
@@ -141,7 +152,7 @@ export function ProductListingClient({ mode, categorySlug, initialSearch = "" }:
   const productResultDescription = isSearchMode
     ? submittedSearch
       ? `Showing matching approved products for "${submittedSearch}".`
-      : "Showing live approved products."
+      : "Showing live marketplace products."
     : `${productsQuery.data?.total ?? 0} ${mode === "deals" ? "deals" : "products"} found.`;
   const serviceItems = servicesQuery.data?.items ?? [];
   const hasServiceResults = mode === "category" && (servicesQuery.isLoading || serviceItems.length > 0 || servicesQuery.isError);
@@ -208,7 +219,7 @@ export function ProductListingClient({ mode, categorySlug, initialSearch = "" }:
         <StorefrontSection>
           <SectionHeading
             title="Categories"
-            description="Browse active departments published for the storefront, then continue into live products from approved sellers."
+            description="Browse active departments, then continue into live marketplace products."
           />
           {categoriesQuery.isLoading ? (
             <div className="mt-5 grid gap-4 sm:mt-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -283,10 +294,16 @@ export function ProductListingClient({ mode, categorySlug, initialSearch = "" }:
                   product={product}
                   onAddToCart={(item) => addMutation.mutate(item)}
                   isAdding={addMutation.isPending}
+                  isInCart={cartProductIds.has(product.id)}
+                  isWishlisted={wishlist.hasWishlistProduct(product.id)}
+                  isWishlistPending={wishlist.isPendingProductId === product.id}
+                  {...(customerAuth.enabled
+                    ? { onWishlistToggle: async (item: ProductSummary) => { await wishlist.toggleWishlist(item.id); } }
+                    : {})}
                 />
               ))
             ) : showProductEmptyState ? (
-              <StorefrontEmptyState className="col-span-2 md:col-span-3 lg:col-span-full" message="No matching approved products are live yet." />
+              <StorefrontEmptyState className="col-span-2 md:col-span-3 lg:col-span-full" message="No matching products are live yet." />
             ) : null}
           </div>
 

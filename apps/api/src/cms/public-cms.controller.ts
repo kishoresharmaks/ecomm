@@ -22,6 +22,12 @@ export class PublicCmsController {
     return this.cmsService.listPublishedAnnouncements();
   }
 
+  @Get("popup-announcements")
+  @ApiOperation({ summary: "List active customer homepage promotional popups." })
+  listPopupAnnouncements() {
+    return this.cmsService.listPublishedPopupAnnouncements();
+  }
+
   @Get("homepage-sections")
   @ApiOperation({ summary: "List published homepage sections." })
   listHomepageSections() {

@@ -15,6 +15,7 @@ import {
   OrderStatus,
   ProductTaxClassification,
   Prisma,
+  SellerStatus,
   SellerTaxRegistrationStatus,
   TaxDocumentLineType,
   TaxDocumentSource,
@@ -270,6 +271,42 @@ export class GstComplianceService {
   async sellerDocumentPage(actor: RequestUser, query: SellerGstDocumentQueryDto) {
     const sellerId = await this.sellerIdForActor(actor);
     return this.documentPage({ ...query, sellerId });
+  }
+
+  async gstSellerOptions() {
+    const sellers = await this.prisma.client.seller.findMany({
+      where: {
+        status: SellerStatus.APPROVED,
+        profile: {
+          is: {
+            taxRegistrationStatus: SellerTaxRegistrationStatus.GST_REGISTERED,
+          },
+        },
+      },
+      select: {
+        id: true,
+        storeName: true,
+        profile: {
+          select: {
+            businessLegalName: true,
+            gstNumber: true,
+          },
+        },
+      },
+      orderBy: { storeName: "asc" },
+      take: 500,
+    });
+    return sellers.flatMap((seller) => {
+      const gstin = this.validGstin(seller.profile?.gstNumber);
+      return gstin
+        ? [{
+            id: seller.id,
+            storeName: seller.storeName,
+            businessLegalName: seller.profile?.businessLegalName ?? null,
+            gstin,
+          }]
+        : [];
+    });
   }
 
   private async overview(query: ReportQueryDto, sellerId?: string) {
@@ -1061,12 +1098,13 @@ export class GstComplianceService {
         skipped += 1;
         continue;
       }
-      const calculation =
+      const calculated =
         split.commissionPaise === 0 &&
         split.gstOnCommissionPaise === 0 &&
         split.platformFeePaise === 0
           ? await this.financeCalculator.calculateSplit(split)
-          : split;
+          : null;
+      const calculation = calculated ?? split;
       const taxableValuePaise =
         calculation.commissionPaise + calculation.platformFeePaise;
       const totalTaxPaise = calculation.gstOnCommissionPaise;
@@ -1088,6 +1126,19 @@ export class GstComplianceService {
         supplyType === TaxSupplyType.INTER_STATE ? totalTaxPaise : 0;
       const issueDate = split.createdAt;
       const financialYear = this.financialYear(issueDate);
+      const recipientGstin = this.validGstin(split.seller.profile?.gstNumber);
+      const taxLinesSnapshot = this.platformTaxLinesSnapshot(
+        calculated?.snapshot ?? split.financeSnapshot,
+        config,
+        supplyType,
+        {
+          taxableValuePaise,
+          cgstPaise,
+          sgstPaise,
+          igstPaise,
+          totalTaxPaise,
+        },
+      );
 
       await this.prisma.client.$transaction(async (tx) => {
         const documentNumber = await this.nextMarketplaceDocumentNumber(
@@ -1109,17 +1160,21 @@ export class GstComplianceService {
             supplierAddressSnapshot: config.address,
             recipientLegalName:
               split.seller.profile?.businessLegalName?.trim() || split.seller.storeName,
-            recipientGstin: this.validGstin(split.seller.profile?.gstNumber),
+            recipientGstin,
             recipientAddressSnapshot: this.jsonValue(sellerAddress ?? {}),
             placeOfSupplyStateCode: sellerStateCode,
             supplyType,
+            gstrSupplySectionSnapshot: recipientGstin
+              ? GstrSupplySection.B2B
+              : GstrSupplySection.B2CS,
+            taxLinesSnapshot,
             taxableValuePaise,
             cgstPaise,
             sgstPaise,
             igstPaise,
             totalTaxPaise,
             invoiceValuePaise: taxableValuePaise + totalTaxPaise,
-            description: "Marketplace commission and platform services",
+            description: config.serviceDescription,
             issuedById: actorUserId,
           },
         });
@@ -1173,6 +1228,10 @@ export class GstComplianceService {
       !platform.address.postalCode
         ? ["Platform registered address"]
         : []),
+      ...(!/^[0-9]{6}$/.test(platform.serviceSacCode)
+        ? ["Valid platform service SAC code"]
+        : []),
+      ...(!platform.serviceDescription ? ["Platform service description"] : []),
     ];
     return {
       configured: isConfiguredPlatformGst(settings),
@@ -1181,7 +1240,103 @@ export class GstComplianceService {
       gstin: gstin ?? "",
       stateCode: platform.stateCode,
       address: platform.address as Prisma.InputJsonObject,
+      serviceSacCode: platform.serviceSacCode,
+      serviceDescription: platform.serviceDescription,
     };
+  }
+
+  private platformTaxLinesSnapshot(
+    value: unknown,
+    config: {
+      serviceSacCode: string;
+      serviceDescription: string;
+    },
+    supplyType: TaxSupplyType,
+    totals: {
+      taxableValuePaise: number;
+      cgstPaise: number;
+      sgstPaise: number;
+      igstPaise: number;
+      totalTaxPaise: number;
+    },
+  ): Prisma.InputJsonArray {
+    const snapshot =
+      value && typeof value === "object" && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : null;
+    const lines = Array.isArray(snapshot?.lines) ? snapshot.lines : [];
+    const grouped = new Map<
+      number,
+      {
+        taxableValuePaise: number;
+        cgstPaise: number;
+        sgstPaise: number;
+        igstPaise: number;
+        totalTaxPaise: number;
+      }
+    >();
+
+    for (const value of lines) {
+      if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+      const line = value as Record<string, unknown>;
+      const gstRateBps = Number(line.gstRateBps);
+      const taxableValuePaise =
+        Number(line.commissionPaise) + Number(line.platformFeePaise);
+      const totalTaxPaise = Number(line.gstOnCommissionPaise);
+      if (
+        !Number.isFinite(gstRateBps) ||
+        !Number.isFinite(taxableValuePaise) ||
+        !Number.isFinite(totalTaxPaise) ||
+        taxableValuePaise <= 0
+      ) {
+        continue;
+      }
+      const current = grouped.get(gstRateBps) ?? {
+        taxableValuePaise: 0,
+        cgstPaise: 0,
+        sgstPaise: 0,
+        igstPaise: 0,
+        totalTaxPaise: 0,
+      };
+      const cgstPaise =
+        supplyType === TaxSupplyType.INTRA_STATE ? Math.floor(totalTaxPaise / 2) : 0;
+      const sgstPaise =
+        supplyType === TaxSupplyType.INTRA_STATE ? totalTaxPaise - cgstPaise : 0;
+      current.taxableValuePaise += taxableValuePaise;
+      current.cgstPaise += cgstPaise;
+      current.sgstPaise += sgstPaise;
+      current.igstPaise +=
+        supplyType === TaxSupplyType.INTER_STATE ? totalTaxPaise : 0;
+      current.totalTaxPaise += totalTaxPaise;
+      grouped.set(gstRateBps, current);
+    }
+
+    if (grouped.size) {
+      return [...grouped.entries()].map(([gstRateBps, line]) => ({
+        description: config.serviceDescription,
+        sacCode: config.serviceSacCode,
+        gstRatePercent: gstRateBps / 100,
+        ...line,
+        source: "FINANCE_SNAPSHOT",
+      }));
+    }
+
+    return [
+      {
+        description: config.serviceDescription,
+        sacCode: config.serviceSacCode,
+        gstRatePercent:
+          totals.taxableValuePaise > 0
+            ? Math.round(
+                (totals.totalTaxPaise / totals.taxableValuePaise) * 10_000,
+              ) / 100
+            : 0,
+        ...totals,
+        source: "DERIVED_TOTAL",
+        warning:
+          "Historical platform invoice tax lines were derived from stored document totals.",
+      },
+    ];
   }
 
   private documentSummary(documents: SignedDocument[]): DocumentSummary {

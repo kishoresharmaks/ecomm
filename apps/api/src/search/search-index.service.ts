@@ -55,22 +55,27 @@ const searchJobStaleMinutes = 10;
 export class SearchIndexService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  enqueueProduct(productId: string, payload?: SearchEntityPayload) {
-    return this.enqueue(SearchDocumentEntityType.PRODUCT, productId, payload);
+  enqueueProduct(productId: string, payload?: SearchEntityPayload, client?: Prisma.TransactionClient) {
+    return this.enqueue(SearchDocumentEntityType.PRODUCT, productId, payload, client);
   }
 
-  enqueueSeller(sellerId: string, payload?: SearchEntityPayload) {
-    return this.enqueue(SearchDocumentEntityType.STORE, sellerId, payload);
+  enqueueSeller(sellerId: string, payload?: SearchEntityPayload, client?: Prisma.TransactionClient) {
+    return this.enqueue(SearchDocumentEntityType.STORE, sellerId, payload, client);
   }
 
-  enqueueCategory(categoryId: string, payload?: SearchEntityPayload) {
-    return this.enqueue(SearchDocumentEntityType.CATEGORY, categoryId, payload);
+  enqueueCategory(categoryId: string, payload?: SearchEntityPayload, client?: Prisma.TransactionClient) {
+    return this.enqueue(SearchDocumentEntityType.CATEGORY, categoryId, payload, client);
   }
 
-  async enqueue(entityType: SearchDocumentEntityType, entityId: string, payload?: SearchEntityPayload) {
+  async enqueue(
+    entityType: SearchDocumentEntityType,
+    entityId: string,
+    payload?: SearchEntityPayload,
+    client: Prisma.TransactionClient | PrismaService["client"] = this.prisma.client,
+  ) {
     const dedupeKey = `${entityType}:${entityId}`;
 
-    return this.prisma.client.searchIndexJob.upsert({
+    return client.searchIndexJob.upsert({
       where: { dedupeKey },
       update: {
         status: SearchIndexJobStatus.PENDING,

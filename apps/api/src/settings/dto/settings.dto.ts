@@ -92,6 +92,16 @@ export class GstPlatformIdentityDto {
   @ValidateNested()
   @Type(() => GstPlatformAddressDto)
   address!: GstPlatformAddressDto;
+
+  @ApiProperty({ example: "998599" })
+  @Matches(/^[0-9]{6}$/, { message: "serviceSacCode must contain exactly 6 digits." })
+  serviceSacCode!: string;
+
+  @ApiProperty({ example: "Marketplace commission and platform services" })
+  @IsString()
+  @MinLength(2)
+  @MaxLength(200)
+  serviceDescription!: string;
 }
 
 export class GstManualWorkflowDto {

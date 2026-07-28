@@ -34,7 +34,7 @@ export function MobileDeliveryAuthProvider({ children }: PropsWithChildren) {
   const [syncState, setSyncState] = useState<{ status: MobileDeliveryAuthStatus; error?: string }>({ status: "loading" });
   const [refreshIndex, setRefreshIndex] = useState(0);
   const lastSyncedSignatureRef = useRef<string | null>(null);
-  const inFlightSyncSignatureRef = useRef<string | null>(null);
+  const inFlightSyncRef = useRef<{ promise: Promise<void>; signature: string } | null>(null);
   const mountedRef = useRef(false);
   const getTokenRef = useRef(getToken);
   const signOutRef = useRef(signOut);
@@ -178,23 +178,28 @@ export function MobileDeliveryAuthProvider({ children }: PropsWithChildren) {
         updateSyncState({ status: "ready" });
         return;
       }
-      if (inFlightSyncSignatureRef.current === syncSignature) return;
-      inFlightSyncSignatureRef.current = syncSignature;
-
       updateSyncState({ status: "syncing" });
+      const existingSync = inFlightSyncRef.current;
+      const syncPromise =
+        existingSync?.signature === syncSignature
+          ? existingSync.promise
+          : postNoContent({
+              path: "/auth/sync-current-user",
+              auth: { bearerToken, getBearerToken: readBearerToken, onUnauthorized: handleUnauthorized },
+              body: {
+                email: userProfile.email,
+                ...(userProfile.phone ? { phone: userProfile.phone } : {}),
+                ...(userProfile.fullName ? { fullName: userProfile.fullName } : {}),
+                defaultRole: "CUSTOMER",
+              },
+            });
+      if (existingSync?.signature !== syncSignature) {
+        inFlightSyncRef.current = { promise: syncPromise, signature: syncSignature };
+      }
       try {
-        await postNoContent({
-          path: "/auth/sync-current-user",
-          auth: { bearerToken, getBearerToken: readBearerToken, onUnauthorized: handleUnauthorized },
-          body: {
-            email: userProfile.email,
-            ...(userProfile.phone ? { phone: userProfile.phone } : {}),
-            ...(userProfile.fullName ? { fullName: userProfile.fullName } : {}),
-            defaultRole: "CUSTOMER",
-          },
-        });
+        await syncPromise;
       } finally {
-        if (inFlightSyncSignatureRef.current === syncSignature) inFlightSyncSignatureRef.current = null;
+        if (inFlightSyncRef.current?.promise === syncPromise) inFlightSyncRef.current = null;
       }
 
       if (!cancelled) {

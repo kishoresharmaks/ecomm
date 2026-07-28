@@ -151,7 +151,15 @@ describe("seo helpers", () => {
 
   it("keeps sitemap fallbacks focused on public discovery routes", () => {
     expect(staticPublicSitemapEntries.map((entry) => entry.path)).toEqual(
-      expect.arrayContaining(["/", "/deals", "/stores", "/privacy-policy", "/seller/register", "/b2b/register"]),
+      expect.arrayContaining([
+        "/",
+        "/account-deletion",
+        "/deals",
+        "/stores",
+        "/privacy-policy",
+        "/seller/register",
+        "/b2b/register",
+      ]),
     );
     expect(staticPublicSitemapEntries.map((entry) => entry.path)).not.toEqual(
       expect.arrayContaining(["/cart", "/checkout", "/track-order"]),

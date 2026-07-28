@@ -1,0 +1,9 @@
+.expo/
+.expo-test-export/
+node_modules/
+.env
+dist/
+build/
+/android
+/ios
+expo-env.d.ts

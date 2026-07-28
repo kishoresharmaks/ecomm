@@ -62,21 +62,31 @@ const topicIcons: Record<SupportRequestTopic, LucideIcon> = {
 
 export function ContactPageClient() {
   const searchParams = useSearchParams();
+  const accountDeletionRequest = searchParams.get("request") === "account-deletion";
   const queryTopic = useMemo(
-    () => supportTopicFromQuery(searchParams.get("topic")),
-    [searchParams],
+    () => accountDeletionRequest ? "SELLER" : supportTopicFromQuery(searchParams.get("topic")),
+    [accountDeletionRequest, searchParams],
   );
   const [topic, setTopic] = useState<SupportRequestTopic>(queryTopic);
-  const [requesterType, setRequesterType] = useState<SupportRequesterType>("GUEST");
+  const [requesterType, setRequesterType] = useState<SupportRequesterType>(
+    accountDeletionRequest ? "SELLER" : "GUEST",
+  );
   const [preferredContactChannel, setPreferredContactChannel] =
     useState<SupportContactChannel>("EMAIL");
-  const [subject, setSubject] = useState(defaultSubjectForTopic(queryTopic));
+  const [subject, setSubject] = useState(
+    accountDeletionRequest ? "Seller account deletion request" : defaultSubjectForTopic(queryTopic),
+  );
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     setTopic(queryTopic);
+    if (accountDeletionRequest) {
+      setRequesterType("SELLER");
+      setSubject("Seller account deletion request");
+      return;
+    }
     setSubject(defaultSubjectForTopic(queryTopic));
-  }, [queryTopic]);
+  }, [accountDeletionRequest, queryTopic]);
 
   const contactQuery = useQuery({
     queryKey: ["storefront-contact"],

@@ -123,6 +123,7 @@ export const staticPublicSitemapEntries = [
   { path: "/seller/register", changeFrequency: "weekly", priority: 0.65, source: "seller_landing" },
   { path: "/b2b/register", changeFrequency: "weekly", priority: 0.65, source: "b2b_landing" },
   { path: "/privacy-policy", changeFrequency: "monthly", priority: 0.35, source: "policy" },
+  { path: "/account-deletion", changeFrequency: "monthly", priority: 0.35, source: "policy" },
   { path: "/refund-return-policy", changeFrequency: "monthly", priority: 0.35, source: "policy" },
   { path: "/seller-policy", changeFrequency: "monthly", priority: 0.35, source: "policy" },
   { path: "/shipping-policy", changeFrequency: "monthly", priority: 0.35, source: "policy" },

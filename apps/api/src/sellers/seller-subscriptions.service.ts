@@ -7,7 +7,7 @@ import {
   ServiceUnavailableException,
   UnauthorizedException,
 } from "@nestjs/common";
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import {
   ApprovalStatus,
   PaymentProvider,
@@ -298,6 +298,7 @@ export class SellerSubscriptionsService {
 
   async assignSellerPlan(sellerId: string, dto: AssignSellerSubscriptionDto, actor: RequestUser) {
     const updatedSeller = await this.prisma.client.$transaction(async (tx) => {
+      await this.lockSellerSubscriptionOwner(tx, sellerId);
       const seller = await tx.seller.findFirst({
         where: { id: sellerId, deletedAt: null },
         include: { subscriptionPlan: true },
@@ -430,6 +431,12 @@ export class SellerSubscriptionsService {
 
     const status = refreshedSubscription?.status ?? seller.subscriptionStatus;
     const plan = refreshedSubscription?.plan ?? seller.subscriptionPlan;
+    const hasAuthorizedAccess =
+      status === SellerSubscriptionStatus.ACTIVE ||
+      status === SellerSubscriptionStatus.TRIALING;
+    const canCancelStatus =
+      hasAuthorizedAccess ||
+      status === SellerSubscriptionStatus.PENDING_PAYMENT;
 
     return {
       sellerId: seller.id,
@@ -445,10 +452,10 @@ export class SellerSubscriptionsService {
           seller.status === SellerStatus.APPROVED &&
           seller.approvalStatus === ApprovalStatus.APPROVED &&
           Boolean(plan && this.isRecurringPaidPlan(plan)) &&
-          status !== SellerSubscriptionStatus.ACTIVE,
+          !hasAuthorizedAccess,
         canCancel:
           Boolean(refreshedSubscription?.providerSubscriptionId) &&
-          status === SellerSubscriptionStatus.ACTIVE &&
+          canCancelStatus &&
           !refreshedSubscription?.cancelAtPeriodEnd,
         gracePeriodEndsAt: refreshedSubscription?.gracePeriodEndsAt ?? null,
         cancelAtPeriodEnd: refreshedSubscription?.cancelAtPeriodEnd ?? false,
@@ -469,6 +476,12 @@ export class SellerSubscriptionsService {
     }
 
     const currentSubscription = await this.ensureCurrentSubscriptionRecord(seller.id, plan, actor.id);
+    if (
+      currentSubscription.status === SellerSubscriptionStatus.ACTIVE ||
+      currentSubscription.status === SellerSubscriptionStatus.TRIALING
+    ) {
+      throw new BadRequestException("This seller subscription is already authorized.");
+    }
 
     if (!this.isRecurringPaidPlan(plan)) {
       await this.activateNonRecurringSubscription(seller.id, currentSubscription.id, plan);
@@ -487,26 +500,44 @@ export class SellerSubscriptionsService {
     });
 
     let providerSubscriptionId = refreshedSubscription.providerSubscriptionId;
+    let expectedProviderStatus = refreshedSubscription.providerStatus;
+
+    if (
+      !providerSubscriptionId &&
+      refreshedSubscription.providerStatus?.startsWith("creation_pending:")
+    ) {
+      const recovered = await this.findRazorpaySubscriptionByLocalId(
+        keyId,
+        keySecret,
+        providerPlanId,
+        refreshedSubscription.id,
+      );
+      if (recovered) {
+        providerSubscriptionId = await this.persistRazorpaySubscription(
+          refreshedSubscription.id,
+          seller.id,
+          providerPlanId,
+          recovered,
+          refreshedSubscription.providerStatus,
+        );
+      } else if (refreshedSubscription.updatedAt > new Date(Date.now() - 2 * 60 * 1000)) {
+        throw new BadRequestException("Seller subscription authorization is already being prepared.");
+      }
+    }
 
     if (providerSubscriptionId) {
-      try {
-        const checkRes = await fetch(
-          `https://api.razorpay.com/v1/subscriptions/${encodeURIComponent(providerSubscriptionId)}`,
-          { headers: this.razorpayHeaders(keyId, keySecret) }
-        );
-        if (!checkRes.ok) {
-          providerSubscriptionId = null;
-        } else {
-          const remoteSub = (await checkRes.json()) as { status?: string };
-          if (remoteSub.status !== "created" && remoteSub.status !== "authenticated" && remoteSub.status !== "active") {
-            providerSubscriptionId = null;
-          }
-        }
-      } catch {
-        providerSubscriptionId = null;
-      }
+      const checkRes = await fetch(
+        `https://api.razorpay.com/v1/subscriptions/${encodeURIComponent(providerSubscriptionId)}`,
+        { headers: this.razorpayHeaders(keyId, keySecret) },
+      ).catch(() => {
+        throw new ServiceUnavailableException("Unable to verify the existing Razorpay subscription.");
+      });
+      const remoteSub = checkRes.ok
+        ? ((await checkRes.json()) as Record<string, unknown>)
+        : null;
+      const remoteStatus = this.stringFromRecord(remoteSub, "status");
 
-      if (providerSubscriptionId) {
+      if (["created", "authenticated", "active"].includes(remoteStatus ?? "")) {
         return this.sellerAuthorizationResponse(
           keyId,
           seller,
@@ -515,47 +546,71 @@ export class SellerSubscriptionsService {
           refreshedSubscription.id,
         );
       }
-    }
 
-    const providerSubscription = await this.createRazorpaySubscription(
-      keyId,
-      keySecret,
-      providerPlanId,
-      seller,
-      plan,
-      refreshedSubscription.id,
-    );
-    providerSubscriptionId = this.stringFromRecord(providerSubscription, "id") ?? null;
-    if (!providerSubscriptionId) {
-      throw new ServiceUnavailableException(
-        "Razorpay subscription creation did not return a provider subscription id.",
-      );
-    }
-
-    await this.prisma.client.$transaction(async (tx) => {
-      await tx.sellerSubscription.update({
-        where: { id: refreshedSubscription.id },
+      if (checkRes.status !== 404 && !["cancelled", "completed", "expired", "halted"].includes(remoteStatus ?? "")) {
+        throw new ServiceUnavailableException(
+          `Unable to verify the existing Razorpay subscription (status ${checkRes.status}).`,
+        );
+      }
+      expectedProviderStatus = remoteStatus ?? "provider_subscription_missing";
+      const cleared = await this.prisma.client.sellerSubscription.updateMany({
+        where: { id: refreshedSubscription.id, providerSubscriptionId },
         data: {
-          status: SellerSubscriptionStatus.PENDING_PAYMENT,
-          provider: PaymentProvider.RAZORPAY,
-          providerSubscriptionId,
-          providerPlanId,
-          providerStatus: this.stringFromRecord(providerSubscription, "status") ?? "created",
-          providerCustomerId: this.stringFromRecord(providerSubscription, "customer_id") ?? null,
-          providerSnapshot: providerSubscription as Prisma.InputJsonValue,
-          lastPaymentStatus: PaymentStatus.PENDING,
-          cancelAtPeriodEnd: false,
-          providerCancelAtCycleEnd: false,
+          providerSubscriptionId: null,
+          providerStatus: expectedProviderStatus,
         },
       });
-      await tx.seller.update({
-        where: { id: seller.id },
-        data: {
-          subscriptionStatus: SellerSubscriptionStatus.PENDING_PAYMENT,
-          subscriptionCurrentPeriodEnd: null,
-        },
-      });
+      if (cleared.count !== 1) {
+        throw new BadRequestException("Seller subscription authorization state changed. Try again.");
+      }
+    }
+
+    const creationClaim = `creation_pending:${randomUUID()}`;
+    const claimed = await this.prisma.client.sellerSubscription.updateMany({
+      where: {
+        id: refreshedSubscription.id,
+        providerSubscriptionId: null,
+        providerStatus: expectedProviderStatus,
+      },
+      data: { providerStatus: creationClaim },
     });
+    if (claimed.count !== 1) {
+      throw new BadRequestException("Seller subscription authorization is already being prepared.");
+    }
+
+    let providerSubscription: Record<string, unknown> | null = null;
+    try {
+      providerSubscription = await this.createRazorpaySubscription(
+        keyId,
+        keySecret,
+        providerPlanId,
+        seller,
+        plan,
+        refreshedSubscription.id,
+      );
+      providerSubscriptionId = await this.persistRazorpaySubscription(
+        refreshedSubscription.id,
+        seller.id,
+        providerPlanId,
+        providerSubscription,
+        creationClaim,
+      );
+    } catch (error) {
+      const orphanProviderSubscriptionId = this.stringFromRecord(providerSubscription, "id");
+      if (orphanProviderSubscriptionId) {
+        await this.cancelRazorpaySubscription(
+          keyId,
+          keySecret,
+          orphanProviderSubscriptionId,
+          false,
+        ).catch(() => null);
+      }
+      await this.prisma.client.sellerSubscription.updateMany({
+        where: { id: refreshedSubscription.id, providerStatus: creationClaim },
+        data: { providerStatus: expectedProviderStatus },
+      }).catch(() => null);
+      throw error;
+    }
 
     return this.sellerAuthorizationResponse(
       keyId,
@@ -589,24 +644,32 @@ export class SellerSubscriptionsService {
 
     this.verifyRazorpaySubscriptionSignature(dto, keySecret);
     const providerPayment = await this.fetchRazorpayPayment(keyId, keySecret, dto.razorpayPaymentId);
-    this.ensureProviderPaymentMatchesSubscription(subscription, providerPayment, dto.razorpayPaymentId);
+    const paymentAmountPaise = this.ensureProviderPaymentMatchesSubscription(
+      subscription,
+      providerPayment,
+      dto.razorpayPaymentId,
+    );
 
     const nextStatus =
       providerPayment.status === "captured"
-        ? SellerSubscriptionStatus.ACTIVE
+        ? subscription.plan.trialDays > 0
+          ? SellerSubscriptionStatus.TRIALING
+          : SellerSubscriptionStatus.ACTIVE
         : providerPayment.status === "failed"
           ? SellerSubscriptionStatus.PENDING_PAYMENT
           : subscription.status;
     const nextPaymentStatus = this.mapRazorpayPaymentStatus(providerPayment.status);
     const periodEnd =
-      nextStatus === SellerSubscriptionStatus.ACTIVE
-        ? this.periodEndFromPlan(subscription.plan, new Date())
+      nextStatus === SellerSubscriptionStatus.TRIALING
+        ? this.trialEndFromPlan(subscription.plan, new Date())
+        : nextStatus === SellerSubscriptionStatus.ACTIVE
+          ? this.periodEndFromPlan(subscription.plan, new Date())
         : subscription.currentPeriodEnd;
 
     await this.prisma.client.$transaction(async (tx) => {
       await this.recordSubscriptionPayment(tx, subscription, {
         providerPaymentId: dto.razorpayPaymentId,
-        amountPaise: providerPayment.amount ?? subscription.plan.pricePaise,
+        amountPaise: paymentAmountPaise,
         currency: providerPayment.currency ?? subscription.plan.currency,
         status: nextPaymentStatus,
         billingPeriodStart: new Date(),
@@ -626,11 +689,13 @@ export class SellerSubscriptionsService {
         data: {
           status: nextStatus,
           providerStatus:
-            nextStatus === SellerSubscriptionStatus.ACTIVE
+            nextStatus === SellerSubscriptionStatus.ACTIVE ||
+            nextStatus === SellerSubscriptionStatus.TRIALING
               ? "authenticated"
               : providerPayment.status ?? subscription.providerStatus,
           authorizedAt:
-            nextStatus === SellerSubscriptionStatus.ACTIVE
+            nextStatus === SellerSubscriptionStatus.ACTIVE ||
+            nextStatus === SellerSubscriptionStatus.TRIALING
               ? (subscription.authorizedAt ?? new Date())
               : subscription.authorizedAt,
           currentPeriodEnd: periodEnd,
@@ -647,7 +712,8 @@ export class SellerSubscriptionsService {
         data: {
           subscriptionStatus: nextStatus,
           subscriptionStartedAt:
-            nextStatus === SellerSubscriptionStatus.ACTIVE
+            nextStatus === SellerSubscriptionStatus.ACTIVE ||
+            nextStatus === SellerSubscriptionStatus.TRIALING
               ? (subscription.seller.subscriptionStartedAt ?? new Date())
               : subscription.seller.subscriptionStartedAt,
           subscriptionCurrentPeriodEnd: periodEnd,
@@ -665,6 +731,12 @@ export class SellerSubscriptionsService {
     if (!subscription) {
       throw new BadRequestException("No active seller subscription assignment was found.");
     }
+    if (subscription.status === SellerSubscriptionStatus.CANCELLED) {
+      throw new BadRequestException("This seller subscription is already cancelled.");
+    }
+    if (subscription.cancelAtPeriodEnd) {
+      throw new BadRequestException("Subscription renewal is already scheduled to stop.");
+    }
 
     if (!subscription.providerSubscriptionId) {
       await this.prisma.client.$transaction(async (tx) => {
@@ -680,36 +752,116 @@ export class SellerSubscriptionsService {
           where: { id: seller.id },
           data: { subscriptionStatus: SellerSubscriptionStatus.CANCELLED },
         });
+        await tx.auditLog.create({
+          data: {
+            actor: { connect: { id: actor.id } },
+            action: "seller.subscription.cancelled",
+            entityType: "seller_subscription",
+            entityId: subscription.id,
+            oldValue: {
+              status: subscription.status,
+              cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
+            },
+            newValue: {
+              status: SellerSubscriptionStatus.CANCELLED,
+              cancelAtPeriodEnd: false,
+            },
+          },
+        });
       });
       return this.getSellerSubscription(actor);
     }
 
-    const cancelAtCycleEnd = subscription.status === SellerSubscriptionStatus.ACTIVE;
+    const cancelAtCycleEnd =
+      subscription.status === SellerSubscriptionStatus.ACTIVE ||
+      subscription.status === SellerSubscriptionStatus.TRIALING;
     const { keyId, keySecret } = await this.getRazorpayKeys(false);
-    const providerResponse = await this.cancelRazorpaySubscription(
-      keyId,
-      keySecret,
-      subscription.providerSubscriptionId,
-      cancelAtCycleEnd,
-    );
-
-    await this.prisma.client.sellerSubscription.update({
-      where: { id: subscription.id },
-      data: {
-        cancelAtPeriodEnd: cancelAtCycleEnd,
-        providerCancelAtCycleEnd: cancelAtCycleEnd,
-        ...(cancelAtCycleEnd ? {} : { status: SellerSubscriptionStatus.CANCELLED, cancelledAt: new Date() }),
-        providerStatus: this.stringFromRecord(providerResponse, "status") ?? subscription.providerStatus,
-        providerSnapshot: providerResponse as Prisma.InputJsonValue,
+    const cancellationClaim = `cancellation_pending:${randomUUID()}`;
+    const claimed = await this.prisma.client.sellerSubscription.updateMany({
+      where: {
+        id: subscription.id,
+        providerSubscriptionId: subscription.providerSubscriptionId,
+        providerStatus: subscription.providerStatus,
+        cancelAtPeriodEnd: false,
       },
+      data: { providerStatus: cancellationClaim },
     });
-
-    if (!cancelAtCycleEnd) {
-      await this.prisma.client.seller.update({
-        where: { id: seller.id },
-        data: { subscriptionStatus: SellerSubscriptionStatus.CANCELLED },
-      });
+    if (claimed.count !== 1) {
+      throw new BadRequestException("Subscription cancellation state changed. Refresh and try again.");
     }
+
+    let providerResponse: Record<string, unknown>;
+    try {
+      const remoteSubscription = await this.fetchRazorpaySubscription(
+        keyId,
+        keySecret,
+        subscription.providerSubscriptionId,
+      );
+      const remoteStatus = this.stringFromRecord(remoteSubscription, "status");
+      providerResponse =
+        remoteStatus === "cancelled" || remoteStatus === "completed"
+          ? remoteSubscription
+          : await this.cancelRazorpaySubscription(
+              keyId,
+              keySecret,
+              subscription.providerSubscriptionId,
+              cancelAtCycleEnd,
+            );
+    } catch (error) {
+      await this.prisma.client.sellerSubscription.updateMany({
+        where: { id: subscription.id, providerStatus: cancellationClaim },
+        data: { providerStatus: subscription.providerStatus },
+      }).catch(() => null);
+      throw error;
+    }
+
+    const providerStatus =
+      this.stringFromRecord(providerResponse, "status") ?? subscription.providerStatus;
+    await this.prisma.client.$transaction(async (tx) => {
+      const updated = await tx.sellerSubscription.updateMany({
+        where: { id: subscription.id, providerStatus: cancellationClaim },
+        data: {
+          cancelAtPeriodEnd: cancelAtCycleEnd,
+          providerCancelAtCycleEnd: cancelAtCycleEnd,
+          ...(cancelAtCycleEnd ? {} : { status: SellerSubscriptionStatus.CANCELLED, cancelledAt: new Date() }),
+          providerStatus,
+          providerSnapshot: providerResponse as Prisma.InputJsonValue,
+        },
+      });
+      if (updated.count !== 1) {
+        throw new BadRequestException("Subscription cancellation state changed. Refresh and try again.");
+      }
+
+      if (!cancelAtCycleEnd) {
+        await tx.seller.update({
+          where: { id: seller.id },
+          data: { subscriptionStatus: SellerSubscriptionStatus.CANCELLED },
+        });
+      }
+
+      await tx.auditLog.create({
+        data: {
+          actor: { connect: { id: actor.id } },
+          action: cancelAtCycleEnd
+            ? "seller.subscription.renewal_cancel_requested"
+            : "seller.subscription.cancelled",
+          entityType: "seller_subscription",
+          entityId: subscription.id,
+          oldValue: {
+            status: subscription.status,
+            cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
+            providerStatus: subscription.providerStatus,
+          },
+          newValue: {
+            status: cancelAtCycleEnd
+              ? subscription.status
+              : SellerSubscriptionStatus.CANCELLED,
+            cancelAtPeriodEnd: cancelAtCycleEnd,
+            providerStatus,
+          },
+        },
+      });
+    });
 
     return this.getSellerSubscription(actor);
   }
@@ -767,18 +919,37 @@ export class SellerSubscriptionsService {
     }
 
     const now = new Date();
-    const next = this.subscriptionStateFromWebhook(eventType, subscription, subscriptionEntity, now);
+    const providerOccurredAt = this.razorpayEventOccurredAt(
+      payload,
+      subscriptionEntity,
+      invoiceEntity,
+      paymentEntity,
+    );
     const paymentStatus = this.paymentStatusFromWebhook(eventType, paymentEntity, invoiceEntity);
-    const providerStatus =
-      this.stringFromRecord(subscriptionEntity, "status") ??
-      this.stringFromRecord(invoiceEntity, "status") ??
-      this.stringFromRecord(paymentEntity, "status") ??
-      subscription.providerStatus;
-
-    await this.prisma.client.$transaction(async (tx) => {
+    const result = await this.prisma.client.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM seller_subscriptions WHERE id = ${subscription.id}::uuid FOR UPDATE`;
+      const current = await tx.sellerSubscription.findUniqueOrThrow({
+        where: { id: subscription.id },
+        include: { seller: true, plan: true },
+      });
+      const duplicateEvent = await tx.sellerSubscriptionProviderEvent.findUnique({
+        where: {
+          provider_providerEventId: {
+            provider: PaymentProvider.RAZORPAY,
+            providerEventId,
+          },
+        },
+      });
+      if (duplicateEvent) {
+        return {
+          nextStatus: current.status,
+          ignored: true,
+          message: "duplicate_event",
+        };
+      }
       const providerEvent = await tx.sellerSubscriptionProviderEvent.create({
         data: {
-          sellerSubscriptionId: subscription.id,
+          sellerSubscriptionId: current.id,
           provider: PaymentProvider.RAZORPAY,
           providerEventId,
           eventType: eventType || "unknown",
@@ -787,19 +958,43 @@ export class SellerSubscriptionsService {
         },
       });
 
+      const lastProviderOccurredAt = this.providerSnapshotDate(
+        current.providerSnapshot,
+        "lastProviderOccurredAt",
+      );
+      if (lastProviderOccurredAt && lastProviderOccurredAt > providerOccurredAt) {
+        const message = "Ignored stale Razorpay subscription event.";
+        await tx.sellerSubscriptionProviderEvent.update({
+          where: { id: providerEvent.id },
+          data: {
+            status: SellerSubscriptionProviderEventStatus.SKIPPED,
+            processedAt: now,
+            message,
+          },
+        });
+        return { nextStatus: current.status, ignored: true, message };
+      }
+
+      const next = this.subscriptionStateFromWebhook(eventType, current, subscriptionEntity, now);
+      const providerStatus =
+        this.stringFromRecord(subscriptionEntity, "status") ??
+        this.stringFromRecord(invoiceEntity, "status") ??
+        this.stringFromRecord(paymentEntity, "status") ??
+        current.providerStatus;
+
       if (paymentStatus) {
-        await this.recordSubscriptionPayment(tx, subscription, {
+        await this.recordSubscriptionPayment(tx, current, {
           providerSubscriptionId,
           providerInvoiceId: this.stringFromRecord(invoiceEntity, "id") ?? null,
           providerPaymentId: this.stringFromRecord(paymentEntity, "id") ?? null,
           amountPaise:
             this.numberFromRecord(paymentEntity, "amount") ??
             this.numberFromRecord(invoiceEntity, "amount") ??
-            subscription.plan.pricePaise,
+            current.plan.pricePaise,
           currency:
             this.stringFromRecord(paymentEntity, "currency") ??
             this.stringFromRecord(invoiceEntity, "currency") ??
-            subscription.plan.currency,
+            current.plan.currency,
           status: paymentStatus,
           billingPeriodStart:
             this.dateFromUnixRecord(invoiceEntity, "billing_start") ??
@@ -814,7 +1009,7 @@ export class SellerSubscriptionsService {
       }
 
       await tx.sellerSubscription.update({
-        where: { id: subscription.id },
+        where: { id: current.id },
         data: {
           status: next.status,
           providerStatus,
@@ -824,24 +1019,28 @@ export class SellerSubscriptionsService {
           gracePeriodEndsAt: next.gracePeriodEndsAt,
           cancelAtPeriodEnd: next.cancelAtPeriodEnd,
           cancelledAt: next.cancelledAt,
-          lastPaymentStatus: paymentStatus ?? subscription.lastPaymentStatus,
+          lastPaymentStatus:
+            current.lastPaymentStatus === PaymentStatus.PAID && paymentStatus !== PaymentStatus.PAID
+              ? PaymentStatus.PAID
+              : paymentStatus ?? current.lastPaymentStatus,
           paymentFailureCount: next.paymentFailureCount,
           providerSnapshot: {
             subscription: subscriptionEntity,
             invoice: invoiceEntity,
             payment: paymentEntity,
+            lastProviderOccurredAt: providerOccurredAt.toISOString(),
           } as Prisma.InputJsonValue,
         },
       });
 
       await tx.seller.update({
-        where: { id: subscription.sellerId },
+        where: { id: current.sellerId },
         data: {
           subscriptionStatus: next.status,
           subscriptionStartedAt:
             next.status === SellerSubscriptionStatus.ACTIVE
-              ? (subscription.seller.subscriptionStartedAt ?? now)
-              : subscription.seller.subscriptionStartedAt,
+              ? (current.seller.subscriptionStartedAt ?? now)
+              : current.seller.subscriptionStartedAt,
           subscriptionCurrentPeriodEnd: next.currentPeriodEnd,
         },
       });
@@ -856,14 +1055,15 @@ export class SellerSubscriptionsService {
           message: next.message,
         },
       });
+      return { nextStatus: next.status, ignored: !next.handled, message: next.message };
     });
 
     return {
       handled: true,
       received: true,
-      ignored: !next.handled,
-      status: next.status,
-      ...(next.message ? { reason: next.message } : {}),
+      ignored: result.ignored,
+      status: result.nextStatus,
+      ...(result.message ? { reason: result.message } : {}),
     };
   }
 
@@ -1143,16 +1343,17 @@ export class SellerSubscriptionsService {
     plan: SellerSubscriptionPlanForBilling,
     actorId: string,
   ) {
-    const existing = await this.prisma.client.sellerSubscription.findFirst({
-      where: { sellerId, isCurrent: true },
-      orderBy: { createdAt: "desc" },
-    });
-
-    if (existing && existing.planId === plan.id) {
-      return existing;
-    }
-
     return this.prisma.client.$transaction(async (tx) => {
+      await this.lockSellerSubscriptionOwner(tx, sellerId);
+      const existing = await tx.sellerSubscription.findFirst({
+        where: { sellerId, isCurrent: true },
+        orderBy: { createdAt: "desc" },
+      });
+
+      if (existing && existing.planId === plan.id) {
+        return existing;
+      }
+
       await tx.sellerSubscription.updateMany({
         where: { sellerId, isCurrent: true },
         data: { isCurrent: false },
@@ -1170,6 +1371,10 @@ export class SellerSubscriptionsService {
         },
       });
     });
+  }
+
+  private async lockSellerSubscriptionOwner(tx: Prisma.TransactionClient, sellerId: string) {
+    await tx.$queryRaw`SELECT id FROM sellers WHERE id = ${sellerId}::uuid FOR UPDATE`;
   }
 
   private async activateNonRecurringSubscription(
@@ -1308,6 +1513,85 @@ export class SellerSubscriptionsService {
     return (await response.json()) as Record<string, unknown>;
   }
 
+  private async findRazorpaySubscriptionByLocalId(
+    keyId: string,
+    keySecret: string,
+    providerPlanId: string,
+    subscriptionId: string,
+  ) {
+    const query = new URLSearchParams({ plan_id: providerPlanId, count: "100" });
+    const response = await fetch(`https://api.razorpay.com/v1/subscriptions?${query.toString()}`, {
+      headers: this.razorpayHeaders(keyId, keySecret),
+    });
+    if (!response.ok) {
+      throw new ServiceUnavailableException(
+        `Razorpay subscription recovery failed with status ${response.status}: ${await response.text()}`,
+      );
+    }
+
+    const payload = (await response.json()) as { items?: Array<Record<string, unknown>> };
+    return (
+      payload.items?.find((item) => {
+        const notes = item.notes;
+        return (
+          notes &&
+          typeof notes === "object" &&
+          !Array.isArray(notes) &&
+          (notes as Record<string, unknown>).indihubSubscriptionId === subscriptionId
+        );
+      }) ?? null
+    );
+  }
+
+  private async persistRazorpaySubscription(
+    subscriptionId: string,
+    sellerId: string,
+    providerPlanId: string,
+    providerSubscription: Record<string, unknown>,
+    expectedProviderStatus: string | null,
+  ) {
+    const providerSubscriptionId = this.stringFromRecord(providerSubscription, "id");
+    if (!providerSubscriptionId) {
+      throw new ServiceUnavailableException(
+        "Razorpay subscription creation did not return a provider subscription id.",
+      );
+    }
+
+    await this.prisma.client.$transaction(async (tx) => {
+      const updated = await tx.sellerSubscription.updateMany({
+        where: {
+          id: subscriptionId,
+          providerSubscriptionId: null,
+          providerStatus: expectedProviderStatus,
+        },
+        data: {
+          status: SellerSubscriptionStatus.PENDING_PAYMENT,
+          provider: PaymentProvider.RAZORPAY,
+          providerSubscriptionId,
+          providerPlanId,
+          providerStatus: this.stringFromRecord(providerSubscription, "status") ?? "created",
+          providerCustomerId: this.stringFromRecord(providerSubscription, "customer_id") ?? null,
+          providerSnapshot: providerSubscription as Prisma.InputJsonValue,
+          lastPaymentStatus: PaymentStatus.PENDING,
+          cancelAtPeriodEnd: false,
+          providerCancelAtCycleEnd: false,
+        },
+      });
+      if (updated.count !== 1) {
+        throw new BadRequestException("Seller subscription authorization state changed. Try again.");
+      }
+      await tx.seller.update({
+        where: { id: sellerId },
+        data: {
+          subscriptionStatus: SellerSubscriptionStatus.PENDING_PAYMENT,
+          subscriptionCurrentPeriodEnd: null,
+        },
+      });
+    });
+
+    return providerSubscriptionId;
+  }
+
   private async cancelRazorpaySubscription(
     keyId: string,
     keySecret: string,
@@ -1332,6 +1616,23 @@ export class SellerSubscriptionsService {
     return (await response.json()) as Record<string, unknown>;
   }
 
+  private async fetchRazorpaySubscription(
+    keyId: string,
+    keySecret: string,
+    providerSubscriptionId: string,
+  ) {
+    const response = await fetch(
+      `https://api.razorpay.com/v1/subscriptions/${encodeURIComponent(providerSubscriptionId)}`,
+      { headers: this.razorpayHeaders(keyId, keySecret) },
+    );
+    if (!response.ok) {
+      throw new ServiceUnavailableException(
+        `Razorpay subscription fetch failed with status ${response.status}: ${await response.text()}`,
+      );
+    }
+    return (await response.json()) as Record<string, unknown>;
+  }
+
   private sellerAuthorizationResponse(
     keyId: string,
     seller: Awaited<ReturnType<SellerSubscriptionsService["getSellerForBilling"]>>,
@@ -1345,7 +1646,7 @@ export class SellerSubscriptionsService {
       sellerId: seller.id,
       subscriptionId,
       razorpaySubscriptionId: providerSubscriptionId,
-      amountPaise: plan.pricePaise,
+      amountPaise: plan.trialDays > 0 ? 500 : plan.pricePaise,
       currency: plan.currency,
       plan,
       checkout: {
@@ -1397,13 +1698,19 @@ export class SellerSubscriptionsService {
       throw new BadRequestException("Fetched Razorpay payment does not match seller subscription.");
     }
 
-    if (providerPayment.amount !== undefined && providerPayment.amount !== subscription.plan.pricePaise) {
-      throw new BadRequestException("Razorpay payment amount does not match the seller plan price.");
+    const expectedAmountPaise =
+      subscription.plan.trialDays > 0 ? 500 : subscription.plan.pricePaise;
+    if (providerPayment.amount !== expectedAmountPaise) {
+      throw new BadRequestException(
+        "Razorpay payment amount does not match the expected seller subscription charge.",
+      );
     }
 
     if (providerPayment.currency && providerPayment.currency !== subscription.plan.currency) {
       throw new BadRequestException("Razorpay payment currency does not match the seller plan currency.");
     }
+
+    return providerPayment.amount;
   }
 
   private async fetchRazorpayPayment(keyId: string, keySecret: string, paymentId: string) {
@@ -1454,6 +1761,10 @@ export class SellerSubscriptionsService {
     const existing = lookup.length
       ? await tx.sellerSubscriptionPayment.findFirst({ where: { OR: lookup } })
       : null;
+    const effectiveStatus =
+      existing?.status === PaymentStatus.PAID && payment.status !== PaymentStatus.PAID
+        ? PaymentStatus.PAID
+        : payment.status;
     const data = {
       sellerId: subscription.sellerId,
       sellerSubscriptionId: subscription.id,
@@ -1464,11 +1775,11 @@ export class SellerSubscriptionsService {
       providerPaymentId: payment.providerPaymentId ?? null,
       amountPaise: payment.amountPaise,
       currency: payment.currency,
-      status: payment.status,
+      status: effectiveStatus,
       billingPeriodStart: payment.billingPeriodStart ?? null,
       billingPeriodEnd: payment.billingPeriodEnd ?? null,
-      paidAt: payment.status === PaymentStatus.PAID ? new Date() : null,
-      failedAt: payment.status === PaymentStatus.FAILED ? new Date() : null,
+      paidAt: effectiveStatus === PaymentStatus.PAID ? (existing?.paidAt ?? new Date()) : null,
+      failedAt: effectiveStatus === PaymentStatus.FAILED ? new Date() : null,
       rawResponse: payment.rawResponse as Prisma.InputJsonValue,
     };
 
@@ -1506,7 +1817,24 @@ export class SellerSubscriptionsService {
         : subscription.currentPeriodEnd ?? null);
     const providerEnded = currentPeriodEnd ? currentPeriodEnd <= now : true;
 
-    if (["subscription.authenticated", "subscription.charged", "invoice.paid"].includes(eventType)) {
+    if (eventType === "subscription.authenticated" && subscription.plan.trialDays > 0) {
+      const trialEndsAt =
+        providerCurrentEnd ?? this.trialEndFromPlan(subscription.plan, now);
+      return {
+        handled: true,
+        status: SellerSubscriptionStatus.TRIALING,
+        authorizedAt: subscription.authorizedAt ?? now,
+        currentPeriodEnd: trialEndsAt,
+        nextBillingAt: trialEndsAt,
+        gracePeriodEndsAt: null,
+        cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
+        cancelledAt: null,
+        paymentFailureCount: 0,
+        message: "Seller recurring subscription trial is active.",
+      };
+    }
+
+    if (["subscription.authenticated", "subscription.activated", "subscription.charged", "invoice.paid"].includes(eventType)) {
       return {
         handled: true,
         status: SellerSubscriptionStatus.ACTIVE,
@@ -1673,10 +2001,6 @@ export class SellerSubscriptionsService {
     }
 
     const end = new Date(from);
-    
-    if (plan.trialDays > 0) {
-      end.setDate(end.getDate() + plan.trialDays);
-    }
 
     if (plan.billingCycle === SellerSubscriptionBillingCycle.YEARLY) {
       end.setFullYear(end.getFullYear() + 1);
@@ -1684,6 +2008,12 @@ export class SellerSubscriptionsService {
     }
 
     end.setMonth(end.getMonth() + 1);
+    return end;
+  }
+
+  private trialEndFromPlan(plan: SellerSubscriptionPlanForBilling, from: Date) {
+    const end = new Date(from);
+    end.setDate(end.getDate() + plan.trialDays);
     return end;
   }
 
@@ -1783,6 +2113,33 @@ export class SellerSubscriptionsService {
   private dateFromUnixRecord(record: Record<string, unknown> | null | undefined, key: string) {
     const value = this.numberFromRecord(record, key);
     return value && value > 0 ? new Date(value * 1000) : null;
+  }
+
+  private razorpayEventOccurredAt(
+    payload: Record<string, unknown>,
+    subscriptionEntity: Record<string, unknown> | null,
+    invoiceEntity: Record<string, unknown> | null,
+    paymentEntity: Record<string, unknown> | null,
+  ) {
+    return (
+      this.dateFromUnixRecord(payload, "created_at") ??
+      this.dateFromUnixRecord(paymentEntity, "created_at") ??
+      this.dateFromUnixRecord(invoiceEntity, "issued_at") ??
+      this.dateFromUnixRecord(subscriptionEntity, "current_start") ??
+      new Date()
+    );
+  }
+
+  private providerSnapshotDate(value: Prisma.JsonValue | null, key: string) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return null;
+    }
+    const raw = (value as Record<string, unknown>)[key];
+    if (typeof raw !== "string") {
+      return null;
+    }
+    const parsed = new Date(raw);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
 
   private auditPlanValue(plan: {

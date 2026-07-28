@@ -25,6 +25,7 @@ export const adminNav = [
   { group: "Commerce", label: "Chat support", href: "/admin/chat" },
   { group: "Content", label: "Content management", href: "/admin/cms" },
   { group: "Content", label: "Announcements", href: "/admin/cms/announcements" },
+  { group: "Content", label: "Promotional popups", href: "/admin/cms/popup-announcements" },
   { group: "Locations", label: "Locations", href: "/admin/locations" },
   { group: "Locations", label: "Location import", href: "/admin/locations/import" },
   { group: "Locations", label: "Location serviceability", href: "/admin/locations/serviceability" },

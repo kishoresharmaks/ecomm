@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { getJson } from "../../lib/api";
 import {
   sellerToCustomerDistanceLabel,
   sellerToCustomerDistancesKm,
@@ -49,5 +50,23 @@ describe("sellerToCustomerDistanceLabel", () => {
   it("returns null when either pickup or customer coordinates are missing", () => {
     expect(sellerToCustomerDistanceLabel({ ...baseOrder, shippingAddressSnapshot: null })).toBeNull();
     expect(sellerToCustomerDistanceLabel({ ...baseOrder, shipments: [] })).toBeNull();
+  });
+});
+
+describe("mobile API query serialization", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("serializes array filters as repeated query parameters", async () => {
+    const fetchMock = vi.fn(async (_input: Parameters<typeof fetch>[0], _init?: Parameters<typeof fetch>[1]) =>
+      new Response("{}", { headers: { "Content-Type": "application/json" }, status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getJson({
+      path: "/delivery/orders",
+      searchParams: { deliveryStatus: ["PENDING", "PACKED"] },
+    });
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("deliveryStatus=PENDING&deliveryStatus=PACKED");
   });
 });

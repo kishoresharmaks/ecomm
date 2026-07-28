@@ -69,7 +69,11 @@ export function SellerWalletClient() {
   return (
     <div className="grid gap-5">
       <div className="grid gap-4 md:grid-cols-4">
-        <SellerMetric label="Earned available balance" value={formatMoney(availabilityQuery.data?.netPayablePaise ?? 0, currency)} note={`${availabilityQuery.data?.eligibleSplitCount ?? 0} delivered paid order splits ready for request`} />
+        <SellerMetric
+          label="Earned available balance"
+          value={formatMoney(availabilityQuery.data?.netPayablePaise ?? 0, currency)}
+          note={`${(availabilityQuery.data?.eligibleSplitCount ?? 0) + (availabilityQuery.data?.eligibleB2BOrderCount ?? 0) + (availabilityQuery.data?.eligibleServiceSettlementCount ?? 0)} eligible order and service records`}
+        />
         <SellerMetric label="Settled ledger balance" value={formatMoney(ledgerQuery.data?.balancePaise ?? 0, currency)} note="Updates after payout approval, payout payment, or adjustments" />
         <SellerMetric label="Platform due" value={formatMoney(sellerCashDuePaise, currency)} note={sellerCashOffsetPaise > 0 ? `${formatMoney(sellerCashOffsetPaise, currency)} will be deducted next` : sellerCashDuePaise > 0 ? "Seller-collected COD balance" : "No seller-collected COD due"} />
         <SellerMetric label="Latest movement" value={latestEntry ? sellerLedgerTitle(latestEntry) : "None"} note={latestEntry ? formatDateTime(latestEntry.createdAt) : "No wallet transactions yet"} />

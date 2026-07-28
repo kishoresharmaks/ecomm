@@ -703,7 +703,7 @@ function PaymentRow({
           </p>
         ) : payment.provider === "MANUAL" && payment.status === "PENDING" ? (
           <p className="mt-2 text-xs font-bold text-[#667085]">
-            Pay-at-visit or offline payment will be updated by the provider or admin after collection.
+            Pay-at-visit or offline payment will be updated after the provider confirms collection.
           </p>
         ) : null}
       </div>

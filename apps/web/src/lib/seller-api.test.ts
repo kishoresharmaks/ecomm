@@ -48,7 +48,7 @@ describe("seller GST report URLs", () => {
     vi.restoreAllMocks();
   });
 
-  it("converts date-only filters to local day boundaries", () => {
+  it("converts date-only filters to stable UTC day boundaries", () => {
     const url = new URL(
       getSellerGstReportCsvUrl("gstr-1", {
         dateFrom: "2026-07-01",
@@ -59,11 +59,22 @@ describe("seller GST report URLs", () => {
 
     expect(url.pathname).toBe("/api/seller/reports/export/gstr-1");
     expect(url.searchParams.get("dateFrom")).toBe(
-      new Date(2026, 6, 1, 0, 0, 0, 0).toISOString(),
+      new Date(Date.UTC(2026, 6, 1, 0, 0, 0, 0)).toISOString(),
     );
     expect(url.searchParams.get("dateTo")).toBe(
-      new Date(2026, 6, 20, 23, 59, 59, 999).toISOString(),
+      new Date(Date.UTC(2026, 6, 20, 23, 59, 59, 999)).toISOString(),
     );
+  });
+
+  it("ignores malformed date-only filters instead of crashing URL creation", () => {
+    expect(() => getSellerGstReportCsvUrl("gstr-1", { dateFrom: "not-a-date", dateTo: "2026-02-31" })).not.toThrow();
+
+    const url = new URL(
+      getSellerGstReportCsvUrl("gstr-1", { dateFrom: "not-a-date", dateTo: "2026-02-31" }),
+      "https://seller.test",
+    );
+    expect(url.searchParams.has("dateFrom")).toBe(false);
+    expect(url.searchParams.has("dateTo")).toBe(false);
   });
 
   it("supports advanced authenticated GST compliance export routes", () => {
@@ -118,7 +129,7 @@ describe("seller GST report URLs", () => {
     expect(requestUrl.searchParams.get("search")).toBe("TI/26-27");
     expect(requestUrl.searchParams.has("sellerId")).toBe(false);
     expect(requestUrl.searchParams.get("dateFrom")).toBe(
-      new Date(2026, 6, 1, 0, 0, 0, 0).toISOString(),
+      new Date(Date.UTC(2026, 6, 1, 0, 0, 0, 0)).toISOString(),
     );
   });
 });

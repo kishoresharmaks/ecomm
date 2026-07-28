@@ -19,14 +19,16 @@ import { useAdminAuth } from "@/components/admin/admin-auth-context";
 import { AdminActionMenu, AdminListbox, type AdminSelectOption, AdminTabs } from "@/components/admin/admin-ux";
 import { FinanceMetric, FinancePanel, FinanceState } from "@/components/admin/finance/finance-ui";
 import { GstDocumentDetailsDrawer } from "@/components/shared/gst-document-details-drawer";
+import { Gstr1ReviewExportPanel } from "@/components/reporting/gstr1-review-export-panel";
 import { SideDrawer } from "@/components/shared/side-drawer";
-import { indihubFetch, userFacingApiErrorMessage } from "@/lib/api";
+import { userFacingApiErrorMessage } from "@/lib/api";
 import {
   downloadAdminGstReportCsv,
   downloadAdminGstDocumentPdf,
   getAdminGstDocuments,
   getAdminGstFilingPeriods,
   getAdminGstOverview,
+  getAdminGstSellerOptions,
   manualEInvoiceValidationError,
   recordAdminManualEInvoice,
   type ManualEInvoiceInput,
@@ -42,8 +44,6 @@ import {
   type SellerTaxRegistrationStatus,
 } from "@/lib/gst-report-api";
 import { formatMoney } from "@/lib/storefront-api";
-
-type SellerOption = { id: string; storeName: string };
 
 const gstDocumentTypes = [
   { value: "", label: "All document types" },
@@ -138,15 +138,8 @@ export function AdminGstReportsClient() {
   });
   const sellers = useQuery({
     queryKey: ["admin-finance-gst-sellers", auth.authHeaders],
-    enabled: auth.isAuthenticated && isAdmin,
-    queryFn: async () => {
-      const response = await indihubFetch<{ items: SellerOption[] }>(
-        "/api/admin/sellers?limit=100",
-        undefined,
-        auth.authHeaders,
-      );
-      return response.items;
-    },
+    enabled: auth.isAuthenticated,
+    queryFn: () => getAdminGstSellerOptions(auth.authHeaders),
   });
   const registerFilters = useMemo<GstDocumentFilters>(
     () => ({
@@ -320,17 +313,11 @@ export function AdminGstReportsClient() {
           </div>
         </div>
         <div
-          className={`mt-5 grid gap-3 border-t border-[#E5E7EB] pt-5 md:grid-cols-2 ${
-            isAdmin
-              ? "xl:grid-cols-[1fr_1fr_1.4fr_1.4fr_auto]"
-              : "xl:grid-cols-[1fr_1fr_1.6fr_auto]"
-          }`}
+          className="mt-5 grid gap-3 border-t border-[#E5E7EB] pt-5 md:grid-cols-2 xl:grid-cols-[1fr_1fr_1.4fr_1.4fr_auto]"
         >
           <DateField label="From" value={dateFrom} onChange={(value) => { setDateFrom(value); setRegisterPage(1); setCompliancePage(1); }} />
           <DateField label="To" value={dateTo} onChange={(value) => { setDateTo(value); setRegisterPage(1); setCompliancePage(1); }} />
-          {isAdmin ? (
-            <AdminListbox label="Seller" value={sellerId} options={sellerOptions} onChange={(value) => { setSellerId(value); setRegisterPage(1); setCompliancePage(1); }} />
-          ) : null}
+          <AdminListbox label="Seller" value={sellerId} options={sellerOptions} onChange={(value) => { setSellerId(value); setRegisterPage(1); setCompliancePage(1); }} />
           <label className="space-y-2">
             <span className="block text-xs font-black uppercase tracking-wide text-[#667085]">Document search</span>
             <div className="relative">
@@ -355,6 +342,13 @@ export function AdminGstReportsClient() {
           </p>
         ) : null}
       </FinancePanel>
+
+      <Gstr1ReviewExportPanel
+        auth={auth.authHeaders}
+        audience={isAdmin ? "admin" : "finance"}
+        sellers={sellers.data ?? []}
+        sellersLoading={sellers.isLoading}
+      />
 
       <FinanceState loading={overview.isLoading} error={overview.error} onRetry={() => void overview.refetch()} />
       {overview.data ? (

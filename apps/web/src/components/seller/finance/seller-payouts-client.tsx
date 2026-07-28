@@ -5,6 +5,7 @@ import { AlertCircle, ReceiptText, Send } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, SectionHeading } from "@indihub/ui";
 import { useConfirmationDialog } from "@/components/shared/confirmation-dialog";
+import { userFacingApiErrorMessage } from "@/lib/api";
 import { formatMoney } from "@/lib/storefront-api";
 import { getSellerPayoutAvailability, listSellerPayouts, requestSellerPayout } from "@/lib/seller-finance-api";
 import {
@@ -74,12 +75,16 @@ export function SellerPayoutsClient() {
   const currency = availability?.currency || "INR";
   const pending = availability?.pendingPayoutsPaise ?? 0;
   const paid = availability?.paidPayoutsPaise ?? 0;
+  const eligibleActivity =
+    (availability?.eligibleSplitCount ?? 0) +
+    (availability?.eligibleB2BOrderCount ?? 0) +
+    (availability?.eligibleServiceSettlementCount ?? 0);
 
   return (
     <div className="grid gap-5">
       {confirmation.confirmationDialog}
       <div className="grid gap-4 md:grid-cols-3">
-        <SellerMetric label="Available to request" value={formatMoney(availability?.netPayablePaise ?? 0, currency)} note={`${availability?.eligibleSplitCount ?? 0} delivered paid order splits`} />
+        <SellerMetric label="Available to request" value={formatMoney(availability?.netPayablePaise ?? 0, currency)} note={`${eligibleActivity} eligible order and service records`} />
         <SellerMetric label="Pending payout" value={formatMoney(pending, currency)} note="Draft, pending, and approved" />
         <SellerMetric label="Paid payouts" value={formatMoney(paid, currency)} note="Marked paid by admin" />
       </div>
@@ -110,7 +115,7 @@ export function SellerPayoutsClient() {
                   ))}
                 </div>
               ) : null}
-              {requestMutation.error ? <p className="mt-3 rounded-md border border-[#F5B7B7] bg-[#FDECEC] p-3 text-sm font-semibold text-[#8A1F1F]">{requestMutation.error.message}</p> : null}
+              {requestMutation.error ? <p className="mt-3 rounded-md border border-[#F5B7B7] bg-[#FDECEC] p-3 text-sm font-semibold text-[#8A1F1F]">{userFacingApiErrorMessage(requestMutation.error)}</p> : null}
             </div>
           </div>
           <div className="rounded-lg border border-[#D8E2EA] bg-[#F8FAFC] p-4">
@@ -137,6 +142,25 @@ export function SellerPayoutsClient() {
           </div>
         </div>
       </SellerPanel>
+
+      {availability ? (
+        <SellerPanel>
+          <SectionHeading title="Payout calculation" description="Review the exact earnings, statutory deductions, platform fees, receivable offsets, and prior wallet debt included in this request." />
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            <PayoutAmount label="Gross eligible earnings" value={availability.grossSalesPaise} currency={currency} />
+            <PayoutAmount label="Marketplace commission" value={-availability.commissionPaise} currency={currency} />
+            <PayoutAmount label="GST on marketplace fees" value={-availability.gstOnCommissionPaise} currency={currency} />
+            <PayoutAmount label="TDS" value={-availability.tdsPaise} currency={currency} />
+            <PayoutAmount label="TCS" value={-availability.tcsPaise} currency={currency} />
+            <PayoutAmount label="Seller settlement fee" value={-availability.platformFeePaise} currency={currency} />
+            <PayoutAmount label="Refund adjustment" value={availability.refundAdjustmentPaise} currency={currency} />
+            <PayoutAmount label="Service cash offset" value={-availability.serviceReceivableOffsetPaise} currency={currency} />
+            <PayoutAmount label="Seller-collected COD offset" value={-(availability.sellerCashReceivableOffsetPaise ?? 0)} currency={currency} />
+            <PayoutAmount label="Prior wallet debt offset" value={-availability.ledgerDebtOffsetPaise} currency={currency} />
+            <PayoutAmount label="Net request amount" value={availability.netPayablePaise} currency={currency} emphasis />
+          </div>
+        </SellerPanel>
+      ) : null}
 
       {availabilityQuery.error ? <SellerErrorPanel error={availabilityQuery.error} onRetry={() => void availabilityQuery.refetch()} /> : null}
 
@@ -181,6 +205,17 @@ export function SellerPayoutsClient() {
           itemLabel="payouts"
         />
       ) : null}
+    </div>
+  );
+}
+
+function PayoutAmount({ label, value, currency, emphasis = false }: { label: string; value: number; currency: string; emphasis?: boolean }) {
+  return (
+    <div className={`rounded-md border px-3 py-3 ${emphasis ? "border-[#ED3500] bg-[#FFF0EC]" : "border-[#E5E7EB] bg-[#F8FAFC]"}`}>
+      <p className="text-xs font-black uppercase tracking-wide text-[#667085]">{label}</p>
+      <p className={`mt-1 text-base font-black ${emphasis ? "text-[#ED3500]" : value < 0 ? "text-[#8A1F1F]" : "text-[#163B5C]"}`}>
+        {value > 0 && !emphasis ? "+" : ""}{formatMoney(value, currency)}
+      </p>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useRef, useState } from "react";
 import { LifeBuoy, Mail, MessageCircle, Phone } from "lucide-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
@@ -31,6 +31,7 @@ export function SupportClient() {
   const [requesterType, setRequesterType] = useState<SupportRequesterType>("CUSTOMER");
   const [preferredContactChannel, setPreferredContactChannel] =
     useState<SupportContactChannel>("EMAIL");
+  const formRef = useRef<HTMLFormElement>(null);
 
   const profileQuery = useQuery({
     queryKey: ["account-profile", customerAuth.authKey],
@@ -47,7 +48,10 @@ export function SupportClient() {
 
   const supportMutation = useMutation({
     mutationFn: (payload: SupportRequestPayload) => createAuthenticatedSupportRequest(customerAuth.authHeaders, payload),
-    onSuccess: () => setNotice("Support request submitted. Admin can review it from the support queue."),
+    onSuccess: () => {
+      formRef.current?.reset();
+      setNotice("Support request submitted. Our support team will review it.");
+    },
     onError: (error) => setNotice(error instanceof Error ? error.message : "Support request failed.")
   });
 
@@ -97,7 +101,7 @@ export function SupportClient() {
           {profileQuery.isLoading ? <SkeletonBlock className="mt-5 h-32" /> : null}
           {profileQuery.error ? <div className="mt-5"><ErrorPanel error={profileQuery.error} onRetry={() => void profileQuery.refetch()} /></div> : null}
           {profile ? (
-            <form key={profile.updatedAt ?? profile.id} onSubmit={submit} className="mt-6 grid gap-4 md:grid-cols-2">
+            <form ref={formRef} key={profile.updatedAt ?? profile.id} onSubmit={submit} className="mt-6 grid gap-4 md:grid-cols-2">
               <SelectField
                 label="Topic"
                 value={topic}
@@ -122,7 +126,7 @@ export function SupportClient() {
               <Field label="Order number" name="orderNumber" placeholder="Optional free-text reference" />
               <Field label="Subject" name="subject" required placeholder={`${contactTopicLabels[topic]} request`} />
               <div className="md:col-span-2">
-                <TextAreaField label="Message" name="message" required rows={6} placeholder="Explain the issue clearly for the admin team." />
+                <TextAreaField label="Message" name="message" required rows={6} placeholder="Explain the issue clearly so our support team can help." />
               </div>
               <div className="flex flex-wrap items-center gap-3 md:col-span-2">
                 <Button type="submit" disabled={supportMutation.isPending}>
@@ -144,12 +148,12 @@ export function SupportClient() {
             </div>
             <div className="mt-5 grid gap-3 text-sm font-semibold text-[#667085]">
               <p>Use this for order help, delivery status questions, payment follow-up, product issues, and account support.</p>
-              <p>Order number is optional free text in this pass, so you can paste any marketplace reference you have.</p>
+              <p>Order number is optional, so you can paste any marketplace reference you have.</p>
             </div>
           </PagePanel>
 
           <PagePanel>
-            <SectionHeading title="Contact channels" description={contactQuery.data?.responseSla ?? "Support channels are managed by admin settings."} />
+            <SectionHeading title="Contact channels" description={contactQuery.data?.responseSla ?? "Available support channels are shown below."} />
             <div className="mt-5 grid gap-3 text-sm font-semibold text-[#667085]">
               {enabledChannels.map((channel) => (
                 <p key={channel} className="flex items-center gap-2">

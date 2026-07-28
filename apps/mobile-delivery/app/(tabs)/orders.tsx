@@ -1,8 +1,8 @@
 import { Link } from "expo-router";
 import { useState } from "react";
 import { Pressable, Text, View } from "react-native";
-import { useQuery } from "@tanstack/react-query";
-import { Button, Field, Header, QueryState, Screen, SelectField, StatusChip, formatDateTime, formatPaise, humanize } from "../../src/components/screen";
+import { useInfiniteQuery } from "@tanstack/react-query";
+import { Button, EmptyState, Field, Header, QueryState, Screen, SelectField, StatusChip, formatDateTime, formatPaise, humanize } from "../../src/components/screen";
 import {
   listDeliveryOrders,
   findCodPayment,
@@ -20,19 +20,26 @@ export default function DeliveryOrdersScreen() {
   const [submittedSearch, setSubmittedSearch] = useState("");
   const [deliveryStatus, setDeliveryStatus] = useState("");
   const [paymentStatus, setPaymentStatus] = useState("");
-  const ordersQuery = useQuery({
+  const submitSearch = () => setSubmittedSearch(search.trim());
+  const ordersQuery = useInfiniteQuery({
     queryKey: ["delivery-orders", auth.authKey, submittedSearch, deliveryStatus, paymentStatus],
-    queryFn: () => listDeliveryOrders(auth.authHeaders, { search: submittedSearch, deliveryStatus, paymentStatus, limit: 40 }),
+    queryFn: ({ pageParam }) => listDeliveryOrders(auth.authHeaders, { search: submittedSearch, deliveryStatus, paymentStatus, page: pageParam, limit: 40 }),
     enabled: auth.enabled,
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => {
+      const page = lastPage.page ?? 1;
+      const limit = lastPage.limit ?? 40;
+      return lastPage.total !== undefined && page * limit < lastPage.total ? page + 1 : undefined;
+    },
   });
-  const orders = ordersQuery.data?.items ?? [];
+  const orders = ordersQuery.data?.pages.flatMap((page) => page.items) ?? [];
 
   return (
-    <Screen>
+    <Screen refreshing={ordersQuery.isRefetching} onRefresh={() => ordersQuery.refetch()}>
       <Header title="Assigned orders" subtitle="Search and update assigned forward deliveries." />
       <View style={{ gap: 12 }}>
-        <Field label="Search order" value={search} onChangeText={setSearch} placeholder="Order number" />
-        <Button title="Search" onPress={() => setSubmittedSearch(search.trim())} />
+        <Field label="Search order" value={search} onChangeText={setSearch} onSubmitEditing={submitSearch} placeholder="Order number" returnKeyType="search" />
+        <Button title="Search" onPress={submitSearch} />
         <SelectField
           label="Delivery status"
           selectedValue={deliveryStatus}
@@ -47,7 +54,18 @@ export default function DeliveryOrdersScreen() {
         />
       </View>
       <QueryState loading={ordersQuery.isLoading} error={ordersQuery.error} onRetry={() => void ordersQuery.refetch()} />
+      {!ordersQuery.isLoading && !ordersQuery.error && orders.length === 0 ? (
+        <EmptyState title="No assigned orders" message="New assignments and matching search results will appear here." />
+      ) : null}
       {orders.map((order) => <OrderCard key={order.id} order={order} />)}
+      {ordersQuery.hasNextPage ? (
+        <Button
+          title="Load more orders"
+          tone="secondary"
+          loading={ordersQuery.isFetchingNextPage}
+          onPress={() => void ordersQuery.fetchNextPage()}
+        />
+      ) : null}
     </Screen>
   );
 }

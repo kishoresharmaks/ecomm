@@ -140,6 +140,39 @@ describe("mobile seller uploads", () => {
     expect(uploadRequest.sizeBytes).toBe(4096);
     expect(getInfoAsync).toHaveBeenCalledWith("file:///cache/gst.png");
   });
+
+  it("scopes service proof upload requests to the booking number", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
+      jsonResponse({
+        provider: "s3",
+        method: "PUT",
+        uploadUrl: "https://s3.example.com/service-proof",
+        headers: { "Content-Type": "image/jpeg" },
+        assetKey: "1handindia/service-evidence/SRV-100/completion-proof/proof.jpg",
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { uploadSellerPrivateDocument } = await import("./mobile-upload");
+
+    await uploadSellerPrivateDocument(
+      { bearerToken: "token" },
+      {
+        uri: "file:///cache/proof.jpg",
+        name: "proof.jpg",
+        mimeType: "image/jpeg",
+        sizeBytes: 2048,
+      },
+      "SERVICE_COMPLETION_PROOF",
+      undefined,
+      { serviceBookingNumber: "SRV-100" },
+    );
+
+    const uploadRequest = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(uploadRequest).toMatchObject({
+      documentType: "SERVICE_COMPLETION_PROOF",
+      serviceBookingNumber: "SRV-100",
+    });
+  });
 });
 
 function jsonResponse(body: unknown) {

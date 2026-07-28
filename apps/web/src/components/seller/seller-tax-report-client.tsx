@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
+import { userFacingApiErrorMessage } from "@/lib/api";
 import { formatMoney } from "@/lib/storefront-api";
 import {
   downloadSellerGstReportCsv,
@@ -93,6 +94,7 @@ export function SellerTaxReportClient({
   const [search, setSearch] = useState("");
   const [selectedDocument, setSelectedDocument] =
     useState<GstReportDocument | null>(null);
+  const [reviewExportMessage, setReviewExportMessage] = useState("");
   const deferredSearch = useDeferredValue(search.trim());
   const profileQuery = useQuery({
     queryKey: ["seller-profile", sellerAuth.authKey],
@@ -182,6 +184,20 @@ export function SellerTaxReportClient({
   const exportMutation = useMutation({
     mutationFn: (type: GstCsvExport) =>
       downloadSellerGstReportCsv(sellerAuth.authHeaders, type, submittedRange),
+  });
+  const reviewExportMutation = useMutation({
+    mutationFn: () =>
+      createReportExport(
+        sellerAuth.authHeaders,
+        "seller",
+        "GSTR1_REVIEW_SELLER_XLSX",
+        submittedRange,
+      ),
+    onMutate: () => setReviewExportMessage(""),
+    onSuccess: () =>
+      setReviewExportMessage(
+        "Accountant review workbook queued. Open report export history to download it when ready.",
+      ),
   });
   const genericExportMutation = useMutation({
     mutationFn: async (type: "sales" | "finance" | "tax" | "returns") => {
@@ -304,6 +320,7 @@ export function SellerTaxReportClient({
               name="dateFrom"
               type="date"
               value={dateFrom}
+              max={dateTo || undefined}
               onChange={setDateFrom}
             />
             <SellerField
@@ -311,6 +328,7 @@ export function SellerTaxReportClient({
               name="dateTo"
               type="date"
               value={dateTo}
+              min={dateFrom || undefined}
               onChange={setDateTo}
             />
             <Button type="submit" className="self-end">
@@ -336,8 +354,13 @@ export function SellerTaxReportClient({
               onClick={() => exportMutation.mutate("hsn-summary")}
             />
             <Gstr1ExportMenu
-              disabled={gstExportDisabled || !isRegularGstSeller}
+              disabled={
+                gstExportDisabled ||
+                reviewExportMutation.isPending ||
+                !isRegularGstSeller
+              }
               onExport={(type) => exportMutation.mutate(type)}
+              onReviewExport={() => reviewExportMutation.mutate()}
             />
             <ExportButton
               label="TCS credit statement"
@@ -355,6 +378,18 @@ export function SellerTaxReportClient({
               onClick={() => exportMutation.mutate("platform-commission")}
             />
           </div>
+          <p className="mt-3 text-xs font-semibold text-[#667085]">
+            The accountant workbook requires a complete calendar month or standard GST quarter
+            in the date range above and is not a GST portal upload file.
+          </p>
+          {reviewExportMessage ? (
+            <p className="mt-2 text-sm font-bold text-[#0F8A5F]">
+              {reviewExportMessage}{" "}
+              <Link href="/seller/reports/exports" className="underline">
+                Open history
+              </Link>
+            </p>
+          ) : null}
           <details className="group mt-4">
             <summary className="flex w-fit cursor-pointer list-none items-center gap-2 text-sm font-black text-[#344054] hover:text-[#ED3500]">
               Advanced GST reports
@@ -447,6 +482,12 @@ export function SellerTaxReportClient({
       ) : null}
       {exportMutation.error ? (
         <SellerErrorPanel error={exportMutation.error} onRetry={() => exportMutation.reset()} />
+      ) : null}
+      {reviewExportMutation.error ? (
+        <SellerErrorPanel
+          error={reviewExportMutation.error}
+          onRetry={() => reviewExportMutation.reset()}
+        />
       ) : null}
 
       {report ? (
@@ -1085,6 +1126,7 @@ function GenericTaxReportView({
               name="dateFrom"
               type="date"
               value={dateFrom}
+              max={dateTo || undefined}
               onChange={onDateFromChange}
             />
             <SellerField
@@ -1092,6 +1134,7 @@ function GenericTaxReportView({
               name="dateTo"
               type="date"
               value={dateTo}
+              min={dateFrom || undefined}
               onChange={onDateToChange}
             />
             <Button type="submit" className="self-end">
@@ -1239,9 +1282,11 @@ function GenericTaxReportView({
 function Gstr1ExportMenu({
   disabled,
   onExport,
+  onReviewExport,
 }: {
   disabled: boolean;
   onExport: (type: "gstr-1" | "gstr-1-json") => void;
+  onReviewExport: () => void;
 }) {
   return (
     <Popover className="relative">
@@ -1271,6 +1316,13 @@ function Gstr1ExportMenu({
               label="JSON filing package"
               onClick={() => {
                 onExport("gstr-1-json");
+                close();
+              }}
+            />
+            <ExportMenuItem
+              label="Accountant review workbook (.xlsx)"
+              onClick={() => {
+                onReviewExport();
                 close();
               }}
             />
@@ -1546,7 +1598,5 @@ function formatReportDate(value?: string | null) {
 }
 
 function mutationMessage(error: unknown) {
-  return error instanceof Error
-    ? error.message
-    : "The filing period action could not be completed.";
+  return userFacingApiErrorMessage(error);
 }

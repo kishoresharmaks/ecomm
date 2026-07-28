@@ -155,6 +155,26 @@ describe("ServiceMarketplaceService serviceability", () => {
     prisma.client.$transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback(prisma.client));
   });
 
+  it("filters seller service bookings by lifecycle status", async () => {
+    const service = createService();
+
+    await service.listSellerBookings(
+      { id: "seller-user-1", email: "seller@example.com", roles: [] } as never,
+      { status: ServiceBookingStatus.REQUESTED, page: 2, limit: 10 },
+    );
+
+    expect(prisma.client.serviceBooking.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          sellerId: "seller-1",
+          status: ServiceBookingStatus.REQUESTED,
+        },
+        skip: 10,
+        take: 10,
+      }),
+    );
+  });
+
   it("does not require a customer address for remote bookings even when the listing has local service areas", async () => {
     const listing = serviceListing({
       allowedVisitModes: [ServiceVisitMode.REMOTE],
@@ -617,6 +637,17 @@ describe("ServiceMarketplaceService serviceability", () => {
       }),
     ).rejects.toThrow("Assign an active technician before you accept this service booking.");
     expect(prisma.client.serviceBooking.update).not.toHaveBeenCalled();
+  });
+
+  it("keeps operational duration updates live but rechecks customer-facing changes", () => {
+    const service = createService();
+    const requiresApproval = Reflect.get(
+      service,
+      "sellerServiceUpdateRequiresApproval",
+    ) as (dto: Record<string, unknown>) => boolean;
+
+    expect(requiresApproval.call(service, { serviceDurationMinutes: 90 })).toBe(false);
+    expect(requiresApproval.call(service, { title: "Updated doorstep repair" })).toBe(true);
   });
 
   function createService() {

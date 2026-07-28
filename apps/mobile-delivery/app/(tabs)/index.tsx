@@ -7,7 +7,6 @@ import {
   listDeliveryOrders,
   getDeliveryProfile,
   getDeliveryWallet,
-  findCodPayment,
   sellerToCustomerDistanceLabel,
   type DeliveryOrder,
 } from "../../src/features/delivery/delivery-api";
@@ -18,7 +17,22 @@ export default function DeliveryDashboardScreen() {
   const queryClient = useQueryClient();
   const ordersQuery = useQuery({
     queryKey: ["delivery-orders", auth.authKey, "dashboard"],
-    queryFn: () => listDeliveryOrders(auth.authHeaders, { limit: 50 }),
+    queryFn: () => listDeliveryOrders(auth.authHeaders, { limit: 8 }),
+    enabled: auth.enabled,
+  });
+  const activeCountQuery = useQuery({
+    queryKey: ["delivery-orders", auth.authKey, "dashboard-active-count"],
+    queryFn: () => listDeliveryOrders(auth.authHeaders, { deliveryStatus: ["PENDING", "PACKED", "DISPATCHED", "IN_TRANSIT"], limit: 1 }),
+    enabled: auth.enabled,
+  });
+  const deliveredCountQuery = useQuery({
+    queryKey: ["delivery-orders", auth.authKey, "dashboard-delivered-count"],
+    queryFn: () => listDeliveryOrders(auth.authHeaders, { deliveryStatus: "DELIVERED", limit: 1 }),
+    enabled: auth.enabled,
+  });
+  const codPendingCountQuery = useQuery({
+    queryKey: ["delivery-orders", auth.authKey, "dashboard-cod-pending-count"],
+    queryFn: () => listDeliveryOrders(auth.authHeaders, { paymentMethod: "COD", paymentStatus: "PENDING", limit: 1 }),
     enabled: auth.enabled,
   });
   const walletQuery = useQuery({
@@ -33,11 +47,21 @@ export default function DeliveryDashboardScreen() {
   });
 
   const orders = ordersQuery.data?.items ?? [];
-  const active = orders.filter((order) => !["DELIVERED", "CANCELLED"].includes(order.deliveryStatus));
-  const delivered = orders.filter((order) => order.deliveryStatus === "DELIVERED");
-  const codPending = orders.filter((order) => order.paymentStatus === "PENDING" && findCodPayment(order));
+  const dashboardError =
+    ordersQuery.error ??
+    activeCountQuery.error ??
+    deliveredCountQuery.error ??
+    codPendingCountQuery.error ??
+    walletQuery.error ??
+    profileQuery.error;
 
-  const isRefreshing = ordersQuery.isFetching || walletQuery.isFetching || profileQuery.isFetching;
+  const isRefreshing =
+    ordersQuery.isFetching ||
+    activeCountQuery.isFetching ||
+    deliveredCountQuery.isFetching ||
+    codPendingCountQuery.isFetching ||
+    walletQuery.isFetching ||
+    profileQuery.isFetching;
 
   const handleRefresh = async () => {
     // invalidateQueries already refetches active queries; calling refetch()
@@ -50,7 +74,7 @@ export default function DeliveryDashboardScreen() {
   };
 
   return (
-    <Screen>
+    <Screen refreshing={isRefreshing} onRefresh={handleRefresh}>
       <Header
         title="Delivery dashboard"
         subtitle="Assigned order focus, COD visibility, and wallet summary."
@@ -60,12 +84,12 @@ export default function DeliveryDashboardScreen() {
           </Pressable>
         }
       />
-      <QueryState loading={ordersQuery.isLoading} error={ordersQuery.error} onRetry={() => void ordersQuery.refetch()} />
+      <QueryState loading={ordersQuery.isLoading} error={dashboardError} onRetry={() => void handleRefresh()} />
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
         <Metric label="Assigned" value={ordersQuery.data?.total ?? orders.length} note="Orders assigned" />
-        <Metric label="Active" value={active.length} note="Needs progress" />
-        <Metric label="Delivered" value={delivered.length} note="Completed" />
-        <Metric label="COD pending" value={codPending.length} note="Needs verification" />
+        <Metric label="Active" value={activeCountQuery.data?.total ?? 0} note="Needs progress" />
+        <Metric label="Delivered" value={deliveredCountQuery.data?.total ?? 0} note="Completed" />
+        <Metric label="COD pending" value={codPendingCountQuery.data?.total ?? 0} note="Needs verification" />
         <Metric label="Wallet" value={formatPaise(walletQuery.data?.summary.availableBalancePaise ?? 0)} note="Available balance" />
         <Metric label="COD handover" value={profileQuery.data?.deliveryProfile.razorpayVirtualUpiId ? "Ready" : "Pending"} note="Smart Collect UPI" />
       </View>

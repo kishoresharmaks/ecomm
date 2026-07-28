@@ -274,6 +274,7 @@ export type StoreProfile = {
 };
 
 export type StoreLocationQuery = {
+  search?: string;
   countryCode?: string;
   stateCode?: string;
   cityCode?: string;
@@ -283,6 +284,17 @@ export type StoreLocationQuery = {
   longitude?: number;
   accuracyMeters?: number;
   limit?: number;
+  page?: number;
+};
+
+export type StorePage = {
+  items: StoreProfile[];
+  total: number;
+  pageInfo: {
+    page: number;
+    pageSize: number;
+    hasNextPage: boolean;
+  };
 };
 
 export type ProductSummary = {
@@ -700,6 +712,22 @@ export type CmsAnnouncement = {
   linkUrl: string | null;
   backgroundColor: string | null;
   textColor: string | null;
+  startsAt: string | null;
+  endsAt: string | null;
+  status: string;
+  sortOrder: number;
+};
+
+export type CmsPopupAnnouncement = {
+  id: string;
+  title: string;
+  desktopImageUrl: string;
+  mobileImageUrl: string | null;
+  imageAlt: string;
+  primaryLinkUrl: string | null;
+  primaryCtaLabel: string | null;
+  secondaryLinkUrl: string | null;
+  secondaryCtaLabel: string | null;
   startsAt: string | null;
   endsAt: string | null;
   status: string;
@@ -1276,6 +1304,18 @@ export function listStores(query: StoreLocationQuery = {}) {
   return indihubFetch<StoreProfile[]>(`/api/sellers${suffix}`);
 }
 
+export function listStorePage(query: StoreLocationQuery & { page: number }) {
+  const params = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== "") {
+      params.set(key, String(value));
+    }
+  }
+
+  return indihubFetch<StorePage>(`/api/sellers?${params.toString()}`);
+}
+
 export function getStorefrontHome(query: StoreLocationQuery = {}, auth?: IndihubAuthHeaders) {
   const params = new URLSearchParams();
 
@@ -1481,6 +1521,10 @@ export function listHomepageBanners() {
 
 export function listCmsAnnouncements() {
   return indihubFetch<CmsAnnouncement[]>("/api/cms/announcements");
+}
+
+export function listCmsPopupAnnouncements() {
+  return indihubFetch<CmsPopupAnnouncement[]>("/api/cms/popup-announcements");
 }
 
 export function listHomepageSections() {

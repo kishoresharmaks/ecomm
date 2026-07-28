@@ -27,6 +27,7 @@ const fallbackPolicyLinks = [
   { label: "Return Policy", href: "/refund-return-policy" },
   { label: "Shipping Policy", href: "/shipping-policy" },
   { label: "Seller Policy", href: "/seller-policy" },
+  { label: "Account Deletion", href: "/account-deletion" },
 ];
 
 export function StorefrontFooter({

@@ -1,4 +1,4 @@
-import { ForbiddenException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException } from "@nestjs/common";
 import { createHmac } from "node:crypto";
 import {
   ApprovalStatus,
@@ -97,6 +97,60 @@ describe("SellerSubscriptionsService recurring billing", () => {
     });
   });
 
+  it.each([
+    SellerSubscriptionStatus.ACTIVE,
+    SellerSubscriptionStatus.TRIALING,
+  ])("rejects direct reauthorization of an already %s subscription", async (status) => {
+    const tx = createTx();
+    const plan = makePlan();
+    const prisma = createPrisma(tx);
+    prisma.client.seller.findUnique.mockResolvedValue(
+      makeSeller({ plan, subscriptionStatus: status }),
+    );
+    prisma.client.sellerSubscription.findFirst.mockResolvedValue(
+      makeSubscription({ plan, status }),
+    );
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const service = new SellerSubscriptionsService(prisma as never);
+
+    await expect(
+      service.authorizeSellerSubscription(makeActor()),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("allows an unpaid authorization to be resumed or cancelled", async () => {
+    const tx = createTx();
+    const plan = makePlan();
+    const subscription = {
+      ...makeSubscription({
+        plan,
+        status: SellerSubscriptionStatus.PENDING_PAYMENT,
+      }),
+      payments: [],
+    };
+    const prisma = createPrisma(tx);
+    prisma.client.seller.findUnique.mockResolvedValue(
+      makeSeller({
+        plan,
+        subscriptionStatus: SellerSubscriptionStatus.PENDING_PAYMENT,
+        subscriptions: [subscription],
+      }),
+    );
+    prisma.client.sellerSubscription.findFirst.mockResolvedValue(subscription);
+    prisma.client.sellerSubscription.findUnique.mockResolvedValue(subscription);
+    const service = new SellerSubscriptionsService(prisma as never);
+
+    const result = await service.getSellerSubscription(makeActor());
+
+    expect(result.billing).toMatchObject({
+      canAuthorize: true,
+      canCancel: true,
+      cancelAtPeriodEnd: false,
+    });
+  });
+
   it("verifies a Razorpay subscription checkout payment and activates the seller plan", async () => {
     const tx = createTx();
     const plan = makePlan({ pricePaise: 99900 });
@@ -154,6 +208,103 @@ describe("SellerSubscriptionsService recurring billing", () => {
       }),
     });
   });
+
+  it("accepts the Razorpay trial authorization charge and starts the trial period", async () => {
+    const tx = createTx();
+    const plan = makePlan({ pricePaise: 99900, trialDays: 14 });
+    const subscription = makeSubscription({ plan });
+    const prisma = createPrisma(tx);
+    prisma.client.setting.findMany.mockResolvedValue([]);
+    prisma.client.sellerSubscription.findUnique.mockResolvedValue(subscription);
+    tx.sellerSubscriptionPayment.findFirst.mockResolvedValue(null);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          id: "pay_trial_auth",
+          amount: 500,
+          currency: "INR",
+          status: "captured",
+          subscription_id: "sub_razorpay_1",
+        }),
+      })),
+    );
+    const service = new SellerSubscriptionsService(prisma as never);
+    vi.spyOn(service, "getSellerSubscription").mockResolvedValue({
+      subscriptionStatus: SellerSubscriptionStatus.TRIALING,
+    } as never);
+    const signature = createHmac("sha256", "test_secret")
+      .update("pay_trial_auth|sub_razorpay_1")
+      .digest("hex");
+
+    await service.verifySellerRazorpaySubscription(makeActor(), {
+      razorpaySubscriptionId: "sub_razorpay_1",
+      razorpayPaymentId: "pay_trial_auth",
+      razorpaySignature: signature,
+    });
+
+    expect(tx.sellerSubscriptionPayment.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        amountPaise: 500,
+        providerPaymentId: "pay_trial_auth",
+        status: PaymentStatus.PAID,
+      }),
+    });
+    const update = tx.sellerSubscription.update.mock.calls[0]?.[0];
+    expect(update).toEqual({
+      where: { id: "seller_sub_1" },
+      data: expect.objectContaining({
+        status: SellerSubscriptionStatus.TRIALING,
+        providerStatus: "authenticated",
+      }),
+    });
+    expect(update?.data.currentPeriodEnd).toBeInstanceOf(Date);
+    expect(update?.data.nextBillingAt).toEqual(update?.data.currentPeriodEnd);
+  });
+
+  it.each([
+    { trialDays: 0, amount: undefined },
+    { trialDays: 0, amount: 99800 },
+    { trialDays: 14, amount: undefined },
+    { trialDays: 14, amount: 499 },
+  ])(
+    "rejects a missing or mismatched checkout amount for trialDays=$trialDays",
+    async ({ trialDays, amount }) => {
+      const tx = createTx();
+      const plan = makePlan({ pricePaise: 99900, trialDays });
+      const subscription = makeSubscription({ plan });
+      const prisma = createPrisma(tx);
+      prisma.client.setting.findMany.mockResolvedValue([]);
+      prisma.client.sellerSubscription.findUnique.mockResolvedValue(subscription);
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => ({
+          ok: true,
+          json: async () => ({
+            id: "pay_invalid_amount",
+            ...(amount === undefined ? {} : { amount }),
+            currency: "INR",
+            status: "captured",
+            subscription_id: "sub_razorpay_1",
+          }),
+        })),
+      );
+      const service = new SellerSubscriptionsService(prisma as never);
+      const signature = createHmac("sha256", "test_secret")
+        .update("pay_invalid_amount|sub_razorpay_1")
+        .digest("hex");
+
+      await expect(
+        service.verifySellerRazorpaySubscription(makeActor(), {
+          razorpaySubscriptionId: "sub_razorpay_1",
+          razorpayPaymentId: "pay_invalid_amount",
+          razorpaySignature: signature,
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(tx.sellerSubscriptionPayment.create).not.toHaveBeenCalled();
+    },
+  );
 
   it("records Razorpay renewal success webhooks idempotently", async () => {
     const tx = createTx();
@@ -273,6 +424,57 @@ describe("SellerSubscriptionsService recurring billing", () => {
       data: expect.objectContaining({
         providerPaymentId: "pay_failed_1",
         status: PaymentStatus.FAILED,
+      }),
+    });
+  });
+
+  it("ignores a stale failed webhook after a newer paid provider event", async () => {
+    const tx = createTx();
+    const plan = makePlan({ pricePaise: 99900 });
+    const prisma = createPrisma(tx);
+    prisma.client.sellerSubscription.findUnique.mockResolvedValue(
+      makeSubscription({
+        plan,
+        status: SellerSubscriptionStatus.ACTIVE,
+        lastPaymentStatus: PaymentStatus.PAID,
+        providerSnapshot: { lastProviderOccurredAt: "2026-07-26T12:00:00.000Z" },
+      }),
+    );
+    prisma.client.sellerSubscriptionProviderEvent.findUnique.mockResolvedValue(null);
+    tx.sellerSubscriptionProviderEvent.create.mockResolvedValue({ id: "event_stale" });
+    const service = new SellerSubscriptionsService(prisma as never);
+
+    const result = await service.handleRazorpaySubscriptionWebhook(
+      {
+        event: "payment.failed",
+        payload: {
+          payment: {
+            entity: {
+              id: "pay_failed_old",
+              subscription_id: "sub_razorpay_1",
+              amount: 99900,
+              currency: "INR",
+              status: "failed",
+              created_at: 1_753_526_400,
+            },
+          },
+        },
+      },
+      "evt_failed_old",
+    );
+
+    expect(result).toMatchObject({
+      handled: true,
+      received: true,
+      ignored: true,
+      status: SellerSubscriptionStatus.ACTIVE,
+    });
+    expect(tx.sellerSubscription.update).not.toHaveBeenCalled();
+    expect(tx.sellerSubscriptionPayment.create).not.toHaveBeenCalled();
+    expect(tx.sellerSubscriptionProviderEvent.update).toHaveBeenCalledWith({
+      where: { id: "event_stale" },
+      data: expect.objectContaining({
+        status: SellerSubscriptionProviderEventStatus.SKIPPED,
       }),
     });
   });
@@ -401,10 +603,15 @@ describe("SellerSubscriptionsService recurring billing", () => {
     );
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => ({
-        ok: true,
-        json: async () => ({ id: "sub_razorpay_1", status: "cancelled", cancel_at_cycle_end: true }),
-      })),
+      vi.fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ id: "sub_razorpay_1", status: "active" }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ id: "sub_razorpay_1", status: "cancelled", cancel_at_cycle_end: true }),
+        }),
     );
     const service = new SellerSubscriptionsService(prisma as never);
     vi.spyOn(service, "getSellerSubscription").mockResolvedValue({
@@ -420,12 +627,92 @@ describe("SellerSubscriptionsService recurring billing", () => {
         body: JSON.stringify({ cancel_at_cycle_end: 1 }),
       }),
     );
-    expect(prisma.client.sellerSubscription.update).toHaveBeenCalledWith({
-      where: { id: "seller_sub_1" },
+    expect(tx.sellerSubscription.updateMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        id: "seller_sub_1",
+        providerStatus: expect.stringMatching(/^cancellation_pending:/),
+      }),
       data: expect.objectContaining({
         cancelAtPeriodEnd: true,
         providerCancelAtCycleEnd: true,
         providerStatus: "cancelled",
+      }),
+    });
+    expect(tx.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: "seller.subscription.renewal_cancel_requested",
+        entityType: "seller_subscription",
+        entityId: "seller_sub_1",
+      }),
+    });
+  });
+
+  it("cancels an unpaid Razorpay authorization immediately", async () => {
+    const tx = createTx();
+    const plan = makePlan({ pricePaise: 99900 });
+    const prisma = createPrisma(tx);
+    prisma.client.setting.findMany.mockResolvedValue([]);
+    prisma.client.seller.findUnique.mockResolvedValue(
+      makeSeller({
+        plan,
+        subscriptions: [
+          makeSubscription({
+            plan,
+            status: SellerSubscriptionStatus.PENDING_PAYMENT,
+          }),
+        ],
+      }),
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ id: "sub_razorpay_1", status: "created" }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            id: "sub_razorpay_1",
+            status: "cancelled",
+            cancel_at_cycle_end: false,
+          }),
+        }),
+    );
+    const service = new SellerSubscriptionsService(prisma as never);
+    vi.spyOn(service, "getSellerSubscription").mockResolvedValue({
+      subscriptionStatus: SellerSubscriptionStatus.CANCELLED,
+    } as never);
+
+    await service.cancelSellerSubscription(makeActor());
+
+    expect(fetch).toHaveBeenCalledWith(
+      "https://api.razorpay.com/v1/subscriptions/sub_razorpay_1/cancel",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ cancel_at_cycle_end: 0 }),
+      }),
+    );
+    expect(tx.sellerSubscription.updateMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        id: "seller_sub_1",
+        providerStatus: expect.stringMatching(/^cancellation_pending:/),
+      }),
+      data: expect.objectContaining({
+        status: SellerSubscriptionStatus.CANCELLED,
+        cancelAtPeriodEnd: false,
+        providerCancelAtCycleEnd: false,
+      }),
+    });
+    expect(tx.seller.update).toHaveBeenCalledWith({
+      where: { id: "seller_1" },
+      data: { subscriptionStatus: SellerSubscriptionStatus.CANCELLED },
+    });
+    expect(tx.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: "seller.subscription.cancelled",
+        entityType: "seller_subscription",
+        entityId: "seller_sub_1",
       }),
     });
   });
@@ -433,14 +720,17 @@ describe("SellerSubscriptionsService recurring billing", () => {
 
 function createTx() {
   return {
+    $queryRaw: vi.fn().mockResolvedValue([]),
     seller: {
       update: vi.fn(),
       updateMany: vi.fn(),
     },
     sellerSubscription: {
       create: vi.fn(),
+      findFirst: vi.fn(),
+      findUniqueOrThrow: vi.fn(),
       update: vi.fn(),
-      updateMany: vi.fn(),
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
     sellerSubscriptionPayment: {
       create: vi.fn(),
@@ -449,13 +739,17 @@ function createTx() {
     },
     sellerSubscriptionProviderEvent: {
       create: vi.fn(),
+      findUnique: vi.fn().mockResolvedValue(null),
       update: vi.fn(),
+    },
+    auditLog: {
+      create: vi.fn(),
     },
   };
 }
 
 function createPrisma(tx: ReturnType<typeof createTx>) {
-  return {
+  const prisma = {
     client: {
       $transaction: vi.fn(async (callback: (transactionClient: typeof tx) => Promise<unknown>) =>
         callback(tx),
@@ -472,6 +766,7 @@ function createPrisma(tx: ReturnType<typeof createTx>) {
         findUniqueOrThrow: vi.fn(),
         findMany: vi.fn(),
         update: vi.fn(),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
       sellerSubscriptionPlan: {
         findUniqueOrThrow: vi.fn(),
@@ -485,6 +780,14 @@ function createPrisma(tx: ReturnType<typeof createTx>) {
       },
     },
   };
+  tx.sellerSubscription.findFirst.mockImplementation((...args) =>
+    prisma.client.sellerSubscription.findFirst(...args),
+  );
+  tx.sellerSubscription.findUniqueOrThrow.mockImplementation(async (...args) => {
+    const value = await prisma.client.sellerSubscription.findUnique(...args);
+    return value ?? prisma.client.sellerSubscription.findUniqueOrThrow(...args);
+  });
+  return prisma;
 }
 
 function makeActor() {
@@ -548,12 +851,16 @@ function makeSubscription({
   currentPeriodEnd = new Date("2026-06-30T00:00:00.000Z"),
   gracePeriodEndsAt = null,
   paymentFailureCount = 0,
+  lastPaymentStatus = PaymentStatus.PENDING,
+  providerSnapshot = null,
 }: {
   plan: TestPlan;
   status?: SellerSubscriptionStatus;
   currentPeriodEnd?: Date | null;
   gracePeriodEndsAt?: Date | null;
   paymentFailureCount?: number;
+  lastPaymentStatus?: PaymentStatus;
+  providerSnapshot?: Record<string, unknown> | null;
 }) {
   return {
     id: "seller_sub_1",
@@ -574,9 +881,9 @@ function makeSubscription({
     gracePeriodEndsAt,
     cancelAtPeriodEnd: false,
     providerCancelAtCycleEnd: false,
-    lastPaymentStatus: PaymentStatus.PENDING,
+    lastPaymentStatus,
     paymentFailureCount,
-    providerSnapshot: null,
+    providerSnapshot,
     note: null,
     createdById: "admin_1",
     createdAt: new Date("2026-01-01T00:00:00.000Z"),

@@ -19,6 +19,8 @@ export type DeliveryPushPermissionState =
 let latestState: DeliveryPushPermissionState = "checking";
 let latestRefresh: (() => void) | null = null;
 let latestRevoke: (() => Promise<void>) | null = null;
+let lastHandledNotificationId: string | null = null;
+let pendingNotification: DeliveryPushPayload | null = null;
 const subscribers = new Set<() => void>();
 
 type DeliveryPushPayload = {
@@ -52,6 +54,7 @@ export function useDeliveryPushNotifications(auth: {
 }) {
   const [state, setState] = useState<DeliveryPushPermissionState>("checking");
   const registeredTokenRef = useRef<RegisteredDeliveryPushToken | null>(null);
+  const authEnabledRef = useRef(auth.enabled);
   // Clerk rotates the bearer token roughly every minute, which gives
   // auth.authHeaders a new identity on each rotation. Registration must key
   // off authKey (the signed-in user), not the headers object, or every
@@ -60,7 +63,15 @@ export function useDeliveryPushNotifications(auth: {
 
   useEffect(() => {
     authHeadersRef.current = auth.authHeaders;
-  }, [auth.authHeaders]);
+    authEnabledRef.current = auth.enabled;
+  }, [auth.authHeaders, auth.enabled]);
+
+  useEffect(() => {
+    if (!auth.enabled || !pendingNotification) return;
+    const notification = pendingNotification;
+    pendingNotification = null;
+    openDeliveryNotification(notification);
+  }, [auth.enabled]);
 
   const revokeRegisteredToken = useCallback(async (record?: RegisteredDeliveryPushToken | null) => {
     const target = record ?? registeredTokenRef.current;
@@ -174,14 +185,17 @@ export function useDeliveryPushNotifications(auth: {
     }
     const received = Notifications.addNotificationReceivedListener(() => undefined);
     const response = Notifications.addNotificationResponseReceivedListener((event) => {
-      openDeliveryNotification(event.notification.request.content.data as DeliveryPushPayload);
+      handleDeliveryNotificationResponse(event, authEnabledRef.current);
+      void Notifications.clearLastNotificationResponseAsync().catch(() => undefined);
     });
 
     Notifications.getLastNotificationResponseAsync()
       .then((event) => {
         if (event) {
-          openDeliveryNotification(event.notification.request.content.data as DeliveryPushPayload);
+          handleDeliveryNotificationResponse(event, authEnabledRef.current);
+          return Notifications.clearLastNotificationResponseAsync();
         }
+        return undefined;
       })
       .catch(() => null);
 
@@ -192,6 +206,21 @@ export function useDeliveryPushNotifications(auth: {
   }, []);
 
   return { refresh: register, state };
+}
+
+function handleDeliveryNotificationResponse(
+  event: Notifications.NotificationResponse,
+  authEnabled: boolean,
+) {
+  const notificationId = event.notification.request.identifier;
+  if (notificationId && lastHandledNotificationId === notificationId) return;
+  lastHandledNotificationId = notificationId || null;
+  const data = event.notification.request.content.data as DeliveryPushPayload;
+  if (!authEnabled) {
+    pendingNotification = data;
+    return;
+  }
+  openDeliveryNotification(data);
 }
 
 export function useDeliveryPushNotificationStatus() {

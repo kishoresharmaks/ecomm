@@ -1,14 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import { Linking, StyleSheet, Text, View } from "react-native";
+import { Linking, StyleSheet, Switch, Text, View, useWindowDimensions } from "react-native";
 import { useMobileSellerAuth } from "../../src/auth/mobile-seller-auth-context";
 import {
+  OperationsHeader,
+  OperationsSection,
+} from "../../src/components/operations-ui";
+import {
   Button,
-  Card,
+  CollapsibleSection,
   ConfirmDialog,
   Field,
-  Header,
   LoadingState,
   QueryErrorState,
   Screen,
@@ -16,6 +19,10 @@ import {
   StatusChip,
   Toast,
 } from "../../src/components/screen";
+import {
+  formatOperationDateTime,
+  operationStatus,
+} from "../../src/features/seller/operations-presentation";
 import {
   availableSellerOrderActions,
   buildSellerTimeline,
@@ -55,6 +62,7 @@ export default function SellerOrderDetailScreen() {
   const { orderNumber } = useLocalSearchParams<{ orderNumber: string }>();
   const decodedOrderNumber = decodeURIComponent(orderNumber ?? "");
   const auth = useMobileSellerAuth();
+  const { width } = useWindowDimensions();
   const queryClient = useQueryClient();
   const [note, setNote] = useState("");
   const [deliveryForm, setDeliveryForm] = useState<DeliveryFormValues | null>(null);
@@ -79,6 +87,7 @@ export default function SellerOrderDetailScreen() {
   const sellerTotalPaise = order ? sellerPayablePaise(order) : 0;
   const sellerCodExpectedPaise = order ? sellerCollectedCodExpectedPaise(order) : 0;
   const packages = useMemo(() => collectPackages(order), [order]);
+  const isTablet = width >= 700;
 
   useEffect(() => {
     if (order) {
@@ -140,7 +149,11 @@ export default function SellerOrderDetailScreen() {
   if (orderQuery.isError || !order) {
     return (
       <Screen>
-        <Header title={decodedOrderNumber || "Order detail"} subtitle="Seller fulfilment workspace" />
+        <OperationsHeader
+          onBack={() => router.back()}
+          title={decodedOrderNumber || "Order detail"}
+          subtitle="Seller fulfilment workspace"
+        />
         <QueryErrorState
           title="Could not load order"
           message={orderQuery.error instanceof Error ? orderQuery.error.message : undefined}
@@ -154,10 +167,19 @@ export default function SellerOrderDetailScreen() {
   const currentDeliveryForm = deliveryForm ?? createDeliveryForm(order);
 
   return (
-    <Screen>
-      <Header title={decodedOrderNumber} subtitle="Manage status, delivery, labels, and package readiness from one place." />
+    <Screen
+      refreshing={orderQuery.isFetching}
+      onRefresh={() => {
+        void orderQuery.refetch();
+      }}
+    >
+      <OperationsHeader
+        onBack={() => router.back()}
+        title={decodedOrderNumber}
+        subtitle="Manage the next fulfilment step, package readiness, handoff, labels, and tracking."
+      />
 
-      <Card>
+      <View style={styles.summarySurface}>
         {order.orderKind === "REPLACEMENT" ? (
           <View style={{ marginBottom: 10 }}>
             <Text style={{ color: "#ED3500", fontSize: 12, fontWeight: "900", textTransform: "uppercase" }}>
@@ -170,9 +192,18 @@ export default function SellerOrderDetailScreen() {
           </View>
         ) : null}
         <View style={styles.summaryRow}>
-          <StatusChip label={labelValue(order.orderStatus ?? order.status ?? "ORDER")} />
-          <StatusChip label={labelValue(order.deliveryStatus ?? "DELIVERY")} tone="warning" />
-          <StatusChip label={labelValue(order.paymentStatus ?? "PAYMENT")} tone="success" />
+          <StatusChip
+            label={operationStatus(order.sellerSplits?.[0]?.sellerStatus ?? order.orderStatus ?? order.status).label}
+            tone={operationStatus(order.sellerSplits?.[0]?.sellerStatus ?? order.orderStatus ?? order.status).tone}
+          />
+          <StatusChip
+            label={operationStatus(order.deliveryStatus).label}
+            tone={operationStatus(order.deliveryStatus).tone}
+          />
+          <StatusChip
+            label={operationStatus(order.paymentStatus).label}
+            tone={operationStatus(order.paymentStatus).tone}
+          />
         </View>
         <Text style={styles.summaryValue}>Seller total: {formatMoney(sellerTotalPaise, order.currency ?? "INR")}</Text>
         {sellerReceivableSummaries(order).map((receivable) => (
@@ -184,43 +215,63 @@ export default function SellerOrderDetailScreen() {
             </Text>
           </View>
         ))}
-        {(order.items ?? []).map((item) => (
-          <Text key={item.id} style={styles.itemText}>
-            {item.productNameSnapshot ?? item.id} x {item.quantity ?? 1}
-          </Text>
-        ))}
-      </Card>
+        <View style={styles.itemList}>
+          {(order.items ?? []).map((item) => (
+            <View key={item.id} style={styles.itemRow}>
+              <Text numberOfLines={2} style={styles.itemText}>
+                {item.productNameSnapshot ?? item.id}
+              </Text>
+              <Text style={styles.itemQuantity}>x {item.quantity ?? 1}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
 
-      <Card>
-        <Field label="Operation note" value={note} onChangeText={setNote} placeholder="Add context for this fulfilment update" multiline />
-        <View style={styles.buttonGrid}>
+      <OperationsSection
+        title="Next fulfilment step"
+        subtitle={
+          actions.length
+            ? "Only actions valid for the current seller and delivery status are shown."
+            : "No seller action is currently required for this order."
+        }
+      >
+        <View style={styles.actionSurface}>
+          {actions.length ? (
+            <Field label="Operation note" value={note} onChangeText={setNote} placeholder="Add context for this fulfilment update" multiline />
+          ) : (
+            <Text style={styles.mutedText}>This order is complete or its next update is handled by the assigned delivery workflow.</Text>
+          )}
+          <View style={[styles.buttonGrid, isTablet ? styles.buttonGridTablet : null]}>
           {actions.includes("ACCEPT") ? (
             <Button
-              title="Accept"
+              title="Accept order"
               onPress={() => {
                 setActiveAction("ACCEPT");
                 statusMutation.mutate("ACCEPTED");
               }}
               loading={activeAction === "ACCEPT" && statusMutation.isPending}
+              style={styles.actionButton}
             />
           ) : null}
           {actions.includes("PROCESSING") ? (
             <Button
-              title="Processing"
+              title="Start processing"
               tone="secondary"
               onPress={() => {
                 setActiveAction("PROCESSING");
                 statusMutation.mutate("PROCESSING");
               }}
               loading={activeAction === "PROCESSING" && statusMutation.isPending}
+              style={styles.actionButton}
             />
           ) : null}
           {actions.includes("PACKED") ? (
             <Button
-              title="Packed"
+              title="Mark packed"
               tone="secondary"
               onPress={() => void submitDeliveryAction(order, "PACKED", currentDeliveryForm)}
               loading={activeAction === "PACKED" && deliveryMutation.isPending}
+              style={styles.actionButton}
             />
           ) : null}
           {actions.includes("DISPATCHED") ? (
@@ -228,56 +279,74 @@ export default function SellerOrderDetailScreen() {
               title="Dispatch"
               onPress={() => void submitDeliveryAction(order, "DISPATCHED", currentDeliveryForm)}
               loading={activeAction === "DISPATCHED" && deliveryMutation.isPending}
+              style={styles.actionButton}
             />
           ) : null}
           {actions.includes("DELIVERED") ? (
             <Button
-              title="Delivered"
+              title="Mark delivered"
               onPress={() => void submitDeliveryAction(order, "DELIVERED", currentDeliveryForm)}
               loading={activeAction === "DELIVERED" && deliveryMutation.isPending}
+              style={styles.actionButton}
             />
           ) : null}
           {actions.includes("CANCELLED") ? (
-            <Button title="Cancel order" tone="danger" onPress={() => setConfirmCancelVisible(true)} />
+            <Button title="Cancel order" tone="danger" onPress={() => setConfirmCancelVisible(true)} style={styles.actionButton} />
           ) : null}
+          </View>
         </View>
-      </Card>
+      </OperationsSection>
 
-      <Card>
+      <CollapsibleSection
+        title="Delivery and handoff"
+        defaultOpen={actions.includes("DISPATCHED") || actions.includes("DELIVERED")}
+      >
         <SelectField
           label="Delivery mode"
           options={deliveryModeOptions.map((option) => ({ label: option.label, value: option.value }))}
           selectedValue={currentDeliveryForm.deliveryMode}
           onSelect={(value) => updateDeliveryField("deliveryMode", value as DeliveryFormValues["deliveryMode"])}
         />
-        <Field
-          label="Courier or partner name"
-          value={currentDeliveryForm.partnerName}
-          onChangeText={(value) => updateDeliveryField("partnerName", value)}
-          placeholder="Blue Dart, in-house rider, pickup desk"
-        />
-        <Field
-          label="Partner phone"
-          value={currentDeliveryForm.partnerPhone}
-          onChangeText={(value) => updateDeliveryField("partnerPhone", value)}
-          keyboardType="phone-pad"
-          placeholder="Contact number"
-        />
-        <Field
-          label="Tracking reference"
-          value={currentDeliveryForm.trackingReference}
-          onChangeText={(value) => updateDeliveryField("trackingReference", value)}
-          autoCapitalize="characters"
-          placeholder="Required for courier dispatch"
-          error={deliveryErrors.trackingReference}
-        />
-        <Field
-          label="Estimated delivery date"
-          value={currentDeliveryForm.estimatedDeliveryDate}
-          onChangeText={(value) => updateDeliveryField("estimatedDeliveryDate", value)}
-          placeholder="YYYY-MM-DD"
-          error={deliveryErrors.estimatedDeliveryDate}
-        />
+        <View style={[styles.responsiveFields, isTablet ? styles.responsiveFieldsTablet : null]}>
+          <View style={styles.responsiveField}>
+            <Field
+              label="Courier or partner name"
+              value={currentDeliveryForm.partnerName}
+              onChangeText={(value) => updateDeliveryField("partnerName", value)}
+              placeholder="Blue Dart, in-house rider, pickup desk"
+            />
+          </View>
+          <View style={styles.responsiveField}>
+            <Field
+              label="Partner phone"
+              value={currentDeliveryForm.partnerPhone}
+              onChangeText={(value) => updateDeliveryField("partnerPhone", value)}
+              keyboardType="phone-pad"
+              placeholder="Contact number"
+            />
+          </View>
+        </View>
+        <View style={[styles.responsiveFields, isTablet ? styles.responsiveFieldsTablet : null]}>
+          <View style={styles.responsiveField}>
+            <Field
+              label="Tracking reference"
+              value={currentDeliveryForm.trackingReference}
+              onChangeText={(value) => updateDeliveryField("trackingReference", value)}
+              autoCapitalize="characters"
+              placeholder="Required for courier dispatch"
+              error={deliveryErrors.trackingReference}
+            />
+          </View>
+          <View style={styles.responsiveField}>
+            <Field
+              label="Estimated delivery date"
+              value={currentDeliveryForm.estimatedDeliveryDate}
+              onChangeText={(value) => updateDeliveryField("estimatedDeliveryDate", value)}
+              placeholder="YYYY-MM-DD"
+              error={deliveryErrors.estimatedDeliveryDate}
+            />
+          </View>
+        </View>
         <Field
           label="Receiver name"
           value={currentDeliveryForm.receiverName}
@@ -299,23 +368,30 @@ export default function SellerOrderDetailScreen() {
           placeholder="Short proof summary"
         />
         <Field
-          label="Proof reference"
+          label="Delivery proof ID or link"
           value={currentDeliveryForm.proofReference}
           onChangeText={(value) => updateDeliveryField("proofReference", value)}
           placeholder="Photo id, slip id, or receiver reference"
         />
         {isCodVisible(order, currentDeliveryForm.deliveryMode) ? (
           <>
-            <SelectField
-              label="Manual transport COD collected"
-              options={[
-                { label: "Yes", value: "true" },
-                { label: "No", value: "false" },
-              ]}
-              selectedValue={String(currentDeliveryForm.codCollected)}
-              onSelect={(value) => updateDeliveryField("codCollected", value === "true")}
-              error={deliveryErrors.codCollected}
-            />
+            <View style={styles.switchRow}>
+              <View style={styles.switchCopy}>
+                <Text style={styles.switchTitle}>Cash collected from customer</Text>
+                <Text style={deliveryErrors.codCollected ? styles.fieldError : styles.mutedText}>
+                  {deliveryErrors.codCollected ?? "Required before marking a manual-transport COD order delivered."}
+                </Text>
+              </View>
+              <Switch
+                accessibilityLabel="Cash collected from customer"
+                accessibilityRole="switch"
+                accessibilityState={{ checked: currentDeliveryForm.codCollected }}
+                onValueChange={(value) => updateDeliveryField("codCollected", value)}
+                thumbColor={colors.surface}
+                trackColor={{ false: "#D1D5DB", true: colors.primary }}
+                value={currentDeliveryForm.codCollected}
+              />
+            </View>
             {currentDeliveryForm.codCollected ? (
               <>
                 <Field
@@ -337,17 +413,25 @@ export default function SellerOrderDetailScreen() {
             ) : null}
           </>
         ) : null}
-      </Card>
+      </CollapsibleSection>
 
-      <Card>
-        <Text style={styles.sectionTitle}>Packages</Text>
+      <CollapsibleSection
+        title={`Packages (${packages.length})`}
+        defaultOpen={packages.some((shipmentPackage) => !shipmentPackage.readyForBookingAt)}
+      >
         {packages.length === 0 ? (
           <Text style={styles.mutedText}>No seller package data is available yet.</Text>
         ) : (
-          packages.map((shipmentPackage) => {
+          packages.map((shipmentPackage, packageIndex) => {
             const form = packageForms[shipmentPackage.id] ?? createPackageForm(shipmentPackage);
             return (
-              <View key={shipmentPackage.id} style={styles.packageCard}>
+              <View
+                key={shipmentPackage.id}
+                style={[
+                  styles.packageRow,
+                  packageIndex > 0 ? styles.packageDivider : null,
+                ]}
+              >
                 <Text style={styles.packageTitle}>{shipmentPackage.packageNumber ?? "Package"}</Text>
                 <Text style={styles.packageMeta}>
                   {labelValue(shipmentPackage.status ?? "PENDING")}
@@ -369,7 +453,7 @@ export default function SellerOrderDetailScreen() {
                 <View style={styles.dimensionRow}>
                   <View style={styles.dimensionCell}>
                     <Field
-                      label="L"
+                      label="L (cm)"
                       keyboardType="number-pad"
                       value={form.lengthCm}
                       onChangeText={(value) => updatePackageField(shipmentPackage.id, "lengthCm", value)}
@@ -377,7 +461,7 @@ export default function SellerOrderDetailScreen() {
                   </View>
                   <View style={styles.dimensionCell}>
                     <Field
-                      label="B"
+                      label="W (cm)"
                       keyboardType="number-pad"
                       value={form.breadthCm}
                       onChangeText={(value) => updatePackageField(shipmentPackage.id, "breadthCm", value)}
@@ -385,26 +469,28 @@ export default function SellerOrderDetailScreen() {
                   </View>
                   <View style={styles.dimensionCell}>
                     <Field
-                      label="H"
+                      label="H (cm)"
                       keyboardType="number-pad"
                       value={form.heightCm}
                       onChangeText={(value) => updatePackageField(shipmentPackage.id, "heightCm", value)}
                     />
                   </View>
                 </View>
-                <View style={styles.buttonGrid}>
+                <View style={[styles.buttonGrid, isTablet ? styles.buttonGridTablet : null]}>
                   <Button
                     title="Save package"
                     tone="secondary"
                     onPress={() => void savePackage(shipmentPackage, false)}
                     loading={packageBusyId === shipmentPackage.id}
                     disabled={Boolean(packageBusyId)}
+                    style={styles.actionButton}
                   />
                   <Button
                     title="Ready for booking"
                     onPress={() => void savePackage(shipmentPackage, true)}
                     loading={packageBusyId === `${shipmentPackage.id}:ready`}
                     disabled={Boolean(packageBusyId)}
+                    style={styles.actionButton}
                   />
                   {shipmentPackage.canDownloadLabel && shipmentPackage.labelDownloadUrl ? (
                     <Button
@@ -413,6 +499,7 @@ export default function SellerOrderDetailScreen() {
                       onPress={() => void openLabel(shipmentPackage)}
                       loading={labelLoadingId === shipmentPackage.id}
                       disabled={Boolean(labelLoadingId)}
+                      style={styles.actionButton}
                     />
                   ) : null}
                 </View>
@@ -420,10 +507,9 @@ export default function SellerOrderDetailScreen() {
             );
           })
         )}
-      </Card>
+      </CollapsibleSection>
 
-      <Card>
-        <Text style={styles.sectionTitle}>Shipment timeline</Text>
+      <CollapsibleSection title={`Shipment timeline (${timeline.length})`}>
         {timeline.length === 0 ? (
           <Text style={styles.mutedText}>No shipment activity has been recorded yet.</Text>
         ) : (
@@ -431,16 +517,17 @@ export default function SellerOrderDetailScreen() {
             <View key={entry.id} style={styles.timelineRow}>
               <Text style={styles.timelineStatus}>{labelValue(entry.status)}</Text>
               <Text style={styles.timelineNote}>{entry.note}</Text>
-              <Text style={styles.timelineAt}>{formatTimelineDate(entry.at)}</Text>
+              <Text style={styles.timelineAt}>{formatOperationDateTime(entry.at)}</Text>
             </View>
           ))
         )}
-      </Card>
+      </CollapsibleSection>
 
       <ConfirmDialog
         visible={confirmCancelVisible}
         title="Cancel this order?"
-        message="This will request seller-side cancellation before dispatch. The backend will still enforce the final rule."
+        message="Cancellation is available only before dispatch. This action is recorded in the order history."
+        confirmLabel="Cancel order"
         onCancel={() => setConfirmCancelVisible(false)}
         onConfirm={() => {
           setConfirmCancelVisible(false);
@@ -474,7 +561,11 @@ export default function SellerOrderDetailScreen() {
       setActiveAction(null);
       return;
     }
-    await deliveryMutation.mutateAsync({ action, payload: result.payload });
+    try {
+      await deliveryMutation.mutateAsync({ action, payload: result.payload });
+    } catch {
+      // Mutation feedback is shown by onError.
+    }
   }
 
   async function savePackage(shipmentPackage: SellerOrderPackage, markReadyForBooking: boolean) {
@@ -556,17 +647,18 @@ function isCodVisible(order: SellerOrder, deliveryMode: DeliveryFormValues["deli
 }
 
 function labelValue(value: string) {
-  return value.replace(/_/g, " ");
-}
-
-function formatTimelineDate(value: string) {
-  return new Date(value).toLocaleString("en-IN", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
+  return operationStatus(value).label;
 }
 
 const styles = StyleSheet.create({
+  summarySurface: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: spacing.md,
+    padding: spacing.md,
+  },
   summaryRow: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -578,8 +670,25 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   itemText: {
+    flex: 1,
     color: colors.muted,
     fontWeight: "700",
+  },
+  itemList: {
+    borderTopColor: colors.border,
+    borderTopWidth: 1,
+    gap: spacing.sm,
+    paddingTop: spacing.sm,
+  },
+  itemRow: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  itemQuantity: {
+    color: colors.ink,
+    fontSize: 12,
+    fontWeight: "900",
   },
   receivableBox: {
     borderWidth: 1,
@@ -602,20 +711,64 @@ const styles = StyleSheet.create({
   buttonGrid: {
     gap: spacing.sm,
   },
-  sectionTitle: {
-    color: colors.ink,
-    fontSize: 16,
-    fontWeight: "800",
+  buttonGridTablet: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+  },
+  actionButton: {
+    flexGrow: 1,
+    minWidth: 150,
+  },
+  actionSurface: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: spacing.md,
+    padding: spacing.md,
+  },
+  responsiveFields: {
+    gap: spacing.md,
+  },
+  responsiveFieldsTablet: {
+    flexDirection: "row",
+  },
+  responsiveField: {
+    flex: 1,
+    minWidth: 0,
   },
   mutedText: {
     color: colors.muted,
   },
-  packageCard: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    padding: spacing.md,
+  fieldError: {
+    color: colors.danger,
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  switchRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.md,
+    justifyContent: "space-between",
+    minHeight: 56,
+  },
+  switchCopy: {
+    flex: 1,
+    gap: spacing.xs,
+  },
+  switchTitle: {
+    color: colors.ink,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  packageRow: {
     gap: spacing.sm,
+    paddingVertical: spacing.sm,
+  },
+  packageDivider: {
+    borderTopColor: colors.border,
+    borderTopWidth: 1,
+    paddingTop: spacing.lg,
   },
   packageTitle: {
     color: colors.ink,

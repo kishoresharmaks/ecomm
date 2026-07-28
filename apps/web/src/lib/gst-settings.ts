@@ -5,6 +5,8 @@ export type GstSettings = {
     legalName: string;
     gstin: string;
     stateCode: string;
+    serviceSacCode: string;
+    serviceDescription: string;
     address: {
       line1: string;
       line2: string;
@@ -63,6 +65,12 @@ export function gstSettingsValidationError(settings: GstSettings) {
   }
   if (gstin.slice(0, 2) !== platform.stateCode.trim()) {
     return "The GSTIN state prefix must match the GST state code.";
+  }
+  if (!/^[0-9]{6}$/.test(platform.serviceSacCode.trim())) {
+    return "Select a valid six-digit SAC code for platform services.";
+  }
+  if (platform.serviceDescription.trim().length < 3) {
+    return "Enter the platform service description used on commission invoices.";
   }
   if (
     !platform.address.line1.trim() ||

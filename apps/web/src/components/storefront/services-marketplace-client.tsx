@@ -55,7 +55,7 @@ function ServicesDirectory() {
 
   return (
     <StorefrontFrame>
-      <main className="min-h-screen bg-[#FFFCFB]">
+      <div className="min-h-screen bg-[#FFFCFB]">
         <section className="border-b border-[#F0E4DE] bg-white">
           <div className="mx-auto grid max-w-7xl gap-6 px-5 py-8 lg:grid-cols-[minmax(0,1fr)_360px] lg:px-6 lg:py-10">
             <div>
@@ -114,7 +114,7 @@ function ServicesDirectory() {
             <StorefrontEmptyState title="No services found" message="Try a different service name or browse again later as more approved providers come online." />
           ) : null}
         </section>
-      </main>
+      </div>
     </StorefrontFrame>
   );
 }
@@ -253,7 +253,7 @@ function ServiceDetail({ slug }: { slug: string }) {
 
   return (
     <StorefrontFrame>
-      <main className="min-h-screen bg-[#FFFCFB]">
+      <div className="min-h-screen bg-[#FFFCFB]">
         <section className="mx-auto max-w-7xl px-5 py-6 lg:px-6">
           <Button asChild variant="ghost" size="sm">
             <Link href="/services">
@@ -412,7 +412,7 @@ function ServiceDetail({ slug }: { slug: string }) {
             </section>
           </>
         ) : null}
-      </main>
+      </div>
     </StorefrontFrame>
   );
 }

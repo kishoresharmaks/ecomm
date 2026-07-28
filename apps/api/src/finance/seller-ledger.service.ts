@@ -158,6 +158,8 @@ export class SellerLedgerService {
       throw new BadRequestException("Ledger entry must have a positive debit or credit amount.");
     }
 
+    await tx.$queryRaw`SELECT id FROM sellers WHERE id = ${input.sellerId}::uuid FOR UPDATE`;
+
     const latest = await tx.sellerLedgerEntry.findFirst({
       where: { sellerId: input.sellerId },
       orderBy: { createdAt: "desc" },

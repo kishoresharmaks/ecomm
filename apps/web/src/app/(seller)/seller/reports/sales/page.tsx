@@ -3,7 +3,12 @@ import { ArrowLeft } from "lucide-react";
 import { SellerSalesReportClient } from "@/components/seller/seller-sales-report-client";
 import { SellerWorkspaceShell } from "@/components/seller/seller-ui";
 
-export default function SellerSalesReportPage() {
+export default async function SellerSalesReportPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ dateFrom?: string; dateTo?: string }>;
+}) {
+  const params = await searchParams;
   return (
     <SellerWorkspaceShell title="Sales report" description="Review gross sales, commission, net revenue, recent order splits, B2B demand, and stock risk.">
       <div className="mb-4">
@@ -12,7 +17,7 @@ export default function SellerSalesReportPage() {
           Back to Reports Hub
         </Link>
       </div>
-      <SellerSalesReportClient />
+      <SellerSalesReportClient initialDateFrom={params.dateFrom ?? ""} initialDateTo={params.dateTo ?? ""} />
     </SellerWorkspaceShell>
   );
 }

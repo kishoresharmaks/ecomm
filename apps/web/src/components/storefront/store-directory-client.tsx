@@ -1,9 +1,9 @@
 "use client";
 
 import { RefreshCw, Store } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { Button, SectionHeading } from "@indihub/ui";
-import { listStores } from "@/lib/storefront-api";
+import { listStorePage, type StoreProfile } from "@/lib/storefront-api";
 import { useStorefrontLocation } from "./storefront-location-context";
 import { StorefrontFrame } from "./storefront-frame";
 import { StorefrontStoreCard } from "./storefront-store-card";
@@ -23,7 +23,7 @@ import {
 
 export function StoreDirectoryClient() {
   const storefrontLocation = useStorefrontLocation();
-  const storesQuery = useQuery({
+  const storesQuery = useInfiniteQuery({
     queryKey: [
       "stores",
       storefrontLocation.activeLocation?.countryCode ?? "",
@@ -32,17 +32,24 @@ export function StoreDirectoryClient() {
       storefrontLocation.activeLocation?.localAreaCode ?? "",
       storefrontLocation.activeLocation?.pincode ?? "",
     ],
-    queryFn: () => listStores(browsingLocationQuery(storefrontLocation.activeLocation, 80)),
+    queryFn: ({ pageParam }) =>
+      listStorePage({
+        ...browsingLocationQuery(storefrontLocation.activeLocation, 24),
+        page: pageParam,
+      }),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) =>
+      lastPage.pageInfo.hasNextPage ? lastPage.pageInfo.page + 1 : undefined,
     retry: false
   });
-  const stores = storesQuery.data ?? [];
+  const stores = storesQuery.data?.pages.flatMap((page) => page.items) ?? [];
   const storeGroups = splitStoresByLocationMatch(stores);
   const hasLocalGrouping =
     storefrontLocation.source !== "global" && storeGroups.localStores.length > 0;
 
   return (
     <StorefrontFrame>
-      <main className="min-h-[calc(100svh-69px)] bg-[#FAF7F0]">
+      <div className="min-h-[calc(100svh-69px)] bg-[#FFFCFB]">
         <StorefrontPageHeader
           badge={
             storefrontLocation.source === "global"
@@ -81,7 +88,7 @@ export function StoreDirectoryClient() {
             <StorefrontEmptyState
               icon={Store}
               title="No approved stores yet"
-              description="Stores appear here after admin approval and can still have their own page once approved."
+              description="Marketplace stores will appear here when their public storefront is ready."
               centered
             />
           ) : null}
@@ -101,13 +108,26 @@ export function StoreDirectoryClient() {
               description={
                 hasLocalGrouping
                   ? "The wider marketplace remains available below your local matches."
-                  : "Each store card opens the seller's customer-facing profile and live approved products."
+                  : "Each store card opens the seller's public profile and live products."
               }
               stores={hasLocalGrouping ? storeGroups.broaderStores : stores}
             />
           ) : null}
+
+          {storesQuery.hasNextPage ? (
+            <div className="mt-8 flex justify-center">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void storesQuery.fetchNextPage()}
+                disabled={storesQuery.isFetchingNextPage}
+              >
+                {storesQuery.isFetchingNextPage ? "Loading stores" : "Load more stores"}
+              </Button>
+            </div>
+          ) : null}
         </StorefrontSection>
-      </main>
+      </div>
     </StorefrontFrame>
   );
 }
@@ -120,7 +140,7 @@ function StoreGridSection({
 }: {
   title: string;
   description: string;
-  stores: Awaited<ReturnType<typeof listStores>>;
+  stores: StoreProfile[];
   emphasize?: boolean;
 }) {
   if (!stores.length) {

@@ -1,9 +1,15 @@
+import {
+  Delete02Icon,
+  DocumentAttachmentIcon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useLocalSearchParams } from "expo-router";
-import { useMemo, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { router, useLocalSearchParams } from "expo-router";
+import { useEffect, useMemo, useState } from "react";
+import { Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { useMobileSellerAuth } from "../../src/auth/mobile-seller-auth-context";
-import { Button, Card, ConfirmDialog, Field, Header, LoadingState, QueryErrorState, Screen, SelectField, StatusChip, Toast } from "../../src/components/screen";
+import { OperationsHeader, OperationsSection } from "../../src/components/operations-ui";
+import { Button, CollapsibleSection, ConfirmDialog, Field, LoadingState, QueryErrorState, Screen, SelectField, StatusChip, Toast } from "../../src/components/screen";
 import {
   acceptSellerServiceBooking,
   cancelSellerServiceBooking,
@@ -23,6 +29,18 @@ import {
   type ServicePaymentPurpose,
 } from "../../src/features/seller/seller-api";
 import { availableServiceBookingActions, dueServiceAmountPaise, servicePaymentPurposeOptions } from "../../src/features/seller/service-operations";
+import {
+  uploadSellerPrivateDocument,
+  type MobileUploadFile,
+} from "../../src/features/seller/mobile-upload";
+import {
+  dateInputFromIso,
+  formatOperationDateTime,
+  localDateTimeToIso,
+  operationStatus,
+  serviceBookingTitle,
+  timeInputFromIso,
+} from "../../src/features/seller/operations-presentation";
 import { formatMoney, rupeesToPaise } from "../../src/lib/money";
 import { colors, spacing } from "../../src/theme";
 
@@ -51,15 +69,18 @@ export default function SellerServiceBookingDetailScreen() {
   const { bookingNumber } = useLocalSearchParams<{ bookingNumber: string }>();
   const decodedBookingNumber = decodeURIComponent(bookingNumber ?? "");
   const auth = useMobileSellerAuth();
+  const { width } = useWindowDimensions();
   const queryClient = useQueryClient();
   const [note, setNote] = useState("");
   const [reason, setReason] = useState("");
-  const [scheduledStartAt, setScheduledStartAt] = useState("");
+  const [scheduleDate, setScheduleDate] = useState("");
+  const [scheduleTime, setScheduleTime] = useState("");
   const [assignedTechnicianId, setAssignedTechnicianId] = useState("");
   const [fieldStatus, setFieldStatus] = useState<(typeof fieldStatusOptions)[number]["value"]>("EN_ROUTE");
-  const [fieldProofKeys, setFieldProofKeys] = useState("");
+  const [fieldProofKeys, setFieldProofKeys] = useState<string[]>([]);
   const [completionNote, setCompletionNote] = useState("");
-  const [completionProofKeys, setCompletionProofKeys] = useState("");
+  const [completionProofKeys, setCompletionProofKeys] = useState<string[]>([]);
+  const [proofUploading, setProofUploading] = useState<"field" | "completion" | null>(null);
   const [quoteLines, setQuoteLines] = useState<QuoteLineDraft[]>([newQuoteLine("SERVICE")]);
   const [quoteTtlHours, setQuoteTtlHours] = useState("48");
   const [paymentAmount, setPaymentAmount] = useState("");
@@ -79,6 +100,7 @@ export default function SellerServiceBookingDetailScreen() {
     enabled: auth.enabled,
   });
   const booking = bookingQuery.data;
+  const isTablet = width >= 700;
   const actions = useMemo(() => (booking ? availableServiceBookingActions(booking.status) : []), [booking]);
   const technicianOptions = useMemo(
     () => [
@@ -90,6 +112,13 @@ export default function SellerServiceBookingDetailScreen() {
     ],
     [calendarQuery.data?.technicians],
   );
+
+  useEffect(() => {
+    if (!booking) return;
+    setScheduleDate((current) => current || dateInputFromIso(booking.scheduledStartAt));
+    setScheduleTime((current) => current || timeInputFromIso(booking.scheduledStartAt));
+    setAssignedTechnicianId((current) => current || booking.assignedTechnicianId || "");
+  }, [booking]);
 
   const invalidateBooking = async () => {
     await Promise.all([
@@ -106,7 +135,7 @@ export default function SellerServiceBookingDetailScreen() {
       }
       if (action === "reschedule") {
         return rescheduleSellerServiceBooking(auth.authHeaders, decodedBookingNumber, {
-          scheduledStartAt: toIsoDateTime(scheduledStartAt),
+          scheduledStartAt: requiredScheduleIso(),
           ...(assignedTechnicianId ? { assignedTechnicianId } : {}),
           ...(note.trim() ? { note: note.trim() } : {}),
         });
@@ -134,13 +163,13 @@ export default function SellerServiceBookingDetailScreen() {
         return updateSellerServiceFieldStatus(auth.authHeaders, decodedBookingNumber, {
           status: fieldStatus,
           ...(note.trim() ? { note: note.trim() } : {}),
-          fieldProofKeys: proofLines(fieldProofKeys),
+          fieldProofKeys,
         });
       }
       if (action === "complete") {
         return submitSellerServiceCompletion(auth.authHeaders, decodedBookingNumber, {
           completionNote: completionNote.trim() || "Service completed and submitted for customer confirmation.",
-          completionProofKeys: proofLines(completionProofKeys),
+          completionProofKeys,
         });
       }
       if (action === "payment") {
@@ -161,6 +190,8 @@ export default function SellerServiceBookingDetailScreen() {
     },
     onSuccess: async (_result, action) => {
       setConfirmState(null);
+      if (action === "field") setFieldProofKeys([]);
+      if (action === "complete") setCompletionProofKeys([]);
       setToast({ visible: true, message: successMessage(action), type: "success" });
       await invalidateBooking();
     },
@@ -174,7 +205,11 @@ export default function SellerServiceBookingDetailScreen() {
   if (bookingQuery.isError || !booking) {
     return (
       <Screen>
-        <Header title={decodedBookingNumber || "Service job"} subtitle="Seller service operations" />
+        <OperationsHeader
+          onBack={() => router.back()}
+          title={decodedBookingNumber || "Service job"}
+          subtitle="Seller service operations"
+        />
         <QueryErrorState
           title="Service job could not be loaded"
           message={bookingQuery.error instanceof Error ? bookingQuery.error.message : undefined}
@@ -186,200 +221,296 @@ export default function SellerServiceBookingDetailScreen() {
   }
 
   return (
-    <Screen contentContainerStyle={styles.content}>
-      <Header title={booking.bookingNumber} subtitle="Accept, schedule, quote, update field work, and complete this service job." />
+    <Screen
+      contentContainerStyle={styles.content}
+      refreshing={bookingQuery.isFetching}
+      onRefresh={() => {
+        void bookingQuery.refetch();
+      }}
+    >
+      <OperationsHeader
+        onBack={() => router.back()}
+        title={booking.bookingNumber}
+        subtitle="Work through the next valid service action, customer quote, field visit, completion, and payment."
+      />
       <Summary booking={booking} />
 
-      <Card>
-        <Text style={styles.sectionTitle}>Schedule and assignment</Text>
-        <Field label="Visit time" value={scheduledStartAt} onChangeText={setScheduledStartAt} placeholder="2026-07-12T10:00:00.000Z" />
-        <SelectField label="Technician" options={technicianOptions} selectedValue={assignedTechnicianId} onSelect={setAssignedTechnicianId} />
-        <Field label="Operation note" value={note} onChangeText={setNote} multiline placeholder="Add context for customer/admin timeline." />
-        <View style={styles.buttonRow}>
-          {actions.includes("ACCEPT") ? <Button title="Accept" onPress={() => actionMutation.mutate("accept")} loading={actionMutation.isPending} style={styles.rowButton} /> : null}
-          {actions.includes("RESCHEDULE") ? <Button title="Reschedule" tone="secondary" onPress={() => actionMutation.mutate("reschedule")} loading={actionMutation.isPending} style={styles.rowButton} /> : null}
-        </View>
-      </Card>
-
-      {actions.includes("QUOTE") || actions.includes("WITHDRAW_QUOTE") ? (
-        <Card>
-          <Text style={styles.sectionTitle}>Quote</Text>
-          {quoteLines.map((line, index) => (
-            <View key={line.id} style={styles.quoteLine}>
-              <View style={styles.quoteLineHeader}>
-                <Text style={styles.quoteLineTitle}>Line {index + 1}</Text>
-                {quoteLines.length > 1 ? (
-                  <Button
-                    title="Remove"
-                    tone="danger"
-                    onPress={() => setQuoteLines((current) => current.filter((item) => item.id !== line.id))}
-                  />
-                ) : null}
+      {actions.includes("ACCEPT") || actions.includes("RESCHEDULE") ? (
+        <OperationsSection
+          title={actions.includes("ACCEPT") ? "Accept and schedule" : "Schedule and assignment"}
+          subtitle="Use local date and time, then assign an active technician when needed."
+        >
+          <View style={styles.surface}>
+            <View style={[styles.responsiveFields, isTablet ? styles.responsiveFieldsTablet : null]}>
+              <View style={styles.column}>
+                <Field
+                  label="Visit date"
+                  value={scheduleDate}
+                  onChangeText={setScheduleDate}
+                  placeholder="YYYY-MM-DD"
+                />
               </View>
-              <SelectField
-                label="Line type"
-                options={[
-                  { label: "Service / SAC", value: "SERVICE" },
-                  { label: "Product or spare part / HSN", value: "PRODUCT" },
-                ]}
-                selectedValue={line.lineType}
-                onSelect={(value) =>
-                  updateQuoteLine(setQuoteLines, line.id, {
-                    lineType: value as QuoteLineDraft["lineType"],
-                    hsnSacCode: "",
-                    uqc: value === "PRODUCT" ? "PCS" : "NOS",
-                  })
-                }
-              />
-              <Field
-                label="Description"
-                value={line.description}
-                onChangeText={(description) => updateQuoteLine(setQuoteLines, line.id, { description })}
-                placeholder={line.lineType === "SERVICE" ? "Repair labour" : "Replacement part"}
-              />
-              <View style={styles.twoColumn}>
-                <View style={styles.column}>
-                  <Field
-                    label="Quantity"
-                    value={line.quantity}
-                    onChangeText={(quantity) => updateQuoteLine(setQuoteLines, line.id, { quantity })}
-                    keyboardType="number-pad"
-                  />
-                </View>
-                <View style={styles.column}>
-                  <Field
-                    label="GST-inclusive unit amount"
-                    value={line.unitAmount}
-                    onChangeText={(unitAmount) => updateQuoteLine(setQuoteLines, line.id, { unitAmount })}
-                    keyboardType="decimal-pad"
-                  />
-                </View>
+              <View style={styles.column}>
+                <Field
+                  label="Visit time"
+                  value={scheduleTime}
+                  onChangeText={setScheduleTime}
+                  placeholder="HH:mm"
+                  keyboardType="numbers-and-punctuation"
+                />
               </View>
-              <Field
-                label={line.lineType === "SERVICE" ? "SAC code" : "HSN code"}
-                value={line.hsnSacCode}
-                onChangeText={(hsnSacCode) =>
-                  updateQuoteLine(setQuoteLines, line.id, {
-                    hsnSacCode: hsnSacCode.replace(/\D/g, "").slice(0, 8),
-                  })
-                }
-                keyboardType="number-pad"
-                placeholder={
-                  line.lineType === "SERVICE"
-                    ? "Leave blank to use booking SAC"
-                    : "4 to 8 digit HSN"
-                }
-              />
-              <SelectField
-                label="Tax classification"
-                options={[
-                  { label: "Taxable", value: "TAXABLE" },
-                  { label: "Nil rated", value: "NIL_RATED" },
-                  { label: "Exempt", value: "EXEMPT" },
-                  { label: "Non-GST", value: "NON_GST" },
-                ]}
-                selectedValue={line.taxClassification}
-                onSelect={(value) =>
-                  updateQuoteLine(setQuoteLines, line.id, {
-                    taxClassification: value as ProductTaxClassification,
-                    ...(value === "TAXABLE" ? {} : { gstRatePercent: "0" }),
-                  })
-                }
-              />
-              <View style={styles.twoColumn}>
-                <View style={styles.column}>
-                  <Field
-                    label="GST rate %"
-                    value={line.gstRatePercent}
-                    onChangeText={(gstRatePercent) =>
-                      updateQuoteLine(setQuoteLines, line.id, { gstRatePercent })
-                    }
-                    keyboardType="decimal-pad"
-                    editable={line.taxClassification === "TAXABLE"}
-                    placeholder={
-                      line.lineType === "SERVICE"
-                        ? "Blank uses booking rate"
-                        : "Required for taxable parts"
-                    }
-                  />
-                </View>
-                <View style={styles.column}>
-                  <Field
-                    label="Unit"
-                    value={line.uqc}
-                    onChangeText={(uqc) => updateQuoteLine(setQuoteLines, line.id, { uqc: uqc.toUpperCase() })}
-                    autoCapitalize="characters"
-                  />
-                </View>
-              </View>
-              <Text style={styles.muted}>Use the SAC or HSN that will appear on the invoice. Amounts include GST.</Text>
             </View>
-          ))}
-          <Button
-            title="Add quote line"
-            tone="secondary"
-            disabled={quoteLines.length >= 50}
-            onPress={() => setQuoteLines((current) => [...current, newQuoteLine("PRODUCT")])}
-          />
-          <Field label="TTL hours" value={quoteTtlHours} onChangeText={setQuoteTtlHours} keyboardType="number-pad" />
-          <View style={styles.buttonRow}>
-            {actions.includes("QUOTE") ? <Button title="Send quote" onPress={() => actionMutation.mutate("quote")} loading={actionMutation.isPending} style={styles.rowButton} /> : null}
-            {actions.includes("WITHDRAW_QUOTE") ? (
-              <Button
-                title="Withdraw"
-                tone="danger"
-                onPress={() => setConfirmState({ action: "withdrawQuote", title: "Withdraw quote", message: "Withdraw the active quote for this booking?" })}
-                style={styles.rowButton}
-              />
-            ) : null}
+            <SelectField label="Technician" options={technicianOptions} selectedValue={assignedTechnicianId} onSelect={setAssignedTechnicianId} />
+            <Field label="Schedule note" value={note} onChangeText={setNote} multiline placeholder="Add timing, access, or customer context." />
+            <View style={[styles.buttonRow, isTablet ? styles.buttonRowTablet : null]}>
+              {actions.includes("ACCEPT") ? <Button title="Accept booking" onPress={() => actionMutation.mutate("accept")} loading={actionMutation.isPending} style={styles.rowButton} /> : null}
+              {actions.includes("RESCHEDULE") ? <Button title="Save schedule" tone="secondary" onPress={() => actionMutation.mutate("reschedule")} loading={actionMutation.isPending} style={styles.rowButton} /> : null}
+            </View>
           </View>
-        </Card>
+        </OperationsSection>
       ) : null}
 
-      {actions.includes("START") || actions.includes("FIELD_STATUS") || actions.includes("COMPLETE") ? (
-        <Card>
-          <Text style={styles.sectionTitle}>Field work</Text>
-          {actions.includes("START") ? <Button title="Mark in progress" onPress={() => actionMutation.mutate("start")} loading={actionMutation.isPending} /> : null}
-          <SelectField label="Technician status" options={fieldStatusOptions.map((option) => ({ label: option.label, value: option.value }))} selectedValue={fieldStatus} onSelect={(value) => setFieldStatus(value as typeof fieldStatus)} />
-          <Field label="Field proof keys" value={fieldProofKeys} onChangeText={setFieldProofKeys} multiline placeholder="One proof asset key per line" />
-          {actions.includes("FIELD_STATUS") ? <Button title="Update field status" tone="secondary" onPress={() => actionMutation.mutate("field")} loading={actionMutation.isPending} /> : null}
-          <Field label="Completion note" value={completionNote} onChangeText={setCompletionNote} multiline placeholder="Explain the completed work." />
-          <Field label="Completion proof keys" value={completionProofKeys} onChangeText={setCompletionProofKeys} multiline placeholder="One proof asset key per line" />
-          {actions.includes("COMPLETE") ? <Button title="Submit completion" onPress={() => actionMutation.mutate("complete")} loading={actionMutation.isPending} /> : null}
-        </Card>
+      {actions.includes("START") ? (
+        <OperationsSection
+          title="Start field work"
+          subtitle="Confirm that the technician has begun the service before recording field updates."
+        >
+          <View style={styles.primaryActionSurface}>
+            <Text style={styles.primaryActionTitle}>Ready to begin the service?</Text>
+            <Text style={styles.muted}>This moves the booking into active field work.</Text>
+            <Button title="Mark in progress" onPress={() => actionMutation.mutate("start")} loading={actionMutation.isPending} />
+          </View>
+        </OperationsSection>
+      ) : null}
+
+      {actions.includes("QUOTE") || actions.includes("WITHDRAW_QUOTE") ? (
+        <OperationsSection
+          title="Customer quote"
+          subtitle="Create GST-ready labour and spare-part lines only when the final scope or price needs approval."
+        >
+          <View style={styles.surface}>
+            {quoteLines.map((line, index) => (
+              <View key={line.id} style={styles.quoteLine}>
+                <View style={styles.quoteLineHeader}>
+                  <Text style={styles.quoteLineTitle}>Line {index + 1}</Text>
+                  {quoteLines.length > 1 ? (
+                    <Button
+                      title="Remove"
+                      tone="danger"
+                      onPress={() => setQuoteLines((current) => current.filter((item) => item.id !== line.id))}
+                    />
+                  ) : null}
+                </View>
+                <SelectField
+                  label="Line type"
+                  options={[
+                    { label: "Service / SAC", value: "SERVICE" },
+                    { label: "Product or spare part / HSN", value: "PRODUCT" },
+                  ]}
+                  selectedValue={line.lineType}
+                  onSelect={(value) =>
+                    updateQuoteLine(setQuoteLines, line.id, {
+                      lineType: value as QuoteLineDraft["lineType"],
+                      hsnSacCode: "",
+                      uqc: value === "PRODUCT" ? "PCS" : "NOS",
+                    })
+                  }
+                />
+                <Field
+                  label="Description"
+                  value={line.description}
+                  onChangeText={(description) => updateQuoteLine(setQuoteLines, line.id, { description })}
+                  placeholder={line.lineType === "SERVICE" ? "Repair labour" : "Replacement part"}
+                />
+                <View style={[styles.responsiveFields, isTablet ? styles.responsiveFieldsTablet : null]}>
+                  <View style={styles.column}>
+                    <Field
+                      label="Quantity"
+                      value={line.quantity}
+                      onChangeText={(quantity) => updateQuoteLine(setQuoteLines, line.id, { quantity })}
+                      keyboardType="number-pad"
+                    />
+                  </View>
+                  <View style={styles.column}>
+                    <Field
+                      label="GST-inclusive unit amount"
+                      value={line.unitAmount}
+                      onChangeText={(unitAmount) => updateQuoteLine(setQuoteLines, line.id, { unitAmount })}
+                      keyboardType="decimal-pad"
+                    />
+                  </View>
+                </View>
+                <Field
+                  label={line.lineType === "SERVICE" ? "SAC code" : "HSN code"}
+                  value={line.hsnSacCode}
+                  onChangeText={(hsnSacCode) =>
+                    updateQuoteLine(setQuoteLines, line.id, {
+                      hsnSacCode: hsnSacCode.replace(/\D/g, "").slice(0, 8),
+                    })
+                  }
+                  keyboardType="number-pad"
+                  placeholder={line.lineType === "SERVICE" ? "Blank uses booking SAC" : "4 to 8 digit HSN"}
+                />
+                <SelectField
+                  label="Tax classification"
+                  options={[
+                    { label: "Taxable", value: "TAXABLE" },
+                    { label: "Nil rated", value: "NIL_RATED" },
+                    { label: "Exempt", value: "EXEMPT" },
+                    { label: "Non-GST", value: "NON_GST" },
+                  ]}
+                  selectedValue={line.taxClassification}
+                  onSelect={(value) =>
+                    updateQuoteLine(setQuoteLines, line.id, {
+                      taxClassification: value as ProductTaxClassification,
+                      ...(value === "TAXABLE" ? {} : { gstRatePercent: "0" }),
+                    })
+                  }
+                />
+                <View style={[styles.responsiveFields, isTablet ? styles.responsiveFieldsTablet : null]}>
+                  <View style={styles.column}>
+                    <Field
+                      label="GST rate %"
+                      value={line.gstRatePercent}
+                      onChangeText={(gstRatePercent) => updateQuoteLine(setQuoteLines, line.id, { gstRatePercent })}
+                      keyboardType="decimal-pad"
+                      editable={line.taxClassification === "TAXABLE"}
+                      placeholder={line.lineType === "SERVICE" ? "Blank uses booking rate" : "Required for taxable parts"}
+                    />
+                  </View>
+                  <View style={styles.column}>
+                    <Field
+                      label="Unit"
+                      value={line.uqc}
+                      onChangeText={(uqc) => updateQuoteLine(setQuoteLines, line.id, { uqc: uqc.toUpperCase() })}
+                      autoCapitalize="characters"
+                    />
+                  </View>
+                </View>
+                <Text style={styles.muted}>Use the SAC or HSN shown on the invoice. Amounts include GST.</Text>
+              </View>
+            ))}
+            <Button
+              title="Add quote line"
+              tone="secondary"
+              disabled={quoteLines.length >= 50}
+              onPress={() => setQuoteLines((current) => [...current, newQuoteLine("PRODUCT")])}
+            />
+            <Field label="Quote valid hours" value={quoteTtlHours} onChangeText={setQuoteTtlHours} keyboardType="number-pad" />
+            <Field label="Quote note" value={note} onChangeText={setNote} multiline placeholder="Explain the scope or assumptions for the customer." />
+            <View style={[styles.buttonRow, isTablet ? styles.buttonRowTablet : null]}>
+              {actions.includes("QUOTE") ? <Button title="Send quote" onPress={() => actionMutation.mutate("quote")} loading={actionMutation.isPending} style={styles.rowButton} /> : null}
+              {actions.includes("WITHDRAW_QUOTE") ? (
+                <Button
+                  title="Withdraw quote"
+                  tone="danger"
+                  onPress={() => setConfirmState({ action: "withdrawQuote", title: "Withdraw quote", message: "Withdraw the active quote for this booking?" })}
+                  style={styles.rowButton}
+                />
+              ) : null}
+            </View>
+          </View>
+        </OperationsSection>
+      ) : null}
+
+      {actions.includes("FIELD_STATUS") ? (
+        <OperationsSection
+          title="Technician field status"
+          subtitle="Record travel, arrival, check-in, or check-out updates for the customer timeline."
+        >
+          <View style={styles.surface}>
+            <SelectField label="Technician status" options={fieldStatusOptions.map((option) => ({ label: option.label, value: option.value }))} selectedValue={fieldStatus} onSelect={(value) => setFieldStatus(value as typeof fieldStatus)} />
+            <Field label="Field note" value={note} onChangeText={setNote} multiline placeholder="Add arrival, access, or visit context." />
+            <ProofAttachments
+              attachments={fieldProofKeys}
+              label="Field proof"
+              uploading={proofUploading === "field"}
+              onAdd={() => void uploadProof("field")}
+              onRemove={(key) =>
+                setFieldProofKeys((current) => current.filter((item) => item !== key))
+              }
+            />
+            <Button title="Update field status" tone="secondary" onPress={() => actionMutation.mutate("field")} loading={actionMutation.isPending} />
+          </View>
+        </OperationsSection>
+      ) : null}
+
+      {actions.includes("COMPLETE") ? (
+        <OperationsSection
+          title="Submit completed work"
+          subtitle="Explain the completed service and attach proof files for customer confirmation."
+        >
+          <View style={styles.surface}>
+            <Field label="Completion note" value={completionNote} onChangeText={setCompletionNote} multiline placeholder="Explain the completed work and result." />
+            <ProofAttachments
+              attachments={completionProofKeys}
+              label="Completion proof"
+              uploading={proofUploading === "completion"}
+              onAdd={() => void uploadProof("completion")}
+              onRemove={(key) =>
+                setCompletionProofKeys((current) => current.filter((item) => item !== key))
+              }
+            />
+            <Button title="Submit completion" onPress={() => actionMutation.mutate("complete")} loading={actionMutation.isPending} />
+          </View>
+        </OperationsSection>
       ) : null}
 
       {actions.includes("PAYMENT") ? (
-        <Card>
-          <Text style={styles.sectionTitle}>Payment and cash</Text>
-          <SelectField
-            label="Purpose"
-            options={servicePaymentPurposeOptions}
-            selectedValue={paymentPurpose}
-            onSelect={(value) => setPaymentPurpose(value as ServicePaymentPurpose)}
-          />
-          <Field label="Amount" value={paymentAmount} onChangeText={setPaymentAmount} keyboardType="decimal-pad" placeholder="0.00" />
-          <Field label="Reference" value={paymentReference} onChangeText={setPaymentReference} placeholder="UPI, receipt, or cash event reference" />
-          <View style={styles.buttonRow}>
-            <Button title="Record payment" tone="secondary" onPress={() => actionMutation.mutate("payment")} loading={actionMutation.isPending} style={styles.rowButton} />
-            <Button title="Cash collected" onPress={() => actionMutation.mutate("cash")} loading={actionMutation.isPending} style={styles.rowButton} />
+        <OperationsSection
+          title="Payment and cash"
+          subtitle="Record only a payment that was actually completed or cash that was physically collected."
+        >
+          <View style={styles.surface}>
+            <SelectField
+              label="Purpose"
+              options={servicePaymentPurposeOptions}
+              selectedValue={paymentPurpose}
+              onSelect={(value) => setPaymentPurpose(value as ServicePaymentPurpose)}
+            />
+            <View style={[styles.responsiveFields, isTablet ? styles.responsiveFieldsTablet : null]}>
+              <View style={styles.column}>
+                <Field label="Amount" value={paymentAmount} onChangeText={setPaymentAmount} keyboardType="decimal-pad" placeholder="0.00" />
+              </View>
+              <View style={styles.column}>
+                <Field label="Reference" value={paymentReference} onChangeText={setPaymentReference} placeholder="UPI, receipt, or cash reference" />
+              </View>
+            </View>
+            <Field label="Collection note" value={note} onChangeText={setNote} multiline placeholder="Add receipt or collection context when needed." />
+            <View style={[styles.buttonRow, isTablet ? styles.buttonRowTablet : null]}>
+              <Button
+                title="Record payment"
+                tone="secondary"
+                onPress={() => actionMutation.mutate("payment")}
+                loading={actionMutation.isPending}
+                disabled={rupeesToPaise(paymentAmount) <= 0}
+                style={styles.rowButton}
+              />
+              <Button
+                title="Record cash collected"
+                onPress={() => actionMutation.mutate("cash")}
+                loading={actionMutation.isPending}
+                disabled={rupeesToPaise(paymentAmount) <= 0}
+                style={styles.rowButton}
+              />
+            </View>
           </View>
-        </Card>
+        </OperationsSection>
       ) : null}
 
       {actions.includes("REJECT") || actions.includes("CANCEL") ? (
-        <Card>
-          <Text style={styles.sectionTitle}>Lifecycle action</Text>
-          <Field label="Reason" value={reason} onChangeText={setReason} multiline placeholder="Reason shown in service history." />
-          <View style={styles.buttonRow}>
+        <CollapsibleSection title="Reject or cancel booking">
+          <Text style={styles.muted}>Use this only when the booking cannot continue. The reason is recorded in service history.</Text>
+          <Field label="Reason" value={reason} onChangeText={setReason} multiline placeholder="Explain why this booking cannot continue." />
+          <View style={[styles.buttonRow, isTablet ? styles.buttonRowTablet : null]}>
             {actions.includes("REJECT") ? (
-              <Button title="Reject" tone="danger" onPress={() => setConfirmState({ action: "reject", title: "Reject booking", message: "Reject this service booking request?" })} style={styles.rowButton} />
+              <Button title="Reject booking" tone="danger" onPress={() => setConfirmState({ action: "reject", title: "Reject booking", message: "Reject this service booking request?" })} style={styles.rowButton} />
             ) : null}
             {actions.includes("CANCEL") ? (
-              <Button title="Cancel" tone="danger" onPress={() => setConfirmState({ action: "cancel", title: "Cancel booking", message: "Cancel this service booking?" })} style={styles.rowButton} />
+              <Button title="Cancel booking" tone="danger" onPress={() => setConfirmState({ action: "cancel", title: "Cancel booking", message: "Cancel this service booking?" })} style={styles.rowButton} />
             ) : null}
           </View>
-        </Card>
+        </CollapsibleSection>
       ) : null}
 
       <BookingHistory booking={booking} />
@@ -387,11 +518,16 @@ export default function SellerServiceBookingDetailScreen() {
         visible={Boolean(confirmState)}
         title={confirmState?.title ?? "Confirm action"}
         message={confirmState?.message ?? "Continue with this service action?"}
+        confirmLabel={
+          confirmState?.action === "withdrawQuote"
+            ? "Withdraw quote"
+            : confirmState?.action === "reject"
+              ? "Reject booking"
+              : "Cancel booking"
+        }
         onCancel={() => setConfirmState(null)}
         onConfirm={() => {
-          if (confirmState) {
-            actionMutation.mutate(confirmState.action);
-          }
+          if (confirmState) actionMutation.mutate(confirmState.action);
         }}
       />
       <Toast visible={toast.visible} message={toast.message} type={toast.type} onDismiss={() => setToast((current) => ({ ...current, visible: false }))} />
@@ -399,58 +535,233 @@ export default function SellerServiceBookingDetailScreen() {
   );
 
   function optionalSchedulePayload() {
+    const scheduledStartAt = optionalScheduleIso();
     return {
-      ...(scheduledStartAt.trim() ? { scheduledStartAt: toIsoDateTime(scheduledStartAt) } : {}),
+      ...(scheduledStartAt ? { scheduledStartAt } : {}),
       ...(assignedTechnicianId ? { assignedTechnicianId } : {}),
       ...(note.trim() ? { note: note.trim() } : {}),
     };
   }
+
+  function optionalScheduleIso() {
+    if (!scheduleDate.trim() && !scheduleTime.trim()) return undefined;
+    return requiredScheduleIso();
+  }
+
+  function requiredScheduleIso() {
+    return localDateTimeToIso(scheduleDate, scheduleTime);
+  }
+
+  async function uploadProof(target: "field" | "completion") {
+    if (proofUploading) return;
+    setProofUploading(target);
+    try {
+      const result = await pickServiceProof();
+      const asset = result.assets?.[0];
+      if (result.canceled || !asset) return;
+      const file: MobileUploadFile = {
+        uri: asset.uri,
+        name: asset.name ?? `service-proof-${Date.now()}`,
+        mimeType: asset.mimeType ?? "image/jpeg",
+        sizeBytes: asset.size,
+      };
+      const uploaded = await uploadSellerPrivateDocument(
+        auth.authHeaders,
+        file,
+        "SERVICE_COMPLETION_PROOF",
+        undefined,
+        { serviceBookingNumber: decodedBookingNumber },
+      );
+      const setAttachments =
+        target === "field" ? setFieldProofKeys : setCompletionProofKeys;
+      setAttachments((current) =>
+        current.includes(uploaded.assetKey)
+          ? current
+          : [...current, uploaded.assetKey],
+      );
+      setToast({
+        visible: true,
+        message: "Proof uploaded and ready to attach.",
+        type: "success",
+      });
+    } catch (error) {
+      setToast({
+        visible: true,
+        message: uploadProofError(error),
+        type: "error",
+      });
+    } finally {
+      setProofUploading(null);
+    }
+  }
 }
 
 function Summary({ booking }: { booking: SellerServiceBooking }) {
+  const status = operationStatus(booking.status);
+  const payment = operationStatus(
+    dueServiceAmountPaise(booking) === 0 ? "PAID" : "PENDING",
+  );
   return (
-    <Card>
+    <View style={styles.summarySurface}>
       <View style={styles.badgeRow}>
-        <StatusChip label={booking.status} tone={booking.status === "COMPLETED" ? "success" : booking.status.includes("CANCEL") ? "danger" : "info"} />
-        <StatusChip label={booking.paymentMode ?? "PAYMENT"} tone="warning" />
+        <StatusChip label={status.label} tone={status.tone} />
+        <StatusChip label={payment.label} tone={payment.tone} />
       </View>
-      <Text style={styles.title}>{booking.listing && "title" in booking.listing ? booking.listing.title ?? "Service job" : "Service job"}</Text>
+      <Text style={styles.title}>{serviceBookingTitle(booking)}</Text>
       <Text style={styles.muted}>{booking.customerIssue}</Text>
-      <Text style={styles.muted}>Customer: {booking.customer?.displayName ?? booking.customer?.user?.fullName ?? "Customer"}</Text>
-      <Text style={styles.money}>Total: {formatMoney(booking.totalPayablePaise, booking.currency)}</Text>
-      <Text style={styles.money}>Due: {formatMoney(dueServiceAmountPaise(booking), booking.currency)}</Text>
-      <Text style={styles.muted}>Scheduled: {booking.scheduledStartAt ?? "Not scheduled"}</Text>
-      <Text style={styles.muted}>Technician: {booking.assignedTechnician?.name ?? "Not assigned"}</Text>
-    </Card>
+      <View style={styles.summaryGrid}>
+        <SummaryItem
+          label="Customer"
+          value={booking.customer?.displayName ?? booking.customer?.user?.fullName ?? "Customer"}
+        />
+        <SummaryItem label="Scheduled" value={formatOperationDateTime(booking.scheduledStartAt)} />
+        <SummaryItem label="Technician" value={booking.assignedTechnician?.name ?? "Not assigned"} />
+        <SummaryItem label="Total" value={formatMoney(booking.totalPayablePaise, booking.currency)} />
+        <SummaryItem label="Amount due" value={formatMoney(dueServiceAmountPaise(booking), booking.currency)} />
+        <SummaryItem label="Visit mode" value={operationStatus(booking.visitMode ?? "NOT_SET").label} />
+      </View>
+    </View>
+  );
+}
+
+function SummaryItem({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.summaryItem}>
+      <Text style={styles.summaryLabel}>{label}</Text>
+      <Text numberOfLines={2} style={styles.summaryValue}>{value}</Text>
+    </View>
   );
 }
 
 function BookingHistory({ booking }: { booking: SellerServiceBooking }) {
   const quote = booking.quotes?.[0];
   return (
-    <Card>
-      <Text style={styles.sectionTitle}>Records</Text>
-      {quote ? <Text style={styles.muted}>Latest quote: {quote.quoteNumber} / {quote.status} / {formatMoney(quote.totalPaise, quote.currency)}</Text> : <Text style={styles.muted}>No quote sent.</Text>}
-      {(booking.payments ?? []).length ? (
-        booking.payments?.map((payment) => (
-          <Text key={payment.id} style={styles.muted}>
-            Payment {payment.purpose}: {payment.status} / {formatMoney(payment.amountPaise, payment.currency)}
-          </Text>
-        ))
-      ) : (
-        <Text style={styles.muted}>No payment records.</Text>
-      )}
-      <Text style={styles.muted}>Completion: {booking.completionSubmittedAt ?? "Not submitted"}</Text>
-      <Text style={styles.muted}>Field proof files: {booking.technicianFieldProofKeys?.length ?? 0}</Text>
-    </Card>
+    <CollapsibleSection title="Service records">
+      <View style={styles.recordList}>
+        <RecordRow
+          label="Latest quote"
+          value={
+            quote
+              ? `${quote.quoteNumber} | ${operationStatus(quote.status).label} | ${formatMoney(quote.totalPaise, quote.currency)}`
+              : "No quote sent"
+          }
+        />
+        {(booking.payments ?? []).length ? (
+          booking.payments?.map((payment) => (
+            <RecordRow
+              key={payment.id}
+              label={operationStatus(payment.purpose).label}
+              value={`${operationStatus(payment.status).label} | ${formatMoney(payment.amountPaise, payment.currency)}`}
+            />
+          ))
+        ) : (
+          <RecordRow label="Payments" value="No payment records" />
+        )}
+        <RecordRow
+          label="Completion"
+          value={booking.completionSubmittedAt ? formatOperationDateTime(booking.completionSubmittedAt) : "Not submitted"}
+        />
+        <RecordRow
+          label="Field proof"
+          value={`${booking.technicianFieldProofKeys?.length ?? 0} files`}
+        />
+      </View>
+    </CollapsibleSection>
   );
 }
 
-function proofLines(value: string) {
-  return value
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
+function RecordRow({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.recordRow}>
+      <Text style={styles.recordLabel}>{label}</Text>
+      <Text style={styles.recordValue}>{value}</Text>
+    </View>
+  );
+}
+
+function ProofAttachments({
+  attachments,
+  label,
+  onAdd,
+  onRemove,
+  uploading,
+}: {
+  attachments: string[];
+  label: string;
+  onAdd: () => void;
+  onRemove: (key: string) => void;
+  uploading: boolean;
+}) {
+  return (
+    <View style={styles.proofGroup}>
+      <Text style={styles.proofLabel}>{label}</Text>
+      {attachments.length ? (
+        <View style={styles.proofList}>
+          {attachments.map((key, index) => (
+            <View key={key} style={styles.proofRow}>
+              <HugeiconsIcon
+                icon={DocumentAttachmentIcon}
+                color={colors.primary}
+                size={20}
+                strokeWidth={2}
+              />
+              <Text numberOfLines={1} style={styles.proofName}>
+                Proof {index + 1} | {proofFileName(key)}
+              </Text>
+              <Pressable
+                accessibilityLabel={`Remove proof ${index + 1}`}
+                accessibilityRole="button"
+                onPress={() => onRemove(key)}
+                style={({ pressed }) => [
+                  styles.proofRemoveButton,
+                  pressed ? styles.proofRemovePressed : null,
+                ]}
+              >
+                <HugeiconsIcon
+                  icon={Delete02Icon}
+                  color={colors.danger}
+                  size={19}
+                  strokeWidth={2.1}
+                />
+              </Pressable>
+            </View>
+          ))}
+        </View>
+      ) : (
+        <Text style={styles.muted}>No proof attached yet.</Text>
+      )}
+      <Button
+        title={uploading ? "Uploading proof..." : "Upload proof"}
+        tone="secondary"
+        loading={uploading}
+        disabled={uploading || attachments.length >= 8}
+        onPress={onAdd}
+      />
+      <Text style={styles.muted}>
+        PDF, JPG, PNG, or WebP up to 10 MB. Uploaded proof is linked when this action is saved.
+      </Text>
+    </View>
+  );
+}
+
+async function pickServiceProof() {
+  const DocumentPicker = await import("expo-document-picker");
+  return DocumentPicker.getDocumentAsync({
+    type: ["application/pdf", "image/jpeg", "image/png", "image/webp"],
+    copyToCacheDirectory: true,
+  });
+}
+
+function uploadProofError(error: unknown) {
+  const message = error instanceof Error ? error.message.trim() : "";
+  if (message.includes("ExpoDocumentPicker") || message.includes("native module")) {
+    return "Proof picker is unavailable in this app build. Rebuild the Expo development app.";
+  }
+  return message || "Proof upload failed. Please try again.";
+}
+
+function proofFileName(key: string) {
+  return key.split("/").pop() || "Uploaded proof";
 }
 
 function newQuoteLine(lineType: QuoteLineDraft["lineType"]): QuoteLineDraft {
@@ -495,13 +806,6 @@ function quoteLinePayload(line: QuoteLineDraft, index: number) {
   };
 }
 
-function toIsoDateTime(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) return new Date().toISOString();
-  if (trimmed.includes("T")) return new Date(trimmed).toISOString();
-  return new Date(`${trimmed}T10:00:00.000+05:30`).toISOString();
-}
-
 function cashEventId(bookingNumber: string, reference: string) {
   const suffix = reference.trim() || String(Date.now());
   return `${bookingNumber}:${suffix}`.replace(/[^A-Za-z0-9:_-]/g, "_").slice(0, 160);
@@ -536,12 +840,15 @@ function successMessage(action: string) {
 
 const styles = StyleSheet.create({
   content: {
-    gap: spacing.lg,
+    gap: spacing.xl,
   },
-  sectionTitle: {
-    color: colors.ink,
-    fontSize: 17,
-    fontWeight: "900",
+  summarySurface: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: spacing.md,
+    padding: spacing.md,
   },
   title: {
     color: colors.ink,
@@ -554,10 +861,28 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     lineHeight: 19,
   },
-  money: {
+  summaryGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+  },
+  summaryItem: {
+    flexBasis: "46%",
+    flexGrow: 1,
+    gap: 2,
+    minWidth: 135,
+  },
+  summaryLabel: {
+    color: colors.muted,
+    fontSize: 10,
+    fontWeight: "800",
+    textTransform: "uppercase",
+  },
+  summaryValue: {
     color: colors.ink,
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: "900",
+    lineHeight: 17,
   },
   badgeRow: {
     flexDirection: "row",
@@ -565,26 +890,50 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   buttonRow: {
-    flexDirection: "row",
     gap: spacing.sm,
+  },
+  buttonRowTablet: {
+    flexDirection: "row",
   },
   rowButton: {
     flex: 1,
   },
-  twoColumn: {
-    flexDirection: "row",
+  responsiveFields: {
     gap: spacing.md,
+  },
+  responsiveFieldsTablet: {
+    flexDirection: "row",
   },
   column: {
     flex: 1,
+    minWidth: 0,
   },
-  quoteLine: {
-    backgroundColor: colors.softSurface,
+  surface: {
+    backgroundColor: colors.surface,
     borderColor: colors.border,
     borderRadius: 8,
     borderWidth: 1,
     gap: spacing.md,
     padding: spacing.md,
+  },
+  primaryActionSurface: {
+    backgroundColor: colors.softSurface,
+    borderColor: "#F0B8A8",
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.md,
+  },
+  primaryActionTitle: {
+    color: colors.ink,
+    fontSize: 15,
+    fontWeight: "900",
+  },
+  quoteLine: {
+    borderTopColor: colors.border,
+    borderTopWidth: 1,
+    gap: spacing.md,
+    paddingTop: spacing.md,
   },
   quoteLineHeader: {
     alignItems: "center",
@@ -595,5 +944,67 @@ const styles = StyleSheet.create({
     color: colors.ink,
     fontSize: 14,
     fontWeight: "900",
+  },
+  recordList: {
+    gap: spacing.sm,
+  },
+  recordRow: {
+    borderBottomColor: colors.border,
+    borderBottomWidth: 1,
+    gap: 2,
+    paddingBottom: spacing.sm,
+  },
+  recordLabel: {
+    color: colors.muted,
+    fontSize: 10,
+    fontWeight: "800",
+    textTransform: "uppercase",
+  },
+  recordValue: {
+    color: colors.ink,
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 18,
+  },
+  proofGroup: {
+    gap: spacing.sm,
+  },
+  proofLabel: {
+    color: colors.ink,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  proofList: {
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    overflow: "hidden",
+  },
+  proofRow: {
+    alignItems: "center",
+    borderBottomColor: colors.border,
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    minHeight: 56,
+    padding: spacing.sm,
+  },
+  proofName: {
+    color: colors.ink,
+    flex: 1,
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  proofRemoveButton: {
+    alignItems: "center",
+    borderColor: "#F4C2C2",
+    borderRadius: 8,
+    borderWidth: 1,
+    height: 44,
+    justifyContent: "center",
+    width: 44,
+  },
+  proofRemovePressed: {
+    opacity: 0.72,
   },
 });

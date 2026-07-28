@@ -1,109 +1,165 @@
+import {
+  Image01Icon,
+  TruckReturnIcon,
+  UserCircleIcon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as FileSystem from "expo-file-system/legacy";
 import { router, useLocalSearchParams } from "expo-router";
 import * as Sharing from "expo-sharing";
-import { ScrollView, Text, View } from "react-native";
 import { useState } from "react";
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from "react-native";
 import { useMobileSellerAuth } from "../../src/auth/mobile-seller-auth-context";
-import { Button, Card, Field, Header, LoadingState, QueryErrorState, Screen, StatusChip } from "../../src/components/screen";
-import { acceptSellerReturn, addSellerReturnNote, getSellerReturn, rejectSellerReturn } from "../../src/features/seller/seller-api";
+import {
+  OperationsHeader,
+  OperationsSection,
+} from "../../src/components/operations-ui";
+import {
+  Button,
+  ConfirmDialog,
+  Field,
+  LoadingState,
+  QueryErrorState,
+  Screen,
+  StatusChip,
+  Toast,
+} from "../../src/components/screen";
+import {
+  formatOperationDate,
+  formatOperationDateTime,
+  operationStatus,
+} from "../../src/features/seller/operations-presentation";
+import {
+  acceptSellerReturn,
+  addSellerReturnNote,
+  getSellerReturn,
+  rejectSellerReturn,
+} from "../../src/features/seller/seller-api";
 import { apiBaseUrl, MobileApiError } from "../../src/lib/api";
+import { formatMoney } from "../../src/lib/money";
+import { colors, spacing } from "../../src/theme";
 
-const statusTones: Record<string, "info" | "success" | "warning" | "danger"> = {
-  PENDING_REVIEW: "warning",
-  AUTO_APPROVED: "success",
-  APPROVED: "success",
-  PICKUP_PENDING: "info",
-  PICKED_UP: "info",
-  IN_TRANSIT: "info",
-  RECEIVED: "info",
-  QC_PASSED: "success",
-  QC_FAILED: "danger",
-  RESOLVED: "success",
-  REJECTED: "danger",
-  CANCELLED: "danger",
-};
+type ToastState = { visible: boolean; message: string; type: "success" | "error" };
+type Decision = "accept" | "reject";
 
 export default function ReturnDetailScreen() {
   const { requestNumber } = useLocalSearchParams<{ requestNumber: string }>();
+  const decodedRequestNumber = decodeURIComponent(requestNumber ?? "");
   const auth = useMobileSellerAuth();
   const queryClient = useQueryClient();
-  const [note, setNote] = useState("");
+  const { width } = useWindowDimensions();
+  const [decisionNote, setDecisionNote] = useState("");
+  const [sellerNote, setSellerNote] = useState("");
+  const [decision, setDecision] = useState<Decision | null>(null);
   const [openingProofKey, setOpeningProofKey] = useState<string | null>(null);
   const [proofOpenError, setProofOpenError] = useState("");
+  const [toast, setToast] = useState<ToastState>({
+    visible: false,
+    message: "",
+    type: "success",
+  });
+  const isTablet = width >= 700;
 
   const returnQuery = useQuery({
-    queryKey: ["seller-return", auth.authKey, requestNumber],
-    queryFn: () => getSellerReturn(auth.authHeaders, requestNumber),
-    enabled: auth.enabled && Boolean(requestNumber),
+    queryKey: ["seller-return", auth.authKey, decodedRequestNumber],
+    queryFn: () => getSellerReturn(auth.authHeaders, decodedRequestNumber),
+    enabled: auth.enabled && Boolean(decodedRequestNumber),
+    retry: false,
   });
 
   const noteMutation = useMutation({
-    mutationFn: (payload: { note: string }) => addSellerReturnNote(auth.authHeaders, requestNumber, payload),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["seller-return"] });
-      void queryClient.invalidateQueries({ queryKey: ["seller-returns"] });
-      setNote("");
+    mutationFn: (note: string) =>
+      addSellerReturnNote(auth.authHeaders, decodedRequestNumber, { note }),
+    onSuccess: async () => {
+      setSellerNote("");
+      setToast({ visible: true, message: "Seller note added.", type: "success" });
+      await refreshReturnQueries();
+    },
+    onError: (error) => {
+      setToast({
+        visible: true,
+        message: error instanceof Error ? error.message : "Seller note could not be saved.",
+        type: "error",
+      });
     },
   });
 
-  const acceptMutation = useMutation({
-    mutationFn: () => acceptSellerReturn(auth.authHeaders, requestNumber, note.trim() || undefined),
-    onSuccess: () => refreshReturnQueries(queryClient, setNote),
+  const decisionMutation = useMutation({
+    mutationFn: ({ action, note }: { action: Decision; note?: string }) =>
+      action === "accept"
+        ? acceptSellerReturn(auth.authHeaders, decodedRequestNumber, note)
+        : rejectSellerReturn(auth.authHeaders, decodedRequestNumber, note),
+    onSuccess: async (_result, variables) => {
+      setDecision(null);
+      setDecisionNote("");
+      setToast({
+        visible: true,
+        message: variables.action === "accept" ? "Return accepted." : "Return rejected.",
+        type: "success",
+      });
+      await refreshReturnQueries();
+    },
+    onError: (error) => {
+      setDecision(null);
+      setToast({
+        visible: true,
+        message: error instanceof Error ? error.message : "Seller decision could not be saved.",
+        type: "error",
+      });
+    },
   });
 
-  const rejectMutation = useMutation({
-    mutationFn: () => rejectSellerReturn(auth.authHeaders, requestNumber, note.trim() || undefined),
-    onSuccess: () => refreshReturnQueries(queryClient, setNote),
-  });
+  async function refreshReturnQueries() {
+    await Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: ["seller-return", auth.authKey, decodedRequestNumber],
+      }),
+      queryClient.invalidateQueries({ queryKey: ["seller-returns", auth.authKey] }),
+    ]);
+  }
 
   if (!auth.enabled || returnQuery.isLoading) {
     return <LoadingState message="Loading return details..." />;
   }
 
-  if (returnQuery.isError) {
-    return (
-      <Screen scroll={false}>
-        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32, gap: 16 }}>
-          <Header title="Return Request" subtitle={requestNumber} />
-          <QueryErrorState
-            title="Return could not be loaded"
-            message={returnQuery.error instanceof Error ? returnQuery.error.message : undefined}
-            onRetry={() => {
-              void returnQuery.refetch();
-            }}
-            retrying={returnQuery.isFetching}
-          />
-          <Button title="Back" tone="secondary" onPress={() => router.back()} />
-        </ScrollView>
-      </Screen>
-    );
-  }
-
-  const returnDetail = returnQuery.data;
-
-  if (!returnDetail) {
+  if (returnQuery.isError || !returnQuery.data) {
     return (
       <Screen>
-        <ScrollView contentContainerStyle={{ padding: 16 }}>
-          <Text>Return not found</Text>
-        </ScrollView>
+        <OperationsHeader
+          onBack={() => router.back()}
+          title={decodedRequestNumber || "Return request"}
+          subtitle="Review return evidence and seller actions."
+        />
+        <QueryErrorState
+          title="Return could not be loaded"
+          message={returnQuery.error instanceof Error ? returnQuery.error.message : undefined}
+          onRetry={() => {
+            void returnQuery.refetch();
+          }}
+          retrying={returnQuery.isFetching}
+        />
       </Screen>
     );
   }
 
-  const customerName = returnDetail.customer?.name ?? returnDetail.customerName ?? "Customer";
-  const customerEmail = returnDetail.customer?.email ?? returnDetail.customerEmail;
-  const returnNotes = returnDetail.notes ?? [];
-  const qualityProofKeys = returnDetail.qualityProofKeys ?? [];
-  const canDecide = returnDetail.status === "PENDING_REVIEW" && returnDetail.items.some((item) => item.status === "PENDING_REVIEW");
-  const decisionError = acceptMutation.error ?? rejectMutation.error;
-
-  const handleAddNote = () => {
-    if (note.trim()) {
-      noteMutation.mutate({ note: note.trim() });
-    }
-  };
+  const detail = returnQuery.data;
+  const status = operationStatus(detail.status);
+  const customerName = detail.customer?.name ?? detail.customerName ?? "Customer";
+  const customerEmail = detail.customer?.email ?? detail.customerEmail;
+  const returnNotes = detail.notes ?? [];
+  const qualityProofKeys = detail.qualityProofKeys ?? [];
+  const canDecide =
+    detail.status === "PENDING_REVIEW"
+    && detail.items.some((item) => item.status === "PENDING_REVIEW");
+  const amount = detail.approvedAmountPaise ?? detail.requestedAmountPaise;
 
   async function openQualityProof(assetKey: string) {
     setOpeningProofKey(assetKey);
@@ -123,167 +179,256 @@ export default function ReturnDetailScreen() {
   }
 
   return (
-    <Screen scroll={false}>
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32, gap: 16 }}>
-        <Header title="Return Request" subtitle={returnDetail.requestNumber} />
-        <Card>
-          <StatusChip label={returnDetail.status.replace(/_/g, " ")} tone={statusTones[returnDetail.status] || "info"} />
-          <Text style={{ color: "#6B7280", fontSize: 12, marginTop: 4 }}>
-            Created: {new Date(returnDetail.createdAt).toLocaleDateString()}
-          </Text>
-          <Text style={{ color: "#6B7280", fontSize: 12 }}>
-            Order: {returnDetail.order.orderNumber}
-          </Text>
-        </Card>
-        <Card>
-          <Text style={{ color: "#111827", fontSize: 16, fontWeight: "900", marginBottom: 8 }}>Return Items</Text>
-          {returnDetail.items.map((item) => (
-            <View key={item.id} style={{ borderBottomWidth: 1, borderBottomColor: "#E5E7EB", paddingBottom: 8, marginBottom: 8 }}>
-              <Text style={{ color: "#374151", fontSize: 14, fontWeight: "800" }}>{item.productName}</Text>
-              <Text style={{ color: "#6B7280", fontSize: 12 }}>
-                Qty: {item.quantity} / Status: {item.status.replace(/_/g, " ")}
-              </Text>
-              {item.variantSnapshot ? <Text style={{ color: "#6B7280", fontSize: 12 }}>Variant: {item.variantSnapshot}</Text> : null}
-              {item.sellerNote ? <Text style={{ color: "#6B7280", fontSize: 12 }}>Seller note: {item.sellerNote}</Text> : null}
-              {item.qcNote ? <Text style={{ color: "#6B7280", fontSize: 12 }}>QC note: {item.qcNote}</Text> : null}
-            </View>
-          ))}
-        </Card>
-        <Card>
-          <Text style={{ color: "#111827", fontSize: 16, fontWeight: "900", marginBottom: 8 }}>Customer</Text>
-          <Text style={{ color: "#374151", fontSize: 14, fontWeight: "600" }}>{customerName}</Text>
-          {customerEmail ? (
-            <Text style={{ color: "#6B7280", fontSize: 12 }}>Email: {customerEmail}</Text>
+    <Screen
+      contentContainerStyle={styles.content}
+      refreshing={returnQuery.isFetching}
+      onRefresh={() => {
+        void returnQuery.refetch();
+      }}
+    >
+      <OperationsHeader
+        onBack={() => router.back()}
+        title={detail.requestNumber}
+        subtitle="Review the customer request, evidence, seller decision, reverse pickup, and QC record."
+      />
+
+      <View style={styles.summarySurface}>
+        <View style={styles.summaryTopRow}>
+          <StatusChip label={status.label} tone={status.tone} />
+          <Text style={styles.created}>{formatOperationDate(detail.createdAt)}</Text>
+        </View>
+        <View style={styles.summaryGrid}>
+          <SummaryValue label="Order" value={detail.order.orderNumber} />
+          <SummaryValue
+            label="Quantity"
+            value={`${detail.totalQuantity} ${detail.totalQuantity === 1 ? "item" : "items"}`}
+          />
+          {typeof amount === "number" ? (
+            <SummaryValue label="Return value" value={formatMoney(amount, detail.currency ?? "INR")} />
           ) : null}
-          {returnDetail.customer?.phone ? (
-            <Text style={{ color: "#6B7280", fontSize: 12 }}>Phone: {returnDetail.customer.phone}</Text>
+          {detail.resolution ? (
+            <SummaryValue label="Resolution" value={operationStatus(detail.resolution).label} />
           ) : null}
-        </Card>
-        <Card>
-          <Text style={{ color: "#111827", fontSize: 16, fontWeight: "900", marginBottom: 8 }}>Return Reason</Text>
-          <Text style={{ color: "#6B7280", fontSize: 14 }}>{returnDetail.reason}</Text>
-        </Card>
-        <Card>
-          <Text style={{ color: "#111827", fontSize: 16, fontWeight: "900", marginBottom: 8 }}>Customer Quality Proof</Text>
-          <Text style={{ color: "#6B7280", fontSize: 13, fontWeight: "700", marginBottom: 8 }}>
-            Check clear product, packaging, label, and damage/mismatch photos before accepting.
-          </Text>
-          {qualityProofKeys.length ? (
-            qualityProofKeys.map((key, index) => (
-              <View key={key} style={{ marginBottom: 8 }}>
-                <Text style={{ color: "#0F8A5F", fontSize: 12, fontWeight: "800", marginBottom: 6 }}>
-                  Image {index + 1}: {key}
-                </Text>
-                <Button
-                  title={openingProofKey === key ? "Opening..." : "Open proof"}
-                  tone="secondary"
-                  loading={openingProofKey === key}
-                  onPress={() => void openQualityProof(key)}
-                />
+        </View>
+      </View>
+
+      <OperationsSection
+        title="Returned items"
+        subtitle="Seller-specific products, quantities, decision status, and QC notes."
+      >
+        <View style={styles.listSurface}>
+          {detail.items.map((item, index) => {
+            const itemStatus = operationStatus(item.status);
+            return (
+              <View
+                key={item.id}
+                style={[styles.itemRow, index > 0 ? styles.divider : null]}
+              >
+                <View style={styles.itemCopy}>
+                  <Text style={styles.itemTitle}>{item.productName}</Text>
+                  <Text style={styles.meta}>
+                    Quantity {item.quantity}
+                    {item.variantSnapshot ? ` | ${item.variantSnapshot}` : ""}
+                  </Text>
+                  {item.reason ? <Text style={styles.itemNote}>Reason: {item.reason}</Text> : null}
+                  {item.sellerNote ? <Text style={styles.itemNote}>Seller note: {item.sellerNote}</Text> : null}
+                  {item.qcNote ? <Text style={styles.qcNote}>QC note: {item.qcNote}</Text> : null}
+                </View>
+                <StatusChip label={itemStatus.label} tone={itemStatus.tone} />
               </View>
-            ))
+            );
+          })}
+        </View>
+      </OperationsSection>
+
+      <View style={[styles.detailGrid, isTablet ? styles.detailGridTablet : null]}>
+        <View style={styles.detailSurface}>
+          <View style={styles.detailHeading}>
+            <HugeiconsIcon icon={UserCircleIcon} color={colors.primary} size={21} strokeWidth={2.1} />
+            <Text style={styles.detailTitle}>Customer</Text>
+          </View>
+          <Text style={styles.detailValue}>{customerName}</Text>
+          {customerEmail ? <Text style={styles.meta}>{customerEmail}</Text> : null}
+          {detail.customer?.phone ? <Text style={styles.meta}>{detail.customer.phone}</Text> : null}
+        </View>
+        <View style={styles.detailSurface}>
+          <View style={styles.detailHeading}>
+            <HugeiconsIcon icon={TruckReturnIcon} color={colors.primary} size={21} strokeWidth={2.1} />
+            <Text style={styles.detailTitle}>Return reason</Text>
+          </View>
+          <Text style={styles.reason}>{detail.reason}</Text>
+          {detail.note ? <Text style={styles.customerNote}>Customer note: {detail.note}</Text> : null}
+        </View>
+      </View>
+
+      <OperationsSection
+        title="Customer quality proof"
+        subtitle="Inspect product condition, packaging, label, damage, or mismatch evidence before deciding."
+      >
+        <View style={styles.proofSurface}>
+          {qualityProofKeys.length ? (
+            <View style={styles.proofGrid}>
+              {qualityProofKeys.map((key, index) => (
+                <Pressable
+                  key={key}
+                  accessibilityLabel={`Open proof image ${index + 1}`}
+                  accessibilityRole="button"
+                  disabled={Boolean(openingProofKey)}
+                  onPress={() => {
+                    void openQualityProof(key);
+                  }}
+                  style={({ pressed }) => [
+                    styles.proofButton,
+                    pressed ? styles.pressed : null,
+                  ]}
+                >
+                  {openingProofKey === key ? (
+                    <ActivityIndicator color={colors.primary} size="small" />
+                  ) : (
+                    <HugeiconsIcon icon={Image01Icon} color={colors.primary} size={24} strokeWidth={2} />
+                  )}
+                  <Text style={styles.proofLabel}>Proof {index + 1}</Text>
+                </Pressable>
+              ))}
+            </View>
           ) : (
-            <Text style={{ color: "#B42318", fontSize: 12, fontWeight: "800" }}>No quality proof images were attached.</Text>
+            <Text style={styles.warning}>No quality proof files were attached.</Text>
           )}
-          {proofOpenError ? (
-            <Text style={{ color: "#B42318", fontSize: 12, fontWeight: "800", marginTop: 8 }}>{proofOpenError}</Text>
-          ) : null}
-        </Card>
-        {returnDetail.note ? (
-          <Card>
-            <Text style={{ color: "#111827", fontSize: 16, fontWeight: "900", marginBottom: 8 }}>Customer Note</Text>
-            <Text style={{ color: "#6B7280", fontSize: 14 }}>{returnDetail.note}</Text>
-          </Card>
-        ) : null}
-        {canDecide ? (
-          <Card>
-            <Text style={{ color: "#111827", fontSize: 16, fontWeight: "900", marginBottom: 8 }}>Seller Decision</Text>
-            <Text style={{ color: "#6B7280", fontSize: 13, fontWeight: "700", marginBottom: 12 }}>
-              Verify the customer reason and quality photos before accepting. Accepted returns move to reverse pickup assignment.
-            </Text>
+          {proofOpenError ? <Text style={styles.error}>{proofOpenError}</Text> : null}
+        </View>
+      </OperationsSection>
+
+      {canDecide ? (
+        <OperationsSection
+          title="Seller decision"
+          subtitle="Accepting moves the request into reverse pickup. Reject only when the reason or evidence does not meet policy."
+        >
+          <View style={styles.decisionSurface}>
             <Field
-              placeholder="Decision note for customer/admin"
-              value={note}
-              onChangeText={setNote}
+              label="Decision note"
+              placeholder="Add a clear reason for the customer and operations team"
+              value={decisionNote}
+              onChangeText={setDecisionNote}
               multiline
               numberOfLines={3}
             />
-            <View style={{ flexDirection: "row", gap: 10 }}>
+            <View style={[styles.actionRow, isTablet ? styles.actionRowTablet : null]}>
               <Button
-                title="Accept Return"
-                loading={acceptMutation.isPending}
-                disabled={rejectMutation.isPending}
-                style={{ flex: 1 }}
-                onPress={() => acceptMutation.mutate()}
+                title="Accept return"
+                disabled={decisionMutation.isPending}
+                loading={decisionMutation.isPending && decision === "accept"}
+                style={styles.actionButton}
+                onPress={() => setDecision("accept")}
               />
               <Button
-                title="Reject"
+                title="Reject return"
                 tone="danger"
-                loading={rejectMutation.isPending}
-                disabled={acceptMutation.isPending}
-                style={{ flex: 1 }}
-                onPress={() => rejectMutation.mutate()}
+                disabled={decisionMutation.isPending}
+                loading={decisionMutation.isPending && decision === "reject"}
+                style={styles.actionButton}
+                onPress={() => setDecision("reject")}
               />
             </View>
-            {decisionError ? (
-              <Text style={{ color: "#B42318", fontSize: 12, fontWeight: "800", marginTop: 8 }}>
-                {decisionError instanceof Error ? decisionError.message : "Could not save seller decision."}
-              </Text>
-            ) : null}
-          </Card>
-        ) : null}
-        <Card>
-          <Text style={{ color: "#111827", fontSize: 16, fontWeight: "900", marginBottom: 8 }}>Add Seller Note</Text>
+          </View>
+        </OperationsSection>
+      ) : null}
+
+      <OperationsSection
+        title="Seller notes"
+        subtitle="Add context for your team without changing the return decision."
+      >
+        <View style={styles.noteSurface}>
           <Field
-            placeholder="Add a note about this return..."
-            value={note}
-            onChangeText={setNote}
+            label="New note"
+            placeholder="Add handling, inspection, pickup, or QC context"
+            value={sellerNote}
+            onChangeText={setSellerNote}
             multiline
             numberOfLines={3}
           />
           <Button
-            title={noteMutation.isPending ? "Saving..." : "Add Note"}
-            onPress={handleAddNote}
-            disabled={noteMutation.isPending || !note.trim()}
+            title="Add note"
+            tone="secondary"
+            loading={noteMutation.isPending}
+            disabled={noteMutation.isPending || !sellerNote.trim()}
+            onPress={() => noteMutation.mutate(sellerNote.trim())}
           />
-        </Card>
-        {returnNotes.length > 0 ? (
-          <Card>
-            <Text style={{ color: "#111827", fontSize: 16, fontWeight: "900", marginBottom: 8 }}>Notes</Text>
-            {returnNotes.map((sellerNote) => (
-              <View key={sellerNote.id} style={{ borderBottomWidth: 1, borderBottomColor: "#E5E7EB", paddingBottom: 8, marginBottom: 8 }}>
-                <Text style={{ color: "#6B7280", fontSize: 14 }}>{sellerNote.note}</Text>
-                <Text style={{ color: "#9CA3AF", fontSize: 10 }}>
-                  {sellerNote.createdAt ? new Date(sellerNote.createdAt).toLocaleString() : "Just now"}
-                </Text>
+        </View>
+        {returnNotes.length ? (
+          <View style={styles.listSurface}>
+            {returnNotes.map((note, index) => (
+              <View
+                key={note.id}
+                style={[styles.noteRow, index > 0 ? styles.divider : null]}
+              >
+                <Text style={styles.noteText}>{note.note}</Text>
+                <Text style={styles.noteDate}>{formatOperationDateTime(note.createdAt)}</Text>
               </View>
             ))}
-          </Card>
-        ) : null}
-        <Button title="Back" tone="secondary" onPress={() => router.back()} />
-      </ScrollView>
+          </View>
+        ) : (
+          <Text style={styles.meta}>No seller notes have been added.</Text>
+        )}
+      </OperationsSection>
+
+      <ConfirmDialog
+        visible={Boolean(decision)}
+        title={decision === "accept" ? "Accept this return?" : "Reject this return?"}
+        message={
+          decision === "accept"
+            ? "The request will move to reverse pickup assignment."
+            : "The customer request will be rejected. Include a clear decision note when possible."
+        }
+        confirmLabel={decision === "accept" ? "Accept return" : "Reject return"}
+        onCancel={() => setDecision(null)}
+        onConfirm={() => {
+          if (decision) {
+            decisionMutation.mutate({
+              action: decision,
+              ...(decisionNote.trim() ? { note: decisionNote.trim() } : {}),
+            });
+          }
+        }}
+      />
+      <Toast
+        visible={toast.visible}
+        message={toast.message}
+        type={toast.type}
+        onDismiss={() => setToast((current) => ({ ...current, visible: false }))}
+      />
     </Screen>
   );
 }
 
-function refreshReturnQueries(queryClient: ReturnType<typeof useQueryClient>, setNote: (value: string) => void) {
-  void queryClient.invalidateQueries({ queryKey: ["seller-return"] });
-  void queryClient.invalidateQueries({ queryKey: ["seller-returns"] });
-  setNote("");
+function SummaryValue({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.summaryValue}>
+      <Text style={styles.summaryLabel}>{label}</Text>
+      <Text numberOfLines={2} style={styles.summaryText}>{value}</Text>
+    </View>
+  );
 }
 
 type PrivateProofAccess =
   | { provider: "s3"; url: string; contentType?: string; fileName?: string }
   | { provider: "local"; contentType?: string; fileName?: string };
 
-async function downloadPrivateProof(auth: ReturnType<typeof useMobileSellerAuth>["authHeaders"], assetKey: string) {
-  const token = auth.getBearerToken ? (await auth.getBearerToken({ skipCache: true })) ?? auth.bearerToken : auth.bearerToken;
-  const accessResponse = await fetch(`${apiBaseUrl()}/storage/private-document/access?key=${encodeURIComponent(assetKey)}`, {
-    headers: {
-      Accept: "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+async function downloadPrivateProof(
+  auth: ReturnType<typeof useMobileSellerAuth>["authHeaders"],
+  assetKey: string,
+) {
+  const token = auth.getBearerToken
+    ? (await auth.getBearerToken({ skipCache: true })) ?? auth.bearerToken
+    : auth.bearerToken;
+  const accessResponse = await fetch(
+    `${apiBaseUrl()}/storage/private-document/access?key=${encodeURIComponent(assetKey)}`,
+    {
+      headers: {
+        Accept: "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
     },
-  });
+  );
   if (!accessResponse.ok) {
     throw new MobileApiError(await proofErrorMessage(accessResponse), accessResponse.status);
   }
@@ -318,3 +463,224 @@ async function proofErrorMessage(response: Response) {
   }
   return "Could not open quality proof.";
 }
+
+const styles = StyleSheet.create({
+  content: {
+    gap: spacing.xl,
+  },
+  summarySurface: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: spacing.md,
+    padding: spacing.md,
+  },
+  summaryTopRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+    justifyContent: "space-between",
+  },
+  created: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  summaryGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+  },
+  summaryValue: {
+    flexBasis: "46%",
+    flexGrow: 1,
+    gap: 2,
+    minWidth: 130,
+  },
+  summaryLabel: {
+    color: colors.muted,
+    fontSize: 10,
+    fontWeight: "800",
+    textTransform: "uppercase",
+  },
+  summaryText: {
+    color: colors.ink,
+    fontSize: 13,
+    fontWeight: "900",
+    lineHeight: 18,
+  },
+  listSurface: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    overflow: "hidden",
+  },
+  itemRow: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: spacing.md,
+    padding: spacing.md,
+  },
+  divider: {
+    borderTopColor: colors.border,
+    borderTopWidth: 1,
+  },
+  itemCopy: {
+    flex: 1,
+    gap: 3,
+    minWidth: 0,
+  },
+  itemTitle: {
+    color: colors.ink,
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  meta: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 18,
+  },
+  itemNote: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: "700",
+    lineHeight: 17,
+  },
+  qcNote: {
+    color: "#166534",
+    fontSize: 11,
+    fontWeight: "800",
+    lineHeight: 17,
+  },
+  detailGrid: {
+    gap: spacing.sm,
+  },
+  detailGridTablet: {
+    flexDirection: "row",
+  },
+  detailSurface: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flex: 1,
+    gap: spacing.xs,
+    minWidth: 0,
+    padding: spacing.md,
+  },
+  detailHeading: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  detailTitle: {
+    color: colors.ink,
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  detailValue: {
+    color: colors.ink,
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  reason: {
+    color: colors.ink,
+    fontSize: 13,
+    fontWeight: "700",
+    lineHeight: 19,
+  },
+  customerNote: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 18,
+    marginTop: spacing.xs,
+  },
+  proofSurface: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: spacing.md,
+    padding: spacing.md,
+  },
+  proofGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+  },
+  proofButton: {
+    alignItems: "center",
+    backgroundColor: colors.softSurface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: spacing.xs,
+    justifyContent: "center",
+    minHeight: 82,
+    minWidth: 96,
+    padding: spacing.sm,
+  },
+  proofLabel: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  warning: {
+    color: "#92400E",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  error: {
+    color: colors.danger,
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  decisionSurface: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: spacing.md,
+    padding: spacing.md,
+  },
+  actionRow: {
+    gap: spacing.sm,
+  },
+  actionRowTablet: {
+    flexDirection: "row",
+  },
+  actionButton: {
+    flex: 1,
+  },
+  noteSurface: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: spacing.md,
+    padding: spacing.md,
+  },
+  noteRow: {
+    gap: spacing.xs,
+    padding: spacing.md,
+  },
+  noteText: {
+    color: colors.ink,
+    fontSize: 13,
+    fontWeight: "700",
+    lineHeight: 19,
+  },
+  noteDate: {
+    color: colors.muted,
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  pressed: {
+    opacity: 0.72,
+  },
+});

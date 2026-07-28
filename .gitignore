@@ -12,12 +12,17 @@ test-results/
 .turbo/
 *.tsbuildinfo
 
+# Expo Continuous Native Generation for cloud builds
+apps/mobile-seller/android/
+apps/mobile-seller/ios/
+
 # Environment
 .env
 .env.*
 !.env.example
 
 # Credentials & Keyfiles
+.local-secrets/
 *-firebase-adminsdk-*.json
 google-services.json
 GoogleService-Info.plist

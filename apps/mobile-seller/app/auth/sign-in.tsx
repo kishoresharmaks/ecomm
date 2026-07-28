@@ -14,11 +14,29 @@ import {
   Text,
   View,
 } from "react-native";
+import {
+  canResendSecondFactor,
+  preferredSecondFactor,
+  secondFactorAttemptParams,
+  secondFactorKey,
+  secondFactorOptions,
+  secondFactorPrepareParams,
+  type SecondFactorOption,
+  type SupportedSecondFactor,
+} from "../../src/auth/clerk-second-factor";
 import { useMobileSellerAuth, mobileSellerAuthErrorMessage } from "../../src/auth/mobile-seller-auth-context";
 import { Button, Card, Field, Screen } from "../../src/components/screen";
 
-type AuthMode = "sign-in" | "sign-up" | "verify-email";
+type AuthMode = "sign-in" | "sign-up" | "verify-email" | "verify-sign-in";
 type SubmitAction = "email" | "google" | "sign-out" | "sync" | null;
+
+type ClerkSignInResource = {
+  status?: string | null;
+  createdSessionId?: string | null;
+  supportedSecondFactors?: SupportedSecondFactor[] | null;
+  prepareSecondFactor: (params: Record<string, unknown>) => Promise<ClerkSignInResource>;
+  attemptSecondFactor: (params: Record<string, unknown>) => Promise<ClerkSignInResource>;
+};
 
 const MAX_ACCOUNT_SYNC_RETRIES = 3;
 
@@ -35,14 +53,23 @@ export default function SellerSignInScreen() {
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [submitAction, setSubmitAction] = useState<SubmitAction>(null);
   const [syncRetryCount, setSyncRetryCount] = useState(0);
   const [shouldAutoContinue, setShouldAutoContinue] = useState(false);
-  const clerkPublishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim() || "pk_live_Y2xlcmsuMWhhbmRpbmRpYS5jb20k";
+  const [availableSecondFactors, setAvailableSecondFactors] = useState<SecondFactorOption[]>([]);
+  const [selectedSecondFactor, setSelectedSecondFactor] = useState<SecondFactorOption | null>(null);
+  const clerkPublishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim();
   const hasClerkKey = Boolean(clerkPublishableKey);
   const isSubmitting = submitAction !== null;
   const title =
-    mode === "sign-up" ? "Create seller account" : mode === "verify-email" ? "Verify email" : "Seller sign in";
+    mode === "sign-up"
+      ? "Create seller account"
+      : mode === "verify-email"
+        ? "Verify email"
+        : mode === "verify-sign-in"
+          ? "Verify sign in"
+          : "Seller sign in";
 
   useEffect(() => {
     if (sellerAuth.enabled) {
@@ -56,31 +83,149 @@ export default function SellerSignInScreen() {
     }
   }, [sellerAuth.enabled, isSignedIn, router, shouldAutoContinue]);
 
+  async function activateSession(resource: ClerkSignInResource) {
+    if (!resource.createdSessionId || !signIn.setActive) {
+      return false;
+    }
+
+    await signIn.setActive({ session: resource.createdSessionId });
+    setShouldAutoContinue(true);
+    setSyncRetryCount(0);
+    return true;
+  }
+
+  async function prepareSecondFactor(resource: ClerkSignInResource, option: SecondFactorOption) {
+    const params = secondFactorPrepareParams(option);
+    if (params) {
+      await resource.prepareSecondFactor(params);
+    }
+  }
+
+  async function beginSecondFactor(resource: ClerkSignInResource) {
+    const options = secondFactorOptions(resource.supportedSecondFactors);
+    const preferred = preferredSecondFactor(options);
+    if (!preferred) {
+      setError("This account requires a verification method that is not supported in the app. Contact support for help.");
+      return;
+    }
+
+    await prepareSecondFactor(resource, preferred);
+    setAvailableSecondFactors(options);
+    setSelectedSecondFactor(preferred);
+    setCode("");
+    setMode("verify-sign-in");
+    setNotice(secondFactorNotice(preferred));
+  }
+
+  async function continueSignIn(resource: ClerkSignInResource) {
+    if (await activateSession(resource)) {
+      return;
+    }
+    if (resource.status === "needs_second_factor") {
+      await beginSecondFactor(resource);
+      return;
+    }
+
+    setError(
+      resource.status === "needs_new_password"
+        ? "This account requires a new password before sign in. Reset the password and try again."
+        : "Sign in could not be completed. Please try again.",
+    );
+  }
+
   async function handleSignIn() {
     if (!signIn.isLoaded) {
       return;
     }
 
     setError(null);
+    setNotice(null);
     setSubmitAction("email");
     try {
       const result = await signIn.signIn.create({
         identifier: email.trim(),
         password,
       });
-
-      if (result.createdSessionId) {
-        await signIn.setActive({ session: result.createdSessionId });
-        setShouldAutoContinue(true);
-        return;
-      }
-
-      setError("Additional verification is required for this account. Please complete it in Clerk.");
+      await continueSignIn(result as unknown as ClerkSignInResource);
     } catch (caught) {
       setError(mobileSellerAuthErrorMessage(caught));
     } finally {
       setSubmitAction(null);
     }
+  }
+
+  async function handleSecondFactor() {
+    if (!signIn.isLoaded || !selectedSecondFactor) {
+      return;
+    }
+    if (!code.trim()) {
+      setError(selectedSecondFactor.strategy === "backup_code" ? "Enter a backup code." : "Enter the verification code.");
+      return;
+    }
+
+    setError(null);
+    setNotice(null);
+    setSubmitAction("email");
+    try {
+      const resource = await (signIn.signIn as unknown as ClerkSignInResource).attemptSecondFactor(
+        secondFactorAttemptParams(selectedSecondFactor, code),
+      );
+      await continueSignIn(resource);
+    } catch (caught) {
+      setError(mobileSellerAuthErrorMessage(caught));
+    } finally {
+      setSubmitAction(null);
+    }
+  }
+
+  async function selectSecondFactor(option: SecondFactorOption) {
+    if (
+      !signIn.isLoaded
+      || (selectedSecondFactor && secondFactorKey(option) === secondFactorKey(selectedSecondFactor))
+    ) {
+      return;
+    }
+
+    setError(null);
+    setNotice(null);
+    setSubmitAction("email");
+    try {
+      await prepareSecondFactor(signIn.signIn as unknown as ClerkSignInResource, option);
+      setSelectedSecondFactor(option);
+      setCode("");
+      setNotice(secondFactorNotice(option));
+    } catch (caught) {
+      setError(mobileSellerAuthErrorMessage(caught));
+    } finally {
+      setSubmitAction(null);
+    }
+  }
+
+  async function resendSecondFactor() {
+    if (!signIn.isLoaded || !selectedSecondFactor || !canResendSecondFactor(selectedSecondFactor)) {
+      return;
+    }
+
+    setError(null);
+    setNotice(null);
+    setSubmitAction("email");
+    try {
+      await prepareSecondFactor(signIn.signIn as unknown as ClerkSignInResource, selectedSecondFactor);
+      setNotice(secondFactorNotice(selectedSecondFactor, true));
+    } catch (caught) {
+      setError(mobileSellerAuthErrorMessage(caught));
+    } finally {
+      setSubmitAction(null);
+    }
+  }
+
+  function returnToSignIn() {
+    setMode("sign-in");
+    setCode("");
+    setError(null);
+    setNotice(null);
+    setAvailableSecondFactors([]);
+    setSelectedSecondFactor(null);
   }
 
   async function handleGoogleSignIn() {
@@ -350,11 +495,119 @@ export default function SellerSignInScreen() {
             </Card>
             </>
           ) : null}
+
+          {mode === "verify-sign-in" && !signedInButNotSynced ? (
+            <>
+              <Card>
+                <Text style={{ color: "#111827", fontSize: 18, fontWeight: "900" }}>Complete secure verification</Text>
+                <Text style={{ color: "#6B7280", fontSize: 14, lineHeight: 20 }}>
+                  {secondFactorInstruction(selectedSecondFactor)}
+                </Text>
+                {availableSecondFactors.length > 1 ? (
+                  <View style={{ gap: 8 }}>
+                    <Text style={{ color: "#111827", fontSize: 13, fontWeight: "800" }}>Verify with</Text>
+                    {availableSecondFactors.map((factor) => {
+                      const active = selectedSecondFactor
+                        ? secondFactorKey(factor) === secondFactorKey(selectedSecondFactor)
+                        : false;
+                      return (
+                        <Pressable
+                          accessibilityRole="radio"
+                          accessibilityState={{ checked: active }}
+                          disabled={isSubmitting}
+                          key={secondFactorKey(factor)}
+                          onPress={() => void selectSecondFactor(factor)}
+                          style={{
+                            backgroundColor: active ? "#FFF4EF" : "#FFFFFF",
+                            borderColor: active ? "#ED3500" : "#E5E7EB",
+                            borderRadius: 8,
+                            borderWidth: 1,
+                            justifyContent: "center",
+                            minHeight: 48,
+                            paddingHorizontal: 14,
+                            paddingVertical: 8,
+                          }}
+                        >
+                          <Text style={{ color: active ? "#ED3500" : "#111827", fontSize: 14, fontWeight: "800" }}>
+                            {factor.label}
+                          </Text>
+                          {factor.destination ? (
+                            <Text style={{ color: "#6B7280", fontSize: 12, marginTop: 2 }}>{factor.destination}</Text>
+                          ) : null}
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                ) : null}
+                <Field
+                  autoComplete="one-time-code"
+                  keyboardType={selectedSecondFactor?.strategy === "backup_code" ? "default" : "number-pad"}
+                  label={selectedSecondFactor?.strategy === "backup_code" ? "Backup code" : "Verification code"}
+                  maxLength={selectedSecondFactor?.strategy === "backup_code" ? 32 : 6}
+                  onChangeText={(value) => setCode(
+                    selectedSecondFactor?.strategy === "backup_code" ? value : value.replace(/\D/g, ""),
+                  )}
+                  placeholder={selectedSecondFactor?.strategy === "backup_code" ? "Enter backup code" : "6-digit code"}
+                  textContentType="oneTimeCode"
+                  value={code}
+                />
+                {notice ? <Text style={{ color: "#0F7A4F", fontWeight: "700" }}>{notice}</Text> : null}
+                {error ? <Text style={{ color: "#D64545", fontWeight: "800" }}>{error}</Text> : null}
+                <Button
+                  disabled={isSubmitting || !code.trim()}
+                  title={isSubmitting ? "Verifying..." : "Verify and sign in"}
+                  onPress={handleSecondFactor}
+                />
+                {canResendSecondFactor(selectedSecondFactor) ? (
+                  <Button
+                    disabled={isSubmitting}
+                    tone="secondary"
+                    title="Resend code"
+                    onPress={resendSecondFactor}
+                  />
+                ) : null}
+              </Card>
+              <Pressable
+                accessibilityRole="button"
+                disabled={isSubmitting}
+                onPress={returnToSignIn}
+                style={{ alignItems: "center", justifyContent: "center", minHeight: 44 }}
+              >
+                <Text style={{ color: "#6B7280", fontSize: 14, fontWeight: "800" }}>Back to sign in</Text>
+              </Pressable>
+            </>
+          ) : null}
           <LegalFooter />
         </ScrollView>
       </KeyboardAvoidingView>
     </Screen>
   );
+}
+
+function secondFactorInstruction(option: SecondFactorOption | null) {
+  if (option?.destination) {
+    return `Enter the code sent to ${option.destination}.`;
+  }
+  if (option?.strategy === "totp") {
+    return "Enter the current code from your authenticator app.";
+  }
+  if (option?.strategy === "backup_code") {
+    return "Enter one of your unused backup codes.";
+  }
+  return "Enter the verification code required for this account.";
+}
+
+function secondFactorNotice(option: SecondFactorOption, resent = false) {
+  if (option.strategy === "email_code") {
+    return resent ? "A new code was sent to your email." : "We sent a sign-in code to your email.";
+  }
+  if (option.strategy === "phone_code") {
+    return resent ? "A new code was sent by text message." : "We sent a sign-in code by text message.";
+  }
+  if (option.strategy === "totp") {
+    return "Open your authenticator app to get the current code.";
+  }
+  return "Use one of the backup codes saved when verification was enabled.";
 }
 
 function LegalFooter() {

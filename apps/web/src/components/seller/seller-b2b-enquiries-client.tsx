@@ -6,7 +6,7 @@ import { io, type Socket } from "socket.io-client";
 import { ArrowLeft, CreditCard, FileText, Loader2, MessageSquare, MessageSquareReply, MessageSquareText, Search, Send } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, SectionHeading, StatusBadge, cn } from "@indihub/ui";
-import { apiBaseUrl, type IndihubAuthHeaders } from "@/lib/api";
+import { apiBaseUrl, userFacingApiErrorMessage, type IndihubAuthHeaders } from "@/lib/api";
 import { formatMoney } from "@/lib/storefront-api";
 import {
   type B2BEnquiry,
@@ -115,7 +115,7 @@ export function SellerB2BEnquiriesClient() {
       void queryClient.invalidateQueries({ queryKey: ["seller-b2b-enquiries", sellerAuth.authKey] });
       void queryClient.invalidateQueries({ queryKey: ["seller-sales-report", sellerAuth.authKey] });
     },
-    onError: (error) => setNotice({ tone: "danger", message: error instanceof Error ? error.message : "B2B response failed." })
+    onError: (error) => setNotice({ tone: "danger", message: userFacingApiErrorMessage(error) })
   });
 
   function submitSearch(event: FormEvent<HTMLFormElement>) {
@@ -126,21 +126,25 @@ export function SellerB2BEnquiriesClient() {
 
   function respond(event: FormEvent<HTMLFormElement>, enquiryId: string) {
     event.preventDefault();
+    if (responseMutation.isPending) return;
     const form = new FormData(event.currentTarget);
     const quoted = optionalFormValue(form, "quotedPrice");
     const transportCharge = optionalFormValue(form, "transportCharge");
     const transportEta = optionalFormValue(form, "transportEta");
     const transportNote = optionalFormValue(form, "transportNote");
     setNotice(null);
-    responseMutation.mutate({
-      enquiryId,
-      responseMessage: formValue(form, "responseMessage"),
-      ...(quoted ? { quotedPricePaise: rupeesToPaise(quoted) } : {}),
-      ...(transportCharge ? { transportChargePaise: rupeesToPaise(transportCharge) } : {}),
-      ...(transportEta ? { transportEta } : {}),
-      ...(transportNote ? { transportNote } : {})
-    });
-    event.currentTarget.reset();
+    const formElement = event.currentTarget;
+    responseMutation.mutate(
+      {
+        enquiryId,
+        responseMessage: formValue(form, "responseMessage"),
+        ...(quoted ? { quotedPricePaise: rupeesToPaise(quoted) } : {}),
+        ...(transportCharge ? { transportChargePaise: rupeesToPaise(transportCharge) } : {}),
+        ...(transportEta ? { transportEta } : {}),
+        ...(transportNote ? { transportNote } : {})
+      },
+      { onSuccess: () => formElement.reset() },
+    );
   }
 
   if (!sellerAuth.enabled) {
@@ -340,7 +344,7 @@ export function SellerB2BEnquiryDetailClient({ enquiryId }: { enquiryId: string 
       void queryClient.invalidateQueries({ queryKey: ["seller-sales-report", sellerAuth.authKey] });
     },
     onError: (error) => {
-      const message = error instanceof Error ? error.message : "B2B response failed.";
+      const message = userFacingApiErrorMessage(error);
       setResponseBlockedByPlan(message.includes("Upgrade your subscription plan"));
       setNotice({ tone: "danger", message });
     }
@@ -380,9 +384,10 @@ export function SellerB2BEnquiryDetailClient({ enquiryId }: { enquiryId: string 
       setResponseBlockedByPlan(false);
       void queryClient.invalidateQueries({ queryKey: ["seller-b2b-enquiry", sellerAuth.authKey, enquiryId] });
     },
-    onError: (error, _message, context) => {
-      const message = error instanceof Error ? error.message : "Message could not be sent.";
+    onError: (error, failedMessage, context) => {
+      const message = userFacingApiErrorMessage(error);
       setMessages((current) => current.filter((item) => item.id !== context?.optimisticId));
+      setDraft((current) => current || failedMessage);
       setResponseBlockedByPlan(message.includes("Upgrade your subscription plan"));
       setNotice({ tone: "danger", message });
     }
@@ -499,24 +504,29 @@ export function SellerB2BEnquiryDetailClient({ enquiryId }: { enquiryId: string 
 
   function respond(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (responseMutation.isPending) return;
     const form = new FormData(event.currentTarget);
     const quoted = optionalFormValue(form, "quotedPrice");
     const transportCharge = optionalFormValue(form, "transportCharge");
     const transportEta = optionalFormValue(form, "transportEta");
     const transportNote = optionalFormValue(form, "transportNote");
     setNotice(null);
-    responseMutation.mutate({
-      responseMessage: formValue(form, "responseMessage"),
-      ...(quoted ? { quotedPricePaise: rupeesToPaise(quoted) } : {}),
-      ...(transportCharge ? { transportChargePaise: rupeesToPaise(transportCharge) } : {}),
-      ...(transportEta ? { transportEta } : {}),
-      ...(transportNote ? { transportNote } : {})
-    });
-    event.currentTarget.reset();
+    const formElement = event.currentTarget;
+    responseMutation.mutate(
+      {
+        responseMessage: formValue(form, "responseMessage"),
+        ...(quoted ? { quotedPricePaise: rupeesToPaise(quoted) } : {}),
+        ...(transportCharge ? { transportChargePaise: rupeesToPaise(transportCharge) } : {}),
+        ...(transportEta ? { transportEta } : {}),
+        ...(transportNote ? { transportNote } : {})
+      },
+      { onSuccess: () => formElement.reset() },
+    );
   }
 
   function sendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (messageMutation.isPending) return;
     const message = draft.trim();
     if (!message) {
       return;
@@ -546,7 +556,7 @@ export function SellerB2BEnquiryDetailClient({ enquiryId }: { enquiryId: string 
         }
       });
     } catch (error) {
-      setNotice({ tone: "danger", message: error instanceof Error ? error.message : "Older messages could not be loaded." });
+      setNotice({ tone: "danger", message: userFacingApiErrorMessage(error) });
     } finally {
       setIsLoadingOlder(false);
     }

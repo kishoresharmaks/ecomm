@@ -3,7 +3,7 @@
 import Link from "next/link";
 import type { Route } from "next";
 import type { ReactNode } from "react";
-import { AlertTriangle, ArrowRight, BarChart3, Boxes, Building2, CreditCard, ExternalLink, PackageCheck, ShoppingBag } from "lucide-react";
+import { AlertTriangle, ArrowRight, BarChart3, Boxes, Building2, CalendarDays, CreditCard, ExternalLink, PackageCheck, ShoppingBag, Wrench } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Button, SectionHeading } from "@indihub/ui";
 import { formatMoney } from "@/lib/storefront-api";
@@ -20,6 +20,7 @@ import {
   formatDateTime,
   isSellerApproved,
   isSellerOnboardingRequiredError,
+  sellerHasCapability,
   statusLabel,
   useSellerAuth
 } from "./seller-ui";
@@ -35,10 +36,12 @@ export function SellerDashboardClient() {
   });
 
   const hasSellerProfile = Boolean(profileQuery.data);
+  const retailEnabled = sellerHasCapability(profileQuery.data, "RETAIL");
+  const serviceEnabled = sellerHasCapability(profileQuery.data, "SERVICE");
   const reportQuery = useQuery({
     queryKey: ["seller-sales-report", sellerAuth.authKey, "dashboard"],
     queryFn: () => getSellerSalesReport(sellerAuth.authHeaders),
-    enabled: sellerAuth.enabled && hasSellerProfile,
+    enabled: sellerAuth.enabled && hasSellerProfile && retailEnabled,
     retry: false
   });
 
@@ -48,7 +51,7 @@ export function SellerDashboardClient() {
     );
   }
 
-  if (profileQuery.isLoading || (hasSellerProfile && reportQuery.isLoading)) {
+  if (profileQuery.isLoading || (hasSellerProfile && retailEnabled && reportQuery.isLoading)) {
     return <SellerSkeleton />;
   }
 
@@ -76,7 +79,7 @@ export function SellerDashboardClient() {
         </div>
       </header>
 
-      {reportQuery.error ? <SellerErrorPanel error={reportQuery.error} onRetry={() => void reportQuery.refetch()} /> : null}
+      {retailEnabled && reportQuery.error ? <SellerErrorPanel error={reportQuery.error} onRetry={() => void reportQuery.refetch()} /> : null}
       {!sellerReady ? (
         <SellerPanel className="border-[#FFC7B8] bg-[#FFF0EC]">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -124,7 +127,9 @@ export function SellerDashboardClient() {
                 <SellerStatusPill status={profile?.approvalStatus} />
               </div>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-[#667085]">
-                {profile?.profile?.description ?? "Keep store profile, catalogue, orders, delivery, B2B enquiries, and sales reporting in one workspace."}
+                {profile?.profile?.description ?? (serviceEnabled && !retailEnabled
+                  ? "Keep services, bookings, availability, and payouts in one workspace."
+                  : "Keep store profile, catalogue, orders, delivery, B2B enquiries, and sales reporting in one workspace.")}
               </p>
             </div>
           </div>
@@ -140,16 +145,25 @@ export function SellerDashboardClient() {
             <Button asChild variant="outline">
               <Link href="/seller/store-profile">Edit profile</Link>
             </Button>
-            <Button asChild>
-              <Link href="/seller/products">
-                Add product <ArrowRight className="h-4 w-4" aria-hidden="true" />
-              </Link>
-            </Button>
+            {retailEnabled ? (
+              <Button asChild>
+                <Link href="/seller/products/new">
+                  Add product <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                </Link>
+              </Button>
+            ) : null}
+            {serviceEnabled ? (
+              <Button asChild>
+                <Link href="/seller/services/new">
+                  Add service <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                </Link>
+              </Button>
+            ) : null}
           </div>
         </div>
       </SellerPanel>
 
-      {!reportQuery.error ? (
+      {retailEnabled && !reportQuery.error ? (
         <>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <SellerMetric label="Net sales" value={formatMoney(report?.summary.netSalesPaise ?? 0, profile?.operatingCurrency || "INR")} note="After marketplace commission" />
@@ -225,6 +239,16 @@ export function SellerDashboardClient() {
             </div>
           </div>
         </>
+      ) : null}
+      {serviceEnabled && !retailEnabled ? (
+        <SellerPanel>
+          <SectionHeading title="Service operations" description="Manage listings, bookings, and working availability." />
+          <div className="mt-5 grid grid-cols-1 gap-3 text-center sm:grid-cols-3">
+            <QuickLink href="/seller/services" label="Services" icon={<Wrench className="h-5 w-5" aria-hidden="true" />} />
+            <QuickLink href="/seller/service-bookings" label="Bookings" icon={<ShoppingBag className="h-5 w-5" aria-hidden="true" />} />
+            <QuickLink href="/seller/service-calendar" label="Calendar" icon={<CalendarDays className="h-5 w-5" aria-hidden="true" />} />
+          </div>
+        </SellerPanel>
       ) : null}
     </div>
   );

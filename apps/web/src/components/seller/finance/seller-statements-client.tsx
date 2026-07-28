@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Download, FileText } from "lucide-react";
+import { Download, FileText, Loader2 } from "lucide-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "@indihub/ui";
 import { saveDownload } from "@/lib/admin-finance-api";
@@ -69,9 +69,13 @@ export function SellerStatementsClient() {
         <SellerMetric label="Statement value" value={totalNetLabel} note="Net payable total" />
         <SellerMetric label="Downloads" value="CSV + PDF" note="Available per statement" />
       </div>
+      {download.error ? <SellerErrorPanel error={download.error} /> : null}
       <div className="grid gap-3">
-        {statements.map((statement) => (
-          <SellerPanel key={statement.id}>
+        {statements.map((statement) => {
+          const activeDownload = download.isPending && download.variables?.statementId === statement.id
+            ? download.variables.format
+            : null;
+          return <SellerPanel key={statement.id}>
             <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-center">
               <div className="flex items-start gap-3">
                 <span className="grid h-10 w-10 place-items-center rounded-md bg-[#EAF1F7] text-[#163B5C]">
@@ -87,18 +91,18 @@ export function SellerStatementsClient() {
               </div>
               <div className="flex flex-wrap gap-2 md:justify-end">
                 <span className="mr-2 self-center text-lg font-black text-[#163B5C]">{formatMoney(statement.netPayablePaise, statement.currency)}</span>
-                <Button type="button" variant="outline" size="sm" onClick={() => download.mutate({ statementId: statement.id, format: "csv" })}>
-                  <Download className="h-4 w-4" aria-hidden="true" />
-                  CSV
+                <Button type="button" variant="outline" size="sm" disabled={download.isPending} onClick={() => download.mutate({ statementId: statement.id, format: "csv" })}>
+                  {activeDownload === "csv" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Download className="h-4 w-4" aria-hidden="true" />}
+                  {activeDownload === "csv" ? "Preparing CSV" : "CSV"}
                 </Button>
-                <Button type="button" size="sm" onClick={() => download.mutate({ statementId: statement.id, format: "pdf" })}>
-                  <Download className="h-4 w-4" aria-hidden="true" />
-                  PDF
+                <Button type="button" size="sm" disabled={download.isPending} onClick={() => download.mutate({ statementId: statement.id, format: "pdf" })}>
+                  {activeDownload === "pdf" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Download className="h-4 w-4" aria-hidden="true" />}
+                  {activeDownload === "pdf" ? "Preparing PDF" : "PDF"}
                 </Button>
               </div>
             </div>
-          </SellerPanel>
-        ))}
+          </SellerPanel>;
+        })}
       </div>
       {statements.length === 0 ? <SellerEmptyState title="No statements yet" message="Statements appear after admin generates them from approved or paid payouts." /> : null}
       {(statementsQuery.data?.total ?? 0) > 0 ? (

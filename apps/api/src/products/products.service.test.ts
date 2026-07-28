@@ -112,6 +112,29 @@ describe("ProductsService", () => {
     };
   }
 
+  it("keeps stock-only seller updates live but rechecks price changes", () => {
+    const service = new ProductsService(
+      prisma as never,
+      notifications as never,
+      { isAvailable: () => false } as never,
+    );
+    const requiresApproval = Reflect.get(
+      service,
+      "sellerProductUpdateRequiresApproval",
+    ) as (dto: Record<string, unknown>) => boolean;
+
+    expect(
+      requiresApproval.call(service, {
+        variants: [{ id: "variant_1", stockQuantity: 25, status: VariantStatus.ACTIVE }],
+      }),
+    ).toBe(false);
+    expect(
+      requiresApproval.call(service, {
+        variants: [{ id: "variant_1", pricePaise: 56000 }],
+      }),
+    ).toBe(true);
+  });
+
   it("keeps new public product details visible when stock is zero", async () => {
     prisma.client.product.findFirst.mockResolvedValue(publicProductWithStock("New", 0));
     const service = new ProductsService(prisma as never, notifications as never, { isAvailable: () => false } as never);

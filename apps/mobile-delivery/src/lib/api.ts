@@ -15,7 +15,7 @@ export type ApiRequestOptions = {
   path: string;
   token?: string | null;
   auth?: MobileAuthHeaders;
-  searchParams?: Record<string, string | number | boolean | null | undefined>;
+  searchParams?: Record<string, string | number | boolean | Array<string | number | boolean> | null | undefined>;
   signal?: AbortSignal;
 };
 
@@ -163,7 +163,10 @@ async function bearerTokenForRequest(options: ApiRequestOptions, tokenOptions: B
 function buildApiUrl(path: string, searchParams?: ApiRequestOptions["searchParams"]) {
   const url = new URL(`${apiBaseUrl()}/${path.replace(/^\//, "")}`);
   Object.entries(searchParams ?? {}).forEach(([key, value]) => {
-    if (value !== null && value !== undefined && value !== "") url.searchParams.set(key, String(value));
+    const values = Array.isArray(value) ? value : [value];
+    values.forEach((item) => {
+      if (item !== null && item !== undefined && item !== "") url.searchParams.append(key, String(item));
+    });
   });
   return url;
 }

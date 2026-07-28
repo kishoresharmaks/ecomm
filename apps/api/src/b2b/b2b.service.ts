@@ -62,6 +62,9 @@ import {
 } from "../storage/storage.service";
 import { safeStorageFolderSegment } from "../storage/storage-image";
 import { TaxDocumentsService } from "../tax/tax-documents.service";
+import { renderTaxDocumentPdf } from "../tax/tax-document-pdf";
+import { renderB2BProformaPdf } from "./b2b-document-pdf";
+import { usesCurrentProfessionalPdfTemplate } from "../documents/professional-pdf";
 import { CreateB2BEnquiryDto } from "./dto/b2b-enquiry.dto";
 import {
   B2BEnquiryDetailQueryDto,
@@ -1472,50 +1475,53 @@ export class B2BService {
 
   async updateSellerB2BTransport(actor: RequestUser, orderNumber: string, dto: UpdateB2BTransportDto) {
     const existing = await this.getSellerB2BOrder(actor, orderNumber);
-    const transportMode = dto.transportMode ?? existing.transportMode ?? B2BTransportMode.SELLER_ARRANGED_TRANSPORT;
-    const transportStatus = this.normalizeB2BTransportStatus(
-      transportMode,
-      dto.transportStatus ?? existing.transportStatus,
-    );
-    const currentCharge = existing.transportChargePaise ?? 0;
-    const requestedCharge = dto.transportChargePaise ?? currentCharge;
-    const nextCharge = transportMode === B2BTransportMode.STORE_PICKUP ? 0 : requestedCharge;
-    const chargeChanged = nextCharge !== currentCharge;
-
-    if (chargeChanged && !this.canChangeB2BTransportCharge(existing)) {
-      throw new BadRequestException(
-        "Transport charge is locked after PO submission or payment activity. Update courier and tracking details only.",
-      );
-    }
-
     const now = new Date();
     const updated = await this.prisma.client.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM b2b_orders WHERE id = ${existing.id}::uuid FOR UPDATE`;
+      const current = await tx.b2BOrder.findUniqueOrThrow({ where: { id: existing.id } });
+      const transportMode =
+        dto.transportMode ?? current.transportMode ?? B2BTransportMode.SELLER_ARRANGED_TRANSPORT;
+      const transportStatus = this.normalizeB2BTransportStatus(
+        transportMode,
+        dto.transportStatus ?? current.transportStatus,
+      );
+      const currentCharge = current.transportChargePaise ?? 0;
+      const requestedCharge = dto.transportChargePaise ?? currentCharge;
+      const nextCharge = transportMode === B2BTransportMode.STORE_PICKUP ? 0 : requestedCharge;
+      const chargeChanged = nextCharge !== currentCharge;
+
+      if (chargeChanged && !this.canChangeB2BTransportCharge(current)) {
+        throw new BadRequestException(
+          "Transport charge is locked after PO submission or payment activity. Update courier and tracking details only.",
+        );
+      }
+
       const updated = await tx.b2BOrder.update({
-        where: { id: existing.id },
+        where: { id: current.id },
         data: {
           transportMode,
           transportStatus,
           transportChargePaise: nextCharge,
-          transportQuotedAt: chargeChanged || !existing.transportQuotedAt ? now : existing.transportQuotedAt,
-          transportPartnerName: dto.transportPartnerName?.trim() || existing.transportPartnerName || null,
-          transportPartnerPhone: dto.transportPartnerPhone?.trim() || existing.transportPartnerPhone || null,
-          transportTrackingRef: dto.transportTrackingRef?.trim() || existing.transportTrackingRef || null,
-          transportEta: dto.transportEta?.trim() || existing.transportEta || null,
-          transportPickupAddress: dto.transportPickupAddress?.trim() || existing.transportPickupAddress || null,
-          transportNote: dto.transportNote?.trim() || existing.transportNote || null,
+          transportQuotedAt: chargeChanged || !current.transportQuotedAt ? now : current.transportQuotedAt,
+          transportPartnerName: dto.transportPartnerName?.trim() || current.transportPartnerName || null,
+          transportPartnerPhone: dto.transportPartnerPhone?.trim() || current.transportPartnerPhone || null,
+          transportTrackingRef: dto.transportTrackingRef?.trim() || current.transportTrackingRef || null,
+          transportEta: dto.transportEta?.trim() || current.transportEta || null,
+          transportPickupAddress: dto.transportPickupAddress?.trim() || current.transportPickupAddress || null,
+          transportNote: dto.transportNote?.trim() || current.transportNote || null,
           ...(chargeChanged
             ? {
                 buyerPayableAmountPaise: Math.max(
                   0,
-                  (existing.buyerPayableAmountPaise ?? existing.subtotalPaise ?? 0) - currentCharge + nextCharge,
+                  (current.buyerPayableAmountPaise ?? current.subtotalPaise ?? 0) - currentCharge + nextCharge,
                 ),
                 proformaInvoiceFileKey: null,
               }
             : {}),
-          ...(transportStatus === B2BTransportStatus.DISPATCHED && !existing.transportDispatchedAt
+          ...(transportStatus === B2BTransportStatus.DISPATCHED && !current.transportDispatchedAt
             ? { transportDispatchedAt: now }
             : {}),
-          ...(transportStatus === B2BTransportStatus.DELIVERED && !existing.transportDeliveredAt
+          ...(transportStatus === B2BTransportStatus.DELIVERED && !current.transportDeliveredAt
             ? { transportDeliveredAt: now }
             : {}),
         },
@@ -1545,7 +1551,7 @@ export class B2BService {
           action: "b2b.order.transport_updated",
           entityType: "b2b_order",
           entityId: updated.id,
-          oldValue: this.b2bOrderAuditValue(existing),
+          oldValue: this.b2bOrderAuditValue(current),
           newValue: this.b2bOrderAuditValue(updated),
         },
       });
@@ -3524,45 +3530,62 @@ export class B2BService {
           gstNumber?: string | null;
           taxRegistrationStatus?: SellerTaxRegistrationStatus | null;
         } | null;
+        addresses?: Array<{
+          line1: string;
+          line2?: string | null;
+          area?: string | null;
+          city: string;
+          state: string;
+          pincode: string;
+          country: string;
+        }>;
       } | null;
-      businessBuyer?: { companyName?: string | null; gstNumber?: string | null } | null;
+      businessBuyer?: {
+        companyName?: string | null;
+        gstNumber?: string | null;
+        addresses?: Array<{
+          line1: string;
+          line2?: string | null;
+          area?: string | null;
+          city: string;
+          state: string;
+          pincode: string;
+          country: string;
+        }>;
+      } | null;
     },
     actor: RequestUser | null,
     reason: string,
   ) {
-    const lines = [
-      "1HandIndia Proforma Invoice",
-      "This is not a tax invoice.",
-      `Proforma No: ${order.proformaInvoiceNumber}`,
-      `Order No: ${order.orderNumber}`,
-      `Issued: ${this.proformaDate(order.proformaIssuedAt)}`,
-      `Expires: ${this.proformaDate(order.proformaExpiresAt)}`,
-      `Payment Due: ${this.proformaDate(order.paymentDueAt)}`,
-      "",
-      `Buyer: ${order.businessBuyer?.companyName ?? "Business buyer"}`,
-      `Buyer GSTIN: ${order.businessBuyer?.gstNumber ?? "Not provided"}`,
-      `Seller: ${order.seller?.profile?.businessLegalName ?? order.seller?.storeName ?? "Seller"}`,
-      `Seller registration: ${this.humanizeTaxValue(order.seller?.profile?.taxRegistrationStatus)}`,
-      `Seller GSTIN: ${order.seller?.profile?.gstNumber ?? "Not provided"}`,
-      "",
-      `Line item: ${order.product?.name ?? order.seller?.storeName ?? "B2B procurement"}`,
-      `Quantity: ${order.quantity}`,
-      `Unit price: ${this.moneyForPdf(order.unitPricePaise ?? 0, order.currency)}`,
-      `Subtotal: ${this.moneyForPdf(order.subtotalPaise ?? order.buyerPayableAmountPaise, order.currency)}`,
-      `B2B transport mode: ${this.humanizeB2BTransport(order.transportMode)}`,
-      `B2B transport status: ${this.humanizeB2BTransport(order.transportStatus)}`,
-      `B2B transport charge: ${this.moneyForPdf(order.transportChargePaise ?? 0, order.currency)}`,
-      `B2B transport ETA: ${order.transportEta ?? "Not provided"}`,
-      `B2B transport note: ${order.transportNote ?? "Not provided"}`,
-      `Buyer payable: ${this.moneyForPdf(order.buyerPayableAmountPaise, order.currency)}`,
-      "",
-      `Platform commission: ${order.commissionRateBps} bps / ${this.moneyForPdf(order.commissionAmountPaise, order.currency)}`,
-      `Seller payout after commission: ${this.moneyForPdf(order.sellerPayoutAmountPaise, order.currency)}`,
-      "",
-      "Bank transfer details are shown in the B2B order payment section.",
-      `Generated reason: ${reason}`,
-    ];
-    const pdf = this.simplePdf(lines);
+    void reason;
+    const pdf = await renderB2BProformaPdf({
+      proformaNumber: order.proformaInvoiceNumber,
+      orderNumber: order.orderNumber,
+      issuedAt: this.proformaDate(order.proformaIssuedAt),
+      expiresAt: this.proformaDate(order.proformaExpiresAt),
+      paymentDueAt: this.proformaDate(order.paymentDueAt),
+      buyer: {
+        name: order.businessBuyer?.companyName ?? "Business buyer",
+        gstin: order.businessBuyer?.gstNumber ?? null,
+        address: this.b2bAddressText(order.businessBuyer?.addresses?.[0]),
+      },
+      seller: {
+        name: order.seller?.profile?.businessLegalName ?? order.seller?.storeName ?? "Seller",
+        gstin: order.seller?.profile?.gstNumber ?? null,
+        registration: this.humanizeTaxValue(order.seller?.profile?.taxRegistrationStatus),
+        address: this.b2bAddressText(order.seller?.addresses?.[0]),
+      },
+      itemDescription: order.product?.name ?? order.seller?.storeName ?? "B2B procurement",
+      quantity: order.quantity,
+      unitPrice: this.moneyForPdf(order.unitPricePaise ?? 0, order.currency),
+      subtotal: this.moneyForPdf(order.subtotalPaise ?? order.buyerPayableAmountPaise, order.currency),
+      transportMode: this.humanizeB2BTransport(order.transportMode),
+      transportStatus: this.humanizeB2BTransport(order.transportStatus),
+      transportCharge: this.moneyForPdf(order.transportChargePaise ?? 0, order.currency),
+      transportPartner: order.transportPartnerName ?? null,
+      transportEta: order.transportEta ?? null,
+      buyerPayable: this.moneyForPdf(order.buyerPayableAmountPaise, order.currency),
+    });
     const upload = await this.storageService.saveB2BProformaInvoicePdf(
       {
         businessBuyerId: order.businessBuyerId,
@@ -3606,12 +3629,17 @@ export class B2BService {
       businessBuyer?: { companyName?: string | null; gstNumber?: string | null } | null;
       seller?: { storeName?: string | null; gstNumber?: string | null } | null;
       taxDocument?: {
+        documentNumber?: string | null;
         documentType: TaxDocumentType;
+        issueDate?: Date | null;
+        supplyDate?: Date | null;
         sellerLegalName: string;
         sellerTaxRegistrationStatus: SellerTaxRegistrationStatus;
         sellerGstin?: string | null;
+        sellerAddressSnapshot?: unknown;
         buyerLegalName?: string | null;
         buyerGstin?: string | null;
+        buyerAddressSnapshot?: unknown;
         placeOfSupplyStateCode?: string | null;
         supplyType?: TaxSupplyType | null;
         reverseCharge: boolean;
@@ -3624,9 +3652,11 @@ export class B2BService {
         invoiceValuePaise: number;
         lines: Array<{
           description: string;
+          sku?: string | null;
           hsnSacCode?: string | null;
           taxClassification: ProductTaxClassification;
           quantity: number;
+          uqc?: string | null;
           taxableValuePaise: number;
           gstRatePercent?: Prisma.Decimal | null;
           cgstPaise: number;
@@ -3635,63 +3665,60 @@ export class B2BService {
           cessPaise: number;
           lineValuePaise: number;
         }>;
+        compliance?: {
+          irn?: string | null;
+          acknowledgementNumber?: string | null;
+          acknowledgementDate?: Date | null;
+          eWayBillNumber?: string | null;
+        } | null;
       };
     },
     actor: RequestUser | null,
   ) {
-    const documentLabel = this.finalDocumentLabel(order.taxDocument?.documentType);
-    const lines = [
-      `1HandIndia Final ${documentLabel}`,
-      `Server generated B2B ${documentLabel.toLowerCase()}.`,
-      `Document No: ${order.taxInvoiceNumber}`,
-      `Order No: ${order.orderNumber}`,
-      `Issued: ${this.proformaDate(order.taxInvoiceIssuedAt)}`,
-      `Fulfilled: ${this.proformaDate(order.fulfilledAt)}`,
-      `Paid: ${this.proformaDate(order.paidAt)}`,
-      `Purchase Order: ${order.purchaseOrderNumber ?? "Not provided"}`,
-      "",
-      `Buyer: ${order.taxDocument?.buyerLegalName ?? order.businessBuyer?.companyName ?? "Business buyer"}`,
-      `Buyer GSTIN: ${order.taxDocument?.buyerGstin ?? "Not provided"}`,
-      `Seller: ${order.taxDocument?.sellerLegalName ?? order.seller?.storeName ?? "Seller"}`,
-      `Seller registration: ${this.humanizeTaxValue(order.taxDocument?.sellerTaxRegistrationStatus)}`,
-      `Seller GSTIN: ${order.taxDocument?.sellerGstin ?? "Not provided"}`,
-      `Supply type: ${this.humanizeTaxValue(order.taxDocument?.supplyType)}`,
-      `Place of supply: ${order.taxDocument?.placeOfSupplyStateCode ?? "Not available"}`,
-      `Reverse charge: ${order.taxDocument?.reverseCharge ? "Yes" : "No"}`,
-      "",
-      ...(order.taxDocument?.lines.flatMap((line, index) => [
-        `Line ${index + 1}: ${line.description}`,
-        `Classification: ${this.humanizeTaxValue(line.taxClassification)} / HSN/SAC: ${line.hsnSacCode ?? "Not applicable"} / Qty: ${line.quantity}`,
-        `Taxable: ${this.moneyForPdf(line.taxableValuePaise, order.currency)} / GST: ${String(line.gstRatePercent ?? 0)}%`,
-        `CGST: ${this.moneyForPdf(line.cgstPaise, order.currency)} / SGST: ${this.moneyForPdf(line.sgstPaise, order.currency)} / IGST: ${this.moneyForPdf(line.igstPaise, order.currency)} / Cess: ${this.moneyForPdf(line.cessPaise, order.currency)}`,
-      ]) ?? [
-        `Line item: ${order.product?.name ?? order.seller?.storeName ?? "B2B procurement"}`,
-        `Quantity: ${order.quantity}`,
-        `Unit price: ${this.moneyForPdf(order.unitPricePaise ?? 0, order.currency)}`,
-        `Subtotal: ${this.moneyForPdf(order.subtotalPaise ?? order.buyerPayableAmountPaise, order.currency)}`,
-      ]),
-      `B2B transport mode: ${this.humanizeB2BTransport(order.transportMode)}`,
-      `B2B transport status: ${this.humanizeB2BTransport(order.transportStatus)}`,
-      `B2B transport charge: ${this.moneyForPdf(order.transportChargePaise ?? 0, order.currency)}`,
-      `B2B transport partner: ${order.transportPartnerName ?? "Not provided"}`,
-      `B2B tracking reference: ${order.transportTrackingRef ?? "Not provided"}`,
-      `Buyer payable: ${this.moneyForPdf(order.buyerPayableAmountPaise, order.currency)}`,
-      `Paid amount: ${this.moneyForPdf(order.paidAmountPaise, order.currency)}`,
-      `Taxable value: ${this.moneyForPdf(order.taxDocument?.taxableValuePaise ?? 0, order.currency)}`,
-      `CGST: ${this.moneyForPdf(order.taxDocument?.cgstPaise ?? 0, order.currency)}`,
-      `SGST: ${this.moneyForPdf(order.taxDocument?.sgstPaise ?? 0, order.currency)}`,
-      `IGST: ${this.moneyForPdf(order.taxDocument?.igstPaise ?? 0, order.currency)}`,
-      `Cess: ${this.moneyForPdf(order.taxDocument?.cessPaise ?? 0, order.currency)}`,
-      `Total GST: ${this.moneyForPdf(order.taxDocument?.totalTaxPaise ?? 0, order.currency)}`,
-      `Invoice value: ${this.moneyForPdf(order.taxDocument?.invoiceValuePaise ?? order.buyerPayableAmountPaise, order.currency)}`,
-      "",
-      `Platform commission deducted from seller: ${order.commissionRateBps} bps / ${this.moneyForPdf(
-        order.commissionAmountPaise,
-        order.currency,
-      )}`,
-      `Seller payout after commission: ${this.moneyForPdf(order.sellerPayoutAmountPaise, order.currency)}`,
-    ];
-    const pdf = this.simplePdf(lines);
+    if (!order.taxDocument) {
+      throw new BadRequestException("B2B final tax document is not available.");
+    }
+    const pdf = await renderTaxDocumentPdf({
+      documentNumber: order.taxDocument.documentNumber ?? order.taxInvoiceNumber,
+      documentType: order.taxDocument.documentType,
+      issueDate: order.taxDocument.issueDate ?? order.taxInvoiceIssuedAt,
+      supplyDate: order.taxDocument.supplyDate ?? order.fulfilledAt ?? order.taxInvoiceIssuedAt,
+      orderNumber: order.orderNumber,
+      sellerLegalName: order.taxDocument.sellerLegalName,
+      sellerTaxRegistrationStatus: order.taxDocument.sellerTaxRegistrationStatus,
+      sellerGstin: order.taxDocument.sellerGstin ?? null,
+      sellerAddressSnapshot: order.taxDocument.sellerAddressSnapshot,
+      buyerLegalName: order.taxDocument.buyerLegalName ?? order.businessBuyer?.companyName ?? "Business buyer",
+      buyerGstin: order.taxDocument.buyerGstin ?? null,
+      buyerAddressSnapshot: order.taxDocument.buyerAddressSnapshot,
+      placeOfSupplyStateCode: order.taxDocument.placeOfSupplyStateCode ?? null,
+      supplyType: order.taxDocument.supplyType ?? null,
+      reverseCharge: order.taxDocument.reverseCharge,
+      currency: order.currency,
+      taxableValuePaise: order.taxDocument.taxableValuePaise,
+      cgstPaise: order.taxDocument.cgstPaise,
+      sgstPaise: order.taxDocument.sgstPaise,
+      igstPaise: order.taxDocument.igstPaise,
+      cessPaise: order.taxDocument.cessPaise,
+      totalTaxPaise: order.taxDocument.totalTaxPaise,
+      invoiceValuePaise: order.taxDocument.invoiceValuePaise,
+      lines: order.taxDocument.lines.map((line) => ({
+        description: line.description,
+        sku: line.sku ?? null,
+        hsnSacCode: line.hsnSacCode ?? null,
+        taxClassification: line.taxClassification,
+        quantity: line.quantity,
+        uqc: line.uqc ?? "NOS",
+        taxableValuePaise: line.taxableValuePaise,
+        gstRatePercent: line.gstRatePercent ?? null,
+        cgstPaise: line.cgstPaise,
+        sgstPaise: line.sgstPaise,
+        igstPaise: line.igstPaise,
+        cessPaise: line.cessPaise,
+        lineValuePaise: line.lineValuePaise,
+      })),
+      compliance: order.taxDocument.compliance ?? null,
+    });
     const upload = await this.storageService.saveB2BTaxInvoicePdf(
       {
         businessBuyerId: order.businessBuyerId,
@@ -4539,7 +4566,7 @@ export class B2BService {
     businessBuyer?: { companyName?: string | null; gstNumber?: string | null } | null;
   }) {
     let fileKey = order.proformaInvoiceFileKey;
-    if (!fileKey) {
+    if (!usesCurrentProfessionalPdfTemplate(fileKey)) {
       fileKey = await this.generateAndStoreB2BProformaInvoice(
         order,
         null,
@@ -4551,7 +4578,7 @@ export class B2BService {
       });
     }
 
-    return this.storageService.b2bProformaInvoiceDocumentAccess(fileKey);
+    return this.storageService.b2bProformaInvoiceDocumentAccess(fileKey ?? undefined);
   }
 
   private async taxInvoiceDocumentAccessForOrder(
@@ -4586,7 +4613,7 @@ export class B2BService {
     }
 
     const existingFileKey = order.taxInvoiceFileKey;
-    if (!existingFileKey) {
+    if (!usesCurrentProfessionalPdfTemplate(existingFileKey)) {
       const taxDocument = await this.taxDocuments.issueB2bDocument(order.id, actor?.id ?? null);
       const issuedAt = taxDocument.issueDate ?? new Date();
       const taxInvoiceNumber = taxDocument.documentNumber;
@@ -4629,7 +4656,7 @@ export class B2BService {
       return this.storageService.b2bTaxInvoiceDocumentAccess(generatedFileKey);
     }
 
-    return this.storageService.b2bTaxInvoiceDocumentAccess(existingFileKey);
+    return this.storageService.b2bTaxInvoiceDocumentAccess(existingFileKey ?? undefined);
   }
 
   private finalDocumentLabel(documentType?: TaxDocumentType | null) {
@@ -4894,48 +4921,23 @@ export class B2BService {
     return `${currency} ${(amountPaise / 100).toFixed(2)}`;
   }
 
-  private simplePdf(lines: string[]) {
-    const pageContent = [
-      "BT",
-      "/F1 12 Tf",
-      "50 790 Td",
-      "16 TL",
-      ...lines.flatMap((line, index) => [
-        index === 0 ? "/F1 18 Tf" : index === 1 ? "/F1 10 Tf" : index === 2 ? "/F1 12 Tf" : "",
-        `(${this.pdfText(line)}) Tj`,
-        "T*",
-      ]).filter(Boolean),
-      "ET",
-    ].join("\n");
-    const objects = [
-      "<< /Type /Catalog /Pages 2 0 R >>",
-      "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-      "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
-      "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-      `<< /Length ${Buffer.byteLength(pageContent, "utf8")} >>\nstream\n${pageContent}\nendstream`,
-    ];
-    const chunks = ["%PDF-1.4\n"];
-    const offsets = [0];
-
-    objects.forEach((object, index) => {
-      offsets.push(Buffer.byteLength(chunks.join(""), "utf8"));
-      chunks.push(`${index + 1} 0 obj\n${object}\nendobj\n`);
-    });
-
-    const xrefOffset = Buffer.byteLength(chunks.join(""), "utf8");
-    chunks.push(`xref\n0 ${objects.length + 1}\n`);
-    chunks.push("0000000000 65535 f \n");
-    offsets.slice(1).forEach((offset) => {
-      chunks.push(`${String(offset).padStart(10, "0")} 00000 n \n`);
-    });
-    chunks.push(
-      `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`,
-    );
-
-    return Buffer.from(chunks.join(""), "utf8");
+  private b2bAddressText(address?: {
+    line1: string;
+    line2?: string | null;
+    area?: string | null;
+    city: string;
+    state: string;
+    pincode: string;
+    country: string;
+  }) {
+    if (!address) return "Address not recorded";
+    return [
+      address.line1,
+      address.line2,
+      address.area,
+      [address.city, address.state, address.pincode].filter(Boolean).join(", "),
+      address.country,
+    ].filter(Boolean).join(", ");
   }
 
-  private pdfText(value: string) {
-    return value.replace(/[\\()]/g, (character) => `\\${character}`).replace(/[^\x20-\x7E]/g, "?");
-  }
 }

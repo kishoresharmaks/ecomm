@@ -51,11 +51,12 @@ import {
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from "node:crypto";
 import type { RequestUser } from "../auth/types/indihub-request";
 import { paginationFromQuery } from "../common/pagination";
+import { usesCurrentProfessionalPdfTemplate } from "../documents/professional-pdf";
 import { PaymentsService } from "../payments/payments.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
 import { TaxDocumentsService } from "../tax/tax-documents.service";
-import { createSimpleB2BPdf } from "./b2b-simple-pdf";
+import { renderB2BReceiptVoucherPdf } from "./b2b-document-pdf";
 import {
   AssignB2BShipmentDto,
   B2BControlActionDto,
@@ -269,22 +270,21 @@ export class B2BOperationsService {
       throw new NotFoundException("B2B receipt voucher not found.");
     }
     let fileKey = payment.receiptVoucher.fileKey;
-    if (!fileKey) {
-      const pdf = createSimpleB2BPdf([
-        "1HandIndia B2B Receipt Voucher",
-        "Payment acknowledgement for the referenced B2B sales order.",
-        `Voucher No: ${payment.receiptVoucher.voucherNumber}`,
-        `Order No: ${order.orderNumber}`,
-        `Buyer: ${order.businessBuyer?.companyName ?? "Business buyer"}`,
-        `Seller: ${order.seller?.storeName ?? "Seller"}`,
-        `Payment method: ${payment.method.replaceAll("_", " ")}`,
-        `Reference: ${payment.referenceNumber ?? payment.id}`,
-        `Amount: ${order.currency} ${(payment.amountPaise / 100).toFixed(2)}`,
-        `Payment status: ${payment.status.replaceAll("_", " ")}`,
-        `Issued: ${payment.receiptVoucher.issuedAt.toISOString()}`,
-        "",
-        "This receipt records payment received and allocated by 1HandIndia.",
-      ]);
+    if (!usesCurrentProfessionalPdfTemplate(fileKey)) {
+      const pdf = await renderB2BReceiptVoucherPdf({
+        voucherNumber: payment.receiptVoucher.voucherNumber,
+        orderNumber: order.orderNumber,
+        issuedAt: payment.receiptVoucher.issuedAt.toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }),
+        buyerName: order.businessBuyer?.companyName ?? "Business buyer",
+        sellerName: order.seller?.storeName ?? "Seller",
+        paymentMethod: payment.method.replaceAll("_", " "),
+        paymentReference: payment.referenceNumber ?? payment.id,
+        paymentStatus: payment.status.replaceAll("_", " "),
+        amount: `${order.currency} ${(payment.amountPaise / 100).toLocaleString("en-IN", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })}`,
+      });
       const upload = await this.storage.saveB2BReceiptVoucherPdf(
         {
           businessBuyerId: order.businessBuyerId,
@@ -295,7 +295,7 @@ export class B2BOperationsService {
         pdf,
       );
       await this.prisma.client.b2BReceiptVoucher.updateMany({
-        where: { id: payment.receiptVoucher.id, fileKey: null },
+        where: { id: payment.receiptVoucher.id, fileKey: fileKey ?? null },
         data: { fileKey: upload.assetKey },
       });
       const voucher = await this.prisma.client.b2BReceiptVoucher.findUnique({
@@ -304,7 +304,7 @@ export class B2BOperationsService {
       });
       fileKey = voucher?.fileKey ?? upload.assetKey;
     }
-    return this.storage.b2bReceiptVoucherDocumentAccess(fileKey);
+    return this.storage.b2bReceiptVoucherDocumentAccess(fileKey ?? undefined);
   }
 
   async podDocumentAccess(

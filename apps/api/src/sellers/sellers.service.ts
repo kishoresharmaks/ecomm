@@ -5,7 +5,6 @@ import {
   HttpException,
   Inject,
   Injectable,
-  InternalServerErrorException,
   NotFoundException,
   Optional,
 } from "@nestjs/common";
@@ -421,15 +420,136 @@ export class SellersService {
 
   async listPublicSellers(query: PublicSellerQueryDto = {}) {
     const limit = query.limit ?? 60;
+    if (query.page) {
+      return this.listPublicSellerPage(query, limit);
+    }
+
     const sellers = await this.prisma.client.seller.findMany({
-      where: {
-        status: SellerStatus.APPROVED,
-        approvalStatus: ApprovalStatus.APPROVED,
-        deletedAt: null,
-      },
+      where: this.publicSellerWhere(query),
       select: publicSellerSelect,
-      orderBy: { storeName: "asc" },
+      orderBy: [{ storeName: "asc" }, { id: "asc" }],
+      take: limit,
     });
+    return this.publicSellerResponses(sellers, query);
+  }
+
+  private async listPublicSellerPage(query: PublicSellerQueryDto, limit: number) {
+    const page = query.page ?? 1;
+    const tiers = this.publicSellerLocationTiers(this.publicSellerWhere(query), query);
+    const tierCounts = await Promise.all(
+      tiers.map((where) => this.prisma.client.seller.count({ where })),
+    );
+    let skip = (page - 1) * limit;
+    let remaining = limit;
+    const sellers: PublicSellerRecord[] = [];
+
+    for (let index = 0; index < tiers.length && remaining > 0; index += 1) {
+      const tier = tiers[index];
+      if (!tier) {
+        continue;
+      }
+      const count = tierCounts[index] ?? 0;
+      if (skip >= count) {
+        skip -= count;
+        continue;
+      }
+
+      const tierSellers = (await this.prisma.client.seller.findMany({
+        where: tier,
+        select: publicSellerSelect,
+        orderBy: [{ storeName: "asc" }, { id: "asc" }],
+        skip,
+        take: remaining,
+      })) as PublicSellerRecord[];
+      sellers.push(...tierSellers);
+      remaining -= tierSellers.length;
+      skip = 0;
+    }
+
+    const items = await this.publicSellerResponses(sellers, query, false);
+    const total = tierCounts.reduce((sum, count) => sum + count, 0);
+    return {
+      items,
+      total,
+      pageInfo: {
+        page,
+        pageSize: limit,
+        hasNextPage: page * limit < total,
+      },
+    };
+  }
+
+  private publicSellerWhere(query: PublicSellerQueryDto): Prisma.SellerWhereInput {
+    const search = query.search?.trim();
+    return {
+      status: SellerStatus.APPROVED,
+      approvalStatus: ApprovalStatus.APPROVED,
+      deletedAt: null,
+      ...(search
+        ? { storeName: { contains: search, mode: Prisma.QueryMode.insensitive } }
+        : {}),
+    };
+  }
+
+  private publicSellerLocationTiers(
+    baseWhere: Prisma.SellerWhereInput,
+    query: PublicSellerQueryDto,
+  ): Prisma.SellerWhereInput[] {
+    const localMatches: Prisma.SellerWhereInput[] = [];
+    const matches: Prisma.SellerWhereInput[] = [];
+
+    if (query.localAreaCode) {
+      localMatches.push({
+        addresses: { some: { localAreaCode: query.localAreaCode.trim().toUpperCase() } },
+      });
+    }
+    if (query.pincode) {
+      localMatches.push({
+        addresses: { some: { pincode: query.pincode.trim().toUpperCase() } },
+      });
+    }
+    if (localMatches.length) {
+      matches.push({ OR: localMatches });
+    }
+    if (query.cityCode) {
+      matches.push({
+        addresses: { some: { cityCode: query.cityCode.trim().toUpperCase() } },
+      });
+    }
+    if (query.stateCode) {
+      matches.push({
+        addresses: { some: { stateCode: query.stateCode.trim().toUpperCase() } },
+      });
+    }
+    if (query.countryCode) {
+      matches.push({
+        addresses: { some: { countryCode: query.countryCode.trim().toUpperCase() } },
+      });
+    }
+
+    if (!matches.length) {
+      return [baseWhere];
+    }
+
+    return [
+      ...matches.map((match, index) => ({
+        AND: [
+          baseWhere,
+          match,
+          ...matches.slice(0, index).map((strongerMatch) => ({ NOT: strongerMatch })),
+        ],
+      })),
+      {
+        AND: [baseWhere, ...matches.map((match) => ({ NOT: match }))],
+      },
+    ];
+  }
+
+  private async publicSellerResponses(
+    sellers: PublicSellerRecord[],
+    query: PublicSellerQueryDto,
+    sortByLocation = true,
+  ) {
     const sellerIds = sellers.map((seller) => seller.id);
     const productCounts = sellerIds.length
       ? await this.prisma.client.product.groupBy({
@@ -465,7 +585,7 @@ export class SellersService {
       ),
     );
 
-    if (hasLocationPreference) {
+    if (hasLocationPreference && sortByLocation) {
       rankedSellers.sort((left, right) => {
         const rankDelta =
           publicSellerLocationMatchRanks[right.locationMatchLevel] -
@@ -480,7 +600,7 @@ export class SellersService {
       });
     }
 
-    return rankedSellers.slice(0, limit);
+    return rankedSellers;
   }
 
   private toPublicSellerResponse(

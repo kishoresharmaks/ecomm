@@ -233,6 +233,9 @@ export function SellerProductsClient({
   useEffect(() => {
     const category = categories.find((item) => item.id === selectedCategoryId) ?? null;
     const editingProduct = productQuery.data ?? null;
+    if (!profileQuery.data || !category || (productId && !editingProduct)) {
+      return;
+    }
     const hydrationKey = `${editingProduct?.id ?? "new"}:${selectedCategoryId}`;
     if (hydratedTaxKeyRef.current === hydrationKey) {
       return;

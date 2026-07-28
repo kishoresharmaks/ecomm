@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { cache } from "react";
 import { JsonLd } from "@/components/seo/json-ld";
 import { StorefrontHome } from "@/components/storefront/storefront-home-sections";
+import { PromotionalPopup } from "@/components/storefront/promotional-popup";
 import {
   browsingLocationQuery,
   parseStorefrontLocationCookie,
@@ -57,6 +58,7 @@ export default async function StorefrontHomePage() {
   return (
     <>
       <JsonLd data={buildGenericJsonLd(seo, { title, description, path })} />
+      <PromotionalPopup />
       <StorefrontHome
         homePromise={homePromise}
         serverLocation={serverLocation}

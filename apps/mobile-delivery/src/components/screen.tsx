@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Modal,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -14,7 +15,12 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, spacing } from "../theme";
 
-export function Screen({ children, scroll = true }: PropsWithChildren<{ scroll?: boolean }>) {
+export function Screen({
+  children,
+  onRefresh,
+  refreshing = false,
+  scroll = true,
+}: PropsWithChildren<{ onRefresh?: () => unknown; refreshing?: boolean; scroll?: boolean }>) {
   const insets = useSafeAreaInsets();
   const bottomPadding = 88 + Math.max(0, insets.bottom);
   if (!scroll) {
@@ -26,7 +32,15 @@ export function Screen({ children, scroll = true }: PropsWithChildren<{ scroll?:
   }
   return (
     <SafeAreaView style={styles.safe} edges={["left", "right", "top"]}>
-      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomPadding }]} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={[styles.scroll, { paddingBottom: bottomPadding }]}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={
+          onRefresh ? (
+            <RefreshControl refreshing={refreshing} tintColor={colors.primary} onRefresh={() => void onRefresh()} />
+          ) : undefined
+        }
+      >
         {children}
       </ScrollView>
     </SafeAreaView>
@@ -261,4 +275,3 @@ const styles = StyleSheet.create({
   emptyText: { color: colors.muted, fontSize: 14, fontWeight: "600", lineHeight: 20 },
   errorCard: { borderColor: "#F5B7B7" },
 });
-

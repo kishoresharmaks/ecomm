@@ -429,6 +429,9 @@ enum ReportExportType {
   SELLER_FINANCE
   SELLER_TAX
   SELLER_RETURNS
+  GSTR1_REVIEW_SELLER_XLSX
+  GSTR1_REVIEW_ALL_SELLERS_ZIP
+  GSTR1_REVIEW_PLATFORM_XLSX
 }
 
 enum PaymentStatus {
@@ -4106,6 +4109,8 @@ model MarketplaceTaxDocument {
   recipientAddressSnapshot Json                @map("recipient_address_snapshot")
   placeOfSupplyStateCode String?               @map("place_of_supply_state_code")
   supplyType            TaxSupplyType?
+  gstrSupplySectionSnapshot GstrSupplySection? @map("gstr_supply_section_snapshot")
+  taxLinesSnapshot      Json?                  @map("tax_lines_snapshot")
   currency              String                 @default("INR")
   taxableValuePaise     Int                    @default(0) @map("taxable_value_paise")
   cgstPaise             Int                    @default(0) @map("cgst_paise")
@@ -6811,6 +6816,29 @@ model CmsAnnouncement {
   @@index([endsAt])
   @@index([status, sortOrder])
   @@map("cms_announcements")
+}
+
+model CmsPopupAnnouncement {
+  id                String        @id @default(uuid()) @db.Uuid
+  title             String
+  desktopImageUrl   String        @map("desktop_image_url")
+  mobileImageUrl    String?       @map("mobile_image_url")
+  imageAlt          String        @map("image_alt")
+  primaryLinkUrl    String?       @map("primary_link_url")
+  primaryCtaLabel   String?       @map("primary_cta_label")
+  secondaryLinkUrl  String?       @map("secondary_link_url")
+  secondaryCtaLabel String?       @map("secondary_cta_label")
+  startsAt          DateTime?     @map("starts_at")
+  endsAt            DateTime?     @map("ends_at")
+  status            ContentStatus @default(DRAFT)
+  sortOrder         Int           @default(0) @map("sort_order")
+  createdAt         DateTime      @default(now()) @map("created_at")
+  updatedAt         DateTime      @updatedAt @map("updated_at")
+
+  @@index([startsAt])
+  @@index([endsAt])
+  @@index([status, sortOrder])
+  @@map("cms_popup_announcements")
 }
 
 model Banner {

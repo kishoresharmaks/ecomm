@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { type ChangeEvent, FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ChangeEvent, FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Description, Dialog, DialogBackdrop, DialogPanel, DialogTitle } from "@headlessui/react";
 import {
   ArrowRight,
   CheckCircle2,
@@ -23,7 +24,7 @@ import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
 import { LocationFields } from "@/components/locations/location-fields";
 import { MapLocationPicker } from "@/components/maps/map-location-picker";
-import { IndihubApiError, type IndihubAuthHeaders } from "@/lib/api";
+import { IndihubApiError, userFacingApiErrorMessage, type IndihubAuthHeaders } from "@/lib/api";
 import {
   uploadSellerDocument,
   type SellerDocumentType,
@@ -144,6 +145,10 @@ export function SellerRegistrationForm({
   const [documents, setDocuments] = useState<SellerDocumentUploadResult[]>([]);
   const [selectedTaxRegistrationStatus, setSelectedTaxRegistrationStatus] =
     useState<SellerTaxRegistrationStatus>("NOT_REGISTERED");
+  const [consentOpen, setConsentOpen] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [privacyAccepted, setPrivacyAccepted] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
 
   const sellerQuery = useQuery({
     queryKey: ["seller-onboarding-profile", auth.authKey],
@@ -181,7 +186,7 @@ export function SellerRegistrationForm({
     onError: (error) => {
       setState({
         status: "error",
-        message: error instanceof Error ? error.message : "Seller onboarding failed.",
+        message: userFacingApiErrorMessage(error),
       });
     },
   });
@@ -206,7 +211,7 @@ export function SellerRegistrationForm({
     onError: (error) => {
       setState({
         status: "error",
-        message: error instanceof Error ? error.message : "Seller capability update failed.",
+        message: userFacingApiErrorMessage(error),
       });
     },
   });
@@ -288,7 +293,12 @@ export function SellerRegistrationForm({
       return;
     }
 
-    const form = new FormData(event.currentTarget);
+    setTermsAccepted(false);
+    setPrivacyAccepted(false);
+    setConsentOpen(true);
+  }
+
+  function submitOnboarding(form: FormData) {
     const line2 = optionalFormValue(form, "line2");
     const area = optionalFormValue(form, "area");
     const businessDescription = optionalFormValue(form, "businessDescription");
@@ -347,6 +357,15 @@ export function SellerRegistrationForm({
         locationConfidenceScore,
       },
     });
+  }
+
+  function confirmPolicyConsent() {
+    if (!termsAccepted || !privacyAccepted || !formRef.current || onboardingMutation.isPending) {
+      return;
+    }
+
+    setConsentOpen(false);
+    submitOnboarding(new FormData(formRef.current));
   }
 
   if (!auth.enabled) {
@@ -465,9 +484,7 @@ export function SellerRegistrationForm({
       <div className="rounded-lg border border-[#F5B7B7] bg-[#FDECEC] p-5 text-sm font-semibold text-[#8A1F1F]">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <span>
-            {sellerQuery.error instanceof Error
-              ? sellerQuery.error.message
-              : "Unable to load seller onboarding status."}
+            {userFacingApiErrorMessage(sellerQuery.error)}
           </span>
           <Button type="button" variant="outline" onClick={() => void sellerQuery.refetch()}>
             <RefreshCw size={16} /> Retry
@@ -478,19 +495,37 @@ export function SellerRegistrationForm({
   }
 
   return (
-    <form onSubmit={onSubmit} className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-      <div className="grid gap-5">
-        <section className="rounded-lg border border-[#E5E7EB] bg-white p-5 shadow-sm">
+    <>
+    <form ref={formRef} onSubmit={onSubmit} className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_300px] xl:items-start">
+      <div className="order-2 grid gap-6 xl:order-1">
+        <div className="overflow-hidden rounded-xl border border-[#F4C7B8] bg-white shadow-sm">
+          <div className="h-1 bg-[#ED3500]" />
+          <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-[#ED3500]">Application overview</p>
+              <h2 className="mt-2 text-xl font-black text-[#123A5A]">Build your verified seller profile</h2>
+              <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-[#667085]">
+                Choose how you sell, upload the required proofs, and add the business details used for review and fulfilment.
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-2 rounded-lg bg-[#FFF0EC] px-3 py-2 text-xs font-bold text-[#9F2600]">
+              <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+              Reviewed before activation
+            </div>
+          </div>
+        </div>
+
+        <section className="rounded-xl border border-[#E1E6EB] bg-white p-5 shadow-sm sm:p-6">
           <div className="flex items-start gap-3">
-            <span className="grid h-11 w-11 place-items-center rounded-md bg-[#FFF0EC] text-[#ED3500]">
-              {registrationModeIcon(commerceMode)}
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#ED3500] text-sm font-black text-white">
+              1
             </span>
             <SectionHeading
-              title="Choose seller mode"
-              description="Choose retail, services, or both. The seller center menu and reports will match the capability you register."
+              title="Choose how you sell"
+              description="Your selection personalises the Seller Hub navigation, listings, reports, and operating workflow."
             />
           </div>
-          <div className="mt-5 grid gap-3 xl:grid-cols-3">
+          <div className="mt-5 grid gap-3 md:grid-cols-3" role="radiogroup" aria-label="Seller mode">
             {[
               {
                 value: "RETAIL" as const,
@@ -521,20 +556,24 @@ export function SellerRegistrationForm({
                   key={option.value}
                   type="button"
                   onClick={() => setCommerceMode(option.value)}
-                  className={`rounded-lg border p-4 text-left transition ${
+                  role="radio"
+                  aria-checked={active}
+                  className={`group relative rounded-xl border p-4 text-left outline-none transition focus-visible:ring-2 focus-visible:ring-[#ED3500] focus-visible:ring-offset-2 ${
                     active
-                      ? "border-[#ED3500] bg-[#FFF6F3] shadow-sm"
-                      : "border-[#E5E7EB] bg-white hover:border-[#ED3500]/50"
+                      ? "border-[#ED3500] bg-[#FFF7F4] shadow-[0_8px_24px_rgba(237,53,0,0.08)]"
+                      : "border-[#DCE3E8] bg-[#FCFDFE] hover:border-[#ED3500]/50 hover:bg-white"
                   }`}
-                  aria-pressed={active}
                 >
+                  <span className={`absolute right-3 top-3 grid h-5 w-5 place-items-center rounded-full border ${active ? "border-[#ED3500] bg-[#ED3500] text-white" : "border-[#B8C3CC] bg-white text-transparent"}`}>
+                    <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
+                  </span>
                   <span className="flex items-center gap-3">
-                    <span className={`grid h-10 w-10 place-items-center rounded-md ${active ? "bg-[#ED3500] text-white" : "bg-[#EAF1F7] text-[#123A5A]"}`}>
+                    <span className={`grid h-10 w-10 place-items-center rounded-lg ${active ? "bg-[#ED3500] text-white" : "bg-[#EEF3F6] text-[#123A5A] group-hover:bg-[#FFF0EC] group-hover:text-[#ED3500]"}`}>
                       <Icon className="h-5 w-5" aria-hidden="true" />
                     </span>
-                    <span>
+                    <span className="pr-5">
                       <span className="block text-sm font-black text-[#1F2933]">{option.title}</span>
-                      <span className="mt-1 block text-xs font-bold uppercase tracking-wide text-[#667085]">
+                      <span className="mt-1 block text-[10px] font-black uppercase tracking-[0.12em] text-[#667085]">
                         {option.label}
                       </span>
                     </span>
@@ -546,33 +585,31 @@ export function SellerRegistrationForm({
           </div>
         </section>
 
-        <section className="rounded-lg border border-[#E5E7EB] bg-white p-5 shadow-sm">
-          <div className="flex items-start gap-3">
-            <span className="grid h-11 w-11 place-items-center rounded-md bg-[#EAF1F7] text-[#163B5C]">
-              <ShieldCheck className="h-5 w-5" aria-hidden="true" />
+        <section className="rounded-xl border border-[#CDEBDD] bg-[#F5FCF8] p-4 sm:p-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#DDF7E9] text-[#0F8A5F]">
+                <CheckCircle2 className="h-5 w-5" aria-hidden="true" />
+              </span>
+              <div>
+                <p className="text-sm font-black text-[#1F2933]">Account email verified</p>
+                <p className="mt-1 break-all text-sm font-semibold text-[#526271]">{currentEmail ?? "Signed-in account"}</p>
+              </div>
+            </div>
+            <span className="self-start rounded-full bg-white px-3 py-1 text-xs font-black text-[#0F8A5F] ring-1 ring-[#B8E5CE] sm:self-center">
+              Ready
             </span>
-            <SectionHeading
-              title="Email verification"
-             />
           </div>
-          <div className="mt-5 grid gap-4">
-            <Field
-              label="Account email"
-              name="accountEmail"
-              type="email"
-              defaultValue={currentEmail ?? "Signed-in account"}
-              readOnly
-            />
-          </div>
+          <input name="accountEmail" type="hidden" value={currentEmail ?? "Signed-in account"} />
         </section>
 
-        <section className="rounded-lg border border-[#E5E7EB] bg-white p-5 shadow-sm">
+        <section className="rounded-xl border border-[#E1E6EB] bg-white p-5 shadow-sm sm:p-6">
           <div className="flex items-start gap-3">
-            <span className="grid h-10 w-10 place-items-center rounded-md bg-[#FFF0EC] text-[#ED3500]">
-              <FileText className="h-5 w-5" aria-hidden="true" />
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#ED3500] text-sm font-black text-white">
+              2
             </span>
             <SectionHeading
-              title="ID and signature verification"
+              title="Upload verification documents"
               description={
                 isServiceOnlyMode(commerceMode)
                   ? "Upload only the proofs needed for service-provider review. PAN and tax documents can be added later if required."
@@ -580,22 +617,27 @@ export function SellerRegistrationForm({
               }
             />
           </div>
-          <div className="mt-5 grid gap-3">
+          <div className="mt-5 flex items-center justify-between gap-3 border-y border-[#EEF1F4] py-3 text-xs font-bold text-[#667085]">
+            <span>PDF, JPG, PNG or WebP</span>
+            <span>Required documents are shown first</span>
+          </div>
+          <div className="mt-4 grid gap-3">
             {verificationDocuments
               .filter((document) => !isServiceOnlyMode(commerceMode) || !["PAN_CARD", "GST_CERTIFICATE", "FSSAI_CERTIFICATE"].includes(document.type))
-              .map((document) => {
-                const displayDocument = {
+              .map((document) => ({
                   ...document,
                   required: sellerDocumentIsRequired(
                     document,
                     selectedTaxRegistrationStatus,
                   ),
-                };
+                }))
+              .sort((left, right) => Number(right.required) - Number(left.required))
+              .map((displayDocument) => {
                 return (
                   <DocumentUploadField
-                    key={document.type}
+                    key={displayDocument.type}
                     document={displayDocument}
-                    value={documents.find((item) => item.documentType === document.type)}
+                    value={documents.find((item) => item.documentType === displayDocument.type)}
                     authHeaders={auth.authHeaders}
                     disabled={onboardingMutation.isPending}
                     onUploaded={(uploaded) =>
@@ -610,10 +652,10 @@ export function SellerRegistrationForm({
           </div>
         </section>
 
-        <section className="rounded-lg border border-[#E5E7EB] bg-white p-5 shadow-sm">
+        <section className="rounded-xl border border-[#E1E6EB] bg-white p-5 shadow-sm sm:p-6">
           <div className="flex items-start gap-3">
-            <span className="grid h-11 w-11 place-items-center rounded-md bg-[#EAF1F7] text-[#163B5C]">
-              <Store className="h-5 w-5" aria-hidden="true" />
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#ED3500] text-sm font-black text-white">
+              3
             </span>
             <SectionHeading
               title={isServiceOnlyMode(commerceMode) ? "Service profile and coverage" : "Store and pickup details"}
@@ -627,7 +669,13 @@ export function SellerRegistrationForm({
             />
           </div>
 
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <div className="mt-6 border-t border-[#EEF1F4] pt-5">
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-[#ED3500]">Business identity</p>
+            <p className="mt-1 text-sm font-semibold leading-6 text-[#667085]">
+              Use details that match your registration, tax, and payout records.
+            </p>
+          </div>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
             <Field
               label={isServiceOnlyMode(commerceMode) ? "Service business name" : "Store name"}
               name="storeName"
@@ -813,7 +861,15 @@ export function SellerRegistrationForm({
             </div>
           </div>
 
-          <div className="mt-5 grid gap-4">
+          <div className="mt-7 border-t border-[#EEF1F4] pt-5">
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-[#ED3500]">
+              {isServiceOnlyMode(commerceMode) ? "Service location" : "Pickup and operating address"}
+            </p>
+            <p className="mt-1 text-sm font-semibold leading-6 text-[#667085]">
+              Select the exact location used for verification, fulfilment, and service coverage.
+            </p>
+          </div>
+          <div className="mt-4 grid gap-4">
             <Field
               label={isServiceOnlyMode(commerceMode) ? "Service base address" : "Address line 1"}
               name="line1"
@@ -831,38 +887,167 @@ export function SellerRegistrationForm({
               radiusPreviewKm={5}
             />
 
-            <div className="text-center text-xs font-semibold leading-5 text-[#667085] mt-4 mb-2">
-              By submitting this form, you agree to 1HandIndia's{" "}
-              <Link href="https://1handindia.com/terms-and-conditions" target="_blank" rel="noopener noreferrer" className="text-[#123A5A] transition hover:text-[#ED3500] hover:underline">Terms of Service</Link>
-              {", "}
-              <Link href="https://1handindia.com/privacy-policy" target="_blank" rel="noopener noreferrer" className="text-[#123A5A] transition hover:text-[#ED3500] hover:underline">Privacy Policy</Link>
-              {", "}
-              <Link href="https://1handindia.com/refund-return-policy" target="_blank" rel="noopener noreferrer" className="text-[#123A5A] transition hover:text-[#ED3500] hover:underline">Return Policy</Link>
-              {", "}
-              <Link href="https://1handindia.com/shipping-policy" target="_blank" rel="noopener noreferrer" className="text-[#123A5A] transition hover:text-[#ED3500] hover:underline">Shipping Policy</Link>
-              {", and "}
-              <Link href="https://1handindia.com/seller-policy" target="_blank" rel="noopener noreferrer" className="text-[#123A5A] transition hover:text-[#ED3500] hover:underline">Seller Policy</Link>
-              .
+            <div className="mt-3 rounded-xl border border-[#F4C7B8] bg-[#FFF8F5] p-4 sm:p-5">
+              <div className="flex items-start gap-3">
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#FFF0EC] text-[#ED3500]">
+                  <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+                </span>
+                <div>
+                  <p className="text-sm font-black text-[#1F2933]">Review and submit</p>
+                  <p className="mt-1 text-xs font-semibold leading-5 text-[#667085]">
+                    You will confirm the Terms and Privacy Policy before final submission. Please also review 1HandIndia&apos;s{" "}
+                    <Link href="https://1handindia.com/refund-return-policy" target="_blank" rel="noopener noreferrer" className="font-bold text-[#123A5A] transition hover:text-[#ED3500] hover:underline">Return Policy</Link>,{" "}
+                    <Link href="https://1handindia.com/shipping-policy" target="_blank" rel="noopener noreferrer" className="font-bold text-[#123A5A] transition hover:text-[#ED3500] hover:underline">Shipping Policy</Link>, and{" "}
+                    <Link href="https://1handindia.com/seller-policy" target="_blank" rel="noopener noreferrer" className="font-bold text-[#123A5A] transition hover:text-[#ED3500] hover:underline">Seller Policy</Link>.
+                  </p>
+                </div>
+              </div>
+
+              <Button type="submit" disabled={onboardingMutation.isPending} className="mt-5 w-full sm:w-auto">
+                {onboardingMutation.isPending ? "Submitting..." : `Submit ${primaryLabel} profile for review`}
+              </Button>
+
+              {state.status === "success" ? (
+                <div className="mt-4"><StatusBadge tone="success">{state.message}</StatusBadge></div>
+              ) : null}
+              {state.status === "error" ? (
+                <div className="mt-4"><StatusBadge tone="danger">{state.message}</StatusBadge></div>
+              ) : null}
             </div>
-
-            <Button type="submit" disabled={onboardingMutation.isPending}>
-              {onboardingMutation.isPending ? "Submitting..." : `Submit ${primaryLabel} profile for review`}
-            </Button>
-
-            {state.status === "success" ? (
-              <StatusBadge tone="success">{state.message}</StatusBadge>
-            ) : null}
-            {state.status === "error" ? (
-              <StatusBadge tone="danger">{state.message}</StatusBadge>
-            ) : null}
           </div>
         </section>
       </div>
 
-      <aside className="self-start xl:sticky xl:top-8">
+      <aside className="order-1 self-start xl:order-2 xl:sticky xl:top-8">
         <OnboardingCompletionStatus status={onboardingStatus} commerceMode={commerceMode} />
       </aside>
     </form>
+    <SellerPolicyConsentDialog
+      open={consentOpen}
+      termsAccepted={termsAccepted}
+      privacyAccepted={privacyAccepted}
+      submitting={onboardingMutation.isPending}
+      onTermsChange={setTermsAccepted}
+      onPrivacyChange={setPrivacyAccepted}
+      onClose={() => setConsentOpen(false)}
+      onConfirm={confirmPolicyConsent}
+    />
+    </>
+  );
+}
+
+function SellerPolicyConsentDialog({
+  open,
+  termsAccepted,
+  privacyAccepted,
+  submitting,
+  onTermsChange,
+  onPrivacyChange,
+  onClose,
+  onConfirm,
+}: {
+  open: boolean;
+  termsAccepted: boolean;
+  privacyAccepted: boolean;
+  submitting: boolean;
+  onTermsChange: (accepted: boolean) => void;
+  onPrivacyChange: (accepted: boolean) => void;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const consentComplete = termsAccepted && privacyAccepted;
+
+  return (
+    <Dialog open={open} onClose={onClose} className="relative z-[140]">
+      <DialogBackdrop
+        transition
+        className="fixed inset-0 bg-[#101828]/55 backdrop-blur-[2px] transition duration-200 data-closed:opacity-0"
+      />
+      <div className="fixed inset-0 w-screen overflow-y-auto px-4 py-6 sm:py-10">
+        <div className="flex min-h-full items-center justify-center">
+          <DialogPanel
+            transition
+            className="w-full max-w-lg overflow-hidden rounded-2xl border border-[#F4C7B8] bg-white shadow-2xl transition duration-200 data-closed:scale-95 data-closed:opacity-0"
+          >
+            <div className="h-1 bg-[#ED3500]" />
+            <div className="p-5 sm:p-6">
+              <div className="flex items-start gap-3">
+                <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[#FFF0EC] text-[#ED3500]">
+                  <ShieldCheck className="h-5 w-5" aria-hidden="true" />
+                </span>
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.14em] text-[#ED3500]">Final confirmation</p>
+                  <DialogTitle className="mt-1 text-xl font-black text-[#123A5A]">
+                    Accept policies to submit
+                  </DialogTitle>
+                  <Description className="mt-2 text-sm font-semibold leading-6 text-[#667085]">
+                    Review and accept both policies before sending your 1HandIndia Seller Hub application.
+                  </Description>
+                </div>
+              </div>
+
+              <div className="mt-5 rounded-xl border border-[#E1E6EB] bg-[#FAFBFC] p-4 text-xs font-semibold leading-5 text-[#667085]">
+                Your application includes identity, business, contact, tax, document, and operating-location information used for seller verification and marketplace operations.
+              </div>
+
+              <div className="mt-5 grid gap-3">
+                <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-[#E1E6EB] p-4 transition hover:border-[#ED3500]/50 hover:bg-[#FFFCFB]">
+                  <input
+                    type="checkbox"
+                    checked={termsAccepted}
+                    onChange={(event) => onTermsChange(event.target.checked)}
+                    className="mt-0.5 h-5 w-5 shrink-0 accent-[#ED3500]"
+                  />
+                  <span className="text-sm font-semibold leading-6 text-[#526271]">
+                    I have read and accept the{" "}
+                    <Link
+                      href="/terms-and-conditions"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-black text-[#123A5A] underline decoration-[#ED3500]/40 underline-offset-2 hover:text-[#ED3500]"
+                    >
+                      Terms and Conditions
+                    </Link>
+                    .
+                  </span>
+                </label>
+
+                <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-[#E1E6EB] p-4 transition hover:border-[#ED3500]/50 hover:bg-[#FFFCFB]">
+                  <input
+                    type="checkbox"
+                    checked={privacyAccepted}
+                    onChange={(event) => onPrivacyChange(event.target.checked)}
+                    className="mt-0.5 h-5 w-5 shrink-0 accent-[#ED3500]"
+                  />
+                  <span className="text-sm font-semibold leading-6 text-[#526271]">
+                    I have read and accept the{" "}
+                    <Link
+                      href="/privacy-policy"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-black text-[#123A5A] underline decoration-[#ED3500]/40 underline-offset-2 hover:text-[#ED3500]"
+                    >
+                      Privacy Policy
+                    </Link>
+                    .
+                  </span>
+                </label>
+              </div>
+
+              <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <Button type="button" variant="outline" onClick={onClose}>
+                  Go back
+                </Button>
+                <Button type="button" disabled={!consentComplete || submitting} onClick={onConfirm}>
+                  <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+                  {submitting ? "Submitting..." : "Accept and submit"}
+                </Button>
+              </div>
+            </div>
+          </DialogPanel>
+        </div>
+      </div>
+    </Dialog>
   );
 }
 
@@ -890,76 +1075,102 @@ function OnboardingCompletionStatus({
   const combined = commerceMode === "BOTH";
   const sections = [
     {
-      title: "Email Verification",
+      title: "Account",
+      phase: "application" as const,
       items: [
-        { key: "email", label: "Email Verification", complete: status.emailVerified },
+        { key: "email", label: "Email verified", complete: status.emailVerified },
       ],
     },
     {
-      title: "ID & Signature Verification",
+      title: "Verification documents",
+      phase: "application" as const,
       items: [
-        { key: "id", label: "ID Verification", complete: status.idVerified },
-        { key: "signature", label: "Signature Verification", complete: status.signatureVerified },
+        { key: "id", label: "ID proof uploaded", complete: status.idVerified },
+        { key: "signature", label: "Signature proof uploaded", complete: status.signatureVerified },
       ],
     },
     {
-      title: serviceOnly ? "Service Profile & Coverage" : combined ? "Store, Pickup & Coverage" : "Store & Pickup Details",
+      title: serviceOnly ? "Service profile" : combined ? "Business and operating address" : "Store and pickup details",
+      phase: "application" as const,
       items: [
-        { key: "display", label: "Display Name", complete: status.displayNameReady },
+        { key: "display", label: "Display name added", complete: status.displayNameReady },
         {
           key: "pickup",
-          label: serviceOnly ? "Service Base Address" : combined ? "Pickup / Service Base Address" : "Pickup Address",
+          label: serviceOnly ? "Service base address added" : combined ? "Operating address added" : "Pickup address added",
           complete: status.pickupAddressReady,
         },
       ],
     },
     {
-      title: serviceOnly ? "Service Listing Readiness" : combined ? "Retail & Service Readiness" : "Listing & Stock Availability",
+      title: "After approval",
+      phase: "after-approval" as const,
       items:
         serviceOnly
-          ? [{ key: "service-listing", label: "First Service Listing", complete: status.serviceListingCreated }]
+          ? [{ key: "service-listing", label: "Create your first service", complete: status.serviceListingCreated }]
           : combined
             ? [
-                { key: "product-listing", label: "First Product Listing", complete: status.productListingCreated },
-                { key: "service-listing", label: "First Service Listing", complete: status.serviceListingCreated },
-                { key: "stock", label: "Product Stock Added", complete: status.stockAdded },
+                { key: "product-listing", label: "Create your first product", complete: status.productListingCreated },
+                { key: "service-listing", label: "Create your first service", complete: status.serviceListingCreated },
+                { key: "stock", label: "Add product stock", complete: status.stockAdded },
               ]
-          : [
-              { key: "product-listing", label: "Listing Created", complete: status.productListingCreated },
-              { key: "stock", label: "Stock Added", complete: status.stockAdded },
-            ],
+            : [
+                { key: "product-listing", label: "Create your first listing", complete: status.productListingCreated },
+                { key: "stock", label: "Add stock", complete: status.stockAdded },
+              ],
     },
   ];
-  const allItems = sections.flatMap((section) => section.items);
+  const applicationItems = sections
+    .filter((section) => section.phase === "application")
+    .flatMap((section) => section.items);
+  const completedApplicationItems = applicationItems.filter((item) => item.complete).length;
   const progress = Math.round(
-    (allItems.filter((item) => item.complete).length / allItems.length) * 100,
+    (completedApplicationItems / applicationItems.length) * 100,
   );
-  const firstIncompleteKey = sections
-    .flatMap((section) => section.items)
-    .find((item) => !item.complete)?.key;
+  const firstIncompleteItem = applicationItems.find((item) => !item.complete);
 
   return (
-    <section className="overflow-hidden rounded-lg border border-[#F59E0B] bg-[#FFF7E8] shadow-sm">
-      <div className="p-4">
-        <h2 className="text-base font-black leading-5 text-[#1F2933]">
-          Your onboarding completion status
-        </h2>
-        <div className="mt-4 flex items-center gap-3">
-          <span className="rounded-full bg-[#F5A623] px-3 py-1 text-sm font-black text-white">
+    <section className="overflow-hidden rounded-xl border border-[#E1E6EB] bg-white shadow-sm">
+      <div className="border-b border-[#EEF1F4] p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-[#ED3500]">Application progress</p>
+            <h2 className="mt-2 text-lg font-black leading-6 text-[#123A5A]">Complete your profile</h2>
+          </div>
+          <span className="rounded-full bg-[#FFF0EC] px-3 py-1 text-sm font-black text-[#ED3500]">
             {progress}%
           </span>
-          <div className="h-2 flex-1 overflow-hidden rounded-full border border-[#F5A623] bg-white">
-            <div className="h-full rounded-full bg-[#F5A623]" style={{ width: `${progress}%` }} />
-          </div>
         </div>
+        <div className="mt-4 h-2 overflow-hidden rounded-full bg-[#F1F3F5]">
+          <div className="h-full rounded-full bg-[#ED3500] transition-[width]" style={{ width: `${progress}%` }} />
+        </div>
+        <p className="mt-2 text-xs font-bold text-[#667085]">
+          {completedApplicationItems} of {applicationItems.length} application checks complete
+        </p>
+        {firstIncompleteItem ? (
+          <div className="mt-4 rounded-lg bg-[#FFF8F5] p-3">
+            <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#ED3500]">Next required action</p>
+            <p className="mt-1 text-sm font-bold text-[#1F2933]">{firstIncompleteItem.label}</p>
+          </div>
+        ) : (
+          <div className="mt-4 rounded-lg bg-[#F0FDF6] p-3 text-sm font-bold text-[#0F8A5F]">
+            Application details are ready for review.
+          </div>
+        )}
       </div>
 
-      <div className="border-t border-[#F5A623]/50 bg-white px-4 py-4">
+      <div className="p-5">
         <div className="grid gap-5">
           {sections.map((section) => (
-            <div key={section.title}>
-              <h3 className="text-sm font-semibold text-[#1F2933]">{section.title}</h3>
-              <div className="mt-3 grid gap-3">
+            <div key={section.title} className={section.phase === "after-approval" ? "border-t border-[#EEF1F4] pt-5" : undefined}>
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-xs font-black uppercase tracking-[0.1em] text-[#526271]">{section.title}</h3>
+                {section.phase === "after-approval" ? (
+                  <span className="rounded-full bg-[#F1F3F5] px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-[#667085]">
+                    Not required now
+                  </span>
+                ) : null}
+              </div>
+              <div className="mt-3 grid gap-2.5">
                 {section.items.map((item) => (
                   <OnboardingCompletionItem
                     key={item.key}
@@ -967,7 +1178,7 @@ function OnboardingCompletionStatus({
                     state={
                       item.complete
                         ? "complete"
-                        : item.key === firstIncompleteKey
+                        : section.phase === "application" && item.key === firstIncompleteItem?.key
                           ? "current"
                           : "pending"
                     }
@@ -993,14 +1204,14 @@ function OnboardingCompletionItem({
   const current = state === "current";
 
   return (
-    <div className="flex items-center gap-3 text-sm">
+    <div className="flex items-center gap-2.5 text-sm">
       <span
         className={
           complete
             ? "text-[#32B877]"
             : current
-              ? "text-[#F5A623]"
-              : "text-[#F5A623]"
+              ? "text-[#ED3500]"
+              : "text-[#A7B1BA]"
         }
       >
         {complete ? (
@@ -1061,7 +1272,7 @@ function PlanPicker({
       ) : null}
       {error ? (
         <p className="mt-4 rounded-md bg-[#FDECEC] px-3 py-2 text-sm font-bold text-[#8A1F1F]">
-          {error.message}
+          {userFacingApiErrorMessage(error)}
         </p>
       ) : null}
       {!loading && plans.length === 0 ? (
@@ -1218,7 +1429,7 @@ function DocumentUploadField({
     } catch (error) {
       setStatus({
         type: "error",
-        message: error instanceof Error ? error.message : "Document upload failed.",
+        message: userFacingApiErrorMessage(error),
       });
     } finally {
       event.target.value = "";
@@ -1227,34 +1438,37 @@ function DocumentUploadField({
 
   return (
     <label
-      className={`block rounded-md border p-3 transition ${
-        value
-          ? "border-[#32B877] bg-[#F0FDF6]"
-          : document.required
-            ? "border-[#F5B7B7] bg-[#FFF8F8]"
-            : "border-[#D8E2EA] bg-[#F8FAFC]"
+      className={`group block cursor-pointer rounded-xl border p-4 outline-none transition focus-within:ring-2 focus-within:ring-[#ED3500] focus-within:ring-offset-2 ${
+        status.type === "error"
+          ? "border-[#E7A6A6] bg-[#FFF8F8]"
+          : value
+            ? "border-[#B8E5CE] bg-[#F3FCF7]"
+            : document.required
+              ? "border-[#E7D4CD] bg-[#FFFCFB] hover:border-[#ED3500]/50"
+              : "border-[#E1E6EB] bg-[#FAFBFC] hover:border-[#BFC9D1]"
       }`}
     >
-      <span className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <span className="min-w-0 flex-1">
+      <span className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <span className="flex min-w-0 flex-1 items-start gap-3">
+          <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-lg ${value ? "bg-[#DDF7E9] text-[#0F8A5F]" : document.required ? "bg-[#FFF0EC] text-[#ED3500]" : "bg-[#EEF3F6] text-[#526271]"}`}>
+            {value ? <CheckCircle2 className="h-5 w-5" aria-hidden="true" /> : <FileText className="h-5 w-5" aria-hidden="true" />}
+          </span>
+          <span className="min-w-0 flex-1">
           <span className="flex flex-wrap items-center gap-1.5">
             <span className="text-sm font-black text-[#1F2933]">{document.label}</span>
             {document.required ? (
-              <span className="text-sm font-black text-[#ED3500]" aria-label="Required">*</span>
-            ) : null}
-            {document.required ? (
-              <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide bg-[#FFF0EC] text-[#ED3500]">
+              <span className="inline-flex items-center rounded-full bg-[#FFF0EC] px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-[#ED3500]">
                 Required
               </span>
             ) : (
-              <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide bg-[#F3F4F6] text-[#9CA3AF]">
+              <span className="inline-flex items-center rounded-full bg-[#EEF1F4] px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-[#7C8995]">
                 Optional
               </span>
             )}
           </span>
           <span className="mt-1 block text-xs font-semibold leading-5 text-[#667085]">
             {value ? (
-              <span className="flex items-center gap-1 text-[#0F8A5F]">
+              <span className="block truncate font-bold text-[#0F8A5F] [&>span:first-child]:hidden">
                 <span>✓</span>
                 <span>{value.fileName}</span>
               </span>
@@ -1262,14 +1476,15 @@ function DocumentUploadField({
               document.description
             )}
           </span>
+          </span>
         </span>
-        <span className="inline-flex h-9 shrink-0 items-center gap-2 rounded-md border border-[#D8E2EA] bg-white px-3 text-xs font-black text-[#163B5C]">
+        <span className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg border border-[#D8E2EA] bg-white px-4 text-xs font-black text-[#123A5A] shadow-sm transition group-hover:border-[#ED3500] group-hover:text-[#ED3500]">
           {status.type === "uploading" ? (
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
           ) : (
             <Upload className="h-4 w-4" aria-hidden="true" />
           )}
-          {value ? "Replace" : "Upload"}
+          {status.type === "uploading" ? "Uploading" : value ? "Replace file" : "Choose file"}
         </span>
       </span>
       <input
@@ -1416,18 +1631,6 @@ function registrationModeLabel(mode: SellerRegistrationMode) {
   }
 
   return mode === "SERVICE" ? "service" : "retail";
-}
-
-function registrationModeIcon(mode: SellerRegistrationMode) {
-  if (mode === "SERVICE") {
-    return <Wrench className="h-5 w-5" aria-hidden="true" />;
-  }
-
-  if (mode === "BOTH") {
-    return <Sparkles className="h-5 w-5" aria-hidden="true" />;
-  }
-
-  return <Store className="h-5 w-5" aria-hidden="true" />;
 }
 
 function hasChecklistDocumentType(

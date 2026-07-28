@@ -7,8 +7,13 @@ export type SellerPayoutAvailability = {
   sellerReady: boolean;
   hasPayoutMethod: boolean;
   eligibleSplitCount: number;
+  eligibleB2BOrderCount: number;
+  eligibleServiceSettlementCount: number;
+  serviceReceivableOffsetPaise: number;
   sellerCashReceivableOffsetPaise?: number;
   sellerCashReceivableOutstandingPaise?: number;
+  ledgerDebtOffsetPaise: number;
+  holdReceivableCount: number;
   pendingPayoutsPaise?: number;
   paidPayoutsPaise?: number;
   periodFrom?: string | null;

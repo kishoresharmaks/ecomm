@@ -79,12 +79,16 @@ export async function uploadSellerPrivateDocument(
   file: MobileUploadFile,
   documentType: SellerDocumentType,
   onProgress?: UploadProgress,
+  context?: { serviceBookingNumber?: string },
 ): Promise<MobileUploadResult> {
   const request = await signedJson<PrivateDocumentUploadRequest>("/storage/private-document/upload-request", auth, {
     documentType,
     fileName: file.name,
     contentType: file.mimeType,
     sizeBytes: await fileSizeBytes(file),
+    ...(context?.serviceBookingNumber
+      ? { serviceBookingNumber: context.serviceBookingNumber }
+      : {}),
   });
 
   if (request.provider === "s3") {
@@ -92,7 +96,14 @@ export async function uploadSellerPrivateDocument(
     return { assetKey: request.assetKey };
   }
 
-  return uploadLocalDocument(file, documentType, request.uploadPath, auth, onProgress);
+  return uploadLocalDocument(
+    file,
+    documentType,
+    request.uploadPath,
+    auth,
+    onProgress,
+    context?.serviceBookingNumber,
+  );
 }
 
 function uploadImageKitImage(
@@ -142,6 +153,7 @@ function uploadLocalDocument(
   uploadPath: string,
   auth: MobileAuthHeaders,
   onProgress?: UploadProgress,
+  serviceBookingNumber?: string,
 ): Promise<MobileUploadResult> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -177,6 +189,9 @@ function uploadLocalDocument(
 
       const body = new FormData();
       body.append("documentType", documentType);
+      if (serviceBookingNumber) {
+        body.append("serviceBookingNumber", serviceBookingNumber);
+      }
       body.append("file", reactNativeFormDataFile(file));
 
       xhr.send(body);
@@ -245,7 +260,7 @@ async function fileSizeBytes(file: MobileUploadFile) {
   throw new Error("Could not read the selected file size. Please choose the document again.");
 }
 
-async function bearerHeaders(auth: MobileAuthHeaders) {
+async function bearerHeaders(auth: MobileAuthHeaders): Promise<Record<string, string>> {
   const token = (await auth.getBearerToken?.()) ?? auth.bearerToken;
   return token ? { Authorization: `Bearer ${token}` } : {};
 }

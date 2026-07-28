@@ -266,13 +266,13 @@ export class UpdateOwnDeliveryPartnerProfileDto {
   @IsOptional()
   @Type(() => Number)
   @IsLatitude()
-  baseLatitude?: number;
+  baseLatitude?: number | null;
 
   @ApiPropertyOptional({ example: 76.9558 })
   @IsOptional()
   @Type(() => Number)
   @IsLongitude()
-  baseLongitude?: number;
+  baseLongitude?: number | null;
 
   @ApiPropertyOptional({ example: 12 })
   @IsOptional()
@@ -280,7 +280,7 @@ export class UpdateOwnDeliveryPartnerProfileDto {
   @IsInt()
   @Min(1)
   @Max(500)
-  serviceRadiusKm?: number;
+  serviceRadiusKm?: number | null;
 
   @ApiPropertyOptional({ example: "Covers Salem local routes." })
   @IsOptional()

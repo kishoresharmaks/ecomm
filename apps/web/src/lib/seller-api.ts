@@ -1251,6 +1251,9 @@ export type SellerTopSoldItem = {
   revenuePaise: number;
 };
 export type SellerInventoryReport = {
+  currency?: string;
+  baseCurrency?: string;
+  fxRate?: number;
   summary: { productCount: number; activeProductCount: number; variantCount: number; lowStockCount: number };
   lowStockVariants: SellerInventoryVariant[];
   variants: SellerInventoryVariant[];
@@ -1305,7 +1308,7 @@ export type SellerFinanceReport = {
   baseCurrency?: string;
   fxRate?: number;
   summary: {
-    grossSalesPaise: number; commissionPaise: number; netPayablePaise: number; refundAdjustmentPaise: number; platformFeePaise: number; orderCount: number;
+    grossSalesPaise: number; commissionPaise: number; gstOnCommissionPaise: number; tdsPaise: number; tcsPaise: number; netPayablePaise: number; refundAdjustmentPaise: number; platformFeePaise: number; couponDiscountPaise: number; orderCount: number;
     pendingPayoutsPaise: number; pendingPayoutsCount: number; paidPayoutsPaise: number; paidPayoutsCount: number; eligiblePaise: number; eligibleCount: number;
   };
   recentPayouts: SellerPayoutRecord[];
@@ -1519,6 +1522,9 @@ export type SellerReturnRecord = {
   order: { orderNumber: string };
 };
 export type SellerReturnsReport = {
+  currency?: string;
+  baseCurrency?: string;
+  fxRate?: number;
   summary: { totalCount: number; approvedCount: number; pendingCount: number; requestedAmountPaise: number; approvedAmountPaise: number; itemCount: number };
   byStatus: { status: string; count: number; requestedAmountPaise: number; approvedAmountPaise: number }[];
   recentReturns: SellerReturnRecord[];
@@ -1621,13 +1627,11 @@ function queryString(query: Record<string, string | number | undefined | string[
           }
         }
       } else if (key === "dateFrom" && typeof value === "string" && value.length === 10) {
-        const [y, m, d] = value.split("-");
-        const date = new Date(Number(y), Number(m) - 1, Number(d), 0, 0, 0, 0);
-        params.append(key, date.toISOString());
+        const date = utcDateBoundary(value, false);
+        if (date) params.append(key, date);
       } else if (key === "dateTo" && typeof value === "string" && value.length === 10) {
-        const [y, m, d] = value.split("-");
-        const date = new Date(Number(y), Number(m) - 1, Number(d), 23, 59, 59, 999);
-        params.append(key, date.toISOString());
+        const date = utcDateBoundary(value, true);
+        if (date) params.append(key, date);
       } else {
         params.append(key, String(value));
       }
@@ -1636,4 +1640,17 @@ function queryString(query: Record<string, string | number | undefined | string[
 
   const str = params.toString();
   return str ? `?${str}` : "";
+}
+
+function utcDateBoundary(value: string, endOfDay: boolean) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return undefined;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day, endOfDay ? 23 : 0, endOfDay ? 59 : 0, endOfDay ? 59 : 0, endOfDay ? 999 : 0));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return undefined;
+
+  return date.toISOString();
 }

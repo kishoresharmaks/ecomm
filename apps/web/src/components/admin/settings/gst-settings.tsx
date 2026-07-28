@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useDeferredValue, useEffect, useState } from "react";
 import { FileCheck2, Info, Landmark, Save, Truck } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, StatusBadge } from "@indihub/ui";
@@ -11,6 +11,7 @@ import {
   AdminSwitch,
 } from "@/components/admin/admin-ux";
 import { userFacingApiErrorMessage } from "@/lib/api";
+import { searchSacMaster, type SacMasterEntry } from "@/lib/storefront-api";
 import {
   getAdminGstSettings,
   gstSettingsValidationError,
@@ -165,6 +166,37 @@ export function AdminGstSettingsClient() {
             description="The first two digits must match the platform GSTIN."
             onChange={(value) =>
               markDirty({ ...draft, platform: { ...draft.platform, stateCode: value } })
+            }
+            required
+          />
+          <SacCodeField
+            value={draft.platform.serviceSacCode}
+            onChange={(serviceSacCode) =>
+              markDirty({
+                ...draft,
+                platform: { ...draft.platform, serviceSacCode },
+              })
+            }
+            onSelect={(entry) =>
+              markDirty({
+                ...draft,
+                platform: {
+                  ...draft.platform,
+                  serviceSacCode: entry.sacCode,
+                  serviceDescription: entry.description,
+                },
+              })
+            }
+          />
+          <TextField
+            label="Platform service description"
+            value={draft.platform.serviceDescription}
+            description="Printed on marketplace commission and platform-service GST documents."
+            onChange={(serviceDescription) =>
+              markDirty({
+                ...draft,
+                platform: { ...draft.platform, serviceDescription },
+              })
             }
             required
           />
@@ -412,5 +444,75 @@ function ReadOnlyProvider() {
         No provider credentials or automatic submission are used.
       </p>
     </div>
+  );
+}
+
+function SacCodeField({
+  value,
+  onChange,
+  onSelect,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onSelect: (entry: SacMasterEntry) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const deferredValue = useDeferredValue(value.trim());
+  const suggestions = useQuery({
+    queryKey: ["platform-gst-sac-master", deferredValue],
+    queryFn: () => searchSacMaster({ search: deferredValue, limit: 8 }),
+    enabled: deferredValue.length >= 2,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  return (
+    <label className="relative space-y-2">
+      <span className="block text-xs font-black uppercase text-[#667085]">
+        Platform service SAC
+      </span>
+      <input
+        value={value}
+        required
+        inputMode="numeric"
+        maxLength={6}
+        placeholder="Search six-digit SAC"
+        onFocus={() => setOpen(true)}
+        onChange={(event) => {
+          onChange(event.target.value.replace(/\D/g, "").slice(0, 6));
+          setOpen(true);
+        }}
+        className={inputClass}
+      />
+      {open && suggestions.data?.length ? (
+        <div
+          role="listbox"
+          className="absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-md border border-[#D8E2EA] bg-white p-1 shadow-lg"
+        >
+          {suggestions.data.map((entry) => (
+            <button
+              key={entry.id}
+              type="button"
+              role="option"
+              aria-selected={entry.sacCode === value}
+              onClick={() => {
+                onSelect(entry);
+                setOpen(false);
+              }}
+              className="block w-full rounded px-3 py-2 text-left hover:bg-[#FFF0EC]"
+            >
+              <span className="block text-sm font-black text-[#1F2933]">
+                {entry.sacCode}
+              </span>
+              <span className="mt-0.5 block text-xs font-semibold leading-5 text-[#667085]">
+                {entry.description}
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+      <span className="block text-xs font-semibold leading-5 text-[#667085]">
+        Classifies the marketplace service on platform-issued GST invoices.
+      </span>
+    </label>
   );
 }

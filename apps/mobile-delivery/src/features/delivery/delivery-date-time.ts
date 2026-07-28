@@ -36,6 +36,28 @@ export function serializeDeliveryEstimate(value: Date | null) {
   return value.toISOString();
 }
 
+export function deliveryEstimateError(value: Date | null, now = new Date()) {
+  if (!value) return null;
+  if (Number.isNaN(value.getTime())) return "Select a valid estimated delivery date and time.";
+  return value.getTime() < now.getTime() ? "Estimated delivery must be in the future." : null;
+}
+
+export function nextAttemptDateError(value: string, now = new Date()) {
+  const normalized = value.trim();
+  if (!normalized) return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(normalized);
+  if (!match) return "Use YYYY-MM-DD format.";
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+    return "Enter a real calendar date.";
+  }
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return date < today ? "Next attempt date cannot be in the past." : null;
+}
+
 export function formatDeliveryEstimateDate(value: Date | null) {
   if (!value) {
     return "Select date";
@@ -59,5 +81,5 @@ export function formatDeliveryEstimateTime(value: Date | null) {
 }
 
 export function earliestDeliveryDate(now = new Date()) {
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+  return new Date(now);
 }

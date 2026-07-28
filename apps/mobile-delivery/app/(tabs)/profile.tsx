@@ -32,17 +32,17 @@ export default function DeliveryProfileScreen() {
     enabled: auth.enabled,
   });
   const updateMutation = useMutation({
-    mutationFn: () =>
-      updateDeliveryProfile(auth.authHeaders, {
+    mutationFn: () => {
+      const location = deliveryProfileLocationPayload(baseLatitude, baseLongitude, serviceRadiusKm);
+      return updateDeliveryProfile(auth.authHeaders, {
         // null (not "") clears a stored value server-side; compactPayload keeps null.
         phone: phone.trim() || null,
         vehicleNumber: vehicleNumber.trim() || null,
         isAvailable,
-        ...optionalNumberPayload("baseLatitude", baseLatitude),
-        ...optionalNumberPayload("baseLongitude", baseLongitude),
-        ...optionalPositiveIntegerPayload("serviceRadiusKm", serviceRadiusKm),
+        ...location,
         notes: notes.trim() || null,
-      }),
+      });
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["delivery-profile"] });
     },
@@ -66,6 +66,7 @@ export default function DeliveryProfileScreen() {
 
   const profile = profileQuery.data;
   const hasBaseLocation = Boolean(baseLatitude && baseLongitude);
+  const serviceRadiusError = serviceRadiusValidationError(serviceRadiusKm);
   const locationStatusStyle =
     locationState.tone === "success"
       ? { backgroundColor: "#E9F7F1", borderColor: "#B7E4CF", color: "#0F5132" }
@@ -142,7 +143,7 @@ export default function DeliveryProfileScreen() {
   };
 
   return (
-    <Screen>
+    <Screen refreshing={profileQuery.isRefetching} onRefresh={() => profileQuery.refetch()}>
       <Header title="Profile" subtitle="Contact, vehicle, GPS base location, workload, and COD exposure." />
       <QueryState loading={profileQuery.isLoading} error={profileQuery.error} onRetry={() => void profileQuery.refetch()} />
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
@@ -208,43 +209,68 @@ export default function DeliveryProfileScreen() {
           </View>
           <View style={{ gap: 8 }}>
             <Button title={hasBaseLocation ? "Update GPS location" : "Use current GPS location"} loading={locationState.loading} onPress={useCurrentLocation} />
+            {hasBaseLocation ? (
+              <Button
+                title="Clear GPS location"
+                tone="secondary"
+                onPress={() => {
+                  setBaseLatitude("");
+                  setBaseLongitude("");
+                  setLocationState({ loading: false, tone: "info", message: "GPS location will be removed when you save the profile." });
+                }}
+              />
+            ) : null}
             {locationState.tone === "danger" ? (
               <Button title="Open Android settings" tone="secondary" onPress={() => void Linking.openSettings()} />
             ) : null}
           </View>
         </View>
-        <Field label="Service radius km" value={serviceRadiusKm} onChangeText={setServiceRadiusKm} keyboardType="number-pad" />
+        <Field
+          label="Service radius km"
+          value={serviceRadiusKm}
+          onChangeText={setServiceRadiusKm}
+          keyboardType="number-pad"
+          {...(serviceRadiusError ? { error: serviceRadiusError } : {})}
+        />
         <Field label="Notes" value={notes} onChangeText={setNotes} multiline />
         {updateMutation.isSuccess ? <StatusChip label="Profile saved" tone="success" /> : null}
         {updateMutation.error ? <Text style={{ color: "#D64545", fontWeight: "800" }}>{updateMutation.error.message}</Text> : null}
-        <Button title="Save profile" loading={updateMutation.isPending} onPress={() => updateMutation.mutate()} />
+        <Button title="Save profile" disabled={Boolean(serviceRadiusError)} loading={updateMutation.isPending} onPress={() => updateMutation.mutate()} />
       </Card>
     </Screen>
   );
 }
 
-function optionalNumberPayload<Key extends "baseLatitude" | "baseLongitude">(
-  key: Key,
-  value: string,
-): Partial<Record<Key, number>> {
-  const normalized = value.trim();
-  if (!normalized) {
-    return {};
+function deliveryProfileLocationPayload(baseLatitude: string, baseLongitude: string, serviceRadiusKm: string) {
+  const latitude = optionalCoordinate(baseLatitude, -90, 90, "latitude");
+  const longitude = optionalCoordinate(baseLongitude, -180, 180, "longitude");
+  if ((latitude === null) !== (longitude === null)) {
+    throw new Error("Capture both latitude and longitude, or clear both values.");
   }
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? ({ [key]: parsed } as Partial<Record<Key, number>>) : {};
+  const radiusError = serviceRadiusValidationError(serviceRadiusKm);
+  if (radiusError) throw new Error(radiusError);
+  return {
+    baseLatitude: latitude,
+    baseLongitude: longitude,
+    serviceRadiusKm: serviceRadiusKm.trim() ? Number(serviceRadiusKm) : null,
+  };
 }
 
-function optionalPositiveIntegerPayload<Key extends "serviceRadiusKm">(
-  key: Key,
-  value: string,
-): Partial<Record<Key, number>> {
+function optionalCoordinate(value: string, minimum: number, maximum: number, label: string) {
   const normalized = value.trim();
-  if (!normalized) {
-    return {};
-  }
+  if (!normalized) return null;
   const parsed = Number(normalized);
-  return Number.isInteger(parsed) && parsed > 0
-    ? ({ [key]: parsed } as Partial<Record<Key, number>>)
-    : {};
+  if (!Number.isFinite(parsed) || parsed < minimum || parsed > maximum) {
+    throw new Error(`Select a valid ${label}.`);
+  }
+  return parsed;
+}
+
+function serviceRadiusValidationError(value: string) {
+  const normalized = value.trim();
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 500
+    ? null
+    : "Service radius must be a whole number from 1 to 500 km.";
 }

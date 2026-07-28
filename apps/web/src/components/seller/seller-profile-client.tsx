@@ -5,7 +5,7 @@ import { CreditCard, FileText, Loader2, MapPinned, Upload, Wrench } from "lucide
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, StatusBadge } from "@indihub/ui";
 import { StorefrontImage } from "@/components/storefront/storefront-image";
-import { type IndihubAuthHeaders } from "@/lib/api";
+import { userFacingApiErrorMessage, type IndihubAuthHeaders } from "@/lib/api";
 import {
   uploadSellerDocument,
   type SellerDocumentType,
@@ -457,7 +457,7 @@ function EditServiceAreasModal({
     },
     onError: (error) => {
       setNoticeTone("danger");
-      setNotice(error instanceof Error ? error.message : "Update failed.");
+      setNotice(userFacingApiErrorMessage(error));
     },
   });
 
@@ -535,7 +535,7 @@ function DocumentUploadField({
     } catch (error) {
       setStatus({
         type: "error",
-        message: error instanceof Error ? error.message : "Document upload failed.",
+        message: userFacingApiErrorMessage(error),
       });
     } finally {
       event.target.value = "";
@@ -792,7 +792,7 @@ function CourierPickupSyncButton({
     onError: (error) => {
       confirmation.requestConfirmation({
         title: "Sync Failed",
-        description: error instanceof Error ? error.message : "Sync failed. Ensure your address, phone, and email are filled.",
+        description: userFacingApiErrorMessage(error),
         confirmLabel: "Understood",
         cancelLabel: "Close",
         tone: "danger",

@@ -17,6 +17,7 @@ import { CmsRevisionQueryDto } from "./dto/cms-revision.dto";
 import { CreateHomepageSectionDto, UpdateHomepageSectionDto } from "./dto/homepage-section.dto";
 import { CreateSeoEntryDto, SeoEntryQueryDto, UpdateSeoEntryDto } from "./dto/seo-entry.dto";
 import { CreateCmsAnnouncementDto, UpdateCmsAnnouncementDto } from "./dto/cms-announcement.dto";
+import { CreateCmsPopupAnnouncementDto, UpdateCmsPopupAnnouncementDto } from "./dto/cms-popup-announcement.dto";
 
 type PublishedHomepageSectionOptions = {
   includeInactiveSchedule?: boolean;
@@ -879,6 +880,115 @@ export class CmsService {
     return { deleted: true };
   }
 
+  async listAdminPopupAnnouncements(query: CmsQueryDto) {
+    const { skip, take, page } = this.pagination(query);
+    const where: Prisma.CmsPopupAnnouncementWhereInput = {
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.search ? { title: { contains: query.search, mode: "insensitive" } } : {})
+    };
+    const [items, total] = await this.prisma.client.$transaction(async (tx) => {
+      const items = await tx.cmsPopupAnnouncement.findMany({
+        where,
+        orderBy: [{ sortOrder: "asc" }, { updatedAt: "desc" }],
+        skip,
+        take,
+      });
+      const total = await tx.cmsPopupAnnouncement.count({ where });
+      return [items, total] as const;
+    });
+    return { items, total, page, limit: take };
+  }
+
+  listPublishedPopupAnnouncements() {
+    const now = new Date();
+    return this.publicCmsRead("published popup announcements", () => this.prisma.client.cmsPopupAnnouncement.findMany({
+      where: {
+        status: { in: [ContentStatus.PUBLISHED, ContentStatus.SCHEDULED] },
+        AND: [
+          { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
+          { OR: [{ endsAt: null }, { endsAt: { gte: now } }] }
+        ]
+      },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }]
+    }), []);
+  }
+
+  getAdminPopupAnnouncement(id: string) {
+    return this.getPopupAnnouncementOrThrow(id);
+  }
+
+  async createPopupAnnouncement(actor: RequestUser, dto: CreateCmsPopupAnnouncementDto) {
+    const data = this.popupAnnouncementData(dto);
+    const popup = await this.prisma.client.cmsPopupAnnouncement.create({ data });
+    await this.audit(actor, "cms.popup_announcement.created", "cms_popup_announcement", popup.id, undefined, popup);
+    await this.recordRevision(actor, "cms_popup_announcement", popup.id, "created", popup);
+    await this.invalidateHomepageCache();
+    return popup;
+  }
+
+  async updatePopupAnnouncement(actor: RequestUser, id: string, dto: UpdateCmsPopupAnnouncementDto) {
+    const existing = await this.getPopupAnnouncementOrThrow(id);
+    const merged: CreateCmsPopupAnnouncementDto = {
+      title: dto.title ?? existing.title,
+      desktopImageUrl: dto.desktopImageUrl ?? existing.desktopImageUrl,
+      ...(dto.mobileImageUrl !== undefined
+        ? { mobileImageUrl: dto.mobileImageUrl }
+        : existing.mobileImageUrl
+          ? { mobileImageUrl: existing.mobileImageUrl }
+          : {}),
+      imageAlt: dto.imageAlt ?? existing.imageAlt,
+      ...(dto.primaryLinkUrl !== undefined
+        ? { primaryLinkUrl: dto.primaryLinkUrl }
+        : existing.primaryLinkUrl
+          ? { primaryLinkUrl: existing.primaryLinkUrl }
+          : {}),
+      ...(dto.primaryCtaLabel !== undefined
+        ? { primaryCtaLabel: dto.primaryCtaLabel }
+        : existing.primaryCtaLabel
+          ? { primaryCtaLabel: existing.primaryCtaLabel }
+          : {}),
+      ...(dto.secondaryLinkUrl !== undefined
+        ? { secondaryLinkUrl: dto.secondaryLinkUrl }
+        : existing.secondaryLinkUrl
+          ? { secondaryLinkUrl: existing.secondaryLinkUrl }
+          : {}),
+      ...(dto.secondaryCtaLabel !== undefined
+        ? { secondaryCtaLabel: dto.secondaryCtaLabel }
+        : existing.secondaryCtaLabel
+          ? { secondaryCtaLabel: existing.secondaryCtaLabel }
+          : {}),
+      ...(dto.startsAt !== undefined
+        ? { startsAt: dto.startsAt }
+        : existing.startsAt
+          ? { startsAt: existing.startsAt.toISOString() }
+          : {}),
+      ...(dto.endsAt !== undefined
+        ? { endsAt: dto.endsAt }
+        : existing.endsAt
+          ? { endsAt: existing.endsAt.toISOString() }
+          : {}),
+      status: dto.status ?? existing.status,
+      sortOrder: dto.sortOrder ?? existing.sortOrder,
+    };
+    const popup = await this.prisma.client.cmsPopupAnnouncement.update({
+      where: { id },
+      data: this.popupAnnouncementData(merged),
+    });
+    await this.audit(actor, "cms.popup_announcement.updated", "cms_popup_announcement", popup.id, existing, popup);
+    await this.recordRevision(actor, "cms_popup_announcement", popup.id, "updated", popup);
+    await this.invalidateHomepageCache();
+    return popup;
+  }
+
+  async deletePopupAnnouncement(actor: RequestUser, id: string) {
+    const existing = await this.getPopupAnnouncementOrThrow(id);
+    await this.prisma.client.cmsPopupAnnouncement.delete({ where: { id } });
+    await this.audit(actor, "cms.popup_announcement.deleted", "cms_popup_announcement", id, existing);
+    await this.recordRevision(actor, "cms_popup_announcement", id, "deleted", existing);
+    await this.invalidateHomepageCache();
+    return { deleted: true };
+  }
+
   async createHomepageSection(actor: RequestUser, dto: CreateHomepageSectionDto) {
     const section = await this.prisma.client.homepageSection.create({
       data: {
@@ -1277,6 +1387,69 @@ export class CmsService {
       throw new NotFoundException("Announcement not found.");
     }
     return announcement;
+  }
+
+  private async getPopupAnnouncementOrThrow(id: string) {
+    const popup = await this.prisma.client.cmsPopupAnnouncement.findUnique({ where: { id } });
+    if (!popup) {
+      throw new NotFoundException("Promotional popup not found.");
+    }
+    return popup;
+  }
+
+  private popupAnnouncementData(dto: CreateCmsPopupAnnouncementDto): Prisma.CmsPopupAnnouncementUncheckedCreateInput {
+    const startsAt = this.parseOptionalDate(dto.startsAt, "Popup start date");
+    const endsAt = this.parseOptionalDate(dto.endsAt, "Popup end date");
+    if (startsAt && endsAt && endsAt <= startsAt) {
+      throw new BadRequestException("Popup end date must be after the start date.");
+    }
+    if (dto.status === ContentStatus.SCHEDULED && !startsAt) {
+      throw new BadRequestException("Scheduled popups require a start date.");
+    }
+
+    const primaryLinkUrl = this.popupLink(dto.primaryLinkUrl, "Primary link");
+    const primaryCtaLabel = this.blankToNull(dto.primaryCtaLabel);
+    const secondaryLinkUrl = this.popupLink(dto.secondaryLinkUrl, "Secondary link");
+    const secondaryCtaLabel = this.blankToNull(dto.secondaryCtaLabel);
+    if (primaryCtaLabel && !primaryLinkUrl) {
+      throw new BadRequestException("Primary button requires a destination link.");
+    }
+    if (secondaryCtaLabel !== null || secondaryLinkUrl !== null) {
+      if (!secondaryCtaLabel || !secondaryLinkUrl) {
+        throw new BadRequestException("Secondary button label and destination link must be provided together.");
+      }
+    }
+
+    const desktopImageUrl = normalizeStorageImageReference(dto.desktopImageUrl, "Desktop popup image");
+    if (!desktopImageUrl) {
+      throw new BadRequestException("Desktop popup image is required.");
+    }
+
+    return {
+      title: dto.title.trim(),
+      desktopImageUrl,
+      mobileImageUrl: normalizeStorageImageReference(dto.mobileImageUrl, "Mobile popup image") || null,
+      imageAlt: dto.imageAlt.trim(),
+      primaryLinkUrl,
+      primaryCtaLabel,
+      secondaryLinkUrl,
+      secondaryCtaLabel,
+      startsAt,
+      endsAt,
+      status: dto.status ?? ContentStatus.DRAFT,
+      sortOrder: dto.sortOrder ?? 0,
+    };
+  }
+
+  private popupLink(value: string | null | undefined, label: string) {
+    const link = this.blankToNull(value);
+    if (!link) {
+      return null;
+    }
+    if (link.startsWith("/") || /^(https?:|mailto:|tel:|onehandindia:)/i.test(link)) {
+      return link;
+    }
+    throw new BadRequestException(`${label} must be an internal path or supported absolute URL.`);
   }
 
   private parseOptionalDate(value: string | undefined | null, label: string) {

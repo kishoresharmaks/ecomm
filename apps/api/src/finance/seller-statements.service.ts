@@ -9,6 +9,7 @@ import {
 } from "../common/pagination";
 import { RequestUser } from "../auth/types/indihub-request";
 import { PrismaService } from "../prisma/prisma.service";
+import { renderProfessionalPdf } from "../documents/professional-pdf";
 import { FinanceListQueryDto, GenerateStatementDto } from "./dto/finance.dto";
 
 type StatementExport = Prisma.SellerStatementGetPayload<{
@@ -256,7 +257,7 @@ export class SellerStatementsService {
       };
     }
 
-    const pdf = this.statementPdf(statement);
+    const pdf = await this.statementPdf(statement);
     return {
       fileName: `${fileBase}.pdf`,
       contentType: "application/pdf",
@@ -279,7 +280,7 @@ export class SellerStatementsService {
       ["TCS", statement.tcsPaise],
       ["Seller settlement fee", statement.platformFeePaise],
       ["Refund adjustment", statement.refundAdjustmentPaise],
-      ["Manual adjustment", statement.adjustmentPaise],
+      ["Offsets and adjustments", statement.adjustmentPaise],
       ["Net payable", statement.netPayablePaise],
       []
     ];
@@ -406,70 +407,128 @@ export class SellerStatementsService {
   }
 
   private statementPdf(statement: StatementExport) {
-    const lines = [
-      "1HandIndia Seller Statement",
-      `Statement: ${statement.statementNumber}`,
-      `Seller: ${statement.seller.storeName}`,
-      `Period: ${this.shortDate(statement.periodFrom)} to ${this.shortDate(statement.periodTo)}`,
-      `Payout: ${statement.payout?.payoutNumber ?? "Not linked"}`,
-      "",
-      `Gross sales: ${this.rupees(statement.grossSalesPaise)}`,
-      `Commission: ${this.rupees(statement.commissionPaise)}`,
-      `GST on commission: ${this.rupees(statement.gstOnCommissionPaise)}`,
-      `TDS: ${this.rupees(statement.tdsPaise)}`,
-      `TCS: ${this.rupees(statement.tcsPaise)}`,
-      `Seller settlement fee: ${this.rupees(statement.platformFeePaise)}`,
-      `Refund adjustment: ${this.rupees(statement.refundAdjustmentPaise)}`,
-      `Manual adjustment: ${this.rupees(statement.adjustmentPaise)}`,
-      `Net payable: ${this.rupees(statement.netPayablePaise)}`,
-      "",
-      `Product order payouts: ${statement.payout?.orderSplits.length ?? 0}`,
-      `B2B order payouts: ${statement.payout?.b2bOrders.length ?? 0}`,
-      `Service booking payouts: ${statement.payout?.serviceSettlements.length ?? 0}`,
-      `Service cash offsets: ${this.rupees(this.serviceReceivableOffsetTotal(statement))}`,
-      `Seller-collected COD offsets: ${this.rupees(this.sellerCashReceivableOffsetTotal(statement))}`,
-      "",
-      "This statement is generated from 1HandIndia seller finance ledger records."
-    ];
-
-    return this.simplePdf(lines);
-  }
-
-  private simplePdf(lines: string[]) {
-    const content = lines
-      .map((line, index) => `BT /F1 12 Tf 50 ${780 - index * 22} Td (${this.pdfText(line)}) Tj ET`)
-      .join("\n");
-    const objects = [
-      "1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj",
-      "2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj",
-      "3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >> endobj",
-      "4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj",
-      `5 0 obj << /Length ${Buffer.byteLength(content)} >> stream\n${content}\nendstream endobj`
-    ];
-    let body = "%PDF-1.4\n";
-    const offsets = [0];
-
-    for (const object of objects) {
-      offsets.push(Buffer.byteLength(body));
-      body += `${object}\n`;
-    }
-
-    const xrefOffset = Buffer.byteLength(body);
-    body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
-    for (const offset of offsets.slice(1)) {
-      body += `${String(offset).padStart(10, "0")} 00000 n \n`;
-    }
-    body += `trailer << /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
-
-    return Buffer.from(body, "utf8");
+    const payout = statement.payout;
+    return renderProfessionalPdf({
+      title: "Seller Settlement Statement",
+      documentNumber: statement.statementNumber,
+      status: statement.status.replaceAll("_", " "),
+      subtitle: "Detailed settlement, deductions, offsets, and payout reconciliation.",
+      issuedBy: "1HandIndia Seller Finance",
+      issuerCaption: "Marketplace settlement and ledger document",
+      metadata: [
+        { label: "Statement number", value: statement.statementNumber },
+        { label: "Payout number", value: payout?.payoutNumber ?? "Not linked" },
+        { label: "Period from", value: this.shortDate(statement.periodFrom) },
+        { label: "Period to", value: this.shortDate(statement.periodTo) },
+      ],
+      parties: [
+        {
+          label: "Statement issued to",
+          name: statement.seller.profile?.businessLegalName ?? statement.seller.storeName,
+          lines: [
+            `Store: ${statement.seller.storeName}`,
+            `GSTIN: ${statement.seller.profile?.gstNumber ?? "Not provided"}`,
+          ],
+        },
+        {
+          label: "Issued by",
+          name: "1HandIndia Seller Finance",
+          lines: ["Settlement support and payout reconciliation", "Amounts are shown in INR unless stated otherwise."],
+        },
+      ],
+      sections: [
+        {
+          type: "totals",
+          title: "Settlement summary",
+          emphasizedLabel: "Net payable",
+          rows: [
+            { label: "Gross sales", value: this.rupees(statement.grossSalesPaise) },
+            { label: "Commission", value: this.rupees(statement.commissionPaise) },
+            { label: "GST on commission", value: this.rupees(statement.gstOnCommissionPaise) },
+            { label: "TDS", value: this.rupees(statement.tdsPaise) },
+            { label: "TCS", value: this.rupees(statement.tcsPaise) },
+            { label: "Seller settlement fee", value: this.rupees(statement.platformFeePaise) },
+            { label: "Refund adjustment", value: this.rupees(statement.refundAdjustmentPaise) },
+            { label: "Offsets and adjustments", value: this.rupees(statement.adjustmentPaise) },
+            { label: "Net payable", value: this.rupees(statement.netPayablePaise) },
+          ],
+        },
+        {
+          type: "table",
+          title: "Product order payouts",
+          columns: [
+            { key: "reference", label: "Order", width: 120 },
+            { key: "gross", label: "Gross", width: 95, align: "right" },
+            { key: "deductions", label: "Commission / Tax", width: 135, align: "right" },
+            { key: "fees", label: "TDS / TCS / Fee", width: 120, align: "right" },
+            { key: "net", label: "Net", width: 95, align: "right" },
+          ],
+          rows: (payout?.orderSplits ?? []).map((split) => ({
+            reference: split.order.orderNumber,
+            gross: this.rupees(split.sellerSubtotalPaise),
+            deductions: `${this.rupees(split.commissionPaise)}\nGST ${this.rupees(split.gstOnCommissionPaise)}`,
+            fees: `TDS ${this.rupees(split.tdsPaise)}\nTCS ${this.rupees(split.tcsPaise)}\nFee ${this.rupees(split.platformFeePaise)}`,
+            net: this.rupees(split.netPayablePaise),
+          })),
+          emptyText: "No product order payouts are linked to this statement.",
+        },
+        {
+          type: "table",
+          title: "B2B order payouts",
+          columns: [
+            { key: "reference", label: "Order", width: 130 },
+            { key: "buyer", label: "Buyer payable", width: 115, align: "right" },
+            { key: "commission", label: "Commission", width: 105, align: "right" },
+            { key: "seller", label: "Seller payout", width: 115, align: "right" },
+            { key: "status", label: "Status", width: 95 },
+          ],
+          rows: (payout?.b2bOrders ?? []).map((order) => ({
+            reference: order.orderNumber,
+            buyer: this.rupees(order.buyerPayableAmountPaise),
+            commission: this.rupees(order.commissionAmountPaise),
+            seller: this.rupees(order.sellerPayoutAmountPaise),
+            status: order.settlementStatus.replaceAll("_", " "),
+          })),
+          emptyText: "No B2B payouts are linked to this statement.",
+        },
+        {
+          type: "table",
+          title: "Service booking payouts",
+          columns: [
+            { key: "reference", label: "Booking", width: 120 },
+            { key: "gross", label: "Gross", width: 100, align: "right" },
+            { key: "deductions", label: "Deductions", width: 155, align: "right" },
+            { key: "net", label: "Net payable", width: 110, align: "right" },
+            { key: "status", label: "Status", width: 90 },
+          ],
+          rows: (payout?.serviceSettlements ?? []).map((settlement) => ({
+            reference: settlement.booking.bookingNumber,
+            gross: `${this.rupees(settlement.grossAmountPaise)}\nInspection ${this.rupees(settlement.inspectionFeeGrossPaise)}`,
+            deductions: `Commission ${this.rupees(settlement.commissionPaise)}\nGST ${this.rupees(settlement.gstOnCommissionPaise)}\nTDS/TCS ${this.rupees(settlement.tdsPaise + settlement.tcsPaise)}\nFee ${this.rupees(settlement.platformFeePaise)}\nRefund ${this.rupees(settlement.refundAdjustmentPaise)}`,
+            net: this.rupees(settlement.netPayablePaise),
+            status: settlement.status.replaceAll("_", " "),
+          })),
+          emptyText: "No service payouts are linked to this statement.",
+        },
+        {
+          type: "fields",
+          title: "Cash collection offsets",
+          fields: [
+            { label: "Service cash offsets", value: this.rupees(this.serviceReceivableOffsetTotal(statement)) },
+            { label: "Seller-collected COD offsets", value: this.rupees(this.sellerCashReceivableOffsetTotal(statement)) },
+          ],
+        },
+      ],
+      footerLines: [
+        "This statement is generated from append-only 1HandIndia seller finance ledger records.",
+        "For reconciliation questions, quote the statement and payout numbers shown above.",
+      ],
+      fileTitle: `Seller statement ${statement.statementNumber}`,
+    });
   }
 
   private csvCell(value: string) {
     return `"${value.replace(/"/g, '""')}"`;
-  }
-
-  private pdfText(value: string) {
-    return value.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
   }
 
   private rupees(paise: number) {

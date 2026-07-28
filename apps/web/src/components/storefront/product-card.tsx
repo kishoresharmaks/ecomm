@@ -4,27 +4,35 @@ import Link from "next/link";
 import type { Route } from "next";
 import { useState, type MouseEvent } from "react";
 import { Eye, FilePlus2, Heart, PackageCheck, ShoppingCart, Star, Store } from "lucide-react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button, cn } from "@indihub/ui";
 import { useMarket } from "@/components/market/market-context";
-import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
 import { primeProductDetail } from "@/lib/product-prefetch";
-import { getCart, primaryImage, primaryVariant, variantBaseMrp, variantBaseOriginalPrice, variantBasePrice, type ProductSummary } from "@/lib/storefront-api";
+import { primaryImage, primaryVariant, variantBaseMrp, variantBaseOriginalPrice, variantBasePrice, type ProductSummary } from "@/lib/storefront-api";
 import { ProductQuickViewModal } from "./product-quick-view-modal";
 import { StorefrontImage } from "./storefront-image";
 import { getStorefrontStockStatus, storefrontStockBadgeClass } from "./storefront-stock-status";
-import { useStorefrontWishlist } from "./use-storefront-wishlist";
 
 type ProductCardProps = {
   product: ProductSummary;
   onAddToCart?: (product: ProductSummary) => void;
   isAdding?: boolean;
+  isInCart?: boolean;
+  isWishlisted?: boolean;
+  isWishlistPending?: boolean;
+  onWishlistToggle?: (product: ProductSummary) => Promise<void>;
 };
 
-export function ProductCard({ product, onAddToCart, isAdding = false }: ProductCardProps) {
+export function ProductCard({
+  product,
+  onAddToCart,
+  isAdding = false,
+  isInCart = false,
+  isWishlisted = false,
+  isWishlistPending = false,
+  onWishlistToggle,
+}: ProductCardProps) {
   const market = useMarket();
-  const customerAuth = useCustomerAuth();
-  const wishlist = useStorefrontWishlist();
   const queryClient = useQueryClient();
   const [quickViewOpen, setQuickViewOpen] = useState(false);
   const imageUrl = primaryImage(product);
@@ -41,31 +49,17 @@ export function ProductCard({ product, onAddToCart, isAdding = false }: ProductC
   const mrp =
     originalDealPrice ??
     (variantBaseMrp(variant) && basePrice && variantBaseMrp(variant)! > basePrice ? variantBaseMrp(variant) : null);
-  const isWishlisted = wishlist.hasWishlistProduct(product.id);
-  const isWishlistPending = wishlist.isPendingProductId === product.id;
   const listingMode = product.listingMode ?? "CART";
   const isEnquiryOnly = listingMode === "ENQUIRY_ONLY";
   const campaignBadge = product.campaignBadge?.trim() || (deal ? "Deal" : "");
   const reviewCount = product.reviewSummary?.reviewCount ?? 0;
   const averageRating = product.reviewSummary?.averageRating ?? null;
-  const cartQuery = useQuery({
-    queryKey: ["cart", customerAuth.authKey],
-    queryFn: () => getCart(customerAuth.authHeaders),
-    enabled: customerAuth.enabled,
-  });
-  const isInCart = Boolean(
-    variant &&
-      cartQuery.data?.items.some(
-        (item) => item.productVariant.id === variant.id || item.productVariant.product.id === product.id,
-      ),
-  );
-
   async function handleWishlistClick(event: MouseEvent<HTMLButtonElement>) {
     event.preventDefault();
     event.stopPropagation();
 
     try {
-      await wishlist.toggleWishlist(product.id);
+      await onWishlistToggle?.(product);
     } catch {
       // Detail pages already carry explicit notices. Cards keep this interaction quiet.
     }
@@ -113,7 +107,7 @@ export function ProductCard({ product, onAddToCart, isAdding = false }: ProductC
               Quick View
             </span>
           </button>
-          {wishlist.isEnabled ? (
+          {onWishlistToggle ? (
             <button
               type="button"
               onClick={(event) => void handleWishlistClick(event)}

@@ -66,7 +66,7 @@ export class AdminReportExportController {
   }
 
   @Get(":jobId/download")
-  @ApiOperation({ summary: "Download admin report export CSV." })
+  @ApiOperation({ summary: "Download an admin report export file." })
   download(
     @CurrentUser() actor: RequestUser,
     @Param("jobId") jobId: string,
@@ -115,7 +115,7 @@ export class FinanceReportExportController {
   }
 
   @Get(":jobId/download")
-  @ApiOperation({ summary: "Download finance report export CSV." })
+  @ApiOperation({ summary: "Download a finance report export file." })
   download(
     @CurrentUser() actor: RequestUser,
     @Param("jobId") jobId: string,
@@ -191,7 +191,7 @@ export class SellerReportExportController {
   }
 
   @Get(":jobId/download")
-  @ApiOperation({ summary: "Download seller report export CSV." })
+  @ApiOperation({ summary: "Download a seller report export file." })
   download(
     @CurrentUser() actor: RequestUser,
     @Param("jobId") jobId: string,

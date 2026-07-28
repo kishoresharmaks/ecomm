@@ -5,7 +5,7 @@ const fs = require("node:fs");
 
 const sentryOrganization = process.env.SENTRY_ORG ?? process.env.EXPO_PUBLIC_SENTRY_ORG;
 const sentryProject = process.env.SENTRY_PROJECT ?? process.env.EXPO_PUBLIC_SENTRY_PROJECT;
-const easProjectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID ?? "6cf13828-ce64-4e04-aadf-cfd59256a3db";
+const easProjectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID ?? "e017cb61-41d7-4e0f-9268-573106ddd729";
 const apsEnvironment = process.env.EXPO_PUBLIC_APP_ENV === "production" ? "production" : "development";
 const androidGoogleServicesFile =
   process.env.GOOGLE_SERVICES_JSON ??
@@ -34,7 +34,7 @@ module.exports = {
     slug: "onehandindia-seller",
     owner: "onehandindiasteam",
     scheme: "onehandindia-seller",
-    version: "0.1.0",
+    version: "1.0.0",
     orientation: "portrait",
     userInterfaceStyle: "light",
     icon: "./assets/icon.png",
@@ -48,6 +48,12 @@ module.exports = {
     android: {
       package: "com.onehandindia.seller",
       versionCode: 1,
+      allowBackup: false,
+      blockedPermissions: [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+      ],
       ...(androidGoogleServicesFile ? { googleServicesFile: androidGoogleServicesFile } : {}),
       adaptiveIcon: {
         foregroundImage: "./assets/adaptive-icon.png",
@@ -75,18 +81,18 @@ module.exports = {
       [
         "expo-notifications",
         {
-          icon: "./assets/icon.png",
+          icon: "./assets/notification-icon.png",
           color: "#ED3500",
           defaultChannel: "seller-alerts",
         },
       ],
-      "./plugins/with-razorpay-native-config",
       ...sentryPlugin,
       [
         "expo-image-picker",
         {
           photosPermission: "Allow 1HandIndia Seller to choose product and store images.",
-          cameraPermission: "Allow 1HandIndia Seller to capture product and store images.",
+          cameraPermission: false,
+          microphonePermission: false,
         },
       ],
       [

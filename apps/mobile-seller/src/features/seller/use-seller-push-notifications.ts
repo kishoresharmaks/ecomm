@@ -138,18 +138,18 @@ export function useSellerPushNotifications(auth: { authHeaders: MobileAuthHeader
   }, [revokeRegisteredToken]);
 
   useEffect(() => {
-    if (!canUseNativePush) {
+    if (!canUseNativePush || !auth.enabled) {
       return undefined;
     }
     const received = Notifications.addNotificationReceivedListener(() => undefined);
     const response = Notifications.addNotificationResponseReceivedListener((event) => {
-      openSellerNotification(event.notification.request.content.data as SellerPushPayload);
+      handleSellerNotificationResponse(event);
     });
 
     Notifications.getLastNotificationResponseAsync()
       .then((event) => {
         if (event) {
-          openSellerNotification(event.notification.request.content.data as SellerPushPayload);
+          handleSellerNotificationResponse(event);
         }
       })
       .catch(() => null);
@@ -158,7 +158,7 @@ export function useSellerPushNotifications(auth: { authHeaders: MobileAuthHeader
       received.remove();
       response.remove();
     };
-  }, []);
+  }, [auth.enabled]);
 
   return { refresh: register, state };
 }
@@ -202,4 +202,11 @@ export function openSellerNotification(data: SellerPushPayload) {
   if (enquiryId) {
     router.push(`/b2b-enquiries/${encodeURIComponent(enquiryId)}` as never);
   }
+}
+
+function handleSellerNotificationResponse(event: Notifications.NotificationResponse) {
+  openSellerNotification(event.notification.request.content.data as SellerPushPayload);
+  void Notifications.clearLastNotificationResponseAsync().catch((error) => {
+    captureMobileError(error, "seller-push-response-clear");
+  });
 }

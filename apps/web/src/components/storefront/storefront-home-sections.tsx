@@ -70,7 +70,7 @@ export function StorefrontHome({
   return (
     <StorefrontFrame>
       <HomeLocationRefreshBridge serverFingerprint={serverLocationFingerprint} />
-      <main className="bg-[#FFFCFB] pb-8">
+      <div className="bg-[#FFFCFB] pb-8">
         <Suspense fallback={<HeroFallback />}>
           <HomeHeroSection homePromise={homePromise} serverLocation={serverLocation} />
         </Suspense>
@@ -100,7 +100,7 @@ export function StorefrontHome({
           <HomeTailSections homePromise={homePromise} />
         </Suspense>
         <HomeAuthNotice />
-      </main>
+      </div>
     </StorefrontFrame>
   );
 }

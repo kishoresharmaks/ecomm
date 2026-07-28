@@ -21,7 +21,10 @@ const tokenCache = {
   },
 };
 
-const clerkPublishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim() || "pk_live_Y2xlcmsuMWhhbmRpbmRpYS5jb20k";
+const clerkPublishableKey = requiredPublicEnv(
+  "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY",
+  process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY,
+);
 
 function RootLayout() {
   const queryClient = useMemo(() => createQueryClient(), []);
@@ -71,6 +74,7 @@ function SellerRouteGate() {
       <Stack.Screen name="services/[id]" />
       <Stack.Screen name="service-bookings/[bookingNumber]" />
       <Stack.Screen name="service-calendar" />
+      <Stack.Screen name="account-privacy" />
       <Stack.Screen name="orders/[orderNumber]" />
     </Stack>
   );
@@ -102,6 +106,14 @@ async function safeSecureStoreSet(key: string, value: string) {
 
 function isValidSecureStoreKey(key: string) {
   return /^[A-Za-z0-9._-]+$/.test(key);
+}
+
+function requiredPublicEnv(name: string, rawValue: string | undefined) {
+  const value = rawValue?.trim();
+  if (!value) {
+    throw new Error(`${name} is required.`);
+  }
+  return value;
 }
 
 export default withMobileTelemetry(RootLayout);

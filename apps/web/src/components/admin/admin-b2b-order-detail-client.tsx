@@ -10,6 +10,7 @@ import {
   FileCheck2,
   FileText,
   Landmark,
+  Loader2,
   ReceiptText,
   RefreshCw,
   ShieldCheck,
@@ -79,6 +80,7 @@ export function AdminB2BOrderDetailPageClient({ orderNumber }: { orderNumber: st
   const queryClient = useQueryClient();
   const [notice, setNotice] = useState<{ tone: StatusTone; message: string } | null>(null);
   const [confirmation, setConfirmation] = useState<ConfirmationRequest | null>(null);
+  const [openingDocument, setOpeningDocument] = useState<"po" | "proforma" | "tax" | "proof" | null>(null);
 
   const query = useQuery({
     queryKey: ["admin-b2b-order", orderNumber, auth.authHeaders],
@@ -137,6 +139,7 @@ export function AdminB2BOrderDetailPageClient({ orderNumber }: { orderNumber: st
 
   async function openDocument(kind: "po" | "proforma" | "tax" | "proof", proofId?: string) {
     setNotice(null);
+    setOpeningDocument(kind);
     try {
       if (kind === "proof") {
         if (!proofId) {
@@ -163,11 +166,13 @@ export function AdminB2BOrderDetailPageClient({ orderNumber }: { orderNumber: st
       );
     } catch (error) {
       setNotice({ tone: "danger", message: userFacingApiErrorMessage(error) });
+    } finally {
+      setOpeningDocument(null);
     }
   }
 
   const order = query.data;
-  const isBusy = actionMutation.isPending || verifyProofMutation.isPending || rejectProofMutation.isPending;
+  const isBusy = actionMutation.isPending || verifyProofMutation.isPending || rejectProofMutation.isPending || openingDocument !== null;
 
   return (
     <div className="grid gap-5">
@@ -214,6 +219,7 @@ export function AdminB2BOrderDetailPageClient({ orderNumber }: { orderNumber: st
             <AdminB2BOperationalMap order={order} />
             <AdminB2BDocumentsPanel
               order={order}
+              openingDocument={openingDocument}
               onOpenPo={() => void openDocument("po")}
               onOpenProforma={() => void openDocument("proforma")}
               onOpenTax={() => void openDocument("tax")}
@@ -386,11 +392,13 @@ function AdminB2BOperationalMap({ order }: { order: B2BOrderWithAdminDetail }) {
 
 function AdminB2BDocumentsPanel({
   order,
+  openingDocument,
   onOpenPo,
   onOpenProforma,
   onOpenTax,
 }: {
   order: B2BOrderWithAdminDetail;
+  openingDocument: "po" | "proforma" | "tax" | "proof" | null;
   onOpenPo: () => void;
   onOpenProforma: () => void;
   onOpenTax: () => void;
@@ -409,6 +417,8 @@ function AdminB2BDocumentsPanel({
           title="Proforma invoice"
           description={`Current PI ${order.proformaInvoiceNumber}`}
           action="Open proforma"
+          busy={openingDocument === "proforma"}
+          disabled={openingDocument !== null}
           onClick={onOpenProforma}
         />
         <DocumentTile
@@ -416,7 +426,8 @@ function AdminB2BDocumentsPanel({
           title="Purchase order"
           description={order.purchaseOrderNumber ? `Buyer PO ${order.purchaseOrderNumber}` : "Waiting for buyer PO upload"}
           action="View PO"
-          disabled={!order.purchaseOrderFileKey}
+          busy={openingDocument === "po"}
+          disabled={!order.purchaseOrderFileKey || openingDocument !== null}
           onClick={onOpenPo}
         />
         <DocumentTile
@@ -424,7 +435,8 @@ function AdminB2BDocumentsPanel({
           title={b2bFinalDocumentLabel(order.finalDocumentType)}
           description={order.status === "FULFILLED" ? order.taxInvoiceNumber ?? "Generated on open" : "Available after fulfilment"}
           action="Open invoice"
-          disabled={order.status !== "FULFILLED"}
+          busy={openingDocument === "tax"}
+          disabled={order.status !== "FULFILLED" || openingDocument !== null}
           onClick={onOpenTax}
         />
       </div>
@@ -923,6 +935,7 @@ function DocumentTile({
   title,
   description,
   action,
+  busy,
   disabled,
   onClick,
 }: {
@@ -930,6 +943,7 @@ function DocumentTile({
   title: string;
   description: string;
   action: string;
+  busy?: boolean;
   disabled?: boolean;
   onClick: () => void;
 }) {
@@ -939,8 +953,8 @@ function DocumentTile({
       <p className="mt-3 text-sm font-black text-[#1F2933]">{title}</p>
       <p className="mt-1 min-h-10 text-xs font-semibold leading-5 text-[#667085]">{description}</p>
       <Button type="button" className="mt-4 w-full" variant="outline" disabled={disabled} onClick={onClick}>
-        <ExternalLink className="h-4 w-4" aria-hidden="true" />
-        {action}
+        {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <ExternalLink className="h-4 w-4" aria-hidden="true" />}
+        {busy ? "Preparing document" : action}
       </Button>
     </div>
   );

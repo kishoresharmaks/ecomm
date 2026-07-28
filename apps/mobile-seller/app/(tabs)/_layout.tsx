@@ -27,7 +27,7 @@ const MoreTabIcon = createTabIcon(UserCircleIcon);
 
 export default function SellerTabsLayout() {
   const insets = useSafeAreaInsets();
-  const tabBarHeight = 56 + insets.bottom;
+  const tabBarHeight = 60 + insets.bottom;
 
   return (
     <Tabs
@@ -39,17 +39,16 @@ export default function SellerTabsLayout() {
           fontFamily: "Plus Jakarta Sans",
           fontSize: 11,
           fontWeight: "900",
-          marginTop: -2,
         },
         tabBarStyle: {
           backgroundColor: colors.surface,
           borderColor: colors.border,
           borderTopColor: colors.border,
           borderTopWidth: 1,
-          elevation: 4,
+          elevation: 3,
           height: tabBarHeight,
-          paddingBottom: Math.max(4, insets.bottom),
-          paddingTop: 4,
+          paddingBottom: Math.max(5, insets.bottom),
+          paddingTop: 5,
           shadowColor: "#111827",
           shadowOffset: { height: -2, width: 0 },
           shadowOpacity: 0.05,
@@ -57,11 +56,11 @@ export default function SellerTabsLayout() {
         },
         tabBarHideOnKeyboard: true,
         tabBarItemStyle: {
-          minHeight: 48,
+          minHeight: 52,
         },
       }}
     >
-      <Tabs.Screen name="index" options={{ title: "Home", tabBarIcon: HomeTabIcon }} />
+      <Tabs.Screen name="index" options={{ title: "Dashboard", tabBarIcon: HomeTabIcon }} />
       <Tabs.Screen name="products" options={{ title: "Products", tabBarIcon: ProductsTabIcon }} />
       <Tabs.Screen name="orders" options={{ title: "Orders", tabBarIcon: OrdersTabIcon }} />
       <Tabs.Screen name="services" options={{ title: "Services", tabBarIcon: ServicesTabIcon }} />

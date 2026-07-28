@@ -9,6 +9,7 @@ import {
   ArrowRight,
   BadgeCheck,
   Barcode,
+  CircleAlert,
   CreditCard,
   FileCheck2,
   FilePlus2,
@@ -72,6 +73,7 @@ export function ProductDetailClient({ slug }: { slug: string }) {
   const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [notice, setNotice] = useState<string | null>(null);
+  const [noticeTone, setNoticeTone] = useState<"success" | "danger">("success");
   const [noticeVisible, setNoticeVisible] = useState(false);
   const wishlist = useStorefrontWishlist();
 
@@ -166,30 +168,36 @@ export function ProductDetailClient({ slug }: { slug: string }) {
       return addCartItem(customerAuth.authHeaders, selectedVariant.id, quantity);
     },
     onSuccess: () => {
+      setNoticeTone("success");
       setNotice("Product added to cart.");
       void queryClient.invalidateQueries({ queryKey: ["cart", customerAuth.authKey] });
     },
     onError: (error) => {
+      setNoticeTone("danger");
       setNotice(error instanceof Error ? error.message : "Unable to add product to cart.");
     },
   });
 
   async function handleWishlistToggle() {
     if (!product) {
+      setNoticeTone("danger");
       setNotice("Product is still loading.");
       return;
     }
 
     try {
       const action = await wishlist.toggleWishlist(product.id);
+      setNoticeTone("success");
       setNotice(action === "add" ? "Product saved to wishlist." : "Product removed from wishlist.");
     } catch (error) {
+      setNoticeTone("danger");
       setNotice(error instanceof Error ? error.message : "Unable to update wishlist.");
     }
   }
 
   async function handleShare() {
     if (!product) {
+      setNoticeTone("danger");
       setNotice("Product is still loading.");
       return;
     }
@@ -215,27 +223,33 @@ export function ProductDetailClient({ slug }: { slug: string }) {
       }
 
       await copyProductShareText(clipboardText);
+      setNoticeTone("success");
       setNotice("Product link copied.");
     } catch (error) {
       console.error("Product share fallback failed", error);
+      setNoticeTone("danger");
       setNotice("Unable to share this product right now. Please try again.");
     }
   }
 
   function handleBuyNow() {
     if (!product) {
+      setNoticeTone("danger");
       setNotice("Product is still loading.");
       return;
     }
     if (!customerAuth.enabled) {
+      setNoticeTone("danger");
       setNotice("Sign in before checkout.");
       return;
     }
     if (!selectedVariant) {
+      setNoticeTone("danger");
       setNotice("Select an active product variant.");
       return;
     }
     if (!hasStock) {
+      setNoticeTone("danger");
       setNotice("This variant is out of stock.");
       return;
     }
@@ -267,6 +281,7 @@ export function ProductDetailClient({ slug }: { slug: string }) {
     <StorefrontFrame>
       <ProductToast
         message={notice}
+        tone={noticeTone}
         visible={noticeVisible}
         onClose={() => {
           setNoticeVisible(false);
@@ -402,7 +417,7 @@ export function ProductDetailClient({ slug }: { slug: string }) {
                 <span className="h-4 w-px bg-[#E5E7EB]" aria-hidden="true" />
                 <span className="inline-flex items-center gap-1.5">
                   <ShieldCheck className="h-4 w-4 text-[#98A2B3]" aria-hidden="true" />
-                  Approved product
+                  Quality checked
                 </span>
               </div>
 
@@ -770,10 +785,12 @@ function ProductTrustItem({ icon, label, value }: { icon: ReactNode; label: stri
 
 function ProductToast({
   message,
+  tone,
   visible,
   onClose,
 }: {
   message: string | null;
+  tone: "success" | "danger";
   visible: boolean;
   onClose: () => void;
 }) {
@@ -787,12 +804,12 @@ function ProductToast({
         "fixed right-4 top-[calc(env(safe-area-inset-top)+128px)] z-[150] w-[min(360px,calc(100vw-2rem))] rounded-lg border border-[#D8E2EA] bg-white px-4 py-3 text-sm font-black text-[#163B5C] shadow-[0_18px_44px_rgba(15,23,42,0.18)] transition-all duration-300 ease-out md:right-6 md:top-36",
         visible ? "translate-x-0 opacity-100" : "translate-x-8 opacity-0",
       )}
-      role="status"
+      role={tone === "danger" ? "alert" : "status"}
       aria-live="polite"
     >
       <div className="flex items-start gap-3">
-        <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[#EAFBF2] text-[#0F8A5F]">
-          <BadgeCheck className="h-4 w-4" aria-hidden="true" />
+        <span className={cn("mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full", tone === "danger" ? "bg-[#FDECEC] text-[#D64545]" : "bg-[#EAFBF2] text-[#0F8A5F]")}>
+          {tone === "danger" ? <CircleAlert className="h-4 w-4" aria-hidden="true" /> : <BadgeCheck className="h-4 w-4" aria-hidden="true" />}
         </span>
         <p className="min-w-0 flex-1 leading-5">{message}</p>
         <button

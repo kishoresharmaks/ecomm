@@ -103,6 +103,7 @@ export function StorefrontHeader({ initialMenu }: { initialMenu?: CmsMenuItem[] 
   const [drawerPortal, setDrawerPortal] = useState<HTMLElement | null>(null);
   const [headerHidden, setHeaderHidden] = useState(false);
   const lastScrollYRef = useRef(0);
+  const urlQuery = searchParams.get("q") ?? "";
 
   const cartQuery = useQuery({
     queryKey: ["cart", customerAuth.authKey],
@@ -152,6 +153,10 @@ export function StorefrontHeader({ initialMenu }: { initialMenu?: CmsMenuItem[] 
     setMobileMenuOpen(false);
     setMobileSearchOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    setQuery(urlQuery);
+  }, [urlQuery]);
 
   useEffect(() => {
     setDrawerPortal(document.body);

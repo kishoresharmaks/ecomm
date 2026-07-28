@@ -104,6 +104,8 @@ export function CheckoutPageClient() {
   const queryClient = useQueryClient();
   const customerAuth = useCustomerAuth();
   const market = useMarket();
+  const initialCouponCode = normalizeCouponCodeInput(searchParams.get("couponCode") ?? "");
+  const validInitialCouponCode = validateCouponCodeInput(initialCouponCode) ? null : initialCouponCode || null;
   const [paymentMethod, setPaymentMethod] = useState<PlaceOrderPayload["paymentMethod"]>("COD");
   const [deliveryPreference, setDeliveryPreference] =
     useState<NonNullable<PlaceOrderPayload["deliveryPreference"]>>("DELIVER_TO_ADDRESS");
@@ -117,9 +119,9 @@ export function CheckoutPageClient() {
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
   const [manualAddress, setManualAddress] = useState<CheckoutAddress>(initialAddress);
   const [formError, setFormError] = useState<string | null>(null);
-  const [couponInput, setCouponInput] = useState("");
-  const [appliedCouponCode, setAppliedCouponCode] = useState<string | null>(null);
-  const [pendingCouponCode, setPendingCouponCode] = useState<string | null>(null);
+  const [couponInput, setCouponInput] = useState(validInitialCouponCode ?? "");
+  const [appliedCouponCode, setAppliedCouponCode] = useState<string | null>(validInitialCouponCode);
+  const [pendingCouponCode, setPendingCouponCode] = useState<string | null>(validInitialCouponCode);
   const [couponFeedback, setCouponFeedback] = useState<CouponFeedback | null>(null);
   const directProductVariantId = searchParams.get("directProductVariantId") ?? undefined;
   const directQuantity = normalizeDirectQuantity(searchParams.get("directQuantity"));
@@ -531,12 +533,8 @@ export function CheckoutPageClient() {
           razorpaySignature: checkoutResponse.razorpay_signature,
         });
         return { ...order, paymentStatus: verification.status };
-      } catch (error) {
-        // Payment verification failed — cancel the order
-        await cancelRazorpayOrder(customerAuth.authHeaders, order.orderNumber).catch(() => null);
-        const message =
-          error instanceof Error ? error.message : "Payment verification failed.";
-        throw new Error(`${message} Your order has been cancelled.`, { cause: error });
+      } catch {
+        return order;
       }
     },
     onSuccess: (order) => {
@@ -960,7 +958,7 @@ export function CheckoutPageClient() {
               icon={CreditCard}
               iconTone="green"
               title="Payment method"
-              description="Backend settings decide which methods can place orders."
+              description="Choose an available payment method for this order."
             />
             <div className="mt-5 grid gap-3 md:grid-cols-2">
               {paymentOptions.map((option) => (

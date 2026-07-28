@@ -24,12 +24,14 @@ export default function DeliveryReturnDetailScreen() {
   const params = useLocalSearchParams<{ requestNumber?: string }>();
   const requestNumber = String(params.requestNumber ?? "");
   const [notice, setNotice] = useState<{ message: string; tone: "success" | "danger" } | null>(null);
-  const [note, setNote] = useState("");
+  const [assignmentNote, setAssignmentNote] = useState("");
+  const [pickupNote, setPickupNote] = useState("");
   const [pickupProofReference, setPickupProofReference] = useState("");
   const [pickupProofUploadStatus, setPickupProofUploadStatus] = useState("");
   const [receiptProofByShipment, setReceiptProofByShipment] = useState<Record<string, string>>({});
   const [receiptProofUploadStatus, setReceiptProofUploadStatus] = useState<Record<string, string>>({});
   const [receiverByShipment, setReceiverByShipment] = useState<Record<string, string>>({});
+  const [receiptNoteByShipment, setReceiptNoteByShipment] = useState<Record<string, string>>({});
 
   const returnQuery = useQuery({
     queryKey: ["delivery-return", auth.authKey, requestNumber],
@@ -70,13 +72,19 @@ export default function DeliveryReturnDetailScreen() {
   );
 
   const acceptMutation = useMutation({
-    mutationFn: () => acceptDeliveryReturnPickup(auth.authHeaders, requestNumber, note.trim() || undefined),
-    onSuccess: async () => afterMutation(queryClient, auth.authKey, requestNumber, "Return pickup accepted.", setNotice, setNote),
+    mutationFn: () => acceptDeliveryReturnPickup(auth.authHeaders, requestNumber, assignmentNote.trim() || undefined),
+    onSuccess: async () => {
+      setAssignmentNote("");
+      await afterMutation(queryClient, auth.authKey, requestNumber, "Return pickup accepted.", setNotice);
+    },
     onError: (error) => setNotice({ message: error instanceof Error ? error.message : "Could not accept pickup.", tone: "danger" }),
   });
   const rejectMutation = useMutation({
-    mutationFn: () => rejectDeliveryReturnPickup(auth.authHeaders, requestNumber, note.trim() || undefined),
-    onSuccess: async () => afterMutation(queryClient, auth.authKey, requestNumber, "Return pickup rejected.", setNotice, setNote),
+    mutationFn: () => rejectDeliveryReturnPickup(auth.authHeaders, requestNumber, assignmentNote.trim() || undefined),
+    onSuccess: async () => {
+      setAssignmentNote("");
+      await afterMutation(queryClient, auth.authKey, requestNumber, "Return pickup rejected.", setNotice);
+    },
     onError: (error) => setNotice({ message: error instanceof Error ? error.message : "Could not reject pickup.", tone: "danger" }),
   });
   const pickupMutation = useMutation({
@@ -84,9 +92,12 @@ export default function DeliveryReturnDetailScreen() {
       updateDeliveryReturnPickup(auth.authHeaders, requestNumber, {
         status,
         pickupProofReference: pickupProofReference.trim() || undefined,
-        note: note.trim() || undefined,
+        note: pickupNote.trim() || undefined,
       }),
-    onSuccess: async (_, status) => afterMutation(queryClient, auth.authKey, requestNumber, `${humanize(status)} saved.`, setNotice, setNote),
+    onSuccess: async (_, status) => {
+      setPickupNote("");
+      await afterMutation(queryClient, auth.authKey, requestNumber, `${humanize(status)} saved.`, setNotice);
+    },
     onError: (error) => setNotice({ message: error instanceof Error ? error.message : "Could not update pickup.", tone: "danger" }),
   });
   const receiptMutation = useMutation({
@@ -94,9 +105,12 @@ export default function DeliveryReturnDetailScreen() {
       recordDeliveryReturnShipmentReceipt(auth.authHeaders, requestNumber, shipmentId, {
         receivedByName: receiverByShipment[shipmentId]?.trim() ?? "",
         receiptProofReference: receiptProofByShipment[shipmentId]?.trim() || undefined,
-        note: note.trim() || undefined,
+        note: receiptNoteByShipment[shipmentId]?.trim() || undefined,
       }),
-    onSuccess: async () => afterMutation(queryClient, auth.authKey, requestNumber, "Seller receipt recorded.", setNotice, setNote),
+    onSuccess: async (_, shipmentId) => {
+      setReceiptNoteByShipment((current) => ({ ...current, [shipmentId]: "" }));
+      await afterMutation(queryClient, auth.authKey, requestNumber, "Seller receipt recorded.", setNotice);
+    },
     onError: (error) => setNotice({ message: error instanceof Error ? error.message : "Could not record seller receipt.", tone: "danger" }),
   });
 
@@ -134,10 +148,11 @@ export default function DeliveryReturnDetailScreen() {
   const anyPickedOrLater = detail?.reverseShipments.some((shipment) => ["PICKED_UP", "IN_TRANSIT", "RECEIVED", "FAILED", "CANCELLED"].includes(shipment.status)) ?? false;
   const anyPickedUp = detail?.reverseShipments.some((shipment) => shipment.status === "PICKED_UP") ?? false;
   const allReceived = detail?.reverseShipments.every((shipment) => shipment.status === "RECEIVED") ?? false;
-  const qualityFailureReady = Boolean(allAccepted && !anyPickedOrLater && pickupProofReference.trim() && note.trim());
+  const qualityFailureReady = Boolean(allAccepted && !anyPickedOrLater && pickupProofReference.trim() && pickupNote.trim());
+  const assignmentPending = acceptMutation.isPending || rejectMutation.isPending;
 
   return (
-    <Screen>
+    <Screen refreshing={returnQuery.isRefetching} onRefresh={() => returnQuery.refetch()}>
       <Button title="Back to returns" tone="secondary" onPress={() => router.back()} />
       <Header title={requestNumber || "Return pickup"} subtitle="Pickup from customer, move package, record seller receipt." />
       <QueryState loading={returnQuery.isLoading} error={returnQuery.error} onRetry={() => void returnQuery.refetch()} />
@@ -151,30 +166,35 @@ export default function DeliveryReturnDetailScreen() {
             <Button title={pickupProofReference ? "Replace pickup proof" : "Upload pickup proof"} tone="secondary" onPress={() => void uploadPickupProof()} />
             {pickupProofReference ? <Text style={successText}>{pickupProofReference}</Text> : null}
             {pickupProofUploadStatus ? <Text style={mutedText}>{pickupProofUploadStatus}</Text> : null}
-            <Field label="Note" value={note} onChangeText={setNote} placeholder="Pickup or handover note" multiline />
             {!allAccepted ? (
-              <View style={{ flexDirection: "row", gap: 10 }}>
-                <Button title="Accept" loading={acceptMutation.isPending} style={{ flex: 1 }} onPress={() => acceptMutation.mutate()} />
-                <Button title="Reject" tone="danger" loading={rejectMutation.isPending} style={{ flex: 1 }} onPress={() => rejectMutation.mutate()} />
-              </View>
+              <>
+                <Field label="Assignment note" value={assignmentNote} onChangeText={setAssignmentNote} placeholder="Optional note for operations" multiline />
+                <View style={{ flexDirection: "row", gap: 10 }}>
+                  <Button title="Accept" disabled={assignmentPending} loading={acceptMutation.isPending} style={{ flex: 1 }} onPress={() => acceptMutation.mutate()} />
+                  <Button title="Reject" tone="danger" disabled={assignmentPending} loading={rejectMutation.isPending} style={{ flex: 1 }} onPress={() => rejectMutation.mutate()} />
+                </View>
+              </>
             ) : (
-              <View style={{ flexDirection: "row", gap: 10 }}>
-                <Button
-                  title="Picked up"
-                  disabled={anyPickedOrLater || !pickupProofReference.trim()}
-                  loading={pickupMutation.isPending && pickupMutation.variables === "PICKED_UP"}
-                  style={{ flex: 1 }}
-                  onPress={() => pickupMutation.mutate("PICKED_UP")}
-                />
-                <Button
-                  title="In transit"
-                  tone="secondary"
-                  disabled={!anyPickedUp || allReceived}
-                  loading={pickupMutation.isPending && pickupMutation.variables === "IN_TRANSIT"}
-                  style={{ flex: 1 }}
-                  onPress={() => pickupMutation.mutate("IN_TRANSIT")}
-                />
-              </View>
+              <>
+                <Field label="Pickup note" value={pickupNote} onChangeText={setPickupNote} placeholder="Pickup or handover note" multiline />
+                <View style={{ flexDirection: "row", gap: 10 }}>
+                  <Button
+                    title="Picked up"
+                    disabled={pickupMutation.isPending || anyPickedOrLater || !pickupProofReference.trim()}
+                    loading={pickupMutation.isPending && pickupMutation.variables === "PICKED_UP"}
+                    style={{ flex: 1 }}
+                    onPress={() => pickupMutation.mutate("PICKED_UP")}
+                  />
+                  <Button
+                    title="In transit"
+                    tone="secondary"
+                    disabled={pickupMutation.isPending || !anyPickedUp || allReceived}
+                    loading={pickupMutation.isPending && pickupMutation.variables === "IN_TRANSIT"}
+                    style={{ flex: 1 }}
+                    onPress={() => pickupMutation.mutate("IN_TRANSIT")}
+                  />
+                </View>
+              </>
             )}
             {allAccepted && !pickupProofReference.trim() && !anyPickedOrLater ? (
               <Text style={dangerText}>Pickup proof reference is required before marking picked up.</Text>
@@ -187,7 +207,7 @@ export default function DeliveryReturnDetailScreen() {
                 <Button
                   title="Cancel bad-quality pickup"
                   tone="danger"
-                  disabled={!qualityFailureReady}
+                  disabled={pickupMutation.isPending || !qualityFailureReady}
                   loading={pickupMutation.isPending && pickupMutation.variables === "FAILED"}
                   onPress={() => pickupMutation.mutate("FAILED")}
                 />
@@ -236,13 +256,20 @@ export default function DeliveryReturnDetailScreen() {
                   onChangeText={(value) => setReceiverByShipment((current) => ({ ...current, [shipment.id]: value }))}
                   placeholder="Person receiving at seller store"
                 />
+                <Field
+                  label="Receipt note"
+                  value={receiptNoteByShipment[shipment.id] ?? ""}
+                  onChangeText={(value) => setReceiptNoteByShipment((current) => ({ ...current, [shipment.id]: value }))}
+                  placeholder="Optional seller handover note"
+                  multiline
+                />
                 <Button title={receiptProofByShipment[shipment.id] ? "Replace receipt proof" : "Upload receipt proof"} tone="secondary" onPress={() => void uploadReceiptProof(shipment.id)} />
                 {receiptProofByShipment[shipment.id] ? <Text style={successText}>{receiptProofByShipment[shipment.id]}</Text> : null}
                 {receiptProofUploadStatus[shipment.id] ? <Text style={mutedText}>{receiptProofUploadStatus[shipment.id]}</Text> : null}
                 {canReceive && (!receiver || !receiptProof) ? <Text style={dangerText}>Receiver name and receipt proof reference are required.</Text> : null}
                 <Button
                   title={shipment.status === "RECEIVED" ? "Received" : "Record seller receipt"}
-                  disabled={shipment.status === "RECEIVED" || !canReceive || !receiver || !receiptProof}
+                  disabled={receiptMutation.isPending || shipment.status === "RECEIVED" || !canReceive || !receiver || !receiptProof}
                   loading={receiptMutation.isPending && receiptMutation.variables === shipment.id}
                   onPress={() => receiptMutation.mutate(shipment.id)}
                 />
@@ -325,10 +352,8 @@ async function afterMutation(
   requestNumber: string,
   message: string,
   setNotice: (notice: { message: string; tone: "success" | "danger" }) => void,
-  setNote: (note: string) => void,
 ) {
   setNotice({ message, tone: "success" });
-  setNote("");
   await queryClient.invalidateQueries({ queryKey: ["delivery-return", authKey, requestNumber] });
   await queryClient.invalidateQueries({ queryKey: ["delivery-returns"] });
 }

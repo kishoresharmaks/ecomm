@@ -72,7 +72,23 @@ export class FinanceCalculatorService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async calculateSplit(split: FinanceSplit, tx: Prisma.TransactionClient = this.prisma.client) {
+    return this.calculateSplitWithCache(split, tx, new Map());
+  }
+
+  async calculateSplits(splits: FinanceSplit[], tx: Prisma.TransactionClient = this.prisma.client) {
     const ruleCache = new Map<string, FinanceRule | null>();
+    const calculations: SplitFinanceCalculation[] = [];
+    for (const split of splits) {
+      calculations.push(await this.calculateSplitWithCache(split, tx, ruleCache));
+    }
+    return calculations;
+  }
+
+  private async calculateSplitWithCache(
+    split: FinanceSplit,
+    tx: Prisma.TransactionClient,
+    ruleCache: Map<string, FinanceRule | null>,
+  ) {
     const items = split.order.items.filter((item) => item.sellerId === split.sellerId);
     const lineSnapshots: Prisma.InputJsonObject[] = [];
     const ruleIds = new Set<string>();
@@ -113,6 +129,7 @@ export class FinanceCalculatorService {
         couponSellerFundedDiscountPaise: lineCouponSellerFundedDiscountPaise,
         ruleId: rule?.id ?? null,
         ruleName: rule?.name ?? "No commission rule",
+        gstRateBps: rule?.gstRateBps ?? 0,
         commissionPaise: lineCommission,
         gstOnCommissionPaise: lineGst,
         tdsPaise: lineTds,
@@ -124,12 +141,14 @@ export class FinanceCalculatorService {
     const deductionsPaise = commissionPaise + gstOnCommissionPaise + tdsPaise + tcsPaise + platformFeePaise;
     const refundAdjustmentPaise = split.refundAdjustmentPaise ?? 0;
     const couponAdjustmentPaise = split.couponAdjustmentPaise ?? 0;
-    const netPayablePaise =
+    const netPayablePaise = Math.max(
+      0,
       split.sellerSubtotalPaise -
-      deductionsPaise -
-      couponSellerFundedDiscountPaise +
-      refundAdjustmentPaise +
-      couponAdjustmentPaise;
+        deductionsPaise -
+        couponSellerFundedDiscountPaise +
+        refundAdjustmentPaise +
+        couponAdjustmentPaise,
+    );
     const ruleIdList = Array.from(ruleIds);
 
     return {

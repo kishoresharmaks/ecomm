@@ -76,7 +76,46 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile --filter "./apps/${{ matrix.app }}..."
+
+      - name: Verify seller release inputs
+        if: matrix.app == 'mobile-seller'
+        env:
+          RAW_CLERK_KEY: ${{ secrets.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+        run: |
+          export EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY="${RAW_CLERK_KEY:-pk_live_Y2xlcmsuMWhhbmRpbmRpYS5jb20k}"
+
+          pnpm --filter @indihub/mobile-seller typecheck
+          pnpm --filter @indihub/mobile-seller lint
+          pnpm --filter @indihub/mobile-seller test
+
+          cd apps/mobile-seller
+          npx expo install --check
+          npx expo-doctor
+          npx expo config --type public --json > "$RUNNER_TEMP/mobile-seller-expo-config.json"
+
+          node - <<'NODE'
+          const fs = require("node:fs");
+          const config = JSON.parse(
+            fs.readFileSync(process.env.RUNNER_TEMP + "/mobile-seller-expo-config.json", "utf8"),
+          );
+          const android = config.android ?? {};
+
+          if (android.package !== "com.onehandindia.seller") {
+            throw new Error(`Unexpected Android package: ${android.package ?? "missing"}`);
+          }
+          if (config.version !== "1.0.0") {
+            throw new Error(`Unexpected app version: ${config.version ?? "missing"}`);
+          }
+          if (android.allowBackup !== false) {
+            throw new Error("Android backup must remain disabled.");
+          }
+          if (config.extra?.eas?.projectId !== "e017cb61-41d7-4e0f-9268-573106ddd729") {
+            throw new Error(`Unexpected Expo EAS project ID: ${config.extra?.eas?.projectId ?? "missing"}`);
+          }
+
+          console.log("Seller Expo release config verified.");
+          NODE
 
       - name: Trigger EAS build
         working-directory: apps/${{ matrix.app }}
@@ -85,9 +124,7 @@ jobs:
             --platform android \
             --profile "${{ github.event.inputs.profile }}" \
             --non-interactive \
-            --no-wait
+            --wait
 
-      # --no-wait: the build runs on EAS servers; download the artifact from
-      # https://expo.dev/accounts/onehandindiasteam/projects when it finishes.
-      # Remove --no-wait if you prefer the workflow to block until completion
-      # (uses CI minutes but lets you chain artifact download steps).
+      # The workflow waits for the EAS result so a green GitHub Action means
+      # the remote Android build completed successfully.

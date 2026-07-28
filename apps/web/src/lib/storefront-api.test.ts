@@ -5,6 +5,7 @@ import {
   formatOrderBuyerAmount,
   formatOrderTotal,
   getStorefrontHome,
+  listStorePage,
   primaryImage,
   primaryVariant,
   type CartSummary,
@@ -138,5 +139,29 @@ describe("storefront home API", () => {
     expect(new Headers((init as RequestInit).headers).get("authorization")).toBe(
       "Bearer customer-token",
     );
+  });
+});
+
+describe("store directory API", () => {
+  it("serializes page and location fields for incremental store loading", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          items: [],
+          total: 0,
+          pageInfo: { page: 2, pageSize: 24, hasNextPage: false },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+
+    await listStorePage({ page: 2, limit: 24, countryCode: "IN", search: "Fresh" });
+
+    const [url] = fetchMock.mock.calls[0] ?? [];
+    expect(String(url)).toContain("/api/sellers?");
+    expect(String(url)).toContain("page=2");
+    expect(String(url)).toContain("limit=24");
+    expect(String(url)).toContain("countryCode=IN");
+    expect(String(url)).toContain("search=Fresh");
   });
 });

@@ -1846,7 +1846,7 @@ function SellerServiceCalendar() {
       void queryClient.invalidateQueries({ queryKey: ["seller-service-calendar", sellerAuth.authKey] });
       void queryClient.invalidateQueries({ queryKey: ["seller-service-bookings", sellerAuth.authKey] });
     },
-    onError: (error) => setNotice({ tone: "danger", message: error instanceof Error ? error.message : "Calendar save failed." }),
+    onError: (error) => setNotice({ tone: "danger", message: userFacingApiErrorMessage(error) }),
   });
 
   useEffect(() => {

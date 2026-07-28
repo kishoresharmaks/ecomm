@@ -99,7 +99,7 @@ type PayoutRequestSplit = Prisma.OrderSellerSplitGetPayload<{
       include: {
         items: {
           include: {
-            product: true;
+            product: { select: { categoryId: true } };
           };
         };
       };
@@ -155,7 +155,7 @@ export class SellerPayoutsService {
         take: take + 1
       });
       const pageResult = cursorPageFromItems(items, take);
-      const readableItems = pageResult.items.map((item) => this.payoutReadback(item));
+      const readableItems = pageResult.items.map((item) => this.payoutListReadback(item));
 
       if (sellerIdFromAuth) {
         const market = await this.marketForSellerId(sellerIdFromAuth);
@@ -178,7 +178,7 @@ export class SellerPayoutsService {
       return [items, total] as const;
     });
 
-    const readableItems = items.map((item) => this.payoutReadback(item));
+    const readableItems = items.map((item) => this.payoutListReadback(item));
     if (sellerIdFromAuth) {
       const market = await this.marketForSellerId(sellerIdFromAuth);
       return { items: readableItems.map((item) => this.convertPayoutForSeller(item, market)), total, page, limit: take };
@@ -198,14 +198,8 @@ export class SellerPayoutsService {
             select: {
               accountHolderName: true,
               bankName: true,
-              accountNumberEncrypted: true,
               accountNumberLast4: true,
-              ifscCodeEncrypted: true,
-              upiIdEncrypted: true,
               upiIdHint: true,
-              legacyAccountNumber: true,
-              legacyIfscCode: true,
-              legacyUpiId: true,
               isVerified: true
             }
           }
@@ -562,9 +556,9 @@ export class SellerPayoutsService {
         throw new BadRequestException("Seller payout details must be verified before payout approval.");
       }
 
-      const splitSummary = await this.payoutSplitSummary(tx, payoutId);
+      const splitSummary = await this.payoutSplitSummary(tx, payoutId, payout.adjustmentPaise);
       if (splitSummary.count < 1) {
-        throw new BadRequestException("Payout has no linked order or B2B sources.");
+        throw new BadRequestException("Payout has no linked order, B2B, or service sources.");
       }
       if (splitSummary.netPayablePaise !== payout.netPayablePaise) {
         throw new ConflictException("Payout source totals changed. Refresh and try again.");
@@ -778,9 +772,9 @@ export class SellerPayoutsService {
         throw new BadRequestException("Only approved payouts can be marked paid.");
       }
 
-      const splitSummary = await this.payoutSplitSummary(tx, payoutId);
+      const splitSummary = await this.payoutSplitSummary(tx, payoutId, payout.adjustmentPaise);
       if (splitSummary.count < 1) {
-        throw new BadRequestException("Payout has no linked order or B2B sources.");
+        throw new BadRequestException("Payout has no linked order, B2B, or service sources.");
       }
       if (splitSummary.netPayablePaise !== payout.netPayablePaise) {
         throw new ConflictException("Payout source totals changed. Refresh and try again.");
@@ -871,16 +865,8 @@ export class SellerPayoutsService {
     }
   }
 
-  private async payoutSplitSummary(tx: Prisma.TransactionClient, payoutId: string) {
-    const [
-      summary,
-      b2bSummary,
-      serviceSummary,
-      receivableOffsetSummary,
-      sellerCashReceivableOffsetSummary,
-      sellerCashLedgerOffsetSummary,
-      manualAdjustmentSummary,
-    ] = await Promise.all([
+  private async payoutSplitSummary(tx: Prisma.TransactionClient, payoutId: string, adjustmentPaise: number) {
+    const [summary, b2bSummary, serviceSummary] = await Promise.all([
       tx.orderSellerSplit.aggregate({
         where: { payoutId },
         _count: { _all: true },
@@ -895,36 +881,8 @@ export class SellerPayoutsService {
         where: { payoutId },
         _count: { _all: true },
         _sum: { netPayablePaise: true }
-      }),
-      tx.serviceSellerReceivable.aggregate({
-        where: { payoutOffsetId: payoutId },
-        _count: { _all: true },
-        _sum: { offsetPaise: true }
-      }),
-      tx.sellerCashReceivable.aggregate({
-        where: { payoutOffsetId: payoutId },
-        _count: { _all: true },
-        _sum: { offsetPaise: true }
-      }),
-      tx.sellerLedgerEntry.aggregate({
-        where: {
-          payoutId,
-          entryType: SellerLedgerEntryType.SELLER_CASH_RECEIVABLE_OFFSET,
-        },
-        _sum: { debitPaise: true }
-      }),
-      tx.sellerLedgerEntry.aggregate({
-        where: { payoutId, entryType: SellerLedgerEntryType.MANUAL_ADJUSTMENT },
-        _sum: { creditPaise: true, debitPaise: true }
       })
     ]);
-    const receivableOffsetPaise = receivableOffsetSummary._sum.offsetPaise ?? 0;
-    const sellerCashLedgerOffsetPaise = sellerCashLedgerOffsetSummary._sum.debitPaise ?? 0;
-    const sellerCashReceivableOffsetPaise =
-      sellerCashLedgerOffsetPaise > 0
-        ? sellerCashLedgerOffsetPaise
-        : (sellerCashReceivableOffsetSummary._sum.offsetPaise ?? 0);
-    const manualAdjustmentPaise = (manualAdjustmentSummary._sum.creditPaise ?? 0) - (manualAdjustmentSummary._sum.debitPaise ?? 0);
 
     return {
       splitCount: summary._count._all,
@@ -934,10 +892,8 @@ export class SellerPayoutsService {
       netPayablePaise:
         (summary._sum.netPayablePaise ?? 0) +
         (b2bSummary._sum.sellerPayoutAmountPaise ?? 0) +
-        (serviceSummary._sum.netPayablePaise ?? 0) -
-        receivableOffsetPaise -
-        sellerCashReceivableOffsetPaise +
-        manualAdjustmentPaise
+        (serviceSummary._sum.netPayablePaise ?? 0) +
+        adjustmentPaise
     };
   }
 
@@ -1204,7 +1160,7 @@ export class SellerPayoutsService {
             include: {
               items: {
                 include: {
-                  product: true
+                  product: { select: { categoryId: true } }
                 }
               }
             }
@@ -1281,8 +1237,9 @@ export class SellerPayoutsService {
     }
 
     const calculations: PayoutRequestCalculation[] = [];
-    for (const split of splits) {
-      const calculation = await this.calculator.calculateSplit(split, tx);
+    const splitCalculations = await this.calculator.calculateSplits(splits, tx);
+    for (const [index, split] of splits.entries()) {
+      const calculation = splitCalculations[index]!;
       if (calculation.netPayablePaise > 0) {
         calculations.push({ split, calculation });
       }
@@ -1491,6 +1448,33 @@ export class SellerPayoutsService {
             value("legacyIfscCode"),
           ),
           upiId: sellerPayoutValue(value("upiIdEncrypted"), value("legacyUpiId")),
+          isVerified: profileRecord.isVerified === true,
+        },
+      },
+    } as T;
+  }
+
+  private payoutListReadback<T extends Record<string, unknown>>(payout: T): T {
+    const seller = payout.seller;
+    if (!seller || typeof seller !== "object" || Array.isArray(seller)) {
+      return payout;
+    }
+    const sellerRecord = seller as Record<string, unknown>;
+    const profile = sellerRecord.payoutProfile;
+    if (!profile || typeof profile !== "object" || Array.isArray(profile)) {
+      return payout;
+    }
+    const profileRecord = profile as Record<string, unknown>;
+
+    return {
+      ...payout,
+      seller: {
+        ...sellerRecord,
+        payoutProfile: {
+          accountHolderName: profileRecord.accountHolderName ?? null,
+          bankName: profileRecord.bankName ?? null,
+          accountNumberLast4: profileRecord.accountNumberLast4 ?? null,
+          upiIdHint: profileRecord.upiIdHint ?? null,
           isVerified: profileRecord.isVerified === true,
         },
       },

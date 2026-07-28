@@ -154,13 +154,20 @@ export class SellerReportsController {
     const data = await this.reportsService.sellerFinanceReport(actor, query);
     const currency = data.currency ?? "INR";
     const rows = [
-      ["Payout Number", "Period From", "Period To", "Status", `Gross Sales (${currency})`, `Net Payable (${currency})`],
+      ["Payout Number", "Period From", "Period To", "Status", `Gross Sales (${currency})`, `Commission (${currency})`, `GST on Fees (${currency})`, `TDS (${currency})`, `TCS (${currency})`, `Seller Settlement Fee (${currency})`, `Refund Adjustment (${currency})`, `Offsets and Adjustments (${currency})`, `Net Payable (${currency})`],
       ...data.recentPayouts.map((p) => [
         p.payoutNumber,
         new Date(p.periodFrom).toLocaleDateString("en-IN"),
         new Date(p.periodTo).toLocaleDateString("en-IN"),
         p.status,
         String((p.grossSalesPaise ?? 0) / 100),
+        String((p.commissionPaise ?? 0) / 100),
+        String((p.gstOnCommissionPaise ?? 0) / 100),
+        String((p.tdsPaise ?? 0) / 100),
+        String((p.tcsPaise ?? 0) / 100),
+        String((p.platformFeePaise ?? 0) / 100),
+        String((p.refundAdjustmentPaise ?? 0) / 100),
+        String((p.adjustmentPaise ?? 0) / 100),
         String((p.netPayablePaise ?? 0) / 100),
       ]),
     ];

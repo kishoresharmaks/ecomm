@@ -80,6 +80,7 @@ import {
   ServiceReceivableWaiverDecisionDto,
   ServiceReceivableWaiverDto,
   ServiceFieldStatusDto,
+  ServiceBookingQueryDto,
   SettleServiceReceivableDto,
   ServiceListingQueryDto,
   ServiceReviewQueryDto,
@@ -512,6 +513,7 @@ export class ServiceMarketplaceService {
       taxFields.sacCode !== existing.sacCode ||
       Number(taxFields.gstRatePercent ?? 0) !== Number(existing.gstRatePercent ?? 0) ||
       (sacMaster?.id ?? null) !== existing.sacMasterId;
+    const requiresApproval = this.sellerServiceUpdateRequiresApproval(dto);
 
     await this.prisma.client.$transaction(async (tx) => {
       await tx.serviceListing.update({
@@ -547,8 +549,10 @@ export class ServiceMarketplaceService {
           ...(dto.title !== undefined || dto.description !== undefined
             ? { searchText: this.searchText(dto.title ?? existing.title, dto.description ?? existing.description) }
             : {}),
-          approvalStatus: ApprovalStatus.PENDING_APPROVAL,
-          status: ServiceListingStatus.INACTIVE,
+          approvalStatus: requiresApproval
+            ? ApprovalStatus.PENDING_APPROVAL
+            : existing.approvalStatus,
+          status: requiresApproval ? ServiceListingStatus.INACTIVE : existing.status,
         },
       });
 
@@ -599,6 +603,16 @@ export class ServiceMarketplaceService {
     });
 
     return this.getSellerServiceOrThrow(seller.id, serviceId);
+  }
+
+  private sellerServiceUpdateRequiresApproval(dto: UpdateServiceListingDto) {
+    const operationalFields = new Set<keyof UpdateServiceListingDto>([
+      "quoteTtlHours",
+      "serviceDurationMinutes",
+    ]);
+    return (Object.keys(dto) as Array<keyof UpdateServiceListingDto>).some(
+      (field) => !operationalFields.has(field),
+    );
   }
 
   async archiveSellerService(actor: RequestUser, serviceId: string) {
@@ -956,10 +970,13 @@ export class ServiceMarketplaceService {
     return booking;
   }
 
-  async listSellerBookings(actor: RequestUser, query: ServiceListingQueryDto) {
+  async listSellerBookings(actor: RequestUser, query: ServiceBookingQueryDto) {
     const seller = await this.resolveSeller(actor);
     const { page, skip, take } = paginationFromQuery(query, { defaultLimit: 20 });
-    const where: Prisma.ServiceBookingWhereInput = { sellerId: seller.id };
+    const where: Prisma.ServiceBookingWhereInput = {
+      sellerId: seller.id,
+      ...(query.status ? { status: query.status } : {}),
+    };
     const [items, total] = await Promise.all([
       this.prisma.client.serviceBooking.findMany({
         where,

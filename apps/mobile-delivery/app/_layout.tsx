@@ -1,10 +1,10 @@
 import { ClerkProvider, useAuth } from "@clerk/clerk-expo";
-import { QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { focusManager, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useMemo, useRef } from "react";
-import { Linking, Text } from "react-native";
+import { AppState, Linking, Text } from "react-native";
 import { MobileDeliveryAuthProvider, useMobileDeliveryAuth } from "../src/auth/mobile-delivery-auth-context";
 import { Button, Card, Screen } from "../src/components/screen";
 import { getDeliveryAccess } from "../src/features/delivery/delivery-api";
@@ -28,6 +28,13 @@ const clerkPublishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim(
 
 function RootLayout() {
   const queryClient = useMemo(() => createQueryClient(), []);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (status) => {
+      focusManager.setFocused(status === "active");
+    });
+    return () => subscription.remove();
+  }, []);
 
   // No hardcoded fallback key: a missing env var must fail loudly at build
   // time instead of silently masking a misconfigured environment.
@@ -80,7 +87,10 @@ function DeliveryRouteGate() {
   // Registers this device for pushes once the partner is signed in and synced.
   // Approval gating happens server-side: assignment pushes only target the
   // partner the order/return is assigned to.
-  useDeliveryPushNotifications(auth);
+  useDeliveryPushNotifications({
+    ...auth,
+    enabled: auth.enabled && accessQuery.data?.isDeliveryPartner === true,
+  });
 
   // ─── Navigation guard ────────────────────────────────────────────────────
   // IMPORTANT: Never render <Redirect> conditionally inside a component that
@@ -102,6 +112,13 @@ function DeliveryRouteGate() {
       !isAccessBlockedRoute
     ) {
       target = "/access-blocked";
+    } else if (
+      auth.enabled &&
+      accessQuery.isSuccess &&
+      accessQuery.data.isDeliveryPartner &&
+      isAccessBlockedRoute
+    ) {
+      target = "/(tabs)";
     }
 
     // Dedupe by destination instead of a time window: repeated effect runs for

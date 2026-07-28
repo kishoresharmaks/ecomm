@@ -145,6 +145,7 @@ export function SellerSubscriptionClient() {
   const billing = subscription?.billing;
   const payments = subscription?.payments ?? currentSubscription?.payments ?? [];
   const actionError = authorizeMutation.error ?? cancelMutation.error;
+  const cancelsImmediately = subscription?.subscriptionStatus === "PENDING_PAYMENT";
 
   if (!plan) {
     return (
@@ -208,9 +209,15 @@ export function SellerSubscriptionClient() {
                 variant="outline"
                 onClick={() =>
                   confirmation.requestConfirmation({
-                    title: "Stop subscription renewal?",
-                    description: "Your current plan remains active until the end of its billing period, then recurring renewal will stop.",
-                    confirmLabel: "Stop renewal",
+                    title: cancelsImmediately
+                      ? "Cancel payment authorization?"
+                      : "Stop subscription renewal?",
+                    description: cancelsImmediately
+                      ? "This unpaid subscription authorization will be cancelled immediately. No paid plan access has started."
+                      : "Your current plan remains active until the end of its billing period, then recurring renewal will stop.",
+                    confirmLabel: cancelsImmediately
+                      ? "Cancel authorization"
+                      : "Stop renewal",
                     tone: "warning",
                     onConfirm: () => cancelMutation.mutate(),
                   })
@@ -218,7 +225,11 @@ export function SellerSubscriptionClient() {
                 disabled={cancelMutation.isPending}
               >
                 <Ban className="h-4 w-4" aria-hidden="true" />
-                {cancelMutation.isPending ? "Cancelling" : "Stop renewal"}
+                {cancelMutation.isPending
+                  ? "Cancelling"
+                  : cancelsImmediately
+                    ? "Cancel authorization"
+                    : "Stop renewal"}
               </Button>
             ) : null}
             <Button type="button" variant="outline" onClick={() => void query.refetch()}>

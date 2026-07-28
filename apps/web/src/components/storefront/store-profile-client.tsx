@@ -157,7 +157,7 @@ export function StoreProfileClient({ slug }: { slug: string }) {
 
   return (
     <StorefrontFrame>
-      <main className="min-h-[calc(100svh-69px)] bg-[#FFFCFB]">
+      <div className="min-h-[calc(100svh-69px)] bg-[#FFFCFB]">
         <section className="mx-auto max-w-7xl px-5 py-6 lg:px-6">
           <Button asChild variant="ghost" size="sm">
             <Link href="/search">
@@ -290,7 +290,7 @@ export function StoreProfileClient({ slug }: { slug: string }) {
                     />
                   ))
                 ) : (
-                  <StorefrontEmptyState className="col-span-2" message="No approved products are live for this store yet." />
+                  <StorefrontEmptyState className="col-span-2" message="No products are live for this store yet." />
                 )}
               </div>
 
@@ -360,7 +360,7 @@ export function StoreProfileClient({ slug }: { slug: string }) {
             <StorefrontErrorPanel error={storeQuery.error} onRetry={() => void storeQuery.refetch()} />
           </section>
         ) : null}
-      </main>
+      </div>
     </StorefrontFrame>
   );
 }

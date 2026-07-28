@@ -159,7 +159,7 @@ export function AdminPayoutsClient() {
                   {payout.seller?.storeName ?? payout.sellerId} / {shortDate(payout.periodFrom)} to {shortDate(payout.periodTo)}
                 </p>
                 <p className="mt-1 text-xs font-black uppercase tracking-wide text-[#667085]">
-                  {payout.settlementRunId ? `Settlement cycle ${payout.settlementRun?.runNumber ?? ""}` : "Seller manual payout request"} / {payout._count?.orderSplits ?? 0} eligible order splits
+                  {payout.settlementRunId ? `Settlement cycle ${payout.settlementRun?.runNumber ?? ""}` : "Seller manual payout request"} / {(payout._count?.orderSplits ?? 0) + (payout._count?.b2bOrders ?? 0) + (payout._count?.serviceSettlements ?? 0)} linked order and service records
                 </p>
                 <PayoutMethod
                   busy={verifyPayoutProfile.isPending}

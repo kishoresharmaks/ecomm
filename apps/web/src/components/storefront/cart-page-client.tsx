@@ -167,7 +167,7 @@ export function CartPageClient() {
       {confirmation.confirmationDialog}
       <StorefrontPageHeader
         title="Cart"
-        description="Review quantities and continue to checkout using the customer account context."
+        description="Review quantities, offers, and the latest order total before checkout."
       />
 
       <section className="mx-auto grid max-w-7xl gap-6 px-5 py-10 lg:grid-cols-[1fr_360px] lg:px-6">
@@ -249,7 +249,7 @@ export function CartPageClient() {
           ) : customerAuth.enabled ? (
             <StorefrontEmptyState
               title="Your cart is empty"
-              description="Add approved products from the storefront before checkout."
+              description="Add products from the storefront before checkout."
               action={
                 <Button asChild>
                   <Link href="/search">Browse products</Link>
@@ -331,7 +331,7 @@ export function CartPageClient() {
           {checkoutSummaryQuery.isError && !couponFeedback ? <StorefrontErrorPanel className="mt-6" error={checkoutSummaryQuery.error} onRetry={() => void checkoutSummaryQuery.refetch()} /> : null}
           {cartQuery.data?.items.length ? (
             <Button asChild size="lg" className="mt-5 w-full">
-              <Link href="/checkout">
+              <Link href={appliedCouponCode ? `/checkout?couponCode=${encodeURIComponent(appliedCouponCode)}` : "/checkout"}>
                 Checkout <ArrowRight size={17} />
               </Link>
             </Button>

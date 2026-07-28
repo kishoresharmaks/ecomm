@@ -16,13 +16,25 @@ describe("service operations", () => {
       description: "Doorstep AC inspection and repair support.",
       pricingModel: "INSPECTION_FEE",
       paymentMode: "INSPECTION_FEE",
+      cancellationPolicy: "STRICT",
+      taxClassification: "TAXABLE",
+      sacCode: "998719",
+      gstRatePercent: "18",
       basePrice: "",
       inspectionFee: "299",
       advanceAmount: "",
+      quoteTtlHours: "72",
+      serviceDurationMinutes: "90",
       allowedVisitModes: ["CUSTOMER_LOCATION"],
+      highlights: "Doorstep visit\nTest report",
+      inclusions: "Inspection\nMinor adjustment",
+      exclusions: "Replacement parts",
+      requirements: "Share model number",
       imageUrl: "seller-products/ac-repair.jpg",
       packageName: "Standard inspection",
+      packageDescription: "Inspection and test report",
       packagePrice: "299",
+      packageMrp: "399",
       areaLabel: "Salem service area",
       areaPincode: "636001",
       areaRadiusKm: "12",
@@ -33,11 +45,26 @@ describe("service operations", () => {
       title: "AC repair",
       pricingModel: "INSPECTION_FEE",
       paymentMode: "INSPECTION_FEE",
+      cancellationPolicy: "STRICT",
+      sacCode: "998719",
+      gstRatePercent: 18,
       inspectionFeePaise: 29900,
+      quoteTtlHours: 72,
+      serviceDurationMinutes: 90,
       allowedVisitModes: ["CUSTOMER_LOCATION"],
+      highlights: ["Doorstep visit", "Test report"],
+      inclusions: ["Inspection", "Minor adjustment"],
+      exclusions: ["Replacement parts"],
+      requirements: ["Share model number"],
     });
     expect(payload.images?.[0]).toMatchObject({ url: "seller-products/ac-repair.jpg", isPrimary: true });
-    expect(payload.packages?.[0]).toMatchObject({ name: "Standard inspection", pricePaise: 29900 });
+    expect(payload.packages?.[0]).toMatchObject({
+      name: "Standard inspection",
+      description: "Inspection and test report",
+      pricePaise: 29900,
+      mrpPaise: 39900,
+      durationMinutes: 90,
+    });
     expect(payload.areas?.[0]).toMatchObject({ label: "Salem service area", pincode: "636001", radiusKm: 12 });
   });
 

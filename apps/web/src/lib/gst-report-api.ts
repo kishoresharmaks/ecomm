@@ -334,6 +334,13 @@ export type GstDocumentPage = {
   totalPages: number;
 };
 
+export type GstReviewSellerOption = {
+  id: string;
+  storeName: string;
+  businessLegalName?: string | null;
+  gstin: string;
+};
+
 export type GstDocumentFilters = {
   page?: number | undefined;
   limit?: number | undefined;
@@ -417,6 +424,14 @@ export function getAdminGstDocuments(
   });
   return indihubFetch<GstDocumentPage>(
     `/api/admin/reports/gst/documents?${query.toString()}`,
+    undefined,
+    auth,
+  );
+}
+
+export function getAdminGstSellerOptions(auth: IndihubAuthHeaders) {
+  return indihubFetch<GstReviewSellerOption[]>(
+    "/api/admin/reports/gst/sellers",
     undefined,
     auth,
   );

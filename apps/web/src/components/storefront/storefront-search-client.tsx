@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   ArrowRight,
   Filter,
@@ -18,8 +18,10 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tansta
 import { Button, SectionHeading, cn } from "@indihub/ui";
 import { CustomerAuthNotice } from "@/components/auth/customer-auth-notice";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import {
   addCartItem,
+  getCart,
   listCategories,
   listStores,
   primaryVariant,
@@ -40,6 +42,7 @@ import {
   StorefrontSkeleton,
   storefrontInputClassName,
 } from "./storefront-ui";
+import { useStorefrontWishlist } from "./use-storefront-wishlist";
 
 type SearchFilters = {
   categoryId: string;
@@ -69,21 +72,37 @@ export function StorefrontSearchClient({ initialSearch = "" }: { initialSearch?:
   const router = useRouter();
   const queryClient = useQueryClient();
   const customerAuth = useCustomerAuth();
+  const wishlist = useStorefrontWishlist();
   const [search, setSearch] = useState(initialSearch);
   const [submittedSearch, setSubmittedSearch] = useState(initialSearch.trim());
   const [filters, setFilters] = useState<SearchFilters>(defaultFilters);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [storeSearch, setStoreSearch] = useState("");
+  const debouncedStoreSearch = useDebouncedValue(storeSearch, 250);
+
+  useEffect(() => {
+    setSearch(initialSearch);
+    setSubmittedSearch(initialSearch.trim());
+  }, [initialSearch]);
   const categoriesQuery = useQuery({
     queryKey: ["categories", "search-filters"],
     queryFn: listCategories,
     staleTime: 5 * 60 * 1000,
   });
   const storesQuery = useQuery({
-    queryKey: ["stores", "search-filters"],
-    queryFn: () => listStores({ limit: 60 }),
+    queryKey: ["stores", "search-filters", debouncedStoreSearch],
+    queryFn: () => listStores({ limit: 60, ...(debouncedStoreSearch ? { search: debouncedStoreSearch } : {}) }),
     staleTime: 5 * 60 * 1000,
   });
+  const cartQuery = useQuery({
+    queryKey: ["cart", customerAuth.authKey],
+    queryFn: () => getCart(customerAuth.authHeaders),
+    enabled: customerAuth.enabled,
+  });
+  const cartProductIds = new Set(
+    cartQuery.data?.items.map((item) => item.productVariant.product.id) ?? [],
+  );
   const effectiveQuery = submittedSearch.trim();
   const searchQuery = useInfiniteQuery({
     queryKey: ["advanced-search", effectiveQuery, filters],
@@ -203,6 +222,8 @@ export function StorefrontSearchClient({ initialSearch = "" }: { initialSearch?:
             onFiltersChange={setFilters}
             categories={categoriesQuery.data ?? []}
             stores={storesQuery.data ?? []}
+            storeSearch={storeSearch}
+            onStoreSearchChange={setStoreSearch}
           />
         </aside>
 
@@ -315,6 +336,12 @@ export function StorefrontSearchClient({ initialSearch = "" }: { initialSearch?:
                         product={product}
                         onAddToCart={(item) => addMutation.mutate(item)}
                         isAdding={addMutation.isPending}
+                        isInCart={cartProductIds.has(product.id)}
+                        isWishlisted={wishlist.hasWishlistProduct(product.id)}
+                        isWishlistPending={wishlist.isPendingProductId === product.id}
+                        {...(customerAuth.enabled
+                          ? { onWishlistToggle: async (item: ProductSummary) => { await wishlist.toggleWishlist(item.id); } }
+                          : {})}
                       />
                     ))}
                   </div>
@@ -392,6 +419,8 @@ export function StorefrontSearchClient({ initialSearch = "" }: { initialSearch?:
               onFiltersChange={setFilters}
               categories={categoriesQuery.data ?? []}
               stores={storesQuery.data ?? []}
+              storeSearch={storeSearch}
+              onStoreSearchChange={setStoreSearch}
               compact
             />
           </aside>
@@ -406,12 +435,16 @@ function SearchFilterPanel({
   onFiltersChange,
   categories,
   stores,
+  storeSearch,
+  onStoreSearchChange,
   compact = false,
 }: {
   filters: SearchFilters;
   onFiltersChange: (filters: SearchFilters) => void;
   categories: CategorySummary[];
   stores: StoreProfile[];
+  storeSearch: string;
+  onStoreSearchChange: (value: string) => void;
   compact?: boolean;
 }) {
   function update<K extends keyof SearchFilters>(key: K, value: SearchFilters[K]) {
@@ -450,6 +483,12 @@ function SearchFilterPanel({
         </FilterField>
 
         <FilterField label="Store">
+          <input
+            value={storeSearch}
+            onChange={(event) => onStoreSearchChange(event.target.value)}
+            placeholder="Search store name"
+            className={storefrontInputClassName}
+          />
           <select value={filters.sellerId} onChange={(event) => update("sellerId", event.target.value)} className={storefrontInputClassName}>
             <option value="">All stores</option>
             {stores.map((store) => (

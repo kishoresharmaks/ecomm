@@ -41,6 +41,7 @@ import {
   type ReactNode,
   startTransition,
   useContext,
+  useEffect,
   useId,
   useRef,
   useState,
@@ -60,6 +61,18 @@ import {
 } from "@/lib/public-image-upload";
 import { getSellerProfile, type SellerCapability, type SellerProfile } from "@/lib/seller-api";
 import { sellerNav } from "@/lib/portal-nav";
+import {
+  isSellerOnboardingRequiredError,
+  requiredSellerCapability,
+  sellerCapabilities,
+  sellerHasCapability,
+} from "./seller-ui-guards";
+
+export {
+  isSellerOnboardingRequiredError,
+  requiredSellerCapability,
+  sellerHasCapability,
+} from "./seller-ui-guards";
 
 const clerkEnabled = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 const SellerWorkspaceRootContext = createContext(false);
@@ -161,6 +174,11 @@ export function SellerWorkspaceRoot({ children }: { children: ReactNode }) {
   const isSignedOut = sellerAuth.status === "signed-out";
   const isLoading = sellerAuth.status === "syncing" || profileQuery.isLoading;
   const requiresOnboarding = Boolean(profileQuery.error && isSellerOnboardingRequiredError(profileQuery.error));
+  const requiredCapability = requiredSellerCapability(pathname);
+  const missingCapability =
+    profileQuery.data && requiredCapability && !sellerHasCapability(profileQuery.data, requiredCapability)
+      ? requiredCapability
+      : null;
   
   // Only show the sidebar if the user is authenticated AND does not explicitly require onboarding.
   // During the loading state, we hide the sidebar if we haven't fetched their profile yet to avoid flashing.
@@ -173,7 +191,7 @@ export function SellerWorkspaceRoot({ children }: { children: ReactNode }) {
         <main className="min-h-screen bg-[#F6F3EC] text-[#1F2933]">
           <div className={cn("min-h-screen", showSidebar ? "grid lg:grid-cols-[300px_minmax(0,1fr)]" : "flex flex-col")}>
             {showSidebar ? (
-              <aside className="hidden border-r border-[#D9E2EA] bg-[#123A5A] text-white lg:block">
+              <aside className="hidden border-r border-[#D9E2EA] bg-[#ED3500] text-white lg:block">
                 <SellerSidebar pathname={pathname} items={visibleNav} profile={profileQuery.data} />
               </aside>
             ) : null}
@@ -183,7 +201,7 @@ export function SellerWorkspaceRoot({ children }: { children: ReactNode }) {
             <div className="sticky top-0 z-30 border-b border-[#D9E2EA] bg-white/95 px-4 py-3 backdrop-blur lg:hidden">
               <div className="flex items-center justify-between gap-3">
                 <Link href="/seller" className="flex items-center gap-3">
-                  <span className="grid h-10 w-10 place-items-center rounded-md bg-[#123A5A] text-sm font-black text-white">1HI</span>
+                  <span className="grid h-10 w-10 place-items-center rounded-md bg-[#ED3500] text-sm font-black text-white">1HI</span>
                   <span>
                     <span className="block text-base font-black text-[#123A5A]">1HandIndia</span>
                     <span className="block text-xs font-bold text-[#ED3500]">Seller Center</span>
@@ -215,7 +233,7 @@ export function SellerWorkspaceRoot({ children }: { children: ReactNode }) {
             ) : null}
 
             <div className={cn("flex-1 px-4 py-5 sm:px-6 lg:px-10 lg:py-8", !showSidebar && "mx-auto w-full max-w-5xl")}>
-              {children}
+              {missingCapability ? <SellerCapabilityUnavailable capability={missingCapability} /> : children}
             </div>
             {!showSidebar ? <StorefrontFooter /> : null}
             </section>
@@ -367,18 +385,6 @@ function filterSellerNav(profile?: SellerProfile | null) {
 
     return capabilities.includes(item.capability);
   });
-}
-
-function sellerCapabilities(profile?: SellerProfile | null): SellerCapability[] {
-  if (!profile) {
-    return [];
-  }
-
-  if (profile.enabledCapabilities?.length) {
-    return profile.enabledCapabilities;
-  }
-
-  return profile.primaryCapability ? [profile.primaryCapability] : ["RETAIL"];
 }
 
 function operationSummary(profile?: SellerProfile | null) {
@@ -648,26 +654,11 @@ export function SellerStartWelcome({
               The 1HandIndia Seller app is packed with features to help you manage and grow your retail or service business wherever you are. Take care of operations right from your phone.
             </p>
             
-            <div className="mt-10 flex flex-col md:flex-row items-center gap-6">
-              <div className="shrink-0 rounded-2xl bg-white p-3 shadow-md border border-[#E5E7EB]">
-                {/* Dynamically generated QR pointing to Playstore */}
-                <img 
-                  src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=https://play.google.com/store/apps/details?id=com.onehandindia.seller" 
-                  alt="Scan to download" 
-                  className="h-20 w-20"
-                  loading="lazy"
-                  decoding="async"
-                />
-              </div>
-              <div className="text-center md:text-left">
-                <p className="text-sm font-black text-[#111827]">Scan to download</p>
-                <p className="text-xs font-semibold text-[#667085] mt-1 flex items-center gap-2 justify-center md:justify-start">
-                  Available on Android
-                  <span className="rounded-full bg-[#FFFCFB] border border-[#ED3500]/20 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-[#ED3500] shadow-sm">
-                    Coming Soon
-                  </span>
-                </p>
-              </div>
+            <div className="mt-10 inline-flex flex-col items-center gap-2 rounded-xl border border-[#ED3500]/20 bg-[#FFFCFB] px-5 py-4 text-center md:items-start md:text-left">
+              <span className="rounded-full bg-[#FFF0EC] px-3 py-1 text-[10px] font-black uppercase tracking-wider text-[#ED3500]">
+                Android app coming soon
+              </span>
+              <p className="text-sm font-bold text-[#1F2933]">Use the Seller Hub web workspace until the verified app listing is available.</p>
             </div>
           </div>
 
@@ -694,8 +685,19 @@ export function SellerOnboardingRequired({ message = "Create a seller profile fo
   );
 }
 
-export function isSellerOnboardingRequiredError(error: unknown) {
-  return error instanceof IndihubApiError && [403, 404].includes(error.status);
+function SellerCapabilityUnavailable({ capability }: { capability: SellerCapability }) {
+  const label = capability === "SERVICE" ? "service provider" : "retail seller";
+  return (
+    <SellerEmptyState
+      title={`${capability === "SERVICE" ? "Service" : "Retail"} access is not enabled`}
+      message={`This account is not currently enabled as a ${label}. Add the capability from seller onboarding to use these tools.`}
+      action={
+        <Button asChild>
+          <Link href="/seller/register">Manage seller capabilities</Link>
+        </Button>
+      }
+    />
+  );
 }
 
 export function isSellerApproved(profile?: Pick<SellerProfile, "status" | "approvalStatus"> | null) {
@@ -743,8 +745,9 @@ export function SellerField({
   required = false,
   placeholder,
     hint,
-    info,
+  info,
   min,
+  max,
   step,
   readOnly = false
 }: {
@@ -758,7 +761,8 @@ export function SellerField({
   placeholder?: string;
     hint?: string;
     info?: ReactNode;
-  min?: number;
+  min?: string | number | undefined;
+  max?: string | number | undefined;
   step?: string;
   readOnly?: boolean;
 }) {
@@ -782,6 +786,7 @@ export function SellerField({
         onChange={onChange ? (event) => onChange(event.target.value) : undefined}
         placeholder={placeholder}
         min={min}
+        max={max}
         step={step}
         readOnly={readOnly}
         className="h-11 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 text-sm font-semibold text-[#1F2933] outline-none transition focus:border-[#ED3500] focus:bg-white read-only:bg-[#EEF3F7] read-only:text-[#667085]"
@@ -859,6 +864,12 @@ export function SellerPagination({
   const currentPage = Math.min(page, pageCount);
   const firstItem = total === 0 ? 0 : (currentPage - 1) * pageSize + 1;
   const lastItem = Math.min(total, currentPage * pageSize);
+
+  useEffect(() => {
+    if (page !== currentPage) {
+      onPageChange(currentPage);
+    }
+  }, [currentPage, onPageChange, page]);
 
   return (
     <div className="mt-6 flex flex-col gap-3 rounded-lg border border-[#D8E2EA] bg-[#F8FAFC] px-4 py-4 md:flex-row md:items-center md:justify-between">

@@ -1,4 +1,4 @@
-import type { SellerPayout } from "./seller-api";
+import type { SellerLedgerEntry, SellerPayout } from "./seller-api";
 
 export function sellerPayoutStatusLabel(status: SellerPayout["status"]) {
   switch (status) {
@@ -22,4 +22,10 @@ export function sellerPayoutStatusLabel(status: SellerPayout["status"]) {
 
 export function isPayoutConfirmed(status: SellerPayout["status"]) {
   return status === "APPROVED" || status === "PAID";
+}
+
+export function sellerLedgerAmount(entry: SellerLedgerEntry) {
+  return entry.creditPaise > 0
+    ? { amountPaise: entry.creditPaise, label: "Credit" }
+    : { amountPaise: entry.debitPaise, label: "Debit" };
 }

@@ -401,6 +401,110 @@ describe("ReportsService", () => {
     expect(result.summary.netPayablePaise).toBe(90600);
   });
 
+  it("reports the full low-stock count and converts inventory revenue for the seller market", async () => {
+    const tx = createReportsTx();
+    const prisma = createPrisma(tx);
+    prisma.client.seller.findUnique.mockResolvedValue({
+      id: "seller_sg",
+      primaryCapability: "RETAIL",
+      enabledCapabilities: ["RETAIL"],
+      addresses: [{ countryCode: "SG" }],
+    });
+    tx.product.count.mockResolvedValueOnce(12).mockResolvedValueOnce(8);
+    tx.productVariant.count.mockResolvedValueOnce(120).mockResolvedValueOnce(65);
+    tx.productVariant.findMany.mockResolvedValue([]);
+    tx.orderItem.groupBy.mockResolvedValue([
+      {
+        productId: "product_1",
+        _sum: { quantity: 4, lineTotalPaise: 100000 },
+      },
+    ]);
+    tx.product.findMany.mockResolvedValue([{ id: "product_1", name: "Product one" }]);
+    tx.orderSellerSplit.findMany.mockResolvedValue([
+      { id: "split_1", sellerSubtotalPaise: 50000, createdAt: new Date("2026-07-01T00:00:00.000Z") },
+    ]);
+    const service = new ReportsService(
+      prisma as never,
+      createFinanceCalculator() as never,
+      createMarketService({ countryCode: "SG", currency: "SGD", rate: 0.02 }) as never,
+    );
+
+    const result = await service.sellerInventoryReport(
+      { id: "user_seller", clerkUserId: null, email: "seller@example.com", roles: [] },
+      {},
+    );
+
+    expect(result.currency).toBe("SGD");
+    expect(result.summary.lowStockCount).toBe(65);
+    expect(result.topSoldItems[0]?.revenuePaise).toBe(2000);
+    expect(result.splits[0]?.sellerSubtotalPaise).toBe(1000);
+  });
+
+  it("scopes return values to the seller's items inside multi-seller requests", async () => {
+    const tx = createReportsTx();
+    const prisma = createPrisma(tx);
+    prisma.client.seller.findUnique.mockResolvedValue({
+      id: "seller_1",
+      primaryCapability: "RETAIL",
+      enabledCapabilities: ["RETAIL"],
+      addresses: [{ countryCode: "IN" }],
+    });
+    tx.returnRequestItem.groupBy.mockResolvedValue([
+      {
+        returnRequestId: "return_1",
+        _count: 1,
+        _sum: { requestedRefundPaise: 2500, approvedRefundPaise: 2000 },
+      },
+    ]);
+    tx.returnRequest.findMany
+      .mockResolvedValueOnce([{ id: "return_1", status: "APPROVED" }])
+      .mockResolvedValueOnce([
+        {
+          id: "return_1",
+          requestNumber: "RET-1",
+          status: "APPROVED",
+          resolution: "REFUND",
+          reason: "Damaged",
+          requestedAmountPaise: 10000,
+          approvedAmountPaise: 9000,
+          requestedAt: new Date("2026-07-10T00:00:00.000Z"),
+          order: { orderNumber: "1HI-1" },
+          items: [{ requestedRefundPaise: 2500, approvedRefundPaise: 2000 }],
+        },
+      ]);
+    const service = new ReportsService(
+      prisma as never,
+      createFinanceCalculator() as never,
+      createMarketService() as never,
+    );
+
+    const result = await service.sellerReturnsReport(
+      { id: "user_seller", clerkUserId: null, email: "seller@example.com", roles: [] },
+      {},
+    );
+
+    expect(result.summary).toMatchObject({
+      totalCount: 1,
+      approvedCount: 1,
+      itemCount: 1,
+      requestedAmountPaise: 2500,
+      approvedAmountPaise: 2000,
+    });
+    expect(result.byStatus).toEqual([
+      {
+        status: "APPROVED",
+        count: 1,
+        requestedAmountPaise: 2500,
+        approvedAmountPaise: 2000,
+      },
+    ]);
+    expect(result.recentReturns[0]).toMatchObject({
+      requestedAmountPaise: 2500,
+      approvedAmountPaise: 2000,
+    });
+    expect(result.recentReturns[0]).not.toHaveProperty("items");
+  });
+
   it("calculates seller tax report rows before payout stamping", async () => {
     const tx = createReportsTx();
     const prisma = createPrisma(tx);
@@ -602,7 +706,11 @@ function createReportsTx() {
       findMany: vi.fn()
     },
     returnRequest: {
-      count: vi.fn()
+      count: vi.fn(),
+      findMany: vi.fn()
+    },
+    returnRequestItem: {
+      groupBy: vi.fn()
     },
     taxDocument: {
       findMany: vi.fn()

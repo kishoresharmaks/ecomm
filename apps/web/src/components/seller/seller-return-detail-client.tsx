@@ -40,6 +40,7 @@ import {
 } from "@/lib/returns-api";
 import { openPrivateProofReference } from "@/lib/delivery-proof-upload";
 import { formatVariantLabel } from "@/lib/order-variant";
+import { userFacingApiErrorMessage } from "@/lib/api";
 import { formatMoney } from "@/lib/storefront-api";
 import {
   SellerAuthNotice,
@@ -70,7 +71,7 @@ export function SellerReturnDetailClient({ requestNumber }: { requestNumber: str
       void queryClient.invalidateQueries({ queryKey: ["seller-returns"] });
       void queryClient.invalidateQueries({ queryKey: ["seller-return-detail"] });
     },
-    onError: (error) => setNotice({ tone: "danger", message: error instanceof Error ? error.message : "Unable to add seller note." }),
+    onError: (error) => setNotice({ tone: "danger", message: userFacingApiErrorMessage(error) }),
   });
 
   const decisionMutation = useMutation({
@@ -87,7 +88,7 @@ export function SellerReturnDetailClient({ requestNumber }: { requestNumber: str
       void queryClient.invalidateQueries({ queryKey: ["seller-returns"] });
       void queryClient.invalidateQueries({ queryKey: ["seller-return-detail"] });
     },
-    onError: (error) => setNotice({ tone: "danger", message: error instanceof Error ? error.message : "Unable to update seller return decision." }),
+    onError: (error) => setNotice({ tone: "danger", message: userFacingApiErrorMessage(error) }),
   });
 
   if (!sellerAuth.enabled) {
@@ -347,7 +348,7 @@ function ReturnDetailCard({ detail }: { detail: ReturnDetail }) {
     try {
       await openPrivateProofReference(sellerAuth.authHeaders, assetKey);
     } catch (error) {
-      setProofOpenError(error instanceof Error ? error.message : "Could not open proof image.");
+      setProofOpenError(userFacingApiErrorMessage(error));
     }
   }
 

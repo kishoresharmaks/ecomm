@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import * as WebBrowser from "expo-web-browser";
 import { useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
@@ -43,6 +43,7 @@ const REPORT_OPTIONS = [
 ];
 
 const PERIOD_OPTIONS = [
+  { label: "Today", value: "today" },
   { label: "This month", value: "month" },
   { label: "Last 7 days", value: "7d" },
   { label: "Last 30 days", value: "30d" },
@@ -62,21 +63,25 @@ export default function SellerReportsScreen() {
     queryKey: ["seller-report", "sales", auth.authKey, dateQuery],
     queryFn: () => getSellerSalesReport(auth.authHeaders, dateQuery),
     enabled: auth.enabled && reportType === "sales",
+    placeholderData: keepPreviousData,
   });
   const inventoryQuery = useQuery({
     queryKey: ["seller-report", "inventory", auth.authKey, dateQuery],
     queryFn: () => getSellerInventoryReport(auth.authHeaders, dateQuery),
     enabled: auth.enabled && reportType === "inventory",
+    placeholderData: keepPreviousData,
   });
   const financeQuery = useQuery({
     queryKey: ["seller-report", "finance", auth.authKey, dateQuery],
     queryFn: () => getSellerFinanceReport(auth.authHeaders, dateQuery),
     enabled: auth.enabled && reportType === "finance",
+    placeholderData: keepPreviousData,
   });
   const returnsQuery = useQuery({
     queryKey: ["seller-report", "returns", auth.authKey, dateQuery],
     queryFn: () => getSellerReturnsReport(auth.authHeaders, dateQuery),
     enabled: auth.enabled && reportType === "returns",
+    placeholderData: keepPreviousData,
   });
 
   const activeQuery = {
@@ -91,7 +96,11 @@ export default function SellerReportsScreen() {
   }
 
   return (
-    <Screen contentContainerStyle={styles.content}>
+    <Screen
+      contentContainerStyle={styles.content}
+      refreshing={activeQuery.isRefetching}
+      onRefresh={() => void activeQuery.refetch()}
+    >
       <Header title="Reports" subtitle="Review seller performance here. Downloads and GST compliance remain in 1HandIndia Seller Hub." />
       <Card>
         <SelectField
@@ -116,6 +125,9 @@ export default function SellerReportsScreen() {
       </Card>
 
       {activeQuery.isLoading ? <LoadingState message={`Loading ${reportType} report...`} /> : null}
+      {activeQuery.isFetching && !activeQuery.isLoading ? (
+        <Text style={styles.updating}>Updating {reportLabel(reportType).toLowerCase()} report...</Text>
+      ) : null}
       {activeQuery.isError ? (
         <QueryErrorState
           title={`${reportLabel(reportType)} report could not be loaded`}
@@ -174,14 +186,15 @@ function SalesReport({ report }: { report: SellerSalesReport | undefined }) {
   if (!report?.summary.orderCount && !report?.recentOrders.length) {
     return <EmptyState title="No sales in this period" message="Orders and sales totals will appear here." />;
   }
+  const currency = report.currency ?? "INR";
   return (
     <>
       <MetricGrid
         items={[
-          ["Gross sales", formatMoney(report.summary.totalSalesPaise)],
-          ["Net sales", formatMoney(report.summary.netSalesPaise)],
-          ["Commission", formatMoney(report.summary.commissionPaise)],
-          ["Platform fee", formatMoney(report.summary.platformFeePaise)],
+          ["Gross sales", formatMoney(report.summary.totalSalesPaise, currency)],
+          ["Net sales", formatMoney(report.summary.netSalesPaise, currency)],
+          ["Commission", formatMoney(report.summary.commissionPaise, currency)],
+          ["Platform fee", formatMoney(report.summary.platformFeePaise, currency)],
           ["Orders", String(report.summary.orderCount)],
           ["Low stock", String(report.summary.lowStockCount)],
         ]}
@@ -210,6 +223,7 @@ function InventoryReport({ report }: { report: SellerInventoryReport | undefined
   if (!report?.summary.productCount && !report?.variants.length) {
     return <EmptyState title="No inventory data" message="Product and stock information will appear here." />;
   }
+  const currency = report.currency ?? "INR";
   return (
     <>
       <MetricGrid
@@ -233,7 +247,7 @@ function InventoryReport({ report }: { report: SellerInventoryReport | undefined
         rows={report.topSoldItems.map((item) => ({
           id: item.productId,
           title: item.productName,
-          detail: `${item.quantitySold} sold - ${formatMoney(item.revenuePaise)}`,
+          detail: `${item.quantitySold} sold - ${formatMoney(item.revenuePaise, currency)}`,
         }))}
       />
     </>
@@ -281,6 +295,7 @@ function ReturnsReport({ report }: { report: SellerReturnsReport | undefined }) 
   if (!report?.summary.totalCount && !report?.recentReturns.length) {
     return <EmptyState title="No returns in this period" message="Return requests and refund values will appear here." />;
   }
+  const currency = report.currency ?? "INR";
   return (
     <>
       <MetricGrid
@@ -289,8 +304,8 @@ function ReturnsReport({ report }: { report: SellerReturnsReport | undefined }) 
           ["Items", String(report.summary.itemCount)],
           ["Pending", String(report.summary.pendingCount)],
           ["Approved", String(report.summary.approvedCount)],
-          ["Requested value", formatMoney(report.summary.requestedAmountPaise)],
-          ["Approved value", formatMoney(report.summary.approvedAmountPaise)],
+          ["Requested value", formatMoney(report.summary.requestedAmountPaise, currency)],
+          ["Approved value", formatMoney(report.summary.approvedAmountPaise, currency)],
         ]}
       />
       <ListCard
@@ -298,7 +313,7 @@ function ReturnsReport({ report }: { report: SellerReturnsReport | undefined }) 
         rows={report.byStatus.map((item) => ({
           id: item.status,
           title: displayStatus(item.status),
-          detail: `${item.count} requests - ${formatMoney(item.approvedAmountPaise)} approved`,
+          detail: `${item.count} requests - ${formatMoney(item.approvedAmountPaise, currency)} approved`,
         }))}
       />
       <ListCard
@@ -306,7 +321,7 @@ function ReturnsReport({ report }: { report: SellerReturnsReport | undefined }) 
         rows={report.recentReturns.map((item) => ({
           id: item.id,
           title: `${item.requestNumber} - ${item.order.orderNumber}`,
-          detail: `${displayStatus(item.status)} - ${formatMoney(item.requestedAmountPaise)}`,
+          detail: `${displayStatus(item.status)} - ${formatMoney(item.requestedAmountPaise, currency)}`,
         }))}
       />
     </>
@@ -370,4 +385,5 @@ const styles = StyleSheet.create({
   row: { borderTopColor: colors.border, borderTopWidth: 1, gap: 3, paddingTop: spacing.sm },
   rowTitle: { color: colors.ink, fontSize: 14, fontWeight: "900" },
   rowDetail: { color: colors.muted, fontSize: 12, fontWeight: "700", lineHeight: 18 },
+  updating: { color: colors.muted, fontSize: 12, fontWeight: "800", textAlign: "center" },
 });

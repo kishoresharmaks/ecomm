@@ -56,6 +56,7 @@ import { useQuery } from "@tanstack/react-query";
 import { EmptyState } from "../../src/components/empty-state";
 import { DealCard } from "../../src/components/deal-card";
 import { Screen } from "../../src/components/screen";
+import { PromotionalPopupSheet } from "../../src/components/promotional-popup-sheet";
 import { AnnouncementCarousel } from "../../src/components/announcement-carousel";
 import logoIcon from "../../assets/icon.png";
 import { useMobileCustomerAuth, type MobileCustomerAuthStatus } from "../../src/auth/mobile-auth-context";
@@ -251,6 +252,7 @@ function HomeScreen() {
         renderItem={({ item }) => <HomeFeedCard item={item} wishlist={wishlist} />}
       />
       <LocationSelectorModal open={locationOpen} onClose={() => setLocationOpen(false)} />
+      <PromotionalPopupSheet />
     </Screen>
   );
 }

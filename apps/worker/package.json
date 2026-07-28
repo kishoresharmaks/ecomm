@@ -15,7 +15,9 @@
     "@indihub/config": "workspace:*",
     "@indihub/database": "workspace:*",
     "bullmq": "5.77.1",
+    "exceljs": "^4.4.0",
     "ioredis": "5.10.1",
+    "jszip": "^3.10.1",
     "nodemailer": "^8.0.9",
     "pino": "10.3.1",
     "zod": "4.4.3"

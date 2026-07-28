@@ -10,6 +10,7 @@ const sellerReportTypes: Array<{ value: ReportExportType; label: string }> = [
   { value: "SELLER_FINANCE", label: "Finance and settlements" },
   { value: "SELLER_TAX", label: "Tax and deductions" },
   { value: "SELLER_RETURNS", label: "Returns and refunds" },
+  { value: "GSTR1_REVIEW_SELLER_XLSX", label: "GSTR-1 accountant review workbook" },
 ];
 
 export function SellerReportExportsClient() {

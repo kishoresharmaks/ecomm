@@ -2,6 +2,7 @@ import { deleteJson, getJson, patchJson, postJson, type MobileAuthHeaders } from
 
 export type SellerStatus = "PENDING_APPROVAL" | "APPROVED" | "SUSPENDED" | "REJECTED";
 export type SellerApprovalStatus = "PENDING_APPROVAL" | "APPROVED" | "REJECTED";
+export type SellerCapability = "RETAIL" | "SERVICE";
 export type ProductTaxClassification = "TAXABLE" | "NIL_RATED" | "EXEMPT" | "NON_GST";
 export type SellerTaxRegistrationStatus = "GST_REGISTERED" | "COMPOSITION" | "NOT_REGISTERED";
 export type SellerProductDeliveryMode =
@@ -14,7 +15,9 @@ export type SellerProfile = {
   id: string;
   storeName: string;
   slug?: string;
-  sellerType?: "MARKETPLACE_SELLER" | "HYPERLOCAL_STORE" | "WHOLESALE_DISTRIBUTOR";
+  sellerType?: "MARKETPLACE_SELLER" | "HYPERLOCAL_STORE" | "WHOLESALE_DISTRIBUTOR" | "SERVICE_PROVIDER";
+  primaryCapability?: SellerCapability;
+  enabledCapabilities?: SellerCapability[];
   status: SellerStatus;
   approvalStatus: SellerApprovalStatus;
   subscriptionStatus?: string;
@@ -96,6 +99,8 @@ export type SellerDocumentType =
   | "ADDRESS_PROOF"
   | "BANK_PROOF"
   | "BUSINESS_REGISTRATION"
+  | "SERVICE_COMPLETION_PROOF"
+  | "SERVICE_DISPUTE_EVIDENCE"
   | "OTHER";
 
 export type SellerVerificationDocumentPayload = {
@@ -282,6 +287,16 @@ export type PageResult<T> = {
   total: number;
   page: number;
   limit: number;
+};
+
+export type CursorPageResult<T, Summary = never> = {
+  items: T[];
+  limit: number;
+  pageInfo: {
+    hasNextPage: boolean;
+    nextCursor: string | null;
+  };
+  summary?: Summary;
 };
 
 export type SellerOrder = {
@@ -482,6 +497,14 @@ export type SellerOrderDeliveryDetail = {
 };
 
 export type SellerSalesReport = {
+  currency?: string;
+  baseCurrency?: string;
+  fxRate?: number;
+  seller?: {
+    id: string;
+    primaryCapability?: SellerCapability;
+    enabledCapabilities?: SellerCapability[];
+  };
   summary: {
     orderCount: number;
     totalSalesPaise: number;
@@ -494,9 +517,67 @@ export type SellerSalesReport = {
     products: number;
     lowStockCount: number;
     b2bEnquiries: number;
+    b2bOrders?: number;
+    b2bOrderValuePaise?: number;
+    serviceBookings?: number;
+    serviceRevenuePaise?: number;
+    serviceListings?: number;
   };
-  recentOrders: Array<{ id: string; sellerSubtotalPaise: number; sellerStatus: string; order: SellerOrder }>;
-  lowStockProducts: Array<{ id: string; stockQuantity?: number | null; product: ProductSummary }>;
+  b2b?: {
+    enquiryCount: number;
+    orderCount: number;
+    byEnquiryStatus: Array<{ status: B2BEnquiryStatus; count: number }>;
+  };
+  services?: {
+    listingCount: number;
+    activeListingCount: number;
+    bookingCount: number;
+    totalPayablePaise: number;
+    paidAmountPaise: number;
+    paidPaymentCount: number;
+    paidPaymentPaise: number;
+    byBookingStatus: Array<{
+      status: ServiceBookingStatus;
+      count: number;
+      totalPayablePaise: number;
+      paidAmountPaise: number;
+    }>;
+    recentBookings: Array<{
+      id: string;
+      bookingNumber: string;
+      status: ServiceBookingStatus;
+      scheduledStartAt?: string | null;
+      totalPayablePaise: number;
+      paidAmountPaise: number;
+      currency: string;
+      createdAt?: string;
+      listing?: {
+        id: string;
+        title: string;
+        slug: string;
+      } | null;
+      customer?: {
+        displayName?: string | null;
+        user?: {
+          fullName?: string | null;
+        } | null;
+      } | null;
+    }>;
+  };
+  recentOrders: Array<{
+    id: string;
+    sellerSubtotalPaise: number;
+    sellerStatus: string;
+    createdAt?: string;
+    order: SellerOrder;
+  }>;
+  lowStockProducts: Array<{
+    id: string;
+    sku?: string | null;
+    variantName?: string | null;
+    stockQuantity?: number | null;
+    product: ProductSummary;
+  }>;
 };
 
 export type SellerInventoryVariant = {
@@ -508,6 +589,9 @@ export type SellerInventoryVariant = {
 };
 
 export type SellerInventoryReport = {
+  currency?: string;
+  baseCurrency?: string;
+  fxRate?: number;
   summary: {
     productCount: number;
     activeProductCount: number;
@@ -565,6 +649,9 @@ export type SellerFinanceReport = {
 };
 
 export type SellerReturnsReport = {
+  currency?: string;
+  baseCurrency?: string;
+  fxRate?: number;
   summary: {
     totalCount: number;
     approvedCount: number;
@@ -594,9 +681,25 @@ export type SellerReturnsReport = {
 
 export type SellerPayoutAvailability = {
   requestEnabled: boolean;
+  minimumPayoutPaise?: number;
   sellerReady: boolean;
   hasPayoutMethod: boolean;
   eligibleSplitCount: number;
+  eligibleB2BOrderCount?: number;
+  eligibleServiceSettlementCount?: number;
+  serviceReceivableOffsetPaise?: number;
+  ledgerDebtOffsetPaise?: number;
+  pendingPayoutsPaise?: number;
+  paidPayoutsPaise?: number;
+  periodFrom?: string | null;
+  periodTo?: string | null;
+  grossSalesPaise?: number;
+  commissionPaise?: number;
+  gstOnCommissionPaise?: number;
+  tdsPaise?: number;
+  tcsPaise?: number;
+  platformFeePaise?: number;
+  refundAdjustmentPaise?: number;
   netPayablePaise: number;
   sellerCashReceivableOffsetPaise?: number;
   sellerCashReceivableOutstandingPaise?: number;
@@ -619,7 +722,9 @@ export type SellerPayout = {
 export type SellerLedgerEntry = {
   id: string;
   entryType?: string;
-  amountPaise: number;
+  debitPaise: number;
+  creditPaise: number;
+  balanceAfterPaise: number;
   currency?: string;
   description?: string | null;
   createdAt?: string;
@@ -631,6 +736,8 @@ export type SellerStatement = {
   status?: string;
   currency?: string;
   netPayablePaise?: number;
+  periodFrom?: string;
+  periodTo?: string;
   generatedAt?: string;
 };
 
@@ -760,6 +867,7 @@ export type B2BEnquiryStatus =
   | "SUBMITTED"
   | "IN_REVIEW"
   | "RESPONDED"
+  | "NEGOTIATING"
   | "BUYER_CONFIRMED"
   | "ADMIN_APPROVED"
   | "FINALISED"
@@ -792,6 +900,9 @@ export type B2BEnquiry = {
     id: string;
     responseMessage: string;
     quotedPricePaise?: number | null;
+    transportChargePaise?: number | null;
+    transportEta?: string | null;
+    transportNote?: string | null;
     source?: string;
     createdAt?: string;
     responder?: {
@@ -799,6 +910,20 @@ export type B2BEnquiry = {
       fullName?: string | null;
     } | null;
   }>;
+  messages?: {
+    items: Array<{
+      id: string;
+      enquiryId: string;
+      senderUserId: string;
+      message: string;
+      createdAt?: string;
+      sender?: {
+        email?: string | null;
+        fullName?: string | null;
+      } | null;
+    }>;
+    nextCursor: string | null;
+  };
   b2bOrder?: B2BOrder | null;
 };
 
@@ -812,7 +937,11 @@ export function listB2BEnquiries(auth: MobileAuthHeaders, query: Record<string, 
 }
 
 export function getB2BEnquiry(auth: MobileAuthHeaders, enquiryId: string) {
-  return getJson<B2BEnquiry>({ path: `/seller/b2b-enquiries/${encodeURIComponent(enquiryId)}`, auth });
+  return getJson<B2BEnquiry>({
+    path: `/seller/b2b-enquiries/${encodeURIComponent(enquiryId)}`,
+    auth,
+    searchParams: { messageLimit: 50 },
+  });
 }
 
 export function respondToB2BEnquiry(auth: MobileAuthHeaders, enquiryId: string, payload: B2BEnquiryResponsePayload) {
@@ -823,8 +952,29 @@ export function respondToB2BEnquiry(auth: MobileAuthHeaders, enquiryId: string, 
 export type B2BOrderStatus =
   | "PROFORMA_ISSUED"
   | "PO_SUBMITTED"
+  | "PO_UNDER_REVIEW"
   | "PO_ACCEPTED"
+  | "CREDIT_CLEARANCE_PENDING"
   | "IN_FULFILMENT"
+  | "PROCUREMENT_IN_PROGRESS"
+  | "PRODUCTION_IN_PROGRESS"
+  | "STOCK_READY"
+  | "PICKING"
+  | "PACKING"
+  | "QC_PENDING"
+  | "PACKED_AND_QC_PASSED"
+  | "TAX_INVOICE_ISSUED"
+  | "E_WAY_READY"
+  | "E_WAY_NOT_REQUIRED"
+  | "DISPATCHED"
+  | "IN_TRANSIT"
+  | "DELIVERED"
+  | "DELIVERY_ACCEPTED"
+  | "DELIVERY_DISPUTED"
+  | "PAYMENT_OVERDUE"
+  | "ON_HOLD"
+  | "FULFILMENT_REVIEW_REQUIRED"
+  | "CLOSED"
   | "FULFILLED"
   | "CANCELLED";
 
@@ -840,6 +990,9 @@ export type B2BOrder = {
   proformaInvoiceNumber?: string;
   proformaIssuedAt?: string;
   proformaExpiresAt?: string | null;
+  taxInvoiceNumber?: string | null;
+  taxInvoiceIssuedAt?: string | null;
+  taxInvoiceFileKey?: string | null;
   purchaseOrderNumber?: string | null;
   purchaseOrderFileKey?: string | null;
   purchaseOrderNote?: string | null;
@@ -850,6 +1003,22 @@ export type B2BOrder = {
   unitPricePaise?: number | null;
   subtotalPaise?: number | null;
   currency: string;
+  paymentStatus?: "PENDING" | "SUBMITTED_FOR_VERIFICATION" | "PARTIALLY_PAID" | "PAID" | "OVERDUE" | "REFUNDED" | "NOT_REQUIRED";
+  paymentMethod?: "BANK_TRANSFER" | "MANUAL" | "RAZORPAY" | null;
+  buyerPayableAmountPaise?: number | null;
+  paidAmountPaise?: number | null;
+  paymentDueAt?: string | null;
+  settlementStatus?: "NOT_ELIGIBLE" | "ELIGIBLE" | "DRAFTED" | "APPROVED" | "PAID" | "CANCELLED" | "ADJUSTED";
+  sellerPayoutAmountPaise?: number | null;
+  transportMode?: "STORE_PICKUP" | "SELLER_ARRANGED_TRANSPORT";
+  transportStatus?: "NOT_REQUIRED" | "REQUESTED" | "QUOTED" | "READY_FOR_PICKUP" | "DISPATCHED" | "IN_TRANSIT" | "DELIVERED" | "CANCELLED";
+  transportChargePaise?: number | null;
+  transportPartnerName?: string | null;
+  transportPartnerPhone?: string | null;
+  transportTrackingRef?: string | null;
+  transportEta?: string | null;
+  transportPickupAddress?: string | null;
+  transportNote?: string | null;
   createdAt: string;
   updatedAt: string;
   businessBuyer?: B2BEnquiry["businessBuyer"] | null;
@@ -884,6 +1053,14 @@ export function getB2BOrder(auth: MobileAuthHeaders, orderNumber: string) {
 
 export function getB2BOrderDocumentAccess(auth: MobileAuthHeaders, orderNumber: string) {
   return getJson<B2BOrderDocumentAccess>({ path: `/seller/b2b-orders/${encodeURIComponent(orderNumber)}/purchase-order/document-access`, auth });
+}
+
+export function getB2BProformaDocumentAccess(auth: MobileAuthHeaders, orderNumber: string) {
+  return getJson<B2BOrderDocumentAccess>({ path: `/seller/b2b-orders/${encodeURIComponent(orderNumber)}/proforma-invoice/document-access`, auth });
+}
+
+export function getB2BTaxInvoiceDocumentAccess(auth: MobileAuthHeaders, orderNumber: string) {
+  return getJson<B2BOrderDocumentAccess>({ path: `/seller/b2b-orders/${encodeURIComponent(orderNumber)}/tax-invoice/document-access`, auth });
 }
 
 // Returns
@@ -949,8 +1126,21 @@ export type SellerReturn = {
   }>;
 };
 
+export type SellerReturnListSummary = {
+  total: number;
+  pending: number;
+  approved: number;
+  refunded: number;
+  rejected: number;
+  cancelled: number;
+};
+
 export function listSellerReturns(auth: MobileAuthHeaders, query: Record<string, string | number | undefined> = {}) {
-  return getJson<PageResult<SellerReturn>>({ path: "/seller/returns", auth, searchParams: query });
+  return getJson<CursorPageResult<SellerReturn, SellerReturnListSummary>>({
+    path: "/seller/returns",
+    auth,
+    searchParams: query,
+  });
 }
 
 export function getSellerReturn(auth: MobileAuthHeaders, requestNumber: string) {
@@ -1297,12 +1487,20 @@ export type SellerServiceReview = {
   reply?: { body: string; createdAt?: string } | null;
 };
 
+export type SellerServiceListingPage = PageResult<SellerServiceListing> & {
+  summary?: {
+    listingCount: number;
+    liveCount: number;
+    pendingApprovalCount: number;
+  };
+};
+
 export function listSellerServiceBookings(auth: MobileAuthHeaders, query: Record<string, string | number | undefined> = {}) {
   return getJson<PageResult<SellerServiceBooking>>({ path: "/seller/service-bookings", auth, searchParams: query });
 }
 
 export function listSellerServices(auth: MobileAuthHeaders, query: Record<string, string | number | undefined> = {}) {
-  return getJson<PageResult<SellerServiceListing>>({ path: "/seller/services", auth, searchParams: query });
+  return getJson<SellerServiceListingPage>({ path: "/seller/services", auth, searchParams: query });
 }
 
 export function getSellerService(auth: MobileAuthHeaders, serviceId: string) {
@@ -1597,12 +1795,27 @@ export type SellerSubscriptionPlan = {
 export type SellerSubscriptionStatus = "TRIALING" | "ACTIVE" | "PENDING_PAYMENT" | "EXPIRED" | "CANCELLED";
 export type SellerPaymentStatus = "PENDING" | "PAID" | "FAILED" | "REFUNDED" | "NOT_REQUIRED";
 
+export type SellerSubscriptionPayment = {
+  id: string;
+  amountPaise: number;
+  currency?: string;
+  status: SellerPaymentStatus;
+  paidAt?: string | null;
+  failedAt?: string | null;
+  createdAt?: string;
+};
+
 export type SellerSubscription = {
   id: string;
   plan?: SellerSubscriptionPlan | null;
   status: SellerSubscriptionStatus;
   currentPeriodEnd?: string | null;
-  razorpaySubscriptionId?: string | null;
+  nextBillingAt?: string | null;
+  provider?: string | null;
+  providerSubscriptionId?: string | null;
+  providerStatus?: string | null;
+  cancelAtPeriodEnd?: boolean;
+  payments?: SellerSubscriptionPayment[];
   createdAt: string;
 };
 
@@ -1613,15 +1826,7 @@ export type SellerSubscriptionSummary = {
   subscriptionCurrentPeriodEnd?: string | null;
   plan?: SellerSubscriptionPlan | null;
   currentSubscription?: SellerSubscription | null;
-  payments?: Array<{
-    id: string;
-    amountPaise: number;
-    currency?: string;
-    status: SellerPaymentStatus;
-    paidAt?: string | null;
-    failedAt?: string | null;
-    createdAt?: string;
-  }>;
+  payments?: SellerSubscriptionPayment[];
   billing?: {
     requiresPayment: boolean;
     canAuthorize: boolean;
@@ -1634,49 +1839,31 @@ export type SellerSubscriptionSummary = {
   };
 };
 
-export type RazorpayCheckoutAuth = {
-  requiresPayment: boolean;
-  subscriptionId: string;
-  razorpaySubscriptionId?: string;
-  keyId?: string;
-  currency?: string;
-  amountPaise?: number;
-  name?: string;
-  description?: string;
-  status?: SellerSubscriptionStatus;
-  plan?: SellerSubscriptionPlan;
-  checkout?: {
-    key: string;
-    subscription_id: string;
-    name?: string;
-    description?: string;
-    prefill?: {
-      name?: string;
-      email?: string;
-      contact?: string;
-    };
-    theme?: {
-      color?: string;
-    };
-  };
-};
-
-export function listSellerSubscriptionPlans() {
-  return getJson<{ items: SellerSubscriptionPlan[] }>({ path: "/seller/subscription-plans", auth: {} });
-}
-
 export function getSellerSubscription(auth: MobileAuthHeaders) {
   return getJson<SellerSubscriptionSummary>({ path: "/seller/subscription", auth });
 }
 
-export function authorizeSellerSubscription(auth: MobileAuthHeaders) {
-  return postJson<RazorpayCheckoutAuth>({ path: "/seller/subscription/authorize", auth });
-}
-
-export function verifySellerSubscription(auth: MobileAuthHeaders, payload: { razorpaySubscriptionId: string; razorpayPaymentId: string; razorpaySignature: string }) {
-  return postJson<SellerSubscriptionSummary>({ path: "/seller/subscription/verify", auth, body: payload });
-}
-
 export function cancelSellerSubscription(auth: MobileAuthHeaders) {
   return postJson<SellerSubscriptionSummary>({ path: "/seller/subscription/cancel", auth });
+}
+
+export type SellerAccountDeletionRequest = {
+  id: string;
+  status: string;
+  createdAt?: string;
+};
+
+export function requestSellerAccountDeletion(auth: MobileAuthHeaders) {
+  return postJson<SellerAccountDeletionRequest>({
+    path: "/support-requests/authenticated",
+    auth,
+    body: {
+      topic: "SELLER",
+      requesterType: "SELLER",
+      preferredContactChannel: "EMAIL",
+      subject: "Seller account deletion request",
+      message:
+        "Please delete my 1HandIndia seller account and associated personal data. I understand that legally required tax, payout, transaction, fraud-prevention, and audit records may be retained for the required period.",
+    },
+  });
 }

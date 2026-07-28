@@ -8,6 +8,8 @@ export const gstSettingKeys = {
   gstin: "gst.platform.gstin",
   stateCode: "gst.platform.state_code",
   address: "gst.platform.address",
+  serviceSacCode: "gst.platform.service_sac_code",
+  serviceDescription: "gst.platform.service_description",
   eInvoiceEnabled: "gst.einvoice.enabled",
   eInvoiceProvider: "gst.einvoice.provider",
   eWayBillEnabled: "gst.eway.enabled",
@@ -30,6 +32,8 @@ export type GstSettings = {
     gstin: string;
     stateCode: string;
     address: GstPlatformAddress;
+    serviceSacCode: string;
+    serviceDescription: string;
   };
   eInvoice: {
     enabled: boolean;
@@ -65,6 +69,8 @@ export async function readGstSettings(client: SettingReader): Promise<GstSetting
           postalCode: "",
           country: "India",
         },
+        serviceSacCode: "",
+        serviceDescription: "",
       },
       eInvoice: { enabled: false, provider: "MANUAL" },
       eWayBill: {
@@ -97,6 +103,8 @@ export async function readGstSettings(client: SettingReader): Promise<GstSetting
         postalCode: stringValue(address.postalCode),
         country: "India",
       },
+      serviceSacCode: stringValue(values.get(gstSettingKeys.serviceSacCode)),
+      serviceDescription: stringValue(values.get(gstSettingKeys.serviceDescription)),
     },
     eInvoice: {
       enabled: readBooleanSetting(values.get(gstSettingKeys.eInvoiceEnabled), false),
@@ -127,6 +135,8 @@ export function normalizeGstSettings(input: GstSettings): GstSettings {
         postalCode: input.platform.address.postalCode.trim(),
         country: "India",
       },
+      serviceSacCode: input.platform.serviceSacCode.trim(),
+      serviceDescription: normalizedText(input.platform.serviceDescription),
     },
     eInvoice: {
       enabled: Boolean(input.eInvoice.enabled),
@@ -150,7 +160,9 @@ export function isConfiguredPlatformGst(settings: GstSettings) {
       platform.address.line1 &&
       platform.address.city &&
       platform.address.state &&
-      platform.address.postalCode,
+      platform.address.postalCode &&
+      /^[0-9]{6}$/.test(platform.serviceSacCode) &&
+      platform.serviceDescription,
   );
 }
 

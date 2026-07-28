@@ -186,7 +186,7 @@ export class TaxDocumentsService {
       throw new NotFoundException(notFoundMessage);
     }
 
-    const buffer = renderTaxDocumentPdf({
+    const buffer = await renderTaxDocumentPdf({
       documentNumber: document.documentNumber,
       documentType: document.documentType,
       issueDate: document.issueDate,

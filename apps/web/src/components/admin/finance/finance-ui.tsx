@@ -117,7 +117,7 @@ export function MoneyBreakup({
     ["TCS", -tcs],
     ["Seller settlement fee", -platformFee],
     ["Refund adjustment", refund],
-    ["Manual adjustment", adjustment ?? 0],
+    ["Offsets and adjustments", adjustment ?? 0],
     ["Net payable", net]
   ];
 

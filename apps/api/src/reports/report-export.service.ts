@@ -11,7 +11,11 @@ import {
   ReportExportAudience,
   ReportExportStatus,
   ReportExportType,
+  SellerStatus,
+  SellerTaxRegistrationStatus,
   countReportExportRows,
+  gstr1ReviewPeriod,
+  isGstr1ReviewExportType,
   reportExportCsvHeader,
   reportExportCsvRow,
   reportExportFileName,
@@ -36,6 +40,9 @@ const audienceTypes: Record<ReportExportAudience, ReadonlySet<ReportExportType>>
     ReportExportType.ADMIN_SELLERS,
     ReportExportType.ADMIN_PRODUCTS,
     ReportExportType.ADMIN_ENQUIRIES,
+    ReportExportType.GSTR1_REVIEW_SELLER_XLSX,
+    ReportExportType.GSTR1_REVIEW_ALL_SELLERS_ZIP,
+    ReportExportType.GSTR1_REVIEW_PLATFORM_XLSX,
   ]),
   [ReportExportAudience.FINANCE]: new Set([
     ReportExportType.FINANCE_PAYMENTS,
@@ -44,6 +51,9 @@ const audienceTypes: Record<ReportExportAudience, ReadonlySet<ReportExportType>>
     ReportExportType.FINANCE_SERVICE_SETTLEMENTS,
     ReportExportType.FINANCE_PAYOUTS,
     ReportExportType.FINANCE_SERVICE_RECEIVABLES,
+    ReportExportType.GSTR1_REVIEW_SELLER_XLSX,
+    ReportExportType.GSTR1_REVIEW_ALL_SELLERS_ZIP,
+    ReportExportType.GSTR1_REVIEW_PLATFORM_XLSX,
   ]),
   [ReportExportAudience.SELLER]: new Set([
     ReportExportType.SELLER_SALES,
@@ -51,6 +61,7 @@ const audienceTypes: Record<ReportExportAudience, ReadonlySet<ReportExportType>>
     ReportExportType.SELLER_FINANCE,
     ReportExportType.SELLER_TAX,
     ReportExportType.SELLER_RETURNS,
+    ReportExportType.GSTR1_REVIEW_SELLER_XLSX,
   ]),
 };
 
@@ -67,31 +78,61 @@ export class ReportExportService {
     dto: CreateReportExportDto,
   ) {
     this.assertAllowedType(audience, dto.exportType);
-    const sellerId =
-      audience === ReportExportAudience.SELLER
-        ? await this.sellerIdForActor(actor)
-        : null;
+    const reviewExport = isGstr1ReviewExportType(dto.exportType);
+    const sellerId = await this.exportSellerId(actor, audience, dto);
     const filters = this.filters(dto);
-    const rowCount = await countReportExportRows(
-      this.prisma.client,
-      dto.exportType,
-      filters,
-      sellerId,
-    );
-    const job = await this.prisma.client.reportExportJob.create({
-      data: {
-        audience,
-        exportType: dto.exportType,
-        actorUserId: actor.id,
-        sellerId,
-        filters: filters as Prisma.InputJsonObject,
-        fileName: reportExportFileName(dto.exportType),
-        contentType: "text/csv; charset=utf-8",
-        rowCount,
-      },
+    if (reviewExport) {
+      try {
+        gstr1ReviewPeriod(filters);
+      } catch (error) {
+        throw new BadRequestException(
+          error instanceof Error ? error.message : "Invalid GSTR-1 review period.",
+        );
+      }
+    }
+    const rowCount = reviewExport
+      ? 0
+      : await countReportExportRows(
+          this.prisma.client,
+          dto.exportType,
+          filters,
+          sellerId,
+        );
+    const fileName = reportExportFileName(dto.exportType);
+    const contentType = reportExportContentType(dto.exportType);
+    const job = await this.prisma.client.$transaction(async (tx) => {
+      const created = await tx.reportExportJob.create({
+        data: {
+          audience,
+          exportType: dto.exportType,
+          actorUserId: actor.id,
+          sellerId,
+          filters: filters as Prisma.InputJsonObject,
+          fileName,
+          contentType,
+          rowCount,
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorUserId: actor.id,
+          action: reviewExport
+            ? "report.gstr1_review.requested"
+            : "report.export.requested",
+          entityType: "report_export_job",
+          entityId: created.id,
+          newValue: {
+            audience,
+            exportType: dto.exportType,
+            sellerId,
+            ...filters,
+          },
+        },
+      });
+      return created;
     });
 
-    if (!reportExportRunsImmediately(rowCount)) {
+    if (reviewExport || !reportExportRunsImmediately(rowCount)) {
       return this.present(job);
     }
 
@@ -154,6 +195,11 @@ export class ReportExportService {
     query: OperationalReportQueryDto,
   ) {
     this.assertAllowedType(audience, exportType);
+    if (isGstr1ReviewExportType(exportType)) {
+      throw new BadRequestException(
+        "GSTR-1 review workbooks are available through export history, not the tabular report API.",
+      );
+    }
     const sellerId =
       audience === ReportExportAudience.SELLER
         ? await this.sellerIdForActor(actor)
@@ -360,6 +406,68 @@ export class ReportExportService {
     }
   }
 
+  private async exportSellerId(
+    actor: RequestUser,
+    audience: ReportExportAudience,
+    dto: CreateReportExportDto,
+  ) {
+    if (audience === ReportExportAudience.SELLER) {
+      const sellerId = await this.sellerIdForActor(actor);
+      if (isGstr1ReviewExportType(dto.exportType)) {
+        await this.requireReviewSeller(sellerId);
+      }
+      return sellerId;
+    }
+    if (dto.exportType === ReportExportType.GSTR1_REVIEW_SELLER_XLSX) {
+      if (!dto.sellerId) {
+        throw new BadRequestException("Select a GST-registered seller for this workbook.");
+      }
+      await this.requireReviewSeller(dto.sellerId);
+      return dto.sellerId;
+    }
+    if (isGstr1ReviewExportType(dto.exportType) && dto.sellerId) {
+      throw new BadRequestException(
+        "A seller can only be selected for an individual seller workbook.",
+      );
+    }
+    return null;
+  }
+
+  private async requireReviewSeller(sellerId: string) {
+    const seller = await this.prisma.client.seller.findUnique({
+      where: { id: sellerId },
+      select: {
+        status: true,
+        profile: {
+          select: {
+            taxRegistrationStatus: true,
+            gstNumber: true,
+          },
+        },
+        addresses: {
+          select: { countryCode: true },
+          orderBy: { createdAt: "asc" },
+          take: 1,
+        },
+      },
+    });
+    if (!seller || seller.status !== SellerStatus.APPROVED) {
+      throw new BadRequestException("Select an approved seller.");
+    }
+    if (
+      seller.profile?.taxRegistrationStatus !==
+        SellerTaxRegistrationStatus.GST_REGISTERED ||
+      !validGstin(seller.profile.gstNumber)
+    ) {
+      throw new BadRequestException(
+        "The selected seller must have a valid regular GST registration.",
+      );
+    }
+    if (seller.addresses[0]?.countryCode !== "IN") {
+      throw new BadRequestException("GSTR-1 workbooks are available for India sellers.");
+    }
+  }
+
   private present<T extends { storageKey?: string | null }>(job: T) {
     const { storageKey: _storageKey, ...visible } = job;
     return visible;
@@ -375,4 +483,20 @@ export function reportExportTypeAllowed(
   exportType: ReportExportType,
 ) {
   return audienceTypes[audience].has(exportType);
+}
+
+export function reportExportContentType(exportType: ReportExportType) {
+  if (exportType === ReportExportType.GSTR1_REVIEW_ALL_SELLERS_ZIP) {
+    return "application/zip";
+  }
+  if (isGstr1ReviewExportType(exportType)) {
+    return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  }
+  return "text/csv; charset=utf-8";
+}
+
+function validGstin(value: string | null | undefined) {
+  return /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(
+    value?.trim().toUpperCase() ?? "",
+  );
 }

@@ -6,6 +6,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  IsUUID,
   Max,
   MaxLength,
   Min,
@@ -50,6 +51,11 @@ export class CreateReportExportDto {
   @IsString()
   @MaxLength(80)
   paymentStatus?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  sellerId?: string;
 }
 
 export class ReportExportListQueryDto {

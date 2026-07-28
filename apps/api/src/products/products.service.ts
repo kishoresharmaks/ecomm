@@ -491,16 +491,18 @@ export class ProductsService {
         },
       });
 
+      await this.enqueueProductSearchIndex(
+        product.id,
+        autoApproveProduct ? "product-auto-approved" : "product-submitted",
+        product.sellerId,
+        product.categoryId,
+        tx,
+      );
+
       return product.id;
     });
 
     const product = await this.getProductByIdOrThrow(productId);
-    await this.enqueueProductSearchIndex(
-      product.id,
-      autoApproveProduct ? "product-auto-approved" : "product-submitted",
-      product.sellerId,
-      product.categoryId,
-    );
     await this.notifyProductSubmission(product, autoApproveProduct);
     await this.invalidateHomepageCache();
 
@@ -575,12 +577,19 @@ export class ProductsService {
       sellerCurrency,
     );
     const autoApproveProduct = await this.isProductAutoApprovalEnabled();
-    const nextProductStatus = autoApproveProduct ? ProductStatus.ACTIVE : ProductStatus.INACTIVE;
-    const nextApprovalStatus = autoApproveProduct
-      ? ApprovalStatus.APPROVED
-      : ApprovalStatus.PENDING_APPROVAL;
+    const requiresApproval = this.sellerProductUpdateRequiresApproval(dto);
+    const nextProductStatus = requiresApproval
+      ? autoApproveProduct
+        ? ProductStatus.ACTIVE
+        : ProductStatus.INACTIVE
+      : existing.status;
+    const nextApprovalStatus = requiresApproval
+      ? autoApproveProduct
+        ? ApprovalStatus.APPROVED
+        : ApprovalStatus.PENDING_APPROVAL
+      : existing.approvalStatus;
 
-    if (autoApproveProduct) {
+    if (autoApproveProduct && requiresApproval) {
       this.ensureProductApprovalReadiness({
         attributes: attributes ?? existing.attributes,
         taxClassification:
@@ -688,17 +697,21 @@ export class ProductsService {
         },
       });
 
+      await this.enqueueProductSearchIndex(
+        product.id,
+        autoApproveProduct && requiresApproval ? "product-auto-approved-update" : "product-updated",
+        product.sellerId,
+        product.categoryId,
+        tx,
+      );
+
       return product.id;
     });
 
     const product = await this.getProductByIdOrThrow(updatedProductId);
-    await this.enqueueProductSearchIndex(
-      product.id,
-      autoApproveProduct ? "product-auto-approved-update" : "product-updated",
-      product.sellerId,
-      product.categoryId,
-    );
-    await this.notifyProductSubmission(product, autoApproveProduct);
+    if (requiresApproval) {
+      await this.notifyProductSubmission(product, autoApproveProduct);
+    }
     await this.invalidateHomepageCache();
 
     return product;
@@ -707,26 +720,35 @@ export class ProductsService {
   async archiveSellerProduct(actor: RequestUser, productId: string) {
     const seller = await this.resolveSeller(actor);
     const existing = await this.getSellerProductOrThrow(seller.id, productId);
-    const product = await this.prisma.client.product.update({
-      where: { id: productId },
-      data: {
-        status: ProductStatus.ARCHIVED,
-        deletedAt: new Date(),
-      },
+    const product = await this.prisma.client.$transaction(async (tx) => {
+      const product = await tx.product.update({
+        where: { id: productId },
+        data: {
+          status: ProductStatus.ARCHIVED,
+          deletedAt: new Date(),
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actor: { connect: { id: actor.id } },
+          action: "product.archived",
+          entityType: "product",
+          entityId: product.id,
+          oldValue: existing,
+          newValue: product,
+        },
+      });
+      await this.enqueueProductSearchIndex(
+        product.id,
+        "product-archived",
+        product.sellerId,
+        product.categoryId,
+        tx,
+      );
+      return product;
     });
 
-    await this.prisma.client.auditLog.create({
-      data: {
-        actor: { connect: { id: actor.id } },
-        action: "product.archived",
-        entityType: "product",
-        entityId: product.id,
-        oldValue: existing,
-        newValue: product,
-      },
-    });
-
-    await this.enqueueProductSearchIndex(product.id, "product-archived", product.sellerId, product.categoryId);
     await this.invalidateHomepageCache();
     return product;
   }
@@ -901,7 +923,16 @@ export class ProductsService {
     reason: string,
     sellerId?: string | null,
     categoryId?: string | null,
+    client?: Prisma.TransactionClient,
   ) {
+    if (client) {
+      await Promise.all([
+        this.searchIndex?.enqueueProduct(productId, { reason }, client),
+        sellerId ? this.searchIndex?.enqueueSeller(sellerId, { reason: `${reason}:seller-rollup` }, client) : undefined,
+        categoryId ? this.searchIndex?.enqueueCategory(categoryId, { reason: `${reason}:category-rollup` }, client) : undefined,
+      ]);
+      return;
+    }
     try {
       await Promise.all([
         this.searchIndex?.enqueueProduct(productId, { reason }),
@@ -1557,6 +1588,38 @@ export class ProductsService {
     });
 
     return readBooleanSetting(setting?.value, false);
+  }
+
+  private sellerProductUpdateRequiresApproval(dto: UpdateSellerProductDto) {
+    if (
+      dto.categoryId !== undefined ||
+      dto.name !== undefined ||
+      dto.description !== undefined ||
+      dto.attributes !== undefined ||
+      dto.taxClassification !== undefined ||
+      dto.images !== undefined ||
+      dto.deliveryModes !== undefined ||
+      dto.manualTransport !== undefined
+    ) {
+      return true;
+    }
+
+    return Boolean(
+      dto.variants?.some(
+        (variant) =>
+          !variant.id ||
+          variant.sku !== undefined ||
+          variant.variantName !== undefined ||
+          variant.pricePaise !== undefined ||
+          variant.mrpPaise !== undefined ||
+          variant.currency !== undefined ||
+          variant.attributes !== undefined ||
+          variant.packageWeightGrams !== undefined ||
+          variant.packageLengthCm !== undefined ||
+          variant.packageBreadthCm !== undefined ||
+          variant.packageHeightCm !== undefined,
+      ),
+    );
   }
 
   private notifyProductSubmission(

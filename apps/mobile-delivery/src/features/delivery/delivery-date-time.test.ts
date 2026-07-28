@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  deliveryEstimateError,
+  nextAttemptDateError,
   parseDeliveryEstimate,
   serializeDeliveryEstimate,
   withDeliveryDate,
@@ -35,5 +37,14 @@ describe("delivery estimate date-time helpers", () => {
     const restored = parseDeliveryEstimate(serialized);
 
     expect(restored?.getTime()).toBe(estimate.getTime());
+  });
+
+  it("rejects past estimates and invalid next-attempt dates", () => {
+    const now = new Date(2026, 6, 26, 15, 0);
+
+    expect(deliveryEstimateError(new Date(2026, 6, 26, 14, 59), now)).toBe("Estimated delivery must be in the future.");
+    expect(nextAttemptDateError("2026-02-30", now)).toBe("Enter a real calendar date.");
+    expect(nextAttemptDateError("2026-07-25", now)).toBe("Next attempt date cannot be in the past.");
+    expect(nextAttemptDateError("2026-07-26", now)).toBeNull();
   });
 });

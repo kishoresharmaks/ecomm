@@ -127,7 +127,18 @@ describe("SellerPayoutsService seller requests", () => {
         refundAdjustmentPaise: 0,
         netPayablePaise: 43_600,
         snapshot: { calculationVersion: 1 }
-      })
+      }),
+      calculateSplits: vi.fn().mockResolvedValue([{
+        grossSalesPaise: 50_000,
+        commissionPaise: 5_000,
+        gstOnCommissionPaise: 900,
+        tdsPaise: 500,
+        tcsPaise: 0,
+        platformFeePaise: 0,
+        refundAdjustmentPaise: 0,
+        netPayablePaise: 43_600,
+        snapshot: { calculationVersion: 1 }
+      }])
     } as unknown as FinanceCalculatorService;
     const service = new SellerPayoutsService(prisma, calculator, {} as SellerLedgerService, createMarketService() as never);
 
@@ -257,7 +268,18 @@ describe("SellerPayoutsService seller requests", () => {
         refundAdjustmentPaise: 0,
         netPayablePaise: 43_600,
         snapshot: { calculationVersion: 1 }
-      })
+      }),
+      calculateSplits: vi.fn().mockResolvedValue([{
+        grossSalesPaise: 50_000,
+        commissionPaise: 5_000,
+        gstOnCommissionPaise: 900,
+        tdsPaise: 500,
+        tcsPaise: 0,
+        platformFeePaise: 0,
+        refundAdjustmentPaise: 0,
+        netPayablePaise: 43_600,
+        snapshot: { calculationVersion: 1 }
+      }])
     } as unknown as FinanceCalculatorService;
     const marketService = createMarketService({ countryCode: "SG", currency: "SGD", rate: 0.02 });
     const service = new SellerPayoutsService(prisma, calculator, {} as SellerLedgerService, marketService as never);
@@ -279,6 +301,7 @@ describe("SellerPayoutsService seller requests", () => {
           id: "payout-1",
           status: SellerPayoutStatus.PENDING_APPROVAL,
           netPayablePaise: 43_600,
+          adjustmentPaise: 0,
           note: null,
           seller: { payoutProfile: { isVerified: true } }
         }),
@@ -354,6 +377,7 @@ describe("SellerPayoutsService seller requests", () => {
           id: "payout-1",
           status: SellerPayoutStatus.PENDING_APPROVAL,
           netPayablePaise: 43_600,
+          adjustmentPaise: 0,
           note: null,
           seller: { payoutProfile: { isVerified: false } }
         }),
@@ -493,6 +517,7 @@ describe("SellerPayoutsService seller requests", () => {
             payoutNumber: "PO-1",
             status: SellerPayoutStatus.PENDING_APPROVAL,
             netPayablePaise: 0,
+            adjustmentPaise: -500,
             note: null,
             settlementRunId: null,
             seller: { payoutProfile: { isVerified: true } }
@@ -618,6 +643,7 @@ describe("SellerPayoutsService seller requests", () => {
           id: "payout-1",
           status: SellerPayoutStatus.APPROVED,
           netPayablePaise: 0,
+          adjustmentPaise: -500,
           note: null,
           settlementRunId: null,
         }),
@@ -709,6 +735,7 @@ describe("SellerPayoutsService seller requests", () => {
           id: "payout-1",
           status: SellerPayoutStatus.APPROVED,
           netPayablePaise: 43_600,
+          adjustmentPaise: 0,
           note: null
         }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 })
@@ -774,6 +801,41 @@ describe("SellerPayoutsService seller requests", () => {
     ).rejects.toThrow("Payout splits changed");
 
     expect(ledger.postPayoutPaidEntry).not.toHaveBeenCalled();
+  });
+
+  it("includes payout debt offsets when validating locked source totals", async () => {
+    const tx = {
+      orderSellerSplit: {
+        aggregate: vi.fn().mockResolvedValue({
+          _count: { _all: 1 },
+          _sum: { netPayablePaise: 43_600 },
+        }),
+      },
+      b2BOrder: {
+        aggregate: vi.fn().mockResolvedValue({
+          _count: { _all: 0 },
+          _sum: { sellerPayoutAmountPaise: 0 },
+        }),
+      },
+      serviceBookingSettlement: {
+        aggregate: vi.fn().mockResolvedValue({
+          _count: { _all: 0 },
+          _sum: { netPayablePaise: 0 },
+        }),
+      },
+    };
+    const service = new SellerPayoutsService(
+      {} as PrismaService,
+      {} as FinanceCalculatorService,
+      {} as SellerLedgerService,
+      createMarketService() as never,
+    );
+
+    const summary = await (service as unknown as {
+      payoutSplitSummary(tx: unknown, payoutId: string, adjustmentPaise: number): Promise<{ netPayablePaise: number }>;
+    }).payoutSplitSummary(tx, "payout-1", -3_600);
+
+    expect(summary.netPayablePaise).toBe(40_000);
   });
 
   it("verifies a configured seller payout profile and writes audit log", async () => {

@@ -1,9 +1,20 @@
 import { PropsWithChildren, useEffect, useState } from "react";
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type TextInputProps, type ViewStyle, type ScrollViewProps } from "react-native";
+import { ActivityIndicator, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View, type TextInputProps, type ViewStyle, type ScrollViewProps } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, spacing } from "../theme";
 
-export function Screen({ children, scroll = true, contentContainerStyle }: PropsWithChildren<{ scroll?: boolean; contentContainerStyle?: ScrollViewProps['contentContainerStyle'] }>) {
+export function Screen({
+  children,
+  scroll = true,
+  contentContainerStyle,
+  refreshing = false,
+  onRefresh,
+}: PropsWithChildren<{
+  scroll?: boolean;
+  contentContainerStyle?: ScrollViewProps["contentContainerStyle"];
+  refreshing?: boolean;
+  onRefresh?: () => void;
+}>) {
   const insets = useSafeAreaInsets();
   const compactTabBarHeight = 56 + insets.bottom;
   const bottomPadding = compactTabBarHeight + spacing.md;
@@ -18,7 +29,21 @@ export function Screen({ children, scroll = true, contentContainerStyle }: Props
 
   return (
     <SafeAreaView style={styles.safe} edges={['left', 'right', 'top']}>
-      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomPadding }, contentContainerStyle]}>{children}</ScrollView>
+      <ScrollView
+        contentContainerStyle={[styles.scroll, { paddingBottom: bottomPadding }, contentContainerStyle]}
+        refreshControl={
+          onRefresh ? (
+            <RefreshControl
+              colors={[colors.primary]}
+              onRefresh={onRefresh}
+              refreshing={refreshing}
+              tintColor={colors.primary}
+            />
+          ) : undefined
+        }
+      >
+        {children}
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -26,7 +51,7 @@ export function Screen({ children, scroll = true, contentContainerStyle }: Props
 export function Header({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
     <View style={styles.header}>
-      <Text style={styles.eyebrow}>1HandIndia Seller</Text>
+      <Text style={styles.eyebrow}>1HandIndia Seller Hub</Text>
       <Text style={styles.title}>{title}</Text>
       {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
     </View>
@@ -53,7 +78,7 @@ export function ConfirmDialog({
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
       <View style={styles.dialogOverlay}>
-        <View style={styles.dialogCard}>
+        <View accessibilityViewIsModal style={styles.dialogCard}>
           <Text style={styles.dialogTitle}>{title}</Text>
           <Text style={styles.dialogMessage}>{message}</Text>
           <View style={styles.dialogActions}>
@@ -99,6 +124,8 @@ export function Button({
   tone = "primary",
   loading = false,
   style,
+  accessibilityHint,
+  accessibilityLabel,
 }: {
   title: string;
   onPress: () => void;
@@ -106,9 +133,13 @@ export function Button({
   tone?: "primary" | "secondary" | "danger";
   loading?: boolean;
   style?: ViewStyle;
+  accessibilityHint?: string;
+  accessibilityLabel?: string;
 }) {
   return (
     <Pressable
+      accessibilityHint={accessibilityHint}
+      accessibilityLabel={accessibilityLabel ?? title}
       accessibilityRole="button"
       disabled={disabled || loading}
       onPress={onPress}

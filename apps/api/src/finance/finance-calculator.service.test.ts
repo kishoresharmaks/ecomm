@@ -1,5 +1,6 @@
 import { CommissionType, FinanceRuleScope } from "@indihub/database";
 import { describe, expect, it, vi } from "vitest";
+import { CommissionRulesService } from "./commission-rules.service";
 import { FinanceCalculatorService } from "./finance-calculator.service";
 
 describe("FinanceCalculatorService", () => {
@@ -97,6 +98,55 @@ describe("FinanceCalculatorService", () => {
       categoryId: "category_1",
       grossAmountPaise: 20_000,
     });
+  });
+
+  it("never creates a negative seller payout when configured deductions exceed gross sales", async () => {
+    const tx = {
+      commissionRule: {
+        findMany: vi.fn().mockResolvedValue([
+          rule({
+            commissionValueBps: 10_000,
+            gstRateBps: 1_800,
+          }),
+        ]),
+      },
+    };
+    const service = new FinanceCalculatorService({ client: tx } as never);
+
+    const result = await service.calculateSplit(split("category_1", 10_000) as never, tx as never);
+
+    expect(result.netPayablePaise).toBe(0);
+  });
+
+  it("rejects ambiguous or incomplete payout deduction rules", async () => {
+    const service = new CommissionRulesService({} as never);
+    const actor = { id: "admin-1", clerkUserId: null, email: "admin@example.com", roles: [] };
+
+    await expect(service.createRule({
+      name: "Seller rule",
+      scope: FinanceRuleScope.SELLER,
+      sellerId: "70cf4fb8-44b7-4ff0-b65c-5987c72f91ab",
+      categoryId: "79f4b5b3-1130-4a38-95e2-7d9f910005b9",
+      commissionType: CommissionType.PERCENTAGE,
+      commissionRatePercent: 10,
+    }, actor)).rejects.toThrow("cannot target a category");
+
+    await expect(service.createRule({
+      name: "Missing settlement fee",
+      scope: FinanceRuleScope.GLOBAL,
+      commissionType: CommissionType.PERCENTAGE,
+      commissionRatePercent: 10,
+      platformFeeType: CommissionType.PERCENTAGE,
+    }, actor)).rejects.toThrow("require platformFeeRatePercent");
+
+    await expect(service.createRule({
+      name: "Invalid dates",
+      scope: FinanceRuleScope.GLOBAL,
+      commissionType: CommissionType.PERCENTAGE,
+      commissionRatePercent: 10,
+      effectiveFrom: "2026-07-27T00:00:00.000Z",
+      effectiveTo: "2026-07-26T00:00:00.000Z",
+    }, actor)).rejects.toThrow("effectiveFrom must be before effectiveTo");
   });
 });
 

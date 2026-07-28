@@ -27,7 +27,10 @@ export type ReportExportType =
   | "SELLER_INVENTORY"
   | "SELLER_FINANCE"
   | "SELLER_TAX"
-  | "SELLER_RETURNS";
+  | "SELLER_RETURNS"
+  | "GSTR1_REVIEW_SELLER_XLSX"
+  | "GSTR1_REVIEW_ALL_SELLERS_ZIP"
+  | "GSTR1_REVIEW_PLATFORM_XLSX";
 
 export type ReportFilters = {
   dateFrom?: string;
@@ -36,6 +39,7 @@ export type ReportFilters = {
   status?: string;
   provider?: string;
   paymentStatus?: string;
+  sellerId?: string;
   page?: number;
   limit?: number;
 };
@@ -153,14 +157,50 @@ export function createReportExport(
   filters: ReportFilters = {},
 ) {
   const { page: _page, limit: _limit, ...exportFilters } = filters;
+  const normalizedFilters = exportType.startsWith("GSTR1_REVIEW_")
+    ? exportFilters
+    : Object.fromEntries(
+        new URLSearchParams(reportQueryString(exportFilters).slice(1)),
+      );
   return indihubFetch<ReportExportJob>(
     exportBase[audience],
     {
       method: "POST",
-      body: JSON.stringify({ exportType, ...exportFilters }),
+      body: JSON.stringify({ exportType, ...normalizedFilters }),
     },
     auth,
   );
+}
+
+export function gstr1ReviewMonthRange(month: string) {
+  const match = /^(\d{4})-(\d{2})$/.exec(month);
+  if (!match) throw new Error("Select a valid calendar month.");
+  const year = Number(match[1]);
+  const monthNumber = Number(match[2]);
+  if (year < 2000 || year > 2100 || monthNumber < 1 || monthNumber > 12) {
+    throw new Error("Select a valid calendar month.");
+  }
+  const lastDay = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+  return {
+    dateFrom: `${match[1]}-${match[2]}-01`,
+    dateTo: `${match[1]}-${match[2]}-${String(lastDay).padStart(2, "0")}`,
+  };
+}
+
+export function gstr1ReviewQuarterRange(year: number, quarter: number) {
+  if (!Number.isInteger(year) || year < 2000 || year > 2100) {
+    throw new Error("Select a valid GST quarter year.");
+  }
+  if (![1, 2, 3, 4].includes(quarter)) {
+    throw new Error("Select a valid GST quarter.");
+  }
+  const startMonth = (quarter - 1) * 3 + 1;
+  const endMonth = startMonth + 2;
+  const lastDay = new Date(Date.UTC(year, endMonth, 0)).getUTCDate();
+  return {
+    dateFrom: `${year}-${String(startMonth).padStart(2, "0")}-01`,
+    dateTo: `${year}-${String(endMonth).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`,
+  };
 }
 
 export function listReportExports(

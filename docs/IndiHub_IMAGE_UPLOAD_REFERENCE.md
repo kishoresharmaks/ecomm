@@ -28,6 +28,8 @@ Only seller/product images currently run a hard dimension check in the browser. 
 | Seller products | Product gallery images | JPG, PNG, WebP, GIF | 5 MB | Recommended `4:3`; best fit `1200 x 900 px` | Browser validation expects at least `400 x 300 px`, at most `2000 x 1500 px`, and warns when the aspect ratio drifts far from `4:3`. Up to 10 images can be uploaded per product. |
 | Admin CMS / homepage banners | Desktop hero image | JPG, PNG, WebP, GIF | 5 MB | `16:9` | Used for desktop and tablet hero/banner content. The form also supports a separate mobile image URL field, but this upload control is the desktop banner asset. |
 | Admin CMS / homepage banners | Mobile hero image | JPG, PNG, WebP, GIF | 5 MB | `4:5` | Optional portrait crop for phones. Desktop image is used when this is empty. |
+| Admin CMS / promotional popups | Desktop popup image | JPG, PNG, WebP, GIF | 5 MB | `16:9` | Required image for the centered customer web homepage popup. |
+| Admin CMS / promotional popups | Mobile popup image | JPG, PNG, WebP, GIF | 5 MB | `4:5` | Optional portrait image for the customer mobile home sheet. Desktop image is used when empty. |
 | Admin categories | Category image | JPG, PNG, WebP, GIF | 5 MB | `5:3` | Shown on category cards and public category SEO previews. |
 | Admin push campaigns | Campaign image asset | JPG, PNG, WebP | 5 MB | No fixed ratio enforced; max edge `4096 px` | File extension must match JPG, PNG, or WebP. The UI checks width and height and rejects images larger than `4096 px` on either edge. |
 

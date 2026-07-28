@@ -21,7 +21,22 @@ type ReportDefinition = {
   query: (filters: ReportExportFilters, sellerId?: string | null) => Prisma.Sql;
 };
 
-const definitions: Record<ReportExportType, ReportDefinition> = {
+const gstr1ReviewTypes = new Set<ReportExportType>([
+  ReportExportType.GSTR1_REVIEW_SELLER_XLSX,
+  ReportExportType.GSTR1_REVIEW_ALL_SELLERS_ZIP,
+  ReportExportType.GSTR1_REVIEW_PLATFORM_XLSX,
+]);
+
+export type Gstr1ReviewPeriod = {
+  dateFrom: string;
+  dateTo: string;
+  from: Date;
+  toExclusive: Date;
+  label: string;
+  kind: "MONTH" | "QUARTER";
+};
+
+const definitions: Partial<Record<ReportExportType, ReportDefinition>> = {
   [ReportExportType.ADMIN_SALES]: {
     fileName: "1handindia-admin-sales.csv",
     headers: [
@@ -360,6 +375,12 @@ const definitions: Record<ReportExportType, ReportDefinition> = {
       "Credit",
       "Gross",
       "Commission",
+      "GST on Fees",
+      "TDS",
+      "TCS",
+      "Seller Settlement Fee",
+      "Refund Adjustment",
+      "Offsets and Adjustments",
       "Net",
       "Balance",
       "Currency",
@@ -459,11 +480,20 @@ const moneyHeaders = new Set([
 ]);
 
 export function reportExportFileName(exportType: ReportExportType) {
-  return definitions[exportType].fileName;
+  if (exportType === ReportExportType.GSTR1_REVIEW_SELLER_XLSX) {
+    return "1handindia-gstr1-seller-review.xlsx";
+  }
+  if (exportType === ReportExportType.GSTR1_REVIEW_ALL_SELLERS_ZIP) {
+    return "1handindia-gstr1-all-sellers.zip";
+  }
+  if (exportType === ReportExportType.GSTR1_REVIEW_PLATFORM_XLSX) {
+    return "1handindia-gstr1-platform-review.xlsx";
+  }
+  return reportDefinition(exportType).fileName;
 }
 
 export function reportExportHeaders(exportType: ReportExportType) {
-  return definitions[exportType].headers;
+  return reportDefinition(exportType).headers;
 }
 
 export async function countReportExportRows(
@@ -472,7 +502,7 @@ export async function countReportExportRows(
   filters: ReportExportFilters,
   sellerId?: string | null,
 ) {
-  const base = definitions[exportType].query(filters, sellerId);
+  const base = reportDefinition(exportType).query(filters, sellerId);
   const rows = await client.$queryRaw<Array<{ count: bigint }>>`
     SELECT COUNT(*)::bigint AS count
     FROM (${base}) AS report_rows
@@ -491,7 +521,8 @@ export async function reportExportTablePage(
   const safePage = Math.max(1, Math.trunc(page));
   const take = Math.min(100, Math.max(1, Math.trunc(limit)));
   const skip = (safePage - 1) * take;
-  const base = definitions[exportType].query(filters, sellerId);
+  const definition = reportDefinition(exportType);
+  const base = definition.query(filters, sellerId);
   const [countRows, rows] = await Promise.all([
     client.$queryRaw<Array<{ count: bigint }>>`
       SELECT COUNT(*)::bigint AS count
@@ -508,8 +539,8 @@ export async function reportExportTablePage(
   const total = Number(countRows[0]?.count ?? 0n);
 
   return {
-    headers: definitions[exportType].headers,
-    moneyHeaders: definitions[exportType].headers.filter((header) => moneyHeaders.has(header)),
+    headers: definition.headers,
+    moneyHeaders: definition.headers.filter((header) => moneyHeaders.has(header)),
     items: rows.map(reportTableRow),
     pageInfo: {
       page: safePage,
@@ -527,7 +558,7 @@ export async function* reportExportRows(
   sellerId?: string | null,
   batchSize = 1000,
 ) {
-  const base = definitions[exportType].query(filters, sellerId);
+  const base = reportDefinition(exportType).query(filters, sellerId);
   const take = Math.min(5000, Math.max(1, Math.trunc(batchSize)));
   let cursorDate: Date | null = null;
   let cursorId: string | null = null;
@@ -566,13 +597,88 @@ export async function* reportExportRows(
 }
 
 export function reportExportCsvHeader(exportType: ReportExportType) {
-  return `${definitions[exportType].headers.map(csvCell).join(",")}\r\n`;
+  return `${reportDefinition(exportType).headers.map(csvCell).join(",")}\r\n`;
 }
 
 export function reportExportCsvRow(exportType: ReportExportType, row: ReportExportRow) {
-  return `${definitions[exportType].headers
+  return `${reportDefinition(exportType).headers
     .map((header) => csvCell(moneyHeaders.has(header) ? minorToMajor(row[header]) : row[header]))
     .join(",")}\r\n`;
+}
+
+export function isGstr1ReviewExportType(exportType: ReportExportType) {
+  return gstr1ReviewTypes.has(exportType);
+}
+
+export function gstr1ReviewPeriod(
+  filters: Pick<ReportExportFilters, "dateFrom" | "dateTo">,
+): Gstr1ReviewPeriod {
+  const dateFrom = dateOnly(filters.dateFrom);
+  const dateTo = dateOnly(filters.dateTo);
+  const from = dateParts(dateFrom);
+  const to = dateParts(dateTo);
+  const lastDayOfFromMonth = new Date(
+    Date.UTC(from.year, from.month, 0),
+  ).getUTCDate();
+  const isMonth =
+    from.day === 1 &&
+    to.year === from.year &&
+    to.month === from.month &&
+    to.day === lastDayOfFromMonth;
+  const quarterEndMonth = from.month + 2;
+  const quarterEndDay = new Date(
+    Date.UTC(from.year, quarterEndMonth, 0),
+  ).getUTCDate();
+  const isQuarter =
+    from.day === 1 &&
+    [1, 4, 7, 10].includes(from.month) &&
+    to.year === from.year &&
+    to.month === quarterEndMonth &&
+    to.day === quarterEndDay;
+
+  if (!isMonth && !isQuarter) {
+    throw new Error("Select a complete calendar month or standard GST quarter.");
+  }
+
+  const indiaOffsetMs = 330 * 60 * 1000;
+  return {
+    dateFrom,
+    dateTo,
+    from: new Date(Date.UTC(from.year, from.month - 1, from.day) - indiaOffsetMs),
+    toExclusive: new Date(
+      Date.UTC(to.year, to.month - 1, to.day + 1) - indiaOffsetMs,
+    ),
+    label: `${dateFrom}_to_${dateTo}`,
+    kind: isMonth ? "MONTH" : "QUARTER",
+  };
+}
+
+function reportDefinition(exportType: ReportExportType) {
+  const definition = definitions[exportType];
+  if (!definition) {
+    throw new Error(`Report type ${exportType} does not provide tabular CSV data.`);
+  }
+  return definition;
+}
+
+function dateOnly(value: string | undefined) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new Error("GSTR-1 review exports require dateFrom and dateTo as YYYY-MM-DD.");
+  }
+  return value;
+}
+
+function dateParts(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year!, month! - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() + 1 !== month ||
+    date.getUTCDate() !== day
+  ) {
+    throw new Error("Enter a valid GSTR-1 review period.");
+  }
+  return { year: year!, month: month!, day: day! };
 }
 
 function adminSalesQuery(filters: ReportExportFilters) {
@@ -1251,6 +1357,12 @@ function sellerFinanceQuery(filters: ReportExportFilters, sellerId?: string | nu
       (sp.net_payable_paise) AS "Credit",
       (sp.gross_sales_paise) AS "Gross",
       (sp.commission_paise) AS "Commission",
+      (sp.gst_on_commission_paise) AS "GST on Fees",
+      (sp.tds_paise) AS "TDS",
+      (sp.tcs_paise) AS "TCS",
+      (sp.platform_fee_paise) AS "Seller Settlement Fee",
+      (sp.refund_adjustment_paise) AS "Refund Adjustment",
+      (sp.adjustment_paise) AS "Offsets and Adjustments",
       (sp.net_payable_paise) AS "Net",
       NULL::numeric AS "Balance",
       sp.currency AS "Currency"
@@ -1269,6 +1381,12 @@ function sellerFinanceQuery(filters: ReportExportFilters, sellerId?: string | nu
       (sle.credit_paise) AS "Credit",
       NULL::numeric AS "Gross",
       NULL::numeric AS "Commission",
+      NULL::numeric AS "GST on Fees",
+      NULL::numeric AS "TDS",
+      NULL::numeric AS "TCS",
+      NULL::numeric AS "Seller Settlement Fee",
+      NULL::numeric AS "Refund Adjustment",
+      NULL::numeric AS "Offsets and Adjustments",
       (sle.credit_paise - sle.debit_paise) AS "Net",
       (sle.balance_after_paise) AS "Balance",
       sle.currency AS "Currency"
@@ -1355,12 +1473,19 @@ function dateConditions(column: string, filters: ReportExportFilters) {
   const conditions: Prisma.Sql[] = [];
   const identifier = Prisma.raw(column);
   if (filters.dateFrom) {
-    conditions.push(Prisma.sql`${identifier} >= ${new Date(filters.dateFrom)}`);
+    conditions.push(Prisma.sql`${identifier} >= ${reportExportDate(filters.dateFrom, false)}`);
   }
   if (filters.dateTo) {
-    conditions.push(Prisma.sql`${identifier} <= ${new Date(filters.dateTo)}`);
+    conditions.push(Prisma.sql`${identifier} <= ${reportExportDate(filters.dateTo, true)}`);
   }
   return conditions;
+}
+
+export function reportExportDate(value: string, endOfDay: boolean) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return new Date(value);
+  }
+  return new Date(`${value}T${endOfDay ? "23:59:59.999" : "00:00:00.000"}Z`);
 }
 
 function datePredicate(column: string, filters: ReportExportFilters) {

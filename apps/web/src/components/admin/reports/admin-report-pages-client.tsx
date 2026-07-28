@@ -13,6 +13,9 @@ const adminReportTypes: Array<{ value: ReportExportType; label: string }> = [
   { value: "ADMIN_SELLERS", label: "Seller performance" },
   { value: "ADMIN_PRODUCTS", label: "Products and inventory" },
   { value: "ADMIN_ENQUIRIES", label: "Enquiries and support" },
+  { value: "GSTR1_REVIEW_SELLER_XLSX", label: "GSTR-1 seller review workbook" },
+  { value: "GSTR1_REVIEW_ALL_SELLERS_ZIP", label: "GSTR-1 all-seller workbook ZIP" },
+  { value: "GSTR1_REVIEW_PLATFORM_XLSX", label: "GSTR-1 platform review workbook" },
 ];
 
 const reportConfig = {
@@ -144,4 +147,3 @@ function money(value = 0) {
 function humanize(value: string) {
   return value.replaceAll("_", " ").toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
-

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useState } from "react";
-import { ArrowLeft, ExternalLink, FileCheck2, FileText, Search, UploadCloud } from "lucide-react";
+import { ArrowLeft, ExternalLink, FileCheck2, FileText, Loader2, Search, UploadCloud } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
 import { userFacingApiErrorMessage } from "@/lib/api";
@@ -145,6 +145,7 @@ export function B2BOrderDetailClient({ orderNumber }: { orderNumber: string }) {
   const [isUploadingPo, setIsUploadingPo] = useState(false);
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [isUploadingProof, setIsUploadingProof] = useState(false);
+  const [openingDocument, setOpeningDocument] = useState<"proforma" | "tax" | null>(null);
 
   const profileQuery = useQuery({
     queryKey: ["b2b-profile", auth.authKey],
@@ -255,6 +256,7 @@ export function B2BOrderDetailClient({ orderNumber }: { orderNumber: string }) {
 
   async function openProformaInvoice() {
     setNotice(null);
+    setOpeningDocument("proforma");
 
     try {
       await openB2BPurchaseOrderDocument(
@@ -264,11 +266,14 @@ export function B2BOrderDetailClient({ orderNumber }: { orderNumber: string }) {
       );
     } catch (error) {
       setNotice(userFacingApiErrorMessage(error));
+    } finally {
+      setOpeningDocument(null);
     }
   }
 
   async function openTaxInvoice() {
     setNotice(null);
+    setOpeningDocument("tax");
 
     try {
       await openB2BPurchaseOrderDocument(
@@ -278,6 +283,8 @@ export function B2BOrderDetailClient({ orderNumber }: { orderNumber: string }) {
       );
     } catch (error) {
       setNotice(userFacingApiErrorMessage(error));
+    } finally {
+      setOpeningDocument(null);
     }
   }
 
@@ -336,8 +343,8 @@ export function B2BOrderDetailClient({ orderNumber }: { orderNumber: string }) {
           <div className="grid gap-5">
             <B2BOrderCommercialPanel order={order} />
             <B2BTransportPanel order={order} />
-            <B2BProformaPanel order={order} onOpen={openProformaInvoice} />
-            <B2BFinalInvoicePanel order={order} onOpen={openTaxInvoice} />
+            <B2BProformaPanel order={order} downloading={openingDocument === "proforma"} onOpen={openProformaInvoice} />
+            <B2BFinalInvoicePanel order={order} downloading={openingDocument === "tax"} onOpen={openTaxInvoice} />
             <B2BOrderPaymentPanel
               order={order}
               proofFile={proofFile}
@@ -502,14 +509,14 @@ function B2BTransportPanel({ order }: { order: B2BOrder }) {
   );
 }
 
-function B2BProformaPanel({ order, onOpen }: { order: B2BOrder; onOpen: () => void }) {
+function B2BProformaPanel({ order, downloading, onOpen }: { order: B2BOrder; downloading: boolean; onOpen: () => void }) {
   return (
     <B2BPanel>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <SectionHeading title="Proforma invoice" description="Download the current commercial proforma before submitting PO and payment." />
-        <Button type="button" variant="outline" onClick={onOpen}>
-          <ExternalLink className="h-4 w-4" aria-hidden="true" />
-          Download PDF
+        <Button type="button" variant="outline" disabled={downloading} onClick={onOpen}>
+          {downloading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <ExternalLink className="h-4 w-4" aria-hidden="true" />}
+          {downloading ? "Preparing PDF" : "Download PDF"}
         </Button>
       </div>
       <div className="mt-4 grid gap-3 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-4 text-sm font-semibold text-[#667085] md:grid-cols-3">
@@ -521,7 +528,7 @@ function B2BProformaPanel({ order, onOpen }: { order: B2BOrder; onOpen: () => vo
   );
 }
 
-function B2BFinalInvoicePanel({ order, onOpen }: { order: B2BOrder; onOpen: () => Promise<void> }) {
+function B2BFinalInvoicePanel({ order, downloading, onOpen }: { order: B2BOrder; downloading: boolean; onOpen: () => Promise<void> }) {
   const available = order.status === "FULFILLED";
   const documentLabel = b2bFinalDocumentLabel(order.finalDocumentType);
 
@@ -535,11 +542,11 @@ function B2BFinalInvoicePanel({ order, onOpen }: { order: B2BOrder; onOpen: () =
         <Button
           type="button"
           variant={available ? "outline" : "ghost"}
-          disabled={!available}
+          disabled={!available || downloading}
           onClick={() => void onOpen()}
         >
-          <ExternalLink className="h-4 w-4" aria-hidden="true" />
-          Open invoice
+          {downloading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <ExternalLink className="h-4 w-4" aria-hidden="true" />}
+          {downloading ? "Preparing PDF" : "Open invoice"}
         </Button>
       </div>
     </B2BPanel>

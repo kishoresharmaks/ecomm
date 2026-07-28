@@ -134,9 +134,15 @@ export class CommissionRulesService {
     if (dto.scope === FinanceRuleScope.SELLER && !dto.sellerId) {
       throw new BadRequestException("Seller commission rules require a seller.");
     }
+    if (dto.scope === FinanceRuleScope.SELLER && dto.categoryId) {
+      throw new BadRequestException("Seller commission rules cannot target a category.");
+    }
 
     if (dto.scope === FinanceRuleScope.CATEGORY && !dto.categoryId) {
       throw new BadRequestException("Category commission rules require a category.");
+    }
+    if (dto.scope === FinanceRuleScope.CATEGORY && dto.sellerId) {
+      throw new BadRequestException("Category commission rules cannot target a seller.");
     }
 
     if (dto.scope === FinanceRuleScope.SELLER_CATEGORY && (!dto.sellerId || !dto.categoryId)) {
@@ -149,6 +155,18 @@ export class CommissionRulesService {
 
     if (dto.commissionType === CommissionType.FIXED && dto.commissionFixedPaise === undefined) {
       throw new BadRequestException("Fixed commission rules require commissionFixedPaise.");
+    }
+
+    if (dto.platformFeeType === CommissionType.PERCENTAGE && dto.platformFeeRatePercent === undefined) {
+      throw new BadRequestException("Percentage seller settlement fees require platformFeeRatePercent.");
+    }
+
+    if (dto.platformFeeType === CommissionType.FIXED && dto.platformFeeFixedPaise === undefined) {
+      throw new BadRequestException("Fixed seller settlement fees require platformFeeFixedPaise.");
+    }
+
+    if (dto.effectiveFrom && dto.effectiveTo && new Date(dto.effectiveFrom) > new Date(dto.effectiveTo)) {
+      throw new BadRequestException("Commission rule effectiveFrom must be before effectiveTo.");
     }
   }
 
@@ -169,4 +187,3 @@ export class CommissionRulesService {
     });
   }
 }
-

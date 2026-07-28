@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState, useEffect } from "react";
+import { FormEvent, useState } from "react";
 import { ArrowRight, PackageCheck, Search, Filter } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Button, SectionHeading } from "@indihub/ui";
@@ -9,6 +9,7 @@ import { Popover, PopoverButton, PopoverPanel } from "@headlessui/react";
 import { formatMoney } from "@/lib/storefront-api";
 import { listSellerOrders, primarySellerImage } from "@/lib/seller-api";
 import { resolveImageSource } from "@/lib/image-url";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import {
   SellerAuthNotice,
   SellerEmptyState,
@@ -56,15 +57,6 @@ function CheckboxGroup({ label, options, selected, onChange }: { label: string; 
   );
 }
 
-function useDebounce<T>(value: T, delay: number): T {
-  const [debouncedValue, setDebouncedValue] = useState<T>(value);
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedValue(value), delay);
-    return () => clearTimeout(timer);
-  }, [value, delay]);
-  return debouncedValue;
-}
-
 export function SellerOrdersClient() {
   const sellerAuth = useSellerAuth();
   const [search, setSearch] = useState("");
@@ -75,9 +67,9 @@ export function SellerOrdersClient() {
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(30);
 
-  const debouncedOrderStatus = useDebounce(orderStatus, 500);
-  const debouncedDeliveryStatus = useDebounce(deliveryStatus, 500);
-  const debouncedPaymentMethod = useDebounce(paymentMethod, 500);
+  const debouncedOrderStatus = useDebouncedValue(orderStatus, 500);
+  const debouncedDeliveryStatus = useDebouncedValue(deliveryStatus, 500);
+  const debouncedPaymentMethod = useDebouncedValue(paymentMethod, 500);
 
   const ordersQuery = useQuery({
     queryKey: ["seller-orders", sellerAuth.authKey, submittedSearch, debouncedOrderStatus, debouncedDeliveryStatus, debouncedPaymentMethod, page, limit],

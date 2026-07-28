@@ -12,6 +12,7 @@ import { plainToInstance } from "class-transformer";
 import { validateSync } from "class-validator";
 import { describe, expect, it, vi } from "vitest";
 import { RegisterSellerPushTokenDto } from "./dto/seller-push-token.dto";
+import { PublicSellerQueryDto } from "./dto/public-seller-query.dto";
 import { UpdateSellerProfileDto } from "./dto/seller-profile.dto";
 import { SellersService } from "./sellers.service";
 
@@ -104,6 +105,19 @@ describe("SellersService profile readback", () => {
 });
 
 describe("seller DTO normalization", () => {
+  it("accepts paged public seller directory and name-search fields", () => {
+    const dto = plainToInstance(PublicSellerQueryDto, {
+      page: "2",
+      limit: "24",
+      search: "Fresh Mart",
+    });
+
+    expect(validateSync(dto)).toEqual([]);
+    expect(dto.page).toBe(2);
+    expect(dto.limit).toBe(24);
+    expect(dto.search).toBe("Fresh Mart");
+  });
+
   it("treats a blank optional business type as empty instead of a Prisma enum value", () => {
     const dto = plainToInstance(UpdateSellerProfileDto, { businessType: "" });
 

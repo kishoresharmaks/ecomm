@@ -46,7 +46,7 @@ export class UpdateDeliveryDto {
   @IsOptional()
   @IsString()
   @MaxLength(1000)
-  deliveryNote?: string;
+  deliveryNote?: string | null;
 
   @ApiPropertyOptional({ example: "Ramesh Kumar" })
   @IsOptional()

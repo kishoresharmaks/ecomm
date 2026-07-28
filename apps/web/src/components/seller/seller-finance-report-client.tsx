@@ -95,8 +95,8 @@ export function SellerFinanceReportClient({ initialDateFrom = "", initialDateTo 
           </div>
           <div className="flex flex-wrap items-end gap-3">
             <form onSubmit={submit} className="grid w-full gap-3 md:grid-cols-[1fr_1fr_auto]">
-              <SellerField label="Date from" name="dateFrom" type="date" value={dateFrom} onChange={setDateFrom} />
-              <SellerField label="Date to" name="dateTo" type="date" value={dateTo} onChange={setDateTo} />
+          <SellerField label="Date from" name="dateFrom" type="date" value={dateFrom} max={dateTo || undefined} onChange={setDateFrom} />
+          <SellerField label="Date to" name="dateTo" type="date" value={dateTo} min={dateFrom || undefined} onChange={setDateTo} />
               <Button type="submit" className="self-end">
                 <CalendarDays className="h-4 w-4" aria-hidden="true" />
                 Apply
@@ -121,7 +121,11 @@ export function SellerFinanceReportClient({ initialDateFrom = "", initialDateTo 
 
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <SellerMetric label="Commission" value={formatMoney(report.summary.commissionPaise, currency)} note="Platform commission deducted" />
-            <SellerMetric label="Platform Fee" value={formatMoney(report.summary.platformFeePaise, currency)} note="Buyer platform fee impact" />
+            <SellerMetric label="GST on fees" value={formatMoney(report.summary.gstOnCommissionPaise, currency)} note="GST charged on marketplace fees" />
+            <SellerMetric label="TDS" value={formatMoney(report.summary.tdsPaise, currency)} note="Tax deducted at source" />
+            <SellerMetric label="TCS" value={formatMoney(report.summary.tcsPaise, currency)} note="Tax collected at source" />
+            <SellerMetric label="Settlement fee" value={formatMoney(report.summary.platformFeePaise, currency)} note="Seller payout processing fee" />
+            <SellerMetric label="Seller coupon share" value={formatMoney(report.summary.couponDiscountPaise, currency)} note="Seller-funded coupon deductions" />
             <SellerMetric label="Refund Adjustments" value={formatMoney(report.summary.refundAdjustmentPaise, currency)} note="Refund-related deductions" />
             <SellerMetric label="Eligible Balance" value={formatMoney(report.summary.eligiblePaise, currency)} note={`${report.summary.eligibleCount} splits awaiting payout`} />
           </div>

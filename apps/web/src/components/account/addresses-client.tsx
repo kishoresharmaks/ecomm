@@ -33,6 +33,7 @@ export function AddressesClient() {
   const customerAuth = useCustomerAuth();
   const [editing, setEditing] = useState<CustomerAddress | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [formVersion, setFormVersion] = useState(0);
   const confirmation = useConfirmationDialog();
 
   const addressesQuery = useQuery({
@@ -54,6 +55,9 @@ export function AddressesClient() {
     },
     onSuccess: () => {
       setNotice(editing ? "Address updated." : "Address added.");
+      if (!editing) {
+        setFormVersion((current) => current + 1);
+      }
       setEditing(null);
       void queryClient.invalidateQueries({ queryKey: ["account-addresses", customerAuth.authKey] });
       void queryClient.invalidateQueries({ queryKey: ["account-profile", customerAuth.authKey] });
@@ -221,7 +225,7 @@ export function AddressesClient() {
             title={editing ? "Edit address" : "Add address"}
             description={editing ? "Update this saved delivery location." : "Create a new address for checkout."}
           />
-          <form key={editing?.id ?? "new-address"} onSubmit={submit} className="mt-5 grid gap-4">
+          <form key={`${editing?.id ?? "new-address"}-${formVersion}`} onSubmit={submit} className="mt-5 grid gap-4">
             <Field label="Label" name="label" defaultValue={editing?.label ?? ""} placeholder="Home, Office, Shop" />
             <Field label="Full name" name="fullName" required defaultValue={editing?.fullName ?? ""} />
             <Field label="Phone" name="phone" required pattern="[+]?[0-9][0-9 ()-]{6,24}" defaultValue={editing?.phone ?? ""} />

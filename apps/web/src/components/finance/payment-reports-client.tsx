@@ -127,7 +127,12 @@ const financeReportTypes: Array<{ value: FinanceExportType; label: string; searc
   { value: "FINANCE_SERVICE_RECEIVABLES", label: "Service receivables", searchPlaceholder: "Receivable, booking or seller" },
 ];
 
-export const financeExportTypes = financeReportTypes.map(({ value, label }) => ({ value, label }));
+export const financeExportTypes: Array<{ value: ReportExportType; label: string }> = [
+  ...financeReportTypes.map(({ value, label }) => ({ value, label })),
+  { value: "GSTR1_REVIEW_SELLER_XLSX", label: "GSTR-1 seller review workbook" },
+  { value: "GSTR1_REVIEW_ALL_SELLERS_ZIP", label: "GSTR-1 all-seller workbook ZIP" },
+  { value: "GSTR1_REVIEW_PLATFORM_XLSX", label: "GSTR-1 platform review workbook" },
+];
 
 function statusOptions(type: FinanceExportType) {
   const values =

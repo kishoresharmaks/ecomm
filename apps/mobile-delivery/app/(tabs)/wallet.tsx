@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Text, View } from "react-native";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Card, Field, Header, Metric, QueryState, Screen, StatusChip, formatDateTime, formatPaise, humanize } from "../../src/components/screen";
 import { getDeliveryProfile, getDeliveryWallet, requestDeliveryWalletPayout } from "../../src/features/delivery/delivery-api";
 import { useMobileDeliveryAuth } from "../../src/auth/mobile-delivery-auth-context";
@@ -9,10 +9,12 @@ export default function DeliveryWalletScreen() {
   const auth = useMobileDeliveryAuth();
   const queryClient = useQueryClient();
   const [note, setNote] = useState("");
-  const walletQuery = useQuery({
+  const walletQuery = useInfiniteQuery({
     queryKey: ["delivery-wallet", auth.authKey],
-    queryFn: () => getDeliveryWallet(auth.authHeaders, { limit: 50 }),
+    queryFn: ({ pageParam }) => getDeliveryWallet(auth.authHeaders, { page: pageParam, limit: 50 }),
     enabled: auth.enabled,
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => lastPage.page * lastPage.limit < lastPage.total ? lastPage.page + 1 : undefined,
   });
   const profileQuery = useQuery({
     queryKey: ["delivery-profile", auth.authKey, "wallet"],
@@ -26,10 +28,16 @@ export default function DeliveryWalletScreen() {
       await queryClient.invalidateQueries({ queryKey: ["delivery-wallet"] });
     },
   });
-  const summary = walletQuery.data?.summary;
+  const firstWalletPage = walletQuery.data?.pages[0];
+  const summary = firstWalletPage?.summary;
+  const entries = walletQuery.data?.pages.flatMap((page) => page.items) ?? [];
+  const isRefreshing = walletQuery.isRefetching || profileQuery.isRefetching;
 
   return (
-    <Screen>
+    <Screen
+      refreshing={isRefreshing}
+      onRefresh={() => Promise.all([walletQuery.refetch(), profileQuery.refetch()]).then(() => undefined)}
+    >
       <Header title="Wallet" subtitle="Local delivery earnings and manual payout requests." />
       <QueryState loading={walletQuery.isLoading} error={walletQuery.error} onRetry={() => void walletQuery.refetch()} />
       <QueryState loading={false} error={profileQuery.error} onRetry={() => void profileQuery.refetch()} />
@@ -72,7 +80,7 @@ export default function DeliveryWalletScreen() {
         <Button title="Request payout" disabled={!summary?.canRequestPayout} loading={payoutMutation.isPending} onPress={() => payoutMutation.mutate()} />
       </Card>
       <Text style={{ color: "#123A5A", fontSize: 18, fontWeight: "900" }}>Ledger</Text>
-      {(walletQuery.data?.items ?? []).map((entry) => (
+      {entries.map((entry) => (
         <Card key={entry.id}>
           <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
             <Text style={{ color: "#123A5A", flex: 1, fontWeight: "900" }}>{humanize(entry.entryType)}</Text>
@@ -82,6 +90,14 @@ export default function DeliveryWalletScreen() {
           <Text style={{ color: "#6B7280" }}>{entry.description ?? formatDateTime(entry.createdAt)}</Text>
         </Card>
       ))}
+      {walletQuery.hasNextPage ? (
+        <Button
+          title="Load more ledger entries"
+          tone="secondary"
+          loading={walletQuery.isFetchingNextPage}
+          onPress={() => void walletQuery.fetchNextPage()}
+        />
+      ) : null}
     </Screen>
   );
 }

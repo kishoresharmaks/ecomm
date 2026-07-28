@@ -3678,7 +3678,7 @@ export class OrdersService {
     }
 
     const result = await this.prisma.client.$transaction(async (tx) => {
-      const orderRecord = await tx.order.findFirst({
+      const orderTarget = await tx.order.findFirst({
         where: {
           orderNumber,
           sellerSplits: {
@@ -3687,11 +3687,17 @@ export class OrdersService {
             },
           },
         },
+        select: { id: true },
       });
 
-      if (!orderRecord) {
+      if (!orderTarget) {
         throw new NotFoundException("Seller order not found.");
       }
+
+      await tx.$queryRaw`SELECT id FROM orders WHERE id = ${orderTarget.id}::uuid FOR UPDATE`;
+      const orderRecord = await tx.order.findUniqueOrThrow({
+        where: { id: orderTarget.id },
+      });
 
       const sellerSplits = await tx.orderSellerSplit.findMany({
         where: { orderId: orderRecord.id },
@@ -3808,13 +3814,20 @@ export class OrdersService {
       let codPaymentSettledBySellerCash = false;
 
       if (orderStatusChanged || deliveryStatusChanged) {
-        await tx.order.update({
-          where: { id: order.id },
+        const updatedOrder = await tx.order.updateMany({
+          where: {
+            id: order.id,
+            orderStatus: order.orderStatus,
+            deliveryStatus: order.deliveryStatus,
+          },
           data: {
             ...(orderStatusChanged ? { orderStatus: nextOrderStatus } : {}),
             ...(deliveryStatusChanged ? { deliveryStatus: nextDeliveryStatus } : {}),
           },
         });
+        if (updatedOrder.count !== 1) {
+          throw new ConflictException("Order state changed. Refresh the order and try again.");
+        }
       }
 
       if (
@@ -4769,14 +4782,14 @@ export class OrdersService {
       await this.notifyCustomerDeliveryStatus(
         orderWithDelivery,
         result.nextStatus,
-        dto.deliveryNote,
+        dto.deliveryNote ?? undefined,
       );
     }
     if (result.orderStatusChanged && orderTemplate !== deliveryTemplate) {
       await this.notifyCustomerOrderStatus(
         orderWithDelivery,
         result.nextOrderStatus,
-        dto.deliveryNote,
+        dto.deliveryNote ?? undefined,
       );
     }
     if (result.codPaymentSettledBySellerCash && orderWithDelivery.paymentStatus === PaymentStatus.PAID) {

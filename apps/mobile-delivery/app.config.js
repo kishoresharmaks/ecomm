@@ -33,7 +33,7 @@ module.exports = {
     name: "1HandIndia Delivery",
     slug: "onehandindia-delivery",
     scheme: "onehandindia-delivery",
-    version: "0.1.0",
+    version: "1.0.0",
     orientation: "portrait",
     userInterfaceStyle: "light",
     icon: "./assets/icon.png",
@@ -46,7 +46,6 @@ module.exports = {
     },
     android: {
       package: "com.onehandindia.delivery",
-      versionCode: 1,
       ...(androidGoogleServicesFile ? { googleServicesFile: androidGoogleServicesFile } : {}),
       adaptiveIcon: {
         foregroundImage: "./assets/adaptive-icon.png",

@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/main.ts",
-    "build": "tsc --noEmit && node ../../scripts/build-node-service.mjs src/main.ts dist/main.js",
+    "build": "node --max-old-space-size=12288 -e \"require('typescript/lib/tsc')\" && node ../../scripts/build-node-service.mjs src/main.ts dist/main.js",
     "start": "node dist/main.js",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "node --max-old-space-size=12288 -e \"require('typescript/lib/tsc')\"",
     "lint": "eslint .",
     "test": "vitest run --passWithNoTests"
   },
@@ -31,6 +31,7 @@
     "ioredis": "5.10.1",
     "libphonenumber-js": "^1.13.7",
     "nodemailer": "^8.0.9",
+    "pdfkit": "0.19.1",
     "pino": "10.3.1",
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2",
@@ -44,6 +45,7 @@
     "@types/express": "^5.0.6",
     "@types/node": "25.9.1",
     "@types/nodemailer": "^8.0.0",
+    "@types/pdfkit": "0.17.6",
     "supertest": "7.2.2",
     "tsx": "4.22.3",
     "typescript": "6.0.3",

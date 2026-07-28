@@ -42,7 +42,7 @@ export function StorefrontCategoryCard({
       <Link
         href={`/categories/${category.slug}` as Route}
         className={cn(
-          "group relative isolate flex min-h-[340px] overflow-hidden rounded-[28px] border border-[#D8E2EA] bg-[#163B5C] p-5 text-white shadow-[0_24px_60px_rgba(22,59,92,0.18)] transition hover:-translate-y-0.5 hover:shadow-[0_28px_70px_rgba(22,59,92,0.22)]",
+          "group relative isolate flex min-h-[340px] overflow-hidden rounded-[28px] border border-[#F7A58E] bg-[#ED3500] p-5 text-white shadow-[0_24px_60px_rgba(237,53,0,0.18)] transition hover:-translate-y-0.5 hover:shadow-[0_28px_70px_rgba(237,53,0,0.22)]",
           className,
         )}
       >

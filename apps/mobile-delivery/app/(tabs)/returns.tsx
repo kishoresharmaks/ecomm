@@ -1,8 +1,8 @@
 import { Link } from "expo-router";
 import { useState } from "react";
 import { Pressable, Text, View } from "react-native";
-import { useQuery } from "@tanstack/react-query";
-import { Button, Field, Header, QueryState, Screen, SelectField, StatusChip, formatPaise, humanize } from "../../src/components/screen";
+import { useInfiniteQuery } from "@tanstack/react-query";
+import { Button, EmptyState, Field, Header, QueryState, Screen, SelectField, StatusChip, formatPaise, humanize } from "../../src/components/screen";
 import { addressLine } from "../../src/features/delivery/delivery-api";
 import { listDeliveryReturns, type ReturnDetail } from "../../src/features/delivery/returns-api";
 import { useMobileDeliveryAuth } from "../../src/auth/mobile-delivery-auth-context";
@@ -14,19 +14,22 @@ export default function DeliveryReturnsScreen() {
   const [search, setSearch] = useState("");
   const [submittedSearch, setSubmittedSearch] = useState("");
   const [assignmentStatus, setAssignmentStatus] = useState("");
-  const returnsQuery = useQuery({
+  const submitSearch = () => setSubmittedSearch(search.trim());
+  const returnsQuery = useInfiniteQuery({
     queryKey: ["delivery-returns", auth.authKey, submittedSearch, assignmentStatus],
-    queryFn: () => listDeliveryReturns(auth.authHeaders, { search: submittedSearch, assignmentStatus, limit: 40 }),
+    queryFn: ({ pageParam }) => listDeliveryReturns(auth.authHeaders, { search: submittedSearch, assignmentStatus, limit: 40, cursor: pageParam }),
     enabled: auth.enabled,
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.pageInfo?.hasNextPage ? lastPage.pageInfo.nextCursor ?? undefined : undefined,
   });
-  const pickups = returnsQuery.data?.items ?? [];
+  const pickups = returnsQuery.data?.pages.flatMap((page) => page.items) ?? [];
 
   return (
-    <Screen>
+    <Screen refreshing={returnsQuery.isRefetching} onRefresh={() => returnsQuery.refetch()}>
       <Header title="Return pickups" subtitle="Accept customer pickups and close seller-store receipt proof references." />
       <View style={{ gap: 12 }}>
-        <Field label="Search return" value={search} onChangeText={setSearch} placeholder="Return or order number" />
-        <Button title="Search" onPress={() => setSubmittedSearch(search.trim())} />
+        <Field label="Search return" value={search} onChangeText={setSearch} onSubmitEditing={submitSearch} placeholder="Return or order number" returnKeyType="search" />
+        <Button title="Search" onPress={submitSearch} />
         <SelectField
           label="Assignment"
           selectedValue={assignmentStatus}
@@ -35,12 +38,20 @@ export default function DeliveryReturnsScreen() {
         />
       </View>
       <QueryState loading={returnsQuery.isLoading} error={returnsQuery.error} onRetry={() => void returnsQuery.refetch()} />
-      {!returnsQuery.isLoading && pickups.length === 0 ? (
-        <Text style={{ color: "#6B7280", fontWeight: "700" }}>Assigned return pickups will appear here.</Text>
+      {!returnsQuery.isLoading && !returnsQuery.error && pickups.length === 0 ? (
+        <EmptyState title="No return pickups" message="Assigned return pickups and matching search results will appear here." />
       ) : null}
       {pickups.map((pickup) => (
         <ReturnCard key={pickup.id} pickup={pickup} />
       ))}
+      {returnsQuery.hasNextPage ? (
+        <Button
+          title="Load more returns"
+          tone="secondary"
+          loading={returnsQuery.isFetchingNextPage}
+          onPress={() => void returnsQuery.fetchNextPage()}
+        />
+      ) : null}
     </Screen>
   );
 }

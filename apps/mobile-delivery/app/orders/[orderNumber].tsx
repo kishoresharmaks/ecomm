@@ -31,10 +31,12 @@ import {
 import { pickDeliveryProofImage, uploadDeliveryProofImage } from "../../src/features/delivery/proof-upload";
 import {
   defaultDeliveryEstimate,
+  deliveryEstimateError,
   earliestDeliveryDate,
   formatDeliveryEstimateDate,
   formatDeliveryEstimateTime,
   parseDeliveryEstimate,
+  nextAttemptDateError,
   serializeDeliveryEstimate,
   withDeliveryDate,
   withDeliveryTime,
@@ -92,6 +94,9 @@ export default function DeliveryOrderDetailScreen() {
   const storedDeliveryEstimate = parseDeliveryEstimate(order?.deliveryDetail?.estimatedDeliveryDate);
   const deliveryEstimateChanged =
     (storedDeliveryEstimate?.getTime() ?? null) !== (estimatedDeliveryDate?.getTime() ?? null);
+  const deliveryNoteChanged = (order?.deliveryDetail?.deliveryNote ?? "") !== deliveryNote.trim();
+  const estimateError = deliveryEstimateError(estimatedDeliveryDate);
+  const attemptDateError = nextAttemptDateError(nextAttemptDate);
 
   const serverFormValues = order
     ? {
@@ -132,19 +137,21 @@ export default function DeliveryOrderDetailScreen() {
   });
   const progressMutation = useMutation({
     mutationFn: (status: DeliveryStatus) =>
-      updateDeliveryOrder(auth.authHeaders, orderNumber, {
-        ...(status !== currentDeliveryStatus ? { status } : {}),
-        estimatedDeliveryDate: serializeDeliveryEstimate(estimatedDeliveryDate),
-        deliveryNote: deliveryNote.trim() || undefined,
-        receiverName: status === "DELIVERED" ? receiverName.trim() : undefined,
-        proofReference: status === "DELIVERED" ? proofReference.trim() : undefined,
-        proofNote: status === "DELIVERED" ? proofNote.trim() || undefined : undefined,
-      }),
+      estimateError
+        ? Promise.reject(new Error(estimateError))
+        : updateDeliveryOrder(auth.authHeaders, orderNumber, {
+            ...(status !== currentDeliveryStatus ? { status } : {}),
+            estimatedDeliveryDate: serializeDeliveryEstimate(estimatedDeliveryDate),
+            deliveryNote: deliveryNote.trim() || null,
+            receiverName: status === "DELIVERED" ? receiverName.trim() : undefined,
+            proofReference: status === "DELIVERED" ? proofReference.trim() : undefined,
+            proofNote: status === "DELIVERED" ? proofNote.trim() || undefined : undefined,
+          }),
     onSuccess: async (_, status) => {
       setNotice({
         message:
           status === currentDeliveryStatus
-            ? "Estimated delivery date and time saved."
+            ? "Delivery details saved."
             : `${humanize(status)} update saved.`,
         tone: "success",
       });
@@ -167,11 +174,13 @@ export default function DeliveryOrderDetailScreen() {
   });
   const attemptMutation = useMutation({
     mutationFn: () =>
-      createDeliveryAttempt(auth.authHeaders, orderNumber, {
-        reason: attemptReason,
-        note: attemptNote.trim() || undefined,
-        nextAttemptDate: nextAttemptDate.trim() || undefined,
-      }),
+      attemptDateError
+        ? Promise.reject(new Error(attemptDateError))
+        : createDeliveryAttempt(auth.authHeaders, orderNumber, {
+            reason: attemptReason,
+            note: attemptNote.trim() || undefined,
+            nextAttemptDate: nextAttemptDate.trim() || undefined,
+          }),
     onSuccess: async () => {
       setNotice({ message: "Delivery attempt recorded.", tone: "success" });
       setAttemptNote("");
@@ -197,7 +206,7 @@ export default function DeliveryOrderDetailScreen() {
   }
 
   return (
-    <Screen>
+    <Screen refreshing={orderQuery.isRefetching} onRefresh={() => orderQuery.refetch()}>
       <Button title="Back to orders" tone="secondary" onPress={() => router.back()} />
       <Header title={orderNumber || "Order detail"} subtitle="Accept, progress, record COD, and close proof." />
       <QueryState loading={orderQuery.isLoading} error={orderQuery.error} onRetry={() => void orderQuery.refetch()} />
@@ -216,7 +225,7 @@ export default function DeliveryOrderDetailScreen() {
             <View style={{ flexDirection: "row", gap: 10 }}>
               <Button
                 title="Accept"
-                disabled={assignmentAccepted}
+                disabled={assignmentAccepted || assignmentMutation.isPending}
                 loading={assignmentMutation.isPending && assignmentMutation.variables === "ACCEPT"}
                 style={{ flex: 1 }}
                 onPress={() => assignmentMutation.mutate("ACCEPT")}
@@ -234,6 +243,7 @@ export default function DeliveryOrderDetailScreen() {
             <Text style={sectionTitle}>Delivery progress</Text>
             <Text style={mutedText}>Tracking: {trackingReference || "Generated after assignment"}</Text>
             <DeliveryEstimateField value={estimatedDeliveryDate} onChange={setEstimatedDeliveryDate} />
+            {estimateError ? <Text style={dangerText}>{estimateError}</Text> : null}
             <Field label="Delivery note" value={deliveryNote} onChangeText={setDeliveryNote} placeholder="Pickup, route, or handover note" multiline />
             <Field label="Receiver name" value={receiverName} onChangeText={setReceiverName} placeholder="Required before delivered" />
             <Button title={proofReference ? "Replace proof file" : "Upload proof file"} tone="secondary" onPress={() => void uploadProof()} />
@@ -256,7 +266,8 @@ export default function DeliveryOrderDetailScreen() {
                 !assignmentAccepted ||
                 progressLocked ||
                 progressMutation.isPending ||
-                (selectedDeliveryStatus === currentDeliveryStatus && !deliveryEstimateChanged) ||
+                Boolean(estimateError) ||
+                (selectedDeliveryStatus === currentDeliveryStatus && !deliveryEstimateChanged && !deliveryNoteChanged) ||
                 (selectedDeliveryStatus === "DELIVERED" && (!receiverName.trim() || !proofReference.trim()))
               }
               loading={progressMutation.isPending}
@@ -293,8 +304,14 @@ export default function DeliveryOrderDetailScreen() {
               options={attemptReasons.map((reason) => ({ value: reason, label: humanize(reason) }))}
             />
             <Field label="Attempt note" value={attemptNote} onChangeText={setAttemptNote} placeholder="What happened?" multiline />
-            <Field label="Next attempt date" value={nextAttemptDate} onChangeText={setNextAttemptDate} placeholder="YYYY-MM-DD" />
-            <Button title="Record attempt" disabled={!assignmentAccepted} loading={attemptMutation.isPending} onPress={() => attemptMutation.mutate()} />
+            <Field
+              label="Next attempt date"
+              value={nextAttemptDate}
+              onChangeText={setNextAttemptDate}
+              placeholder="YYYY-MM-DD"
+              {...(attemptDateError ? { error: attemptDateError } : {})}
+            />
+            <Button title="Record attempt" disabled={!assignmentAccepted || Boolean(attemptDateError)} loading={attemptMutation.isPending} onPress={() => attemptMutation.mutate()} />
             {(order.deliveryDetail?.attempts ?? []).map((attempt) => (
               <View key={attempt.id} style={{ borderTopColor: "#EEF2F6", borderTopWidth: 1, gap: 4, paddingTop: 10 }}>
                 <StatusChip label={humanize(attempt.reason)} tone="warning" />

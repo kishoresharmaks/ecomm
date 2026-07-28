@@ -3,7 +3,9 @@ import { router, useLocalSearchParams } from "expo-router";
 import { ScrollView, Text, View } from "react-native";
 import { useState } from "react";
 import { useMobileSellerAuth } from "../../src/auth/mobile-seller-auth-context";
-import { Button, Card, ConfirmDialog, Field, Header, LoadingState, Screen, StatusChip } from "../../src/components/screen";
+import { Button, Card, ConfirmDialog, Field, Header, LoadingState, QueryErrorState, Screen, StatusChip } from "../../src/components/screen";
+import { SellerHubHandoffButton } from "../../src/components/seller-hub-handoff-button";
+import { sellerPortalB2BEnquiryUrl } from "../../src/features/seller/b2b-navigation";
 import { getB2BEnquiry, respondToB2BEnquiry, type B2BEnquiryResponsePayload, type B2BEnquiryStatus } from "../../src/features/seller/seller-api";
 import { formatMoney, rupeesToPaise } from "../../src/lib/money";
 
@@ -11,6 +13,7 @@ const statusTones: Record<B2BEnquiryStatus, "info" | "success" | "warning" | "da
   SUBMITTED: "warning",
   IN_REVIEW: "warning",
   RESPONDED: "info",
+  NEGOTIATING: "info",
   BUYER_CONFIRMED: "info",
   ADMIN_APPROVED: "success",
   FINALISED: "success",
@@ -47,9 +50,22 @@ export default function B2BEnquiryDetailScreen() {
     return <LoadingState message="Loading enquiry details..." />;
   }
 
+  if (enquiryQuery.isError) {
+    return (
+      <Screen>
+        <QueryErrorState
+          title="Enquiry could not be loaded"
+          message={enquiryQuery.error instanceof Error ? enquiryQuery.error.message : undefined}
+          onRetry={() => void enquiryQuery.refetch()}
+          retrying={enquiryQuery.isFetching}
+        />
+      </Screen>
+    );
+  }
+
   const enquiry = enquiryQuery.data;
   const isLocked = enquiry ? ["BUYER_CONFIRMED", "ADMIN_APPROVED", "FINALISED", "CLOSED", "CANCELLED"].includes(enquiry.status) : false;
-  const canRespond = enquiry ? ["SUBMITTED", "IN_REVIEW", "RESPONDED"].includes(enquiry.status) : false;
+  const canRespond = enquiry ? ["SUBMITTED", "IN_REVIEW", "RESPONDED", "NEGOTIATING"].includes(enquiry.status) : false;
 
   const handleResponseSubmit = () => {
     if (responseMessage.trim().length < 5) return;
@@ -126,6 +142,11 @@ export default function B2BEnquiryDetailScreen() {
                     Quote: {formatMoney(response.quotedPricePaise)}
                   </Text>
                 ) : null}
+                {response.transportChargePaise ? (
+                  <Text style={{ color: "#6B7280", fontSize: 12 }}>Transport: {formatMoney(response.transportChargePaise)}</Text>
+                ) : null}
+                {response.transportEta ? <Text style={{ color: "#6B7280", fontSize: 12 }}>ETA: {response.transportEta}</Text> : null}
+                {response.transportNote ? <Text style={{ color: "#6B7280", fontSize: 12 }}>{response.transportNote}</Text> : null}
                 <Text style={{ color: "#6B7280", fontSize: 12 }}>{response.responseMessage}</Text>
                 {response.createdAt ? (
                   <Text style={{ color: "#6B7280", fontSize: 10, marginTop: 4 }}>
@@ -134,6 +155,23 @@ export default function B2BEnquiryDetailScreen() {
                 ) : null}
               </View>
             ))}
+          </Card>
+        ) : null}
+        {(enquiry.messages?.items.length ?? 0) > 0 ? (
+          <Card>
+            <Text style={{ color: "#111827", fontSize: 16, fontWeight: "900", marginBottom: 8 }}>Negotiation Messages</Text>
+            {enquiry.messages?.items.map((message) => (
+              <View key={message.id} style={{ borderBottomWidth: 1, borderBottomColor: "#E5E7EB", paddingBottom: 8, marginBottom: 8 }}>
+                <Text style={{ color: "#374151", fontSize: 13, fontWeight: "700" }}>
+                  {message.sender?.fullName?.trim() || message.sender?.email?.trim() || "B2B participant"}
+                </Text>
+                <Text style={{ color: "#6B7280", fontSize: 13 }}>{message.message}</Text>
+                {message.createdAt ? <Text style={{ color: "#98A2B3", fontSize: 10 }}>{new Date(message.createdAt).toLocaleString()}</Text> : null}
+              </View>
+            ))}
+            {enquiry.messages?.nextCursor ? (
+              <Text style={{ color: "#6B7280", fontSize: 12 }}>Older messages are available in Seller Hub.</Text>
+            ) : null}
           </Card>
         ) : null}
         {enquiry.b2bOrder ? (
@@ -156,6 +194,11 @@ export default function B2BEnquiryDetailScreen() {
               numberOfLines={4}
             />
             <Button title="Submit Response" onPress={handleResponseSubmit} disabled={responseMutation.isPending || responseMessage.trim().length < 5} />
+            {responseMutation.isError ? (
+              <Text style={{ color: "#B42318", fontSize: 12, fontWeight: "700" }}>
+                {responseMutation.error instanceof Error ? responseMutation.error.message : "The response could not be submitted."}
+              </Text>
+            ) : null}
           </Card>
         ) : isLocked ? (
           <Card>
@@ -164,6 +207,18 @@ export default function B2BEnquiryDetailScreen() {
             </Text>
           </Card>
         ) : null}
+        <Card>
+          <Text style={{ color: "#111827", fontSize: 16, fontWeight: "900", marginBottom: 6 }}>Full B2B workspace</Text>
+          <Text style={{ color: "#6B7280", fontSize: 13, marginBottom: 12 }}>
+            Continue detailed quotation, buyer negotiation, and complete enquiry actions in Seller Hub.
+          </Text>
+          <SellerHubHandoffButton
+            buttonTitle="Continue in Seller Hub"
+            title="Open this enquiry in Seller Hub?"
+            message="The exact enquiry will open in the web Seller Hub. Sign in with the same seller account if requested."
+            url={sellerPortalB2BEnquiryUrl(enquiry.id)}
+          />
+        </Card>
         <Button title="Back" tone="secondary" onPress={() => router.back()} />
         <ConfirmDialog
           visible={showConfirmDialog}

@@ -22,8 +22,8 @@ export function StorefrontFrame({
 }) {
   return (
     <StorefrontMaintenanceGate>
-      <div className="flex min-h-screen flex-col bg-[#FAF7F0] text-[#1F2933]">
-        <Suspense fallback={<div className="h-[160px] bg-[#FAF7F0]" />}>
+      <div className="flex min-h-screen flex-col bg-[#FFFCFB] text-[#1F2933]">
+        <Suspense fallback={<div className="h-[160px] bg-[#FFFCFB]" />}>
           <StorefrontHeader initialMenu={initialMenus?.header} />
         </Suspense>
         <div className="flex flex-1 flex-col pb-28 lg:pb-0">

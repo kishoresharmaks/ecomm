@@ -817,26 +817,37 @@ export class ReportsService {
 
   async sellerInventoryReport(actor: RequestUser, query: ReportQueryDto) {
     const seller = await this.requireSeller(actor);
+    const market = await this.marketForSeller(seller);
     const createdAt = this.dateRange(query);
     const splitWhere: Prisma.OrderSellerSplitWhereInput = { sellerId: seller.id, order: this.reportableOrderWhere(createdAt) };
     const variantWhere: Prisma.ProductVariantWhereInput = { product: { sellerId: seller.id, deletedAt: null } };
-    const [productCount, activeProductCount, variantCount, lowStockVariants, allVariants, topSoldItems] = await this.prisma.client.$transaction(async (tx) => {
+    const [productCount, activeProductCount, variantCount, lowStockCount, lowStockVariants, allVariants, topSoldItems] = await this.prisma.client.$transaction(async (tx) => {
       const productCount = await tx.product.count({ where: { sellerId: seller.id, deletedAt: null } });
       const activeProductCount = await tx.product.count({ where: { sellerId: seller.id, status: ProductStatus.ACTIVE, deletedAt: null } });
       const variantCount = await tx.productVariant.count({ where: variantWhere });
+      const lowStockCount = await tx.productVariant.count({ where: { ...variantWhere, stockQuantity: { lte: 5 } } });
       const lowStockVariants = await tx.productVariant.findMany({ where: { ...variantWhere, stockQuantity: { lte: 5 } }, include: { product: { select: { id: true, name: true, status: true } } }, orderBy: { stockQuantity: "asc" }, take: 50 });
       const allVariants = await tx.productVariant.findMany({ where: variantWhere, include: { product: { select: { id: true, name: true, status: true } } }, orderBy: { stockQuantity: "asc" }, take: 100 });
       const topSoldItems = await tx.orderItem.groupBy({ by: ["productId"], where: { sellerId: seller.id, order: this.reportableOrderWhere(createdAt) }, _sum: { quantity: true, lineTotalPaise: true }, orderBy: { _sum: { quantity: "desc" } }, take: 10 });
-      return [productCount, activeProductCount, variantCount, lowStockVariants, allVariants, topSoldItems] as const;
+      return [productCount, activeProductCount, variantCount, lowStockCount, lowStockVariants, allVariants, topSoldItems] as const;
     });
     const products = await this.prisma.client.product.findMany({ where: { id: { in: topSoldItems.map((i) => i.productId) }, sellerId: seller.id }, select: { id: true, name: true } });
     const productNameMap = new Map(products.map((p) => [p.id, p.name]));
+    const splits = await this.prisma.client.orderSellerSplit.findMany({ where: splitWhere, select: { id: true, sellerSubtotalPaise: true, createdAt: true }, orderBy: { createdAt: "desc" }, take: 10 });
     return {
-      summary: { productCount, activeProductCount, variantCount, lowStockCount: lowStockVariants.length },
-      splits: await this.prisma.client.orderSellerSplit.findMany({ where: splitWhere, select: { id: true, sellerSubtotalPaise: true, createdAt: true }, orderBy: { createdAt: "desc" }, take: 10 }),
+      currency: market.currency,
+      baseCurrency: market.baseCurrency,
+      fxRate: market.rate,
+      summary: { productCount, activeProductCount, variantCount, lowStockCount },
+      splits: splits.map((split) => this.convertMoneyFields(split, ["sellerSubtotalPaise"] as const, market)),
       lowStockVariants,
       variants: allVariants,
-      topSoldItems: topSoldItems.map((i) => ({ productId: i.productId, productName: productNameMap.get(i.productId) ?? "Product", quantitySold: i._sum.quantity ?? 0, revenuePaise: i._sum.lineTotalPaise ?? 0 }))
+      topSoldItems: topSoldItems.map((i) => this.convertMoneyFields({
+        productId: i.productId,
+        productName: productNameMap.get(i.productId) ?? "Product",
+        quantitySold: i._sum.quantity ?? 0,
+        revenuePaise: i._sum.lineTotalPaise ?? 0
+      }, ["revenuePaise"] as const, market))
     };
   }
 
@@ -846,15 +857,20 @@ export class ReportsService {
     const createdAt = this.dateRange(query);
     const splitWhere: Prisma.OrderSellerSplitWhereInput = { sellerId: seller.id, order: this.reportableOrderWhere(createdAt) };
     const payoutDateWhere = createdAt ? { createdAt } : {};
-    const [splitAgg, pendingPayouts, paidPayouts, recentPayouts, ledgerEntries] = await this.prisma.client.$transaction(async (tx) => {
+    const [splitAgg, eligibleSplits, pendingPayouts, paidPayouts, recentPayouts, ledgerEntries] = await this.prisma.client.$transaction(async (tx) => {
       const splitAgg = await this.effectiveSellerSplitFinance(tx, splitWhere);
-      const pendingPayouts = await tx.sellerPayout.aggregate({ where: { sellerId: seller.id, status: { in: [SellerPayoutStatus.PENDING_APPROVAL, SellerPayoutStatus.APPROVED] } }, _sum: { netPayablePaise: true }, _count: true });
+      const eligibleSplits = await this.effectiveSellerSplitFinance(tx, {
+        sellerId: seller.id,
+        settlementStatus: SellerSettlementStatus.ELIGIBLE,
+        payoutId: null,
+        order: this.reportableOrderWhere(createdAt),
+      });
+      const pendingPayouts = await tx.sellerPayout.aggregate({ where: { sellerId: seller.id, status: { in: [SellerPayoutStatus.PENDING_APPROVAL, SellerPayoutStatus.APPROVED] }, ...payoutDateWhere }, _sum: { netPayablePaise: true }, _count: true });
       const paidPayouts = await tx.sellerPayout.aggregate({ where: { sellerId: seller.id, status: SellerPayoutStatus.PAID, ...payoutDateWhere }, _sum: { netPayablePaise: true, grossSalesPaise: true }, _count: true });
       const recentPayouts = await tx.sellerPayout.findMany({ where: { sellerId: seller.id, ...payoutDateWhere }, orderBy: { createdAt: "desc" }, take: 20 });
       const ledgerEntries = await tx.sellerLedgerEntry.findMany({ where: { sellerId: seller.id, ...(createdAt ? { createdAt } : {}) }, orderBy: { createdAt: "desc" }, take: 20 });
-      return [splitAgg, pendingPayouts, paidPayouts, recentPayouts, ledgerEntries] as const;
+      return [splitAgg, eligibleSplits, pendingPayouts, paidPayouts, recentPayouts, ledgerEntries] as const;
     });
-    const eligibleSplits = await this.prisma.client.orderSellerSplit.aggregate({ where: { sellerId: seller.id, settlementStatus: SellerSettlementStatus.ELIGIBLE, payoutId: null }, _sum: { netPayablePaise: true }, _count: true });
     // Re-derive net payable from effective components (matches finance-calculator formula exactly)
     const financeNetPayablePaise =
       splitAgg.sellerSubtotalPaise -
@@ -870,7 +886,7 @@ export class ReportsService {
       currency: market.currency,
       baseCurrency: market.baseCurrency,
       fxRate: market.rate,
-      summary: this.convertMoneyFields({ grossSalesPaise: splitAgg.sellerSubtotalPaise, commissionPaise: splitAgg.commissionPaise, netPayablePaise: financeNetPayablePaise, refundAdjustmentPaise: splitAgg.refundAdjustmentPaise, platformFeePaise: splitAgg.platformFeePaise, orderCount: splitAgg.count, pendingPayoutsPaise: pendingPayouts._sum.netPayablePaise ?? 0, pendingPayoutsCount: pendingPayouts._count, paidPayoutsPaise: paidPayouts._sum.netPayablePaise ?? 0, paidPayoutsCount: paidPayouts._count, eligiblePaise: eligibleSplits._sum.netPayablePaise ?? 0, eligibleCount: eligibleSplits._count }, ["grossSalesPaise", "commissionPaise", "netPayablePaise", "refundAdjustmentPaise", "platformFeePaise", "pendingPayoutsPaise", "paidPayoutsPaise", "eligiblePaise"] as const, market),
+      summary: this.convertMoneyFields({ grossSalesPaise: splitAgg.sellerSubtotalPaise, commissionPaise: splitAgg.commissionPaise, gstOnCommissionPaise: splitAgg.gstOnCommissionPaise, tdsPaise: splitAgg.tdsPaise, tcsPaise: splitAgg.tcsPaise, netPayablePaise: financeNetPayablePaise, refundAdjustmentPaise: splitAgg.refundAdjustmentPaise, platformFeePaise: splitAgg.platformFeePaise, couponDiscountPaise: splitAgg.couponSellerFundedDiscountPaise, orderCount: splitAgg.count, pendingPayoutsPaise: pendingPayouts._sum.netPayablePaise ?? 0, pendingPayoutsCount: pendingPayouts._count, paidPayoutsPaise: paidPayouts._sum.netPayablePaise ?? 0, paidPayoutsCount: paidPayouts._count, eligiblePaise: eligibleSplits.netPayablePaise, eligibleCount: eligibleSplits.count }, ["grossSalesPaise", "commissionPaise", "gstOnCommissionPaise", "tdsPaise", "tcsPaise", "netPayablePaise", "refundAdjustmentPaise", "platformFeePaise", "couponDiscountPaise", "pendingPayoutsPaise", "paidPayoutsPaise", "eligiblePaise"] as const, market),
       recentPayouts: recentPayouts.map((payout) => this.convertCurrencyRecord(payout, sellerPayoutMoneyFields, market)),
       ledgerEntries: ledgerEntries.map((entry) => this.convertCurrencyRecord(entry, sellerLedgerMoneyFields, market))
     };
@@ -926,22 +942,81 @@ export class ReportsService {
 
   async sellerReturnsReport(actor: RequestUser, query: ReportQueryDto) {
     const seller = await this.requireSeller(actor);
+    const market = await this.marketForSeller(seller);
     const createdAt = this.dateRange(query);
-    const returnItemWhere: Prisma.ReturnRequestItemWhereInput = { sellerId: seller.id, ...(createdAt ? { createdAt } : {}) };
+    const returnItemWhere: Prisma.ReturnRequestItemWhereInput = {
+      sellerId: seller.id,
+      ...(createdAt ? { returnRequest: { createdAt } } : {})
+    };
     const returnWhere: Prisma.ReturnRequestWhereInput = { items: { some: { sellerId: seller.id } }, ...(createdAt ? { createdAt } : {}) };
-    const [byStatus, itemAgg, recentReturns] = await this.prisma.client.$transaction(async (tx) => {
-      const byStatus = await tx.returnRequest.groupBy({ by: ["status"], where: returnWhere, _count: true, _sum: { requestedAmountPaise: true, approvedAmountPaise: true } });
-      const itemAgg = await tx.returnRequestItem.aggregate({ where: returnItemWhere, _count: true, _sum: { requestedRefundPaise: true, approvedRefundPaise: true } });
-      const recentReturns = await tx.returnRequest.findMany({ where: returnWhere, include: { order: { select: { orderNumber: true } } }, orderBy: { requestedAt: "desc" }, take: 50 });
-      return [byStatus, itemAgg, recentReturns] as const;
+    const [requestTotals, recentReturns] = await this.prisma.client.$transaction(async (tx) => {
+      const itemTotals = await tx.returnRequestItem.groupBy({
+        by: ["returnRequestId"],
+        where: returnItemWhere,
+        _count: true,
+        _sum: { requestedRefundPaise: true, approvedRefundPaise: true }
+      });
+      const requestStatuses = itemTotals.length
+        ? await tx.returnRequest.findMany({
+            where: { id: { in: itemTotals.map((item) => item.returnRequestId) } },
+            select: { id: true, status: true }
+          })
+        : [];
+      const statusByRequestId = new Map(requestStatuses.map((item) => [item.id, item.status]));
+      const requestTotals = itemTotals.map((item) => ({
+        ...item,
+        status: statusByRequestId.get(item.returnRequestId) ?? ReturnRequestStatus.PENDING_REVIEW
+      }));
+      const recentReturns = await tx.returnRequest.findMany({
+        where: returnWhere,
+        include: {
+          order: { select: { orderNumber: true } },
+          items: {
+            where: { sellerId: seller.id },
+            select: {
+              requestedRefundPaise: true,
+              approvedRefundPaise: true
+            }
+          }
+        },
+        orderBy: { requestedAt: "desc" },
+        take: 50
+      });
+      return [requestTotals, recentReturns] as const;
     });
-    const approvedCount = byStatus.find((s) => s.status === ReturnRequestStatus.APPROVED)?._count ?? 0;
-    const pendingCount = byStatus.find((s) => s.status === ReturnRequestStatus.PENDING_REVIEW)?._count ?? 0;
-    const totalCount = byStatus.reduce((acc, s) => acc + s._count, 0);
+    const byStatusMap = new Map<ReturnRequestStatus, { count: number; requestedAmountPaise: number; approvedAmountPaise: number }>();
+    for (const request of requestTotals) {
+      const current = byStatusMap.get(request.status) ?? { count: 0, requestedAmountPaise: 0, approvedAmountPaise: 0 };
+      current.count += 1;
+      current.requestedAmountPaise += request._sum.requestedRefundPaise ?? 0;
+      current.approvedAmountPaise += request._sum.approvedRefundPaise ?? 0;
+      byStatusMap.set(request.status, current);
+    }
+    const approvedCount = byStatusMap.get(ReturnRequestStatus.APPROVED)?.count ?? 0;
+    const pendingCount = byStatusMap.get(ReturnRequestStatus.PENDING_REVIEW)?.count ?? 0;
+    const requestedAmountPaise = requestTotals.reduce((sum, item) => sum + (item._sum.requestedRefundPaise ?? 0), 0);
+    const approvedAmountPaise = requestTotals.reduce((sum, item) => sum + (item._sum.approvedRefundPaise ?? 0), 0);
+    const itemCount = requestTotals.reduce((sum, item) => sum + item._count, 0);
     return {
-      summary: { totalCount, approvedCount, pendingCount, requestedAmountPaise: itemAgg._sum?.requestedRefundPaise ?? 0, approvedAmountPaise: itemAgg._sum?.approvedRefundPaise ?? 0, itemCount: itemAgg._count },
-      byStatus: byStatus.map((s) => ({ status: s.status, count: s._count, requestedAmountPaise: s._sum?.requestedAmountPaise ?? 0, approvedAmountPaise: s._sum?.approvedAmountPaise ?? 0 })),
-      recentReturns
+      currency: market.currency,
+      baseCurrency: market.baseCurrency,
+      fxRate: market.rate,
+      summary: this.convertMoneyFields({
+        totalCount: requestTotals.length,
+        approvedCount,
+        pendingCount,
+        requestedAmountPaise,
+        approvedAmountPaise,
+        itemCount
+      }, ["requestedAmountPaise", "approvedAmountPaise"] as const, market),
+      byStatus: Array.from(byStatusMap.entries()).map(([status, item]) =>
+        this.convertMoneyFields({ status, ...item }, ["requestedAmountPaise", "approvedAmountPaise"] as const, market)
+      ),
+      recentReturns: recentReturns.map(({ items, ...request }) => this.convertMoneyFields({
+        ...request,
+        requestedAmountPaise: items.reduce((sum, item) => sum + item.requestedRefundPaise, 0),
+        approvedAmountPaise: items.reduce((sum, item) => sum + item.approvedRefundPaise, 0)
+      }, ["requestedAmountPaise", "approvedAmountPaise"] as const, market))
     };
   }
 

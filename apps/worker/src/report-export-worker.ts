@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { createWriteStream } from "node:fs";
+import { createReadStream, createWriteStream } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,6 +8,7 @@ import type pino from "pino";
 import {
   ReportExportStatus,
   ReportExportType,
+  isGstr1ReviewExportType,
   prisma,
   reportExportCsvHeader,
   reportExportCsvRow,
@@ -15,6 +16,7 @@ import {
   reportExportRows,
   type ReportExportFilters,
 } from "@indihub/database";
+import { generateGstr1ReviewExport } from "./gstr1-review-export";
 import {
   deletePrivateStoredFile,
   loadPrivateStorageConfig,
@@ -137,40 +139,54 @@ async function claimReportExportJobs(limit: number) {
 
 async function generateReportExport(job: ClaimedExportJob) {
   const exportType = job.exportType;
-  const fileName = reportExportFileName(exportType);
-  const contentType = "text/csv; charset=utf-8";
+  const reviewExport = isGstr1ReviewExportType(exportType);
   const directory = join(tmpdir(), "1handindia-report-exports");
-  const tempPath = join(directory, `${job.id}.csv`);
   await mkdir(directory, { recursive: true });
+  let tempPath = "";
 
   try {
-    const { byteSize, rowCount, sha256 } = await writeCsvFile(
-      tempPath,
-      exportType,
-      reportExportFilters(job.filters),
-      job.sellerId,
-    );
+    const filters = reportExportFilters(job.filters);
+    const generated = reviewExport
+      ? await generateGstr1ReviewExport({
+          exportType,
+          sellerId: job.sellerId,
+          filters,
+          directory,
+          jobId: job.id,
+        })
+      : {
+          filePath: join(directory, `${job.id}.csv`),
+          fileName: reportExportFileName(exportType),
+          contentType: "text/csv; charset=utf-8",
+          rowCount: 0,
+        };
+    tempPath = generated.filePath;
+    const csvMetadata = reviewExport
+      ? null
+      : await writeCsvFile(tempPath, exportType, filters, job.sellerId);
+    const metadata = csvMetadata ?? await fileMetadata(tempPath);
+    const rowCount = csvMetadata?.rowCount ?? generated.rowCount;
     const storage = await loadPrivateStorageConfig();
     const storageKey = await saveReportExportFile({
       storage,
       jobId: job.id,
       actorUserId: job.actorUserId,
-      fileName,
-      contentType,
+      fileName: generated.fileName,
+      contentType: generated.contentType,
       sourcePath: tempPath,
-      sizeBytes: byteSize,
+      sizeBytes: metadata.byteSize,
     });
 
     await prisma.reportExportJob.update({
       where: { id: job.id },
       data: {
         status: ReportExportStatus.COMPLETED,
-        fileName,
-        contentType,
+        fileName: generated.fileName,
+        contentType: generated.contentType,
         storageKey,
-        sha256,
+        sha256: metadata.sha256,
         rowCount,
-        byteSize,
+        byteSize: metadata.byteSize,
         lockedAt: null,
         errorMessage: null,
         completedAt: new Date(),
@@ -178,7 +194,7 @@ async function generateReportExport(job: ClaimedExportJob) {
       },
     });
   } finally {
-    await rm(tempPath, { force: true });
+    if (tempPath) await rm(tempPath, { force: true });
   }
 }
 
@@ -218,6 +234,19 @@ async function writeCsvFile(
     stream.destroy();
     throw error;
   }
+}
+
+async function fileMetadata(filePath: string) {
+  const hash = createHash("sha256");
+  let byteSize = 0;
+  for await (const chunk of createReadStream(filePath)) {
+    byteSize += chunk.length;
+    if (byteSize > maxExportBytes) {
+      throw new Error("The report exceeds the 250 MB export limit. Narrow the filters and retry.");
+    }
+    hash.update(chunk);
+  }
+  return { byteSize, sha256: hash.digest("hex") };
 }
 
 async function failReportExport(job: ClaimedExportJob, error: unknown) {

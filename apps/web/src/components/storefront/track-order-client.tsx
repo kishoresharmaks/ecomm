@@ -216,7 +216,7 @@ function TrackedOrderPanel({ order }: { order: PublicTrackedOrder }) {
 
       {timeline.length || order.createdAt ? (
         <section className="mt-7">
-          <SectionHeading title="Tracking timeline" description="Latest delivery and order events from admin, seller, and delivery updates." />
+          <SectionHeading title="Tracking timeline" description="Latest seller, order, and delivery updates." />
           <OrderStatusTimeline
             className="mt-4"
             events={timeline}

@@ -31,7 +31,7 @@ export function AccountShell({
 
   return (
     <StorefrontFrame>
-      <main className="min-h-[calc(100svh-69px)] bg-[#FFFCFB]">
+      <div className="min-h-[calc(100svh-69px)] bg-[#FFFCFB]">
         <section className="border-b border-[#E5E7EB] bg-white">
           <div className="mx-auto max-w-7xl px-5 py-6 lg:px-6 lg:py-8">
             <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#ED3500] lg:text-xs">Customer account</p>
@@ -65,7 +65,7 @@ export function AccountShell({
           </aside>
           <div className="min-w-0">{children}</div>
         </section>
-      </main>
+      </div>
     </StorefrontFrame>
   );
 }

@@ -36,7 +36,7 @@ export function StorefrontStoreCard({
         className,
       )}
     >
-      <div className={cn("relative bg-[#163B5C]", isCompact ? "h-28 sm:h-36" : "h-32 sm:h-40")}>
+      <div className={cn("relative bg-[#ED3500]", isCompact ? "h-28 sm:h-36" : "h-32 sm:h-40")}>
         <StorefrontImage
           src={store.profile?.bannerUrl ?? null}
           alt={`${store.storeName} banner`}

@@ -104,7 +104,7 @@ export function OrderSuccessClient({ orderNumber }: { orderNumber: string }) {
 
             {order && payment ? (
               <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-                <main className="grid gap-6">
+                <div className="grid gap-6">
                   <section className="grid gap-3 md:grid-cols-3">
                     <StatusTile icon={<PackageCheck className="h-5 w-5" />} label="Order status" value={statusLabel(order.orderStatus)} tone="blue" />
                     <StatusTile icon={<CreditCard className="h-5 w-5" />} label="Payment" value={payment.label} tone={payment.tone} loading={payment.loading} />
@@ -116,7 +116,7 @@ export function OrderSuccessClient({ orderNumber }: { orderNumber: string }) {
                   <section>
                     <SectionHeading
                       title="Items ordered"
-                      description={`${order.items.length} product${order.items.length === 1 ? "" : "s"} will be handled by the seller and delivery workflow.`}
+                      description={`${order.items.length} product${order.items.length === 1 ? "" : "s"} will be prepared by the seller and updated throughout delivery.`}
                     />
                     <div className="mt-4 grid gap-3">
                       {order.items.map((item) => (
@@ -133,7 +133,7 @@ export function OrderSuccessClient({ orderNumber }: { orderNumber: string }) {
                       <TrustPoint icon={<HeartHandshake className="h-5 w-5" />} title="Support ready" text="Our team can help if a seller or payment update is needed." />
                     </div>
                   </section>
-                </main>
+                </div>
 
                 <aside className="grid h-fit gap-4">
                   <section className="rounded-2xl border border-[#E5E7EB] bg-white p-4 shadow-sm md:p-5">

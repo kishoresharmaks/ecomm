@@ -23,7 +23,10 @@ export default async function SellerRegisterPage({
   return (
     <>
       <JsonLd data={buildWebPageJsonLd({ title: "Sell on 1HandIndia", description: "Register as a seller on the 1HandIndia marketplace.", path: "/seller/register" })} />
-      <SellerWorkspaceShell title="Seller onboarding" description="Submit store and pickup details for review. After approval, product and order operations unlock.">
+      <SellerWorkspaceShell
+        title="1HandIndia Seller Hub onboarding"
+        description="Complete your business profile and verification documents in one secure application. Every submission is reviewed before marketplace access is activated."
+      >
         <SellerRegistrationForm initialMode={params.mode ?? null} initialPlanId={params.plan ?? null} />
       </SellerWorkspaceShell>
     </>

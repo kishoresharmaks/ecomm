@@ -6,6 +6,8 @@ const validSettings = {
     legalName: "1HandIndia Private Limited",
     gstin: "33ABCDE1234F1Z5",
     stateCode: "33",
+    serviceSacCode: "998599",
+    serviceDescription: "Marketplace commission and platform services",
     address: {
       line1: "12 Marketplace Avenue",
       line2: "",
@@ -69,7 +71,7 @@ describe("SettingsService GST configuration", () => {
         validSettings,
       ),
     ).resolves.toEqual(validSettings);
-    expect(tx.setting.upsert).toHaveBeenCalledTimes(9);
+    expect(tx.setting.upsert).toHaveBeenCalledTimes(11);
     expect(tx.auditLog.create).toHaveBeenCalledTimes(1);
     expect(tx.auditLog.create).toHaveBeenCalledWith({
       data: expect.objectContaining({

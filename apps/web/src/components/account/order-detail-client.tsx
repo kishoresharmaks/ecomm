@@ -181,7 +181,7 @@ export function OrderDetailClient({ orderNumber }: { orderNumber: string }) {
       submitProductReview(customerAuth.authHeaders, payload),
     onSuccess: () => {
       setNoticeTone("success");
-      setNotice("Review submitted for admin approval.");
+      setNotice("Review submitted for quality checks.");
       void queryClient.invalidateQueries({
         queryKey: ["account-order-review-options", customerAuth.authKey, orderNumber],
       });
@@ -1621,8 +1621,8 @@ function OrderItemReviewBox({
           <p className="text-sm font-black text-[#1F2933]">Rate this product</p>
           <p className="mt-1 text-xs font-semibold text-[#667085]">
             {existingReview
-              ? "Editing will send the review back to admin approval."
-              : "Submitted reviews appear publicly after admin approval."}
+              ? "Editing will send the review back for quality checks."
+              : "Submitted reviews appear publicly after quality checks."}
           </p>
         </div>
         {existingReview ? <StatusPill status={existingReview.status} /> : null}
@@ -1676,7 +1676,7 @@ function OrderItemReviewBox({
 
       {existingReview?.adminNote ? (
         <p className="mt-3 rounded-md bg-white px-3 py-2 text-xs font-semibold text-[#667085]">
-          Admin note: {existingReview.adminNote}
+          Review note: {existingReview.adminNote}
         </p>
       ) : null}
 

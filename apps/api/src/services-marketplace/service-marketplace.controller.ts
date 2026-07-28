@@ -46,6 +46,7 @@ import {
   ServiceReceivableWaiverDecisionDto,
   ServiceReceivableWaiverDto,
   ServiceFieldStatusDto,
+  ServiceBookingQueryDto,
   SettleServiceReceivableDto,
   ServiceListingQueryDto,
   ServiceReviewQueryDto,
@@ -267,7 +268,7 @@ export class ServiceMarketplaceController {
   @Roles(RoleCode.SELLER)
   @Get("seller/service-bookings")
   @ApiOperation({ summary: "List service bookings for the authenticated service provider." })
-  listSellerBookings(@CurrentUser() actor: RequestUser, @Query() query: ServiceListingQueryDto) {
+  listSellerBookings(@CurrentUser() actor: RequestUser, @Query() query: ServiceBookingQueryDto) {
     return this.serviceMarketplace.listSellerBookings(actor, query);
   }
 
