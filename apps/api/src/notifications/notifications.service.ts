@@ -1266,35 +1266,33 @@ export class NotificationsService {
   }
 
   private async ensureEmailTriggerRules() {
-    await Promise.all(
-      emailTriggerCatalog.map(async (item) => {
-        const defaultTemplate = await this.prisma.client.notificationTemplate.findUnique({
-          where: { code: item.defaultTemplateCode },
-          select: { id: true },
-        });
+    for (const item of emailTriggerCatalog) {
+      const defaultTemplate = await this.prisma.client.notificationTemplate.findUnique({
+        where: { code: item.defaultTemplateCode },
+        select: { id: true },
+      });
 
-        await this.prisma.client.emailTriggerRule.upsert({
-          where: {
-            eventCode_recipientType: {
-              eventCode: item.eventCode,
-              recipientType: item.recipientType,
-            },
-          },
-          update: {
-            category: item.category,
-            delayMinutes: 0,
-          },
-          create: {
+      await this.prisma.client.emailTriggerRule.upsert({
+        where: {
+          eventCode_recipientType: {
             eventCode: item.eventCode,
             recipientType: item.recipientType,
-            category: item.category,
-            isEnabled: true,
-            delayMinutes: 0,
-            ...(defaultTemplate ? { template: { connect: { id: defaultTemplate.id } } } : {}),
           },
-        });
-      }),
-    );
+        },
+        update: {
+          category: item.category,
+          delayMinutes: 0,
+        },
+        create: {
+          eventCode: item.eventCode,
+          recipientType: item.recipientType,
+          category: item.category,
+          isEnabled: true,
+          delayMinutes: 0,
+          ...(defaultTemplate ? { template: { connect: { id: defaultTemplate.id } } } : {}),
+        },
+      });
+    }
   }
 
   private async renderEmail(

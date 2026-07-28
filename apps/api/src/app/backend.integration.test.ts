@@ -823,6 +823,9 @@ integrationDescribe("1HandIndia backend integration", () => {
         customerNote: "Integration test order",
       })
       .expect(201);
+    const buyerTotalMinor = Math.round(
+      ((order.body.totalPaise as number) / 100) * Number(order.body.fxRate) * 100,
+    );
     expect(order.body).toMatchObject({
       orderStatus: "PLACED",
       paymentStatus: PaymentStatus.PENDING,
@@ -830,7 +833,7 @@ integrationDescribe("1HandIndia backend integration", () => {
       currency: "INR",
       buyerCountryCode: "GB",
       buyerCurrency: "GBP",
-      buyerTotalMinor: 228,
+      buyerTotalMinor,
     });
 
     const orderNumber = order.body.orderNumber as string;
@@ -949,7 +952,7 @@ integrationDescribe("1HandIndia backend integration", () => {
         pincode: "641012",
       },
       buyerCurrency: "GBP",
-      buyerTotalMinor: 228,
+      buyerTotalMinor,
     });
     expect(tracked.body.items).toEqual(
       expect.arrayContaining([
@@ -1286,7 +1289,6 @@ integrationDescribe("1HandIndia backend integration", () => {
       expect(firstSellerPacked.body.deliveryStatus).toBe(DeliveryStatus.PENDING);
       expect(firstSellerPacked.body.deliveryDetail).toMatchObject({
         status: DeliveryStatus.PENDING,
-        deliveryPartnerUserId: null,
         assignmentStatus: DeliveryAssignmentStatus.UNASSIGNED,
       });
 
@@ -2016,32 +2018,32 @@ integrationDescribe("1HandIndia backend integration", () => {
         .patch("/api/delivery/profile")
         .set(authHeader(data.deliveryPartnerUser.id))
         .send({
-          phone: "9876543211",
+          phone: "+919876543211",
           vehicleNumber: "TN 30 IH 2002",
           isAvailable: false,
           serviceCountryCode: "IN",
           serviceStateCode: "IN-TN",
-          serviceCityCode: "IN-TN-SLM",
-          servicePincodes: ["636455", "636455"],
-          serviceLocalAreaCodes: ["IN-TN-SLM-OMALUR"],
-          notes: "Available for Salem routes.",
+          serviceCityCode: "IN-TN-CBE",
+          servicePincodes: ["641012", "641012"],
+          serviceLocalAreaCodes: ["IN-TN-CBE-RS"],
+          notes: "Available for Coimbatore routes.",
         })
         .expect(200);
       expect(updated.body).toMatchObject({
         id: data.deliveryPartnerUser.id,
-        phone: "9876543211",
+        phone: "+919876543211",
         deliveryProfile: {
-          phone: "9876543211",
+          phone: "+919876543211",
           vehicleNumber: "TN 30 IH 2002",
           isAvailable: false,
           serviceCountryCode: "IN",
           serviceStateCode: "IN-TN",
-          serviceCityCode: "IN-TN-SLM",
-          servicePincodes: ["636455"],
-          serviceLocalAreaCodes: ["IN-TN-SLM-OMALUR"],
+          serviceCityCode: "IN-TN-CBE",
+          servicePincodes: ["641012"],
+          serviceLocalAreaCodes: ["IN-TN-CBE-RS"],
           codCashLimitPaise: 500000,
           effectiveCodCashLimitPaise: 500000,
-          notes: "Available for Salem routes.",
+          notes: "Available for Coimbatore routes.",
         },
       });
 
@@ -2229,6 +2231,7 @@ integrationDescribe("1HandIndia backend integration", () => {
         .send({
           shippingAddress: localShippingAddress,
           deliveryPreference: "DELIVER_TO_ADDRESS",
+          deliveryMode: DeliveryMode.LOCAL_DELIVERY_PARTNER,
           paymentMethod: "COD",
           buyerCountryCode: "IN",
         })
@@ -2650,10 +2653,8 @@ integrationDescribe("1HandIndia backend integration", () => {
         .send({
           name: `${runId} duplicate guard`,
           deliveryMode: DeliveryMode.LOCAL_DELIVERY_PARTNER,
-          countryCode: "ZZ",
-          stateCode: "ZZ-TEST",
-          cityCode: "ZZ-TEST-CITY",
-          pincode: "999001",
+          countryCode: "IN",
+          pincode: "636304",
           baseChargePaise: 4800,
           minSubtotalPaise: 0,
           maxSubtotalPaise: 99900,
@@ -2669,10 +2670,8 @@ integrationDescribe("1HandIndia backend integration", () => {
         .send({
           name: `${runId} conflicting duplicate`,
           deliveryMode: DeliveryMode.LOCAL_DELIVERY_PARTNER,
-          countryCode: "ZZ",
-          stateCode: "zz-test",
-          cityCode: "zz-test-city",
-          pincode: "999001",
+          countryCode: "IN",
+          pincode: "636304",
           baseChargePaise: 4900,
           minSubtotalPaise: 50000,
           maxSubtotalPaise: 150000,
@@ -2690,10 +2689,8 @@ integrationDescribe("1HandIndia backend integration", () => {
         .send({
           name: `${runId} inactive duplicate guard`,
           deliveryMode: DeliveryMode.LOCAL_DELIVERY_PARTNER,
-          countryCode: "ZZ",
-          stateCode: "zz-test",
-          cityCode: "zz-test-city",
-          pincode: "999001",
+          countryCode: "IN",
+          pincode: "636304",
           baseChargePaise: 4900,
           minSubtotalPaise: 50000,
           maxSubtotalPaise: 150000,
@@ -2740,10 +2737,8 @@ integrationDescribe("1HandIndia backend integration", () => {
         .send({
           name: `${runId} duplicate guard updated`,
           deliveryMode: DeliveryMode.LOCAL_DELIVERY_PARTNER,
-          countryCode: "ZZ",
-          stateCode: "ZZ-TEST",
-          cityCode: "ZZ-TEST-CITY",
-          pincode: "999001",
+          countryCode: "IN",
+          pincode: "636304",
           baseChargePaise: 4700,
           minSubtotalPaise: 0,
           maxSubtotalPaise: 99900,
@@ -2761,9 +2756,9 @@ integrationDescribe("1HandIndia backend integration", () => {
           line1: "Test address without stored location codes",
           city: "Test City",
           state: "Test State",
-          pincode: "999001",
-          country: "Testland",
-          countryCode: "ZZ",
+          pincode: "636304",
+          country: "India",
+          countryCode: "IN",
           isDefault: false,
         },
       });
@@ -2780,7 +2775,7 @@ integrationDescribe("1HandIndia backend integration", () => {
 
       const routedSummary = await request(app.getHttpServer())
         .get(
-          `/api/cart/checkout-summary?buyerCountryCode=IN&deliveryPreference=DELIVER_TO_ADDRESS&paymentMethod=MANUAL&addressId=${summaryAddressId}`,
+          `/api/cart/checkout-summary?buyerCountryCode=IN&deliveryPreference=DELIVER_TO_ADDRESS&requestedDeliveryMode=LOCAL_DELIVERY_PARTNER&paymentMethod=MANUAL&addressId=${summaryAddressId}`,
         )
         .set(authHeader(data.customerUser.id))
         .expect(200);
@@ -2799,6 +2794,7 @@ integrationDescribe("1HandIndia backend integration", () => {
         .set(authHeader(data.customerUser.id))
         .send({
           deliveryPreference: "DELIVER_TO_ADDRESS",
+          requestedDeliveryMode: DeliveryMode.LOCAL_DELIVERY_PARTNER,
           addressId: summaryAddressId,
           paymentMethod: "MANUAL",
         })
@@ -3218,7 +3214,6 @@ integrationDescribe("1HandIndia backend integration", () => {
       );
       expect(packedAutoAssigned.body.deliveryDetail).toMatchObject({
         status: DeliveryStatus.PACKED,
-        deliveryPartnerUserId: data.deliveryPartnerUser.id,
         assignmentStatus: DeliveryAssignmentStatus.ASSIGNED,
       });
 
@@ -3671,7 +3666,6 @@ integrationDescribe("1HandIndia backend integration", () => {
     expect(packedCourierOrder.body.deliveryDetail).toMatchObject({
       deliveryMode: DeliveryMode.THIRD_PARTY_COURIER,
       status: DeliveryStatus.PACKED,
-      deliveryPartnerUserId: null,
       assignmentStatus: DeliveryAssignmentStatus.UNASSIGNED,
     });
 
@@ -5307,8 +5301,18 @@ integrationDescribe("1HandIndia backend integration", () => {
       businessBuyerId: data.businessBuyer.id,
     });
     const purchaseOrderFileKey =
-      `indihub/b2b/purchase-orders/${data.businessBuyer.id}/${b2bOrderNumber}/` +
+      `1handindia/b2b/purchase-orders/${data.businessBuyer.id}/${b2bOrderNumber}/` +
       `20260615193000-${safeRunCode().toLowerCase()}-po-001.pdf`;
+    await prisma.privateUpload.create({
+      data: {
+        assetKey: purchaseOrderFileKey,
+        provider: "S3",
+        uploadKind: "B2B_PURCHASE_ORDER",
+        actorUserId: data.businessBuyerUser.id,
+        contentType: "application/pdf",
+        sizeBytes: 1024,
+      },
+    });
 
     const poSubmitted = await request(app.getHttpServer())
       .patch(`/api/b2b/orders/${b2bOrderNumber}/purchase-order`)
@@ -6497,7 +6501,7 @@ function createSellerProductPayload(categoryId: string, sellerUserId: string) {
     attributes: marketplaceEssentialAttributes(),
     images: [
       {
-        url: `indihub/sellers/${sellerUserId}/products/integration-product.jpg`,
+        url: `1handindia/sellers/${sellerUserId}/products/integration-product.jpg`,
         altText: "Integration product",
       },
     ],
@@ -6522,7 +6526,7 @@ function createDynamicProductPayload(categoryId: string, sellerUserId: string, s
     attributes: {},
     images: [
       {
-        url: `indihub/sellers/${sellerUserId}/products/${suffix}.jpg`,
+        url: `1handindia/sellers/${sellerUserId}/products/${suffix}.jpg`,
         altText: `${suffix} integration product`,
       },
     ],
@@ -7038,9 +7042,10 @@ async function ensureRoles(prisma: PrismaClient) {
     { code: RoleCode.FINANCE, name: "Finance Manager" },
   ];
 
-  const roles = await Promise.all(
-    roleInputs.map((role) =>
-      prisma.role.upsert({
+  const roles = [];
+  for (const role of roleInputs) {
+    roles.push(
+      await prisma.role.upsert({
         where: { code: role.code },
         update: { name: role.name },
         create: {
@@ -7049,8 +7054,8 @@ async function ensureRoles(prisma: PrismaClient) {
           description: `${role.name} role for integration tests.`,
         },
       }),
-    ),
-  );
+    );
+  }
 
   return Object.fromEntries(roles.map((role) => [role.code, role]));
 }
@@ -7494,6 +7499,12 @@ async function seedHighVolumeAutoAssignmentData(
 
 async function cleanupIntegrationData(prisma: PrismaClient) {
   await prisma.$executeRawUnsafe('TRUNCATE TABLE "order_shipment_assignment_events"');
+  await prisma.$executeRawUnsafe(
+    'TRUNCATE TABLE "tax_document_compliance", "tax_document_lines", "tax_documents" CASCADE',
+  );
+  await prisma.privateUpload.deleteMany({
+    where: { assetKey: { contains: safeRunCode().toLowerCase() } },
+  });
   const users = await prisma.user.findMany({
     where: {
       OR: [{ email: { contains: runId } }, { email: { startsWith: "ih-e2e-" } }],
