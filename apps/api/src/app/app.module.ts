@@ -18,6 +18,7 @@ import { DeliveryPartnerApplicationsModule } from "../delivery-partner-applicati
 import { DealsModule } from "../deals/deals.module";
 import { FinanceModule } from "../finance/finance.module";
 import { HealthController } from "../health/health.controller";
+import { HealthService } from "../health/health.service";
 import { HsnMasterModule } from "../hsn-master/hsn-master.module";
 import { LocationsModule } from "../locations/locations.module";
 import { MapsModule } from "../maps/maps.module";
@@ -89,6 +90,6 @@ import { SupportModule } from "../support/support.module";
     AdminUsersModule
   ],
   controllers: [HealthController],
-  providers: []
+  providers: [HealthService]
 })
 export class AppModule {}

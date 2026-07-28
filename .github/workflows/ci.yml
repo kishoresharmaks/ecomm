@@ -8,43 +8,118 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY || 'pk_test_Y2xlcmsuMWhhbmRpbmRpYS50ZXN0JA' }}
+  NODE_OPTIONS: --max-old-space-size=12288
+  TURBO_CONCURRENCY: "1"
+
 jobs:
-  verify:
+  quality:
+    name: Quality and architecture
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
           version: 10.20.0
-
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Generate and validate Prisma
+        run: pnpm db:generate && pnpm db:validate && pnpm db:migrations:check
+      - name: Verify architecture boundaries and model ownership
+        run: pnpm architecture:check
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Lint
+        run: pnpm lint
+      - name: Unit tests
+        run: pnpm test
+      - name: OpenAPI compatibility
+        run: pnpm api:contract:check
+      - name: Production build
+        run: pnpm build
+      - name: Production dependency audit
+        run: pnpm audit --prod --audit-level high
 
+  database-integration:
+    name: Migration replay and API integration
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: indihub_integration_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d indihub_integration_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/indihub_integration_test?schema=public
+      DATABASE_DIRECT_URL: postgresql://postgres:postgres@localhost:5432/indihub_integration_test?schema=public
+      INDIHUB_ALLOW_INTEGRATION_TEST_DB: "true"
+      REDIS_URL: ""
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.20.0
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
       - name: Generate Prisma client
         run: pnpm db:generate
+      - name: Replay migrations on empty PostgreSQL
+        run: pnpm exec prisma migrate deploy --schema prisma/schema.prisma
+      - name: Verify migration status
+        run: pnpm exec prisma migrate status --schema prisma/schema.prisma
+      - name: Run guarded API integration suite
+        run: pnpm test:integration:api
 
-      - name: Validate Prisma schema
-        run: pnpm db:validate
+  dependency-review:
+    name: Changed dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
 
-      - name: Typecheck
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Scan committed secrets
+        uses: gitleaks/gitleaks-action@v2
         env:
-          RAW_CLERK_KEY: ${{ secrets.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY }}
-        run: |
-          export EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY="${RAW_CLERK_KEY:-pk_live_Y2xlcmsuMWhhbmRpbmRpYS5jb20k}"
-          pnpm typecheck
-
-      - name: Build
-        env:
-          RAW_CLERK_KEY: ${{ secrets.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY }}
-        run: |
-          export EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY="${RAW_CLERK_KEY:-pk_live_Y2xlcmsuMWhhbmRpbmRpYS5jb20k}"
-          pnpm build
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

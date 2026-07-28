@@ -1,0 +1,465 @@
+{
+  "$schema": "./architecture-boundaries.schema.json",
+  "schemaVersion": 1,
+  "scanRoots": [
+    "apps/api/src",
+    "apps/worker/src",
+    "packages/config/src",
+    "packages/database/src",
+    "packages/shared-types/src",
+    "packages/ui/src",
+    "packages/validators/src"
+  ],
+  "extensions": [
+    ".ts",
+    ".tsx",
+    ".mts",
+    ".cts"
+  ],
+  "exclude": [
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/*.spec.ts",
+    "**/*.spec.tsx",
+    "**/generated/**",
+    "**/dist/**",
+    "**/node_modules/**"
+  ],
+  "contexts": [
+    {
+      "name": "composition",
+      "kind": "composition",
+      "roots": [
+        "apps/api/src/app",
+        "apps/api/src/main.ts",
+        "apps/worker/src/index.ts"
+      ]
+    },
+    {
+      "name": "identity-access",
+      "kind": "business",
+      "roots": [
+        "apps/api/src/auth",
+        "apps/api/src/customers",
+        "apps/api/src/admin/bootstrap",
+        "apps/api/src/admin/customers",
+        "apps/api/src/admin/users"
+      ]
+    },
+    {
+      "name": "seller-management",
+      "kind": "business",
+      "roots": [
+        "apps/api/src/sellers",
+        "apps/api/src/admin/sellers",
+        "apps/api/src/delivery-partner-applications"
+      ]
+    },
+    {
+      "name": "catalog",
+      "kind": "business",
+      "roots": [
+        "apps/api/src/categories",
+        "apps/api/src/hsn-master",
+        "apps/api/src/product-templates",
+        "apps/api/src/products",
+        "apps/api/src/sac-master"
+      ]
+    },
+    {
+      "name": "merchandising",
+      "kind": "business",
+      "roots": [
+        "apps/api/src/coupons",
+        "apps/api/src/deals",
+        "apps/api/src/reviews"
+      ]
+    },
+    {
+      "name": "shopping-experience",
+      "kind": "business",
+      "roots": [
+        "apps/api/src/cart",
+        "apps/api/src/checkout",
+        "apps/api/src/mobile",
+        "apps/api/src/storefront"
+      ]
+    },
+    {
+      "name": "order-management",
+      "kind": "business",
+      "roots": [
+        "apps/api/src/orders",
+        "apps/api/src/returns"
+      ]
+    },
+    {
+      "name": "finance-tax",
+      "kind": "business",
+      "roots": [
+        "apps/api/src/finance",
+        "apps/api/src/market",
+        "apps/api/src/payments",
+        "apps/api/src/reports",
+        "apps/api/src/tax"
+      ]
+    },
+    {
+      "name": "services-marketplace",
+      "kind": "business",
+      "roots": [
+        "apps/api/src/services-marketplace"
+      ]
+    },
+    {
+      "name": "b2b-commerce",
+      "kind": "business",
+      "roots": [
+        "apps/api/src/b2b"
+      ]
+    },
+    {
+      "name": "content-support",
+      "kind": "business",
+      "roots": [
+        "apps/api/src/chat",
+        "apps/api/src/cms",
+        "apps/api/src/support"
+      ]
+    },
+    {
+      "name": "communications",
+      "kind": "business",
+      "roots": [
+        "apps/api/src/notifications"
+      ]
+    },
+    {
+      "name": "discovery",
+      "kind": "business",
+      "roots": [
+        "apps/api/src/search"
+      ]
+    },
+    {
+      "name": "location-routing",
+      "kind": "business",
+      "roots": [
+        "apps/api/src/locations",
+        "apps/api/src/maps"
+      ]
+    },
+    {
+      "name": "administration",
+      "kind": "business",
+      "roots": [
+        "apps/api/src/admin"
+      ]
+    },
+    {
+      "name": "platform",
+      "kind": "platform",
+      "roots": [
+        "apps/api/src/audit",
+        "apps/api/src/common",
+        "apps/api/src/documents",
+        "apps/api/src/health",
+        "apps/api/src/prisma",
+        "apps/api/src/rate-limit",
+        "apps/api/src/settings",
+        "apps/api/src/storage",
+        "apps/api/src/types"
+      ]
+    },
+    {
+      "name": "worker-runtime",
+      "kind": "business",
+      "roots": [
+        "apps/worker/src"
+      ]
+    },
+    {
+      "name": "shared-packages",
+      "kind": "platform",
+      "roots": [
+        "packages/config/src",
+        "packages/database/src",
+        "packages/shared-types/src",
+        "packages/ui/src",
+        "packages/validators/src"
+      ]
+    }
+  ],
+  "policy": {
+    "unrestrictedSources": [
+      "composition"
+    ],
+    "unrestrictedTargets": [
+      "platform",
+      "shared-packages"
+    ],
+    "allowedDependencies": {}
+  },
+  "baseline": [
+    {
+      "from": "administration",
+      "to": "identity-access",
+      "count": 1
+    },
+    {
+      "from": "b2b-commerce",
+      "to": "communications",
+      "count": 4
+    },
+    {
+      "from": "b2b-commerce",
+      "to": "finance-tax",
+      "count": 7
+    },
+    {
+      "from": "b2b-commerce",
+      "to": "identity-access",
+      "count": 30
+    },
+    {
+      "from": "b2b-commerce",
+      "to": "location-routing",
+      "count": 2
+    },
+    {
+      "from": "b2b-commerce",
+      "to": "seller-management",
+      "count": 2
+    },
+    {
+      "from": "catalog",
+      "to": "communications",
+      "count": 3
+    },
+    {
+      "from": "catalog",
+      "to": "discovery",
+      "count": 4
+    },
+    {
+      "from": "catalog",
+      "to": "identity-access",
+      "count": 19
+    },
+    {
+      "from": "catalog",
+      "to": "merchandising",
+      "count": 2
+    },
+    {
+      "from": "catalog",
+      "to": "seller-management",
+      "count": 2
+    },
+    {
+      "from": "catalog",
+      "to": "shopping-experience",
+      "count": 4
+    },
+    {
+      "from": "communications",
+      "to": "identity-access",
+      "count": 12
+    },
+    {
+      "from": "content-support",
+      "to": "communications",
+      "count": 3
+    },
+    {
+      "from": "content-support",
+      "to": "identity-access",
+      "count": 26
+    },
+    {
+      "from": "content-support",
+      "to": "shopping-experience",
+      "count": 2
+    },
+    {
+      "from": "discovery",
+      "to": "identity-access",
+      "count": 5
+    },
+    {
+      "from": "discovery",
+      "to": "merchandising",
+      "count": 2
+    },
+    {
+      "from": "finance-tax",
+      "to": "communications",
+      "count": 6
+    },
+    {
+      "from": "finance-tax",
+      "to": "identity-access",
+      "count": 34
+    },
+    {
+      "from": "finance-tax",
+      "to": "order-management",
+      "count": 2
+    },
+    {
+      "from": "finance-tax",
+      "to": "seller-management",
+      "count": 2
+    },
+    {
+      "from": "identity-access",
+      "to": "communications",
+      "count": 3
+    },
+    {
+      "from": "identity-access",
+      "to": "location-routing",
+      "count": 2
+    },
+    {
+      "from": "location-routing",
+      "to": "identity-access",
+      "count": 2
+    },
+    {
+      "from": "merchandising",
+      "to": "communications",
+      "count": 2
+    },
+    {
+      "from": "merchandising",
+      "to": "identity-access",
+      "count": 25
+    },
+    {
+      "from": "order-management",
+      "to": "communications",
+      "count": 8
+    },
+    {
+      "from": "order-management",
+      "to": "finance-tax",
+      "count": 16
+    },
+    {
+      "from": "order-management",
+      "to": "identity-access",
+      "count": 51
+    },
+    {
+      "from": "order-management",
+      "to": "location-routing",
+      "count": 4
+    },
+    {
+      "from": "order-management",
+      "to": "merchandising",
+      "count": 4
+    },
+    {
+      "from": "order-management",
+      "to": "shopping-experience",
+      "count": 6
+    },
+    {
+      "from": "platform",
+      "to": "identity-access",
+      "count": 12
+    },
+    {
+      "from": "seller-management",
+      "to": "communications",
+      "count": 6
+    },
+    {
+      "from": "seller-management",
+      "to": "discovery",
+      "count": 4
+    },
+    {
+      "from": "seller-management",
+      "to": "identity-access",
+      "count": 24
+    },
+    {
+      "from": "seller-management",
+      "to": "location-routing",
+      "count": 2
+    },
+    {
+      "from": "seller-management",
+      "to": "order-management",
+      "count": 3
+    },
+    {
+      "from": "seller-management",
+      "to": "services-marketplace",
+      "count": 2
+    },
+    {
+      "from": "seller-management",
+      "to": "shopping-experience",
+      "count": 1
+    },
+    {
+      "from": "services-marketplace",
+      "to": "communications",
+      "count": 2
+    },
+    {
+      "from": "services-marketplace",
+      "to": "finance-tax",
+      "count": 8
+    },
+    {
+      "from": "services-marketplace",
+      "to": "identity-access",
+      "count": 7
+    },
+    {
+      "from": "shopping-experience",
+      "to": "catalog",
+      "count": 2
+    },
+    {
+      "from": "shopping-experience",
+      "to": "content-support",
+      "count": 4
+    },
+    {
+      "from": "shopping-experience",
+      "to": "finance-tax",
+      "count": 8
+    },
+    {
+      "from": "shopping-experience",
+      "to": "identity-access",
+      "count": 16
+    },
+    {
+      "from": "shopping-experience",
+      "to": "location-routing",
+      "count": 4
+    },
+    {
+      "from": "shopping-experience",
+      "to": "merchandising",
+      "count": 8
+    },
+    {
+      "from": "shopping-experience",
+      "to": "order-management",
+      "count": 3
+    },
+    {
+      "from": "shopping-experience",
+      "to": "seller-management",
+      "count": 4
+    }
+  ]
+}

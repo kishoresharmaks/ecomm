@@ -22,6 +22,13 @@ export type EmailJobPayload = {
   fromName: string;
   fromEmail: string;
   templateCode: string;
+  jobMetadata?: {
+    schemaVersion: 1;
+    idempotencyKey: string;
+    correlationId: string;
+    requestId?: string;
+    causationId?: string;
+  };
 };
 
 export type EmailDeliveryResult = {

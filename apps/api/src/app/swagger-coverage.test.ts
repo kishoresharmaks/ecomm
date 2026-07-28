@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 function listControllerFiles(directory: string): string[] {
@@ -16,7 +17,10 @@ function listControllerFiles(directory: string): string[] {
 }
 
 describe("Swagger/OpenAPI coverage", () => {
-  const sourceRoot = path.resolve(process.cwd(), "src");
+  const sourceRoot = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "..",
+  );
 
   it("keeps every controller grouped with Swagger tags", () => {
     const missingTags = listControllerFiles(sourceRoot)

@@ -13,6 +13,7 @@ import {
   VariantStatus,
   prisma,
 } from "@indihub/database";
+import { createPollingGuard, retryDelayMs, safeJobError } from "./runtime/job-runtime";
 
 type Logger = pino.Logger;
 
@@ -54,24 +55,19 @@ export function startSearchIndexPolling(logger: Logger) {
 
   const pollIntervalMs = positiveInteger(process.env.SEARCH_INDEX_POLL_INTERVAL_MS, 5000);
   const batchSize = positiveInteger(process.env.SEARCH_INDEX_BATCH_SIZE, 25);
-  let running = false;
+  const runOnce = createPollingGuard();
 
   const poll = async () => {
-    if (running) {
-      return;
-    }
-
-    running = true;
-    try {
-      const result = await processSearchIndexJobs(batchSize);
-      if (result.claimed > 0) {
-        logger.info(result, "PostgreSQL search index jobs processed");
+    await runOnce(async () => {
+      try {
+        const result = await processSearchIndexJobs(batchSize);
+        if (result.claimed > 0) {
+          logger.info(result, "PostgreSQL search index jobs processed");
+        }
+      } catch (error) {
+        logger.error({ error: safeJobError(error) }, "PostgreSQL search index worker poll failed");
       }
-    } catch (error) {
-      logger.error({ error }, "PostgreSQL search index worker poll failed");
-    } finally {
-      running = false;
-    }
+    });
   };
 
   void poll();
@@ -104,14 +100,20 @@ export async function processSearchIndexJobs(limit = 25) {
       });
       result.completed += 1;
     } catch (error) {
-      const retrySeconds = Math.min(300, 2 ** Math.min(job.attempts, 8) * 10);
+      const retrySeconds = Math.ceil(
+        retryDelayMs(
+          job.attempts,
+          { baseDelayMs: 10_000, maxDelayMs: 300_000, jitterRatio: 0.2 },
+        ) / 1_000,
+      );
+      const safeError = safeJobError(error);
       await prisma.searchIndexJob.update({
         where: { id: job.id },
         data: {
           status: SearchIndexJobStatus.FAILED,
           lockedAt: null,
           availableAt: new Date(Date.now() + retrySeconds * 1000),
-          lastError: error instanceof Error ? error.message : String(error),
+          lastError: safeError.message,
         },
       });
       result.failed += 1;

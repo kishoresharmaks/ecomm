@@ -9,7 +9,8 @@
     "start": "node dist/main.js",
     "typecheck": "node --max-old-space-size=12288 -e \"require('typescript/lib/tsc')\"",
     "lint": "eslint .",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "openapi:contract": "tsx --tsconfig tsconfig.json src/app/openapi-contract-cli.ts"
   },
   "dependencies": {
     "@clerk/backend": "3.4.13",

@@ -27,13 +27,33 @@ export class NotificationQueueService implements OnModuleDestroy {
     return Boolean(this.queue);
   }
 
-  async enqueueEmail(payload: EmailJobPayload, options?: { delayMs?: number | undefined }) {
+  async enqueueEmail(
+    payload: EmailJobPayload,
+    options?: {
+      delayMs?: number | undefined;
+      correlationId?: string | undefined;
+      requestId?: string | undefined;
+      causationId?: string | undefined;
+    },
+  ) {
     if (!this.queue) {
       return false;
     }
 
     try {
-      await this.queue.add("send", this.queueSafePayload(payload), {
+      const safePayload = this.queueSafePayload({
+        ...payload,
+        jobMetadata: {
+          schemaVersion: 1,
+          idempotencyKey: `email:${payload.notificationLogId}`,
+          correlationId:
+            options?.correlationId ?? options?.requestId ?? payload.notificationLogId,
+          ...(options?.requestId ? { requestId: options.requestId } : {}),
+          ...(options?.causationId ? { causationId: options.causationId } : {}),
+        },
+      });
+      await this.queue.add("send", safePayload, {
+        jobId: `email-${payload.notificationLogId}`,
         attempts: 1,
         ...(options?.delayMs ? { delay: options.delayMs } : {}),
         removeOnComplete: 500,

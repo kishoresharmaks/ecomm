@@ -5,6 +5,7 @@ import {
   B2BIntegrationOutboxStatus,
   prisma,
 } from "@indihub/database";
+import { createPollingGuard, retryDelayMs, safeJobError } from "./runtime/job-runtime";
 
 type Logger = pino.Logger;
 type AuthConfig = {
@@ -28,19 +29,17 @@ export function startB2BErpOutboxPolling(logger: Logger) {
     30_000,
   );
   const batchSize = positiveInteger(process.env.B2B_ERP_OUTBOX_BATCH_SIZE, 50);
-  let running = false;
+  const runOnce = createPollingGuard();
 
   const poll = async () => {
-    if (running) return;
-    running = true;
-    try {
-      const result = await deliverB2BErpOutbox(batchSize);
-      if (result.checked > 0) logger.info(result, "B2B ERP outbox delivery completed");
-    } catch (error) {
-      logger.error({ error }, "B2B ERP outbox poll failed");
-    } finally {
-      running = false;
-    }
+    await runOnce(async () => {
+      try {
+        const result = await deliverB2BErpOutbox(batchSize);
+        if (result.checked > 0) logger.info(result, "B2B ERP outbox delivery completed");
+      } catch (error) {
+        logger.error({ error: safeJobError(error) }, "B2B ERP outbox poll failed");
+      }
+    });
   };
 
   void poll();
@@ -167,16 +166,25 @@ export async function deliverB2BErpOutbox(limit = 50) {
       const maxAttempts = positiveInteger(process.env.B2B_ERP_MAX_RETRY_ATTEMPTS, 8);
       const deadLetter = attempts >= maxAttempts;
       const baseDelay = positiveInteger(process.env.B2B_ERP_RETRY_BASE_DELAY_MS, 30_000);
-      const nextAttemptAt = deadLetter
+      const safeError = safeJobError(error);
+      const nextAttemptAt = deadLetter || !safeError.retryable
         ? null
-        : new Date(Date.now() + Math.min(86_400_000, baseDelay * 2 ** Math.max(0, attempts - 1)));
+        : new Date(
+            Date.now() +
+              retryDelayMs(attempts, {
+                baseDelayMs: baseDelay,
+                maxDelayMs: 86_400_000,
+                jitterRatio: 0.2,
+              }),
+          );
+      const terminal = deadLetter || !safeError.retryable;
       const responseCode = error instanceof DeliveryError ? error.responseCode : null;
       const responseBody = error instanceof DeliveryError ? error.responseBody : null;
-      const message = error instanceof Error ? error.message : String(error);
+      const message = safeError.message;
       await prisma.b2BIntegrationOutbox.update({
         where: { id: event.id },
         data: {
-          status: deadLetter
+          status: terminal
             ? B2BIntegrationOutboxStatus.DEAD_LETTER
             : B2BIntegrationOutboxStatus.FAILED,
           responseCode,
@@ -193,7 +201,7 @@ export async function deliverB2BErpOutbox(limit = 50) {
           data: { lastError: message.slice(0, 2_000) },
         });
       }
-      if (deadLetter) deadLettered += 1;
+      if (terminal) deadLettered += 1;
       else failed += 1;
     }
   }

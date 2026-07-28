@@ -784,7 +784,8 @@ function addTableSheet(
   for (const row of sheet.getRows(2, Math.max(0, sheet.rowCount - 1)) ?? []) {
     row.eachCell((cell) => {
       if (cell.value instanceof Date) cell.numFmt = "dd-mm-yyyy";
-      if (typeof cell.value === "number" && moneyHeader(headers[cell.col - 1] ?? "")) {
+      const columnNumber = Number(cell.col);
+      if (typeof cell.value === "number" && moneyHeader(headers[columnNumber - 1] ?? "")) {
         cell.numFmt = "#,##0.00;[Red]-#,##0.00";
       }
     });

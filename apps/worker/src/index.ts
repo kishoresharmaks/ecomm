@@ -20,6 +20,7 @@ import { startServiceQuoteExpiryPolling } from "./service-quote-expiry-worker";
 import { startShiprocketBookingPolling } from "./shiprocket-booking-worker";
 import { startDeliveryBatchRoutingPolling } from "./delivery-routing-batch-worker";
 import { startReportExportPolling } from "./report-export-worker";
+import { registerGracefulShutdown, safeJobError } from "./runtime/job-runtime";
 
 const logger = pino({
   name: "indihub-worker",
@@ -100,7 +101,7 @@ if (redisUrl) {
           data: {
             status: NotificationStatus.FAILED,
             providerMessageId: null,
-            errorMessage: String(error),
+            errorMessage: safeJobError(error).message,
           },
         });
         throw error;
@@ -112,11 +113,21 @@ if (redisUrl) {
   const queueEvents = new QueueEvents(EMAIL_QUEUE_NAME, { connection });
 
   emailWorker.on("completed", (job) => {
-    logger.info({ jobId: job.id }, "Email notification job completed");
+    logger.info(
+      { jobId: job.id, correlationId: job.data.jobMetadata?.correlationId },
+      "Email notification job completed",
+    );
   });
 
   emailWorker.on("failed", (job, error) => {
-    logger.error({ jobId: job?.id, error }, "Email notification job failed");
+    logger.error(
+      {
+        jobId: job?.id,
+        correlationId: job?.data.jobMetadata?.correlationId,
+        error: safeJobError(error),
+      },
+      "Email notification job failed",
+    );
   });
 
   queueEvents.on("waiting", ({ jobId }) => {
@@ -134,12 +145,7 @@ if (redisUrl) {
     process.exit(0);
   };
 
-  process.once("SIGINT", () => {
-    void shutdown();
-  });
-  process.once("SIGTERM", () => {
-    void shutdown();
-  });
+  registerGracefulShutdown(shutdown);
 } else {
   logger.info("REDIS_URL is not configured. Email queue processors are ready but not started.");
 }

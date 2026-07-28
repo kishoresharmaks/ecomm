@@ -1,0 +1,24 @@
+# Default owner for the 1HandIndia repository.
+* @kishoresharmaks
+
+# Architecture, delivery and persistence controls
+/docs/architecture/ @kishoresharmaks
+/config/architecture-boundaries.json @kishoresharmaks
+/scripts/architecture/ @kishoresharmaks
+/.github/workflows/ @kishoresharmaks
+/prisma/ @kishoresharmaks
+/packages/database/ @kishoresharmaks
+
+# Security trust zones
+/apps/api/src/auth/ @kishoresharmaks
+/apps/api/src/admin/ @kishoresharmaks
+/apps/api/src/rate-limit/ @kishoresharmaks
+
+# Financial and transaction-critical contexts
+/apps/api/src/orders/ @kishoresharmaks
+/apps/api/src/returns/ @kishoresharmaks
+/apps/api/src/payments/ @kishoresharmaks
+/apps/api/src/finance/ @kishoresharmaks
+/apps/api/src/tax/ @kishoresharmaks
+/apps/api/src/b2b/ @kishoresharmaks
+/apps/worker/ @kishoresharmaks

@@ -2,11 +2,15 @@ import "reflect-metadata";
 import { ValidationPipe } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import type { NestExpressApplication } from "@nestjs/platform-express";
-import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
+import { SwaggerModule } from "@nestjs/swagger";
 import type { Request, Response } from "express";
 import helmet from "helmet";
 import { AppModule } from "./app/app.module";
 import { createCorsOptions } from "./app/cors";
+import { createSwaggerConfig } from "./app/swagger";
+import { PinoNestLogger, apiLogger } from "./common/observability/api-logger";
+import { HttpLoggingInterceptor } from "./common/observability/http-logging.interceptor";
+import { requestContextMiddleware } from "./common/observability/request-context";
 import { createRateLimitMiddleware, rateLimitOptionsFromEnv } from "./rate-limit/request-rate-limiter";
 
 async function bootstrap() {
@@ -14,6 +18,9 @@ async function bootstrap() {
     bufferLogs: true,
     rawBody: true
   });
+  app.useLogger(new PinoNestLogger());
+  app.use(requestContextMiddleware);
+  app.useGlobalInterceptors(new HttpLoggingInterceptor());
 
   app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 
@@ -40,42 +47,7 @@ async function bootstrap() {
 
   app.setGlobalPrefix("api");
 
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle("1HandIndia API")
-    .setDescription(
-      "Complete 1HandIndia marketplace OpenAPI map covering storefront, customer account, seller center, B2B, admin, finance, delivery, courier, returns, CMS, support, payments, reports, search, storage, mobile, and webhook workflows."
-    )
-    .setVersion("0.1.0")
-    .addBearerAuth(
-      {
-        type: "http",
-        scheme: "bearer",
-        bearerFormat: "JWT or admin session token",
-        description:
-          "Use Clerk bearer tokens for customer/seller/B2B/delivery sessions, or standalone back-office session tokens for admin, finance, and courier-manager routes."
-      },
-      "bearer"
-    )
-    .addApiKey(
-      {
-        type: "apiKey",
-        in: "header",
-        name: "x-indihub-user-id",
-        description:
-          "Local development only: platform user id bridge for non-back-office customer, seller, B2B, and delivery role testing."
-      },
-      "local-dev-user"
-    )
-    .addApiKey(
-      {
-        type: "apiKey",
-        in: "header",
-        name: "x-clerk-user-id",
-        description: "Local development only: Clerk user id fallback when real Clerk bearer verification is not configured."
-      },
-      "local-clerk-user"
-    )
-    .build();
+  const swaggerConfig = createSwaggerConfig();
 
   const document = SwaggerModule.createDocument(app, swaggerConfig, {
     deepScanRoutes: true,
@@ -98,11 +70,11 @@ async function bootstrap() {
   const publicHost = process.env.API_PUBLIC_HOST?.trim() || host;
   await app.listen(port, host);
 
-  console.log(`1HandIndia API listening on http://${publicHost}:${port}/api`);
-  console.log(`1HandIndia API docs available on http://${publicHost}:${port}/api/docs`);
+  apiLogger.info({ publicHost, port }, "1HandIndia API listening");
+  apiLogger.info({ url: `http://${publicHost}:${port}/api/docs` }, "1HandIndia API docs available");
 }
 
 bootstrap().catch((error) => {
-  console.error("Failed to start 1HandIndia API", error);
+  apiLogger.fatal({ err: error }, "Failed to start 1HandIndia API");
   process.exit(1);
 });
