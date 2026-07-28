@@ -16,6 +16,9 @@ test-results/
 apps/mobile-seller/android/
 apps/mobile-seller/ios/
 
+# Expo-generated type declarations
+apps/mobile-delivery/expo-env.d.ts
+
 # Environment
 .env
 .env.*
@@ -49,14 +52,20 @@ pnpm-debug.log*
 .codex-temp/
 .dev-logs/
 .devin/
+.workbuddy-ai/
 .vscode/
 
-# Local caches and temp files
+# Local caches, generated reports, and temp files
 .expo/
 .cache/
+.pnpm-ci-home/
 .tmp/
 .tmp-*.sql
+/_tmp_*
 .qa-screenshots/
+/apps/worker/storage/
+/outputs/
+/overview.md
 storage/private/
 tmp-*.png
 IndiHub_Testing_Source_*.zip

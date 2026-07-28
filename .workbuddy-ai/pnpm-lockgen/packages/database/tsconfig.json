@@ -1,9 +1,0 @@
-{
-  "extends": "@indihub/tsconfig/base.json",
-  "compilerOptions": {
-    "noEmit": true,
-    "types": ["node"]
-  },
-  "include": ["src/**/*.ts"],
-  "exclude": ["src/generated/**"]
-}
