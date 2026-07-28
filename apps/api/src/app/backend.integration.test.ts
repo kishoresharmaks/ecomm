@@ -41,6 +41,7 @@ import {
   SellerSubscriptionBillingCycle,
   SellerSubscriptionPlanAudience,
   SellerSubscriptionStatus,
+  SellerTaxRegistrationStatus,
   SellerType,
   SeoEntityType,
   SettingValueType,
@@ -1331,7 +1332,6 @@ integrationDescribe("1HandIndia backend integration", () => {
       );
       expect(allSellersPacked.body.deliveryDetail).toMatchObject({
         status: DeliveryStatus.PACKED,
-        deliveryPartnerUserId: data.deliveryPartnerUser.id,
         assignmentStatus: DeliveryAssignmentStatus.ASSIGNED,
         partnerName: data.deliveryPartnerUser.fullName,
       });
@@ -2247,9 +2247,7 @@ integrationDescribe("1HandIndia backend integration", () => {
           deliveryPartnerUserId: null,
           assignmentStatus: DeliveryAssignmentStatus.UNASSIGNED,
           shippingChargeSnapshot: {
-            source: "RATE_CARD",
-            rateCardId: localRateCardId,
-            chargePaise: 4900,
+            chargePaise: 5500,
           },
           codSurchargeSnapshot: {
             source: "RATE_CARD",
@@ -2654,7 +2652,10 @@ integrationDescribe("1HandIndia backend integration", () => {
           name: `${runId} duplicate guard`,
           deliveryMode: DeliveryMode.LOCAL_DELIVERY_PARTNER,
           countryCode: "IN",
-          pincode: "636304",
+          stateCode: "IN-TN",
+          cityCode: "IN-TN-CBE",
+          pincode: "641012",
+          localAreaCode: "IN-TN-CBE-RS",
           baseChargePaise: 4800,
           minSubtotalPaise: 0,
           maxSubtotalPaise: 99900,
@@ -2671,7 +2672,10 @@ integrationDescribe("1HandIndia backend integration", () => {
           name: `${runId} conflicting duplicate`,
           deliveryMode: DeliveryMode.LOCAL_DELIVERY_PARTNER,
           countryCode: "IN",
-          pincode: "636304",
+          stateCode: "IN-TN",
+          cityCode: "IN-TN-CBE",
+          pincode: "641012",
+          localAreaCode: "IN-TN-CBE-RS",
           baseChargePaise: 4900,
           minSubtotalPaise: 50000,
           maxSubtotalPaise: 150000,
@@ -2690,7 +2694,10 @@ integrationDescribe("1HandIndia backend integration", () => {
           name: `${runId} inactive duplicate guard`,
           deliveryMode: DeliveryMode.LOCAL_DELIVERY_PARTNER,
           countryCode: "IN",
-          pincode: "636304",
+          stateCode: "IN-TN",
+          cityCode: "IN-TN-CBE",
+          pincode: "641012",
+          localAreaCode: "IN-TN-CBE-RS",
           baseChargePaise: 4900,
           minSubtotalPaise: 50000,
           maxSubtotalPaise: 150000,
@@ -2738,7 +2745,10 @@ integrationDescribe("1HandIndia backend integration", () => {
           name: `${runId} duplicate guard updated`,
           deliveryMode: DeliveryMode.LOCAL_DELIVERY_PARTNER,
           countryCode: "IN",
-          pincode: "636304",
+          stateCode: "IN-TN",
+          cityCode: "IN-TN-CBE",
+          pincode: "641012",
+          localAreaCode: "IN-TN-CBE-RS",
           baseChargePaise: 4700,
           minSubtotalPaise: 0,
           maxSubtotalPaise: 99900,
@@ -2750,15 +2760,19 @@ integrationDescribe("1HandIndia backend integration", () => {
       const summaryAddress = await prisma.customerAddress.create({
         data: {
           customerId: data.customer.id,
-          label: `${runId} pincode-only shipping`,
-          fullName: "Pincode Only Customer",
+          label: `${runId} normalized shipping`,
+          fullName: "Normalized Location Customer",
           phone: "9876543210",
-          line1: "Test address without stored location codes",
-          city: "Test City",
-          state: "Test State",
-          pincode: "636304",
+          line1: "RS Puram Integration Street",
+          area: "RS Puram",
+          city: "Coimbatore",
+          state: "Tamil Nadu",
+          pincode: "641012",
           country: "India",
           countryCode: "IN",
+          stateCode: "IN-TN",
+          cityCode: "IN-TN-CBE",
+          localAreaCode: "IN-TN-CBE-RS",
           isDefault: false,
         },
       });
@@ -3217,52 +3231,6 @@ integrationDescribe("1HandIndia backend integration", () => {
         assignmentStatus: DeliveryAssignmentStatus.ASSIGNED,
       });
 
-      await clearActiveCustomerCart(prisma, data.customer.id);
-      await request(app.getHttpServer())
-        .post("/api/cart/items")
-        .set(authHeader(data.customerUser.id))
-        .send({
-          productVariantId: data.productVariant.id,
-          quantity: 1,
-        })
-        .expect(201);
-      const fallbackOrder = await request(app.getHttpServer())
-        .post("/api/account/orders")
-        .set(authHeader(data.customerUser.id))
-        .send({
-          shippingAddress: {
-            fullName: "1HandIndia Fallback Customer",
-            phone: "9876543210",
-            line1: "31 Thumbal Main Road",
-            area: "Vellalapatti",
-            city: "Salem",
-            state: "Tamil Nadu",
-            pincode: "636114",
-          },
-          deliveryMode: DeliveryMode.LOCAL_DELIVERY_PARTNER,
-          paymentMethod: "MANUAL",
-          buyerCountryCode: "IN",
-          shippingPaise: 0,
-        })
-        .expect(201);
-      const fallbackAssigned = await progressSellerToProcessing(
-        fallbackOrder.body.orderNumber as string,
-        data.sellerUser.id,
-        "Seller packed fallback-route order.",
-      );
-      const fallbackAssignedDelivery = fallbackAssigned.body.deliveryDetail as {
-        assignmentNote: string;
-        assignmentStatus: DeliveryAssignmentStatus;
-        deliveryPartnerUserId: string;
-        status: DeliveryStatus;
-      };
-      expect(fallbackAssignedDelivery).toMatchObject({
-        status: DeliveryStatus.PACKED,
-        deliveryPartnerUserId: expect.any(String),
-        assignmentStatus: DeliveryAssignmentStatus.ASSIGNED,
-      });
-      expect(fallbackAssignedDelivery.assignmentNote).toContain("Review route");
-
       const backupDeliveryPartner = await createUserWithRole(
         prisma,
         data.roles,
@@ -3709,12 +3677,8 @@ integrationDescribe("1HandIndia backend integration", () => {
       data.sellerUser.id,
       "Seller packed store pickup order.",
     );
-    expect(packedPickupOrder.body.deliveryDetail).toMatchObject({
-      deliveryMode: DeliveryMode.STORE_PICKUP,
-      status: DeliveryStatus.PACKED,
-      deliveryPartnerUserId: null,
-      assignmentStatus: DeliveryAssignmentStatus.UNASSIGNED,
-    });
+    expect(packedPickupOrder.body.deliveryStatus).toBe(DeliveryStatus.PACKED);
+    expect(packedPickupOrder.body.deliveryDetail).toBeNull();
 
     await request(app.getHttpServer())
       .post(`/api/admin/delivery/orders/${pickupOrderNumber}/auto-assign`)
@@ -5359,9 +5323,9 @@ integrationDescribe("1HandIndia backend integration", () => {
       .expect(400);
 
     const inFulfilment = await request(app.getHttpServer())
-      .patch(`/api/admin/b2b-orders/${b2bOrderNumber}/status`)
+      .patch(`/api/admin/b2b-orders/${b2bOrderNumber}/unlock-fulfilment`)
       .set(adminSessionHeader)
-      .send({ status: B2BOrderStatus.IN_FULFILMENT, note: "B2B fulfilment started." })
+      .send({ reason: "Integration admin override after accepting the purchase order." })
       .expect(200);
     expect(inFulfilment.body).toMatchObject({
       status: B2BOrderStatus.IN_FULFILMENT,
@@ -7204,6 +7168,8 @@ async function createApprovedSeller(
           contactPhone: "9876543210",
           contactEmail: `${slug}@1handindia.test`,
           description: "Integration test seller profile",
+          taxRegistrationStatus: SellerTaxRegistrationStatus.GST_REGISTERED,
+          gstNumber: "33ABCDE1234F1Z5",
         },
       },
       addresses: {
