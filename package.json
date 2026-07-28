@@ -21,7 +21,7 @@
     "db:bootstrap:empty": "node scripts/database/bootstrap-empty-database.mjs",
     "api:contract:export": "pnpm --dir apps/api openapi:contract",
     "api:contract:check": "pnpm --dir apps/api openapi:contract --compare=docs/architecture/contracts/openapi.json",
-    "test:integration:api": "vitest run apps/api/src/app/backend.integration.test.ts",
+    "test:integration:api": "vitest run --root apps/api src/app/backend.integration.test.ts",
     "format": "prettier --write .",
     "db:generate": "prisma generate --schema prisma/schema.prisma",
     "db:validate": "prisma validate --schema prisma/schema.prisma",
