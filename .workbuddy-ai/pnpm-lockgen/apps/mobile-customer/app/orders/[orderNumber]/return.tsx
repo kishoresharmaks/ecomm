@@ -1,0 +1,1268 @@
+import {
+  Add01Icon,
+  CheckmarkCircle02Icon,
+  DeliveryReturn01Icon,
+  MinusSignIcon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react-native";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { EmptyState } from "../../../src/components/empty-state";
+import { RemoteImage } from "../../../src/components/remote-image";
+import { Screen } from "../../../src/components/screen";
+import { useMobileCustomerAuth } from "../../../src/auth/mobile-auth-context";
+import { accountErrorMessage, formatDate, SignInRequiredState } from "../../../src/features/account/account-ui";
+import { formatMoney, useMobileMarket } from "../../../src/features/market/mobile-market";
+import {
+  acceptedReturnReasonsForSelection,
+  availableReturnQuantityForResolution,
+  activeOrderReturnRequest,
+  defaultMobileReturnPolicySettings,
+  isDeliveredStorePickupOrder,
+  mobileReturnResolutions,
+  mobileReverseShipmentModes,
+  orderCanStartReturn,
+  orderReturnPolicyState,
+  selectedReturnItems,
+  validateReturnForm,
+  type MobileReturnResolution,
+  type MobileReverseShipmentMode,
+  type ReturnFormSelection,
+} from "../../../src/features/returns/return-eligibility";
+import { isMobileReturnsEnabled } from "../../../src/features/returns/return-feature";
+import { returnsCopy } from "../../../src/features/returns/return-copy";
+import {
+  pickReturnQualityImageFiles,
+  uploadReturnQualityImage,
+} from "../../../src/features/returns/return-quality-upload";
+import {
+  createCustomerReturn,
+  getCustomerOrder,
+  getReturnPolicySettings,
+  type MobileOrderDetail,
+  type MobileReturnPolicySettings,
+} from "../../../src/features/storefront/storefront-api";
+import { MobileApiError } from "../../../src/lib/api";
+import { resolveImageUrl } from "../../../src/lib/image-url";
+import { captureMobileException, trackMobileEvent } from "../../../src/lib/mobile-telemetry";
+import { colors } from "../../../src/theme";
+
+type FormErrorKey = ReturnType<typeof validateReturnForm>;
+
+export default function OrderReturnScreen() {
+  const params = useLocalSearchParams<{ orderNumber?: string }>();
+  const orderNumber = Array.isArray(params.orderNumber) ? params.orderNumber[0] : params.orderNumber;
+  const customerAuth = useMobileCustomerAuth();
+  const market = useMobileMarket();
+  const copy = returnsCopy(market.market.locale);
+  const featureEnabled = isMobileReturnsEnabled(customerAuth.authKey);
+  const queryClient = useQueryClient();
+  const router = useRouter();
+  const submittedRef = useRef(false);
+  const [selection, setSelection] = useState<ReturnFormSelection>({});
+  const [resolution, setResolution] = useState<MobileReturnResolution>("REFUND");
+  const [reverseShipmentMode, setReverseShipmentMode] = useState<MobileReverseShipmentMode>("PLATFORM_PICKUP");
+  const [reason, setReason] = useState("");
+  const [note, setNote] = useState("");
+  const [formError, setFormError] = useState<FormErrorKey>(null);
+  const [submitMessage, setSubmitMessage] = useState("");
+  const [qualityProofKeys, setQualityProofKeys] = useState<string[]>([]);
+  const [qualityUploadMessage, setQualityUploadMessage] = useState("");
+  const [qualityUploadBusy, setQualityUploadBusy] = useState(false);
+  const [requiresServerRefresh, setRequiresServerRefresh] = useState(false);
+  const [refundMethod, setRefundMethod] = useState<"UPI" | "BANK_TRANSFER">("UPI");
+  const [refundAccountHolderName, setRefundAccountHolderName] = useState("");
+  const [refundUpiId, setRefundUpiId] = useState("");
+  const [refundBankName, setRefundBankName] = useState("");
+  const [refundAccountNumber, setRefundAccountNumber] = useState("");
+  const [refundIfsc, setRefundIfsc] = useState("");
+
+  const orderQuery = useQuery({
+    queryKey: ["mobile-order-detail", customerAuth.authKey, orderNumber],
+    queryFn: () => getCustomerOrder(customerAuth.authHeaders, orderNumber ?? ""),
+    enabled: customerAuth.enabled && featureEnabled && Boolean(orderNumber),
+    refetchOnMount: "always",
+    retry: false,
+  });
+  const returnPolicyQuery = useQuery({
+    queryKey: ["mobile-return-policy"],
+    queryFn: getReturnPolicySettings,
+    enabled: featureEnabled,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const order = orderQuery.data;
+  const selectedItems = useMemo(() => selectedReturnItems(selection), [selection]);
+  const policySettings = returnPolicyQuery.data ?? defaultMobileReturnPolicySettings;
+  const acceptedReasons = useMemo(
+    () => (order ? acceptedReturnReasonsForSelection(order.items, selection) : []),
+    [order, selection],
+  );
+  const returnPolicy = useMemo(
+    () =>
+      order
+        ? orderReturnPolicyState(
+            order,
+            policySettings,
+          )
+        : null,
+    [order, policySettings],
+  );
+  const activeReturn = order ? activeOrderReturnRequest(order) : null;
+  const selectedWindow = resolution === "REPLACEMENT" ? returnPolicy?.replacement : returnPolicy?.refund;
+  const resolutionAvailable = useMemo(
+    () => ({
+      REFUND:
+        order?.items.some(
+          (item) =>
+            availableReturnQuantityForResolution(
+              order,
+              item,
+              policySettings,
+              "REFUND",
+            ) > 0,
+        ) ?? false,
+      REPLACEMENT:
+        order?.items.some(
+          (item) =>
+            availableReturnQuantityForResolution(
+              order,
+              item,
+              policySettings,
+              "REPLACEMENT",
+            ) > 0,
+        ) ?? false,
+    }),
+    [order, policySettings],
+  );
+
+  useEffect(() => {
+    if (!returnPolicy) {
+      return;
+    }
+    if (resolution === "REFUND" && !returnPolicy.refund.eligible && returnPolicy.replacement.eligible) {
+      setResolution("REPLACEMENT");
+      setSelection({});
+      setReason("");
+    } else if (
+      resolution === "REPLACEMENT" &&
+      !returnPolicy.replacement.eligible &&
+      returnPolicy.refund.eligible
+    ) {
+      setResolution("REFUND");
+      setSelection({});
+      setReason("");
+    }
+  }, [resolution, returnPolicy]);
+
+  useEffect(() => {
+    if (customerAuth.enabled && featureEnabled && orderNumber) {
+      trackMobileEvent("return_started", { itemCount: order?.items.length ?? 0 });
+    }
+  }, [customerAuth.enabled, featureEnabled, order?.items.length, orderNumber]);
+
+  useEffect(() => {
+    return () => {
+      if (!submittedRef.current && customerAuth.enabled && featureEnabled && orderNumber) {
+        trackMobileEvent("return_abandoned", {
+          selectedItemCount: selectedItems.length,
+        });
+      }
+    };
+  }, [customerAuth.enabled, featureEnabled, orderNumber, selectedItems.length]);
+
+  useEffect(() => {
+    if (orderQuery.isError) {
+      captureMobileException(orderQuery.error, "return_order_load_failed", {
+        status: "order_error",
+      });
+    }
+  }, [orderQuery.error, orderQuery.isError]);
+
+  const createReturnMutation = useMutation({
+    mutationFn: () => {
+      if (!orderNumber) {
+        throw new Error("Order number is missing.");
+      }
+      if (!selectedWindow?.eligible) {
+        throw new Error(
+          resolution === "REPLACEMENT"
+            ? "The replacement window for this order has ended."
+            : "The return window for this order has ended.",
+        );
+      }
+
+      const validation = validateReturnForm({ note, reason, selection });
+      setFormError(validation);
+      if (validation) {
+        throw new Error(copy[validation]);
+      }
+      const refundDestination = requiresManualRefundDestination
+        ? buildRefundDestination({
+            method: refundMethod,
+            accountHolderName: refundAccountHolderName,
+            upiId: refundUpiId,
+            bankName: refundBankName,
+            accountNumber: refundAccountNumber,
+            ifsc: refundIfsc,
+          })
+        : null;
+
+      trackMobileEvent("return_submit_attempted", {
+        itemCount: selectedItems.length,
+        resolution,
+        reverseShipmentMode,
+      });
+
+      return createCustomerReturn(customerAuth.authHeaders, orderNumber, {
+        items: selectedItems,
+        reason: reason.trim(),
+        resolution,
+        reverseShipmentMode,
+        ...(note.trim() ? { note: note.trim() } : {}),
+        ...(qualityProofKeys.length ? { qualityProofKeys } : {}),
+        ...(refundDestination ? { refundDestination } : {}),
+      });
+    },
+    retry: false,
+    onSuccess: async (result) => {
+      submittedRef.current = true;
+      trackMobileEvent("return_submit_succeeded", {
+        itemCount: result.items.length,
+        resolution: result.resolution,
+        status: result.status,
+      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["mobile-order-detail", customerAuth.authKey, orderNumber] }),
+        queryClient.invalidateQueries({ queryKey: ["mobile-orders", customerAuth.authKey] }),
+        queryClient.invalidateQueries({ queryKey: ["mobile-returns", customerAuth.authKey] }),
+      ]);
+      router.replace(`/account/returns/${encodeURIComponent(result.requestNumber)}` as never);
+    },
+    onError: async (error) => {
+      const message = returnSubmitErrorMessage(error, copy);
+      setSubmitMessage(message);
+      trackMobileEvent("return_submit_failed", {
+        offline: error instanceof MobileApiError && error.status === 0,
+        rateLimited: error instanceof MobileApiError && error.status === 429,
+        status: error instanceof MobileApiError ? error.status : "client",
+      });
+      captureMobileException(error, "return_submit_failed", {
+        itemCount: selectedItems.length,
+        status: error instanceof MobileApiError ? error.status : "client",
+      });
+
+      if (shouldRequireServerRefresh(error)) {
+        setRequiresServerRefresh(true);
+        await Promise.all([
+          orderQuery.refetch(),
+          queryClient.invalidateQueries({ queryKey: ["mobile-returns", customerAuth.authKey] }),
+        ]);
+      }
+    },
+  });
+
+  async function refreshBeforeRetry() {
+    setSubmitMessage(copy.alreadySubmittedGuard);
+    await Promise.all([
+      orderQuery.refetch(),
+      queryClient.invalidateQueries({ queryKey: ["mobile-returns", customerAuth.authKey] }),
+    ]);
+    setRequiresServerRefresh(false);
+    setSubmitMessage("");
+  }
+
+  function handleSubmit() {
+    if (createReturnMutation.isPending) {
+      return;
+    }
+
+    if (requiresServerRefresh) {
+      void refreshBeforeRetry();
+      return;
+    }
+
+    createReturnMutation.mutate();
+  }
+
+  async function handleUploadQualityImages() {
+    if (qualityUploadBusy || qualityProofKeys.length >= 2) {
+      return;
+    }
+
+    setQualityUploadMessage("");
+    setQualityUploadBusy(true);
+    try {
+      const files = await pickReturnQualityImageFiles();
+      const slots = Math.max(0, 2 - qualityProofKeys.length);
+      const uploadedKeys: string[] = [];
+      for (const file of files.slice(0, slots)) {
+        uploadedKeys.push(await uploadReturnQualityImage(customerAuth.authHeaders, file));
+      }
+      if (uploadedKeys.length) {
+        setQualityProofKeys((current) => [...current, ...uploadedKeys].slice(0, 2));
+        setQualityUploadMessage(copy.qualityImagesUploaded);
+      }
+    } catch (error) {
+      setQualityUploadMessage(error instanceof Error ? error.message : "Photo upload failed.");
+    } finally {
+      setQualityUploadBusy(false);
+    }
+  }
+
+  if (!featureEnabled) {
+    return (
+      <Screen>
+        <Stack.Screen options={{ headerShown: true, title: copy.createTitle }} />
+        <EmptyState title={copy.disabledTitle} message={copy.disabledMessage} />
+      </Screen>
+    );
+  }
+
+  if (!orderNumber) {
+    return (
+      <Screen>
+        <Stack.Screen options={{ headerShown: true, title: copy.createTitle }} />
+        <EmptyState title={copy.orderMissingTitle} message={copy.orderMissingMessage} />
+      </Screen>
+    );
+  }
+
+  if (customerAuth.status === "loading" || customerAuth.status === "syncing" || orderQuery.isLoading) {
+    return (
+      <Screen>
+        <Stack.Screen options={{ headerShown: true, title: copy.createTitle }} />
+        <View style={styles.centerState}>
+          <ActivityIndicator color={colors.primary} />
+          <Text style={styles.stateText}>{copy.preparingForm}</Text>
+        </View>
+      </Screen>
+    );
+  }
+
+  if (!customerAuth.enabled) {
+    return (
+      <>
+        <Stack.Screen options={{ headerShown: true, title: copy.createTitle }} />
+        <SignInRequiredState title={copy.createSignInTitle} message={copy.sessionExpired} />
+      </>
+    );
+  }
+
+  if (orderQuery.isError) {
+    return (
+      <Screen>
+        <Stack.Screen options={{ headerShown: true, title: copy.createTitle }} />
+        <EmptyState title={copy.orderLoadErrorTitle} message={accountErrorMessage(orderQuery.error, copy.genericRetryMessage)} />
+        <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={() => void orderQuery.refetch()}>
+          <Text style={styles.primaryButtonText}>{copy.retry}</Text>
+        </Pressable>
+      </Screen>
+    );
+  }
+
+  if (!order) {
+    return (
+      <Screen>
+        <Stack.Screen options={{ headerShown: true, title: copy.createTitle }} />
+        <EmptyState title={copy.orderMissingTitle} message={copy.orderUnavailableMessage} />
+      </Screen>
+    );
+  }
+
+  if (isDeliveredStorePickupOrder(order) || !orderCanStartReturn(order)) {
+    return (
+      <Screen>
+        <Stack.Screen options={{ headerShown: true, title: copy.createTitle }} />
+        <EmptyState
+          title={copy.returnLockedTitle}
+          message={copy.returnLockedMessage}
+        />
+      </Screen>
+    );
+  }
+
+  if (activeReturn) {
+    return (
+      <Screen>
+        <Stack.Screen options={{ headerShown: true, title: copy.createTitle }} />
+        <EmptyState
+          title="Return already submitted"
+          message={`Request ${activeReturn.requestNumber} is ${activeReturn.status.toLowerCase().replaceAll("_", " ")}.`}
+        />
+        <Pressable
+          accessibilityRole="button"
+          style={styles.primaryButton}
+          onPress={() => router.replace(`/account/returns/${encodeURIComponent(activeReturn.requestNumber)}` as never)}
+        >
+          <Text style={styles.primaryButtonText}>View return</Text>
+        </Pressable>
+      </Screen>
+    );
+  }
+
+  if (!returnPolicy?.refund.eligible && !returnPolicy?.replacement.eligible) {
+    return (
+      <Screen>
+        <Stack.Screen options={{ headerShown: true, title: copy.createTitle }} />
+        <EmptyState
+          title="Return window ended"
+          message={`Refund returns are available for ${returnPolicy?.refund.windowDays ?? 0} days and replacements for ${returnPolicy?.replacement.windowDays ?? 0} days after delivery.`}
+        />
+      </Screen>
+    );
+  }
+
+  const validationMessage = formError ? copy[formError] : "";
+  const requiresManualRefundDestination =
+    resolution === "REFUND" &&
+    order.payments?.some((payment) =>
+      ["COD", "BANK_TRANSFER", "MANUAL"].includes(payment.provider ?? payment.method),
+    );
+  const submitDisabled =
+    createReturnMutation.isPending ||
+    qualityUploadBusy ||
+    !selectedWindow?.eligible ||
+    selectedItems.length === 0 ||
+    acceptedReasons.length === 0 ||
+    !reason ||
+    (requiresServerRefresh && orderQuery.isFetching);
+
+  return (
+    <Screen padded={false}>
+      <Stack.Screen options={{ headerShown: true, title: copy.createTitle }} />
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <View style={styles.heroCard}>
+          <View style={styles.heroTop}>
+            <View style={styles.heroIcon}>
+              <HugeiconsIcon color={colors.primary} icon={DeliveryReturn01Icon} size={30} strokeWidth={2.1} />
+            </View>
+            <View style={styles.heroCopy}>
+              <Text style={styles.heroTitle}>{copy.returnEligibleTitle}</Text>
+              <Text style={styles.heroMeta}>
+                Order {order.orderNumber} - {copy.deliveredLabel} {formatDate(returnPolicy.refund.deliveredAt)}
+              </Text>
+            </View>
+          </View>
+          <Text style={styles.heroDescription}>{copy.createDescription}</Text>
+        </View>
+
+        <View style={styles.policyCard}>
+          <PolicyWindowRow label="Refund return" state={returnPolicy.refund} />
+          <PolicyWindowRow label="Replacement" state={returnPolicy.replacement} />
+        </View>
+
+        <Text style={styles.sectionTitle}>{copy.selectedItemsLabel}</Text>
+        <View style={styles.sectionCard}>
+          {order.items.map((item) => (
+            <ReturnSelectableItem
+              copy={copy}
+              item={item}
+              key={item.id}
+              order={order}
+              policySettings={policySettings}
+              resolution={resolution}
+              quantity={selection[item.id] ?? 0}
+              onChange={(quantity) => {
+                setFormError(null);
+                setReason("");
+                setSelection((current) => ({ ...current, [item.id]: quantity }));
+                trackMobileEvent("return_item_selected", {
+                  selected: quantity > 0,
+                });
+              }}
+            />
+          ))}
+        </View>
+
+        <Text style={styles.sectionTitle}>{copy.resolutionLabel}</Text>
+        <View style={styles.segmentRow}>
+          {mobileReturnResolutions.map((item) => (
+            <SegmentButton
+              active={resolution === item}
+              disabled={!resolutionAvailable[item]}
+              key={item}
+              label={item === "REFUND" ? copy.refund : copy.replacement}
+              onPress={() => {
+                if (item === resolution) {
+                  return;
+                }
+                setResolution(item);
+                setSelection({});
+                setReason("");
+                setFormError(null);
+              }}
+            />
+          ))}
+        </View>
+
+        <Text style={styles.sectionTitle}>{copy.returnModeLabel}</Text>
+        <View style={styles.segmentRow}>
+          {mobileReverseShipmentModes.map((item) => (
+            <SegmentButton
+              active={reverseShipmentMode === item}
+              key={item}
+              label={item === "PLATFORM_PICKUP" ? copy.returnModePickup : copy.returnModeSelfShip}
+              onPress={() => setReverseShipmentMode(item)}
+            />
+          ))}
+        </View>
+        <Text style={styles.modeHelp}>
+          {reverseShipmentMode === "PLATFORM_PICKUP"
+            ? copy.returnModePickupHelp
+            : copy.returnModeSelfShipHelp}
+        </Text>
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.inputLabel}>{copy.formReasonLabel}</Text>
+          <View style={styles.reasonGrid}>
+            {acceptedReasons.map((option) => (
+              <Pressable
+                accessibilityRole="radio"
+                accessibilityState={{ selected: reason === option }}
+                key={option}
+                onPress={() => {
+                  setFormError(null);
+                  setReason(option);
+                }}
+                style={[styles.reasonOption, reason === option ? styles.reasonOptionActive : null]}
+              >
+                <Text style={[styles.reasonText, reason === option ? styles.reasonTextActive : null]}>
+                  {option}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          {selectedItems.length > 0 && acceptedReasons.length === 0 ? (
+            <Text style={styles.validationText}>
+              These products do not share an accepted reason. Submit them separately.
+            </Text>
+          ) : null}
+        </View>
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.inputLabel}>{copy.noteLabel}</Text>
+          <TextInput
+            accessibilityLabel={copy.noteLabel}
+            maxLength={1000}
+            multiline
+            onChangeText={(value) => {
+              setFormError(null);
+              setNote(value);
+            }}
+            placeholder={copy.notePlaceholder}
+            placeholderTextColor={colors.muted}
+            style={[styles.textArea, styles.noteArea]}
+            value={note}
+          />
+          <Text style={styles.counterText}>{note.length}/1000</Text>
+        </View>
+
+        {requiresManualRefundDestination ? (
+          <View style={styles.qualityCard}>
+            <Text style={styles.inputLabel}>Refund destination</Text>
+            <Text style={styles.qualityHelp}>COD and offline refunds are paid only through UPI or bank transfer.</Text>
+            <View style={styles.segmentRow}>
+              <SegmentButton active={refundMethod === "UPI"} label="UPI" onPress={() => setRefundMethod("UPI")} />
+              <SegmentButton active={refundMethod === "BANK_TRANSFER"} label="Bank" onPress={() => setRefundMethod("BANK_TRANSFER")} />
+            </View>
+            <TextInput
+              accessibilityLabel="Refund account holder name"
+              onChangeText={setRefundAccountHolderName}
+              placeholder="Account holder name"
+              placeholderTextColor={colors.muted}
+              style={styles.textInput}
+              value={refundAccountHolderName}
+            />
+            {refundMethod === "UPI" ? (
+              <TextInput
+                accessibilityLabel="UPI ID"
+                autoCapitalize="none"
+                onChangeText={setRefundUpiId}
+                placeholder="UPI ID"
+                placeholderTextColor={colors.muted}
+                style={styles.textInput}
+                value={refundUpiId}
+              />
+            ) : (
+              <>
+                <TextInput
+                  accessibilityLabel="Bank name"
+                  onChangeText={setRefundBankName}
+                  placeholder="Bank name"
+                  placeholderTextColor={colors.muted}
+                  style={styles.textInput}
+                  value={refundBankName}
+                />
+                <TextInput
+                  accessibilityLabel="Account number"
+                  keyboardType="number-pad"
+                  onChangeText={setRefundAccountNumber}
+                  placeholder="Account number"
+                  placeholderTextColor={colors.muted}
+                  style={styles.textInput}
+                  value={refundAccountNumber}
+                />
+                <TextInput
+                  accessibilityLabel="IFSC"
+                  autoCapitalize="characters"
+                  onChangeText={(value) => setRefundIfsc(value.toUpperCase())}
+                  placeholder="IFSC"
+                  placeholderTextColor={colors.muted}
+                  style={styles.textInput}
+                  value={refundIfsc}
+                />
+              </>
+            )}
+          </View>
+        ) : null}
+
+        <View style={styles.qualityCard}>
+          <Text style={styles.inputLabel}>{copy.qualityImagesTitle}</Text>
+          <Text style={styles.qualityHelp}>{copy.qualityImagesHelp}</Text>
+          <Pressable
+            accessibilityRole="button"
+            disabled={qualityUploadBusy || qualityProofKeys.length >= 2}
+            style={[styles.secondaryButton, qualityUploadBusy || qualityProofKeys.length >= 2 ? styles.disabledButton : null]}
+            onPress={handleUploadQualityImages}
+          >
+            {qualityUploadBusy ? <ActivityIndicator color={colors.primary} /> : null}
+            <Text style={styles.secondaryButtonText}>
+              {qualityUploadBusy ? copy.qualityImagesUploading : copy.qualityImagesUpload}
+            </Text>
+          </Pressable>
+          {qualityProofKeys.map((key, index) => (
+            <View key={key} style={styles.qualityReferenceRow}>
+              <Text numberOfLines={2} style={styles.qualityReferenceText}>Image {index + 1}: {key}</Text>
+              <Pressable accessibilityRole="button" onPress={() => setQualityProofKeys((current) => current.filter((item) => item !== key))}>
+                <Text style={styles.removeText}>Remove</Text>
+              </Pressable>
+            </View>
+          ))}
+          {qualityUploadMessage ? <Text style={styles.uploadMessage}>{qualityUploadMessage}</Text> : null}
+        </View>
+
+        {validationMessage ? <Text style={styles.errorText}>{validationMessage}</Text> : null}
+        {submitMessage ? <Text style={styles.errorText}>{submitMessage}</Text> : null}
+
+        <Pressable
+          accessibilityHint={requiresServerRefresh ? "Refresh order and returns before retrying" : "Submit this return request"}
+          accessibilityRole="button"
+          disabled={submitDisabled}
+          style={[styles.primaryButton, submitDisabled ? styles.disabledButton : null]}
+          onPress={handleSubmit}
+        >
+          {createReturnMutation.isPending || (requiresServerRefresh && orderQuery.isFetching) ? (
+            <ActivityIndicator color={colors.surface} />
+          ) : (
+            <HugeiconsIcon color={colors.surface} icon={DeliveryReturn01Icon} size={20} strokeWidth={2.2} />
+          )}
+          <Text style={styles.primaryButtonText}>
+            {createReturnMutation.isPending
+              ? copy.formSubmitting
+              : requiresServerRefresh
+                ? copy.refreshBeforeRetry
+                : copy.formSubmit}
+          </Text>
+        </Pressable>
+      </ScrollView>
+    </Screen>
+  );
+}
+
+function ReturnSelectableItem({
+  copy,
+  item,
+  onChange,
+  order,
+  policySettings,
+  quantity,
+  resolution,
+}: {
+  copy: ReturnType<typeof returnsCopy>;
+  item: MobileOrderDetail["items"][number];
+  onChange: (quantity: number) => void;
+  order: MobileOrderDetail;
+  policySettings: MobileReturnPolicySettings;
+  quantity: number;
+  resolution: MobileReturnResolution;
+}) {
+  const maxQuantity = availableReturnQuantityForResolution(
+    order,
+    item,
+    policySettings,
+    resolution,
+  );
+  const selected = quantity > 0;
+  const disabled = maxQuantity <= 0;
+  const imageUrl = resolveImageUrl(item.product?.imageUrl);
+
+  function setNextQuantity(nextQuantity: number) {
+    onChange(Math.max(0, Math.min(maxQuantity, nextQuantity)));
+  }
+
+  return (
+    <View style={[styles.itemCard, disabled ? styles.itemDisabled : null]}>
+      <Pressable
+        accessibilityHint={copy.itemSelectHint}
+        accessibilityLabel={`${item.productNameSnapshot}, available quantity ${maxQuantity}`}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: selected, disabled }}
+        disabled={disabled}
+        style={styles.itemMain}
+        onPress={() => setNextQuantity(selected ? 0 : Math.max(1, Math.min(1, maxQuantity)))}
+      >
+        <RemoteImage fallbackLabel={item.productNameSnapshot} resizeMode="contain" style={styles.itemImage} uri={imageUrl} />
+        <View style={styles.itemCopy}>
+          <Text numberOfLines={2} style={styles.itemName}>{item.productNameSnapshot}</Text>
+          <Text numberOfLines={1} style={styles.itemMeta}>
+            {copy.quantityShort} {item.quantity}
+            {item.seller?.storeName ? ` - ${item.seller.storeName}` : ""}
+          </Text>
+          <Text style={styles.itemPrice}>{formatMoney(item.unitPricePaise, item.currency ?? order.currency, "en-IN")} {copy.eachLabel}</Text>
+          {disabled ? <Text style={styles.unavailableText}>{copy.unavailableQuantity}</Text> : null}
+        </View>
+        <View style={[styles.checkbox, selected ? styles.checkboxActive : null]}>
+          {selected ? <HugeiconsIcon color={colors.surface} icon={CheckmarkCircle02Icon} size={18} strokeWidth={2.2} /> : null}
+        </View>
+      </Pressable>
+
+      {selected ? (
+        <View accessibilityLabel={copy.quantityControlsLabel} accessibilityRole="adjustable" style={styles.quantityRow}>
+          <Pressable
+            accessibilityHint={copy.decreaseQuantityHint}
+            accessibilityRole="button"
+            style={styles.quantityButton}
+            onPress={() => setNextQuantity(quantity - 1)}
+          >
+            <HugeiconsIcon color={colors.primary} icon={MinusSignIcon} size={18} strokeWidth={2.2} />
+          </Pressable>
+          <Text style={styles.quantityText}>{quantity} of {maxQuantity}</Text>
+          <Pressable
+            accessibilityHint={copy.increaseQuantityHint}
+            accessibilityRole="button"
+            disabled={quantity >= maxQuantity}
+            style={[styles.quantityButton, quantity >= maxQuantity ? styles.disabledButton : null]}
+            onPress={() => setNextQuantity(quantity + 1)}
+          >
+            <HugeiconsIcon color={colors.primary} icon={Add01Icon} size={18} strokeWidth={2.2} />
+          </Pressable>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function SegmentButton({
+  active,
+  disabled = false,
+  label,
+  onPress,
+}: {
+  active: boolean;
+  disabled?: boolean;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ disabled, selected: active }}
+      disabled={disabled}
+      style={[
+        styles.segmentButton,
+        active ? styles.segmentButtonActive : null,
+        disabled ? styles.disabledButton : null,
+      ]}
+      onPress={onPress}
+    >
+      <Text style={[styles.segmentText, active ? styles.segmentTextActive : null]}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function PolicyWindowRow({
+  label,
+  state,
+}: {
+  label: string;
+  state: ReturnType<typeof orderReturnPolicyState>["refund"];
+}) {
+  return (
+    <View style={styles.policyRow}>
+      <View style={styles.policyCopy}>
+        <Text style={styles.policyLabel}>{label}</Text>
+        <Text style={styles.policyDeadline}>
+          {state.windowDays > 0
+            ? `${state.windowDays} days after delivery - until ${formatDate(state.deadlineAt)}`
+            : "Unavailable"}
+        </Text>
+      </View>
+      <Text style={[styles.policyStatus, !state.eligible ? styles.policyStatusEnded : null]}>
+        {state.eligible ? `${state.daysRemaining} days left` : "Ended"}
+      </Text>
+    </View>
+  );
+}
+
+function returnSubmitErrorMessage(error: unknown, copy: ReturnType<typeof returnsCopy>) {
+  if (error instanceof MobileApiError) {
+    if (error.status === 0) {
+      return copy.networkError;
+    }
+    if (error.status === 401) {
+      return copy.sessionExpired;
+    }
+    if (error.status === 429) {
+      return copy.rateLimited;
+    }
+    return error.message;
+  }
+
+  return error instanceof Error ? error.message : copy.returnSubmitFallbackError;
+}
+
+function shouldRequireServerRefresh(error: unknown) {
+  if (error instanceof MobileApiError) {
+    return error.status === 0 || error.status === 408 || error.status === 409 || error.status === 429 || error.status >= 500;
+  }
+
+  return false;
+}
+
+function buildRefundDestination(input: {
+  method: "UPI" | "BANK_TRANSFER";
+  accountHolderName: string;
+  upiId: string;
+  bankName: string;
+  accountNumber: string;
+  ifsc: string;
+}) {
+  const accountHolderName = input.accountHolderName.trim();
+  if (!accountHolderName) {
+    throw new Error("Enter the refund account holder name.");
+  }
+  if (input.method === "UPI") {
+    const upiId = input.upiId.trim();
+    if (!upiId) {
+      throw new Error("Enter the UPI ID for refund.");
+    }
+    return { method: "UPI" as const, accountHolderName, upiId };
+  }
+  const bankName = input.bankName.trim();
+  const accountNumber = input.accountNumber.trim();
+  const ifsc = input.ifsc.trim().toUpperCase();
+  if (!bankName || !accountNumber || !ifsc) {
+    throw new Error("Enter bank name, account number, and IFSC for refund.");
+  }
+  return { method: "BANK_TRANSFER" as const, accountHolderName, bankName, accountNumber, ifsc };
+}
+
+const styles = StyleSheet.create({
+  centerState: {
+    alignItems: "center",
+    flex: 1,
+    justifyContent: "center",
+  },
+  checkbox: {
+    alignItems: "center",
+    borderColor: colors.border,
+    borderRadius: 999,
+    borderWidth: 1,
+    height: 28,
+    justifyContent: "center",
+    width: 28,
+  },
+  checkboxActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  content: {
+    padding: 18,
+    paddingBottom: 128,
+  },
+  counterText: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: "800",
+    marginTop: 6,
+    textAlign: "right",
+  },
+  disabledButton: {
+    opacity: 0.58,
+  },
+  errorText: {
+    color: colors.danger,
+    fontSize: 13,
+    fontWeight: "800",
+    lineHeight: 19,
+    marginBottom: 10,
+  },
+  heroCard: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 28,
+    borderWidth: 1,
+    marginBottom: 18,
+    padding: 18,
+    shadowColor: "#ED3500",
+    shadowOffset: { height: 10, width: 0 },
+    shadowOpacity: 0.06,
+    shadowRadius: 24,
+  },
+  heroCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  heroDescription: {
+    color: colors.muted,
+    fontSize: 13,
+    fontWeight: "700",
+    lineHeight: 20,
+    marginTop: 14,
+  },
+  policyCard: {
+    backgroundColor: "#FFF7F2",
+    borderColor: "#FFD3C5",
+    borderRadius: 22,
+    borderWidth: 1,
+    marginBottom: 18,
+    paddingHorizontal: 14,
+  },
+  policyRow: {
+    alignItems: "center",
+    borderBottomColor: "#FFDCCF",
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    gap: 12,
+    justifyContent: "space-between",
+    minHeight: 72,
+    paddingVertical: 12,
+  },
+  policyCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  policyLabel: {
+    color: colors.ink,
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  policyDeadline: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: "700",
+    lineHeight: 16,
+    marginTop: 4,
+  },
+  policyStatus: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  policyStatusEnded: {
+    color: colors.muted,
+  },
+  heroIcon: {
+    alignItems: "center",
+    backgroundColor: "#FFF1EB",
+    borderRadius: 20,
+    height: 56,
+    justifyContent: "center",
+    width: 56,
+  },
+  heroMeta: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "800",
+    marginTop: 4,
+  },
+  heroTitle: {
+    color: colors.ink,
+    fontSize: 18,
+    fontWeight: "900",
+  },
+  heroTop: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 12,
+  },
+  inputGroup: {
+    marginBottom: 14,
+  },
+  modeHelp: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 18,
+    marginBottom: 16,
+    marginTop: -4,
+  },
+  reasonGrid: {
+    gap: 8,
+  },
+  reasonOption: {
+    backgroundColor: colors.softSurface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    minHeight: 44,
+    justifyContent: "center" as const,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  reasonOptionActive: {
+    backgroundColor: "#FFF0EC",
+    borderColor: colors.primary,
+  },
+  reasonText: {
+    color: colors.ink,
+    fontSize: 13,
+    fontWeight: "700" as const,
+  },
+  reasonTextActive: {
+    color: colors.primary,
+    fontWeight: "900" as const,
+  },
+  validationText: {
+    color: colors.danger,
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 18,
+    marginTop: 8,
+  },
+  inputLabel: {
+    color: colors.ink,
+    fontSize: 14,
+    fontWeight: "900",
+    marginBottom: 8,
+  },
+  itemCard: {
+    borderColor: colors.border,
+    borderRadius: 22,
+    borderWidth: 1,
+    marginBottom: 12,
+    padding: 12,
+  },
+  itemCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  itemDisabled: {
+    opacity: 0.58,
+  },
+  itemImage: {
+    backgroundColor: "#FFF9F6",
+    borderColor: colors.border,
+    borderRadius: 18,
+    borderWidth: 1,
+    height: 74,
+    width: 74,
+  },
+  itemMain: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 12,
+    minHeight: 96,
+  },
+  itemMeta: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "700",
+    marginTop: 4,
+  },
+  itemName: {
+    color: colors.ink,
+    fontSize: 14,
+    fontWeight: "900",
+    lineHeight: 19,
+  },
+  itemPrice: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: "900",
+    marginTop: 6,
+  },
+  noteArea: {
+    minHeight: 118,
+  },
+  qualityCard: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 20,
+    borderWidth: 1,
+    marginBottom: 14,
+    padding: 14,
+  },
+  qualityHelp: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 18,
+    marginBottom: 12,
+  },
+  qualityReferenceRow: {
+    alignItems: "center",
+    backgroundColor: "#F8FAFC",
+    borderRadius: 12,
+    flexDirection: "row",
+    gap: 10,
+    justifyContent: "space-between",
+    marginTop: 8,
+    padding: 10,
+  },
+  qualityReferenceText: {
+    color: colors.muted,
+    flex: 1,
+    fontSize: 11,
+    fontWeight: "800",
+    lineHeight: 16,
+  },
+  primaryButton: {
+    alignItems: "center",
+    alignSelf: "stretch",
+    backgroundColor: colors.primary,
+    borderRadius: 999,
+    flexDirection: "row",
+    gap: 9,
+    justifyContent: "center",
+    minHeight: 52,
+    paddingHorizontal: 18,
+  },
+  primaryButtonText: {
+    color: colors.surface,
+    fontSize: 15,
+    fontWeight: "900",
+  },
+  removeText: {
+    color: colors.danger,
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  secondaryButton: {
+    alignItems: "center",
+    alignSelf: "flex-start",
+    borderColor: colors.border,
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 8,
+    minHeight: 42,
+    paddingHorizontal: 14,
+  },
+  secondaryButtonText: {
+    color: colors.ink,
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  quantityButton: {
+    alignItems: "center",
+    backgroundColor: "#FFF2ED",
+    borderRadius: 999,
+    height: 44,
+    justifyContent: "center",
+    width: 44,
+  },
+  quantityRow: {
+    alignItems: "center",
+    borderTopColor: colors.border,
+    borderTopWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 12,
+    paddingTop: 12,
+  },
+  quantityText: {
+    color: colors.ink,
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  sectionCard: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 24,
+    borderWidth: 1,
+    marginBottom: 18,
+    padding: 12,
+  },
+  sectionTitle: {
+    color: colors.ink,
+    fontSize: 16,
+    fontWeight: "900",
+    marginBottom: 10,
+  },
+  segmentButton: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 999,
+    borderWidth: 1,
+    flex: 1,
+    minHeight: 48,
+    justifyContent: "center",
+    paddingHorizontal: 12,
+  },
+  segmentButtonActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  segmentRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 18,
+  },
+  segmentText: {
+    color: colors.ink,
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  segmentTextActive: {
+    color: colors.surface,
+  },
+  stateText: {
+    color: colors.muted,
+    fontSize: 14,
+    fontWeight: "800",
+    marginTop: 10,
+  },
+  textArea: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 20,
+    borderWidth: 1,
+    color: colors.ink,
+    fontSize: 14,
+    fontWeight: "700",
+    lineHeight: 20,
+    minHeight: 92,
+    padding: 14,
+    textAlignVertical: "top",
+  },
+  textInput: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 16,
+    borderWidth: 1,
+    color: colors.ink,
+    fontSize: 14,
+    fontWeight: "700",
+    minHeight: 48,
+    marginBottom: 10,
+    paddingHorizontal: 14,
+  },
+  unavailableText: {
+    color: colors.danger,
+    fontSize: 12,
+    fontWeight: "800",
+    marginTop: 6,
+  },
+  uploadMessage: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 18,
+    marginTop: 10,
+  },
+});

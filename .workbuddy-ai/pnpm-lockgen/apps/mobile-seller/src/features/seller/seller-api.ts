@@ -1,0 +1,1869 @@
+import { deleteJson, getJson, patchJson, postJson, type MobileAuthHeaders } from "../../lib/api";
+
+export type SellerStatus = "PENDING_APPROVAL" | "APPROVED" | "SUSPENDED" | "REJECTED";
+export type SellerApprovalStatus = "PENDING_APPROVAL" | "APPROVED" | "REJECTED";
+export type SellerCapability = "RETAIL" | "SERVICE";
+export type ProductTaxClassification = "TAXABLE" | "NIL_RATED" | "EXEMPT" | "NON_GST";
+export type SellerTaxRegistrationStatus = "GST_REGISTERED" | "COMPOSITION" | "NOT_REGISTERED";
+export type SellerProductDeliveryMode =
+  | "STORE_PICKUP"
+  | "LOCAL_DELIVERY_PARTNER"
+  | "THIRD_PARTY_COURIER"
+  | "MANUAL_TRANSPORT";
+
+export type SellerProfile = {
+  id: string;
+  storeName: string;
+  slug?: string;
+  sellerType?: "MARKETPLACE_SELLER" | "HYPERLOCAL_STORE" | "WHOLESALE_DISTRIBUTOR" | "SERVICE_PROVIDER";
+  primaryCapability?: SellerCapability;
+  enabledCapabilities?: SellerCapability[];
+  status: SellerStatus;
+  approvalStatus: SellerApprovalStatus;
+  subscriptionStatus?: string;
+  operatingCurrency?: string;
+  /**
+   * Legacy/mobile-normalized aliases. The API source of truth is `profile.*`.
+   */
+  logoUrl?: string | null;
+  bannerUrl?: string | null;
+  description?: string | null;
+  user?: {
+    email?: string | null;
+    phone?: string | null;
+    fullName?: string | null;
+    status?: string;
+  } | null;
+  profile?: {
+    logoUrl?: string | null;
+    bannerUrl?: string | null;
+    description?: string | null;
+    contactName?: string | null;
+    contactPhone?: string | null;
+    contactEmail?: string | null;
+    businessLegalName?: string | null;
+    businessType?: string | null;
+    taxRegistrationStatus?: SellerTaxRegistrationStatus;
+    gstNumber?: string | null;
+    panNumber?: string | null;
+  } | null;
+  payoutProfile?: {
+    accountHolderName?: string | null;
+    bankName?: string | null;
+    maskedAccountNumber?: string | null;
+    ifscCode?: string | null;
+    maskedUpiId?: string | null;
+    isVerified?: boolean;
+  } | null;
+  addresses?: SellerAddress[];
+  serviceAreas?: SellerServiceArea[];
+  subscriptionPlan?: SellerSubscriptionPlan | null;
+};
+
+export type SellerAddress = {
+  line1?: string;
+  line2?: string;
+  area?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
+  country?: string;
+  countryCode?: string;
+  stateCode?: string;
+  cityCode?: string;
+  localAreaCode?: string;
+};
+
+export type SellerServiceArea = {
+  id?: string;
+  label?: string | null;
+  countryCode?: string | null;
+  stateCode?: string | null;
+  cityCode?: string | null;
+  localAreaCode?: string | null;
+  pincode?: string | null;
+  latitude?: number | string | null;
+  longitude?: number | string | null;
+  radiusKm?: number | null;
+  isActive?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type SellerDocumentType =
+  | "ID_PROOF"
+  | "SIGNATURE_PROOF"
+  | "GST_CERTIFICATE"
+  | "FSSAI_CERTIFICATE"
+  | "PAN_CARD"
+  | "ADDRESS_PROOF"
+  | "BANK_PROOF"
+  | "BUSINESS_REGISTRATION"
+  | "SERVICE_COMPLETION_PROOF"
+  | "SERVICE_DISPUTE_EVIDENCE"
+  | "OTHER";
+
+export type SellerVerificationDocumentPayload = {
+  documentType: SellerDocumentType;
+  fileUrl: string;
+};
+
+export type SellerOnboardingPayload = {
+  sellerType: "MARKETPLACE_SELLER" | "HYPERLOCAL_STORE" | "WHOLESALE_DISTRIBUTOR";
+  storeName: string;
+  contactName: string;
+  contactPhone: string;
+  businessDescription?: string;
+  businessLegalName?: string;
+  businessType?: string;
+  taxRegistrationStatus: SellerTaxRegistrationStatus;
+  gstNumber?: string;
+  panNumber?: string;
+  address: SellerAddress & { line1: string };
+  documents?: SellerVerificationDocumentPayload[];
+  subscriptionPlanId?: string;
+};
+
+export type SellerProfilePayload = {
+  storeName?: string;
+  logoUrl?: string | null;
+  bannerUrl?: string | null;
+  description?: string;
+  contactName?: string;
+  contactPhone?: string;
+  contactEmail?: string;
+  businessLegalName?: string;
+  businessType?: string | null;
+  taxRegistrationStatus?: SellerTaxRegistrationStatus;
+  gstNumber?: string;
+  panNumber?: string;
+  payoutProfile?: {
+    accountHolderName?: string;
+    bankName?: string;
+    accountNumber?: string;
+    ifscCode?: string;
+    upiId?: string;
+  };
+  address?: SellerAddress;
+  serviceAreas?: SellerServiceArea[];
+  documents?: SellerVerificationDocumentPayload[];
+};
+
+export type ProductSummary = {
+  id: string;
+  name: string;
+  slug?: string;
+  status?: string;
+  approvalStatus?: string;
+  imageUrl?: string | null;
+  images?: Array<{ url: string; altText?: string | null; sortOrder?: number | null; isPrimary?: boolean | null }>;
+  description?: string | null;
+  attributes?: Record<string, unknown> | null;
+  hsnCode?: string | null;
+  gstRatePercent?: number | null;
+  taxClassification?: ProductTaxClassification;
+  deliveryModes?: SellerProductDeliveryMode[];
+  category?: { id: string; name: string } | null;
+  variants?: Array<{
+    id: string;
+    sku?: string | null;
+    variantName?: string | null;
+    pricePaise: number;
+    mrpPaise?: number | null;
+    currency?: string | null;
+    stockQuantity?: number | null;
+    status?: string;
+    packageWeightGrams?: number | null;
+    packageLengthCm?: number | null;
+    packageBreadthCm?: number | null;
+    packageHeightCm?: number | null;
+  }>;
+};
+
+export type SellerProductPayload = {
+  categoryId: string;
+  name: string;
+  description: string;
+  taxClassification: ProductTaxClassification;
+  deliveryModes?: SellerProductDeliveryMode[];
+  attributes?: Record<string, unknown>;
+  images?: Array<{ url: string; altText?: string; sortOrder?: number; isPrimary?: boolean }>;
+  variants: Array<{
+    sku?: string;
+    variantName?: string;
+    pricePaise: number;
+    mrpPaise?: number | null;
+    currency?: string;
+    stockQuantity?: number;
+    packageWeightGrams?: number;
+    packageLengthCm?: number;
+    packageBreadthCm?: number;
+    packageHeightCm?: number;
+    status?: "ACTIVE" | "INACTIVE";
+    attributes?: Record<string, unknown>;
+  }>;
+};
+
+export type SellerProductUpdatePayload = Partial<Omit<SellerProductPayload, "variants">> & {
+  variants?: Array<Partial<SellerProductPayload["variants"][number]> & { id?: string }>;
+  };
+
+export type ProductTemplateFieldType =
+  | "TEXT"
+  | "TEXTAREA"
+  | "NUMBER"
+  | "SELECT"
+  | "MULTI_SELECT"
+  | "BOOLEAN"
+  | "DATE";
+
+export type ProductTemplateFieldScope = "PRODUCT" | "VARIANT";
+
+export type ProductTemplateField = {
+  id: string;
+  productTemplateId: string;
+  label: string;
+  fieldKey: string;
+  fieldType: ProductTemplateFieldType;
+  scope: ProductTemplateFieldScope;
+  isRequired: boolean;
+  options?: string[] | null;
+  placeholder?: string | null;
+  helpText?: string | null;
+  isFilterable?: boolean;
+  isSearchable?: boolean;
+  sortOrder: number;
+};
+
+export type ProductTemplateSummary = {
+  id: string;
+  name: string;
+  code: string;
+  description?: string | null;
+  status: string;
+  listingMode?: "CART" | "ENQUIRY_ONLY" | "CART_AND_ENQUIRY";
+  sortOrder?: number;
+  fields?: ProductTemplateField[];
+};
+
+export type CategorySummary = {
+  id: string;
+  parentId?: string | null;
+  productTemplateId?: string | null;
+  name: string;
+  slug: string;
+  description?: string | null;
+  imageUrl?: string | null;
+  defaultHsnCode?: string | null;
+  defaultSacCode?: string | null;
+  defaultSacMasterId?: string | null;
+  defaultGstRatePercent?: number | null;
+  defaultTaxClassification?: ProductTaxClassification | null;
+  defaultTaxDescription?: string | null;
+  sortOrder?: number;
+  productTemplate?: ProductTemplateSummary | null;
+  children?: CategorySummary[];
+};
+
+export type HsnMasterEntry = {
+  id: string;
+  hsnCode: string;
+  description: string;
+  gstRatePercent: number;
+  categoryId?: string | null;
+  isActive: boolean;
+};
+
+export type SacMasterEntry = {
+  id: string;
+  sacCode: string;
+  description: string;
+  sourceReference?: string | null;
+  effectiveDate?: string | null;
+};
+
+export type PageResult<T> = {
+  items: T[];
+  total: number;
+  page: number;
+  limit: number;
+};
+
+export type CursorPageResult<T, Summary = never> = {
+  items: T[];
+  limit: number;
+  pageInfo: {
+    hasNextPage: boolean;
+    nextCursor: string | null;
+  };
+  summary?: Summary;
+};
+
+export type SellerOrder = {
+  id: string;
+  orderNumber: string;
+  orderKind?: "STANDARD" | "REPLACEMENT";
+  parentOrder?: { id: string; orderNumber: string; orderStatus?: string; deliveryStatus?: string } | null;
+  replacementReturnRequest?: { id: string; requestNumber: string; status?: string; resolution?: string } | null;
+  orderStatus?: string;
+  status?: string;
+  paymentStatus?: string;
+  deliveryStatus?: string;
+  currency?: string;
+  subtotalPaise?: number;
+  shippingPaise?: number;
+  platformFeePaise?: number;
+  totalPaise?: number;
+  createdAt?: string;
+  items?: Array<{ id: string; productNameSnapshot?: string; quantity?: number; lineTotalPaise?: number }>;
+  sellerCashReceivables?: SellerCashReceivableSummary[];
+  sellerSplits?: Array<{
+    id: string;
+    sellerStatus?: string;
+    settlementStatus?: string;
+    sellerSubtotalPaise?: number;
+    sellerCashReceivables?: SellerCashReceivableSummary[];
+    shipment?: SellerOrderShipment | null;
+  }>;
+  payments?: Array<{
+    id: string;
+    provider?: string | null;
+    method?: string | null;
+    amountPaise?: number | null;
+    currency?: string | null;
+    status?: string | null;
+  }>;
+  shipments?: SellerOrderShipment[];
+  deliveryDetail?: SellerOrderDeliveryDetail | null;
+  statusEvents?: SellerOrderStatusEvent[];
+};
+
+export type SellerOrderStatusPayload = {
+  sellerStatus: "PENDING" | "ACCEPTED" | "PROCESSING" | "DISPATCHED" | "DELIVERED" | "CANCELLED";
+  note?: string;
+};
+
+export type SellerDeliveryPayload = {
+  deliveryMode?: "STORE_PICKUP" | "LOCAL_DELIVERY_PARTNER" | "THIRD_PARTY_COURIER" | "MANUAL_TRANSPORT";
+  partnerName?: string;
+  partnerPhone?: string;
+  trackingReference?: string;
+  estimatedDeliveryDate?: string;
+  deliveryNote?: string;
+  receiverName?: string;
+  proofNote?: string;
+  proofReference?: string;
+  codCollected?: boolean;
+  codCollectedAmountPaise?: number;
+  codCollectionNote?: string;
+  status?: "NOT_ASSIGNED" | "PENDING" | "PACKED" | "DISPATCHED" | "IN_TRANSIT" | "DELIVERED" | "CANCELLED";
+};
+
+export type SellerOrderStatusEvent = {
+  id: string;
+  statusType?: string;
+  oldStatus?: string | null;
+  newStatus?: string;
+  note?: string | null;
+  createdAt?: string;
+};
+
+export type SellerOrderPackage = {
+  id: string;
+  packageNumber?: string;
+  orderShipmentId?: string;
+  orderId?: string;
+  sellerId?: string;
+  sequence?: number;
+  deliveryMode?: string;
+  status?: string;
+  shippingPaise?: number;
+  codSurchargePaise?: number;
+  declaredValuePaise?: number;
+  currency?: string;
+  weightGrams?: number | null;
+  lengthCm?: number | null;
+  breadthCm?: number | null;
+  heightCm?: number | null;
+  itemAllocations?: unknown;
+  readyForBookingAt?: string | null;
+  bookedAt?: string | null;
+  pickupScheduledAt?: string | null;
+  pickedUpAt?: string | null;
+  deliveredAt?: string | null;
+  cancelledAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  awbNumber?: string | null;
+  courierName?: string | null;
+  courierCode?: string | null;
+  courierTrackingStatus?: string | null;
+  courierTrackingStatusLabel?: string | null;
+  trackingUrl?: string | null;
+  shippingZone?: string | null;
+  providerRawStatus?: string | null;
+  providerRawStatusCode?: string | null;
+  shipmentBookedAt?: string | null;
+  canDownloadLabel?: boolean;
+  labelDownloadUrl?: string | null;
+};
+
+export type SellerOrderShipment = {
+  id: string;
+  shipmentNumber?: string;
+  sellerId?: string;
+  subtotalPaise?: number;
+  shippingPaise?: number;
+  codSurchargePaise?: number;
+  deliveryMode?: string;
+  courierProviderCode?: string | null;
+  routedAt?: string | null;
+  routingFailed?: boolean | null;
+  routingFailureReason?: string | null;
+  routingFailureNote?: string | null;
+  routingFirstFailedAt?: string | null;
+  routingLastAttemptAt?: string | null;
+  routingRetryCount?: number | null;
+  routingPermanentFailureAt?: string | null;
+  status?: string;
+  assignmentStatus?: string | null;
+  assignmentExpiresAt?: string | null;
+  deliveryPartnerUserId?: string | null;
+  partnerName?: string | null;
+  partnerPhone?: string | null;
+  trackingReference?: string | null;
+  estimatedDeliveryDate?: string | null;
+  deliveryNote?: string | null;
+  codCollectionSource?: string | null;
+  codCollectionStatus?: string | null;
+  codCollectedAmountPaise?: number | null;
+  codCollectedAt?: string | null;
+  codVerifiedAt?: string | null;
+  sellerCashReceivable?: SellerCashReceivableSummary | null;
+  packages?: SellerOrderPackage[];
+};
+
+export type SellerCashReceivableSummary = {
+  id: string;
+  receivableNumber: string;
+  source: "STORE_PICKUP_COD" | "MANUAL_TRANSPORT_COD";
+  status: "OPEN" | "PARTIALLY_OFFSET" | "OFFSET_SCHEDULED" | "SETTLED" | "WAIVED" | "CANCELLED";
+  grossCashCollectedPaise: number;
+  platformDuePaise: number;
+  offsetPaise: number;
+  settledPaise: number;
+  waivedPaise: number;
+  outstandingPaise: number;
+  currency: string;
+  openedAt?: string;
+  settledAt?: string | null;
+  waivedAt?: string | null;
+};
+
+export type SellerOrderDeliveryDetail = {
+  deliveryMode?: string;
+  partnerName?: string | null;
+  partnerPhone?: string | null;
+  deliveryPartner?: {
+    id: string;
+    fullName?: string | null;
+    phone?: string | null;
+    vehicleNumber?: string | null;
+  } | null;
+  assignmentStatus?: string | null;
+  assignedAt?: string | null;
+  acceptedAt?: string | null;
+  assignmentExpiresAt?: string | null;
+  trackingReference?: string | null;
+  estimatedDeliveryDate?: string | null;
+  deliveryNote?: string | null;
+  receiverName?: string | null;
+  proofNote?: string | null;
+  proofReference?: string | null;
+  status?: string;
+  codCollectionStatus?: string | null;
+  codCollectedAmountPaise?: number | null;
+  codCollectedAt?: string | null;
+  codCollectionNote?: string | null;
+  codVerifiedAt?: string | null;
+  codVerificationNote?: string | null;
+  events?: Array<{
+    id: string;
+    oldStatus?: string | null;
+    newStatus?: string;
+    note?: string | null;
+    createdAt?: string;
+  }>;
+};
+
+export type SellerSalesReport = {
+  currency?: string;
+  baseCurrency?: string;
+  fxRate?: number;
+  seller?: {
+    id: string;
+    primaryCapability?: SellerCapability;
+    enabledCapabilities?: SellerCapability[];
+  };
+  summary: {
+    orderCount: number;
+    totalSalesPaise: number;
+    commissionPaise: number;
+    gstOnCommissionPaise?: number;
+    tdsPaise?: number;
+    tcsPaise?: number;
+    platformFeePaise?: number;
+    netSalesPaise: number;
+    products: number;
+    lowStockCount: number;
+    b2bEnquiries: number;
+    b2bOrders?: number;
+    b2bOrderValuePaise?: number;
+    serviceBookings?: number;
+    serviceRevenuePaise?: number;
+    serviceListings?: number;
+  };
+  b2b?: {
+    enquiryCount: number;
+    orderCount: number;
+    byEnquiryStatus: Array<{ status: B2BEnquiryStatus; count: number }>;
+  };
+  services?: {
+    listingCount: number;
+    activeListingCount: number;
+    bookingCount: number;
+    totalPayablePaise: number;
+    paidAmountPaise: number;
+    paidPaymentCount: number;
+    paidPaymentPaise: number;
+    byBookingStatus: Array<{
+      status: ServiceBookingStatus;
+      count: number;
+      totalPayablePaise: number;
+      paidAmountPaise: number;
+    }>;
+    recentBookings: Array<{
+      id: string;
+      bookingNumber: string;
+      status: ServiceBookingStatus;
+      scheduledStartAt?: string | null;
+      totalPayablePaise: number;
+      paidAmountPaise: number;
+      currency: string;
+      createdAt?: string;
+      listing?: {
+        id: string;
+        title: string;
+        slug: string;
+      } | null;
+      customer?: {
+        displayName?: string | null;
+        user?: {
+          fullName?: string | null;
+        } | null;
+      } | null;
+    }>;
+  };
+  recentOrders: Array<{
+    id: string;
+    sellerSubtotalPaise: number;
+    sellerStatus: string;
+    createdAt?: string;
+    order: SellerOrder;
+  }>;
+  lowStockProducts: Array<{
+    id: string;
+    sku?: string | null;
+    variantName?: string | null;
+    stockQuantity?: number | null;
+    product: ProductSummary;
+  }>;
+};
+
+export type SellerInventoryVariant = {
+  id: string;
+  sku: string | null;
+  variantName: string | null;
+  stockQuantity: number;
+  product: { id: string; name: string; status: string };
+};
+
+export type SellerInventoryReport = {
+  currency?: string;
+  baseCurrency?: string;
+  fxRate?: number;
+  summary: {
+    productCount: number;
+    activeProductCount: number;
+    variantCount: number;
+    lowStockCount: number;
+  };
+  lowStockVariants: SellerInventoryVariant[];
+  variants: SellerInventoryVariant[];
+  topSoldItems: Array<{
+    productId: string;
+    productName: string;
+    quantitySold: number;
+    revenuePaise: number;
+  }>;
+  splits: Array<{ id: string; sellerSubtotalPaise: number; createdAt: string }>;
+};
+
+export type SellerFinanceReport = {
+  currency?: string;
+  baseCurrency?: string;
+  fxRate?: number;
+  summary: {
+    grossSalesPaise: number;
+    commissionPaise: number;
+    netPayablePaise: number;
+    refundAdjustmentPaise: number;
+    platformFeePaise: number;
+    orderCount: number;
+    pendingPayoutsPaise: number;
+    pendingPayoutsCount: number;
+    paidPayoutsPaise: number;
+    paidPayoutsCount: number;
+    eligiblePaise: number;
+    eligibleCount: number;
+  };
+  recentPayouts: Array<{
+    id: string;
+    payoutNumber: string;
+    status: string;
+    netPayablePaise: number;
+    currency: string;
+    createdAt: string;
+    paidAt: string | null;
+  }>;
+  ledgerEntries: Array<{
+    id: string;
+    entryType: string;
+    description: string;
+    debitPaise: number;
+    creditPaise: number;
+    balanceAfterPaise: number;
+    currency: string;
+    createdAt: string;
+  }>;
+};
+
+export type SellerReturnsReport = {
+  currency?: string;
+  baseCurrency?: string;
+  fxRate?: number;
+  summary: {
+    totalCount: number;
+    approvedCount: number;
+    pendingCount: number;
+    requestedAmountPaise: number;
+    approvedAmountPaise: number;
+    itemCount: number;
+  };
+  byStatus: Array<{
+    status: string;
+    count: number;
+    requestedAmountPaise: number;
+    approvedAmountPaise: number;
+  }>;
+  recentReturns: Array<{
+    id: string;
+    requestNumber: string;
+    status: string;
+    resolution: string;
+    reason: string;
+    requestedAmountPaise: number;
+    approvedAmountPaise: number;
+    requestedAt: string;
+    order: { orderNumber: string };
+  }>;
+};
+
+export type SellerPayoutAvailability = {
+  requestEnabled: boolean;
+  minimumPayoutPaise?: number;
+  sellerReady: boolean;
+  hasPayoutMethod: boolean;
+  eligibleSplitCount: number;
+  eligibleB2BOrderCount?: number;
+  eligibleServiceSettlementCount?: number;
+  serviceReceivableOffsetPaise?: number;
+  ledgerDebtOffsetPaise?: number;
+  pendingPayoutsPaise?: number;
+  paidPayoutsPaise?: number;
+  periodFrom?: string | null;
+  periodTo?: string | null;
+  grossSalesPaise?: number;
+  commissionPaise?: number;
+  gstOnCommissionPaise?: number;
+  tdsPaise?: number;
+  tcsPaise?: number;
+  platformFeePaise?: number;
+  refundAdjustmentPaise?: number;
+  netPayablePaise: number;
+  sellerCashReceivableOffsetPaise?: number;
+  sellerCashReceivableOutstandingPaise?: number;
+  currency: string;
+  canRequest: boolean;
+  blockers: string[];
+};
+
+export type SellerPayout = {
+  id: string;
+  payoutNumber: string;
+  status: "DRAFT" | "PENDING_APPROVAL" | "APPROVED" | "PAID" | "REJECTED" | "CANCELLED" | "HELD";
+  netPayablePaise?: number;
+  currency?: string;
+  createdAt?: string;
+  approvedAt?: string | null;
+  paidAt?: string | null;
+};
+
+export type SellerLedgerEntry = {
+  id: string;
+  entryType?: string;
+  debitPaise: number;
+  creditPaise: number;
+  balanceAfterPaise: number;
+  currency?: string;
+  description?: string | null;
+  createdAt?: string;
+};
+
+export type SellerStatement = {
+  id: string;
+  statementNumber?: string;
+  status?: string;
+  currency?: string;
+  netPayablePaise?: number;
+  periodFrom?: string;
+  periodTo?: string;
+  generatedAt?: string;
+};
+
+export function getSellerProfile(auth: MobileAuthHeaders) {
+  return getJson<SellerProfile>({ path: "/seller/profile", auth });
+}
+
+export function onboardSeller(auth: MobileAuthHeaders, payload: SellerOnboardingPayload) {
+  return postJson<SellerProfile>({ path: "/sellers/register", auth, body: payload });
+}
+
+export function updateSellerProfile(auth: MobileAuthHeaders, payload: SellerProfilePayload) {
+  return patchJson<SellerProfile>({ path: "/seller/profile", auth, body: payload });
+}
+
+export function registerSellerPushToken(
+  auth: MobileAuthHeaders,
+  payload: { appVersion?: string; deviceId?: string; platform: "android" | "ios"; token: string },
+) {
+  return postJson<{ registered: boolean; tokenId: string }>({ path: "/seller/push-tokens", auth, body: payload });
+}
+
+export function revokeSellerPushToken(auth: MobileAuthHeaders, token: string) {
+  return postJson<{ revoked: boolean }>({ path: "/seller/push-tokens/revoke", auth, body: { token } });
+}
+
+export function listSellerProducts(auth: MobileAuthHeaders, query: Record<string, string | number | undefined> = {}) {
+  return getJson<PageResult<ProductSummary>>({ path: "/seller/products", auth, searchParams: query });
+}
+
+export function getSellerProduct(auth: MobileAuthHeaders, productId: string) {
+  return getJson<ProductSummary>({ path: `/seller/products/${encodeURIComponent(productId)}`, auth });
+}
+
+export function listCategories(auth: MobileAuthHeaders) {
+  return getJson<CategorySummary[]>({ path: "/categories", auth });
+}
+
+export function searchHsnMaster(auth: MobileAuthHeaders, query: { search?: string; categoryId?: string; limit?: number }) {
+  return getJson<HsnMasterEntry[]>({ path: "/hsn-master", auth, searchParams: query });
+}
+
+export function searchSacMaster(auth: MobileAuthHeaders, query: { search?: string; limit?: number }) {
+  return getJson<SacMasterEntry[]>({ path: "/sac-master", auth, searchParams: query });
+}
+
+export function createSellerProduct(auth: MobileAuthHeaders, payload: SellerProductPayload) {
+  return postJson<ProductSummary>({ path: "/seller/products", auth, body: payload });
+}
+
+export function updateSellerProduct(auth: MobileAuthHeaders, productId: string, payload: SellerProductUpdatePayload) {
+  return patchJson<ProductSummary>({ path: `/seller/products/${encodeURIComponent(productId)}`, auth, body: payload });
+}
+
+export function archiveSellerProduct(auth: MobileAuthHeaders, productId: string) {
+  return deleteJson<ProductSummary>({ path: `/seller/products/${encodeURIComponent(productId)}`, auth });
+}
+
+export function listSellerOrders(auth: MobileAuthHeaders, query: Record<string, string | number | undefined> = {}) {
+  return getJson<PageResult<SellerOrder>>({ path: "/seller/orders", auth, searchParams: query });
+}
+
+export function getSellerOrder(auth: MobileAuthHeaders, orderNumber: string) {
+  return getJson<SellerOrder>({ path: `/seller/orders/${encodeURIComponent(orderNumber)}`, auth });
+}
+
+export function updateSellerOrderStatus(auth: MobileAuthHeaders, orderNumber: string, payload: SellerOrderStatusPayload) {
+  return patchJson<SellerOrder>({ path: `/seller/orders/${encodeURIComponent(orderNumber)}/status`, auth, body: payload });
+}
+
+export function updateSellerDelivery(auth: MobileAuthHeaders, orderNumber: string, payload: SellerDeliveryPayload) {
+  return patchJson<SellerOrder>({ path: `/seller/orders/${encodeURIComponent(orderNumber)}/delivery`, auth, body: payload });
+}
+
+export function updateSellerPackage(
+  auth: MobileAuthHeaders,
+  packageId: string,
+  payload: {
+    weightGrams?: number;
+    lengthCm?: number;
+    breadthCm?: number;
+    heightCm?: number;
+    markReadyForBooking?: boolean;
+  },
+) {
+  return patchJson<SellerOrderPackage>({ path: `/seller/packages/${encodeURIComponent(packageId)}`, auth, body: payload });
+}
+
+export function getSellerSalesReport(auth: MobileAuthHeaders, query: Record<string, string | number | undefined> = {}) {
+  return getJson<SellerSalesReport>({ path: "/seller/reports/sales", auth, searchParams: query });
+}
+
+export function getSellerInventoryReport(auth: MobileAuthHeaders, query: Record<string, string | number | undefined> = {}) {
+  return getJson<SellerInventoryReport>({ path: "/seller/reports/inventory", auth, searchParams: query });
+}
+
+export function getSellerFinanceReport(auth: MobileAuthHeaders, query: Record<string, string | number | undefined> = {}) {
+  return getJson<SellerFinanceReport>({ path: "/seller/reports/finance", auth, searchParams: query });
+}
+
+export function getSellerReturnsReport(auth: MobileAuthHeaders, query: Record<string, string | number | undefined> = {}) {
+  return getJson<SellerReturnsReport>({ path: "/seller/reports/returns", auth, searchParams: query });
+}
+
+export function getSellerPayoutAvailability(auth: MobileAuthHeaders) {
+  return getJson<SellerPayoutAvailability>({ path: "/seller/finance/payouts/availability", auth });
+}
+
+export function requestSellerPayout(auth: MobileAuthHeaders, payload: { note?: string }) {
+  return postJson<SellerPayout>({ path: "/seller/finance/payout-requests", auth, body: payload });
+}
+
+export function listSellerPayouts(auth: MobileAuthHeaders, query: Record<string, string | number | undefined> = {}) {
+  return getJson<PageResult<SellerPayout>>({ path: "/seller/finance/payouts", auth, searchParams: query });
+}
+
+export function listSellerLedger(auth: MobileAuthHeaders, query: Record<string, string | number | undefined> = {}) {
+  return getJson<PageResult<SellerLedgerEntry>>({ path: "/seller/finance/ledger", auth, searchParams: query });
+}
+
+export function listSellerStatements(auth: MobileAuthHeaders, query: Record<string, string | number | undefined> = {}) {
+  return getJson<PageResult<SellerStatement>>({ path: "/seller/finance/statements", auth, searchParams: query });
+}
+
+// B2B Enquiries
+export type B2BEnquiryStatus =
+  | "SUBMITTED"
+  | "IN_REVIEW"
+  | "RESPONDED"
+  | "NEGOTIATING"
+  | "BUYER_CONFIRMED"
+  | "ADMIN_APPROVED"
+  | "FINALISED"
+  | "CLOSED"
+  | "CANCELLED";
+
+export type B2BEnquiry = {
+  id: string;
+  businessBuyerId?: string | null;
+  productId?: string | null;
+  sellerId?: string | null;
+  quantity?: number | null;
+  message: string;
+  status: B2BEnquiryStatus;
+  businessBuyer?: {
+    id?: string;
+    companyName: string;
+    contactName?: string | null;
+    contactPhone?: string | null;
+    user?: {
+      email?: string | null;
+    } | null;
+    addresses?: Array<SellerAddress>;
+  } | null;
+  product?: ProductSummary | null;
+  seller?: SellerProfile | null;
+  createdAt: string;
+  updatedAt: string;
+  responses?: Array<{
+    id: string;
+    responseMessage: string;
+    quotedPricePaise?: number | null;
+    transportChargePaise?: number | null;
+    transportEta?: string | null;
+    transportNote?: string | null;
+    source?: string;
+    createdAt?: string;
+    responder?: {
+      email?: string | null;
+      fullName?: string | null;
+    } | null;
+  }>;
+  messages?: {
+    items: Array<{
+      id: string;
+      enquiryId: string;
+      senderUserId: string;
+      message: string;
+      createdAt?: string;
+      sender?: {
+        email?: string | null;
+        fullName?: string | null;
+      } | null;
+    }>;
+    nextCursor: string | null;
+  };
+  b2bOrder?: B2BOrder | null;
+};
+
+export type B2BEnquiryResponsePayload = {
+  responseMessage: string;
+  quotedPricePaise?: number;
+};
+
+export function listB2BEnquiries(auth: MobileAuthHeaders, query: Record<string, string | number | undefined> = {}) {
+  return getJson<PageResult<B2BEnquiry>>({ path: "/seller/b2b-enquiries", auth, searchParams: query });
+}
+
+export function getB2BEnquiry(auth: MobileAuthHeaders, enquiryId: string) {
+  return getJson<B2BEnquiry>({
+    path: `/seller/b2b-enquiries/${encodeURIComponent(enquiryId)}`,
+    auth,
+    searchParams: { messageLimit: 50 },
+  });
+}
+
+export function respondToB2BEnquiry(auth: MobileAuthHeaders, enquiryId: string, payload: B2BEnquiryResponsePayload) {
+  return postJson<B2BEnquiry>({ path: `/seller/b2b-enquiries/${encodeURIComponent(enquiryId)}/responses`, auth, body: payload });
+}
+
+// B2B Orders
+export type B2BOrderStatus =
+  | "PROFORMA_ISSUED"
+  | "PO_SUBMITTED"
+  | "PO_UNDER_REVIEW"
+  | "PO_ACCEPTED"
+  | "CREDIT_CLEARANCE_PENDING"
+  | "IN_FULFILMENT"
+  | "PROCUREMENT_IN_PROGRESS"
+  | "PRODUCTION_IN_PROGRESS"
+  | "STOCK_READY"
+  | "PICKING"
+  | "PACKING"
+  | "QC_PENDING"
+  | "PACKED_AND_QC_PASSED"
+  | "TAX_INVOICE_ISSUED"
+  | "E_WAY_READY"
+  | "E_WAY_NOT_REQUIRED"
+  | "DISPATCHED"
+  | "IN_TRANSIT"
+  | "DELIVERED"
+  | "DELIVERY_ACCEPTED"
+  | "DELIVERY_DISPUTED"
+  | "PAYMENT_OVERDUE"
+  | "ON_HOLD"
+  | "FULFILMENT_REVIEW_REQUIRED"
+  | "CLOSED"
+  | "FULFILLED"
+  | "CANCELLED";
+
+export type B2BOrder = {
+  id: string;
+  orderNumber: string;
+  enquiryId: string;
+  businessBuyerId: string;
+  sellerId?: string | null;
+  productId?: string | null;
+  selectedResponseId?: string | null;
+  status: B2BOrderStatus;
+  proformaInvoiceNumber?: string;
+  proformaIssuedAt?: string;
+  proformaExpiresAt?: string | null;
+  taxInvoiceNumber?: string | null;
+  taxInvoiceIssuedAt?: string | null;
+  taxInvoiceFileKey?: string | null;
+  purchaseOrderNumber?: string | null;
+  purchaseOrderFileKey?: string | null;
+  purchaseOrderNote?: string | null;
+  purchaseOrderSubmittedAt?: string | null;
+  purchaseOrderAcceptedAt?: string | null;
+  fulfilledAt?: string | null;
+  quantity: number;
+  unitPricePaise?: number | null;
+  subtotalPaise?: number | null;
+  currency: string;
+  paymentStatus?: "PENDING" | "SUBMITTED_FOR_VERIFICATION" | "PARTIALLY_PAID" | "PAID" | "OVERDUE" | "REFUNDED" | "NOT_REQUIRED";
+  paymentMethod?: "BANK_TRANSFER" | "MANUAL" | "RAZORPAY" | null;
+  buyerPayableAmountPaise?: number | null;
+  paidAmountPaise?: number | null;
+  paymentDueAt?: string | null;
+  settlementStatus?: "NOT_ELIGIBLE" | "ELIGIBLE" | "DRAFTED" | "APPROVED" | "PAID" | "CANCELLED" | "ADJUSTED";
+  sellerPayoutAmountPaise?: number | null;
+  transportMode?: "STORE_PICKUP" | "SELLER_ARRANGED_TRANSPORT";
+  transportStatus?: "NOT_REQUIRED" | "REQUESTED" | "QUOTED" | "READY_FOR_PICKUP" | "DISPATCHED" | "IN_TRANSIT" | "DELIVERED" | "CANCELLED";
+  transportChargePaise?: number | null;
+  transportPartnerName?: string | null;
+  transportPartnerPhone?: string | null;
+  transportTrackingRef?: string | null;
+  transportEta?: string | null;
+  transportPickupAddress?: string | null;
+  transportNote?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  businessBuyer?: B2BEnquiry["businessBuyer"] | null;
+  product?: ProductSummary | null;
+  seller?: SellerProfile | null;
+  selectedResponse?: NonNullable<B2BEnquiry["responses"]>[number] | null;
+  enquiry?: B2BEnquiry | null;
+  events?: Array<{
+    id: string;
+    status: B2BOrderStatus;
+    note?: string | null;
+    createdAt?: string;
+    actor?: {
+      email?: string | null;
+      fullName?: string | null;
+    } | null;
+  }>;
+};
+
+export type B2BOrderDocumentAccess = {
+  documentUrl: string;
+  expiresAt: string;
+};
+
+export function listB2BOrders(auth: MobileAuthHeaders, query: Record<string, string | number | undefined> = {}) {
+  return getJson<PageResult<B2BOrder>>({ path: "/seller/b2b-orders", auth, searchParams: query });
+}
+
+export function getB2BOrder(auth: MobileAuthHeaders, orderNumber: string) {
+  return getJson<B2BOrder>({ path: `/seller/b2b-orders/${encodeURIComponent(orderNumber)}`, auth });
+}
+
+export function getB2BOrderDocumentAccess(auth: MobileAuthHeaders, orderNumber: string) {
+  return getJson<B2BOrderDocumentAccess>({ path: `/seller/b2b-orders/${encodeURIComponent(orderNumber)}/purchase-order/document-access`, auth });
+}
+
+export function getB2BProformaDocumentAccess(auth: MobileAuthHeaders, orderNumber: string) {
+  return getJson<B2BOrderDocumentAccess>({ path: `/seller/b2b-orders/${encodeURIComponent(orderNumber)}/proforma-invoice/document-access`, auth });
+}
+
+export function getB2BTaxInvoiceDocumentAccess(auth: MobileAuthHeaders, orderNumber: string) {
+  return getJson<B2BOrderDocumentAccess>({ path: `/seller/b2b-orders/${encodeURIComponent(orderNumber)}/tax-invoice/document-access`, auth });
+}
+
+// Returns
+export type SellerReturn = {
+  id: string;
+  requestNumber: string;
+  status:
+    | "PENDING_REVIEW"
+    | "AUTO_APPROVED"
+    | "APPROVED"
+    | "PICKUP_PENDING"
+    | "PICKED_UP"
+    | "IN_TRANSIT"
+    | "RECEIVED"
+    | "QC_PASSED"
+    | "QC_FAILED"
+    | "RESOLVED"
+    | "REJECTED"
+    | "CANCELLED";
+  resolution?: "REFUND" | "REPLACEMENT" | "PARTIAL_REFUND" | "REJECTED";
+  reason: string;
+  totalQuantity: number;
+  requestedAmountPaise?: number;
+  approvedAmountPaise?: number;
+  qualityProofKeys?: string[];
+  currency?: string;
+  order: {
+    orderNumber: string;
+    orderStatus?: string;
+    paymentStatus?: string;
+    deliveryStatus?: string;
+  };
+  customerName?: string | null;
+  customerEmail?: string | null;
+  customer?: {
+    id?: string;
+    name?: string | null;
+    email?: string | null;
+    phone?: string | null;
+  };
+  items: Array<{
+    id: string;
+    orderItemId?: string;
+    productName: string;
+    quantity: number;
+    status: string;
+    sellerId?: string;
+    sellerName?: string;
+    variantSnapshot?: string | null;
+    reason?: string;
+    qcNote?: string | null;
+    sellerNote?: string | null;
+  }>;
+  note?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  notes?: Array<{
+    id: string;
+    note: string;
+    sellerId?: string | null;
+    createdAt?: string;
+    createdBy?: { id: string; fullName?: string | null; email?: string | null } | null;
+  }>;
+};
+
+export type SellerReturnListSummary = {
+  total: number;
+  pending: number;
+  approved: number;
+  refunded: number;
+  rejected: number;
+  cancelled: number;
+};
+
+export function listSellerReturns(auth: MobileAuthHeaders, query: Record<string, string | number | undefined> = {}) {
+  return getJson<CursorPageResult<SellerReturn, SellerReturnListSummary>>({
+    path: "/seller/returns",
+    auth,
+    searchParams: query,
+  });
+}
+
+export function getSellerReturn(auth: MobileAuthHeaders, requestNumber: string) {
+  return getJson<SellerReturn>({ path: `/seller/returns/${encodeURIComponent(requestNumber)}`, auth });
+}
+
+export function addSellerReturnNote(auth: MobileAuthHeaders, requestNumber: string, payload: { note: string }) {
+  return postJson<SellerReturn>({ path: `/seller/returns/${encodeURIComponent(requestNumber)}/notes`, auth, body: payload });
+}
+
+export function acceptSellerReturn(auth: MobileAuthHeaders, requestNumber: string, note?: string) {
+  return postJson<SellerReturn>({
+    path: `/seller/returns/${encodeURIComponent(requestNumber)}/accept`,
+    auth,
+    body: note?.trim() ? { note: note.trim() } : {},
+  });
+}
+
+export function rejectSellerReturn(auth: MobileAuthHeaders, requestNumber: string, note?: string) {
+  return postJson<SellerReturn>({
+    path: `/seller/returns/${encodeURIComponent(requestNumber)}/reject`,
+    auth,
+    body: note?.trim() ? { note: note.trim() } : {},
+  });
+}
+
+// Reviews
+export type SellerReview = {
+  id: string;
+  rating: number;
+  title?: string | null;
+  comment?: string | null;
+  status: "PENDING" | "APPROVED" | "REJECTED" | "HIDDEN";
+  product: {
+    id: string;
+    name: string;
+  };
+  customer: {
+    displayName: string;
+  };
+  order: {
+    orderNumber: string;
+  };
+  isVerifiedPurchase: boolean;
+  createdAt: string;
+};
+
+export type SellerReviewSummary = {
+  summary: {
+    reviewCount: number;
+    averageRating: number;
+  };
+  statusCounts: {
+    PENDING: number;
+    APPROVED: number;
+    REJECTED: number;
+    HIDDEN: number;
+  };
+};
+
+export function getSellerReviewSummary(auth: MobileAuthHeaders) {
+  return getJson<SellerReviewSummary>({ path: "/seller/reviews/summary", auth });
+}
+
+export function listSellerReviews(auth: MobileAuthHeaders, query: Record<string, string | number | undefined> = {}) {
+  return getJson<PageResult<SellerReview>>({ path: "/seller/reviews", auth, searchParams: query });
+}
+
+export type ApprovalStatus = "DRAFT" | "PENDING_APPROVAL" | "APPROVED" | "REJECTED";
+export type ServiceListingStatus = "DRAFT" | "INACTIVE" | "ACTIVE" | "ARCHIVED";
+export type ServiceVisitMode = "CUSTOMER_LOCATION" | "PROVIDER_LOCATION" | "REMOTE";
+export type ServicePricingModel = "FIXED_PRICE" | "QUOTE_FIRST" | "INSPECTION_FEE";
+export type ServicePaymentMode = "FULL_PAYMENT" | "ADVANCE_PAYMENT" | "INSPECTION_FEE" | "PAY_AT_VISIT";
+export type ServiceCancellationPolicy = "FLEXIBLE" | "MODERATE" | "STRICT";
+export type ServiceBookingStatus =
+  | "REQUESTED"
+  | "ACCEPTED"
+  | "QUOTE_SENT"
+  | "QUOTE_ACCEPTED"
+  | "QUOTE_REJECTED"
+  | "QUOTE_EXPIRED"
+  | "REJECTED"
+  | "SCHEDULED"
+  | "IN_PROGRESS"
+  | "COMPLETION_SUBMITTED"
+  | "COMPLETION_DISPUTED"
+  | "COMPLETED"
+  | "CLOSED_AFTER_INSPECTION"
+  | "CANCELLED"
+  | "CANCELLED_AFTER_DISPUTE";
+export type ServiceQuoteStatus = "SENT" | "ACCEPTED" | "REJECTED" | "EXPIRED" | "WITHDRAWN";
+export type ServicePaymentPurpose = "INSPECTION_FEE" | "FULL_PAYMENT" | "ADVANCE_PAYMENT" | "FINAL_QUOTE" | "PAY_AT_VISIT";
+export type ServicePaymentProvider = "RAZORPAY" | "COD" | "BANK_TRANSFER" | "MANUAL";
+export type ServicePaymentStatus = "PENDING" | "PAID" | "FAILED" | "REFUNDED" | "NOT_REQUIRED";
+export type ServiceCashCollectionStatus =
+  | "NOT_APPLICABLE"
+  | "RECORDED"
+  | "CUSTOMER_CONFIRMED"
+  | "CUSTOMER_DISPUTED"
+  | "ADMIN_VERIFIED"
+  | "ADMIN_PARTIALLY_VERIFIED"
+  | "REJECTED"
+  | "REOPENED";
+
+export type SellerServiceImage = {
+  id?: string;
+  url: string;
+  altText?: string | null;
+  sortOrder?: number;
+  isPrimary?: boolean;
+};
+
+export type SellerServicePackage = {
+  id?: string;
+  name: string;
+  description?: string | null;
+  pricePaise: number;
+  mrpPaise?: number | null;
+  currency?: string;
+  durationMinutes?: number | null;
+  sortOrder?: number;
+  isActive?: boolean;
+};
+
+export type SellerServiceListing = {
+  id: string;
+  sellerId: string;
+  categoryId: string;
+  title: string;
+  slug: string;
+  description: string;
+  status: ServiceListingStatus;
+  approvalStatus: ApprovalStatus;
+  pricingModel: ServicePricingModel;
+  paymentMode: ServicePaymentMode;
+  cancellationPolicy: ServiceCancellationPolicy;
+  taxClassification: ProductTaxClassification;
+  sacCode?: string | null;
+  gstRatePercent?: number | null;
+  taxReviewRequired?: boolean;
+  taxConfigurationVersion?: number;
+  basePricePaise?: number | null;
+  inspectionFeePaise?: number | null;
+  advanceAmountPaise?: number | null;
+  currency: string;
+  quoteTtlHours?: number;
+  serviceDurationMinutes?: number | null;
+  allowedVisitModes: ServiceVisitMode[];
+  highlights?: string[];
+  inclusions?: string[];
+  exclusions?: string[];
+  requirements?: string[];
+  serviceRating?: number | string | null;
+  serviceReviewCount?: number;
+  category?: CategorySummary | null;
+  packages?: SellerServicePackage[];
+  images?: SellerServiceImage[];
+  areas?: SellerServiceArea[];
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type SellerServicePayload = {
+  categoryId: string;
+  title: string;
+  description: string;
+  pricingModel: ServicePricingModel;
+  paymentMode: ServicePaymentMode;
+  cancellationPolicy?: ServiceCancellationPolicy;
+  taxClassification?: ProductTaxClassification;
+  sacCode?: string;
+  gstRatePercent?: number;
+  basePricePaise?: number;
+  inspectionFeePaise?: number;
+  advanceAmountPaise?: number;
+  currency?: string;
+  quoteTtlHours?: number;
+  serviceDurationMinutes?: number;
+  allowedVisitModes: ServiceVisitMode[];
+  highlights?: string[];
+  inclusions?: string[];
+  exclusions?: string[];
+  requirements?: string[];
+  images?: SellerServiceImage[];
+  packages?: SellerServicePackage[];
+  areas?: SellerServiceArea[];
+};
+
+export type SellerServiceTechnician = {
+  id?: string;
+  sellerId?: string;
+  name: string;
+  phone?: string | null;
+  email?: string | null;
+  skills?: string[];
+  isActive?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type SellerServiceAvailabilityRule = {
+  id?: string;
+  sellerId?: string;
+  dayOfWeek: number;
+  startMinute: number;
+  endMinute: number;
+  capacity: number;
+  note?: string | null;
+  isActive?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type SellerServiceBlockedWindow = {
+  id?: string;
+  sellerId?: string;
+  startsAt: string;
+  endsAt: string;
+  reason?: string | null;
+  isFullDay?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type SellerServiceQuote = {
+  id: string;
+  quoteNumber: string;
+  revisionNumber?: number;
+  status: ServiceQuoteStatus;
+  subtotalPaise: number;
+  totalPaise: number;
+  currency: string;
+  note?: string | null;
+  expiresAt: string;
+  sentAt?: string;
+  lineItems?: Array<{
+    id?: string;
+    lineType?: "SERVICE" | "PRODUCT";
+    description: string;
+    quantity: number;
+    unitPaise: number;
+    totalPaise: number;
+    hsnSacCode?: string | null;
+    taxClassification?: ProductTaxClassification;
+    gstRatePercent?: number | string;
+    uqc?: string;
+    taxableValuePaise?: number;
+    taxTotalPaise?: number;
+    classificationDescriptionSnapshot?: string | null;
+  }>;
+};
+
+export type SellerServicePayment = {
+  id: string;
+  provider: ServicePaymentProvider;
+  purpose: ServicePaymentPurpose;
+  cashCollectionStatus?: ServiceCashCollectionStatus;
+  amountPaise: number;
+  currency: string;
+  status: ServicePaymentStatus;
+  referenceNumber?: string | null;
+  cashCollectionEventId?: string | null;
+  cashCollectedAt?: string | null;
+  paidAt?: string | null;
+  createdAt?: string;
+};
+
+export type SellerServiceBooking = {
+  id: string;
+  bookingNumber: string;
+  status: ServiceBookingStatus;
+  visitMode?: ServiceVisitMode;
+  paymentMode?: ServicePaymentMode;
+  cancellationPolicy?: ServiceCancellationPolicy;
+  scheduledStartAt?: string | null;
+  scheduledEndAt?: string | null;
+  assignedTechnicianId?: string | null;
+  addressSnapshot?: Record<string, unknown> | null;
+  totalPayablePaise: number;
+  paidAmountPaise: number;
+  subtotalPaise?: number;
+  inspectionFeePaise?: number;
+  advanceAmountPaise?: number;
+  sellerTaxRegistrationStatusSnapshot?: "GST_REGISTERED" | "NOT_REGISTERED" | "COMPOSITION";
+  serviceTaxClassificationSnapshot?: ProductTaxClassification;
+  sacCodeSnapshot?: string | null;
+  gstRatePercentSnapshot?: number | string;
+  taxableValuePaise?: number;
+  taxTotalPaise?: number;
+  currency: string;
+  customerIssue: string;
+  customerNote?: string | null;
+  providerNote?: string | null;
+  cancellationReason?: string | null;
+  completionNote?: string | null;
+  completionImages?: string[];
+  completionProofKeys?: string[];
+  completionSubmittedAt?: string | null;
+  completionConfirmedAt?: string | null;
+  listing?: SellerServiceListing | { title?: string | null };
+  package?: SellerServicePackage | null;
+  quotes?: SellerServiceQuote[];
+  payments?: SellerServicePayment[];
+  customer?: { displayName?: string | null; user?: { fullName?: string | null; phone?: string | null; email?: string | null } | null } | null;
+  assignedTechnician?: SellerServiceTechnician | null;
+  technicianEnRouteAt?: string | null;
+  technicianArrivedAt?: string | null;
+  technicianCheckInAt?: string | null;
+  technicianCheckOutAt?: string | null;
+  technicianFieldStatusNote?: string | null;
+  technicianFieldProofKeys?: string[];
+  reviews?: SellerServiceReview[];
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type SellerServiceCalendar = {
+  availabilityRules: SellerServiceAvailabilityRule[];
+  blockedWindows: SellerServiceBlockedWindow[];
+  technicians: SellerServiceTechnician[];
+  bookings: SellerServiceBooking[];
+  diagnostics?: {
+    hasCustomAvailability?: boolean;
+    scheduledBookingCount?: number;
+    unscheduledBookingCount?: number;
+  };
+};
+
+export type SellerServiceCalendarPayload = {
+  availabilityRules?: SellerServiceAvailabilityRule[];
+  blockedWindows?: SellerServiceBlockedWindow[];
+  technicians?: SellerServiceTechnician[];
+};
+
+export type SellerServiceReview = {
+  id: string;
+  rating: number;
+  body?: string | null;
+  isVisible?: boolean;
+  createdAt?: string;
+  listing?: { title?: string | null };
+  booking?: { bookingNumber?: string | null };
+  customer?: { displayName?: string | null; user?: { fullName?: string | null } | null } | null;
+  reply?: { body: string; createdAt?: string } | null;
+};
+
+export type SellerServiceListingPage = PageResult<SellerServiceListing> & {
+  summary?: {
+    listingCount: number;
+    liveCount: number;
+    pendingApprovalCount: number;
+  };
+};
+
+export function listSellerServiceBookings(auth: MobileAuthHeaders, query: Record<string, string | number | undefined> = {}) {
+  return getJson<PageResult<SellerServiceBooking>>({ path: "/seller/service-bookings", auth, searchParams: query });
+}
+
+export function listSellerServices(auth: MobileAuthHeaders, query: Record<string, string | number | undefined> = {}) {
+  return getJson<SellerServiceListingPage>({ path: "/seller/services", auth, searchParams: query });
+}
+
+export function getSellerService(auth: MobileAuthHeaders, serviceId: string) {
+  return getJson<SellerServiceListing>({ path: `/seller/services/${encodeURIComponent(serviceId)}`, auth });
+}
+
+export function createSellerService(auth: MobileAuthHeaders, payload: SellerServicePayload) {
+  return postJson<SellerServiceListing>({ path: "/seller/services", auth, body: payload });
+}
+
+export function updateSellerService(auth: MobileAuthHeaders, serviceId: string, payload: SellerServicePayload) {
+  return patchJson<SellerServiceListing>({ path: `/seller/services/${encodeURIComponent(serviceId)}`, auth, body: payload });
+}
+
+export function archiveSellerService(auth: MobileAuthHeaders, serviceId: string) {
+  return deleteJson<{ deleted: boolean }>({ path: `/seller/services/${encodeURIComponent(serviceId)}`, auth });
+}
+
+export function getSellerServiceBooking(auth: MobileAuthHeaders, bookingNumber: string) {
+  return getJson<SellerServiceBooking>({ path: `/seller/service-bookings/${encodeURIComponent(bookingNumber)}`, auth });
+}
+
+export function getSellerServiceCalendar(auth: MobileAuthHeaders) {
+  return getJson<SellerServiceCalendar>({ path: "/seller/service-calendar", auth });
+}
+
+export function updateSellerServiceCalendar(auth: MobileAuthHeaders, payload: SellerServiceCalendarPayload) {
+  return patchJson<SellerServiceCalendar>({ path: "/seller/service-calendar", auth, body: payload });
+}
+
+export function acceptSellerServiceBooking(
+  auth: MobileAuthHeaders,
+  bookingNumber: string,
+  payload: { note?: string; scheduledStartAt?: string; assignedTechnicianId?: string },
+) {
+  return patchJson<SellerServiceBooking>({
+    path: `/seller/service-bookings/${encodeURIComponent(bookingNumber)}/accept`,
+    auth,
+    body: payload,
+  });
+}
+
+export function rescheduleSellerServiceBooking(
+  auth: MobileAuthHeaders,
+  bookingNumber: string,
+  payload: { scheduledStartAt: string; assignedTechnicianId?: string; note?: string },
+) {
+  return patchJson<SellerServiceBooking>({
+    path: `/seller/service-bookings/${encodeURIComponent(bookingNumber)}/reschedule`,
+    auth,
+    body: payload,
+  });
+}
+
+export function rejectSellerServiceBooking(auth: MobileAuthHeaders, bookingNumber: string, payload: { reason: string }) {
+  return patchJson<SellerServiceBooking>({
+    path: `/seller/service-bookings/${encodeURIComponent(bookingNumber)}/reject`,
+    auth,
+    body: payload,
+  });
+}
+
+export function cancelSellerServiceBooking(auth: MobileAuthHeaders, bookingNumber: string, payload: { reason: string }) {
+  return patchJson<SellerServiceBooking>({
+    path: `/seller/service-bookings/${encodeURIComponent(bookingNumber)}/cancel`,
+    auth,
+    body: payload,
+  });
+}
+
+export function sendSellerServiceQuote(
+  auth: MobileAuthHeaders,
+  bookingNumber: string,
+  payload: {
+    lineItems: Array<{
+      lineType?: "SERVICE" | "PRODUCT";
+      description: string;
+      quantity?: number;
+      unitPaise: number;
+      hsnSacCode?: string;
+      taxClassification?: ProductTaxClassification;
+      gstRatePercent?: number;
+      uqc?: string;
+    }>;
+    note?: string;
+    ttlHours?: number;
+  },
+) {
+  return postJson<SellerServiceBooking>({
+    path: `/seller/service-bookings/${encodeURIComponent(bookingNumber)}/quotes`,
+    auth,
+    body: payload,
+  });
+}
+
+export function withdrawSellerServiceQuote(auth: MobileAuthHeaders, bookingNumber: string, payload: { note?: string } = {}) {
+  return patchJson<SellerServiceBooking>({
+    path: `/seller/service-bookings/${encodeURIComponent(bookingNumber)}/quotes/withdraw`,
+    auth,
+    body: payload,
+  });
+}
+
+export function updateSellerServiceFieldStatus(
+  auth: MobileAuthHeaders,
+  bookingNumber: string,
+  payload: { status: "EN_ROUTE" | "ARRIVED" | "CHECKED_IN" | "CHECKED_OUT"; latitude?: number; longitude?: number; note?: string; fieldProofKeys?: string[] },
+) {
+  return patchJson<SellerServiceBooking>({
+    path: `/seller/service-bookings/${encodeURIComponent(bookingNumber)}/field-status`,
+    auth,
+    body: payload,
+  });
+}
+
+export function markSellerServiceInProgress(auth: MobileAuthHeaders, bookingNumber: string) {
+  return patchJson<SellerServiceBooking>({
+    path: `/seller/service-bookings/${encodeURIComponent(bookingNumber)}/in-progress`,
+    auth,
+    body: {},
+  });
+}
+
+export function submitSellerServiceCompletion(
+  auth: MobileAuthHeaders,
+  bookingNumber: string,
+  payload: { completionNote: string; completionImages?: string[]; completionProofKeys?: string[] },
+) {
+  return patchJson<SellerServiceBooking>({
+    path: `/seller/service-bookings/${encodeURIComponent(bookingNumber)}/submit-completion`,
+    auth,
+    body: payload,
+  });
+}
+
+export function recordSellerServicePayment(
+  auth: MobileAuthHeaders,
+  bookingNumber: string,
+  payload: {
+    provider: ServicePaymentProvider;
+    purpose: ServicePaymentPurpose;
+    amountPaise: number;
+    referenceNumber?: string;
+    markPaid?: boolean;
+  },
+) {
+  return postJson<SellerServicePayment>({
+    path: `/seller/service-bookings/${encodeURIComponent(bookingNumber)}/payments`,
+    auth,
+    body: payload,
+  });
+}
+
+export function recordSellerServiceCashCollection(
+  auth: MobileAuthHeaders,
+  bookingNumber: string,
+  payload: {
+    amountPaise: number;
+    purpose?: ServicePaymentPurpose;
+    idempotencyKey?: string;
+    cashCollectionEventId?: string;
+    attemptNumber?: number;
+    note?: string;
+  },
+) {
+  return postJson<SellerServicePayment>({
+    path: `/seller/service-bookings/${encodeURIComponent(bookingNumber)}/cash-collections`,
+    auth,
+    body: payload,
+  });
+}
+
+export function listSellerServiceReviews(auth: MobileAuthHeaders, query: Record<string, string | number | undefined> = {}) {
+  return getJson<PageResult<SellerServiceReview>>({ path: "/seller/service-reviews", auth, searchParams: query });
+}
+
+export function replyToSellerServiceReview(auth: MobileAuthHeaders, reviewId: string, payload: { body: string }) {
+  return postJson<SellerServiceReview>({
+    path: `/seller/service-reviews/${encodeURIComponent(reviewId)}/reply`,
+    auth,
+    body: payload,
+  });
+}
+
+// Coupons
+export type SellerCouponParticipation = {
+  id: string;
+  couponId: string;
+  status: "PENDING" | "ACCEPTED" | "DECLINED" | "REMOVED";
+  lockedAt?: string | null;
+  coupon: {
+    id: string;
+    code: string;
+    title: string;
+    status: "ACTIVE" | "ARCHIVED";
+    discountType: "PERCENTAGE" | "FIXED" | "FREE_SHIPPING";
+    discountValueBps?: number | null;
+    discountAmountPaise?: number | null;
+    fundingSource: "PLATFORM_FUNDED" | "SELLER_FUNDED";
+    redemptions?: Array<{
+      id: string;
+      sellerFundedDiscountPaise: number;
+    }> | null;
+  };
+};
+
+export function listSellerCoupons(auth: MobileAuthHeaders, query: Record<string, string | number | undefined> = {}) {
+  return getJson<PageResult<SellerCouponParticipation>>({ path: "/seller/coupons", auth, searchParams: query });
+}
+
+export function acceptSellerCoupon(auth: MobileAuthHeaders, couponId: string) {
+  return postJson<SellerCouponParticipation>({ path: `/seller/coupons/${encodeURIComponent(couponId)}/accept`, auth });
+}
+
+export function declineSellerCoupon(auth: MobileAuthHeaders, couponId: string) {
+  return postJson<SellerCouponParticipation>({ path: `/seller/coupons/${encodeURIComponent(couponId)}/decline`, auth });
+}
+
+// Deals
+export type SellerDeal = {
+  id: string;
+  title: string;
+  description?: string | null;
+  category?: {
+    id: string;
+    name: string;
+  } | null;
+  discountBps: number;
+  startsAt: string;
+  endsAt: string;
+  joinDeadline: string;
+  sellerParticipation?: {
+    status: "PENDING" | "ACCEPTED" | "DECLINED";
+  } | null;
+  sellerEligibleProductCount?: number | null;
+  eligibleProducts?: Array<{
+    id: string;
+    name: string;
+    imageUrl?: string | null;
+    pricePaise: number;
+  }> | null;
+  productEnrollments?: Array<{
+    id: string;
+    productId: string;
+    status: "ENROLLED" | "REMOVED";
+  }> | null;
+};
+
+export function listSellerDeals(auth: MobileAuthHeaders) {
+  return getJson<{ items: SellerDeal[] }>({ path: "/seller/deals", auth });
+}
+
+export function getSellerDeal(auth: MobileAuthHeaders, dealId: string) {
+  return getJson<SellerDeal>({ path: `/seller/deals/${encodeURIComponent(dealId)}`, auth });
+}
+
+export function acceptSellerDeal(auth: MobileAuthHeaders, dealId: string) {
+  return postJson<SellerDeal>({ path: `/seller/deals/${encodeURIComponent(dealId)}/accept`, auth });
+}
+
+export function declineSellerDeal(auth: MobileAuthHeaders, dealId: string) {
+  return postJson<SellerDeal>({ path: `/seller/deals/${encodeURIComponent(dealId)}/decline`, auth });
+}
+
+export function enrollSellerDealProducts(auth: MobileAuthHeaders, dealId: string, productIds: string[]) {
+  return postJson<SellerDeal>({ path: `/seller/deals/${encodeURIComponent(dealId)}/products`, auth, body: { productIds } });
+}
+
+export function removeSellerDealProduct(auth: MobileAuthHeaders, dealId: string, productId: string) {
+  return deleteJson<SellerDeal>({ path: `/seller/deals/${encodeURIComponent(dealId)}/products/${encodeURIComponent(productId)}`, auth });
+}
+
+// Subscription
+export type SellerSubscriptionPlan = {
+  id: string;
+  code?: string;
+  name: string;
+  description?: string | null;
+  pricePaise: number;
+  currency?: string;
+  billingCycle: "MONTHLY" | "YEARLY" | "LIFETIME";
+  trialDays: number;
+  features?: string[];
+  isDefault?: boolean;
+  isActive: boolean;
+  productLimit?: number | null;
+  featuredProductLimit?: number | null;
+  b2bEnquiryLimit?: number | null;
+  commissionDiscountBps?: number | null;
+};
+
+export type SellerSubscriptionStatus = "TRIALING" | "ACTIVE" | "PENDING_PAYMENT" | "EXPIRED" | "CANCELLED";
+export type SellerPaymentStatus = "PENDING" | "PAID" | "FAILED" | "REFUNDED" | "NOT_REQUIRED";
+
+export type SellerSubscriptionPayment = {
+  id: string;
+  amountPaise: number;
+  currency?: string;
+  status: SellerPaymentStatus;
+  paidAt?: string | null;
+  failedAt?: string | null;
+  createdAt?: string;
+};
+
+export type SellerSubscription = {
+  id: string;
+  plan?: SellerSubscriptionPlan | null;
+  status: SellerSubscriptionStatus;
+  currentPeriodEnd?: string | null;
+  nextBillingAt?: string | null;
+  provider?: string | null;
+  providerSubscriptionId?: string | null;
+  providerStatus?: string | null;
+  cancelAtPeriodEnd?: boolean;
+  payments?: SellerSubscriptionPayment[];
+  createdAt: string;
+};
+
+export type SellerSubscriptionSummary = {
+  sellerId: string;
+  subscriptionStatus: SellerSubscriptionStatus;
+  subscriptionStartedAt?: string | null;
+  subscriptionCurrentPeriodEnd?: string | null;
+  plan?: SellerSubscriptionPlan | null;
+  currentSubscription?: SellerSubscription | null;
+  payments?: SellerSubscriptionPayment[];
+  billing?: {
+    requiresPayment: boolean;
+    canAuthorize: boolean;
+    canCancel: boolean;
+    gracePeriodEndsAt?: string | null;
+    cancelAtPeriodEnd: boolean;
+    providerStatus?: string | null;
+    lastPaymentStatus?: SellerPaymentStatus | null;
+    paymentFailureCount: number;
+  };
+};
+
+export function getSellerSubscription(auth: MobileAuthHeaders) {
+  return getJson<SellerSubscriptionSummary>({ path: "/seller/subscription", auth });
+}
+
+export function cancelSellerSubscription(auth: MobileAuthHeaders) {
+  return postJson<SellerSubscriptionSummary>({ path: "/seller/subscription/cancel", auth });
+}
+
+export type SellerAccountDeletionRequest = {
+  id: string;
+  status: string;
+  createdAt?: string;
+};
+
+export function requestSellerAccountDeletion(auth: MobileAuthHeaders) {
+  return postJson<SellerAccountDeletionRequest>({
+    path: "/support-requests/authenticated",
+    auth,
+    body: {
+      topic: "SELLER",
+      requesterType: "SELLER",
+      preferredContactChannel: "EMAIL",
+      subject: "Seller account deletion request",
+      message:
+        "Please delete my 1HandIndia seller account and associated personal data. I understand that legally required tax, payout, transaction, fraud-prevention, and audit records may be retained for the required period.",
+    },
+  });
+}

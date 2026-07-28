@@ -1,0 +1,187 @@
+import { Body, Controller, Get, Header, Inject, Param, Put, Query } from "@nestjs/common";
+import { ApiOperation, ApiTags } from "@nestjs/swagger";
+import { RoleCode } from "@indihub/database";
+import { CurrentUser } from "../auth/decorators/current-user.decorator";
+import { Public } from "../auth/decorators/public.decorator";
+import { Roles } from "../auth/decorators/roles.decorator";
+import type { RequestUser } from "../auth/types/indihub-request";
+import {
+  UpsertMaintenanceSettingsDto,
+  UpsertSeoAnalyticsSettingsDto,
+  SettingsQueryDto,
+  UpsertCheckoutPlatformFeeDto,
+  UpsertContactSettingsDto,
+  UpsertDeliveryPartnerPayoutSettingsDto,
+  UpsertEmailSettingDto,
+  UpsertGstSettingsDto,
+  UpsertMapRoutingSettingsDto,
+  UpsertReturnPolicySettingsDto,
+  UpsertSettingDto,
+} from "./dto/settings.dto";
+import { SettingsService } from "./settings.service";
+
+@ApiTags("Admin Settings")
+@Roles(RoleCode.ADMIN)
+@Controller("admin/settings")
+export class SettingsController {
+  constructor(@Inject(SettingsService) private readonly settingsService: SettingsService) {}
+
+  @Get()
+  @ApiOperation({ summary: "List platform settings." })
+  listSettings(@Query() query: SettingsQueryDto) {
+    return this.settingsService.listSettings(query);
+  }
+
+  @Get("email/current")
+  @ApiOperation({ summary: "Read email provider setting." })
+  getEmailSetting() {
+    return this.settingsService.getEmailSetting();
+  }
+
+  @Put("email/current")
+  @ApiOperation({ summary: "Update email provider setting." })
+  upsertEmailSetting(@CurrentUser() actor: RequestUser, @Body() dto: UpsertEmailSettingDto) {
+    return this.settingsService.upsertEmailSetting(actor, dto);
+  }
+
+  @Get("checkout/platform-fee")
+  @Roles(RoleCode.ADMIN, RoleCode.FINANCE)
+  @ApiOperation({ summary: "Read checkout buyer platform fee settings." })
+  getCheckoutPlatformFee() {
+    return this.settingsService.getCheckoutPlatformFee();
+  }
+
+  @Put("checkout/platform-fee")
+  @Roles(RoleCode.ADMIN, RoleCode.FINANCE)
+  @ApiOperation({ summary: "Atomically update checkout buyer platform fee settings." })
+  upsertCheckoutPlatformFee(@CurrentUser() actor: RequestUser, @Body() dto: UpsertCheckoutPlatformFeeDto) {
+    return this.settingsService.upsertCheckoutPlatformFee(actor, dto);
+  }
+
+  @Get("gst")
+  @ApiOperation({ summary: "Read platform GST identity and manual compliance settings." })
+  getGstSettings() {
+    return this.settingsService.getGstSettings();
+  }
+
+  @Put("gst")
+  @ApiOperation({ summary: "Atomically update platform GST and manual compliance settings." })
+  upsertGstSettings(
+    @CurrentUser() actor: RequestUser,
+    @Body() dto: UpsertGstSettingsDto,
+  ) {
+    return this.settingsService.upsertGstSettings(actor, dto);
+  }
+
+  @Get("returns/policy")
+  @ApiOperation({ summary: "Read customer return and replacement window settings." })
+  getReturnPolicySettings() {
+    return this.settingsService.getReturnPolicySettings();
+  }
+
+  @Put("returns/policy")
+  @ApiOperation({ summary: "Atomically update customer return and replacement windows." })
+  upsertReturnPolicySettings(
+    @CurrentUser() actor: RequestUser,
+    @Body() dto: UpsertReturnPolicySettingsDto,
+  ) {
+    return this.settingsService.upsertReturnPolicySettings(actor, dto);
+  }
+
+  @Get("delivery-partner-payouts")
+  @ApiOperation({ summary: "Read delivery partner payout and earning settings." })
+  getDeliveryPartnerPayoutSettings() {
+    return this.settingsService.getDeliveryPartnerPayoutSettings();
+  }
+
+  @Put("delivery-partner-payouts")
+  @ApiOperation({ summary: "Update delivery partner payout and earning settings." })
+  upsertDeliveryPartnerPayoutSettings(
+    @CurrentUser() actor: RequestUser,
+    @Body() dto: UpsertDeliveryPartnerPayoutSettingsDto,
+  ) {
+    return this.settingsService.upsertDeliveryPartnerPayoutSettings(actor, dto);
+  }
+
+  @Get("maps/routing")
+  @ApiOperation({ summary: "Read map routing provider settings." })
+  getMapRoutingSettings() {
+    return this.settingsService.getMapRoutingSettings();
+  }
+
+  @Put("maps/routing")
+  @ApiOperation({ summary: "Update map routing provider settings." })
+  upsertMapRoutingSettings(
+    @CurrentUser() actor: RequestUser,
+    @Body() dto: UpsertMapRoutingSettingsDto,
+  ) {
+    return this.settingsService.upsertMapRoutingSettings(actor, dto);
+  }
+
+  @Get("contact")
+  @ApiOperation({ summary: "Read public contact/support center settings." })
+  getContactSettings() {
+    return this.settingsService.getContactSettings();
+  }
+
+  @Put("contact")
+  @ApiOperation({ summary: "Update public contact/support center settings." })
+  upsertContactSettings(
+    @CurrentUser() actor: RequestUser,
+    @Body() dto: UpsertContactSettingsDto,
+  ) {
+    return this.settingsService.upsertContactSettings(actor, dto);
+  }
+
+  @Put("maintenance")
+  @ApiOperation({ summary: "Atomically update portal maintenance mode settings." })
+  upsertMaintenanceSettings(
+    @CurrentUser() actor: RequestUser,
+    @Body() dto: UpsertMaintenanceSettingsDto,
+  ) {
+    return this.settingsService.upsertMaintenanceSettings(actor, dto);
+  }
+
+  @Put("seo/analytics")
+  @ApiOperation({ summary: "Atomically update Google analytics, tag, ads, and site verification settings." })
+  upsertSeoAnalyticsSettings(
+    @CurrentUser() actor: RequestUser,
+    @Body() dto: UpsertSeoAnalyticsSettingsDto,
+  ) {
+    return this.settingsService.upsertSeoAnalyticsSettings(actor, dto);
+  }
+
+  @Put(":key")
+  @ApiOperation({ summary: "Create or update one platform setting." })
+  upsertSetting(@CurrentUser() actor: RequestUser, @Param("key") key: string, @Body() dto: UpsertSettingDto) {
+    return this.settingsService.upsertSetting(actor, key, dto);
+  }
+}
+
+@ApiTags("Public Settings")
+@Public()
+@Controller("settings")
+export class PublicSettingsController {
+  constructor(@Inject(SettingsService) private readonly settingsService: SettingsService) {}
+
+  @Get("maintenance")
+  @Header("Cache-Control", "public, max-age=30, stale-while-revalidate=60")
+  @ApiOperation({ summary: "Read public maintenance mode settings." })
+  getMaintenanceSettings() {
+    return this.settingsService.getMaintenanceSettings();
+  }
+
+  @Get("seo")
+  @Header("Cache-Control", "no-store, no-cache, must-revalidate")
+  @ApiOperation({ summary: "Read public Google analytics, tag, ads, and site verification settings." })
+  getSeoSettings() {
+    return this.settingsService.getSeoSettings();
+  }
+
+  @Get("returns")
+  @Header("Cache-Control", "public, max-age=30, stale-while-revalidate=60")
+  @ApiOperation({ summary: "Read customer return and replacement windows." })
+  getReturnPolicySettings() {
+    return this.settingsService.getReturnPolicySettings();
+  }
+}

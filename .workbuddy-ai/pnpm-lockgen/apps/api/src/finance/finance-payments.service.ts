@@ -1,0 +1,936 @@
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  CodCollectionStatus,
+  CourierCodRemittanceStatus,
+  EmailRecipientType,
+  OrderStatus,
+  PaymentProvider,
+  PaymentStatus,
+  Prisma,
+  ServiceSellerReceivableStatus,
+  SellerCashReceivableStatus,
+  SellerOrderStatus,
+  SellerPayoutStatus,
+  SellerSettlementStatus,
+  StatusEventType,
+} from "@indihub/database";
+import type { RequestUser } from "../auth/types/indihub-request";
+import {
+  cursorPageFromTimestampItems,
+  cursorPaginationFromQuery,
+  paginationFromQuery,
+  timestampCursorOrderBy,
+  timestampCursorWhere,
+} from "../common/pagination";
+import { EMAIL_TRIGGER_EVENTS } from "../notifications/email-trigger-catalog";
+import { NotificationsService } from "../notifications/notifications.service";
+import { PrismaService } from "../prisma/prisma.service";
+import {
+  FinanceOfflinePaymentVerificationDecision,
+  FinanceOfflinePaymentVerificationDto,
+  FinancePaymentCollectionQueryDto,
+} from "./dto/finance.dto";
+import { FinanceCalculatorService } from "./finance-calculator.service";
+
+const offlinePaymentProviders = [PaymentProvider.BANK_TRANSFER, PaymentProvider.MANUAL] as const;
+
+@Injectable()
+export class FinancePaymentsService {
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(NotificationsService) private readonly notifications: NotificationsService,
+    @Inject(FinanceCalculatorService) private readonly financeCalculator: FinanceCalculatorService,
+  ) {}
+
+  async dashboard() {
+    const [
+      codPending,
+      codCollected,
+      bankTransferPending,
+      manualPending,
+      onlinePaid,
+      settlementDue,
+      payoutPending,
+      payoutPaid,
+      serviceReceivableOpen,
+      serviceReceivableDisputed,
+      serviceReceivableSettled,
+      sellerCashReceivableOpen,
+      sellerCashReceivableSettled,
+      recentPayments,
+    ] = await Promise.all([
+      this.codPendingMetric(),
+      this.codCollectionMetric({
+        codCollectionStatus: CodCollectionStatus.COLLECTED,
+        order: {
+          payments: {
+            some: {
+              OR: [{ provider: PaymentProvider.COD }, { method: "COD" }],
+            },
+          },
+        },
+      }),
+      this.paymentMetric({
+        provider: PaymentProvider.BANK_TRANSFER,
+        status: PaymentStatus.PENDING,
+      }),
+      this.paymentMetric({ provider: PaymentProvider.MANUAL, status: PaymentStatus.PENDING }),
+      this.paymentMetric({ provider: PaymentProvider.RAZORPAY, status: PaymentStatus.PAID }),
+      this.eligibleSettlementDueMetric(),
+      this.prisma.client.sellerPayout.aggregate({
+        where: {
+          status: { in: [SellerPayoutStatus.PENDING_APPROVAL, SellerPayoutStatus.APPROVED] },
+        },
+        _count: { _all: true },
+        _sum: { netPayablePaise: true },
+      }),
+      this.prisma.client.sellerPayout.aggregate({
+        where: { status: SellerPayoutStatus.PAID },
+        _count: { _all: true },
+        _sum: { netPayablePaise: true },
+      }),
+      this.serviceReceivableMetric({
+        status: {
+          in: [
+            ServiceSellerReceivableStatus.OPEN,
+            ServiceSellerReceivableStatus.PARTIALLY_SETTLED,
+            ServiceSellerReceivableStatus.WAIVER_REQUESTED,
+            ServiceSellerReceivableStatus.OFFSET_SCHEDULED,
+          ],
+        },
+      }),
+      this.serviceReceivableMetric({
+        status: ServiceSellerReceivableStatus.DISPUTED,
+      }),
+      this.serviceReceivableMetric({
+        status: {
+          in: [
+            ServiceSellerReceivableStatus.SETTLED,
+            ServiceSellerReceivableStatus.WAIVED,
+            ServiceSellerReceivableStatus.REVERSED,
+            ServiceSellerReceivableStatus.OFFSET_APPLIED,
+          ],
+        },
+      }),
+      this.sellerCashReceivableMetric(
+        {
+          status: {
+            in: [
+              SellerCashReceivableStatus.OPEN,
+              SellerCashReceivableStatus.PARTIALLY_OFFSET,
+              SellerCashReceivableStatus.OFFSET_SCHEDULED,
+            ],
+          },
+        },
+        "outstanding",
+      ),
+      this.sellerCashReceivableMetric(
+        {
+          status: {
+            in: [
+              SellerCashReceivableStatus.SETTLED,
+              SellerCashReceivableStatus.WAIVED,
+            ],
+          },
+        },
+        "platformDue",
+      ),
+      this.recentPayments(),
+    ]);
+
+    return {
+      metrics: {
+        codPending,
+        codCollected,
+        bankTransferPending,
+        manualPending,
+        onlinePaid,
+        settlementDue,
+        payoutPending: this.aggregateMetric(
+          payoutPending._count._all,
+          payoutPending._sum.netPayablePaise,
+        ),
+        payoutPaid: this.aggregateMetric(payoutPaid._count._all, payoutPaid._sum.netPayablePaise),
+        serviceReceivableOpen,
+        serviceReceivableDisputed,
+        serviceReceivableSettled,
+        sellerCashReceivableOpen,
+        sellerCashReceivableSettled,
+      },
+      recentPayments,
+    };
+  }
+
+  async listPaymentCollections(query: FinancePaymentCollectionQueryDto) {
+    const where = this.paymentCollectionWhere(query);
+
+    if (query.cursor) {
+      const { take, cursor } = cursorPaginationFromQuery(query);
+      const cursorWhere = timestampCursorWhere("updatedAt", cursor) as
+        | Prisma.PaymentWhereInput
+        | undefined;
+      const items = await this.prisma.client.payment.findMany({
+        where: cursorWhere ? { AND: [where, cursorWhere] } : where,
+        include: this.paymentCollectionInclude(),
+        orderBy: timestampCursorOrderBy("updatedAt"),
+        take: take + 1,
+      });
+      const pageResult = cursorPageFromTimestampItems(items, take, "updatedAt");
+
+      return {
+        items: pageResult.items.map((payment) => this.toPaymentCollection(payment)),
+        pageInfo: pageResult.pageInfo,
+        limit: take,
+      };
+    }
+
+    const { page, skip, take } = paginationFromQuery(query);
+    const items = await this.prisma.client.payment.findMany({
+      where,
+      include: this.paymentCollectionInclude(),
+      orderBy: timestampCursorOrderBy("updatedAt"),
+      skip,
+      take,
+    });
+    const total = await this.prisma.client.payment.count({ where });
+
+    return {
+      items: items.map((payment) => this.toPaymentCollection(payment)),
+      total,
+      page,
+      limit: take,
+    };
+  }
+
+  async verifyOfflinePayment(
+    actor: RequestUser,
+    orderNumber: string,
+    dto: FinanceOfflinePaymentVerificationDto,
+  ) {
+    const existing = await this.prisma.client.order.findUnique({
+      where: { orderNumber },
+      include: {
+        customer: {
+          include: {
+            user: true,
+          },
+        },
+        deliveryDetail: true,
+        payments: true,
+      },
+    });
+
+    if (!existing) {
+      throw new NotFoundException("Order not found.");
+    }
+
+    const payment = existing.payments.find((item) =>
+      offlinePaymentProviders.includes(item.provider as (typeof offlinePaymentProviders)[number]),
+    );
+    if (!payment) {
+      throw new BadRequestException(
+        "Only bank transfer or manual payment records can be verified here.",
+      );
+    }
+
+    if (
+      existing.paymentStatus !== PaymentStatus.PENDING ||
+      payment.status !== PaymentStatus.PENDING
+    ) {
+      throw new BadRequestException("Only pending offline payments can be verified or rejected.");
+    }
+
+    const isVerified = dto.decision === FinanceOfflinePaymentVerificationDecision.VERIFY;
+    const nextStatus = isVerified ? PaymentStatus.PAID : PaymentStatus.FAILED;
+    const eventType = isVerified
+      ? "finance.offline_payment.verified"
+      : "finance.offline_payment.rejected";
+    const note =
+      dto.note ??
+      (isVerified
+        ? "Offline payment verified by finance."
+        : "Offline payment rejected by finance.");
+    const transactionReference =
+      dto.transactionReference?.trim() || this.paymentReference(payment.rawResponse) || null;
+
+    const orderId = await this.prisma.client.$transaction(async (tx) => {
+      const paymentUpdate = await tx.payment.updateMany({
+        where: { id: payment.id, status: PaymentStatus.PENDING },
+        data: {
+          status: nextStatus,
+          providerPaymentId: transactionReference,
+          rawResponse: this.mergePaymentRawResponse(payment.rawResponse, {
+            financeVerification: {
+              decision: dto.decision,
+              note,
+              transactionReference,
+              verifiedById: actor.id,
+              verifiedAt: new Date().toISOString(),
+            },
+          }),
+        },
+      });
+      if (paymentUpdate.count !== 1) {
+        throw new BadRequestException("Payment status changed. Refresh and try again.");
+      }
+
+      const orderUpdate = await tx.order.updateMany({
+        where: { id: existing.id, paymentStatus: PaymentStatus.PENDING },
+        data: { paymentStatus: nextStatus },
+      });
+      if (orderUpdate.count !== 1) {
+        throw new BadRequestException("Order payment status changed. Refresh and try again.");
+      }
+
+      await tx.paymentEvent.create({
+        data: {
+          paymentId: payment.id,
+          eventType,
+          oldStatus: payment.status,
+          newStatus: nextStatus,
+          payload: {
+            orderNumber: existing.orderNumber,
+            transactionReference,
+            note,
+          },
+        },
+      });
+
+      await tx.orderStatusEvent.create({
+        data: {
+          orderId: existing.id,
+          statusType: StatusEventType.PAYMENT,
+          oldStatus: existing.paymentStatus,
+          newStatus: nextStatus,
+          note,
+          createdById: actor.id,
+        },
+      });
+
+      if (isVerified && existing.orderStatus === OrderStatus.DELIVERED) {
+        await tx.orderSellerSplit.updateMany({
+          where: {
+            orderId: existing.id,
+            sellerStatus: { not: SellerOrderStatus.CANCELLED },
+            payoutId: null,
+          },
+          data: {
+            settlementStatus: SellerSettlementStatus.ELIGIBLE,
+            settlementEligibleAt: new Date(),
+          },
+        });
+      }
+
+      await tx.auditLog.create({
+        data: {
+          actorUserId: actor.id,
+          action: eventType,
+          entityType: "order",
+          entityId: existing.id,
+          oldValue: {
+            paymentStatus: existing.paymentStatus,
+            paymentId: payment.id,
+            provider: payment.provider,
+          },
+          newValue: {
+            paymentStatus: nextStatus,
+            transactionReference,
+            note,
+          },
+        },
+      });
+
+      return existing.id;
+    });
+
+    const order = await this.prisma.client.order.findUnique({
+      where: { id: orderId },
+      include: {
+        customer: {
+          include: {
+            user: true,
+          },
+        },
+        payments: true,
+        deliveryDetail: true,
+      },
+    });
+
+    if (order) {
+      await this.notifications.notifyEvent({
+        eventCode: isVerified
+          ? EMAIL_TRIGGER_EVENTS.PAYMENT_SUCCESS
+          : EMAIL_TRIGGER_EVENTS.PAYMENT_FAILED,
+        recipientType: EmailRecipientType.CUSTOMER,
+        recipient: order.customer.user.email,
+        userId: order.customer.userId,
+        variables: {
+          orderNumber: order.orderNumber,
+          paymentStatus: nextStatus,
+          note,
+        },
+      });
+    }
+
+    return order;
+  }
+
+  async paymentReports(query: FinancePaymentCollectionQueryDto) {
+    const where = this.paymentCollectionWhere(query);
+    const dateRange = this.activityDateRange(query);
+    const codWhere: Prisma.DeliveryDetailWhereInput = dateRange
+      ? {
+          OR: [
+            { codCollectedAt: dateRange },
+            { codCollectedAt: null, order: { createdAt: dateRange } },
+          ],
+        }
+      : {};
+    const settlementWhere: Prisma.OrderSellerSplitWhereInput = dateRange
+      ? {
+          OR: [
+            { settledAt: dateRange },
+            { settlementEligibleAt: dateRange },
+            { createdAt: dateRange },
+          ],
+        }
+      : {};
+    const serviceSettlementWhere: Prisma.ServiceBookingSettlementWhereInput = dateRange
+      ? { updatedAt: dateRange }
+      : {};
+    const payoutWhere: Prisma.SellerPayoutWhereInput = dateRange
+      ? {
+          OR: [
+            { paidAt: dateRange },
+            { approvedAt: dateRange },
+            { createdAt: dateRange },
+          ],
+        }
+      : {};
+    const receivableWhere: Prisma.ServiceSellerReceivableWhereInput = dateRange
+      ? {
+          OR: [
+            { resolvedAt: dateRange },
+            { disputedAt: dateRange },
+            { verifiedAt: dateRange },
+            { createdAt: dateRange },
+          ],
+        }
+      : {};
+    const [
+      byProvider,
+      byPaymentStatus,
+      codByCollectionStatus,
+      bySettlementStatus,
+      byServiceSettlementStatus,
+      byPayoutStatus,
+      serviceReceivablesByStatus,
+      serviceReceivablesByTaxStatus,
+      serviceReceivablesByOffsetPolicy,
+    ] =
+      await Promise.all([
+        this.prisma.client.payment.groupBy({
+          by: ["provider"],
+          where,
+          _count: { _all: true },
+          _sum: { amountPaise: true },
+        }),
+        this.prisma.client.payment.groupBy({
+          by: ["status"],
+          where,
+          _count: { _all: true },
+          _sum: { amountPaise: true },
+        }),
+        this.prisma.client.deliveryDetail.groupBy({
+          by: ["codCollectionStatus"],
+          where: codWhere,
+          _count: { _all: true },
+          _sum: { codCollectedAmountPaise: true },
+        }),
+        this.prisma.client.orderSellerSplit.groupBy({
+          by: ["settlementStatus"],
+          where: settlementWhere,
+          _count: { _all: true },
+          _sum: { sellerSubtotalPaise: true },
+        }),
+        this.prisma.client.serviceBookingSettlement.groupBy({
+          by: ["status"],
+          where: serviceSettlementWhere,
+          _count: { _all: true },
+          _sum: { netPayablePaise: true },
+        }),
+        this.prisma.client.sellerPayout.groupBy({
+          by: ["status"],
+          where: payoutWhere,
+          _count: { _all: true },
+          _sum: { netPayablePaise: true },
+        }),
+        this.prisma.client.serviceSellerReceivable.groupBy({
+          by: ["status"],
+          where: receivableWhere,
+          _count: { _all: true },
+          _sum: { amountDueToPlatformPaise: true },
+        }),
+        this.prisma.client.serviceSellerReceivable.groupBy({
+          by: ["taxAccrualStatus"],
+          where: receivableWhere,
+          _count: { _all: true },
+          _sum: { amountDueToPlatformPaise: true },
+        }),
+        this.prisma.client.serviceSellerReceivable.groupBy({
+          by: ["offsetPolicy"],
+          where: receivableWhere,
+          _count: { _all: true },
+          _sum: { amountDueToPlatformPaise: true },
+        }),
+      ]);
+
+    return {
+      activityBasis: {
+        payments: "Payment created date",
+        codCollections: "Collection date, then order date",
+        orderSettlements: "Settled, eligible, or created date",
+        serviceSettlements: "Last settlement activity",
+        payouts: "Paid, approved, or created date",
+        serviceReceivables: "Resolved, disputed, verified, or created date",
+      },
+      byProvider: byProvider.map((item) =>
+        this.groupMetric(item.provider, item._count._all, item._sum.amountPaise),
+      ),
+      byPaymentStatus: byPaymentStatus.map((item) =>
+        this.groupMetric(item.status, item._count._all, item._sum.amountPaise),
+      ),
+      codByCollectionStatus: codByCollectionStatus.map((item) =>
+        this.groupMetric(
+          item.codCollectionStatus,
+          item._count._all,
+          item._sum.codCollectedAmountPaise,
+        ),
+      ),
+      bySettlementStatus: bySettlementStatus.map((item) =>
+        this.groupMetric(item.settlementStatus, item._count._all, item._sum.sellerSubtotalPaise),
+      ),
+      byServiceSettlementStatus: byServiceSettlementStatus.map((item) =>
+        this.groupMetric(item.status, item._count._all, item._sum.netPayablePaise),
+      ),
+      byPayoutStatus: byPayoutStatus.map((item) =>
+        this.groupMetric(item.status, item._count._all, item._sum.netPayablePaise),
+      ),
+      serviceReceivablesByStatus: serviceReceivablesByStatus.map((item) =>
+        this.groupMetric(item.status, item._count._all, item._sum.amountDueToPlatformPaise),
+      ),
+      serviceReceivablesByTaxStatus: serviceReceivablesByTaxStatus.map((item) =>
+        this.groupMetric(item.taxAccrualStatus, item._count._all, item._sum.amountDueToPlatformPaise),
+      ),
+      serviceReceivablesByOffsetPolicy: serviceReceivablesByOffsetPolicy.map((item) =>
+        this.groupMetric(item.offsetPolicy, item._count._all, item._sum.amountDueToPlatformPaise),
+      ),
+    };
+  }
+
+  private paymentMetric(where: Prisma.PaymentWhereInput) {
+    return this.prisma.client.payment
+      .aggregate({
+        where,
+        _count: { _all: true },
+        _sum: { amountPaise: true },
+      })
+      .then((result) => this.aggregateMetric(result._count._all, result._sum.amountPaise));
+  }
+
+  private async codPendingMetric() {
+    const payments = await this.prisma.client.payment.findMany({
+      where: {
+        provider: PaymentProvider.COD,
+        status: PaymentStatus.PENDING,
+      },
+      select: {
+        amountPaise: true,
+        order: {
+          select: {
+            // payment.amountPaise is in the buyer's currency; COD cash and the
+            // receivable/remittance figures below are INR paise. Use the
+            // order's base total so the subtraction stays in one unit.
+            totalPaise: true,
+            deliveryDetail: {
+              select: {
+                codCollectionStatus: true,
+                codCollectedAmountPaise: true,
+              },
+            },
+            courierCodRemittances: {
+              select: {
+                status: true,
+                remittedAmountPaise: true,
+              },
+            },
+            sellerCashReceivables: {
+              where: {
+                status: { not: SellerCashReceivableStatus.CANCELLED },
+              },
+              select: {
+                grossCashCollectedPaise: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    let count = 0;
+    let amountPaise = 0;
+    for (const payment of payments) {
+      const sellerAccountedPaise = payment.order.sellerCashReceivables.reduce(
+        (sum, receivable) => sum + receivable.grossCashCollectedPaise,
+        0,
+      );
+      const localVerifiedPaise =
+        payment.order.deliveryDetail?.codCollectionStatus === CodCollectionStatus.VERIFIED
+          ? payment.order.deliveryDetail.codCollectedAmountPaise ?? 0
+          : 0;
+      const courierVerifiedPaise = payment.order.courierCodRemittances
+        .filter((remittance) => remittance.status === CourierCodRemittanceStatus.VERIFIED)
+        .reduce((sum, remittance) => sum + (remittance.remittedAmountPaise ?? 0), 0);
+      const pendingPaise = Math.max(
+        0,
+        payment.order.totalPaise - sellerAccountedPaise - localVerifiedPaise - courierVerifiedPaise,
+      );
+      if (pendingPaise > 0) {
+        count += 1;
+        amountPaise += pendingPaise;
+      }
+    }
+
+    return this.aggregateMetric(count, amountPaise);
+  }
+
+  private codCollectionMetric(where: Prisma.DeliveryDetailWhereInput) {
+    return this.prisma.client.deliveryDetail
+      .aggregate({
+        where,
+        _count: { _all: true },
+        _sum: { codCollectedAmountPaise: true },
+      })
+      .then((result) =>
+        this.aggregateMetric(result._count._all, result._sum.codCollectedAmountPaise),
+      );
+  }
+
+  private serviceReceivableMetric(where: Prisma.ServiceSellerReceivableWhereInput) {
+    return this.prisma.client.serviceSellerReceivable
+      .aggregate({
+        where,
+        _count: { _all: true },
+        _sum: { amountDueToPlatformPaise: true },
+      })
+      .then((result) =>
+        this.aggregateMetric(result._count._all, result._sum.amountDueToPlatformPaise),
+      );
+  }
+
+  private sellerCashReceivableMetric(
+    where: Prisma.SellerCashReceivableWhereInput,
+    amount: "outstanding" | "platformDue",
+  ) {
+    return this.prisma.client.sellerCashReceivable
+      .aggregate({
+        where,
+        _count: { _all: true },
+        _sum: amount === "outstanding" ? { outstandingPaise: true } : { platformDuePaise: true },
+      })
+      .then((result) =>
+        this.aggregateMetric(
+          result._count._all,
+          (amount === "outstanding" ? result._sum.outstandingPaise : result._sum.platformDuePaise) ??
+            null,
+        ),
+      );
+  }
+
+  private async eligibleSettlementDueMetric() {
+    const [splits, serviceSettlements] = await Promise.all([
+      this.prisma.client.orderSellerSplit.findMany({
+      where: {
+        payoutId: null,
+        sellerStatus: { not: SellerOrderStatus.CANCELLED },
+        settlementStatus: SellerSettlementStatus.ELIGIBLE,
+        order: {
+          orderStatus: OrderStatus.DELIVERED,
+          paymentStatus: { in: [PaymentStatus.PAID, PaymentStatus.NOT_REQUIRED] },
+        },
+        sellerCashReceivables: {
+          none: {
+            status: { not: SellerCashReceivableStatus.CANCELLED },
+          },
+        },
+      },
+      include: {
+        order: {
+          include: {
+            items: {
+              include: {
+                product: true,
+              },
+            },
+          },
+        },
+      },
+      }),
+      this.prisma.client.serviceBookingSettlement.findMany({
+        where: {
+          payoutId: null,
+          status: SellerSettlementStatus.ELIGIBLE,
+          netPayablePaise: { gt: 0 },
+        },
+      }),
+    ]);
+
+    let amountPaise = 0;
+    for (const split of splits) {
+      const calculation = await this.financeCalculator.calculateSplit(split);
+      amountPaise += calculation.netPayablePaise;
+    }
+    amountPaise += serviceSettlements.reduce((sum, settlement) => sum + settlement.netPayablePaise, 0);
+
+    return this.aggregateMetric(splits.length + serviceSettlements.length, amountPaise);
+  }
+
+  private recentPayments() {
+    return this.prisma.client.payment
+      .findMany({
+        where: {
+          provider: {
+            in: [
+              PaymentProvider.RAZORPAY,
+              PaymentProvider.COD,
+              PaymentProvider.BANK_TRANSFER,
+              PaymentProvider.MANUAL,
+            ],
+          },
+        },
+        include: this.paymentCollectionInclude(),
+        orderBy: { updatedAt: "desc" },
+        take: 8,
+      })
+      .then((payments) => payments.map((payment) => this.toPaymentCollection(payment)));
+  }
+
+  private paymentCollectionWhere(
+    query: FinancePaymentCollectionQueryDto,
+  ): Prisma.PaymentWhereInput {
+    const search = query.search?.trim();
+    const createdAt: Prisma.DateTimeFilter = {
+      ...(query.dateFrom ? { gte: new Date(query.dateFrom) } : {}),
+      ...(query.dateTo ? { lte: new Date(query.dateTo) } : {}),
+    };
+
+    return {
+      ...(query.provider ? { provider: query.provider } : {}),
+      ...(query.paymentStatus ? { status: query.paymentStatus } : {}),
+      ...(Object.keys(createdAt).length ? { createdAt } : {}),
+      ...(search
+        ? {
+            order: {
+              OR: [
+                { orderNumber: { contains: search, mode: "insensitive" } },
+                { customer: { user: { email: { contains: search, mode: "insensitive" } } } },
+                {
+                  customer: { user: { fullName: { contains: search, mode: "insensitive" } } },
+                },
+              ],
+            },
+          }
+        : {}),
+    };
+  }
+
+  private activityDateRange(
+    query: Pick<FinancePaymentCollectionQueryDto, "dateFrom" | "dateTo">,
+  ): Prisma.DateTimeFilter | undefined {
+    if (!query.dateFrom && !query.dateTo) {
+      return undefined;
+    }
+    return {
+      ...(query.dateFrom ? { gte: new Date(query.dateFrom) } : {}),
+      ...(query.dateTo ? { lte: new Date(query.dateTo) } : {}),
+    };
+  }
+
+  private paymentCollectionInclude() {
+    return {
+      events: {
+        orderBy: { createdAt: "desc" as const },
+        take: 5,
+      },
+      order: {
+        include: {
+          customer: {
+            include: {
+              user: true,
+            },
+          },
+          deliveryDetail: {
+            include: {
+              codCollectedBy: true,
+              codVerifiedBy: true,
+            },
+          },
+          sellerSplits: {
+            include: {
+              seller: true,
+            },
+          },
+          sellerCashReceivables: {
+            include: {
+              seller: true,
+              orderShipment: true,
+            },
+          },
+        },
+      },
+    };
+  }
+
+  private toPaymentCollection(
+    payment: Prisma.PaymentGetPayload<{
+      include: ReturnType<FinancePaymentsService["paymentCollectionInclude"]>;
+    }>,
+  ) {
+    return {
+      id: payment.id,
+      provider: payment.provider,
+      method: payment.method,
+      status: payment.status,
+      amountPaise: payment.amountPaise,
+      currency: payment.currency,
+      providerPaymentId: payment.providerPaymentId,
+      providerOrderId: payment.providerOrderId,
+      customerReference: this.paymentReference(payment.rawResponse),
+      bankTransferDetails: this.bankTransferDetails(payment.rawResponse),
+      createdAt: payment.createdAt,
+      updatedAt: payment.updatedAt,
+      order: {
+        id: payment.order.id,
+        orderNumber: payment.order.orderNumber,
+        orderStatus: payment.order.orderStatus,
+        paymentStatus: payment.order.paymentStatus,
+        deliveryStatus: payment.order.deliveryStatus,
+        totalPaise: payment.order.totalPaise,
+        currency: payment.order.currency,
+        createdAt: payment.order.createdAt,
+        customer: {
+          email: payment.order.customer.user.email,
+          phone: payment.order.customer.user.phone,
+          fullName: payment.order.customer.user.fullName,
+        },
+        sellers: payment.order.sellerSplits.map((split) => ({
+          id: split.sellerId,
+          storeName: split.seller.storeName,
+          sellerSubtotalPaise: split.sellerSubtotalPaise,
+          settlementStatus: split.settlementStatus,
+        })),
+        sellerCashReceivables: payment.order.sellerCashReceivables.map((receivable) => ({
+          receivableNumber: receivable.receivableNumber,
+          sellerId: receivable.sellerId,
+          sellerName: receivable.seller.storeName,
+          source: receivable.source,
+          status: receivable.status,
+          grossCashCollectedPaise: receivable.grossCashCollectedPaise,
+          platformDuePaise: receivable.platformDuePaise,
+          outstandingPaise: receivable.outstandingPaise,
+          orderShipment: receivable.orderShipment
+            ? {
+                id: receivable.orderShipment.id,
+                shipmentNumber: receivable.orderShipment.shipmentNumber,
+                deliveryMode: receivable.orderShipment.deliveryMode,
+                shippingPaise: receivable.orderShipment.shippingPaise,
+                codSurchargePaise: receivable.orderShipment.codSurchargePaise,
+                codCollectionStatus: receivable.orderShipment.codCollectionStatus,
+                routingSnapshot: receivable.orderShipment.routingSnapshot,
+                shippingChargeSnapshot: receivable.orderShipment.shippingChargeSnapshot,
+              }
+            : null,
+        })),
+        deliveryDetail: payment.order.deliveryDetail
+          ? {
+              status: payment.order.deliveryDetail.status,
+              codCollectionStatus: payment.order.deliveryDetail.codCollectionStatus,
+              codCollectedAmountPaise: payment.order.deliveryDetail.codCollectedAmountPaise,
+              codCollectedAt: payment.order.deliveryDetail.codCollectedAt,
+              codCollectionNote: payment.order.deliveryDetail.codCollectionNote,
+              codVerifiedAt: payment.order.deliveryDetail.codVerifiedAt,
+              codVerificationNote: payment.order.deliveryDetail.codVerificationNote,
+              codCollectedBy: payment.order.deliveryDetail.codCollectedBy
+                ? {
+                    id: payment.order.deliveryDetail.codCollectedBy.id,
+                    email: payment.order.deliveryDetail.codCollectedBy.email,
+                    fullName: payment.order.deliveryDetail.codCollectedBy.fullName,
+                  }
+                : null,
+              codVerifiedBy: payment.order.deliveryDetail.codVerifiedBy
+                ? {
+                    id: payment.order.deliveryDetail.codVerifiedBy.id,
+                    email: payment.order.deliveryDetail.codVerifiedBy.email,
+                    fullName: payment.order.deliveryDetail.codVerifiedBy.fullName,
+                  }
+                : null,
+            }
+          : null,
+      },
+      events: payment.events.map((event) => ({
+        id: event.id,
+        eventType: event.eventType,
+        oldStatus: event.oldStatus,
+        newStatus: event.newStatus,
+        createdAt: event.createdAt,
+      })),
+    };
+  }
+
+  private aggregateMetric(count: number, amountPaise: number | null) {
+    return {
+      count,
+      amountPaise: amountPaise ?? 0,
+    };
+  }
+
+  private groupMetric(label: string, count: number, amountPaise: number | null) {
+    return {
+      label,
+      count,
+      amountPaise: amountPaise ?? 0,
+    };
+  }
+
+  private paymentReference(rawResponse: Prisma.JsonValue | null) {
+    const record = this.jsonObject(rawResponse);
+    const reference = record?.customerReference ?? record?.transactionReference;
+
+    return typeof reference === "string" && reference.trim() ? reference.trim() : null;
+  }
+
+  private bankTransferDetails(rawResponse: Prisma.JsonValue | null) {
+    const record = this.jsonObject(rawResponse);
+    const details = this.jsonObject(record?.bankTransferDetails);
+
+    return details ?? null;
+  }
+
+  private mergePaymentRawResponse(
+    rawResponse: Prisma.JsonValue | null,
+    extra: Prisma.InputJsonObject,
+  ) {
+    const existing = this.jsonObject(rawResponse);
+
+    return {
+      ...(existing ?? {}),
+      ...extra,
+    } as Prisma.InputJsonObject;
+  }
+
+  private jsonObject(value: unknown): Record<string, unknown> | null {
+    return value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+  }
+}

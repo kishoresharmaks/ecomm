@@ -1,0 +1,49 @@
+import { Body, Controller, Get, Inject, Param, Post, Query } from "@nestjs/common";
+import { ApiCreatedResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
+import { CurrentUser } from "../auth/decorators/current-user.decorator";
+import { Public } from "../auth/decorators/public.decorator";
+import { Roles } from "../auth/decorators/roles.decorator";
+import type { RequestUser } from "../auth/types/indihub-request";
+import { RoleCode } from "@indihub/database";
+import { CreateSellerOnboardingDto } from "./dto/create-seller-registration.dto";
+import { PublicSellerQueryDto } from "./dto/public-seller-query.dto";
+import { UpdateMySellerCapabilitiesDto } from "./dto/seller-profile.dto";
+import { SellersService } from "./sellers.service";
+
+@ApiTags("sellers")
+@Controller("sellers")
+export class SellersController {
+  constructor(@Inject(SellersService) private readonly sellersService: SellersService) {}
+
+  @Post("register")
+  @ApiOperation({ summary: "Register a seller for admin approval." })
+  @ApiCreatedResponse({ description: "Seller registration submitted for admin approval." })
+  registerSeller(@CurrentUser() actor: RequestUser, @Body() dto: CreateSellerOnboardingDto) {
+    return this.sellersService.registerSeller(actor, dto);
+  }
+
+  @Roles(RoleCode.SELLER)
+  @Post("capabilities")
+  @ApiOperation({ summary: "Add retail or service capability to the authenticated seller account." })
+  @ApiCreatedResponse({ description: "Seller capabilities updated." })
+  updateMySellerCapabilities(
+    @CurrentUser() actor: RequestUser,
+    @Body() dto: UpdateMySellerCapabilitiesDto,
+  ) {
+    return this.sellersService.updateMySellerCapabilities(actor, dto);
+  }
+
+  @Public()
+  @Get()
+  @ApiOperation({ summary: "List approved public seller storefronts." })
+  listPublicSellers(@Query() query: PublicSellerQueryDto) {
+    return this.sellersService.listPublicSellers(query);
+  }
+
+  @Public()
+  @Get(":slug")
+  @ApiOperation({ summary: "Read one approved public seller storefront." })
+  getPublicSeller(@Param("slug") slug: string) {
+    return this.sellersService.getPublicSeller(slug);
+  }
+}

@@ -1,0 +1,116 @@
+<div class="page">
+  <header>
+    <div>
+      <p class="eyebrow">Architecture decision overview</p>
+      <h1>1HandIndia scalable system architecture</h1>
+      <p class="lede">Evolve the current platform into an enforced modular monolith with a reliable asynchronous plane. Scale runtimes independently now; extract services only from production evidence.</p>
+    </div>
+    <div class="decision"><span>Decision</span><strong>Modular monolith first</strong><small>Selective extraction later</small></div>
+  </header>
+
+  <section>
+    <h2>Target runtime topology</h2>
+    <div class="flow">
+      <div class="flow-row clients">
+        <article><b>Web experiences</b><small>Customer, Seller Hub, B2B, admin</small></article>
+        <article><b>Mobile clients</b><small>Customer, seller, delivery</small></article>
+        <article><b>Provider ingress</b><small>Payments, courier, identity</small></article>
+      </div>
+      <div class="arrow">↓</div>
+      <article class="wide accent"><b>Managed edge</b><small>DNS · CDN · WAF · TLS · load balancing · coarse distributed limits</small></article>
+      <div class="arrow">↓</div>
+      <div class="flow-row two">
+        <article class="strong"><b>Next.js web replicas</b><small>Stateless presentation and portal boundaries</small></article>
+        <article class="strong"><b>NestJS API replicas</b><small>Validated commands, queries and durable transactions</small></article>
+      </div>
+      <div class="arrow">↓</div>
+      <div class="flow-row three">
+        <article><b>Critical workers</b><small>Payment, order, refund, timeout</small></article>
+        <article><b>Projection workers</b><small>Search, cache, notifications</small></article>
+        <article><b>Batch workers</b><small>Reports, routing, integration</small></article>
+      </div>
+      <div class="arrow">↓</div>
+      <div class="flow-row three data">
+        <article><b>PostgreSQL</b><small>Transactional truth · HA · PITR</small></article>
+        <article><b>Redis</b><small>Optional queue, cache, backplane</small></article>
+        <article><b>Object storage</b><small>Media and private documents</small></article>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Bounded-context map</h2>
+    <div class="contexts">
+      <article><b>Identity and access</b><small>Separate customer and back-office trust</small></article>
+      <article><b>Seller lifecycle</b><small>Onboarding, status, capability</small></article>
+      <article><b>Catalog and inventory</b><small>Products, variants, stock</small></article>
+      <article><b>Pricing and promotions</b><small>Prices, deals, coupons</small></article>
+      <article class="core"><b>Checkout and orders</b><small>Orchestration and order state</small></article>
+      <article><b>Payments</b><small>Provider events and reconciliation</small></article>
+      <article class="core"><b>Ledger and settlements</b><small>Financial truth and payouts</small></article>
+      <article><b>Fulfilment and delivery</b><small>Shipment, routing, proof</small></article>
+      <article><b>Returns and refunds</b><small>Eligibility and state machine</small></article>
+      <article><b>B2B commerce</b><small>Buyer, quote, PO and credit</small></article>
+      <article><b>Services marketplace</b><small>Quote and booking lifecycle</small></article>
+      <article><b>Trust and support</b><small>Cases, chat, reviews, audit</small></article>
+      <article><b>Search and notification</b><small>Async projections and delivery</small></article>
+      <article><b>Configuration and reports</b><small>Settings, compliance, exports</small></article>
+    </div>
+    <p class="rule"><b>Boundary rule:</b> each context owns its writes and invariants. Other contexts use a public command/query interface or durable events—not internal repositories or direct table mutation.</p>
+  </section>
+
+  <section class="split">
+    <div>
+      <h2>Architecture findings</h2>
+      <ul class="findings">
+        <li><b>Strong base:</b> coarse web/API/worker runtimes, explicit feature modules, PostgreSQL transactions, substantial tests and Redis fallback.</li>
+        <li><b>Critical gap:</b> CI validates type/build but does not gate lint and tests.</li>
+        <li><b>High coupling:</b> order and B2B modules import many capabilities; schema ownership is implicit across 209 Prisma models.</li>
+        <li><b>Scale limit:</b> single-host Nginx topology plus per-process memory rate limiting and cache behavior.</li>
+        <li><b>Operations gap:</b> liveness-only health, uneven structured logs, missing correlation and workload SLOs.</li>
+      </ul>
+    </div>
+    <div>
+      <h2>Communication rules</h2>
+      <div class="compare">
+        <article class="sync"><b>Synchronous</b><small>Auth · checkout decision · inventory/price validation · local order transition · payment intent</small></article>
+        <article class="async"><b>Asynchronous</b><small>Notifications · search index · reports · ERP/courier sync · analytics · long jobs</small></article>
+      </div>
+      <p class="rule"><b>Delivery model:</b> transactional outbox + at-least-once delivery + idempotent consumer + bounded retry + terminal recovery.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Service objectives after HA rollout</h2>
+    <div class="metrics">
+      <article><small>General availability</small><b>99.9%</b></article>
+      <article><small>Checkout/payment</small><b>99.95%</b></article>
+      <article><small>Read API p95</small><b>&lt; 400 ms</b></article>
+      <article><small>Command API p95</small><b>&lt; 750 ms</b></article>
+      <article><small>Transactional RPO</small><b>≤ 15 min</b></article>
+      <article><small>Transactional RTO</small><b>≤ 60 min</b></article>
+    </div>
+  </section>
+
+  <section>
+    <h2>90-day control plan</h2>
+    <div class="timeline">
+      <article><span>0–30</span><b>Establish control</b><small>Context ownership, ADRs, CI gates, request IDs, readiness and baselines</small></article>
+      <article><span>31–60</span><b>Make change safe</b><small>Outbox standard, migration replay, split workers, load baseline and restore proof</small></article>
+      <article><span>61–90</span><b>Prove resilience</b><small>Multi-replica drill, Redis/provider failures, queue backlog, DR and debt budget</small></article>
+    </div>
+  </section>
+
+  <section class="extract">
+    <h2>Microservice extraction gate</h2>
+    <div class="checks">
+      <span>Stable bounded context</span><span>Stable contract for two quarters</span><span>No cross-context transaction</span><span>Independent scale ≥ 3×</span><span>Measured blast-radius benefit</span><span>Independent operational owner</span>
+    </div>
+    <p>Likely early candidates, when justified: <b>notifications, report exports and search indexing</b>. Delay payment and ledger extraction until reconciliation and event contracts are operationally mature.</p>
+  </section>
+
+  <footer>Prepared from the 1HandIndia governance documents and repository implementation as of 2026-07-28. Detailed assessment and governance checklist accompany this overview.</footer>
+</div>
+<style>
+:root{--orange:#ED3500;--orange-soft:#fff0eb;--ink:#261c18;--muted:#74645d;--line:#e9ddd7;--paper:#fff;--surface:#fffaf8;--green:#17643b;--green-soft:#eef8f2}*{box-sizing:border-box}body{margin:0;background:#f5f1ef;color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}.page{max-width:1120px;margin:24px auto;background:var(--paper);padding:48px;border:1px solid var(--line);border-radius:18px}header{display:flex;justify-content:space-between;gap:36px;align-items:flex-start;border-bottom:3px solid var(--orange);padding-bottom:28px}h1{font-size:38px;line-height:1.08;margin:6px 0 14px;max-width:720px}h2{font-size:20px;margin:0 0 18px}p{line-height:1.65}.eyebrow{margin:0;color:var(--orange);font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-size:12px}.lede{font-size:17px;color:var(--muted);max-width:760px;margin:0}.decision{min-width:210px;padding:18px;border:1px solid var(--orange);border-radius:14px;background:var(--orange-soft)}.decision span,.decision small{display:block;color:var(--muted);font-size:12px}.decision strong{display:block;color:var(--orange);font-size:18px;margin:6px 0}section{padding:34px 0;border-bottom:1px solid var(--line)}article{border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:14px 16px}article b,article small{display:block}article small{color:var(--muted);margin-top:5px;line-height:1.4}.flow{max-width:920px;margin:auto}.flow-row{display:grid;gap:12px}.flow-row.clients,.flow-row.three{grid-template-columns:repeat(3,1fr)}.flow-row.two{grid-template-columns:repeat(2,1fr)}.flow .wide{text-align:center}.flow .accent{background:var(--orange-soft);border-color:#f7b8a6}.flow .strong{border-color:#e5a08d}.flow .data article{background:#f7faf8;border-color:#ccdfd3}.arrow{text-align:center;color:var(--orange);font-size:20px;height:30px;line-height:30px}.contexts{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.contexts .core{background:var(--orange-soft);border-color:#f7b8a6}.rule{background:#faf7f5;border-left:4px solid var(--orange);padding:12px 16px;margin:16px 0 0}.split{display:grid;grid-template-columns:1.15fr .85fr;gap:32px}.findings{margin:0;padding-left:20px}.findings li{margin-bottom:12px;line-height:1.5}.compare{display:grid;grid-template-columns:1fr 1fr;gap:12px}.compare .sync{background:#fff6f2}.compare .async{background:var(--green-soft);border-color:#bddbc9}.metrics{display:grid;grid-template-columns:repeat(6,1fr);gap:10px}.metrics article{background:#faf7f5}.metrics b{font-size:20px;color:var(--orange);margin-top:7px}.timeline{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.timeline span{display:inline-block;color:var(--orange);font-weight:700;margin-bottom:8px}.timeline b{font-size:16px}.extract{background:#fffaf8;margin:0 -20px;padding:34px 20px;border-radius:14px}.checks{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.checks span{padding:11px 12px;border:1px solid #d9cbc4;border-radius:9px;background:#fff}.checks span:before{content:"✓";color:var(--green);font-weight:700;margin-right:8px}footer{padding-top:24px;color:var(--muted);font-size:12px;line-height:1.5}@media(max-width:800px){.page{margin:0;padding:24px;border-radius:0}header,.split{display:block}.decision{margin-top:20px}.contexts{grid-template-columns:repeat(2,1fr)}.metrics{grid-template-columns:repeat(2,1fr)}.timeline,.checks{grid-template-columns:1fr}.flow-row.clients,.flow-row.three,.flow-row.two{grid-template-columns:1fr}.compare{grid-template-columns:1fr}h1{font-size:30px}}
+</style>

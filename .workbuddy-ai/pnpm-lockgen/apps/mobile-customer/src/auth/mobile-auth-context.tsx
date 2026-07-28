@@ -1,0 +1,390 @@
+import { useAuth, useUser } from "@clerk/clerk-expo";
+import { PropsWithChildren, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { MobileApiError, postNoContent, type MobileAuthHeaders } from "../lib/api";
+import { revokeCurrentCustomerPushToken } from "../features/notifications/use-customer-push-notifications";
+
+const CLERK_TOKEN_RETRY_ATTEMPTS = 10;
+// Per-request reads sit in front of every API call; a missing token there
+// should fail fast (~1 s) instead of stalling the request for 5 s.
+const CLERK_TOKEN_REQUEST_RETRY_ATTEMPTS = 3;
+const CLERK_TOKEN_RETRY_DELAY_MS = 500;
+
+export type MobileCustomerAuthStatus = "loading" | "signed-out" | "syncing" | "ready" | "error";
+
+type MobileCustomerAuthContextValue = {
+  authHeaders: MobileAuthHeaders;
+  authKey: string;
+  enabled: boolean;
+  status: MobileCustomerAuthStatus;
+  error?: string;
+  userProfile: {
+    canChangePassword?: boolean;
+    email?: string;
+    hasGoogleAccount?: boolean;
+    imageUrl?: string;
+    phone?: string;
+    fullName?: string;
+  };
+  refresh: () => void;
+};
+
+const MobileCustomerAuthContext = createContext<MobileCustomerAuthContextValue | null>(null);
+
+export function MobileCustomerAuthProvider({ children }: PropsWithChildren) {
+  const { isLoaded, isSignedIn, userId, getToken, signOut } = useAuth();
+  const { isLoaded: isUserLoaded, user } = useUser();
+  const [bearerToken, setBearerToken] = useState<string | null>(null);
+  const [syncState, setSyncState] = useState<{ status: MobileCustomerAuthStatus; error?: string }>({
+    status: "loading",
+  });
+  const [refreshIndex, setRefreshIndex] = useState(0);
+  const lastSyncedSignatureRef = useRef<string | null>(null);
+  const mountedRef = useRef(false);
+  const getTokenRef = useRef(getToken);
+  const signOutRef = useRef(signOut);
+
+  useEffect(() => {
+    getTokenRef.current = getToken;
+    signOutRef.current = signOut;
+  }, [getToken, signOut]);
+
+  const updateSyncState = useCallback((next: { status: MobileCustomerAuthStatus; error?: string }) => {
+    if (!mountedRef.current) {
+      return;
+    }
+
+    setSyncState((current) => {
+      if (current.status === next.status && current.error === next.error) {
+        return current;
+      }
+
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    mountedRef.current = true;
+
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const readBearerToken = useCallback(
+    async (options?: { skipCache?: boolean }) => {
+      if (!isLoaded || !isSignedIn || !userId) {
+        return null;
+      }
+
+      const token = await readClerkTokenWithRetry(
+        () => getTokenRef.current({ skipCache: Boolean(options?.skipCache) }),
+        CLERK_TOKEN_REQUEST_RETRY_ATTEMPTS,
+      );
+      if (token && mountedRef.current) {
+        setBearerToken((current) => (current === token ? current : token));
+      }
+      return token;
+    },
+    [isLoaded, isSignedIn, userId],
+  );
+
+  const handleUnauthorized = useCallback(
+    (_error: MobileApiError) => {
+      if (!mountedRef.current) {
+        return;
+      }
+
+      setBearerToken(null);
+      updateSyncState({ status: "error", error: "Your session has expired. Please sign in again." });
+      // Revoke the push token before the session dies so a shared device
+      // stops receiving the previous account's notifications.
+      void revokeCurrentCustomerPushToken().finally(() => signOutRef.current());
+    },
+    [updateSyncState],
+  );
+
+  const userProfile = useMemo(() => currentUserPayload(user), [user]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadToken() {
+      if (!isLoaded) {
+        updateSyncState({ status: "loading" });
+        return;
+      }
+
+      if (!isSignedIn || !userId) {
+        setBearerToken(null);
+        lastSyncedSignatureRef.current = null;
+        updateSyncState({ status: "signed-out" });
+        return;
+      }
+
+      updateSyncState({ status: "syncing" });
+      const token = await readClerkTokenWithRetry(() =>
+        getTokenRef.current({ skipCache: refreshIndex > 0 }),
+      );
+      if (!token) {
+        if (!cancelled) {
+          setBearerToken(null);
+          updateSyncState({ status: "error", error: "Your session has expired. Please sign in again." });
+        }
+        return;
+      }
+
+      if (!cancelled) {
+        setBearerToken(token);
+      }
+    }
+
+    void loadToken().catch((error) => {
+      if (!cancelled) {
+        setBearerToken(null);
+        updateSyncState({ status: "error", error: mobileAuthErrorMessage(error) });
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoaded, isSignedIn, refreshIndex, updateSyncState, userId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function syncCurrentCustomer() {
+      if (!bearerToken || !isSignedIn || !userId) {
+        return;
+      }
+
+      if (!isUserLoaded) {
+        updateSyncState({ status: "syncing" });
+        return;
+      }
+
+      if (!userProfile.email && !userProfile.phone) {
+        updateSyncState({ status: "error", error: "Your account needs a verified email address or phone number before it can be used here." });
+        return;
+      }
+
+      const syncSignature = JSON.stringify({
+        userId,
+        refreshIndex,
+        email: userProfile.email ?? "",
+        phone: userProfile.phone ?? "",
+        fullName: userProfile.fullName ?? "",
+      });
+      if (lastSyncedSignatureRef.current === syncSignature) {
+        updateSyncState({ status: "ready" });
+        return;
+      }
+
+      updateSyncState({ status: "syncing" });
+      await postNoContent({
+        path: "/auth/sync-current-user",
+        auth: { bearerToken, getBearerToken: readBearerToken, onUnauthorized: handleUnauthorized },
+        body: {
+          ...(userProfile.email ? { email: userProfile.email } : {}),
+          ...(userProfile.phone ? { phone: userProfile.phone } : {}),
+          ...(userProfile.fullName ? { fullName: userProfile.fullName } : {}),
+          defaultRole: "CUSTOMER",
+        },
+      });
+
+      if (!cancelled) {
+        lastSyncedSignatureRef.current = syncSignature;
+        updateSyncState({ status: "ready" });
+      }
+    }
+
+    void syncCurrentCustomer().catch((error) => {
+      if (!cancelled) {
+        updateSyncState({ status: "error", error: mobileAuthErrorMessage(error) });
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [bearerToken, handleUnauthorized, isSignedIn, isUserLoaded, readBearerToken, refreshIndex, updateSyncState, userId, userProfile.email, userProfile.fullName, userProfile.phone]);
+
+  const refresh = useCallback(() => setRefreshIndex((current) => current + 1), []);
+  const value = useMemo<MobileCustomerAuthContextValue>(
+    () => ({
+      authHeaders:
+        bearerToken && userId
+          ? { bearerToken, getBearerToken: readBearerToken, onUnauthorized: handleUnauthorized }
+          : {},
+      authKey: userId ? `clerk:${userId}` : "clerk:anonymous",
+      enabled: syncState.status === "ready" && Boolean(bearerToken),
+      status: syncState.status,
+      ...(syncState.error ? { error: syncState.error } : {}),
+      userProfile,
+      refresh,
+    }),
+    [bearerToken, handleUnauthorized, readBearerToken, refresh, syncState.error, syncState.status, userId, userProfile],
+  );
+
+  return <MobileCustomerAuthContext.Provider value={value}>{children}</MobileCustomerAuthContext.Provider>;
+}
+
+export function useMobileCustomerAuth() {
+  const context = useContext(MobileCustomerAuthContext);
+  if (!context) {
+    throw new Error("useMobileCustomerAuth must be used inside MobileCustomerAuthProvider.");
+  }
+
+  return context;
+}
+
+export function mobileAuthErrorMessage(error: unknown) {
+  if (error instanceof MobileApiError) {
+    return sanitizedMobileAuthErrorMessage(error.message, error.status);
+  }
+
+  if (error && typeof error === "object" && "errors" in error) {
+    const clerkErrors = (error as { errors?: Array<{ code?: string; longMessage?: string; message?: string }> }).errors;
+    const firstError = clerkErrors?.[0];
+    const firstMessage = firstError?.longMessage ?? firstError?.message;
+    if (firstMessage) {
+      return sanitizedMobileAuthErrorMessage(firstMessage, undefined, firstError?.code);
+    }
+  }
+
+  if (error instanceof Error && error.message.trim()) {
+    return sanitizedMobileAuthErrorMessage(error.message);
+  }
+
+  return "Something went wrong. Please try again.";
+}
+
+function sanitizedMobileAuthErrorMessage(message: string, status?: number, clerkCode?: string) {
+  const trimmed = message.trim();
+  const lower = trimmed.toLowerCase();
+  const normalizedCode = clerkCode?.trim().toLowerCase();
+
+  if (normalizedCode === "form_code_incorrect") {
+    return "That verification code is incorrect. Check the latest code and try again.";
+  }
+
+  if (normalizedCode === "verification_expired" || normalizedCode === "form_code_expired") {
+    return "The verification code has expired. Request a new code and try again.";
+  }
+
+  if (normalizedCode === "form_identifier_not_found") {
+    return "We could not find an account with those details.";
+  }
+
+  if (normalizedCode === "form_password_incorrect") {
+    return "The email, phone number, or password is incorrect.";
+  }
+
+  if (normalizedCode === "form_password_pwned") {
+    return "Choose a different password. This password has appeared in a known data breach.";
+  }
+
+  if (normalizedCode === "form_password_length_too_short" || normalizedCode === "form_password_not_strong_enough") {
+    return "Choose a stronger password with at least 8 characters.";
+  }
+
+  if (status === 401 || lower.includes("jwt") || lower.includes("bearer") || lower.includes("session token")) {
+    return "Your session has expired. Please sign in again.";
+  }
+
+  if (status === 403 || lower.includes("forbidden")) {
+    return "You do not have access to this action.";
+  }
+
+  if (status && status >= 500) {
+    return "1HandIndia is taking longer than expected. Please try again.";
+  }
+
+  if (/network|timeout|connection|fetch/i.test(trimmed)) {
+    return "We could not reach 1HandIndia. Check your connection and try again.";
+  }
+
+  if (/invalid.*password|incorrect.*password|invalid.*credential|identifier.*password/i.test(trimmed)) {
+    return "The email, phone number, or password is incorrect.";
+  }
+
+  if (/verification|otp|code/i.test(trimmed)) {
+    return lower.includes("expired")
+      ? "The verification code has expired. Please request a new one."
+      : "The verification code could not be confirmed. Check the latest code and try again.";
+  }
+
+  if (/clerk|publishable|secret|token|auth.*provider|unauthorized/i.test(trimmed)) {
+    return "We could not complete sign in. Please try again.";
+  }
+
+  return trimmed || "Something went wrong. Please try again.";
+}
+
+function currentUserPayload(user: ReturnType<typeof useUser>["user"]) {
+  const email = user?.primaryEmailAddress?.emailAddress ?? user?.emailAddresses[0]?.emailAddress;
+  const phone = normalizeIndianPhone(user?.primaryPhoneNumber?.phoneNumber ?? user?.phoneNumbers[0]?.phoneNumber);
+  const fullName = user?.fullName ?? [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim();
+  const userWithAuthDetails = user as
+    | (typeof user & {
+        externalAccounts?: Array<{ provider?: string | null; strategy?: string | null }>;
+        hasImage?: boolean;
+        imageUrl?: string | null;
+        passwordEnabled?: boolean;
+        updatePassword?: (params: {
+          currentPassword: string;
+          newPassword: string;
+          signOutOfOtherSessions?: boolean;
+        }) => Promise<unknown>;
+      })
+    | null
+    | undefined;
+  const externalAccounts = userWithAuthDetails?.externalAccounts as
+    | Array<{ provider?: string | null; strategy?: string | null }>
+    | undefined;
+  const hasGoogleAccount = Boolean(
+    externalAccounts?.some((account) =>
+      `${account.provider ?? ""} ${account.strategy ?? ""}`.toLowerCase().includes("google"),
+    ),
+  );
+  const imageUrl = userWithAuthDetails?.imageUrl?.trim();
+  const canChangePassword = Boolean(!hasGoogleAccount && userWithAuthDetails?.updatePassword);
+
+  return {
+    ...(canChangePassword ? { canChangePassword } : {}),
+    ...(email ? { email } : {}),
+    ...(hasGoogleAccount ? { hasGoogleAccount } : {}),
+    ...(imageUrl ? { imageUrl } : {}),
+    ...(phone ? { phone } : {}),
+    ...(fullName ? { fullName } : {}),
+  };
+}
+
+async function readClerkTokenWithRetry(
+  readToken: () => Promise<string | null>,
+  attempts = CLERK_TOKEN_RETRY_ATTEMPTS,
+) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const token = await readToken();
+    if (token) {
+      return token;
+    }
+
+    if (attempt < attempts - 1) {
+      await delay(CLERK_TOKEN_RETRY_DELAY_MS);
+    }
+  }
+
+  return null;
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function normalizeIndianPhone(value?: string | null) {
+  const digits = value?.replace(/\D/g, "") ?? "";
+  const normalized = digits.length > 10 ? digits.slice(-10) : digits;
+
+  return /^[6-9]\d{9}$/.test(normalized) ? normalized : undefined;
+}

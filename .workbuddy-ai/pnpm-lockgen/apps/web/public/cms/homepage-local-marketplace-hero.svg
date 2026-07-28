@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900" viewBox="0 0 1200 900" role="img" aria-labelledby="title desc">
+  <title id="title">1HandIndia local marketplace hero</title>
+  <desc id="desc">A polished marketplace hero image with shopping bags, product cards, and a shield badge in the 1HandIndia orange and navy palette.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#fff7f4"/>
+      <stop offset="0.55" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#eaf4ff"/>
+    </linearGradient>
+    <linearGradient id="orange" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#ff6b35"/>
+      <stop offset="1" stop-color="#ed3500"/>
+    </linearGradient>
+    <linearGradient id="navy" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#204b70"/>
+      <stop offset="1" stop-color="#0f2d49"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="28" stdDeviation="24" flood-color="#163b5c" flood-opacity="0.18"/>
+    </filter>
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="4" cy="4" r="2" fill="#ed3500" opacity="0.22"/>
+    </pattern>
+  </defs>
+
+  <rect width="1200" height="900" fill="url(#bg)"/>
+  <circle cx="710" cy="445" r="255" fill="url(#orange)"/>
+  <ellipse cx="705" cy="720" rx="360" ry="62" fill="#ffffff" opacity="0.92"/>
+  <rect x="838" y="110" width="180" height="150" fill="url(#dots)"/>
+  <circle cx="260" cy="170" r="90" fill="#ffefe8"/>
+  <circle cx="1040" cy="645" r="88" fill="#e8f7f0"/>
+
+  <g filter="url(#shadow)">
+    <rect x="196" y="242" width="308" height="392" rx="34" fill="#ffffff"/>
+    <rect x="226" y="272" width="248" height="178" rx="24" fill="#fff2ed"/>
+    <path d="M285 387h130l-26-56-43 48-25-30z" fill="#ed3500" opacity="0.9"/>
+    <circle cx="410" cy="318" r="26" fill="#ffb59e"/>
+    <text x="226" y="500" font-family="Arial, sans-serif" font-size="26" font-weight="800" fill="#14253a">Trusted local stores</text>
+    <text x="226" y="538" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#ed3500">Fresh deals every day</text>
+    <rect x="226" y="572" width="170" height="46" rx="23" fill="#ed3500"/>
+    <text x="258" y="602" font-family="Arial, sans-serif" font-size="18" font-weight="800" fill="#ffffff">Shop now</text>
+  </g>
+
+  <g filter="url(#shadow)" transform="rotate(-8 710 330)">
+    <rect x="575" y="165" width="270" height="330" rx="30" fill="#ffffff"/>
+    <rect x="610" y="198" width="200" height="165" rx="24" fill="#f3f7fb"/>
+    <rect x="646" y="245" width="128" height="96" rx="18" fill="url(#navy)"/>
+    <path d="M670 245v-38c0-38 31-69 69-69s69 31 69 69v38h-28v-38c0-22-18-41-41-41s-41 19-41 41v38z" fill="#163b5c"/>
+    <path d="M665 294c30 16 62 16 96 0" fill="none" stroke="#62d8ff" stroke-width="9" stroke-linecap="round"/>
+    <text x="610" y="406" font-family="Arial, sans-serif" font-size="23" font-weight="800" fill="#14253a">Smart products</text>
+    <text x="610" y="438" font-family="Arial, sans-serif" font-size="18" font-weight="800" fill="#ed3500">From local sellers</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="780" y="510" width="250" height="250" rx="32" fill="#ffffff"/>
+    <circle cx="905" cy="624" r="76" fill="#e8f7f0"/>
+    <path d="M905 554l62 27v47c0 52-35 88-62 100-27-12-62-48-62-100v-47z" fill="#12a66a"/>
+    <path d="M872 622l28 28 56-62" fill="none" stroke="#ffffff" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="826" y="720" font-family="Arial, sans-serif" font-size="22" font-weight="800" fill="#14253a">Verified sellers</text>
+  </g>
+
+  <g>
+    <rect x="118" y="124" width="332" height="66" rx="33" fill="#ffffff" opacity="0.92"/>
+    <circle cx="154" cy="157" r="20" fill="#ed3500"/>
+    <path d="M146 157h16M154 149v16" stroke="#ffffff" stroke-width="5" stroke-linecap="round"/>
+    <text x="184" y="165" font-family="Arial, sans-serif" font-size="24" font-weight="900" letter-spacing="1.5" fill="#163b5c">SHOP LOCAL</text>
+  </g>
+</svg>

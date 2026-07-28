@@ -1,0 +1,1634 @@
+import { indihubFetch, type IndihubAuthHeaders } from "./api";
+import type { OrderVariantSnapshot } from "./order-variant";
+import type { LocationSource } from "./maps-api";
+import type {
+  SupportContactChannel,
+  SupportRequesterType,
+  SupportRequestTopic,
+} from "@indihub/shared-types";
+
+export type CategorySummary = {
+  id: string;
+  parentId?: string | null;
+  productTemplateId?: string | null;
+  name: string;
+  slug: string;
+  description?: string | null;
+  imageUrl?: string | null;
+  defaultHsnCode?: string | null;
+  defaultSacCode?: string | null;
+  defaultSacMasterId?: string | null;
+  defaultGstRatePercent?: number | string | null;
+  defaultTaxClassification?: ProductTaxClassification;
+  defaultTaxDescription?: string | null;
+  sortOrder?: number;
+  productTemplate?: ProductTemplateSummary | null;
+  children?: CategorySummary[];
+  parent?: CategorySummary | null;
+  _count?: {
+    products?: number;
+    children?: number;
+  };
+};
+
+export type ProductTaxClassification =
+  | "TAXABLE"
+  | "NIL_RATED"
+  | "EXEMPT"
+  | "NON_GST";
+
+export type ProductListingMode = "CART" | "ENQUIRY_ONLY" | "CART_AND_ENQUIRY";
+export type DeliveryMode = "STORE_PICKUP" | "LOCAL_DELIVERY_PARTNER" | "THIRD_PARTY_COURIER" | "MANUAL_TRANSPORT";
+export type ReturnPolicySettings = {
+  returnWindowDays: number;
+  replacementWindowDays: number;
+};
+export type ProductTemplateFieldType =
+  | "TEXT"
+  | "TEXTAREA"
+  | "NUMBER"
+  | "SELECT"
+  | "MULTI_SELECT"
+  | "BOOLEAN"
+  | "DATE";
+export type ProductTemplateFieldScope = "PRODUCT" | "VARIANT";
+
+export type ProductTemplateField = {
+  id: string;
+  productTemplateId: string;
+  label: string;
+  fieldKey: string;
+  fieldType: ProductTemplateFieldType;
+  scope: ProductTemplateFieldScope;
+  isRequired: boolean;
+  options?: string[] | null;
+  placeholder?: string | null;
+  helpText?: string | null;
+  isFilterable?: boolean;
+  isSearchable?: boolean;
+  sortOrder: number;
+};
+
+export type ProductTemplateSummary = {
+  id: string;
+  name: string;
+  code: string;
+  description?: string | null;
+  status: string;
+  listingMode: ProductListingMode;
+  sortOrder: number;
+  fields?: ProductTemplateField[];
+  _count?: {
+    categories?: number;
+  };
+};
+
+export type ProductReviewStatus = "PENDING" | "APPROVED" | "REJECTED" | "HIDDEN";
+
+export type ProductReviewSummary = {
+  averageRating: number | null;
+  reviewCount: number;
+  distribution: Record<1 | 2 | 3 | 4 | 5, number>;
+};
+
+export type PublicProductReview = {
+  id: string;
+  rating: number;
+  title?: string | null;
+  comment?: string | null;
+  isVerifiedPurchase: boolean;
+  publishedAt?: string | null;
+  createdAt?: string;
+  customer: {
+    displayName: string;
+  };
+};
+
+export type PaginatedProductReviews = {
+  items: PublicProductReview[];
+  summary: ProductReviewSummary;
+  total: number;
+  page: number;
+  limit: number;
+};
+
+export type ProductImage = {
+  id: string;
+  url: string;
+  altText?: string | null;
+  sortOrder?: number;
+  isPrimary?: boolean;
+};
+
+export type ActiveDealSummary = {
+  dealId: string;
+  title: string;
+  discountBps: number;
+  startsAt: string;
+  endsAt: string;
+};
+
+export type ProductVariant = {
+  id: string;
+  sku?: string | null;
+  variantName?: string | null;
+  pricePaise: number;
+  mrpPaise?: number | null;
+  currency: string;
+  basePricePaise?: number | null;
+  baseMrpPaise?: number | null;
+  baseOriginalPricePaise?: number | null;
+  baseDealPricePaise?: number | null;
+  baseCurrency?: string | null;
+  stockQuantity: number;
+  originalPricePaise?: number | null;
+  dealPricePaise?: number | null;
+  dealDiscountBps?: number | null;
+  dealDiscountPaise?: number | null;
+  activeDeal?: ActiveDealSummary | null;
+  packageWeightGrams?: number | null;
+  packageLengthCm?: number | null;
+  packageBreadthCm?: number | null;
+  packageHeightCm?: number | null;
+  status: string;
+  attributes?: Record<string, unknown> | null;
+};
+
+export type SellerSummary = {
+  id: string;
+  storeName: string;
+  slug: string;
+  sellerType?: string;
+  status?: string;
+  approvalStatus?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  profile?: {
+    logoUrl?: string | null;
+    bannerUrl?: string | null;
+    description?: string | null;
+    contactName?: string | null;
+    contactPhone?: string | null;
+    contactEmail?: string | null;
+    businessLegalName?: string | null;
+    taxRegistrationStatus?: "GST_REGISTERED" | "NOT_REGISTERED" | "COMPOSITION";
+    gstNumber?: string | null;
+    createdAt?: string;
+    updatedAt?: string;
+  } | null;
+  payoutProfile?: {
+    accountHolderName?: string | null;
+    bankName?: string | null;
+    accountNumber?: string | null;
+    ifscCode?: string | null;
+    upiId?: string | null;
+    isVerified?: boolean;
+  } | null;
+  user?: {
+    email?: string | null;
+    fullName?: string | null;
+  } | null;
+};
+
+export type SellerAddress = {
+  id: string;
+  line1: string;
+  line2?: string | null;
+  area?: string | null;
+  city: string;
+  state: string;
+  pincode: string;
+  country?: string | null;
+  countryCode?: string | null;
+  stateCode?: string | null;
+  cityCode?: string | null;
+  localAreaCode?: string | null;
+  latitude?: number | string | null;
+  longitude?: number | string | null;
+  locationSource?: LocationSource | string | null;
+  accuracyMeters?: number | string | null;
+  locationConfidenceScore?: number | string | null;
+};
+
+export type PublicStoreAddress = {
+  area?: string | null;
+  city: string;
+  state: string;
+  country?: string | null;
+  countryCode?: string | null;
+};
+
+export type PublicStoreServiceArea = {
+  id: string;
+  label?: string | null;
+  countryCode?: string | null;
+  stateCode?: string | null;
+  cityCode?: string | null;
+  localAreaCode?: string | null;
+  pincode?: string | null;
+  radiusKm?: number | null;
+  isActive?: boolean;
+};
+
+export type StoreLocationMatchLevel = "LOCAL_AREA" | "PINCODE" | "CITY" | "STATE" | "COUNTRY" | "NONE";
+export type StoreRankingMode =
+  | "LOCATION_MATCH"
+  | "GPS_NEAREST"
+  | "CUSTOMER_RECENT_ORDERS"
+  | "PLATFORM_TRENDING"
+  | "DAILY_ROTATION";
+export type StoreRankingReason =
+  | "LOCAL_AREA_AND_PINCODE"
+  | "LOCAL_AREA"
+  | "PINCODE"
+  | "CITY"
+  | "STATE"
+  | "COUNTRY"
+  | "GPS_NEAREST"
+  | "CUSTOMER_RECENT_ORDER"
+  | "PLATFORM_TRENDING"
+  | "DAILY_ROTATION";
+
+export type StoreProfile = {
+  id: string;
+  storeName: string;
+  slug: string;
+  sellerType?: string;
+  createdAt?: string;
+  profile?: {
+    logoUrl?: string | null;
+    bannerUrl?: string | null;
+    description?: string | null;
+    createdAt?: string;
+  } | null;
+  addresses: PublicStoreAddress[];
+  serviceAreas?: PublicStoreServiceArea[];
+  locationMatchLevel?: StoreLocationMatchLevel;
+  _count?: {
+    products?: number;
+  };
+  reviewSummary?: ProductReviewSummary;
+  previewProducts?: ProductSummary[];
+  rankingReason?: StoreRankingReason;
+  distanceMeters?: number | null;
+};
+
+export type StoreLocationQuery = {
+  search?: string;
+  countryCode?: string;
+  stateCode?: string;
+  cityCode?: string;
+  localAreaCode?: string;
+  pincode?: string;
+  latitude?: number;
+  longitude?: number;
+  accuracyMeters?: number;
+  limit?: number;
+  page?: number;
+};
+
+export type StorePage = {
+  items: StoreProfile[];
+  total: number;
+  pageInfo: {
+    page: number;
+    pageSize: number;
+    hasNextPage: boolean;
+  };
+};
+
+export type ProductSummary = {
+  id: string;
+  sellerId: string;
+  categoryId: string;
+  name: string;
+  slug: string;
+  description: string;
+  status: string;
+  approvalStatus: string;
+  listingMode?: ProductListingMode;
+  attributes?: Record<string, unknown> | null;
+  taxClassification?: ProductTaxClassification;
+  hsnCode?: string | null;
+  gstRatePercent?: number | string | null;
+  hsnMaster?: HsnMasterEntry | null;
+  isFeatured?: boolean;
+  category: CategorySummary;
+  seller: SellerSummary;
+  images: ProductImage[];
+  variants: ProductVariant[];
+  deliveryModes?: DeliveryMode[];
+  manualTransport?: {
+    freeDistanceKm: number;
+    chargePerKmMinor?: number;
+    currency?: string;
+    chargePerKmPaise?: number;
+    note: string;
+  } | null;
+  activeDeal?: ActiveDealSummary | null;
+  campaignBadge?: string | null;
+  campaignLabel?: string | null;
+  campaignDescription?: string | null;
+  campaignImageUrl?: string | null;
+  campaignLinkUrl?: string | null;
+  reviewSummary?: ProductReviewSummary;
+  createdAt?: string;
+};
+
+export type HsnMasterEntry = {
+  id: string;
+  hsnCode: string;
+  description: string;
+  gstRatePercent: number | string;
+  categoryId?: string | null;
+  category?: {
+    id: string;
+    name: string;
+    slug: string;
+  } | null;
+};
+
+export type SacMasterEntry = {
+  id: string;
+  sacCode: string;
+  description: string;
+  sourceReference?: string | null;
+  effectiveDate?: string | null;
+};
+
+export type PaginatedProducts = {
+  items: ProductSummary[];
+  total?: number;
+  page?: number;
+  limit: number;
+  pageInfo?: {
+    hasNextPage: boolean;
+    nextCursor: string | null;
+  };
+};
+
+export type SearchResultType = "product" | "store" | "category";
+export type SearchSort = "relevance" | "newest" | "price_asc" | "price_desc" | "rating" | "discount";
+
+export type SearchSuggestion = {
+  id: string;
+  type: SearchResultType;
+  title: string;
+  subtitle?: string | null;
+  href: string;
+  imageUrl?: string | null;
+  score?: number;
+};
+
+export type StorefrontSearchItem =
+  | { type: "product"; score: number; product: ProductSummary }
+  | { type: "store"; score: number; store: StoreProfile }
+  | { type: "category"; score: number; category: CategorySummary };
+
+export type StorefrontSearchResponse = {
+  query: string;
+  limit: number;
+  sort: SearchSort;
+  items: StorefrontSearchItem[];
+  products: ProductSummary[];
+  stores: StoreProfile[];
+  categories: CategorySummary[];
+  filters?: {
+    categories?: Array<{ categoryId: string; label: string; count: number }>;
+    stores?: Array<{ sellerId: string; label: string; count: number }>;
+    price?: {
+      minPricePaise: number | null;
+      maxPricePaise: number | null;
+    };
+  };
+  pageInfo: {
+    hasNextPage: boolean;
+    nextCursor: string | null;
+  };
+};
+
+export type StorefrontSearchSuggestionsResponse = {
+  query: string;
+  suggestions: SearchSuggestion[];
+  products: SearchSuggestion[];
+  stores: SearchSuggestion[];
+  categories: SearchSuggestion[];
+  limit: number;
+};
+
+export type StorefrontSearchQuery = {
+  q: string;
+  type?: "all" | "product" | "store" | "category";
+  sort?: SearchSort;
+  categoryId?: string;
+  sellerId?: string;
+  minPricePaise?: number;
+  maxPricePaise?: number;
+  inStock?: boolean;
+  deals?: boolean;
+  rating?: number;
+  limit?: number;
+  cursor?: string | null;
+};
+
+export type CartItem = {
+  id: string;
+  quantity: number;
+  unitPricePaise: number;
+  currency: string;
+  originalUnitPricePaise?: number | null;
+  dealDiscountBps?: number | null;
+  dealDiscountPaise?: number | null;
+  activeDeal?: ActiveDealSummary | null;
+  seller: SellerSummary;
+  productVariant: ProductVariant & {
+    product: ProductSummary;
+  };
+};
+
+export type CartSummary = {
+  id: string;
+  status: string;
+  items: CartItem[];
+};
+
+export type CheckoutSummary = {
+  itemCount: number;
+  subtotalPaise: number;
+  payableSubtotalPaise?: number;
+  deliveryChargePaise: number;
+  codSurchargePaise: number;
+  shippingBeforeCouponPaise: number;
+  shippingPaise: number;
+  platformFeePaise: number;
+  couponDiscountPaise?: number;
+  couponMerchandiseDiscountPaise?: number;
+  couponShippingDiscountPaise?: number;
+  couponPlatformFundedDiscountPaise?: number;
+  couponSellerFundedDiscountPaise?: number;
+  coupon?: {
+    couponId: string;
+    code: string;
+    title: string;
+    description?: string | null;
+    discountType: string;
+    fundingSource: string;
+    discountPaise: number;
+    merchandiseDiscountPaise: number;
+    shippingDiscountPaise: number;
+  } | null;
+  totalPaise: number;
+  currency: string;
+  buyerCountryCode: string;
+  buyerCurrency: string;
+  buyerSubtotalMinor: number;
+  buyerPayableSubtotalMinor?: number;
+  buyerDeliveryChargeMinor: number;
+  buyerCodSurchargeMinor: number;
+  buyerShippingBeforeCouponMinor: number;
+  buyerShippingMinor: number;
+  buyerPlatformFeeMinor: number;
+  buyerCouponDiscountMinor?: number;
+  buyerCouponMerchandiseDiscountMinor?: number;
+  buyerCouponShippingDiscountMinor?: number;
+  buyerTotalMinor: number;
+  availableDeliveryOptions?: {
+    mode: DeliveryMode;
+    chargePaise: number;
+    payableChargePaise?: number;
+    isCheapest: boolean;
+    available: boolean;
+    reason: string | null;
+    manualTransport?: CheckoutManualTransportOption | null;
+  }[];
+  sellerDeliveryGroups?: Array<{
+    sellerId: string;
+    sellerName: string;
+    subtotalPaise: number;
+    items: Array<{
+      productId: string;
+      productName: string;
+      quantity: number;
+      enabledDeliveryModes: DeliveryMode[];
+    }>;
+    availableDeliveryOptions: Array<{
+      mode: DeliveryMode;
+      chargePaise: number;
+      payableChargePaise?: number;
+      isCheapest: boolean;
+      available: boolean;
+      reason: string | null;
+      manualTransport?: CheckoutManualTransportOption | null;
+    }>;
+    selectedDeliveryMode?: DeliveryMode;
+    blockedReason?: string | null;
+  }>;
+};
+
+export type CheckoutManualTransportOption = {
+  distanceKm?: number | null;
+  freeDistanceKm?: number | null;
+  billableKm?: number | null;
+  chargePerKmMinor?: number | null;
+  sellerChargeMinor?: number | null;
+  sellerCurrency?: string | null;
+  baseChargeMinor?: number | null;
+  baseCurrency?: string | null;
+  fxRate?: number | null;
+  note?: string | null;
+};
+
+export type CheckoutSummaryOptions = {
+  buyerCountryCode?: string;
+  directProductVariantId?: string;
+  directQuantity?: number;
+  couponCode?: string;
+  deliveryPreference?: "STORE_PICKUP" | "DELIVER_TO_ADDRESS";
+  requestedDeliveryMode?: string;
+  deliverySelections?: Array<{ sellerId: string; deliveryMode: DeliveryMode }>;
+  addressId?: string;
+  paymentMethod?: "RAZORPAY" | "COD" | "BANK_TRANSFER" | "MANUAL";
+  shippingAddress?: {
+    countryCode?: string | undefined;
+    stateCode?: string | undefined;
+    cityCode?: string | undefined;
+    pincode?: string | undefined;
+    localAreaCode?: string | undefined;
+    latitude?: number | undefined;
+    longitude?: number | undefined;
+    locationSource?: LocationSource | undefined;
+    accuracyMeters?: number | undefined;
+    locationConfidenceScore?: number | undefined;
+  };
+};
+
+export type CheckoutAddress = {
+  fullName: string;
+  phone: string;
+  line1: string;
+  line2?: string | undefined;
+  area?: string | undefined;
+  city: string;
+  state: string;
+  pincode: string;
+  country?: string | undefined;
+  countryCode?: string | undefined;
+  stateCode?: string | undefined;
+  cityCode?: string | undefined;
+  localAreaCode?: string | undefined;
+  latitude?: number | null | undefined;
+  longitude?: number | null | undefined;
+  locationSource?: LocationSource | null | undefined;
+  accuracyMeters?: number | null | undefined;
+  locationConfidenceScore?: number | null | undefined;
+};
+
+export type PlaceOrderPayload = {
+  addressId?: string;
+  directProductVariantId?: string;
+  directQuantity?: number;
+  shippingAddress?: CheckoutAddress;
+  deliveryPreference?: "STORE_PICKUP" | "DELIVER_TO_ADDRESS";
+  deliveryMode?: DeliveryMode;
+  deliverySelections?: Array<{ sellerId: string; deliveryMode: DeliveryMode }>;
+  paymentMethod: "RAZORPAY" | "COD" | "BANK_TRANSFER" | "MANUAL";
+  paymentReference?: string;
+  couponCode?: string;
+  buyerCountryCode?: string;
+  buyerGstin?: string;
+  buyerLegalName?: string;
+  shippingPaise?: number;
+  customerNote?: string;
+};
+
+export type ResolveCheckoutDeliveryPayload = {
+  deliveryPreference: "STORE_PICKUP" | "DELIVER_TO_ADDRESS";
+  addressId?: string;
+  shippingAddress?: CheckoutAddress;
+  paymentMethod?: PlaceOrderPayload["paymentMethod"];
+};
+
+export type CheckoutDeliveryRouteQuote = {
+  deliveryPreference: "STORE_PICKUP" | "DELIVER_TO_ADDRESS";
+  deliveryMode: "STORE_PICKUP" | "LOCAL_DELIVERY_PARTNER" | "THIRD_PARTY_COURIER" | "MANUAL_TRANSPORT";
+  recommendedPartnerUserId: string | null;
+  courierProviderCode: string | null;
+  matchedRateCardId: string | null;
+  shippingChargePaise: number;
+  codSurchargePaise: number;
+  totalDeliveryChargePaise: number;
+  freeShippingApplied: boolean;
+  routingFailed: boolean;
+  routingFailureReason: string | null;
+  routingFailureNote: string | null;
+  fallbackReason: string | null;
+  shipmentQuotes?: Array<{
+    sellerId: string;
+    sellerType: string;
+    subtotalPaise: number;
+    deliveryMode: "STORE_PICKUP" | "LOCAL_DELIVERY_PARTNER" | "THIRD_PARTY_COURIER" | "MANUAL_TRANSPORT";
+    shippingChargePaise: number;
+    codSurchargePaise: number;
+    totalDeliveryChargePaise: number;
+    routingFailed: boolean;
+    routingFailureReason: string | null;
+    routingFailureNote: string | null;
+    courierProviderCode: string | null;
+    recommendedPartnerUserId: string | null;
+    recommendedPartnerName: string | null;
+    routingSnapshot?: unknown;
+  }>;
+  shipmentShippingTotalPaise?: number;
+  warnings: string[];
+};
+
+export type RazorpayOrderResponse = {
+  keyId: string;
+  razorpayOrderId: string;
+  amountPaise: number;
+  currency: string;
+  orderNumber: string;
+};
+
+export type RazorpayVerificationPayload = {
+  razorpayOrderId: string;
+  razorpayPaymentId: string;
+  razorpaySignature: string;
+};
+
+export type RazorpayVerificationResponse = {
+  received: boolean;
+  paymentId: string;
+  status: string;
+};
+
+export type CheckoutPaymentMethodRecord = {
+  method: PlaceOrderPayload["paymentMethod"];
+  label: string;
+  enabled: boolean;
+  note: string;
+  instructions?: string;
+  maxOrderPaise?: number;
+  bankTransferDetails?: {
+    configured?: boolean;
+    accountHolderName?: string;
+    bankName?: string;
+    accountNumber?: string;
+    ifscCode?: string;
+    branch?: string;
+    upiId?: string;
+    instructions?: string;
+    referenceRequired?: boolean;
+  };
+};
+
+export type CheckoutPaymentMethodsResponse = {
+  methods: CheckoutPaymentMethodRecord[];
+};
+
+export type HomepageBanner = {
+  id: string;
+  title: string;
+  subtitle?: string | null;
+  imageUrl?: string | null;
+  linkUrl?: string | null;
+  eyebrow?: string | null;
+  ctaLabel?: string | null;
+  secondaryCtaLabel?: string | null;
+  secondaryLinkUrl?: string | null;
+  mobileImageUrl?: string | null;
+  imageAlt?: string | null;
+  textPosition?: "LEFT" | "CENTER" | "RIGHT" | string | null;
+  startsAt?: string | null;
+  endsAt?: string | null;
+  status: string;
+  sortOrder: number;
+  updatedAt?: string;
+};
+
+export type CmsAnnouncement = {
+  id: string;
+  title: string;
+  linkUrl: string | null;
+  backgroundColor: string | null;
+  textColor: string | null;
+  startsAt: string | null;
+  endsAt: string | null;
+  status: string;
+  sortOrder: number;
+};
+
+export type CmsPopupAnnouncement = {
+  id: string;
+  title: string;
+  desktopImageUrl: string;
+  mobileImageUrl: string | null;
+  imageAlt: string;
+  primaryLinkUrl: string | null;
+  primaryCtaLabel: string | null;
+  secondaryLinkUrl: string | null;
+  secondaryCtaLabel: string | null;
+  startsAt: string | null;
+  endsAt: string | null;
+  status: string;
+  sortOrder: number;
+};
+
+export type HomepageSectionItem = {
+  sourceType?: string;
+  sourceId?: string;
+  slug?: string;
+  label?: string;
+  title?: string;
+  name?: string;
+  description?: string;
+  subtitle?: string;
+  imageUrl?: string;
+  image?: string;
+  linkUrl?: string;
+  href?: string;
+  url?: string;
+  badge?: string;
+};
+
+export type HomepageSection = {
+  id: string;
+  title: string;
+  sectionType: string;
+  config?: {
+    eyebrow?: string;
+    subtitle?: string;
+    description?: string;
+    ctaLabel?: string;
+    ctaUrl?: string;
+    ctaHref?: string;
+    items?: HomepageSectionItem[];
+    [key: string]: unknown;
+  } | null;
+  status: string;
+  sortOrder: number;
+  updatedAt?: string;
+};
+
+export type CmsMenuItem = {
+  id: string;
+  area: string;
+  label: string;
+  href: string;
+  parentId?: string | null;
+  status: string;
+  sortOrder: number;
+  children?: CmsMenuItem[];
+};
+
+export type StorefrontHomeStats = {
+  liveProducts: number;
+  approvedStores: number;
+  activeCustomers: number;
+  activeCategories: number;
+  verifiedSellers: number;
+  verifiedSellerPercent: number;
+};
+
+export type StorefrontHomePayload = {
+  banners: HomepageBanner[];
+  fallbackHeroEnabled?: boolean;
+  homepageSections: HomepageSection[];
+  categories: CategorySummary[];
+  storesNearYou: StoreProfile[];
+  storeRankingMode?: StoreRankingMode;
+  productRails: {
+    featured: ProductSummary[];
+    latest: ProductSummary[];
+    deals: ProductSummary[];
+  };
+  stats: StorefrontHomeStats;
+  menus: {
+    header: CmsMenuItem[];
+    footer: CmsMenuItem[];
+    legal: CmsMenuItem[];
+  };
+  sellerCta?: HomepageSection | null;
+  serviceBadges?: HomepageSection | null;
+  generatedAt?: string;
+};
+
+export type OrderSummary = {
+  id: string;
+  orderNumber: string;
+  orderKind?: "STANDARD" | "REPLACEMENT";
+  parentOrder?: {
+    id: string;
+    orderNumber: string;
+    orderStatus?: string;
+    deliveryStatus?: string;
+  } | null;
+  replacementReturnRequest?: {
+    id: string;
+    requestNumber: string;
+    status?: string;
+    resolution?: string;
+  } | null;
+  orderStatus: string;
+  paymentStatus: string;
+  deliveryStatus: string;
+  subtotalPaise: number;
+  shippingPaise: number;
+  platformFeePaise: number;
+  couponCode?: string | null;
+  couponTitle?: string | null;
+  couponDiscountPaise?: number;
+  couponMerchandiseDiscountPaise?: number;
+  couponShippingDiscountPaise?: number;
+  couponPlatformFundedDiscountPaise?: number;
+  couponSellerFundedDiscountPaise?: number;
+  totalPaise: number;
+  currency: string;
+  buyerCountryCode?: string;
+  buyerCurrency?: string;
+  buyerSubtotalMinor?: number;
+  buyerPayableSubtotalMinor?: number;
+  buyerShippingMinor?: number;
+  buyerPlatformFeeMinor?: number;
+  buyerCouponDiscountMinor?: number;
+  buyerCouponMerchandiseDiscountMinor?: number;
+  buyerCouponShippingDiscountMinor?: number;
+  buyerTotalMinor?: number;
+  fxRate?: string | null;
+  fxProvider?: string | null;
+  fxRateFetchedAt?: string | null;
+  createdAt?: string;
+  items: Array<{
+    id: string;
+    sellerId?: string;
+    productNameSnapshot: string;
+    variantSnapshot?: OrderVariantSnapshot;
+    quantity: number;
+    activeQuantity?: number;
+    cancelledQuantity?: number;
+    returnedQuantity?: number;
+    refundedQuantity?: number;
+    replacementQuantity?: number;
+    lifecycleStatus?: string | null;
+    unitPricePaise: number;
+    lineTotalPaise: number;
+    currency: string;
+    originalUnitPricePaise?: number | null;
+    dealDiscountBps?: number | null;
+    dealDiscountPaise?: number | null;
+    dealId?: string | null;
+    dealSnapshot?: ActiveDealSummary | (Record<string, unknown> & { title?: string }) | null;
+    couponDiscountPaise?: number;
+    couponPlatformFundedDiscountPaise?: number;
+    couponSellerFundedDiscountPaise?: number;
+    returnPolicySnapshot?: {
+      returnEligibility?: string | null;
+      returnAllowed?: boolean;
+      replacementAllowed?: boolean;
+      returnWindowDays?: number;
+      replacementWindowDays?: number;
+      returnReasons?: string[];
+      warranty?: string | null;
+      capturedAt?: string | null;
+    } | null;
+    returnItems?: Array<{
+      id: string;
+      returnRequestId: string;
+      quantity: number;
+      status: string;
+      resolution: string;
+      requestedRefundPaise: number;
+      approvedRefundPaise: number;
+      createdAt?: string;
+      returnRequest: {
+        requestNumber: string;
+        status: string;
+        resolution: string;
+      };
+    }>;
+    product?: ProductSummary;
+    seller?: SellerSummary;
+  }>;
+  shipments?: Array<{
+    id: string;
+    shipmentNumber: string;
+    sellerId: string;
+    seller?: SellerSummary | null;
+    subtotalPaise: number;
+    shippingPaise: number;
+    codSurchargePaise?: number;
+    deliveryMode: string;
+    status: string;
+    assignmentStatus?: string | null;
+    assignmentExpiresAt?: string | null;
+    deliveryPartner?: {
+      id: string;
+      fullName?: string | null;
+      phone?: string | null;
+      vehicleNumber?: string | null;
+    } | null;
+    partnerName?: string | null;
+    partnerPhone?: string | null;
+    trackingReference?: string | null;
+    estimatedDeliveryDate?: string | null;
+    deliveryNote?: string | null;
+    packages?: Array<{
+      id: string;
+      packageNumber: string;
+      orderShipmentId: string;
+      orderId: string;
+      sellerId: string;
+      sequence: number;
+      deliveryMode: string;
+      status: string;
+      shippingPaise: number;
+      codSurchargePaise?: number;
+      declaredValuePaise?: number;
+      currency: string;
+      weightGrams?: number | null;
+      lengthCm?: number | null;
+      breadthCm?: number | null;
+      heightCm?: number | null;
+      ewayBillNumber?: string | null;
+      itemAllocations?: unknown;
+      readyForBookingAt?: string | null;
+      bookedAt?: string | null;
+      pickupScheduledAt?: string | null;
+      pickedUpAt?: string | null;
+      deliveredAt?: string | null;
+      cancelledAt?: string | null;
+      awbNumber?: string | null;
+      courierName?: string | null;
+      courierCode?: string | null;
+      courierTrackingStatus?: string | null;
+      courierTrackingStatusLabel?: string | null;
+      trackingUrl?: string | null;
+      shipmentBookedAt?: string | null;
+      bookingError?: string | null;
+      canDownloadLabel?: boolean;
+      labelDownloadUrl?: string | null;
+    }>;
+  }>;
+  sellerSplits?: Array<{
+    id: string;
+    orderId: string;
+    sellerId: string;
+    sellerSubtotalPaise: number;
+    couponDiscountPaise?: number;
+    couponPlatformFundedDiscountPaise?: number;
+    couponSellerFundedDiscountPaise?: number;
+    couponAdjustmentPaise?: number;
+    sellerStatus: string;
+    createdAt?: string;
+    updatedAt?: string;
+    seller?: SellerSummary;
+  }>;
+  deliveryDetail?: {
+    deliveryMode: string;
+    partnerName?: string | null;
+    partnerPhone?: string | null;
+    assignmentStatus?: string | null;
+    deliveryPartner?: {
+      id: string;
+      fullName?: string | null;
+      phone?: string | null;
+      vehicleNumber?: string | null;
+    } | null;
+    assignedAt?: string | null;
+    acceptedAt?: string | null;
+    assignmentExpiresAt?: string | null;
+    trackingReference?: string | null;
+    estimatedDeliveryDate?: string | null;
+    deliveryNote?: string | null;
+    status: string;
+    events?: Array<{
+      id: string;
+      oldStatus?: string | null;
+      newStatus: string;
+      note?: string | null;
+      createdAt?: string;
+    }>;
+  } | null;
+  customerDeliveryTimeline?: Array<{
+    code: string;
+    label: string;
+    at?: string | null;
+    completed: boolean;
+  }>;
+};
+
+export type CmsPage = {
+  id: string;
+  slug: string;
+  title: string;
+  content: string;
+  status: string;
+  publishedAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type PublicSupportPayload = {
+  name: string;
+  email: string;
+  phone?: string;
+  topic: SupportRequestTopic;
+  requesterType: SupportRequesterType;
+  preferredContactChannel: SupportContactChannel;
+  subject: string;
+  orderNumber?: string;
+  message: string;
+};
+
+export type StorefrontContactConfig = {
+  supportEmail: string;
+  supportPhone: string;
+  whatsappNumber: string;
+  whatsappUrl: string;
+  whatsappLink: string;
+  businessAddress: string;
+  workingHours: string;
+  responseSla: string;
+  mapUrl: string;
+  enableEmail: boolean;
+  enablePhone: boolean;
+  enableWhatsapp: boolean;
+  enableAddress: boolean;
+  enableMap: boolean;
+  enabledChannels: SupportContactChannel[];
+};
+
+export type TrackOrderPayload = {
+  orderNumber: string;
+  contact: string;
+};
+
+export type PublicTrackedOrder = Pick<
+  OrderSummary,
+  | "orderNumber"
+  | "orderStatus"
+  | "paymentStatus"
+  | "deliveryStatus"
+  | "subtotalPaise"
+  | "shippingPaise"
+  | "platformFeePaise"
+  | "couponCode"
+  | "couponTitle"
+  | "couponDiscountPaise"
+  | "couponMerchandiseDiscountPaise"
+  | "couponShippingDiscountPaise"
+  | "couponPlatformFundedDiscountPaise"
+  | "couponSellerFundedDiscountPaise"
+  | "totalPaise"
+  | "currency"
+  | "buyerCountryCode"
+  | "buyerCurrency"
+  | "buyerSubtotalMinor"
+  | "buyerPayableSubtotalMinor"
+  | "buyerShippingMinor"
+  | "buyerPlatformFeeMinor"
+  | "buyerCouponDiscountMinor"
+  | "buyerCouponMerchandiseDiscountMinor"
+  | "buyerCouponShippingDiscountMinor"
+  | "buyerTotalMinor"
+  | "fxRate"
+  | "fxProvider"
+  | "fxRateFetchedAt"
+  | "createdAt"
+> & {
+  updatedAt?: string;
+  shippingLocation?: {
+    city?: string | null;
+    state?: string | null;
+    pincode?: string | null;
+    country?: string | null;
+    countryCode?: string | null;
+  } | null;
+  items: Array<{
+    id: string;
+    productNameSnapshot: string;
+    variantSnapshot?: OrderVariantSnapshot;
+    quantity: number;
+    unitPricePaise: number;
+    lineTotalPaise: number;
+    currency: string;
+    originalUnitPricePaise?: number | null;
+    dealDiscountBps?: number | null;
+    dealDiscountPaise?: number | null;
+    dealId?: string | null;
+    dealSnapshot?: ActiveDealSummary | (Record<string, unknown> & { title?: string }) | null;
+    product?: {
+      name: string;
+      slug: string;
+      imageUrl?: string | null;
+    } | null;
+    seller?: {
+      storeName: string;
+      slug: string;
+    } | null;
+  }>;
+  deliveryDetail?: NonNullable<OrderSummary["deliveryDetail"]> | null;
+  customerDeliveryTimeline?: NonNullable<OrderSummary["customerDeliveryTimeline"]>;
+  statusEvents?: Array<{
+    id: string;
+    statusType: string;
+    oldStatus?: string | null;
+    newStatus: string;
+    note?: string | null;
+    createdAt?: string;
+  }>;
+};
+
+export function listCategories() {
+  return indihubFetch<CategorySummary[]>("/api/categories");
+}
+
+export function getReturnPolicySettings() {
+  return indihubFetch<ReturnPolicySettings>("/api/settings/returns");
+}
+
+export function searchHsnMaster({
+  search,
+  categoryId,
+  limit = 10,
+}: {
+  search?: string;
+  categoryId?: string;
+  limit?: number;
+}) {
+  const params = new URLSearchParams();
+  if (search?.trim()) {
+    params.set("search", search.trim());
+  }
+  if (categoryId) {
+    params.set("categoryId", categoryId);
+  }
+  params.set("limit", String(limit));
+
+  return indihubFetch<HsnMasterEntry[]>(`/api/hsn-master?${params.toString()}`);
+}
+
+export function searchSacMaster({
+  search,
+  limit = 10,
+}: {
+  search?: string;
+  limit?: number;
+}) {
+  const params = new URLSearchParams();
+  if (search?.trim()) {
+    params.set("search", search.trim());
+  }
+  params.set("limit", String(limit));
+  return indihubFetch<SacMasterEntry[]>(`/api/sac-master?${params.toString()}`);
+}
+
+export function getCategory(slug: string) {
+  return indihubFetch<CategorySummary>(`/api/categories/${encodeURIComponent(slug)}`);
+}
+
+export function listProducts(
+  query: {
+    search?: string;
+    categoryId?: string;
+    sellerId?: string;
+    page?: number;
+    limit?: number;
+    cursor?: string | null;
+    pagination?: "offset" | "cursor";
+  } = {},
+  auth?: IndihubAuthHeaders,
+) {
+  const params = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== null && value !== "") {
+      params.set(key, String(value));
+    }
+  }
+
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return indihubFetch<PaginatedProducts>(`/api/products${suffix}`, undefined, auth);
+}
+
+export function searchStorefront(query: StorefrontSearchQuery, auth?: IndihubAuthHeaders) {
+  const params = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== null && value !== "") {
+      params.set(key, String(value));
+    }
+  }
+
+  return indihubFetch<StorefrontSearchResponse>(`/api/search?${params.toString()}`, undefined, auth);
+}
+
+export function getSearchSuggestions(query: { q: string; limit?: number }) {
+  const params = new URLSearchParams();
+  params.set("q", query.q);
+  if (query.limit) {
+    params.set("limit", String(query.limit));
+  }
+
+  return indihubFetch<StorefrontSearchSuggestionsResponse>(`/api/search/suggestions?${params.toString()}`);
+}
+
+export function listStorefrontDeals(
+  query: {
+    search?: string;
+    categoryId?: string;
+    sellerId?: string;
+    page?: number;
+    limit?: number;
+    cursor?: string | null;
+    pagination?: "offset" | "cursor";
+  } = {},
+) {
+  const params = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== null && value !== "") {
+      params.set(key, String(value));
+    }
+  }
+
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return indihubFetch<PaginatedProducts>(`/api/storefront/deals${suffix}`);
+}
+
+export function getProduct(slug: string) {
+  return indihubFetch<ProductSummary>(`/api/products/${encodeURIComponent(slug)}`);
+}
+
+export function listProductReviews(
+  productId: string,
+  query: {
+    page?: number;
+    limit?: number;
+  } = {},
+) {
+  const params = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined) {
+      params.set(key, String(value));
+    }
+  }
+
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return indihubFetch<PaginatedProductReviews>(
+    `/api/reviews/products/${encodeURIComponent(productId)}${suffix}`,
+  );
+}
+
+export function getProductReviewSummary(productId: string) {
+  return indihubFetch<ProductReviewSummary>(
+    `/api/reviews/products/${encodeURIComponent(productId)}/summary`,
+  );
+}
+
+export function getStoreProfile(slug: string) {
+  return indihubFetch<StoreProfile>(`/api/sellers/${encodeURIComponent(slug)}`);
+}
+
+export function listStores(query: StoreLocationQuery = {}) {
+  const params = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== "") {
+      params.set(key, String(value));
+    }
+  }
+
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return indihubFetch<StoreProfile[]>(`/api/sellers${suffix}`);
+}
+
+export function listStorePage(query: StoreLocationQuery & { page: number }) {
+  const params = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== "") {
+      params.set(key, String(value));
+    }
+  }
+
+  return indihubFetch<StorePage>(`/api/sellers?${params.toString()}`);
+}
+
+export function getStorefrontHome(query: StoreLocationQuery = {}, auth?: IndihubAuthHeaders) {
+  const params = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== "") {
+      params.set(key, String(value));
+    }
+  }
+
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return indihubFetch<StorefrontHomePayload>(
+    `/api/storefront/home${suffix}`,
+    { cache: "no-store" },
+    auth,
+  );
+}
+
+export function getStorefrontContact() {
+  return indihubFetch<StorefrontContactConfig>("/api/storefront/contact");
+}
+
+export function getCmsPage(slug: string) {
+  return indihubFetch<CmsPage>(`/api/cms/pages/${encodeURIComponent(slug)}`);
+}
+
+export function createPublicSupportRequest(payload: PublicSupportPayload) {
+  return indihubFetch("/api/support-requests", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function trackOrder(payload: TrackOrderPayload) {
+  return indihubFetch<PublicTrackedOrder>("/api/orders/track", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getCart(auth: IndihubAuthHeaders) {
+  return indihubFetch<CartSummary>("/api/cart", undefined, auth);
+}
+
+export function getCheckoutSummary(
+  auth: IndihubAuthHeaders,
+  options: string | CheckoutSummaryOptions = "IN",
+) {
+  const summaryOptions = typeof options === "string" ? { buyerCountryCode: options } : options;
+  const query = new URLSearchParams();
+  query.set("buyerCountryCode", summaryOptions.buyerCountryCode ?? "IN");
+  if (summaryOptions.directProductVariantId) {
+    query.set("directProductVariantId", summaryOptions.directProductVariantId);
+    query.set("directQuantity", String(summaryOptions.directQuantity ?? 1));
+  }
+  if (summaryOptions.deliveryPreference) {
+    query.set("deliveryPreference", summaryOptions.deliveryPreference);
+  }
+  if (summaryOptions.requestedDeliveryMode) {
+    query.set("requestedDeliveryMode", summaryOptions.requestedDeliveryMode);
+  }
+  if (summaryOptions.deliverySelections?.length) {
+    query.set("deliverySelections", JSON.stringify(summaryOptions.deliverySelections));
+  }
+  if (summaryOptions.paymentMethod) {
+    query.set("paymentMethod", summaryOptions.paymentMethod);
+  }
+  if (summaryOptions.addressId) {
+    query.set("addressId", summaryOptions.addressId);
+  }
+  if (summaryOptions.couponCode?.trim()) {
+    query.set("couponCode", summaryOptions.couponCode.trim());
+  }
+  const address = summaryOptions.shippingAddress;
+  if (address?.countryCode) {
+    query.set("countryCode", address.countryCode);
+  }
+  if (address?.stateCode) {
+    query.set("stateCode", address.stateCode);
+  }
+  if (address?.cityCode) {
+    query.set("cityCode", address.cityCode);
+  }
+  if (address?.pincode) {
+    query.set("pincode", address.pincode);
+  }
+  if (address?.localAreaCode) {
+    query.set("localAreaCode", address.localAreaCode);
+  }
+  if (address?.latitude !== undefined) {
+    query.set("latitude", String(address.latitude));
+  }
+  if (address?.longitude !== undefined) {
+    query.set("longitude", String(address.longitude));
+  }
+
+  return indihubFetch<CheckoutSummary>(
+    `/api/cart/checkout-summary?${query.toString()}`,
+    undefined,
+    auth,
+  );
+}
+
+export function addCartItem(auth: IndihubAuthHeaders, productVariantId: string, quantity: number) {
+  return indihubFetch<CartSummary>(
+    "/api/cart/items",
+    {
+      method: "POST",
+      body: JSON.stringify({ productVariantId, quantity }),
+    },
+    auth,
+  );
+}
+
+export function updateCartItem(auth: IndihubAuthHeaders, cartItemId: string, quantity: number) {
+  return indihubFetch<CartSummary>(
+    `/api/cart/items/${encodeURIComponent(cartItemId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ quantity }),
+    },
+    auth,
+  );
+}
+
+export function removeCartItem(auth: IndihubAuthHeaders, cartItemId: string) {
+  return indihubFetch<CartSummary>(
+    `/api/cart/items/${encodeURIComponent(cartItemId)}`,
+    {
+      method: "DELETE",
+    },
+    auth,
+  );
+}
+
+export function placeOrder(auth: IndihubAuthHeaders, payload: PlaceOrderPayload) {
+  return indihubFetch<OrderSummary>(
+    "/api/account/orders",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    auth,
+  );
+}
+
+export function resolveCheckoutDelivery(
+  auth: IndihubAuthHeaders,
+  payload: ResolveCheckoutDeliveryPayload,
+) {
+  return indihubFetch<CheckoutDeliveryRouteQuote>(
+    "/api/checkout/resolve-delivery",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    auth,
+  );
+}
+
+export function createRazorpayProviderOrder(auth: IndihubAuthHeaders, orderNumber: string) {
+  return indihubFetch<RazorpayOrderResponse>(
+    `/api/payments/razorpay/orders/${encodeURIComponent(orderNumber)}`,
+    {
+      method: "POST",
+    },
+    auth,
+  );
+}
+
+export function verifyRazorpayPayment(
+  auth: IndihubAuthHeaders,
+  payload: RazorpayVerificationPayload,
+) {
+  return indihubFetch<RazorpayVerificationResponse>(
+    "/api/payments/razorpay/verify",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    auth,
+  );
+}
+
+export function cancelRazorpayOrder(auth: IndihubAuthHeaders, orderNumber: string) {
+  return indihubFetch<{ orderNumber: string; cancelled: boolean }>(
+    `/api/payments/razorpay/orders/${encodeURIComponent(orderNumber)}/cancel`,
+    { method: "PATCH" },
+    auth,
+  );
+}
+
+export function getCheckoutPaymentMethods(auth: IndihubAuthHeaders) {
+  return indihubFetch<CheckoutPaymentMethodsResponse>(
+    "/api/payments/checkout-methods",
+    undefined,
+    auth,
+  );
+}
+
+export function listHomepageBanners() {
+  return indihubFetch<HomepageBanner[]>("/api/cms/banners");
+}
+
+export function listCmsAnnouncements() {
+  return indihubFetch<CmsAnnouncement[]>("/api/cms/announcements");
+}
+
+export function listCmsPopupAnnouncements() {
+  return indihubFetch<CmsPopupAnnouncement[]>("/api/cms/popup-announcements");
+}
+
+export function listHomepageSections() {
+  return indihubFetch<HomepageSection[]>("/api/cms/homepage-sections");
+}
+
+export function listCmsMenus(area = "header") {
+  return indihubFetch<CmsMenuItem[]>(`/api/cms/menus?area=${encodeURIComponent(area)}`);
+}
+
+export function getCustomerOrder(auth: IndihubAuthHeaders, orderNumber: string) {
+  return indihubFetch<OrderSummary>(
+    `/api/account/orders/${encodeURIComponent(orderNumber)}`,
+    undefined,
+    auth,
+  );
+}
+
+export function formatMoney(
+  paise?: number | null,
+  currency = "INR",
+  locale = currency === "INR" ? "en-IN" : "en-US",
+) {
+  const amount = (paise ?? 0) / 100;
+
+  return new Intl.NumberFormat(locale, {
+    style: "currency",
+    currency,
+    maximumFractionDigits: amount % 1 === 0 ? 0 : 2,
+  }).format(amount);
+}
+
+export function formatOrderTotal(
+  order: Pick<OrderSummary, "totalPaise" | "currency" | "buyerTotalMinor" | "buyerCurrency">,
+) {
+  if (
+    order.buyerCurrency &&
+    order.buyerTotalMinor !== undefined &&
+    order.buyerTotalMinor !== null
+  ) {
+    return formatMoney(order.buyerTotalMinor, order.buyerCurrency);
+  }
+
+  return formatMoney(order.totalPaise, order.currency);
+}
+
+export function formatOrderBuyerAmount(
+  order: Pick<OrderSummary, "currency" | "buyerCurrency">,
+  buyerMinor: number | null | undefined,
+  baseMinor: number | null | undefined,
+) {
+  if (order.buyerCurrency && buyerMinor !== undefined && buyerMinor !== null) {
+    return formatMoney(buyerMinor, order.buyerCurrency);
+  }
+
+  return formatMoney(baseMinor ?? 0, order.currency);
+}
+
+export function formatOrderBaseAmount(order: Pick<OrderSummary, "currency" | "buyerCurrency">, baseMinor: number | null | undefined) {
+  if (!order.buyerCurrency || order.buyerCurrency === order.currency) {
+    return null;
+  }
+
+  return formatMoney(baseMinor ?? 0, order.currency);
+}
+
+export function primaryImage(product: ProductSummary) {
+  const campaignImage = product.campaignImageUrl?.trim();
+  const images = product.images ?? [];
+  return campaignImage || (images.find((image) => image.isPrimary)?.url ?? images[0]?.url ?? null);
+}
+
+export function isPurchasableVariant(variant: ProductVariant) {
+  return variant.status === "ACTIVE" && variant.stockQuantity > 0;
+}
+
+export function primaryVariant(product: ProductSummary) {
+  const variants = product.variants ?? [];
+
+  return (
+    variants.find(isPurchasableVariant) ??
+    variants.find((variant) => variant.status === "ACTIVE") ??
+    variants[0] ??
+    null
+  );
+}
+
+export function variantBasePrice(variant: ProductVariant | null | undefined) {
+  return variant?.basePricePaise ?? variant?.pricePaise ?? null;
+}
+
+export function variantBaseMrp(variant: ProductVariant | null | undefined) {
+  return variant?.baseMrpPaise ?? variant?.mrpPaise ?? null;
+}
+
+export function variantBaseOriginalPrice(variant: ProductVariant | null | undefined) {
+  return variant?.baseOriginalPricePaise ?? variant?.originalPricePaise ?? null;
+}
+
+export function cartTotals(cart?: CartSummary) {
+  const subtotalPaise =
+    cart?.items.reduce((total, item) => total + item.quantity * item.unitPricePaise, 0) ?? 0;
+  const itemCount = cart?.items.reduce((total, item) => total + item.quantity, 0) ?? 0;
+  const productCount = cart ? new Set(cart.items.map((item) => item.productVariant.product.id)).size : 0;
+
+  return { subtotalPaise, itemCount, productCount };
+}

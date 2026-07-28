@@ -1,0 +1,10 @@
+{
+  "extends": "@indihub/tsconfig/base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["src/**/*.ts"]
+}

@@ -1,0 +1,371 @@
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useState } from "react";
+import { Linking, Text, View } from "react-native";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Button, Card, Field, Header, QueryState, Screen, StatusChip, formatPaise, humanize } from "../../src/components/screen";
+import { addressLine, type AddressSnapshot } from "../../src/features/delivery/delivery-api";
+import {
+  acceptDeliveryReturnPickup,
+  getDeliveryReturn,
+  recordDeliveryReturnShipmentReceipt,
+  rejectDeliveryReturnPickup,
+  updateDeliveryReturnPickup,
+  type ReturnDetail,
+  type ReverseShipmentStatus,
+} from "../../src/features/delivery/returns-api";
+import { pickDeliveryProofImage, uploadDeliveryProofImage } from "../../src/features/delivery/proof-upload";
+import { useMobileDeliveryAuth } from "../../src/auth/mobile-delivery-auth-context";
+import { useServerSync } from "../../src/lib/use-server-sync";
+
+export default function DeliveryReturnDetailScreen() {
+  const auth = useMobileDeliveryAuth();
+  const queryClient = useQueryClient();
+  const router = useRouter();
+  const params = useLocalSearchParams<{ requestNumber?: string }>();
+  const requestNumber = String(params.requestNumber ?? "");
+  const [notice, setNotice] = useState<{ message: string; tone: "success" | "danger" } | null>(null);
+  const [assignmentNote, setAssignmentNote] = useState("");
+  const [pickupNote, setPickupNote] = useState("");
+  const [pickupProofReference, setPickupProofReference] = useState("");
+  const [pickupProofUploadStatus, setPickupProofUploadStatus] = useState("");
+  const [receiptProofByShipment, setReceiptProofByShipment] = useState<Record<string, string>>({});
+  const [receiptProofUploadStatus, setReceiptProofUploadStatus] = useState<Record<string, string>>({});
+  const [receiverByShipment, setReceiverByShipment] = useState<Record<string, string>>({});
+  const [receiptNoteByShipment, setReceiptNoteByShipment] = useState<Record<string, string>>({});
+
+  const returnQuery = useQuery({
+    queryKey: ["delivery-return", auth.authKey, requestNumber],
+    queryFn: () => getDeliveryReturn(auth.authHeaders, requestNumber),
+    enabled: auth.enabled && Boolean(requestNumber),
+  });
+  const detail = returnQuery.data;
+
+  const serverFormValues = detail
+    ? detail.reverseShipments.map((shipment) => ({
+        id: shipment.id,
+        pickupProofReference: shipment.pickupProofReference ?? shipment.proofReference ?? null,
+        receiptProofReference: shipment.receiptProofReference ?? null,
+        receivedByName: shipment.receivedByName ?? null,
+      }))
+    : null;
+  useServerSync(
+    serverFormValues,
+    (shipments) => {
+      if (!shipments) return;
+      setPickupProofReference(shipments[0]?.pickupProofReference ?? "");
+      setReceiptProofByShipment(
+        Object.fromEntries(
+          shipments
+            .filter((shipment) => shipment.receiptProofReference)
+            .map((shipment) => [shipment.id, shipment.receiptProofReference ?? ""]),
+        ),
+      );
+      setReceiverByShipment(
+        Object.fromEntries(
+          shipments
+            .filter((shipment) => shipment.receivedByName)
+            .map((shipment) => [shipment.id, shipment.receivedByName ?? ""]),
+        ),
+      );
+    },
+    Boolean(detail),
+  );
+
+  const acceptMutation = useMutation({
+    mutationFn: () => acceptDeliveryReturnPickup(auth.authHeaders, requestNumber, assignmentNote.trim() || undefined),
+    onSuccess: async () => {
+      setAssignmentNote("");
+      await afterMutation(queryClient, auth.authKey, requestNumber, "Return pickup accepted.", setNotice);
+    },
+    onError: (error) => setNotice({ message: error instanceof Error ? error.message : "Could not accept pickup.", tone: "danger" }),
+  });
+  const rejectMutation = useMutation({
+    mutationFn: () => rejectDeliveryReturnPickup(auth.authHeaders, requestNumber, assignmentNote.trim() || undefined),
+    onSuccess: async () => {
+      setAssignmentNote("");
+      await afterMutation(queryClient, auth.authKey, requestNumber, "Return pickup rejected.", setNotice);
+    },
+    onError: (error) => setNotice({ message: error instanceof Error ? error.message : "Could not reject pickup.", tone: "danger" }),
+  });
+  const pickupMutation = useMutation({
+    mutationFn: (status: ReverseShipmentStatus) =>
+      updateDeliveryReturnPickup(auth.authHeaders, requestNumber, {
+        status,
+        pickupProofReference: pickupProofReference.trim() || undefined,
+        note: pickupNote.trim() || undefined,
+      }),
+    onSuccess: async (_, status) => {
+      setPickupNote("");
+      await afterMutation(queryClient, auth.authKey, requestNumber, `${humanize(status)} saved.`, setNotice);
+    },
+    onError: (error) => setNotice({ message: error instanceof Error ? error.message : "Could not update pickup.", tone: "danger" }),
+  });
+  const receiptMutation = useMutation({
+    mutationFn: (shipmentId: string) =>
+      recordDeliveryReturnShipmentReceipt(auth.authHeaders, requestNumber, shipmentId, {
+        receivedByName: receiverByShipment[shipmentId]?.trim() ?? "",
+        receiptProofReference: receiptProofByShipment[shipmentId]?.trim() || undefined,
+        note: receiptNoteByShipment[shipmentId]?.trim() || undefined,
+      }),
+    onSuccess: async (_, shipmentId) => {
+      setReceiptNoteByShipment((current) => ({ ...current, [shipmentId]: "" }));
+      await afterMutation(queryClient, auth.authKey, requestNumber, "Seller receipt recorded.", setNotice);
+    },
+    onError: (error) => setNotice({ message: error instanceof Error ? error.message : "Could not record seller receipt.", tone: "danger" }),
+  });
+
+  async function uploadPickupProof() {
+    setPickupProofUploadStatus("");
+    try {
+      const asset = await pickDeliveryProofImage();
+      if (!asset) return;
+      setPickupProofUploadStatus("Uploading proof...");
+      const uploaded = await uploadDeliveryProofImage(auth.authHeaders, asset.uri, asset.fileName, "RETURN_PICKUP_PROOF");
+      setPickupProofReference(uploaded.assetKey);
+      setPickupProofUploadStatus("Pickup proof uploaded.");
+    } catch (error) {
+      setPickupProofUploadStatus("");
+      setNotice({ message: error instanceof Error ? error.message : "Proof upload failed.", tone: "danger" });
+    }
+  }
+
+  async function uploadReceiptProof(shipmentId: string) {
+    setReceiptProofUploadStatus((current) => ({ ...current, [shipmentId]: "" }));
+    try {
+      const asset = await pickDeliveryProofImage();
+      if (!asset) return;
+      setReceiptProofUploadStatus((current) => ({ ...current, [shipmentId]: "Uploading proof..." }));
+      const uploaded = await uploadDeliveryProofImage(auth.authHeaders, asset.uri, asset.fileName, "RETURN_RECEIPT_PROOF");
+      setReceiptProofByShipment((current) => ({ ...current, [shipmentId]: uploaded.assetKey }));
+      setReceiptProofUploadStatus((current) => ({ ...current, [shipmentId]: "Receipt proof uploaded." }));
+    } catch (error) {
+      setReceiptProofUploadStatus((current) => ({ ...current, [shipmentId]: "" }));
+      setNotice({ message: error instanceof Error ? error.message : "Proof upload failed.", tone: "danger" });
+    }
+  }
+
+  const allAccepted = detail?.reverseShipments.every((shipment) => shipment.assignmentStatus === "ACCEPTED") ?? false;
+  const anyPickedOrLater = detail?.reverseShipments.some((shipment) => ["PICKED_UP", "IN_TRANSIT", "RECEIVED", "FAILED", "CANCELLED"].includes(shipment.status)) ?? false;
+  const anyPickedUp = detail?.reverseShipments.some((shipment) => shipment.status === "PICKED_UP") ?? false;
+  const allReceived = detail?.reverseShipments.every((shipment) => shipment.status === "RECEIVED") ?? false;
+  const qualityFailureReady = Boolean(allAccepted && !anyPickedOrLater && pickupProofReference.trim() && pickupNote.trim());
+  const assignmentPending = acceptMutation.isPending || rejectMutation.isPending;
+
+  return (
+    <Screen refreshing={returnQuery.isRefetching} onRefresh={() => returnQuery.refetch()}>
+      <Button title="Back to returns" tone="secondary" onPress={() => router.back()} />
+      <Header title={requestNumber || "Return pickup"} subtitle="Pickup from customer, move package, record seller receipt." />
+      <QueryState loading={returnQuery.isLoading} error={returnQuery.error} onRetry={() => void returnQuery.refetch()} />
+      {notice ? <NoticeCard notice={notice} /> : null}
+      {detail ? (
+        <>
+          <ReturnSummary detail={detail} allAccepted={allAccepted} allReceived={allReceived} />
+          <RouteActions detail={detail} />
+          <Card>
+            <Text style={sectionTitle}>Pickup actions</Text>
+            <Button title={pickupProofReference ? "Replace pickup proof" : "Upload pickup proof"} tone="secondary" onPress={() => void uploadPickupProof()} />
+            {pickupProofReference ? <Text style={successText}>{pickupProofReference}</Text> : null}
+            {pickupProofUploadStatus ? <Text style={mutedText}>{pickupProofUploadStatus}</Text> : null}
+            {!allAccepted ? (
+              <>
+                <Field label="Assignment note" value={assignmentNote} onChangeText={setAssignmentNote} placeholder="Optional note for operations" multiline />
+                <View style={{ flexDirection: "row", gap: 10 }}>
+                  <Button title="Accept" disabled={assignmentPending} loading={acceptMutation.isPending} style={{ flex: 1 }} onPress={() => acceptMutation.mutate()} />
+                  <Button title="Reject" tone="danger" disabled={assignmentPending} loading={rejectMutation.isPending} style={{ flex: 1 }} onPress={() => rejectMutation.mutate()} />
+                </View>
+              </>
+            ) : (
+              <>
+                <Field label="Pickup note" value={pickupNote} onChangeText={setPickupNote} placeholder="Pickup or handover note" multiline />
+                <View style={{ flexDirection: "row", gap: 10 }}>
+                  <Button
+                    title="Picked up"
+                    disabled={pickupMutation.isPending || anyPickedOrLater || !pickupProofReference.trim()}
+                    loading={pickupMutation.isPending && pickupMutation.variables === "PICKED_UP"}
+                    style={{ flex: 1 }}
+                    onPress={() => pickupMutation.mutate("PICKED_UP")}
+                  />
+                  <Button
+                    title="In transit"
+                    tone="secondary"
+                    disabled={pickupMutation.isPending || !anyPickedUp || allReceived}
+                    loading={pickupMutation.isPending && pickupMutation.variables === "IN_TRANSIT"}
+                    style={{ flex: 1 }}
+                    onPress={() => pickupMutation.mutate("IN_TRANSIT")}
+                  />
+                </View>
+              </>
+            )}
+            {allAccepted && !pickupProofReference.trim() && !anyPickedOrLater ? (
+              <Text style={dangerText}>Pickup proof reference is required before marking picked up.</Text>
+            ) : null}
+            {allAccepted && !anyPickedOrLater ? (
+              <>
+                <Text style={mutedText}>
+                  If the package is damaged, missing, mismatched, or not in returnable condition, upload clear proof and write the reason before cancelling the pickup.
+                </Text>
+                <Button
+                  title="Cancel bad-quality pickup"
+                  tone="danger"
+                  disabled={pickupMutation.isPending || !qualityFailureReady}
+                  loading={pickupMutation.isPending && pickupMutation.variables === "FAILED"}
+                  onPress={() => pickupMutation.mutate("FAILED")}
+                />
+                {!qualityFailureReady ? (
+                  <Text style={dangerText}>Quality cancellation needs a proof reference and note.</Text>
+                ) : null}
+              </>
+            ) : null}
+          </Card>
+          <Text style={sectionTitle}>Seller packages</Text>
+          {detail.reverseShipments.map((shipment) => {
+            const receiver = receiverByShipment[shipment.id]?.trim() ?? "";
+            const receiptProof = receiptProofByShipment[shipment.id]?.trim() ?? "";
+            const canReceive = shipment.assignmentStatus === "ACCEPTED" && ["PICKED_UP", "IN_TRANSIT"].includes(shipment.status);
+            const sellerAddress = addressLine(shipment.seller?.destinationAddress);
+            const sellerPhone = shipment.seller?.contactPhone;
+            const sellerPhoneUrl = sellerPhone ? `tel:${sellerPhone.replace(/[^\d+]/g, "")}` : null;
+            return (
+              <Card key={shipment.id}>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                  <StatusChip label={humanize(shipment.status)} tone={shipment.status === "RECEIVED" ? "success" : "warning"} />
+                  <StatusChip label={humanize(shipment.assignmentStatus ?? "ASSIGNED")} tone={shipment.assignmentStatus === "ACCEPTED" ? "success" : "warning"} />
+                </View>
+                <Text style={{ color: "#123A5A", fontSize: 17, fontWeight: "900" }}>{shipment.seller?.storeName ?? "Seller store"}</Text>
+                <Text style={mutedText}>{addressBlock(shipment.seller?.destinationAddress)}</Text>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+                  <Button
+                    title="Seller map"
+                    tone="secondary"
+                    disabled={!sellerAddress}
+                    style={{ flex: 1, minWidth: 130 }}
+                    onPress={() => sellerAddress && void Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(sellerAddress)}`)}
+                  />
+                  <Button
+                    title="Call seller"
+                    tone="secondary"
+                    disabled={!sellerPhoneUrl}
+                    style={{ flex: 1, minWidth: 130 }}
+                    onPress={() => sellerPhoneUrl && void Linking.openURL(sellerPhoneUrl)}
+                  />
+                </View>
+                <Text style={mutedText}>Tracking: {shipment.trackingReference ?? "Generated after pickup"}</Text>
+                <Field
+                  label="Receiver name"
+                  value={receiverByShipment[shipment.id] ?? ""}
+                  onChangeText={(value) => setReceiverByShipment((current) => ({ ...current, [shipment.id]: value }))}
+                  placeholder="Person receiving at seller store"
+                />
+                <Field
+                  label="Receipt note"
+                  value={receiptNoteByShipment[shipment.id] ?? ""}
+                  onChangeText={(value) => setReceiptNoteByShipment((current) => ({ ...current, [shipment.id]: value }))}
+                  placeholder="Optional seller handover note"
+                  multiline
+                />
+                <Button title={receiptProofByShipment[shipment.id] ? "Replace receipt proof" : "Upload receipt proof"} tone="secondary" onPress={() => void uploadReceiptProof(shipment.id)} />
+                {receiptProofByShipment[shipment.id] ? <Text style={successText}>{receiptProofByShipment[shipment.id]}</Text> : null}
+                {receiptProofUploadStatus[shipment.id] ? <Text style={mutedText}>{receiptProofUploadStatus[shipment.id]}</Text> : null}
+                {canReceive && (!receiver || !receiptProof) ? <Text style={dangerText}>Receiver name and receipt proof reference are required.</Text> : null}
+                <Button
+                  title={shipment.status === "RECEIVED" ? "Received" : "Record seller receipt"}
+                  disabled={receiptMutation.isPending || shipment.status === "RECEIVED" || !canReceive || !receiver || !receiptProof}
+                  loading={receiptMutation.isPending && receiptMutation.variables === shipment.id}
+                  onPress={() => receiptMutation.mutate(shipment.id)}
+                />
+              </Card>
+            );
+          })}
+          <Card>
+            <Text style={sectionTitle}>Return items</Text>
+            {detail.items.map((item) => (
+              <Text key={item.id} style={mutedText}>
+                {item.productName} x{item.quantity} / {item.sellerName ?? "Seller"}
+              </Text>
+            ))}
+          </Card>
+        </>
+      ) : null}
+    </Screen>
+  );
+}
+
+function ReturnSummary({ detail, allAccepted, allReceived }: { detail: ReturnDetail; allAccepted: boolean; allReceived: boolean }) {
+  return (
+    <Card>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+        <StatusChip label={allAccepted ? "Accepted" : "Awaiting acceptance"} tone={allAccepted ? "success" : "warning"} />
+        <StatusChip label={humanize(detail.status)} tone={allReceived ? "success" : "warning"} />
+      </View>
+      <Text style={{ color: "#123A5A", fontSize: 22, fontWeight: "900" }}>{formatPaise(detail.requestedAmountPaise, detail.currency)}</Text>
+      <Text style={mutedText}>
+        Order {detail.order.orderNumber} / {detail.totalQuantity} return item{detail.totalQuantity === 1 ? "" : "s"}
+      </Text>
+      <Text style={mutedText}>{detail.customer?.name ?? "Customer"} / {detail.customer?.phone ?? detail.pickupAddress?.phone ?? "Phone not available"}</Text>
+      <Text style={mutedText}>{addressBlock(detail.pickupAddress)}</Text>
+    </Card>
+  );
+}
+
+function RouteActions({ detail }: { detail: ReturnDetail }) {
+  const pickupAddress = addressLine(detail.pickupAddress);
+  const pickupPhone = detail.customer?.phone ?? detail.pickupAddress?.phone;
+  const sellerAddress = addressLine(detail.reverseShipments[0]?.seller?.destinationAddress);
+  return (
+    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+      <Button
+        title="Pickup map"
+        tone="secondary"
+        disabled={!pickupAddress}
+        style={{ flex: 1, minWidth: 130 }}
+        onPress={() => pickupAddress && void Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(pickupAddress)}`)}
+      />
+      <Button
+        title="Call customer"
+        tone="secondary"
+        disabled={!pickupPhone}
+        style={{ flex: 1, minWidth: 130 }}
+        onPress={() => pickupPhone && void Linking.openURL(`tel:${pickupPhone.replace(/[^\d+]/g, "")}`)}
+      />
+      <Button
+        title="Seller map"
+        tone="secondary"
+        disabled={!sellerAddress}
+        style={{ flex: 1, minWidth: 130 }}
+        onPress={() => sellerAddress && void Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(sellerAddress)}`)}
+      />
+    </View>
+  );
+}
+
+function NoticeCard({ notice }: { notice: { message: string; tone: "success" | "danger" } }) {
+  return (
+    <Card style={{ borderColor: notice.tone === "success" ? "#B7E4CE" : "#F5B7B7" }}>
+      <Text style={{ color: notice.tone === "success" ? "#0F8A5F" : "#B42318", fontWeight: "900" }}>{notice.message}</Text>
+    </Card>
+  );
+}
+
+async function afterMutation(
+  queryClient: ReturnType<typeof useQueryClient>,
+  authKey: string,
+  requestNumber: string,
+  message: string,
+  setNotice: (notice: { message: string; tone: "success" | "danger" }) => void,
+) {
+  setNotice({ message, tone: "success" });
+  await queryClient.invalidateQueries({ queryKey: ["delivery-return", authKey, requestNumber] });
+  await queryClient.invalidateQueries({ queryKey: ["delivery-returns"] });
+}
+
+function addressBlock(address?: AddressSnapshot | null) {
+  if (!address) return "Address not available.";
+  return [address.fullName, address.phone, address.line1, address.line2, address.area, address.city, address.state, address.pincode, address.country]
+    .filter(Boolean)
+    .join("\n");
+}
+
+const sectionTitle = { color: "#123A5A", fontSize: 18, fontWeight: "900" } as const;
+const mutedText = { color: "#6B7280", fontWeight: "700", lineHeight: 20 } as const;
+const dangerText = { color: "#B42318", fontWeight: "800" } as const;
+const successText = { color: "#0F8A5F", fontWeight: "800" } as const;

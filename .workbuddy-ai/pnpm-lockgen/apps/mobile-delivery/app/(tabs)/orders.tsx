@@ -1,0 +1,96 @@
+import { Link } from "expo-router";
+import { useState } from "react";
+import { Pressable, Text, View } from "react-native";
+import { useInfiniteQuery } from "@tanstack/react-query";
+import { Button, EmptyState, Field, Header, QueryState, Screen, SelectField, StatusChip, formatDateTime, formatPaise, humanize } from "../../src/components/screen";
+import {
+  listDeliveryOrders,
+  findCodPayment,
+  sellerToCustomerDistanceLabel,
+  type DeliveryOrder,
+} from "../../src/features/delivery/delivery-api";
+import { useMobileDeliveryAuth } from "../../src/auth/mobile-delivery-auth-context";
+
+const deliveryStatuses = ["", "PENDING", "PACKED", "DISPATCHED", "IN_TRANSIT", "DELIVERED", "CANCELLED"];
+const paymentStatuses = ["", "PENDING", "PAID", "FAILED", "REFUNDED", "NOT_REQUIRED"];
+
+export default function DeliveryOrdersScreen() {
+  const auth = useMobileDeliveryAuth();
+  const [search, setSearch] = useState("");
+  const [submittedSearch, setSubmittedSearch] = useState("");
+  const [deliveryStatus, setDeliveryStatus] = useState("");
+  const [paymentStatus, setPaymentStatus] = useState("");
+  const submitSearch = () => setSubmittedSearch(search.trim());
+  const ordersQuery = useInfiniteQuery({
+    queryKey: ["delivery-orders", auth.authKey, submittedSearch, deliveryStatus, paymentStatus],
+    queryFn: ({ pageParam }) => listDeliveryOrders(auth.authHeaders, { search: submittedSearch, deliveryStatus, paymentStatus, page: pageParam, limit: 40 }),
+    enabled: auth.enabled,
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => {
+      const page = lastPage.page ?? 1;
+      const limit = lastPage.limit ?? 40;
+      return lastPage.total !== undefined && page * limit < lastPage.total ? page + 1 : undefined;
+    },
+  });
+  const orders = ordersQuery.data?.pages.flatMap((page) => page.items) ?? [];
+
+  return (
+    <Screen refreshing={ordersQuery.isRefetching} onRefresh={() => ordersQuery.refetch()}>
+      <Header title="Assigned orders" subtitle="Search and update assigned forward deliveries." />
+      <View style={{ gap: 12 }}>
+        <Field label="Search order" value={search} onChangeText={setSearch} onSubmitEditing={submitSearch} placeholder="Order number" returnKeyType="search" />
+        <Button title="Search" onPress={submitSearch} />
+        <SelectField
+          label="Delivery status"
+          selectedValue={deliveryStatus}
+          onSelect={setDeliveryStatus}
+          options={deliveryStatuses.map((status) => ({ value: status, label: status ? humanize(status) : "All statuses" }))}
+        />
+        <SelectField
+          label="Payment status"
+          selectedValue={paymentStatus}
+          onSelect={setPaymentStatus}
+          options={paymentStatuses.map((status) => ({ value: status, label: status ? humanize(status) : "All payments" }))}
+        />
+      </View>
+      <QueryState loading={ordersQuery.isLoading} error={ordersQuery.error} onRetry={() => void ordersQuery.refetch()} />
+      {!ordersQuery.isLoading && !ordersQuery.error && orders.length === 0 ? (
+        <EmptyState title="No assigned orders" message="New assignments and matching search results will appear here." />
+      ) : null}
+      {orders.map((order) => <OrderCard key={order.id} order={order} />)}
+      {ordersQuery.hasNextPage ? (
+        <Button
+          title="Load more orders"
+          tone="secondary"
+          loading={ordersQuery.isFetchingNextPage}
+          onPress={() => void ordersQuery.fetchNextPage()}
+        />
+      ) : null}
+    </Screen>
+  );
+}
+
+function OrderCard({ order }: { order: DeliveryOrder }) {
+  const cod = findCodPayment(order);
+  const distanceLabel = sellerToCustomerDistanceLabel(order);
+  return (
+    <Link href={`/orders/${encodeURIComponent(order.orderNumber)}` as never} asChild>
+      <Pressable style={{ backgroundColor: "#FFFFFF", borderColor: "#F3E7E2", borderRadius: 16, borderWidth: 1, gap: 8, padding: 16 }}>
+        <Text style={{ color: "#123A5A", fontSize: 18, fontWeight: "900" }}>{order.orderNumber}</Text>
+        <Text style={{ color: "#6B7280", fontWeight: "700" }}>{formatDateTime(order.createdAt)} / {order.customer?.fullName ?? order.customer?.email ?? "Customer"}</Text>
+        <Text style={{ color: "#6B7280", fontWeight: "700" }}>{(order.items ?? []).map((item) => `${item.productNameSnapshot} x${item.quantity}`).join(", ")}</Text>
+        <Text style={{ color: distanceLabel ? "#ED3500" : "#9CA3AF", fontSize: 12, fontWeight: "900" }}>
+          {distanceLabel ?? "Seller to customer distance unavailable"}
+        </Text>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+          <StatusChip label={humanize(order.deliveryStatus)} tone={order.deliveryStatus === "DELIVERED" ? "success" : "warning"} />
+          {order.orderKind === "REPLACEMENT" ? <StatusChip label="Replacement delivery" tone="info" /> : null}
+          <StatusChip label={humanize(order.deliveryDetail?.assignmentStatus ?? "ASSIGNED")} tone={order.deliveryDetail?.assignmentStatus === "ACCEPTED" ? "success" : "warning"} />
+          <StatusChip label={humanize(order.paymentStatus)} tone={order.paymentStatus === "PAID" ? "success" : "warning"} />
+          {cod ? <StatusChip label={`COD ${humanize(order.deliveryDetail?.codCollectionStatus ?? "NOT_COLLECTED")}`} tone="info" /> : null}
+        </View>
+        <Text style={{ color: "#123A5A", fontWeight: "900" }}>{formatPaise(order.buyerTotalMinor ?? order.totalPaise, order.buyerCurrency ?? order.currency)}</Text>
+      </Pressable>
+    </Link>
+  );
+}
