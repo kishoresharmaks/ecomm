@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { RequestRateLimiter, rateLimitOptionsFromEnv } from "./request-rate-limiter";
 
 function request({
@@ -148,5 +148,39 @@ describe("RequestRateLimiter", () => {
 
     expect(decision.policy.max).toBe(7);
     expect(suggestionsDecision.policy.max).toBe(3);
+  });
+
+  it("shares counters through Redis when configured", async () => {
+    const redisClient = {
+      eval: vi.fn().mockResolvedValueOnce([1, 60_000]).mockResolvedValueOnce([2, 59_000]),
+      on: vi.fn(),
+      disconnect: vi.fn(),
+    };
+    const limiter = new RequestRateLimiter({
+      now: () => 1_000,
+      redisClient: redisClient as never,
+      policies: { admin: { max: 1 } },
+    });
+
+    expect((await limiter.checkDistributed(request({ url: "/api/admin/users" }))).allowed).toBe(true);
+    expect((await limiter.checkDistributed(request({ url: "/api/admin/users" }))).allowed).toBe(false);
+    expect(redisClient.eval).toHaveBeenCalledTimes(2);
+  });
+
+  it("falls back locally when Redis is unavailable", async () => {
+    const redisClient = {
+      eval: vi.fn().mockRejectedValue(new Error("Redis unavailable")),
+      on: vi.fn(),
+      disconnect: vi.fn(),
+    };
+    const limiter = new RequestRateLimiter({
+      now: () => 1_000,
+      redisClient: redisClient as never,
+      policies: { admin: { max: 1 } },
+    });
+
+    expect((await limiter.checkDistributed(request({ url: "/api/admin/users" }))).allowed).toBe(true);
+    expect((await limiter.checkDistributed(request({ url: "/api/admin/users" }))).allowed).toBe(false);
+    expect(redisClient.disconnect).toHaveBeenCalledTimes(1);
   });
 });

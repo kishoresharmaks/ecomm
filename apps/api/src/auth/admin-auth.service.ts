@@ -121,6 +121,19 @@ export class AdminAuthService {
 
   async resolveAuthorizationHeader(authorizationHeader: string | undefined): Promise<RequestUser | null> {
     const token = this.readBearerToken(authorizationHeader);
+    return this.resolveToken(token);
+  }
+
+  async resolveRequestHeaders(headers: Record<string, string | string[] | undefined>): Promise<RequestUser | null> {
+    return this.resolveToken(this.readRequestToken(headers));
+  }
+
+  readRequestToken(headers: Record<string, string | string[] | undefined>) {
+    const bearerToken = this.readBearerToken(readHeader(headers, "authorization"));
+    return bearerToken ? (bearerToken.startsWith(adminTokenPrefix) ? bearerToken : null) : readCookieToken(readHeader(headers, "cookie"));
+  }
+
+  private async resolveToken(token: string | null): Promise<RequestUser | null> {
     if (!token) {
       return null;
     }
@@ -168,9 +181,7 @@ export class AdminAuthService {
     return this.toRequestUser(session.user);
   }
 
-  async logout(authorizationHeader: string | undefined, actor?: RequestUser) {
-    const token = this.readBearerToken(authorizationHeader);
-
+  async logout(token: string | null, actor?: RequestUser) {
     if (!token?.startsWith(adminTokenPrefix)) {
       return { loggedOut: false };
     }
@@ -204,11 +215,10 @@ export class AdminAuthService {
   }
 
   async changePassword(
-    authorizationHeader: string | undefined,
+    token: string | null,
     actor: RequestUser,
     dto: AdminChangePasswordDto,
   ) {
-    const token = this.readBearerToken(authorizationHeader);
     if (!token?.startsWith(adminTokenPrefix)) {
       throw new UnauthorizedException("Admin session has expired. Sign in again.");
     }
@@ -451,4 +461,25 @@ export class AdminAuthService {
 
 function uniquePermissions(values: string[]) {
   return Array.from(new Set(values));
+}
+
+function readHeader(headers: Record<string, string | string[] | undefined>, name: string) {
+  const value = headers[name];
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function readCookieToken(cookieHeader: string | undefined) {
+  const cookie = cookieHeader
+    ?.split(";")
+    .map((value) => value.trim())
+    .find((value) => value.startsWith("indihub_admin_session="));
+  if (!cookie) {
+    return null;
+  }
+
+  try {
+    return decodeURIComponent(cookie.slice("indihub_admin_session=".length));
+  } catch {
+    return null;
+  }
 }

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { IncomingHttpHeaders } from "node:http";
+import IORedis from "ioredis";
 
 type RateLimitRequest = {
   method?: string;
@@ -45,6 +46,8 @@ type RequestRateLimiterOptions = {
   enabled?: boolean;
   trustProxyHeaders?: boolean;
   now?: () => number;
+  redisUrl?: string;
+  redisClient?: Pick<IORedis, "eval" | "on" | "disconnect">;
   policies?: Partial<Record<PolicyName, Partial<RateLimitPolicy>>>;
 };
 
@@ -120,6 +123,7 @@ const defaultPolicies: Record<PolicyName, RateLimitPolicy> = {
 
 export class RequestRateLimiter {
   private readonly buckets = new Map<string, RateLimitEntry>();
+  private redis: Pick<IORedis, "eval" | "on" | "disconnect"> | undefined;
   private readonly enabled: boolean;
   private readonly trustProxyHeaders: boolean;
   private readonly now: () => number;
@@ -131,14 +135,20 @@ export class RequestRateLimiter {
     this.trustProxyHeaders = options.trustProxyHeaders ?? false;
     this.now = options.now ?? Date.now;
     this.policies = mergePolicies(options.policies);
+    if (options.redisClient) {
+      this.redis = options.redisClient;
+    } else if (options.redisUrl) {
+      this.redis = new IORedis(options.redisUrl, {
+        enableOfflineQueue: false,
+        maxRetriesPerRequest: 1,
+        retryStrategy: (attempt) => (attempt === 1 ? 250 : null),
+      });
+      this.redis.on("error", () => this.disableRedis());
+    }
   }
 
   check(request: RateLimitRequest): RateLimitDecision {
-    const route = this.routeInfo(request);
-    const policyKey = this.policyNameForRoute(route, this.authenticatedPrincipal(request));
-    const policy = this.policies[policyKey];
-    const now = this.now();
-    const key = `${policy.name}:${route.method}:${this.identityKey(request)}`;
+    const { key, now, policy } = this.requestContext(request);
 
     if (!this.enabled) {
       return {
@@ -168,6 +178,47 @@ export class RequestRateLimiter {
       remaining,
       resetAt: entry.resetAt,
       retryAfterSeconds,
+    };
+  }
+
+  async checkDistributed(request: RateLimitRequest): Promise<RateLimitDecision> {
+    const redis = this.redis;
+    if (!redis || !this.enabled) {
+      return this.check(request);
+    }
+
+    const { key, now, policy } = this.requestContext(request);
+    try {
+      const [count, ttlMs] = (await redis.eval(
+        "local count = redis.call('INCR', KEYS[1]); if count == 1 then redis.call('PEXPIRE', KEYS[1], ARGV[1]); end; return {count, redis.call('PTTL', KEYS[1])}",
+        1,
+        `indihub:rate-limit:${key}`,
+        policy.windowMs,
+      )) as [number, number];
+      const remaining = Math.max(0, policy.max - count);
+      const retryAfterSeconds = Math.max(1, Math.ceil(ttlMs / 1000));
+
+      return {
+        allowed: count <= policy.max,
+        key,
+        policy,
+        remaining,
+        resetAt: now + Math.max(0, ttlMs),
+        retryAfterSeconds,
+      };
+    } catch {
+      this.disableRedis();
+      return this.check(request);
+    }
+  }
+
+  private requestContext(request: RateLimitRequest) {
+    const route = this.routeInfo(request);
+    const policy = this.policies[this.policyNameForRoute(route, this.authenticatedPrincipal(request))];
+    return {
+      key: `${policy.name}:${route.method}:${this.identityKey(request)}`,
+      now: this.now(),
+      policy,
     };
   }
 
@@ -276,6 +327,16 @@ export class RequestRateLimiter {
       }
     }
   }
+
+  private disableRedis() {
+    const redis = this.redis;
+    if (!redis) {
+      return;
+    }
+
+    this.redis = undefined;
+    redis.disconnect();
+  }
 }
 
 function normalizeRequestUrl(value: string) {
@@ -298,8 +359,8 @@ function normalizeRequestUrl(value: string) {
 export function createRateLimitMiddleware(options: RequestRateLimiterOptions = {}) {
   const limiter = new RequestRateLimiter(options);
 
-  return (request: RateLimitRequest, response: RateLimitResponse, next: NextFunction) => {
-    const decision = limiter.check(request);
+  return async (request: RateLimitRequest, response: RateLimitResponse, next: NextFunction) => {
+    const decision = await limiter.checkDistributed(request);
     response.setHeader("X-RateLimit-Limit", decision.policy.max);
     response.setHeader("X-RateLimit-Remaining", decision.remaining);
     response.setHeader("X-RateLimit-Reset", Math.ceil(decision.resetAt / 1000));
@@ -322,6 +383,7 @@ export function rateLimitOptionsFromEnv(env: NodeJS.ProcessEnv = process.env): R
   return {
     enabled: env.INDIHUB_API_RATE_LIMIT_ENABLED !== "false",
     trustProxyHeaders: env.INDIHUB_TRUST_PROXY_HEADERS === "true",
+    ...(env.REDIS_URL ? { redisUrl: env.REDIS_URL } : {}),
     policies: {
       auth: maxOverride(env.INDIHUB_RATE_LIMIT_AUTH_PER_MINUTE),
       admin: maxOverride(env.INDIHUB_RATE_LIMIT_ADMIN_PER_MINUTE),

@@ -7,6 +7,10 @@ import {
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AdminUsersService } from "./admin-users.service";
 
+vi.mock("../../auth/admin-password", () => ({
+  hashAdminPassword: vi.fn().mockResolvedValue({ hash: "password_hash", salt: "password_salt" }),
+}));
+
 const actor = {
   id: "admin_actor",
   clerkUserId: null,
@@ -142,6 +146,7 @@ describe("AdminUsersService role removal", () => {
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
 
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
     expect(tx.userRole.deleteMany).not.toHaveBeenCalled();
   });
 
@@ -164,6 +169,101 @@ describe("AdminUsersService role removal", () => {
     expect(tx.adminSession.updateMany).toHaveBeenCalledWith({
       where: { userId: "finance_user", revokedAt: null },
       data: { revokedAt: expect.any(Date) },
+    });
+  });
+});
+
+describe("AdminUsersService back-office password reset", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("updates user status and writes its audit record in the same locked transaction", async () => {
+    const tx = createUsersTx();
+    const existing = adminUser("user_admin_2", UserStatus.ACTIVE);
+    const updated = adminUser("user_admin_2", UserStatus.DISABLED);
+    tx.user.findUnique.mockResolvedValue(existing);
+    tx.user.count.mockResolvedValue(1);
+    tx.user.update.mockResolvedValue(updated);
+    const service = new AdminUsersService(createPrisma(tx));
+
+    await service.updateStatus(actor, existing.id, {
+      status: UserStatus.DISABLED,
+      note: "Access removed after review.",
+    });
+
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(tx.user.count).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        id: { not: existing.id },
+        status: UserStatus.ACTIVE,
+      }),
+    });
+    expect(tx.user.update).toHaveBeenCalledWith({
+      where: { id: existing.id },
+      data: { status: UserStatus.DISABLED },
+      include: expect.any(Object),
+    });
+    expect(tx.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: "admin.user.status_updated",
+        entityId: existing.id,
+        oldValue: { status: UserStatus.ACTIVE },
+        newValue: { status: UserStatus.DISABLED, note: "Access removed after review." },
+      }),
+    });
+  });
+
+  it("keeps the final active admin enabled", async () => {
+    const tx = createUsersTx();
+    const existing = adminUser("user_admin_2", UserStatus.ACTIVE);
+    tx.user.findUnique.mockResolvedValue(existing);
+    tx.user.count.mockResolvedValue(0);
+    const service = new AdminUsersService(createPrisma(tx));
+
+    await expect(
+      service.updateStatus(actor, existing.id, { status: UserStatus.DISABLED }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(tx.user.update).not.toHaveBeenCalled();
+    expect(tx.auditLog.create).not.toHaveBeenCalled();
+  });
+
+  it("updates the credential and revokes active sessions in one transaction", async () => {
+    const tx = createUsersTx();
+    tx.user.findUnique.mockResolvedValue(baseUser("admin_target", RoleCode.ADMIN));
+    tx.adminSession.updateMany.mockResolvedValue({ count: 3 });
+    const service = new AdminUsersService(createPrisma(tx));
+
+    await expect(
+      service.setBackOfficePassword(actor, "admin_target", {
+        password: "NewSecurePassword123!",
+        note: "Credential rotated after account review.",
+      }),
+    ).resolves.toEqual({ updated: true, userId: "admin_target", revokedSessions: 3 });
+
+    expect(tx.adminCredential.upsert).toHaveBeenCalledWith({
+      where: { userId: "admin_target" },
+      update: expect.objectContaining({
+        passwordHash: "password_hash",
+        passwordSalt: "password_salt",
+      }),
+      create: expect.objectContaining({
+        userId: "admin_target",
+        passwordHash: "password_hash",
+        passwordSalt: "password_salt",
+      }),
+    });
+    expect(tx.adminSession.updateMany).toHaveBeenCalledWith({
+      where: { userId: "admin_target", revokedAt: null },
+      data: { revokedAt: expect.any(Date) },
+    });
+    expect(tx.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: "admin.user.backoffice_password_set",
+        entityId: "admin_target",
+        newValue: expect.objectContaining({ revokedSessionCount: 3 }),
+      }),
     });
   });
 });
@@ -223,9 +323,11 @@ function deliveryPartnerUser() {
 
 function createUsersTx() {
   return {
+    $executeRaw: vi.fn(),
     user: {
       findUnique: vi.fn(),
       count: vi.fn().mockResolvedValue(1),
+      update: vi.fn(),
     },
     role: {
       findUnique: vi.fn(),
@@ -284,6 +386,7 @@ function createUsersTx() {
     adminCredential: {
       count: vi.fn().mockResolvedValue(0),
       deleteMany: vi.fn(),
+      upsert: vi.fn(),
     },
     adminSession: {
       count: vi.fn().mockResolvedValue(0),
@@ -303,4 +406,22 @@ function createPrisma(tx: ReturnType<typeof createUsersTx>) {
       ),
     },
   } as never;
+}
+
+function adminUser(id: string, status: UserStatus) {
+  return {
+    id,
+    clerkUserId: null,
+    email: `${id}@example.com`,
+    phone: null,
+    fullName: "Back Office Admin",
+    status,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    userRoles: [{ role: role(RoleCode.ADMIN) }],
+    customer: null,
+    seller: null,
+    businessBuyer: null,
+    deliveryProfile: null,
+  };
 }

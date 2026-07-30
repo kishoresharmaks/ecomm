@@ -1,6 +1,7 @@
 import { CanActivate, ExecutionContext, ForbiddenException, Inject, Injectable, UnauthorizedException } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { RoleCode, UserStatus } from "@indihub/database";
+import { isCorsOriginAllowed } from "../../app/cors";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AdminAuthService } from "../admin-auth.service";
 import { IS_PUBLIC_KEY, ROLES_KEY } from "../auth.constants";
@@ -31,10 +32,10 @@ export class AuthGuard implements CanActivate {
       context.getClass()
     ]);
     const request = context.switchToHttp().getRequest<IndiHubRequest>();
-    const authorizationHeader = this.readHeader(request, "authorization");
-    const adminUser = await this.adminAuthService.resolveAuthorizationHeader(authorizationHeader);
+    const adminUser = await this.adminAuthService.resolveRequestHeaders(request.headers);
 
     if (adminUser) {
+      this.assertSafeCookieRequest(request);
       request.currentUser = adminUser;
       return true;
     }
@@ -102,6 +103,23 @@ export class AuthGuard implements CanActivate {
 
   private isBackOfficeRole(role: RoleCode) {
     return role === RoleCode.ADMIN || role === RoleCode.FINANCE || role === RoleCode.COURIER_MANAGER || role === RoleCode.CHAT_SUPPORT;
+  }
+
+  private assertSafeCookieRequest(request: IndiHubRequest) {
+    const method = request.method?.toUpperCase() ?? "GET";
+    if (["GET", "HEAD", "OPTIONS"].includes(method)) {
+      return;
+    }
+
+    const authorization = this.readHeader(request, "authorization");
+    if (authorization?.startsWith("Bearer ih_admin_")) {
+      return;
+    }
+
+    const origin = this.readHeader(request, "origin");
+    if (!origin || !isCorsOriginAllowed(origin)) {
+      throw new ForbiddenException("Back-office request origin is not allowed.");
+    }
   }
 
   private async resolveClerkUserId(request: IndiHubRequest) {

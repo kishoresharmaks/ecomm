@@ -142,31 +142,36 @@ export class AdminUsersService {
   }
 
   async updateStatus(actor: RequestUser, userId: string, dto: UpdateUserStatusDto) {
-    const existing = await this.getUserOrThrow(userId);
+    const user = await this.prisma.client.$transaction(async (tx) => {
+      await this.lockActiveAdminChanges(tx);
+      const existing = await this.getUserOrThrow(userId, tx);
 
-    if (existing.id === actor.id && dto.status !== UserStatus.ACTIVE) {
-      throw new BadRequestException("Admin cannot disable their own active account.");
-    }
-
-    if (existing.userRoles.some((userRole) => userRole.role.code === RoleCode.ADMIN) && dto.status !== UserStatus.ACTIVE) {
-      await this.ensureAnotherActiveAdmin(existing.id);
-    }
-
-    const user = await this.prisma.client.user.update({
-      where: { id: userId },
-      data: { status: dto.status },
-      include: userInclude
-    });
-
-    await this.prisma.client.auditLog.create({
-      data: {
-        actor: { connect: { id: actor.id } },
-        action: "admin.user.status_updated",
-        entityType: "user",
-        entityId: user.id,
-        oldValue: { status: existing.status },
-        newValue: { status: user.status, note: dto.note }
+      if (existing.id === actor.id && dto.status !== UserStatus.ACTIVE) {
+        throw new BadRequestException("Admin cannot disable their own active account.");
       }
+
+      if (existing.userRoles.some((userRole) => userRole.role.code === RoleCode.ADMIN) && dto.status !== UserStatus.ACTIVE) {
+        await this.ensureAnotherActiveAdmin(existing.id, tx);
+      }
+
+      const updated = await tx.user.update({
+        where: { id: userId },
+        data: { status: dto.status },
+        include: userInclude
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actor: { connect: { id: actor.id } },
+          action: "admin.user.status_updated",
+          entityType: "user",
+          entityId: updated.id,
+          oldValue: { status: existing.status },
+          newValue: { status: updated.status, note: dto.note }
+        }
+      });
+
+      return updated;
     });
 
     return this.userReadback(user);
@@ -244,6 +249,9 @@ export class AdminUsersService {
     this.assertValidRoleCode(dto.roleCode);
 
     const updated = await this.prisma.client.$transaction(async (tx) => {
+      if (dto.roleCode === RoleCode.ADMIN) {
+        await this.lockActiveAdminChanges(tx);
+      }
       const user = await this.getUserOrThrow(userId, tx);
       const role = await tx.role.findUnique({ where: { code: dto.roleCode } });
 
@@ -296,48 +304,58 @@ export class AdminUsersService {
   }
 
   async setBackOfficePassword(actor: RequestUser, userId: string, dto: SetBackOfficePasswordDto) {
-    const user = await this.getUserOrThrow(userId);
-    const canUseBackOffice = user.userRoles.some((userRole) =>
-      backOfficeRoleCodes.has(userRole.role.code),
-    );
-
-    if (!canUseBackOffice) {
-      throw new BadRequestException("Assign Admin, Finance Manager, or Courier Manager role before setting a back-office password.");
-    }
-
     const hashed = await hashAdminPassword(dto.password);
-    await this.prisma.client.adminCredential.upsert({
-      where: { userId },
-      update: {
-        passwordHash: hashed.hash,
-        passwordSalt: hashed.salt,
-        passwordAlgorithm: "scrypt",
-        passwordUpdatedAt: new Date(),
-        failedLoginCount: 0,
-        lockedUntil: null
-      },
-      create: {
-        userId,
-        passwordHash: hashed.hash,
-        passwordSalt: hashed.salt,
-        passwordAlgorithm: "scrypt"
-      }
-    });
+    const revokedSessions = await this.prisma.client.$transaction(async (tx) => {
+      const user = await this.getUserOrThrow(userId, tx);
+      const canUseBackOffice = user.userRoles.some((userRole) =>
+        backOfficeRoleCodes.has(userRole.role.code),
+      );
 
-    await this.prisma.client.auditLog.create({
-      data: {
-        actor: { connect: { id: actor.id } },
-        action: "admin.user.backoffice_password_set",
-        entityType: "user",
-        entityId: user.id,
-        newValue: {
-          roles: user.userRoles.map((userRole) => userRole.role.code),
-          note: dto.note ?? null
+      if (!canUseBackOffice) {
+        throw new BadRequestException("Assign Admin, Finance Manager, or Courier Manager role before setting a back-office password.");
+      }
+
+      await tx.adminCredential.upsert({
+        where: { userId },
+        update: {
+          passwordHash: hashed.hash,
+          passwordSalt: hashed.salt,
+          passwordAlgorithm: "scrypt",
+          passwordUpdatedAt: new Date(),
+          failedLoginCount: 0,
+          lockedUntil: null
+        },
+        create: {
+          userId,
+          passwordHash: hashed.hash,
+          passwordSalt: hashed.salt,
+          passwordAlgorithm: "scrypt"
         }
-      }
+      });
+
+      const sessions = await tx.adminSession.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() }
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actor: { connect: { id: actor.id } },
+          action: "admin.user.backoffice_password_set",
+          entityType: "user",
+          entityId: user.id,
+          newValue: {
+            roles: user.userRoles.map((userRole) => userRole.role.code),
+            revokedSessionCount: sessions.count,
+            note: dto.note ?? null
+          }
+        }
+      });
+
+      return sessions.count;
     });
 
-    return { updated: true, userId };
+    return { updated: true, userId, revokedSessions };
   }
 
   async updateDeliveryPartnerProfile(
@@ -435,8 +453,8 @@ export class AdminUsersService {
     };
   }
 
-  private async ensureAnotherActiveAdmin(excludedUserId: string) {
-    const otherAdminCount = await this.prisma.client.user.count({
+  private async ensureAnotherActiveAdmin(excludedUserId: string, db: AdminUsersDbClient) {
+    const otherAdminCount = await db.user.count({
       where: {
         id: { not: excludedUserId },
         status: UserStatus.ACTIVE,
@@ -451,6 +469,11 @@ export class AdminUsersService {
     if (otherAdminCount === 0) {
       throw new BadRequestException("At least one other active admin must remain.");
     }
+  }
+
+  private async lockActiveAdminChanges(db: Prisma.TransactionClient) {
+    // ponytail: one global active-admin lock; split it only if back-office status throughput becomes material.
+    await db.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('indihub:active-admin-status'))`;
   }
 
   private async buildRoleRemovalImpact(

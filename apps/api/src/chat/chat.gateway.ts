@@ -100,9 +100,10 @@ export class ChatGateway implements OnGatewayConnection, OnModuleInit {
   private async resolveUser(client: Socket): Promise<RequestUser> {
     const auth = client.handshake.auth as Record<string, string | undefined>;
     const bearerToken = auth.token;
-    const adminUser = await this.adminAuthService.resolveAuthorizationHeader(
-      bearerToken ? `Bearer ${bearerToken}` : undefined,
-    );
+    const adminUser = await this.adminAuthService.resolveRequestHeaders({
+      ...client.handshake.headers,
+      ...(bearerToken ? { authorization: `Bearer ${bearerToken}` } : {}),
+    });
     if (adminUser) {
       return adminUser;
     }

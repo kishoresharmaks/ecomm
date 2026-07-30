@@ -1,7 +1,7 @@
 "use client";
 
 import { ReactNode, createContext, useContext, useEffect, useMemo, useState } from "react";
-import { indihubFetch, type IndihubAuthHeaders } from "@/lib/api";
+import { adminCookieSessionMarker, indihubFetch, type IndihubAuthHeaders } from "@/lib/api";
 
 type AdminAuthUser = {
   id: string;
@@ -10,7 +10,6 @@ type AdminAuthUser = {
 };
 
 type AdminLoginResponse = {
-  token: string;
   expiresAt: string;
   user: AdminAuthUser;
 };
@@ -30,7 +29,6 @@ type AdminAuthContextValue = AdminAuthState & {
   logout: () => Promise<void>;
 };
 
-const storageKey = "indihub.adminAuth.v1";
 const emptyState: AdminAuthState = {
   token: "",
   expiresAt: "",
@@ -41,38 +39,27 @@ const AdminAuthContext = createContext<AdminAuthContextValue | null>(null);
 
 export function AdminAuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AdminAuthState>(emptyState);
-  const [isReady, setIsReady] = useState(true);
+  const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
 
     async function restoreSession() {
       try {
-        const stored = localStorage.getItem(storageKey);
-        if (!stored) {
-          return;
-        }
-
-        const parsed = JSON.parse(stored) as AdminAuthState;
-        if (!parsed.token || !parsed.expiresAt || new Date(parsed.expiresAt) <= new Date()) {
-          localStorage.removeItem(storageKey);
-          return;
-        }
-
-        const user = await indihubFetch<AdminAuthUser>("/api/admin/auth/me", undefined, { bearerToken: parsed.token });
+        const user = await indihubFetch<AdminAuthUser>("/api/admin/auth/me", undefined, {
+          bearerToken: adminCookieSessionMarker,
+        });
         if (cancelled) {
           return;
         }
 
         const nextState = {
-          token: parsed.token,
-          expiresAt: parsed.expiresAt,
+          token: adminCookieSessionMarker,
+          expiresAt: "",
           user
         };
-        localStorage.setItem(storageKey, JSON.stringify(nextState));
         setState(nextState);
       } catch {
-        localStorage.removeItem(storageKey);
         if (!cancelled) {
           setState(emptyState);
         }
@@ -91,8 +78,10 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<AdminAuthContextValue>(() => {
-    const isAuthenticated = Boolean(isReady && state.token && state.user && new Date(state.expiresAt) > new Date());
-    const authHeaders = isAuthenticated ? { bearerToken: state.token } : {};
+    const isAuthenticated = Boolean(isReady && state.token && state.user);
+    const authHeaders = isAuthenticated
+      ? { bearerToken: state.token, onUnauthorized: () => setState(emptyState) }
+      : {};
 
     return {
       ...state,
@@ -102,14 +91,14 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
       login: async (email, password) => {
         const response = await indihubFetch<AdminLoginResponse>("/api/admin/auth/login", {
           method: "POST",
+          credentials: "include",
           body: JSON.stringify({ email, password })
         });
         const nextState = {
-          token: response.token,
+          token: adminCookieSessionMarker,
           expiresAt: response.expiresAt,
           user: response.user
         };
-        localStorage.setItem(storageKey, JSON.stringify(nextState));
         setState(nextState);
       },
       changePassword: async (currentPassword, newPassword) => {
@@ -119,17 +108,14 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
             method: "POST",
             body: JSON.stringify({ currentPassword, newPassword }),
           },
-          { bearerToken: state.token },
+          { bearerToken: adminCookieSessionMarker },
         );
       },
       logout: async () => {
-        const token = state.token;
         setState(emptyState);
-        localStorage.removeItem(storageKey);
-
-        if (token) {
+        if (state.token) {
           try {
-            await indihubFetch("/api/admin/auth/logout", { method: "POST" }, { bearerToken: token });
+            await indihubFetch("/api/admin/auth/logout", { method: "POST" }, { bearerToken: adminCookieSessionMarker });
           } catch {
             // The browser session is already cleared; stale server sessions expire automatically.
           }

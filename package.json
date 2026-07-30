@@ -19,6 +19,8 @@
     "architecture:baseline:verify": "tsx scripts/architecture/check-prisma-ownership.ts && tsx scripts/architecture/check-boundaries.ts --verify-baseline",
     "db:migrations:check": "tsx scripts/architecture/check-migrations.ts",
     "db:bootstrap:empty": "node scripts/database/bootstrap-empty-database.mjs",
+    "db:baseline:build": "node scripts/database/build-complete-production-schema.mjs",
+    "db:baseline:check": "node scripts/database/build-complete-production-schema.mjs --check",
     "api:contract:export": "pnpm --dir apps/api openapi:contract",
     "api:contract:check": "pnpm --dir apps/api openapi:contract --compare=docs/architecture/contracts/openapi.json",
     "test:integration:api": "vitest run --root apps/api src/app/backend.integration.test.ts",

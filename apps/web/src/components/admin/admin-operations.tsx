@@ -5277,7 +5277,6 @@ export function AdminB2BEnquiryDetailPageClient({ enquiryId }: { enquiryId: stri
     }
 
     const socket = io(`${apiBaseUrl}/b2b`, {
-      auth: { token: auth.authHeaders.bearerToken },
       withCredentials: true,
       transports: ["websocket"],
     });

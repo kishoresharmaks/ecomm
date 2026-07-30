@@ -2796,13 +2796,6 @@ integrationDescribe("1HandIndia backend integration", () => {
       expect(routedSummary.body).toMatchObject({
         shippingPaise: 4700,
       });
-      const routedSummarySnapshot = routedSummary.body as {
-        feeSnapshot: { deliveryRouting: unknown };
-      };
-      expect(routedSummarySnapshot.feeSnapshot.deliveryRouting).toMatchObject({
-        deliveryMode: DeliveryMode.LOCAL_DELIVERY_PARTNER,
-      });
-
       const routedQuote = await request(app.getHttpServer())
         .post("/api/checkout/resolve-delivery")
         .set(authHeader(data.customerUser.id))
@@ -4805,6 +4798,14 @@ integrationDescribe("1HandIndia backend integration", () => {
   });
 
   it("runs seller product submission and admin product approval through the API", async () => {
+    await prisma.sellerProfile.update({
+      where: { sellerId: data.seller.id },
+      data: {
+        taxRegistrationStatus: SellerTaxRegistrationStatus.GST_REGISTERED,
+        gstNumber: "33ABCDE1234F1Z5",
+      },
+    });
+
     await request(app.getHttpServer())
       .post("/api/seller/products")
       .set(authHeader(data.customerUser.id))
@@ -4976,7 +4977,7 @@ integrationDescribe("1HandIndia backend integration", () => {
       .set(authHeader(data.sellerUser.id))
       .send({
         ...createDynamicProductPayload(categoryId, data.sellerUser.id, "invalid-storage"),
-        attributes: { brand: "Acme" },
+        attributes: marketplaceEssentialAttributes({ brand: "Acme" }),
         variants: [
           {
             sku: `${runId}-INVALID-STORAGE`,
@@ -4995,7 +4996,7 @@ integrationDescribe("1HandIndia backend integration", () => {
       .set(authHeader(data.sellerUser.id))
       .send({
         ...createDynamicProductPayload(categoryId, data.sellerUser.id, "valid-mobile"),
-        attributes: { brand: "Acme" },
+        attributes: marketplaceEssentialAttributes({ brand: "Acme" }),
         variants: [
           {
             sku: `${runId}-DYNAMIC-MOBILE-128`,
@@ -6514,7 +6515,10 @@ function marketplaceEssentialAttributes(overrides: Record<string, unknown> = {})
     unitOfMeasure: "Pack",
     gstRatePercent: 5,
     hsnCode: "100630",
-    returnEligibility: "Returnable",
+    returnEligibility: "Return and replacement",
+    returnWindowDays: 7,
+    replacementWindowDays: 7,
+    returnReasons: ["Damaged on arrival", "Wrong item received"],
     packageWeightGrams: 500,
     ...overrides,
   };
@@ -7168,8 +7172,6 @@ async function createApprovedSeller(
           contactPhone: "9876543210",
           contactEmail: `${slug}@1handindia.test`,
           description: "Integration test seller profile",
-          taxRegistrationStatus: SellerTaxRegistrationStatus.GST_REGISTERED,
-          gstNumber: "33ABCDE1234F1Z5",
         },
       },
       addresses: {

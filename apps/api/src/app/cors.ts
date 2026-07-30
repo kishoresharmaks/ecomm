@@ -3,9 +3,6 @@ const DEFAULT_CORS_ORIGINS = "https://1handindia.com,https://www.1handindia.com,
 type CorsOriginCallback = (error: Error | null, allow?: boolean) => void;
 
 export function createCorsOptions(env: NodeJS.ProcessEnv = process.env) {
-  const allowedOrigins = parseCorsOrigins(env.API_CORS_ORIGINS ?? DEFAULT_CORS_ORIGINS);
-  const productionLike = isProductionLike(env);
-
   return {
     credentials: true,
     origin(origin: string | undefined, callback: CorsOriginCallback) {
@@ -14,7 +11,7 @@ export function createCorsOptions(env: NodeJS.ProcessEnv = process.env) {
         return;
       }
 
-      if (allowedOrigins.has(origin) || (!productionLike && isPrivateNetworkOrigin(origin))) {
+      if (isCorsOriginAllowed(origin, env)) {
         callback(null, true);
         return;
       }
@@ -22,6 +19,11 @@ export function createCorsOptions(env: NodeJS.ProcessEnv = process.env) {
       callback(null, false);
     },
   };
+}
+
+export function isCorsOriginAllowed(origin: string, env: NodeJS.ProcessEnv = process.env) {
+  const allowedOrigins = parseCorsOrigins(env.API_CORS_ORIGINS ?? DEFAULT_CORS_ORIGINS);
+  return allowedOrigins.has(origin) || (!isProductionLike(env) && isPrivateNetworkOrigin(origin));
 }
 
 export function parseCorsOrigins(value: string) {

@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { IndihubApiError, indihubFetch, requestTimedOutMessage, userFacingApiErrorMessage, userSessionExpiredMessage } from "./api";
+import {
+  adminCookieSessionMarker,
+  IndihubApiError,
+  indihubFetch,
+  requestTimedOutMessage,
+  userFacingApiErrorMessage,
+  userSessionExpiredMessage,
+} from "./api";
 
 describe("indihubFetch", () => {
   afterEach(() => {
@@ -88,6 +95,21 @@ describe("indihubFetch", () => {
       synced: true
     });
     expect(new Headers((fetchMock.mock.calls[0]?.[1] as RequestInit).headers).get("x-indihub-accept-encrypted-response")).toBe("A256GCM");
+  });
+
+  it("uses credentials without exposing an admin bearer token", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    await indihubFetch("/api/admin/auth/me", undefined, { bearerToken: adminCookieSessionMarker });
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(init.credentials).toBe("include");
+    expect(new Headers(init.headers).get("authorization")).toBeNull();
   });
 });
 

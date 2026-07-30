@@ -11,5 +11,6 @@ export type RequestUser = {
 
 export type IndiHubRequest = {
   headers: Record<string, string | string[] | undefined>;
+  method?: string;
   currentUser?: RequestUser;
 };

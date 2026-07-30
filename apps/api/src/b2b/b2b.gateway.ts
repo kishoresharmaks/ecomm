@@ -84,9 +84,10 @@ export class B2BGateway implements OnGatewayConnection, OnGatewayInit {
   private async resolveUser(client: Socket): Promise<RequestUser> {
     const auth = client.handshake.auth as Record<string, string | undefined>;
     const token = auth.token ?? auth.clerkToken;
-    const adminUser = await this.adminAuthService.resolveAuthorizationHeader(
-      token ? `Bearer ${token}` : undefined,
-    );
+    const adminUser = await this.adminAuthService.resolveRequestHeaders({
+      ...client.handshake.headers,
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+    });
     if (adminUser) {
       return adminUser;
     }

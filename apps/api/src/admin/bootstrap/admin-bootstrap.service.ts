@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable } from "@nestjs/common";
-import { RoleCode, UserStatus } from "@indihub/database";
+import { Prisma, RoleCode, UserStatus } from "@indihub/database";
 import { hashAdminPassword } from "../../auth/admin-password";
 import { PrismaService } from "../../prisma/prisma.service";
 import { FirstAdminDto } from "./dto/first-admin.dto";
@@ -23,21 +23,27 @@ export class AdminBootstrapService {
         }
       });
 
-      const existingUser = await tx.user.findFirst({
+      const existingUser = await tx.user.findUnique({
         where: {
           email: dto.email
+        },
+        include: {
+          adminCredential: true
         }
       });
 
       const existingAdminCount = await tx.userRole.count({
         where: {
-          roleId: adminRole.id,
-          ...(existingUser ? { userId: { not: existingUser.id } } : {})
+          roleId: adminRole.id
         }
       });
 
       if (existingAdminCount > 0) {
         throw new ConflictException("First admin is already configured. Add more admins from the admin users module.");
+      }
+
+      if (existingUser?.adminCredential) {
+        throw new ConflictException("A back-office credential already exists for this account. Use the admin users module instead.");
       }
 
       const user = existingUser
@@ -74,17 +80,8 @@ export class AdminBootstrapService {
       });
 
       const hashed = await hashAdminPassword(dto.password);
-      await tx.adminCredential.upsert({
-        where: { userId: user.id },
-        update: {
-          passwordHash: hashed.hash,
-          passwordSalt: hashed.salt,
-          passwordAlgorithm: "scrypt",
-          passwordUpdatedAt: new Date(),
-          failedLoginCount: 0,
-          lockedUntil: null
-        },
-        create: {
+      await tx.adminCredential.create({
+        data: {
           userId: user.id,
           passwordHash: hashed.hash,
           passwordSalt: hashed.salt,
@@ -111,6 +108,8 @@ export class AdminBootstrapService {
         fullName: user.fullName,
         role: RoleCode.ADMIN
       };
+    }, {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable
     });
   }
 }

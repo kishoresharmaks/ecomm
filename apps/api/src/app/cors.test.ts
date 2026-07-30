@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createCorsOptions, parseCorsOrigins } from "./cors";
+import { createCorsOptions, isCorsOriginAllowed, parseCorsOrigins } from "./cors";
 
 function checkOrigin(origin: string | undefined, env: NodeJS.ProcessEnv) {
   const options = createCorsOptions(env);
@@ -50,5 +50,10 @@ describe("createCorsOptions", () => {
         NODE_ENV: "production",
       }),
     ).toBe(false);
+  });
+
+  it("shares the same origin policy with cookie-authenticated admin requests", () => {
+    expect(isCorsOriginAllowed("https://1handindia.com", { NODE_ENV: "production" })).toBe(true);
+    expect(isCorsOriginAllowed("https://attacker.example", { NODE_ENV: "production" })).toBe(false);
   });
 });

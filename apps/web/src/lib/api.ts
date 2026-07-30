@@ -20,6 +20,8 @@ export type IndihubAuthHeaders = {
   onUnauthorized?: (error: IndihubApiError) => void;
 };
 
+export const adminCookieSessionMarker = "indihub-admin-cookie-session";
+
 export const userSessionExpiredMessage = "Your sign-in session expired. Please refresh your session or sign in again.";
 export const requestTimedOutMessage = "The server is taking longer than expected. Please try again.";
 
@@ -37,9 +39,10 @@ export class IndihubApiError extends Error {
 
 export async function buildAuthHeaders(auth?: IndihubAuthHeaders, options: BearerTokenOptions = {}): Promise<Record<string, string>> {
   const bearerToken = await bearerTokenForRequest(auth, options);
+  const authorizationToken = bearerToken === adminCookieSessionMarker ? undefined : bearerToken;
 
   return {
-    ...(bearerToken ? { Authorization: `Bearer ${bearerToken}` } : {}),
+    ...(authorizationToken ? { Authorization: `Bearer ${authorizationToken}` } : {}),
     ...(auth?.platformUserId ? { "x-indihub-user-id": auth.platformUserId } : {}),
     ...(auth?.clerkUserId && !bearerToken ? { "x-clerk-user-id": auth.clerkUserId } : {})
   };
@@ -97,10 +100,11 @@ async function request(path: string, init: RequestInit | undefined, auth: Indihu
   }
 
   const bearerToken = await bearerTokenForRequest(auth, options);
-  const acceptsEncryptedResponse = bearerToken && canDecryptEncryptedResponses();
+  const authorizationToken = bearerToken === adminCookieSessionMarker ? undefined : bearerToken;
+  const acceptsEncryptedResponse = authorizationToken && canDecryptEncryptedResponses();
   const headers = new Headers({
     "Content-Type": "application/json",
-    ...(bearerToken ? { Authorization: `Bearer ${bearerToken}` } : {}),
+    ...(authorizationToken ? { Authorization: `Bearer ${authorizationToken}` } : {}),
     ...(acceptsEncryptedResponse ? { "x-indihub-accept-encrypted-response": "A256GCM" } : {}),
     ...(auth?.platformUserId ? { "x-indihub-user-id": auth.platformUserId } : {}),
     ...(auth?.clerkUserId && !bearerToken ? { "x-clerk-user-id": auth.clerkUserId } : {})
@@ -122,11 +126,12 @@ async function request(path: string, init: RequestInit | undefined, auth: Indihu
     const requestInit: RequestInit = {
       ...init,
       headers,
+      credentials: init?.credentials ?? (bearerToken === adminCookieSessionMarker ? "include" : "same-origin"),
       ...(init?.signal || controller?.signal ? { signal: init?.signal ?? controller?.signal ?? null } : {})
     };
     const response = await fetch(`${apiBaseUrl}${path}`, requestInit);
 
-    return { response, bearerToken };
+    return { response, bearerToken: authorizationToken };
   } finally {
     if (timeoutId) {
       clearTimeout(timeoutId);

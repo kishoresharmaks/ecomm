@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 const root = process.cwd();
 
@@ -104,4 +105,13 @@ ALTER TABLE "b2b_financial_reconciliations"
   ),
 ];
 
-process.stdout.write(`${sections.join("\n\n")}\n`);
+export function buildProductionBaselineHardening() {
+  return `${sections.join("\n\n")}\n`;
+}
+
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(resolve(process.argv[1])).href
+) {
+  process.stdout.write(buildProductionBaselineHardening());
+}

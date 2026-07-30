@@ -24,13 +24,13 @@ describe("AuthGuard", () => {
     verifyAuthorizationHeader: vi.fn()
   };
   const adminAuthService = {
-    resolveAuthorizationHeader: vi.fn()
+    resolveRequestHeaders: vi.fn()
   };
 
   beforeEach(() => {
     vi.clearAllMocks();
     reflector.getAllAndOverride.mockReturnValue(false);
-    adminAuthService.resolveAuthorizationHeader.mockResolvedValue(null);
+    adminAuthService.resolveRequestHeaders.mockResolvedValue(null);
   });
 
   it("allows public routes without reading auth headers", async () => {
@@ -141,6 +141,44 @@ describe("AuthGuard", () => {
     ).rejects.toBeInstanceOf(UnauthorizedException);
 
     expect(clerkAuthService.verifyAuthorizationHeader).not.toHaveBeenCalled();
+  });
+
+  it("rejects cookie-authenticated admin mutations without an allowed origin", async () => {
+    adminAuthService.resolveRequestHeaders.mockResolvedValue({
+      id: "admin_1",
+      clerkUserId: null,
+      email: "admin@example.com",
+      roles: [RoleCode.ADMIN],
+      authProvider: "ADMIN_SESSION",
+    });
+    const guard = new AuthGuard(reflector as unknown as Reflector, prisma as never, adminAuthService as never, clerkAuthService as never);
+
+    await expect(
+      guard.canActivate(createContext({ method: "PATCH", headers: { cookie: "indihub_admin_session=token" } })),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it("allows cookie-authenticated admin mutations from an approved origin", async () => {
+    adminAuthService.resolveRequestHeaders.mockResolvedValue({
+      id: "admin_1",
+      clerkUserId: null,
+      email: "admin@example.com",
+      roles: [RoleCode.ADMIN],
+      authProvider: "ADMIN_SESSION",
+    });
+    const guard = new AuthGuard(reflector as unknown as Reflector, prisma as never, adminAuthService as never, clerkAuthService as never);
+
+    await expect(
+      guard.canActivate(
+        createContext({
+          method: "PATCH",
+          headers: {
+            cookie: "indihub_admin_session=token",
+            origin: "http://localhost:3000",
+          },
+        }),
+      ),
+    ).resolves.toBe(true);
   });
 });
 

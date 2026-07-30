@@ -117,9 +117,7 @@ async function openAdminSellerDocument(
     const response = await fetch(
       `${apiBaseUrl}/api/admin/sellers/${safeSellerId}/documents/${safeDocumentId}/file`,
       {
-        headers: {
-          Authorization: `Bearer ${auth.bearerToken}`,
-        },
+        credentials: "include",
       },
     );
 
