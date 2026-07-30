@@ -10,6 +10,10 @@ const outputPath = resolve(
   root,
   "prisma/baselines/20260730_complete_production_schema.sql",
 );
+const postBaselineOutputPath = resolve(
+  root,
+  "prisma/baselines/20260730_post_baseline_migrations.sql",
+);
 const migrationsPath = resolve(root, "prisma/migrations");
 const laterMigrations = readdirSync(migrationsPath, { withFileTypes: true })
   .filter(
@@ -37,15 +41,35 @@ const sections = [
   ),
 ];
 const output = `${sections.join("\n\n")}\n`;
+const postBaselineOutput = `${[
+  `-- 1HandIndia post-baseline migration repair.
+-- Generated on 2026-07-30 for a database that already has the approved
+-- ${manifest.throughMigration} baseline but is missing every later migration.
+-- Do not run this file on an empty database or rerun it after it succeeds.`,
+  ...laterMigrations.map(
+    (migrationName) =>
+      `-- Migration: ${migrationName}\n${read(
+        join("prisma/migrations", migrationName, "migration.sql"),
+      )}`,
+  ),
+].join("\n\n")}\n`;
 
 if (process.argv.includes("--check")) {
   if (readFileSync(outputPath, "utf8") !== output) {
     throw new Error(`${basename(outputPath)} is stale. Run pnpm db:baseline:build.`);
   }
-  console.log(`${basename(outputPath)} is current.`);
+  if (readFileSync(postBaselineOutputPath, "utf8") !== postBaselineOutput) {
+    throw new Error(
+      `${basename(postBaselineOutputPath)} is stale. Run pnpm db:baseline:build.`,
+    );
+  }
+  console.log(
+    `${basename(outputPath)} and ${basename(postBaselineOutputPath)} are current.`,
+  );
 } else {
   writeFileSync(outputPath, output);
+  writeFileSync(postBaselineOutputPath, postBaselineOutput);
   console.log(
-    `Wrote ${basename(outputPath)} with ${laterMigrations.length} post-baseline migrations.`,
+    `Wrote ${basename(outputPath)} and ${basename(postBaselineOutputPath)} with ${laterMigrations.length} post-baseline migrations.`,
   );
 }
