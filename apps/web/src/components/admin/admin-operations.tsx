@@ -2359,9 +2359,9 @@ export function AdminProductsPageClient({
     },
   });
   const items = listItems(query.data);
-  const title = isApprovalQueue ? "Product approval queue" : "Product catalogue";
+  const title = isApprovalQueue ? "Product verification" : "Product catalogue";
   const description = isApprovalQueue
-    ? "Review only seller-submitted products waiting for admin approval before they go live."
+    ? "Review only seller-submitted products waiting for verification before they go live."
     : "Review all products, approval state, pricing, stock, seller ownership, and customer-visible status.";
   const emptyTitle = isApprovalQueue ? "No products waiting for approval" : "No products found";
 
@@ -5112,7 +5112,7 @@ export function AdminB2BEnquiriesPageClient() {
                   onApprove={() =>
                     confirmation.requestConfirmation({
                       title: "Approve confirmed B2B enquiry?",
-                      description: `${item.businessBuyer?.companyName ?? "This buyer"} has confirmed the quotation. Admin approval moves it to the finalisation step.`,
+                      description: `${item.businessBuyer?.companyName ?? "This buyer"} has confirmed the quotation. Verification moves it to the finalisation step.`,
                       confirmLabel: "Approve enquiry",
                       tone: "warning",
                       onConfirm: () => approve.mutate(item.id),
@@ -5576,7 +5576,7 @@ export function AdminB2BEnquiryDetailPageClient({ enquiryId }: { enquiryId: stri
                 onApprove={() =>
                   confirmation.requestConfirmation({
                     title: "Approve confirmed B2B enquiry?",
-                    description: "Admin approval moves this buyer-confirmed quotation to finalisation.",
+                    description: "Verification moves this buyer-confirmed quotation to finalisation.",
                     confirmLabel: "Approve enquiry",
                     tone: "warning",
                     onConfirm: () => approve.mutate(),
@@ -7450,7 +7450,7 @@ function SettingsOverviewPanel({
               icon: <RefreshCw className="h-4 w-4" />,
               title: "Fallbacks stay compatible",
               detail:
-                "Existing environment fallback keys still work for old deployments, but the normal admin path is DB-backed.",
+                "Existing secrets stay compatible during the migration. Active credentials are managed from the database.",
             },
           ].map((item) => (
             <div key={item.title} className="rounded-md border border-[#D8E2EA] bg-[#F8FAFC] p-4">
@@ -11046,7 +11046,7 @@ function customerInitials(customer: CustomerRecord) {
 
 function customerDateLabel(value?: string | null) {
   if (!value) {
-    return "Not yet";
+    return "—";
   }
 
   return new Intl.DateTimeFormat("en-IN", {
@@ -12196,7 +12196,7 @@ function RoleRemovalImpactDialog({
                         value={note}
                         onChange={(event) => onNoteChange(event.target.value)}
                         rows={3}
-                        placeholder="Example: Active work cleared and profile access removed after admin review."
+                        placeholder="Example: Active work cleared and profile access removed after quality check."
                         className={cn(
                           "mt-2 w-full rounded-md border bg-white px-3 py-2 text-sm font-semibold text-[#1F2933] outline-none transition focus:border-[#ED3500]",
                           noteError ? "border-[#F5B7B7]" : "border-[#D8E2EA]",
@@ -13080,7 +13080,7 @@ function B2BAction({
           {status === "BUYER_CONFIRMED"
             ? "Buyer confirmed this quotation. Approve it to move it toward finalisation."
             : status === "ADMIN_APPROVED"
-              ? "Admin approval is done. Finalise to issue a proforma invoice and open PO processing."
+              ? "Verification is done. Finalise to issue a proforma invoice and open PO processing."
               : "This enquiry is locked for further responses."}
         </p>
       )}
@@ -19504,7 +19504,7 @@ function formatMinor(value: number, currency = "INR") {
 
 function formatDate(value?: string | null) {
   if (!value) {
-    return "Not yet";
+    return "—";
   }
 
   return new Intl.DateTimeFormat("en-IN", {

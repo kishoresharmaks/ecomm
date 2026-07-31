@@ -13,6 +13,8 @@ const roleLabels: Record<DevAuthRole, string> = {
 };
 
 export function DevAuthPanel({ role }: { role: DevAuthRole }) {
+  if (process.env.NODE_ENV === "production") return null;
+
   const auth = useDevAuth();
   const userId = auth.userIds[role];
 

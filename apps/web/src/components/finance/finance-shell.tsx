@@ -368,7 +368,7 @@ function FinanceForbiddenShell() {
         <ShieldCheck className="mx-auto h-8 w-8 text-[#ED3500]" aria-hidden="true" />
         <h1 className="mt-4 text-2xl font-black text-[#1F2933]">Finance access required</h1>
         <p className="mt-2 text-sm font-semibold leading-6 text-[#667085]">
-          This workspace is available only for Admin and Finance Manager users.
+          Available to Admin and Finance Manager users.
         </p>
         <Button type="button" onClick={() => auth.logout()} className="mt-5">
           Sign out

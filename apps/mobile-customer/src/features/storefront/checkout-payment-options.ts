@@ -4,7 +4,7 @@ export type CheckoutPaymentOption = MobileCheckoutPaymentMethodsResponse["method
 
 export const fallbackPaymentMethods: CheckoutPaymentOption[] = [
   { method: "COD", label: "Cash on Delivery", enabled: true, note: "Pay when your order is delivered." },
-  { method: "MANUAL", label: "Manual Payment", enabled: true, note: "Admin/finance team will verify payment manually." },
+  { method: "MANUAL", label: "Manual Payment", enabled: true, note: "Finance team will verify payment manually." },
 ];
 
 export function checkoutPaymentOptions(

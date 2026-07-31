@@ -46,7 +46,7 @@ export function ProductApprovalSettings({ settings }: { settings: SettingRecord[
       setNotice(
         autoApproveProducts
           ? "Product auto approval is enabled for valid seller submissions."
-          : "Product auto approval is disabled. Seller products will wait for admin review.",
+          : "Product auto approval is disabled. Seller products will wait for quality check.",
       );
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["admin-settings"] }),
@@ -78,7 +78,7 @@ export function ProductApprovalSettings({ settings }: { settings: SettingRecord[
               </StatusBadge>
             </div>
             <p className="mt-1 text-sm font-semibold leading-6 text-[#667085]">
-              Controls whether valid seller product submissions go live immediately or enter the admin approval queue.
+              Controls whether valid seller product submissions go live immediately or enter the Verification queue.
             </p>
           </div>
         </div>
@@ -96,7 +96,7 @@ export function ProductApprovalSettings({ settings }: { settings: SettingRecord[
 
       <div className="mt-5 rounded-md border border-[#D8E2EA] bg-[#F8FAFC] p-4">
         <p className="text-sm font-black text-[#1F2933]">
-          {autoApproveProducts ? "Valid products publish immediately." : "Seller products need admin approval."}
+          {autoApproveProducts ? "Valid products publish immediately." : "Seller products need verification."}
         </p>
         <p className="mt-1 text-xs font-semibold leading-5 text-[#667085]">
           Products missing required marketplace essentials will still be blocked from going live. Admin archive,

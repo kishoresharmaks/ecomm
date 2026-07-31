@@ -232,7 +232,7 @@ function AuthUnavailable() {
         <div>
           <h2 className="text-lg font-black text-[#1F2933]">Account access is unavailable</h2>
           <p className="mt-1 text-sm font-semibold leading-6 text-[#667085]">
-            Account access is temporarily unavailable. Please try again after authentication has been configured for this environment.
+            Account access is unavailable right now. Please try again shortly.
           </p>
         </div>
       </div>

@@ -201,7 +201,7 @@ export default function SubscriptionScreen() {
           <Text
             style={{ color: "#6B7280", fontSize: 14, textAlign: "center" }}
           >
-            No seller plan is assigned. Contact marketplace support or an admin
+            No seller plan is assigned. Contact marketplace support
             before relying on plan limits.
           </Text>
         </Card>

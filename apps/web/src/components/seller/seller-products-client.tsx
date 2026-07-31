@@ -177,7 +177,7 @@ export function SellerProductsClient({
             : "Product created and published."
           : variables.productId
             ? "Product updated and sent for approval."
-            : "Product submitted for admin approval.",
+            : "Product submitted for verification.",
       });
       setDraftImages([]);
       setDraftVariants([emptyDraftVariant()]);
@@ -487,7 +487,7 @@ export function SellerProductsClient({
             ) : null}
             {!profileQuery.isLoading && !sellerReady ? (
               <div className="rounded-lg border border-[#FFC7B8] bg-[#FFF0EC] p-4 text-sm font-semibold text-[#9F2600]">
-                Product submission unlocks after seller approval. You can prepare profile details now and return here after admin approval.
+                Product submission unlocks after seller approval. You can prepare profile details now and return here after verification.
               </div>
             ) : null}
 
@@ -637,7 +637,7 @@ export function SellerProductsClient({
                 >
                   <div className="grid gap-3">
                     <ProductStatusStep title="Seller details" description={sellerReady ? "Approved seller account" : "Approval required before submit"} complete={sellerReady} />
-                    <ProductStatusStep title="Admin review" description="Submitted products are reviewed before storefront publishing." complete={Boolean(editingProduct?.approvalStatus === "APPROVED")} />
+                    <ProductStatusStep title="Quality check" description="Submitted products are reviewed before storefront publishing." complete={Boolean(editingProduct?.approvalStatus === "APPROVED")} />
                     <ProductStatusStep title="Storefront visibility" description="Visible only after approval and active catalogue status." complete={Boolean(editingProduct?.status === "ACTIVE" && editingProduct?.approvalStatus === "APPROVED")} />
                   </div>
                 </ProductSidebarCard>

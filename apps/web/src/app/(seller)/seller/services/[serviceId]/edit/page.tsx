@@ -11,7 +11,7 @@ export default async function SellerEditServicePage({ params }: SellerEditServic
   return (
     <SellerWorkspaceShell
       title="Edit service"
-      description="Update service details, pricing, image, visit modes, and serviceable areas. Changes go back to admin approval before going live."
+      description="Update service details, pricing, image, visit modes, and serviceable areas. Changes go back to verification before going live."
     >
       <SellerServicesClient mode="edit" serviceId={serviceId} />
     </SellerWorkspaceShell>

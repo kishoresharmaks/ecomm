@@ -83,7 +83,7 @@ export function DeliveryOrdersClient() {
         {ordersQuery.isLoading ? <div className="h-56 animate-pulse rounded-md bg-[#F8FAFC]" /> : null}
         {ordersQuery.error ? <DeliveryError error={ordersQuery.error} onRetry={() => void ordersQuery.refetch()} /> : null}
         {!ordersQuery.isLoading && orders.length === 0 ? (
-          <DeliveryEmptyState title="No matching orders" message="Try clearing filters, or ask admin to assign this delivery partner to an order." />
+          <DeliveryEmptyState title="No matching orders" message="Try clearing filters or contact logistics dispatch." />
         ) : null}
         {orders.map((order) => (
           <DeliveryOrderCard key={order.id} order={order} />

@@ -167,7 +167,7 @@ export default function DeliveryOrderDetailScreen() {
         codCollectionNote: codNote.trim() || "Collected exact COD amount from customer.",
       }),
     onSuccess: async () => {
-      setNotice({ message: "COD collection recorded for admin verification.", tone: "success" });
+      setNotice({ message: "COD collection recorded for finance verification.", tone: "success" });
       await refresh(queryClient, auth.authKey, orderNumber);
     },
     onError: (error) => setNotice({ message: error instanceof Error ? error.message : "COD collection failed.", tone: "danger" }),
@@ -446,7 +446,7 @@ function SellerPickupStops({ order }: { order: DeliveryOrder }) {
         <Text style={sectionTitle}>Pickup from seller</Text>
         <StatusChip label={`${shipments.length} ${shipments.length === 1 ? "stop" : "stops"}`} tone={shipments.length > 1 ? "info" : "neutral"} />
       </View>
-      {shipments.length === 0 ? <Text style={warningBox}>Pickup details not available. Contact admin.</Text> : null}
+      {shipments.length === 0 ? <Text style={warningBox}>Pickup details not available. Contact dispatch.</Text> : null}
       {shipments.map((shipment, index) => (
         <SellerPickupStop key={shipment.id} shipment={shipment} sequence={index + 1} />
       ))}
@@ -474,7 +474,7 @@ function SellerPickupStop({ shipment, sequence }: { shipment: DeliveryOrderShipm
       <Text style={mutedText}>{shipment.shipmentNumber}</Text>
       {seller?.contactName ? <Text style={mutedText}>Contact: {seller.contactName}</Text> : null}
       {seller?.contactPhone ? <Text style={mutedText}>Phone: {seller.contactPhone}</Text> : null}
-      {addressLines.length ? addressLines.map((line) => <Text key={line} style={mutedText}>{line}</Text>) : <Text style={warningBox}>Seller pickup address unavailable. Contact admin.</Text>}
+      {addressLines.length ? addressLines.map((line) => <Text key={line} style={mutedText}>{line}</Text>) : <Text style={warningBox}>Seller pickup address unavailable. Contact dispatch.</Text>}
       {coordinates ? (
         <View style={{ gap: 4 }}>
           <StatusChip label="Pickup pin saved" tone="success" />
@@ -503,7 +503,7 @@ function CustomerDropAddressPanel({ order }: { order: DeliveryOrder }) {
       <Text style={sectionTitle}>Customer drop address</Text>
       <Text style={compactTitle}>{address?.fullName ?? order.customer?.fullName ?? "Customer"}</Text>
       {address?.phone || order.customer?.phone ? <Text style={mutedText}>{address?.phone ?? order.customer?.phone}</Text> : null}
-      {addressLines.length ? addressLines.map((line) => <Text key={line} style={mutedText}>{line}</Text>) : <Text style={warningBox}>Address not available. Contact admin.</Text>}
+      {addressLines.length ? addressLines.map((line) => <Text key={line} style={mutedText}>{line}</Text>) : <Text style={warningBox}>Address not available. Contact dispatch.</Text>}
       {coordinates ? (
         <View style={innerCard}>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
@@ -541,7 +541,7 @@ function PaymentCheckPanel({ order }: { order: DeliveryOrder }) {
           <Text style={compactTitle}>{formatPaise(payment.amountPaise, payment.currency)}</Text>
         </View>
       ))}
-      {isCodPending(order) ? <Text style={warningBox}>COD cash can be recorded from the delivery form. Admin verification marks the payment paid.</Text> : null}
+      {isCodPending(order) ? <Text style={warningBox}>COD cash can be recorded from the delivery form. Finance verification marks the payment paid.</Text> : null}
     </Card>
   );
 }
@@ -816,7 +816,7 @@ function nextActionCopy(order: DeliveryOrder) {
       return {
         title: codStatus === "COLLECTED" ? "COD waiting for verification" : "Record COD if collected",
         body: codStatus === "COLLECTED"
-          ? "Admin or finance will verify the collection."
+          ? "Finance team will verify the collection."
           : "Submit the exact COD amount collected from the customer.",
       };
     }

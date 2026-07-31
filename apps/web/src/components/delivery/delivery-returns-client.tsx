@@ -105,7 +105,7 @@ export function DeliveryReturnsClient() {
         {!returnsQuery.isLoading && returns.length === 0 ? (
           <DeliveryEmptyState
             title="No return pickups"
-            message="Assigned return pickup tasks will appear here after admin or auto-assignment."
+            message="Assigned return pickup tasks will appear here once dispatched to your account."
           />
         ) : null}
         {returns.map((request) => (

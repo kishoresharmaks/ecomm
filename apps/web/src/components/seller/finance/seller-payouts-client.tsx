@@ -86,7 +86,7 @@ export function SellerPayoutsClient() {
       <div className="grid gap-4 md:grid-cols-3">
         <SellerMetric label="Available to request" value={formatMoney(availability?.netPayablePaise ?? 0, currency)} note={`${eligibleActivity} eligible order and service records`} />
         <SellerMetric label="Pending payout" value={formatMoney(pending, currency)} note="Draft, pending, and approved" />
-        <SellerMetric label="Paid payouts" value={formatMoney(paid, currency)} note="Marked paid by admin" />
+        <SellerMetric label="Paid payouts" value={formatMoney(paid, currency)} note="Confirmed paid" />
       </div>
 
       <SellerPanel>
@@ -96,13 +96,13 @@ export function SellerPayoutsClient() {
               <Send className="h-5 w-5" aria-hidden="true" />
             </span>
             <div className="min-w-0 flex-1">
-              <SectionHeading title="Request manual payout" description="Request the full currently eligible delivered and paid order amount. Admin will approve and record manual bank or UPI payment." />
+              <SectionHeading title="Request manual payout" description="Request the full currently eligible delivered and paid order amount. Our finance team will approve and record manual bank or UPI payment." />
               <textarea
                 value={note}
                 onChange={(event) => setNote(event.target.value)}
                 rows={3}
                 maxLength={1000}
-                placeholder="Optional note for admin"
+                placeholder="Optional note for finance team"
                 className="mt-4 w-full resize-y rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 py-2 text-sm font-semibold text-[#1F2933] outline-none focus:border-[#ED3500] focus:bg-white"
               />
               {availability?.blockers?.length ? (
@@ -129,7 +129,7 @@ export function SellerPayoutsClient() {
               onClick={() =>
                 confirmation.requestConfirmation({
                   title: "Request manual payout?",
-                  description: `${formatMoney(availability?.netPayablePaise ?? 0, currency)} will be sent to admin for manual approval. Eligible orders are locked to prevent duplicate payout requests.`,
+                  description: `${formatMoney(availability?.netPayablePaise ?? 0, currency)} will be sent for manual finance approval. Eligible orders are locked to prevent duplicate payout requests.`,
                   confirmLabel: "Request payout",
                   tone: "warning",
                   onConfirm: () => requestMutation.mutate()
@@ -190,7 +190,7 @@ export function SellerPayoutsClient() {
           </SellerPanel>
         ))}
       </div>
-      {payouts.length === 0 ? <SellerEmptyState title="No payouts yet" message="Payout records appear after admin generates a seller settlement cycle." /> : null}
+      {payouts.length === 0 ? <SellerEmptyState title="No payouts yet" message="Payout records appear after finance team generates a seller settlement cycle." /> : null}
       {(payoutsQuery.data?.total ?? 0) > 0 ? (
         <SellerPagination
           page={page}

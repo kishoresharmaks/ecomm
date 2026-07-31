@@ -130,7 +130,7 @@ export default function SellerDashboardScreen() {
   if (profileState === "pending-approval") {
     return (
       <Screen>
-        <Header title="Approval pending" subtitle="Your seller registration is submitted. Admin approval is required before catalogue and order tools unlock." />
+        <Header title="Approval pending" subtitle="Your seller registration is submitted. Verification is required before catalogue and order tools unlock." />
         <Card>
           <StatusChip label={profileQuery.data?.approvalStatus ?? "PENDING_APPROVAL"} tone="warning" />
           <Text style={{ color: "#6B7280" }}>We will keep this app ready for products, orders, finance, and profile management once the store is approved.</Text>
@@ -141,7 +141,7 @@ export default function SellerDashboardScreen() {
   if (profileState === "blocked") {
     return (
       <Screen>
-        <Header title="Seller account blocked" subtitle="This store cannot currently use seller operations. Contact admin support for the next step." />
+        <Header title="Seller account blocked" subtitle="This store cannot currently use seller operations. Contact support for the next step." />
         <Card>
           <StatusChip label={profileQuery.data?.status ?? "BLOCKED"} tone="danger" />
         </Card>
@@ -468,7 +468,7 @@ function AttentionSection({
   } else if (!payoutProfile?.isVerified) {
     items.push({
       title: "Payout details awaiting verification",
-      detail: "Review the saved information while admin verification is pending.",
+      detail: "Review the saved information while verification is pending.",
       href: "/(tabs)/profile",
       icon: Wallet01Icon,
     });
@@ -1296,7 +1296,7 @@ function OnboardingScreen() {
 
   return (
     <Screen>
-      <Header title="Register as seller" subtitle="Create the store profile admin will review before product operations open." />
+      <Header title="Register as seller" subtitle="Create the store profile our team will review before product operations open." />
       <Card>
         <SelectField label="Seller type" options={SELLER_TYPE_OPTIONS} selectedValue={sellerType} onSelect={(value) => setSellerType(value as typeof sellerType)} />
         <Field label="Store name" value={storeName} onChangeText={setStoreName} />

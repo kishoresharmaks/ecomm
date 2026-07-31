@@ -15,7 +15,7 @@ export default function DeliveryPartnerRegisterPage() {
                 Become a Delivery Partner
               </h1>
               <p className="mt-3 max-w-3xl text-sm font-semibold leading-6 text-[#667085] sm:text-base sm:leading-7">
-                Apply for local delivery assignments. Your details go to admin review first; approved accounts
+                Apply for local delivery assignments. Your details go to quality check first; approved accounts
                 get the delivery workspace, wallet, and assigned-order queue.
               </p>
             </div>

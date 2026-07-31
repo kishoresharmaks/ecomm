@@ -37,7 +37,7 @@ export default async function SellerOrderDeliveryPage({
               <h2 className="mt-1 text-xl font-black text-[#1F2933]">Automation-first logistics</h2>
               <p className="mt-1 text-sm font-semibold leading-6 text-[#667085]">
                 Sellers prepare the package and download labels. Dispatch, tracking, proof, COD,
-                and delivery completion are handled by courier, delivery partner, or admin
+                and delivery completion are handled by courier, delivery partner, or our marketplace support team
                 operations.
               </p>
             </div>

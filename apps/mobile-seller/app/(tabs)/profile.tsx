@@ -385,7 +385,7 @@ export default function SellerProfileScreen() {
         </CollapsibleSection>
 
         <CollapsibleSection title="Verification documents">
-          <Text style={styles.helperText}>Upload current business documents for faster admin review.</Text>
+          <Text style={styles.helperText}>Upload current business documents for faster verification.</Text>
           <DocumentUploadButton type="GST_CERTIFICATE" uploadingSection={uploadingSection} onPress={uploadDocument} />
           <DocumentUploadButton type="PAN_CARD" uploadingSection={uploadingSection} onPress={uploadDocument} />
           <DocumentUploadButton type="BUSINESS_REGISTRATION" uploadingSection={uploadingSection} onPress={uploadDocument} />

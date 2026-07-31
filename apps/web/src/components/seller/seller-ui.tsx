@@ -267,7 +267,7 @@ function SellerSidebar({
         </span>
         <span className="min-w-0">
           <span className="block truncate text-base font-black leading-tight">{storeName}</span>
-          <span className="block truncate text-xs font-semibold text-[#DCE8F2]">1HandIndia Seller Center</span>
+          <span className="block truncate text-xs font-semibold text-[#DCE8F2]">1HandIndia Seller Hub</span>
         </span>
       </Link>
 

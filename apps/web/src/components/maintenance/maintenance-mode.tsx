@@ -127,7 +127,7 @@ function MaintenancePage({
             <div className="p-8 sm:p-10 lg:p-12">
               <div className="inline-flex items-center gap-2 rounded-md bg-[#FFF0EC] px-3 py-2 text-xs font-black uppercase tracking-[0.16em] text-[#ED3500]">
                 <AlertTriangle className="h-4 w-4" aria-hidden="true" />
-                Temporarily unavailable
+                We're polishing a few things — please check back in a moment.
               </div>
               <h1 className="mt-5 text-3xl font-black tracking-normal text-[#123A5A] sm:text-5xl">
                 {scopeLabels[scope]}

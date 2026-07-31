@@ -833,7 +833,7 @@ export function SellerOrderDetailClient({
                               />
                               <p className="mt-2 text-xs font-semibold leading-5 text-[#9A3412]">
                                 This statutory number is permanently non-editable for sellers.
-                                Contact admin only if a legally required correction is needed.
+                                Contact support only if a legally required correction is needed.
                               </p>
                             </div>
                           ) : null}
@@ -1128,7 +1128,7 @@ export function SellerOrderDetailClient({
               ) : (
                 <div className="rounded-lg border border-[#D8E2EA] bg-[#F8FAFC] p-4 text-sm font-semibold text-[#667085]">
                   {isAutomatedDelivery && currentSellerStatus === "PROCESSING"
-                    ? "Packed and ready. Courier, delivery partner, or admin operations will update dispatch and delivery."
+                    ? "Packed and ready. Courier, delivery partner, or marketplace operations will update dispatch and delivery."
                     : "No further seller action is needed for this package."}
                 </div>
               )}
@@ -1147,7 +1147,7 @@ export function SellerOrderDetailClient({
 
               {!isTerminalSellerStatus && !canCancelSellerPackage ? (
                 <div className="rounded-lg border border-[#FDE2B8] bg-[#FFF7ED] p-4 text-sm font-semibold leading-6 text-[#9A3412]">
-                  Package already dispatched. Contact admin to reverse or handle return/refund.
+                  Package already dispatched. Contact support to reverse or handle return/refund.
                 </div>
               ) : null}
             </div>
@@ -1165,7 +1165,7 @@ export function SellerOrderDetailClient({
                     description={
                       isAutomatedDelivery
                         ? "Transport is controlled by courier, delivery partner, or admin operations after seller packing."
-                        : "This delivery mode needs seller or admin coordination."
+                        : "This delivery mode needs seller or platform support coordination."
                     }
                   />
                 </div>
@@ -1197,12 +1197,12 @@ export function SellerOrderDetailClient({
                     <p>
                       Seller action stops at packed. Assignment, AWB, tracking, proof, COD collection,
                       dispatch, and delivered updates come from the logistics workspace, delivery
-                      partner app, courier webhook, or admin override.
+                      partner app, courier webhook, or support override.
                     </p>
                   ) : (
                     <p>
                       Manual transport does not have automated provider tracking. Use the seller
-                      status flow for package progress and coordinate exceptions with admin.
+                      status flow for package progress and coordinate exceptions with support.
                     </p>
                   )}
                   {delivery?.deliveryNote ? (
@@ -1630,7 +1630,7 @@ function SellerStatusStep({
         </span>
         <span className="mt-1 block text-xs font-semibold leading-5 text-[#667085]">
           {isOperationsStep && !isDone && !isCurrent
-            ? "Updated by courier, delivery partner, or admin operations."
+            ? "Updated by courier, delivery partner, or marketplace operations."
             : step.description}
         </span>
       </span>

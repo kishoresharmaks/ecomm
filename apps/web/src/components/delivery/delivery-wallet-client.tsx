@@ -84,13 +84,13 @@ export function DeliveryWalletClient() {
           <div>
             <SectionHeading
               title="Manual payout request"
-              description="Request payout from the available wallet balance after it reaches the admin-set threshold."
+              description="Request payout from your available wallet balance once it reaches the minimum threshold."
             />
             <div className="mt-4 grid gap-3 md:grid-cols-3">
               <DeliveryMetric
                 label="Threshold"
                 value={formatPaise(summary?.minimumPayoutPaise ?? 0, summary?.currency ?? "INR")}
-                note="Configured by admin"
+                note="Platform threshold"
               />
               <DeliveryMetric
                 label="Request status"

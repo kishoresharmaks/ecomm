@@ -154,7 +154,7 @@ const defaultDeliveryPartnerContext: Required<DeliveryPartnerManagementContext> 
   basePath: "/courier/local-delivery/partners",
   assignmentBoardHref: "/courier/local-delivery",
   listHelpText: "Courier Manager can edit service coverage and availability only.",
-  profileHelpText: "Courier Manager can edit delivery profile data only. User account, roles, passwords, and finance verification stay outside this workspace.",
+  profileHelpText: "Courier Managers can edit delivery profile data. Account, roles, passwords, and finance verification stay with the admin team.",
   availabilityNoteSource: "courier workspace",
 };
 

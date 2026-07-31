@@ -332,7 +332,7 @@ function CustomerCard({ detail }: { detail: ReturnDetail }) {
           <InfoTile label="Shipping / Pickup Address" value={formatAddress(detail.pickupAddress)} />
           <InfoTile label="Billing Address" value="Not available in seller return record" />
           <InfoTile label="Requested By" value={customerName} />
-          <InfoTile label="Privacy Note" value="Use seller notes for coordination; admin manages sensitive refund operations." />
+          <InfoTile label="Privacy Note" value="Use seller notes for coordination; platform finance manages sensitive refund operations." />
         </div>
       </div>
     </SectionCard>

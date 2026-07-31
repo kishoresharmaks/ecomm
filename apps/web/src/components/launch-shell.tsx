@@ -1,7 +1,15 @@
 import Link from "next/link";
 import type { Route } from "next";
-import { ArrowRight, BarChart3, Building2, PackageSearch, ShieldCheck, Store, Truck } from "lucide-react";
-import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
+import {
+  ArrowRight,
+  Building2,
+  PackageSearch,
+  ShieldCheck,
+  Sparkles,
+  Store,
+  Truck,
+} from "lucide-react";
+import { Button, SectionHeading } from "@indihub/ui";
 import { AuthActions } from "./auth/auth-actions";
 
 const surfaces: Array<{
@@ -13,34 +21,48 @@ const surfaces: Array<{
   {
     title: "Customer storefront",
     href: "/",
-    description: "Homepage, categories, product detail, cart, checkout, and order tracking.",
-    icon: PackageSearch
+    description:
+      "Discover, buy, and track orders from verified sellers and local stores.",
+    icon: PackageSearch,
   },
   {
-    title: "Seller center",
+    title: "Seller hub",
     href: "/seller",
-    description: "Seller registration, products, stock, seller orders, and delivery updates.",
-    icon: Store
+    description:
+      "Onboard your store, list products, fulfil orders, and grow your retail or service business.",
+    icon: Store,
   },
   {
     title: "B2B buyer portal",
     href: "/b2b",
-    description: "Business registration, company profile, and product enquiry workflow.",
-    icon: Building2
+    description:
+      "Procure at scale with verified sellers — enquiries, quotations, POs, GST invoicing, and delivery.",
+    icon: Building2,
   },
   {
     title: "Admin control panel",
     href: "/admin",
-    description: "Approvals, orders, CMS, settings, reports, email, and audit controls.",
-    icon: ShieldCheck
+    description:
+      "Approvals, orders, content, settings, reports, and email — all in one workspace.",
+    icon: ShieldCheck,
   },
   {
     title: "Delivery partner",
     href: "/delivery",
-    description: "Assigned delivery orders, progress updates, COD visibility, and delivery timeline.",
-    icon: Truck
-  }
+    description:
+      "Pickups, local drops, COD settlement, and delivery timeline — all on one workspace.",
+    icon: Truck,
+  },
 ];
+
+const valueProps = [
+  "Verified sellers, every order",
+  "Hyperlocal delivery network",
+  "B2B procurement, simplified",
+  "Secure checkout and refunds",
+  "Transparent policies, no surprises",
+  "24×7 customer support",
+] as const;
 
 export function LaunchShell() {
   return (
@@ -53,7 +75,9 @@ export function LaunchShell() {
             </span>
             <span>
               <span className="block text-lg font-black text-[#163B5C]">1HandIndia</span>
-              <span className="block text-xs font-semibold text-[#667085]">Phase 1 build</span>
+              <span className="block text-xs font-semibold text-[#667085]">
+                India&apos;s verified marketplace
+              </span>
             </span>
           </Link>
           <nav className="hidden items-center gap-6 text-sm font-semibold text-[#1F2933] md:flex">
@@ -69,19 +93,20 @@ export function LaunchShell() {
 
       <section className="mx-auto grid max-w-7xl gap-8 px-5 py-12 lg:grid-cols-[1fr_420px] lg:py-16">
         <div className="flex flex-col justify-center">
-          <StatusBadge tone="info">Stack locked. Implementation started.</StatusBadge>
+          <span className="inline-flex w-fit items-center gap-2 rounded-full bg-[#FFF0EC] px-3 py-1 text-[11px] font-black uppercase tracking-wider text-[#ED3500]">
+            <Sparkles className="h-3 w-3" aria-hidden="true" />
+            New on 1HandIndia
+          </span>
           <h1 className="mt-5 max-w-4xl text-4xl font-black tracking-normal text-[#163B5C] md:text-6xl">
-            1HandIndia marketplace foundation is now live in code.
+            Shop from verified sellers, hyperlocal stores, and trusted B2B partners — all in one place.
           </h1>
           <p className="mt-5 max-w-2xl text-base leading-7 text-[#667085]">
-            This first scaffold separates storefront, customer account, seller center, B2B portal,
-            admin control, API, worker jobs, Prisma database, shared UI, validators, and typed
-            configuration.
+            1HandIndia brings the storefront, seller hub, B2B procurement, admin control, mobile apps, and a verified delivery network together as separate experiences on a single trusted platform.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Button asChild>
               <Link href="/seller">
-                Seller center <ArrowRight size={16} />
+                Open Seller Hub <ArrowRight size={16} />
               </Link>
             </Button>
             <Button asChild variant="outline">
@@ -91,22 +116,17 @@ export function LaunchShell() {
         </div>
 
         <aside className="rounded-lg border border-[#E5E7EB] bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-black text-[#1F2933]">Phase 1 foundation</h2>
-            <BarChart3 className="text-[#ED3500]" size={22} />
-          </div>
+          <h2 className="text-lg font-black text-[#1F2933]">Why 1HandIndia</h2>
           <div className="mt-6 space-y-4">
-            {[
-              ["Web app", "Next.js App Router"],
-              ["API", "NestJS REST + OpenAPI"],
-              ["Database", "PostgreSQL + Prisma"],
-              ["Auth", "Clerk + DB RBAC"],
-              ["Delivery", "Pickup, local partner, courier"],
-              ["Emails", "Queued transactional templates"]
-            ].map(([label, value]) => (
-              <div key={label} className="flex items-center justify-between border-b border-[#E5E7EB] pb-3">
-                <span className="text-sm font-semibold text-[#667085]">{label}</span>
-                <span className="text-sm font-black text-[#1F2933]">{value}</span>
+            {valueProps.map((prop) => (
+              <div
+                key={prop}
+                className="flex items-start gap-3 border-b border-[#E5E7EB] pb-3 last:border-b-0 last:pb-0"
+              >
+                <span className="mt-1 grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[#ED3500] text-white">
+                  <Sparkles className="h-3 w-3" aria-hidden="true" />
+                </span>
+                <span className="text-sm font-semibold leading-6 text-[#1F2933]">{prop}</span>
               </div>
             ))}
           </div>
@@ -115,9 +135,9 @@ export function LaunchShell() {
 
       <section className="mx-auto max-w-7xl px-5 pb-16">
         <SectionHeading
-          eyebrow="Workspace surfaces"
-          title="Separated from the first commit"
-          description="Customer, seller, B2B, and admin areas are intentionally split so role-based access and future feature work stay clean."
+          eyebrow="Explore 1HandIndia"
+          title="Built around four experiences"
+          description="Customer, seller, B2B, and admin experiences are separate so every user gets the tools they need."
         />
         <div className="mt-6 grid gap-4 md:grid-cols-2">
           {surfaces.map((surface) => {

@@ -13,6 +13,13 @@ loadEnv({ path: path.join(workspaceDirectory, ".env.sentry-build-plugin"), quiet
 
 const isWindows = process.platform === "win32";
 const isDevelopment = process.env.NODE_ENV === "development";
+
+// Pin the output tracing root to the monorepo root so Next.js does not
+// auto-detect a stray lockfile in the parent directory (e.g. /root/package-lock.json
+// when the PM2 process is launched from /root instead of /root/ecomm).
+const outputFileTracingRoot = process.env.NEXT_OUTPUT_FILE_TRACING_ROOT
+  ? path.resolve(process.env.NEXT_OUTPUT_FILE_TRACING_ROOT)
+  : workspaceDirectory;
 const defaultDevWebUrl = "http://192.168.1.2:3000";
 const localHostnames = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1"]);
 const allowedDevOrigins = resolveAllowedDevOrigins();
@@ -25,6 +32,7 @@ const imageRemotePatterns = buildImageRemotePatterns();
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  outputFileTracingRoot,
   allowedDevOrigins,
   poweredByHeader: false,
   compress: true,

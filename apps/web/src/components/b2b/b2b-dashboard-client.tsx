@@ -44,7 +44,7 @@ export function B2BDashboardClient() {
   return (
     <B2BShell
       title="Business buying workspace"
-      description="Manage company details, submit bulk purchase enquiries, and review seller or admin quotation responses."
+      description="Manage company details, submit bulk purchase enquiries, and review seller or platform quotation responses."
     >
       <B2BAuthNotice />
 

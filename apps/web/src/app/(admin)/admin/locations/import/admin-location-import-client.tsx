@@ -454,7 +454,7 @@ function formatImportRun(run: AdminLocationImportRun | null) {
 
 function formatDate(value: string | null | undefined) {
   if (!value) {
-    return "Not yet";
+    return "—";
   }
 
   return new Intl.DateTimeFormat("en-IN", {

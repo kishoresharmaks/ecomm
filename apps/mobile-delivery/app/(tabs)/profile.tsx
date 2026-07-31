@@ -174,7 +174,7 @@ export default function DeliveryProfileScreen() {
               Your COD deposit QR is being prepared. You can continue deliveries and record COD collections while operations completes the setup.
             </Text>
             <Text style={{ color: "#8A4B1F", fontSize: 12, fontWeight: "800", marginTop: 8 }}>
-              Until the QR appears, COD collections stay available for admin or finance verification.
+              Until the QR appears, COD collections stay recorded for finance verification.
             </Text>
           </>
         )}

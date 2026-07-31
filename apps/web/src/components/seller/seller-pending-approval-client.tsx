@@ -66,12 +66,12 @@ export function SellerPendingApprovalClient() {
         ? "Seller profile is under review"
         : "Seller profile is under review";
   const message = suspended
-    ? "Seller operations are currently restricted. Review your profile details and contact admin support if you need clarification."
+    ? "Seller operations are currently restricted. Review your profile details and contact support if you need clarification."
     : rejected
-      ? "Your seller application was not approved. Review onboarding details, update any missing information, and resubmit or contact admin if needed."
+      ? "Your seller application was not approved. Review onboarding details, update any missing information, and resubmit or contact support if needed."
       : pending
-        ? "Your seller profile is currently under admin review. You can update your onboarding details and maintain store information while waiting for approval. Product publishing and order operations will unlock after approval."
-        : "You can still review onboarding details and maintain store information while admin approval is pending.";
+        ? "Your seller profile is currently under quality check. You can update your onboarding details and maintain store information while waiting for approval. Product publishing and order operations will unlock after approval."
+        : "You can still review onboarding details and maintain store information while verification is pending.";
 
   if (!profile || isSellerApproved(profile)) {
     return null;
@@ -119,7 +119,7 @@ export function SellerPendingApprovalClient() {
           />
           <AccessRow
             title="Product publishing and operational tools"
-            description="Catalogue publishing, normal order fulfilment, and seller growth workflows unlock after admin approval."
+            description="Catalogue publishing, normal order fulfilment, and seller growth workflows unlock after verification."
             status="Unlocks after approval"
             tone="warning"
             icon={<FileText className="h-5 w-5" aria-hidden="true" />}

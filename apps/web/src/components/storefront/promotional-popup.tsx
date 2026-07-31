@@ -4,13 +4,20 @@ import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from "@headlessui/re
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@indihub/ui";
 import { resolveImageSource } from "@/lib/image-url";
 import { movePopupIndex, resolvePopupDestination } from "@/lib/popup-announcement";
 import { listCmsPopupAnnouncements } from "@/lib/storefront-api";
 
 const swipeThreshold = 48;
+const POPUP_Z_INDEX = 200;
 
 export function PromotionalPopup() {
   const router = useRouter();
@@ -22,10 +29,24 @@ export function PromotionalPopup() {
   });
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
   const openedThisVisit = useRef(false);
   const pointerStart = useRef<{ x: number; y: number } | null>(null);
   const items = query.data ?? [];
   const active = items[activeIndex] ?? items[0];
+
+  useEffect(() => {
+    setPortalRoot(document.body);
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
 
   useEffect(() => {
     const first = items[0];
@@ -78,9 +99,17 @@ export function PromotionalPopup() {
     else window.location.assign(destination.url);
   }
 
-  return (
-    <Dialog open={open} onClose={() => setOpen(false)} className="relative z-[80]">
-      <DialogBackdrop transition className="fixed inset-0 bg-[#101828]/60 backdrop-blur-[2px] transition duration-200 data-closed:opacity-0" />
+  const dialog = (
+    <Dialog
+      open={open}
+      onClose={() => setOpen(false)}
+      className="relative"
+      style={{ zIndex: POPUP_Z_INDEX }}
+    >
+      <DialogBackdrop
+        transition
+        className="fixed inset-0 bg-[#101828]/60 backdrop-blur-[2px] transition duration-200 data-closed:opacity-0"
+      />
       <div className="fixed inset-0 overflow-y-auto p-4 sm:p-8">
         <div className="flex min-h-full items-center justify-center">
           <DialogPanel
@@ -158,4 +187,7 @@ export function PromotionalPopup() {
       </div>
     </Dialog>
   );
+
+  if (!portalRoot) return null;
+  return createPortal(dialog, portalRoot);
 }

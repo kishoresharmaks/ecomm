@@ -225,7 +225,7 @@ export function B2BEnquiryDetailClient({ enquiryId }: { enquiryId: string }) {
     mutationFn: (responseId: string) => confirmBusinessBuyerEnquiry(auth.authHeaders, enquiryId, responseId),
     onSuccess: (updated) => {
       setLiveStatus(updated.status);
-      setNotice("Quotation confirmed. 1HandIndia admin can now approve and finalise it.");
+      setNotice("Quotation confirmed. 1HandIndia commercial operations can now approve and finalise it.");
       void queryClient.invalidateQueries({ queryKey: ["b2b-enquiry", auth.authKey, enquiryId] });
       void queryClient.invalidateQueries({ queryKey: ["b2b-enquiries", auth.authKey] });
     },
@@ -365,7 +365,7 @@ export function B2BEnquiryDetailClient({ enquiryId }: { enquiryId: string }) {
                     onClick={() =>
                       confirmation.requestConfirmation({
                         title: "Confirm latest quotation?",
-                        description: "The enquiry will move to buyer confirmed and wait for admin approval. Older quotations cannot be confirmed.",
+                        description: "The enquiry will move to buyer confirmed and wait for verification. Older quotations cannot be confirmed.",
                         confirmLabel: "Confirm quotation",
                         tone: "warning",
                         onConfirm: () => confirmMutation.mutate(latestResponse.id),
@@ -444,7 +444,7 @@ export function B2BEnquiryDetailClient({ enquiryId }: { enquiryId: string }) {
                     onConfirm={() =>
                       confirmation.requestConfirmation({
                         title: "Confirm latest quotation?",
-                        description: "The enquiry will move to buyer confirmed and wait for admin approval.",
+                        description: "The enquiry will move to buyer confirmed and wait for verification.",
                         confirmLabel: "Confirm quotation",
                         tone: "warning",
                         onConfirm: () => confirmMutation.mutate(response.id),

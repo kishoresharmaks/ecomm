@@ -85,7 +85,7 @@ export function SellerDashboardClient() {
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="text-base font-black text-[#9F2600]">Seller approval is pending</p>
-              <p className="mt-1 text-sm leading-6 text-[#9F2600]">Profile and onboarding can be updated now. Product publishing and order operations unlock after admin approval.</p>
+              <p className="mt-1 text-sm leading-6 text-[#9F2600]">Profile and onboarding can be updated now. Product publishing and order operations unlock after verification.</p>
             </div>
             <Button asChild variant="outline">
               <Link href="/seller/pending-approval">Review approval status</Link>
@@ -104,7 +104,7 @@ export function SellerDashboardClient() {
               <div>
                 <p className="text-base font-black text-[#1F2933]">{profile.subscriptionPlan.name}</p>
                 <p className="mt-1 text-sm leading-6 text-[#667085]">
-                  Subscription status: {statusLabel(profile.subscriptionStatus)}. Plan capacity is managed by admin.
+                  Subscription status: {statusLabel(profile.subscriptionStatus)}. Plan capacity is managed by platform support.
                 </p>
               </div>
             </div>

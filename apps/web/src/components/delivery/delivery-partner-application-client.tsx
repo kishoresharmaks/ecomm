@@ -50,7 +50,7 @@ export function DeliveryPartnerApplicationClient() {
         tone: "success",
         message:
           application.status === "PENDING_REVIEW"
-            ? "Application submitted for admin review."
+            ? "Application submitted for verification."
             : "Application saved.",
       });
       void queryClient.invalidateQueries({ queryKey });
@@ -230,7 +230,7 @@ export function DeliveryPartnerApplicationClient() {
             </IconTile>
             <SectionHeading
               title="Vehicle and verification"
-              description="Admin will verify these details before approving delivery assignments."
+              description="Our team will verify these details before approving delivery assignments."
             />
           </div>
           <div className="mt-5 grid gap-4 md:grid-cols-2">
@@ -291,7 +291,7 @@ export function DeliveryPartnerApplicationClient() {
             </IconTile>
             <SectionHeading
               title="Address and service area"
-              description="Coordinates and pincode/local area help admin assign nearby local deliveries correctly."
+              description="Coordinates and area coverage help dispatch assign nearby local deliveries accurately."
             />
           </div>
           <div className="mt-5 grid gap-4">
@@ -402,7 +402,7 @@ function ApplicationStatusBanner({ application }: { application: DeliveryPartner
     return (
       <StatePanel tone="info" title="New delivery partner application" icon={<Truck className="h-5 w-5" />}>
         <p className="text-sm font-semibold leading-6 text-[#536579]">
-          Submit your service area, vehicle, and contact details. Admin approval is required before delivery orders
+          Submit your service area, vehicle, and contact details. Verification is required before delivery orders
           can be assigned.
         </p>
       </StatePanel>
@@ -416,7 +416,7 @@ function ApplicationStatusBanner({ application }: { application: DeliveryPartner
         <p>Submitted on {formatDate(application.createdAt)}. Last updated {formatDate(application.updatedAt)}.</p>
         {application.reviewNote ? <p>Review note: {application.reviewNote}</p> : null}
         {application.status === "PENDING_REVIEW" ? (
-          <p>You can update details while admin review is pending.</p>
+          <p>You can update details while your application is being verified.</p>
         ) : null}
       </div>
     </StatePanel>
@@ -429,7 +429,7 @@ function ChecklistCard({ application }: { application: DeliveryPartnerApplicatio
     { label: "Contact details", complete: Boolean(application?.phone) },
     { label: "Vehicle details", complete: Boolean(application?.vehicleType && application.vehicleNumber) },
     { label: "Service area", complete: Boolean(application?.pincode || application?.serviceCityCode) },
-    { label: "Admin approval", complete: application?.status === "APPROVED" },
+    { label: "Verification", complete: application?.status === "APPROVED" },
   ];
   const progress = Math.round((items.filter((item) => item.complete).length / items.length) * 100);
 
@@ -439,7 +439,7 @@ function ChecklistCard({ application }: { application: DeliveryPartnerApplicatio
         <div>
           <h2 className="text-lg font-black text-[#1F2933]">Application readiness</h2>
           <p className="mt-1 text-sm font-semibold leading-6 text-[#667085]">
-            Admin approval unlocks delivery assignments.
+            Verification unlocks delivery assignments.
           </p>
         </div>
         <StatusBadge tone={progress === 100 ? "success" : "info"}>{progress}%</StatusBadge>

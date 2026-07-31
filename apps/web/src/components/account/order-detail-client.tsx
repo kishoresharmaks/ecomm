@@ -1676,7 +1676,7 @@ function OrderItemReviewBox({
 
       {existingReview?.adminNote ? (
         <p className="mt-3 rounded-md bg-white px-3 py-2 text-xs font-semibold text-[#667085]">
-          Review note: {existingReview.adminNote}
+          Moderation note: {existingReview.adminNote}
         </p>
       ) : null}
 

@@ -115,7 +115,7 @@ export function SellerB2BOrdersClient() {
         {ordersQuery.isLoading ? <SellerSkeleton /> : null}
         {ordersQuery.error ? <SellerErrorPanel error={ordersQuery.error} onRetry={() => void ordersQuery.refetch()} /> : null}
         {!ordersQuery.isLoading && !ordersQuery.error && orders.length === 0 ? (
-          <SellerEmptyState title="No B2B orders found" message="B2B orders appear after admin finalises a buyer-confirmed quotation." />
+          <SellerEmptyState title="No B2B orders found" message="B2B orders appear after quotation finalisation." />
         ) : null}
         {orders.map((order) => (
           <Link key={order.id} href={`/seller/b2b-orders/${encodeURIComponent(order.orderNumber)}`} className="block rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-4 transition hover:border-[#ED3500]">

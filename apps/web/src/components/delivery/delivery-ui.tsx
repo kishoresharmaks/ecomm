@@ -240,7 +240,7 @@ export function DeliveryAuthNotice() {
               <p className="text-sm font-black text-[#1F2933]">Delivery partner sign in required</p>
               <StatusBadge tone="warning">Signed out</StatusBadge>
             </div>
-            <p className="mt-1 text-xs leading-5 text-[#667085]">Sign in with the account assigned by admin to view delivery tasks.</p>
+            <p className="mt-1 text-xs leading-5 text-[#667085]">Sign in with your registered delivery partner account to view tasks.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button asChild>
@@ -325,7 +325,7 @@ function DeliveryAccessGate({
               <StatusBadge tone="warning">Application required</StatusBadge>
             </div>
             <p className="mt-1 text-xs leading-5 text-[#667085]">
-              Redirecting to the delivery partner application page. Admin approval is required before this workspace opens.
+              Redirecting to the delivery partner application page. Verification is required before this workspace opens.
             </p>
           </div>
           <Button asChild>

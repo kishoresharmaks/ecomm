@@ -64,7 +64,7 @@ export default function DeliveryWalletScreen() {
               QR code not available yet.
             </Text>
             <Text style={{ color: "#6B7280", marginTop: 8 }}>
-              Smart Collect is still being configured for your delivery account. Continue recording COD collections; admin or finance can verify them until the QR appears.
+              Smart Collect is still being configured for your delivery account. Continue recording COD collections; finance will verify them until the QR appears.
             </Text>
           </>
         )}
@@ -72,7 +72,7 @@ export default function DeliveryWalletScreen() {
       <Card>
         <Text style={{ color: "#123A5A", fontSize: 18, fontWeight: "900" }}>Request payout</Text>
         <Text style={{ color: "#6B7280" }}>
-          Active requests: {summary?.activePayoutRequestCount ?? 0}. Requests are available only after the admin-set threshold.
+          Active requests: {summary?.activePayoutRequestCount ?? 0}. Requests are available after reaching the platform threshold.
         </Text>
         <Field label="Note" value={note} onChangeText={setNote} placeholder="Optional payout note" multiline />
         {payoutMutation.error ? <Text style={{ color: "#D64545", fontWeight: "800" }}>{payoutMutation.error.message}</Text> : null}

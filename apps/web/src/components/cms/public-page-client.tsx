@@ -68,7 +68,7 @@ export function PublicPageClient({
                 description={pageQuery.error instanceof IndihubApiError ? pageQuery.error.message : "This page content is not published yet."}
               />
               <p className="mt-4 text-sm leading-7 text-[#667085]">
-                The CMS route is ready. Final client-approved content can be published from the admin CMS panel when that admin screen is built.
+                This policy page is being updated. Please check back shortly for official updates.
               </p>
               <Button asChild className="mt-5" variant="outline">
                 <Link href="/contact">Contact support</Link>

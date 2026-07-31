@@ -910,7 +910,7 @@ function HomeLoadError() {
   return (
     <section className="mx-auto max-w-[1360px] px-4 py-10 text-center sm:px-6 lg:px-10">
       <div className="rounded-lg border border-[#FFE0D6] bg-white p-8">
-        <h1 className="text-2xl font-black text-[#111827]">The marketplace home is temporarily unavailable</h1>
+        <h1 className="text-2xl font-black text-[#111827]">We're polishing a few things — please check back in a moment.</h1>
         <p className="mt-2 text-sm font-semibold text-[#667085]">Please retry while we reconnect to the catalogue.</p>
         <HomeRetryButton />
       </div>

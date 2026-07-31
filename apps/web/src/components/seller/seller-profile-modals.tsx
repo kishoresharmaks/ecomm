@@ -704,7 +704,7 @@ export function EditDocumentsModal({
       open={open}
       onClose={onClose}
       title="Verification Documents"
-      description="Upload proof documents for admin review."
+      description="Upload proof documents for quality check."
       isSaving={mutation.isPending}
     >
       <form onSubmit={submit}>

@@ -279,7 +279,7 @@ export function AdminGstReportsClient() {
               </div>
             </div>
             <p className="mt-4 max-w-3xl text-sm font-semibold leading-6 text-[#667085]">
-              This workspace prepares and monitors GST data. GST returns, GSTR-8, IRNs, and
+              Prepare and monitor GST data, returns, GSTR-8 filings, IRNs, and reconciliation.
               e-way bills remain external filing or provider operations until the corresponding
               integration is activated.
             </p>

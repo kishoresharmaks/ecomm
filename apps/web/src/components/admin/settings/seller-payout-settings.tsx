@@ -89,7 +89,7 @@ export function SellerPayoutSettings({ settings }: { settings: SettingRecord[] }
       </div>
 
       <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-xs font-semibold text-[#667085]">Requests still require admin approval and manual payment reference before becoming paid.</p>
+        <p className="text-xs font-semibold text-[#667085]">Requests still require verification and manual payment reference before becoming paid.</p>
         <Button type="button" onClick={() => saveMutation.mutate()} disabled={!auth.isAuthenticated || saveMutation.isPending}>
           <Save className="h-4 w-4" aria-hidden="true" />
           {saveMutation.isPending ? "Saving" : "Save payout settings"}

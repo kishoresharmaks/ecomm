@@ -257,7 +257,7 @@ function returnSteps(status?: string | null) {
     {
       key: "review",
       label: "Review",
-      helper: "Admin checks policy and request details.",
+      helper: "Our team verifies policy and request details.",
       icon: <ClipboardCheck className="h-4 w-4" aria-hidden="true" />,
     },
     {

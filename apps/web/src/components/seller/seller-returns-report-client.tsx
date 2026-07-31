@@ -102,7 +102,7 @@ export function SellerReturnsReportClient({ initialDateFrom = "", initialDateTo 
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <SellerMetric label="Total Returns" value={report.summary.totalCount} note="All return requests" />
             <SellerMetric label="Approved" value={report.summary.approvedCount} note="Approved return requests" />
-            <SellerMetric label="Pending Review" value={report.summary.pendingCount} note="Awaiting admin review" />
+            <SellerMetric label="Pending Review" value={report.summary.pendingCount} note="awaiting quality check" />
             <SellerMetric label="Total Items Returned" value={report.summary.itemCount} note="Individual items across requests" />
           </div>
 

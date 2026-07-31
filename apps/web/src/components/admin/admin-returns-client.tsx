@@ -521,7 +521,7 @@ function AdminReturnDetailPanel({
             </label>
             <div className="mt-4 grid gap-2">
               {waitingForSeller ? (
-                <WorkspaceNotice tone="info" title="Waiting for seller" message="The seller must approve or reject this return/replacement request. Admin approval is not required." />
+                <WorkspaceNotice tone="info" title="Waiting for seller" message="The seller must approve or reject this return/replacement request. Verification is not required." />
               ) : null}
               {canReceiveSelfShip ? (
                 <Button type="button" variant="outline" onClick={() => onStatus("RECEIVED")} disabled={isBusy}>

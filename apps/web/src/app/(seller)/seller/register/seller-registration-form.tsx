@@ -204,7 +204,7 @@ export function SellerRegistrationForm({
       });
     },
     onSuccess: async () => {
-      setState({ status: "success", message: "Seller capability updated. New listings still follow normal admin approval." });
+      setState({ status: "success", message: "Seller capability updated. New listings still follow normal verification." });
       await queryClient.invalidateQueries({ queryKey: ["seller-onboarding-profile", auth.authKey] });
       await queryClient.invalidateQueries({ queryKey: ["seller-profile", `seller:${auth.authKey}`] });
     },
@@ -613,7 +613,7 @@ export function SellerRegistrationForm({
               description={
                 isServiceOnlyMode(commerceMode)
                   ? "Upload only the proofs needed for service-provider review. PAN and tax documents can be added later if required."
-                  : "Upload proof documents for final review. PAN is optional unless admin asks for it."
+                  : "Upload proof documents for final review. PAN is optional unless requested during verification."
               }
             />
           </div>
@@ -1262,7 +1262,7 @@ function PlanPicker({
               ? "Combined onboarding uses the retail/default seller plan now; service capability is enabled on the same verified profile."
               : audience === "SERVICE"
               ? "Choose the service-provider plan for bookings, quotes, featured service slots, and recurring billing readiness."
-              : "Choose the plan for onboarding. Paid monthly and yearly plans are authorised after admin approval."
+              : "Choose the plan for onboarding. Paid monthly and yearly plans are authorised after verification."
           }
         />
       </div>
@@ -1277,7 +1277,7 @@ function PlanPicker({
       ) : null}
       {!loading && plans.length === 0 ? (
         <p className="mt-4 text-sm font-semibold text-[#667085]">
-          No active {combined ? "combined" : audience === "SERVICE" ? "service" : "seller"} plans configured. Admin default will be applied during review.
+          No active {combined ? "combined" : audience === "SERVICE" ? "service" : "seller"} plans configured. Default plan terms will be applied during verification.
         </p>
       ) : null}
 
@@ -1320,7 +1320,7 @@ function PlanPicker({
                 </p>
                 {plan.pricePaise > 0 && plan.billingCycle !== "LIFETIME" ? (
                   <p className="mt-2 text-xs font-bold text-[#8A5A00]">
-                    Recurring Razorpay authorisation starts only after admin approval.
+                    Recurring Razorpay authorisation starts only after verification.
                   </p>
                 ) : null}
               </div>

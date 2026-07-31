@@ -336,7 +336,7 @@ export function DeliveryOrderDetailClient({ orderNumber }: { orderNumber: string
               )}
             </p>
             <p className="mt-1 text-xs font-semibold text-[#667085]">
-              Payment is controlled by admin/payment flow.
+              Payment status is updated upon verification.
             </p>
           </div>
         </div>
@@ -678,8 +678,7 @@ export function DeliveryOrderDetailClient({ orderNumber }: { orderNumber: string
                 ))}
                 {isCodPending(order) ? (
                   <p className="rounded-md border border-[#FFC7B8] bg-[#FFF0EC] p-3 text-sm font-bold leading-6 text-[#9F2600]">
-                    COD cash can be recorded from the delivery form. Admin verification marks the
-                    payment paid.
+                    COD cash can be recorded from the delivery form. Our team verifies the payment before it is marked paid.
                   </p>
                 ) : null}
               </div>
@@ -836,7 +835,7 @@ function SellerPickupStops({ order }: { order: DeliveryOrder }) {
         ))}
         {shipments.length === 0 ? (
           <p className="rounded-md border border-[#FFE0D6] bg-[#FFFCFB] p-3 text-sm font-bold text-[#8A4B32]">
-            Pickup details are not available for this assignment. Contact admin before visiting the
+            Pickup details are not available for this assignment. Contact delivery dispatch support before visiting the
             seller.
           </p>
         ) : null}
@@ -987,7 +986,7 @@ function CodCollectionFields({
         <span>
           <span className="block text-sm font-black text-[#1F2933]">COD cash collected</span>
           <span className="block text-xs font-semibold leading-5 text-[#667085]">
-            Admin verification will update payment status.
+            Our team verifies the payment before the status is updated.
           </span>
         </span>
       </label>

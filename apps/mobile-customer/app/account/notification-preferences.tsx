@@ -91,7 +91,7 @@ export default function NotificationPreferencesScreen() {
             onValueChange={(dealAlertsEnabled) => updateMutation.mutate({ dealAlertsEnabled })}
           />
           <PreferenceRow
-            description="Admin campaigns with offers, store launches, and curated picks."
+            description="Promotional campaigns with offers, store launches, and curated picks."
             icon={BellDotIcon}
             title="Marketing campaigns"
             value={preferences.marketingCampaignsEnabled}

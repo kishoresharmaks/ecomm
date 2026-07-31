@@ -46,10 +46,10 @@ export function DeliveryDashboardClient() {
   return (
     <div className="grid gap-5">
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-        <DeliveryMetric label="Assigned" value={ordersQuery.data?.total ?? orders.length} note="Orders assigned by admin" />
+        <DeliveryMetric label="Assigned" value={ordersQuery.data?.total ?? orders.length} note="Active assignments" />
         <DeliveryMetric label="Active" value={activeOrders.length} note="Pending, packed, or in transit" />
         <DeliveryMetric label="Delivered" value={deliveredOrders.length} note="Completed delivery updates" />
-        <DeliveryMetric label="COD pending" value={codPending.length} note="Admin marks COD paid after verification" />
+        <DeliveryMetric label="COD pending" value={codPending.length} note="Verified upon finance deposit" />
         <DeliveryMetric
           label="Wallet balance"
           value={formatPaise(walletQuery.data?.summary.availableBalancePaise ?? 0)}
@@ -71,7 +71,7 @@ export function DeliveryDashboardClient() {
           {ordersQuery.isLoading ? <div className="h-48 animate-pulse rounded-md bg-[#F8FAFC]" /> : null}
           {ordersQuery.error ? <DeliveryError error={ordersQuery.error} onRetry={() => void ordersQuery.refetch()} /> : null}
           {!ordersQuery.isLoading && orders.length === 0 ? (
-            <DeliveryEmptyState title="No assigned deliveries" message="Orders appear here after admin assigns this delivery partner from the order detail screen." />
+            <DeliveryEmptyState title="No assigned deliveries" message="Orders appear here once assigned to your delivery partner account." />
           ) : null}
           {orders.slice(0, 8).map((order) => (
             <DeliveryOrderRow key={order.id} order={order} />

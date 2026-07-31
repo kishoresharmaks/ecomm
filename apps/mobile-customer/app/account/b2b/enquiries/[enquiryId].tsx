@@ -290,7 +290,7 @@ function B2BEnquiryDetailContent() {
                     canConfirm={showConfirm && item.isLatest}
                     isPending={confirmMutation.isPending}
                     onConfirm={() =>
-                      Alert.alert("Confirm this quotation?", "The enquiry will move to buyer confirmed and wait for admin approval.", [
+                      Alert.alert("Confirm this quotation?", "The enquiry will move to buyer confirmed and wait for commercial approval.", [
                         { text: "Keep reviewing", style: "cancel" },
                         { text: "Confirm quotation", onPress: () => latestResponse && confirmMutation.mutate(latestResponse.id) },
                       ])

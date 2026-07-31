@@ -222,7 +222,7 @@ export function ContactPageClient() {
             <StorefrontFormPanel onSubmit={submit} className="rounded-lg">
               <SectionHeading
                 title={`${contactTopicLabels[topic]} request`}
-                description="Your request will be stored with topic, requester type, preferred channel, and optional order reference for admin triage."
+                description="Your request will be stored with topic, requester type, preferred channel, and optional order reference for our team to action."
               />
               <div className="mt-6 grid gap-4 md:grid-cols-2">
                 <SelectField
@@ -307,7 +307,7 @@ function ContactChannelsPanel({
   const channels = contact?.enabledChannels.length ? contact.enabledChannels : (["EMAIL"] as SupportContactChannel[]);
   return (
     <StorefrontPanel className="rounded-lg">
-      <SectionHeading title="Support channels" description={contact?.responseSla ?? "Response SLA is managed by admin settings."} />
+      <SectionHeading title="Support channels" description={contact?.responseSla ?? "Our support team handles all enquiries promptly."} />
       {isLoading ? <div className="mt-5 h-28 animate-pulse rounded-lg bg-[#F8FAFC]" /> : null}
       <div className="mt-5 grid gap-3">
         {channels.map((channel) => (

@@ -75,7 +75,7 @@ const kpiCards = [
     href: "/admin/sellers/approvals",
     icon: UsersRound,
     tone: "info",
-    note: "Seller approval queue",
+    note: "Seller verification",
   },
   {
     key: "pendingProducts",

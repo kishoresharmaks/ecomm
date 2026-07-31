@@ -2782,7 +2782,7 @@ function humanize(value?: string | null) {
 
 function formatDate(value?: string | null) {
   if (!value) {
-    return "Not yet";
+    return "—";
   }
 
   return new Intl.DateTimeFormat("en-IN", {

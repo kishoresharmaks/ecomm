@@ -297,7 +297,7 @@ function uploadFailureMessage(status: number, responseText: string) {
     return "Storage upload was rejected by S3. Check the signed URL expiry, bucket policy, and CORS PUT configuration.";
   }
 
-  return `Storage upload failed with HTTP ${status}. Please retry or ask admin to check storage settings.`;
+  return `Storage upload failed with HTTP ${status}. Please retry or contact support if the issue persists.`;
 }
 
 function storageErrorMessage(responseText: string) {

@@ -151,7 +151,7 @@ export function SellerSubscriptionClient() {
     return (
       <SellerEmptyState
         title="No seller plan assigned"
-        message="Admin can assign a seller subscription plan, or the default plan will be applied during onboarding."
+        message="Platform support can assign a seller subscription plan, or the default plan will be applied during onboarding."
         action={
           <Button type="button" variant="outline" onClick={() => void query.refetch()}>
             <RefreshCw className="h-4 w-4" aria-hidden="true" />
@@ -286,7 +286,7 @@ export function SellerSubscriptionClient() {
           note={statusLabel(plan.billingCycle)}
         />
         <SellerMetric label="Product limit" value={limitLabel(plan.productLimit)} note="Catalogue capacity" />
-        <SellerMetric label="Featured slots" value={limitLabel(plan.featuredProductLimit)} note="Admin-managed visibility" />
+        <SellerMetric label="Featured slots" value={limitLabel(plan.featuredProductLimit)} note="Platform-managed visibility" />
         <SellerMetric label="B2B enquiries" value={limitLabel(plan.b2bEnquiryLimit)} note="Quotation request capacity" />
       </div>
 

@@ -267,7 +267,7 @@ export function SellerB2BEnquiriesClient() {
                   </form>
                 ) : (
                   <div className="rounded-md border border-[#E5E7EB] bg-white p-4 text-sm font-semibold leading-6 text-[#667085]">
-                    Buyer confirmation or admin finalisation is already in progress. Further seller responses are locked for this enquiry.
+                    Buyer confirmation or order finalisation is already in progress. Further seller responses are locked for this enquiry.
                   </div>
                 )}
               </div>
@@ -780,7 +780,7 @@ export function SellerB2BEnquiryDetailClient({ enquiryId }: { enquiryId: string 
                 </form>
               ) : (
                 <p className="text-sm font-semibold leading-6 text-[#667085]">
-                  Buyer confirmation or admin finalisation is already in progress. Further seller responses are locked for this enquiry.
+                  Buyer confirmation or order finalisation is already in progress. Further seller responses are locked for this enquiry.
                 </p>
               )}
             </SellerPanel>

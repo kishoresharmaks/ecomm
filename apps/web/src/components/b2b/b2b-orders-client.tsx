@@ -120,7 +120,7 @@ export function B2BOrdersClient() {
         {!ordersQuery.isLoading && orders.length === 0 ? (
           <B2BEmptyState
             title="No B2B orders yet"
-            message="After an admin finalises a confirmed quotation, its proforma invoice and purchase-order workflow will appear here."
+            message="After commercial operations finalises a confirmed quotation, its proforma invoice and purchase-order workflow will appear here."
             action={
               <Button asChild>
                 <Link href="/b2b/enquiries">View enquiries</Link>
@@ -164,7 +164,7 @@ export function B2BOrderDetailClient({ orderNumber }: { orderNumber: string }) {
     mutationFn: (payload: BusinessBuyerPurchaseOrderPayload) =>
       submitBusinessBuyerPurchaseOrder(auth.authHeaders, orderNumber, payload),
     onSuccess: () => {
-      setNotice("Purchase order submitted for admin review.");
+      setNotice("Purchase order submitted for verification.");
       setPoFile(null);
       void queryClient.invalidateQueries({ queryKey: ["b2b-order", auth.authKey, orderNumber] });
       void queryClient.invalidateQueries({ queryKey: ["b2b-orders", auth.authKey] });
@@ -318,7 +318,7 @@ export function B2BOrderDetailClient({ orderNumber }: { orderNumber: string }) {
   const canSubmitPo = order ? ["PROFORMA_ISSUED", "PO_SUBMITTED"].includes(order.status) : false;
 
   return (
-    <B2BShell title={`B2B order ${orderNumber}`} description="Review the issued proforma invoice and submit purchase-order details for admin acceptance.">
+    <B2BShell title={`B2B order ${orderNumber}`} description="Review the issued proforma invoice and submit purchase-order details for commercial acceptance.">
       <B2BAuthNotice />
       <div className="mb-5">
         <Button asChild variant="ghost">
@@ -410,7 +410,7 @@ export function B2BOrderDetailClient({ orderNumber }: { orderNumber: string }) {
                 </form>
               ) : (
                 <div className="mt-5 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-4 text-sm font-semibold leading-6 text-[#667085]">
-                  Purchase order changes are locked after admin acceptance or closure.
+                  Purchase order changes are locked after commercial acceptance or closure.
                   {order.purchaseOrderFileKey ? (
                     <div className="mt-3">
                       <Button type="button" variant="ghost" onClick={() => void openPurchaseOrder()}>
@@ -598,7 +598,7 @@ function B2BOrderPaymentPanel({
       </div>
       {!bankConfigured && !locked ? (
         <p className="mt-4 rounded-lg border border-[#FEDF89] bg-[#FFFAEB] p-4 text-sm font-bold text-[#B54708]">
-          Bank transfer is not fully configured by admin yet. Please wait for finance instructions before transferring funds.
+          Bank transfer account details are being prepared. Please contact finance support before transferring funds.
         </p>
       ) : null}
       {locked ? (
@@ -695,7 +695,7 @@ function B2BPaymentProofHistory({ order }: { order: B2BOrder }) {
 function B2BOrderTimeline({ order }: { order: B2BOrder }) {
   return (
     <B2BPanel>
-      <SectionHeading title="Timeline" description="Commercial order events and admin decisions." />
+      <SectionHeading title="Timeline" description="Commercial order events and verification milestones." />
       <div className="mt-4 grid gap-3">
         {(order.events ?? []).length ? (
           order.events?.map((event) => (

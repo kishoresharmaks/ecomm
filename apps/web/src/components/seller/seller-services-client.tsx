@@ -149,7 +149,7 @@ function sellerServiceActionMessage(action: string) {
     case "complete":
       return "Completion submitted for customer approval.";
     case "payment":
-      return "Cash collection recorded. It will count as paid after customer or admin confirmation.";
+      return "Cash collection recorded. It will count as paid after customer or support confirmation.";
     default:
       return "Service action completed.";
   }
@@ -275,7 +275,7 @@ function SellerServiceList() {
       <div className="grid gap-4 md:grid-cols-3">
         <SellerMetric label="Service listings" value={summary?.listingCount ?? servicesQuery.data?.total ?? 0} note="All submitted service listings" />
         <SellerMetric label="Live services" value={summary?.liveCount ?? 0} note="Approved and visible" />
-        <SellerMetric label="Pending approval" value={summary?.pendingApprovalCount ?? 0} note="Waiting for admin review" />
+        <SellerMetric label="Pending approval" value={summary?.pendingApprovalCount ?? 0} note="Awaiting quality check" />
       </div>
 
       <SellerPanel>
@@ -433,7 +433,7 @@ function SellerServiceForm({ serviceId }: { serviceId?: string }) {
     mutationFn: (payload: ServiceListingPayload) =>
       serviceId ? updateSellerService(sellerAuth.authHeaders, serviceId, payload) : createSellerService(sellerAuth.authHeaders, payload),
     onSuccess: (service) => {
-      setNotice({ tone: "success", message: serviceId ? "Service changes submitted for admin approval." : "Service submitted for admin approval." });
+      setNotice({ tone: "success", message: serviceId ? "Service changes submitted for verification." : "Service submitted for verification." });
       void queryClient.invalidateQueries({ queryKey: ["seller-services", sellerAuth.authKey] });
       void queryClient.invalidateQueries({ queryKey: ["seller-service", sellerAuth.authKey, service.id] });
       router.push("/seller/services");
@@ -573,7 +573,7 @@ function SellerServiceForm({ serviceId }: { serviceId?: string }) {
             </span>
             <div>
           <h2 className="text-xl font-black text-[#123A5A]">Service details</h2>
-          <p className="mt-1 text-sm leading-6 text-[#667085]">{editing ? "Update the listing and send it back to admin review." : "Add a precise title, category, pricing model, and operating terms."}</p>
+          <p className="mt-1 text-sm leading-6 text-[#667085]">{editing ? "Update the listing and send it back to quality check." : "Add a precise title, category, pricing model, and operating terms."}</p>
             </div>
           </div>
           <div className="grid gap-4 md:grid-cols-2">
@@ -755,7 +755,7 @@ function SellerServiceForm({ serviceId }: { serviceId?: string }) {
       <aside className="self-start xl:sticky xl:top-8">
         <SellerPanel>
           <h2 className="text-lg font-black text-[#123A5A]">Approval summary</h2>
-          <p className="mt-2 text-sm leading-6 text-[#667085]">{editing ? "Edited services become inactive until admin approves the updated listing." : "Services are submitted inactive and become visible after admin approval."}</p>
+          <p className="mt-2 text-sm leading-6 text-[#667085]">{editing ? "Edited services become inactive until quality check approves the updated listing." : "Services are submitted inactive and become visible after verification."}</p>
           <div className="mt-4 grid gap-2 rounded-md border border-[#D9E2EA] bg-[#F8FAFC] p-3 text-sm font-bold text-[#1F2933]">
             <span>Image: {coverImageUrl ? "Uploaded" : "Not uploaded"}</span>
             <span>Coverage areas: {serviceAreaCount}</span>
@@ -939,7 +939,7 @@ function SellerServiceBookings() {
       <div className="grid gap-4 md:grid-cols-3">
         <SellerMetric label="New requests" value={summary?.requestedCount ?? 0} note="Awaiting provider action" />
         <SellerMetric label="Upcoming jobs" value={summary?.upcomingCount ?? 0} note="Accepted or scheduled" />
-        <SellerMetric label="Completion review" value={summary?.completionReviewCount ?? 0} note="Awaiting customer/admin confirmation" />
+        <SellerMetric label="Completion review" value={summary?.completionReviewCount ?? 0} note="Awaiting customer or support confirmation" />
       </div>
       <div className="grid gap-4">
         {bookings.map((booking) => (
@@ -1569,7 +1569,7 @@ function BookingActionPanel({
             <input name="amount" type="number" min="0.01" step="0.01" defaultValue={remainingDuePaise > 0 ? (remainingDuePaise / 100).toFixed(2) : undefined} placeholder="Amount received INR" className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold" />
             <input name="referenceNumber" placeholder="Reference / cash note" className="h-10 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold" />
             <p className="rounded-md bg-white px-3 py-2 text-xs font-semibold leading-5 text-[#667085]">
-              Remaining balance: {formatMoney(remainingDuePaise, booking.currency)}. Records cash collected by your service person. Customer/admin confirmation controls booking payment; only platform dues from this cash can be settled or offset.
+              Remaining balance: {formatMoney(remainingDuePaise, booking.currency)}. Records cash collected by your service person. Customer or support confirmation controls booking payment; only platform dues from this cash can be settled or offset.
             </p>
             <Button type="submit" variant="outline" size="sm" disabled={pending}>Record cash collected</Button>
           </form>

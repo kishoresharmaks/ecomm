@@ -121,7 +121,7 @@ export function DeliveryProfileClient() {
         <DeliveryMetric
           label="Availability"
           value={form.isAvailable ? "Active" : "Inactive"}
-          note="Used for new admin assignment"
+          note="Used for dispatch matching"
         />
         <DeliveryMetric
           label="Active workload"
@@ -224,7 +224,7 @@ export function DeliveryProfileClient() {
               This usually means Razorpay Smart Collect is still being configured for your delivery account. Please check again after some time, or contact operations if you have already collected COD cash.
             </p>
             <p className="mt-3 text-xs font-bold leading-5 text-[#8A4B1F]">
-              Until the QR appears, COD collections stay available for admin or finance verification.
+              Until the QR appears, COD collections remain recorded for finance verification.
             </p>
           </div>
         </DeliveryPanel>
@@ -249,7 +249,7 @@ export function DeliveryProfileClient() {
               icon={<Bike className="h-5 w-5" aria-hidden="true" />}
               label="Vehicle"
               value={form.vehicleNumber || "Not set"}
-              note="Used by admin handover"
+              note="Used during hub handover"
             />
           </div>
 

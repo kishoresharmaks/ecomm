@@ -5,7 +5,7 @@ export default function SellerReviewsPage() {
   return (
     <SellerWorkspaceShell
       title="Ratings and reviews"
-      description="View customer ratings and reviews for your products. Moderation is controlled by 1HandIndia admin."
+      description="View customer ratings and reviews for your products. Moderation is managed by the 1HandIndia platform team."
     >
       <SellerReviewsClient />
     </SellerWorkspaceShell>
