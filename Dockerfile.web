@@ -12,7 +12,8 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
+ENV PORT=3002
 RUN pnpm turbo run build --filter=@indihub/web
 
-EXPOSE 3000
-CMD ["pnpm", "--filter", "@indihub/web", "start"]
+EXPOSE 3002
+CMD ["pnpm", "--filter", "@indihub/web", "exec", "next", "start", "--port", "3002"]
