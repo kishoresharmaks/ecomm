@@ -1,0 +1,18 @@
+FROM node:22-alpine AS base
+RUN apk add --no-cache libc6-compat
+WORKDIR /app
+RUN corepack enable && corepack prepare pnpm@10.20.0 --activate
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
+COPY packages/ ./packages/
+COPY apps/web/package.json ./apps/web/
+COPY scripts/ ./scripts/
+RUN pnpm install --frozen-lockfile
+
+COPY . .
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_ENV=production
+RUN pnpm turbo run build --filter=@indihub/web
+
+EXPOSE 3000
+CMD ["pnpm", "--filter", "@indihub/web", "start"]
