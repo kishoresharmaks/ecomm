@@ -1,4 +1,4 @@
-import { Controller, Get, Res } from "@nestjs/common";
+import { Controller, Get, Inject, Res } from "@nestjs/common";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import type { Response } from "express";
 import { brandConfig } from "@indihub/config";
@@ -9,7 +9,7 @@ import { HealthService } from "./health.service";
 @Public()
 @Controller("health")
 export class HealthController {
-  constructor(private readonly health: HealthService) {}
+  constructor(@Inject(HealthService) private readonly health: HealthService) {}
 
   @Get()
   @ApiOperation({ summary: "Check API liveness using the legacy compatibility endpoint." })

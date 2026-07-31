@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import IORedis from "ioredis";
 import { PrismaService } from "../prisma/prisma.service";
 
@@ -6,7 +6,7 @@ export type ComponentStatus = "available" | "degraded" | "not_configured";
 
 @Injectable()
 export class HealthService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   liveness() {
     return {
