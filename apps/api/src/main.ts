@@ -47,23 +47,27 @@ async function bootstrap() {
 
   app.setGlobalPrefix("api");
 
-  const swaggerConfig = createSwaggerConfig();
+  const enableApiDocs = process.env.NODE_ENV !== "production" || process.env.ENABLE_API_DOCS === "true";
 
-  const document = SwaggerModule.createDocument(app, swaggerConfig, {
-    deepScanRoutes: true,
-    operationIdFactory: (controllerKey: string, methodKey: string) => `${controllerKey}_${methodKey}`
-  });
-  SwaggerModule.setup("api/docs", app, document, {
-    jsonDocumentUrl: "api/openapi.json",
-    yamlDocumentUrl: "api/openapi.yaml",
-    swaggerOptions: {
-      displayRequestDuration: true,
-      docExpansion: "none",
-      operationsSorter: "alpha",
-      persistAuthorization: true,
-      tagsSorter: "alpha"
-    }
-  });
+  if (enableApiDocs) {
+    const swaggerConfig = createSwaggerConfig();
+
+    const document = SwaggerModule.createDocument(app, swaggerConfig, {
+      deepScanRoutes: true,
+      operationIdFactory: (controllerKey: string, methodKey: string) => `${controllerKey}_${methodKey}`
+    });
+    SwaggerModule.setup("api/docs", app, document, {
+      jsonDocumentUrl: "api/openapi.json",
+      yamlDocumentUrl: "api/openapi.yaml",
+      swaggerOptions: {
+        displayRequestDuration: true,
+        docExpansion: "none",
+        operationsSorter: "alpha",
+        persistAuthorization: true,
+        tagsSorter: "alpha"
+      }
+    });
+  }
 
   const port = Number(process.env.API_PORT ?? 4000);
   const host = process.env.API_HOST?.trim() || "0.0.0.0";
@@ -71,7 +75,9 @@ async function bootstrap() {
   await app.listen(port, host);
 
   apiLogger.info({ publicHost, port }, "1HandIndia API listening");
-  apiLogger.info({ url: `http://${publicHost}:${port}/api/docs` }, "1HandIndia API docs available");
+  if (enableApiDocs) {
+    apiLogger.info({ url: `http://${publicHost}:${port}/api/docs` }, "1HandIndia API docs available");
+  }
 }
 
 bootstrap().catch((error) => {

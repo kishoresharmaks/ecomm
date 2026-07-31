@@ -145,7 +145,7 @@ describe("seo helpers", () => {
     expect(publicRobotsAllow).toEqual(expect.arrayContaining(["/seller/register", "/b2b/register"]));
     expect(privateRobotsDisallow).not.toContain("/seller");
     expect(privateRobotsDisallow).toEqual(
-      expect.arrayContaining(["/seller/orders", "/b2b/enquiries", "/courier", "/track-order", "/sentry-example-page"]),
+      expect.arrayContaining(["/seller/orders", "/b2b/enquiries", "/courier", "/track-order"]),
     );
   });
 

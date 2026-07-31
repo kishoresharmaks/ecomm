@@ -87,7 +87,6 @@ export const privateRobotsDisallow = [
   "/delivery",
   "/finance",
   "/api",
-  "/sentry-example-page",
   "/sign-in",
   "/sign-up",
   "/track-order",

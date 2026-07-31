@@ -1,7 +1,8 @@
 "use client";
 
+import { useCallback, useRef, useState } from "react";
 import Link from "next/link";
-import { Mail, MapPin, Send, ShieldCheck, Store } from "lucide-react";
+import { Check, Loader2, Mail, MapPin, Send, ShieldCheck, Store } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { listCmsMenus, type CmsMenuItem } from "@/lib/storefront-api";
 
@@ -88,26 +89,7 @@ export function StorefrontFooter({
             <p className="mt-3 text-sm font-semibold leading-6 text-[#667085]">
               Get the best deals and marketplace updates.
             </p>
-            <form
-              className="mt-4 flex h-11 overflow-hidden rounded-full border border-[#FFE0D6] bg-white"
-              onSubmit={(event) => event.preventDefault()}
-            >
-              <label htmlFor="footer-email" className="sr-only">
-                Email address
-              </label>
-              <span className="grid w-11 place-items-center text-[#ED3500]">
-                <Mail className="h-4 w-4" aria-hidden="true" />
-              </span>
-              <input
-                id="footer-email"
-                type="email"
-                placeholder="Enter your email"
-                className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-[#111827] outline-none placeholder:text-[#98A2B3]"
-              />
-              <button type="submit" className="grid w-11 place-items-center bg-[#ED3500] text-white" aria-label="Subscribe">
-                <Send className="h-4 w-4" aria-hidden="true" />
-              </button>
-            </form>
+            <NewsletterForm />
           </div>
         </div>
 
@@ -186,4 +168,106 @@ function flattenMenuItems(items?: CmsMenuItem[]): Array<{ label: string; href: s
 
 function isExternalHref(href: string) {
   return /^(https?:)?\/\//i.test(href) || href.startsWith("mailto:") || href.startsWith("tel:");
+}
+
+const NEWSLETTER_COOLDOWN_MS = 10_000;
+
+function NewsletterForm() {
+  const [status, setStatus] = useState<"idle" | "submitting" | "success" | "error">("idle");
+  const [message, setMessage] = useState("");
+  const lastSubmitRef = useRef(0);
+
+  const handleSubmit = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+
+    // Honeypot check — bots fill hidden fields
+    if (formData.get("website")) return;
+
+    // Cooldown check — prevent rapid resubmission
+    if (Date.now() - lastSubmitRef.current < NEWSLETTER_COOLDOWN_MS) {
+      setStatus("error");
+      setMessage("Please wait before subscribing again.");
+      return;
+    }
+
+    const email = (formData.get("email") as string)?.trim();
+    if (!email) return;
+
+    setStatus("submitting");
+    lastSubmitRef.current = Date.now();
+
+    try {
+      const response = await fetch("/api/newsletter/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+
+      if (response.ok) {
+        setStatus("success");
+        setMessage("Subscribed! Check your inbox.");
+        form.reset();
+      } else {
+        setStatus("error");
+        setMessage("Could not subscribe. Try again later.");
+      }
+    } catch {
+      setStatus("error");
+      setMessage("Connection error. Please retry.");
+    }
+  }, []);
+
+  return (
+    <>
+      <form
+        className="mt-4 flex h-11 overflow-hidden rounded-full border border-[#FFE0D6] bg-white"
+        onSubmit={handleSubmit}
+      >
+        <label htmlFor="footer-email" className="sr-only">
+          Email address
+        </label>
+        {/* Honeypot — hidden from real users, visible to bots */}
+        <input
+          name="website"
+          type="text"
+          tabIndex={-1}
+          autoComplete="off"
+          aria-hidden="true"
+          style={{ position: "absolute", left: "-9999px", opacity: 0 }}
+        />
+        <span className="grid w-11 place-items-center text-[#ED3500]">
+          <Mail className="h-4 w-4" aria-hidden="true" />
+        </span>
+        <input
+          id="footer-email"
+          name="email"
+          type="email"
+          required
+          placeholder="Enter your email"
+          className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-[#111827] outline-none placeholder:text-[#98A2B3]"
+        />
+        <button
+          type="submit"
+          disabled={status === "submitting"}
+          className="grid w-11 place-items-center bg-[#ED3500] text-white disabled:opacity-60"
+          aria-label="Subscribe"
+        >
+          {status === "submitting" ? (
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+          ) : status === "success" ? (
+            <Check className="h-4 w-4" aria-hidden="true" />
+          ) : (
+            <Send className="h-4 w-4" aria-hidden="true" />
+          )}
+        </button>
+      </form>
+      {message ? (
+        <p className={`mt-2 text-xs font-semibold ${status === "success" ? "text-[#059669]" : "text-[#DC2626]"}`}>
+          {message}
+        </p>
+      ) : null}
+    </>
+  );
 }

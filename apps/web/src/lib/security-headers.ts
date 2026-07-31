@@ -44,7 +44,7 @@ export function buildContentSecurityPolicy({ nonce, origin }: SecurityHeaderOpti
       apiOrigin,
       apiWebSocketOrigin,
       imageKitUploadOrigin,
-      "https://*.amazonaws.com",
+      ...parseCsvOrigins(process.env.NEXT_PUBLIC_CSP_AWS_S3_ORIGINS ?? "https://1handindia-private-documents-510537391373-ap-south-1-an.s3.ap-south-1.amazonaws.com"),
       ...analyticsConnectOrigins,
       ...razorpayOrigins,
       ...clerkOrigins,
