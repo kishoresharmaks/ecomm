@@ -24,6 +24,13 @@ describe("customer storefront flow boundaries", () => {
     expect(checkoutSource).toContain('searchParams.get("couponCode")');
   });
 
+  it("waits for a complete location and checkout recalculation before order submission", () => {
+    expect(checkoutSource).toContain("summaryAddress.stateCode");
+    expect(checkoutSource).toContain("summaryAddress.cityCode");
+    expect(checkoutSource).toContain("checkoutSummaryPending ||");
+    expect(checkoutSource).toContain('disabled={deliveryPreference === "STORE_PICKUP"}');
+  });
+
   it("synchronizes header and search-page state with URL navigation", () => {
     expect(headerSource).toContain("setQuery(urlQuery)");
     expect(searchSource).toContain("setSubmittedSearch(initialSearch.trim())");

@@ -156,6 +156,8 @@ export function CheckoutPageClient() {
     deliveryPreference !== "STORE_PICKUP" &&
     showManualAddress &&
     hasManualAddressLocationForSummary(manualAddress);
+  const checkoutSummaryReady =
+    deliveryPreference === "STORE_PICKUP" || useSavedAddress || manualAddressReadyForSummary;
   const checkoutSummaryOptions = useMemo(
     () => ({
       buyerCountryCode: market.countryCode,
@@ -186,9 +188,7 @@ export function CheckoutPageClient() {
   const checkoutSummaryQuery = useQuery({
     queryKey: ["checkout-summary", customerAuth.authKey, checkoutSummaryOptions],
     queryFn: () => getCheckoutSummary(customerAuth.authHeaders, checkoutSummaryOptions),
-    enabled:
-      customerAuth.enabled &&
-      (deliveryPreference === "STORE_PICKUP" || useSavedAddress || manualAddressReadyForSummary),
+    enabled: customerAuth.enabled && checkoutSummaryReady,
     retry: false,
   });
   const configuredPaymentOptions = paymentMethodsQuery.data?.methods ?? fallbackPaymentOptions;
@@ -228,6 +228,7 @@ export function CheckoutPageClient() {
     buyerLocale: market.market.locale,
   };
   const couponIsApplying = Boolean(pendingCouponCode && checkoutSummaryQuery.isFetching);
+  const checkoutSummaryPending = checkoutSummaryReady && checkoutSummaryQuery.isFetching;
   const couponApplied = Boolean(appliedCouponCode && checkoutTotals.coupon && !pendingCouponCode);
   const hasCheckoutItem = isDirectCheckout
     ? checkoutTotals.itemCount > 0
@@ -428,6 +429,9 @@ export function CheckoutPageClient() {
       if (!hasCheckoutItem) {
         throw new Error(isDirectCheckout ? "Selected product is unavailable for checkout." : "Cart is empty.");
       }
+      if (checkoutSummaryPending) {
+        throw new Error("Please wait while delivery and totals are being checked.");
+      }
       if (checkoutBlockedMessage) {
         throw new Error(checkoutBlockedMessage);
       }
@@ -552,7 +556,7 @@ export function CheckoutPageClient() {
   });
 
   function syncManualAddressFromForm(form: HTMLFormElement) {
-    if (showManualAddress) {
+    if (deliveryPreference !== "STORE_PICKUP" && showManualAddress) {
       setManualAddress(addressFromForm(new FormData(form)));
     }
   }
@@ -615,8 +619,21 @@ export function CheckoutPageClient() {
             <StorefrontPanelHeader
               icon={MapPin}
               title="Delivery address"
-              description="Choose a saved delivery location or enter a new one."
+              description={
+                deliveryPreference === "STORE_PICKUP"
+                  ? "No delivery address is required for store pickup."
+                  : "Choose a saved delivery location or enter a new one."
+              }
             />
+            {deliveryPreference === "STORE_PICKUP" ? (
+              <StorefrontNotice tone="success" className="mt-5">
+                Pickup details will be confirmed after the order is placed.
+              </StorefrontNotice>
+            ) : null}
+            <fieldset
+              disabled={deliveryPreference === "STORE_PICKUP"}
+              className={deliveryPreference === "STORE_PICKUP" ? "hidden" : "contents"}
+            >
             {addressesQuery.isLoading ? <StorefrontSkeleton className="mt-5 h-24" /> : null}
             {savedAddresses.length ? (
               <div className="mt-5 grid gap-3 md:grid-cols-2">
@@ -741,6 +758,7 @@ export function CheckoutPageClient() {
                 </div>
               </div>
             ) : null}
+            </fieldset>
           </StorefrontPanel>
 
           <StorefrontPanel as="section">
@@ -1067,12 +1085,15 @@ export function CheckoutPageClient() {
               !customerAuth.enabled ||
               !hasCheckoutItem ||
               Boolean(checkoutBlockedMessage) ||
+              checkoutSummaryPending ||
               !hasEnabledPaymentMethod ||
               orderMutation.isPending
             }
           >
             {orderMutation.isPending
               ? "Placing order"
+              : checkoutSummaryPending
+                ? "Checking delivery"
               : paymentMethod === "RAZORPAY"
                 ? "Place order and pay"
                 : "Place order"}
@@ -1260,7 +1281,13 @@ export function CheckoutPageClient() {
               retryLabel="Retry cart"
             />
           ) : null}
-          {checkoutBlockedMessage && !couponFeedback ? (
+          {checkoutSummaryPending ? (
+            <StorefrontNotice tone="info" className="mt-5 flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              Checking delivery options and the latest total.
+            </StorefrontNotice>
+          ) : null}
+          {checkoutSummaryReady && !checkoutSummaryPending && checkoutBlockedMessage && !couponFeedback ? (
             <StorefrontNotice
               tone={deliveryServiceabilityError ? "warning" : "danger"}
               className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
@@ -1352,6 +1379,8 @@ function hasManualAddressLocationForSummary(address: CheckoutAddress) {
   const summaryAddress = checkoutSummaryAddress(address);
   return Boolean(
     summaryAddress.countryCode &&
+      summaryAddress.stateCode &&
+      summaryAddress.cityCode &&
       (summaryAddress.localAreaCode ||
         summaryAddress.pincode ||
         (typeof summaryAddress.latitude === "number" && typeof summaryAddress.longitude === "number")),

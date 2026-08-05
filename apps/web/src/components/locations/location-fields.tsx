@@ -75,6 +75,8 @@ export function LocationFields({
   const autoMatchedState = useRef(false);
   const autoMatchedCity = useRef(false);
   const autoMatchedArea = useRef(false);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
 
   const inputClass = inputClassName ?? defaultInputClass;
   const labelClass = labelClassName ?? defaultLabelClass;
@@ -292,7 +294,7 @@ export function LocationFields({
   );
 
   useEffect(() => {
-    onChange?.({
+    onChangeRef.current?.({
       country: hiddenValues.country,
       countryCode,
       state: hiddenValues.state,
@@ -311,7 +313,6 @@ export function LocationFields({
     hiddenValues.country,
     hiddenValues.state,
     localAreaCode,
-    onChange,
     pincode,
     stateCode,
   ]);
@@ -515,6 +516,9 @@ export function LocationFields({
         isLoading={areasStore.isLoading || areasStore.isFetching}
         placeholder="Search local area or pincode"
         onSearchChange={(value) => {
+          if (localAreaCode || selectedArea) {
+            setPincode("");
+          }
           setAreaSearch(value);
           setLocalAreaCode("");
           setSelectedArea(null);
