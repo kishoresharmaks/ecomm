@@ -70,6 +70,8 @@ export function MapLocationPicker({
   const currentPointRef = useRef<Coordinates | null>(null);
   const centerFallbackRef = useRef<Coordinates>(centerFallback ?? defaultCenter);
   const handleMapPickRef = useRef<(point: Coordinates) => void>(() => undefined);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
   const [latitude, setLatitude] = useState(coordinateValue(defaultValue?.latitude));
   const [longitude, setLongitude] = useState(coordinateValue(defaultValue?.longitude));
   const [locationSource, setLocationSource] = useState(sourceValue(defaultValue?.locationSource));
@@ -113,14 +115,14 @@ export function MapLocationPicker({
   }, [currentPoint]);
 
   useEffect(() => {
-    onChange?.({
+    onChangeRef.current?.({
       latitude,
       longitude,
       locationSource,
       accuracyMeters,
       locationConfidenceScore,
     });
-  }, [accuracyMeters, latitude, locationConfidenceScore, locationSource, longitude, onChange]);
+  }, [accuracyMeters, latitude, locationConfidenceScore, locationSource, longitude]);
 
   useEffect(() => {
     centerFallbackRef.current = centerFallback ?? defaultCenter;

@@ -419,7 +419,7 @@ export class SellersService {
   }
 
   async listPublicSellers(query: PublicSellerQueryDto = {}) {
-    const limit = query.limit ?? 60;
+    const limit = Number(query.limit ?? 60);
     if (query.page) {
       return this.listPublicSellerPage(query, limit);
     }
@@ -434,7 +434,7 @@ export class SellersService {
   }
 
   private async listPublicSellerPage(query: PublicSellerQueryDto, limit: number) {
-    const page = query.page ?? 1;
+    const page = Number(query.page ?? 1);
     const tiers = this.publicSellerLocationTiers(this.publicSellerWhere(query), query);
     const tierCounts = await Promise.all(
       tiers.map((where) => this.prisma.client.seller.count({ where })),

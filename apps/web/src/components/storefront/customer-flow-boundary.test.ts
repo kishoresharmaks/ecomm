@@ -24,6 +24,17 @@ describe("customer storefront flow boundaries", () => {
     expect(checkoutSource).toContain('searchParams.get("couponCode")');
   });
 
+  it("moves successful order placement to the checkout success page", () => {
+    const successBlock = checkoutSource.slice(
+      checkoutSource.indexOf("onSuccess: (order)"),
+      checkoutSource.indexOf("onError: (error)"),
+    );
+
+    expect(checkoutSource).toContain("moveToOrderSuccess(order.orderNumber)");
+    expect(successBlock).toContain("moveToOrderSuccess(order.orderNumber)");
+    expect(checkoutSource).toContain("window.location.assign(path)");
+  });
+
   it("waits for a complete location and checkout recalculation before order submission", () => {
     expect(checkoutSource).toContain("summaryAddress.stateCode");
     expect(checkoutSource).toContain("summaryAddress.cityCode");

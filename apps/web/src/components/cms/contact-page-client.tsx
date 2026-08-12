@@ -161,6 +161,7 @@ export function ContactPageClient() {
                 sizes="(min-width: 1024px) 420px, 100vw"
                 className="object-cover opacity-85"
                 priority
+                loading="eager"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-[#163B5C]/90 via-[#163B5C]/35 to-transparent" />
               <div className="absolute bottom-0 p-5 text-white">

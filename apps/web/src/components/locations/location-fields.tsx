@@ -197,6 +197,16 @@ export function LocationFields({
   const postalLabel = country?.postalCodeLabel ?? (countryCode === "IN" ? "Pincode" : "Postal code");
   const canChooseCity = Boolean(countryCode && (stateCode || loadCitiesAcrossCountry));
   const pincodeAreaOptions = postalCodeLookup ? areas.filter((item) => item.postalCode === postalCodeLookup) : [];
+  const locationCatalogError =
+    locationCatalog.countriesQuery.error ?? locationCatalog.statesQuery.error ?? locationCatalog.citiesQuery.error;
+
+  function retryLocationCatalog() {
+    void Promise.all([
+      locationCatalog.countriesQuery.refetch(),
+      locationCatalog.statesQuery.refetch(),
+      ...(stateCode ? [locationCatalog.citiesQuery.refetch()] : []),
+    ]);
+  }
 
   function selectArea(nextArea: LocationAreaOption) {
     setLocalAreaCode(nextArea.code);
@@ -431,106 +441,151 @@ export function LocationFields({
       <input type="hidden" name="city" value={hiddenValues.city} />
       <input type="hidden" name="area" value={hiddenValues.area} />
 
-      <SelectField
-        label="Country"
-        name="countryCode"
-        value={countryCode}
-        options={countries}
-        getLabel={(item) => item.name}
-        getValue={(item) => item.code}
-        inputClassName={inputClass}
-        labelClassName={labelClass}
-        disabled={disabled || locationCatalog.countriesQuery.isLoading}
-        onChange={(value) => {
-          setCountryCode(value);
-          setStateCode("");
-          setCityCode("");
-          setLocalAreaCode("");
-          setSelectedArea(null);
-          setAreaSearch("");
-          setPincode("");
-        }}
-      /> 
+      {locationCatalogError ? (
+        <div role="alert" className="flex flex-col gap-2 rounded-md border border-[#F4C7B8] bg-[#FFF8F5] p-3 text-sm text-[#9F2600] sm:flex-row sm:items-center sm:justify-between">
+          <span>Location options could not be loaded. Check that the API is running, then try again.</span>
+          <button
+            type="button"
+            onClick={retryLocationCatalog}
+            className="w-fit rounded-md border border-[#ED3500] px-3 py-2 text-xs font-black text-[#ED3500] transition hover:bg-[#FFF0EC]"
+          >
+            Retry location options
+          </button>
+        </div>
+      ) : null}
 
-      <SelectField
-        label={state?.type ?? "State / province"}
-        name="stateCode"
-        value={stateCode}
-        options={states}
-        getLabel={(item) => item.name}
-        getValue={(item) => item.code}
-        inputClassName={inputClass}
-        labelClassName={labelClass}
-        disabled={disabled || !countryCode || locationCatalog.statesQuery.isLoading}
-        required={!hiddenValues.state}
-        onChange={(value) => {
-          setStateCode(value);
-          setCityCode("");
-          setLocalAreaCode("");
-          setSelectedArea(null);
-          setAreaSearch("");
-          setPincode("");
-        }}
-      />
-
-      <SelectField
-        label="City"
-        name="cityCode"
-        value={cityCode}
-        options={cities}
-        getLabel={(item) => loadCitiesAcrossCountry ? formatCityOptionLabel(item) : item.name}
-        getValue={(item) => item.code}
-        inputClassName={inputClass}
-        labelClassName={labelClass}
-        disabled={disabled || !canChooseCity || locationCatalog.citiesQuery.isLoading}
-        required={!hiddenValues.city}
-        onChange={(value) => {
-          setCityCode(value);
-          const selectedCity = cities.find((item) => item.code === value);
-          const selectedSubdivision = selectedCity?.subdivision;
-          const selectedCountry = selectedSubdivision?.country;
-          if (selectedCountry?.code && selectedCountry.code !== countryCode) {
-            setCountryCode(selectedCountry.code);
-          }
-          if (selectedSubdivision?.code && selectedSubdivision.code !== stateCode) {
-            setStateCode(selectedSubdivision.code);
-          }
-          setLocalAreaCode("");
-          setSelectedArea(null);
-          setAreaSearch("");
-          setPincode("");
-        }}
-      />
-
-      <AreaSearchField
-        label="Local area"
-        name="localAreaCode"
-        value={localAreaCode}
-        searchValue={areaSearch}
-        options={areas}
-        getLabel={(item) => item.postalCode ? `${item.name} (${item.postalCode})` : item.name}
-        getValue={(item) => item.code}
-        inputClassName={inputClass}
-        labelClassName={labelClass}
-        disabled={disabled || !countryCode}
-        isLoading={areasStore.isLoading || areasStore.isFetching}
-        placeholder="Search local area or pincode"
-        onSearchChange={(value) => {
-          if (localAreaCode || selectedArea) {
+      {/* Each SelectField is wrapped in relative z-10 so native <select> elements
+          have their own stacking context and cannot be covered by the absolute
+          dropdown rendered inside AreaSearchField. */}
+      <div className="relative z-10">
+        <SelectField
+          label="Country"
+          name="countryCode"
+          value={countryCode}
+          options={countries}
+          getLabel={(item) => item.name}
+          getValue={(item) => item.code}
+          inputClassName={inputClass}
+          labelClassName={labelClass}
+          disabled={disabled || locationCatalog.countriesQuery.isLoading}
+          onChange={(value) => {
+            const selectedCountry = countries.find((item) => item.code === value);
+            setCountryCode(value);
+            setManualNames((current) => ({
+              country: selectedCountry?.name ?? current.country,
+              state: undefined,
+              city: undefined,
+              area: undefined
+            }));
+            setStateCode("");
+            setCityCode("");
+            setLocalAreaCode("");
+            setSelectedArea(null);
+            setAreaSearch("");
             setPincode("");
-          }
-          setAreaSearch(value);
-          setLocalAreaCode("");
-          setSelectedArea(null);
-        }}
-        onSelect={(value) => {
-          setLocalAreaCode(value);
-          const selected = areas.find((item) => item.code === value);
-          if (selected) {
-            selectArea(selected);
-          }
-        }}
-      />
+          }}
+        />
+      </div>
+
+      <div className="relative z-10">
+        <SelectField
+          label={state?.type ?? "State / province"}
+          name="stateCode"
+          value={stateCode}
+          options={states}
+          getLabel={(item) => item.name}
+          getValue={(item) => item.code}
+          inputClassName={inputClass}
+          labelClassName={labelClass}
+          disabled={disabled || !countryCode || locationCatalog.statesQuery.isLoading}
+          required={!hiddenValues.state}
+          onChange={(value) => {
+            const selectedState = states.find((item) => item.code === value);
+            setStateCode(value);
+            setManualNames((current) => ({
+              ...current,
+              state: selectedState?.name ?? current.state,
+              city: undefined,
+              area: undefined
+            }));
+            setCityCode("");
+            setLocalAreaCode("");
+            setSelectedArea(null);
+            setAreaSearch("");
+            setPincode("");
+          }}
+        />
+      </div>
+
+      <div className="relative z-10">
+        <SelectField
+          label="City"
+          name="cityCode"
+          value={cityCode}
+          options={cities}
+          getLabel={(item) => loadCitiesAcrossCountry ? formatCityOptionLabel(item) : item.name}
+          getValue={(item) => item.code}
+          inputClassName={inputClass}
+          labelClassName={labelClass}
+          disabled={disabled || !canChooseCity || locationCatalog.citiesQuery.isLoading}
+          required={!hiddenValues.city}
+          onChange={(value) => {
+            const selectedCity = cities.find((item) => item.code === value);
+            const selectedSubdivision = selectedCity?.subdivision;
+            const selectedCountry = selectedSubdivision?.country;
+            setCityCode(value);
+            setManualNames((current) => ({
+              ...current,
+              city: selectedCity?.name ?? current.city,
+              area: undefined
+            }));
+            if (selectedCountry?.code && selectedCountry.code !== countryCode) {
+              setCountryCode(selectedCountry.code);
+            }
+            if (selectedSubdivision?.code && selectedSubdivision.code !== stateCode) {
+              setStateCode(selectedSubdivision.code);
+            }
+            setLocalAreaCode("");
+            setSelectedArea(null);
+            setAreaSearch("");
+            setPincode("");
+          }}
+        />
+      </div>
+
+      {/* AreaSearchField wrapper gets z-20 so its absolute dropdown (z-30) layers
+          correctly above all SelectField wrappers (z-10) when focused. */}
+      <div className="relative z-20">
+        <AreaSearchField
+          label="Local area"
+          name="localAreaCode"
+          value={localAreaCode}
+          searchValue={areaSearch}
+          options={areas}
+          getLabel={(item) => item.postalCode ? `${item.name} (${item.postalCode})` : item.name}
+          getValue={(item) => item.code}
+          inputClassName={inputClass}
+          labelClassName={labelClass}
+          disabled={disabled || !countryCode}
+          isLoading={areasStore.isLoading || areasStore.isFetching}
+          placeholder="Search local area or pincode"
+          onSearchChange={(value) => {
+            if (localAreaCode || selectedArea) {
+              setPincode("");
+            }
+            setAreaSearch(value);
+            setLocalAreaCode("");
+            setSelectedArea(null);
+          }}
+          onSelect={(value) => {
+            setLocalAreaCode(value);
+            const selected = areas.find((item) => item.code === value);
+            if (selected) {
+              selectArea(selected);
+            }
+          }}
+        />
+      </div>
 
       <div className={labelClass}>
         <label className="block">
@@ -655,7 +710,7 @@ function AreaSearchField<T>({
         autoComplete="off"
       />
       {showOptions ? (
-        <div className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-md border border-[#D8E2EA] bg-white shadow-lg">
+        <div className="absolute z-30 mt-1 max-h-56 w-full overflow-auto rounded-md border border-[#D8E2EA] bg-white shadow-lg">
           {options.length ? (
             options.map((item) => {
               const itemValue = getValue(item);

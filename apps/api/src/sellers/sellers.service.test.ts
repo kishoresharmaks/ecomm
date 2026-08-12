@@ -135,6 +135,38 @@ describe("seller DTO normalization", () => {
   });
 });
 
+describe("SellersService public directory pagination", () => {
+  it("normalizes string pagination before passing values to Prisma", async () => {
+    const prisma = {
+      client: {
+        seller: {
+          count: vi.fn().mockResolvedValue(1),
+          findMany: vi.fn().mockResolvedValue([]),
+        },
+      },
+    };
+    const service = new SellersService(
+      prisma as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await service.listPublicSellers({
+      page: "1",
+      limit: "24",
+    } as unknown as PublicSellerQueryDto);
+
+    expect(prisma.client.seller.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        skip: 0,
+        take: 24,
+      }),
+    );
+  });
+});
+
 describe("SellersService onboarding tax verification", () => {
   it("requires a GST certificate before a GST-registered seller can submit onboarding", async () => {
     const prisma = {

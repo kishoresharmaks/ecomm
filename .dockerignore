@@ -5,3 +5,7 @@ dist
 .git
 .tmp
 *.log
+.env
+.env.local
+apps/*/.env
+apps/*/.env.local

@@ -186,7 +186,7 @@ function AuthStory({ presentation }: { presentation: AuthPresentation }) {
   return (
     <div className="relative isolate overflow-hidden bg-[#ED3500] px-6 py-9 text-white sm:px-10 sm:py-12 lg:flex lg:flex-col lg:justify-between lg:px-12 lg:py-14">
       <div className="absolute -right-20 bottom-[-12rem] z-[-1] hidden w-[520px] opacity-20 lg:block">
-        <Image src="/brand/1handindia_hero_mark.png" alt="" width={669} height={744} className="h-auto w-full object-contain" aria-hidden="true" priority />
+        <Image src="/brand/1handindia_hero_mark.png" alt="" width={669} height={744} className="h-auto w-full object-contain" aria-hidden="true" priority loading="eager" />
       </div>
       <div className="absolute -left-16 -top-16 z-[-1] h-44 w-44 rounded-full border-[32px] border-white/10" aria-hidden="true" />
 

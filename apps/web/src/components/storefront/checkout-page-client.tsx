@@ -505,6 +505,7 @@ export function CheckoutPageClient() {
 
       const order = await placeOrder(customerAuth.authHeaders, payload);
       if (paymentMethod !== "RAZORPAY") {
+        moveToOrderSuccess(order.orderNumber);
         return order;
       }
 
@@ -536,14 +537,16 @@ export function CheckoutPageClient() {
           razorpayPaymentId: checkoutResponse.razorpay_payment_id,
           razorpaySignature: checkoutResponse.razorpay_signature,
         });
+        moveToOrderSuccess(order.orderNumber);
         return { ...order, paymentStatus: verification.status };
       } catch {
+        moveToOrderSuccess(order.orderNumber);
         return order;
       }
     },
     onSuccess: (order) => {
       void queryClient.invalidateQueries({ queryKey: ["cart", customerAuth.authKey] });
-      router.push(`/checkout/success/${order.orderNumber}`);
+      moveToOrderSuccess(order.orderNumber);
     },
     onError: (error) =>
       setFormError(
@@ -555,9 +558,33 @@ export function CheckoutPageClient() {
       ),
   });
 
+  function moveToOrderSuccess(orderNumber: string) {
+    const path = `/checkout/success/${encodeURIComponent(orderNumber)}`;
+    router.replace(path);
+    window.setTimeout(() => {
+      if (window.location.pathname !== path) {
+        window.location.assign(path);
+      }
+    }, 600);
+  }
+
   function syncManualAddressFromForm(form: HTMLFormElement) {
     if (deliveryPreference !== "STORE_PICKUP" && showManualAddress) {
-      setManualAddress(addressFromForm(new FormData(form)));
+      const formData = new FormData(form);
+      // Only sync the free-text fields that are NOT managed by LocationFields.
+      // Location fields (country, state, city, area, codes, pincode) are kept
+      // from the current manualAddress state because they are maintained by the
+      // LocationFields onChange callback. Reading them from FormData here would
+      // race against the controlled <select> values in LocationFields before
+      // React re-renders them, causing the selects to visually snap back to the
+      // previous selection.
+      setManualAddress((current) => ({
+        ...current,
+        fullName: formValue(formData, "fullName"),
+        phone: formValue(formData, "phone"),
+        line1: formValue(formData, "line1"),
+        line2: optionalFormValue(formData, "line2"),
+      }));
     }
   }
 

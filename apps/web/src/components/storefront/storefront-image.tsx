@@ -56,6 +56,7 @@ export function StorefrontImage({
           title={imageTitle}
           fill
           priority={priority}
+          loading={priority ? "eager" : undefined}
           sizes={sizes}
           unoptimized={isPrivateNetworkImageSource(resolvedSrc)}
           className={cn("object-cover", className)}
@@ -89,6 +90,7 @@ export function StorefrontImage({
           title={fallbackTitle}
           fill
           priority={priority}
+          loading={priority ? "eager" : undefined}
           className="object-contain drop-shadow-[0_12px_24px_rgba(237,53,0,0.16)]"
           sizes={sizes}
           onError={() => setFailed(true)}
