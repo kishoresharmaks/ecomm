@@ -428,11 +428,10 @@ function StorefrontAnnouncementBar({ announcements }: { announcements: CmsAnnoun
 
 
 function BrandBlock() {
-  const t = useTranslations("header");
   return (
     <Link
       href="/"
-      className="flex min-w-[178px] items-center gap-2.5 2xl:min-w-[218px] 2xl:gap-3"
+      className="flex min-w-[210px] items-center gap-2.5 2xl:min-w-[240px] 2xl:gap-3"
       aria-label="1HandIndia home"
     >
       <span className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-2xl bg-white shadow-[0_14px_30px_rgba(255,90,31,0.18)] 2xl:h-14 2xl:w-14">
@@ -442,8 +441,8 @@ function BrandBlock() {
         <span className="block whitespace-nowrap text-[23px] font-black leading-none tracking-normal text-[#101828] 2xl:text-[26px]">
           1Hand<span className="text-[#ff5a1f]">India</span>
         </span>
-        <span className="mt-1 hidden truncate text-xs font-semibold text-[#667085] xl:block">
-          {t("smart_shopping")}
+        <span className="mt-1 block truncate text-[11px] font-semibold text-[#667085]">
+          (Bees Hub Farmland Pvt Ltd)
         </span>
       </span>
     </Link>
@@ -457,8 +456,11 @@ function MobileBrandLogo() {
         <img src={brandLogoSrc} alt="" className="h-full w-full object-cover" loading="eager" />
       </span>
       <span className="min-w-0">
-        <span className="block truncate text-[17px] font-black leading-none text-[#101828] sm:text-[18px]">
+        <span className="block truncate text-[16px] font-black leading-none text-[#101828] sm:text-[18px]">
           1Hand<span className="text-[#ff5a1f]">India</span>
+        </span>
+        <span className="block truncate text-[10px] font-semibold text-[#667085]">
+          (Bees Hub Farmland Pvt Ltd)
         </span>
       </span>
     </Link>
