@@ -1837,7 +1837,22 @@ export class StorageService {
     const credentialScope = `${dateStamp}/${s3.region}/s3/aws4_request`;
     const credential = `${s3.accessKeyId}/${credentialScope}`;
     const signedHeaders = "host";
-    const canonicalUri = this.s3CanonicalUri(endpoint.pathname, s3.bucket, assetKey);
+
+    // Prefer virtual-hosted-style URLs (bucket.s3.region.amazonaws.com) when the
+    // configured endpoint is a standard AWS regional S3 endpoint. AWS is deprecating
+    // path-style access and the CSP whitelists the virtual-hosted origin, not the
+    // path-style s3.amazonaws.com origin, so path-style presigned URLs would be
+    // blocked by the browser's Content Security Policy.
+    const virtualHostedOrigin = this.s3VirtualHostedOrigin(endpoint, s3.region, s3.bucket);
+    const useVirtualHosted = Boolean(virtualHostedOrigin);
+    const requestHost = useVirtualHosted
+      ? new URL(virtualHostedOrigin!).host
+      : endpoint.host;
+    const canonicalUri = useVirtualHosted
+      ? this.s3VirtualHostedCanonicalUri(assetKey)
+      : this.s3CanonicalUri(endpoint.pathname, s3.bucket, assetKey);
+    const requestOrigin = useVirtualHosted ? virtualHostedOrigin! : endpoint.origin;
+
     const queryParams: Array<[string, string]> = [
       ["X-Amz-Algorithm", "AWS4-HMAC-SHA256"],
       ["X-Amz-Credential", credential],
@@ -1846,7 +1861,7 @@ export class StorageService {
       ["X-Amz-SignedHeaders", signedHeaders],
     ];
     const canonicalQuery = this.canonicalQueryString(queryParams);
-    const canonicalHeaders = `host:${endpoint.host}\n`;
+    const canonicalHeaders = `host:${requestHost}\n`;
     const canonicalRequest = [
       method,
       canonicalUri,
@@ -1867,9 +1882,31 @@ export class StorageService {
     )
       .update(stringToSign)
       .digest("hex");
-    const url = `${endpoint.origin}${canonicalUri}?${canonicalQuery}&X-Amz-Signature=${signature}`;
+    const url = `${requestOrigin}${canonicalUri}?${canonicalQuery}&X-Amz-Signature=${signature}`;
 
     return { url, expiresAt };
+  }
+
+  /**
+   * Returns the virtual-hosted-style origin for a standard AWS S3 regional endpoint
+   * (e.g. https://s3.ap-south-1.amazonaws.com → https://bucket.s3.ap-south-1.amazonaws.com).
+   * Returns null for custom / non-AWS endpoints so callers fall back to path-style.
+   */
+  private s3VirtualHostedOrigin(
+    endpoint: URL,
+    region: string,
+    bucket: string,
+  ): string | null {
+    // Match standard AWS regional S3 hostnames:
+    //   s3.amazonaws.com
+    //   s3.<region>.amazonaws.com
+    //   s3-<region>.amazonaws.com
+    const isAwsS3 = /^s3[.-][a-z0-9-]*\.amazonaws\.com$/.test(endpoint.hostname) ||
+      endpoint.hostname === "s3.amazonaws.com";
+    if (!isAwsS3 || !bucket || !region) {
+      return null;
+    }
+    return `${endpoint.protocol}//${bucket}.s3.${region}.amazonaws.com`;
   }
 
   private folderForPurpose(actor: RequestUser, purpose: PublicImageUploadPurpose) {
@@ -2311,6 +2348,12 @@ export class StorageService {
     const basePath = endpointPath.replace(/\/+$/, "");
     const segments = [...basePath.split("/").filter(Boolean), bucket, ...assetKey.split("/")];
 
+    return `/${segments.map((segment) => this.encodeRfc3986(segment)).join("/")}`;
+  }
+
+  /** Canonical URI for virtual-hosted-style requests: bucket is in the hostname, not the path. */
+  private s3VirtualHostedCanonicalUri(assetKey: string) {
+    const segments = assetKey.split("/");
     return `/${segments.map((segment) => this.encodeRfc3986(segment)).join("/")}`;
   }
 

@@ -19,6 +19,14 @@ export const metadata: Metadata = {
   },
   description: brandConfig.tagline,
   applicationName: brandConfig.name,
+  icons: {
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/brand/1handindia_hero_mark.png", type: "image/png" }
+    ],
+    shortcut: "/icon.svg",
+    apple: "/brand/1handindia_hero_mark.png"
+  },
   openGraph: {
     siteName: brandConfig.name,
     type: "website",
