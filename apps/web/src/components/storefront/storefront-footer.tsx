@@ -72,6 +72,11 @@ export function StorefrontFooter({
             <p className="mt-4 max-w-xs text-sm font-semibold leading-6 text-[#667085]">
               A modern marketplace for local shopping, verified sellers, best prices, and secure customer flows.
             </p>
+            <div className="mt-4 max-w-xs text-xs font-semibold leading-5 text-[#475467]">
+              <p className="font-bold text-[#111827]">BEES HUB FARMLAND PRIVATE LIMITED</p>
+              <p className="mt-0.5 text-[#667085]">2/26-1, Muhilanvilai, Monikettipottal</p>
+              <p className="text-[#667085]">Kanyakumari District, Tamil Nadu - 629501</p>
+            </div>
             <div className="mt-5 flex items-center gap-2">
               <SocialButton label="Facebook" text="f" />
               <SocialButton label="Instagram" text="ig" />
