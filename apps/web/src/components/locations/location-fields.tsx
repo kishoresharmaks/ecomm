@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { cn } from "@indihub/ui";
 import { type LocationArea } from "@/lib/location-api";
 import { formatLocalAreaLabel } from "./location-utils";
@@ -92,22 +92,44 @@ export function LocationFields({
     limit: 50,
   });
 
+  const isFirstRender = useRef(true);
+  const prevDefaultValueRef = useRef(defaultValue);
+
   useEffect(() => {
-    setCountryCode(defaultValue?.countryCode ?? defaultCountryCode);
-    setStateCode(defaultValue?.stateCode ?? "");
-    setCityCode(defaultValue?.cityCode ?? "");
-    setLocalAreaCode(defaultValue?.localAreaCode ?? "");
-    setAreaSearch(defaultValue?.area ?? "");
-    setPincode(defaultValue?.pincode ?? "");
-    setSelectedArea(null);
-    setPendingAutofill(null);
-    setManualNames({});
-    
-    autoMatchedState.current = false;
-    autoMatchedCity.current = false;
-    autoMatchedArea.current = false;
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+
+    const prev = prevDefaultValueRef.current;
+    const curr = defaultValue;
+    prevDefaultValueRef.current = defaultValue;
+
+    if (
+      curr?.countryCode !== prev?.countryCode ||
+      curr?.stateCode !== prev?.stateCode ||
+      curr?.cityCode !== prev?.cityCode ||
+      curr?.localAreaCode !== prev?.localAreaCode ||
+      curr?.area !== prev?.area ||
+      curr?.pincode !== prev?.pincode
+    ) {
+      setCountryCode(curr?.countryCode ?? defaultCountryCode);
+      setStateCode(curr?.stateCode ?? "");
+      setCityCode(curr?.cityCode ?? "");
+      setLocalAreaCode(curr?.localAreaCode ?? "");
+      setAreaSearch(curr?.area ?? "");
+      setPincode(curr?.pincode ?? "");
+      setSelectedArea(null);
+      setPendingAutofill(null);
+      setManualNames({});
+
+      autoMatchedState.current = false;
+      autoMatchedCity.current = false;
+      autoMatchedArea.current = false;
+    }
   }, [
     defaultCountryCode,
+    defaultValue,
     defaultValue?.area,
     defaultValue?.cityCode,
     defaultValue?.countryCode,
@@ -123,16 +145,17 @@ export function LocationFields({
   const selectedAreaCity = selectedArea?.city;
   const selectedAreaSubdivision = selectedAreaCity?.subdivision;
   const selectedAreaCountry = selectedAreaSubdivision?.country;
-  const countries = rawCountries.some((item) => item.code === countryCode)
-    ? rawCountries
-    : [
+  const fallbackCountryName =
+    selectedAreaCountry?.name ??
+    manualNames.country ??
+    defaultValue?.country ??
+    (countryCode === defaultCountryCode && countryCode === "IN" ? "India" : countryCode);
+  const countries = countryCode && !rawCountries.some((item) => item.code === countryCode)
+    ? [
         {
           id: selectedAreaCountry?.id ?? `fallback-${countryCode}`,
           code: countryCode,
-          name:
-            selectedAreaCountry?.name ??
-            defaultValue?.country ??
-            (countryCode === defaultCountryCode && countryCode === "IN" ? "India" : countryCode),
+          name: fallbackCountryName || countryCode,
           currency: selectedAreaCountry?.currency ?? (countryCode === "IN" ? "INR" : ""),
           locale: selectedAreaCountry?.locale ?? (countryCode === "IN" ? "en-IN" : "en-US"),
           phoneCode: selectedAreaCountry?.phoneCode ?? "",
@@ -142,29 +165,38 @@ export function LocationFields({
           sortOrder: selectedAreaCountry?.sortOrder ?? -1
         },
         ...rawCountries
-      ];
-  const fallbackStateName = selectedAreaSubdivision?.name ?? defaultValue?.state;
-  const states = stateCode && fallbackStateName && !rawStates.some((item) => item.code === stateCode)
+      ]
+    : rawCountries;
+  const fallbackStateName =
+    selectedAreaSubdivision?.name ??
+    manualNames.state ??
+    defaultValue?.state ??
+    stateCode;
+  const states = stateCode && !rawStates.some((item) => item.code === stateCode)
     ? [
         {
           id: selectedAreaSubdivision?.id ?? `fallback-${stateCode}`,
           countryId: selectedAreaSubdivision?.countryId ?? "",
           code: stateCode,
-          name: fallbackStateName,
+          name: fallbackStateName || stateCode,
           type: selectedAreaSubdivision?.type ?? "State / province",
           country: selectedAreaCountry
         },
         ...rawStates
       ]
     : rawStates;
-  const fallbackCityName = selectedAreaCity?.name ?? defaultValue?.city;
-  const cities = cityCode && fallbackCityName && !rawCities.some((item) => item.code === cityCode)
+  const fallbackCityName =
+    selectedAreaCity?.name ??
+    manualNames.city ??
+    defaultValue?.city ??
+    cityCode;
+  const cities = cityCode && !rawCities.some((item) => item.code === cityCode)
     ? [
         {
           id: selectedAreaCity?.id ?? `fallback-${cityCode}`,
           subdivisionId: selectedAreaCity?.subdivisionId ?? "",
           code: cityCode,
-          name: fallbackCityName,
+          name: fallbackCityName || cityCode,
           subdivision: selectedAreaSubdivision
         },
         ...rawCities
@@ -199,6 +231,7 @@ export function LocationFields({
   const pincodeAreaOptions = postalCodeLookup ? areas.filter((item) => item.postalCode === postalCodeLookup) : [];
   const locationCatalogError =
     locationCatalog.countriesQuery.error ?? locationCatalog.statesQuery.error ?? locationCatalog.citiesQuery.error;
+  const areaStoreError = areasStore.error;
 
   function retryLocationCatalog() {
     void Promise.all([
@@ -208,9 +241,14 @@ export function LocationFields({
     ]);
   }
 
-  function selectArea(nextArea: LocationAreaOption) {
+  function retryAreaStore() {
+    void areasStore.refetch();
+  }
+
+  const selectArea = useCallback((nextArea: LocationAreaOption) => {
     setLocalAreaCode(nextArea.code);
     setSelectedArea(nextArea);
+    // Use the same formatter as AreaSearchField getLabel so selectionIsDisplayed stays true.
     setAreaSearch(formatLocalAreaLabel(nextArea));
     const selectedCity = nextArea.city;
     const selectedSubdivision = selectedCity?.subdivision;
@@ -224,10 +262,9 @@ export function LocationFields({
     if (selectedCity?.code) {
       setCityCode(selectedCity.code);
     }
-    if (nextArea.postalCode) {
-      setPincode(nextArea.postalCode);
-    }
-  }
+    // Fix #2: always overwrite pincode so a stale value is not left when the new area has none.
+    setPincode(nextArea.postalCode ?? "");
+  }, []);
 
   useEffect(() => {
     if (!stateCode && defaultValue?.state && states.length && !autoMatchedState.current) {
@@ -393,6 +430,8 @@ export function LocationFields({
     return () => form.removeEventListener(locationAutofillEventName, handleAutofill as EventListener);
   }, [areaSearch, cityCode, countryCode, localAreaCode, pincode, stateCode]);
 
+  // Fix #1: clear the pending autofill field after it is applied so it cannot
+  // re-fire if the user manually clears the dropdown later.
   useEffect(() => {
     if (!pendingAutofill?.state || stateCode || !states.length) {
       return;
@@ -402,6 +441,8 @@ export function LocationFields({
     if (match) {
       setStateCode(match.code);
     }
+    // Clear regardless of match — field has been handled.
+    setPendingAutofill((current) => current ? { ...current, state: undefined } : null);
   }, [pendingAutofill?.state, stateCode, states]);
 
   useEffect(() => {
@@ -410,17 +451,16 @@ export function LocationFields({
     }
 
     const match = cities.find((item) => sameName(item.name, pendingAutofill.city));
-    if (!match) {
-      return;
+    if (match) {
+      setCityCode(match.code);
+      if (match.subdivision?.country?.code) {
+        setCountryCode(match.subdivision.country.code);
+      }
+      if (match.subdivision?.code) {
+        setStateCode(match.subdivision.code);
+      }
     }
-
-    setCityCode(match.code);
-    if (match.subdivision?.country?.code) {
-      setCountryCode(match.subdivision.country.code);
-    }
-    if (match.subdivision?.code) {
-      setStateCode(match.subdivision.code);
-    }
+    setPendingAutofill((current) => current ? { ...current, city: undefined } : null);
   }, [cities, cityCode, pendingAutofill?.city]);
 
   useEffect(() => {
@@ -432,7 +472,8 @@ export function LocationFields({
     if (match) {
       selectArea(match);
     }
-  }, [areas, localAreaCode, pendingAutofill?.area]);
+    setPendingAutofill((current) => current ? { ...current, area: undefined } : null);
+  }, [areas, localAreaCode, pendingAutofill?.area, selectArea]);
 
   return (
     <div ref={rootRef} className={cn("grid gap-4", className)}>
@@ -450,6 +491,20 @@ export function LocationFields({
             className="w-fit rounded-md border border-[#ED3500] px-3 py-2 text-xs font-black text-[#ED3500] transition hover:bg-[#FFF0EC]"
           >
             Retry location options
+          </button>
+        </div>
+      ) : null}
+
+      {/* Fix #8: surface area store errors with a dedicated retry. */}
+      {!locationCatalogError && areaStoreError ? (
+        <div role="alert" className="flex flex-col gap-2 rounded-md border border-[#F4C7B8] bg-[#FFF8F5] p-3 text-sm text-[#9F2600] sm:flex-row sm:items-center sm:justify-between">
+          <span>Local area options could not be loaded. Please try again.</span>
+          <button
+            type="button"
+            onClick={retryAreaStore}
+            className="w-fit rounded-md border border-[#ED3500] px-3 py-2 text-xs font-black text-[#ED3500] transition hover:bg-[#FFF0EC]"
+          >
+            Retry local areas
           </button>
         </div>
       ) : null}
@@ -498,7 +553,7 @@ export function LocationFields({
           inputClassName={inputClass}
           labelClassName={labelClass}
           disabled={disabled || !countryCode || locationCatalog.statesQuery.isLoading}
-          required={!hiddenValues.state}
+          required={!stateCode}
           onChange={(value) => {
             const selectedState = states.find((item) => item.code === value);
             setStateCode(value);
@@ -528,7 +583,7 @@ export function LocationFields({
           inputClassName={inputClass}
           labelClassName={labelClass}
           disabled={disabled || !canChooseCity || locationCatalog.citiesQuery.isLoading}
-          required={!hiddenValues.city}
+          required={!cityCode}
           onChange={(value) => {
             const selectedCity = cities.find((item) => item.code === value);
             const selectedSubdivision = selectedCity?.subdivision;
@@ -689,34 +744,109 @@ function AreaSearchField<T>({
   onSelect: (value: string) => void;
 }) {
   const [focused, setFocused] = useState(false);
+  // Fix #7: store timeout id so we can cancel it on unmount.
+  const blurTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Fix #6: accessibility – unique IDs for combobox wiring.
+  const listboxId = useId();
+  const [activeIndex, setActiveIndex] = useState(-1);
+
+  useEffect(() => {
+    return () => {
+      if (blurTimerRef.current !== null) clearTimeout(blurTimerRef.current);
+    };
+  }, []);
+
   const selectedOption = options.find((item) => getValue(item) === value);
   const selectedOptionLabel = selectedOption ? getLabel(selectedOption) : "";
   const selectionIsDisplayed = Boolean(value && selectedOptionLabel && searchValue.trim() === selectedOptionLabel.trim());
-  const showOptions = focused && !disabled && !selectionIsDisplayed && (isLoading || options.length > 0 || searchValue.trim().length > 0);
+  // Fix #4: never render stale options while a new search is loading.
+  // Show the list only when not loading OR when we have no search text (initial open).
+  const showOptions =
+    focused &&
+    !disabled &&
+    !selectionIsDisplayed &&
+    (options.length > 0 || searchValue.trim().length > 0) &&
+    !isLoading;
+  const showLoadingRow = focused && !disabled && !selectionIsDisplayed && isLoading;
+
+  // Reset active index whenever the option set changes.
+  useEffect(() => {
+    setActiveIndex(-1);
+  }, [options]);
+
+  function handleKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (!showOptions && !showLoadingRow) return;
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setActiveIndex((prev) => Math.min(prev + 1, options.length - 1));
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setActiveIndex((prev) => Math.max(prev - 1, 0));
+    } else if (event.key === "Enter") {
+      if (activeIndex >= 0 && activeIndex < options.length) {
+        event.preventDefault();
+        const chosen = options[activeIndex];
+        if (chosen) {
+          onSelect(getValue(chosen));
+          setFocused(false);
+        }
+      }
+    } else if (event.key === "Escape") {
+      setFocused(false);
+    }
+  }
+
+  const activeOptionId = activeIndex >= 0 ? `${listboxId}-opt-${activeIndex}` : undefined;
 
   return (
     <label className={cn(labelClassName, "relative")}>
       <span className="block text-sm font-bold text-[#1F2933]">{label}</span>
       <input type="hidden" name={name} value={value} />
+      {/* Fix #6: role="combobox" + aria-* for full accessibility. */}
       <input
         type="text"
+        role="combobox"
+        aria-expanded={showOptions || showLoadingRow}
+        aria-autocomplete="list"
+        aria-controls={listboxId}
+        aria-activedescendant={activeOptionId}
         value={searchValue}
-        onChange={(event) => onSearchChange(event.target.value)}
+        onChange={(event) => { setActiveIndex(-1); onSearchChange(event.target.value); }}
         onFocus={() => setFocused(true)}
-        onBlur={() => window.setTimeout(() => setFocused(false), 120)}
+        onBlur={() => {
+          // Fix #7: cancel previous timer and store new one.
+          if (blurTimerRef.current !== null) clearTimeout(blurTimerRef.current);
+          blurTimerRef.current = setTimeout(() => setFocused(false), 120);
+        }}
+        onKeyDown={handleKeyDown}
         disabled={disabled}
         className={inputClassName}
         placeholder={isLoading ? "Loading local areas..." : placeholder ?? `Search ${label.toLowerCase()}`}
         autoComplete="off"
       />
-      {showOptions ? (
-        <div className="absolute z-30 mt-1 max-h-56 w-full overflow-auto rounded-md border border-[#D8E2EA] bg-white shadow-lg">
-          {options.length ? (
-            options.map((item) => {
+      {(showOptions || showLoadingRow) ? (
+        <div
+          id={listboxId}
+          role="listbox"
+          aria-label={label}
+          className="absolute z-30 mt-1 max-h-56 w-full overflow-auto rounded-md border border-[#D8E2EA] bg-white shadow-lg"
+        >
+          {showLoadingRow ? (
+            // Fix #4: loading spinner row replaces stale option list.
+            <div className="px-3 py-2 text-sm font-semibold text-[#667085]" aria-live="polite">
+              Searching...
+            </div>
+          ) : options.length ? (
+            options.map((item, idx) => {
               const itemValue = getValue(item);
+              const isActive = idx === activeIndex;
               return (
                 <button
                   key={itemValue}
+                  id={`${listboxId}-opt-${idx}`}
+                  role="option"
+                  aria-selected={value === itemValue}
                   type="button"
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => {
@@ -725,7 +855,7 @@ function AreaSearchField<T>({
                   }}
                   className={cn(
                     "block w-full px-3 py-2 text-left text-sm font-semibold text-[#1F2933] hover:bg-[#EAF1F7]",
-                    value === itemValue ? "bg-[#EAF1F7]" : ""
+                    value === itemValue || isActive ? "bg-[#EAF1F7]" : ""
                   )}
                 >
                   {getLabel(item)}
@@ -734,7 +864,7 @@ function AreaSearchField<T>({
             })
           ) : (
             <div className="px-3 py-2 text-sm font-semibold text-[#667085]">
-              {isLoading ? "Searching..." : "No matching local areas"}
+              No matching local areas
             </div>
           )}
         </div>
