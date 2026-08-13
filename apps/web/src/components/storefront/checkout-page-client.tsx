@@ -7,7 +7,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, StatusBadge } from "@indihub/ui";
 import { CustomerAuthNotice } from "@/components/auth/customer-auth-notice";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
-import { LocationFields } from "@/components/locations/location-fields";
+import { LocationFields, type AddressLocationValue } from "@/components/locations/location-fields";
+import { PincodeFirstAddressGate } from "./pincode-first-address-gate";
 import { MapLocationPicker } from "@/components/maps/map-location-picker";
 import { useMarket } from "@/components/market/market-context";
 import { listCustomerAddresses } from "@/lib/account-api";
@@ -118,6 +119,8 @@ export function CheckoutPageClient() {
   const [buyerLegalName, setBuyerLegalName] = useState("");
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
   const [manualAddress, setManualAddress] = useState<CheckoutAddress>(initialAddress);
+  // null = pincode gate not yet confirmed; non-null = user has confirmed a pincode (or skipped)
+  const [confirmedPincodeLocation, setConfirmedPincodeLocation] = useState<(AddressLocationValue & { pincode: string }) | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [couponInput, setCouponInput] = useState(validInitialCouponCode ?? "");
   const [appliedCouponCode, setAppliedCouponCode] = useState<string | null>(validInitialCouponCode);
@@ -394,6 +397,8 @@ export function CheckoutPageClient() {
     const defaultAddress = savedAddresses.find((item) => item.isDefault) ?? savedAddresses[0];
     if (defaultAddress) {
       setSelectedAddressId(defaultAddress.id);
+      // Saved address selected — no pincode gate needed
+      setConfirmedPincodeLocation(null);
     }
   }, [savedAddresses, selectedAddressId]);
 
@@ -716,73 +721,122 @@ export function CheckoutPageClient() {
               />
             ) : null}
             {showManualAddress ? (
-              <div className="mt-5 grid gap-4 md:grid-cols-2">
-                {[
-                  ["fullName", "Full name"],
-                  ["phone", "Phone"],
-                  ["line1", "Address line 1"],
-                  ["line2", "Address line 2"],
-                ].map(([name, label]) => (
-                  <label
-                    key={name}
-                    className={`space-y-2 ${name === "line1" || name === "line2" ? "md:col-span-2" : ""}`}
-                  >
-                    <span className={storefrontFieldLabelClassName}>{label}</span>
-                    <input
-                      name={name}
-                      defaultValue={initialAddress[name as keyof CheckoutAddress] ?? ""}
-                      className={storefrontInputClassName}
-                    />
-                  </label>
-                ))}
-                <div className="md:col-span-2">
-                  <LocationFields
-                    defaultValue={initialAddress}
-                    defaultCountryCode="IN"
-                    loadCitiesAcrossCountry
-                    className="md:grid-cols-2"
-                    labelClassName="space-y-2"
+              <div className="mt-5">
+                {/* Step 1: Pincode-first gate — shown until the user confirms a pincode or skips */}
+                {!confirmedPincodeLocation ? (
+                  <PincodeFirstAddressGate
                     inputClassName={storefrontInputClassName}
-                    onChange={(location) =>
+                    onConfirm={(loc) => {
+                      setConfirmedPincodeLocation(loc);
+                      // Pre-populate manualAddress with the resolved location
                       setManualAddress((current) => ({
                         ...current,
-                        country: location.country ?? current.country,
-                        countryCode: location.countryCode ?? current.countryCode,
-                        state: location.state ?? current.state,
-                        stateCode: location.stateCode ?? current.stateCode,
-                        city: location.city ?? current.city,
-                        cityCode: location.cityCode ?? current.cityCode,
-                        area: location.area ?? current.area,
-                        localAreaCode: location.localAreaCode ?? current.localAreaCode,
-                        pincode: location.pincode ?? current.pincode,
-                      }))
-                    }
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <MapLocationPicker
-                    defaultValue={{
-                      latitude: initialAddress.latitude,
-                      longitude: initialAddress.longitude,
-                      locationSource: initialAddress.locationSource,
-                      accuracyMeters: initialAddress.accuracyMeters,
-                      locationConfidenceScore: initialAddress.locationConfidenceScore,
+                        country: loc.country ?? current.country,
+                        countryCode: loc.countryCode ?? current.countryCode,
+                        state: loc.state ?? current.state,
+                        stateCode: loc.stateCode ?? current.stateCode,
+                        city: loc.city ?? current.city,
+                        cityCode: loc.cityCode ?? current.cityCode,
+                        area: loc.area ?? current.area,
+                        localAreaCode: loc.localAreaCode ?? current.localAreaCode,
+                        pincode: loc.pincode || current.pincode,
+                      }));
                     }}
-                    authHeaders={customerAuth.authHeaders}
-                    disabled={orderMutation.isPending}
-                    inputClassName={storefrontInputClassName}
-                    onChange={(location) =>
-                      setManualAddress((current) => ({
-                        ...current,
-                        latitude: nullableFiniteNumber(location.latitude) ?? null,
-                        longitude: nullableFiniteNumber(location.longitude) ?? null,
-                        locationSource: normalizeLocationSource(location.locationSource),
-                        accuracyMeters: nullableFiniteNumber(location.accuracyMeters) ?? null,
-                        locationConfidenceScore: nullableFiniteNumber(location.locationConfidenceScore) ?? null,
-                      }))
-                    }
                   />
-                </div>
+                ) : (
+                  /* Step 2: Full address form, pre-filled from pincode lookup */
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {/* Change pincode link */}
+                    <div className="md:col-span-2 flex items-center justify-between gap-2">
+                      <span className="text-xs font-semibold text-[#667085]">
+                        Delivery to pincode{" "}
+                        <span className="font-black text-[#1F2933]">{confirmedPincodeLocation.pincode || "—"}</span>
+                        {confirmedPincodeLocation.city ? (
+                          <> &middot; {confirmedPincodeLocation.city}</>
+                        ) : null}
+                        {confirmedPincodeLocation.state ? (
+                          <>, {confirmedPincodeLocation.state}</>
+                        ) : null}
+                      </span>
+                      <button
+                        type="button"
+                        className="shrink-0 text-xs font-black text-[#ED3500] underline underline-offset-2 hover:opacity-80 transition-opacity"
+                        onClick={() => {
+                          setConfirmedPincodeLocation(null);
+                          setManualAddress(initialAddress);
+                        }}
+                      >
+                        Change pincode
+                      </button>
+                    </div>
+                    {[
+                      ["fullName", "Full name"],
+                      ["phone", "Phone"],
+                      ["line1", "Address line 1"],
+                      ["line2", "Address line 2"],
+                    ].map(([name, label]) => (
+                      <label
+                        key={name}
+                        className={`space-y-2 ${name === "line1" || name === "line2" ? "md:col-span-2" : ""}`}
+                      >
+                        <span className={storefrontFieldLabelClassName}>{label}</span>
+                        <input
+                          name={name}
+                          defaultValue={initialAddress[name as keyof CheckoutAddress] ?? ""}
+                          className={storefrontInputClassName}
+                        />
+                      </label>
+                    ))}
+                    <div className="md:col-span-2">
+                      <LocationFields
+                        defaultValue={confirmedPincodeLocation}
+                        defaultCountryCode="IN"
+                        loadCitiesAcrossCountry
+                        className="md:grid-cols-2"
+                        labelClassName="space-y-2"
+                        inputClassName={storefrontInputClassName}
+                        onChange={(location) =>
+                          setManualAddress((current) => ({
+                            ...current,
+                            country: location.country ?? current.country,
+                            countryCode: location.countryCode ?? current.countryCode,
+                            state: location.state ?? current.state,
+                            stateCode: location.stateCode ?? current.stateCode,
+                            city: location.city ?? current.city,
+                            cityCode: location.cityCode ?? current.cityCode,
+                            area: location.area ?? current.area,
+                            localAreaCode: location.localAreaCode ?? current.localAreaCode,
+                            pincode: location.pincode ?? current.pincode,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <MapLocationPicker
+                        defaultValue={{
+                          latitude: initialAddress.latitude,
+                          longitude: initialAddress.longitude,
+                          locationSource: initialAddress.locationSource,
+                          accuracyMeters: initialAddress.accuracyMeters,
+                          locationConfidenceScore: initialAddress.locationConfidenceScore,
+                        }}
+                        authHeaders={customerAuth.authHeaders}
+                        disabled={orderMutation.isPending}
+                        inputClassName={storefrontInputClassName}
+                        onChange={(location) =>
+                          setManualAddress((current) => ({
+                            ...current,
+                            latitude: nullableFiniteNumber(location.latitude) ?? null,
+                            longitude: nullableFiniteNumber(location.longitude) ?? null,
+                            locationSource: normalizeLocationSource(location.locationSource),
+                            accuracyMeters: nullableFiniteNumber(location.accuracyMeters) ?? null,
+                            locationConfidenceScore: nullableFiniteNumber(location.locationConfidenceScore) ?? null,
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             ) : null}
             </fieldset>
