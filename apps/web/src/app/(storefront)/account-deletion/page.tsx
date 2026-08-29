@@ -43,8 +43,8 @@ export default function AccountDeletionPage() {
             <p className="text-sm font-black uppercase text-[#ED3500]">Privacy request</p>
             <h1 className="mt-3 text-4xl font-black text-[#1F2933]">{title}</h1>
             <p className="mt-4 max-w-3xl text-base font-semibold leading-7 text-[#667085]">
-              Signed-in seller-app users can submit a deletion request from More, Account &
-              privacy. Anyone who cannot access the app can use the request form below.
+              Signed-in customers, sellers, and business buyers can submit a deletion request from
+              their account settings or mobile app. Anyone who cannot access the account or prefers web submission can use the request form below.
             </p>
           </div>
         </section>
@@ -63,11 +63,10 @@ export default function AccountDeletionPage() {
           <div className="border-t border-[#F0E4DF] pt-8">
             <h2 className="text-xl font-black text-[#1F2933]">Submit a request</h2>
             <p className="mt-3 text-sm font-semibold leading-6 text-[#667085]">
-              Use the account email, select the correct requester type, and describe the account
-              you want deleted. Support will respond through the selected contact channel.
+              Use the account email, select your account type (Customer, Seller, Business buyer, or Delivery partner), and describe the account you want deleted.
             </p>
             <Button asChild className="mt-5">
-              <Link href="/contact?topic=SELLER&request=account-deletion">
+              <Link href="/contact?request=account-deletion">
                 Request account deletion
               </Link>
             </Button>

@@ -1,4 +1,4 @@
-import { BadRequestException } from "@nestjs/common";
+import { BadRequestException, UnauthorizedException } from "@nestjs/common";
 import {
   CourierShipmentStatus,
   DeliveryAssignmentStatus,
@@ -639,6 +639,66 @@ describe("CourierLogisticsService", () => {
       message: "Courier shipment was already cancelled.",
     });
     expect(cancelShipment).not.toHaveBeenCalled();
+  });
+
+  it("rejects tracking webhooks with UnauthorizedException when webhook secret is unconfigured", async () => {
+    const prisma = {
+      client: {
+        courierProviderSetting: {
+          findUnique: vi.fn().mockResolvedValue({
+            providerCode: "SHIPROCKET",
+            isActive: true,
+            webhookSecretConfigured: false,
+            settingsSnapshot: {},
+          }),
+        },
+      },
+    };
+    const service = new CourierLogisticsService(prisma as never, undefined as never);
+
+    await expect(
+      service.handleTrackingWebhook("SHIPROCKET", { status: "DELIVERED" }, "any-signature"),
+    ).rejects.toThrow(new UnauthorizedException("Courier webhook secret is not configured."));
+  });
+
+  it("rejects tracking webhooks when webhookSecretConfigured is true but secret is missing", async () => {
+    const prisma = {
+      client: {
+        courierProviderSetting: {
+          findUnique: vi.fn().mockResolvedValue({
+            providerCode: "SHIPROCKET",
+            isActive: true,
+            webhookSecretConfigured: true,
+            settingsSnapshot: { webhookSecret: "   " },
+          }),
+        },
+      },
+    };
+    const service = new CourierLogisticsService(prisma as never, undefined as never);
+
+    await expect(
+      service.handleTrackingWebhook("SHIPROCKET", { status: "DELIVERED" }, "any-signature"),
+    ).rejects.toThrow(new UnauthorizedException("Courier webhook secret is not configured."));
+  });
+
+  it("rejects tracking webhooks when signature is invalid", async () => {
+    const prisma = {
+      client: {
+        courierProviderSetting: {
+          findUnique: vi.fn().mockResolvedValue({
+            providerCode: "SHIPROCKET",
+            isActive: true,
+            webhookSecretConfigured: true,
+            settingsSnapshot: { adapterCode: "SHIPROCKET", webhookSecret: "valid-secret" },
+          }),
+        },
+      },
+    };
+    const service = new CourierLogisticsService(prisma as never, undefined as never);
+
+    await expect(
+      service.handleTrackingWebhook("SHIPROCKET", { status: "DELIVERED" }, "wrong-secret"),
+    ).rejects.toThrow(new UnauthorizedException("Invalid Shiprocket webhook signature."));
   });
 });
 

@@ -2,27 +2,29 @@ import { describe, expect, it, vi } from "vitest";
 import { RequestRateLimiter, rateLimitOptionsFromEnv } from "./request-rate-limiter";
 
 function request({
-  authorization,
+  currentUser,
   forwardedFor,
-  platformUserId,
+  headers = {},
+  ip = "10.0.0.10",
   method = "GET",
   url = "/api/products?search=rice",
 }: {
-  authorization?: string;
+  currentUser?: { id?: string; clerkUserId?: string | null } | null;
   forwardedFor?: string;
-  platformUserId?: string;
+  headers?: Record<string, string>;
+  ip?: string;
   method?: string;
   url?: string;
 } = {}) {
   return {
     method,
     originalUrl: url,
-    ip: "10.0.0.10",
-    socket: { remoteAddress: "10.0.0.10" },
+    ip,
+    socket: { remoteAddress: ip },
+    currentUser,
     headers: {
-      ...(authorization ? { authorization } : {}),
       ...(forwardedFor ? { "x-forwarded-for": forwardedFor } : {}),
-      ...(platformUserId ? { "x-indihub-user-id": platformUserId } : {}),
+      ...headers,
     },
   };
 }
@@ -43,18 +45,61 @@ describe("RequestRateLimiter", () => {
     expect(decision.retryAfterSeconds).toBe(60);
   });
 
-  it("uses the authenticated search policy when an auth identity is present", () => {
+  it("uses the authenticated search policy when an auth identity is present in verified request context", () => {
     const limiter = new RequestRateLimiter({ now: () => 1_000 });
 
     for (let index = 0; index < 100; index += 1) {
-      const decision = limiter.check(request({ authorization: "Bearer customer-token" }));
+      const decision = limiter.check(request({ currentUser: { id: "customer-1" } }));
       expect(decision.allowed).toBe(true);
     }
 
-    const decision = limiter.check(request({ authorization: "Bearer customer-token" }));
+    const decision = limiter.check(request({ currentUser: { id: "customer-1" } }));
 
     expect(decision.allowed).toBe(false);
     expect(decision.policy.name).toBe("search-authenticated");
+  });
+
+  it("ignores spoofed unverified headers and isolates by client IP to prevent user DoS", () => {
+    const limiter = new RequestRateLimiter({
+      now: () => 1_000,
+      policies: { searchAnonymous: { max: 2 }, searchAuthenticated: { max: 10 } },
+    });
+
+    // Attacker sends spoofed headers attempting to poison victim-user's bucket from IP 198.51.100.1
+    const attackReq1 = request({
+      ip: "198.51.100.1",
+      headers: {
+        "x-indihub-user-id": "victim-user",
+        "x-clerk-user-id": "victim-clerk",
+        authorization: "Bearer spoofed-token",
+      },
+    });
+    const attackReq2 = request({
+      ip: "198.51.100.1",
+      headers: { "x-indihub-user-id": "victim-user" },
+    });
+    const attackReq3 = request({
+      ip: "198.51.100.1",
+      headers: { "x-indihub-user-id": "victim-user" },
+    });
+
+    expect(limiter.check(attackReq1).allowed).toBe(true);
+    expect(limiter.check(attackReq2).allowed).toBe(true);
+    // Attacker exhausts their own IP bucket
+    const attackDecision3 = limiter.check(attackReq3);
+    expect(attackDecision3.allowed).toBe(false);
+    expect(attackDecision3.key).toContain("ip:");
+
+    // Legitimate victim user connects from a different IP with verified request.currentUser
+    const legitimateUserReq = request({
+      ip: "203.0.113.50",
+      currentUser: { id: "victim-user" },
+    });
+    const legitimateDecision = limiter.check(legitimateUserReq);
+    expect(legitimateDecision.allowed).toBe(true);
+    expect(legitimateDecision.key).toContain("user:");
+    expect(legitimateDecision.policy.name).toBe("search-authenticated");
+    expect(legitimateDecision.remaining).toBe(9);
   });
 
   it("uses the same search budget for the dedicated advanced search endpoint", () => {
@@ -89,21 +134,22 @@ describe("RequestRateLimiter", () => {
       policies: { searchSuggestionsAuthenticated: { max: 1 } },
     });
 
-    expect(limiter.check(request({ url: "/api/search/suggestions?q=wa", platformUserId: "customer-1" })).allowed).toBe(true);
-    const decision = limiter.check(request({ url: "/api/search/suggestions?q=wa", platformUserId: "customer-1" }));
+    expect(limiter.check(request({ url: "/api/search/suggestions?q=wa", currentUser: { id: "customer-1" } })).allowed).toBe(true);
+    const decision = limiter.check(request({ url: "/api/search/suggestions?q=wa", currentUser: { id: "customer-1" } }));
 
     expect(decision.allowed).toBe(false);
     expect(decision.policy.name).toBe("search-suggestions-authenticated");
   });
 
-  it("prefers a stable platform user id over a bearer token for user-based limits", () => {
+  it("isolates different verified users to separate rate limit buckets", () => {
     const limiter = new RequestRateLimiter({
       now: () => 1_000,
       policies: { searchAuthenticated: { max: 1 } },
     });
 
-    expect(limiter.check(request({ authorization: "Bearer token-a", platformUserId: "user-1" })).allowed).toBe(true);
-    expect(limiter.check(request({ authorization: "Bearer token-b", platformUserId: "user-1" })).allowed).toBe(false);
+    expect(limiter.check(request({ currentUser: { id: "user-1" } })).allowed).toBe(true);
+    expect(limiter.check(request({ currentUser: { id: "user-2" } })).allowed).toBe(true);
+    expect(limiter.check(request({ currentUser: { id: "user-1" } })).allowed).toBe(false);
   });
 
   it("keeps product detail reads on a higher product-detail policy", () => {

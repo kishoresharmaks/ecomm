@@ -64,25 +64,25 @@ export function ContactPageClient() {
   const searchParams = useSearchParams();
   const accountDeletionRequest = searchParams.get("request") === "account-deletion";
   const queryTopic = useMemo(
-    () => accountDeletionRequest ? "SELLER" : supportTopicFromQuery(searchParams.get("topic")),
-    [accountDeletionRequest, searchParams],
+    () => supportTopicFromQuery(searchParams.get("topic")),
+    [searchParams],
   );
   const [topic, setTopic] = useState<SupportRequestTopic>(queryTopic);
   const [requesterType, setRequesterType] = useState<SupportRequesterType>(
-    accountDeletionRequest ? "SELLER" : "GUEST",
+    accountDeletionRequest ? "CUSTOMER" : "GUEST",
   );
   const [preferredContactChannel, setPreferredContactChannel] =
     useState<SupportContactChannel>("EMAIL");
   const [subject, setSubject] = useState(
-    accountDeletionRequest ? "Seller account deletion request" : defaultSubjectForTopic(queryTopic),
+    accountDeletionRequest ? "Account deletion request" : defaultSubjectForTopic(queryTopic),
   );
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     setTopic(queryTopic);
     if (accountDeletionRequest) {
-      setRequesterType("SELLER");
-      setSubject("Seller account deletion request");
+      setRequesterType("CUSTOMER");
+      setSubject("Account deletion request");
       return;
     }
     setSubject(defaultSubjectForTopic(queryTopic));
@@ -222,8 +222,12 @@ export function ContactPageClient() {
 
             <StorefrontFormPanel onSubmit={submit} className="rounded-lg">
               <SectionHeading
-                title={`${contactTopicLabels[topic]} request`}
-                description="Your request will be stored with topic, requester type, preferred channel, and optional order reference for our team to action."
+                title={accountDeletionRequest ? "Account deletion request" : `${contactTopicLabels[topic]} request`}
+                description={
+                  accountDeletionRequest
+                    ? "Your request will be submitted to the 1HandIndia privacy operations team for identity verification and account processing."
+                    : "Your request will be stored with topic, requester type, preferred channel, and optional order reference for our team to action."
+                }
               />
               <div className="mt-6 grid gap-4 md:grid-cols-2">
                 <SelectField

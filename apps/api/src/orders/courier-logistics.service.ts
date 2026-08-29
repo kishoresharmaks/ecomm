@@ -2462,7 +2462,7 @@ export class CourierLogisticsService {
     rawBody?: Buffer,
   ) {
     if (!provider.webhookSecretConfigured) {
-      return;
+      throw new UnauthorizedException("Courier webhook secret is not configured.");
     }
     const snapshot = this.providerSnapshot(provider.settingsSnapshot);
     const secret = snapshot.webhookSecret?.trim();

@@ -11,6 +11,10 @@ type RateLimitRequest = {
   socket?: {
     remoteAddress?: string;
   };
+  currentUser?: {
+    id?: string;
+    clerkUserId?: string | null;
+  } | null | undefined;
 };
 
 type RateLimitResponse = {
@@ -277,19 +281,14 @@ export class RequestRateLimiter {
   }
 
   private authenticatedPrincipal(request: RateLimitRequest) {
-    const platformUserId = readHeader(request.headers, "x-indihub-user-id");
+    const platformUserId = request.currentUser?.id?.trim();
     if (platformUserId) {
       return `user:${hashValue(platformUserId)}`;
     }
 
-    const clerkUserId = readHeader(request.headers, "x-clerk-user-id") ?? readHeader(request.headers, "x-indihub-dev-clerk-id");
+    const clerkUserId = request.currentUser?.clerkUserId?.trim();
     if (clerkUserId) {
       return `clerk:${hashValue(clerkUserId)}`;
-    }
-
-    const authorization = readHeader(request.headers, "authorization");
-    if (authorization) {
-      return `auth:${hashValue(authorization)}`;
     }
 
     return null;
