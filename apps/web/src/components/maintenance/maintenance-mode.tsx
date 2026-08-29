@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { AlertTriangle, Clock, LifeBuoy, ShieldCheck, Store, Truck, Wrench } from "lucide-react";
+import { AlertTriangle, Clock, LifeBuoy, ShieldCheck, ShoppingBag, Store, Truck } from "lucide-react";
 import { Suspense, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@indihub/ui";
@@ -100,56 +100,89 @@ function MaintenancePage({
   scope: MaintenanceScope;
   setting: MaintenanceScopeSetting | null;
 }) {
-  const Icon = scope === "delivery" ? Truck : scope === "seller" ? Store : Wrench;
+  const Icon = scope === "delivery" ? Truck : scope === "seller" ? Store : ShoppingBag;
   const message = setting?.message || scopeDescriptions[scope];
 
   return (
-    <main className="min-h-screen bg-[#FAF7F0] px-5 py-10 text-[#1F2933]">
-      <div className="mx-auto flex min-h-[calc(100svh-5rem)] max-w-5xl items-center">
-        <section className="w-full overflow-hidden rounded-lg border border-[#E5E7EB] bg-white shadow-sm">
-          <div className="grid gap-0 lg:grid-cols-[0.9fr_1.1fr]">
-            <div className="bg-[#123A5A] p-8 text-white sm:p-10">
-              <Link href="/" className="inline-flex items-center gap-3">
-                <span className="grid h-11 w-11 place-items-center rounded-md bg-[#ED3500] text-sm font-black">1HI</span>
-                <span>
-                  <span className="block text-xl font-black">1HandIndia</span>
-                  <span className="block text-xs font-black uppercase tracking-[0.18em] text-[#FFB19B]">Maintenance</span>
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#FFFDFB] px-4 py-8 sm:px-6 lg:px-8 text-[#1F2933]">
+      {/* Soft ambient background glows */}
+      <div className="pointer-events-none absolute -top-32 -left-32 h-96 w-96 rounded-full bg-[#ED3500]/5 blur-3xl" />
+      <div className="pointer-events-none absolute -bottom-32 -right-32 h-96 w-96 rounded-full bg-[#ED3500]/5 blur-3xl" />
+
+      <div className="relative mx-auto w-full max-w-4xl">
+        <section className="overflow-hidden rounded-3xl border border-[#F3E8E2] bg-white shadow-[0_20px_50px_rgba(237,53,0,0.06),0_1px_3px_rgba(0,0,0,0.04)]">
+          <div className="grid gap-0 lg:grid-cols-[0.92fr_1.08fr]">
+            {/* Left Brand & Visual Panel */}
+            <div className="relative flex flex-col justify-between border-b border-[#F7E7DF] bg-gradient-to-br from-[#FFF5F1] via-[#FFF9F6] to-[#FFF0EB] p-8 sm:p-10 lg:border-b-0 lg:border-r">
+              <Link href="/" className="inline-flex items-center gap-3 self-start">
+                <span className="grid h-11 w-11 place-items-center rounded-2xl bg-[#ED3500] text-sm font-black text-white shadow-lg shadow-[#ED3500]/25">
+                  1HI
                 </span>
+                <div>
+                  <span className="block text-xl font-black text-[#1F2933]">1HandIndia</span>
+                  <span className="inline-flex items-center rounded-full bg-[#ED3500]/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-[#ED3500]">
+                    Maintenance
+                  </span>
+                </div>
               </Link>
-              <div className="mt-12 grid h-24 w-24 place-items-center rounded-lg bg-white/10 text-[#FFB19B]">
-                <Icon className="h-11 w-11" aria-hidden="true" />
+
+              {/* Central 3D Styled Icon Container */}
+              <div className="relative my-8 flex items-center justify-center sm:my-10">
+                <div className="absolute h-36 w-36 rounded-full bg-[#ED3500]/15 blur-2xl" />
+                <div className="relative flex h-36 w-36 flex-col items-center justify-center rounded-3xl border border-white/90 bg-white/80 p-6 shadow-[0_12px_32px_rgba(237,53,0,0.12)] backdrop-blur-md sm:h-40 sm:w-40">
+                  <div className="grid h-16 w-16 place-items-center rounded-2xl bg-gradient-to-tr from-[#ED3500] to-[#FF6B42] text-white shadow-md shadow-[#ED3500]/30 sm:h-20 sm:w-20">
+                    <Icon className="h-9 w-9 sm:h-11 sm:w-11" aria-hidden="true" />
+                  </div>
+                </div>
               </div>
-              <p className="mt-8 max-w-sm text-sm font-semibold leading-6 text-[#DCE8F2]">
+
+              <p className="text-center text-xs font-semibold leading-relaxed text-[#7A8B99] lg:text-left">
                 Platform teams are keeping unaffected workspaces available while this area is updated.
               </p>
             </div>
 
-            <div className="p-8 sm:p-10 lg:p-12">
-              <div className="inline-flex items-center gap-2 rounded-md bg-[#FFF0EC] px-3 py-2 text-xs font-black uppercase tracking-[0.16em] text-[#ED3500]">
-                <AlertTriangle className="h-4 w-4" aria-hidden="true" />
-                We're polishing a few things — please check back in a moment.
+            {/* Right Content Panel */}
+            <div className="flex flex-col justify-center p-8 sm:p-10 lg:p-12">
+              <div className="inline-flex items-center gap-2 self-start rounded-full border border-[#FCD9CE] bg-[#FFF0EC] px-3.5 py-1.5 text-xs font-bold text-[#ED3500]">
+                <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" aria-hidden="true" />
+                <span>We&apos;re polishing a few things — please check back in a moment.</span>
               </div>
-              <h1 className="mt-5 text-3xl font-black tracking-normal text-[#123A5A] sm:text-5xl">
+
+              <h1 className="mt-5 text-2xl font-black tracking-tight text-[#1F2933] sm:text-4xl lg:text-[2.4rem] lg:leading-tight">
                 {scopeLabels[scope]}
               </h1>
-              <p className="mt-4 max-w-2xl text-base font-semibold leading-7 text-[#536579]">{message}</p>
+
+              <p className="mt-4 text-sm font-medium leading-relaxed text-[#5B6B79] sm:text-base">
+                {message}
+              </p>
+
               {setting?.eta ? (
-                <p className="mt-4 inline-flex items-center gap-2 rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 py-2 text-sm font-black text-[#123A5A]">
+                <div className="mt-5 inline-flex items-center gap-2 self-start rounded-full border border-[#E9EEF2] bg-[#F8FAFC] px-4 py-2 text-xs font-bold text-[#1F2933] shadow-sm sm:text-sm">
                   <Clock className="h-4 w-4 text-[#ED3500]" aria-hidden="true" />
-                  {setting.eta}
-                </p>
+                  <span>
+                    Estimated completion: <strong className="font-extrabold text-[#ED3500]">{setting.eta}</strong>
+                  </span>
+                </div>
               ) : null}
 
-              <div className="mt-8 flex flex-wrap gap-3">
-                <Button asChild>
+              <div className="mt-8 flex flex-wrap items-center gap-3">
+                <Button asChild className="h-11 rounded-full bg-[#ED3500] px-6 font-bold text-white shadow-lg shadow-[#ED3500]/20 hover:bg-[#D93000]">
                   <Link href="/support">
-                    <LifeBuoy className="h-4 w-4" aria-hidden="true" />
+                    <LifeBuoy className="mr-2 h-4 w-4" aria-hidden="true" />
                     Contact support
                   </Link>
                 </Button>
                 {scope === "storefront" ? (
-                  <Button asChild variant="outline">
+                  <Button asChild variant="outline" className="h-11 rounded-full border-[#D8E2EA] px-6 font-bold text-[#1F2933] hover:bg-[#F8FAFC]">
                     <Link href="/account/orders">View orders</Link>
+                  </Button>
+                ) : scope === "seller" ? (
+                  <Button asChild variant="outline" className="h-11 rounded-full border-[#D8E2EA] px-6 font-bold text-[#1F2933] hover:bg-[#F8FAFC]">
+                    <Link href="/">Customer storefront</Link>
+                  </Button>
+                ) : scope === "delivery" ? (
+                  <Button asChild variant="outline" className="h-11 rounded-full border-[#D8E2EA] px-6 font-bold text-[#1F2933] hover:bg-[#F8FAFC]">
+                    <Link href="/support">Delivery help</Link>
                   </Button>
                 ) : null}
               </div>
