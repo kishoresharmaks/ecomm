@@ -86,9 +86,9 @@ export async function expireRazorpayReservations(
   }
 
   const apiUrl = normalizeInternalApiBaseUrl(
-    process.env.INTERNAL_API_URL ??
-      process.env.NEXT_PUBLIC_API_URL ??
-      "http://localhost:4000/api",
+    process.env.INTERNAL_API_URL ||
+      process.env.NEXT_PUBLIC_API_URL ||
+      (process.env.API_PORT ? `http://127.0.0.1:${process.env.API_PORT}/api` : "http://localhost:4000/api"),
   );
   const response = await request(`${apiUrl}/internal/payments/expire-razorpay-reservations`, {
     method: "POST",

@@ -348,7 +348,7 @@ function CategoryCard({ category, index }: { category: CategorySummary; index: n
           className="object-contain p-1.5 transition group-hover:scale-105 sm:p-4"
         />
       </span>
-      <span className="mt-2.5 line-clamp-2 min-h-8 w-full text-left text-[12px] font-black leading-4 text-[#111827] sm:mt-5 sm:min-h-0 sm:text-xl">
+      <span className="mt-2.5 line-clamp-2 min-h-8 w-full text-left text-[12px] font-black leading-4 text-[#111827] sm:mt-5 sm:min-h-[3.25rem] sm:text-lg sm:font-black sm:leading-6 lg:text-xl lg:leading-snug">
         {category.name}
       </span>
       <span className="mt-auto flex w-full items-center justify-between gap-2 sm:hidden">
@@ -358,7 +358,9 @@ function CategoryCard({ category, index }: { category: CategorySummary; index: n
         </span>
       </span>
       <span className="mt-2 hidden text-sm font-semibold text-[#7A8496] sm:block">
-        {productCount ? `${productCount.toLocaleString("en-IN")} products` : "Curated marketplace picks"}
+        {productCount
+          ? `${productCount.toLocaleString("en-IN")} ${productCount === 1 ? "product" : "products"}`
+          : "Curated marketplace picks"}
       </span>
       <span className="mt-auto hidden items-center gap-2 text-sm font-black text-[#ED3500] sm:inline-flex">
         Explore <ArrowRight className="h-4 w-4" aria-hidden="true" />

@@ -102,7 +102,9 @@ export async function processDeliveryBatches(logger?: Logger) {
       
       try {
         const apiUrl = normalizeInternalApiBaseUrl(
-          process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api",
+          process.env.INTERNAL_API_URL ||
+            process.env.NEXT_PUBLIC_API_URL ||
+            (process.env.API_PORT ? `http://127.0.0.1:${process.env.API_PORT}/api` : "http://localhost:4000/api"),
         );
         const internalSecret = process.env.INTERNAL_API_SECRET;
         if (!internalSecret) throw new Error("INTERNAL_API_SECRET is missing");
