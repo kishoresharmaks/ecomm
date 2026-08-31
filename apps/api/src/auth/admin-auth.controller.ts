@@ -49,6 +49,7 @@ export class AdminAuthController {
   ) {
     const result = await this.adminAuthService.logout(this.adminAuthService.readRequestToken(request.headers), actor);
     response.clearCookie("indihub_admin_session", adminSessionCookieOptions());
+    response.clearCookie("indihub_seller_impersonation", { path: "/" });
     return result;
   }
 

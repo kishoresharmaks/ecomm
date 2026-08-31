@@ -52,7 +52,7 @@ import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
 import { StorefrontFooter } from "@/components/storefront/storefront-footer";
 import { MaintenanceGate } from "@/components/maintenance/maintenance-mode";
 import { StorefrontImage } from "@/components/storefront/storefront-image";
-import { IndihubApiError, indihubFetch, userFacingApiErrorMessage } from "@/lib/api";
+import { IndihubApiError, adminCookieSessionMarker, indihubFetch, userFacingApiErrorMessage } from "@/lib/api";
 import type { IndihubAuthHeaders } from "@/lib/api";
 import {
   uploadPublicImage,
@@ -456,15 +456,20 @@ function parseImpersonationPayload(token: string) {
 
 export async function exitSellerImpersonation() {
   try {
-    await indihubFetch("/api/admin/sellers/exit-impersonation", {
-      method: "POST",
-      credentials: "include",
-    });
+    await indihubFetch(
+      "/api/admin/sellers/exit-impersonation",
+      {
+        method: "POST",
+        credentials: "include",
+      },
+      { bearerToken: adminCookieSessionMarker },
+    );
   } catch {
     // Ignore backend logout errors
   } finally {
     if (typeof document !== "undefined") {
       document.cookie = "indihub_seller_impersonation=; path=/; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+      document.cookie = "indihub_seller_impersonation=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
     }
     if (typeof window !== "undefined") {
       window.location.href = "/admin/sellers";

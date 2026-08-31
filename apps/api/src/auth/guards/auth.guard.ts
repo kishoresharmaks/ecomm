@@ -36,6 +36,18 @@ export class AuthGuard implements CanActivate {
       context.getClass()
     ]);
     const request = context.switchToHttp().getRequest<IndiHubRequest>();
+    const isBackOfficeRoute = this.requiresStandaloneBackOffice(requiredRoles);
+
+    const adminUser = await this.adminAuthService.resolveRequestHeaders(request.headers);
+
+    if (isBackOfficeRoute) {
+      if (adminUser) {
+        this.assertSafeCookieRequest(request);
+        request.currentUser = adminUser;
+        return true;
+      }
+      throw new UnauthorizedException("Standalone back-office sign in is required.");
+    }
 
     const impersonatedUser = await this.adminImpersonationService?.resolveRequestHeaders(request.headers);
     if (impersonatedUser) {
@@ -44,16 +56,10 @@ export class AuthGuard implements CanActivate {
       return true;
     }
 
-    const adminUser = await this.adminAuthService.resolveRequestHeaders(request.headers);
-
     if (adminUser) {
       this.assertSafeCookieRequest(request);
       request.currentUser = adminUser;
       return true;
-    }
-
-    if (this.requiresStandaloneBackOffice(requiredRoles)) {
-      throw new UnauthorizedException("Standalone back-office sign in is required.");
     }
 
     const clerkUserId = await this.resolveClerkUserId(request);

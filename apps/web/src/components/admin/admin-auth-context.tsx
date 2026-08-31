@@ -113,6 +113,10 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
       },
       logout: async () => {
         setState(emptyState);
+        if (typeof document !== "undefined") {
+          document.cookie = "indihub_seller_impersonation=; path=/; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+          document.cookie = "indihub_seller_impersonation=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+        }
         if (state.token) {
           try {
             await indihubFetch("/api/admin/auth/logout", { method: "POST" }, { bearerToken: adminCookieSessionMarker });
