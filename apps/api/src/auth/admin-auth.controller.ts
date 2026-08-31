@@ -8,6 +8,12 @@ import { Roles } from "./decorators/roles.decorator";
 import { AdminAuthService } from "./admin-auth.service";
 import { AdminChangePasswordDto } from "./dto/admin-change-password.dto";
 import { AdminLoginDto } from "./dto/admin-login.dto";
+import {
+  AdminConfirmMfaDto,
+  AdminDisableMfaDto,
+  AdminRegenerateMfaCodesDto,
+  AdminVerifyMfaDto,
+} from "./dto/admin-mfa.dto";
 import type { RequestUser } from "./types/indihub-request";
 
 type AdminAuthRequest = {
@@ -28,15 +34,90 @@ export class AdminAuthController {
     @Req() request: AdminAuthRequest,
     @Res({ passthrough: true }) response: Response,
   ) {
-    const { token, ...session } = await this.adminAuthService.login(dto, {
+    const result = await this.adminAuthService.login(dto, {
       userAgent: readHeader(request, "user-agent"),
       ipAddress: request.ip ?? readHeader(request, "x-forwarded-for"),
     });
+
+    if (result.mfaRequired) {
+      return result;
+    }
+
+    response.cookie("indihub_admin_session", result.token, {
+      ...adminSessionCookieOptions(),
+      expires: new Date(result.expiresAt),
+    });
+
+    return {
+      mfaRequired: false,
+      expiresAt: result.expiresAt,
+      user: result.user,
+    };
+  }
+
+  @Public()
+  @Post("mfa/verify")
+  @ApiOperation({ summary: "Verify 6-digit TOTP or emergency recovery code to complete login." })
+  async verifyMfa(
+    @Body() dto: AdminVerifyMfaDto,
+    @Req() request: AdminAuthRequest,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const { token, ...session } = await this.adminAuthService.verifyMfa(dto, {
+      userAgent: readHeader(request, "user-agent"),
+      ipAddress: request.ip ?? readHeader(request, "x-forwarded-for"),
+    });
+
     response.cookie("indihub_admin_session", token, {
       ...adminSessionCookieOptions(),
       expires: new Date(session.expiresAt),
     });
+
     return session;
+  }
+
+  @Post("mfa/setup")
+  @Roles(RoleCode.ADMIN, RoleCode.FINANCE, RoleCode.COURIER_MANAGER, RoleCode.CHAT_SUPPORT)
+  @ApiOperation({ summary: "Generate TOTP secret and QR URI for admin MFA enrollment." })
+  setupMfa(@CurrentUser() actor: RequestUser) {
+    return this.adminAuthService.setupMfa(actor);
+  }
+
+  @Post("mfa/confirm")
+  @Roles(RoleCode.ADMIN, RoleCode.FINANCE, RoleCode.COURIER_MANAGER, RoleCode.CHAT_SUPPORT)
+  @ApiOperation({ summary: "Verify first TOTP code, enable MFA, and generate recovery codes." })
+  confirmMfaSetup(
+    @CurrentUser() actor: RequestUser,
+    @Body() dto: AdminConfirmMfaDto,
+  ) {
+    return this.adminAuthService.confirmMfaSetup(actor, dto);
+  }
+
+  @Post("mfa/disable")
+  @Roles(RoleCode.ADMIN, RoleCode.FINANCE, RoleCode.COURIER_MANAGER, RoleCode.CHAT_SUPPORT)
+  @ApiOperation({ summary: "Disable MFA on the current admin account." })
+  disableMfa(
+    @CurrentUser() actor: RequestUser,
+    @Body() dto: AdminDisableMfaDto,
+  ) {
+    return this.adminAuthService.disableMfa(actor, dto);
+  }
+
+  @Post("mfa/regenerate-recovery-codes")
+  @Roles(RoleCode.ADMIN, RoleCode.FINANCE, RoleCode.COURIER_MANAGER, RoleCode.CHAT_SUPPORT)
+  @ApiOperation({ summary: "Regenerate 10 emergency single-use recovery codes." })
+  regenerateRecoveryCodes(
+    @CurrentUser() actor: RequestUser,
+    @Body() dto: AdminRegenerateMfaCodesDto,
+  ) {
+    return this.adminAuthService.regenerateRecoveryCodes(actor, dto);
+  }
+
+  @Get("mfa/status")
+  @Roles(RoleCode.ADMIN, RoleCode.FINANCE, RoleCode.COURIER_MANAGER, RoleCode.CHAT_SUPPORT)
+  @ApiOperation({ summary: "Get current admin's MFA enrollment status and recovery code balance." })
+  getMfaStatus(@CurrentUser() actor: RequestUser) {
+    return this.adminAuthService.getMfaStatus(actor);
   }
 
   @Post("logout")

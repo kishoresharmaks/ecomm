@@ -2351,8 +2351,8 @@ function personalizedProductFromRecent(product: RecentProductSnapshot): MobilePe
     pricePaise: product.pricePaise,
     mrpPaise: product.mrpPaise,
     badge: "Viewed",
-    stockQuantity: null,
-    variantStatus: null,
+    stockQuantity: product.stockQuantity ?? null,
+    variantStatus: product.variantStatus ?? null,
     viewedAt: product.viewedAt,
   };
 }

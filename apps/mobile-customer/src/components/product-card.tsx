@@ -5,6 +5,7 @@ import { Link, type Href } from "expo-router";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View, type GestureResponderEvent } from "react-native";
 import { formatMoney } from "../features/market/mobile-market";
 import { primeProductDetail } from "../features/storefront/product-prefetch";
+import { isProductCardInStock } from "../features/storefront/product-stock";
 import { resolveImageUrl } from "../lib/image-url";
 import { colors } from "../theme";
 import type { MobileProduct } from "../types/mobile-home";
@@ -42,12 +43,7 @@ export function ProductCard({
   const mrp = variant?.baseMrpPaise ?? variant?.mrpPaise ?? null;
   const discount = discountPercent(price, mrp);
   const storeName = product.seller?.storeName ?? "1HandIndia seller";
-  const stockAwareVariant = variant as Partial<{ status: string; stockQuantity: number }> | undefined;
-  const inStock = Boolean(
-    variant &&
-      (!stockAwareVariant?.status ||
-        (stockAwareVariant.status === "ACTIVE" && (stockAwareVariant.stockQuantity ?? 0) > 0)),
-  );
+  const inStock = isProductCardInStock(variant);
   // Use standard image height for consistency
   const imageHeight = compact ? STANDARD_IMAGE_HEIGHT : STANDARD_IMAGE_HEIGHT;
   function handleWishlistPress(event: GestureResponderEvent) {
@@ -110,6 +106,8 @@ export function ProductCard({
     </Link>
   );
 }
+
+export { isProductCardInStock };
 
 export function defaultFormatPrice(pricePaise?: number | null) {
   if (typeof pricePaise !== "number") {

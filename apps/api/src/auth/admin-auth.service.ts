@@ -1,10 +1,28 @@
 import { BadRequestException, Inject, Injectable, UnauthorizedException } from "@nestjs/common";
 import { createHash, randomBytes } from "node:crypto";
-import { Prisma, RoleCode, UserStatus } from "@indihub/database";
+import { AdminMfaType, Prisma, RoleCode, UserStatus } from "@indihub/database";
 import { PrismaService } from "../prisma/prisma.service";
+import {
+  decryptMfaSecret,
+  encryptMfaSecret,
+  generateBase32Secret,
+  generateMfaTicket,
+  generateRecoveryCodes,
+  generateTotpUri,
+  hashRecoveryCode,
+  verifyMfaTicket,
+  verifyRecoveryCode,
+  verifyTotpCode,
+} from "./admin-mfa";
 import { hashAdminPassword, verifyAdminPassword } from "./admin-password";
 import { AdminChangePasswordDto } from "./dto/admin-change-password.dto";
 import { AdminLoginDto } from "./dto/admin-login.dto";
+import {
+  AdminConfirmMfaDto,
+  AdminDisableMfaDto,
+  AdminRegenerateMfaCodesDto,
+  AdminVerifyMfaDto,
+} from "./dto/admin-mfa.dto";
 import type { RequestUser } from "./types/indihub-request";
 
 const adminTokenPrefix = "ih_admin_";
@@ -77,6 +95,24 @@ export class AdminAuthService {
       throw new UnauthorizedException("Invalid admin email or password.");
     }
 
+    // If MFA is enabled, return ephemeral challenge ticket without creating full session
+    if (credential.mfaEnabled && credential.mfaSecretEncrypted) {
+      await this.prisma.client.adminCredential.update({
+        where: { id: credential.id },
+        data: {
+          failedLoginCount: 0,
+          lockedUntil: null,
+        },
+      });
+
+      const mfaTicket = generateMfaTicket(user.id, credential.id, 300);
+      return {
+        mfaRequired: true as const,
+        mfaTicket,
+        mfaType: credential.mfaType,
+      };
+    }
+
     const token = `${adminTokenPrefix}${randomBytes(32).toString("base64url")}`;
     const expiresAt = this.sessionExpiry();
 
@@ -113,9 +149,365 @@ export class AdminAuthService {
     });
 
     return {
+      mfaRequired: false as const,
       token,
       expiresAt: expiresAt.toISOString(),
       user: this.toRequestUser(user)
+    };
+  }
+
+  async verifyMfa(dto: AdminVerifyMfaDto, meta: LoginMeta = {}) {
+    const verifiedTicket = verifyMfaTicket(dto.mfaTicket);
+    if (!verifiedTicket) {
+      throw new UnauthorizedException("MFA session has expired or is invalid. Please sign in again.");
+    }
+
+    const user = await this.prisma.client.user.findUnique({
+      where: { id: verifiedTicket.userId },
+      include: {
+        adminCredential: {
+          include: {
+            recoveryCodes: true,
+          },
+        },
+        userRoles: {
+          include: {
+            role: {
+              include: {
+                rolePermissions: {
+                  include: {
+                    permission: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!user || user.status === UserStatus.DISABLED || !this.hasBackOfficeRole(user)) {
+      throw new UnauthorizedException("Back-office access is not available for this account.");
+    }
+
+    const credential = user.adminCredential;
+    if (!credential || !credential.mfaEnabled || !credential.mfaSecretEncrypted) {
+      throw new UnauthorizedException("MFA is not enabled for this account.");
+    }
+
+    if (credential.mfaLockedUntil && credential.mfaLockedUntil > new Date()) {
+      throw new UnauthorizedException("Too many failed MFA attempts. Account is temporarily locked. Try again later.");
+    }
+
+    let mfaValid = false;
+    let matchedRecoveryCodeId: string | null = null;
+
+    if (dto.isRecoveryCode) {
+      const unusedCodes = credential.recoveryCodes.filter((rc) => !rc.usedAt);
+      for (const rc of unusedCodes) {
+        if (verifyRecoveryCode(dto.code, rc.codeHash)) {
+          mfaValid = true;
+          matchedRecoveryCodeId = rc.id;
+          break;
+        }
+      }
+    } else {
+      try {
+        const secret = decryptMfaSecret(credential.mfaSecretEncrypted);
+        mfaValid = verifyTotpCode(dto.code, secret, 1);
+      } catch {
+        mfaValid = false;
+      }
+    }
+
+    if (!mfaValid) {
+      const nextFailed = credential.failedMfaAttempts + 1;
+      const lockedUntil = nextFailed >= maxFailedAttempts ? new Date(Date.now() + lockMinutes * 60 * 1000) : null;
+      await this.prisma.client.adminCredential.update({
+        where: { id: credential.id },
+        data: {
+          failedMfaAttempts: nextFailed,
+          mfaLockedUntil: lockedUntil,
+        },
+      });
+      throw new UnauthorizedException(
+        dto.isRecoveryCode
+          ? "Invalid emergency recovery code."
+          : "Invalid 6-digit authentication code.",
+      );
+    }
+
+    const token = `${adminTokenPrefix}${randomBytes(32).toString("base64url")}`;
+    const expiresAt = this.sessionExpiry();
+
+    await this.prisma.client.$transaction(async (tx) => {
+      await tx.adminCredential.update({
+        where: { id: credential.id },
+        data: {
+          failedMfaAttempts: 0,
+          mfaLockedUntil: null,
+          lastLoginAt: new Date(),
+        },
+      });
+
+      if (matchedRecoveryCodeId) {
+        await tx.adminMfaRecoveryCode.update({
+          where: { id: matchedRecoveryCodeId },
+          data: { usedAt: new Date() },
+        });
+      }
+
+      await tx.adminSession.create({
+        data: {
+          userId: user.id,
+          tokenHash: this.hashToken(token),
+          expiresAt,
+          userAgent: meta.userAgent ?? null,
+          ipAddress: meta.ipAddress ?? null,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actorUserId: user.id,
+          action: "admin.auth.mfa_login",
+          entityType: "admin_session",
+          entityId: user.id,
+          newValue: {
+            method: dto.isRecoveryCode ? "recovery_code" : "totp",
+            expiresAt: expiresAt.toISOString(),
+            ipAddress: meta.ipAddress ?? null,
+          },
+        },
+      });
+    });
+
+    return {
+      token,
+      expiresAt: expiresAt.toISOString(),
+      user: this.toRequestUser(user),
+    };
+  }
+
+  async setupMfa(actor: RequestUser) {
+    const credential = await this.prisma.client.adminCredential.findUnique({
+      where: { userId: actor.id },
+    });
+    if (!credential) {
+      throw new BadRequestException("Admin credential not found.");
+    }
+
+    const secret = generateBase32Secret(20);
+    const otpauthUri = generateTotpUri(actor.email, secret, "1HandIndia");
+
+    return {
+      secret,
+      otpauthUri,
+    };
+  }
+
+  async confirmMfaSetup(actor: RequestUser, dto: AdminConfirmMfaDto) {
+    const credential = await this.prisma.client.adminCredential.findUnique({
+      where: { userId: actor.id },
+    });
+    if (!credential) {
+      throw new BadRequestException("Admin credential not found.");
+    }
+
+    const valid = verifyTotpCode(dto.code, dto.secret, 1);
+    if (!valid) {
+      throw new BadRequestException("Invalid 6-digit verification code. Ensure your device time is synchronized.");
+    }
+
+    const encryptedSecret = encryptMfaSecret(dto.secret);
+    const rawRecoveryCodes = generateRecoveryCodes(10);
+
+    await this.prisma.client.$transaction(async (tx) => {
+      await tx.adminMfaRecoveryCode.deleteMany({
+        where: { credentialId: credential.id },
+      });
+
+      for (const rawCode of rawRecoveryCodes) {
+        await tx.adminMfaRecoveryCode.create({
+          data: {
+            credentialId: credential.id,
+            codeHash: hashRecoveryCode(rawCode),
+          },
+        });
+      }
+
+      await tx.adminCredential.update({
+        where: { id: credential.id },
+        data: {
+          mfaEnabled: true,
+          mfaType: AdminMfaType.TOTP,
+          mfaSecretEncrypted: encryptedSecret,
+          failedMfaAttempts: 0,
+          mfaLockedUntil: null,
+          mfaEnforcedAt: new Date(),
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actorUserId: actor.id,
+          action: "admin.auth.mfa_enabled",
+          entityType: "admin_credential",
+          entityId: credential.id,
+          newValue: { mfaType: AdminMfaType.TOTP },
+        },
+      });
+    });
+
+    return {
+      mfaEnabled: true,
+      recoveryCodes: rawRecoveryCodes,
+    };
+  }
+
+  async disableMfa(actor: RequestUser, dto: AdminDisableMfaDto) {
+    const credential = await this.prisma.client.adminCredential.findUnique({
+      where: { userId: actor.id },
+      include: { recoveryCodes: true },
+    });
+    if (!credential || !credential.mfaEnabled || !credential.mfaSecretEncrypted) {
+      throw new BadRequestException("MFA is not currently enabled for this account.");
+    }
+
+    const passwordValid = await verifyAdminPassword(
+      dto.password,
+      credential.passwordSalt,
+      credential.passwordHash,
+    );
+    if (!passwordValid) {
+      throw new UnauthorizedException("Current password is incorrect.");
+    }
+
+    let codeValid = false;
+    try {
+      const secret = decryptMfaSecret(credential.mfaSecretEncrypted);
+      codeValid = verifyTotpCode(dto.code, secret, 1);
+    } catch {
+      codeValid = false;
+    }
+
+    if (!codeValid) {
+      const unusedCodes = credential.recoveryCodes.filter((rc) => !rc.usedAt);
+      for (const rc of unusedCodes) {
+        if (verifyRecoveryCode(dto.code, rc.codeHash)) {
+          codeValid = true;
+          break;
+        }
+      }
+    }
+
+    if (!codeValid) {
+      throw new UnauthorizedException("Invalid authentication code or recovery code.");
+    }
+
+    await this.prisma.client.$transaction(async (tx) => {
+      await tx.adminMfaRecoveryCode.deleteMany({
+        where: { credentialId: credential.id },
+      });
+
+      await tx.adminCredential.update({
+        where: { id: credential.id },
+        data: {
+          mfaEnabled: false,
+          mfaType: AdminMfaType.NONE,
+          mfaSecretEncrypted: null,
+          failedMfaAttempts: 0,
+          mfaLockedUntil: null,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actorUserId: actor.id,
+          action: "admin.auth.mfa_disabled",
+          entityType: "admin_credential",
+          entityId: credential.id,
+        },
+      });
+    });
+
+    return { mfaEnabled: false };
+  }
+
+  async regenerateRecoveryCodes(actor: RequestUser, dto: AdminRegenerateMfaCodesDto) {
+    const credential = await this.prisma.client.adminCredential.findUnique({
+      where: { userId: actor.id },
+    });
+    if (!credential || !credential.mfaEnabled || !credential.mfaSecretEncrypted) {
+      throw new BadRequestException("MFA must be enabled to regenerate recovery codes.");
+    }
+
+    const passwordValid = await verifyAdminPassword(
+      dto.password,
+      credential.passwordSalt,
+      credential.passwordHash,
+    );
+    if (!passwordValid) {
+      throw new UnauthorizedException("Current password is incorrect.");
+    }
+
+    const secret = decryptMfaSecret(credential.mfaSecretEncrypted);
+    const codeValid = verifyTotpCode(dto.code, secret, 1);
+    if (!codeValid) {
+      throw new UnauthorizedException("Invalid authentication code.");
+    }
+
+    const rawCodes = generateRecoveryCodes(10);
+
+    await this.prisma.client.$transaction(async (tx) => {
+      await tx.adminMfaRecoveryCode.deleteMany({
+        where: { credentialId: credential.id },
+      });
+
+      for (const rawCode of rawCodes) {
+        await tx.adminMfaRecoveryCode.create({
+          data: {
+            credentialId: credential.id,
+            codeHash: hashRecoveryCode(rawCode),
+          },
+        });
+      }
+
+      await tx.auditLog.create({
+        data: {
+          actorUserId: actor.id,
+          action: "admin.auth.mfa_recovery_codes_regenerated",
+          entityType: "admin_credential",
+          entityId: credential.id,
+        },
+      });
+    });
+
+    return { recoveryCodes: rawCodes };
+  }
+
+  async getMfaStatus(actor: RequestUser) {
+    const credential = await this.prisma.client.adminCredential.findUnique({
+      where: { userId: actor.id },
+      include: {
+        recoveryCodes: {
+          where: { usedAt: null },
+        },
+      },
+    });
+
+    if (!credential) {
+      return {
+        mfaEnabled: false,
+        mfaType: AdminMfaType.NONE,
+        remainingRecoveryCodes: 0,
+      };
+    }
+
+    return {
+      mfaEnabled: credential.mfaEnabled,
+      mfaType: credential.mfaType,
+      remainingRecoveryCodes: credential.recoveryCodes.length,
     };
   }
 

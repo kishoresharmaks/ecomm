@@ -68,9 +68,11 @@ describe("recent products store", () => {
         id: "product-1",
         name: "Updated Product 1",
         sellerId: "seller-1",
+        stockQuantity: 10,
+        variantStatus: "ACTIVE",
         viewedAt: "2026-06-15T00:00:00.000Z",
       }),
-      expect.objectContaining({ id: "product-2" }),
+      expect.objectContaining({ id: "product-2", stockQuantity: 10, variantStatus: "ACTIVE" }),
     ]);
   });
 

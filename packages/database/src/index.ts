@@ -4,8 +4,8 @@ import { fileURLToPath } from "node:url";
 import { PrismaPg } from "@prisma/adapter-pg";
 import type { PoolConfig } from "pg";
 import { PrismaClient } from "./generated/prisma/client";
-export { CodCollectionStatus } from "./generated/prisma/enums";
-export type { CodCollectionStatus as CodCollectionStatusValue } from "./generated/prisma/enums";
+export { CodCollectionStatus, AdminMfaType } from "./generated/prisma/enums";
+export type { CodCollectionStatus as CodCollectionStatusValue, AdminMfaType as AdminMfaTypeValue } from "./generated/prisma/enums";
 
 declare global {
   var indihubPrisma: PrismaClient | undefined;

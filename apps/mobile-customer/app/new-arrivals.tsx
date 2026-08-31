@@ -40,10 +40,10 @@ function NewArrivalsScreen() {
     }
 
     const fallback = uniqueProducts([
-      ...productsFromOrders(ordersQuery.data?.items ?? []),
-      ...recentProducts.map(productFromRecent),
       ...latest,
       ...(homeQuery.data?.productRails.featured ?? []),
+      ...recentProducts.map(productFromRecent),
+      ...productsFromOrders(ordersQuery.data?.items ?? []),
     ]);
 
     return fallback;
@@ -193,7 +193,12 @@ function productFromRecent(product: RecentProductSnapshot): MobileProduct {
     seller,
     sellerId: product.sellerId ?? null,
     slug: product.slug,
-    variants: [{ pricePaise: product.pricePaise ?? 0, mrpPaise: product.mrpPaise, status: "ACTIVE", stockQuantity: null }],
+    variants: [{
+      pricePaise: product.pricePaise ?? 0,
+      mrpPaise: product.mrpPaise,
+      status: product.variantStatus ?? "ACTIVE",
+      stockQuantity: product.stockQuantity ?? null,
+    }],
   };
 }
 

@@ -16,6 +16,8 @@ export type RecentProductSnapshot = {
   sellerSlug?: string | null;
   pricePaise: number | null;
   mrpPaise: number | null;
+  stockQuantity?: number | null;
+  variantStatus?: string | null;
   viewedAt: string;
 };
 
@@ -71,6 +73,8 @@ function productToSnapshot(product: ProductSummary): RecentProductSnapshot {
     sellerSlug: product.seller?.slug ?? null,
     pricePaise: variantDisplayPrice(variant) ?? null,
     mrpPaise: variantOriginalDisplayPrice(variant),
+    stockQuantity: variant?.stockQuantity ?? null,
+    variantStatus: variant?.status ?? null,
     viewedAt: new Date().toISOString(),
   };
 }

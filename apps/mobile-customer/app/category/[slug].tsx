@@ -7,6 +7,7 @@ import { useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View, Modal } from "react-native";
 import { EmptyState } from "../../src/components/empty-state";
 import { RemoteImage } from "../../src/components/remote-image";
+import { isProductCardInStock } from "../../src/components/product-card";
 import { useMobileMarket } from "../../src/features/market/mobile-market";
 import { withStorefrontMaintenance } from "../../src/features/maintenance/mobile-maintenance-gate";
 import { getCategory, listProducts, addCartItem } from "../../src/features/storefront/storefront-api";
@@ -55,12 +56,7 @@ function PremiumProductCard({
   const rating = product.reviewSummary?.averageRating ?? null;
   const reviewCount = product.reviewSummary?.reviewCount ?? 0;
   const storeName = product.seller?.storeName ?? "1HandIndia Seller";
-  const stockAwareVariant = variant as Partial<{ status: string; stockQuantity: number }> | undefined;
-  const inStock = Boolean(
-    variant &&
-      (!stockAwareVariant?.status ||
-        (stockAwareVariant.status === "ACTIVE" && (stockAwareVariant.stockQuantity ?? 0) > 0)),
-  );
+  const inStock = isProductCardInStock(variant);
   const router = useRouter();
 
   const handleCardPress = () => {

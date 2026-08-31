@@ -3,15 +3,38 @@
 import { ReactNode, createContext, useContext, useEffect, useMemo, useState } from "react";
 import { adminCookieSessionMarker, indihubFetch, type IndihubAuthHeaders } from "@/lib/api";
 
-type AdminAuthUser = {
+export type AdminAuthUser = {
   id: string;
   email: string;
   roles: string[];
 };
 
-type AdminLoginResponse = {
-  expiresAt: string;
-  user: AdminAuthUser;
+export type AdminLoginResult =
+  | {
+      mfaRequired: true;
+      mfaTicket: string;
+      mfaType: "TOTP" | "NONE";
+    }
+  | {
+      mfaRequired: false;
+      expiresAt: string;
+      user: AdminAuthUser;
+    };
+
+export type AdminMfaStatus = {
+  mfaEnabled: boolean;
+  mfaType: "TOTP" | "NONE";
+  remainingRecoveryCodes: number;
+};
+
+export type AdminMfaSetupResult = {
+  secret: string;
+  otpauthUri: string;
+};
+
+export type AdminMfaConfirmResult = {
+  mfaEnabled: boolean;
+  recoveryCodes: string[];
 };
 
 type AdminAuthState = {
@@ -20,11 +43,17 @@ type AdminAuthState = {
   user: AdminAuthUser | null;
 };
 
-type AdminAuthContextValue = AdminAuthState & {
+export type AdminAuthContextValue = AdminAuthState & {
   isReady: boolean;
   isAuthenticated: boolean;
   authHeaders: IndihubAuthHeaders;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<AdminLoginResult>;
+  verifyMfa: (mfaTicket: string, code: string, isRecoveryCode?: boolean) => Promise<void>;
+  setupMfa: () => Promise<AdminMfaSetupResult>;
+  confirmMfa: (code: string, secret: string) => Promise<AdminMfaConfirmResult>;
+  disableMfa: (password: string, code: string) => Promise<void>;
+  regenerateRecoveryCodes: (password: string, code: string) => Promise<{ recoveryCodes: string[] }>;
+  getMfaStatus: () => Promise<AdminMfaStatus>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   logout: () => Promise<void>;
 };
@@ -89,10 +118,26 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
       isAuthenticated,
       authHeaders,
       login: async (email, password) => {
-        const response = await indihubFetch<AdminLoginResponse>("/api/admin/auth/login", {
+        const response = await indihubFetch<AdminLoginResult>("/api/admin/auth/login", {
           method: "POST",
           credentials: "include",
           body: JSON.stringify({ email, password })
+        });
+        if (!response.mfaRequired) {
+          const nextState = {
+            token: adminCookieSessionMarker,
+            expiresAt: response.expiresAt,
+            user: response.user
+          };
+          setState(nextState);
+        }
+        return response;
+      },
+      verifyMfa: async (mfaTicket, code, isRecoveryCode = false) => {
+        const response = await indihubFetch<{ expiresAt: string; user: AdminAuthUser }>("/api/admin/auth/mfa/verify", {
+          method: "POST",
+          credentials: "include",
+          body: JSON.stringify({ mfaTicket, code, isRecoveryCode })
         });
         const nextState = {
           token: adminCookieSessionMarker,
@@ -100,6 +145,50 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
           user: response.user
         };
         setState(nextState);
+      },
+      setupMfa: async () => {
+        return indihubFetch<AdminMfaSetupResult>(
+          "/api/admin/auth/mfa/setup",
+          { method: "POST" },
+          { bearerToken: adminCookieSessionMarker },
+        );
+      },
+      confirmMfa: async (code, secret) => {
+        return indihubFetch<AdminMfaConfirmResult>(
+          "/api/admin/auth/mfa/confirm",
+          {
+            method: "POST",
+            body: JSON.stringify({ code, secret }),
+          },
+          { bearerToken: adminCookieSessionMarker },
+        );
+      },
+      disableMfa: async (password, code) => {
+        await indihubFetch(
+          "/api/admin/auth/mfa/disable",
+          {
+            method: "POST",
+            body: JSON.stringify({ password, code }),
+          },
+          { bearerToken: adminCookieSessionMarker },
+        );
+      },
+      regenerateRecoveryCodes: async (password, code) => {
+        return indihubFetch<{ recoveryCodes: string[] }>(
+          "/api/admin/auth/mfa/regenerate-recovery-codes",
+          {
+            method: "POST",
+            body: JSON.stringify({ password, code }),
+          },
+          { bearerToken: adminCookieSessionMarker },
+        );
+      },
+      getMfaStatus: async () => {
+        return indihubFetch<AdminMfaStatus>(
+          "/api/admin/auth/mfa/status",
+          undefined,
+          { bearerToken: adminCookieSessionMarker },
+        );
       },
       changePassword: async (currentPassword, newPassword) => {
         await indihubFetch(
