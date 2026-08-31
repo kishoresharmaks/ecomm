@@ -4499,7 +4499,6 @@ export class OrdersService {
               notIn: [
                 OrderShipmentPackageStatus.DELIVERED,
                 OrderShipmentPackageStatus.CANCELLED,
-                OrderShipmentPackageStatus.FAILED,
                 OrderShipmentPackageStatus.RTO_DELIVERED,
               ],
             },
@@ -4513,6 +4512,20 @@ export class OrdersService {
             ...(nextStatus === DeliveryStatus.CANCELLED ? { cancelledAt: new Date() } : {}),
           },
         });
+
+        if (nextStatus === DeliveryStatus.DELIVERED) {
+          await tx.courierShipment.updateMany({
+            where: {
+              orderShipment: { orderId: order.id },
+              trackingStatus: { notIn: [CourierShipmentStatus.DELIVERED, CourierShipmentStatus.CANCELLED] },
+            },
+            data: {
+              trackingStatus: CourierShipmentStatus.DELIVERED,
+              deliveredAt: new Date(),
+              bookingError: null,
+            },
+          });
+        }
       }
 
       const deliveryStatusChanged = nextOrderDeliveryStatus !== order.deliveryStatus;
@@ -8662,7 +8675,6 @@ export class OrdersService {
           notIn: [
             OrderShipmentPackageStatus.DELIVERED,
             OrderShipmentPackageStatus.CANCELLED,
-            OrderShipmentPackageStatus.FAILED,
             OrderShipmentPackageStatus.RTO_DELIVERED,
           ],
         },
@@ -8676,6 +8688,20 @@ export class OrdersService {
         ...(input.nextStatus === DeliveryStatus.CANCELLED ? { cancelledAt: new Date() } : {}),
       },
     });
+
+    if (input.nextStatus === DeliveryStatus.DELIVERED) {
+      await tx.courierShipment.updateMany({
+        where: {
+          orderShipmentId: shipment.id,
+          trackingStatus: { notIn: [CourierShipmentStatus.DELIVERED, CourierShipmentStatus.CANCELLED] },
+        },
+        data: {
+          trackingStatus: CourierShipmentStatus.DELIVERED,
+          deliveredAt: new Date(),
+          bookingError: null,
+        },
+      });
+    }
 
     for (const shipmentPackage of shipment.packages) {
       const dimensions = this.packageDimensionsFromAllocations(shipmentPackage.itemAllocations);

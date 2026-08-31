@@ -732,6 +732,15 @@ export class CourierLogisticsService {
       this.prisma.client.courierShipment.count({
         where: {
           ...activeCourierShipmentWhere,
+          orderShipment: {
+            status: { notIn: [DeliveryStatus.DELIVERED, DeliveryStatus.CANCELLED] },
+            deliveryMode: DeliveryMode.THIRD_PARTY_COURIER,
+          },
+          order: {
+            deliveryStatus: { notIn: [DeliveryStatus.DELIVERED, DeliveryStatus.CANCELLED] },
+            orderStatus: { not: OrderStatus.CANCELLED },
+          },
+          trackingStatus: { notIn: [CourierShipmentStatus.DELIVERED, CourierShipmentStatus.CANCELLED] },
           OR: [
             { bookingError: { not: null } },
             { trackingStatus: CourierShipmentStatus.FAILED },
@@ -741,6 +750,9 @@ export class CourierLogisticsService {
       this.prisma.client.courierConsignmentPackage.count({
         where: {
           ...activeCourierPackageWhere,
+          orderShipment: {
+            status: { notIn: [DeliveryStatus.DELIVERED, DeliveryStatus.CANCELLED] },
+          },
           labelUrl: { not: null },
           trackingStatus: { notIn: Array.from(labelDownloadBlockedStatuses) },
         },
@@ -748,12 +760,18 @@ export class CourierLogisticsService {
       this.prisma.client.courierConsignmentPackage.count({
         where: {
           ...activeCourierPackageWhere,
+          orderShipment: {
+            status: { notIn: [DeliveryStatus.DELIVERED, DeliveryStatus.CANCELLED] },
+          },
           trackingStatus: CourierShipmentStatus.PICKUP_SCHEDULED,
         },
       }),
       this.prisma.client.courierConsignmentPackage.count({
         where: {
           ...activeCourierPackageWhere,
+          orderShipment: {
+            status: { notIn: [DeliveryStatus.DELIVERED, DeliveryStatus.CANCELLED] },
+          },
           trackingStatus: {
             in: [
               CourierShipmentStatus.PICKED_UP,
@@ -1060,6 +1078,16 @@ export class CourierLogisticsService {
         where: { orderShipmentId: shipment.id },
         data: { deliveryMode: nextMode },
       });
+      if (nextMode !== DeliveryMode.THIRD_PARTY_COURIER) {
+        await tx.courierShipment.updateMany({
+          where: { orderShipmentId: shipment.id },
+          data: {
+            bookingError: null,
+            trackingStatus: CourierShipmentStatus.NOT_BOOKED,
+            trackingStatusLabel: "Overridden to manual/local fulfillment",
+          },
+        });
+      }
       await tx.deliveryDetail.upsert({
         where: { orderId: shipment.orderId },
         update: {
@@ -2651,6 +2679,16 @@ export class CourierLogisticsService {
       case "BOOKING_FAILURES":
         return {
           ...activePackageWhere,
+          deliveryMode: DeliveryMode.THIRD_PARTY_COURIER,
+          orderShipment: {
+            status: { notIn: [DeliveryStatus.DELIVERED, DeliveryStatus.CANCELLED] },
+            deliveryMode: DeliveryMode.THIRD_PARTY_COURIER,
+          },
+          order: {
+            deliveryStatus: { notIn: [DeliveryStatus.DELIVERED, DeliveryStatus.CANCELLED] },
+            orderStatus: { not: OrderStatus.CANCELLED },
+          },
+          status: { notIn: [OrderShipmentPackageStatus.DELIVERED, OrderShipmentPackageStatus.CANCELLED] },
           courierPackages: { some: { trackingStatus: CourierShipmentStatus.FAILED } },
         };
       case "LABEL_READY":
@@ -3253,9 +3291,25 @@ export class CourierLogisticsService {
           },
       latestCourierPackage: courierPackage,
       courierTrackingStatus:
-        (courierPackage?.trackingStatus ??
-        packageShipment?.courierShipment?.trackingStatus ??
-        CourierShipmentStatus.NOT_BOOKED),
+        shipmentPackage.status === OrderShipmentPackageStatus.DELIVERED ||
+        packageShipment?.status === DeliveryStatus.DELIVERED ||
+        shipmentPackage.order?.deliveryStatus === DeliveryStatus.DELIVERED
+          ? CourierShipmentStatus.DELIVERED
+          : shipmentPackage.status === OrderShipmentPackageStatus.CANCELLED ||
+            packageShipment?.status === DeliveryStatus.CANCELLED ||
+            shipmentPackage.order?.orderStatus === OrderStatus.CANCELLED ||
+            shipmentPackage.order?.deliveryStatus === DeliveryStatus.CANCELLED
+            ? CourierShipmentStatus.CANCELLED
+            : shipmentPackage.deliveryMode !== DeliveryMode.THIRD_PARTY_COURIER
+              ? (shipmentPackage.status === OrderShipmentPackageStatus.OUT_FOR_DELIVERY
+                  ? CourierShipmentStatus.OUT_FOR_DELIVERY
+                  : shipmentPackage.status === OrderShipmentPackageStatus.IN_TRANSIT ||
+                    shipmentPackage.status === OrderShipmentPackageStatus.PICKED_UP
+                    ? CourierShipmentStatus.IN_TRANSIT
+                    : CourierShipmentStatus.NOT_BOOKED)
+              : (courierPackage?.trackingStatus ??
+                packageShipment?.courierShipment?.trackingStatus ??
+                CourierShipmentStatus.NOT_BOOKED),
       awbNumber: courierPackage?.awbNumber ?? packageShipment?.courierShipment?.awbNumber ?? null,
       courierName: courierPackage?.courierName ?? null,
       courierCode:
@@ -3264,7 +3318,11 @@ export class CourierLogisticsService {
         packageShipment?.courierProviderCode ??
         null,
       trackingUrl: courierPackage?.trackingUrl ?? packageShipment?.courierShipment?.trackingUrl ?? null,
-      canBookCourier: shipmentPackage.deliveryMode === DeliveryMode.THIRD_PARTY_COURIER,
+      canBookCourier:
+        shipmentPackage.deliveryMode === DeliveryMode.THIRD_PARTY_COURIER &&
+        shipmentPackage.status !== OrderShipmentPackageStatus.DELIVERED &&
+        packageShipment?.status !== DeliveryStatus.DELIVERED &&
+        shipmentPackage.order?.deliveryStatus !== DeliveryStatus.DELIVERED,
       canDownloadLabel,
       labelDownloadUrl: canDownloadLabel ? `/api/courier/packages/${shipmentPackage.id}/label` : null,
     };

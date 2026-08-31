@@ -422,7 +422,7 @@ export function CourierPackageDetailClient({ packageId }: { packageId: string })
             <InfoCell label="Provider" value={latest?.courierConsignment?.providerCode ?? pkg.courierCode ?? "Not booked"} />
             <InfoCell label="AWB" value={pkg.awbNumber ?? "Not assigned"} />
             <InfoCell label="Courier" value={pkg.courierName ?? pkg.courierCode ?? "Not assigned"} />
-            <InfoCell label="Tracking status" value={label(pkg.courierTrackingStatus)} />
+            <InfoCell label="Tracking status" value={label(effectiveCourierTrackingStatus(pkg))} />
             <InfoCell label="Pickup location" value={latest?.courierConsignment?.pickupLocationName ?? "Not synced"} />
           </div>
           {latest?.courierConsignment?.bookingError ? (
@@ -1545,7 +1545,7 @@ function CourierPackageTable({ packages, total }: { packages: CourierPackageReco
                   <td className="px-4 py-3">
                     <p className="font-black text-[#1F2933]">{pkg.courierCode ?? "Not booked"}</p>
                     <p className="mt-1 text-xs font-semibold text-[#667085]">AWB: {pkg.awbNumber ?? "Pending"}</p>
-                    <p className="mt-1 text-xs font-semibold text-[#667085]">{label(pkg.courierTrackingStatus)}</p>
+                    <p className="mt-1 text-xs font-semibold text-[#667085]">{label(effectiveCourierTrackingStatus(pkg))}</p>
                   </td>
                   <td className="px-4 py-3">
                     <StatusBadge tone={pkg.canDownloadLabel ? "success" : "warning"}>{pkg.canDownloadLabel ? "Ready" : "Not ready"}</StatusBadge>
@@ -1811,6 +1811,7 @@ function CourierRemittanceRow({ remittance }: { remittance: CourierCodRemittance
 
 function PackageSummaryRow({ pkg }: { pkg: CourierPackageRecord }) {
   const packageDisplayStatus = effectivePackageStatus(pkg);
+  const trackingDisplayStatus = effectiveCourierTrackingStatus(pkg);
 
   return (
     <Link href={`/courier/packages/${pkg.id}`} className="grid gap-3 px-4 py-3 transition hover:bg-[#F8FAFC] md:grid-cols-[1fr_auto] md:items-center">
@@ -1824,7 +1825,9 @@ function PackageSummaryRow({ pkg }: { pkg: CourierPackageRecord }) {
           {pkg.order.orderNumber} / {pkg.seller.storeName} / AWB {pkg.awbNumber ?? "pending"}
         </p>
       </div>
-      <StatusBadge tone={pkg.canDownloadLabel ? "success" : "warning"}>{pkg.canDownloadLabel ? "Label ready" : label(pkg.courierTrackingStatus)}</StatusBadge>
+      <StatusBadge tone={pkg.canDownloadLabel ? "success" : statusTone(trackingDisplayStatus)}>
+        {pkg.canDownloadLabel ? "Label ready" : label(trackingDisplayStatus)}
+      </StatusBadge>
     </Link>
   );
 }
@@ -2422,6 +2425,22 @@ function effectivePackageStatus(pkg: CourierPackageRecord): PackageStatus {
   }
 
   return pkg.status;
+}
+
+function effectiveCourierTrackingStatus(pkg: CourierPackageRecord): CourierTrackingStatus {
+  const displayStatus = effectivePackageStatus(pkg);
+  if (displayStatus === "DELIVERED") {
+    return "DELIVERED";
+  }
+  if (displayStatus === "CANCELLED") {
+    return "CANCELLED";
+  }
+  if (pkg.deliveryMode !== "THIRD_PARTY_COURIER") {
+    if (displayStatus === "OUT_FOR_DELIVERY") return "OUT_FOR_DELIVERY";
+    if (displayStatus === "IN_TRANSIT" || displayStatus === "PICKED_UP") return "IN_TRANSIT";
+    return "NOT_BOOKED";
+  }
+  return pkg.courierTrackingStatus;
 }
 
 function parsePackageQuickFilter(value: string | null): CourierPackageQuickFilter | null {
