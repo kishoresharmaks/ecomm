@@ -936,6 +936,25 @@ function ProductRow({
           {stockBadge ? <StatusBadge tone={stockBadge.tone}>{stockBadge.label}</StatusBadge> : null}
           {variant ? <StatusBadge tone="neutral">{formatMoney(variant.pricePaise, variant.currency)}</StatusBadge> : null}
         </div>
+        {product.variants.length > 1 ? (
+          <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+            {product.variants.map((v) => (
+              <span
+                key={v.id}
+                className={cn(
+                  "rounded-md border px-2 py-0.5 text-xs font-semibold",
+                  v.stockQuantity <= 0
+                    ? "border-[#F5B7B7] bg-[#FDECEC] text-[#9B1C1C]"
+                    : v.stockQuantity <= 5
+                      ? "border-[#FEF08A] bg-[#FEFCE8] text-[#854D0E]"
+                      : "border-[#D8E2EA] bg-white text-[#475569]"
+                )}
+              >
+                {v.variantName || v.sku || "Variant"}: {v.stockQuantity <= 0 ? "0 (Out of stock)" : `${v.stockQuantity} in stock`}
+              </span>
+            ))}
+          </div>
+        ) : null}
         {chips.length ? (
           <div className="mt-2 flex flex-wrap gap-2">
             {chips.slice(0, 4).map((chip) => (

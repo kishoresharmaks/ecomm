@@ -13,6 +13,7 @@ import {
   SellerSettlementStatus,
   ServiceBookingStatus,
   ServiceListingStatus,
+  VariantStatus,
   reportExportTablePage,
 } from "@indihub/database";
 import type { RequestUser } from "../auth/types/indihub-request";
@@ -206,10 +207,14 @@ export class ReportsService {
       const pendingProducts = await tx.product.count({ where: { approvalStatus: ApprovalStatus.PENDING_APPROVAL, deletedAt: null } });
       const activeProducts = await tx.product.count({ where: { status: ProductStatus.ACTIVE, deletedAt: null } });
       const lowStockProducts = await tx.productVariant.findMany({
-        where: { stockQuantity: { lte: 5 }, product: { deletedAt: null } },
+        where: {
+          stockQuantity: { lte: 5 },
+          status: VariantStatus.ACTIVE,
+          product: { status: ProductStatus.ACTIVE, deletedAt: null }
+        },
         include: { product: true },
         take: 25,
-          orderBy: { stockQuantity: "asc" }
+        orderBy: { stockQuantity: "asc" }
       });
       const productGroups = await tx.orderItem.groupBy({
         by: ["productId"],
@@ -409,8 +414,10 @@ export class ReportsService {
       });
       const lowStockWhere: Prisma.ProductVariantWhereInput = {
         stockQuantity: { lte: 5 },
+        status: VariantStatus.ACTIVE,
         product: {
           sellerId: seller.id,
+          status: ProductStatus.ACTIVE,
           deletedAt: null
         }
       };
