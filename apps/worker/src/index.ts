@@ -1,3 +1,20 @@
+import path from "node:path";
+import { existsSync } from "node:fs";
+import { config as loadEnv } from "dotenv";
+
+const candidateEnvPaths = [
+  path.resolve(process.cwd(), ".env"),
+  path.resolve(process.cwd(), "../../.env"),
+  path.resolve(process.cwd(), "../.env"),
+  "/var/www/indihub/.env",
+];
+
+for (const envPath of candidateEnvPaths) {
+  if (existsSync(envPath)) {
+    loadEnv({ path: envPath, override: false });
+  }
+}
+
 import pino from "pino";
 import { Worker as BullWorker, QueueEvents } from "bullmq";
 import IORedis from "ioredis";

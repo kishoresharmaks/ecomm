@@ -15,6 +15,11 @@ export function startDeliveryBatchRoutingPolling(logger: Logger) {
     return;
   }
 
+  if (!process.env.INTERNAL_API_SECRET) {
+    logger.warn("INTERNAL_API_SECRET is not configured in environment. Delivery batch routing worker is idle.");
+    return;
+  }
+
   const pollIntervalMs = 60000; // Poll every 1 minute
   let running = false;
 

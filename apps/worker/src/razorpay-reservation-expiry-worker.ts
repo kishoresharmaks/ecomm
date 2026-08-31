@@ -20,6 +20,13 @@ export function startRazorpayReservationExpiryPolling(logger: Logger) {
     return;
   }
 
+  if (!process.env.INTERNAL_API_SECRET) {
+    logger.warn(
+      "INTERNAL_API_SECRET is not configured in environment. Razorpay reservation expiry worker is idle.",
+    );
+    return;
+  }
+
   const pollIntervalMs = positiveInteger(
     process.env.RAZORPAY_RESERVATION_EXPIRY_POLL_INTERVAL_MS,
     60_000,

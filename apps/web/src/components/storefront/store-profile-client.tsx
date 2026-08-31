@@ -93,11 +93,11 @@ export function StoreProfileClient({ slug }: { slug: string }) {
   });
 
   const store = storeQuery.data;
-  const address = store?.addresses[0];
-  const serviceAreas = (store?.serviceAreas ?? []).filter((area) => area.isActive !== false);
+  const address = store?.addresses?.[0];
+  const serviceAreas = (store?.serviceAreas ?? []).filter((area) => area?.isActive !== false);
   const bannerUrl = store?.profile?.bannerUrl ?? null;
   const logoUrl = store?.profile?.logoUrl ?? null;
-  const productCount = store?._count?.products ?? productsQuery.data?.items.length ?? 0;
+  const productCount = store?._count?.products ?? productsQuery.data?.items?.length ?? 0;
   const memberSince = formatMonthYear(store?.createdAt ?? store?.profile?.createdAt);
   const storeReviewCount = store?.reviewSummary?.reviewCount ?? 0;
   const storeAverageRating = store?.reviewSummary?.averageRating ?? null;
@@ -192,7 +192,7 @@ export function StoreProfileClient({ slug }: { slug: string }) {
                         src={logoUrl}
                         alt={`${store.storeName} logo`}
                         sizes="112px"
-                        fallbackLabel={store.storeName.slice(0, 2).toUpperCase()}
+                        fallbackLabel={(store.storeName ?? "1H").slice(0, 2).toUpperCase()}
                       />
                       <span className="absolute bottom-0 right-0 grid h-5 w-5 place-items-center rounded-full border-2 border-white bg-[#ED3500] text-white shadow-lg sm:h-7 sm:w-7 md:bottom-1 md:right-1 md:h-8 md:w-8">
                         <BadgeCheck className="h-3 w-3 sm:h-4 sm:w-4 md:h-5 md:w-5" aria-hidden="true" />
@@ -513,10 +513,10 @@ function StoreProductTile({
         ) : null}
         <StorefrontImage
           src={displayImageUrl}
-          alt={product.images[0]?.altText ?? product.name}
+          alt={product.images?.[0]?.altText ?? product.name}
           sizes="(max-width: 640px) 50vw, (max-width: 1280px) 50vw, 260px"
           className="object-contain p-5 transition duration-500 group-hover:scale-105"
-          fallbackLabel={product.category.name}
+          fallbackLabel={product.category?.name ?? product.name}
           allowExternalRemote
         />
       </Link>
@@ -539,11 +539,11 @@ function StoreProductTile({
         ) : null}
 
         <Link
-          href={`/stores/${product.seller.slug}` as Route}
+          href={product.seller?.slug ? (`/stores/${product.seller.slug}` as Route) : ("#" as Route)}
           className="flex max-w-[calc(100%-3rem)] items-center gap-1.5 text-[10px] font-black uppercase tracking-wide text-[#667085] hover:text-[#163B5C] sm:max-w-[calc(100%-3.5rem)] sm:gap-2 sm:text-xs"
         >
           <Store className="h-4 w-4 shrink-0" aria-hidden="true" />
-          <span className="truncate">{product.seller.storeName}</span>
+          <span className="truncate">{product.seller?.storeName ?? "Store"}</span>
         </Link>
 
         <Link href={href} className="mt-3 block max-w-[calc(100%-3rem)] sm:mt-4 sm:max-w-[calc(100%-3.5rem)]">
