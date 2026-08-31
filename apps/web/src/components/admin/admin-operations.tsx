@@ -48,6 +48,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   ShoppingBag,
+  LogIn,
   Store,
   Trash2,
   Truck,
@@ -2121,6 +2122,27 @@ export function AdminSellersPageClient() {
     onSuccess: (storeName) => setExportNotice(`Seller audit workbook downloaded for ${storeName}.`),
     onError: (error) => setExportNotice(userFacingApiErrorMessage(error)),
   });
+  const impersonateSeller = useMutation({
+    mutationFn: async (seller: SellerRecord) => {
+      const session = await adminRequest<{
+        token: string;
+        redirectUrl: string;
+        expiresAt: string;
+        sellerStoreName: string;
+      }>(`/api/admin/sellers/${seller.id}/impersonate`, auth.authHeaders, {
+        method: "POST",
+        body: JSON.stringify({ reason: "Admin requested impersonation access" }),
+      });
+      return session;
+    },
+    onSuccess: (session) => {
+      if (typeof document !== "undefined") {
+        document.cookie = `indihub_seller_impersonation=${encodeURIComponent(session.token)}; path=/; max-age=1800; samesite=lax`;
+      }
+      window.location.href = session.redirectUrl || `/seller?ih_impersonate=${encodeURIComponent(session.token)}`;
+    },
+    onError: (error) => setExportNotice(userFacingApiErrorMessage(error)),
+  });
   const items = listItems(query.data);
 
   return (
@@ -2230,6 +2252,20 @@ export function AdminSellersPageClient() {
                     description: "Review documents and seller details",
                     icon: <Eye className="h-4 w-4 text-[#163B5C]" />,
                     onSelect: () => setViewingSeller(item),
+                  },
+                  {
+                    label: impersonateSeller.isPending ? "Connecting..." : "Login as seller",
+                    description: "Access Seller Center in audited admin impersonation mode",
+                    icon: <LogIn className="h-4 w-4 text-[#ED3500]" />,
+                    onSelect: () =>
+                      confirmation.requestConfirmation({
+                        title: `Login as ${item.storeName}?`,
+                        description: `You will open the Seller Center under ${item.storeName}'s account. All actions during this session will be recorded in the audit log.`,
+                        confirmLabel: "Login as seller",
+                        tone: "warning",
+                        onConfirm: () => impersonateSeller.mutate(item),
+                      }),
+                    disabled: impersonateSeller.isPending,
                   },
                   {
                     label: "Approve seller",

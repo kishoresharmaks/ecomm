@@ -52,7 +52,7 @@ import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
 import { StorefrontFooter } from "@/components/storefront/storefront-footer";
 import { MaintenanceGate } from "@/components/maintenance/maintenance-mode";
 import { StorefrontImage } from "@/components/storefront/storefront-image";
-import { IndihubApiError, userFacingApiErrorMessage } from "@/lib/api";
+import { IndihubApiError, indihubFetch, userFacingApiErrorMessage } from "@/lib/api";
 import type { IndihubAuthHeaders } from "@/lib/api";
 import {
   uploadPublicImage,
@@ -184,10 +184,17 @@ export function SellerWorkspaceRoot({ children }: { children: ReactNode }) {
   // During the loading state, we hide the sidebar if we haven't fetched their profile yet to avoid flashing.
   // We can show it optimistically if we have profileQuery.data, otherwise we wait.
   const showSidebar = !isSignedOut && !requiresOnboarding && (!isLoading || Boolean(profileQuery.data));
+  const isImpersonating = sellerAuth.mode === "impersonation";
 
   return (
     <SellerWorkspaceRootContext.Provider value>
       <MaintenanceGate scope="seller">
+        {isImpersonating ? (
+          <SellerImpersonationBanner
+            impersonatorEmail={sellerAuth.impersonatorEmail}
+            storeName={profileQuery.data?.storeName ?? sellerAuth.sellerStoreName}
+          />
+        ) : null}
         <main className="min-h-screen bg-[#F6F3EC] text-[#1F2933]">
           <div className={cn("min-h-screen", showSidebar ? "grid lg:grid-cols-[300px_minmax(0,1fr)]" : "flex flex-col")}>
             {showSidebar ? (
@@ -412,8 +419,137 @@ function operationSummary(profile?: SellerProfile | null) {
   };
 }
 
+function getClientImpersonationToken(): string | null {
+  if (typeof document === "undefined") {
+    return null;
+  }
+  const match = document.cookie.match(/(?:^|;\s*)indihub_seller_impersonation=([^;]+)/);
+  const rawToken = match?.[1];
+  if (!rawToken) {
+    return null;
+  }
+  try {
+    const token = decodeURIComponent(rawToken);
+    return token.startsWith("ih_impersonate_") ? token : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseImpersonationPayload(token: string) {
+  try {
+    const stripped = token.slice("ih_impersonate_".length);
+    const dotIndex = stripped.lastIndexOf(".");
+    const dataString = dotIndex > 0 ? stripped.slice(0, dotIndex) : stripped;
+    const rawJson = atob(dataString.replace(/-/g, "+").replace(/_/g, "/"));
+    return JSON.parse(rawJson) as {
+      sellerId: string;
+      sellerStoreName: string;
+      impersonatorAdminId: string;
+      impersonatorEmail: string;
+      expiresAt: number;
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function exitSellerImpersonation() {
+  try {
+    await indihubFetch("/api/admin/sellers/exit-impersonation", {
+      method: "POST",
+      credentials: "include",
+    });
+  } catch {
+    // Ignore backend logout errors
+  } finally {
+    if (typeof document !== "undefined") {
+      document.cookie = "indihub_seller_impersonation=; path=/; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+    }
+    if (typeof window !== "undefined") {
+      window.location.href = "/admin/sellers";
+    }
+  }
+}
+
+export function SellerImpersonationBanner({
+  impersonatorEmail,
+  storeName,
+}: {
+  impersonatorEmail?: string | undefined;
+  storeName?: string | undefined;
+}) {
+  const [exiting, setExiting] = useState(false);
+
+  const handleExit = async () => {
+    setExiting(true);
+    await exitSellerImpersonation();
+  };
+
+  return (
+    <aside
+      aria-label="Admin impersonation notice"
+      className="sticky top-0 z-50 flex flex-wrap items-center justify-between gap-3 border-b border-amber-600 bg-amber-500 px-4 py-2 text-white shadow-md"
+    >
+      <div className="flex items-center gap-2 text-xs font-bold sm:text-sm">
+        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-black/20 text-xs font-black">
+          !
+        </span>
+        <span>
+          <strong>Admin Impersonation Mode:</strong> You are viewing Seller Center as{" "}
+          <span className="underline">{storeName || "Seller Store"}</span> (Admin: {impersonatorEmail || "Active Admin"}).
+        </span>
+      </div>
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        onClick={handleExit}
+        disabled={exiting}
+        className="h-8 border-white/40 bg-white/20 text-xs font-black text-white hover:bg-white hover:text-amber-700"
+      >
+        {exiting ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <LogOut className="mr-1.5 h-3.5 w-3.5" />}
+        Exit Impersonation
+      </Button>
+    </aside>
+  );
+}
+
 export function useSellerAuth() {
   const clerkOrLocalAuth = useCustomerAuth();
+  const [impersonationToken, setImpersonationToken] = useState<string | null>(() => getClientImpersonationToken());
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const searchParams = new URLSearchParams(window.location.search);
+      const paramToken = searchParams.get("ih_impersonate");
+      if (paramToken && paramToken.startsWith("ih_impersonate_")) {
+        document.cookie = `indihub_seller_impersonation=${encodeURIComponent(paramToken)}; path=/; max-age=1800; samesite=lax`;
+        const nextUrl = new URL(window.location.href);
+        nextUrl.searchParams.delete("ih_impersonate");
+        window.history.replaceState({}, "", nextUrl.pathname + (nextUrl.search ? nextUrl.search : ""));
+        setImpersonationToken(paramToken);
+      }
+    }
+  }, []);
+
+  if (impersonationToken) {
+    const payload = parseImpersonationPayload(impersonationToken);
+    return {
+      mode: "impersonation" as const,
+      authHeaders: {
+        bearerToken: impersonationToken,
+      },
+      authKey: `seller:impersonation:${impersonationToken}`,
+      enabled: true,
+      status: "ready" as const,
+      error: undefined,
+      refresh: () => undefined,
+      platformUserId: "",
+      impersonatorEmail: payload?.impersonatorEmail,
+      sellerStoreName: payload?.sellerStoreName,
+    };
+  }
 
   if (clerkOrLocalAuth.mode === "clerk") {
     return {
@@ -424,7 +560,9 @@ export function useSellerAuth() {
       status: clerkOrLocalAuth.status,
       error: clerkOrLocalAuth.error,
       refresh: clerkOrLocalAuth.refresh,
-      platformUserId: ""
+      platformUserId: "",
+      impersonatorEmail: undefined,
+      sellerStoreName: undefined,
     };
   }
 
@@ -436,7 +574,9 @@ export function useSellerAuth() {
     status: "signed-out" as const,
     error: undefined,
     refresh: () => undefined,
-    platformUserId: ""
+    platformUserId: "",
+    impersonatorEmail: undefined,
+    sellerStoreName: undefined,
   };
 }
 

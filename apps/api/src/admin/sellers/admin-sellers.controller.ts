@@ -1,7 +1,8 @@
-import { Body, Controller, Get, Inject, Param, Patch, Query, Res, StreamableFile } from "@nestjs/common";
+import { Body, Controller, Get, Inject, Param, Patch, Post, Query, Req, Res, StreamableFile } from "@nestjs/common";
 import { ApiOkResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { createReadStream } from "node:fs";
 import { RoleCode } from "@indihub/database";
+import type { Response } from "express";
 import { CurrentUser } from "../../auth/decorators/current-user.decorator";
 import { Roles } from "../../auth/decorators/roles.decorator";
 import type { RequestUser } from "../../auth/types/indihub-request";
@@ -16,6 +17,10 @@ import {
 type PrivateDocumentResponse = {
   redirect: (statusCode: number, url: string) => void;
   set: (headers: Record<string, string>) => void;
+};
+
+type ImpersonateBodyDto = {
+  reason?: string;
 };
 
 @ApiTags("admin sellers")
@@ -130,8 +135,60 @@ export class AdminSellersController {
       currentUser,
     );
   }
+
+  @Post(":sellerId/impersonate")
+  @ApiOperation({ summary: "Create an admin impersonation session to log into the seller account." })
+  @ApiOkResponse({ description: "Impersonation session token and redirect payload." })
+  async impersonateSeller(
+    @Param("sellerId") sellerId: string,
+    @CurrentUser() currentUser: RequestUser,
+    @Body() dto: ImpersonateBodyDto,
+    @Req() request: { ip?: string; headers: Record<string, string | string[] | undefined> },
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const session = await this.adminSellersService.impersonateSeller(sellerId, currentUser, {
+      reason: dto?.reason,
+      ipAddress: request.ip ?? readHeader(request.headers, "x-forwarded-for"),
+    });
+
+    response.cookie("indihub_seller_impersonation", session.token, {
+      ...sellerImpersonationCookieOptions(),
+      expires: new Date(session.expiresAt),
+    });
+
+    return session;
+  }
+
+  @Post("exit-impersonation")
+  @ApiOperation({ summary: "End the active seller impersonation session." })
+  @ApiOkResponse({ description: "Impersonation session ended." })
+  async exitImpersonation(
+    @CurrentUser() currentUser: RequestUser,
+    @Req() request: { ip?: string; headers: Record<string, string | string[] | undefined> },
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const result = await this.adminSellersService.exitImpersonation(currentUser, {
+      ipAddress: request.ip ?? readHeader(request.headers, "x-forwarded-for"),
+    });
+
+    response.clearCookie("indihub_seller_impersonation", sellerImpersonationCookieOptions());
+    return result;
+  }
 }
 
 function safeDownloadFileName(fileName: string) {
   return fileName.replace(/["\\]/g, "").slice(0, 120) || "private-document";
+}
+
+function readHeader(headers: Record<string, string | string[] | undefined>, name: string): string | undefined {
+  const value = headers[name];
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function sellerImpersonationCookieOptions() {
+  const secure =
+    process.env.NODE_ENV === "production" ||
+    process.env.INDIHUB_PRODUCTION === "true" ||
+    process.env.INDIHUB_ENV === "production";
+  return { httpOnly: true, secure, sameSite: "lax" as const, path: "/" };
 }

@@ -3,6 +3,7 @@ import { APP_GUARD } from "@nestjs/core";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { AdminAuthController } from "./admin-auth.controller";
 import { AdminAuthService } from "./admin-auth.service";
+import { AdminImpersonationService } from "./admin-impersonation.service";
 import { AuthSyncController } from "./auth-sync.controller";
 import { AuthUsersService } from "./auth-users.service";
 import { ClerkAuthService } from "./clerk-auth.service";
@@ -14,6 +15,7 @@ import { RolesGuard } from "./guards/roles.guard";
   controllers: [AuthSyncController, AdminAuthController],
   providers: [
     AdminAuthService,
+    AdminImpersonationService,
     ClerkAuthService,
     AuthUsersService,
     {
@@ -25,6 +27,6 @@ import { RolesGuard } from "./guards/roles.guard";
       useClass: RolesGuard
     }
   ],
-  exports: [AuthUsersService, ClerkAuthService, AdminAuthService]
+  exports: [AuthUsersService, ClerkAuthService, AdminAuthService, AdminImpersonationService]
 })
 export class AuthModule {}

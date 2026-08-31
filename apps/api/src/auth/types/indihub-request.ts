@@ -7,6 +7,10 @@ export type RequestUser = {
   roles: RoleCode[];
   permissions?: string[];
   authProvider?: "ADMIN_SESSION" | "CLERK" | "DEV";
+  impersonatedBy?: {
+    id: string;
+    email: string;
+  };
 };
 
 export type IndiHubRequest = {

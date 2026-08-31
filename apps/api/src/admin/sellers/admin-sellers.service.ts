@@ -17,6 +17,7 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { invalidateSellerServiceTaxReview } from "../../services-marketplace/service-tax-review";
 import { SearchIndexService } from "../../search/search-index.service";
 import { StorageService } from "../../storage/storage.service";
+import { AdminImpersonationService } from "../../auth/admin-impersonation.service";
 import { RequestUser } from "../../auth/types/indihub-request";
 import {
   SellerApprovalDecision,
@@ -35,7 +36,31 @@ export class AdminSellersService {
     @Optional()
     @Inject(SearchIndexService)
     private readonly searchIndex?: SearchIndexService,
+    @Optional()
+    @Inject(AdminImpersonationService)
+    private readonly impersonationService?: AdminImpersonationService,
   ) {}
+
+  async impersonateSeller(
+    sellerId: string,
+    currentUser: RequestUser,
+    meta: { ipAddress?: string | null | undefined; reason?: string | null | undefined } = {},
+  ) {
+    if (!this.impersonationService) {
+      throw new BadRequestException("Impersonation service is not available.");
+    }
+    return this.impersonationService.createImpersonationSession(sellerId, currentUser, meta);
+  }
+
+  async exitImpersonation(
+    currentUser: RequestUser,
+    meta: { ipAddress?: string | null | undefined } = {},
+  ) {
+    if (!this.impersonationService) {
+      return { success: true };
+    }
+    return this.impersonationService.exitImpersonation(currentUser, undefined, meta);
+  }
 
   async listSellers(query: SellerQueryDto) {
     const { page, skip, take } = paginationFromQuery(query);

@@ -1,9 +1,10 @@
-import { CanActivate, ExecutionContext, ForbiddenException, Inject, Injectable, UnauthorizedException } from "@nestjs/common";
+import { CanActivate, ExecutionContext, ForbiddenException, Inject, Injectable, Optional, UnauthorizedException } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { RoleCode, UserStatus } from "@indihub/database";
 import { isCorsOriginAllowed } from "../../app/cors";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AdminAuthService } from "../admin-auth.service";
+import { AdminImpersonationService } from "../admin-impersonation.service";
 import { IS_PUBLIC_KEY, ROLES_KEY } from "../auth.constants";
 import { ClerkAuthService } from "../clerk-auth.service";
 import { IndiHubRequest } from "../types/indihub-request";
@@ -14,7 +15,10 @@ export class AuthGuard implements CanActivate {
     @Inject(Reflector) private readonly reflector: Reflector,
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(AdminAuthService) private readonly adminAuthService: AdminAuthService,
-    @Inject(ClerkAuthService) private readonly clerkAuthService: ClerkAuthService
+    @Inject(ClerkAuthService) private readonly clerkAuthService: ClerkAuthService,
+    @Optional()
+    @Inject(AdminImpersonationService)
+    private readonly adminImpersonationService?: AdminImpersonationService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -32,6 +36,14 @@ export class AuthGuard implements CanActivate {
       context.getClass()
     ]);
     const request = context.switchToHttp().getRequest<IndiHubRequest>();
+
+    const impersonatedUser = await this.adminImpersonationService?.resolveRequestHeaders(request.headers);
+    if (impersonatedUser) {
+      this.assertSafeCookieRequest(request);
+      request.currentUser = impersonatedUser;
+      return true;
+    }
+
     const adminUser = await this.adminAuthService.resolveRequestHeaders(request.headers);
 
     if (adminUser) {
@@ -112,7 +124,7 @@ export class AuthGuard implements CanActivate {
     }
 
     const authorization = this.readHeader(request, "authorization");
-    if (authorization?.startsWith("Bearer ih_admin_")) {
+    if (authorization?.startsWith("Bearer ih_admin_") || authorization?.startsWith("Bearer ih_impersonate_")) {
       return;
     }
 
