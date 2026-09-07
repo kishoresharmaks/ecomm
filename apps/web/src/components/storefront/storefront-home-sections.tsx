@@ -894,9 +894,14 @@ function SectionHeading({
 
 function HeroFallback() {
   return (
-    <section className="mx-auto max-w-[1440px] px-4 py-4 sm:px-6 lg:px-10">
-      <div className="min-h-[390px] animate-pulse rounded-[22px] bg-[#FFF4EF]" />
-    </section>
+    <>
+      <div className="mx-auto max-w-[760px] px-3 pb-1 pt-3 sm:px-4 lg:hidden">
+        <div className="h-[210px] animate-pulse rounded-[16px] bg-[#FFF4EF]" />
+      </div>
+      <section className="mx-auto max-w-[1440px] px-4 pt-3 sm:px-6 md:px-8 lg:px-10 xl:px-12">
+        <div className="min-h-[310px] sm:min-h-[390px] lg:min-h-[500px] animate-pulse rounded-[22px] bg-[#FFF4EF]" />
+      </section>
+    </>
   );
 }
 

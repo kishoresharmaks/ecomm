@@ -50,6 +50,7 @@ export default async function StorefrontHomePage() {
     cookieStore.get(storefrontLocationCookieName)?.value,
   );
   const homePromise = getHomePayload(homeQueryKey(browsingLocationQuery(serverLocation, 6)));
+  await homePromise;
   const seo = await getHomeSeo();
   const title = seo?.metaTitle?.trim() || homeSeoFallback.title;
   const description = seo?.metaDescription?.trim() || homeSeoFallback.description;
