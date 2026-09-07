@@ -36,6 +36,7 @@ import {
   ServicePaymentCollectionType,
   ServicePaymentSettlementTreatment,
   StatusEventType,
+  B2BPaymentRecordStatus,
 } from "@indihub/database";
 import type { RequestUser } from "../auth/types/indihub-request";
 import { FinanceCalculatorService } from "../finance/finance-calculator.service";
@@ -676,7 +677,7 @@ export class PaymentsService {
     });
 
     const linkedB2BOrder = await this.prisma.client.b2BOrder.findFirst({
-      where: { orderId: order.id },
+      where: { orderNumber: order.orderNumber },
     });
     if (linkedB2BOrder) {
       await this.prisma.client.b2BPaymentRecord.updateMany({

@@ -4288,7 +4288,14 @@ export class B2BOperationsService {
 
   private async advanceOrder(
     tx: Prisma.TransactionClient,
-    order: { id: string; version: number; status: B2BOrderStatus },
+    order: {
+      id: string;
+      version: number;
+      status: B2BOrderStatus;
+      paymentStatus: B2BPaymentStatus;
+      paidAmountPaise: number;
+      paidAt: Date | null;
+    },
     nextStatus: B2BOrderStatus,
     actorUserId: string | null,
     note?: string | null,
