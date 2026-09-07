@@ -22,10 +22,10 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       { url: "/icon.svg", type: "image/svg+xml" },
-      { url: "/brand/1handindia_hero_mark.png", type: "image/png" }
+      { url: "/brand/apple-touch-icon.png", type: "image/png" }
     ],
     shortcut: "/icon.svg",
-    apple: "/brand/1handindia_hero_mark.png"
+    apple: "/brand/apple-touch-icon.png"
   },
   openGraph: {
     siteName: brandConfig.name,

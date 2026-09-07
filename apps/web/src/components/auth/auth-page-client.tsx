@@ -146,7 +146,7 @@ export function AuthPageClient({
                   <p className="text-xs font-black uppercase tracking-[0.18em] text-[#ED3500]">{presentation.eyebrow}</p>
                   <p className="mt-1 text-sm font-semibold text-[#667085]">Protected account access</p>
                 </div>
-                <Image src="/brand/1handindia_logo.png" alt="1HandIndia" width={48} height={48} className="h-12 w-12 rounded-xl object-contain" />
+                <Image src="/brand/1handindia_logo.webp" alt="1HandIndia" width={48} height={48} className="h-12 w-12 rounded-xl object-contain" />
               </div>
 
               {clerkEnabled ? (
@@ -186,7 +186,7 @@ function AuthStory({ presentation }: { presentation: AuthPresentation }) {
   return (
     <div className="relative isolate overflow-hidden bg-[#ED3500] px-6 py-9 text-white sm:px-10 sm:py-12 lg:flex lg:flex-col lg:justify-between lg:px-12 lg:py-14">
       <div className="absolute -right-20 bottom-[-12rem] z-[-1] hidden w-[520px] opacity-20 lg:block">
-        <Image src="/brand/1handindia_hero_mark.png" alt="" width={669} height={744} className="h-auto w-full object-contain" aria-hidden="true" priority loading="eager" />
+        <Image src="/brand/1handindia_hero_mark.webp" alt="" width={669} height={744} className="h-auto w-full object-contain" aria-hidden="true" priority loading="eager" />
       </div>
       <div className="absolute -left-16 -top-16 z-[-1] h-44 w-44 rounded-full border-[32px] border-white/10" aria-hidden="true" />
 

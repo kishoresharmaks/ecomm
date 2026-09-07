@@ -725,7 +725,7 @@ export function SellerStartWelcome({
       {/* Hero Content */}
       <div className="relative z-10 mx-auto max-w-4xl px-5 text-center sm:px-7 lg:px-8">
         <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center overflow-hidden rounded-3xl bg-white shadow-[0_16px_32px_rgba(237,53,0,0.15)] ring-1 ring-black/5">
-          <img src="/brand/1handindia_logo.png" alt="1HandIndia" className="h-full w-full object-cover" fetchPriority="high" />
+          <img src="/brand/1handindia_logo.webp" alt="1HandIndia" className="h-full w-full object-cover" fetchPriority="high" />
         </div>
         <span className="mx-auto inline-flex items-center gap-2 rounded-full border border-[#ED3500]/20 bg-[#ED3500]/10 px-4 py-1.5 text-xs font-black uppercase tracking-[0.2em] text-[#ED3500] shadow-sm">
           <ShieldCheck className="h-4 w-4" aria-hidden="true" />

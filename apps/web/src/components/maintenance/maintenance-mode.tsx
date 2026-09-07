@@ -129,7 +129,7 @@ function MaintenancePage({
             <div className="relative flex flex-col justify-between border-b border-[#F7E7DF] bg-gradient-to-br from-[#FFF5F1] via-[#FFF9F6] to-[#FFF0EB] p-8 sm:p-10 lg:border-b-0 lg:border-r">
               <Link href="/" className="inline-flex items-center gap-3 self-start">
                 <span className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-2xl bg-white p-1 shadow-[0_8px_20px_rgba(237,53,0,0.15)] border border-[#F6C7B8]/40">
-                  <img src="/brand/1handindia_logo.png" alt="1HandIndia" className="h-full w-full object-contain" />
+                  <img src="/brand/1handindia_logo.webp" alt="1HandIndia" className="h-full w-full object-contain" />
                 </span>
                 <div>
                   <span className="block text-xl font-black text-[#101828]">

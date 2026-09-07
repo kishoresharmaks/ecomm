@@ -155,7 +155,7 @@ export function ContactPageClient() {
             </div>
             <div className="relative min-h-[260px] overflow-hidden rounded-lg border border-[#F0E4DF] bg-[#163B5C]">
               <Image
-                src="/brand/1handindia_hero_mark.png"
+                src="/brand/1handindia_hero_mark.webp"
                 alt="1HandIndia support"
                 fill
                 sizes="(min-width: 1024px) 420px, 100vw"

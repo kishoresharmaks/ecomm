@@ -248,7 +248,7 @@ export function buildOrganizationJsonLd() {
     "@id": `${siteUrl}/#organization`,
     name: "1HandIndia",
     url: `${siteUrl}/`,
-    logo: absoluteUrl("/brand/1handindia_logo.png")
+    logo: absoluteUrl("/brand/1handindia_logo.webp")
   };
 }
 

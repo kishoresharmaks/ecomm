@@ -1262,7 +1262,7 @@ function AdminLoginShell({ redirectTo }: { redirectTo: string }) {
           <div className="relative z-10 flex flex-col items-center gap-4">
             <Link href="/" className="inline-flex flex-col items-center gap-3.5 transition-opacity hover:opacity-90">
               <img
-                src="/brand/1handindia_logo.png"
+                src="/brand/1handindia_logo.webp"
                 alt="1HandIndia"
                 className="h-16 w-auto object-contain drop-shadow-md sm:h-20"
               />

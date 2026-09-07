@@ -49,8 +49,8 @@ import {
 import { locationMatchLabel, sellerLocationLabel } from "./storefront-location-utils";
 import { useStorefrontWishlist } from "./use-storefront-wishlist";
 
-const brandLogoSrc = "/brand/1handindia_logo.png";
-const vendorHeroVisualSrc = "/brand/vendor-page-logo.png";
+const brandLogoSrc = "/brand/1handindia_logo.webp";
+const vendorHeroVisualSrc = "/brand/vendor-page-logo.webp";
 
 export function StoreProfileClient({ slug }: { slug: string }) {
   const queryClient = useQueryClient();

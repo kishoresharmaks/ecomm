@@ -23,7 +23,7 @@ type StorefrontImageProps = {
   allowExternalRemote?: boolean;
 };
 
-const brandFallbackImageSrc = "/brand/1handindia_hero_mark.png";
+const brandFallbackImageSrc = "/brand/1handindia_hero_mark.webp";
 
 export function StorefrontImage({
   src,
