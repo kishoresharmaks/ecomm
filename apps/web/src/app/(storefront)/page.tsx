@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { cache } from "react";
 import { JsonLd } from "@/components/seo/json-ld";
 import { StorefrontHome } from "@/components/storefront/storefront-home-sections";
-import { PromotionalPopup } from "@/components/storefront/promotional-popup";
+import { DynamicPromotionalPopup as PromotionalPopup } from "@/components/storefront/dynamic-promotional-popup";
 import {
   browsingLocationQuery,
   parseStorefrontLocationCookie,

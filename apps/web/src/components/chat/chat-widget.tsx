@@ -20,9 +20,9 @@ import {
   type ChatTopic,
 } from "@/lib/chat-api";
 import { userFacingApiErrorMessage } from "@/lib/api";
-import { useChatSocket } from "./chat-socket-context";
+import { ChatSocketProvider, useChatSocket } from "./chat-socket-context";
 
-export function ChatWidget() {
+function ChatWidgetInner() {
   const auth = useCustomerAuth();
   const pathname = usePathname();
   const queryClient = useQueryClient();
@@ -364,9 +364,17 @@ export function ChatWidget() {
         className="flex h-14 w-14 overflow-hidden items-center justify-center rounded-full bg-white shadow-[0_12px_30px_rgba(255,90,31,0.25)] ring-2 ring-[#ff5a1f]/20 hover:ring-[#ff5a1f]/50 transition"
         aria-label="Open support chat"
       >
-        <img src="/brand/1handindia_logo.png" alt="Support Chat" className="h-full w-full object-cover" />
+        <img src="/brand/1handindia_logo.webp" alt="Support Chat" width={56} height={56} className="h-full w-full object-cover" />
       </button>
     </div>
+  );
+}
+
+export function ChatWidget() {
+  return (
+    <ChatSocketProvider>
+      <ChatWidgetInner />
+    </ChatSocketProvider>
   );
 }
 

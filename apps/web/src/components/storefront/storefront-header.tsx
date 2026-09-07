@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   type FormEvent,
@@ -68,7 +69,7 @@ type HeaderNavItem = {
   children?: HeaderNavItem[];
 };
 
-const brandLogoSrc = "/brand/1handindia_logo.png";
+const brandLogoSrc = "/brand/1handindia_logo.webp";
 const clerkEnabled = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 const staticStorefrontDataStaleMs = 5 * 60 * 1000;
 const categoryIcons = [PackageSearch, Store, ShoppingCart, BadgePercent, PackageCheck, ShieldCheck];
@@ -434,8 +435,15 @@ function BrandBlock() {
       className="flex min-w-[210px] items-center gap-2.5 2xl:min-w-[240px] 2xl:gap-3"
       aria-label="1HandIndia home"
     >
-      <span className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-2xl bg-white shadow-[0_14px_30px_rgba(255,90,31,0.18)] 2xl:h-14 2xl:w-14">
-        <img src={brandLogoSrc} alt="" className="h-full w-full object-cover" loading="eager" />
+      <span className="relative grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-2xl bg-white shadow-[0_14px_30px_rgba(255,90,31,0.18)] 2xl:h-14 2xl:w-14">
+        <Image
+          src={brandLogoSrc}
+          alt="1HandIndia logo"
+          width={56}
+          height={56}
+          priority
+          className="h-full w-full object-cover"
+        />
       </span>
       <span className="min-w-0">
         <span className="block whitespace-nowrap text-[23px] font-black leading-none tracking-normal text-[#101828] 2xl:text-[26px]">
@@ -452,8 +460,15 @@ function BrandBlock() {
 function MobileBrandLogo() {
   return (
     <Link href="/" className="flex min-w-0 flex-1 items-center gap-2" aria-label="1HandIndia home">
-      <span className="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-2xl bg-white shadow-[0_12px_24px_rgba(255,90,31,0.16)] sm:h-10 sm:w-10">
-        <img src={brandLogoSrc} alt="" className="h-full w-full object-cover" loading="eager" />
+      <span className="relative grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-2xl bg-white shadow-[0_12px_24px_rgba(255,90,31,0.16)] sm:h-10 sm:w-10">
+        <Image
+          src={brandLogoSrc}
+          alt="1HandIndia logo"
+          width={40}
+          height={40}
+          priority
+          className="h-full w-full object-cover"
+        />
       </span>
       <span className="min-w-0">
         <span className="block truncate text-[16px] font-black leading-none text-[#101828] sm:text-[18px]">

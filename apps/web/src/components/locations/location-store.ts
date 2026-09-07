@@ -75,6 +75,7 @@ type LocationCatalogInput = {
   countryCode?: string | null;
   stateCode?: string | null;
   loadCitiesAcrossCountry?: boolean;
+  enabled?: boolean;
 };
 
 export type LocationCityCatalogRequest = {
@@ -153,6 +154,7 @@ export function useLocationCatalog({
   countryCode,
   stateCode,
   loadCitiesAcrossCountry = false,
+  enabled = true,
 }: LocationCatalogInput) {
   const normalizedCountryCode = cleanCode(countryCode);
   const normalizedStateCode = cleanCode(stateCode);
@@ -169,18 +171,19 @@ export function useLocationCatalog({
   const countriesQuery = useQuery({
     queryKey: locationQueryKeys.countries(),
     queryFn: listLocationCountries,
+    enabled,
     ...locationQueryCacheOptions.countries,
   });
   const statesQuery = useQuery({
     queryKey: locationQueryKeys.states(normalizedCountryCode),
     queryFn: () => listLocationStates(normalizedCountryCode),
-    enabled: Boolean(normalizedCountryCode),
+    enabled: enabled && Boolean(normalizedCountryCode),
     ...locationQueryCacheOptions.catalog,
   });
   const citiesQuery = useQuery({
     queryKey: locationQueryKeys.cities(cityRequest.queryParams),
     queryFn: () => listLocationCities(cityRequest.queryParams),
-    enabled: cityRequest.enabled,
+    enabled: enabled && cityRequest.enabled,
     ...locationQueryCacheOptions.catalog,
   });
 

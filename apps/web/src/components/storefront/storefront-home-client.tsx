@@ -65,7 +65,10 @@ export function HomeLocationRefreshBridge({
   const router = useRouter();
   const location = useStorefrontLocation();
   const lastRefreshedFingerprint = useRef(serverFingerprint);
+  const lastManualFingerprint = useRef<string | null>(null);
+  const isMounted = useRef(false);
   const activeFingerprint = storefrontLocationFingerprint(location.activeLocation);
+  const manualFingerprint = storefrontLocationFingerprint(location.manualLocation);
 
   useEffect(() => {
     if (!location.isReady) {
@@ -81,13 +84,23 @@ export function HomeLocationRefreshBridge({
       document.cookie = `${storefrontLocationCookieName}=; Path=/; Max-Age=0; SameSite=Lax${secure}`;
     }
 
-    if (lastRefreshedFingerprint.current === activeFingerprint) {
+    if (!isMounted.current) {
+      isMounted.current = true;
+      lastManualFingerprint.current = manualFingerprint;
+      lastRefreshedFingerprint.current = activeFingerprint;
+      return;
+    }
+
+    // Only refresh when manual location preference was explicitly changed by user action
+    if (lastManualFingerprint.current !== manualFingerprint) {
+      lastManualFingerprint.current = manualFingerprint;
+      lastRefreshedFingerprint.current = activeFingerprint;
+      startTransition(() => router.refresh());
       return;
     }
 
     lastRefreshedFingerprint.current = activeFingerprint;
-    startTransition(() => router.refresh());
-  }, [activeFingerprint, location.activeLocation, location.isReady, router]);
+  }, [activeFingerprint, manualFingerprint, location.activeLocation, location.isReady, router]);
 
   return null;
 }

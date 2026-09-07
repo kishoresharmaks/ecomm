@@ -36,9 +36,19 @@ const nextConfig = {
   allowedDevOrigins,
   poweredByHeader: false,
   compress: true,
-  ...(isWindows ? { experimental: { workerThreads: true } } : {}),
+  experimental: {
+    ...(isWindows ? { workerThreads: true } : {}),
+    optimizePackageImports: [
+      "lucide-react",
+      "@headlessui/react",
+      "@tanstack/react-query",
+      "recharts",
+    ],
+  },
   images: {
     remotePatterns: imageRemotePatterns,
+    formats: ["image/avif", "image/webp"],
+    minimumCacheTTL: 2592000,
   },
   transpilePackages: [
     "@indihub/config",
@@ -48,6 +58,24 @@ const nextConfig = {
   ],
   async headers() {
     return [
+      {
+        source: "/brand/(.*)",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=31536000, immutable",
+          },
+        ],
+      },
+      {
+        source: "/icon.svg",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=31536000, immutable",
+          },
+        ],
+      },
       {
         source: "/(.*)",
         headers: [

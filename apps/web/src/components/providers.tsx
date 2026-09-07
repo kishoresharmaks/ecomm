@@ -8,11 +8,15 @@ import { ConsentManagedScripts, CookieConsentBanner } from "./compliance/cookie-
 import { DevAuthProvider } from "./dev-auth/dev-auth-context";
 import { AdminAuthProvider } from "./admin/admin-auth-context";
 import { ClerkCustomerAuthProvider, LocalCustomerAuthProvider } from "./auth/indihub-auth-context";
-import { ChatSocketProvider } from "./chat/chat-socket-context";
-import { ChatWidget } from "./chat/chat-widget";
+import dynamic from "next/dynamic";
 import { MarketProvider } from "./market/market-context";
 import { StorefrontLocationProvider } from "./storefront/storefront-location-context";
 import { I18nProvider } from "./i18n/i18n-provider";
+
+const DynamicChatWidget = dynamic(
+  () => import("./chat/chat-widget").then((m) => m.ChatWidget),
+  { ssr: false },
+);
 
 const clerkPublishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
@@ -50,29 +54,25 @@ export function Providers({
           <DevAuthProvider>
             {shouldUseClerk ? (
               <ClerkCustomerAuthProvider>
-                <ChatSocketProvider>
-                  <StorefrontLocationProvider>
-                    <I18nProvider>
-                      {children}
-                      <ChatWidget />
-                      <CookieConsentBanner />
-                      <ConsentManagedScripts nonce={nonce} />
-                    </I18nProvider>
-                  </StorefrontLocationProvider>
-                </ChatSocketProvider>
+                <StorefrontLocationProvider>
+                  <I18nProvider>
+                    {children}
+                    <DynamicChatWidget />
+                    <CookieConsentBanner />
+                    <ConsentManagedScripts nonce={nonce} />
+                  </I18nProvider>
+                </StorefrontLocationProvider>
               </ClerkCustomerAuthProvider>
             ) : (
               <LocalCustomerAuthProvider>
-                <ChatSocketProvider>
-                  <StorefrontLocationProvider>
-                    <I18nProvider>
-                      {children}
-                      <ChatWidget />
-                      <CookieConsentBanner />
-                      <ConsentManagedScripts nonce={nonce} />
-                    </I18nProvider>
-                  </StorefrontLocationProvider>
-                </ChatSocketProvider>
+                <StorefrontLocationProvider>
+                  <I18nProvider>
+                    {children}
+                    <DynamicChatWidget />
+                    <CookieConsentBanner />
+                    <ConsentManagedScripts nonce={nonce} />
+                  </I18nProvider>
+                </StorefrontLocationProvider>
               </LocalCustomerAuthProvider>
             )}
           </DevAuthProvider>
@@ -105,6 +105,8 @@ export function Providers({
 
   const clerkProps: Record<string, unknown> = {
     publishableKey: clerkPublishableKey,
+    __internal_clerkJSVersion: "6.31.0",
+    __internal_clerkUIVersion: "1.32.1",
   };
   if (nonce) {
     clerkProps.nonce = nonce;

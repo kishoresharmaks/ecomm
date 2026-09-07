@@ -79,7 +79,7 @@ export function StorefrontLocationPicker({
     setShowRefinements(Boolean(location?.localAreaCode || location?.areaName || location?.pincode));
   }, [activeLocation, market.countryCode]);
 
-  const locationCatalog = useLocationCatalog({ countryCode, stateCode });
+  const locationCatalog = useLocationCatalog({ countryCode, stateCode, enabled: open });
   const areasStore = useLocationAreaStore({
     countryCode,
     stateCode,

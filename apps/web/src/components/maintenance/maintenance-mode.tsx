@@ -36,19 +36,6 @@ const scopeDescriptions: Record<MaintenanceScope, string> = {
 };
 
 export function MaintenanceGate({ scope, children, block = true }: MaintenanceGateProps) {
-  return (
-    <Suspense fallback={<>{children}</>}>
-      <MaintenanceGateContent scope={scope} block={block}>
-        {children}
-      </MaintenanceGateContent>
-    </Suspense>
-  );
-}
-
-function MaintenanceGateContent({ scope, children, block = true }: MaintenanceGateProps) {
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const admin = useAdminAuth();
   const query = useQuery({
     queryKey: ["maintenance-settings"],
     queryFn: getMaintenanceSettings,
@@ -56,18 +43,44 @@ function MaintenanceGateContent({ scope, children, block = true }: MaintenanceGa
   });
   const maintenance = maintenanceForScope(query.data, scope);
   const blocked = block && Boolean(maintenance?.enabled);
-  const bypass = blocked && canBypassMaintenancePreview(searchParams, {
+
+  if (!blocked) {
+    return <>{children}</>;
+  }
+
+  return (
+    <Suspense fallback={null}>
+      <MaintenanceGateBlockedCheck scope={scope} setting={maintenance}>
+        {children}
+      </MaintenanceGateBlockedCheck>
+    </Suspense>
+  );
+}
+
+function MaintenanceGateBlockedCheck({
+  scope,
+  setting,
+  children,
+}: {
+  scope: MaintenanceScope;
+  setting: MaintenanceScopeSetting | null | undefined;
+  children: ReactNode;
+}) {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const admin = useAdminAuth();
+  const bypass = canBypassMaintenancePreview(searchParams, {
     isAuthenticated: admin.isAuthenticated,
     ...(admin.user?.roles ? { roles: admin.user.roles } : {}),
   });
 
-  if (blocked && !bypass) {
-    return <MaintenancePage scope={scope} setting={maintenance} />;
+  if (!bypass) {
+    return <MaintenancePage scope={scope} setting={setting ?? null} />;
   }
 
   return (
     <>
-      {bypass ? <MaintenanceBypassBanner scope={scope} pathname={pathname} /> : null}
+      <MaintenanceBypassBanner scope={scope} pathname={pathname} />
       {children}
     </>
   );
