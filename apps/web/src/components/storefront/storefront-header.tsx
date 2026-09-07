@@ -1092,6 +1092,7 @@ function AccountMenuShell({ imageUrl }: { imageUrl?: string | null }) {
       <button
         ref={triggerRef}
         type="button"
+        aria-label={t("my_account")}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={menuId}

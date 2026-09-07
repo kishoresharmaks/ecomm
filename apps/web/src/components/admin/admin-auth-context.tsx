@@ -74,6 +74,11 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
 
     async function restoreSession() {
+      if (typeof window !== "undefined" && !window.location.pathname.startsWith("/admin")) {
+        setIsReady(true);
+        return;
+      }
+
       try {
         const user = await indihubFetch<AdminAuthUser>("/api/admin/auth/me", undefined, {
           bearerToken: adminCookieSessionMarker,
