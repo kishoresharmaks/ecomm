@@ -19,7 +19,8 @@ export function StorefrontMobileTabs() {
   return (
     <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[#EEF0F4] bg-white/96 px-3 pt-2 shadow-[0_-12px_34px_rgba(22,59,92,0.08)] backdrop-blur-xl lg:hidden">
       <nav
-        className="mx-auto flex max-w-md items-center justify-between gap-1"
+        aria-label="Primary"
+        className="mx-auto flex max-w-md items-stretch justify-between gap-1"
         style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 0.45rem)" }}
       >
         {tabs.map(({ href, label, icon: Icon }) => {
@@ -30,7 +31,7 @@ export function StorefrontMobileTabs() {
               key={href}
               href={href}
               className={cn(
-                "flex min-w-0 flex-1 flex-col items-center gap-1 rounded-[18px] px-2 py-1.5 text-[11px] font-bold transition",
+                "flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-[18px] px-2.5 py-2 text-[11px] font-bold transition",
                 active
                   ? "text-[#ED3500]"
                   : "text-[#667085] hover:text-[#ED3500]"

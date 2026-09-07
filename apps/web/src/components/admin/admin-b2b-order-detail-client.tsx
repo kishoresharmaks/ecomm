@@ -24,8 +24,7 @@ import {
   AdminStatusNotice,
   AdminTabs,
 } from "@/components/admin/admin-ux";
-import { indihubFetch, userFacingApiErrorMessage } from "@/lib/api";
-import { openB2BPurchaseOrderDocument } from "@/lib/b2b-po-documents";
+import { transportLabel } from "@/components/b2b/b2b-ui";
 import {
   b2bFinalDocumentLabel,
   type B2BOrder,
@@ -33,10 +32,12 @@ import {
   type B2BPaymentProof,
   type B2BPaymentStatus,
 } from "@/lib/business-buyer-api";
+import { getAdminB2BOperation } from "@/lib/b2b-operations-api";
 import {
   rejectAdminB2BPaymentProof,
   verifyAdminB2BPaymentProof,
 } from "@/lib/admin-b2b-payments-api";
+import { userFacingApiErrorMessage, buildAuthHeaders } from "@/lib/api";
 
 type B2BOrderWithAdminDetail = B2BOrder & {
   paidAt?: string | null;
@@ -86,15 +87,11 @@ export function AdminB2BOrderDetailPageClient({ orderNumber }: { orderNumber: st
     queryKey: ["admin-b2b-order", orderNumber, auth.authHeaders],
     enabled: auth.isAuthenticated,
     queryFn: () =>
-      indihubFetch<B2BOrderWithAdminDetail>(
-        `/api/admin/b2b-orders/${encodeURIComponent(orderNumber)}`,
-        undefined,
-        auth.authHeaders,
-      ),
+      getAdminB2BOperation(auth.authHeaders, orderNumber) as Promise<B2BOrderWithAdminDetail>,
   });
 
   const actionMutation = useMutation({
-    mutationFn: ({
+    mutationFn: async ({
       path,
       method = "PATCH",
       payload,
@@ -102,12 +99,21 @@ export function AdminB2BOrderDetailPageClient({ orderNumber }: { orderNumber: st
       path: string;
       method?: "PATCH" | "POST";
       payload: Record<string, unknown>;
-    }) =>
-      indihubFetch<B2BOrderWithAdminDetail>(
-        `/api/admin/b2b-orders/${encodeURIComponent(orderNumber)}${path}`,
-        { method, body: JSON.stringify(payload) },
-        auth.authHeaders,
-      ),
+    }) => {
+      const response = await fetch(`/api/admin/b2b-orders/${encodeURIComponent(orderNumber)}${path}`, {
+        method,
+        headers: {
+          "content-type": "application/json",
+          ...(await buildAuthHeaders(auth.authHeaders)),
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        const text = await response.text().catch(() => "");
+        throw new Error(text || `Request failed with status ${response.status}`);
+      }
+      return (await response.json()) as B2BOrderWithAdminDetail;
+    },
     onSuccess: async () => {
       setNotice({ tone: "success", message: "B2B order updated." });
       await invalidateB2BOrderQueries(queryClient, orderNumber);
@@ -1225,9 +1231,3 @@ function safeJson(value: unknown) {
   }
 }
 
-function transportLabel(value?: string | null) {
-  if (value === "STORE_PICKUP") {
-    return "Store pickup by buyer";
-  }
-  return "Seller-arranged B2B transport";
-}

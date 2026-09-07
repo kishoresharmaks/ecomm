@@ -37,6 +37,7 @@ import {
   B2BStatusPill,
   formatDateTime,
   formatMoney,
+  transportLabel,
 } from "./b2b-ui";
 
 type RealtimeMessageEvent = {
@@ -120,11 +121,16 @@ export function B2BEnquiryDetailClient({ enquiryId }: { enquiryId: string }) {
 
     let socket: Socket | null = null;
     let mounted = true;
+    let currentToken: string | undefined;
 
     async function connect() {
       const token = await auth.authHeaders.getBearerToken?.().catch(() => auth.authHeaders.bearerToken);
-      if (!mounted) {
-        return;
+      if (!mounted) return;
+      if (token === currentToken && socket?.connected) return;
+      currentToken = token;
+      if (socket) {
+        socket.removeAllListeners();
+        socket.disconnect();
       }
       socket = io(`${apiBaseUrl}/b2b`, {
         auth: {
@@ -136,15 +142,17 @@ export function B2BEnquiryDetailClient({ enquiryId }: { enquiryId: string }) {
         transports: ["websocket"],
       });
 
-      socket.on("connect", () => socket?.emit("b2b.enquiry.join", { enquiryId }));
+      socket.on("connect", () => {
+        if (!mounted) return;
+        socket?.emit("b2b.enquiry.join", { enquiryId });
+      });
       socket.io.on("reconnect", () => {
+        if (!mounted) return;
         socket?.emit("b2b.enquiry.join", { enquiryId });
         void queryClient.invalidateQueries({ queryKey: ["b2b-enquiry", auth.authKey, enquiryId] });
       });
       socket.on("b2b.enquiry.message", (payload: RealtimeMessageEvent) => {
-        if (payload.enquiryId !== enquiryId) {
-          return;
-        }
+        if (payload.enquiryId !== enquiryId || !mounted) return;
         const nearBottom = isNearBottom();
         setMessages((current) =>
           orderMessages([
@@ -166,12 +174,19 @@ export function B2BEnquiryDetailClient({ enquiryId }: { enquiryId: string }) {
         }
       });
       socket.on("b2b.enquiry.status_changed", (payload: RealtimeStatusEvent) => {
-        if (payload.enquiryId === enquiryId) {
+        if (payload.enquiryId === enquiryId && mounted) {
           setLiveStatus(payload.data.newStatus);
         }
       });
       socket.on("b2b.enquiry.quotation_added", () => {
+        if (!mounted) return;
         void queryClient.invalidateQueries({ queryKey: ["b2b-enquiry", auth.authKey, enquiryId] });
+      });
+      socket.on("connect_error", () => {
+        if (!mounted) return;
+        setTimeout(() => {
+          if (mounted && !socket?.connected) void connect();
+        }, 5000);
       });
     }
 
@@ -180,6 +195,7 @@ export function B2BEnquiryDetailClient({ enquiryId }: { enquiryId: string }) {
       mounted = false;
       socket?.emit("b2b.enquiry.leave", { enquiryId });
       socket?.disconnect();
+      socket = null;
     };
   }, [auth.authHeaders, auth.authKey, auth.enabled, enquiryId, queryClient]);
 
@@ -581,13 +597,6 @@ function QuotationCard({
       ) : null}
     </article>
   );
-}
-
-function transportLabel(value?: string | null) {
-  if (value === "STORE_PICKUP") {
-    return "Store pickup by buyer";
-  }
-  return "Seller-arranged B2B transport";
 }
 
 function MessageBubble({ message, isSelf }: { message: B2BEnquiryMessage; isSelf: boolean }) {

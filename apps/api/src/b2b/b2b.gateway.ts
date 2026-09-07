@@ -1,4 +1,4 @@
-import { Inject } from "@nestjs/common";
+import { Inject, Logger } from "@nestjs/common";
 import {
   ConnectedSocket,
   MessageBody,
@@ -25,6 +25,7 @@ type B2BSocket = Socket & { data: { user?: RequestUser } };
 export class B2BGateway implements OnGatewayConnection, OnGatewayInit {
   @WebSocketServer()
   private server!: Server;
+  private readonly logger = new Logger(B2BGateway.name);
 
   constructor(
     @Inject(B2BService) private readonly b2bService: B2BService,
@@ -43,7 +44,8 @@ export class B2BGateway implements OnGatewayConnection, OnGatewayInit {
   async handleConnection(client: B2BSocket) {
     try {
       client.data.user = await this.resolveUser(client);
-    } catch {
+    } catch (error) {
+      this.logger.warn(`Socket connection rejected for client ${client.id}: ${error instanceof Error ? error.message : String(error)}`);
       client.disconnect(true);
     }
   }
@@ -104,7 +106,7 @@ export class B2BGateway implements OnGatewayConnection, OnGatewayInit {
     }
 
     const user = await this.prisma.client.user.findFirst({
-      where: clerkUserId ? { clerkUserId } : { id: platformUserId as string },
+      where: clerkUserId ? { clerkUserId } : { id: platformUserId! },
       include: {
         userRoles: {
           include: {

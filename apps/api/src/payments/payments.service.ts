@@ -675,6 +675,23 @@ export class PaymentsService {
       providerPaymentId: razorpayPayment.providerPaymentId,
     });
 
+    const linkedB2BOrder = await this.prisma.client.b2BOrder.findFirst({
+      where: { orderId: order.id },
+    });
+    if (linkedB2BOrder) {
+      await this.prisma.client.b2BPaymentRecord.updateMany({
+        where: {
+          b2bOrderId: linkedB2BOrder.id,
+          status: { in: [B2BPaymentRecordStatus.PENDING, B2BPaymentRecordStatus.FAILED] },
+          providerPaymentId: null,
+        },
+        data: {
+          status: B2BPaymentRecordStatus.REJECTED,
+          rejectionReason: "Online payment was cancelled by the buyer.",
+        },
+      });
+    }
+
     return { orderNumber, cancelled: true };
   }
 

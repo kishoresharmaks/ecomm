@@ -36,6 +36,15 @@ const nextConfig = {
   allowedDevOrigins,
   poweredByHeader: false,
   compress: true,
+  env: {
+    // Public mirror of the backend B2B_ORDER_TO_CASH_V2_ENABLED. Falls back
+    // to the backend value when NEXT_PUBLIC_B2B_ORDER_TO_CASH_V2_ENABLED is
+    // not set, so deployments only need to override it explicitly to diverge.
+    NEXT_PUBLIC_B2B_ORDER_TO_CASH_V2_ENABLED:
+      process.env.NEXT_PUBLIC_B2B_ORDER_TO_CASH_V2_ENABLED
+      ?? process.env.B2B_ORDER_TO_CASH_V2_ENABLED
+      ?? "false",
+  },
   experimental: {
     ...(isWindows ? { workerThreads: true } : {}),
     optimizePackageImports: [

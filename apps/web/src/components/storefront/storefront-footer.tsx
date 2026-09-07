@@ -249,7 +249,7 @@ function NewsletterForm() {
           tabIndex={-1}
           autoComplete="off"
           aria-hidden="true"
-          style={{ position: "absolute", left: "-9999px", opacity: 0 }}
+          className="absolute -left-[9999px] opacity-0"
         />
         <span className="grid w-11 place-items-center text-[#ED3500]">
           <Mail className="h-4 w-4" aria-hidden="true" />
@@ -278,7 +278,7 @@ function NewsletterForm() {
         </button>
       </form>
       {message ? (
-        <p className={`mt-2 text-xs font-semibold ${status === "success" ? "text-[#059669]" : "text-[#DC2626]"}`}>
+        <p role="status" className={`mt-2 text-xs font-semibold ${status === "success" ? "text-[#059669]" : "text-[#DC2626]"}`}>
           {message}
         </p>
       ) : null}

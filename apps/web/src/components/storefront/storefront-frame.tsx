@@ -27,7 +27,7 @@ export function StorefrontFrame({
           <StorefrontHeader initialMenu={initialMenus?.header} />
         </Suspense>
         <div className="flex flex-1 flex-col pb-28 lg:pb-0">
-          <main className="flex-1">
+          <main id="main-content" className="flex-1">
             {children}
           </main>
           <StorefrontFooter initialFooterMenu={initialMenus?.footer} initialLegalMenu={initialMenus?.legal} />

@@ -64,6 +64,7 @@ type PolicyName =
   | "searchAuthenticated"
   | "searchSuggestionsAnonymous"
   | "searchSuggestionsAuthenticated"
+  | "b2bEnquiry"
   | "public";
 
 const oneMinute = 60_000;
@@ -116,6 +117,12 @@ const defaultPolicies: Record<PolicyName, RateLimitPolicy> = {
     max: 60,
     windowMs: oneMinute,
     message: "Too many search suggestions. Please wait a minute and try again.",
+  },
+  b2bEnquiry: {
+    name: "b2b-enquiry",
+    max: 5,
+    windowMs: oneMinute,
+    message: "Too many enquiry submissions. Please wait a minute and try again.",
   },
   public: {
     name: "public",
@@ -264,6 +271,13 @@ export class RequestRateLimiter {
       return "admin";
     }
 
+    if (
+      route.pathname === "/b2b/enquiries" &&
+      route.method === "POST"
+    ) {
+      return "b2bEnquiry";
+    }
+
     if (route.pathname.startsWith("/products/") && route.method === "GET") {
       return "productDetail";
     }
@@ -392,6 +406,7 @@ export function rateLimitOptionsFromEnv(env: NodeJS.ProcessEnv = process.env): R
       searchAuthenticated: maxOverride(env.INDIHUB_RATE_LIMIT_SEARCH_AUTH_PER_MINUTE),
       searchSuggestionsAnonymous: maxOverride(env.INDIHUB_RATE_LIMIT_SEARCH_SUGGESTIONS_ANON_PER_MINUTE),
       searchSuggestionsAuthenticated: maxOverride(env.INDIHUB_RATE_LIMIT_SEARCH_SUGGESTIONS_AUTH_PER_MINUTE),
+      b2bEnquiry: maxOverride(env.INDIHUB_RATE_LIMIT_B2B_ENQUIRY_PER_MINUTE),
       public: maxOverride(env.INDIHUB_RATE_LIMIT_PUBLIC_PER_MINUTE),
     },
   };

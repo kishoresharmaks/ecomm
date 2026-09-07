@@ -61,20 +61,40 @@ export function B2BEnquiryFormClient() {
     onError: (error) => setNotice(error instanceof Error ? error.message : "Enquiry submission failed.")
   });
 
+  function validatePayload(payload: { productId?: string; sellerId?: string; quantity: number; message: string; transportMode?: "STORE_PICKUP" | "SELLER_ARRANGED_TRANSPORT"; transportNote?: string }): string | null {
+    if (!payload.productId && !payload.sellerId) return "Select a product or a seller before submitting.";
+    if (!Number.isFinite(payload.quantity) || payload.quantity <= 0) return "Quantity must be a positive number.";
+    if (!Number.isInteger(payload.quantity)) return "Quantity must be a whole number.";
+    if (payload.transportMode && !["STORE_PICKUP", "SELLER_ARRANGED_TRANSPORT"].includes(payload.transportMode)) return "Invalid transport mode selected.";
+    if (!payload.message.trim() || payload.message.trim().length < 10) return "Please describe your requirements (minimum 10 characters).";
+    return null;
+  }
+
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const productId = optionalFormValue(form, "productId");
     const sellerId = productId ? undefined : optionalFormValue(form, "sellerId");
     const transportNote = optionalFormValue(form, "transportNote");
+    const transportModeRaw = formValue(form, "transportMode");
+    const transportMode = transportModeRaw === "STORE_PICKUP" ? "STORE_PICKUP" : transportModeRaw === "SELLER_ARRANGED_TRANSPORT" ? "SELLER_ARRANGED_TRANSPORT" : undefined;
+    const quantityValue = Number(formValue(form, "quantity"));
+    const messageValue = formValue(form, "message");
+
     const payload = {
       ...(productId ? { productId } : {}),
       ...(sellerId ? { sellerId } : {}),
-      quantity: Number(formValue(form, "quantity")),
-      message: formValue(form, "message"),
-      transportMode: formValue(form, "transportMode") as "STORE_PICKUP" | "SELLER_ARRANGED_TRANSPORT",
+      quantity: quantityValue,
+      message: messageValue,
+      ...(transportMode ? { transportMode } : {}),
       ...(transportNote ? { transportNote } : {})
     };
+
+    const validationError = validatePayload(payload);
+    if (validationError) {
+      setNotice(validationError);
+      return;
+    }
 
     setNotice(null);
     createMutation.mutate(payload);

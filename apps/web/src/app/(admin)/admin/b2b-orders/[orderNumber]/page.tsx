@@ -1,6 +1,7 @@
 import { AdminB2BOrderDetailPageClient } from "@/components/admin/admin-b2b-order-detail-client";
 import { AdminPortalShell } from "@/components/admin/admin-portal-shell";
 import { AdminB2BV2OperationsPanel } from "@/components/b2b/b2b-v2-operations-panel";
+import { isB2BV2Enabled } from "@/lib/b2b-feature-flags";
 
 export default async function AdminB2BOrderDetailPage({
   params,
@@ -16,7 +17,7 @@ export default async function AdminB2BOrderDetailPage({
     >
       <div className="grid gap-5">
         <AdminB2BOrderDetailPageClient orderNumber={orderNumber} />
-        <AdminB2BV2OperationsPanel orderNumber={orderNumber} />
+        {isB2BV2Enabled() ? <AdminB2BV2OperationsPanel orderNumber={orderNumber} /> : null}
       </div>
     </AdminPortalShell>
   );

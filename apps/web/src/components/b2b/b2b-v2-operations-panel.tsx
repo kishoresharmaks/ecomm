@@ -77,6 +77,7 @@ function BuyerOperationsBody({
   const [disputeReason, setDisputeReason] = useState("");
   const [downloading, setDownloading] = useState(false);
   const [payingScheduleId, setPayingScheduleId] = useState<string | null>(null);
+  const [selectedShipmentId, setSelectedShipmentId] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const action = useMutation({
     mutationFn: ({
@@ -94,6 +95,7 @@ function BuyerOperationsBody({
     onError: (error) => setNotice(userFacingApiErrorMessage(error)),
   });
   const primaryShipment = order.shipments[0];
+  const selectedShipment = order.shipments.find((s) => s.id === selectedShipmentId) ?? primaryShipment;
 
   async function download(path: string, fallbackFileName: string) {
     try {
@@ -245,39 +247,53 @@ function BuyerOperationsBody({
         </div>
       </B2BPanel>
 
-      {primaryShipment?.proofOfDelivery ? (
+      {selectedShipment?.proofOfDelivery ? (
         <B2BPanel>
           <SectionHeading title="Delivery decision" description="Review the authenticated POD before accepting or disputing delivery." />
+          {order.shipments.length > 1 ? (
+            <div className="mt-4">
+              <label className="block text-xs font-bold uppercase tracking-wide text-[#667085]">Select shipment</label>
+              <select
+                value={selectedShipmentId ?? primaryShipment?.id ?? ""}
+                onChange={(event) => setSelectedShipmentId(event.target.value)}
+                className="mt-1 h-10 rounded-md border border-[#D8E2EA] bg-white px-3 text-sm font-bold"
+              >
+                {order.shipments.map((shipment) => (
+                  <option key={shipment.id} value={shipment.id}>{shipment.shipmentNumber}</option>
+                ))}
+              </select>
+            </div>
+          ) : null}
           <div className="mt-4 grid gap-3 text-sm font-semibold text-[#667085] md:grid-cols-3">
-            <Info label="Receiver" value={primaryShipment.proofOfDelivery.receiverName} />
-            <Info label="Delivered" value={formatDateTime(primaryShipment.proofOfDelivery.deliveredAt)} />
-            <Info label="Acceptance due" value={formatDateTime(primaryShipment.acceptanceDueAt)} />
+            <Info label="Receiver" value={selectedShipment.proofOfDelivery.receiverName} />
+            <Info label="Delivered" value={formatDateTime(selectedShipment.proofOfDelivery.deliveredAt)} />
+            <Info label="Acceptance due" value={formatDateTime(selectedShipment.acceptanceDueAt)} />
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
-            {podEvidenceCount(primaryShipment.proofOfDelivery.proofFileKeys) > 0 ? (
+            {podEvidenceCount(selectedShipment.proofOfDelivery.proofFileKeys) > 0 ? (
               <Button
                 type="button"
                 variant="outline"
                 disabled={downloading}
                 onClick={() =>
                   void download(
-                    `/api/b2b/v2/orders/${encodeURIComponent(order.orderNumber)}/shipments/${primaryShipment.id}/pod/0`,
-                    `${primaryShipment.shipmentNumber}-pod`,
+                    `/api/b2b/v2/orders/${encodeURIComponent(order.orderNumber)}/shipments/${selectedShipment.id}/pod/0`,
+                    `${selectedShipment.shipmentNumber}-pod`,
                   )
                 }
               >
                 <Download className="h-4 w-4" aria-hidden="true" /> Download POD
               </Button>
             ) : null}
-            {primaryShipment.proofOfDelivery.signatureFileKey ? (
+            {selectedShipment.proofOfDelivery.signatureFileKey ? (
               <Button
                 type="button"
                 variant="outline"
                 disabled={downloading}
                 onClick={() =>
                   void download(
-                    `/api/b2b/v2/orders/${encodeURIComponent(order.orderNumber)}/shipments/${primaryShipment.id}/pod/signature`,
-                    `${primaryShipment.shipmentNumber}-signature`,
+                    `/api/b2b/v2/orders/${encodeURIComponent(order.orderNumber)}/shipments/${selectedShipment.id}/pod/signature`,
+                    `${selectedShipment.shipmentNumber}-signature`,
                   )
                 }
               >
@@ -285,13 +301,13 @@ function BuyerOperationsBody({
               </Button>
             ) : null}
           </div>
-          {primaryShipment.acceptanceStatus === "PENDING" ? (
+          {selectedShipment.acceptanceStatus === "PENDING" ? (
             <div className="mt-4 flex flex-wrap gap-2">
               <Button
                 type="button"
                 onClick={() =>
                   action.mutate({
-                    path: `/api/b2b/v2/orders/${encodeURIComponent(order.orderNumber)}/shipments/${primaryShipment.id}/accept`,
+                    path: `/api/b2b/v2/orders/${encodeURIComponent(order.orderNumber)}/shipments/${selectedShipment.id}/accept`,
                     payload: { version: order.version },
                   })
                 }
@@ -304,7 +320,7 @@ function BuyerOperationsBody({
                 variant="outline"
                 onClick={() =>
                   action.mutate({
-                    path: `/api/b2b/v2/orders/${encodeURIComponent(order.orderNumber)}/shipments/${primaryShipment.id}/dispute`,
+                    path: `/api/b2b/v2/orders/${encodeURIComponent(order.orderNumber)}/shipments/${selectedShipment.id}/dispute`,
                     payload: { version: order.version, disputeReason: disputeReason.trim() },
                   })
                 }
@@ -319,7 +335,7 @@ function BuyerOperationsBody({
                 className="h-10 min-w-64 flex-1 rounded-md border border-[#D8E2EA] px-3 text-sm font-semibold"
               />
             </div>
-          ) : <B2BStatusPill status={primaryShipment.acceptanceStatus} />}
+          ) : <B2BStatusPill status={selectedShipment.acceptanceStatus} />}
         </B2BPanel>
       ) : null}
 

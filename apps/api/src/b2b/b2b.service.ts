@@ -350,6 +350,12 @@ const b2bPurchaseOrderScanStatus = "NOT_SCANNED" as const;
 const b2bMessageNotificationThrottleMinutes = 10;
 const defaultB2BCommissionRateBps = 200;
 const defaultB2BPaymentDueDays = 7;
+const B2B_PROFORMA_EXPIRY_DAYS = 15;
+const B2B_MS_PER_SECOND = 1000;
+const B2B_SECONDS_PER_MINUTE = 60;
+const B2B_MINUTES_PER_HOUR = 60;
+const B2B_HOURS_PER_DAY = 24;
+const B2B_DAYS_TO_MILLISECONDS = B2B_HOURS_PER_DAY * B2B_MINUTES_PER_HOUR * B2B_SECONDS_PER_MINUTE * B2B_MS_PER_SECOND;
 const b2bCommissionSettingKey = "b2b.commission.rate_bps";
 const b2bFulfilmentPaymentStatuses = new Set<B2BPaymentStatus>([
   B2BPaymentStatus.PAID,
@@ -2239,7 +2245,7 @@ export class B2BService {
     };
 
     const issuedAt = new Date();
-    const expiresAt = new Date(issuedAt.getTime() + 15 * 24 * 60 * 60 * 1000);
+    const expiresAt = new Date(issuedAt.getTime() + B2B_PROFORMA_EXPIRY_DAYS * B2B_DAYS_TO_MILLISECONDS);
     const fileKey = await this.generateAndStoreB2BProformaInvoice(
       {
         ...existing,
@@ -3369,8 +3375,8 @@ export class B2BService {
     const buyerPayableAmountPaise = (subtotalPaise ?? 0) + transportChargePaise;
     const orderNumber = await this.createUniqueB2BOrderNumber();
     const proformaInvoiceNumber = await this.createUniqueProformaInvoiceNumber();
-    const proformaExpiresAt = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000);
-    const paymentDueAt = new Date(Date.now() + defaultB2BPaymentDueDays * 24 * 60 * 60 * 1000);
+    const proformaExpiresAt = new Date(Date.now() + B2B_PROFORMA_EXPIRY_DAYS * B2B_DAYS_TO_MILLISECONDS);
+    const paymentDueAt = new Date(Date.now() + defaultB2BPaymentDueDays * B2B_DAYS_TO_MILLISECONDS);
 
     const createdOrder = await this.prisma.client.$transaction(async (tx) => {
       const b2bOrder = await tx.b2BOrder.create({
@@ -4453,7 +4459,7 @@ export class B2BService {
     eventCode: string,
   ) {
     const recentSince = new Date(
-      Date.now() - b2bMessageNotificationThrottleMinutes * 60 * 1000,
+      Date.now() - b2bMessageNotificationThrottleMinutes * B2B_SECONDS_PER_MINUTE * B2B_MS_PER_SECOND,
     );
     const recent = await this.prisma.client.notificationLog.findMany({
       where: {

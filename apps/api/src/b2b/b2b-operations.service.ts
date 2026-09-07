@@ -183,6 +183,7 @@ const orderOperationsInclude = {
 
 @Injectable()
 export class B2BOperationsService {
+  private readonly paymentStaleLockMs = 2 * 60 * 1000;
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(StorageService) private readonly storage: StorageService,
@@ -733,7 +734,7 @@ export class B2BOperationsService {
           settlementEligibleAt: null,
         },
       );
-      await this.enqueueOutbox(tx, order.id, "order.cancelled", {
+      await this.enqueueOutboxForOrder( order.id, "order.cancelled", {
         orderNumber: order.orderNumber,
         reason: dto.reason.trim(),
       });
@@ -843,7 +844,7 @@ export class B2BOperationsService {
           payload: { amendmentId: amendment.id },
         },
       });
-      await this.enqueueOutbox(tx, order.id, "order.amendment.requested", {
+      await this.enqueueOutboxForOrder( order.id, "order.amendment.requested", {
         orderNumber: order.orderNumber,
         amendmentNumber: amendment.amendmentNumber,
       });
@@ -1096,7 +1097,7 @@ export class B2BOperationsService {
           settlementEligibleAt: null,
         },
       );
-      await this.enqueueOutbox(tx, order.id, "order.amended", {
+      await this.enqueueOutboxForOrder( order.id, "order.amended", {
         orderNumber: order.orderNumber,
         amendmentNumber: amendment.amendmentNumber,
       });
@@ -1913,7 +1914,7 @@ export class B2BOperationsService {
           taxInvoiceIssuedAt: document.issueDate ?? new Date(),
         },
       );
-      await this.enqueueOutbox(tx, order.id, "invoice.issued", {
+      await this.enqueueOutboxForOrder( order.id, "invoice.issued", {
         orderNumber: order.orderNumber,
         taxDocumentId: document.id,
         documentNumber: document.documentNumber,
@@ -2064,7 +2065,7 @@ export class B2BOperationsService {
           transportTrackingRef: transportReference,
         },
       );
-      await this.enqueueOutbox(tx, order.id, "shipment.dispatched", {
+      await this.enqueueOutboxForOrder( order.id, "shipment.dispatched", {
         orderNumber: order.orderNumber,
         shipmentNumber: shipment.shipmentNumber,
       });
@@ -2162,7 +2163,7 @@ export class B2BOperationsService {
         { shipmentId: shipment.id, podId: pod.id },
         { transportStatus: "DELIVERED", transportDeliveredAt: deliveredAt },
       );
-      await this.enqueueOutbox(tx, shipment.order.id, "shipment.delivered", {
+      await this.enqueueOutboxForOrder( shipment.order.id, "shipment.delivered", {
         orderNumber: shipment.order.orderNumber,
         shipmentNumber: shipment.shipmentNumber,
         podId: pod.id,
@@ -2337,7 +2338,7 @@ export class B2BOperationsService {
             : {},
         );
         if (canClose) {
-          await this.enqueueOutbox(tx, order.id, "order.closed", {
+          await this.enqueueOutboxForOrder( order.id, "order.closed", {
             orderNumber: order.orderNumber,
             reason: "Delivery accepted and buyer payment cleared.",
           });
@@ -2742,7 +2743,7 @@ export class B2BOperationsService {
       return this.onlinePaymentOrderResponse(keyId, order.orderNumber, payment);
     }
 
-    const staleLockBefore = new Date(Date.now() - 2 * 60 * 1000);
+    const staleLockBefore = new Date(Date.now() - this.paymentStaleLockMs);
     const claimed = await this.prisma.client.b2BPaymentRecord.updateMany({
       where: {
         id: payment.id,
@@ -2959,7 +2960,7 @@ export class B2BOperationsService {
           providerPaymentId: verified.providerPaymentId,
         },
       );
-      await this.enqueueOutbox(tx, current.b2bOrderId, "payment.verified", {
+      await this.enqueueOutboxForOrder( current.b2bOrderId, "payment.verified", {
         paymentId: current.id,
         amountPaise: current.amountPaise,
         method: settlementMethod,
@@ -3025,7 +3026,7 @@ export class B2BOperationsService {
         },
       });
       await this.recordMutation(tx, actor.id, payment.b2bOrderId, "payment-verify", key, dto);
-      await this.enqueueOutbox(tx, payment.b2bOrderId, "payment.verified", {
+      await this.enqueueOutboxForOrder( payment.b2bOrderId, "payment.verified", {
         paymentId: payment.id,
         amountPaise: payment.amountPaise,
         status: dto.status,
@@ -3591,7 +3592,7 @@ export class B2BOperationsService {
           settlementEligibleAt: closesOrder ? now : null,
         },
       );
-      await this.enqueueOutbox(tx, order.id, "order.dispute.resolved", {
+      await this.enqueueOutboxForOrder( order.id, "order.dispute.resolved", {
         orderNumber: order.orderNumber,
         caseNumber: supportCase.caseNumber,
         resolutionType: dto.resolutionType,
@@ -3640,7 +3641,7 @@ export class B2BOperationsService {
             description: line.description,
             quantity: line.quantity,
             targetPricePaise: line.unitPricePaise,
-            note: `Copied from completed order ${order.orderNumber}.`,
+            note: `Copied from completed order ${order.orderNumber} line ${line.lineNumber}.`,
           })),
         },
       },
@@ -4300,6 +4301,9 @@ export class B2BOperationsService {
         ...extraData,
         status: nextStatus,
         version: { increment: 1 },
+        paymentStatus: order.paymentStatus,
+        paidAmountPaise: order.paidAmountPaise,
+        paidAt: order.paidAt,
       },
     });
     if (updated.count !== 1) {
@@ -4589,7 +4593,7 @@ export class B2BOperationsService {
           payload: { paymentRecordId: payment.id },
         },
       });
-      await this.enqueueOutbox(tx, payment.b2bOrderId, "order.closed", {
+      await this.enqueueOutboxForOrder( payment.b2bOrderId, "order.closed", {
         paymentRecordId: payment.id,
         reason: "Delivery accepted and buyer payment cleared.",
       });
@@ -4629,7 +4633,7 @@ export class B2BOperationsService {
         issuedAt: new Date(),
       },
     });
-    await this.enqueueOutbox(tx, payment.b2bOrderId, "receipt.issued", {
+    await this.enqueueOutboxForOrder(payment.b2bOrderId, "receipt.issued", {
       paymentId: payment.id,
       voucherNumber: receipt.voucherNumber,
       amountPaise: payment.amountPaise,
@@ -4696,6 +4700,34 @@ export class B2BOperationsService {
     });
     for (const connection of connections) {
       await tx.b2BIntegrationOutbox.create({
+        data: {
+          eventId: randomUUID(),
+          connectionId: connection.id,
+          b2bOrderId,
+          eventType,
+          aggregateType: "B2BOrder",
+          aggregateId: b2bOrderId,
+          payload: payload as Prisma.InputJsonValue,
+          nextAttemptAt: new Date(),
+        },
+      });
+    }
+  }
+
+  async enqueueOutboxForOrder(
+    b2bOrderId: string,
+    eventType: string,
+    payload: Record<string, unknown>,
+  ) {
+    const connections = await this.prisma.client.b2BErpConnection.findMany({
+      where: {
+        status: B2BErpConnectionStatus.ACTIVE,
+        subscribedEvents: { has: eventType },
+      },
+      select: { id: true },
+    });
+    for (const connection of connections) {
+      await this.prisma.client.b2BIntegrationOutbox.create({
         data: {
           eventId: randomUUID(),
           connectionId: connection.id,

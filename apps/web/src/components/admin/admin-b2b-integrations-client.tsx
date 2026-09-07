@@ -6,6 +6,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
 import { useAdminAuth } from "./admin-auth-context";
 import { AdminPanel, AdminStatusNotice } from "./admin-ux";
+import { B2BEmptyState } from "@/components/b2b/b2b-ui";
 import { userFacingApiErrorMessage } from "@/lib/api";
 import {
   b2bAction,
@@ -183,6 +184,16 @@ export function AdminB2BIntegrationsClient() {
                   </td>
                 </tr>
               ))}
+              {!exports.isLoading && !exports.data?.items.length ? (
+                <tr>
+                  <td colSpan={6} className="px-3 py-6">
+                    <B2BEmptyState
+                      title="No ERP exports yet"
+                      message="Generate a CSV or JSON export above to seed the history log with a hashed reconciliation file."
+                    />
+                  </td>
+                </tr>
+              ) : null}
             </tbody>
           </table>
         </div>
@@ -251,7 +262,12 @@ export function AdminB2BIntegrationsClient() {
               <Button type="button" variant="outline" disabled={action.isPending} onClick={() => action.mutate({ method: "PATCH", path: `/api/admin/b2b-integrations/connections/${connection.id}`, payload: { status: connection.status === "ACTIVE" ? "PAUSED" : "ACTIVE" } })}>{connection.status === "ACTIVE" ? "Pause" : "Activate"}</Button>
             </div>
           ))}
-          {!connections.isLoading && !connections.data?.length ? <p className="text-sm font-semibold text-[#667085]">No ERP connections configured.</p> : null}
+          {!connections.isLoading && !connections.data?.length ? (
+            <B2BEmptyState
+              title="No ERP connections yet"
+              message="Add a webhook connection above to begin signing outbound lifecycle events for your finance or ERP system."
+            />
+          ) : null}
         </div>
       </AdminPanel>
 
@@ -263,7 +279,46 @@ export function AdminB2BIntegrationsClient() {
         <div className="mt-4 overflow-x-auto">
           <table className="min-w-full text-left text-sm">
             <thead className="border-b border-[#D8E2EA] text-xs font-black uppercase tracking-wide text-[#667085]"><tr><th className="px-3 py-3">Event</th><th className="px-3 py-3">Status</th><th className="px-3 py-3">Attempts</th><th className="px-3 py-3">Response</th><th className="px-3 py-3">Created</th><th className="px-3 py-3">Action</th></tr></thead>
-            <tbody>{outbox.data?.items.map((event) => <tr key={event.id} className="border-b border-[#EEF2F6]"><td className="px-3 py-3"><p className="font-black">{humanize(event.eventType)}</p><p className="text-xs font-semibold text-[#667085]">{event.eventId}</p></td><td className="px-3 py-3"><StatusBadge tone={event.status === "DELIVERED" ? "success" : event.status === "DEAD_LETTER" ? "danger" : "warning"}>{humanize(event.status)}</StatusBadge></td><td className="px-3 py-3 font-bold">{event.attemptCount}</td><td className="px-3 py-3 text-xs font-semibold text-[#667085]">{event.responseCode ?? event.lastError ?? "Pending"}</td><td className="px-3 py-3 text-xs font-semibold">{dateTime(event.createdAt)}</td><td className="px-3 py-3">{["FAILED", "DEAD_LETTER"].includes(event.status) ? <Button type="button" variant="outline" size="sm" onClick={() => action.mutate({ path: `/api/admin/b2b-integrations/outbox/${event.id}/replay`, payload: {} })}><RotateCcw className="h-4 w-4" aria-hidden="true" /> Replay</Button> : null}</td></tr>)}</tbody>
+            <tbody>
+              {outbox.data?.items.map((event) => (
+                <tr key={event.id} className="border-b border-[#EEF2F6]">
+                  <td className="px-3 py-3">
+                    <p className="font-black">{humanize(event.eventType)}</p>
+                    <p className="text-xs font-semibold text-[#667085]">{event.eventId}</p>
+                  </td>
+                  <td className="px-3 py-3">
+                    <StatusBadge tone={event.status === "DELIVERED" ? "success" : event.status === "DEAD_LETTER" ? "danger" : "warning"}>
+                      {humanize(event.status)}
+                    </StatusBadge>
+                  </td>
+                  <td className="px-3 py-3 font-bold">{event.attemptCount}</td>
+                  <td className="px-3 py-3 text-xs font-semibold text-[#667085]">{event.responseCode ?? event.lastError ?? "Pending"}</td>
+                  <td className="px-3 py-3 text-xs font-semibold">{dateTime(event.createdAt)}</td>
+                  <td className="px-3 py-3">
+                    {["FAILED", "DEAD_LETTER"].includes(event.status) ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => action.mutate({ path: `/api/admin/b2b-integrations/outbox/${event.id}/replay`, payload: {} })}
+                      >
+                        <RotateCcw className="h-4 w-4" aria-hidden="true" /> Replay
+                      </Button>
+                    ) : null}
+                  </td>
+                </tr>
+              ))}
+              {!outbox.isLoading && !outbox.data?.items.length ? (
+                <tr>
+                  <td colSpan={6} className="px-3 py-6">
+                    <B2BEmptyState
+                      title="No webhook deliveries yet"
+                      message="Outbound lifecycle events will appear here once a connection starts firing."
+                    />
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
           </table>
         </div>
         {(outbox.data?.total ?? 0) > 0 ? <div className="mt-4 flex items-center justify-between gap-3"><p className="text-sm font-semibold text-[#667085]">Page {outboxPage} of {outbox.data?.totalPages ?? 1}</p><div className="flex gap-2"><Button type="button" variant="outline" disabled={outboxPage <= 1} onClick={() => setOutboxPage((value) => value - 1)}>Previous</Button><Button type="button" variant="outline" disabled={outboxPage >= (outbox.data?.totalPages ?? 1)} onClick={() => setOutboxPage((value) => value + 1)}>Next</Button></div></div> : null}
@@ -274,10 +329,6 @@ export function AdminB2BIntegrationsClient() {
 
 function Field({ label, name, type = "text", placeholder, required, minLength }: { label: string; name: string; type?: string; placeholder?: string; required?: boolean; minLength?: number }) {
   return <label className="space-y-2"><span className="block text-xs font-black uppercase tracking-wide text-[#667085]">{label}</span><input name={name} type={type} placeholder={placeholder} required={required} minLength={minLength} autoComplete="off" className="h-11 w-full rounded-md border border-[#D8E2EA] bg-[#F8FAFC] px-3 text-sm font-semibold outline-none focus:border-[#ED3500] focus:bg-white" /></label>;
-}
-
-function humanize(value: string) {
-  return value.replace(/[._]/g, " ").toLowerCase().replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
 function dateTime(value: string) {

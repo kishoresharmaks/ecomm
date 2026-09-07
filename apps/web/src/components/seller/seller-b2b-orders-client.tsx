@@ -31,6 +31,7 @@ import {
   useSellerAuth,
 } from "./seller-ui";
 import { formatMoney } from "@/lib/storefront-api";
+import { transportLabel } from "./b2b-ui";
 
 const orderStatuses = ["", "PROFORMA_ISSUED", "PO_SUBMITTED", "PO_ACCEPTED", "IN_FULFILMENT", "FULFILLED", "CANCELLED"];
 
@@ -487,13 +488,6 @@ function payoutStatusText(order: SellerB2BOrder) {
     return "Eligible for payout";
   }
   return "Pending finance review";
-}
-
-function transportLabel(value?: string | null) {
-  if (value === "STORE_PICKUP") {
-    return "Store pickup by buyer";
-  }
-  return "Seller-arranged B2B transport";
 }
 
 function Info({ label, value }: { label: string; value: string }) {

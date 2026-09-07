@@ -151,28 +151,62 @@ export function statusLabel(status?: string | null) {
   return status ? status.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (char) => char.toUpperCase()) : "Not set";
 }
 
-export function statusTone(status?: string | null): StatusTone {
-  if (!status) {
-    return "neutral";
-  }
+export function humanize(value?: string | null): string {
+  if (!value) return "Not set";
+  return value.replace(/[._]/g, " ").toLowerCase().replace(/\b\w/g, (char) => char.toUpperCase());
+}
 
-  if (["ACTIVE", "APPROVED", "RESPONDED", "BUYER_CONFIRMED", "ADMIN_APPROVED", "FINALISED", "CLOSED"].includes(status)) {
+export function statusTone(status?: string | null): StatusTone {
+  const normalized = status ?? "";
+  if (
+    [
+      "ACTIVE",
+      "APPROVED",
+      "PAID",
+      "DELIVERED",
+      "SENT",
+      "COMPLETED",
+      "PUBLISHED",
+      "RESPONDED",
+      "BUYER_CONFIRMED",
+      "ADMIN_APPROVED",
+      "FINALISED",
+      "CLOSED",
+    ].includes(normalized)
+  ) {
     return "success";
   }
-
-  if (status === "NEGOTIATING") {
+  if (normalized === "NEGOTIATING") {
     return "info";
   }
-
-  if (["PENDING", "SUBMITTED", "IN_REVIEW"].includes(status)) {
+  if (
+    [
+      "PENDING",
+      "SUBMITTED",
+      "IN_REVIEW",
+      "PENDING_APPROVAL",
+      "PLACED",
+      "PROCESSING",
+      "DRAFT",
+      "SKIPPED",
+      "OPEN",
+    ].includes(normalized)
+  ) {
     return "warning";
   }
-
-  if (["REJECTED", "SUSPENDED", "CANCELLED"].includes(status)) {
+  if (
+    ["REJECTED", "SUSPENDED", "DISABLED", "FAILED", "CANCELLED", "ARCHIVED"].includes(normalized)
+  ) {
     return "danger";
   }
-
   return "info";
+}
+
+export function transportLabel(value?: string | null) {
+  if (value === "STORE_PICKUP") {
+    return "Store pickup by buyer";
+  }
+  return "Seller-arranged B2B transport";
 }
 
 export function formatDateTime(value?: string | null) {
@@ -198,8 +232,31 @@ export function formatMoney(paise?: number | null) {
   }).format(paise / 100);
 }
 
-export function formValue(form: FormData, name: string) {
-  return String(form.get(name) ?? "").trim();
+export function formValue(form: FormData, name: string, expectedType: "string" | "number" | "boolean" = "string") {
+  const raw = form.get(name);
+  if (raw === null) {
+    return "";
+  }
+
+  switch (expectedType) {
+    case "number": {
+      const parsed = Number(raw);
+      if (!Number.isFinite(parsed)) {
+        throw new TypeError(`Form field "${name}" must be a valid number, got "${raw}".`);
+      }
+      return parsed;
+    }
+    case "boolean": {
+      const asString = String(raw).toLowerCase();
+      if (!["true", "false", "1", "0", "yes", "no"].includes(asString)) {
+        throw new TypeError(`Form field "${name}" must be a valid boolean, got "${raw}".`);
+      }
+      return asString === "true" || asString === "1" || asString === "yes";
+    }
+    case "string":
+    default:
+      return String(raw).trim();
+  }
 }
 
 export function optionalFormValue(form: FormData, name: string) {

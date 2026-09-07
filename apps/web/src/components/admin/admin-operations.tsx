@@ -101,6 +101,7 @@ import {
 import { useLocationAreaStore, useLocationCatalog } from "@/components/locations/location-store";
 import { formatLocalAreaLabel } from "@/components/locations/location-utils";
 import { SellerImageUpload } from "@/components/seller/seller-ui";
+import { statusTone, type StatusTone } from "@/components/b2b/b2b-ui";
 import {
   apiBaseUrl,
   IndihubApiError,
@@ -18419,47 +18420,6 @@ function totalItems<T>(data: PageResult<T> | T[] | undefined, fallback: number) 
   }
 
   return Array.isArray(data) ? data.length : (data.total ?? fallback);
-}
-
-function statusTone(status?: string | null): StatusTone {
-  const normalized = status ?? "";
-  if (
-    [
-      "ACTIVE",
-      "APPROVED",
-      "PAID",
-      "DELIVERED",
-      "SENT",
-      "COMPLETED",
-      "PUBLISHED",
-      "RESPONDED",
-      "BUYER_CONFIRMED",
-      "ADMIN_APPROVED",
-      "FINALISED",
-    ].includes(normalized)
-  ) {
-    return "success";
-  }
-  if (
-    [
-      "PENDING",
-      "PENDING_APPROVAL",
-      "PLACED",
-      "PROCESSING",
-      "IN_REVIEW",
-      "DRAFT",
-      "SKIPPED",
-      "OPEN",
-    ].includes(normalized)
-  ) {
-    return "warning";
-  }
-  if (
-    ["REJECTED", "SUSPENDED", "DISABLED", "FAILED", "CANCELLED", "ARCHIVED"].includes(normalized)
-  ) {
-    return "danger";
-  }
-  return "info";
 }
 
 function orderStatusHelp(status?: string | null) {

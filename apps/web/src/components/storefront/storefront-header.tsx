@@ -266,9 +266,15 @@ export function StorefrontHeader({ initialMenu }: { initialMenu?: CmsMenuItem[] 
               <UtilityLink href="/contact" icon={<CircleHelp className="h-4 w-4" />}>
                 {t("help_support")}
               </UtilityLink>
-              <UtilityLink href="/seller/register" icon={<Store className="h-4 w-4" />}>
-                {t("sell_on_platform")}
-              </UtilityLink>
+              {customerAuth.status === "ready" ? (
+                <UtilityLink href="/seller" icon={<Store className="h-4 w-4" />}>
+                  {t("seller_dashboard")}
+                </UtilityLink>
+              ) : (
+                <UtilityLink href="/seller/register" icon={<Store className="h-4 w-4" />}>
+                  {t("sell_on_platform")}
+                </UtilityLink>
+              )}
             </nav>
           </div>
         </div>

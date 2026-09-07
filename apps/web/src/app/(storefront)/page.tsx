@@ -29,7 +29,10 @@ const getHomePayload = cache((queryKey: string) =>
 );
 
 export async function generateMetadata(): Promise<Metadata> {
-  const [seo, home] = await Promise.all([getHomeSeo(), getHomePayload(homeQueryKey({ limit: 6 }))]);
+  const [seo, home] = await Promise.all([
+    getHomeSeo(),
+    getHomePayload(homeQueryKey(browsingLocationQuery(parseStorefrontLocationCookie(undefined), 6))),
+  ]);
   const bannerImage = home?.banners[0]?.imageUrl ?? home?.banners[0]?.mobileImageUrl;
   const productImage = home?.productRails.featured[0]
     ? primaryImage(home.productRails.featured[0])

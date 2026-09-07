@@ -55,6 +55,9 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
         {gscId ? <meta name="google-site-verification" content={gscId} /> : null}
       </head>
       <body>
+        <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-3 focus:left-3 focus:z-[9999] focus:rounded-lg focus:bg-[#ED3500] focus:px-4 focus:py-2 focus:text-sm focus:font-black focus:text-white focus:shadow-lg">
+          Skip to content
+        </a>
         <noscript>
           <iframe
             src={`https://www.googletagmanager.com/ns.html?id=${primaryGoogleTagManagerId}`}

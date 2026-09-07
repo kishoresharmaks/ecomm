@@ -37,6 +37,7 @@ import {
   formatMoney,
   formValue,
   optionalFormValue,
+  transportLabel,
 } from "./b2b-ui";
 
 const b2bOrderStatuses = ["", "PROFORMA_ISSUED", "PO_SUBMITTED", "PO_ACCEPTED", "IN_FULFILMENT", "FULFILLED", "CANCELLED"];
@@ -722,11 +723,4 @@ function Info({ label, value }: { label: string; value: string }) {
       <p className="mt-1 text-sm font-black text-[#1F2933]">{value}</p>
     </div>
   );
-}
-
-function transportLabel(value?: string | null) {
-  if (value === "STORE_PICKUP") {
-    return "Store pickup by buyer";
-  }
-  return "Seller-arranged B2B transport";
 }
