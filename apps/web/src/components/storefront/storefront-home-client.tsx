@@ -765,7 +765,7 @@ function PersonalizedProductCard({ product }: { product: HomePersonalizedProduct
           <StorefrontImage
             src={product.imageUrl}
             alt={product.name}
-            sizes="164px"
+            sizes="(max-width: 640px) 140px, 160px"
             fallbackLabel={product.categoryName}
             allowExternalRemote
             className="object-contain p-2 transition group-hover:scale-105"

@@ -49,6 +49,7 @@ const nextConfig = {
     remotePatterns: imageRemotePatterns,
     formats: ["image/avif", "image/webp"],
     minimumCacheTTL: 2592000,
+    imageSizes: [16, 32, 48, 64, 96, 128, 200, 256, 320, 384],
   },
   transpilePackages: [
     "@indihub/config",

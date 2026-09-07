@@ -548,7 +548,7 @@ function ProductCard({ product }: { product: ProductSummary }) {
             <StorefrontImage
               src={primaryImage(product)}
               alt={product.name}
-              sizes="164px"
+              sizes="(max-width: 640px) 140px, 160px"
               fallbackLabel={product.category.name}
               allowExternalRemote
               className="object-contain p-2 transition group-hover:scale-105"
