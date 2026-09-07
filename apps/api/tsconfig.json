@@ -2,7 +2,7 @@
   "extends": "@indihub/tsconfig/nestjs.json",
   "compilerOptions": {
     "noEmit": true,
-    "tsBuildInfoFile": "./dist/tsconfig.tsbuildinfo",
+    "tsBuildInfoFile": "./dist/.tsbuildinfo",
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "paths": {

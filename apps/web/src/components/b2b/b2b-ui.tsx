@@ -232,7 +232,10 @@ export function formatMoney(paise?: number | null) {
   }).format(paise / 100);
 }
 
-export function formValue(form: FormData, name: string, expectedType: "string" | "number" | "boolean" = "string") {
+export function formValue(form: FormData, name: string): string;
+export function formValue(form: FormData, name: string, expectedType: "number"): number;
+export function formValue(form: FormData, name: string, expectedType: "boolean"): boolean;
+export function formValue(form: FormData, name: string, expectedType: "string" | "number" | "boolean" = "string"): string | number | boolean {
   const raw = form.get(name);
   if (raw === null) {
     return "";

@@ -60,8 +60,8 @@ export function B2BEnquiriesClient() {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     setFilters({
-      search: formValue(form, "search"),
-      status: formValue(form, "status")
+      search: String(formValue(form, "search")),
+      status: String(formValue(form, "status"))
     });
   }
 

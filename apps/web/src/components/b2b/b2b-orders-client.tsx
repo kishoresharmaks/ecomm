@@ -217,9 +217,9 @@ export function B2BOrderDetailClient({ orderNumber }: { orderNumber: string }) {
     }
 
     poMutation.mutate({
-      purchaseOrderNumber: formValue(form, "purchaseOrderNumber"),
+      purchaseOrderNumber: String(formValue(form, "purchaseOrderNumber")),
       purchaseOrderFileKey,
-      ...(note ? { note } : {}),
+      ...(note ? { note: String(note) } : {}),
     });
   }
 
@@ -305,7 +305,7 @@ export function B2BOrderDetailClient({ orderNumber }: { orderNumber: string }) {
         method: "BANK_TRANSFER",
         amountPaise: Math.round(Number(formValue(form, "amountRupees")) * 100),
         currency: order?.currency ?? "INR",
-        referenceNumber: formValue(form, "referenceNumber"),
+        referenceNumber: String(formValue(form, "referenceNumber")),
         proofFileKey,
       });
     } catch (error) {

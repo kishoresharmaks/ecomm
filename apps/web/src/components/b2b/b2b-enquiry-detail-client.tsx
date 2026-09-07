@@ -127,7 +127,7 @@ export function B2BEnquiryDetailClient({ enquiryId }: { enquiryId: string }) {
       const token = await auth.authHeaders.getBearerToken?.().catch(() => auth.authHeaders.bearerToken);
       if (!mounted) return;
       if (token === currentToken && socket?.connected) return;
-      currentToken = token;
+      currentToken = token ?? undefined;
       if (socket) {
         socket.removeAllListeners();
         socket.disconnect();

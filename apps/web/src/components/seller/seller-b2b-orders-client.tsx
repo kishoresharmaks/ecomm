@@ -31,7 +31,7 @@ import {
   useSellerAuth,
 } from "./seller-ui";
 import { formatMoney } from "@/lib/storefront-api";
-import { transportLabel } from "./b2b-ui";
+import { transportLabel } from "../b2b/b2b-ui";
 
 const orderStatuses = ["", "PROFORMA_ISSUED", "PO_SUBMITTED", "PO_ACCEPTED", "IN_FULFILMENT", "FULFILLED", "CANCELLED"];
 

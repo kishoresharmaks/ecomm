@@ -683,7 +683,7 @@ export class PaymentsService {
       await this.prisma.client.b2BPaymentRecord.updateMany({
         where: {
           b2bOrderId: linkedB2BOrder.id,
-          status: { in: [B2BPaymentRecordStatus.PENDING, B2BPaymentRecordStatus.FAILED] },
+          status: { in: [B2BPaymentRecordStatus.SUBMITTED, B2BPaymentRecordStatus.VERIFIED] },
           providerPaymentId: null,
         },
         data: {

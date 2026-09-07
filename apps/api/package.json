@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/main.ts",
-    "build": "node --max-old-space-size=12288 -e \"require('typescript/lib/tsc')\" && node ../../scripts/build-node-service.mjs src/main.ts dist/main.js",
+    "build": "node --max-old-space-size=24576 -e \"require('typescript/lib/tsc')\" && node ../../scripts/build-node-service.mjs src/main.ts dist/main.js",
     "start": "node dist/main.js",
     "typecheck": "node --max-old-space-size=12288 -e \"require('typescript/lib/tsc')\"",
     "lint": "eslint .",

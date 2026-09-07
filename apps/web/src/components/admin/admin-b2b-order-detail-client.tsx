@@ -33,6 +33,7 @@ import {
   type B2BPaymentStatus,
 } from "@/lib/business-buyer-api";
 import { getAdminB2BOperation } from "@/lib/b2b-operations-api";
+import { openB2BPurchaseOrderDocument } from "@/lib/b2b-po-documents";
 import {
   rejectAdminB2BPaymentProof,
   verifyAdminB2BPaymentProof,
@@ -87,7 +88,7 @@ export function AdminB2BOrderDetailPageClient({ orderNumber }: { orderNumber: st
     queryKey: ["admin-b2b-order", orderNumber, auth.authHeaders],
     enabled: auth.isAuthenticated,
     queryFn: () =>
-      getAdminB2BOperation(auth.authHeaders, orderNumber) as Promise<B2BOrderWithAdminDetail>,
+      getAdminB2BOperation(auth.authHeaders, orderNumber) as unknown as Promise<B2BOrderWithAdminDetail>,
   });
 
   const actionMutation = useMutation({

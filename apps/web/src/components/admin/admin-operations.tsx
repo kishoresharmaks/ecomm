@@ -101,7 +101,7 @@ import {
 import { useLocationAreaStore, useLocationCatalog } from "@/components/locations/location-store";
 import { formatLocalAreaLabel } from "@/components/locations/location-utils";
 import { SellerImageUpload } from "@/components/seller/seller-ui";
-import { statusTone, type StatusTone } from "@/components/b2b/b2b-ui";
+import { statusTone } from "@/components/b2b/b2b-ui";
 import {
   apiBaseUrl,
   IndihubApiError,

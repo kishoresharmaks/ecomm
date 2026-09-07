@@ -81,13 +81,20 @@ export function B2BEnquiryFormClient() {
     const quantityValue = Number(formValue(form, "quantity"));
     const messageValue = formValue(form, "message");
 
-    const payload = {
-      ...(productId ? { productId } : {}),
-      ...(sellerId ? { sellerId } : {}),
+    const payload: {
+      productId?: string;
+      sellerId?: string;
+      quantity: number;
+      message: string;
+      transportMode?: "STORE_PICKUP" | "SELLER_ARRANGED_TRANSPORT";
+      transportNote?: string;
+    } = {
+      ...(productId ? { productId: String(productId) } : {}),
+      ...(sellerId ? { sellerId: String(sellerId) } : {}),
       quantity: quantityValue,
-      message: messageValue,
+      message: String(messageValue),
       ...(transportMode ? { transportMode } : {}),
-      ...(transportNote ? { transportNote } : {})
+      ...(transportNote ? { transportNote: String(transportNote) } : {})
     };
 
     const validationError = validatePayload(payload);

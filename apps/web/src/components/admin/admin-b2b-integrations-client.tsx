@@ -6,7 +6,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
 import { useAdminAuth } from "./admin-auth-context";
 import { AdminPanel, AdminStatusNotice } from "./admin-ux";
-import { B2BEmptyState } from "@/components/b2b/b2b-ui";
+import { B2BEmptyState, humanize } from "@/components/b2b/b2b-ui";
 import { userFacingApiErrorMessage } from "@/lib/api";
 import {
   b2bAction,
