@@ -15,6 +15,6 @@ import { StorageModule } from "../storage/storage.module";
   imports: [PrismaModule, SettingsModule, StorageModule],
   controllers: [AdminNotificationsController, AdminEmailController, AdminPushCampaignsController],
   providers: [NotificationsService, NotificationQueueService, EmailDeliveryService, ExpoPushService, PushCampaignsService],
-  exports: [NotificationsService, ExpoPushService],
+  exports: [NotificationsService, ExpoPushService, EmailDeliveryService],
 })
 export class NotificationsModule {}

@@ -5,6 +5,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Inject,
   Param,
   Post,
   Query,
@@ -26,7 +27,7 @@ import { SubscriberQueryDto, newsletterPaginationFromQuery } from "./dto/subscri
 @ApiTags("Newsletter")
 @Controller(["newsletter", "admin/newsletter"])
 export class NewsletterController {
-  constructor(private readonly newsletterService: NewsletterService) {}
+  constructor(@Inject(NewsletterService) private readonly newsletterService: NewsletterService) {}
 
   @Post("subscribe")
   @Public()

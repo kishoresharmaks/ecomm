@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { PrismaService } from "../prisma/prisma.service";
 import { EmailDeliveryService } from "../notifications/email-delivery.service";
@@ -62,8 +62,8 @@ export class NewsletterService {
   private readonly logger = new Logger(NewsletterService.name);
 
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly emailDeliveryService: EmailDeliveryService,
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(EmailDeliveryService) private readonly emailDeliveryService: EmailDeliveryService,
   ) {}
 
   async subscribe(input: {
