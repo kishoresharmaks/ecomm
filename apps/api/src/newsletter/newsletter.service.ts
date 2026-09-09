@@ -1,4 +1,4 @@
-import { Injectable, Logger, BadRequestException, NotFoundException } from "@nestjs/common";
+import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { PrismaService } from "../prisma/prisma.service";
 import { EmailDeliveryService } from "../notifications/email-delivery.service";
@@ -68,16 +68,16 @@ export class NewsletterService {
 
   async subscribe(input: {
     email: string;
-    name?: string;
-    source?: string;
-    ipAddress?: string;
-    userAgent?: string;
+    name?: string | null | undefined;
+    source?: string | null | undefined;
+    ipAddress?: string | null | undefined;
+    userAgent?: string | null | undefined;
   }): Promise<{ success: boolean; message: string; status: NewsletterStatus }> {
     const email = input.email.trim().toLowerCase();
 
     const existing = await this.prisma.client.newsletterSubscriber.findUnique({
       where: { email },
-      select: { status: true },
+      select: { status: true, name: true },
     });
 
     if (existing?.status === "ACTIVE") {
@@ -89,32 +89,38 @@ export class NewsletterService {
         where: { email },
         data: {
           status: "ACTIVE",
-          name: input.name ?? existing.name,
+          name: input.name ?? existing.name ?? null,
           source: input.source ?? "footer",
           unsubscribedAt: null,
-          ipAddress: input.ipAddress,
-          userAgent: input.userAgent,
+          ipAddress: input.ipAddress ?? null,
+          userAgent: input.userAgent ?? null,
         },
       });
-      await this.sendWelcomeEmail(email, input.name);
+      await this.sendWelcomeEmail(email, input.name ?? existing.name ?? undefined);
       return { success: true, message: "Welcome back! You've been re-subscribed.", status: "ACTIVE" };
     }
 
     await this.prisma.client.newsletterSubscriber.create({
       data: {
         email,
-        name: input.name,
+        name: input.name ?? null,
         source: input.source ?? "footer",
-        ipAddress: input.ipAddress,
-        userAgent: input.userAgent,
+        ipAddress: input.ipAddress ?? null,
+        userAgent: input.userAgent ?? null,
       },
     });
 
-    await this.sendWelcomeEmail(email, input.name);
+    await this.sendWelcomeEmail(email, input.name ?? undefined);
     return { success: true, message: "Welcome aboard! Check your inbox.", status: "ACTIVE" };
   }
 
-  async listSubscribers(query: { page: number; limit: number; search?: string; status?: string; source?: string }) {
+  async listSubscribers(query: {
+    page: number;
+    limit: number;
+    search?: string | undefined;
+    status?: string | undefined;
+    source?: string | undefined;
+  }) {
     const { page, limit, search, status, source } = query;
     const where: Record<string, unknown> = {};
 
@@ -168,22 +174,22 @@ export class NewsletterService {
     return { success: true, message: "You've been unsubscribed." };
   }
 
-  async resendWelcome(email: string, name?: string): Promise<{ success: boolean; message: string }> {
+  async resendWelcome(email: string, name?: string | undefined): Promise<{ success: boolean; message: string }> {
     const trimmed = email.trim().toLowerCase();
     const existing = await this.prisma.client.newsletterSubscriber.findUnique({
       where: { email: trimmed },
-      select: { status: true },
+      select: { status: true, name: true },
     });
 
     if (!existing || existing.status !== "ACTIVE") {
       throw new NotFoundException("Active subscriber not found.");
     }
 
-    await this.sendWelcomeEmail(trimmed, name);
+    await this.sendWelcomeEmail(trimmed, name ?? existing.name ?? undefined);
     return { success: true, message: "Welcome email resent." };
   }
 
-  private async sendWelcomeEmail(email: string, name?: string): Promise<void> {
+  private async sendWelcomeEmail(email: string, name?: string | undefined): Promise<void> {
     try {
       const fromEmail =
         (await this.prisma.client.emailSetting.findFirst({
@@ -197,18 +203,28 @@ export class NewsletterService {
       const fromName = fromEmail?.senderName ?? "1HandIndia";
       const fromAddr = fromEmail?.senderEmail ?? "noreply@1handindia.com";
 
-      const providerConfig: EmailProviderConfig = {
-        resendApiKey: process.env.RESEND_API_KEY,
-        sendgridApiKey: process.env.SENDGRID_API_KEY,
-      };
+      const providerConfig: EmailProviderConfig = {};
+      if (process.env.RESEND_API_KEY) {
+        providerConfig.resendApiKey = process.env.RESEND_API_KEY;
+      }
+      if (process.env.SENDGRID_API_KEY) {
+        providerConfig.sendgridApiKey = process.env.SENDGRID_API_KEY;
+      }
+
+      const hasProviderConfig = Object.keys(providerConfig).length > 0;
+      const provider = providerConfig.resendApiKey
+        ? "resend"
+        : providerConfig.sendgridApiKey
+          ? "sendgrid"
+          : "smtp";
 
       const payload: EmailJobPayload = {
         notificationLogId: randomUUID(),
-        provider: providerConfig.resendApiKey ? "resend" : providerConfig.sendgridApiKey ? "sendgrid" : "smtp",
-        providerConfig: Object.keys(providerConfig).some(k => providerConfig[k as keyof EmailProviderConfig]) ? providerConfig : undefined,
+        provider,
+        ...(hasProviderConfig ? { providerConfig } : {}),
         recipient: email,
         subject: NEWSLETTER_WELCOME_SUBJECT,
-        body: buildWelcomeHtml(name),
+        body: buildWelcomeHtml(name ?? undefined),
         fromName,
         fromEmail: fromAddr,
         templateCode: "NEWSLETTER_WELCOME",

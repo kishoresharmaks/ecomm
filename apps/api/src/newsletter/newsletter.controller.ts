@@ -6,10 +6,8 @@ import {
   HttpCode,
   HttpStatus,
   Param,
-  ParseUUIDPipe,
   Post,
   Query,
-  UseGuards,
 } from "@nestjs/common";
 import {
   ApiOperation,
@@ -18,17 +16,15 @@ import {
   ApiResponse,
   ApiTags,
 } from "@nestjs/swagger";
-import { Public } from "../../auth/decorators/public.decorator";
-import { Roles } from "../../auth/decorators/roles.decorator";
+import { Public } from "../auth/decorators/public.decorator";
+import { Roles } from "../auth/decorators/roles.decorator";
 import { RoleCode } from "@indihub/database";
 import { NewsletterService } from "./newsletter.service";
 import { SubscribeDto } from "./dto/subscribe.dto";
 import { SubscriberQueryDto, newsletterPaginationFromQuery } from "./dto/subscriber-query.dto";
 
-const ADMINS_ONLY = { requiresLogin: true } as const;
-
 @ApiTags("Newsletter")
-@Controller("newsletter")
+@Controller(["newsletter", "admin/newsletter"])
 export class NewsletterController {
   constructor(private readonly newsletterService: NewsletterService) {}
 
@@ -41,7 +37,7 @@ export class NewsletterController {
   subscribe(@Body() dto: SubscribeDto) {
     return this.newsletterService.subscribe({
       email: dto.email,
-      name: dto.name,
+      ...(dto.name !== undefined ? { name: dto.name } : {}),
     });
   }
 
@@ -58,9 +54,9 @@ export class NewsletterController {
     return this.newsletterService.listSubscribers({
       page,
       limit,
-      search: query.search,
-      status: query.status,
-      source: query.source,
+      ...(query.search !== undefined ? { search: query.search } : {}),
+      ...(query.status !== undefined ? { status: query.status } : {}),
+      ...(query.source !== undefined ? { source: query.source } : {}),
     });
   }
 

@@ -47,6 +47,12 @@ describe("B2BOperationsService online payments and exports", () => {
         create: vi.fn(),
         update: vi.fn(),
       },
+      b2BErpConnection: {
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+      b2BIntegrationOutbox: {
+        create: vi.fn(),
+      },
       $transaction: vi.fn(),
     },
   };
@@ -96,6 +102,7 @@ describe("B2BOperationsService online payments and exports", () => {
     );
     vi.spyOn(service, "getOrder").mockResolvedValue(order as never);
     prisma.client.b2BMutationRecord.findUnique.mockResolvedValue(null);
+    prisma.client.b2BErpConnection.findMany.mockResolvedValue([]);
   });
 
   it("creates one provider order for an idempotent B2B UPI payment request", async () => {

@@ -1,12 +1,12 @@
 import { BadRequestException } from "@nestjs/common";
 
-type PaginationQuery = {
+export type PaginationQuery = {
   page?: number | string;
   limit?: number | string;
   cursor?: string;
 };
 
-type PaginationOptions = {
+export type PaginationOptions = {
   defaultLimit?: number;
   maxLimit?: number;
 };

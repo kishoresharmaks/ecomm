@@ -4740,13 +4740,16 @@ export class B2BOperationsService {
     eventType: string,
     payload: Record<string, unknown>,
   ) {
-    const connections = await this.prisma.client.b2BErpConnection.findMany({
+    if (!this.prisma.client.b2BErpConnection?.findMany) {
+      return;
+    }
+    const connections = (await this.prisma.client.b2BErpConnection.findMany({
       where: {
         status: B2BErpConnectionStatus.ACTIVE,
         subscribedEvents: { has: eventType },
       },
       select: { id: true },
-    });
+    })) ?? [];
     for (const connection of connections) {
       await this.prisma.client.b2BIntegrationOutbox.create({
         data: {

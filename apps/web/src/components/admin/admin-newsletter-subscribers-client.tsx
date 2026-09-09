@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Mail, MailCheck, RefreshCw, Trash2 } from "lucide-react";
 import { Button, StatusBadge } from "@indihub/ui";

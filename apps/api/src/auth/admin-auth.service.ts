@@ -383,7 +383,7 @@ export class AdminAuthService {
       throw new UnauthorizedException("Current password is incorrect.");
     }
 
-    let codeValid = false;
+    let codeValid: boolean;
     try {
       const secret = decryptMfaSecret(credential.mfaSecretEncrypted);
       codeValid = verifyTotpCode(dto.code, secret, 1);

@@ -1,5 +1,4 @@
 import { IsOptional, IsString, MaxLength } from "class-validator";
-import { Type } from "class-transformer";
 import { paginationFromQuery, type PaginationQuery } from "../../common/pagination";
 
 export class SubscriberQueryDto implements PaginationQuery {

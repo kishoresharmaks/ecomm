@@ -24,7 +24,7 @@ import { LocationsModule } from "../locations/locations.module";
 import { MapsModule } from "../maps/maps.module";
 import { MarketModule } from "../market/market.module";
 import { MobileModule } from "../mobile/mobile.module";
-import { NewslettersModule } from "../newsletter/newsletter.module";
+import { NewsletterModule } from "../newsletter/newsletter.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { OrdersModule } from "../orders/orders.module";
 import { PaymentsModule } from "../payments/payments.module";
@@ -70,7 +70,7 @@ import { SupportModule } from "../support/support.module";
     MapsModule,
     MarketModule,
     MobileModule,
-    NewslettersModule,
+    NewsletterModule,
     NotificationsModule,
     ProductTemplatesModule,
     ProductsModule,
