@@ -6,6 +6,7 @@ import Image from "next/image";
 import { Check, Loader2, Mail, MapPin, Send, ShieldCheck, Store } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { listCmsMenus, type CmsMenuItem } from "@/lib/storefront-api";
+import { subscribeToNewsletter } from "@/lib/newsletter-api";
 
 const brandLogoSrc = "/brand/1handindia_logo.webp";
 const staticStorefrontDataStaleMs = 5 * 60 * 1000;
@@ -213,23 +214,14 @@ function NewsletterForm() {
     lastSubmitRef.current = Date.now();
 
     try {
-      const response = await fetch("/api/newsletter/subscribe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
+      await subscribeToNewsletter(email);
 
-      if (response.ok) {
-        setStatus("success");
-        setMessage("Subscribed! Check your inbox.");
-        form.reset();
-      } else {
-        setStatus("error");
-        setMessage("Could not subscribe. Try again later.");
-      }
-    } catch {
+      setStatus("success");
+      setMessage("Subscribed! Check your inbox.");
+      form.reset();
+    } catch (error) {
       setStatus("error");
-      setMessage("Connection error. Please retry.");
+      setMessage(error instanceof Error ? error.message : "Could not subscribe. Try again later.");
     }
   }, []);
 

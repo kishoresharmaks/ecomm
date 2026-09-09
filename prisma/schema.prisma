@@ -7453,6 +7453,24 @@ model EmailSetting {
   @@map("email_settings")
 }
 
+model NewsletterSubscriber {
+  email           String   @db.VarChar(320)
+  name            String?  @db.VarChar(200)
+  status          String   @default("ACTIVE") @db.VarChar(20)
+  source          String   @default("footer") @db.VarChar(50)
+  subscribedAt    DateTime @default(now()) @db.Timestamp
+  unsubscribedAt  DateTime? @db.Timestamp
+  ipAddress       String?  @db.VarChar(45)
+  userAgent       String?  @db.Text
+  createdAt       DateTime @default(now()) @db.Timestamp
+  updatedAt       DateTime @updatedAt @db.Timestamp
+
+  @@id([email])
+  @@index([status, subscribedAt])
+  @@index([source])
+  @@map("newsletter_subscribers")
+}
+
 model Setting {
   id        String           @id @default(uuid()) @db.Uuid
   key       String           @unique
