@@ -36,6 +36,7 @@ export const adminNav = [
   { group: "Operations", label: "Search index", href: "/admin/search" },
   { group: "Operations", label: "Email", href: "/admin/email" },
   { group: "Operations", label: "Push campaigns", href: "/admin/push-campaigns" },
+  { group: "Operations", label: "Newsletter", href: "/admin/newsletter" },
   { group: "Operations", label: "Audit logs", href: "/admin/audit-logs" },
   { group: "Operations", label: "Settings", href: "/admin/settings/general" },
   { group: "Operations", label: "Tax & GST settings", href: "/admin/settings/tax-gst" },
