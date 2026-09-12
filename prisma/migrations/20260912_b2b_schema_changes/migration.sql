@@ -8,7 +8,7 @@ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_enum
     WHERE enumlabel = 'CANCELLED'
-      AND enumty = (SELECT oid FROM pg_type WHERE typname = 'B2BPaymentStatus')
+      AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'B2BPaymentStatus')
   ) THEN
     ALTER TYPE "B2BPaymentStatus" ADD VALUE 'CANCELLED';
   END IF;
@@ -20,7 +20,7 @@ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_enum
     WHERE enumlabel = 'CANCEL_ORDER'
-      AND enumty = (SELECT oid FROM pg_type WHERE typname = 'B2BAdminAction')
+      AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'B2BAdminAction')
   ) THEN
     ALTER TYPE "B2BAdminAction" ADD VALUE 'CANCEL_ORDER';
   END IF;
@@ -31,7 +31,7 @@ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_enum
     WHERE enumlabel = 'UPDATE_ORDER_STATUS'
-      AND enumty = (SELECT oid FROM pg_type WHERE typname = 'B2BAdminAction')
+      AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'B2BAdminAction')
   ) THEN
     ALTER TYPE "B2BAdminAction" ADD VALUE 'UPDATE_ORDER_STATUS';
   END IF;
