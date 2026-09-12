@@ -5,6 +5,7 @@ import { Screen } from "../../../../src/components/screen";
 import { EmptyState } from "../../../../src/components/empty-state";
 import { useMobileCustomerAuth } from "../../../../src/auth/mobile-auth-context";
 import { B2BAuthGate } from "../../../../src/features/b2b/b2b-auth-gate";
+import { openB2BWeb } from "../../../../src/features/b2b/b2b-web-redirect";
 import {
   ORDER_STATUS_COLOR,
   ORDER_STATUS_LABEL,
@@ -111,7 +112,7 @@ function OrderListContent() {
                 <Pressable
                   key={order.id}
                   style={styles.card}
-                  onPress={() => router.push(`/account/b2b/orders/${order.orderNumber}` as never)}
+                  onPress={() => openB2BWeb(`/b2b/orders/${order.orderNumber}`)}
                 >
                   <View style={styles.cardBody}>
                     <Text numberOfLines={1} style={styles.cardTitle}>

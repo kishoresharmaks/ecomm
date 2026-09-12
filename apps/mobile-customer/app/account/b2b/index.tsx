@@ -12,6 +12,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import { Screen } from "../../../src/components/screen";
 import { useMobileCustomerAuth } from "../../../src/auth/mobile-auth-context";
 import { B2BAuthGate } from "../../../src/features/b2b/b2b-auth-gate";
+import { openB2BWeb } from "../../../src/features/b2b/b2b-web-redirect";
 import {
   ENQUIRY_STATUS_COLOR,
   ENQUIRY_STATUS_LABEL,
@@ -88,22 +89,22 @@ function B2BOverviewContent() {
         <QuickAction
           icon={<HugeiconsIcon color={colors.primary} icon={PlusSignIcon} size={22} strokeWidth={2.2} />}
           label="New Enquiry"
-          onPress={() => router.push("/account/b2b/enquiries/new" as never)}
+          onPress={() => openB2BWeb("/b2b/enquiries/new")}
         />
         <QuickAction
           icon={<HugeiconsIcon color="#1475FF" icon={Message02Icon} size={22} strokeWidth={2.2} />}
           label="My Enquiries"
-          onPress={() => router.push("/account/b2b/enquiries" as never)}
+          onPress={() => openB2BWeb("/b2b/enquiries")}
         />
         <QuickAction
           icon={<HugeiconsIcon color={colors.success} icon={FileCheckIcon} size={22} strokeWidth={2.2} />}
           label="B2B Orders"
-          onPress={() => router.push("/account/b2b/orders" as never)}
+          onPress={() => openB2BWeb("/b2b/orders")}
         />
         <QuickAction
           icon={<HugeiconsIcon color={colors.muted} icon={Location01Icon} size={22} strokeWidth={2.2} />}
           label="Addresses"
-          onPress={() => router.push("/account/b2b/addresses" as never)}
+          onPress={() => openB2BWeb("/b2b/addresses")}
         />
       </View>
 
@@ -117,7 +118,7 @@ function B2BOverviewContent() {
             <Pressable
               key={enq.id}
               style={styles.listItem}
-              onPress={() => router.push(`/account/b2b/enquiries/${enq.id}` as never)}
+              onPress={() => openB2BWeb(`/b2b/enquiries/${enq.id}`)}
             >
               <View style={styles.listItemBody}>
                 <Text numberOfLines={1} style={styles.listItemTitle}>
@@ -140,7 +141,7 @@ function B2BOverviewContent() {
           {totalEnquiries > 3 ? (
             <Pressable
               style={styles.viewAllBtn}
-              onPress={() => router.push("/account/b2b/enquiries" as never)}
+              onPress={() => openB2BWeb("/b2b/enquiries")}
             >
               <Text style={styles.viewAllText}>View all {totalEnquiries} enquiries</Text>
             </Pressable>
@@ -156,7 +157,7 @@ function B2BOverviewContent() {
             <Pressable
               key={order.id}
               style={styles.listItem}
-              onPress={() => router.push(`/account/b2b/orders/${order.orderNumber}` as never)}
+              onPress={() => openB2BWeb(`/b2b/orders/${order.orderNumber}`)}
             >
               <View style={styles.listItemBody}>
                 <Text numberOfLines={1} style={styles.listItemTitle}>

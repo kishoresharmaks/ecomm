@@ -16,6 +16,7 @@ import { Screen } from "../../../../src/components/screen";
 import { EmptyState } from "../../../../src/components/empty-state";
 import { useMobileCustomerAuth } from "../../../../src/auth/mobile-auth-context";
 import { B2BAuthGate } from "../../../../src/features/b2b/b2b-auth-gate";
+import { openB2BWeb } from "../../../../src/features/b2b/b2b-web-redirect";
 import {
   ENQUIRY_STATUS_COLOR,
   ENQUIRY_STATUS_LABEL,
@@ -110,7 +111,7 @@ function EnquiryListContent() {
               <Pressable
                 key={enq.id}
                 style={styles.card}
-                onPress={() => router.push(`/account/b2b/enquiries/${enq.id}` as never)}
+                onPress={() => openB2BWeb(`/b2b/enquiries/${enq.id}`)}
               >
                 <View style={styles.cardBody}>
                   <Text numberOfLines={1} style={styles.cardTitle}>
@@ -148,7 +149,7 @@ function EnquiryListContent() {
 
       <Pressable
         style={styles.fabBtn}
-        onPress={() => router.push("/account/b2b/enquiries/new" as never)}
+        onPress={() => openB2BWeb("/b2b/enquiries/new")}
       >
         <Text style={styles.fabText}>+ New Enquiry</Text>
       </Pressable>

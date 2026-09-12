@@ -1,20 +1,20 @@
 import { PlusSignIcon, Delete02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Stack, useRouter } from "expo-router";
+import { Stack } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Screen } from "../../../src/components/screen";
 import { EmptyState } from "../../../src/components/empty-state";
 import { useMobileCustomerAuth } from "../../../src/auth/mobile-auth-context";
 import { B2BAuthGate } from "../../../src/features/b2b/b2b-auth-gate";
+import { openB2BWeb } from "../../../src/features/b2b/b2b-web-redirect";
 import { deleteB2BAddress, listB2BAddresses } from "../../../src/lib/mobile-b2b-api";
 import { colors, spacing } from "../../../src/theme";
 import type { BusinessBuyerAddress } from "../../../src/features/b2b/b2b-types";
 
 function B2BAddressesContent() {
   const customerAuth = useMobileCustomerAuth();
-  const router = useRouter();
   const queryClient = useQueryClient();
   const [deleteError, setDeleteError] = useState("");
 
@@ -57,9 +57,7 @@ function B2BAddressesContent() {
               <View key={addr.id} style={styles.addressCard}>
                 <Pressable
                   style={styles.addressBody}
-                  onPress={() =>
-                    router.push(`/account/b2b/address-form?addressId=${addr.id}` as never)
-                  }
+                  onPress={() => openB2BWeb("/b2b/addresses")}
                 >
                   <Text style={styles.addressLine}>{addr.line1}</Text>
                   {addr.line2 ? <Text style={styles.addressMeta}>{addr.line2}</Text> : null}
@@ -81,7 +79,7 @@ function B2BAddressesContent() {
 
           <Pressable
             style={styles.addBtn}
-            onPress={() => router.push("/account/b2b/address-form" as never)}
+            onPress={() => openB2BWeb("/b2b/addresses")}
           >
             <HugeiconsIcon color={colors.primary} icon={PlusSignIcon} size={20} strokeWidth={2.2} />
             <Text style={styles.addBtnText}>Add procurement address</Text>
@@ -110,11 +108,9 @@ export default function B2BAddressesScreen() {
 }
 
 function HeaderAddButton() {
-  const router = useRouter();
-
   return (
     <Pressable
-      onPress={() => router.push("/account/b2b/address-form" as never)}
+      onPress={() => openB2BWeb("/b2b/addresses")}
       style={{ marginRight: spacing.md }}
     >
       <HugeiconsIcon color={colors.primary} icon={PlusSignIcon} size={24} strokeWidth={2.2} />
