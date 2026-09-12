@@ -58,7 +58,8 @@ export function B2BEnquiryFormClient() {
       setNotice("Enquiry submitted.");
       router.push(`/b2b/enquiries/${enquiry.id}`);
     },
-    onError: (error) => setNotice(error instanceof Error ? error.message : "Enquiry submission failed.")
+    onError: (error) => setNotice(error instanceof Error ? error.message : "Enquiry submission failed."),
+    onSettled: () => setNotice(null),
   });
 
   function validatePayload(payload: { productId?: string; sellerId?: string; quantity: number; message: string; transportMode?: "STORE_PICKUP" | "SELLER_ARRANGED_TRANSPORT"; transportNote?: string }): string | null {

@@ -224,6 +224,7 @@ export function B2BEnquiryDetailClient({ enquiryId }: { enquiryId: string }) {
       setMessages((current) => current.filter((message) => message.id !== context?.optimisticId));
       setNotice(error instanceof Error ? error.message : "Message could not be sent.");
     },
+    onSettled: () => setNotice(null),
   });
 
   const cancelMutation = useMutation({
@@ -235,6 +236,7 @@ export function B2BEnquiryDetailClient({ enquiryId }: { enquiryId: string }) {
       void queryClient.invalidateQueries({ queryKey: ["b2b-enquiries", auth.authKey] });
     },
     onError: (error) => setNotice(error instanceof Error ? error.message : "Enquiry cancellation failed."),
+    onSettled: () => setNotice(null),
   });
 
   const confirmMutation = useMutation({
@@ -246,6 +248,7 @@ export function B2BEnquiryDetailClient({ enquiryId }: { enquiryId: string }) {
       void queryClient.invalidateQueries({ queryKey: ["b2b-enquiries", auth.authKey] });
     },
     onError: (error) => setNotice(error instanceof Error ? error.message : "Quotation confirmation failed."),
+    onSettled: () => setNotice(null),
   });
 
   async function loadOlderMessages() {

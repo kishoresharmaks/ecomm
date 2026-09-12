@@ -120,6 +120,7 @@ export function AdminB2BOrderDetailPageClient({ orderNumber }: { orderNumber: st
       await invalidateB2BOrderQueries(queryClient, orderNumber);
     },
     onError: (error) => setNotice({ tone: "danger", message: userFacingApiErrorMessage(error) }),
+    onSettled: () => setNotice(null),
   });
 
   const verifyProofMutation = useMutation({
@@ -131,6 +132,7 @@ export function AdminB2BOrderDetailPageClient({ orderNumber }: { orderNumber: st
       await queryClient.invalidateQueries({ queryKey: ["admin-b2b-payments"] });
     },
     onError: (error) => setNotice({ tone: "danger", message: userFacingApiErrorMessage(error) }),
+    onSettled: () => setNotice(null),
   });
 
   const rejectProofMutation = useMutation({
@@ -142,6 +144,7 @@ export function AdminB2BOrderDetailPageClient({ orderNumber }: { orderNumber: st
       await queryClient.invalidateQueries({ queryKey: ["admin-b2b-payments"] });
     },
     onError: (error) => setNotice({ tone: "danger", message: userFacingApiErrorMessage(error) }),
+    onSettled: () => setNotice(null),
   });
 
   async function openDocument(kind: "po" | "proforma" | "tax" | "proof", proofId?: string) {

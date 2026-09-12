@@ -67,6 +67,9 @@ describe("B2BOperationsService online payments and exports", () => {
   const taxDocuments = {
     createB2bCreditNote: vi.fn(),
   };
+  const b2b = {
+    createB2BAdminAuditLog: vi.fn(),
+  };
   const actor = {
     id: "00000000-0000-4000-8000-000000000001",
     roles: ["BUSINESS_BUYER"],
@@ -99,6 +102,7 @@ describe("B2BOperationsService online payments and exports", () => {
       storage as never,
       taxDocuments as never,
       payments as never,
+      b2b as never,
     );
     vi.spyOn(service, "getOrder").mockResolvedValue(order as never);
     prisma.client.b2BMutationRecord.findUnique.mockResolvedValue(null);
@@ -710,7 +714,7 @@ describe("B2BOperationsService online payments and exports", () => {
     });
 
     await expect(
-      service.updateSupportCase(actor as never, "case-1", {
+      service.updateSupportCase(actor as never, "case-1", "test-idempotency-key-1", {
         status: B2BSupportCaseStatus.RESOLVED,
         resolution: "Closed manually.",
       }),

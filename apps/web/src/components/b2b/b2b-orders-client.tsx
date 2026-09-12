@@ -171,6 +171,7 @@ export function B2BOrderDetailClient({ orderNumber }: { orderNumber: string }) {
       void queryClient.invalidateQueries({ queryKey: ["b2b-orders", auth.authKey] });
     },
     onError: (error) => setNotice(error instanceof Error ? error.message : "Purchase order submission failed."),
+    onSettled: () => setNotice(null),
   });
 
   const paymentMutation = useMutation({
@@ -183,6 +184,7 @@ export function B2BOrderDetailClient({ orderNumber }: { orderNumber: string }) {
       void queryClient.invalidateQueries({ queryKey: ["b2b-orders", auth.authKey] });
     },
     onError: (error) => setNotice(userFacingApiErrorMessage(error)),
+    onSettled: () => setNotice(null),
   });
 
   async function submitPurchaseOrder(event: FormEvent<HTMLFormElement>) {

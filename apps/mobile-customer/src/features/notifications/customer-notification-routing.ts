@@ -5,6 +5,8 @@ export type CustomerNotificationRoutePayload = {
   orderNumber?: unknown;
   productSlug?: unknown;
   storeSlug?: unknown;
+  b2bEnquiryId?: unknown;
+  b2bOrderNumber?: unknown;
 };
 
 const allowedHrefPatterns = [
@@ -14,6 +16,8 @@ const allowedHrefPatterns = [
   /^\/products?\/[A-Za-z0-9._-]+$/,
   /^\/stores?\/[A-Za-z0-9._-]+$/,
   /^\/categories?\/[A-Za-z0-9._-]+$/,
+  /^\/account\/b2b\/enquiries\/[A-Za-z0-9._-]+$/,
+  /^\/account\/b2b\/orders\/[A-Za-z0-9._-]+$/,
 ];
 
 export function isAllowedCustomerNotificationHref(value: unknown): value is string {
@@ -26,6 +30,12 @@ export function routeForCustomerNotification(data?: CustomerNotificationRoutePay
   }
   if (typeof data?.orderNumber === "string" && data.orderNumber.trim()) {
     return `/orders/${encodeURIComponent(data.orderNumber.trim())}` as Href;
+  }
+  if (typeof data?.b2bEnquiryId === "string" && data.b2bEnquiryId.trim()) {
+    return `/account/b2b/enquiries/${encodeURIComponent(data.b2bEnquiryId.trim())}` as Href;
+  }
+  if (typeof data?.b2bOrderNumber === "string" && data.b2bOrderNumber.trim()) {
+    return `/account/b2b/orders/${encodeURIComponent(data.b2bOrderNumber.trim())}` as Href;
   }
   if (typeof data?.productSlug === "string" && data.productSlug.trim()) {
     return `/product/${encodeURIComponent(data.productSlug.trim())}` as Href;

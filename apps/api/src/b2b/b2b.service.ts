@@ -1669,6 +1669,14 @@ export class B2BService {
       if (!currentProof || currentProof.status !== B2BProofStatus.SUBMITTED) {
         throw new BadRequestException("Payment proof is no longer awaiting verification.");
       }
+      // Lock the order row to prevent concurrent verification of another proof against the same order.
+      await tx.$queryRaw`SELECT id FROM b2b_orders WHERE id = ${currentProof.order.id} FOR UPDATE`;
+      if (
+        currentProof.order.status === B2BOrderStatus.CANCELLED ||
+        currentProof.order.status === B2BOrderStatus.FULFILLED
+      ) {
+        throw new BadRequestException("Payment cannot be changed for this B2B order.");
+      }
 
       const now = new Date();
       const paidAmountPaise = currentProof.order.paidAmountPaise + currentProof.amountPaise;
@@ -1783,6 +1791,14 @@ export class B2BService {
       });
       if (!currentProof || currentProof.status !== B2BProofStatus.SUBMITTED) {
         throw new BadRequestException("Payment proof is no longer awaiting verification.");
+      }
+      // Lock the order row to prevent concurrent verification of another proof against the same order.
+      await tx.$queryRaw`SELECT id FROM b2b_orders WHERE id = ${currentProof.order.id} FOR UPDATE`;
+      if (
+        currentProof.order.status === B2BOrderStatus.CANCELLED ||
+        currentProof.order.status === B2BOrderStatus.FULFILLED
+      ) {
+        throw new BadRequestException("Payment cannot be changed for this B2B order.");
       }
 
       const now = new Date();
@@ -2327,7 +2343,7 @@ export class B2BService {
               }
             : {}),
           ...(dto.status === B2BOrderStatus.FULFILLED ? { fulfilledAt: now } : {}),
-          ...(dto.status === B2BOrderStatus.FULFILLED && existing.paymentStatus === B2BPaymentStatus.PAID
+          ...(dto.status === B2BOrderStatus.FULFILLED && b2bFulfilmentPaymentStatuses.has(existing.paymentStatus)
             ? {
                 settlementStatus: SellerSettlementStatus.ELIGIBLE,
                 settlementEligibleAt: existing.settlementEligibleAt ?? now,
@@ -2356,6 +2372,23 @@ export class B2BService {
             ...this.b2bOrderAuditValue(updated),
             note: dto.note,
           },
+        },
+      });
+
+      await this.createB2BAdminAuditLog(tx, {
+        orderId: existing.id,
+        actor,
+        actorType: B2BAuditActorType.ADMIN,
+        action: B2BAdminAction.UPDATE_ORDER_STATUS,
+        reason: dto.note?.trim() || `Admin moved B2B order to ${this.statusForMessage(updated.status)}.`,
+        beforeSnapshot: {
+          status: existing.status,
+          paymentStatus: existing.paymentStatus,
+        },
+        afterSnapshot: {
+          status: updated.status,
+          paymentStatus: updated.paymentStatus,
+          settlementStatus: updated.settlementStatus,
         },
       });
 
@@ -3988,7 +4021,7 @@ export class B2BService {
     });
   }
 
-  private async createB2BAdminAuditLog(
+  public async createB2BAdminAuditLog(
     tx: Prisma.TransactionClient,
     input: {
       orderId: string;

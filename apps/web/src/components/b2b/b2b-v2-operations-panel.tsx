@@ -93,6 +93,7 @@ function BuyerOperationsBody({
       void queryClient.invalidateQueries({ queryKey: ["b2b-v2-buyer-order"] });
     },
     onError: (error) => setNotice(userFacingApiErrorMessage(error)),
+    onSettled: () => setNotice(null),
   });
   const primaryShipment = order.shipments[0];
   const selectedShipment = order.shipments.find((s) => s.id === selectedShipmentId) ?? primaryShipment;
@@ -431,6 +432,7 @@ function SellerOperationsBody({
       onRefresh();
     },
     onError: (error) => setNotice(userFacingApiErrorMessage(error)),
+    onSettled: () => setNotice(null),
   });
   const availableLines = order.lines.map((line) => ({
     orderLineId: line.id,
@@ -693,6 +695,7 @@ function AdminOperationsBody({
       onRefresh();
     },
     onError: (error) => setNotice(userFacingApiErrorMessage(error)),
+    onSettled: () => setNotice(null),
   });
   const pendingAmendment = order.amendments.find(
     (amendment) => amendment.status === "REQUESTED",
@@ -1070,6 +1073,7 @@ function AmendmentRequestPanel({
       onSaved();
     },
     onError: (error) => setNotice(userFacingApiErrorMessage(error)),
+    onSettled: () => setNotice(null),
   });
   const pending = order.amendments.find(
     (amendment) => amendment.status === "REQUESTED",

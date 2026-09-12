@@ -60,7 +60,8 @@ export function B2BProfileClient({ onboarding = false }: { onboarding?: boolean 
       void queryClient.invalidateQueries({ queryKey: ["b2b-profile", auth.authKey] });
       void queryClient.invalidateQueries({ queryKey: ["b2b-addresses", auth.authKey] });
     },
-    onError: (error) => setNotice(error instanceof Error ? error.message : "Business profile save failed.")
+    onError: (error) => setNotice(error instanceof Error ? error.message : "Business profile save failed."),
+    onSettled: () => setNotice(null),
   });
 
   const addressMutation = useMutation({
@@ -77,7 +78,8 @@ export function B2BProfileClient({ onboarding = false }: { onboarding?: boolean 
       void queryClient.invalidateQueries({ queryKey: ["b2b-addresses", auth.authKey] });
       void queryClient.invalidateQueries({ queryKey: ["b2b-profile", auth.authKey] });
     },
-    onError: (error) => setNotice(error instanceof Error ? error.message : "Business address save failed.")
+    onError: (error) => setNotice(error instanceof Error ? error.message : "Business address save failed."),
+    onSettled: () => setNotice(null),
   });
 
   const deleteMutation = useMutation({
@@ -87,7 +89,8 @@ export function B2BProfileClient({ onboarding = false }: { onboarding?: boolean 
       void queryClient.invalidateQueries({ queryKey: ["b2b-addresses", auth.authKey] });
       void queryClient.invalidateQueries({ queryKey: ["b2b-profile", auth.authKey] });
     },
-    onError: (error) => setNotice(error instanceof Error ? error.message : "Business address delete failed.")
+    onError: (error) => setNotice(error instanceof Error ? error.message : "Business address delete failed."),
+    onSettled: () => setNotice(null),
   });
 
   function submitProfile(event: FormEvent<HTMLFormElement>) {

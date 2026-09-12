@@ -16,11 +16,16 @@ describe("customer notification routing", () => {
     expect(isAllowedCustomerNotificationHref("/products/cotton-shirt")).toBe(true);
     expect(isAllowedCustomerNotificationHref("/admin/orders")).toBe(false);
     expect(isAllowedCustomerNotificationHref("https://example.com/deals")).toBe(false);
+    expect(isAllowedCustomerNotificationHref("/account/b2b/enquiries/ENQ-1001")).toBe(true);
+    expect(isAllowedCustomerNotificationHref("/account/b2b/orders/B2B-1001")).toBe(true);
+    expect(isAllowedCustomerNotificationHref("/account/b2b/profile")).toBe(false);
   });
 
   it("builds fallback routes from typed payload fields", () => {
     expect(routeForCustomerNotification({ orderNumber: "ORD 1001" })).toBe("/orders/ORD%201001");
     expect(routeForCustomerNotification({ productSlug: "cotton-shirt" })).toBe("/product/cotton-shirt");
+    expect(routeForCustomerNotification({ b2bEnquiryId: "ENQ-1001" })).toBe("/account/b2b/enquiries/ENQ-1001");
+    expect(routeForCustomerNotification({ b2bOrderNumber: "B2B-1001" })).toBe("/account/b2b/orders/B2B-1001");
     expect(routeForCustomerNotification({})).toBe("/account/notifications");
   });
 

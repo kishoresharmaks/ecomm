@@ -794,6 +794,7 @@ enum B2BPaymentStatus {
   OVERDUE
   REFUNDED
   NOT_REQUIRED
+  CANCELLED
 }
 
 enum B2BProofStatus {
@@ -838,6 +839,8 @@ enum B2BAdminAction {
   SET_NOT_REQUIRED
   UNLOCK_FULFILMENT
   CANCEL_OVERDUE_ORDER
+  CANCEL_ORDER
+  UPDATE_ORDER_STATUS
   REGENERATE_PROFORMA
   RECORD_MANUAL_PAYMENT
   VERIFY_PAYMENT_PROOF
@@ -2351,7 +2354,7 @@ model BusinessBuyer {
   status       UserStatus             @default(PENDING)
   createdAt    DateTime               @default(now()) @map("created_at")
   updatedAt    DateTime               @updatedAt @map("updated_at")
-  user         User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User                   @relation(fields: [userId], references: [id], onDelete: SetNull)
   addresses    BusinessBuyerAddress[]
   enquiries    B2BEnquiry[]
   b2bOrders    B2BOrder[]
@@ -5857,7 +5860,7 @@ model B2BOrder {
   createdAt                DateTime            @default(now()) @map("created_at")
   updatedAt                DateTime            @updatedAt @map("updated_at")
   enquiry                  B2BEnquiry          @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
-  businessBuyer            BusinessBuyer       @relation(fields: [businessBuyerId], references: [id], onDelete: Cascade)
+  businessBuyer            BusinessBuyer       @relation(fields: [businessBuyerId], references: [id], onDelete: Restrict)
   seller                   Seller?             @relation(fields: [sellerId], references: [id], onDelete: SetNull)
   product                  Product?            @relation(fields: [productId], references: [id], onDelete: SetNull)
   selectedResponse         B2BEnquiryResponse? @relation("B2BOrderSelectedResponse", fields: [selectedResponseId], references: [id], onDelete: SetNull)
@@ -5902,6 +5905,7 @@ model B2BOrder {
   @@index([sellerId, status, createdAt])
   @@index([sellerId, settlementStatus, createdAt])
   @@index([taxInvoiceNumber])
+  @@unique([sellerId, taxInvoiceNumber], map: "idx_b2b_orders_seller_tax_invoice")
   @@map("b2b_orders")
   @@index([createdByUserId])
   @@index([paymentVerifiedById])
@@ -5946,7 +5950,7 @@ model B2BPaymentProof {
   note                   String?
   createdAt              DateTime         @default(now()) @map("created_at")
   updatedAt              DateTime         @updatedAt @map("updated_at")
-  order                  B2BOrder         @relation(fields: [b2bOrderId], references: [id], onDelete: Cascade)
+  order                  B2BOrder         @relation(fields: [b2bOrderId], references: [id], onDelete: Restrict)
   submittedBy            User             @relation("B2BPaymentProofSubmittedBy", fields: [submittedByUserId], references: [id], onDelete: Restrict)
   reviewedBy             User?            @relation("B2BPaymentProofReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
   paymentRecord          B2BPaymentRecord?
@@ -6660,7 +6664,7 @@ model B2BOrderAmendment {
   appliedAt               DateTime?               @map("applied_at")
   createdAt               DateTime                @default(now()) @map("created_at")
   updatedAt               DateTime                @updatedAt @map("updated_at")
-  order                    B2BOrder                @relation(fields: [b2bOrderId], references: [id], onDelete: Cascade)
+  order                    B2BOrder                @relation(fields: [b2bOrderId], references: [id], onDelete: Restrict)
   requestedBy             User                    @relation("B2BOrderAmendmentRequestedBy", fields: [requestedByUserId], references: [id], onDelete: Restrict)
   decidedBy               User?                   @relation("B2BOrderAmendmentDecidedBy", fields: [decidedByUserId], references: [id], onDelete: SetNull)
 
@@ -6690,7 +6694,7 @@ model B2BDisputeResolution {
   resolvedByUserId          String                   @map("resolved_by_user_id") @db.Uuid
   resolvedAt                DateTime                 @default(now()) @map("resolved_at")
   createdAt                 DateTime                 @default(now()) @map("created_at")
-  order                     B2BOrder                 @relation(fields: [b2bOrderId], references: [id], onDelete: Cascade)
+  order                     B2BOrder                 @relation(fields: [b2bOrderId], references: [id], onDelete: Restrict)
   supportCase               B2BSupportCase           @relation(fields: [supportCaseId], references: [id], onDelete: Restrict)
   orderLine                 B2BOrderLine?            @relation(fields: [b2bOrderLineId], references: [id], onDelete: SetNull)
   shipment                  B2BShipment?             @relation(fields: [shipmentId], references: [id], onDelete: SetNull)

@@ -167,9 +167,10 @@ export class B2BBuyerOperationsController {
   createCase(
     @CurrentUser() actor: RequestUser,
     @Param("orderNumber") orderNumber: string,
+    @Headers("idempotency-key") key: string | undefined,
     @Body() dto: CreateB2BSupportCaseDto,
   ) {
-    return this.operations.createSupportCase(actor, orderNumber, "BUYER", dto);
+    return this.operations.createSupportCase(actor, orderNumber, "BUYER", key, dto);
   }
 
   @Post(":orderNumber/amendments")
@@ -413,9 +414,10 @@ export class SellerB2BOperationsController {
   createCase(
     @CurrentUser() actor: RequestUser,
     @Param("orderNumber") orderNumber: string,
+    @Headers("idempotency-key") key: string | undefined,
     @Body() dto: CreateB2BSupportCaseDto,
   ) {
-    return this.operations.createSupportCase(actor, orderNumber, "SELLER", dto);
+    return this.operations.createSupportCase(actor, orderNumber, "SELLER", key, dto);
   }
 
   @Post("orders/:orderNumber/amendments")
@@ -709,9 +711,10 @@ export class FinanceB2BOperationsController {
   @ApiOperation({ summary: "Create a B2B receivable collection task." })
   createCollectionTask(
     @CurrentUser() actor: RequestUser,
+    @Headers("idempotency-key") key: string | undefined,
     @Body() dto: CreateB2BCollectionTaskDto,
   ) {
-    return this.operations.createCollectionTask(actor, dto);
+    return this.operations.createCollectionTask(actor, key, dto);
   }
 
   @Patch("collection-tasks/:taskId")
@@ -719,9 +722,10 @@ export class FinanceB2BOperationsController {
   updateCollectionTask(
     @CurrentUser() actor: RequestUser,
     @Param("taskId") taskId: string,
+    @Headers("idempotency-key") key: string | undefined,
     @Body() dto: UpdateB2BCollectionTaskDto,
   ) {
-    return this.operations.updateCollectionTask(actor, taskId, dto);
+    return this.operations.updateCollectionTask(actor, taskId, key, dto);
   }
 
   @Get("orders/:orderNumber/payments/:paymentId/receipt")
@@ -790,9 +794,10 @@ export class DeliveryB2BOperationsController {
   event(
     @CurrentUser() actor: RequestUser,
     @Param("shipmentId") shipmentId: string,
+    @Headers("idempotency-key") key: string | undefined,
     @Body() dto: UpdateB2BShipmentEventDto,
   ) {
-    return this.operations.recordShipmentEvent(actor, shipmentId, dto);
+    return this.operations.recordShipmentEvent(actor, shipmentId, key, dto);
   }
 
   @Post(":shipmentId/pod")
@@ -800,9 +805,10 @@ export class DeliveryB2BOperationsController {
   pod(
     @CurrentUser() actor: RequestUser,
     @Param("shipmentId") shipmentId: string,
+    @Headers("idempotency-key") key: string | undefined,
     @Body() dto: RecordB2BPodDto,
   ) {
-    return this.operations.recordPod(actor, shipmentId, dto);
+    return this.operations.recordPod(actor, shipmentId, key, dto);
   }
 
   @Get(":shipmentId/pod/:fileReference")
@@ -842,9 +848,10 @@ export class SupportB2BOperationsController {
   update(
     @CurrentUser() actor: RequestUser,
     @Param("caseId") caseId: string,
+    @Headers("idempotency-key") key: string | undefined,
     @Body() dto: UpdateB2BSupportCaseDto,
   ) {
-    return this.operations.updateSupportCase(actor, caseId, dto);
+    return this.operations.updateSupportCase(actor, caseId, key, dto);
   }
 }
 

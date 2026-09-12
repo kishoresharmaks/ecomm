@@ -10,6 +10,8 @@ import {
   UnprocessableEntityException,
 } from "@nestjs/common";
 import {
+  B2BAdminAction,
+  B2BAuditActorType,
   B2BCreditDecisionStatus,
   B2BDeliveryAcceptanceStatus,
   B2BDisputeResolutionType,
@@ -54,6 +56,7 @@ import { paginationFromQuery } from "../common/pagination";
 import { usesCurrentProfessionalPdfTemplate } from "../documents/professional-pdf";
 import { PaymentsService } from "../payments/payments.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { B2BService } from "./b2b.service";
 import { StorageService } from "../storage/storage.service";
 import { TaxDocumentsService } from "../tax/tax-documents.service";
 import { renderB2BReceiptVoucherPdf } from "./b2b-document-pdf";
@@ -189,6 +192,7 @@ export class B2BOperationsService {
     @Inject(StorageService) private readonly storage: StorageService,
     @Inject(TaxDocumentsService) private readonly taxDocuments: TaxDocumentsService,
     @Inject(PaymentsService) private readonly payments: PaymentsService,
+    @Inject(B2BService) private readonly b2b: B2BService,
   ) {}
 
   async listOrders(actor: RequestUser, audience: OrderAudience, query: B2BOperationsQueryDto) {
@@ -734,6 +738,21 @@ export class B2BOperationsService {
           settlementEligibleAt: null,
         },
       );
+      await this.b2b.createB2BAdminAuditLog(tx, {
+        orderId: order.id,
+        actor,
+        actorType: B2BAuditActorType.ADMIN,
+        action: B2BAdminAction.CANCEL_ORDER,
+        reason: dto.reason.trim(),
+        beforeSnapshot: {
+          status: order.status,
+          paymentStatus: order.paymentStatus,
+        },
+        afterSnapshot: {
+          status: B2BOrderStatus.CANCELLED,
+          paymentStatus: B2BPaymentStatus.CANCELLED,
+        },
+      });
       await this.enqueueOutboxForOrder( order.id, "order.cancelled", {
         orderNumber: order.orderNumber,
         reason: dto.reason.trim(),
@@ -1277,7 +1296,7 @@ export class B2BOperationsService {
         where: { b2bOrderId: order.id, isCurrent: true },
         data: { isCurrent: false },
       });
-      await tx.b2BCreditDecision.create({
+      const createdDecision = await tx.b2BCreditDecision.create({
         data: {
           b2bOrderId: order.id,
           status: dto.status,
@@ -1293,6 +1312,15 @@ export class B2BOperationsService {
           decidedAt: new Date(),
         },
       });
+      if (
+        dto.status === B2BCreditDecisionStatus.OVERRIDDEN &&
+        createdDecision.overrideExpiresAt &&
+        new Date() > createdDecision.overrideExpiresAt
+      ) {
+        throw new UnprocessableEntityException(
+          "The override has expired. Renew the override before proceeding.",
+        );
+      }
       await this.ensurePaymentSchedules(tx, order, dto.paymentTermType);
       const canStart = netTerm > 0 && creditApproved;
       await this.advanceOrder(
@@ -2077,9 +2105,14 @@ export class B2BOperationsService {
   async recordShipmentEvent(
     actor: RequestUser,
     shipmentId: string,
+    idempotencyKey: string | undefined,
     dto: UpdateB2BShipmentEventDto,
   ) {
     this.assertEnabled();
+    const key = this.requireIdempotencyKey(idempotencyKey);
+    if (await this.wasProcessed(actor.id, "shipment-event", key)) {
+      return this.assignedShipment(actor, shipmentId);
+    }
     const shipment = await this.prisma.client.b2BShipment.findFirst({
       where: {
         id: shipmentId,
@@ -2111,11 +2144,26 @@ export class B2BOperationsService {
           dto.note,
         );
       }
+      await this.recordMutation(tx, actor.id, shipment.order.id, "shipment-event", key, dto);
     });
     return this.assignedShipment(actor, shipmentId);
   }
 
-  async recordPod(actor: RequestUser, shipmentId: string, dto: RecordB2BPodDto) {
+  async recordPod(
+    actor: RequestUser,
+    shipmentId: string,
+    idempotencyKey: string | undefined,
+    dto: RecordB2BPodDto,
+  ) {
+    const key = this.requireIdempotencyKey(idempotencyKey);
+    if (await this.wasProcessed(actor.id, "shipment-pod", key)) {
+      const shipment = await this.prisma.client.b2BShipment.findFirst({
+        where: { id: shipmentId, assignedDeliveryUserId: actor.id },
+        include: { proofOfDelivery: true },
+      });
+      if (shipment?.proofOfDelivery) return shipment.proofOfDelivery;
+      throw new NotFoundException("Proof of delivery not found.");
+    }
     const shipment = await this.prisma.client.b2BShipment.findFirst({
       where: { id: shipmentId, assignedDeliveryUserId: actor.id },
       include: { order: true, proofOfDelivery: true },
@@ -2168,6 +2216,7 @@ export class B2BOperationsService {
         shipmentNumber: shipment.shipmentNumber,
         podId: pod.id,
       });
+      await this.recordMutation(tx, actor.id, shipment.order.id, "shipment-pod", key, dto);
       return pod;
     });
   }
@@ -3038,9 +3087,25 @@ export class B2BOperationsService {
     });
   }
 
-  async createCollectionTask(actor: RequestUser, dto: CreateB2BCollectionTaskDto) {
+  async createCollectionTask(
+    actor: RequestUser,
+    idempotencyKey: string | undefined,
+    dto: CreateB2BCollectionTaskDto,
+  ) {
     this.assertEnabled();
-    return this.prisma.client.b2BCollectionTask.create({
+    const key = this.requireIdempotencyKey(idempotencyKey);
+    const receivable = await this.prisma.client.b2BReceivable.findUnique({
+      where: { id: dto.receivableId },
+      select: { id: true, b2bOrderId: true },
+    });
+    if (!receivable) throw new NotFoundException("B2B receivable not found.");
+    if (await this.wasProcessed(actor.id, "collection-task-create", key)) {
+      return this.prisma.client.b2BCollectionTask.findFirst({
+        where: { receivableId: dto.receivableId, assignedToUserId: actor.id },
+        orderBy: { createdAt: "desc" },
+      });
+    }
+    const task = await this.prisma.client.b2BCollectionTask.create({
       data: {
         receivableId: dto.receivableId,
         assignedToUserId: dto.assignedToUserId ?? actor.id,
@@ -3049,15 +3114,34 @@ export class B2BOperationsService {
         note: dto.note?.trim() || null,
       },
     });
+    await this.recordMutation(
+      this.prisma.client,
+      actor.id,
+      receivable.b2bOrderId,
+      "collection-task-create",
+      key,
+      dto,
+    );
+    return task;
   }
 
   async updateCollectionTask(
     actor: RequestUser,
     taskId: string,
+    idempotencyKey: string | undefined,
     dto: UpdateB2BCollectionTaskDto,
   ) {
     this.assertEnabled();
-    return this.prisma.client.b2BCollectionTask.update({
+    const key = this.requireIdempotencyKey(idempotencyKey);
+    const task = await this.prisma.client.b2BCollectionTask.findUnique({
+      where: { id: taskId },
+      select: { id: true, receivableId: true },
+    });
+    if (!task) throw new NotFoundException("B2B collection task not found.");
+    if (await this.wasProcessed(actor.id, "collection-task-update", key)) {
+      return this.prisma.client.b2BCollectionTask.findUnique({ where: { id: taskId } });
+    }
+    const updated = await this.prisma.client.b2BCollectionTask.update({
       where: { id: taskId },
       data: {
         status: dto.status,
@@ -3067,14 +3151,28 @@ export class B2BOperationsService {
         assignedToUserId: actor.id,
       },
     });
+    await this.recordMutation(
+      this.prisma.client,
+      actor.id,
+      task.receivableId,
+      "collection-task-update",
+      key,
+      dto,
+    );
+    return updated;
   }
 
   async createSupportCase(
     actor: RequestUser,
     orderNumber: string,
     audience: OrderAudience,
+    idempotencyKey: string | undefined,
     dto: CreateB2BSupportCaseDto,
   ) {
+    const key = this.requireIdempotencyKey(idempotencyKey);
+    if (await this.wasProcessed(actor.id, "support-case-create", key)) {
+      return this.getOrder(actor, audience, orderNumber);
+    }
     const order = await this.getOrder(actor, audience, orderNumber);
     if (audience === "SELLER") {
       await this.assertSellerPermission(actor, order.sellerId, SellerStaffPermission.B2B_SALES);
@@ -3110,6 +3208,14 @@ export class B2BOperationsService {
         createdByUserId: actor.id,
       },
     });
+    await this.recordMutation(
+      this.prisma.client,
+      actor.id,
+      order.id,
+      "support-case-create",
+      key,
+      dto,
+    );
   }
 
   async listSupportCases(query: B2BOperationsQueryDto) {
@@ -3162,15 +3268,24 @@ export class B2BOperationsService {
     return { items, total, page, limit: take, totalPages: Math.ceil(total / take) };
   }
 
-  async updateSupportCase(actor: RequestUser, caseId: string, dto: UpdateB2BSupportCaseDto) {
+  async updateSupportCase(
+    actor: RequestUser,
+    caseId: string,
+    idempotencyKey: string | undefined,
+    dto: UpdateB2BSupportCaseDto,
+  ) {
     this.assertEnabled();
+    const key = this.requireIdempotencyKey(idempotencyKey);
+    if (await this.wasProcessed(actor.id, "support-case-update", key)) {
+      return this.prisma.client.b2BSupportCase.findUnique({ where: { id: caseId } });
+    }
     const supportCase = await this.prisma.client.b2BSupportCase.findUnique({
       where: { id: caseId },
       select: {
         caseType: true,
         shipmentId: true,
         disputeResolution: { select: { id: true } },
-        order: { select: { status: true } },
+        order: { select: { status: true, b2bOrderId: true } },
       },
     });
     if (!supportCase) throw new NotFoundException("B2B support case not found.");
@@ -3188,7 +3303,7 @@ export class B2BOperationsService {
         "Use the structured dispute resolution action before closing a delivery dispute.",
       );
     }
-    return this.prisma.client.b2BSupportCase.update({
+    const updated = await this.prisma.client.b2BSupportCase.update({
       where: { id: caseId },
       data: {
         status: dto.status,
@@ -3201,6 +3316,15 @@ export class B2BOperationsService {
             : null,
       },
     });
+    await this.recordMutation(
+      this.prisma.client,
+      actor.id,
+      supportCase.order.b2bOrderId,
+      "support-case-update",
+      key,
+      dto,
+    );
+    return updated;
   }
 
   async resolveDispute(
@@ -4235,6 +4359,7 @@ export class B2BOperationsService {
         record.unitPricePaise >= 0
           ? record.unitPricePaise
           : undefined;
+      if (quantity === undefined && unitPricePaise === undefined) return [];
       return [{ orderLineId: record.orderLineId, quantity, unitPricePaise }];
     });
   }

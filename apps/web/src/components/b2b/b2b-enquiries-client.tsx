@@ -53,7 +53,8 @@ export function B2BEnquiriesClient() {
       setNotice("Enquiry cancelled.");
       void queryClient.invalidateQueries({ queryKey: ["b2b-enquiries", auth.authKey] });
     },
-    onError: (error) => setNotice(error instanceof Error ? error.message : "Enquiry cancellation failed.")
+    onError: (error) => setNotice(error instanceof Error ? error.message : "Enquiry cancellation failed."),
+    onSettled: () => setNotice(null),
   });
 
   function submitFilters(event: FormEvent<HTMLFormElement>) {
