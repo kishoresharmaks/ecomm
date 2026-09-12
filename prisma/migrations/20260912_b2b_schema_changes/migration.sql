@@ -56,7 +56,7 @@ BEGIN
     AND contype = 'f'
     AND conkey @> ARRAY[
       (SELECT attnum FROM pg_attribute WHERE attrelid = 'business_buyers'::regclass AND attname = 'user_id')
-    ]::int[]
+    ]::smallint[]
   LIMIT 1;
 
   IF constraint_name IS NOT NULL THEN
