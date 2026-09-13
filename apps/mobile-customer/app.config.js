@@ -28,7 +28,8 @@ module.exports = {
     slug: "onehandindia-customer",
     owner: "onehandindiasteam",
     scheme: "onehandindia",
-    version: "0.1.1",
+    version: "1.0.0",
+    privacyPolicy: "https://1handindia.com/privacy-policy",
     orientation: "portrait",
     userInterfaceStyle: "light",
     icon: "./assets/icon.png",
@@ -81,7 +82,7 @@ module.exports = {
     },
     ios: {
       bundleIdentifier: "com.onehandindia.customer",
-      buildNumber: "2",
+      buildNumber: "1.0.0",
       supportsTablet: true,
       associatedDomains: ["applinks:1handindia.com", "applinks:www.1handindia.com"],
       infoPlist: {
