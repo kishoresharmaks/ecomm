@@ -105,11 +105,14 @@ android {
             keyPassword 'android'
         }
         release {
-            if (project.hasProperty('MYAPP_RELEASE_STORE_FILE')) {
-                storeFile file(MYAPP_RELEASE_STORE_FILE)
+            def keystoreFile = file(MYAPP_RELEASE_STORE_FILE)
+            if (project.hasProperty('MYAPP_RELEASE_STORE_FILE') && keystoreFile.exists()) {
+                storeFile keystoreFile
                 storePassword MYAPP_RELEASE_STORE_PASSWORD
                 keyAlias MYAPP_RELEASE_KEY_ALIAS
                 keyPassword MYAPP_RELEASE_KEY_PASSWORD
+            } else {
+                signingConfig signingConfigs.debug
             }
         }
     }
