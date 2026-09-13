@@ -148,8 +148,8 @@ type FeaturedCategory = {
 const HERO_CAROUSEL_INTERVAL_MS = 5000;
 const QUICK_ACTION_TILE_WIDTH = 90;
 const QUICK_ACTION_TILE_GAP = 14;
-const PERSONALIZED_RAIL_SIDE_PADDING = 20;
-const PERSONALIZED_RAIL_CARD_GAP = 16;
+const PERSONALIZED_RAIL_SIDE_PADDING = 16;
+const PERSONALIZED_RAIL_CARD_GAP = 12;
 
 // Standard product card dimensions - consistent across all card types
 const STANDARD_CARD_WIDTH = 160;
@@ -2484,13 +2484,13 @@ const styles = StyleSheet.create({
     paddingBottom: 194,
   },
   header: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingTop: 12,
   },
   headerRow: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 12,
+    gap: 10,
     justifyContent: "space-between",
   },
   logoWrap: {
@@ -2498,7 +2498,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flex: 1,
     gap: 10,
-    justifyContent: "center",
+    justifyContent: "flex-start",
     minWidth: 0,
   },
   logoBadge: {
@@ -2993,7 +2993,7 @@ const styles = StyleSheet.create({
   heroInner: {
     flex: 1,
     flexDirection: "row",
-    padding: 20,
+    padding: 16,
   },
   heroTextBlock: {
     flex: 1,
@@ -3303,9 +3303,9 @@ const styles = StyleSheet.create({
   personalizedHeader: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 12,
+    gap: 10,
     justifyContent: "space-between",
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
   },
   personalizedTitleRow: {
     alignItems: "center",
@@ -4375,7 +4375,7 @@ const styles = StyleSheet.create({
   productScrollContent: {
     alignItems: "stretch",
     paddingBottom: 14,
-    paddingRight: 20,
+    paddingRight: 16,
   },
   productCard: {
     backgroundColor: colors.surface,
@@ -4383,7 +4383,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     elevation: 3,
-    marginRight: 18,
+    marginRight: 12,
     overflow: "hidden",
     padding: 12,
     shadowColor: colors.primary,
