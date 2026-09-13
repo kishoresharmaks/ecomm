@@ -11,7 +11,7 @@ import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import type { ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { EmptyState } from "../../src/components/empty-state";
 import { RemoteImage } from "../../src/components/remote-image";
@@ -59,6 +59,8 @@ import {
 import { isMobileReturnsEnabled } from "../../src/features/returns/return-feature";
 import { returnsCopy } from "../../src/features/returns/return-copy";
 import { resolveImageUrl } from "../../src/lib/image-url";
+import { generateAndShareOrderInvoice } from "../../src/lib/invoice-pdf";
+import { useReviewableItems } from "../../src/features/storefront/use-mobile-reviews";
 import { colors } from "../../src/theme";
 
 export default function OrderDetailScreen() {
@@ -71,6 +73,8 @@ export default function OrderDetailScreen() {
   const [cancelNote, setCancelNote] = useState("");
   const [paymentRetryMessage, setPaymentRetryMessage] = useState("");
   const [paymentRetryProgress, setPaymentRetryProgress] = useState<string | null>(null);
+  const [invoiceError, setInvoiceError] = useState<string | null>(null);
+  const [isGeneratingInvoice, setIsGeneratingInvoice] = useState(false);
   const mountedRef = useRef(true);
   const retryPaymentMutationResetRef = useRef<() => void>(() => undefined);
   const cancelMutationResetRef = useRef<() => void>(() => undefined);
@@ -95,6 +99,7 @@ export default function OrderDetailScreen() {
     enabled: isMobileReturnsEnabled(customerAuth.authKey),
     staleTime: 5 * 60 * 1000,
   });
+  const { items: reviewableItems, isLoading: reviewOptionsLoading } = useReviewableItems(orderNumber);
 
   const cancelMutation = useMutation({
     mutationFn: () => cancelCustomerOrder(customerAuth.authHeaders, orderNumber ?? "", cancelNote),
@@ -167,6 +172,19 @@ export default function OrderDetailScreen() {
       await refreshOrderPaymentState();
     },
   });
+
+  async function handleDownloadInvoice() {
+    if (!order || isGeneratingInvoice) return;
+    setIsGeneratingInvoice(true);
+    setInvoiceError(null);
+    try {
+      await generateAndShareOrderInvoice(order);
+    } catch (err) {
+      setInvoiceError(err instanceof Error ? err.message : "Invoice could not be generated.");
+    } finally {
+      setIsGeneratingInvoice(false);
+    }
+  }
 
   retryPaymentMutationResetRef.current = retryPaymentMutation.reset;
   cancelMutationResetRef.current = cancelMutation.reset;
@@ -263,6 +281,13 @@ export default function OrderDetailScreen() {
     orderCanStartReturn(order) &&
     (returnPolicy.refund.eligible || returnPolicy.replacement.eligible);
   const canRetryPayment = canRetryRazorpayPayment(order);
+  const reviewOptionsByItem = useMemo(() => {
+    const map = new Map<string, (typeof reviewableItems)[number]>();
+    for (const opt of reviewableItems) {
+      map.set(opt.orderItemId, opt);
+    }
+    return map;
+  }, [reviewableItems]);
   const address = readShippingAddress(order);
   const timeline = buildTimeline(order);
 
@@ -290,27 +315,41 @@ export default function OrderDetailScreen() {
         </View>
 
         <Section icon={ShoppingCart01Icon} title="Items">
-          {order.items.map((item) => (
-            <View key={item.id} style={styles.itemRow}>
-              <RemoteImage fallbackLabel={item.productNameSnapshot} style={styles.itemImage} uri={resolveImageUrl(item.product?.imageUrl)} />
-              <View style={styles.itemBody}>
-                <Text numberOfLines={2} style={styles.itemName}>{item.productNameSnapshot}</Text>
-                <Text numberOfLines={1} style={styles.itemMeta}>
-                  Qty {item.quantity}
-                  {item.seller?.storeName ? ` - ${item.seller.storeName}` : ""}
-                </Text>
-                <Text style={styles.itemMeta}>{formatMoney(item.unitPricePaise, item.currency ?? order.currency, "en-IN")} each</Text>
-                {delivered ? (
-                  <ItemReturnTerms
-                    item={item}
-                    order={order}
-                    settings={returnPolicyQuery.data ?? defaultMobileReturnPolicySettings}
-                  />
+          {order.items.map((item) => {
+            const reviewOption = reviewOptionsByItem.get(item.id);
+            const canRate = delivered && reviewOption?.canReview && !reviewOption.alreadyReviewed;
+            return (
+              <View key={item.id} style={styles.itemCard}>
+                <View style={styles.itemRow}>
+                  <RemoteImage fallbackLabel={item.productNameSnapshot} style={styles.itemImage} uri={resolveImageUrl(item.product?.imageUrl)} />
+                  <View style={styles.itemBody}>
+                    <Text numberOfLines={2} style={styles.itemName}>{item.productNameSnapshot}</Text>
+                    <Text numberOfLines={1} style={styles.itemMeta}>
+                      Qty {item.quantity}
+                      {item.seller?.storeName ? ` - ${item.seller.storeName}` : ""}
+                    </Text>
+                    <Text style={styles.itemMeta}>{formatMoney(item.unitPricePaise, item.currency ?? order.currency, "en-IN")} each</Text>
+                    {delivered ? (
+                      <ItemReturnTerms
+                        item={item}
+                        order={order}
+                        settings={returnPolicyQuery.data ?? defaultMobileReturnPolicySettings}
+                      />
+                    ) : null}
+                  </View>
+                  <Text style={styles.itemTotal}>{formatMoney(item.lineTotalPaise, item.currency ?? order.currency, "en-IN")}</Text>
+                </View>
+                {canRate ? (
+                  <Pressable
+                    style={styles.rateProductButton}
+                    onPress={() => router.push({ pathname: "/account/reviews/write", params: { orderItemId: item.id, productId: item.product?.slug ?? "" } })}
+                  >
+                    <Text style={styles.rateProductButtonText}>Rate this product</Text>
+                  </Pressable>
                 ) : null}
               </View>
-              <Text style={styles.itemTotal}>{formatMoney(item.lineTotalPaise, item.currency ?? order.currency, "en-IN")}</Text>
-            </View>
-          ))}
+            );
+          })}
         </Section>
 
         <Section icon={DeliveryBox01Icon} title="Delivery">
@@ -412,6 +451,18 @@ export default function OrderDetailScreen() {
               </Pressable>
             </View>
           ) : null}
+          <Pressable
+            style={styles.secondaryButton}
+            onPress={handleDownloadInvoice}
+            disabled={isGeneratingInvoice}
+          >
+            {isGeneratingInvoice ? (
+              <ActivityIndicator color={colors.primary} size="small" />
+            ) : (
+              <Text style={styles.secondaryButtonText}>Download invoice</Text>
+            )}
+          </Pressable>
+          {invoiceError ? <Text style={styles.errorText}>{invoiceError}</Text> : null}
         </Section>
 
         <Section icon={HeadsetIcon} title="Need help">
@@ -910,12 +961,35 @@ const styles = StyleSheet.create({
   itemRow: {
     backgroundColor: colors.secondary,
     borderColor: colors.border,
-    borderRadius: 22,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
     borderWidth: 1,
     flexDirection: "row",
     gap: 12,
-    marginTop: 10,
     padding: 12,
+  },
+  itemCard: {
+    backgroundColor: colors.secondary,
+    borderColor: colors.border,
+    borderRadius: 22,
+    borderWidth: 1,
+    marginTop: 10,
+    overflow: "hidden",
+  },
+  rateProductButton: {
+    alignItems: "center",
+    backgroundColor: colors.softSurface,
+    borderColor: colors.border,
+    borderTopColor: colors.border,
+    borderTopWidth: 1,
+    borderWidth: 1,
+    justifyContent: "center",
+    minHeight: 44,
+  },
+  rateProductButtonText: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: "900",
   },
   itemImage: {
     backgroundColor: colors.surface,

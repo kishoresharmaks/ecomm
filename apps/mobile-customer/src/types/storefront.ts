@@ -155,3 +155,53 @@ export type ProductSummary = {
   campaignLinkUrl?: string | null;
   createdAt?: string;
 };
+
+export type MobileProductReview = {
+  id: string;
+  rating: number;
+  title: string | null;
+  comment: string | null;
+  customerName: string;
+  createdAt: string;
+  verifiedPurchase: boolean;
+};
+
+export type MobileCustomerReview = {
+  id: string;
+  productId: string;
+  productName: string;
+  productSlug: string;
+  productImageUrl: string | null;
+  rating: number;
+  title: string | null;
+  comment: string | null;
+  status: string;
+  isVerifiedPurchase: boolean;
+  submittedAt: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CustomerReviewsResponse = {
+  items: MobileCustomerReview[];
+  total: number;
+  page: number;
+  limit: number;
+};
+
+export type ReviewableOrderItem = {
+  orderItemId: string;
+  productId: string;
+  productName: string;
+  productSlug: string;
+  productImageUrl: string | null;
+  variantLabel: string | null;
+  canReview: boolean;
+  alreadyReviewed: boolean;
+};
+
+export type CustomerReviewOptions = {
+  orderNumber: string;
+  orderDate: string;
+  items: ReviewableOrderItem[];
+};

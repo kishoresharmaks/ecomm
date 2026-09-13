@@ -1,5 +1,14 @@
 import { deleteNoContent, getJson, patchJson, postJson, type MobileAuthHeaders } from "../../lib/api";
-import type { LocationArea, ProductSummary, SelectedLocation, StorefrontSearchResponse, StorefrontSuggestionsResponse } from "../../types/storefront";
+import type {
+  CustomerReviewOptions,
+  CustomerReviewsResponse,
+  LocationArea,
+  MobileProductReview,
+  ProductSummary,
+  SelectedLocation,
+  StorefrontSearchResponse,
+  StorefrontSuggestionsResponse,
+} from "../../types/storefront";
 import type { MobileCategory, MobileProduct, MobileStore } from "../../types/mobile-home";
 import { normalizeMobileAnnouncementsResponse } from "./mobile-announcement";
 import type { MobileAnnouncement } from "./mobile-announcement";
@@ -1305,6 +1314,53 @@ export function updateCartItem(auth: MobileAuthHeaders, cartItemId: string, quan
 export function removeCartItem(auth: MobileAuthHeaders, cartItemId: string) {
   return deleteNoContent({
     path: `/cart/items/${cartItemId}`,
+    auth,
+  });
+}
+
+export type SubmitProductReviewPayload = {
+  orderItemId: string;
+  rating: number;
+  title?: string | null;
+  comment?: string | null;
+};
+
+export function getOrderReviewOptions(auth: MobileAuthHeaders, orderNumber: string) {
+  return getJson<CustomerReviewOptions>({
+    path: `/account/reviews/orders/${encodeURIComponent(orderNumber)}`,
+    auth,
+  });
+}
+
+export function submitProductReview(auth: MobileAuthHeaders, payload: SubmitProductReviewPayload) {
+  return postJson<{ id: string; rating: number }>({
+    path: "/account/reviews",
+    auth,
+    body: payload,
+  });
+}
+
+export function getProductReviews(productId: string, cursor?: string | null) {
+  return getJson<{
+    items: MobileProductReview[];
+    nextCursor: string | null;
+  }>({
+    path: `/reviews/products/${encodeURIComponent(productId)}`,
+    searchParams: { limit: 10, ...(cursor ? { cursor } : {}) },
+  });
+}
+
+export function getCustomerReviews(auth: MobileAuthHeaders, page = 1) {
+  return getJson<CustomerReviewsResponse>({
+    path: "/account/reviews",
+    auth,
+    searchParams: { page },
+  });
+}
+
+export function deleteCustomerReview(auth: MobileAuthHeaders, reviewId: string) {
+  return deleteNoContent({
+    path: `/account/reviews/${encodeURIComponent(reviewId)}`,
     auth,
   });
 }

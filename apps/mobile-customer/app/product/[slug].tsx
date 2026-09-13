@@ -5,11 +5,13 @@ import {
   HeartIcon,
   MinusSignIcon,
   NoteIcon,
+  PencilEdit01Icon,
   PlusSignIcon,
   QrCodeIcon,
   Share02Icon,
   Shield01Icon,
   ShoppingCart01Icon,
+  StarIcon,
   Store01Icon,
   TagIcon,
 } from "@hugeicons/core-free-icons";
@@ -26,7 +28,27 @@ import { Screen } from "../../src/components/screen";
 import { useMobileCustomerAuth } from "../../src/auth/mobile-auth-context";
 import { useMobileMarket } from "../../src/features/market/mobile-market";
 import { withStorefrontMaintenance } from "../../src/features/maintenance/mobile-maintenance-gate";
-import { addCartItem, addWishlistItem, getCart, getProduct, getWishlist, listProducts, removeWishlistItem } from "../../src/features/storefront/storefront-api";
+import {
+  addCartItem,
+  addWishlistItem,
+  getCart,
+  getProduct,
+  getWishlist,
+  listProducts,
+  removeWishlistItem,
+} from "../../src/features/storefront/storefront-api";
+import { useProductReviews } from "../../src/features/storefront/use-mobile-reviews";
+import { RatingDisplay } from "../../src/components/rating-display";
+import {
+  accountErrorMessage,
+  formatDate,
+  formatDateTime,
+  formatStatus,
+  orderCanBeCancelled,
+  RetryState,
+  SignInRequiredState,
+  StatusPill,
+} from "../../src/features/account/account-ui";
 import { resolveImageUrl } from "../../src/lib/image-url";
 import { useRecentProductsStore } from "../../src/state/recent-products-store";
 import { colors } from "../../src/theme";
@@ -79,6 +101,11 @@ type ProductDetailFeedItem =
       onToggleWishlist: (productId: string, wished: boolean) => void;
       products: MobileProduct[];
       type: "recommendations";
+    }
+  | {
+      id: "reviews";
+      type: "reviews";
+      product: ProductSummary;
     };
 
 function ProductDetailScreen() {
@@ -194,6 +221,7 @@ function ProductDetailScreen() {
         },
         { id: "description", type: "description", product, selectedVariant },
         { id: "seller", type: "seller", product },
+        { id: "reviews", type: "reviews", product },
       ];
 
       if (recommendations.length >= 4) {
@@ -390,6 +418,10 @@ function ProductDetailFeed({
         onToggleWishlist={item.onToggleWishlist}
       />
     );
+  }
+
+  if (item.type === "reviews") {
+    return <ReviewsSection product={item.product} />;
   }
 
   return <DescriptionBlock product={item.product} selectedVariant={item.selectedVariant} />;
@@ -777,6 +809,72 @@ function RecommendationsBlock({
           );
         })}
       </ScrollView>
+    </View>
+  );
+}
+
+function ReviewsSection({ product }: { product: ProductSummary }) {
+  const router = useRouter();
+  const { averageRating, reviewCount, reviews, isLoading } = useProductReviews(product.id);
+  const summaryRating = averageRating ?? product.reviewSummary?.averageRating ?? 0;
+  const summaryCount = reviewCount ?? product.reviewSummary?.reviewCount ?? 0;
+  const [expanded, setExpanded] = useState(false);
+
+  const visibleReviews = expanded ? reviews : reviews.slice(0, 2);
+
+  return (
+    <View style={styles.section}>
+      <View style={styles.reviewsHeader}>
+        <RatingDisplay averageRating={summaryRating} reviewCount={summaryCount} size="medium" />
+        {summaryCount > 2 ? (
+          <Pressable onPress={() => setExpanded((v) => !v)}>
+            <Text style={styles.reviewsToggleText}>{expanded ? "Show less" : `See all ${summaryCount} reviews`}</Text>
+          </Pressable>
+        ) : null}
+      </View>
+
+      {isLoading ? (
+        <View style={styles.reviewsLoading}>
+          <ActivityIndicator color={colors.primary} />
+          <Text style={styles.reviewsLoadingText}>Loading reviews...</Text>
+        </View>
+      ) : reviews.length > 0 ? (
+        <View style={styles.reviewsList}>
+          {visibleReviews.map((review) => (
+            <View key={review.id} style={styles.reviewCard}>
+              <View style={styles.reviewCardHeader}>
+                <Text style={styles.reviewCustomerName}>{review.customerName}</Text>
+                <View style={styles.reviewCardStars}>
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <HugeiconsIcon
+                      key={star}
+                      icon={StarIcon}
+                      size={14}
+                      color={star <= review.rating ? "#F59E0B" : "#D1D5DB"}
+                      strokeWidth={star <= review.rating ? 1.8 : 1.3}
+                    />
+                  ))}
+                </View>
+              </View>
+              {review.title ? <Text style={styles.reviewTitle}>{review.title}</Text> : null}
+              {review.comment ? <Text style={styles.reviewComment}>{review.comment}</Text> : null}
+              <Text style={styles.reviewDate}>{formatDate(review.createdAt)}</Text>
+            </View>
+          ))}
+        </View>
+      ) : (
+        <Text style={styles.reviewsEmpty}>No reviews yet. Be the first to share your experience.</Text>
+      )}
+
+      <Pressable
+        style={styles.writeReviewButton}
+        onPress={() => {
+          router.push("/orders");
+        }}
+      >
+        <HugeiconsIcon color={colors.surface} icon={PencilEdit01Icon} size={18} strokeWidth={2.2} />
+        <Text style={styles.writeReviewButtonText}>Write a review</Text>
+      </Pressable>
     </View>
   );
 }
@@ -1524,5 +1622,94 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontSize: 15,
     fontWeight: "700",
+  },
+  reviewsHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 14,
+  },
+  reviewsToggleText: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  reviewsList: {
+    gap: 10,
+  },
+  reviewCard: {
+    backgroundColor: colors.secondary,
+    borderColor: colors.border,
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 14,
+  },
+  reviewCardHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 6,
+  },
+  reviewCustomerName: {
+    color: colors.ink,
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  reviewCardStars: {
+    flexDirection: "row",
+    gap: 3,
+  },
+  reviewTitle: {
+    color: colors.ink,
+    fontSize: 14,
+    fontWeight: "800",
+    marginBottom: 4,
+  },
+  reviewComment: {
+    color: "#475467",
+    fontSize: 13,
+    fontWeight: "700",
+    lineHeight: 20,
+    marginBottom: 6,
+  },
+  reviewDate: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  reviewsEmpty: {
+    color: colors.muted,
+    fontSize: 13,
+    fontWeight: "700",
+    lineHeight: 20,
+    marginBottom: 12,
+    textAlign: "center",
+  },
+  reviewsLoading: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+    paddingVertical: 12,
+  },
+  reviewsLoadingText: {
+    color: colors.muted,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  writeReviewButton: {
+    alignItems: "center",
+    backgroundColor: colors.primary,
+    borderRadius: 999,
+    flexDirection: "row",
+    gap: 8,
+    justifyContent: "center",
+    marginTop: 14,
+    minHeight: 50,
+    paddingVertical: 14,
+  },
+  writeReviewButtonText: {
+    color: colors.surface,
+    fontSize: 15,
+    fontWeight: "900",
   },
 });

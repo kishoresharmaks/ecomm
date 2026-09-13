@@ -57,6 +57,8 @@ function RootLayout() {
             <Stack.Screen name="account/notifications" />
             <Stack.Screen name="account/notification-preferences" />
             <Stack.Screen name="account/wishlist" />
+            <Stack.Screen name="account/reviews" />
+            <Stack.Screen name="account/reviews/write" />
             <Stack.Screen name="account/support" />
             <Stack.Screen name="account/returns" />
             <Stack.Screen name="account/returns/[requestNumber]" />

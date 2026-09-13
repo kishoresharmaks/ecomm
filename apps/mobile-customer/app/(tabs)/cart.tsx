@@ -8,15 +8,16 @@ import { HugeiconsIcon } from "@hugeicons/react-native";
 import { FlashList } from "@shopify/flash-list";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useRouter } from "expo-router";
-import { useState } from "react";
-import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { useCallback, useMemo, useState } from "react";
+import { ActivityIndicator, Image, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { EmptyState } from "../../src/components/empty-state";
 import { Screen } from "../../src/components/screen";
 import { useMobileCustomerAuth } from "../../src/auth/mobile-auth-context";
 import { accountErrorMessage } from "../../src/features/account/account-ui";
 import { useMobileMarket } from "../../src/features/market/mobile-market";
 import { withStorefrontMaintenance } from "../../src/features/maintenance/mobile-maintenance-gate";
-import { getCart, removeCartItem, updateCartItem, type MobileCartSummary } from "../../src/features/storefront/storefront-api";
+import { getCart, removeCartItem, updateCartItem, getCheckoutSummary, type MobileCartSummary } from "../../src/features/storefront/storefront-api";
+import { validateCheckoutCouponCode, normalizeCheckoutCouponCode } from "../../src/features/storefront/checkout-validation";
 import { resolveImageUrl } from "../../src/lib/image-url";
 import { colors } from "../../src/theme";
 
@@ -26,6 +27,10 @@ function CartScreen() {
   const queryClient = useQueryClient();
   const market = useMobileMarket();
   const [actionError, setActionError] = useState("");
+  const [couponCode, setCouponCode] = useState("");
+  const [appliedCouponCode, setAppliedCouponCode] = useState<string | null>(null);
+  const [couponFeedback, setCouponFeedback] = useState<{ message: string; tone: "success" | "danger" } | null>(null);
+  const [isApplyingCoupon, setIsApplyingCoupon] = useState(false);
   const cartQueryKey = ["mobile-cart", customerAuth.authKey] as const;
   const cartQuery = useQuery({
     queryKey: cartQueryKey,
@@ -48,6 +53,52 @@ function CartScreen() {
     onSuccess: () => void invalidateCart(queryClient, customerAuth.authKey),
     onError: (error) => setActionError(accountErrorMessage(error, "Cart item could not be removed.")),
   });
+
+  const applyCouponMutation = useMutation({
+    mutationFn: async (code: string) => {
+      setIsApplyingCoupon(true);
+      setCouponFeedback(null);
+      const normalizedCode = normalizeCheckoutCouponCode(code);
+      validateCheckoutCouponCode(code);
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      return getCheckoutSummary(customerAuth.authHeaders, { couponCode: normalizedCode });
+    },
+    onSuccess: (data, code) => {
+      const coupon = data.coupon;
+      if (coupon && normalizeCheckoutCouponCode(coupon.code) === normalizeCheckoutCouponCode(code)) {
+        setAppliedCouponCode(coupon.code);
+        setCouponFeedback({ message: `${coupon.code} applied successfully`, tone: "success" });
+        setCouponCode("");
+      } else {
+        setAppliedCouponCode(null);
+        setCouponFeedback({ message: "This coupon is not valid for your cart.", tone: "danger" });
+      }
+    },
+    onError: (error) => {
+      setAppliedCouponCode(null);
+      const message = error instanceof Error ? error.message : "Could not apply coupon.";
+      if (message.includes("coupon code") || message.includes("Enter")) {
+        setCouponFeedback({ message, tone: "danger" });
+      } else {
+        setCouponFeedback({ message: "This coupon is not valid for your cart.", tone: "danger" });
+      }
+    },
+    onSettled: () => {
+      setIsApplyingCoupon(false);
+    },
+  });
+
+  function handleApplyCoupon() {
+    if (!couponCode.trim() || isApplyingCoupon || appliedCouponCode) return;
+    applyCouponMutation.mutate(couponCode.trim());
+  }
+
+  function handleRemoveCoupon() {
+    setAppliedCouponCode(null);
+    setCouponFeedback(null);
+    setCouponCode("");
+    void queryClient.invalidateQueries({ queryKey: ["mobile-cart", customerAuth.authKey] });
+  }
 
   if (customerAuth.status === "loading" || customerAuth.status === "syncing") {
     return (
@@ -142,6 +193,58 @@ function CartScreen() {
                 <Text style={styles.summaryValue}>
                   {itemCount} item{itemCount === 1 ? "" : "s"}
                 </Text>
+              </View>
+              <View style={styles.couponCard}>
+                <Text style={styles.couponLabel}>Promo code</Text>
+                {appliedCouponCode ? (
+                  <View style={styles.couponAppliedRow}>
+                    <View style={styles.couponAppliedBadge}>
+                      <Text style={styles.couponAppliedCode}>{appliedCouponCode}</Text>
+                      <Text style={styles.couponAppliedStatus}>Applied</Text>
+                    </View>
+                    <Pressable style={styles.couponRemoveButton} onPress={handleRemoveCoupon}>
+                      <Text style={styles.couponRemoveText}>Remove</Text>
+                    </Pressable>
+                  </View>
+                ) : (
+                  <View style={styles.couponInputRow}>
+                    <TextInput
+                      autoCapitalize="characters"
+                      autoCorrect={false}
+                      keyboardType="default"
+                      onChangeText={setCouponCode}
+                      placeholder="Enter promo code"
+                      placeholderTextColor="#9AA4B2"
+                      style={[styles.couponInputField, isApplyingCoupon ? styles.couponInputDisabled : null]}
+                      value={couponCode}
+                    />
+                    <Pressable
+                      disabled={isApplyingCoupon || !couponCode.trim()}
+                      onPress={() => void handleApplyCoupon()}
+                      style={({ pressed }) => [
+                        styles.couponApplyButton,
+                        (isApplyingCoupon || !couponCode.trim()) ? styles.couponApplyButtonDisabled : null,
+                        pressed && !isApplyingCoupon && couponCode.trim() ? styles.couponApplyButtonPressed : null,
+                      ]}
+                    >
+                      {isApplyingCoupon ? (
+                        <ActivityIndicator color={colors.surface} size="small" />
+                      ) : (
+                        <Text style={styles.couponApplyButtonText}>Apply</Text>
+                      )}
+                    </Pressable>
+                  </View>
+                )}
+                {couponFeedback ? (
+                  <Text
+                    style={[
+                      styles.couponFeedbackText,
+                      couponFeedback.tone === "success" ? styles.couponFeedbackSuccess : styles.couponFeedbackError,
+                    ]}
+                  >
+                    {couponFeedback.message}
+                  </Text>
+                ) : null}
               </View>
               <Text style={styles.summaryHelp}>Delivery, discounts, and platform fees are calculated in checkout.</Text>
               <Pressable style={styles.checkoutButton} onPress={() => router.push("/checkout")}>
@@ -556,5 +659,102 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "900",
     textAlign: "center",
+  },
+  couponCard: {
+    marginTop: 14,
+    paddingTop: 14,
+    borderTopColor: "#F3E7E2",
+    borderTopWidth: 1,
+  },
+  couponLabel: {
+    color: "#6B7280",
+    fontSize: 12,
+    fontWeight: "800",
+    marginBottom: 8,
+  },
+  couponInputRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  couponInputField: {
+    flex: 1,
+    backgroundColor: "#FFFBFA",
+    borderColor: "#F3E7E2",
+    borderRadius: 16,
+    borderWidth: 1,
+    color: "#111827",
+    fontSize: 14,
+    fontWeight: "700",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  couponInputDisabled: {
+    backgroundColor: "#F3F4F6",
+    color: "#9AA4B2",
+  },
+  couponApplyButton: {
+    alignItems: "center",
+    backgroundColor: colors.primary,
+    borderRadius: 16,
+    justifyContent: "center",
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+  },
+  couponApplyButtonDisabled: {
+    backgroundColor: "#9AA4B2",
+  },
+  couponApplyButtonPressed: {
+    opacity: 0.88,
+  },
+  couponApplyButtonText: {
+    color: colors.surface,
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  couponAppliedRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  couponAppliedBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.softSurface,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    gap: 8,
+  },
+  couponAppliedCode: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: "900",
+    textTransform: "uppercase",
+  },
+  couponAppliedStatus: {
+    color: "#22C55E",
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  couponRemoveButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  couponRemoveText: {
+    color: colors.danger,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  couponFeedbackText: {
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 17,
+    marginTop: 8,
+  },
+  couponFeedbackSuccess: {
+    color: "#22C55E",
+  },
+  couponFeedbackError: {
+    color: colors.danger,
   },
 });

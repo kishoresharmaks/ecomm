@@ -322,6 +322,49 @@ export class ReviewsService {
     return this.toCustomerReview(review);
   }
 
+  async listCustomerReviews(actor: RequestUser, query: ReviewListQueryDto) {
+    const customer = await this.getCustomerOrThrow(actor);
+    const { page, skip, take } = paginationFromQuery(query, { defaultLimit: 20, maxLimit: 50 });
+    const where: Prisma.ProductReviewWhereInput = {
+      customerId: customer.id,
+    };
+
+    const [items, total] = await Promise.all([
+      this.prisma.client.productReview.findMany({
+        where,
+        include: reviewInclude,
+        orderBy: [{ createdAt: "desc" }],
+        skip,
+        take,
+      }),
+      this.prisma.client.productReview.count({ where }),
+    ]);
+
+    return {
+      items: items.map((review) => this.toCustomerReview(review)),
+      total,
+      page,
+      limit: take,
+    };
+  }
+
+  async deleteCustomerReview(actor: RequestUser, reviewId: string) {
+    const customer = await this.getCustomerOrThrow(actor);
+    const review = await this.prisma.client.productReview.findUnique({
+      where: { id: reviewId },
+    });
+
+    if (!review || review.customerId !== customer.id) {
+      throw new NotFoundException("Review not found.");
+    }
+
+    await this.prisma.client.productReview.delete({
+      where: { id: reviewId },
+    });
+
+    return { success: true };
+  }
+
   async listAdminReviews(query: ReviewListQueryDto) {
     const { page, skip, take } = paginationFromQuery(query, { defaultLimit: 20, maxLimit: 100 });
     const where = this.reviewListWhere(query);
@@ -614,9 +657,9 @@ export class ReviewsService {
     return {
       id: review.id,
       productId: review.productId,
-      sellerId: review.sellerId,
-      orderId: review.orderId,
-      orderItemId: review.orderItemId,
+      productName: review.product.name,
+      productSlug: review.product.slug,
+      productImageUrl: this.productImageUrl(review),
       rating: review.rating,
       title: review.title,
       comment: review.comment,
