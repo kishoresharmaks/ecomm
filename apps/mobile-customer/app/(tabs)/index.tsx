@@ -815,31 +815,62 @@ function ServicesRail() {
 function HeroSlide({ banner, width }: { banner?: MobileBanner | undefined; width: number }) {
   const imageUrl = resolveImageUrl(banner?.mobileImageUrl ?? banner?.imageUrl);
   const ctaHref = banner?.linkUrl?.startsWith("/") ? (banner.linkUrl as Href) : "/search";
+  const aspectRatio = 1.35;
+  const heroHeight = Math.max(180, Math.round(width / aspectRatio));
 
   return (
-    <Link href={ctaHref} style={[styles.heroCard, { width }]}>
-      <View style={styles.heroInner}>
-        <View style={styles.heroTextBlock}>
-          {banner?.title ? (
-            <Text numberOfLines={2} style={styles.heroTitle}>{banner.title}</Text>
-          ) : null}
-          {banner?.subtitle ? (
-            <Text numberOfLines={2} style={styles.heroSubtitle}>{banner.subtitle}</Text>
-          ) : null}
-          {banner?.linkUrl ? (
-            <View style={styles.heroButtonWrap}>
-              <Text style={styles.heroButtonText}>Shop Now →</Text>
-            </View>
-          ) : null}
+    <Link href={ctaHref} style={[styles.heroCard, { width, height: heroHeight }]}>
+      {imageUrl ? (
+        <ImageBackground
+          source={{ uri: imageUrl }}
+          resizeMode="cover"
+          style={[styles.heroImageFull, { width, height: heroHeight }]}
+          imageStyle={styles.heroImageFullOverflow}
+        >
+          <View style={styles.heroImageScrim} />
+          <View style={styles.heroTextBlock}>
+            {banner?.title ? (
+              <Text numberOfLines={2} style={styles.heroTitle}>{banner.title}</Text>
+            ) : null}
+            {banner?.subtitle ? (
+              <Text numberOfLines={2} style={styles.heroSubtitle}>{banner.subtitle}</Text>
+            ) : null}
+            {banner?.linkUrl ? (
+              <View style={styles.heroButtonWrap}>
+                <View style={styles.heroButton}>
+                  <Text style={styles.heroButtonText}>Shop Now</Text>
+                  <Text style={styles.heroButtonArrow}>→</Text>
+                </View>
+              </View>
+            ) : null}
+          </View>
+        </ImageBackground>
+      ) : (
+        <View style={[styles.heroCard, { width, height: heroHeight }]}>
+          <View style={styles.heroFallbackContainer}>
+            <View style={styles.heroFallbackCircle1} />
+            <View style={styles.heroFallbackCircle2} />
+            <Text style={styles.heroFallbackPercent}>1H</Text>
+          </View>
+          <View style={styles.heroImageScrim} />
+          <View style={styles.heroTextBlock}>
+            {banner?.title ? (
+              <Text numberOfLines={2} style={styles.heroTitle}>{banner.title}</Text>
+            ) : null}
+            {banner?.subtitle ? (
+              <Text numberOfLines={2} style={styles.heroSubtitle}>{banner.subtitle}</Text>
+            ) : null}
+            {banner?.linkUrl ? (
+              <View style={styles.heroButtonWrap}>
+                <View style={styles.heroButton}>
+                  <Text style={styles.heroButtonText}>Shop Now</Text>
+                  <Text style={styles.heroButtonArrow}>→</Text>
+                </View>
+              </View>
+            ) : null}
+          </View>
         </View>
-        <View style={styles.heroImageBlock}>
-          {imageUrl ? (
-            <RemoteImage resizeMode="contain" style={styles.heroImage} uri={imageUrl} />
-          ) : (
-            <View style={styles.heroImagePlaceholder} />
-          )}
-        </View>
-      </View>
+      )}
     </Link>
   );
 }
@@ -2955,104 +2986,119 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   heroCarouselWrap: {
-    marginHorizontal: 20,
+    marginHorizontal: 16,
     marginTop: 26,
     position: "relative",
   },
   heroCardContainer: {
-    backgroundColor: "#FFF7F2",
     borderRadius: 28,
-    borderColor: "#FFE4D6",
-    borderWidth: 1,
     elevation: 6,
     overflow: "hidden",
-    shadowColor: colors.primary,
-    shadowOffset: { height: 14, width: 0 },
-    shadowOpacity: 0.1,
-    shadowRadius: 32,
+    shadowColor: "#111827",
+    shadowOffset: { height: 10, width: 0 },
+    shadowOpacity: 0.12,
+    shadowRadius: 28,
   },
   heroCarousel: {
     borderRadius: 28,
     overflow: "hidden",
   },
   heroCard: {
-    backgroundColor: "#FFF7F2",
-    borderRadius: 20,
-    height: 260,
-    overflow: "hidden",
-  },
-  heroInner: {
-    flex: 1,
-    flexDirection: "row",
-    padding: 16,
+    position: "relative",
   },
   heroTextBlock: {
-    flex: 1,
-    justifyContent: "center",
-    paddingRight: 10,
+    alignItems: "flex-start",
+    gap: 8,
+    justifyContent: "flex-end",
+    padding: 22,
+    position: "relative",
+    width: "100%",
+    zIndex: 2,
   },
   heroEyebrow: {
-    color: colors.primary,
+    color: "#FFB088",
     fontFamily: "Plus Jakarta Sans",
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: "900",
-    letterSpacing: 1,
-    marginBottom: 6,
+    letterSpacing: 1.4,
     textTransform: "uppercase",
   },
   heroTitle: {
-    color: colors.ink,
+    color: colors.surface,
     fontFamily: "Plus Jakarta Sans",
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: "900",
-    lineHeight: 28,
+    lineHeight: 32,
+    textShadowColor: "rgba(0, 0, 0, 0.3)",
+    textShadowOffset: { height: 1, width: 0 },
+    textShadowRadius: 4,
   },
   heroSubtitle: {
-    color: "#6B7280",
+    color: "rgba(255, 255, 255, 0.92)",
     fontFamily: "Plus Jakarta Sans",
-    fontSize: 12,
+    fontSize: 12.5,
     fontWeight: "700",
-    lineHeight: 18,
-    marginTop: 6,
+    lineHeight: 19,
+    textShadowColor: "rgba(0, 0, 0, 0.25)",
+    textShadowOffset: { height: 1, width: 0 },
+    textShadowRadius: 3,
   },
   heroButtonWrap: {
-    marginTop: 12,
-  },
-  heroButtonText: {
-    color: colors.primary,
-    fontFamily: "Plus Jakarta Sans",
-    fontSize: 13,
-    fontWeight: "900",
-  },
-  heroSecondary: {
-    color: "#6B7280",
-    fontFamily: "Plus Jakarta Sans",
-    fontSize: 11,
-    fontWeight: "800",
     marginTop: 6,
   },
-  heroImageBlock: {
+  heroButton: {
     alignItems: "center",
-    justifyContent: "center",
-    width: 140,
+    backgroundColor: colors.primary,
+    borderRadius: 999,
+    elevation: 4,
+    flexDirection: "row",
+    gap: 8,
+    paddingHorizontal: 22,
+    paddingVertical: 12,
+    shadowColor: "#ED3500",
+    shadowOffset: { height: 6, width: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 14,
   },
-  heroImage: {
-    height: 180,
-    width: 140,
+  heroButtonText: {
+    color: colors.surface,
+    fontFamily: "Plus Jakarta Sans",
+    fontSize: 14,
+    fontWeight: "900",
+    letterSpacing: 0.2,
   },
-  heroImagePlaceholder: {
-    backgroundColor: "#FFEDDF",
-    borderRadius: 16,
-    flex: 1,
-    width: "100%",
+  heroButtonArrow: {
+    color: colors.surface,
+    fontFamily: "Plus Jakarta Sans",
+    fontSize: 18,
+    fontWeight: "900",
+    marginTop: -1,
+  },
+  heroSecondary: {
+    color: "rgba(255, 255, 255, 0.8)",
+    fontFamily: "Plus Jakarta Sans",
+    fontSize: 10.5,
+    fontWeight: "800",
+    lineHeight: 16,
+    marginTop: 4,
+    textShadowColor: "rgba(0, 0, 0, 0.2)",
+    textShadowOffset: { height: 1, width: 0 },
+    textShadowRadius: 3,
   },
   heroImageScrim: {
-    backgroundColor: "rgba(255, 247, 240, 0.15)",
+    backgroundColor: "rgba(0, 0, 0, 0.32)",
     bottom: 0,
     left: 0,
     position: "absolute",
+    right: 0,
     top: 0,
-    width: "100%",
+  },
+  heroImageFull: {
+    alignItems: "flex-start",
+    justifyContent: "flex-end",
+  },
+  heroImageFullOverflow: {
+    borderRadius: 0,
   },
   heroDiscountBadge: {
     alignItems: "center",
@@ -3134,11 +3180,14 @@ const styles = StyleSheet.create({
   },
   heroFallbackContainer: {
     alignItems: "center",
-    backgroundColor: "#FFEDDF",
+    backgroundColor: "#FFF2EE",
     borderRadius: 999,
-    height: 80,
+    height: 160,
     justifyContent: "center",
-    width: 80,
+    position: "absolute",
+    right: -30,
+    top: 10,
+    width: 160,
   },
   heroFallbackCircle1: {
     backgroundColor: "rgba(237, 53, 0, 0.08)",
