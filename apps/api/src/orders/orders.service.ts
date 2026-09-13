@@ -4521,7 +4521,6 @@ export class OrdersService {
             },
             data: {
               trackingStatus: CourierShipmentStatus.DELIVERED,
-              deliveredAt: new Date(),
               bookingError: null,
             },
           });
@@ -8697,7 +8696,6 @@ export class OrdersService {
         },
         data: {
           trackingStatus: CourierShipmentStatus.DELIVERED,
-          deliveredAt: new Date(),
           bookingError: null,
         },
       });

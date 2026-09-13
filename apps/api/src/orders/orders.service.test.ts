@@ -1,6 +1,7 @@
 import { BadRequestException } from "@nestjs/common";
 import {
   CodCollectionStatus,
+  CourierShipmentStatus,
   DeliveryAssignmentStatus,
   DeliveryMode,
   DeliveryStatus,
@@ -466,6 +467,79 @@ describe("OrdersService", () => {
       breadthCm: 19,
       heightCm: 11,
     });
+  });
+
+  it("does not include deliveredAt when updating courierShipment on delivery", async () => {
+    const service = new OrdersService(
+      {} as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+    );
+
+    const tx = {
+      orderShipment: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "shipment_1",
+          shipmentNumber: "SHP-1",
+          orderId: "order_1",
+          sellerId: "seller_1",
+          subtotalPaise: 1000,
+          shippingPaise: 0,
+          codSurchargePaise: 0,
+          status: DeliveryStatus.IN_TRANSIT,
+          deliveryMode: DeliveryMode.THIRD_PARTY_COURIER,
+          packages: [],
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      orderShipmentPackage: {
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      courierShipment: {
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+    };
+
+    const updateGuarded = (
+      service as unknown as {
+        updateSellerShipmentStatusGuarded: (
+          tx: unknown,
+          input: Record<string, unknown>,
+        ) => Promise<void>;
+      }
+    ).updateSellerShipmentStatusGuarded.bind(service);
+
+    await updateGuarded(tx, {
+      orderSellerSplitId: "split_1",
+      nextStatus: DeliveryStatus.DELIVERED,
+      actorUserId: "user_1",
+      requiresEWayBill: false,
+      updateData: {},
+      createData: {},
+    });
+
+    expect(tx.courierShipment.updateMany).toHaveBeenCalledWith({
+      where: {
+        orderShipmentId: "shipment_1",
+        trackingStatus: { notIn: [CourierShipmentStatus.DELIVERED, CourierShipmentStatus.CANCELLED] },
+      },
+      data: {
+        trackingStatus: CourierShipmentStatus.DELIVERED,
+        bookingError: null,
+      },
+    });
+    const updateData = tx.courierShipment.updateMany.mock.calls[0][0].data;
+    expect(updateData).not.toHaveProperty("deliveredAt");
   });
 });
 

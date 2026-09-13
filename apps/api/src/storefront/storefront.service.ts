@@ -659,7 +659,7 @@ export class StorefrontService {
       const signal = orderSignals.get(product.id) ?? { count: 0, quantity: 0, latestAt: new Date(0) };
       const review = reviewSummaries.get(product.id) ?? this.emptyReviewSummary();
       const orderScore = signal.count * 100 + Math.min(signal.quantity, 100);
-      const reviewScore = review.averageRating * 100 + Math.min(review.reviewCount, 100);
+      const reviewScore = (review.averageRating ?? 0) * 100 + Math.min(review.reviewCount, 100);
       const productScore = Math.min((product.variants[0]?.stockQuantity ?? 0) > 0 ? 1 : 0, 1);
       return { product, orderScore, reviewScore, productScore, latestAt: signal.latestAt.getTime() };
     });

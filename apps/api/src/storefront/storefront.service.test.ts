@@ -25,6 +25,7 @@ describe("StorefrontService homepage personalization cache", () => {
     vi.spyOn(internals, "listPublicCategoryProductCounts").mockResolvedValue([]);
     vi.spyOn(internals, "listHomeProducts").mockResolvedValue([]);
     vi.spyOn(internals, "resolveHomeDealProducts").mockResolvedValue([]);
+    vi.spyOn(internals, "listBestSellerProducts").mockResolvedValue([]);
     vi.spyOn(internals, "getStats").mockResolvedValue({
       liveProducts: 0,
       approvedStores: 0,
@@ -66,6 +67,7 @@ type StorefrontServiceInternals = {
   listPublicCategoryProductCounts: () => Promise<unknown[]>;
   listHomeProducts: () => Promise<unknown[]>;
   resolveHomeDealProducts: () => Promise<unknown[]>;
+  listBestSellerProducts: () => Promise<unknown[]>;
   getStats: () => Promise<Record<string, number>>;
   listHomeStores: (
     query: unknown,
