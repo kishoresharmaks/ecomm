@@ -249,9 +249,11 @@ export default function OrderDetailScreen() {
   const order = orderQuery.data;
   if (!order) {
     return (
-      <Screen>
+      <Screen padded={false}>
         <Stack.Screen options={{ headerShown: true, title: orderNumber }} />
-        <EmptyState title="Order not found" message="This order is not available for this account." />
+        <View style={styles.centerState}>
+          <EmptyState title="Order not found" message="This order is not available for this account." />
+        </View>
       </Screen>
     );
   }
@@ -260,26 +262,17 @@ export default function OrderDetailScreen() {
   const delivered = order.orderStatus === "DELIVERED" || order.deliveryStatus === "DELIVERED";
   const canCancel = !storePickupFinal && orderCanBeCancelled(order);
   const returnFeatureEnabled = isMobileReturnsEnabled(customerAuth.authKey);
-  const returnPolicy = orderReturnPolicyState(
-    order,
-    returnPolicyQuery.data ?? defaultMobileReturnPolicySettings,
-  );
+  const returnPolicyData = returnPolicyQuery.data;
+  const returnPolicy = returnPolicyData
+    ? orderReturnPolicyState(order, returnPolicyData)
+    : null;
   const activeReturn = activeOrderReturnRequest(order);
   const latestReturn = latestOrderReturnRequest(order);
-  const hasAvailableReturnQuantity = order.items.some(
-    (item) =>
-      availableReturnQuantityForResolution(
-        order,
-        item,
-        returnPolicyQuery.data ?? defaultMobileReturnPolicySettings,
-        "REFUND",
-      ) > 0 ||
-      availableReturnQuantityForResolution(
-        order,
-        item,
-        returnPolicyQuery.data ?? defaultMobileReturnPolicySettings,
-        "REPLACEMENT",
-      ) > 0,
+  const hasAvailableReturnQuantity = order.items.some((item) =>
+    returnPolicyData
+      ? availableReturnQuantityForResolution(order, item, returnPolicyData, "REFUND") > 0 ||
+        availableReturnQuantityForResolution(order, item, returnPolicyData, "REPLACEMENT") > 0
+      : false,
   );
   const canStartReturn =
     !storePickupFinal &&
@@ -287,7 +280,9 @@ export default function OrderDetailScreen() {
     !activeReturn &&
     hasAvailableReturnQuantity &&
     orderCanStartReturn(order) &&
-    (returnPolicy.refund.eligible || returnPolicy.replacement.eligible);
+    returnPolicy
+      ? returnPolicy.refund.eligible || returnPolicy.replacement.eligible
+      : false;
   const canRetryPayment = canRetryRazorpayPayment(order);
   const address = readShippingAddress(order);
   const timeline = buildTimeline(order);
@@ -361,16 +356,22 @@ export default function OrderDetailScreen() {
             <Detail label="Tracking" value={firstTracking(order) ?? "Not assigned"} />
           </View>
           <View style={styles.timeline}>
-            {timeline.map((event, index) => (
-              <View key={`${event.label}-${event.createdAt ?? index}`} style={styles.timelineRow}>
-                <View style={[styles.timelineDot, index === 0 ? styles.timelineDotActive : null]} />
-                <View style={styles.timelineBody}>
-                  <Text style={styles.timelineTitle}>{event.label}</Text>
-                  {event.note ? <Text style={styles.timelineNote}>{event.note}</Text> : null}
-                  <Text style={styles.timelineDate}>{formatDateTime(event.createdAt)}</Text>
+            {timeline.map((event, index) => {
+              const isLast = index === timeline.length - 1;
+              return (
+                <View key={`${event.label}-${event.createdAt ?? index}`} style={styles.timelineRow}>
+                  <View style={styles.timelineDotCol}>
+                    <View style={[styles.timelineDot, !isLast || order.orderStatus === "DELIVERED" || order.deliveryStatus === "DELIVERED" || order.orderStatus === "CANCELLED" ? styles.timelineDotDone : null, isLast ? styles.timelineDotActive : null]} />
+                    {!isLast ? <View style={styles.timelineLine} /> : null}
+                  </View>
+                  <View style={styles.timelineBody}>
+                    <Text style={styles.timelineTitle}>{event.label}</Text>
+                    {event.note ? <Text style={styles.timelineNote}>{event.note}</Text> : null}
+                    <Text style={styles.timelineDate}>{formatDateTime(event.createdAt)}</Text>
+                  </View>
                 </View>
-              </View>
-            ))}
+              );
+            })}
           </View>
         </Section>
 
@@ -477,11 +478,24 @@ export default function OrderDetailScreen() {
 
         {delivered && returnFeatureEnabled ? (
           <Section icon={DeliveryReturn01Icon} title={returnCopy.accountEntryTitle}>
-            <Text style={styles.helpText}>Eligibility starts from the delivery date and is checked again when you submit.</Text>
-            <View style={styles.returnPolicyGrid}>
-              <ReturnWindowDetail label="Refund return" state={returnPolicy.refund} />
-              <ReturnWindowDetail label="Replacement" state={returnPolicy.replacement} />
-            </View>
+            {returnPolicyQuery.isLoading ? (
+              <Text style={styles.helpText}>Checking return eligibility...</Text>
+            ) : returnPolicyQuery.isError ? (
+              <View style={styles.returnPolicyItem}>
+                <Text style={styles.helpText}>Could not load return policy. Please try again later.</Text>
+                <Pressable style={[styles.secondaryButton, { marginTop: 10 }]} onPress={() => returnPolicyQuery.refetch()}>
+                  <Text style={styles.secondaryButtonText}>Retry</Text>
+                </Pressable>
+              </View>
+            ) : returnPolicy ? (
+              <>
+                <Text style={styles.helpText}>Eligibility starts from the delivery date and is checked again when you submit.</Text>
+                <View style={styles.returnPolicyGrid}>
+                  <ReturnWindowDetail label="Refund return" state={returnPolicy.refund} />
+                  <ReturnWindowDetail label="Replacement" state={returnPolicy.replacement} />
+                </View>
+              </>
+            ) : null}
             {activeReturn ? (
               <View style={styles.returnRequestBox}>
                 <Text style={styles.returnRequestTitle}>Request {activeReturn.requestNumber}</Text>
@@ -603,8 +617,17 @@ function ReturnWindowDetail({
   state,
 }: {
   label: string;
-  state: ReturnType<typeof orderReturnPolicyState>["refund"];
+  state: { windowDays: number; eligible: boolean; daysRemaining: number; deadlineAt: string | null } | null;
 }) {
+  if (!state) {
+    return (
+      <View style={styles.returnPolicyItem}>
+        <Text style={styles.detailLabel}>{label}</Text>
+        <Text style={styles.helpText}>Checking eligibility...</Text>
+      </View>
+    );
+  }
+
   const deadline = state.deadlineAt ? formatDate(state.deadlineAt) : "Not available";
   const value =
     state.windowDays <= 0
@@ -653,7 +676,7 @@ function ItemReturnTerms({
 
 function returnUnavailableMessage(
   order: MobileOrderDetail,
-  policy: ReturnType<typeof orderReturnPolicyState>,
+  policy: ReturnType<typeof orderReturnPolicyState> | null,
   hasAvailableQuantity: boolean,
 ) {
   if (isDeliveredStorePickupOrder(order)) {
@@ -661,6 +684,9 @@ function returnUnavailableMessage(
   }
   if (order.paymentStatus !== "PAID" && order.paymentStatus !== "NOT_REQUIRED") {
     return "Returns become available after payment is completed or marked not required.";
+  }
+  if (!policy) {
+    return "Return eligibility data is not available right now.";
   }
   if (!hasAvailableQuantity) {
     return "No quantity in this order is available for another return or replacement request.";
@@ -768,7 +794,7 @@ function orderProgressIndex(order: MobileOrderDetail) {
 
 const styles = StyleSheet.create({
   content: {
-    padding: 18,
+    padding: 12,
     paddingBottom: 128,
   },
   centerState: {
@@ -785,27 +811,27 @@ const styles = StyleSheet.create({
   heroCard: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
-    borderRadius: 28,
+    borderRadius: 20,
     borderWidth: 1,
-    marginBottom: 16,
-    padding: 18,
+    marginBottom: 10,
+    padding: 14,
     shadowColor: "#ED3500",
-    shadowOffset: { height: 10, width: 0 },
-    shadowOpacity: 0.055,
-    shadowRadius: 24,
+    shadowOffset: { height: 6, width: 0 },
+    shadowOpacity: 0.04,
+    shadowRadius: 16,
   },
   heroTop: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 12,
+    gap: 10,
   },
   heroIcon: {
     alignItems: "center",
     backgroundColor: "#FFF1EB",
     borderRadius: 999,
-    height: 58,
+    height: 48,
     justifyContent: "center",
-    width: 58,
+    width: 48,
   },
   heroBody: {
     flex: 1,
@@ -813,36 +839,36 @@ const styles = StyleSheet.create({
   },
   orderNumber: {
     color: colors.ink,
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "900",
   },
   orderMeta: {
     color: colors.muted,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "700",
-    marginTop: 4,
+    marginTop: 3,
   },
   orderTotal: {
     color: colors.primary,
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "900",
   },
   statusRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 8,
-    marginTop: 12,
+    gap: 6,
+    marginTop: 10,
   },
   progressCard: {
     backgroundColor: colors.secondary,
     borderColor: colors.border,
-    borderRadius: 24,
+    borderRadius: 18,
     borderWidth: 1,
     flexDirection: "row",
     justifyContent: "space-between",
-    marginTop: 16,
-    paddingHorizontal: 10,
-    paddingVertical: 14,
+    marginTop: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 12,
   },
   progressIcon: {
     alignItems: "center",
@@ -850,10 +876,10 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: 999,
     borderWidth: 1,
-    height: 42,
+    height: 36,
     justifyContent: "center",
-    marginBottom: 8,
-    width: 42,
+    marginBottom: 6,
+    width: 36,
   },
   progressIconDone: {
     backgroundColor: colors.primary,
@@ -865,7 +891,7 @@ const styles = StyleSheet.create({
   },
   progressLabel: {
     color: colors.ink,
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "900",
     textAlign: "center",
   },
@@ -876,7 +902,7 @@ const styles = StyleSheet.create({
     height: 1,
     left: "64%",
     position: "absolute",
-    top: 21,
+    top: 17,
     width: "72%",
   },
   progressLineDone: {
@@ -890,7 +916,7 @@ const styles = StyleSheet.create({
   },
   progressSubLabel: {
     color: colors.muted,
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: "800",
     marginTop: 3,
     textAlign: "center",
@@ -898,43 +924,43 @@ const styles = StyleSheet.create({
   section: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
-    borderRadius: 26,
+    borderRadius: 20,
     borderWidth: 1,
-    marginBottom: 16,
-    padding: 18,
+    marginBottom: 10,
+    padding: 14,
     shadowColor: "#ED3500",
-    shadowOffset: { height: 8, width: 0 },
-    shadowOpacity: 0.04,
-    shadowRadius: 20,
+    shadowOffset: { height: 4, width: 0 },
+    shadowOpacity: 0.03,
+    shadowRadius: 12,
   },
   sectionTitleRow: {
     alignItems: "center",
     flexDirection: "row",
     gap: 8,
-    marginBottom: 12,
+    marginBottom: 10,
   },
   sectionTitle: {
     color: colors.ink,
-    fontSize: 17,
+    fontSize: 15,
     fontWeight: "900",
   },
   returnPolicyGrid: {
     flexDirection: "row",
     gap: 10,
-    marginTop: 12,
+    marginTop: 10,
   },
   returnPolicyItem: {
     backgroundColor: colors.secondary,
     borderColor: colors.border,
-    borderRadius: 20,
+    borderRadius: 16,
     borderWidth: 1,
     flex: 1,
-    minHeight: 108,
-    padding: 12,
+    minHeight: 90,
+    padding: 10,
   },
   returnPolicyValue: {
     color: colors.ink,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "900",
     marginTop: 6,
   },
@@ -948,31 +974,31 @@ const styles = StyleSheet.create({
   returnRequestBox: {
     backgroundColor: "#FFF7F2",
     borderColor: "#FFD3C5",
-    borderRadius: 20,
+    borderRadius: 16,
     borderWidth: 1,
     marginTop: 12,
-    padding: 14,
+    padding: 12,
   },
   returnRequestTitle: {
     color: colors.ink,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "900",
     marginBottom: 4,
   },
   itemRow: {
     backgroundColor: colors.secondary,
     borderColor: colors.border,
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
     borderWidth: 1,
     flexDirection: "row",
-    gap: 12,
-    padding: 12,
+    gap: 10,
+    padding: 10,
   },
   itemCard: {
     backgroundColor: colors.secondary,
     borderColor: colors.border,
-    borderRadius: 22,
+    borderRadius: 18,
     borderWidth: 1,
     marginTop: 10,
     overflow: "hidden",
@@ -985,7 +1011,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderWidth: 1,
     justifyContent: "center",
-    minHeight: 44,
+    minHeight: 40,
   },
   rateProductButtonText: {
     color: colors.primary,
@@ -994,9 +1020,9 @@ const styles = StyleSheet.create({
   },
   itemImage: {
     backgroundColor: colors.surface,
-    borderRadius: 18,
-    height: 70,
-    width: 70,
+    borderRadius: 14,
+    height: 60,
+    width: 60,
   },
   itemBody: {
     flex: 1,
@@ -1029,15 +1055,15 @@ const styles = StyleSheet.create({
   detailGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 10,
+    gap: 8,
   },
   detailBox: {
     backgroundColor: colors.secondary,
     borderColor: colors.border,
-    borderRadius: 20,
+    borderRadius: 14,
     borderWidth: 1,
-    minHeight: 70,
-    padding: 12,
+    minHeight: 60,
+    padding: 10,
     width: "48.5%",
   },
   detailLabel: {
@@ -1062,12 +1088,29 @@ const styles = StyleSheet.create({
   timelineDot: {
     backgroundColor: colors.border,
     borderRadius: 999,
-    height: 12,
-    marginTop: 3,
-    width: 12,
+    height: 10,
+    marginTop: 2,
+    width: 10,
+  },
+  timelineDotDone: {
+    backgroundColor: colors.primary,
   },
   timelineDotActive: {
     backgroundColor: colors.primary,
+    borderColor: colors.primary,
+    borderWidth: 2,
+    height: 12,
+    width: 12,
+  },
+  timelineDotCol: {
+    alignItems: "center",
+    width: 12,
+  },
+  timelineLine: {
+    backgroundColor: colors.border,
+    flex: 1,
+    marginVertical: 2,
+    width: 1,
   },
   timelineBody: {
     flex: 1,
@@ -1113,7 +1156,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingVertical: 7,
+    paddingVertical: 6,
   },
   summaryLabel: {
     color: colors.muted,
@@ -1131,26 +1174,26 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     flexDirection: "row",
     justifyContent: "space-between",
-    marginTop: 8,
-    paddingTop: 13,
+    marginTop: 6,
+    paddingTop: 10,
   },
   totalLabel: {
     color: colors.ink,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "900",
   },
   totalValue: {
     color: colors.primary,
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: "900",
   },
   retryPaymentBox: {
     backgroundColor: "#FFF7F3",
     borderColor: "#FFD7CA",
-    borderRadius: 22,
+    borderRadius: 18,
     borderWidth: 1,
-    marginTop: 12,
-    padding: 12,
+    marginTop: 10,
+    padding: 10,
   },
   retryPaymentTitle: {
     color: colors.ink,
