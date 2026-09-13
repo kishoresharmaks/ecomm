@@ -676,7 +676,7 @@ function HeroCarousel({ banners }: { banners: MobileBanner[] }) {
   const scrollRef = useRef<ScrollView | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
-  const slideWidth = Math.max(0, width - 36);
+  const slideWidth = Math.max(0, width - 40);
   const slides: Array<MobileBanner | undefined> = banners.length ? banners : [undefined];
 
   useEffect(() => {
@@ -728,30 +728,40 @@ function HeroCarousel({ banners }: { banners: MobileBanner[] }) {
 
   return (
     <View style={styles.heroCarouselWrap}>
-      <ScrollView
-        ref={scrollRef}
-        horizontal
-        pagingEnabled
-        bounces={false}
-        decelerationRate="fast"
-        showsHorizontalScrollIndicator={false}
-        style={styles.heroCarousel}
-        onMomentumScrollEnd={handleMomentumScrollEnd}
-      >
-        {slides.map((banner, index) => (
-          <HeroSlide banner={banner} key={banner?.id ?? `fallback-${index}`} width={slideWidth} />
-        ))}
-      </ScrollView>
-      {slides.length > 1 ? (
-        <View style={styles.heroDots}>
+      <View style={styles.heroCardContainer}>
+        <ScrollView
+          ref={scrollRef}
+          horizontal
+          pagingEnabled
+          bounces={false}
+          decelerationRate="fast"
+          showsHorizontalScrollIndicator={false}
+          style={styles.heroCarousel}
+          onMomentumScrollEnd={handleMomentumScrollEnd}
+        >
           {slides.map((banner, index) => (
-            <View
-              key={banner?.id ?? index}
-              style={[styles.heroDot, index === activeIndex ? styles.heroDotActive : null]}
-            />
+            <HeroSlide banner={banner} key={banner?.id ?? `fallback-${index}`} width={slideWidth} />
           ))}
-        </View>
-      ) : null}
+        </ScrollView>
+        {slides.length > 1 ? (
+          <View style={styles.heroDotsWrap}>
+            <View style={styles.heroDotsTrack}>
+              {slides.map((banner, index) => (
+                <Pressable
+                  key={banner?.id ?? index}
+                  onPress={() => {
+                    const direction = index > activeIndex ? 1 : -1;
+                    setActiveIndex(index);
+                    scrollRef.current?.scrollTo({ animated: true, x: index * slideWidth });
+                  }}
+                >
+                  <View style={[styles.heroDot, index === activeIndex ? styles.heroDotActive : null]} />
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -804,21 +814,30 @@ function ServicesRail() {
 
 function HeroSlide({ banner, width }: { banner?: MobileBanner | undefined; width: number }) {
   const imageUrl = resolveImageUrl(banner?.mobileImageUrl ?? banner?.imageUrl);
+  const ctaHref = banner?.linkUrl?.startsWith("/") ? (banner.linkUrl as Href) : "/search";
 
   return (
     <View style={[styles.heroCard, { width }]}>
-      {imageUrl ? (
-        <RemoteImage resizeMode="cover" style={styles.heroImage} uri={imageUrl} />
-      ) : (
-        <HeroFallbackArt />
-      )}
-      <View style={styles.heroScrim} />
-      <View style={styles.heroContent}>
-        <Text numberOfLines={2} style={styles.heroTitle}>{banner?.title ?? "Month End\nSales Live!"}</Text>
-        <Text numberOfLines={2} style={styles.heroSubtitle}>{banner?.subtitle ?? "Shop the best. Save more."}</Text>
-        <Link href={(banner?.linkUrl?.startsWith("/") ? banner.linkUrl : "/search") as Href} style={styles.heroButton}>
-          Shop Now
-        </Link>
+      <View style={styles.heroInner}>
+        <View style={styles.heroTextBlock}>
+          <Text numberOfLines={2} style={styles.heroTitle}>{banner?.title ?? "Month End\nSales Live!"}</Text>
+          <Text numberOfLines={2} style={styles.heroSubtitle}>{banner?.subtitle ?? "Shop the best. Save more."}</Text>
+          <Link href={ctaHref} style={styles.heroButton}>
+            Shop Now
+          </Link>
+        </View>
+        <View style={styles.heroImageBlock}>
+          <View style={styles.heroImageCard}>
+            {imageUrl ? (
+              <RemoteImage resizeMode="cover" style={styles.heroImage} uri={imageUrl} />
+            ) : (
+              <HeroFallbackArt />
+            )}
+            <View style={styles.heroImageScrim} />
+          </View>
+          <View style={styles.heroDecoCircle1} />
+          <View style={styles.heroDecoCircle2} />
+        </View>
       </View>
     </View>
   );
@@ -826,11 +845,10 @@ function HeroSlide({ banner, width }: { banner?: MobileBanner | undefined; width
 
 function HeroFallbackArt() {
   return (
-    <View style={styles.heroFallbackArt}>
-      <View style={styles.heroBagLarge} />
-      <View style={styles.heroBagSmall} />
-      <View style={styles.heroShield} />
-      <Text style={styles.heroPercent}>%</Text>
+    <View style={styles.heroFallbackContainer}>
+      <View style={styles.heroFallbackCircle1} />
+      <View style={styles.heroFallbackCircle2} />
+      <View style={styles.heroFallbackPercent}>%</View>
     </View>
   );
 }
@@ -2480,6 +2498,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flex: 1,
     gap: 10,
+    justifyContent: "center",
     minWidth: 0,
   },
   logoBadge: {
@@ -2949,141 +2968,61 @@ const styles = StyleSheet.create({
     marginTop: 26,
     position: "relative",
   },
-  heroCarousel: {
-    borderRadius: 26,
-    overflow: "hidden",
-  },
-  heroCard: {
-    backgroundColor: "#FFF0E4",
-    borderColor: "#F8E4D8",
-    borderRadius: 26,
+  heroCardContainer: {
+    backgroundColor: "#FFF7F2",
+    borderRadius: 28,
+    borderColor: "#FFE4D6",
     borderWidth: 1,
-    elevation: 4,
-    height: 252,
+    elevation: 6,
     overflow: "hidden",
     shadowColor: colors.primary,
     shadowOffset: { height: 14, width: 0 },
-    shadowOpacity: 0.08,
-    shadowRadius: 30,
+    shadowOpacity: 0.1,
+    shadowRadius: 32,
   },
-  heroImage: {
-    bottom: 0,
-    height: "100%",
-    left: 0,
-    opacity: 0.9,
-    position: "absolute",
-    right: 0,
-    top: 0,
-    width: "100%",
+  heroCarousel: {
+    borderRadius: 28,
+    overflow: "hidden",
   },
-  heroScrim: {
-    backgroundColor: "rgba(255, 244, 235, 0.84)",
-    bottom: 0,
-    left: 0,
-    position: "absolute",
-    top: 0,
-    width: "60%",
+  heroCard: {
+    backgroundColor: "#FFF7F2",
+    borderRadius: 28,
+    height: 310,
+    overflow: "hidden",
   },
-  heroFallbackArt: {
-    bottom: 0,
-    height: "100%",
-    position: "absolute",
-    right: 0,
-    top: 0,
-    width: "58%",
+  heroInner: {
+    flex: 1,
+    flexDirection: "row",
+    padding: 20,
   },
-  heroBagLarge: {
-    backgroundColor: "#FF8A00",
-    borderBottomLeftRadius: 22,
-    borderBottomRightRadius: 22,
-    borderTopLeftRadius: 14,
-    borderTopRightRadius: 14,
-    bottom: 42,
-    height: 110,
-    position: "absolute",
-    right: 52,
-    shadowColor: "#ED3500",
-    shadowOffset: { height: 10, width: 0 },
-    shadowOpacity: 0.18,
-    shadowRadius: 16,
-    width: 106,
+  heroTextBlock: {
+    flex: 1,
+    justifyContent: "center",
+    paddingRight: 12,
   },
-  heroBagSmall: {
-    backgroundColor: "#F97316",
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
-    borderTopLeftRadius: 12,
-    borderTopRightRadius: 12,
-    bottom: 56,
-    height: 82,
-    position: "absolute",
-    right: 18,
-    width: 78,
-  },
-  heroShield: {
-    backgroundColor: "#22C55E",
-    borderRadius: 999,
-    bottom: 124,
-    height: 52,
-    opacity: 0.92,
-    position: "absolute",
-    right: 124,
-    transform: [{ rotate: "-12deg" }],
-    width: 52,
-  },
-  heroPercent: {
-    backgroundColor: "#F54A24",
-    borderRadius: 18,
-    bottom: 50,
-    color: colors.surface,
+  heroEyebrow: {
+    color: colors.primary,
     fontFamily: "Plus Jakarta Sans",
-    fontSize: 30,
+    fontSize: 11,
     fontWeight: "900",
-    overflow: "hidden",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    position: "absolute",
-    right: 118,
-    transform: [{ rotate: "-13deg" }],
-  },
-  svgImageSurface: {
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
-  },
-  heroContent: {
-    justifyContent: "center",
-    minHeight: 252,
-    padding: 24,
-    width: "63%",
-    zIndex: 2,
-  },
-  heroPill: {
-    alignSelf: "flex-start",
-    backgroundColor: colors.primary,
-    borderRadius: 999,
-    color: colors.surface,
-    fontSize: 12,
-    fontWeight: "900",
-    marginBottom: 12,
-    overflow: "hidden",
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    letterSpacing: 1.2,
+    marginBottom: 8,
+    textTransform: "uppercase",
   },
   heroTitle: {
     color: colors.ink,
     fontFamily: "Plus Jakarta Sans",
-    fontSize: 30,
+    fontSize: 28,
     fontWeight: "900",
-    lineHeight: 36,
+    lineHeight: 34,
   },
   heroSubtitle: {
-    color: colors.muted,
+    color: "#6B7280",
     fontFamily: "Plus Jakarta Sans",
-    fontSize: 15,
-    fontWeight: "800",
-    lineHeight: 21,
-    marginTop: 9,
+    fontSize: 14,
+    fontWeight: "700",
+    lineHeight: 20,
+    marginTop: 8,
   },
   heroButton: {
     alignSelf: "flex-start",
@@ -3095,18 +3034,114 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     marginTop: 14,
     overflow: "hidden",
-    paddingHorizontal: 18,
-    paddingVertical: 11,
+    paddingHorizontal: 22,
+    paddingVertical: 12,
   },
-  heroDots: {
+  heroSecondary: {
+    color: "#6B7280",
+    fontFamily: "Plus Jakarta Sans",
+    fontSize: 12,
+    fontWeight: "800",
+    marginTop: 8,
+  },
+  heroImageBlock: {
     alignItems: "center",
-    bottom: 14,
-    flexDirection: "row",
-    gap: 6,
     justifyContent: "center",
+    position: "relative",
+    width: 160,
+  },
+  heroImageCard: {
+    alignItems: "center",
+    backgroundColor: "#FFEDDF",
+    borderRadius: 24,
+    borderColor: "#F8E4D8",
+    borderWidth: 1,
+    elevation: 4,
+    height: 260,
+    justifyContent: "center",
+    overflow: "hidden",
+    position: "relative",
+    shadowColor: "#ED3500",
+    shadowOffset: { height: 10, width: 0 },
+    shadowOpacity: 0.12,
+    shadowRadius: 20,
+    width: 160,
+  },
+  heroImage: {
+    height: "100%",
+    position: "absolute",
+    width: "100%",
+  },
+  heroImageScrim: {
+    backgroundColor: "rgba(255, 247, 240, 0.15)",
+    bottom: 0,
     left: 0,
     position: "absolute",
-    right: 0,
+    top: 0,
+    width: "100%",
+  },
+  heroDiscountBadge: {
+    alignItems: "center",
+    backgroundColor: colors.primary,
+    borderRadius: 16,
+    bottom: -12,
+    elevation: 6,
+    height: 60,
+    justifyContent: "center",
+    position: "absolute",
+    right: -12,
+    shadowColor: "#ED3500",
+    shadowOffset: { height: 6, width: 0 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    width: 60,
+    zIndex: 5,
+  },
+  heroDiscountSave: {
+    color: colors.surface,
+    fontFamily: "Plus Jakarta Sans",
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+  },
+  heroDiscountValue: {
+    color: colors.surface,
+    fontFamily: "Plus Jakarta Sans",
+    fontSize: 22,
+    fontWeight: "900",
+    lineHeight: 26,
+  },
+  heroDecoCircle1: {
+    backgroundColor: "rgba(237, 53, 0, 0.06)",
+    borderRadius: 999,
+    height: 80,
+    position: "absolute",
+    right: -20,
+    top: -30,
+    width: 80,
+    zIndex: 0,
+  },
+  heroDecoCircle2: {
+    backgroundColor: "rgba(237, 53, 0, 0.08)",
+    borderRadius: 999,
+    height: 48,
+    position: "absolute",
+    bottom: -16,
+    left: -10,
+    width: 48,
+    zIndex: 0,
+  },
+  heroDotsWrap: {
+    alignItems: "center",
+    paddingBottom: 16,
+    paddingTop: 12,
+  },
+  heroDotsTrack: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+    justifyContent: "center",
   },
   heroDot: {
     backgroundColor: "#D1D5DB",
@@ -3117,6 +3152,44 @@ const styles = StyleSheet.create({
   heroDotActive: {
     backgroundColor: colors.primary,
     width: 20,
+  },
+  svgImageSurface: {
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  heroFallbackContainer: {
+    alignItems: "center",
+    backgroundColor: "#FFEDDF",
+    borderRadius: 999,
+    height: 80,
+    justifyContent: "center",
+    width: 80,
+  },
+  heroFallbackCircle1: {
+    backgroundColor: "rgba(237, 53, 0, 0.08)",
+    borderRadius: 999,
+    height: 60,
+    position: "absolute",
+    right: 10,
+    top: 20,
+    width: 60,
+  },
+  heroFallbackCircle2: {
+    backgroundColor: "rgba(237, 53, 0, 0.12)",
+    borderRadius: 999,
+    height: 36,
+    position: "absolute",
+    bottom: 20,
+    left: 20,
+    width: 36,
+  },
+  heroFallbackPercent: {
+    color: colors.primary,
+    fontFamily: "Plus Jakarta Sans",
+    fontSize: 40,
+    fontWeight: "900",
+    zIndex: 1,
   },
   trustCard: {
     backgroundColor: colors.surface,

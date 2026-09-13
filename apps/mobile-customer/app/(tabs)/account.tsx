@@ -5,19 +5,23 @@ import {
   CheckmarkBadge02Icon,
   DeliveryReturn01Icon,
   Edit02Icon,
+  Facebook01Icon,
   HeadsetIcon,
   HeartIcon,
   Home01Icon,
+  InstagramIcon,
   LegalDocument01Icon,
   Location01Icon,
   LockPasswordIcon,
   Logout03Icon,
   Notification02Icon,
   PackageIcon,
+  TwitterIcon,
   Wrench01Icon,
   QuestionIcon,
   Shield01Icon,
   UserCircleIcon,
+  YoutubeIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react-native";
 import { useAuth } from "@clerk/clerk-expo";
@@ -331,6 +335,9 @@ export default function AccountScreen() {
               title={item.title}
             />
           ))}
+        </View>
+
+        <View style={styles.listCard}>
           <SettingsRow
             danger
             icon={Logout03Icon}
@@ -341,6 +348,14 @@ export default function AccountScreen() {
             text="Sign out from your account"
             title="Sign out"
           />
+        </View>
+
+        <SectionTitle title="Follow us" />
+        <View style={styles.socialLinksRow}>
+          <SocialLink icon={Facebook01Icon} label="Facebook" url="https://www.facebook.com/1handindia" />
+          <SocialLink icon={InstagramIcon} label="Instagram" url="https://www.instagram.com/1handindia/" />
+          <SocialLink icon={TwitterIcon} label="X" url="https://x.com/1handindia" />
+          <SocialLink icon={YoutubeIcon} label="YouTube" url="https://www.youtube.com/channel/UCK1w6LlYqW666P5E_ZrPeoA" />
         </View>
       </Animated.ScrollView>
     </Screen>
@@ -368,6 +383,23 @@ function OverviewMetric({
       <Text style={styles.overviewLabel}>{label}</Text>
       <Text style={styles.overviewValue}>{value}</Text>
     </View>
+  );
+}
+
+function SocialLink({ icon, label, url }: { icon: IconSvgElement; label: string; url: string }) {
+  return (
+    <Pressable
+      accessibilityLabel={`Follow us on ${label}`}
+      accessibilityRole="link"
+      style={styles.socialLinkButton}
+      onPress={() => void WebBrowser.openBrowserAsync(url)}
+    >
+      <View style={styles.socialLinkIcon}>
+        <HugeiconsIcon color={colors.primary} icon={icon} size={20} strokeWidth={2.1} />
+      </View>
+      <Text style={styles.socialLinkLabel}>{label}</Text>
+      <HugeiconsIcon color={MUTED} icon={ArrowRight02Icon} size={18} strokeWidth={2.2} />
+    </Pressable>
   );
 }
 
@@ -769,4 +801,39 @@ const styles = StyleSheet.create({
   b2bCardBody: { flex: 1, minWidth: 0 },
   b2bCardTitle: { color: TEXT, fontSize: 15, fontWeight: "900" },
   b2bCardSub: { color: MUTED, fontSize: 13, fontWeight: "700", marginTop: 3 },
+  socialLinksRow: {
+    alignItems: "center",
+    backgroundColor: CARD_BG,
+    borderColor: BORDER,
+    borderRadius: 26,
+    borderWidth: 1,
+    overflow: "hidden",
+    shadowColor: colors.primary,
+    shadowOffset: { height: 8, width: 0 },
+    shadowOpacity: 0.06,
+    shadowRadius: 30,
+    elevation: 2,
+  },
+  socialLinkButton: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 14,
+    minHeight: 78,
+    paddingHorizontal: 18,
+    paddingVertical: 15,
+  },
+  socialLinkIcon: {
+    alignItems: "center",
+    backgroundColor: "#FFF2ED",
+    borderRadius: 999,
+    height: 44,
+    justifyContent: "center",
+    width: 44,
+  },
+  socialLinkLabel: {
+    color: TEXT,
+    flex: 1,
+    fontSize: 15,
+    fontWeight: "900",
+  },
 });
