@@ -600,7 +600,7 @@ export function SellerOrderDetailClient({
                   </span>
                 </div>
                 <div className="flex justify-between gap-4 lg:justify-end">
-                  <span>Platform Fee</span>
+                  <span>Seller settlement fee</span>
                   <span className="text-[#9F2600]">
                     -{formatMoney(
                       sellerCurrencySnapshot?.platformFeeMinor ?? sellerSplit.platformFeePaise ?? 0,
@@ -659,11 +659,35 @@ export function SellerOrderDetailClient({
                   <span className="font-bold text-[#163B5C]">Net added to Wallet</span>
                   <span className="font-black text-[#0F8A5F]">
                     {formatMoney(
-                      sellerCurrencySnapshot?.netPayableMinor ?? sellerSplit.netPayablePaise ?? 0,
+                      (sellerCurrencySnapshot?.netPayableMinor || sellerSplit.netPayablePaise)
+                        ? (sellerCurrencySnapshot?.netPayableMinor ?? sellerSplit.netPayablePaise ?? 0)
+                        : Math.max(
+                            0,
+                            sellerSubtotalMinor -
+                              ((sellerCurrencySnapshot?.commissionMinor ?? sellerSplit.commissionPaise ?? 0) +
+                                (sellerCurrencySnapshot?.platformFeeMinor ?? sellerSplit.platformFeePaise ?? 0) +
+                                (sellerCurrencySnapshot?.gstOnCommissionMinor ?? sellerSplit.gstOnCommissionPaise ?? 0) +
+                                (sellerCurrencySnapshot?.tdsMinor ?? sellerSplit.tdsPaise ?? 0) +
+                                (sellerCurrencySnapshot?.tcsMinor ?? sellerSplit.tcsPaise ?? 0) +
+                                (sellerCurrencySnapshot?.couponSellerFundedDiscountMinor ?? sellerSplit.couponSellerFundedDiscountPaise ?? 0)),
+                          ),
                       sellerCurrency,
                     )}
                   </span>
                 </div>
+                {(order.platformFeePaise ?? 0) > 0 ? (
+                  <div className="mt-3 border-t border-dashed border-[#F2D5CC] pt-2 text-xs font-semibold text-[#667085]">
+                    <div className="flex justify-between gap-4 lg:justify-end">
+                      <span>Buyer checkout platform fee</span>
+                      <span className="font-bold text-[#1F2933]">
+                        {formatMoney(order.platformFeePaise ?? 0, order.currency)}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 text-[11px] text-[#98A2B3]">
+                      Paid by customer to marketplace; not deducted from seller payout.
+                    </p>
+                  </div>
+                ) : null}
                 {usesSeparateSellerCurrency ? (
                   <p className="text-xs font-bold leading-5 text-[#667085]">
                     Order-time seller pricing snapshot. Platform ledger remains{" "}
