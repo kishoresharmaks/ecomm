@@ -6,6 +6,9 @@ import {
   ContentStatus,
   DealProductEnrollmentStatus,
   DealStatus,
+  OrderItemLifecycleStatus,
+  OrderStatus,
+  PaymentStatus,
   Prisma,
   ProductReviewStatus,
   ProductStatus,
@@ -256,6 +259,7 @@ export class StorefrontService {
       featuredProducts,
       latestProducts,
       dealProducts,
+      bestSellerProducts,
       stats,
       fallbackHeroSetting,
     ] = await Promise.all([
@@ -296,6 +300,12 @@ export class StorefrontService {
         "home deal products",
         `home:products:deals:${activeDealSection?.id ?? (hasConfiguredDealSection ? "configured" : "automatic")}`,
         () => this.resolveHomeDealProducts(activeDealSection, hasConfiguredDealSection),
+        [],
+      ),
+      this.optionalHomeRead(
+        "best seller products",
+        "home:products:best-sellers",
+        () => this.listBestSellerProducts(),
         [],
       ),
       this.optionalHomeRead("home stats", "home:stats", () => this.getStats(), {
@@ -339,6 +349,7 @@ export class StorefrontService {
         featured: featuredProducts,
         latest: latestProducts,
         deals: dealProducts,
+        bestSellers: bestSellerProducts,
       },
       stats,
       menus: {
@@ -617,6 +628,100 @@ export class StorefrontService {
     return typeof input.resultLimit === "number"
       ? discountedProducts.slice(0, input.resultLimit)
       : discountedProducts;
+  }
+
+  private readonly bestSellerTrendingDays = positiveIntegerEnv("STOREFRONT_BEST_SELLER_TRENDING_DAYS", 30);
+  private readonly bestSellerCandidateLimit = positiveIntegerEnv("STOREFRONT_BEST_SELLER_CANDIDATE_LIMIT", 200);
+
+  private async listBestSellerProducts(): Promise<PublicProduct[]> {
+    const candidates = await this.prisma.client.product.findMany({
+      where: publicProductWhere,
+      include: publicProductInclude,
+      orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }],
+      take: this.bestSellerCandidateLimit,
+    });
+
+    if (!candidates.length) {
+      return [];
+    }
+
+    const productIds = candidates.map((p) => p.id);
+    const visible = this.publicVisibleProducts(candidates);
+    const since = daysAgo(this.bestSellerTrendingDays);
+
+    const [orderSignals, reviewSummaries] = await Promise.all([
+      this.recentOrderSignalsForProducts({ productIds, since }),
+      this.reviewSummariesForProducts(productIds),
+    ]);
+
+    const scored = visible.map((product) => {
+      const signal = orderSignals.get(product.id) ?? { count: 0, quantity: 0, latestAt: new Date(0) };
+      const review = reviewSummaries.get(product.id) ?? this.emptyReviewSummary();
+      const orderScore = signal.count * 100 + Math.min(signal.quantity, 100);
+      const reviewScore = review.averageRating * 100 + Math.min(review.reviewCount, 100);
+      const productScore = Math.min((product.variants[0]?.stockQuantity ?? 0) > 0 ? 1 : 0, 1);
+      return { product, orderScore, reviewScore, productScore, latestAt: signal.latestAt.getTime() };
+    });
+
+    return scored
+      .sort((a, b) => {
+        const orderDelta = b.orderScore - a.orderScore;
+        if (orderDelta !== 0) return orderDelta;
+        const reviewDelta = b.reviewScore - a.reviewScore;
+        if (reviewDelta !== 0) return reviewDelta;
+        const latestDelta = b.latestAt - a.latestAt;
+        if (latestDelta !== 0) return latestDelta;
+        return b.productScore - a.productScore;
+      })
+      .slice(0, 6)
+      .map((item) => item.product);
+  }
+
+  private async recentOrderSignalsForProducts(input: {
+    productIds: string[];
+    since: Date;
+  }): Promise<Map<string, { count: number; quantity: number; latestAt: Date }>> {
+    const signals = new Map<string, { count: number; quantity: number; latestAt: Date }>();
+    if (!input.productIds.length) {
+      return signals;
+    }
+
+    const rows = await this.prisma.client.orderItem.findMany({
+      where: {
+        productId: { in: input.productIds },
+        activeQuantity: { gt: 0 },
+        lifecycleStatus: { not: OrderItemLifecycleStatus.CANCELLED },
+        order: {
+          createdAt: { gte: input.since },
+          orderStatus: { not: OrderStatus.CANCELLED },
+          paymentStatus: { notIn: [PaymentStatus.FAILED, PaymentStatus.REFUNDED] },
+        },
+      },
+      select: {
+        productId: true,
+        quantity: true,
+        activeQuantity: true,
+        order: { select: { createdAt: true } },
+      },
+      orderBy: { order: { createdAt: "desc" } },
+      take: 500,
+    });
+
+    for (const row of rows) {
+      const signal = signals.get(row.productId) ?? {
+        count: 0,
+        quantity: 0,
+        latestAt: row.order.createdAt,
+      };
+      signal.count += 1;
+      signal.quantity += row.activeQuantity || row.quantity || 0;
+      if (row.order.createdAt > signal.latestAt) {
+        signal.latestAt = row.order.createdAt;
+      }
+      signals.set(row.productId, signal);
+    }
+
+    return signals;
   }
 
   private async activeDealProductIds() {
