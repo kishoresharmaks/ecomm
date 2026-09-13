@@ -1,19 +1,14 @@
 import {
   CheckmarkCircle01Icon,
-  DeliveryTruck01Icon,
-  FileCheckIcon,
   HeartIcon,
   MinusSignIcon,
-  NoteIcon,
   PencilEdit01Icon,
   PlusSignIcon,
-  QrCodeIcon,
   Share02Icon,
   Shield01Icon,
   ShoppingCart01Icon,
   StarIcon,
   Store01Icon,
-  TagIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react-native";
 import { FlashList } from "@shopify/flash-list";
@@ -33,6 +28,7 @@ import {
   addWishlistItem,
   getCart,
   getProduct,
+  getReturnPolicySettings,
   getWishlist,
   listProducts,
   removeWishlistItem,
@@ -40,20 +36,13 @@ import {
 import { useProductReviews } from "../../src/features/storefront/use-mobile-reviews";
 import { RatingDisplay } from "../../src/components/rating-display";
 import {
-  accountErrorMessage,
   formatDate,
-  formatDateTime,
-  formatStatus,
-  orderCanBeCancelled,
-  RetryState,
-  SignInRequiredState,
-  StatusPill,
 } from "../../src/features/account/account-ui";
 import { resolveImageUrl } from "../../src/lib/image-url";
 import { useRecentProductsStore } from "../../src/state/recent-products-store";
 import { colors } from "../../src/theme";
 import type { MobileProduct } from "../../src/types/mobile-home";
-import type { ProductImage, ProductSummary, ProductVariant } from "../../src/types/storefront";
+import type { MobileProductReview, ProductImage, ProductSummary, ProductVariant } from "../../src/types/storefront";
 
 type ProductDetailFeedItem =
   | {
@@ -150,6 +139,11 @@ function ProductDetailScreen() {
     queryFn: () => getWishlist(customerAuth.authHeaders),
     enabled: customerAuth.enabled,
     staleTime: 30_000,
+  });
+  const returnPolicyQuery = useQuery({
+    queryKey: ["mobile-return-policy"],
+    queryFn: getReturnPolicySettings,
+    staleTime: 5 * 60_000,
   });
   const wishlistProductIds = useMemo(
     () => new Set((wishlistQuery.data?.items ?? []).map((item) => item.productId)),
@@ -362,6 +356,7 @@ function ProductDetailScreen() {
           onGoToCart={() => router.push("/cart")}
           onSignIn={() => router.push("/auth/sign-in")}
           product={product}
+          returnPolicy={returnPolicyQuery.data ?? null}
           selectedVariant={selectedVariant}
         />
       </View>
@@ -442,7 +437,14 @@ function ProductGallery({
   return (
     <View style={styles.gallerySection}>
       {heroImage ? (
-        <Image resizeMode="contain" source={{ uri: heroImage }} style={styles.heroImage} />
+        <Pressable onPress={() => {}} style={styles.heroImageWrap}>
+          <Image resizeMode="contain" source={{ uri: heroImage }} style={styles.heroImage} />
+          {images.length > 1 && (
+            <View style={styles.imageCountBadge}>
+              <Text style={styles.imageCountText}>{images.length}</Text>
+            </View>
+          )}
+        </Pressable>
       ) : (
         <View style={styles.heroImageFallback}>
           <Text style={styles.heroImageFallbackText}>1HI</Text>
@@ -493,18 +495,28 @@ function ProductSummaryBlock({
   const price = variantDisplayPrice(selectedVariant);
   const rating = product.reviewSummary?.averageRating;
   const reviewCount = product.reviewSummary?.reviewCount ?? 0;
-  const inStock = Boolean(selectedVariant && selectedVariant.status === "ACTIVE" && selectedVariant.stockQuantity > 0);
+  const stockQuantity = selectedVariant?.stockQuantity ?? 0;
+  const inStock = Boolean(selectedVariant && selectedVariant.status === "ACTIVE" && stockQuantity > 0);
+  const lowStock = inStock && stockQuantity > 0 && stockQuantity < 10;
+  const discountPercent = useMemo(() => {
+    if (!selectedVariant || !price || !mrp || mrp <= price) return 0;
+    return Math.round(((mrp - price) / mrp) * 100);
+  }, [selectedVariant, price, mrp]);
 
   return (
     <View style={styles.section}>
-      <Text numberOfLines={1} style={styles.categoryLabel}>
+      <Text numberOfLines={2} style={styles.categoryLabel}>
         {product.category?.name ?? "Marketplace product"}
       </Text>
-      <Text style={styles.productName}>{product.name}</Text>
+      <Text numberOfLines={3} style={styles.productName}>{product.name}</Text>
       <View style={styles.priceRow}>
         <Text style={styles.priceText}>{formatPrice(price)}</Text>
-        {mrp && price && mrp > price ? <Text style={styles.mrpText}>{formatPrice(mrp)}</Text> : null}
-        {discountLabel(selectedVariant) ? <Text style={styles.discountPill}>{discountLabel(selectedVariant)}</Text> : null}
+        {mrp && price && mrp > price ? (
+          <>
+            <Text style={styles.mrpText}>{formatPrice(mrp)}</Text>
+            <Text style={styles.discountPill}>-{discountPercent}%</Text>
+          </>
+        ) : null}
       </View>
       <View style={styles.productActionRow}>
         <Pressable
@@ -518,26 +530,26 @@ function ProductSummaryBlock({
           {isWishlistPending ? (
             <ActivityIndicator color={colors.primary} size="small" />
           ) : (
-            <HugeiconsIcon color={isWished ? colors.primary : "#667085"} icon={HeartIcon} size={18} strokeWidth={isWished ? 2.6 : 2} />
+            <HugeiconsIcon color={isWished ? colors.primary : "#667085"} icon={HeartIcon} size={17} strokeWidth={isWished ? 2.6 : 2} />
           )}
           <Text numberOfLines={1} style={[styles.productActionText, isWished ? styles.productActionTextActive : null]}>
             {isWished ? "Saved" : "Wishlist"}
           </Text>
         </Pressable>
         <Pressable accessibilityLabel="Share product" accessibilityRole="button" style={styles.productActionButton} onPress={onShare}>
-          <HugeiconsIcon color="#667085" icon={Share02Icon} size={18} strokeWidth={2} />
+          <HugeiconsIcon color="#667085" icon={Share02Icon} size={17} strokeWidth={2} />
           <Text numberOfLines={1} style={styles.productActionText}>Share</Text>
         </Pressable>
       </View>
       <View style={styles.metaRow}>
-        <Text style={[styles.stockPill, inStock ? styles.stockPillIn : styles.stockPillOut]}>
-          {inStock ? `${selectedVariant?.stockQuantity ?? 0} in stock` : "Out of stock"}
+        <Text style={[styles.stockPill, inStock ? (lowStock ? styles.stockPillLow : styles.stockPillIn) : styles.stockPillOut]}>
+          {!inStock ? "Out of stock" : lowStock ? `Only ${stockQuantity} left` : "In stock"}
         </Text>
         <Text style={styles.metaPill}>
           {rating ? `${rating.toFixed(1)} rating` : "New arrival"}
           {reviewCount ? ` (${reviewCount})` : ""}
         </Text>
-        {selectedVariant?.activeDeal ? <Text style={styles.metaPill}>{selectedVariant.activeDeal.title}</Text> : null}
+        {selectedVariant?.activeDeal ? <Text style={styles.metaPillDeal}>{selectedVariant.activeDeal.title}</Text> : null}
       </View>
     </View>
   );
@@ -584,7 +596,7 @@ function VariantSelector({
               <Text style={[styles.variantPrice, selected ? styles.variantNameActive : null]}>
                 {formatPrice(variantDisplayPrice(item))}
               </Text>
-              {disabled ? <Text style={styles.variantUnavailable}>Out of stock</Text> : null}
+              {disabled ? <Text style={styles.variantUnavailable}>Sold out</Text> : null}
             </Pressable>
           );
         }}
@@ -621,7 +633,7 @@ function QuantitySelector({
           style={[styles.qtyButton, quantity <= 1 ? styles.qtyButtonDisabled : null]}
           onPress={() => onChangeQuantity(Math.max(1, quantity - 1))}
         >
-          <HugeiconsIcon color={quantity <= 1 ? "#9AA4B2" : colors.ink} icon={MinusSignIcon} size={17} strokeWidth={2.2} />
+          <HugeiconsIcon color={quantity <= 1 ? "#9AA4B2" : colors.ink} icon={MinusSignIcon} size={16} strokeWidth={2.2} />
         </Pressable>
         <Text style={styles.qtyText}>{quantity}</Text>
         <Pressable
@@ -629,7 +641,7 @@ function QuantitySelector({
           style={[styles.qtyButton, unavailable || quantity >= maxQuantity ? styles.qtyButtonDisabled : null]}
           onPress={() => onChangeQuantity(Math.min(maxQuantity, quantity + 1))}
         >
-          <HugeiconsIcon color={unavailable || quantity >= maxQuantity ? "#9AA4B2" : colors.ink} icon={PlusSignIcon} size={17} strokeWidth={2.2} />
+          <HugeiconsIcon color={unavailable || quantity >= maxQuantity ? "#9AA4B2" : colors.ink} icon={PlusSignIcon} size={16} strokeWidth={2.2} />
         </Pressable>
       </View>
     </View>
@@ -649,15 +661,13 @@ function DescriptionBlock({
   const [descExpanded, setDescExpanded] = useState(false);
   const isLong = rawDescription.length > DESC_LIMIT;
   const displayDescription = isLong && !descExpanded
-    ? `${rawDescription.slice(0, DESC_LIMIT).trimEnd()}\u2026`
+    ? `${rawDescription.slice(0, DESC_LIMIT).trimEnd()}…`
     : rawDescription;
 
   return (
     <View style={styles.section}>
-      {/* Header */}
       <Text style={styles.sectionTitle}>About this product</Text>
 
-      {/* Description */}
       <Text style={styles.descriptionText}>
         {displayDescription || "Product details will be updated by the seller soon."}
       </Text>
@@ -670,17 +680,10 @@ function DescriptionBlock({
       {/* Highlights */}
       {details.highlights.length ? (
         <View style={styles.detailSection}>
-          <View style={styles.detailSectionHeader}>
-            <View style={styles.sectionIconBadge}>
-              <HugeiconsIcon color="#ED3500" icon={CheckmarkCircle01Icon} size={13} strokeWidth={2.4} />
-            </View>
-            <Text style={styles.detailSectionTitle}>Key highlights</Text>
-          </View>
-          {details.highlights.map((highlight, index) => (
+          <Text style={styles.detailSectionTitle}>Key highlights</Text>
+          {details.highlights.map((highlight) => (
             <View key={highlight} style={styles.highlightRow}>
-              <View style={styles.highlightNumberBadge}>
-                <Text style={styles.highlightNumberText}>{index + 1}</Text>
-              </View>
+              <View style={styles.highlightDot} />
               <Text style={styles.highlightText}>{highlight}</Text>
             </View>
           ))}
@@ -690,20 +693,14 @@ function DescriptionBlock({
       {/* Detail sections */}
       {details.sections.map((detailSection) => (
         <View key={detailSection.key} style={styles.detailSection}>
-          <View style={styles.detailSectionHeader}>
-            <View style={styles.sectionIconBadge}>
-              <DescriptionSectionIcon sectionKey={detailSection.key} />
-            </View>
-            <Text style={styles.detailSectionTitle}>{detailSection.title}</Text>
-          </View>
+          <Text style={styles.detailSectionTitle}>{detailSection.title}</Text>
           <View style={styles.detailTable}>
-            {detailSection.rows.map((row, index) => (
+            {detailSection.rows.map((row, idx) => (
               <View
                 key={`${row.scope}-${row.key}`}
                 style={[
                   styles.detailRow,
-                  index % 2 === 0 ? styles.detailRowEven : styles.detailRowOdd,
-                  index === detailSection.rows.length - 1 ? styles.detailRowLast : null,
+                  idx === detailSection.rows.length - 1 ? styles.detailRowLast : null,
                 ]}
               >
                 <Text style={styles.detailLabel}>{row.label}</Text>
@@ -717,7 +714,7 @@ function DescriptionBlock({
       {/* Trust row */}
       <View style={styles.trustRow}>
         <View style={styles.trustIconWrap}>
-          <HugeiconsIcon color={colors.success} icon={Shield01Icon} size={18} strokeWidth={2.2} />
+          <HugeiconsIcon color={colors.success} icon={Shield01Icon} size={16} strokeWidth={2.2} />
         </View>
         <Text style={styles.trustText}>Seller listing verified and approved by 1HandIndia marketplace.</Text>
       </View>
@@ -725,53 +722,63 @@ function DescriptionBlock({
   );
 }
 
-function DescriptionSectionIcon({ sectionKey }: { sectionKey: string }) {
-  switch (sectionKey) {
-    case "OVERVIEW":
-      return <HugeiconsIcon color="#163B5C" icon={NoteIcon} size={13} strokeWidth={2.3} />;
-    case "COMPLIANCE":
-      return <HugeiconsIcon color="#163B5C" icon={FileCheckIcon} size={13} strokeWidth={2.3} />;
-    case "FULFILMENT":
-      return <HugeiconsIcon color="#163B5C" icon={DeliveryTruck01Icon} size={13} strokeWidth={2.3} />;
-    case "IDENTIFIERS":
-      return <HugeiconsIcon color="#163B5C" icon={QrCodeIcon} size={13} strokeWidth={2.3} />;
-    case "SPECIFICATIONS":
-      return <HugeiconsIcon color="#163B5C" icon={TagIcon} size={13} strokeWidth={2.3} />;
-    case "VARIANT":
-      return <HugeiconsIcon color="#163B5C" icon={TagIcon} size={13} strokeWidth={2.3} />;
-    default:
-      return <HugeiconsIcon color="#163B5C" icon={NoteIcon} size={13} strokeWidth={2.3} />;
-  }
-}
-
 function SellerBlock({ product }: { product: ProductSummary }) {
   const logoUrl = resolveImageUrl(product.seller?.profile?.logoUrl);
   const sellerSlug = product.seller?.slug;
-  const sellerRow = (
-    <Pressable disabled={!sellerSlug} style={({ pressed }) => [styles.sellerRow, pressed ? styles.sellerRowPressed : null]}>
-      {logoUrl ? (
-        <Image source={{ uri: logoUrl }} style={styles.sellerLogo} />
-      ) : (
-        <View style={styles.sellerLogoFallback}>
-          <HugeiconsIcon color={colors.primary} icon={Store01Icon} size={26} strokeWidth={2} />
-        </View>
-      )}
-      <View style={styles.sellerCopy}>
-        <Text numberOfLines={1} style={styles.sellerName}>
-          {product.seller?.storeName ?? "1HandIndia seller"}
-        </Text>
-        <Text numberOfLines={2} style={styles.sellerDescription}>
-          {product.seller?.profile?.description ?? "Approved marketplace seller."}
-        </Text>
-      </View>
-      {sellerSlug ? <Text style={styles.sellerAction}>View</Text> : null}
-    </Pressable>
-  );
+  const sellerReview = (product.seller as { reviewSummary?: { averageRating?: number } } | undefined)?.reviewSummary;
+  const sellerRating = sellerReview?.averageRating;
 
   return (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>Sold by</Text>
-      {sellerSlug ? <Link asChild href={`/store/${sellerSlug}` as Href}>{sellerRow}</Link> : sellerRow}
+      {sellerSlug ? (
+        <Link asChild href={`/store/${sellerSlug}` as Href}>
+          <Pressable style={({ pressed }) => [styles.sellerRow, pressed ? styles.sellerRowPressed : null]}>
+            {logoUrl ? (
+              <Image source={{ uri: logoUrl }} style={styles.sellerLogo} />
+            ) : (
+              <View style={styles.sellerLogoFallback}>
+                <HugeiconsIcon color={colors.primary} icon={Store01Icon} size={22} strokeWidth={2} />
+              </View>
+            )}
+            <View style={styles.sellerCopy}>
+              <View style={styles.sellerNameRow}>
+                <Text numberOfLines={1} style={styles.sellerName}>
+                  {product.seller?.storeName ?? "1HandIndia seller"}
+                </Text>
+                {sellerRating ? (
+                  <View style={styles.sellerRatingPill}>
+                    <HugeiconsIcon icon={StarIcon} size={10} color="#F59E0B" strokeWidth={2} />
+                    <Text style={styles.sellerRatingText}>{sellerRating.toFixed(1)}</Text>
+                  </View>
+                ) : null}
+              </View>
+              <Text numberOfLines={1} style={styles.sellerDescription}>
+                {product.seller?.profile?.description ?? "Approved marketplace seller."}
+              </Text>
+            </View>
+            <Text style={styles.sellerAction}>Visit Store</Text>
+          </Pressable>
+        </Link>
+      ) : (
+        <View style={styles.sellerRow}>
+          {logoUrl ? (
+            <Image source={{ uri: logoUrl }} style={styles.sellerLogo} />
+          ) : (
+            <View style={styles.sellerLogoFallback}>
+              <HugeiconsIcon color={colors.primary} icon={Store01Icon} size={22} strokeWidth={2} />
+            </View>
+          )}
+          <View style={styles.sellerCopy}>
+            <Text numberOfLines={1} style={styles.sellerName}>
+              {product.seller?.storeName ?? "1HandIndia seller"}
+            </Text>
+            <Text numberOfLines={1} style={styles.sellerDescription}>
+              {product.seller?.profile?.description ?? "Approved marketplace seller."}
+            </Text>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -813,6 +820,36 @@ function RecommendationsBlock({
   );
 }
 
+function ReviewBreakdown({ reviews }: { reviews: MobileProductReview[] }) {
+  const counts = useMemo(() => {
+    const countsMap: Record<number, number> = {};
+    for (const r of reviews) {
+      const idx = Math.max(0, Math.min(4, r.rating as number));
+      countsMap[idx] = (countsMap[idx] || 0) + 1;
+    }
+    return countsMap;
+  }, [reviews]);
+  const maxCount = Math.max(...Object.values(counts), 1);
+
+  return (
+    <View style={styles.reviewBreakdown}>
+      {[5, 4, 3, 2, 1].map((star) => {
+        const count = counts[star - 1] ?? 0;
+        return (
+          <View key={star} style={styles.reviewBreakdownRow}>
+            <Text style={styles.reviewBreakdownLabel}>{star}</Text>
+            <HugeiconsIcon icon={StarIcon} size={10} color="#F59E0B" strokeWidth={2} />
+            <View style={styles.reviewBreakdownBarTrack}>
+              <View style={[styles.reviewBreakdownBarFill, { width: `${(count / maxCount) * 100}%` }]} />
+            </View>
+            <Text style={styles.reviewBreakdownCount}>{count}</Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
 function ReviewsSection({ product }: { product: ProductSummary }) {
   const router = useRouter();
   const { averageRating, reviewCount, reviews, isLoading } = useProductReviews(product.id);
@@ -820,18 +857,24 @@ function ReviewsSection({ product }: { product: ProductSummary }) {
   const summaryCount = reviewCount ?? product.reviewSummary?.reviewCount ?? 0;
   const [expanded, setExpanded] = useState(false);
 
-  const visibleReviews = expanded ? reviews : reviews.slice(0, 2);
+  const visibleReviews = expanded ? reviews : reviews.slice(0, 3);
 
   return (
     <View style={styles.section}>
       <View style={styles.reviewsHeader}>
-        <RatingDisplay averageRating={summaryRating} reviewCount={summaryCount} size="medium" />
-        {summaryCount > 2 ? (
+        <View style={styles.reviewsRatingWrap}>
+          <RatingDisplay averageRating={summaryRating} reviewCount={summaryCount} size="medium" />
+        </View>
+        {summaryCount > 3 ? (
           <Pressable onPress={() => setExpanded((v) => !v)}>
-            <Text style={styles.reviewsToggleText}>{expanded ? "Show less" : `See all ${summaryCount} reviews`}</Text>
+            <Text style={styles.reviewsToggleText}>{expanded ? "Show less" : `See all ${summaryCount}`}</Text>
           </Pressable>
         ) : null}
       </View>
+
+      {reviews.length > 0 && !expanded ? (
+        <ReviewBreakdown reviews={reviews} />
+      ) : null}
 
       {isLoading ? (
         <View style={styles.reviewsLoading}>
@@ -843,13 +886,21 @@ function ReviewsSection({ product }: { product: ProductSummary }) {
           {visibleReviews.map((review) => (
             <View key={review.id} style={styles.reviewCard}>
               <View style={styles.reviewCardHeader}>
-                <Text style={styles.reviewCustomerName}>{review.customerName}</Text>
+                <View style={styles.reviewCustomerWrap}>
+                  <Text style={styles.reviewCustomerName}>{review.customerName}</Text>
+                  {review.verifiedPurchase ? (
+                    <View style={styles.verifiedBadge}>
+                      <HugeiconsIcon icon={CheckmarkCircle01Icon} size={11} color={colors.success} strokeWidth={2.2} />
+                      <Text style={styles.verifiedBadgeText}>Verified</Text>
+                    </View>
+                  ) : null}
+                </View>
                 <View style={styles.reviewCardStars}>
                   {[1, 2, 3, 4, 5].map((star) => (
                     <HugeiconsIcon
                       key={star}
                       icon={StarIcon}
-                      size={14}
+                      size={13}
                       color={star <= review.rating ? "#F59E0B" : "#D1D5DB"}
                       strokeWidth={star <= review.rating ? 1.8 : 1.3}
                     />
@@ -872,7 +923,7 @@ function ReviewsSection({ product }: { product: ProductSummary }) {
           router.push("/orders");
         }}
       >
-        <HugeiconsIcon color={colors.surface} icon={PencilEdit01Icon} size={18} strokeWidth={2.2} />
+        <HugeiconsIcon color={colors.surface} icon={PencilEdit01Icon} size={17} strokeWidth={2.2} />
         <Text style={styles.writeReviewButtonText}>Write a review</Text>
       </Pressable>
     </View>
@@ -890,6 +941,7 @@ function ProductActionBar({
   onGoToCart,
   onSignIn,
   product,
+  returnPolicy,
   selectedVariant,
 }: {
   addedMessage: string;
@@ -902,6 +954,7 @@ function ProductActionBar({
   onGoToCart: () => void;
   onSignIn: () => void;
   product: ProductSummary;
+  returnPolicy: { returnWindowDays: number; replacementWindowDays: number } | null;
   selectedVariant: ProductVariant | null;
 }) {
   const router = useRouter();
@@ -916,6 +969,13 @@ function ProductActionBar({
       : isOutOfStock
         ? "Selected option is out of stock."
         : "";
+
+  const returnLabel = useMemo(() => {
+    if (!returnPolicy) return null;
+    const days = returnPolicy.returnWindowDays;
+    if (days && days > 0) return `${days}-day easy return`;
+    return "Non-returnable";
+  }, [returnPolicy]);
 
   function handleB2BCTA() {
     if (!isSignedIn) {
@@ -944,10 +1004,10 @@ function ProductActionBar({
         /* ENQUIRY_ONLY: B2B request-quote button is the only CTA */
         <Pressable
           disabled={isRegionRestricted}
-          style={[styles.addButton, isRegionRestricted ? styles.addButtonDisabled : null]}
+          style={[styles.addButton, styles.addButtonOutline, isRegionRestricted ? styles.addButtonDisabled : null]}
           onPress={isRegionRestricted ? undefined : handleB2BCTA}
         >
-          <Text style={styles.addButtonText}>
+          <Text style={[styles.addButtonText, styles.addButtonTextOutline]}>
             {isRegionRestricted
               ? "Not available in your region"
               : isSignedIn
@@ -957,7 +1017,6 @@ function ProductActionBar({
         </Pressable>
       ) : (
         <>
-          {/* Primary add-to-cart button */}
           <Pressable
             disabled={isBusy || (isSignedIn && !isInCart && !canAddToCart)}
             style={[styles.addButton, isBusy || (isSignedIn && !isInCart && !canAddToCart) ? styles.addButtonDisabled : null]}
@@ -967,12 +1026,17 @@ function ProductActionBar({
               <ActivityIndicator color={colors.surface} />
             ) : (
               <>
-                <HugeiconsIcon color={colors.surface} icon={ShoppingCart01Icon} size={22} strokeWidth={2.2} />
+                <HugeiconsIcon color={colors.surface} icon={ShoppingCart01Icon} size={20} strokeWidth={2.2} />
                 <Text style={styles.addButtonText}>{isSignedIn ? (isInCart ? "Go to cart" : "Add to cart") : "Sign in to add"}</Text>
               </>
             )}
           </Pressable>
-          {/* Secondary B2B CTA — always visible, even out-of-stock */}
+          {returnLabel ? (
+            <View style={styles.actionReturnPill}>
+              <HugeiconsIcon icon={Shield01Icon} size={12} color={colors.success} strokeWidth={2} />
+              <Text style={styles.actionReturnText}>{returnLabel}</Text>
+            </View>
+          ) : null}
           <Pressable
             disabled={isRegionRestricted}
             style={[styles.b2bSecondaryButton, isRegionRestricted ? styles.b2bSecondaryButtonDisabled : null]}
@@ -1047,24 +1111,6 @@ function selectVariant(product: ProductSummary | undefined, selectedVariantId: s
   );
 }
 
-function discountLabel(variant: ProductVariant | null) {
-  if (!variant) {
-    return "";
-  }
-
-  if (variant.dealDiscountBps && variant.dealDiscountBps > 0) {
-    return `${Math.round(variant.dealDiscountBps / 100)}% off`;
-  }
-
-  const price = variantDisplayPrice(variant);
-  const mrp = variantOriginalDisplayPrice(variant);
-  if (price && mrp && mrp > price) {
-    return `${Math.round(((mrp - price) / mrp) * 100)}% off`;
-  }
-
-  return "";
-}
-
 function variantDisplayPrice(variant: ProductVariant | null | undefined) {
   return variant?.baseDealPricePaise ?? variant?.basePricePaise ?? variant?.dealPricePaise ?? variant?.pricePaise;
 }
@@ -1079,7 +1125,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   listContent: {
-    paddingBottom: 142,
+    paddingBottom: 130,
   },
   centerState: {
     alignItems: "center",
@@ -1106,27 +1152,49 @@ const styles = StyleSheet.create({
   },
   gallerySection: {
     backgroundColor: colors.secondary,
-    paddingBottom: 10,
-    paddingHorizontal: 18,
-    paddingTop: 14,
+    paddingBottom: 8,
+    marginHorizontal: 0,
+    paddingTop: 12,
+  },
+  heroImageWrap: {
+    position: "relative",
   },
   heroImage: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
-    borderRadius: 28,
+    borderRadius: 20,
     borderWidth: 1,
-    height: 330,
+    height: 260,
+    marginHorizontal: 12,
     overflow: "hidden",
     width: "100%",
+  },
+  imageCountBadge: {
+    position: "absolute",
+    bottom: 14,
+    right: 24,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    borderRadius: 12,
+    height: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 28,
+    paddingHorizontal: 8,
+  },
+  imageCountText: {
+    color: colors.surface,
+    fontSize: 12,
+    fontWeight: "900",
   },
   heroImageFallback: {
     alignItems: "center",
     backgroundColor: colors.surface,
     borderColor: colors.border,
-    borderRadius: 28,
+    borderRadius: 20,
     borderWidth: 1,
-    height: 330,
+    height: 260,
     justifyContent: "center",
+    marginHorizontal: 12,
     overflow: "hidden",
     width: "100%",
   },
@@ -1138,18 +1206,18 @@ const styles = StyleSheet.create({
   thumbnailButton: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
-    borderRadius: 18,
-    borderWidth: 1,
-    height: 66,
-    marginLeft: 0,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    height: 72,
+    marginLeft: 12,
     marginRight: 10,
-    marginTop: 14,
+    marginTop: 10,
     overflow: "hidden",
-    width: 66,
+    width: 72,
   },
   thumbnailButtonActive: {
     borderColor: colors.primary,
-    borderWidth: 2,
+    borderWidth: 2.5,
   },
   thumbnailImage: {
     height: "100%",
@@ -1158,39 +1226,36 @@ const styles = StyleSheet.create({
   section: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
-    borderRadius: 26,
+    borderRadius: 20,
     borderWidth: 1,
-    marginHorizontal: 18,
-    marginTop: 14,
-    padding: 18,
-    shadowColor: "#ED3500",
-    shadowOffset: { height: 8, width: 0 },
-    shadowOpacity: 0.045,
-    shadowRadius: 22,
+    marginHorizontal: 12,
+    marginTop: 12,
+    padding: 14,
   },
   categoryLabel: {
     color: colors.primary,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "900",
     textTransform: "uppercase",
+    letterSpacing: 0.3,
   },
   productName: {
     color: colors.ink,
-    fontSize: 23,
+    fontSize: 22,
     fontWeight: "900",
-    lineHeight: 29,
-    marginTop: 6,
+    lineHeight: 28,
+    marginTop: 4,
   },
   priceRow: {
     alignItems: "center",
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
-    marginTop: 12,
+    marginTop: 10,
   },
   priceText: {
     color: colors.primary,
-    fontSize: 25,
+    fontSize: 22,
     fontWeight: "900",
   },
   mrpText: {
@@ -1203,17 +1268,17 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFF0E8",
     borderRadius: 999,
     color: colors.primary,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "900",
     overflow: "hidden",
-    paddingHorizontal: 9,
-    paddingVertical: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
   productActionRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 10,
-    marginTop: 14,
+    gap: 8,
+    marginTop: 12,
   },
   productActionButton: {
     alignItems: "center",
@@ -1222,10 +1287,10 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     flexDirection: "row",
-    gap: 7,
-    minHeight: 40,
-    paddingHorizontal: 13,
-    paddingVertical: 8,
+    gap: 6,
+    minHeight: 36,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
   },
   productActionButtonActive: {
     backgroundColor: "#FFF2ED",
@@ -1236,7 +1301,7 @@ const styles = StyleSheet.create({
   },
   productActionText: {
     color: "#667085",
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "900",
   },
   productActionTextActive: {
@@ -1245,51 +1310,65 @@ const styles = StyleSheet.create({
   metaRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 8,
-    marginTop: 12,
-  },
-  metaPill: {
-    backgroundColor: colors.softSurface,
-    borderRadius: 999,
-    color: colors.ink,
-    fontSize: 12,
-    fontWeight: "800",
-    overflow: "hidden",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    gap: 6,
+    marginTop: 10,
   },
   stockPill: {
     borderRadius: 999,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "900",
     overflow: "hidden",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
   },
   stockPillIn: {
     backgroundColor: "#EAFBF1",
     color: colors.success,
   },
+  stockPillLow: {
+    backgroundColor: "#FFF9EB",
+    color: colors.warning,
+  },
   stockPillOut: {
     backgroundColor: "#FFE9E9",
     color: colors.danger,
   },
+  metaPill: {
+    backgroundColor: colors.softSurface,
+    borderRadius: 999,
+    color: colors.ink,
+    fontSize: 11,
+    fontWeight: "800",
+    overflow: "hidden",
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  metaPillDeal: {
+    backgroundColor: "#FEF3C7",
+    borderRadius: 999,
+    color: "#92400E",
+    fontSize: 11,
+    fontWeight: "800",
+    overflow: "hidden",
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
   sectionTitle: {
     color: colors.ink,
-    fontSize: 17,
+    fontSize: 15,
     fontWeight: "900",
-    marginBottom: 12,
+    marginBottom: 10,
   },
   variantChip: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
-    borderRadius: 22,
+    borderRadius: 16,
     borderWidth: 1,
-    marginRight: 10,
-    minHeight: 78,
-    paddingHorizontal: 13,
-    paddingVertical: 11,
-    width: 150,
+    marginRight: 8,
+    minHeight: 60,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    width: 120,
   },
   variantChipActive: {
     backgroundColor: "#FFF3ED",
@@ -1300,7 +1379,7 @@ const styles = StyleSheet.create({
   },
   variantName: {
     color: colors.ink,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "900",
   },
   variantNameActive: {
@@ -1308,15 +1387,15 @@ const styles = StyleSheet.create({
   },
   variantPrice: {
     color: colors.primary,
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: "900",
-    marginTop: 7,
+    marginTop: 4,
   },
   variantUnavailable: {
     color: colors.danger,
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "800",
-    marginTop: 5,
+    marginTop: 3,
   },
   quantityHeader: {
     alignItems: "center",
@@ -1327,7 +1406,7 @@ const styles = StyleSheet.create({
     color: colors.success,
     fontSize: 12,
     fontWeight: "900",
-    marginBottom: 12,
+    marginBottom: 10,
   },
   stockDanger: {
     color: colors.danger,
@@ -1335,7 +1414,7 @@ const styles = StyleSheet.create({
   quantityRow: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 12,
+    gap: 10,
   },
   qtyButton: {
     alignItems: "center",
@@ -1343,9 +1422,9 @@ const styles = StyleSheet.create({
     borderColor: "#FFE0D6",
     borderRadius: 999,
     borderWidth: 1,
-    height: 38,
+    height: 36,
     justifyContent: "center",
-    width: 38,
+    width: 36,
   },
   qtyButtonDisabled: {
     backgroundColor: "#F3F4F6",
@@ -1367,32 +1446,17 @@ const styles = StyleSheet.create({
   detailSection: {
     borderTopColor: colors.border,
     borderTopWidth: 1,
-    marginTop: 18,
-    paddingTop: 16,
-  },
-  detailSectionHeader: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 8,
-    marginBottom: 12,
-  },
-  sectionIconBadge: {
-    alignItems: "center",
-    backgroundColor: "#F0F4F8",
-    borderColor: colors.border,
-    borderRadius: 8,
-    borderWidth: 1,
-    height: 26,
-    justifyContent: "center",
-    width: 26,
+    marginTop: 14,
+    paddingTop: 12,
   },
   detailSectionTitle: {
     color: colors.ink,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "900",
+    marginBottom: 10,
   },
   detailTable: {
-    borderColor: "#EEF1F4",
+    borderColor: colors.border,
     borderRadius: 14,
     borderWidth: 1,
     overflow: "hidden",
@@ -1403,19 +1467,14 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingVertical: 5,
   },
-  highlightNumberBadge: {
+  highlightDot: {
     alignItems: "center",
-    backgroundColor: "#FFF0E8",
-    borderRadius: 999,
-    height: 20,
+    backgroundColor: colors.primary,
+    borderRadius: 5,
+    height: 6,
     justifyContent: "center",
-    marginTop: 1,
-    width: 20,
-  },
-  highlightNumberText: {
-    color: colors.primary,
-    fontSize: 10,
-    fontWeight: "900",
+    marginTop: 7,
+    width: 6,
   },
   highlightText: {
     color: "#475467",
@@ -1426,64 +1485,58 @@ const styles = StyleSheet.create({
   },
   detailRow: {
     alignItems: "flex-start",
-    borderBottomColor: "#EEF1F4",
+    borderBottomColor: colors.border,
     borderBottomWidth: 1,
     flexDirection: "row",
     gap: 10,
     justifyContent: "space-between",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  detailRowEven: {
-    backgroundColor: "#FFFFFF",
-  },
-  detailRowOdd: {
-    backgroundColor: "#FAFBFC",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
   },
   detailRowLast: {
     borderBottomWidth: 0,
-    paddingBottom: 10,
+    paddingBottom: 8,
   },
   detailLabel: {
     color: colors.muted,
     flex: 1,
     fontSize: 12,
     fontWeight: "800",
-    lineHeight: 18,
+    lineHeight: 17,
   },
   detailValue: {
     color: colors.ink,
     flex: 1,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "900",
-    lineHeight: 19,
+    lineHeight: 17,
     textAlign: "right",
   },
   trustRow: {
     alignItems: "center",
     backgroundColor: "#F2FCF7",
     borderColor: "#AEDEC8",
-    borderRadius: 18,
+    borderRadius: 14,
     borderWidth: 1,
     flexDirection: "row",
-    gap: 10,
-    marginTop: 16,
-    padding: 12,
+    gap: 8,
+    marginTop: 12,
+    padding: 10,
   },
   trustIconWrap: {
     alignItems: "center",
     backgroundColor: "#DCF5EA",
     borderRadius: 999,
-    height: 32,
+    height: 28,
     justifyContent: "center",
-    width: 32,
+    width: 28,
   },
   trustText: {
     color: "#1A5C3A",
     flex: 1,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "800",
-    lineHeight: 17,
+    lineHeight: 16,
   },
   readMoreButton: {
     marginTop: 6,
@@ -1497,43 +1550,63 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: colors.secondary,
     borderColor: colors.border,
-    borderRadius: 22,
+    borderRadius: 16,
     borderWidth: 1,
     flexDirection: "row",
     gap: 12,
-    padding: 12,
+    padding: 10,
   },
   sellerRowPressed: {
     transform: [{ scale: 0.99 }],
   },
   sellerLogo: {
-    borderRadius: 18,
-    height: 54,
-    width: 54,
+    borderRadius: 12,
+    height: 44,
+    width: 44,
   },
   sellerLogoFallback: {
     alignItems: "center",
     backgroundColor: colors.softSurface,
-    borderRadius: 18,
-    height: 54,
+    borderRadius: 12,
+    height: 44,
     justifyContent: "center",
-    width: 54,
+    width: 44,
   },
   sellerCopy: {
     flex: 1,
     minWidth: 0,
   },
+  sellerNameRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+  },
   sellerName: {
     color: colors.ink,
-    fontSize: 16,
+    fontSize: 14,
+    fontWeight: "900",
+    flex: 1,
+  },
+  sellerRatingPill: {
+    alignItems: "center",
+    backgroundColor: "#FFFBEB",
+    borderRadius: 6,
+    flexDirection: "row",
+    gap: 3,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+  },
+  sellerRatingText: {
+    color: "#92400E",
+    fontSize: 11,
     fontWeight: "900",
   },
   sellerDescription: {
     color: colors.muted,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "700",
-    lineHeight: 17,
-    marginTop: 4,
+    lineHeight: 15,
+    marginTop: 2,
   },
   sellerAction: {
     color: colors.primary,
@@ -1545,39 +1618,57 @@ const styles = StyleSheet.create({
     paddingRight: 4,
   },
   recommendationCard: {
-    width: 184,
+    width: 152,
   },
   actionWrap: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
-    borderTopLeftRadius: 26,
-    borderTopRightRadius: 26,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
     borderTopWidth: 1,
-    paddingBottom: 18,
-    paddingHorizontal: 18,
-    paddingTop: 14,
+    paddingBottom: 16,
+    paddingHorizontal: 12,
+    paddingTop: 12,
     shadowColor: "#111827",
-    shadowOffset: { height: -8, width: 0 },
-    shadowOpacity: 0.08,
-    shadowRadius: 18,
+    shadowOffset: { height: -6, width: 0 },
+    shadowOpacity: 0.06,
+    shadowRadius: 14,
+  },
+  actionReturnPill: {
+    alignItems: "center",
+    backgroundColor: "#F0FDF6",
+    borderColor: "#BBF7D0",
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 4,
+    marginTop: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    alignSelf: "center",
+  },
+  actionReturnText: {
+    color: "#15803D",
+    fontSize: 12,
+    fontWeight: "800",
   },
   actionHelp: {
     color: colors.danger,
     fontSize: 12,
     fontWeight: "800",
-    marginBottom: 10,
+    marginBottom: 8,
   },
   actionError: {
     color: colors.danger,
     fontSize: 12,
     fontWeight: "800",
-    marginBottom: 10,
+    marginBottom: 8,
   },
   addedRow: {
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 10,
+    marginBottom: 8,
   },
   addedText: {
     color: colors.success,
@@ -1592,85 +1683,116 @@ const styles = StyleSheet.create({
   addButton: {
     alignItems: "center",
     backgroundColor: colors.primary,
-    borderRadius: 999,
+    borderRadius: 16,
     flexDirection: "row",
-    gap: 9,
+    gap: 8,
     justifyContent: "center",
-    minHeight: 54,
+    minHeight: 48,
+  },
+  addButtonOutline: {
+    backgroundColor: "transparent",
+    borderColor: colors.primary,
+    borderWidth: 1.5,
   },
   addButtonDisabled: {
     backgroundColor: "#A8AFBA",
   },
   addButtonText: {
     color: colors.surface,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "900",
+  },
+  addButtonTextOutline: {
+    color: colors.primary,
   },
   b2bSecondaryButton: {
     alignItems: "center",
-    borderColor: colors.primary,
-    borderRadius: 14,
+    borderColor: colors.border,
+    borderRadius: 12,
     borderWidth: 1.5,
     justifyContent: "center",
-    minHeight: 48,
-    marginTop: 6,
+    minHeight: 42,
+    marginTop: 8,
   },
   b2bSecondaryButtonDisabled: {
     borderColor: "#C0C8D4",
   },
   b2bSecondaryButtonText: {
-    color: colors.primary,
-    fontSize: 15,
+    color: colors.muted,
+    fontSize: 13,
     fontWeight: "700",
   },
   reviewsHeader: {
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 14,
+    marginBottom: 10,
+  },
+  reviewsRatingWrap: {
+    flex: 1,
   },
   reviewsToggleText: {
     color: colors.primary,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "900",
   },
   reviewsList: {
-    gap: 10,
+    gap: 8,
   },
   reviewCard: {
     backgroundColor: colors.secondary,
     borderColor: colors.border,
-    borderRadius: 18,
+    borderRadius: 16,
     borderWidth: 1,
-    padding: 14,
+    padding: 12,
   },
   reviewCardHeader: {
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 6,
+    marginBottom: 4,
+  },
+  reviewCustomerWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flex: 1,
   },
   reviewCustomerName: {
     color: colors.ink,
     fontSize: 13,
     fontWeight: "900",
   },
+  verifiedBadge: {
+    alignItems: "center",
+    backgroundColor: "#F0FDF4",
+    borderRadius: 4,
+    flexDirection: "row",
+    gap: 2,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+  },
+  verifiedBadgeText: {
+    color: colors.success,
+    fontSize: 9,
+    fontWeight: "900",
+  },
   reviewCardStars: {
     flexDirection: "row",
-    gap: 3,
+    gap: 2,
   },
   reviewTitle: {
     color: colors.ink,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "800",
-    marginBottom: 4,
+    marginBottom: 3,
   },
   reviewComment: {
     color: "#475467",
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "700",
-    lineHeight: 20,
-    marginBottom: 6,
+    lineHeight: 18,
+    marginBottom: 4,
   },
   reviewDate: {
     color: colors.muted,
@@ -1703,13 +1825,53 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 8,
     justifyContent: "center",
-    marginTop: 14,
-    minHeight: 50,
-    paddingVertical: 14,
+    marginTop: 12,
+    minHeight: 46,
+    paddingVertical: 12,
   },
   writeReviewButtonText: {
     color: colors.surface,
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "900",
+  },
+  reviewBreakdown: {
+    backgroundColor: colors.secondary,
+    borderRadius: 14,
+    borderColor: colors.border,
+    borderWidth: 1,
+    gap: 6,
+    marginBottom: 12,
+    padding: 12,
+  },
+  reviewBreakdownRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 6,
+  },
+  reviewBreakdownLabel: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: "800",
+    width: 10,
+    textAlign: "right",
+  },
+  reviewBreakdownBarTrack: {
+    backgroundColor: colors.softSurface,
+    borderRadius: 3,
+    flex: 1,
+    height: 6,
+    overflow: "hidden",
+  },
+  reviewBreakdownBarFill: {
+    backgroundColor: "#F59E0B",
+    borderRadius: 3,
+    height: "100%",
+  },
+  reviewBreakdownCount: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: "800",
+    width: 18,
+    textAlign: "right",
   },
 });
