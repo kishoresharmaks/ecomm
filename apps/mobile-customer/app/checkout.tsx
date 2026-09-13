@@ -62,7 +62,7 @@ import {
 import { resolveImageUrl } from "../src/lib/image-url";
 import { MobileApiError } from "../src/lib/api";
 import { useLocationStore } from "../src/state/location-store";
-import { colors } from "../src/theme";
+import { colors, spacing } from "../src/theme";
 
 type CheckoutFeedItem =
   | { id: "items"; type: "items" }
@@ -180,13 +180,14 @@ function CheckoutScreen() {
     addressFormOpen ? JSON.stringify(checkoutSummaryAddressFromMobileForm(addressForm)) : "",
     450,
   );
-  const unsavedSummaryAddress = useMemo(
-    () =>
-      unsavedSummaryAddressKey
-        ? (JSON.parse(unsavedSummaryAddressKey) as ReturnType<typeof checkoutSummaryAddressFromMobileForm>)
-        : null,
-    [unsavedSummaryAddressKey],
-  );
+  const unsavedSummaryAddress = useMemo(() => {
+    if (!unsavedSummaryAddressKey) return null;
+    try {
+      return JSON.parse(unsavedSummaryAddressKey) as ReturnType<typeof checkoutSummaryAddressFromMobileForm>;
+    } catch {
+      return null;
+    }
+  }, [unsavedSummaryAddressKey]);
   const unsavedAddressReadyForSummary =
     deliveryPreference === "DELIVER_TO_ADDRESS" &&
     !selectedAddress &&
@@ -1070,8 +1071,8 @@ function CheckoutSection({
           <SegmentButton active={deliveryPreference === "STORE_PICKUP"} label="Pickup" onPress={() => { setDeliveryPreference("STORE_PICKUP"); setRequestedDeliveryMode(null); setDeliverySelectionsBySeller({}); }} />
         </View>
         {summary.sellerDeliveryGroups?.length ? (
-          <View style={{ marginTop: 24, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 24 }}>
-            <Text style={{ fontSize: 14, fontWeight: "700", color: colors.ink, marginBottom: 16 }}>Select delivery for each seller</Text>
+          <View style={styles.deliverySectionDivider}>
+            <Text style={styles.deliverySectionTitle}>Select delivery for each seller</Text>
             {summary.sellerDeliveryGroups.map((group) => {
               const availableOptions = group.availableDeliveryOptions.filter((option) => option.available);
               const selectedMode = deliverySelectionsBySeller[group.sellerId];
@@ -1102,8 +1103,8 @@ function CheckoutSection({
             })}
           </View>
         ) : deliveryPreference === "DELIVER_TO_ADDRESS" && summary?.availableDeliveryOptions?.length ? (
-          <View style={{ marginTop: 24, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 24 }}>
-            <Text style={{ fontSize: 14, fontWeight: "700", color: colors.ink, marginBottom: 16 }}>Select transport method</Text>
+          <View style={styles.deliverySectionDivider}>
+            <Text style={styles.deliverySectionTitle}>Select transport method</Text>
             {summary.availableDeliveryOptions
               .filter((opt) => opt.mode !== "STORE_PICKUP")
               .map((opt) => {
@@ -1120,22 +1121,22 @@ function CheckoutSection({
                       !opt.available && { opacity: 0.5 }
                     ]}
                   >
-                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <View style={styles.deliveryOptionRow}>
+                      <View style={styles.deliveryBadgeRow}>
                         <Text style={styles.optionTitle}>{label}</Text>
                         {!opt.available && (
-                          <View style={{ backgroundColor: "#f3f4f6", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 12 }}>
-                            <Text style={{ fontSize: 10, fontWeight: "700", color: "#4b5563" }}>Unavailable</Text>
+                          <View style={styles.unavailableBadge}>
+                            <Text style={styles.unavailableBadgeText}>Unavailable</Text>
                           </View>
                         )}
                       </View>
                       {opt.isCheapest && opt.available && (
-                        <View style={{ backgroundColor: "#dcfce7", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12 }}>
-                          <Text style={{ fontSize: 10, fontWeight: "700", color: "#166534" }}>Cheapest</Text>
+                        <View style={styles.cheapestBadge}>
+                          <Text style={styles.unavailableBadgeText}>Cheapest</Text>
                         </View>
                       )}
                     </View>
-                    <Text style={[styles.optionText, { marginTop: 8, fontWeight: "700" }]}>
+                    <Text style={[styles.optionText, { marginTop: spacing.sm, fontWeight: "700" }]}>
                       {opt.available
                         ? deliveryOptionPriceText(opt, formatCatalogPrice)
                         : (opt.reason || "Delivery unavailable")}
@@ -1188,6 +1189,8 @@ function CheckoutSection({
             onChangeText={setPaymentReference}
             placeholder="Payment reference or UTR"
             placeholderTextColor={colors.muted}
+            returnKeyType="done"
+            blurOnSubmit
             style={styles.input}
             value={paymentReference}
           />
@@ -1197,6 +1200,9 @@ function CheckoutSection({
           onChangeText={setCustomerNote}
           placeholder="Delivery note optional"
           placeholderTextColor={colors.muted}
+          returnKeyType="done"
+          blurOnSubmit
+          maxLength={500}
           style={[styles.input, styles.noteInput]}
           value={customerNote}
         />
@@ -1526,7 +1532,7 @@ function checkoutSummaryAmount(
 }
 
 function deliveryOptionPriceText(
-  option: { chargePaise: number; payableChargePaise?: number },
+  option: { chargePaise: number; payableChargePaise?: number; reason: string | null },
   formatPrice: (pricePaise?: number | null) => string,
 ) {
   const payableChargePaise = option.payableChargePaise ?? option.chargePaise;
@@ -1743,7 +1749,7 @@ const styles = StyleSheet.create({
   },
   checkoutHeader: {
     backgroundColor: colors.surface,
-    borderColor: "#F3E7E2",
+    borderColor: colors.border,
     borderRadius: 28,
     borderWidth: 1,
     elevation: 4,
@@ -1761,13 +1767,13 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   checkoutTitle: {
-    color: "#111827",
+    color: colors.ink,
     fontSize: 28,
     fontWeight: "900",
     marginTop: 4,
   },
   checkoutSubtitle: {
-    color: "#6B7280",
+    color: colors.muted,
     fontSize: 14,
     fontWeight: "700",
     lineHeight: 20,
@@ -1784,8 +1790,8 @@ const styles = StyleSheet.create({
   },
   progressDot: {
     alignItems: "center",
-    backgroundColor: "#FFF8F5",
-    borderColor: "#F3E7E2",
+    backgroundColor: colors.softSurface,
+    borderColor: colors.border,
     borderRadius: 999,
     borderWidth: 1,
     height: 28,
@@ -1797,11 +1803,11 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
   },
   progressDotComplete: {
-    backgroundColor: "#22C55E",
-    borderColor: "#22C55E",
+    backgroundColor: colors.success,
+    borderColor: colors.success,
   },
   progressDotText: {
-    color: "#6B7280",
+    color: colors.muted,
     fontSize: 12,
     fontWeight: "900",
   },
@@ -1809,12 +1815,12 @@ const styles = StyleSheet.create({
     color: colors.surface,
   },
   progressLine: {
-    backgroundColor: "#F3E7E2",
+    backgroundColor: colors.border,
     flex: 1,
     height: 2,
   },
   progressLineComplete: {
-    backgroundColor: "#22C55E",
+    backgroundColor: colors.success,
   },
   centerState: {
     alignItems: "center",
@@ -1829,7 +1835,7 @@ const styles = StyleSheet.create({
   },
   section: {
     backgroundColor: colors.surface,
-    borderColor: "#F3E7E2",
+    borderColor: colors.border,
     borderRadius: 28,
     borderWidth: 1,
     elevation: 3,
@@ -1848,8 +1854,8 @@ const styles = StyleSheet.create({
   },
   stepBadge: {
     alignItems: "center",
-    backgroundColor: "#FFF8F5",
-    borderColor: "#F3E7E2",
+    backgroundColor: colors.softSurface,
+    borderColor: colors.border,
     borderRadius: 999,
     borderWidth: 1,
     height: 36,
@@ -1861,11 +1867,11 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
   },
   stepBadgeComplete: {
-    backgroundColor: "#22C55E",
-    borderColor: "#22C55E",
+    backgroundColor: colors.success,
+    borderColor: colors.success,
   },
   stepBadgeText: {
-    color: "#6B7280",
+    color: colors.muted,
     fontSize: 14,
     fontWeight: "900",
   },
@@ -1882,53 +1888,53 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   sectionTitle: {
-    color: "#111827",
+    color: colors.ink,
     fontSize: 18,
     fontWeight: "900",
   },
   sectionSubtitle: {
-    color: "#6B7280",
+    color: colors.muted,
     fontSize: 12,
     fontWeight: "800",
     marginTop: 3,
   },
   optionCard: {
     backgroundColor: colors.surface,
-    borderColor: "#F3E7E2",
+    borderColor: colors.border,
     borderRadius: 22,
     borderWidth: 1,
     marginTop: 10,
     padding: 14,
   },
   optionCardActive: {
-    backgroundColor: "#FFF8F5",
+    backgroundColor: colors.softSurface,
     borderColor: colors.primary,
   },
   optionCardDisabled: {
-    backgroundColor: "#F3F4F6",
-    opacity: 0.7,
+    backgroundColor: colors.muted,
+    opacity: 0.12,
   },
   optionTitle: {
-    color: "#111827",
+    color: colors.ink,
     fontSize: 15,
     fontWeight: "900",
   },
   optionText: {
-    color: "#6B7280",
+    color: colors.muted,
     fontSize: 12,
     fontWeight: "700",
     lineHeight: 18,
     marginTop: 4,
   },
   helpText: {
-    color: "#6B7280",
+    color: colors.muted,
     fontSize: 12,
     fontWeight: "700",
     lineHeight: 18,
   },
   paymentDetails: {
-    backgroundColor: "#FFF8F5",
-    borderColor: "#F3E7E2",
+    backgroundColor: colors.softSurface,
+    borderColor: colors.border,
     borderRadius: 20,
     borderWidth: 1,
     gap: 8,
@@ -1962,8 +1968,8 @@ const styles = StyleSheet.create({
   },
   checkoutItemRow: {
     alignItems: "center",
-    backgroundColor: "#FFFBFA",
-    borderColor: "#F3E7E2",
+    backgroundColor: colors.secondary,
+    borderColor: colors.border,
     borderRadius: 22,
     borderWidth: 1,
     flexDirection: "row",
@@ -1972,7 +1978,7 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   checkoutItemImage: {
-    backgroundColor: "#F8FAFC",
+    backgroundColor: colors.border,
     borderRadius: 18,
     height: 64,
     width: 64,
@@ -1988,7 +1994,7 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   checkoutItemName: {
-    color: "#111827",
+    color: colors.ink,
     fontSize: 14,
     fontWeight: "900",
     lineHeight: 20,
@@ -2004,6 +2010,56 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "900",
   },
+  deliverySectionDivider: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    marginTop: spacing.xl,
+    paddingTop: spacing.xl,
+  },
+  deliverySectionTitle: {
+    color: colors.ink,
+    fontSize: 14,
+    fontWeight: "700",
+    marginBottom: spacing.lg,
+  },
+  deliveryOptionRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  deliveryBadgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  unavailableBadge: {
+    backgroundColor: colors.muted,
+    opacity: 0.15,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 2,
+    borderRadius: 12,
+  },
+  unavailableBadgeText: {
+    color: colors.ink,
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  cheapestBadge: {
+    backgroundColor: colors.success,
+    opacity: 0.12,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: 12,
+  },
+  cheapestBadgeText: {
+    color: colors.success,
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  deliveryOptionMeta: {
+    marginTop: spacing.sm,
+    fontWeight: "700",
+  },
   addressForm: {
     gap: 10,
     marginTop: 12,
@@ -2017,8 +2073,8 @@ const styles = StyleSheet.create({
   },
   secondaryButton: {
     alignItems: "center",
-    backgroundColor: "#FFF8F5",
-    borderColor: "#F3E7E2",
+    backgroundColor: colors.softSurface,
+    borderColor: colors.border,
     borderRadius: 18,
     borderWidth: 1,
     marginTop: 12,
@@ -2036,8 +2092,8 @@ const styles = StyleSheet.create({
   },
   segmentButton: {
     alignItems: "center",
-    backgroundColor: "#FFFBFA",
-    borderColor: "#F3E7E2",
+    backgroundColor: colors.secondary,
+    borderColor: colors.border,
     borderRadius: 20,
     borderWidth: 1,
     flex: 1,
@@ -2057,23 +2113,23 @@ const styles = StyleSheet.create({
     color: colors.surface,
   },
   input: {
-    backgroundColor: "#FFFBFA",
-    borderColor: "#F3E7E2",
+    backgroundColor: colors.secondary,
+    borderColor: colors.border,
     borderRadius: 20,
     borderWidth: 1,
-    color: "#111827",
+    color: colors.ink,
     fontSize: 14,
     fontWeight: "700",
     minHeight: 52,
     paddingHorizontal: 14,
   },
   inputDisabled: {
-    backgroundColor: "#F3F4F6",
-    color: "#6B7280",
+    backgroundColor: colors.border,
+    color: colors.muted,
   },
   couponCard: {
-    backgroundColor: "#FFFCFB",
-    borderColor: "#FAD7CB",
+    backgroundColor: colors.secondary,
+    borderColor: colors.border,
     borderRadius: 20,
     borderWidth: 1,
     marginBottom: 12,
@@ -2098,8 +2154,8 @@ const styles = StyleSheet.create({
   },
   couponApplyButton: {
     alignItems: "center",
-    backgroundColor: "#FFF8F5",
-    borderColor: "#F3E7E2",
+    backgroundColor: colors.softSurface,
+    borderColor: colors.border,
     borderRadius: 16,
     borderWidth: 1,
     height: 46,
@@ -2131,13 +2187,13 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   couponFeedbackSuccess: {
-    color: "#0F8A5F",
+    color: colors.success,
   },
   couponFeedbackWarning: {
-    color: "#8A5A00",
+    color: colors.warning,
   },
   couponFeedbackDanger: {
-    color: "#B42318",
+    color: colors.danger,
   },
   noteInput: {
     marginTop: 10,
@@ -2152,18 +2208,18 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
   },
   summaryLabel: {
-    color: "#6B7280",
+    color: colors.muted,
     fontSize: 13,
     fontWeight: "800",
   },
   summaryValue: {
-    color: "#111827",
+    color: colors.ink,
     fontSize: 14,
     fontWeight: "900",
   },
   totalRow: {
     alignItems: "center",
-    borderTopColor: "#F3E7E2",
+    borderTopColor: colors.border,
     borderTopWidth: 1,
     flexDirection: "row",
     justifyContent: "space-between",
@@ -2171,7 +2227,7 @@ const styles = StyleSheet.create({
     paddingTop: 13,
   },
   totalLabel: {
-    color: "#111827",
+    color: colors.ink,
     fontSize: 17,
     fontWeight: "900",
   },
@@ -2191,8 +2247,8 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   paymentIssueCard: {
-    backgroundColor: "#FFF8F5",
-    borderColor: "#F3E7E2",
+    backgroundColor: colors.softSurface,
+    borderColor: colors.border,
     borderRadius: 24,
     borderWidth: 1,
     marginBottom: 12,
@@ -2218,7 +2274,7 @@ const styles = StyleSheet.create({
   paymentRetryButton: {
     alignItems: "center",
     backgroundColor: colors.surface,
-    borderColor: "#F3E7E2",
+    borderColor: colors.border,
     borderRadius: 18,
     borderWidth: 1,
     flex: 1,
@@ -2261,10 +2317,10 @@ const styles = StyleSheet.create({
     minHeight: 58,
   },
   buttonDisabled: {
-    backgroundColor: "#A8AFBA",
+    backgroundColor: colors.muted,
   },
   buttonDisabledLight: {
-    backgroundColor: "#F3F4F6",
+    backgroundColor: colors.border,
   },
   placeButtonText: {
     color: colors.surface,
