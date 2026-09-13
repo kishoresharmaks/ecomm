@@ -101,6 +101,14 @@ export default function OrderDetailScreen() {
   });
   const { items: reviewableItems, isLoading: reviewOptionsLoading } = useReviewableItems(orderNumber);
 
+  const reviewOptionsByItem = useMemo(() => {
+    const map = new Map<string, (typeof reviewableItems)[number]>();
+    for (const opt of reviewableItems) {
+      map.set(opt.orderItemId, opt);
+    }
+    return map;
+  }, [reviewableItems]);
+
   const cancelMutation = useMutation({
     mutationFn: () => cancelCustomerOrder(customerAuth.authHeaders, orderNumber ?? "", cancelNote),
     onSuccess: async () => {
@@ -281,13 +289,6 @@ export default function OrderDetailScreen() {
     orderCanStartReturn(order) &&
     (returnPolicy.refund.eligible || returnPolicy.replacement.eligible);
   const canRetryPayment = canRetryRazorpayPayment(order);
-  const reviewOptionsByItem = useMemo(() => {
-    const map = new Map<string, (typeof reviewableItems)[number]>();
-    for (const opt of reviewableItems) {
-      map.set(opt.orderItemId, opt);
-    }
-    return map;
-  }, [reviewableItems]);
   const address = readShippingAddress(order);
   const timeline = buildTimeline(order);
 
