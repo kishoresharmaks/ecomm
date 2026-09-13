@@ -817,39 +817,30 @@ function HeroSlide({ banner, width }: { banner?: MobileBanner | undefined; width
   const ctaHref = banner?.linkUrl?.startsWith("/") ? (banner.linkUrl as Href) : "/search";
 
   return (
-    <View style={[styles.heroCard, { width }]}>
+    <Link href={ctaHref} style={[styles.heroCard, { width }]}>
       <View style={styles.heroInner}>
         <View style={styles.heroTextBlock}>
-          <Text numberOfLines={2} style={styles.heroTitle}>{banner?.title ?? "Month End\nSales Live!"}</Text>
-          <Text numberOfLines={2} style={styles.heroSubtitle}>{banner?.subtitle ?? "Shop the best. Save more."}</Text>
-          <Link href={ctaHref} style={styles.heroButton}>
-            Shop Now
-          </Link>
+          {banner?.title ? (
+            <Text numberOfLines={2} style={styles.heroTitle}>{banner.title}</Text>
+          ) : null}
+          {banner?.subtitle ? (
+            <Text numberOfLines={2} style={styles.heroSubtitle}>{banner.subtitle}</Text>
+          ) : null}
+          {banner?.linkUrl ? (
+            <View style={styles.heroButtonWrap}>
+              <Text style={styles.heroButtonText}>Shop Now →</Text>
+            </View>
+          ) : null}
         </View>
         <View style={styles.heroImageBlock}>
-          <View style={styles.heroImageCard}>
-            {imageUrl ? (
-              <RemoteImage resizeMode="cover" style={styles.heroImage} uri={imageUrl} />
-            ) : (
-              <HeroFallbackArt />
-            )}
-            <View style={styles.heroImageScrim} />
-          </View>
-          <View style={styles.heroDecoCircle1} />
-          <View style={styles.heroDecoCircle2} />
+          {imageUrl ? (
+            <RemoteImage resizeMode="contain" style={styles.heroImage} uri={imageUrl} />
+          ) : (
+            <View style={styles.heroImagePlaceholder} />
+          )}
         </View>
       </View>
-    </View>
-  );
-}
-
-function HeroFallbackArt() {
-  return (
-    <View style={styles.heroFallbackContainer}>
-      <View style={styles.heroFallbackCircle1} />
-      <View style={styles.heroFallbackCircle2} />
-      <View style={styles.heroFallbackPercent}>%</View>
-    </View>
+    </Link>
   );
 }
 
@@ -2986,8 +2977,8 @@ const styles = StyleSheet.create({
   },
   heroCard: {
     backgroundColor: "#FFF7F2",
-    borderRadius: 28,
-    height: 310,
+    borderRadius: 20,
+    height: 260,
     overflow: "hidden",
   },
   heroInner: {
@@ -2998,78 +2989,61 @@ const styles = StyleSheet.create({
   heroTextBlock: {
     flex: 1,
     justifyContent: "center",
-    paddingRight: 12,
+    paddingRight: 10,
   },
   heroEyebrow: {
     color: colors.primary,
     fontFamily: "Plus Jakarta Sans",
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "900",
-    letterSpacing: 1.2,
-    marginBottom: 8,
+    letterSpacing: 1,
+    marginBottom: 6,
     textTransform: "uppercase",
   },
   heroTitle: {
     color: colors.ink,
     fontFamily: "Plus Jakarta Sans",
-    fontSize: 28,
+    fontSize: 22,
     fontWeight: "900",
-    lineHeight: 34,
+    lineHeight: 28,
   },
   heroSubtitle: {
     color: "#6B7280",
     fontFamily: "Plus Jakarta Sans",
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: "700",
-    lineHeight: 20,
-    marginTop: 8,
+    lineHeight: 18,
+    marginTop: 6,
   },
-  heroButton: {
-    alignSelf: "flex-start",
-    backgroundColor: colors.ink,
-    borderRadius: 999,
-    color: colors.surface,
+  heroButtonWrap: {
+    marginTop: 12,
+  },
+  heroButtonText: {
+    color: colors.primary,
     fontFamily: "Plus Jakarta Sans",
     fontSize: 13,
     fontWeight: "900",
-    marginTop: 14,
-    overflow: "hidden",
-    paddingHorizontal: 22,
-    paddingVertical: 12,
   },
   heroSecondary: {
     color: "#6B7280",
     fontFamily: "Plus Jakarta Sans",
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "800",
-    marginTop: 8,
+    marginTop: 6,
   },
   heroImageBlock: {
     alignItems: "center",
     justifyContent: "center",
-    position: "relative",
-    width: 160,
-  },
-  heroImageCard: {
-    alignItems: "center",
-    backgroundColor: "#FFEDDF",
-    borderRadius: 24,
-    borderColor: "#F8E4D8",
-    borderWidth: 1,
-    elevation: 4,
-    height: 260,
-    justifyContent: "center",
-    overflow: "hidden",
-    position: "relative",
-    shadowColor: "#ED3500",
-    shadowOffset: { height: 10, width: 0 },
-    shadowOpacity: 0.12,
-    shadowRadius: 20,
-    width: 160,
+    width: 140,
   },
   heroImage: {
-    height: "100%",
-    position: "absolute",
+    height: 180,
+    width: 140,
+  },
+  heroImagePlaceholder: {
+    backgroundColor: "#FFEDDF",
+    borderRadius: 16,
+    flex: 1,
     width: "100%",
   },
   heroImageScrim: {
