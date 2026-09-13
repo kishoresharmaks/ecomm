@@ -717,7 +717,7 @@ function dailyStableScore(sellerId: string, dateSeed: Date) {
   return Number.parseInt(digest, 16);
 }
 
-function daysAgo(days: number) {
+export function daysAgo(days: number) {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 }
 

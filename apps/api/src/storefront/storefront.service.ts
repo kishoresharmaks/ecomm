@@ -31,6 +31,7 @@ import { readBooleanSetting } from "../settings/setting-value-utils";
 import { isTransientPrismaConnectionError, retryTransientPrismaRead } from "../prisma/transient-read-retry";
 import {
   StorefrontStoreRankingService,
+  daysAgo,
   type PublicStoreSellerRecord,
   type StoreLocationMatchLevel,
   type StoreRankingMode,
