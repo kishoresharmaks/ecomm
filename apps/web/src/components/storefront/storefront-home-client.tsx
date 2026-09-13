@@ -16,6 +16,7 @@ import {
 } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
+  ArrowLeft,
   ArrowRight,
   ChevronLeft,
   ChevronRight,
@@ -162,92 +163,58 @@ export function HomeHeroCarousel({
   const slides = Children.toArray(children);
   const [activeIndex, setActiveIndex] = useState(0);
   const [paused, setPaused] = useState(false);
-  const pointerStart = useRef<{
-    x: number;
-    y: number;
-    pointerId: number;
-    captured: boolean;
-  } | null>(null);
-  const suppressClickRef = useRef(false);
+  const [displayIndex, setDisplayIndex] = useState(0);
+  const [fadeKey, setFadeKey] = useState(0);
+  const pointerStart = useRef<{ x: number; y: number; pointerId: number } | null>(null);
   const hasMultipleSlides = slides.length > 1;
-  const normalizedIndex = slides.length ? activeIndex % slides.length : 0;
 
   useEffect(() => {
     setActiveIndex((current) => Math.min(current, Math.max(0, slides.length - 1)));
+    setDisplayIndex((current) => Math.min(current, Math.max(0, slides.length - 1)));
   }, [slides.length]);
 
   useEffect(() => {
     if (!hasMultipleSlides || paused || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       return;
     }
-
-    const timer = window.setTimeout(
-      () => setActiveIndex((current) => (current + 1) % slides.length),
-      heroIntervalMs,
-    );
+    const timer = window.setTimeout(() => handleMove(1), heroIntervalMs);
     return () => window.clearTimeout(timer);
-  }, [activeIndex, hasMultipleSlides, paused, slides.length]);
+  }, [displayIndex, hasMultipleSlides, paused]);
 
-  function move(direction: -1 | 1) {
-    if (!slides.length) {
-      return;
-    }
-    setActiveIndex((current) => (current + direction + slides.length) % slides.length);
+  function handleMove(direction: -1 | 1) {
+    if (!slides.length) return;
+    const next = (displayIndex + direction + slides.length) % slides.length;
+    setActiveIndex(next);
+    setDisplayIndex(next);
+    setFadeKey((k) => k + 1);
   }
 
   function handlePointerDown(event: ReactPointerEvent<HTMLElement>) {
-    if (!hasMultipleSlides) {
-      return;
-    }
-    pointerStart.current = {
-      x: event.clientX,
-      y: event.clientY,
-      pointerId: event.pointerId,
-      captured: false,
-    };
+    if (!hasMultipleSlides) return;
+    pointerStart.current = { x: event.clientX, y: event.clientY, pointerId: event.pointerId };
   }
 
   function handlePointerMove(event: ReactPointerEvent<HTMLElement>) {
     const start = pointerStart.current;
-    if (!start || start.pointerId !== event.pointerId || start.captured) {
-      return;
-    }
-
+    if (!start || start.pointerId !== event.pointerId) return;
     const x = event.clientX - start.x;
     const y = event.clientY - start.y;
-    if (Math.abs(x) < swipeThresholdPx || Math.abs(x) <= Math.abs(y)) {
-      return;
-    }
-
-    start.captured = true;
-    event.currentTarget.setPointerCapture?.(event.pointerId);
+    if (Math.abs(x) < swipeThresholdPx || Math.abs(x) <= Math.abs(y)) return;
     event.preventDefault();
   }
 
   function handlePointerUp(event: ReactPointerEvent<HTMLElement>) {
     const start = pointerStart.current;
     pointerStart.current = null;
-    if (!start) {
-      return;
-    }
-
+    if (!start) return;
     const x = event.clientX - start.x;
     const y = event.clientY - start.y;
     if (Math.abs(x) >= swipeThresholdPx && Math.abs(x) > Math.abs(y)) {
-      suppressClickRef.current = true;
-      move(x < 0 ? 1 : -1);
+      handleMove(x < 0 ? 1 : -1);
     }
-    if (start.captured && event.currentTarget.hasPointerCapture?.(start.pointerId)) {
-      event.currentTarget.releasePointerCapture(start.pointerId);
-    }
-    window.setTimeout(() => {
-      suppressClickRef.current = false;
-    }, 0);
   }
 
-  if (!slides.length) {
-    return null;
-  }
+  if (!slides.length) return null;
 
   return (
     <section
@@ -261,51 +228,55 @@ export function HomeHeroCarousel({
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
-      onPointerCancel={() => {
-        pointerStart.current = null;
-      }}
-      onClickCapture={(event) => {
-        if (suppressClickRef.current) {
-          event.preventDefault();
-          event.stopPropagation();
-        }
-      }}
+      onPointerCancel={() => { pointerStart.current = null; }}
     >
-      {slides.map((slide, index) => (
-        <div key={index} hidden={index !== normalizedIndex} aria-hidden={index !== normalizedIndex}>
-          {slide}
-        </div>
-      ))}
+      <div className="relative overflow-hidden rounded-[24px] border border-[#FFE4DC] bg-white shadow-[0_18px_50px_rgba(237,53,0,0.07)]">
+        {slides.map((slide, index) => (
+          <div
+            key={`${fadeKey}-${index}`}
+            className={cn(
+              "absolute inset-0 transition-opacity duration-500 ease-in-out",
+              index === displayIndex ? "z-10 opacity-100" : "z-0 opacity-0 pointer-events-none",
+            )}
+            aria-hidden={index !== displayIndex}
+          >
+            {slide}
+          </div>
+        ))}
+        <div className="invisible">{slides[displayIndex]}</div>
+      </div>
 
       {hasMultipleSlides ? (
         <>
           <button
             type="button"
-            onClick={() => move(-1)}
-            aria-label="Previous homepage banner"
-            className="absolute bottom-4 left-4 z-20 grid h-9 w-9 place-items-center rounded-full border border-[#FFE0D6] bg-white/95 text-[#ED3500] shadow-md lg:bottom-auto lg:top-1/2 lg:-translate-y-1/2"
+            onClick={() => handleMove(-1)}
+            aria-label="Previous slide"
+            className="absolute left-3 top-1/2 z-20 -translate-y-1/2 grid h-10 w-10 place-items-center rounded-full border border-[#FFE0D6] bg-white/95 text-[#ED3500] shadow-lg transition hover:scale-110 active:scale-95"
           >
-            <ChevronLeft className="h-5 w-5" aria-hidden="true" />
+            <ArrowLeft className="h-5 w-5" aria-hidden="true" />
           </button>
           <button
             type="button"
-            onClick={() => move(1)}
-            aria-label="Next homepage banner"
-            className="absolute bottom-4 right-4 z-20 grid h-9 w-9 place-items-center rounded-full border border-[#FFE0D6] bg-white/95 text-[#ED3500] shadow-md lg:bottom-auto lg:top-1/2 lg:-translate-y-1/2"
+            onClick={() => handleMove(1)}
+            aria-label="Next slide"
+            className="absolute right-3 top-1/2 z-20 -translate-y-1/2 grid h-10 w-10 place-items-center rounded-full border border-[#FFE0D6] bg-white/95 text-[#ED3500] shadow-lg transition hover:scale-110 active:scale-95"
           >
-            <ChevronRight className="h-5 w-5" aria-hidden="true" />
+            <ArrowRight className="h-5 w-5" aria-hidden="true" />
           </button>
-          <div className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 gap-1.5 rounded-full bg-white/95 px-2.5 py-2 shadow-md">
+          <div className="absolute -bottom-8 left-1/2 z-20 flex -translate-x-1/2 gap-2">
             {slides.map((_, index) => (
               <button
                 key={index}
                 type="button"
-                onClick={() => setActiveIndex(index)}
-                aria-label={`Show banner ${index + 1}`}
-                aria-current={index === normalizedIndex ? "true" : undefined}
+                onClick={() => {
+                  if (index !== displayIndex) handleMove(index > displayIndex ? 1 : -1);
+                }}
+                aria-label={`Slide ${index + 1}`}
+                aria-current={index === displayIndex ? "true" : undefined}
                 className={cn(
-                  "h-2 rounded-full transition",
-                  index === normalizedIndex ? "w-6 bg-[#ED3500]" : "w-2 bg-[#F2B8A7]",
+                  "h-2 rounded-full transition-all duration-300",
+                  index === displayIndex ? "w-6 bg-[#ED3500]" : "w-2 bg-[#FFC7B8] hover:bg-[#ED3500]/60",
                 )}
               />
             ))}
@@ -915,5 +886,152 @@ export function HomeRetryButton() {
     >
       Try again
     </button>
+  );
+}
+
+export function HomeRecommendedClient({
+  productPool,
+}: {
+  productPool: ProductSummary[];
+}) {
+  const customerAuth = useCustomerAuth();
+  const [recentProducts, setRecentProducts] = useState<RecentProductSnapshot[]>([]);
+  const cartQuery = useQuery({
+    queryKey: ["cart", customerAuth.authKey],
+    queryFn: () => getCart(customerAuth.authHeaders),
+    enabled: customerAuth.enabled,
+    retry: false,
+    staleTime: 30_000,
+  });
+  const ordersQuery = useQuery({
+    queryKey: ["account-orders", customerAuth.authKey, "home-recommended"],
+    queryFn: () => listCustomerOrders(customerAuth.authHeaders, { limit: 8 }),
+    enabled: customerAuth.enabled,
+    retry: false,
+    staleTime: 60_000,
+  });
+
+  useEffect(() => {
+    function refresh() {
+      setRecentProducts(readRecentProducts());
+    }
+    refresh();
+    window.addEventListener("focus", refresh);
+    window.addEventListener("storage", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("storage", refresh);
+    };
+  }, []);
+
+  const personalized = useMemo(() => {
+    if (!productPool.length) {
+      return [] as ProductSummary[];
+    }
+
+    const poolById = new Map(productPool.map((p) => [p.id, p]));
+
+    const cartProductIds = new Set(
+      (cartQuery.data?.items ?? [])
+        .filter((item) => item.productVariant?.product?.id)
+        .map((item) => item.productVariant!.product.id),
+    );
+    const orderProductIds = new Set(
+      (ordersQuery.data?.items ?? []).flatMap((order) =>
+        order.items.flatMap((item) => (item.product?.id ? [item.product.id] : [])),
+      ),
+    );
+    const viewedIds = new Set(
+      recentProducts.filter((rp) => rp.id).map((rp) => rp.id),
+    );
+
+    const blocked = new Set<string>([...cartProductIds, ...orderProductIds, ...viewedIds]);
+
+    const candidates = productPool.filter((p) => !blocked.has(p.id));
+    if (!candidates.length) {
+      return [] as ProductSummary[];
+    }
+
+    const normalize = (value: string | null | undefined): string =>
+      typeof value === "string" ? value.trim().toLowerCase().replace(/\s+/g, "-") : "";
+
+    const cartCategoryKeys = new Set<string>();
+    const cartSellerKeys = new Set<string>();
+    const buyAgainSellerCounts = new Map<string, number>();
+
+    for (const item of (cartQuery.data?.items ?? []) as CartSummary["items"]) {
+      const product = item.productVariant?.product;
+      if (!product?.id) continue;
+      cartCategoryKeys.add(normalize(product.category?.slug ?? product.categoryId));
+      cartSellerKeys.add(normalize(product.seller?.slug ?? product.sellerId));
+    }
+
+    for (const order of ordersQuery.data?.items ?? []) {
+      for (const item of order.items) {
+        const product = item.product;
+        if (!product?.id) continue;
+        const key = normalize(product.seller?.slug ?? product.sellerId);
+        buyAgainSellerCounts.set(key, (buyAgainSellerCounts.get(key) ?? 0) + 1);
+        cartCategoryKeys.add(normalize(product.category?.slug ?? product.categoryId));
+      }
+    }
+
+    const viewedCategoryKeys = new Set<string>();
+    for (const rp of recentProducts) {
+      const ck = normalize(rp.categoryName);
+      viewedCategoryKeys.add(ck);
+    }
+
+    return candidates
+      .map((product, index) => {
+        const categoryKey = normalize(product.category?.slug ?? product.categoryId);
+        const sellerKey = normalize(product.seller?.slug ?? product.sellerId);
+        let categoryScore = 0;
+        let sellerScore = 0;
+
+        if (cartCategoryKeys.has(categoryKey)) categoryScore += 3;
+        if (cartSellerKeys.has(sellerKey)) sellerScore += 2;
+
+        if (buyAgainSellerCounts.has(sellerKey)) {
+          const count = buyAgainSellerCounts.get(sellerKey)!;
+          sellerScore += Math.min(4, count * 2);
+          categoryScore += 2;
+        }
+        if (viewedCategoryKeys.has(categoryKey)) categoryScore += 1;
+
+        const score = categoryScore * 3 + sellerScore * 2 - index / 1000;
+        return { product, score };
+      })
+      .sort((a, b) => b.score - a.score || a.product.id.localeCompare(b.product.id))
+      .slice(0, 8)
+      .map((item) => item.product);
+  }, [productPool, cartQuery.data, ordersQuery.data, recentProducts]);
+
+  if (!personalized.length && !cartQuery.isLoading && !ordersQuery.isLoading) {
+    return null;
+  }
+
+  return (
+    <section className="bg-white py-8 lg:py-10">
+      <div className="mx-auto max-w-[1360px] px-4 sm:px-6 lg:px-10">
+        <div className="mt-5 min-w-0 sm:mt-6">
+          <div className="mb-4 flex items-end justify-between gap-3">
+            <div>
+              <h2 className="text-[22px] font-black leading-7 text-[#111827] sm:text-3xl sm:leading-9">
+                Recommended for you
+              </h2>
+              <p className="mt-1.5 text-xs font-semibold text-[#7A8496] sm:text-sm">
+                Picked based on your browsing and shopping history.
+              </p>
+            </div>
+          </div>
+          <HomeScrollableRail ariaLabel="Recommended for you">
+            {personalized.map((product) => (
+              <PersonalizedProductCard key={`recommended-${product.id}`} product={productFromSummary(product, "Recommended")} />
+            ))}
+          </HomeScrollableRail>
+        </div>
+      </div>
+    </section>
   );
 }

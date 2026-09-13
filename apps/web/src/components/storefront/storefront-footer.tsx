@@ -88,10 +88,19 @@ export function StorefrontFooter({
               <p className="text-[#667085]">Kanyakumari District, Tamil Nadu - 629501</p>
             </div>
             <div className="mt-5 flex items-center gap-2">
-              <SocialButton label="Facebook" text="f" />
-              <SocialButton label="Instagram" text="ig" />
-              <SocialButton label="X" text="x" />
-              <SocialButton label="YouTube" text="yt" />
+              {socialLinks.map((link) => (
+                <a
+                  key={link.href}
+                  href={link.href}
+                  target="_blank"
+                  rel="noopener noreferrer nofollow"
+                  className="grid h-9 w-9 place-items-center rounded-full border border-[#FFE0D6] bg-white text-[11px] font-black uppercase text-[#667085] transition hover:border-[#ED3500] hover:text-[#ED3500]"
+                  title={link.label}
+                  aria-label={`Follow us on ${link.label}`}
+                >
+                  {link.text}
+                </a>
+              ))}
             </div>
           </div>
 
@@ -159,16 +168,12 @@ function FooterLink({ href, label }: { href: string; label: string }) {
   );
 }
 
-function SocialButton({ label, text }: { label: string; text: string }) {
-  return (
-    <span
-      className="grid h-9 w-9 place-items-center rounded-full border border-[#FFE0D6] bg-white text-[11px] font-black uppercase text-[#667085]"
-      title={label}
-    >
-      {text}
-    </span>
-  );
-}
+const socialLinks = [
+  { label: "Facebook", href: "https://www.facebook.com/1handindia", text: "f" },
+  { label: "Instagram", href: "https://www.instagram.com/1handindia/", text: "ig" },
+  { label: "X", href: "https://x.com/1handindia", text: "x" },
+  { label: "YouTube", href: "https://www.youtube.com/channel/UCK1w6LlYqW666P5E_ZrPeoA", text: "yt" },
+];
 
 function flattenMenuItems(items?: CmsMenuItem[]): Array<{ label: string; href: string }> {
   if (!items?.length) {

@@ -801,6 +801,7 @@ export type StorefrontHomePayload = {
     featured: ProductSummary[];
     latest: ProductSummary[];
     deals: ProductSummary[];
+    bestSellers: ProductSummary[];
   };
   stats: StorefrontHomeStats;
   menus: {

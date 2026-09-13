@@ -49,6 +49,7 @@ import {
   HomeSearchForm,
   HomeWishlistButton,
   PersonalizedHomeClient,
+  HomeRecommendedClient,
 } from "./storefront-home-client";
 import {
   browsingLocationHeadline,
@@ -218,60 +219,75 @@ function HeroSlide({
   const subtitle =
     banner.subtitle?.trim() ||
     "Shop verified local stores, live deals, and everyday essentials from trusted sellers.";
+  const hasDiscountBadge = banner.secondaryCtaLabel?.trim().match(/\d+%/) || false;
+  const discountValue = banner.secondaryCtaLabel?.trim().match(/(\d+%)/)?.[1];
 
   return (
-    <div className="relative grid min-h-[310px] overflow-hidden rounded-[22px] border border-[#FFE4DC] bg-[linear-gradient(104deg,#fff_0%,#fff_48%,#fff1ec_100%)] px-5 py-7 shadow-[0_18px_50px_rgba(237,53,0,0.07)] sm:grid-cols-[minmax(0,1fr)_180px] sm:px-8 md:min-h-[390px] md:px-10 lg:min-h-[500px] lg:grid-cols-[minmax(0,0.9fr)_minmax(360px,1fr)] lg:px-14 lg:py-12">
-      <div className="relative z-10 flex max-w-2xl flex-col justify-center">
+    <div className="relative flex h-full flex-col justify-center bg-[linear-gradient(135deg,#FFFCFB_0%,#FFF8F4_50%,#FFF0EC_100%)] px-5 py-8 sm:flex-row sm:items-center sm:gap-6 sm:px-8 sm:py-10 md:min-h-[400px] lg:min-h-[480px] lg:gap-10 lg:px-12 lg:py-12">
+      {/* Left: Text content */}
+      <div className="relative z-10 flex max-w-xl flex-col justify-center">
         <div className="flex flex-wrap items-center gap-2">
           {banner.eyebrow?.trim() ? (
-            <span className="rounded-full bg-[#FFF0EC] px-3 py-1.5 text-[11px] font-black uppercase text-[#ED3500]">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-white/90 px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-[#ED3500] shadow-sm backdrop-blur-sm">
               {banner.eyebrow}
             </span>
           ) : null}
-          <span className="hidden items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-black text-[#596276] shadow-sm lg:inline-flex">
-            <MapPin className="h-4 w-4 text-[#ED3500]" aria-hidden="true" />
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-white/70 px-3 py-1.5 text-xs font-black text-[#596276] shadow-sm backdrop-blur-sm">
+            <MapPin className="h-3.5 w-3.5 text-[#ED3500]" aria-hidden="true" />
             {locationLabel === "All stores" ? "Set your location" : locationLabel}
           </span>
         </div>
-        <h1 className="mt-4 text-[30px] font-black leading-[1.06] tracking-normal text-[#111827] sm:text-[42px] lg:text-[60px]">
+        <h1 className="mt-4 text-[28px] font-black leading-[1.08] tracking-tight text-[#111827] sm:text-[38px] lg:text-[52px]">
           {splitMarketplaceTitle(title)}
         </h1>
-        <p className="mt-4 max-w-xl text-sm font-semibold leading-6 text-[#596276] sm:text-lg sm:leading-8">
+        <p className="mt-3 max-w-lg text-sm font-semibold leading-6 text-[#596276] sm:text-base sm:leading-7 lg:text-lg">
           {subtitle}
         </p>
-        <div className="mt-6 flex flex-wrap items-center gap-3">
+        <div className="mt-5 flex flex-wrap items-center gap-3">
           <HomepageLink
             href={banner.linkUrl?.trim() || "/categories"}
-            className="inline-flex h-12 items-center gap-2 rounded-full bg-[#ED3500] px-5 text-sm font-black text-white shadow-[0_16px_30px_rgba(237,53,0,0.24)]"
+            className="inline-flex h-11 items-center gap-2 rounded-full bg-[#ED3500] px-5 text-sm font-black text-white shadow-[0_14px_28px_rgba(237,53,0,0.22)] transition hover:bg-[#C72D00] hover:shadow-[0_18px_36px_rgba(237,53,0,0.30)] active:scale-[0.97]"
           >
             {banner.ctaLabel?.trim() || "Shop Now"}
             <ArrowRight className="h-4 w-4" aria-hidden="true" />
           </HomepageLink>
-          {banner.secondaryCtaLabel?.trim() && banner.secondaryLinkUrl?.trim() ? (
+          {banner.secondaryCtaLabel?.trim() && banner.secondaryLinkUrl?.trim() && (
             <HomepageLink
               href={banner.secondaryLinkUrl}
-              className="inline-flex h-12 items-center rounded-full border border-[#FFE0D6] bg-white px-5 text-sm font-black text-[#111827]"
+              className="inline-flex h-11 items-center rounded-full border border-[#FFE0D6] bg-white px-5 text-sm font-black text-[#111827] transition hover:border-[#ED3500] hover:text-[#ED3500] active:scale-[0.97]"
             >
               {banner.secondaryCtaLabel}
             </HomepageLink>
-          ) : null}
-          <HomeSearchForm className="hidden min-w-[300px] flex-1 md:block" />
+          )}
+          <HomeSearchForm className="hidden min-w-[260px] flex-1 md:block" />
         </div>
       </div>
 
-      <div className="relative ml-auto hidden h-full min-h-[280px] w-full items-center justify-center sm:flex">
-        <div className="relative aspect-[4/3] w-full max-w-[520px] overflow-hidden rounded-[18px] border border-white bg-white/80 shadow-[0_24px_70px_rgba(22,59,92,0.14)]">
+      {/* Right: Image card with floating badge */}
+      <div className="relative mt-6 flex shrink-0 justify-center sm:mt-0 sm:w-[340px] lg:w-[420px]">
+        <div className="relative aspect-[4/3] w-full max-w-[400px] overflow-hidden rounded-[20px] border border-white bg-white/80 shadow-[0_24px_70px_rgba(22,59,92,0.12)]">
           <StorefrontImage
             src={imageUrl || (fallbackProduct ? primaryImage(fallbackProduct) : null)}
             alt={banner.imageAlt || title}
-            sizes="(max-width: 1024px) 180px, 520px"
+            sizes="(max-width: 639px) 280px, (max-width: 1023px) 340px, 420px"
             fallbackLabel={fallbackProduct?.category.name ?? title}
             showFallbackLabel={false}
             priority={priority}
             allowExternalRemote
-            className={imageUrl ? "object-cover" : "object-contain p-5"}
+            className={imageUrl ? "object-cover" : "object-contain p-6"}
           />
+          {hasDiscountBadge && discountValue && (
+            <div className="absolute -right-2 -top-2 flex h-16 w-16 items-center justify-center rounded-full bg-[#ED3500] text-white shadow-[0_8px_24px_rgba(237,53,0,0.35)] sm:h-20 sm:w-20">
+              <div className="flex flex-col items-center leading-none">
+                <span className="text-[10px] font-black uppercase tracking-wider opacity-90">Save</span>
+                <span className="text-lg font-black sm:text-xl">{discountValue}</span>
+              </div>
+            </div>
+          )}
         </div>
+        {/* Decorative floating dots */}
+        <div className="absolute -bottom-3 -left-3 h-16 w-16 rounded-full bg-[#ED3500]/[0.06] sm:h-20 sm:w-20" />
+        <div className="absolute -top-2 -right-6 h-10 w-10 rounded-full bg-[#ED3500]/[0.08] sm:h-12 sm:w-12" />
       </div>
     </div>
   );
@@ -395,29 +411,14 @@ async function HomeRecommendedSection({ homePromise }: { homePromise: Storefront
   if (!home) {
     return null;
   }
-  const products = uniqueProducts([
-    ...home.productRails.featured,
-    ...home.productRails.deals,
-    ...home.productRails.latest,
-  ]).slice(0, 6);
-  if (!products.length) {
-    return null;
-  }
 
   return (
-    <ProductRail
-      rail={{
-        id: "recommended",
-        title: "Recommended for you",
-        description: "Fresh picks from verified sellers across the marketplace.",
-        href: "/search",
-        products,
-        surface: "white",
-        promoTitle: "Marketplace picks",
-        promoBadge: "Recommended",
-        promoDescription: "Fresh picks from verified sellers across the marketplace.",
-        promoCtaLabel: "Explore Picks",
-      }}
+    <HomeRecommendedClient
+      productPool={uniqueProducts([
+        ...home.productRails.featured,
+        ...home.productRails.deals,
+        ...home.productRails.latest,
+      ]).slice(0, 24)}
     />
   );
 }
@@ -995,9 +996,10 @@ function buildProductRails(home: StorefrontHomePayload): HomeProductRail[] {
     ...home.productRails.deals,
     ...home.productRails.featured,
     ...home.productRails.latest,
+    ...home.productRails.bestSellers,
   ]);
   const deals = uniqueProducts(home.productRails.deals).slice(0, 6);
-  const best = distinctProducts(home.productRails.featured, deals).slice(0, 6);
+  const best = distinctProducts(home.productRails.bestSellers, deals).slice(0, 6);
   const latest = distinctProducts(home.productRails.latest, [...deals, ...best]).slice(0, 6);
   const nearbySellerIds = new Set(home.storesNearYou.map((store) => store.id));
   const nearby = distinctProducts(

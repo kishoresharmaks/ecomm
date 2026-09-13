@@ -465,7 +465,7 @@ function BrandBlock() {
 
 function MobileBrandLogo() {
   return (
-    <Link href="/" className="flex min-w-0 flex-1 items-center gap-2" aria-label="1HandIndia home">
+    <Link href="/" className="flex min-w-0 flex-1 items-center justify-center gap-2" aria-label="1HandIndia home">
       <span className="relative grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-2xl bg-white shadow-[0_12px_24px_rgba(255,90,31,0.16)] sm:h-10 sm:w-10">
         <Image
           src={brandLogoSrc}
