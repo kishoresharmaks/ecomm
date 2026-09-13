@@ -246,32 +246,33 @@ export function StorefrontHeader({ initialMenu }: { initialMenu?: CmsMenuItem[] 
         <StorefrontAnnouncementBar announcements={announcements} />
       </div>
       <div className="pointer-events-auto lg:mx-auto lg:max-w-[1840px] lg:overflow-visible lg:rounded-[18px] lg:border lg:border-[#f2e4dd] lg:bg-white/96 lg:shadow-[0_16px_48px_rgba(17,24,39,0.08)] lg:backdrop-blur-xl">
+        {/* Desktop utility bar */}
         <div className="hidden border-b border-[#f2e4dd] bg-[#fffaf7]/88 lg:block lg:rounded-t-[18px]">
-          <div className="mx-auto flex h-11 items-center justify-between gap-5 px-5 xl:px-7 2xl:px-8">
-            <div className="flex min-w-0 items-center gap-3">
-              <StorefrontLocationPicker utility compact className="w-auto min-w-0 max-w-[360px]" />
-              <StorefrontLocalePicker className="hidden xl:block" />
+          <div className="mx-auto flex h-10 items-center justify-between gap-3 px-4 xl:gap-4 xl:px-6 2xl:gap-5 2xl:px-8">
+            <div className="flex min-w-0 items-center gap-2.5 xl:gap-3">
+              <StorefrontLocationPicker utility compact className="w-auto min-w-0 max-w-[300px] xl:max-w-[380px]" />
+              <StorefrontLocalePicker className="hidden sm:block" />
             </div>
 
             <nav
-              className="flex shrink-0 items-center gap-4 text-[13px] font-bold text-[#344054] 2xl:gap-5"
+              className="flex shrink-0 items-center gap-3 text-[12px] font-bold text-[#344054] xl:gap-4 2xl:gap-5"
               aria-label="Storefront utility"
             >
               <UtilityLink
                 href="/contact?topic=download-app"
-                icon={<Smartphone className="h-4 w-4" />}
+                icon={<Smartphone className="h-3.5 w-3.5" />}
               >
                 {t("download_app")}
               </UtilityLink>
-              <UtilityLink href="/contact" icon={<CircleHelp className="h-4 w-4" />}>
+              <UtilityLink href="/contact" icon={<CircleHelp className="h-3.5 w-3.5" />}>
                 {t("help_support")}
               </UtilityLink>
               {customerAuth.status === "ready" ? (
-                <UtilityLink href="/seller" icon={<Store className="h-4 w-4" />}>
+                <UtilityLink href="/seller" icon={<Store className="h-3.5 w-3.5" />}>
                   {t("seller_dashboard")}
                 </UtilityLink>
               ) : (
-                <UtilityLink href="/seller/register" icon={<Store className="h-4 w-4" />}>
+                <UtilityLink href="/seller/register" icon={<Store className="h-3.5 w-3.5" />}>
                   {t("sell_on_platform")}
                 </UtilityLink>
               )}
@@ -279,8 +280,9 @@ export function StorefrontHeader({ initialMenu }: { initialMenu?: CmsMenuItem[] 
           </div>
         </div>
 
+        {/* Desktop main header */}
         <div className="hidden lg:block">
-          <div className="mx-auto flex min-h-[76px] items-center gap-2 px-5 py-3 xl:gap-3 xl:px-7 2xl:gap-4 2xl:px-8">
+          <div className="mx-auto flex min-h-[72px] items-center gap-2.5 px-4 py-2.5 xl:gap-3 xl:px-6 2xl:gap-5 2xl:px-8">
             <BrandBlock />
             <CategoryMenu categories={categories} />
 
@@ -293,22 +295,22 @@ export function StorefrontHeader({ initialMenu }: { initialMenu?: CmsMenuItem[] 
                 setMobileMenuOpen(false);
                 setMobileSearchOpen(false);
               }}
-              className="mx-1 min-w-[220px] flex-1 xl:mx-2"
-              inputClassName="h-[52px] rounded-full border-[#eaded8] bg-white pl-[52px] pr-[112px] text-[15px] shadow-[0_14px_36px_rgba(17,24,39,0.08)]"
-              buttonClassName="right-2 top-1.5 h-10 px-6"
+              className="mx-1 min-w-0 flex-1 xl:mx-2"
+              inputClassName="h-[50px] rounded-full border-[#eaded8] bg-white pl-11 pr-[108px] text-[14px] shadow-[0_14px_36px_rgba(17,24,39,0.08)]"
+              buttonClassName="right-1.5 top-1.5 h-9 px-5 text-sm"
             />
 
             <div className="flex shrink-0 items-center gap-1 xl:gap-2">
               <HeaderIconAction
                 href="/account/wishlist"
                 label={t("wishlist")}
-                icon={<Heart className="h-5 w-5" />}
+                icon={<Heart className="h-[18px] w-[18px]" />}
                 badge={wishlistCount}
               />
               <HeaderIconAction
                 href="/cart"
                 label={t("cart")}
-                icon={<ShoppingCart className="h-5 w-5" />}
+                icon={<ShoppingCart className="h-[18px] w-[18px]" />}
                 badge={cartProductCount}
               />
               <AccountMenu />
@@ -316,12 +318,13 @@ export function StorefrontHeader({ initialMenu }: { initialMenu?: CmsMenuItem[] 
           </div>
         </div>
 
+        {/* Mobile header */}
         <div className="lg:hidden">
-          <div className="mx-auto flex h-[62px] max-w-[760px] items-center gap-1.5 px-2.5 sm:px-4">
+          <div className="mx-auto flex h-[60px] max-w-[760px] items-center gap-1.5 px-2.5 sm:px-4">
             <button
               type="button"
               onClick={() => setMobileMenuOpen(true)}
-              className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl text-[#101828] transition hover:bg-[#fff1ea] hover:text-[#ff5a1f]"
+              className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl text-[#101828] transition hover:bg-[#fff1ea] hover:text-[#ff5a1f] active:scale-95"
               aria-label="Open menu"
               aria-expanded={mobileMenuOpen}
             >
@@ -334,20 +337,20 @@ export function StorefrontHeader({ initialMenu }: { initialMenu?: CmsMenuItem[] 
               <MobileRoundAction
                 asButton
                 label={t("search_placeholder")}
-                icon={<Search className="h-5 w-5" />}
+                icon={<Search className="h-[18px] w-[18px]" />}
                 onClick={() => setMobileSearchOpen((current) => !current)}
                 active={mobileSearchOpen}
               />
               <MobileRoundAction
                 href="/account/wishlist"
                 label={t("wishlist")}
-                icon={<Heart className="h-5 w-5" />}
+                icon={<Heart className="h-[18px] w-[18px]" />}
                 badge={wishlistCount}
               />
               <MobileRoundAction
                 href="/cart"
                 label={t("cart")}
-                icon={<ShoppingCart className="h-5 w-5" />}
+                icon={<ShoppingCart className="h-[18px] w-[18px]" />}
                 badge={cartProductCount}
               />
               <MobileRoundAction
@@ -1496,7 +1499,7 @@ function UtilityLink({
   return (
     <Link
       href={href}
-      className="inline-flex h-8 items-center gap-2 whitespace-nowrap rounded-full transition hover:text-[#ff5a1f]"
+      className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1.5 text-[12px] font-bold text-[#344054] transition hover:bg-white hover:text-[#ff5a1f] hover:shadow-sm"
     >
       <span className="text-[#667085]">{icon}</span>
       <span>{children}</span>
