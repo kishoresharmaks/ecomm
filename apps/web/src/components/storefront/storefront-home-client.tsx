@@ -249,8 +249,9 @@ export function HomeHeroCarousel({
 
   // Handle location badge clicks via event delegation (badge lives in server-rendered hero slide).
   useEffect(() => {
-    function handleClick(event: MouseEvent) {
-      const badge = (event.target as HTMLElement | null)?.closest('[data-location-badge]');
+    function handleClick(event: Event) {
+      const target = event.target as HTMLElement | null;
+      const badge = target?.closest('[data-location-badge]');
       if (!badge) return;
       const text = badge.textContent?.trim();
       if (text?.includes("Set your location")) {
