@@ -37,7 +37,6 @@ import {
 import { StorefrontFrame } from "./storefront-frame";
 import { StorefrontImage } from "./storefront-image";
 import { StorefrontLocationPicker } from "./storefront-location-picker";
-import { HeroLocationBadge } from "./hero-location-badge";
 import { getStorefrontStockStatus, storefrontStockBadgeClass } from "./storefront-stock-status";
 import {
   HomeAuthNotice,
