@@ -15,56 +15,85 @@ type ConsentChoice = "essential" | "analytics";
 const consentStorageKey = "indihub:privacy:cookie-consent";
 const consentEventName = "indihub-cookie-consent";
 const bannerDismissedKey = "indihub:privacy:cookie-consent-dismissed";
+const bannerSessionKey = "indihub:privacy:cookie-consent-session";
 const cloudflareBeaconToken = process.env.NEXT_PUBLIC_CLOUDFLARE_BEACON_TOKEN?.trim();
 
+function readConsentChoice(): ConsentChoice | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    // Dismissed banner takes priority — implies analytics consent.
+    if (window.localStorage.getItem(bannerDismissedKey) === "true") {
+      return "analytics";
+    }
+
+    const raw = window.localStorage.getItem(consentStorageKey);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw) as { choice?: string };
+    return parsed.choice === "analytics" ? "analytics" : "essential";
+  } catch {
+    return null;
+  }
+}
+
+function isBannerVisibleThisSession(): boolean {
+  if (typeof window === "undefined") {
+    return true;
+  }
+  return window.sessionStorage.getItem(bannerSessionKey) !== "true";
+}
+
+function markBannerShownThisSession() {
+  try {
+    window.sessionStorage.setItem(bannerSessionKey, "true");
+  } catch {
+    // Ignore storage errors.
+  }
+}
+
 export function CookieConsentBanner() {
-  const [choice, setChoice] = useState<ConsentChoice | null>(null);
   const [bannerVisible, setBannerVisible] = useState(false);
 
   useEffect(() => {
-    const stored = readConsentChoice();
-    const wasDismissed = typeof window !== "undefined" && window.localStorage.getItem(bannerDismissedKey) === "true";
+    const choice = readConsentChoice();
 
-    // Dismissed flag takes priority — implies consent.
-    if (wasDismissed) {
-      setChoice("analytics");
-      return;
+    // Show banner only if no consent stored AND not already shown this session.
+    if (choice === null && isBannerVisibleThisSession()) {
+      setBannerVisible(true);
     }
-
-    if (stored) {
-      setChoice(stored);
-      return;
-    }
-
-    setBannerVisible(true);
   }, []);
 
   function saveChoice(nextChoice: ConsentChoice) {
-    setChoice(nextChoice);
+    markBannerShownThisSession();
     try {
       window.localStorage.setItem(consentStorageKey, JSON.stringify({ choice: nextChoice, savedAt: new Date().toISOString() }));
     } catch {
-      // Ignore storage errors; consent still applies for the current page view.
+      // Ignore storage errors.
     }
     window.dispatchEvent(new CustomEvent(consentEventName, { detail: nextChoice }));
   }
 
   function dismissBanner() {
-    setBannerVisible(false);
+    markBannerShownThisSession();
     try {
       window.localStorage.setItem(bannerDismissedKey, "true");
     } catch {
       // Ignore storage errors.
     }
-    // Treating dismissal as implied consent for analytics.
     saveChoice("analytics");
+    setBannerVisible(false);
   }
 
   function handleEssentialOnly() {
     saveChoice("essential");
+    setBannerVisible(false);
   }
 
-  if (!bannerVisible || choice !== null) {
+  if (!bannerVisible) {
     return null;
   }
 
@@ -124,34 +153,20 @@ export function ConsentManagedScripts({
     return () => window.removeEventListener(consentEventName, handleConsent);
   }, []);
 
-  const analyticsAllowed = choice === "analytics";
-
-  if (!analyticsAllowed) {
-    return (
-      <Script id="indihub-google-consent-denied" nonce={nonce} strategy="afterInteractive">
-        {`
-          gtag('consent', 'update', {
-            analytics_storage: 'denied',
-            ad_storage: 'denied',
-            ad_user_data: 'denied',
-            ad_personalization: 'denied'
-          });
-        `}
-      </Script>
-    );
-  }
+  // null = hasn't chosen yet → default to granted (head bootstrap already sets this).
+  // "essential" = explicit opt-out → deny analytics and ads.
+  // "analytics" = explicit consent → grant everything.
+  const consentUpdate =
+    choice === "essential"
+      ? { analytics_storage: "denied" as const, ad_storage: "denied" as const, ad_user_data: "denied" as const, ad_personalization: "denied" as const }
+      : { analytics_storage: "granted" as const, ad_storage: "granted" as const, ad_user_data: "granted" as const, ad_personalization: "granted" as const };
 
   return (
     <>
-      <Script id="indihub-google-consent-granted" nonce={nonce} strategy="afterInteractive">
+      <Script id="indihub-google-consent-update" nonce={nonce} strategy="afterInteractive">
         {`
-          gtag('consent', 'update', {
-            analytics_storage: 'granted',
-            ad_storage: 'granted',
-            ad_user_data: 'granted',
-            ad_personalization: 'granted'
-          });
-          window.dataLayer.push({ event: 'indihub_consent_granted' });
+          gtag('consent', 'update', ${JSON.stringify(consentUpdate)});
+          window.dataLayer.push({ event: 'indihub_consent_${choice === "essential" ? "denied" : choice === "analytics" ? "granted" : "default"}' });
         `}
       </Script>
       <Script
@@ -174,21 +189,4 @@ export function ConsentManagedScripts({
       ) : null}
     </>
   );
-}
-
-function readConsentChoice(): ConsentChoice | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  try {
-    const raw = window.localStorage.getItem(consentStorageKey);
-    if (!raw) {
-      return null;
-    }
-    const parsed = JSON.parse(raw) as { choice?: string };
-    return parsed.choice === "analytics" ? "analytics" : "essential";
-  } catch {
-    return null;
-  }
 }
