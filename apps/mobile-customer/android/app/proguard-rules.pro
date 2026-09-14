@@ -36,9 +36,60 @@
 -keep class expo.modules.filesystem.** { *; }
 -dontwarn expo.modules.filesystem.**
 
-# expo-image-picker (if used)
+# expo-image-picker
 -keep class expo.modules.imagepicker.** { *; }
 -dontwarn expo.modules.imagepicker.**
+
+# expo-web-browser
+-keep class expo.modules.webbrowser.** { *; }
+-dontwarn expo.modules.webbrowser.**
+
+# expo-sharing
+-keep class expo.modules.sharing.** { *; }
+-dontwarn expo.modules.sharing.**
+
+# expo-print
+-keep class expo.modules.print.** { *; }
+-dontwarn expo.modules.print.**
+
+# expo-dom-webview
+-keep class expo.modules.domwebview.** { *; }
+-dontwarn expo.modules.domwebview.**
+
+# expo-dev-client / expo-dev-launcher (release builds)
+-keep class expo.modules.devclient.** { *; }
+-keep class expo.modules.devlauncher.** { *; }
+-dontwarn expo.modules.devclient.**
+-dontwarn expo.modules.devlauncher.**
+
+# expo-dev-menu
+-keep class expo.modules.devmenu.** { *; }
+-dontwarn expo.modules.devmenu.**
+
+# expo-log-box
+-keep class expo.modules.logbox.** { *; }
+-dontwarn expo.modules.logbox.**
+
+# expo-updates-interface
+-keep class expo.modules.updatesinterface.** { *; }
+-dontwarn expo.modules.updatesinterface.**
+
+# Solana Mobile Wallet Adapter
+-keep class com.solanamobile.** { *; }
+-dontwarn com.solanamobile.**
+
+# react-native-masked-view
+-keep class com.th3rdwave.** { *; }
+-dontwarn com.th3rdwave.**
+
+# react-native-gesture-handler
+-keep class com.swmansion.gesturehandler.** { *; }
+-dontwarn com.swmansion.gesturehandler.**
+
+# react-native-svg
+-keep class com.horcrux.svg.** { *; }
+-keep class com.facebook.react.views.image.** { *; }
+-dontwarn com.horcrux.svg.**
 
 # Google Play Services (Firebase Messaging)
 -keep class com.google.firebase.** { *; }
@@ -53,6 +104,14 @@
 # Sentry
 -keep class io.sentry.** { *; }
 -dontwarn io.sentry.**
+
+# Additional R8 protection
+-keepattributes *Annotation*
+-dontwarn com.google.protobuf.**
+
+# Solana - don't strip native libs
+-keep class com.solanamobile.** { *; }
+-dontwarn com.solanamobile.**
 
 # OkHttp
 -dontwarn okhttp3.**

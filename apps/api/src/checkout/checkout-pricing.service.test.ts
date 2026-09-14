@@ -99,6 +99,30 @@ describe("CheckoutPricingService", () => {
     expect(result.totalPaise).toBe(10500);
   });
 
+  it("keeps fixed platform fee zero on an empty cart (subtotal = 0)", async () => {
+    const tx = {
+      setting: {
+        findMany: vi.fn().mockResolvedValue([
+          setting("shipping.default_charge_paise", 0),
+          setting("checkout.platform_fee.enabled", true),
+          setting("checkout.platform_fee.type", "FIXED"),
+          setting("checkout.platform_fee.value_bps", 1000),
+          setting("checkout.platform_fee.fixed_paise", 1500)
+        ])
+      }
+    };
+    const service = new CheckoutPricingService({ client: tx } as never, undefined);
+
+    const result = await service.calculateCharges(0, tx as never);
+
+    expect(result).toMatchObject({
+      subtotalPaise: 0,
+      platformFeePaise: 0,
+      shippingPaise: 0,
+      totalPaise: 0
+    });
+  });
+
   it("honors legacy string-stored checkout fee settings after restart", async () => {
     const tx = {
       setting: {

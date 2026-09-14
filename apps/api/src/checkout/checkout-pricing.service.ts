@@ -664,6 +664,9 @@ export class CheckoutPricingService {
   }
 
   private calculatePlatformFee(subtotalPaise: number, type: PlatformFeeType, valueBps: number, fixedPaise: number) {
+    if (subtotalPaise === 0) {
+      return 0;
+    }
     switch (type) {
       case "PERCENTAGE":
         return Math.round((subtotalPaise * valueBps) / 10_000);
