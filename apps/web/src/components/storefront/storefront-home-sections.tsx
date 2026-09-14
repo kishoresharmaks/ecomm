@@ -277,7 +277,7 @@ function HeroSlide({
 
       {/* Right: Image */}
       <div className="relative mt-4 flex shrink-0 justify-center sm:mt-0 sm:w-[280px] md:w-[320px] lg:w-[360px]">
-        <div className="group relative w-full overflow-hidden rounded-2xl border border-white bg-white/70 shadow-[0_16px_48px_rgba(22,59,92,0.08)]">
+        <div className="group relative aspect-[4/3] w-full overflow-hidden rounded-2xl border border-white bg-white/70 shadow-[0_16px_48px_rgba(22,59,92,0.08)]">
           <StorefrontImage
             src={imageUrl || (fallbackProduct ? primaryImage(fallbackProduct) : null)}
             alt={banner.imageAlt || title}
@@ -287,7 +287,7 @@ function HeroSlide({
             priority={priority}
             allowExternalRemote
             className={cn(
-              "aspect-[4/3] w-full transition-transform duration-500 group-hover:scale-[1.03]",
+              "transition-transform duration-500 group-hover:scale-[1.03]",
               imageUrl ? "object-cover" : "object-contain p-4",
             )}
           />
