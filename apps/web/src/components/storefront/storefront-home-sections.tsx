@@ -307,24 +307,24 @@ async function HomeCategorySection({ homePromise }: { homePromise: StorefrontHom
     "Explore popular departments across the marketplace.";
 
   return (
-    <section className="bg-[linear-gradient(180deg,#FFFCFB_0%,#FFF8F4_100%)] py-7 sm:py-8 lg:py-11">
+    <section className="bg-[linear-gradient(180deg,#FFFCFB_0%,#FFF8F4_100%)] py-6 sm:py-8 lg:py-10">
       <div className="mx-auto max-w-[1360px] px-4 sm:px-6 lg:px-10">
         <div className="sm:hidden">
-          <h2 className="text-[26px] font-black leading-8 text-[#111827]">{title}</h2>
-          <p className="mt-1.5 max-w-[320px] text-sm font-semibold leading-5 text-[#7A8496]">{description}</p>
+          <h2 className="text-xl font-black leading-7 text-[#111827]">{title}</h2>
+          <p className="mt-1 max-w-[320px] text-xs font-semibold leading-5 text-[#7A8496]">{description}</p>
           <Link
             href="/categories"
-            className="mt-4 inline-flex min-h-9 items-center gap-2 rounded-full border border-[#FFD8CC] bg-white px-3.5 py-2 text-xs font-black text-[#ED3500] shadow-[0_4px_12px_rgba(17,24,39,0.06)]"
+            className="mt-3 inline-flex min-h-8 items-center gap-1.5 rounded-full border border-[#FFD8CC] bg-white px-3 py-1.5 text-[11px] font-black text-[#ED3500] shadow-[0_2px_8px_rgba(17,24,39,0.04)]"
           >
             View all categories
-            <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+            <ArrowRight className="h-3 w-3" aria-hidden="true" />
           </Link>
         </div>
         <div className="hidden sm:block">
           <SectionHeading title={title} description={description} href="/categories" linkLabel="View all categories" />
         </div>
         {home.categories.length ? (
-          <HomeScrollableRail ariaLabel="Shop by category" className="mt-5 sm:mt-6">
+          <HomeScrollableRail ariaLabel="Shop by category" className="mt-4 sm:mt-5">
             {home.categories.slice(0, 10).map((category, index) => (
               <CategoryCard key={category.id} category={category} index={index} />
             ))}
@@ -339,21 +339,14 @@ async function HomeCategorySection({ homePromise }: { homePromise: StorefrontHom
 
 function CategoryCard({ category, index }: { category: CategorySummary; index: number }) {
   const productCount = category._count?.products ?? 0;
-  const accentClasses = [
-    "bg-[#FFF0F4] text-[#D92D68]",
-    "bg-[#F4EDFF] text-[#7C3AED]",
-    "bg-[#EEF9EE] text-[#2FAE3D]",
-    "bg-[#EEF6FF] text-[#2F80ED]",
-  ];
-  const accent = accentClasses[index % accentClasses.length] ?? accentClasses[0];
 
   return (
     <Link
       href={`/categories/${category.slug}` as Route}
       aria-label={`Shop ${category.name}`}
-      className="storefront-category-card group flex shrink-0 snap-start flex-col items-start rounded-[16px] border border-[#E8EDF2] bg-white p-3 shadow-[0_8px_24px_rgba(17,24,39,0.06)] transition duration-300 hover:-translate-y-0.5 hover:border-[#FFD8CC] hover:shadow-[0_14px_34px_rgba(17,24,39,0.10)] motion-reduce:transform-none sm:p-5"
+      className="storefront-category-card group flex shrink-0 snap-start flex-col items-start rounded-2xl border border-[#E8EDF2] bg-white p-2.5 shadow-[0_4px_16px_rgba(17,24,39,0.04)] transition duration-300 hover:-translate-y-0.5 hover:border-[#FFD8CC] hover:shadow-[0_12px_32px_rgba(17,24,39,0.08)] motion-reduce:transform-none sm:rounded-[16px] sm:p-4 lg:p-5"
     >
-      <span className={cn("storefront-category-image relative grid place-items-center overflow-hidden rounded-full", accent)}>
+      <span className="storefront-category-image relative grid place-items-center overflow-hidden rounded-full bg-[#FFF0F4] text-[#D92D68]">
         <StorefrontImage
           src={category.imageUrl?.trim() || null}
           alt={category.name}
@@ -361,25 +354,19 @@ function CategoryCard({ category, index }: { category: CategorySummary; index: n
           fallbackLabel={category.name}
           showFallbackLabel={false}
           allowExternalRemote
-          className="object-contain p-1.5 transition group-hover:scale-105 sm:p-4"
+          className="object-contain p-1 transition group-hover:scale-105 sm:p-3"
         />
       </span>
-      <span className="mt-2.5 line-clamp-2 min-h-8 w-full text-left text-[12px] font-black leading-4 text-[#111827] sm:mt-5 sm:min-h-[3.25rem] sm:text-lg sm:font-black sm:leading-6 lg:text-xl lg:leading-snug">
+      <span className="mt-2 line-clamp-2 w-full text-left text-xs font-black leading-5 text-[#111827] sm:mt-3 sm:text-[15px] sm:leading-5 lg:text-base lg:leading-5">
         {category.name}
       </span>
-      <span className="mt-auto flex w-full items-center justify-between gap-2 sm:hidden">
-        <span className="truncate text-[10px] font-semibold text-[#7A8496]">Explore category</span>
-        <span className={cn("grid h-7 w-7 shrink-0 place-items-center rounded-full", accent)}>
-          <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-        </span>
-      </span>
-      <span className="mt-2 hidden text-sm font-semibold text-[#7A8496] sm:block">
+      <span className="mt-1.5 hidden text-[11px] font-semibold leading-4 text-[#7A8496] sm:block">
         {productCount
           ? `${productCount.toLocaleString("en-IN")} ${productCount === 1 ? "product" : "products"}`
-          : "Curated marketplace picks"}
+          : "Curated picks"}
       </span>
-      <span className="mt-auto hidden items-center gap-2 text-sm font-black text-[#ED3500] sm:inline-flex">
-        Explore <ArrowRight className="h-4 w-4" aria-hidden="true" />
+      <span className="mt-auto hidden items-center gap-1.5 text-[11px] font-black text-[#ED3500] sm:inline-flex">
+        Explore <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
       </span>
     </Link>
   );

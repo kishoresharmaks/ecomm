@@ -97,7 +97,7 @@ export function SeoAnalyticsSettings({ settings }: { settings: SettingRecord[] }
               )}
             </div>
             <p className="mt-1 text-sm font-semibold leading-6 text-[#667085]">
-              Google Tag Manager is installed across the website. The published container manages the Google Ads and Google Analytics 4 destinations, while Search Console verification remains configurable here.
+              Google Tag Manager is installed across the website. Basic analytics are enabled by default (analytics_storage: granted). Advertising and personalization storage remain blocked until a visitor opts in. The published container manages the Google Ads and Google Analytics 4 destinations, while Search Console verification remains configurable here.
             </p>
           </div>
         </div>

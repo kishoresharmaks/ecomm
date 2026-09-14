@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  googleAnalyticsDirectScript,
   googleConsentDefaultScript,
   googleTagManagerHeadBootstrapScript,
   primaryGoogleAdsId,
@@ -16,10 +17,21 @@ describe("Google Tag Manager bootstrap", () => {
     expect(primaryGoogleAdsId).toBe("AW-18165667075");
     expect(primaryGoogleAnalyticsId).toBe("G-MR1H66G0DZ");
     expect(consentScript).toContain("gtag('consent', 'default'");
-    expect(consentScript).toContain("analytics_storage: 'denied'");
+    expect(consentScript).toContain("analytics_storage: 'granted'");
+    expect(consentScript).toContain("ad_storage: 'denied'");
     expect(gtmScript).toContain(`'${primaryGoogleTagManagerId}'`);
     expect(gtmScript).toContain("https://www.googletagmanager.com/gtm.js?id=");
     expect(gtmScript).toContain("(function(w,d,s,l,i)");
     expect(gtmScript).not.toContain("gtag('config'");
+  });
+});
+
+describe("Google Analytics direct gtag integration", () => {
+  it("generates a gtag config call for the primary GA4 measurement ID", () => {
+    const script = googleAnalyticsDirectScript();
+
+    expect(script).toContain("gtag('js', new Date())");
+    expect(script).toContain(`gtag('config', '${primaryGoogleAnalyticsId}'`);
+    expect(script).toContain("send_page_view: true");
   });
 });

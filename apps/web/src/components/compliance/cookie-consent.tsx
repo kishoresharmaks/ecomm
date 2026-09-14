@@ -3,34 +3,67 @@
 import Link from "next/link";
 import Script from "next/script";
 import { useEffect, useState } from "react";
+import {
+  googleAnalyticsDirectScript,
+  googleConsentDefaultScript,
+  primaryGoogleAnalyticsId,
+  primaryGoogleTagManagerId,
+} from "@/lib/google-analytics";
 
 type ConsentChoice = "essential" | "analytics";
 
 const consentStorageKey = "indihub:privacy:cookie-consent";
 const consentEventName = "indihub-cookie-consent";
+const bannerDismissedKey = "indihub:privacy:cookie-consent-dismissed";
 const cloudflareBeaconToken = process.env.NEXT_PUBLIC_CLOUDFLARE_BEACON_TOKEN?.trim();
 
 export function CookieConsentBanner() {
   const [choice, setChoice] = useState<ConsentChoice | null>(null);
+  const [bannerVisible, setBannerVisible] = useState(false);
 
   useEffect(() => {
     const stored = readConsentChoice();
-    setChoice(stored);
+    if (stored) {
+      setChoice(stored);
+      return;
+    }
+
+    // If banner was already dismissed once in a previous session, treat as implied consent.
+    const wasDismissed = typeof window !== "undefined" && window.localStorage.getItem(bannerDismissedKey) === "true";
+    if (wasDismissed) {
+      setChoice("analytics");
+      return;
+    }
+
+    setBannerVisible(true);
   }, []);
 
-  const bannerVisible = choice === null;
-
   function saveChoice(nextChoice: ConsentChoice) {
+    setChoice(nextChoice);
     try {
       window.localStorage.setItem(consentStorageKey, JSON.stringify({ choice: nextChoice, savedAt: new Date().toISOString() }));
     } catch {
-      // Consent still applies for the current page view when storage is unavailable.
+      // Ignore storage errors; consent still applies for the current page view.
     }
-    setChoice(nextChoice);
     window.dispatchEvent(new CustomEvent(consentEventName, { detail: nextChoice }));
   }
 
-  if (!bannerVisible) {
+  function dismissBanner() {
+    setBannerVisible(false);
+    try {
+      window.localStorage.setItem(bannerDismissedKey, "true");
+    } catch {
+      // Ignore storage errors.
+    }
+    // Treating dismissal as implied consent for analytics.
+    saveChoice("analytics");
+  }
+
+  function handleEssentialOnly() {
+    saveChoice("essential");
+  }
+
+  if (!bannerVisible || choice !== null) {
     return null;
   }
 
@@ -43,26 +76,27 @@ export function CookieConsentBanner() {
         <div className="space-y-1">
           <p className="text-sm font-black text-[#1F2933]">Your privacy choices</p>
           <p className="max-w-3xl text-sm font-semibold leading-6 text-[#667085]">
-            We use essential storage for secure sign-in, cart, checkout, and marketplace preferences. Analytics storage and page-view collection remain disabled until you allow them.
+            We use essential storage for secure sign-in, cart, checkout, and marketplace preferences.
+            Basic analytics are enabled by default to help us improve the site. You can choose to allow personalized ads as well, or keep them off.
           </p>
           <Link href="/privacy-policy" className="text-sm font-black text-[#ED3500] underline underline-offset-4">
             Privacy policy
           </Link>
         </div>
-        <div className="grid gap-2 sm:grid-cols-2">
+        <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => saveChoice("essential")}
+            onClick={handleEssentialOnly}
             className="min-h-11 rounded-md border border-[#d8e2ea] bg-white px-4 text-sm font-black text-[#1F2933] transition hover:border-[#ED3500]"
           >
             Essential only
           </button>
           <button
             type="button"
-            onClick={() => saveChoice("analytics")}
+            onClick={dismissBanner}
             className="min-h-11 rounded-md bg-[#ED3500] px-4 text-sm font-black text-white transition hover:bg-[#c72d00]"
           >
-            Allow analytics
+            Got it
           </button>
         </div>
       </div>
@@ -76,7 +110,6 @@ export function ConsentManagedScripts({
   nonce: string | undefined;
 }) {
   const [choice, setChoice] = useState<ConsentChoice | null>(null);
-  const analyticsAllowed = choice === "analytics";
 
   useEffect(() => {
     setChoice(readConsentChoice());
@@ -90,8 +123,21 @@ export function ConsentManagedScripts({
     return () => window.removeEventListener(consentEventName, handleConsent);
   }, []);
 
+  const analyticsAllowed = choice === "analytics";
+
   if (!analyticsAllowed) {
-    return null;
+    return (
+      <Script id="indihub-google-consent-denied" nonce={nonce} strategy="afterInteractive">
+        {`
+          gtag('consent', 'update', {
+            analytics_storage: 'denied',
+            ad_storage: 'denied',
+            ad_user_data: 'denied',
+            ad_personalization: 'denied'
+          });
+        `}
+      </Script>
+    );
   }
 
   return (
@@ -106,6 +152,15 @@ export function ConsentManagedScripts({
           });
           window.dataLayer.push({ event: 'indihub_consent_granted' });
         `}
+      </Script>
+      <Script
+        id="indihub-google-analytics-direct"
+        nonce={nonce}
+        src={`https://www.googletagmanager.com/gtag/js?id=${primaryGoogleAnalyticsId}`}
+        strategy="afterInteractive"
+      />
+      <Script id="indihub-google-analytics-init" nonce={nonce} strategy="afterInteractive">
+        {googleAnalyticsDirectScript()}
       </Script>
       {cloudflareBeaconToken ? (
         <Script
