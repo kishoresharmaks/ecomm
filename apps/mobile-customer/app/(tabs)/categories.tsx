@@ -77,7 +77,7 @@ function CategoriesScreen() {
     () => subcategoryGroups(filteredCategories),
     [filteredCategories],
   );
-  const allColumnCount = width >= 360 ? 3 : 2;
+  const allColumnCount = width >= 400 ? 3 : 2;
 
   function showAllCategories() {
     router.push({ pathname: "/categories", params: { view: "all" } } as never);
@@ -114,7 +114,7 @@ function CategoriesScreen() {
         style={styles.scroll}
         contentContainerStyle={[
           view === "all" ? styles.allContent : styles.overviewContent,
-          { paddingBottom: Math.max(126, insets.bottom + 112) },
+          { paddingBottom: Math.max(160, insets.bottom + 140) },
         ]}
       >
         {view === "all" ? (
@@ -145,6 +145,7 @@ function CategoriesScreen() {
                     category={category}
                     columnCount={allColumnCount}
                     index={index}
+                    screenWidth={width}
                   />
                 ))}
               </View>
@@ -588,10 +589,12 @@ function AllCategoryTile({
   category,
   columnCount,
   index,
+  screenWidth,
 }: {
   category: MobileCategory;
   columnCount: number;
   index: number;
+  screenWidth: number;
 }) {
   const router = useRouter();
   const visual = categoryVisual(category);
@@ -602,14 +605,14 @@ function AllCategoryTile({
     <Pressable
       accessibilityLabel={`Open ${category.name}`}
       accessibilityRole="button"
-      style={[styles.allTile, tileSpacing(columnCount, index)]}
+      style={[styles.allTile, tileSpacing(columnCount, index, screenWidth)]}
       onPress={() => router.push(`/category/${category.slug}` as never)}
     >
       <View style={[styles.allTileIcon, { backgroundColor: visual.background }]}>
         {imageUrl ? (
           <RemoteImage fallbackLabel={category.name} resizeMode="cover" style={styles.allTileImage} uri={imageUrl} />
         ) : (
-          <HugeiconsIcon color={visual.accent} icon={visual.icon} size={34} strokeWidth={2.1} />
+          <HugeiconsIcon color={visual.accent} icon={visual.icon} size={columnCount === 2 ? 30 : 34} strokeWidth={2.1} />
         )}
       </View>
       <Text numberOfLines={2} style={styles.allTileTitle}>
@@ -715,10 +718,14 @@ function shortCategoryName(name: string) {
   return trimmed.split(/[&/ ]+/)[0] || trimmed;
 }
 
-function tileSpacing(columnCount: number, index: number) {
+function tileSpacing(columnCount: number, index: number, screenWidth: number) {
+  const gap = 10;
+  const containerPad = 16;
+  const usableWidth = Math.max(0, screenWidth - containerPad * 2);
+  const tileWidth = (usableWidth - (columnCount - 1) * gap) / columnCount;
   return {
-    marginRight: (index + 1) % columnCount === 0 ? 0 : 12,
-    width: `${(100 - (columnCount - 1) * 3.2) / columnCount}%` as `${number}%`,
+    marginRight: (index + 1) % columnCount === 0 ? 0 : gap,
+    width: tileWidth,
   };
 }
 
@@ -1110,8 +1117,8 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
   subcategoryDirectory: {
-    marginTop: 26,
-    gap: 14,
+    marginTop: 18,
+    gap: 10,
   },
   directoryTitleRow: {
     alignItems: "center",
@@ -1383,10 +1390,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     alignSelf: "center",
     borderRadius: 999,
-    height: 58,
+    height: 52,
     justifyContent: "center",
     overflow: "hidden",
-    width: 58,
+    width: 52,
   },
   allTileImage: {
     height: "100%",
@@ -1397,8 +1404,8 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "900",
     lineHeight: 16,
-    marginTop: 13,
-    minHeight: 32,
+    marginTop: 10,
+    minHeight: 22,
   },
   allTileBottom: {
     alignItems: "center",
