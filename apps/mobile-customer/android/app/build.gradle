@@ -105,14 +105,19 @@ android {
             keyPassword 'android'
         }
         release {
-            def keystoreFile = file(MYAPP_RELEASE_STORE_FILE)
-            if (project.hasProperty('MYAPP_RELEASE_STORE_FILE') && keystoreFile.exists()) {
-                storeFile keystoreFile
-                storePassword MYAPP_RELEASE_STORE_PASSWORD
-                keyAlias MYAPP_RELEASE_KEY_ALIAS
-                keyPassword MYAPP_RELEASE_KEY_PASSWORD
+            if (project.hasProperty('android.injected.signing.store.file')) {
+                storeFile file(android.injected.signing.store.file)
+                storePassword android.injected.signing.store.password
+                keyAlias android.injected.signing.key.alias
+                keyPassword android.injected.signing.key.password
             } else {
-                signingConfig = signingConfigs.debug
+                def keystoreFile = file(MYAPP_RELEASE_STORE_FILE)
+                if (project.hasProperty('MYAPP_RELEASE_STORE_FILE') && keystoreFile.exists()) {
+                    storeFile keystoreFile
+                    storePassword MYAPP_RELEASE_STORE_PASSWORD
+                    keyAlias MYAPP_RELEASE_KEY_ALIAS
+                    keyPassword MYAPP_RELEASE_KEY_PASSWORD
+                }
             }
         }
     }
