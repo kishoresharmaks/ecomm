@@ -165,6 +165,10 @@ export function HomeHeroCarousel({
   const [paused, setPaused] = useState(false);
   const [displayIndex, setDisplayIndex] = useState(0);
   const [fadeKey, setFadeKey] = useState(0);
+  const [progress, setProgress] = useState(0);
+  const progressRef = useRef<number>(0);
+  const rafRef = useRef<number>(0);
+  const startTimeRef = useRef<number>(0);
   const pointerStart = useRef<{ x: number; y: number; pointerId: number } | null>(null);
   const hasMultipleSlides = slides.length > 1;
 
@@ -175,10 +179,36 @@ export function HomeHeroCarousel({
 
   useEffect(() => {
     if (!hasMultipleSlides || paused || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      cancelAnimationFrame(rafRef.current);
+      setProgress(0);
       return;
     }
-    const timer = window.setTimeout(() => handleMove(1), heroIntervalMs);
-    return () => window.clearTimeout(timer);
+
+    startTimeRef.current = performance.now();
+    progressRef.current = 0;
+
+    function tick(now: number) {
+      const elapsed = now - startTimeRef.current;
+      const p = Math.min(elapsed / heroIntervalMs, 1);
+      progressRef.current = p;
+      setProgress(p);
+      if (p >= 1) {
+        return;
+      }
+      rafRef.current = requestAnimationFrame(tick);
+    }
+
+    rafRef.current = requestAnimationFrame(tick);
+
+    const timer = window.setTimeout(() => {
+      cancelAnimationFrame(rafRef.current);
+      handleMove(1);
+    }, heroIntervalMs);
+
+    return () => {
+      window.clearTimeout(timer);
+      cancelAnimationFrame(rafRef.current);
+    };
   }, [displayIndex, hasMultipleSlides, paused]);
 
   function handleMove(direction: -1 | 1) {
@@ -187,6 +217,7 @@ export function HomeHeroCarousel({
     setActiveIndex(next);
     setDisplayIndex(next);
     setFadeKey((k) => k + 1);
+    setProgress(0);
   }
 
   function handlePointerDown(event: ReactPointerEvent<HTMLElement>) {
@@ -216,6 +247,21 @@ export function HomeHeroCarousel({
 
   if (!slides.length) return null;
 
+  // Handle location badge clicks via event delegation (badge lives in server-rendered hero slide).
+  useEffect(() => {
+    function handleClick(event: MouseEvent) {
+      const badge = (event.target as HTMLElement | null)?.closest('[data-location-badge]');
+      if (!badge) return;
+      const text = badge.textContent?.trim();
+      if (text?.includes("Set your location")) {
+        window.dispatchEvent(new CustomEvent("indihub:location:open"));
+      }
+    }
+    const root = document.querySelector("[data-hero-carousel-root]");
+    root?.addEventListener("click", handleClick);
+    return () => root?.removeEventListener("click", handleClick);
+  }, []);
+
   return (
     <section
       aria-label={ariaLabel}
@@ -230,19 +276,25 @@ export function HomeHeroCarousel({
       onPointerUp={handlePointerUp}
       onPointerCancel={() => { pointerStart.current = null; }}
     >
-      <div className="relative overflow-hidden rounded-[24px] border border-[#FFE4DC] bg-white shadow-[0_18px_50px_rgba(237,53,0,0.07)]">
-        {slides.map((slide, index) => (
-          <div
-            key={`${fadeKey}-${index}`}
-            className={cn(
-              "absolute inset-0 transition-opacity duration-500 ease-in-out",
-              index === displayIndex ? "z-10 opacity-100" : "z-0 opacity-0 pointer-events-none",
-            )}
-            aria-hidden={index !== displayIndex}
-          >
-            {slide}
-          </div>
-        ))}
+      <div
+        data-hero-carousel-root
+        className="relative overflow-hidden rounded-[24px] border border-[#FFE4DC] bg-white shadow-[0_18px_50px_rgba(237,53,0,0.07)]"
+      >
+        {slides.map((slide, index) => {
+          const isActive = index === displayIndex;
+          return (
+            <div
+              key={`${fadeKey}-${index}`}
+              className={cn(
+                "absolute inset-0 transition-all duration-700 ease-in-out",
+                isActive ? "z-10 opacity-100 translate-x-0" : "z-0 opacity-0 translate-x-4 pointer-events-none",
+              )}
+              aria-hidden={!isActive}
+            >
+              {slide}
+            </div>
+          );
+        })}
         <div className="invisible">{slides[displayIndex]}</div>
       </div>
 
@@ -264,22 +316,33 @@ export function HomeHeroCarousel({
           >
             <ArrowRight className="h-5 w-5" aria-hidden="true" />
           </button>
-          <div className="absolute -bottom-8 left-1/2 z-20 flex -translate-x-1/2 gap-2">
-            {slides.map((_, index) => (
-              <button
-                key={index}
-                type="button"
-                onClick={() => {
-                  if (index !== displayIndex) handleMove(index > displayIndex ? 1 : -1);
-                }}
-                aria-label={`Slide ${index + 1}`}
-                aria-current={index === displayIndex ? "true" : undefined}
-                className={cn(
-                  "h-2 rounded-full transition-all duration-300",
-                  index === displayIndex ? "w-6 bg-[#ED3500]" : "w-2 bg-[#FFC7B8] hover:bg-[#ED3500]/60",
-                )}
+          <div className="absolute inset-x-0 bottom-0 z-20 flex flex-col items-center gap-3 pb-5 pt-10">
+            <div className="flex items-center gap-3">
+              {slides.map((_, index) => (
+                <button
+                  key={index}
+                  type="button"
+                  onClick={() => {
+                    if (index !== displayIndex) handleMove(index > displayIndex ? 1 : -1);
+                  }}
+                  aria-label={`Slide ${index + 1}`}
+                  aria-current={index === displayIndex ? "true" : undefined}
+                  className={cn(
+                    "h-2 rounded-full transition-all duration-300",
+                    index === displayIndex ? "w-6 bg-[#ED3500]" : "w-2 bg-[#FFC7B8] hover:bg-[#ED3500]/60",
+                  )}
+                />
+              ))}
+              <span className="text-[11px] font-black text-[#596276] tabular-nums">
+                {displayIndex + 1} / {slides.length}
+              </span>
+            </div>
+            <div className="h-[3px] w-24 overflow-hidden rounded-full bg-black/5">
+              <div
+                className="h-full rounded-full bg-[#ED3500]/40 transition-[width] duration-100"
+                style={{ width: `${progress * 100}%` }}
               />
-            ))}
+            </div>
           </div>
         </>
       ) : null}

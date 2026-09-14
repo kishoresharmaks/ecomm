@@ -57,6 +57,14 @@ export function StorefrontLocationPicker({
   const panelId = useId();
   const closePanel = useCallback(() => setOpen(false), []);
   const useFloatingPanel = !mobile;
+
+  useEffect(() => {
+    function openPicker() {
+      setOpen(true);
+    }
+    window.addEventListener("indihub:location:open", openPicker);
+    return () => window.removeEventListener("indihub:location:open", openPicker);
+  }, []);
   const { portalRoot, floatingStyle, updatePosition } = useFloatingHeaderDropdown({
     open: useFloatingPanel && open,
     onClose: closePanel,

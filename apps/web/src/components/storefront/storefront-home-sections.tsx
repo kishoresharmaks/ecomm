@@ -37,6 +37,7 @@ import {
 import { StorefrontFrame } from "./storefront-frame";
 import { StorefrontImage } from "./storefront-image";
 import { StorefrontLocationPicker } from "./storefront-location-picker";
+import { HeroLocationBadge } from "./hero-location-badge";
 import { getStorefrontStockStatus, storefrontStockBadgeClass } from "./storefront-stock-status";
 import {
   HomeAuthNotice,
@@ -221,6 +222,13 @@ function HeroSlide({
     "Shop verified local stores, live deals, and everyday essentials from trusted sellers.";
   const hasDiscountBadge = banner.secondaryCtaLabel?.trim().match(/\d+%/) || false;
   const discountValue = banner.secondaryCtaLabel?.trim().match(/(\d+%)/)?.[1];
+  const needsLocation = locationLabel === "All stores";
+
+  function handleLocationBadgeClick() {
+    if (needsLocation) {
+      window.dispatchEvent(new CustomEvent("indihub:location:open"));
+    }
+  }
 
   return (
     <div className="relative flex h-full flex-col justify-center bg-[linear-gradient(135deg,#FFFCFB_0%,#FFF8F4_50%,#FFF0EC_100%)] px-5 py-8 sm:flex-row sm:items-center sm:gap-6 sm:px-8 sm:py-10 md:min-h-[400px] lg:min-h-[480px] lg:gap-10 lg:px-12 lg:py-12">
@@ -232,7 +240,10 @@ function HeroSlide({
               {banner.eyebrow}
             </span>
           ) : null}
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-white/70 px-3 py-1.5 text-xs font-black text-[#596276] shadow-sm backdrop-blur-sm">
+          <span
+            data-location-badge
+            className="inline-flex items-center gap-1.5 rounded-full bg-white/70 px-3 py-1.5 text-xs font-black text-[#596276] shadow-sm backdrop-blur-sm"
+          >
             <MapPin className="h-3.5 w-3.5 text-[#ED3500]" aria-hidden="true" />
             {locationLabel === "All stores" ? "Set your location" : locationLabel}
           </span>
@@ -265,7 +276,7 @@ function HeroSlide({
 
       {/* Right: Image card with floating badge */}
       <div className="relative mt-6 flex shrink-0 justify-center sm:mt-0 sm:w-[340px] lg:w-[420px]">
-        <div className="relative aspect-[4/3] w-full max-w-[400px] overflow-hidden rounded-[20px] border border-white bg-white/80 shadow-[0_24px_70px_rgba(22,59,92,0.12)]">
+        <div className="group relative aspect-[4/3] w-full max-w-[400px] overflow-hidden rounded-[20px] border border-white bg-white/80 shadow-[0_24px_70px_rgba(22,59,92,0.12)]">
           <StorefrontImage
             src={imageUrl || (fallbackProduct ? primaryImage(fallbackProduct) : null)}
             alt={banner.imageAlt || title}
@@ -276,6 +287,12 @@ function HeroSlide({
             allowExternalRemote
             className={imageUrl ? "object-cover" : "object-contain p-6"}
           />
+          {/* Hover overlay */}
+          <div className="absolute inset-0 flex items-center justify-center bg-black/0 opacity-0 transition-all duration-300 group-hover:bg-black/20 group-hover:opacity-100 sm:group-hover:backdrop-blur-[2px]">
+            <span className="inline-flex items-center gap-2 rounded-full bg-white/95 px-5 py-2.5 text-sm font-black text-[#111827] shadow-lg translate-y-4 transition-all duration-300 group-hover:translate-y-0">
+              View product
+            </span>
+          </div>
           {hasDiscountBadge && discountValue && (
             <div className="absolute -right-2 -top-2 flex h-16 w-16 items-center justify-center rounded-full bg-[#ED3500] text-white shadow-[0_8px_24px_rgba(237,53,0,0.35)] sm:h-20 sm:w-20">
               <div className="flex flex-col items-center leading-none">
