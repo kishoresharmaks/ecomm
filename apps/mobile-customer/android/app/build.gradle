@@ -195,4 +195,30 @@ dependencies {
     }
 }
 
+// Auto-generate google-services.json from environment variables if missing during CI / EAS builds
+def googleServicesJsonFile = file("google-services.json")
+if (!googleServicesJsonFile.exists()) {
+    def googleServicesEnv = System.getenv("GOOGLE_SERVICES_JSON") ?: System.getenv("GOOGLE_SERVICES_BASE64")
+    if (googleServicesEnv != null && !googleServicesEnv.trim().isEmpty()) {
+        def trimmed = googleServicesEnv.trim()
+        if (trimmed.startsWith("{")) {
+            googleServicesJsonFile.text = trimmed
+            println "Successfully generated google-services.json from GOOGLE_SERVICES_JSON environment variable"
+        } else if (new File(trimmed).exists()) {
+            googleServicesJsonFile.bytes = new File(trimmed).bytes
+            println "Successfully copied google-services.json from ${trimmed}"
+        } else {
+            try {
+                def decoded = new String(trimmed.decodeBase64(), "UTF-8")
+                if (decoded.trim().startsWith("{")) {
+                    googleServicesJsonFile.text = decoded
+                    println "Successfully decoded and generated google-services.json from base64 environment variable"
+                }
+            } catch (Exception e) {
+                println "WARNING: Failed to decode GOOGLE_SERVICES_JSON: ${e.message}"
+            }
+        }
+    }
+}
+
 apply plugin: 'com.google.gms.google-services'

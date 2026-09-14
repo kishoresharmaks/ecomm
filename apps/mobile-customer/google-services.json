@@ -1,0 +1,67 @@
+{
+  "project_info": {
+    "project_number": "696405663705",
+    "project_id": "onehandindia-apps",
+    "storage_bucket": "onehandindia-apps.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:696405663705:android:23f90f5b422910f8ba43c8",
+        "android_client_info": {
+          "package_name": "com.onehandindia.customer"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBwRyHyPeHGOXPUBNiylvOw4end-C4-wIc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:696405663705:android:e5ab054285c034cbba43c8",
+        "android_client_info": {
+          "package_name": "com.onehandindia.delivery"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBwRyHyPeHGOXPUBNiylvOw4end-C4-wIc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:696405663705:android:41b35e58d190cf2bba43c8",
+        "android_client_info": {
+          "package_name": "com.onehandindia.seller"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBwRyHyPeHGOXPUBNiylvOw4end-C4-wIc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

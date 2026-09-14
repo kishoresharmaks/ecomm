@@ -2,12 +2,43 @@
 /* global module, process, require */
 
 const fs = require("node:fs");
+const path = require("node:path");
 
 const sentryOrganization = process.env.SENTRY_ORG ?? process.env.EXPO_PUBLIC_SENTRY_ORG;
 const sentryProject = process.env.SENTRY_PROJECT ?? process.env.EXPO_PUBLIC_SENTRY_PROJECT;
 const easProjectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID ?? "553773e3-8d42-4cf2-9c85-66c64f3c6b72";
-const androidGoogleServicesFile =
-  process.env.GOOGLE_SERVICES_JSON ?? (fs.existsSync("./google-services.json") ? "./google-services.json" : undefined);
+
+const rootGoogleServicesPath = path.resolve(__dirname, "google-services.json");
+const androidAppGoogleServicesPath = path.resolve(__dirname, "android/app/google-services.json");
+
+let androidGoogleServicesFile = undefined;
+const rawGoogleServices = process.env.GOOGLE_SERVICES_JSON ?? process.env.GOOGLE_SERVICES_BASE64;
+if (rawGoogleServices) {
+  const trimmed = rawGoogleServices.trim();
+  if (trimmed.startsWith("{")) {
+    try {
+      const androidAppDir = path.resolve(__dirname, "android/app");
+      if (!fs.existsSync(androidAppDir)) {
+        fs.mkdirSync(androidAppDir, { recursive: true });
+      }
+      fs.writeFileSync(androidAppGoogleServicesPath, trimmed, "utf8");
+      fs.writeFileSync(rootGoogleServicesPath, trimmed, "utf8");
+      androidGoogleServicesFile = "./google-services.json";
+    } catch {
+      // ignore
+    }
+  } else if (fs.existsSync(trimmed)) {
+    androidGoogleServicesFile = trimmed;
+  }
+}
+
+if (!androidGoogleServicesFile) {
+  if (fs.existsSync(rootGoogleServicesPath)) {
+    androidGoogleServicesFile = "./google-services.json";
+  } else if (fs.existsSync(androidAppGoogleServicesPath)) {
+    androidGoogleServicesFile = "./android/app/google-services.json";
+  }
+}
 const sentryPlugin =
   sentryOrganization && sentryProject
     ? [

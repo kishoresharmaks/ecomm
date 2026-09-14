@@ -29,6 +29,8 @@ apps/mobile-delivery/expo-env.d.ts
 *-firebase-adminsdk-*.json
 google-services.json
 GoogleService-Info.plist
+!apps/mobile-customer/android/app/google-services.json
+!apps/mobile-customer/google-services.json
 *.keystore
 *.jks
 config/onehandindia-apps-b03644a41e09.json
