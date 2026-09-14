@@ -12,6 +12,7 @@ import { RemoteImage } from "./remote-image";
 
 type DealCardProps = {
   badgeText?: string;
+  cardWidth?: number;
   ctaText?: string;
   formatPrice?: (pricePaise?: number | null) => string;
   isWishlistPending?: boolean;
@@ -27,6 +28,7 @@ const STANDARD_IMAGE_HEIGHT = 120;
 
 export function DealCard({
   badgeText = "Deal",
+  cardWidth = STANDARD_CARD_WIDTH,
   ctaText = "View deal",
   formatPrice = defaultFormatPrice,
   isWishlistPending = false,
@@ -36,7 +38,6 @@ export function DealCard({
   showBadge = true
 }: DealCardProps) {
   const queryClient = useQueryClient();
-  const cardWidth = STANDARD_CARD_WIDTH;
   const imageHeight = STANDARD_IMAGE_HEIGHT;
   const cardHeight = imageHeight + 126;
   const imageUrl = resolveImageUrl(product.images?.[0]?.url);

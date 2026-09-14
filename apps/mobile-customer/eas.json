@@ -28,7 +28,7 @@
       }
     },
     "production": {
-      "autoIncrement": true,
+      "autoIncrement": "version",
       "android": {
         "buildType": "app-bundle"
       },

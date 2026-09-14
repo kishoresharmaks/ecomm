@@ -1591,7 +1591,9 @@ function CategoryStrip({ categories }: { categories: MobileCategory[] }) {
 }
 
 function AdminSection({ section, products, wishlist }: { section: MobileHomepageSection; products: MobileProduct[]; wishlist: WishlistActions }) {
+  const { width } = useWindowDimensions();
   const market = useMobileMarket();
+  const cardWidth = personalizedRailCardWidth(width, "standard");
   const items = normalizeSectionItems(section.config?.items);
   const description = stringValue(section.config?.subtitle) || stringValue(section.config?.description);
   const ctaLabel = stringValue(section.config?.ctaLabel) || "View all";
@@ -1627,10 +1629,10 @@ function AdminSection({ section, products, wishlist }: { section: MobileHomepage
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.flashProducts}>
           {(products.length ? products : []).slice(0, CARDS_PER_VIEW).map((product) => (
-            <DealProductCard key={product.id} formatPrice={market.format} product={product} timerEndsAt={timerEndsAt} wishlist={wishlist} />
+            <DealProductCard key={product.id} cardWidth={cardWidth} formatPrice={market.format} product={product} timerEndsAt={timerEndsAt} wishlist={wishlist} />
           ))}
           {!products.length
-            ? items.slice(0, CARDS_PER_VIEW).map((item, index) => <AdminMiniCard key={`${section.id}-${index}`} item={item} timerEndsAt={timerEndsAt} />)
+            ? items.slice(0, CARDS_PER_VIEW).map((item, index) => <AdminMiniCard key={`${section.id}-${index}`} item={item} timerEndsAt={timerEndsAt} width={cardWidth} />)
             : null}
         </ScrollView>
       </View>
@@ -1653,14 +1655,14 @@ function AdminSection({ section, products, wishlist }: { section: MobileHomepage
       {products.length ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.productScrollContent} style={styles.productScroll}>
           {products.slice(0, CARDS_PER_VIEW).map((product) => (
-            <MarketplaceProductCard key={product.id} formatPrice={market.format} product={product} wishlist={wishlist} />
+            <MarketplaceProductCard key={product.id} formatPrice={market.format} product={product} wishlist={wishlist} cardWidth={cardWidth} />
           ))}
         </ScrollView>
       ) : null}
       {items.length ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.genericSectionScroll}>
           {items.map((item, index) => (
-            <AdminMiniCard key={`${section.id}-${index}`} item={item} />
+            <AdminMiniCard key={`${section.id}-${index}`} item={item} width={cardWidth} />
           ))}
         </ScrollView>
       ) : null}
@@ -1668,7 +1670,7 @@ function AdminSection({ section, products, wishlist }: { section: MobileHomepage
   );
 }
 
-function AdminMiniCard({ item, timerEndsAt }: { item: NormalizedSectionItem; timerEndsAt?: string }) {
+function AdminMiniCard({ item, timerEndsAt, width = 154 }: { item: NormalizedSectionItem; timerEndsAt?: string; width?: number }) {
   const imageUrl = resolveImageUrl(item.imageUrl);
   const content = (
     <View>
@@ -1686,16 +1688,18 @@ function AdminMiniCard({ item, timerEndsAt }: { item: NormalizedSectionItem; tim
     </View>
   );
 
+  const cardStyle = [styles.adminMiniCard, { width }];
+
   if (item.linkUrl.startsWith("/")) {
     return (
-      <Link href={item.linkUrl as Href} style={styles.adminMiniCard}>
+      <Link href={item.linkUrl as Href} style={cardStyle}>
         {content}
       </Link>
     );
   }
 
   return (
-    <View style={styles.adminMiniCard}>
+    <View style={cardStyle}>
       {content}
     </View>
   );
@@ -1705,14 +1709,18 @@ function DealProductCard({
   formatPrice,
   product,
   wishlist,
+  timerEndsAt,
+  cardWidth,
 }: {
   formatPrice: (pricePaise?: number | null) => string;
   product: MobileProduct;
   timerEndsAt: string;
   wishlist: WishlistActions;
+  cardWidth?: number;
 }) {
   return (
     <DealCard
+      cardWidth={cardWidth}
       formatPrice={formatPrice}
       isWishlistPending={wishlist.isPending(product.id)}
       isWished={wishlist.isWished(product.id)}
@@ -1782,12 +1790,13 @@ function MarketplaceProductCard({
   formatPrice,
   product,
   wishlist,
+  cardWidth = STANDARD_CARD_WIDTH,
 }: {
   formatPrice: (pricePaise?: number | null) => string;
   product: MobileProduct;
   wishlist: WishlistActions;
+  cardWidth?: number;
 }) {
-  const cardWidth = STANDARD_CARD_WIDTH;
   const imageHeight = STANDARD_IMAGE_HEIGHT;
   const cardHeight = imageHeight + 132;
   const imageUrl = resolveImageUrl(product.images?.[0]?.url);
