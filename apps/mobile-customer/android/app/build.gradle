@@ -105,18 +105,20 @@ android {
             keyPassword 'android'
         }
         release {
-            if (project.hasProperty('android.injected.signing.store.file')) {
-                storeFile file(project.findProperty('android.injected.signing.store.file'))
-                storePassword project.findProperty('android.injected.signing.store.password')
-                keyAlias project.findProperty('android.injected.signing.key.alias')
-                keyPassword project.findProperty('android.injected.signing.key.password')
-            } else {
-                def keystoreFile = file(MYAPP_RELEASE_STORE_FILE)
-                if (project.hasProperty('MYAPP_RELEASE_STORE_FILE') && keystoreFile.exists()) {
-                    storeFile keystoreFile
-                    storePassword MYAPP_RELEASE_STORE_PASSWORD
-                    keyAlias MYAPP_RELEASE_KEY_ALIAS
-                    keyPassword MYAPP_RELEASE_KEY_PASSWORD
+            if (!System.getenv("EAS_BUILD")) {
+                if (project.hasProperty('android.injected.signing.store.file')) {
+                    storeFile file(project.findProperty('android.injected.signing.store.file'))
+                    storePassword project.findProperty('android.injected.signing.store.password')
+                    keyAlias project.findProperty('android.injected.signing.key.alias')
+                    keyPassword project.findProperty('android.injected.signing.key.password')
+                } else {
+                    def keystoreFile = file(MYAPP_RELEASE_STORE_FILE)
+                    if (project.hasProperty('MYAPP_RELEASE_STORE_FILE') && keystoreFile.exists()) {
+                        storeFile keystoreFile
+                        storePassword MYAPP_RELEASE_STORE_PASSWORD
+                        keyAlias MYAPP_RELEASE_KEY_ALIAS
+                        keyPassword MYAPP_RELEASE_KEY_PASSWORD
+                    }
                 }
             }
         }
