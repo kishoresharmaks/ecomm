@@ -23,15 +23,16 @@ export function CookieConsentBanner() {
 
   useEffect(() => {
     const stored = readConsentChoice();
-    if (stored) {
-      setChoice(stored);
+    const wasDismissed = typeof window !== "undefined" && window.localStorage.getItem(bannerDismissedKey) === "true";
+
+    // Dismissed flag takes priority — implies consent.
+    if (wasDismissed) {
+      setChoice("analytics");
       return;
     }
 
-    // If banner was already dismissed once in a previous session, treat as implied consent.
-    const wasDismissed = typeof window !== "undefined" && window.localStorage.getItem(bannerDismissedKey) === "true";
-    if (wasDismissed) {
-      setChoice("analytics");
+    if (stored) {
+      setChoice(stored);
       return;
     }
 
