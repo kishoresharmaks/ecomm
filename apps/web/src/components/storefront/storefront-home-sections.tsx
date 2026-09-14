@@ -230,33 +230,35 @@ function HeroSlide({
   }
 
   return (
-    <div className="relative flex h-full flex-col justify-center bg-[linear-gradient(135deg,#FFFCFB_0%,#FFF8F4_50%,#FFF0EC_100%)] px-5 py-8 sm:flex-row sm:items-center sm:gap-6 sm:px-8 sm:py-10 md:min-h-[400px] lg:min-h-[480px] lg:gap-10 lg:px-12 lg:py-12">
+    <div className="relative flex h-full flex-col justify-center bg-[linear-gradient(135deg,#FFFCFB_0%,#FFF8F4_50%,#FFF0EC_100%)] px-4 py-6 sm:flex-row sm:items-center sm:gap-8 sm:px-8 sm:py-10 md:min-h-[420px] lg:min-h-[460px] lg:gap-10 lg:px-12 lg:py-10">
       {/* Left: Text content */}
-      <div className="relative z-10 flex max-w-xl flex-col justify-center">
+      <div className="relative z-10 flex max-w-md flex-col justify-center sm:max-w-lg lg:max-w-xl">
         <div className="flex flex-wrap items-center gap-2">
           {banner.eyebrow?.trim() ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-white/90 px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-[#ED3500] shadow-sm backdrop-blur-sm">
+            <span className="inline-flex items-center rounded-full bg-[#ED3500]/[0.07] px-3 py-1 text-[10px] font-black uppercase tracking-widest text-[#ED3500]">
               {banner.eyebrow}
             </span>
           ) : null}
           <span
             data-location-badge
-            className="inline-flex items-center gap-1.5 rounded-full bg-white/70 px-3 py-1.5 text-xs font-black text-[#596276] shadow-sm backdrop-blur-sm"
+            className="inline-flex items-center gap-1.5 rounded-full bg-white/60 px-2.5 py-1 text-[11px] font-bold text-[#596276] shadow-sm"
           >
-            <MapPin className="h-3.5 w-3.5 text-[#ED3500]" aria-hidden="true" />
+            <MapPin className="h-3 w-3 text-[#ED3500]" aria-hidden="true" />
             {locationLabel === "All stores" ? "Set your location" : locationLabel}
           </span>
         </div>
-        <h1 className="mt-4 text-[28px] font-black leading-[1.08] tracking-tight text-[#111827] sm:text-[38px] lg:text-[52px]">
-          {splitMarketplaceTitle(title)}
+        <h1 className="mt-3 text-[22px] font-extrabold leading-[1.1] text-[#111827] sm:text-[26px] md:text-[30px] lg:text-[34px]">
+          {title}
         </h1>
-        <p className="mt-3 max-w-lg text-sm font-semibold leading-6 text-[#596276] sm:text-base sm:leading-7 lg:text-lg">
-          {subtitle}
-        </p>
-        <div className="mt-5 flex flex-wrap items-center gap-3">
+        {subtitle ? (
+          <p className="mt-2 text-[13px] font-medium leading-5 text-[#6B7280] sm:text-sm sm:leading-6 lg:text-base lg:leading-6">
+            {subtitle}
+          </p>
+        ) : null}
+        <div className="mt-4 flex flex-wrap items-center gap-2.5">
           <HomepageLink
             href={banner.linkUrl?.trim() || "/categories"}
-            className="inline-flex h-11 items-center gap-2 rounded-full bg-[#ED3500] px-5 text-sm font-black text-white shadow-[0_14px_28px_rgba(237,53,0,0.22)] transition hover:bg-[#C72D00] hover:shadow-[0_18px_36px_rgba(237,53,0,0.30)] active:scale-[0.97]"
+            className="inline-flex h-10 items-center gap-1.5 rounded-full bg-[#ED3500] px-5 text-sm font-bold text-white shadow-[0_8px_24px_rgba(237,53,0,0.2)] transition hover:bg-[#C72D00] hover:shadow-[0_12px_32px_rgba(237,53,0,0.28)] active:scale-[0.97]"
           >
             {banner.ctaLabel?.trim() || "Shop Now"}
             <ArrowRight className="h-4 w-4" aria-hidden="true" />
@@ -264,46 +266,53 @@ function HeroSlide({
           {banner.secondaryCtaLabel?.trim() && banner.secondaryLinkUrl?.trim() && (
             <HomepageLink
               href={banner.secondaryLinkUrl}
-              className="inline-flex h-11 items-center rounded-full border border-[#FFE0D6] bg-white px-5 text-sm font-black text-[#111827] transition hover:border-[#ED3500] hover:text-[#ED3500] active:scale-[0.97]"
+              className="inline-flex h-10 items-center rounded-full border border-[#FFD8CC] bg-white px-4 text-[13px] font-bold text-[#374151] transition hover:border-[#ED3500] hover:text-[#ED3500] active:scale-[0.97]"
             >
               {banner.secondaryCtaLabel}
             </HomepageLink>
           )}
-          <HomeSearchForm className="hidden min-w-[260px] flex-1 md:block" />
+          <HomeSearchForm className="hidden min-w-[200px] flex-1 md:block" />
         </div>
       </div>
 
-      {/* Right: Image card with floating badge */}
-      <div className="relative mt-6 flex shrink-0 justify-center sm:mt-0 sm:w-[340px] lg:w-[420px]">
-        <div className="group relative aspect-[4/3] w-full max-w-[400px] overflow-hidden rounded-[20px] border border-white bg-white/80 shadow-[0_24px_70px_rgba(22,59,92,0.12)]">
+      {/* Right: Image */}
+      <div className="relative mt-4 flex shrink-0 justify-center sm:mt-0 sm:w-[280px] md:w-[320px] lg:w-[360px]">
+        <div className="group relative w-full overflow-hidden rounded-2xl border border-white bg-white/70 shadow-[0_16px_48px_rgba(22,59,92,0.08)]">
           <StorefrontImage
             src={imageUrl || (fallbackProduct ? primaryImage(fallbackProduct) : null)}
             alt={banner.imageAlt || title}
-            sizes="(max-width: 639px) 280px, (max-width: 1023px) 340px, 420px"
+            sizes="(max-width: 639px) 260px, (max-width: 1023px) 300px, 360px"
             fallbackLabel={fallbackProduct?.category.name ?? title}
             showFallbackLabel={false}
             priority={priority}
             allowExternalRemote
-            className={imageUrl ? "object-cover" : "object-contain p-6"}
+            className={cn(
+              "aspect-[4/3] w-full transition-transform duration-500 group-hover:scale-[1.03]",
+              imageUrl ? "object-cover" : "object-contain p-4",
+            )}
           />
-          {/* Hover overlay */}
-          <div className="absolute inset-0 flex items-center justify-center bg-black/0 opacity-0 transition-all duration-300 group-hover:bg-black/20 group-hover:opacity-100 sm:group-hover:backdrop-blur-[2px]">
-            <span className="inline-flex items-center gap-2 rounded-full bg-white/95 px-5 py-2.5 text-sm font-black text-[#111827] shadow-lg translate-y-4 transition-all duration-300 group-hover:translate-y-0">
-              View product
-            </span>
-          </div>
+          {fallbackProduct ? (
+            <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-t from-black/25 via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+              <HomepageLink
+                href={`/products/${fallbackProduct.slug}`}
+                className="inline-flex items-center gap-1.5 rounded-full bg-white/95 px-4 py-2 text-xs font-bold text-[#111827] shadow-lg backdrop-blur-sm translate-y-3 transition-all duration-300 group-hover:translate-y-0 hover:bg-white"
+              >
+                Shop now
+                <ArrowRight className="h-3 w-3" aria-hidden="true" />
+              </HomepageLink>
+            </div>
+          ) : null}
           {hasDiscountBadge && discountValue && (
-            <div className="absolute -right-2 -top-2 flex h-16 w-16 items-center justify-center rounded-full bg-[#ED3500] text-white shadow-[0_8px_24px_rgba(237,53,0,0.35)] sm:h-20 sm:w-20">
+            <div className="absolute -right-1.5 -top-1.5 flex h-14 w-14 items-center justify-center rounded-full bg-[#ED3500] text-white shadow-[0_6px_20px_rgba(237,53,0,0.3)] md:h-16 md:w-16">
               <div className="flex flex-col items-center leading-none">
-                <span className="text-[10px] font-black uppercase tracking-wider opacity-90">Save</span>
-                <span className="text-lg font-black sm:text-xl">{discountValue}</span>
+                <span className="text-[8px] font-black uppercase tracking-wider opacity-90">Save</span>
+                <span className="text-base font-black md:text-lg">{discountValue}</span>
               </div>
             </div>
           )}
         </div>
-        {/* Decorative floating dots */}
-        <div className="absolute -bottom-3 -left-3 h-16 w-16 rounded-full bg-[#ED3500]/[0.06] sm:h-20 sm:w-20" />
-        <div className="absolute -top-2 -right-6 h-10 w-10 rounded-full bg-[#ED3500]/[0.08] sm:h-12 sm:w-12" />
+        {/* Subtle decorative accent */}
+        <div className="absolute -bottom-3 -right-3 h-12 w-12 rounded-full bg-[#ED3500]/[0.05] md:h-16 md:w-16" />
       </div>
     </div>
   );
