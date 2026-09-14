@@ -16,11 +16,13 @@ import {
   Logout03Icon,
   Notification02Icon,
   PackageIcon,
+  Shield01Icon,
+  ShoppingBag01Icon,
+  TicketIcon,
   TwitterIcon,
+  UserCircleIcon,
   Wrench01Icon,
   QuestionIcon,
-  Shield01Icon,
-  UserCircleIcon,
   YoutubeIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react-native";
@@ -30,7 +32,6 @@ import * as WebBrowser from "expo-web-browser";
 import { Link, useRouter, type Href } from "expo-router";
 import { useEffect, useRef } from "react";
 import { ActivityIndicator, Animated, Image, Pressable, StyleSheet, Text, View } from "react-native";
-import { EmptyState } from "../../src/components/empty-state";
 import { Screen } from "../../src/components/screen";
 import { useMobileCustomerAuth } from "../../src/auth/mobile-auth-context";
 import {
@@ -137,14 +138,50 @@ export default function AccountScreen() {
 
   if (!isSignedIn || !customerAuth.enabled) {
     return (
-      <Screen>
-        <View style={styles.signInWrap}>
-          <Text style={styles.title}>My Profile</Text>
-          <Text style={styles.subtitle}>Manage your personal information</Text>
-          <EmptyState title="Sign in to continue" message="Access orders, wishlist, addresses, saved location, and support history." />
-          <Link href="/auth/sign-in" style={styles.primaryLink}>
-            Sign in or create account
-          </Link>
+      <Screen padded={false}>
+        <View style={styles.authPromptWrap}>
+          <View style={styles.authPromptCard}>
+            <View style={styles.authPromptGlow} />
+            <View style={styles.authPromptIconWrap}>
+              <HugeiconsIcon color={colors.primary} icon={UserCircleIcon} size={44} strokeWidth={1.8} />
+            </View>
+            <Text style={styles.authPromptTitle}>Welcome to 1HandIndia</Text>
+            <Text style={styles.authPromptSubtitle}>
+              Sign in to access orders, wishlist, saved addresses, and exclusive deals tailored for you.
+            </Text>
+
+            <View style={styles.authBenefitRow}>
+              <View style={styles.authBenefit}>
+                <View style={styles.authBenefitIconWrap}>
+                  <HugeiconsIcon color={colors.primary} icon={ShoppingBag01Icon} size={20} strokeWidth={2.2} />
+                </View>
+                <Text style={styles.authBenefitText}>Track orders</Text>
+              </View>
+              <View style={styles.authBenefit}>
+                <View style={styles.authBenefitIconWrap}>
+                  <HugeiconsIcon color={colors.primary} icon={TicketIcon} size={20} strokeWidth={2.2} />
+                </View>
+                <Text style={styles.authBenefitText}>Save wishlist</Text>
+              </View>
+              <View style={styles.authBenefit}>
+                <View style={styles.authBenefitIconWrap}>
+                  <HugeiconsIcon color={colors.primary} icon={Location01Icon} size={20} strokeWidth={2.2} />
+                </View>
+                <Text style={styles.authBenefitText}>Fast checkout</Text>
+              </View>
+            </View>
+
+            <Link href="/auth/sign-in" style={styles.authPromptPrimary}>
+              Sign in
+            </Link>
+            <Link href="/auth/sign-in" style={styles.authPromptSecondary}>
+              Create new account
+            </Link>
+
+            <Text style={styles.authPromptGuest}>
+              <Text style={styles.authPromptGuestLink}>Continue as guest</Text>
+            </Text>
+          </View>
         </View>
       </Screen>
     );
@@ -640,17 +677,6 @@ const styles = StyleSheet.create({
     opacity: 0.82,
     transform: [{ scale: 0.99 }],
   },
-  primaryLink: {
-    backgroundColor: colors.primary,
-    borderRadius: 20,
-    color: colors.surface,
-    fontSize: 15,
-    fontWeight: "900",
-    marginTop: 18,
-    overflow: "hidden",
-    paddingVertical: 14,
-    textAlign: "center",
-  },
   profileTopRow: {
     alignItems: "center",
     flexDirection: "row",
@@ -734,10 +760,6 @@ const styles = StyleSheet.create({
   settingsRowBorder: {
     borderBottomColor: BORDER,
     borderBottomWidth: 1,
-  },
-  signInWrap: {
-    flex: 1,
-    justifyContent: "center",
   },
   stateText: {
     color: colors.muted,
@@ -835,5 +857,117 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 15,
     fontWeight: "900",
+  },
+  authPromptWrap: {
+    flex: 1,
+    justifyContent: "center",
+    padding: 20,
+  },
+  authPromptCard: {
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: BORDER,
+    overflow: "hidden",
+    paddingHorizontal: 24,
+    paddingVertical: 36,
+    position: "relative",
+    shadowColor: colors.primary,
+    shadowOffset: { height: 10, width: 0 },
+    shadowOpacity: 0.07,
+    shadowRadius: 34,
+    elevation: 4,
+  },
+  authPromptGlow: {
+    backgroundColor: "rgba(237,53,0,0.05)",
+    borderRadius: 999,
+    height: 180,
+    position: "absolute",
+    top: -60,
+    width: 180,
+  },
+  authPromptIconWrap: {
+    alignItems: "center",
+    backgroundColor: "#FFF2ED",
+    borderRadius: 999,
+    height: 88,
+    justifyContent: "center",
+    marginBottom: 20,
+    width: 88,
+    zIndex: 1,
+  },
+  authPromptTitle: {
+    color: TEXT,
+    fontSize: 26,
+    fontWeight: "900",
+    letterSpacing: 0,
+    lineHeight: 32,
+    textAlign: "center",
+    zIndex: 1,
+  },
+  authPromptSubtitle: {
+    color: MUTED,
+    fontSize: 14,
+    fontWeight: "700",
+    lineHeight: 21,
+    marginTop: 10,
+    textAlign: "center",
+    zIndex: 1,
+  },
+  authBenefitRow: {
+    flexDirection: "row",
+    gap: 18,
+    marginTop: 28,
+    zIndex: 1,
+  },
+  authBenefit: {
+    alignItems: "center",
+    gap: 8,
+  },
+  authBenefitIconWrap: {
+    alignItems: "center",
+    backgroundColor: "#FFF2ED",
+    borderRadius: 999,
+    height: 44,
+    justifyContent: "center",
+    width: 44,
+  },
+  authBenefitText: {
+    color: TEXT,
+    fontSize: 12,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  authPromptPrimary: {
+    backgroundColor: colors.primary,
+    borderRadius: 16,
+    color: colors.surface,
+    fontSize: 16,
+    fontWeight: "900",
+    marginTop: 30,
+    overflow: "hidden",
+    paddingVertical: 16,
+    textAlign: "center",
+    width: "100%",
+    zIndex: 1,
+  },
+  authPromptSecondary: {
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: "900",
+    marginTop: 14,
+    textAlign: "center",
+    zIndex: 1,
+  },
+  authPromptGuest: {
+    marginTop: 18,
+    zIndex: 1,
+  },
+  authPromptGuestLink: {
+    color: MUTED,
+    fontSize: 13,
+    fontWeight: "700",
+    textDecorationLine: "underline",
   },
 });
