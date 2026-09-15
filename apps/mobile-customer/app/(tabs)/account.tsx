@@ -178,9 +178,7 @@ export default function AccountScreen() {
               Create new account
             </Link>
 
-            <Text style={styles.authPromptGuest}>
-              <Text style={styles.authPromptGuestLink}>Continue as guest</Text>
-            </Text>
+            
           </View>
         </View>
       </Screen>
@@ -959,15 +957,5 @@ const styles = StyleSheet.create({
     marginTop: 14,
     textAlign: "center",
     zIndex: 1,
-  },
-  authPromptGuest: {
-    marginTop: 18,
-    zIndex: 1,
-  },
-  authPromptGuestLink: {
-    color: MUTED,
-    fontSize: 13,
-    fontWeight: "700",
-    textDecorationLine: "underline",
   },
 });
