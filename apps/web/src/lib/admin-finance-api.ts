@@ -288,6 +288,7 @@ export type SellerLedgerEntry = {
   createdAt?: string;
   payout?: { id: string; payoutNumber: string; status: string } | null;
   orderSellerSplit?: { id: string; order?: { orderNumber: string } } | null;
+  sellerCashReceivable?: { id: string; receivableNumber: string; source: string; status: string } | null;
 };
 
 export type LedgerResult = PageResult<SellerLedgerEntry> & {

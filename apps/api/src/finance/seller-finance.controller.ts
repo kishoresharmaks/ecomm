@@ -4,7 +4,8 @@ import { RoleCode } from "@indihub/database";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { Roles } from "../auth/decorators/roles.decorator";
 import type { RequestUser } from "../auth/types/indihub-request";
-import { FinanceListQueryDto, PayoutQueryDto, SellerPayoutRequestDto } from "./dto/finance.dto";
+import { SellerCashReceivableActionDto, SellerCashReceivableQueryDto, FinanceListQueryDto, PayoutQueryDto, SellerPayoutRequestDto } from "./dto/finance.dto";
+import { SellerCashReceivablesService } from "./seller-cash-receivables.service";
 import { SellerFinanceAccessService } from "./seller-finance-access.service";
 import { SellerLedgerService } from "./seller-ledger.service";
 import { SellerPayoutsService } from "./seller-payouts.service";
@@ -18,7 +19,8 @@ export class SellerFinanceController {
     @Inject(SellerFinanceAccessService) private readonly access: SellerFinanceAccessService,
     @Inject(SellerLedgerService) private readonly ledger: SellerLedgerService,
     @Inject(SellerPayoutsService) private readonly payouts: SellerPayoutsService,
-    @Inject(SellerStatementsService) private readonly statements: SellerStatementsService
+    @Inject(SellerStatementsService) private readonly statements: SellerStatementsService,
+    @Inject(SellerCashReceivablesService) private readonly cashReceivables: SellerCashReceivablesService,
   ) {}
 
   @Get("ledger")
@@ -69,5 +71,13 @@ export class SellerFinanceController {
   async downloadStatement(@CurrentUser() actor: RequestUser, @Param("statementId") statementId: string, @Param("format") format: "csv" | "pdf") {
     const sellerId = await this.access.sellerIdForActor(actor);
     return this.statements.exportStatement(statementId, format, sellerId);
+  }
+
+  @Get("cash-receivables/:receivableNumber")
+  @ApiOperation({ summary: "Read authenticated seller cash receivable detail." })
+  @ApiOkResponse({ description: "Authenticated seller cash receivable detail." })
+  async getCashReceivable(@CurrentUser() actor: RequestUser, @Param("receivableNumber") receivableNumber: string) {
+    const sellerId = await this.access.sellerIdForActor(actor);
+    return this.cashReceivables.getReceivable(receivableNumber, sellerId);
   }
 }

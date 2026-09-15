@@ -1,5 +1,59 @@
 import { indihubFetch, type IndihubAuthHeaders } from "./api";
-import type { LedgerResult, PageResult, SellerPayout, SellerStatement, StatementDownload } from "./admin-finance-api";
+import type { LedgerResult, PageResult, SellerLedgerEntry, SellerPayout, SellerStatement, StatementDownload } from "./admin-finance-api";
+
+export type SellerCashReceivableDetail = {
+  id: string;
+  receivableNumber: string;
+  source: string;
+  status: string;
+  grossCashCollectedPaise: number;
+  platformDuePaise: number;
+  outstandingPaise: number;
+  settledPaise: number;
+  waivedPaise: number;
+  offsetPaise: number;
+  commissionPaise: number;
+  gstOnCommissionPaise: number;
+  tdsPaise: number;
+  tcsPaise: number;
+  sellerPlatformFeePaise: number;
+  buyerPlatformFeePaise: number;
+  currency: string;
+  note: string | null;
+  createdAt: string;
+  payoutOffset: { id: string; payoutNumber: string; status: string } | null;
+  order: { id: string; orderNumber: string };
+  orderShipment: {
+    id: string;
+    shipmentNumber: string;
+    deliveryMode: string;
+    status: string;
+    shippingPaise: number;
+    codSurchargePaise: number;
+  };
+  payment: { id: string; provider: string; method: string; amountPaise: number; status: string };
+  events: Array<{
+    id: string;
+    eventType: string;
+    oldStatus: string;
+    newStatus: string;
+    amountDeltaPaise: number;
+    oldOutstandingPaise: number;
+    newOutstandingPaise: number;
+    note: string | null;
+    createdAt: string;
+    actor: { id: string; email: string; fullName: string };
+  }>;
+  ledgerEntries: Array<{
+    id: string;
+    entryType: string;
+    description: string;
+    debitPaise: number;
+    creditPaise: number;
+    balanceAfterPaise: number;
+    createdAt: string;
+  }>;
+};
 
 export type SellerPayoutAvailability = {
   requestEnabled: boolean;
@@ -69,6 +123,10 @@ export function listSellerStatements(auth: IndihubAuthHeaders, query: Record<str
 
 export function downloadSellerStatement(auth: IndihubAuthHeaders, statementId: string, format: "csv" | "pdf") {
   return indihubFetch<StatementDownload>(`/api/seller/finance/statements/${encodeURIComponent(statementId)}/download/${format}`, undefined, auth);
+}
+
+export function getSellerCashReceivable(auth: IndihubAuthHeaders, receivableNumber: string) {
+  return indihubFetch<SellerCashReceivableDetail>(`/api/seller/finance/cash-receivables/${encodeURIComponent(receivableNumber)}`, undefined, auth);
 }
 
 function queryString(query: Record<string, string | number | undefined>) {

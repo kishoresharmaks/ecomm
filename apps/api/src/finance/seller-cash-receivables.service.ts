@@ -67,9 +67,12 @@ export class SellerCashReceivablesService {
     return { items, total, page, limit: take };
   }
 
-  async getReceivable(receivableNumber: string) {
-    const receivable = await this.prisma.client.sellerCashReceivable.findUnique({
-      where: { receivableNumber },
+  async getReceivable(receivableNumber: string, sellerId?: string) {
+    const receivable = await this.prisma.client.sellerCashReceivable.findFirst({
+      where: {
+        receivableNumber,
+        ...(sellerId ? { sellerId } : {}),
+      },
       include: {
         ...this.receivableListInclude(),
         events: { orderBy: { createdAt: "desc" }, include: { actor: { select: { id: true, email: true, fullName: true } } } },
