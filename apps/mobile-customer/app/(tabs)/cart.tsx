@@ -13,7 +13,7 @@ import { ActivityIndicator, Image, Pressable, StyleSheet, Text, TextInput, View 
 import { EmptyState } from "../../src/components/empty-state";
 import { Screen } from "../../src/components/screen";
 import { useMobileCustomerAuth } from "../../src/auth/mobile-auth-context";
-import { accountErrorMessage } from "../../src/features/account/account-ui";
+import { accountErrorMessage, RequireAuthGate } from "../../src/features/account/account-ui";
 import { useMobileMarket } from "../../src/features/market/mobile-market";
 import { withStorefrontMaintenance } from "../../src/features/maintenance/mobile-maintenance-gate";
 import { getCart, removeCartItem, updateCartItem, getCheckoutSummary, type MobileCartSummary } from "../../src/features/storefront/storefront-api";
@@ -113,12 +113,8 @@ function CartScreen() {
 
   if (!customerAuth.enabled) {
     return (
-      <Screen>
-        <Text style={styles.title}>Cart</Text>
-        <EmptyState title="Sign in to view cart" message="Your cart is saved securely with your 1HandIndia account." />
-        <Link href="/auth/sign-in" style={styles.primaryButton}>
-          Sign in
-        </Link>
+      <Screen padded={false}>
+        <RequireAuthGate title="Sign in to view cart" message="Your cart is saved securely with your 1HandIndia account." />
       </Screen>
     );
   }

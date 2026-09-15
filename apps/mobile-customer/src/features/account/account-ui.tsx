@@ -2,6 +2,8 @@ import { Link } from "expo-router";
 import type { ReactNode } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { EmptyState } from "../../components/empty-state";
+import { HugeiconsIcon } from "@hugeicons/react-native";
+import { UserCircleIcon, ShoppingBag01Icon, TicketIcon, Location01Icon } from "@hugeicons/core-free-icons";
 import { Screen } from "../../components/screen";
 import { formatMoney } from "../market/mobile-market";
 import type { MobileOrderDetail } from "../storefront/storefront-api";
@@ -11,6 +13,45 @@ import { colors } from "../../theme";
 const blockedOrderStatuses = new Set(["CANCELLED", "SHIPPED", "DELIVERED"]);
 const blockedDeliveryStatuses = new Set(["DISPATCHED", "IN_TRANSIT", "DELIVERED"]);
 const blockedSellerStatuses = new Set(["DISPATCHED", "DELIVERED"]);
+
+const BENEFITS = [
+  { icon: ShoppingBag01Icon, label: "Track orders" },
+  { icon: TicketIcon, label: "Wishlist" },
+  { icon: Location01Icon, label: "Saved addresses" },
+];
+
+export function RequireAuthGate({ title, message }: { message?: string; title?: string }) {
+  return (
+    <Screen padded={false}>
+      <View style={styles.gateWrap}>
+        <View style={styles.gateCard}>
+          <View style={styles.gateGlow} />
+          <View style={styles.gateIconWrap}>
+            <HugeiconsIcon color={colors.primary} icon={UserCircleIcon} size={40} strokeWidth={1.8} />
+          </View>
+          <Text style={styles.gateTitle}>{title ?? "Sign in to continue"}</Text>
+          <Text style={styles.gateMessage}>{message ?? "This section is linked to your 1HandIndia account."}</Text>
+          <View style={styles.gateBenefitRow}>
+            {BENEFITS.map((benefit) => (
+              <View key={benefit.label} style={styles.gateBenefit}>
+                <View style={styles.gateBenefitIconWrap}>
+                  <HugeiconsIcon color={colors.primary} icon={benefit.icon} size={18} strokeWidth={2.2} />
+                </View>
+                <Text style={styles.gateBenefitText}>{benefit.label}</Text>
+              </View>
+            ))}
+          </View>
+          <Link href="/auth/sign-in" style={styles.gatePrimary}>
+            Sign in
+          </Link>
+          <Link href="/auth/sign-in" style={styles.gateSecondary}>
+            Create new account
+          </Link>
+        </View>
+      </View>
+    </Screen>
+  );
+}
 
 export function AccountLoadingState({ title = "Loading account..." }: { title?: string }) {
   return (
@@ -30,14 +71,7 @@ export function SignInRequiredState({
   message?: string;
   title?: string;
 }) {
-  return (
-    <Screen>
-      <EmptyState title={title} message={message} />
-      <Link href="/auth/sign-in" style={styles.primaryLink}>
-        Sign in
-      </Link>
-    </Screen>
-  );
+  return <RequireAuthGate message={message} title={title} />;
 }
 
 export function RetryState({
@@ -181,17 +215,6 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     marginTop: 10,
   },
-  primaryLink: {
-    backgroundColor: colors.primary,
-    borderRadius: 8,
-    color: colors.surface,
-    fontSize: 15,
-    fontWeight: "900",
-    marginTop: 16,
-    overflow: "hidden",
-    paddingVertical: 14,
-    textAlign: "center",
-  },
   primaryButton: {
     alignItems: "center",
     backgroundColor: colors.primary,
@@ -234,5 +257,107 @@ const styles = StyleSheet.create({
     color: colors.ink,
     fontSize: 17,
     fontWeight: "900",
+  },
+  gateWrap: {
+    flex: 1,
+    justifyContent: "center",
+    padding: 20,
+  },
+  gateCard: {
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: "#F3E7E2",
+    overflow: "hidden",
+    paddingHorizontal: 24,
+    paddingVertical: 36,
+    position: "relative",
+    shadowColor: colors.primary,
+    shadowOffset: { height: 10, width: 0 },
+    shadowOpacity: 0.07,
+    shadowRadius: 34,
+    elevation: 4,
+  },
+  gateGlow: {
+    backgroundColor: "rgba(237,53,0,0.05)",
+    borderRadius: 999,
+    height: 160,
+    position: "absolute",
+    top: -50,
+    width: 160,
+  },
+  gateIconWrap: {
+    alignItems: "center",
+    backgroundColor: "#FFF2ED",
+    borderRadius: 999,
+    height: 88,
+    justifyContent: "center",
+    marginBottom: 20,
+    width: 88,
+    zIndex: 1,
+  },
+  gateTitle: {
+    color: "#111827",
+    fontSize: 22,
+    fontWeight: "900",
+    letterSpacing: 0,
+    lineHeight: 29,
+    textAlign: "center",
+    zIndex: 1,
+  },
+  gateMessage: {
+    color: "#6B7280",
+    fontSize: 14,
+    fontWeight: "700",
+    lineHeight: 21,
+    marginTop: 10,
+    textAlign: "center",
+    zIndex: 1,
+  },
+  gateBenefitRow: {
+    flexDirection: "row",
+    gap: 18,
+    marginTop: 26,
+    zIndex: 1,
+  },
+  gateBenefit: {
+    alignItems: "center",
+    gap: 8,
+  },
+  gateBenefitIconWrap: {
+    alignItems: "center",
+    backgroundColor: "#FFF2ED",
+    borderRadius: 999,
+    height: 44,
+    justifyContent: "center",
+    width: 44,
+  },
+  gateBenefitText: {
+    color: "#111827",
+    fontSize: 11,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  gatePrimary: {
+    backgroundColor: colors.primary,
+    borderRadius: 16,
+    color: colors.surface,
+    fontSize: 16,
+    fontWeight: "900",
+    marginTop: 28,
+    overflow: "hidden",
+    paddingVertical: 16,
+    textAlign: "center",
+    width: "100%",
+    zIndex: 1,
+  },
+  gateSecondary: {
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: "900",
+    marginTop: 14,
+    textAlign: "center",
+    zIndex: 1,
   },
 });

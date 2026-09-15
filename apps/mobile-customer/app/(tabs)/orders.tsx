@@ -15,12 +15,12 @@ import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { EmptyState } from "../../src/components/empty-state";
 import { RemoteImage } from "../../src/components/remote-image";
+import { EmptyState } from "../../src/components/empty-state";
 import { useMobileCustomerAuth } from "../../src/auth/mobile-auth-context";
 import { formatOrderDisplayTotal } from "../../src/features/market/mobile-market";
 import { listCustomerOrders, type MobileOrderSummary } from "../../src/features/storefront/storefront-api";
-import { accountErrorMessage, formatStatus } from "../../src/features/account/account-ui";
+import { accountErrorMessage, formatStatus, RequireAuthGate } from "../../src/features/account/account-ui";
 import { resolveImageUrl } from "../../src/lib/image-url";
 import { colors } from "../../src/theme";
 
@@ -90,21 +90,7 @@ export default function OrdersScreen() {
   }
 
   if (!customerAuth.enabled) {
-    return (
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.signedOutScreen}>
-          <OrdersTitleBlock />
-          <View style={styles.emptyPanelWrap}>
-            <View style={styles.emptyPanel}>
-              <EmptyState title="Sign in to view orders" message="Your order history, tracking, and support requests are linked to your 1HandIndia account." />
-              <Pressable style={styles.primaryButton} onPress={() => router.push("/auth/sign-in")}>
-                <Text style={styles.primaryButtonText}>Sign in</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </SafeAreaView>
-    );
+    return <RequireAuthGate title="Sign in to view orders" message="Your order history, tracking, and support requests are linked to your 1HandIndia account." />;
   }
 
   if (ordersQuery.isError) {

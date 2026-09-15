@@ -749,10 +749,13 @@ function CheckoutScreen() {
     return (
       <Screen>
         <Stack.Screen options={{ headerShown: true, title: "Checkout" }} />
-        <EmptyState title="Sign in to checkout" message="Your cart and checkout are linked to your 1HandIndia account." />
-        <Pressable style={styles.primaryButton} onPress={() => router.push("/auth/sign-in")}>
-          <Text style={styles.primaryButtonText}>Sign in</Text>
-        </Pressable>
+        <View style={styles.centerState}>
+          <Text style={styles.authTitle}>Sign in to checkout</Text>
+          <Text style={styles.authMessage}>Your cart and checkout are linked to your 1HandIndia account.</Text>
+          <Pressable style={styles.primaryButton} onPress={() => router.push("/auth/sign-in")}>
+            <Text style={styles.primaryButtonText}>Sign in</Text>
+          </Pressable>
+        </View>
       </Screen>
     );
   }
@@ -1826,6 +1829,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flex: 1,
     justifyContent: "center",
+  },
+  authTitle: {
+    color: colors.ink,
+    fontSize: 20,
+    fontWeight: "900",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  authMessage: {
+    color: colors.muted,
+    fontSize: 14,
+    fontWeight: "700",
+    marginBottom: 24,
+    textAlign: "center",
   },
   stateText: {
     color: colors.muted,
