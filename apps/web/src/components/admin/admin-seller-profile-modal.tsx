@@ -125,6 +125,7 @@ export function AdminSellerProfileModal({
                     </h3>
                     <div className="mt-4 grid gap-4">
                       <DetailBlock label="Legal Name" value={seller.profile?.businessLegalName} />
+                      <DetailBlock label="Seller Type" value={humanize(seller.sellerType)} />
                       <DetailBlock label="Business Type" value={humanize(seller.profile?.businessType)} />
                       <DetailBlock
                         label="GST Registration"

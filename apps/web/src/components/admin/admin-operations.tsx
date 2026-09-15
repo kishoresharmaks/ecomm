@@ -2179,9 +2179,17 @@ export function AdminSellersPageClient() {
                 />
                 <EntityTitle
                   title={item.storeName}
-                  subtitle={`${item.slug} / ${humanize(item.sellerType)}`}
+                  subtitle={item.slug}
                 />
               </div>
+            ),
+          },
+          {
+            header: "Type",
+            cell: (item) => (
+              <span className="text-xs font-bold text-[#163B5C] bg-[#EEF6FB] rounded-full px-2.5 py-1">
+                {humanize(item.sellerType)}
+              </span>
             ),
           },
           {

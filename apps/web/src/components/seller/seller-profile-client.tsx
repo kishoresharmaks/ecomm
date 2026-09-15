@@ -208,6 +208,10 @@ export function SellerProfileClient() {
                   {profileData?.profile?.panNumber ? ` / ${profileData.profile.panNumber}` : ""}
                 </span>
               </div>
+              <div>
+                <span className="block text-xs text-[#667085]">Seller Type</span>
+                <span>{humanize(profileData?.sellerType)}</span>
+              </div>
             </div>
           </div>
         </SellerPanel>

@@ -9,7 +9,8 @@ export * from "./product-return-policy";
 export const sellerTypes = [
   "MARKETPLACE_SELLER",
   "HYPERLOCAL_STORE",
-  "WHOLESALE_DISTRIBUTOR"
+  "WHOLESALE_DISTRIBUTOR",
+  "SERVICE_PROVIDER",
 ] as const;
 export type SellerType = (typeof sellerTypes)[number];
 
