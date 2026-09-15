@@ -14,7 +14,7 @@ import { HugeiconsIcon } from "@hugeicons/react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { buildProductDetailContent } from "@indihub/shared-types";
 import { Link, Stack, type Href, useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -64,7 +64,7 @@ function ProductDetailScreen() {
   const [quantity, setQuantity] = useState(1);
   const [addedMessage, setAddedMessage] = useState("");
   const [pendingWishlistProductId, setPendingWishlistProductId] = useState<string | null>(null);
-  const rememberRecentProduct = useRecentProductsStore((state) => state.rememberRecentProduct);
+  const _rememberRecentProduct = useRecentProductsStore((state) => state.rememberRecentProduct);
 
   const productQuery = useQuery({
     queryKey: ["mobile-product", slug],
@@ -226,7 +226,7 @@ function ProductDetailScreen() {
 
   const isEnquiryOnly = product.listingMode === "ENQUIRY_ONLY";
   const isOutOfStock = Boolean(selectedVariant && selectedVariant.stockQuantity <= 0);
-  const isRegionRestricted = false;
+  const _isRegionRestricted = false;
   const unavailableReason = isEnquiryOnly
     ? null
     : isOutOfStock
@@ -930,7 +930,7 @@ function ProductActionBar({
 }) {
   const router = useRouter();
   const isEnquiryOnly = product.listingMode === "ENQUIRY_ONLY";
-  const isOutOfStock = Boolean(selectedVariant && selectedVariant.stockQuantity <= 0);
+  const _isOutOfStock = Boolean(selectedVariant && selectedVariant.stockQuantity <= 0);
 
   function handleB2BCTA() {
     if (!isSignedIn) {
