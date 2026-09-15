@@ -1716,11 +1716,12 @@ function DealProductCard({
   product: MobileProduct;
   timerEndsAt: string;
   wishlist: WishlistActions;
-  cardWidth?: number;
+  cardWidth: number;
 }) {
+  const resolvedCardWidth = cardWidth ?? 160;
   return (
     <DealCard
-      cardWidth={cardWidth}
+      cardWidth={resolvedCardWidth}
       formatPrice={formatPrice}
       isWishlistPending={wishlist.isPending(product.id)}
       isWished={wishlist.isWished(product.id)}

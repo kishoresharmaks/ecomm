@@ -12,7 +12,7 @@ import { RemoteImage } from "./remote-image";
 
 type DealCardProps = {
   badgeText?: string;
-  cardWidth?: number;
+  cardWidth: number;
   ctaText?: string;
   formatPrice?: (pricePaise?: number | null) => string;
   isWishlistPending?: boolean;
