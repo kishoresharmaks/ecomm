@@ -50,8 +50,7 @@ import { colors } from "../../src/theme";
 import type { MobileProduct } from "../../src/types/mobile-home";
 import type { MobileProductReview, ProductImage, ProductSummary, ProductVariant } from "../../src/types/storefront";
 
-/* ─── default return policy (always shown) ─── */
-const DEFAULT_RETURN_DAYS = 7;
+/* ─── return policy: only shown when admin has configured it ─── */
 
 function ProductDetailScreen() {
   const params = useLocalSearchParams<{ slug?: string }>();
@@ -130,10 +129,14 @@ function ProductDetailScreen() {
   }, [product?.id, product?.slug, recommendationsQuery.data?.items]);
 
   /* ─── return policy: always show 7-day as fallback ─── */
-  const returnPolicy = returnPolicyQuery.data ?? null;
-  const returnDays = returnPolicy?.returnWindowDays ?? DEFAULT_RETURN_DAYS;
-  const returnLabel = `${returnDays}-day easy return`;
-  const hasReturns = returnDays > 0;
+  const returnPolicyData = returnPolicyQuery.data;
+  const returnLabel = returnPolicyData
+    ? returnPolicyData.returnWindowDays > 0
+      ? `${returnPolicyData.returnWindowDays}-day easy return`
+      : "Non-returnable"
+    : null;
+  const showReturnPill = returnPolicyData != null;
+  const isWholesaleSeller = product?.seller?.sellerType === "WHOLESALE_DISTRIBUTOR";
 
   const addMutation = useMutation({
     mutationFn: async () => {
@@ -325,12 +328,11 @@ function ProductDetailScreen() {
           onGoToCart={() => router.push("/cart")}
           onSignIn={() => router.push("/auth/sign-in")}
           product={product}
-          returnLabel={returnLabel}
-          hasReturns={hasReturns}
+          returnLabel={returnLabel ?? ""}
+          showReturnPill={showReturnPill}
           selectedVariant={selectedVariant}
           unavailableReason={unavailableReason}
-          isEnquiryOnly={isEnquiryOnly}
-          isRegionRestricted={isRegionRestricted}
+          isWholesaleSeller={isWholesaleSeller}
         />
       </View>
     </Screen>
@@ -899,36 +901,36 @@ function ProductActionBar({
   isBusy,
   isInCart,
   isSignedIn,
+  isWholesaleSeller,
   mutationError,
   onAdd,
   onGoToCart,
   onSignIn,
   product,
   returnLabel,
-  hasReturns,
   selectedVariant,
+  showReturnPill,
   unavailableReason,
-  isEnquiryOnly,
-  isRegionRestricted,
 }: {
   addedMessage: string;
   canAddToCart: boolean;
   isBusy: boolean;
   isInCart: boolean;
   isSignedIn: boolean;
+  isWholesaleSeller: boolean;
   mutationError: Error | null;
   onAdd: () => void;
   onGoToCart: () => void;
   onSignIn: () => void;
   product: ProductSummary;
   returnLabel: string;
-  hasReturns: boolean;
   selectedVariant: ProductVariant | null;
+  showReturnPill: boolean;
   unavailableReason: string | null;
-  isEnquiryOnly: boolean;
-  isRegionRestricted: boolean;
 }) {
   const router = useRouter();
+  const isEnquiryOnly = product.listingMode === "ENQUIRY_ONLY";
+  const isOutOfStock = Boolean(selectedVariant && selectedVariant.stockQuantity <= 0);
 
   function handleB2BCTA() {
     if (!isSignedIn) {
@@ -963,15 +965,13 @@ function ProductActionBar({
       )}
 
       {isEnquiryOnly ? (
-        <Pressable
-          disabled={isRegionRestricted}
-          onPress={isRegionRestricted ? undefined : handleB2BCTA}
-          style={[styles.actionPrimary, styles.actionPrimaryOutline, isRegionRestricted ? styles.actionPrimaryDisabled : null]}
-        >
-          <Text style={[styles.actionPrimaryText, styles.actionPrimaryOutlineText]}>
-            {isRegionRestricted ? "Not available in your region" : isSignedIn ? "Request Quote (B2B)" : "Sign in to request quote"}
-          </Text>
-        </Pressable>
+        isWholesaleSeller && (
+          <Pressable onPress={handleB2BCTA} style={[styles.actionPrimary, styles.actionPrimaryOutline]}>
+            <Text style={[styles.actionPrimaryText, styles.actionPrimaryOutlineText]}>
+              {isSignedIn ? "Request Quote (B2B)" : "Sign in to request quote"}
+            </Text>
+          </Pressable>
+        )
       ) : (
         <>
           <Pressable
@@ -991,27 +991,32 @@ function ProductActionBar({
             )}
           </Pressable>
 
-          <Pressable
-            disabled={isRegionRestricted}
-            onPress={isRegionRestricted ? undefined : handleB2BCTA}
-            style={[styles.actionSecondary, isRegionRestricted ? styles.actionSecondaryDisabled : null]}
-          >
-            <Text style={[styles.actionSecondaryText, isRegionRestricted ? styles.actionSecondaryTextDisabled : null]}>
-              {isRegionRestricted ? "B2B not available in your region" : "Request Quote (B2B)"}
-            </Text>
-          </Pressable>
+          {isWholesaleSeller && (
+            <Pressable onPress={handleB2BCTA} style={styles.actionSecondary}>
+              <Text style={styles.actionSecondaryText}>Request Quote (B2B)</Text>
+            </Pressable>
+          )}
         </>
       )}
 
-      {/* Return policy - always visible */}
-      <View style={styles.returnPill}>
-        <View style={[styles.returnIcon, hasReturns ? styles.returnIconActive : styles.returnIconDefault]}>
-          <HugeiconsIcon icon={Shield01Icon} size={12} color={hasReturns ? colors.success : colors.muted} strokeWidth={2.2} />
+      {showReturnPill && returnLabel && (
+        <View style={styles.returnPill}>
+          <View style={styles.returnIcon}>
+            <HugeiconsIcon
+              icon={Shield01Icon}
+              size={12}
+              color={returnLabel.includes("Non-returnable") ? colors.muted : colors.success}
+              strokeWidth={2.2}
+            />
+          </View>
+          <Text style={[
+            styles.returnText,
+            returnLabel.includes("Non-returnable") ? styles.returnTextDefault : styles.returnTextActive,
+          ]}>
+            {returnLabel}
+          </Text>
         </View>
-        <Text style={[styles.returnText, hasReturns ? styles.returnTextActive : styles.returnTextDefault]}>
-          {hasReturns ? returnLabel : "Non-returnable"}
-        </Text>
-      </View>
+      )}
     </View>
   );
 }
