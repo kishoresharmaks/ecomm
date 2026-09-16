@@ -35,6 +35,7 @@ import { withStorefrontMaintenance } from "../../src/features/maintenance/mobile
 import { getCart, listCategories } from "../../src/features/storefront/storefront-api";
 import { resolveImageUrl } from "../../src/lib/image-url";
 import { colors } from "../../src/theme";
+import { useResponsiveScale } from "../../src/hooks/use-responsive-scale";
 import type { MobileCategory } from "../../src/types/mobile-home";
 
 type CategoryView = "overview" | "all";
@@ -45,6 +46,7 @@ type CategoryVisual = {
 };
 
 function CategoriesScreen() {
+  const responsive = useResponsiveScale();
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -183,21 +185,23 @@ function CategoriesScreen() {
 export default withStorefrontMaintenance(CategoriesScreen);
 
 function CategoriesHeader({ cartItemCount }: { cartItemCount: number }) {
+  const { width } = useWindowDimensions();
+  const responsive = useResponsiveScale();
   return (
-    <View style={styles.header}>
-      <View style={styles.headerLeft}>
-        <View style={styles.headerMark}>
-          <HugeiconsIcon color="#FFFFFF" icon={Grid2X2Icon} size={26} strokeWidth={2.2} />
+    <View style={[styles.header, { paddingHorizontal: responsive.pad(14), paddingTop: responsive.pad(10), paddingBottom: responsive.pad(12) }]}>
+      <View style={[styles.headerLeft, { gap: responsive.gap(10) }]}>
+        <View style={[styles.headerMark, { height: responsive.icon(34), width: responsive.icon(34), borderRadius: responsive.radius(10) }]}>
+          <HugeiconsIcon color="#FFFFFF" icon={Grid2X2Icon} size={responsive.icon(26)} strokeWidth={2.2} />
         </View>
         <View style={styles.headerCopy}>
-          <Text style={styles.headerTitle}>Categories</Text>
-          <Text style={styles.headerSubtitle}>Browse all marketplace categories</Text>
+          <Text style={[styles.headerTitle, { fontSize: responsive.text(22), lineHeight: responsive.text(28) }]}>Categories</Text>
+          <Text style={[styles.headerSubtitle, { fontSize: responsive.text(13), lineHeight: responsive.text(18) }]}>Browse all marketplace categories</Text>
         </View>
       </View>
-      <View style={styles.headerActions}>
+      <View style={[styles.headerActions, { gap: responsive.gap(10) }]}>
         <Link asChild href="/cart">
           <Pressable accessibilityLabel="Open cart" accessibilityRole="button" style={styles.iconButton}>
-            <HugeiconsIcon color="#1F2937" icon={ShoppingCart01Icon} size={24} strokeWidth={2} />
+            <HugeiconsIcon color="#1F2937" icon={ShoppingCart01Icon} size={responsive.icon(24)} strokeWidth={2} />
             {cartItemCount > 0 ? (
               <View style={styles.cartBadge}>
                 <Text style={styles.cartBadgeText}>{cartItemCount > 99 ? "99+" : cartItemCount}</Text>
@@ -207,7 +211,7 @@ function CategoriesHeader({ cartItemCount }: { cartItemCount: number }) {
         </Link>
         <Link asChild href="/account/notifications">
           <Pressable accessibilityLabel="Open notifications" accessibilityRole="button" style={styles.iconButton}>
-            <HugeiconsIcon color="#1F2937" icon={BellDotIcon} size={24} strokeWidth={2} />
+            <HugeiconsIcon color="#1F2937" icon={BellDotIcon} size={responsive.icon(24)} strokeWidth={2} />
             <View style={styles.notificationDot} />
           </Pressable>
         </Link>
@@ -750,9 +754,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.secondary,
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingHorizontal: 14,
-    paddingBottom: 12,
-    paddingTop: 10,
   },
   headerLeft: {
     alignItems: "center",

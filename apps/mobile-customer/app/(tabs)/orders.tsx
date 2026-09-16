@@ -20,6 +20,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -31,6 +32,7 @@ import { listCustomerOrders, type MobileOrderSummary } from "../../src/features/
 import { accountErrorMessage, formatStatus, RequireAuthGate } from "../../src/features/account/account-ui";
 import { resolveImageUrl } from "../../src/lib/image-url";
 import { colors } from "../../src/theme";
+import { useResponsiveScale } from "../../src/hooks/use-responsive-scale";
 
 type OrderFilter = "all" | "placed" | "processing" | "shipped" | "delivered";
 
@@ -52,6 +54,7 @@ const orderStatusConfig: Record<string, { label: string; bg: string; text: strin
 const ordersPageSize = 20;
 
 export default function OrdersScreen() {
+  const responsive = useResponsiveScale();
   const router = useRouter();
   const customerAuth = useMobileCustomerAuth();
   const [activeFilter, setActiveFilter] = useState<OrderFilter>("all");
@@ -195,29 +198,29 @@ function OrdersListHeader({
   onRefresh: () => void;
   onViewAll: () => void;
 }) {
+  const responsive = useResponsiveScale();
   return (
-    <View style={styles.header}>
-      {/* Consistent header row matching Categories */}
+    <View style={[styles.header, { paddingHorizontal: responsive.pad(14), paddingTop: responsive.pad(10), paddingBottom: responsive.pad(12) }]}>
       <View style={styles.headerTopRow}>
-        <View style={styles.headerLeft}>
-          <View style={styles.headerMark}>
-            <HugeiconsIcon color="#FFFFFF" icon={PackageIcon} size={24} strokeWidth={2.2} />
+        <View style={[styles.headerLeft, { gap: responsive.gap(10) }]}>
+          <View style={[styles.headerMark, { height: responsive.icon(34), width: responsive.icon(34), borderRadius: responsive.radius(10) }]}>
+            <HugeiconsIcon color="#FFFFFF" icon={PackageIcon} size={responsive.icon(24)} strokeWidth={2.2} />
           </View>
           <View style={styles.headerCopy}>
-            <Text style={styles.headerTitle}>My Orders</Text>
-            <Text style={styles.headerSubtitle}>Track and manage your orders</Text>
+            <Text style={[styles.headerTitle, { fontSize: responsive.text(22), lineHeight: responsive.text(28) }]}>My Orders</Text>
+            <Text style={[styles.headerSubtitle, { fontSize: responsive.text(13), lineHeight: responsive.text(18) }]}>Track and manage your orders</Text>
           </View>
         </View>
-        <View style={styles.headerActions}>
+        <View style={[styles.headerActions, { gap: responsive.gap(10) }]}>
           <Pressable accessibilityRole="button" style={styles.iconButton} onPress={onRefresh}>
             {isFetching ? (
               <ActivityIndicator color={colors.primary} size="small" />
             ) : (
-              <HugeiconsIcon color={colors.primary} icon={RefreshIcon} size={22} strokeWidth={2.2} />
+              <HugeiconsIcon color={colors.primary} icon={RefreshIcon} size={responsive.icon(22)} strokeWidth={2.2} />
             )}
           </Pressable>
           <Pressable accessibilityRole="button" style={styles.iconButton} onPress={onOpenFilter}>
-            <HugeiconsIcon color={colors.primary} icon={FilterHorizontalIcon} size={22} strokeWidth={2.2} />
+            <HugeiconsIcon color={colors.primary} icon={FilterHorizontalIcon} size={responsive.icon(22)} strokeWidth={2.2} />
           </Pressable>
         </View>
       </View>
@@ -496,9 +499,6 @@ const styles = StyleSheet.create({
   header: {
     backgroundColor: colors.secondary,
     gap: 16,
-    paddingBottom: 12,
-    paddingHorizontal: 14,
-    paddingTop: 10,
   },
   headerTopRow: {
     alignItems: "center",
