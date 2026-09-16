@@ -1,20 +1,18 @@
 import {
   ArrowLeft01Icon,
   ArrowRight01Icon,
-  BellDotIcon,
   ClothesIcon,
   Grid2X2Icon,
   LaptopIcon,
   MobileNavigator01Icon,
   Search01Icon,
   ShoppingBagIcon,
-  ShoppingCart01Icon,
-  Sofa01Icon,
+  SofaIcon,
   Store01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react-native";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -28,14 +26,12 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useMobileCustomerAuth } from "../../src/auth/mobile-auth-context";
 import { EmptyState } from "../../src/components/empty-state";
 import { RemoteImage } from "../../src/components/remote-image";
 import { withStorefrontMaintenance } from "../../src/features/maintenance/mobile-maintenance-gate";
-import { getCart, listCategories } from "../../src/features/storefront/storefront-api";
+import { listCategories } from "../../src/features/storefront/storefront-api";
 import { resolveImageUrl } from "../../src/lib/image-url";
 import { colors } from "../../src/theme";
-import { useResponsiveScale } from "../../src/hooks/use-responsive-scale";
 import type { MobileCategory } from "../../src/types/mobile-home";
 
 type CategoryView = "overview" | "all";
@@ -46,13 +42,11 @@ type CategoryVisual = {
 };
 
 function CategoriesScreen() {
-  const responsive = useResponsiveScale();
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const params = useLocalSearchParams<{ view?: string }>();
   const view: CategoryView = params.view === "all" ? "all" : "overview";
-  const customerAuth = useMobileCustomerAuth();
   const [searchText, setSearchText] = useState("");
   const [sortMode, setSortMode] = useState<"featured" | "az">("featured");
 
@@ -61,15 +55,8 @@ function CategoriesScreen() {
     queryFn: listCategories,
     retry: false,
   });
-  const cartQuery = useQuery({
-    queryKey: ["mobile-cart-count", customerAuth.authKey],
-    queryFn: () => getCart(customerAuth.authHeaders),
-    enabled: customerAuth.enabled,
-    staleTime: 30_000,
-  });
 
   const categories = categoriesQuery.data ?? [];
-  const cartItemCount = cartQuery.data?.items.reduce((total, item) => total + Math.max(0, item.quantity), 0) ?? 0;
   const filteredCategories = useMemo(
     () => filterCategories(categories, searchText, sortMode),
     [categories, searchText, sortMode],
@@ -101,7 +88,7 @@ function CategoriesScreen() {
       {view === "all" ? (
         <AllCategoriesHeader onBack={showOverview} onSearch={() => router.push("/search" as never)} />
       ) : (
-        <CategoriesHeader cartItemCount={cartItemCount} />
+        <CategoriesHeader />
       )}
 
       <ScrollView
@@ -184,37 +171,15 @@ function CategoriesScreen() {
 
 export default withStorefrontMaintenance(CategoriesScreen);
 
-function CategoriesHeader({ cartItemCount }: { cartItemCount: number }) {
-  const { width } = useWindowDimensions();
-  const responsive = useResponsiveScale();
+function CategoriesHeader() {
   return (
-    <View style={[styles.header, { paddingHorizontal: responsive.pad(14), paddingTop: responsive.pad(10), paddingBottom: responsive.pad(12) }]}>
-      <View style={[styles.headerLeft, { gap: responsive.gap(10) }]}>
-        <View style={[styles.headerMark, { height: responsive.icon(34), width: responsive.icon(34), borderRadius: responsive.radius(10) }]}>
-          <HugeiconsIcon color="#FFFFFF" icon={Grid2X2Icon} size={responsive.icon(26)} strokeWidth={2.2} />
-        </View>
-        <View style={styles.headerCopy}>
-          <Text style={[styles.headerTitle, { fontSize: responsive.text(22), lineHeight: responsive.text(28) }]}>Categories</Text>
-          <Text style={[styles.headerSubtitle, { fontSize: responsive.text(13), lineHeight: responsive.text(18) }]}>Browse all marketplace categories</Text>
-        </View>
+    <View style={styles.header}>
+      <View style={styles.headerMark}>
+        <HugeiconsIcon color="#FFFFFF" icon={Grid2X2Icon} size={20} strokeWidth={2.2} />
       </View>
-      <View style={[styles.headerActions, { gap: responsive.gap(10) }]}>
-        <Link asChild href="/cart">
-          <Pressable accessibilityLabel="Open cart" accessibilityRole="button" style={styles.iconButton}>
-            <HugeiconsIcon color="#1F2937" icon={ShoppingCart01Icon} size={responsive.icon(24)} strokeWidth={2} />
-            {cartItemCount > 0 ? (
-              <View style={styles.cartBadge}>
-                <Text style={styles.cartBadgeText}>{cartItemCount > 99 ? "99+" : cartItemCount}</Text>
-              </View>
-            ) : null}
-          </Pressable>
-        </Link>
-        <Link asChild href="/account/notifications">
-          <Pressable accessibilityLabel="Open notifications" accessibilityRole="button" style={styles.iconButton}>
-            <HugeiconsIcon color="#1F2937" icon={BellDotIcon} size={responsive.icon(24)} strokeWidth={2} />
-            <View style={styles.notificationDot} />
-          </Pressable>
-        </Link>
+      <View style={styles.headerCopy}>
+        <Text style={styles.headerTitle}>Categories</Text>
+        <Text style={styles.headerSubtitle}>Browse all marketplace categories</Text>
       </View>
     </View>
   );
@@ -224,14 +189,14 @@ function AllCategoriesHeader({ onBack, onSearch }: { onBack: () => void; onSearc
   return (
     <View style={styles.allHeader}>
       <Pressable accessibilityLabel="Back to categories" accessibilityRole="button" style={styles.iconButtonLarge} onPress={onBack}>
-        <HugeiconsIcon color="#111827" icon={ArrowLeft01Icon} size={24} strokeWidth={2.2} />
+        <HugeiconsIcon color="#111827" icon={ArrowLeft01Icon} size={22} strokeWidth={2.2} />
       </Pressable>
       <View style={styles.allHeaderCopy}>
         <Text style={styles.headerTitle}>All Categories</Text>
         <Text style={styles.headerSubtitle}>Browse all categories</Text>
       </View>
       <Pressable accessibilityLabel="Open marketplace search" accessibilityRole="button" style={styles.iconButtonLarge} onPress={onSearch}>
-        <HugeiconsIcon color="#111827" icon={Search01Icon} size={24} strokeWidth={2.2} />
+        <HugeiconsIcon color="#111827" icon={Search01Icon} size={22} strokeWidth={2.2} />
       </Pressable>
     </View>
   );
@@ -246,21 +211,16 @@ function CategorySearchBar({
 }) {
   return (
     <View style={styles.searchBar}>
-      <View style={styles.searchLeft}>
-        <HugeiconsIcon color="#6B7280" icon={Search01Icon} size={22} strokeWidth={2} />
-        <TextInput
-          accessibilityLabel="Search categories"
-          placeholder="Search categories..."
-          placeholderTextColor="#9CA3AF"
-          returnKeyType="search"
-          style={styles.searchInput}
-          value={searchText}
-          onChangeText={setSearchText}
-        />
-      </View>
-      <Pressable accessibilityLabel="Search categories" accessibilityRole="button" style={styles.searchButton}>
-        <HugeiconsIcon color="#FFFFFF" icon={Search01Icon} size={22} strokeWidth={2.2} />
-      </Pressable>
+      <HugeiconsIcon color="#9CA3AF" icon={Search01Icon} size={19} strokeWidth={2} />
+      <TextInput
+        accessibilityLabel="Search categories"
+        placeholder="Search categories..."
+        placeholderTextColor="#9CA3AF"
+        returnKeyType="search"
+        style={styles.searchInput}
+        value={searchText}
+        onChangeText={setSearchText}
+      />
     </View>
   );
 }
@@ -276,46 +236,45 @@ function FeaturedCategoryChips({
   const visible = categories.slice(0, 5);
 
   return (
-    <View style={styles.chipPanel}>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-        <Pressable accessibilityRole="button" style={styles.categoryChipActive} onPress={onMorePress}>
-          <View style={styles.categoryChipIconActive}>
-            <HugeiconsIcon color={colors.primary} icon={Grid2X2Icon} size={24} strokeWidth={2.4} />
-          </View>
-          <Text style={styles.categoryChipTextActive}>All</Text>
-        </Pressable>
-        {visible.map((category) => {
-          const visual = categoryVisual(category);
-          const imageUrl = resolveImageUrl(category.imageUrl);
-          return (
-            <Pressable
-              key={category.id}
-              accessibilityLabel={`Open ${category.name}`}
-              accessibilityRole="button"
-              style={styles.categoryChip}
-              onPress={() => router.push(`/category/${category.slug}` as never)}
-            >
-              <View style={[styles.categoryChipIcon, { backgroundColor: visual.background }]}>
-                {imageUrl ? (
-                  <RemoteImage fallbackLabel={category.name} resizeMode="cover" style={styles.chipImage} uri={imageUrl} />
-                ) : (
-                  <HugeiconsIcon color={visual.accent} icon={visual.icon} size={24} strokeWidth={2} />
-                )}
-              </View>
-              <Text numberOfLines={1} style={styles.categoryChipText}>
-                {shortCategoryName(category.name)}
-              </Text>
-            </Pressable>
-          );
-        })}
-        <Pressable accessibilityRole="button" style={styles.categoryChip} onPress={onMorePress}>
-          <View style={styles.moreChipIcon}>
-            <Text style={styles.moreDots}>...</Text>
-          </View>
-          <Text style={styles.categoryChipText}>More</Text>
-        </Pressable>
-      </ScrollView>
-    </View>
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+      <Pressable accessibilityRole="button" style={styles.categoryChipActive} onPress={onMorePress}>
+        <View style={styles.categoryChipIconActive}>
+          <HugeiconsIcon color={colors.primary} icon={Grid2X2Icon} size={20} strokeWidth={2.2} />
+        </View>
+        <Text style={styles.categoryChipTextActive}>All</Text>
+      </Pressable>
+      {visible.map((category) => {
+        const imageUrl = resolveImageUrl(category.imageUrl);
+        return (
+          <Pressable
+            key={category.id}
+            accessibilityLabel={`Open ${category.name}`}
+            accessibilityRole="button"
+            style={styles.categoryChip}
+            onPress={() => router.push(`/category/${category.slug}` as never)}
+          >
+            <View style={styles.categoryChipIcon}>
+              {imageUrl ? (
+                <RemoteImage fallbackLabel={category.name} resizeMode="cover" style={styles.chipImage} uri={imageUrl} />
+              ) : (
+                <View style={[styles.categoryChipFallback, { backgroundColor: categoryVisual(category).background }]}>
+                  <HugeiconsIcon color={categoryVisual(category).accent} icon={categoryVisual(category).icon} size={18} strokeWidth={2} />
+                </View>
+              )}
+            </View>
+            <Text numberOfLines={1} style={styles.categoryChipText}>
+              {shortCategoryName(category.name)}
+            </Text>
+          </Pressable>
+        );
+      })}
+      <Pressable accessibilityRole="button" style={styles.categoryChip} onPress={onMorePress}>
+        <View style={styles.moreChipIcon}>
+          <Text style={styles.moreDots}>+</Text>
+        </View>
+        <Text style={styles.categoryChipText}>More</Text>
+      </Pressable>
+    </ScrollView>
   );
 }
 
@@ -333,7 +292,7 @@ function SectionHeader({
       <Text style={styles.sectionTitle}>{title}</Text>
       <Pressable accessibilityRole="button" style={styles.sectionAction} onPress={onAction}>
         <Text style={styles.sectionActionText}>{actionLabel}</Text>
-        <HugeiconsIcon color={colors.primary} icon={ArrowRight01Icon} size={17} strokeWidth={2.4} />
+        <HugeiconsIcon color={colors.primary} icon={ArrowRight01Icon} size={14} strokeWidth={2.4} />
       </Pressable>
     </View>
   );
@@ -365,53 +324,36 @@ function PopularCategoryCard({
   variant: "tall" | "wide";
 }) {
   const router = useRouter();
-  const visual = categoryVisual(category);
   const imageUrl = resolveImageUrl(category.imageUrl);
   const productCount = category._count?.products ?? 0;
-  const childCount = category.children?.length ?? category._count?.children ?? 0;
 
   return (
     <Pressable
       accessibilityLabel={`Explore ${category.name}`}
       accessibilityRole="button"
-      style={[styles.popularCard, variant === "wide" ? styles.popularCardWide : styles.popularCardTall]}
+      style={({ pressed }) => [
+        styles.popularCard,
+        variant === "wide" ? styles.popularCardWide : styles.popularCardTall,
+        pressed && styles.pressedOverlay,
+      ]}
       onPress={() => router.push(`/category/${category.slug}` as never)}
     >
       <View style={variant === "wide" ? styles.wideImageWrap : styles.popularImageWrap}>
-        <RemoteImage fallbackLabel={category.name} resizeMode="cover" style={styles.popularImage} uri={imageUrl} />
-        {variant === "tall" && productCount > 0 ? (
-          <View style={styles.trendingBadge}>
-            <Text style={styles.trendingBadgeText}>Trending</Text>
+        {imageUrl ? (
+          <RemoteImage fallbackLabel={category.name} resizeMode="cover" style={styles.popularImage} uri={imageUrl} />
+        ) : (
+          <View style={styles.popularImageFallback}>
+            <HugeiconsIcon color={colors.muted} icon={categoryVisual(category).icon} size={30} strokeWidth={1.8} />
           </View>
-        ) : null}
+        )}
       </View>
-      <View style={variant === "wide" ? styles.popularWideContent : undefined}>
-        <View style={styles.popularBody}>
-          <View style={[styles.popularIcon, { backgroundColor: visual.background }]}>
-            <HugeiconsIcon color={visual.accent} icon={visual.icon} size={25} strokeWidth={2.1} />
-          </View>
-          <View style={styles.popularCopy}>
-            <Text numberOfLines={2} style={styles.popularTitle}>
-              {category.name}
-            </Text>
-            <Text numberOfLines={1} style={styles.popularSubtitle}>
-              {category.description?.trim() || "Quality products from verified sellers"}
-            </Text>
-          </View>
-        </View>
+      <View style={[styles.popularBody, variant === "wide" && styles.popularBodyWide]}>
+        <Text numberOfLines={1} style={styles.popularTitle}>
+          {category.name}
+        </Text>
         <View style={styles.popularMeta}>
-          <View style={styles.metaPill}>
-            <ShoppingBagTiny />
-            <Text style={styles.metaText}>{productCount} Products</Text>
-          </View>
-          <View style={styles.metaPill}>
-            <GridTiny />
-            <Text style={styles.metaText}>{childCount} Subcategories</Text>
-          </View>
-        </View>
-        <View style={styles.popularFooter}>
-          <Text style={styles.exploreText}>Explore</Text>
-          <HugeiconsIcon color={colors.primary} icon={ArrowRight01Icon} size={20} strokeWidth={2.4} />
+          <Text style={styles.popularMetaText}>{productCount} products</Text>
+          <HugeiconsIcon color="#D1D5DB" icon={ArrowRight01Icon} size={13} strokeWidth={2} />
         </View>
       </View>
     </Pressable>
@@ -448,7 +390,6 @@ function SubcategoryFamily({
   group: { parent: MobileCategory; children: MobileCategory[] };
 }) {
   const router = useRouter();
-  const visual = categoryVisual(group.parent);
   const parentImageUrl = resolveImageUrl(group.parent.imageUrl);
 
   return (
@@ -456,14 +397,16 @@ function SubcategoryFamily({
       <Pressable
         accessibilityLabel={`Open ${group.parent.name}`}
         accessibilityRole="button"
-        style={styles.familyHeader}
+        style={({ pressed }) => [styles.familyHeader, pressed && styles.pressedOverlayLight]}
         onPress={() => router.push(`/category/${group.parent.slug}` as never)}
       >
-        <View style={[styles.familyParentIcon, { backgroundColor: visual.background }]}>
+        <View style={styles.familyHeaderIcon}>
           {parentImageUrl ? (
-            <RemoteImage fallbackLabel={group.parent.name} resizeMode="cover" style={styles.familyParentImage} uri={parentImageUrl} />
+            <RemoteImage fallbackLabel={group.parent.name} resizeMode="cover" style={styles.familyHeaderImage} uri={parentImageUrl} />
           ) : (
-            <HugeiconsIcon color={visual.accent} icon={visual.icon} size={24} strokeWidth={2.1} />
+            <View style={[styles.familyHeaderFallback, { backgroundColor: categoryVisual(group.parent).background }]}>
+              <HugeiconsIcon color={categoryVisual(group.parent).accent} icon={categoryVisual(group.parent).icon} size={18} strokeWidth={2} />
+            </View>
           )}
         </View>
         <View style={styles.familyHeaderCopy}>
@@ -474,7 +417,7 @@ function SubcategoryFamily({
             {group.children.length} subcategories
           </Text>
         </View>
-        <HugeiconsIcon color={colors.primary} icon={ArrowRight01Icon} size={20} strokeWidth={2.3} />
+        <HugeiconsIcon color="#D1D5DB" icon={ArrowRight01Icon} size={16} strokeWidth={2} />
       </Pressable>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.familyRail}>
         {group.children.map((child) => (
@@ -487,49 +430,43 @@ function SubcategoryFamily({
 
 function SubcategoryRailCard({ category }: { category: MobileCategory }) {
   const router = useRouter();
-  const visual = categoryVisual(category);
   const imageUrl = resolveImageUrl(category.imageUrl);
 
   return (
     <Pressable
       accessibilityLabel={`Open ${category.name}`}
       accessibilityRole="button"
-      style={styles.familyRailCard}
+      style={({ pressed }) => [styles.familyRailCard, pressed && styles.pressedOverlayLight]}
       onPress={() => router.push(`/category/${category.slug}` as never)}
     >
-      <View style={[styles.familyRailImageWrap, { backgroundColor: visual.background }]}>
+      <View style={styles.familyRailImageWrap}>
         {imageUrl ? (
           <RemoteImage fallbackLabel={category.name} resizeMode="cover" style={styles.familyRailImage} uri={imageUrl} />
         ) : (
-          <HugeiconsIcon color={visual.accent} icon={visual.icon} size={28} strokeWidth={2.1} />
+          <View style={[styles.familyRailFallback, { backgroundColor: categoryVisual(category).background }]}>
+            <HugeiconsIcon color={categoryVisual(category).accent} icon={categoryVisual(category).icon} size={20} strokeWidth={2} />
+          </View>
         )}
       </View>
       <Text numberOfLines={2} style={styles.familyRailTitle}>
         {category.name}
       </Text>
-      <View style={styles.familyRailFooter}>
-        <Text numberOfLines={1} style={styles.familyRailMeta}>
-          {category._count?.products ?? 0} products
-        </Text>
-        <HugeiconsIcon color="#6B7280" icon={ArrowRight01Icon} size={15} strokeWidth={2.2} />
-      </View>
+      <Text numberOfLines={1} style={styles.familyRailMeta}>
+        {category._count?.products ?? 0} products
+      </Text>
     </Pressable>
   );
 }
 
 function DiscoverMoreCard({ onPress }: { onPress: () => void }) {
   return (
-    <Pressable accessibilityRole="button" style={styles.discoverCard} onPress={onPress}>
-      <View style={styles.discoverIcon}>
-        <HugeiconsIcon color="#FFFFFF" icon={ShoppingBagIcon} size={25} strokeWidth={2.2} />
-      </View>
-      <View style={styles.discoverCopy}>
-        <Text style={styles.discoverTitle}>Discover more categories</Text>
+    <Pressable accessibilityRole="button" style={({ pressed }) => [styles.discoverCard, pressed && styles.pressedOverlayLight]} onPress={onPress}>
+      <View style={styles.discoverContent}>
+        <Text style={styles.discoverTitle}>Explore all categories</Text>
         <Text style={styles.discoverSubtitle}>Find everything you need in one place</Text>
       </View>
-      <View style={styles.discoverButton}>
-        <Text style={styles.discoverButtonText}>Explore All</Text>
-        <HugeiconsIcon color="#FFFFFF" icon={ArrowRight01Icon} size={18} strokeWidth={2.2} />
+      <View style={styles.discoverArrow}>
+        <HugeiconsIcon color={colors.primary} icon={ArrowRight01Icon} size={16} strokeWidth={2.2} />
       </View>
     </Pressable>
   );
@@ -557,10 +494,16 @@ function AllCategoriesHero({ categories }: { categories: MobileCategory[] }) {
           }}
         >
           <Text style={styles.heroCtaText}>Shop Now</Text>
-          <HugeiconsIcon color="#FFFFFF" icon={ArrowRight01Icon} size={18} strokeWidth={2.2} />
+          <HugeiconsIcon color="#FFFFFF" icon={ArrowRight01Icon} size={15} strokeWidth={2.2} />
         </Pressable>
       </View>
-      <RemoteImage fallbackLabel="1HI" resizeMode="cover" style={styles.allHeroImage} uri={imageUrl} />
+      {imageUrl ? (
+        <RemoteImage fallbackLabel="Hero" resizeMode="cover" style={styles.allHeroImage} uri={imageUrl} />
+      ) : (
+        <View style={styles.allHeroImageFallback}>
+          <HugeiconsIcon color="#D1D5DB" icon={ShoppingBagIcon} size={36} strokeWidth={1.5} />
+        </View>
+      )}
     </View>
   );
 }
@@ -577,13 +520,13 @@ function AllCategoriesToolbar({
   return (
     <View style={styles.allToolbar}>
       <View style={styles.allToolbarTitle}>
-        <HugeiconsIcon color={colors.primary} icon={Grid2X2Icon} size={22} strokeWidth={2.3} />
+        <HugeiconsIcon color={colors.primary} icon={Grid2X2Icon} size={18} strokeWidth={2.2} />
         <Text style={styles.allToolbarText}>All Categories</Text>
         <Text style={styles.allToolbarCount}>({count})</Text>
       </View>
       <Pressable accessibilityRole="button" style={styles.sortButton} onPress={onToggleSort}>
         <Text style={styles.sortButtonText}>{sortMode === "featured" ? "Sort" : "A-Z"}</Text>
-        <HugeiconsIcon color="#111827" icon={ArrowLeft01Icon} size={15} strokeWidth={2.2} style={styles.sortChevron} />
+        <HugeiconsIcon color="#9CA3AF" icon={ArrowLeft01Icon} size={13} strokeWidth={2} style={styles.sortChevron} />
       </Pressable>
     </View>
   );
@@ -601,7 +544,6 @@ function AllCategoryTile({
   screenWidth: number;
 }) {
   const router = useRouter();
-  const visual = categoryVisual(category);
   const imageUrl = resolveImageUrl(category.imageUrl);
   const childCount = category.children?.length ?? category._count?.children ?? 0;
 
@@ -609,24 +551,28 @@ function AllCategoryTile({
     <Pressable
       accessibilityLabel={`Open ${category.name}`}
       accessibilityRole="button"
-      style={[styles.allTile, tileSpacing(columnCount, index, screenWidth)]}
+      style={({ pressed }) => [styles.allTile, tileSpacing(columnCount, index, screenWidth), pressed && styles.pressedOverlayLight]}
       onPress={() => router.push(`/category/${category.slug}` as never)}
     >
-      <View style={[styles.allTileIcon, { backgroundColor: visual.background }]}>
+      <View style={styles.allTileImageWrap}>
         {imageUrl ? (
           <RemoteImage fallbackLabel={category.name} resizeMode="cover" style={styles.allTileImage} uri={imageUrl} />
         ) : (
-          <HugeiconsIcon color={visual.accent} icon={visual.icon} size={columnCount === 2 ? 30 : 34} strokeWidth={2.1} />
+          <View style={[styles.allTileImageFallback, { backgroundColor: categoryVisual(category).background }]}>
+            <HugeiconsIcon color={categoryVisual(category).accent} icon={categoryVisual(category).icon} size={columnCount === 2 ? 28 : 32} strokeWidth={2} />
+          </View>
         )}
       </View>
-      <Text numberOfLines={2} style={styles.allTileTitle}>
-        {category.name}
-      </Text>
-      <View style={styles.allTileBottom}>
-        <Text numberOfLines={1} style={styles.allTileMeta}>
-          {childCount > 0 ? `${childCount} Subcategories` : `${category._count?.products ?? 0} Products`}
+      <View style={styles.allTileBody}>
+        <Text numberOfLines={2} style={styles.allTileTitle}>
+          {category.name}
         </Text>
-        <HugeiconsIcon color="#6B7280" icon={ArrowRight01Icon} size={17} strokeWidth={2.2} />
+        <View style={styles.allTileBottom}>
+          <Text numberOfLines={1} style={styles.allTileMeta}>
+            {childCount > 0 ? `${childCount} Subcategories` : `${category._count?.products ?? 0} Products`}
+          </Text>
+          <HugeiconsIcon color="#D1D5DB" icon={ArrowRight01Icon} size={13} strokeWidth={2} />
+        </View>
       </View>
     </Pressable>
   );
@@ -639,14 +585,6 @@ function LoadingState() {
       <Text style={styles.loadingText}>Loading categories...</Text>
     </View>
   );
-}
-
-function ShoppingBagTiny() {
-  return <HugeiconsIcon color="#6B7280" icon={ShoppingBagIcon} size={13} strokeWidth={2} />;
-}
-
-function GridTiny() {
-  return <HugeiconsIcon color="#6B7280" icon={Grid2X2Icon} size={13} strokeWidth={2} />;
 }
 
 function filterCategories(categories: MobileCategory[], searchText: string, sortMode: "featured" | "az") {
@@ -700,7 +638,7 @@ function categoryVisual(category: MobileCategory): CategoryVisual {
     return { accent: "#7C3AED", background: "#F1E9FF", icon: ClothesIcon };
   }
   if (/(home|living|furniture|decor|kitchen)/.test(text)) {
-    return { accent: "#0F8A5F", background: "#EAF8EF", icon: Sofa01Icon };
+    return { accent: "#0F8A5F", background: "#EAF8EF", icon: SofaIcon };
   }
   if (/(electronics|laptop|computer|tech|audio|headphone)/.test(text)) {
     return { accent: "#0A7BEA", background: "#EAF4FF", icon: LaptopIcon };
@@ -723,7 +661,7 @@ function shortCategoryName(name: string) {
 }
 
 function tileSpacing(columnCount: number, index: number, screenWidth: number) {
-  const gap = 10;
+  const gap = 12;
   const containerPad = 16;
   const usableWidth = Math.max(0, screenWidth - containerPad * 2);
   const tileWidth = (usableWidth - (columnCount - 1) * gap) / columnCount;
@@ -742,125 +680,71 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   overviewContent: {
-    paddingHorizontal: 18,
-    paddingTop: 18,
+    paddingHorizontal: 16,
+    paddingTop: 14,
   },
   allContent: {
     paddingHorizontal: 16,
     paddingTop: 12,
   },
+  pressedOverlay: {
+    opacity: 0.88,
+  },
+  pressedOverlayLight: {
+    opacity: 0.75,
+  },
   header: {
     alignItems: "center",
     backgroundColor: colors.secondary,
     flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  headerLeft: {
-    alignItems: "center",
-    flexDirection: "row",
     gap: 10,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 10,
   },
   headerMark: {
     alignItems: "center",
-    backgroundColor: colors.primary,
+    backgroundColor: "#FFF0EC",
     borderRadius: 10,
-    height: 34,
+    height: 36,
     justifyContent: "center",
-    shadowColor: colors.primary,
-    shadowOffset: { height: 4, width: 0 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    width: 34,
+    width: 36,
   },
   headerCopy: {
     flex: 1,
   },
   headerTitle: {
     color: colors.ink,
-    fontSize: 22,
-    fontWeight: "900",
-    letterSpacing: 0,
-    lineHeight: 28,
+    fontSize: 21,
+    fontWeight: "800",
+    letterSpacing: -0.3,
+    lineHeight: 27,
   },
   headerSubtitle: {
     color: colors.muted,
-    fontSize: 13,
-    fontWeight: "600",
-    lineHeight: 18,
-    marginTop: 2,
-  },
-  headerActions: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 10,
-  },
-  iconButton: {
-    alignItems: "center",
-    backgroundColor: "#FFFFFF",
-    borderColor: colors.border,
-    borderRadius: 14,
-    borderWidth: 1,
-    height: 48,
-    justifyContent: "center",
-    position: "relative",
-    shadowColor: "#111827",
-    shadowOffset: { height: 6, width: 0 },
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
-    width: 48,
+    fontSize: 12,
+    fontWeight: "500",
+    lineHeight: 17,
+    marginTop: 1,
   },
   iconButtonLarge: {
     alignItems: "center",
     backgroundColor: "#FFFFFF",
     borderColor: colors.border,
-    borderRadius: 14,
-    borderWidth: 1,
-    height: 48,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    height: 40,
     justifyContent: "center",
-    shadowColor: "#111827",
-    shadowOffset: { height: 6, width: 0 },
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
-    width: 48,
-  },
-  cartBadge: {
-    alignItems: "center",
-    backgroundColor: colors.primary,
-    borderColor: "#FFFFFF",
-    borderRadius: 999,
-    borderWidth: 2,
-    height: 20,
-    justifyContent: "center",
-    minWidth: 20,
-    paddingHorizontal: 4,
-    position: "absolute",
-    right: -3,
-    top: -4,
-  },
-  cartBadgeText: {
-    color: "#FFFFFF",
-    fontSize: 10,
-    fontWeight: "900",
-  },
-  notificationDot: {
-    backgroundColor: colors.primary,
-    borderColor: "#FFFFFF",
-    borderRadius: 999,
-    borderWidth: 1.5,
-    height: 10,
-    position: "absolute",
-    right: 12,
-    top: 11,
-    width: 10,
+    width: 40,
   },
   allHeader: {
     alignItems: "center",
     backgroundColor: colors.secondary,
     flexDirection: "row",
-    gap: 14,
-    paddingHorizontal: 22,
-    paddingBottom: 10,
+    gap: 12,
+    paddingHorizontal: 16,
     paddingTop: 12,
+    paddingBottom: 8,
   },
   allHeaderCopy: {
     flex: 1,
@@ -869,75 +753,56 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "#FFFFFF",
     borderColor: colors.border,
-    borderRadius: 18,
-    borderWidth: 1,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
     flexDirection: "row",
-    minHeight: 62,
-    paddingLeft: 16,
-    paddingRight: 6,
-    shadowColor: "#111827",
-    shadowOffset: { height: 8, width: 0 },
-    shadowOpacity: 0.04,
-    shadowRadius: 18,
-  },
-  searchLeft: {
-    alignItems: "center",
-    flex: 1,
-    flexDirection: "row",
-    gap: 12,
+    gap: 10,
+    height: 52,
+    paddingHorizontal: 16,
+    shadowColor: "#000000",
+    shadowOffset: { height: 0, width: 0 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
   },
   searchInput: {
     color: colors.ink,
     flex: 1,
     fontSize: 15,
-    fontWeight: "700",
-    minHeight: 54,
-  },
-  searchButton: {
-    alignItems: "center",
-    backgroundColor: colors.primary,
-    borderRadius: 999,
-    height: 48,
-    justifyContent: "center",
-    width: 48,
-  },
-  chipPanel: {
-    backgroundColor: "#FFFFFF",
-    borderColor: colors.border,
-    borderRadius: 16,
-    borderWidth: 1,
-    marginTop: 14,
-    paddingVertical: 12,
+    fontWeight: "400",
   },
   chipRow: {
-    gap: 12,
-    paddingHorizontal: 12,
+    gap: 10,
   },
   categoryChip: {
     alignItems: "center",
-    minWidth: 62,
+    minWidth: 52,
   },
   categoryChipActive: {
     alignItems: "center",
-    minWidth: 62,
+    minWidth: 52,
   },
   categoryChipIcon: {
     alignItems: "center",
     borderRadius: 999,
-    height: 50,
+    height: 46,
     justifyContent: "center",
     overflow: "hidden",
-    width: 50,
+    width: 46,
   },
   categoryChipIconActive: {
     alignItems: "center",
     backgroundColor: "#FFF2ED",
-    borderColor: "#FFD7CA",
     borderRadius: 999,
-    borderWidth: 2,
-    height: 50,
+    height: 46,
     justifyContent: "center",
-    width: 50,
+    width: 46,
+  },
+  categoryChipFallback: {
+    alignItems: "center",
+    borderRadius: 999,
+    height: 46,
+    justifyContent: "center",
+    width: 46,
   },
   chipImage: {
     height: "100%",
@@ -947,29 +812,29 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "#F3F4F6",
     borderRadius: 999,
-    height: 50,
+    height: 46,
     justifyContent: "center",
-    width: 50,
+    width: 46,
   },
   moreDots: {
-    color: "#4B5563",
-    fontSize: 21,
-    fontWeight: "900",
-    lineHeight: 22,
+    color: "#9CA3AF",
+    fontSize: 18,
+    fontWeight: "600",
+    lineHeight: 20,
   },
   categoryChipText: {
-    color: "#4B5563",
-    fontSize: 11,
-    fontWeight: "800",
-    marginTop: 8,
-    maxWidth: 72,
+    color: "#6B7280",
+    fontSize: 10,
+    fontWeight: "600",
+    marginTop: 7,
+    maxWidth: 64,
     textAlign: "center",
   },
   categoryChipTextActive: {
     color: colors.primary,
-    fontSize: 11,
-    fontWeight: "900",
-    marginTop: 8,
+    fontSize: 10,
+    fontWeight: "700",
+    marginTop: 7,
   },
   sectionHeader: {
     alignItems: "center",
@@ -981,144 +846,88 @@ const styles = StyleSheet.create({
   sectionTitle: {
     color: colors.ink,
     fontSize: 17,
-    fontWeight: "900",
+    fontWeight: "800",
+    letterSpacing: -0.2,
   },
   sectionAction: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 2,
-    minHeight: 44,
+    gap: 3,
+    minHeight: 36,
   },
   sectionActionText: {
     color: colors.primary,
-    fontSize: 13,
-    fontWeight: "900",
+    fontSize: 12,
+    fontWeight: "700",
   },
   popularGrid: {
-    gap: 16,
+    gap: 14,
   },
   popularRow: {
     flexDirection: "row",
-    gap: 16,
+    gap: 14,
   },
   popularCard: {
     backgroundColor: "#FFFFFF",
-    borderColor: colors.border,
-    borderRadius: 18,
-    borderWidth: 1,
+    borderColor: "#F3F4F6",
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
     overflow: "hidden",
-    shadowColor: "#111827",
-    shadowOffset: { height: 8, width: 0 },
-    shadowOpacity: 0.05,
-    shadowRadius: 18,
   },
   popularCardTall: {
     flex: 1,
   },
   popularCardWide: {
     flexDirection: "row",
-    height: 178,
-  },
-  popularWideContent: {
-    flex: 1,
-    justifyContent: "space-between",
-    minWidth: 0,
+    height: 150,
   },
   popularImageWrap: {
-    height: 156,
-    position: "relative",
+    height: 150,
   },
   wideImageWrap: {
-    height: 178,
+    height: 150,
     width: "42%",
   },
   popularImage: {
     height: "100%",
     width: "100%",
   },
-  trendingBadge: {
-    backgroundColor: "rgba(255, 255, 255, 0.92)",
-    borderRadius: 999,
-    left: 10,
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-    position: "absolute",
-    top: 10,
-  },
-  trendingBadgeText: {
-    color: colors.primary,
-    fontSize: 11,
-    fontWeight: "900",
+  popularImageFallback: {
+    alignItems: "center",
+    backgroundColor: "#F9FAFB",
+    height: "100%",
+    justifyContent: "center",
+    width: "100%",
   },
   popularBody: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 11,
-    paddingHorizontal: 12,
-    paddingTop: 14,
+    padding: 12,
   },
-  popularIcon: {
-    alignItems: "center",
-    borderRadius: 13,
-    height: 42,
-    justifyContent: "center",
-    width: 42,
-  },
-  popularCopy: {
+  popularBodyWide: {
     flex: 1,
+    justifyContent: "center",
+    minWidth: 0,
   },
   popularTitle: {
     color: colors.ink,
     fontSize: 15,
-    fontWeight: "900",
-    lineHeight: 19,
-  },
-  popularSubtitle: {
-    color: colors.muted,
-    fontSize: 12,
-    fontWeight: "600",
-    lineHeight: 17,
-    marginTop: 2,
+    fontWeight: "700",
+    letterSpacing: -0.2,
+    lineHeight: 20,
   },
   popularMeta: {
-    backgroundColor: "#F8FAFC",
-    borderRadius: 9,
-    flexDirection: "row",
-    gap: 8,
-    marginHorizontal: 12,
-    marginTop: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 9,
-  },
-  metaPill: {
     alignItems: "center",
-    flex: 1,
     flexDirection: "row",
-    gap: 4,
+    gap: 6,
+    marginTop: 6,
   },
-  metaText: {
-    color: "#6B7280",
-    fontSize: 10,
-    fontWeight: "800",
-  },
-  popularFooter: {
-    alignItems: "center",
-    borderTopColor: "#F3F4F6",
-    borderTopWidth: 1,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 13,
-  },
-  exploreText: {
-    color: colors.primary,
-    fontSize: 13,
-    fontWeight: "900",
+  popularMetaText: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "500",
   },
   subcategoryDirectory: {
-    marginTop: 18,
-    gap: 10,
+    marginTop: 24,
+    gap: 12,
   },
   directoryTitleRow: {
     alignItems: "center",
@@ -1127,50 +936,48 @@ const styles = StyleSheet.create({
   },
   directoryTitle: {
     color: colors.ink,
-    fontSize: 18,
-    fontWeight: "900",
-    letterSpacing: 0,
+    fontSize: 17,
+    fontWeight: "800",
+    letterSpacing: -0.2,
   },
   directorySubtitle: {
     color: colors.muted,
     fontSize: 12,
-    fontWeight: "700",
+    fontWeight: "500",
     lineHeight: 17,
     marginTop: 3,
   },
   familyPanel: {
     backgroundColor: "#FFFFFF",
-    borderColor: colors.border,
+    borderColor: "#F3F4F6",
     borderRadius: 16,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     overflow: "hidden",
-    paddingBottom: 13,
-    shadowColor: "#111827",
-    shadowOffset: { height: 7, width: 0 },
-    shadowOpacity: 0.04,
-    shadowRadius: 16,
+    paddingBottom: 12,
   },
   familyHeader: {
     alignItems: "center",
-    borderBottomColor: "#F3E7E2",
-    borderBottomWidth: 1,
     flexDirection: "row",
     gap: 11,
-    minHeight: 62,
-    paddingHorizontal: 13,
-    paddingVertical: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
   },
-  familyParentIcon: {
-    alignItems: "center",
+  familyHeaderIcon: {
     borderRadius: 12,
-    height: 42,
-    justifyContent: "center",
+    height: 40,
     overflow: "hidden",
-    width: 42,
+    width: 40,
   },
-  familyParentImage: {
+  familyHeaderImage: {
     height: "100%",
     width: "100%",
+  },
+  familyHeaderFallback: {
+    alignItems: "center",
+    borderRadius: 12,
+    height: 40,
+    justifyContent: "center",
+    width: 40,
   },
   familyHeaderCopy: {
     flex: 1,
@@ -1179,192 +986,182 @@ const styles = StyleSheet.create({
   familyTitle: {
     color: colors.ink,
     fontSize: 14,
-    fontWeight: "900",
+    fontWeight: "700",
+    letterSpacing: -0.2,
   },
   familyMeta: {
     color: colors.muted,
     fontSize: 11,
-    fontWeight: "700",
-    marginTop: 2,
+    fontWeight: "500",
+    marginTop: 1,
   },
   familyRail: {
-    gap: 11,
-    paddingHorizontal: 13,
-    paddingTop: 13,
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingTop: 12,
   },
   familyRailCard: {
-    backgroundColor: "#FFFCFB",
-    borderColor: "#F3E7E2",
-    borderRadius: 13,
-    borderWidth: 1,
-    minHeight: 136,
+    alignItems: "center",
+    backgroundColor: "#FEFDFC",
+    borderRadius: 12,
     padding: 10,
-    width: 112,
+    width: 104,
   },
   familyRailImageWrap: {
-    alignItems: "center",
-    alignSelf: "center",
-    borderRadius: 999,
-    height: 54,
-    justifyContent: "center",
+    borderRadius: 12,
+    height: 56,
     overflow: "hidden",
-    width: 54,
+    width: 56,
   },
   familyRailImage: {
     height: "100%",
     width: "100%",
   },
+  familyRailFallback: {
+    alignItems: "center",
+    borderRadius: 12,
+    height: 56,
+    justifyContent: "center",
+    width: 56,
+  },
   familyRailTitle: {
     color: colors.ink,
     fontSize: 11,
-    fontWeight: "900",
+    fontWeight: "600",
     lineHeight: 15,
-    marginTop: 10,
-    minHeight: 30,
-  },
-  familyRailFooter: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 7,
+    marginTop: 8,
+    minHeight: 22,
+    textAlign: "center",
   },
   familyRailMeta: {
-    color: "#6B7280",
-    flex: 1,
-    fontSize: 9,
-    fontWeight: "800",
+    color: colors.muted,
+    fontSize: 10,
+    fontWeight: "500",
+    marginTop: 4,
+    textAlign: "center",
   },
   discoverCard: {
     alignItems: "center",
-    backgroundColor: "#FFF8F4",
-    borderColor: "#FFD9CB",
-    borderRadius: 18,
-    borderWidth: 1,
+    backgroundColor: "#FFF4EF",
+    borderRadius: 16,
     flexDirection: "row",
-    gap: 12,
-    marginTop: 24,
+    marginTop: 22,
     padding: 16,
   },
-  discoverIcon: {
-    alignItems: "center",
-    backgroundColor: colors.primary,
-    borderRadius: 999,
-    height: 48,
-    justifyContent: "center",
-    width: 48,
-  },
-  discoverCopy: {
+  discoverContent: {
     flex: 1,
   },
   discoverTitle: {
     color: colors.ink,
-    fontSize: 14,
-    fontWeight: "900",
+    fontSize: 15,
+    fontWeight: "800",
+    letterSpacing: -0.2,
   },
   discoverSubtitle: {
     color: colors.muted,
     fontSize: 12,
-    fontWeight: "600",
+    fontWeight: "500",
     lineHeight: 17,
     marginTop: 2,
   },
-  discoverButton: {
+  discoverArrow: {
     alignItems: "center",
-    backgroundColor: colors.primary,
-    borderRadius: 11,
-    flexDirection: "row",
-    gap: 5,
-    minHeight: 44,
-    paddingHorizontal: 13,
-  },
-  discoverButtonText: {
-    color: "#FFFFFF",
-    fontSize: 12,
-    fontWeight: "900",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 999,
+    height: 36,
+    justifyContent: "center",
+    width: 36,
   },
   allHero: {
     backgroundColor: "#FFF1EA",
-    borderRadius: 16,
+    borderRadius: 18,
     flexDirection: "row",
-    minHeight: 162,
+    minHeight: 155,
     overflow: "hidden",
   },
   allHeroText: {
     flex: 1,
     justifyContent: "center",
     paddingLeft: 18,
-    paddingVertical: 18,
+    paddingRight: 12,
+    paddingVertical: 16,
     zIndex: 1,
   },
   allHeroTitle: {
     color: colors.ink,
-    fontSize: 28,
-    fontWeight: "900",
-    letterSpacing: 0,
-    lineHeight: 33,
+    fontSize: 21,
+    fontWeight: "800",
+    letterSpacing: -0.3,
+    lineHeight: 27,
   },
   allHeroSubtitle: {
-    color: "#4B5563",
+    color: "#6B7280",
     fontSize: 13,
-    fontWeight: "700",
-    lineHeight: 19,
-    marginTop: 8,
+    fontWeight: "500",
+    lineHeight: 18,
+    marginTop: 6,
   },
   heroCta: {
     alignItems: "center",
     alignSelf: "flex-start",
     backgroundColor: colors.primary,
-    borderRadius: 9,
+    borderRadius: 10,
     flexDirection: "row",
-    gap: 8,
-    marginTop: 14,
-    minHeight: 42,
-    paddingHorizontal: 16,
+    gap: 6,
+    marginTop: 12,
+    minHeight: 38,
+    paddingHorizontal: 14,
   },
   heroCtaText: {
     color: "#FFFFFF",
     fontSize: 13,
-    fontWeight: "900",
+    fontWeight: "700",
   },
   allHeroImage: {
     height: "100%",
+    width: "42%",
+  },
+  allHeroImageFallback: {
+    alignItems: "center",
+    height: "100%",
+    justifyContent: "center",
     width: "42%",
   },
   allToolbar: {
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "space-between",
-    marginTop: 22,
+    marginTop: 20,
     marginBottom: 12,
   },
   allToolbarTitle: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 7,
+    gap: 6,
   },
   allToolbarText: {
     color: colors.primary,
     fontSize: 14,
-    fontWeight: "900",
+    fontWeight: "800",
   },
   allToolbarCount: {
-    color: "#4B5563",
+    color: "#D1D5DB",
     fontSize: 13,
-    fontWeight: "800",
+    fontWeight: "600",
   },
   sortButton: {
     alignItems: "center",
     backgroundColor: "#F3F4F6",
     borderRadius: 999,
     flexDirection: "row",
-    gap: 5,
-    minHeight: 38,
-    paddingHorizontal: 13,
+    gap: 4,
+    minHeight: 34,
+    paddingHorizontal: 12,
   },
   sortButtonText: {
     color: colors.ink,
     fontSize: 12,
-    fontWeight: "900",
+    fontWeight: "700",
   },
   sortChevron: {
     transform: [{ rotate: "-90deg" }],
@@ -1376,61 +1173,60 @@ const styles = StyleSheet.create({
   },
   allTile: {
     backgroundColor: "#FFFFFF",
-    borderColor: colors.border,
-    borderRadius: 13,
-    borderWidth: 1,
-    minHeight: 138,
-    padding: 10,
-    shadowColor: "#111827",
-    shadowOffset: { height: 6, width: 0 },
-    shadowOpacity: 0.04,
-    shadowRadius: 14,
-  },
-  allTileIcon: {
-    alignItems: "center",
-    alignSelf: "center",
-    borderRadius: 999,
-    height: 52,
-    justifyContent: "center",
+    borderColor: "#F3F4F6",
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    minHeight: 148,
     overflow: "hidden",
-    width: 52,
+  },
+  allTileImageWrap: {
+    height: 90,
+    overflow: "hidden",
   },
   allTileImage: {
     height: "100%",
     width: "100%",
   },
+  allTileImageFallback: {
+    alignItems: "center",
+    height: 90,
+    justifyContent: "center",
+    width: "100%",
+  },
+  allTileBody: {
+    padding: 10,
+  },
   allTileTitle: {
     color: colors.ink,
     fontSize: 12,
-    fontWeight: "900",
+    fontWeight: "700",
+    letterSpacing: -0.1,
     lineHeight: 16,
-    marginTop: 10,
-    minHeight: 22,
   },
   allTileBottom: {
     alignItems: "center",
     flexDirection: "row",
     gap: 4,
     justifyContent: "space-between",
-    marginTop: 7,
+    marginTop: 4,
   },
   allTileMeta: {
-    color: "#4B5563",
+    color: colors.muted,
     flex: 1,
-    fontSize: 10,
-    fontWeight: "800",
+    fontSize: 11,
+    fontWeight: "500",
   },
   loading: {
     alignItems: "center",
-    paddingVertical: 34,
+    paddingVertical: 30,
   },
   loadingText: {
     color: colors.muted,
     fontSize: 13,
-    fontWeight: "700",
+    fontWeight: "500",
     marginTop: 10,
   },
   emptyWrap: {
-    paddingVertical: 18,
+    paddingVertical: 16,
   },
 });
