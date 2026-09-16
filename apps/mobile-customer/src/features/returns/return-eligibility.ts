@@ -27,6 +27,7 @@ type ReturnWindowOrder = {
   updatedAt?: string | null;
   customerDeliveryTimeline?: MobileOrderDetail["customerDeliveryTimeline"];
   shipments?: MobileOrderDetail["shipments"];
+  items?: MobileOrderDetail["items"];
 };
 
 export const defaultMobileReturnPolicySettings: MobileReturnPolicySettings = {
@@ -177,12 +178,22 @@ export function returnWindowState(
 
 export function orderReturnPolicyState(
   order: ReturnWindowOrder,
-  settings: MobileReturnPolicySettings = defaultMobileReturnPolicySettings,
+  _settings: MobileReturnPolicySettings = defaultMobileReturnPolicySettings,
   now = new Date(),
 ) {
+  // Use per-item product policies rather than global settings so non-returnable
+  // products correctly show as unavailable at the order level.
+  const refundWindow = (order.items ?? []).reduce(
+    (acc, item) => Math.max(acc, mobileItemReturnPolicy(item).returnWindowDays),
+    0,
+  );
+  const replacementWindow = (order.items ?? []).reduce(
+    (acc, item) => Math.max(acc, mobileItemReturnPolicy(item).replacementWindowDays),
+    0,
+  );
   return {
-    refund: returnWindowState(order, settings.returnWindowDays, now),
-    replacement: returnWindowState(order, settings.replacementWindowDays, now),
+    refund: returnWindowState(order, refundWindow, now),
+    replacement: returnWindowState(order, replacementWindow, now),
   };
 }
 
@@ -236,13 +247,14 @@ export function acceptedReturnReasonsForSelection(
 
 export function mobileItemReturnPolicy(item: MobileOrderDetail["items"][number]) {
   const snapshot = item.returnPolicySnapshot ?? {};
-  const eligibility = snapshot.returnEligibility?.trim() || "Returnable";
+  const eligibility = snapshot.returnEligibility?.trim();
+  const resolvedEligibility = eligibility || "Non-returnable";
   const returnAllowed =
     snapshot.returnAllowed ??
-    ["Returnable", "Return and replacement", "Return only"].includes(eligibility);
+    ["Return and replacement", "Return only"].includes(resolvedEligibility);
   const replacementAllowed =
     snapshot.replacementAllowed ??
-    ["Returnable", "Return and replacement", "Replacement only"].includes(eligibility);
+    ["Return and replacement", "Replacement only"].includes(resolvedEligibility);
   const returnReasons = (snapshot.returnReasons ?? []).filter((reason) =>
     mobileProductReturnReasons.includes(reason as (typeof mobileProductReturnReasons)[number]),
   );

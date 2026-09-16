@@ -85,7 +85,7 @@ export function returnPolicyLabel(item: OrderDetailItem): string {
   const value =
     item.returnPolicySnapshot?.returnEligibility ??
     (item.returnPolicySnapshot as { returnPolicy?: string | null } | null)?.returnPolicy;
-  return typeof value === "string" && value.trim() ? value.trim() : "Returnable";
+  return typeof value === "string" && value.trim() ? value.trim() : "Non-returnable";
 }
 
 export function returnPolicyDescription(item: OrderDetailItem): string {
@@ -242,7 +242,7 @@ export function deliveredItemReturnState(
 export function itemReturnWindowState(
   order: AccountOrder,
   item: OrderDetailItem,
-  settings: ReturnPolicySettings,
+  _settings: ReturnPolicySettings,
   resolution: CustomerResolution,
   now = new Date(),
 ) {
@@ -251,19 +251,22 @@ export function itemReturnWindowState(
     resolution === "REPLACEMENT"
       ? policy.replacementWindowDays
       : policy.returnWindowDays;
-  const globalDays =
-    resolution === "REPLACEMENT"
-      ? settings.replacementWindowDays
-      : settings.returnWindowDays;
-  const windowDays = Math.min(productDays, globalDays);
+  // If the product has no return policy, it's non-returnable — no fallback to global settings.
+  if (productDays <= 0) {
+    return {
+      windowDays: 0,
+      deadlineAt: null as Date | null,
+      eligible: false,
+    };
+  }
   const deliveredAt = orderDeliveredAt(order);
   const deadlineAt =
-    deliveredAt && windowDays > 0
-      ? new Date(deliveredAt.getTime() + windowDays * 24 * 60 * 60 * 1000)
+    deliveredAt && productDays > 0
+      ? new Date(deliveredAt.getTime() + productDays * 24 * 60 * 60 * 1000)
       : null;
 
   return {
-    windowDays,
+    windowDays: productDays,
     deadlineAt,
     eligible:
       itemPolicyAllowsReturn(item, resolution) &&

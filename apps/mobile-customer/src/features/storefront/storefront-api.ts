@@ -752,6 +752,8 @@ export type MobileTrackedOrder = {
   buyerCouponMerchandiseDiscountMinor?: number | null;
   buyerCouponShippingDiscountMinor?: number | null;
   buyerTotalMinor?: number | null;
+  couponCode?: string | null;
+  couponTitle?: string | null;
   createdAt?: string;
   updatedAt?: string;
   shippingLocation?: {
@@ -778,9 +780,39 @@ export type MobileTrackedOrder = {
       slug?: string | null;
     } | null;
   }>;
-  deliveryDetail?: MobileOrderDetail["deliveryDetail"];
-  customerDeliveryTimeline?: MobileOrderDetail["customerDeliveryTimeline"];
-  statusEvents?: MobileOrderDetail["statusEvents"];
+  deliveryDetail?: {
+    deliveryMode?: string | null;
+    partnerName?: string | null;
+    partnerPhone?: string | null;
+    trackingReference?: string | null;
+    estimatedDeliveryDate?: string | null;
+    deliveryNote?: string | null;
+    status?: string | null;
+    label?: string | null;
+    events?: Array<{
+      id: string;
+      label?: string | null;
+      oldStatus?: string | null;
+      newStatus?: string | null;
+      status?: string | null;
+      note?: string | null;
+      createdAt?: string | null;
+    }>;
+  } | null;
+  customerDeliveryTimeline?: Array<{
+    label?: string;
+    status?: string;
+    note?: string | null;
+    createdAt?: string | null;
+  }>;
+  statusEvents?: Array<{
+    id: string;
+    statusType?: string | null;
+    oldStatus?: string | null;
+    newStatus?: string | null;
+    note?: string | null;
+    createdAt?: string;
+  }>;
 };
 
 export type MobileTrackOrderPayload = {

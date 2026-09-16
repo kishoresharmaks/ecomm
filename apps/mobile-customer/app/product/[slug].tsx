@@ -36,7 +36,6 @@ import {
   addWishlistItem,
   getCart,
   getProduct,
-  getReturnPolicySettings,
   getWishlist,
   listProducts,
   removeWishlistItem,
@@ -99,12 +98,6 @@ function ProductDetailScreen() {
     staleTime: 30_000,
   });
 
-  const returnPolicyQuery = useQuery({
-    queryKey: ["mobile-return-policy"],
-    queryFn: getReturnPolicySettings,
-    staleTime: 5 * 60_000,
-  });
-
   const wishlistProductIds = useMemo(
     () => new Set((wishlistQuery.data?.items ?? []).map((item) => item.productId)),
     [wishlistQuery.data?.items],
@@ -128,14 +121,34 @@ function ProductDetailScreen() {
     return items.filter((item) => item.id !== product?.id && item.slug !== product?.slug).slice(0, 8);
   }, [product?.id, product?.slug, recommendationsQuery.data?.items]);
 
-  /* ─── return policy: always show 7-day as fallback ─── */
-  const returnPolicyData = returnPolicyQuery.data;
-  const returnLabel = returnPolicyData
-    ? returnPolicyData.returnWindowDays > 0
-      ? `${returnPolicyData.returnWindowDays}-day easy return`
-      : "Non-returnable"
-    : null;
-  const showReturnPill = returnPolicyData != null;
+  /* ─── return policy: derived from product attributes (seller-set) ─── */
+  const productReturnPolicy = useMemo(() => {
+    if (!product) return null;
+    const attrs = (product.attributes ?? {}) as Record<string, unknown>;
+    const eligibility = String(attrs.returnEligibility ?? "").trim();
+    const refundDays = Number(attrs.returnWindowDays ?? 0);
+    const replacementDays = Number(attrs.replacementWindowDays ?? 0);
+    if (!eligibility) return null;
+
+    let label = "";
+    if (eligibility === "Non-returnable") {
+      label = "Non-returnable";
+    } else if (eligibility === "Return and replacement") {
+      const parts = [];
+      if (refundDays > 0) parts.push(`${refundDays}-day refund return`);
+      if (replacementDays > 0) parts.push(`${replacementDays}-day replacement`);
+      label = parts.join(" / ") || "Return and replacement";
+    } else if (eligibility === "Return only") {
+      label = refundDays > 0 ? `${refundDays}-day refund return` : "Return only";
+    } else if (eligibility === "Replacement only") {
+      label = replacementDays > 0 ? `${replacementDays}-day replacement` : "Replacement only";
+    } else if (eligibility === "Service/warranty only") {
+      label = "Service/warranty only";
+    } else {
+      label = eligibility;
+    }
+    return { eligibility, label, isNonReturnable: eligibility === "Non-returnable" };
+  }, [product]);
   const isWholesaleSeller = product?.seller?.sellerType === "WHOLESALE_DISTRIBUTOR";
 
   const addMutation = useMutation({
@@ -328,8 +341,7 @@ function ProductDetailScreen() {
           onGoToCart={() => router.push("/cart")}
           onSignIn={() => router.push("/auth/sign-in")}
           product={product}
-          returnLabel={returnLabel ?? ""}
-          showReturnPill={showReturnPill}
+          productReturnPolicy={productReturnPolicy}
           selectedVariant={selectedVariant}
           unavailableReason={unavailableReason}
           isWholesaleSeller={isWholesaleSeller}
@@ -907,9 +919,8 @@ function ProductActionBar({
   onGoToCart,
   onSignIn,
   product,
-  returnLabel,
+  productReturnPolicy,
   selectedVariant,
-  showReturnPill,
   unavailableReason,
 }: {
   addedMessage: string;
@@ -923,9 +934,8 @@ function ProductActionBar({
   onGoToCart: () => void;
   onSignIn: () => void;
   product: ProductSummary;
-  returnLabel: string;
+  productReturnPolicy: { eligibility: string; label: string; isNonReturnable: boolean } | null;
   selectedVariant: ProductVariant | null;
-  showReturnPill: boolean;
   unavailableReason: string | null;
 }) {
   const router = useRouter();
@@ -975,9 +985,9 @@ function ProductActionBar({
       ) : (
         <>
           <Pressable
-            disabled={isBusy || (!isInCart && !canAddToCart)}
+            disabled={isBusy}
             onPress={isSignedIn ? (isInCart ? onGoToCart : onAdd) : onSignIn}
-            style={[styles.actionPrimary, isBusy || (!isInCart && !canAddToCart) ? styles.actionPrimaryDisabled : null]}
+            style={[styles.actionPrimary, isBusy ? styles.actionPrimaryDisabled : null]}
           >
             {isBusy ? (
               <ActivityIndicator color={colors.surface} />
@@ -999,21 +1009,21 @@ function ProductActionBar({
         </>
       )}
 
-      {showReturnPill && returnLabel && (
+      {productReturnPolicy && (
         <View style={styles.returnPill}>
           <View style={styles.returnIcon}>
             <HugeiconsIcon
               icon={Shield01Icon}
               size={12}
-              color={returnLabel.includes("Non-returnable") ? colors.muted : colors.success}
+              color={productReturnPolicy.isNonReturnable ? colors.muted : colors.success}
               strokeWidth={2.2}
             />
           </View>
           <Text style={[
             styles.returnText,
-            returnLabel.includes("Non-returnable") ? styles.returnTextDefault : styles.returnTextActive,
+            productReturnPolicy.isNonReturnable ? styles.returnTextDefault : styles.returnTextActive,
           ]}>
-            {returnLabel}
+            {productReturnPolicy.label}
           </Text>
         </View>
       )}

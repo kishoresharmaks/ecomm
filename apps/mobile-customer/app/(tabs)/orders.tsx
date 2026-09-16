@@ -8,12 +8,20 @@ import {
   RefreshIcon,
   ShoppingCart01Icon,
 } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react-native";
+import { HugeiconsIcon } from "@hugeicons/react-native";
 import { FlashList } from "@shopify/flash-list";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { RemoteImage } from "../../src/components/remote-image";
 import { EmptyState } from "../../src/components/empty-state";
@@ -25,37 +33,21 @@ import { resolveImageUrl } from "../../src/lib/image-url";
 import { colors } from "../../src/theme";
 
 type OrderFilter = "all" | "placed" | "processing" | "shipped" | "delivered";
-type TimelineStep = {
-  color: string;
-  completed: boolean;
-  dateLabel: string;
-  icon: IconSvgElement;
-  label: string;
-  tone: "primary" | "warning" | "purple" | "success" | "danger";
-};
 
 const textColor = "#111827";
 const mutedColor = "#6B7280";
 const borderColor = "#F3E7E2";
-const successColor = "#22C55E";
-const warningColor = "#F59E0B";
-const purpleColor = "#8B5CF6";
-const dangerColor = "#EF4444";
-const cardShadow = {
-  shadowColor: colors.primary,
-  shadowOffset: { height: 8, width: 0 },
-  shadowOpacity: 0.06,
-  shadowRadius: 30,
-  elevation: 2,
-};
 
-const filterOptions: Array<{ icon: IconSvgElement; label: string; value: OrderFilter }> = [
-  { icon: ShoppingCart01Icon, label: "All Orders", value: "all" },
-  { icon: PackageIcon, label: "Placed", value: "placed" },
-  { icon: PackageIcon, label: "Processing", value: "processing" },
-  { icon: DeliveryBox01Icon, label: "Shipped", value: "shipped" },
-  { icon: CheckmarkCircle02Icon, label: "Delivered", value: "delivered" },
-];
+const orderStatusConfig: Record<string, { label: string; bg: string; text: string; icon: typeof PackageIcon }> = {
+  PLACED: { label: "Placed", bg: "#FFF8F0", text: "#C2410C", icon: PackageIcon },
+  CONFIRMED: { label: "Confirmed", bg: "#FFF8F0", text: "#C2410C", icon: PackageIcon },
+  PROCESSING: { label: "Processing", bg: "#FEF3C7", text: "#92400E", icon: PackageIcon },
+  SHIPPED: { label: "Shipped", bg: "#F3E8FF", text: "#6B21A8", icon: DeliveryBox01Icon },
+  DISPATCHED: { label: "In Transit", bg: "#F3E8FF", text: "#6B21A8", icon: DeliveryBox01Icon },
+  IN_TRANSIT: { label: "In Transit", bg: "#F3E8FF", text: "#6B21A8", icon: DeliveryBox01Icon },
+  DELIVERED: { label: "Delivered", bg: "#DCFCE7", text: "#15803D", icon: CheckmarkCircle02Icon },
+  CANCELLED: { label: "Cancelled", bg: "#FEE2E2", text: "#991B1B", icon: PackageIcon },
+};
 
 const ordersPageSize = 20;
 
@@ -64,6 +56,7 @@ export default function OrdersScreen() {
   const customerAuth = useMobileCustomerAuth();
   const [activeFilter, setActiveFilter] = useState<OrderFilter>("all");
   const [filterOpen, setFilterOpen] = useState(false);
+
   const ordersQuery = useInfiniteQuery({
     queryKey: ["mobile-orders", customerAuth.authKey],
     queryFn: ({ pageParam }) => listCustomerOrders(customerAuth.authHeaders, ordersPageSize, pageParam),
@@ -74,17 +67,28 @@ export default function OrdersScreen() {
     getNextPageParam: (lastPage, _pages, lastPageParam) =>
       lastPage.items.length >= ordersPageSize ? lastPageParam + 1 : undefined,
   });
+
   const orders = useMemo(
-    () => dedupeOrdersById(ordersQuery.data?.pages.flatMap((page) => page.items) ?? []),
+    () => ordersQuery.data?.pages.flatMap((page) => page.items) ?? [],
     [ordersQuery.data?.pages],
   );
+
   const totalOrderCount = ordersQuery.data?.pages[0]?.total ?? orders.length;
-  const visibleOrders = useMemo(() => orders.filter((order) => matchesOrderFilter(order, activeFilter)), [activeFilter, orders]);
+  const visibleOrders = useMemo(
+    () => orders.filter((order) => matchesOrderFilter(order, activeFilter)),
+    [orders, activeFilter],
+  );
 
   if (customerAuth.status === "loading" || customerAuth.status === "syncing" || ordersQuery.isLoading) {
     return (
       <SafeAreaView style={styles.safeArea}>
-        <LoadingState label="Loading your orders..." />
+        <OrdersTitleBlock />
+        <View style={styles.centerState}>
+          <View style={styles.loadingIcon}>
+            <ActivityIndicator color={colors.primary} />
+          </View>
+          <Text style={styles.stateText}>Loading your orders...</Text>
+        </View>
       </SafeAreaView>
     );
   }
@@ -96,15 +100,13 @@ export default function OrdersScreen() {
   if (ordersQuery.isError) {
     return (
       <SafeAreaView style={styles.safeArea}>
-        <View style={styles.signedOutScreen}>
-          <OrdersTitleBlock />
-          <View style={styles.emptyPanelWrap}>
-            <View style={styles.emptyPanel}>
-              <EmptyState title="Orders could not load" message={accountErrorMessage(ordersQuery.error, "Check your connection and refresh orders.")} />
-              <Pressable style={styles.primaryButton} onPress={() => void ordersQuery.refetch()}>
-                <Text style={styles.primaryButtonText}>Retry orders</Text>
-              </Pressable>
-            </View>
+        <OrdersTitleBlock />
+        <View style={styles.emptyPanelWrap}>
+          <View style={styles.emptyPanel}>
+            <EmptyState title="Orders could not load" message={accountErrorMessage(ordersQuery.error, "Check your connection and refresh orders.")} />
+            <Pressable style={styles.primaryButton} onPress={() => void ordersQuery.refetch()}>
+              <Text style={styles.primaryButtonText}>Retry orders</Text>
+            </Pressable>
           </View>
         </View>
       </SafeAreaView>
@@ -124,11 +126,17 @@ export default function OrdersScreen() {
         }}
         onEndReachedThreshold={0.4}
         ListEmptyComponent={
-          <PremiumEmptyState
-            activeFilter={activeFilter}
-            hasOrders={orders.length > 0}
-            onReset={() => setActiveFilter("all")}
-          />
+          <View style={styles.emptyPanel}>
+            <EmptyState
+              title={orders.length > 0 ? `No ${filterLabel(activeFilter).toLowerCase()} orders` : "No orders yet"}
+              message={orders.length > 0 ? "Try another status filter to see more orders." : "Orders placed from checkout will appear here with tracking and support options."}
+            />
+            {orders.length > 0 ? (
+              <Pressable style={styles.secondaryButton} onPress={() => setActiveFilter("all")}>
+                <Text style={styles.secondaryButtonText}>Show all orders</Text>
+              </Pressable>
+            ) : null}
+          </View>
         }
         ListFooterComponent={
           <>
@@ -142,7 +150,7 @@ export default function OrdersScreen() {
           </>
         }
         ListHeaderComponent={
-          <OrdersHeader
+          <OrdersListHeader
             activeFilter={activeFilter}
             isFetching={ordersQuery.isFetching && !ordersQuery.isFetchingNextPage}
             orderCount={visibleOrders.length}
@@ -168,7 +176,7 @@ export default function OrdersScreen() {
   );
 }
 
-function OrdersHeader({
+function OrdersListHeader({
   activeFilter,
   isFetching,
   orderCount,
@@ -189,9 +197,18 @@ function OrdersHeader({
 }) {
   return (
     <View style={styles.header}>
+      {/* Consistent header row matching Categories */}
       <View style={styles.headerTopRow}>
-        <OrdersTitleBlock />
-        <View style={styles.headerActionRow}>
+        <View style={styles.headerLeft}>
+          <View style={styles.headerMark}>
+            <HugeiconsIcon color="#FFFFFF" icon={PackageIcon} size={24} strokeWidth={2.2} />
+          </View>
+          <View style={styles.headerCopy}>
+            <Text style={styles.headerTitle}>My Orders</Text>
+            <Text style={styles.headerSubtitle}>Track and manage your orders</Text>
+          </View>
+        </View>
+        <View style={styles.headerActions}>
           <Pressable accessibilityRole="button" style={styles.iconButton} onPress={onRefresh}>
             {isFetching ? (
               <ActivityIndicator color={colors.primary} size="small" />
@@ -199,25 +216,28 @@ function OrdersHeader({
               <HugeiconsIcon color={colors.primary} icon={RefreshIcon} size={22} strokeWidth={2.2} />
             )}
           </Pressable>
-          <Pressable accessibilityRole="button" style={styles.filterButton} onPress={onOpenFilter}>
-            <HugeiconsIcon color={colors.primary} icon={FilterHorizontalIcon} size={20} strokeWidth={2.2} />
-            <Text style={styles.filterButtonText}>Filter</Text>
+          <Pressable accessibilityRole="button" style={styles.iconButton} onPress={onOpenFilter}>
+            <HugeiconsIcon color={colors.primary} icon={FilterHorizontalIcon} size={22} strokeWidth={2.2} />
           </Pressable>
         </View>
       </View>
 
+      {/* Status filter chips */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRail}>
-        {filterOptions.map((option) => (
-          <FilterChip
-            active={activeFilter === option.value}
-            icon={option.icon}
-            key={option.value}
-            label={option.label}
-            onPress={() => onFilterChange(option.value)}
-          />
+        {filterChips.map((chip) => (
+          <Pressable
+            key={chip.value}
+            style={[styles.filterChip, activeFilter === chip.value ? styles.filterChipActive : null]}
+            onPress={() => onFilterChange(chip.value)}
+          >
+            <Text style={[styles.filterChipText, activeFilter === chip.value ? styles.filterChipTextActive : null]}>
+              {chip.label}
+            </Text>
+          </Pressable>
         ))}
       </ScrollView>
 
+      {/* Results summary */}
       <View style={styles.sectionHeaderRow}>
         <Text style={styles.sectionHeading}>
           {orderCount} {activeFilter === "all" ? "Recent" : filterLabel(activeFilter)} {orderCount === 1 ? "Order" : "Orders"}
@@ -243,183 +263,114 @@ function OrdersTitleBlock() {
   );
 }
 
-function FilterChip({
-  active,
-  icon,
-  label,
-  onPress,
-}: {
-  active: boolean;
-  icon: IconSvgElement;
-  label: string;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable style={[styles.filterChip, active ? styles.filterChipActive : null]} onPress={onPress}>
-      <HugeiconsIcon color={active ? colors.primary : mutedColor} icon={icon} size={18} strokeWidth={2.1} />
-      <Text style={[styles.filterChipText, active ? styles.filterChipTextActive : null]}>{label}</Text>
-    </Pressable>
-  );
-}
-
 function OrderCard({ order }: { order: MobileOrderSummary }) {
   const router = useRouter();
   const firstItem = order.items?.[0];
-  const imageUrl = resolveImageUrl(firstItem?.product?.imageUrl);
-  const totalQuantity = (order.items ?? []).reduce((total, item) => total + item.quantity, 0);
   const extraItems = Math.max(0, (order.items?.length ?? 0) - 1);
   const isCancelled = order.orderStatus === "CANCELLED";
-  const primaryActionLabel = isCancelled ? "View Reason" : "Buy Again";
+  const statusConfig = (orderStatusConfig[order.orderStatus] ?? orderStatusConfig[order.deliveryStatus] ?? orderStatusConfig.PLACED)!;
+  const StatusIcon = statusConfig.icon;
 
   function openOrder() {
     router.push(`/orders/${order.orderNumber}` as never);
   }
 
-  function handlePrimaryAction() {
+  function handleBuyAgain() {
     if (isCancelled || !firstItem?.product?.slug) {
       openOrder();
       return;
     }
-
     router.push(`/product/${firstItem.product.slug}` as never);
   }
 
   return (
     <View style={styles.orderCard}>
-      <Pressable style={styles.orderTopRow} onPress={openOrder}>
-        <View style={styles.orderIcon}>
-          <HugeiconsIcon color={colors.primary} icon={PackageIcon} size={25} strokeWidth={2.15} />
+      {/* Top row: order number + status badge + total */}
+      <Pressable style={styles.orderHeaderRow} onPress={openOrder}>
+        <View style={styles.orderHeaderLeft}>
+          <View style={styles.orderNumberBox}>
+            <HugeiconsIcon color={colors.primary} icon={PackageIcon} size={20} strokeWidth={2.1} />
+          </View>
+          <View style={styles.orderHeaderText}>
+            <Text numberOfLines={1} style={styles.orderNumber}>{order.orderNumber}</Text>
+            <Text style={styles.orderDate}>{formatOrderDate(order.createdAt)}</Text>
+          </View>
         </View>
-        <View style={styles.orderHead}>
-          <Text numberOfLines={1} style={styles.orderNumber}>
-            {order.orderNumber}
-          </Text>
-          <Text style={styles.orderDate}>{formatOrderDateTime(order.createdAt)}</Text>
-        </View>
-        <View style={styles.totalWrap}>
+        <View style={styles.orderHeaderRight}>
+          <View style={[styles.statusBadge, { backgroundColor: statusConfig.bg }]}>
+            <HugeiconsIcon color={statusConfig.text} icon={StatusIcon} size={13} strokeWidth={2.2} />
+            <Text style={[styles.statusBadgeText, { color: statusConfig.text }]}>{statusConfig.label}</Text>
+          </View>
           <Text style={styles.orderTotal}>{formatOrderDisplayTotal(order)}</Text>
-          <HugeiconsIcon color={textColor} icon={ArrowRight02Icon} size={22} strokeWidth={2.2} />
         </View>
       </Pressable>
 
-      {firstItem ? (
-        <View style={styles.itemRow}>
-          <RemoteImage fallbackLabel={firstItem.productNameSnapshot} resizeMode="cover" style={styles.itemImage} uri={imageUrl} />
-          <View style={styles.itemBody}>
-            <Text numberOfLines={2} style={styles.itemName}>
-              {firstItem.productNameSnapshot}
-            </Text>
-            <Text numberOfLines={1} style={styles.itemMeta}>
-              Qty {totalQuantity || firstItem.quantity}
-              {firstItem.seller?.storeName ? ` - ${firstItem.seller.storeName}` : ""}
-            </Text>
-            {extraItems ? (
-              <Text style={styles.extraItemText}>
-                +{extraItems} more {extraItems === 1 ? "item" : "items"} in this order
+      {/* Product photo + name + actions */}
+      <Pressable style={styles.orderBody} onPress={openOrder}>
+        {firstItem ? (
+          <View style={styles.itemSection}>
+            {/* Product image */}
+            <View style={styles.itemImageWrap}>
+              <RemoteImage
+                fallbackLabel={firstItem.productNameSnapshot}
+                resizeMode="cover"
+                style={styles.itemImage}
+                uri={resolveImageUrl(firstItem.product?.imageUrl ?? firstItem.product?.images?.[0]?.url ?? null)}
+              />
+              {extraItems > 0 && (
+                <View style={styles.extraItemsBadge}>
+                  <Text style={styles.extraItemsText}>+{extraItems}</Text>
+                </View>
+              )}
+            </View>
+
+            {/* Product details */}
+            <View style={styles.itemDetails}>
+              <Text numberOfLines={2} style={styles.itemName}>
+                {firstItem.productNameSnapshot}
               </Text>
-            ) : null}
+              <Text style={styles.itemMeta}>
+                Qty {firstItem.quantity}
+                {firstItem.seller?.storeName ? ` · ${firstItem.seller.storeName}` : ""}
+              </Text>
+              <Text style={styles.itemPrice}>
+                {formatMoney(firstItem.lineTotalPaise, order.currency)}
+              </Text>
+            </View>
           </View>
-        </View>
-      ) : null}
+        ) : null}
+      </Pressable>
 
-      <OrderTimeline order={order} />
-
-      <View style={styles.cardActionRow}>
+      {/* Action buttons */}
+      <View style={styles.cardActions}>
         <Pressable style={styles.detailsButton} onPress={openOrder}>
-          <HugeiconsIcon color={textColor} icon={PackageIcon} size={20} strokeWidth={2.05} />
           <Text style={styles.detailsButtonText}>Order Details</Text>
+          <HugeiconsIcon color={mutedColor} icon={ArrowRight02Icon} size={18} strokeWidth={2.2} />
         </Pressable>
-        <Pressable style={styles.buyAgainButton} onPress={handlePrimaryAction}>
-          <HugeiconsIcon color={colors.primary} icon={isCancelled ? PackageIcon : RefreshIcon} size={20} strokeWidth={2.2} />
-          <Text style={styles.buyAgainText}>{primaryActionLabel}</Text>
-        </Pressable>
+        {!isCancelled ? (
+          <Pressable style={styles.buyAgainButton} onPress={handleBuyAgain}>
+            <HugeiconsIcon color={colors.primary} icon={RefreshIcon} size={18} strokeWidth={2.2} />
+            <Text style={styles.buyAgainText}>Buy Again</Text>
+          </Pressable>
+        ) : null}
       </View>
-    </View>
-  );
-}
-
-function OrderTimeline({ order }: { order: MobileOrderSummary }) {
-  const steps = buildTimelineSteps(order);
-
-  return (
-    <View style={styles.timelineRow}>
-      {steps.map((step, index) => (
-        <View key={`${step.label}-${index}`} style={styles.timelineStepWrap}>
-          <View style={styles.stepTopLine}>
-            <TimelineIcon step={step} />
-            {index < steps.length - 1 ? <View style={[styles.timelineConnector, step.completed ? styles.timelineConnectorActive : null]} /> : null}
-          </View>
-          <Text numberOfLines={1} style={styles.timelineLabel}>
-            {step.label}
-          </Text>
-          <Text numberOfLines={1} style={styles.timelineDate}>
-            {step.dateLabel}
-          </Text>
-        </View>
-      ))}
-    </View>
-  );
-}
-
-function TimelineIcon({ step }: { step: TimelineStep }) {
-  return (
-    <View style={[styles.timelineIcon, step.completed ? timelineIconTone(step.tone) : styles.timelineIconPending]}>
-      <HugeiconsIcon color={step.completed ? step.color : "#8A94A6"} icon={step.icon} size={21} strokeWidth={2.15} />
     </View>
   );
 }
 
 function SupportCard() {
   const router = useRouter();
-
   return (
-    <View style={styles.supportCard}>
+    <Pressable style={styles.supportCard} onPress={() => router.push("/account/support" as never)}>
       <View style={styles.supportIcon}>
-        <HugeiconsIcon color={colors.primary} icon={HeadsetIcon} size={28} strokeWidth={2.1} />
+        <HugeiconsIcon color={colors.primary} icon={HeadsetIcon} size={26} strokeWidth={2.1} />
       </View>
       <View style={styles.supportCopy}>
         <Text style={styles.supportTitle}>Need help with your order?</Text>
         <Text style={styles.supportText}>Our support team is here to help you.</Text>
       </View>
-      <Pressable style={styles.supportButton} onPress={() => router.push("/account/support" as never)}>
-        <Text style={styles.supportButtonText}>Contact Support</Text>
-      </Pressable>
-    </View>
-  );
-}
-
-function PremiumEmptyState({
-  activeFilter,
-  hasOrders,
-  onReset,
-}: {
-  activeFilter: OrderFilter;
-  hasOrders: boolean;
-  onReset: () => void;
-}) {
-  return (
-    <View style={styles.emptyPanel}>
-      <EmptyState
-        title={hasOrders ? `No ${filterLabel(activeFilter).toLowerCase()} orders` : "No orders yet"}
-        message={hasOrders ? "Try another status filter to see more orders." : "Orders placed from checkout will appear here with tracking and support options."}
-      />
-      {hasOrders ? (
-        <Pressable style={styles.secondaryButton} onPress={onReset}>
-          <Text style={styles.secondaryButtonText}>Show all orders</Text>
-        </Pressable>
-      ) : null}
-    </View>
-  );
-}
-
-function LoadingState({ label }: { label: string }) {
-  return (
-    <View style={styles.centerState}>
-      <View style={styles.loadingIcon}>
-        <ActivityIndicator color={colors.primary} />
-      </View>
-      <Text style={styles.stateText}>{label}</Text>
-    </View>
+      <HugeiconsIcon color={mutedColor} icon={ArrowRight02Icon} size={20} strokeWidth={2.2} />
+    </Pressable>
   );
 }
 
@@ -450,26 +401,26 @@ function OrderFilterModal({
             </Pressable>
           </View>
           <View style={styles.sheetOptions}>
-            {filterOptions.map((option) => (
+            {filterChips.map((chip) => (
               <Pressable
-                key={option.value}
-                style={[styles.sheetOption, activeFilter === option.value ? styles.sheetOptionActive : null]}
-                onPress={() => onSelect(option.value)}
+                key={chip.value}
+                style={[styles.sheetOption, activeFilter === chip.value ? styles.sheetOptionActive : null]}
+                onPress={() => onSelect(chip.value)}
               >
-                <View style={[styles.sheetOptionIcon, activeFilter === option.value ? styles.sheetOptionIconActive : null]}>
+                <View style={[styles.sheetOptionIcon, activeFilter === chip.value ? styles.sheetOptionIconActive : null]}>
                   <HugeiconsIcon
-                    color={activeFilter === option.value ? colors.surface : colors.primary}
-                    icon={option.icon}
+                    color={activeFilter === chip.value ? colors.surface : colors.primary}
+                    icon={chip.icon}
                     size={22}
                     strokeWidth={2.15}
                   />
                 </View>
                 <View style={styles.sheetOptionCopy}>
-                  <Text style={[styles.sheetOptionTitle, activeFilter === option.value ? styles.sheetOptionTitleActive : null]}>
-                    {option.label}
+                  <Text style={[styles.sheetOptionTitle, activeFilter === chip.value ? styles.sheetOptionTitleActive : null]}>
+                    {chip.label}
                   </Text>
-                  <Text style={[styles.sheetOptionText, activeFilter === option.value ? styles.sheetOptionTextActive : null]}>
-                    {filterDescription(option.value)}
+                  <Text style={[styles.sheetOptionText, activeFilter === chip.value ? styles.sheetOptionTextActive : null]}>
+                    {chip.description}
                   </Text>
                 </View>
               </Pressable>
@@ -481,179 +432,43 @@ function OrderFilterModal({
   );
 }
 
-function dedupeOrdersById(orders: MobileOrderSummary[]) {
-  const seen = new Set<string>();
-  return orders.filter((order) => {
-    if (seen.has(order.id)) {
-      return false;
-    }
-    seen.add(order.id);
-    return true;
-  });
-}
+const filterChips: Array<{ icon: typeof PackageIcon; label: string; value: OrderFilter; description: string }> = [
+  { icon: ShoppingCart01Icon, label: "All Orders", value: "all", description: "Show every order in your account." },
+  { icon: PackageIcon, label: "Placed", value: "placed", description: "Orders received and waiting for seller action." },
+  { icon: PackageIcon, label: "Processing", value: "processing", description: "Orders currently being prepared." },
+  { icon: DeliveryBox01Icon, label: "Shipped", value: "shipped", description: "Orders dispatched or in transit." },
+  { icon: CheckmarkCircle02Icon, label: "Delivered", value: "delivered", description: "Orders successfully delivered." },
+];
 
 function matchesOrderFilter(order: MobileOrderSummary, filter: OrderFilter) {
-  if (filter === "all") {
-    return true;
-  }
-  if (filter === "placed") {
-    return order.orderStatus === "PLACED" || order.orderStatus === "CONFIRMED";
-  }
-  if (filter === "processing") {
-    return order.orderStatus === "PROCESSING";
-  }
-  if (filter === "shipped") {
-    return order.orderStatus === "SHIPPED" || order.deliveryStatus === "DISPATCHED" || order.deliveryStatus === "IN_TRANSIT";
-  }
-
+  if (filter === "all") return true;
+  if (filter === "placed") return order.orderStatus === "PLACED" || order.orderStatus === "CONFIRMED";
+  if (filter === "processing") return order.orderStatus === "PROCESSING";
+  if (filter === "shipped") return order.orderStatus === "SHIPPED" || order.deliveryStatus === "DISPATCHED" || order.deliveryStatus === "IN_TRANSIT";
   return order.orderStatus === "DELIVERED" || order.deliveryStatus === "DELIVERED";
 }
 
-function buildTimelineSteps(order: MobileOrderSummary): TimelineStep[] {
-  const dateLabel = shortOrderDate(order.createdAt);
-
-  if (order.orderStatus === "CANCELLED") {
-    return [
-      { color: dangerColor, completed: true, dateLabel, icon: PackageIcon, label: "Cancelled", tone: "danger" },
-      {
-        color: warningColor,
-        completed: true,
-        dateLabel: order.paymentStatus === "NOT_REQUIRED" ? "-" : dateLabel,
-        icon: RefreshIcon,
-        label: order.paymentStatus === "NOT_REQUIRED" ? "Not Required" : formatStatus(order.paymentStatus),
-        tone: "warning",
-      },
-      { color: successColor, completed: true, dateLabel, icon: CheckmarkCircle02Icon, label: "Closed", tone: "success" },
-    ];
-  }
-
-  const rank = orderStatusRank(order);
-  const steps = [
-    { color: colors.primary, icon: ShoppingCart01Icon, key: 1, label: "Placed", tone: "primary" as const },
-    { color: warningColor, icon: PackageIcon, key: 2, label: "Processing", tone: "warning" as const },
-    { color: purpleColor, icon: DeliveryBox01Icon, key: 3, label: "Shipped", tone: "purple" as const },
-    { color: successColor, icon: CheckmarkCircle02Icon, key: 4, label: "Delivered", tone: "success" as const },
-  ];
-
-  return steps.map((step) => ({
-    color: step.color,
-    completed: rank >= step.key,
-    dateLabel: rank >= step.key ? dateLabel : "-",
-    icon: step.icon,
-    label: step.label,
-    tone: step.tone,
-  }));
+function formatOrderDate(value?: string | null) {
+  if (!value) return "Date not available";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "Date not available";
+  return new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", year: "numeric" }).format(date);
 }
 
-function orderStatusRank(order: MobileOrderSummary) {
-  if (order.orderStatus === "DELIVERED" || order.deliveryStatus === "DELIVERED") {
-    return 4;
-  }
-  if (order.orderStatus === "SHIPPED" || order.deliveryStatus === "DISPATCHED" || order.deliveryStatus === "IN_TRANSIT") {
-    return 3;
-  }
-  if (order.orderStatus === "PROCESSING") {
-    return 2;
-  }
-
-  return 1;
-}
-
-function timelineIconTone(tone: TimelineStep["tone"]) {
-  if (tone === "warning") {
-    return styles.timelineIconWarning;
-  }
-  if (tone === "purple") {
-    return styles.timelineIconPurple;
-  }
-  if (tone === "success") {
-    return styles.timelineIconSuccess;
-  }
-  if (tone === "danger") {
-    return styles.timelineIconDanger;
-  }
-
-  return styles.timelineIconPrimary;
+function formatMoney(paise: number | undefined, currency: string) {
+  if (typeof paise !== "number") return "";
+  const rupees = paise / 100;
+  return new Intl.NumberFormat("en-IN", { style: "currency", currency: currency || "INR", maximumFractionDigits: 0 }).format(rupees);
 }
 
 function filterLabel(filter: OrderFilter) {
-  return filterOptions.find((option) => option.value === filter)?.label.replace("All Orders", "Recent") ?? "Recent";
-}
-
-function filterDescription(filter: OrderFilter) {
-  if (filter === "placed") {
-    return "Orders received and waiting for seller action.";
-  }
-  if (filter === "processing") {
-    return "Orders currently being prepared.";
-  }
-  if (filter === "shipped") {
-    return "Orders dispatched or in transit.";
-  }
-  if (filter === "delivered") {
-    return "Orders successfully delivered.";
-  }
-
-  return "Show every order in your account.";
-}
-
-function formatOrderDateTime(value?: string | null) {
-  if (!value) {
-    return "Date not available";
-  }
-
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) {
-    return "Date not available";
-  }
-
-  return new Intl.DateTimeFormat("en-IN", {
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    month: "short",
-    year: "numeric",
-  }).format(date);
-}
-
-function shortOrderDate(value?: string | null) {
-  if (!value) {
-    return "-";
-  }
-
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) {
-    return "-";
-  }
-
-  return new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short" }).format(date);
+  return filterChips.find((c) => c.value === filter)?.label.replace("All Orders", "Recent") ?? "Recent";
 }
 
 const styles = StyleSheet.create({
-  buyAgainButton: {
-    alignItems: "center",
-    backgroundColor: "#FFF2ED",
-    borderRadius: 18,
-    flexDirection: "row",
-    gap: 8,
-    justifyContent: "center",
-    minHeight: 52,
-    paddingHorizontal: 18,
-  },
-  buyAgainText: {
-    color: colors.primary,
-    fontSize: 14,
-    fontWeight: "900",
-  },
-  cardActionRow: {
-    alignItems: "center",
-    borderTopColor: borderColor,
-    borderTopWidth: 1,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: 12,
-    marginTop: 18,
-    paddingTop: 16,
+  safeArea: {
+    backgroundColor: "#FFFCFB",
+    flex: 1,
   },
   centerState: {
     alignItems: "center",
@@ -661,18 +476,316 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     padding: 24,
   },
-  detailsButton: {
+  loadingIcon: {
     alignItems: "center",
-    flex: 1,
-    flexDirection: "row",
-    gap: 8,
-    minHeight: 52,
+    backgroundColor: "#FFF2ED",
+    borderRadius: 999,
+    height: 58,
+    justifyContent: "center",
+    marginBottom: 12,
+    width: 58,
   },
-  detailsButtonText: {
+  stateText: {
+    color: mutedColor,
+    fontSize: 14,
+    fontWeight: "800",
+    marginTop: 10,
+  },
+
+  /* ── Header ── */
+  header: {
+    backgroundColor: colors.secondary,
+    gap: 16,
+    paddingBottom: 16,
+    paddingHorizontal: 20,
+    paddingTop: 14,
+  },
+  headerTopRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  headerLeft: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 14,
+  },
+  headerMark: {
+    alignItems: "center",
+    backgroundColor: colors.primary,
+    borderRadius: 14,
+    height: 48,
+    justifyContent: "center",
+    shadowColor: colors.primary,
+    shadowOffset: { height: 8, width: 0 },
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    width: 48,
+  },
+  headerCopy: {
+    flex: 1,
+  },
+  headerTitle: {
+    color: colors.ink,
+    fontSize: 22,
+    fontWeight: "900",
+    letterSpacing: 0,
+    lineHeight: 28,
+  },
+  headerSubtitle: {
+    color: colors.muted,
+    fontSize: 13,
+    fontWeight: "600",
+    lineHeight: 18,
+    marginTop: 2,
+  },
+  headerActions: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+  },
+  iconButton: {
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderColor: colors.border,
+    borderRadius: 14,
+    borderWidth: 1,
+    height: 48,
+    justifyContent: "center",
+    shadowColor: "#111827",
+    shadowOffset: { height: 6, width: 0 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    width: 48,
+  },
+
+  /* ── Filter chips ── */
+  filterRail: {
+    gap: 8,
+    paddingRight: 4,
+  },
+  filterChip: {
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderColor: borderColor,
+    borderRadius: 999,
+    borderWidth: 1,
+    minHeight: 42,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+  },
+  filterChipActive: {
+    backgroundColor: "#FFF8F5",
+    borderColor: colors.primary,
+  },
+  filterChipText: {
+    color: mutedColor,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  filterChipTextActive: {
+    color: colors.primary,
+    fontWeight: "900",
+  },
+
+  /* ── Section header ── */
+  sectionHeaderRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  sectionHeading: {
+    color: textColor,
+    flex: 1,
+    fontSize: 18,
+    fontWeight: "900",
+  },
+  viewAllText: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: "900",
+  },
+
+  /* ── Order card ── */
+  listContent: {
+    padding: 16,
+    paddingBottom: 140,
+  },
+  orderCard: {
+    backgroundColor: "#FFFFFF",
+    borderColor: borderColor,
+    borderRadius: 20,
+    borderWidth: 1,
+    marginBottom: 16,
+    shadowColor: "#111827",
+    shadowOffset: { height: 6, width: 0 },
+    shadowOpacity: 0.05,
+    shadowRadius: 18,
+    elevation: 2,
+    overflow: "hidden",
+  },
+  orderHeaderRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    padding: 14,
+    paddingBottom: 12,
+  },
+  orderHeaderLeft: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 12,
+    flex: 1,
+  },
+  orderNumberBox: {
+    alignItems: "center",
+    backgroundColor: "#FFF2ED",
+    borderRadius: 12,
+    height: 40,
+    justifyContent: "center",
+    width: 40,
+  },
+  orderHeaderText: {
+    flex: 1,
+  },
+  orderNumber: {
+    color: textColor,
+    fontSize: 15,
+    fontWeight: "900",
+    letterSpacing: 0.3,
+  },
+  orderDate: {
+    color: mutedColor,
+    fontSize: 12,
+    fontWeight: "700",
+    marginTop: 2,
+  },
+  orderHeaderRight: {
+    alignItems: "flex-end",
+    gap: 8,
+  },
+  statusBadge: {
+    alignItems: "center",
+    borderRadius: 999,
+    flexDirection: "row",
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+  statusBadgeText: {
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  orderTotal: {
+    color: colors.primary,
+    fontSize: 17,
+    fontWeight: "900",
+  },
+
+  /* ── Product section ── */
+  orderBody: {
+    borderTopColor: borderColor,
+    borderTopWidth: 1,
+  },
+  itemSection: {
+    flexDirection: "row",
+    gap: 14,
+    padding: 14,
+  },
+  itemImageWrap: {
+    position: "relative",
+  },
+  itemImage: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 14,
+    height: 88,
+    width: 88,
+  },
+  extraItemsBadge: {
+    alignItems: "center",
+    backgroundColor: "rgba(17,24,39,0.7)",
+    borderRadius: 999,
+    bottom: -4,
+    height: 22,
+    justifyContent: "center",
+    position: "absolute",
+    right: -4,
+    width: 22,
+  },
+  extraItemsText: {
+    color: "#FFFFFF",
+    fontSize: 10,
+    fontWeight: "900",
+  },
+  itemDetails: {
+    flex: 1,
+    justifyContent: "center",
+    minWidth: 0,
+  },
+  itemName: {
     color: textColor,
     fontSize: 14,
     fontWeight: "900",
+    lineHeight: 20,
   },
+  itemMeta: {
+    color: mutedColor,
+    fontSize: 12,
+    fontWeight: "700",
+    marginTop: 4,
+  },
+  itemPrice: {
+    color: colors.primary,
+    fontSize: 15,
+    fontWeight: "900",
+    marginTop: 6,
+  },
+
+  /* ── Actions ── */
+  cardActions: {
+    borderTopColor: borderColor,
+    borderTopWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    padding: 14,
+    paddingTop: 12,
+  },
+  detailsButton: {
+    alignItems: "center",
+    backgroundColor: "#F9FAFB",
+    borderRadius: 14,
+    borderColor: borderColor,
+    borderWidth: 1,
+    flex: 1,
+    flexDirection: "row",
+    gap: 6,
+    justifyContent: "center",
+    minHeight: 48,
+  },
+  detailsButtonText: {
+    color: textColor,
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  buyAgainButton: {
+    alignItems: "center",
+    backgroundColor: "#FFF2ED",
+    borderRadius: 14,
+    borderColor: colors.primary,
+    borderWidth: 1,
+    flex: 1,
+    flexDirection: "row",
+    gap: 6,
+    justifyContent: "center",
+    minHeight: 48,
+  },
+  buyAgainText: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: "900",
+  },
+
+  /* ── Empty ── */
   emptyPanelWrap: {
     flex: 1,
     justifyContent: "center",
@@ -680,128 +793,93 @@ const styles = StyleSheet.create({
   },
   emptyPanel: {
     backgroundColor: colors.surface,
-    borderColor,
-    borderRadius: 28,
+    borderColor: borderColor,
+    borderRadius: 24,
     borderWidth: 1,
-    padding: 16,
-    ...cardShadow,
+    padding: 20,
   },
-  extraItemText: {
-    color: colors.primary,
-    fontSize: 12,
+  titleBlock: {
+    flex: 1,
+  },
+  title: {
+    color: textColor,
+    fontSize: 30,
+    fontWeight: "900",
+    letterSpacing: 0,
+    lineHeight: 38,
+  },
+  subtitle: {
+    color: mutedColor,
+    fontSize: 15,
     fontWeight: "800",
-    marginTop: 6,
+    lineHeight: 22,
+    marginTop: 2,
   },
-  filterButton: {
+  primaryButton: {
+    alignItems: "center",
+    backgroundColor: colors.primary,
+    borderRadius: 16,
+    justifyContent: "center",
+    marginTop: 16,
+    minHeight: 54,
+  },
+  primaryButtonText: {
+    color: colors.surface,
+    fontSize: 15,
+    fontWeight: "900",
+  },
+  secondaryButton: {
     alignItems: "center",
     backgroundColor: "#FFF2ED",
-    borderRadius: 999,
-    flexDirection: "row",
-    gap: 8,
-    minHeight: 48,
-    paddingHorizontal: 17,
-  },
-  filterButtonText: {
-    color: colors.primary,
-    fontSize: 14,
-    fontWeight: "900",
-  },
-  filterChip: {
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderColor,
-    borderRadius: 999,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: 9,
-    marginRight: 12,
-    minHeight: 52,
-    paddingHorizontal: 18,
-  },
-  filterChipActive: {
-    backgroundColor: "#FFF8F5",
-    borderColor: colors.primary,
-  },
-  filterChipText: {
-    color: textColor,
-    fontSize: 14,
-    fontWeight: "900",
-  },
-  filterChipTextActive: {
-    color: colors.primary,
-  },
-  filterRail: {
-    paddingRight: 18,
-  },
-  filterSheet: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
-    paddingBottom: 24,
-    paddingHorizontal: 18,
-    paddingTop: 10,
-  },
-  header: {
-    gap: 22,
-    paddingBottom: 18,
-  },
-  headerActionRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 10,
-  },
-  headerTopRow: {
-    alignItems: "flex-start",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: 14,
-  },
-  iconButton: {
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderColor,
-    borderRadius: 999,
-    borderWidth: 1,
-    height: 48,
-    justifyContent: "center",
-    width: 48,
-    ...cardShadow,
-  },
-  itemBody: {
-    flex: 1,
-    minWidth: 0,
-  },
-  itemImage: {
-    backgroundColor: "#F8FAFC",
     borderRadius: 16,
-    height: 84,
-    width: 84,
+    justifyContent: "center",
+    marginTop: 14,
+    minHeight: 50,
   },
-  itemMeta: {
-    color: mutedColor,
-    fontSize: 13,
-    fontWeight: "800",
-    lineHeight: 18,
-    marginTop: 8,
-  },
-  itemName: {
-    color: textColor,
-    fontSize: 16,
+  secondaryButtonText: {
+    color: colors.primary,
+    fontSize: 14,
     fontWeight: "900",
-    lineHeight: 22,
   },
-  itemRow: {
-    borderTopColor: borderColor,
-    borderTopWidth: 1,
+
+  /* ── Support ── */
+  supportCard: {
+    alignItems: "center",
+    backgroundColor: "#FFF6F2",
+    borderColor: "#FFD9CC",
+    borderRadius: 20,
+    borderWidth: 1,
     flexDirection: "row",
     gap: 14,
-    marginTop: 16,
-    paddingTop: 16,
-  },
-  listContent: {
+    marginTop: 4,
     padding: 18,
-    paddingBottom: 128,
   },
+  supportIcon: {
+    alignItems: "center",
+    backgroundColor: "#FFE9E1",
+    borderRadius: 16,
+    height: 52,
+    justifyContent: "center",
+    width: 52,
+  },
+  supportCopy: {
+    flex: 1,
+  },
+  supportTitle: {
+    color: textColor,
+    fontSize: 14,
+    fontWeight: "900",
+    lineHeight: 20,
+  },
+  supportText: {
+    color: mutedColor,
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 17,
+    marginTop: 2,
+  },
+
+  /* ── Loading more ── */
   loadingMoreRow: {
     alignItems: "center",
     flexDirection: "row",
@@ -814,143 +892,77 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "800",
   },
-  loadingIcon: {
-    alignItems: "center",
-    backgroundColor: "#FFF2ED",
-    borderRadius: 999,
-    height: 58,
-    justifyContent: "center",
-    marginBottom: 12,
-    width: 58,
-  },
-  modalBackdrop: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: "rgba(17,24,39,0.22)",
-  },
+
+  /* ── Filter modal ── */
   modalOverlay: {
     flex: 1,
     justifyContent: "flex-end",
   },
-  orderCard: {
+  modalBackdrop: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: "rgba(17,24,39,0.25)",
+  },
+  filterSheet: {
     backgroundColor: colors.surface,
-    borderColor,
-    borderRadius: 28,
-    borderWidth: 1,
-    marginBottom: 20,
-    padding: 18,
-    ...cardShadow,
-  },
-  orderDate: {
-    color: mutedColor,
-    fontSize: 13,
-    fontWeight: "800",
-    lineHeight: 19,
-    marginTop: 4,
-  },
-  orderHead: {
-    flex: 1,
-    minWidth: 0,
-  },
-  orderIcon: {
-    alignItems: "center",
-    backgroundColor: "#FFF2ED",
-    borderRadius: 999,
-    height: 54,
-    justifyContent: "center",
-    width: 54,
-  },
-  orderNumber: {
-    color: textColor,
-    fontSize: 17,
-    fontWeight: "900",
-    lineHeight: 22,
-  },
-  orderTopRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 12,
-  },
-  orderTotal: {
-    color: colors.primary,
-    fontSize: 19,
-    fontWeight: "900",
-  },
-  primaryButton: {
-    alignItems: "center",
-    backgroundColor: colors.primary,
-    borderRadius: 18,
-    justifyContent: "center",
-    marginTop: 16,
-    minHeight: 54,
-  },
-  primaryButtonText: {
-    color: colors.surface,
-    fontSize: 15,
-    fontWeight: "900",
-  },
-  safeArea: {
-    backgroundColor: "#FFFCFB",
-    flex: 1,
-  },
-  secondaryButton: {
-    alignItems: "center",
-    backgroundColor: "#FFF2ED",
-    borderRadius: 18,
-    justifyContent: "center",
-    marginTop: 14,
-    minHeight: 50,
-  },
-  secondaryButtonText: {
-    color: colors.primary,
-    fontSize: 14,
-    fontWeight: "900",
-  },
-  sectionHeaderRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: 12,
-  },
-  sectionHeading: {
-    color: textColor,
-    flex: 1,
-    fontSize: 20,
-    fontWeight: "900",
-  },
-  sheetCloseButton: {
-    backgroundColor: "#FFF2ED",
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-  },
-  sheetCloseText: {
-    color: colors.primary,
-    fontSize: 12,
-    fontWeight: "900",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingBottom: 28,
+    paddingHorizontal: 18,
+    paddingTop: 10,
   },
   sheetHandle: {
     alignSelf: "center",
     backgroundColor: "#E8DAD4",
     borderRadius: 999,
     height: 5,
-    marginBottom: 14,
+    marginBottom: 16,
     width: 46,
   },
   sheetHeader: {
     alignItems: "flex-start",
     flexDirection: "row",
-    gap: 14,
     justifyContent: "space-between",
+    marginBottom: 4,
+  },
+  sheetTitleBlock: {
+    flex: 1,
+  },
+  sheetTitle: {
+    color: textColor,
+    fontSize: 22,
+    fontWeight: "900",
+  },
+  sheetSubtitle: {
+    color: mutedColor,
+    fontSize: 13,
+    fontWeight: "700",
+    lineHeight: 18,
+    marginTop: 4,
+  },
+  sheetCloseButton: {
+    backgroundColor: "#FFF2ED",
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  sheetCloseText: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  sheetOptions: {
+    gap: 10,
+    marginTop: 20,
   },
   sheetOption: {
     alignItems: "center",
     backgroundColor: colors.surface,
-    borderColor,
-    borderRadius: 22,
+    borderColor: borderColor,
+    borderRadius: 16,
     borderWidth: 1,
     flexDirection: "row",
     gap: 14,
-    minHeight: 76,
+    minHeight: 72,
     padding: 14,
   },
   sheetOptionActive: {
@@ -959,209 +971,34 @@ const styles = StyleSheet.create({
   },
   sheetOptionCopy: {
     flex: 1,
-    minWidth: 0,
   },
   sheetOptionIcon: {
     alignItems: "center",
     backgroundColor: "#FFF2ED",
-    borderRadius: 999,
-    height: 46,
+    borderRadius: 14,
+    height: 44,
     justifyContent: "center",
-    width: 46,
+    width: 44,
   },
   sheetOptionIconActive: {
     backgroundColor: "rgba(255,255,255,0.18)",
   },
-  sheetOptions: {
-    gap: 12,
-    marginTop: 20,
-  },
-  sheetOptionText: {
-    color: mutedColor,
-    fontSize: 12,
-    fontWeight: "700",
-    lineHeight: 18,
-    marginTop: 3,
-  },
-  sheetOptionTextActive: {
-    color: "rgba(255,255,255,0.82)",
-  },
   sheetOptionTitle: {
     color: textColor,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "900",
   },
   sheetOptionTitleActive: {
     color: colors.surface,
   },
-  sheetSubtitle: {
+  sheetOptionText: {
     color: mutedColor,
     fontSize: 12,
     fontWeight: "700",
-    lineHeight: 18,
-    marginTop: 4,
-  },
-  sheetTitle: {
-    color: textColor,
-    fontSize: 22,
-    fontWeight: "900",
-  },
-  sheetTitleBlock: {
-    flex: 1,
-    minWidth: 0,
-  },
-  signedOutScreen: {
-    flex: 1,
-    gap: 22,
-    padding: 18,
-  },
-  stateText: {
-    color: mutedColor,
-    fontSize: 14,
-    fontWeight: "800",
-    marginTop: 10,
-  },
-  subtitle: {
-    color: mutedColor,
-    fontSize: 15,
-    fontWeight: "800",
-    lineHeight: 22,
-    marginTop: 2,
-  },
-  supportButton: {
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderColor: "#FFD4C6",
-    borderRadius: 18,
-    borderWidth: 1,
-    justifyContent: "center",
-    minHeight: 50,
-    paddingHorizontal: 18,
-  },
-  supportButtonText: {
-    color: colors.primary,
-    fontSize: 13,
-    fontWeight: "900",
-  },
-  supportCard: {
-    alignItems: "center",
-    backgroundColor: "#FFF6F2",
-    borderColor: "#FFD9CC",
-    borderRadius: 28,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: 14,
-    marginTop: 4,
-    padding: 18,
-    ...cardShadow,
-  },
-  supportCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
-  supportIcon: {
-    alignItems: "center",
-    backgroundColor: "#FFE9E1",
-    borderRadius: 18,
-    height: 62,
-    justifyContent: "center",
-    width: 62,
-  },
-  supportText: {
-    color: mutedColor,
-    fontSize: 13,
-    fontWeight: "800",
-    lineHeight: 19,
+    lineHeight: 17,
     marginTop: 3,
   },
-  supportTitle: {
-    color: textColor,
-    fontSize: 15,
-    fontWeight: "900",
-    lineHeight: 21,
-  },
-  timelineConnector: {
-    borderColor: "#D7DDE8",
-    borderStyle: "dashed",
-    borderTopWidth: 1,
-    flex: 1,
-    marginHorizontal: 8,
-    marginTop: 22,
-  },
-  timelineConnectorActive: {
-    borderColor: "#C6CEDA",
-  },
-  timelineDate: {
-    color: mutedColor,
-    fontSize: 10,
-    fontWeight: "800",
-    lineHeight: 14,
-    marginTop: 2,
-  },
-  timelineIcon: {
-    alignItems: "center",
-    borderRadius: 999,
-    height: 44,
-    justifyContent: "center",
-    width: 44,
-  },
-  timelineIconDanger: {
-    backgroundColor: "#FEE2E2",
-  },
-  timelineIconPending: {
-    backgroundColor: "#F3F4F6",
-  },
-  timelineIconPrimary: {
-    backgroundColor: "#FFF2ED",
-  },
-  timelineIconPurple: {
-    backgroundColor: "#F3E8FF",
-  },
-  timelineIconSuccess: {
-    backgroundColor: "#DCFCE7",
-  },
-  timelineIconWarning: {
-    backgroundColor: "#FEF3C7",
-  },
-  timelineLabel: {
-    color: textColor,
-    fontSize: 11,
-    fontWeight: "900",
-    lineHeight: 15,
-    marginTop: 8,
-  },
-  timelineRow: {
-    flexDirection: "row",
-    gap: 0,
-    marginTop: 18,
-  },
-  timelineStepWrap: {
-    flex: 1,
-    minWidth: 0,
-  },
-  stepTopLine: {
-    alignItems: "flex-start",
-    flexDirection: "row",
-  },
-  title: {
-    color: textColor,
-    fontSize: 30,
-    fontWeight: "900",
-    letterSpacing: 0,
-    lineHeight: 38,
-  },
-  titleBlock: {
-    flex: 1,
-    minWidth: 0,
-  },
-  totalWrap: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 6,
-  },
-  viewAllText: {
-    color: colors.primary,
-    fontSize: 14,
-    fontWeight: "900",
+  sheetOptionTextActive: {
+    color: "rgba(255,255,255,0.8)",
   },
 });

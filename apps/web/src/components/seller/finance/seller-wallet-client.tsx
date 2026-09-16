@@ -435,13 +435,13 @@ function ReceivableDetailModal({
                       <p className="text-xs text-[#667085]">{formatDateTime(evt.createdAt)}</p>
                     </div>
                     <div className="text-right">
-                      {evt.amountDeltaPaise > 0 && (
-                        <p className="text-sm font-black text-[#0F8A5F]">+{formatMoney(evt.amountDeltaPaise, currency)}</p>
+                      {evt.amountDeltaPaise !== 0 ? (
+                        <p className={`text-sm font-black ${evt.amountDeltaPaise > 0 ? "text-[#B42318]" : "text-[#0F8A5F]"}`}>
+                          {evt.amountDeltaPaise > 0 ? "-" : "+"}{formatMoney(Math.abs(evt.amountDeltaPaise), currency)}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-[#667085]">--</p>
                       )}
-                      {evt.amountDeltaPaise < 0 && (
-                        <p className="text-sm font-black text-[#B42318]">-{formatMoney(Math.abs(evt.amountDeltaPaise), currency)}</p>
-                      )}
-                      {evt.amountDeltaPaise === 0 && <p className="text-xs text-[#667085]">--</p>}
                     </div>
                   </div>
                 ))}

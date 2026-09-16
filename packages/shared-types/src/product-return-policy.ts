@@ -37,23 +37,24 @@ export function normalizeProductReturnPolicy(
     attributes && typeof attributes === "object" && !Array.isArray(attributes)
       ? (attributes as Record<string, unknown>)
       : {};
-  const eligibility = normalizedEligibility(record.returnEligibility ?? record.returnPolicy);
-  const returnAllowed =
-    eligibility === "Return and replacement" ||
-    eligibility === "Return only" ||
-    eligibility === "Returnable";
-  const replacementAllowed =
-    eligibility === "Return and replacement" ||
-    eligibility === "Replacement only" ||
-    eligibility === "Returnable";
+  const eligibility = typeof record.returnEligibility === "string"
+    ? record.returnEligibility.trim()
+    : typeof record.returnPolicy === "string"
+      ? record.returnPolicy.trim()
+      : "";
+  const isReturnable =
+    eligibility === "Return and replacement" || eligibility === "Return only";
+  const isReplaceable =
+    eligibility === "Return and replacement" || eligibility === "Replacement only";
+  const isLegacyReturnable = eligibility === "Returnable";
 
   return {
-    returnAllowed,
-    replacementAllowed,
-    returnWindowDays: returnAllowed
+    returnAllowed: isReturnable || isLegacyReturnable,
+    replacementAllowed: isReplaceable || isLegacyReturnable,
+    returnWindowDays: isReturnable || isLegacyReturnable
       ? normalizedWindowDays(record.returnWindowDays, fallbackWindowDays)
       : 0,
-    replacementWindowDays: replacementAllowed
+    replacementWindowDays: isReplaceable || isLegacyReturnable
       ? normalizedWindowDays(record.replacementWindowDays, fallbackWindowDays)
       : 0,
     returnReasons: normalizedReasons(record.returnReasons),
@@ -65,10 +66,6 @@ export function productPolicyAllowsResolution(
   resolution: "REFUND" | "REPLACEMENT",
 ) {
   return resolution === "REPLACEMENT" ? policy.replacementAllowed : policy.returnAllowed;
-}
-
-function normalizedEligibility(value: unknown) {
-  return typeof value === "string" && value.trim() ? value.trim() : "Returnable";
 }
 
 function normalizedWindowDays(value: unknown, fallback: number) {
