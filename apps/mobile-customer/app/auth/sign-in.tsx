@@ -18,8 +18,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Image,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -531,14 +529,14 @@ export default function SignInScreen() {
   return (
     <Screen padded={false}>
       <Stack.Screen options={{ headerShown: false }} />
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.flex}>
-        <ScrollView
-          automaticallyAdjustKeyboardInsets
-          contentContainerStyle={styles.content}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          <BrandStage onBack={() => router.back()} title={screenTitle} />
+      <ScrollView
+        automaticallyAdjustKeyboardInsets
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        showsVerticalScrollIndicator={false}
+      >
+        <BrandStage onBack={() => router.back()} title={screenTitle} />
 
           <View style={styles.authWorkspace}>
             {!hasClerkKey ? (
@@ -786,10 +784,9 @@ export default function SignInScreen() {
             <LegalFooter />
           </View>
         </ScrollView>
-      </KeyboardAvoidingView>
-    </Screen>
-  );
-}
+      </Screen>
+    );
+  }
 
 function BrandStage({ onBack, title }: { onBack: () => void; title: string }) {
   return (
@@ -1246,10 +1243,14 @@ const styles = StyleSheet.create({
   },
   brandStage: {
     backgroundColor: colors.primary,
-    minHeight: 244,
-    paddingBottom: 26,
+    paddingBottom: 28,
     paddingHorizontal: 20,
     paddingTop: 8,
+    shadowColor: "#000",
+    shadowOffset: { height: 4, width: 0 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
   },
   topBar: {
     alignItems: "center",
@@ -1259,7 +1260,7 @@ const styles = StyleSheet.create({
   backButton: {
     alignItems: "center",
     backgroundColor: "rgba(255,255,255,0.14)",
-    borderRadius: 8,
+    borderRadius: 10,
     height: 42,
     justifyContent: "center",
     width: 42,
@@ -1281,56 +1282,62 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexDirection: "row",
     gap: 16,
-    marginTop: 28,
+    marginTop: 24,
   },
   logoPlate: {
     alignItems: "center",
     backgroundColor: colors.surface,
-    borderRadius: 8,
-    height: 76,
+    borderRadius: 12,
+    height: 72,
     justifyContent: "center",
-    width: 76,
+    shadowColor: "#000",
+    shadowOffset: { height: 2, width: 0 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 2,
+    width: 72,
   },
   logoImage: {
-    height: 68,
-    width: 68,
+    height: 64,
+    width: 64,
   },
   brandCopy: {
     flex: 1,
   },
   brandName: {
     color: colors.surface,
-    fontSize: 30,
+    fontSize: 32,
     fontWeight: "900",
-    lineHeight: 36,
+    letterSpacing: -0.3,
+    lineHeight: 38,
   },
   brandTagline: {
     color: "#FFF0EB",
     fontSize: 13,
-    fontWeight: "700",
+    fontWeight: "600",
     lineHeight: 19,
     marginTop: 4,
   },
   securityLine: {
     alignItems: "center",
-    borderTopColor: "rgba(255,255,255,0.22)",
+    borderTopColor: "rgba(255,255,255,0.18)",
     borderTopWidth: 1,
     flexDirection: "row",
     gap: 8,
-    marginTop: 24,
+    marginTop: 22,
     paddingTop: 14,
   },
   securityText: {
     color: "#FFF3EE",
     fontSize: 12,
-    fontWeight: "800",
+    fontWeight: "700",
   },
   authWorkspace: {
     backgroundColor: colors.secondary,
     flex: 1,
     paddingBottom: 32,
     paddingHorizontal: 20,
-    paddingTop: 26,
+    paddingTop: 24,
   },
   panel: {
     width: "100%",
@@ -1339,7 +1346,7 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
     borderBottomWidth: 1,
     flexDirection: "row",
-    marginBottom: 26,
+    marginBottom: 24,
   },
   mainModeTab: {
     alignItems: "center",
@@ -1347,7 +1354,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 3,
     flex: 1,
     justifyContent: "center",
-    minHeight: 46,
+    minHeight: 44,
   },
   mainModeTabActive: {
     borderBottomColor: colors.primary,
@@ -1364,33 +1371,40 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontSize: 12,
     fontWeight: "900",
+    letterSpacing: 0.5,
     textTransform: "uppercase",
   },
   title: {
     color: colors.ink,
-    fontSize: 27,
+    fontSize: 28,
     fontWeight: "900",
-    lineHeight: 33,
+    letterSpacing: -0.3,
+    lineHeight: 34,
     marginTop: 8,
   },
   subtitle: {
     color: colors.muted,
     fontSize: 14,
-    fontWeight: "600",
-    lineHeight: 21,
-    marginTop: 9,
+    fontWeight: "500",
+    lineHeight: 20,
+    marginTop: 8,
   },
   googleButton: {
     alignItems: "center",
     backgroundColor: colors.surface,
-    borderColor: "#DDD6D2",
-    borderRadius: 8,
+    borderColor: "#E5E0DB",
+    borderRadius: 12,
     borderWidth: 1,
     flexDirection: "row",
     gap: 11,
     justifyContent: "center",
-    marginTop: 24,
-    minHeight: 54,
+    marginTop: 22,
+    minHeight: 52,
+    shadowColor: "#000",
+    shadowOffset: { height: 1, width: 0 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 1,
   },
   googleButtonText: {
     color: colors.ink,
@@ -1398,12 +1412,13 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   buttonPressed: {
-    opacity: 0.78,
+    opacity: 0.85,
+    transform: [{ scale: 0.98 }],
   },
   dividerRow: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 12,
+    gap: 14,
     marginVertical: 20,
   },
   dividerLine: {
@@ -1414,29 +1429,34 @@ const styles = StyleSheet.create({
   dividerText: {
     color: colors.muted,
     fontSize: 12,
-    fontWeight: "700",
+    fontWeight: "600",
   },
   segmentRow: {
     backgroundColor: colors.softSurface,
     borderColor: colors.border,
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 1,
     flexDirection: "row",
     gap: 6,
     marginBottom: 20,
-    padding: 5,
+    padding: 4,
   },
   segmentButton: {
     alignItems: "center",
-    borderRadius: 6,
+    borderRadius: 10,
     flex: 1,
     flexDirection: "row",
     gap: 7,
     justifyContent: "center",
-    minHeight: 42,
+    minHeight: 44,
   },
   segmentButtonActive: {
     backgroundColor: colors.primary,
+    shadowColor: colors.primary,
+    shadowOffset: { height: 2, width: 0 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 2,
   },
   segmentText: {
     color: colors.muted,
@@ -1447,24 +1467,30 @@ const styles = StyleSheet.create({
     color: colors.surface,
   },
   field: {
-    marginBottom: 16,
+    marginBottom: 18,
   },
   label: {
     color: colors.ink,
     fontSize: 13,
     fontWeight: "800",
+    letterSpacing: 0.2,
     marginBottom: 8,
   },
   inputShell: {
     alignItems: "center",
     backgroundColor: colors.surface,
-    borderColor: "#DDD6D2",
-    borderRadius: 8,
-    borderWidth: 1,
+    borderColor: "#E5E0DB",
+    borderRadius: 12,
+    borderWidth: 1.5,
     flexDirection: "row",
-    gap: 11,
+    gap: 12,
     minHeight: 56,
     paddingHorizontal: 14,
+    shadowColor: "#000",
+    shadowOffset: { height: 1, width: 0 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 0.5,
   },
   input: {
     color: colors.ink,
@@ -1479,8 +1505,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
     lineHeight: 17,
-    marginBottom: 14,
-    marginTop: -8,
+    marginTop: -6,
   },
   passwordHint: {
     color: colors.muted,
@@ -1488,7 +1513,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     lineHeight: 18,
     marginBottom: 14,
-    marginTop: -5,
+    marginTop: -6,
   },
   forgotButton: {
     alignItems: "flex-end",
@@ -1551,65 +1576,8 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     marginTop: 3,
   },
-  inlineMessage: {
-    borderRadius: 8,
-    borderWidth: 1,
-    marginBottom: 14,
-    padding: 12,
-  },
-  inlineMessageDanger: {
-    backgroundColor: "#FFF1F1",
-    borderColor: "#F7C6C6",
-  },
-  inlineMessageSuccess: {
-    backgroundColor: "#F0FDF4",
-    borderColor: "#BBF7D0",
-  },
-  inlineMessageText: {
-    fontSize: 13,
-    fontWeight: "700",
-    lineHeight: 19,
-  },
-  inlineMessageDangerText: {
-    color: colors.danger,
-  },
-  inlineMessageSuccessText: {
-    color: "#0F7A4F",
-  },
-  primaryButton: {
-    alignItems: "center",
-    backgroundColor: colors.primary,
-    borderRadius: 8,
-    justifyContent: "center",
-    minHeight: 56,
-    paddingHorizontal: 18,
-  },
-  primaryButtonPressed: {
-    backgroundColor: "#CF2E00",
-  },
-  primaryButtonText: {
-    color: colors.surface,
-    fontSize: 15,
-    fontWeight: "900",
-  },
-  secondaryButton: {
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 8,
-    borderWidth: 1,
-    justifyContent: "center",
-    marginTop: 10,
-    minHeight: 52,
-    paddingHorizontal: 18,
-  },
-  secondaryButtonText: {
-    color: colors.ink,
-    fontSize: 14,
-    fontWeight: "800",
-  },
   disabledButton: {
-    opacity: 0.52,
+    opacity: 0.5,
   },
   switchButton: {
     alignItems: "center",
@@ -1631,10 +1599,72 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontWeight: "900",
   },
-  notice: {
+  inlineMessage: {
+    borderRadius: 10,
+    borderWidth: 1,
+    marginBottom: 14,
+    padding: 12,
+  },
+  inlineMessageDanger: {
     backgroundColor: "#FFF1F1",
     borderColor: "#F7C6C6",
-    borderRadius: 8,
+  },
+  inlineMessageSuccess: {
+    backgroundColor: "#F0FDF4",
+    borderColor: "#BBF7D0",
+  },
+  inlineMessageText: {
+    fontSize: 13,
+    fontWeight: "600",
+    lineHeight: 19,
+  },
+  inlineMessageDangerText: {
+    color: colors.danger,
+  },
+  inlineMessageSuccessText: {
+    color: "#0F7A4F",
+  },
+  primaryButton: {
+    alignItems: "center",
+    backgroundColor: colors.primary,
+    borderRadius: 12,
+    justifyContent: "center",
+    minHeight: 56,
+    paddingHorizontal: 18,
+    shadowColor: colors.primary,
+    shadowOffset: { height: 4, width: 0 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  primaryButtonPressed: {
+    backgroundColor: "#CF2E00",
+  },
+  primaryButtonText: {
+    color: colors.surface,
+    fontSize: 16,
+    fontWeight: "900",
+  },
+  secondaryButton: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    justifyContent: "center",
+    marginTop: 10,
+    minHeight: 52,
+    paddingHorizontal: 18,
+  },
+  secondaryButtonText: {
+    color: colors.ink,
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  notice: {
+    backgroundColor: "#FFF8F0",
+    borderColor: "#FFD7CA",
+    borderRadius: 10,
     borderWidth: 1,
     marginBottom: 18,
     padding: 14,
@@ -1642,7 +1672,7 @@ const styles = StyleSheet.create({
   noticeTitle: {
     color: colors.ink,
     fontSize: 14,
-    fontWeight: "900",
+    fontWeight: "800",
   },
   noticeText: {
     color: colors.muted,

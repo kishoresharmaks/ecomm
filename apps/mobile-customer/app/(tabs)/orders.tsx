@@ -662,18 +662,20 @@ const styles = StyleSheet.create({
   },
   orderHeaderRight: {
     alignItems: "flex-end",
-    gap: 8,
+    gap: 4,
+    maxWidth: "44%",
   },
   statusBadge: {
     alignItems: "center",
+    alignSelf: "flex-end",
     borderRadius: 999,
     flexDirection: "row",
-    gap: 5,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
+    gap: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
   },
   statusBadgeText: {
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: "900",
   },
   orderTotal: {

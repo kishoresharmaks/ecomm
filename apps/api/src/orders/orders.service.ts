@@ -5050,6 +5050,7 @@ export class OrdersService {
             id: item.product.id,
             name: item.product.name,
             slug: item.product.slug,
+            imageUrl: item.product.images[0]?.url ?? null,
             images: item.product.images.map((image) => ({
               id: image.id,
               url: image.url,

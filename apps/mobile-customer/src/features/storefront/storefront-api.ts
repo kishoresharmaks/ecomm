@@ -334,6 +334,8 @@ export type MobileOrderSummary = {
   buyerCouponMerchandiseDiscountMinor?: number | null;
   buyerCouponShippingDiscountMinor?: number | null;
   buyerTotalMinor?: number | null;
+  couponCode?: string | null;
+  couponTitle?: string | null;
   fxRateFetchedAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
@@ -496,6 +498,7 @@ export type MobileOrderDetail = Omit<MobileOrderSummary, "items"> & {
     label?: string;
     status?: string;
     note?: string | null;
+    at?: string | null;
     createdAt?: string | null;
   }>;
 };
@@ -803,6 +806,7 @@ export type MobileTrackedOrder = {
     label?: string;
     status?: string;
     note?: string | null;
+    at?: string | null;
     createdAt?: string | null;
   }>;
   statusEvents?: Array<{

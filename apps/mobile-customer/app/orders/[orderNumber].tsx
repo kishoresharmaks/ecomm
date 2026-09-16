@@ -751,7 +751,7 @@ function buildTimeline(order: MobileOrderDetail) {
     return deliveryTimeline.map((event) => ({
       label: event.label ?? formatStatus(event.status ?? "Order update"),
       note: event.note,
-      createdAt: event.createdAt,
+      createdAt: event.at ?? event.createdAt ?? null,
     }));
   }
 

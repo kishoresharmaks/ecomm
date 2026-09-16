@@ -23,16 +23,8 @@ export function resolveImageUrl(value?: string | null) {
       return `${origin}${image}`;
     }
 
-    if (image.startsWith("/storage/")) {
-      return `${origin}${image}`;
-    }
-
-    if (image.startsWith("/cms/")) {
-      return publicStorageImageUrl(apiUrl, cmsPublicPathToStorageKey(image));
-    }
-
     if (isStorageImageKey(image.slice(1))) {
-      return publicStorageImageUrl(apiUrl, image.slice(1));
+      return `${origin}${image}`;
     }
 
     return `${origin}${image}`;
@@ -42,7 +34,12 @@ export function resolveImageUrl(value?: string | null) {
     return publicStorageImageUrl(apiUrl, cmsPublicPathToStorageKey(image));
   }
 
-  return publicStorageImageUrl(apiUrl, image);
+  if (isStorageImageKey(image)) {
+    return publicStorageImageUrl(apiUrl, image);
+  }
+
+  // Direct relative path on the server (e.g. "storage/products/abc.jpg")
+  return `${origin}/${image}`;
 }
 
 function isStorageImageKey(value: string) {
