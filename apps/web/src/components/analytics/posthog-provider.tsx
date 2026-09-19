@@ -1,13 +1,15 @@
 "use client";
 
 import { usePathname, useSearchParams } from "next/navigation";
-import { useEffect, Suspense, ReactNode } from "react";
+import { useEffect, useRef, Suspense, ReactNode } from "react";
 import posthog from "posthog-js";
 import { initPostHog, isPostHogConfigured } from "@/lib/posthog-client";
 
 function PostHogPageViewTracker() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const previousUrlRef = useRef<string | null>(null);
+  const pageviewTimestampRef = useRef<number>(Date.now());
 
   useEffect(() => {
     if (!pathname || !isPostHogConfigured()) {
@@ -22,10 +24,41 @@ function PostHogPageViewTracker() {
       url += `?${searchString}`;
     }
 
+    // Capture $pageleave for previous page on SPA navigation
+    if (previousUrlRef.current && previousUrlRef.current !== url) {
+      const durationSeconds = Math.max(
+        0,
+        Math.round((Date.now() - pageviewTimestampRef.current) / 1000),
+      );
+      posthog.capture("$pageleave", {
+        $current_url: previousUrlRef.current,
+        $prev_pageview_duration: durationSeconds,
+      });
+    }
+
+    previousUrlRef.current = url;
+    pageviewTimestampRef.current = Date.now();
+
     posthog.capture("$pageview", {
       $current_url: url,
     });
   }, [pathname, searchParams]);
+
+  useEffect(() => {
+    return () => {
+      // Capture $pageleave on final unmount
+      if (previousUrlRef.current && isPostHogConfigured()) {
+        const durationSeconds = Math.max(
+          0,
+          Math.round((Date.now() - pageviewTimestampRef.current) / 1000),
+        );
+        posthog.capture("$pageleave", {
+          $current_url: previousUrlRef.current,
+          $prev_pageview_duration: durationSeconds,
+        });
+      }
+    };
+  }, []);
 
   return null;
 }
@@ -50,7 +83,8 @@ export function PostHogProvider({ children }: { children?: ReactNode }) {
     }
 
     try {
-      const bannerDismissed = window.localStorage.getItem("indihub:privacy:cookie-consent-dismissed") === "true";
+      const bannerDismissed =
+        window.localStorage.getItem("indihub:privacy:cookie-consent-dismissed") === "true";
       if (bannerDismissed) {
         applyConsent("analytics");
       } else {
