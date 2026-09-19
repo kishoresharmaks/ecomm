@@ -26,6 +26,7 @@ export function isPostHogConfigured(): boolean {
 }
 
 let isInitialized = false;
+let hasWarnedMissingToken = false;
 
 export function initPostHog(): typeof posthog | null {
   if (typeof window === "undefined") {
@@ -34,6 +35,12 @@ export function initPostHog(): typeof posthog | null {
 
   const token = getPostHogToken();
   if (!token) {
+    if (!hasWarnedMissingToken) {
+      console.warn(
+        "[PostHog] NEXT_PUBLIC_POSTHOG_KEY / NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN is missing. Analytics and session recording are disabled. Set this variable in your hosting environment to start capturing events.",
+      );
+      hasWarnedMissingToken = true;
+    }
     return null;
   }
 
