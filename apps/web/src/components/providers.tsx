@@ -12,6 +12,7 @@ import dynamic from "next/dynamic";
 import { MarketProvider } from "./market/market-context";
 import { StorefrontLocationProvider } from "./storefront/storefront-location-context";
 import { I18nProvider } from "./i18n/i18n-provider";
+import { PostHogProvider } from "./analytics/posthog-provider";
 
 const DynamicChatWidget = dynamic(
   () => import("./chat/chat-widget").then((m) => m.ChatWidget),
@@ -49,35 +50,37 @@ export function Providers({
 
   const app = (
     <QueryClientProvider client={queryClient}>
-      <MarketProvider>
-        <AdminAuthProvider>
-          <DevAuthProvider>
-            {shouldUseClerk ? (
-              <ClerkCustomerAuthProvider>
-                <StorefrontLocationProvider>
-                  <I18nProvider>
-                    {children}
-                    <DynamicChatWidget />
-                    <CookieConsentBanner />
-                    <ConsentManagedScripts nonce={nonce} />
-                  </I18nProvider>
-                </StorefrontLocationProvider>
-              </ClerkCustomerAuthProvider>
-            ) : (
-              <LocalCustomerAuthProvider>
-                <StorefrontLocationProvider>
-                  <I18nProvider>
-                    {children}
-                    <DynamicChatWidget />
-                    <CookieConsentBanner />
-                    <ConsentManagedScripts nonce={nonce} />
-                  </I18nProvider>
-                </StorefrontLocationProvider>
-              </LocalCustomerAuthProvider>
-            )}
-          </DevAuthProvider>
-        </AdminAuthProvider>
-      </MarketProvider>
+      <PostHogProvider>
+        <MarketProvider>
+          <AdminAuthProvider>
+            <DevAuthProvider>
+              {shouldUseClerk ? (
+                <ClerkCustomerAuthProvider>
+                  <StorefrontLocationProvider>
+                    <I18nProvider>
+                      {children}
+                      <DynamicChatWidget />
+                      <CookieConsentBanner />
+                      <ConsentManagedScripts nonce={nonce} />
+                    </I18nProvider>
+                  </StorefrontLocationProvider>
+                </ClerkCustomerAuthProvider>
+              ) : (
+                <LocalCustomerAuthProvider>
+                  <StorefrontLocationProvider>
+                    <I18nProvider>
+                      {children}
+                      <DynamicChatWidget />
+                      <CookieConsentBanner />
+                      <ConsentManagedScripts nonce={nonce} />
+                    </I18nProvider>
+                  </StorefrontLocationProvider>
+                </LocalCustomerAuthProvider>
+              )}
+            </DevAuthProvider>
+          </AdminAuthProvider>
+        </MarketProvider>
+      </PostHogProvider>
     </QueryClientProvider>
   );
 

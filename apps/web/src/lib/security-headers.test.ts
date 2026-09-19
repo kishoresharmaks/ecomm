@@ -31,6 +31,8 @@ describe("security header helpers", () => {
     expect(connectDirective).toContain("https://*.g.doubleclick.net");
     expect(connectDirective).toContain("https://ad.doubleclick.net");
     expect(frameDirective).toContain("https://www.googletagmanager.com");
+    expect(scriptDirective).toContain("https://us-assets.i.posthog.com");
+    expect(connectDirective).toContain("https://us.i.posthog.com");
   });
 
   it("keeps an explicitly configured local HTTP API usable in production preview", () => {

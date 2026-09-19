@@ -1,22 +1,76 @@
 import posthog from "posthog-js";
 
-const posthogConfigured = Boolean(
-  process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN?.trim() &&
-    process.env.NEXT_PUBLIC_POSTHOG_HOST?.trim(),
-);
+export function getPostHogToken(): string | undefined {
+  return (
+    process.env.NEXT_PUBLIC_POSTHOG_KEY?.trim() ||
+    process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN?.trim()
+  );
+}
+
+export function getPostHogHost(): string {
+  return (
+    process.env.NEXT_PUBLIC_POSTHOG_HOST?.trim() ||
+    "https://us.i.posthog.com"
+  );
+}
+
+export function isPostHogConfigured(): boolean {
+  return Boolean(getPostHogToken());
+}
+
+let isInitialized = false;
+
+export function initPostHog(): typeof posthog | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const token = getPostHogToken();
+  if (!token) {
+    return null;
+  }
+
+  if (isInitialized || posthog.__loaded) {
+    return posthog;
+  }
+
+  const host = getPostHogHost();
+
+  posthog.init(token, {
+    api_host: host,
+    defaults: "2026-01-30",
+    capture_pageview: false, // Managed by PostHogPageView on App Router route transitions
+    capture_pageleave: true,
+    capture_exceptions: true,
+    autocapture: true,
+    person_profiles: "identified_only",
+    debug: process.env.NODE_ENV === "development",
+  });
+
+  isInitialized = true;
+  return posthog;
+}
 
 export function capturePostHogEvent(
   eventName: string,
   properties?: Record<string, unknown>,
 ) {
-  if (posthogConfigured) {
-    posthog.capture(eventName, properties);
+  if (typeof window === "undefined") {
+    return;
+  }
+  const client = initPostHog();
+  if (client) {
+    client.capture(eventName, properties);
   }
 }
 
 export function capturePostHogException(error: unknown) {
-  if (posthogConfigured) {
-    posthog.captureException(error);
+  if (typeof window === "undefined") {
+    return;
+  }
+  const client = initPostHog();
+  if (client) {
+    client.captureException(error);
   }
 }
 
@@ -24,13 +78,23 @@ export function identifyPostHogUser(
   distinctId: string,
   personProperties?: Record<string, unknown>,
 ) {
-  if (posthogConfigured) {
-    posthog.identify(distinctId, personProperties);
+  if (typeof window === "undefined") {
+    return;
+  }
+  const client = initPostHog();
+  if (client) {
+    client.identify(distinctId, personProperties);
   }
 }
 
 export function resetPostHogUser() {
-  if (posthogConfigured) {
-    posthog.reset();
+  if (typeof window === "undefined") {
+    return;
+  }
+  const client = initPostHog();
+  if (client) {
+    client.reset();
   }
 }
+
+export { posthog };
