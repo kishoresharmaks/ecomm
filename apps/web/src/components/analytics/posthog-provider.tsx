@@ -5,11 +5,58 @@ import { useEffect, useRef, Suspense, ReactNode } from "react";
 import posthog from "posthog-js";
 import { initPostHog, isPostHogConfigured } from "@/lib/posthog-client";
 
+function calculateScrollPercentages(): { currentScrollPercentage: number } {
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    return { currentScrollPercentage: 0 };
+  }
+
+  const scrollTop =
+    window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
+  const winHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+  const docHeight = Math.max(
+    document.body.scrollHeight,
+    document.documentElement.scrollHeight,
+    document.body.offsetHeight,
+    document.documentElement.offsetHeight,
+    document.body.clientHeight,
+    document.documentElement.clientHeight,
+  );
+
+  if (docHeight <= winHeight) {
+    return { currentScrollPercentage: 100 };
+  }
+
+  const percentage = Math.min(
+    100,
+    Math.max(0, Math.round(((scrollTop + winHeight) / docHeight) * 100)),
+  );
+  return { currentScrollPercentage: percentage };
+}
+
 function PostHogPageViewTracker() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const previousUrlRef = useRef<string | null>(null);
   const pageviewTimestampRef = useRef<number>(Date.now());
+  const maxScrollRef = useRef<number>(0);
+
+  // Monitor scroll depth on active page
+  useEffect(() => {
+    function handleScroll() {
+      const { currentScrollPercentage } = calculateScrollPercentages();
+      if (currentScrollPercentage > maxScrollRef.current) {
+        maxScrollRef.current = currentScrollPercentage;
+      }
+    }
+
+    // Initialize with first view
+    handleScroll();
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+    };
+  }, [pathname]);
 
   useEffect(() => {
     if (!pathname || !isPostHogConfigured()) {
@@ -30,14 +77,23 @@ function PostHogPageViewTracker() {
         0,
         Math.round((Date.now() - pageviewTimestampRef.current) / 1000),
       );
+      const { currentScrollPercentage } = calculateScrollPercentages();
+      const maxScroll = Math.max(maxScrollRef.current, currentScrollPercentage);
+
       posthog.capture("$pageleave", {
         $current_url: previousUrlRef.current,
         $prev_pageview_duration: durationSeconds,
+        $prev_pageview_max_content_percentage: maxScroll,
+        $prev_pageview_max_scroll_percentage: maxScroll,
+        $prev_pageview_last_scroll_percentage: currentScrollPercentage,
+        "last scroll percentage": currentScrollPercentage,
+        "max scroll percentage": maxScroll,
       });
     }
 
     previousUrlRef.current = url;
     pageviewTimestampRef.current = Date.now();
+    maxScrollRef.current = calculateScrollPercentages().currentScrollPercentage;
 
     posthog.capture("$pageview", {
       $current_url: url,
@@ -52,9 +108,17 @@ function PostHogPageViewTracker() {
           0,
           Math.round((Date.now() - pageviewTimestampRef.current) / 1000),
         );
+        const { currentScrollPercentage } = calculateScrollPercentages();
+        const maxScroll = Math.max(maxScrollRef.current, currentScrollPercentage);
+
         posthog.capture("$pageleave", {
           $current_url: previousUrlRef.current,
           $prev_pageview_duration: durationSeconds,
+          $prev_pageview_max_content_percentage: maxScroll,
+          $prev_pageview_max_scroll_percentage: maxScroll,
+          $prev_pageview_last_scroll_percentage: currentScrollPercentage,
+          "last scroll percentage": currentScrollPercentage,
+          "max scroll percentage": maxScroll,
         });
       }
     };
