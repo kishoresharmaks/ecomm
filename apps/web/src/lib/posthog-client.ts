@@ -10,7 +10,14 @@ export function getPostHogToken(): string | undefined {
 export function getPostHogHost(): string {
   return (
     process.env.NEXT_PUBLIC_POSTHOG_HOST?.trim() ||
-    "https://us.i.posthog.com"
+    "https://t.1handindia.com"
+  );
+}
+
+export function getPostHogUiHost(): string {
+  return (
+    process.env.NEXT_PUBLIC_POSTHOG_UI_HOST?.trim() ||
+    "https://us.posthog.com"
   );
 }
 
@@ -35,10 +42,12 @@ export function initPostHog(): typeof posthog | null {
   }
 
   const host = getPostHogHost();
+  const uiHost = getPostHogUiHost();
 
   posthog.init(token, {
     api_host: host,
-    defaults: "2026-01-30",
+    ui_host: uiHost,
+    defaults: "2026-05-30",
     capture_pageview: false, // Managed by PostHogPageView on App Router route transitions
     capture_pageleave: true,
     capture_exceptions: true,

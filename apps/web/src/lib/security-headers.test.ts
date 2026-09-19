@@ -33,6 +33,8 @@ describe("security header helpers", () => {
     expect(frameDirective).toContain("https://www.googletagmanager.com");
     expect(scriptDirective).toContain("https://us-assets.i.posthog.com");
     expect(connectDirective).toContain("https://us.i.posthog.com");
+    expect(scriptDirective).toContain("https://t.1handindia.com");
+    expect(connectDirective).toContain("https://t.1handindia.com");
   });
 
   it("keeps an explicitly configured local HTTP API usable in production preview", () => {

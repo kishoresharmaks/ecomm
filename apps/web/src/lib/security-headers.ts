@@ -107,10 +107,22 @@ function analyticsScriptOrigins() {
     "https://www.google.com",
     "https://pagead2.googlesyndication.com",
     "https://googleads.g.doubleclick.net",
+    "https://t.1handindia.com",
+    "https://us.posthog.com",
     "https://us-assets.i.posthog.com",
     "https://eu-assets.i.posthog.com",
     "https://*.posthog.com",
   ];
+
+  const posthogHostOrigin = originFromUrl(process.env.NEXT_PUBLIC_POSTHOG_HOST);
+  if (posthogHostOrigin) {
+    origins.push(posthogHostOrigin);
+  }
+
+  const posthogUiHostOrigin = originFromUrl(process.env.NEXT_PUBLIC_POSTHOG_UI_HOST);
+  if (posthogUiHostOrigin) {
+    origins.push(posthogUiHostOrigin);
+  }
 
   if (process.env.NEXT_PUBLIC_CLOUDFLARE_BEACON_TOKEN?.trim()) {
     origins.push("https://static.cloudflareinsights.com");
@@ -134,6 +146,8 @@ function analyticsConnectionOrigins() {
     "https://googleads.g.doubleclick.net",
     "https://*.g.doubleclick.net",
     "https://ad.doubleclick.net",
+    "https://t.1handindia.com",
+    "https://us.posthog.com",
     "https://us.i.posthog.com",
     "https://eu.i.posthog.com",
     "https://*.posthog.com",

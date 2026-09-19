@@ -4,6 +4,7 @@ import {
   capturePostHogException,
   getPostHogHost,
   getPostHogToken,
+  getPostHogUiHost,
   identifyPostHogUser,
   isPostHogConfigured,
   resetPostHogUser,
@@ -35,14 +36,24 @@ describe("posthog-client helper", () => {
     expect(isPostHogConfigured()).toBe(false);
   });
 
-  it("defaults host to https://us.i.posthog.com when unset", () => {
+  it("defaults host to https://t.1handindia.com when unset", () => {
     vi.stubEnv("NEXT_PUBLIC_POSTHOG_HOST", "");
-    expect(getPostHogHost()).toBe("https://us.i.posthog.com");
+    expect(getPostHogHost()).toBe("https://t.1handindia.com");
   });
 
   it("uses custom host when provided", () => {
     vi.stubEnv("NEXT_PUBLIC_POSTHOG_HOST", "https://eu.i.posthog.com");
     expect(getPostHogHost()).toBe("https://eu.i.posthog.com");
+  });
+
+  it("defaults ui_host to https://us.posthog.com when unset", () => {
+    vi.stubEnv("NEXT_PUBLIC_POSTHOG_UI_HOST", "");
+    expect(getPostHogUiHost()).toBe("https://us.posthog.com");
+  });
+
+  it("uses custom ui_host when provided", () => {
+    vi.stubEnv("NEXT_PUBLIC_POSTHOG_UI_HOST", "https://eu.posthog.com");
+    expect(getPostHogUiHost()).toBe("https://eu.posthog.com");
   });
 
   it("safely handles capture and identify calls in non-browser environments without errors", () => {
