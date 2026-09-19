@@ -20,6 +20,7 @@ import { Button, SectionHeading, StatusBadge, cn, type StatusTone } from "@indih
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
 import { LocationFields } from "@/components/locations/location-fields";
 import { MapLocationPicker } from "@/components/maps/map-location-picker";
+import { capturePostHogEvent, capturePostHogException } from "@/lib/posthog-client";
 import {
   getOwnDeliveryPartnerApplication,
   submitDeliveryPartnerApplication,
@@ -45,7 +46,13 @@ export function DeliveryPartnerApplicationClient() {
   const submitMutation = useMutation({
     mutationFn: (payload: DeliveryPartnerApplicationPayload) =>
       submitDeliveryPartnerApplication(auth.authHeaders, payload),
-    onSuccess: (application) => {
+    onSuccess: (application, variables) => {
+      capturePostHogEvent("delivery_partner_application_submitted", {
+        application_id: application.id,
+        application_status: application.status,
+        submission_type: applicationQuery.data?.application ? "update" : "new",
+        vehicle_type: variables.vehicleType,
+      });
       setNotice({
         tone: "success",
         message:
@@ -56,6 +63,7 @@ export function DeliveryPartnerApplicationClient() {
       void queryClient.invalidateQueries({ queryKey });
     },
     onError: (error) => {
+      capturePostHogException(error);
       setNotice({
         tone: "danger",
         message: error instanceof Error ? error.message : "Delivery partner application failed.",

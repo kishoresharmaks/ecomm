@@ -44,6 +44,7 @@ import {
 } from "@/lib/seller-api";
 import { formatVariantLabel } from "@/lib/order-variant";
 import { userFacingApiErrorMessage } from "@/lib/api";
+import { capturePostHogEvent, capturePostHogException } from "@/lib/posthog-client";
 import {
   SellerAuthNotice,
   SellerErrorPanel,
@@ -181,13 +182,20 @@ export function SellerOrderDetailClient({
       note?: string | undefined;
       ewayBillNumber?: string | undefined;
     }) => updateSellerOrderStatus(sellerAuth.authHeaders, orderNumber, { sellerStatus, note, ewayBillNumber }),
-    onSuccess: () => {
+    onSuccess: (_order, variables) => {
+      capturePostHogEvent("seller_order_status_updated", {
+        order_number: orderNumber,
+        seller_status: variables.sellerStatus,
+        update_source: "fulfilment",
+      });
       setNotice({ tone: "success", message: "Seller order status updated." });
       setStatusNote("");
       invalidateOrder();
     },
-    onError: (error) =>
-      setNotice({ tone: "danger", message: userFacingApiErrorMessage(error) }),
+    onError: (error) => {
+      capturePostHogException(error);
+      setNotice({ tone: "danger", message: userFacingApiErrorMessage(error) });
+    },
   });
 
   const packageMutation = useMutation({
@@ -211,14 +219,21 @@ export function SellerOrderDetailClient({
     mutationFn: (payload: Parameters<typeof updateSellerDelivery>[2]) =>
       updateSellerDelivery(sellerAuth.authHeaders, orderNumber, payload),
     onSuccess: () => {
+      capturePostHogEvent("seller_order_status_updated", {
+        order_number: orderNumber,
+        seller_status: "DELIVERED",
+        update_source: "manual_transport_cod",
+      });
       setNotice({ tone: "success", message: "Manual transport COD delivery recorded." });
       setStatusNote("");
       setManualCodCollected(false);
       setManualCodNote("");
       invalidateOrder();
     },
-    onError: (error) =>
-      setNotice({ tone: "danger", message: userFacingApiErrorMessage(error) }),
+    onError: (error) => {
+      capturePostHogException(error);
+      setNotice({ tone: "danger", message: userFacingApiErrorMessage(error) });
+    },
   });
 
   function invalidateOrder() {

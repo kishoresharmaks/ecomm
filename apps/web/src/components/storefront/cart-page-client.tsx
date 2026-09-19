@@ -10,6 +10,7 @@ import { CustomerAuthNotice } from "@/components/auth/customer-auth-notice";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
 import { useMarket } from "@/components/market/market-context";
 import { useConfirmationDialog } from "@/components/shared/confirmation-dialog";
+import { capturePostHogEvent } from "@/lib/posthog-client";
 import { cartTotals, formatMoney, getCart, getCheckoutSummary, primaryImage, removeCartItem, updateCartItem } from "@/lib/storefront-api";
 import {
   couponApplyErrorMessage,
@@ -331,7 +332,17 @@ export function CartPageClient() {
           {checkoutSummaryQuery.isError && !couponFeedback ? <StorefrontErrorPanel className="mt-6" error={checkoutSummaryQuery.error} onRetry={() => void checkoutSummaryQuery.refetch()} /> : null}
           {cartQuery.data?.items.length ? (
             <Button asChild size="lg" className="mt-5 w-full">
-              <Link href={appliedCouponCode ? `/checkout?couponCode=${encodeURIComponent(appliedCouponCode)}` : "/checkout"}>
+              <Link
+                href={appliedCouponCode ? `/checkout?couponCode=${encodeURIComponent(appliedCouponCode)}` : "/checkout"}
+                onClick={() =>
+                  capturePostHogEvent("checkout_started", {
+                    item_count: checkoutTotals.itemCount,
+                    total: checkoutTotals.buyerTotalMinor,
+                    currency: checkoutTotals.buyerCurrency,
+                    coupon_applied: Boolean(appliedCouponCode),
+                  })
+                }
+              >
                 Checkout <ArrowRight size={17} />
               </Link>
             </Button>

@@ -5,6 +5,7 @@ import { AlertTriangle, Ban, CreditCard, ReceiptText, RefreshCw, ShieldCheck } f
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
 import { useConfirmationDialog } from "@/components/shared/confirmation-dialog";
+import { capturePostHogEvent, capturePostHogException } from "@/lib/posthog-client";
 import {
   authorizeSellerSubscription,
   cancelSellerSubscription,
@@ -101,9 +102,15 @@ export function SellerSubscriptionClient() {
         razorpaySignature: checkoutResponse.razorpay_signature,
       });
     },
-    onSuccess: async () => {
+    onSuccess: async (result) => {
+      if (!("requiresPayment" in result) || !result.requiresPayment) {
+        capturePostHogEvent("seller_subscription_authorized", {
+          payment_required: "requiresPayment" in result ? result.requiresPayment : true,
+        });
+      }
       await queryClient.invalidateQueries({ queryKey: ["seller-subscription"] });
     },
+    onError: (error) => capturePostHogException(error),
   });
 
   const cancelMutation = useMutation({

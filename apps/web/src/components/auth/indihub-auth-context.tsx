@@ -5,6 +5,11 @@ import { useAuth, useUser } from "@clerk/nextjs";
 import { useDevAuth } from "@/components/dev-auth/dev-auth-context";
 import { syncCurrentUser } from "@/lib/auth-api";
 import { userFacingApiErrorMessage, userSessionExpiredMessage, type IndihubAuthHeaders } from "@/lib/api";
+import {
+  capturePostHogException,
+  identifyPostHogUser,
+  resetPostHogUser,
+} from "@/lib/posthog-client";
 
 export type CustomerAuthStatus = "signed-out" | "syncing" | "ready" | "error";
 
@@ -52,6 +57,7 @@ export function ClerkCustomerAuthProvider({ children }: { children: ReactNode })
   const [refreshIndex, setRefreshIndex] = useState(0);
   const lastSyncedSignatureRef = useRef<string | null>(null);
   const inFlightSyncRef = useRef<{ signature: string; promise: Promise<unknown> } | null>(null);
+  const identifiedUserIdRef = useRef<string | null>(null);
 
   const readBearerToken = useCallback(
     async (options?: { skipCache?: boolean }) => {
@@ -87,6 +93,10 @@ export function ClerkCustomerAuthProvider({ children }: { children: ReactNode })
         setBearerToken(null);
         lastSyncedSignatureRef.current = null;
         inFlightSyncRef.current = null;
+        if (identifiedUserIdRef.current) {
+          resetPostHogUser();
+          identifiedUserIdRef.current = null;
+        }
         setSyncState((current) => (current.status === "signed-out" ? current : { status: "signed-out" }));
         return;
       }
@@ -107,6 +117,7 @@ export function ClerkCustomerAuthProvider({ children }: { children: ReactNode })
     }
 
     void loadToken().catch((error) => {
+      capturePostHogException(error);
       if (!cancelled) {
         setBearerToken(null);
         setSyncState({ status: "error", error: userFacingApiErrorMessage(error) });
@@ -160,6 +171,16 @@ export function ClerkCustomerAuthProvider({ children }: { children: ReactNode })
         await syncPromise;
 
         if (!cancelled) {
+          if (identifiedUserIdRef.current && identifiedUserIdRef.current !== userId) {
+            resetPostHogUser();
+          }
+          identifyPostHogUser(userId, {
+            email: payload.email,
+            name: payload.fullName,
+            phone: payload.phone,
+            role: payload.defaultRole,
+          });
+          identifiedUserIdRef.current = userId;
           lastSyncedSignatureRef.current = syncSignature;
           setSyncState({ status: "ready" });
         }
@@ -171,6 +192,7 @@ export function ClerkCustomerAuthProvider({ children }: { children: ReactNode })
     }
 
     void syncCustomer().catch((error) => {
+      capturePostHogException(error);
       if (!cancelled) {
         setSyncState({ status: "error", error: userFacingApiErrorMessage(error) });
       }

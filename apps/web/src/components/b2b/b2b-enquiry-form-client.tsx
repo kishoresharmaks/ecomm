@@ -8,6 +8,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
 import { IndihubApiError } from "@/lib/api";
 import { createBusinessBuyerEnquiry, getBusinessBuyerProfile } from "@/lib/business-buyer-api";
+import { capturePostHogEvent, capturePostHogException } from "@/lib/posthog-client";
 import { listProducts, listStores } from "@/lib/storefront-api";
 import { B2BAuthNotice, useB2BAuth } from "./b2b-auth";
 import { B2BShell } from "./b2b-shell";
@@ -54,11 +55,21 @@ export function B2BEnquiryFormClient() {
   const createMutation = useMutation({
     mutationFn: (payload: { productId?: string; sellerId?: string; quantity: number; message: string; transportMode?: "STORE_PICKUP" | "SELLER_ARRANGED_TRANSPORT"; transportNote?: string }) =>
       createBusinessBuyerEnquiry(auth.authHeaders, payload),
-    onSuccess: (enquiry) => {
+    onSuccess: (enquiry, variables) => {
+      capturePostHogEvent("b2b_enquiry_submitted", {
+        enquiry_id: enquiry.id,
+        product_id: variables.productId,
+        seller_id: variables.sellerId,
+        quantity: variables.quantity,
+        transport_mode: variables.transportMode,
+      });
       setNotice("Enquiry submitted.");
       router.push(`/b2b/enquiries/${enquiry.id}`);
     },
-    onError: (error) => setNotice(error instanceof Error ? error.message : "Enquiry submission failed."),
+    onError: (error) => {
+      capturePostHogException(error);
+      setNotice(error instanceof Error ? error.message : "Enquiry submission failed.");
+    },
     onSettled: () => setNotice(null),
   });
 

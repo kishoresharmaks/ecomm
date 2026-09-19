@@ -34,6 +34,7 @@ import {
   type SellerProductPayload
 } from "@/lib/seller-api";
 import { userFacingApiErrorMessage, type IndihubAuthHeaders } from "@/lib/api";
+import { capturePostHogEvent, capturePostHogException } from "@/lib/posthog-client";
 import { sellerProductStockBadge } from "@/lib/product-stock-labels";
 import { uploadPublicImage } from "@/lib/public-image-upload";
 import type { CategorySummary, DeliveryMode, HsnMasterEntry, ProductImage, ProductSummary, ProductTemplateField, ProductTemplateSummary, ProductVariant } from "@/lib/storefront-api";
@@ -169,6 +170,13 @@ export function SellerProductsClient({
       productId ? updateSellerProduct(sellerAuth.authHeaders, productId, payload) : createSellerProduct(sellerAuth.authHeaders, payload),
     onSuccess: (product, variables) => {
       const isLive = product.approvalStatus === "APPROVED" && product.status === "ACTIVE";
+      capturePostHogEvent("seller_product_saved", {
+        product_id: product.id,
+        action: variables.productId ? "updated" : "created",
+        product_status: product.status,
+        approval_status: product.approvalStatus,
+        variant_count: product.variants.length,
+      });
       setNotice({
         tone: "success",
         message: isLive
@@ -191,7 +199,10 @@ export function SellerProductsClient({
         router.push("/seller/products");
       }
     },
-    onError: (error) => setNotice({ tone: "danger", message: userFacingApiErrorMessage(error) })
+    onError: (error) => {
+      capturePostHogException(error);
+      setNotice({ tone: "danger", message: userFacingApiErrorMessage(error) });
+    }
   });
 
   const archiveMutation = useMutation({

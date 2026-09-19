@@ -23,6 +23,7 @@ import { AccountShell } from "./account-shell";
 import { ErrorPanel, Field, PagePanel, SkeletonBlock, TextAreaField, formValue, optionalFormValue } from "./account-ui";
 import { createAuthenticatedSupportRequest, getCustomerProfile, type SupportRequestPayload } from "@/lib/account-api";
 import { getStorefrontContact } from "@/lib/storefront-api";
+import { capturePostHogEvent, capturePostHogException } from "@/lib/posthog-client";
 
 export function SupportClient() {
   const customerAuth = useCustomerAuth();
@@ -48,11 +49,20 @@ export function SupportClient() {
 
   const supportMutation = useMutation({
     mutationFn: (payload: SupportRequestPayload) => createAuthenticatedSupportRequest(customerAuth.authHeaders, payload),
-    onSuccess: () => {
+    onSuccess: (_request, variables) => {
+      capturePostHogEvent("support_request_submitted", {
+        topic: variables.topic,
+        requester_type: variables.requesterType,
+        preferred_contact_channel: variables.preferredContactChannel,
+        has_order_reference: Boolean(variables.orderNumber),
+      });
       formRef.current?.reset();
       setNotice("Support request submitted. Our support team will review it.");
     },
-    onError: (error) => setNotice(error instanceof Error ? error.message : "Support request failed.")
+    onError: (error) => {
+      capturePostHogException(error);
+      setNotice(error instanceof Error ? error.message : "Support request failed.");
+    }
   });
 
   function submit(event: FormEvent<HTMLFormElement>) {

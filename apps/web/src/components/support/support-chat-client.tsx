@@ -16,6 +16,7 @@ import {
   type StaffChatQuery,
 } from "@/lib/chat-api";
 import { userFacingApiErrorMessage } from "@/lib/api";
+import { capturePostHogEvent, capturePostHogException } from "@/lib/posthog-client";
 
 export function SupportChatClient() {
   const auth = useAdminAuth();
@@ -65,10 +66,18 @@ export function SupportChatClient() {
   const statusMutation = useMutation({
     mutationFn: ({ conversationId, status, note }: { conversationId: string; status: string; note?: string }) =>
       updateStaffChat(auth.authHeaders, conversationId, { status, note }),
-    onSuccess: async () => {
+    onSuccess: async (_conversation, variables) => {
+      if (variables.status === "CLOSED") {
+        capturePostHogEvent("support_chat_closed", {
+          conversation_id: variables.conversationId,
+          requester_type: selected?.requesterType,
+          sensitivity: selected?.sensitivity,
+        });
+      }
       setReply("");
       await refresh();
     },
+    onError: (error) => capturePostHogException(error),
   });
   const linkMutation = useMutation({
     mutationFn: (conversationId: string) => linkChatSupportRequest(auth.authHeaders, conversationId),

@@ -10,6 +10,7 @@ import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
 import { AccountShell } from "./account-shell";
 import { ErrorPanel, Field, PagePanel, SkeletonBlock, formValue, optionalFormValue } from "./account-ui";
 import { getCustomerProfile, updateCustomerProfile, type CustomerProfilePayload } from "@/lib/account-api";
+import { capturePostHogEvent, capturePostHogException } from "@/lib/posthog-client";
 
 export function ProfileClient() {
   const queryClient = useQueryClient();
@@ -26,10 +27,14 @@ export function ProfileClient() {
   const updateMutation = useMutation({
     mutationFn: (payload: CustomerProfilePayload) => updateCustomerProfile(customerAuth.authHeaders, payload),
     onSuccess: () => {
+      capturePostHogEvent("customer_profile_updated");
       setNotice("Profile updated.");
       void queryClient.invalidateQueries({ queryKey: ["account-profile", customerAuth.authKey] });
     },
-    onError: (error) => setNotice(error instanceof Error ? error.message : "Profile update failed.")
+    onError: (error) => {
+      capturePostHogException(error);
+      setNotice(error instanceof Error ? error.message : "Profile update failed.");
+    }
   });
 
   function submit(event: FormEvent<HTMLFormElement>) {

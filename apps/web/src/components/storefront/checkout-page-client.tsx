@@ -15,6 +15,7 @@ import { listCustomerAddresses } from "@/lib/account-api";
 import { IndihubApiError } from "@/lib/api";
 import { customerDeliveryOptions, customerDeliveryModeLabel } from "@/lib/delivery-labels";
 import { normalizeGstin, validateGstInvoiceDetails } from "@/lib/gst-invoice";
+import { capturePostHogEvent, capturePostHogException } from "@/lib/posthog-client";
 import {
   cartTotals,
   createRazorpayProviderOrder,
@@ -550,17 +551,29 @@ export function CheckoutPageClient() {
       }
     },
     onSuccess: (order) => {
+      capturePostHogEvent("order_placed", {
+        order_number: order.orderNumber,
+        item_count: checkoutTotals.itemCount,
+        total: checkoutTotals.buyerTotalMinor,
+        currency: checkoutTotals.buyerCurrency,
+        payment_method: paymentMethod,
+        delivery_preference: deliveryPreference,
+        direct_checkout: isDirectCheckout,
+        coupon_applied: Boolean(appliedCouponCode),
+      });
       void queryClient.invalidateQueries({ queryKey: ["cart", customerAuth.authKey] });
       moveToOrderSuccess(order.orderNumber);
     },
-    onError: (error) =>
+    onError: (error) => {
+      capturePostHogException(error);
       setFormError(
         appliedCouponCode && error instanceof Error && error.message.toLowerCase().includes("coupon")
           ? couponApplyErrorMessage(error)
           : error instanceof Error
             ? error.message
             : "Unable to place order.",
-      ),
+      );
+    },
   });
 
   function moveToOrderSuccess(orderNumber: string) {

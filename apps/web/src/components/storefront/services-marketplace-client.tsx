@@ -9,6 +9,7 @@ import { Button, SectionHeading, StatusBadge } from "@indihub/ui";
 import { CustomerAuthNotice } from "@/components/auth/customer-auth-notice";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
 import { listCustomerAddresses } from "@/lib/account-api";
+import { capturePostHogEvent, capturePostHogException } from "@/lib/posthog-client";
 import {
   createCustomerServiceBooking,
   getPublicService,
@@ -199,11 +200,21 @@ function ServiceDetail({ slug }: { slug: string }) {
       }
       return createCustomerServiceBooking(customerAuth.authHeaders, payload);
     },
-    onSuccess: (booking) => {
+    onSuccess: (booking, variables) => {
+      capturePostHogEvent("service_booking_created", {
+        booking_number: booking.bookingNumber,
+        service_slug: variables.serviceSlug,
+        visit_mode: variables.visitMode,
+        package_selected: Boolean(variables.servicePackageId),
+        pricing_model: service?.pricingModel,
+      });
       void queryClient.invalidateQueries({ queryKey: ["customer-service-bookings", customerAuth.authKey] });
       router.push(`/account/service-bookings/${encodeURIComponent(booking.bookingNumber)}`);
     },
-    onError: (error) => setNotice(error instanceof Error ? error.message : "Unable to book this service right now."),
+    onError: (error) => {
+      capturePostHogException(error);
+      setNotice(error instanceof Error ? error.message : "Unable to book this service right now.");
+    },
   });
 
   const service = serviceQuery.data;

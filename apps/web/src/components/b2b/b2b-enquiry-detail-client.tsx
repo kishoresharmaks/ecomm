@@ -17,6 +17,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, StatusBadge, cn } from "@indihub/ui";
 import { apiBaseUrl } from "@/lib/api";
+import { capturePostHogEvent, capturePostHogException } from "@/lib/posthog-client";
 import { useConfirmationDialog } from "@/components/shared/confirmation-dialog";
 import {
   type B2BEnquiryMessage,
@@ -241,13 +242,21 @@ export function B2BEnquiryDetailClient({ enquiryId }: { enquiryId: string }) {
 
   const confirmMutation = useMutation({
     mutationFn: (responseId: string) => confirmBusinessBuyerEnquiry(auth.authHeaders, enquiryId, responseId),
-    onSuccess: (updated) => {
+    onSuccess: (updated, responseId) => {
+      capturePostHogEvent("b2b_quotation_confirmed", {
+        enquiry_id: enquiryId,
+        quotation_id: responseId,
+        enquiry_status: updated.status,
+      });
       setLiveStatus(updated.status);
       setNotice("Quotation confirmed. 1HandIndia commercial operations can now approve and finalise it.");
       void queryClient.invalidateQueries({ queryKey: ["b2b-enquiry", auth.authKey, enquiryId] });
       void queryClient.invalidateQueries({ queryKey: ["b2b-enquiries", auth.authKey] });
     },
-    onError: (error) => setNotice(error instanceof Error ? error.message : "Quotation confirmation failed."),
+    onError: (error) => {
+      capturePostHogException(error);
+      setNotice(error instanceof Error ? error.message : "Quotation confirmation failed.");
+    },
     onSettled: () => setNotice(null),
   });
 

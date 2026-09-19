@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
 import { addWishlistItem, getWishlist, removeWishlistItem } from "@/lib/account-api";
+import { capturePostHogEvent, capturePostHogException } from "@/lib/posthog-client";
 
 type WishlistMutationArgs = {
   action: "add" | "remove";
@@ -35,10 +36,15 @@ export function useStorefrontWishlist() {
 
       return addWishlistItem(customerAuth.authHeaders, productId);
     },
-    onSuccess: () => {
+    onSuccess: (_wishlist, variables) => {
+      capturePostHogEvent("product_wishlist_updated", {
+        action: variables.action,
+        product_id: variables.productId,
+      });
       void queryClient.invalidateQueries({ queryKey: ["account-wishlist", customerAuth.authKey] });
       void queryClient.invalidateQueries({ queryKey: ["account-profile", customerAuth.authKey] });
     },
+    onError: (error) => capturePostHogException(error),
   });
 
   async function toggleWishlist(productId: string) {

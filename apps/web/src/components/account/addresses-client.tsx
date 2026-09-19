@@ -27,6 +27,7 @@ import {
   type CustomerAddress,
   type CustomerAddressPayload
 } from "@/lib/account-api";
+import { capturePostHogEvent, capturePostHogException } from "@/lib/posthog-client";
 
 export function AddressesClient() {
   const queryClient = useQueryClient();
@@ -54,6 +55,9 @@ export function AddressesClient() {
         : createCustomerAddress(customerAuth.authHeaders, payload);
     },
     onSuccess: () => {
+      capturePostHogEvent("customer_address_updated", {
+        action: editing ? "updated" : "created",
+      });
       setNotice(editing ? "Address updated." : "Address added.");
       if (!editing) {
         setFormVersion((current) => current + 1);
@@ -62,7 +66,10 @@ export function AddressesClient() {
       void queryClient.invalidateQueries({ queryKey: ["account-addresses", customerAuth.authKey] });
       void queryClient.invalidateQueries({ queryKey: ["account-profile", customerAuth.authKey] });
     },
-    onError: (error) => setNotice(error instanceof Error ? error.message : "Address save failed.")
+    onError: (error) => {
+      capturePostHogException(error);
+      setNotice(error instanceof Error ? error.message : "Address save failed.");
+    }
   });
 
   const deleteMutation = useMutation({
@@ -74,11 +81,15 @@ export function AddressesClient() {
       return deleteCustomerAddress(customerAuth.authHeaders, addressId);
     },
     onSuccess: () => {
+      capturePostHogEvent("customer_address_updated", { action: "deleted" });
       setNotice("Address deleted.");
       void queryClient.invalidateQueries({ queryKey: ["account-addresses", customerAuth.authKey] });
       void queryClient.invalidateQueries({ queryKey: ["account-profile", customerAuth.authKey] });
     },
-    onError: (error) => setNotice(error instanceof Error ? error.message : "Address delete failed.")
+    onError: (error) => {
+      capturePostHogException(error);
+      setNotice(error instanceof Error ? error.message : "Address delete failed.");
+    }
   });
 
   const defaultMutation = useMutation({
@@ -90,11 +101,15 @@ export function AddressesClient() {
       return updateCustomerAddress(customerAuth.authHeaders, addressId, { isDefault: true });
     },
     onSuccess: () => {
+      capturePostHogEvent("customer_address_updated", { action: "default_changed" });
       setNotice("Default address updated.");
       void queryClient.invalidateQueries({ queryKey: ["account-addresses", customerAuth.authKey] });
       void queryClient.invalidateQueries({ queryKey: ["account-profile", customerAuth.authKey] });
     },
-    onError: (error) => setNotice(error instanceof Error ? error.message : "Default address update failed.")
+    onError: (error) => {
+      capturePostHogException(error);
+      setNotice(error instanceof Error ? error.message : "Default address update failed.");
+    }
   });
 
   function submit(event: FormEvent<HTMLFormElement>) {

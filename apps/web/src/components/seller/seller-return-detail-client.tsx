@@ -41,6 +41,7 @@ import {
 import { openPrivateProofReference } from "@/lib/delivery-proof-upload";
 import { formatVariantLabel } from "@/lib/order-variant";
 import { userFacingApiErrorMessage } from "@/lib/api";
+import { capturePostHogEvent, capturePostHogException } from "@/lib/posthog-client";
 import { formatMoney } from "@/lib/storefront-api";
 import {
   SellerAuthNotice,
@@ -83,12 +84,21 @@ export function SellerReturnDetailClient({ requestNumber }: { requestNumber: str
         : rejectSellerReturn(sellerAuth.authHeaders, requestNumber, payload);
     },
     onSuccess: (detail, variables) => {
+      capturePostHogEvent("seller_return_decision_made", {
+        request_number: detail.requestNumber,
+        decision: variables.decision.toLowerCase(),
+        return_status: detail.status,
+        resolution: detail.resolution,
+      });
       setNotice({ tone: "success", message: variables.decision === "ACCEPT" ? "Return request accepted by seller." : "Return request rejected by seller." });
       setNote("");
       void queryClient.invalidateQueries({ queryKey: ["seller-returns"] });
       void queryClient.invalidateQueries({ queryKey: ["seller-return-detail"] });
     },
-    onError: (error) => setNotice({ tone: "danger", message: userFacingApiErrorMessage(error) }),
+    onError: (error) => {
+      capturePostHogException(error);
+      setNotice({ tone: "danger", message: userFacingApiErrorMessage(error) });
+    },
   });
 
   if (!sellerAuth.enabled) {

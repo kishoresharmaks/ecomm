@@ -51,6 +51,7 @@ import {
   type ProductSummary,
   type ProductVariant,
 } from "@/lib/storefront-api";
+import { capturePostHogEvent, capturePostHogException } from "@/lib/posthog-client";
 import { rememberRecentProduct } from "@/lib/recent-products";
 import { StorefrontFrame } from "./storefront-frame";
 import { StorefrontImage } from "./storefront-image";
@@ -168,11 +169,21 @@ export function ProductDetailClient({ slug }: { slug: string }) {
       return addCartItem(customerAuth.authHeaders, selectedVariant.id, quantity);
     },
     onSuccess: () => {
+      capturePostHogEvent("product_added_to_cart", {
+        product_id: product?.id,
+        variant_id: selectedVariant?.id,
+        category_id: product?.category.id,
+        quantity,
+        unit_price: selectedBasePrice,
+        currency: selectedVariant?.baseCurrency ?? "INR",
+        listing_mode: product?.listingMode,
+      });
       setNoticeTone("success");
       setNotice("Product added to cart.");
       void queryClient.invalidateQueries({ queryKey: ["cart", customerAuth.authKey] });
     },
     onError: (error) => {
+      capturePostHogException(error);
       setNoticeTone("danger");
       setNotice(error instanceof Error ? error.message : "Unable to add product to cart.");
     },
