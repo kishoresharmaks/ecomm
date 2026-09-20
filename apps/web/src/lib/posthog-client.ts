@@ -1,4 +1,35 @@
-import posthog from "posthog-js";
+import posthog, { type CaptureResult } from "posthog-js";
+
+type CapturedException = {
+  type?: unknown;
+  stacktrace?: { frames?: unknown[] } | null;
+};
+
+// A genuine Error capture carries a stack trace, and its type is an Error class
+// name such as "TypeError". A bare DOM event reaches the global exception handler
+// with no stack trace and a type like "Event", which produces a valueless issue
+// that nobody can debug. Drop that class before it leaves the browser.
+function isStacklessNonError(exception: CapturedException): boolean {
+  const frames = exception.stacktrace?.frames;
+  const hasStack = Array.isArray(frames) && frames.length > 0;
+  const isErrorType = typeof exception.type === "string" && /Error$/.test(exception.type);
+  return !hasStack && !isErrorType;
+}
+
+export function dropStacklessNonErrorExceptions(
+  event: CaptureResult | null,
+): CaptureResult | null {
+  if (!event || event.event !== "$exception") {
+    return event;
+  }
+
+  const exceptions = event.properties?.["$exception_list"] as CapturedException[] | undefined;
+  if (Array.isArray(exceptions) && exceptions.length > 0 && exceptions.every(isStacklessNonError)) {
+    return null;
+  }
+
+  return event;
+}
 
 export function getPostHogToken(): string | undefined {
   return (
@@ -58,6 +89,7 @@ export function initPostHog(): typeof posthog | null {
     capture_pageview: false, // Managed by PostHogPageView on App Router route transitions
     capture_pageleave: true,
     capture_exceptions: true,
+    before_send: dropStacklessNonErrorExceptions,
     autocapture: true,
     person_profiles: "identified_only",
     debug: process.env.NODE_ENV === "development",
