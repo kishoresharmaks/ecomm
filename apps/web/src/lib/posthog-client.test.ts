@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { CaptureResult } from "posthog-js";
 import {
   capturePostHogEvent,
   capturePostHogException,
+  dropStacklessNonErrorExceptions,
   getPostHogHost,
   getPostHogToken,
   getPostHogUiHost,
@@ -63,5 +65,51 @@ describe("posthog-client helper", () => {
       identifyPostHogUser("user_123", { role: "CUSTOMER" });
       resetPostHogUser();
     }).not.toThrow();
+  });
+});
+
+function exceptionEvent(exceptionList: unknown[]): CaptureResult {
+  return {
+    event: "$exception",
+    properties: { $exception_list: exceptionList },
+  } as unknown as CaptureResult;
+}
+
+describe("dropStacklessNonErrorExceptions", () => {
+  it("drops a bare DOM event captured as an exception", () => {
+    const event = exceptionEvent([
+      { type: "Event", value: "Event captured as exception with keys: isTrusted", mechanism: { synthetic: true } },
+    ]);
+    expect(dropStacklessNonErrorExceptions(event)).toBeNull();
+  });
+
+  it("keeps a genuine Error with a stack trace", () => {
+    const event = exceptionEvent([
+      { type: "TypeError", value: "x is not a function", stacktrace: { frames: [{ filename: "app.js" }] } },
+    ]);
+    expect(dropStacklessNonErrorExceptions(event)).toBe(event);
+  });
+
+  it("keeps a stackless Error-typed exception", () => {
+    const event = exceptionEvent([{ type: "RangeError", value: "out of range" }]);
+    expect(dropStacklessNonErrorExceptions(event)).toBe(event);
+  });
+
+  it("keeps the event when any exception in the list is debuggable", () => {
+    const event = exceptionEvent([
+      { type: "Event" },
+      { type: "TypeError", stacktrace: { frames: [{ filename: "app.js" }] } },
+    ]);
+    expect(dropStacklessNonErrorExceptions(event)).toBe(event);
+  });
+
+  it("passes through non-exception events and an empty exception list", () => {
+    const pageview = { event: "$pageview", properties: {} } as unknown as CaptureResult;
+    expect(dropStacklessNonErrorExceptions(pageview)).toBe(pageview);
+
+    const empty = exceptionEvent([]);
+    expect(dropStacklessNonErrorExceptions(empty)).toBe(empty);
+
+    expect(dropStacklessNonErrorExceptions(null)).toBeNull();
   });
 });
