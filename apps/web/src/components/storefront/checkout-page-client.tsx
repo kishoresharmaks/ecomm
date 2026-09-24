@@ -15,7 +15,7 @@ import { listCustomerAddresses } from "@/lib/account-api";
 import { IndihubApiError } from "@/lib/api";
 import { customerDeliveryOptions, customerDeliveryModeLabel } from "@/lib/delivery-labels";
 import { normalizeGstin, validateGstInvoiceDetails } from "@/lib/gst-invoice";
-import { capturePostHogEvent, capturePostHogException } from "@/lib/posthog-client";
+import { capturePostHogEvent, capturePostHogException, isPostHogConfigured, posthog } from "@/lib/posthog-client";
 import {
   cartTotals,
   createRazorpayProviderOrder,
@@ -430,6 +430,16 @@ export function CheckoutPageClient() {
     }
   }, [market.countryCode]);
 
+  useEffect(() => {
+    if (hasCheckoutItem && isPostHogConfigured()) {
+      posthog.capture("checkout_started", {
+        cart_value: checkoutTotals.totalPaise / 100,
+        total_items: checkoutTotals.itemCount,
+        currency: "INR",
+      });
+    }
+  }, [hasCheckoutItem]);
+
   const orderMutation = useMutation({
     mutationFn: async (manualAddress?: CheckoutAddress) => {
       if (!hasCheckoutItem) {
@@ -454,6 +464,14 @@ export function CheckoutPageClient() {
         !paymentReference.trim()
       ) {
         throw new Error("Enter the bank transfer UTR/reference before placing this order.");
+      }
+
+      if (isPostHogConfigured()) {
+        posthog.capture("payment_initiated", {
+          payment_method: paymentMethod.toLowerCase(),
+          order_value: checkoutTotals.totalPaise / 100,
+          currency: "INR",
+        });
       }
 
       const gstInvoice = businessInvoiceRequested
@@ -551,6 +569,15 @@ export function CheckoutPageClient() {
       }
     },
     onSuccess: (order) => {
+      if (isPostHogConfigured()) {
+        posthog.capture("purchase_completed", {
+          order_id: order.orderNumber,
+          revenue: checkoutTotals.totalPaise / 100,
+          total_items: checkoutTotals.itemCount,
+          payment_method: paymentMethod.toLowerCase(),
+          currency: "INR",
+        });
+      }
       capturePostHogEvent("order_placed", {
         order_number: order.orderNumber,
         item_count: checkoutTotals.itemCount,
@@ -565,6 +592,14 @@ export function CheckoutPageClient() {
       moveToOrderSuccess(order.orderNumber);
     },
     onError: (error) => {
+      if (isPostHogConfigured()) {
+        posthog.capture("purchase_failed", {
+          reason: error instanceof Error ? error.message : String(error),
+          order_value: checkoutTotals.totalPaise / 100,
+          payment_method: paymentMethod.toLowerCase(),
+          currency: "INR",
+        });
+      }
       capturePostHogException(error);
       setFormError(
         appliedCouponCode && error instanceof Error && error.message.toLowerCase().includes("coupon")

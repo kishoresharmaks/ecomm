@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import type { Route } from "next";
+import { useEffect } from "react";
 import {
   CheckCircle2,
   Clock3,
@@ -18,6 +19,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Button, SectionHeading, StatusBadge, cn } from "@indihub/ui";
 import { CustomerAuthNotice } from "@/components/auth/customer-auth-notice";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
+import { isPostHogConfigured, posthog } from "@/lib/posthog-client";
 import { formatVariantLabel } from "@/lib/order-variant";
 import {
   formatOrderBaseAmount,
@@ -56,6 +58,19 @@ export function OrderSuccessClient({ orderNumber }: { orderNumber: string }) {
   const order = orderQuery.data;
   const payment = order ? paymentSummary(order) : null;
   const savingsPaise = order ? orderSavingsPaise(order) : 0;
+
+  useEffect(() => {
+    if (order && isPostHogConfigured()) {
+      const paymentMethodStr = (primaryPayment(order)?.method || "cod").toLowerCase();
+      posthog.capture("purchase_completed", {
+        order_id: order.orderNumber,
+        revenue: order.totalPaise / 100,
+        total_items: order.items.reduce((sum, item) => sum + item.quantity, 0),
+        payment_method: paymentMethodStr,
+        currency: "INR",
+      });
+    }
+  }, [order?.orderNumber]);
 
   return (
     <StorefrontFrame>

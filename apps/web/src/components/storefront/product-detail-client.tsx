@@ -51,7 +51,7 @@ import {
   type ProductSummary,
   type ProductVariant,
 } from "@/lib/storefront-api";
-import { capturePostHogEvent, capturePostHogException } from "@/lib/posthog-client";
+import { capturePostHogEvent, capturePostHogException, isPostHogConfigured, posthog } from "@/lib/posthog-client";
 import { rememberRecentProduct } from "@/lib/recent-products";
 import { StorefrontFrame } from "./storefront-frame";
 import { StorefrontImage } from "./storefront-image";
@@ -133,8 +133,18 @@ export function ProductDetailClient({ slug }: { slug: string }) {
   useEffect(() => {
     if (product) {
       rememberRecentProduct(product);
+      if (isPostHogConfigured()) {
+        const priceVal = selectedBasePrice ? selectedBasePrice / 100 : 0;
+        posthog.capture("product_viewed", {
+          product_id: product.id,
+          product_name: product.name,
+          category: product.category?.name ?? "",
+          price: priceVal,
+          currency: "INR",
+        });
+      }
     }
-  }, [product]);
+  }, [product?.id]);
 
   useEffect(() => {
     if (!notice) {
@@ -169,6 +179,16 @@ export function ProductDetailClient({ slug }: { slug: string }) {
       return addCartItem(customerAuth.authHeaders, selectedVariant.id, quantity);
     },
     onSuccess: () => {
+      if (product && isPostHogConfigured()) {
+        const priceVal = selectedBasePrice ? selectedBasePrice / 100 : 0;
+        posthog.capture("add_to_cart", {
+          product_id: product.id,
+          product_name: product.name,
+          price: priceVal,
+          quantity,
+          currency: "INR",
+        });
+      }
       capturePostHogEvent("product_added_to_cart", {
         product_id: product?.id,
         variant_id: selectedVariant?.id,

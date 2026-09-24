@@ -8,6 +8,8 @@ import { userFacingApiErrorMessage, userSessionExpiredMessage, type IndihubAuthH
 import {
   capturePostHogException,
   identifyPostHogUser,
+  isPostHogConfigured,
+  posthog,
   resetPostHogUser,
 } from "@/lib/posthog-client";
 
@@ -180,6 +182,30 @@ export function ClerkCustomerAuthProvider({ children }: { children: ReactNode })
             phone: payload.phone,
             role: payload.defaultRole,
           });
+
+          if (identifiedUserIdRef.current !== userId && isPostHogConfigured()) {
+            const isNewUser =
+              user?.createdAt &&
+              Date.now() - new Date(user.createdAt).getTime() < 120_000;
+
+            const provider = user?.externalAccounts?.[0]?.provider;
+            const authMethod = provider
+              ? provider.replace("oauth_", "")
+              : user?.primaryPhoneNumberId
+              ? "phone"
+              : "email";
+
+            if (isNewUser) {
+              posthog.capture("user_signed_up", {
+                method: authMethod,
+              });
+            } else {
+              posthog.capture("user_logged_in", {
+                method: authMethod,
+              });
+            }
+          }
+
           identifiedUserIdRef.current = userId;
           lastSyncedSignatureRef.current = syncSignature;
           setSyncState({ status: "ready" });

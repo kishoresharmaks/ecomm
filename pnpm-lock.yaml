@@ -123,6 +123,9 @@ importers:
       pino:
         specifier: 10.3.1
         version: 10.3.1
+      posthog-node:
+        specifier: ^5.53.0
+        version: 5.53.0(rxjs@7.8.2)
       reflect-metadata:
         specifier: 0.2.2
         version: 0.2.2
@@ -628,6 +631,9 @@ importers:
       posthog-js:
         specifier: ^1.434.2
         version: 1.434.2(@types/react@19.2.15)(react@19.2.6)
+      posthog-node:
+        specifier: ^5.53.0
+        version: 5.53.0(rxjs@7.8.2)
       react:
         specifier: 19.2.6
         version: 19.2.6
@@ -2684,8 +2690,14 @@ packages:
   '@posthog/core@1.55.0':
     resolution: {integrity: sha512-x+0FR+uHsK3uJeofd5X4S2YS7hjaWkzkPN0X1GROHm9SvKw2RJ91kfQ7gT1bPtFwZSHNiRtteB7fX/xEMRN0IQ==}
 
+  '@posthog/core@1.55.2':
+    resolution: {integrity: sha512-2mYxGbDmTLUs096VbcZqSWo0lrI48/BrX65r54NynxxFq409BOx9w73HxOAtOKZ1vblkdV6/GxQTe7KDcIQidg==}
+
   '@posthog/types@1.412.2':
     resolution: {integrity: sha512-taxTh8o6n7ZVlC8qBypZvF+6w7/18yNkS9XDiGCbutGTKqIljfzYi/7pumgwN3mcnl/n0e9A+JhF05+nLd4Xaw==}
+
+  '@posthog/types@1.412.4':
+    resolution: {integrity: sha512-Q7lV9O9TbLngjOYw1ucm3bS3tn48xb1B4ZQdDy8gv7yfKe99hCTeWYG4xZ36nJM80VxpTF9TriiJt5hngDOkBg==}
 
   '@prisma/adapter-pg@7.8.0':
     resolution: {integrity: sha512-ygb3UkerK3v8MDpXVgCISdRNDozpxh6+JVJgiIGbSr5KBgz10LLf5ejUskPGoXlsIjxsOu6nuy1JVQr2EKGSlg==}
@@ -7676,6 +7688,15 @@ packages:
       react:
         optional: true
 
+  posthog-node@5.53.0:
+    resolution: {integrity: sha512-Ug0Jx80uRZzbC0cRbL1n224Q/hJRKfvkHMJXhuXfo2is8tdbsvA8T7cOvPBpgclS5u+qN+Whw0eMIGhiAK7e/Q==}
+    engines: {node: ^20.20.0 || >=22.22.0}
+    peerDependencies:
+      rxjs: ^7.0.0
+    peerDependenciesMeta:
+      rxjs:
+        optional: true
+
   preact@10.24.2:
     resolution: {integrity: sha512-1cSoF0aCC8uaARATfrlz4VCBqE8LwZwRfLgkxJOQwAlQt6ayTmi0D9OF7nXid1POI5SZidFuG9CnlXbDfLqY/Q==}
 
@@ -11790,7 +11811,13 @@ snapshots:
     dependencies:
       '@posthog/types': 1.412.2
 
+  '@posthog/core@1.55.2':
+    dependencies:
+      '@posthog/types': 1.412.4
+
   '@posthog/types@1.412.2': {}
+
+  '@posthog/types@1.412.4': {}
 
   '@prisma/adapter-pg@7.8.0':
     dependencies:
@@ -18113,6 +18140,12 @@ snapshots:
       react: 19.2.6
     transitivePeerDependencies:
       - preact-render-to-string
+
+  posthog-node@5.53.0(rxjs@7.8.2):
+    dependencies:
+      '@posthog/core': 1.55.2
+    optionalDependencies:
+      rxjs: 7.8.2
 
   preact@10.24.2: {}
 

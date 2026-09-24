@@ -42,6 +42,7 @@ import {
   StorefrontSkeleton,
   storefrontInputClassName,
 } from "./storefront-ui";
+import { isPostHogConfigured, posthog } from "@/lib/posthog-client";
 import { useStorefrontWishlist } from "./use-storefront-wishlist";
 
 type SearchFilters = {
@@ -144,6 +145,17 @@ export function StorefrontSearchClient({ initialSearch = "" }: { initialSearch?:
       return addCartItem(customerAuth.authHeaders, variant.id, 1);
     },
     onSuccess: (_cart, product) => {
+      const variant = primaryVariant(product);
+      if (isPostHogConfigured()) {
+        const priceVal = variant?.basePricePaise ? variant.basePricePaise / 100 : variant?.pricePaise ? variant.pricePaise / 100 : 0;
+        posthog.capture("add_to_cart", {
+          product_id: product.id,
+          product_name: product.name,
+          price: priceVal,
+          quantity: 1,
+          currency: "INR",
+        });
+      }
       setNotice(`${product.name} added to cart.`);
       void queryClient.invalidateQueries({ queryKey: ["cart", customerAuth.authKey] });
     },
@@ -155,6 +167,15 @@ export function StorefrontSearchClient({ initialSearch = "" }: { initialSearch?:
     () => uniqueById(searchQuery.data?.pages.flatMap((page) => page.products) ?? []),
     [searchQuery.data],
   );
+
+  useEffect(() => {
+    if (effectiveQuery.length >= 2 && searchQuery.isSuccess && isPostHogConfigured()) {
+      posthog.capture("search_performed", {
+        search_query: effectiveQuery,
+        results_count: products.length,
+      });
+    }
+  }, [effectiveQuery, searchQuery.isSuccess, searchQuery.dataUpdatedAt, products.length]);
   const stores = useMemo(
     () => uniqueById(searchQuery.data?.pages.flatMap((page) => page.stores) ?? []),
     [searchQuery.data],

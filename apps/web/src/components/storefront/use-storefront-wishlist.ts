@@ -4,11 +4,13 @@ import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
 import { addWishlistItem, getWishlist, removeWishlistItem } from "@/lib/account-api";
-import { capturePostHogEvent, capturePostHogException } from "@/lib/posthog-client";
+import { capturePostHogEvent, capturePostHogException, isPostHogConfigured, posthog } from "@/lib/posthog-client";
 
 type WishlistMutationArgs = {
   action: "add" | "remove";
   productId: string;
+  productName?: string | undefined;
+  price?: number | undefined;
 };
 
 export function useStorefrontWishlist() {
@@ -37,6 +39,14 @@ export function useStorefrontWishlist() {
       return addWishlistItem(customerAuth.authHeaders, productId);
     },
     onSuccess: (_wishlist, variables) => {
+      if (variables.action === "add" && isPostHogConfigured()) {
+        posthog.capture("wishlist_added", {
+          product_id: variables.productId,
+          product_name: variables.productName ?? "",
+          price: variables.price ?? 0,
+          currency: "INR",
+        });
+      }
       capturePostHogEvent("product_wishlist_updated", {
         action: variables.action,
         product_id: variables.productId,
@@ -47,13 +57,21 @@ export function useStorefrontWishlist() {
     onError: (error) => capturePostHogException(error),
   });
 
-  async function toggleWishlist(productId: string) {
+  async function toggleWishlist(
+    productId: string,
+    details?: { productName?: string; price?: number },
+  ) {
     if (!customerAuth.enabled) {
       throw new Error("Sign in before using wishlist actions.");
     }
 
     const action: WishlistMutationArgs["action"] = wishlistIds.has(productId) ? "remove" : "add";
-    await wishlistMutation.mutateAsync({ action, productId });
+    await wishlistMutation.mutateAsync({
+      action,
+      productId,
+      productName: details?.productName,
+      price: details?.price,
+    });
     return action;
   }
 

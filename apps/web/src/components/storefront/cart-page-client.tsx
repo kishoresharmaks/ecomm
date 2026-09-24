@@ -10,7 +10,7 @@ import { CustomerAuthNotice } from "@/components/auth/customer-auth-notice";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
 import { useMarket } from "@/components/market/market-context";
 import { useConfirmationDialog } from "@/components/shared/confirmation-dialog";
-import { capturePostHogEvent } from "@/lib/posthog-client";
+import { capturePostHogEvent, isPostHogConfigured, posthog } from "@/lib/posthog-client";
 import { cartTotals, formatMoney, getCart, getCheckoutSummary, primaryImage, removeCartItem, updateCartItem } from "@/lib/storefront-api";
 import {
   couponApplyErrorMessage,
@@ -153,9 +153,27 @@ export function CartPageClient() {
     setCouponInput("");
     setCouponFeedback(null);
   }
+  useEffect(() => {
+    if (cartQuery.data && isPostHogConfigured()) {
+      posthog.capture("cart_viewed", {
+        total_items: totals.itemCount,
+        cart_value: totals.subtotalPaise / 100,
+        currency: "INR",
+      });
+    }
+  }, [cartQuery.data?.items.length]);
+
   const removeMutation = useMutation({
     mutationFn: (itemId: string) => removeCartItem(customerAuth.authHeaders, itemId),
-    onSuccess: () => {
+    onSuccess: (_data, itemId) => {
+      const removedItem = cartQuery.data?.items.find((item) => item.id === itemId);
+      if (removedItem && isPostHogConfigured()) {
+        posthog.capture("remove_from_cart", {
+          product_id: removedItem.productVariant.product.id,
+          product_name: removedItem.productVariant.product.name,
+          currency: "INR",
+        });
+      }
       setNotice("Item removed.");
       void queryClient.invalidateQueries({ queryKey: ["cart", customerAuth.authKey] });
       void queryClient.invalidateQueries({ queryKey: ["checkout-summary", customerAuth.authKey] });
@@ -334,14 +352,21 @@ export function CartPageClient() {
             <Button asChild size="lg" className="mt-5 w-full">
               <Link
                 href={appliedCouponCode ? `/checkout?couponCode=${encodeURIComponent(appliedCouponCode)}` : "/checkout"}
-                onClick={() =>
+                onClick={() => {
+                  if (isPostHogConfigured()) {
+                    posthog.capture("checkout_started", {
+                      cart_value: totals.subtotalPaise / 100,
+                      total_items: totals.itemCount,
+                      currency: "INR",
+                    });
+                  }
                   capturePostHogEvent("checkout_started", {
                     item_count: checkoutTotals.itemCount,
                     total: checkoutTotals.buyerTotalMinor,
                     currency: checkoutTotals.buyerCurrency,
                     coupon_applied: Boolean(appliedCouponCode),
-                  })
-                }
+                  });
+                }}
               >
                 Checkout <ArrowRight size={17} />
               </Link>
