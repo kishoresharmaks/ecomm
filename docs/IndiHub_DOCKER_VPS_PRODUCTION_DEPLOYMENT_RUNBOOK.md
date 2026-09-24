@@ -694,7 +694,10 @@ NEXT_PUBLIC_GOOGLE_ADS_ID=
 NEXT_PUBLIC_CLOUDFLARE_BEACON_TOKEN=
 NEXT_PUBLIC_CSP_CONNECT_SRC=
 NEXT_PUBLIC_CSP_IMG_SRC=
+NEXT_PUBLIC_CSP_STYLE_SRC=
+NEXT_PUBLIC_CSP_FONT_SRC=
 NEXT_PUBLIC_CSP_FRAME_SRC=
+NEXT_PUBLIC_CSP_FRAME_ANCESTORS=
 ```
 
 `NEXT_PUBLIC_*` values are embedded into the browser bundle. The build database URLs are placeholders and are never contacted by `prisma generate`. Never put production database or provider credentials in this file.

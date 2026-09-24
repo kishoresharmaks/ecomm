@@ -22,6 +22,9 @@ describe("security header helpers", () => {
     const connectDirective = directive(csp, "connect-src");
     const frameDirective = directive(csp, "frame-src");
 
+    const styleDirective = directive(csp, "style-src");
+    const fontDirective = directive(csp, "font-src");
+
     expect(scriptDirective).toContain("https://www.googletagmanager.com");
     expect(scriptDirective).toContain("https://pagead2.googlesyndication.com");
     expect(scriptDirective).toContain("https://googleads.g.doubleclick.net");
@@ -31,10 +34,26 @@ describe("security header helpers", () => {
     expect(connectDirective).toContain("https://*.g.doubleclick.net");
     expect(connectDirective).toContain("https://ad.doubleclick.net");
     expect(frameDirective).toContain("https://www.googletagmanager.com");
+    expect(frameDirective).toContain("https://t.1handindia.com");
     expect(scriptDirective).toContain("https://us-assets.i.posthog.com");
     expect(connectDirective).toContain("https://us.i.posthog.com");
     expect(scriptDirective).toContain("https://t.1handindia.com");
     expect(connectDirective).toContain("https://t.1handindia.com");
+    expect(styleDirective).toContain("https://t.1handindia.com");
+    expect(styleDirective).toContain("https://us-assets.i.posthog.com");
+    expect(fontDirective).toContain("https://t.1handindia.com");
+  });
+
+  it("incorporates optional custom CSP environment variables", () => {
+    vi.stubEnv("NEXT_PUBLIC_CSP_STYLE_SRC", "https://custom-styles.1handindia.com");
+    vi.stubEnv("NEXT_PUBLIC_CSP_FONT_SRC", "https://custom-fonts.1handindia.com");
+    vi.stubEnv("NEXT_PUBLIC_CSP_FRAME_ANCESTORS", "https://us.posthog.com,https://admin.1handindia.com");
+
+    const csp = buildContentSecurityPolicy({ nonce: "nonce-value", origin: "https://1handindia.com" });
+
+    expect(directive(csp, "style-src")).toContain("https://custom-styles.1handindia.com");
+    expect(directive(csp, "font-src")).toContain("https://custom-fonts.1handindia.com");
+    expect(directive(csp, "frame-ancestors")).toContain("https://us.posthog.com https://admin.1handindia.com");
   });
 
   it("keeps an explicitly configured local HTTP API usable in production preview", () => {
