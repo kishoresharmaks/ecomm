@@ -7,6 +7,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tansta
 import { Button, SectionHeading, cn } from "@indihub/ui";
 import { CustomerAuthNotice } from "@/components/auth/customer-auth-notice";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
+import { customerSignInRequiredMessage, useCustomerSignInGate } from "@/components/auth/use-customer-sign-in-gate";
 import { useStorefrontLocation } from "@/components/storefront/storefront-location-context";
 import {
   addCartItem,
@@ -44,6 +45,7 @@ type ProductListingClientProps = {
 export function ProductListingClient({ mode, categorySlug, initialSearch = "" }: ProductListingClientProps) {
   const queryClient = useQueryClient();
   const customerAuth = useCustomerAuth();
+  const requireCustomerSignIn = useCustomerSignInGate();
   const storefrontLocation = useStorefrontLocation();
   const wishlist = useStorefrontWishlist();
   const [search, setSearch] = useState(initialSearch);
@@ -109,9 +111,6 @@ export function ProductListingClient({ mode, categorySlug, initialSearch = "" }:
   const addMutation = useMutation({
     mutationFn: (product: ProductSummary) => {
       const variant = primaryVariant(product);
-      if (!customerAuth.enabled) {
-        throw new Error("Sign in before using cart actions.");
-      }
       if (!variant) {
         throw new Error("This product does not have an active variant.");
       }
@@ -126,6 +125,14 @@ export function ProductListingClient({ mode, categorySlug, initialSearch = "" }:
       setNotice(error instanceof Error ? error.message : "Unable to add product to cart.");
     }
   });
+
+  function handleAddToCart(product: ProductSummary) {
+    if (!requireCustomerSignIn("product_listing")) {
+      setNotice(customerSignInRequiredMessage);
+      return;
+    }
+    addMutation.mutate(product);
+  }
 
   const title =
     mode === "category"
@@ -292,7 +299,7 @@ export function ProductListingClient({ mode, categorySlug, initialSearch = "" }:
                 <ProductCard
                   key={product.id}
                   product={product}
-                  onAddToCart={(item) => addMutation.mutate(item)}
+                  onAddToCart={handleAddToCart}
                   isAdding={addMutation.isPending}
                   isInCart={cartProductIds.has(product.id)}
                   isWishlisted={wishlist.hasWishlistProduct(product.id)}

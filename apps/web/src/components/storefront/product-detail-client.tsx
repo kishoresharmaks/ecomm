@@ -35,6 +35,7 @@ import { buildProductDetailContent } from "@indihub/shared-types";
 import { Button, SectionHeading, cn } from "@indihub/ui";
 import { CustomerAuthNotice } from "@/components/auth/customer-auth-notice";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
+import { customerSignInRequiredMessage, useCustomerSignInGate } from "@/components/auth/use-customer-sign-in-gate";
 import { useMarket } from "@/components/market/market-context";
 import {
   addCartItem,
@@ -69,6 +70,7 @@ export function ProductDetailClient({ slug }: { slug: string }) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const customerAuth = useCustomerAuth();
+  const requireCustomerSignIn = useCustomerSignInGate();
   const market = useMarket();
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
   const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
@@ -162,22 +164,7 @@ export function ProductDetailClient({ slug }: { slug: string }) {
   }, [notice]);
 
   const addMutation = useMutation({
-    mutationFn: async () => {
-      if (!product) {
-        throw new Error("Product is still loading.");
-      }
-      if (!customerAuth.enabled) {
-        throw new Error("Sign in before using cart actions.");
-      }
-      if (product.listingMode === "ENQUIRY_ONLY") {
-        throw new Error("This listing is enquiry-only. Contact the seller instead of adding it to cart.");
-      }
-      if (!selectedVariant) {
-        throw new Error("Select an active product variant.");
-      }
-
-      return addCartItem(customerAuth.authHeaders, selectedVariant.id, quantity);
-    },
+    mutationFn: (variantId: string) => addCartItem(customerAuth.authHeaders, variantId, quantity),
     onSuccess: () => {
       if (product && isPostHogConfigured()) {
         const priceVal = selectedBasePrice ? selectedBasePrice / 100 : 0;
@@ -208,6 +195,31 @@ export function ProductDetailClient({ slug }: { slug: string }) {
       setNotice(error instanceof Error ? error.message : "Unable to add product to cart.");
     },
   });
+
+  function handleAddToCart() {
+    if (!product) {
+      setNoticeTone("danger");
+      setNotice("Product is still loading.");
+      return;
+    }
+    if (!requireCustomerSignIn("product_detail")) {
+      setNoticeTone("danger");
+      setNotice(customerSignInRequiredMessage);
+      return;
+    }
+    if (product.listingMode === "ENQUIRY_ONLY") {
+      setNoticeTone("danger");
+      setNotice("This listing is enquiry-only. Contact the seller instead of adding it to cart.");
+      return;
+    }
+    if (!selectedVariant) {
+      setNoticeTone("danger");
+      setNotice("Select an active product variant.");
+      return;
+    }
+
+    addMutation.mutate(selectedVariant.id);
+  }
 
   async function handleWishlistToggle() {
     if (!product) {
@@ -524,7 +536,7 @@ export function ProductDetailClient({ slug }: { slug: string }) {
                       type="button"
                       size="lg"
                       disabled={!selectedVariant || !hasStock || addMutation.isPending}
-                      onClick={() => addMutation.mutate()}
+                      onClick={handleAddToCart}
                       className={cn(
                         "min-w-[190px] rounded-full bg-[#ED3500] shadow-[0_14px_28px_rgba(237,53,0,0.20)]",
                         (!selectedVariant || !hasStock) && "bg-[#FFF0EC] text-[#C4320A] hover:bg-[#FFF0EC] [&_svg]:text-[#C4320A]",

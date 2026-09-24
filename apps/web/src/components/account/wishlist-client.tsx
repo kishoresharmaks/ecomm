@@ -8,6 +8,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, SectionHeading, StatusBadge, cn } from "@indihub/ui";
 import { CustomerAuthNotice } from "@/components/auth/customer-auth-notice";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
+import { customerSignInRequiredMessage, useCustomerSignInGate } from "@/components/auth/use-customer-sign-in-gate";
 import { useMarket } from "@/components/market/market-context";
 import { useConfirmationDialog } from "@/components/shared/confirmation-dialog";
 import { StorefrontImage } from "@/components/storefront/storefront-image";
@@ -21,6 +22,7 @@ type WishlistItem = WishlistSummary["items"][number];
 export function WishlistClient() {
   const queryClient = useQueryClient();
   const customerAuth = useCustomerAuth();
+  const requireCustomerSignIn = useCustomerSignInGate();
   const market = useMarket();
   const [notice, setNotice] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
@@ -79,10 +81,6 @@ export function WishlistClient() {
 
   const cartMutation = useMutation({
     mutationFn: async (products: WishlistProduct[]) => {
-      if (!customerAuth.enabled) {
-        throw new Error("Sign in before using cart actions.");
-      }
-
       for (const product of products) {
         const variant = primaryWishlistVariant(product);
         if (!variant) {
@@ -97,6 +95,14 @@ export function WishlistClient() {
     },
     onError: (error) => setNotice(error instanceof Error ? error.message : "Unable to add selected products to cart.")
   });
+
+  function addToCart(products: WishlistProduct[]) {
+    if (!requireCustomerSignIn("wishlist")) {
+      setNotice(customerSignInRequiredMessage);
+      return;
+    }
+    cartMutation.mutate(products);
+  }
 
   function toggleProduct(productId: string) {
     setSelectedIds((current) => {
@@ -126,7 +132,7 @@ export function WishlistClient() {
       setNotice("Select available products before adding to cart.");
       return;
     }
-    cartMutation.mutate(selectedItems.map((item) => item.product));
+    addToCart(selectedItems.map((item) => item.product));
   }
 
   function removeSelected() {
@@ -220,7 +226,7 @@ export function WishlistClient() {
                     selected={isSelected}
                     variant={variant}
                     onToggle={() => variant ? toggleProduct(product.id) : undefined}
-                    onAddToCart={() => cartMutation.mutate([product])}
+                    onAddToCart={() => addToCart([product])}
                     onRemove={() =>
                       confirmation.requestConfirmation({
                         title: "Remove wishlist product?",
