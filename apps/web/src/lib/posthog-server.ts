@@ -1,5 +1,3 @@
-import { PostHog } from "posthog-node";
-
 function getPostHogToken(): string | undefined {
   return (
     process.env.POSTHOG_PROJECT_TOKEN?.trim() ||
@@ -16,23 +14,6 @@ function getPostHogHost(): string {
   );
 }
 
-let posthogInstance: PostHog | null = null;
-
-export function getPostHogServerClient(): PostHog | null {
-  const token = getPostHogToken();
-  if (!token) {
-    return null;
-  }
-
-  if (!posthogInstance) {
-    posthogInstance = new PostHog(token, {
-      host: getPostHogHost(),
-    });
-  }
-
-  return posthogInstance;
-}
-
 export const posthog = {
   capture({
     distinctId,
@@ -47,21 +28,33 @@ export const posthog = {
     if (!token) {
       return;
     }
-    const client = getPostHogServerClient();
-    if (client) {
-      client.capture({
-        distinctId,
+    const host = getPostHogHost().replace(/\/+$/, "");
+
+    void fetch(`${host}/capture/`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        api_key: token,
         event,
-        ...(properties ? { properties } : {}),
-      });
-    }
+        distinct_id: distinctId,
+        properties: {
+          ...properties,
+          $lib: "indihub-posthog-server",
+        },
+      }),
+    }).catch(() => {
+      // Non-blocking catch for server tracking fetch
+    });
   },
   shutdown() {
-    if (posthogInstance) {
-      void posthogInstance.shutdown();
-      posthogInstance = null;
-    }
+    // No-op for HTTP capture
   },
 };
+
+export function getPostHogServerClient() {
+  return posthog;
+}
 
 export default posthog;
