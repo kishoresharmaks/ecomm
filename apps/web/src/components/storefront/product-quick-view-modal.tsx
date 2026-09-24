@@ -18,6 +18,7 @@ import {
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, StatusBadge, cn } from "@indihub/ui";
 import { useCustomerAuth } from "@/components/auth/indihub-auth-context";
+import { customerSignInRequiredMessage, useCustomerSignInGate } from "@/components/auth/use-customer-sign-in-gate";
 import { useMarket } from "@/components/market/market-context";
 import {
   addCartItem,
@@ -42,6 +43,7 @@ type ProductQuickViewModalProps = {
 export function ProductQuickViewModal({ product, open, onClose }: ProductQuickViewModalProps) {
   const queryClient = useQueryClient();
   const customerAuth = useCustomerAuth();
+  const requireCustomerSignIn = useCustomerSignInGate();
   const market = useMarket();
   const wishlist = useStorefrontWishlist();
   const [quantity, setQuantity] = useState(1);
@@ -82,9 +84,6 @@ export function ProductQuickViewModal({ product, open, onClose }: ProductQuickVi
       if (!product) {
         throw new Error("Product is still loading.");
       }
-      if (!customerAuth.enabled) {
-        throw new Error("Sign in before using cart actions.");
-      }
       if (isEnquiryOnly) {
         throw new Error("This listing is enquiry-only. Contact the seller instead of adding it to cart.");
       }
@@ -102,6 +101,14 @@ export function ProductQuickViewModal({ product, open, onClose }: ProductQuickVi
       setNotice(error instanceof Error ? error.message : "Unable to add product to cart.");
     },
   });
+
+  function handleAddToCart() {
+    if (!requireCustomerSignIn("quick_view")) {
+      setNotice(customerSignInRequiredMessage);
+      return;
+    }
+    addMutation.mutate();
+  }
 
   async function handleWishlistToggle() {
     if (!product) {
@@ -246,7 +253,7 @@ export function ProductQuickViewModal({ product, open, onClose }: ProductQuickVi
                         type="button"
                         size="lg"
                         disabled={!variant || !hasStock || addMutation.isPending}
-                        onClick={() => addMutation.mutate()}
+                        onClick={handleAddToCart}
                         className={cn(
                           "h-12 rounded-md bg-[#163B5C] hover:bg-[#0f2d46]",
                           (!variant || !hasStock) && "bg-[#FFF0EC] text-[#C4320A] hover:bg-[#FFF0EC] [&_svg]:text-[#C4320A]",

@@ -10,3 +10,8 @@ export function safeRedirectPath(value: string | null) {
   if (!value || !value.startsWith("/") || value.startsWith("//")) return null;
   return value;
 }
+
+export function customerSignInHref(returnPath: string) {
+  const redirectUrl = safeRedirectPath(returnPath);
+  return redirectUrl ? `/sign-in?redirect_url=${encodeURIComponent(redirectUrl)}` : "/sign-in";
+}
