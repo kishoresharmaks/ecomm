@@ -55,6 +55,7 @@ export function initPostHog(): typeof posthog | null {
     api_host: host,
     ui_host: uiHost,
     defaults: "2026-05-30",
+    persistence: "localStorage+cookie",
     capture_pageview: false, // Managed by PostHogPageView on App Router route transitions
     capture_pageleave: true,
     capture_exceptions: true,
