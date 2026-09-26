@@ -7,6 +7,8 @@ import {
   userFacingApiErrorMessage,
   userSessionExpiredMessage,
   isAbortError,
+  isNetworkError,
+  networkErrorMessage,
 } from "./api";
 
 describe("indihubFetch", () => {
@@ -80,6 +82,23 @@ describe("indihubFetch", () => {
     expect(userFacingApiErrorMessage(fetchAbortedError)).toBe(requestTimedOutMessage);
     expect(userFacingApiErrorMessage("Fetch is aborted")).toBe(requestTimedOutMessage);
     expect(userFacingApiErrorMessage("signal is aborted without reason")).toBe(requestTimedOutMessage);
+  });
+
+  it("converts Safari Load failed network rejections into IndihubApiError in indihubFetch", async () => {
+    const safariError = new TypeError("Load failed");
+    vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(safariError);
+
+    await expect(indihubFetch("/api/test-network-error")).rejects.toMatchObject({
+      message: networkErrorMessage,
+      status: 0
+    } satisfies Partial<IndihubApiError>);
+  });
+
+  it("identifies network fetch errors across Safari, Chrome, and Firefox", () => {
+    expect(isNetworkError(new TypeError("Load failed"))).toBe(true);
+    expect(isNetworkError(new TypeError("Failed to fetch"))).toBe(true);
+    expect(isNetworkError(new TypeError("NetworkError when attempting to fetch resource."))).toBe(true);
+    expect(userFacingApiErrorMessage(new TypeError("Load failed"))).toBe(networkErrorMessage);
   });
 
   it("sanitizes obscure API errors to standard messages in production mode", () => {

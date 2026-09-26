@@ -1,4 +1,4 @@
-import { isAbortError } from "./api";
+import { isAbortError, isNetworkError } from "./api";
 import posthog from "posthog-js";
 
 export function getPostHogToken(): string | undefined {
@@ -72,6 +72,11 @@ export function initPostHog(): typeof posthog | null {
         if (
           type === "AbortError" ||
           type === "DOMException" ||
+          lowerMsg.includes("load failed") ||
+          lowerMsg.includes("failed to fetch") ||
+          lowerMsg.includes("networkerror") ||
+          lowerMsg.includes("network error") ||
+          lowerMsg.includes("network request failed") ||
           lowerMsg.includes("fetch is aborted") ||
           lowerMsg.includes("signal is aborted") ||
           lowerMsg.includes("operation was aborted") ||
@@ -112,7 +117,7 @@ export function isUserFacingAuthOrValidationError(error: unknown): boolean {
     return false;
   }
 
-  if (isAbortError(error)) {
+  if (isAbortError(error) || isNetworkError(error)) {
     return true;
   }
 

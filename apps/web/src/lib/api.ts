@@ -24,6 +24,7 @@ export const adminCookieSessionMarker = "indihub-admin-cookie-session";
 
 export const userSessionExpiredMessage = "Your sign-in session expired. Please refresh your session or sign in again.";
 export const requestTimedOutMessage = "The server is taking longer than expected. Please try again.";
+export const networkErrorMessage = "We could not reach 1HandIndia. Please check your connection and try again.";
 
 export class IndihubApiError extends Error {
   readonly status: number;
@@ -81,6 +82,10 @@ export function userFacingApiErrorMessage(error: unknown) {
 
   if (isAbortError(error)) {
     return requestTimedOutMessage;
+  }
+
+  if (isNetworkError(error)) {
+    return networkErrorMessage;
   }
 
   if (error instanceof Error) {
@@ -145,6 +150,10 @@ async function request(path: string, init: RequestInit | undefined, auth: Indihu
       throw new IndihubApiError(requestTimedOutMessage, 408);
     }
 
+    if (isNetworkError(error)) {
+      throw new IndihubApiError(networkErrorMessage, 0);
+    }
+
     throw error;
   } finally {
     if (timeoutId) {
@@ -204,6 +213,10 @@ function sanitizeApiMessage(message: string, status?: number) {
 
   if (isAbortMessage(trimmed)) {
     return requestTimedOutMessage;
+  }
+
+  if (isNetworkErrorMessage(trimmed)) {
+    return networkErrorMessage;
   }
 
   if (isDeveloperAuthMessage(trimmed, status)) {
@@ -277,6 +290,44 @@ export function isAbortMessage(message: string): boolean {
     lower === "abort" ||
     lower.includes("is aborted") ||
     lower.includes("aborted")
+  );
+}
+
+export function isNetworkError(error: unknown): boolean {
+  if (!error) {
+    return false;
+  }
+
+  if (error instanceof IndihubApiError) {
+    return error.message === networkErrorMessage || isNetworkErrorMessage(error.message);
+  }
+
+  if (error instanceof Error) {
+    return isNetworkErrorMessage(error.message);
+  }
+
+  if (typeof error === "object") {
+    const err = error as { name?: unknown; message?: unknown };
+    const message = typeof err.message === "string" ? err.message : "";
+    return isNetworkErrorMessage(message);
+  }
+
+  if (typeof error === "string") {
+    return isNetworkErrorMessage(error);
+  }
+
+  return false;
+}
+
+export function isNetworkErrorMessage(message: string): boolean {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes("load failed") ||
+    lower.includes("failed to fetch") ||
+    lower.includes("networkerror") ||
+    lower.includes("network error") ||
+    lower.includes("network request failed") ||
+    lower.includes("failed to load resource")
   );
 }
 
