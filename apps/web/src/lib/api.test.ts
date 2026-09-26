@@ -6,6 +6,7 @@ import {
   requestTimedOutMessage,
   userFacingApiErrorMessage,
   userSessionExpiredMessage,
+  isAbortError,
 } from "./api";
 
 describe("indihubFetch", () => {
@@ -55,11 +56,29 @@ describe("indihubFetch", () => {
     } satisfies Partial<IndihubApiError>);
   });
 
+  it("converts raw fetch abort rejections into IndihubApiError(408) in indihubFetch", async () => {
+    const domAbortError = new DOMException("Fetch is aborted", "AbortError");
+    vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(domAbortError);
+
+    await expect(indihubFetch("/api/test-timeout")).rejects.toMatchObject({
+      message: requestTimedOutMessage,
+      status: 408
+    } satisfies Partial<IndihubApiError>);
+  });
+
   it("keeps raw abort errors out of user-facing API failures", () => {
     const abortError = new Error("signal is aborted without reason");
     abortError.name = "AbortError";
 
+    const fetchAbortedError = new DOMException("Fetch is aborted", "AbortError");
+
+    expect(isAbortError(fetchAbortedError)).toBe(true);
+    expect(isAbortError("Fetch is aborted")).toBe(true);
+    expect(isAbortError({ name: "AbortError", message: "Fetch is aborted" })).toBe(true);
+
     expect(userFacingApiErrorMessage(abortError)).toBe(requestTimedOutMessage);
+    expect(userFacingApiErrorMessage(fetchAbortedError)).toBe(requestTimedOutMessage);
+    expect(userFacingApiErrorMessage("Fetch is aborted")).toBe(requestTimedOutMessage);
     expect(userFacingApiErrorMessage("signal is aborted without reason")).toBe(requestTimedOutMessage);
   });
 

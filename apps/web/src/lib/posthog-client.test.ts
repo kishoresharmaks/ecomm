@@ -7,6 +7,7 @@ import {
   getPostHogUiHost,
   identifyPostHogUser,
   isPostHogConfigured,
+  isUserFacingAuthOrValidationError,
   resetPostHogUser,
 } from "./posthog-client";
 
@@ -54,6 +55,16 @@ describe("posthog-client helper", () => {
   it("uses custom ui_host when provided", () => {
     vi.stubEnv("NEXT_PUBLIC_POSTHOG_UI_HOST", "https://eu.posthog.com");
     expect(getPostHogUiHost()).toBe("https://eu.posthog.com");
+  });
+
+  it("filters out expected user-facing auth and validation errors from exception tracking", () => {
+    expect(isUserFacingAuthOrValidationError(new Error("Sign in before using cart actions."))).toBe(true);
+    expect(isUserFacingAuthOrValidationError(new Error("Sign in before using wishlist actions."))).toBe(true);
+    expect(isUserFacingAuthOrValidationError(new Error("Sign in before managing addresses."))).toBe(true);
+    expect(isUserFacingAuthOrValidationError(new Error("Sign in before booking a service."))).toBe(true);
+    expect(isUserFacingAuthOrValidationError(new Error("Your sign-in session expired. Please refresh your session or sign in again."))).toBe(true);
+
+    expect(isUserFacingAuthOrValidationError(new Error("TypeError: Cannot read properties of undefined"))).toBe(false);
   });
 
   it("safely handles capture and identify calls in non-browser environments without errors", () => {

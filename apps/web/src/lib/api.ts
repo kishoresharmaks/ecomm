@@ -118,8 +118,12 @@ async function request(path: string, init: RequestInit | undefined, auth: Indihu
     init?.signal || !Number.isFinite(apiRequestTimeoutMs) || apiRequestTimeoutMs <= 0
       ? null
       : new AbortController();
+  let timedOut = false;
   const timeoutId = controller
-    ? setTimeout(() => controller.abort(), apiRequestTimeoutMs)
+    ? setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, apiRequestTimeoutMs)
     : null;
 
   try {
@@ -132,6 +136,16 @@ async function request(path: string, init: RequestInit | undefined, auth: Indihu
     const response = await fetch(`${apiBaseUrl}${path}`, requestInit);
 
     return { response, bearerToken: authorizationToken };
+  } catch (error) {
+    if (error instanceof IndihubApiError) {
+      throw error;
+    }
+
+    if (timedOut || isAbortError(error)) {
+      throw new IndihubApiError(requestTimedOutMessage, 408);
+    }
+
+    throw error;
   } finally {
     if (timeoutId) {
       clearTimeout(timeoutId);
@@ -223,17 +237,47 @@ function sanitizeApiMessage(message: string, status?: number) {
   return trimmed;
 }
 
-function isAbortError(error: unknown) {
-  if (!(error instanceof Error)) {
+export function isAbortError(error: unknown): boolean {
+  if (!error) {
     return false;
   }
 
-  return error.name === "AbortError" || isAbortMessage(error.message);
+  if (error instanceof IndihubApiError) {
+    return error.status === 408 || error.message === requestTimedOutMessage || isAbortMessage(error.message);
+  }
+
+  if (error instanceof Error) {
+    return error.name === "AbortError" || error.name === "DOMException" || isAbortMessage(error.message);
+  }
+
+  if (typeof error === "object") {
+    const err = error as { name?: unknown; message?: unknown };
+    const name = typeof err.name === "string" ? err.name : "";
+    const message = typeof err.message === "string" ? err.message : "";
+    return name === "AbortError" || name === "DOMException" || isAbortMessage(message);
+  }
+
+  if (typeof error === "string") {
+    return isAbortMessage(error);
+  }
+
+  return false;
 }
 
-function isAbortMessage(message: string) {
+export function isAbortMessage(message: string): boolean {
   const lower = message.toLowerCase();
-  return lower.includes("signal is aborted") || lower.includes("aborted without reason") || lower.includes("operation was aborted");
+  return (
+    lower.includes("fetch is aborted") ||
+    lower.includes("signal is aborted") ||
+    lower.includes("aborted without reason") ||
+    lower.includes("operation was aborted") ||
+    lower.includes("the user aborted a request") ||
+    lower.includes("request aborted") ||
+    lower.includes("fetch aborted") ||
+    lower === "abort" ||
+    lower.includes("is aborted") ||
+    lower.includes("aborted")
+  );
 }
 
 function isDeveloperAuthMessage(message: string, status?: number) {
