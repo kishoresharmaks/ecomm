@@ -26,6 +26,30 @@ export function isPostHogConfigured(): boolean {
   return Boolean(getPostHogToken());
 }
 
+type CapturedException = {
+  value?: unknown;
+  stacktrace?: { frames?: unknown[] } | null;
+};
+
+// Browsers hide errors from cross-origin scripts (GTM, gtag, extensions) behind
+// "Script error." with no stack, so these issues have nothing to debug.
+export function isStacklessCrossOriginScriptError(
+  properties: Record<string, unknown> | undefined,
+): boolean {
+  const exceptions = properties?.["$exception_list"] as CapturedException[] | undefined;
+  return (
+    Array.isArray(exceptions) &&
+    exceptions.length > 0 &&
+    exceptions.every((exception) => {
+      const frames = exception?.stacktrace?.frames;
+      return (
+        String(exception?.value ?? "").trim() === "Script error." &&
+        !(Array.isArray(frames) && frames.length > 0)
+      );
+    })
+  );
+}
+
 let isInitialized = false;
 let hasWarnedMissingToken = false;
 
@@ -62,6 +86,9 @@ export function initPostHog(): typeof posthog | null {
     capture_exceptions: true,
     before_send: (event) => {
       if (event?.event === "$exception") {
+        if (isStacklessCrossOriginScriptError(event.properties)) {
+          return null;
+        }
         const type = String(event?.properties?.["$exception_type"] || "");
         const message = String(
           event?.properties?.["$exception_message"] ||
