@@ -7,6 +7,7 @@ import {
   getPostHogUiHost,
   identifyPostHogUser,
   isPostHogConfigured,
+  isStacklessCrossOriginScriptError,
   isUserFacingAuthOrValidationError,
   resetPostHogUser,
 } from "./posthog-client";
@@ -74,5 +75,42 @@ describe("posthog-client helper", () => {
       identifyPostHogUser("user_123", { role: "CUSTOMER" });
       resetPostHogUser();
     }).not.toThrow();
+  });
+});
+
+describe("isStacklessCrossOriginScriptError", () => {
+  it("matches a stackless cross-origin Script error.", () => {
+    expect(
+      isStacklessCrossOriginScriptError({
+        $exception_list: [
+          { type: "Error", value: "Script error.", mechanism: { handled: false, synthetic: true } },
+        ],
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps a Script error. that has stack frames", () => {
+    expect(
+      isStacklessCrossOriginScriptError({
+        $exception_list: [
+          { type: "Error", value: "Script error.", stacktrace: { frames: [{ filename: "app.js" }] } },
+        ],
+      }),
+    ).toBe(false);
+  });
+
+  it("keeps other stackless errors and empty exception lists", () => {
+    expect(
+      isStacklessCrossOriginScriptError({
+        $exception_list: [{ type: "Error", value: "Something broke" }],
+      }),
+    ).toBe(false);
+    expect(
+      isStacklessCrossOriginScriptError({
+        $exception_list: [{ type: "Error", value: "Script error." }, { type: "TypeError", value: "x is undefined" }],
+      }),
+    ).toBe(false);
+    expect(isStacklessCrossOriginScriptError({ $exception_list: [] })).toBe(false);
+    expect(isStacklessCrossOriginScriptError(undefined)).toBe(false);
   });
 });
